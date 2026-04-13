@@ -208,8 +208,12 @@ export function SessionDetail() {
 
   const hasMore = messages.length < totalMessages;
   const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
+  // The assistant is still working if:
+  // - the last message is from the user (assistant hasn't replied yet), or
+  // - the last message is from the assistant with no finish reason (still streaming).
+  // Once finish is set to any value ("stop", "tool-calls", etc.), that turn is done.
   const isRunning = lastMsg
-    ? lastMsg.data?.role === 'user' || (lastMsg.data?.role === 'assistant' && lastMsg.data?.finish !== 'stop')
+    ? lastMsg.data?.role === 'user' || (lastMsg.data?.role === 'assistant' && !lastMsg.data?.finish)
     : false;
 
   return (
@@ -270,12 +274,7 @@ export function SessionDetail() {
               hasMore={hasMore}
               loadingMore={loadingMore}
               onLoadMore={loadMore}
-              composer={<Composer onSend={handleSend} isRunning={isRunning} />}
-              footer={!portAvailable ? (
-                <div className="chat-input-status error" style={{ marginTop: 4 }}>
-                  No running OpenCode instance found for this session.
-                </div>
-              ) : undefined}
+              composer={<Composer onSend={handleSend} isRunning={isRunning} disabled={!portAvailable} />}
             />
           </OcmanRuntimeProvider>
         )}

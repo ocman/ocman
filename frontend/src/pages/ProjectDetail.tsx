@@ -16,9 +16,9 @@ export function ProjectDetail() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Auto-refresh every second
+  // Auto-refresh every 5 seconds
   useEffect(() => {
-    const id = setInterval(load, 1000);
+    const id = setInterval(load, 5000);
     return () => clearInterval(id);
   }, [load]);
 

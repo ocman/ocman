@@ -9,7 +9,7 @@ A web dashboard for viewing OpenCode session data. Go backend reads OpenCode's S
 - `main.go` — entrypoint; parses `-addr` and `-db` flags, opens the DB, starts the server
 - `internal/db/` — SQLite queries against OpenCode's `session`, `message`, `part` tables; uses `json_extract` heavily
 - `internal/server/server.go` — HTTP server, API handlers, static file serving with SPA fallback, OpenCode port discovery via `lsof`
-- `internal/server/frontend/` — React + TypeScript + Vite SPA (port 8228 in dev)
+- `frontend/` — React + TypeScript + Vite SPA (port 8228 in dev)
 - `internal/server/static/` — Vite build output; embedded into the Go binary via `//go:embed`
 
 ## Dev commands
@@ -27,7 +27,7 @@ make clean          # removes ocman binary, tmp/, and static/assets/
 
 ## Build pipeline
 
-1. `cd internal/server/frontend && npm ci && npm run build` — builds frontend into `internal/server/static/`
+1. `cd frontend && npm ci && npm run build` — builds frontend into `internal/server/static/`
 2. `go build -o ocman .` — embeds `internal/server/static/` via `//go:embed`
 
 Order matters: frontend must be built before `go build` so static assets are embedded.
@@ -39,8 +39,8 @@ Order matters: frontend must be built before `go build` so static assets are emb
 - **No tests exist** in either Go or frontend as of now.
 - **CI**: `.github/workflows/ci.yml` runs frontend lint + typecheck, `go vet`, and a full `make build`. Runs on push/PR to `main`.
 - **No linter/formatter config** for Go. Frontend has ESLint (`eslint.config.js`).
-- Frontend lint: `cd internal/server/frontend && npm run lint`
-- Frontend typecheck: `cd internal/server/frontend && npx tsc -b`
+- Frontend lint: `cd frontend && npm run lint`
+- Frontend typecheck: `cd frontend && npx tsc -b`
 
 ## Conventions
 

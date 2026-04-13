@@ -42,9 +42,9 @@ export function Dashboard() {
     api.projects().then(p => { setProjects(p); setLoadingProjects(false); });
   }, [loadSessions]);
 
-  // Auto-refresh sessions every second
+  // Auto-refresh sessions every 5 seconds
   useEffect(() => {
-    const id = setInterval(loadSessions, 1000);
+    const id = setInterval(loadSessions, 5000);
     return () => clearInterval(id);
   }, [loadSessions]);
 

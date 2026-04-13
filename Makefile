@@ -1,4 +1,4 @@
-.PHONY: dev dev-backend dev-frontend build clean
+.PHONY: dev dev-backend dev-frontend build run clean
 
 # Run both backend (air) and frontend (vite) with live reload
 dev:
@@ -15,16 +15,19 @@ dev-backend:
 	air
 
 dev-frontend:
-	cd internal/server/frontend && npm run dev
+	cd frontend && npm run dev
 
 # Production build
 build: build-frontend build-backend
 
 build-frontend:
-	cd internal/server/frontend && npm ci && npm run build
+	cd frontend && npm ci && npm run build
 
 build-backend:
 	go build -o ocman .
+
+run: build
+	./ocman -addr 0.0.0.0:8228
 
 clean:
 	rm -rf ocman tmp internal/server/static/assets

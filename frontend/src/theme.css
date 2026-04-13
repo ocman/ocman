@@ -317,6 +317,10 @@ tr.no-port { opacity: 0.4; }
 .oc-msg-assistant {
   padding: 16px 0;
 }
+.oc-msg-muted {
+  padding: 0;
+  margin: 0x 0;
+}
 
 .oc-msg-body {
   font-family: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
@@ -353,6 +357,7 @@ tr.no-port { opacity: 0.4; }
 .oc-md ul, .oc-md ol { margin: 6px 0; padding-left: 28px; }
 .oc-md ol { list-style-position: outside; }
 .oc-md li { margin-bottom: 3px; }
+.oc-md strong { color: #e8edfb; font-weight: 600; }
 .oc-md code { background: rgba(110, 118, 129, 0.25); padding: 1px 5px; border-radius: 3px; font-family: 'SF Mono', Consolas, monospace; font-size: 12px; color: var(--accent4); }
 .oc-md pre { background: rgba(0, 0, 0, 0.35); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; margin: 8px 0; overflow-x: auto; }
 .oc-md pre code { background: none; padding: 0; font-size: 12px; line-height: 1.5; color: var(--text); }
@@ -420,6 +425,33 @@ tr.no-port { opacity: 0.4; }
 }
 .oc-tool-output { color: var(--text); }
 
+/* Shell command - terminal style */
+.oc-shell-block {
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-family: 'SF Mono', Consolas, monospace;
+  line-height: 1.5;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 4px 0;
+  overflow: hidden;
+  max-height: 150px;
+}
+.oc-tool-expanded .oc-shell-block {
+  max-height: none;
+  overflow: visible;
+}
+.oc-shell-prompt {
+  color: var(--accent);
+  user-select: none;
+}
+.oc-shell-cmd {
+  color: var(--accent2);
+}
+
 /* Diff colors in tool output */
 /* Diff table - GitHub style */
 .oc-diff-table {
@@ -467,16 +499,17 @@ tr.no-port { opacity: 0.4; }
 .oc-todo-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0;
   font-family: 'SF Mono', Consolas, monospace;
   font-size: 12px;
 }
 .oc-todo-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 0;
+  gap: 6px;
+  padding: 1px 0;
   color: var(--text);
+  line-height: 1.3;
 }
 .oc-todo-check {
   width: 16px;
@@ -504,6 +537,34 @@ tr.no-port { opacity: 0.4; }
   font-size: 11px;
 }
 
+/* Inline file read indicator */
+.oc-read-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  color: var(--overlay0);
+  padding: 0;
+  margin: -1px 0;
+  line-height: 1.4;
+}
+.oc-read-arrow {
+  color: var(--surface2);
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+/* Subagent task link */
+.oc-task-link {
+  color: var(--overlay0);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.oc-tool-task .oc-tool-header:hover .oc-task-link {
+  color: var(--accent);
+}
+
 .oc-tool-expand {
   font-size: 11px;
   color: var(--text-dim);
@@ -515,11 +576,11 @@ tr.no-port { opacity: 0.4; }
 
 /* Composer - OpenCode style */
 .oc-composer-wrap {
-  position: fixed;
+  position: absolute;
   bottom: 0;
-  left: 284px;
+  left: 0;
   right: 0;
-  padding: 8px 24px 12px 24px;
+  padding: 12px 0px 12px 0px;
   padding-bottom: max(12px, env(safe-area-inset-bottom));
   background: var(--bg);
   z-index: 50;
@@ -546,6 +607,8 @@ tr.no-port { opacity: 0.4; }
   max-height: 200px;
 }
 .oc-composer-input::placeholder { color: var(--overlay0); }
+.oc-composer-disabled .oc-composer { opacity: 0.5; border-left-color: var(--text-dim); }
+.oc-composer-disabled .oc-composer-input { cursor: not-allowed; }
 
 .oc-composer-bar {
   display: flex;
@@ -642,5 +705,5 @@ header h1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-
   .session-layout { flex-direction: column; }
   .session-sidebar { width: 100%; height: 120px; border-right: none; border-bottom: 1px solid var(--border); }
   .session-main { padding-left: 0; }
-  .oc-composer-wrap { left: 0; padding: 8px 12px 12px 12px; }
+  .oc-composer-wrap { padding: 8px 12px 12px 12px; }
 }

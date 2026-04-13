@@ -6,6 +6,7 @@ import {
 } from '@assistant-ui/react';
 import type { Message, Part, PartData } from '../lib/api';
 import { api } from '../lib/api';
+import { simpleDiff } from '../lib/diff';
 
 function parsePart(p: Part): PartData {
   try {
@@ -13,98 +14,6 @@ function parsePart(p: Part): PartData {
   } catch {
     return (p.data || {}) as PartData;
   }
-}
-
-// Generate a simple unified diff between two strings.
-// Shows context lines around changes for readability.
-function simpleDiff(oldStr: string, newStr: string): string {
-  const oldLines = oldStr.split('\n');
-  const newLines = newStr.split('\n');
-
-  // Find longest common subsequence to produce a proper diff
-  const m = oldLines.length;
-  const n = newLines.length;
-
-  // For small inputs, use full LCS. For large inputs, just show removed/added.
-  if (m + n > 200) {
-    const out: string[] = [];
-    oldLines.forEach(l => out.push(`- ${l}`));
-    newLines.forEach(l => out.push(`+ ${l}`));
-    return out.join('\n');
-  }
-
-  // Build LCS table
-  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      dp[i][j] = oldLines[i - 1] === newLines[j - 1]
-        ? dp[i - 1][j - 1] + 1
-        : Math.max(dp[i - 1][j], dp[i][j - 1]);
-    }
-  }
-
-  // Backtrack to produce diff
-  const result: string[] = [];
-  let i = m, j = n;
-  const ops: Array<[string, string]> = [];
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
-      ops.push([' ', oldLines[i - 1]]);
-      i--; j--;
-    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
-      ops.push(['+', newLines[j - 1]]);
-      j--;
-    } else {
-      ops.push(['-', oldLines[i - 1]]);
-      i--;
-    }
-  }
-  ops.reverse();
-
-  // Assign line numbers to each op
-  let oldLine = 1, newLine = 1;
-  const numbered: Array<[string, string, string, string]> = []; // [op, text, oldLn, newLn]
-  ops.forEach(([op, text]) => {
-    if (op === ' ') {
-      numbered.push([op, text, String(oldLine), String(newLine)]);
-      oldLine++; newLine++;
-    } else if (op === '-') {
-      numbered.push([op, text, String(oldLine), '']);
-      oldLine++;
-    } else {
-      numbered.push([op, text, '', String(newLine)]);
-      newLine++;
-    }
-  });
-
-  // Only show lines around changes (context of 2 lines)
-  const ctx = 2;
-  const changed = new Set<number>();
-  numbered.forEach(([op], idx) => {
-    if (op !== ' ') {
-      for (let k = Math.max(0, idx - ctx); k <= Math.min(numbered.length - 1, idx + ctx); k++) {
-        changed.add(k);
-      }
-    }
-  });
-
-  const pad = (s: string, w: number) => s.padStart(w, ' ');
-  const maxOld = String(oldLine).length;
-  const maxNew = String(newLine).length;
-
-  let lastShown = -1;
-  numbered.forEach(([op, text, oln, nln], idx) => {
-    if (!changed.has(idx)) return;
-    if (lastShown >= 0 && idx - lastShown > 1) {
-      result.push(`${' '.repeat(maxOld)}  ${' '.repeat(maxNew)}    ...`);
-    }
-    const ol = oln ? pad(oln, maxOld) : ' '.repeat(maxOld);
-    const nl = nln ? pad(nln, maxNew) : ' '.repeat(maxNew);
-    result.push(`${ol}  ${nl}  ${op} ${text}`);
-    lastShown = idx;
-  });
-
-  return result.join('\n');
 }
 
 function truncate(text: string | undefined | null, max: number): string {
@@ -141,6 +50,9 @@ function convertMessages(
       }> = [];
 
       msgParts.forEach((pd) => {
+        // Skip non-renderable lifecycle parts
+        if (pd.type === 'step-start' || pd.type === 'step-finish' || pd.type === 'snapshot') return;
+
         switch (pd.type) {
           case 'text':
             if (pd.text?.trim()) {
@@ -171,16 +83,62 @@ function convertMessages(
               argsText = ''; // diff is shown as result, no need for args
               resultText = simpleDiff(inp.oldString, inp.newString);
             } else if (isRead && inp.filePath) {
-              // For read tools, the file path is already in the result XML;
-              // use short filename as title and suppress args to avoid repetition.
+              // Render reads as a muted inline line, not a collapsible block.
               const fileName = inp.filePath.split('/').pop() || inp.filePath;
-              if (!title) title = 'Read ' + fileName;
-              argsText = ''; // path is shown in result output
-              if (typeof st.output === 'string') {
-                resultText = truncate(st.output, 5000);
-              } else if (st.output != null) {
-                resultText = truncate(JSON.stringify(st.output, null, 2), 5000);
+              const params: string[] = [];
+              if (inp.offset) params.push(`offset=${inp.offset}`);
+              if (inp.limit) params.push(`limit=${inp.limit}`);
+              const suffix = params.length > 0 ? ` [${params.join(', ')}]` : '';
+              toolCalls.push({
+                type: 'tool-call' as const,
+                toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
+                toolName: '__read__',
+                argsText: `Read ${fileName}${suffix}`,
+                result: undefined,
+              });
+              break;
+            } else if (toolName === 'task' || toolName === 'mcp_task') {
+              // Render subagent calls without the prompt, with a link to the session
+              const desc = inp.description || title || 'Subagent task';
+              const agentType = inp.subagent_type || '';
+              const label = agentType ? `${desc} (${agentType})` : desc;
+              // Extract task_id and output from the tool result
+              let taskId = '';
+              let taskOutput = '';
+              const outputStr = typeof st.output === 'string' ? st.output : JSON.stringify(st.output || '');
+              // task_id may appear in the output text
+              const idMatch = outputStr.match(/task_id:\s*(ses_[^\s)]+)/);
+              if (idMatch) taskId = idMatch[1];
+              if (!taskId && st.output && typeof st.output === 'object') {
+                const out = st.output as Record<string, unknown>;
+                if (typeof out.task_id === 'string') taskId = out.task_id;
               }
+              // The output is the subagent result — use it directly, stripping the task_id line
+              if (typeof st.output === 'string' && st.output.trim()) {
+                taskOutput = truncate(
+                  st.output.replace(/task_id:\s*ses_[^\s)]+[^\n]*\n?/, '').trim(),
+                  5000,
+                );
+              }
+              toolCalls.push({
+                type: 'tool-call' as const,
+                toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
+                toolName: '__task__',
+                argsText: `${st.status || 'running'}\n${label}`,
+                result: JSON.stringify({ taskId, taskOutput }),
+              });
+              break;
+            } else if ((toolName === 'grep' || toolName === 'mcp_grep') && inp.pattern) {
+              // Render grep as a muted inline line, like file reads.
+              const include = inp.include ? ` (${inp.include})` : '';
+              toolCalls.push({
+                type: 'tool-call' as const,
+                toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
+                toolName: '__read__',
+                argsText: `Grep ${inp.pattern}${include}`,
+                result: undefined,
+              });
+              break;
             } else if (typeof st.output === 'string') {
               resultText = truncate(st.output, 5000);
             } else if (st.output != null) {
@@ -209,6 +167,40 @@ function convertMessages(
             }
             break;
           }
+          default: {
+            // Treat unrecognized part types as tool-like operations so they
+            // still appear in the UI (e.g. "write", "file", custom tools).
+            const st = pd.state || {};
+            const input = st.input || {};
+            const inp = input as Record<string, string>;
+            const toolName = pd.tool || pd.type || 'unknown';
+            let title = st.title || st.metadata?.description || inp.description || '';
+            if (!title && inp.filePath) {
+              title = toolName + ' ' + (inp.filePath.split('/').pop() || inp.filePath);
+            }
+            let argsText = '';
+            if (typeof input === 'string') argsText = input;
+            else if (inp.command) argsText = inp.command;
+            else if (inp.filePath) argsText = inp.filePath;
+            else {
+              const s = JSON.stringify(input, null, 2);
+              if (s !== '{}') argsText = s;
+            }
+            let resultText = '';
+            if (typeof st.output === 'string') {
+              resultText = truncate(st.output, 5000);
+            } else if (st.output != null) {
+              resultText = truncate(JSON.stringify(st.output, null, 2), 5000);
+            }
+            toolCalls.push({
+              type: 'tool-call' as const,
+              toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
+              toolName,
+              argsText: `${st.status || 'running'}\n${title ? title + '\n' : ''}${argsText}`,
+              result: resultText || undefined,
+            });
+            break;
+          }
         }
       });
 
@@ -220,7 +212,7 @@ function convertMessages(
           content: textPieces.join('\n\n') || '',
           createdAt: new Date(m.timeCreated),
           status: role === 'assistant'
-            ? m.data.finish === 'stop'
+            ? m.data.finish
               ? { type: 'complete' as const, reason: 'stop' as const }
               : { type: 'running' as const }
             : undefined,
@@ -242,7 +234,7 @@ function convertMessages(
         content,
         createdAt: new Date(m.timeCreated),
         status: role === 'assistant'
-          ? m.data.finish === 'stop'
+          ? m.data.finish
             ? { type: 'complete' as const, reason: 'stop' as const }
             : { type: 'running' as const }
           : undefined,
@@ -259,15 +251,17 @@ interface Props {
   children: React.ReactNode;
 }
 
-// Determine if the session is actively running based on the last message
+// Determine if the session is actively running based on the last message.
+// The assistant is running if the last message has no finish reason (still streaming).
+// Any finish value ("stop", "tool-calls", etc.) means that turn is done.
 function computeIsRunning(messages: Message[]): boolean {
   if (messages.length === 0) return false;
   const last = messages[messages.length - 1];
   if (!last.data) return false;
   // If last message is from user, assistant hasn't replied yet -> running
   if (last.data.role === 'user') return true;
-  // If last message is from assistant but not finished -> running
-  if (last.data.role === 'assistant' && last.data.finish !== 'stop') return true;
+  // If last message is from assistant with no finish reason -> still streaming
+  if (last.data.role === 'assistant' && !last.data.finish) return true;
   return false;
 }
 

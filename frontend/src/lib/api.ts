@@ -140,6 +140,5 @@ export const api = {
       body: JSON.stringify({ sessionId, directory, message }),
     });
     if (!resp.ok) throw new Error(await resp.text());
-    return resp.json();
   },
 };

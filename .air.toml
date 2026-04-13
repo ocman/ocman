@@ -6,7 +6,7 @@ tmp_dir = "tmp"
   bin = "./tmp/ocman"
   full_bin = "./tmp/ocman -addr 0.0.0.0:8080"
   include_ext = ["go"]
-  exclude_dir = ["tmp", "internal/server/frontend", "internal/server/static"]
+  exclude_dir = ["tmp", "frontend", "internal/server/static"]
   delay = 1000
 
 [log]

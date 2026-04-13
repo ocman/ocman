@@ -3,15 +3,16 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"os"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/server"
 )
 
 func main() {
-	addr := flag.String("addr", "0.0.0.0:8080", "listen address")
+	addr := flag.String("addr", "127.0.0.1:8080", "listen address")
 	dbPath := flag.String("db", db.DefaultDBPath(), "path to opencode.db")
 	flag.Parse()
 

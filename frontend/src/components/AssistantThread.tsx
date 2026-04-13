@@ -39,6 +39,24 @@ const AssistantMessage: FC = () => {
   );
   if (!hasContent) return null;
 
+  // Messages that only contain muted tool calls (reads/greps) render as a compact list
+  const onlyMuted = content.every(
+    (p) => p.type === 'tool-call' && 'toolName' in p && (p as { toolName: string }).toolName === '__read__'
+  );
+
+  if (onlyMuted) {
+    return (
+      <MessagePrimitive.Root className="oc-msg oc-msg-muted">
+        <MessagePrimitive.Content
+          components={{
+            Text: MarkdownText,
+            tools: { Fallback: ToolCallDisplay },
+          }}
+        />
+      </MessagePrimitive.Root>
+    );
+  }
+
   return (
     <MessagePrimitive.Root className="oc-msg oc-msg-assistant">
       <div className="oc-msg-body oc-md">
@@ -57,8 +75,14 @@ const AssistantMessage: FC = () => {
 function AssistantMeta() {
   const createdAt = useMessage((m) => m.createdAt);
   const status = useMessage((m) => m.status);
+  const content = useMessage((m) => m.content);
   if (!createdAt || createdAt.getTime() === 0) return null;
   if (status?.type === 'running') return null;
+  // Hide timestamp when message only contains file reads
+  const onlyReads = content.every(
+    (p) => p.type === 'tool-call' && 'toolName' in p && (p as { toolName: string }).toolName === '__read__'
+  );
+  if (onlyReads) return null;
   const time = createdAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
   return (
     <div className="oc-msg-meta">
@@ -180,6 +204,58 @@ function TodoList({ todos }: { todos: TodoItem[] }) {
 }
 
 const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, result }) => {
+  // File reads/greps render as a muted inline line with an arrow icon
+  if (toolName === '__read__') {
+    return (
+      <div className="oc-read-line">
+        <span className="oc-read-arrow">{'\u2192'}</span>
+        <span>{argsText || 'Read'}</span>
+      </div>
+    );
+  }
+
+  // Subagent tasks render as a compact card with output, clicking header opens the session
+  if (toolName === '__task__') {
+    const [taskExpanded, setTaskExpanded] = useState(false);
+    const lines = (argsText || '').split('\n');
+    const taskStatus = lines[0] || 'running';
+    const label = lines.slice(1).join(' ').trim() || 'Subagent task';
+
+    let sessionId = '';
+    let taskOutput = '';
+    try {
+      const parsed = JSON.parse(typeof result === 'string' ? result : '{}');
+      sessionId = parsed.taskId || '';
+      taskOutput = parsed.taskOutput || '';
+    } catch { /* ignore */ }
+
+    let statusIcon = '\u2022';
+    let statusClass = 'oc-tool-running';
+    if (taskStatus === 'completed') { statusIcon = '\u2713'; statusClass = 'oc-tool-done'; }
+    else if (taskStatus === 'error') { statusIcon = '\u2717'; statusClass = 'oc-tool-error'; }
+
+    const handleHeaderClick = sessionId ? () => { window.location.href = `/session/${sessionId}`; } : undefined;
+    const isLongOutput = taskOutput.length > 500;
+
+    return (
+      <div className={`oc-tool oc-tool-task ${statusClass} ${taskExpanded ? 'oc-tool-expanded' : ''}`}>
+        <div className="oc-tool-header" onClick={handleHeaderClick} style={sessionId ? { cursor: 'pointer' } : undefined}>
+          <span className={`oc-tool-icon ${statusClass}`}>{statusIcon}</span>
+          <span className="oc-tool-label">{label}</span>
+          {sessionId && <span className="oc-task-link">{'\u2197'}</span>}
+        </div>
+        {taskOutput && (
+          <div className="oc-tool-content" onClick={() => !taskExpanded && setTaskExpanded(true)} style={!taskExpanded ? { cursor: 'pointer' } : undefined}>
+            <pre className="oc-tool-pre oc-tool-output">{taskOutput}</pre>
+            {!taskExpanded && isLongOutput && (
+              <div className="oc-tool-expand">Click to expand</div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const [expanded, setExpanded] = useState(false);
 
   // First line of argsText is the tool's own status (completed/running/error)
@@ -187,10 +263,14 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
   const toolStatus = lines[0] || 'running';
   const remainingArgs = lines.slice(1).join('\n');
 
-  // Hide empty/loading tool calls
+  // Show tool calls that have content, are completed, or are actively running.
+  // Only hide if there's truly nothing to show (no args, no result, no
+  // meaningful status). "pending" and "running" states should remain visible
+  // so the user can see operations in progress (e.g. "preparing to write").
   const hasArgs = remainingArgs.trim() && remainingArgs.trim() !== '{}';
   const hasResult = result && String(result).trim() && String(result).trim() !== '{}';
-  if (!hasArgs && !hasResult && toolStatus !== 'completed') return null;
+  const isActive = toolStatus === 'running' || toolStatus === 'pending';
+  if (!hasArgs && !hasResult && !isActive && toolStatus !== 'completed') return null;
 
   let statusIcon = '\u2022';
   let statusClass = 'oc-tool-running';
@@ -225,6 +305,28 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
     );
   }
 
+  // Shell commands get a terminal-style rendering
+  const isBash = toolName === 'bash' || toolName === 'mcp_bash';
+  if (isBash) {
+    const command = detail || title;
+    return (
+      <div className={`oc-tool oc-tool-shell ${statusClass} ${expanded ? 'oc-tool-expanded' : ''}`}>
+        <div className="oc-tool-header" onClick={() => setExpanded(!expanded)}>
+          <span className={`oc-tool-icon ${statusClass}`}>{statusIcon}</span>
+          <span className="oc-tool-label">{title && title !== command ? title : toolName}</span>
+        </div>
+        <div className="oc-tool-content" onClick={() => !expanded && setExpanded(true)} style={!expanded ? { cursor: 'pointer' } : undefined}>
+          <pre className="oc-shell-block">
+{command && <><span className="oc-shell-prompt">$</span> <span className="oc-shell-cmd">{command}</span>{outputDisplay ? '\n' : ''}</>}{outputDisplay}
+          </pre>
+          {!expanded && isLong && (
+            <div className="oc-tool-expand">Click to expand</div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`oc-tool ${statusClass} ${expanded ? 'oc-tool-expanded' : ''}`}>
       <div className="oc-tool-header" onClick={() => setExpanded(!expanded)}>
@@ -248,27 +350,44 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
   );
 };
 
-function Composer({ onSend, isRunning }: { onSend?: (text: string) => void; isRunning: boolean }) {
+function Composer({ onSend, isRunning, disabled }: { onSend?: (text: string) => void; isRunning: boolean; disabled?: boolean }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const onSendRef = useRef(onSend);
   const isRunningRef = useRef(isRunning);
+  const disabledRef = useRef(disabled);
   const mountedRef = useRef(false);
 
-  // Keep refs in sync without re-rendering
-  onSendRef.current = onSend;
-  isRunningRef.current = isRunning;
+  // Keep refs in sync via effect to satisfy lint rules
+  useEffect(() => {
+    onSendRef.current = onSend;
+  }, [onSend]);
+  useEffect(() => {
+    isRunningRef.current = isRunning;
+  }, [isRunning]);
+  useEffect(() => {
+    disabledRef.current = disabled;
+  }, [disabled]);
 
   // Update status bar text via DOM, not React state
   useEffect(() => {
     const bar = wrapRef.current?.querySelector('.oc-composer-bar-left');
     if (!bar) return;
-    if (isRunning) {
+    if (disabled) {
+      bar.innerHTML = '<span class="oc-bar-hint">No running OpenCode instance</span>';
+    } else if (isRunning) {
       bar.innerHTML = '<span class="oc-bar-dots"><span class="oc-thinking-dot"></span><span class="oc-thinking-dot"></span><span class="oc-thinking-dot"></span></span><span class="oc-bar-hint">esc interrupt</span>';
     } else {
       bar.innerHTML = '<span class="oc-bar-hint">enter send</span>';
     }
-  }, [isRunning]);
+  }, [isRunning, disabled]);
+
+  // Sync the disabled attribute on the textarea
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.disabled = !!disabled;
+  }, [disabled]);
 
   // Attach native event listeners once, never re-render
   useEffect(() => {
@@ -278,6 +397,7 @@ function Composer({ onSend, isRunning }: { onSend?: (text: string) => void; isRu
     if (!el) return;
 
     el.addEventListener('keydown', (e) => {
+      if (disabledRef.current) return;
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         const trimmed = el.value.trim();
@@ -297,24 +417,28 @@ function Composer({ onSend, isRunning }: { onSend?: (text: string) => void; isRu
 
   // Only render the shell once — never re-renders
   return (
-    <div className="oc-composer-wrap" ref={wrapRef}>
+    <div className={`oc-composer-wrap${disabled ? ' oc-composer-disabled' : ''}`} ref={wrapRef}>
       <div className="oc-composer">
         <textarea
           ref={inputRef}
           className="oc-composer-input"
           rows={1}
+          disabled={disabled}
+          placeholder={disabled ? 'No running OpenCode instance' : undefined}
         />
       </div>
       <div className="oc-composer-bar">
         <div className="oc-composer-bar-left">
-          <span className="oc-bar-hint">enter send</span>
+          <span className="oc-bar-hint">{disabled ? 'No running OpenCode instance' : 'enter send'}</span>
         </div>
       </div>
     </div>
   );
 }
 
-const MemoComposer = memo(Composer, () => true);
+// Re-render when isRunning or disabled changes.
+// Other props (onSend) are accessed via refs and don't need re-renders.
+const MemoComposer = memo(Composer, (prev, next) => prev.isRunning === next.isRunning && prev.disabled === next.disabled);
 export { MemoComposer as Composer };
 
 export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, footer }: { hasMore?: boolean; loadingMore?: boolean; onLoadMore?: () => void; composer?: React.ReactNode; footer?: React.ReactNode }) {
@@ -324,9 +448,9 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
   const hasMoreRef = useRef(hasMore);
   const loadingMoreRef = useRef(loadingMore);
   const onLoadMoreRef = useRef(onLoadMore);
-  hasMoreRef.current = hasMore;
-  loadingMoreRef.current = loadingMore;
-  onLoadMoreRef.current = onLoadMore;
+  useEffect(() => { hasMoreRef.current = hasMore; }, [hasMore]);
+  useEffect(() => { loadingMoreRef.current = loadingMore; }, [loadingMore]);
+  useEffect(() => { onLoadMoreRef.current = onLoadMore; }, [onLoadMore]);
 
   const isAtBottom = useCallback(() => {
     const el = viewportRef.current;
