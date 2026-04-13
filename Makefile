@@ -1,0 +1,30 @@
+.PHONY: dev dev-backend dev-frontend build clean
+
+# Run both backend (air) and frontend (vite) with live reload
+dev:
+	@echo "Starting ocman dev environment..."
+	@echo "  Backend (air):    http://localhost:8080"
+	@echo "  Frontend (vite):  http://localhost:8228"
+	@echo ""
+	@trap 'kill 0' EXIT; \
+		$(MAKE) dev-backend & \
+		$(MAKE) dev-frontend & \
+		wait
+
+dev-backend:
+	air
+
+dev-frontend:
+	cd internal/server/frontend && npm run dev
+
+# Production build
+build: build-frontend build-backend
+
+build-frontend:
+	cd internal/server/frontend && npm ci && npm run build
+
+build-backend:
+	go build -o ocman .
+
+clean:
+	rm -rf ocman tmp internal/server/static/assets
