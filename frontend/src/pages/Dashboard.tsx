@@ -2,12 +2,12 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend } from 'chart.js';
 import { Bar, Doughnut } from 'react-chartjs-2';
-import { api } from '../lib/api';
 import type { Session, Stats, Project, ActivityDay, ModelUsage, HourlyData } from '../lib/api';
 import { formatNumber, relativeTime, shortPath } from '../lib/format';
 import { usePageTitle } from '../lib/headerContext';
 import { SessionTable } from '../components/SessionTable';
 import { useTmux } from '../lib/useTmux';
+import { useApiStore, useApiRequest } from '../lib/apiStore';
 
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend);
@@ -28,25 +28,28 @@ export function Dashboard() {
   const [activity, setActivity] = useState<ActivityDay[]>([]);
   const [models, setModels] = useState<ModelUsage[]>([]);
   const [hourly, setHourly] = useState<HourlyData[]>([]);
-  const [loadingSessions, setLoadingSessions] = useState(true);
-  const [loadingProjects, setLoadingProjects] = useState(true);
-  const [loadingStats, setLoadingStats] = useState(true);
-  const [loadingCharts, setLoadingCharts] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState(24); // hours (0 = all)
   const [showArchived, setShowArchived] = useState(false);
   const chartsRequestedRef = useRef(false);
+  const [chartsLoading, setChartsLoading] = useState(false);
+  const getSessions = useApiStore((state) => state.getSessions);
+  const getStats = useApiStore((state) => state.getStats);
+  const getProjects = useApiStore((state) => state.getProjects);
+  const getActivity = useApiStore((state) => state.getActivity);
+  const getModels = useApiStore((state) => state.getModels);
+  const getHourly = useApiStore((state) => state.getHourly);
+  const statsRequest = useApiRequest('stats:get');
+  const projectsRequest = useApiRequest('projects:get');
+  const sessionsRequest = useApiRequest(timeRange > 0 ? `sessions:get:since:${Date.now() - timeRange * 60 * 60 * 1000}` : 'sessions:get');
 
   const loadSessions = useCallback(async () => {
     try {
       const since = timeRange > 0 ? Date.now() - timeRange * 60 * 60 * 1000 : undefined;
-      setSessions(await api.sessions(since ? { since } : {}));
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load sessions');
+      setSessions(await getSessions(since ? { since } : {}));
+    } catch {
+      // error is tracked by useApiRequest
     }
-    setLoadingSessions(false);
-  }, [timeRange]);
+  }, [getSessions, timeRange]);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,21 +57,15 @@ export function Dashboard() {
     async function loadInitialData() {
       try {
         const [nextStats, nextProjects] = await Promise.all([
-          api.stats(),
-          api.projects(),
+          getStats(),
+          getProjects(),
           loadSessions(),
         ]);
         if (cancelled) return;
         setStats(nextStats);
         setProjects(nextProjects);
-      } catch (e) {
-        if (cancelled) return;
-        setError(e instanceof Error ? e.message : 'Failed to load dashboard');
-      } finally {
-        if (!cancelled) {
-          setLoadingStats(false);
-          setLoadingProjects(false);
-        }
+      } catch {
+        // errors tracked by useApiRequest
       }
     }
 
@@ -76,7 +73,7 @@ export function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [loadSessions]);
+  }, [getProjects, getStats, loadSessions]);
 
   // Auto-refresh sessions every 5 seconds
   useEffect(() => {
@@ -92,12 +89,12 @@ export function Dashboard() {
     chartsRequestedRef.current = true;
 
     async function loadCharts() {
-      setLoadingCharts(true);
+      setChartsLoading(true);
       try {
         const [nextActivity, nextModels, nextHourly] = await Promise.all([
-          api.activity(),
-          api.models(),
-          api.hourly(),
+          getActivity(),
+          getModels(),
+          getHourly(),
         ]);
         if (cancelled) return;
         setActivity(nextActivity);
@@ -105,7 +102,7 @@ export function Dashboard() {
         setHourly(nextHourly);
       } finally {
         if (!cancelled) {
-          setLoadingCharts(false);
+          setChartsLoading(false);
         }
       }
     }
@@ -114,7 +111,7 @@ export function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [tab]);
+  }, [getActivity, getHourly, getModels, tab]);
 
   const colors = ['#89b4fa', '#a6e3a1', '#cba6f7', '#fab387', '#f38ba8', '#74c7ec', '#94e2d5', '#f9e2af'];
   const sortedModels = [...models].sort((a, b) => b.count - a.count).slice(0, 8);
@@ -127,10 +124,10 @@ export function Dashboard() {
         <button className={`nav-tab ${tab === 'stats' ? 'active' : ''}`} onClick={() => setTab('stats')}>Stats</button>
       </div>
 
-      {error && (
+      {sessionsRequest.error && (
         <div className="oc-error-banner">
-          {error}
-          <button onClick={() => { setError(null); loadSessions(); }}>Retry</button>
+          {sessionsRequest.error}
+          <button onClick={() => loadSessions()}>Retry</button>
         </div>
       )}
       {tab === 'sessions' && (
@@ -140,7 +137,7 @@ export function Dashboard() {
               <button
                 key={opt.value}
                 className={`oc-time-range-btn${timeRange === opt.value ? ' active' : ''}`}
-                onClick={() => { setTimeRange(opt.value); setLoadingSessions(true); }}
+                onClick={() => setTimeRange(opt.value)}
               >{opt.label}</button>
             ))}
             <button
@@ -148,12 +145,12 @@ export function Dashboard() {
               onClick={() => setShowArchived(current => !current)}
             >Include archived</button>
           </div>
-          <SessionTable sessions={sessions} showProject loading={loadingSessions} tmux={tmux} includeArchived={showArchived} />
+          <SessionTable sessions={sessions} showProject loading={sessionsRequest.loading && sessions.length === 0} tmux={tmux} includeArchived={showArchived} />
         </>
       )}
 
       {tab === 'projects' && (
-        loadingProjects ? (
+        projectsRequest.loading && projects.length === 0 ? (
           <div className="oc-list-loading">
             <div className="oc-spinner" />
             Loading projects...
@@ -203,7 +200,7 @@ export function Dashboard() {
 
       {tab === 'stats' && (
         <>
-          {loadingStats ? (
+          {statsRequest.loading && !stats ? (
             <div className="oc-list-loading">
               <div className="oc-spinner" />
               Loading stats...
@@ -218,13 +215,13 @@ export function Dashboard() {
               <div className="stat-card"><div className="label">Total Cost</div><div className="value green">${stats.totalCost.toFixed(2)}</div></div>
             </div>
           )}
-          {loadingCharts ? (
+          {chartsLoading ? (
             <div className="oc-list-loading">
               <div className="oc-spinner" />
               Loading charts...
             </div>
           ) : activity.length > 0 && <Heatmap activity={activity} />}
-          {!loadingCharts && <>
+          {!chartsLoading && <>
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16, marginBottom: 32 }}>
             <div className="chart-card">
               <h3>Daily Messages (last 90 days)</h3>

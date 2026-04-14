@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, type Session } from '../lib/api';
+import type { Session } from '../lib/api';
+import { useApiStore } from '../lib/apiStore';
 import { formatDuration, relativeTime, shortPath } from '../lib/format';
 import { StatusBadge } from './StatusBadge';
 import type { TmuxState } from '../lib/useTmux';
@@ -25,6 +26,7 @@ function ArchiveIcon() {
 
 export function SessionTable({ sessions, showProject, loading, tmux, includeArchived }: Props) {
   const navigate = useNavigate();
+  const archiveSession = useApiStore((state) => state.archiveSession);
   const [pickerFor, setPickerFor] = useState<string | null>(null);
   const [pickerPos, setPickerPos] = useState<{ top: number; left: number } | null>(null);
   const [archivingSessionIds, setArchivingSessionIds] = useState<Set<string>>(new Set());
@@ -79,7 +81,7 @@ export function SessionTable({ sessions, showProject, loading, tmux, includeArch
 
     setArchivingSessionIds(prev => new Set(prev).add(session.id));
     try {
-      await api.archiveSession(session.id, session.timeUpdated, true);
+      await archiveSession(session.id, session.timeUpdated, true);
       setLocallyArchivedSessionIds(prev => new Set(prev).add(session.id));
     } catch (err) {
       console.error('Failed to archive session', err);

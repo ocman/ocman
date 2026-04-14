@@ -10,6 +10,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import type { FC } from 'react';
 import { getDraft, saveDraft, clearDraft } from '../lib/composerDraft';
+import { useApiStore } from '../lib/apiStore';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function CodeBlockPre(props: any) {
@@ -934,6 +935,7 @@ function Composer({
       icon.classList.add('bi-mic-fill');
     }
   }, []);
+  const transcribe = useApiStore((state) => state.transcribe);
 
   const stopRecording = useCallback((): Blob | null => {
     const ctx = recordingRef.current;
@@ -979,8 +981,7 @@ function Composer({
       const blob = stopRecording();
       if (blob && blob.size > 44) { // > 44 bytes = has actual audio data beyond WAV header
         try {
-          const { api } = await import('../lib/api');
-          const text = await api.transcribe(blob);
+          const text = await transcribe(blob);
           if (text && inputRef.current) {
             inputRef.current.value += (inputRef.current.value ? ' ' : '') + text;
             inputRef.current.dispatchEvent(new Event('input'));
@@ -1020,7 +1021,7 @@ function Composer({
       console.error('Microphone access failed', err);
       setMicState('idle');
     }
-  }, [setMicState, stopRecording]);
+  }, [setMicState, stopRecording, transcribe]);
 
   // Attach native event listeners once, never re-render
   useEffect(() => {

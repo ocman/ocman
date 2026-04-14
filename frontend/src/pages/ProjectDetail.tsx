@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
-import { api } from '../lib/api';
 import type { Session } from '../lib/api';
 import { usePageTitle } from '../lib/headerContext';
 import { SessionTable } from '../components/SessionTable';
 import { useTmux } from '../lib/useTmux';
+import { useApiStore, useApiRequest } from '../lib/apiStore';
 
 export function ProjectDetail() {
   const { '*': directory } = useParams();
@@ -12,40 +12,38 @@ export function ProjectDetail() {
   usePageTitle(projectName);
   const tmux = useTmux();
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [loading, setLoading] = useState(true);
+  const getSessions = useApiStore((state) => state.getSessions);
+  const sessionsRequest = useApiRequest(directory ? `sessions:get:dir:${directory}` : 'sessions:get');
 
   const load = useCallback(async () => {
     if (!directory) {
       setSessions([]);
-      setLoading(false);
       return;
     }
 
-    const nextSessions = await api.sessions({ dir: directory });
-    setSessions(nextSessions);
-    setLoading(false);
-  }, [directory]);
+    try {
+      const nextSessions = await getSessions({ dir: directory });
+      setSessions(nextSessions);
+    } catch {
+      // error tracked by useApiRequest
+    }
+  }, [directory, getSessions]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadProject() {
       if (!directory) {
-        if (!cancelled) {
-          setSessions([]);
-          setLoading(false);
-        }
+        if (!cancelled) setSessions([]);
         return;
       }
 
       try {
-        const nextSessions = await api.sessions({ dir: directory });
+        const nextSessions = await getSessions({ dir: directory });
         if (cancelled) return;
         setSessions(nextSessions);
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+      } catch {
+        // error tracked by useApiRequest
       }
     }
 
@@ -53,7 +51,7 @@ export function ProjectDetail() {
     return () => {
       cancelled = true;
     };
-  }, [directory]);
+  }, [directory, getSessions]);
 
   // Auto-refresh every 5 seconds
   useEffect(() => {
@@ -69,7 +67,7 @@ export function ProjectDetail() {
           <a href={`vscode://file${directory}`} className="vscode-btn" title="Open in VS Code">VS Code</a>
         )}
       </h2>
-      <SessionTable sessions={sessions} loading={loading} tmux={tmux} includeArchived />
+      <SessionTable sessions={sessions} loading={sessionsRequest.loading && sessions.length === 0} tmux={tmux} includeArchived />
     </div>
   );
 }

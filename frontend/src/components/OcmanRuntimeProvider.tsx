@@ -5,7 +5,7 @@ import {
   type ThreadMessageLike,
 } from '@assistant-ui/react';
 import type { Message, Part, PartData, FilePart } from '../lib/api';
-import { api } from '../lib/api';
+import { useApiStore } from '../lib/apiStore';
 import { simpleDiff } from '../lib/diff';
 
 function isImageMime(mime: string | undefined): boolean {
@@ -367,6 +367,7 @@ export function OcmanRuntimeProvider({
   portAvailable,
   children,
 }: Props) {
+  const sendMessage = useApiStore((state) => state.sendMessage);
   const converted = useMemo(
     () => convertMessages(messages, parts),
     [messages, parts],
@@ -386,7 +387,7 @@ export function OcmanRuntimeProvider({
         .filter((c): c is { type: 'image'; image: string } => c.type === 'image' && 'image' in c)
         .map((c) => ({ url: c.image, mime: 'image/png' }));
       if (!text && imageParts.length === 0) return;
-      await api.sendMessage(sessionId, directory, text, imageParts.length > 0 ? imageParts : undefined);
+      await sendMessage(sessionId, directory, text, imageParts.length > 0 ? imageParts : undefined);
     },
   });
 

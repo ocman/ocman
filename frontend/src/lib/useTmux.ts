@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { api } from './api';
 import type { TmuxClient, TmuxSession } from './api';
+import { useApiStore } from './apiStore';
 
 function checkIsLocal(): boolean {
   const h = window.location.hostname;
@@ -24,6 +24,9 @@ export function useTmux(): TmuxState {
   const [sessions, setSessions] = useState<TmuxSession[]>([]);
   const [clients, setClients] = useState<TmuxClient[]>([]);
   const isLocal = checkIsLocal();
+  const getTmuxSessions = useApiStore((state) => state.getTmuxSessions);
+  const getTmuxClients = useApiStore((state) => state.getTmuxClients);
+  const switchTmuxSession = useApiStore((state) => state.switchTmuxSession);
 
   useEffect(() => {
     let cancelled = false;
@@ -31,12 +34,12 @@ export function useTmux(): TmuxState {
       try {
         // Always fetch sessions. Only fetch clients for remote users
         // (local users always use /dev/ttys000 via the server default).
-        const sessRes = await api.tmuxSessions();
+        const sessRes = await getTmuxSessions();
         if (cancelled) return;
 
         let tmuxClients: TmuxClient[] = [];
         if (!isLocal) {
-          const cliRes = await api.tmuxClients();
+          const cliRes = await getTmuxClients();
           if (cancelled) return;
           tmuxClients = cliRes.clients || [];
         }
@@ -49,11 +52,11 @@ export function useTmux(): TmuxState {
       }
     })();
     return () => { cancelled = true; };
-  }, [isLocal]);
+  }, [getTmuxClients, getTmuxSessions, isLocal]);
 
   const switchSession = useCallback(async (tmuxSessionName: string, clientTTY?: string) => {
-    await api.tmuxSwitch(tmuxSessionName, clientTTY);
-  }, []);
+    await switchTmuxSession(tmuxSessionName, clientTTY);
+  }, [switchTmuxSession]);
 
   const findSession = useCallback((directory: string) => {
     return sessions.find(ts => ts.resolvedPath === directory);

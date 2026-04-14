@@ -1,5 +1,5 @@
-export async function fetchJSON<T>(url: string): Promise<T> {
-  const resp = await fetch(url);
+export async function fetchJSON<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const resp = await fetch(url, signal ? { signal } : undefined);
   if (!resp.ok) throw new Error(await resp.text());
   return resp.json();
 }
@@ -153,14 +153,14 @@ export interface TmuxSession {
 export const api = {
   stats: () => fetchJSON<Stats>('/api/stats'),
   projects: () => fetchJSON<Project[]>('/api/projects'),
-  sessions: (params?: { dir?: string; since?: number }) => {
+  sessions: (params?: { dir?: string; since?: number }, signal?: AbortSignal) => {
     const q = new URLSearchParams();
     if (params?.dir) q.set('dir', params.dir);
     if (params?.since) q.set('since', String(params.since));
     const qs = q.toString();
-    return fetchJSON<Session[]>(`/api/sessions${qs ? '?' + qs : ''}`);
+    return fetchJSON<Session[]>(`/api/sessions${qs ? '?' + qs : ''}`, signal);
   },
-  session: (id: string, limit = 50, offset = 0) => fetchJSON<SessionDetail>(`/api/session/${id}?limit=${limit}&offset=${offset}`),
+  session: (id: string, limit = 50, offset = 0, signal?: AbortSignal) => fetchJSON<SessionDetail>(`/api/session/${id}?limit=${limit}&offset=${offset}`, signal),
   archiveSession: async (sessionId: string, timeUpdated: number, archived = true) => {
     const resp = await fetch('/api/session/archive', {
       method: 'POST',
@@ -182,7 +182,7 @@ export const api = {
   activity: () => fetchJSON<ActivityDay[]>('/api/activity'),
   models: () => fetchJSON<ModelUsage[]>('/api/models'),
   hourly: () => fetchJSON<HourlyData[]>('/api/hourly'),
-  sessionPort: (id: string) => fetchJSON<PortInfo>(`/api/session-port/${id}`),
+  sessionPort: (id: string, signal?: AbortSignal) => fetchJSON<PortInfo>(`/api/session-port/${id}`, signal),
   createSession: async (directory: string) => {
     const resp = await fetch('/api/create-session', {
       method: 'POST',

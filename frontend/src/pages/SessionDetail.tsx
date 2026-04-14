@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { api } from '../lib/api';
 import type { Session, SessionDetail as SessionDetailData, Message, Part } from '../lib/api';
 import { formatDuration, formatNumber, shortPath, relativeTime } from '../lib/format';
 import { useHeaderInfo, usePageTitle } from '../lib/headerContext';
@@ -9,11 +8,11 @@ import { AssistantThread, Composer, type AttachedImage } from '../components/Ass
 import { StatusBadge } from '../components/StatusBadge';
 import { useTmux } from '../lib/useTmux';
 import { filterVisibleSessions } from '../lib/sessionVisibility';
+import { useApiStore, useApiRequest } from '../lib/apiStore';
 
 const PAGE_SIZE = 50;
 const RECENT_SESSIONS_LIMIT = 20;
 const ARCHIVE_ANIMATION_MS = 220;
-const RECENT_SESSIONS_DEBOUNCE_MS = 180;
 
 interface PendingPermission {
   permissionId: string;
@@ -261,8 +260,7 @@ export function SessionDetail() {
   const [selectedModel, setSelectedModel] = useState('');
   const [selectedAgent, setSelectedAgent] = useState('');
   const [recentSessions, setRecentSessions] = useState<Session[]>([]);
-  const [loadingRecentSessions, setLoadingRecentSessions] = useState(true);
-  const [refreshingRecentSessionsFilter, setRefreshingRecentSessionsFilter] = useState(false);
+  const [filterRefreshPending, setFilterRefreshPending] = useState(false);
   const [archivingSessionIds, setArchivingSessionIds] = useState<Set<string>>(new Set());
   const [showArchivedRecent, setShowArchivedRecent] = useState(false);
   const { setInfo } = useHeaderInfo();
@@ -270,9 +268,8 @@ export function SessionDetail() {
   const lastHashRef = useRef('');
   const lastSiblingsHashRef = useRef('');
   const archiveTimeoutsRef = useRef<Record<string, number>>({});
-  const recentSessionsLoadTimeoutRef = useRef<number | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const showArchivedRecentRef = useRef(showArchivedRecent);
-  const recentSessionsFilterSessionRef = useRef<string | null>(null);
 
   // Tmux state
   const tmux = useTmux();
@@ -286,16 +283,33 @@ export function SessionDetail() {
   const [pendingQuestion, setPendingQuestion] = useState<PendingQuestion | null>(null);
   const [answeringQuestion, setAnsweringQuestion] = useState(false);
   const [sseDebugEvents, setSseDebugEvents] = useState<SseDebugEvent[]>([]);
+  const getSession = useApiStore((state) => state.getSession);
+  const archiveSession = useApiStore((state) => state.archiveSession);
+  const getSessionPort = useApiStore((state) => state.getSessionPort);
+  const getWhisperStatus = useApiStore((state) => state.getWhisperStatus);
+  const getModels = useApiStore((state) => state.getModels);
+  const getSessions = useApiStore((state) => state.getSessions);
+  const markSessionSeen = useApiStore((state) => state.markSessionSeen);
+  const sendMessage = useApiStore((state) => state.sendMessage);
+  const respondPermission = useApiStore((state) => state.respondPermission);
+  const respondQuestion = useApiStore((state) => state.respondQuestion);
+  const rejectQuestion = useApiStore((state) => state.rejectQuestion);
+  const createSession = useApiStore((state) => state.createSession);
+  const sessionsRequest = useApiRequest('sessions:get');
+  const refreshingRecentSessionsFilter = filterRefreshPending || sessionsRequest.loading;
 
   useEffect(() => {
     showArchivedRecentRef.current = showArchivedRecent;
   }, [showArchivedRecent]);
 
   // Load the latest page (newest messages). Merges with older loaded messages.
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     if (!id) return;
     try {
-      const result = await api.session(id, PAGE_SIZE, 0);
+      const result = await getSession(id, PAGE_SIZE, 0, signal);
+
+      // If this request was aborted, don't update state
+      if (signal?.aborted) return;
 
       // Always update session metadata
       setSession({
@@ -330,18 +344,22 @@ export function SessionDetail() {
       }
       setLoadError(null);
     } catch (e) {
+      // Silently ignore aborted requests
+      if (e instanceof DOMException && e.name === 'AbortError') return;
       console.error('Failed to load session', e);
       setLoadError(e instanceof Error ? e.message : 'Failed to load session');
     }
     setLoading(false);
-  }, [id]);
+  }, [getSession, id]);
 
   // Load older messages (prepend)
   const loadMore = useCallback(async () => {
     if (!id || loadingMore) return;
+    const signal = abortControllerRef.current?.signal;
     setLoadingMore(true);
     try {
-      const result = await api.session(id, PAGE_SIZE, messages.length);
+      const result = await getSession(id, PAGE_SIZE, messages.length, signal);
+      if (signal?.aborted) return;
       const newMsgs = result.messages || [];
       const newParts = result.parts || [];
       if (newMsgs.length) {
@@ -356,10 +374,13 @@ export function SessionDetail() {
           return [...unique, ...prev];
         });
       }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
+      throw e;
     } finally {
       setLoadingMore(false);
     }
-  }, [id, messages.length, loadingMore]);
+  }, [getSession, id, messages.length, loadingMore]);
 
   // Close picker on outside click
   useEffect(() => {
@@ -401,7 +422,7 @@ export function SessionDetail() {
     if (archivingSessionIds.has(target.id)) return;
     setArchivingSessionIds(prev => new Set(prev).add(target.id));
     archiveTimeoutsRef.current[target.id] = window.setTimeout(() => {
-      api.archiveSession(target.id, target.timeUpdated, true)
+      archiveSession(target.id, target.timeUpdated, true)
         .then(() => {
           setRecentSessions(prev => showArchivedRecent
             ? prev.map(session => (session.id === target.id ? { ...session, archived: true } : session))
@@ -419,17 +440,20 @@ export function SessionDetail() {
           delete archiveTimeoutsRef.current[target.id];
         });
     }, ARCHIVE_ANIMATION_MS);
-  }, [archivingSessionIds, showArchivedRecent]);
+  }, [archiveSession, archivingSessionIds, showArchivedRecent]);
 
   useEffect(() => () => {
     Object.values(archiveTimeoutsRef.current).forEach(timeoutId => window.clearTimeout(timeoutId));
-    if (recentSessionsLoadTimeoutRef.current) {
-      window.clearTimeout(recentSessionsLoadTimeoutRef.current);
-    }
   }, []);
 
-  // Reset on session change
+  // Reset on session change — abort any in-flight requests from the previous session
   useEffect(() => {
+    // Abort previous session's pending requests
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const signal = controller.signal;
+
     lastHashRef.current = '';
     setSession(null);
     setMessages([]);
@@ -443,12 +467,17 @@ export function SessionDetail() {
     setPermissionError(null);
     setPendingQuestion(null);
     setSseDebugEvents([]);
-    load();
+    load(signal);
     if (id) {
-      api.sessionPort(id).then(p => setPortAvailable(p.available)).catch(() => setPortAvailable(false));
+      getSessionPort(id, signal).then(p => {
+        if (!signal.aborted) setPortAvailable(p.available);
+      }).catch((e) => {
+        if (e instanceof DOMException && e.name === 'AbortError') return;
+        setPortAvailable(false);
+      });
     }
-    api.whisperStatus().then(s => setWhisperAvailable(s.available)).catch(() => setWhisperAvailable(false));
-    api.models()
+    getWhisperStatus().then(s => setWhisperAvailable(s.available)).catch(() => setWhisperAvailable(false));
+    getModels()
       .then((models) => {
         const ordered = [...models]
           .sort((a, b) => b.count - a.count)
@@ -456,11 +485,14 @@ export function SessionDetail() {
         setModelOptions(Array.from(new Set(ordered)));
       })
       .catch(() => setModelOptions([]));
-  }, [id, load]);
 
-  const loadRecentSessions = useCallback(async (options?: { fullScreen?: boolean; filterRefresh?: boolean }) => {
+    return () => controller.abort();
+  }, [getModels, getSessionPort, getWhisperStatus, id, load]);
+
+  const loadRecentSessions = useCallback(async (signal?: AbortSignal) => {
     try {
-      const result = await api.sessions();
+      const result = await getSessions(undefined, signal);
+      if (signal?.aborted) return;
       const visible = (showArchivedRecentRef.current ? result : filterVisibleSessions(result)).slice(0, RECENT_SESSIONS_LIMIT);
       const current = result.find(s => s.id === id);
       const nextRecentSessions = current && !visible.some(s => s.id === current.id)
@@ -471,48 +503,32 @@ export function SessionDetail() {
         lastSiblingsHashRef.current = hash;
         setRecentSessions(nextRecentSessions);
       }
-    } finally {
-      if (options?.fullScreen) {
-        setLoadingRecentSessions(false);
-      }
-      if (options?.filterRefresh) {
-        setRefreshingRecentSessionsFilter(false);
-      }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
+      throw e;
     }
-  }, [id]);
+  }, [getSessions, id]);
 
+  const sessionId = session?.id;
   useEffect(() => {
-    if (!session) return;
-    setLoadingRecentSessions(true);
-    void loadRecentSessions({ fullScreen: true });
-  }, [session, id, loadRecentSessions]);
+    if (!sessionId) return;
+    void loadRecentSessions(abortControllerRef.current?.signal);
+  }, [sessionId, loadRecentSessions]);
 
+  const showArchivedRecentMounted = useRef(true);
   useEffect(() => {
-    if (!session?.id) return;
-    if (recentSessionsFilterSessionRef.current !== session.id) {
-      recentSessionsFilterSessionRef.current = session.id;
+    showArchivedRecentRef.current = showArchivedRecent;
+    // Skip the initial mount -- the sessionId effect already handles the first load.
+    if (showArchivedRecentMounted.current) {
+      showArchivedRecentMounted.current = false;
       return;
     }
-    setRefreshingRecentSessionsFilter(true);
-    if (recentSessionsLoadTimeoutRef.current) {
-      window.clearTimeout(recentSessionsLoadTimeoutRef.current);
-    }
-    recentSessionsLoadTimeoutRef.current = window.setTimeout(() => {
-      void loadRecentSessions({ filterRefresh: true });
-      recentSessionsLoadTimeoutRef.current = null;
-    }, RECENT_SESSIONS_DEBOUNCE_MS);
-
-    return () => {
-      if (recentSessionsLoadTimeoutRef.current) {
-        window.clearTimeout(recentSessionsLoadTimeoutRef.current);
-        recentSessionsLoadTimeoutRef.current = null;
-      }
-    };
-  }, [showArchivedRecent, loadRecentSessions, session]);
+    void loadRecentSessions(abortControllerRef.current?.signal);
+  }, [showArchivedRecent, loadRecentSessions]);
 
   useEffect(() => {
     const refreshId = window.setInterval(() => {
-      loadRecentSessions().catch(err => console.error('Failed to refresh recent sessions', err));
+      loadRecentSessions(abortControllerRef.current?.signal).catch(err => console.error('Failed to refresh recent sessions', err));
     }, 10000);
     return () => window.clearInterval(refreshId);
   }, [loadRecentSessions]);
@@ -522,13 +538,13 @@ export function SessionDetail() {
 
   useEffect(() => {
     if (!sessionSeenId) return;
-    void api.markSessionSeen(sessionSeenId, sessionSeenUpdated)
+    void markSessionSeen(sessionSeenId, sessionSeenUpdated)
       .then(() => {
         setSession(prev => prev && prev.id === sessionSeenId ? { ...prev, seen: true } : prev);
         setRecentSessions(prev => prev.map(s => (s.id === sessionSeenId ? { ...s, seen: true } : s)));
       })
       .catch(err => console.error('Failed to mark session seen', err));
-  }, [sessionSeenId, sessionSeenUpdated]);
+  }, [markSessionSeen, sessionSeenId, sessionSeenUpdated]);
 
   // SSE with reconnection
   const [sseActive, setSseActive] = useState(false);
@@ -583,8 +599,8 @@ export function SessionDetail() {
         handleEventData(evt.data || '', 'message');
         if (debounceTimer) clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
-          load();
-          loadRecentSessions();
+          const signal = abortControllerRef.current?.signal;
+          load(signal);
         }, 200);
       };
       // Some OpenCode SSE updates may use named events, not default "message".
@@ -609,10 +625,10 @@ export function SessionDetail() {
     // Fallback polling when SSE is not active
     const fallback = setInterval(() => {
       if (!evtSource || evtSource.readyState !== EventSource.OPEN) {
-        load();
-          loadRecentSessions();
-        }
-      }, 10000);
+        const signal = abortControllerRef.current?.signal;
+        load(signal);
+      }
+    }, 10000);
 
     return () => {
       cancelled = true;
@@ -622,7 +638,7 @@ export function SessionDetail() {
       clearInterval(fallback);
       setSseActive(false);
     };
-  }, [session?.directory, load, loadRecentSessions]);
+  }, [session?.directory, load]);
 
   // Header info
   useEffect(() => {
@@ -686,7 +702,7 @@ export function SessionDetail() {
     setParts(prev => [...prev, ...optimisticParts]);
 
     try {
-      await api.sendMessage(
+      await sendMessage(
         session.id,
         session.directory,
         text,
@@ -695,7 +711,7 @@ export function SessionDetail() {
         selectedAgent || activeAgent || undefined,
       );
       // Reload immediately to get the real message + assistant response
-      load();
+      load(abortControllerRef.current?.signal);
     } catch (e) {
       console.error('Failed to send message', e);
       // Show the error as a system message in the conversation
@@ -718,54 +734,54 @@ export function SessionDetail() {
       setMessages(prev => [...prev, errMsg]);
       setParts(prev => [...prev, errPart]);
     }
-  }, [session, portAvailable, selectedModel, selectedAgent, activeModel, activeAgent, load]);
+  }, [activeAgent, activeModel, load, portAvailable, selectedAgent, selectedModel, sendMessage, session]);
 
   const handlePermissionReply = useCallback(async (reply: 'once' | 'always' | 'reject') => {
     if (!pendingPermission || answeringPermission || !portAvailable || !session) return;
     setPermissionError(null);
     setAnsweringPermission(true);
     try {
-      await api.respondPermission(session.id, session.directory, pendingPermission.permissionId, reply);
+      await respondPermission(session.id, session.directory, pendingPermission.permissionId, reply);
       setPendingPermission(null);
       // Reload immediately and again after a short delay to catch the updated session state
-      load();
-      setTimeout(() => load(), 1000);
+      load(abortControllerRef.current?.signal);
+      setTimeout(() => load(abortControllerRef.current?.signal), 1000);
     } catch (e) {
       setPermissionError(e instanceof Error ? e.message : 'Failed to respond to permission request');
     } finally {
       setAnsweringPermission(false);
     }
-  }, [pendingPermission, answeringPermission, portAvailable, session, load]);
+  }, [answeringPermission, load, pendingPermission, portAvailable, respondPermission, session]);
 
   const handleQuestionReply = useCallback(async (answers: string[][]) => {
     if (!pendingQuestion || answeringQuestion || !portAvailable || !session) return;
     setAnsweringQuestion(true);
     try {
-      await api.respondQuestion(session.id, session.directory, pendingQuestion.requestId, answers);
+      await respondQuestion(session.id, session.directory, pendingQuestion.requestId, answers);
       setPendingQuestion(null);
-      load();
-      setTimeout(() => load(), 1000);
+      load(abortControllerRef.current?.signal);
+      setTimeout(() => load(abortControllerRef.current?.signal), 1000);
     } catch (e) {
       console.error('Failed to respond to question', e);
     } finally {
       setAnsweringQuestion(false);
     }
-  }, [pendingQuestion, answeringQuestion, portAvailable, session, load]);
+  }, [answeringQuestion, load, pendingQuestion, portAvailable, respondQuestion, session]);
 
   const handleQuestionReject = useCallback(async () => {
     if (!pendingQuestion || answeringQuestion || !portAvailable || !session) return;
     setAnsweringQuestion(true);
     try {
-      await api.rejectQuestion(session.id, session.directory, pendingQuestion.requestId);
+      await rejectQuestion(session.id, session.directory, pendingQuestion.requestId);
       setPendingQuestion(null);
-      load();
-      setTimeout(() => load(), 1000);
+      load(abortControllerRef.current?.signal);
+      setTimeout(() => load(abortControllerRef.current?.signal), 1000);
     } catch (e) {
       console.error('Failed to dismiss question', e);
     } finally {
       setAnsweringQuestion(false);
     }
-  }, [pendingQuestion, answeringQuestion, portAvailable, session, load]);
+  }, [answeringQuestion, load, pendingQuestion, portAvailable, rejectQuestion, session]);
 
   // Find the tmux session whose resolved path matches the current project directory.
   const matchingTmuxSession = session
@@ -802,7 +818,7 @@ export function SessionDetail() {
             type="button"
             className={`session-sidebar-new${showArchivedRecent ? ' active' : ''}`}
             onClick={() => {
-              setRefreshingRecentSessionsFilter(true);
+              setFilterRefreshPending(true);
               setShowArchivedRecent(current => !current);
             }}
             title={showArchivedRecent ? 'Hide archived sessions' : 'Include archived sessions'}
@@ -832,12 +848,7 @@ export function SessionDetail() {
           </div>
         )}
         <div className="session-sidebar-list">
-          {loadingRecentSessions && recentSessions.length === 0 ? (
-            <div className="oc-list-loading">
-              <div className="oc-spinner" />
-              Loading sessions...
-            </div>
-          ) : recentSessions.map(sib => (
+          {recentSessions.map(sib => (
             <div
               key={sib.id}
               role="button"
@@ -890,7 +901,7 @@ export function SessionDetail() {
               className="session-sidebar-new"
               onClick={async () => {
                 try {
-                  const res = await api.createSession(session.directory);
+                  const res = await createSession(session.directory);
                   if (res.id) navigate(`/session/${res.id}`);
                 } catch (e) {
                   console.error('Failed to create session', e);
@@ -908,7 +919,7 @@ export function SessionDetail() {
         ) : loadError ? (
           <div className="oc-error-banner" style={{ margin: 24 }}>
             {loadError}
-            <button onClick={() => { setLoadError(null); load(); }}>Retry</button>
+            <button onClick={() => { setLoadError(null); load(abortControllerRef.current?.signal); }}>Retry</button>
           </div>
         ) : session && (
           <OcmanRuntimeProvider

@@ -1,0 +1,103 @@
+import { create } from 'zustand';
+import { api } from './api';
+import type {
+  ActivityDay,
+  HourlyData,
+  ModelUsage,
+  PortInfo,
+  Project,
+  Session,
+  SessionDetail,
+  Stats,
+  TmuxClient,
+  TmuxSession,
+} from './api';
+
+type RequestStatus = {
+  loading: boolean;
+  error: string | null;
+};
+
+type ApiStore = {
+  requests: Record<string, RequestStatus>;
+  runRequest: <T>(key: string, task: () => Promise<T>) => Promise<T>;
+  getStats: () => Promise<Stats>;
+  getProjects: () => Promise<Project[]>;
+  getSessions: (params?: { dir?: string; since?: number }, signal?: AbortSignal) => Promise<Session[]>;
+  getSession: (id: string, limit?: number, offset?: number, signal?: AbortSignal) => Promise<SessionDetail>;
+  archiveSession: (sessionId: string, timeUpdated: number, archived?: boolean) => Promise<{ ok: boolean }>;
+  markSessionSeen: (sessionId: string, timeUpdated: number) => Promise<{ ok: boolean }>;
+  getActivity: () => Promise<ActivityDay[]>;
+  getModels: () => Promise<ModelUsage[]>;
+  getHourly: () => Promise<HourlyData[]>;
+  getSessionPort: (id: string, signal?: AbortSignal) => Promise<PortInfo>;
+  createSession: (directory: string) => Promise<{ id: string }>;
+  sendMessage: (sessionId: string, directory: string, message: string, images?: { url: string; mime: string }[], model?: string, agent?: string) => Promise<void>;
+  respondPermission: (sessionId: string, directory: string, permissionId: string, reply: 'once' | 'always' | 'reject') => Promise<void>;
+  respondQuestion: (sessionId: string, directory: string, requestId: string, answers: string[][]) => Promise<void>;
+  rejectQuestion: (sessionId: string, directory: string, requestId: string) => Promise<void>;
+  getTmuxClients: () => Promise<{ available: boolean; clients: TmuxClient[] }>;
+  getTmuxSessions: () => Promise<{ available: boolean; sessions: TmuxSession[] }>;
+  switchTmuxSession: (session: string, client?: string) => Promise<void>;
+  getWhisperStatus: () => Promise<{ available: boolean }>;
+  transcribe: (audio: Blob) => Promise<string>;
+};
+
+export const useApiStore = create<ApiStore>((set, get) => ({
+  requests: {},
+  runRequest: async <T,>(key: string, task: () => Promise<T>) => {
+    set((state) => ({
+      requests: {
+        ...state.requests,
+        [key]: { loading: true, error: null },
+      },
+    }));
+
+    try {
+      const result = await task();
+      set((state) => ({
+        requests: {
+          ...state.requests,
+          [key]: { loading: false, error: null },
+        },
+      }));
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Request failed';
+      set((state) => ({
+        requests: {
+          ...state.requests,
+          [key]: { loading: false, error: message },
+        },
+      }));
+      throw error;
+    }
+  },
+  getStats: () => get().runRequest('stats:get', () => api.stats()),
+  getProjects: () => get().runRequest('projects:get', () => api.projects()),
+  getSessions: (params, signal) => {
+    const key = params?.dir ? `sessions:get:dir:${params.dir}` : params?.since ? `sessions:get:since:${params.since}` : 'sessions:get';
+    return get().runRequest(key, () => api.sessions(params, signal));
+  },
+  getSession: (id, limit = 50, offset = 0, signal) => get().runRequest(`session:get:${id}`, () => api.session(id, limit, offset, signal)),
+  archiveSession: (sessionId, timeUpdated, archived = true) => get().runRequest(`session:archive:${sessionId}`, () => api.archiveSession(sessionId, timeUpdated, archived)),
+  markSessionSeen: (sessionId, timeUpdated) => get().runRequest(`session:seen:${sessionId}`, () => api.markSessionSeen(sessionId, timeUpdated)),
+  getActivity: () => get().runRequest('activity:get', () => api.activity()),
+  getModels: () => get().runRequest('models:get', () => api.models()),
+  getHourly: () => get().runRequest('hourly:get', () => api.hourly()),
+  getSessionPort: (id, signal) => get().runRequest(`session-port:get:${id}`, () => api.sessionPort(id, signal)),
+  createSession: (directory) => get().runRequest('session:create', () => api.createSession(directory)),
+  sendMessage: (sessionId, directory, message, images, model, agent) => get().runRequest(`message:send:${sessionId}`, () => api.sendMessage(sessionId, directory, message, images, model, agent)),
+  respondPermission: (sessionId, directory, permissionId, reply) => get().runRequest(`permission:respond:${sessionId}`, () => api.respondPermission(sessionId, directory, permissionId, reply)),
+  respondQuestion: (sessionId, directory, requestId, answers) => get().runRequest(`question:respond:${sessionId}`, () => api.respondQuestion(sessionId, directory, requestId, answers)),
+  rejectQuestion: (sessionId, directory, requestId) => get().runRequest(`question:reject:${sessionId}`, () => api.rejectQuestion(sessionId, directory, requestId)),
+  getTmuxClients: () => get().runRequest('tmux-clients:get', () => api.tmuxClients()),
+  getTmuxSessions: () => get().runRequest('tmux-sessions:get', () => api.tmuxSessions()),
+  switchTmuxSession: (session, client) => get().runRequest(`tmux:switch:${session}`, () => api.tmuxSwitch(session, client)),
+  getWhisperStatus: () => get().runRequest('whisper-status:get', () => api.whisperStatus()),
+  transcribe: (audio) => get().runRequest('transcribe:post', () => api.transcribe(audio)),
+}));
+
+export function useApiRequest(key: string): RequestStatus {
+  return useApiStore((state) => state.requests[key] ?? { loading: false, error: null });
+}
