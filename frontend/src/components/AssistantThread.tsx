@@ -7,11 +7,44 @@ import {
 } from '@assistant-ui/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
 import type { FC } from 'react';
+import { getDraft, saveDraft, clearDraft } from '../lib/composerDraft';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function CodeBlockPre(props: any) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { children, node: _node, ...rest } = props;
+  const codeRef = useRef<HTMLPreElement>(null);
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    const text = codeRef.current?.textContent || '';
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+  return (
+    <div className="oc-code-block">
+      <button className="oc-code-copy" onClick={handleCopy} title="Copy code">
+        {copied ? 'Copied' : 'Copy'}
+      </button>
+      <pre ref={codeRef} {...rest}>{children}</pre>
+    </div>
+  );
+}
 
 const MarkdownText: FC<{ text: string }> = ({ text }) => {
   if (!text.trim()) return null;
-  return <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>;
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      rehypePlugins={[rehypeHighlight]}
+      components={{ pre: CodeBlockPre }}
+    >
+      {text}
+    </ReactMarkdown>
+  );
 };
 
 const ImageDisplay: FC<{ image: string; filename?: string }> = ({ image, filename }) => {
@@ -32,13 +65,18 @@ const ImageDisplay: FC<{ image: string; filename?: string }> = ({ image, filenam
 
 const UserMessage: FC = () => {
   const content = useMessage((m) => m.content);
+  const isQueued = useMessage((m) => {
+    const meta = m.metadata as Record<string, unknown> | undefined;
+    const custom = meta?.custom as Record<string, unknown> | undefined;
+    return custom?.queued === true;
+  });
   const hasContent = content.some(
     (p) => (p.type === 'text' && 'text' in p && (p as { text: string }).text.trim()) || p.type === 'tool-call' || p.type === 'image'
   );
   if (!hasContent) return null;
 
   return (
-    <MessagePrimitive.Root className="oc-msg oc-msg-user">
+    <MessagePrimitive.Root className={`oc-msg oc-msg-user${isQueued ? ' oc-msg-queued' : ''}`}>
       <div className="oc-msg-body">
         <MessagePrimitive.Content
           components={{
@@ -47,6 +85,12 @@ const UserMessage: FC = () => {
           }}
         />
       </div>
+      {isQueued && (
+        <div className="oc-msg-queued-badge">
+          <span className="oc-queued-dot" />
+          Queued
+        </div>
+      )}
     </MessagePrimitive.Root>
   );
 };
@@ -60,7 +104,12 @@ const AssistantMessage: FC = () => {
 
   // Messages that only contain muted tool calls (reads/greps) render as a compact list
   const onlyMuted = content.every(
-    (p) => p.type === 'tool-call' && 'toolName' in p && (p as { toolName: string }).toolName === '__read__'
+    (p) => {
+      if (p.type === 'text' && 'text' in p && !(p as { text: string }).text.trim()) return true;
+      if (p.type !== 'tool-call' || !('toolName' in p)) return false;
+      const name = (p as { toolName: string }).toolName;
+      return name === '__read__' || name === 'read' || name === 'mcp_read' || name === 'grep' || name === 'mcp_grep' || name === 'glob' || name === 'mcp_glob';
+    }
   );
 
   if (onlyMuted) {
@@ -101,15 +150,28 @@ function AssistantMeta() {
   if (status?.type === 'running') return null;
   // Hide timestamp when message only contains file reads
   const onlyReads = content.every(
-    (p) => p.type === 'tool-call' && 'toolName' in p && (p as { toolName: string }).toolName === '__read__'
+    (p) => {
+      if (p.type === 'text' && 'text' in p && !(p as { text: string }).text.trim()) return true;
+      if (p.type !== 'tool-call' || !('toolName' in p)) return false;
+      const name = (p as { toolName: string }).toolName;
+      return name === '__read__' || name === 'read' || name === 'mcp_read' || name === 'grep' || name === 'mcp_grep' || name === 'glob' || name === 'mcp_glob';
+    }
   );
   if (onlyReads) return null;
   const time = createdAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const isError = status?.type === 'incomplete' && 'reason' in status && status.reason === 'error';
   return (
-    <div className="oc-msg-meta">
-      <span className="oc-meta-dot" />
-      <span>{time}</span>
-    </div>
+    <>
+      {isError && (
+        <div className="oc-error-banner" style={{ marginTop: 10 }}>
+          Session ended with an error
+        </div>
+      )}
+      <div className="oc-msg-meta">
+        <span className="oc-meta-dot" style={isError ? { background: 'var(--danger)' } : undefined} />
+        <span>{time}</span>
+      </div>
+    </>
   );
 }
 
@@ -165,6 +227,196 @@ function renderOutput(text: string) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+interface PatchSection {
+  action: 'add' | 'update' | 'delete';
+  path: string;
+}
+
+interface PatchPayload {
+  patchText: string | null;
+  preamble: string;
+}
+
+function parseJsonObject(text: string): Record<string, unknown> | null {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return null;
+  try {
+    const parsed = JSON.parse(trimmed);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseJsonObjectFromMixedText(text: string): Record<string, unknown> | null {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  return parseJsonObject(text.slice(start, end + 1));
+}
+
+function extractPatchPayload(text: string): PatchPayload {
+  const parsed = parseJsonObject(text) || parseJsonObjectFromMixedText(text);
+  if (typeof parsed?.patchText === 'string') {
+    const jsonStart = text.indexOf('{');
+    const preamble = jsonStart > 0 ? text.slice(0, jsonStart).trim() : '';
+    return { patchText: parsed.patchText, preamble };
+  }
+
+  return { patchText: null, preamble: text.trim() };
+}
+
+function splitToolArgs(toolName: string, rawArgs: string): { title: string; detail: string } {
+  const argLines = rawArgs.split('\n');
+  const firstLine = argLines[0] || '';
+  const rest = argLines.slice(1).join('\n').trim();
+
+  // Some tools, notably apply_patch, send structured JSON without a title.
+  // In that case the first line is part of the payload, not a display label.
+  if (toolName === 'apply_patch' && (firstLine.trim().startsWith('{') || !rest)) {
+    return { title: '', detail: rawArgs.trim() };
+  }
+
+  return { title: firstLine, detail: rest };
+}
+
+function parsePatchSections(patchText: string): PatchSection[] {
+  return patchText.split('\n').flatMap<PatchSection>((line) => {
+    const updateMatch = line.match(/^\*\*\* Update File: (.+)$/);
+    if (updateMatch) return [{ action: 'update' as const, path: updateMatch[1] }];
+    const addMatch = line.match(/^\*\*\* Add File: (.+)$/);
+    if (addMatch) return [{ action: 'add' as const, path: addMatch[1] }];
+    const deleteMatch = line.match(/^\*\*\* Delete File: (.+)$/);
+    if (deleteMatch) return [{ action: 'delete' as const, path: deleteMatch[1] }];
+    return [];
+  });
+}
+
+function summarizePatch(patchText: string): string {
+  const sections = parsePatchSections(patchText);
+  if (sections.length === 0) return 'Patch';
+  if (sections.length === 1) {
+    const section = sections[0];
+    const action = section.action === 'add' ? 'Add' : section.action === 'delete' ? 'Delete' : 'Update';
+    return `${action} ${shortenPatchPath(section.path)}`;
+  }
+
+  const counts = sections.reduce<{ add: number; update: number; delete: number }>((acc, section) => {
+    acc[section.action] += 1;
+    return acc;
+  }, { add: 0, update: 0, delete: 0 });
+  const parts = [
+    counts.add ? `${counts.add} add${counts.add === 1 ? '' : 's'}` : null,
+    counts.update ? `${counts.update} update${counts.update === 1 ? '' : 's'}` : null,
+    counts.delete ? `${counts.delete} delete${counts.delete === 1 ? '' : 's'}` : null,
+  ].filter(Boolean);
+  return `Patch ${sections.length} files${parts.length ? ` (${parts.join(', ')})` : ''}`;
+}
+
+function shortenPatchPath(path: string): string {
+  if (!path.startsWith('/')) return path;
+
+  const markers = ['/frontend/', '/internal/', '/docs/', '/.github/'];
+  for (const marker of markers) {
+    const index = path.indexOf(marker);
+    if (index >= 0) return path.slice(index + 1);
+  }
+
+  const parts = path.split('/').filter(Boolean);
+  return parts.slice(-2).join('/');
+}
+
+function renderPatch(patchText: string) {
+  const lines = patchText.split('\n');
+  return (
+    <div className="oc-patch-block">
+      {lines.map((line, i) => {
+        let cls = 'oc-patch-line';
+        if (/^\*\*\* (Add|Update|Delete) File: /.test(line)) cls += ' oc-patch-file';
+        else if (line.startsWith('*** Begin Patch') || line.startsWith('*** End Patch') || line.startsWith('*** Move to:')) cls += ' oc-patch-meta';
+        else if (line.startsWith('@@')) cls += ' oc-patch-hunk';
+        else if (line.startsWith('+')) cls += ' oc-patch-add';
+        else if (line.startsWith('-')) cls += ' oc-patch-del';
+
+        const fileMatch = line.match(/^\*\*\* (Add|Update|Delete) File: (.+)$/);
+        const displayLine = fileMatch ? `*** ${fileMatch[1]} File: ${shortenPatchPath(fileMatch[2])}` : line;
+
+        return <div key={i} className={cls}>{displayLine || ' '}</div>;
+      })}
+    </div>
+  );
+}
+
+interface QuestionOption {
+  label: string;
+  description: string;
+}
+
+interface QuestionData {
+  header: string;
+  question: string;
+  options: QuestionOption[];
+}
+
+function parseQuestionAnswers(result: unknown): string[] | null {
+  if (typeof result !== 'string' || !result.trim()) return null;
+
+  const normalizeAnswer = (value: string): string => {
+    const trimmed = value.trim();
+    const mappedMatch = trimmed.match(/=\s*"([^"]+)"/);
+    if (mappedMatch) return mappedMatch[1].trim();
+    const quotedMatch = trimmed.match(/^"([^"]+)"$/);
+    if (quotedMatch) return quotedMatch[1].trim();
+    return trimmed;
+  };
+
+  try {
+    const parsed = JSON.parse(result);
+    if (Array.isArray(parsed)) {
+      const answers = parsed.map((entry) => {
+        if (Array.isArray(entry)) return entry.join(', ').trim();
+        if (typeof entry === 'string') return normalizeAnswer(entry);
+        return '';
+      }).filter(Boolean);
+      return answers.length > 0 ? answers : null;
+    }
+    if (typeof parsed === 'string' && parsed.trim()) return [normalizeAnswer(parsed)];
+  } catch {
+    const raw = normalizeAnswer(result);
+    if (raw && raw !== '""' && raw !== '[]') return [raw];
+  }
+  return null;
+}
+
+function parseQuestions(argsText: string): QuestionData[] | null {
+  // argsText format: "status\njsonData"
+  const lines = argsText.split('\n');
+  const jsonStr = lines.slice(1).join('\n').trim();
+  if (!jsonStr) return null;
+  try {
+    const parsed = JSON.parse(jsonStr);
+    // Could be { questions: [...] } or just [...]
+    const questions = parsed?.questions || parsed;
+    if (Array.isArray(questions) && questions.length > 0 && questions[0]?.question) {
+      return questions as QuestionData[];
+    }
+  } catch { /* not JSON */ }
+  return null;
+}
+
+function AnsweredQuestionBlock({ questions, answers }: { questions: QuestionData[]; answers: string[] }) {
+  return (
+    <div className="oc-question-list">
+      {questions.map((q, index) => (
+        <div key={index} className="oc-question-card oc-question-answered-card">
+          <div className="oc-question-text">{q.question}</div>
+          <div className="oc-question-answer">{answers[index] || ''}</div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -225,8 +477,11 @@ function TodoList({ todos }: { todos: TodoItem[] }) {
 }
 
 const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, result }) => {
+  const [expanded, setExpanded] = useState(false);
+  const [taskExpanded, setTaskExpanded] = useState(false);
+
   // File reads/greps render as a muted inline line with an arrow icon
-  if (toolName === '__read__') {
+  if (toolName === '__read__' || toolName === 'read' || toolName === 'mcp_read' || toolName === 'grep' || toolName === 'mcp_grep' || toolName === 'glob' || toolName === 'mcp_glob') {
     return (
       <div className="oc-read-line">
         <span className="oc-read-arrow">{'\u2192'}</span>
@@ -237,7 +492,6 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
 
   // Subagent tasks render as a compact card with output, clicking header opens the session
   if (toolName === '__task__') {
-    const [taskExpanded, setTaskExpanded] = useState(false);
     const lines = (argsText || '').split('\n');
     const taskStatus = lines[0] || 'running';
     const label = lines.slice(1).join(' ').trim() || 'Subagent task';
@@ -277,7 +531,24 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
     );
   }
 
-  const [expanded, setExpanded] = useState(false);
+  // Questions are answered in the composer slot. While pending, show a muted
+  // summary. Once answered, repeat the question and answer in a compact block.
+  if (toolName === '__question__') {
+    const questions = parseQuestions(argsText || '');
+    if (questions) {
+      const answers = parseQuestionAnswers(result);
+      if (answers) {
+        return <AnsweredQuestionBlock questions={questions} answers={answers} />;
+      }
+      const count = questions.length;
+      return (
+        <div className="oc-read-line">
+          <span className="oc-read-arrow">{'\u2192'}</span>
+          <span>{`Asked ${count} question${count === 1 ? '' : 's'}`}</span>
+        </div>
+      );
+    }
+  }
 
   // First line of argsText is the tool's own status (completed/running/error)
   const lines = (argsText || '').split('\n');
@@ -302,9 +573,8 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
   if (typeof result === 'string') outputDisplay = result;
   else if (result != null) outputDisplay = JSON.stringify(result, null, 2);
 
-  const argLines = remainingArgs.split('\n');
-  const title = argLines[0] || toolName;
-  const detail = argLines.slice(1).join('\n').trim();
+  const { title: parsedTitle, detail } = splitToolArgs(toolName, remainingArgs);
+  const title = parsedTitle || toolName;
 
   const isLong = outputDisplay.length > 500 || (detail && detail.length > 300);
 
@@ -322,6 +592,40 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
         <div className="oc-tool-content">
           <TodoList todos={todos} />
         </div>
+      </div>
+    );
+  }
+
+  const isApplyPatch = toolName === 'apply_patch';
+  if (isApplyPatch) {
+    const patchSource = remainingArgs.trim();
+    const { patchText, preamble } = extractPatchPayload(patchSource || detail);
+    const patchSummary = patchText ? summarizePatch(patchText) : 'Apply patch';
+    const patchBody = patchText || '';
+    const patchIsLong = patchBody.length > 500;
+    const fileLines = preamble.split('\n').map((line) => line.trim()).filter((line) => /^([MADRCU?!]|->)\s/.test(line));
+
+    return (
+      <div className={`oc-tool oc-tool-patch ${statusClass} ${expanded ? 'oc-tool-expanded' : ''}`}>
+        <div className="oc-tool-header" onClick={() => setExpanded(!expanded)}>
+          <span className={`oc-tool-icon ${statusClass}`}>{statusIcon}</span>
+          <span className="oc-tool-label">{patchSummary}</span>
+        </div>
+        {(fileLines.length > 0 || patchBody) && (
+          <div className="oc-tool-content" onClick={() => !expanded && setExpanded(true)} style={!expanded ? { cursor: 'pointer' } : undefined}>
+            {fileLines.length > 0 && (
+              <div className="oc-patch-files">
+                {fileLines.map((line, index) => (
+                  <div key={index} className="oc-patch-files-line">{line}</div>
+                ))}
+              </div>
+            )}
+            {patchBody && <div className="oc-tool-pre oc-tool-output">{renderPatch(patchBody)}</div>}
+            {!expanded && patchIsLong && (
+              <div className="oc-tool-expand">Click to expand</div>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -413,17 +717,134 @@ interface RecordingCtx {
   chunks: Float32Array[];
 }
 
-function Composer({ onSend, isRunning, disabled, whisperAvailable }: { onSend?: (text: string) => void; isRunning: boolean; disabled?: boolean; whisperAvailable?: boolean }) {
+export interface AttachedImage {
+  url: string;  // data URL (base64)
+  mime: string;
+}
+
+// Read a File as a data URL
+function readFileAsDataURL(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// Known context window sizes (in tokens) for common models.
+// Used to compute percentage used. Partial matches are supported (matched from the end).
+const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
+  // OpenAI
+  'gpt-4o': 128_000,
+  'gpt-4o-mini': 128_000,
+  'gpt-4-turbo': 128_000,
+  'gpt-4': 8_192,
+  'gpt-4.1': 1_047_576,
+  'gpt-4.1-mini': 1_047_576,
+  'gpt-4.1-nano': 1_047_576,
+  'o1': 200_000,
+  'o1-mini': 128_000,
+  'o1-pro': 200_000,
+  'o3': 200_000,
+  'o3-mini': 200_000,
+  'o3-pro': 200_000,
+  'o4-mini': 200_000,
+  // Anthropic
+  'claude-sonnet-4-20250514': 200_000,
+  'claude-opus-4-20250514': 200_000,
+  'claude-3-7-sonnet-20250219': 200_000,
+  'claude-3-5-sonnet-20241022': 200_000,
+  'claude-3-5-sonnet-20240620': 200_000,
+  'claude-3-5-haiku-20241022': 200_000,
+  'claude-3-opus-20240229': 200_000,
+  'claude-3-haiku-20240307': 200_000,
+  'claude-sonnet-4': 200_000,
+  'claude-opus-4': 200_000,
+  // Google
+  'gemini-2.5-pro': 1_048_576,
+  'gemini-2.5-flash': 1_048_576,
+  'gemini-2.0-flash': 1_048_576,
+  'gemini-1.5-pro': 2_097_152,
+  'gemini-1.5-flash': 1_048_576,
+  // xAI
+  'grok-3': 131_072,
+  'grok-3-mini': 131_072,
+  // DeepSeek
+  'deepseek-chat': 64_000,
+  'deepseek-reasoner': 64_000,
+  // Mistral
+  'mistral-large-latest': 128_000,
+  'codestral-latest': 256_000,
+};
+
+function getContextWindow(modelId: string | undefined): number | null {
+  if (!modelId) return null;
+  // Exact match first
+  if (MODEL_CONTEXT_WINDOWS[modelId]) return MODEL_CONTEXT_WINDOWS[modelId];
+  // Try partial match (model ID may have provider prefix like "anthropic/claude-...")
+  const lower = modelId.toLowerCase();
+  for (const [key, value] of Object.entries(MODEL_CONTEXT_WINDOWS)) {
+    if (lower.endsWith(key) || lower.includes(key)) return value;
+  }
+  return null;
+}
+
+function formatTokenCount(n: number): string {
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+  return String(n);
+}
+
+// Known user-selectable agents in OpenCode.
+const KNOWN_AGENTS = ['build', 'developer', 'plan', 'architect', 'ba', 'brainstormer', 'reviewer', 'security'];
+
+function Composer({
+  onSend,
+  isRunning,
+  disabled,
+  whisperAvailable,
+  models,
+  activeModel,
+  selectedModel,
+  onModelChange,
+  activeAgent,
+  selectedAgent,
+  onAgentChange,
+  contextTokens,
+  sessionId,
+}: {
+  onSend?: (text: string, images?: AttachedImage[]) => void;
+  isRunning: boolean;
+  disabled?: boolean;
+  whisperAvailable?: boolean;
+  models?: string[];
+  activeModel?: string;
+  selectedModel?: string;
+  onModelChange?: (model: string) => void;
+  activeAgent?: string;
+  selectedAgent?: string;
+  onAgentChange?: (agent: string) => void;
+  contextTokens?: number;
+  sessionId?: string;
+}) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const micRef = useRef<HTMLButtonElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const onSendRef = useRef(onSend);
   const isRunningRef = useRef(isRunning);
   const disabledRef = useRef(disabled);
   const mountedRef = useRef(false);
   const recordingRef = useRef<RecordingCtx | null>(null);
+  const [images, setImages] = useState<AttachedImage[]>([]);
+  const imagesRef = useRef<AttachedImage[]>([]);
+  const sessionIdRef = useRef(sessionId);
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Keep refs in sync via effect to satisfy lint rules
+  // Keep refs in sync
+  useEffect(() => { imagesRef.current = images; }, [images]);
+  useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
   useEffect(() => {
     onSendRef.current = onSend;
   }, [onSend]);
@@ -434,18 +855,59 @@ function Composer({ onSend, isRunning, disabled, whisperAvailable }: { onSend?: 
     disabledRef.current = disabled;
   }, [disabled]);
 
-  // Update status bar text via DOM, not React state
+  // Restore draft from localStorage when sessionId changes
   useEffect(() => {
-    const bar = wrapRef.current?.querySelector('.oc-composer-bar-left');
-    if (!bar) return;
-    if (disabled) {
-      bar.innerHTML = '<span class="oc-bar-hint">No running OpenCode instance</span>';
-    } else if (isRunning) {
-      bar.innerHTML = '<span class="oc-bar-dots"><span class="oc-thinking-dot"></span><span class="oc-thinking-dot"></span><span class="oc-thinking-dot"></span></span><span class="oc-bar-hint">esc interrupt</span>';
-    } else {
-      bar.innerHTML = '<span class="oc-bar-hint">enter send</span>';
+    const el = inputRef.current;
+    if (!el || !sessionId) return;
+    const draft = getDraft(sessionId);
+    el.value = draft;
+    // Auto-resize the textarea to fit the restored content
+    el.style.height = 'auto';
+    if (draft) {
+      el.style.height = Math.min(el.scrollHeight, 200) + 'px';
     }
-  }, [isRunning, disabled]);
+  }, [sessionId]);
+
+  // Flush any pending draft save on unmount
+  useEffect(() => {
+    const el = inputRef.current;
+    return () => {
+      if (draftTimerRef.current) {
+        clearTimeout(draftTimerRef.current);
+        draftTimerRef.current = null;
+      }
+      // Save current value immediately on unmount
+      const sid = sessionIdRef.current;
+      if (el && sid) {
+        const text = el.value.trim();
+        if (text) {
+          saveDraft(sid, text);
+        } else {
+          clearDraft(sid);
+        }
+      }
+    };
+  }, []);
+
+  // Helper to add image files
+  const addImageFiles = useCallback(async (files: File[]) => {
+    const imageFiles = files.filter(f => f.type.startsWith('image/'));
+    if (imageFiles.length === 0) return;
+    const newImages: AttachedImage[] = [];
+    for (const file of imageFiles) {
+      try {
+        const url = await readFileAsDataURL(file);
+        newImages.push({ url, mime: file.type });
+      } catch (err) {
+        console.error('Failed to read image', err);
+      }
+    }
+    setImages(prev => [...prev, ...newImages]);
+  }, []);
+
+  const removeImage = useCallback((index: number) => {
+    setImages(prev => prev.filter((_, i) => i !== index));
+  }, []);
 
   // Sync the disabled attribute on the textarea
   useEffect(() => {
@@ -457,16 +919,19 @@ function Composer({ onSend, isRunning, disabled, whisperAvailable }: { onSend?: 
   const setMicState = useCallback((state: 'idle' | 'recording' | 'transcribing') => {
     const btn = micRef.current;
     if (!btn) return;
+    const icon = btn.querySelector('.oc-mic-icon');
+    if (!(icon instanceof HTMLElement)) return;
     btn.classList.remove('oc-mic-recording', 'oc-mic-transcribing');
     btn.disabled = state === 'transcribing' || !!disabledRef.current;
+    icon.className = 'bi oc-mic-icon';
     if (state === 'recording') {
       btn.classList.add('oc-mic-recording');
-      btn.textContent = '\u25A0'; // stop square
+      icon.classList.add('bi-stop-fill');
     } else if (state === 'transcribing') {
       btn.classList.add('oc-mic-transcribing');
-      btn.textContent = '\u2026'; // ellipsis
+      icon.classList.add('bi-hourglass-split');
     } else {
-      btn.textContent = '\u2399';
+      icon.classList.add('bi-mic-fill');
     }
   }, []);
 
@@ -569,24 +1034,134 @@ function Composer({ onSend, isRunning, disabled, whisperAvailable }: { onSend?: 
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         const trimmed = el.value.trim();
-        if (!trimmed) return;
-        onSendRef.current?.(trimmed);
+        const imgs = imagesRef.current;
+        if (!trimmed && imgs.length === 0) return;
+        onSendRef.current?.(trimmed, imgs.length > 0 ? imgs : undefined);
         el.value = '';
         el.style.height = 'auto';
+        // Clear draft from localStorage on send
+        const sid = sessionIdRef.current;
+        if (sid) {
+          if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+          clearDraft(sid);
+        }
+        // Clear images via a dispatched custom event (since setImages is not in scope here)
+        el.dispatchEvent(new CustomEvent('oc-clear-images'));
       }
     });
 
     el.addEventListener('input', () => {
       el.style.height = 'auto';
       el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+      // Debounced save of draft to localStorage
+      const sid = sessionIdRef.current;
+      if (sid) {
+        if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+        draftTimerRef.current = setTimeout(() => {
+          const text = el.value.trim();
+          if (text) {
+            saveDraft(sid, text);
+          } else {
+            clearDraft(sid);
+          }
+        }, 300);
+      }
+    });
+
+    // Handle paste with images
+    el.addEventListener('paste', (e) => {
+      if (disabledRef.current) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const imageFiles: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          const file = items[i].getAsFile();
+          if (file) imageFiles.push(file);
+        }
+      }
+      if (imageFiles.length > 0) {
+        e.preventDefault();
+        // Dispatch custom event with files to be handled by React
+        el.dispatchEvent(new CustomEvent('oc-paste-images', { detail: imageFiles }));
+      }
     });
 
   }, []);
 
-  // Only render the shell once — never re-renders
+  // Listen for custom events from native listeners to bridge into React state
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    const handleClearImages = () => setImages([]);
+    const handlePasteImages = (e: Event) => {
+      const files = (e as CustomEvent).detail as File[];
+      addImageFiles(files);
+    };
+    el.addEventListener('oc-clear-images', handleClearImages);
+    el.addEventListener('oc-paste-images', handlePasteImages);
+    return () => {
+      el.removeEventListener('oc-clear-images', handleClearImages);
+      el.removeEventListener('oc-paste-images', handlePasteImages);
+    };
+  }, [addImageFiles]);
+
+  // Handle drag and drop on the composer wrapper
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (disabled) return;
+    const files = Array.from(e.dataTransfer.files);
+    addImageFiles(files);
+  }, [disabled, addImageFiles]);
+
+  // Build agent options: active agent + known agents, deduplicated
+  const agentOptions = Array.from(new Set(
+    [activeAgent, ...KNOWN_AGENTS].filter((a): a is string => !!a)
+  ));
+  const effectiveAgent = selectedAgent || activeAgent || '';
+  const effectiveModel = selectedModel || activeModel || '';
+  const modelGroups = (models || []).reduce<Array<{ label: string; options: { value: string; label: string }[] }>>((groups, model) => {
+    const slashIndex = model.indexOf('/');
+    const provider = slashIndex > 0 ? model.slice(0, slashIndex) : 'Other';
+    const optionLabel = slashIndex > 0 ? model.slice(slashIndex + 1) : model;
+    const existing = groups.find((group) => group.label === provider);
+
+    if (existing) {
+      existing.options.push({ value: model, label: optionLabel });
+      return groups;
+    }
+
+    groups.push({
+      label: provider,
+      options: [{ value: model, label: optionLabel }],
+    });
+    return groups;
+  }, []);
+
   return (
-    <div className={`oc-composer-wrap${disabled ? ' oc-composer-disabled' : ''}`} ref={wrapRef}>
+    <div
+      className={`oc-composer-wrap${disabled ? ' oc-composer-disabled' : ''}`}
+      ref={wrapRef}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
       <div className="oc-composer">
+        {images.length > 0 && (
+          <div className="oc-composer-images">
+            {images.map((img, i) => (
+              <div key={i} className="oc-composer-image-thumb">
+                <img src={img.url} alt={`Attachment ${i + 1}`} />
+                <button className="oc-composer-image-remove" onClick={() => removeImage(i)}>{'\u00D7'}</button>
+              </div>
+            ))}
+          </div>
+        )}
         <textarea
           ref={inputRef}
           className="oc-composer-input"
@@ -594,31 +1169,103 @@ function Composer({ onSend, isRunning, disabled, whisperAvailable }: { onSend?: 
           disabled={disabled}
           placeholder={disabled ? 'No running OpenCode instance' : undefined}
         />
-        {whisperAvailable && (
-          <button
-            ref={micRef}
-            className="oc-mic-btn"
-            onClick={handleMicClick}
-            disabled={disabled}
-            title="Record voice message"
-          >{'\u2399'}</button>
-        )}
-      </div>
-      <div className="oc-composer-bar">
-        <div className="oc-composer-bar-left">
-          <span className="oc-bar-hint">{disabled ? 'No running OpenCode instance' : 'enter send'}</span>
+        <div className="oc-composer-bar">
+          <div className="oc-composer-bar-left">
+            <button
+              className="oc-bar-action"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={disabled}
+              title="Attach image"
+            >+</button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const files = Array.from(e.target.files || []);
+                addImageFiles(files);
+                e.target.value = '';
+              }}
+            />
+            {contextTokens != null && contextTokens > 0 && (() => {
+              const contextWindow = getContextWindow(activeModel);
+              const pct = contextWindow ? Math.min(100, (contextTokens / contextWindow) * 100) : null;
+              return (
+                <span className={`oc-context-usage${pct != null && pct > 80 ? ' oc-context-warn' : ''}`} title={contextWindow ? `${contextTokens.toLocaleString()} / ${contextWindow.toLocaleString()} tokens` : `${contextTokens.toLocaleString()} tokens used`}>
+                  {formatTokenCount(contextTokens)}{pct != null && ` (${pct.toFixed(0)}%)`}
+                </span>
+              );
+            })()}
+            {disabled && <span className="oc-bar-hint">No running OpenCode instance</span>}
+            {!disabled && isRunning && (
+              <span className="oc-bar-dots">
+                <span className="oc-thinking-dot" /><span className="oc-thinking-dot" /><span className="oc-thinking-dot" />
+              </span>
+            )}
+          </div>
+          <div className="oc-composer-bar-right">
+            <select
+              className="oc-bar-select"
+              disabled={disabled}
+              value={effectiveAgent}
+              onChange={(e) => onAgentChange?.(e.target.value)}
+              title="Agent"
+            >
+              {agentOptions.map((agent) => (
+                <option key={agent} value={agent}>{agent}</option>
+              ))}
+            </select>
+            {models && models.length > 0 && (
+              <select
+                className="oc-bar-select"
+                disabled={disabled}
+                value={models.includes(effectiveModel) ? effectiveModel : ''}
+                onChange={(e) => onModelChange?.(e.target.value)}
+                title="Model"
+              >
+                {modelGroups.map((group) => (
+                  <optgroup key={group.label} label={group.label}>
+                    {group.options.map((model) => (
+                      <option key={model.value} value={model.value}>{model.label}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            )}
+            {whisperAvailable && (
+              <button
+                ref={micRef}
+                className="oc-bar-action"
+                onClick={handleMicClick}
+                disabled={disabled}
+                title="Record voice message"
+              >
+                <i className="bi bi-mic-fill oc-mic-icon" aria-hidden="true" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-// Re-render when isRunning, disabled, or whisperAvailable changes.
+// Re-render when status, model, agent, context tokens, session, or mic availability changes.
 // Other props (onSend) are accessed via refs and don't need re-renders.
 const MemoComposer = memo(Composer, (prev, next) =>
   prev.isRunning === next.isRunning &&
   prev.disabled === next.disabled &&
-  prev.whisperAvailable === next.whisperAvailable
+  prev.whisperAvailable === next.whisperAvailable &&
+  prev.activeModel === next.activeModel &&
+  prev.selectedModel === next.selectedModel &&
+  prev.activeAgent === next.activeAgent &&
+  prev.selectedAgent === next.selectedAgent &&
+  prev.contextTokens === next.contextTokens &&
+  prev.sessionId === next.sessionId &&
+  (prev.models?.length || 0) === (next.models?.length || 0) &&
+  (prev.models || []).every((model, i) => model === (next.models || [])[i])
 );
 export { MemoComposer as Composer };
 
@@ -665,8 +1312,9 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
     });
     observer.observe(el, { childList: true, subtree: true, characterData: true });
 
-    checkScroll();
+    const frame = requestAnimationFrame(checkScroll);
     return () => {
+      cancelAnimationFrame(frame);
       el.removeEventListener('scroll', checkScroll);
       observer.disconnect();
     };
@@ -733,8 +1381,8 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
           Scroll to bottom
         </button>
       )}
+      {footer && <div className="oc-thread-overlay">{footer}</div>}
       {composer}
-      {footer}
     </ThreadPrimitive.Root>
   );
 }

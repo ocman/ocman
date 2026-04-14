@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	log "github.com/sirupsen/logrus"
 
@@ -54,6 +55,10 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		serverError(w, "fetching sessions", err)
 		return
 	}
+	if err := s.applySessionState(sessions); err != nil {
+		serverError(w, "fetching session state", err)
+		return
+	}
 
 	// Discover all running OpenCode ports once and mark sessions.
 	ports := discoverOpenCodePorts()
@@ -64,6 +69,108 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, sessions)
+}
+
+func (s *Server) applySessionState(sessions []db.Session) error {
+	archived, err := s.stateDB.ArchivedSessions()
+	if err != nil {
+		return err
+	}
+	seen, err := s.stateDB.SeenSessions()
+	if err != nil {
+		return err
+	}
+
+	for i := range sessions {
+		seenAtUpdate, ok := seen[sessions[i].ID]
+		if ok && seenAtUpdate >= sessions[i].TimeUpdated {
+			sessions[i].Seen = true
+		}
+
+		archivedAtUpdate, ok := archived[sessions[i].ID]
+		if !ok {
+			continue
+		}
+		if sessions[i].TimeUpdated > archivedAtUpdate {
+			if err := s.stateDB.UnarchiveSession(sessions[i].ID); err != nil {
+				return err
+			}
+			continue
+		}
+		sessions[i].Archived = true
+	}
+
+	return nil
+}
+
+func (s *Server) handleSeenSession(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		SessionID          string `json:"sessionId"`
+		SessionTimeUpdated int64  `json:"timeUpdated"`
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBody))
+	if err != nil {
+		http.Error(w, "failed to read body", http.StatusBadRequest)
+		return
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if !validateID(req.SessionID) {
+		http.Error(w, "invalid session ID", http.StatusBadRequest)
+		return
+	}
+	if req.SessionTimeUpdated <= 0 {
+		http.Error(w, "timeUpdated is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.stateDB.MarkSessionSeen(req.SessionID, req.SessionTimeUpdated); err != nil {
+		serverError(w, "updating seen session state", err)
+		return
+	}
+
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleArchiveSession(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		SessionID          string `json:"sessionId"`
+		SessionTimeUpdated int64  `json:"timeUpdated"`
+		Archived           bool   `json:"archived"`
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBody))
+	if err != nil {
+		http.Error(w, "failed to read body", http.StatusBadRequest)
+		return
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if !validateID(req.SessionID) {
+		http.Error(w, "invalid session ID", http.StatusBadRequest)
+		return
+	}
+	if req.Archived && req.SessionTimeUpdated <= 0 {
+		http.Error(w, "timeUpdated is required", http.StatusBadRequest)
+		return
+	}
+
+	if req.Archived {
+		err = s.stateDB.ArchiveSession(req.SessionID, req.SessionTimeUpdated)
+	} else {
+		err = s.stateDB.UnarchiveSession(req.SessionID)
+	}
+	if err != nil {
+		serverError(w, "updating archived session state", err)
+		return
+	}
+
+	writeJSON(w, map[string]bool{"ok": true})
 }
 
 func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
@@ -114,11 +221,21 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	pagedMessages, _ := db.PaginateMessages(messages, limit, offset)
 	filteredParts := db.FilterPartsForMessages(parts, pagedMessages)
 
+	// Compute composer context usage from assistant message total token counts.
+	contextTokenCount := s.db.GetContextTokenCount(sessionID)
+	defaults, err := s.db.GetSessionDefaults(sessionID, session.Directory)
+	if err != nil {
+		log.WithFields(log.Fields{"sessionID": sessionID, "error": err}).Warn("fetching session defaults")
+	}
+
 	writeJSON(w, map[string]interface{}{
-		"session":       session,
-		"messages":      pagedMessages,
-		"parts":         filteredParts,
-		"totalMessages": totalMessages,
+		"session":           session,
+		"messages":          pagedMessages,
+		"parts":             filteredParts,
+		"totalMessages":     totalMessages,
+		"contextTokenCount": contextTokenCount,
+		"defaultAgent":      defaults.Agent,
+		"defaultModel":      defaults.Model,
 	})
 }
 
@@ -218,14 +335,44 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	w.Write(respBody)
 }
 
+// maxSendMessageBody is the maximum allowed body for send-message (20 MB to support inline images).
+const maxSendMessageBody = 20 << 20
+
+type openCodeModelRef struct {
+	ProviderID string `json:"providerID,omitempty"`
+	ModelID    string `json:"modelID"`
+}
+
+func parseOpenCodeModelRef(model string) *openCodeModelRef {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return nil
+	}
+	providerID, modelID, ok := strings.Cut(model, "/")
+	if ok {
+		providerID = strings.TrimSpace(providerID)
+		modelID = strings.TrimSpace(modelID)
+		if providerID != "" && modelID != "" {
+			return &openCodeModelRef{ProviderID: providerID, ModelID: modelID}
+		}
+	}
+	return &openCodeModelRef{ModelID: model}
+}
+
 func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		SessionID string `json:"sessionId"`
 		Directory string `json:"directory"`
 		Message   string `json:"message"`
+		Model     string `json:"model"`
+		Agent     string `json:"agent"`
+		Images    []struct {
+			URL  string `json:"url"`
+			Mime string `json:"mime"`
+		} `json:"images"`
 	}
 
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBody))
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxSendMessageBody))
 	if err != nil {
 		http.Error(w, "failed to read body", http.StatusBadRequest)
 		return
@@ -238,8 +385,8 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid session ID", http.StatusBadRequest)
 		return
 	}
-	if req.Message == "" {
-		http.Error(w, "message is required", http.StatusBadRequest)
+	if req.Message == "" && len(req.Images) == 0 {
+		http.Error(w, "message or images required", http.StatusBadRequest)
 		return
 	}
 
@@ -251,17 +398,35 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Build parts array: text + optional images
+	parts := []map[string]string{}
+	if req.Message != "" {
+		parts = append(parts, map[string]string{"type": "text", "text": req.Message})
+	}
+	for _, img := range req.Images {
+		parts = append(parts, map[string]string{
+			"type": "file",
+			"url":  img.URL,
+			"mime": img.Mime,
+		})
+	}
+
 	// Use prompt_async so the request returns immediately (204) and the
 	// assistant response streams back via SSE instead of blocking until
 	// the full response is generated.
 	apiURL := fmt.Sprintf("http://127.0.0.1:%s/session/%s/prompt_async", port, req.SessionID)
-	payload, _ := json.Marshal(map[string]interface{}{
-		"parts": []map[string]string{
-			{"type": "text", "text": req.Message},
-		},
-	})
+	bodyMap := map[string]interface{}{
+		"parts": parts,
+	}
+	if modelRef := parseOpenCodeModelRef(req.Model); modelRef != nil {
+		bodyMap["model"] = modelRef
+	}
+	if req.Agent != "" {
+		bodyMap["agent"] = req.Agent
+	}
+	payload, _ := json.Marshal(bodyMap)
 
-	log.WithFields(log.Fields{"sessionID": req.SessionID, "port": port}).Info("sending message via OpenCode API")
+	log.WithFields(log.Fields{"sessionID": req.SessionID, "port": port, "images": len(req.Images)}).Info("sending message via OpenCode API")
 
 	resp, err := openCodeClient.Post(apiURL, "application/json", limitedReader(payload))
 	if err != nil {
@@ -274,11 +439,193 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(resp.Body)
 		log.WithFields(log.Fields{"statusCode": resp.StatusCode, "sessionID": req.SessionID, "body": string(respBody)}).Error("OpenCode API error")
-		http.Error(w, "OpenCode API error", resp.StatusCode)
+		errMsg := string(respBody)
+		if errMsg == "" {
+			errMsg = fmt.Sprintf("OpenCode API error (HTTP %d)", resp.StatusCode)
+		}
+		http.Error(w, errMsg, resp.StatusCode)
 		return
 	}
 
 	log.WithField("sessionID", req.SessionID).Info("message sent via OpenCode API")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleRespondPermission(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		SessionID    string `json:"sessionId"`
+		Directory    string `json:"directory"`
+		PermissionID string `json:"permissionId"`
+		Reply        string `json:"reply"`
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBody))
+	if err != nil {
+		http.Error(w, "failed to read body", http.StatusBadRequest)
+		return
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if !validateID(req.SessionID) || !validateID(req.PermissionID) {
+		http.Error(w, "invalid session or permission ID", http.StatusBadRequest)
+		return
+	}
+	reply := req.Reply
+	if reply == "" {
+		http.Error(w, "reply is required", http.StatusBadRequest)
+		return
+	}
+
+	port := discoverOpenCodePort(req.Directory)
+	if port == "" {
+		log.WithFields(log.Fields{"sessionID": req.SessionID, "directory": req.Directory}).Warn("no running OpenCode instance found")
+		http.Error(w, "no running OpenCode instance found for this session's directory", http.StatusServiceUnavailable)
+		return
+	}
+
+	// OpenCode expects "once", "always", or "reject" as the response value directly.
+	switch reply {
+	case "once", "always", "reject":
+		// valid
+	default:
+		http.Error(w, "invalid reply value: expected once, always, or reject", http.StatusBadRequest)
+		return
+	}
+
+	apiURL := fmt.Sprintf("http://127.0.0.1:%s/session/%s/permissions/%s", port, req.SessionID, req.PermissionID)
+	payload, _ := json.Marshal(map[string]interface{}{
+		"response": reply,
+	})
+
+	resp, err := openCodeClient.Post(apiURL, "application/json", limitedReader(payload))
+	if err != nil {
+		log.WithFields(log.Fields{"sessionID": req.SessionID, "permissionID": req.PermissionID, "error": err}).Error("OpenCode permission API error")
+		http.Error(w, "failed to reach OpenCode instance", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		log.WithFields(log.Fields{"statusCode": resp.StatusCode, "sessionID": req.SessionID, "permissionID": req.PermissionID, "body": string(respBody)}).Error("OpenCode permission API error")
+		errMsg := string(respBody)
+		if errMsg == "" {
+			errMsg = fmt.Sprintf("OpenCode permission API error (HTTP %d)", resp.StatusCode)
+		}
+		http.Error(w, errMsg, resp.StatusCode)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleRespondQuestion(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		SessionID string     `json:"sessionId"`
+		Directory string     `json:"directory"`
+		RequestID string     `json:"requestId"`
+		Answers   [][]string `json:"answers"`
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBody))
+	if err != nil {
+		http.Error(w, "failed to read body", http.StatusBadRequest)
+		return
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if req.SessionID == "" || req.RequestID == "" {
+		http.Error(w, "sessionId and requestId are required", http.StatusBadRequest)
+		return
+	}
+
+	port := discoverOpenCodePort(req.Directory)
+	if port == "" {
+		log.WithFields(log.Fields{"sessionID": req.SessionID, "directory": req.Directory}).Warn("no running OpenCode instance found")
+		http.Error(w, "no running OpenCode instance found for this session's directory", http.StatusServiceUnavailable)
+		return
+	}
+
+	apiURL := fmt.Sprintf("http://127.0.0.1:%s/question/%s/reply", port, req.RequestID)
+	payload, _ := json.Marshal(map[string]interface{}{
+		"answers": req.Answers,
+	})
+
+	resp, err := openCodeClient.Post(apiURL, "application/json", limitedReader(payload))
+	if err != nil {
+		log.WithFields(log.Fields{"sessionID": req.SessionID, "requestID": req.RequestID, "error": err}).Error("OpenCode question reply API error")
+		http.Error(w, "failed to reach OpenCode instance", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		log.WithFields(log.Fields{"statusCode": resp.StatusCode, "sessionID": req.SessionID, "requestID": req.RequestID, "body": string(respBody)}).Error("OpenCode question reply API error")
+		errMsg := string(respBody)
+		if errMsg == "" {
+			errMsg = fmt.Sprintf("OpenCode question API error (HTTP %d)", resp.StatusCode)
+		}
+		http.Error(w, errMsg, resp.StatusCode)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleRejectQuestion(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		SessionID string `json:"sessionId"`
+		Directory string `json:"directory"`
+		RequestID string `json:"requestId"`
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBody))
+	if err != nil {
+		http.Error(w, "failed to read body", http.StatusBadRequest)
+		return
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if req.SessionID == "" || req.RequestID == "" {
+		http.Error(w, "sessionId and requestId are required", http.StatusBadRequest)
+		return
+	}
+
+	port := discoverOpenCodePort(req.Directory)
+	if port == "" {
+		log.WithFields(log.Fields{"sessionID": req.SessionID, "directory": req.Directory}).Warn("no running OpenCode instance found")
+		http.Error(w, "no running OpenCode instance found for this session's directory", http.StatusServiceUnavailable)
+		return
+	}
+
+	apiURL := fmt.Sprintf("http://127.0.0.1:%s/question/%s/reject", port, req.RequestID)
+
+	resp, err := openCodeClient.Post(apiURL, "application/json", limitedReader([]byte("{}")))
+	if err != nil {
+		log.WithFields(log.Fields{"sessionID": req.SessionID, "requestID": req.RequestID, "error": err}).Error("OpenCode question reject API error")
+		http.Error(w, "failed to reach OpenCode instance", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		log.WithFields(log.Fields{"statusCode": resp.StatusCode, "sessionID": req.SessionID, "requestID": req.RequestID, "body": string(respBody)}).Error("OpenCode question reject API error")
+		errMsg := string(respBody)
+		if errMsg == "" {
+			errMsg = fmt.Sprintf("OpenCode question API error (HTTP %d)", resp.StatusCode)
+		}
+		http.Error(w, errMsg, resp.StatusCode)
+		return
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 

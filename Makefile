@@ -5,6 +5,7 @@ dev:
 	@echo "Starting ocman dev environment..."
 	@echo "  Backend (air):    http://localhost:8080"
 	@echo "  Frontend (vite):  http://localhost:8228"
+	@echo "  Backend log:      tmp/air.log"
 	@echo ""
 	@trap 'kill 0' EXIT; \
 		$(MAKE) dev-backend & \
@@ -12,7 +13,8 @@ dev:
 		wait
 
 dev-backend:
-	air
+	@mkdir -p tmp
+	@air 2>&1 | tee tmp/air.log
 
 dev-frontend:
 	cd frontend && npm run dev

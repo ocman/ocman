@@ -19,8 +19,16 @@ type Session struct {
 	TotalInputTokens  int64   `json:"totalInputTokens"`
 	TotalOutputTokens int64   `json:"totalOutputTokens"`
 	TotalCost         float64 `json:"totalCost"`
-	Status            string  `json:"status"`  // "waiting", "busy", or "done"
+	Status            string  `json:"status"`  // "waiting", "busy", "done", or "error"
 	HasPort           bool    `json:"hasPort"` // true if a running OpenCode instance with --port is detected
+	Archived          bool    `json:"archived"`
+	Seen              bool    `json:"seen"`
+}
+
+// SessionArchiveCandidate carries the minimal session data needed for archive jobs.
+type SessionArchiveCandidate struct {
+	ID          string
+	TimeUpdated int64
 }
 
 // Message represents an OpenCode message.
@@ -122,6 +130,12 @@ type ModelUsage struct {
 	Count     int    `json:"count"`
 	TokensIn  int64  `json:"tokensIn"`
 	TokensOut int64  `json:"tokensOut"`
+}
+
+// SessionDefaults holds the fallback composer settings for a session.
+type SessionDefaults struct {
+	Agent string `json:"agent"`
+	Model string `json:"model"`
 }
 
 // HourlyActivity holds activity counts per hour of day.

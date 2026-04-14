@@ -15,11 +15,45 @@ export function ProjectDetail() {
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    if (directory) setSessions(await api.sessions({ dir: directory }));
+    if (!directory) {
+      setSessions([]);
+      setLoading(false);
+      return;
+    }
+
+    const nextSessions = await api.sessions({ dir: directory });
+    setSessions(nextSessions);
     setLoading(false);
   }, [directory]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProject() {
+      if (!directory) {
+        if (!cancelled) {
+          setSessions([]);
+          setLoading(false);
+        }
+        return;
+      }
+
+      try {
+        const nextSessions = await api.sessions({ dir: directory });
+        if (cancelled) return;
+        setSessions(nextSessions);
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadProject();
+    return () => {
+      cancelled = true;
+    };
+  }, [directory]);
 
   // Auto-refresh every 5 seconds
   useEffect(() => {
@@ -35,7 +69,7 @@ export function ProjectDetail() {
           <a href={`vscode://file${directory}`} className="vscode-btn" title="Open in VS Code">VS Code</a>
         )}
       </h2>
-      <SessionTable sessions={sessions} loading={loading} tmux={tmux} />
+      <SessionTable sessions={sessions} loading={loading} tmux={tmux} includeArchived />
     </div>
   );
 }

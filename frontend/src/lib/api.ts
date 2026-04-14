@@ -20,8 +20,10 @@ export interface Session {
   totalInputTokens: number;
   totalOutputTokens: number;
   totalCost: number;
-  status: 'waiting' | 'busy' | 'done';
+  status: 'waiting' | 'busy' | 'done' | 'error';
   hasPort: boolean;
+  archived: boolean;
+  seen: boolean;
 }
 
 export interface Message {
@@ -32,8 +34,18 @@ export interface Message {
     role: string;
     finish?: string;
     modelID?: string;
+    providerID?: string;
+    agent?: string;
+    mode?: string;
     cost?: number;
     tokens?: { input: number; output: number };
+    error?: {
+      name?: string;
+      data?: {
+        message?: string;
+        statusCode?: number;
+      };
+    };
   };
 }
 
@@ -74,10 +86,13 @@ export interface PartData {
 }
 
 export interface SessionDetail {
-  session: Session;
+  session: Session & { contextTokenCount?: number };
   messages: Message[];
   parts: Part[];
   totalMessages?: number;
+  contextTokenCount?: number;
+  defaultAgent?: string;
+  defaultModel?: string;
 }
 
 export interface Stats {
@@ -105,6 +120,7 @@ export interface ActivityDay {
 }
 
 export interface ModelUsage {
+  provider: string;
   model: string;
   count: number;
   tokensIn: number;
@@ -145,6 +161,24 @@ export const api = {
     return fetchJSON<Session[]>(`/api/sessions${qs ? '?' + qs : ''}`);
   },
   session: (id: string, limit = 50, offset = 0) => fetchJSON<SessionDetail>(`/api/session/${id}?limit=${limit}&offset=${offset}`),
+  archiveSession: async (sessionId: string, timeUpdated: number, archived = true) => {
+    const resp = await fetch('/api/session/archive', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, timeUpdated, archived }),
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    return resp.json() as Promise<{ ok: boolean }>;
+  },
+  markSessionSeen: async (sessionId: string, timeUpdated: number) => {
+    const resp = await fetch('/api/session/seen', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, timeUpdated }),
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    return resp.json() as Promise<{ ok: boolean }>;
+  },
   activity: () => fetchJSON<ActivityDay[]>('/api/activity'),
   models: () => fetchJSON<ModelUsage[]>('/api/models'),
   hourly: () => fetchJSON<HourlyData[]>('/api/hourly'),
@@ -158,11 +192,56 @@ export const api = {
     if (!resp.ok) throw new Error(await resp.text());
     return resp.json() as Promise<{ id: string }>;
   },
-  sendMessage: async (sessionId: string, directory: string, message: string) => {
+  sendMessage: async (
+    sessionId: string,
+    directory: string,
+    message: string,
+    images?: { url: string; mime: string }[],
+    model?: string,
+    agent?: string,
+  ) => {
     const resp = await fetch('/api/send-message', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, directory, message }),
+      body: JSON.stringify({ sessionId, directory, message, images, model, agent }),
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+  },
+  respondPermission: async (
+    sessionId: string,
+    directory: string,
+    permissionId: string,
+    reply: 'once' | 'always' | 'reject',
+  ) => {
+    const resp = await fetch('/api/respond-permission', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, directory, permissionId, reply }),
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+  },
+  respondQuestion: async (
+    sessionId: string,
+    directory: string,
+    requestId: string,
+    answers: string[][],
+  ) => {
+    const resp = await fetch('/api/respond-question', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, directory, requestId, answers }),
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+  },
+  rejectQuestion: async (
+    sessionId: string,
+    directory: string,
+    requestId: string,
+  ) => {
+    const resp = await fetch('/api/reject-question', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, directory, requestId }),
     });
     if (!resp.ok) throw new Error(await resp.text());
   },

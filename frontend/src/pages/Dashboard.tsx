@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend } from 'chart.js';
 import { Bar, Doughnut } from 'react-chartjs-2';
@@ -28,22 +28,54 @@ export function Dashboard() {
   const [activity, setActivity] = useState<ActivityDay[]>([]);
   const [models, setModels] = useState<ModelUsage[]>([]);
   const [hourly, setHourly] = useState<HourlyData[]>([]);
-  const [chartsLoaded, setChartsLoaded] = useState(false);
   const [loadingSessions, setLoadingSessions] = useState(true);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [loadingStats, setLoadingStats] = useState(true);
   const [loadingCharts, setLoadingCharts] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [timeRange, setTimeRange] = useState(24); // hours (0 = all)
+  const [showArchived, setShowArchived] = useState(false);
+  const chartsRequestedRef = useRef(false);
 
   const loadSessions = useCallback(async () => {
-    const since = Date.now() - 12 * 60 * 60 * 1000;
-    setSessions(await api.sessions({ since }));
+    try {
+      const since = timeRange > 0 ? Date.now() - timeRange * 60 * 60 * 1000 : undefined;
+      setSessions(await api.sessions(since ? { since } : {}));
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load sessions');
+    }
     setLoadingSessions(false);
-  }, []);
+  }, [timeRange]);
 
   useEffect(() => {
-    api.stats().then(s => { setStats(s); setLoadingStats(false); });
-    loadSessions();
-    api.projects().then(p => { setProjects(p); setLoadingProjects(false); });
+    let cancelled = false;
+
+    async function loadInitialData() {
+      try {
+        const [nextStats, nextProjects] = await Promise.all([
+          api.stats(),
+          api.projects(),
+          loadSessions(),
+        ]);
+        if (cancelled) return;
+        setStats(nextStats);
+        setProjects(nextProjects);
+      } catch (e) {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : 'Failed to load dashboard');
+      } finally {
+        if (!cancelled) {
+          setLoadingStats(false);
+          setLoadingProjects(false);
+        }
+      }
+    }
+
+    void loadInitialData();
+    return () => {
+      cancelled = true;
+    };
   }, [loadSessions]);
 
   // Auto-refresh sessions every 5 seconds
@@ -54,16 +86,35 @@ export function Dashboard() {
 
   // Load charts on first stats tab visit
   useEffect(() => {
-    if (tab === 'stats' && !chartsLoaded) {
-      setChartsLoaded(true);
+    if (tab !== 'stats' || chartsRequestedRef.current) return;
+
+    let cancelled = false;
+    chartsRequestedRef.current = true;
+
+    async function loadCharts() {
       setLoadingCharts(true);
-      Promise.all([
-        api.activity().then(setActivity),
-        api.models().then(setModels),
-        api.hourly().then(setHourly),
-      ]).finally(() => setLoadingCharts(false));
+      try {
+        const [nextActivity, nextModels, nextHourly] = await Promise.all([
+          api.activity(),
+          api.models(),
+          api.hourly(),
+        ]);
+        if (cancelled) return;
+        setActivity(nextActivity);
+        setModels(nextModels);
+        setHourly(nextHourly);
+      } finally {
+        if (!cancelled) {
+          setLoadingCharts(false);
+        }
+      }
     }
-  }, [tab, chartsLoaded]);
+
+    void loadCharts();
+    return () => {
+      cancelled = true;
+    };
+  }, [tab]);
 
   const colors = ['#89b4fa', '#a6e3a1', '#cba6f7', '#fab387', '#f38ba8', '#74c7ec', '#94e2d5', '#f9e2af'];
   const sortedModels = [...models].sort((a, b) => b.count - a.count).slice(0, 8);
@@ -76,7 +127,30 @@ export function Dashboard() {
         <button className={`nav-tab ${tab === 'stats' ? 'active' : ''}`} onClick={() => setTab('stats')}>Stats</button>
       </div>
 
-      {tab === 'sessions' && <SessionTable sessions={sessions} showProject loading={loadingSessions} tmux={tmux} />}
+      {error && (
+        <div className="oc-error-banner">
+          {error}
+          <button onClick={() => { setError(null); loadSessions(); }}>Retry</button>
+        </div>
+      )}
+      {tab === 'sessions' && (
+        <>
+          <div className="oc-time-range">
+            {[{label: '12h', value: 12}, {label: '24h', value: 24}, {label: '7d', value: 168}, {label: '30d', value: 720}, {label: 'All', value: 0}].map(opt => (
+              <button
+                key={opt.value}
+                className={`oc-time-range-btn${timeRange === opt.value ? ' active' : ''}`}
+                onClick={() => { setTimeRange(opt.value); setLoadingSessions(true); }}
+              >{opt.label}</button>
+            ))}
+            <button
+              className={`oc-time-range-btn${showArchived ? ' active' : ''}`}
+              onClick={() => setShowArchived(current => !current)}
+            >Include archived</button>
+          </div>
+          <SessionTable sessions={sessions} showProject loading={loadingSessions} tmux={tmux} includeArchived={showArchived} />
+        </>
+      )}
 
       {tab === 'projects' && (
         loadingProjects ? (

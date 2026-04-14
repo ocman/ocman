@@ -263,6 +263,7 @@ type messageStats struct {
 	totalOutputTokens float64
 	totalCost         float64
 	durationMs        int64
+	contextTokenCount float64 // context usage for composer display
 }
 
 func computeMessageStats(messages []map[string]interface{}) messageStats {
@@ -284,11 +285,32 @@ func computeMessageStats(messages []map[string]interface{}) messageStats {
 			}
 		}
 		if tokens, ok := info["tokens"].(map[string]interface{}); ok {
+			inputTokens := float64(0)
+			outputTokens := float64(0)
+			reasoningTokens := float64(0)
+			cacheReadTokens := float64(0)
+			cacheWriteTokens := float64(0)
 			if v, ok := tokens["input"].(float64); ok {
 				stats.totalInputTokens += v
+				inputTokens = v
 			}
 			if v, ok := tokens["output"].(float64); ok {
 				stats.totalOutputTokens += v
+				outputTokens = v
+			}
+			if v, ok := tokens["reasoning"].(float64); ok {
+				reasoningTokens = v
+			}
+			if cache, ok := tokens["cache"].(map[string]interface{}); ok {
+				if v, ok := cache["read"].(float64); ok {
+					cacheReadTokens = v
+				}
+				if v, ok := cache["write"].(float64); ok {
+					cacheWriteTokens = v
+				}
+			}
+			if role, _ := info["role"].(string); role == "assistant" && outputTokens > 0 {
+				stats.contextTokenCount = inputTokens + outputTokens + reasoningTokens + cacheReadTokens + cacheWriteTokens
 			}
 		}
 		if c, ok := info["cost"].(float64); ok {
@@ -393,8 +415,13 @@ func (s *Server) fetchSessionFromOpenCode(sessionID string, limit, offset int) (
 	// Build session object in our format
 	timeMap, _ := ocSession["time"].(map[string]interface{})
 	summaryMap, _ := ocSession["summary"].(map[string]interface{})
+	defaults, err := s.db.GetSessionDefaults(sessionID, session.Directory)
+	if err != nil {
+		log.WithFields(log.Fields{"sessionID": sessionID, "error": err}).Warn("fetching session defaults")
+	}
 
 	// Determine status from the last message.
+	// "error"   = last assistant message has an error object, or finish == "error"
 	// "waiting" = last assistant message has a finish reason (turn complete, needs user input)
 	// "busy"    = last message is assistant with no finish reason (still streaming)
 	// "done"    = no messages or last message is from the user
@@ -404,8 +431,11 @@ func (s *Server) fetchSessionFromOpenCode(sessionID string, limit, offset int) (
 		if info, ok := lastMsg["data"].(map[string]interface{}); ok {
 			role, _ := info["role"].(string)
 			finish, _ := info["finish"].(string)
+			_, hasError := info["error"]
 			if role == "assistant" {
-				if finish != "" {
+				if finish == "error" || hasError {
+					sessionStatus = "error"
+				} else if finish != "" {
 					sessionStatus = "waiting"
 				} else {
 					sessionStatus = "busy"
@@ -440,12 +470,15 @@ func (s *Server) fetchSessionFromOpenCode(sessionID string, limit, offset int) (
 			"totalInputTokens":  int64(stats.totalInputTokens),
 			"totalOutputTokens": int64(stats.totalOutputTokens),
 			"totalCost":         stats.totalCost,
+			"contextTokenCount": int64(stats.contextTokenCount),
 			"hasPort":           true,
 			"status":            sessionStatus,
 		},
 		"messages":      pagedMessages,
 		"parts":         pagedParts,
 		"totalMessages": totalMessages,
+		"defaultAgent":  defaults.Agent,
+		"defaultModel":  defaults.Model,
 	}
 
 	return result, true

@@ -1,20 +1,255 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { Session, SessionDetail as SessionDetailData, Message, Part } from '../lib/api';
 import { formatDuration, formatNumber, shortPath, relativeTime } from '../lib/format';
 import { useHeaderInfo, usePageTitle } from '../lib/headerContext';
 import { OcmanRuntimeProvider } from '../components/OcmanRuntimeProvider';
-import { AssistantThread, Composer } from '../components/AssistantThread';
+import { AssistantThread, Composer, type AttachedImage } from '../components/AssistantThread';
 import { StatusBadge } from '../components/StatusBadge';
 import { useTmux } from '../lib/useTmux';
+import { filterVisibleSessions } from '../lib/sessionVisibility';
 
 const PAGE_SIZE = 50;
+const RECENT_SESSIONS_LIMIT = 20;
+const ARCHIVE_ANIMATION_MS = 220;
+const RECENT_SESSIONS_DEBOUNCE_MS = 180;
+
+interface PendingPermission {
+  permissionId: string;
+  permission: string;
+  patterns: string[];
+}
+
+interface SseDebugEvent {
+  at: number;
+  event: string;
+  data: string;
+}
+
+function formatModelRef(providerId?: string, modelId?: string): string {
+  if (!modelId) return '';
+  return providerId ? `${providerId}/${modelId}` : modelId;
+}
+
+function extractPendingPermission(node: unknown): PendingPermission | null {
+  if (!node || typeof node !== 'object' || Array.isArray(node)) return null;
+  const obj = node as Record<string, unknown>;
+
+  if (obj.type !== 'permission.asked') return null;
+
+  const properties = (obj.properties && typeof obj.properties === 'object')
+    ? obj.properties as Record<string, unknown>
+    : {};
+
+  const id =
+    (typeof properties.id === 'string' && properties.id) ||
+    (typeof properties.requestID === 'string' && properties.requestID) ||
+    '';
+  if (!id) return null;
+
+  const permission =
+    (typeof properties.permission === 'string' && properties.permission) || 'Permission required';
+
+  const rawPatterns = properties.patterns;
+  const patterns = Array.isArray(rawPatterns)
+    ? rawPatterns.filter((p): p is string => typeof p === 'string')
+    : [];
+
+  return { permissionId: id, permission, patterns };
+}
+
+interface QuestionOption {
+  label: string;
+  description: string;
+}
+
+interface QuestionItem {
+  question: string;
+  header: string;
+  options: QuestionOption[];
+  multiple?: boolean;
+  custom?: boolean;
+}
+
+interface PendingQuestion {
+  requestId: string;
+  sessionID: string;
+  questions: QuestionItem[];
+}
+
+function extractPendingQuestion(node: unknown): PendingQuestion | null {
+  if (!node || typeof node !== 'object' || Array.isArray(node)) return null;
+  const obj = node as Record<string, unknown>;
+
+  if (obj.type !== 'question.asked') return null;
+
+  const properties = (obj.properties && typeof obj.properties === 'object')
+    ? obj.properties as Record<string, unknown>
+    : {};
+
+  const id =
+    (typeof properties.id === 'string' && properties.id) ||
+    (typeof properties.requestID === 'string' && properties.requestID) ||
+    '';
+  if (!id) return null;
+
+  const sessionID = typeof properties.sessionID === 'string' ? properties.sessionID : '';
+
+  const rawQuestions = properties.questions;
+  if (!Array.isArray(rawQuestions) || rawQuestions.length === 0) return null;
+
+  const questions = rawQuestions.filter(
+    (q): q is QuestionItem =>
+      !!q && typeof q === 'object' && typeof (q as QuestionItem).question === 'string',
+  );
+  if (questions.length === 0) return null;
+
+  return { requestId: id, sessionID, questions };
+}
+
+function truncateSseData(raw: string, max = 240): string {
+  if (raw.length <= max) return raw;
+  return raw.slice(0, max) + '...';
+}
+
+function ArchiveIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M2 3.5h12v2H2zm1 3h10v6H3zm3 2.5h4" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function ArchiveFilterIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M2.5 3h11l-4.25 4.9v3.35l-2.5 1.25V7.9z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function QuestionPrompt({
+  question,
+  onReply,
+  onReject,
+  disabled,
+}: {
+  question: PendingQuestion;
+  onReply: (answers: string[][]) => void;
+  onReject: () => void;
+  disabled?: boolean;
+}) {
+  const [selectedIndices, setSelectedIndices] = useState<Record<number, number | null>>({});
+  const [customTexts, setCustomTexts] = useState<Record<number, string>>({});
+
+  const handleOptionClick = (qi: number, oi: number) => {
+    if (disabled) return;
+    setSelectedIndices(prev => ({ ...prev, [qi]: oi }));
+    setCustomTexts(prev => ({ ...prev, [qi]: '' }));
+  };
+
+  const handleCustomFocus = (qi: number) => {
+    setSelectedIndices(prev => ({ ...prev, [qi]: null }));
+  };
+
+  const handleSubmit = () => {
+    if (disabled) return;
+    const answers: string[][] = question.questions.map((q, qi) => {
+      const sel = selectedIndices[qi];
+      const custom = customTexts[qi]?.trim();
+      if (sel != null && sel >= 0 && sel < q.options.length) {
+        return [q.options[sel].label];
+      }
+      if (custom) return [custom];
+      return [];
+    });
+    if (answers.every(a => a.length > 0)) {
+      onReply(answers);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      onReject();
+    } else if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
+    }
+  };
+
+  const allAnswered = question.questions.every((_, qi) => {
+    const sel = selectedIndices[qi];
+    const custom = customTexts[qi]?.trim();
+    return (sel != null && sel >= 0) || !!custom;
+  });
+
+  return (
+    <div className="oc-question-wrap" onKeyDown={handleKeyDown}>
+      {question.questions.map((q, qi) => (
+        <div key={qi} className="oc-question-box">
+          <div className="oc-question-box-text">{q.question}</div>
+          <div className="oc-question-box-options">
+            {q.options.map((opt, oi) => (
+              <button
+                key={oi}
+                type="button"
+                className={`oc-question-opt-btn${selectedIndices[qi] === oi ? ' oc-question-opt-selected' : ''}`}
+                onClick={() => handleOptionClick(qi, oi)}
+                disabled={disabled}
+              >
+                <span className="oc-question-opt-num">{oi + 1}.</span>
+                <span className="oc-question-opt-content">
+                  <span className="oc-question-opt-label">{opt.label}</span>
+                  {opt.description && (
+                    <span className="oc-question-opt-desc">{opt.description}</span>
+                  )}
+                </span>
+              </button>
+            ))}
+            <div className={`oc-question-opt-custom${selectedIndices[qi] === null && customTexts[qi]?.trim() ? ' oc-question-opt-custom-active' : ''}`}>
+              <span className="oc-question-opt-num">{q.options.length + 1}.</span>
+              <input
+                type="text"
+                className="oc-question-inline-input"
+                placeholder="Type your own answer"
+                value={customTexts[qi] || ''}
+                onChange={(e) => setCustomTexts(prev => ({ ...prev, [qi]: e.target.value }))}
+                onFocus={() => handleCustomFocus(qi)}
+                disabled={disabled}
+              />
+            </div>
+          </div>
+          <div className="oc-question-box-actions">
+            <button
+              type="button"
+              className="oc-question-submit-btn"
+              onClick={handleSubmit}
+              disabled={disabled || !allAnswered}
+            >Submit</button>
+            <button
+              type="button"
+              className="oc-question-dismiss-btn"
+              onClick={onReject}
+              disabled={disabled}
+            >Dismiss</button>
+            <span className="oc-question-keys">
+              <kbd>enter</kbd> submit &middot; <kbd>esc</kbd> dismiss
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export function SessionDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [session, setSession] = useState<SessionDetailData['session'] | null>(null);
+  const [searchParams] = useSearchParams();
+  const debugMode = searchParams.has('debug');
+  const [session, setSession] = useState<(SessionDetailData['session'] & { defaultAgent?: string; defaultModel?: string }) | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [parts, setParts] = useState<Part[]>([]);
   const [totalMessages, setTotalMessages] = useState(0);
@@ -22,19 +257,39 @@ export function SessionDetail() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [portAvailable, setPortAvailable] = useState(false);
   const [whisperAvailable, setWhisperAvailable] = useState(false);
-  const [siblings, setSiblings] = useState<Session[]>([]);
-  const [loadingSiblings, setLoadingSiblings] = useState(true);
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [selectedModel, setSelectedModel] = useState('');
+  const [selectedAgent, setSelectedAgent] = useState('');
+  const [recentSessions, setRecentSessions] = useState<Session[]>([]);
+  const [loadingRecentSessions, setLoadingRecentSessions] = useState(true);
+  const [refreshingRecentSessionsFilter, setRefreshingRecentSessionsFilter] = useState(false);
+  const [archivingSessionIds, setArchivingSessionIds] = useState<Set<string>>(new Set());
+  const [showArchivedRecent, setShowArchivedRecent] = useState(false);
   const { setInfo } = useHeaderInfo();
   usePageTitle(session?.title || 'Session');
   const lastHashRef = useRef('');
   const lastSiblingsHashRef = useRef('');
-  const directoryRef = useRef('');
+  const archiveTimeoutsRef = useRef<Record<string, number>>({});
+  const recentSessionsLoadTimeoutRef = useRef<number | null>(null);
+  const showArchivedRecentRef = useRef(showArchivedRecent);
+  const recentSessionsFilterSessionRef = useRef<string | null>(null);
 
   // Tmux state
   const tmux = useTmux();
   const [pendingTmuxSession, setPendingTmuxSession] = useState<string | null>(null);
   const [pickerPos, setPickerPos] = useState<{ top: number; left: number } | null>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [answeringPermission, setAnsweringPermission] = useState(false);
+  const [pendingPermission, setPendingPermission] = useState<PendingPermission | null>(null);
+  const [permissionError, setPermissionError] = useState<string | null>(null);
+  const [pendingQuestion, setPendingQuestion] = useState<PendingQuestion | null>(null);
+  const [answeringQuestion, setAnsweringQuestion] = useState(false);
+  const [sseDebugEvents, setSseDebugEvents] = useState<SseDebugEvent[]>([]);
+
+  useEffect(() => {
+    showArchivedRecentRef.current = showArchivedRecent;
+  }, [showArchivedRecent]);
 
   // Load the latest page (newest messages). Merges with older loaded messages.
   const load = useCallback(async () => {
@@ -43,7 +298,12 @@ export function SessionDetail() {
       const result = await api.session(id, PAGE_SIZE, 0);
 
       // Always update session metadata
-      setSession(result.session);
+      setSession({
+        ...result.session,
+        contextTokenCount: result.session.contextTokenCount ?? result.contextTokenCount,
+        defaultAgent: result.defaultAgent,
+        defaultModel: result.defaultModel,
+      });
       setTotalMessages(result.totalMessages || result.session.messageCount || 0);
 
       // Only update messages if the latest page actually changed
@@ -56,20 +316,22 @@ export function SessionDetail() {
       if (hash !== lastHashRef.current) {
         lastHashRef.current = hash;
         // Merge: keep older loaded messages, replace the newest page.
-        // Also remove optimistic (temp-*) messages once real data arrives.
+        // Also remove optimistic (temp-*) and error (error-*) messages once real data arrives.
         setMessages(prev => {
           const newIds = new Set(newMsgs.map(m => m.id));
-          const older = prev.filter(m => !newIds.has(m.id) && !m.id.startsWith('temp-'));
+          const older = prev.filter(m => !newIds.has(m.id) && !m.id.startsWith('temp-') && !m.id.startsWith('error-'));
           return [...older, ...newMsgs];
         });
         setParts(prev => {
           const newIds = new Set(newParts.map(p => p.id));
-          const older = prev.filter(p => !newIds.has(p.id) && !p.id.startsWith('part-temp-'));
+          const older = prev.filter(p => !newIds.has(p.id) && !p.id.startsWith('part-temp-') && !p.id.startsWith('part-error-'));
           return [...older, ...newParts];
         });
       }
+      setLoadError(null);
     } catch (e) {
       console.error('Failed to load session', e);
+      setLoadError(e instanceof Error ? e.message : 'Failed to load session');
     }
     setLoading(false);
   }, [id]);
@@ -126,13 +388,45 @@ export function SessionDetail() {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setPickerPos({ top: rect.bottom + 4, left: rect.right });
     setPendingTmuxSession(tmuxSessionName);
-  }, [tmux.isLocal, tmux.clients, tmux.switchSession]);
+  }, [tmux]);
 
   const handleClientSelect = useCallback((clientTTY: string) => {
     if (!pendingTmuxSession) return;
     tmux.switchSession(pendingTmuxSession, clientTTY).catch(err => console.error('tmux switch failed', err));
     setPendingTmuxSession(null);
-  }, [pendingTmuxSession, tmux.switchSession]);
+  }, [pendingTmuxSession, tmux]);
+
+  const handleArchiveSession = useCallback((e: React.MouseEvent, target: Session) => {
+    e.stopPropagation();
+    if (archivingSessionIds.has(target.id)) return;
+    setArchivingSessionIds(prev => new Set(prev).add(target.id));
+    archiveTimeoutsRef.current[target.id] = window.setTimeout(() => {
+      api.archiveSession(target.id, target.timeUpdated, true)
+        .then(() => {
+          setRecentSessions(prev => showArchivedRecent
+            ? prev.map(session => (session.id === target.id ? { ...session, archived: true } : session))
+            : prev.filter(session => session.id !== target.id));
+        })
+        .catch(err => {
+          console.error('Failed to archive session', err);
+        })
+        .finally(() => {
+          setArchivingSessionIds(prev => {
+            const next = new Set(prev);
+            next.delete(target.id);
+            return next;
+          });
+          delete archiveTimeoutsRef.current[target.id];
+        });
+    }, ARCHIVE_ANIMATION_MS);
+  }, [archivingSessionIds, showArchivedRecent]);
+
+  useEffect(() => () => {
+    Object.values(archiveTimeoutsRef.current).forEach(timeoutId => window.clearTimeout(timeoutId));
+    if (recentSessionsLoadTimeoutRef.current) {
+      window.clearTimeout(recentSessionsLoadTimeoutRef.current);
+    }
+  }, []);
 
   // Reset on session change
   useEffect(() => {
@@ -143,60 +437,192 @@ export function SessionDetail() {
     setTotalMessages(0);
     setLoading(true);
     setPortAvailable(false);
+    setSelectedModel('');
+    setSelectedAgent('');
+    setPendingPermission(null);
+    setPermissionError(null);
+    setPendingQuestion(null);
+    setSseDebugEvents([]);
     load();
     if (id) {
       api.sessionPort(id).then(p => setPortAvailable(p.available)).catch(() => setPortAvailable(false));
     }
     api.whisperStatus().then(s => setWhisperAvailable(s.available)).catch(() => setWhisperAvailable(false));
+    api.models()
+      .then((models) => {
+        const ordered = [...models]
+          .sort((a, b) => b.count - a.count)
+          .map((m) => formatModelRef(m.provider, m.model));
+        setModelOptions(Array.from(new Set(ordered)));
+      })
+      .catch(() => setModelOptions([]));
   }, [id, load]);
 
-  const loadSiblings = useCallback(async (dir: string) => {
-    const result = await api.sessions({ dir });
-    const hash = result.map(s => s.id + s.status + s.timeUpdated).join(',');
-    if (hash !== lastSiblingsHashRef.current) {
-      lastSiblingsHashRef.current = hash;
-      setSiblings(result);
+  const loadRecentSessions = useCallback(async (options?: { fullScreen?: boolean; filterRefresh?: boolean }) => {
+    try {
+      const result = await api.sessions();
+      const visible = (showArchivedRecentRef.current ? result : filterVisibleSessions(result)).slice(0, RECENT_SESSIONS_LIMIT);
+      const current = result.find(s => s.id === id);
+      const nextRecentSessions = current && !visible.some(s => s.id === current.id)
+        ? [current, ...visible].slice(0, RECENT_SESSIONS_LIMIT)
+        : visible;
+      const hash = nextRecentSessions.map(s => s.id + s.status + s.timeUpdated).join(',');
+      if (hash !== lastSiblingsHashRef.current) {
+        lastSiblingsHashRef.current = hash;
+        setRecentSessions(nextRecentSessions);
+      }
+    } finally {
+      if (options?.fullScreen) {
+        setLoadingRecentSessions(false);
+      }
+      if (options?.filterRefresh) {
+        setRefreshingRecentSessionsFilter(false);
+      }
     }
-    setLoadingSiblings(false);
-  }, []);
+  }, [id]);
 
   useEffect(() => {
     if (!session) return;
-    directoryRef.current = session.directory;
-    loadSiblings(session.directory);
-  }, [session?.directory, loadSiblings]);
+    setLoadingRecentSessions(true);
+    void loadRecentSessions({ fullScreen: true });
+  }, [session, id, loadRecentSessions]);
 
-  // SSE
+  useEffect(() => {
+    if (!session?.id) return;
+    if (recentSessionsFilterSessionRef.current !== session.id) {
+      recentSessionsFilterSessionRef.current = session.id;
+      return;
+    }
+    setRefreshingRecentSessionsFilter(true);
+    if (recentSessionsLoadTimeoutRef.current) {
+      window.clearTimeout(recentSessionsLoadTimeoutRef.current);
+    }
+    recentSessionsLoadTimeoutRef.current = window.setTimeout(() => {
+      void loadRecentSessions({ filterRefresh: true });
+      recentSessionsLoadTimeoutRef.current = null;
+    }, RECENT_SESSIONS_DEBOUNCE_MS);
+
+    return () => {
+      if (recentSessionsLoadTimeoutRef.current) {
+        window.clearTimeout(recentSessionsLoadTimeoutRef.current);
+        recentSessionsLoadTimeoutRef.current = null;
+      }
+    };
+  }, [showArchivedRecent, loadRecentSessions, session]);
+
+  useEffect(() => {
+    const refreshId = window.setInterval(() => {
+      loadRecentSessions().catch(err => console.error('Failed to refresh recent sessions', err));
+    }, 10000);
+    return () => window.clearInterval(refreshId);
+  }, [loadRecentSessions]);
+
+  const sessionSeenId = session?.id;
+  const sessionSeenUpdated = session?.timeUpdated || 0;
+
+  useEffect(() => {
+    if (!sessionSeenId) return;
+    void api.markSessionSeen(sessionSeenId, sessionSeenUpdated)
+      .then(() => {
+        setSession(prev => prev && prev.id === sessionSeenId ? { ...prev, seen: true } : prev);
+        setRecentSessions(prev => prev.map(s => (s.id === sessionSeenId ? { ...s, seen: true } : s)));
+      })
+      .catch(err => console.error('Failed to mark session seen', err));
+  }, [sessionSeenId, sessionSeenUpdated]);
+
+  // SSE with reconnection
+  const [sseActive, setSseActive] = useState(false);
   useEffect(() => {
     if (!session?.directory) return;
     const dir = session.directory;
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    let sseConnected = false;
+    let evtSource: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
 
-    const evtSource = new EventSource(`/api/events/?dir=${encodeURIComponent(dir)}`);
-    evtSource.onopen = () => { sseConnected = true; };
-    evtSource.onmessage = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        load();
-        loadSiblings(dir);
-      }, 200);
-    };
-    evtSource.onerror = () => { sseConnected = false; };
+    const handleEventData = (raw: string, event = 'message') => {
+      if (!raw) return;
 
-    const fallback = setInterval(() => {
-      if (!sseConnected) {
-        load();
-        loadSiblings(dir);
+      setSseDebugEvents((prev) => {
+        const next = [...prev, { at: Date.now(), event, data: truncateSseData(raw) }];
+        return next.slice(-8);
+      });
+
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        const perm = extractPendingPermission(parsed);
+        if (perm) {
+          setPendingPermission(perm);
+          setPermissionError(null);
+        }
+        const question = extractPendingQuestion(parsed);
+        if (question) {
+          setPendingQuestion(question);
+        }
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          const obj = parsed as Record<string, unknown>;
+          // Clear pending permission on session status changes or new messages
+          if (obj.type === 'session.status' || obj.type === 'message.updated' || obj.type === 'permission.responded') {
+            setPendingPermission(null);
+          }
+          // Clear pending question when answered, rejected, or session moves on
+          if (obj.type === 'question.replied' || obj.type === 'question.rejected' || obj.type === 'session.status' || obj.type === 'message.updated') {
+            setPendingQuestion(null);
+          }
+        }
+      } catch {
+        // not JSON, ignore
       }
-    }, 10000);
+    };
+
+    const connect = () => {
+      if (cancelled) return;
+      evtSource = new EventSource(`/api/events/?dir=${encodeURIComponent(dir)}`);
+      evtSource.onopen = () => { setSseActive(true); };
+      evtSource.onmessage = (evt) => {
+        handleEventData(evt.data || '', 'message');
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          load();
+          loadRecentSessions();
+        }, 200);
+      };
+      // Some OpenCode SSE updates may use named events, not default "message".
+      ['question', 'permission', 'approval', 'tool', 'error'].forEach((eventName) => {
+        evtSource?.addEventListener(eventName, (evt) => {
+          handleEventData((evt as MessageEvent).data || '', eventName);
+        });
+      });
+      evtSource.onerror = () => {
+        setSseActive(false);
+        evtSource?.close();
+        evtSource = null;
+        // Retry after 5 seconds
+        if (!cancelled) {
+          reconnectTimer = setTimeout(connect, 5000);
+        }
+      };
+    };
+
+    connect();
+
+    // Fallback polling when SSE is not active
+    const fallback = setInterval(() => {
+      if (!evtSource || evtSource.readyState !== EventSource.OPEN) {
+        load();
+          loadRecentSessions();
+        }
+      }, 10000);
 
     return () => {
-      evtSource.close();
+      cancelled = true;
+      evtSource?.close();
       if (debounceTimer) clearTimeout(debounceTimer);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       clearInterval(fallback);
+      setSseActive(false);
     };
-  }, [session?.directory, load, loadSiblings]);
+  }, [session?.directory, load, loadRecentSessions]);
 
   // Header info
   useEffect(() => {
@@ -220,7 +646,13 @@ export function SessionDetail() {
     return () => setInfo({});
   }, [session, totalMessages, setInfo]);
 
-  const handleSend = useCallback(async (text: string) => {
+  const activeModel = ([...messages]
+    .reverse()
+    .map((m) => formatModelRef(m.data?.providerID, m.data?.modelID))
+    .find(Boolean) || session?.defaultModel || '');
+  const activeAgent = [...messages].reverse().find(m => !!m.data?.agent)?.data.agent || session?.defaultAgent || '';
+
+  const handleSend = useCallback(async (text: string, images?: AttachedImage[]) => {
     if (!session || !portAvailable) return;
 
     // Optimistically add user message immediately
@@ -231,25 +663,109 @@ export function SessionDetail() {
       timeCreated: Date.now(),
       data: { role: 'user' },
     };
-    const optimisticPart: Part = {
-      id: 'part-' + tempId,
-      messageId: tempId,
-      sessionId: session.id,
-      data: { type: 'text', text } as unknown as string,
-    };
+    const optimisticParts: Part[] = [];
+    if (text) {
+      optimisticParts.push({
+        id: 'part-' + tempId,
+        messageId: tempId,
+        sessionId: session.id,
+        data: { type: 'text', text } as unknown as string,
+      });
+    }
+    if (images) {
+      images.forEach((img, i) => {
+        optimisticParts.push({
+          id: `part-${tempId}-img-${i}`,
+          messageId: tempId,
+          sessionId: session.id,
+          data: { type: 'file', mime: img.mime, url: img.url } as unknown as string,
+        });
+      });
+    }
     setMessages(prev => [...prev, optimisticMsg]);
-    setParts(prev => [...prev, optimisticPart]);
+    setParts(prev => [...prev, ...optimisticParts]);
 
     try {
-      await api.sendMessage(session.id, session.directory, text);
+      await api.sendMessage(
+        session.id,
+        session.directory,
+        text,
+        images,
+        selectedModel || activeModel || undefined,
+        selectedAgent || activeAgent || undefined,
+      );
       // Reload immediately to get the real message + assistant response
       load();
     } catch (e) {
       console.error('Failed to send message', e);
-      // Remove optimistic message on failure
-      setMessages(prev => prev.filter(m => m.id !== tempId));
+      // Show the error as a system message in the conversation
+      const errId = 'error-' + Date.now();
+      const errMsg: Message = {
+        id: errId,
+        sessionId: session.id,
+        timeCreated: Date.now(),
+        data: { role: 'assistant', finish: 'error' },
+      };
+      const errPart: Part = {
+        id: 'part-' + errId,
+        messageId: errId,
+        sessionId: session.id,
+        data: {
+          type: 'text',
+          text: `**Failed to send message:** ${e instanceof Error ? e.message : 'Unknown error'}`,
+        } as unknown as string,
+      };
+      setMessages(prev => [...prev, errMsg]);
+      setParts(prev => [...prev, errPart]);
     }
-  }, [session?.id, session?.directory, portAvailable, load]);
+  }, [session, portAvailable, selectedModel, selectedAgent, activeModel, activeAgent, load]);
+
+  const handlePermissionReply = useCallback(async (reply: 'once' | 'always' | 'reject') => {
+    if (!pendingPermission || answeringPermission || !portAvailable || !session) return;
+    setPermissionError(null);
+    setAnsweringPermission(true);
+    try {
+      await api.respondPermission(session.id, session.directory, pendingPermission.permissionId, reply);
+      setPendingPermission(null);
+      // Reload immediately and again after a short delay to catch the updated session state
+      load();
+      setTimeout(() => load(), 1000);
+    } catch (e) {
+      setPermissionError(e instanceof Error ? e.message : 'Failed to respond to permission request');
+    } finally {
+      setAnsweringPermission(false);
+    }
+  }, [pendingPermission, answeringPermission, portAvailable, session, load]);
+
+  const handleQuestionReply = useCallback(async (answers: string[][]) => {
+    if (!pendingQuestion || answeringQuestion || !portAvailable || !session) return;
+    setAnsweringQuestion(true);
+    try {
+      await api.respondQuestion(session.id, session.directory, pendingQuestion.requestId, answers);
+      setPendingQuestion(null);
+      load();
+      setTimeout(() => load(), 1000);
+    } catch (e) {
+      console.error('Failed to respond to question', e);
+    } finally {
+      setAnsweringQuestion(false);
+    }
+  }, [pendingQuestion, answeringQuestion, portAvailable, session, load]);
+
+  const handleQuestionReject = useCallback(async () => {
+    if (!pendingQuestion || answeringQuestion || !portAvailable || !session) return;
+    setAnsweringQuestion(true);
+    try {
+      await api.rejectQuestion(session.id, session.directory, pendingQuestion.requestId);
+      setPendingQuestion(null);
+      load();
+      setTimeout(() => load(), 1000);
+    } catch (e) {
+      console.error('Failed to dismiss question', e);
+    } finally {
+      setAnsweringQuestion(false);
+    }
+  }, [pendingQuestion, answeringQuestion, portAvailable, session, load]);
 
   // Find the tmux session whose resolved path matches the current project directory.
   const matchingTmuxSession = session
@@ -258,51 +774,40 @@ export function SessionDetail() {
 
   const hasMore = messages.length < totalMessages;
   const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
+  const composerModels = Array.from(new Set([activeModel, session?.defaultModel, ...modelOptions].filter((model): model is string => !!model)));
+  const showSseNotice = portAvailable && !sseActive;
+  const showSseDebug = debugMode && sseDebugEvents.length > 0;
   // The assistant is still working if:
   // - the last message is from the user (assistant hasn't replied yet), or
-  // - the last message is from the assistant with no finish reason (still streaming).
+  // - the last message is from the assistant with no finish reason and no error (still streaming).
   // Once finish is set to any value ("stop", "tool-calls", etc.), that turn is done.
+  // A message with an error object is also not running.
   const isRunning = lastMsg
-    ? lastMsg.data?.role === 'user' || (lastMsg.data?.role === 'assistant' && !lastMsg.data?.finish)
+    ? lastMsg.data?.role === 'user' || (lastMsg.data?.role === 'assistant' && !lastMsg.data?.finish && !lastMsg.data?.error)
     : false;
 
   return (
     <div className="session-layout">
       <div className="session-sidebar">
         <div className="session-sidebar-header">
-          <span>{session ? shortPath(session.directory) : '...'}</span>
-          <div style={{ display: 'flex', gap: 4 }}>
-            {tmux.available && matchingTmuxSession && (
-              <button
-                className="session-sidebar-new"
-                onClick={(e) => handleTmuxSwitch(e, matchingTmuxSession.name)}
-                title={`Switch tmux to ${shortPath(matchingTmuxSession.name)}`}
-                style={{ fontSize: 11, fontFamily: "'SF Mono', Consolas, monospace" }}
-              >tmux</button>
+          <span className="session-sidebar-heading">
+            <span>Recent sessions</span>
+            {refreshingRecentSessionsFilter && (
+              <span className="session-sidebar-inline-loading" aria-hidden="true">
+                <span className="oc-spinner session-sidebar-inline-spinner" />
+              </span>
             )}
-            {session && (
-              <a
-                href={`vscode://file${session.directory}`}
-                className="session-sidebar-new"
-                title="Open in VS Code"
-                style={{ textDecoration: 'none', fontSize: 11 }}
-              >&lt;/&gt;</a>
-            )}
-            {session && (
-              <button
-                className="session-sidebar-new"
-                onClick={async () => {
-                  try {
-                    const res = await api.createSession(session.directory);
-                    if (res.id) navigate(`/session/${res.id}`);
-                  } catch (e) {
-                    console.error('Failed to create session', e);
-                  }
-                }}
-                title="New session"
-              >+</button>
-            )}
-          </div>
+          </span>
+          <button
+            type="button"
+            className={`session-sidebar-new${showArchivedRecent ? ' active' : ''}`}
+            onClick={() => {
+              setRefreshingRecentSessionsFilter(true);
+              setShowArchivedRecent(current => !current);
+            }}
+            title={showArchivedRecent ? 'Hide archived sessions' : 'Include archived sessions'}
+            aria-label={showArchivedRecent ? 'Hide archived sessions' : 'Include archived sessions'}
+          ><ArchiveFilterIcon /></button>
         </div>
         {pendingTmuxSession && pickerPos && (
           <div
@@ -327,29 +832,83 @@ export function SessionDetail() {
           </div>
         )}
         <div className="session-sidebar-list">
-          {loadingSiblings ? (
+          {loadingRecentSessions && recentSessions.length === 0 ? (
             <div className="oc-list-loading">
               <div className="oc-spinner" />
               Loading sessions...
             </div>
-          ) : siblings.map(sib => (
+          ) : recentSessions.map(sib => (
             <div
               key={sib.id}
-              className={`session-sidebar-item ${sib.id === id ? 'active' : ''}`}
+              role="button"
+              tabIndex={0}
+              aria-selected={sib.id === id}
+              className={`session-sidebar-item ${sib.id === id ? 'active' : ''}${archivingSessionIds.has(sib.id) ? ' archiving' : ''}`}
               onClick={() => navigate(`/session/${sib.id}`)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/session/${sib.id}`); } }}
             >
-              <StatusBadge status={sib.status} compact />
-              <span className="session-sidebar-title">{sib.title || 'Untitled'}</span>
-              <span className="session-sidebar-time">{relativeTime(sib.timeUpdated)}</span>
+              <StatusBadge status={sib.status} compact seen={sib.status === 'waiting' && sib.seen} />
+              <span className="session-sidebar-item-body">
+                <span className="session-sidebar-title">{sib.title || 'Untitled'}</span>
+                <span className="session-sidebar-project">{shortPath(sib.directory)}</span>
+              </span>
+              <span className="session-sidebar-meta">
+                <span className="session-sidebar-time">{relativeTime(sib.timeUpdated)}</span>
+                <button
+                  type="button"
+                  className="session-archive-btn session-sidebar-archive-btn"
+                  onClick={(e) => handleArchiveSession(e, sib)}
+                  title="Archive session"
+                  aria-label="Archive session"
+                  disabled={archivingSessionIds.has(sib.id)}
+                >
+                  <ArchiveIcon />
+                </button>
+              </span>
             </div>
           ))}
         </div>
       </div>
       <div className="session-main">
+        {session && (
+          <div className="session-detail-actions">
+            {tmux.available && matchingTmuxSession && (
+              <button
+                className="session-sidebar-new"
+                onClick={(e) => handleTmuxSwitch(e, matchingTmuxSession.name)}
+                title={`Switch tmux to ${shortPath(matchingTmuxSession.name)}`}
+                style={{ fontSize: 11, fontFamily: "'SF Mono', Consolas, monospace" }}
+              >tmux</button>
+            )}
+            <a
+              href={`vscode://file${session.directory}`}
+              className="session-sidebar-new"
+              title="Open in VS Code"
+              style={{ textDecoration: 'none', fontSize: 11 }}
+            >&lt;/&gt;</a>
+            <button
+              className="session-sidebar-new"
+              onClick={async () => {
+                try {
+                  const res = await api.createSession(session.directory);
+                  if (res.id) navigate(`/session/${res.id}`);
+                } catch (e) {
+                  console.error('Failed to create session', e);
+                }
+              }}
+              title="New session"
+            >+</button>
+          </div>
+        )}
         {loading ? (
           <div className="oc-loading">
             <div className="oc-spinner" />
             Loading conversation...
+          </div>
+        ) : loadError ? (
+          <div className="oc-error-banner" style={{ margin: 24 }}>
+            {loadError}
+            <button onClick={() => { setLoadError(null); load(); }}>Retry</button>
           </div>
         ) : session && (
           <OcmanRuntimeProvider
@@ -364,7 +923,93 @@ export function SessionDetail() {
               hasMore={hasMore}
               loadingMore={loadingMore}
               onLoadMore={loadMore}
-              composer={<Composer onSend={handleSend} isRunning={isRunning} disabled={!portAvailable} whisperAvailable={whisperAvailable} />}
+              composer={pendingPermission && portAvailable ? (
+                <div className="oc-permission-wrap">
+                  <div className="oc-permission-box">
+                    <div className="oc-permission-header">
+                      <span className="oc-permission-icon">&#9651;</span>
+                      <span>Permission required</span>
+                    </div>
+                    <div className="oc-permission-desc">
+                      &larr; {pendingPermission.permission}
+                    </div>
+                    {pendingPermission.patterns.length > 0 && (
+                      <div className="oc-permission-patterns">
+                        <div className="oc-permission-patterns-label">Patterns</div>
+                        {pendingPermission.patterns.map((p) => (
+                          <div key={p} className="oc-permission-pattern">- {p}</div>
+                        ))}
+                      </div>
+                    )}
+                    {permissionError && (
+                      <div className="oc-permission-error">{permissionError}</div>
+                    )}
+                    <div className="oc-permission-actions">
+                      <button
+                        type="button"
+                        className={`oc-permission-btn oc-permission-btn-active`}
+                        onClick={() => handlePermissionReply('once')}
+                        disabled={answeringPermission}
+                      >Allow once</button>
+                      <button
+                        type="button"
+                        className="oc-permission-btn"
+                        onClick={() => handlePermissionReply('always')}
+                        disabled={answeringPermission}
+                      >Allow always</button>
+                      <button
+                        type="button"
+                        className="oc-permission-btn"
+                        onClick={() => handlePermissionReply('reject')}
+                        disabled={answeringPermission}
+                      >Reject</button>
+                    </div>
+                  </div>
+                </div>
+              ) : pendingQuestion && portAvailable ? (
+                <QuestionPrompt
+                  question={pendingQuestion}
+                  onReply={handleQuestionReply}
+                  onReject={handleQuestionReject}
+                  disabled={answeringQuestion}
+                />
+              ) : (
+                <Composer
+                  onSend={handleSend}
+                  isRunning={isRunning}
+                  disabled={!portAvailable}
+                  whisperAvailable={whisperAvailable}
+                  models={composerModels}
+                  activeModel={activeModel}
+                  selectedModel={selectedModel}
+                  onModelChange={setSelectedModel}
+                  activeAgent={activeAgent}
+                  selectedAgent={selectedAgent}
+                  onAgentChange={setSelectedAgent}
+                  contextTokens={session?.contextTokenCount || undefined}
+                  sessionId={session?.id}
+                />
+              )}
+              footer={showSseNotice || showSseDebug ? (
+                <>
+                  {showSseNotice && (
+                    <div className="oc-sse-indicator">Live updates unavailable -- polling every 10s</div>
+                  )}
+                  {showSseDebug && (
+                    <details className="oc-sse-debug">
+                      <summary>SSE debug ({sseDebugEvents.length})</summary>
+                      <div className="oc-sse-debug-list">
+                        {[...sseDebugEvents].reverse().map((evt, idx) => (
+                          <div key={evt.at + ':' + idx} className="oc-sse-debug-item">
+                            <span className="oc-sse-debug-meta">{new Date(evt.at).toLocaleTimeString()} [{evt.event}]</span>
+                            <pre className="oc-sse-debug-data">{evt.data}</pre>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </>
+              ) : undefined}
             />
           </OcmanRuntimeProvider>
         )}

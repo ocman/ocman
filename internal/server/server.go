@@ -7,28 +7,38 @@ import (
 	"io/fs"
 	"net/http"
 	"strings"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 //go:embed static/*
 var staticFS embed.FS
 
+const (
+	autoArchiveAfter    = 7 * 24 * time.Hour
+	autoArchiveInterval = 24 * time.Hour
+)
+
 // Server serves the web UI and API.
 type Server struct {
-	db   *db.DB
-	addr string
+	db      *db.DB
+	stateDB *state.DB
+	addr    string
 }
 
 // New creates a new server.
-func New(database *db.DB, addr string) *Server {
-	return &Server{db: database, addr: addr}
+func New(database *db.DB, stateDB *state.DB, addr string) *Server {
+	return &Server{db: database, stateDB: stateDB, addr: addr}
 }
 
 // Start starts the HTTP server.
 func (s *Server) Start() error {
+	go s.runAutoArchiveLoop()
+
 	mux := http.NewServeMux()
 
 	// API routes — read-only endpoints enforce GET, mutating endpoints enforce POST
@@ -36,11 +46,16 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/projects", s.requireGET(s.handleProjects))
 	mux.HandleFunc("/api/sessions", s.requireGET(s.handleSessions))
 	mux.HandleFunc("/api/session/", s.requireGET(s.handleSession))
+	mux.HandleFunc("/api/session/archive", s.requirePOST(s.handleArchiveSession))
+	mux.HandleFunc("/api/session/seen", s.requirePOST(s.handleSeenSession))
 	mux.HandleFunc("/api/activity", s.requireGET(s.handleActivity))
 	mux.HandleFunc("/api/models", s.requireGET(s.handleModels))
 	mux.HandleFunc("/api/hourly", s.requireGET(s.handleHourly))
 	mux.HandleFunc("/api/session-port/", s.requireGET(s.handleSessionPort))
 	mux.HandleFunc("/api/send-message", s.requirePOST(s.handleSendMessage))
+	mux.HandleFunc("/api/respond-permission", s.requirePOST(s.handleRespondPermission))
+	mux.HandleFunc("/api/respond-question", s.requirePOST(s.handleRespondQuestion))
+	mux.HandleFunc("/api/reject-question", s.requirePOST(s.handleRejectQuestion))
 	mux.HandleFunc("/api/create-session", s.requirePOST(s.handleCreateSession))
 	mux.HandleFunc("/api/events/", s.handleEvents)
 	mux.HandleFunc("/api/whisper/status", s.requireGET(s.handleWhisperStatus))
@@ -76,6 +91,40 @@ func (s *Server) Start() error {
 
 	log.WithField("addr", s.addr).Info("ocman server started")
 	return http.ListenAndServe(s.addr, mux)
+}
+
+func (s *Server) runAutoArchiveLoop() {
+	s.autoArchiveInactiveSessions()
+
+	ticker := time.NewTicker(autoArchiveInterval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		s.autoArchiveInactiveSessions()
+	}
+}
+
+func (s *Server) autoArchiveInactiveSessions() {
+	cutoff := time.Now().Add(-autoArchiveAfter).UnixMilli()
+	sessions, err := s.db.GetSessionsInactiveBefore(cutoff)
+	if err != nil {
+		log.WithError(err).Error("listing inactive sessions for auto-archive")
+		return
+	}
+
+	archivedCount := 0
+	for _, session := range sessions {
+		if err := s.stateDB.ArchiveSession(session.ID, session.TimeUpdated); err != nil {
+			log.WithFields(log.Fields{"sessionID": session.ID, "error": err}).Error("auto-archiving inactive session")
+			continue
+		}
+		archivedCount++
+	}
+
+	log.WithFields(log.Fields{
+		"cutoff":   cutoff,
+		"archived": archivedCount,
+	}).Info("auto-archive pass completed")
 }
 
 // requireGET wraps a handler to only allow GET requests.

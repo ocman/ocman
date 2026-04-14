@@ -9,6 +9,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/server"
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 func main() {
@@ -28,7 +29,13 @@ func main() {
 	}
 	defer database.Close()
 
-	srv := server.New(database, *addr)
+	stateDB, err := state.Open(state.DefaultDBPath())
+	if err != nil {
+		log.Fatalf("Failed to open state database: %v", err)
+	}
+	defer stateDB.Close()
+
+	srv := server.New(database, stateDB, *addr)
 	if err := srv.Start(); err != nil {
 		log.Fatalf("Server error: %v", err)
 	}

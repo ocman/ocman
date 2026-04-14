@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -40,7 +41,11 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 			(
 				SELECT json_extract(data, '$.finish') FROM message
 				WHERE session_id = s.id ORDER BY time_created DESC LIMIT 1
-			) AS last_finish
+			) AS last_finish,
+			(
+				SELECT json_extract(data, '$.error') FROM message
+				WHERE session_id = s.id ORDER BY time_created DESC LIMIT 1
+			) AS last_error
 		FROM session s
 	`
 	var conditions []string
@@ -69,7 +74,7 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 	var sessions []Session
 	for rows.Next() {
 		var s Session
-		var lastRole, lastFinish *string
+		var lastRole, lastFinish, lastError *string
 		err := rows.Scan(
 			&s.ID, &s.ProjectID, &s.Title, &s.Directory,
 			&s.TimeCreated, &s.TimeUpdated,
@@ -77,7 +82,7 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 			&s.ShareURL,
 			&s.MessageCount,
 			&s.TotalInputTokens, &s.TotalOutputTokens, &s.TotalCost,
-			&lastRole, &lastFinish,
+			&lastRole, &lastFinish, &lastError,
 		)
 		if err != nil {
 			log.WithError(err).Warn("failed to scan session row")
@@ -86,11 +91,14 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 		s.DurationMs = s.TimeUpdated - s.TimeCreated
 
 		// Determine session status based on the last message.
+		// "error"   = last assistant message has an error object, or finish == "error"
 		// "waiting" = last assistant message has a finish reason (turn complete, needs user input)
 		// "busy"    = last message is assistant with no finish reason (still streaming)
 		// "done"    = no messages or last message is from the user (session idle)
 		if lastRole != nil && *lastRole == "assistant" {
-			if lastFinish != nil && *lastFinish != "" {
+			if (lastFinish != nil && *lastFinish == "error") || (lastError != nil && *lastError != "") {
+				s.Status = "error"
+			} else if lastFinish != nil && *lastFinish != "" {
 				s.Status = "waiting"
 			} else {
 				s.Status = "busy"
@@ -125,6 +133,31 @@ func (d *DB) GetSession(sessionID string) (*Session, error) {
 	}
 	s.DurationMs = s.TimeUpdated - s.TimeCreated
 	return &s, nil
+}
+
+// GetSessionsInactiveBefore returns non-subagent sessions last updated before the cutoff.
+func (d *DB) GetSessionsInactiveBefore(cutoff int64) ([]SessionArchiveCandidate, error) {
+	rows, err := d.db.Query(`
+		SELECT s.id, s.time_updated
+		FROM session s
+		WHERE s.title NOT LIKE '%(% subagent)'
+		  AND s.time_updated < ?
+	`, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sessions []SessionArchiveCandidate
+	for rows.Next() {
+		var session SessionArchiveCandidate
+		if err := rows.Scan(&session.ID, &session.TimeUpdated); err != nil {
+			log.WithError(err).Warn("failed to scan inactive session row")
+			continue
+		}
+		sessions = append(sessions, session)
+	}
+	return sessions, rows.Err()
 }
 
 // GetSessionMessages returns all messages for a session.
@@ -218,6 +251,89 @@ func FilterPartsForMessages(parts []Part, messages []Message) []Part {
 		}
 	}
 	return filtered
+}
+
+// GetSessionDefaults returns the most recent agent/model pair to seed a new or
+// empty session's composer. It prefers another session in the same directory and
+// falls back to the most recent session overall.
+func (d *DB) GetSessionDefaults(sessionID, directory string) (SessionDefaults, error) {
+	var defaults SessionDefaults
+	err := d.db.QueryRow(`
+		SELECT
+			COALESCE(NULLIF(json_extract(m.data, '$.agent'), ''), '') AS agent,
+			COALESCE(
+				CASE
+					WHEN COALESCE(NULLIF(json_extract(m.data, '$.providerID'), ''), '') != ''
+						AND COALESCE(NULLIF(json_extract(m.data, '$.modelID'), ''), '') != ''
+					THEN json_extract(m.data, '$.providerID') || '/' || json_extract(m.data, '$.modelID')
+					WHEN COALESCE(NULLIF(json_extract(m.data, '$.model.providerID'), ''), '') != ''
+						AND COALESCE(NULLIF(json_extract(m.data, '$.model.modelID'), ''), '') != ''
+					THEN json_extract(m.data, '$.model.providerID') || '/' || json_extract(m.data, '$.model.modelID')
+					ELSE COALESCE(
+						NULLIF(json_extract(m.data, '$.modelID'), ''),
+						NULLIF(json_extract(m.data, '$.model.modelID'), ''),
+						''
+					)
+				END,
+				''
+			) AS model
+		FROM message m
+		JOIN session s ON s.id = m.session_id
+		WHERE m.session_id != ?
+		  AND s.title NOT LIKE '%(% subagent)'
+		  AND json_extract(m.data, '$.role') = 'assistant'
+		  AND (
+				COALESCE(NULLIF(json_extract(m.data, '$.agent'), ''), '') != ''
+				OR COALESCE(NULLIF(json_extract(m.data, '$.providerID'), ''), '') != ''
+				OR COALESCE(NULLIF(json_extract(m.data, '$.modelID'), ''), '') != ''
+				OR COALESCE(NULLIF(json_extract(m.data, '$.model.providerID'), ''), '') != ''
+				OR COALESCE(NULLIF(json_extract(m.data, '$.model.modelID'), ''), '') != ''
+		  )
+		ORDER BY CASE WHEN s.directory = ? THEN 0 ELSE 1 END, m.time_created DESC
+		LIMIT 1
+	`, sessionID, directory).Scan(&defaults.Agent, &defaults.Model)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return SessionDefaults{}, nil
+		}
+		return SessionDefaults{}, err
+	}
+	return defaults, nil
+}
+
+// GetContextTokenCount returns the token usage shown in OpenCode's prompt bar:
+// the last assistant message with output > 0, using
+// input + output + reasoning + cache.read + cache.write.
+func (d *DB) GetContextTokenCount(sessionID string) int64 {
+	var count int64
+	err := d.db.QueryRow(`
+		SELECT COALESCE(
+		  json_extract(data, '$.tokens.input'),
+		  0
+		) + COALESCE(
+		  json_extract(data, '$.tokens.output'),
+		  0
+		) + COALESCE(
+		  json_extract(data, '$.tokens.reasoning'),
+		  0
+		) + COALESCE(
+		  json_extract(data, '$.tokens.cache.read'),
+		  0
+		) + COALESCE(
+		  json_extract(data, '$.tokens.cache.write'),
+		  0
+		)
+		FROM message
+		WHERE session_id = ?
+		  AND json_extract(data, '$.role') = 'assistant'
+		  AND COALESCE(json_extract(data, '$.tokens.output'), 0) > 0
+		ORDER BY time_created DESC
+		LIMIT 1
+	`, sessionID).Scan(&count)
+	if err != nil {
+		return 0
+	}
+	return count
 }
 
 // sessionRowScannable is a helper type for scanning nullable int64 values.

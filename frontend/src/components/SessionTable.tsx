@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { Session } from '../lib/api';
+import { api, type Session } from '../lib/api';
 import { formatDuration, relativeTime, shortPath } from '../lib/format';
 import { StatusBadge } from './StatusBadge';
 import type { TmuxState } from '../lib/useTmux';
+import { filterVisibleSessions } from '../lib/sessionVisibility';
 
 
 interface Props {
@@ -11,12 +12,23 @@ interface Props {
   showProject?: boolean;
   loading?: boolean;
   tmux?: TmuxState;
+  includeArchived?: boolean;
 }
 
-export function SessionTable({ sessions, showProject, loading, tmux }: Props) {
+function ArchiveIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M2 3.5h12v2H2zm1 3h10v6H3zm3 2.5h4" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function SessionTable({ sessions, showProject, loading, tmux, includeArchived }: Props) {
   const navigate = useNavigate();
   const [pickerFor, setPickerFor] = useState<string | null>(null);
   const [pickerPos, setPickerPos] = useState<{ top: number; left: number } | null>(null);
+  const [archivingSessionIds, setArchivingSessionIds] = useState<Set<string>>(new Set());
+  const [locallyArchivedSessionIds, setLocallyArchivedSessionIds] = useState<Set<string>>(new Set());
   const pickerRef = useRef<HTMLDivElement>(null);
 
   // Close picker on outside click
@@ -61,6 +73,25 @@ export function SessionTable({ sessions, showProject, loading, tmux }: Props) {
     setPickerFor(null);
   };
 
+  const handleArchiveSession = async (e: React.MouseEvent, session: Session) => {
+    e.stopPropagation();
+    if (archivingSessionIds.has(session.id)) return;
+
+    setArchivingSessionIds(prev => new Set(prev).add(session.id));
+    try {
+      await api.archiveSession(session.id, session.timeUpdated, true);
+      setLocallyArchivedSessionIds(prev => new Set(prev).add(session.id));
+    } catch (err) {
+      console.error('Failed to archive session', err);
+    } finally {
+      setArchivingSessionIds(prev => {
+        const next = new Set(prev);
+        next.delete(session.id);
+        return next;
+      });
+    }
+  };
+
   if (loading) {
     return (
       <div className="oc-list-loading">
@@ -71,14 +102,16 @@ export function SessionTable({ sessions, showProject, loading, tmux }: Props) {
   }
 
   const colCount = showProject ? 5 : 4;
+  const visibleSessions = (includeArchived ? sessions : filterVisibleSessions(sessions))
+    .filter(session => includeArchived || !locallyArchivedSessionIds.has(session.id));
 
-  if (!sessions.length) {
+  if (!visibleSessions.length) {
     return (
       <table>
         <tbody>
           <tr>
             <td colSpan={colCount} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: 24 }}>
-              No sessions found
+              {includeArchived ? 'No sessions found' : 'No active sessions found'}
             </td>
           </tr>
         </tbody>
@@ -114,15 +147,16 @@ export function SessionTable({ sessions, showProject, loading, tmux }: Props) {
         <thead>
           <tr>
             <th>Session</th>
-            <th>Status</th>
             {showProject && <th>Project</th>}
             <th>Activity</th>
             <th>Started</th>
+            <th style={{ width: 44 }} />
           </tr>
         </thead>
         <tbody>
-          {sessions.map(s => {
+          {visibleSessions.map(s => {
             const hasTmux = tmux?.available && tmux.findSession(s.directory);
+            const seenLatest = s.status === 'waiting' && s.seen;
             return (
               <tr
                 key={s.id}
@@ -130,28 +164,30 @@ export function SessionTable({ sessions, showProject, loading, tmux }: Props) {
                 onClick={() => navigate(`/session/${s.id}`)}
               >
                 <td>
-                  <div style={{ color: 'var(--accent)', fontWeight: 500 }}>{s.title || 'Untitled'}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <StatusBadge status={s.status} compact seen={seenLatest} />
+                    <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{s.title || 'Untitled'}</span>
+                  </div>
                   <div className="mono">
                     {s.id}
-                    {!showProject && (
-                      <span className="session-row-actions">
-                        {hasTmux && (
-                          <button
-                            className="tmux-switch-btn"
-                            onClick={(e) => handleTmuxSwitch(e, s.directory)}
-                            title={`Switch tmux to ${shortPath(s.directory)}`}
-                          >tmux</button>
-                        )}
+                    <span className="session-row-actions">
+                      {!showProject && hasTmux && (
+                        <button
+                          className="tmux-switch-btn"
+                          onClick={(e) => handleTmuxSwitch(e, s.directory)}
+                          title={`Switch tmux to ${shortPath(s.directory)}`}
+                        >tmux</button>
+                      )}
+                      {!showProject && (
                         <button
                           className="tmux-switch-btn"
                           onClick={(e) => { e.stopPropagation(); window.location.href = `vscode://file${s.directory}`; }}
                           title="Open in VS Code"
                         >&lt;/&gt;</button>
-                      </span>
-                    )}
+                      )}
+                    </span>
                   </div>
                 </td>
-                <td><StatusBadge status={s.status} /></td>
                 {showProject && (
                   <td className="mono">
                     {shortPath(s.directory)}
@@ -173,6 +209,17 @@ export function SessionTable({ sessions, showProject, loading, tmux }: Props) {
                 )}
                 <td className="mono">{s.messageCount} msgs &middot; {formatDuration(s.durationMs)}</td>
                 <td>{relativeTime(s.timeCreated)}</td>
+                <td className="session-action-cell">
+                  <button
+                    className="session-archive-btn"
+                    onClick={(e) => handleArchiveSession(e, s)}
+                    title="Archive session (reappears on new activity)"
+                    aria-label="Archive session"
+                    disabled={archivingSessionIds.has(s.id)}
+                  >
+                    <ArchiveIcon />
+                  </button>
+                </td>
               </tr>
             );
           })}
