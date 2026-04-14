@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 
 export interface HeaderInfo {
   sessionTitle?: string;
@@ -21,4 +21,10 @@ export function HeaderProvider({ children }: { children: ReactNode }) {
 
 export function useHeaderInfo() {
   return useContext(HeaderContext);
+}
+
+export function usePageTitle(title: string) {
+  useEffect(() => {
+    document.title = title ? `${title} - ocman` : 'ocman';
+  }, [title]);
 }

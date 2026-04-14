@@ -4,9 +4,13 @@ import {
   useExternalStoreRuntime,
   type ThreadMessageLike,
 } from '@assistant-ui/react';
-import type { Message, Part, PartData } from '../lib/api';
+import type { Message, Part, PartData, FilePart } from '../lib/api';
 import { api } from '../lib/api';
 import { simpleDiff } from '../lib/diff';
+
+function isImageMime(mime: string | undefined): boolean {
+  return !!mime && mime.startsWith('image/');
+}
 
 function parsePart(p: Part): PartData {
   try {
@@ -39,8 +43,9 @@ function convertMessages(
       const msgParts = (partsByMsg[m.id] || []).map(parsePart);
 
       // Build content as string | content array. Using string for simple text,
-      // and the full content array format for messages with tool calls.
+      // and the full content array format for messages with tool calls or images.
       const textPieces: string[] = [];
+      const imageParts: Array<{ type: 'image'; image: string }> = [];
       const toolCalls: Array<{
         type: 'tool-call';
         toolCallId: string;
@@ -152,6 +157,15 @@ function convertMessages(
               argsText: `${st.status || 'running'}\n${title ? title + '\n' : ''}${argsText}`,
               result: resultText || undefined,
             });
+
+            // Extract image attachments from tool results (e.g. screenshot tools)
+            if (st.attachments && Array.isArray(st.attachments)) {
+              for (const att of st.attachments as FilePart[]) {
+                if (isImageMime(att.mime) && att.url) {
+                  imageParts.push({ type: 'image' as const, image: att.url });
+                }
+              }
+            }
             break;
           }
           case 'reasoning':
@@ -164,6 +178,16 @@ function convertMessages(
             const diff = pd.content || pd.diff || '';
             if (diff) {
               textPieces.push(`**${file}**\n\`\`\`diff\n${diff}\n\`\`\``);
+            }
+            break;
+          }
+          case 'file': {
+            // Image/file parts from OpenCode - render images inline
+            if (isImageMime(pd.mime) && pd.url) {
+              imageParts.push({ type: 'image' as const, image: pd.url });
+            } else if (pd.url && pd.filename) {
+              // Non-image file - show as a text link/label
+              textPieces.push(`📎 ${pd.filename} (${pd.mime || 'file'})`);
             }
             break;
           }
@@ -204,8 +228,8 @@ function convertMessages(
         }
       });
 
-      // If only text, use simple string content
-      if (toolCalls.length === 0) {
+      // If only text (no tool calls or images), use simple string content
+      if (toolCalls.length === 0 && imageParts.length === 0) {
         return {
           role,
           id: m.id,
@@ -219,11 +243,14 @@ function convertMessages(
         };
       }
 
-      // Mix of text and tool calls
+      // Mix of text, images, and tool calls
       const content: ThreadMessageLike['content'] = [];
       if (textPieces.length > 0) {
         (content as Array<{ type: 'text'; text: string }>).push({ type: 'text', text: textPieces.join('\n\n') });
       }
+      imageParts.forEach((img) => {
+        (content as Array<unknown>).push(img);
+      });
       toolCalls.forEach((tc) => {
         (content as Array<unknown>).push(tc);
       });

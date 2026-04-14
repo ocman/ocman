@@ -73,6 +73,7 @@ a:hover { text-decoration: underline; }
 .content { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 
 .mono { font-family: 'SF Mono', Consolas, monospace; font-size: 12px; color: var(--text-dim); }
+.cell-dim { color: var(--overlay0); font-size: 11px; }
 .hidden { display: none; }
 
 /* Tables */
@@ -96,6 +97,18 @@ tr:hover { background: var(--bg-hover); cursor: pointer; }
 .status-busy { background: rgba(240, 136, 62, 0.15); color: var(--accent4); }
 .status-done .status-dot { background: var(--text-dim); }
 .status-done { background: rgba(139, 148, 158, 0.1); color: var(--text-dim); }
+/* Compact status dot (sidebar) */
+.status-dot-compact {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  cursor: default;
+}
+.status-dot-compact.status-waiting { background: var(--accent); }
+.status-dot-compact.status-busy { background: var(--accent4); animation: pulse 1.2s ease-in-out infinite; }
+.status-dot-compact.status-done { background: var(--text-dim); }
+
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
 tr.no-port { opacity: 0.4; }
@@ -151,8 +164,9 @@ tr.no-port { opacity: 0.4; }
   justify-content: space-between;
 }
 .session-sidebar-new {
-  width: 24px;
+  min-width: 24px;
   height: 24px;
+  padding: 0 4px;
   border-radius: 4px;
   border: 1px solid var(--border);
   background: transparent;
@@ -574,6 +588,34 @@ tr.no-port { opacity: 0.4; }
 }
 .oc-tool-expand:hover { color: var(--accent); }
 
+/* Inline image display */
+.oc-image-wrap {
+  margin: 8px 0;
+}
+.oc-image {
+  max-width: 400px;
+  max-height: 300px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: max-width 0.2s, max-height 0.2s;
+  display: block;
+  object-fit: contain;
+}
+.oc-image:hover {
+  border-color: var(--accent);
+}
+.oc-image.oc-image-expanded {
+  max-width: 100%;
+  max-height: none;
+}
+.oc-image-label {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
 /* Composer - OpenCode style */
 .oc-composer-wrap {
   position: absolute;
@@ -593,7 +635,7 @@ tr.no-port { opacity: 0.4; }
   padding: 0;
 }
 .oc-composer-input {
-  width: 100%;
+  min-width: 0;
   background: transparent;
   border: none;
   padding: 12px 16px;
@@ -609,6 +651,35 @@ tr.no-port { opacity: 0.4; }
 .oc-composer-input::placeholder { color: var(--overlay0); }
 .oc-composer-disabled .oc-composer { opacity: 0.5; border-left-color: var(--text-dim); }
 .oc-composer-disabled .oc-composer-input { cursor: not-allowed; }
+
+.oc-composer { display: flex; align-items: flex-end; }
+.oc-composer .oc-composer-input { flex: 1; }
+
+.oc-mic-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 18px;
+  padding: 8px 12px;
+  cursor: pointer;
+  line-height: 1;
+  transition: color 0.15s;
+  flex-shrink: 0;
+}
+.oc-mic-btn:hover { color: var(--text); }
+.oc-mic-btn:disabled { cursor: not-allowed; opacity: 0.4; }
+.oc-mic-btn.oc-mic-recording {
+  color: #f38ba8;
+  animation: oc-mic-pulse 1s ease-in-out infinite;
+}
+.oc-mic-btn.oc-mic-transcribing {
+  color: var(--accent);
+  animation: oc-mic-pulse 0.6s ease-in-out infinite;
+}
+@keyframes oc-mic-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
 
 .oc-composer-bar {
   display: flex;
@@ -698,7 +769,126 @@ header h1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-
   color: var(--subtext1);
 }
 
+/* VS Code open button */
+.vscode-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.vscode-btn:hover {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  text-decoration: none;
+}
+
 .section-title { font-size: 18px; font-weight: 600; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+
+/* Session row action buttons (tmux, vscode) */
+.session-row-actions {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+div.session-row-actions {
+  display: flex;
+  margin-left: 0;
+}
+
+/* Tmux switch button in tables */
+.tmux-switch-btn {
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  text-decoration: none;
+  line-height: 1.4;
+  display: inline-flex;
+  align-items: center;
+}
+.tmux-switch-btn:hover {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  text-decoration: none;
+}
+
+/* Tmux client popover (floating, for remote users with multiple clients) */
+.tmux-client-popover {
+  position: fixed;
+  z-index: 200;
+  transform: translateX(-100%);
+  min-width: 260px;
+  background: var(--mantle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+.tmux-client-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  font-size: 11px;
+  font-family: 'SF Mono', Consolas, monospace;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+}
+.tmux-client-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  transition: background 0.1s;
+}
+.tmux-client-picker-item:hover {
+  background: var(--bg-hover);
+}
+.tmux-client-picker-item + .tmux-client-picker-item {
+  border-top: 1px solid var(--border);
+}
+.tmux-client-tty {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.tmux-client-session {
+  color: var(--text-dim);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tmux-client-size {
+  color: var(--overlay0);
+  font-size: 10px;
+  flex-shrink: 0;
+}
 
 @media (max-width: 768px) {
   .container { padding: 0 12px; }

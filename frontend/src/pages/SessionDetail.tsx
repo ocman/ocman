@@ -3,10 +3,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { Session, SessionDetail as SessionDetailData, Message, Part } from '../lib/api';
 import { formatDuration, formatNumber, shortPath, relativeTime } from '../lib/format';
-import { useHeaderInfo } from '../lib/headerContext';
+import { useHeaderInfo, usePageTitle } from '../lib/headerContext';
 import { OcmanRuntimeProvider } from '../components/OcmanRuntimeProvider';
 import { AssistantThread, Composer } from '../components/AssistantThread';
 import { StatusBadge } from '../components/StatusBadge';
+import { useTmux } from '../lib/useTmux';
 
 const PAGE_SIZE = 50;
 
@@ -20,12 +21,20 @@ export function SessionDetail() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [portAvailable, setPortAvailable] = useState(false);
+  const [whisperAvailable, setWhisperAvailable] = useState(false);
   const [siblings, setSiblings] = useState<Session[]>([]);
   const [loadingSiblings, setLoadingSiblings] = useState(true);
   const { setInfo } = useHeaderInfo();
+  usePageTitle(session?.title || 'Session');
   const lastHashRef = useRef('');
   const lastSiblingsHashRef = useRef('');
   const directoryRef = useRef('');
+
+  // Tmux state
+  const tmux = useTmux();
+  const [pendingTmuxSession, setPendingTmuxSession] = useState<string | null>(null);
+  const [pickerPos, setPickerPos] = useState<{ top: number; left: number } | null>(null);
+  const pickerRef = useRef<HTMLDivElement>(null);
 
   // Load the latest page (newest messages). Merges with older loaded messages.
   const load = useCallback(async () => {
@@ -90,6 +99,41 @@ export function SessionDetail() {
     }
   }, [id, messages.length, loadingMore]);
 
+  // Close picker on outside click
+  useEffect(() => {
+    if (!pendingTmuxSession) return;
+    const handle = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setPendingTmuxSession(null);
+      }
+    };
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [pendingTmuxSession]);
+
+  const handleTmuxSwitch = useCallback((e: React.MouseEvent, tmuxSessionName: string) => {
+    // Local user: fire directly, server defaults to /dev/ttys000
+    if (tmux.isLocal) {
+      tmux.switchSession(tmuxSessionName).catch(err => console.error('tmux switch failed', err));
+      return;
+    }
+    // Remote user with single client
+    if (tmux.clients.length === 1) {
+      tmux.switchSession(tmuxSessionName, tmux.clients[0].tty).catch(err => console.error('tmux switch failed', err));
+      return;
+    }
+    // Remote user with multiple clients: show floating picker
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setPickerPos({ top: rect.bottom + 4, left: rect.right });
+    setPendingTmuxSession(tmuxSessionName);
+  }, [tmux.isLocal, tmux.clients, tmux.switchSession]);
+
+  const handleClientSelect = useCallback((clientTTY: string) => {
+    if (!pendingTmuxSession) return;
+    tmux.switchSession(pendingTmuxSession, clientTTY).catch(err => console.error('tmux switch failed', err));
+    setPendingTmuxSession(null);
+  }, [pendingTmuxSession, tmux.switchSession]);
+
   // Reset on session change
   useEffect(() => {
     lastHashRef.current = '';
@@ -103,6 +147,7 @@ export function SessionDetail() {
     if (id) {
       api.sessionPort(id).then(p => setPortAvailable(p.available)).catch(() => setPortAvailable(false));
     }
+    api.whisperStatus().then(s => setWhisperAvailable(s.available)).catch(() => setWhisperAvailable(false));
   }, [id, load]);
 
   const loadSiblings = useCallback(async (dir: string) => {
@@ -206,6 +251,11 @@ export function SessionDetail() {
     }
   }, [session?.id, session?.directory, portAvailable, load]);
 
+  // Find the tmux session whose resolved path matches the current project directory.
+  const matchingTmuxSession = session
+    ? tmux.findSession(session.directory)
+    : undefined;
+
   const hasMore = messages.length < totalMessages;
   const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
   // The assistant is still working if:
@@ -221,21 +271,61 @@ export function SessionDetail() {
       <div className="session-sidebar">
         <div className="session-sidebar-header">
           <span>{session ? shortPath(session.directory) : '...'}</span>
-          {session && (
-            <button
-              className="session-sidebar-new"
-              onClick={async () => {
-                try {
-                  const res = await api.createSession(session.directory);
-                  if (res.id) navigate(`/session/${res.id}`);
-                } catch (e) {
-                  console.error('Failed to create session', e);
-                }
-              }}
-              title="New session"
-            >+</button>
-          )}
+          <div style={{ display: 'flex', gap: 4 }}>
+            {tmux.available && matchingTmuxSession && (
+              <button
+                className="session-sidebar-new"
+                onClick={(e) => handleTmuxSwitch(e, matchingTmuxSession.name)}
+                title={`Switch tmux to ${shortPath(matchingTmuxSession.name)}`}
+                style={{ fontSize: 11, fontFamily: "'SF Mono', Consolas, monospace" }}
+              >tmux</button>
+            )}
+            {session && (
+              <a
+                href={`vscode://file${session.directory}`}
+                className="session-sidebar-new"
+                title="Open in VS Code"
+                style={{ textDecoration: 'none', fontSize: 11 }}
+              >&lt;/&gt;</a>
+            )}
+            {session && (
+              <button
+                className="session-sidebar-new"
+                onClick={async () => {
+                  try {
+                    const res = await api.createSession(session.directory);
+                    if (res.id) navigate(`/session/${res.id}`);
+                  } catch (e) {
+                    console.error('Failed to create session', e);
+                  }
+                }}
+                title="New session"
+              >+</button>
+            )}
+          </div>
         </div>
+        {pendingTmuxSession && pickerPos && (
+          <div
+            ref={pickerRef}
+            className="tmux-client-popover"
+            style={{ top: pickerPos.top, left: pickerPos.left }}
+          >
+            <div className="tmux-client-picker-header">
+              <span>Select tmux client</span>
+            </div>
+            {tmux.clients.map(c => (
+              <div
+                key={c.tty}
+                className="tmux-client-picker-item"
+                onClick={() => handleClientSelect(c.tty)}
+              >
+                <span className="tmux-client-tty">{c.tty}</span>
+                <span className="tmux-client-session">{shortPath(c.session)}</span>
+                <span className="tmux-client-size">{c.width}&times;{c.height}</span>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="session-sidebar-list">
           {loadingSiblings ? (
             <div className="oc-list-loading">
@@ -248,7 +338,7 @@ export function SessionDetail() {
               className={`session-sidebar-item ${sib.id === id ? 'active' : ''}`}
               onClick={() => navigate(`/session/${sib.id}`)}
             >
-              <StatusBadge status={sib.status} />
+              <StatusBadge status={sib.status} compact />
               <span className="session-sidebar-title">{sib.title || 'Untitled'}</span>
               <span className="session-sidebar-time">{relativeTime(sib.timeUpdated)}</span>
             </div>
@@ -274,7 +364,7 @@ export function SessionDetail() {
               hasMore={hasMore}
               loadingMore={loadingMore}
               onLoadMore={loadMore}
-              composer={<Composer onSend={handleSend} isRunning={isRunning} disabled={!portAvailable} />}
+              composer={<Composer onSend={handleSend} isRunning={isRunning} disabled={!portAvailable} whisperAvailable={whisperAvailable} />}
             />
           </OcmanRuntimeProvider>
         )}

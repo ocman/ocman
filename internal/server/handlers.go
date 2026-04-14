@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 
 	log "github.com/sirupsen/logrus"
@@ -336,4 +338,61 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+// maxAudioUpload is the maximum allowed audio upload size (25 MB).
+const maxAudioUpload = 25 << 20
+
+func (s *Server) handleWhisperStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]interface{}{
+		"available": whisperAvailable(),
+	})
+}
+
+func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
+	if !whisperAvailable() {
+		http.Error(w, "whisper is not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Limit upload size
+	r.Body = http.MaxBytesReader(w, r.Body, maxAudioUpload)
+
+	file, header, err := r.FormFile("audio")
+	if err != nil {
+		log.WithError(err).Warn("failed to read audio upload")
+		http.Error(w, "failed to read audio file", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	// Write to a temp file so whisper can read it
+	ext := filepath.Ext(header.Filename)
+	if ext == "" {
+		ext = ".wav"
+	}
+	tmp, err := os.CreateTemp("", "ocman-audio-*"+ext)
+	if err != nil {
+		serverError(w, "creating temp file", err)
+		return
+	}
+	defer os.Remove(tmp.Name())
+	defer tmp.Close()
+
+	if _, err := io.Copy(tmp, file); err != nil {
+		serverError(w, "writing audio to temp file", err)
+		return
+	}
+	tmp.Close()
+
+	text, err := transcribeAudio(tmp.Name())
+	if err != nil {
+		log.WithError(err).Error("transcription failed")
+		http.Error(w, "transcription failed", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"text": text,
+	})
 }

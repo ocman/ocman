@@ -43,6 +43,11 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/send-message", s.requirePOST(s.handleSendMessage))
 	mux.HandleFunc("/api/create-session", s.requirePOST(s.handleCreateSession))
 	mux.HandleFunc("/api/events/", s.handleEvents)
+	mux.HandleFunc("/api/whisper/status", s.requireGET(s.handleWhisperStatus))
+	mux.HandleFunc("/api/transcribe", s.requirePOST(s.handleTranscribe))
+	mux.HandleFunc("/api/tmux/clients", s.requireGET(s.requireLocalhost(s.handleTmuxClients)))
+	mux.HandleFunc("/api/tmux/sessions", s.requireGET(s.requireLocalhost(s.handleTmuxSessions)))
+	mux.HandleFunc("/api/tmux/switch", s.requirePOST(s.requireLocalhost(s.handleTmuxSwitch)))
 
 	// Static files with SPA fallback
 	staticContent, err := fs.Sub(staticFS, "static")

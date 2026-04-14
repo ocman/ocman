@@ -14,10 +14,26 @@ const MarkdownText: FC<{ text: string }> = ({ text }) => {
   return <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>;
 };
 
+const ImageDisplay: FC<{ image: string; filename?: string }> = ({ image, filename }) => {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="oc-image-wrap">
+      <img
+        src={image}
+        alt={filename || 'Image'}
+        className={`oc-image${expanded ? ' oc-image-expanded' : ''}`}
+        onClick={() => setExpanded(!expanded)}
+        loading="lazy"
+      />
+      {filename && <div className="oc-image-label">{filename}</div>}
+    </div>
+  );
+};
+
 const UserMessage: FC = () => {
   const content = useMessage((m) => m.content);
   const hasContent = content.some(
-    (p) => (p.type === 'text' && 'text' in p && (p as { text: string }).text.trim()) || p.type === 'tool-call'
+    (p) => (p.type === 'text' && 'text' in p && (p as { text: string }).text.trim()) || p.type === 'tool-call' || p.type === 'image'
   );
   if (!hasContent) return null;
 
@@ -25,7 +41,10 @@ const UserMessage: FC = () => {
     <MessagePrimitive.Root className="oc-msg oc-msg-user">
       <div className="oc-msg-body">
         <MessagePrimitive.Content
-          components={{ Text: ({ text }) => text.trim() ? <span style={{ whiteSpace: 'pre-wrap' }}>{text}</span> : null }}
+          components={{
+            Text: ({ text }) => text.trim() ? <span style={{ whiteSpace: 'pre-wrap' }}>{text}</span> : null,
+            Image: ImageDisplay,
+          }}
         />
       </div>
     </MessagePrimitive.Root>
@@ -35,7 +54,7 @@ const UserMessage: FC = () => {
 const AssistantMessage: FC = () => {
   const content = useMessage((m) => m.content);
   const hasContent = content.some(
-    (p) => (p.type === 'text' && 'text' in p && (p as { text: string }).text.trim()) || p.type === 'tool-call'
+    (p) => (p.type === 'text' && 'text' in p && (p as { text: string }).text.trim()) || p.type === 'tool-call' || p.type === 'image'
   );
   if (!hasContent) return null;
 
@@ -50,6 +69,7 @@ const AssistantMessage: FC = () => {
         <MessagePrimitive.Content
           components={{
             Text: MarkdownText,
+            Image: ImageDisplay,
             tools: { Fallback: ToolCallDisplay },
           }}
         />
@@ -63,6 +83,7 @@ const AssistantMessage: FC = () => {
         <MessagePrimitive.Content
           components={{
             Text: MarkdownText,
+            Image: ImageDisplay,
             tools: { Fallback: ToolCallDisplay },
           }}
         />
@@ -350,13 +371,57 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
   );
 };
 
-function Composer({ onSend, isRunning, disabled }: { onSend?: (text: string) => void; isRunning: boolean; disabled?: boolean }) {
+// Encode raw PCM Float32 samples into a WAV Blob (works on all browsers).
+function encodeWav(samples: Float32Array, sampleRate: number): Blob {
+  const numSamples = samples.length;
+  const buffer = new ArrayBuffer(44 + numSamples * 2);
+  const view = new DataView(buffer);
+
+  function writeString(offset: number, str: string) {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  }
+
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + numSamples * 2, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);            // chunk size
+  view.setUint16(20, 1, true);             // PCM
+  view.setUint16(22, 1, true);             // mono
+  view.setUint32(24, sampleRate, true);     // sample rate
+  view.setUint32(28, sampleRate * 2, true); // byte rate
+  view.setUint16(32, 2, true);             // block align
+  view.setUint16(34, 16, true);            // bits per sample
+  writeString(36, 'data');
+  view.setUint32(40, numSamples * 2, true);
+
+  // Convert float32 [-1,1] to int16
+  let offset = 44;
+  for (let i = 0; i < numSamples; i++, offset += 2) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+  }
+
+  return new Blob([buffer], { type: 'audio/wav' });
+}
+
+// Recording state held outside React to avoid ref/state complexity.
+interface RecordingCtx {
+  stream: MediaStream;
+  audioCtx: AudioContext;
+  processor: ScriptProcessorNode;
+  chunks: Float32Array[];
+}
+
+function Composer({ onSend, isRunning, disabled, whisperAvailable }: { onSend?: (text: string) => void; isRunning: boolean; disabled?: boolean; whisperAvailable?: boolean }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const micRef = useRef<HTMLButtonElement>(null);
   const onSendRef = useRef(onSend);
   const isRunningRef = useRef(isRunning);
   const disabledRef = useRef(disabled);
   const mountedRef = useRef(false);
+  const recordingRef = useRef<RecordingCtx | null>(null);
 
   // Keep refs in sync via effect to satisfy lint rules
   useEffect(() => {
@@ -388,6 +453,109 @@ function Composer({ onSend, isRunning, disabled }: { onSend?: (text: string) => 
     if (!el) return;
     el.disabled = !!disabled;
   }, [disabled]);
+
+  const setMicState = useCallback((state: 'idle' | 'recording' | 'transcribing') => {
+    const btn = micRef.current;
+    if (!btn) return;
+    btn.classList.remove('oc-mic-recording', 'oc-mic-transcribing');
+    btn.disabled = state === 'transcribing' || !!disabledRef.current;
+    if (state === 'recording') {
+      btn.classList.add('oc-mic-recording');
+      btn.textContent = '\u25A0'; // stop square
+    } else if (state === 'transcribing') {
+      btn.classList.add('oc-mic-transcribing');
+      btn.textContent = '\u2026'; // ellipsis
+    } else {
+      btn.textContent = '\u2399';
+    }
+  }, []);
+
+  const stopRecording = useCallback((): Blob | null => {
+    const ctx = recordingRef.current;
+    if (!ctx) return null;
+    recordingRef.current = null;
+
+    ctx.processor.disconnect();
+    ctx.stream.getTracks().forEach(t => t.stop());
+
+    // Merge all chunks into one Float32Array
+    const totalLen = ctx.chunks.reduce((sum, c) => sum + c.length, 0);
+    const merged = new Float32Array(totalLen);
+    let offset = 0;
+    for (const chunk of ctx.chunks) {
+      merged.set(chunk, offset);
+      offset += chunk.length;
+    }
+
+    // Downsample to 16kHz for whisper (from whatever the AudioContext rate is)
+    const origRate = ctx.audioCtx.sampleRate;
+    ctx.audioCtx.close();
+
+    let samples = merged;
+    if (origRate !== 16000) {
+      const ratio = origRate / 16000;
+      const newLen = Math.floor(merged.length / ratio);
+      const downsampled = new Float32Array(newLen);
+      for (let i = 0; i < newLen; i++) {
+        downsampled[i] = merged[Math.floor(i * ratio)];
+      }
+      samples = downsampled;
+    }
+
+    return encodeWav(samples, 16000);
+  }, []);
+
+  const handleMicClick = useCallback(async () => {
+    if (disabledRef.current) return;
+
+    // If recording, stop and transcribe
+    if (recordingRef.current) {
+      setMicState('transcribing');
+      const blob = stopRecording();
+      if (blob && blob.size > 44) { // > 44 bytes = has actual audio data beyond WAV header
+        try {
+          const { api } = await import('../lib/api');
+          const text = await api.transcribe(blob);
+          if (text && inputRef.current) {
+            inputRef.current.value += (inputRef.current.value ? ' ' : '') + text;
+            inputRef.current.dispatchEvent(new Event('input'));
+            inputRef.current.focus();
+          }
+        } catch (err) {
+          console.error('Transcription failed', err);
+        }
+      }
+      setMicState('idle');
+      return;
+    }
+
+    // Start recording using Web Audio API (works on Safari/iPad)
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        console.error('getUserMedia not supported');
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+      const source = audioCtx.createMediaStreamSource(stream);
+      const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+      const chunks: Float32Array[] = [];
+
+      processor.onaudioprocess = (e) => {
+        const data = e.inputBuffer.getChannelData(0);
+        chunks.push(new Float32Array(data));
+      };
+
+      source.connect(processor);
+      processor.connect(audioCtx.destination);
+
+      recordingRef.current = { stream, audioCtx, processor, chunks };
+      setMicState('recording');
+    } catch (err) {
+      console.error('Microphone access failed', err);
+      setMicState('idle');
+    }
+  }, [setMicState, stopRecording]);
 
   // Attach native event listeners once, never re-render
   useEffect(() => {
@@ -426,6 +594,15 @@ function Composer({ onSend, isRunning, disabled }: { onSend?: (text: string) => 
           disabled={disabled}
           placeholder={disabled ? 'No running OpenCode instance' : undefined}
         />
+        {whisperAvailable && (
+          <button
+            ref={micRef}
+            className="oc-mic-btn"
+            onClick={handleMicClick}
+            disabled={disabled}
+            title="Record voice message"
+          >{'\u2399'}</button>
+        )}
       </div>
       <div className="oc-composer-bar">
         <div className="oc-composer-bar-left">
@@ -436,9 +613,13 @@ function Composer({ onSend, isRunning, disabled }: { onSend?: (text: string) => 
   );
 }
 
-// Re-render when isRunning or disabled changes.
+// Re-render when isRunning, disabled, or whisperAvailable changes.
 // Other props (onSend) are accessed via refs and don't need re-renders.
-const MemoComposer = memo(Composer, (prev, next) => prev.isRunning === next.isRunning && prev.disabled === next.disabled);
+const MemoComposer = memo(Composer, (prev, next) =>
+  prev.isRunning === next.isRunning &&
+  prev.disabled === next.disabled &&
+  prev.whisperAvailable === next.whisperAvailable
+);
 export { MemoComposer as Composer };
 
 export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, footer }: { hasMore?: boolean; loadingMore?: boolean; onLoadMore?: () => void; composer?: React.ReactNode; footer?: React.ReactNode }) {

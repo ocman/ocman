@@ -2,10 +2,15 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { Session } from '../lib/api';
+import { usePageTitle } from '../lib/headerContext';
 import { SessionTable } from '../components/SessionTable';
+import { useTmux } from '../lib/useTmux';
 
 export function ProjectDetail() {
   const { '*': directory } = useParams();
+  const projectName = directory?.split('/').pop() || 'Project';
+  usePageTitle(projectName);
+  const tmux = useTmux();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -24,8 +29,13 @@ export function ProjectDetail() {
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-      <h2 className="section-title">{directory}</h2>
-      <SessionTable sessions={sessions} loading={loading} />
+      <h2 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{directory}</span>
+        {directory && (
+          <a href={`vscode://file${directory}`} className="vscode-btn" title="Open in VS Code">VS Code</a>
+        )}
+      </h2>
+      <SessionTable sessions={sessions} loading={loading} tmux={tmux} />
     </div>
   );
 }

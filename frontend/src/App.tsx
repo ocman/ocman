@@ -9,7 +9,7 @@ function Header() {
   const path = location.pathname;
   const { info } = useHeaderInfo();
 
-  let breadcrumb: React.ReactNode = '/ OpenCode Sessions';
+  let breadcrumb: React.ReactNode = '';
   if (path.startsWith('/session/')) {
     breadcrumb = (
       <>

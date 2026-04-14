@@ -44,16 +44,28 @@ export interface Part {
   data: string | PartData;
 }
 
+export interface FilePart {
+  type: 'file';
+  mime: string;
+  url: string;
+  filename?: string;
+}
+
 export interface PartData {
   type: string;
   text?: string;
   tool?: string;
+  // File part fields (for type === 'file')
+  mime?: string;
+  url?: string;
+  filename?: string;
   state?: {
     status?: string;
     input?: Record<string, unknown>;
     output?: unknown;
     title?: string;
     metadata?: { description?: string };
+    attachments?: FilePart[];
   };
   file?: string;
   path?: string;
@@ -109,6 +121,19 @@ export interface PortInfo {
   available: boolean;
 }
 
+export interface TmuxClient {
+  tty: string;
+  session: string;
+  width: string;
+  height: string;
+}
+
+export interface TmuxSession {
+  name: string;
+  resolvedPath: string;
+  windows: number;
+}
+
 export const api = {
   stats: () => fetchJSON<Stats>('/api/stats'),
   projects: () => fetchJSON<Project[]>('/api/projects'),
@@ -140,5 +165,37 @@ export const api = {
       body: JSON.stringify({ sessionId, directory, message }),
     });
     if (!resp.ok) throw new Error(await resp.text());
+  },
+  tmuxClients: () => fetchJSON<{ available: boolean; clients: TmuxClient[] }>('/api/tmux/clients'),
+  tmuxSessions: () => fetchJSON<{ available: boolean; sessions: TmuxSession[] }>('/api/tmux/sessions'),
+  tmuxSwitch: async (session: string, client?: string) => {
+    const body: Record<string, string> = { session };
+    if (client) body.client = client;
+    const resp = await fetch('/api/tmux/switch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+  },
+  whisperStatus: () => fetchJSON<{ available: boolean }>('/api/whisper/status'),
+  transcribe: async (audio: Blob): Promise<string> => {
+    // Pick a filename extension the backend can use to identify the format
+    const extMap: Record<string, string> = {
+      'audio/webm': '.webm',
+      'audio/webm;codecs=opus': '.webm',
+      'audio/ogg': '.ogg',
+      'audio/ogg;codecs=opus': '.ogg',
+      'audio/mp4': '.m4a',
+      'audio/wav': '.wav',
+      'audio/x-wav': '.wav',
+    };
+    const ext = extMap[audio.type] || '.webm';
+    const form = new FormData();
+    form.append('audio', audio, `recording${ext}`);
+    const resp = await fetch('/api/transcribe', { method: 'POST', body: form });
+    if (!resp.ok) throw new Error(await resp.text());
+    const data = await resp.json() as { text: string };
+    return data.text;
   },
 };

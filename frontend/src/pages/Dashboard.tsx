@@ -5,13 +5,17 @@ import { Bar, Doughnut } from 'react-chartjs-2';
 import { api } from '../lib/api';
 import type { Session, Stats, Project, ActivityDay, ModelUsage, HourlyData } from '../lib/api';
 import { formatNumber, relativeTime, shortPath } from '../lib/format';
+import { usePageTitle } from '../lib/headerContext';
 import { SessionTable } from '../components/SessionTable';
+import { useTmux } from '../lib/useTmux';
 
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend);
 
 export function Dashboard() {
+  usePageTitle('Dashboard');
   const navigate = useNavigate();
+  const tmux = useTmux();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
   const tab = (tabParam === 'projects' || tabParam === 'stats') ? tabParam : 'sessions';
@@ -72,7 +76,7 @@ export function Dashboard() {
         <button className={`nav-tab ${tab === 'stats' ? 'active' : ''}`} onClick={() => setTab('stats')}>Stats</button>
       </div>
 
-      {tab === 'sessions' && <SessionTable sessions={sessions} showProject loading={loadingSessions} />}
+      {tab === 'sessions' && <SessionTable sessions={sessions} showProject loading={loadingSessions} tmux={tmux} />}
 
       {tab === 'projects' && (
         loadingProjects ? (
@@ -101,7 +105,15 @@ export function Dashboard() {
             ) : projects.filter(p => p.sessionCount > 0).map(p => (
               <tr key={p.directory} onClick={() => navigate(`/project/${encodeURIComponent(p.directory)}`)}>
                 <td>
-                  <div style={{ color: 'var(--accent)', fontWeight: 500 }}>{shortPath(p.directory)}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{shortPath(p.directory)}</span>
+                    <a
+                      href={`vscode://file${p.directory}`}
+                      className="vscode-btn"
+                      title="Open in VS Code"
+                      onClick={e => e.stopPropagation()}
+                    >VS Code</a>
+                  </div>
                   <div className="mono">{p.directory}</div>
                 </td>
                 <td>{p.sessionCount}</td>
