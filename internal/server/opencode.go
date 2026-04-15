@@ -14,6 +14,8 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
+
+	"github.com/NoUseFreak/ocman/internal/db"
 )
 
 // rePortSuffix matches a port number at the end of a string (e.g. ":4096").
@@ -420,27 +422,18 @@ func (s *Server) fetchSessionFromOpenCode(sessionID string, limit, offset int) (
 		log.WithFields(log.Fields{"sessionID": sessionID, "error": err}).Warn("fetching session defaults")
 	}
 
-	// Determine status from the last message.
-	// "error"   = last assistant message has an error object, or finish == "error"
-	// "waiting" = last assistant message has a finish reason (turn complete, needs user input)
-	// "busy"    = last message is assistant with no finish reason (still streaming)
-	// "done"    = no messages or last message is from the user
+	// Determine status from the last message using shared logic.
 	sessionStatus := "done"
 	if len(messages) > 0 {
 		lastMsg := messages[len(messages)-1]
 		if info, ok := lastMsg["data"].(map[string]interface{}); ok {
 			role, _ := info["role"].(string)
 			finish, _ := info["finish"].(string)
-			_, hasError := info["error"]
-			if role == "assistant" {
-				if finish == "error" || hasError {
-					sessionStatus = "error"
-				} else if finish != "" {
-					sessionStatus = "waiting"
-				} else {
-					sessionStatus = "busy"
-				}
+			lastErr := ""
+			if _, hasError := info["error"]; hasError {
+				lastErr = "true" // non-empty signals an error is present
 			}
+			sessionStatus = db.InferSessionStatus(role, finish, lastErr)
 		}
 	}
 

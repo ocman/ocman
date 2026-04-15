@@ -15,8 +15,12 @@ type DB struct {
 }
 
 // DefaultDBPath returns the default path to the OpenCode database.
+// Falls back to a relative path if the home directory cannot be determined.
 func DefaultDBPath() string {
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(".local", "share", "opencode", "opencode.db")
+	}
 	return filepath.Join(home, ".local", "share", "opencode", "opencode.db")
 }
 

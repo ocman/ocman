@@ -1168,6 +1168,21 @@ tr.no-port { opacity: 0.4; }
 .oc-composer-disabled .oc-composer { opacity: 0.5; border-left-color: var(--text-dim); }
 .oc-composer-disabled .oc-composer-input { cursor: not-allowed; }
 
+.oc-composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 4px 0;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.oc-composer-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .oc-mic-icon { font-size: 12px; }
 @keyframes oc-mic-pulse {
   0%, 100% { opacity: 1; }
@@ -1296,7 +1311,7 @@ tr.no-port { opacity: 0.4; }
   justify-content: center;
   width: 18px;
   height: 18px;
-  border: 1px solid var(--overlay0);
+  border: none;
   border-radius: 4px;
   background: transparent;
   color: var(--overlay0);
@@ -1306,9 +1321,16 @@ tr.no-port { opacity: 0.4; }
 }
 .oc-stop-btn:hover {
   color: var(--red, #f38ba8);
-  border-color: var(--red, #f38ba8);
+
   background: rgba(243, 139, 168, 0.1);
 }
+.oc-stop-hint { color: var(--overlay0); font-size: 11px; }
+.oc-composer-footer-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.oc-keybind-hint { color: var(--overlay0); font-size: 11px; }
 .oc-bar-hint { color: var(--overlay0); }
 /* Context usage indicator */
 .oc-context-usage {

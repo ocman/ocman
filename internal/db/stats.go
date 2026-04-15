@@ -3,10 +3,23 @@ package db
 import (
 	"database/sql"
 	"encoding/json"
+	"sort"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 )
+
+// extractModelProvider returns the provider and model from a MessageData,
+// handling the fallback from top-level fields to nested Model fields.
+func extractModelProvider(md MessageData) (provider, model string) {
+	provider = md.ProviderID
+	model = md.ModelID
+	if provider == "" && md.Model != nil {
+		provider = md.Model.ProviderID
+		model = md.Model.ModelID
+	}
+	return provider, model
+}
 
 // GetStats returns aggregate statistics using SQL aggregation.
 func (d *DB) GetStats() (*Stats, error) {
@@ -203,12 +216,7 @@ func (d *DB) GetModelUsage() ([]ModelUsage, error) {
 			log.WithError(err).Warn("failed to unmarshal message data for model usage")
 			continue
 		}
-		provider := md.ProviderID
-		model := md.ModelID
-		if provider == "" && md.Model != nil {
-			provider = md.Model.ProviderID
-			model = md.Model.ModelID
-		}
+		provider, model := extractModelProvider(md)
 		if model == "" {
 			continue
 		}
@@ -225,10 +233,16 @@ func (d *DB) GetModelUsage() ([]ModelUsage, error) {
 		}
 	}
 
-	var result []ModelUsage
+	result := make([]ModelUsage, 0, len(modelMap))
 	for _, mu := range modelMap {
 		result = append(result, *mu)
 	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Provider != result[j].Provider {
+			return result[i].Provider < result[j].Provider
+		}
+		return result[i].Model < result[j].Model
+	})
 	return result, nil
 }
 
@@ -268,12 +282,7 @@ func (d *DB) GetHourlyTokensByModel() ([]HourlyTokensByModel, error) {
 			log.WithError(err).Warn("failed to unmarshal message data for hourly tokens")
 			continue
 		}
-		provider := md.ProviderID
-		model := md.ModelID
-		if provider == "" && md.Model != nil {
-			provider = md.Model.ProviderID
-			model = md.Model.ModelID
-		}
+		provider, model := extractModelProvider(md)
 		if model == "" {
 			continue
 		}
@@ -289,10 +298,19 @@ func (d *DB) GetHourlyTokensByModel() ([]HourlyTokensByModel, error) {
 		}
 	}
 
-	var result []HourlyTokensByModel
+	result := make([]HourlyTokensByModel, 0, len(agg))
 	for _, v := range agg {
 		result = append(result, *v)
 	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Datetime != result[j].Datetime {
+			return result[i].Datetime < result[j].Datetime
+		}
+		if result[i].Provider != result[j].Provider {
+			return result[i].Provider < result[j].Provider
+		}
+		return result[i].Model < result[j].Model
+	})
 	return result, nil
 }
 

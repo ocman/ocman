@@ -87,7 +87,7 @@ func isLoopback(r *http.Request) bool {
 }
 
 // requireLocalhost wraps a handler to reject non-loopback requests.
-func (s *Server) requireLocalhost(h http.HandlerFunc) http.HandlerFunc {
+func requireLocalhost(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !isLoopback(r) {
 			http.Error(w, "forbidden", http.StatusForbidden)

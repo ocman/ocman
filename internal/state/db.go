@@ -16,8 +16,12 @@ type DB struct {
 }
 
 // DefaultDBPath returns the default path to the ocman state database.
+// Falls back to a relative path if the home directory cannot be determined.
 func DefaultDBPath() string {
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(".local", "share", "ocman", "state.db")
+	}
 	return filepath.Join(home, ".local", "share", "ocman", "state.db")
 }
 

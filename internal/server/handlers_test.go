@@ -1,0 +1,225 @@
+package server
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+// --- validateID tests ---
+
+func TestValidateID(t *testing.T) {
+	tests := []struct {
+		name string
+		id   string
+		want bool
+	}{
+		{"valid simple", "abc123", true},
+		{"valid with hyphens", "abc-def-123", true},
+		{"valid with underscores", "abc_def_123", true},
+		{"valid mixed", "a1-b2_c3", true},
+		{"empty", "", false},
+		{"too long", strings.Repeat("a", 257), false},
+		{"max length", strings.Repeat("a", 256), true},
+		{"with spaces", "abc def", false},
+		{"with slash", "abc/def", false},
+		{"with dots", "abc.def", false},
+		{"special chars", "abc!@#", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := validateID(tt.id)
+			if got != tt.want {
+				t.Errorf("validateID(%q) = %v, want %v", tt.id, got, tt.want)
+			}
+		})
+	}
+}
+
+// --- parseOpenCodeModelRef tests ---
+
+func TestParseOpenCodeModelRef(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        string
+		wantNil      bool
+		wantProvider string
+		wantModel    string
+	}{
+		{"empty", "", true, "", ""},
+		{"whitespace only", "   ", true, "", ""},
+		{"model only", "gpt-4", false, "", "gpt-4"},
+		{"provider/model", "openai/gpt-4", false, "openai", "gpt-4"},
+		{"with spaces", "  openai / gpt-4  ", false, "openai", "gpt-4"},
+		{"empty provider", "/gpt-4", false, "", "/gpt-4"},
+		{"empty model", "openai/", false, "", "openai/"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := parseOpenCodeModelRef(tt.input)
+			if tt.wantNil {
+				if result != nil {
+					t.Errorf("expected nil, got %+v", result)
+				}
+				return
+			}
+			if result == nil {
+				t.Fatal("expected non-nil result")
+			}
+			if result.ProviderID != tt.wantProvider {
+				t.Errorf("ProviderID = %q, want %q", result.ProviderID, tt.wantProvider)
+			}
+			if result.ModelID != tt.wantModel {
+				t.Errorf("ModelID = %q, want %q", result.ModelID, tt.wantModel)
+			}
+		})
+	}
+}
+
+// --- requireGET / requirePOST tests ---
+
+func TestRequireGET(t *testing.T) {
+	handler := requireGET(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// GET should pass through
+	req := httptest.NewRequest("GET", "/test", nil)
+	rr := httptest.NewRecorder()
+	handler(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Errorf("GET: expected 200, got %d", rr.Code)
+	}
+
+	// POST should be rejected
+	req = httptest.NewRequest("POST", "/test", nil)
+	rr = httptest.NewRecorder()
+	handler(rr, req)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("POST: expected 405, got %d", rr.Code)
+	}
+}
+
+func TestRequirePOST(t *testing.T) {
+	handler := requirePOST(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// POST should pass through
+	req := httptest.NewRequest("POST", "/test", nil)
+	rr := httptest.NewRecorder()
+	handler(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Errorf("POST: expected 200, got %d", rr.Code)
+	}
+
+	// GET should be rejected
+	req = httptest.NewRequest("GET", "/test", nil)
+	rr = httptest.NewRecorder()
+	handler(rr, req)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("GET: expected 405, got %d", rr.Code)
+	}
+}
+
+// --- requireLocalhost tests ---
+
+func TestRequireLocalhost(t *testing.T) {
+	handler := requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	tests := []struct {
+		name       string
+		remoteAddr string
+		wantCode   int
+	}{
+		{"IPv4 loopback", "127.0.0.1:12345", http.StatusOK},
+		{"IPv6 loopback", "[::1]:12345", http.StatusOK},
+		{"external IP", "192.168.1.100:12345", http.StatusForbidden},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/test", nil)
+			req.RemoteAddr = tt.remoteAddr
+			rr := httptest.NewRecorder()
+			handler(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Errorf("RemoteAddr=%q: expected %d, got %d", tt.remoteAddr, tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+// --- isLoopback tests ---
+
+func TestIsLoopback(t *testing.T) {
+	tests := []struct {
+		remoteAddr string
+		want       bool
+	}{
+		{"127.0.0.1:8080", true},
+		{"[::1]:8080", true},
+		{"192.168.1.1:8080", false},
+		{"10.0.0.1:443", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.remoteAddr, func(t *testing.T) {
+			r := &http.Request{RemoteAddr: tt.remoteAddr}
+			if got := isLoopback(r); got != tt.want {
+				t.Errorf("isLoopback(%q) = %v, want %v", tt.remoteAddr, got, tt.want)
+			}
+		})
+	}
+}
+
+// --- readAndUnmarshal tests ---
+
+func TestReadAndUnmarshal_ValidJSON(t *testing.T) {
+	body := strings.NewReader(`{"name":"test","value":42}`)
+	req := httptest.NewRequest("POST", "/test", body)
+	rr := httptest.NewRecorder()
+
+	var dst struct {
+		Name  string `json:"name"`
+		Value int    `json:"value"`
+	}
+	ok := readAndUnmarshal(rr, req, 1024, &dst)
+	if !ok {
+		t.Fatal("expected true for valid JSON")
+	}
+	if dst.Name != "test" || dst.Value != 42 {
+		t.Errorf("unexpected parsed values: %+v", dst)
+	}
+}
+
+func TestReadAndUnmarshal_InvalidJSON(t *testing.T) {
+	body := strings.NewReader(`{invalid}`)
+	req := httptest.NewRequest("POST", "/test", body)
+	rr := httptest.NewRecorder()
+
+	var dst struct{}
+	ok := readAndUnmarshal(rr, req, 1024, &dst)
+	if ok {
+		t.Fatal("expected false for invalid JSON")
+	}
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", rr.Code)
+	}
+}
+
+// --- writeJSON tests ---
+
+func TestWriteJSON(t *testing.T) {
+	rr := httptest.NewRecorder()
+	writeJSON(rr, map[string]string{"key": "value"})
+
+	if ct := rr.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", ct)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `"key":"value"`) {
+		t.Errorf("unexpected body: %s", body)
+	}
+}

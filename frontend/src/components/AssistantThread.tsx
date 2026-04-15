@@ -957,7 +957,7 @@ function Composer({
     setSlashIndex(0);
   }, []);
 
-  // Restore draft from localStorage when sessionId changes
+  // Restore draft from localStorage when sessionId changes and focus the input
   useEffect(() => {
     const el = inputRef.current;
     if (!el || !sessionId) return;
@@ -968,7 +968,21 @@ function Composer({
     if (draft) {
       el.style.height = Math.min(el.scrollHeight, 200) + 'px';
     }
+    el.focus();
   }, [sessionId]);
+
+  // Refocus the input when clicking anywhere non-interactive on the page
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!inputRef.current || inputRef.current.disabled) return;
+      // Don't steal focus from interactive elements
+      if (target.closest('button, a, select, input, textarea, [role="button"], [contenteditable], pre, code, .oc-cmd-palette')) return;
+      inputRef.current.focus();
+    };
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, []);
 
   // Flush any pending draft save on unmount
   useEffect(() => {
@@ -1408,33 +1422,7 @@ function Composer({
                 ))}
               </select>
             )}
-            {contextTokens != null && contextTokens > 0 && (() => {
-              const contextWindow = getContextWindow(activeModel);
-              const pct = contextWindow ? Math.min(100, (contextTokens / contextWindow) * 100) : null;
-              return (
-                <span className={`oc-context-usage${pct != null && pct > 80 ? ' oc-context-warn' : ''}`} title={contextWindow ? `${contextTokens.toLocaleString()} / ${contextWindow.toLocaleString()} tokens` : `${contextTokens.toLocaleString()} tokens used`}>
-                  {formatTokenCount(contextTokens)}{pct != null && ` (${pct.toFixed(0)}%)`}
-                </span>
-              );
-            })()}
             {disabled && <span className="oc-bar-hint">No running OpenCode instance</span>}
-            {!disabled && isRunning && (
-              <span className="oc-bar-running">
-                <span className="oc-bar-dots">
-                  <span className="oc-thinking-dot" /><span className="oc-thinking-dot" /><span className="oc-thinking-dot" />
-                </span>
-                <button
-                  type="button"
-                  className="oc-stop-btn"
-                  onClick={() => onAbort?.()}
-                  title="Stop generation (Esc)"
-                >
-                  <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-                    <rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor" />
-                  </svg>
-                </button>
-              </span>
-            )}
           </div>
           <div className="oc-composer-bar-right">
             <button
@@ -1468,6 +1456,40 @@ function Composer({
             )}
           </div>
         </div>
+      </div>
+      <div className="oc-composer-footer">
+        <span className="oc-composer-footer-left">
+          {!disabled && isRunning && (
+            <>
+              <span className="oc-bar-dots">
+                <span className="oc-thinking-dot" /><span className="oc-thinking-dot" /><span className="oc-thinking-dot" />
+              </span>
+              <button
+                type="button"
+                className="oc-stop-btn"
+                onClick={() => onAbort?.()}
+                title="Stop generation (Esc)"
+              >
+                <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+                  <rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor" />
+                </svg>
+              </button>
+              <span className="oc-stop-hint">Esc to interrupt</span>
+            </>
+          )}
+        </span>
+        <span className="oc-composer-footer-right">
+          {contextTokens != null && contextTokens > 0 && (() => {
+            const contextWindow = getContextWindow(activeModel);
+            const pct = contextWindow ? Math.min(100, (contextTokens / contextWindow) * 100) : null;
+            return (
+              <span className={`oc-context-usage${pct != null && pct > 80 ? ' oc-context-warn' : ''}`} title={contextWindow ? `${contextTokens.toLocaleString()} / ${contextWindow.toLocaleString()} tokens` : `${contextTokens.toLocaleString()} tokens used`}>
+                {formatTokenCount(contextTokens)}{pct != null && ` (${pct.toFixed(0)}%)`}
+              </span>
+            );
+          })()}
+          <span className="oc-keybind-hint">? for shortcuts</span>
+        </span>
       </div>
     </div>
   );

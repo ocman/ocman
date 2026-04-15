@@ -9,6 +9,14 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// derefStr returns the string value of a nullable string pointer, or "" if nil.
+func derefStr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
 // GetSessions returns sessions, optionally filtered by directory and/or a minimum timestamp.
 // Uses SQL aggregation to avoid N+1 queries.
 func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
@@ -91,21 +99,8 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 		s.DurationMs = s.TimeUpdated - s.TimeCreated
 
 		// Determine session status based on the last message.
-		// "error"   = last assistant message has an error object, or finish == "error"
-		// "waiting" = last assistant message has a finish reason (turn complete, needs user input)
-		// "busy"    = last message is assistant with no finish reason (still streaming)
-		// "done"    = no messages or last message is from the user (session idle)
-		if lastRole != nil && *lastRole == "assistant" {
-			if (lastFinish != nil && *lastFinish == "error") || (lastError != nil && *lastError != "") {
-				s.Status = "error"
-			} else if lastFinish != nil && *lastFinish != "" {
-				s.Status = "waiting"
-			} else {
-				s.Status = "busy"
-			}
-		} else {
-			s.Status = "done"
-		}
+		role, finish, lastErr := derefStr(lastRole), derefStr(lastFinish), derefStr(lastError)
+		s.Status = InferSessionStatus(role, finish, lastErr)
 
 		sessions = append(sessions, s)
 	}
@@ -304,7 +299,7 @@ func (d *DB) GetSessionDefaults(sessionID, directory string) (SessionDefaults, e
 // GetContextTokenCount returns the token usage shown in OpenCode's prompt bar:
 // the last assistant message with output > 0, using
 // input + output + reasoning + cache.read + cache.write.
-func (d *DB) GetContextTokenCount(sessionID string) int64 {
+func (d *DB) GetContextTokenCount(sessionID string) (int64, error) {
 	var count int64
 	err := d.db.QueryRow(`
 		SELECT COALESCE(
@@ -331,10 +326,7 @@ func (d *DB) GetContextTokenCount(sessionID string) int64 {
 		LIMIT 1
 	`, sessionID).Scan(&count)
 	if err != nil {
-		return 0
+		return 0, err
 	}
-	return count
+	return count, nil
 }
-
-// sessionRowScannable is a helper type for scanning nullable int64 values.
-type nullableInt64 = sql.NullInt64

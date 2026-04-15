@@ -1,6 +1,26 @@
 package db
 
-import "encoding/json"
+import (
+	"encoding/json"
+)
+
+// InferSessionStatus determines the session status from the last message's attributes.
+//   - "error"   = last assistant message has an error or finish == "error"
+//   - "waiting" = last assistant message has a finish reason (turn complete)
+//   - "busy"    = last message is assistant with no finish reason (still streaming)
+//   - "done"    = no messages or last message is from the user
+func InferSessionStatus(lastRole, lastFinish, lastError string) string {
+	if lastRole == "assistant" {
+		if lastFinish == "error" || lastError != "" {
+			return "error"
+		}
+		if lastFinish != "" {
+			return "waiting"
+		}
+		return "busy"
+	}
+	return "done"
+}
 
 // Session represents an OpenCode session.
 type Session struct {
@@ -86,13 +106,6 @@ type Part struct {
 	SessionID   string          `json:"sessionId"`
 	TimeCreated int64           `json:"timeCreated"`
 	Data        json.RawMessage `json:"data"`
-}
-
-// PartData is the parsed data from a part.
-type PartData struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
-	Tool string `json:"tool"`
 }
 
 // Stats holds aggregate statistics.

@@ -123,9 +123,16 @@ function convertMessages(
               const desc = inp.description || title || 'Subagent task';
               const agentType = inp.subagent_type || '';
               const label = agentType ? `${desc} (${agentType})` : desc;
-              // Extract task_id and output from the tool result
+              // Extract task_id and output from the tool result.
+              // The task_id can appear in several places depending on
+              // whether the task is still running or already completed:
+              // - inp.task_id: present when resuming an existing task
+              // - st.output: written by OpenCode once the tool returns
+              // - st.metadata: may contain session references
               let taskId = '';
               let taskOutput = '';
+              // Check input first (available immediately for resumed tasks)
+              if (typeof inp.task_id === 'string' && inp.task_id) taskId = inp.task_id;
               const outputStr = typeof st.output === 'string' ? st.output : JSON.stringify(st.output || '');
               // task_id may appear in the output text
               const idMatch = outputStr.match(/task_id:\s*(ses_[^\s)]+)/);
@@ -133,6 +140,13 @@ function convertMessages(
               if (!taskId && st.output && typeof st.output === 'object') {
                 const out = st.output as Record<string, unknown>;
                 if (typeof out.task_id === 'string') taskId = out.task_id;
+              }
+              // Check metadata for session references
+              if (!taskId && st.metadata) {
+                const meta = st.metadata as Record<string, unknown>;
+                if (typeof meta.sessionId === 'string') taskId = meta.sessionId;
+                else if (typeof meta.taskId === 'string') taskId = meta.taskId;
+                else if (typeof meta.task_id === 'string') taskId = meta.task_id;
               }
               // The output is the subagent result — use it directly, stripping the task_id line
               if (typeof st.output === 'string' && st.output.trim()) {

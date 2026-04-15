@@ -42,31 +42,31 @@ func (s *Server) Start() error {
 	mux := http.NewServeMux()
 
 	// API routes — read-only endpoints enforce GET, mutating endpoints enforce POST
-	mux.HandleFunc("/api/stats", s.requireGET(s.handleStats))
-	mux.HandleFunc("/api/projects", s.requireGET(s.handleProjects))
-	mux.HandleFunc("/api/sessions", s.requireGET(s.handleSessions))
-	mux.HandleFunc("/api/session/", s.requireGET(s.handleSession))
-	mux.HandleFunc("/api/session/archive", s.requirePOST(s.handleArchiveSession))
-	mux.HandleFunc("/api/session/seen", s.requirePOST(s.handleSeenSession))
-	mux.HandleFunc("/api/activity", s.requireGET(s.handleActivity))
-	mux.HandleFunc("/api/models", s.requireGET(s.handleModels))
-	mux.HandleFunc("/api/hourly", s.requireGET(s.handleHourly))
-	mux.HandleFunc("/api/hourly-tokens", s.requireGET(s.handleHourlyTokens))
-	mux.HandleFunc("/api/session-port/", s.requireGET(s.handleSessionPort))
-	mux.HandleFunc("/api/send-message", s.requirePOST(s.handleSendMessage))
-	mux.HandleFunc("/api/respond-permission", s.requirePOST(s.handleRespondPermission))
-	mux.HandleFunc("/api/respond-question", s.requirePOST(s.handleRespondQuestion))
-	mux.HandleFunc("/api/reject-question", s.requirePOST(s.handleRejectQuestion))
-	mux.HandleFunc("/api/abort-session", s.requirePOST(s.handleAbortSession))
-	mux.HandleFunc("/api/create-session", s.requirePOST(s.handleCreateSession))
+	mux.HandleFunc("/api/stats", requireGET(s.handleStats))
+	mux.HandleFunc("/api/projects", requireGET(s.handleProjects))
+	mux.HandleFunc("/api/sessions", requireGET(s.handleSessions))
+	mux.HandleFunc("/api/session/", requireGET(s.handleSession))
+	mux.HandleFunc("/api/session/archive", requirePOST(s.handleArchiveSession))
+	mux.HandleFunc("/api/session/seen", requirePOST(s.handleSeenSession))
+	mux.HandleFunc("/api/activity", requireGET(s.handleActivity))
+	mux.HandleFunc("/api/models", requireGET(s.handleModels))
+	mux.HandleFunc("/api/hourly", requireGET(s.handleHourly))
+	mux.HandleFunc("/api/hourly-tokens", requireGET(s.handleHourlyTokens))
+	mux.HandleFunc("/api/session-port/", requireGET(s.handleSessionPort))
+	mux.HandleFunc("/api/send-message", requirePOST(s.handleSendMessage))
+	mux.HandleFunc("/api/respond-permission", requirePOST(s.handleRespondPermission))
+	mux.HandleFunc("/api/respond-question", requirePOST(s.handleRespondQuestion))
+	mux.HandleFunc("/api/reject-question", requirePOST(s.handleRejectQuestion))
+	mux.HandleFunc("/api/abort-session", requirePOST(s.handleAbortSession))
+	mux.HandleFunc("/api/create-session", requirePOST(s.handleCreateSession))
 	mux.HandleFunc("/api/events/", s.handleEvents)
-	mux.HandleFunc("/api/whisper/status", s.requireGET(s.handleWhisperStatus))
-	mux.HandleFunc("/api/transcribe", s.requirePOST(s.handleTranscribe))
-	mux.HandleFunc("/api/commands", s.requireGET(s.handleCommands))
-	mux.HandleFunc("/api/command", s.requirePOST(s.handleExecuteCommand))
-	mux.HandleFunc("/api/tmux/clients", s.requireGET(s.requireLocalhost(s.handleTmuxClients)))
-	mux.HandleFunc("/api/tmux/sessions", s.requireGET(s.requireLocalhost(s.handleTmuxSessions)))
-	mux.HandleFunc("/api/tmux/switch", s.requirePOST(s.requireLocalhost(s.handleTmuxSwitch)))
+	mux.HandleFunc("/api/whisper/status", requireGET(s.handleWhisperStatus))
+	mux.HandleFunc("/api/transcribe", requirePOST(s.handleTranscribe))
+	mux.HandleFunc("/api/commands", requireGET(s.handleCommands))
+	mux.HandleFunc("/api/command", requirePOST(s.handleExecuteCommand))
+	mux.HandleFunc("/api/tmux/clients", requireGET(requireLocalhost(s.handleTmuxClients)))
+	mux.HandleFunc("/api/tmux/sessions", requireGET(requireLocalhost(s.handleTmuxSessions)))
+	mux.HandleFunc("/api/tmux/switch", requirePOST(requireLocalhost(s.handleTmuxSwitch)))
 
 	// Static files with SPA fallback
 	staticContent, err := fs.Sub(staticFS, "static")
@@ -132,7 +132,7 @@ func (s *Server) autoArchiveInactiveSessions() {
 }
 
 // requireGET wraps a handler to only allow GET requests.
-func (s *Server) requireGET(h http.HandlerFunc) http.HandlerFunc {
+func requireGET(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -143,7 +143,7 @@ func (s *Server) requireGET(h http.HandlerFunc) http.HandlerFunc {
 }
 
 // requirePOST wraps a handler to only allow POST requests.
-func (s *Server) requirePOST(h http.HandlerFunc) http.HandlerFunc {
+func requirePOST(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

@@ -1,0 +1,787 @@
+package db
+
+import (
+	"database/sql"
+	"encoding/json"
+	"testing"
+	"time"
+
+	_ "github.com/mattn/go-sqlite3"
+)
+
+// openTestDB creates an in-memory SQLite database with the OpenCode schema
+// and returns a *DB suitable for testing. The caller should defer db.Close().
+func openTestDB(t *testing.T) *DB {
+	t.Helper()
+	sqlDB, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("opening test db: %v", err)
+	}
+	_, err = sqlDB.Exec(`
+		CREATE TABLE session (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL DEFAULT '',
+			title TEXT NOT NULL DEFAULT '',
+			directory TEXT NOT NULL DEFAULT '',
+			time_created INTEGER NOT NULL DEFAULT 0,
+			time_updated INTEGER NOT NULL DEFAULT 0,
+			summary_additions INTEGER,
+			summary_deletions INTEGER,
+			summary_files INTEGER,
+			share_url TEXT
+		);
+		CREATE TABLE message (
+			id TEXT PRIMARY KEY,
+			session_id TEXT NOT NULL,
+			time_created INTEGER NOT NULL DEFAULT 0,
+			data TEXT NOT NULL DEFAULT '{}'
+		);
+		CREATE TABLE part (
+			id TEXT PRIMARY KEY,
+			message_id TEXT NOT NULL,
+			session_id TEXT NOT NULL,
+			time_created INTEGER NOT NULL DEFAULT 0,
+			data TEXT NOT NULL DEFAULT '{}'
+		);
+	`)
+	if err != nil {
+		sqlDB.Close()
+		t.Fatalf("creating schema: %v", err)
+	}
+	return &DB{db: sqlDB}
+}
+
+func insertSession(t *testing.T, db *DB, id, title, dir string, created, updated int64) {
+	t.Helper()
+	_, err := db.db.Exec(
+		`INSERT INTO session (id, project_id, title, directory, time_created, time_updated) VALUES (?, '', ?, ?, ?, ?)`,
+		id, title, dir, created, updated,
+	)
+	if err != nil {
+		t.Fatalf("inserting session %s: %v", id, err)
+	}
+}
+
+func insertMessage(t *testing.T, db *DB, id, sessionID string, created int64, data interface{}) {
+	t.Helper()
+	raw, err := json.Marshal(data)
+	if err != nil {
+		t.Fatalf("marshalling message data: %v", err)
+	}
+	_, err = db.db.Exec(
+		`INSERT INTO message (id, session_id, time_created, data) VALUES (?, ?, ?, ?)`,
+		id, sessionID, created, string(raw),
+	)
+	if err != nil {
+		t.Fatalf("inserting message %s: %v", id, err)
+	}
+}
+
+func insertPart(t *testing.T, db *DB, id, messageID, sessionID string, created int64, data interface{}) {
+	t.Helper()
+	raw, err := json.Marshal(data)
+	if err != nil {
+		t.Fatalf("marshalling part data: %v", err)
+	}
+	_, err = db.db.Exec(
+		`INSERT INTO part (id, message_id, session_id, time_created, data) VALUES (?, ?, ?, ?, ?)`,
+		id, messageID, sessionID, created, string(raw),
+	)
+	if err != nil {
+		t.Fatalf("inserting part %s: %v", id, err)
+	}
+}
+
+// --- InferSessionStatus tests ---
+
+func TestInferSessionStatus(t *testing.T) {
+	tests := []struct {
+		name       string
+		role       string
+		finish     string
+		lastError  string
+		wantStatus string
+	}{
+		{"no messages (empty role)", "", "", "", "done"},
+		{"user message last", "user", "", "", "done"},
+		{"assistant busy (no finish)", "assistant", "", "", "busy"},
+		{"assistant waiting (finish set)", "assistant", "end_turn", "", "waiting"},
+		{"assistant error (finish=error)", "assistant", "error", "", "error"},
+		{"assistant error (lastError set)", "assistant", "", "something broke", "error"},
+		{"assistant error (both set)", "assistant", "error", "also error", "error"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := InferSessionStatus(tt.role, tt.finish, tt.lastError)
+			if got != tt.wantStatus {
+				t.Errorf("InferSessionStatus(%q, %q, %q) = %q, want %q",
+					tt.role, tt.finish, tt.lastError, got, tt.wantStatus)
+			}
+		})
+	}
+}
+
+// --- GetSessions tests ---
+
+func TestGetSessions_Empty(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	sessions, err := db.GetSessions("", 0)
+	if err != nil {
+		t.Fatalf("GetSessions: %v", err)
+	}
+	if len(sessions) != 0 {
+		t.Errorf("expected 0 sessions, got %d", len(sessions))
+	}
+}
+
+func TestGetSessions_ReturnsSessionsWithStatus(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Test Session", "/project/a", now-10000, now)
+	insertMessage(t, db, "m1", "s1", now-5000, map[string]interface{}{"role": "user"})
+	insertMessage(t, db, "m2", "s1", now, map[string]interface{}{
+		"role":   "assistant",
+		"finish": "end_turn",
+		"tokens": map[string]interface{}{"input": 100, "output": 50},
+		"cost":   0.005,
+	})
+
+	sessions, err := db.GetSessions("", 0)
+	if err != nil {
+		t.Fatalf("GetSessions: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(sessions))
+	}
+	s := sessions[0]
+	if s.ID != "s1" {
+		t.Errorf("expected ID s1, got %s", s.ID)
+	}
+	if s.Status != "waiting" {
+		t.Errorf("expected status 'waiting', got %q", s.Status)
+	}
+	if s.MessageCount != 1 {
+		t.Errorf("expected 1 user message, got %d", s.MessageCount)
+	}
+	if s.TotalInputTokens != 100 {
+		t.Errorf("expected 100 input tokens, got %d", s.TotalInputTokens)
+	}
+	if s.TotalOutputTokens != 50 {
+		t.Errorf("expected 50 output tokens, got %d", s.TotalOutputTokens)
+	}
+}
+
+func TestGetSessions_FilterByDirectory(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Session A", "/project/a", now, now)
+	insertSession(t, db, "s2", "Session B", "/project/b", now, now)
+
+	sessions, err := db.GetSessions("/project/a", 0)
+	if err != nil {
+		t.Fatalf("GetSessions: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(sessions))
+	}
+	if sessions[0].ID != "s1" {
+		t.Errorf("expected s1, got %s", sessions[0].ID)
+	}
+}
+
+func TestGetSessions_FilterBySince(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Old Session", "/project", now-100000, now-100000)
+	insertSession(t, db, "s2", "New Session", "/project", now, now)
+
+	sessions, err := db.GetSessions("", now-50000)
+	if err != nil {
+		t.Fatalf("GetSessions: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(sessions))
+	}
+	if sessions[0].ID != "s2" {
+		t.Errorf("expected s2, got %s", sessions[0].ID)
+	}
+}
+
+func TestGetSessions_ExcludesSubagents(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Normal Session", "/project", now, now)
+	insertSession(t, db, "s2", "Task (code subagent)", "/project", now, now)
+
+	sessions, err := db.GetSessions("", 0)
+	if err != nil {
+		t.Fatalf("GetSessions: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session (subagent excluded), got %d", len(sessions))
+	}
+	if sessions[0].ID != "s1" {
+		t.Errorf("expected s1, got %s", sessions[0].ID)
+	}
+}
+
+func TestGetSessions_StatusBusy(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Busy Session", "/project", now, now)
+	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{"role": "assistant"})
+
+	sessions, err := db.GetSessions("", 0)
+	if err != nil {
+		t.Fatalf("GetSessions: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(sessions))
+	}
+	if sessions[0].Status != "busy" {
+		t.Errorf("expected status 'busy', got %q", sessions[0].Status)
+	}
+}
+
+func TestGetSessions_StatusError(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Error Session", "/project", now, now)
+	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{
+		"role":   "assistant",
+		"finish": "error",
+	})
+
+	sessions, err := db.GetSessions("", 0)
+	if err != nil {
+		t.Fatalf("GetSessions: %v", err)
+	}
+	if sessions[0].Status != "error" {
+		t.Errorf("expected status 'error', got %q", sessions[0].Status)
+	}
+}
+
+func TestGetSessions_StatusDone(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Done Session", "/project", now, now)
+	// Last message is from user → done
+	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{"role": "user"})
+
+	sessions, err := db.GetSessions("", 0)
+	if err != nil {
+		t.Fatalf("GetSessions: %v", err)
+	}
+	if sessions[0].Status != "done" {
+		t.Errorf("expected status 'done', got %q", sessions[0].Status)
+	}
+}
+
+// --- GetSession tests ---
+
+func TestGetSession_Found(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "My Session", "/project", now-1000, now)
+
+	s, err := db.GetSession("s1")
+	if err != nil {
+		t.Fatalf("GetSession: %v", err)
+	}
+	if s.ID != "s1" {
+		t.Errorf("expected ID s1, got %s", s.ID)
+	}
+	if s.Title != "My Session" {
+		t.Errorf("expected title 'My Session', got %q", s.Title)
+	}
+	if s.DurationMs != 1000 {
+		t.Errorf("expected DurationMs=1000, got %d", s.DurationMs)
+	}
+}
+
+func TestGetSession_NotFound(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	_, err := db.GetSession("nonexistent")
+	if err == nil {
+		t.Fatal("expected error for non-existent session")
+	}
+}
+
+// --- GetSessionMessages tests ---
+
+func TestGetSessionMessages(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Session", "/project", now, now)
+	insertMessage(t, db, "m1", "s1", now-2000, map[string]interface{}{"role": "user"})
+	insertMessage(t, db, "m2", "s1", now-1000, map[string]interface{}{"role": "assistant"})
+	insertMessage(t, db, "m3", "s2", now, map[string]interface{}{"role": "user"}) // different session
+
+	messages, err := db.GetSessionMessages("s1")
+	if err != nil {
+		t.Fatalf("GetSessionMessages: %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(messages))
+	}
+	if messages[0].ID != "m1" || messages[1].ID != "m2" {
+		t.Errorf("messages out of order: %s, %s", messages[0].ID, messages[1].ID)
+	}
+}
+
+// --- GetSessionParts tests ---
+
+func TestGetSessionParts(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Session", "/project", now, now)
+	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{"role": "user"})
+	insertPart(t, db, "p1", "m1", "s1", now, map[string]interface{}{"type": "text", "text": "hello"})
+	insertPart(t, db, "p2", "m1", "s1", now+1, map[string]interface{}{"type": "text", "text": "world"})
+	insertPart(t, db, "p3", "m1", "s2", now+2, map[string]interface{}{"type": "text"}) // different session
+
+	parts, err := db.GetSessionParts("s1")
+	if err != nil {
+		t.Fatalf("GetSessionParts: %v", err)
+	}
+	if len(parts) != 2 {
+		t.Fatalf("expected 2 parts, got %d", len(parts))
+	}
+}
+
+// --- PaginateMessages tests ---
+
+func TestPaginateMessages(t *testing.T) {
+	msgs := []Message{
+		{ID: "m1"}, {ID: "m2"}, {ID: "m3"}, {ID: "m4"}, {ID: "m5"},
+	}
+
+	tests := []struct {
+		name      string
+		limit     int
+		offset    int
+		wantIDs   []string
+		wantTotal int
+	}{
+		{"last 2", 2, 0, []string{"m4", "m5"}, 5},
+		{"last 2, offset 1", 2, 1, []string{"m3", "m4"}, 5},
+		{"all", 10, 0, []string{"m1", "m2", "m3", "m4", "m5"}, 5},
+		{"offset beyond", 2, 10, nil, 5},
+		{"empty input", 5, 0, nil, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := msgs
+			if tt.name == "empty input" {
+				input = nil
+			}
+			result, total := PaginateMessages(input, tt.limit, tt.offset)
+			if total != tt.wantTotal {
+				t.Errorf("total = %d, want %d", total, tt.wantTotal)
+			}
+			if len(result) != len(tt.wantIDs) {
+				t.Fatalf("got %d results, want %d", len(result), len(tt.wantIDs))
+			}
+			for i, id := range tt.wantIDs {
+				if result[i].ID != id {
+					t.Errorf("result[%d].ID = %q, want %q", i, result[i].ID, id)
+				}
+			}
+		})
+	}
+}
+
+// --- FilterPartsForMessages tests ---
+
+func TestFilterPartsForMessages(t *testing.T) {
+	parts := []Part{
+		{ID: "p1", MessageID: "m1"},
+		{ID: "p2", MessageID: "m2"},
+		{ID: "p3", MessageID: "m1"},
+		{ID: "p4", MessageID: "m3"},
+	}
+	messages := []Message{{ID: "m1"}, {ID: "m3"}}
+
+	result := FilterPartsForMessages(parts, messages)
+	if len(result) != 3 {
+		t.Fatalf("expected 3 filtered parts, got %d", len(result))
+	}
+	expectedIDs := map[string]bool{"p1": true, "p3": true, "p4": true}
+	for _, p := range result {
+		if !expectedIDs[p.ID] {
+			t.Errorf("unexpected part %s", p.ID)
+		}
+	}
+}
+
+func TestFilterPartsForMessages_Empty(t *testing.T) {
+	result := FilterPartsForMessages(nil, nil)
+	if len(result) != 0 {
+		t.Errorf("expected 0 parts, got %d", len(result))
+	}
+}
+
+// --- GetSessionsInactiveBefore tests ---
+
+func TestGetSessionsInactiveBefore(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Old", "/project", now-200000, now-200000)
+	insertSession(t, db, "s2", "Recent", "/project", now, now)
+	insertSession(t, db, "s3", "Subagent (code subagent)", "/project", now-200000, now-200000)
+
+	cutoff := now - 100000
+	candidates, err := db.GetSessionsInactiveBefore(cutoff)
+	if err != nil {
+		t.Fatalf("GetSessionsInactiveBefore: %v", err)
+	}
+	// s1 should be returned, s2 is too recent, s3 is a subagent (excluded)
+	if len(candidates) != 1 {
+		t.Fatalf("expected 1 candidate, got %d", len(candidates))
+	}
+	if candidates[0].ID != "s1" {
+		t.Errorf("expected s1, got %s", candidates[0].ID)
+	}
+}
+
+// --- GetSessionDefaults tests ---
+
+func TestGetSessionDefaults_NoMessages(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	defaults, err := db.GetSessionDefaults("s1", "/project")
+	if err != nil {
+		t.Fatalf("GetSessionDefaults: %v", err)
+	}
+	if defaults.Agent != "" || defaults.Model != "" {
+		t.Errorf("expected empty defaults, got agent=%q model=%q", defaults.Agent, defaults.Model)
+	}
+}
+
+func TestGetSessionDefaults_WithMessages(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Current", "/project", now, now)
+	insertSession(t, db, "s2", "Previous", "/project", now-10000, now-10000)
+
+	// Insert an assistant message in s2 with agent and model
+	insertMessage(t, db, "m1", "s2", now-5000, map[string]interface{}{
+		"role":       "assistant",
+		"agent":      "code",
+		"providerID": "anthropic",
+		"modelID":    "claude-3-5-sonnet",
+	})
+
+	defaults, err := db.GetSessionDefaults("s1", "/project")
+	if err != nil {
+		t.Fatalf("GetSessionDefaults: %v", err)
+	}
+	if defaults.Agent != "code" {
+		t.Errorf("expected agent 'code', got %q", defaults.Agent)
+	}
+	if defaults.Model != "anthropic/claude-3-5-sonnet" {
+		t.Errorf("expected model 'anthropic/claude-3-5-sonnet', got %q", defaults.Model)
+	}
+}
+
+// --- GetContextTokenCount tests ---
+
+func TestGetContextTokenCount_NoMessages(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	count, err := db.GetContextTokenCount("nonexistent")
+	if err == nil {
+		t.Fatal("expected error for non-existent session")
+	}
+	if count != 0 {
+		t.Errorf("expected 0, got %d", count)
+	}
+}
+
+func TestGetContextTokenCount_WithTokens(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Session", "/project", now, now)
+	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{
+		"role": "assistant",
+		"tokens": map[string]interface{}{
+			"input":     100,
+			"output":    50,
+			"reasoning": 10,
+			"cache":     map[string]interface{}{"read": 5, "write": 3},
+		},
+	})
+
+	count, err := db.GetContextTokenCount("s1")
+	if err != nil {
+		t.Fatalf("GetContextTokenCount: %v", err)
+	}
+	expected := int64(100 + 50 + 10 + 5 + 3)
+	if count != expected {
+		t.Errorf("expected %d, got %d", expected, count)
+	}
+}
+
+// --- Stats tests ---
+
+func TestGetStats(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Session 1", "/a", now, now)
+	insertSession(t, db, "s2", "Session 2", "/b", now, now)
+	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{"role": "user"})
+	insertMessage(t, db, "m2", "s1", now, map[string]interface{}{
+		"role":   "assistant",
+		"tokens": map[string]interface{}{"input": 100, "output": 50},
+		"cost":   0.01,
+	})
+
+	stats, err := db.GetStats()
+	if err != nil {
+		t.Fatalf("GetStats: %v", err)
+	}
+	if stats.TotalSessions != 2 {
+		t.Errorf("TotalSessions = %d, want 2", stats.TotalSessions)
+	}
+	if stats.TotalMessages != 1 {
+		t.Errorf("TotalMessages = %d, want 1", stats.TotalMessages)
+	}
+	if stats.TotalProjects != 2 {
+		t.Errorf("TotalProjects = %d, want 2", stats.TotalProjects)
+	}
+	if stats.TotalTokensIn != 100 {
+		t.Errorf("TotalTokensIn = %d, want 100", stats.TotalTokensIn)
+	}
+	if stats.TotalTokensOut != 50 {
+		t.Errorf("TotalTokensOut = %d, want 50", stats.TotalTokensOut)
+	}
+}
+
+func TestGetProjects(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Session 1", "/project/a", now, now)
+	insertSession(t, db, "s2", "Session 2", "/project/a", now, now)
+	insertSession(t, db, "s3", "Session 3", "/project/b", now, now)
+
+	projects, err := db.GetProjects()
+	if err != nil {
+		t.Fatalf("GetProjects: %v", err)
+	}
+	if len(projects) != 2 {
+		t.Fatalf("expected 2 projects, got %d", len(projects))
+	}
+	// Both are returned; find project /a
+	for _, p := range projects {
+		if p.Directory == "/project/a" && p.SessionCount != 2 {
+			t.Errorf("project /a: expected 2 sessions, got %d", p.SessionCount)
+		}
+	}
+}
+
+func TestGetHourlyActivity(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	result, err := db.GetHourlyActivity()
+	if err != nil {
+		t.Fatalf("GetHourlyActivity: %v", err)
+	}
+	if len(result) != 24 {
+		t.Errorf("expected 24 hours, got %d", len(result))
+	}
+	for i, h := range result {
+		if h.Hour != i {
+			t.Errorf("hour %d has Hour=%d", i, h.Hour)
+		}
+	}
+}
+
+func TestGetModelUsage(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Session", "/project", now, now)
+	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{
+		"role":       "assistant",
+		"providerID": "anthropic",
+		"modelID":    "claude-3",
+		"tokens":     map[string]interface{}{"input": 100, "output": 50},
+	})
+	insertMessage(t, db, "m2", "s1", now, map[string]interface{}{
+		"role":       "assistant",
+		"providerID": "anthropic",
+		"modelID":    "claude-3",
+		"tokens":     map[string]interface{}{"input": 200, "output": 100},
+	})
+
+	result, err := db.GetModelUsage()
+	if err != nil {
+		t.Fatalf("GetModelUsage: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 model, got %d", len(result))
+	}
+	if result[0].Provider != "anthropic" || result[0].Model != "claude-3" {
+		t.Errorf("unexpected model: %s/%s", result[0].Provider, result[0].Model)
+	}
+	if result[0].Count != 2 {
+		t.Errorf("expected count=2, got %d", result[0].Count)
+	}
+	if result[0].TokensIn != 300 || result[0].TokensOut != 150 {
+		t.Errorf("expected tokens 300/150, got %d/%d", result[0].TokensIn, result[0].TokensOut)
+	}
+}
+
+func TestGetModelUsage_SortedOutput(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Session", "/project", now, now)
+	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{
+		"role": "assistant", "providerID": "openai", "modelID": "gpt-4",
+		"tokens": map[string]interface{}{"input": 10, "output": 5},
+	})
+	insertMessage(t, db, "m2", "s1", now, map[string]interface{}{
+		"role": "assistant", "providerID": "anthropic", "modelID": "claude-3",
+		"tokens": map[string]interface{}{"input": 20, "output": 10},
+	})
+
+	result, err := db.GetModelUsage()
+	if err != nil {
+		t.Fatalf("GetModelUsage: %v", err)
+	}
+	if len(result) != 2 {
+		t.Fatalf("expected 2 models, got %d", len(result))
+	}
+	// Should be sorted: anthropic before openai
+	if result[0].Provider != "anthropic" {
+		t.Errorf("expected first provider 'anthropic', got %q", result[0].Provider)
+	}
+	if result[1].Provider != "openai" {
+		t.Errorf("expected second provider 'openai', got %q", result[1].Provider)
+	}
+}
+
+func TestGetModelUsage_FallbackToNestedModel(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Session", "/project", now, now)
+	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{
+		"role": "assistant",
+		"model": map[string]interface{}{
+			"providerID": "google",
+			"modelID":    "gemini-pro",
+		},
+		"tokens": map[string]interface{}{"input": 50, "output": 25},
+	})
+
+	result, err := db.GetModelUsage()
+	if err != nil {
+		t.Fatalf("GetModelUsage: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 model, got %d", len(result))
+	}
+	if result[0].Provider != "google" || result[0].Model != "gemini-pro" {
+		t.Errorf("expected google/gemini-pro, got %s/%s", result[0].Provider, result[0].Model)
+	}
+}
+
+func TestGetDailyActivity(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	result, err := db.GetDailyActivity(7)
+	if err != nil {
+		t.Fatalf("GetDailyActivity: %v", err)
+	}
+	// Should return 8 entries (today + 7 days back)
+	if len(result) != 8 {
+		t.Errorf("expected 8 daily entries, got %d", len(result))
+	}
+}
+
+// --- extractModelProvider tests ---
+
+func TestExtractModelProvider(t *testing.T) {
+	tests := []struct {
+		name         string
+		data         MessageData
+		wantProvider string
+		wantModel    string
+	}{
+		{
+			"top-level fields",
+			MessageData{ProviderID: "anthropic", ModelID: "claude-3"},
+			"anthropic", "claude-3",
+		},
+		{
+			"nested model",
+			MessageData{Model: &ModelRef{ProviderID: "google", ModelID: "gemini"}},
+			"google", "gemini",
+		},
+		{
+			"top-level takes precedence",
+			MessageData{
+				ProviderID: "anthropic", ModelID: "claude",
+				Model: &ModelRef{ProviderID: "google", ModelID: "gemini"},
+			},
+			"anthropic", "claude",
+		},
+		{
+			"empty data",
+			MessageData{},
+			"", "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider, model := extractModelProvider(tt.data)
+			if provider != tt.wantProvider || model != tt.wantModel {
+				t.Errorf("extractModelProvider() = (%q, %q), want (%q, %q)",
+					provider, model, tt.wantProvider, tt.wantModel)
+			}
+		})
+	}
+}
