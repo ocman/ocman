@@ -36,6 +36,7 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go vet ./...
+      - run: go test ./...
 
   build:
     name: Build

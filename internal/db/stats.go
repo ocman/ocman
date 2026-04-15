@@ -119,6 +119,9 @@ func (d *DB) GetProjects() ([]ProjectStats, error) {
 		}
 		results = append(results, ps)
 	}
+	if err := rows.Err(); err != nil {
+		return results, err
+	}
 	return results, nil
 }
 
@@ -150,6 +153,9 @@ func (d *DB) GetDailyActivity(days int) ([]DailyActivity, error) {
 		}
 		dayMap[da.Date] = &da
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	// Get message counts per day
 	rows2, err := d.db.Query(`
@@ -178,6 +184,9 @@ func (d *DB) GetDailyActivity(days int) ([]DailyActivity, error) {
 		} else {
 			dayMap[date] = &DailyActivity{Date: date, Messages: messages}
 		}
+	}
+	if err := rows2.Err(); err != nil {
+		return nil, err
 	}
 
 	// Fill in gaps and sort
@@ -231,6 +240,9 @@ func (d *DB) GetModelUsage() ([]ModelUsage, error) {
 			mu.TokensIn += md.Tokens.Input
 			mu.TokensOut += md.Tokens.Output
 		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	result := make([]ModelUsage, 0, len(modelMap))
@@ -297,6 +309,9 @@ func (d *DB) GetHourlyTokensByModel() ([]HourlyTokensByModel, error) {
 			entry.TokensOut += md.Tokens.Output
 		}
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	result := make([]HourlyTokensByModel, 0, len(agg))
 	for _, v := range agg {
@@ -337,6 +352,9 @@ func (d *DB) GetHourlyActivity() ([]HourlyActivity, error) {
 			continue
 		}
 		hourMap[hour] = count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	var result []HourlyActivity

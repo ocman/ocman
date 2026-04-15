@@ -104,6 +104,9 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 
 		sessions = append(sessions, s)
 	}
+	if err := rows.Err(); err != nil {
+		return sessions, err
+	}
 	return sessions, nil
 }
 
@@ -180,6 +183,9 @@ func (d *DB) GetSessionMessages(sessionID string) ([]Message, error) {
 		m.Data = json.RawMessage(rawData)
 		messages = append(messages, m)
 	}
+	if err := rows.Err(); err != nil {
+		return messages, err
+	}
 	return messages, nil
 }
 
@@ -207,6 +213,9 @@ func (d *DB) GetSessionParts(sessionID string) ([]Part, error) {
 		}
 		p.Data = json.RawMessage(rawData)
 		parts = append(parts, p)
+	}
+	if err := rows.Err(); err != nil {
+		return parts, err
 	}
 	return parts, nil
 }

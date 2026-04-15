@@ -163,7 +163,7 @@ func (s *Server) handleArchiveSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
-	sessionID := r.URL.Path[len("/api/session/"):]
+	sessionID := strings.TrimPrefix(r.URL.Path, "/api/session/")
 	if !validateID(sessionID) {
 		http.Error(w, "invalid session ID", http.StatusBadRequest)
 		return
@@ -215,7 +215,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 
 	// Compute composer context usage from assistant message total token counts.
 	contextTokenCount, err := s.db.GetContextTokenCount(sessionID)
-	if err != nil {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		log.WithFields(log.Fields{"sessionID": sessionID, "error": err}).Warn("fetching context token count")
 	}
 	defaults, err := s.db.GetSessionDefaults(sessionID, session.Directory)
@@ -271,7 +271,7 @@ func (s *Server) handleHourly(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSessionPort(w http.ResponseWriter, r *http.Request) {
-	sessionID := r.URL.Path[len("/api/session-port/"):]
+	sessionID := strings.TrimPrefix(r.URL.Path, "/api/session-port/")
 	if !validateID(sessionID) {
 		http.Error(w, "invalid session ID", http.StatusBadRequest)
 		return

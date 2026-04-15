@@ -1,8 +1,6 @@
 package server
 
 import (
-	"encoding/json"
-	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -227,14 +225,7 @@ func (s *Server) handleTmuxSwitch(w http.ResponseWriter, r *http.Request) {
 		Client  string `json:"client"`
 		Session string `json:"session"`
 	}
-
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBody))
-	if err != nil {
-		http.Error(w, "failed to read body", http.StatusBadRequest)
-		return
-	}
-	if err := json.Unmarshal(body, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
 		return
 	}
 	if req.Session == "" {

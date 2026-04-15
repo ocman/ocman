@@ -589,14 +589,25 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
   const isActive = toolStatus === 'running' || toolStatus === 'pending';
   if (!hasArgs && !hasResult && !isActive && toolStatus !== 'completed') return null;
 
-  // Empty tool calls that are still running render as a compact thinking indicator
+  // Empty tool calls that are still running render as a muted preparing indicator
   if (!hasArgs && !hasResult && isActive) {
+    const lowerName = toolName.toLowerCase().replace(/^mcp_/, '');
+    const preparingLabel =
+      lowerName === 'edit' ? 'Preparing edit…' :
+      lowerName === 'write' ? 'Preparing write…' :
+      lowerName === 'bash' ? 'Preparing command…' :
+      lowerName === 'read' ? 'Preparing read…' :
+      lowerName === 'grep' ? 'Preparing search…' :
+      lowerName === 'glob' ? 'Preparing file search…' :
+      lowerName === 'task' ? 'Preparing task…' :
+      lowerName === 'todowrite' ? 'Updating tasks…' :
+      lowerName === 'webfetch' ? 'Preparing fetch…' :
+      lowerName === 'question' ? 'Preparing question…' :
+      `Preparing ${lowerName}…`;
     return (
       <div className="oc-read-line">
-        <span className="oc-bar-dots" style={{ display: 'inline-flex', gap: 3, verticalAlign: 'middle' }}>
-          <span className="oc-thinking-dot" /><span className="oc-thinking-dot" /><span className="oc-thinking-dot" />
-        </span>
-        <span style={{ marginLeft: 6 }}>Thinking…</span>
+        <span className="oc-read-arrow">{'\u223C'}</span>
+        <span>{preparingLabel}</span>
       </div>
     );
   }

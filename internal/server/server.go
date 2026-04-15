@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -35,9 +36,10 @@ func New(database *db.DB, stateDB *state.DB, addr string) *Server {
 	return &Server{db: database, stateDB: stateDB, addr: addr}
 }
 
-// Start starts the HTTP server.
-func (s *Server) Start() error {
-	go s.runAutoArchiveLoop()
+// Start starts the HTTP server. It blocks until the context is cancelled,
+// then gracefully shuts down the server.
+func (s *Server) Start(ctx context.Context) error {
+	go s.runAutoArchiveLoop(ctx)
 
 	mux := http.NewServeMux()
 
@@ -93,18 +95,46 @@ func (s *Server) Start() error {
 		fileServer.ServeHTTP(w, r)
 	})
 
-	log.WithField("addr", s.addr).Info("ocman server started")
-	return http.ListenAndServe(s.addr, mux)
+	httpServer := &http.Server{
+		Addr:    s.addr,
+		Handler: mux,
+	}
+
+	// Start the server in a goroutine so we can wait for the context.
+	errCh := make(chan error, 1)
+	go func() {
+		log.WithField("addr", s.addr).Info("ocman server started")
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errCh <- err
+		}
+		close(errCh)
+	}()
+
+	// Wait for context cancellation (signal) or server error.
+	select {
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+		log.Info("shutting down server...")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return httpServer.Shutdown(shutdownCtx)
+	}
 }
 
-func (s *Server) runAutoArchiveLoop() {
+func (s *Server) runAutoArchiveLoop(ctx context.Context) {
 	s.autoArchiveInactiveSessions()
 
 	ticker := time.NewTicker(autoArchiveInterval)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		s.autoArchiveInactiveSessions()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.autoArchiveInactiveSessions()
+		}
 	}
 }
 

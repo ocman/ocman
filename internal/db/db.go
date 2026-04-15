@@ -32,6 +32,22 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
 	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("pinging database: %w", err)
+	}
+	return &DB{db: db}, nil
+}
+
+// OpenReadWrite opens the database in read-write mode. This is intended for
+// test setup where schema creation must happen before read-only access.
+func OpenReadWrite(path string) (*DB, error) {
+	dsn := fmt.Sprintf("file:%s?_journal_mode=WAL", path)
+	db, err := sql.Open("sqlite3", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("opening database: %w", err)
+	}
+	if err := db.Ping(); err != nil {
+		db.Close()
 		return nil, fmt.Errorf("pinging database: %w", err)
 	}
 	return &DB{db: db}, nil

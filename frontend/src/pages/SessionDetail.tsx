@@ -390,6 +390,7 @@ export function SessionDetail() {
   const { setInfo } = useHeaderInfo();
   usePageTitle(session?.title || 'Session');
   const lastHashRef = useRef('');
+  const lastSessionHashRef = useRef('');
   const lastSiblingsHashRef = useRef('');
   const archiveTimeoutsRef = useRef<Record<string, number>>({});
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -435,13 +436,18 @@ export function SessionDetail() {
       // If this request was aborted, don't update state
       if (signal?.aborted) return;
 
-      // Always update session metadata
-      setSession({
+      // Only update session metadata if it actually changed
+      const sessionData = {
         ...result.session,
         contextTokenCount: result.session.contextTokenCount ?? result.contextTokenCount,
         defaultAgent: result.defaultAgent,
         defaultModel: result.defaultModel,
-      });
+      };
+      const sessionHash = JSON.stringify({ id: sessionData.id, status: sessionData.status, title: sessionData.title, ctx: sessionData.contextTokenCount, agent: sessionData.defaultAgent, model: sessionData.defaultModel });
+      if (sessionHash !== lastSessionHashRef.current) {
+        lastSessionHashRef.current = sessionHash;
+        setSession(sessionData);
+      }
       setTotalMessages(result.totalMessages || result.session.messageCount || 0);
 
       // Only update messages if the latest page actually changed
@@ -579,6 +585,7 @@ export function SessionDetail() {
     const signal = controller.signal;
 
     lastHashRef.current = '';
+    lastSessionHashRef.current = '';
     setSession(null);
     setMessages([]);
     setParts([]);
@@ -742,12 +749,26 @@ export function SessionDetail() {
       evtSource = new EventSource(`/api/events/?dir=${encodeURIComponent(dir)}`);
       evtSource.onopen = () => { setSseActive(true); };
       evtSource.onmessage = (evt) => {
-        handleEventData(evt.data || '', 'message');
-        if (debounceTimer) clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => {
-          const signal = abortControllerRef.current?.signal;
-          load(signal);
-        }, 200);
+        const data = evt.data || '';
+        handleEventData(data, 'message');
+        // Only schedule a refetch for events that indicate session content changed
+        if (data && data.trim()) {
+          try {
+            const parsed = JSON.parse(data);
+            const type = parsed?.type || '';
+            // Only refetch on events that affect message/part content
+            const contentEvents = ['message.created', 'message.updated', 'part.updated', 'tool.updated', 'session.status'];
+            if (contentEvents.some(e => type.includes(e) || type === e) || !type) {
+              if (debounceTimer) clearTimeout(debounceTimer);
+              debounceTimer = setTimeout(() => {
+                const signal = abortControllerRef.current?.signal;
+                load(signal);
+              }, 1000);
+            }
+          } catch {
+            // Non-JSON event, skip refetch
+          }
+        }
       };
       // Some OpenCode SSE updates may use named events, not default "message".
       ['question', 'permission', 'approval', 'tool', 'error'].forEach((eventName) => {

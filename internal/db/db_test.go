@@ -785,3 +785,52 @@ func TestExtractModelProvider(t *testing.T) {
 		})
 	}
 }
+
+// --- GetHourlyTokensByModel tests ---
+
+func TestGetHourlyTokensByModel(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Session", "/project", now, now)
+	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{
+		"role":       "assistant",
+		"providerID": "anthropic",
+		"modelID":    "claude-3",
+		"tokens":     map[string]interface{}{"input": 100, "output": 50},
+	})
+	insertMessage(t, db, "m2", "s1", now, map[string]interface{}{
+		"role":       "assistant",
+		"providerID": "anthropic",
+		"modelID":    "claude-3",
+		"tokens":     map[string]interface{}{"input": 200, "output": 100},
+	})
+
+	result, err := db.GetHourlyTokensByModel()
+	if err != nil {
+		t.Fatalf("GetHourlyTokensByModel: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 hourly entry, got %d", len(result))
+	}
+	if result[0].Provider != "anthropic" || result[0].Model != "claude-3" {
+		t.Errorf("unexpected model: %s/%s", result[0].Provider, result[0].Model)
+	}
+	if result[0].TokensIn != 300 || result[0].TokensOut != 150 {
+		t.Errorf("expected tokens 300/150, got %d/%d", result[0].TokensIn, result[0].TokensOut)
+	}
+}
+
+func TestGetHourlyTokensByModel_Empty(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	result, err := db.GetHourlyTokensByModel()
+	if err != nil {
+		t.Fatalf("GetHourlyTokensByModel: %v", err)
+	}
+	if len(result) != 0 {
+		t.Errorf("expected 0 entries, got %d", len(result))
+	}
+}

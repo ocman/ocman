@@ -51,13 +51,23 @@ func discoverOpenCodePorts() map[string]string {
 	defer portCache.mu.Unlock()
 
 	if time.Since(portCache.updated) < portCacheTTL && portCache.ports != nil {
-		return portCache.ports
+		return copyMap(portCache.ports)
 	}
 
 	result := discoverOpenCodePortsUncached()
 	portCache.ports = result
 	portCache.updated = time.Now()
-	return result
+	return copyMap(result)
+}
+
+// copyMap returns a shallow copy of a string map to prevent callers from
+// mutating the cached data.
+func copyMap(m map[string]string) map[string]string {
+	cp := make(map[string]string, len(m))
+	for k, v := range m {
+		cp[k] = v
+	}
+	return cp
 }
 
 // discoverOpenCodePortsUncached performs the actual lsof-based discovery.

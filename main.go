@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	log "github.com/sirupsen/logrus"
 
@@ -35,8 +38,14 @@ func main() {
 	}
 	defer stateDB.Close()
 
+	// Create a context that is cancelled on SIGINT or SIGTERM.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	srv := server.New(database, stateDB, *addr)
-	if err := srv.Start(); err != nil {
+	if err := srv.Start(ctx); err != nil {
 		log.Fatalf("Server error: %v", err)
 	}
+
+	log.Info("server stopped gracefully")
 }
