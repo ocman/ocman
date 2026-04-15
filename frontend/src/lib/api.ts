@@ -132,9 +132,24 @@ export interface HourlyData {
   sessions: number;
 }
 
+export interface HourlyTokensByModel {
+  datetime: string; // "YYYY-MM-DD HH"
+  provider: string;
+  model: string;
+  tokensIn: number;
+  tokensOut: number;
+}
+
 export interface PortInfo {
   port: string;
   available: boolean;
+}
+
+export interface SlashCommand {
+  name: string;
+  description?: string;
+  agent?: string;
+  model?: string;
 }
 
 export interface TmuxClient {
@@ -182,6 +197,7 @@ export const api = {
   activity: () => fetchJSON<ActivityDay[]>('/api/activity'),
   models: () => fetchJSON<ModelUsage[]>('/api/models'),
   hourly: () => fetchJSON<HourlyData[]>('/api/hourly'),
+  hourlyTokens: () => fetchJSON<HourlyTokensByModel[]>('/api/hourly-tokens'),
   sessionPort: (id: string, signal?: AbortSignal) => fetchJSON<PortInfo>(`/api/session-port/${id}`, signal),
   createSession: async (directory: string) => {
     const resp = await fetch('/api/create-session', {
@@ -245,6 +261,14 @@ export const api = {
     });
     if (!resp.ok) throw new Error(await resp.text());
   },
+  abortSession: async (sessionId: string, directory: string) => {
+    const resp = await fetch('/api/abort-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, directory }),
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+  },
   tmuxClients: () => fetchJSON<{ available: boolean; clients: TmuxClient[] }>('/api/tmux/clients'),
   tmuxSessions: () => fetchJSON<{ available: boolean; sessions: TmuxSession[] }>('/api/tmux/sessions'),
   tmuxSwitch: async (session: string, client?: string) => {
@@ -254,6 +278,23 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+  },
+  commands: (directory: string, signal?: AbortSignal) =>
+    fetchJSON<SlashCommand[]>(`/api/commands?dir=${encodeURIComponent(directory)}`, signal),
+  executeCommand: async (
+    sessionId: string,
+    directory: string,
+    command: string,
+    args: string,
+    model?: string,
+    agent?: string,
+  ) => {
+    const resp = await fetch('/api/command', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, directory, command, arguments: args, model, agent }),
     });
     if (!resp.ok) throw new Error(await resp.text());
   },

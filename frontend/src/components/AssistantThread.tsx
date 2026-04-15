@@ -11,6 +11,8 @@ import rehypeHighlight from 'rehype-highlight';
 import type { FC } from 'react';
 import { getDraft, saveDraft, clearDraft } from '../lib/composerDraft';
 import { useApiStore } from '../lib/apiStore';
+import { api, type SlashCommand } from '../lib/api';
+
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function CodeBlockPre(props: any) {
@@ -88,7 +90,7 @@ const UserMessage: FC = () => {
       </div>
       {isQueued && (
         <div className="oc-msg-queued-badge">
-          <span className="oc-queued-dot" />
+          <span className="oc-queued-dot" title="Queued" />
           Queued
         </div>
       )}
@@ -103,13 +105,13 @@ const AssistantMessage: FC = () => {
   );
   if (!hasContent) return null;
 
-  // Messages that only contain muted tool calls (reads/greps) render as a compact list
+  // Messages that only contain muted tool calls (reads/greps/webfetch) render as a compact list
   const onlyMuted = content.every(
     (p) => {
       if (p.type === 'text' && 'text' in p && !(p as { text: string }).text.trim()) return true;
       if (p.type !== 'tool-call' || !('toolName' in p)) return false;
       const name = (p as { toolName: string }).toolName;
-      return name === '__read__' || name === 'read' || name === 'mcp_read' || name === 'grep' || name === 'mcp_grep' || name === 'glob' || name === 'mcp_glob';
+      return name === '__read__' || name === 'read' || name === 'mcp_read' || name === 'grep' || name === 'mcp_grep' || name === 'glob' || name === 'mcp_glob' || name === 'webfetch' || name === 'mcp_webfetch' || name === 'mcp_Webfetch';
     }
   );
 
@@ -155,7 +157,7 @@ function AssistantMeta() {
       if (p.type === 'text' && 'text' in p && !(p as { text: string }).text.trim()) return true;
       if (p.type !== 'tool-call' || !('toolName' in p)) return false;
       const name = (p as { toolName: string }).toolName;
-      return name === '__read__' || name === 'read' || name === 'mcp_read' || name === 'grep' || name === 'mcp_grep' || name === 'glob' || name === 'mcp_glob';
+      return name === '__read__' || name === 'read' || name === 'mcp_read' || name === 'grep' || name === 'mcp_grep' || name === 'glob' || name === 'mcp_glob' || name === 'webfetch' || name === 'mcp_webfetch' || name === 'mcp_Webfetch';
     }
   );
   if (onlyReads) return null;
@@ -169,7 +171,7 @@ function AssistantMeta() {
         </div>
       )}
       <div className="oc-msg-meta">
-        <span className="oc-meta-dot" style={isError ? { background: 'var(--danger)' } : undefined} />
+        <span className="oc-meta-dot" style={isError ? { background: 'var(--danger)' } : undefined} title={isError ? 'Error' : 'Message group'} />
         <span>{time}</span>
       </div>
     </>
@@ -375,18 +377,39 @@ function parseQuestionAnswers(result: unknown): string[] | null {
     return trimmed;
   };
 
-  try {
-    const parsed = JSON.parse(result);
-    if (Array.isArray(parsed)) {
-      const answers = parsed.map((entry) => {
-        if (Array.isArray(entry)) return entry.join(', ').trim();
-        if (typeof entry === 'string') return normalizeAnswer(entry);
-        return '';
-      }).filter(Boolean);
-      return answers.length > 0 ? answers : null;
-    }
-    if (typeof parsed === 'string' && parsed.trim()) return [normalizeAnswer(parsed)];
-  } catch {
+  // The result may be JSON-stringified multiple times (e.g. a JSON string
+  // inside another JSON string). Unwrap up to two levels.
+  const unwrap = (raw: string): unknown => {
+    try {
+      const first = JSON.parse(raw);
+      if (typeof first === 'string') {
+        try { return JSON.parse(first); } catch { return first; }
+      }
+      return first;
+    } catch { return raw; }
+  };
+
+  const parsed = unwrap(result);
+
+  if (Array.isArray(parsed)) {
+    const answers = parsed.map((entry) => {
+      if (Array.isArray(entry)) return entry.join(', ').trim();
+      if (typeof entry === 'string') return normalizeAnswer(entry);
+      if (entry && typeof entry === 'object') {
+        // Handle {label: "..."} or {answer: "..."} shaped objects
+        const obj = entry as Record<string, unknown>;
+        const val = obj.label || obj.answer || obj.value || obj.text;
+        if (typeof val === 'string') return normalizeAnswer(val);
+        return JSON.stringify(entry);
+      }
+      return '';
+    }).filter(Boolean);
+    return answers.length > 0 ? answers : null;
+  }
+  if (typeof parsed === 'string' && parsed.trim()) return [normalizeAnswer(parsed)];
+
+  // Fallback for non-JSON result
+  if (typeof result === 'string') {
     const raw = normalizeAnswer(result);
     if (raw && raw !== '""' && raw !== '[]') return [raw];
   }
@@ -467,9 +490,9 @@ function TodoList({ todos }: { todos: TodoItem[] }) {
         if (isActive) cls += ' oc-todo-active';
         return (
           <div key={i} className={cls}>
-            <span className="oc-todo-check">{isDone ? '\u2713' : isActive ? '\u25B6' : '\u25CB'}</span>
+            <span className="oc-todo-check" title={isDone ? 'Completed' : isActive ? 'In progress' : 'Pending'}>{isDone ? '\u2713' : isActive ? '\u25B6' : '\u25CB'}</span>
             <span className="oc-todo-text">{t.content}</span>
-            {t.priority === 'high' && <span className="oc-todo-priority">!</span>}
+            {t.priority === 'high' && <span className="oc-todo-priority" title="High priority">!</span>}
           </div>
         );
       })}
@@ -482,7 +505,7 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
   const [taskExpanded, setTaskExpanded] = useState(false);
 
   // File reads/greps render as a muted inline line with an arrow icon
-  if (toolName === '__read__' || toolName === 'read' || toolName === 'mcp_read' || toolName === 'grep' || toolName === 'mcp_grep' || toolName === 'glob' || toolName === 'mcp_glob') {
+  if (toolName === '__read__' || toolName === 'read' || toolName === 'mcp_read' || toolName === 'grep' || toolName === 'mcp_grep' || toolName === 'glob' || toolName === 'mcp_glob' || toolName === 'webfetch' || toolName === 'mcp_webfetch' || toolName === 'mcp_Webfetch') {
     return (
       <div className="oc-read-line">
         <span className="oc-read-arrow">{'\u2192'}</span>
@@ -507,8 +530,9 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
 
     let statusIcon = '\u2022';
     let statusClass = 'oc-tool-running';
-    if (taskStatus === 'completed') { statusIcon = '\u2713'; statusClass = 'oc-tool-done'; }
-    else if (taskStatus === 'error') { statusIcon = '\u2717'; statusClass = 'oc-tool-error'; }
+    let statusTitle = 'Running';
+    if (taskStatus === 'completed') { statusIcon = '\u2713'; statusClass = 'oc-tool-done'; statusTitle = 'Completed'; }
+    else if (taskStatus === 'error') { statusIcon = '\u2717'; statusClass = 'oc-tool-error'; statusTitle = 'Error'; }
 
     const handleHeaderClick = sessionId ? () => { window.location.href = `/session/${sessionId}`; } : undefined;
     const isLongOutput = taskOutput.length > 500;
@@ -516,7 +540,7 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
     return (
       <div className={`oc-tool oc-tool-task ${statusClass} ${taskExpanded ? 'oc-tool-expanded' : ''}`}>
         <div className="oc-tool-header" onClick={handleHeaderClick} style={sessionId ? { cursor: 'pointer' } : undefined}>
-          <span className={`oc-tool-icon ${statusClass}`}>{statusIcon}</span>
+          <span className={`oc-tool-icon ${statusClass}`} title={statusTitle}>{statusIcon}</span>
           <span className="oc-tool-label">{label}</span>
           {sessionId && <span className="oc-task-link">{'\u2197'}</span>}
         </div>
@@ -565,10 +589,23 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
   const isActive = toolStatus === 'running' || toolStatus === 'pending';
   if (!hasArgs && !hasResult && !isActive && toolStatus !== 'completed') return null;
 
+  // Empty tool calls that are still running render as a compact thinking indicator
+  if (!hasArgs && !hasResult && isActive) {
+    return (
+      <div className="oc-read-line">
+        <span className="oc-bar-dots" style={{ display: 'inline-flex', gap: 3, verticalAlign: 'middle' }}>
+          <span className="oc-thinking-dot" /><span className="oc-thinking-dot" /><span className="oc-thinking-dot" />
+        </span>
+        <span style={{ marginLeft: 6 }}>Thinking…</span>
+      </div>
+    );
+  }
+
   let statusIcon = '\u2022';
   let statusClass = 'oc-tool-running';
-  if (toolStatus === 'completed') { statusIcon = '\u2713'; statusClass = 'oc-tool-done'; }
-  else if (toolStatus === 'error') { statusIcon = '\u2717'; statusClass = 'oc-tool-error'; }
+  let statusTitle = 'Running';
+  if (toolStatus === 'completed') { statusIcon = '\u2713'; statusClass = 'oc-tool-done'; statusTitle = 'Completed'; }
+  else if (toolStatus === 'error') { statusIcon = '\u2717'; statusClass = 'oc-tool-error'; statusTitle = 'Error'; }
 
   let outputDisplay = '';
   if (typeof result === 'string') outputDisplay = result;
@@ -587,7 +624,7 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
     return (
       <div className={`oc-tool ${statusClass}`}>
         <div className="oc-tool-header" onClick={() => setExpanded(!expanded)}>
-          <span className={`oc-tool-icon ${statusClass}`}>{statusIcon}</span>
+          <i className={`bi bi-check2-square oc-tool-icon ${statusClass}`} title={statusTitle} aria-hidden="true" />
           <span className="oc-tool-label">{title && title !== toolName ? title : 'Task list'}</span>
         </div>
         <div className="oc-tool-content">
@@ -609,7 +646,7 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
     return (
       <div className={`oc-tool oc-tool-patch ${statusClass} ${expanded ? 'oc-tool-expanded' : ''}`}>
         <div className="oc-tool-header" onClick={() => setExpanded(!expanded)}>
-          <span className={`oc-tool-icon ${statusClass}`}>{statusIcon}</span>
+          <span className={`oc-tool-icon ${statusClass}`} title={statusTitle}>{statusIcon}</span>
           <span className="oc-tool-label">{patchSummary}</span>
         </div>
         {(fileLines.length > 0 || patchBody) && (
@@ -631,14 +668,14 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
     );
   }
 
-  // Shell commands get a terminal-style rendering
+   // Shell commands get a terminal-style rendering
   const isBash = toolName === 'bash' || toolName === 'mcp_bash';
   if (isBash) {
     const command = detail || title;
     return (
       <div className={`oc-tool oc-tool-shell ${statusClass} ${expanded ? 'oc-tool-expanded' : ''}`}>
         <div className="oc-tool-header" onClick={() => setExpanded(!expanded)}>
-          <span className={`oc-tool-icon ${statusClass}`}>{statusIcon}</span>
+          <i className={`bi bi-terminal-fill oc-tool-icon ${statusClass}`} title={statusTitle} aria-hidden="true" />
           <span className="oc-tool-label">{title && title !== command ? title : toolName}</span>
         </div>
         <div className="oc-tool-content" onClick={() => !expanded && setExpanded(true)} style={!expanded ? { cursor: 'pointer' } : undefined}>
@@ -656,7 +693,7 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
   return (
     <div className={`oc-tool ${statusClass} ${expanded ? 'oc-tool-expanded' : ''}`}>
       <div className="oc-tool-header" onClick={() => setExpanded(!expanded)}>
-        <span className={`oc-tool-icon ${statusClass}`}>{statusIcon}</span>
+        <span className={`oc-tool-icon ${statusClass}`} title={statusTitle}>{statusIcon}</span>
         <span className="oc-tool-label">{title || toolName}</span>
       </div>
       {(detail || outputDisplay) && (
@@ -802,6 +839,8 @@ const KNOWN_AGENTS = ['build', 'developer', 'plan', 'architect', 'ba', 'brainsto
 
 function Composer({
   onSend,
+  onCommand,
+  onAbort,
   isRunning,
   disabled,
   whisperAvailable,
@@ -814,8 +853,11 @@ function Composer({
   onAgentChange,
   contextTokens,
   sessionId,
+  directory,
 }: {
   onSend?: (text: string, images?: AttachedImage[]) => void;
+  onCommand?: (command: string, args: string) => void;
+  onAbort?: () => void;
   isRunning: boolean;
   disabled?: boolean;
   whisperAvailable?: boolean;
@@ -828,6 +870,7 @@ function Composer({
   onAgentChange?: (agent: string) => void;
   contextTokens?: number;
   sessionId?: string;
+  directory?: string;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -843,6 +886,8 @@ function Composer({
   const sessionIdRef = useRef(sessionId);
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const onAbortRef = useRef(onAbort);
+
   // Keep refs in sync
   useEffect(() => { imagesRef.current = images; }, [images]);
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
@@ -850,11 +895,67 @@ function Composer({
     onSendRef.current = onSend;
   }, [onSend]);
   useEffect(() => {
+    onAbortRef.current = onAbort;
+  }, [onAbort]);
+  useEffect(() => {
     isRunningRef.current = isRunning;
   }, [isRunning]);
   useEffect(() => {
     disabledRef.current = disabled;
   }, [disabled]);
+
+  // --- Slash command autocomplete ---
+  const onCommandRef = useRef(onCommand);
+  useEffect(() => { onCommandRef.current = onCommand; }, [onCommand]);
+  const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
+  const [showSlashMenu, setShowSlashMenu] = useState(false);
+  const [slashFilter, setSlashFilter] = useState('');
+  const [slashIndex, setSlashIndex] = useState(0);
+  const slashMenuRef = useRef<HTMLDivElement>(null);
+
+  // Refs for native listener access
+  const showSlashMenuRef = useRef(false);
+  const slashIndexRef = useRef(0);
+  const filteredCommandsRef = useRef<SlashCommand[]>([]);
+
+  // Fetch commands from OpenCode when directory is available
+  useEffect(() => {
+    if (!directory) return;
+    let cancelled = false;
+    api.commands(directory).then(cmds => {
+      if (!cancelled) setSlashCommands(cmds || []);
+    }).catch(() => { /* no instance running, ignore */ });
+    return () => { cancelled = true; };
+  }, [directory]);
+
+  const filteredCommands = slashCommands.filter(cmd =>
+    cmd.name.toLowerCase().startsWith(slashFilter.toLowerCase())
+  );
+
+  // Keep refs in sync with state
+  useEffect(() => { showSlashMenuRef.current = showSlashMenu; }, [showSlashMenu]);
+  useEffect(() => { slashIndexRef.current = slashIndex; }, [slashIndex]);
+  useEffect(() => { filteredCommandsRef.current = filteredCommands; }, [filteredCommands]);
+
+  // Scroll active item into view
+  useEffect(() => {
+    if (!showSlashMenu || !slashMenuRef.current) return;
+    const active = slashMenuRef.current.querySelector('.oc-slash-item.active');
+    if (active) active.scrollIntoView({ block: 'nearest' });
+  }, [slashIndex, showSlashMenu]);
+
+  // Select a slash command: fill textarea with /<name> and close menu
+  const selectSlashCommand = useCallback((cmd: SlashCommand) => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.value = '/' + cmd.name + ' ';
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+    el.focus();
+    setShowSlashMenu(false);
+    setSlashFilter('');
+    setSlashIndex(0);
+  }, []);
 
   // Restore draft from localStorage when sessionId changes
   useEffect(() => {
@@ -1032,12 +1133,57 @@ function Composer({
 
     el.addEventListener('keydown', (e) => {
       if (disabledRef.current) return;
+
+      // Slash menu keyboard navigation
+      if (showSlashMenuRef.current) {
+        const cmds = filteredCommandsRef.current;
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          const next = (slashIndexRef.current + 1) % Math.max(cmds.length, 1);
+          slashIndexRef.current = next;
+          el.dispatchEvent(new CustomEvent('oc-slash-nav', { detail: next }));
+          return;
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          const next = (slashIndexRef.current - 1 + Math.max(cmds.length, 1)) % Math.max(cmds.length, 1);
+          slashIndexRef.current = next;
+          el.dispatchEvent(new CustomEvent('oc-slash-nav', { detail: next }));
+          return;
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          el.dispatchEvent(new CustomEvent('oc-slash-close'));
+          return;
+        }
+        if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+          if (cmds.length > 0) {
+            e.preventDefault();
+            const cmd = cmds[slashIndexRef.current];
+            if (cmd) {
+              el.dispatchEvent(new CustomEvent('oc-slash-select', { detail: cmd }));
+            }
+            return;
+          }
+        }
+      }
+
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         const trimmed = el.value.trim();
         const imgs = imagesRef.current;
         if (!trimmed && imgs.length === 0) return;
-        onSendRef.current?.(trimmed, imgs.length > 0 ? imgs : undefined);
+
+        // Check if this is a slash command
+        if (trimmed.startsWith('/') && onCommandRef.current) {
+          const spaceIdx = trimmed.indexOf(' ');
+          const command = spaceIdx > 0 ? trimmed.slice(1, spaceIdx) : trimmed.slice(1);
+          const args = spaceIdx > 0 ? trimmed.slice(spaceIdx + 1).trim() : '';
+          onCommandRef.current(command, args);
+        } else {
+          onSendRef.current?.(trimmed, imgs.length > 0 ? imgs : undefined);
+        }
+
         el.value = '';
         el.style.height = 'auto';
         // Clear draft from localStorage on send
@@ -1054,6 +1200,15 @@ function Composer({
     el.addEventListener('input', () => {
       el.style.height = 'auto';
       el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+
+      // Slash command detection: show menu when input starts with /
+      const val = el.value;
+      if (val.startsWith('/') && !val.includes('\n')) {
+        const filter = val.slice(1).split(' ')[0] || '';
+        el.dispatchEvent(new CustomEvent('oc-slash-update', { detail: { show: true, filter } }));
+      } else {
+        el.dispatchEvent(new CustomEvent('oc-slash-update', { detail: { show: false, filter: '' } }));
+      }
       // Debounced save of draft to localStorage
       const sid = sessionIdRef.current;
       if (sid) {
@@ -1090,6 +1245,19 @@ function Composer({
 
   }, []);
 
+  // ESC key to abort a running session
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      if (e.key === 'Escape' && isRunningRef.current && onAbortRef.current) {
+        e.preventDefault();
+        onAbortRef.current();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   // Listen for custom events from native listeners to bridge into React state
   useEffect(() => {
     const el = inputRef.current;
@@ -1099,13 +1267,38 @@ function Composer({
       const files = (e as CustomEvent).detail as File[];
       addImageFiles(files);
     };
+    const handleSlashUpdate = (e: Event) => {
+      const { show, filter } = (e as CustomEvent).detail as { show: boolean; filter: string };
+      setShowSlashMenu(show);
+      setSlashFilter(filter);
+      if (!show) setSlashIndex(0);
+    };
+    const handleSlashNav = (e: Event) => {
+      setSlashIndex((e as CustomEvent).detail as number);
+    };
+    const handleSlashClose = () => {
+      setShowSlashMenu(false);
+      setSlashFilter('');
+      setSlashIndex(0);
+    };
+    const handleSlashSelect = (e: Event) => {
+      selectSlashCommand((e as CustomEvent).detail as SlashCommand);
+    };
     el.addEventListener('oc-clear-images', handleClearImages);
     el.addEventListener('oc-paste-images', handlePasteImages);
+    el.addEventListener('oc-slash-update', handleSlashUpdate);
+    el.addEventListener('oc-slash-nav', handleSlashNav);
+    el.addEventListener('oc-slash-close', handleSlashClose);
+    el.addEventListener('oc-slash-select', handleSlashSelect);
     return () => {
       el.removeEventListener('oc-clear-images', handleClearImages);
       el.removeEventListener('oc-paste-images', handlePasteImages);
+      el.removeEventListener('oc-slash-update', handleSlashUpdate);
+      el.removeEventListener('oc-slash-nav', handleSlashNav);
+      el.removeEventListener('oc-slash-close', handleSlashClose);
+      el.removeEventListener('oc-slash-select', handleSlashSelect);
     };
-  }, [addImageFiles]);
+  }, [addImageFiles, selectSlashCommand]);
 
   // Handle drag and drop on the composer wrapper
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -1152,6 +1345,21 @@ function Composer({
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
+      {showSlashMenu && filteredCommands.length > 0 && (
+        <div className="oc-slash-menu" ref={slashMenuRef}>
+          {filteredCommands.map((cmd, i) => (
+            <div
+              key={cmd.name}
+              className={`oc-slash-item${i === slashIndex ? ' active' : ''}`}
+              onMouseDown={(e) => { e.preventDefault(); selectSlashCommand(cmd); }}
+              onMouseEnter={() => setSlashIndex(i)}
+            >
+              <span className="oc-slash-name">/{cmd.name}</span>
+              {cmd.description && <span className="oc-slash-desc">{cmd.description}</span>}
+            </div>
+          ))}
+        </div>
+      )}
       <div className="oc-composer">
         {images.length > 0 && (
           <div className="oc-composer-images">
@@ -1172,41 +1380,6 @@ function Composer({
         />
         <div className="oc-composer-bar">
           <div className="oc-composer-bar-left">
-            <button
-              className="oc-bar-action"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={disabled}
-              title="Attach image"
-            >+</button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              style={{ display: 'none' }}
-              onChange={(e) => {
-                const files = Array.from(e.target.files || []);
-                addImageFiles(files);
-                e.target.value = '';
-              }}
-            />
-            {contextTokens != null && contextTokens > 0 && (() => {
-              const contextWindow = getContextWindow(activeModel);
-              const pct = contextWindow ? Math.min(100, (contextTokens / contextWindow) * 100) : null;
-              return (
-                <span className={`oc-context-usage${pct != null && pct > 80 ? ' oc-context-warn' : ''}`} title={contextWindow ? `${contextTokens.toLocaleString()} / ${contextWindow.toLocaleString()} tokens` : `${contextTokens.toLocaleString()} tokens used`}>
-                  {formatTokenCount(contextTokens)}{pct != null && ` (${pct.toFixed(0)}%)`}
-                </span>
-              );
-            })()}
-            {disabled && <span className="oc-bar-hint">No running OpenCode instance</span>}
-            {!disabled && isRunning && (
-              <span className="oc-bar-dots">
-                <span className="oc-thinking-dot" /><span className="oc-thinking-dot" /><span className="oc-thinking-dot" />
-              </span>
-            )}
-          </div>
-          <div className="oc-composer-bar-right">
             <select
               className="oc-bar-select"
               disabled={disabled}
@@ -1235,6 +1408,53 @@ function Composer({
                 ))}
               </select>
             )}
+            {contextTokens != null && contextTokens > 0 && (() => {
+              const contextWindow = getContextWindow(activeModel);
+              const pct = contextWindow ? Math.min(100, (contextTokens / contextWindow) * 100) : null;
+              return (
+                <span className={`oc-context-usage${pct != null && pct > 80 ? ' oc-context-warn' : ''}`} title={contextWindow ? `${contextTokens.toLocaleString()} / ${contextWindow.toLocaleString()} tokens` : `${contextTokens.toLocaleString()} tokens used`}>
+                  {formatTokenCount(contextTokens)}{pct != null && ` (${pct.toFixed(0)}%)`}
+                </span>
+              );
+            })()}
+            {disabled && <span className="oc-bar-hint">No running OpenCode instance</span>}
+            {!disabled && isRunning && (
+              <span className="oc-bar-running">
+                <span className="oc-bar-dots">
+                  <span className="oc-thinking-dot" /><span className="oc-thinking-dot" /><span className="oc-thinking-dot" />
+                </span>
+                <button
+                  type="button"
+                  className="oc-stop-btn"
+                  onClick={() => onAbort?.()}
+                  title="Stop generation (Esc)"
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+                    <rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor" />
+                  </svg>
+                </button>
+              </span>
+            )}
+          </div>
+          <div className="oc-composer-bar-right">
+            <button
+              className="oc-bar-action"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={disabled}
+              title="Attach image"
+            >+</button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const files = Array.from(e.target.files || []);
+                addImageFiles(files);
+                e.target.value = '';
+              }}
+            />
             {whisperAvailable && (
               <button
                 ref={micRef}
@@ -1265,9 +1485,11 @@ const MemoComposer = memo(Composer, (prev, next) =>
   prev.selectedAgent === next.selectedAgent &&
   prev.contextTokens === next.contextTokens &&
   prev.sessionId === next.sessionId &&
+  prev.directory === next.directory &&
   (prev.models?.length || 0) === (next.models?.length || 0) &&
   (prev.models || []).every((model, i) => model === (next.models || [])[i])
 );
+// Note: onSend, onAbort, onCommand are accessed via refs, so they don't need re-renders.
 export { MemoComposer as Composer };
 
 export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, footer }: { hasMore?: boolean; loadingMore?: boolean; onLoadMore?: () => void; composer?: React.ReactNode; footer?: React.ReactNode }) {
@@ -1359,6 +1581,56 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
     const el = viewportRef.current;
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   };
+
+  useEffect(() => {
+    const jumpToUserMessage = (direction: 'next' | 'prev') => {
+      const viewport = viewportRef.current;
+      if (!viewport) return;
+
+      const userMessages = Array.from(viewport.querySelectorAll<HTMLElement>('.oc-msg-user'));
+      if (userMessages.length === 0) return;
+
+      const viewportRect = viewport.getBoundingClientRect();
+      const viewportMiddle = viewportRect.top + viewportRect.height / 2;
+      const positions = userMessages.map((message) => {
+        const rect = message.getBoundingClientRect();
+        return {
+          message,
+          middle: rect.top + rect.height / 2,
+        };
+      });
+
+      const currentIndex = positions.reduce((bestIndex, entry, index, arr) => {
+        if (bestIndex === -1) return index;
+        const bestDistance = Math.abs(arr[bestIndex].middle - viewportMiddle);
+        const currentDistance = Math.abs(entry.middle - viewportMiddle);
+        return currentDistance < bestDistance ? index : bestIndex;
+      }, -1);
+
+      const currentEntry = positions[currentIndex];
+      const target = direction === 'next'
+        ? positions.find((entry) => entry.middle > currentEntry.middle + 4)?.message
+        : [...positions].reverse().find((entry) => entry.middle < currentEntry.middle - 4)?.message;
+
+      if (!target && direction === 'next') {
+        viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' });
+        return;
+      }
+
+      (target || currentEntry.message).scrollIntoView({ block: 'start', behavior: 'smooth' });
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || !e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+      if (e.key !== 'j' && e.key !== 'k') return;
+
+      e.preventDefault();
+      jumpToUserMessage(e.key === 'j' ? 'next' : 'prev');
+    };
+
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
+  }, []);
 
   return (
     <ThreadPrimitive.Root className="oc-thread">

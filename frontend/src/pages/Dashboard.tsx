@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend } from 'chart.js';
 import { Bar, Doughnut } from 'react-chartjs-2';
-import type { Session, Stats, Project, ActivityDay, ModelUsage, HourlyData } from '../lib/api';
+import type { Session, Stats, Project, ActivityDay, ModelUsage, HourlyData, HourlyTokensByModel } from '../lib/api';
 import { formatNumber, relativeTime, shortPath } from '../lib/format';
 import { usePageTitle } from '../lib/headerContext';
 import { SessionTable } from '../components/SessionTable';
@@ -28,6 +28,7 @@ export function Dashboard() {
   const [activity, setActivity] = useState<ActivityDay[]>([]);
   const [models, setModels] = useState<ModelUsage[]>([]);
   const [hourly, setHourly] = useState<HourlyData[]>([]);
+  const [hourlyTokens, setHourlyTokens] = useState<HourlyTokensByModel[]>([]);
   const [timeRange, setTimeRange] = useState(24); // hours (0 = all)
   const [showArchived, setShowArchived] = useState(false);
   const chartsRequestedRef = useRef(false);
@@ -38,9 +39,10 @@ export function Dashboard() {
   const getActivity = useApiStore((state) => state.getActivity);
   const getModels = useApiStore((state) => state.getModels);
   const getHourly = useApiStore((state) => state.getHourly);
+  const getHourlyTokens = useApiStore((state) => state.getHourlyTokens);
   const statsRequest = useApiRequest('stats:get');
   const projectsRequest = useApiRequest('projects:get');
-  const sessionsRequest = useApiRequest(timeRange > 0 ? `sessions:get:since:${Date.now() - timeRange * 60 * 60 * 1000}` : 'sessions:get');
+  const sessionsRequest = useApiRequest('sessions:get');
 
   const loadSessions = useCallback(async () => {
     try {
@@ -91,15 +93,17 @@ export function Dashboard() {
     async function loadCharts() {
       setChartsLoading(true);
       try {
-        const [nextActivity, nextModels, nextHourly] = await Promise.all([
+        const [nextActivity, nextModels, nextHourly, nextHourlyTokens] = await Promise.all([
           getActivity(),
           getModels(),
           getHourly(),
+          getHourlyTokens(),
         ]);
         if (cancelled) return;
         setActivity(nextActivity);
         setModels(nextModels);
         setHourly(nextHourly);
+        setHourlyTokens(nextHourlyTokens);
       } finally {
         if (!cancelled) {
           setChartsLoading(false);
@@ -111,7 +115,7 @@ export function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [getActivity, getHourly, getModels, tab]);
+  }, [getActivity, getHourly, getHourlyTokens, getModels, tab]);
 
   const colors = ['#89b4fa', '#a6e3a1', '#cba6f7', '#fab387', '#f38ba8', '#74c7ec', '#94e2d5', '#f9e2af'];
   const sortedModels = [...models].sort((a, b) => b.count - a.count).slice(0, 8);
@@ -243,6 +247,7 @@ export function Dashboard() {
               }} />
             </div>
           </div>
+          {hourlyTokens.length > 0 && <HourlyTokensChart data={hourlyTokens} colors={colors} />}
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16, marginBottom: 32 }}>
             <div className="chart-card">
               <h3>Sessions by Hour of Day</h3>
@@ -272,6 +277,104 @@ export function Dashboard() {
           </>}
         </>
       )}
+    </div>
+  );
+}
+
+function HourlyTokensChart({ data, colors }: { data: HourlyTokensByModel[]; colors: string[] }) {
+  // Generate all hourly slots for the last 7 days
+  const slots: string[] = [];
+  const now = new Date();
+  for (let i = 7 * 24 - 1; i >= 0; i--) {
+    const d = new Date(now.getTime() - i * 3600_000);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    slots.push(`${yyyy}-${mm}-${dd} ${hh}`);
+  }
+
+  // Determine top models by total tokens
+  const modelTotals = new Map<string, number>();
+  for (const d of data) {
+    const key = `${d.provider}/${d.model}`;
+    modelTotals.set(key, (modelTotals.get(key) || 0) + d.tokensIn + d.tokensOut);
+  }
+  const topModels = [...modelTotals.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([key]) => key);
+
+  // Build lookup: modelKey -> datetime -> total tokens
+  const lookup = new Map<string, Map<string, number>>();
+  for (const d of data) {
+    const key = `${d.provider}/${d.model}`;
+    if (!topModels.includes(key)) continue;
+    if (!lookup.has(key)) lookup.set(key, new Map());
+    const dtMap = lookup.get(key)!;
+    dtMap.set(d.datetime, (dtMap.get(d.datetime) || 0) + d.tokensIn + d.tokensOut);
+  }
+
+  const datasets = topModels.map((key, idx) => {
+    const dtMap = lookup.get(key) || new Map();
+    const label = key.includes('/') ? key.split('/').pop()! : key;
+    return {
+      label: label.length > 25 ? label.slice(0, 25) + '...' : label,
+      data: slots.map(s => dtMap.get(s) || 0),
+      backgroundColor: colors[idx % colors.length],
+      borderRadius: 1,
+    };
+  });
+
+  // Build display labels: show "Mon 10", "Tue 11" etc. at midnight, otherwise just the hour
+  const labels = slots.map(s => {
+    const hour = s.slice(11, 13);
+    if (hour === '00') {
+      const d = new Date(s.replace(' ', 'T') + ':00:00');
+      const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
+      return `${day} ${d.getDate()}`;
+    }
+    return '';
+  });
+
+  return (
+    <div className="chart-card" style={{ marginBottom: 32 }}>
+      <h3>Tokens per Hour by Model (last 7 days)</h3>
+      <Bar
+        data={{ labels, datasets }}
+        options={{
+          responsive: true,
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: { boxWidth: 12, padding: 8, font: { size: 11 } },
+            },
+            tooltip: {
+              callbacks: {
+                title: (items) => {
+                  const idx = items[0]?.dataIndex;
+                  if (idx == null) return '';
+                  const s = slots[idx];
+                  return `${s.slice(0, 10)} ${s.slice(11)}:00`;
+                },
+                label: (ctx) => `${ctx.dataset.label}: ${formatNumber(ctx.raw as number)} tokens`,
+              },
+            },
+          },
+          scales: {
+            x: {
+              stacked: true,
+              grid: { display: false },
+              ticks: {
+                maxRotation: 0,
+                autoSkip: false,
+                callback: (_, idx) => labels[idx] || null,
+              },
+            },
+            y: { stacked: true, beginAtZero: true, ticks: { callback: v => formatNumber(v as number) } },
+          },
+        }}
+      />
     </div>
   );
 }

@@ -257,6 +257,15 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, models)
 }
 
+func (s *Server) handleHourlyTokens(w http.ResponseWriter, r *http.Request) {
+	data, err := s.db.GetHourlyTokensByModel()
+	if err != nil {
+		serverError(w, "fetching hourly tokens by model", err)
+		return
+	}
+	writeJSON(w, data)
+}
+
 func (s *Server) handleHourly(w http.ResponseWriter, r *http.Request) {
 	hourly, err := s.db.GetHourlyActivity()
 	if err != nil {
@@ -629,6 +638,56 @@ func (s *Server) handleRejectQuestion(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *Server) handleAbortSession(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		SessionID string `json:"sessionId"`
+		Directory string `json:"directory"`
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBody))
+	if err != nil {
+		http.Error(w, "failed to read body", http.StatusBadRequest)
+		return
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if !validateID(req.SessionID) {
+		http.Error(w, "invalid session ID", http.StatusBadRequest)
+		return
+	}
+
+	port := discoverOpenCodePort(req.Directory)
+	if port == "" {
+		log.WithFields(log.Fields{"sessionID": req.SessionID, "directory": req.Directory}).Warn("no running OpenCode instance found")
+		http.Error(w, "no running OpenCode instance found for this session's directory", http.StatusServiceUnavailable)
+		return
+	}
+
+	apiURL := fmt.Sprintf("http://127.0.0.1:%s/session/%s/abort", port, req.SessionID)
+	resp, err := openCodeClient.Post(apiURL, "application/json", limitedReader([]byte("{}")))
+	if err != nil {
+		log.WithFields(log.Fields{"sessionID": req.SessionID, "error": err}).Error("OpenCode abort API error")
+		http.Error(w, "failed to reach OpenCode instance", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		log.WithFields(log.Fields{"statusCode": resp.StatusCode, "sessionID": req.SessionID, "body": string(respBody)}).Error("OpenCode abort API error")
+		errMsg := string(respBody)
+		if errMsg == "" {
+			errMsg = fmt.Sprintf("OpenCode abort API error (HTTP %d)", resp.StatusCode)
+		}
+		http.Error(w, errMsg, resp.StatusCode)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	dir := r.URL.Query().Get("dir")
 	if dir == "" {
@@ -742,4 +801,115 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]interface{}{
 		"text": text,
 	})
+}
+
+// handleCommands proxies GET /command from the OpenCode instance to list available slash commands.
+func (s *Server) handleCommands(w http.ResponseWriter, r *http.Request) {
+	dir := r.URL.Query().Get("dir")
+	if dir == "" {
+		http.Error(w, "dir parameter required", http.StatusBadRequest)
+		return
+	}
+
+	port := discoverOpenCodePort(dir)
+	if port == "" {
+		log.WithField("directory", dir).Warn("no running OpenCode instance found")
+		http.Error(w, "no running OpenCode instance found", http.StatusServiceUnavailable)
+		return
+	}
+
+	apiURL := fmt.Sprintf("http://127.0.0.1:%s/command", port)
+	resp, err := openCodeClient.Get(apiURL)
+	if err != nil {
+		log.WithFields(log.Fields{"directory": dir, "error": err}).Error("OpenCode commands API error")
+		http.Error(w, "failed to reach OpenCode instance", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		errMsg := string(respBody)
+		if errMsg == "" {
+			errMsg = fmt.Sprintf("OpenCode commands API error (HTTP %d)", resp.StatusCode)
+		}
+		http.Error(w, errMsg, resp.StatusCode)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	io.Copy(w, resp.Body)
+}
+
+// handleExecuteCommand proxies POST /session/:id/command to execute a slash command.
+func (s *Server) handleExecuteCommand(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		SessionID string `json:"sessionId"`
+		Directory string `json:"directory"`
+		Command   string `json:"command"`
+		Arguments string `json:"arguments"`
+		Model     string `json:"model"`
+		Agent     string `json:"agent"`
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBody))
+	if err != nil {
+		http.Error(w, "failed to read body", http.StatusBadRequest)
+		return
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if !validateID(req.SessionID) {
+		http.Error(w, "invalid session ID", http.StatusBadRequest)
+		return
+	}
+	if req.Command == "" {
+		http.Error(w, "command is required", http.StatusBadRequest)
+		return
+	}
+
+	port := discoverOpenCodePort(req.Directory)
+	if port == "" {
+		log.WithFields(log.Fields{"sessionID": req.SessionID, "directory": req.Directory}).Warn("no running OpenCode instance found")
+		http.Error(w, "no running OpenCode instance found for this session's directory", http.StatusServiceUnavailable)
+		return
+	}
+
+	apiURL := fmt.Sprintf("http://127.0.0.1:%s/session/%s/command", port, req.SessionID)
+	bodyMap := map[string]interface{}{
+		"command":   req.Command,
+		"arguments": req.Arguments,
+	}
+	if req.Model != "" {
+		bodyMap["model"] = req.Model
+	}
+	if req.Agent != "" {
+		bodyMap["agent"] = req.Agent
+	}
+	payload, _ := json.Marshal(bodyMap)
+
+	log.WithFields(log.Fields{"sessionID": req.SessionID, "command": req.Command, "port": port}).Info("executing command via OpenCode API")
+
+	resp, err := openCodeClient.Post(apiURL, "application/json", limitedReader(payload))
+	if err != nil {
+		log.WithFields(log.Fields{"sessionID": req.SessionID, "command": req.Command, "error": err}).Error("OpenCode command API error")
+		http.Error(w, "failed to reach OpenCode instance", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		log.WithFields(log.Fields{"statusCode": resp.StatusCode, "sessionID": req.SessionID, "command": req.Command, "body": string(respBody)}).Error("OpenCode command API error")
+		errMsg := string(respBody)
+		if errMsg == "" {
+			errMsg = fmt.Sprintf("OpenCode command API error (HTTP %d)", resp.StatusCode)
+		}
+		http.Error(w, errMsg, resp.StatusCode)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

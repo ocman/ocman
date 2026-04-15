@@ -194,6 +194,18 @@ function convertMessages(
                 result: undefined,
               });
               break;
+            } else if (toolName === 'webfetch' || toolName === 'mcp_webfetch' || toolName === 'mcp_Webfetch') {
+              // Render webfetch as a muted inline line, like file reads.
+              const url = inp.url || argsText || title || '';
+              const fetchText = url ? `Fetch ${url}` : 'Webfetch';
+              toolCalls.push({
+                type: 'tool-call' as const,
+                toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
+                toolName: '__read__',
+                argsText: fetchText,
+                result: undefined,
+              });
+              break;
             } else if (typeof st.output === 'string') {
               resultText = truncate(st.output, 5000);
             } else if (st.output != null) {

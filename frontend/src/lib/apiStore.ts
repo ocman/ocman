@@ -3,6 +3,7 @@ import { api } from './api';
 import type {
   ActivityDay,
   HourlyData,
+  HourlyTokensByModel,
   ModelUsage,
   PortInfo,
   Project,
@@ -30,12 +31,14 @@ type ApiStore = {
   getActivity: () => Promise<ActivityDay[]>;
   getModels: () => Promise<ModelUsage[]>;
   getHourly: () => Promise<HourlyData[]>;
+  getHourlyTokens: () => Promise<HourlyTokensByModel[]>;
   getSessionPort: (id: string, signal?: AbortSignal) => Promise<PortInfo>;
   createSession: (directory: string) => Promise<{ id: string }>;
   sendMessage: (sessionId: string, directory: string, message: string, images?: { url: string; mime: string }[], model?: string, agent?: string) => Promise<void>;
   respondPermission: (sessionId: string, directory: string, permissionId: string, reply: 'once' | 'always' | 'reject') => Promise<void>;
   respondQuestion: (sessionId: string, directory: string, requestId: string, answers: string[][]) => Promise<void>;
   rejectQuestion: (sessionId: string, directory: string, requestId: string) => Promise<void>;
+  abortSession: (sessionId: string, directory: string) => Promise<void>;
   getTmuxClients: () => Promise<{ available: boolean; clients: TmuxClient[] }>;
   getTmuxSessions: () => Promise<{ available: boolean; sessions: TmuxSession[] }>;
   switchTmuxSession: (session: string, client?: string) => Promise<void>;
@@ -76,7 +79,7 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   getStats: () => get().runRequest('stats:get', () => api.stats()),
   getProjects: () => get().runRequest('projects:get', () => api.projects()),
   getSessions: (params, signal) => {
-    const key = params?.dir ? `sessions:get:dir:${params.dir}` : params?.since ? `sessions:get:since:${params.since}` : 'sessions:get';
+    const key = params?.dir ? `sessions:get:dir:${params.dir}` : 'sessions:get';
     return get().runRequest(key, () => api.sessions(params, signal));
   },
   getSession: (id, limit = 50, offset = 0, signal) => get().runRequest(`session:get:${id}`, () => api.session(id, limit, offset, signal)),
@@ -85,12 +88,14 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   getActivity: () => get().runRequest('activity:get', () => api.activity()),
   getModels: () => get().runRequest('models:get', () => api.models()),
   getHourly: () => get().runRequest('hourly:get', () => api.hourly()),
+  getHourlyTokens: () => get().runRequest('hourly-tokens:get', () => api.hourlyTokens()),
   getSessionPort: (id, signal) => get().runRequest(`session-port:get:${id}`, () => api.sessionPort(id, signal)),
   createSession: (directory) => get().runRequest('session:create', () => api.createSession(directory)),
   sendMessage: (sessionId, directory, message, images, model, agent) => get().runRequest(`message:send:${sessionId}`, () => api.sendMessage(sessionId, directory, message, images, model, agent)),
   respondPermission: (sessionId, directory, permissionId, reply) => get().runRequest(`permission:respond:${sessionId}`, () => api.respondPermission(sessionId, directory, permissionId, reply)),
   respondQuestion: (sessionId, directory, requestId, answers) => get().runRequest(`question:respond:${sessionId}`, () => api.respondQuestion(sessionId, directory, requestId, answers)),
   rejectQuestion: (sessionId, directory, requestId) => get().runRequest(`question:reject:${sessionId}`, () => api.rejectQuestion(sessionId, directory, requestId)),
+  abortSession: (sessionId, directory) => get().runRequest(`session:abort:${sessionId}`, () => api.abortSession(sessionId, directory)),
   getTmuxClients: () => get().runRequest('tmux-clients:get', () => api.tmuxClients()),
   getTmuxSessions: () => get().runRequest('tmux-sessions:get', () => api.tmuxSessions()),
   switchTmuxSession: (session, client) => get().runRequest(`tmux:switch:${session}`, () => api.tmuxSwitch(session, client)),

@@ -6,11 +6,12 @@ A web dashboard for viewing OpenCode session data. Go backend reads OpenCode's S
 
 ## Repository layout
 
-- `main.go` — entrypoint; parses `-addr` and `-db` flags, opens the DB, starts the server
-- `internal/db/` — SQLite queries against OpenCode's `session`, `message`, `part` tables; uses `json_extract` heavily
-- `internal/server/server.go` — HTTP server, API handlers, static file serving with SPA fallback, OpenCode port discovery via `lsof`
+- `main.go` — entrypoint; parses `-addr` and `-db` flags, opens both databases, starts the server
+- `internal/db/` — read-only SQLite queries against OpenCode's `session`, `message`, `part` tables; uses `json_extract` heavily
+- `internal/state/` — writable SQLite database (`~/.local/share/ocman/state.db`) for ocman's own state (archived/seen sessions)
+- `internal/server/` — HTTP server, API handlers, static file serving with SPA fallback, OpenCode port discovery via `lsof`, tmux integration, whisper transcription
 - `frontend/` — React + TypeScript + Vite SPA (port 8228 in dev)
-- `internal/server/static/` — Vite build output; embedded into the Go binary via `//go:embed`
+- `internal/server/static/` — Vite build output; embedded into the Go binary via `//go:embed`. Gitignored except for `.gitkeep`.
 
 ## Dev commands
 
@@ -32,18 +33,29 @@ make clean          # removes ocman binary, tmp/, and static/assets/
 
 Order matters: frontend must be built before `go build` so static assets are embedded.
 
+## Verification
+
+CI runs these checks (`.github/workflows/ci.yml`):
+
+```sh
+cd frontend && npm run lint       # ESLint
+cd frontend && npx tsc -b         # TypeScript typecheck
+go vet ./...                      # Go vet
+make build                        # full production build (frontend + Go)
+```
+
+No tests exist in either Go or frontend. No Go linter/formatter config.
+
 ## Key details
 
-- **Single Go dependency**: `github.com/mattn/go-sqlite3` (CGo required)
-- **DB is read-only**: opened with `?mode=ro&_journal_mode=WAL`. The database lives at `~/.local/share/opencode/opencode.db` by default.
-- **No tests exist** in either Go or frontend as of now.
-- **CI**: `.github/workflows/ci.yml` runs frontend lint + typecheck, `go vet`, and a full `make build`. Runs on push/PR to `main`.
-- **No linter/formatter config** for Go. Frontend has ESLint (`eslint.config.js`).
-- Frontend lint: `cd frontend && npm run lint`
-- Frontend typecheck: `cd frontend && npx tsc -b`
+- **CGo required**: `github.com/mattn/go-sqlite3` needs a C compiler.
+- **Two databases**: OpenCode's DB is opened read-only (`?mode=ro&_journal_mode=WAL`, default `~/.local/share/opencode/opencode.db`). Ocman's own state DB is writable (`~/.local/share/ocman/state.db`) and auto-creates its schema on startup.
+- **OpenCode port discovery** uses `lsof` to find processes named `opencode` listening on TCP, then resolves their cwd. This only works on macOS/Linux. Results are cached with a 3-second TTL.
+- **Session status** is inferred at query time from the last message's `role`, `finish`, and `error` fields — not stored.
+- **Auto-archive**: the server background-goroutine archives sessions inactive for 7+ days (checked every 24h).
 
 ## Conventions
 
 - All Go packages live under `internal/` — nothing is exported.
-- The server discovers running OpenCode instances by parsing `lsof` output for processes named `opencode` listening on TCP ports, then resolving their cwd.
-- Session status is inferred from the last message's `role` and `finish` fields, not stored explicitly.
+- API routes use `requireGET`/`requirePOST` wrappers for method enforcement. Some routes (tmux) additionally require `localhost` origin via `requireLocalhost`.
+- Frontend state management uses Zustand. Routing uses react-router-dom.

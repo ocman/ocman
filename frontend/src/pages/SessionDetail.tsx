@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import type { Session, SessionDetail as SessionDetailData, Message, Part } from '../lib/api';
+import { useHotkeys } from 'react-hotkeys-hook';
+import { api, type Session, type SessionDetail as SessionDetailData, type Message, type Part } from '../lib/api';
 import { formatDuration, formatNumber, shortPath, relativeTime } from '../lib/format';
 import { useHeaderInfo, usePageTitle } from '../lib/headerContext';
 import { OcmanRuntimeProvider } from '../components/OcmanRuntimeProvider';
@@ -8,7 +9,8 @@ import { AssistantThread, Composer, type AttachedImage } from '../components/Ass
 import { StatusBadge } from '../components/StatusBadge';
 import { useTmux } from '../lib/useTmux';
 import { filterVisibleSessions } from '../lib/sessionVisibility';
-import { useApiStore, useApiRequest } from '../lib/apiStore';
+import { useApiStore } from '../lib/apiStore';
+import { openVSCode } from '../lib/shortcuts';
 
 const PAGE_SIZE = 50;
 const RECENT_SESSIONS_LIMIT = 20;
@@ -107,6 +109,59 @@ function extractPendingQuestion(node: unknown): PendingQuestion | null {
   return { requestId: id, sessionID, questions };
 }
 
+/** Check if loaded parts contain a pending (unanswered) question tool call. */
+function hasPendingQuestionInParts(parts: Part[]): boolean {
+  const questionToolNames = ['question', 'mcp_question', 'Question', 'mcp_Question'];
+
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i];
+    let pd: Record<string, unknown>;
+    try {
+      pd = typeof p.data === 'string' ? JSON.parse(p.data) : (p.data as unknown as Record<string, unknown>);
+    } catch {
+      continue;
+    }
+    if (pd.type !== 'tool') continue;
+    const toolName = pd.tool as string | undefined;
+    if (!toolName || !questionToolNames.includes(toolName)) continue;
+
+    const state = pd.state as Record<string, unknown> | undefined;
+    if (!state) continue;
+
+    const status = state.status as string | undefined;
+    const output = state.output;
+    const hasOutput = output != null && output !== '' && output !== '""' && output !== '[]';
+    if (status === 'running' || !hasOutput) return true;
+  }
+  return false;
+}
+
+const PENDING_QUESTION_KEY = 'ocman:pendingQuestion:';
+
+function storePendingQuestion(sessionId: string, question: PendingQuestion) {
+  try {
+    sessionStorage.setItem(PENDING_QUESTION_KEY + sessionId, JSON.stringify(question));
+  } catch { /* quota exceeded or unavailable */ }
+}
+
+function loadPendingQuestion(sessionId: string): PendingQuestion | null {
+  try {
+    const raw = sessionStorage.getItem(PENDING_QUESTION_KEY + sessionId);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.requestId && Array.isArray(parsed.questions) && parsed.questions.length > 0) {
+      return parsed as PendingQuestion;
+    }
+  } catch { /* corrupt or unavailable */ }
+  return null;
+}
+
+function clearPendingQuestion(sessionId: string) {
+  try {
+    sessionStorage.removeItem(PENDING_QUESTION_KEY + sessionId);
+  } catch { /* unavailable */ }
+}
+
 function truncateSseData(raw: string, max = 240): string {
   if (raw.length <= max) return raw;
   return raw.slice(0, max) + '...';
@@ -133,14 +188,27 @@ function QuestionPrompt({
   onReply,
   onReject,
   disabled,
+  error,
 }: {
   question: PendingQuestion;
   onReply: (answers: string[][]) => void;
   onReject: () => void;
   disabled?: boolean;
+  error?: string | null;
 }) {
   const [selectedIndices, setSelectedIndices] = useState<Record<number, number | null>>({});
   const [customTexts, setCustomTexts] = useState<Record<number, string>>({});
+  const [currentStep, setCurrentStep] = useState(0);
+
+  const totalSteps = question.questions.length;
+  const isStepped = totalSteps > 1;
+
+  const isStepAnswered = (qi: number) => {
+    const sel = selectedIndices[qi];
+    const custom = customTexts[qi]?.trim();
+    const q = question.questions[qi];
+    return (sel != null && sel >= 0 && (!q || sel < q.options.length)) || !!custom;
+  };
 
   const handleOptionClick = (qi: number, oi: number) => {
     if (disabled) return;
@@ -152,9 +220,8 @@ function QuestionPrompt({
     setSelectedIndices(prev => ({ ...prev, [qi]: null }));
   };
 
-  const handleSubmit = () => {
-    if (disabled) return;
-    const answers: string[][] = question.questions.map((q, qi) => {
+  const getAnswers = (): string[][] =>
+    question.questions.map((q, qi) => {
       const sel = selectedIndices[qi];
       const custom = customTexts[qi]?.trim();
       if (sel != null && sel >= 0 && sel < q.options.length) {
@@ -163,8 +230,24 @@ function QuestionPrompt({
       if (custom) return [custom];
       return [];
     });
+
+  const handleSubmit = () => {
+    if (disabled) return;
+    const answers = getAnswers();
     if (answers.every(a => a.length > 0)) {
       onReply(answers);
+    }
+  };
+
+  const handleNext = () => {
+    if (currentStep < totalSteps - 1) {
+      setCurrentStep(currentStep + 1);
+    }
+  };
+
+  const handlePrev = () => {
+    if (currentStep > 0) {
+      setCurrentStep(currentStep - 1);
     }
   };
 
@@ -174,71 +257,112 @@ function QuestionPrompt({
       onReject();
     } else if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSubmit();
+      if (isStepped && currentStep < totalSteps - 1) {
+        if (isStepAnswered(currentStep)) handleNext();
+      } else {
+        handleSubmit();
+      }
     }
   };
 
-  const allAnswered = question.questions.every((_, qi) => {
-    const sel = selectedIndices[qi];
-    const custom = customTexts[qi]?.trim();
-    return (sel != null && sel >= 0) || !!custom;
-  });
+  const allAnswered = getAnswers().every(a => a.length > 0);
+  const isLastStep = currentStep === totalSteps - 1;
 
-  return (
-    <div className="oc-question-wrap" onKeyDown={handleKeyDown}>
-      {question.questions.map((q, qi) => (
-        <div key={qi} className="oc-question-box">
-          <div className="oc-question-box-text">{q.question}</div>
-          <div className="oc-question-box-options">
-            {q.options.map((opt, oi) => (
+  const renderStep = (qi: number) => {
+    const q = question.questions[qi];
+    return (
+      <div key={qi} className="oc-question-box">
+        {isStepped && (
+          <div className="oc-question-step-indicator">
+            {question.questions.map((_, si) => (
               <button
-                key={oi}
+                key={si}
                 type="button"
-                className={`oc-question-opt-btn${selectedIndices[qi] === oi ? ' oc-question-opt-selected' : ''}`}
-                onClick={() => handleOptionClick(qi, oi)}
+                className={`oc-question-step-dot${si === currentStep ? ' oc-question-step-active' : ''}${isStepAnswered(si) ? ' oc-question-step-done' : ''}`}
+                onClick={() => setCurrentStep(si)}
                 disabled={disabled}
-              >
-                <span className="oc-question-opt-num">{oi + 1}.</span>
-                <span className="oc-question-opt-content">
-                  <span className="oc-question-opt-label">{opt.label}</span>
-                  {opt.description && (
-                    <span className="oc-question-opt-desc">{opt.description}</span>
-                  )}
-                </span>
-              </button>
-            ))}
-            <div className={`oc-question-opt-custom${selectedIndices[qi] === null && customTexts[qi]?.trim() ? ' oc-question-opt-custom-active' : ''}`}>
-              <span className="oc-question-opt-num">{q.options.length + 1}.</span>
-              <input
-                type="text"
-                className="oc-question-inline-input"
-                placeholder="Type your own answer"
-                value={customTexts[qi] || ''}
-                onChange={(e) => setCustomTexts(prev => ({ ...prev, [qi]: e.target.value }))}
-                onFocus={() => handleCustomFocus(qi)}
-                disabled={disabled}
+                title={`Question ${si + 1}`}
               />
-            </div>
+            ))}
+            <span className="oc-question-step-label">{currentStep + 1} / {totalSteps}</span>
           </div>
-          <div className="oc-question-box-actions">
+        )}
+        <div className="oc-question-box-text">{q.question}</div>
+        <div className="oc-question-box-options">
+          {q.options.map((opt, oi) => (
+            <button
+              key={oi}
+              type="button"
+              className={`oc-question-opt-btn${selectedIndices[qi] === oi ? ' oc-question-opt-selected' : ''}`}
+              onClick={() => handleOptionClick(qi, oi)}
+              disabled={disabled}
+            >
+              <span className="oc-question-opt-num">{oi + 1}.</span>
+              <span className="oc-question-opt-content">
+                <span className="oc-question-opt-label">{opt.label}</span>
+                {opt.description && (
+                  <span className="oc-question-opt-desc">{opt.description}</span>
+                )}
+              </span>
+            </button>
+          ))}
+          <div className={`oc-question-opt-custom${selectedIndices[qi] === null && customTexts[qi]?.trim() ? ' oc-question-opt-custom-active' : ''}`}>
+            <span className="oc-question-opt-num">{q.options.length + 1}.</span>
+            <input
+              type="text"
+              className="oc-question-inline-input"
+              placeholder="Type your own answer"
+              value={customTexts[qi] || ''}
+              onChange={(e) => setCustomTexts(prev => ({ ...prev, [qi]: e.target.value }))}
+              onFocus={() => handleCustomFocus(qi)}
+              disabled={disabled}
+            />
+          </div>
+        </div>
+        <div className="oc-question-box-actions">
+          {isStepped && currentStep > 0 && (
+            <button
+              type="button"
+              className="oc-question-dismiss-btn"
+              onClick={handlePrev}
+              disabled={disabled}
+            >Back</button>
+          )}
+          {isStepped && !isLastStep ? (
+            <button
+              type="button"
+              className="oc-question-submit-btn"
+              onClick={handleNext}
+              disabled={disabled || !isStepAnswered(currentStep)}
+            >Next</button>
+          ) : (
             <button
               type="button"
               className="oc-question-submit-btn"
               onClick={handleSubmit}
               disabled={disabled || !allAnswered}
             >Submit</button>
-            <button
-              type="button"
-              className="oc-question-dismiss-btn"
-              onClick={onReject}
-              disabled={disabled}
-            >Dismiss</button>
-            <span className="oc-question-keys">
-              <kbd>enter</kbd> submit &middot; <kbd>esc</kbd> dismiss
-            </span>
-          </div>
+          )}
+          <button
+            type="button"
+            className="oc-question-dismiss-btn"
+            onClick={onReject}
+            disabled={disabled}
+          >Dismiss</button>
+          <span className="oc-question-keys">
+            <kbd>enter</kbd> {isStepped && !isLastStep ? 'next' : 'submit'} &middot; <kbd>esc</kbd> dismiss
+          </span>
         </div>
-      ))}
+        {error && (
+          <div className="oc-question-error">{error}</div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="oc-question-wrap" onKeyDown={handleKeyDown}>
+      {renderStep(currentStep)}
     </div>
   );
 }
@@ -260,7 +384,7 @@ export function SessionDetail() {
   const [selectedModel, setSelectedModel] = useState('');
   const [selectedAgent, setSelectedAgent] = useState('');
   const [recentSessions, setRecentSessions] = useState<Session[]>([]);
-  const [filterRefreshPending, setFilterRefreshPending] = useState(false);
+
   const [archivingSessionIds, setArchivingSessionIds] = useState<Set<string>>(new Set());
   const [showArchivedRecent, setShowArchivedRecent] = useState(false);
   const { setInfo } = useHeaderInfo();
@@ -282,6 +406,7 @@ export function SessionDetail() {
   const [permissionError, setPermissionError] = useState<string | null>(null);
   const [pendingQuestion, setPendingQuestion] = useState<PendingQuestion | null>(null);
   const [answeringQuestion, setAnsweringQuestion] = useState(false);
+  const [questionError, setQuestionError] = useState<string | null>(null);
   const [sseDebugEvents, setSseDebugEvents] = useState<SseDebugEvent[]>([]);
   const getSession = useApiStore((state) => state.getSession);
   const archiveSession = useApiStore((state) => state.archiveSession);
@@ -295,8 +420,7 @@ export function SessionDetail() {
   const respondQuestion = useApiStore((state) => state.respondQuestion);
   const rejectQuestion = useApiStore((state) => state.rejectQuestion);
   const createSession = useApiStore((state) => state.createSession);
-  const sessionsRequest = useApiRequest('sessions:get');
-  const refreshingRecentSessionsFilter = filterRefreshPending || sessionsRequest.loading;
+
 
   useEffect(() => {
     showArchivedRecentRef.current = showArchivedRecent;
@@ -546,11 +670,26 @@ export function SessionDetail() {
       .catch(err => console.error('Failed to mark session seen', err));
   }, [markSessionSeen, sessionSeenId, sessionSeenUpdated]);
 
+  // Restore pending question when navigating to a page.
+  // Check sessionStorage for a previously received question (stored when the
+  // SSE question.asked event fired), but only if the parts still show the
+  // question tool call as pending (not yet answered).
+  useEffect(() => {
+    if (pendingQuestion || !session?.id || !portAvailable) return;
+    if (!hasPendingQuestionInParts(parts)) return;
+
+    const stored = loadPendingQuestion(session.id);
+    if (stored) {
+      setPendingQuestion(stored);
+    }
+  }, [parts, session?.id, portAvailable, pendingQuestion]);
+
   // SSE with reconnection
   const [sseActive, setSseActive] = useState(false);
   useEffect(() => {
-    if (!session?.directory) return;
+    if (!session?.directory || !session?.id) return;
     const dir = session.directory;
+    const sid = session.id;
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     let evtSource: EventSource | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -573,7 +712,13 @@ export function SessionDetail() {
         }
         const question = extractPendingQuestion(parsed);
         if (question) {
-          setPendingQuestion(question);
+          // Store using the question's own sessionID so it's keyed correctly
+          const questionSid = question.sessionID || sid;
+          storePendingQuestion(questionSid, question);
+          // Only show the prompt if the question belongs to the current session
+          if (!question.sessionID || question.sessionID === sid) {
+            setPendingQuestion(question);
+          }
         }
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
           const obj = parsed as Record<string, unknown>;
@@ -584,6 +729,7 @@ export function SessionDetail() {
           // Clear pending question when answered, rejected, or session moves on
           if (obj.type === 'question.replied' || obj.type === 'question.rejected' || obj.type === 'session.status' || obj.type === 'message.updated') {
             setPendingQuestion(null);
+            clearPendingQuestion(sid);
           }
         }
       } catch {
@@ -638,7 +784,7 @@ export function SessionDetail() {
       clearInterval(fallback);
       setSseActive(false);
     };
-  }, [session?.directory, load]);
+  }, [session?.directory, session?.id, load]);
 
   // Header info
   useEffect(() => {
@@ -736,6 +882,60 @@ export function SessionDetail() {
     }
   }, [activeAgent, activeModel, load, portAvailable, selectedAgent, selectedModel, sendMessage, session]);
 
+  const handleCommand = useCallback(async (command: string, args: string) => {
+    if (!session || !portAvailable) return;
+
+    // Optimistic user message showing the command
+    const tempId = 'temp-' + Date.now();
+    const optimisticMsg: Message = {
+      id: tempId,
+      sessionId: session.id,
+      timeCreated: Date.now(),
+      data: { role: 'user' },
+    };
+    const displayText = args ? `/${command} ${args}` : `/${command}`;
+    const optimisticParts: Part[] = [{
+      id: 'part-' + tempId,
+      messageId: tempId,
+      sessionId: session.id,
+      data: { type: 'text', text: displayText } as unknown as string,
+    }];
+    setMessages(prev => [...prev, optimisticMsg]);
+    setParts(prev => [...prev, ...optimisticParts]);
+
+    try {
+      await api.executeCommand(
+        session.id,
+        session.directory,
+        command,
+        args,
+        selectedModel || activeModel || undefined,
+        selectedAgent || activeAgent || undefined,
+      );
+      load(abortControllerRef.current?.signal);
+    } catch (e) {
+      console.error('Failed to execute command', e);
+      const errId = 'error-' + Date.now();
+      const errMsg: Message = {
+        id: errId,
+        sessionId: session.id,
+        timeCreated: Date.now(),
+        data: { role: 'assistant', finish: 'error' },
+      };
+      const errPart: Part = {
+        id: 'part-' + errId,
+        messageId: errId,
+        sessionId: session.id,
+        data: {
+          type: 'text',
+          text: `**Failed to execute command:** ${e instanceof Error ? e.message : 'Unknown error'}`,
+        } as unknown as string,
+      };
+      setMessages(prev => [...prev, errMsg]);
+      setParts(prev => [...prev, errPart]);
+    }
+  }, [activeAgent, activeModel, load, portAvailable, selectedAgent, selectedModel, session]);
+
   const handlePermissionReply = useCallback(async (reply: 'once' | 'always' | 'reject') => {
     if (!pendingPermission || answeringPermission || !portAvailable || !session) return;
     setPermissionError(null);
@@ -755,14 +955,18 @@ export function SessionDetail() {
 
   const handleQuestionReply = useCallback(async (answers: string[][]) => {
     if (!pendingQuestion || answeringQuestion || !portAvailable || !session) return;
+    setQuestionError(null);
     setAnsweringQuestion(true);
     try {
       await respondQuestion(session.id, session.directory, pendingQuestion.requestId, answers);
       setPendingQuestion(null);
+      setQuestionError(null);
+      clearPendingQuestion(session.id);
       load(abortControllerRef.current?.signal);
       setTimeout(() => load(abortControllerRef.current?.signal), 1000);
     } catch (e) {
       console.error('Failed to respond to question', e);
+      setQuestionError(e instanceof Error ? e.message : 'Failed to submit answer');
     } finally {
       setAnsweringQuestion(false);
     }
@@ -774,6 +978,7 @@ export function SessionDetail() {
     try {
       await rejectQuestion(session.id, session.directory, pendingQuestion.requestId);
       setPendingQuestion(null);
+      clearPendingQuestion(session.id);
       load(abortControllerRef.current?.signal);
       setTimeout(() => load(abortControllerRef.current?.signal), 1000);
     } catch (e) {
@@ -783,10 +988,67 @@ export function SessionDetail() {
     }
   }, [answeringQuestion, load, pendingQuestion, portAvailable, rejectQuestion, session]);
 
+  const abortSession = useApiStore((state) => state.abortSession);
+
+  const handleAbort = useCallback(async () => {
+    if (!session || !portAvailable) return;
+    try {
+      await abortSession(session.id, session.directory);
+      load(abortControllerRef.current?.signal);
+    } catch (e) {
+      console.error('Failed to abort session', e);
+    }
+  }, [abortSession, load, portAvailable, session]);
+
   // Find the tmux session whose resolved path matches the current project directory.
   const matchingTmuxSession = session
     ? tmux.findSession(session.directory)
     : undefined;
+
+  const handleTmuxShortcut = useCallback(() => {
+    if (!matchingTmuxSession) return;
+    if (tmux.isLocal) {
+      tmux.switchSession(matchingTmuxSession.name).catch(err => console.error('tmux switch failed', err));
+      return;
+    }
+    if (tmux.clients.length === 1) {
+      tmux.switchSession(matchingTmuxSession.name, tmux.clients[0].tty).catch(err => console.error('tmux switch failed', err));
+      return;
+    }
+
+    setPickerPos({ top: 88, left: Math.min(window.innerWidth - 24, 420) });
+    setPendingTmuxSession(matchingTmuxSession.name);
+  }, [matchingTmuxSession, tmux]);
+
+  const handleVSCodeShortcut = useCallback(() => {
+    if (!session) return;
+    openVSCode(session.directory);
+  }, [session]);
+
+  useHotkeys('t', (e) => {
+    e.preventDefault();
+    handleTmuxShortcut();
+  }, { enabled: !!matchingTmuxSession, preventDefault: true }, [handleTmuxShortcut, matchingTmuxSession]);
+
+  useHotkeys('v', (e) => {
+    e.preventDefault();
+    handleVSCodeShortcut();
+  }, { enabled: !!session, preventDefault: true }, [handleVSCodeShortcut, session]);
+
+  const handleNewSession = useCallback(async () => {
+    if (!session) return;
+    try {
+      const res = await createSession(session.directory);
+      if (res.id) navigate(`/session/${res.id}`);
+    } catch (e) {
+      console.error('Failed to create session', e);
+    }
+  }, [session, createSession, navigate]);
+
+  useHotkeys('n', (e) => {
+    e.preventDefault();
+    handleNewSession();
+  }, { enabled: !!session && portAvailable, preventDefault: true }, [handleNewSession, session, portAvailable]);
 
   const hasMore = messages.length < totalMessages;
   const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
@@ -808,17 +1070,11 @@ export function SessionDetail() {
         <div className="session-sidebar-header">
           <span className="session-sidebar-heading">
             <span>Recent sessions</span>
-            {refreshingRecentSessionsFilter && (
-              <span className="session-sidebar-inline-loading" aria-hidden="true">
-                <span className="oc-spinner session-sidebar-inline-spinner" />
-              </span>
-            )}
           </span>
           <button
             type="button"
             className={`session-sidebar-new${showArchivedRecent ? ' active' : ''}`}
             onClick={() => {
-              setFilterRefreshPending(true);
               setShowArchivedRecent(current => !current);
             }}
             title={showArchivedRecent ? 'Hide archived sessions' : 'Include archived sessions'}
@@ -858,7 +1114,7 @@ export function SessionDetail() {
               onClick={() => navigate(`/session/${sib.id}`)}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/session/${sib.id}`); } }}
             >
-              <StatusBadge status={sib.status} compact seen={sib.status === 'waiting' && sib.seen} />
+              <StatusBadge status={sib.status} compact seen={(sib.status === 'waiting' || sib.status === 'error') && sib.seen} />
               <span className="session-sidebar-item-body">
                 <span className="session-sidebar-title">{sib.title || 'Untitled'}</span>
                 <span className="session-sidebar-project">{shortPath(sib.directory)}</span>
@@ -887,16 +1143,17 @@ export function SessionDetail() {
               <button
                 className="session-sidebar-new"
                 onClick={(e) => handleTmuxSwitch(e, matchingTmuxSession.name)}
-                title={`Switch tmux to ${shortPath(matchingTmuxSession.name)}`}
+                title={`Switch tmux to ${shortPath(matchingTmuxSession.name)} (T)`}
                 style={{ fontSize: 11, fontFamily: "'SF Mono', Consolas, monospace" }}
               >tmux</button>
             )}
-            <a
-              href={`vscode://file${session.directory}`}
+            <button
+              type="button"
               className="session-sidebar-new"
-              title="Open in VS Code"
+              onClick={handleVSCodeShortcut}
+              title="Open in VS Code (V)"
               style={{ textDecoration: 'none', fontSize: 11 }}
-            >&lt;/&gt;</a>
+            >&lt;/&gt;</button>
             <button
               className="session-sidebar-new"
               onClick={async () => {
@@ -983,10 +1240,13 @@ export function SessionDetail() {
                   onReply={handleQuestionReply}
                   onReject={handleQuestionReject}
                   disabled={answeringQuestion}
+                  error={questionError}
                 />
               ) : (
                 <Composer
                   onSend={handleSend}
+                  onCommand={handleCommand}
+                  onAbort={handleAbort}
                   isRunning={isRunning}
                   disabled={!portAvailable}
                   whisperAvailable={whisperAvailable}
@@ -999,6 +1259,7 @@ export function SessionDetail() {
                   onAgentChange={setSelectedAgent}
                   contextTokens={session?.contextTokenCount || undefined}
                   sessionId={session?.id}
+                  directory={session?.directory}
                 />
               )}
               footer={showSseNotice || showSseDebug ? (

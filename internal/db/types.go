@@ -143,3 +143,12 @@ type HourlyActivity struct {
 	Hour     int `json:"hour"`
 	Sessions int `json:"sessions"`
 }
+
+// HourlyTokensByModel holds token counts for a specific calendar hour and model.
+type HourlyTokensByModel struct {
+	Datetime  string `json:"datetime"` // "YYYY-MM-DD HH" in local time
+	Provider  string `json:"provider"`
+	Model     string `json:"model"`
+	TokensIn  int64  `json:"tokensIn"`
+	TokensOut int64  `json:"tokensOut"`
+}

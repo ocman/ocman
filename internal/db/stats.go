@@ -232,6 +232,70 @@ func (d *DB) GetModelUsage() ([]ModelUsage, error) {
 	return result, nil
 }
 
+// GetHourlyTokensByModel returns token counts per calendar hour for the last 7 days, broken down by provider/model.
+func (d *DB) GetHourlyTokensByModel() ([]HourlyTokensByModel, error) {
+	cutoff := time.Now().AddDate(0, 0, -7).UnixMilli()
+
+	rows, err := d.db.Query(`
+		SELECT
+			strftime('%Y-%m-%d %H', time_created / 1000, 'unixepoch', 'localtime') as datetime,
+			data
+		FROM message
+		WHERE json_extract(data, '$.role') = 'assistant'
+		  AND time_created >= ?
+	`, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type key struct {
+		Datetime string
+		Provider string
+		Model    string
+	}
+	agg := make(map[key]*HourlyTokensByModel)
+
+	for rows.Next() {
+		var dt string
+		var raw string
+		if err := rows.Scan(&dt, &raw); err != nil {
+			log.WithError(err).Warn("failed to scan hourly tokens row")
+			continue
+		}
+		var md MessageData
+		if err := json.Unmarshal([]byte(raw), &md); err != nil {
+			log.WithError(err).Warn("failed to unmarshal message data for hourly tokens")
+			continue
+		}
+		provider := md.ProviderID
+		model := md.ModelID
+		if provider == "" && md.Model != nil {
+			provider = md.Model.ProviderID
+			model = md.Model.ModelID
+		}
+		if model == "" {
+			continue
+		}
+		k := key{Datetime: dt, Provider: provider, Model: model}
+		entry, ok := agg[k]
+		if !ok {
+			entry = &HourlyTokensByModel{Datetime: dt, Provider: provider, Model: model}
+			agg[k] = entry
+		}
+		if md.Tokens != nil {
+			entry.TokensIn += md.Tokens.Input
+			entry.TokensOut += md.Tokens.Output
+		}
+	}
+
+	var result []HourlyTokensByModel
+	for _, v := range agg {
+		result = append(result, *v)
+	}
+	return result, nil
+}
+
 // GetHourlyActivity returns session counts per hour of day.
 func (d *DB) GetHourlyActivity() ([]HourlyActivity, error) {
 	rows, err := d.db.Query(`

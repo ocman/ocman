@@ -158,7 +158,7 @@ export function SessionTable({ sessions, showProject, loading, tmux, includeArch
         <tbody>
           {visibleSessions.map(s => {
             const hasTmux = tmux?.available && tmux.findSession(s.directory);
-            const seenLatest = s.status === 'waiting' && s.seen;
+            const seenLatest = (s.status === 'waiting' || s.status === 'error') && s.seen;
             return (
               <tr
                 key={s.id}

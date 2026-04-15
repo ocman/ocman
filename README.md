@@ -1,6 +1,46 @@
 # ocman
 
+[![CI](https://github.com/NoUseFreak/ocman/actions/workflows/ci.yml/badge.svg)](https://github.com/NoUseFreak/ocman/actions/workflows/ci.yml)
+[![Release](https://github.com/NoUseFreak/ocman/actions/workflows/release.yml/badge.svg)](https://github.com/NoUseFreak/ocman/actions/workflows/release.yml)
+[![Go](https://img.shields.io/github/go-mod/go-version/NoUseFreak/ocman)](https://go.dev/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A web dashboard for viewing [OpenCode](https://github.com/anomalyco/opencode) session data. The Go backend reads OpenCode's SQLite database (read-only) and serves a React SPA. It can also proxy live data from running OpenCode instances via their HTTP API.
+
+## Architecture
+
+```mermaid
+graph TD
+    subgraph Browser
+        SPA[React SPA]
+    end
+
+    subgraph ocman Server
+        HTTP[HTTP Server]
+        Static[Embedded Static Assets]
+        API[API Handlers]
+        Proxy[OpenCode Proxy]
+        Archive[Auto-Archive Goroutine]
+    end
+
+    subgraph Storage
+        OC_DB[(OpenCode DB<br/>read-only)]
+        State_DB[(ocman State DB<br/>read-write)]
+    end
+
+    subgraph External
+        OC[Running OpenCode Instances]
+    end
+
+    SPA -->|/api/*| HTTP
+    SPA -->|static files| Static
+    HTTP --> API
+    HTTP --> Proxy
+    API -->|sessions, messages, parts| OC_DB
+    API -->|archived/seen state| State_DB
+    Archive -->|archive inactive sessions| State_DB
+    Proxy -->|lsof discovery + HTTP| OC
+```
 
 ## Requirements
 
@@ -40,9 +80,10 @@ This builds the frontend first (`npm ci && npm run build`), then compiles the Go
 
 ```
 main.go                          entrypoint (-addr, -db flags)
+frontend/                        React + TypeScript + Vite SPA
 internal/db/                     SQLite queries (session, message, part tables)
-internal/server/server.go        HTTP server, API handlers, OpenCode port discovery
-internal/server/frontend/        React + TypeScript + Vite SPA
+internal/state/                  ocman's own writable state DB (archived/seen sessions)
+internal/server/                 HTTP server, API handlers, static file serving
 internal/server/static/          Vite build output (embedded into Go binary)
 ```
 
@@ -59,11 +100,17 @@ internal/server/static/          Vite build output (embedded into Go binary)
 ### Frontend checks
 
 ```sh
-cd internal/server/frontend
+cd frontend
 npm run lint        # ESLint
 npx tsc -b          # TypeScript type checking
 ```
 
+### Backend checks
+
+```sh
+go vet ./...
+```
+
 ## License
 
-See [LICENSE](LICENSE) if present.
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
