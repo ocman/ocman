@@ -20,6 +20,9 @@ import { openVSCode } from '../lib/shortcuts';
 const PAGE_SIZE = 50;
 const RECENT_SESSIONS_LIMIT = 20;
 const ARCHIVE_ANIMATION_MS = 220;
+const MAX_RETAINED_MESSAGES = 300;
+const TRIMMED_RETAINED_MESSAGES = 250;
+const MAX_SUBAGENT_TOKEN_ENTRIES = 256;
 
 // Maximum length for part text/output before truncation (matches backend maxOutputLen).
 const MAX_OUTPUT_LEN = 10000;
@@ -30,6 +33,14 @@ function truncatePartField(value: unknown): unknown {
     return value.slice(0, MAX_OUTPUT_LEN) + '\n... (truncated)';
   }
   return value;
+}
+
+function trimSubagentTokens(
+  prev: Map<string, { output: number; created: number }>,
+): Map<string, { output: number; created: number }> {
+  if (prev.size <= MAX_SUBAGENT_TOKEN_ENTRIES) return prev;
+  const entries = Array.from(prev.entries());
+  return new Map(entries.slice(entries.length - MAX_SUBAGENT_TOKEN_ENTRIES));
 }
 
 /**
@@ -409,6 +420,7 @@ export function SessionDetail() {
   const archiveTimeoutsRef = useRef<Record<string, number>>({});
   const abortControllerRef = useRef<AbortController | null>(null);
   const showArchivedRecentRef = useRef(showArchivedRecent);
+  const droppedMessageCountRef = useRef(0);
 
   // Tmux state
   const tmux = useTmux();
@@ -503,7 +515,7 @@ export function SessionDetail() {
     const signal = abortControllerRef.current?.signal;
     setLoadingMore(true);
     try {
-      const result = await getSession(id, PAGE_SIZE, messages.length, signal);
+      const result = await getSession(id, PAGE_SIZE, messages.length + droppedMessageCountRef.current, signal);
       if (signal?.aborted) return;
       const newMsgs = result.messages || [];
       const newParts = result.parts || [];
@@ -601,6 +613,7 @@ export function SessionDetail() {
 
     lastHashRef.current = '';
     lastSessionHashRef.current = '';
+    droppedMessageCountRef.current = 0;
     setSession(null);
     setMessages([]);
     setParts([]);
@@ -634,6 +647,18 @@ export function SessionDetail() {
 
     return () => controller.abort();
   }, [getModels, getSessionPort, getWhisperStatus, id, load]);
+
+  useEffect(() => {
+    if (messages.length <= MAX_RETAINED_MESSAGES) return;
+
+    const retainedMessages = messages.slice(-TRIMMED_RETAINED_MESSAGES);
+    const droppedCount = messages.length - retainedMessages.length;
+    const retainedMessageIds = new Set(retainedMessages.map((message) => message.id));
+    droppedMessageCountRef.current += droppedCount;
+
+    setMessages(retainedMessages);
+    setParts((prev) => prev.filter((part) => retainedMessageIds.has(part.messageId)));
+  }, [messages]);
 
   const loadRecentSessions = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -856,7 +881,7 @@ export function SessionDetail() {
                     output: Math.max(existing?.output || 0, output),
                     created: existing ? Math.min(existing.created, created) : created,
                   });
-                  return updated;
+                  return trimSubagentTokens(updated);
                 });
               }
             }

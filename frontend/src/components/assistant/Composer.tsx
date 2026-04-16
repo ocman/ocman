@@ -470,7 +470,7 @@ function ComposerImpl({
     const el = inputRef.current;
     if (!el) return;
 
-    el.addEventListener('keydown', (e) => {
+    const handleInputKeyDown = (e: KeyboardEvent) => {
       if (disabledRef.current) return;
 
       if (showSlashMenuRef.current) {
@@ -530,9 +530,9 @@ function ComposerImpl({
         }
         el.dispatchEvent(new CustomEvent('oc-clear-images'));
       }
-    });
+    };
 
-    el.addEventListener('input', () => {
+    const handleInput = () => {
       el.style.height = 'auto';
       el.style.height = Math.min(el.scrollHeight, 200) + 'px';
 
@@ -555,9 +555,9 @@ function ComposerImpl({
           }
         }, 300);
       }
-    });
+    };
 
-    el.addEventListener('paste', (e) => {
+    const handlePaste = (e: ClipboardEvent) => {
       if (disabledRef.current) return;
       const items = e.clipboardData?.items;
       if (!items) return;
@@ -572,7 +572,21 @@ function ComposerImpl({
         e.preventDefault();
         el.dispatchEvent(new CustomEvent('oc-paste-images', { detail: imageFiles }));
       }
-    });
+    };
+
+    el.addEventListener('keydown', handleInputKeyDown);
+    el.addEventListener('input', handleInput);
+    el.addEventListener('paste', handlePaste);
+
+    return () => {
+      if (draftTimerRef.current) {
+        clearTimeout(draftTimerRef.current);
+        draftTimerRef.current = null;
+      }
+      el.removeEventListener('keydown', handleInputKeyDown);
+      el.removeEventListener('input', handleInput);
+      el.removeEventListener('paste', handlePaste);
+    };
   }, []);
 
   useEffect(() => {

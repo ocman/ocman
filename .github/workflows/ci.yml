@@ -53,7 +53,7 @@ jobs:
         with:
           go-version-file: go.mod
       - run: make build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v3
         with:
           name: ocman-linux-amd64
           path: ocman
