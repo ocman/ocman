@@ -11,6 +11,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/pricing"
 	"github.com/NoUseFreak/ocman/internal/server"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
@@ -37,6 +38,10 @@ func main() {
 		log.Fatalf("Failed to open state database: %v", err)
 	}
 	defer stateDB.Close()
+
+	// Pre-warm the pricing table in the background so the first metrics request
+	// doesn't block on a remote fetch.
+	go pricing.Load()
 
 	// Create a context that is cancelled on SIGINT or SIGTERM.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

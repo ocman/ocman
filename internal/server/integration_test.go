@@ -103,6 +103,24 @@ func TestHandleStats_Empty(t *testing.T) {
 	}
 }
 
+func TestHandleMetrics_Empty(t *testing.T) {
+	srv := testServer(t)
+	req := httptest.NewRequest("GET", "/api/metrics?days=30", nil)
+	rr := httptest.NewRecorder()
+	srv.handleMetrics(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("invalid JSON response: %v", err)
+	}
+	if _, ok := payload["summary"]; !ok {
+		t.Fatalf("expected summary in metrics payload")
+	}
+}
+
 func TestHandleProjects_Empty(t *testing.T) {
 	srv := testServer(t)
 	req := httptest.NewRequest("GET", "/api/projects", nil)

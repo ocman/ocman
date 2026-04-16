@@ -11,10 +11,12 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/pricing"
 )
 
 // maxRequestBody is the maximum allowed request body size (1 MB).
@@ -35,6 +37,34 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, stats)
+}
+
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	agent := strings.TrimSpace(r.URL.Query().Get("agent"))
+	model := strings.TrimSpace(r.URL.Query().Get("model"))
+	var since int64
+	var dayCount int
+	if daysStr := strings.TrimSpace(r.URL.Query().Get("days")); daysStr != "" && daysStr != "0" {
+		fmt.Sscanf(daysStr, "%d", &dayCount)
+		if dayCount > 0 {
+			since = time.Now().Add(-time.Duration(dayCount) * 24 * time.Hour).UnixMilli()
+		}
+	}
+	limit := 20
+	if v := strings.TrimSpace(r.URL.Query().Get("limit")); v != "" {
+		fmt.Sscanf(v, "%d", &limit)
+	}
+	var offset int
+	if v := strings.TrimSpace(r.URL.Query().Get("offset")); v != "" {
+		fmt.Sscanf(v, "%d", &offset)
+	}
+
+	metrics, err := s.db.GetMetricsDashboard(agent, model, since, dayCount, limit, offset, pricing.Load())
+	if err != nil {
+		serverError(w, "fetching metrics", err)
+		return
+	}
+	writeJSON(w, metrics)
 }
 
 func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {

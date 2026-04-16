@@ -1,16 +1,36 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { startTransition, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend } from 'chart.js';
-import { Bar, Doughnut } from 'react-chartjs-2';
-import type { Session, Stats, Project, ActivityDay, ModelUsage, HourlyData, HourlyTokensByModel } from '../lib/api';
-import { formatNumber, relativeTime, shortPath } from '../lib/format';
+import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend, PointElement, LineElement } from 'chart.js';
+import { Bar, Doughnut, Line } from 'react-chartjs-2';
+import { api } from '../lib/api';
+import type { MetricsDashboard, Project, Session } from '../lib/api';
+import {
+  formatCompactNumber,
+  formatCurrency,
+  formatDateTimeShort,
+  formatNumber,
+  formatPercent,
+  formatSeconds,
+  formatTokenCache,
+  relativeTime,
+  shortPath,
+} from '../lib/format';
 import { usePageTitle } from '../lib/headerContext';
 import { SessionTable } from '../components/SessionTable';
 import { useTmux } from '../lib/useTmux';
 import { useApiStore, useApiRequest } from '../lib/apiStore';
 
+ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, PointElement, LineElement, Tooltip, Legend);
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend);
+const STOP_REASON_COLORS = ['#f38ba8', '#a6e3a1', '#f9e2af', '#89b4fa', '#cba6f7', '#fab387', '#94e2d5'];
+
+const METRICS_RANGE_OPTIONS = [
+  { label: '24 hours', value: 1 },
+  { label: '7 days', value: 7 },
+  { label: '30 days', value: 30 },
+  { label: '90 days', value: 90 },
+  { label: 'All time', value: 0 },
+];
 
 export function Dashboard() {
   usePageTitle('Dashboard');
@@ -22,25 +42,24 @@ export function Dashboard() {
   const setTab = (t: 'sessions' | 'projects' | 'stats') => {
     setSearchParams(t === 'sessions' ? {} : { tab: t }, { replace: true });
   };
-  const [stats, setStats] = useState<Stats | null>(null);
+
   const [sessions, setSessions] = useState<Session[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [activity, setActivity] = useState<ActivityDay[]>([]);
-  const [models, setModels] = useState<ModelUsage[]>([]);
-  const [hourly, setHourly] = useState<HourlyData[]>([]);
-  const [hourlyTokens, setHourlyTokens] = useState<HourlyTokensByModel[]>([]);
-  const [timeRange, setTimeRange] = useState(24); // hours (0 = all)
+  const [metrics, setMetrics] = useState<MetricsDashboard | null>(null);
+  const [timeRange, setTimeRange] = useState(24);
   const [showArchived, setShowArchived] = useState(false);
-  const chartsRequestedRef = useRef(false);
-  const [chartsLoading, setChartsLoading] = useState(false);
+  const [selectedAgent, setSelectedAgent] = useState('');
+  const [selectedModel, setSelectedModel] = useState('');
+  const [metricsDays, setMetricsDays] = useState(30);
+  const [logPage, setLogPage] = useState(0);
+  const LOG_PAGE_SIZE = 20;
+
   const getSessions = useApiStore((state) => state.getSessions);
-  const getStats = useApiStore((state) => state.getStats);
   const getProjects = useApiStore((state) => state.getProjects);
-  const getActivity = useApiStore((state) => state.getActivity);
-  const getModels = useApiStore((state) => state.getModels);
-  const getHourly = useApiStore((state) => state.getHourly);
-  const getHourlyTokens = useApiStore((state) => state.getHourlyTokens);
-  const statsRequest = useApiRequest('stats:get');
+
+  const [metricsLoading, setMetricsLoading] = useState(false);
+  const [metricsError, setMetricsError] = useState<string | null>(null);
+
   const projectsRequest = useApiRequest('projects:get');
   const sessionsRequest = useApiRequest('sessions:get');
 
@@ -58,13 +77,11 @@ export function Dashboard() {
 
     async function loadInitialData() {
       try {
-        const [nextStats, nextProjects] = await Promise.all([
-          getStats(),
+        const [nextProjects] = await Promise.all([
           getProjects(),
           loadSessions(),
         ]);
         if (cancelled) return;
-        setStats(nextStats);
         setProjects(nextProjects);
       } catch {
         // errors tracked by useApiRequest
@@ -75,50 +92,57 @@ export function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [getProjects, getStats, loadSessions]);
+  }, [getProjects, loadSessions]);
 
-  // Auto-refresh sessions every 5 seconds
   useEffect(() => {
     const id = setInterval(loadSessions, 5000);
     return () => clearInterval(id);
   }, [loadSessions]);
 
-  // Load charts on first stats tab visit
+  // Reset to page 0 whenever filters or date range change.
   useEffect(() => {
-    if (tab !== 'stats' || chartsRequestedRef.current) return;
+    setLogPage(0);
+  }, [selectedAgent, selectedModel, metricsDays]);
+
+  useEffect(() => {
+    if (tab !== 'stats') return;
 
     let cancelled = false;
-    chartsRequestedRef.current = true;
+    const params = {
+      agent: selectedAgent || undefined,
+      model: selectedModel || undefined,
+      days: metricsDays,
+      limit: LOG_PAGE_SIZE,
+      offset: logPage * LOG_PAGE_SIZE,
+    };
 
-    async function loadCharts() {
-      setChartsLoading(true);
+    void (async () => {
+      startTransition(() => {
+        setMetricsLoading(true);
+        setMetricsError(null);
+      });
       try {
-        const [nextActivity, nextModels, nextHourly, nextHourlyTokens] = await Promise.all([
-          getActivity(),
-          getModels(),
-          getHourly(),
-          getHourlyTokens(),
-        ]);
+        const nextMetrics = await api.metrics(params);
         if (cancelled) return;
-        setActivity(nextActivity);
-        setModels(nextModels);
-        setHourly(nextHourly);
-        setHourlyTokens(nextHourlyTokens);
-      } finally {
-        if (!cancelled) {
-          setChartsLoading(false);
-        }
+        startTransition(() => {
+          setMetrics(nextMetrics);
+          setMetricsLoading(false);
+        });
+      } catch (err) {
+        if (cancelled) return;
+        startTransition(() => {
+          setMetricsError(err instanceof Error ? err.message : 'Failed to load metrics');
+          setMetricsLoading(false);
+        });
       }
-    }
+    })();
 
-    void loadCharts();
     return () => {
       cancelled = true;
     };
-  }, [getActivity, getHourly, getHourlyTokens, getModels, tab]);
+  }, [metricsDays, selectedAgent, selectedModel, tab, logPage, LOG_PAGE_SIZE]);
 
-  const colors = ['#89b4fa', '#a6e3a1', '#cba6f7', '#fab387', '#f38ba8', '#74c7ec', '#94e2d5', '#f9e2af'];
-  const sortedModels = [...models].sort((a, b) => b.count - a.count).slice(0, 8);
+  const metricLabels = metrics?.series.map((point) => point.label) ?? [];
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
@@ -134,10 +158,11 @@ export function Dashboard() {
           <button onClick={() => loadSessions()}>Retry</button>
         </div>
       )}
+
       {tab === 'sessions' && (
         <>
           <div className="oc-time-range">
-            {[{label: '12h', value: 12}, {label: '24h', value: 24}, {label: '7d', value: 168}, {label: '30d', value: 720}, {label: 'All', value: 0}].map(opt => (
+            {[{label: '12h', value: 12}, {label: '24h', value: 24}, {label: '7d', value: 168}, {label: '30d', value: 720}, {label: 'All', value: 0}].map((opt) => (
               <button
                 key={opt.value}
                 className={`oc-time-range-btn${timeRange === opt.value ? ' active' : ''}`}
@@ -146,7 +171,7 @@ export function Dashboard() {
             ))}
             <button
               className={`oc-time-range-btn${showArchived ? ' active' : ''}`}
-              onClick={() => setShowArchived(current => !current)}
+              onClick={() => setShowArchived((current) => !current)}
             >Include archived</button>
           </div>
           <SessionTable sessions={sessions} showProject loading={sessionsRequest.loading && sessions.length === 0} tmux={tmux} includeArchived={showArchived} />
@@ -160,280 +185,323 @@ export function Dashboard() {
             Loading projects...
           </div>
         ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>Project</th>
-              <th>Sessions</th>
-              <th>Messages</th>
-              <th>Tokens (in/out)</th>
-              <th>Last Active</th>
-            </tr>
-          </thead>
-          <tbody>
-            {projects.filter(p => p.sessionCount > 0).length === 0 ? (
+          <table>
+            <thead>
               <tr>
-                <td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: 24 }}>
-                  No projects found
-                </td>
+                <th>Project</th>
+                <th>Sessions</th>
+                <th>Messages</th>
+                <th>Tokens (in/out)</th>
+                <th>Last Active</th>
               </tr>
-            ) : projects.filter(p => p.sessionCount > 0).map(p => (
-              <tr key={p.directory} onClick={() => navigate(`/project/${encodeURIComponent(p.directory)}`)}>
-                <td>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{shortPath(p.directory)}</span>
-                    <a
-                      href={`vscode://file${p.directory}`}
-                      className="vscode-btn"
-                      title="Open in VS Code"
-                      onClick={e => e.stopPropagation()}
-                    >VS Code</a>
-                  </div>
-                  <div className="mono">{p.directory}</div>
-                </td>
-                <td>{p.sessionCount}</td>
-                <td>{p.messageCount}</td>
-                <td className="mono">{formatNumber(p.totalTokensIn)} / {formatNumber(p.totalTokensOut)}</td>
-                <td>{relativeTime(p.lastUsed)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {projects.filter((p) => p.sessionCount > 0).length === 0 ? (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: 24 }}>
+                    No projects found
+                  </td>
+                </tr>
+              ) : projects.filter((p) => p.sessionCount > 0).map((p) => (
+                <tr key={p.directory} onClick={() => navigate(`/project/${encodeURIComponent(p.directory)}`)}>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{shortPath(p.directory)}</span>
+                      <a
+                        href={`vscode://file${p.directory}`}
+                        className="vscode-btn"
+                        title="Open in VS Code"
+                        onClick={(e) => e.stopPropagation()}
+                      >VS Code</a>
+                    </div>
+                    <div className="mono">{p.directory}</div>
+                  </td>
+                  <td>{p.sessionCount}</td>
+                  <td>{p.messageCount}</td>
+                  <td className="mono">{formatNumber(p.totalTokensIn)} / {formatNumber(p.totalTokensOut)}</td>
+                  <td>{relativeTime(p.lastUsed)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )
       )}
 
       {tab === 'stats' && (
         <>
-          {statsRequest.loading && !stats ? (
-            <div className="oc-list-loading">
-              <div className="oc-spinner" />
-              Loading stats...
-            </div>
-          ) : stats && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 32 }}>
-              <div className="stat-card"><div className="label">Sessions</div><div className="value blue">{formatNumber(stats.totalSessions)}</div></div>
-              <div className="stat-card"><div className="label">Messages</div><div className="value green">{formatNumber(stats.totalMessages)}</div></div>
-              <div className="stat-card"><div className="label">Projects</div><div className="value purple">{formatNumber(stats.totalProjects)}</div></div>
-              <div className="stat-card"><div className="label">Tokens In</div><div className="value orange">{formatNumber(stats.totalTokensIn)}</div></div>
-              <div className="stat-card"><div className="label">Tokens Out</div><div className="value blue">{formatNumber(stats.totalTokensOut)}</div></div>
-              <div className="stat-card"><div className="label">Total Cost</div><div className="value green">${stats.totalCost.toFixed(2)}</div></div>
+          <div className="metrics-filters">
+            <label className="metrics-filter">
+              <span>Agent</span>
+              <select value={selectedAgent} onChange={(e) => setSelectedAgent(e.target.value)}>
+                <option value="">All agents</option>
+                {(metrics?.availableAgents ?? []).map((agent) => (
+                  <option key={agent} value={agent}>{agent}</option>
+                ))}
+              </select>
+            </label>
+            <label className="metrics-filter">
+              <span>Model</span>
+              <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}>
+                <option value="">All models</option>
+                {(metrics?.availableModels ?? []).map((model) => (
+                  <option key={model} value={model}>{renderModel(model)}</option>
+                ))}
+              </select>
+            </label>
+            <label className="metrics-filter metrics-filter-small">
+              <span>Last</span>
+              <select value={metricsDays} onChange={(e) => setMetricsDays(Number(e.target.value))}>
+                {METRICS_RANGE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          {metricsError && (
+            <div className="oc-error-banner">
+              {metricsError}
             </div>
           )}
-          {chartsLoading ? (
+
+          {metricsLoading && !metrics ? (
             <div className="oc-list-loading">
               <div className="oc-spinner" />
-              Loading charts...
+              Loading metrics...
             </div>
-          ) : activity.length > 0 && <Heatmap activity={activity} />}
-          {!chartsLoading && <>
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16, marginBottom: 32 }}>
-            <div className="chart-card">
-              <h3>Daily Messages (last 90 days)</h3>
-              <Bar data={{
-                labels: activity.map(d => d.date),
-                datasets: [{ label: 'Messages', data: activity.map(d => d.messages), backgroundColor: 'rgba(137, 180, 250, 0.6)', borderRadius: 2 }],
-              }} options={{
-                responsive: true, plugins: { legend: { display: false } },
-                scales: { x: { ticks: { maxTicksLimit: 12, callback: (_, idx) => activity[idx]?.date?.slice(5) || '' }, grid: { display: false } }, y: { beginAtZero: true } },
-              }} />
-            </div>
-            <div className="chart-card">
-              <h3>Model Usage</h3>
-              <Doughnut data={{
-                labels: sortedModels.map(m => m.model),
-                datasets: [{ data: sortedModels.map(m => m.count), backgroundColor: colors, borderWidth: 0 }],
-              }} options={{
-                responsive: true, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 8, font: { size: 11 } } } },
-              }} />
-            </div>
-          </div>
-          {hourlyTokens.length > 0 && <HourlyTokensChart data={hourlyTokens} colors={colors} />}
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16, marginBottom: 32 }}>
-            <div className="chart-card">
-              <h3>Sessions by Hour of Day</h3>
-              <Bar data={{
-                labels: hourly.map(h => h.hour + ':00'),
-                datasets: [{ label: 'Sessions', data: hourly.map(h => h.sessions), backgroundColor: hourly.map(h => h.sessions > 0 ? 'rgba(166, 227, 161, 0.6)' : 'rgba(166, 227, 161, 0.1)'), borderRadius: 2 }],
-              }} options={{
-                responsive: true, plugins: { legend: { display: false } },
-                scales: { x: { grid: { display: false } }, y: { beginAtZero: true } },
-              }} />
-            </div>
-            <div className="chart-card">
-              <h3>Tokens by Model</h3>
-              <Bar data={{
-                labels: sortedModels.map(m => m.model.length > 20 ? m.model.slice(0, 20) + '...' : m.model),
-                datasets: [
-                  { label: 'Input', data: sortedModels.map(m => m.tokensIn), backgroundColor: 'rgba(137, 180, 250, 0.6)', borderRadius: 2 },
-                  { label: 'Output', data: sortedModels.map(m => m.tokensOut), backgroundColor: 'rgba(203, 166, 247, 0.6)', borderRadius: 2 },
-                ],
-              }} options={{
-                responsive: true, indexAxis: 'y' as const,
-                plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 8, font: { size: 11 } } } },
-                scales: { x: { beginAtZero: true, ticks: { callback: v => formatNumber(v as number) }, stacked: true }, y: { grid: { display: false }, stacked: true } },
-              }} />
-            </div>
-          </div>
-          </>}
+          ) : metrics && (
+            <>
+              <div className="metrics-summary-grid">
+                <MetricCard label="Requests" value={formatNumber(metrics.summary.requests)} tone="blue" />
+                <MetricCard label="Total Tokens" value={formatCompactNumber(metrics.summary.totalTokens)} tone="blue" subvalue={`${formatCompactNumber(metrics.summary.inputTokens)} in / ${formatCompactNumber(metrics.summary.outputTokens)} out`} />
+                <MetricCard label="Avg Tok/s" value={metrics.summary.avgTokensPerSec.toFixed(1)} tone="orange" />
+                <MetricCard label="Avg Duration" value={formatSeconds(metrics.summary.avgDurationMs / 1000)} tone="blue" />
+                <MetricCard label="Cache Hit Rate" value={formatPercent(metrics.summary.cacheHitRate)} tone="green" subvalue={formatTokenCache(metrics.summary.cacheReadTokens, metrics.summary.cacheWriteTokens)} />
+                <MetricCard label="Total Cost" value={formatCurrency(metrics.summary.totalCost)} tone="green" subvalue="stored by OpenCode" />
+                <MetricCard label="Est. API Cost" value={formatCurrency(metrics.summary.totalCalcCost)} tone="orange" subvalue="calculated from tokens" />
+              </div>
+
+              <div className="metrics-chart-grid metrics-chart-grid-top">
+                <ChartCard title="Avg Output Tokens/Second">
+                  <Bar data={{
+                    labels: metricLabels,
+                    datasets: [{ label: 'Tok/s', data: metrics.series.map((point) => point.avgOutputTokensSec), backgroundColor: 'rgba(249, 226, 175, 0.7)', borderRadius: 2 }],
+                  }} options={BAR_OPTIONS_TOKS} />
+                </ChartCard>
+
+                <ChartCard title="Cumulative Cost (USD)">
+                  <Line data={{
+                    labels: metricLabels,
+                    datasets: [{ label: 'Cost', data: metrics.series.map((point) => point.cumulativeCost), borderColor: '#a6e3a1', backgroundColor: 'rgba(166, 227, 161, 0.18)', fill: true, tension: 0.2, pointRadius: 0 }],
+                  }} options={LINE_OPTIONS_COST} />
+                </ChartCard>
+
+                <ChartCard title="Token Usage per Bucket">
+                  <Bar data={{
+                    labels: metricLabels,
+                    datasets: [
+                      { label: 'Input', data: metrics.series.map((point) => point.inputTokens), backgroundColor: 'rgba(137, 180, 250, 0.72)', stack: 'tokens' },
+                      { label: 'Cache Read', data: metrics.series.map((point) => point.cacheReadTokens), backgroundColor: 'rgba(148, 226, 213, 0.72)', stack: 'tokens' },
+                      { label: 'Output', data: metrics.series.map((point) => point.outputTokens), backgroundColor: 'rgba(166, 227, 161, 0.72)', stack: 'tokens' },
+                    ],
+                  }} options={BAR_OPTIONS_STACKED} />
+                </ChartCard>
+
+                <ChartCard title="Avg Request Duration (s)">
+                  <Bar data={{
+                    labels: metricLabels,
+                    datasets: [{ label: 'Duration', data: metrics.series.map((point) => point.avgDurationMs / 1000), backgroundColor: 'rgba(203, 166, 247, 0.45)', borderRadius: 2 }],
+                  }} options={BAR_OPTIONS_DURATION} />
+                </ChartCard>
+              </div>
+
+              <div className="metrics-chart-grid metrics-chart-grid-bottom">
+                <ChartCard title="Cache Efficiency">
+                  <Line data={{
+                    labels: metricLabels,
+                    datasets: [{ label: 'Efficiency', data: metrics.series.map((point) => point.avgCacheEfficiency * 100), borderColor: '#94e2d5', backgroundColor: 'rgba(148, 226, 213, 0.15)', fill: true, tension: 0.25, pointRadius: 0 }],
+                  }} options={LINE_OPTIONS_CACHE} />
+                </ChartCard>
+
+                <ChartCard title="Stop Reason Distribution">
+                  <Doughnut data={{
+                    labels: metrics.stopReasons.map((item) => item.reason),
+                    datasets: [{ data: metrics.stopReasons.map((item) => item.count), backgroundColor: metrics.stopReasons.map((_, idx) => STOP_REASON_COLORS[idx % STOP_REASON_COLORS.length]), borderWidth: 0 }],
+                  }} options={DOUGHNUT_OPTIONS} />
+                </ChartCard>
+              </div>
+
+              <div className="chart-card">
+                <h3 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>Request Log</span>
+                  <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--text-dim)', textTransform: 'none', letterSpacing: 0 }}>
+                    {metrics.totalRequests > 0 && (
+                      <>
+                        {logPage * LOG_PAGE_SIZE + 1}–{Math.min((logPage + 1) * LOG_PAGE_SIZE, metrics.totalRequests)} of {metrics.totalRequests}
+                      </>
+                    )}
+                  </span>
+                </h3>
+                <div className="metrics-table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Time</th>
+                        <th>Session</th>
+                        <th>Model</th>
+                        <th>Input</th>
+                        <th>Output</th>
+                        <th>Cache</th>
+                        <th>Tok/s</th>
+                        <th>Duration</th>
+                        <th>Cost</th>
+                        <th title="Calculated from token counts using public API pricing">Est. Cost</th>
+                        <th>Stop</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {metrics.requests.length === 0 ? (
+                        <tr>
+                          <td colSpan={12} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: 24 }}>
+                            No requests matched the current filters
+                          </td>
+                        </tr>
+                      ) : metrics.requests.map((request, idx) => (
+                        <tr key={request.id} onClick={() => navigate(`/session/${encodeURIComponent(request.sessionId)}`)}>
+                          <td>{logPage * LOG_PAGE_SIZE + idx + 1}</td>
+                          <td>{formatDateTimeShort(request.timeCreated)}</td>
+                          <td className="mono">{shortSessionID(request.sessionId)}</td>
+                          <td>{renderModel(request.model)}</td>
+                          <td>{formatNumber(request.inputTokens)}</td>
+                          <td>{formatNumber(request.outputTokens)}</td>
+                          <td className="mono">{formatTokenCache(request.cacheReadTokens, request.cacheWriteTokens)}</td>
+                          <td>{request.tokensPerSecond > 0 ? request.tokensPerSecond.toFixed(1) : '-'}</td>
+                          <td>{request.durationMs > 0 ? formatSeconds(request.durationMs / 1000) : '-'}</td>
+                          <td>{request.cost > 0 ? formatCurrency(request.cost) : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
+                          <td>{request.calcCost > 0 ? <span style={{ color: 'var(--accent4)' }}>{formatCurrency(request.calcCost)}</span> : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
+                          <td><span className="metrics-stop-pill">{request.stopReason}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {metrics.totalRequests > LOG_PAGE_SIZE && (
+                  <div className="metrics-pagination">
+                    <button
+                      className="oc-time-range-btn"
+                      disabled={logPage === 0}
+                      onClick={() => setLogPage((p) => p - 1)}
+                    >Prev</button>
+                    <span className="metrics-pagination-info">
+                      Page {logPage + 1} / {Math.ceil(metrics.totalRequests / LOG_PAGE_SIZE)}
+                    </span>
+                    <button
+                      className="oc-time-range-btn"
+                      disabled={(logPage + 1) * LOG_PAGE_SIZE >= metrics.totalRequests}
+                      onClick={() => setLogPage((p) => p + 1)}
+                    >Next</button>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </>
       )}
     </div>
   );
 }
 
-function HourlyTokensChart({ data, colors }: { data: HourlyTokensByModel[]; colors: string[] }) {
-  // Generate all hourly slots for the last 7 days
-  const slots: string[] = [];
-  const now = new Date();
-  for (let i = 7 * 24 - 1; i >= 0; i--) {
-    const d = new Date(now.getTime() - i * 3600_000);
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    const hh = String(d.getHours()).padStart(2, '0');
-    slots.push(`${yyyy}-${mm}-${dd} ${hh}`);
-  }
-
-  // Determine top models by total tokens
-  const modelTotals = new Map<string, number>();
-  for (const d of data) {
-    const key = `${d.provider}/${d.model}`;
-    modelTotals.set(key, (modelTotals.get(key) || 0) + d.tokensIn + d.tokensOut);
-  }
-  const topModels = [...modelTotals.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 8)
-    .map(([key]) => key);
-
-  // Build lookup: modelKey -> datetime -> total tokens
-  const lookup = new Map<string, Map<string, number>>();
-  for (const d of data) {
-    const key = `${d.provider}/${d.model}`;
-    if (!topModels.includes(key)) continue;
-    if (!lookup.has(key)) lookup.set(key, new Map());
-    const dtMap = lookup.get(key)!;
-    dtMap.set(d.datetime, (dtMap.get(d.datetime) || 0) + d.tokensIn + d.tokensOut);
-  }
-
-  const datasets = topModels.map((key, idx) => {
-    const dtMap = lookup.get(key) || new Map();
-    const label = key.includes('/') ? key.split('/').pop()! : key;
-    return {
-      label: label.length > 25 ? label.slice(0, 25) + '...' : label,
-      data: slots.map(s => dtMap.get(s) || 0),
-      backgroundColor: colors[idx % colors.length],
-      borderRadius: 1,
-    };
-  });
-
-  // Build display labels: show "Mon 10", "Tue 11" etc. at midnight, otherwise just the hour
-  const labels = slots.map(s => {
-    const hour = s.slice(11, 13);
-    if (hour === '00') {
-      const d = new Date(s.replace(' ', 'T') + ':00:00');
-      const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
-      return `${day} ${d.getDate()}`;
-    }
-    return '';
-  });
-
+function MetricCard({ label, value, subvalue, tone }: { label: string; value: string; subvalue?: string; tone: 'blue' | 'green' | 'purple' | 'orange' }) {
   return (
-    <div className="chart-card" style={{ marginBottom: 32 }}>
-      <h3>Tokens per Hour by Model (last 7 days)</h3>
-      <Bar
-        data={{ labels, datasets }}
-        options={{
-          responsive: true,
-          plugins: {
-            legend: {
-              position: 'bottom',
-              labels: { boxWidth: 12, padding: 8, font: { size: 11 } },
-            },
-            tooltip: {
-              callbacks: {
-                title: (items) => {
-                  const idx = items[0]?.dataIndex;
-                  if (idx == null) return '';
-                  const s = slots[idx];
-                  return `${s.slice(0, 10)} ${s.slice(11)}:00`;
-                },
-                label: (ctx) => `${ctx.dataset.label}: ${formatNumber(ctx.raw as number)} tokens`,
-              },
-            },
-          },
-          scales: {
-            x: {
-              stacked: true,
-              grid: { display: false },
-              ticks: {
-                maxRotation: 0,
-                autoSkip: false,
-                callback: (_, idx) => labels[idx] || null,
-              },
-            },
-            y: { stacked: true, beginAtZero: true, ticks: { callback: v => formatNumber(v as number) } },
-          },
-        }}
-      />
+    <div className="stat-card">
+      <div className="label">{label}</div>
+      <div className={`value ${tone}`}>{value}</div>
+      {subvalue ? <div className="metrics-subvalue">{subvalue}</div> : null}
     </div>
   );
 }
 
-function Heatmap({ activity }: { activity: ActivityDay[] }) {
-  const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
-  const maxSessions = Math.max(...activity.map(d => d.sessions), 1);
-
-  const weeks: (ActivityDay | null)[][] = [];
-  let current: (ActivityDay | null)[] = [];
-
-  const firstDate = new Date(activity[0]?.date || new Date());
-  for (let i = 0; i < firstDate.getDay(); i++) current.push(null);
-
-  activity.forEach(day => {
-    current.push(day);
-    if (current.length === 7) { weeks.push(current); current = []; }
-  });
-  if (current.length > 0) weeks.push(current);
-
-  const dayNames = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-
+function ChartCard({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="chart-card" style={{ marginBottom: 24 }}>
-      <h3>Activity (last 90 days)</h3>
-      <div style={{ display: 'flex', gap: 3 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginRight: 4 }}>
-          {dayNames.map((d, i) => (
-            <div key={i} style={{ width: 14, height: 14, fontSize: 10, color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              {i % 2 === 1 ? d : ''}
-            </div>
-          ))}
-        </div>
-        {weeks.map((week, wi) => (
-          <div key={wi} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            {week.map((day, di) => {
-              if (!day) return <div key={di} style={{ width: 14, height: 14 }} />;
-              const level = day.sessions === 0 ? 0 : Math.min(4, Math.ceil(day.sessions / maxSessions * 4));
-              return (
-                <div
-                  key={di}
-                  className="heatmap-day"
-                  data-level={level}
-                  onMouseEnter={e => setTooltip({ text: `${day.date}: ${day.sessions} sessions, ${day.messages} messages`, x: e.clientX + 10, y: e.clientY - 30 })}
-                  onMouseLeave={() => setTooltip(null)}
-                />
-              );
-            })}
-            {Array.from({ length: 7 - week.length }).map((_, i) => (
-              <div key={`pad-${i}`} style={{ width: 14, height: 14 }} />
-            ))}
-          </div>
-        ))}
-      </div>
-      {tooltip && (
-        <div style={{ position: 'fixed', left: tooltip.x, top: tooltip.y, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12, pointerEvents: 'none', zIndex: 100 }}>
-          {tooltip.text}
-        </div>
-      )}
+    <div className="chart-card metrics-chart-card">
+      <h3>{title}</h3>
+      <div className="metrics-chart-body">{children}</div>
     </div>
   );
+}
+
+const CHART_X_TICKS = { maxTicksLimit: 10, maxRotation: 45, minRotation: 45 };
+
+const BAR_OPTIONS_TOKS = {
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: false as const,
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { grid: { display: false }, ticks: CHART_X_TICKS },
+    y: { beginAtZero: true, ticks: { callback: (v: string | number) => `${v}Tok/s` } },
+  },
+} as const;
+
+const BAR_OPTIONS_DURATION = {
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: false as const,
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { grid: { display: false }, ticks: CHART_X_TICKS },
+    y: { beginAtZero: true, ticks: { callback: (v: string | number) => `${v}s` } },
+  },
+} as const;
+
+const BAR_OPTIONS_STACKED = {
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: false as const,
+  plugins: { legend: { position: 'top' as const, labels: { color: '#bac2de', boxWidth: 12, padding: 12 } } },
+  scales: {
+    x: { stacked: true, grid: { display: false }, ticks: CHART_X_TICKS },
+    y: { stacked: true, beginAtZero: true, ticks: { callback: (v: string | number) => formatCompactNumber(Number(v)) } },
+  },
+} as const;
+
+const LINE_OPTIONS_COST = {
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: false as const,
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { grid: { display: false }, ticks: CHART_X_TICKS },
+    y: { beginAtZero: true, ticks: { callback: (v: string | number) => formatCurrency(Number(v), 2) } },
+  },
+} as const;
+
+const LINE_OPTIONS_CACHE = {
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: false as const,
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { grid: { display: false }, ticks: CHART_X_TICKS },
+    y: { beginAtZero: true, max: 100, ticks: { callback: (v: string | number) => `${Number(v).toFixed(0)}%` } },
+  },
+} as const;
+
+const DOUGHNUT_OPTIONS = {
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: false as const,
+  cutout: '62%',
+  plugins: { legend: { position: 'right' as const, labels: { color: '#bac2de', boxWidth: 12, padding: 12 } } },
+} as const;
+
+function renderModel(model: string): string {
+  if (!model) return 'unknown';
+  return model.includes('/') ? model.split('/').slice(-1)[0] : model;
+}
+
+function shortSessionID(sessionID: string): string {
+  if (sessionID.length <= 12) return sessionID;
+  return `${sessionID.slice(0, 4)}...${sessionID.slice(-8)}`;
 }

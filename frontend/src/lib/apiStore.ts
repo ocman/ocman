@@ -4,6 +4,7 @@ import type {
   ActivityDay,
   HourlyData,
   HourlyTokensByModel,
+  MetricsDashboard,
   ModelUsage,
   PortInfo,
   Project,
@@ -23,6 +24,7 @@ type ApiStore = {
   requests: Record<string, RequestStatus>;
   runRequest: <T>(key: string, task: () => Promise<T>) => Promise<T>;
   getStats: () => Promise<Stats>;
+  getMetrics: (params?: { agent?: string; model?: string; days?: number }) => Promise<MetricsDashboard>;
   getProjects: () => Promise<Project[]>;
   getSessions: (params?: { dir?: string; since?: number }, signal?: AbortSignal) => Promise<Session[]>;
   getSession: (id: string, limit?: number, offset?: number, signal?: AbortSignal) => Promise<SessionDetail>;
@@ -77,6 +79,7 @@ export const useApiStore = create<ApiStore>((set, get) => ({
     }
   },
   getStats: () => get().runRequest('stats:get', () => api.stats()),
+  getMetrics: (params) => get().runRequest(`metrics:get:${params?.agent ?? ''}:${params?.model ?? ''}:${params?.days ?? ''}`, () => api.metrics(params)),
   getProjects: () => get().runRequest('projects:get', () => api.projects()),
   getSessions: (params, signal) => {
     const key = params?.dir ? `sessions:get:dir:${params.dir}` : 'sessions:get';

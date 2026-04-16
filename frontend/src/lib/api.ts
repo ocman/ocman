@@ -39,6 +39,7 @@ export interface Message {
     mode?: string;
     cost?: number;
     tokens?: { input: number; output: number };
+    time?: { created: number; completed?: number };
     error?: {
       name?: string;
       data?: {
@@ -104,6 +105,64 @@ export interface Stats {
   totalCost: number;
 }
 
+export interface MetricsSummary {
+  requests: number;
+  totalTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  avgTokensPerSec: number;
+  avgDurationMs: number;
+  cacheHitRate: number;
+  totalCost: number;
+  totalCalcCost: number;
+}
+
+export interface MetricsPoint {
+  label: string;
+  avgOutputTokensSec: number;
+  cumulativeCost: number;
+  inputTokens: number;
+  cacheReadTokens: number;
+  outputTokens: number;
+  avgDurationMs: number;
+  avgCacheEfficiency: number;
+  count: number;
+}
+
+export interface StopReasonCount {
+  reason: string;
+  count: number;
+}
+
+export interface RequestMetricsRow {
+  id: string;
+  sessionId: string;
+  timeCreated: number;
+  agent: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  tokensPerSecond: number;
+  durationMs: number;
+  cost: number;
+  calcCost: number;
+  stopReason: string;
+}
+
+export interface MetricsDashboard {
+  availableAgents: string[];
+  availableModels: string[];
+  summary: MetricsSummary;
+  series: MetricsPoint[];
+  stopReasons: StopReasonCount[];
+  requests: RequestMetricsRow[];
+  totalRequests: number;
+}
+
 export interface Project {
   directory: string;
   sessionCount: number;
@@ -167,6 +226,16 @@ export interface TmuxSession {
 
 export const api = {
   stats: () => fetchJSON<Stats>('/api/stats'),
+  metrics: (params?: { agent?: string; model?: string; days?: number; limit?: number; offset?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.agent) q.set('agent', params.agent);
+    if (params?.model) q.set('model', params.model);
+    if (params?.days != null) q.set('days', String(params.days));
+    if (params?.limit != null) q.set('limit', String(params.limit));
+    if (params?.offset != null) q.set('offset', String(params.offset));
+    const qs = q.toString();
+    return fetchJSON<MetricsDashboard>(`/api/metrics${qs ? '?' + qs : ''}`);
+  },
   projects: () => fetchJSON<Project[]>('/api/projects'),
   sessions: (params?: { dir?: string; since?: number }, signal?: AbortSignal) => {
     const q = new URLSearchParams();

@@ -118,6 +118,70 @@ type Stats struct {
 	TotalCost      float64 `json:"totalCost"`
 }
 
+// MetricsSummary holds the dashboard KPI cards for request analytics.
+type MetricsSummary struct {
+	Requests         int     `json:"requests"`
+	TotalTokens      int64   `json:"totalTokens"`
+	InputTokens      int64   `json:"inputTokens"`
+	OutputTokens     int64   `json:"outputTokens"`
+	CacheReadTokens  int64   `json:"cacheReadTokens"`
+	CacheWriteTokens int64   `json:"cacheWriteTokens"`
+	AvgTokensPerSec  float64 `json:"avgTokensPerSec"`
+	AvgDurationMs    float64 `json:"avgDurationMs"`
+	CacheHitRate     float64 `json:"cacheHitRate"`
+	TotalCost        float64 `json:"totalCost"`
+	TotalCalcCost    float64 `json:"totalCalcCost"`
+}
+
+// MetricsPoint holds chart data for a time bucket (hour or day).
+type MetricsPoint struct {
+	// Label is the human-readable bucket label ("2026-04-16 14" or "2026-04-16").
+	Label              string  `json:"label"`
+	AvgOutputTokensSec float64 `json:"avgOutputTokensSec"`
+	CumulativeCost     float64 `json:"cumulativeCost"`
+	InputTokens        int64   `json:"inputTokens"`
+	CacheReadTokens    int64   `json:"cacheReadTokens"`
+	OutputTokens       int64   `json:"outputTokens"`
+	AvgDurationMs      float64 `json:"avgDurationMs"`
+	AvgCacheEfficiency float64 `json:"avgCacheEfficiency"`
+	Count              int     `json:"count"`
+}
+
+// StopReasonCount holds the count for a stop reason.
+type StopReasonCount struct {
+	Reason string `json:"reason"`
+	Count  int    `json:"count"`
+}
+
+// RequestLogEntry holds request-level metrics for the request log table.
+type RequestLogEntry struct {
+	ID               string  `json:"id"`
+	SessionID        string  `json:"sessionId"`
+	TimeCreated      int64   `json:"timeCreated"`
+	Agent            string  `json:"agent"`
+	Model            string  `json:"model"`
+	InputTokens      int64   `json:"inputTokens"`
+	OutputTokens     int64   `json:"outputTokens"`
+	CacheReadTokens  int64   `json:"cacheReadTokens"`
+	CacheWriteTokens int64   `json:"cacheWriteTokens"`
+	TokensPerSecond  float64 `json:"tokensPerSecond"`
+	DurationMs       int64   `json:"durationMs"`
+	Cost             float64 `json:"cost"`
+	CalcCost         float64 `json:"calcCost"`
+	StopReason       string  `json:"stopReason"`
+}
+
+// MetricsDashboard holds the full metrics dashboard payload.
+type MetricsDashboard struct {
+	AvailableAgents []string          `json:"availableAgents"`
+	AvailableModels []string          `json:"availableModels"`
+	Summary         MetricsSummary    `json:"summary"`
+	Series          []MetricsPoint    `json:"series"`
+	StopReasons     []StopReasonCount `json:"stopReasons"`
+	Requests        []RequestLogEntry `json:"requests"`
+	TotalRequests   int               `json:"totalRequests"`
+}
+
 // ProjectStats holds per-directory aggregated data.
 type ProjectStats struct {
 	Directory      string  `json:"directory"`

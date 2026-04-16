@@ -10,6 +10,7 @@ import { useHeaderInfo } from './lib/headerContext';
 import { CommandPalette } from './components/CommandPalette';
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
 import { isEditableTarget } from './lib/shortcuts';
+import { useFaviconNotify } from './lib/useFaviconNotify';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
@@ -116,12 +117,18 @@ function GlobalHotkeys({ shortcutsOpen, onToggleShortcuts, onCloseShortcuts }: {
   );
 }
 
+function FaviconNotify() {
+  useFaviconNotify();
+  return null;
+}
+
 export default function App() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   return (
     <BrowserRouter>
       <HeaderProvider>
+        <FaviconNotify />
         <GlobalHotkeys
           shortcutsOpen={shortcutsOpen}
           onToggleShortcuts={() => setShortcutsOpen((open) => !open)}

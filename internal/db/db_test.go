@@ -591,6 +591,54 @@ func TestGetStats(t *testing.T) {
 	}
 }
 
+func TestGetMetricsDashboard(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Session 1", "/a", now, now)
+	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{
+		"role":       "assistant",
+		"agent":      "build",
+		"providerID": "anthropic",
+		"modelID":    "opus-4.1",
+		"finish":     "end_turn",
+		"cost":       0.25,
+		"time":       map[string]interface{}{"created": now - 4000, "completed": now},
+		"tokens": map[string]interface{}{
+			"input":  100,
+			"output": 200,
+			"cache":  map[string]interface{}{"read": 300, "write": 100},
+		},
+	})
+
+	metrics, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, nil)
+	if err != nil {
+		t.Fatalf("GetMetricsDashboard: %v", err)
+	}
+	if metrics.Summary.Requests != 1 {
+		t.Fatalf("Requests = %d, want 1", metrics.Summary.Requests)
+	}
+	if metrics.Summary.TotalTokens != 300 {
+		t.Errorf("TotalTokens = %d, want 300", metrics.Summary.TotalTokens)
+	}
+	if metrics.Summary.CacheHitRate != 0.75 {
+		t.Errorf("CacheHitRate = %v, want 0.75", metrics.Summary.CacheHitRate)
+	}
+	if len(metrics.AvailableAgents) != 1 || metrics.AvailableAgents[0] != "build" {
+		t.Errorf("AvailableAgents = %#v, want [build]", metrics.AvailableAgents)
+	}
+	if len(metrics.AvailableModels) != 1 || metrics.AvailableModels[0] != "anthropic/opus-4.1" {
+		t.Errorf("AvailableModels = %#v, want [anthropic/opus-4.1]", metrics.AvailableModels)
+	}
+	if len(metrics.StopReasons) != 1 || metrics.StopReasons[0].Reason != "end_turn" {
+		t.Errorf("StopReasons = %#v, want end_turn", metrics.StopReasons)
+	}
+	if len(metrics.Requests) != 1 || metrics.Requests[0].TokensPerSecond != 50 {
+		t.Errorf("Requests = %#v, want tokensPerSecond=50", metrics.Requests)
+	}
+}
+
 func TestGetProjects(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()

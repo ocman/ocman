@@ -16,7 +16,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
-//go:embed static/* all:static/.gitkeep
+//go:embed static/*
 var staticFS embed.FS
 
 const (
@@ -45,6 +45,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// API routes — read-only endpoints enforce GET, mutating endpoints enforce POST
 	mux.HandleFunc("/api/stats", requireGET(s.handleStats))
+	mux.HandleFunc("/api/metrics", requireGET(s.handleMetrics))
 	mux.HandleFunc("/api/projects", requireGET(s.handleProjects))
 	mux.HandleFunc("/api/sessions", requireGET(s.handleSessions))
 	mux.HandleFunc("/api/session/", requireGET(s.handleSession))

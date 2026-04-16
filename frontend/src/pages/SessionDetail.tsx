@@ -819,6 +819,7 @@ export function SessionDetail() {
                   ...updated.data,
                   finish: info.finish as string | undefined,
                   tokens: info.tokens as Message['data']['tokens'],
+                  time: (info.time ?? updated.data.time) as Message['data']['time'],
                   cost: typeof info.cost === 'number' ? info.cost : updated.data.cost,
                   error: info.error as Message['data']['error'],
                 };
@@ -1374,6 +1375,34 @@ export function SessionDetail() {
     ? lastMsg.data?.role === 'user' || (lastMsg.data?.role === 'assistant' && !lastMsg.data?.finish && !lastMsg.data?.error)
     : false;
 
+  // Live tokens-per-second: computed from the most recent streaming assistant message.
+  // We look for the last assistant message with time.created and output tokens, then
+  // update the rate every second while the session is running.
+  const [liveTokensPerSecond, setLiveTokensPerSecond] = useState<number | null>(null);
+  useEffect(() => {
+    if (!isRunning) {
+      setLiveTokensPerSecond(null);
+      return;
+    }
+    const computeTps = () => {
+      // Find the last assistant message that has timing info and output tokens
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const m = messages[i];
+        if (m.data?.role === 'assistant' && m.data.time?.created && m.data.tokens?.output) {
+          const elapsedSec = (Date.now() - m.data.time.created) / 1000;
+          if (elapsedSec > 0.1) {
+            setLiveTokensPerSecond(m.data.tokens.output / elapsedSec);
+          }
+          return;
+        }
+      }
+      setLiveTokensPerSecond(null);
+    };
+    computeTps();
+    const interval = setInterval(computeTps, 1000);
+    return () => clearInterval(interval);
+  }, [isRunning, messages]);
+
   return (
     <div className="session-layout">
       <div className="session-sidebar">
@@ -1570,6 +1599,7 @@ export function SessionDetail() {
                   contextTokens={session?.contextTokenCount || undefined}
                   sessionId={session?.id}
                   directory={session?.directory}
+                  tokensPerSecond={liveTokensPerSecond ?? undefined}
                 />
               )}
               footer={showSseNotice || showSseDebug ? (

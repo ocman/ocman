@@ -543,7 +543,7 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
         </div>
         {taskOutput && (
           <div className="oc-tool-content" onClick={() => !taskExpanded && setTaskExpanded(true)} style={!taskExpanded ? { cursor: 'pointer' } : undefined}>
-            <pre className="oc-tool-pre oc-tool-output">{taskOutput}</pre>
+            <div className="oc-tool-pre oc-tool-output oc-md"><MarkdownText text={taskOutput} /></div>
             {!taskExpanded && isLongOutput && (
               <div className="oc-tool-expand">Click to expand</div>
             )}

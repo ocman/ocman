@@ -132,6 +132,7 @@ function ComposerImpl({
   contextTokens,
   sessionId,
   directory,
+  tokensPerSecond,
 }: {
   onSend?: (text: string, images?: AttachedImage[]) => void;
   onCommand?: (command: string, args: string) => void;
@@ -149,6 +150,7 @@ function ComposerImpl({
   contextTokens?: number;
   sessionId?: string;
   directory?: string;
+  tokensPerSecond?: number;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -697,6 +699,9 @@ function ComposerImpl({
               <span className="oc-bar-dots">
                 <span className="oc-thinking-dot" /><span className="oc-thinking-dot" /><span className="oc-thinking-dot" />
               </span>
+              {tokensPerSecond != null && tokensPerSecond > 0 && (
+                <span className="oc-tps-hint">{tokensPerSecond.toFixed(1)} tok/s</span>
+              )}
               <button
                 type="button"
                 className="oc-stop-btn"
@@ -739,6 +744,7 @@ export const Composer = memo(ComposerImpl, (prev, next) =>
   prev.contextTokens === next.contextTokens &&
   prev.sessionId === next.sessionId &&
   prev.directory === next.directory &&
+  prev.tokensPerSecond === next.tokensPerSecond &&
   (prev.models?.length || 0) === (next.models?.length || 0) &&
   (prev.models || []).every((model, i) => model === (next.models || [])[i])
 );

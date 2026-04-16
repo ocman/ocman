@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"sort"
+	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -52,6 +53,254 @@ func (d *DB) GetStats() (*Stats, error) {
 	}
 
 	return s, nil
+}
+
+// CostCalculator can compute the API-equivalent cost for a request given token counts.
+// Pass nil to skip calculated-cost population.
+type CostCalculator interface {
+	CalcCost(modelID string, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens int64) float64
+}
+
+// GetMetricsDashboard returns filtered request-level analytics for the dashboard.
+// days is the number of days in the selected window (0 = all time); it drives bucket granularity.
+// pricing may be nil, in which case CalcCost fields are left zero.
+func (d *DB) GetMetricsDashboard(agentFilter, modelFilter string, since int64, days, requestLimit, requestOffset int, pricing CostCalculator) (*MetricsDashboard, error) {
+	rows, err := d.db.Query(`
+		SELECT m.id, m.session_id, m.time_created, m.data
+		FROM message m
+		WHERE json_extract(m.data, '$.role') = 'assistant'
+		  AND (? <= 0 OR m.time_created >= ?)
+		ORDER BY m.time_created ASC
+	`, since, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type requestRow struct {
+		RequestLogEntry
+	}
+
+	dashboard := &MetricsDashboard{}
+	agentSet := make(map[string]struct{})
+	modelSet := make(map[string]struct{})
+	stopCounts := make(map[string]int)
+	filtered := make([]requestRow, 0)
+
+	for rows.Next() {
+		var id, sessionID string
+		var timeCreated int64
+		var raw string
+		if err := rows.Scan(&id, &sessionID, &timeCreated, &raw); err != nil {
+			log.WithError(err).Warn("failed to scan metrics dashboard row")
+			continue
+		}
+
+		var md MessageData
+		if err := json.Unmarshal([]byte(raw), &md); err != nil {
+			log.WithError(err).Warn("failed to unmarshal metrics dashboard message")
+			continue
+		}
+
+		agent := strings.TrimSpace(md.Agent)
+		provider, model := extractModelProvider(md)
+		modelKey := strings.TrimSpace(model)
+		if provider != "" && modelKey != "" {
+			modelKey = provider + "/" + modelKey
+		}
+
+		if agent != "" {
+			agentSet[agent] = struct{}{}
+		}
+		if modelKey != "" {
+			modelSet[modelKey] = struct{}{}
+		}
+
+		if agentFilter != "" && agent != agentFilter {
+			continue
+		}
+		if modelFilter != "" && modelKey != modelFilter {
+			continue
+		}
+
+		entry := requestRow{RequestLogEntry: RequestLogEntry{
+			ID:          id,
+			SessionID:   sessionID,
+			TimeCreated: timeCreated,
+			Agent:       agent,
+			Model:       modelKey,
+			Cost:        md.Cost,
+		}}
+		if md.Tokens != nil {
+			entry.InputTokens = md.Tokens.Input
+			entry.OutputTokens = md.Tokens.Output
+			if md.Tokens.Cache != nil {
+				entry.CacheReadTokens = md.Tokens.Cache.Read
+				entry.CacheWriteTokens = md.Tokens.Cache.Write
+			}
+		}
+		if md.Time != nil && md.Time.Completed > md.Time.Created {
+			entry.DurationMs = md.Time.Completed - md.Time.Created
+		}
+		if entry.DurationMs > 0 {
+			entry.TokensPerSecond = float64(entry.OutputTokens) / (float64(entry.DurationMs) / 1000)
+		}
+		entry.StopReason = strings.TrimSpace(md.Finish)
+		if entry.StopReason == "" {
+			entry.StopReason = "none"
+		}
+		if pricing != nil {
+			entry.CalcCost = pricing.CalcCost(modelKey, entry.InputTokens, entry.OutputTokens, entry.CacheReadTokens, entry.CacheWriteTokens)
+		}
+
+		filtered = append(filtered, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	dashboard.AvailableAgents = sortedKeys(agentSet)
+	dashboard.AvailableModels = sortedKeys(modelSet)
+
+	// Choose bucket granularity: hourly for short windows, daily otherwise.
+	hourly := days > 0 && days <= 7
+	bucketFmt := "2006-01-02"
+	if hourly {
+		bucketFmt = "2006-01-02 15"
+	}
+
+	type bucketAcc struct {
+		label             string
+		inputTokens       int64
+		cacheReadTokens   int64
+		cacheWriteTokens  int64
+		outputTokens      int64
+		totalOutputTokSec float64
+		totalDurationMs   float64
+		totalCacheEff     float64
+		totalCost         float64
+		durationCount     int
+		count             int
+	}
+	bucketOrder := make([]string, 0)
+	buckets := make(map[string]*bucketAcc)
+
+	validDurationCount := 0
+	for _, entry := range filtered {
+		totalTokens := entry.InputTokens + entry.OutputTokens
+		dashboard.Summary.Requests++
+		dashboard.Summary.TotalTokens += totalTokens
+		dashboard.Summary.InputTokens += entry.InputTokens
+		dashboard.Summary.OutputTokens += entry.OutputTokens
+		dashboard.Summary.CacheReadTokens += entry.CacheReadTokens
+		dashboard.Summary.CacheWriteTokens += entry.CacheWriteTokens
+		dashboard.Summary.TotalCost += entry.Cost
+		dashboard.Summary.TotalCalcCost += entry.CalcCost
+		if entry.DurationMs > 0 {
+			dashboard.Summary.AvgDurationMs += float64(entry.DurationMs)
+			dashboard.Summary.AvgTokensPerSec += entry.TokensPerSecond
+			validDurationCount++
+		}
+		stopCounts[entry.StopReason]++
+
+		label := time.UnixMilli(entry.TimeCreated).Local().Format(bucketFmt)
+		b, ok := buckets[label]
+		if !ok {
+			b = &bucketAcc{label: label}
+			buckets[label] = b
+			bucketOrder = append(bucketOrder, label)
+		}
+		b.inputTokens += entry.InputTokens
+		b.cacheReadTokens += entry.CacheReadTokens
+		b.cacheWriteTokens += entry.CacheWriteTokens
+		b.outputTokens += entry.OutputTokens
+		b.totalOutputTokSec += entry.TokensPerSecond
+		if entry.DurationMs > 0 {
+			b.totalDurationMs += float64(entry.DurationMs)
+			b.durationCount++
+		}
+		cacheEff := 0.0
+		if tc := entry.CacheReadTokens + entry.CacheWriteTokens; tc > 0 {
+			cacheEff = float64(entry.CacheReadTokens) / float64(tc)
+		}
+		b.totalCacheEff += cacheEff
+		b.totalCost += entry.Cost
+		b.count++
+	}
+
+	if validDurationCount > 0 {
+		dashboard.Summary.AvgDurationMs /= float64(validDurationCount)
+		dashboard.Summary.AvgTokensPerSec /= float64(validDurationCount)
+	}
+	if totalCache := dashboard.Summary.CacheReadTokens + dashboard.Summary.CacheWriteTokens; totalCache > 0 {
+		dashboard.Summary.CacheHitRate = float64(dashboard.Summary.CacheReadTokens) / float64(totalCache)
+	}
+
+	// Build the series from buckets (already in chronological order).
+	cumCost := 0.0
+	for _, label := range bucketOrder {
+		b := buckets[label]
+		cumCost += b.totalCost
+		avgDur := 0.0
+		if b.durationCount > 0 {
+			avgDur = b.totalDurationMs / float64(b.durationCount)
+		}
+		n := b.count
+		if n < 1 {
+			n = 1
+		}
+		dashboard.Series = append(dashboard.Series, MetricsPoint{
+			Label:              label,
+			AvgOutputTokensSec: b.totalOutputTokSec / float64(n),
+			CumulativeCost:     cumCost,
+			InputTokens:        b.inputTokens,
+			CacheReadTokens:    b.cacheReadTokens,
+			OutputTokens:       b.outputTokens,
+			AvgDurationMs:      avgDur,
+			AvgCacheEfficiency: b.totalCacheEff / float64(n),
+			Count:              b.count,
+		})
+	}
+
+	for reason, count := range stopCounts {
+		dashboard.StopReasons = append(dashboard.StopReasons, StopReasonCount{Reason: reason, Count: count})
+	}
+	sort.Slice(dashboard.StopReasons, func(i, j int) bool {
+		if dashboard.StopReasons[i].Count != dashboard.StopReasons[j].Count {
+			return dashboard.StopReasons[i].Count > dashboard.StopReasons[j].Count
+		}
+		return dashboard.StopReasons[i].Reason < dashboard.StopReasons[j].Reason
+	})
+
+	dashboard.TotalRequests = len(filtered)
+
+	// Reverse so most-recent is first, then apply offset + limit.
+	start := requestOffset
+	if start < 0 {
+		start = 0
+	}
+	if start > len(filtered) {
+		start = len(filtered)
+	}
+	end := len(filtered) - start
+	page := filtered[:end]
+	if requestLimit > 0 && len(page) > requestLimit {
+		page = page[len(page)-requestLimit:]
+	}
+	for i := len(page) - 1; i >= 0; i-- {
+		dashboard.Requests = append(dashboard.Requests, page[i].RequestLogEntry)
+	}
+
+	return dashboard, nil
+}
+
+func sortedKeys(values map[string]struct{}) []string {
+	result := make([]string, 0, len(values))
+	for value := range values {
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
 }
 
 // GetProjects returns all directories with aggregated stats using SQL aggregation.
