@@ -2,7 +2,7 @@ ocman
 node_modules/
 tmp/
 dist/
-internal/server/static/
-!internal/server/static/.gitkeep
+internal/server/static/*
+!internal/server/static/index.html
 *.log
 *.local
