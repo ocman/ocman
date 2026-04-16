@@ -16,7 +16,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
-//go:embed static/*
+//go:embed static/* static/.gitkeep
 var staticFS embed.FS
 
 const (
