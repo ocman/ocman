@@ -59,10 +59,12 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: go build -o ocman-${{ matrix.goos }}-${{ matrix.goarch }} -ldflags="-s -w" .
+      - name: Package binary
+        run: tar -czf ocman-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz ocman-${{ matrix.goos }}-${{ matrix.goarch }}
       - uses: actions/upload-artifact@v3
         with:
-          name: ocman-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: ocman-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: ocman-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
+          path: ocman-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
 
   release:
     name: Publish Release
@@ -74,13 +76,72 @@ jobs:
           path: artifacts
       - name: Create Release
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          GITHUB_SERVER_URL: ${{ github.server_url }}
+          FORGEJO_TOKEN: ${{ github.token }}
+          FORGEJO_API_URL: ${{ github.api_url }}
+          REPOSITORY: ${{ github.repository }}
+          TAG_NAME: ${{ github.ref_name }}
         run: |
-          export GH_HOST="${GITHUB_SERVER_URL#https://}"
-          export GH_HOST="${GH_HOST#http://}"
-          gh release create "${{ github.ref_name }}" \
-            --title "${{ github.ref_name }}" \
-            --generate-notes \
-            artifacts/*/ocman-*
+          set -euo pipefail
+
+          owner="${REPOSITORY%/*}"
+          repo="${REPOSITORY#*/}"
+          api_base="${FORGEJO_API_URL}/repos/${owner}/${repo}"
+
+          create_response="$(curl --silent --show-error --write-out '\n%{http_code}' \
+            --header "Authorization: token ${FORGEJO_TOKEN}" \
+            --header "Content-Type: application/json" \
+            --request POST \
+            --data "{\"tag_name\":\"${TAG_NAME}\",\"target_commitish\":\"${TAG_NAME}\",\"name\":\"${TAG_NAME}\",\"body\":\"Release ${TAG_NAME}\"}" \
+            "${api_base}/releases")"
+
+          create_status="${create_response##*$'\n'}"
+          create_body="${create_response%$'\n'*}"
+
+          if [ "${create_status}" = "201" ]; then
+            release_json="${create_body}"
+          elif [ "${create_status}" = "409" ]; then
+            releases_json="$(curl --silent --show-error \
+              --header "Authorization: token ${FORGEJO_TOKEN}" \
+              "${api_base}/releases?limit=100")"
+            release_json="$(printf '%s' "${releases_json}" | python3 -c 'import json, os, sys; tag = os.environ["TAG_NAME"]; release = next((item for item in json.load(sys.stdin) if item.get("tag_name") == tag), None); sys.exit("existing release not found for tag " + tag) if release is None else print(json.dumps(release))')"
+          else
+            printf '%s\n' "${create_body}"
+            exit 1
+          fi
+
+          release_id="$(printf '%s' "${release_json}" | python3 -c 'import json, sys; print(json.load(sys.stdin)["id"])')"
+          release_url="$(printf '%s' "${release_json}" | python3 -c 'import json, sys; print(json.load(sys.stdin)["html_url"])')"
+
+          shopt -s nullglob
+          assets=(artifacts/*/ocman-*.tar.gz)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            printf '%s\n' "No release assets found"
+            exit 1
+          fi
+
+          existing_assets="$(curl --silent --show-error \
+            --header "Authorization: token ${FORGEJO_TOKEN}" \
+            "${api_base}/releases/${release_id}/assets")"
+
+          for asset_path in "${assets[@]}"; do
+            asset_name="$(basename "${asset_path}")"
+            existing_asset_id="$(printf '%s' "${existing_assets}" | ASSET_NAME="${asset_name}" python3 -c 'import json, os, sys; name = os.environ["ASSET_NAME"]; assets = json.load(sys.stdin); match = next((item for item in assets if item.get("name") == name), None); print(match["id"] if match else "")')"
+
+            if [ -n "${existing_asset_id}" ]; then
+              curl --silent --show-error --fail-with-body \
+                --header "Authorization: token ${FORGEJO_TOKEN}" \
+                --request DELETE \
+                "${api_base}/releases/${release_id}/assets/${existing_asset_id}"
+            fi
+
+            encoded_name="$(ASSET_NAME="${asset_name}" python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["ASSET_NAME"]))')"
+
+            curl --silent --show-error --fail-with-body \
+              --header "Authorization: token ${FORGEJO_TOKEN}" \
+              --header "Content-Type: application/octet-stream" \
+              --request POST \
+              --data-binary @"${asset_path}" \
+              "${api_base}/releases/${release_id}/assets?name=${encoded_name}"
+          done
+
+          printf 'Release published: %s\n' "${release_url}"
