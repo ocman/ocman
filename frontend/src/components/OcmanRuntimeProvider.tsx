@@ -41,13 +41,16 @@ function convertMessages(
     .map((m, idx): ThreadMessageLike => {
       const role = m.data.role as 'user' | 'assistant';
 
-      // A user message is "queued" when it follows an assistant message that
-      // hasn't finished yet (still streaming / no finish reason and no error).
-      // This means the user sent input while the assistant was still working.
+      // A user message is "queued" when it follows an unfinished assistant
+      // turn and the session already had a prior user turn. New UI-created
+      // sessions can start with an assistant bootstrap message, which should
+      // not make the first user message look queued.
       let isQueued = false;
       if (role === 'user' && idx > 0) {
         const prev = filtered[idx - 1];
+        const hasPriorUserTurn = filtered.slice(0, idx - 1).some((entry) => entry.data?.role === 'user');
         if (
+          hasPriorUserTurn &&
           prev.data?.role === 'assistant' &&
           !prev.data.finish &&
           !prev.data.error
@@ -98,8 +101,8 @@ function convertMessages(
             const isEdit = toolName === 'edit' || toolName === 'mcp_edit';
             const isRead = toolName === 'read' || toolName === 'mcp_read';
             if (isEdit && inp.oldString && inp.newString) {
-              const fileName = inp.filePath ? inp.filePath.split('/').pop() || inp.filePath : '';
-              title = 'Edited ' + fileName;
+              const editTarget = inp.filePath || title || 'file';
+              title = 'Edit ' + editTarget;
               argsText = ''; // diff is shown as result, no need for args
               // Try to determine the starting line number from the tool output.
               // The output often contains the modified content prefixed with

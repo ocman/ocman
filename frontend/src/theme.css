@@ -431,6 +431,9 @@ tr.no-port { opacity: 0.4; }
 .oc-msg {
   padding: 16px 0;
 }
+.oc-thread-viewport > .oc-msg:first-of-type {
+  margin-top: 16px;
+}
 .oc-msg-user {
   background: var(--bg-card);
   border: 1px solid var(--border);

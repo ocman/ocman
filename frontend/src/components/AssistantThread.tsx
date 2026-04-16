@@ -1531,8 +1531,10 @@ const MemoComposer = memo(Composer, (prev, next) =>
 export { MemoComposer as Composer };
 
 export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, footer }: { hasMore?: boolean; loadingMore?: boolean; onLoadMore?: () => void; composer?: React.ReactNode; footer?: React.ReactNode }) {
+  const threadRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const [bottomInset, setBottomInset] = useState(140);
   const wasAtBottomRef = useRef(true);
   const hasMoreRef = useRef(hasMore);
   const loadingMoreRef = useRef(loadingMore);
@@ -1560,6 +1562,32 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
   }, [isAtBottom]);
 
   useEffect(() => {
+    const thread = threadRef.current;
+    if (!thread) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      const overlay = thread.querySelector<HTMLElement>('.oc-composer-wrap, .oc-permission-wrap');
+      setBottomInset((overlay?.offsetHeight || 124) + 16);
+    });
+    const mutationObserver = new MutationObserver(() => {
+      const overlay = thread.querySelector<HTMLElement>('.oc-composer-wrap, .oc-permission-wrap');
+      resizeObserver.disconnect();
+      if (overlay) resizeObserver.observe(overlay);
+      setBottomInset((overlay?.offsetHeight || 124) + 16);
+    });
+
+    const overlay = thread.querySelector<HTMLElement>('.oc-composer-wrap, .oc-permission-wrap');
+    if (overlay) resizeObserver.observe(overlay);
+    setBottomInset((overlay?.offsetHeight || 124) + 16);
+
+    mutationObserver.observe(thread, { childList: true, subtree: true });
+    return () => {
+      mutationObserver.disconnect();
+      resizeObserver.disconnect();
+    };
+  }, [composer]);
+
+  useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
     el.addEventListener('scroll', checkScroll, { passive: true });
@@ -1580,6 +1608,18 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
       observer.disconnect();
     };
   }, [checkScroll]);
+
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+
+    requestAnimationFrame(() => {
+      if (wasAtBottomRef.current) {
+        el.scrollTop = el.scrollHeight;
+      }
+      checkScroll();
+    });
+  }, [bottomInset, checkScroll]);
 
   // Auto-scroll to bottom on initial load
   useEffect(() => {
@@ -1671,29 +1711,31 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
   }, []);
 
   return (
-    <ThreadPrimitive.Root className="oc-thread">
-      <div ref={viewportRef} className="oc-thread-viewport">
-        {hasMore && (
-          <div className="oc-load-more">
-            <button onClick={onLoadMore} disabled={loadingMore}>
-              {loadingMore ? 'Loading...' : 'Load older messages'}
-            </button>
-          </div>
+    <div ref={threadRef} style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+      <ThreadPrimitive.Root className="oc-thread">
+        <div ref={viewportRef} className="oc-thread-viewport" style={{ paddingBottom: bottomInset }}>
+          {hasMore && (
+            <div className="oc-load-more">
+              <button onClick={onLoadMore} disabled={loadingMore}>
+                {loadingMore ? 'Loading...' : 'Load older messages'}
+              </button>
+            </div>
+          )}
+          <ThreadPrimitive.Empty>
+            <div className="oc-empty">No messages yet.</div>
+          </ThreadPrimitive.Empty>
+          <ThreadPrimitive.Messages
+            components={{ UserMessage, AssistantMessage }}
+          />
+        </div>
+        {showScrollBtn && (
+          <button className="oc-scroll-btn" onClick={scrollToBottom}>
+            Scroll to bottom
+          </button>
         )}
-        <ThreadPrimitive.Empty>
-          <div className="oc-empty">No messages yet.</div>
-        </ThreadPrimitive.Empty>
-        <ThreadPrimitive.Messages
-          components={{ UserMessage, AssistantMessage }}
-        />
-      </div>
-      {showScrollBtn && (
-        <button className="oc-scroll-btn" onClick={scrollToBottom}>
-          Scroll to bottom
-        </button>
-      )}
-      {footer && <div className="oc-thread-overlay">{footer}</div>}
-      {composer}
-    </ThreadPrimitive.Root>
+        {footer && <div className="oc-thread-overlay">{footer}</div>}
+        {composer}
+      </ThreadPrimitive.Root>
+    </div>
   );
 }
