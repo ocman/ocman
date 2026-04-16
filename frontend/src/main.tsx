@@ -5,7 +5,7 @@ import '@fontsource/jetbrains-mono/latin-600.css'
 import '@fontsource/jetbrains-mono/latin-700.css'
 import 'bootstrap-icons/font/bootstrap-icons.css'
 import 'highlight.js/styles/github-dark-dimmed.min.css'
-import './theme.css'
+import './tokens.css'
 import App from './App'
 
 createRoot(document.getElementById('root')!).render(

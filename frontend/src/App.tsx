@@ -2,14 +2,13 @@ import { Component, useEffect, useState } from 'react';
 import type { ReactNode, ErrorInfo } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { useHotkeys } from 'react-hotkeys-hook';
-import { Dashboard } from './pages/Dashboard';
+import { DashboardLayout, SessionsTab, ProjectsTab, StatsTab, UsageTab } from './pages/Dashboard';
 import { ProjectDetail } from './pages/ProjectDetail';
 import { SessionDetail } from './pages/SessionDetail';
 import { HeaderProvider } from './lib/HeaderProvider';
 import { useHeaderInfo } from './lib/headerContext';
 import { CommandPalette } from './components/CommandPalette';
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
-import { isEditableTarget } from './lib/shortcuts';
 import { useFaviconNotify } from './lib/useFaviconNotify';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
@@ -32,7 +31,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
   }
 }
 
-function Header({ onToggleShortcuts }: { onToggleShortcuts: () => void }) {
+function Header() {
   const location = useLocation();
   const path = location.pathname;
   const { info } = useHeaderInfo();
@@ -41,16 +40,13 @@ function Header({ onToggleShortcuts }: { onToggleShortcuts: () => void }) {
   if (path.startsWith('/session/')) {
     breadcrumb = (
       <>
-        / <Link to="/" style={{ color: 'inherit' }}>Sessions</Link>
         {info.sessionTitle && <> / {info.sessionTitle}</>}
       </>
     );
   } else if (path.startsWith('/project/')) {
     const dir = decodeURIComponent(path.slice('/project/'.length));
     const name = dir.split('/').pop();
-    breadcrumb = (
-      <>/ <Link to="/" style={{ color: 'inherit' }}>Sessions</Link> / {name}</>
-    );
+    breadcrumb = <>/ {name}</>;
   }
 
   return (
@@ -69,12 +65,7 @@ function Header({ onToggleShortcuts }: { onToggleShortcuts: () => void }) {
           ))}
         </div>
       )}
-      <button
-        type="button"
-        className="vscode-btn"
-        title="Keyboard shortcuts (?)"
-        onClick={onToggleShortcuts}
-      >?</button>
+
     </header>
   );
 }
@@ -86,26 +77,56 @@ function GlobalHotkeys({ shortcutsOpen, onToggleShortcuts, onCloseShortcuts }: {
 }) {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.repeat || isEditableTarget(e.target)) return;
-      const isPhysicalSlash = e.shiftKey && ((e.code === 'Slash' || e.code === 'IntlRo') || e.keyCode === 191);
-      const isQuestionMark = e.key === '?' || (e.shiftKey && e.key === '/') || isPhysicalSlash;
-      if (!isQuestionMark || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.defaultPrevented || e.repeat) return;
+      // Alt+? (Alt+Shift+/ on most layouts) — use e.code to handle macOS Option key producing special chars
+      const isAltQuestion = e.altKey && e.shiftKey && (e.code === 'Slash' || e.code === 'IntlRo');
+      if (!isAltQuestion || e.metaKey || e.ctrlKey) return;
 
       e.preventDefault();
       e.stopPropagation();
       onToggleShortcuts();
     };
 
-    document.addEventListener('keydown', onKeyDown, true);
+    window.addEventListener('keydown', onKeyDown, true);
 
     return () => {
-      document.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('keydown', onKeyDown, true);
     };
   }, [onToggleShortcuts]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.repeat || !e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (e.code !== 'ArrowUp' && e.code !== 'ArrowDown') return;
+      e.preventDefault();
+
+      // Find the nearest scrollable ancestor of the active/focused element
+      let el: Element | null = document.activeElement;
+      let scroller: Element | null = null;
+      while (el && el !== document.documentElement) {
+        const style = getComputedStyle(el);
+        const overflow = style.overflowY;
+        if ((overflow === 'auto' || overflow === 'scroll') && el.scrollHeight > el.clientHeight) {
+          scroller = el;
+          break;
+        }
+        el = el.parentElement;
+      }
+      // Fall back to the thread viewport or document
+      if (!scroller) scroller = document.querySelector('.oc-thread-viewport') ?? document.documentElement;
+
+      const amount = scroller.clientHeight / 2;
+      scroller.scrollBy({ top: e.code === 'ArrowDown' ? amount : -amount, behavior: 'smooth' });
+    };
+
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, []);
 
   useHotkeys('esc', () => onCloseShortcuts(), {
     enabled: shortcutsOpen,
     enableOnFormTags: ['INPUT', 'TEXTAREA', 'SELECT'],
+    enableOnContentEditable: true,
     preventDefault: true,
   }, [onCloseShortcuts, shortcutsOpen]);
 
@@ -135,11 +156,16 @@ export default function App() {
           onCloseShortcuts={() => setShortcutsOpen(false)}
         />
         <div className="container">
-          <Header onToggleShortcuts={() => setShortcutsOpen((open) => !open)} />
+          <Header />
           <div className="content">
             <ErrorBoundary>
               <Routes>
-                <Route path="/" element={<Dashboard />} />
+                <Route element={<DashboardLayout />}>
+                  <Route path="/" element={<SessionsTab />} />
+                  <Route path="/projects" element={<ProjectsTab />} />
+                  <Route path="/stats" element={<StatsTab />} />
+                  <Route path="/usage" element={<UsageTab />} />
+                </Route>
                 <Route path="/project/*" element={<ProjectDetail />} />
                 <Route path="/session/:id" element={<SessionDetail />} />
               </Routes>

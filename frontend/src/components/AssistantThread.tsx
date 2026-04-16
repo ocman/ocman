@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import './AssistantThread.css';
 import {
   ThreadPrimitive,
   MessagePrimitive,
   useMessage,
   type ToolCallMessagePartProps,
 } from '@assistant-ui/react';
+import { formatSeconds } from '../lib/format';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -146,6 +148,7 @@ function AssistantMeta() {
   const createdAt = useMessage((m) => m.createdAt);
   const status = useMessage((m) => m.status);
   const content = useMessage((m) => m.content);
+  const custom = useMessage((m) => m.metadata?.custom as Record<string, unknown> | undefined);
   if (!createdAt || createdAt.getTime() === 0) return null;
   if (status?.type === 'running') return null;
   // Hide timestamp when message only contains file reads
@@ -160,6 +163,20 @@ function AssistantMeta() {
   if (onlyReads) return null;
   const time = createdAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
   const isError = status?.type === 'incomplete' && 'reason' in status && status.reason === 'error';
+
+  // Compute duration and tokens-per-second from per-message timing data when available.
+  const msgTime = custom?.time as { created?: number; completed?: number } | undefined;
+  const msgTokens = custom?.tokens as { output?: number } | undefined;
+  let durationSec: number | null = null;
+  let tps: number | null = null;
+  if (msgTime?.created && msgTime?.completed) {
+    const d = (msgTime.completed - msgTime.created) / 1000;
+    if (d > 0) {
+      durationSec = d;
+      if (msgTokens?.output) tps = msgTokens.output / d;
+    }
+  }
+
   return (
     <>
       {isError && (
@@ -170,6 +187,18 @@ function AssistantMeta() {
       <div className="oc-msg-meta">
         <span className="oc-meta-dot" style={isError ? { background: 'var(--danger)' } : undefined} title={isError ? 'Error' : 'Message group'} />
         <span>{time}</span>
+        {durationSec !== null && (
+          <>
+            <span className="oc-meta-sep">|</span>
+            <span className="oc-meta-tps">{formatSeconds(durationSec)}</span>
+          </>
+        )}
+        {tps !== null && (
+          <>
+            <span className="oc-meta-sep">|</span>
+            <span className="oc-meta-tps">{tps.toFixed(1)} tok/s</span>
+          </>
+        )}
       </div>
     </>
   );
@@ -857,55 +886,7 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   };
 
-  useEffect(() => {
-    const jumpToUserMessage = (direction: 'next' | 'prev') => {
-      const viewport = viewportRef.current;
-      if (!viewport) return;
 
-      const userMessages = Array.from(viewport.querySelectorAll<HTMLElement>('.oc-msg-user'));
-      if (userMessages.length === 0) return;
-
-      const viewportRect = viewport.getBoundingClientRect();
-      const viewportMiddle = viewportRect.top + viewportRect.height / 2;
-      const positions = userMessages.map((message) => {
-        const rect = message.getBoundingClientRect();
-        return {
-          message,
-          middle: rect.top + rect.height / 2,
-        };
-      });
-
-      const currentIndex = positions.reduce((bestIndex, entry, index, arr) => {
-        if (bestIndex === -1) return index;
-        const bestDistance = Math.abs(arr[bestIndex].middle - viewportMiddle);
-        const currentDistance = Math.abs(entry.middle - viewportMiddle);
-        return currentDistance < bestDistance ? index : bestIndex;
-      }, -1);
-
-      const currentEntry = positions[currentIndex];
-      const target = direction === 'next'
-        ? positions.find((entry) => entry.middle > currentEntry.middle + 4)?.message
-        : [...positions].reverse().find((entry) => entry.middle < currentEntry.middle - 4)?.message;
-
-      if (!target && direction === 'next') {
-        viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' });
-        return;
-      }
-
-      (target || currentEntry.message).scrollIntoView({ block: 'start', behavior: 'smooth' });
-    };
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || !e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
-      if (e.key !== 'j' && e.key !== 'k') return;
-
-      e.preventDefault();
-      jumpToUserMessage(e.key === 'j' ? 'next' : 'prev');
-    };
-
-    document.addEventListener('keydown', onKeyDown, true);
-    return () => document.removeEventListener('keydown', onKeyDown, true);
-  }, []);
 
   return (
     <div ref={threadRef} style={{ display: 'flex', flex: 1, minHeight: 0 }}>

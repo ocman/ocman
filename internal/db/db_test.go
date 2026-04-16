@@ -667,7 +667,7 @@ func TestGetHourlyActivity(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	result, err := db.GetHourlyActivity()
+	result, err := db.GetHourlyActivity(0)
 	if err != nil {
 		t.Fatalf("GetHourlyActivity: %v", err)
 	}
@@ -700,7 +700,7 @@ func TestGetModelUsage(t *testing.T) {
 		"tokens":     map[string]interface{}{"input": 200, "output": 100},
 	})
 
-	result, err := db.GetModelUsage()
+	result, err := db.GetModelUsage(0)
 	if err != nil {
 		t.Fatalf("GetModelUsage: %v", err)
 	}
@@ -733,7 +733,7 @@ func TestGetModelUsage_SortedOutput(t *testing.T) {
 		"tokens": map[string]interface{}{"input": 20, "output": 10},
 	})
 
-	result, err := db.GetModelUsage()
+	result, err := db.GetModelUsage(0)
 	if err != nil {
 		t.Fatalf("GetModelUsage: %v", err)
 	}
@@ -764,7 +764,7 @@ func TestGetModelUsage_FallbackToNestedModel(t *testing.T) {
 		"tokens": map[string]interface{}{"input": 50, "output": 25},
 	})
 
-	result, err := db.GetModelUsage()
+	result, err := db.GetModelUsage(0)
 	if err != nil {
 		t.Fatalf("GetModelUsage: %v", err)
 	}
@@ -780,13 +780,13 @@ func TestGetDailyActivity(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	result, err := db.GetDailyActivity(7)
+	result, err := db.GetDailyActivity(0, "")
 	if err != nil {
 		t.Fatalf("GetDailyActivity: %v", err)
 	}
-	// Should return 8 entries (today + 7 days back)
-	if len(result) != 8 {
-		t.Errorf("expected 8 daily entries, got %d", len(result))
+	// Should return 366 entries (365 days + today)
+	if len(result) != 366 {
+		t.Errorf("expected 366 daily entries, got %d", len(result))
 	}
 }
 
@@ -855,7 +855,7 @@ func TestGetHourlyTokensByModel(t *testing.T) {
 		"tokens":     map[string]interface{}{"input": 200, "output": 100},
 	})
 
-	result, err := db.GetHourlyTokensByModel()
+	result, err := db.GetHourlyTokensByModel(7, 0, "")
 	if err != nil {
 		t.Fatalf("GetHourlyTokensByModel: %v", err)
 	}
@@ -874,7 +874,7 @@ func TestGetHourlyTokensByModel_Empty(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	result, err := db.GetHourlyTokensByModel()
+	result, err := db.GetHourlyTokensByModel(7, 0, "")
 	if err != nil {
 		t.Fatalf("GetHourlyTokensByModel: %v", err)
 	}

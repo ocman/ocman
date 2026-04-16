@@ -37,6 +37,7 @@ type ApiStore = {
   getSessionPort: (id: string, signal?: AbortSignal) => Promise<PortInfo>;
   createSession: (directory: string) => Promise<{ id: string }>;
   sendMessage: (sessionId: string, directory: string, message: string, images?: { url: string; mime: string }[], model?: string, agent?: string) => Promise<void>;
+  listPermissions: (directory: string) => Promise<unknown[]>;
   respondPermission: (sessionId: string, directory: string, permissionId: string, reply: 'once' | 'always' | 'reject') => Promise<void>;
   respondQuestion: (sessionId: string, directory: string, requestId: string, answers: string[][]) => Promise<void>;
   rejectQuestion: (sessionId: string, directory: string, requestId: string) => Promise<void>;
@@ -95,6 +96,7 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   getSessionPort: (id, signal) => get().runRequest(`session-port:get:${id}`, () => api.sessionPort(id, signal)),
   createSession: (directory) => get().runRequest('session:create', () => api.createSession(directory)),
   sendMessage: (sessionId, directory, message, images, model, agent) => get().runRequest(`message:send:${sessionId}`, () => api.sendMessage(sessionId, directory, message, images, model, agent)),
+  listPermissions: (directory) => get().runRequest(`permissions:list:${directory}`, () => api.listPermissions(directory)),
   respondPermission: (sessionId, directory, permissionId, reply) => get().runRequest(`permission:respond:${sessionId}`, () => api.respondPermission(sessionId, directory, permissionId, reply)),
   respondQuestion: (sessionId, directory, requestId, answers) => get().runRequest(`question:respond:${sessionId}`, () => api.respondQuestion(sessionId, directory, requestId, answers)),
   rejectQuestion: (sessionId, directory, requestId) => get().runRequest(`question:reject:${sessionId}`, () => api.rejectQuestion(sessionId, directory, requestId)),
@@ -107,5 +109,5 @@ export const useApiStore = create<ApiStore>((set, get) => ({
 }));
 
 export function useApiRequest(key: string): RequestStatus {
-  return useApiStore((state) => state.requests[key] ?? { loading: false, error: null });
+  return useApiStore((state) => state.requests[key] ?? { loading: true, error: null });
 }

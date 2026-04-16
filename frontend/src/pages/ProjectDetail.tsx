@@ -104,15 +104,15 @@ export function ProjectDetail() {
     openVSCode(directory);
   }, [directory]);
 
-  useHotkeys('t', (e) => {
+  useHotkeys('alt+t', (e) => {
     e.preventDefault();
     handleTmuxSwitch();
-  }, { enabled: !!matchingTmuxSession, preventDefault: true }, [handleTmuxSwitch, matchingTmuxSession]);
+  }, { enabled: !!matchingTmuxSession, preventDefault: true, enableOnFormTags: ['INPUT', 'TEXTAREA', 'SELECT'], enableOnContentEditable: true }, [handleTmuxSwitch, matchingTmuxSession]);
 
-  useHotkeys('v', (e) => {
+  useHotkeys('alt+v', (e) => {
     e.preventDefault();
     handleOpenVSCode();
-  }, { enabled: !!directory, preventDefault: true }, [handleOpenVSCode, directory]);
+  }, { enabled: !!directory, preventDefault: true, enableOnFormTags: ['INPUT', 'TEXTAREA', 'SELECT'], enableOnContentEditable: true }, [handleOpenVSCode, directory]);
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>

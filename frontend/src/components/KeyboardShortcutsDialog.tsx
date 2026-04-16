@@ -1,3 +1,5 @@
+import './KeyboardShortcutsDialog.css';
+
 interface ShortcutItem {
   keys: string;
   description: string;
@@ -5,32 +7,40 @@ interface ShortcutItem {
 
 const shortcuts: ShortcutItem[] = [
   {
-    keys: '?',
+    keys: 'Alt+?',
     description: 'Open keyboard shortcuts',
   },
   {
-    keys: '/ or Ctrl+/',
+    keys: 'Alt+Space',
     description: 'Open command palette',
   },
   {
-    keys: 'T',
+    keys: 'Alt+T',
     description: 'Switch tmux for current session or project',
   },
   {
-    keys: 'V',
+    keys: 'Alt+V',
     description: 'Open current session or project in VS Code',
   },
   {
-    keys: 'N',
+    keys: 'Alt+C',
     description: 'Create new session in current project',
   },
   {
-    keys: 'Ctrl+J',
-    description: 'Jump to next user input in conversation history',
+    keys: 'Alt+J',
+    description: 'Go to next session',
   },
   {
-    keys: 'Ctrl+K',
-    description: 'Jump to previous user input in conversation history',
+    keys: 'Alt+K',
+    description: 'Go to previous session',
+  },
+  {
+    keys: 'Alt+↑',
+    description: 'Scroll up half a page',
+  },
+  {
+    keys: 'Alt+↓',
+    description: 'Scroll down half a page',
   },
 ];
 

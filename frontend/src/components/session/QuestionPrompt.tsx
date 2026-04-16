@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import './QuestionPrompt.css';
 
 interface QuestionOption {
   label: string;

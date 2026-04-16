@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import './SessionTable.css';
 import { useNavigate } from 'react-router-dom';
 import type { Session } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
@@ -210,7 +211,7 @@ export function SessionTable({ sessions, showProject, loading, tmux, includeArch
                   </td>
                 )}
                 <td className="mono">{s.messageCount} msgs &middot; {formatDuration(s.durationMs)}</td>
-                <td>{relativeTime(s.timeCreated)}</td>
+                <td><span title={new Date(s.timeCreated).toLocaleString()}>{relativeTime(s.timeCreated)}</span></td>
                 <td className="session-action-cell">
                   <button
                     className="session-archive-btn"

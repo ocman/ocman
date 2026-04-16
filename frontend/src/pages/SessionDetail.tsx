@@ -1,5 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import './SessionDetail.css';
+import '../components/PermissionPrompt.css';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { api, type Session, type SessionDetail as SessionDetailData, type Message, type Part } from '../lib/api';
 import { formatDuration, formatNumber, shortPath, relativeTime } from '../lib/format';
@@ -12,6 +14,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { useTmux } from '../lib/useTmux';
 import { filterVisibleSessions } from '../lib/sessionVisibility';
 import { useApiStore } from '../lib/apiStore';
+import { recheckFaviconNotify } from '../lib/useFaviconNotify';
 import { openVSCode } from '../lib/shortcuts';
 
 const PAGE_SIZE = 50;
@@ -199,47 +202,128 @@ function extractPendingQuestion(node: unknown): PendingQuestion | null {
   const id =
     (typeof properties.id === 'string' && properties.id) ||
     (typeof properties.requestID === 'string' && properties.requestID) ||
+    (typeof properties.requestId === 'string' && properties.requestId) ||
     '';
   if (!id) return null;
 
-  const sessionID = typeof properties.sessionID === 'string' ? properties.sessionID : '';
+  const sessionID =
+    (typeof properties.sessionID === 'string' && properties.sessionID) ||
+    (typeof properties.sessionId === 'string' && properties.sessionId) ||
+    '';
 
   const rawQuestions = properties.questions;
-  if (!Array.isArray(rawQuestions) || rawQuestions.length === 0) return null;
-
-  const questions = rawQuestions.filter(
-    (q): q is QuestionItem =>
-      !!q && typeof q === 'object' && typeof (q as QuestionItem).question === 'string',
-  );
+  const questions = normalizeQuestionItems(rawQuestions);
   if (questions.length === 0) return null;
 
   return { requestId: id, sessionID, questions };
 }
 
+const QUESTION_TOOL_NAMES = ['question', 'mcp_question', 'Question', 'mcp_Question'];
+
+function normalizeQuestionItems(raw: unknown): QuestionItem[] {
+  let value = raw;
+
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value) as unknown;
+    } catch {
+      return [];
+    }
+  }
+
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const obj = value as Record<string, unknown>;
+    if (Array.isArray(obj.questions)) value = obj.questions;
+  }
+
+  if (!Array.isArray(value) || value.length === 0) return [];
+
+  return value.filter(
+    (q): q is QuestionItem =>
+      !!q && typeof q === 'object' && typeof (q as QuestionItem).question === 'string' && Array.isArray((q as QuestionItem).options),
+  );
+}
+
+function hasQuestionOutput(output: unknown): boolean {
+  return output != null && output !== '' && output !== '""' && output !== '[]';
+}
+
+function extractPendingQuestionFromPart(part: Part, sessionId: string): PendingQuestion | null {
+  let pd: Record<string, unknown>;
+  try {
+    pd = typeof part.data === 'string' ? JSON.parse(part.data) : (part.data as unknown as Record<string, unknown>);
+  } catch {
+    return null;
+  }
+
+  if (pd.type !== 'tool') return null;
+  const toolName = pd.tool as string | undefined;
+  if (!toolName || !QUESTION_TOOL_NAMES.includes(toolName)) return null;
+
+  const state = pd.state as Record<string, unknown> | undefined;
+  if (!state) return null;
+
+  const status = state.status as string | undefined;
+  if (status !== 'running' && hasQuestionOutput(state.output)) return null;
+
+  const input = (state.input && typeof state.input === 'object' && !Array.isArray(state.input))
+    ? state.input as Record<string, unknown>
+    : {};
+  const metadata = (state.metadata && typeof state.metadata === 'object' && !Array.isArray(state.metadata))
+    ? state.metadata as Record<string, unknown>
+    : {};
+
+  const requestId =
+    (typeof input.requestId === 'string' && input.requestId) ||
+    (typeof input.requestID === 'string' && input.requestID) ||
+    (typeof input.id === 'string' && input.id) ||
+    (typeof metadata.requestId === 'string' && metadata.requestId) ||
+    (typeof metadata.requestID === 'string' && metadata.requestID) ||
+    (typeof metadata.id === 'string' && metadata.id) ||
+    '';
+  if (!requestId) return null;
+
+  const questions = normalizeQuestionItems(input.questions ?? state.input);
+  if (questions.length === 0) return null;
+
+  const pendingSessionId =
+    (typeof input.sessionID === 'string' && input.sessionID) ||
+    (typeof input.sessionId === 'string' && input.sessionId) ||
+    sessionId;
+
+  return { requestId, sessionID: pendingSessionId, questions };
+}
+
+function extractPendingQuestionFromParts(parts: Part[], sessionId: string): PendingQuestion | null {
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const pending = extractPendingQuestionFromPart(parts[i], sessionId);
+    if (pending) return pending;
+  }
+  return null;
+}
+
 /** Check if loaded parts contain a pending (unanswered) question tool call. */
-function hasPendingQuestionInParts(parts: Part[]): boolean {
-  const questionToolNames = ['question', 'mcp_question', 'Question', 'mcp_Question'];
+function hasPendingQuestionInParts(parts: Part[], sessionId: string): boolean {
+  if (extractPendingQuestionFromParts(parts, sessionId)) return true;
 
   for (let i = parts.length - 1; i >= 0; i--) {
-    const p = parts[i];
     let pd: Record<string, unknown>;
     try {
-      pd = typeof p.data === 'string' ? JSON.parse(p.data) : (p.data as unknown as Record<string, unknown>);
+      const data = parts[i].data;
+      pd = typeof data === 'string' ? JSON.parse(data) : (data as unknown as Record<string, unknown>);
     } catch {
       continue;
     }
+
     if (pd.type !== 'tool') continue;
     const toolName = pd.tool as string | undefined;
-    if (!toolName || !questionToolNames.includes(toolName)) continue;
+    if (!toolName || !QUESTION_TOOL_NAMES.includes(toolName)) continue;
 
     const state = pd.state as Record<string, unknown> | undefined;
     if (!state) continue;
-
-    const status = state.status as string | undefined;
-    const output = state.output;
-    const hasOutput = output != null && output !== '' && output !== '""' && output !== '[]';
-    if (status === 'running' || !hasOutput) return true;
+    if (state.status === 'running' || !hasQuestionOutput(state.output)) return true;
   }
+
   return false;
 }
 
@@ -313,6 +397,10 @@ export function SessionDetail() {
 
   const [archivingSessionIds, setArchivingSessionIds] = useState<Set<string>>(new Set());
   const [showArchivedRecent, setShowArchivedRecent] = useState(false);
+
+  // Track token data from subagent sessions so the TPS indicator includes their output.
+  // Maps subagent messageId -> { output: output tokens for that message, created: time.created }
+  const [subagentTokens, setSubagentTokens] = useState<Map<string, { output: number; created: number }>>(new Map());
   const { setInfo } = useHeaderInfo();
   usePageTitle(session?.title || 'Session');
   const lastHashRef = useRef('');
@@ -343,6 +431,7 @@ export function SessionDetail() {
   const getSessions = useApiStore((state) => state.getSessions);
   const markSessionSeen = useApiStore((state) => state.markSessionSeen);
   const sendMessage = useApiStore((state) => state.sendMessage);
+  const listPermissions = useApiStore((state) => state.listPermissions);
   const respondPermission = useApiStore((state) => state.respondPermission);
   const respondQuestion = useApiStore((state) => state.respondQuestion);
   const rejectQuestion = useApiStore((state) => state.rejectQuestion);
@@ -599,6 +688,7 @@ export function SessionDetail() {
       .then(() => {
         setSession(prev => prev && prev.id === sessionSeenId ? { ...prev, seen: true } : prev);
         setRecentSessions(prev => prev.map(s => (s.id === sessionSeenId ? { ...s, seen: true } : s)));
+        recheckFaviconNotify();
       })
       .catch(err => console.error('Failed to mark session seen', err));
   }, [markSessionSeen, sessionSeenId, sessionSeenUpdated]);
@@ -609,7 +699,13 @@ export function SessionDetail() {
   // question tool call as pending (not yet answered).
   useEffect(() => {
     if (pendingQuestion || !session?.id || !portAvailable) return;
-    if (!hasPendingQuestionInParts(parts)) return;
+    const pendingFromParts = extractPendingQuestionFromParts(parts, session.id);
+    if (pendingFromParts) {
+      storePendingQuestion(session.id, pendingFromParts);
+      setPendingQuestion(pendingFromParts);
+      return;
+    }
+    if (!hasPendingQuestionInParts(parts, session.id)) return;
 
     const stored = loadPendingQuestion(session.id);
     if (stored) {
@@ -655,10 +751,12 @@ export function SessionDetail() {
       }
       // Only clear permission/question state on specific event types,
       // and only if there's something to clear (avoids no-op renders).
-      if (type === 'session.status' || type === 'message.updated' || type === 'permission.responded') {
+      // Do NOT clear on message.updated — that event fires for queued user
+      // messages and would prematurely dismiss the permission/question prompt.
+      if (type === 'session.status' || type === 'permission.replied') {
         setPendingPermission(prev => prev === null ? prev : null);
       }
-      if (type === 'question.replied' || type === 'question.rejected' || type === 'session.status' || type === 'message.updated') {
+      if (type === 'question.replied' || type === 'question.rejected' || type === 'session.status') {
         setPendingQuestion(prev => {
           if (prev === null) return prev;
           clearPendingQuestion(sid);
@@ -672,6 +770,26 @@ export function SessionDetail() {
       evtSource = new EventSource(`/api/events/?dir=${encodeURIComponent(dir)}`);
       evtSource.onopen = () => {
         setSseActive(true);
+        // SSE connected means OpenCode is running — mark port as available.
+        setPortAvailable(true);
+        // Fetch any permissions that were already pending when we connected.
+        // SSE only delivers new events; existing pending permissions need to
+        // be retrieved explicitly so the dialog shows immediately.
+        listPermissions(dir).then((perms) => {
+          if (cancelled) return;
+          for (const p of perms) {
+            const perm = extractPendingPermission({ type: 'permission.asked', properties: p });
+            if (perm && (!perm.permissionId || true)) {
+              // Only show if it belongs to the current session
+              const props = p as Record<string, unknown>;
+              if (!props.sessionID || props.sessionID === sid) {
+                setPendingPermission(perm);
+                setPermissionError(null);
+                break; // show the first pending permission for this session
+              }
+            }
+          }
+        }).catch(() => { /* ignore errors — SSE events will handle live permissions */ });
         // Reconciliation: fetch the latest state to close the gap between
         // the initial load() and the SSE connection opening. Delay slightly
         // so that if SSE events arrive immediately (active conversation),
@@ -717,7 +835,34 @@ export function SessionDetail() {
           ((evtProps?.info as Record<string, unknown> | undefined)?.sessionID as string) ||
           ((evtProps?.part as Record<string, unknown> | undefined)?.sessionID as string) ||
           undefined;
-        if (evtSessionId && evtSessionId !== sid) return;
+        if (evtSessionId && evtSessionId !== sid) {
+          // Capture token data from subagent sessions for the TPS indicator.
+          // Track per-message tokens so we can accurately sum across multiple
+          // assistant messages within a subagent session.
+          if (subagentSessionIdsRef.current.has(evtSessionId) &&
+              (type === 'message.created' || type === 'message.updated')) {
+            const subInfo = (evtProps?.info || (evtProps as Record<string, unknown>)) as Record<string, unknown> | undefined;
+            if (subInfo && typeof subInfo.id === 'string' && subInfo.role === 'assistant') {
+              const msgId = subInfo.id as string;
+              const subTokens = subInfo.tokens as { input?: number; output?: number } | undefined;
+              const subTime = subInfo.time as { created?: number } | undefined;
+              if (subTokens?.output || subTime?.created) {
+                setSubagentTokens(prev => {
+                  const existing = prev.get(msgId);
+                  const output = subTokens?.output || existing?.output || 0;
+                  const created = subTime?.created || existing?.created || Date.now();
+                  const updated = new Map(prev);
+                  updated.set(msgId, {
+                    output: Math.max(existing?.output || 0, output),
+                    created: existing ? Math.min(existing.created, created) : created,
+                  });
+                  return updated;
+                });
+              }
+            }
+          }
+          return;
+        }
 
         // Handle permission/question prompts
         handleParsedEvent(parsed);
@@ -1080,7 +1225,7 @@ export function SessionDetail() {
       clearInterval(fallback);
       setSseActive(false);
     };
-  }, [session?.directory, session?.id, load]);
+  }, [session?.directory, session?.id, load, listPermissions]);
 
   // Compute aggregate token/cost stats from the messages array so the header
   // stays up-to-date from SSE events without needing a server round-trip.
@@ -1131,6 +1276,9 @@ export function SessionDetail() {
 
   const handleSend = useCallback(async (text: string, images?: AttachedImage[]) => {
     if (!session || !portAvailable) return;
+
+    // Clear subagent token tracking for the new run window.
+    setSubagentTokens(new Map());
 
     // Optimistically add user message immediately
     const tempId = 'temp-' + Date.now();
@@ -1197,8 +1345,41 @@ export function SessionDetail() {
     }
   }, [activeAgent, activeModel, portAvailable, selectedAgent, selectedModel, sendMessage, session]);
 
+  const handleCompact = useCallback(async () => {
+    if (!session || !portAvailable) return;
+    const model = selectedModel || activeModel || '';
+    const slashIdx = model.indexOf('/');
+    const providerID = slashIdx > 0 ? model.slice(0, slashIdx) : '';
+    const modelID = slashIdx > 0 ? model.slice(slashIdx + 1) : model;
+    try {
+      await api.compactSession(session.id, session.directory, providerID, modelID);
+    } catch (e) {
+      console.error('Failed to compact session', e);
+    }
+  }, [activeModel, portAvailable, selectedModel, session]);
+
+  const handleNewSession = useCallback(async () => {
+    if (!session) return;
+    try {
+      const res = await createSession(session.directory);
+      if (res.id) navigate(`/session/${res.id}`);
+    } catch (e) {
+      console.error('Failed to create session', e);
+    }
+  }, [session, createSession, navigate]);
+
   const handleCommand = useCallback(async (command: string, args: string) => {
     if (!session || !portAvailable) return;
+
+    if (command === 'compact') {
+      await handleCompact();
+      return;
+    }
+
+    if (command === 'new') {
+      await handleNewSession();
+      return;
+    }
 
     // Optimistic user message showing the command
     const tempId = 'temp-' + Date.now();
@@ -1249,7 +1430,7 @@ export function SessionDetail() {
       setMessages(prev => [...prev, errMsg]);
       setParts(prev => [...prev, errPart]);
     }
-  }, [activeAgent, activeModel, portAvailable, selectedAgent, selectedModel, session]);
+  }, [activeAgent, activeModel, handleCompact, handleNewSession, portAvailable, selectedAgent, selectedModel, session]);
 
   const handlePermissionReply = useCallback(async (reply: 'once' | 'always' | 'reject') => {
     if (!pendingPermission || answeringPermission || !portAvailable || !session) return;
@@ -1336,36 +1517,84 @@ export function SessionDetail() {
     openVSCode(session.directory);
   }, [session]);
 
-  useHotkeys('t', (e) => {
+  const recentSessionsRef = useRef<Session[]>([]);
+  useEffect(() => { recentSessionsRef.current = recentSessions; }, [recentSessions]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.repeat || !e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (e.code !== 'KeyJ' && e.code !== 'KeyK') return;
+      e.preventDefault();
+      const sessions = recentSessionsRef.current;
+      const currentIndex = sessions.findIndex((s) => s.id === id);
+      if (currentIndex === -1) return;
+      const nextIndex = e.code === 'KeyJ' ? currentIndex + 1 : currentIndex - 1;
+      const target = sessions[nextIndex];
+      if (target) navigate(`/session/${target.id}`);
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [id, navigate]);
+
+  useHotkeys('alt+t', (e) => {
     e.preventDefault();
     handleTmuxShortcut();
-  }, { enabled: !!matchingTmuxSession, preventDefault: true }, [handleTmuxShortcut, matchingTmuxSession]);
+  }, { enabled: !!matchingTmuxSession, preventDefault: true, enableOnFormTags: ['INPUT', 'TEXTAREA', 'SELECT'], enableOnContentEditable: true }, [handleTmuxShortcut, matchingTmuxSession]);
 
-  useHotkeys('v', (e) => {
+  useHotkeys('alt+v', (e) => {
     e.preventDefault();
     handleVSCodeShortcut();
-  }, { enabled: !!session, preventDefault: true }, [handleVSCodeShortcut, session]);
+  }, { enabled: !!session, preventDefault: true, enableOnFormTags: ['INPUT', 'TEXTAREA', 'SELECT'], enableOnContentEditable: true }, [handleVSCodeShortcut, session]);
 
-  const handleNewSession = useCallback(async () => {
-    if (!session) return;
-    try {
-      const res = await createSession(session.directory);
-      if (res.id) navigate(`/session/${res.id}`);
-    } catch (e) {
-      console.error('Failed to create session', e);
-    }
-  }, [session, createSession, navigate]);
-
-  useHotkeys('n', (e) => {
+  useHotkeys('alt+c', (e) => {
     e.preventDefault();
     handleNewSession();
-  }, { enabled: !!session && portAvailable, preventDefault: true }, [handleNewSession, session, portAvailable]);
+  }, { enabled: !!session && portAvailable, preventDefault: true, enableOnFormTags: ['INPUT', 'TEXTAREA', 'SELECT'], enableOnContentEditable: true }, [handleNewSession, session, portAvailable]);
 
   const hasMore = messages.length < totalMessages;
   const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
   const composerModels = Array.from(new Set([activeModel, session?.defaultModel, ...modelOptions].filter((model): model is string => !!model)));
   const showSseNotice = portAvailable && !sseActive;
   const showSseDebug = debugMode && sseDebugEvents.length > 0;
+  // Keep a ref so the SSE handler can access the latest subagent IDs without
+  // needing to be in the useEffect dependency list (which would reconnect SSE).
+  const subagentSessionIdsRef = useRef<Set<string>>(new Set());
+
+  // Derive subagent session IDs from task/mcp_task tool call parts.
+  // These are needed to capture SSE token events from subagent sessions.
+  const subagentSessionIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const p of parts) {
+      const d = typeof p.data === 'string' ? (() => { try { return JSON.parse(p.data); } catch { return null; } })() : p.data;
+      if (!d || typeof d !== 'object') continue;
+      const toolName = (d as Record<string, unknown>).tool as string | undefined;
+      if (toolName !== 'task' && toolName !== 'mcp_task' && toolName !== 'Task' && toolName !== 'mcp_Task') continue;
+      const st = (d as Record<string, unknown>).state as Record<string, unknown> | undefined;
+      const inp = st?.input as Record<string, unknown> | undefined;
+      // Extract task_id from various locations (same logic as OcmanRuntimeProvider)
+      let taskId = '';
+      if (inp && typeof inp.task_id === 'string') taskId = inp.task_id;
+      if (!taskId && st) {
+        const outputStr = typeof st.output === 'string' ? st.output : JSON.stringify(st.output || '');
+        const idMatch = outputStr.match(/task_id:\s*(ses_[^\s)]+)/);
+        if (idMatch) taskId = idMatch[1];
+        if (!taskId && st.output && typeof st.output === 'object') {
+          const out = st.output as Record<string, unknown>;
+          if (typeof out.task_id === 'string') taskId = out.task_id;
+        }
+        if (!taskId && st.metadata) {
+          const meta = st.metadata as Record<string, unknown>;
+          if (typeof meta.sessionId === 'string') taskId = meta.sessionId;
+          else if (typeof meta.taskId === 'string') taskId = meta.taskId;
+          else if (typeof meta.task_id === 'string') taskId = meta.task_id;
+        }
+      }
+      if (taskId) ids.add(taskId);
+    }
+    return ids;
+  }, [parts]);
+  subagentSessionIdsRef.current = subagentSessionIds;
+
   // The assistant is still working if:
   // - the last message is from the user (assistant hasn't replied yet), or
   // - the last message is from the assistant with no finish reason and no error (still streaming).
@@ -1375,24 +1604,48 @@ export function SessionDetail() {
     ? lastMsg.data?.role === 'user' || (lastMsg.data?.role === 'assistant' && !lastMsg.data?.finish && !lastMsg.data?.error)
     : false;
 
-  // Live tokens-per-second: computed from the most recent streaming assistant message.
-  // We look for the last assistant message with time.created and output tokens, then
-  // update the rate every second while the session is running.
+  // Live tokens-per-second: sum output tokens across all assistant messages in the
+  // current run window (since the last user message) plus tokens from subagent
+  // sessions, divided by elapsed wall-clock time since the earliest time.created.
   const [liveTokensPerSecond, setLiveTokensPerSecond] = useState<number | null>(null);
   useEffect(() => {
     if (!isRunning) {
       setLiveTokensPerSecond(null);
+      // Clear subagent token tracking when the run ends so the next run starts fresh.
+      setSubagentTokens(prev => prev.size > 0 ? new Map() : prev);
       return;
     }
     const computeTps = () => {
-      // Find the last assistant message that has timing info and output tokens
+      // Find the start of the current run window: the index after the last user message.
+      let windowStart = 0;
       for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].data?.role === 'user') { windowStart = i + 1; break; }
+      }
+      // Sum output tokens and find the earliest time.created across all assistant
+      // messages in the window that have timing data.
+      let totalOutput = 0;
+      let earliestCreated: number | null = null;
+      for (let i = windowStart; i < messages.length; i++) {
         const m = messages[i];
-        if (m.data?.role === 'assistant' && m.data.time?.created && m.data.tokens?.output) {
-          const elapsedSec = (Date.now() - m.data.time.created) / 1000;
-          if (elapsedSec > 0.1) {
-            setLiveTokensPerSecond(m.data.tokens.output / elapsedSec);
+        if (m.data?.role !== 'assistant') continue;
+        if (m.data.tokens?.output) totalOutput += m.data.tokens.output;
+        if (m.data.time?.created) {
+          if (earliestCreated === null || m.data.time.created < earliestCreated) {
+            earliestCreated = m.data.time.created;
           }
+        }
+      }
+      // Include output tokens from subagent sessions (captured via SSE).
+      for (const entry of subagentTokens.values()) {
+        totalOutput += entry.output;
+        if (earliestCreated === null || entry.created < earliestCreated) {
+          earliestCreated = entry.created;
+        }
+      }
+      if (totalOutput > 0 && earliestCreated !== null) {
+        const elapsedSec = (Date.now() - earliestCreated) / 1000;
+        if (elapsedSec > 0.1) {
+          setLiveTokensPerSecond(totalOutput / elapsedSec);
           return;
         }
       }
@@ -1401,7 +1654,7 @@ export function SessionDetail() {
     computeTps();
     const interval = setInterval(computeTps, 1000);
     return () => clearInterval(interval);
-  }, [isRunning, messages]);
+  }, [isRunning, messages, subagentTokens]);
 
   return (
     <div className="session-layout">
@@ -1459,7 +1712,7 @@ export function SessionDetail() {
                 <span className="session-sidebar-project">{shortPath(sib.directory)}</span>
               </span>
               <span className="session-sidebar-meta">
-                <span className="session-sidebar-time">{relativeTime(sib.timeUpdated)}</span>
+                <span className="session-sidebar-time" title={new Date(sib.timeUpdated).toLocaleString()}>{relativeTime(sib.timeUpdated)}</span>
                 <button
                   type="button"
                   className="session-archive-btn session-sidebar-archive-btn"

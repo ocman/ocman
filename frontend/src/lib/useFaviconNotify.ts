@@ -5,6 +5,19 @@ const FAVICON_DEFAULT = '/favicon.svg';
 const FAVICON_NOTIFY = '/favicon-notify.svg';
 const POLL_INTERVAL_MS = 10_000;
 
+// Module-level recheck trigger set by the active hook instance.
+let _recheck: (() => void) | null = null;
+
+/**
+ * Triggers a recheck of pending sessions and clears the favicon/title
+ * notification if there are none remaining.  Call this after marking a
+ * session as seen so the notification clears immediately even when the tab
+ * is already visible.
+ */
+export function recheckFaviconNotify() {
+  _recheck?.();
+}
+
 /**
  * Swaps the favicon and document title prefix when there are sessions that have
  * finished running (status "waiting" or "error") but have not been seen yet,
@@ -31,16 +44,12 @@ export function useFaviconNotify() {
       if (link.href !== href) link.href = href;
     }
 
-    function applyNotify(count: number) {
+    function applyNotify() {
       notifyingRef.current = true;
       setFavicon(FAVICON_NOTIFY);
       if (!document.title.startsWith('(•)')) {
         document.title = `(•) ${document.title}`;
       }
-      // keep the count in the title current
-      const titleWithoutBadge = document.title.replace(/^\(•\) /, '');
-      document.title = `(•) ${titleWithoutBadge}`;
-      void count; // count reserved for future use (e.g. "(3)")
     }
 
     function clearNotify() {
@@ -58,7 +67,7 @@ export function useFaviconNotify() {
         ).length;
         pendingCountRef.current = count;
         if (count > 0 && document.hidden) {
-          applyNotify(count);
+          applyNotify();
         } else {
           clearNotify();
         }
@@ -66,6 +75,8 @@ export function useFaviconNotify() {
         // silently ignore — network errors shouldn't break anything
       }
     }
+
+    _recheck = () => void checkPending();
 
     function onVisibilityChange() {
       if (!document.hidden) {
@@ -95,6 +106,7 @@ export function useFaviconNotify() {
     }
 
     return () => {
+      _recheck = null;
       document.removeEventListener('visibilitychange', onVisibilityChange);
       if (intervalRef.current !== null) {
         clearInterval(intervalRef.current);

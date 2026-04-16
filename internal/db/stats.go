@@ -236,29 +236,76 @@ func (d *DB) GetMetricsDashboard(agentFilter, modelFilter string, since int64, d
 		dashboard.Summary.CacheHitRate = float64(dashboard.Summary.CacheReadTokens) / float64(totalCache)
 	}
 
-	// Build the series from buckets (already in chronological order).
-	cumCost := 0.0
-	for _, label := range bucketOrder {
-		b := buckets[label]
-		cumCost += b.totalCost
-		avgDur := 0.0
-		if b.durationCount > 0 {
-			avgDur = b.totalDurationMs / float64(b.durationCount)
+	// Build the series with gap-filling: enumerate every bucket in the window so
+	// empty days/hours are represented as zero-valued points.
+	var seriesLabels []string
+	if days > 0 {
+		start := time.UnixMilli(since).Local()
+		now := time.Now().Local()
+		if hourly {
+			// Truncate to the hour and walk forward hour by hour.
+			cur := start.Truncate(time.Hour)
+			for !cur.After(now) {
+				seriesLabels = append(seriesLabels, cur.Format(bucketFmt))
+				cur = cur.Add(time.Hour)
+			}
+		} else {
+			// Truncate to the day and walk forward day by day.
+			cur := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, start.Location())
+			for !cur.After(now) {
+				seriesLabels = append(seriesLabels, cur.Format(bucketFmt))
+				cur = cur.AddDate(0, 0, 1)
+			}
 		}
-		n := b.count
+	} else {
+		// All-time: fall back to only the buckets that have data.
+		seriesLabels = bucketOrder
+	}
+
+	cumCost := 0.0
+	for _, label := range seriesLabels {
+		b := buckets[label] // nil for empty buckets
+		var (
+			totalCost         float64
+			totalOutputTokSec float64
+			totalCacheEff     float64
+			totalDurationMs   float64
+			inputTokens       int64
+			cacheReadTokens   int64
+			outputTokens      int64
+			durationCount     int
+			count             int
+		)
+		if b != nil {
+			totalCost = b.totalCost
+			totalOutputTokSec = b.totalOutputTokSec
+			totalCacheEff = b.totalCacheEff
+			totalDurationMs = b.totalDurationMs
+			inputTokens = b.inputTokens
+			cacheReadTokens = b.cacheReadTokens
+			outputTokens = b.outputTokens
+			durationCount = b.durationCount
+			count = b.count
+		}
+		cumCost += totalCost
+		avgDur := 0.0
+		if durationCount > 0 {
+			avgDur = totalDurationMs / float64(durationCount)
+		}
+		n := count
 		if n < 1 {
 			n = 1
 		}
 		dashboard.Series = append(dashboard.Series, MetricsPoint{
 			Label:              label,
-			AvgOutputTokensSec: b.totalOutputTokSec / float64(n),
+			AvgOutputTokensSec: totalOutputTokSec / float64(n),
 			CumulativeCost:     cumCost,
-			InputTokens:        b.inputTokens,
-			CacheReadTokens:    b.cacheReadTokens,
-			OutputTokens:       b.outputTokens,
+			InputTokens:        inputTokens,
+			CacheReadTokens:    cacheReadTokens,
+			OutputTokens:       outputTokens,
 			AvgDurationMs:      avgDur,
-			AvgCacheEfficiency: b.totalCacheEff / float64(n),
-			Count:              b.count,
+			AvgCacheEfficiency: totalCacheEff / float64(n),
+			Count:              count,
 		})
 	}
 
@@ -375,45 +422,56 @@ func (d *DB) GetProjects() ([]ProjectStats, error) {
 }
 
 // GetDailyActivity returns activity per day for the last N days.
-func (d *DB) GetDailyActivity(days int) ([]DailyActivity, error) {
+// GetDailyActivity returns daily session/message counts for the last 365 days,
+// optionally filtered by a time window (since) and model (modelFilter = "provider/model" or "model").
+func (d *DB) GetDailyActivity(since int64, modelFilter string) ([]DailyActivity, error) {
+	days := 365
 	cutoff := time.Now().AddDate(0, 0, -days).UnixMilli()
-
-	// Get session counts per day
-	rows, err := d.db.Query(`
-		SELECT
-			date(time_created / 1000, 'unixepoch', 'localtime') as day,
-			count(*) as sessions
-		FROM session
-		WHERE time_created >= ?
-		GROUP BY day
-		ORDER BY day
-	`, cutoff)
-	if err != nil {
-		return nil, err
+	if since > cutoff {
+		cutoff = since
 	}
-	defer rows.Close()
 
 	dayMap := make(map[string]*DailyActivity)
-	for rows.Next() {
-		var da DailyActivity
-		if err := rows.Scan(&da.Date, &da.Sessions); err != nil {
-			log.WithError(err).Warn("failed to scan daily activity row")
-			continue
+
+	if modelFilter == "" {
+		// No model filter: count all sessions per day (excluding subagent sessions).
+		rows, err := d.db.Query(`
+			SELECT
+				date(time_created / 1000, 'unixepoch', 'localtime') as day,
+				count(*) as sessions
+			FROM session
+			WHERE time_created >= ?
+			  AND title NOT LIKE '%(% subagent)'
+			GROUP BY day
+			ORDER BY day
+		`, cutoff)
+		if err != nil {
+			return nil, err
 		}
-		dayMap[da.Date] = &da
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
+		defer rows.Close()
+		for rows.Next() {
+			var da DailyActivity
+			if err := rows.Scan(&da.Date, &da.Sessions); err != nil {
+				log.WithError(err).Warn("failed to scan daily activity row")
+				continue
+			}
+			dayMap[da.Date] = &da
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
 	}
 
-	// Get message counts per day
+	// Count assistant messages per day, excluding messages from subagent sessions.
 	rows2, err := d.db.Query(`
 		SELECT
-			date(time_created / 1000, 'unixepoch', 'localtime') as day,
-			count(*) as messages
-		FROM message
-		WHERE time_created >= ?
-		GROUP BY day
+			date(m.time_created / 1000, 'unixepoch', 'localtime') as day,
+			m.data
+		FROM message m
+		JOIN session s ON s.id = m.session_id
+		WHERE json_extract(m.data, '$.role') = 'assistant'
+		  AND m.time_created >= ?
+		  AND s.title NOT LIKE '%(% subagent)'
 		ORDER BY day
 	`, cutoff)
 	if err != nil {
@@ -422,16 +480,27 @@ func (d *DB) GetDailyActivity(days int) ([]DailyActivity, error) {
 	defer rows2.Close()
 
 	for rows2.Next() {
-		var date string
-		var messages int
-		if err := rows2.Scan(&date, &messages); err != nil {
+		var day string
+		var raw string
+		if err := rows2.Scan(&day, &raw); err != nil {
 			log.WithError(err).Warn("failed to scan message activity row")
 			continue
 		}
-		if da, ok := dayMap[date]; ok {
-			da.Messages = messages
+		if modelFilter != "" {
+			var md MessageData
+			if err := json.Unmarshal([]byte(raw), &md); err != nil {
+				continue
+			}
+			provider, model := extractModelProvider(md)
+			key := provider + "/" + model
+			if key != modelFilter && model != modelFilter {
+				continue
+			}
+		}
+		if da, ok := dayMap[day]; ok {
+			da.Messages++
 		} else {
-			dayMap[date] = &DailyActivity{Date: date, Messages: messages}
+			dayMap[day] = &DailyActivity{Date: day, Messages: 1}
 		}
 	}
 	if err := rows2.Err(); err != nil {
@@ -441,22 +510,23 @@ func (d *DB) GetDailyActivity(days int) ([]DailyActivity, error) {
 	// Fill in gaps and sort
 	var result []DailyActivity
 	for i := days; i >= 0; i-- {
-		d := time.Now().AddDate(0, 0, -i).Format("2006-01-02")
-		if da, ok := dayMap[d]; ok {
+		day := time.Now().AddDate(0, 0, -i).Format("2006-01-02")
+		if da, ok := dayMap[day]; ok {
 			result = append(result, *da)
 		} else {
-			result = append(result, DailyActivity{Date: d})
+			result = append(result, DailyActivity{Date: day})
 		}
 	}
 	return result, nil
 }
 
-// GetModelUsage returns usage stats per model.
-func (d *DB) GetModelUsage() ([]ModelUsage, error) {
+// GetModelUsage returns usage stats per model, optionally filtered by time window.
+func (d *DB) GetModelUsage(since int64) ([]ModelUsage, error) {
 	rows, err := d.db.Query(`
 		SELECT data FROM message
 		WHERE json_extract(data, '$.role') = 'assistant'
-	`)
+		  AND (? <= 0 OR time_created >= ?)
+	`, since, since)
 	if err != nil {
 		return nil, err
 	}
@@ -507,9 +577,16 @@ func (d *DB) GetModelUsage() ([]ModelUsage, error) {
 	return result, nil
 }
 
-// GetHourlyTokensByModel returns token counts per calendar hour for the last 7 days, broken down by provider/model.
-func (d *DB) GetHourlyTokensByModel() ([]HourlyTokensByModel, error) {
-	cutoff := time.Now().AddDate(0, 0, -7).UnixMilli()
+// GetHourlyTokensByModel returns token counts per calendar hour, broken down by provider/model.
+// windowDays controls how many days back to look (default 7); modelFilter optionally restricts to one model key ("provider/model").
+func (d *DB) GetHourlyTokensByModel(windowDays int, since int64, modelFilter string) ([]HourlyTokensByModel, error) {
+	if windowDays <= 0 {
+		windowDays = 7
+	}
+	cutoff := time.Now().AddDate(0, 0, -windowDays).UnixMilli()
+	if since > cutoff {
+		cutoff = since
+	}
 
 	rows, err := d.db.Query(`
 		SELECT
@@ -547,6 +624,9 @@ func (d *DB) GetHourlyTokensByModel() ([]HourlyTokensByModel, error) {
 		if model == "" {
 			continue
 		}
+		if modelFilter != "" && (provider+"/"+model) != modelFilter && model != modelFilter {
+			continue
+		}
 		k := key{Datetime: dt, Provider: provider, Model: model}
 		entry, ok := agg[k]
 		if !ok {
@@ -579,15 +659,16 @@ func (d *DB) GetHourlyTokensByModel() ([]HourlyTokensByModel, error) {
 }
 
 // GetHourlyActivity returns session counts per hour of day.
-func (d *DB) GetHourlyActivity() ([]HourlyActivity, error) {
+func (d *DB) GetHourlyActivity(since int64) ([]HourlyActivity, error) {
 	rows, err := d.db.Query(`
 		SELECT
 			cast(strftime('%H', time_created / 1000, 'unixepoch', 'localtime') as integer) as hour,
 			count(*) as sessions
 		FROM session
+		WHERE (? <= 0 OR time_created >= ?)
 		GROUP BY hour
 		ORDER BY hour
-	`)
+	`, since, since)
 	if err != nil {
 		return nil, err
 	}

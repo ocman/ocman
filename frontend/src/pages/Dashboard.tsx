@@ -1,9 +1,11 @@
-import { startTransition, useState, useEffect, useCallback, type ReactNode } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { startTransition, useState, useEffect, useCallback, useContext, createContext, type ReactNode } from 'react';
+import './Dashboard.css';
+import { useNavigate, NavLink, Outlet } from 'react-router-dom';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend, PointElement, LineElement } from 'chart.js';
 import { Bar, Doughnut, Line } from 'react-chartjs-2';
 import { api } from '../lib/api';
-import type { MetricsDashboard, Project, Session } from '../lib/api';
+import type { ActivityDay, HourlyData, HourlyTokensByModel, MetricsDashboard, ModelUsage, Project, Session } from '../lib/api';
+import { useApiStore } from '../lib/apiStore';
 import {
   formatCompactNumber,
   formatCurrency,
@@ -18,7 +20,7 @@ import {
 import { usePageTitle } from '../lib/headerContext';
 import { SessionTable } from '../components/SessionTable';
 import { useTmux } from '../lib/useTmux';
-import { useApiStore, useApiRequest } from '../lib/apiStore';
+import { useApiRequest } from '../lib/apiStore';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, PointElement, LineElement, Tooltip, Legend);
 
@@ -32,66 +34,73 @@ const METRICS_RANGE_OPTIONS = [
   { label: 'All time', value: 0 },
 ];
 
-export function Dashboard() {
-  usePageTitle('Dashboard');
-  const navigate = useNavigate();
+// ---------------------------------------------------------------------------
+// Shared dashboard context — sessions + projects are fetched once in the
+// layout and shared across all three tab routes.
+// ---------------------------------------------------------------------------
+
+interface DashboardCtx {
+  sessions: Session[];
+  projects: Project[];
+  sessionsLoading: boolean;
+  sessionsError: string | null;
+  projectsLoading: boolean;
+  loadSessions: () => void;
+  timeRange: number;
+  setTimeRange: (v: number) => void;
+  showArchived: boolean;
+  setShowArchived: (v: boolean) => void;
+  tmux: ReturnType<typeof useTmux>;
+}
+
+const DashboardContext = createContext<DashboardCtx | null>(null);
+
+function useDashboard(): DashboardCtx {
+  const ctx = useContext(DashboardContext);
+  if (!ctx) throw new Error('useDashboard must be used inside DashboardLayout');
+  return ctx;
+}
+
+// ---------------------------------------------------------------------------
+// Layout — renders the tab bar + <Outlet> for the active tab route.
+// ---------------------------------------------------------------------------
+
+export function DashboardLayout() {
   const tmux = useTmux();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const tabParam = searchParams.get('tab');
-  const tab = (tabParam === 'projects' || tabParam === 'stats') ? tabParam : 'sessions';
-  const setTab = (t: 'sessions' | 'projects' | 'stats') => {
-    setSearchParams(t === 'sessions' ? {} : { tab: t }, { replace: true });
-  };
 
   const [sessions, setSessions] = useState<Session[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [metrics, setMetrics] = useState<MetricsDashboard | null>(null);
   const [timeRange, setTimeRange] = useState(24);
   const [showArchived, setShowArchived] = useState(false);
-  const [selectedAgent, setSelectedAgent] = useState('');
-  const [selectedModel, setSelectedModel] = useState('');
-  const [metricsDays, setMetricsDays] = useState(30);
-  const [logPage, setLogPage] = useState(0);
-  const LOG_PAGE_SIZE = 20;
 
   const getSessions = useApiStore((state) => state.getSessions);
   const getProjects = useApiStore((state) => state.getProjects);
 
-  const [metricsLoading, setMetricsLoading] = useState(false);
-  const [metricsError, setMetricsError] = useState<string | null>(null);
-
-  const projectsRequest = useApiRequest('projects:get');
   const sessionsRequest = useApiRequest('sessions:get');
+  const projectsRequest = useApiRequest('projects:get');
 
   const loadSessions = useCallback(async () => {
     try {
       const since = timeRange > 0 ? Date.now() - timeRange * 60 * 60 * 1000 : undefined;
       setSessions(await getSessions(since ? { since } : {}));
     } catch {
-      // error is tracked by useApiRequest
+      // error tracked by useApiRequest
     }
   }, [getSessions, timeRange]);
 
   useEffect(() => {
     let cancelled = false;
-
     async function loadInitialData() {
       try {
-        const [nextProjects] = await Promise.all([
-          getProjects(),
-          loadSessions(),
-        ]);
+        const [nextProjects] = await Promise.all([getProjects(), loadSessions()]);
         if (cancelled) return;
         setProjects(nextProjects);
       } catch {
         // errors tracked by useApiRequest
       }
     }
-
     void loadInitialData();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [getProjects, loadSessions]);
 
   useEffect(() => {
@@ -99,14 +108,148 @@ export function Dashboard() {
     return () => clearInterval(id);
   }, [loadSessions]);
 
-  // Reset to page 0 whenever filters or date range change.
+  const ctx: DashboardCtx = {
+    sessions,
+    projects,
+    sessionsLoading: sessionsRequest.loading,
+    sessionsError: sessionsRequest.error,
+    projectsLoading: projectsRequest.loading,
+    loadSessions,
+    timeRange,
+    setTimeRange,
+    showArchived,
+    setShowArchived,
+    tmux,
+  };
+
+  return (
+    <DashboardContext.Provider value={ctx}>
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+        <div className="nav-tabs">
+          <NavLink to="/" end className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Sessions</NavLink>
+          <NavLink to="/projects" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Projects</NavLink>
+          <NavLink to="/stats" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Stats</NavLink>
+          <NavLink to="/usage" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Usage</NavLink>
+        </div>
+        <Outlet />
+      </div>
+    </DashboardContext.Provider>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sessions tab
+// ---------------------------------------------------------------------------
+
+export function SessionsTab() {
+  usePageTitle('Sessions');
+  const { sessions, sessionsLoading, sessionsError, loadSessions, timeRange, setTimeRange, showArchived, setShowArchived, tmux } = useDashboard();
+
+  return (
+    <>
+      {sessionsError && (
+        <div className="oc-error-banner">
+          {sessionsError}
+          <button onClick={() => loadSessions()}>Retry</button>
+        </div>
+      )}
+      <div className="oc-time-range">
+        {[{label: '12h', value: 12}, {label: '24h', value: 24}, {label: '7d', value: 168}, {label: '30d', value: 720}, {label: 'All', value: 0}].map((opt) => (
+          <button
+            key={opt.value}
+            className={`oc-time-range-btn${timeRange === opt.value ? ' active' : ''}`}
+            onClick={() => setTimeRange(opt.value)}
+          >{opt.label}</button>
+        ))}
+        <button
+          className={`oc-time-range-btn${showArchived ? ' active' : ''}`}
+          onClick={() => setShowArchived(!showArchived)}
+        >Include archived</button>
+      </div>
+      <SessionTable sessions={sessions} showProject loading={sessionsLoading && sessions.length === 0} tmux={tmux} includeArchived={showArchived} />
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Projects tab
+// ---------------------------------------------------------------------------
+
+export function ProjectsTab() {
+  usePageTitle('Projects');
+  const { projects, projectsLoading } = useDashboard();
+  const navigate = useNavigate();
+
+  return projectsLoading && projects.length === 0 ? (
+    <div className="oc-list-loading">
+      <div className="oc-spinner" />
+      Loading projects...
+    </div>
+  ) : (
+    <table>
+      <thead>
+        <tr>
+          <th>Project</th>
+          <th>Sessions</th>
+          <th>Messages</th>
+          <th>Tokens (in/out)</th>
+          <th>Last Active</th>
+        </tr>
+      </thead>
+      <tbody>
+        {projects.filter((p) => p.sessionCount > 0).length === 0 ? (
+          <tr>
+            <td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: 24 }}>
+              No projects found
+            </td>
+          </tr>
+        ) : projects.filter((p) => p.sessionCount > 0).map((p) => (
+          <tr key={p.directory} onClick={() => navigate(`/project/${encodeURIComponent(p.directory)}`)}>
+            <td>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{shortPath(p.directory)}</span>
+                <a
+                  href={`vscode://file${p.directory}`}
+                  className="vscode-btn"
+                  title="Open in VS Code"
+                  onClick={(e) => e.stopPropagation()}
+                >VS Code</a>
+              </div>
+              <div className="mono">{p.directory}</div>
+            </td>
+            <td>{p.sessionCount}</td>
+            <td>{p.messageCount}</td>
+            <td className="mono">{formatNumber(p.totalTokensIn)} / {formatNumber(p.totalTokensOut)}</td>
+            <td>{relativeTime(p.lastUsed)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Stats tab
+// ---------------------------------------------------------------------------
+
+export function StatsTab() {
+  usePageTitle('Stats');
+  const navigate = useNavigate();
+
+  const [metrics, setMetrics] = useState<MetricsDashboard | null>(null);
+  const [selectedAgent, setSelectedAgent] = useState('');
+  const [selectedModel, setSelectedModel] = useState('');
+  const [metricsDays, setMetricsDays] = useState(30);
+  const [logPage, setLogPage] = useState(0);
+  const [metricsLoading, setMetricsLoading] = useState(false);
+  const [metricsError, setMetricsError] = useState<string | null>(null);
+  const LOG_PAGE_SIZE = 20;
+
   useEffect(() => {
     setLogPage(0);
   }, [selectedAgent, selectedModel, metricsDays]);
 
   useEffect(() => {
-    if (tab !== 'stats') return;
-
     let cancelled = false;
     const params = {
       agent: selectedAgent || undefined,
@@ -137,280 +280,197 @@ export function Dashboard() {
       }
     })();
 
-    return () => {
-      cancelled = true;
-    };
-  }, [metricsDays, selectedAgent, selectedModel, tab, logPage, LOG_PAGE_SIZE]);
+    return () => { cancelled = true; };
+  }, [metricsDays, selectedAgent, selectedModel, logPage, LOG_PAGE_SIZE]);
 
   const metricLabels = metrics?.series.map((point) => point.label) ?? [];
 
   return (
-    <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-      <div className="nav-tabs">
-        <button className={`nav-tab ${tab === 'sessions' ? 'active' : ''}`} onClick={() => setTab('sessions')}>Sessions</button>
-        <button className={`nav-tab ${tab === 'projects' ? 'active' : ''}`} onClick={() => setTab('projects')}>Projects</button>
-        <button className={`nav-tab ${tab === 'stats' ? 'active' : ''}`} onClick={() => setTab('stats')}>Stats</button>
+    <div className="metrics-page">
+      <div className="metrics-filters">
+        <label className="metrics-filter">
+          <span>Agent</span>
+          <select value={selectedAgent} onChange={(e) => setSelectedAgent(e.target.value)}>
+            <option value="">All agents</option>
+            {(metrics?.availableAgents ?? []).map((agent) => (
+              <option key={agent} value={agent}>{agent}</option>
+            ))}
+          </select>
+        </label>
+        <label className="metrics-filter">
+          <span>Model</span>
+          <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}>
+            <option value="">All models</option>
+            {(metrics?.availableModels ?? []).map((model) => (
+              <option key={model} value={model}>{renderModel(model)}</option>
+            ))}
+          </select>
+        </label>
+        <label className="metrics-filter metrics-filter-small">
+          <span>Last</span>
+          <select value={metricsDays} onChange={(e) => setMetricsDays(Number(e.target.value))}>
+            {METRICS_RANGE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
       </div>
 
-      {sessionsRequest.error && (
+      {metricsError && (
         <div className="oc-error-banner">
-          {sessionsRequest.error}
-          <button onClick={() => loadSessions()}>Retry</button>
+          {metricsError}
         </div>
       )}
 
-      {tab === 'sessions' && (
+      {metricsLoading && !metrics ? (
+        <div className="oc-list-loading">
+          <div className="oc-spinner" />
+          Loading metrics...
+        </div>
+      ) : metrics && (
         <>
-          <div className="oc-time-range">
-            {[{label: '12h', value: 12}, {label: '24h', value: 24}, {label: '7d', value: 168}, {label: '30d', value: 720}, {label: 'All', value: 0}].map((opt) => (
-              <button
-                key={opt.value}
-                className={`oc-time-range-btn${timeRange === opt.value ? ' active' : ''}`}
-                onClick={() => setTimeRange(opt.value)}
-              >{opt.label}</button>
-            ))}
-            <button
-              className={`oc-time-range-btn${showArchived ? ' active' : ''}`}
-              onClick={() => setShowArchived((current) => !current)}
-            >Include archived</button>
-          </div>
-          <SessionTable sessions={sessions} showProject loading={sessionsRequest.loading && sessions.length === 0} tmux={tmux} includeArchived={showArchived} />
-        </>
-      )}
-
-      {tab === 'projects' && (
-        projectsRequest.loading && projects.length === 0 ? (
-          <div className="oc-list-loading">
-            <div className="oc-spinner" />
-            Loading projects...
-          </div>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Project</th>
-                <th>Sessions</th>
-                <th>Messages</th>
-                <th>Tokens (in/out)</th>
-                <th>Last Active</th>
-              </tr>
-            </thead>
-            <tbody>
-              {projects.filter((p) => p.sessionCount > 0).length === 0 ? (
-                <tr>
-                  <td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: 24 }}>
-                    No projects found
-                  </td>
-                </tr>
-              ) : projects.filter((p) => p.sessionCount > 0).map((p) => (
-                <tr key={p.directory} onClick={() => navigate(`/project/${encodeURIComponent(p.directory)}`)}>
-                  <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{shortPath(p.directory)}</span>
-                      <a
-                        href={`vscode://file${p.directory}`}
-                        className="vscode-btn"
-                        title="Open in VS Code"
-                        onClick={(e) => e.stopPropagation()}
-                      >VS Code</a>
-                    </div>
-                    <div className="mono">{p.directory}</div>
-                  </td>
-                  <td>{p.sessionCount}</td>
-                  <td>{p.messageCount}</td>
-                  <td className="mono">{formatNumber(p.totalTokensIn)} / {formatNumber(p.totalTokensOut)}</td>
-                  <td>{relativeTime(p.lastUsed)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )
-      )}
-
-      {tab === 'stats' && (
-        <>
-          <div className="metrics-filters">
-            <label className="metrics-filter">
-              <span>Agent</span>
-              <select value={selectedAgent} onChange={(e) => setSelectedAgent(e.target.value)}>
-                <option value="">All agents</option>
-                {(metrics?.availableAgents ?? []).map((agent) => (
-                  <option key={agent} value={agent}>{agent}</option>
-                ))}
-              </select>
-            </label>
-            <label className="metrics-filter">
-              <span>Model</span>
-              <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}>
-                <option value="">All models</option>
-                {(metrics?.availableModels ?? []).map((model) => (
-                  <option key={model} value={model}>{renderModel(model)}</option>
-                ))}
-              </select>
-            </label>
-            <label className="metrics-filter metrics-filter-small">
-              <span>Last</span>
-              <select value={metricsDays} onChange={(e) => setMetricsDays(Number(e.target.value))}>
-                {METRICS_RANGE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            </label>
+          <div className="metrics-summary-grid">
+            <MetricCard label="Requests" value={formatNumber(metrics.summary.requests)} tone="blue" />
+            <MetricCard label="Total Tokens" value={formatCompactNumber(metrics.summary.totalTokens)} tone="blue" subvalue={`${formatCompactNumber(metrics.summary.inputTokens)} in / ${formatCompactNumber(metrics.summary.outputTokens)} out`} />
+            <MetricCard label="Avg Tok/s" value={metrics.summary.avgTokensPerSec.toFixed(1)} tone="orange" />
+            <MetricCard label="Avg Duration" value={formatSeconds(metrics.summary.avgDurationMs / 1000)} tone="blue" />
+            <MetricCard label="Cache Hit Rate" value={formatPercent(metrics.summary.cacheHitRate)} tone="green" subvalue={formatTokenCache(metrics.summary.cacheReadTokens, metrics.summary.cacheWriteTokens)} />
+            <MetricCard label="Total Cost" value={formatCurrency(metrics.summary.totalCost)} tone="green" subvalue="stored by OpenCode" />
+            <MetricCard label="Est. API Cost" value={formatCurrency(metrics.summary.totalCalcCost)} tone="orange" subvalue="calculated from tokens" />
           </div>
 
-          {metricsError && (
-            <div className="oc-error-banner">
-              {metricsError}
-            </div>
-          )}
+          <div className="metrics-chart-grid metrics-chart-grid-top">
+            <ChartCard title="Avg Output Tokens/Second">
+              <Bar data={{
+                labels: metricLabels,
+                datasets: [{ label: 'Tok/s', data: metrics.series.map((point) => point.avgOutputTokensSec), backgroundColor: 'rgba(249, 226, 175, 0.7)', borderRadius: 2 }],
+              }} options={BAR_OPTIONS_TOKS} />
+            </ChartCard>
 
-          {metricsLoading && !metrics ? (
-            <div className="oc-list-loading">
-              <div className="oc-spinner" />
-              Loading metrics...
-            </div>
-          ) : metrics && (
-            <>
-              <div className="metrics-summary-grid">
-                <MetricCard label="Requests" value={formatNumber(metrics.summary.requests)} tone="blue" />
-                <MetricCard label="Total Tokens" value={formatCompactNumber(metrics.summary.totalTokens)} tone="blue" subvalue={`${formatCompactNumber(metrics.summary.inputTokens)} in / ${formatCompactNumber(metrics.summary.outputTokens)} out`} />
-                <MetricCard label="Avg Tok/s" value={metrics.summary.avgTokensPerSec.toFixed(1)} tone="orange" />
-                <MetricCard label="Avg Duration" value={formatSeconds(metrics.summary.avgDurationMs / 1000)} tone="blue" />
-                <MetricCard label="Cache Hit Rate" value={formatPercent(metrics.summary.cacheHitRate)} tone="green" subvalue={formatTokenCache(metrics.summary.cacheReadTokens, metrics.summary.cacheWriteTokens)} />
-                <MetricCard label="Total Cost" value={formatCurrency(metrics.summary.totalCost)} tone="green" subvalue="stored by OpenCode" />
-                <MetricCard label="Est. API Cost" value={formatCurrency(metrics.summary.totalCalcCost)} tone="orange" subvalue="calculated from tokens" />
-              </div>
+            <ChartCard title="Cumulative Cost (USD)">
+              <Line data={{
+                labels: metricLabels,
+                datasets: [{ label: 'Cost', data: metrics.series.map((point) => point.cumulativeCost), borderColor: '#a6e3a1', backgroundColor: 'rgba(166, 227, 161, 0.18)', fill: true, tension: 0.2, pointRadius: 0 }],
+              }} options={LINE_OPTIONS_COST} />
+            </ChartCard>
 
-              <div className="metrics-chart-grid metrics-chart-grid-top">
-                <ChartCard title="Avg Output Tokens/Second">
-                  <Bar data={{
-                    labels: metricLabels,
-                    datasets: [{ label: 'Tok/s', data: metrics.series.map((point) => point.avgOutputTokensSec), backgroundColor: 'rgba(249, 226, 175, 0.7)', borderRadius: 2 }],
-                  }} options={BAR_OPTIONS_TOKS} />
-                </ChartCard>
+            <ChartCard title="Token Usage per Bucket">
+              <Bar data={{
+                labels: metricLabels,
+                datasets: [
+                  { label: 'Input', data: metrics.series.map((point) => point.inputTokens), backgroundColor: 'rgba(137, 180, 250, 0.72)', stack: 'tokens' },
+                  { label: 'Cache Read', data: metrics.series.map((point) => point.cacheReadTokens), backgroundColor: 'rgba(148, 226, 213, 0.72)', stack: 'tokens' },
+                  { label: 'Output', data: metrics.series.map((point) => point.outputTokens), backgroundColor: 'rgba(166, 227, 161, 0.72)', stack: 'tokens' },
+                ],
+              }} options={BAR_OPTIONS_STACKED} />
+            </ChartCard>
 
-                <ChartCard title="Cumulative Cost (USD)">
-                  <Line data={{
-                    labels: metricLabels,
-                    datasets: [{ label: 'Cost', data: metrics.series.map((point) => point.cumulativeCost), borderColor: '#a6e3a1', backgroundColor: 'rgba(166, 227, 161, 0.18)', fill: true, tension: 0.2, pointRadius: 0 }],
-                  }} options={LINE_OPTIONS_COST} />
-                </ChartCard>
+            <ChartCard title="Avg Request Duration (s)">
+              <Bar data={{
+                labels: metricLabels,
+                datasets: [{ label: 'Duration', data: metrics.series.map((point) => point.avgDurationMs / 1000), backgroundColor: 'rgba(203, 166, 247, 0.45)', borderRadius: 2 }],
+              }} options={BAR_OPTIONS_DURATION} />
+            </ChartCard>
+          </div>
 
-                <ChartCard title="Token Usage per Bucket">
-                  <Bar data={{
-                    labels: metricLabels,
-                    datasets: [
-                      { label: 'Input', data: metrics.series.map((point) => point.inputTokens), backgroundColor: 'rgba(137, 180, 250, 0.72)', stack: 'tokens' },
-                      { label: 'Cache Read', data: metrics.series.map((point) => point.cacheReadTokens), backgroundColor: 'rgba(148, 226, 213, 0.72)', stack: 'tokens' },
-                      { label: 'Output', data: metrics.series.map((point) => point.outputTokens), backgroundColor: 'rgba(166, 227, 161, 0.72)', stack: 'tokens' },
-                    ],
-                  }} options={BAR_OPTIONS_STACKED} />
-                </ChartCard>
+          <div className="metrics-chart-grid metrics-chart-grid-bottom">
+            <ChartCard title="Cache Efficiency">
+              <Line data={{
+                labels: metricLabels,
+                datasets: [{ label: 'Efficiency', data: metrics.series.map((point) => point.avgCacheEfficiency * 100), borderColor: '#94e2d5', backgroundColor: 'rgba(148, 226, 213, 0.15)', fill: true, tension: 0.25, pointRadius: 0 }],
+              }} options={LINE_OPTIONS_CACHE} />
+            </ChartCard>
 
-                <ChartCard title="Avg Request Duration (s)">
-                  <Bar data={{
-                    labels: metricLabels,
-                    datasets: [{ label: 'Duration', data: metrics.series.map((point) => point.avgDurationMs / 1000), backgroundColor: 'rgba(203, 166, 247, 0.45)', borderRadius: 2 }],
-                  }} options={BAR_OPTIONS_DURATION} />
-                </ChartCard>
-              </div>
+            <ChartCard title="Stop Reason Distribution">
+              <Doughnut data={{
+                labels: metrics.stopReasons.map((item) => item.reason),
+                datasets: [{ data: metrics.stopReasons.map((item) => item.count), backgroundColor: metrics.stopReasons.map((_, idx) => STOP_REASON_COLORS[idx % STOP_REASON_COLORS.length]), borderWidth: 0 }],
+              }} options={DOUGHNUT_OPTIONS} />
+            </ChartCard>
+          </div>
 
-              <div className="metrics-chart-grid metrics-chart-grid-bottom">
-                <ChartCard title="Cache Efficiency">
-                  <Line data={{
-                    labels: metricLabels,
-                    datasets: [{ label: 'Efficiency', data: metrics.series.map((point) => point.avgCacheEfficiency * 100), borderColor: '#94e2d5', backgroundColor: 'rgba(148, 226, 213, 0.15)', fill: true, tension: 0.25, pointRadius: 0 }],
-                  }} options={LINE_OPTIONS_CACHE} />
-                </ChartCard>
-
-                <ChartCard title="Stop Reason Distribution">
-                  <Doughnut data={{
-                    labels: metrics.stopReasons.map((item) => item.reason),
-                    datasets: [{ data: metrics.stopReasons.map((item) => item.count), backgroundColor: metrics.stopReasons.map((_, idx) => STOP_REASON_COLORS[idx % STOP_REASON_COLORS.length]), borderWidth: 0 }],
-                  }} options={DOUGHNUT_OPTIONS} />
-                </ChartCard>
-              </div>
-
-              <div className="chart-card">
-                <h3 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span>Request Log</span>
-                  <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--text-dim)', textTransform: 'none', letterSpacing: 0 }}>
-                    {metrics.totalRequests > 0 && (
-                      <>
-                        {logPage * LOG_PAGE_SIZE + 1}–{Math.min((logPage + 1) * LOG_PAGE_SIZE, metrics.totalRequests)} of {metrics.totalRequests}
-                      </>
-                    )}
-                  </span>
-                </h3>
-                <div className="metrics-table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>Time</th>
-                        <th>Session</th>
-                        <th>Model</th>
-                        <th>Input</th>
-                        <th>Output</th>
-                        <th>Cache</th>
-                        <th>Tok/s</th>
-                        <th>Duration</th>
-                        <th>Cost</th>
-                        <th title="Calculated from token counts using public API pricing">Est. Cost</th>
-                        <th>Stop</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {metrics.requests.length === 0 ? (
-                        <tr>
-                          <td colSpan={12} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: 24 }}>
-                            No requests matched the current filters
-                          </td>
-                        </tr>
-                      ) : metrics.requests.map((request, idx) => (
-                        <tr key={request.id} onClick={() => navigate(`/session/${encodeURIComponent(request.sessionId)}`)}>
-                          <td>{logPage * LOG_PAGE_SIZE + idx + 1}</td>
-                          <td>{formatDateTimeShort(request.timeCreated)}</td>
-                          <td className="mono">{shortSessionID(request.sessionId)}</td>
-                          <td>{renderModel(request.model)}</td>
-                          <td>{formatNumber(request.inputTokens)}</td>
-                          <td>{formatNumber(request.outputTokens)}</td>
-                          <td className="mono">{formatTokenCache(request.cacheReadTokens, request.cacheWriteTokens)}</td>
-                          <td>{request.tokensPerSecond > 0 ? request.tokensPerSecond.toFixed(1) : '-'}</td>
-                          <td>{request.durationMs > 0 ? formatSeconds(request.durationMs / 1000) : '-'}</td>
-                          <td>{request.cost > 0 ? formatCurrency(request.cost) : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
-                          <td>{request.calcCost > 0 ? <span style={{ color: 'var(--accent4)' }}>{formatCurrency(request.calcCost)}</span> : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
-                          <td><span className="metrics-stop-pill">{request.stopReason}</span></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                {metrics.totalRequests > LOG_PAGE_SIZE && (
-                  <div className="metrics-pagination">
-                    <button
-                      className="oc-time-range-btn"
-                      disabled={logPage === 0}
-                      onClick={() => setLogPage((p) => p - 1)}
-                    >Prev</button>
-                    <span className="metrics-pagination-info">
-                      Page {logPage + 1} / {Math.ceil(metrics.totalRequests / LOG_PAGE_SIZE)}
-                    </span>
-                    <button
-                      className="oc-time-range-btn"
-                      disabled={(logPage + 1) * LOG_PAGE_SIZE >= metrics.totalRequests}
-                      onClick={() => setLogPage((p) => p + 1)}
-                    >Next</button>
-                  </div>
+          <div className="chart-card">
+            <h3 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>Request Log</span>
+              <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--text-dim)', textTransform: 'none', letterSpacing: 0 }}>
+                {metrics.totalRequests > 0 && (
+                  <>
+                    {logPage * LOG_PAGE_SIZE + 1}–{Math.min((logPage + 1) * LOG_PAGE_SIZE, metrics.totalRequests)} of {metrics.totalRequests}
+                  </>
                 )}
+              </span>
+            </h3>
+            <div className="metrics-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Time</th>
+                    <th>Session</th>
+                    <th>Model</th>
+                    <th>Input</th>
+                    <th>Output</th>
+                    <th>Cache</th>
+                    <th>Tok/s</th>
+                    <th>Duration</th>
+                    <th>Cost</th>
+                    <th title="Calculated from token counts using public API pricing">Est. Cost</th>
+                    <th>Stop</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {metrics.requests.length === 0 ? (
+                    <tr>
+                      <td colSpan={12} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: 24 }}>
+                        No requests matched the current filters
+                      </td>
+                    </tr>
+                  ) : metrics.requests.map((request, idx) => (
+                    <tr key={request.id} onClick={() => navigate(`/session/${encodeURIComponent(request.sessionId)}`)}>
+                      <td>{logPage * LOG_PAGE_SIZE + idx + 1}</td>
+                      <td>{formatDateTimeShort(request.timeCreated)}</td>
+                      <td className="mono">{shortSessionID(request.sessionId)}</td>
+                      <td>{renderModel(request.model)}</td>
+                      <td>{formatNumber(request.inputTokens)}</td>
+                      <td>{formatNumber(request.outputTokens)}</td>
+                      <td className="mono">{formatTokenCache(request.cacheReadTokens, request.cacheWriteTokens)}</td>
+                      <td>{request.tokensPerSecond > 0 ? request.tokensPerSecond.toFixed(1) : '-'}</td>
+                      <td>{request.durationMs > 0 ? formatSeconds(request.durationMs / 1000) : '-'}</td>
+                      <td>{request.cost > 0 ? formatCurrency(request.cost) : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
+                      <td>{request.calcCost > 0 ? <span style={{ color: 'var(--accent4)' }}>{formatCurrency(request.calcCost)}</span> : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
+                      <td><span className="metrics-stop-pill">{request.stopReason}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {metrics.totalRequests > LOG_PAGE_SIZE && (
+              <div className="metrics-pagination">
+                <button
+                  className="oc-time-range-btn"
+                  disabled={logPage === 0}
+                  onClick={() => setLogPage((p) => p - 1)}
+                >Prev</button>
+                <span className="metrics-pagination-info">
+                  Page {logPage + 1} / {Math.ceil(metrics.totalRequests / LOG_PAGE_SIZE)}
+                </span>
+                <button
+                  className="oc-time-range-btn"
+                  disabled={(logPage + 1) * LOG_PAGE_SIZE >= metrics.totalRequests}
+                  onClick={() => setLogPage((p) => p + 1)}
+                >Next</button>
               </div>
-            </>
-          )}
+            )}
+          </div>
         </>
       )}
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Shared sub-components
+// ---------------------------------------------------------------------------
 
 function MetricCard({ label, value, subvalue, tone }: { label: string; value: string; subvalue?: string; tone: 'blue' | 'green' | 'purple' | 'orange' }) {
   return (
@@ -495,6 +555,391 @@ const DOUGHNUT_OPTIONS = {
   cutout: '62%',
   plugins: { legend: { position: 'right' as const, labels: { color: '#bac2de', boxWidth: 12, padding: 12 } } },
 } as const;
+
+// ---------------------------------------------------------------------------
+// Usage charts (restored): heatmap + hourly/daily/model breakdowns
+// ---------------------------------------------------------------------------
+
+const COLORS = ['#89b4fa', '#a6e3a1', '#cba6f7', '#fab387', '#f38ba8', '#74c7ec', '#94e2d5', '#f9e2af'];
+
+const BAR_OPTIONS_SESSIONS = {
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: false as const,
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { grid: { display: false }, ticks: { maxTicksLimit: 12, callback: (_: unknown, idx: number, ticks: unknown[]) => idx === 0 || idx === ticks.length - 1 || idx % Math.ceil(ticks.length / 12) === 0 ? undefined : null } },
+    y: { beginAtZero: true },
+  },
+} as const;
+
+const BAR_OPTIONS_HOURLY = {
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: false as const,
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { grid: { display: false } },
+    y: { beginAtZero: true },
+  },
+} as const;
+
+const BAR_OPTIONS_TOKENS_BY_MODEL = {
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: false as const,
+  indexAxis: 'y' as const,
+  plugins: { legend: { position: 'bottom' as const, labels: { color: '#bac2de', boxWidth: 12, padding: 8, font: { size: 11 } } } },
+  scales: {
+    x: { beginAtZero: true, stacked: true, ticks: { callback: (v: string | number) => formatCompactNumber(Number(v)) } },
+    y: { grid: { display: false }, stacked: true },
+  },
+} as const;
+
+const BAR_OPTIONS_HOURLY_TOKENS = {
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: false as const,
+  plugins: { legend: { position: 'bottom' as const, labels: { color: '#bac2de', boxWidth: 12, padding: 8, font: { size: 11 } } } },
+  scales: {
+    x: { stacked: true, grid: { display: false }, ticks: { maxRotation: 0, autoSkip: false } },
+    y: { stacked: true, beginAtZero: true, ticks: { callback: (v: string | number) => formatCompactNumber(Number(v)) } },
+  },
+} as const;
+
+const USAGE_RANGE_OPTIONS = [
+  { label: '7 days', value: 7 },
+  { label: '30 days', value: 30 },
+  { label: '90 days', value: 90 },
+  { label: 'All time', value: 0 },
+];
+
+export function UsageTab() {
+  usePageTitle('Usage');
+  const [activity, setActivity] = useState<ActivityDay[]>([]);
+  const [models, setModels] = useState<ModelUsage[]>([]);
+  const [hourly, setHourly] = useState<HourlyData[]>([]);
+  const [hourlyTokens, setHourlyTokens] = useState<HourlyTokensByModel[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedModel, setSelectedModel] = useState('');
+  const [usageDays, setUsageDays] = useState(30);
+
+  // All charts respect model + days filters.
+  useEffect(() => {
+    let cancelled = false;
+    const params = { days: usageDays || undefined, model: selectedModel || undefined };
+
+    startTransition(() => setLoading(true));
+
+    // Activity heatmap always shows the full year regardless of the days filter.
+    api.activity({ model: selectedModel || undefined }).then((nextActivity) => {
+      if (cancelled) return;
+      startTransition(() => setActivity(nextActivity));
+    }).catch(() => {});
+
+    api.models({ days: params.days }).then((nextModels) => {
+      if (cancelled) return;
+      startTransition(() => setModels(nextModels));
+    }).catch(() => {});
+
+    api.hourly({ days: params.days }).then((nextHourly) => {
+      if (cancelled) return;
+      startTransition(() => setHourly(nextHourly));
+    }).catch(() => {});
+
+    api.hourlyTokens(params).then((nextHourlyTokens) => {
+      if (cancelled) return;
+      startTransition(() => {
+        setHourlyTokens(nextHourlyTokens);
+        setLoading(false);
+      });
+    }).catch(() => {
+      if (!cancelled) startTransition(() => setLoading(false));
+    });
+
+    return () => { cancelled = true; };
+  }, [usageDays, selectedModel]);
+
+  // Derive available models for the filter dropdown from loaded model usage data.
+  const allModels = [...models].sort((a, b) => b.count - a.count);
+  const sortedModels = allModels.slice(0, 8);
+
+  return (
+    <div className="metrics-page">
+      <div className="metrics-filters">
+        <label className="metrics-filter">
+          <span>Model</span>
+          <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}>
+            <option value="">All models</option>
+            {allModels.map((m) => {
+              const key = `${m.provider}/${m.model}`;
+              return <option key={key} value={key}>{m.model}</option>;
+            })}
+          </select>
+        </label>
+        <label className="metrics-filter metrics-filter-small">
+          <span>Last</span>
+          <select value={usageDays} onChange={(e) => setUsageDays(Number(e.target.value))}>
+            {USAGE_RANGE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {activity.length > 0 && <HeatmapChart activity={activity} />}
+
+      {loading ? (
+        <div className="oc-list-loading">
+          <div className="oc-spinner" />
+          Loading usage charts...
+        </div>
+      ) : (
+        <>
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16, marginBottom: 24 }}>
+        <div className="chart-card metrics-chart-card">
+          <h3>Daily Messages</h3>
+          <div className="metrics-chart-body">
+            <Bar data={{
+              labels: activity.map((d) => d.date.slice(5)),
+              datasets: [{ label: 'Messages', data: activity.map((d) => d.messages), backgroundColor: 'rgba(137, 180, 250, 0.6)', borderRadius: 2 }],
+            }} options={BAR_OPTIONS_SESSIONS} />
+          </div>
+        </div>
+        <div className="chart-card metrics-chart-card">
+          <h3>Model Usage</h3>
+          <div className="metrics-chart-body">
+            <Doughnut data={{
+              labels: sortedModels.map((m) => m.model),
+              datasets: [{ data: sortedModels.map((m) => m.count), backgroundColor: COLORS, borderWidth: 0 }],
+            }} options={{ responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { position: 'bottom', labels: { color: '#bac2de', boxWidth: 12, padding: 8, font: { size: 11 } } } } }} />
+          </div>
+        </div>
+      </div>
+
+      {hourlyTokens.length > 0 && <HourlyTokensChart data={hourlyTokens} />}
+
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16, marginBottom: 32 }}>
+        <div className="chart-card metrics-chart-card">
+          <h3>Sessions by Hour of Day</h3>
+          <div className="metrics-chart-body">
+            <Bar data={{
+              labels: hourly.map((h) => h.hour + ':00'),
+              datasets: [{ label: 'Sessions', data: hourly.map((h) => h.sessions), backgroundColor: hourly.map((h) => h.sessions > 0 ? 'rgba(166, 227, 161, 0.6)' : 'rgba(166, 227, 161, 0.1)'), borderRadius: 2 }],
+            }} options={BAR_OPTIONS_HOURLY} />
+          </div>
+        </div>
+        <div className="chart-card metrics-chart-card">
+          <h3>Tokens by Model</h3>
+          <div className="metrics-chart-body">
+            <Bar data={{
+              labels: sortedModels.map((m) => m.model.length > 20 ? m.model.slice(0, 20) + '...' : m.model),
+              datasets: [
+                { label: 'Input', data: sortedModels.map((m) => m.tokensIn), backgroundColor: 'rgba(137, 180, 250, 0.6)', borderRadius: 2 },
+                { label: 'Output', data: sortedModels.map((m) => m.tokensOut), backgroundColor: 'rgba(203, 166, 247, 0.6)', borderRadius: 2 },
+              ],
+            }} options={BAR_OPTIONS_TOKENS_BY_MODEL} />
+          </div>
+        </div>
+      </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function HourlyTokensChart({ data }: { data: HourlyTokensByModel[] }) {
+  const slots: string[] = [];
+  const now = new Date();
+  for (let i = 7 * 24 - 1; i >= 0; i--) {
+    const d = new Date(now.getTime() - i * 3_600_000);
+    slots.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}`);
+  }
+
+  const modelTotals = new Map<string, number>();
+  for (const d of data) {
+    const key = `${d.provider}/${d.model}`;
+    modelTotals.set(key, (modelTotals.get(key) ?? 0) + d.tokensIn + d.tokensOut);
+  }
+  const topModels = [...modelTotals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k]) => k);
+
+  const lookup = new Map<string, Map<string, number>>();
+  for (const d of data) {
+    const key = `${d.provider}/${d.model}`;
+    if (!topModels.includes(key)) continue;
+    if (!lookup.has(key)) lookup.set(key, new Map());
+    const dtMap = lookup.get(key)!;
+    dtMap.set(d.datetime, (dtMap.get(d.datetime) ?? 0) + d.tokensIn + d.tokensOut);
+  }
+
+  const datasets = topModels.map((key, idx) => {
+    const dtMap = lookup.get(key) ?? new Map();
+    const label = key.includes('/') ? key.split('/').pop()! : key;
+    return {
+      label: label.length > 25 ? label.slice(0, 25) + '...' : label,
+      data: slots.map((s) => dtMap.get(s) ?? 0),
+      backgroundColor: COLORS[idx % COLORS.length],
+      borderRadius: 1,
+    };
+  });
+
+  const labels = slots.map((s) => {
+    const hour = s.slice(11, 13);
+    if (hour === '00') {
+      const d = new Date(s.replace(' ', 'T') + ':00:00');
+      return `${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()]} ${d.getDate()}`;
+    }
+    return '';
+  });
+
+  return (
+    <div className="chart-card metrics-chart-card" style={{ marginBottom: 24 }}>
+      <h3>Tokens per Hour by Model (last 7 days)</h3>
+      <div className="metrics-chart-body">
+        <Bar data={{ labels, datasets }} options={{
+          ...BAR_OPTIONS_HOURLY_TOKENS,
+          plugins: {
+            ...BAR_OPTIONS_HOURLY_TOKENS.plugins,
+            tooltip: {
+              callbacks: {
+                title: (items) => { const idx = items[0]?.dataIndex; return idx != null ? `${slots[idx].slice(0, 10)} ${slots[idx].slice(11)}:00` : ''; },
+                label: (ctx) => `${ctx.dataset.label}: ${formatCompactNumber(ctx.raw as number)} tokens`,
+              },
+            },
+          },
+          scales: {
+            ...BAR_OPTIONS_HOURLY_TOKENS.scales,
+            x: { ...BAR_OPTIONS_HOURLY_TOKENS.scales.x, ticks: { maxRotation: 0, autoSkip: false, callback: (_: unknown, idx: number) => labels[idx] || null } },
+          },
+        }} />
+      </div>
+    </div>
+  );
+}
+
+const CELL = 13;
+const GAP = 2;
+const DOW_W = 36; // width reserved for Mon/Wed/Fri labels
+
+function HeatmapChart({ activity }: { activity: ActivityDay[] }) {
+  const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
+
+  const maxMessages = Math.max(...activity.map((d) => d.messages), 1);
+  const totalMessages = activity.reduce((s, d) => s + d.messages, 0);
+
+  // Build week columns: each column is Sun→Sat (index 0–6).
+  // The first day of the data determines how many leading nulls to pad.
+  const weeks: (ActivityDay | null)[][] = [];
+  if (activity.length > 0) {
+    const first = new Date(activity[0].date + 'T00:00:00');
+    let col: (ActivityDay | null)[] = Array(first.getDay()).fill(null);
+    for (const day of activity) {
+      col.push(day);
+      if (col.length === 7) { weeks.push(col); col = []; }
+    }
+    if (col.length > 0) {
+      while (col.length < 7) col.push(null);
+      weeks.push(col);
+    }
+  }
+
+  // Month labels: emit a label at the first week-column that starts a new month.
+  const monthLabels: { wi: number; label: string }[] = [];
+  let lastMonth = -1;
+  weeks.forEach((week, wi) => {
+    const firstReal = week.find((d) => d !== null);
+    if (firstReal) {
+      const m = new Date(firstReal.date + 'T00:00:00').getMonth();
+      if (m !== lastMonth) {
+        monthLabels.push({ wi, label: new Date(firstReal.date + 'T00:00:00').toLocaleString('en-US', { month: 'short' }) });
+        lastMonth = m;
+      }
+    }
+  });
+
+  const level = (day: ActivityDay) => {
+    if (day.messages === 0) return 0;
+    return Math.min(4, Math.ceil(day.messages / maxMessages * 4));
+  };
+
+  const LEGEND_COLORS = [
+    'var(--heatmap-1)',
+    'var(--heatmap-2)',
+    'var(--heatmap-3)',
+    'var(--heatmap-4)',
+  ];
+
+  return (
+    <div className="chart-card heatmap-card">
+      {/* Month labels row */}
+      <div className="heatmap-months" style={{ paddingLeft: DOW_W }}>
+        {monthLabels.map(({ wi, label }) => (
+          <div key={wi} className="heatmap-month-label" style={{ left: wi * (CELL + GAP) }}>
+            {label}
+          </div>
+        ))}
+      </div>
+
+      {/* Grid */}
+      <div style={{ display: 'flex', gap: 0 }}>
+        {/* Day-of-week labels: Mon, Wed, Fri */}
+        <div className="heatmap-dow" style={{ width: DOW_W }}>
+          {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d, i) => (
+            <div key={i} className="heatmap-dow-label" style={{ height: CELL, marginBottom: i < 6 ? GAP : 0 }}>
+              {(i === 1 || i === 3 || i === 5) ? d : ''}
+            </div>
+          ))}
+        </div>
+
+        {/* Week columns */}
+        <div style={{ display: 'flex', gap: GAP, overflow: 'hidden' }}>
+          {weeks.map((week, wi) => (
+            <div key={wi} style={{ display: 'flex', flexDirection: 'column', gap: GAP }}>
+              {week.map((day, di) =>
+                day === null ? (
+                  <div key={di} style={{ width: CELL, height: CELL }} />
+                ) : (
+                  <div
+                    key={di}
+                    className="heatmap-day"
+                    data-level={level(day)}
+                    style={{ width: CELL, height: CELL }}
+                    onMouseEnter={(e) => setTooltip({
+                      text: `${day.date}: ${day.messages} messages, ${day.sessions} sessions`,
+                      x: e.clientX + 12,
+                      y: e.clientY - 36,
+                    })}
+                    onMouseLeave={() => setTooltip(null)}
+                  />
+                )
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Footer: summary + legend */}
+      <div className="heatmap-footer">
+        <span className="heatmap-summary">
+          {totalMessages.toLocaleString()} messages in the last 12 months
+        </span>
+        <span className="heatmap-legend">
+          <span className="heatmap-legend-label">Less</span>
+          {LEGEND_COLORS.map((c, i) => (
+            <span key={i} className="heatmap-legend-cell" style={{ background: c }} />
+          ))}
+          <span className="heatmap-legend-label">More</span>
+        </span>
+      </div>
+
+      {tooltip && (
+        <div className="heatmap-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
+          {tooltip.text}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function renderModel(model: string): string {
   if (!model) return 'unknown';

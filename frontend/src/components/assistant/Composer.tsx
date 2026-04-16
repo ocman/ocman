@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, memo } from 'react';
+import './Composer.css';
 import { getDraft, saveDraft, clearDraft } from '../../lib/composerDraft';
 import { useApiStore } from '../../lib/apiStore';
 import { api, type SlashCommand } from '../../lib/api';
@@ -113,7 +114,72 @@ function formatTokenCount(n: number): string {
   return String(n);
 }
 
+type SelectGroup = { label?: string; options: { value: string; label: string }[] };
+
+function BarSelect({ groups, value, disabled, onChange, title, placeholder }: {
+  groups: SelectGroup[];
+  value: string;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+  title?: string;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [open]);
+
+  return (
+    <div className="oc-model-select" ref={ref}>
+      <button
+        type="button"
+        className="oc-bar-select"
+        disabled={disabled}
+        onClick={() => !disabled && setOpen((o) => !o)}
+        title={title}
+      >
+        {value || placeholder || title || ''}
+      </button>
+      {open && (
+        <div className="oc-model-dropdown">
+          {groups.map((group, gi) => (
+            <div key={group.label ?? gi} className="oc-model-group">
+              {group.label && <div className="oc-model-group-label">{group.label}</div>}
+              {group.options.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={`oc-model-option${opt.value === value ? ' active' : ''}`}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    onChange(opt.value);
+                    setOpen(false);
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const KNOWN_AGENTS = ['build', 'developer', 'plan', 'architect', 'ba', 'brainstormer', 'reviewer', 'security'];
+
+const BUILTIN_COMMANDS: SlashCommand[] = [
+  { name: 'compact', description: 'Summarize conversation history to free up context window' },
+  { name: 'new', description: 'Start a new session in the same project directory' },
+];
 
 function ComposerImpl({
   onSend,
@@ -189,8 +255,17 @@ function ComposerImpl({
     if (!directory) return;
     let cancelled = false;
     api.commands(directory).then(cmds => {
-      if (!cancelled) setSlashCommands(cmds || []);
-    }).catch(() => {});
+      if (!cancelled) {
+        const fetched = cmds || [];
+        const merged = [
+          ...BUILTIN_COMMANDS.filter(b => !fetched.some(f => f.name === b.name)),
+          ...fetched,
+        ];
+        setSlashCommands(merged);
+      }
+    }).catch(() => {
+      setSlashCommands(BUILTIN_COMMANDS);
+    });
     return () => { cancelled = true; };
   }, [directory]);
 
@@ -629,33 +704,21 @@ function ComposerImpl({
         />
         <div className="oc-composer-bar">
           <div className="oc-composer-bar-left">
-            <select
-              className="oc-bar-select"
-              disabled={disabled}
+            <BarSelect
+              groups={[{ options: agentOptions.map((a) => ({ value: a, label: a })) }]}
               value={effectiveAgent}
-              onChange={(e) => onAgentChange?.(e.target.value)}
+              disabled={disabled}
+              onChange={(v) => onAgentChange?.(v)}
               title="Agent"
-            >
-              {agentOptions.map((agent) => (
-                <option key={agent} value={agent}>{agent}</option>
-              ))}
-            </select>
+            />
             {models && models.length > 0 && (
-              <select
-                className="oc-bar-select"
-                disabled={disabled}
+              <BarSelect
+                groups={modelGroups}
                 value={models.includes(effectiveModel) ? effectiveModel : ''}
-                onChange={(e) => onModelChange?.(e.target.value)}
+                disabled={disabled}
+                onChange={(v) => onModelChange?.(v)}
                 title="Model"
-              >
-                {modelGroups.map((group) => (
-                  <optgroup key={group.label} label={group.label}>
-                    {group.options.map((model) => (
-                      <option key={model.value} value={model.value}>{model.label}</option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
+              />
             )}
             {disabled && <span className="oc-bar-hint">No running OpenCode instance</span>}
           </div>

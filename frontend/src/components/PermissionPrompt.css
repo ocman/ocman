@@ -1,0 +1,108 @@
+/* Permission prompt — replaces the composer, TUI-style */
+.oc-permission-wrap {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 12px 0px 12px 0px;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  background: var(--bg);
+  z-index: 50;
+}
+
+.oc-permission-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent4);
+  border-radius: 6px;
+  padding: 14px 18px;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.oc-permission-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.oc-permission-icon {
+  color: var(--accent4);
+  font-size: 14px;
+}
+
+.oc-permission-desc {
+  color: var(--text-dim);
+  padding-left: 22px;
+  margin-bottom: 10px;
+}
+
+.oc-permission-patterns {
+  padding-left: 4px;
+  margin-bottom: 12px;
+}
+
+.oc-permission-patterns-label {
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+.oc-permission-pattern {
+  color: var(--text);
+  padding-left: 6px;
+}
+
+.oc-permission-error {
+  color: var(--danger);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.oc-permission-actions {
+  display: flex;
+  gap: 0;
+  margin-top: 6px;
+}
+
+.oc-permission-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 13px;
+  padding: 4px 14px;
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.oc-permission-btn:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.oc-permission-btn:last-child {
+  border-radius: 0 4px 4px 0;
+}
+
+.oc-permission-btn:not(:first-child) {
+  border-left: none;
+}
+
+.oc-permission-btn:hover:enabled {
+  color: var(--text);
+  background: var(--surface1);
+}
+
+.oc-permission-btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.oc-permission-btn-active {
+  background: rgba(249, 226, 175, 0.15);
+  color: var(--accent4);
+  border-color: var(--accent4);
+}

@@ -1,0 +1,226 @@
+/* Question prompt - replaces composer when a question is pending */
+.oc-question-wrap {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 12px 0px 12px 0px;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  background: var(--bg);
+  z-index: 50;
+}
+.oc-question-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--pink);
+  border-radius: 6px;
+  padding: 14px 18px;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+/* Step indicator for multi-question stepped form */
+.oc-question-step-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.oc-question-step-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--overlay0);
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.oc-question-step-dot:hover:enabled {
+  border-color: var(--text);
+}
+.oc-question-step-active {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.oc-question-step-done {
+  border-color: var(--accent2);
+  background: var(--accent2);
+}
+.oc-question-step-active.oc-question-step-done {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.oc-question-step-dot:disabled {
+  cursor: default;
+}
+.oc-question-step-label {
+  font-size: 11px;
+  color: var(--overlay0);
+  margin-left: 4px;
+  font-family: 'SF Mono', Consolas, monospace;
+}
+
+.oc-question-box-text {
+  color: var(--text);
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+.oc-question-box-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-bottom: 12px;
+}
+.oc-question-box-actions {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-top: 4px;
+}
+
+/* Interactive option buttons */
+.oc-question-options-interactive {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-bottom: 12px;
+}
+.oc-question-opt-btn {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  border-radius: 4px;
+  transition: background 0.1s;
+}
+.oc-question-opt-btn:hover:enabled {
+  background: rgba(255, 255, 255, 0.04);
+}
+.oc-question-opt-selected {
+  background: rgba(137, 180, 250, 0.12);
+}
+.oc-question-opt-selected:hover:enabled {
+  background: rgba(137, 180, 250, 0.16);
+}
+.oc-question-opt-btn:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.oc-question-opt-num {
+  color: var(--overlay0);
+  flex-shrink: 0;
+  width: 20px;
+  padding-top: 1px;
+}
+.oc-question-opt-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.oc-question-opt-label {
+  color: var(--lavender);
+}
+.oc-question-opt-selected .oc-question-opt-label {
+  color: var(--accent);
+  font-weight: 600;
+}
+.oc-question-opt-desc {
+  color: var(--overlay1);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Custom answer row */
+.oc-question-opt-custom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 4px;
+}
+.oc-question-opt-custom-active {
+  background: rgba(137, 180, 250, 0.12);
+}
+
+/* Text input for custom answer */
+.oc-question-inline-input {
+  flex: 1;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 13px;
+  color: var(--text);
+  outline: none;
+}
+.oc-question-inline-input:focus {
+  border-color: var(--accent);
+}
+.oc-question-inline-input::placeholder {
+  color: var(--overlay0);
+}
+.oc-question-inline-input:disabled {
+  opacity: 0.7;
+  cursor: default;
+  color: var(--text-dim);
+}
+
+/* Submit / Dismiss actions */
+.oc-question-actions {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-top: 4px;
+}
+.oc-question-submit-btn,
+.oc-question-dismiss-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 13px;
+  padding: 4px 14px;
+  cursor: pointer;
+  transition: all 0.1s;
+}
+.oc-question-submit-btn {
+  border-radius: 4px 0 0 4px;
+  background: rgba(137, 180, 250, 0.15);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.oc-question-dismiss-btn {
+  border-radius: 0 4px 4px 0;
+  border-left: none;
+}
+.oc-question-submit-btn:hover:enabled,
+.oc-question-dismiss-btn:hover:enabled {
+  color: var(--text);
+  background: var(--surface1);
+}
+.oc-question-submit-btn:disabled,
+.oc-question-dismiss-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.oc-question-keys {
+  margin-left: 12px;
+  font-size: 11px;
+  color: var(--overlay0);
+}
+.oc-question-keys kbd {
+  color: var(--subtext0);
+  font-family: inherit;
+  font-weight: 600;
+}

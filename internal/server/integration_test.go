@@ -180,9 +180,9 @@ func TestHandleActivity_ReturnsData(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &activity); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	// Should return 91 entries (90 days + today)
-	if len(activity) != 91 {
-		t.Errorf("expected 91 daily entries, got %d", len(activity))
+	// Should return 366 entries (365 days + today, no filter)
+	if len(activity) != 366 {
+		t.Errorf("expected 366 daily entries, got %d", len(activity))
 	}
 }
 

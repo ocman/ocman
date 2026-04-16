@@ -1,0 +1,39 @@
+/* Status */
+.status-indicator { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; padding: 2px 8px; border-radius: 12px; white-space: nowrap; }
+.status-indicator .status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.status-waiting .status-dot { background: var(--accent); }
+.status-waiting { background: rgba(88, 166, 255, 0.15); color: var(--accent); }
+.status-busy .status-dot { background: var(--accent4); animation: pulse 1.2s ease-in-out infinite; }
+.status-busy { background: rgba(240, 136, 62, 0.15); color: var(--accent4); }
+.status-done .status-dot { background: var(--text-dim); }
+.status-done { background: rgba(139, 148, 158, 0.1); color: var(--text-dim); }
+.status-error .status-dot { background: var(--danger); }
+.status-error { background: rgba(243, 139, 168, 0.15); color: var(--danger); }
+
+/* Compact status dot (sidebar) */
+.status-dot-compact {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  cursor: default;
+  margin-top: 5px;
+}
+.status-dot-compact.status-waiting { background: var(--accent); }
+.status-dot-compact.status-busy { background: var(--accent4); animation: pulse 1.2s ease-in-out infinite; }
+.status-dot-compact.status-done { background: var(--text-dim); }
+.status-dot-compact.status-error { background: var(--danger); }
+.status-dot-compact.status-seen { background: var(--overlay0); animation: none; }
+
+/* Compact error icon (replaces dot with ! icon) */
+.status-icon-compact {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  color: var(--danger);
+  margin-top: 4px;
+}
+.status-icon-compact.status-seen { color: var(--overlay0); }

@@ -263,10 +263,32 @@ export const api = {
     if (!resp.ok) throw new Error(await resp.text());
     return resp.json() as Promise<{ ok: boolean }>;
   },
-  activity: () => fetchJSON<ActivityDay[]>('/api/activity'),
-  models: () => fetchJSON<ModelUsage[]>('/api/models'),
-  hourly: () => fetchJSON<HourlyData[]>('/api/hourly'),
-  hourlyTokens: () => fetchJSON<HourlyTokensByModel[]>('/api/hourly-tokens'),
+  activity: (params?: { days?: number; model?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.days) q.set('days', String(params.days));
+    if (params?.model) q.set('model', params.model);
+    const qs = q.toString();
+    return fetchJSON<ActivityDay[]>(`/api/activity${qs ? '?' + qs : ''}`);
+  },
+  models: (params?: { days?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.days) q.set('days', String(params.days));
+    const qs = q.toString();
+    return fetchJSON<ModelUsage[]>(`/api/models${qs ? '?' + qs : ''}`);
+  },
+  hourly: (params?: { days?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.days) q.set('days', String(params.days));
+    const qs = q.toString();
+    return fetchJSON<HourlyData[]>(`/api/hourly${qs ? '?' + qs : ''}`);
+  },
+  hourlyTokens: (params?: { days?: number; model?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.days) q.set('days', String(params.days));
+    if (params?.model) q.set('model', params.model);
+    const qs = q.toString();
+    return fetchJSON<HourlyTokensByModel[]>(`/api/hourly-tokens${qs ? '?' + qs : ''}`);
+  },
   sessionPort: (id: string, signal?: AbortSignal) => fetchJSON<PortInfo>(`/api/session-port/${id}`, signal),
   createSession: async (directory: string) => {
     const resp = await fetch('/api/create-session', {
@@ -292,6 +314,7 @@ export const api = {
     });
     if (!resp.ok) throw new Error(await resp.text());
   },
+  listPermissions: (directory: string) => fetchJSON<unknown[]>(`/api/list-permissions?dir=${encodeURIComponent(directory)}`),
   respondPermission: async (
     sessionId: string,
     directory: string,
@@ -347,6 +370,14 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+  },
+  compactSession: async (sessionId: string, directory: string, providerID: string, modelID: string) => {
+    const resp = await fetch('/api/compact-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, directory, providerID, modelID }),
     });
     if (!resp.ok) throw new Error(await resp.text());
   },

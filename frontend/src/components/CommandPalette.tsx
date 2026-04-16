@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import './CommandPalette.css';
 import { useNavigate } from 'react-router-dom';
 import Fuse from 'fuse.js';
-import { useHotkeys } from 'react-hotkeys-hook';
 import { useApiStore } from '../lib/apiStore';
 import { relativeTime, shortPath } from '../lib/format';
 import type { Session } from '../lib/api';
-import { isEditableTarget } from '../lib/shortcuts';
 
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
@@ -27,12 +26,9 @@ export function CommandPalette() {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.repeat) return;
 
-      // Ctrl+/ or Cmd+/ works everywhere including inside composer
-      const isModSlash = (e.ctrlKey || e.metaKey) && (e.key === '/' || e.code === 'Slash');
-      // Bare / only when not in an editable field
-      const isBareSlash = e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey && !isEditableTarget(e.target);
-
-      if (!isModSlash && !isBareSlash) return;
+      // Alt+Space: toggle palette
+      const isAltSpace = e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'Space';
+      if (!isAltSpace) return;
 
       e.preventDefault();
       setOpen((prev) => {
@@ -45,15 +41,9 @@ export function CommandPalette() {
       });
     };
 
-    document.addEventListener('keydown', onKeyDown, true);
-    return () => document.removeEventListener('keydown', onKeyDown, true);
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
   }, []);
-
-  useHotkeys('esc', () => close(), {
-    enabled: open,
-    enableOnFormTags: ['INPUT', 'TEXTAREA', 'SELECT'],
-    preventDefault: true,
-  }, [close, open]);
 
   // Fetch sessions when palette opens
   useEffect(() => {
@@ -108,7 +98,10 @@ export function CommandPalette() {
   }
 
   function onInputKeyDown(e: React.KeyboardEvent) {
-    if (e.key === 'ArrowDown') {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      close();
+    } else if (e.key === 'ArrowDown') {
       e.preventDefault();
       setSelectedIndex((i) => Math.min(i + 1, results.length - 1));
     } else if (e.key === 'ArrowUp') {

@@ -1,0 +1,86 @@
+.oc-shortcuts-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.oc-shortcuts-dialog {
+  width: 480px;
+  max-width: 92vw;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.oc-shortcuts-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.oc-shortcuts-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.oc-shortcuts-header p {
+  margin: 6px 0 0;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.oc-shortcuts-close {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.oc-shortcuts-close:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.oc-shortcuts-list {
+  padding: 10px 0;
+}
+
+.oc-shortcuts-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 20px;
+}
+
+.oc-shortcuts-item + .oc-shortcuts-item {
+  border-top: 1px solid var(--border);
+}
+
+.oc-shortcuts-item span {
+  color: var(--text);
+  font-size: 13px;
+}
+
+@media (max-width: 768px) {
+  .oc-shortcuts-item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

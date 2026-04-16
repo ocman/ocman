@@ -265,7 +265,9 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
-	activity, err := s.db.GetDailyActivity(90)
+	since := parseSinceParam(r)
+	model := strings.TrimSpace(r.URL.Query().Get("model"))
+	activity, err := s.db.GetDailyActivity(since, model)
 	if err != nil {
 		serverError(w, "fetching activity", err)
 		return
@@ -274,7 +276,8 @@ func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
-	models, err := s.db.GetModelUsage()
+	since := parseSinceParam(r)
+	models, err := s.db.GetModelUsage(since)
 	if err != nil {
 		serverError(w, "fetching model usage", err)
 		return
@@ -283,7 +286,13 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHourlyTokens(w http.ResponseWriter, r *http.Request) {
-	data, err := s.db.GetHourlyTokensByModel()
+	since := parseSinceParam(r)
+	model := strings.TrimSpace(r.URL.Query().Get("model"))
+	var dayCount int
+	if v := strings.TrimSpace(r.URL.Query().Get("days")); v != "" {
+		fmt.Sscanf(v, "%d", &dayCount)
+	}
+	data, err := s.db.GetHourlyTokensByModel(dayCount, since, model)
 	if err != nil {
 		serverError(w, "fetching hourly tokens by model", err)
 		return
@@ -292,12 +301,26 @@ func (s *Server) handleHourlyTokens(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHourly(w http.ResponseWriter, r *http.Request) {
-	hourly, err := s.db.GetHourlyActivity()
+	since := parseSinceParam(r)
+	hourly, err := s.db.GetHourlyActivity(since)
 	if err != nil {
 		serverError(w, "fetching hourly activity", err)
 		return
 	}
 	writeJSON(w, hourly)
+}
+
+// parseSinceParam reads the ?days= query param and returns a Unix millisecond cutoff.
+// Returns 0 (no filter) when the param is absent or zero.
+func parseSinceParam(r *http.Request) int64 {
+	if v := strings.TrimSpace(r.URL.Query().Get("days")); v != "" && v != "0" {
+		var dayCount int64
+		fmt.Sscanf(v, "%d", &dayCount)
+		if dayCount > 0 {
+			return time.Now().Add(-time.Duration(dayCount) * 24 * time.Hour).UnixMilli()
+		}
+	}
+	return 0
 }
 
 func (s *Server) handleSessionPort(w http.ResponseWriter, r *http.Request) {
@@ -535,6 +558,57 @@ func (s *Server) handleRespondPermission(w http.ResponseWriter, r *http.Request)
 	apiURL := fmt.Sprintf("http://127.0.0.1:%s/session/%s/permissions/%s", port, req.SessionID, req.PermissionID)
 	payload, _ := json.Marshal(map[string]interface{}{"response": req.Reply})
 	proxyToOpenCode(w, req.Directory, apiURL, payload, logCtx)
+}
+
+// handleListPermissions proxies GET /permission/ from the running OpenCode instance
+// to retrieve any currently pending permission requests. This allows the frontend
+// to recover pending permissions after connecting to the SSE stream.
+func (s *Server) handleListPermissions(w http.ResponseWriter, r *http.Request) {
+	dir := r.URL.Query().Get("dir")
+	if dir == "" {
+		http.Error(w, "dir parameter required", http.StatusBadRequest)
+		return
+	}
+
+	logCtx := log.Fields{"directory": dir}
+	port := discoverOpenCodePort(dir)
+	if port == "" {
+		log.WithFields(logCtx).Warn("no running OpenCode instance found")
+		// Return empty list when no instance is running — not an error.
+		writeJSON(w, []interface{}{})
+		return
+	}
+
+	apiURL := fmt.Sprintf("http://127.0.0.1:%s/permission", port)
+	resp, err := openCodeClient.Get(apiURL)
+	if err != nil {
+		log.WithFields(logCtx).WithError(err).Error("failed to list permissions from OpenCode")
+		writeJSON(w, []interface{}{})
+		return
+	}
+	defer resp.Body.Close()
+
+	// If the OpenCode instance doesn't support the /permission/ endpoint it may
+	// return a non-JSON response (e.g. its SPA HTML fallback). Treat anything
+	// that isn't application/json as an empty list.
+	ct := resp.Header.Get("Content-Type")
+	if resp.StatusCode != http.StatusOK || !strings.HasPrefix(ct, "application/json") {
+		log.WithFields(logCtx).WithFields(log.Fields{
+			"status":      resp.StatusCode,
+			"contentType": ct,
+		}).Debug("OpenCode /permission/ endpoint returned non-JSON response, treating as empty")
+		writeJSON(w, []interface{}{})
+		return
+	}
+
+	var permissions []interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&permissions); err != nil {
+		log.WithFields(logCtx).WithError(err).Error("failed to decode permissions response")
+		writeJSON(w, []interface{}{})
+		return
+	}
+
+	writeJSON(w, permissions)
 }
 
 func (s *Server) handleRespondQuestion(w http.ResponseWriter, r *http.Request) {
@@ -808,5 +882,41 @@ func (s *Server) handleExecuteCommand(w http.ResponseWriter, r *http.Request) {
 	payload, _ := json.Marshal(bodyMap)
 
 	log.WithFields(logCtx).WithField("port", port).Info("executing command via OpenCode API")
+	proxyToOpenCode(w, req.Directory, apiURL, payload, logCtx)
+}
+
+// handleCompactSession proxies POST /session/:id/summarize to compact a session's history.
+func (s *Server) handleCompactSession(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		SessionID  string `json:"sessionId"`
+		Directory  string `json:"directory"`
+		ProviderID string `json:"providerID"`
+		ModelID    string `json:"modelID"`
+	}
+	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+		return
+	}
+	if !validateID(req.SessionID) {
+		http.Error(w, "invalid session ID", http.StatusBadRequest)
+		return
+	}
+	if req.ProviderID == "" || req.ModelID == "" {
+		http.Error(w, "providerID and modelID are required", http.StatusBadRequest)
+		return
+	}
+
+	logCtx := log.Fields{"sessionID": req.SessionID, "providerID": req.ProviderID, "modelID": req.ModelID}
+	port := requireOpenCodePort(w, req.Directory, logCtx)
+	if port == "" {
+		return
+	}
+
+	payload, _ := json.Marshal(map[string]string{
+		"providerID": req.ProviderID,
+		"modelID":    req.ModelID,
+	})
+
+	apiURL := fmt.Sprintf("http://127.0.0.1:%s/session/%s/summarize", port, req.SessionID)
+	log.WithFields(logCtx).WithField("port", port).Info("compacting session via OpenCode API")
 	proxyToOpenCode(w, req.Directory, apiURL, payload, logCtx)
 }

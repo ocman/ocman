@@ -100,7 +100,19 @@ function convertMessages(
             const toolName = pd.tool || 'unknown';
             const isEdit = toolName === 'edit' || toolName === 'mcp_edit';
             const isRead = toolName === 'read' || toolName === 'mcp_read';
-            if (isEdit && inp.oldString && inp.newString) {
+            const isWrite = toolName === 'write' || toolName === 'mcp_write' || toolName === 'mcp_Write';
+            if (isWrite && inp.content) {
+              // Show the written content as a full-addition diff (all green lines)
+              const writeTarget = inp.filePath || title || 'file';
+              title = 'Write ' + writeTarget;
+              argsText = ''; // diff is shown as result, no need for args
+              const lines = (inp.content as string).split('\n');
+              const maxLn = String(lines.length).length;
+              const pad = (s: string, w: number) => s.padStart(w, ' ');
+              resultText = lines
+                .map((line: string, i: number) => `${' '.repeat(maxLn)}  ${pad(String(i + 1), maxLn)}  + ${line}`)
+                .join('\n');
+            } else if (isEdit && inp.oldString && inp.newString) {
               const editTarget = inp.filePath || title || 'file';
               title = 'Edit ' + editTarget;
               argsText = ''; // diff is shown as result, no need for args
@@ -333,6 +345,21 @@ function convertMessages(
       // User messages cannot contain tool-call parts in assistant-ui.
       const visibleToolCalls = role === 'assistant' ? toolCalls : [];
 
+      const msgStatus = role === 'assistant'
+        ? (m.data.finish === 'error' || m.data.error)
+          ? { type: 'incomplete' as const, reason: 'error' as const }
+          : m.data.finish
+            ? { type: 'complete' as const, reason: 'stop' as const }
+            : { type: 'running' as const }
+        : undefined;
+
+      const customMeta = {
+        ...(isQueued ? { queued: true } : {}),
+        ...(m.data.tokens ? { tokens: m.data.tokens } : {}),
+        ...(m.data.time ? { time: m.data.time } : {}),
+      };
+      const metadata = Object.keys(customMeta).length > 0 ? { custom: customMeta } : undefined;
+
       // If only text (no tool calls or images), use simple string content
       if (visibleToolCalls.length === 0 && imageParts.length === 0) {
         return {
@@ -340,14 +367,8 @@ function convertMessages(
           id: m.id,
           content: textPieces.join('\n\n') || '',
           createdAt: new Date(m.timeCreated),
-          status: role === 'assistant'
-            ? (m.data.finish === 'error' || m.data.error)
-              ? { type: 'incomplete' as const, reason: 'error' as const }
-              : m.data.finish
-                ? { type: 'complete' as const, reason: 'stop' as const }
-                : { type: 'running' as const }
-            : undefined,
-          ...(isQueued ? { metadata: { custom: { queued: true } } } : {}),
+          status: msgStatus,
+          ...(metadata ? { metadata } : {}),
         };
       }
 
@@ -368,14 +389,8 @@ function convertMessages(
         id: m.id,
         content,
         createdAt: new Date(m.timeCreated),
-        status: role === 'assistant'
-          ? (m.data.finish === 'error' || m.data.error)
-            ? { type: 'incomplete' as const, reason: 'error' as const }
-            : m.data.finish
-              ? { type: 'complete' as const, reason: 'stop' as const }
-              : { type: 'running' as const }
-          : undefined,
-        ...(isQueued ? { metadata: { custom: { queued: true } } } : {}),
+        status: msgStatus,
+        ...(metadata ? { metadata } : {}),
       };
     });
 }
