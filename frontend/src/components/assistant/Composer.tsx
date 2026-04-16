@@ -225,7 +225,6 @@ function ComposerImpl({
   const onSendRef = useRef(onSend);
   const isRunningRef = useRef(isRunning);
   const disabledRef = useRef(disabled);
-  const mountedRef = useRef(false);
   const recordingRef = useRef<RecordingCtx | null>(null);
   const [images, setImages] = useState<AttachedImage[]>([]);
   const imagesRef = useRef<AttachedImage[]>([]);
@@ -465,8 +464,6 @@ function ComposerImpl({
   }, [setMicState, stopRecording, transcribe]);
 
   useEffect(() => {
-    if (mountedRef.current) return;
-    mountedRef.current = true;
     const el = inputRef.current;
     if (!el) return;
 
