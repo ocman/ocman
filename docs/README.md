@@ -1,3 +1,3 @@
 # Docs
 
-- [Release Please](release-please.md)
+- [Releases](releases.md)
