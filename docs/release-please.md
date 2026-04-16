@@ -4,7 +4,7 @@ This repository uses `release-please` to turn Conventional Commit messages on `m
 
 ## Files
 
-- `.github/workflows/release-please.yml`: runs `release-please` on pushes to `main`
+- `.github/workflows/release-please.yml`: installs Node and runs the `release-please` CLI on pushes to `main`
 - `release-please-config.json`: tells `release-please` to manage this repository as a single `simple` component
 - `.release-please-manifest.json`: stores the last released version
 - `.github/workflows/release.yml`: builds archives when a `v*` tag is pushed and uploads them to the Forgejo release
@@ -16,6 +16,17 @@ This repository uses `release-please` to turn Conventional Commit messages on `m
 3. Make sure the token has enough repository write access for contents, pull requests, and releases.
 4. Push the workflow and config files to `main`.
 5. Trigger the `Release Please` workflow once with `workflow_dispatch` if you want to verify the setup immediately.
+
+## Why The Workflow Uses The CLI
+
+Forgejo runners often mirror `uses:` actions through `data.forgejo.org`.
+
+`googleapis/release-please-action` is not available there, so the workflow runs `release-please` through `npx` instead of using the third-party action directly.
+
+The workflow performs the same two logical steps as the action:
+
+1. `manifest-release`: create tags and release entries after a release PR has been merged.
+2. `manifest-pr`: open or update the next release PR.
 
 ## Commit Format
 

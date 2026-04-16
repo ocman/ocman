@@ -15,13 +15,37 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
-      - uses: googleapis/release-please-action@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
-          config-file: release-please-config.json
-          manifest-file: .release-please-manifest.json
-          target-branch: main
-          repo-url: ${{ github.repository }}
-          github-api-url: ${{ github.api_url }}
-          github-graphql-url: ${{ github.graphql_url }}
-          changelog-host: ${{ github.server_url }}
+          node-version: 20
+      - name: Run release-please release step
+        env:
+          RELEASE_PLEASE_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          API_URL: ${{ github.api_url }}
+          GRAPHQL_URL: ${{ github.graphql_url }}
+        run: |
+          npx release-please@latest manifest-release \
+            --token="${RELEASE_PLEASE_TOKEN}" \
+            --repo-url="${REPOSITORY}" \
+            --target-branch=main \
+            --api-url="${API_URL}" \
+            --graphql-url="${GRAPHQL_URL}" \
+            --config-file=release-please-config.json \
+            --manifest-file=.release-please-manifest.json
+      - name: Run release-please PR step
+        env:
+          RELEASE_PLEASE_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          API_URL: ${{ github.api_url }}
+          GRAPHQL_URL: ${{ github.graphql_url }}
+        run: |
+          npx release-please@latest manifest-pr \
+            --token="${RELEASE_PLEASE_TOKEN}" \
+            --repo-url="${REPOSITORY}" \
+            --target-branch=main \
+            --api-url="${API_URL}" \
+            --graphql-url="${GRAPHQL_URL}" \
+            --config-file=release-please-config.json \
+            --manifest-file=.release-please-manifest.json
