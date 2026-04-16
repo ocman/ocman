@@ -1,6 +1,6 @@
 // Generate a simple unified diff between two strings.
 // Shows context lines around changes for readability.
-export function simpleDiff(oldStr: string, newStr: string): string {
+export function simpleDiff(oldStr: string, newStr: string, startLine = 1): string {
   const oldLines = oldStr.split('\n');
   const newLines = newStr.split('\n');
 
@@ -44,7 +44,7 @@ export function simpleDiff(oldStr: string, newStr: string): string {
   ops.reverse();
 
   // Assign line numbers to each op
-  let oldLine = 1, newLine = 1;
+  let oldLine = startLine, newLine = startLine;
   const numbered: Array<[string, string, string, string]> = []; // [op, text, oldLn, newLn]
   ops.forEach(([op, text]) => {
     if (op === ' ') {

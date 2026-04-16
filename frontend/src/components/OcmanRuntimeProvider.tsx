@@ -101,7 +101,23 @@ function convertMessages(
               const fileName = inp.filePath ? inp.filePath.split('/').pop() || inp.filePath : '';
               title = 'Edited ' + fileName;
               argsText = ''; // diff is shown as result, no need for args
-              resultText = simpleDiff(inp.oldString, inp.newString);
+              // Try to determine the starting line number from the tool output.
+              // The output often contains the modified content prefixed with
+              // line numbers like "123: code\n124: more code".
+              let startLine = 1;
+              const outputText = typeof st.output === 'string' ? st.output : '';
+              // Look for the first numbered line in the content block
+              const contentMatch = outputText.match(/<content>\n?(\d+): /);
+              if (contentMatch) {
+                startLine = parseInt(contentMatch[1], 10) || 1;
+              } else {
+                // Fallback: look for "line X" or "Line X" patterns
+                const lineRefMatch = outputText.match(/[Ll]ine\s+(\d+)/);
+                if (lineRefMatch) {
+                  startLine = parseInt(lineRefMatch[1], 10) || 1;
+                }
+              }
+              resultText = simpleDiff(inp.oldString, inp.newString, startLine);
             } else if (isRead) {
               // Render reads as a muted inline line, not a collapsible block.
               const readTarget = inp.filePath || argsText || title || 'file';

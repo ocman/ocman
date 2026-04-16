@@ -802,6 +802,7 @@ const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
   // Anthropic
   'claude-sonnet-4-20250514': 200_000,
   'claude-opus-4-20250514': 200_000,
+  'claude-opus-4-6-20250616': 200_000,
   'claude-3-7-sonnet-20250219': 200_000,
   'claude-3-5-sonnet-20241022': 200_000,
   'claude-3-5-sonnet-20240620': 200_000,
@@ -809,6 +810,7 @@ const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
   'claude-3-opus-20240229': 200_000,
   'claude-3-haiku-20240307': 200_000,
   'claude-sonnet-4': 200_000,
+  'claude-opus-4-6': 200_000,
   'claude-opus-4': 200_000,
   // Google
   'gemini-2.5-pro': 1_048_576,
@@ -832,8 +834,11 @@ function getContextWindow(modelId: string | undefined): number | null {
   // Exact match first
   if (MODEL_CONTEXT_WINDOWS[modelId]) return MODEL_CONTEXT_WINDOWS[modelId];
   // Try partial match (model ID may have provider prefix like "anthropic/claude-...")
+  // Sort by key length descending so more specific models match first
+  // (e.g. "gpt-4.1-mini" before "gpt-4")
   const lower = modelId.toLowerCase();
-  for (const [key, value] of Object.entries(MODEL_CONTEXT_WINDOWS)) {
+  const sorted = Object.entries(MODEL_CONTEXT_WINDOWS).sort((a, b) => b[0].length - a[0].length);
+  for (const [key, value] of sorted) {
     if (lower.endsWith(key) || lower.includes(key)) return value;
   }
   return null;

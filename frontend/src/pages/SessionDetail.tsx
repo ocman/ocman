@@ -16,6 +16,130 @@ const PAGE_SIZE = 50;
 const RECENT_SESSIONS_LIMIT = 20;
 const ARCHIVE_ANIMATION_MS = 220;
 
+// Maximum length for part text/output before truncation (matches backend maxOutputLen).
+const MAX_OUTPUT_LEN = 10000;
+
+/** Truncate large string fields in a part to keep memory usage manageable. */
+function truncatePartField(value: unknown): unknown {
+  if (typeof value === 'string' && value.length > MAX_OUTPUT_LEN) {
+    return value.slice(0, MAX_OUTPUT_LEN) + '\n... (truncated)';
+  }
+  return value;
+}
+
+/**
+ * Try to extract a Message + Parts from a raw SSE event payload.
+ * OpenCode SSE events for message changes carry an `info` object (the message
+ * metadata) and an optional `parts` array — the same structure the backend's
+ * convertOpenCodeMessages reads from the HTTP API.
+ *
+ * Returns null when the event doesn't contain usable message data.
+ */
+function extractMessageFromEvent(
+  parsed: Record<string, unknown>,
+  sessionId: string,
+): { message: Message; parts: Part[] } | null {
+  // The event can wrap the payload in `properties` or carry it at the top level.
+  const props = (parsed.properties && typeof parsed.properties === 'object')
+    ? parsed.properties as Record<string, unknown>
+    : parsed;
+
+  const info = props.info as Record<string, unknown> | undefined;
+  if (!info || typeof info !== 'object') return null;
+
+  const msgId = info.id as string | undefined;
+  if (!msgId) return null;
+
+  const timeObj = info.time as Record<string, unknown> | undefined;
+  const timeCreated = typeof timeObj?.created === 'number' ? timeObj.created : Date.now();
+
+  // Default to 'assistant' if role is not yet set (can happen during early streaming)
+  const role = (info.role as string) || 'assistant';
+
+  const message: Message = {
+    id: msgId,
+    sessionId: info.sessionID as string || sessionId,
+    timeCreated,
+    data: {
+      role,
+      finish: info.finish as string | undefined,
+      modelID: info.modelID as string | undefined,
+      providerID: info.providerID as string | undefined,
+      agent: info.agent as string | undefined,
+      mode: info.mode as string | undefined,
+      cost: typeof info.cost === 'number' ? info.cost : undefined,
+      tokens: info.tokens as Message['data']['tokens'],
+      error: info.error as Message['data']['error'],
+    },
+  };
+
+  const parts: Part[] = [];
+  const rawParts = props.parts;
+  if (Array.isArray(rawParts)) {
+    for (const p of rawParts) {
+      if (!p || typeof p !== 'object') continue;
+      const part = p as Record<string, unknown>;
+      const partType = part.type as string | undefined;
+      // Skip non-essential types (same filter as backend convertOpenCodeMessages)
+      if (partType === 'step-start' || partType === 'step-finish' || partType === 'snapshot') continue;
+
+      // Truncate large outputs
+      if (typeof part.text === 'string') part.text = truncatePartField(part.text);
+      const state = part.state as Record<string, unknown> | undefined;
+      if (state) {
+        if (typeof state.output === 'string') state.output = truncatePartField(state.output);
+        const meta = state.metadata as Record<string, unknown> | undefined;
+        if (meta && typeof meta.output === 'string') meta.output = truncatePartField(meta.output);
+      }
+
+      parts.push({
+        id: (part.id as string) || `sse-part-${msgId}-${parts.length}`,
+        messageId: (part.messageID as string) || msgId,
+        sessionId: (part.sessionID as string) || sessionId,
+        data: part as unknown as string, // stored as the raw object, same as backend
+      });
+    }
+  }
+
+  return { message, parts };
+}
+
+/**
+ * Try to extract a single Part update from an SSE event.
+ * `part.updated` events carry the part data directly in `properties`.
+ */
+function extractPartFromEvent(
+  parsed: Record<string, unknown>,
+  sessionId: string,
+): Part | null {
+  const props = (parsed.properties && typeof parsed.properties === 'object')
+    ? parsed.properties as Record<string, unknown>
+    : parsed;
+
+  const partId = props.id as string | undefined;
+  const messageId = props.messageID as string | undefined;
+  if (!partId || !messageId) return null;
+
+  const partType = props.type as string | undefined;
+  if (partType === 'step-start' || partType === 'step-finish' || partType === 'snapshot') return null;
+
+  // Truncate large fields
+  if (typeof props.text === 'string') props.text = truncatePartField(props.text);
+  const state = props.state as Record<string, unknown> | undefined;
+  if (state) {
+    if (typeof state.output === 'string') state.output = truncatePartField(state.output);
+    const meta = state.metadata as Record<string, unknown> | undefined;
+    if (meta && typeof meta.output === 'string') meta.output = truncatePartField(meta.output);
+  }
+
+  return {
+    id: partId,
+    messageId,
+    sessionId: (props.sessionID as string) || sessionId,
+    data: props as unknown as string,
+  };
+}
+
 interface PendingPermission {
   permissionId: string;
   permission: string;
@@ -162,7 +286,7 @@ function clearPendingQuestion(sessionId: string) {
   } catch { /* unavailable */ }
 }
 
-function truncateSseData(raw: string, max = 240): string {
+function truncateSseData(raw: string, max = 500): string {
   if (raw.length <= max) return raw;
   return raw.slice(0, max) + '...';
 }
@@ -372,6 +496,8 @@ export function SessionDetail() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const debugMode = searchParams.has('debug');
+  const debugModeRef = useRef(debugMode);
+  debugModeRef.current = debugMode;
   const [session, setSession] = useState<(SessionDetailData['session'] & { defaultAgent?: string; defaultModel?: string }) | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [parts, setParts] = useState<Part[]>([]);
@@ -697,83 +823,432 @@ export function SessionDetail() {
     if (!session?.directory || !session?.id) return;
     const dir = session.directory;
     const sid = session.id;
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     let evtSource: EventSource | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let cancelled = false;
+    let hasReceivedContentEvent = false; // tracks whether any content event arrived before reconciliation completes
 
-    const handleEventData = (raw: string, event = 'message') => {
-      if (!raw) return;
+    // Immediately fetch the latest content from the API.
+    const loadNow = () => {
+      if (cancelled) return;
+      const signal = abortControllerRef.current?.signal;
+      load(signal);
+    };
 
-      setSseDebugEvents((prev) => {
-        const next = [...prev, { at: Date.now(), event, data: truncateSseData(raw) }];
-        return next.slice(-8);
-      });
+    // Process a parsed SSE event: handle permission/question prompts and
+    // clear stale prompts. Only triggers state updates when values change.
+    const handleParsedEvent = (parsed: Record<string, unknown>) => {
+      const type = (parsed.type as string) || '';
 
-      try {
-        const parsed = JSON.parse(raw) as unknown;
-        const perm = extractPendingPermission(parsed);
-        if (perm) {
-          setPendingPermission(perm);
-          setPermissionError(null);
+      const perm = extractPendingPermission(parsed);
+      if (perm) {
+        setPendingPermission(perm);
+        setPermissionError(null);
+      }
+      const question = extractPendingQuestion(parsed);
+      if (question) {
+        const questionSid = question.sessionID || sid;
+        storePendingQuestion(questionSid, question);
+        if (!question.sessionID || question.sessionID === sid) {
+          setPendingQuestion(question);
         }
-        const question = extractPendingQuestion(parsed);
-        if (question) {
-          // Store using the question's own sessionID so it's keyed correctly
-          const questionSid = question.sessionID || sid;
-          storePendingQuestion(questionSid, question);
-          // Only show the prompt if the question belongs to the current session
-          if (!question.sessionID || question.sessionID === sid) {
-            setPendingQuestion(question);
-          }
-        }
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          const obj = parsed as Record<string, unknown>;
-          // Clear pending permission on session status changes or new messages
-          if (obj.type === 'session.status' || obj.type === 'message.updated' || obj.type === 'permission.responded') {
-            setPendingPermission(null);
-          }
-          // Clear pending question when answered, rejected, or session moves on
-          if (obj.type === 'question.replied' || obj.type === 'question.rejected' || obj.type === 'session.status' || obj.type === 'message.updated') {
-            setPendingQuestion(null);
-            clearPendingQuestion(sid);
-          }
-        }
-      } catch {
-        // not JSON, ignore
+      }
+      // Only clear permission/question state on specific event types,
+      // and only if there's something to clear (avoids no-op renders).
+      if (type === 'session.status' || type === 'message.updated' || type === 'permission.responded') {
+        setPendingPermission(prev => prev === null ? prev : null);
+      }
+      if (type === 'question.replied' || type === 'question.rejected' || type === 'session.status' || type === 'message.updated') {
+        setPendingQuestion(prev => {
+          if (prev === null) return prev;
+          clearPendingQuestion(sid);
+          return null;
+        });
       }
     };
 
     const connect = () => {
       if (cancelled) return;
       evtSource = new EventSource(`/api/events/?dir=${encodeURIComponent(dir)}`);
-      evtSource.onopen = () => { setSseActive(true); };
-      evtSource.onmessage = (evt) => {
-        const data = evt.data || '';
-        handleEventData(data, 'message');
-        // Only schedule a refetch for events that indicate session content changed
-        if (data && data.trim()) {
-          try {
-            const parsed = JSON.parse(data);
-            const type = parsed?.type || '';
-            // Only refetch on events that affect message/part content
-            const contentEvents = ['message.created', 'message.updated', 'part.updated', 'tool.updated', 'session.status'];
-            if (contentEvents.some(e => type.includes(e) || type === e) || !type) {
-              if (debounceTimer) clearTimeout(debounceTimer);
-              debounceTimer = setTimeout(() => {
-                const signal = abortControllerRef.current?.signal;
-                load(signal);
-              }, 1000);
-            }
-          } catch {
-            // Non-JSON event, skip refetch
+      evtSource.onopen = () => {
+        setSseActive(true);
+        // Reconciliation: fetch the latest state to close the gap between
+        // the initial load() and the SSE connection opening. Delay slightly
+        // so that if SSE events arrive immediately (active conversation),
+        // we can skip the redundant fetch.
+        setTimeout(() => {
+          if (!hasReceivedContentEvent && !cancelled) {
+            const signal = abortControllerRef.current?.signal;
+            load(signal);
           }
+        }, 500);
+      };
+      evtSource.onmessage = (evt) => {
+        const raw = evt.data || '';
+        if (!raw || !raw.trim()) return;
+
+        // Debug logging — only when debug mode is active
+        if (debugModeRef.current) {
+          setSseDebugEvents((prev) => {
+            const next = [...prev, { at: Date.now(), event: 'message', data: truncateSseData(raw) }];
+            return next.slice(-50);
+          });
+        }
+
+        let parsed: Record<string, unknown>;
+        try {
+          parsed = JSON.parse(raw) as Record<string, unknown>;
+        } catch {
+          return; // not JSON, ignore
+        }
+
+        const type = (parsed.type as string) || '';
+
+        // Filter out events for other sessions. The session ID can live in
+        // several places depending on the event type:
+        //   properties.info.sessionID  (message.created / message.updated)
+        //   properties.part.sessionID  (message.part.updated / message.part.delta)
+        //   properties.sessionID       (session.status, part events, questions)
+        const evtProps = (parsed.properties && typeof parsed.properties === 'object')
+          ? parsed.properties as Record<string, unknown>
+          : null;
+        const evtSessionId: string | undefined =
+          (evtProps?.sessionID as string) ||
+          ((evtProps?.info as Record<string, unknown> | undefined)?.sessionID as string) ||
+          ((evtProps?.part as Record<string, unknown> | undefined)?.sessionID as string) ||
+          undefined;
+        if (evtSessionId && evtSessionId !== sid) return;
+
+        // Handle permission/question prompts
+        handleParsedEvent(parsed);
+
+        // Apply content updates incrementally.
+        // OpenCode SSE event types:
+        //   message.created  — properties.info + properties.parts (full message)
+        //   message.updated  — properties.info (metadata only, no parts)
+        //   message.part.updated — properties.part (single part with incremental content)
+        //   message.part.delta   — properties.part (text delta to append)
+        //   session.status   — properties.status
+
+        const props = evtProps;
+
+        // message.created carries full message + parts
+        if (type === 'message.created') {
+          const extracted = extractMessageFromEvent(parsed, sid);
+          if (extracted) {
+            hasReceivedContentEvent = true;
+            setMessages(prev => {
+              const filtered = prev.filter(
+                m => m.id !== extracted.message.id && !m.id.startsWith('temp-') && !m.id.startsWith('error-'),
+              );
+              const idx = filtered.findIndex(m => m.timeCreated > extracted.message.timeCreated);
+              if (idx === -1) return [...filtered, extracted.message];
+              return [...filtered.slice(0, idx), extracted.message, ...filtered.slice(idx)];
+            });
+            if (extracted.parts.length > 0) {
+              setParts(prev => {
+                const newIds = new Set(extracted.parts.map(p => p.id));
+                const filtered = prev.filter(
+                  p => !newIds.has(p.id) && !p.id.startsWith('part-temp-') && !p.id.startsWith('part-error-'),
+                );
+                return [...filtered, ...extracted.parts];
+              });
+            }
+            setSession(prev => {
+              if (!prev) return prev;
+              const msg = extracted.message;
+              let status: Session['status'] = 'done';
+              if (msg.data.role === 'assistant') {
+                if (msg.data.finish === 'error' || msg.data.error) status = 'error';
+                else if (msg.data.finish) status = 'waiting';
+                else status = 'busy';
+              }
+              if (prev.status === status) return prev;
+              return { ...prev, status };
+            });
+          }
+        }
+
+        // message.updated carries metadata (finish, tokens, cost) and may also
+        // include parts during streaming depending on the OpenCode version.
+        if (type === 'message.updated' && props) {
+          // First, try to extract as a full message with parts (some versions bundle them)
+          const extracted = extractMessageFromEvent(parsed, sid);
+          if (extracted) {
+            hasReceivedContentEvent = true;
+            setMessages(prev => {
+              const filtered = prev.filter(
+                m => m.id !== extracted.message.id && !m.id.startsWith('temp-') && !m.id.startsWith('error-'),
+              );
+              const idx = filtered.findIndex(m => m.timeCreated > extracted.message.timeCreated);
+              if (idx === -1) return [...filtered, extracted.message];
+              return [...filtered.slice(0, idx), extracted.message, ...filtered.slice(idx)];
+            });
+            if (extracted.parts.length > 0) {
+              setParts(prev => {
+                const newIds = new Set(extracted.parts.map(p => p.id));
+                const filtered = prev.filter(
+                  p => !newIds.has(p.id) && !p.id.startsWith('part-temp-') && !p.id.startsWith('part-error-'),
+                );
+                return [...filtered, ...extracted.parts];
+              });
+            }
+            setSession(prev => {
+              if (!prev) return prev;
+              const msg = extracted.message;
+              let status: Session['status'] = 'done';
+              if (msg.data.role === 'assistant') {
+                if (msg.data.finish === 'error' || msg.data.error) status = 'error';
+                else if (msg.data.finish) status = 'waiting';
+                else status = 'busy';
+              }
+              if (prev.status === status) return prev;
+              return { ...prev, status };
+            });
+          } else {
+            // Fallback: metadata-only update (no parts in this event)
+            const info = props.info as Record<string, unknown> | undefined;
+            if (info && info.id) {
+              hasReceivedContentEvent = true;
+              const msgId = info.id as string;
+              setMessages(prev => {
+                const idx = prev.findIndex(m => m.id === msgId);
+                if (idx < 0) return prev;
+                const updated = { ...prev[idx] };
+                updated.data = {
+                  ...updated.data,
+                  finish: info.finish as string | undefined,
+                  tokens: info.tokens as Message['data']['tokens'],
+                  cost: typeof info.cost === 'number' ? info.cost : updated.data.cost,
+                  error: info.error as Message['data']['error'],
+                };
+                const next = [...prev];
+                next[idx] = updated;
+                return next;
+              });
+              setSession(prev => {
+                if (!prev) return prev;
+                let status: Session['status'] = prev.status;
+                const role = info.role as string | undefined;
+                if (role === 'assistant') {
+                  const finish = info.finish as string | undefined;
+                  if (finish === 'error' || info.error) status = 'error';
+                  else if (finish) status = 'waiting';
+                  else status = 'busy';
+                }
+                if (prev.status === status) return prev;
+                return { ...prev, status };
+              });
+            }
+          }
+        }
+
+        // message.part.updated — carries the full part content (replacement).
+        if (type === 'message.part.updated' && props) {
+          const rawPart = props.part as Record<string, unknown> | undefined;
+          if (rawPart && rawPart.id && rawPart.messageID) {
+            hasReceivedContentEvent = true;
+            const partType = rawPart.type as string | undefined;
+            if (partType !== 'step-start' && partType !== 'step-finish' && partType !== 'snapshot') {
+              // Truncate large fields
+              if (typeof rawPart.text === 'string') rawPart.text = truncatePartField(rawPart.text) as string;
+              const state = rawPart.state as Record<string, unknown> | undefined;
+              if (state) {
+                if (typeof state.output === 'string') state.output = truncatePartField(state.output) as string;
+                const meta = state.metadata as Record<string, unknown> | undefined;
+                if (meta && typeof meta.output === 'string') meta.output = truncatePartField(meta.output) as string;
+              }
+              const part: Part = {
+                id: rawPart.id as string,
+                messageId: rawPart.messageID as string,
+                sessionId: (rawPart.sessionID as string) || sid,
+                data: rawPart as unknown as string,
+              };
+              setParts(prev => {
+                const idx = prev.findIndex(p => p.id === part.id);
+                if (idx >= 0) {
+                  const updated = [...prev];
+                  updated[idx] = part;
+                  return updated;
+                }
+                return [...prev, part];
+              });
+            }
+          }
+        }
+
+        // message.part.delta — per-token incremental text during streaming.
+        // Shape: { type: "message.part.delta", properties: { sessionID, messageID, partID, field, delta } }
+        // The `delta` field contains the new text chunk to append.
+        // The `field` indicates which part field is being updated (usually "text").
+        if (type === 'message.part.delta' && props) {
+          const partId = props.partID as string | undefined;
+          const messageId = props.messageID as string | undefined;
+          const deltaText = (props.delta as string) || '';
+          const field = (props.field as string) || 'text';
+          if (partId && messageId && deltaText) {
+            hasReceivedContentEvent = true;
+            setParts(prev => {
+              const idx = prev.findIndex(p => p.id === partId);
+              if (idx >= 0) {
+                // Append delta to the target field of the existing part
+                const existing = prev[idx];
+                let existingData: Record<string, unknown>;
+                try {
+                  existingData = typeof existing.data === 'string'
+                    ? JSON.parse(existing.data) as Record<string, unknown>
+                    : existing.data as unknown as Record<string, unknown>;
+                } catch {
+                  existingData = {};
+                }
+                const currentVal = (existingData[field] as string) || '';
+                const updatedData = { ...existingData, [field]: currentVal + deltaText };
+                const updated = [...prev];
+                updated[idx] = {
+                  ...existing,
+                  data: updatedData as unknown as string,
+                };
+                return updated;
+              }
+              // Part doesn't exist yet — create it with the delta as initial content.
+              // This can happen if the message.part.updated for text-start hasn't
+              // arrived yet. Use a minimal text part shape.
+              const newPart: Part = {
+                id: partId,
+                messageId,
+                sessionId: (props.sessionID as string) || sid,
+                data: { type: 'text', [field]: deltaText } as unknown as string,
+              };
+              return [...prev, newPart];
+            });
+          }
+        }
+
+        // Catch-all for any event carrying part data — handles legacy event
+        // names (part.updated, tool.updated) and any unknown event types that
+        // still contain renderable part content. We try multiple extraction
+        // strategies to be as permissive as possible.
+        if (type !== 'message.created' && type !== 'message.updated' && type !== 'message.part.updated' && type !== 'message.part.delta' && type !== 'session.status') {
+          let handled = false;
+
+          // Strategy 1: properties contains a part directly
+          if (props) {
+            const part = extractPartFromEvent(parsed, sid);
+            if (part) {
+              hasReceivedContentEvent = true;
+              handled = true;
+              setParts(prev => {
+                const idx = prev.findIndex(p => p.id === part.id);
+                if (idx >= 0) {
+                  const updated = [...prev];
+                  updated[idx] = part;
+                  return updated;
+                }
+                return [...prev, part];
+              });
+            }
+          }
+
+          // Strategy 2: properties.part contains the part (like message.part.updated)
+          if (!handled && props) {
+            const rawPart = props.part as Record<string, unknown> | undefined;
+            if (rawPart && rawPart.id && rawPart.messageID) {
+              hasReceivedContentEvent = true;
+              handled = true;
+              const partType = rawPart.type as string | undefined;
+              if (partType !== 'step-start' && partType !== 'step-finish' && partType !== 'snapshot') {
+                if (typeof rawPart.text === 'string') rawPart.text = truncatePartField(rawPart.text) as string;
+                const part: Part = {
+                  id: rawPart.id as string,
+                  messageId: rawPart.messageID as string,
+                  sessionId: (rawPart.sessionID as string) || sid,
+                  data: rawPart as unknown as string,
+                };
+                setParts(prev => {
+                  const idx = prev.findIndex(p => p.id === part.id);
+                  if (idx >= 0) {
+                    const updated = [...prev];
+                    updated[idx] = part;
+                    return updated;
+                  }
+                  return [...prev, part];
+                });
+              }
+            }
+          }
+
+          // Strategy 3: try as a full message with parts
+          if (!handled) {
+            const extracted = extractMessageFromEvent(parsed, sid);
+            if (extracted) {
+              hasReceivedContentEvent = true;
+              setMessages(prev => {
+                const filtered = prev.filter(
+                  m => m.id !== extracted.message.id && !m.id.startsWith('temp-') && !m.id.startsWith('error-'),
+                );
+                const idx = filtered.findIndex(m => m.timeCreated > extracted.message.timeCreated);
+                if (idx === -1) return [...filtered, extracted.message];
+                return [...filtered.slice(0, idx), extracted.message, ...filtered.slice(idx)];
+              });
+              if (extracted.parts.length > 0) {
+                setParts(prev => {
+                  const newIds = new Set(extracted.parts.map(p => p.id));
+                  const filtered = prev.filter(
+                    p => !newIds.has(p.id) && !p.id.startsWith('part-temp-') && !p.id.startsWith('part-error-'),
+                  );
+                  return [...filtered, ...extracted.parts];
+                });
+              }
+            }
+          }
+        }
+
+        // session.status — update the session status locally.
+        if (type === 'session.status' && props) {
+          const statusObj = props.status as Record<string, unknown> | string | undefined;
+          const status = typeof statusObj === 'string'
+            ? statusObj
+            : (typeof statusObj === 'object' && statusObj !== null)
+              ? (statusObj.type as string | undefined)
+              : (props.status as string | undefined);
+          if (status === 'waiting' || status === 'busy' || status === 'done' || status === 'error' || status === 'idle') {
+            const mapped = status === 'idle' ? 'done' : status;
+            setSession(prev => prev && prev.status !== mapped ? { ...prev, status: mapped as Session['status'] } : prev);
+            // When the session finishes (idle), fetch the final state from
+            // the API to reconcile any events we may have missed.
+            if (status === 'idle') {
+              loadNow();
+            }
+          }
+        }
+
+        // session.idle — explicit idle signal, fetch final state.
+        if (type === 'session.idle') {
+          loadNow();
+        }
+
+        // message.updated — message metadata changed (tokens, finish, etc.).
+        // Also triggers a load to pick up any content not delivered via
+        // part events (e.g. the assistant message itself on finish-step).
+        if (type === 'message.updated') {
+          loadNow();
         }
       };
       // Some OpenCode SSE updates may use named events, not default "message".
       ['question', 'permission', 'approval', 'tool', 'error'].forEach((eventName) => {
         evtSource?.addEventListener(eventName, (evt) => {
-          handleEventData((evt as MessageEvent).data || '', eventName);
+          const raw = (evt as MessageEvent).data || '';
+          if (!raw) return;
+          if (debugModeRef.current) {
+            setSseDebugEvents((prev) => {
+              const next = [...prev, { at: Date.now(), event: eventName, data: truncateSseData(raw) }];
+              return next.slice(-50);
+            });
+          }
+          try {
+            const parsed = JSON.parse(raw) as Record<string, unknown>;
+            handleParsedEvent(parsed);
+          } catch { /* not JSON */ }
         });
       });
       evtSource.onerror = () => {
@@ -800,12 +1275,30 @@ export function SessionDetail() {
     return () => {
       cancelled = true;
       evtSource?.close();
-      if (debounceTimer) clearTimeout(debounceTimer);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       clearInterval(fallback);
       setSseActive(false);
     };
   }, [session?.directory, session?.id, load]);
+
+  // Compute aggregate token/cost stats from the messages array so the header
+  // stays up-to-date from SSE events without needing a server round-trip.
+  const liveTokens = (() => {
+    let tokensIn = 0, tokensOut = 0;
+    for (const m of messages) {
+      if (m.data?.role === 'assistant' && m.data.tokens) {
+        tokensIn += m.data.tokens.input || 0;
+        tokensOut += m.data.tokens.output || 0;
+      }
+    }
+    return { tokensIn, tokensOut };
+  })();
+
+  // Use the larger of server-provided totals and locally-computed totals.
+  // The server value covers all messages including paginated-out ones;
+  // the local value picks up incremental SSE updates before the next load().
+  const displayTokensIn = Math.max(session?.totalInputTokens || 0, liveTokens.tokensIn);
+  const displayTokensOut = Math.max(session?.totalOutputTokens || 0, liveTokens.tokensOut);
 
   // Header info
   useEffect(() => {
@@ -814,7 +1307,7 @@ export function SessionDetail() {
     const stats: { label: string; value: string }[] = [
       { label: 'Duration', value: formatDuration(s.durationMs) },
       { label: 'Messages', value: String(totalMessages || s.messageCount) },
-      { label: 'Tokens', value: `${formatNumber(s.totalInputTokens)}/${formatNumber(s.totalOutputTokens)}` },
+      { label: 'Tokens', value: `${formatNumber(displayTokensIn)}/${formatNumber(displayTokensOut)}` },
       { label: 'Project', value: shortPath(s.directory) },
     ];
     if (s.summaryFiles) {
@@ -827,7 +1320,7 @@ export function SessionDetail() {
     }
     setInfo({ sessionTitle: s.title || 'Untitled', stats });
     return () => setInfo({});
-  }, [session, totalMessages, setInfo]);
+  }, [session, totalMessages, setInfo, displayTokensIn, displayTokensOut]);
 
   const activeModel = ([...messages]
     .reverse()
@@ -877,8 +1370,8 @@ export function SessionDetail() {
         selectedModel || activeModel || undefined,
         selectedAgent || activeAgent || undefined,
       );
-      // Reload immediately to get the real message + assistant response
-      load(abortControllerRef.current?.signal);
+      // SSE events will deliver the real message + assistant response incrementally.
+      // The optimistic message is already visible to the user.
     } catch (e) {
       console.error('Failed to send message', e);
       // Show the error as a system message in the conversation
@@ -901,7 +1394,7 @@ export function SessionDetail() {
       setMessages(prev => [...prev, errMsg]);
       setParts(prev => [...prev, errPart]);
     }
-  }, [activeAgent, activeModel, load, portAvailable, selectedAgent, selectedModel, sendMessage, session]);
+  }, [activeAgent, activeModel, portAvailable, selectedAgent, selectedModel, sendMessage, session]);
 
   const handleCommand = useCallback(async (command: string, args: string) => {
     if (!session || !portAvailable) return;
@@ -933,7 +1426,7 @@ export function SessionDetail() {
         selectedModel || activeModel || undefined,
         selectedAgent || activeAgent || undefined,
       );
-      load(abortControllerRef.current?.signal);
+      // SSE events will deliver the command response incrementally.
     } catch (e) {
       console.error('Failed to execute command', e);
       const errId = 'error-' + Date.now();
@@ -955,7 +1448,7 @@ export function SessionDetail() {
       setMessages(prev => [...prev, errMsg]);
       setParts(prev => [...prev, errPart]);
     }
-  }, [activeAgent, activeModel, load, portAvailable, selectedAgent, selectedModel, session]);
+  }, [activeAgent, activeModel, portAvailable, selectedAgent, selectedModel, session]);
 
   const handlePermissionReply = useCallback(async (reply: 'once' | 'always' | 'reject') => {
     if (!pendingPermission || answeringPermission || !portAvailable || !session) return;
@@ -964,15 +1457,13 @@ export function SessionDetail() {
     try {
       await respondPermission(session.id, session.directory, pendingPermission.permissionId, reply);
       setPendingPermission(null);
-      // Reload immediately and again after a short delay to catch the updated session state
-      load(abortControllerRef.current?.signal);
-      setTimeout(() => load(abortControllerRef.current?.signal), 1000);
+      // SSE events will deliver the updated session state incrementally.
     } catch (e) {
       setPermissionError(e instanceof Error ? e.message : 'Failed to respond to permission request');
     } finally {
       setAnsweringPermission(false);
     }
-  }, [answeringPermission, load, pendingPermission, portAvailable, respondPermission, session]);
+  }, [answeringPermission, pendingPermission, portAvailable, respondPermission, session]);
 
   const handleQuestionReply = useCallback(async (answers: string[][]) => {
     if (!pendingQuestion || answeringQuestion || !portAvailable || !session) return;
@@ -983,15 +1474,14 @@ export function SessionDetail() {
       setPendingQuestion(null);
       setQuestionError(null);
       clearPendingQuestion(session.id);
-      load(abortControllerRef.current?.signal);
-      setTimeout(() => load(abortControllerRef.current?.signal), 1000);
+      // SSE events will deliver the updated session state incrementally.
     } catch (e) {
       console.error('Failed to respond to question', e);
       setQuestionError(e instanceof Error ? e.message : 'Failed to submit answer');
     } finally {
       setAnsweringQuestion(false);
     }
-  }, [answeringQuestion, load, pendingQuestion, portAvailable, respondQuestion, session]);
+  }, [answeringQuestion, pendingQuestion, portAvailable, respondQuestion, session]);
 
   const handleQuestionReject = useCallback(async () => {
     if (!pendingQuestion || answeringQuestion || !portAvailable || !session) return;
@@ -1000,14 +1490,13 @@ export function SessionDetail() {
       await rejectQuestion(session.id, session.directory, pendingQuestion.requestId);
       setPendingQuestion(null);
       clearPendingQuestion(session.id);
-      load(abortControllerRef.current?.signal);
-      setTimeout(() => load(abortControllerRef.current?.signal), 1000);
+      // SSE events will deliver the updated session state incrementally.
     } catch (e) {
       console.error('Failed to dismiss question', e);
     } finally {
       setAnsweringQuestion(false);
     }
-  }, [answeringQuestion, load, pendingQuestion, portAvailable, rejectQuestion, session]);
+  }, [answeringQuestion, pendingQuestion, portAvailable, rejectQuestion, session]);
 
   const abortSession = useApiStore((state) => state.abortSession);
 
@@ -1015,11 +1504,11 @@ export function SessionDetail() {
     if (!session || !portAvailable) return;
     try {
       await abortSession(session.id, session.directory);
-      load(abortControllerRef.current?.signal);
+      // SSE events will deliver the updated session state incrementally.
     } catch (e) {
       console.error('Failed to abort session', e);
     }
-  }, [abortSession, load, portAvailable, session]);
+  }, [abortSession, portAvailable, session]);
 
   // Find the tmux session whose resolved path matches the current project directory.
   const matchingTmuxSession = session
