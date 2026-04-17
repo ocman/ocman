@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, memo } from 'react';
+import { createPortal } from 'react-dom';
 import './Composer.css';
 import { getDraft, saveDraft, clearDraft } from '../../lib/composerDraft';
 import { useApiStore } from '../../lib/apiStore';
@@ -179,6 +180,8 @@ const KNOWN_AGENTS = ['build', 'developer', 'plan', 'architect', 'ba', 'brainsto
 const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: 'compact', description: 'Summarize conversation history to free up context window' },
   { name: 'new', description: 'Start a new session in the same project directory' },
+  { name: 'tmux', description: 'Switch to the tmux session for this project' },
+  { name: 'vscode', description: 'Open the project directory in VS Code' },
 ];
 
 function ComposerImpl({
@@ -226,6 +229,7 @@ function ComposerImpl({
   const isRunningRef = useRef(isRunning);
   const disabledRef = useRef(disabled);
   const recordingRef = useRef<RecordingCtx | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
   const [images, setImages] = useState<AttachedImage[]>([]);
   const imagesRef = useRef<AttachedImage[]>([]);
   const sessionIdRef = useRef(sessionId);
@@ -362,6 +366,7 @@ function ComposerImpl({
   }, [disabled]);
 
   const setMicState = useCallback((state: 'idle' | 'recording' | 'transcribing') => {
+    setIsRecording(state === 'recording');
     const btn = micRef.current;
     if (!btn) return;
     const icon = btn.querySelector('.oc-mic-icon');
@@ -414,25 +419,40 @@ function ComposerImpl({
     return encodeWav(samples, 16000);
   }, []);
 
+  const submitRecording = useCallback(async () => {
+    if (!recordingRef.current) return;
+    setMicState('transcribing');
+    const blob = stopRecording();
+    if (blob && blob.size > 44) {
+      try {
+        const text = await transcribe(blob);
+        if (text && inputRef.current) {
+          inputRef.current.value += (inputRef.current.value ? ' ' : '') + text;
+          inputRef.current.dispatchEvent(new Event('input'));
+          inputRef.current.focus();
+        }
+      } catch (err) {
+        console.error('Transcription failed', err);
+      }
+    }
+    setMicState('idle');
+  }, [setMicState, stopRecording, transcribe]);
+
+  const cancelRecording = useCallback(() => {
+    if (!recordingRef.current) return;
+    const ctx = recordingRef.current;
+    recordingRef.current = null;
+    ctx.processor.disconnect();
+    ctx.stream.getTracks().forEach(t => t.stop());
+    ctx.audioCtx.close();
+    setMicState('idle');
+  }, [setMicState]);
+
   const handleMicClick = useCallback(async () => {
     if (disabledRef.current) return;
 
     if (recordingRef.current) {
-      setMicState('transcribing');
-      const blob = stopRecording();
-      if (blob && blob.size > 44) {
-        try {
-          const text = await transcribe(blob);
-          if (text && inputRef.current) {
-            inputRef.current.value += (inputRef.current.value ? ' ' : '') + text;
-            inputRef.current.dispatchEvent(new Event('input'));
-            inputRef.current.focus();
-          }
-        } catch (err) {
-          console.error('Transcription failed', err);
-        }
-      }
-      setMicState('idle');
+      await submitRecording();
       return;
     }
 
@@ -461,7 +481,7 @@ function ComposerImpl({
       console.error('Microphone access failed', err);
       setMicState('idle');
     }
-  }, [setMicState, stopRecording, transcribe]);
+  }, [setMicState, submitRecording]);
 
   useEffect(() => {
     const el = inputRef.current;
@@ -673,7 +693,33 @@ function ComposerImpl({
     return groups;
   }, []);
 
+  useEffect(() => {
+    if (!isRecording) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Escape') {
+        e.preventDefault();
+        cancelRecording();
+      } else {
+        e.preventDefault();
+        void submitRecording();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [isRecording, submitRecording, cancelRecording]);
+
   return (
+    <>
+    {isRecording && createPortal(
+      <div className="oc-recording-overlay" onClick={() => void submitRecording()}>
+        <div className="oc-recording-inner">
+          <div className="oc-recording-pulse" />
+          <div className="oc-recording-label">Recording</div>
+          <div className="oc-recording-hint">Press any key or click to submit &nbsp;·&nbsp; Esc to cancel</div>
+        </div>
+      </div>,
+      document.body,
+    )}
     <div
       className={`oc-composer-wrap${disabled ? ' oc-composer-disabled' : ''}`}
       ref={wrapRef}
@@ -804,6 +850,7 @@ function ComposerImpl({
         </span>
       </div>
     </div>
+    </>
   );
 }
 

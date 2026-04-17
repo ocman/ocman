@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import './SessionDetail.css';
 import '../components/PermissionPrompt.css';
-import { useHotkeys } from 'react-hotkeys-hook';
 import { api, type Session, type SessionDetail as SessionDetailData, type Message, type Part } from '../lib/api';
 import { formatDuration, formatNumber, shortPath, relativeTime } from '../lib/format';
 import { useHeaderInfo, usePageTitle } from '../lib/headerContext';
@@ -405,6 +404,7 @@ export function SessionDetail() {
   const [selectedModel, setSelectedModel] = useState('');
   const [selectedAgent, setSelectedAgent] = useState('');
   const [recentSessions, setRecentSessions] = useState<Session[]>([]);
+  const [loadingRecentSessions, setLoadingRecentSessions] = useState(true);
 
   const [archivingSessionIds, setArchivingSessionIds] = useState<Set<string>>(new Set());
   const [showArchivedRecent, setShowArchivedRecent] = useState(false);
@@ -674,6 +674,7 @@ export function SessionDetail() {
         lastSiblingsHashRef.current = hash;
         setRecentSessions(nextRecentSessions);
       }
+      setLoadingRecentSessions(false);
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return;
       throw e;
@@ -1406,6 +1407,16 @@ export function SessionDetail() {
       return;
     }
 
+    if (command === 'tmux') {
+      handleTmuxShortcutRef.current();
+      return;
+    }
+
+    if (command === 'vscode') {
+      handleVSCodeShortcutRef.current();
+      return;
+    }
+
     // Optimistic user message showing the command
     const tempId = 'temp-' + Date.now();
     const optimisticMsg: Message = {
@@ -1561,20 +1572,36 @@ export function SessionDetail() {
     return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [id, navigate]);
 
-  useHotkeys('alt+t', (e) => {
-    e.preventDefault();
-    handleTmuxShortcut();
-  }, { enabled: !!matchingTmuxSession, preventDefault: true, enableOnFormTags: ['INPUT', 'TEXTAREA', 'SELECT'], enableOnContentEditable: true }, [handleTmuxShortcut, matchingTmuxSession]);
+  const handleTmuxShortcutRef = useRef(handleTmuxShortcut);
+  useEffect(() => { handleTmuxShortcutRef.current = handleTmuxShortcut; }, [handleTmuxShortcut]);
+  const handleVSCodeShortcutRef = useRef(handleVSCodeShortcut);
+  useEffect(() => { handleVSCodeShortcutRef.current = handleVSCodeShortcut; }, [handleVSCodeShortcut]);
+  const handleNewSessionRef = useRef(handleNewSession);
+  useEffect(() => { handleNewSessionRef.current = handleNewSession; }, [handleNewSession]);
+  const matchingTmuxSessionRef = useRef(matchingTmuxSession);
+  useEffect(() => { matchingTmuxSessionRef.current = matchingTmuxSession; }, [matchingTmuxSession]);
+  const sessionRef = useRef(session);
+  useEffect(() => { sessionRef.current = session; }, [session]);
+  const portAvailableRef = useRef(portAvailable);
+  useEffect(() => { portAvailableRef.current = portAvailable; }, [portAvailable]);
 
-  useHotkeys('alt+v', (e) => {
-    e.preventDefault();
-    handleVSCodeShortcut();
-  }, { enabled: !!session, preventDefault: true, enableOnFormTags: ['INPUT', 'TEXTAREA', 'SELECT'], enableOnContentEditable: true }, [handleVSCodeShortcut, session]);
-
-  useHotkeys('alt+c', (e) => {
-    e.preventDefault();
-    handleNewSession();
-  }, { enabled: !!session && portAvailable, preventDefault: true, enableOnFormTags: ['INPUT', 'TEXTAREA', 'SELECT'], enableOnContentEditable: true }, [handleNewSession, session, portAvailable]);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.repeat || !e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (e.code === 'KeyT' && matchingTmuxSessionRef.current) {
+        e.preventDefault();
+        handleTmuxShortcutRef.current();
+      } else if (e.code === 'KeyV' && sessionRef.current) {
+        e.preventDefault();
+        handleVSCodeShortcutRef.current();
+      } else if (e.code === 'KeyC' && sessionRef.current && portAvailableRef.current) {
+        e.preventDefault();
+        handleNewSessionRef.current();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, []);
 
   const hasMore = messages.length < totalMessages;
   const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
@@ -1721,6 +1748,7 @@ export function SessionDetail() {
           </div>
         )}
         <div className="session-sidebar-list">
+          {loadingRecentSessions && <div className="session-sidebar-loader"><div className="oc-spinner" /></div>}
           {recentSessions.map(sib => (
             <div
               key={sib.id}

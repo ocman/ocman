@@ -551,7 +551,7 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
     try {
       const parsed = JSON.parse(typeof result === 'string' ? result : '{}');
       sessionId = parsed.taskId || '';
-      taskOutput = parsed.taskOutput || '';
+      taskOutput = (parsed.taskOutput || '').replace(/^<task_result>\n?/, '').replace(/\n?<\/task_result>$/, '').trim();
     } catch { /* ignore */ }
 
     let statusIcon = '\u2022';
@@ -697,6 +697,34 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
             )}
             {patchBody && <div className="oc-tool-pre oc-tool-output">{renderPatch(patchBody)}</div>}
             {!expanded && patchIsLong && (
+              <div className="oc-tool-expand">Click to expand</div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Edit / Write tools get a diff-style rendering
+  const isEditTool = toolName === 'edit' || toolName === 'mcp_edit' || toolName === 'mcp_Edit';
+  const isWriteTool = toolName === 'write' || toolName === 'mcp_write' || toolName === 'mcp_Write';
+  if (isEditTool || isWriteTool) {
+    const hasDiff = outputDisplay && outputDisplay.split('\n').some(l =>
+      /^(\s*\d*)\s{2}(\s*\d*)\s{2}([+ -])\s(.*)$/.test(l)
+    );
+    return (
+      <div className={`oc-tool oc-tool-edit ${statusClass} ${expanded ? 'oc-tool-expanded' : ''}`}>
+        <div className="oc-tool-header" onClick={() => setExpanded(!expanded)}>
+          <i className={`bi bi-pencil-fill oc-tool-icon ${statusClass}`} title={statusTitle} aria-hidden="true" />
+          <span className="oc-tool-label">{title || toolName}</span>
+        </div>
+        {outputDisplay && (
+          <div className="oc-tool-content" onClick={() => !expanded && setExpanded(true)} style={!expanded ? { cursor: 'pointer' } : undefined}>
+            {hasDiff
+              ? <div className="oc-tool-output">{renderOutput(outputDisplay)}</div>
+              : <pre className="oc-tool-pre oc-tool-output">{outputDisplay}</pre>
+            }
+            {!expanded && isLong && (
               <div className="oc-tool-expand">Click to expand</div>
             )}
           </div>

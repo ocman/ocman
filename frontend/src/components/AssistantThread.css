@@ -146,10 +146,10 @@
 }
 .oc-tool-header:hover { background: rgba(255,255,255,0.02); }
 
-.oc-tool-icon { font-size: 12px; width: 14px; text-align: center; flex-shrink: 0; }
+.oc-tool-icon { font-size: 12px; width: 14px; text-align: center; flex-shrink: 0; opacity: 0.4; }
 .oc-tool-icon.oc-tool-done { color: var(--accent2); }
-.oc-tool-icon.oc-tool-error { color: var(--danger); }
-.oc-tool-icon.oc-tool-running { color: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+.oc-tool-icon.oc-tool-error { color: var(--danger); opacity: 0.6; }
+.oc-tool-icon.oc-tool-running { color: var(--accent); opacity: 0.6; animation: pulse 1.2s ease-in-out infinite; }
 
 .oc-tool-type-icon {
   font-size: 11px;
@@ -274,6 +274,12 @@
   font-size: 12px;
   line-height: 1.5;
   width: 100%;
+  overflow: hidden;
+  max-height: 150px;
+}
+.oc-tool-expanded .oc-diff-table {
+  max-height: none;
+  overflow: visible;
 }
 .oc-diff-row {
   display: flex;

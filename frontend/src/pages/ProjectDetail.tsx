@@ -1,11 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { useHotkeys } from 'react-hotkeys-hook';
 import type { Session } from '../lib/api';
 import { usePageTitle } from '../lib/headerContext';
 import { SessionTable } from '../components/SessionTable';
 import { useTmux } from '../lib/useTmux';
-import { useApiStore, useApiRequest } from '../lib/apiStore';
+import { useApiStore } from '../lib/apiStore';
 import { shortPath } from '../lib/format';
 import { openVSCode } from '../lib/shortcuts';
 
@@ -16,11 +15,11 @@ export function ProjectDetail() {
   const tmux = useTmux();
   const matchingTmuxSession = directory ? tmux.findSession(directory) : undefined;
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [pendingTmuxSession, setPendingTmuxSession] = useState<string | null>(null);
   const [pickerPos, setPickerPos] = useState<{ top: number; left: number } | null>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
   const getSessions = useApiStore((state) => state.getSessions);
-  const sessionsRequest = useApiRequest(directory ? `sessions:get:dir:${directory}` : 'sessions:get');
 
   useEffect(() => {
     if (!pendingTmuxSession) return;
@@ -42,6 +41,7 @@ export function ProjectDetail() {
     try {
       const nextSessions = await getSessions({ dir: directory });
       setSessions(nextSessions);
+      setSessionsLoaded(true);
     } catch {
       // error tracked by useApiRequest
     }
@@ -60,6 +60,7 @@ export function ProjectDetail() {
         const nextSessions = await getSessions({ dir: directory });
         if (cancelled) return;
         setSessions(nextSessions);
+        setSessionsLoaded(true);
       } catch {
         // error tracked by useApiRequest
       }
@@ -104,15 +105,29 @@ export function ProjectDetail() {
     openVSCode(directory);
   }, [directory]);
 
-  useHotkeys('alt+t', (e) => {
-    e.preventDefault();
-    handleTmuxSwitch();
-  }, { enabled: !!matchingTmuxSession, preventDefault: true, enableOnFormTags: ['INPUT', 'TEXTAREA', 'SELECT'], enableOnContentEditable: true }, [handleTmuxSwitch, matchingTmuxSession]);
+  const handleTmuxSwitchRef = useRef(handleTmuxSwitch);
+  useEffect(() => { handleTmuxSwitchRef.current = handleTmuxSwitch; }, [handleTmuxSwitch]);
+  const handleOpenVSCodeRef = useRef(handleOpenVSCode);
+  useEffect(() => { handleOpenVSCodeRef.current = handleOpenVSCode; }, [handleOpenVSCode]);
+  const matchingTmuxSessionRef = useRef(matchingTmuxSession);
+  useEffect(() => { matchingTmuxSessionRef.current = matchingTmuxSession; }, [matchingTmuxSession]);
+  const directoryRef = useRef(directory);
+  useEffect(() => { directoryRef.current = directory; }, [directory]);
 
-  useHotkeys('alt+v', (e) => {
-    e.preventDefault();
-    handleOpenVSCode();
-  }, { enabled: !!directory, preventDefault: true, enableOnFormTags: ['INPUT', 'TEXTAREA', 'SELECT'], enableOnContentEditable: true }, [handleOpenVSCode, directory]);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.repeat || !e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (e.code === 'KeyT' && matchingTmuxSessionRef.current) {
+        e.preventDefault();
+        handleTmuxSwitchRef.current();
+      } else if (e.code === 'KeyV' && directoryRef.current) {
+        e.preventDefault();
+        handleOpenVSCodeRef.current();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, []);
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
@@ -152,7 +167,7 @@ export function ProjectDetail() {
           <button type="button" className="vscode-btn" onClick={handleOpenVSCode} title="Open in VS Code (V)">VS Code</button>
         )}
       </h2>
-      <SessionTable sessions={sessions} loading={sessionsRequest.loading && sessions.length === 0} tmux={tmux} includeArchived />
+      <SessionTable sessions={sessions} loading={!sessionsLoaded} tmux={tmux} includeArchived />
     </div>
   );
 }

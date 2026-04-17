@@ -44,19 +44,17 @@ export function useFaviconNotify() {
       if (link.href !== href) link.href = href;
     }
 
-    function applyNotify() {
+    function applyNotify(count: number) {
       notifyingRef.current = true;
       setFavicon(FAVICON_NOTIFY);
-      if (!document.title.startsWith('(•)')) {
-        document.title = `(•) ${document.title}`;
-      }
+      document.title = `(${count}) ${document.title.replace(/^\(\d+\) /, '')}`;
     }
 
     function clearNotify() {
       if (!notifyingRef.current) return;
       notifyingRef.current = false;
       setFavicon(FAVICON_DEFAULT);
-      document.title = document.title.replace(/^\(•\) /, '');
+      document.title = document.title.replace(/^\(\d+\) /, '');
     }
 
     async function checkPending() {
@@ -67,7 +65,7 @@ export function useFaviconNotify() {
         ).length;
         pendingCountRef.current = count;
         if (count > 0 && document.hidden) {
-          applyNotify();
+          applyNotify(count);
         } else {
           clearNotify();
         }

@@ -72,6 +72,7 @@ export function DashboardLayout() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [timeRange, setTimeRange] = useState(24);
   const [showArchived, setShowArchived] = useState(false);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
 
   const getSessions = useApiStore((state) => state.getSessions);
   const getProjects = useApiStore((state) => state.getProjects);
@@ -82,7 +83,9 @@ export function DashboardLayout() {
   const loadSessions = useCallback(async () => {
     try {
       const since = timeRange > 0 ? Date.now() - timeRange * 60 * 60 * 1000 : undefined;
-      setSessions(await getSessions(since ? { since } : {}));
+      const result = await getSessions(since ? { since } : {});
+      setSessions(result);
+      setSessionsLoaded(true);
     } catch {
       // error tracked by useApiRequest
     }
@@ -111,7 +114,7 @@ export function DashboardLayout() {
   const ctx: DashboardCtx = {
     sessions,
     projects,
-    sessionsLoading: sessionsRequest.loading,
+    sessionsLoading: !sessionsLoaded,
     sessionsError: sessionsRequest.error,
     projectsLoading: projectsRequest.loading,
     loadSessions,
