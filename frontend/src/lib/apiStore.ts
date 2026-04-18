@@ -20,12 +20,29 @@ type RequestStatus = {
   error: string | null;
 };
 
+/**
+ * Maximum number of session detail responses to keep in the client-side
+ * cache. Entries are evicted in LRU order when this limit is exceeded.
+ * Kept small because each entry can hold hundreds of messages and their
+ * parts; 5 is enough for back-and-forth navigation without unbounded
+ * memory growth. See spec/session-switch-cache/architecture.md.
+ */
+export const SESSION_CACHE_MAX = 5;
+
 type ApiStore = {
   requests: Record<string, RequestStatus>;
   // Cached list of all sessions (no directory filter). `null` means never
   // fetched; components can render immediately from this value while
   // `refreshCachedSessions` updates it in the background.
   cachedSessions: Session[] | null;
+  // LRU cache of session detail responses, used to render recently-viewed
+  // sessions instantly on return. See spec/session-switch-cache.
+  sessionCache: Map<string, SessionDetail>;
+  sessionCacheOrder: string[];
+  getCachedSession: (id: string) => SessionDetail | null;
+  setCachedSession: (id: string, data: SessionDetail) => void;
+  updateCachedSession: (id: string, updater: (prev: SessionDetail) => SessionDetail) => void;
+  clearCachedSession: (id: string) => void;
   runRequest: <T>(key: string, task: () => Promise<T>) => Promise<T>;
   getStats: () => Promise<Stats>;
   getMetrics: (params?: { agent?: string; model?: string; days?: number }) => Promise<MetricsDashboard>;
@@ -58,6 +75,42 @@ type ApiStore = {
 export const useApiStore = create<ApiStore>((set, get) => ({
   requests: {},
   cachedSessions: null,
+  sessionCache: new Map(),
+  sessionCacheOrder: [],
+  getCachedSession: (id) => get().sessionCache.get(id) ?? null,
+  setCachedSession: (id, data) => {
+    set((state) => {
+      const nextCache = new Map(state.sessionCache);
+      nextCache.set(id, data);
+      // Remove existing slot (if any) and push to the end (most-recent).
+      const filteredOrder = state.sessionCacheOrder.filter((entry) => entry !== id);
+      filteredOrder.push(id);
+      // Evict oldest entries while we exceed the cap.
+      while (filteredOrder.length > SESSION_CACHE_MAX) {
+        const evicted = filteredOrder.shift();
+        if (evicted !== undefined) nextCache.delete(evicted);
+      }
+      return { sessionCache: nextCache, sessionCacheOrder: filteredOrder };
+    });
+  },
+  updateCachedSession: (id, updater) => {
+    set((state) => {
+      const existing = state.sessionCache.get(id);
+      if (!existing) return state;
+      const nextCache = new Map(state.sessionCache);
+      nextCache.set(id, updater(existing));
+      return { sessionCache: nextCache };
+    });
+  },
+  clearCachedSession: (id) => {
+    set((state) => {
+      if (!state.sessionCache.has(id)) return state;
+      const nextCache = new Map(state.sessionCache);
+      nextCache.delete(id);
+      const nextOrder = state.sessionCacheOrder.filter((entry) => entry !== id);
+      return { sessionCache: nextCache, sessionCacheOrder: nextOrder };
+    });
+  },
   runRequest: async <T,>(key: string, task: () => Promise<T>) => {
     set((state) => ({
       requests: {

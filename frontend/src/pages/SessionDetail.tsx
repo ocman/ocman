@@ -17,6 +17,7 @@ import { useApiStore } from '../lib/apiStore';
 import { recheckFaviconNotify } from '../lib/useFaviconNotify';
 import { openVSCode } from '../lib/shortcuts';
 import { useShortcut } from '../lib/shortcutRegistry';
+import { hashSession, hashMessagesAndParts } from '../lib/sessionHash';
 
 const PAGE_SIZE = 50;
 const RECENT_SESSIONS_LIMIT = 20;
@@ -394,11 +395,25 @@ export function SessionDetail() {
   const debugMode = searchParams.has('debug');
   const debugModeRef = useRef(debugMode);
   debugModeRef.current = debugMode;
-  const [session, setSession] = useState<(SessionDetailData['session'] & { defaultAgent?: string; defaultModel?: string }) | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [parts, setParts] = useState<Part[]>([]);
-  const [totalMessages, setTotalMessages] = useState(0);
-  const [loading, setLoading] = useState(true);
+  // Read the cache once at mount time via getState() — we want a snapshot
+  // for the initial render, not a reactive subscription.
+  const initialCached = id ? useApiStore.getState().getCachedSession(id) : null;
+  const [session, setSession] = useState<(SessionDetailData['session'] & { defaultAgent?: string; defaultModel?: string }) | null>(
+    initialCached
+      ? {
+          ...initialCached.session,
+          contextTokenCount: initialCached.session.contextTokenCount ?? initialCached.contextTokenCount,
+          defaultAgent: initialCached.defaultAgent,
+          defaultModel: initialCached.defaultModel,
+        }
+      : null,
+  );
+  const [messages, setMessages] = useState<Message[]>(initialCached?.messages ?? []);
+  const [parts, setParts] = useState<Part[]>(initialCached?.parts ?? []);
+  const [totalMessages, setTotalMessages] = useState(
+    initialCached?.totalMessages ?? initialCached?.session.messageCount ?? 0,
+  );
+  const [loading, setLoading] = useState(!initialCached);
   const [loadingMore, setLoadingMore] = useState(false);
   const [portAvailable, setPortAvailable] = useState(false);
   const [whisperAvailable, setWhisperAvailable] = useState(false);
@@ -425,6 +440,10 @@ export function SessionDetail() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const showArchivedRecentRef = useRef(showArchivedRecent);
   const droppedMessageCountRef = useRef(0);
+  // Tracks the currently-rendered session's directory so the session-change
+  // effect can compare it against the incoming one without subscribing to
+  // `session` (which would cause the effect to fire on every render).
+  const currentDirectoryRef = useRef<string | undefined>(session?.directory);
 
   // Tmux state
   const tmux = useTmux();
@@ -432,6 +451,11 @@ export function SessionDetail() {
   const [pickerPos, setPickerPos] = useState<{ top: number; left: number } | null>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Mirrored so SSE's onopen closure can read the latest value without
+  // re-subscribing. Used to gate the reconciliation fetch (step 5 of
+  // spec/session-switch-cache).
+  const loadErrorRef = useRef<string | null>(null);
+  loadErrorRef.current = loadError;
   const [answeringPermission, setAnsweringPermission] = useState(false);
   const [pendingPermission, setPendingPermission] = useState<PendingPermission | null>(null);
   const [permissionError, setPermissionError] = useState<string | null>(null);
@@ -453,11 +477,20 @@ export function SessionDetail() {
   const respondQuestion = useApiStore((state) => state.respondQuestion);
   const rejectQuestion = useApiStore((state) => state.rejectQuestion);
   const createSession = useApiStore((state) => state.createSession);
+  const setCachedSession = useApiStore((state) => state.setCachedSession);
+  const updateCachedSession = useApiStore((state) => state.updateCachedSession);
 
 
   useEffect(() => {
     showArchivedRecentRef.current = showArchivedRecent;
   }, [showArchivedRecent]);
+
+  // Keep the directory ref aligned with the currently-rendered session so the
+  // next session-change effect can read the correct previous directory even
+  // when the initial render started from a null session (cold load).
+  useEffect(() => {
+    currentDirectoryRef.current = session?.directory;
+  }, [session?.directory]);
 
   // Load the latest page (newest messages). Merges with older loaded messages.
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -475,20 +508,18 @@ export function SessionDetail() {
         defaultAgent: result.defaultAgent,
         defaultModel: result.defaultModel,
       };
-      const sessionHash = JSON.stringify({ id: sessionData.id, status: sessionData.status, title: sessionData.title, ctx: sessionData.contextTokenCount, agent: sessionData.defaultAgent, model: sessionData.defaultModel });
+      const sessionHash = hashSession(sessionData);
       if (sessionHash !== lastSessionHashRef.current) {
         lastSessionHashRef.current = sessionHash;
         setSession(sessionData);
       }
-      setTotalMessages(result.totalMessages || result.session.messageCount || 0);
+      const nextTotalMessages = result.totalMessages || result.session.messageCount || 0;
+      setTotalMessages(nextTotalMessages);
 
       // Only update messages if the latest page actually changed
       const newMsgs = result.messages || [];
       const newParts = result.parts || [];
-      // Include message IDs + part IDs and data to detect content changes
-      // (e.g., tool call status updates, new text in parts)
-      const hash = newMsgs.map(m => m.id + ':' + m.timeCreated).join(',')
-        + '|' + newParts.map(p => p.id + ':' + JSON.stringify(p.data)).join(',');
+      const hash = hashMessagesAndParts(newMsgs, newParts);
       if (hash !== lastHashRef.current) {
         lastHashRef.current = hash;
         // Merge: keep older loaded messages, replace the newest page.
@@ -504,6 +535,18 @@ export function SessionDetail() {
           return [...older, ...newParts];
         });
       }
+      // Seed the session detail cache so revisits render instantly. The
+      // SSE mirror effect keeps it in sync with live updates after this
+      // point. See spec/session-switch-cache.
+      setCachedSession(id, {
+        session: sessionData,
+        messages: newMsgs,
+        parts: newParts,
+        totalMessages: nextTotalMessages,
+        contextTokenCount: result.contextTokenCount,
+        defaultAgent: result.defaultAgent,
+        defaultModel: result.defaultModel,
+      });
       setLoadError(null);
     } catch (e) {
       // Silently ignore aborted requests
@@ -512,7 +555,7 @@ export function SessionDetail() {
       setLoadError(e instanceof Error ? e.message : 'Failed to load session');
     }
     setLoading(false);
-  }, [getSession, id]);
+  }, [getSession, id, setCachedSession]);
 
   // Load older messages (prepend)
   const loadMore = useCallback(async () => {
@@ -616,15 +659,47 @@ export function SessionDetail() {
     abortControllerRef.current = controller;
     const signal = controller.signal;
 
-    lastHashRef.current = '';
-    lastSessionHashRef.current = '';
     droppedMessageCountRef.current = 0;
-    setSession(null);
-    setMessages([]);
-    setParts([]);
-    setTotalMessages(0);
-    setLoading(true);
-    setPortAvailable(false);
+    // If we have a cached snapshot for this session, render it immediately
+    // and seed the hash refs so the background load() only re-renders on a
+    // real content change. Otherwise fall back to the original wipe-and-load
+    // behaviour so the loading state still shows for first visits.
+    const cached = id ? useApiStore.getState().getCachedSession(id) : null;
+    const previousDirectory = currentDirectoryRef.current;
+    let nextDirectory: string | undefined;
+    if (cached) {
+      const cachedSessionData = {
+        ...cached.session,
+        contextTokenCount: cached.session.contextTokenCount ?? cached.contextTokenCount,
+        defaultAgent: cached.defaultAgent,
+        defaultModel: cached.defaultModel,
+      };
+      setSession(cachedSessionData);
+      setMessages(cached.messages);
+      setParts(cached.parts);
+      setTotalMessages(cached.totalMessages || cached.session.messageCount || 0);
+      setLoading(false);
+      lastSessionHashRef.current = hashSession(cachedSessionData);
+      lastHashRef.current = hashMessagesAndParts(cached.messages, cached.parts);
+      nextDirectory = cached.session.directory;
+    } else {
+      lastHashRef.current = '';
+      lastSessionHashRef.current = '';
+      setSession(null);
+      setMessages([]);
+      setParts([]);
+      setTotalMessages(0);
+      setLoading(true);
+    }
+    currentDirectoryRef.current = nextDirectory;
+    // Port availability and the agent list are per-directory, not per-session.
+    // When switching between sessions in the same project we already know the
+    // correct values, so preserve them to avoid an agent-color flash while the
+    // background refresh runs. Wipe only when the directory actually changes
+    // (or is unknown — cold first visit).
+    if (!nextDirectory || nextDirectory !== previousDirectory) {
+      setPortAvailable(false);
+    }
     setSelectedModel('');
     setSelectedAgent('');
     setPendingPermission(null);
@@ -724,6 +799,21 @@ export function SessionDetail() {
     setMessages(retainedMessages);
     setParts((prev) => prev.filter((part) => retainedMessageIds.has(part.messageId)));
   }, [messages]);
+
+  // Mirror live session data into the per-session detail cache so switching
+  // away and back renders instantly. `updateCachedSession` no-ops when the
+  // session isn't in the cache, so this only runs after the initial load()
+  // has seeded an entry. See spec/session-switch-cache.
+  useEffect(() => {
+    if (!id || !session) return;
+    updateCachedSession(id, (prev) => ({
+      ...prev,
+      session,
+      messages,
+      parts,
+      totalMessages: Math.max(prev.totalMessages ?? 0, totalMessages),
+    }));
+  }, [id, session, messages, parts, totalMessages, updateCachedSession]);
 
   const loadRecentSessions = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -948,15 +1038,15 @@ export function SessionDetail() {
             }
           }
         }).catch(() => { /* ignore errors — SSE events will handle live questions */ });
-        // Reconciliation: fetch the latest state to close the gap between
-        // the initial load() and the SSE connection opening. Delay slightly
-        // so that if SSE events arrive immediately (active conversation),
-        // we can skip the redundant fetch.
+        // Reconciliation: fetch the latest state only when the initial
+        // load() failed AND no SSE content events have arrived. In the happy
+        // path the initial load in the session-change effect is authoritative
+        // and SSE takes over for live updates, so this timer is a no-op.
         setTimeout(() => {
-          if (!hasReceivedContentEvent && !cancelled) {
-            const signal = abortControllerRef.current?.signal;
-            load(signal);
-          }
+          if (cancelled || hasReceivedContentEvent) return;
+          if (!loadErrorRef.current) return;
+          const signal = abortControllerRef.current?.signal;
+          load(signal);
         }, 500);
       };
       evtSource.onmessage = (evt) => {
