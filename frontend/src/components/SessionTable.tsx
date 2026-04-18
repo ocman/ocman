@@ -3,11 +3,17 @@ import './SessionTable.css';
 import { useNavigate } from 'react-router-dom';
 import type { Session } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
-import { formatDuration, relativeTime, shortPath } from '../lib/format';
+import { cleanTitle, formatDuration, relativeTime, shortPath } from '../lib/format';
 import { StatusBadge } from './StatusBadge';
 import type { TmuxState } from '../lib/useTmux';
 import { filterVisibleSessions } from '../lib/sessionVisibility';
 
+export function ShortPath({ path }: { path: string }) {
+  const parts = (path || '').split('/').filter(Boolean);
+  const last = parts.pop() || '';
+  const prefix = parts.length > 0 ? parts.slice(-1).join('/') + '/' : '';
+  return <><span className="short-path-prefix">{prefix}</span><span className="short-path-last">{last}</span></>;
+}
 
 interface Props {
   sessions: Session[];
@@ -160,6 +166,7 @@ export function SessionTable({ sessions, showProject, loading, tmux, includeArch
           {visibleSessions.map(s => {
             const hasTmux = tmux?.available && tmux.findSession(s.directory);
             const seenLatest = (s.status === 'waiting' || s.status === 'error') && s.seen;
+            const pending = s.pendingPermission || s.pendingQuestion;
             return (
               <tr
                 key={s.id}
@@ -168,8 +175,8 @@ export function SessionTable({ sessions, showProject, loading, tmux, includeArch
               >
                 <td>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <StatusBadge status={s.status} compact seen={seenLatest} />
-                    <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{s.title || 'Untitled'}</span>
+                    <StatusBadge status={s.status} compact seen={seenLatest} pending={pending} />
+                    <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{cleanTitle(s.title) || 'Untitled'}</span>
                   </div>
                   <div className="mono">
                     {s.id}
@@ -192,8 +199,8 @@ export function SessionTable({ sessions, showProject, loading, tmux, includeArch
                   </div>
                 </td>
                 {showProject && (
-                  <td className="mono">
-                    {shortPath(s.directory)}
+                   <td className="mono">
+                    <ShortPath path={s.directory} />
                     <div className="session-row-actions" style={{ marginTop: 2 }}>
                       {hasTmux && (
                         <button

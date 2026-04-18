@@ -47,8 +47,9 @@
   padding: 2px 6px;
   border-radius: 4px;
   background: var(--surface1);
-  color: var(--text-dim);
+  color: var(--text);
   border: 1px solid var(--surface2);
+  box-shadow: 0 1px 0 var(--surface2);
   flex-shrink: 0;
 }
 .oc-cmd-results {
@@ -83,6 +84,7 @@
 .oc-cmd-status[data-status="busy"]    { background: var(--accent4); animation: pulse 1.2s ease-in-out infinite; }
 .oc-cmd-status[data-status="done"]    { background: var(--text-dim); }
 .oc-cmd-status[data-status="error"]   { background: var(--danger); }
+.oc-cmd-status[data-status="pending"] { background: var(--yellow); animation: pulse 1s ease-in-out infinite; }
 .oc-cmd-item-content {
   display: flex;
   flex-direction: column;

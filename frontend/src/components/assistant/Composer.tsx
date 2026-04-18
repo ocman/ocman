@@ -2,8 +2,14 @@ import { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { createPortal } from 'react-dom';
 import './Composer.css';
 import { getDraft, saveDraft, clearDraft } from '../../lib/composerDraft';
+import { isMacPlatform } from '../../lib/shortcuts';
+import { useShortcut } from '../../lib/shortcutRegistry';
+import { useUiStore } from '../../lib/uiStore';
 import { useApiStore } from '../../lib/apiStore';
-import { api, type SlashCommand } from '../../lib/api';
+import { api, type SlashCommand, type AgentInfo, type SessionModelEntry } from '../../lib/api';
+import { agentColor } from '../../lib/agentColor';
+import { ModelPicker } from './ModelPicker';
+import { AgentPicker } from './AgentPicker';
 
 function encodeWav(samples: Float32Array, sampleRate: number): Blob {
   const numSamples = samples.length;
@@ -115,70 +121,13 @@ function formatTokenCount(n: number): string {
   return String(n);
 }
 
-type SelectGroup = { label?: string; options: { value: string; label: string }[] };
-
-function BarSelect({ groups, value, disabled, onChange, title, placeholder }: {
-  groups: SelectGroup[];
-  value: string;
-  disabled?: boolean;
-  onChange: (value: string) => void;
-  title?: string;
-  placeholder?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener('mousedown', onClickOutside);
-    return () => document.removeEventListener('mousedown', onClickOutside);
-  }, [open]);
-
-  return (
-    <div className="oc-model-select" ref={ref}>
-      <button
-        type="button"
-        className="oc-bar-select"
-        disabled={disabled}
-        onClick={() => !disabled && setOpen((o) => !o)}
-        title={title}
-      >
-        {value || placeholder || title || ''}
-      </button>
-      {open && (
-        <div className="oc-model-dropdown">
-          {groups.map((group, gi) => (
-            <div key={group.label ?? gi} className="oc-model-group">
-              {group.label && <div className="oc-model-group-label">{group.label}</div>}
-              {group.options.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  className={`oc-model-option${opt.value === value ? ' active' : ''}`}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    onChange(opt.value);
-                    setOpen(false);
-                  }}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 const KNOWN_AGENTS = ['build', 'developer', 'plan', 'architect', 'ba', 'brainstormer', 'reviewer', 'security'];
 
 const BUILTIN_COMMANDS: SlashCommand[] = [
+  { name: 'agent', description: 'Change the active agent (opens a picker)' },
+  { name: 'archive', description: 'Archive this session and open the most recent one' },
   { name: 'compact', description: 'Summarize conversation history to free up context window' },
+  { name: 'model', description: 'Change the active model (opens a picker)' },
   { name: 'new', description: 'Start a new session in the same project directory' },
   { name: 'tmux', description: 'Switch to the tmux session for this project' },
   { name: 'vscode', description: 'Open the project directory in VS Code' },
@@ -192,16 +141,19 @@ function ComposerImpl({
   disabled,
   whisperAvailable,
   models,
+  modelEntries,
   activeModel,
   selectedModel,
   onModelChange,
   activeAgent,
   selectedAgent,
   onAgentChange,
+  agents,
   contextTokens,
   sessionId,
   directory,
   tokensPerSecond,
+  tokenStats,
 }: {
   onSend?: (text: string, images?: AttachedImage[]) => void;
   onCommand?: (command: string, args: string) => void;
@@ -210,17 +162,34 @@ function ComposerImpl({
   disabled?: boolean;
   whisperAvailable?: boolean;
   models?: string[];
+  modelEntries?: SessionModelEntry[];
   activeModel?: string;
   selectedModel?: string;
   onModelChange?: (model: string) => void;
   activeAgent?: string;
   selectedAgent?: string;
   onAgentChange?: (agent: string) => void;
+  agents?: AgentInfo[];
   contextTokens?: number;
   sessionId?: string;
   directory?: string;
   tokensPerSecond?: number;
+  tokenStats?: {
+    input: number;
+    output: number;
+    reasoning: number;
+    cacheRead: number;
+    cacheWrite: number;
+    totalCost: number;
+    contextWindow?: number;
+  };
 }) {
+  const [showTokenPopover, setShowTokenPopover] = useState(false);
+  const [estCost, setEstCost] = useState<{ cost: number; known: boolean } | null>(null);
+  const [estCostLoading, setEstCostLoading] = useState(false);
+  const tokenPopoverRef = useRef<HTMLDivElement>(null);
+  const openShortcuts = useUiStore((s) => s.openShortcuts);
+
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const micRef = useRef<HTMLButtonElement>(null);
@@ -245,10 +214,27 @@ function ComposerImpl({
 
   const onCommandRef = useRef(onCommand);
   useEffect(() => { onCommandRef.current = onCommand; }, [onCommand]);
+  const agentOptionsRef = useRef<string[]>([]);
+  const effectiveAgentRef = useRef<string>('');
+  const onAgentChangeRef = useRef(onAgentChange);
+  useEffect(() => { onAgentChangeRef.current = onAgentChange; }, [onAgentChange]);
   const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [slashFilter, setSlashFilter] = useState('');
   const [slashIndex, setSlashIndex] = useState(0);
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [modelPickerQuery, setModelPickerQuery] = useState('');
+  const [agentPickerOpen, setAgentPickerOpen] = useState(false);
+  const [agentPickerQuery, setAgentPickerQuery] = useState('');
+  // Refs let the non-React keydown/submit handlers (which capture their
+  // initial closure) always see the latest lists + callbacks without having
+  // to re-bind every render.
+  const modelsRef = useRef<string[] | undefined>(models);
+  const onModelChangeRef = useRef(onModelChange);
+  const agentsRef = useRef<AgentInfo[] | undefined>(agents);
+  useEffect(() => { modelsRef.current = models; }, [models]);
+  useEffect(() => { onModelChangeRef.current = onModelChange; }, [onModelChange]);
+  useEffect(() => { agentsRef.current = agents; }, [agents]);
   const slashMenuRef = useRef<HTMLDivElement>(null);
   const showSlashMenuRef = useRef(false);
   const slashIndexRef = useRef(0);
@@ -272,9 +258,16 @@ function ComposerImpl({
     return () => { cancelled = true; };
   }, [directory]);
 
-  const filteredCommands = slashCommands.filter(cmd =>
-    cmd.name.toLowerCase().startsWith(slashFilter.toLowerCase())
-  );
+  const hasModels = !!((models && models.length > 0) || (modelEntries && modelEntries.length > 0));
+  // Agent picker has something to show as long as we know *any* agent name —
+  // either from OpenCode's /agent catalog or the always-present KNOWN_AGENTS
+  // fallback in agentOptionsRef.
+  const hasAgents = !!(agents && agents.length > 0);
+  const filteredCommands = slashCommands.filter(cmd => {
+    if (cmd.name === 'model' && !hasModels) return false;
+    if (cmd.name === 'agent' && !hasAgents && (!activeAgent)) return false;
+    return cmd.name.toLowerCase().startsWith(slashFilter.toLowerCase());
+  });
 
   useEffect(() => { showSlashMenuRef.current = showSlashMenu; }, [showSlashMenu]);
   useEffect(() => { slashIndexRef.current = slashIndex; }, [slashIndex]);
@@ -286,9 +279,91 @@ function ComposerImpl({
     if (active) active.scrollIntoView({ block: 'nearest' });
   }, [slashIndex, showSlashMenu]);
 
+  // Try to resolve `args` to a concrete model without opening the palette.
+  // Matches against the full `provider/model` string or the bare model name,
+  // case-insensitively. Returns the resolved value if there's exactly one match.
+  const resolveModelArg = useCallback((arg: string): string | null => {
+    const list = modelsRef.current || [];
+    if (!arg) return null;
+    const q = arg.toLowerCase();
+    const exact = list.find((m) => m.toLowerCase() === q);
+    if (exact) return exact;
+    const byModelName = list.filter((m) => {
+      const idx = m.indexOf('/');
+      const name = idx > 0 ? m.slice(idx + 1) : m;
+      return name.toLowerCase() === q;
+    });
+    if (byModelName.length === 1) return byModelName[0];
+    return null;
+  }, []);
+
+  // Open the /model palette. If `arg` uniquely identifies a model, apply it
+  // directly instead of opening the modal. The arg is otherwise pre-filled
+  // as the palette's initial query.
+  const openModelPicker = useCallback((arg: string) => {
+    const resolved = resolveModelArg(arg);
+    if (resolved) {
+      onModelChangeRef.current?.(resolved);
+      return;
+    }
+    setModelPickerQuery(arg);
+    setModelPickerOpen(true);
+  }, [resolveModelArg]);
+
+  // Same shape as resolveModelArg: case-insensitive exact match against
+  // known agent names, so `/agent plan` applies without opening the palette.
+  const resolveAgentArg = useCallback((arg: string): string | null => {
+    if (!arg) return null;
+    const q = arg.toLowerCase();
+    const names = new Set<string>();
+    for (const a of agentsRef.current || []) names.add(a.name);
+    for (const n of agentOptionsRef.current || []) names.add(n);
+    for (const n of names) {
+      if (n.toLowerCase() === q) return n;
+    }
+    return null;
+  }, []);
+
+  const openAgentPicker = useCallback((arg: string) => {
+    const resolved = resolveAgentArg(arg);
+    if (resolved) {
+      onAgentChangeRef.current?.(resolved);
+      return;
+    }
+    setAgentPickerQuery(arg);
+    setAgentPickerOpen(true);
+  }, [resolveAgentArg]);
+
+  const clearComposerInput = useCallback(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.value = '';
+    el.style.height = 'auto';
+    setShowSlashMenu(false);
+    setSlashFilter('');
+    setSlashIndex(0);
+    const sid = sessionIdRef.current;
+    if (sid) {
+      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+      clearDraft(sid);
+    }
+  }, []);
+
   const selectSlashCommand = useCallback((cmd: SlashCommand) => {
     const el = inputRef.current;
     if (!el) return;
+    // /model and /agent are client-only commands — picking them from the
+    // slash menu opens their picker instead of inserting command text.
+    if (cmd.name === 'model') {
+      clearComposerInput();
+      openModelPicker('');
+      return;
+    }
+    if (cmd.name === 'agent') {
+      clearComposerInput();
+      openAgentPicker('');
+      return;
+    }
     el.value = '/' + cmd.name + ' ';
     el.style.height = 'auto';
     el.style.height = Math.min(el.scrollHeight, 200) + 'px';
@@ -296,7 +371,7 @@ function ComposerImpl({
     setShowSlashMenu(false);
     setSlashFilter('');
     setSlashIndex(0);
-  }, []);
+  }, [clearComposerInput, openModelPicker, openAgentPicker]);
 
   useEffect(() => {
     const el = inputRef.current;
@@ -491,15 +566,22 @@ function ComposerImpl({
       if (disabledRef.current) return;
 
       if (showSlashMenuRef.current) {
+        // Once the user has typed a space after the command (e.g.
+        // `/agent plan`), the slash menu is irrelevant — the input is now
+        // an argument to the command, not a command filter. Let Enter fall
+        // through to the normal submit path so the args are parsed and
+        // dispatched properly. Arrow / Escape / Tab still apply when the
+        // caret is somewhere we can usefully navigate the menu.
+        const hasArg = el.value.includes(' ');
         const cmds = filteredCommandsRef.current;
-        if (e.key === 'ArrowDown') {
+        if (e.key === 'ArrowDown' && !hasArg) {
           e.preventDefault();
           const next = (slashIndexRef.current + 1) % Math.max(cmds.length, 1);
           slashIndexRef.current = next;
           el.dispatchEvent(new CustomEvent('oc-slash-nav', { detail: next }));
           return;
         }
-        if (e.key === 'ArrowUp') {
+        if (e.key === 'ArrowUp' && !hasArg) {
           e.preventDefault();
           const next = (slashIndexRef.current - 1 + Math.max(cmds.length, 1)) % Math.max(cmds.length, 1);
           slashIndexRef.current = next;
@@ -511,7 +593,7 @@ function ComposerImpl({
           el.dispatchEvent(new CustomEvent('oc-slash-close'));
           return;
         }
-        if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+        if ((e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) && !hasArg) {
           if (cmds.length > 0) {
             e.preventDefault();
             const cmd = cmds[slashIndexRef.current];
@@ -521,6 +603,36 @@ function ComposerImpl({
             return;
           }
         }
+      }
+
+      if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const opts = agentOptionsRef.current;
+        const onChange = onAgentChangeRef.current;
+        if (opts.length > 0 && onChange) {
+          e.preventDefault();
+          const current = effectiveAgentRef.current;
+          const idx = opts.indexOf(current);
+          const dir = e.shiftKey ? -1 : 1;
+          const nextIdx = idx === -1
+            ? (e.shiftKey ? opts.length - 1 : 0)
+            : (idx + dir + opts.length) % opts.length;
+          onChange(opts[nextIdx]);
+          return;
+        }
+      }
+
+      if (e.key === 'c' && e.ctrlKey && el.value.trim() && el.selectionStart === el.selectionEnd) {
+        e.preventDefault();
+        el.value = '';
+        el.style.height = 'auto';
+        el.dispatchEvent(new CustomEvent('oc-slash-update', { detail: { show: false, filter: '' } }));
+        el.dispatchEvent(new CustomEvent('oc-clear-images'));
+        const sid = sessionIdRef.current;
+        if (sid) {
+          if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+          clearDraft(sid);
+        }
+        return;
       }
 
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -533,6 +645,19 @@ function ComposerImpl({
           const spaceIdx = trimmed.indexOf(' ');
           const command = spaceIdx > 0 ? trimmed.slice(1, spaceIdx) : trimmed.slice(1);
           const args = spaceIdx > 0 ? trimmed.slice(spaceIdx + 1).trim() : '';
+          // /model and /agent are client-only: don't dispatch to the backend.
+          if (command === 'model' || command === 'agent') {
+            el.value = '';
+            el.style.height = 'auto';
+            const sid = sessionIdRef.current;
+            if (sid) {
+              if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+              clearDraft(sid);
+            }
+            const evt = command === 'model' ? 'oc-model-picker-open' : 'oc-agent-picker-open';
+            el.dispatchEvent(new CustomEvent(evt, { detail: args }));
+            return;
+          }
           onCommandRef.current(command, args);
         } else {
           onSendRef.current?.(trimmed, imgs.length > 0 ? imgs : undefined);
@@ -554,8 +679,11 @@ function ComposerImpl({
       el.style.height = Math.min(el.scrollHeight, 200) + 'px';
 
       const val = el.value;
-      if (val.startsWith('/') && !val.includes('\n')) {
-        const filter = val.slice(1).split(' ')[0] || '';
+      // Only show the slash menu while the user is typing the command name
+      // itself. Once a space appears (or a newline), the caret has moved on
+      // to arguments (e.g. `/agent plan`) and the menu becomes noise.
+      if (val.startsWith('/') && !val.includes(' ') && !val.includes('\n')) {
+        const filter = val.slice(1);
         el.dispatchEvent(new CustomEvent('oc-slash-update', { detail: { show: true, filter } }));
       } else {
         el.dispatchEvent(new CustomEvent('oc-slash-update', { detail: { show: false, filter: '' } }));
@@ -643,12 +771,20 @@ function ComposerImpl({
     const handleSlashSelect = (e: Event) => {
       selectSlashCommand((e as CustomEvent).detail as SlashCommand);
     };
+    const handleModelPickerOpen = (e: Event) => {
+      openModelPicker(((e as CustomEvent).detail as string) || '');
+    };
+    const handleAgentPickerOpen = (e: Event) => {
+      openAgentPicker(((e as CustomEvent).detail as string) || '');
+    };
     el.addEventListener('oc-clear-images', handleClearImages);
     el.addEventListener('oc-paste-images', handlePasteImages);
     el.addEventListener('oc-slash-update', handleSlashUpdate);
     el.addEventListener('oc-slash-nav', handleSlashNav);
     el.addEventListener('oc-slash-close', handleSlashClose);
     el.addEventListener('oc-slash-select', handleSlashSelect);
+    el.addEventListener('oc-model-picker-open', handleModelPickerOpen);
+    el.addEventListener('oc-agent-picker-open', handleAgentPickerOpen);
     return () => {
       el.removeEventListener('oc-clear-images', handleClearImages);
       el.removeEventListener('oc-paste-images', handlePasteImages);
@@ -656,8 +792,10 @@ function ComposerImpl({
       el.removeEventListener('oc-slash-nav', handleSlashNav);
       el.removeEventListener('oc-slash-close', handleSlashClose);
       el.removeEventListener('oc-slash-select', handleSlashSelect);
+      el.removeEventListener('oc-model-picker-open', handleModelPickerOpen);
+      el.removeEventListener('oc-agent-picker-open', handleAgentPickerOpen);
     };
-  }, [addImageFiles, selectSlashCommand]);
+  }, [addImageFiles, selectSlashCommand, openModelPicker, openAgentPicker]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -672,26 +810,61 @@ function ComposerImpl({
     addImageFiles(files);
   }, [disabled, addImageFiles]);
 
+  useEffect(() => {
+    if (!showTokenPopover) return;
+    const handler = (e: MouseEvent) => {
+      if (tokenPopoverRef.current && !tokenPopoverRef.current.contains(e.target as Node)) {
+        setShowTokenPopover(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showTokenPopover]);
+
+  // Fetch estimated cost from backend when the popover opens (or stats change
+  // while it's already open). The backend uses the pricing table loaded at
+  // startup to compute the cost from the token counts and active model.
+  useEffect(() => {
+    if (!showTokenPopover || !tokenStats || !activeModel) return;
+    let cancelled = false;
+    // Schedule the loading flag in a microtask to avoid a synchronous setState
+    // inside the effect body (react-hooks/set-state-in-effect).
+    Promise.resolve().then(() => { if (!cancelled) setEstCostLoading(true); });
+    api.calcCost({
+      modelID: activeModel,
+      input: tokenStats.input,
+      output: tokenStats.output,
+      cacheRead: tokenStats.cacheRead,
+      cacheWrite: tokenStats.cacheWrite,
+    }).then((result) => {
+      if (!cancelled) {
+        setEstCost(result);
+        setEstCostLoading(false);
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        setEstCost(null);
+        setEstCostLoading(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [showTokenPopover, activeModel, tokenStats?.input, tokenStats?.output, tokenStats?.cacheRead, tokenStats?.cacheWrite, tokenStats]);
+
   const agentOptions = Array.from(new Set([activeAgent, ...KNOWN_AGENTS].filter((a): a is string => !!a)));
   const effectiveAgent = selectedAgent || activeAgent || '';
+  useEffect(() => { agentOptionsRef.current = agentOptions; }, [agentOptions]);
+  useEffect(() => { effectiveAgentRef.current = effectiveAgent; }, [effectiveAgent]);
   const effectiveModel = selectedModel || activeModel || '';
-  const modelGroups = (models || []).reduce<Array<{ label: string; options: { value: string; label: string }[] }>>((groups, model) => {
-    const slashIndex = model.indexOf('/');
-    const provider = slashIndex > 0 ? model.slice(0, slashIndex) : 'Other';
-    const optionLabel = slashIndex > 0 ? model.slice(slashIndex + 1) : model;
-    const existing = groups.find((group) => group.label === provider);
-
-    if (existing) {
-      existing.options.push({ value: model, label: optionLabel });
-      return groups;
-    }
-
-    groups.push({
-      label: provider,
-      options: [{ value: model, label: optionLabel }],
-    });
-    return groups;
-  }, []);
+  // Label shown on the composer's model button. Prefer the human-readable
+  // `modelName` from the rich entries (e.g. "Claude Opus 4.7"), falling back
+  // to the bare model id from the "provider/model" string.
+  const modelButtonLabel = (() => {
+    if (!effectiveModel) return '';
+    const match = modelEntries?.find((e) => e.provider && `${e.provider}/${e.model}` === effectiveModel);
+    if (match) return match.modelName || match.model;
+    const slash = effectiveModel.indexOf('/');
+    return slash > 0 ? effectiveModel.slice(slash + 1) : effectiveModel;
+  })();
 
   useEffect(() => {
     if (!isRecording) return;
@@ -707,6 +880,21 @@ function ComposerImpl({
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [isRecording, submitRecording, cancelRecording]);
+
+  // Alt+D (Option+D on Mac) starts dictation. While recording, the overlay
+  // effect above handles any keydown (any key submits, Esc cancels), so this
+  // shortcut only fires when we're idle.
+  const handleMicClickRef = useRef(handleMicClick);
+  useEffect(() => { handleMicClickRef.current = handleMicClick; }, [handleMicClick]);
+
+  useShortcut({
+    id: 'composer.dictation',
+    scope: 'composer',
+    keys: { code: 'KeyD', alt: true },
+    description: 'Start dictation (voice input)',
+    enabled: () => !!whisperAvailable && !isRecording && !disabledRef.current,
+    handler: () => { void handleMicClickRef.current(); },
+  });
 
   return (
     <>
@@ -726,6 +914,29 @@ function ComposerImpl({
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
+      {modelPickerOpen && (
+        <ModelPicker
+          open={modelPickerOpen}
+          models={models || []}
+          modelEntries={modelEntries}
+          currentModel={effectiveModel}
+          initialQuery={modelPickerQuery}
+          onSelect={(m) => onModelChange?.(m)}
+          onClose={() => setModelPickerOpen(false)}
+        />
+      )}
+      {agentPickerOpen && (
+        <AgentPicker
+          open={agentPickerOpen}
+          agentNames={agentOptions}
+          agents={agents}
+          activeAgent={activeAgent}
+          currentAgent={effectiveAgent}
+          initialQuery={agentPickerQuery}
+          onSelect={(a) => onAgentChange?.(a)}
+          onClose={() => setAgentPickerOpen(false)}
+        />
+      )}
       {showSlashMenu && filteredCommands.length > 0 && (
         <div className="oc-slash-menu" ref={slashMenuRef}>
           {filteredCommands.map((cmd, i) => (
@@ -741,7 +952,10 @@ function ComposerImpl({
           ))}
         </div>
       )}
-      <div className="oc-composer">
+      <div
+        className="oc-composer"
+        style={!disabled && effectiveAgent ? { borderLeftColor: agentColor(effectiveAgent, agents) } : undefined}
+      >
         {images.length > 0 && (
           <div className="oc-composer-images">
             {images.map((img, i) => (
@@ -761,21 +975,40 @@ function ComposerImpl({
         />
         <div className="oc-composer-bar">
           <div className="oc-composer-bar-left">
-            <BarSelect
-              groups={[{ options: agentOptions.map((a) => ({ value: a, label: a })) }]}
-              value={effectiveAgent}
+            <button
+              type="button"
+              className="oc-bar-select"
               disabled={disabled}
-              onChange={(v) => onAgentChange?.(v)}
-              title="Agent"
-            />
-            {models && models.length > 0 && (
-              <BarSelect
-                groups={modelGroups}
-                value={models.includes(effectiveModel) ? effectiveModel : ''}
+              onClick={() => {
+                if (disabled) return;
+                setAgentPickerQuery('');
+                setAgentPickerOpen(true);
+              }}
+              title="Agent (click to change)"
+            >
+              {effectiveAgent && (
+                <span
+                  className="oc-agent-swatch"
+                  aria-hidden="true"
+                  style={{ background: agentColor(effectiveAgent, agents) }}
+                />
+              )}
+              {effectiveAgent || 'Agent'}
+            </button>
+            {hasModels && (
+              <button
+                type="button"
+                className="oc-bar-select"
                 disabled={disabled}
-                onChange={(v) => onModelChange?.(v)}
-                title="Model"
-              />
+                onClick={() => {
+                  if (disabled) return;
+                  setModelPickerQuery('');
+                  setModelPickerOpen(true);
+                }}
+                title="Model (click to change)"
+              >
+                {modelButtonLabel || 'Model'}
+              </button>
             )}
             {disabled && <span className="oc-bar-hint">No running OpenCode instance</span>}
           </div>
@@ -841,12 +1074,74 @@ function ComposerImpl({
             const contextWindow = getContextWindow(activeModel);
             const pct = contextWindow ? Math.min(100, (contextTokens / contextWindow) * 100) : null;
             return (
-              <span className={`oc-context-usage${pct != null && pct > 80 ? ' oc-context-warn' : ''}`} title={contextWindow ? `${contextTokens.toLocaleString()} / ${contextWindow.toLocaleString()} tokens` : `${contextTokens.toLocaleString()} tokens used`}>
-                {formatTokenCount(contextTokens)}{pct != null && ` (${pct.toFixed(0)}%)`}
+              <span className="oc-context-usage-wrap" ref={tokenPopoverRef}>
+                <button
+                  type="button"
+                  className={`oc-context-usage${pct != null && pct > 80 ? ' oc-context-warn' : ''}`}
+                  title="Click for token usage details"
+                  onClick={() => setShowTokenPopover(v => !v)}
+                >
+                  {formatTokenCount(contextTokens)}{pct != null && ` (${pct.toFixed(0)}%)`}
+                </button>
+                {showTokenPopover && tokenStats && (
+                  <div className="oc-token-popover">
+                    <div className="oc-token-popover-title">Session token usage</div>
+                    <div className="oc-token-popover-rows">
+                      <div className="oc-token-popover-row">
+                        <span className="oc-token-popover-label">Input</span>
+                        <span className="oc-token-popover-value">{tokenStats.input.toLocaleString()}</span>
+                      </div>
+                      <div className="oc-token-popover-row">
+                        <span className="oc-token-popover-label">Output</span>
+                        <span className="oc-token-popover-value">{tokenStats.output.toLocaleString()}</span>
+                      </div>
+                      {tokenStats.reasoning > 0 && (
+                        <div className="oc-token-popover-row">
+                          <span className="oc-token-popover-label">Reasoning</span>
+                          <span className="oc-token-popover-value">{tokenStats.reasoning.toLocaleString()}</span>
+                        </div>
+                      )}
+                      {(tokenStats.cacheRead > 0 || tokenStats.cacheWrite > 0) && (
+                        <div className="oc-token-popover-row">
+                          <span className="oc-token-popover-label">Cache read</span>
+                          <span className="oc-token-popover-value">{tokenStats.cacheRead.toLocaleString()}</span>
+                        </div>
+                      )}
+                      {tokenStats.cacheWrite > 0 && (
+                        <div className="oc-token-popover-row">
+                          <span className="oc-token-popover-label">Cache write</span>
+                          <span className="oc-token-popover-value">{tokenStats.cacheWrite.toLocaleString()}</span>
+                        </div>
+                      )}
+                      <div className="oc-token-popover-divider" />
+                      <div className="oc-token-popover-row">
+                        <span className="oc-token-popover-label">Context used</span>
+                        <span className="oc-token-popover-value">
+                          {contextTokens.toLocaleString()}
+                          {contextWindow ? ` / ${contextWindow.toLocaleString()}` : ''}
+                          {pct != null ? ` (${pct.toFixed(0)}%)` : ''}
+                        </span>
+                      </div>
+                      {tokenStats.totalCost > 0 && (
+                        <div className="oc-token-popover-row">
+                          <span className="oc-token-popover-label">Reported cost</span>
+                          <span className="oc-token-popover-value">${tokenStats.totalCost.toFixed(4)}</span>
+                        </div>
+                      )}
+                      <div className="oc-token-popover-divider" />
+                      <div className="oc-token-popover-row oc-token-popover-cost">
+                        <span className="oc-token-popover-label">Est. cost</span>
+                        <span className="oc-token-popover-value">
+                          {estCostLoading ? '…' : estCost ? (estCost.known ? `$${estCost.cost.toFixed(4)}` : 'unknown model') : 'n/a'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </span>
             );
           })()}
-          <span className="oc-keybind-hint">? for shortcuts</span>
+          <button type="button" className="oc-keybind-hint" onClick={openShortcuts}>{isMacPlatform() ? '⌥+?' : 'Alt+?'} for shortcuts</button>
         </span>
       </div>
     </div>
@@ -862,10 +1157,14 @@ export const Composer = memo(ComposerImpl, (prev, next) =>
   prev.selectedModel === next.selectedModel &&
   prev.activeAgent === next.activeAgent &&
   prev.selectedAgent === next.selectedAgent &&
+  prev.agents === next.agents &&
   prev.contextTokens === next.contextTokens &&
   prev.sessionId === next.sessionId &&
   prev.directory === next.directory &&
   prev.tokensPerSecond === next.tokensPerSecond &&
+  prev.tokenStats?.input === next.tokenStats?.input &&
+  prev.tokenStats?.output === next.tokenStats?.output &&
+  prev.tokenStats?.totalCost === next.tokenStats?.totalCost &&
   (prev.models?.length || 0) === (next.models?.length || 0) &&
   (prev.models || []).every((model, i) => model === (next.models || [])[i])
 );

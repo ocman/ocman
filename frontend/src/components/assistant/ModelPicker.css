@@ -1,0 +1,73 @@
+/* ── /model command palette ────────────────────────────── */
+.oc-model-picker .oc-model-picker-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--accent);
+  font-size: 14px;
+}
+.oc-model-picker .oc-model-picker-check[data-active="false"] {
+  visibility: hidden;
+}
+
+/* Section headers (Recent / Recommended / All models / Archived), and, in
+   search mode, per-provider group labels. Non-interactive, dimmed, small. */
+.oc-model-picker .oc-model-picker-header {
+  padding: 8px 16px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  pointer-events: none;
+  user-select: none;
+}
+.oc-model-picker .oc-model-picker-header:not(:first-child) {
+  margin-top: 4px;
+  border-top: 1px solid var(--surface1);
+  padding-top: 10px;
+}
+
+/* Tight row so the badges line up with the model name and provider-name
+   meta line stays compact. */
+.oc-model-picker .oc-model-picker-row .oc-cmd-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.oc-model-picker .oc-model-picker-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--surface1);
+  color: var(--text-dim);
+  font-weight: 500;
+}
+.oc-model-picker .oc-model-picker-badge--star {
+  background: transparent;
+  color: var(--yellow, #f5c63a);
+  padding: 0;
+}
+.oc-model-picker .oc-model-picker-badge--used {
+  background: transparent;
+  color: var(--text-dim);
+  padding: 0;
+}
+.oc-model-picker .oc-model-picker-badge--default {
+  background: var(--accent-soft, var(--surface1));
+  color: var(--accent);
+}
+.oc-model-picker .oc-model-picker-badge--archived {
+  background: var(--surface1);
+  color: var(--overlay0, var(--text-dim));
+  opacity: 0.75;
+}

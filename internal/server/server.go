@@ -53,12 +53,14 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/session/seen", requirePOST(s.handleSeenSession))
 	mux.HandleFunc("/api/activity", requireGET(s.handleActivity))
 	mux.HandleFunc("/api/models", requireGET(s.handleModels))
+	mux.HandleFunc("/api/session-models/", requireGET(s.handleSessionModels))
 	mux.HandleFunc("/api/hourly", requireGET(s.handleHourly))
 	mux.HandleFunc("/api/hourly-tokens", requireGET(s.handleHourlyTokens))
 	mux.HandleFunc("/api/session-port/", requireGET(s.handleSessionPort))
 	mux.HandleFunc("/api/send-message", requirePOST(s.handleSendMessage))
 	mux.HandleFunc("/api/respond-permission", requirePOST(s.handleRespondPermission))
 	mux.HandleFunc("/api/list-permissions", requireGET(s.handleListPermissions))
+	mux.HandleFunc("/api/list-questions", requireGET(s.handleListQuestions))
 	mux.HandleFunc("/api/respond-question", requirePOST(s.handleRespondQuestion))
 	mux.HandleFunc("/api/reject-question", requirePOST(s.handleRejectQuestion))
 	mux.HandleFunc("/api/abort-session", requirePOST(s.handleAbortSession))
@@ -67,11 +69,18 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/whisper/status", requireGET(s.handleWhisperStatus))
 	mux.HandleFunc("/api/transcribe", requirePOST(s.handleTranscribe))
 	mux.HandleFunc("/api/commands", requireGET(s.handleCommands))
+	mux.HandleFunc("/api/agents", requireGET(s.handleAgents))
 	mux.HandleFunc("/api/command", requirePOST(s.handleExecuteCommand))
 	mux.HandleFunc("/api/compact-session", requirePOST(s.handleCompactSession))
+	mux.HandleFunc("/api/cost/calc", requirePOST(s.handleCalcCost))
 	mux.HandleFunc("/api/tmux/clients", requireGET(requireLocalhost(s.handleTmuxClients)))
 	mux.HandleFunc("/api/tmux/sessions", requireGET(requireLocalhost(s.handleTmuxSessions)))
 	mux.HandleFunc("/api/tmux/switch", requirePOST(requireLocalhost(s.handleTmuxSwitch)))
+
+	// Best-effort remote-logging sink for the frontend. Localhost-only so
+	// it can't be used to flood logs from the network. See
+	// handleDebugLog for the JSON shape.
+	mux.HandleFunc("/api/debug/log", requirePOST(requireLocalhost(s.handleDebugLog)))
 
 	// Static files with SPA fallback
 	staticContent, err := fs.Sub(staticFS, "static")

@@ -612,7 +612,7 @@ func TestGetMetricsDashboard(t *testing.T) {
 		},
 	})
 
-	metrics, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, nil)
+	metrics, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 50, 0, nil)
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard: %v", err)
 	}
@@ -636,6 +636,142 @@ func TestGetMetricsDashboard(t *testing.T) {
 	}
 	if len(metrics.Requests) != 1 || metrics.Requests[0].TokensPerSecond != 50 {
 		t.Errorf("Requests = %#v, want tokensPerSecond=50", metrics.Requests)
+	}
+	if metrics.TotalSessions != 1 {
+		t.Errorf("TotalSessions = %d, want 1", metrics.TotalSessions)
+	}
+	if len(metrics.Sessions) != 1 {
+		t.Fatalf("Sessions len = %d, want 1", len(metrics.Sessions))
+	}
+	sess := metrics.Sessions[0]
+	if sess.ID != "s1" {
+		t.Errorf("Sessions[0].ID = %q, want s1", sess.ID)
+	}
+	if sess.Title != "Session 1" {
+		t.Errorf("Sessions[0].Title = %q, want Session 1", sess.Title)
+	}
+	if sess.Directory != "/a" {
+		t.Errorf("Sessions[0].Directory = %q, want /a", sess.Directory)
+	}
+	if sess.Requests != 1 {
+		t.Errorf("Sessions[0].Requests = %d, want 1", sess.Requests)
+	}
+	if sess.TotalTokens != 300 {
+		t.Errorf("Sessions[0].TotalTokens = %d, want 300", sess.TotalTokens)
+	}
+	if sess.Cost != 0.25 {
+		t.Errorf("Sessions[0].Cost = %v, want 0.25", sess.Cost)
+	}
+	if sess.AvgTokensPerSec != 50 {
+		t.Errorf("Sessions[0].AvgTokensPerSec = %v, want 50", sess.AvgTokensPerSec)
+	}
+	if len(sess.Agents) != 1 || sess.Agents[0] != "build" {
+		t.Errorf("Sessions[0].Agents = %#v, want [build]", sess.Agents)
+	}
+	if len(sess.Models) != 1 || sess.Models[0] != "anthropic/opus-4.1" {
+		t.Errorf("Sessions[0].Models = %#v, want [anthropic/opus-4.1]", sess.Models)
+	}
+	if sess.ErrorCount != 0 {
+		t.Errorf("Sessions[0].ErrorCount = %d, want 0", sess.ErrorCount)
+	}
+}
+
+func TestGetMetricsDashboardSessionAggregation(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	// Two sessions; s1 gets 2 requests, s2 gets 1. s2 is more recent.
+	insertSession(t, db, "s1", "Session One", "/proj/a", now-10000, now-1000)
+	insertSession(t, db, "s2", "Session Two", "/proj/b", now-500, now)
+
+	insertMessage(t, db, "m1", "s1", now-8000, map[string]interface{}{
+		"role":       "assistant",
+		"agent":      "build",
+		"providerID": "anthropic",
+		"modelID":    "opus-4.1",
+		"finish":     "end_turn",
+		"cost":       0.10,
+		"time":       map[string]interface{}{"created": now - 9000, "completed": now - 7000},
+		"tokens":     map[string]interface{}{"input": 50, "output": 100, "cache": map[string]interface{}{"read": 10, "write": 5}},
+	})
+	insertMessage(t, db, "m2", "s1", now-2000, map[string]interface{}{
+		"role":       "assistant",
+		"agent":      "review",
+		"providerID": "anthropic",
+		"modelID":    "opus-4.1",
+		"finish":     "error",
+		"cost":       0.05,
+		"time":       map[string]interface{}{"created": now - 3000, "completed": now - 2500},
+		"tokens":     map[string]interface{}{"input": 20, "output": 0},
+	})
+	insertMessage(t, db, "m3", "s2", now, map[string]interface{}{
+		"role":       "assistant",
+		"agent":      "build",
+		"providerID": "openai",
+		"modelID":    "gpt-5",
+		"finish":     "end_turn",
+		"cost":       0.01,
+		"time":       map[string]interface{}{"created": now - 500, "completed": now},
+		"tokens":     map[string]interface{}{"input": 10, "output": 20},
+	})
+
+	metrics, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 50, 0, nil)
+	if err != nil {
+		t.Fatalf("GetMetricsDashboard: %v", err)
+	}
+
+	if metrics.TotalSessions != 2 {
+		t.Fatalf("TotalSessions = %d, want 2", metrics.TotalSessions)
+	}
+	if len(metrics.Sessions) != 2 {
+		t.Fatalf("Sessions len = %d, want 2", len(metrics.Sessions))
+	}
+	// Most-recent activity first -> s2 then s1.
+	if metrics.Sessions[0].ID != "s2" {
+		t.Errorf("Sessions[0].ID = %q, want s2", metrics.Sessions[0].ID)
+	}
+	if metrics.Sessions[1].ID != "s1" {
+		t.Errorf("Sessions[1].ID = %q, want s1", metrics.Sessions[1].ID)
+	}
+
+	// s1 aggregation.
+	s1 := metrics.Sessions[1]
+	if s1.Requests != 2 {
+		t.Errorf("s1.Requests = %d, want 2", s1.Requests)
+	}
+	if s1.InputTokens != 70 || s1.OutputTokens != 100 {
+		t.Errorf("s1 tokens = in=%d out=%d, want in=70 out=100", s1.InputTokens, s1.OutputTokens)
+	}
+	if diff := s1.Cost - 0.15; diff < -1e-9 || diff > 1e-9 {
+		t.Errorf("s1.Cost = %v, want ~0.15", s1.Cost)
+	}
+	if s1.ErrorCount != 1 {
+		t.Errorf("s1.ErrorCount = %d, want 1", s1.ErrorCount)
+	}
+	if len(s1.Agents) != 2 {
+		t.Errorf("s1.Agents = %#v, want 2 entries", s1.Agents)
+	}
+
+	// Pagination: sessionLimit=1 returns just the most recent.
+	paged, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 1, 0, nil)
+	if err != nil {
+		t.Fatalf("GetMetricsDashboard paged: %v", err)
+	}
+	if len(paged.Sessions) != 1 || paged.Sessions[0].ID != "s2" {
+		t.Errorf("paged sessions = %#v, want [s2]", paged.Sessions)
+	}
+	if paged.TotalSessions != 2 {
+		t.Errorf("paged.TotalSessions = %d, want 2", paged.TotalSessions)
+	}
+
+	// Offset skips the first.
+	offset, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 1, 1, nil)
+	if err != nil {
+		t.Fatalf("GetMetricsDashboard offset: %v", err)
+	}
+	if len(offset.Sessions) != 1 || offset.Sessions[0].ID != "s1" {
+		t.Errorf("offset sessions = %#v, want [s1]", offset.Sessions)
 	}
 }
 

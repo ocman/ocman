@@ -59,8 +59,8 @@ export function simpleDiff(oldStr: string, newStr: string, startLine = 1): strin
     }
   });
 
-  // Only show lines around changes (context of 2 lines)
-  const ctx = 2;
+  // Only show lines around changes (context of 3 lines)
+  const ctx = 3;
   const changed = new Set<number>();
   numbered.forEach(([op], idx) => {
     if (op !== ' ') {

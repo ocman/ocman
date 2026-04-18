@@ -81,3 +81,33 @@ export function escapeHtml(str: string): string {
   if (!str) return '';
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
+
+// cleanTitle strips the common markdown decorations that LLMs tend to emit in
+// generated session titles: leading `#` headings, `**bold**` / `*italic*` /
+// `__bold__` / `_italic_` emphasis, `~~strike~~`, inline `` `code` ``, and
+// `[text](url)` links (keeping the link text). It is tolerant of unbalanced
+// markers (e.g. `**Title` with no closing pair) — those are also stripped so
+// users never see raw asterisks in lists and titles.
+//
+// This operates on a single line of text. It is NOT a full markdown parser and
+// does not try to be clever about escapes; titles are short and the goal is
+// purely visual cleanup for list/heading display.
+export function cleanTitle(str: string | null | undefined): string {
+  if (!str) return '';
+  let out = str;
+  // [text](url) -> text. Do links first so we don't strip emphasis inside URLs.
+  out = out.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1');
+  // Inline code `code` -> code.
+  out = out.replace(/`([^`]*)`/g, '$1');
+  // Strip leading heading markers and any trailing closing `#` (ATX style).
+  out = out.replace(/^\s{0,3}#{1,6}\s+/, '').replace(/\s+#+\s*$/, '');
+  // Bold/italic: ** __ * _ ~~. Replace both balanced pairs and any stray
+  // markers. We walk from longest to shortest so ** is handled before *.
+  out = out.replace(/\*\*/g, '');
+  out = out.replace(/__/g, '');
+  out = out.replace(/~~/g, '');
+  out = out.replace(/(^|[^\w])[*_]([^*_\s][^*_]*?)[*_](?=[^\w]|$)/g, '$1$2');
+  // Any remaining stray * or _ at word boundaries are noise — drop them.
+  out = out.replace(/(^|\s)[*_]+(\s|$)/g, '$1$2');
+  return out.trim();
+}

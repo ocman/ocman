@@ -3,18 +3,21 @@ import './CommandPalette.css';
 import { useNavigate } from 'react-router-dom';
 import Fuse from 'fuse.js';
 import { useApiStore } from '../lib/apiStore';
-import { relativeTime, shortPath } from '../lib/format';
+import { cleanTitle, relativeTime, shortPath } from '../lib/format';
+import { useShortcut } from '../lib/shortcutRegistry';
 import type { Session } from '../lib/api';
 
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
-  const getSessions = useApiStore((s) => s.getSessions);
+  // Render directly from the cached sessions in the store. The palette picks
+  // up updates automatically when the background refresh completes.
+  const sessions = useApiStore((s) => s.cachedSessions);
+  const refreshCachedSessions = useApiStore((s) => s.refreshCachedSessions);
 
   const close = useCallback(() => {
     setOpen(false);
@@ -22,38 +25,35 @@ export function CommandPalette() {
     setSelectedIndex(0);
   }, []);
 
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.repeat) return;
-
-      // Alt+Space: toggle palette
-      const isAltSpace = e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'Space';
-      if (!isAltSpace) return;
-
-      e.preventDefault();
-      setOpen((prev) => {
-        if (prev) {
-          setQuery('');
-          setSelectedIndex(0);
-          return false;
-        }
-        return true;
-      });
-    };
-
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
+  const toggleOpen = useCallback(() => {
+    setOpen((prev) => {
+      if (prev) {
+        setQuery('');
+        setSelectedIndex(0);
+        return false;
+      }
+      return true;
+    });
   }, []);
 
-  // Fetch sessions when palette opens
+  useShortcut({
+    id: 'site.command-palette',
+    scope: 'site',
+    keys: { code: 'Space', alt: true },
+    description: 'Open command palette',
+    handler: toggleOpen,
+  });
+
+  // Refresh the cached session list in the background whenever the palette
+  // opens. The list itself comes straight from the store, so the palette
+  // renders instantly with whatever data we already have and then updates
+  // when the fetch resolves.
   useEffect(() => {
     if (!open) return;
-    let cancelled = false;
-    getSessions().then((data) => {
-      if (!cancelled) setSessions(data);
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [open, getSessions]);
+    const controller = new AbortController();
+    refreshCachedSessions(controller.signal).catch(() => {});
+    return () => controller.abort();
+  }, [open, refreshCachedSessions]);
 
   // Focus input when opened
   useEffect(() => {
@@ -66,8 +66,13 @@ export function CommandPalette() {
   // Fuse instance
   const fuse = useMemo(
     () =>
-      new Fuse(sessions, {
-        keys: ['title', 'directory'],
+      new Fuse(sessions ?? [], {
+        // Search on the cleaned title so markdown markers (#, **, _, etc.)
+        // don't interfere with user queries. `directory` is used as-is.
+        keys: [
+          { name: 'title', getFn: (s) => cleanTitle(s.title) },
+          'directory',
+        ],
         threshold: 0.4,
         includeScore: true,
       }),
@@ -75,6 +80,7 @@ export function CommandPalette() {
   );
 
   const results = useMemo(() => {
+    if (!sessions) return [];
     if (!query.trim()) {
       // Show all sessions sorted by most recent
       return sessions
@@ -135,7 +141,9 @@ export function CommandPalette() {
         </div>
         <div className="oc-cmd-results" ref={listRef}>
           {results.length === 0 && (
-            <div className="oc-cmd-empty">No sessions found</div>
+            <div className="oc-cmd-empty">
+              {sessions === null ? 'Loading sessions...' : 'No sessions found'}
+            </div>
           )}
           {results.map((session, i) => (
             <div
@@ -146,11 +154,12 @@ export function CommandPalette() {
             >
               <span
                 className="oc-cmd-status"
-                data-status={session.status}
+                data-status={session.pendingPermission || session.pendingQuestion ? 'pending' : session.status}
+                title={session.pendingPermission || session.pendingQuestion ? 'Waiting for your response' : undefined}
               />
               <div className="oc-cmd-item-content">
                 <span className="oc-cmd-title">
-                  {session.title || 'Untitled'}
+                  {cleanTitle(session.title) || 'Untitled'}
                 </span>
                 <span className="oc-cmd-meta">
                   {shortPath(session.directory)} &middot; {relativeTime(session.timeUpdated)}

@@ -4,9 +4,10 @@ import {
   useExternalStoreRuntime,
   type ThreadMessageLike,
 } from '@assistant-ui/react';
-import type { Message, Part, PartData, FilePart } from '../lib/api';
+import type { AgentInfo, Message, Part, PartData, FilePart } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
 import { simpleDiff } from '../lib/diff';
+import { AgentsContext } from '../lib/agentColor';
 
 function isImageMime(mime: string | undefined): boolean {
   return !!mime && mime.startsWith('image/');
@@ -29,6 +30,7 @@ function truncate(text: string | undefined | null, max: number): string {
 function convertMessages(
   messages: Message[],
   parts: Part[],
+  pendingAgent?: string,
 ): ThreadMessageLike[] {
   const partsByMsg: Record<string, Part[]> = {};
   parts.forEach((p) => {
@@ -57,6 +59,25 @@ function convertMessages(
         ) {
           isQueued = true;
         }
+      }
+
+      // Resolve the agent associated with this message so the UI can color
+      // it. For assistant messages the agent is on the message itself. For
+      // user messages we attribute the color to the agent that replies —
+      // i.e. the next assistant message in the thread — falling back to the
+      // currently-selected agent when the reply hasn't been produced yet.
+      let msgAgent: string | undefined;
+      if (role === 'assistant') {
+        msgAgent = m.data.agent || undefined;
+      } else if (role === 'user') {
+        for (let j = idx + 1; j < filtered.length; j++) {
+          const later = filtered[j];
+          if (later.data?.role === 'assistant' && later.data.agent) {
+            msgAgent = later.data.agent;
+            break;
+          }
+        }
+        if (!msgAgent) msgAgent = pendingAgent || undefined;
       }
       const msgParts = (partsByMsg[m.id] || []).map(parsePart);
 
@@ -116,23 +137,31 @@ function convertMessages(
               const editTarget = inp.filePath || title || 'file';
               title = 'Edit ' + editTarget;
               argsText = ''; // diff is shown as result, no need for args
-              // Try to determine the starting line number from the tool output.
-              // The output often contains the modified content prefixed with
-              // line numbers like "123: code\n124: more code".
-              let startLine = 1;
-              const outputText = typeof st.output === 'string' ? st.output : '';
-              // Look for the first numbered line in the content block
-              const contentMatch = outputText.match(/<content>\n?(\d+): /);
-              if (contentMatch) {
-                startLine = parseInt(contentMatch[1], 10) || 1;
+              // Prefer the full before/after file contents from filediff metadata
+              // when available. This lets simpleDiff compute real surrounding
+              // context, so even a single-line change shows a few lines around
+              // it instead of just the changed line itself.
+              const fd = st.metadata?.filediff;
+              if (fd && typeof fd.before === 'string' && typeof fd.after === 'string') {
+                resultText = simpleDiff(fd.before, fd.after, 1);
               } else {
-                // Fallback: look for "line X" or "Line X" patterns
-                const lineRefMatch = outputText.match(/[Ll]ine\s+(\d+)/);
-                if (lineRefMatch) {
-                  startLine = parseInt(lineRefMatch[1], 10) || 1;
+                // Fallback: diff just oldString vs newString. Try to determine
+                // the starting line number from the tool output. The output
+                // often contains the modified content prefixed with line
+                // numbers like "123: code\n124: more code".
+                let startLine = 1;
+                const outputText = typeof st.output === 'string' ? st.output : '';
+                const contentMatch = outputText.match(/<content>\n?(\d+): /);
+                if (contentMatch) {
+                  startLine = parseInt(contentMatch[1], 10) || 1;
+                } else {
+                  const lineRefMatch = outputText.match(/[Ll]ine\s+(\d+)/);
+                  if (lineRefMatch) {
+                    startLine = parseInt(lineRefMatch[1], 10) || 1;
+                  }
                 }
+                resultText = simpleDiff(inp.oldString, inp.newString, startLine);
               }
-              resultText = simpleDiff(inp.oldString, inp.newString, startLine);
             } else if (isRead) {
               // Render reads as a muted inline line, not a collapsible block.
               const readTarget = inp.filePath || argsText || title || 'file';
@@ -335,11 +364,15 @@ function convertMessages(
         }
       });
 
-      // If the message has an error object, inject the error details as visible text.
+      // If the message has an error object, inject the error details as visible text —
+      // but skip abort errors since the UI already shows an "interrupted" indicator.
       if (role === 'assistant' && m.data.error) {
         const errName = m.data.error.name || 'Error';
-        const errMessage = m.data.error.data?.message || 'An unknown error occurred';
-        textPieces.push(`**${errName}:** ${errMessage}`);
+        const isAbort = errName === 'MessageAbortedError' || errName === 'AbortError';
+        if (!isAbort) {
+          const errMessage = m.data.error.data?.message || 'An unknown error occurred';
+          textPieces.push(`**${errName}:** ${errMessage}`);
+        }
       }
 
       // User messages cannot contain tool-call parts in assistant-ui.
@@ -357,6 +390,8 @@ function convertMessages(
         ...(isQueued ? { queued: true } : {}),
         ...(m.data.tokens ? { tokens: m.data.tokens } : {}),
         ...(m.data.time ? { time: m.data.time } : {}),
+        ...(m.data.error ? { errorName: m.data.error.name || 'Error' } : {}),
+        ...(msgAgent ? { agent: msgAgent } : {}),
       };
       const metadata = Object.keys(customMeta).length > 0 ? { custom: customMeta } : undefined;
 
@@ -401,6 +436,11 @@ interface Props {
   sessionId: string;
   directory: string;
   portAvailable: boolean;
+  // Agent that the user is about to send the next message as. Used to color
+  // user messages that haven't been replied to yet.
+  pendingAgent?: string;
+  // Agent metadata (including colors) loaded from the OpenCode /agent API.
+  agents?: AgentInfo[];
   children: React.ReactNode;
 }
 
@@ -425,12 +465,15 @@ export function OcmanRuntimeProvider({
   sessionId,
   directory,
   portAvailable,
+  pendingAgent,
+  agents,
   children,
 }: Props) {
+  const agentList = useMemo(() => agents ?? [], [agents]);
   const sendMessage = useApiStore((state) => state.sendMessage);
   const converted = useMemo(
-    () => convertMessages(messages, parts),
-    [messages, parts],
+    () => convertMessages(messages, parts, pendingAgent),
+    [messages, parts, pendingAgent],
   );
 
   const isRunning = useMemo(() => computeIsRunning(messages), [messages]);
@@ -452,8 +495,10 @@ export function OcmanRuntimeProvider({
   });
 
   return (
-    <AssistantRuntimeProvider runtime={runtime}>
-      {children}
-    </AssistantRuntimeProvider>
+    <AgentsContext.Provider value={agentList}>
+      <AssistantRuntimeProvider runtime={runtime}>
+        {children}
+      </AssistantRuntimeProvider>
+    </AgentsContext.Provider>
   );
 }

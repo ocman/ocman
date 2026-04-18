@@ -8,6 +8,7 @@
   padding-bottom: max(12px, env(safe-area-inset-bottom));
   background: var(--bg);
   z-index: 50;
+  outline: none;
 }
 .oc-question-box {
   background: var(--bg-card);
@@ -106,8 +107,15 @@
 .oc-question-opt-btn:hover:enabled {
   background: rgba(255, 255, 255, 0.04);
 }
+.oc-question-opt-focused {
+  background: rgba(255, 255, 255, 0.06);
+  outline: 1px solid var(--border);
+}
 .oc-question-opt-selected {
   background: rgba(137, 180, 250, 0.12);
+}
+.oc-question-opt-selected.oc-question-opt-focused {
+  outline: 1px solid var(--accent);
 }
 .oc-question-opt-selected:hover:enabled {
   background: rgba(137, 180, 250, 0.16);

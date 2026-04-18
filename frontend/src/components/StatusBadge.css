@@ -37,3 +37,22 @@
   margin-top: 4px;
 }
 .status-icon-compact.status-seen { color: var(--overlay0); }
+
+/* Pending prompt — a permission/question is waiting for the user. Uses a
+   pulsing yellow "!" icon so it is unmistakable versus the red error icon
+   and the neutral grey/blue/orange status dots. */
+.status-icon-compact.status-pending {
+  color: var(--yellow);
+  animation: pulse 1s ease-in-out infinite;
+}
+.status-indicator.status-pending {
+  background: rgba(249, 226, 175, 0.15);
+  color: var(--yellow);
+}
+.status-indicator.status-pending .status-pending-icon {
+  display: inline-flex;
+  width: 10px;
+  height: 10px;
+  color: var(--yellow);
+  animation: pulse 1s ease-in-out infinite;
+}

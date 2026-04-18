@@ -7,6 +7,7 @@ import { useTmux } from '../lib/useTmux';
 import { useApiStore } from '../lib/apiStore';
 import { shortPath } from '../lib/format';
 import { openVSCode } from '../lib/shortcuts';
+import { useShortcut } from '../lib/shortcutRegistry';
 
 export function ProjectDetail() {
   const { '*': directory } = useParams();
@@ -114,20 +115,22 @@ export function ProjectDetail() {
   const directoryRef = useRef(directory);
   useEffect(() => { directoryRef.current = directory; }, [directory]);
 
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.repeat || !e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-      if (e.code === 'KeyT' && matchingTmuxSessionRef.current) {
-        e.preventDefault();
-        handleTmuxSwitchRef.current();
-      } else if (e.code === 'KeyV' && directoryRef.current) {
-        e.preventDefault();
-        handleOpenVSCodeRef.current();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, []);
+  useShortcut({
+    id: 'project.switch-tmux',
+    scope: 'project',
+    keys: { code: 'KeyT', alt: true },
+    description: 'Switch tmux for current project',
+    enabled: () => !!matchingTmuxSessionRef.current,
+    handler: () => handleTmuxSwitchRef.current(),
+  });
+  useShortcut({
+    id: 'project.open-vscode',
+    scope: 'project',
+    keys: { code: 'KeyV', alt: true },
+    description: 'Open current project in VS Code',
+    enabled: () => !!directoryRef.current,
+    handler: () => handleOpenVSCodeRef.current(),
+  });
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>

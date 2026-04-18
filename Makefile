@@ -1,16 +1,18 @@
-.PHONY: dev dev-backend dev-frontend build run clean
+.PHONY: dev dev-backend dev-frontend build run clean test test-backend test-frontend lint lint-backend lint-frontend
 
 # Run both backend (air) and frontend (vite) with live reload
 dev:
+	@mkdir -p tmp
 	@echo "Starting ocman dev environment..."
 	@echo "  Backend (air):    http://localhost:8080"
 	@echo "  Frontend (vite):  http://localhost:8228"
 	@echo "  Backend log:      tmp/air.log"
+	@echo "  Combined log:     tmp/debug.log"
 	@echo ""
 	@trap 'kill 0' EXIT; \
-		$(MAKE) dev-backend & \
-		$(MAKE) dev-frontend & \
-		wait
+		{ $(MAKE) dev-backend & \
+		  $(MAKE) dev-frontend & \
+		  wait; } 2>&1 | tee tmp/debug.log
 
 dev-backend:
 	@mkdir -p tmp
@@ -33,3 +35,21 @@ run: build
 
 clean:
 	rm -rf ocman tmp internal/server/static/assets
+
+# Run both Go and frontend test suites
+test: test-backend test-frontend
+
+test-backend:
+	go test ./...
+
+test-frontend:
+	cd frontend && npm test
+
+# Run all linters and type checks
+lint: lint-backend lint-frontend
+
+lint-backend:
+	go vet ./...
+
+lint-frontend:
+	cd frontend && npx tsc -b && npm run lint

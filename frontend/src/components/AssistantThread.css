@@ -80,6 +80,18 @@
   flex-shrink: 0;
 }
 .oc-meta-sep { color: var(--overlay0); }
+.oc-error-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--danger);
+  opacity: 0.75;
+}
+.oc-error-banner-abort {
+  color: var(--text-dim);
+}
 .oc-meta-tps {
   color: var(--overlay0);
   font-variant-numeric: tabular-nums;

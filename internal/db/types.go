@@ -39,8 +39,10 @@ type Session struct {
 	TotalInputTokens  int64   `json:"totalInputTokens"`
 	TotalOutputTokens int64   `json:"totalOutputTokens"`
 	TotalCost         float64 `json:"totalCost"`
-	Status            string  `json:"status"`  // "waiting", "busy", "done", or "error"
-	HasPort           bool    `json:"hasPort"` // true if a running OpenCode instance with --port is detected
+	Status            string  `json:"status"`            // "waiting", "busy", "done", or "error"
+	HasPort           bool    `json:"hasPort"`           // true if a running OpenCode instance with --port is detected
+	PendingPermission bool    `json:"pendingPermission"` // true if the running OpenCode instance has a pending permission request for this session
+	PendingQuestion   bool    `json:"pendingQuestion"`   // true if the running OpenCode instance has a pending question for this session
 	Archived          bool    `json:"archived"`
 	Seen              bool    `json:"seen"`
 }
@@ -171,6 +173,31 @@ type RequestLogEntry struct {
 	StopReason       string  `json:"stopReason"`
 }
 
+// SessionLogEntry holds per-session aggregated metrics for the session log table.
+// Values are derived by aggregating the assistant requests that fall within the
+// currently-applied agent/model/time filters, so it reflects the same scope as
+// the other metrics panels on the dashboard.
+type SessionLogEntry struct {
+	ID               string   `json:"id"`
+	Title            string   `json:"title"`
+	Directory        string   `json:"directory"`
+	FirstRequestTime int64    `json:"firstRequestTime"`
+	LastRequestTime  int64    `json:"lastRequestTime"`
+	Requests         int      `json:"requests"`
+	InputTokens      int64    `json:"inputTokens"`
+	OutputTokens     int64    `json:"outputTokens"`
+	CacheReadTokens  int64    `json:"cacheReadTokens"`
+	CacheWriteTokens int64    `json:"cacheWriteTokens"`
+	TotalTokens      int64    `json:"totalTokens"`
+	TotalDurationMs  int64    `json:"totalDurationMs"`
+	AvgTokensPerSec  float64  `json:"avgTokensPerSec"`
+	Cost             float64  `json:"cost"`
+	CalcCost         float64  `json:"calcCost"`
+	Agents           []string `json:"agents"`
+	Models           []string `json:"models"`
+	ErrorCount       int      `json:"errorCount"`
+}
+
 // MetricsDashboard holds the full metrics dashboard payload.
 type MetricsDashboard struct {
 	AvailableAgents []string          `json:"availableAgents"`
@@ -180,6 +207,8 @@ type MetricsDashboard struct {
 	StopReasons     []StopReasonCount `json:"stopReasons"`
 	Requests        []RequestLogEntry `json:"requests"`
 	TotalRequests   int               `json:"totalRequests"`
+	Sessions        []SessionLogEntry `json:"sessions"`
+	TotalSessions   int               `json:"totalSessions"`
 }
 
 // ProjectStats holds per-directory aggregated data.

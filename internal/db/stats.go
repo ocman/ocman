@@ -61,10 +61,18 @@ type CostCalculator interface {
 	CalcCost(modelID string, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens int64) float64
 }
 
+// requestRow is the internal shape used while aggregating metrics. It wraps
+// RequestLogEntry so we can attach computed fields without mutating the API
+// type.
+type requestRow struct {
+	RequestLogEntry
+}
+
 // GetMetricsDashboard returns filtered request-level analytics for the dashboard.
 // days is the number of days in the selected window (0 = all time); it drives bucket granularity.
 // pricing may be nil, in which case CalcCost fields are left zero.
-func (d *DB) GetMetricsDashboard(agentFilter, modelFilter string, since int64, days, requestLimit, requestOffset int, pricing CostCalculator) (*MetricsDashboard, error) {
+// sessionLimit/sessionOffset control pagination of the Sessions aggregation (most-recent activity first).
+func (d *DB) GetMetricsDashboard(agentFilter, modelFilter string, since int64, days, requestLimit, requestOffset, sessionLimit, sessionOffset int, pricing CostCalculator) (*MetricsDashboard, error) {
 	rows, err := d.db.Query(`
 		SELECT m.id, m.session_id, m.time_created, m.data
 		FROM message m
@@ -76,10 +84,6 @@ func (d *DB) GetMetricsDashboard(agentFilter, modelFilter string, since int64, d
 		return nil, err
 	}
 	defer rows.Close()
-
-	type requestRow struct {
-		RequestLogEntry
-	}
 
 	dashboard := &MetricsDashboard{}
 	agentSet := make(map[string]struct{})
@@ -338,7 +342,156 @@ func (d *DB) GetMetricsDashboard(agentFilter, modelFilter string, since int64, d
 		dashboard.Requests = append(dashboard.Requests, page[i].RequestLogEntry)
 	}
 
+	// ------------------------------------------------------------------
+	// Session log: aggregate the same filtered requests by session id.
+	// ------------------------------------------------------------------
+	if err := d.populateSessionLog(dashboard, filtered, sessionLimit, sessionOffset); err != nil {
+		return nil, err
+	}
+
 	return dashboard, nil
+}
+
+// populateSessionLog aggregates the already-filtered request rows by session id
+// and applies pagination. Session metadata (title, directory) is fetched from
+// the session table in a single query.
+func (d *DB) populateSessionLog(dashboard *MetricsDashboard, filtered []requestRow, sessionLimit, sessionOffset int) error {
+	if len(filtered) == 0 {
+		return nil
+	}
+
+	type sessionAcc struct {
+		entry          SessionLogEntry
+		agentSet       map[string]struct{}
+		modelSet       map[string]struct{}
+		tokPerSecTotal float64
+		durationCount  int
+	}
+	accs := make(map[string]*sessionAcc)
+	order := make([]string, 0)
+
+	for _, entry := range filtered {
+		acc, ok := accs[entry.SessionID]
+		if !ok {
+			acc = &sessionAcc{
+				entry:    SessionLogEntry{ID: entry.SessionID, FirstRequestTime: entry.TimeCreated, LastRequestTime: entry.TimeCreated},
+				agentSet: make(map[string]struct{}),
+				modelSet: make(map[string]struct{}),
+			}
+			accs[entry.SessionID] = acc
+			order = append(order, entry.SessionID)
+		}
+		acc.entry.Requests++
+		acc.entry.InputTokens += entry.InputTokens
+		acc.entry.OutputTokens += entry.OutputTokens
+		acc.entry.CacheReadTokens += entry.CacheReadTokens
+		acc.entry.CacheWriteTokens += entry.CacheWriteTokens
+		acc.entry.TotalTokens += entry.InputTokens + entry.OutputTokens
+		acc.entry.TotalDurationMs += entry.DurationMs
+		acc.entry.Cost += entry.Cost
+		acc.entry.CalcCost += entry.CalcCost
+		if entry.DurationMs > 0 {
+			acc.tokPerSecTotal += entry.TokensPerSecond
+			acc.durationCount++
+		}
+		if entry.TimeCreated < acc.entry.FirstRequestTime {
+			acc.entry.FirstRequestTime = entry.TimeCreated
+		}
+		if entry.TimeCreated > acc.entry.LastRequestTime {
+			acc.entry.LastRequestTime = entry.TimeCreated
+		}
+		if entry.Agent != "" {
+			acc.agentSet[entry.Agent] = struct{}{}
+		}
+		if entry.Model != "" {
+			acc.modelSet[entry.Model] = struct{}{}
+		}
+		if entry.StopReason == "error" {
+			acc.entry.ErrorCount++
+		}
+	}
+
+	// Look up session titles/directories in a single query.
+	ids := make([]string, 0, len(accs))
+	for id := range accs {
+		ids = append(ids, id)
+	}
+	titles, dirs, err := d.lookupSessionMetadata(ids)
+	if err != nil {
+		return err
+	}
+
+	entries := make([]SessionLogEntry, 0, len(accs))
+	for _, id := range order {
+		acc := accs[id]
+		if acc.durationCount > 0 {
+			acc.entry.AvgTokensPerSec = acc.tokPerSecTotal / float64(acc.durationCount)
+		}
+		acc.entry.Agents = sortedKeys(acc.agentSet)
+		acc.entry.Models = sortedKeys(acc.modelSet)
+		acc.entry.Title = titles[id]
+		acc.entry.Directory = dirs[id]
+		entries = append(entries, acc.entry)
+	}
+
+	// Sort by most-recent activity first.
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].LastRequestTime > entries[j].LastRequestTime
+	})
+
+	dashboard.TotalSessions = len(entries)
+
+	// Apply offset + limit.
+	offset := sessionOffset
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(entries) {
+		offset = len(entries)
+	}
+	paged := entries[offset:]
+	if sessionLimit > 0 && len(paged) > sessionLimit {
+		paged = paged[:sessionLimit]
+	}
+	dashboard.Sessions = paged
+	return nil
+}
+
+// lookupSessionMetadata returns title and directory maps keyed by session id.
+// Missing sessions simply have empty strings.
+func (d *DB) lookupSessionMetadata(ids []string) (titles, dirs map[string]string, err error) {
+	titles = make(map[string]string, len(ids))
+	dirs = make(map[string]string, len(ids))
+	if len(ids) == 0 {
+		return titles, dirs, nil
+	}
+	// Build a parameterised IN clause; session counts in a filtered window
+	// are typically small, so a single query is fine.
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	q := "SELECT id, title, directory FROM session WHERE id IN (" + strings.Join(placeholders, ",") + ")"
+	rows, err := d.db.Query(q, args...)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, title, dir string
+		if err := rows.Scan(&id, &title, &dir); err != nil {
+			log.WithError(err).Warn("failed to scan session metadata row")
+			continue
+		}
+		titles[id] = title
+		dirs[id] = dir
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	return titles, dirs, nil
 }
 
 func sortedKeys(values map[string]struct{}) []string {
@@ -574,6 +727,75 @@ func (d *DB) GetModelUsage(since int64) ([]ModelUsage, error) {
 		}
 		return result[i].Model < result[j].Model
 	})
+	return result, nil
+}
+
+// RecentModel is one entry in the recent-models signal used by the composer
+// model picker. `LastUsed` is a Unix-millis timestamp of the newest message
+// that used this model.
+type RecentModel struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+	LastUsed int64  `json:"lastUsed"`
+}
+
+// GetRecentModels returns the distinct `provider/model` pairs most recently
+// used across the N latest sessions, newest-message-first. This is a cheap
+// alternative to the full usage aggregation (`GetModelUsage`): it limits work
+// to recent sessions (index-backed on `time_updated`) and uses the compound
+// session/time_created index when joining to messages.
+//
+// `sessionLimit` caps how many recent sessions to sample (typical: 50);
+// `maxResults` caps the final list size (typical: 5–10).
+func (d *DB) GetRecentModels(sessionLimit, maxResults int) ([]RecentModel, error) {
+	if sessionLimit <= 0 {
+		sessionLimit = 50
+	}
+	if maxResults <= 0 {
+		maxResults = 10
+	}
+	// Per-model: max timestamp of an assistant message, scoped to the N most
+	// recently-updated sessions. Rely on SQL for the grouping/sort — way
+	// cheaper than decoding N JSON blobs in Go just to pluck out a string.
+	rows, err := d.db.Query(`
+		SELECT
+			COALESCE(
+				NULLIF(json_extract(m.data, '$.providerID'), ''),
+				NULLIF(json_extract(m.data, '$.model.providerID'), ''),
+				''
+			) AS provider,
+			COALESCE(
+				NULLIF(json_extract(m.data, '$.modelID'), ''),
+				NULLIF(json_extract(m.data, '$.model.modelID'), ''),
+				''
+			) AS model,
+			MAX(m.time_created) AS last_used
+		FROM session s
+		JOIN message m ON m.session_id = s.id
+		WHERE json_extract(m.data, '$.role') = 'assistant'
+		  AND s.id IN (SELECT id FROM session ORDER BY time_updated DESC LIMIT ?)
+		GROUP BY provider, model
+		HAVING model != ''
+		ORDER BY last_used DESC
+		LIMIT ?
+	`, sessionLimit, maxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]RecentModel, 0, maxResults)
+	for rows.Next() {
+		var rm RecentModel
+		if err := rows.Scan(&rm.Provider, &rm.Model, &rm.LastUsed); err != nil {
+			log.WithError(err).Warn("failed to scan recent model row")
+			continue
+		}
+		result = append(result, rm)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 

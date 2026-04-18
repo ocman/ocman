@@ -22,11 +22,16 @@ type RequestStatus = {
 
 type ApiStore = {
   requests: Record<string, RequestStatus>;
+  // Cached list of all sessions (no directory filter). `null` means never
+  // fetched; components can render immediately from this value while
+  // `refreshCachedSessions` updates it in the background.
+  cachedSessions: Session[] | null;
   runRequest: <T>(key: string, task: () => Promise<T>) => Promise<T>;
   getStats: () => Promise<Stats>;
   getMetrics: (params?: { agent?: string; model?: string; days?: number }) => Promise<MetricsDashboard>;
   getProjects: () => Promise<Project[]>;
   getSessions: (params?: { dir?: string; since?: number }, signal?: AbortSignal) => Promise<Session[]>;
+  refreshCachedSessions: (signal?: AbortSignal) => Promise<Session[]>;
   getSession: (id: string, limit?: number, offset?: number, signal?: AbortSignal) => Promise<SessionDetail>;
   archiveSession: (sessionId: string, timeUpdated: number, archived?: boolean) => Promise<{ ok: boolean }>;
   markSessionSeen: (sessionId: string, timeUpdated: number) => Promise<{ ok: boolean }>;
@@ -39,6 +44,7 @@ type ApiStore = {
   sendMessage: (sessionId: string, directory: string, message: string, images?: { url: string; mime: string }[], model?: string, agent?: string) => Promise<void>;
   listPermissions: (directory: string) => Promise<unknown[]>;
   respondPermission: (sessionId: string, directory: string, permissionId: string, reply: 'once' | 'always' | 'reject') => Promise<void>;
+  listQuestions: (directory: string) => Promise<unknown[]>;
   respondQuestion: (sessionId: string, directory: string, requestId: string, answers: string[][]) => Promise<void>;
   rejectQuestion: (sessionId: string, directory: string, requestId: string) => Promise<void>;
   abortSession: (sessionId: string, directory: string) => Promise<void>;
@@ -51,6 +57,7 @@ type ApiStore = {
 
 export const useApiStore = create<ApiStore>((set, get) => ({
   requests: {},
+  cachedSessions: null,
   runRequest: async <T,>(key: string, task: () => Promise<T>) => {
     set((state) => ({
       requests: {
@@ -84,8 +91,21 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   getProjects: () => get().runRequest('projects:get', () => api.projects()),
   getSessions: (params, signal) => {
     const key = params?.dir ? `sessions:get:dir:${params.dir}` : 'sessions:get';
-    return get().runRequest(key, () => api.sessions(params, signal));
+    const isFullList = !params?.dir && !params?.since;
+    return get().runRequest(key, async () => {
+      const result = await api.sessions(params, signal);
+      // Opportunistically keep the shared cache warm whenever the full,
+      // unfiltered session list is fetched — e.g. when the Dashboard loads.
+      if (isFullList) set({ cachedSessions: result });
+      return result;
+    });
   },
+  refreshCachedSessions: (signal) =>
+    get().runRequest('sessions:get', async () => {
+      const result = await api.sessions(undefined, signal);
+      set({ cachedSessions: result });
+      return result;
+    }),
   getSession: (id, limit = 50, offset = 0, signal) => get().runRequest(`session:get:${id}`, () => api.session(id, limit, offset, signal)),
   archiveSession: (sessionId, timeUpdated, archived = true) => get().runRequest(`session:archive:${sessionId}`, () => api.archiveSession(sessionId, timeUpdated, archived)),
   markSessionSeen: (sessionId, timeUpdated) => get().runRequest(`session:seen:${sessionId}`, () => api.markSessionSeen(sessionId, timeUpdated)),
@@ -98,6 +118,7 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   sendMessage: (sessionId, directory, message, images, model, agent) => get().runRequest(`message:send:${sessionId}`, () => api.sendMessage(sessionId, directory, message, images, model, agent)),
   listPermissions: (directory) => get().runRequest(`permissions:list:${directory}`, () => api.listPermissions(directory)),
   respondPermission: (sessionId, directory, permissionId, reply) => get().runRequest(`permission:respond:${sessionId}`, () => api.respondPermission(sessionId, directory, permissionId, reply)),
+  listQuestions: (directory) => get().runRequest(`questions:list:${directory}`, () => api.listQuestions(directory)),
   respondQuestion: (sessionId, directory, requestId, answers) => get().runRequest(`question:respond:${sessionId}`, () => api.respondQuestion(sessionId, directory, requestId, answers)),
   rejectQuestion: (sessionId, directory, requestId) => get().runRequest(`question:reject:${sessionId}`, () => api.rejectQuestion(sessionId, directory, requestId)),
   abortSession: (sessionId, directory) => get().runRequest(`session:abort:${sessionId}`, () => api.abortSession(sessionId, directory)),

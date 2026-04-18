@@ -22,6 +22,8 @@ export interface Session {
   totalCost: number;
   status: 'waiting' | 'busy' | 'done' | 'error';
   hasPort: boolean;
+  pendingPermission: boolean;
+  pendingQuestion: boolean;
   archived: boolean;
   seen: boolean;
 }
@@ -38,7 +40,7 @@ export interface Message {
     agent?: string;
     mode?: string;
     cost?: number;
-    tokens?: { input: number; output: number };
+    tokens?: { input: number; output: number; reasoning?: number; cache?: { read?: number; write?: number } };
     time?: { created: number; completed?: number };
     error?: {
       name?: string;
@@ -77,7 +79,19 @@ export interface PartData {
     input?: Record<string, unknown>;
     output?: unknown;
     title?: string;
-    metadata?: { description?: string };
+    metadata?: {
+      description?: string;
+      // Edit/Write tools include a filediff with the full file before/after
+      // the change. We use this to render a diff with surrounding context
+      // beyond what oldString/newString alone would show.
+      filediff?: {
+        file?: string;
+        before?: string;
+        after?: string;
+        additions?: number;
+        deletions?: number;
+      };
+    };
     attachments?: FilePart[];
   };
   file?: string;
@@ -153,6 +167,27 @@ export interface RequestMetricsRow {
   stopReason: string;
 }
 
+export interface SessionLogEntry {
+  id: string;
+  title: string;
+  directory: string;
+  firstRequestTime: number;
+  lastRequestTime: number;
+  requests: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  totalTokens: number;
+  totalDurationMs: number;
+  avgTokensPerSec: number;
+  cost: number;
+  calcCost: number;
+  agents: string[];
+  models: string[];
+  errorCount: number;
+}
+
 export interface MetricsDashboard {
   availableAgents: string[];
   availableModels: string[];
@@ -161,6 +196,8 @@ export interface MetricsDashboard {
   stopReasons: StopReasonCount[];
   requests: RequestMetricsRow[];
   totalRequests: number;
+  sessions: SessionLogEntry[];
+  totalSessions: number;
 }
 
 export interface Project {
@@ -211,6 +248,42 @@ export interface SlashCommand {
   model?: string;
 }
 
+// SessionModelEntry mirrors internal/server/handlers.go:sessionModelEntry —
+// one row of the model palette built by GET /api/session-models/{id}.
+//
+// Ordering signals are computed server-side; the client just renders:
+// - recentRank: 1-based position in the "recently used" list (0 = not recent)
+// - isSessionDefault: last model used in this session (strongest signal)
+// - isProviderDefault: OpenCode's default for this provider
+// - isAvailable: provider is in /provider's `connected` set (user has it set up)
+export interface SessionModelEntry {
+  provider: string;
+  providerName?: string;
+  model: string;
+  modelName?: string;
+  recentRank?: number;
+  isSessionDefault?: boolean;
+  isProviderDefault?: boolean;
+  isAvailable?: boolean;
+}
+
+export interface SessionModelsResponse {
+  sessionDefault?: string;
+  providerDefaults?: Record<string, string>;
+  hasProviders: boolean;
+  models: SessionModelEntry[];
+}
+
+export interface AgentInfo {
+  name: string;
+  description?: string;
+  mode?: 'primary' | 'subagent' | 'all';
+  model?: string | { providerID?: string; modelID?: string };
+  color?: string;
+  hidden?: boolean;
+  builtIn?: boolean;
+}
+
 export interface TmuxClient {
   tty: string;
   session: string;
@@ -226,13 +299,15 @@ export interface TmuxSession {
 
 export const api = {
   stats: () => fetchJSON<Stats>('/api/stats'),
-  metrics: (params?: { agent?: string; model?: string; days?: number; limit?: number; offset?: number }) => {
+  metrics: (params?: { agent?: string; model?: string; days?: number; limit?: number; offset?: number; sessionLimit?: number; sessionOffset?: number }) => {
     const q = new URLSearchParams();
     if (params?.agent) q.set('agent', params.agent);
     if (params?.model) q.set('model', params.model);
     if (params?.days != null) q.set('days', String(params.days));
     if (params?.limit != null) q.set('limit', String(params.limit));
     if (params?.offset != null) q.set('offset', String(params.offset));
+    if (params?.sessionLimit != null) q.set('sessionLimit', String(params.sessionLimit));
+    if (params?.sessionOffset != null) q.set('sessionOffset', String(params.sessionOffset));
     const qs = q.toString();
     return fetchJSON<MetricsDashboard>(`/api/metrics${qs ? '?' + qs : ''}`);
   },
@@ -263,6 +338,15 @@ export const api = {
     if (!resp.ok) throw new Error(await resp.text());
     return resp.json() as Promise<{ ok: boolean }>;
   },
+  calcCost: async (req: { modelID: string; input: number; output: number; cacheRead: number; cacheWrite: number }) => {
+    const resp = await fetch('/api/cost/calc', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    return resp.json() as Promise<{ cost: number; known: boolean }>;
+  },
   activity: (params?: { days?: number; model?: string }) => {
     const q = new URLSearchParams();
     if (params?.days) q.set('days', String(params.days));
@@ -276,6 +360,8 @@ export const api = {
     const qs = q.toString();
     return fetchJSON<ModelUsage[]>(`/api/models${qs ? '?' + qs : ''}`);
   },
+  sessionModels: (sessionId: string) =>
+    fetchJSON<SessionModelsResponse>(`/api/session-models/${encodeURIComponent(sessionId)}`),
   hourly: (params?: { days?: number }) => {
     const q = new URLSearchParams();
     if (params?.days) q.set('days', String(params.days));
@@ -328,6 +414,7 @@ export const api = {
     });
     if (!resp.ok) throw new Error(await resp.text());
   },
+  listQuestions: (directory: string) => fetchJSON<unknown[]>(`/api/list-questions?dir=${encodeURIComponent(directory)}`),
   respondQuestion: async (
     sessionId: string,
     directory: string,
@@ -383,6 +470,8 @@ export const api = {
   },
   commands: (directory: string, signal?: AbortSignal) =>
     fetchJSON<SlashCommand[]>(`/api/commands?dir=${encodeURIComponent(directory)}`, signal),
+  agents: (directory: string, signal?: AbortSignal) =>
+    fetchJSON<AgentInfo[]>(`/api/agents?dir=${encodeURIComponent(directory)}`, signal),
   executeCommand: async (
     sessionId: string,
     directory: string,
@@ -397,6 +486,23 @@ export const api = {
       body: JSON.stringify({ sessionId, directory, command, arguments: args, model, agent }),
     });
     if (!resp.ok) throw new Error(await resp.text());
+  },
+  // Best-effort remote log. Used by remoteLog.* to ship debug output to the
+  // backend when browser devtools aren't reachable (e.g. on iPad). Errors
+  // are swallowed so a failing log call never breaks the caller.
+  debugLog: async (level: 'debug' | 'info' | 'warn' | 'error', message: string, data?: unknown): Promise<void> => {
+    try {
+      await fetch('/api/debug/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ level, message, data }),
+        // `keepalive` lets the request survive page unload — handy when the
+        // log call sits right before a navigation or a crash.
+        keepalive: true,
+      });
+    } catch {
+      // Deliberately ignored.
+    }
   },
   whisperStatus: () => fetchJSON<{ available: boolean }>('/api/whisper/status'),
   transcribe: async (audio: Blob): Promise<string> => {

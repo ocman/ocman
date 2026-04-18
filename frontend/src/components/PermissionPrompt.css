@@ -8,6 +8,7 @@
   padding-bottom: max(12px, env(safe-area-inset-bottom));
   background: var(--bg);
   z-index: 50;
+  outline: none;
 }
 
 .oc-permission-box {
@@ -105,4 +106,22 @@
   background: rgba(249, 226, 175, 0.15);
   color: var(--accent4);
   border-color: var(--accent4);
+}
+
+/* Restore the left border on an active middle/last button so all four sides
+   are accent-colored (the shared-border trick strips it by default). */
+.oc-permission-btn-active:not(:first-child) {
+  border-left: 1px solid var(--accent4);
+}
+
+.oc-permission-keys {
+  margin-left: 12px;
+  font-size: 11px;
+  color: var(--overlay0);
+  font-family: 'SF Mono', Consolas, monospace;
+}
+.oc-permission-keys kbd {
+  color: var(--subtext0);
+  font-family: inherit;
+  font-weight: 600;
 }

@@ -10,8 +10,11 @@
 }
 
 .oc-shortcuts-dialog {
-  width: 480px;
+  width: 860px;
   max-width: 92vw;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -57,8 +60,50 @@
   color: var(--text);
 }
 
-.oc-shortcuts-list {
+.oc-shortcuts-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.oc-shortcuts-body-single {
+  grid-template-columns: 1fr;
+  justify-items: center;
+}
+
+.oc-shortcuts-body-single > .oc-shortcuts-column {
+  width: 100%;
+  max-width: 420px;
+}
+
+.oc-shortcuts-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.oc-shortcuts-section {
+  background: var(--bg-sunken, transparent);
+  border: 1px solid var(--border);
+  border-radius: 8px;
   padding: 10px 0;
+}
+
+.oc-shortcuts-section-title {
+  margin: 0;
+  padding: 4px 16px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+
+.oc-shortcuts-list {
+  display: flex;
+  flex-direction: column;
 }
 
 .oc-shortcuts-item {
@@ -66,19 +111,47 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 12px 20px;
+  padding: 10px 16px;
 }
 
 .oc-shortcuts-item + .oc-shortcuts-item {
   border-top: 1px solid var(--border);
 }
 
-.oc-shortcuts-item span {
+.oc-shortcuts-item > span {
   color: var(--text);
   font-size: 13px;
 }
 
+.oc-kbd-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.oc-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text);
+  background: var(--surface1);
+  border: 1px solid var(--surface2);
+  border-radius: 5px;
+  box-shadow: 0 1px 0 var(--surface2);
+}
+
 @media (max-width: 768px) {
+  .oc-shortcuts-body {
+    grid-template-columns: 1fr;
+  }
   .oc-shortcuts-item {
     align-items: flex-start;
     flex-direction: column;

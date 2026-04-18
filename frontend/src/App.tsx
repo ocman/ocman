@@ -1,4 +1,4 @@
-import { Component, useEffect, useState } from 'react';
+import { Component, useCallback } from 'react';
 import type { ReactNode, ErrorInfo } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { useHotkeys } from 'react-hotkeys-hook';
@@ -10,6 +10,8 @@ import { useHeaderInfo } from './lib/headerContext';
 import { CommandPalette } from './components/CommandPalette';
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
 import { useFaviconNotify } from './lib/useFaviconNotify';
+import { useUiStore } from './lib/uiStore';
+import { useShortcut, useShortcutDispatcher } from './lib/shortcutRegistry';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
@@ -70,70 +72,73 @@ function Header() {
   );
 }
 
-function GlobalHotkeys({ shortcutsOpen, onToggleShortcuts, onCloseShortcuts }: {
-  shortcutsOpen: boolean;
-  onToggleShortcuts: () => void;
-  onCloseShortcuts: () => void;
-}) {
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.repeat) return;
-      // Alt+? (Alt+Shift+/ on most layouts) — use e.code to handle macOS Option key producing special chars
-      const isAltQuestion = e.altKey && e.shiftKey && (e.code === 'Slash' || e.code === 'IntlRo');
-      if (!isAltQuestion || e.metaKey || e.ctrlKey) return;
+function GlobalHotkeys() {
+  const { shortcutsOpen, toggleShortcuts, closeShortcuts } = useUiStore();
 
-      e.preventDefault();
-      e.stopPropagation();
-      onToggleShortcuts();
-    };
+  // Single dispatcher for every shortcut registered via useShortcut.
+  useShortcutDispatcher();
 
-    window.addEventListener('keydown', onKeyDown, true);
+  useShortcut({
+    id: 'site.toggle-shortcuts',
+    scope: 'site',
+    // Accept Alt+? (Shift+/) and Alt+/ on both US (Slash) and JIS (IntlRo)
+    // layouts so the help dialog is reachable regardless of keyboard.
+    keys: [
+      { code: 'Slash', alt: true, shift: true },
+      { code: 'Slash', alt: true },
+      { code: 'IntlRo', alt: true, shift: true },
+      { code: 'IntlRo', alt: true },
+    ],
+    description: 'Open keyboard shortcuts',
+    handler: toggleShortcuts,
+  });
 
-    return () => {
-      window.removeEventListener('keydown', onKeyDown, true);
-    };
-  }, [onToggleShortcuts]);
-
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.repeat || !e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-      if (e.code !== 'ArrowUp' && e.code !== 'ArrowDown') return;
-      e.preventDefault();
-
-      // Find the nearest scrollable ancestor of the active/focused element
-      let el: Element | null = document.activeElement;
-      let scroller: Element | null = null;
-      while (el && el !== document.documentElement) {
-        const style = getComputedStyle(el);
-        const overflow = style.overflowY;
-        if ((overflow === 'auto' || overflow === 'scroll') && el.scrollHeight > el.clientHeight) {
-          scroller = el;
-          break;
-        }
-        el = el.parentElement;
+  const scrollHalfPage = useCallback((e: KeyboardEvent) => {
+    // Find the nearest scrollable ancestor of the active/focused element, or
+    // fall back to the thread viewport or document.
+    let el: Element | null = document.activeElement;
+    let scroller: Element | null = null;
+    while (el && el !== document.documentElement) {
+      const style = getComputedStyle(el);
+      const overflow = style.overflowY;
+      if ((overflow === 'auto' || overflow === 'scroll') && el.scrollHeight > el.clientHeight) {
+        scroller = el;
+        break;
       }
-      // Fall back to the thread viewport or document
-      if (!scroller) scroller = document.querySelector('.oc-thread-viewport') ?? document.documentElement;
+      el = el.parentElement;
+    }
+    if (!scroller) scroller = document.querySelector('.oc-thread-viewport') ?? document.documentElement;
 
-      const amount = scroller.clientHeight / 2;
-      scroller.scrollBy({ top: e.code === 'ArrowDown' ? amount : -amount, behavior: 'smooth' });
-    };
-
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
+    const amount = scroller.clientHeight / 2;
+    scroller.scrollBy({ top: e.code === 'ArrowDown' ? amount : -amount, behavior: 'smooth' });
   }, []);
 
-  useHotkeys('esc', () => onCloseShortcuts(), {
+  useShortcut({
+    id: 'site.scroll-down',
+    scope: 'site',
+    keys: { code: 'ArrowDown', alt: true },
+    description: 'Scroll down half a page',
+    handler: scrollHalfPage,
+  });
+  useShortcut({
+    id: 'site.scroll-up',
+    scope: 'site',
+    keys: { code: 'ArrowUp', alt: true },
+    description: 'Scroll up half a page',
+    handler: scrollHalfPage,
+  });
+
+  useHotkeys('esc', () => closeShortcuts(), {
     enabled: shortcutsOpen,
     enableOnFormTags: ['INPUT', 'TEXTAREA', 'SELECT'],
     enableOnContentEditable: true,
     preventDefault: true,
-  }, [onCloseShortcuts, shortcutsOpen]);
+  }, [closeShortcuts, shortcutsOpen]);
 
   return (
     <>
       <CommandPalette />
-      <KeyboardShortcutsDialog open={shortcutsOpen} onClose={onCloseShortcuts} />
+      <KeyboardShortcutsDialog open={shortcutsOpen} onClose={closeShortcuts} />
     </>
   );
 }
@@ -144,17 +149,11 @@ function FaviconNotify() {
 }
 
 export default function App() {
-  const [shortcutsOpen, setShortcutsOpen] = useState(false);
-
   return (
     <BrowserRouter>
       <HeaderProvider>
         <FaviconNotify />
-        <GlobalHotkeys
-          shortcutsOpen={shortcutsOpen}
-          onToggleShortcuts={() => setShortcutsOpen((open) => !open)}
-          onCloseShortcuts={() => setShortcutsOpen(false)}
-        />
+        <GlobalHotkeys />
         <div className="container">
           <Header />
           <div className="content">

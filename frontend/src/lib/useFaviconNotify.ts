@@ -31,6 +31,9 @@ export function useFaviconNotify() {
   const pendingCountRef = useRef(0);
   const notifyingRef = useRef(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Snapshot of session statuses taken when the tab goes hidden.
+  // Only sessions that transition to waiting/error *after* this snapshot count.
+  const baselineRef = useRef<Map<string, string> | null>(null);
 
   useEffect(() => {
     function setFavicon(href: string) {
@@ -60,9 +63,15 @@ export function useFaviconNotify() {
     async function checkPending() {
       try {
         const sessions = await api.sessions();
-        const count = sessions.filter(
-          s => (s.status === 'waiting' || s.status === 'error') && !s.seen,
-        ).length;
+        const baseline = baselineRef.current;
+        const count = sessions.filter(s => {
+          if (s.status !== 'waiting' && s.status !== 'error') return false;
+          if (s.seen) return false;
+          // Only count sessions that were not already in a terminal state
+          // when the tab went hidden (i.e. newly completed while away).
+          if (baseline !== null && baseline.get(s.id) === s.status) return false;
+          return true;
+        }).length;
         pendingCountRef.current = count;
         if (count > 0 && document.hidden) {
           applyNotify(count);
@@ -74,12 +83,22 @@ export function useFaviconNotify() {
       }
     }
 
+    async function takeBaseline() {
+      try {
+        const sessions = await api.sessions();
+        baselineRef.current = new Map(sessions.map(s => [s.id, s.status]));
+      } catch {
+        baselineRef.current = null;
+      }
+    }
+
     _recheck = () => void checkPending();
 
     function onVisibilityChange() {
       if (!document.hidden) {
-        // Tab became visible — clear the notification badge immediately.
+        // Tab became visible — clear the notification badge and baseline.
         clearNotify();
+        baselineRef.current = null;
         // Stop the poll while visible; the Dashboard / SessionDetail have
         // their own polling, so we avoid redundant requests.
         if (intervalRef.current !== null) {
@@ -87,8 +106,8 @@ export function useFaviconNotify() {
           intervalRef.current = null;
         }
       } else {
-        // Tab became hidden — start polling and check immediately.
-        void checkPending();
+        // Tab became hidden — snapshot current statuses, then start polling.
+        void takeBaseline().then(() => void checkPending());
         if (intervalRef.current === null) {
           intervalRef.current = setInterval(() => void checkPending(), POLL_INTERVAL_MS);
         }
@@ -99,7 +118,7 @@ export function useFaviconNotify() {
 
     // Kick off if the page starts hidden (e.g. opened in a background tab).
     if (document.hidden) {
-      void checkPending();
+      void takeBaseline().then(() => void checkPending());
       intervalRef.current = setInterval(() => void checkPending(), POLL_INTERVAL_MS);
     }
 

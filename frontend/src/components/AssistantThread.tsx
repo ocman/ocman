@@ -7,6 +7,8 @@ import {
   type ToolCallMessagePartProps,
 } from '@assistant-ui/react';
 import { formatSeconds } from '../lib/format';
+import { useAgentColor } from '../lib/agentColor';
+import { useShortcut } from '../lib/shortcutRegistry';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -67,18 +69,23 @@ const ImageDisplay: FC<{ image: string; filename?: string }> = ({ image, filenam
 
 const UserMessage: FC = () => {
   const content = useMessage((m) => m.content);
-  const isQueued = useMessage((m) => {
-    const meta = m.metadata as Record<string, unknown> | undefined;
-    const custom = meta?.custom as Record<string, unknown> | undefined;
-    return custom?.queued === true;
-  });
+  const custom = useMessage((m) => m.metadata?.custom as Record<string, unknown> | undefined);
+  const isQueued = custom?.queued === true;
+  const agent = typeof custom?.agent === 'string' ? (custom.agent as string) : undefined;
+  // Queued messages use their own peach accent — don't override it with the
+  // agent color until the message actually starts being processed.
+  const agentBorder = useAgentColor(agent);
+  const borderStyle = !isQueued && agent ? { borderLeftColor: agentBorder } : undefined;
   const hasContent = content.some(
     (p) => (p.type === 'text' && 'text' in p && (p as { text: string }).text.trim()) || p.type === 'tool-call' || p.type === 'image'
   );
   if (!hasContent) return null;
 
   return (
-    <MessagePrimitive.Root className={`oc-msg oc-msg-user${isQueued ? ' oc-msg-queued' : ''}`}>
+    <MessagePrimitive.Root
+      className={`oc-msg oc-msg-user${isQueued ? ' oc-msg-queued' : ''}`}
+      style={borderStyle}
+    >
       <div className="oc-msg-body">
         <MessagePrimitive.Content
           components={{
@@ -149,6 +156,8 @@ function AssistantMeta() {
   const status = useMessage((m) => m.status);
   const content = useMessage((m) => m.content);
   const custom = useMessage((m) => m.metadata?.custom as Record<string, unknown> | undefined);
+  const agent = typeof custom?.agent === 'string' ? (custom.agent as string) : undefined;
+  const agentColor = useAgentColor(agent);
   if (!createdAt || createdAt.getTime() === 0) return null;
   if (status?.type === 'running') return null;
   // Hide timestamp when message only contains file reads
@@ -163,6 +172,8 @@ function AssistantMeta() {
   if (onlyReads) return null;
   const time = createdAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
   const isError = status?.type === 'incomplete' && 'reason' in status && status.reason === 'error';
+  const errorName = custom?.errorName as string | undefined;
+  const isAbort = errorName === 'MessageAbortedError' || errorName === 'AbortError';
 
   // Compute duration and tokens-per-second from per-message timing data when available.
   const msgTime = custom?.time as { created?: number; completed?: number } | undefined;
@@ -180,12 +191,19 @@ function AssistantMeta() {
   return (
     <>
       {isError && (
-        <div className="oc-error-banner" style={{ marginTop: 10 }}>
-          Session ended with an error
+        <div className={`oc-error-banner${isAbort ? ' oc-error-banner-abort' : ''}`}>
+          {isAbort
+            ? <><i className="bi bi-slash-circle" aria-hidden="true" /> Interrupted</>
+            : <><i className="bi bi-exclamation-triangle-fill" aria-hidden="true" /> Session ended with an error</>
+          }
         </div>
       )}
       <div className="oc-msg-meta">
-        <span className="oc-meta-dot" style={isError ? { background: 'var(--danger)' } : undefined} title={isError ? 'Error' : 'Message group'} />
+        <span
+          className="oc-meta-dot"
+          style={isError ? { background: 'var(--danger)' } : agent ? { background: agentColor } : undefined}
+          title={isError ? 'Error' : agent ? `agent: ${agent}` : 'Message group'}
+        />
         <span>{time}</span>
         {durationSec !== null && (
           <>
@@ -396,11 +414,58 @@ function parseQuestionAnswers(result: unknown): string[] | null {
 
   const normalizeAnswer = (value: string): string => {
     const trimmed = value.trim();
-    const mappedMatch = trimmed.match(/=\s*"([^"]+)"/);
-    if (mappedMatch) return mappedMatch[1].trim();
-    const quotedMatch = trimmed.match(/^"([^"]+)"$/);
+    const quotedMatch = trimmed.match(/^"([\s\S]+)"$/);
     if (quotedMatch) return quotedMatch[1].trim();
     return trimmed;
+  };
+
+  // Extract `"question"="answer"` pairs from the prose format emitted by the
+  // MCP question tool:
+  //   User has answered your questions: "Q1"="A1", "Q2"="A2". You can now ...
+  // Question and answer bodies may themselves contain escaped quotes and
+  // multiple lines, so we walk the string matching balanced quoted segments
+  // separated by `=`.
+  const extractProseAnswers = (raw: string): string[] | null => {
+    const answers: string[] = [];
+    let i = 0;
+    const len = raw.length;
+    const readQuoted = (): string | null => {
+      if (i >= len || raw[i] !== '"') return null;
+      i++; // skip opening quote
+      let out = '';
+      while (i < len) {
+        const ch = raw[i];
+        if (ch === '\\' && i + 1 < len) {
+          out += raw[i + 1];
+          i += 2;
+          continue;
+        }
+        if (ch === '"') {
+          i++; // skip closing quote
+          return out;
+        }
+        out += ch;
+        i++;
+      }
+      return null; // unterminated
+    };
+
+    while (i < len) {
+      // Advance to the next opening quote.
+      while (i < len && raw[i] !== '"') i++;
+      if (i >= len) break;
+      const q = readQuoted();
+      if (q === null) break;
+      // Expect `=` (optional whitespace).
+      while (i < len && (raw[i] === ' ' || raw[i] === '\t')) i++;
+      if (raw[i] !== '=') continue;
+      i++;
+      while (i < len && (raw[i] === ' ' || raw[i] === '\t')) i++;
+      const a = readQuoted();
+      if (a === null) break;
+      answers.push(a.trim());
+    }
+    return answers.length > 0 ? answers : null;
   };
 
   // The result may be JSON-stringified multiple times (e.g. a JSON string
@@ -432,10 +497,19 @@ function parseQuestionAnswers(result: unknown): string[] | null {
     }).filter(Boolean);
     return answers.length > 0 ? answers : null;
   }
-  if (typeof parsed === 'string' && parsed.trim()) return [normalizeAnswer(parsed)];
+  if (typeof parsed === 'string' && parsed.trim()) {
+    // MCP question tool returns prose like:
+    //   User has answered your questions: "Q"="A", "Q2"="A2". You can now ...
+    // Extract the answer from each "question"="answer" pair.
+    const prose = extractProseAnswers(parsed);
+    if (prose) return prose;
+    return [normalizeAnswer(parsed)];
+  }
 
   // Fallback for non-JSON result
   if (typeof result === 'string') {
+    const prose = extractProseAnswers(result);
+    if (prose) return prose;
     const raw = normalizeAnswer(result);
     if (raw && raw !== '""' && raw !== '[]') return [raw];
   }
@@ -737,17 +811,20 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
   const isBash = toolName === 'bash' || toolName === 'mcp_bash';
   if (isBash) {
     const command = detail || title;
+    // Auto-expand while the command is running so output streams visibly.
+    const isRunningWithOutput = toolStatus === 'running' && !!outputDisplay;
+    const bashExpanded = expanded || isRunningWithOutput;
     return (
-      <div className={`oc-tool oc-tool-shell ${statusClass} ${expanded ? 'oc-tool-expanded' : ''}`}>
+      <div className={`oc-tool oc-tool-shell ${statusClass} ${bashExpanded ? 'oc-tool-expanded' : ''}`}>
         <div className="oc-tool-header" onClick={() => setExpanded(!expanded)}>
           <i className={`bi bi-terminal-fill oc-tool-icon ${statusClass}`} title={statusTitle} aria-hidden="true" />
           <span className="oc-tool-label">{title && title !== command ? title : toolName}</span>
         </div>
-        <div className="oc-tool-content" onClick={() => !expanded && setExpanded(true)} style={!expanded ? { cursor: 'pointer' } : undefined}>
+        <div className="oc-tool-content" onClick={() => !bashExpanded && setExpanded(true)} style={!bashExpanded ? { cursor: 'pointer' } : undefined}>
           <pre className="oc-shell-block">
 {command && <><span className="oc-shell-prompt">$</span> <span className="oc-shell-cmd">{command}</span>{outputDisplay ? '\n' : ''}</>}{outputDisplay}
           </pre>
-          {!expanded && isLong && (
+          {!bashExpanded && isLong && (
             <div className="oc-tool-expand">Click to expand</div>
           )}
         </div>
@@ -815,7 +892,7 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
     if (!thread) return;
 
     const updateBottomInset = () => {
-      const overlay = thread.querySelector<HTMLElement>('.oc-composer-wrap, .oc-permission-wrap');
+      const overlay = thread.querySelector<HTMLElement>('.oc-composer-wrap, .oc-permission-wrap, .oc-question-wrap');
       setBottomInset((overlay?.offsetHeight || 124) + 16);
       return overlay;
     };
@@ -829,7 +906,7 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
       if (overlay) resizeObserver.observe(overlay);
     });
 
-    const overlay = thread.querySelector<HTMLElement>('.oc-composer-wrap, .oc-permission-wrap');
+    const overlay = thread.querySelector<HTMLElement>('.oc-composer-wrap, .oc-permission-wrap, .oc-question-wrap');
     if (overlay) resizeObserver.observe(overlay);
     const frame = requestAnimationFrame(updateBottomInset);
 
@@ -913,6 +990,58 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
     const el = viewportRef.current;
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   };
+
+  // Alt+H / Alt+L (Option+H / Option+L on Mac) jump between user messages in
+  // the history. Alt+H: previous user message (up). Alt+L: next user message
+  // (down). The registry handles key-matching and preventDefault; this code
+  // just computes the scroll target.
+  const jumpToUserMessage = useCallback((direction: 'prev' | 'next') => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const userMsgs = Array.from(viewport.querySelectorAll<HTMLElement>('.oc-msg-user'));
+    if (userMsgs.length === 0) return;
+
+    const viewportTop = viewport.getBoundingClientRect().top;
+    // Tolerance for detecting messages "at the top" of the viewport — anything
+    // within this distance is treated as the current anchor so the shortcut
+    // jumps to the neighboring message rather than re-snapping to this one.
+    const epsilon = 4;
+    const offsets = userMsgs.map((el) => el.getBoundingClientRect().top - viewportTop);
+
+    let targetIndex = -1;
+    if (direction === 'prev') {
+      for (let i = offsets.length - 1; i >= 0; i--) {
+        if (offsets[i] < -epsilon) { targetIndex = i; break; }
+      }
+      if (targetIndex === -1) targetIndex = 0;
+    } else {
+      for (let i = 0; i < offsets.length; i++) {
+        if (offsets[i] > epsilon) { targetIndex = i; break; }
+      }
+      if (targetIndex === -1) targetIndex = offsets.length - 1;
+    }
+
+    const target = userMsgs[targetIndex];
+    if (!target) return;
+    const targetTop = target.getBoundingClientRect().top - viewportTop + viewport.scrollTop;
+    viewport.scrollTo({ top: Math.max(0, targetTop - 12), behavior: 'smooth' });
+  }, []);
+
+  useShortcut({
+    id: 'session.prev-user-message',
+    scope: 'session',
+    keys: { code: 'KeyH', alt: true },
+    description: 'Jump to previous user message',
+    handler: () => jumpToUserMessage('prev'),
+  });
+  useShortcut({
+    id: 'session.next-user-message',
+    scope: 'session',
+    keys: { code: 'KeyL', alt: true },
+    description: 'Jump to next user message',
+    handler: () => jumpToUserMessage('next'),
+  });
 
 
 

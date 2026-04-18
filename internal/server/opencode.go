@@ -142,6 +142,85 @@ func discoverOpenCodePort(directory string) string {
 	return discoverOpenCodePorts()[directory]
 }
 
+// fetchPendingPrompts calls the OpenCode HTTP endpoints that list currently
+// open permission and question prompts and returns a set of session IDs that
+// have an outstanding prompt of each kind. Endpoints that return non-JSON or
+// HTTP errors are treated as empty (the endpoint may not be implemented on
+// older OpenCode versions — we never want session listing to fail because of
+// this best-effort lookup).
+func fetchPendingPrompts(port string) (permissions, questions map[string]bool) {
+	permissions = fetchPromptSessionIDs(port, "/permission")
+	questions = fetchPromptSessionIDs(port, "/question")
+	return permissions, questions
+}
+
+// fetchPromptSessionIDs performs the actual HTTP call and returns the set of
+// session IDs mentioned in the JSON array response.
+func fetchPromptSessionIDs(port, path string) map[string]bool {
+	result := map[string]bool{}
+	url := fmt.Sprintf("http://127.0.0.1:%s%s", port, path)
+	resp, err := openCodeClient.Get(url)
+	if err != nil {
+		return result
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return result
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		return result
+	}
+	var items []map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&items); err != nil {
+		return result
+	}
+	for _, item := range items {
+		if sid, ok := item["sessionID"].(string); ok && sid != "" {
+			result[sid] = true
+		}
+	}
+	return result
+}
+
+// collectPendingPromptsByDir queries every running OpenCode instance for its
+// currently pending permission and question prompts and returns two maps,
+// each keyed by session ID. Directories that fail to respond are silently
+// skipped — this is a best-effort UI hint.
+func collectPendingPromptsByDir(ports map[string]string) (permSIDs, questionSIDs map[string]bool) {
+	permSIDs = map[string]bool{}
+	questionSIDs = map[string]bool{}
+	if len(ports) == 0 {
+		return permSIDs, questionSIDs
+	}
+
+	type result struct {
+		perms     map[string]bool
+		questions map[string]bool
+	}
+	results := make(chan result, len(ports))
+	var wg sync.WaitGroup
+	for _, port := range ports {
+		wg.Add(1)
+		go func(p string) {
+			defer wg.Done()
+			perms, questions := fetchPendingPrompts(p)
+			results <- result{perms: perms, questions: questions}
+		}(port)
+	}
+	wg.Wait()
+	close(results)
+
+	for r := range results {
+		for sid := range r.perms {
+			permSIDs[sid] = true
+		}
+		for sid := range r.questions {
+			questionSIDs[sid] = true
+		}
+	}
+	return permSIDs, questionSIDs
+}
+
 // --- Fetching session data from the OpenCode HTTP API ---
 
 const maxOutputLen = 10000
@@ -186,6 +265,87 @@ func fetchOpenCodeSession(port, sessionID string) (map[string]interface{}, error
 		return nil, fmt.Errorf("decoding session: %w", err)
 	}
 	return result, nil
+}
+
+// fetchOpenCodeSmallModel fetches the resolved OpenCode config from the running
+// instance and extracts the `small_model` field, returning providerID/modelID.
+// Returns ok=false when the config is unreachable, missing the field, or
+// malformed. OpenCode's /config endpoint returns the merged config across
+// global/project/custom sources, so this honors whatever precedence the user
+// configured. The expected format is `"provider/model"` (e.g.
+// `"anthropic/claude-haiku-4-5"`).
+func fetchOpenCodeSmallModel(port string) (providerID, modelID string, ok bool) {
+	url := fmt.Sprintf("http://127.0.0.1:%s/config", port)
+	resp, err := openCodeClient.Get(url)
+	if err != nil {
+		return "", "", false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", "", false
+	}
+	var cfg struct {
+		SmallModel string `json:"small_model"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&cfg); err != nil {
+		return "", "", false
+	}
+	slash := strings.IndexByte(cfg.SmallModel, '/')
+	if slash <= 0 || slash == len(cfg.SmallModel)-1 {
+		return "", "", false
+	}
+	return cfg.SmallModel[:slash], cfg.SmallModel[slash+1:], true
+}
+
+// OpenCodeProviderModel is the minimal subset of a model entry we need for
+// the picker. The /provider payload includes costs, capabilities, limits,
+// variants, etc. — none of that matters for selection, so we strip it
+// server-side to keep the frontend response small.
+type OpenCodeProviderModel struct {
+	ID     string `json:"id"`
+	Name   string `json:"name,omitempty"`
+	Status string `json:"status,omitempty"`
+}
+
+// OpenCodeProvider is a trimmed provider entry. `Models` matches OpenCode's
+// native shape: a map keyed by model ID.
+type OpenCodeProvider struct {
+	ID     string                           `json:"id"`
+	Name   string                           `json:"name,omitempty"`
+	Models map[string]OpenCodeProviderModel `json:"models"`
+}
+
+// OpenCodeProvidersResponse is the shape returned by OpenCode's GET /provider:
+// the full catalog (`all`), the user's authenticated providers (`connected`),
+// and the per-provider default model (`default`). `/provider` is preferred
+// over `/config/providers` because it also exposes the `connected` set.
+type OpenCodeProvidersResponse struct {
+	All       []OpenCodeProvider `json:"all"`
+	Connected []string           `json:"connected"`
+	Default   map[string]string  `json:"default"`
+}
+
+// fetchOpenCodeProviders calls GET /provider on the running OpenCode instance
+// and returns the catalog of providers, the subset the user has authenticated,
+// and the per-provider defaults. Returns ok=false when the endpoint is
+// unreachable or responds with a non-200 status so callers can fall back
+// gracefully (e.g. to DB-derived recent models).
+func fetchOpenCodeProviders(port string) (OpenCodeProvidersResponse, bool) {
+	var empty OpenCodeProvidersResponse
+	url := fmt.Sprintf("http://127.0.0.1:%s/provider", port)
+	resp, err := openCodeClient.Get(url)
+	if err != nil {
+		return empty, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return empty, false
+	}
+	var parsed OpenCodeProvidersResponse
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		return empty, false
+	}
+	return parsed, true
 }
 
 // fetchOpenCodeMessages fetches messages for a session from the OpenCode HTTP API.

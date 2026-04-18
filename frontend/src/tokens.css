@@ -75,6 +75,8 @@ a:hover { text-decoration: underline; }
 .content:has(.session-layout) { padding: 0; }
 
 .mono { font-family: 'SF Mono', Consolas, monospace; font-size: 12px; color: var(--text-dim); }
+.short-path-prefix { color: var(--text-dim); }
+.short-path-last { color: var(--subtext0); }
 .cell-dim { color: var(--overlay0); font-size: 11px; }
 .hidden { display: none; }
 

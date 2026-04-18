@@ -1,20 +1,22 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import './SessionDetail.css';
-import '../components/PermissionPrompt.css';
-import { api, type Session, type SessionDetail as SessionDetailData, type Message, type Part } from '../lib/api';
-import { formatDuration, formatNumber, shortPath, relativeTime } from '../lib/format';
+import { api, type Session, type SessionDetail as SessionDetailData, type Message, type Part, type AgentInfo, type SessionModelEntry } from '../lib/api';
+import { cleanTitle, formatDuration, formatNumber, shortPath, relativeTime } from '../lib/format';
 import { useHeaderInfo, usePageTitle } from '../lib/headerContext';
 import { OcmanRuntimeProvider } from '../components/OcmanRuntimeProvider';
 import { AssistantThread } from '../components/AssistantThread';
 import { Composer, type AttachedImage } from '../components/assistant/Composer';
 import { QuestionPrompt, type PendingQuestion, type QuestionItem } from '../components/session/QuestionPrompt';
+import { PermissionPrompt } from '../components/session/PermissionPrompt';
 import { StatusBadge } from '../components/StatusBadge';
+import { ShortPath } from '../components/SessionTable';
 import { useTmux } from '../lib/useTmux';
 import { filterVisibleSessions } from '../lib/sessionVisibility';
 import { useApiStore } from '../lib/apiStore';
 import { recheckFaviconNotify } from '../lib/useFaviconNotify';
 import { openVSCode } from '../lib/shortcuts';
+import { useShortcut } from '../lib/shortcutRegistry';
 
 const PAGE_SIZE = 50;
 const RECENT_SESSIONS_LIMIT = 20;
@@ -401,8 +403,10 @@ export function SessionDetail() {
   const [portAvailable, setPortAvailable] = useState(false);
   const [whisperAvailable, setWhisperAvailable] = useState(false);
   const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [modelEntries, setModelEntries] = useState<SessionModelEntry[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
   const [selectedAgent, setSelectedAgent] = useState('');
+  const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [recentSessions, setRecentSessions] = useState<Session[]>([]);
   const [loadingRecentSessions, setLoadingRecentSessions] = useState(true);
 
@@ -413,7 +417,7 @@ export function SessionDetail() {
   // Maps subagent messageId -> { output: output tokens for that message, created: time.created }
   const [subagentTokens, setSubagentTokens] = useState<Map<string, { output: number; created: number }>>(new Map());
   const { setInfo } = useHeaderInfo();
-  usePageTitle(session?.title || 'Session');
+  usePageTitle(cleanTitle(session?.title) || 'Session');
   const lastHashRef = useRef('');
   const lastSessionHashRef = useRef('');
   const lastSiblingsHashRef = useRef('');
@@ -445,6 +449,7 @@ export function SessionDetail() {
   const sendMessage = useApiStore((state) => state.sendMessage);
   const listPermissions = useApiStore((state) => state.listPermissions);
   const respondPermission = useApiStore((state) => state.respondPermission);
+  const listQuestions = useApiStore((state) => state.listQuestions);
   const respondQuestion = useApiStore((state) => state.respondQuestion);
   const rejectQuestion = useApiStore((state) => state.rejectQuestion);
   const createSession = useApiStore((state) => state.createSession);
@@ -636,17 +641,77 @@ export function SessionDetail() {
       });
     }
     getWhisperStatus().then(s => setWhisperAvailable(s.available)).catch(() => setWhisperAvailable(false));
-    getModels()
-      .then((models) => {
-        const ordered = [...models]
-          .sort((a, b) => b.count - a.count)
-          .map((m) => formatModelRef(m.provider, m.model));
-        setModelOptions(Array.from(new Set(ordered)));
-      })
-      .catch(() => setModelOptions([]));
+    // Fetch the rich session-scoped model list (historical + live-available
+    // from /config/providers). Falls back to the plain global usage list when
+    // the new endpoint fails so the composer still works on older backends.
+    if (id) {
+      api.sessionModels(id).then((resp) => {
+        if (signal.aborted) return;
+        setModelEntries(resp.models || []);
+        setModelOptions(
+          Array.from(new Set((resp.models || []).map((m) => formatModelRef(m.provider, m.model)))),
+        );
+      }).catch(() => {
+        if (signal.aborted) return;
+        // Fallback: historical-only list.
+        getModels()
+          .then((models) => {
+            if (signal.aborted) return;
+            const ordered = [...models]
+              .sort((a, b) => b.count - a.count)
+              .map((m) => formatModelRef(m.provider, m.model));
+            setModelOptions(Array.from(new Set(ordered)));
+            // Fallback shape: no recency info, but the picker will still
+            // render a sensible provider-grouped list.
+            setModelEntries(models.map((m) => ({
+              provider: m.provider,
+              model: m.model,
+            })));
+          })
+          .catch(() => {
+            setModelOptions([]);
+            setModelEntries([]);
+          });
+      });
+    }
 
     return () => controller.abort();
   }, [getModels, getSessionPort, getWhisperStatus, id, load]);
+
+  // Fetch the OpenCode /agent list so we can color UI by agent. Requires a
+  // running OpenCode instance for this project directory — silently stays
+  // empty otherwise (agentColor falls back to deterministic defaults).
+  useEffect(() => {
+    const dir = session?.directory;
+    if (!dir || !portAvailable) {
+      setAgents([]);
+      return;
+    }
+    const controller = new AbortController();
+    api.agents(dir, controller.signal)
+      .then((list) => { if (!controller.signal.aborted) setAgents(list || []); })
+      .catch((e) => {
+        if (e instanceof DOMException && e.name === 'AbortError') return;
+        setAgents([]);
+      });
+    return () => controller.abort();
+  }, [session?.directory, portAvailable]);
+
+  // Re-fetch the session-scoped model list once OpenCode becomes reachable so
+  // the picker picks up the full /config/providers catalog. The initial fetch
+  // in the main load effect may have run before discovery completed.
+  useEffect(() => {
+    if (!id || !portAvailable) return;
+    const controller = new AbortController();
+    api.sessionModels(id).then((resp) => {
+      if (controller.signal.aborted) return;
+      setModelEntries(resp.models || []);
+      setModelOptions(
+        Array.from(new Set((resp.models || []).map((m) => formatModelRef(m.provider, m.model)))),
+      );
+    }).catch(() => { /* keep existing data on failure */ });
+    return () => controller.abort();
+  }, [id, portAvailable]);
 
   useEffect(() => {
     if (messages.length <= MAX_RETAINED_MESSAGES) return;
@@ -669,7 +734,9 @@ export function SessionDetail() {
       const nextRecentSessions = current && !visible.some(s => s.id === current.id)
         ? [current, ...visible].slice(0, RECENT_SESSIONS_LIMIT)
         : visible;
-      const hash = nextRecentSessions.map(s => s.id + s.status + s.timeUpdated).join(',');
+      const hash = nextRecentSessions
+        .map(s => `${s.id}|${s.status}|${s.timeUpdated}|${s.pendingPermission ? 'p' : ''}${s.pendingQuestion ? 'q' : ''}`)
+        .join(',');
       if (hash !== lastSiblingsHashRef.current) {
         lastSiblingsHashRef.current = hash;
         setRecentSessions(nextRecentSessions);
@@ -704,6 +771,35 @@ export function SessionDetail() {
     }, 10000);
     return () => window.clearInterval(refreshId);
   }, [loadRecentSessions]);
+
+  // Mirror the current session's pending-prompt state from SSE into the
+  // sidebar list entry so its badge lights up/clears immediately, without
+  // waiting for the 10-second background poll to /api/sessions. The sibling
+  // entries still rely on the poll, since their pending state is owned by
+  // the backend (fetched from each running OpenCode instance).
+  const hasPendingPrompt = pendingPermission !== null || pendingQuestion !== null;
+  useEffect(() => {
+    if (!id) return;
+    setRecentSessions(prev => {
+      let changed = false;
+      const next = prev.map(s => {
+        if (s.id !== id) return s;
+        const newPerm = pendingPermission !== null;
+        const newQuestion = pendingQuestion !== null;
+        if (s.pendingPermission === newPerm && s.pendingQuestion === newQuestion) return s;
+        changed = true;
+        return { ...s, pendingPermission: newPerm, pendingQuestion: newQuestion };
+      });
+      if (changed) {
+        // Keep the hash cache in sync so the next poll still diffs correctly.
+        lastSiblingsHashRef.current = next
+          .map(s => `${s.id}|${s.status}|${s.timeUpdated}|${s.pendingPermission ? 'p' : ''}${s.pendingQuestion ? 'q' : ''}`)
+          .join(',');
+        return next;
+      }
+      return prev;
+    });
+  }, [id, pendingPermission, pendingQuestion, hasPendingPrompt]);
 
   const sessionSeenId = session?.id;
   const sessionSeenUpdated = session?.timeUpdated || 0;
@@ -779,7 +875,25 @@ export function SessionDetail() {
       // and only if there's something to clear (avoids no-op renders).
       // Do NOT clear on message.updated — that event fires for queued user
       // messages and would prematurely dismiss the permission/question prompt.
-      if (type === 'session.status' || type === 'permission.replied') {
+      // For permission.replied, only clear if the replied permission matches
+      // the currently displayed one — otherwise a back-to-back permission
+      // request that was already set by a preceding permission.asked event
+      // would be wiped out.
+      if (type === 'permission.replied') {
+        const repliedId =
+          (typeof (parsed.properties as Record<string, unknown> | undefined)?.id === 'string' &&
+            ((parsed.properties as Record<string, unknown>).id as string)) ||
+          (typeof (parsed.properties as Record<string, unknown> | undefined)?.permissionID === 'string' &&
+            ((parsed.properties as Record<string, unknown>).permissionID as string)) ||
+          '';
+        setPendingPermission(prev => {
+          if (prev === null) return prev;
+          // If we can't identify which permission was replied to, leave state
+          // alone — a new permission.asked may have already replaced it.
+          if (!repliedId) return prev;
+          return prev.permissionId === repliedId ? null : prev;
+        });
+      } else if (type === 'session.status') {
         setPendingPermission(prev => prev === null ? prev : null);
       }
       if (type === 'question.replied' || type === 'question.rejected' || type === 'session.status') {
@@ -816,6 +930,24 @@ export function SessionDetail() {
             }
           }
         }).catch(() => { /* ignore errors — SSE events will handle live permissions */ });
+        // Fetch any questions that were already pending when we connected.
+        // Mirrors the permissions recovery above: the question.asked SSE
+        // event only fires once, so a user who wasn't viewing the session
+        // when it fired would otherwise never see the prompt.
+        listQuestions(dir).then((questions) => {
+          if (cancelled) return;
+          for (const q of questions) {
+            const question = extractPendingQuestion({ type: 'question.asked', properties: q });
+            if (!question) continue;
+            // Only show if it belongs to the current session
+            const props = q as Record<string, unknown>;
+            if (!props.sessionID || props.sessionID === sid) {
+              storePendingQuestion(sid, question);
+              setPendingQuestion((prev) => prev ?? question);
+              break; // show the first pending question for this session
+            }
+          }
+        }).catch(() => { /* ignore errors — SSE events will handle live questions */ });
         // Reconciliation: fetch the latest state to close the gap between
         // the initial load() and the SSE connection opening. Delay slightly
         // so that if SSE events arrive immediately (active conversation),
@@ -1063,7 +1195,9 @@ export function SessionDetail() {
             setParts(prev => {
               const idx = prev.findIndex(p => p.id === partId);
               if (idx >= 0) {
-                // Append delta to the target field of the existing part
+                // Append delta to the target field of the existing part.
+                // `field` may be a dotted path like "state.output" — handle
+                // one level of nesting so tool output streams incrementally.
                 const existing = prev[idx];
                 let existingData: Record<string, unknown>;
                 try {
@@ -1073,8 +1207,21 @@ export function SessionDetail() {
                 } catch {
                   existingData = {};
                 }
-                const currentVal = (existingData[field] as string) || '';
-                const updatedData = { ...existingData, [field]: currentVal + deltaText };
+                let updatedData: Record<string, unknown>;
+                const dotIdx = field.indexOf('.');
+                if (dotIdx > 0) {
+                  const parent = field.slice(0, dotIdx);
+                  const child = field.slice(dotIdx + 1);
+                  const parentObj = (existingData[parent] as Record<string, unknown> | undefined) || {};
+                  const currentVal = (parentObj[child] as string) || '';
+                  updatedData = {
+                    ...existingData,
+                    [parent]: { ...parentObj, [child]: currentVal + deltaText },
+                  };
+                } else {
+                  const currentVal = (existingData[field] as string) || '';
+                  updatedData = { ...existingData, [field]: currentVal + deltaText };
+                }
                 const updated = [...prev];
                 updated[idx] = {
                   ...existing,
@@ -1251,19 +1398,25 @@ export function SessionDetail() {
       clearInterval(fallback);
       setSseActive(false);
     };
-  }, [session?.directory, session?.id, load, listPermissions]);
+  }, [session?.directory, session?.id, load, listPermissions, listQuestions]);
 
   // Compute aggregate token/cost stats from the messages array so the header
   // stays up-to-date from SSE events without needing a server round-trip.
   const liveTokens = (() => {
-    let tokensIn = 0, tokensOut = 0;
+    let tokensIn = 0, tokensOut = 0, tokensReasoning = 0, cacheRead = 0, cacheWrite = 0, totalCost = 0;
     for (const m of messages) {
       if (m.data?.role === 'assistant' && m.data.tokens) {
         tokensIn += m.data.tokens.input || 0;
         tokensOut += m.data.tokens.output || 0;
+        tokensReasoning += m.data.tokens.reasoning || 0;
+        cacheRead += m.data.tokens.cache?.read || 0;
+        cacheWrite += m.data.tokens.cache?.write || 0;
+      }
+      if (m.data?.role === 'assistant' && m.data.cost) {
+        totalCost += m.data.cost;
       }
     }
-    return { tokensIn, tokensOut };
+    return { tokensIn, tokensOut, tokensReasoning, cacheRead, cacheWrite, totalCost };
   })();
 
   // Use the larger of server-provided totals and locally-computed totals.
@@ -1271,6 +1424,15 @@ export function SessionDetail() {
   // the local value picks up incremental SSE updates before the next load().
   const displayTokensIn = Math.max(session?.totalInputTokens || 0, liveTokens.tokensIn);
   const displayTokensOut = Math.max(session?.totalOutputTokens || 0, liveTokens.tokensOut);
+  const tokenStats = {
+    input: displayTokensIn,
+    output: displayTokensOut,
+    reasoning: liveTokens.tokensReasoning,
+    cacheRead: liveTokens.cacheRead,
+    cacheWrite: liveTokens.cacheWrite,
+    totalCost: liveTokens.totalCost,
+    contextWindow: session?.contextTokenCount,
+  };
 
   // Header info
   useEffect(() => {
@@ -1290,7 +1452,7 @@ export function SessionDetail() {
       ].filter(Boolean).join(' ');
       stats.push({ label: 'Changes', value: changes });
     }
-    setInfo({ sessionTitle: s.title || 'Untitled', stats });
+    setInfo({ sessionTitle: cleanTitle(s.title) || 'Untitled', stats });
     return () => setInfo({});
   }, [session, totalMessages, setInfo, displayTokensIn, displayTokensOut]);
 
@@ -1377,12 +1539,19 @@ export function SessionDetail() {
     const slashIdx = model.indexOf('/');
     const providerID = slashIdx > 0 ? model.slice(0, slashIdx) : '';
     const modelID = slashIdx > 0 ? model.slice(slashIdx + 1) : model;
+    // Snapshot the effective agent before compact. OpenCode's summarize adds a
+    // message whose agent becomes the new `activeAgent` (derived from the last
+    // message with an agent), which would override the user's selection. Pin
+    // the pre-compact agent via `selectedAgent` so the next send continues to
+    // use it.
+    const agentBeforeCompact = selectedAgent || activeAgent || '';
     try {
       await api.compactSession(session.id, session.directory, providerID, modelID);
+      if (agentBeforeCompact) setSelectedAgent(agentBeforeCompact);
     } catch (e) {
       console.error('Failed to compact session', e);
     }
-  }, [activeModel, portAvailable, selectedModel, session]);
+  }, [activeAgent, activeModel, portAvailable, selectedAgent, selectedModel, session]);
 
   const handleNewSession = useCallback(async () => {
     if (!session) return;
@@ -1395,7 +1564,23 @@ export function SessionDetail() {
   }, [session, createSession, navigate]);
 
   const handleCommand = useCallback(async (command: string, args: string) => {
-    if (!session || !portAvailable) return;
+    if (!session) return;
+
+    // /archive is a local ocman action — it works even when OpenCode isn't running.
+    if (command === 'archive') {
+      try {
+        await archiveSession(session.id, session.timeUpdated, true);
+      } catch (e) {
+        console.error('Failed to archive session', e);
+        return;
+      }
+      // Pick the most recent remaining, non-archived session other than the one we just archived.
+      const next = recentSessionsRef.current.find(s => s.id !== session.id && !s.archived);
+      navigate(next ? `/session/${next.id}` : '/');
+      return;
+    }
+
+    if (!portAvailable) return;
 
     if (command === 'compact') {
       await handleCompact();
@@ -1466,15 +1651,20 @@ export function SessionDetail() {
       setMessages(prev => [...prev, errMsg]);
       setParts(prev => [...prev, errPart]);
     }
-  }, [activeAgent, activeModel, handleCompact, handleNewSession, portAvailable, selectedAgent, selectedModel, session]);
+  }, [activeAgent, activeModel, archiveSession, handleCompact, handleNewSession, navigate, portAvailable, selectedAgent, selectedModel, session]);
 
   const handlePermissionReply = useCallback(async (reply: 'once' | 'always' | 'reject') => {
     if (!pendingPermission || answeringPermission || !portAvailable || !session) return;
     setPermissionError(null);
     setAnsweringPermission(true);
+    const repliedId = pendingPermission.permissionId;
     try {
-      await respondPermission(session.id, session.directory, pendingPermission.permissionId, reply);
-      setPendingPermission(null);
+      await respondPermission(session.id, session.directory, repliedId, reply);
+      // Only clear the prompt if the currently pending permission is still
+      // the one we just replied to. An SSE `permission.asked` event for a
+      // follow-up permission may have already arrived while the POST was in
+      // flight — clearing unconditionally would hide that new prompt.
+      setPendingPermission(prev => (prev && prev.permissionId === repliedId ? null : prev));
       // SSE events will deliver the updated session state incrementally.
     } catch (e) {
       setPermissionError(e instanceof Error ? e.message : 'Failed to respond to permission request');
@@ -1556,22 +1746,33 @@ export function SessionDetail() {
   const recentSessionsRef = useRef<Session[]>([]);
   useEffect(() => { recentSessionsRef.current = recentSessions; }, [recentSessions]);
 
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.repeat || !e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-      if (e.code !== 'KeyJ' && e.code !== 'KeyK') return;
-      e.preventDefault();
-      const sessions = recentSessionsRef.current;
-      const currentIndex = sessions.findIndex((s) => s.id === id);
-      if (currentIndex === -1) return;
-      const nextIndex = e.code === 'KeyJ' ? currentIndex + 1 : currentIndex - 1;
-      const target = sessions[nextIndex];
-      if (target) navigate(`/session/${target.id}`);
-    };
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
+  // Alt+J / Alt+K: navigate between recent sessions. Handlers read from refs
+  // so they can capture the latest recentSessions without re-registering.
+  const jumpToSession = useCallback((direction: 1 | -1) => {
+    const sessions = recentSessionsRef.current;
+    const currentIndex = sessions.findIndex((s) => s.id === id);
+    if (currentIndex === -1) return;
+    const target = sessions[currentIndex + direction];
+    if (target) navigate(`/session/${target.id}`);
   }, [id, navigate]);
 
+  useShortcut({
+    id: 'session.nav-next',
+    scope: 'session',
+    keys: { code: 'KeyJ', alt: true },
+    description: 'Go to next session',
+    handler: () => jumpToSession(1),
+  });
+  useShortcut({
+    id: 'session.nav-prev',
+    scope: 'session',
+    keys: { code: 'KeyK', alt: true },
+    description: 'Go to previous session',
+    handler: () => jumpToSession(-1),
+  });
+
+  // Refs keep shortcut handlers stable while the underlying callbacks/values
+  // change, so the registry doesn't need to re-register on every render.
   const handleTmuxShortcutRef = useRef(handleTmuxShortcut);
   useEffect(() => { handleTmuxShortcutRef.current = handleTmuxShortcut; }, [handleTmuxShortcut]);
   const handleVSCodeShortcutRef = useRef(handleVSCodeShortcut);
@@ -1585,23 +1786,30 @@ export function SessionDetail() {
   const portAvailableRef = useRef(portAvailable);
   useEffect(() => { portAvailableRef.current = portAvailable; }, [portAvailable]);
 
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.repeat || !e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-      if (e.code === 'KeyT' && matchingTmuxSessionRef.current) {
-        e.preventDefault();
-        handleTmuxShortcutRef.current();
-      } else if (e.code === 'KeyV' && sessionRef.current) {
-        e.preventDefault();
-        handleVSCodeShortcutRef.current();
-      } else if (e.code === 'KeyC' && sessionRef.current && portAvailableRef.current) {
-        e.preventDefault();
-        handleNewSessionRef.current();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, []);
+  useShortcut({
+    id: 'session.switch-tmux',
+    scope: 'session',
+    keys: { code: 'KeyT', alt: true },
+    description: 'Switch tmux for current session',
+    enabled: () => !!matchingTmuxSessionRef.current,
+    handler: () => handleTmuxShortcutRef.current(),
+  });
+  useShortcut({
+    id: 'session.open-vscode',
+    scope: 'session',
+    keys: { code: 'KeyV', alt: true },
+    description: 'Open current session in VS Code',
+    enabled: () => !!sessionRef.current,
+    handler: () => handleVSCodeShortcutRef.current(),
+  });
+  useShortcut({
+    id: 'session.new-session',
+    scope: 'session',
+    keys: { code: 'KeyC', alt: true },
+    description: 'Create new session in current project',
+    enabled: () => !!sessionRef.current && portAvailableRef.current,
+    handler: () => handleNewSessionRef.current(),
+  });
 
   const hasMore = messages.length < totalMessages;
   const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
@@ -1759,10 +1967,15 @@ export function SessionDetail() {
               onClick={() => navigate(`/session/${sib.id}`)}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/session/${sib.id}`); } }}
             >
-              <StatusBadge status={sib.status} compact seen={(sib.status === 'waiting' || sib.status === 'error') && sib.seen} />
+              <StatusBadge
+                status={sib.status}
+                compact
+                seen={(sib.status === 'waiting' || sib.status === 'error') && sib.seen}
+                pending={sib.pendingPermission || sib.pendingQuestion}
+              />
               <span className="session-sidebar-item-body">
-                <span className="session-sidebar-title">{sib.title || 'Untitled'}</span>
-                <span className="session-sidebar-project">{shortPath(sib.directory)}</span>
+                <span className="session-sidebar-title">{cleanTitle(sib.title) || 'Untitled'}</span>
+                <span className="session-sidebar-project"><ShortPath path={sib.directory} /></span>
               </span>
               <span className="session-sidebar-meta">
                 <span className="session-sidebar-time" title={new Date(sib.timeUpdated).toLocaleString()}>{relativeTime(sib.timeUpdated)}</span>
@@ -1831,54 +2044,20 @@ export function SessionDetail() {
             sessionId={session.id}
             directory={session.directory}
             portAvailable={portAvailable}
+            pendingAgent={selectedAgent || activeAgent || undefined}
+            agents={agents}
           >
             <AssistantThread
               hasMore={hasMore}
               loadingMore={loadingMore}
               onLoadMore={loadMore}
               composer={pendingPermission && portAvailable ? (
-                <div className="oc-permission-wrap">
-                  <div className="oc-permission-box">
-                    <div className="oc-permission-header">
-                      <span className="oc-permission-icon">&#9651;</span>
-                      <span>Permission required</span>
-                    </div>
-                    <div className="oc-permission-desc">
-                      &larr; {pendingPermission.permission}
-                    </div>
-                    {pendingPermission.patterns.length > 0 && (
-                      <div className="oc-permission-patterns">
-                        <div className="oc-permission-patterns-label">Patterns</div>
-                        {pendingPermission.patterns.map((p) => (
-                          <div key={p} className="oc-permission-pattern">- {p}</div>
-                        ))}
-                      </div>
-                    )}
-                    {permissionError && (
-                      <div className="oc-permission-error">{permissionError}</div>
-                    )}
-                    <div className="oc-permission-actions">
-                      <button
-                        type="button"
-                        className={`oc-permission-btn oc-permission-btn-active`}
-                        onClick={() => handlePermissionReply('once')}
-                        disabled={answeringPermission}
-                      >Allow once</button>
-                      <button
-                        type="button"
-                        className="oc-permission-btn"
-                        onClick={() => handlePermissionReply('always')}
-                        disabled={answeringPermission}
-                      >Allow always</button>
-                      <button
-                        type="button"
-                        className="oc-permission-btn"
-                        onClick={() => handlePermissionReply('reject')}
-                        disabled={answeringPermission}
-                      >Reject</button>
-                    </div>
-                  </div>
-                </div>
+                <PermissionPrompt
+                  permission={pendingPermission}
+                  onReply={handlePermissionReply}
+                  disabled={answeringPermission}
+                  error={permissionError}
+                />
               ) : pendingQuestion && portAvailable ? (
                 <QuestionPrompt
                   question={pendingQuestion}
@@ -1896,16 +2075,19 @@ export function SessionDetail() {
                   disabled={!portAvailable}
                   whisperAvailable={whisperAvailable}
                   models={composerModels}
+                  modelEntries={modelEntries}
                   activeModel={activeModel}
                   selectedModel={selectedModel}
                   onModelChange={setSelectedModel}
                   activeAgent={activeAgent}
                   selectedAgent={selectedAgent}
                   onAgentChange={setSelectedAgent}
+                  agents={agents}
                   contextTokens={session?.contextTokenCount || undefined}
                   sessionId={session?.id}
                   directory={session?.directory}
                   tokensPerSecond={liveTokensPerSecond ?? undefined}
+                  tokenStats={tokenStats}
                 />
               )}
               footer={showSseNotice || showSseDebug ? (

@@ -167,6 +167,9 @@
 
 /* Composer bar select dropdowns (agent, model) — rendered as plain text */
 .oc-bar-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: transparent;
   color: var(--text);
   border: none;
@@ -214,7 +217,9 @@
   padding: 6px 10px 2px;
 }
 .oc-model-option {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   width: 100%;
   text-align: left;
   background: none;
@@ -228,6 +233,14 @@
 }
 .oc-model-option:hover { background: var(--overlay0); }
 .oc-model-option.active { color: var(--accent); }
+
+.oc-agent-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
 
 /* Image preview strip inside composer */
 .oc-composer-images {
@@ -327,15 +340,75 @@
   align-items: center;
   gap: 10px;
 }
-.oc-keybind-hint { color: var(--overlay0); font-size: 11px; }
+.oc-keybind-hint { color: var(--overlay0); font-size: 11px; background: none; border: none; padding: 0; cursor: pointer; }
+.oc-keybind-hint:hover { color: var(--text); }
 .oc-bar-hint { color: var(--overlay0); }
 
 /* Context usage indicator */
+.oc-context-usage-wrap {
+  position: relative;
+}
 .oc-context-usage {
   color: var(--overlay0);
   white-space: nowrap;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: inherit;
+  font-family: inherit;
 }
+.oc-context-usage:hover { color: var(--subtext0); }
 .oc-context-usage.oc-context-warn { color: var(--accent4); }
+.oc-context-usage.oc-context-warn:hover { color: var(--rosewater); }
+
+/* Token usage popover */
+.oc-token-popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  background: var(--surface0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  min-width: 220px;
+  z-index: 100;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+.oc-token-popover-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--overlay0);
+  margin-bottom: 10px;
+}
+.oc-token-popover-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.oc-token-popover-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  font-size: 12px;
+  font-family: 'SF Mono', Consolas, monospace;
+}
+.oc-token-popover-label {
+  color: var(--text-dim);
+}
+.oc-token-popover-value {
+  color: var(--subtext0);
+  text-align: right;
+}
+.oc-token-popover-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+.oc-token-popover-cost .oc-token-popover-label { color: var(--subtext0); }
+.oc-token-popover-cost .oc-token-popover-value { color: var(--text); font-weight: 600; }
 
 /* Mic icon in bar action */
 .oc-bar-action .oc-mic-icon { font-size: 12px; }
