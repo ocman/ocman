@@ -25,6 +25,12 @@ const FAVICON_VARIANTS = {
 type VariantName = keyof typeof FAVICON_VARIANTS;
 
 const POLL_INTERVAL_MS = 10_000;
+// Lookback window for /api/sessions/notify. Any reasonable upper bound
+// works — the endpoint already filters server-side to only sessions
+// that could drive the notification, so the response stays small even
+// at 7 days.
+const FAVICON_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
+const FAVICON_LIMIT = 500;
 
 // Module-level recheck trigger set by the active hook instance.
 let _recheck: (() => void) | null = null;
@@ -117,7 +123,10 @@ export function useFaviconNotify() {
 
     async function checkPending() {
       try {
-        const sessions = await api.sessions();
+        const sessions = await api.sessionsNotify({
+          since: Date.now() - FAVICON_LOOKBACK_MS,
+          limit: FAVICON_LIMIT,
+        });
 
         // Prompt state: any session currently blocked on user input.  We do
         // not apply the baseline filter here — a pending permission/question
@@ -130,11 +139,11 @@ export function useFaviconNotify() {
         }
 
         // Notify state: sessions that transitioned to a terminal state
-        // *after* the tab went hidden and have not been seen.
+        // *after* the tab went hidden and have not been seen. The endpoint
+        // already filters out seen sessions and non-terminal statuses, so
+        // we only need to apply the baseline filter here.
         const baseline = baselineRef.current;
         const notifyCount = sessions.filter(s => {
-          if (s.status !== 'waiting' && s.status !== 'error') return false;
-          if (s.seen) return false;
           if (baseline !== null && baseline.get(s.id) === s.status) return false;
           return true;
         }).length;
@@ -151,7 +160,10 @@ export function useFaviconNotify() {
 
     async function takeBaseline() {
       try {
-        const sessions = await api.sessions();
+        const sessions = await api.sessionsNotify({
+          since: Date.now() - FAVICON_LOOKBACK_MS,
+          limit: FAVICON_LIMIT,
+        });
         baselineRef.current = new Map(sessions.map(s => [s.id, s.status]));
       } catch {
         baselineRef.current = null;

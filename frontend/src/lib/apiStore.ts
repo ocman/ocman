@@ -24,10 +24,10 @@ type RequestStatus = {
  * Maximum number of session detail responses to keep in the client-side
  * cache. Entries are evicted in LRU order when this limit is exceeded.
  * Kept small because each entry can hold hundreds of messages and their
- * parts; 5 is enough for back-and-forth navigation without unbounded
+ * parts; 3 is enough for back-and-forth navigation without unbounded
  * memory growth. See spec/session-switch-cache/architecture.md.
  */
-export const SESSION_CACHE_MAX = 5;
+export const SESSION_CACHE_MAX = 3;
 
 type ApiStore = {
   requests: Record<string, RequestStatus>;
@@ -47,7 +47,7 @@ type ApiStore = {
   getStats: () => Promise<Stats>;
   getMetrics: (params?: { agent?: string; model?: string; days?: number }) => Promise<MetricsDashboard>;
   getProjects: () => Promise<Project[]>;
-  getSessions: (params?: { dir?: string; since?: number }, signal?: AbortSignal) => Promise<Session[]>;
+  getSessions: (params?: { dir?: string; since?: number; limit?: number }, signal?: AbortSignal) => Promise<Session[]>;
   refreshCachedSessions: (signal?: AbortSignal) => Promise<Session[]>;
   getSession: (id: string, limit?: number, offset?: number, signal?: AbortSignal) => Promise<SessionDetail>;
   archiveSession: (platform: string, sessionId: string, timeUpdated: number, archived?: boolean) => Promise<{ ok: boolean }>;
@@ -58,7 +58,7 @@ type ApiStore = {
   getHourlyTokens: () => Promise<HourlyTokensByModel[]>;
   getCapabilities: (signal?: AbortSignal) => Promise<CapabilitiesResponse>;
   createSession: (directory: string, platform?: string) => Promise<{ id: string }>;
-  sendMessage: (sessionId: string, message: string, images?: { url: string; mime: string }[], model?: string, agent?: string) => Promise<void>;
+  sendMessage: (sessionId: string, message: string, images?: { url: string; mime: string }[], model?: string, agent?: string, reasoning?: string) => Promise<void>;
   listPermissions: (sessionId: string) => Promise<unknown[]>;
   respondPermission: (sessionId: string, permissionId: string, reply: 'once' | 'always' | 'reject') => Promise<void>;
   listQuestions: (sessionId: string) => Promise<unknown[]>;
@@ -143,8 +143,11 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   getMetrics: (params) => get().runRequest(`metrics:get:${params?.agent ?? ''}:${params?.model ?? ''}:${params?.days ?? ''}`, () => api.metrics(params)),
   getProjects: () => get().runRequest('projects:get', () => api.projects()),
   getSessions: (params, signal) => {
+    // Stable key so useApiRequest('sessions:get') sees status transitions.
+    // Per-params variance (since, limit) doesn't need its own loading row —
+    // the dashboard only cares about the latest request's status.
     const key = params?.dir ? `sessions:get:dir:${params.dir}` : 'sessions:get';
-    const isFullList = !params?.dir && !params?.since;
+    const isFullList = !params?.dir && !params?.since && !params?.limit;
     return get().runRequest(key, async () => {
       const result = await api.sessions(params, signal);
       // Opportunistically keep the shared cache warm whenever the full,
@@ -153,12 +156,14 @@ export const useApiStore = create<ApiStore>((set, get) => ({
       return result;
     });
   },
-  refreshCachedSessions: (signal) =>
-    get().runRequest('sessions:get', async () => {
-      const result = await api.sessions(undefined, signal);
+  refreshCachedSessions: (signal) => {
+    const since = Date.now() - 12 * 60 * 60 * 1000;
+    return get().runRequest('sessions:get', async () => {
+      const result = await api.sessions({ since, limit: 100 }, signal);
       set({ cachedSessions: result });
       return result;
-    }),
+    });
+  },
   getSession: (id, limit = 50, offset = 0, signal) => get().runRequest(`session:get:${id}`, () => api.session(id, limit, offset, signal)),
   archiveSession: (platform, sessionId, timeUpdated, archived = true) => get().runRequest(`session:archive:${sessionId}`, () => api.archiveSession(platform, sessionId, timeUpdated, archived)),
   markSessionSeen: (platform, sessionId, timeUpdated) => get().runRequest(`session:seen:${sessionId}`, () => api.markSessionSeen(platform, sessionId, timeUpdated)),
@@ -168,7 +173,7 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   getHourlyTokens: () => get().runRequest('hourly-tokens:get', () => api.hourlyTokens()),
   getCapabilities: (signal) => get().runRequest('capabilities:get', () => api.capabilities(signal)),
   createSession: (directory, platform) => get().runRequest('session:create', () => api.createSession(directory, platform)),
-  sendMessage: (sessionId, message, images, model, agent) => get().runRequest(`message:send:${sessionId}`, () => api.sendMessage(sessionId, message, images, model, agent)),
+  sendMessage: (sessionId, message, images, model, agent, reasoning) => get().runRequest(`message:send:${sessionId}`, () => api.sendMessage(sessionId, message, images, model, agent, reasoning)),
   listPermissions: (sessionId) => get().runRequest(`permissions:list:${sessionId}`, () => api.listPermissions(sessionId)),
   respondPermission: (sessionId, permissionId, reply) => get().runRequest(`permission:respond:${sessionId}`, () => api.respondPermission(sessionId, permissionId, reply)),
   listQuestions: (sessionId) => get().runRequest(`questions:list:${sessionId}`, () => api.listQuestions(sessionId)),
@@ -182,6 +187,8 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   transcribe: (audio) => get().runRequest('transcribe:post', () => api.transcribe(audio)),
 }));
 
+const DEFAULT_REQUEST_STATUS: RequestStatus = { loading: true, error: null };
+
 export function useApiRequest(key: string): RequestStatus {
-  return useApiStore((state) => state.requests[key] ?? { loading: true, error: null });
+  return useApiStore((state) => state.requests[key] ?? DEFAULT_REQUEST_STATUS);
 }

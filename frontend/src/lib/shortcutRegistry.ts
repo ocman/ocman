@@ -16,7 +16,6 @@
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import { isMacPlatform } from './shortcuts';
-import { remoteLog } from './remoteLog';
 
 export type Scope = 'site' | 'session' | 'project' | 'composer' | 'prompt';
 
@@ -99,10 +98,8 @@ export function useShortcut(shortcut: Shortcut): void {
   const unregister = useShortcutRegistry((s) => s.unregister);
 
   useEffect(() => {
-    remoteLog.debug('[shortcut] register', { id: shortcut.id, scope: shortcut.scope });
     register(shortcut);
     return () => {
-      remoteLog.debug('[shortcut] unregister', { id: shortcut.id });
       unregister(shortcut.id);
     };
     // We deliberately track every field so consumers can pass inline objects
@@ -221,17 +218,6 @@ export function useShortcutDispatcher(): void {
       // Temporary diagnostic logging (remove once the keybinding regression
       // is resolved). Only logs events that look like they might be meant
       // for a shortcut — avoids spamming the server log on every keystroke.
-      if (e.altKey || e.metaKey || e.code === 'Escape' || /^F\d+$/.test(e.code)) {
-        remoteLog.debug('[shortcut] keydown', {
-          code: e.code,
-          alt: e.altKey, shift: e.shiftKey, ctrl: e.ctrlKey, meta: e.metaKey,
-          repeat: e.repeat,
-          target: (e.target as { tagName?: string } | null)?.tagName,
-          registered: [...shortcuts.keys()],
-          matchedId: match?.id ?? null,
-          preventDefault,
-        });
-      }
       if (preventDefault) {
         e.preventDefault();
         e.stopPropagation();

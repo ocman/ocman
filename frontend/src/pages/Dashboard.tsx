@@ -1,6 +1,6 @@
 import { startTransition, useState, useEffect, useCallback, useContext, createContext, type ReactNode } from 'react';
 import './Dashboard.css';
-import { useNavigate, NavLink, Outlet } from 'react-router-dom';
+import { useNavigate, NavLink, Outlet, useSearchParams, useLocation } from 'react-router-dom';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend, PointElement, LineElement } from 'chart.js';
 import { Bar, Doughnut, Line } from 'react-chartjs-2';
 import { api } from '../lib/api';
@@ -68,12 +68,24 @@ function useDashboard(): DashboardCtx {
 
 export function DashboardLayout() {
   const tmux = useTmux();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const isOnDashboard = location.pathname === '/' || location.pathname === '/projects' || location.pathname === '/stats' || location.pathname === '/usage';
 
   const [sessions, setSessions] = useState<Session[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [timeRange, setTimeRange] = useState(24);
-  const [showArchived, setShowArchived] = useState(false);
+  const timeRange = parseInt(searchParams.get('t') || '12', 10);
+  const showArchived = searchParams.get('a') === '1';
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
+
+  const setTimeRange = useCallback((v: number) => {
+    setSearchParams((p) => { p.set('t', String(v)); return p; }, { replace: true });
+  }, [setSearchParams]);
+
+  const setShowArchived = useCallback((v: boolean) => {
+    setSearchParams((p) => { v ? p.set('a', '1') : p.delete('a'); return p; }, { replace: true });
+  }, [setSearchParams]);
 
   const getSessions = useApiStore((state) => state.getSessions);
   const getProjects = useApiStore((state) => state.getProjects);
@@ -83,8 +95,8 @@ export function DashboardLayout() {
 
   const loadSessions = useCallback(async () => {
     try {
-      const since = timeRange > 0 ? Date.now() - timeRange * 60 * 60 * 1000 : undefined;
-      const result = await getSessions(since ? { since } : {});
+      const since = timeRange > 0 ? Date.now() - timeRange * 60 * 60 * 1000 : Date.now() - 30 * 24 * 60 * 60 * 1000;
+      const result = await getSessions({ since });
       setSessions(result);
       setSessionsLoaded(true);
     } catch {
@@ -108,9 +120,10 @@ export function DashboardLayout() {
   }, [getProjects, loadSessions]);
 
   useEffect(() => {
+    if (!isOnDashboard) return;
     const id = setInterval(loadSessions, 5000);
     return () => clearInterval(id);
-  }, [loadSessions]);
+  }, [loadSessions, isOnDashboard]);
 
   const ctx: DashboardCtx = {
     sessions,

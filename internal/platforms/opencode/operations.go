@@ -195,6 +195,9 @@ func (a *Adapter) SendMessage(ctx context.Context, req platforms.SendMessageRequ
 	}
 	body := map[string]interface{}{"parts": parts}
 	if mr := parseOpenCodeModelRefInternal(req.Model); mr != nil {
+		if req.Reasoning != "" {
+			mr.Variant = req.Reasoning
+		}
 		body["model"] = mr
 	}
 	if req.Agent != "" {
@@ -412,6 +415,7 @@ func postJSON(ctx context.Context, port, path string, payload []byte) error {
 type openCodeModelRefInternal struct {
 	ProviderID string `json:"providerID,omitempty"`
 	ModelID    string `json:"modelID"`
+	Variant    string `json:"variant,omitempty"`
 }
 
 func parseOpenCodeModelRefInternal(model string) *openCodeModelRefInternal {

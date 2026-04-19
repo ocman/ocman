@@ -14,7 +14,7 @@
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-left: 3px solid var(--pink);
-  border-radius: 6px;
+  border-radius: 0;
   padding: 14px 18px;
   font-family: 'SF Mono', Consolas, monospace;
   font-size: 13px;
@@ -32,7 +32,7 @@
 .oc-question-step-dot {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: 0;
   border: 1.5px solid var(--overlay0);
   background: transparent;
   padding: 0;
@@ -101,7 +101,7 @@
   font-family: inherit;
   font-size: 13px;
   color: var(--text);
-  border-radius: 4px;
+  border-radius: 0;
   transition: background 0.1s;
 }
 .oc-question-opt-btn:hover:enabled {
@@ -154,7 +154,7 @@
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  border-radius: 4px;
+  border-radius: 0;
 }
 .oc-question-opt-custom-active {
   background: rgba(137, 180, 250, 0.12);
@@ -165,7 +165,7 @@
   flex: 1;
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 0;
   padding: 4px 8px;
   font-family: 'SF Mono', Consolas, monospace;
   font-size: 13px;
@@ -203,13 +203,13 @@
   transition: all 0.1s;
 }
 .oc-question-submit-btn {
-  border-radius: 4px 0 0 4px;
+  border-radius: 0;
   background: rgba(137, 180, 250, 0.15);
   color: var(--accent);
   border-color: var(--accent);
 }
 .oc-question-dismiss-btn {
-  border-radius: 0 4px 4px 0;
+  border-radius: 0;
   border-left: none;
 }
 .oc-question-submit-btn:hover:enabled,

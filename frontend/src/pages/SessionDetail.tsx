@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import './SessionDetail.css';
-import { api, type Session, type SessionDetail as SessionDetailData, type Message, type Part, type AgentInfo, type SessionModelEntry } from '../lib/api';
+import { api, type Session, type Message, type Part, type AgentInfo, type SessionModelEntry, type SessionDetail } from '../lib/api';
 import { cleanTitle, formatDuration, formatNumber, shortPath, relativeTime } from '../lib/format';
 import { useHeaderInfo, usePageTitle } from '../lib/headerContext';
 import { OcmanRuntimeProvider } from '../components/OcmanRuntimeProvider';
@@ -21,11 +21,12 @@ import { openVSCode } from '../lib/shortcuts';
 import { useShortcut } from '../lib/shortcutRegistry';
 import { hashSession, hashMessagesAndParts } from '../lib/sessionHash';
 
-const PAGE_SIZE = 50;
-const RECENT_SESSIONS_LIMIT = 20;
+const PAGE_SIZE = 30;
+const RECENT_SESSIONS_LIMIT = 15;
+const SIDEBAR_RECENT_HOURS = 12;
 const ARCHIVE_ANIMATION_MS = 220;
-const MAX_RETAINED_MESSAGES = 300;
-const TRIMMED_RETAINED_MESSAGES = 250;
+const MAX_RETAINED_MESSAGES = 100;
+const TRIMMED_RETAINED_MESSAGES = 80;
 const MAX_SUBAGENT_TOKEN_ENTRIES = 256;
 
 // Maximum length for part text/output before truncation (matches backend maxOutputLen).
@@ -416,7 +417,7 @@ export function SessionDetail() {
   // Read the cache once at mount time via getState() — we want a snapshot
   // for the initial render, not a reactive subscription.
   const initialCached = id ? useApiStore.getState().getCachedSession(id) : null;
-  const [session, setSession] = useState<(SessionDetailData['session'] & { defaultAgent?: string; defaultModel?: string }) | null>(
+  const [session, setSession] = useState<(SessionDetail['session'] & { defaultAgent?: string; defaultModel?: string }) | null>(
     initialCached
       ? {
           ...initialCached.session,
@@ -455,6 +456,7 @@ export function SessionDetail() {
   const [modelEntries, setModelEntries] = useState<SessionModelEntry[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
   const [selectedAgent, setSelectedAgent] = useState('');
+  const [selectedReasoning, setSelectedReasoning] = useState('');
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   // Tracks whether we've finished attempting to load the /agent catalog for
   // the current session's directory. UI that colors by agent should stay
@@ -471,6 +473,9 @@ export function SessionDetail() {
   // Track token data from subagent sessions so the TPS indicator includes their output.
   // Maps subagent messageId -> { output: output tokens for that message, created: time.created }
   const [subagentTokens, setSubagentTokens] = useState<Map<string, { output: number; created: number }>>(new Map());
+  // Track live output from running tasks. Maps taskId (child session) -> last 10 lines of stdout.
+  // Fetched by polling the task's session while it runs.
+  const [taskLiveOutput, setTaskLiveOutput] = useState<Record<string, string>>({});
   const { setInfo } = useHeaderInfo();
   usePageTitle(cleanTitle(session?.title) || 'Session');
   const lastHashRef = useRef('');
@@ -747,6 +752,7 @@ export function SessionDetail() {
     }
     setSelectedModel('');
     setSelectedAgent('');
+    setSelectedReasoning('');
     setPendingPermission(null);
     setPermissionError(null);
     setPendingQuestion(null);
@@ -891,7 +897,8 @@ export function SessionDetail() {
 
   const loadRecentSessions = useCallback(async (signal?: AbortSignal) => {
     try {
-      const result = await getSessions(undefined, signal);
+      const since = Date.now() - SIDEBAR_RECENT_HOURS * 60 * 60 * 1000;
+      const result = await getSessions({ since, limit: RECENT_SESSIONS_LIMIT + 5 }, signal);
       if (signal?.aborted) return;
       const visible = (showArchivedRecentRef.current ? result : filterVisibleSessions(result)).slice(0, RECENT_SESSIONS_LIMIT);
       const current = result.find(s => s.id === id);
@@ -1141,7 +1148,7 @@ export function SessionDetail() {
         if (debugModeRef.current) {
           setSseDebugEvents((prev) => {
             const next = [...prev, { at: Date.now(), event: 'message', data: truncateSseData(raw) }];
-            return next.slice(-50);
+            return next.slice(-10);
           });
         }
 
@@ -1679,6 +1686,7 @@ export function SessionDetail() {
         images,
         selectedModel || activeModel || undefined,
         selectedAgent || activeAgent || undefined,
+        selectedReasoning || undefined,
       );
       // SSE events will deliver the real message + assistant response incrementally.
       // The optimistic message is already visible to the user.
@@ -1704,7 +1712,14 @@ export function SessionDetail() {
       setMessages(prev => [...prev, errMsg]);
       setParts(prev => [...prev, errPart]);
     }
-  }, [activeAgent, activeModel, portAvailable, selectedAgent, selectedModel, sendMessage, session]);
+  }, [activeAgent, activeModel, portAvailable, selectedAgent, selectedModel, selectedReasoning, sendMessage, session]);
+
+  // When the user picks a different model, clear the reasoning selection
+  // because the new model may not support the same variants.
+  const handleModelChange = useCallback((model: string) => {
+    setSelectedModel(model);
+    setSelectedReasoning('');
+  }, []);
 
   const handleCompact = useCallback(async () => {
     if (!session || !portAvailable || !caps.compact) return;
@@ -1928,23 +1943,25 @@ export function SessionDetail() {
     if (target) navigate(`/session/${target.id}`);
   }, [id, navigate]);
 
-  useShortcut({
+  const navNextShortcut = useMemo(() => ({
     id: 'session.nav-next',
-    scope: 'session',
+    scope: 'session' as const,
     keys: { code: 'KeyJ', alt: true },
     description: 'Go to next session',
     handler: () => jumpToSession(1),
-  });
-  useShortcut({
+  }), [jumpToSession]);
+
+  const navPrevShortcut = useMemo(() => ({
     id: 'session.nav-prev',
-    scope: 'session',
+    scope: 'session' as const,
     keys: { code: 'KeyK', alt: true },
     description: 'Go to previous session',
     handler: () => jumpToSession(-1),
-  });
+  }), [jumpToSession]);
 
-  // Refs keep shortcut handlers stable while the underlying callbacks/values
-  // change, so the registry doesn't need to re-register on every render.
+  useShortcut(navNextShortcut);
+  useShortcut(navPrevShortcut);
+
   const handleTmuxShortcutRef = useRef(handleTmuxShortcut);
   useEffect(() => { handleTmuxShortcutRef.current = handleTmuxShortcut; }, [handleTmuxShortcut]);
   const handleVSCodeShortcutRef = useRef(handleVSCodeShortcut);
@@ -1958,30 +1975,36 @@ export function SessionDetail() {
   const portAvailableRef = useRef(portAvailable);
   useEffect(() => { portAvailableRef.current = portAvailable; }, [portAvailable]);
 
-  useShortcut({
+  const switchTmuxShortcut = useMemo(() => ({
     id: 'session.switch-tmux',
-    scope: 'session',
+    scope: 'session' as const,
     keys: { code: 'KeyT', alt: true },
     description: 'Switch tmux for current session',
     enabled: () => !!matchingTmuxSessionRef.current,
     handler: () => handleTmuxShortcutRef.current(),
-  });
-  useShortcut({
+  }), []);
+
+  const openVscodeShortcut = useMemo(() => ({
     id: 'session.open-vscode',
-    scope: 'session',
+    scope: 'session' as const,
     keys: { code: 'KeyV', alt: true },
     description: 'Open current session in VS Code',
     enabled: () => !!sessionRef.current,
     handler: () => handleVSCodeShortcutRef.current(),
-  });
-  useShortcut({
+  }), []);
+
+  const newSessionShortcut = useMemo(() => ({
     id: 'session.new-session',
-    scope: 'session',
+    scope: 'session' as const,
     keys: { code: 'KeyC', alt: true },
     description: 'Create new session in current project',
     enabled: () => !!sessionRef.current && portAvailableRef.current,
     handler: () => handleNewSessionRef.current(),
-  });
+  }), []);
+
+  useShortcut(switchTmuxShortcut);
+  useShortcut(openVscodeShortcut);
+  useShortcut(newSessionShortcut);
 
   const hasMore = messages.length < totalMessages;
   const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
@@ -2026,6 +2049,72 @@ export function SessionDetail() {
     return ids;
   }, [parts]);
   subagentSessionIdsRef.current = subagentSessionIds;
+
+  // Derive running task IDs and their live output from task tool calls.
+  // While a task runs, we poll its session to get stdout for live preview.
+  const runningTaskIds = useMemo(() => {
+    const running: { taskId: string; status: string }[] = [];
+    for (const p of parts) {
+      const d = typeof p.data === 'string' ? (() => { try { return JSON.parse(p.data); } catch { return null; } })() : p.data;
+      if (!d || typeof d !== 'object') continue;
+      const toolName = (d as Record<string, unknown>).tool as string | undefined;
+      if (toolName !== 'task' && toolName !== 'mcp_task' && toolName !== 'Task' && toolName !== 'mcp_Task') continue;
+      const st = (d as Record<string, unknown>).state as Record<string, unknown> | undefined;
+      const inp = st?.input as Record<string, unknown> | undefined;
+      const status = (st?.status as string) || 'running';
+      if (status !== 'running') continue; // only track running tasks
+      let taskId = '';
+      if (inp && typeof inp.task_id === 'string') taskId = inp.task_id;
+      if (!taskId && st?.output && typeof st.output === 'object') {
+        const out = st.output as Record<string, unknown>;
+        if (typeof out.task_id === 'string') taskId = out.task_id;
+      }
+      if (taskId) running.push({ taskId, status });
+    }
+    return running;
+  }, [parts]);
+
+  // Poll running task sessions every 2s for live stdout output.
+  // Fetches the task's session messages and extracts stdout from tool outputs.
+  useEffect(() => {
+    if (runningTaskIds.length === 0) return;
+    let cancelled = false;
+    const poll = async () => {
+      for (const { taskId } of runningTaskIds) {
+        if (cancelled) break;
+        try {
+          const resp = await fetch(`/api/session/${taskId}?limit=1`);
+          if (!resp.ok || cancelled) continue;
+          const data: { messages?: Message[]; parts?: Part[] } = await resp.json();
+          // Find the latest assistant message with tool call output
+          const msgs = data.messages || [];
+          let stdout = '';
+          for (let i = msgs.length - 1; i >= 0; i--) {
+            const m = msgs[i];
+            if (m.data?.role !== 'assistant') continue;
+            const msgParts = data.parts?.filter((p: Part) => p.messageId === m.id) || [];
+            for (const p of msgParts) {
+              const pd = typeof p.data === 'string' ? (() => { try { return JSON.parse(p.data); } catch { return null; } })() : p.data;
+              if (!pd || typeof pd !== 'object') continue;
+              // stdout lives in state.output for bash/builtin tools
+              const state = pd.state as Record<string, unknown> | undefined;
+              if (state?.output && typeof state.output === 'string') {
+                stdout = state.output;
+                break;
+              }
+            }
+            if (stdout) break;
+          }
+          if (stdout && !cancelled) {
+            setTaskLiveOutput((prev: Record<string, string>) => ({ ...prev, [taskId]: stdout }));
+          }
+        } catch { /* ignore poll errors */ }
+      }
+    };
+    poll();
+    const interval = setInterval(poll, 2000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [runningTaskIds.length]); // only depends on count, not contents
 
   // The assistant is still working if:
   // - the last message is from the user (assistant hasn't replied yet), or
@@ -2281,6 +2370,7 @@ export function SessionDetail() {
             canSend={portAvailable && caps.composer}
             pendingAgent={selectedAgent || activeAgent || undefined}
             agents={agents}
+            taskLiveOutput={taskLiveOutput}
           >
             <AssistantThread
               hasMore={hasMore}
@@ -2313,7 +2403,7 @@ export function SessionDetail() {
                   modelEntries={modelEntries}
                   activeModel={activeModel}
                   selectedModel={selectedModel}
-                  onModelChange={setSelectedModel}
+                  onModelChange={handleModelChange}
                   activeAgent={activeAgent}
                   selectedAgent={selectedAgent}
                   onAgentChange={setSelectedAgent}
@@ -2323,6 +2413,8 @@ export function SessionDetail() {
                   sessionId={session?.id}
                   tokensPerSecond={liveTokensPerSecond ?? undefined}
                   tokenStats={tokenStats}
+                  selectedReasoning={selectedReasoning}
+                  onReasoningChange={setSelectedReasoning}
                 />
               ) : null}
               footer={showSseNotice || showSseDebug ? (

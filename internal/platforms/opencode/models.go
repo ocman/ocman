@@ -8,6 +8,25 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
+// variantNamesFor extracts the enabled variant names for a model from the
+// provider data, returning them in a stable sorted order.
+func variantNamesFor(m OpenCodeProviderModel) []string {
+	if len(m.Variants) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(m.Variants))
+	for name, v := range m.Variants {
+		if !v.Disabled {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	sort.Strings(names)
+	return names
+}
+
 // buildSessionModelEntries merges recents, live /provider data, and the
 // session default into a single sorted list.
 //
@@ -72,6 +91,9 @@ func buildSessionModelEntries(
 			e.ProviderName = p.Name
 			e.ModelName = m.Name
 			e.IsAvailable = true
+			if variants := variantNamesFor(m); len(variants) > 0 {
+				e.Reasoning = variants
+			}
 		}
 	}
 	// Back-fill provider names on entries that aren't in the live set (e.g.

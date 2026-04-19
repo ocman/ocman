@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, memo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import { createPortal } from 'react-dom';
 import './Composer.css';
 import { getDraft, saveDraft, clearDraft } from '../../lib/composerDraft';
@@ -10,6 +10,7 @@ import { api, type SlashCommand, type AgentInfo, type SessionModelEntry } from '
 import { agentColor } from '../../lib/agentColor';
 import { ModelPicker } from './ModelPicker';
 import { AgentPicker } from './AgentPicker';
+import { ReasoningPicker } from './ReasoningPicker';
 
 function encodeWav(samples: Float32Array, sampleRate: number): Blob {
   const numSamples = samples.length;
@@ -154,6 +155,8 @@ function ComposerImpl({
   sessionId,
   tokensPerSecond,
   tokenStats,
+  selectedReasoning,
+  onReasoningChange,
 }: {
   onSend?: (text: string, images?: AttachedImage[]) => void;
   onCommand?: (command: string, args: string) => void;
@@ -190,6 +193,8 @@ function ComposerImpl({
     totalCost: number;
     contextWindow?: number;
   };
+  selectedReasoning?: string;
+  onReasoningChange?: (reasoning: string) => void;
 }) {
   const [showTokenPopover, setShowTokenPopover] = useState(false);
   const [estCost, setEstCost] = useState<{ cost: number; known: boolean } | null>(null);
@@ -219,6 +224,18 @@ function ComposerImpl({
   useEffect(() => { isRunningRef.current = isRunning; }, [isRunning]);
   useEffect(() => { disabledRef.current = disabled; }, [disabled]);
 
+  // Auto-focus the composer input when the component becomes visible.
+  useEffect(() => {
+    if (!disabled && inputRef.current) {
+      const timer = setTimeout(() => {
+        if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+          inputRef.current?.focus();
+        }
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [disabled]);
+
   const onCommandRef = useRef(onCommand);
   useEffect(() => { onCommandRef.current = onCommand; }, [onCommand]);
   const agentOptionsRef = useRef<string[]>([]);
@@ -233,6 +250,7 @@ function ComposerImpl({
   const [modelPickerQuery, setModelPickerQuery] = useState('');
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [agentPickerQuery, setAgentPickerQuery] = useState('');
+  const [reasoningPickerOpen, setReasoningPickerOpen] = useState(false);
   // Refs let the non-React keydown/submit handlers (which capture their
   // initial closure) always see the latest lists + callbacks without having
   // to re-bind every render.
@@ -872,6 +890,17 @@ function ComposerImpl({
     const slash = effectiveModel.indexOf('/');
     return slash > 0 ? effectiveModel.slice(slash + 1) : effectiveModel;
   })();
+  // Reasoning options for the effective model, derived from the model entries.
+  const reasoningOptions: string[] = (() => {
+    if (!effectiveModel || !modelEntries) return [];
+    const match = modelEntries.find((e) => e.provider && `${e.provider}/${e.model}` === effectiveModel);
+    return match?.reasoning ?? [];
+  })();
+  const hasReasoning = reasoningOptions.length > 0;
+  const onReasoningChangeRef = useRef(onReasoningChange);
+  useEffect(() => { onReasoningChangeRef.current = onReasoningChange; }, [onReasoningChange]);
+  const reasoningOptionsRef = useRef(reasoningOptions);
+  useEffect(() => { reasoningOptionsRef.current = reasoningOptions; }, [reasoningOptions]);
 
   useEffect(() => {
     if (!isRecording) return;
@@ -888,20 +917,38 @@ function ComposerImpl({
     return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [isRecording, submitRecording, cancelRecording]);
 
-  // Alt+D (Option+D on Mac) starts dictation. While recording, the overlay
-  // effect above handles any keydown (any key submits, Esc cancels), so this
-  // shortcut only fires when we're idle.
   const handleMicClickRef = useRef(handleMicClick);
   useEffect(() => { handleMicClickRef.current = handleMicClick; }, [handleMicClick]);
 
-  useShortcut({
+  const dictationShortcut = useMemo(() => ({
     id: 'composer.dictation',
-    scope: 'composer',
+    scope: 'composer' as const,
     keys: { code: 'KeyD', alt: true },
     description: 'Start dictation (voice input)',
     enabled: () => !!whisperAvailable && !isRecording && !disabledRef.current,
     handler: () => { void handleMicClickRef.current(); },
-  });
+  }), [whisperAvailable, isRecording]);
+
+  const reasoningCycleShortcut = useMemo(() => ({
+    id: 'composer.reasoning-cycle',
+    scope: 'composer' as const,
+    keys: { code: 'KeyR', alt: true },
+    description: 'Cycle reasoning level',
+    enabled: () => reasoningOptionsRef.current.length > 0 && !disabledRef.current,
+    handler: () => {
+      const opts = reasoningOptionsRef.current;
+      if (opts.length === 0) return;
+      const cb = onReasoningChangeRef.current;
+      if (!cb) return;
+      const cycle = ['', ...opts];
+      const cur = cycle.indexOf(selectedReasoning ?? '');
+      const next = cycle[(cur + 1) % cycle.length];
+      cb(next);
+    },
+  }), [selectedReasoning]);
+
+  useShortcut(dictationShortcut);
+  useShortcut(reasoningCycleShortcut);
 
   return (
     <>
@@ -929,7 +976,7 @@ function ComposerImpl({
           currentModel={effectiveModel}
           initialQuery={modelPickerQuery}
           onSelect={(m) => onModelChange?.(m)}
-          onClose={() => setModelPickerOpen(false)}
+          onClose={() => { setModelPickerOpen(false); inputRef.current?.focus(); }}
         />
       )}
       {agentPickerOpen && (
@@ -941,7 +988,16 @@ function ComposerImpl({
           currentAgent={effectiveAgent}
           initialQuery={agentPickerQuery}
           onSelect={(a) => onAgentChange?.(a)}
-          onClose={() => setAgentPickerOpen(false)}
+          onClose={() => { setAgentPickerOpen(false); inputRef.current?.focus(); }}
+        />
+      )}
+      {reasoningPickerOpen && (
+        <ReasoningPicker
+          open={reasoningPickerOpen}
+          options={reasoningOptions}
+          current={selectedReasoning}
+          onSelect={(v) => onReasoningChange?.(v)}
+          onClose={() => { setReasoningPickerOpen(false); inputRef.current?.focus(); }}
         />
       )}
       {showSlashMenu && filteredCommands.length > 0 && (
@@ -1018,6 +1074,20 @@ function ComposerImpl({
                 title="Model (click to change)"
               >
                 {modelButtonLabel || 'Model'}
+              </button>
+            )}
+            {hasReasoning && (
+              <button
+                type="button"
+                className="oc-bar-select oc-bar-reasoning"
+                disabled={disabled}
+                onClick={() => {
+                  if (disabled) return;
+                  setReasoningPickerOpen(true);
+                }}
+                title={`Reasoning level (${isMacPlatform() ? '⌥' : 'Alt'}+R to cycle)`}
+              >
+                {selectedReasoning || 'default'}
               </button>
             )}
             {disabled && <span className="oc-bar-hint">No live connection</span>}
@@ -1187,6 +1257,7 @@ export const Composer = memo(ComposerImpl, (prev, next) =>
   prev.tokenStats?.input === next.tokenStats?.input &&
   prev.tokenStats?.output === next.tokenStats?.output &&
   prev.tokenStats?.totalCost === next.tokenStats?.totalCost &&
+  prev.selectedReasoning === next.selectedReasoning &&
   (prev.models?.length || 0) === (next.models?.length || 0) &&
   (prev.models || []).every((model, i) => model === (next.models || [])[i])
 );

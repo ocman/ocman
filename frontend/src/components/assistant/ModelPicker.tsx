@@ -242,6 +242,20 @@ export function ModelPicker({
     onClose();
   }, [onSelect, onClose]);
 
+  // Close on Escape keydown, regardless of focus target.
+  // Register on open, unregister on close.
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [open, onClose]);
+
   const onInputKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault();

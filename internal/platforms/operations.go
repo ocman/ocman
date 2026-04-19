@@ -24,6 +24,10 @@ type SendMessageRequest struct {
 	// subagent name). Empty = platform default. Platforms without a
 	// composer-agent concept ignore this field.
 	Agent string
+	// Reasoning is the model variant / thinking-budget level to use
+	// (e.g. "high", "max", "low"). Empty = platform default. Only
+	// meaningful when the model exposes variants.
+	Reasoning string
 }
 
 // ImageAttachment is one inline image included with a composer message.
@@ -39,6 +43,7 @@ type ExecuteCommandRequest struct {
 	Arguments string
 	Model     string
 	Agent     string
+	Reasoning string
 }
 
 // CompactRequest compacts (summarizes) the session history.
@@ -107,14 +112,15 @@ type SlashCommandEntry struct {
 
 // SessionModel represents one selectable model for a session.
 type SessionModel struct {
-	Provider          string `json:"provider"`
-	ProviderName      string `json:"providerName,omitempty"`
-	Model             string `json:"model"`
-	ModelName         string `json:"modelName,omitempty"`
-	RecentRank        int    `json:"recentRank,omitempty"`
-	IsSessionDefault  bool   `json:"isSessionDefault,omitempty"`
-	IsProviderDefault bool   `json:"isProviderDefault,omitempty"`
-	IsAvailable       bool   `json:"isAvailable,omitempty"`
+	Provider          string   `json:"provider"`
+	ProviderName      string   `json:"providerName,omitempty"`
+	Model             string   `json:"model"`
+	ModelName         string   `json:"modelName,omitempty"`
+	RecentRank        int      `json:"recentRank,omitempty"`
+	IsSessionDefault  bool     `json:"isSessionDefault,omitempty"`
+	IsProviderDefault bool     `json:"isProviderDefault,omitempty"`
+	IsAvailable       bool     `json:"isAvailable,omitempty"`
+	Reasoning         []string `json:"reasoning,omitempty"`
 }
 
 // SessionModelsResponse is the full response for the session models

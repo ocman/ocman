@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import './AssistantThread.css';
 import {
   ThreadPrimitive,
@@ -626,6 +626,10 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
       const parsed = JSON.parse(typeof result === 'string' ? result : '{}');
       sessionId = parsed.taskId || '';
       taskOutput = (parsed.taskOutput || '').replace(/^<task_result>\n?/, '').replace(/\n?<\/task_result>$/, '').trim();
+      // Use live preview while running, final output when done
+      if (parsed.livePreview && taskStatus === 'running') {
+        taskOutput = parsed.livePreview;
+      }
     } catch { /* ignore */ }
 
     let statusIcon = '\u2022';
@@ -1044,20 +1048,24 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
     viewport.scrollTo({ top: Math.max(0, targetTop - 12), behavior: 'smooth' });
   }, []);
 
-  useShortcut({
+  const prevUserMessageShortcut = useMemo(() => ({
     id: 'session.prev-user-message',
-    scope: 'session',
+    scope: 'session' as const,
     keys: { code: 'KeyH', alt: true },
     description: 'Jump to previous user message',
     handler: () => jumpToUserMessage('prev'),
-  });
-  useShortcut({
+  }), [jumpToUserMessage]);
+
+  const nextUserMessageShortcut = useMemo(() => ({
     id: 'session.next-user-message',
-    scope: 'session',
+    scope: 'session' as const,
     keys: { code: 'KeyL', alt: true },
     description: 'Jump to next user message',
     handler: () => jumpToUserMessage('next'),
-  });
+  }), [jumpToUserMessage]);
+
+  useShortcut(prevUserMessageShortcut);
+  useShortcut(nextUserMessageShortcut);
 
 
 

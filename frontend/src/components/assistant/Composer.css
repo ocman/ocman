@@ -20,7 +20,7 @@
 .oc-recording-pulse {
   width: 64px;
   height: 64px;
-  border-radius: 50%;
+  border-radius: 0;
   background: #f38ba8;
   animation: oc-recording-pulse 1.2s ease-in-out infinite;
 }
@@ -51,7 +51,7 @@
   margin-bottom: 4px;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 0;
   max-height: 200px;
   overflow-y: auto;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
@@ -103,7 +103,6 @@
      The inline `borderLeftColor` on the element overrides this as soon as an
      agent is resolved. */
   border-left: 3px solid var(--text-dim);
-  border-radius: 6px;
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -157,7 +156,7 @@
 .oc-bar-action {
   background: none;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 0;
   color: var(--text-dim);
   font-size: 13px;
   padding: 2px 8px;
@@ -193,6 +192,13 @@
 .oc-bar-select:disabled { opacity: 0.6; cursor: not-allowed; }
 .oc-bar-select option { background: var(--bg-card); color: var(--text); }
 
+/* Reasoning level button — dimmer than model/agent to read as a suffix */
+.oc-bar-reasoning {
+  color: var(--subtext0);
+  font-size: 10px;
+}
+.oc-bar-reasoning:hover { color: var(--accent); }
+
 /* Custom model dropdown */
 .oc-model-select {
   position: relative;
@@ -204,7 +210,7 @@
   margin-bottom: 4px;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 0;
   padding: 4px 0;
   min-width: 200px;
   max-height: 300px;
@@ -242,7 +248,7 @@
   display: inline-block;
   width: 8px;
   height: 8px;
-  border-radius: 2px;
+  border-radius: 0;
   flex-shrink: 0;
 }
 
@@ -258,7 +264,7 @@
   position: relative;
   width: 64px;
   height: 64px;
-  border-radius: 6px;
+  border-radius: 0;
   overflow: hidden;
   border: 1px solid var(--border);
   flex-shrink: 0;
@@ -275,7 +281,7 @@
   right: 2px;
   width: 18px;
   height: 18px;
-  border-radius: 50%;
+  border-radius: 0;
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
@@ -326,7 +332,7 @@
   width: 18px;
   height: 18px;
   border: none;
-  border-radius: 4px;
+  border-radius: 0;
   background: transparent;
   color: var(--overlay0);
   cursor: pointer;
@@ -373,7 +379,7 @@
   right: 0;
   background: var(--surface0);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 0;
   padding: 12px 14px;
   min-width: 220px;
   z-index: 100;

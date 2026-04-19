@@ -63,6 +63,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/metrics", requireGET(s.handleMetrics))
 	mux.HandleFunc("/api/projects", requireGET(s.handleProjects))
 	mux.HandleFunc("/api/sessions", s.handleSessionsRoot) // GET = list, POST = create
+	mux.HandleFunc("/api/sessions/notify", requireGET(s.handleSessionsNotify))
 	mux.HandleFunc("/api/session/", s.dispatchSessionSubpath)
 	mux.HandleFunc("/api/activity", requireGET(s.handleActivity))
 	mux.HandleFunc("/api/models", requireGET(s.handleModels))

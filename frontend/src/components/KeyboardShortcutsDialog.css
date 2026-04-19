@@ -17,7 +17,7 @@
   flex-direction: column;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 0;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
   overflow: hidden;
 }
@@ -48,7 +48,7 @@
   color: var(--text-dim);
   width: 28px;
   height: 28px;
-  border-radius: 6px;
+  border-radius: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -88,7 +88,7 @@
 .oc-shortcuts-section {
   background: var(--bg-sunken, transparent);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 0;
   padding: 10px 0;
 }
 
@@ -144,7 +144,7 @@
   color: var(--text);
   background: var(--surface1);
   border: 1px solid var(--surface2);
-  border-radius: 5px;
+  border-radius: 0;
   box-shadow: 0 1px 0 var(--surface2);
 }
 

@@ -1,5 +1,5 @@
 /* Cards */
-.stat-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+.stat-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 0; padding: 20px; }
 .stat-card .label { font-size: 13px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
 .stat-card .value { font-size: 28px; font-weight: 600; }
 .stat-card .value.blue { color: var(--accent); }
@@ -8,7 +8,7 @@
 .stat-card .value.orange { color: var(--accent4); }
 .metrics-subvalue { margin-top: 6px; font-size: 12px; color: var(--text-dim); font-family: 'SF Mono', Consolas, monospace; }
 
-.chart-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+.chart-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 0; padding: 20px; }
 .chart-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 16px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
 .chart-card canvas { width: 100% !important; }
 
@@ -20,7 +20,7 @@
   background: var(--bg-card);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 0;
   padding: 10px 12px;
   font: inherit;
 }
@@ -40,7 +40,7 @@
   display: inline-flex;
   align-items: center;
   padding: 4px 8px;
-  border-radius: 999px;
+  border-radius: 0;
   border: 1px solid var(--border);
   background: rgba(166, 227, 161, 0.08);
   color: var(--accent2);
@@ -101,7 +101,7 @@
   background: transparent;
   color: var(--text-dim);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 0;
   padding: 3px 10px;
   cursor: pointer;
   font-family: 'SF Mono', Consolas, monospace;
@@ -170,7 +170,7 @@
   position: fixed;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 0;
   padding: 6px 10px;
   font-size: 12px;
   pointer-events: none;

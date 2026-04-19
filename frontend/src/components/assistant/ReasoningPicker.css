@@ -1,0 +1,30 @@
+/* Reasoning picker — smaller palette than model picker */
+.oc-reasoning-picker {
+  max-width: 280px;
+}
+
+.oc-reasoning-picker-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--subtext0);
+  padding: 4px 0;
+}
+
+.oc-reasoning-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.oc-reasoning-picker-check {
+  width: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.oc-reasoning-picker-check[data-active='false'] {
+  visibility: hidden;
+}

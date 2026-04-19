@@ -36,13 +36,15 @@ export function CommandPalette() {
     });
   }, []);
 
-  useShortcut({
+  const commandPaletteShortcut = useMemo(() => ({
     id: 'site.command-palette',
-    scope: 'site',
+    scope: 'site' as const,
     keys: { code: 'Space', alt: true },
     description: 'Open command palette',
     handler: toggleOpen,
-  });
+  }), [toggleOpen]);
+
+  useShortcut(commandPaletteShortcut);
 
   // Refresh the cached session list in the background whenever the palette
   // opens. The list itself comes straight from the store, so the palette

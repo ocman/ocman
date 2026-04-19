@@ -4,6 +4,20 @@ export async function fetchJSON<T>(url: string, signal?: AbortSignal): Promise<T
   return resp.json();
 }
 
+/**
+ * Minimal per-session projection returned by /api/sessions/notify.
+ * Only sessions that could drive the favicon/title notification state
+ * are included in the response, so the caller can simply check whether
+ * the array is non-empty to decide whether to show a badge.
+ */
+export interface NotifyEntry {
+  id: string;
+  status: string;
+  seen: boolean;
+  pendingPermission?: boolean;
+  pendingQuestion?: boolean;
+}
+
 export interface Session {
   id: string;
   /**
@@ -306,6 +320,7 @@ export interface SessionModelEntry {
   isSessionDefault?: boolean;
   isProviderDefault?: boolean;
   isAvailable?: boolean;
+  reasoning?: string[];
 }
 
 export interface SessionModelsResponse {
@@ -353,12 +368,20 @@ export const api = {
     return fetchJSON<MetricsDashboard>(`/api/metrics${qs ? '?' + qs : ''}`);
   },
   projects: () => fetchJSON<Project[]>('/api/projects'),
-  sessions: (params?: { dir?: string; since?: number }, signal?: AbortSignal) => {
+  sessions: (params?: { dir?: string; since?: number; limit?: number }, signal?: AbortSignal) => {
     const q = new URLSearchParams();
     if (params?.dir) q.set('dir', params.dir);
     if (params?.since) q.set('since', String(params.since));
+    if (params?.limit) q.set('limit', String(params.limit));
     const qs = q.toString();
     return fetchJSON<Session[]>(`/api/sessions${qs ? '?' + qs : ''}`, signal);
+  },
+  sessionsNotify: (params?: { since?: number; limit?: number }, signal?: AbortSignal) => {
+    const q = new URLSearchParams();
+    if (params?.since) q.set('since', String(params.since));
+    if (params?.limit) q.set('limit', String(params.limit));
+    const qs = q.toString();
+    return fetchJSON<NotifyEntry[]>(`/api/sessions/notify${qs ? '?' + qs : ''}`, signal);
   },
   session: (id: string, limit = 50, offset = 0, signal?: AbortSignal) => fetchJSON<SessionDetail>(`/api/session/${id}?limit=${limit}&offset=${offset}`, signal),
   archiveSession: async (platform: string, sessionId: string, timeUpdated: number, archived = true) => {
@@ -432,11 +455,12 @@ export const api = {
     images?: { url: string; mime: string }[],
     model?: string,
     agent?: string,
+    reasoning?: string,
   ) => {
     const resp = await fetch(`/api/session/${encodeURIComponent(sessionId)}/message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, images, model, agent }),
+      body: JSON.stringify({ message, images, model, agent, reasoning }),
     });
     if (!resp.ok) {
       const body = (await resp.text()).trim();

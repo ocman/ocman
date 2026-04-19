@@ -31,6 +31,7 @@ function convertMessages(
   messages: Message[],
   parts: Part[],
   pendingAgent?: string,
+  taskLiveOutput?: Record<string, string>,
 ): ThreadMessageLike[] {
   const partsByMsg: Record<string, Part[]> = {};
   parts.forEach((p) => {
@@ -209,18 +210,25 @@ function convertMessages(
                 else if (typeof meta.task_id === 'string') taskId = meta.task_id;
               }
               // The output is the subagent result — use it directly, stripping the task_id line
+              const status = (st.status as string) || 'running';
               if (typeof st.output === 'string' && st.output.trim()) {
                 taskOutput = truncate(
                   st.output.replace(/task_id:\s*ses_[^\s)]+[^\n]*\n?/, '').trim(),
                   5000,
                 );
               }
+              // While running, inject live output from the task's session if we have it.
+              let livePreview = '';
+              if (status === 'running' && taskId && taskLiveOutput?.[taskId]) {
+                const lines = taskLiveOutput[taskId].split('\n');
+                livePreview = lines.slice(-10).join('\n'); // last 10 lines
+              }
               toolCalls.push({
                 type: 'tool-call' as const,
                 toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
                 toolName: '__task__',
-                argsText: `${st.status || 'running'}\n${label}`,
-                result: JSON.stringify({ taskId, taskOutput }),
+                argsText: `${status}\n${label}`,
+                result: JSON.stringify({ taskId, taskOutput, livePreview }),
               });
               break;
             } else if (toolName === 'question' || toolName === 'mcp_question' || toolName === 'Question') {
@@ -446,6 +454,8 @@ interface Props {
   pendingAgent?: string;
   // Agent metadata (including colors) loaded from the OpenCode /agent API.
   agents?: AgentInfo[];
+  // Live stdout from running task sessions. Maps taskId -> last 10 lines of output.
+  taskLiveOutput?: Record<string, string>;
   children: React.ReactNode;
 }
 
@@ -471,13 +481,14 @@ export function OcmanRuntimeProvider({
   canSend,
   pendingAgent,
   agents,
+  taskLiveOutput,
   children,
 }: Props) {
   const agentList = useMemo(() => agents ?? [], [agents]);
   const sendMessage = useApiStore((state) => state.sendMessage);
   const converted = useMemo(
-    () => convertMessages(messages, parts, pendingAgent),
-    [messages, parts, pendingAgent],
+    () => convertMessages(messages, parts, pendingAgent, taskLiveOutput),
+    [messages, parts, pendingAgent, taskLiveOutput],
   );
 
   const isRunning = useMemo(() => computeIsRunning(messages), [messages]);

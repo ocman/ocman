@@ -15,7 +15,7 @@
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-left: 3px solid var(--accent4);
-  border-radius: 6px;
+  border-radius: 0;
   padding: 14px 18px;
   font-family: 'SF Mono', Consolas, monospace;
   font-size: 13px;
@@ -81,11 +81,11 @@
 }
 
 .oc-permission-btn:first-child {
-  border-radius: 4px 0 0 4px;
+  border-radius: 0;
 }
 
 .oc-permission-btn:last-child {
-  border-radius: 0 4px 4px 0;
+  border-radius: 0;
 }
 
 .oc-permission-btn:not(:first-child) {

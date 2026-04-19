@@ -1,4 +1,4 @@
-import { Component, useCallback } from 'react';
+import { Component, useCallback, useMemo } from 'react';
 import type { ReactNode, ErrorInfo } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { useHotkeys } from 'react-hotkeys-hook';
@@ -89,24 +89,7 @@ function GlobalHotkeys() {
   // Single dispatcher for every shortcut registered via useShortcut.
   useShortcutDispatcher();
 
-  useShortcut({
-    id: 'site.toggle-shortcuts',
-    scope: 'site',
-    // Accept Alt+? (Shift+/) and Alt+/ on both US (Slash) and JIS (IntlRo)
-    // layouts so the help dialog is reachable regardless of keyboard.
-    keys: [
-      { code: 'Slash', alt: true, shift: true },
-      { code: 'Slash', alt: true },
-      { code: 'IntlRo', alt: true, shift: true },
-      { code: 'IntlRo', alt: true },
-    ],
-    description: 'Open keyboard shortcuts',
-    handler: toggleShortcuts,
-  });
-
   const scrollHalfPage = useCallback((e: KeyboardEvent) => {
-    // Find the nearest scrollable ancestor of the active/focused element, or
-    // fall back to the thread viewport or document.
     let el: Element | null = document.activeElement;
     let scroller: Element | null = null;
     while (el && el !== document.documentElement) {
@@ -124,20 +107,38 @@ function GlobalHotkeys() {
     scroller.scrollBy({ top: e.code === 'ArrowDown' ? amount : -amount, behavior: 'smooth' });
   }, []);
 
-  useShortcut({
+  const toggleShortcutsShortcut = useMemo(() => ({
+    id: 'site.toggle-shortcuts',
+    scope: 'site' as const,
+    keys: [
+      { code: 'Slash', alt: true, shift: true },
+      { code: 'Slash', alt: true },
+      { code: 'IntlRo', alt: true, shift: true },
+      { code: 'IntlRo', alt: true },
+    ],
+    description: 'Open keyboard shortcuts',
+    handler: toggleShortcuts,
+  }), [toggleShortcuts]);
+
+  const scrollDownShortcut = useMemo(() => ({
     id: 'site.scroll-down',
-    scope: 'site',
+    scope: 'site' as const,
     keys: { code: 'ArrowDown', alt: true },
     description: 'Scroll down half a page',
     handler: scrollHalfPage,
-  });
-  useShortcut({
+  }), [scrollHalfPage]);
+
+  const scrollUpShortcut = useMemo(() => ({
     id: 'site.scroll-up',
-    scope: 'site',
+    scope: 'site' as const,
     keys: { code: 'ArrowUp', alt: true },
     description: 'Scroll up half a page',
     handler: scrollHalfPage,
-  });
+  }), [scrollHalfPage]);
+
+  useShortcut(toggleShortcutsShortcut);
+  useShortcut(scrollDownShortcut);
+  useShortcut(scrollUpShortcut);
 
   useHotkeys('esc', () => closeShortcuts(), {
     enabled: shortcutsOpen,

@@ -300,12 +300,21 @@ func fetchOpenCodeSmallModel(port string) (providerID, modelID string, ok bool) 
 
 // OpenCodeProviderModel is the minimal subset of a model entry we need for
 // the picker. The /provider payload includes costs, capabilities, limits,
-// variants, etc. — none of that matters for selection, so we strip it
-// server-side to keep the frontend response small.
+// etc. — we strip most of it server-side to keep the frontend response
+// small, but preserve variant names so the UI can offer a reasoning picker.
 type OpenCodeProviderModel struct {
-	ID     string `json:"id"`
-	Name   string `json:"name,omitempty"`
-	Status string `json:"status,omitempty"`
+	ID       string                          `json:"id"`
+	Name     string                          `json:"name,omitempty"`
+	Status   string                          `json:"status,omitempty"`
+	Variants map[string]OpenCodeModelVariant `json:"variants,omitempty"`
+}
+
+// OpenCodeModelVariant is a single variant entry from OpenCode's /provider
+// payload. We only need the key (map key) and whether it's disabled; the
+// actual option values (reasoningEffort, budgetTokens, …) are opaque to
+// ocman — OpenCode applies them when it receives the variant name.
+type OpenCodeModelVariant struct {
+	Disabled bool `json:"disabled,omitempty"`
 }
 
 // OpenCodeProvider is a trimmed provider entry. `Models` matches OpenCode's

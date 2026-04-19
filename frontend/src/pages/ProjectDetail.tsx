@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import type { Session } from '../lib/api';
 import { usePageTitle } from '../lib/headerContext';
@@ -58,7 +58,7 @@ export function ProjectDetail() {
       }
 
       try {
-        const nextSessions = await getSessions({ dir: directory });
+const nextSessions = await getSessions({ dir: directory, since: Date.now() - 12 * 60 * 60 * 1000 });
         if (cancelled) return;
         setSessions(nextSessions);
         setSessionsLoaded(true);
@@ -115,22 +115,26 @@ export function ProjectDetail() {
   const directoryRef = useRef(directory);
   useEffect(() => { directoryRef.current = directory; }, [directory]);
 
-  useShortcut({
+  const switchTmuxShortcut = useMemo(() => ({
     id: 'project.switch-tmux',
-    scope: 'project',
+    scope: 'project' as const,
     keys: { code: 'KeyT', alt: true },
     description: 'Switch tmux for current project',
     enabled: () => !!matchingTmuxSessionRef.current,
     handler: () => handleTmuxSwitchRef.current(),
-  });
-  useShortcut({
+  }), []);
+
+  const openVscodeShortcut = useMemo(() => ({
     id: 'project.open-vscode',
-    scope: 'project',
+    scope: 'project' as const,
     keys: { code: 'KeyV', alt: true },
     description: 'Open current project in VS Code',
     enabled: () => !!directoryRef.current,
     handler: () => handleOpenVSCodeRef.current(),
-  });
+  }), []);
+
+  useShortcut(switchTmuxShortcut);
+  useShortcut(openVscodeShortcut);
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>

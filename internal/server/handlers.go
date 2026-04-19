@@ -261,6 +261,10 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	if sinceStr := r.URL.Query().Get("since"); sinceStr != "" {
 		fmt.Sscanf(sinceStr, "%d", &since)
 	}
+	limit := 500
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		fmt.Sscanf(limitStr, "%d", &limit)
+	}
 
 	ctx := r.Context()
 	var all []db.Session
@@ -287,12 +291,98 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		return all[i].TimeUpdated > all[j].TimeUpdated
 	})
 
+	// Apply limit
+	if len(all) > limit {
+		all = all[:limit]
+	}
+
 	if err := s.applySessionState(all); err != nil {
 		serverError(w, "fetching session state", err)
 		return
 	}
 
 	writeJSON(w, all)
+}
+
+// notifyEntry is a minimal per-session payload used by the favicon/title
+// notification poller. Keeping the response small reduces bandwidth and
+// lets the poller query a longer time-window (e.g. 500 sessions) without
+// the cost of a full /api/sessions payload.
+type notifyEntry struct {
+	ID                string `json:"id"`
+	Status            string `json:"status"`
+	Seen              bool   `json:"seen"`
+	PendingPermission bool   `json:"pendingPermission,omitempty"`
+	PendingQuestion   bool   `json:"pendingQuestion,omitempty"`
+}
+
+// handleSessionsNotify returns a minimal projection of the sessions
+// list used by the client's favicon/title notification logic. Only
+// sessions that could contribute to the notification state are
+// returned:
+//
+//   - any session with a pending permission or question prompt
+//   - sessions whose status is "waiting" or "error" and that haven't
+//     been seen
+//
+// Everything else is filtered out server-side so the response stays
+// tiny even with a large time window.
+func (s *Server) handleSessionsNotify(w http.ResponseWriter, r *http.Request) {
+	var since int64
+	if sinceStr := r.URL.Query().Get("since"); sinceStr != "" {
+		fmt.Sscanf(sinceStr, "%d", &since)
+	}
+	limit := 500
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		fmt.Sscanf(limitStr, "%d", &limit)
+	}
+
+	ctx := r.Context()
+	var all []db.Session
+	for _, adapter := range s.registry.Platforms() {
+		if !adapter.Available(ctx) {
+			continue
+		}
+		sessions, err := adapter.Sessions(ctx, "", since)
+		if err != nil {
+			log.WithFields(log.Fields{"platform": adapter.ID(), "error": err}).
+				Warn("listing sessions for notify")
+			continue
+		}
+		all = append(all, sessions...)
+	}
+
+	sort.SliceStable(all, func(i, j int) bool {
+		return all[i].TimeUpdated > all[j].TimeUpdated
+	})
+	if len(all) > limit {
+		all = all[:limit]
+	}
+
+	if err := s.applySessionState(all); err != nil {
+		serverError(w, "fetching session state for notify", err)
+		return
+	}
+
+	// Project + filter. Only keep sessions that could drive the UI.
+	out := make([]notifyEntry, 0, len(all))
+	for i := range all {
+		se := &all[i]
+		hasPrompt := se.PendingPermission || se.PendingQuestion
+		isUnseenTerminal := (se.Status == "waiting" || se.Status == "error") && !se.Seen
+		if !hasPrompt && !isUnseenTerminal {
+			continue
+		}
+		out = append(out, notifyEntry{
+			ID:                se.ID,
+			Status:            se.Status,
+			Seen:              se.Seen,
+			PendingPermission: se.PendingPermission,
+			PendingQuestion:   se.PendingQuestion,
+		})
+	}
+
+	writeJSON(w, out)
 }
 
 func (s *Server) applySessionState(sessions []db.Session) error {
@@ -426,7 +516,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	sessionID := strings.TrimPrefix(r.URL.Path, "/api/session/")
 
 	// Parse pagination params
-	limit := 50
+	limit := 30
 	offset := 0
 	if v := r.URL.Query().Get("limit"); v != "" {
 		fmt.Sscanf(v, "%d", &limit)
@@ -605,8 +695,9 @@ func (s *Server) handleSessionMessage(w http.ResponseWriter, r *http.Request) {
 			URL  string `json:"url"`
 			Mime string `json:"mime"`
 		} `json:"images"`
-		Model string `json:"model"`
-		Agent string `json:"agent"`
+		Model     string `json:"model"`
+		Agent     string `json:"agent"`
+		Reasoning string `json:"reasoning"`
 	}
 	if !readAndUnmarshal(w, r, maxSendMessageBody, &req) {
 		return
@@ -631,6 +722,7 @@ func (s *Server) handleSessionMessage(w http.ResponseWriter, r *http.Request) {
 		Images:    images,
 		Model:     req.Model,
 		Agent:     req.Agent,
+		Reasoning: req.Reasoning,
 	})
 	if err != nil {
 		writePlatformError(w, "sending message", err)
@@ -650,6 +742,7 @@ func (s *Server) handleSessionCommand(w http.ResponseWriter, r *http.Request) {
 		Arguments string `json:"arguments"`
 		Model     string `json:"model"`
 		Agent     string `json:"agent"`
+		Reasoning string `json:"reasoning"`
 	}
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
 		return
@@ -668,6 +761,7 @@ func (s *Server) handleSessionCommand(w http.ResponseWriter, r *http.Request) {
 		Arguments: req.Arguments,
 		Model:     req.Model,
 		Agent:     req.Agent,
+		Reasoning: req.Reasoning,
 	})
 	if err != nil {
 		writePlatformError(w, "executing command", err)
@@ -849,8 +943,9 @@ func (s *Server) handleSessionEvents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := adapter.ProxyEvents(r.Context(), sessionID, w, flush); err != nil {
-		// At this point headers are already sent, so the best we can
-		// do is log and close.
+		if errors.Is(err, context.Canceled) {
+			return
+		}
 		log.WithFields(log.Fields{"sessionID": sessionID, "error": err}).
 			Warn("SSE proxy stream ended with error")
 	}

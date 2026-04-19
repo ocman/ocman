@@ -13,7 +13,7 @@ div.session-row-actions {
 /* Tmux switch button in tables */
 .tmux-switch-btn {
   padding: 2px 8px;
-  border-radius: 4px;
+  border-radius: 0;
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text-dim);
@@ -41,7 +41,7 @@ div.session-row-actions {
 .session-archive-btn {
   width: 24px;
   height: 24px;
-  border-radius: 4px;
+  border-radius: 0;
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text-dim);
@@ -66,7 +66,7 @@ div.session-row-actions {
   min-width: 260px;
   background: var(--mantle);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 0;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   overflow: hidden;
 }
