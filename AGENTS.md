@@ -2,16 +2,46 @@
 
 ## What is ocman
 
-A web dashboard for viewing OpenCode session data. Go backend reads OpenCode's SQLite database (read-only) and serves a React SPA. Can also proxy live data from running OpenCode instances via their HTTP API.
+A web dashboard for viewing coding-agent session data across multiple
+platforms. As of v2, ocman supports:
+
+- **OpenCode** — reads OpenCode's SQLite database (read-only) and
+  proxies live data from running OpenCode instances via their HTTP
+  API.
+- **Claude Code** — reads Claude Code's per-session JSONL transcripts
+  from `~/.claude/projects/` and installs HTTP hooks into
+  `~/.claude/settings.json` to track live session state. Can inject
+  new prompts into any session via `claude -p --resume`.
+
+Both platforms are wired through a common `Platform` adapter interface
+(`internal/platforms/`). Adding a third platform (e.g. Codex) is a
+new adapter + registry entry; see
+`spec/multi-agent-support/architecture.md` for the design.
 
 ## Repository layout
 
-- `main.go` — entrypoint; parses `-addr` and `-db` flags, opens both databases, starts the server
-- `internal/db/` — read-only SQLite queries against OpenCode's `session`, `message`, `part` tables; uses `json_extract` heavily
-- `internal/state/` — writable SQLite database (`~/.local/share/ocman/state.db`) for ocman's own state (archived/seen sessions)
-- `internal/server/` — HTTP server, API handlers, static file serving with SPA fallback, OpenCode port discovery via `lsof`, tmux integration, whisper transcription
-- `frontend/` — React + TypeScript + Vite SPA (port 8228 in dev)
-- `internal/server/static/` — Vite build output; embedded into the Go binary via `//go:embed`. Gitignored except for `.gitkeep`.
+- `main.go` — entrypoint; parses `-addr` and `-db` flags, opens both
+  databases, registers platform adapters, starts the server.
+- `internal/platforms/` — `Platform` interface, `Registry`, common
+  types/errors.
+- `internal/platforms/opencode/` — OpenCode adapter wrapping the DB
+  + HTTP proxy client.
+- `internal/platforms/claudecode/` — Claude Code adapter: JSONL
+  scanner, parser, mtime-keyed cache, in-memory live-state cache,
+  hook settings installer, `claude -p` composer.
+- `internal/db/` — read-only SQLite queries against OpenCode's
+  `session`, `message`, `part` tables; uses `json_extract` heavily.
+- `internal/state/` — writable SQLite database
+  (`~/.local/share/ocman/state.db`) for ocman's own state (archived
+  / seen sessions). Primary key is `(platform, session_id)` so it
+  can scope state per platform.
+- `internal/server/` — HTTP server, API handlers, static file serving
+  with SPA fallback, OpenCode port discovery via `lsof`, tmux
+  integration, whisper transcription, Claude Code hook handler +
+  boot-time hook installation.
+- `frontend/` — React + TypeScript + Vite SPA (port 8228 in dev).
+- `internal/server/static/` — Vite build output; embedded into the Go
+  binary via `//go:embed`. Gitignored except for `.gitkeep`.
 
 ## Dev commands
 
@@ -19,19 +49,30 @@ A web dashboard for viewing OpenCode session data. Go backend reads OpenCode's S
 make dev            # runs backend (air) + frontend (vite) concurrently with live reload
 make dev-backend    # air only (Go on :8080)
 make dev-frontend   # vite only (React on :8228, proxies /api to :8080)
+make test           # runs `go test ./...` + `vitest run`
+make lint           # runs go vet, tsc -b, eslint, and the platform-branching check
 make build          # production: npm ci + npm run build, then go build -o ocman .
 make clean          # removes ocman binary, tmp/, and static/assets/
 ```
 
-- `mise` provides `air` (Go live-reload). Run `mise install` if air is missing.
+- `mise` provides `air` (Go live-reload). Run `mise install` if air
+  is missing.
 - The Vite dev server proxies `/api` requests to `localhost:8080`.
+- Air rebuilds Go on source changes but does **not** re-embed the
+  frontend bundle. After editing frontend code, either (a) use the
+  Vite dev server on :8228 instead of the embedded build, or (b)
+  run `cd frontend && npm run build` and touch a `.go` file to
+  trigger Air.
 
 ## Build pipeline
 
-1. `cd frontend && npm ci && npm run build` — builds frontend into `internal/server/static/`
-2. `go build -o ocman .` — embeds `internal/server/static/` via `//go:embed`
+1. `cd frontend && npm ci && npm run build` — builds frontend into
+   `internal/server/static/`.
+2. `go build -o ocman .` — embeds `internal/server/static/` via
+   `//go:embed`.
 
-Order matters: frontend must be built before `go build` so static assets are embedded.
+Order matters: frontend must be built before `go build` so static
+assets are embedded.
 
 ## Verification
 
@@ -40,22 +81,68 @@ CI runs these checks (`.github/workflows/ci.yml`):
 ```sh
 cd frontend && npm run lint       # ESLint
 cd frontend && npx tsc -b         # TypeScript typecheck
+cd frontend && npm test           # vitest (81 tests)
+go test ./...                     # Go unit + integration tests (180+ tests)
 go vet ./...                      # Go vet
+./scripts/check-platform-branching.sh
+                                  # catches `platform === 'opencode'` style
+                                  # branching in the frontend; the rule is
+                                  # enforced by AD-12a.
 make build                        # full production build (frontend + Go)
 ```
 
-No tests exist in either Go or frontend. No Go linter/formatter config.
+All of the above are wrapped by `make test` and `make lint` for local
+use. The repo has no Go formatter/linter config beyond `go vet`; keep
+diffs minimal and match the surrounding code.
 
 ## Key details
 
 - **CGo required**: `github.com/mattn/go-sqlite3` needs a C compiler.
-- **Two databases**: OpenCode's DB is opened read-only (`?mode=ro&_journal_mode=WAL`, default `~/.local/share/opencode/opencode.db`). Ocman's own state DB is writable (`~/.local/share/ocman/state.db`) and auto-creates its schema on startup.
-- **OpenCode port discovery** uses `lsof` to find processes named `opencode` listening on TCP, then resolves their cwd. This only works on macOS/Linux. Results are cached with a 3-second TTL.
-- **Session status** is inferred at query time from the last message's `role`, `finish`, and `error` fields — not stored.
-- **Auto-archive**: the server background-goroutine archives sessions inactive for 7+ days (checked every 24h).
+- **Two databases**: OpenCode's DB is opened read-only
+  (`?mode=ro&_journal_mode=WAL`, default `~/.local/share/opencode/opencode.db`).
+  Ocman's own state DB is writable (`~/.local/share/ocman/state.db`),
+  auto-creates its schema, and runs a versioned migration on startup.
+- **OpenCode port discovery** uses `lsof` to find processes named
+  `opencode` listening on TCP, then resolves their cwd. macOS/Linux
+  only. Cached with a 3-second TTL.
+- **Claude Code live state** is driven by HTTP hooks fired from the
+  `claude` CLI. Ocman installs a managed block of hooks into
+  `~/.claude/settings.json` on startup (sentinel `_owner: "ocman"`
+  marks them for idempotent re-install / removal); hooks POST to
+  `/api/hooks/claude` on loopback. Live state is kept in-memory only
+  (`liveCache`), with a 2 min TTL on `busy` to recover from missed
+  `Stop` events.
+- **Claude Code composer** spawns `claude -p --resume <id> <message>`
+  detached from the request context (so the subprocess outlives the
+  HTTP handler). Refuses to send while the target session is
+  reported `busy` (see AD-13 / R1); returns HTTP 409 with a
+  "try again" body.
+- **Session status** for OpenCode is inferred at query time from the
+  last message's `role`, `finish`, and `error` fields. For Claude
+  Code it's inferred from the last `type` in the JSONL + overlaid
+  with the live cache.
+- **Auto-archive**: background goroutine archives sessions inactive
+  for 7+ days (checked every 24 h). Runs against all registered
+  platforms.
 
 ## Conventions
 
 - All Go packages live under `internal/` — nothing is exported.
-- API routes use `requireGET`/`requirePOST` wrappers for method enforcement. Some routes (tmux) additionally require `localhost` origin via `requireLocalhost`.
-- Frontend state management uses Zustand. Routing uses react-router-dom.
+- **Platform-agnostic frontend.** The UI must not branch on
+  `session.platform === '...'`; capability gating goes through
+  `/api/capabilities` + `useCapabilities()`. Enforced by
+  `scripts/check-platform-branching.sh`, which `make lint` runs.
+  The pragma `// ocman:allow-platform-branch` can suppress false
+  positives when the comparison is part of a generic helper.
+- **Terminology**: *platform* = the tool that produced the session
+  (OpenCode / Claude Code). *Agent* = a composer-level role within a
+  session (OpenCode's `build` / `plan` / user-defined subagent).
+  Claude Code has no per-session agent concept.
+- API routes use `requireGET` / `requirePOST` wrappers for method
+  enforcement. Some routes (tmux, hook receiver) additionally require
+  `localhost` origin via `requireLocalhost`.
+- Frontend state management uses Zustand. Routing uses
+  react-router-dom.
+- Tests live alongside code as `*_test.go` / `*.test.ts(x)`. Prefer
+  table-driven tests in Go. The server package has a shared
+  `fakePlatform` for integration tests.

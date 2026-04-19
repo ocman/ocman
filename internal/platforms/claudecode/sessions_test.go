@@ -296,3 +296,58 @@ func TestAdapter_SessionsInactiveBefore_FiltersByCutoff(t *testing.T) {
 		t.Errorf("expected 0 stale candidates for cutoff=0, got %d", len(fresh))
 	}
 }
+
+// BenchmarkSessions_1000 exercises NFR-1: building session summaries
+// for ~1000 Claude Code sessions must return in well under ~1 s on
+// typical developer hardware. Run with:
+//
+//	go test -bench=BenchmarkSessions_1000 -benchmem ./internal/platforms/claudecode
+//
+// Uses a synthetic fixture (small jsonl per session) so it's
+// reproducible on CI. Real-world sessions are larger, but head-parse
+// only reads until the first sessioned event, so file size barely
+// matters for this code path. Cache is re-seeded each iteration via
+// a fresh adapter to avoid measuring the warm-cache path — that's
+// already ~instant.
+func BenchmarkSessions_1000(b *testing.B) {
+	const N = 1000
+	files := make(map[string]string, N)
+	for i := 0; i < N; i++ {
+		// Spread across 20 fake project dirs to mirror how the
+		// real ~/.claude/projects/ tree is shaped.
+		dir := "-Users-dries-src-p" + itoa(i%20)
+		files[dir+"/S"+itoa(i)+".jsonl"] = sampleJSONL
+	}
+	t := &testing.T{}
+	root := writeFixture(t, files)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		a := NewFromDir(root)
+		ss, err := a.Sessions(context.Background(), "", 0)
+		if err != nil {
+			b.Fatalf("Sessions: %v", err)
+		}
+		if len(ss) != N {
+			b.Fatalf("got %d sessions, want %d", len(ss), N)
+		}
+	}
+}
+
+// itoa is a tiny alloc-free int-to-decimal conversion used only by
+// the benchmark's fixture generator. Standard library strconv.Itoa
+// would also work; keeping this local avoids pulling in imports just
+// for a bench helper.
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var buf [20]byte
+	i := len(buf)
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	return string(buf[i:])
+}

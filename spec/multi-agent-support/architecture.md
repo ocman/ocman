@@ -1205,16 +1205,33 @@ agnostic UI from day one.
      HTTP 409 by `writePlatformError`. Live-verified end-to-end:
      `UserPromptSubmit` hook → composer POST → 409; `Stop` hook →
      composer POST → 204 + subprocess actually runs.
-   - NFR-1 and frontend copy audit: deferred to Phase 8. NFR-1 passes
-     casually in Phase 6 live testing (60+ CC projects, no perceptible
-     lag) but no formal measurement has been taken.
+   - NFR-1 and frontend copy audit: deferred to Phase 8.
 
-8. **Polish, docs, paper design for a third adapter.**
-   - Update `README.md` + `AGENTS.md` with Claude Code setup notes
-     (including the "ocman auto-installs hooks" disclosure).
-   - Produce a short paper design for a Codex adapter (not to be
-     merged, but as a sanity check that the interface holds up). This
-     is a requirements success criterion (SC-6).
+8. **Polish, docs, paper design for a third adapter.** (Done)
+   - `README.md` rewritten with multi-platform overview, the
+     revised architecture diagram, and a dedicated Claude Code
+     integration section disclosing the hook install, the busy-guard
+     (AD-13), and the in-memory live-state cache.
+   - `AGENTS.md` rewritten to list both adapters, the updated test
+     counts (180+ Go + 81 frontend), the platform-branching lint
+     rule, and the OpenCode-vs-Claude-Code operational differences.
+   - **NFR-1 formally measured** via `BenchmarkSessions_1000` in
+     `internal/platforms/claudecode`: 1000 synthetic sessions
+     enumerated and summarised in **~28.6 ms/op** (Apple M4 Max).
+     Budget was "under ~1 s" — we clear it by ~35×. Bench runs on
+     demand via `go test -bench=BenchmarkSessions_1000 -benchmem
+     ./internal/platforms/claudecode`.
+   - Frontend copy audit: grep for `OpenCode`, `opencode`, `hasPort`
+     under `frontend/src/` returns only comments, test fixtures, and
+     the `PlatformBadge` label — no user-facing strings that leak
+     platform identity. Live-runtime identity checks are blocked by
+     `scripts/check-platform-branching.sh` which `make lint` runs.
+   - Codex paper design at `spec/multi-agent-support/codex-paper.md`
+     (SC-6): fits the existing `Platform` interface without any
+     changes. Details the three Codex surfaces (history file, TUI,
+     CLI `codex exec`), maps each to an adapter method, and calls
+     out the two unresolved unknowns (history-file format, per-turn
+     capture) that would need investigation before real work.
 
 No phase introduces a schema break for OpenCode-only users. Phases 1-3
 can be merged behind minor feature gating if incremental release is
