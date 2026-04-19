@@ -1,10 +1,13 @@
 package server
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
 // --- validateID tests ---
@@ -184,5 +187,43 @@ func TestWriteJSON(t *testing.T) {
 	body := rr.Body.String()
 	if !strings.Contains(body, `"key":"value"`) {
 		t.Errorf("unexpected body: %s", body)
+	}
+}
+
+// --- writePlatformError tests ---
+
+// TestWritePlatformError_MapsErrBusyTo409 ensures AD-13's wire
+// contract: a SendMessage that returns platforms.ErrBusy must surface
+// as HTTP 409 Conflict so the frontend can show a distinct "try
+// again" toast rather than the generic "upstream failed" banner used
+// for 502s.
+func TestWritePlatformError_MapsErrBusyTo409(t *testing.T) {
+	rr := httptest.NewRecorder()
+	writePlatformError(rr, "sending message", platforms.ErrBusy)
+	if rr.Code != http.StatusConflict {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusConflict)
+	}
+	if !strings.Contains(rr.Body.String(), "processing") {
+		t.Errorf("body missing explanation, got %q", rr.Body.String())
+	}
+}
+
+// TestWritePlatformError_MapsErrUnsupportedTo501 is a regression test
+// for the existing sentinel mapping — added alongside ErrBusy so a
+// future edit can't silently break either route.
+func TestWritePlatformError_MapsErrUnsupportedTo501(t *testing.T) {
+	rr := httptest.NewRecorder()
+	writePlatformError(rr, "sending message", platforms.ErrUnsupported)
+	if rr.Code != http.StatusNotImplemented {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusNotImplemented)
+	}
+}
+
+// TestWritePlatformError_MapsUnknownTo502 covers the default branch.
+func TestWritePlatformError_MapsUnknownTo502(t *testing.T) {
+	rr := httptest.NewRecorder()
+	writePlatformError(rr, "sending message", errors.New("unexpected"))
+	if rr.Code != http.StatusBadGateway {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadGateway)
 	}
 }

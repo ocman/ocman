@@ -142,3 +142,46 @@ func TestAdapter_SendMessage_RejectsUnknownSession(t *testing.T) {
 		t.Error("expected error for unknown session")
 	}
 }
+
+// TestAdapter_SendMessage_RejectsBusySession guards AD-13: composer
+// must refuse to inject a prompt while the target session is reported
+// `busy` by the live cache, because concurrent `claude -p --resume`
+// forks the conversation tree (Phase 7 findings).
+func TestAdapter_SendMessage_RejectsBusySession(t *testing.T) {
+	root := writeFixture(t, map[string]string{
+		"-Users-dries-src-proj/S1.jsonl": sampleJSONL,
+	})
+	f := &fakeSpawner{}
+	a := NewFromDir(root).WithSender(f)
+
+	// Mark S1 busy in the live cache.
+	a.live.Apply("S1", liveStateDelta{Status: "busy"})
+
+	err := a.SendMessage(context.Background(), platformSendReq("S1", "hi"))
+	if !errors.Is(err, platforms.ErrBusy) {
+		t.Fatalf("expected ErrBusy, got %v", err)
+	}
+	// Spawner must not have been called.
+	if f.args != nil {
+		t.Errorf("spawner was invoked despite busy session: args=%v", f.args)
+	}
+}
+
+// TestAdapter_SendMessage_AllowsDoneSession confirms the guard is
+// scoped to `busy` only: `done`, `error`, and unknown states pass.
+func TestAdapter_SendMessage_AllowsDoneSession(t *testing.T) {
+	root := writeFixture(t, map[string]string{
+		"-Users-dries-src-proj/S1.jsonl": sampleJSONL,
+	})
+	f := &fakeSpawner{}
+	a := NewFromDir(root).WithSender(f)
+	a.live.Apply("S1", liveStateDelta{Status: "done"})
+
+	err := a.SendMessage(context.Background(), platformSendReq("S1", "hi"))
+	if err != nil {
+		t.Fatalf("expected done state to be accepted, got %v", err)
+	}
+	if f.args == nil {
+		t.Error("expected spawner to be invoked for done session")
+	}
+}

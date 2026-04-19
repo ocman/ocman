@@ -509,6 +509,38 @@ graph TD
   transcript for tool_use ID" method. Frontend needs a new rendering
   for expandable tool_use (small addition to the existing tool_use UI).
 
+### AD-13: Composer refuses to send while the target Claude Code session is `busy`
+
+- **Context**: Phase 7 reproduced risk R1 (see
+  `spec/multi-agent-support/phase7/findings.md`). When `claude -p
+  --resume <id>` runs concurrently with a live `claude` TUI on the same
+  session, the jsonl stays valid JSONL but the conversation tree forks:
+  the composer grafts its new user turn onto the in-flight TUI prompt
+  instead of onto its reply, producing two sibling branches with
+  non-monotonic timestamps. Neither side notices; the TUI keeps its
+  pre-composer in-memory view and the next TUI turn compounds the fork.
+- **Decision**: The Claude Code adapter's `SendMessage` rejects the
+  request when its `liveCache` reports `busy` for the target session,
+  returning a sentinel error that the HTTP handler maps to HTTP 409
+  (`Conflict`) with `{ "error": "session is currently processing a
+  prompt; try again in a moment" }`. The frontend shows a toast. Idle,
+  `done`, and `error` states still accept the prompt.
+- **Alternatives considered**:
+  - Queue the prompt until the session goes idle. Rejected: composer is
+    fire-and-forget, there is no UI surface for a pending queue, and
+    silently delaying breaks user expectations.
+  - Render forked trees as branches in the UI. Rejected: out of scope
+    for multi-agent-support v1; useful future direction.
+  - Do nothing, document the hazard. Rejected: the corruption is
+    repeatable and the symptom (an out-of-order conversation) is
+    confusing enough to warrant a guard.
+- **Consequences**: False positives are possible — the `busy` state has
+  a 2-minute TTL and relies on hook delivery, so a session whose hooks
+  were missed for network/permission reasons might be reported `busy`
+  forever until its TTL expires. The chosen TTL is short enough that
+  the user just retries; we accept the trade-off. The guard is
+  applied only on Claude Code; OpenCode keeps its existing semantics.
+
 ## Component Design
 
 ### Component Diagram
@@ -1159,14 +1191,23 @@ agnostic UI from day one.
    - At end of this phase: full composer works for Claude Code in both
      live-tmux and headless modes.
 
-7. **Risk-test and smooth over remaining edges.**
-   - Execute the R1 experiment (concurrent `claude -p --resume` vs.
-     live TUI flock) before merging Phase 6 to trunk.
-   - Confirm NFR-1 against a realistic dataset (O(100+) Claude Code
-     sessions); tune cache sizing if needed.
-   - Audit the frontend once more: grep for the strings "OpenCode",
-     "opencode", "hasPort", and any session-agent identity checks;
-     remove any leftovers (this catches copy that slipped through).
+7. **Risk-test and smooth over remaining edges.** (Done)
+   - Executed the R1 experiment (concurrent `claude -p --resume` vs.
+     live TUI) on a throwaway session at `/tmp/ocman-r1-test`. Result:
+     soft bar (jsonl integrity) **pass**, hard bar (linear
+     chronological history) **fail** — the tree forks. Full
+     write-up in `spec/multi-agent-support/phase7/findings.md` with
+     snapshot-A (initial), snapshot-B (composer while idle — clean
+     extension), snapshot-C (composer while busy — forked tree).
+   - Added AD-13: composer refuses to send while the session is
+     reported `busy` by the liveCache. Implemented as
+     `platforms.ErrBusy` returned by `Adapter.SendMessage`, mapped to
+     HTTP 409 by `writePlatformError`. Live-verified end-to-end:
+     `UserPromptSubmit` hook → composer POST → 409; `Stop` hook →
+     composer POST → 204 + subprocess actually runs.
+   - NFR-1 and frontend copy audit: deferred to Phase 8. NFR-1 passes
+     casually in Phase 6 live testing (60+ CC projects, no perceptible
+     lag) but no formal measurement has been taken.
 
 8. **Polish, docs, paper design for a third adapter.**
    - Update `README.md` + `AGENTS.md` with Claude Code setup notes
@@ -1186,13 +1227,20 @@ avoid a half-there experience.
 
 - **Likelihood**: medium. **Impact**: high (could corrupt the jsonl or
   block the user's interactive session).
-- **Mitigation**: AD-8 avoids this path entirely via the liveness
-  check. Before Phase 5 merges, explicitly test concurrent
-  `claude -p --resume` against an active TUI on a scratch session to
-  confirm the flock behavior matches assumptions (requirements
-  Assumption 2). If the flock contends destructively, tighten the
-  liveness check (e.g. also check the session's tasks-dir lock
-  directly).
+- **Status (Phase 7 reproduced)**: the jsonl stays **syntactically
+  intact** (every line is valid JSON, no events lost) but **the
+  conversation tree forks** — two sibling children of the in-flight
+  TUI user prompt — and disk-order timestamps go non-monotonic. Full
+  write-up in `spec/multi-agent-support/phase7/findings.md` with
+  before/after jsonl snapshots.
+- **Mitigation (AD-13 implemented)**: the Claude Code adapter's
+  `SendMessage` refuses to spawn `claude -p --resume` while its
+  `liveCache` reports the target session as `busy`, returning
+  `platforms.ErrBusy` which `writePlatformError` maps to HTTP 409
+  Conflict. The frontend surfaces the server's message as a toast
+  via the existing error path. The guard's stale-busy TTL (2 min,
+  liveCache) prevents a dropped `Stop` hook from wedging the composer
+  permanently; a user retry after the TTL passes works.
 
 ### R2: Hook auto-install modifies user-owned config.
 

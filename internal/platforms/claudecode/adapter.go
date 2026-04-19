@@ -152,6 +152,18 @@ func (a *Adapter) SendMessage(ctx context.Context, req platforms.SendMessageRequ
 	if req.SessionID == "" {
 		return fmt.Errorf("claudecode SendMessage: SessionID required")
 	}
+	// AD-13: refuse to send while the target session is busy. A
+	// concurrent `claude -p --resume` against an in-flight TUI turn
+	// forks the conversation tree (see
+	// spec/multi-agent-support/phase7/findings.md). `busy` is the
+	// only blocked state: `done`, `error`, and "never observed"
+	// (nil live state) all pass. The stale-busy TTL in liveCache
+	// prevents a dead session from blocking the composer forever.
+	if a.live != nil {
+		if st := a.live.Get(req.SessionID); st != nil && st.Status == "busy" {
+			return platforms.ErrBusy
+		}
+	}
 	// Look up the session to recover its cwd. Required because
 	// claude -p runs in cwd and uses it to resolve project-scoped
 	// settings (CLAUDE.md, plugins, etc).

@@ -74,9 +74,15 @@ func (s *Server) resolvePlatformForSession(w http.ResponseWriter, r *http.Reques
 }
 
 // writePlatformError maps a Platform error to an appropriate HTTP
-// response. The three well-known sentinels (ErrUnsupported, ErrNotFound)
-// map to 501/404; every other error becomes a 502 Bad Gateway (the
-// most likely cause is an unreachable upstream platform).
+// response. Well-known sentinels map to specific status codes:
+//
+//   - ErrUnsupported -> 501 Not Implemented
+//   - ErrNotFound    -> 404 Not Found
+//   - ErrBusy        -> 409 Conflict (AD-13, Claude Code composer
+//     refusing while session is mid-turn)
+//
+// Every other error becomes a 502 Bad Gateway (the most likely
+// cause is an unreachable upstream platform).
 func writePlatformError(w http.ResponseWriter, msg string, err error) {
 	if errors.Is(err, platforms.ErrUnsupported) {
 		http.Error(w, "operation not supported by this platform", http.StatusNotImplemented)
@@ -84,6 +90,13 @@ func writePlatformError(w http.ResponseWriter, msg string, err error) {
 	}
 	if errors.Is(err, platforms.ErrNotFound) {
 		http.Error(w, "session not found", http.StatusNotFound)
+		return
+	}
+	if errors.Is(err, platforms.ErrBusy) {
+		// 409 is the standard "your request is valid but conflicts
+		// with the current state of the resource" code. The client
+		// should retry once the session reports idle.
+		http.Error(w, "session is currently processing a prompt; try again in a moment", http.StatusConflict)
 		return
 	}
 	log.WithError(err).Error(msg)

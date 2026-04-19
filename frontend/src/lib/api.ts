@@ -438,7 +438,21 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message, images, model, agent }),
     });
-    if (!resp.ok) throw new Error(await resp.text());
+    if (!resp.ok) {
+      const body = (await resp.text()).trim();
+      // 409 Conflict is AD-13's busy-guard: the target session is
+      // mid-turn and accepting this prompt would fork its history.
+      // Surface a friendlier message and tag the error so callers
+      // can render a distinct UI if they want.
+      if (resp.status === 409) {
+        const err = new Error(
+          body || 'The session is still responding to a previous prompt. Try again in a moment.',
+        );
+        (err as Error & { code?: string }).code = 'busy';
+        throw err;
+      }
+      throw new Error(body || `HTTP ${resp.status}`);
+    }
   },
   listPermissions: (sessionId: string) =>
     fetchJSON<unknown[]>(`/api/session/${encodeURIComponent(sessionId)}/permissions`),
