@@ -160,6 +160,12 @@ func fileStem(path string) string {
 // Claude Code has no concept of per-session token totals, cost, or
 // share URL; those fields stay zero / nil. See FR-14 in the
 // requirements.
+//
+// LiveConnection defaults to true for every Claude Code session
+// that exists on disk: the composer resumes via `claude -p` without
+// needing a running TUI, so "reachable" is always true as long as
+// the jsonl is parseable. The hook-driven overlay in applyLiveState
+// doesn't downgrade this — it can only set it (redundantly) true.
 func sessionFromParsed(pf *parsedFile) db.Session {
 	title := pf.Title
 	if title == "" {
@@ -167,16 +173,17 @@ func sessionFromParsed(pf *parsedFile) db.Session {
 	}
 	status := inferStatus(pf)
 	return db.Session{
-		ID:           pf.SessionID,
-		Platform:     string(PlatformID),
-		ProjectID:    pf.Cwd, // no separate projectID concept
-		Title:        title,
-		Directory:    pf.Cwd,
-		TimeCreated:  pf.TimeCreated,
-		TimeUpdated:  pf.TimeUpdated,
-		MessageCount: pf.UserMessageCount,
-		DurationMs:   pf.TimeUpdated - pf.TimeCreated,
-		Status:       status,
+		ID:             pf.SessionID,
+		Platform:       string(PlatformID),
+		ProjectID:      pf.Cwd, // no separate projectID concept
+		Title:          title,
+		Directory:      pf.Cwd,
+		TimeCreated:    pf.TimeCreated,
+		TimeUpdated:    pf.TimeUpdated,
+		MessageCount:   pf.UserMessageCount,
+		DurationMs:     pf.TimeUpdated - pf.TimeCreated,
+		Status:         status,
+		LiveConnection: true,
 	}
 }
 

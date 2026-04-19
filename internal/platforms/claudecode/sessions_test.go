@@ -148,14 +148,19 @@ func TestAdapter_Session_NotFound(t *testing.T) {
 	}
 }
 
-func TestAdapter_Capabilities_Phase4ReadOnly(t *testing.T) {
+func TestAdapter_Capabilities_ComposerOnlyInPhase6(t *testing.T) {
 	a := NewFromDir(t.TempDir())
 	c := a.Capabilities()
-	// No interactive capabilities in Phase 4.
-	if c.Composer || c.RespondPermission || c.RespondQuestion ||
+	if !c.Composer {
+		t.Error("Composer should be true from Phase 6 on")
+	}
+	// Everything else stays off — Claude Code has no ocman-routable
+	// permission/question/abort/compact APIs, no composer-agent
+	// catalog, no slash commands, no ProxyEvents stream.
+	if c.RespondPermission || c.RespondQuestion ||
 		c.Abort || c.Compact || c.Events ||
 		c.AgentCatalog || c.ModelCatalog || c.SlashCommands {
-		t.Errorf("Phase 4 should not advertise any interactive capabilities: %+v", c)
+		t.Errorf("only Composer should be advertised in Phase 6: %+v", c)
 	}
 }
 
@@ -170,13 +175,15 @@ func TestAdapter_ApplyHookEvent_UpdatesLiveStatus(t *testing.T) {
 	a := NewFromDir(root)
 
 	// Baseline: before any hook, Status is the jsonl-derived "done"
-	// default and LiveConnection is false.
+	// default. LiveConnection defaults to true for every CC session
+	// (the composer can always reach it via `claude -p --resume`)
+	// regardless of hook cache state.
 	before, err := a.Sessions(context.Background(), "", 0)
 	if err != nil {
 		t.Fatalf("Sessions: %v", err)
 	}
-	if len(before) != 1 || before[0].Status != "done" || before[0].LiveConnection {
-		t.Fatalf("baseline: got %+v, want status=done liveConnection=false", before)
+	if len(before) != 1 || before[0].Status != "done" || !before[0].LiveConnection {
+		t.Fatalf("baseline: got %+v, want status=done liveConnection=true", before)
 	}
 
 	// Apply a UserPromptSubmit hook: the session should transition
@@ -233,9 +240,10 @@ func TestAdapter_ApplyHookEvent_IgnoresUnknownSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sessions: %v", err)
 	}
-	// Our one real session must still have the jsonl-derived defaults.
-	if got[0].Status != "done" || got[0].LiveConnection {
-		t.Errorf("unrelated session touched by foreign hook: %+v", got[0])
+	// Our one real session must still have the jsonl-derived defaults
+	// (status="done"; LiveConnection=true is the baseline for CC).
+	if got[0].Status != "done" {
+		t.Errorf("unrelated session status touched by foreign hook: %+v", got[0])
 	}
 }
 

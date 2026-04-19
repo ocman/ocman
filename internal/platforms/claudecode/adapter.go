@@ -51,6 +51,10 @@ type Adapter struct {
 	// construction — New / NewFromDir initialise it so handler code
 	// can dispatch without nil checks.
 	live *liveCache
+
+	// sender spawns the claude subprocess for composer messages.
+	// Defaults to execSpawner{}; overridable by tests.
+	sender spawner
 }
 
 // New returns a Claude Code adapter reading from the user's default
@@ -75,7 +79,15 @@ func NewFromDir(projectsDir string) *Adapter {
 		projectsDir: projectsDir,
 		cache:       newCache(),
 		live:        newLiveCache(defaultBusyTTL),
+		sender:      &execSpawner{},
 	}
+}
+
+// WithSender overrides the default subprocess spawner; used by tests
+// to swap in a fake. Returns the adapter for chaining.
+func (a *Adapter) WithSender(s spawner) *Adapter {
+	a.sender = s
+	return a
 }
 
 // ID returns the Claude Code platform identifier.
@@ -97,18 +109,19 @@ func (a *Adapter) Available(context.Context) bool {
 	return err == nil && info.IsDir()
 }
 
-// Capabilities reflects Phase 4's read-only slice. Later phases will
-// flip composer/respondPermission/respondQuestion/abort/compact/events
-// to true as each ships.
+// Capabilities declares what Claude Code supports.
+//
+// Composer is true from Phase 6 on — SendMessage routes via
+// `claude -p --resume`. Per-session availability is implied by
+// session.LiveConnection (set when a hook event has been observed);
+// the frontend gates the composer UI on that flag.
+//
+// Other interactive ops stay false: Claude Code has no in-flight
+// permission/question response API, no compact primitive, and its
+// SSE live-event stream isn't proxied through ocman.
 func (a *Adapter) Capabilities() platforms.Capabilities {
 	return platforms.Capabilities{
-		// Read-only capabilities (supported in Phase 4).
-		// Nothing here yet — none of the flags describe "we can
-		// show you the session", which is always true if the
-		// adapter is Available.
-
-		// All interactive capabilities come in later phases.
-		Composer:          false,
+		Composer:          true,
 		RespondPermission: false,
 		RespondQuestion:   false,
 		Abort:             false,
@@ -120,10 +133,36 @@ func (a *Adapter) Capabilities() platforms.Capabilities {
 	}
 }
 
-// --- Interactive operations: not supported in Phase 4 ---
+// --- Interactive operations ---
 
-func (a *Adapter) SendMessage(context.Context, platforms.SendMessageRequest) error {
-	return platforms.ErrUnsupported
+// SendMessage spawns `claude -p --resume <id> "<message>"` in the
+// session's working directory. Fire-and-forget: the subprocess runs
+// detached, appends new turns to its jsonl file, and fires hook
+// events back into ocman as it runs. The read path picks up the new
+// messages on the next Sessions()/Session() poll.
+//
+// Returns an error only if the session can't be resolved or the
+// subprocess fails to start. Runtime errors from the claude process
+// itself (bad prompt, API failure) show up via the jsonl's error
+// fields, not this return value.
+//
+// Images are not supported — claude -p doesn't accept inline
+// attachments — so req.Images is silently ignored. Phase 6 scope.
+func (a *Adapter) SendMessage(ctx context.Context, req platforms.SendMessageRequest) error {
+	if req.SessionID == "" {
+		return fmt.Errorf("claudecode SendMessage: SessionID required")
+	}
+	// Look up the session to recover its cwd. Required because
+	// claude -p runs in cwd and uses it to resolve project-scoped
+	// settings (CLAUDE.md, plugins, etc).
+	detail, err := a.Session(ctx, req.SessionID, 1, 0)
+	if err != nil {
+		return fmt.Errorf("claudecode SendMessage: resolve session: %w", err)
+	}
+	if detail.Session == nil || detail.Session.Directory == "" {
+		return fmt.Errorf("claudecode SendMessage: session %s has no directory", req.SessionID)
+	}
+	return sendPromptWith(ctx, a.sender, req.SessionID, detail.Session.Directory, req.Message)
 }
 
 func (a *Adapter) ExecuteCommand(context.Context, platforms.ExecuteCommandRequest) error {
