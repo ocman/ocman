@@ -12,6 +12,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	claudecodeplatform "github.com/NoUseFreak/ocman/internal/platforms/claudecode"
 	opencodeplatform "github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/pricing"
 	"github.com/NoUseFreak/ocman/internal/server"
@@ -49,11 +50,12 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Register all platform adapters. For now ocman ships with OpenCode;
-	// Claude Code (and later Codex, Gemini, ...) will be added here as
-	// subsequent multi-platform phases land.
+	// Register all platform adapters. Each adapter knows how to report
+	// its own availability; the Claude Code adapter stays silent if
+	// Claude Code isn't installed.
 	registry := platforms.NewRegistry()
 	registry.Register(opencodeplatform.New(database))
+	registry.Register(claudecodeplatform.New())
 
 	srv := server.New(database, stateDB, *addr, registry)
 	if err := srv.Start(ctx); err != nil {

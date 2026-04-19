@@ -112,11 +112,29 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  direction: rtl;
   text-align: left;
   font-size: 11px;
   font-family: 'SF Mono', Consolas, monospace;
   color: var(--text-dim);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+/*
+ * Inner span holds the path itself; it's the element we RTL-ellipsise
+ * so long project dirs collapse from the left (keeping the final
+ * directory name visible) while the platform identifier to its left
+ * stays unaffected.
+ */
+.session-sidebar-project-path {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
 }
 .session-sidebar-meta {
   display: flex;

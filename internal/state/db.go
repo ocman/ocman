@@ -26,6 +26,7 @@ func DefaultDBPath() string {
 }
 
 // Open opens the ocman state database and ensures the schema exists.
+// Runs any pending migrations exactly once; safe to call on every boot.
 func Open(path string) (*DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("creating state directory: %w", err)
@@ -50,60 +51,58 @@ func Open(path string) (*DB, error) {
 	return stateDB, nil
 }
 
+// init bootstraps the schema to latestSchemaVersion. See migrate.go
+// for the migration plan.
 func (d *DB) init() error {
-	_, err := d.db.Exec(`
-		CREATE TABLE IF NOT EXISTS archived_session (
-			session_id TEXT PRIMARY KEY,
-			session_time_updated INTEGER NOT NULL,
-			archived_at INTEGER NOT NULL
-		);
-
-		CREATE TABLE IF NOT EXISTS seen_session (
-			session_id TEXT PRIMARY KEY,
-			session_time_updated INTEGER NOT NULL,
-			seen_at INTEGER NOT NULL
-		)
-	`)
-	if err != nil {
-		return fmt.Errorf("initializing state schema: %w", err)
-	}
-	return nil
+	return migrate(d.db)
 }
 
-// MarkSessionSeen records the latest session update the user has viewed.
-func (d *DB) MarkSessionSeen(sessionID string, sessionTimeUpdated int64) error {
+// Key identifies a session by its owning platform + session ID. Used
+// as the map key for state lookups so two different platforms can
+// share a session-id namespace without colliding.
+type Key struct {
+	Platform  string
+	SessionID string
+}
+
+// MarkSessionSeen records the latest session update the user has
+// viewed for the given platform/session. Per-platform: Claude Code's
+// session "abc123" and OpenCode's session "abc123" are independent.
+func (d *DB) MarkSessionSeen(platform, sessionID string, sessionTimeUpdated int64) error {
 	_, err := d.db.Exec(`
-		INSERT INTO seen_session (session_id, session_time_updated, seen_at)
-		VALUES (?, ?, ?)
-		ON CONFLICT(session_id) DO UPDATE SET
+		INSERT INTO seen_session (platform, session_id, session_time_updated, seen_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(platform, session_id) DO UPDATE SET
 			session_time_updated = CASE
 				WHEN excluded.session_time_updated > seen_session.session_time_updated THEN excluded.session_time_updated
 				ELSE seen_session.session_time_updated
 			END,
 			seen_at = excluded.seen_at
-	`, sessionID, sessionTimeUpdated, time.Now().UnixMilli())
+	`, platform, sessionID, sessionTimeUpdated, time.Now().UnixMilli())
 	if err != nil {
 		return fmt.Errorf("marking session seen: %w", err)
 	}
 	return nil
 }
 
-// SeenSessions returns seen session timestamps keyed by session ID.
-func (d *DB) SeenSessions() (map[string]int64, error) {
-	rows, err := d.db.Query(`SELECT session_id, session_time_updated FROM seen_session`)
+// SeenSessions returns every seen session's time_updated, keyed by
+// (platform, session-id). Callers doing a per-platform lookup can
+// construct a Key directly.
+func (d *DB) SeenSessions() (map[Key]int64, error) {
+	rows, err := d.db.Query(`SELECT platform, session_id, session_time_updated FROM seen_session`)
 	if err != nil {
 		return nil, fmt.Errorf("listing seen sessions: %w", err)
 	}
 	defer rows.Close()
 
-	seen := make(map[string]int64)
+	seen := make(map[Key]int64)
 	for rows.Next() {
-		var sessionID string
+		var platform, sessionID string
 		var sessionTimeUpdated int64
-		if err := rows.Scan(&sessionID, &sessionTimeUpdated); err != nil {
+		if err := rows.Scan(&platform, &sessionID, &sessionTimeUpdated); err != nil {
 			return nil, fmt.Errorf("scanning seen session: %w", err)
 		}
-		seen[sessionID] = sessionTimeUpdated
+		seen[Key{Platform: platform, SessionID: sessionID}] = sessionTimeUpdated
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("reading seen sessions: %w", err)
@@ -117,46 +116,51 @@ func (d *DB) Close() error {
 	return d.db.Close()
 }
 
-// ArchiveSession records a session as archived at its current update timestamp.
-func (d *DB) ArchiveSession(sessionID string, sessionTimeUpdated int64) error {
+// ArchiveSession records a session as archived at its current update
+// timestamp for the given platform.
+func (d *DB) ArchiveSession(platform, sessionID string, sessionTimeUpdated int64) error {
 	_, err := d.db.Exec(`
-		INSERT INTO archived_session (session_id, session_time_updated, archived_at)
-		VALUES (?, ?, ?)
-		ON CONFLICT(session_id) DO UPDATE SET
+		INSERT INTO archived_session (platform, session_id, session_time_updated, archived_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(platform, session_id) DO UPDATE SET
 			session_time_updated = excluded.session_time_updated,
 			archived_at = excluded.archived_at
-	`, sessionID, sessionTimeUpdated, time.Now().UnixMilli())
+	`, platform, sessionID, sessionTimeUpdated, time.Now().UnixMilli())
 	if err != nil {
 		return fmt.Errorf("archiving session: %w", err)
 	}
 	return nil
 }
 
-// UnarchiveSession removes a session's archived marker.
-func (d *DB) UnarchiveSession(sessionID string) error {
-	_, err := d.db.Exec(`DELETE FROM archived_session WHERE session_id = ?`, sessionID)
+// UnarchiveSession removes a session's archived marker (per platform).
+func (d *DB) UnarchiveSession(platform, sessionID string) error {
+	_, err := d.db.Exec(
+		`DELETE FROM archived_session WHERE platform = ? AND session_id = ?`,
+		platform, sessionID,
+	)
 	if err != nil {
 		return fmt.Errorf("unarchiving session: %w", err)
 	}
 	return nil
 }
 
-// ArchivedSessions returns archived session timestamps keyed by session ID.
-func (d *DB) ArchivedSessions() (map[string]int64, error) {
-	rows, err := d.db.Query(`SELECT session_id, session_time_updated FROM archived_session`)
+// ArchivedSessions returns every archived session's time_updated,
+// keyed by (platform, session-id).
+func (d *DB) ArchivedSessions() (map[Key]int64, error) {
+	rows, err := d.db.Query(`SELECT platform, session_id, session_time_updated FROM archived_session`)
 	if err != nil {
 		return nil, fmt.Errorf("listing archived sessions: %w", err)
 	}
 	defer rows.Close()
 
-	archived := make(map[string]int64)
+	archived := make(map[Key]int64)
 	for rows.Next() {
-		var sessionID string
+		var platform, sessionID string
 		var sessionTimeUpdated int64
-		if err := rows.Scan(&sessionID, &sessionTimeUpdated); err != nil {
+		if err := rows.Scan(&platform, &sessionID, &sessionTimeUpdated); err != nil {
 			return nil, fmt.Errorf("scanning archived session: %w", err)
 		}
-		archived[sessionID] = sessionTimeUpdated
+		archived[Key{Platform: platform, SessionID: sessionID}] = sessionTimeUpdated
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("reading archived sessions: %w", err)

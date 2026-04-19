@@ -233,7 +233,7 @@ func TestHandleSeenSession_InvalidID(t *testing.T) {
 
 func TestHandleSeenSession_Valid(t *testing.T) {
 	srv := testServer(t)
-	body := strings.NewReader(`{"sessionId":"abc123","timeUpdated":1000}`)
+	body := strings.NewReader(`{"platform":"opencode","sessionId":"abc123","timeUpdated":1000}`)
 	req := httptest.NewRequest("POST", "/api/session/seen", body)
 	rr := httptest.NewRecorder()
 	srv.handleSeenSession(rr, req)
@@ -245,7 +245,7 @@ func TestHandleSeenSession_Valid(t *testing.T) {
 
 func TestHandleArchiveSession_Valid(t *testing.T) {
 	srv := testServer(t)
-	body := strings.NewReader(`{"sessionId":"abc123","timeUpdated":1000,"archived":true}`)
+	body := strings.NewReader(`{"platform":"opencode","sessionId":"abc123","timeUpdated":1000,"archived":true}`)
 	req := httptest.NewRequest("POST", "/api/session/archive", body)
 	rr := httptest.NewRecorder()
 	srv.handleArchiveSession(rr, req)
@@ -257,7 +257,7 @@ func TestHandleArchiveSession_Valid(t *testing.T) {
 
 func TestHandleArchiveSession_Unarchive(t *testing.T) {
 	srv := testServer(t)
-	body := strings.NewReader(`{"sessionId":"abc123","archived":false}`)
+	body := strings.NewReader(`{"platform":"opencode","sessionId":"abc123","archived":false}`)
 	req := httptest.NewRequest("POST", "/api/session/archive", body)
 	rr := httptest.NewRecorder()
 	srv.handleArchiveSession(rr, req)
@@ -302,14 +302,13 @@ func TestHandleArchiveSession_InvalidJSON(t *testing.T) {
 
 func TestApplySessionState_MarksSeen(t *testing.T) {
 	srv := testServer(t)
-	// Mark s1 as seen at time 2000
-	if err := srv.stateDB.MarkSessionSeen("s1", 2000); err != nil {
+	if err := srv.stateDB.MarkSessionSeen("opencode", "s1", 2000); err != nil {
 		t.Fatal(err)
 	}
 
 	sessions := []db.Session{
-		{ID: "s1", TimeUpdated: 2000},
-		{ID: "s2", TimeUpdated: 3000},
+		{ID: "s1", Platform: "opencode", TimeUpdated: 2000},
+		{ID: "s2", Platform: "opencode", TimeUpdated: 3000},
 	}
 	if err := srv.applySessionState(sessions); err != nil {
 		t.Fatalf("applySessionState: %v", err)
@@ -324,12 +323,12 @@ func TestApplySessionState_MarksSeen(t *testing.T) {
 
 func TestApplySessionState_MarksArchived(t *testing.T) {
 	srv := testServer(t)
-	if err := srv.stateDB.ArchiveSession("s1", 2000); err != nil {
+	if err := srv.stateDB.ArchiveSession("opencode", "s1", 2000); err != nil {
 		t.Fatal(err)
 	}
 
 	sessions := []db.Session{
-		{ID: "s1", TimeUpdated: 2000},
+		{ID: "s1", Platform: "opencode", TimeUpdated: 2000},
 	}
 	if err := srv.applySessionState(sessions); err != nil {
 		t.Fatalf("applySessionState: %v", err)
@@ -341,13 +340,12 @@ func TestApplySessionState_MarksArchived(t *testing.T) {
 
 func TestApplySessionState_AutoUnarchivesUpdatedSession(t *testing.T) {
 	srv := testServer(t)
-	if err := srv.stateDB.ArchiveSession("s1", 1000); err != nil {
+	if err := srv.stateDB.ArchiveSession("opencode", "s1", 1000); err != nil {
 		t.Fatal(err)
 	}
 
-	// Session was updated after archive
 	sessions := []db.Session{
-		{ID: "s1", TimeUpdated: 2000},
+		{ID: "s1", Platform: "opencode", TimeUpdated: 2000},
 	}
 	if err := srv.applySessionState(sessions); err != nil {
 		t.Fatalf("applySessionState: %v", err)
@@ -356,10 +354,34 @@ func TestApplySessionState_AutoUnarchivesUpdatedSession(t *testing.T) {
 		t.Error("s1 should have been auto-unarchived (updated since archive)")
 	}
 
-	// Verify it was actually removed from the DB
 	archived, _ := srv.stateDB.ArchivedSessions()
-	if _, ok := archived["s1"]; ok {
+	if _, ok := archived[state.Key{Platform: "opencode", SessionID: "s1"}]; ok {
 		t.Error("s1 should no longer be in archived_session table")
+	}
+}
+
+// TestApplySessionState_ScopesByPlatform verifies that marking a
+// session seen / archived under one platform has no effect on a
+// session with the same ID under a different platform — the
+// multi-platform point of the state.db migration (AD-10).
+func TestApplySessionState_ScopesByPlatform(t *testing.T) {
+	srv := testServer(t)
+	if err := srv.stateDB.ArchiveSession("opencode", "shared-id", 1000); err != nil {
+		t.Fatal(err)
+	}
+
+	sessions := []db.Session{
+		{ID: "shared-id", Platform: "opencode", TimeUpdated: 1000},
+		{ID: "shared-id", Platform: "claude-code", TimeUpdated: 1000},
+	}
+	if err := srv.applySessionState(sessions); err != nil {
+		t.Fatalf("applySessionState: %v", err)
+	}
+	if !sessions[0].Archived {
+		t.Error("opencode/shared-id should be archived")
+	}
+	if sessions[1].Archived {
+		t.Error("claude-code/shared-id must NOT inherit opencode's archive state")
 	}
 }
 
@@ -409,8 +431,8 @@ func TestAutoArchive_UsesRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ArchivedSessions: %v", err)
 	}
-	if _, ok := archived["old-session"]; !ok {
-		t.Errorf("expected old-session to be archived after auto-archive pass, got %+v", archived)
+	if _, ok := archived[state.Key{Platform: "opencode", SessionID: "old-session"}]; !ok {
+		t.Errorf("expected old-session to be archived under opencode after auto-archive pass, got %+v", archived)
 	}
 }
 
@@ -475,4 +497,72 @@ func testServerWithRawDB(t *testing.T) (*Server, *sql.DB) {
 	reg.Register(opencodeplatform.New(database))
 	srv := New(database, stateDB, "127.0.0.1:0", reg)
 	return srv, setupDB
+}
+
+// TestHandleSessions_MergesByTimeUpdatedDesc guards the list merge
+// order across platforms. Each adapter returns its own sessions already
+// sorted by TimeUpdated desc, but the combined /api/sessions response
+// must also interleave across platforms so a recent Claude Code
+// session is not hidden behind hundreds of older OpenCode rows.
+//
+// Regression: prior to the sort.SliceStable in handleSessions the
+// combined slice was a naive concatenation, which placed every
+// claude-code row after every opencode row regardless of recency.
+func TestHandleSessions_MergesByTimeUpdatedDesc(t *testing.T) {
+	srv, rawDB := testServerWithRawDB(t)
+	defer rawDB.Close()
+
+	// Register a second (fake) platform alongside the real OpenCode
+	// adapter already registered by testServerWithRawDB. The fake
+	// returns two sessions: one newer and one older than the OpenCode
+	// rows we seed below, proving interleaving — not tail-append.
+	srv.registry.Register(&fakePlatform{
+		id: "claude-code",
+		sessions: []db.Session{
+			{ID: "cc-newest", Platform: "claude-code", TimeUpdated: 5000, Directory: "/tmp"},
+			{ID: "cc-oldest", Platform: "claude-code", TimeUpdated: 1000, Directory: "/tmp"},
+		},
+	})
+
+	// Seed two opencode sessions with timestamps that bracket the
+	// claude-code rows. The expected sorted order is:
+	//   cc-newest (5000) > oc-mid (4000) > oc-old (2000) > cc-oldest (1000)
+	// which is only achievable if the handler sorts the union.
+	_, err := rawDB.Exec(
+		`INSERT INTO session (id, title, directory, time_created, time_updated)
+		 VALUES ('oc-mid', 'mid', '/tmp', 4000, 4000),
+		        ('oc-old', 'old', '/tmp', 2000, 2000)`,
+	)
+	if err != nil {
+		t.Fatalf("seeding opencode sessions: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/sessions", nil)
+	rr := httptest.NewRecorder()
+	srv.handleSessions(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var got []db.Session
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(got) != 4 {
+		t.Fatalf("expected 4 sessions, got %d: %+v", len(got), got)
+	}
+	wantIDs := []string{"cc-newest", "oc-mid", "oc-old", "cc-oldest"}
+	for i, want := range wantIDs {
+		if got[i].ID != want {
+			t.Errorf("position %d: got %s, want %s (full order: %v)",
+				i, got[i].ID, want,
+				func() []string {
+					ids := make([]string, len(got))
+					for j, s := range got {
+						ids[j] = s.ID
+					}
+					return ids
+				}())
+		}
+	}
 }

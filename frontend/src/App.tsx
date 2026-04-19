@@ -8,6 +8,7 @@ import { SessionDetail } from './pages/SessionDetail';
 import { HeaderProvider } from './lib/HeaderProvider';
 import { useHeaderInfo } from './lib/headerContext';
 import { CommandPalette } from './components/CommandPalette';
+import { PlatformBadge } from './components/PlatformBadge';
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
 import { useFaviconNotify } from './lib/useFaviconNotify';
 import { useUiStore } from './lib/uiStore';
@@ -42,7 +43,17 @@ function Header() {
   if (path.startsWith('/session/')) {
     breadcrumb = (
       <>
-        {info.sessionTitle && <> / {info.sessionTitle}</>}
+        {info.sessionTitle && (
+          <>
+            {' / '}
+            {info.sessionPlatform && (
+              <>
+                <PlatformBadge platform={info.sessionPlatform} />{' '}
+              </>
+            )}
+            {info.sessionTitle}
+          </>
+        )}
       </>
     );
   } else if (path.startsWith('/project/')) {

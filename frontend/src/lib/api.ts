@@ -361,20 +361,20 @@ export const api = {
     return fetchJSON<Session[]>(`/api/sessions${qs ? '?' + qs : ''}`, signal);
   },
   session: (id: string, limit = 50, offset = 0, signal?: AbortSignal) => fetchJSON<SessionDetail>(`/api/session/${id}?limit=${limit}&offset=${offset}`, signal),
-  archiveSession: async (sessionId: string, timeUpdated: number, archived = true) => {
+  archiveSession: async (platform: string, sessionId: string, timeUpdated: number, archived = true) => {
     const resp = await fetch('/api/session/archive', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, timeUpdated, archived }),
+      body: JSON.stringify({ platform, sessionId, timeUpdated, archived }),
     });
     if (!resp.ok) throw new Error(await resp.text());
     return resp.json() as Promise<{ ok: boolean }>;
   },
-  markSessionSeen: async (sessionId: string, timeUpdated: number) => {
+  markSessionSeen: async (platform: string, sessionId: string, timeUpdated: number) => {
     const resp = await fetch('/api/session/seen', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, timeUpdated }),
+      body: JSON.stringify({ platform, sessionId, timeUpdated }),
     });
     if (!resp.ok) throw new Error(await resp.text());
     return resp.json() as Promise<{ ok: boolean }>;

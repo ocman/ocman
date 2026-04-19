@@ -5,6 +5,7 @@ import type { Session } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
 import { cleanTitle, formatDuration, relativeTime, shortPath } from '../lib/format';
 import { StatusBadge } from './StatusBadge';
+import { PlatformBadge } from './PlatformBadge';
 import type { TmuxState } from '../lib/useTmux';
 import { filterVisibleSessions } from '../lib/sessionVisibility';
 
@@ -88,7 +89,7 @@ export function SessionTable({ sessions, showProject, loading, tmux, includeArch
 
     setArchivingSessionIds(prev => new Set(prev).add(session.id));
     try {
-      await archiveSession(session.id, session.timeUpdated, true);
+      await archiveSession(session.platform, session.id, session.timeUpdated, true);
       setLocallyArchivedSessionIds(prev => new Set(prev).add(session.id));
     } catch (err) {
       console.error('Failed to archive session', err);
@@ -179,6 +180,8 @@ export function SessionTable({ sessions, showProject, loading, tmux, includeArch
                     <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{cleanTitle(s.title) || 'Untitled'}</span>
                   </div>
                   <div className="mono">
+                    <PlatformBadge platform={s.platform} variant="plain" />
+                    {' '}
                     {s.id}
                     <span className="session-row-actions">
                       {!showProject && hasTmux && (

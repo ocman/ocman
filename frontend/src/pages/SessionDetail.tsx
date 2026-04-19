@@ -10,6 +10,7 @@ import { Composer, type AttachedImage } from '../components/assistant/Composer';
 import { QuestionPrompt, type PendingQuestion, type QuestionItem } from '../components/session/QuestionPrompt';
 import { PermissionPrompt } from '../components/session/PermissionPrompt';
 import { StatusBadge } from '../components/StatusBadge';
+import { PlatformBadge } from '../components/PlatformBadge';
 import { ShortPath } from '../components/SessionTable';
 import { useTmux } from '../lib/useTmux';
 import { filterVisibleSessions } from '../lib/sessionVisibility';
@@ -649,7 +650,7 @@ export function SessionDetail() {
     if (archivingSessionIds.has(target.id)) return;
     setArchivingSessionIds(prev => new Set(prev).add(target.id));
     archiveTimeoutsRef.current[target.id] = window.setTimeout(() => {
-      archiveSession(target.id, target.timeUpdated, true)
+      archiveSession(target.platform, target.id, target.timeUpdated, true)
         .then(() => {
           setRecentSessions(prev => showArchivedRecent
             ? prev.map(session => (session.id === target.id ? { ...session, archived: true } : session))
@@ -949,18 +950,19 @@ export function SessionDetail() {
   }, [id, pendingPermission, pendingQuestion, hasPendingPrompt]);
 
   const sessionSeenId = session?.id;
+  const sessionSeenPlatform = session?.platform;
   const sessionSeenUpdated = session?.timeUpdated || 0;
 
   useEffect(() => {
-    if (!sessionSeenId) return;
-    void markSessionSeen(sessionSeenId, sessionSeenUpdated)
+    if (!sessionSeenId || !sessionSeenPlatform) return;
+    void markSessionSeen(sessionSeenPlatform, sessionSeenId, sessionSeenUpdated)
       .then(() => {
         setSession(prev => prev && prev.id === sessionSeenId ? { ...prev, seen: true } : prev);
         setRecentSessions(prev => prev.map(s => (s.id === sessionSeenId ? { ...s, seen: true } : s)));
         recheckFaviconNotify();
       })
       .catch(err => console.error('Failed to mark session seen', err));
-  }, [markSessionSeen, sessionSeenId, sessionSeenUpdated]);
+  }, [markSessionSeen, sessionSeenId, sessionSeenPlatform, sessionSeenUpdated]);
 
   // Restore pending question when navigating to a page.
   // Check sessionStorage for a previously received question (stored when the
@@ -1598,7 +1600,7 @@ export function SessionDetail() {
       ].filter(Boolean).join(' ');
       stats.push({ label: 'Changes', value: changes });
     }
-    setInfo({ sessionTitle: cleanTitle(s.title) || 'Untitled', stats });
+    setInfo({ sessionTitle: cleanTitle(s.title) || 'Untitled', sessionPlatform: s.platform, stats });
     return () => setInfo({});
   }, [session, totalMessages, setInfo, displayTokensIn, displayTokensOut]);
 
@@ -1711,10 +1713,10 @@ export function SessionDetail() {
   const handleCommand = useCallback(async (command: string, args: string) => {
     if (!session) return;
 
-    // /archive is a local ocman action — it works even when OpenCode isn't running.
+    // /archive is a local ocman action — it works even when the agent isn't running.
     if (command === 'archive') {
       try {
-        await archiveSession(session.id, session.timeUpdated, true);
+        await archiveSession(session.platform, session.id, session.timeUpdated, true);
       } catch (e) {
         console.error('Failed to archive session', e);
         return;
@@ -2161,7 +2163,12 @@ export function SessionDetail() {
               />
               <span className="session-sidebar-item-body">
                 <span className="session-sidebar-title">{cleanTitle(sib.title) || 'Untitled'}</span>
-                <span className="session-sidebar-project"><ShortPath path={sib.directory} /></span>
+                <span className="session-sidebar-project">
+                  <PlatformBadge platform={sib.platform} variant="plain" />
+                  <span className="session-sidebar-project-path">
+                    <ShortPath path={sib.directory} />
+                  </span>
+                </span>
               </span>
               <span className="session-sidebar-meta">
                 <span className="session-sidebar-time" title={new Date(sib.timeUpdated).toLocaleString()}>{relativeTime(sib.timeUpdated)}</span>

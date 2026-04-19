@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/pricing"
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 // maxRequestBody is the maximum allowed request body size (1 MB).
@@ -231,6 +233,15 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		all = append(all, sessions...)
 	}
 
+	// Adapters each return their own list pre-sorted, but the combined
+	// slice must also be sorted by TimeUpdated desc so sessions from
+	// different platforms interleave by recency rather than clumping
+	// by source. Without this, e.g. every Claude Code session lands
+	// after every OpenCode session regardless of how recent it is.
+	sort.SliceStable(all, func(i, j int) bool {
+		return all[i].TimeUpdated > all[j].TimeUpdated
+	})
+
 	if err := s.applySessionState(all); err != nil {
 		serverError(w, "fetching session state", err)
 		return
@@ -250,17 +261,19 @@ func (s *Server) applySessionState(sessions []db.Session) error {
 	}
 
 	for i := range sessions {
-		seenAtUpdate, ok := seen[sessions[i].ID]
+		key := state.Key{Platform: sessions[i].Platform, SessionID: sessions[i].ID}
+
+		seenAtUpdate, ok := seen[key]
 		if ok && seenAtUpdate >= sessions[i].TimeUpdated {
 			sessions[i].Seen = true
 		}
 
-		archivedAtUpdate, ok := archived[sessions[i].ID]
+		archivedAtUpdate, ok := archived[key]
 		if !ok {
 			continue
 		}
 		if sessions[i].TimeUpdated > archivedAtUpdate {
-			if err := s.stateDB.UnarchiveSession(sessions[i].ID); err != nil {
+			if err := s.stateDB.UnarchiveSession(key.Platform, key.SessionID); err != nil {
 				return err
 			}
 			continue
@@ -273,8 +286,31 @@ func (s *Server) applySessionState(sessions []db.Session) error {
 
 // --- Archive / seen state ---
 
+// resolvePlatformIDForState returns the platform ID owning a session
+// for state.db operations. The caller may also pass an explicit
+// platform string in the request body to short-circuit the lookup
+// (used when archiving / marking-seen a session whose platform the
+// client already knows from its local cache). Empty platform triggers
+// a registry reverse lookup.
+func (s *Server) resolvePlatformIDForState(w http.ResponseWriter, r *http.Request, sessionID, platform string) (string, bool) {
+	if platform != "" {
+		if _, ok := s.registry.Get(platforms.ID(platform)); !ok {
+			http.Error(w, "unknown platform", http.StatusBadRequest)
+			return "", false
+		}
+		return platform, true
+	}
+	p, ok := s.registry.PlatformForSession(r.Context(), sessionID)
+	if !ok {
+		http.Error(w, "session not found", http.StatusNotFound)
+		return "", false
+	}
+	return string(p.ID()), true
+}
+
 func (s *Server) handleSeenSession(w http.ResponseWriter, r *http.Request) {
 	var req struct {
+		Platform           string `json:"platform"`
 		SessionID          string `json:"sessionId"`
 		SessionTimeUpdated int64  `json:"timeUpdated"`
 	}
@@ -289,8 +325,12 @@ func (s *Server) handleSeenSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "timeUpdated is required", http.StatusBadRequest)
 		return
 	}
+	platform, ok := s.resolvePlatformIDForState(w, r, req.SessionID, req.Platform)
+	if !ok {
+		return
+	}
 
-	if err := s.stateDB.MarkSessionSeen(req.SessionID, req.SessionTimeUpdated); err != nil {
+	if err := s.stateDB.MarkSessionSeen(platform, req.SessionID, req.SessionTimeUpdated); err != nil {
 		serverError(w, "updating seen session state", err)
 		return
 	}
@@ -300,6 +340,7 @@ func (s *Server) handleSeenSession(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleArchiveSession(w http.ResponseWriter, r *http.Request) {
 	var req struct {
+		Platform           string `json:"platform"`
 		SessionID          string `json:"sessionId"`
 		SessionTimeUpdated int64  `json:"timeUpdated"`
 		Archived           bool   `json:"archived"`
@@ -315,12 +356,16 @@ func (s *Server) handleArchiveSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "timeUpdated is required", http.StatusBadRequest)
 		return
 	}
+	platform, ok := s.resolvePlatformIDForState(w, r, req.SessionID, req.Platform)
+	if !ok {
+		return
+	}
 
 	var err error
 	if req.Archived {
-		err = s.stateDB.ArchiveSession(req.SessionID, req.SessionTimeUpdated)
+		err = s.stateDB.ArchiveSession(platform, req.SessionID, req.SessionTimeUpdated)
 	} else {
-		err = s.stateDB.UnarchiveSession(req.SessionID)
+		err = s.stateDB.UnarchiveSession(platform, req.SessionID)
 	}
 	if err != nil {
 		serverError(w, "updating archived session state", err)

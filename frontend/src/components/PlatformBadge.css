@@ -1,0 +1,86 @@
+/*
+ * PlatformBadge indicates which coding-agent platform produced a
+ * session. Visible in session lists, detail pages, and the header
+ * breadcrumb. Three visual treatments:
+ *
+ *   - default: full pill with platform accent (headers, prominent).
+ *   - .compact: short code on accent (smaller pill).
+ *   - .plain:   short code only, no chrome, inherits local colour.
+ *
+ * Per-platform accents are applied via platform-* modifier classes so
+ * new platforms can be styled by adding a rule; the fallback uses the
+ * neutral muted colour so unknown IDs still render cleanly.
+ */
+
+.platform-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--surface-alt);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.platform-badge.compact {
+  padding: 1px 5px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+/*
+ * Plain variant: the platform identifier blends into whatever
+ * secondary mono row it's placed in (session IDs, project paths).
+ * No background, no border, font size and colour inherited — so the
+ * parent element's styling wins. Letter-spacing is kept for
+ * readability of the 2-letter code at small sizes.
+ */
+.platform-badge.plain {
+  display: inline;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+  font-family: inherit;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: inherit;
+  white-space: nowrap;
+}
+
+/* Default pill: coloured background + border per platform. */
+.platform-badge.platform-opencode {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.platform-badge.platform-claude-code {
+  /* Claude's wordmark colour -- warm amber that reads well against
+     both light and dark surfaces. */
+  background: color-mix(in srgb, #d97757 15%, transparent);
+  color: #d97757;
+  border-color: color-mix(in srgb, #d97757 30%, transparent);
+}
+
+/*
+ * Plain variant intentionally ignores per-platform accents: it sits
+ * in the same muted mono row as a session id or project path, and
+ * we don't want the row to gain a random splash of colour based on
+ * which platform it happens to be. The two-letter code ('OC' / 'CC')
+ * is the signal on its own.
+ */
+.platform-badge.plain.platform-opencode,
+.platform-badge.plain.platform-claude-code {
+  background: transparent;
+  border: none;
+  color: inherit;
+}

@@ -149,32 +149,8 @@ func (s *Server) autoArchiveInactiveSessions() {
 	ctx := context.Background()
 
 	archivedCount := 0
-	registered := s.registry.Platforms()
 
-	// If no adapter is registered, fall back to the legacy DB call so
-	// existing OpenCode-only deployments keep working. This path goes
-	// away once main.go always registers the OpenCode adapter.
-	if len(registered) == 0 {
-		sessions, err := s.db.GetSessionsInactiveBefore(cutoff)
-		if err != nil {
-			log.WithError(err).Error("listing inactive sessions for auto-archive")
-			return
-		}
-		for _, session := range sessions {
-			if err := s.stateDB.ArchiveSession(session.ID, session.TimeUpdated); err != nil {
-				log.WithFields(log.Fields{"sessionID": session.ID, "error": err}).Error("auto-archiving inactive session")
-				continue
-			}
-			archivedCount++
-		}
-		log.WithFields(log.Fields{
-			"cutoff":   cutoff,
-			"archived": archivedCount,
-		}).Info("auto-archive pass completed")
-		return
-	}
-
-	for _, adapter := range registered {
+	for _, adapter := range s.registry.Platforms() {
 		if !adapter.Available(ctx) {
 			continue
 		}
@@ -185,7 +161,7 @@ func (s *Server) autoArchiveInactiveSessions() {
 			continue
 		}
 		for _, session := range sessions {
-			if err := s.stateDB.ArchiveSession(session.ID, session.TimeUpdated); err != nil {
+			if err := s.stateDB.ArchiveSession(string(adapter.ID()), session.ID, session.TimeUpdated); err != nil {
 				log.WithFields(log.Fields{
 					"platform":  adapter.ID(),
 					"sessionID": session.ID,

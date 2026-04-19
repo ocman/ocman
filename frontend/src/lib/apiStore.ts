@@ -50,8 +50,8 @@ type ApiStore = {
   getSessions: (params?: { dir?: string; since?: number }, signal?: AbortSignal) => Promise<Session[]>;
   refreshCachedSessions: (signal?: AbortSignal) => Promise<Session[]>;
   getSession: (id: string, limit?: number, offset?: number, signal?: AbortSignal) => Promise<SessionDetail>;
-  archiveSession: (sessionId: string, timeUpdated: number, archived?: boolean) => Promise<{ ok: boolean }>;
-  markSessionSeen: (sessionId: string, timeUpdated: number) => Promise<{ ok: boolean }>;
+  archiveSession: (platform: string, sessionId: string, timeUpdated: number, archived?: boolean) => Promise<{ ok: boolean }>;
+  markSessionSeen: (platform: string, sessionId: string, timeUpdated: number) => Promise<{ ok: boolean }>;
   getActivity: () => Promise<ActivityDay[]>;
   getModels: () => Promise<ModelUsage[]>;
   getHourly: () => Promise<HourlyData[]>;
@@ -160,8 +160,8 @@ export const useApiStore = create<ApiStore>((set, get) => ({
       return result;
     }),
   getSession: (id, limit = 50, offset = 0, signal) => get().runRequest(`session:get:${id}`, () => api.session(id, limit, offset, signal)),
-  archiveSession: (sessionId, timeUpdated, archived = true) => get().runRequest(`session:archive:${sessionId}`, () => api.archiveSession(sessionId, timeUpdated, archived)),
-  markSessionSeen: (sessionId, timeUpdated) => get().runRequest(`session:seen:${sessionId}`, () => api.markSessionSeen(sessionId, timeUpdated)),
+  archiveSession: (platform, sessionId, timeUpdated, archived = true) => get().runRequest(`session:archive:${sessionId}`, () => api.archiveSession(platform, sessionId, timeUpdated, archived)),
+  markSessionSeen: (platform, sessionId, timeUpdated) => get().runRequest(`session:seen:${sessionId}`, () => api.markSessionSeen(platform, sessionId, timeUpdated)),
   getActivity: () => get().runRequest('activity:get', () => api.activity()),
   getModels: () => get().runRequest('models:get', () => api.models()),
   getHourly: () => get().runRequest('hourly:get', () => api.hourly()),

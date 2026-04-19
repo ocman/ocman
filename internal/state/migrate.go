@@ -1,0 +1,182 @@
+package state
+
+import (
+	"database/sql"
+	"fmt"
+	"time"
+)
+
+// Schema versions:
+//
+//	1 - initial schema (archived_session, seen_session keyed by session_id).
+//	2 - multi-platform: add `platform TEXT NOT NULL DEFAULT 'opencode'`
+//	    column + recreate tables with (platform, session_id) composite
+//	    primary key. See spec/multi-agent-support/architecture.md AD-10.
+//
+// The `schema_version` table tracks applied migrations so each step runs
+// exactly once. A fresh database is migrated up to latestSchemaVersion
+// in a single pass.
+const latestSchemaVersion = 2
+
+// migrate brings the state database up to latestSchemaVersion. Safe to
+// call on every startup: idempotent, no-op once already current.
+//
+// Migrations run inside a single transaction so a crash mid-migration
+// can never leave the database in a half-converted state. SQLite lets
+// us wrap DDL in a transaction; the whole operation either commits or
+// rolls back.
+func migrate(db *sql.DB) error {
+	if err := ensureSchemaVersionTable(db); err != nil {
+		return err
+	}
+	current, err := currentSchemaVersion(db)
+	if err != nil {
+		return err
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("migrate begin: %w", err)
+	}
+	defer func() {
+		// Roll back on any path that doesn't reach Commit. Ignored if
+		// the transaction has already committed.
+		_ = tx.Rollback()
+	}()
+
+	for v := current + 1; v <= latestSchemaVersion; v++ {
+		if err := applyMigration(tx, v); err != nil {
+			return fmt.Errorf("migrate to v%d: %w", v, err)
+		}
+		if _, err := tx.Exec(
+			`INSERT INTO schema_version (version, applied_at) VALUES (?, ?)`,
+			v, time.Now().UnixMilli(),
+		); err != nil {
+			return fmt.Errorf("recording schema_version v%d: %w", v, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("migrate commit: %w", err)
+	}
+	return nil
+}
+
+// ensureSchemaVersionTable creates the schema_version table if absent.
+// This is outside the migration transaction because a fresh database
+// needs it before we can even read "what version are we at?".
+func ensureSchemaVersionTable(db *sql.DB) error {
+	_, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS schema_version (
+			version INTEGER PRIMARY KEY,
+			applied_at INTEGER NOT NULL
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("creating schema_version: %w", err)
+	}
+	return nil
+}
+
+// currentSchemaVersion returns the highest applied version, or 0 if
+// the table is empty. A fresh database starts at 0 and migrates up.
+//
+// Tables created by a previous ocman version (before schema_version
+// existed) are detected by checking for the `archived_session` table
+// and treating its presence as "at v1".
+func currentSchemaVersion(db *sql.DB) (int, error) {
+	var version int
+	err := db.QueryRow(`SELECT COALESCE(max(version), 0) FROM schema_version`).Scan(&version)
+	if err != nil {
+		return 0, fmt.Errorf("reading schema_version: %w", err)
+	}
+	if version > 0 {
+		return version, nil
+	}
+
+	// Fallback: schema_version empty but archived_session already
+	// exists from a pre-schema_version ocman build. Treat as v1.
+	var exists int
+	err = db.QueryRow(
+		`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='archived_session'`,
+	).Scan(&exists)
+	if err != nil {
+		return 0, fmt.Errorf("probing for legacy archived_session table: %w", err)
+	}
+	if exists > 0 {
+		return 1, nil
+	}
+	return 0, nil
+}
+
+// applyMigration runs the DDL for the given target version.
+func applyMigration(tx *sql.Tx, target int) error {
+	switch target {
+	case 1:
+		return migrateToV1(tx)
+	case 2:
+		return migrateToV2(tx)
+	default:
+		return fmt.Errorf("no migration registered for v%d", target)
+	}
+}
+
+// migrateToV1 creates the original single-platform tables. Only runs
+// on a fresh database; existing ocman installs jump straight to v1's
+// shape via the bootstrapped CREATE TABLE IF NOT EXISTS in Open.
+func migrateToV1(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS archived_session (
+			session_id TEXT PRIMARY KEY,
+			session_time_updated INTEGER NOT NULL,
+			archived_at INTEGER NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS seen_session (
+			session_id TEXT PRIMARY KEY,
+			session_time_updated INTEGER NOT NULL,
+			seen_at INTEGER NOT NULL
+		);
+	`)
+	return err
+}
+
+// migrateToV2 widens the primary key on both tables from (session_id)
+// to (platform, session_id). SQLite can't ALTER a primary key in
+// place, so each table is rebuilt: create a new table with the
+// target shape, copy rows (defaulting platform='opencode' since that
+// was ocman's only platform before v2), drop the old, rename.
+func migrateToV2(tx *sql.Tx) error {
+	stmts := []string{
+		`CREATE TABLE archived_session_v2 (
+			platform             TEXT    NOT NULL,
+			session_id           TEXT    NOT NULL,
+			session_time_updated INTEGER NOT NULL,
+			archived_at          INTEGER NOT NULL,
+			PRIMARY KEY (platform, session_id)
+		)`,
+		`INSERT INTO archived_session_v2 (platform, session_id, session_time_updated, archived_at)
+		 SELECT 'opencode', session_id, session_time_updated, archived_at
+		 FROM archived_session`,
+		`DROP TABLE archived_session`,
+		`ALTER TABLE archived_session_v2 RENAME TO archived_session`,
+
+		`CREATE TABLE seen_session_v2 (
+			platform             TEXT    NOT NULL,
+			session_id           TEXT    NOT NULL,
+			session_time_updated INTEGER NOT NULL,
+			seen_at              INTEGER NOT NULL,
+			PRIMARY KEY (platform, session_id)
+		)`,
+		`INSERT INTO seen_session_v2 (platform, session_id, session_time_updated, seen_at)
+		 SELECT 'opencode', session_id, session_time_updated, seen_at
+		 FROM seen_session`,
+		`DROP TABLE seen_session`,
+		`ALTER TABLE seen_session_v2 RENAME TO seen_session`,
+	}
+	for _, s := range stmts {
+		if _, err := tx.Exec(s); err != nil {
+			return err
+		}
+	}
+	return nil
+}
