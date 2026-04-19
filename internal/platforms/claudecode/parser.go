@@ -313,22 +313,29 @@ func appendConvertedEvent(pf *parsedFile, evt jsonlEvent, raw []byte) {
 //
 // For assistant messages we also surface Claude Code's model string
 // under modelID so the per-message model badge renders without
-// special-casing the platform.
+// special-casing the platform. Historical assistant messages from
+// Claude Code's jsonl are always terminal (the file only contains
+// completed turns), so we set `finish: "stop"` to match OpenCode's
+// shape — the frontend's queued-message detection reads `finish` to
+// decide whether a preceding assistant turn is still streaming.
 func buildMessageEnvelope(role string, evt jsonlEvent, raw []byte) json.RawMessage {
 	envelope := map[string]interface{}{
 		"role": role,
 		"raw":  json.RawMessage(raw),
 	}
-	if role == "assistant" && len(evt.Message) > 0 {
-		// Pull the model name out of the nested anthropic-shaped
-		// message body. We don't care about anything else — the
-		// content blocks are already surfaced as parts.
-		var inner struct {
-			Model string `json:"model"`
-		}
-		if err := json.Unmarshal(evt.Message, &inner); err == nil && inner.Model != "" {
-			envelope["modelID"] = inner.Model
-			envelope["providerID"] = "anthropic"
+	if role == "assistant" {
+		envelope["finish"] = "stop"
+		if len(evt.Message) > 0 {
+			// Pull the model name out of the nested anthropic-shaped
+			// message body. We don't care about anything else — the
+			// content blocks are already surfaced as parts.
+			var inner struct {
+				Model string `json:"model"`
+			}
+			if err := json.Unmarshal(evt.Message, &inner); err == nil && inner.Model != "" {
+				envelope["modelID"] = inner.Model
+				envelope["providerID"] = "anthropic"
+			}
 		}
 	}
 	buf, err := json.Marshal(envelope)

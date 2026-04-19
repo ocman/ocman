@@ -82,7 +82,11 @@ func TestParseFull_PopulatesMessagesAndParts(t *testing.T) {
 	}
 
 	// Assistant message's assistant envelope carries model + provider
-	// hints derived from Claude Code's nested message.
+	// hints derived from Claude Code's nested message, plus a synthetic
+	// finish="stop" so the frontend's queued-message detection (which
+	// reads data.finish to decide whether a preceding assistant turn is
+	// still streaming) doesn't mark every follow-up user message as
+	// "Queued" for Claude Code sessions.
 	for _, m := range pf.Messages {
 		if m.ID != "a1" {
 			continue
@@ -91,6 +95,7 @@ func TestParseFull_PopulatesMessagesAndParts(t *testing.T) {
 			Role       string `json:"role"`
 			ModelID    string `json:"modelID"`
 			ProviderID string `json:"providerID"`
+			Finish     string `json:"finish"`
 		}
 		if err := json.Unmarshal(m.Data, &env); err != nil {
 			t.Fatalf("assistant envelope: %v", err)
@@ -100,6 +105,9 @@ func TestParseFull_PopulatesMessagesAndParts(t *testing.T) {
 		}
 		if env.ProviderID != "anthropic" {
 			t.Errorf("assistant providerID = %q, want anthropic", env.ProviderID)
+		}
+		if env.Finish != "stop" {
+			t.Errorf("assistant finish = %q, want \"stop\"", env.Finish)
 		}
 	}
 

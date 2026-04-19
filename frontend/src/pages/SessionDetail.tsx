@@ -177,6 +177,22 @@ function formatModelRef(providerId?: string, modelId?: string): string {
   return providerId ? `${providerId}/${modelId}` : modelId;
 }
 
+// Checks whether a parsed `session.status` SSE event reports the session as
+// idle (the only terminal state among busy/retry/idle). Used to avoid
+// clearing pending permission/question prompts during intermediate status
+// transitions fired mid-request.
+function isSessionStatusIdle(parsed: Record<string, unknown>): boolean {
+  const props = parsed.properties as Record<string, unknown> | undefined;
+  if (!props) return false;
+  const status = props.status;
+  if (typeof status === 'string') return status === 'idle';
+  if (status && typeof status === 'object' && !Array.isArray(status)) {
+    const t = (status as Record<string, unknown>).type;
+    return typeof t === 'string' && t === 'idle';
+  }
+  return false;
+}
+
 function extractPendingPermission(node: unknown): PendingPermission | null {
   if (!node || typeof node !== 'object' || Array.isArray(node)) return null;
   const obj = node as Record<string, unknown>;
@@ -1028,11 +1044,15 @@ export function SessionDetail() {
       // request that was already set by a preceding permission.asked event
       // would be wiped out.
       if (type === 'permission.replied') {
+        // OpenCode's permission.replied event uses `requestID` to reference
+        // the permission that was answered. `id`/`permissionID` are included
+        // as fallbacks for older/alternate payload shapes.
+        const props = parsed.properties as Record<string, unknown> | undefined;
         const repliedId =
-          (typeof (parsed.properties as Record<string, unknown> | undefined)?.id === 'string' &&
-            ((parsed.properties as Record<string, unknown>).id as string)) ||
-          (typeof (parsed.properties as Record<string, unknown> | undefined)?.permissionID === 'string' &&
-            ((parsed.properties as Record<string, unknown>).permissionID as string)) ||
+          (typeof props?.requestID === 'string' && props.requestID) ||
+          (typeof props?.requestId === 'string' && props.requestId) ||
+          (typeof props?.id === 'string' && props.id) ||
+          (typeof props?.permissionID === 'string' && props.permissionID) ||
           '';
         setPendingPermission(prev => {
           if (prev === null) return prev;
@@ -1041,10 +1061,18 @@ export function SessionDetail() {
           if (!repliedId) return prev;
           return prev.permissionId === repliedId ? null : prev;
         });
-      } else if (type === 'session.status') {
+      } else if (type === 'session.idle' || (type === 'session.status' && isSessionStatusIdle(parsed))) {
+        // Only clear on terminal session states. Intermediate session.status
+        // events (busy / retry) fire during normal tool execution — including
+        // right after a permission is asked — and must NOT wipe the prompt.
         setPendingPermission(prev => prev === null ? prev : null);
       }
-      if (type === 'question.replied' || type === 'question.rejected' || type === 'session.status') {
+      if (
+        type === 'question.replied' ||
+        type === 'question.rejected' ||
+        type === 'session.idle' ||
+        (type === 'session.status' && isSessionStatusIdle(parsed))
+      ) {
         setPendingQuestion(prev => {
           if (prev === null) return prev;
           clearPendingQuestion(sid);
@@ -1067,15 +1095,13 @@ export function SessionDetail() {
           if (cancelled) return;
           for (const p of perms) {
             const perm = extractPendingPermission({ type: 'permission.asked', properties: p });
-            if (perm && (!perm.permissionId || true)) {
-              // Only show if it belongs to the current session
-              const props = p as Record<string, unknown>;
-              if (!props.sessionID || props.sessionID === sid) {
-                setPendingPermission(perm);
-                setPermissionError(null);
-                break; // show the first pending permission for this session
-              }
-            }
+            if (!perm) continue;
+            // Only show if it belongs to the current session.
+            const props = p as Record<string, unknown>;
+            if (props.sessionID && props.sessionID !== sid) continue;
+            setPendingPermission(perm);
+            setPermissionError(null);
+            break; // show the first pending permission for this session
           }
         }).catch(() => { /* ignore errors — SSE events will handle live permissions */ });
         // Fetch any questions that were already pending when we connected.
@@ -2046,7 +2072,14 @@ export function SessionDetail() {
 
   // Live tokens-per-second: sum output tokens across all assistant messages in the
   // current run window (since the last user message) plus tokens from subagent
-  // sessions, divided by elapsed wall-clock time since the earliest time.created.
+  // sessions, divided by the sum of per-message LLM durations.
+  //
+  // We sum per-message durations (time.completed - time.created for finished
+  // messages, Date.now() - time.created for in-flight ones) instead of using
+  // wall-clock elapsed from the earliest message. This excludes idle time spent
+  // on permission prompts, question prompts, tool execution between messages,
+  // etc., so the indicator reflects actual LLM generation speed rather than
+  // end-to-end session pace.
   const [liveTokensPerSecond, setLiveTokensPerSecond] = useState<number | null>(null);
   useEffect(() => {
     if (!isRunning) {
@@ -2061,33 +2094,38 @@ export function SessionDetail() {
       for (let i = messages.length - 1; i >= 0; i--) {
         if (messages[i].data?.role === 'user') { windowStart = i + 1; break; }
       }
-      // Sum output tokens and find the earliest time.created across all assistant
-      // messages in the window that have timing data.
+      // Sum per-message output tokens and LLM durations across all assistant
+      // messages in the window. For completed messages we use the stored
+      // time.completed; for still-streaming messages we use Date.now() so the
+      // rate updates live while a response is being generated.
       let totalOutput = 0;
-      let earliestCreated: number | null = null;
+      let totalDurationMs = 0;
+      const now = Date.now();
       for (let i = windowStart; i < messages.length; i++) {
         const m = messages[i];
         if (m.data?.role !== 'assistant') continue;
-        if (m.data.tokens?.output) totalOutput += m.data.tokens.output;
-        if (m.data.time?.created) {
-          if (earliestCreated === null || m.data.time.created < earliestCreated) {
-            earliestCreated = m.data.time.created;
-          }
-        }
+        const created = m.data.time?.created;
+        if (!created) continue;
+        const output = m.data.tokens?.output || 0;
+        const completed = m.data.time?.completed;
+        const endTime = completed && completed > created ? completed : now;
+        const durationMs = endTime - created;
+        if (durationMs <= 0) continue;
+        totalOutput += output;
+        totalDurationMs += durationMs;
       }
-      // Include output tokens from subagent sessions (captured via SSE).
+      // Include output tokens and durations from subagent sessions (captured
+      // via SSE). Subagent entries only track `created`, so we always treat
+      // them as in-flight and use now - created for the duration.
       for (const entry of subagentTokens.values()) {
+        const durationMs = now - entry.created;
+        if (durationMs <= 0) continue;
         totalOutput += entry.output;
-        if (earliestCreated === null || entry.created < earliestCreated) {
-          earliestCreated = entry.created;
-        }
+        totalDurationMs += durationMs;
       }
-      if (totalOutput > 0 && earliestCreated !== null) {
-        const elapsedSec = (Date.now() - earliestCreated) / 1000;
-        if (elapsedSec > 0.1) {
-          setLiveTokensPerSecond(totalOutput / elapsedSec);
-          return;
-        }
+      if (totalOutput > 0 && totalDurationMs > 100) {
+        setLiveTokensPerSecond(totalOutput / (totalDurationMs / 1000));
+        return;
       }
       setLiveTokensPerSecond(null);
     };
