@@ -7,15 +7,21 @@
 // size); see AD-3 in the multi-agent architecture spec.
 //
 // Phase 4 ships read-only support (browse, archive, mark-seen,
-// auto-archive). Composer, permission/question responses, abort, and
-// compact all return ErrUnsupported — they come in Phase 5+.
+// auto-archive). Phase 5 adds live-state via Claude Code hooks — the
+// adapter holds an in-memory cache that's mutated by hook events
+// posted to /api/hooks/claude, and Sessions() / Session() overlay
+// that cache onto the static jsonl-derived state. Composer,
+// permission/question responses, abort, and compact still return
+// ErrUnsupported — those come in Phase 6+.
 package claudecode
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -38,6 +44,13 @@ type Adapter struct {
 
 	// cache memoises parse results keyed by (path, mtime, size).
 	cache *cache
+
+	// live holds hook-driven live-state (status, pending permission)
+	// for each session, keyed by session UUID. In-memory, goroutine-
+	// safe; see live_cache.go for details. Never nil after
+	// construction — New / NewFromDir initialise it so handler code
+	// can dispatch without nil checks.
+	live *liveCache
 }
 
 // New returns a Claude Code adapter reading from the user's default
@@ -47,7 +60,10 @@ type Adapter struct {
 func New() *Adapter {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return &Adapter{} // Available() will report false.
+		// Even an unavailable adapter needs an initialised live cache
+		// so that handler code can call ApplyHookEvent without first
+		// checking whether the adapter found its projects dir.
+		return &Adapter{live: newLiveCache(defaultBusyTTL)}
 	}
 	return NewFromDir(filepath.Join(home, defaultProjectsDir))
 }
@@ -58,6 +74,7 @@ func NewFromDir(projectsDir string) *Adapter {
 	return &Adapter{
 		projectsDir: projectsDir,
 		cache:       newCache(),
+		live:        newLiveCache(defaultBusyTTL),
 	}
 }
 
@@ -163,9 +180,68 @@ func (a *Adapter) ListQuestions(context.Context, string) ([]platforms.LivePrompt
 	return nil, nil
 }
 
-// LiveStatus returns nil in Phase 4 — live-state is driven by hooks
-// which land in Phase 5.
-func (a *Adapter) LiveStatus(string) *platforms.LiveState { return nil }
+// LiveStatus returns the cache entry for sessionID, or nil if no
+// hook event has ever been seen for this session. The returned
+// pointer is a copy — callers may mutate it safely.
+func (a *Adapter) LiveStatus(sessionID string) *platforms.LiveState {
+	if a.live == nil {
+		return nil
+	}
+	return a.live.Get(sessionID)
+}
+
+// RefreshHooks rewrites the user's ~/.claude/settings.json so that
+// Claude Code POSTs every managed hook event to hookURL. Called from
+// server boot; safe to call repeatedly — see InstallHooks for the
+// merge/idempotence semantics.
+//
+// Separated from InstallHooks so callers don't need to know about
+// $HOME or the filename convention; tests can still exercise the
+// underlying installer directly.
+//
+// Returns a non-nil error if $HOME can't be resolved or the installer
+// fails. Callers (typically the server's boot path) should log the
+// error and continue — a missing hook install degrades to read-only
+// Claude Code support, not a hard failure.
+func (a *Adapter) RefreshHooks(hookURL string) error {
+	if a.projectsDir == "" {
+		// Adapter was constructed with no home dir; nothing to
+		// install into. Shouldn't reach here — callers gate this
+		// with Available() — but be defensive.
+		return fmt.Errorf("claudecode: adapter has no projects directory configured")
+	}
+	// The settings file lives next to the projects directory at
+	// $HOME/.claude/settings.json, so derive it from projectsDir
+	// rather than re-reading $HOME. Keeps the adapter self-contained
+	// and makes tests that pass a custom projectsDir work transparently.
+	settingsPath := filepath.Join(filepath.Dir(a.projectsDir), "settings.json")
+	return InstallHooks(settingsPath, hookURL)
+}
+
+// ApplyHookEvent decodes a Claude Code hook payload and updates the
+// live-state cache. Called by the /api/hooks/claude handler.
+//
+// Errors (malformed JSON) are returned so the handler can log with
+// context; Ignored events (unknown event_name, empty session_id)
+// return nil so the hook command exits 0 from the CLI's perspective.
+//
+// The context is accepted for future use (persisted audit trail,
+// metrics, etc.) — Phase 5 only consults wall-clock time via the
+// cache.
+func (a *Adapter) ApplyHookEvent(_ context.Context, payload []byte) error {
+	if a.live == nil {
+		return fmt.Errorf("claudecode: adapter has no live cache")
+	}
+	ev, err := parseHookPayload(payload, time.Now())
+	if err != nil {
+		return err
+	}
+	if ev.Ignored {
+		return nil
+	}
+	a.live.Apply(ev.SessionID, ev.toLiveStateDelta())
+	return nil
+}
 
 // SessionsInactiveBefore returns an empty slice until the adapter
 // populates live-state; stale Claude Code sessions will still be

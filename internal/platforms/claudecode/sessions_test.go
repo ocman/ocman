@@ -159,6 +159,112 @@ func TestAdapter_Capabilities_Phase4ReadOnly(t *testing.T) {
 	}
 }
 
+// TestAdapter_ApplyHookEvent_UpdatesLiveStatus verifies the end-to-end
+// integration: posting a hook payload through the adapter's public
+// entry point must surface on the next Sessions() call as a status
+// override and live-connection flag.
+func TestAdapter_ApplyHookEvent_UpdatesLiveStatus(t *testing.T) {
+	root := writeFixture(t, map[string]string{
+		"-Users-dries-src-proj/S1.jsonl": sampleJSONL,
+	})
+	a := NewFromDir(root)
+
+	// Baseline: before any hook, Status is the jsonl-derived "done"
+	// default and LiveConnection is false.
+	before, err := a.Sessions(context.Background(), "", 0)
+	if err != nil {
+		t.Fatalf("Sessions: %v", err)
+	}
+	if len(before) != 1 || before[0].Status != "done" || before[0].LiveConnection {
+		t.Fatalf("baseline: got %+v, want status=done liveConnection=false", before)
+	}
+
+	// Apply a UserPromptSubmit hook: the session should transition
+	// to "busy" and be reported as live.
+	payload := []byte(`{"session_id":"S1","hook_event_name":"UserPromptSubmit","cwd":"/Users/dries/src/proj"}`)
+	if err := a.ApplyHookEvent(context.Background(), payload); err != nil {
+		t.Fatalf("ApplyHookEvent: %v", err)
+	}
+
+	after, err := a.Sessions(context.Background(), "", 0)
+	if err != nil {
+		t.Fatalf("Sessions after hook: %v", err)
+	}
+	if after[0].Status != "busy" {
+		t.Errorf("Status after UserPromptSubmit = %q, want busy", after[0].Status)
+	}
+	if !after[0].LiveConnection {
+		t.Error("LiveConnection should be true after a hook event")
+	}
+
+	// Apply a Stop hook: status returns to "done" and any pending
+	// permission is cleared. LiveConnection stays true because
+	// we're clearly still in communication with the CLI.
+	stopPayload := []byte(`{"session_id":"S1","hook_event_name":"Stop"}`)
+	if err := a.ApplyHookEvent(context.Background(), stopPayload); err != nil {
+		t.Fatalf("ApplyHookEvent stop: %v", err)
+	}
+	done, err := a.Sessions(context.Background(), "", 0)
+	if err != nil {
+		t.Fatalf("Sessions after stop: %v", err)
+	}
+	if done[0].Status != "done" {
+		t.Errorf("Status after Stop = %q, want done", done[0].Status)
+	}
+	if !done[0].LiveConnection {
+		t.Error("LiveConnection should remain true after Stop (still talking to CLI)")
+	}
+}
+
+// TestAdapter_ApplyHookEvent_IgnoresUnknownSession proves the live
+// overlay doesn't leak cross-session: a hook for a session we don't
+// know about must not mutate any other session's state.
+func TestAdapter_ApplyHookEvent_IgnoresUnknownSession(t *testing.T) {
+	root := writeFixture(t, map[string]string{
+		"-Users-dries-src-proj/S1.jsonl": sampleJSONL,
+	})
+	a := NewFromDir(root)
+
+	payload := []byte(`{"session_id":"DIFFERENT","hook_event_name":"UserPromptSubmit"}`)
+	if err := a.ApplyHookEvent(context.Background(), payload); err != nil {
+		t.Fatalf("ApplyHookEvent: %v", err)
+	}
+	got, err := a.Sessions(context.Background(), "", 0)
+	if err != nil {
+		t.Fatalf("Sessions: %v", err)
+	}
+	// Our one real session must still have the jsonl-derived defaults.
+	if got[0].Status != "done" || got[0].LiveConnection {
+		t.Errorf("unrelated session touched by foreign hook: %+v", got[0])
+	}
+}
+
+// TestAdapter_ApplyHookEvent_IgnoredPayloads accepts parse-but-ignore
+// payloads (unknown event names) silently — the CLI hook must still
+// exit 0.
+func TestAdapter_ApplyHookEvent_IgnoredPayloads(t *testing.T) {
+	a := NewFromDir(t.TempDir())
+	cases := []string{
+		`{"session_id":"S","hook_event_name":"UnknownFutureEvent"}`,
+		`{"hook_event_name":"Stop"}`, // no session_id
+	}
+	for _, p := range cases {
+		if err := a.ApplyHookEvent(context.Background(), []byte(p)); err != nil {
+			t.Errorf("payload %s: expected silent accept, got err=%v", p, err)
+		}
+	}
+}
+
+// TestAdapter_ApplyHookEvent_RejectsMalformedJSON is the one hard
+// failure mode: totally malformed JSON surfaces as an error so the
+// handler can log it.
+func TestAdapter_ApplyHookEvent_RejectsMalformedJSON(t *testing.T) {
+	a := NewFromDir(t.TempDir())
+	if err := a.ApplyHookEvent(context.Background(), []byte("{not json")); err == nil {
+		t.Error("expected error on malformed JSON")
+	}
+}
+
 func TestAdapter_SessionsInactiveBefore_FiltersByCutoff(t *testing.T) {
 	root := writeFixture(t, map[string]string{
 		"-Users-dries-src-proj/S1.jsonl": sampleJSONL,

@@ -48,6 +48,11 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 func (s *Server) Start(ctx context.Context) error {
 	go s.runAutoArchiveLoop(ctx)
 
+	// Refresh Claude Code hook registration against the current
+	// listen address. Best-effort — see maybeInstallClaudeHooks for
+	// the no-op preconditions.
+	s.maybeInstallClaudeHooks()
+
 	mux := http.NewServeMux()
 
 	// API routes — read-only endpoints enforce GET, mutating endpoints
@@ -75,6 +80,13 @@ func (s *Server) Start(ctx context.Context) error {
 	// it can't be used to flood logs from the network. See
 	// handleDebugLog for the JSON shape.
 	mux.HandleFunc("/api/debug/log", requirePOST(requireLocalhost(s.handleDebugLog)))
+
+	// Claude Code hook sink. The hook installer (auto-run at ocman
+	// launch when the `claude` CLI is on PATH) writes a block into
+	// ~/.claude/settings.json that POSTs every hook event here.
+	// Localhost-only for the same reason as tmux — only a local
+	// process can legitimately fire these events.
+	mux.HandleFunc("/api/hooks/claude", requirePOST(requireLocalhost(s.handleClaudeHook)))
 
 	// Static files with SPA fallback
 	staticContent, err := fs.Sub(staticFS, "static")

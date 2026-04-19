@@ -35,7 +35,14 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 		if since > 0 && pf.TimeUpdated < since {
 			continue
 		}
-		out = append(out, sessionFromParsed(pf))
+		s := sessionFromParsed(pf)
+		// Overlay hook-driven live-state on top of the static
+		// jsonl-derived session. Only applies when the user has
+		// actually invoked a Claude Code hook against this session;
+		// otherwise we keep the conservative "done" default from
+		// sessionFromParsed. See Phase 5 in the architecture doc.
+		applyLiveState(&s, a.live)
+		out = append(out, s)
 	}
 	// Mirror OpenCode's list ordering: newest first.
 	sort.Slice(out, func(i, j int) bool {
@@ -91,12 +98,44 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 	pagedMessages, _ := db.PaginateMessages(pf.Messages, limit, offset)
 	pagedParts := db.FilterPartsForMessages(pf.Parts, pagedMessages)
 
+	detailSession := sessionFromParsedPtr(pf)
+	// Same overlay as Sessions(): if a hook event has been observed
+	// for this session, prefer its status / pending flags over the
+	// static jsonl-derived defaults.
+	applyLiveState(detailSession, a.live)
+
 	return &platforms.SessionDetail{
-		Session:       sessionFromParsedPtr(pf),
+		Session:       detailSession,
 		Messages:      pagedMessages,
 		Parts:         pagedParts,
 		TotalMessages: totalMessages,
 	}, nil
+}
+
+// applyLiveState overlays hook-driven live state onto a db.Session.
+// No-op when the cache has no entry for the session, or when live is
+// nil (defensive — Adapter.New always initialises live, but tests
+// occasionally construct bare Adapter{} values).
+//
+// Also flips LiveConnection=true when there IS a recent hook event,
+// because the presence of a hook proves a running Claude Code CLI.
+// Without this, the dashboard would keep showing "no live connection"
+// even while we're receiving active status updates.
+func applyLiveState(s *db.Session, live *liveCache) {
+	if s == nil || live == nil {
+		return
+	}
+	ls := live.Get(s.ID)
+	if ls == nil {
+		return
+	}
+	if ls.Status != "" {
+		s.Status = ls.Status
+	}
+	if ls.PendingPermission {
+		s.PendingPermission = true
+	}
+	s.LiveConnection = true
 }
 
 // fileStem returns the filename without extension, stripped of any
