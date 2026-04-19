@@ -9,6 +9,17 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content, viewport-fit=cover"
     />
+    <meta name="theme-color" content="#1e1e2e" />
+    <!--
+      Paint the Catppuccin Mocha base immediately so the browser doesn't flash
+      white between the initial HTML paint and when tokens.css (bundled with
+      the JS) applies. `color-scheme: dark` also keeps scrollbars and native
+      form controls dark from the first frame. Keep this value in sync with
+      `--bg` in src/tokens.css.
+    -->
+    <style>
+      html, body { background: #1e1e2e; color-scheme: dark; }
+    </style>
     <title>ocman</title>
   </head>
   <body>
