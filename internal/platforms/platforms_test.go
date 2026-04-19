@@ -3,12 +3,15 @@ package platforms
 import (
 	"context"
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 )
 
-// fakePlatform is a minimal Platform used for registry tests.
+// fakePlatform is a minimal Platform used for registry tests. All
+// capability-gated methods return ErrUnsupported so tests don't
+// accidentally rely on them succeeding.
 type fakePlatform struct {
 	id          ID
 	displayName string
@@ -35,6 +38,43 @@ func (f *fakePlatform) SessionsInactiveBefore(context.Context, int64) ([]db.Sess
 }
 
 func (f *fakePlatform) LiveStatus(string) *LiveState { return nil }
+
+func (f *fakePlatform) AgentCatalog(context.Context, string) ([]AgentCatalogEntry, error) {
+	return nil, nil
+}
+func (f *fakePlatform) SlashCommands(context.Context, string) ([]SlashCommandEntry, error) {
+	return nil, nil
+}
+func (f *fakePlatform) SessionModels(context.Context, string) (*SessionModelsResponse, error) {
+	return nil, ErrUnsupported
+}
+func (f *fakePlatform) ListPermissions(context.Context, string) ([]LivePrompt, error) {
+	return nil, nil
+}
+func (f *fakePlatform) ListQuestions(context.Context, string) ([]LivePrompt, error) {
+	return nil, nil
+}
+func (f *fakePlatform) SendMessage(context.Context, SendMessageRequest) error { return ErrUnsupported }
+func (f *fakePlatform) ExecuteCommand(context.Context, ExecuteCommandRequest) error {
+	return ErrUnsupported
+}
+func (f *fakePlatform) RespondPermission(context.Context, RespondPermissionRequest) error {
+	return ErrUnsupported
+}
+func (f *fakePlatform) RespondQuestion(context.Context, RespondQuestionRequest) error {
+	return ErrUnsupported
+}
+func (f *fakePlatform) RejectQuestion(context.Context, RejectQuestionRequest) error {
+	return ErrUnsupported
+}
+func (f *fakePlatform) Abort(context.Context, AbortRequest) error     { return ErrUnsupported }
+func (f *fakePlatform) Compact(context.Context, CompactRequest) error { return ErrUnsupported }
+func (f *fakePlatform) CreateSession(context.Context, CreateSessionRequest) (*CreateSessionResponse, error) {
+	return nil, ErrUnsupported
+}
+func (f *fakePlatform) ProxyEvents(context.Context, string, io.Writer, func()) error {
+	return ErrUnsupported
+}
 
 func TestRegistry_RegisterAndGet(t *testing.T) {
 	reg := NewRegistry()

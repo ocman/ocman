@@ -2,11 +2,11 @@ import { create } from 'zustand';
 import { api } from './api';
 import type {
   ActivityDay,
+  CapabilitiesResponse,
   HourlyData,
   HourlyTokensByModel,
   MetricsDashboard,
   ModelUsage,
-  PortInfo,
   Project,
   Session,
   SessionDetail,
@@ -56,15 +56,15 @@ type ApiStore = {
   getModels: () => Promise<ModelUsage[]>;
   getHourly: () => Promise<HourlyData[]>;
   getHourlyTokens: () => Promise<HourlyTokensByModel[]>;
-  getSessionPort: (id: string, signal?: AbortSignal) => Promise<PortInfo>;
-  createSession: (directory: string) => Promise<{ id: string }>;
-  sendMessage: (sessionId: string, directory: string, message: string, images?: { url: string; mime: string }[], model?: string, agent?: string) => Promise<void>;
-  listPermissions: (directory: string) => Promise<unknown[]>;
-  respondPermission: (sessionId: string, directory: string, permissionId: string, reply: 'once' | 'always' | 'reject') => Promise<void>;
-  listQuestions: (directory: string) => Promise<unknown[]>;
-  respondQuestion: (sessionId: string, directory: string, requestId: string, answers: string[][]) => Promise<void>;
-  rejectQuestion: (sessionId: string, directory: string, requestId: string) => Promise<void>;
-  abortSession: (sessionId: string, directory: string) => Promise<void>;
+  getCapabilities: (signal?: AbortSignal) => Promise<CapabilitiesResponse>;
+  createSession: (directory: string, platform?: string) => Promise<{ id: string }>;
+  sendMessage: (sessionId: string, message: string, images?: { url: string; mime: string }[], model?: string, agent?: string) => Promise<void>;
+  listPermissions: (sessionId: string) => Promise<unknown[]>;
+  respondPermission: (sessionId: string, permissionId: string, reply: 'once' | 'always' | 'reject') => Promise<void>;
+  listQuestions: (sessionId: string) => Promise<unknown[]>;
+  respondQuestion: (sessionId: string, requestId: string, answers: string[][]) => Promise<void>;
+  rejectQuestion: (sessionId: string, requestId: string) => Promise<void>;
+  abortSession: (sessionId: string) => Promise<void>;
   getTmuxClients: () => Promise<{ available: boolean; clients: TmuxClient[] }>;
   getTmuxSessions: () => Promise<{ available: boolean; sessions: TmuxSession[] }>;
   switchTmuxSession: (session: string, client?: string) => Promise<void>;
@@ -166,15 +166,15 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   getModels: () => get().runRequest('models:get', () => api.models()),
   getHourly: () => get().runRequest('hourly:get', () => api.hourly()),
   getHourlyTokens: () => get().runRequest('hourly-tokens:get', () => api.hourlyTokens()),
-  getSessionPort: (id, signal) => get().runRequest(`session-port:get:${id}`, () => api.sessionPort(id, signal)),
-  createSession: (directory) => get().runRequest('session:create', () => api.createSession(directory)),
-  sendMessage: (sessionId, directory, message, images, model, agent) => get().runRequest(`message:send:${sessionId}`, () => api.sendMessage(sessionId, directory, message, images, model, agent)),
-  listPermissions: (directory) => get().runRequest(`permissions:list:${directory}`, () => api.listPermissions(directory)),
-  respondPermission: (sessionId, directory, permissionId, reply) => get().runRequest(`permission:respond:${sessionId}`, () => api.respondPermission(sessionId, directory, permissionId, reply)),
-  listQuestions: (directory) => get().runRequest(`questions:list:${directory}`, () => api.listQuestions(directory)),
-  respondQuestion: (sessionId, directory, requestId, answers) => get().runRequest(`question:respond:${sessionId}`, () => api.respondQuestion(sessionId, directory, requestId, answers)),
-  rejectQuestion: (sessionId, directory, requestId) => get().runRequest(`question:reject:${sessionId}`, () => api.rejectQuestion(sessionId, directory, requestId)),
-  abortSession: (sessionId, directory) => get().runRequest(`session:abort:${sessionId}`, () => api.abortSession(sessionId, directory)),
+  getCapabilities: (signal) => get().runRequest('capabilities:get', () => api.capabilities(signal)),
+  createSession: (directory, platform) => get().runRequest('session:create', () => api.createSession(directory, platform)),
+  sendMessage: (sessionId, message, images, model, agent) => get().runRequest(`message:send:${sessionId}`, () => api.sendMessage(sessionId, message, images, model, agent)),
+  listPermissions: (sessionId) => get().runRequest(`permissions:list:${sessionId}`, () => api.listPermissions(sessionId)),
+  respondPermission: (sessionId, permissionId, reply) => get().runRequest(`permission:respond:${sessionId}`, () => api.respondPermission(sessionId, permissionId, reply)),
+  listQuestions: (sessionId) => get().runRequest(`questions:list:${sessionId}`, () => api.listQuestions(sessionId)),
+  respondQuestion: (sessionId, requestId, answers) => get().runRequest(`question:respond:${sessionId}`, () => api.respondQuestion(sessionId, requestId, answers)),
+  rejectQuestion: (sessionId, requestId) => get().runRequest(`question:reject:${sessionId}`, () => api.rejectQuestion(sessionId, requestId)),
+  abortSession: (sessionId) => get().runRequest(`session:abort:${sessionId}`, () => api.abortSession(sessionId)),
   getTmuxClients: () => get().runRequest('tmux-clients:get', () => api.tmuxClients()),
   getTmuxSessions: () => get().runRequest('tmux-sessions:get', () => api.tmuxSessions()),
   switchTmuxSession: (session, client) => get().runRequest(`tmux:switch:${session}`, () => api.tmuxSwitch(session, client)),

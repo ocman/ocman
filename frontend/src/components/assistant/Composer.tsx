@@ -152,7 +152,6 @@ function ComposerImpl({
   agentsLoaded,
   contextTokens,
   sessionId,
-  directory,
   tokensPerSecond,
   tokenStats,
 }: {
@@ -181,7 +180,6 @@ function ComposerImpl({
   agentsLoaded?: boolean;
   contextTokens?: number;
   sessionId?: string;
-  directory?: string;
   tokensPerSecond?: number;
   tokenStats?: {
     input: number;
@@ -250,9 +248,9 @@ function ComposerImpl({
   const filteredCommandsRef = useRef<SlashCommand[]>([]);
 
   useEffect(() => {
-    if (!directory) return;
+    if (!sessionId) return;
     let cancelled = false;
-    api.commands(directory).then(cmds => {
+    api.commands(sessionId).then(cmds => {
       if (!cancelled) {
         const fetched = cmds || [];
         const merged = [
@@ -265,7 +263,7 @@ function ComposerImpl({
       setSlashCommands(BUILTIN_COMMANDS);
     });
     return () => { cancelled = true; };
-  }, [directory]);
+  }, [sessionId]);
 
   const hasModels = !!((models && models.length > 0) || (modelEntries && modelEntries.length > 0));
   // Agent picker has something to show as long as we know *any* agent name —
@@ -983,7 +981,7 @@ function ComposerImpl({
           className="oc-composer-input"
           rows={1}
           disabled={disabled}
-          placeholder={disabled ? 'No running OpenCode instance' : undefined}
+          placeholder={disabled ? 'No live connection to the agent' : undefined}
         />
         <div className="oc-composer-bar">
           <div className="oc-composer-bar-left">
@@ -1022,7 +1020,7 @@ function ComposerImpl({
                 {modelButtonLabel || 'Model'}
               </button>
             )}
-            {disabled && <span className="oc-bar-hint">No running OpenCode instance</span>}
+            {disabled && <span className="oc-bar-hint">No live connection</span>}
           </div>
           <div className="oc-composer-bar-right">
             <button
@@ -1185,7 +1183,6 @@ export const Composer = memo(ComposerImpl, (prev, next) =>
   prev.agentsLoaded === next.agentsLoaded &&
   prev.contextTokens === next.contextTokens &&
   prev.sessionId === next.sessionId &&
-  prev.directory === next.directory &&
   prev.tokensPerSecond === next.tokensPerSecond &&
   prev.tokenStats?.input === next.tokenStats?.input &&
   prev.tokenStats?.output === next.tokenStats?.output &&

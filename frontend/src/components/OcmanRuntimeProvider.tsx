@@ -434,8 +434,13 @@ interface Props {
   messages: Message[];
   parts: Part[];
   sessionId: string;
-  directory: string;
-  portAvailable: boolean;
+  /**
+   * Whether the composer may currently send messages. Typically this
+   * is `platformCapabilities.composer && portAvailable` — that is, the
+   * owning platform supports composition AND the live connection is up.
+   * When false, `onNew` is a no-op.
+   */
+  canSend: boolean;
   // Agent that the user is about to send the next message as. Used to color
   // user messages that haven't been replied to yet.
   pendingAgent?: string;
@@ -463,8 +468,7 @@ export function OcmanRuntimeProvider({
   messages,
   parts,
   sessionId,
-  directory,
-  portAvailable,
+  canSend,
   pendingAgent,
   agents,
   children,
@@ -483,14 +487,14 @@ export function OcmanRuntimeProvider({
     isRunning,
     convertMessage: (m: ThreadMessageLike) => m,
     onNew: async (message) => {
-      if (!portAvailable) return;
+      if (!canSend) return;
       const textPart = message.content.find((c) => c.type === 'text');
       const text = textPart && textPart.type === 'text' ? textPart.text : '';
       const imageParts = message.content
         .filter((c): c is { type: 'image'; image: string } => c.type === 'image' && 'image' in c)
         .map((c) => ({ url: c.image, mime: 'image/png' }));
       if (!text && imageParts.length === 0) return;
-      await sendMessage(sessionId, directory, text, imageParts.length > 0 ? imageParts : undefined);
+      await sendMessage(sessionId, text, imageParts.length > 0 ? imageParts : undefined);
     },
   });
 

@@ -1,4 +1,4 @@
-.PHONY: dev dev-backend dev-frontend build run clean test test-backend test-frontend lint lint-backend lint-frontend
+.PHONY: dev dev-backend dev-frontend build run clean test test-backend test-frontend lint lint-backend lint-frontend lint-platform-branching
 
 # Run both backend (air) and frontend (vite) with live reload
 dev:
@@ -46,10 +46,17 @@ test-frontend:
 	cd frontend && npm test
 
 # Run all linters and type checks
-lint: lint-backend lint-frontend
+lint: lint-backend lint-frontend lint-platform-branching
 
 lint-backend:
 	go vet ./...
 
 lint-frontend:
 	cd frontend && npx tsc -b && npm run lint
+
+# Guard against reintroducing `session.platform === 'foo'` branching,
+# which would undermine the multi-platform architecture.
+# Suppress individual lines with a trailing `// ocman:allow-platform-branch`
+# pragma — expect to justify it in review.
+lint-platform-branching:
+	./scripts/check-platform-branching.sh

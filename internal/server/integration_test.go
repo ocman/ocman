@@ -6,10 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
-	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 
@@ -293,156 +291,12 @@ func TestHandleArchiveSession_InvalidJSON(t *testing.T) {
 	}
 }
 
-func TestHandleAbortSession_NoPort(t *testing.T) {
-	srv := testServer(t)
-	body := strings.NewReader(`{"sessionId":"abc123","directory":"/nonexistent"}`)
-	req := httptest.NewRequest("POST", "/api/abort-session", body)
-	rr := httptest.NewRecorder()
-	srv.handleAbortSession(rr, req)
-
-	// No OpenCode instance running, so should get 503
-	if rr.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected 503, got %d", rr.Code)
-	}
-}
-
-func TestHandleSessionPort_InvalidID(t *testing.T) {
-	srv := testServer(t)
-	req := httptest.NewRequest("GET", "/api/session-port/bad!id", nil)
-	req.URL.Path = "/api/session-port/bad!id"
-	rr := httptest.NewRecorder()
-	srv.handleSessionPort(rr, req)
-
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rr.Code)
-	}
-}
-
-// --- handleAgents / handleCommands (OpenCode proxy endpoints) ---
-
-func TestHandleAgents_MissingDir(t *testing.T) {
-	srv := testServer(t)
-	req := httptest.NewRequest("GET", "/api/agents", nil)
-	rr := httptest.NewRecorder()
-	srv.handleAgents(rr, req)
-
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", rr.Code, rr.Body.String())
-	}
-}
-
-func TestHandleAgents_NoRunningInstance(t *testing.T) {
-	srv := testServer(t)
-	// A directory that has no OpenCode process bound to it — discoverOpenCodePort
-	// should return empty, which the handler turns into 503.
-	req := httptest.NewRequest("GET", "/api/agents?dir=/tmp/ocman-test-nonexistent-dir", nil)
-	rr := httptest.NewRecorder()
-	srv.handleAgents(rr, req)
-
-	if rr.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected 503, got %d: %s", rr.Code, rr.Body.String())
-	}
-}
-
-func TestHandleCommands_MissingDir(t *testing.T) {
-	srv := testServer(t)
-	req := httptest.NewRequest("GET", "/api/commands", nil)
-	rr := httptest.NewRecorder()
-	srv.handleCommands(rr, req)
-
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", rr.Code, rr.Body.String())
-	}
-}
-
-func TestHandleCommands_NoRunningInstance(t *testing.T) {
-	srv := testServer(t)
-	req := httptest.NewRequest("GET", "/api/commands?dir=/tmp/ocman-test-nonexistent-dir", nil)
-	rr := httptest.NewRecorder()
-	srv.handleCommands(rr, req)
-
-	if rr.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected 503, got %d: %s", rr.Code, rr.Body.String())
-	}
-}
-
-// primePortCache overrides the module-level port discovery cache for the
-// duration of a test so handler tests can aim `discoverOpenCodePort` at an
-// arbitrary httptest.Server without actually running an opencode process.
-func primePortCache(t *testing.T, directory, port string) {
-	t.Helper()
-	portCache.mu.Lock()
-	prev := portCache.ports
-	prevUpdated := portCache.updated
-	portCache.ports = map[string]string{directory: port}
-	portCache.updated = time.Now()
-	portCache.mu.Unlock()
-	t.Cleanup(func() {
-		portCache.mu.Lock()
-		portCache.ports = prev
-		portCache.updated = prevUpdated
-		portCache.mu.Unlock()
-	})
-}
-
-func TestHandleAgents_ProxiesSuccess(t *testing.T) {
-	// Fake OpenCode instance returning a minimal /agent response.
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/agent" {
-			t.Errorf("upstream hit unexpected path %q", r.URL.Path)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`[{"name":"build","color":"#ff0000"},{"name":"plan","color":"accent"}]`))
-	}))
-	t.Cleanup(upstream.Close)
-
-	u, _ := url.Parse(upstream.URL)
-	const dir = "/tmp/ocman-test-proxies-success"
-	primePortCache(t, dir, u.Port())
-
-	srv := testServer(t)
-	req := httptest.NewRequest("GET", "/api/agents?dir="+url.QueryEscape(dir), nil)
-	rr := httptest.NewRecorder()
-	srv.handleAgents(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
-	if ct := rr.Header().Get("Content-Type"); ct != "application/json" {
-		t.Errorf("Content-Type = %q, want application/json", ct)
-	}
-	var agents []map[string]interface{}
-	if err := json.Unmarshal(rr.Body.Bytes(), &agents); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
-	if len(agents) != 2 || agents[0]["name"] != "build" || agents[1]["name"] != "plan" {
-		t.Errorf("unexpected proxied body: %s", rr.Body.String())
-	}
-}
-
-func TestHandleAgents_UpstreamError(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "agent listing unavailable", http.StatusInternalServerError)
-	}))
-	t.Cleanup(upstream.Close)
-
-	u, _ := url.Parse(upstream.URL)
-	const dir = "/tmp/ocman-test-upstream-error"
-	primePortCache(t, dir, u.Port())
-
-	srv := testServer(t)
-	req := httptest.NewRequest("GET", "/api/agents?dir="+url.QueryEscape(dir), nil)
-	rr := httptest.NewRecorder()
-	srv.handleAgents(rr, req)
-
-	// The handler forwards the upstream status (>= 400) verbatim.
-	if rr.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d: %s", rr.Code, rr.Body.String())
-	}
-	if !strings.Contains(rr.Body.String(), "agent listing unavailable") {
-		t.Errorf("expected upstream error body to be forwarded, got %q", rr.Body.String())
-	}
-}
+// Note: the old /api/agents and /api/commands tests (and the
+// primePortCache helper) have moved with their implementations into the
+// internal/platforms/opencode package. The server layer now dispatches
+// every session-scoped operation through the Platform adapter, so the
+// proxy behaviour is covered by the adapter's own tests rather than the
+// server's.
 
 // --- applySessionState tests ---
 

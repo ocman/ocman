@@ -50,35 +50,22 @@ func (s *Server) Start(ctx context.Context) error {
 
 	mux := http.NewServeMux()
 
-	// API routes — read-only endpoints enforce GET, mutating endpoints enforce POST
+	// API routes — read-only endpoints enforce GET, mutating endpoints
+	// enforce POST. Session-scoped routes (/api/session/{id}/...) are
+	// dispatched through a single handler because net/http's ServeMux
+	// doesn't support path patterns.
 	mux.HandleFunc("/api/stats", requireGET(s.handleStats))
 	mux.HandleFunc("/api/metrics", requireGET(s.handleMetrics))
 	mux.HandleFunc("/api/projects", requireGET(s.handleProjects))
-	mux.HandleFunc("/api/sessions", requireGET(s.handleSessions))
-	mux.HandleFunc("/api/session/", requireGET(s.handleSession))
-	mux.HandleFunc("/api/session/archive", requirePOST(s.handleArchiveSession))
-	mux.HandleFunc("/api/session/seen", requirePOST(s.handleSeenSession))
+	mux.HandleFunc("/api/sessions", s.handleSessionsRoot) // GET = list, POST = create
+	mux.HandleFunc("/api/session/", s.dispatchSessionSubpath)
 	mux.HandleFunc("/api/activity", requireGET(s.handleActivity))
 	mux.HandleFunc("/api/models", requireGET(s.handleModels))
-	mux.HandleFunc("/api/session-models/", requireGET(s.handleSessionModels))
 	mux.HandleFunc("/api/hourly", requireGET(s.handleHourly))
 	mux.HandleFunc("/api/hourly-tokens", requireGET(s.handleHourlyTokens))
-	mux.HandleFunc("/api/session-port/", requireGET(s.handleSessionPort))
-	mux.HandleFunc("/api/send-message", requirePOST(s.handleSendMessage))
-	mux.HandleFunc("/api/respond-permission", requirePOST(s.handleRespondPermission))
-	mux.HandleFunc("/api/list-permissions", requireGET(s.handleListPermissions))
-	mux.HandleFunc("/api/list-questions", requireGET(s.handleListQuestions))
-	mux.HandleFunc("/api/respond-question", requirePOST(s.handleRespondQuestion))
-	mux.HandleFunc("/api/reject-question", requirePOST(s.handleRejectQuestion))
-	mux.HandleFunc("/api/abort-session", requirePOST(s.handleAbortSession))
-	mux.HandleFunc("/api/create-session", requirePOST(s.handleCreateSession))
-	mux.HandleFunc("/api/events/", s.handleEvents)
+	mux.HandleFunc("/api/capabilities", requireGET(s.handleCapabilities))
 	mux.HandleFunc("/api/whisper/status", requireGET(s.handleWhisperStatus))
 	mux.HandleFunc("/api/transcribe", requirePOST(s.handleTranscribe))
-	mux.HandleFunc("/api/commands", requireGET(s.handleCommands))
-	mux.HandleFunc("/api/agents", requireGET(s.handleAgents))
-	mux.HandleFunc("/api/command", requirePOST(s.handleExecuteCommand))
-	mux.HandleFunc("/api/compact-session", requirePOST(s.handleCompactSession))
 	mux.HandleFunc("/api/cost/calc", requirePOST(s.handleCalcCost))
 	mux.HandleFunc("/api/tmux/clients", requireGET(requireLocalhost(s.handleTmuxClients)))
 	mux.HandleFunc("/api/tmux/sessions", requireGET(requireLocalhost(s.handleTmuxSessions)))

@@ -254,9 +254,32 @@ export interface HourlyTokensByModel {
   tokensOut: number;
 }
 
-export interface PortInfo {
-  port: string;
+/**
+ * Capability flags reported by a platform adapter. Mirrors
+ * internal/platforms.Capabilities. The frontend gates UI affordances
+ * on these flags rather than on platform identity comparisons.
+ */
+export interface PlatformCapabilities {
+  composer: boolean;
+  respondPermission: boolean;
+  respondQuestion: boolean;
+  abort: boolean;
+  compact: boolean;
+  events: boolean;
+  agentCatalog: boolean;
+  modelCatalog: boolean;
+  slashCommands: boolean;
+}
+
+export interface PlatformCapabilityEntry {
+  id: string;
+  displayName: string;
   available: boolean;
+  capabilities: PlatformCapabilities;
+}
+
+export interface CapabilitiesResponse {
+  platforms: PlatformCapabilityEntry[];
 }
 
 export interface SlashCommand {
@@ -379,7 +402,7 @@ export const api = {
     return fetchJSON<ModelUsage[]>(`/api/models${qs ? '?' + qs : ''}`);
   },
   sessionModels: (sessionId: string) =>
-    fetchJSON<SessionModelsResponse>(`/api/session-models/${encodeURIComponent(sessionId)}`),
+    fetchJSON<SessionModelsResponse>(`/api/session/${encodeURIComponent(sessionId)}/models`),
   hourly: (params?: { days?: number }) => {
     const q = new URLSearchParams();
     if (params?.days) q.set('days', String(params.days));
@@ -393,76 +416,74 @@ export const api = {
     const qs = q.toString();
     return fetchJSON<HourlyTokensByModel[]>(`/api/hourly-tokens${qs ? '?' + qs : ''}`);
   },
-  sessionPort: (id: string, signal?: AbortSignal) => fetchJSON<PortInfo>(`/api/session-port/${id}`, signal),
-  createSession: async (directory: string) => {
-    const resp = await fetch('/api/create-session', {
+  capabilities: (signal?: AbortSignal) => fetchJSON<CapabilitiesResponse>('/api/capabilities', signal),
+  createSession: async (directory: string, platform?: string) => {
+    const resp = await fetch('/api/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ directory }),
+      body: JSON.stringify({ directory, ...(platform ? { platform } : {}) }),
     });
     if (!resp.ok) throw new Error(await resp.text());
     return resp.json() as Promise<{ id: string }>;
   },
   sendMessage: async (
     sessionId: string,
-    directory: string,
     message: string,
     images?: { url: string; mime: string }[],
     model?: string,
     agent?: string,
   ) => {
-    const resp = await fetch('/api/send-message', {
+    const resp = await fetch(`/api/session/${encodeURIComponent(sessionId)}/message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, directory, message, images, model, agent }),
+      body: JSON.stringify({ message, images, model, agent }),
     });
     if (!resp.ok) throw new Error(await resp.text());
   },
-  listPermissions: (directory: string) => fetchJSON<unknown[]>(`/api/list-permissions?dir=${encodeURIComponent(directory)}`),
+  listPermissions: (sessionId: string) =>
+    fetchJSON<unknown[]>(`/api/session/${encodeURIComponent(sessionId)}/permissions`),
   respondPermission: async (
     sessionId: string,
-    directory: string,
     permissionId: string,
     reply: 'once' | 'always' | 'reject',
   ) => {
-    const resp = await fetch('/api/respond-permission', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, directory, permissionId, reply }),
-    });
+    const resp = await fetch(
+      `/api/session/${encodeURIComponent(sessionId)}/permissions/${encodeURIComponent(permissionId)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reply }),
+      },
+    );
     if (!resp.ok) throw new Error(await resp.text());
   },
-  listQuestions: (directory: string) => fetchJSON<unknown[]>(`/api/list-questions?dir=${encodeURIComponent(directory)}`),
+  listQuestions: (sessionId: string) =>
+    fetchJSON<unknown[]>(`/api/session/${encodeURIComponent(sessionId)}/questions`),
   respondQuestion: async (
     sessionId: string,
-    directory: string,
     requestId: string,
     answers: string[][],
   ) => {
-    const resp = await fetch('/api/respond-question', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, directory, requestId, answers }),
-    });
+    const resp = await fetch(
+      `/api/session/${encodeURIComponent(sessionId)}/questions/${encodeURIComponent(requestId)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers }),
+      },
+    );
     if (!resp.ok) throw new Error(await resp.text());
   },
-  rejectQuestion: async (
-    sessionId: string,
-    directory: string,
-    requestId: string,
-  ) => {
-    const resp = await fetch('/api/reject-question', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, directory, requestId }),
-    });
+  rejectQuestion: async (sessionId: string, requestId: string) => {
+    const resp = await fetch(
+      `/api/session/${encodeURIComponent(sessionId)}/questions/${encodeURIComponent(requestId)}/reject`,
+      { method: 'POST' },
+    );
     if (!resp.ok) throw new Error(await resp.text());
   },
-  abortSession: async (sessionId: string, directory: string) => {
-    const resp = await fetch('/api/abort-session', {
+  abortSession: async (sessionId: string) => {
+    const resp = await fetch(`/api/session/${encodeURIComponent(sessionId)}/abort`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, directory }),
     });
     if (!resp.ok) throw new Error(await resp.text());
   },
@@ -478,30 +499,29 @@ export const api = {
     });
     if (!resp.ok) throw new Error(await resp.text());
   },
-  compactSession: async (sessionId: string, directory: string, providerID: string, modelID: string) => {
-    const resp = await fetch('/api/compact-session', {
+  compactSession: async (sessionId: string, providerID: string, modelID: string) => {
+    const resp = await fetch(`/api/session/${encodeURIComponent(sessionId)}/compact`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, directory, providerID, modelID }),
+      body: JSON.stringify({ providerID, modelID }),
     });
     if (!resp.ok) throw new Error(await resp.text());
   },
-  commands: (directory: string, signal?: AbortSignal) =>
-    fetchJSON<SlashCommand[]>(`/api/commands?dir=${encodeURIComponent(directory)}`, signal),
-  agents: (directory: string, signal?: AbortSignal) =>
-    fetchJSON<AgentInfo[]>(`/api/agents?dir=${encodeURIComponent(directory)}`, signal),
+  commands: (sessionId: string, signal?: AbortSignal) =>
+    fetchJSON<SlashCommand[]>(`/api/session/${encodeURIComponent(sessionId)}/commands`, signal),
+  agents: (sessionId: string, signal?: AbortSignal) =>
+    fetchJSON<AgentInfo[]>(`/api/session/${encodeURIComponent(sessionId)}/agents`, signal),
   executeCommand: async (
     sessionId: string,
-    directory: string,
     command: string,
     args: string,
     model?: string,
     agent?: string,
   ) => {
-    const resp = await fetch('/api/command', {
+    const resp = await fetch(`/api/session/${encodeURIComponent(sessionId)}/command`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, directory, command, arguments: args, model, agent }),
+      body: JSON.stringify({ command, arguments: args, model, agent }),
     });
     if (!resp.ok) throw new Error(await resp.text());
   },

@@ -14,6 +14,7 @@ import { ShortPath } from '../components/SessionTable';
 import { useTmux } from '../lib/useTmux';
 import { filterVisibleSessions } from '../lib/sessionVisibility';
 import { useApiStore } from '../lib/apiStore';
+import { usePlatformCapabilities } from '../lib/useCapabilities';
 import { recheckFaviconNotify } from '../lib/useFaviconNotify';
 import { openVSCode } from '../lib/shortcuts';
 import { useShortcut } from '../lib/shortcutRegistry';
@@ -420,6 +421,17 @@ export function SessionDetail() {
   // animation frame. See spec/session-switch-cache (step 4 follow-up).
   const [switching, setSwitching] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+
+  // Capability flags for the owning platform. Used to *hide* affordances
+  // the platform doesn't support (composer, abort, compact, ...). Falls
+  // back to all-false before /api/capabilities resolves, which keeps UI
+  // dormant — preferable to flashing controls the platform can't honour.
+  const caps = usePlatformCapabilities(session?.platform);
+
+  // `portAvailable` represents transient reachability of the running
+  // platform process (e.g. OpenCode on a discovered --port). Capability
+  // flags describe what the platform supports in principle; an action
+  // should generally be enabled iff both are true.
   const [portAvailable, setPortAvailable] = useState(false);
   const [whisperAvailable, setWhisperAvailable] = useState(false);
   const [modelOptions, setModelOptions] = useState<string[]>([]);
@@ -476,7 +488,6 @@ export function SessionDetail() {
   const [sseDebugEvents, setSseDebugEvents] = useState<SseDebugEvent[]>([]);
   const getSession = useApiStore((state) => state.getSession);
   const archiveSession = useApiStore((state) => state.archiveSession);
-  const getSessionPort = useApiStore((state) => state.getSessionPort);
   const getWhisperStatus = useApiStore((state) => state.getWhisperStatus);
   const getModels = useApiStore((state) => state.getModels);
   const getSessions = useApiStore((state) => state.getSessions);
@@ -724,14 +735,9 @@ export function SessionDetail() {
     setPendingQuestion(null);
     setSseDebugEvents([]);
     load(signal);
-    if (id) {
-      getSessionPort(id, signal).then(p => {
-        if (!signal.aborted) setPortAvailable(p.available);
-      }).catch((e) => {
-        if (e instanceof DOMException && e.name === 'AbortError') return;
-        setPortAvailable(false);
-      });
-    }
+    // portAvailable is now derived from session.liveConnection (populated
+    // by the platform adapter). The state variable is kept because SSE
+    // onopen still overrides it to true on a successful connection.
     getWhisperStatus().then(s => setWhisperAvailable(s.available)).catch(() => setWhisperAvailable(false));
     // Fetch the rich session-scoped model list (historical + live-available
     // from /config/providers). Falls back to the plain global usage list when
@@ -771,11 +777,22 @@ export function SessionDetail() {
       controller.abort();
       window.cancelAnimationFrame(rafId);
     };
-  }, [getModels, getSessionPort, getWhisperStatus, id, load]);
+  }, [getModels, getWhisperStatus, id, load]);
 
-  // Fetch the OpenCode /agent list so we can color UI by agent. Requires a
-  // running OpenCode instance for this project directory — silently stays
-  // empty otherwise (agentColor falls back to deterministic defaults).
+  // Keep `portAvailable` in sync with the session's live-connection flag
+  // (populated by the platform adapter). SSE onopen still flips it to
+  // true on a successful connection; this just seeds the initial value
+  // from the session payload so the composer isn't disabled for a frame
+  // on entry to a live session.
+  useEffect(() => {
+    if (session?.liveConnection) setPortAvailable(true);
+  }, [session?.liveConnection]);
+
+  // Fetch the platform's composer-agent catalog (OpenCode's /agent
+  // endpoint when available) so we can color UI by agent. Platforms
+  // without an agent catalog return an empty list via the
+  // GET /api/session/{id}/agents endpoint, leaving agentColor to fall
+  // back to its deterministic defaults.
   useEffect(() => {
     const dir = session?.directory;
     if (!dir) {
@@ -791,9 +808,14 @@ export function SessionDetail() {
       setAgentsLoaded(true);
       return;
     }
+    if (!id) {
+      setAgents([]);
+      setAgentsLoaded(true);
+      return;
+    }
     setAgentsLoaded(false);
     const controller = new AbortController();
-    api.agents(dir, controller.signal)
+    api.agents(id, controller.signal)
       .then((list) => {
         if (controller.signal.aborted) return;
         setAgents(list || []);
@@ -805,7 +827,7 @@ export function SessionDetail() {
         setAgentsLoaded(true);
       });
     return () => controller.abort();
-  }, [session?.directory, portAvailable]);
+  }, [id, session?.directory, portAvailable]);
 
   // Re-fetch the session-scoped model list once OpenCode becomes reachable so
   // the picker picks up the full /config/providers catalog. The initial fetch
@@ -963,8 +985,7 @@ export function SessionDetail() {
   // SSE with reconnection
   const [sseActive, setSseActive] = useState(false);
   useEffect(() => {
-    if (!session?.directory || !session?.id) return;
-    const dir = session.directory;
+    if (!session?.id) return;
     const sid = session.id;
     let evtSource: EventSource | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1032,7 +1053,7 @@ export function SessionDetail() {
 
     const connect = () => {
       if (cancelled) return;
-      evtSource = new EventSource(`/api/events/?dir=${encodeURIComponent(dir)}`);
+      evtSource = new EventSource(`/api/session/${encodeURIComponent(sid)}/events`);
       evtSource.onopen = () => {
         setSseActive(true);
         // SSE connected means OpenCode is running — mark port as available.
@@ -1040,7 +1061,7 @@ export function SessionDetail() {
         // Fetch any permissions that were already pending when we connected.
         // SSE only delivers new events; existing pending permissions need to
         // be retrieved explicitly so the dialog shows immediately.
-        listPermissions(dir).then((perms) => {
+        listPermissions(sid).then((perms) => {
           if (cancelled) return;
           for (const p of perms) {
             const perm = extractPendingPermission({ type: 'permission.asked', properties: p });
@@ -1059,7 +1080,7 @@ export function SessionDetail() {
         // Mirrors the permissions recovery above: the question.asked SSE
         // event only fires once, so a user who wasn't viewing the session
         // when it fired would otherwise never see the prompt.
-        listQuestions(dir).then((questions) => {
+        listQuestions(sid).then((questions) => {
           if (cancelled) return;
           for (const q of questions) {
             const question = extractPendingQuestion({ type: 'question.asked', properties: q });
@@ -1626,7 +1647,6 @@ export function SessionDetail() {
     try {
       await sendMessage(
         session.id,
-        session.directory,
         text,
         images,
         selectedModel || activeModel || undefined,
@@ -1659,7 +1679,7 @@ export function SessionDetail() {
   }, [activeAgent, activeModel, portAvailable, selectedAgent, selectedModel, sendMessage, session]);
 
   const handleCompact = useCallback(async () => {
-    if (!session || !portAvailable) return;
+    if (!session || !portAvailable || !caps.compact) return;
     const model = selectedModel || activeModel || '';
     const slashIdx = model.indexOf('/');
     const providerID = slashIdx > 0 ? model.slice(0, slashIdx) : '';
@@ -1671,12 +1691,12 @@ export function SessionDetail() {
     // use it.
     const agentBeforeCompact = selectedAgent || activeAgent || '';
     try {
-      await api.compactSession(session.id, session.directory, providerID, modelID);
+      await api.compactSession(session.id, providerID, modelID);
       if (agentBeforeCompact) setSelectedAgent(agentBeforeCompact);
     } catch (e) {
       console.error('Failed to compact session', e);
     }
-  }, [activeAgent, activeModel, portAvailable, selectedAgent, selectedModel, session]);
+  }, [activeAgent, activeModel, caps.compact, portAvailable, selectedAgent, selectedModel, session]);
 
   const handleNewSession = useCallback(async () => {
     if (!session) return;
@@ -1748,7 +1768,6 @@ export function SessionDetail() {
     try {
       await api.executeCommand(
         session.id,
-        session.directory,
         command,
         args,
         selectedModel || activeModel || undefined,
@@ -1779,12 +1798,12 @@ export function SessionDetail() {
   }, [activeAgent, activeModel, archiveSession, handleCompact, handleNewSession, navigate, portAvailable, selectedAgent, selectedModel, session]);
 
   const handlePermissionReply = useCallback(async (reply: 'once' | 'always' | 'reject') => {
-    if (!pendingPermission || answeringPermission || !portAvailable || !session) return;
+    if (!pendingPermission || answeringPermission || !portAvailable || !caps.respondPermission || !session) return;
     setPermissionError(null);
     setAnsweringPermission(true);
     const repliedId = pendingPermission.permissionId;
     try {
-      await respondPermission(session.id, session.directory, repliedId, reply);
+      await respondPermission(session.id, repliedId, reply);
       // Only clear the prompt if the currently pending permission is still
       // the one we just replied to. An SSE `permission.asked` event for a
       // follow-up permission may have already arrived while the POST was in
@@ -1796,14 +1815,14 @@ export function SessionDetail() {
     } finally {
       setAnsweringPermission(false);
     }
-  }, [answeringPermission, pendingPermission, portAvailable, respondPermission, session]);
+  }, [answeringPermission, caps.respondPermission, pendingPermission, portAvailable, respondPermission, session]);
 
   const handleQuestionReply = useCallback(async (answers: string[][]) => {
-    if (!pendingQuestion || answeringQuestion || !portAvailable || !session) return;
+    if (!pendingQuestion || answeringQuestion || !portAvailable || !caps.respondQuestion || !session) return;
     setQuestionError(null);
     setAnsweringQuestion(true);
     try {
-      await respondQuestion(session.id, session.directory, pendingQuestion.requestId, answers);
+      await respondQuestion(session.id, pendingQuestion.requestId, answers);
       setPendingQuestion(null);
       setQuestionError(null);
       clearPendingQuestion(session.id);
@@ -1814,13 +1833,13 @@ export function SessionDetail() {
     } finally {
       setAnsweringQuestion(false);
     }
-  }, [answeringQuestion, pendingQuestion, portAvailable, respondQuestion, session]);
+  }, [answeringQuestion, caps.respondQuestion, pendingQuestion, portAvailable, respondQuestion, session]);
 
   const handleQuestionReject = useCallback(async () => {
-    if (!pendingQuestion || answeringQuestion || !portAvailable || !session) return;
+    if (!pendingQuestion || answeringQuestion || !portAvailable || !caps.respondQuestion || !session) return;
     setAnsweringQuestion(true);
     try {
-      await rejectQuestion(session.id, session.directory, pendingQuestion.requestId);
+      await rejectQuestion(session.id, pendingQuestion.requestId);
       setPendingQuestion(null);
       clearPendingQuestion(session.id);
       // SSE events will deliver the updated session state incrementally.
@@ -1829,19 +1848,19 @@ export function SessionDetail() {
     } finally {
       setAnsweringQuestion(false);
     }
-  }, [answeringQuestion, pendingQuestion, portAvailable, rejectQuestion, session]);
+  }, [answeringQuestion, caps.respondQuestion, pendingQuestion, portAvailable, rejectQuestion, session]);
 
   const abortSession = useApiStore((state) => state.abortSession);
 
   const handleAbort = useCallback(async () => {
-    if (!session || !portAvailable) return;
+    if (!session || !portAvailable || !caps.abort) return;
     try {
-      await abortSession(session.id, session.directory);
+      await abortSession(session.id);
       // SSE events will deliver the updated session state incrementally.
     } catch (e) {
       console.error('Failed to abort session', e);
     }
-  }, [abortSession, portAvailable, session]);
+  }, [abortSession, caps.abort, portAvailable, session]);
 
   // Find the tmux session whose resolved path matches the current project directory.
   const matchingTmuxSession = session
@@ -2214,8 +2233,7 @@ export function SessionDetail() {
             messages={messages}
             parts={parts}
             sessionId={session.id}
-            directory={session.directory}
-            portAvailable={portAvailable}
+            canSend={portAvailable && caps.composer}
             pendingAgent={selectedAgent || activeAgent || undefined}
             agents={agents}
           >
@@ -2223,14 +2241,14 @@ export function SessionDetail() {
               hasMore={hasMore}
               loadingMore={loadingMore}
               onLoadMore={loadMore}
-              composer={pendingPermission && portAvailable ? (
+              composer={pendingPermission && portAvailable && caps.respondPermission ? (
                 <PermissionPrompt
                   permission={pendingPermission}
                   onReply={handlePermissionReply}
                   disabled={answeringPermission}
                   error={permissionError}
                 />
-              ) : pendingQuestion && portAvailable ? (
+              ) : pendingQuestion && portAvailable && caps.respondQuestion ? (
                 <QuestionPrompt
                   question={pendingQuestion}
                   onReply={handleQuestionReply}
@@ -2238,7 +2256,7 @@ export function SessionDetail() {
                   disabled={answeringQuestion}
                   error={questionError}
                 />
-              ) : (
+              ) : caps.composer ? (
                 <Composer
                   onSend={handleSend}
                   onCommand={handleCommand}
@@ -2258,11 +2276,10 @@ export function SessionDetail() {
                   agentsLoaded={agentsLoaded}
                   contextTokens={session?.contextTokenCount || undefined}
                   sessionId={session?.id}
-                  directory={session?.directory}
                   tokensPerSecond={liveTokensPerSecond ?? undefined}
                   tokenStats={tokenStats}
                 />
-              )}
+              ) : null}
               footer={showSseNotice || showSseDebug ? (
                 <>
                   {showSseNotice && (

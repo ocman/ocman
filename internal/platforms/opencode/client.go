@@ -1,4 +1,4 @@
-package server
+package opencode
 
 import (
 	"bytes"
@@ -16,6 +16,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
 // rePortSuffix matches a port number at the end of a string (e.g. ":4096").
@@ -538,112 +539,227 @@ func filterPartsUntyped(parts []map[string]interface{}, msgIDs map[string]bool) 
 	return result
 }
 
-// fetchSessionFromOpenCode tries to get session data from the OpenCode HTTP API.
-// Returns the response data and true if successful, or nil and false if not available.
-func (s *Server) fetchSessionFromOpenCode(sessionID string, limit, offset int) (map[string]interface{}, bool) {
-	// First get session from DB to find the directory
-	session, err := s.db.GetSession(sessionID)
+// fetchSessionFromOpenCode tries to get session data from the running
+// OpenCode HTTP API and returns it as a typed SessionDetail. Returns
+// nil, false when the data is not available (no running instance for
+// this session's directory, upstream error, etc.) so callers can fall
+// back to the DB.
+func (a *Adapter) fetchSessionFromOpenCode(sessionID string, limit, offset int) (*platforms.SessionDetail, bool) {
+	if a.db == nil {
+		return nil, false
+	}
+	// First get session from DB to find the directory.
+	dbSession, err := a.db.GetSession(sessionID)
 	if err != nil {
 		return nil, false
 	}
 
-	port := discoverOpenCodePort(session.Directory)
+	port := discoverOpenCodePort(dbSession.Directory)
 	if port == "" {
 		return nil, false
 	}
 
-	// Fetch session detail and messages in parallel
+	// Fetch session detail and messages in parallel.
 	var ocSession map[string]interface{}
 	var ocMessages []map[string]interface{}
 	var sessionErr, messagesErr error
 	var wg sync.WaitGroup
 	wg.Add(2)
-
 	go func() {
 		defer wg.Done()
 		ocSession, sessionErr = fetchOpenCodeSession(port, sessionID)
 	}()
-
 	go func() {
 		defer wg.Done()
 		ocMessages, messagesErr = fetchOpenCodeMessages(port, sessionID)
 	}()
-
 	wg.Wait()
 
 	if sessionErr != nil || messagesErr != nil || ocSession == nil {
 		return nil, false
 	}
 
-	// Convert to our format
-	messages, parts := convertOpenCodeMessages(ocMessages)
-	stats := computeMessageStats(messages)
+	// Untyped conversion (preserves every OpenCode-specific data key
+	// under the message/part .data map). We then re-encode .data into
+	// json.RawMessage for the typed Message/Part shape.
+	untypedMessages, untypedParts := convertOpenCodeMessages(ocMessages)
+	stats := computeMessageStats(untypedMessages)
+	totalMessages := len(untypedMessages)
+	pagedMessages, pagedMsgIDs := paginateUntyped(untypedMessages, limit, offset)
+	pagedParts := filterPartsUntyped(untypedParts, pagedMsgIDs)
 
-	// Apply pagination
-	totalMessages := len(messages)
-	pagedMessages, pagedMsgIDs := paginateUntyped(messages, limit, offset)
-	pagedParts := filterPartsUntyped(parts, pagedMsgIDs)
-
-	// Build session object in our format
-	timeMap, _ := ocSession["time"].(map[string]interface{})
-	summaryMap, _ := ocSession["summary"].(map[string]interface{})
-	defaults, err := s.db.GetSessionDefaults(sessionID, session.Directory)
+	defaults, err := a.db.GetSessionDefaults(sessionID, dbSession.Directory)
 	if err != nil {
-		log.WithFields(log.Fields{"sessionID": sessionID, "error": err}).Warn("fetching session defaults")
+		log.WithFields(log.Fields{"sessionID": sessionID, "error": err}).
+			Warn("opencode: fetching session defaults for live path")
 	}
 
 	// Determine status from the last message using shared logic.
 	sessionStatus := "done"
-	if len(messages) > 0 {
-		lastMsg := messages[len(messages)-1]
-		if info, ok := lastMsg["data"].(map[string]interface{}); ok {
+	if n := len(untypedMessages); n > 0 {
+		if info, ok := untypedMessages[n-1]["data"].(map[string]interface{}); ok {
 			role, _ := info["role"].(string)
 			finish, _ := info["finish"].(string)
 			lastErr := ""
 			if _, hasError := info["error"]; hasError {
-				lastErr = "true" // non-empty signals an error is present
+				lastErr = "true"
 			}
 			sessionStatus = db.InferSessionStatus(role, finish, lastErr)
 		}
 	}
 
-	// Count user messages for messageCount
+	// Count user messages for messageCount parity with the DB path.
 	userMsgCount := 0
-	for _, m := range messages {
+	for _, m := range untypedMessages {
 		if info, ok := m["data"].(map[string]interface{}); ok {
-			if role, ok := info["role"].(string); ok && role == "user" {
+			if role, _ := info["role"].(string); role == "user" {
 				userMsgCount++
 			}
 		}
 	}
 
-	result := map[string]interface{}{
-		"session": map[string]interface{}{
-			"id":                ocSession["id"],
-			"projectId":         ocSession["projectID"],
-			"title":             ocSession["title"],
-			"directory":         ocSession["directory"],
-			"timeCreated":       timeMap["created"],
-			"timeUpdated":       timeMap["updated"],
-			"summaryAdditions":  summaryMap["additions"],
-			"summaryDeletions":  summaryMap["deletions"],
-			"summaryFiles":      summaryMap["files"],
-			"messageCount":      userMsgCount,
-			"durationMs":        stats.durationMs,
-			"totalInputTokens":  int64(stats.totalInputTokens),
-			"totalOutputTokens": int64(stats.totalOutputTokens),
-			"totalCost":         stats.totalCost,
-			"contextTokenCount": int64(stats.contextTokenCount),
-			"liveConnection":    true,
-			"platform":          "opencode",
-			"status":            sessionStatus,
-		},
-		"messages":      pagedMessages,
-		"parts":         pagedParts,
-		"totalMessages": totalMessages,
-		"defaultAgent":  defaults.Agent,
-		"defaultModel":  defaults.Model,
+	session := sessionFromOpenCode(ocSession, stats, userMsgCount, sessionStatus)
+	messages := typedMessagesFromUntyped(pagedMessages)
+	parts := typedPartsFromUntyped(pagedParts)
+
+	return &platforms.SessionDetail{
+		Session:           session,
+		Messages:          messages,
+		Parts:             parts,
+		TotalMessages:     totalMessages,
+		ContextTokenCount: int64(stats.contextTokenCount),
+		DefaultAgent:      defaults.Agent,
+		DefaultModel:      defaults.Model,
+	}, true
+}
+
+// sessionFromOpenCode builds a typed *db.Session from the OpenCode
+// /session/{id} response. Fields absent from the upstream payload end
+// up at their zero value / nil — matching the DB-path behaviour for
+// the same session.
+func sessionFromOpenCode(oc map[string]interface{}, stats messageStats, userMsgCount int, status string) *db.Session {
+	timeMap, _ := oc["time"].(map[string]interface{})
+	summaryMap, _ := oc["summary"].(map[string]interface{})
+
+	intPtr := func(m map[string]interface{}, key string) *int {
+		if m == nil {
+			return nil
+		}
+		v, ok := m[key].(float64)
+		if !ok {
+			return nil
+		}
+		n := int(v)
+		return &n
+	}
+	strPtr := func(m map[string]interface{}, key string) *string {
+		if m == nil {
+			return nil
+		}
+		v, ok := m[key].(string)
+		if !ok || v == "" {
+			return nil
+		}
+		return &v
+	}
+	strField := func(m map[string]interface{}, key string) string {
+		if v, ok := m[key].(string); ok {
+			return v
+		}
+		return ""
+	}
+	int64Field := func(m map[string]interface{}, key string) int64 {
+		if m == nil {
+			return 0
+		}
+		if v, ok := m[key].(float64); ok {
+			return int64(v)
+		}
+		return 0
 	}
 
-	return result, true
+	timeCreated := int64Field(timeMap, "created")
+	timeUpdated := int64Field(timeMap, "updated")
+
+	return &db.Session{
+		ID:                strField(oc, "id"),
+		Platform:          string(PlatformID),
+		ProjectID:         strField(oc, "projectID"),
+		Title:             strField(oc, "title"),
+		Directory:         strField(oc, "directory"),
+		TimeCreated:       timeCreated,
+		TimeUpdated:       timeUpdated,
+		SummaryAdditions:  intPtr(summaryMap, "additions"),
+		SummaryDeletions:  intPtr(summaryMap, "deletions"),
+		SummaryFiles:      intPtr(summaryMap, "files"),
+		ShareURL:          strPtr(oc, "shareURL"),
+		MessageCount:      userMsgCount,
+		DurationMs:        stats.durationMs,
+		TotalInputTokens:  int64(stats.totalInputTokens),
+		TotalOutputTokens: int64(stats.totalOutputTokens),
+		TotalCost:         stats.totalCost,
+		Status:            status,
+		LiveConnection:    true,
+	}
+}
+
+// typedMessagesFromUntyped re-encodes the `data` map of each untyped
+// message into a json.RawMessage, producing a typed db.Message that
+// marshals identically to a message read from SQLite.
+func typedMessagesFromUntyped(untyped []map[string]interface{}) []db.Message {
+	if len(untyped) == 0 {
+		return nil
+	}
+	out := make([]db.Message, 0, len(untyped))
+	for _, m := range untyped {
+		id, _ := m["id"].(string)
+		sid, _ := m["sessionId"].(string)
+		var timeCreated int64
+		switch v := m["timeCreated"].(type) {
+		case int64:
+			timeCreated = v
+		case float64:
+			timeCreated = int64(v)
+		}
+		var raw json.RawMessage
+		if data, ok := m["data"]; ok {
+			if bs, err := json.Marshal(data); err == nil {
+				raw = bs
+			}
+		}
+		out = append(out, db.Message{
+			ID:          id,
+			SessionID:   sid,
+			TimeCreated: timeCreated,
+			Data:        raw,
+		})
+	}
+	return out
+}
+
+// typedPartsFromUntyped re-encodes the `data` map of each untyped part
+// into a json.RawMessage, producing a typed db.Part.
+func typedPartsFromUntyped(untyped []map[string]interface{}) []db.Part {
+	if len(untyped) == 0 {
+		return nil
+	}
+	out := make([]db.Part, 0, len(untyped))
+	for _, p := range untyped {
+		id, _ := p["id"].(string)
+		mid, _ := p["messageId"].(string)
+		sid, _ := p["sessionId"].(string)
+		var raw json.RawMessage
+		if data, ok := p["data"]; ok {
+			if bs, err := json.Marshal(data); err == nil {
+				raw = bs
+			}
+		}
+		out = append(out, db.Part{
+			ID:        id,
+			MessageID: mid,
+			SessionID: sid,
+			Data:      raw,
+		})
+	}
+	return out
 }

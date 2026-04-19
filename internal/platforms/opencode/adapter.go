@@ -59,8 +59,10 @@ func (a *Adapter) Capabilities() platforms.Capabilities {
 }
 
 // Sessions returns all OpenCode sessions, optionally filtered by directory
-// and/or updated-after timestamp. The Platform field is populated on
-// every returned row.
+// and/or updated-after timestamp. In addition to Platform, the adapter
+// populates LiveConnection, PendingPermission, and PendingQuestion by
+// probing running OpenCode instances — the server package no longer
+// needs to know about lsof or OpenCode HTTP endpoints to list sessions.
 func (a *Adapter) Sessions(_ context.Context, dir string, since int64) ([]db.Session, error) {
 	if a.db == nil {
 		return nil, nil
@@ -69,19 +71,40 @@ func (a *Adapter) Sessions(_ context.Context, dir string, since int64) ([]db.Ses
 	if err != nil {
 		return nil, err
 	}
+
+	// Fan out to every running OpenCode instance to collect liveness
+	// flags. Failures are silent — this is a best-effort UI hint.
+	ports := discoverOpenCodePorts()
+	pendingPerms, pendingQuestions := collectPendingPromptsByDir(ports)
+
 	for i := range sessions {
 		sessions[i].Platform = string(PlatformID)
+		if _, ok := ports[sessions[i].Directory]; ok {
+			sessions[i].LiveConnection = true
+		}
+		if pendingPerms[sessions[i].ID] {
+			sessions[i].PendingPermission = true
+		}
+		if pendingQuestions[sessions[i].ID] {
+			sessions[i].PendingQuestion = true
+		}
 	}
 	return sessions, nil
 }
 
-// Session returns full detail for one session. In Phase 1 the server still
-// calls its legacy path for the OpenCode live-API fallback; this method
-// provides a DB-only fallback that matches the handler's fallback.
+// Session returns full detail for one session. Prefers live OpenCode
+// API data (for in-flight streams) with a fallback to the read-only
+// DB. Both paths return the same typed SessionDetail shape.
 func (a *Adapter) Session(_ context.Context, id string, limit, offset int) (*platforms.SessionDetail, error) {
 	if a.db == nil {
 		return nil, platforms.ErrNotFound
 	}
+	// Try live data from OpenCode first.
+	if detail, ok := a.fetchSessionFromOpenCode(id, limit, offset); ok {
+		return detail, nil
+	}
+
+	// Fall back to DB.
 	session, err := a.db.GetSession(id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
