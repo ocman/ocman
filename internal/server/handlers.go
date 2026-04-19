@@ -110,8 +110,9 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	// false — they are hints, not critical state.
 	pendingPerms, pendingQuestions := collectPendingPromptsByDir(ports)
 	for i := range sessions {
+		sessions[i].Platform = "opencode"
 		if _, ok := ports[sessions[i].Directory]; ok {
-			sessions[i].HasPort = true
+			sessions[i].LiveConnection = true
 		}
 		if pendingPerms[sessions[i].ID] {
 			sessions[i].PendingPermission = true
@@ -246,6 +247,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	session.Platform = "opencode"
 
 	messages, err := s.db.GetSessionMessages(sessionID)
 	if err != nil {

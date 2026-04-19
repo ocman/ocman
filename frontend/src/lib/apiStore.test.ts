@@ -5,6 +5,7 @@ import type { SessionDetail, Session } from './api';
 function makeSessionDetail(id: string, overrides: Partial<SessionDetail> = {}): SessionDetail {
   const session: Session = {
     id,
+    platform: 'opencode',
     projectId: 'proj',
     title: `Session ${id}`,
     directory: '/tmp',
@@ -20,7 +21,7 @@ function makeSessionDetail(id: string, overrides: Partial<SessionDetail> = {}): 
     totalOutputTokens: 0,
     totalCost: 0,
     status: 'done',
-    hasPort: false,
+    liveConnection: false,
     pendingPermission: false,
     pendingQuestion: false,
     archived: false,

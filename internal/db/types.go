@@ -22,9 +22,19 @@ func InferSessionStatus(lastRole, lastFinish, lastError string) string {
 	return "done"
 }
 
-// Session represents an OpenCode session.
+// Session represents a coding-platform session (OpenCode, Claude Code, ...).
+//
+// Fields that have no equivalent in a given platform are zero-valued or nil;
+// see FR-14 in spec/multi-agent-support/requirements.md. The Platform field
+// identifies the owning adapter and is populated by every adapter.
+//
+// Terminology: Platform here is the coding-agent tool producing the session
+// (OpenCode / Claude Code / ...). Don't confuse it with the composer-level
+// "agent" role exposed by some platforms (MessageData.Agent below, OpenCode's
+// /agent catalog) — that's a narrower concept within a single session.
 type Session struct {
 	ID                string  `json:"id"`
+	Platform          string  `json:"platform"` // owning adapter ID, e.g. "opencode", "claude-code"
 	ProjectID         string  `json:"projectId"`
 	Title             string  `json:"title"`
 	Directory         string  `json:"directory"`
@@ -39,12 +49,16 @@ type Session struct {
 	TotalInputTokens  int64   `json:"totalInputTokens"`
 	TotalOutputTokens int64   `json:"totalOutputTokens"`
 	TotalCost         float64 `json:"totalCost"`
-	Status            string  `json:"status"`            // "waiting", "busy", "done", or "error"
-	HasPort           bool    `json:"hasPort"`           // true if a running OpenCode instance with --port is detected
-	PendingPermission bool    `json:"pendingPermission"` // true if the running OpenCode instance has a pending permission request for this session
-	PendingQuestion   bool    `json:"pendingQuestion"`   // true if the running OpenCode instance has a pending question for this session
-	Archived          bool    `json:"archived"`
-	Seen              bool    `json:"seen"`
+	Status            string  `json:"status"` // "waiting", "busy", "done", or "error"
+	// LiveConnection is true when the adapter has a live channel to this
+	// session's running agent process. For OpenCode this means a --port
+	// was discovered for the session's cwd; for Claude Code it means the
+	// jsonl is currently held open or a hook event was observed recently.
+	LiveConnection    bool `json:"liveConnection"`
+	PendingPermission bool `json:"pendingPermission"` // agent has a pending permission request for this session
+	PendingQuestion   bool `json:"pendingQuestion"`   // agent has a pending question for this session
+	Archived          bool `json:"archived"`
+	Seen              bool `json:"seen"`
 }
 
 // SessionArchiveCandidate carries the minimal session data needed for archive jobs.
@@ -62,9 +76,14 @@ type Message struct {
 }
 
 // MessageData is the parsed data from a message.
+//
+// Agent here is the composer-level agent role used within a single
+// OpenCode session (e.g. "build", "plan", a subagent name). This is a
+// different concept from Session.Platform, which identifies the coding
+// tool that produced the session.
 type MessageData struct {
 	Role       string     `json:"role"`
-	Agent      string     `json:"agent"`
+	Agent      string     `json:"agent"` // composer-agent role (OpenCode: "build", "plan", subagent name)
 	Mode       string     `json:"mode"`
 	ModelID    string     `json:"modelID"`
 	ProviderID string     `json:"providerID"`

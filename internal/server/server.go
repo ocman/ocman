@@ -13,6 +13,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -26,14 +27,20 @@ const (
 
 // Server serves the web UI and API.
 type Server struct {
-	db      *db.DB
-	stateDB *state.DB
-	addr    string
+	db       *db.DB
+	stateDB  *state.DB
+	addr     string
+	registry *platforms.Registry
 }
 
-// New creates a new server.
-func New(database *db.DB, stateDB *state.DB, addr string) *Server {
-	return &Server{db: database, stateDB: stateDB, addr: addr}
+// New creates a new server. The registry may be nil, in which case a
+// new empty registry is created. Callers that want to pre-register
+// platform adapters should pass one built with platforms.NewRegistry().
+func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Registry) *Server {
+	if registry == nil {
+		registry = platforms.NewRegistry()
+	}
+	return &Server{db: database, stateDB: stateDB, addr: addr, registry: registry}
 }
 
 // Start starts the HTTP server. It blocks until the context is cancelled,
@@ -152,19 +159,55 @@ func (s *Server) runAutoArchiveLoop(ctx context.Context) {
 
 func (s *Server) autoArchiveInactiveSessions() {
 	cutoff := time.Now().Add(-autoArchiveAfter).UnixMilli()
-	sessions, err := s.db.GetSessionsInactiveBefore(cutoff)
-	if err != nil {
-		log.WithError(err).Error("listing inactive sessions for auto-archive")
+	ctx := context.Background()
+
+	archivedCount := 0
+	registered := s.registry.Platforms()
+
+	// If no adapter is registered, fall back to the legacy DB call so
+	// existing OpenCode-only deployments keep working. This path goes
+	// away once main.go always registers the OpenCode adapter.
+	if len(registered) == 0 {
+		sessions, err := s.db.GetSessionsInactiveBefore(cutoff)
+		if err != nil {
+			log.WithError(err).Error("listing inactive sessions for auto-archive")
+			return
+		}
+		for _, session := range sessions {
+			if err := s.stateDB.ArchiveSession(session.ID, session.TimeUpdated); err != nil {
+				log.WithFields(log.Fields{"sessionID": session.ID, "error": err}).Error("auto-archiving inactive session")
+				continue
+			}
+			archivedCount++
+		}
+		log.WithFields(log.Fields{
+			"cutoff":   cutoff,
+			"archived": archivedCount,
+		}).Info("auto-archive pass completed")
 		return
 	}
 
-	archivedCount := 0
-	for _, session := range sessions {
-		if err := s.stateDB.ArchiveSession(session.ID, session.TimeUpdated); err != nil {
-			log.WithFields(log.Fields{"sessionID": session.ID, "error": err}).Error("auto-archiving inactive session")
+	for _, adapter := range registered {
+		if !adapter.Available(ctx) {
 			continue
 		}
-		archivedCount++
+		sessions, err := adapter.SessionsInactiveBefore(ctx, cutoff)
+		if err != nil {
+			log.WithFields(log.Fields{"platform": adapter.ID(), "error": err}).
+				Error("listing inactive sessions for auto-archive")
+			continue
+		}
+		for _, session := range sessions {
+			if err := s.stateDB.ArchiveSession(session.ID, session.TimeUpdated); err != nil {
+				log.WithFields(log.Fields{
+					"platform":  adapter.ID(),
+					"sessionID": session.ID,
+					"error":     err,
+				}).Error("auto-archiving inactive session")
+				continue
+			}
+			archivedCount++
+		}
 	}
 
 	log.WithFields(log.Fields{

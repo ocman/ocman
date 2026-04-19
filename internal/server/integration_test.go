@@ -14,6 +14,8 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/platforms"
+	opencodeplatform "github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -82,7 +84,9 @@ func testServer(t *testing.T) *Server {
 	}
 	t.Cleanup(func() { stateDB.Close() })
 
-	return New(database, stateDB, "127.0.0.1:0")
+	reg := platforms.NewRegistry()
+	reg.Register(opencodeplatform.New(database))
+	return New(database, stateDB, "127.0.0.1:0", reg)
 }
 
 // --- Handler integration tests ---
@@ -525,4 +529,96 @@ func TestServerStart_ShutdownOnCancel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected nil error on clean shutdown, got: %v", err)
 	}
+}
+
+// TestAutoArchive_UsesRegistry verifies the auto-archive pass iterates
+// registered agents (as opposed to calling s.db directly) so that in
+// future phases Claude Code sessions will be picked up for the same
+// archive logic.
+func TestAutoArchive_UsesRegistry(t *testing.T) {
+	srv, rawDB := testServerWithRawDB(t)
+	defer rawDB.Close()
+
+	// Seed one old session (time_updated in 1970) so it qualifies as stale
+	// under the 7-day window.
+	_, err := rawDB.Exec(
+		`INSERT INTO session (id, title, directory, time_created, time_updated)
+		 VALUES ('old-session', 'ancient', '/tmp', 1000, 1000)`,
+	)
+	if err != nil {
+		t.Fatalf("seeding session: %v", err)
+	}
+
+	srv.autoArchiveInactiveSessions()
+
+	archived, err := srv.stateDB.ArchivedSessions()
+	if err != nil {
+		t.Fatalf("ArchivedSessions: %v", err)
+	}
+	if _, ok := archived["old-session"]; !ok {
+		t.Errorf("expected old-session to be archived after auto-archive pass, got %+v", archived)
+	}
+}
+
+// testServerWithRawDB is like testServer but also returns a raw *sql.DB
+// handle to the same OpenCode database so tests can seed additional rows.
+func testServerWithRawDB(t *testing.T) (*Server, *sql.DB) {
+	t.Helper()
+	tmpDir := t.TempDir()
+
+	tmpOC := tmpDir + "/opencode.db"
+	setupDB, err := sql.Open("sqlite3", tmpOC)
+	if err != nil {
+		t.Fatalf("opening temp oc file: %v", err)
+	}
+	_, err = setupDB.Exec(`
+		CREATE TABLE session (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL DEFAULT '',
+			title TEXT NOT NULL DEFAULT '',
+			directory TEXT NOT NULL DEFAULT '',
+			time_created INTEGER NOT NULL DEFAULT 0,
+			time_updated INTEGER NOT NULL DEFAULT 0,
+			summary_additions INTEGER,
+			summary_deletions INTEGER,
+			summary_files INTEGER,
+			share_url TEXT
+		);
+		CREATE TABLE message (
+			id TEXT PRIMARY KEY,
+			session_id TEXT NOT NULL,
+			time_created INTEGER NOT NULL DEFAULT 0,
+			data TEXT NOT NULL DEFAULT '{}'
+		);
+		CREATE TABLE part (
+			id TEXT PRIMARY KEY,
+			message_id TEXT NOT NULL,
+			session_id TEXT NOT NULL,
+			time_created INTEGER NOT NULL DEFAULT 0,
+			data TEXT NOT NULL DEFAULT '{}'
+		);
+	`)
+	if err != nil {
+		setupDB.Close()
+		t.Fatalf("creating oc schema: %v", err)
+	}
+
+	database, err := db.OpenReadWrite(tmpOC)
+	if err != nil {
+		setupDB.Close()
+		t.Fatalf("opening db: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
+	stateDB, err := state.Open(tmpDir + "/state.db")
+	if err != nil {
+		setupDB.Close()
+		t.Fatalf("opening state db: %v", err)
+	}
+	t.Cleanup(func() { stateDB.Close() })
+
+	reg := platforms.NewRegistry()
+	reg.Register(opencodeplatform.New(database))
+	srv := New(database, stateDB, "127.0.0.1:0", reg)
+	return srv, setupDB
 }

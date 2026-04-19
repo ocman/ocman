@@ -6,6 +6,18 @@ export async function fetchJSON<T>(url: string, signal?: AbortSignal): Promise<T
 
 export interface Session {
   id: string;
+  /**
+   * Stable identifier of the coding-agent platform that owns this
+   * session (e.g. 'opencode', 'claude-code'). Populated by the backend.
+   *
+   * The frontend must not branch on this value — use the capabilities
+   * endpoint for feature gating instead.
+   *
+   * Terminology: this is the *platform* (the tool that produced the
+   * session), not the composer-level *agent* role ("build", "plan",
+   * subagent, ...) that OpenCode surfaces in MessageData.agent.
+   */
+  platform: string;
   projectId: string;
   title: string;
   directory: string;
@@ -21,7 +33,13 @@ export interface Session {
   totalOutputTokens: number;
   totalCost: number;
   status: 'waiting' | 'busy' | 'done' | 'error';
-  hasPort: boolean;
+  /**
+   * True when the owning adapter has a live channel to this session's
+   * running agent process. For OpenCode this means a --port was
+   * discovered for the session's directory; for Claude Code (future)
+   * it means the session's jsonl is held open or a hook fired recently.
+   */
+  liveConnection: boolean;
   pendingPermission: boolean;
   pendingQuestion: boolean;
   archived: boolean;

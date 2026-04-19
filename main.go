@@ -11,6 +11,8 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/platforms"
+	opencodeplatform "github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/pricing"
 	"github.com/NoUseFreak/ocman/internal/server"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -47,7 +49,13 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	srv := server.New(database, stateDB, *addr)
+	// Register all platform adapters. For now ocman ships with OpenCode;
+	// Claude Code (and later Codex, Gemini, ...) will be added here as
+	// subsequent multi-platform phases land.
+	registry := platforms.NewRegistry()
+	registry.Register(opencodeplatform.New(database))
+
+	srv := server.New(database, stateDB, *addr, registry)
 	if err := srv.Start(ctx); err != nil {
 		log.Fatalf("Server error: %v", err)
 	}

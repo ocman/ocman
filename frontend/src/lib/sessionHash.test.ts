@@ -13,6 +13,7 @@ function makeSession(overrides: Partial<Session & {
 } {
   return {
     id: 'sess-1',
+    platform: 'opencode',
     projectId: 'proj-1',
     title: 'A session',
     directory: '/tmp/project',
@@ -28,7 +29,7 @@ function makeSession(overrides: Partial<Session & {
     totalOutputTokens: 0,
     totalCost: 0,
     status: 'done',
-    hasPort: false,
+    liveConnection: false,
     pendingPermission: false,
     pendingQuestion: false,
     archived: false,

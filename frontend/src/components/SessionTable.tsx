@@ -170,7 +170,7 @@ export function SessionTable({ sessions, showProject, loading, tmux, includeArch
             return (
               <tr
                 key={s.id}
-                className={s.hasPort ? '' : 'no-port'}
+                className={s.liveConnection ? '' : 'no-port'}
                 onClick={() => navigate(`/session/${s.id}`)}
               >
                 <td>
