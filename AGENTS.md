@@ -20,8 +20,9 @@ new adapter + registry entry; see
 
 ## Repository layout
 
-- `main.go` — entrypoint; parses `-addr` and `-db` flags, opens both
-  databases, registers platform adapters, starts the server.
+- `main.go` — entrypoint; parses `-addr`, `-db`, and `-platforms`
+  flags, opens databases, registers platform adapters, starts the
+  server.
 - `internal/platforms/` — `Platform` interface, `Registry`, common
   types/errors.
 - `internal/platforms/opencode/` — OpenCode adapter wrapping the DB
@@ -97,6 +98,11 @@ diffs minimal and match the surrounding code.
 
 ## Key details
 
+- **`-platforms` flag**: comma-separated list of platforms to enable
+  (default `"opencode"`). Valid values: `opencode`, `claude-code`.
+  Only the listed adapters are registered; the OpenCode database is
+  not required when `opencode` is omitted from the list. Example:
+  `-platforms opencode,claude-code`.
 - **CGo required**: `github.com/mattn/go-sqlite3` needs a C compiler.
 - **Two databases**: OpenCode's DB is opened read-only
   (`?mode=ro&_journal_mode=WAL`, default `~/.local/share/opencode/opencode.db`).

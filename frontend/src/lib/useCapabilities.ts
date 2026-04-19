@@ -100,3 +100,14 @@ export function usePlatformCapabilities(platformID: string | undefined): Platfor
   const entry = all.platforms.find((p): p is PlatformCapabilityEntry => p.id === platformID);
   return entry?.capabilities ?? EMPTY_CAPS;
 }
+
+/**
+ * Returns true when more than one platform is registered. Components
+ * that display platform badges can use this to hide themselves when
+ * there's only a single platform — the badge adds no information in
+ * that case.
+ */
+export function useMultiPlatform(): boolean {
+  const all = useCapabilities();
+  return (all?.platforms.length ?? 0) > 1;
+}

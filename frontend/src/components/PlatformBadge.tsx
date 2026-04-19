@@ -1,4 +1,5 @@
 import './PlatformBadge.css';
+import { useMultiPlatform } from '../lib/useCapabilities';
 
 /**
  * Human-facing labels + short aliases for known platforms. A platform
@@ -27,7 +28,15 @@ interface PlatformBadgeProps {
   variant?: 'compact' | 'plain';
 }
 
+/**
+ * Renders a platform badge (pill or inline label). When only a single
+ * platform is registered the badge is hidden — it adds no information
+ * when every session comes from the same platform.
+ */
 export function PlatformBadge({ platform, variant }: PlatformBadgeProps) {
+  const multi = useMultiPlatform();
+  if (!multi) return null;
+
   const meta = META[platform];
   const label = meta?.label ?? platform;
   const short = meta?.short ?? platform.slice(0, 2).toUpperCase();

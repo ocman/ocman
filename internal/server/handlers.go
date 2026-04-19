@@ -105,7 +105,21 @@ func writePlatformError(w http.ResponseWriter, msg string, err error) {
 
 // --- Global read-only endpoints ---
 
+// requireDB returns true if s.db is available, or writes a 501 error
+// and returns false. Callers that depend on the OpenCode database
+// should gate on this.
+func (s *Server) requireDB(w http.ResponseWriter) bool {
+	if s.db == nil {
+		http.Error(w, "OpenCode platform is not enabled", http.StatusNotImplemented)
+		return false
+	}
+	return true
+}
+
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDB(w) {
+		return
+	}
 	stats, err := s.db.GetStats()
 	if err != nil {
 		serverError(w, "fetching stats", err)
@@ -115,6 +129,9 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDB(w) {
+		return
+	}
 	agent := strings.TrimSpace(r.URL.Query().Get("agent"))
 	model := strings.TrimSpace(r.URL.Query().Get("model"))
 	var since int64
@@ -151,6 +168,9 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDB(w) {
+		return
+	}
 	projects, err := s.db.GetProjects()
 	if err != nil {
 		serverError(w, "fetching projects", err)
@@ -160,6 +180,9 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDB(w) {
+		return
+	}
 	since := parseSinceParam(r)
 	model := strings.TrimSpace(r.URL.Query().Get("model"))
 	activity, err := s.db.GetDailyActivity(since, model)
@@ -171,6 +194,9 @@ func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDB(w) {
+		return
+	}
 	since := parseSinceParam(r)
 	models, err := s.db.GetModelUsage(since)
 	if err != nil {
@@ -181,6 +207,9 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHourlyTokens(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDB(w) {
+		return
+	}
 	since := parseSinceParam(r)
 	model := strings.TrimSpace(r.URL.Query().Get("model"))
 	var dayCount int
@@ -196,6 +225,9 @@ func (s *Server) handleHourlyTokens(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHourly(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDB(w) {
+		return
+	}
 	since := parseSinceParam(r)
 	hourly, err := s.db.GetHourlyActivity(since)
 	if err != nil {
