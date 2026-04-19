@@ -99,7 +99,10 @@
 .oc-composer {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-left: 3px solid var(--accent3);
+  /* Muted default — when no agent is known yet, the composer reads as neutral.
+     The inline `borderLeftColor` on the element overrides this as soon as an
+     agent is resolved. */
+  border-left: 3px solid var(--text-dim);
   border-radius: 6px;
   padding: 0;
   display: flex;
@@ -132,6 +135,11 @@
   font-family: 'SF Mono', Consolas, monospace;
   font-size: 11px;
   color: var(--text-dim);
+  /* Reserve the tallest footer state (18px stop button during generation) so
+     appearing/disappearing children like the tok/s hint, stop button, or
+     thinking dots never nudge the composer vertically. */
+  min-height: 18px;
+  box-sizing: content-box;
 }
 .oc-composer-footer-left {
   display: flex;

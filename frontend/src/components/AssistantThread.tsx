@@ -995,12 +995,21 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
   // the history. Alt+H: previous user message (up). Alt+L: next user message
   // (down). The registry handles key-matching and preventDefault; this code
   // just computes the scroll target.
+  //
+  // Alt+L past the last user message scrolls to the very bottom of the
+  // viewport so the most recent assistant response is visible — otherwise we'd
+  // re-snap to the last user message and leave the response hidden below.
   const jumpToUserMessage = useCallback((direction: 'prev' | 'next') => {
     const viewport = viewportRef.current;
     if (!viewport) return;
 
     const userMsgs = Array.from(viewport.querySelectorAll<HTMLElement>('.oc-msg-user'));
-    if (userMsgs.length === 0) return;
+    if (userMsgs.length === 0) {
+      if (direction === 'next') {
+        viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' });
+      }
+      return;
+    }
 
     const viewportTop = viewport.getBoundingClientRect().top;
     // Tolerance for detecting messages "at the top" of the viewport — anything
@@ -1009,21 +1018,28 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
     const epsilon = 4;
     const offsets = userMsgs.map((el) => el.getBoundingClientRect().top - viewportTop);
 
-    let targetIndex = -1;
-    if (direction === 'prev') {
-      for (let i = offsets.length - 1; i >= 0; i--) {
-        if (offsets[i] < -epsilon) { targetIndex = i; break; }
+    if (direction === 'next') {
+      // Jump to the first user message strictly below the viewport top. If
+      // none exists, we're at/past the last user message — scroll to bottom
+      // so the assistant's final response is visible.
+      const nextIdx = offsets.findIndex((o) => o > epsilon);
+      if (nextIdx === -1) {
+        viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' });
+        return;
       }
-      if (targetIndex === -1) targetIndex = 0;
-    } else {
-      for (let i = 0; i < offsets.length; i++) {
-        if (offsets[i] > epsilon) { targetIndex = i; break; }
-      }
-      if (targetIndex === -1) targetIndex = offsets.length - 1;
+      const target = userMsgs[nextIdx];
+      const targetTop = target.getBoundingClientRect().top - viewportTop + viewport.scrollTop;
+      viewport.scrollTo({ top: Math.max(0, targetTop - 12), behavior: 'smooth' });
+      return;
     }
 
+    // direction === 'prev'
+    let targetIndex = -1;
+    for (let i = offsets.length - 1; i >= 0; i--) {
+      if (offsets[i] < -epsilon) { targetIndex = i; break; }
+    }
+    if (targetIndex === -1) targetIndex = 0;
     const target = userMsgs[targetIndex];
-    if (!target) return;
     const targetTop = target.getBoundingClientRect().top - viewportTop + viewport.scrollTop;
     viewport.scrollTo({ top: Math.max(0, targetTop - 12), behavior: 'smooth' });
   }, []);

@@ -414,6 +414,11 @@ export function SessionDetail() {
     initialCached?.totalMessages ?? initialCached?.session.messageCount ?? 0,
   );
   const [loading, setLoading] = useState(!initialCached);
+  // Briefly hides the thread viewport between sessions so the fade-in
+  // animation plays against a blank backdrop rather than swapping content
+  // in place. Set to true synchronously on id change, cleared on the next
+  // animation frame. See spec/session-switch-cache (step 4 follow-up).
+  const [switching, setSwitching] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [portAvailable, setPortAvailable] = useState(false);
   const [whisperAvailable, setWhisperAvailable] = useState(false);
@@ -422,6 +427,12 @@ export function SessionDetail() {
   const [selectedModel, setSelectedModel] = useState('');
   const [selectedAgent, setSelectedAgent] = useState('');
   const [agents, setAgents] = useState<AgentInfo[]>([]);
+  // Tracks whether we've finished attempting to load the /agent catalog for
+  // the current session's directory. UI that colors by agent should stay
+  // muted until this flips true — otherwise we flash a fallback color (e.g.
+  // `build`'s mauve default) before the authoritative color arrives from the
+  // API, which reads as a jarring pink flash on the composer.
+  const [agentsLoaded, setAgentsLoaded] = useState(false);
   const [recentSessions, setRecentSessions] = useState<Session[]>([]);
   const [loadingRecentSessions, setLoadingRecentSessions] = useState(true);
 
@@ -659,6 +670,12 @@ export function SessionDetail() {
     abortControllerRef.current = controller;
     const signal = controller.signal;
 
+    // Hide the viewport for one paint frame so the fade-in clearly reads as
+    // a navigation rather than an in-place content swap. Cleared on the next
+    // animation frame (fires before the next paint).
+    setSwitching(true);
+    const rafId = window.requestAnimationFrame(() => setSwitching(false));
+
     droppedMessageCountRef.current = 0;
     // If we have a cached snapshot for this session, render it immediately
     // and seed the hash refs so the background load() only re-renders on a
@@ -750,7 +767,10 @@ export function SessionDetail() {
       });
     }
 
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      window.cancelAnimationFrame(rafId);
+    };
   }, [getModels, getSessionPort, getWhisperStatus, id, load]);
 
   // Fetch the OpenCode /agent list so we can color UI by agent. Requires a
@@ -758,16 +778,31 @@ export function SessionDetail() {
   // empty otherwise (agentColor falls back to deterministic defaults).
   useEffect(() => {
     const dir = session?.directory;
-    if (!dir || !portAvailable) {
+    if (!dir) {
       setAgents([]);
+      setAgentsLoaded(false);
       return;
     }
+    if (!portAvailable) {
+      // No OpenCode instance to query — the fallback colors are all we'll ever
+      // have, so mark as "loaded" immediately. The composer/UI can apply them
+      // without risk of a subsequent color change.
+      setAgents([]);
+      setAgentsLoaded(true);
+      return;
+    }
+    setAgentsLoaded(false);
     const controller = new AbortController();
     api.agents(dir, controller.signal)
-      .then((list) => { if (!controller.signal.aborted) setAgents(list || []); })
+      .then((list) => {
+        if (controller.signal.aborted) return;
+        setAgents(list || []);
+        setAgentsLoaded(true);
+      })
       .catch((e) => {
         if (e instanceof DOMException && e.name === 'AbortError') return;
         setAgents([]);
+        setAgentsLoaded(true);
       });
     return () => controller.abort();
   }, [session?.directory, portAvailable]);
@@ -1954,6 +1989,40 @@ export function SessionDetail() {
     ? lastMsg.data?.role === 'user' || (lastMsg.data?.role === 'assistant' && !lastMsg.data?.finish && !lastMsg.data?.error)
     : false;
 
+  // Mirror the current session's status from SSE-driven message state into the
+  // sidebar list entry so its status dot starts/stops pulsing immediately when
+  // a turn begins or ends, without waiting for the 10-second poll to
+  // /api/sessions. The derivation mirrors internal/db/types.go exactly so what
+  // we set optimistically matches what the next poll will confirm (no flicker).
+  const optimisticStatus: Session['status'] = (() => {
+    if (!lastMsg) return 'done';
+    const data = lastMsg.data;
+    if (data?.role !== 'assistant') return 'done';
+    if (data?.finish === 'error' || data?.error) return 'error';
+    if (data?.finish) return 'waiting';
+    return 'busy';
+  })();
+  useEffect(() => {
+    if (!id) return;
+    setRecentSessions(prev => {
+      let changed = false;
+      const next = prev.map(s => {
+        if (s.id !== id) return s;
+        if (s.status === optimisticStatus) return s;
+        changed = true;
+        return { ...s, status: optimisticStatus };
+      });
+      if (changed) {
+        // Keep the hash cache in sync so the next poll still diffs correctly.
+        lastSiblingsHashRef.current = next
+          .map(s => `${s.id}|${s.status}|${s.timeUpdated}|${s.pendingPermission ? 'p' : ''}${s.pendingQuestion ? 'q' : ''}`)
+          .join(',');
+        return next;
+      }
+      return prev;
+    });
+  }, [id, optimisticStatus]);
+
   // Live tokens-per-second: sum output tokens across all assistant messages in the
   // current run window (since the last user message) plus tokens from subagent
   // sessions, divided by elapsed wall-clock time since the earliest time.created.
@@ -2047,7 +2116,15 @@ export function SessionDetail() {
         )}
         <div className="session-sidebar-list">
           {loadingRecentSessions && <div className="session-sidebar-loader"><div className="oc-spinner" /></div>}
-          {recentSessions.map(sib => (
+          {recentSessions.map(sib => {
+            // For the currently-viewed session, trust the SSE-derived status
+            // over whatever the last 10s poll returned. OpenCode's DB can lag
+            // the SSE stream by several seconds (message finish arrives on the
+            // wire before the DB write is visible to ocman's read-only
+            // handle), so using the poll value here would make the sidebar
+            // pulse keep running after the composer has already gone idle.
+            const displayStatus = sib.id === id ? optimisticStatus : sib.status;
+            return (
             <div
               key={sib.id}
               role="button"
@@ -2058,9 +2135,9 @@ export function SessionDetail() {
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/session/${sib.id}`); } }}
             >
               <StatusBadge
-                status={sib.status}
+                status={displayStatus}
                 compact
-                seen={(sib.status === 'waiting' || sib.status === 'error') && sib.seen}
+                seen={(displayStatus === 'waiting' || displayStatus === 'error') && sib.seen}
                 pending={sib.pendingPermission || sib.pendingQuestion}
               />
               <span className="session-sidebar-item-body">
@@ -2081,7 +2158,8 @@ export function SessionDetail() {
                 </button>
               </span>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
       <div className="session-main">
@@ -2116,7 +2194,11 @@ export function SessionDetail() {
             >+</button>
           </div>
         )}
-        {loading ? (
+        {switching ? (
+          // Blank paint frame between sessions — lets the fade-in animation
+          // play against an empty viewport so navigation reads clearly.
+          <div style={{ flex: 1, minHeight: 0 }} />
+        ) : loading ? (
           <div className="oc-loading">
             <div className="oc-spinner" />
             Loading conversation...
@@ -2173,6 +2255,7 @@ export function SessionDetail() {
                   selectedAgent={selectedAgent}
                   onAgentChange={setSelectedAgent}
                   agents={agents}
+                  agentsLoaded={agentsLoaded}
                   contextTokens={session?.contextTokenCount || undefined}
                   sessionId={session?.id}
                   directory={session?.directory}

@@ -149,6 +149,7 @@ function ComposerImpl({
   selectedAgent,
   onAgentChange,
   agents,
+  agentsLoaded,
   contextTokens,
   sessionId,
   directory,
@@ -170,6 +171,14 @@ function ComposerImpl({
   selectedAgent?: string;
   onAgentChange?: (agent: string) => void;
   agents?: AgentInfo[];
+  /**
+   * Whether the /agent catalog has finished loading (success or failure) for
+   * the current session directory. When false, the composer intentionally
+   * stays muted — it avoids applying an agent-derived accent color that might
+   * change seconds later once the authoritative colors resolve (which
+   * manifested as a pink flash on page load).
+   */
+  agentsLoaded?: boolean;
   contextTokens?: number;
   sessionId?: string;
   directory?: string;
@@ -954,7 +963,10 @@ function ComposerImpl({
       )}
       <div
         className="oc-composer"
-        style={!disabled && effectiveAgent ? { borderLeftColor: agentColor(effectiveAgent, agents) } : undefined}
+        // Only colorize once the /agent catalog has resolved — otherwise the
+        // fallback color (e.g. `build` → mauve) paints briefly before the
+        // authoritative color arrives, producing a pink flash.
+        style={!disabled && effectiveAgent && agentsLoaded ? { borderLeftColor: agentColor(effectiveAgent, agents) } : undefined}
       >
         {images.length > 0 && (
           <div className="oc-composer-images">
@@ -986,7 +998,7 @@ function ComposerImpl({
               }}
               title="Agent (click to change)"
             >
-              {effectiveAgent && (
+              {effectiveAgent && agentsLoaded && (
                 <span
                   className="oc-agent-swatch"
                   aria-hidden="true"
@@ -1049,7 +1061,19 @@ function ComposerImpl({
         <span className="oc-composer-footer-left">
           {!disabled && isRunning && (
             <>
-              <span className="oc-bar-dots">
+              <span
+                className="oc-bar-dots"
+                // Tint the progressing dots with the active agent's colour so
+                // the user can see at a glance which agent is generating.
+                // Same gating as the composer's left border: only apply once
+                // the /agent catalog has resolved, otherwise fall through to
+                // the CSS default (`--accent4`).
+                style={effectiveAgent && agentsLoaded
+                  // Cast because TS doesn't know about custom CSS properties
+                  // on inline styles. The shape is still a valid style object.
+                  ? { '--oc-dot-color': agentColor(effectiveAgent, agents) } as Record<string, string>
+                  : undefined}
+              >
                 <span className="oc-thinking-dot" /><span className="oc-thinking-dot" /><span className="oc-thinking-dot" />
               </span>
               {tokensPerSecond != null && tokensPerSecond > 0 && (
@@ -1158,6 +1182,7 @@ export const Composer = memo(ComposerImpl, (prev, next) =>
   prev.activeAgent === next.activeAgent &&
   prev.selectedAgent === next.selectedAgent &&
   prev.agents === next.agents &&
+  prev.agentsLoaded === next.agentsLoaded &&
   prev.contextTokens === next.contextTokens &&
   prev.sessionId === next.sessionId &&
   prev.directory === next.directory &&

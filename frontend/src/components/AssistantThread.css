@@ -9,6 +9,22 @@
   gap: 12px;
   padding-bottom: 140px;
   padding-right: 12px;
+  /* On-mount fade signals "you just switched sessions". The viewport is
+     remounted on every id change (OcmanRuntimeProvider has key={session.id}),
+     so this plays naturally on navigation. Opacity-only to avoid layout
+     shifts inside the scroll container. */
+  animation: oc-thread-enter 300ms ease-out both;
+}
+
+@keyframes oc-thread-enter {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oc-thread-viewport {
+    animation: none;
+  }
 }
 
 /* Messages */
@@ -491,12 +507,16 @@
 .oc-load-more button:hover { color: var(--accent); border-color: var(--accent); }
 .oc-load-more button:disabled { opacity: 0.4; cursor: default; }
 
-/* Thinking dots (used in composer bar) */
+/* Thinking dots (used in composer bar).
+ * The dot colour defaults to the neutral peach accent but can be overridden
+ * per-instance via the `--oc-dot-color` CSS variable on the container
+ * (`.oc-bar-dots`). The composer sets this to the active agent's colour so
+ * the progress indicator matches the agent currently generating. */
 .oc-thinking-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--accent3);
+  background: var(--oc-dot-color, var(--accent4));
   animation: oc-bounce 1.4s ease-in-out infinite;
 }
 .oc-thinking-dot:nth-child(2) { animation-delay: 0.2s; }
