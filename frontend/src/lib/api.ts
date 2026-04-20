@@ -563,6 +563,14 @@ export const api = {
     });
     if (!resp.ok) throw new Error(await resp.text());
   },
+  renameSession: async (sessionId: string, title: string) => {
+    const resp = await fetch(`/api/session/${encodeURIComponent(sessionId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+  },
   // Best-effort remote log. Used by remoteLog.* to ship debug output to the
   // backend when browser devtools aren't reachable (e.g. on iPad). Errors
   // are swallowed so a failing log call never breaks the caller.

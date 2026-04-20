@@ -770,6 +770,36 @@ func (s *Server) handleSessionCommand(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *Server) handleSessionRename(w http.ResponseWriter, r *http.Request) {
+	sessionID, _, ok := sessionSubPath(r.URL.Path, "/api/session/")
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	var req struct {
+		Title string `json:"title"`
+	}
+	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+		return
+	}
+	if req.Title == "" {
+		http.Error(w, "title is required", http.StatusBadRequest)
+		return
+	}
+	adapter := s.resolvePlatformForSession(w, r, sessionID)
+	if adapter == nil {
+		return
+	}
+	if err := adapter.RenameSession(r.Context(), platforms.RenameSessionRequest{
+		SessionID: sessionID,
+		Title:     req.Title,
+	}); err != nil {
+		writePlatformError(w, "renaming session", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) handleSessionAbort(w http.ResponseWriter, r *http.Request) {
 	sessionID, _, ok := sessionSubPath(r.URL.Path, "/api/session/")
 	if !ok {
@@ -970,6 +1000,7 @@ func (s *Server) handleSessionsRoot(w http.ResponseWriter, r *http.Request) {
 //	/api/session/archive               POST     -> handleArchiveSession
 //	/api/session/seen                  POST     -> handleSeenSession
 //	/api/session/{id}                  GET      -> handleSession
+//	/api/session/{id}                  PATCH    -> handleSessionRename
 //	/api/session/{id}/agents           GET      -> handleSessionAgents
 //	/api/session/{id}/commands         GET      -> handleSessionCommands
 //	/api/session/{id}/models           GET      -> handleSessionModels
@@ -1006,6 +1037,10 @@ func (s *Server) dispatchSessionSubpath(w http.ResponseWriter, r *http.Request) 
 		// /api/session/{id}
 		if r.Method == http.MethodGet {
 			s.handleSession(w, r)
+			return
+		}
+		if r.Method == http.MethodPatch {
+			s.handleSessionRename(w, r)
 			return
 		}
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

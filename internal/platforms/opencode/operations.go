@@ -262,6 +262,16 @@ func (a *Adapter) Abort(ctx context.Context, req platforms.AbortRequest) error {
 	return postJSON(ctx, port, fmt.Sprintf("/session/%s/abort", req.SessionID), []byte("{}"))
 }
 
+// RenameSession sets a new title for a session.
+func (a *Adapter) RenameSession(ctx context.Context, req platforms.RenameSessionRequest) error {
+	port, _, err := a.resolvePort(req.SessionID)
+	if err != nil {
+		return err
+	}
+	payload, _ := json.Marshal(map[string]string{"title": req.Title})
+	return patchJSON(ctx, port, fmt.Sprintf("/session/%s", req.SessionID), payload)
+}
+
 // Compact summarizes the session's history, preferring OpenCode's
 // configured `small_model` when set.
 func (a *Adapter) Compact(ctx context.Context, req platforms.CompactRequest) error {
@@ -389,8 +399,20 @@ func getJSON(ctx context.Context, port, path string) ([]byte, bool) {
 // postJSON performs a POST with a JSON body. Returns nil on 2xx,
 // an error describing the upstream status otherwise.
 func postJSON(ctx context.Context, port, path string, payload []byte) error {
+	return sendJSON(ctx, http.MethodPost, port, path, payload)
+}
+
+// patchJSON performs a PATCH with a JSON body. Returns nil on 2xx,
+// an error describing the upstream status otherwise.
+func patchJSON(ctx context.Context, port, path string, payload []byte) error {
+	return sendJSON(ctx, http.MethodPatch, port, path, payload)
+}
+
+// sendJSON performs an HTTP request with a JSON body. Returns nil on 2xx,
+// an error describing the upstream status otherwise.
+func sendJSON(ctx context.Context, method, port, path string, payload []byte) error {
 	apiURL := fmt.Sprintf("http://127.0.0.1:%s%s", port, path)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, strings.NewReader(string(payload)))
+	req, err := http.NewRequestWithContext(ctx, method, apiURL, strings.NewReader(string(payload)))
 	if err != nil {
 		return err
 	}

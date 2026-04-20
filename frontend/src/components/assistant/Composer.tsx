@@ -130,6 +130,7 @@ const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: 'compact', description: 'Summarize conversation history to free up context window' },
   { name: 'model', description: 'Change the active model (opens a picker)' },
   { name: 'new', description: 'Start a new session in the same project directory' },
+  { name: 'rename', description: 'Rename this session' },
   { name: 'tmux', description: 'Switch to the tmux session for this project' },
   { name: 'vscode', description: 'Open the project directory in VS Code' },
 ];

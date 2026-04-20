@@ -78,6 +78,12 @@ type AbortRequest struct {
 	SessionID string
 }
 
+// RenameSessionRequest sets a new title for a session.
+type RenameSessionRequest struct {
+	SessionID string
+	Title     string
+}
+
 // CreateSessionRequest creates a new session on the owning platform.
 // Unlike the other request types, this one doesn't reference an
 // existing session — the handler picks the platform from the

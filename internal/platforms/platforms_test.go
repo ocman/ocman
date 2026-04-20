@@ -67,7 +67,10 @@ func (f *fakePlatform) RespondQuestion(context.Context, RespondQuestionRequest) 
 func (f *fakePlatform) RejectQuestion(context.Context, RejectQuestionRequest) error {
 	return ErrUnsupported
 }
-func (f *fakePlatform) Abort(context.Context, AbortRequest) error     { return ErrUnsupported }
+func (f *fakePlatform) Abort(context.Context, AbortRequest) error { return ErrUnsupported }
+func (f *fakePlatform) RenameSession(context.Context, RenameSessionRequest) error {
+	return ErrUnsupported
+}
 func (f *fakePlatform) Compact(context.Context, CompactRequest) error { return ErrUnsupported }
 func (f *fakePlatform) CreateSession(context.Context, CreateSessionRequest) (*CreateSessionResponse, error) {
 	return nil, ErrUnsupported

@@ -97,20 +97,22 @@ export function PermissionPrompt({
           <span className="oc-permission-icon">&#9651;</span>
           <span>Permission required</span>
         </div>
-        <div className="oc-permission-desc">
-          &larr; {permission.permission}
-        </div>
-        {permission.patterns.length > 0 && (
-          <div className="oc-permission-patterns">
-            <div className="oc-permission-patterns-label">Patterns</div>
-            {permission.patterns.map((p) => (
-              <div key={p} className="oc-permission-pattern">- {p}</div>
-            ))}
+        <div className="oc-permission-content">
+          <div className="oc-permission-desc">
+            &larr; {permission.permission}
           </div>
-        )}
-        {error && (
-          <div className="oc-permission-error">{error}</div>
-        )}
+          {permission.patterns.length > 0 && (
+            <div className="oc-permission-patterns">
+              <div className="oc-permission-patterns-label">Patterns</div>
+              {permission.patterns.map((p) => (
+                <div key={p} className="oc-permission-pattern">- {p}</div>
+              ))}
+            </div>
+          )}
+          {error && (
+            <div className="oc-permission-error">{error}</div>
+          )}
+        </div>
         <div className="oc-permission-actions">
           {CHOICES.map((c, i) => (
             <button

@@ -21,6 +21,10 @@
   font-size: 13px;
   line-height: 1.5;
   color: var(--text);
+  max-height: 50vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .oc-permission-header {
@@ -29,11 +33,18 @@
   gap: 8px;
   font-weight: 600;
   margin-bottom: 2px;
+  flex-shrink: 0;
 }
 
 .oc-permission-icon {
   color: var(--accent4);
   font-size: 14px;
+}
+
+.oc-permission-content {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 .oc-permission-desc {
@@ -67,6 +78,7 @@
   display: flex;
   gap: 0;
   margin-top: 6px;
+  flex-shrink: 0;
 }
 
 .oc-permission-btn {
@@ -89,7 +101,7 @@
 }
 
 .oc-permission-btn:not(:first-child) {
-  border-left: none;
+  border-left: 1px solid transparent;
 }
 
 .oc-permission-btn:hover:enabled {
@@ -108,10 +120,10 @@
   border-color: var(--accent4);
 }
 
-/* Restore the left border on an active middle/last button so all four sides
-   are accent-colored (the shared-border trick strips it by default). */
+/* Make the left border visible on active middle/last buttons so all four sides
+   are accent-colored. */
 .oc-permission-btn-active:not(:first-child) {
-  border-left: 1px solid var(--accent4);
+  border-left-color: var(--accent4);
 }
 
 .oc-permission-keys {

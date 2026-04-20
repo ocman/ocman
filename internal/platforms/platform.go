@@ -157,6 +157,9 @@ type Platform interface {
 	// Abort cancels an in-flight response.
 	Abort(ctx context.Context, req AbortRequest) error
 
+	// RenameSession sets a new title for a session.
+	RenameSession(ctx context.Context, req RenameSessionRequest) error
+
 	// Compact compacts the session's history.
 	Compact(ctx context.Context, req CompactRequest) error
 

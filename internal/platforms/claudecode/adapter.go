@@ -197,6 +197,10 @@ func (a *Adapter) Abort(context.Context, platforms.AbortRequest) error {
 	return platforms.ErrUnsupported
 }
 
+func (a *Adapter) RenameSession(context.Context, platforms.RenameSessionRequest) error {
+	return platforms.ErrUnsupported
+}
+
 func (a *Adapter) Compact(context.Context, platforms.CompactRequest) error {
 	return platforms.ErrUnsupported
 }

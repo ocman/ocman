@@ -39,7 +39,10 @@ export function CommandPalette() {
   const commandPaletteShortcut = useMemo(() => ({
     id: 'site.command-palette',
     scope: 'site' as const,
-    keys: { code: 'Space', alt: true },
+    keys: [
+      { code: 'Space', alt: true },
+      { code: 'KeyF', alt: true, opt: true },
+    ],
     description: 'Open command palette',
     handler: toggleOpen,
   }), [toggleOpen]);

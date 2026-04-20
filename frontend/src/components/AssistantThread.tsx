@@ -873,6 +873,19 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
   useEffect(() => { loadingMoreRef.current = loadingMore; }, [loadingMore]);
   useEffect(() => { onLoadMoreRef.current = onLoadMore; }, [onLoadMore]);
 
+  const hasAutoLoadedRef = useRef(false);
+  const isJumpingRef = useRef(false);
+  useEffect(() => {
+    if (hasMore && !loadingMore && !hasAutoLoadedRef.current && onLoadMore) {
+      hasAutoLoadedRef.current = true;
+      onLoadMore();
+    }
+    if (!hasMore) {
+      hasAutoLoadedRef.current = false;
+    }
+    isJumpingRef.current = false;
+  }, [hasMore, loadingMore, onLoadMore]);
+
   const isAtBottom = useCallback(() => {
     const el = viewportRef.current;
     if (!el) return true;
@@ -1003,37 +1016,34 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
   // Alt+L past the last user message scrolls to the very bottom of the
   // viewport so the most recent assistant response is visible — otherwise we'd
   // re-snap to the last user message and leave the response hidden below.
-  const jumpToUserMessage = useCallback((direction: 'prev' | 'next') => {
+const jumpToUserMessage = useCallback((direction: 'prev' | 'next') => {
     const viewport = viewportRef.current;
     if (!viewport) return;
 
     const userMsgs = Array.from(viewport.querySelectorAll<HTMLElement>('.oc-msg-user'));
     if (userMsgs.length === 0) {
       if (direction === 'next') {
-        viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' });
+        viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'auto' });
       }
       return;
     }
 
     const viewportTop = viewport.getBoundingClientRect().top;
-    // Tolerance for detecting messages "at the top" of the viewport — anything
-    // within this distance is treated as the current anchor so the shortcut
-    // jumps to the neighboring message rather than re-snapping to this one.
     const epsilon = 4;
     const offsets = userMsgs.map((el) => el.getBoundingClientRect().top - viewportTop);
 
     if (direction === 'next') {
-      // Jump to the first user message strictly below the viewport top. If
-      // none exists, we're at/past the last user message — scroll to bottom
-      // so the assistant's final response is visible.
-      const nextIdx = offsets.findIndex((o) => o > epsilon);
+      // Find the first message that's clearly below the current viewport position.
+      // We look for messages with offset > 50px to skip any message that's currently
+      // at the top and find the next one down.
+      const nextIdx = offsets.findIndex((o) => o > 50);
       if (nextIdx === -1) {
-        viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' });
+        viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'auto' });
         return;
       }
       const target = userMsgs[nextIdx];
       const targetTop = target.getBoundingClientRect().top - viewportTop + viewport.scrollTop;
-      viewport.scrollTo({ top: Math.max(0, targetTop - 12), behavior: 'smooth' });
+      viewport.scrollTo({ top: Math.max(0, targetTop - 12), behavior: 'auto' });
       return;
     }
 
@@ -1042,10 +1052,16 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
     for (let i = offsets.length - 1; i >= 0; i--) {
       if (offsets[i] < -epsilon) { targetIndex = i; break; }
     }
-    if (targetIndex === -1) targetIndex = 0;
+    if (targetIndex === -1) {
+      if (viewport.scrollTop > 100 && hasMoreRef.current && !loadingMoreRef.current && !isJumpingRef.current) {
+        isJumpingRef.current = true;
+        onLoadMoreRef.current?.();
+      }
+      return;
+    }
     const target = userMsgs[targetIndex];
     const targetTop = target.getBoundingClientRect().top - viewportTop + viewport.scrollTop;
-    viewport.scrollTo({ top: Math.max(0, targetTop - 12), behavior: 'smooth' });
+    viewport.scrollTo({ top: Math.max(0, targetTop - 12), behavior: 'auto' });
   }, []);
 
   const prevUserMessageShortcut = useMemo(() => ({
@@ -1053,6 +1069,7 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
     scope: 'session' as const,
     keys: { code: 'KeyH', alt: true },
     description: 'Jump to previous user message',
+    runInEditable: true,
     handler: () => jumpToUserMessage('prev'),
   }), [jumpToUserMessage]);
 
@@ -1061,6 +1078,7 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
     scope: 'session' as const,
     keys: { code: 'KeyL', alt: true },
     description: 'Jump to next user message',
+    runInEditable: true,
     handler: () => jumpToUserMessage('next'),
   }), [jumpToUserMessage]);
 
@@ -1073,11 +1091,9 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
     <div ref={threadRef} style={{ display: 'flex', flex: 1, minHeight: 0 }}>
       <ThreadPrimitive.Root className="oc-thread">
         <div ref={viewportRef} className="oc-thread-viewport" style={{ paddingBottom: bottomInset }}>
-          {hasMore && (
+          {hasMore && loadingMore && (
             <div className="oc-load-more">
-              <button onClick={onLoadMore} disabled={loadingMore}>
-                {loadingMore ? 'Loading...' : 'Load older messages'}
-              </button>
+              <span className="oc-spinner" /> Loading older messages...
             </div>
           )}
           <ThreadPrimitive.Empty>
@@ -1087,12 +1103,12 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
             components={{ UserMessage, AssistantMessage }}
           />
         </div>
+        {footer && <div className="oc-thread-overlay">{footer}</div>}
         {showScrollBtn && (
-          <button className="oc-scroll-btn" onClick={scrollToBottom}>
+          <button className="oc-scroll-btn" onClick={scrollToBottom} style={{ bottom: `calc(${bottomInset}px - 40px)` }}>
             Scroll to bottom
           </button>
         )}
-        {footer && <div className="oc-thread-overlay">{footer}</div>}
         {composer}
       </ThreadPrimitive.Root>
     </div>

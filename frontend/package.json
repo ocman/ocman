@@ -15,6 +15,7 @@
     "@assistant-ui/react": "^0.12.24",
     "@assistant-ui/react-markdown": "^0.12.8",
     "@fontsource/jetbrains-mono": "^5.2.8",
+    "@radix-ui/react-toast": "^1.2.15",
     "bootstrap-icons": "^1.13.1",
     "chart.js": "^4.5.1",
     "fuse.js": "^7.3.0",

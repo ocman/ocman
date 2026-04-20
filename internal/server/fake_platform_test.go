@@ -114,6 +114,10 @@ func (f *fakePlatform) Abort(context.Context, platforms.AbortRequest) error {
 	return platforms.ErrUnsupported
 }
 
+func (f *fakePlatform) RenameSession(context.Context, platforms.RenameSessionRequest) error {
+	return platforms.ErrUnsupported
+}
+
 func (f *fakePlatform) Compact(context.Context, platforms.CompactRequest) error {
 	return platforms.ErrUnsupported
 }

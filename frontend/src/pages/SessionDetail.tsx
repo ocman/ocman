@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import * as Toast from '@radix-ui/react-toast';
 import './SessionDetail.css';
 import { api, type Session, type Message, type Part, type AgentInfo, type SessionModelEntry, type SessionDetail } from '../lib/api';
 import { cleanTitle, formatDuration, formatNumber, shortPath, relativeTime } from '../lib/format';
@@ -25,8 +26,8 @@ const PAGE_SIZE = 30;
 const RECENT_SESSIONS_LIMIT = 15;
 const SIDEBAR_RECENT_HOURS = 12;
 const ARCHIVE_ANIMATION_MS = 220;
-const MAX_RETAINED_MESSAGES = 100;
-const TRIMMED_RETAINED_MESSAGES = 80;
+const MAX_RETAINED_MESSAGES = 200;
+const TRIMMED_RETAINED_MESSAGES = 150;
 const MAX_SUBAGENT_TOKEN_ENTRIES = 256;
 
 // Maximum length for part text/output before truncation (matches backend maxOutputLen).
@@ -508,6 +509,9 @@ export function SessionDetail() {
   const [answeringQuestion, setAnsweringQuestion] = useState(false);
   const [questionError, setQuestionError] = useState<string | null>(null);
   const [sseDebugEvents, setSseDebugEvents] = useState<SseDebugEvent[]>([]);
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [renameTitle, setRenameTitle] = useState('');
+  const [showRenameToast, setShowRenameToast] = useState(false);
   const getSession = useApiStore((state) => state.getSession);
   const archiveSession = useApiStore((state) => state.archiveSession);
   const getWhisperStatus = useApiStore((state) => state.getWhisperStatus);
@@ -1790,6 +1794,26 @@ export function SessionDetail() {
       return;
     }
 
+    if (command === 'rename') {
+      console.log('Rename command triggered', { args, sessionId: session.id, title: session.title });
+      if (args.trim()) {
+        try {
+          console.log('Calling renameSession API');
+          await api.renameSession(session.id, args.trim());
+          console.log('API call successful, updating state');
+          setSession(prev => prev ? { ...prev, title: args.trim() } : prev);
+          setShowRenameToast(true);
+        } catch (e) {
+          console.error('Failed to rename session', e);
+        }
+      } else {
+        console.log('Showing rename modal');
+        setRenameTitle(session.title || '');
+        setShowRenameModal(true);
+      }
+      return;
+    }
+
     // Optimistic user message showing the command
     const tempId = 'temp-' + Date.now();
     const optimisticMsg: Message = {
@@ -2224,8 +2248,9 @@ export function SessionDetail() {
   }, [isRunning, messages, subagentTokens]);
 
   return (
-    <div className="session-layout">
-      <div className="session-sidebar">
+    <Toast.Provider swipeDirection="right">
+      <div className="session-layout">
+        <div className="session-sidebar">
         <div className="session-sidebar-header">
           <span className="session-sidebar-heading">
             <span>Recent sessions</span>
@@ -2438,9 +2463,66 @@ export function SessionDetail() {
                 </>
               ) : undefined}
             />
+            {showRenameModal && (
+              <div className="oc-rename-backdrop" onClick={() => setShowRenameModal(false)}>
+                <div className="oc-rename-dialog" onClick={e => e.stopPropagation()}>
+                  <h3>Rename Session</h3>
+                  <input
+                    className="oc-rename-input"
+                    type="text"
+                    value={renameTitle}
+                    onChange={e => setRenameTitle(e.target.value)}
+                    placeholder="Session title"
+                    autoFocus
+                    onFocus={e => e.target.select()}
+                    onKeyDown={async e => {
+                      if (e.key === 'Enter' && session) {
+                        try {
+                          await api.renameSession(session.id, renameTitle.trim());
+                          setSession(prev => prev ? { ...prev, title: renameTitle.trim() } : prev);
+                          setShowRenameModal(false);
+                          setShowRenameToast(true);
+                        } catch (err) {
+                          console.error('Failed to rename session', err);
+                        }
+                      }
+                      if (e.key === 'Escape') setShowRenameModal(false);
+                    }}
+                  />
+                  <div className="oc-rename-actions">
+                    <button
+                      className="oc-rename-btn oc-rename-btn-submit"
+                      onClick={async () => {
+                        if (!session) return;
+                        try {
+                          await api.renameSession(session.id, renameTitle.trim());
+                          setSession(prev => prev ? { ...prev, title: renameTitle.trim() } : prev);
+                          setShowRenameModal(false);
+                          setShowRenameToast(true);
+                        } catch (err) {
+                          console.error('Failed to rename session', err);
+                        }
+                      }}
+                    >
+                      Rename
+                    </button>
+                    <button className="oc-rename-btn oc-rename-btn-cancel" onClick={() => setShowRenameModal(false)}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </OcmanRuntimeProvider>
         )}
       </div>
+      <Toast.Root className="oc-toast-root" open={showRenameToast} onOpenChange={setShowRenameToast} duration={2000}>
+        <Toast.Description className="oc-toast-description">
+          Session renamed
+        </Toast.Description>
+      </Toast.Root>
+      <Toast.Viewport className="oc-toast-viewport" />
     </div>
+    </Toast.Provider>
   );
 }

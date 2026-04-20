@@ -58,12 +58,12 @@
 .oc-queued-dot {
   width: 6px;
   height: 6px;
-  border-radius: 0;
+  border-radius: 50%;
   background: var(--accent4);
   animation: pulse 1.2s ease-in-out infinite;
 }
 .oc-msg-assistant {
-  padding: 16px 0;
+  padding: 0;
 }
 .oc-msg-muted {
   padding: 0;
@@ -491,6 +491,13 @@
   text-align: center;
   padding: 12px;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-dim);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
 }
 .oc-load-more button {
   background: transparent;
@@ -529,7 +536,7 @@
 .oc-thread { position: relative; }
 .oc-scroll-btn {
   position: absolute;
-  bottom: 100px;
+  /* bottom is set inline as calc(bottomInset + 8px) */
   left: 50%;
   transform: translateX(-50%);
   padding: 6px 16px;
@@ -542,8 +549,9 @@
   font-size: 11px;
   white-space: nowrap;
   transition: all 0.15s;
-  z-index: 60;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  z-index: 51;
+  pointer-events: auto;
 }
 .oc-scroll-btn:hover { color: var(--accent); border-color: var(--accent); }
 
