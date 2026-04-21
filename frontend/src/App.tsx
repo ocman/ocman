@@ -13,6 +13,8 @@ import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
 import { useFaviconNotify } from './lib/useFaviconNotify';
 import { useUiStore } from './lib/uiStore';
 import { useShortcut, useShortcutDispatcher } from './lib/shortcutRegistry';
+import { usePerformanceCleanup } from './lib/usePerformanceCleanup';
+import { useMemoryMonitor } from './lib/useMemoryMonitor';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
@@ -160,11 +162,23 @@ function FaviconNotify() {
   return null;
 }
 
+function PerformanceCleanup() {
+  usePerformanceCleanup();
+  return null;
+}
+
+function MemoryMonitor() {
+  useMemoryMonitor();
+  return null;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
       <HeaderProvider>
         <FaviconNotify />
+        <PerformanceCleanup />
+        <MemoryMonitor />
         <GlobalHotkeys />
         <div className="container">
           <Header />
