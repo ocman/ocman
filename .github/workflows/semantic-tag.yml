@@ -103,7 +103,7 @@ jobs:
           create_status="${create_response##*$'\n'}"
           create_body="${create_response%$'\n'*}"
 
-          if [ "${create_status}" != "200" ]; then
+          if [ "${create_status}" != "200" ] && [ "${create_status}" != "201" ]; then
             printf '%s\n' "${create_body}"
             exit 1
           fi
