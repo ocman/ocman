@@ -9,6 +9,7 @@ import {
 import { formatSeconds } from '../lib/format';
 import { useAgentColor } from '../lib/agentColor';
 import { useShortcut } from '../lib/shortcutRegistry';
+import { hardenMessageLinks } from '../lib/linkHardener';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -607,6 +608,27 @@ function TodoList({ todos }: { todos: TodoItem[] }) {
   );
 }
 
+// Compact live-streaming preview for a running subagent task. Renders the
+// tail of the subagent's latest stdout in a small scroll-pinned container so
+// the main thread shows progress while the final output is still being
+// produced. Replaced by the final Markdown output once the task completes.
+const TaskStreamPreview: FC<{ text: string }> = ({ text }) => {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [text]);
+  return (
+    <div className="oc-tool-stream" aria-live="polite">
+      <div className="oc-tool-stream-header">
+        <span className="oc-tool-stream-dot" />
+        <span>streaming</span>
+      </div>
+      <div ref={ref} className="oc-tool-stream-body">{text}</div>
+    </div>
+  );
+};
+
 const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, result }) => {
   const [expanded, setExpanded] = useState(false);
   const [taskExpanded, setTaskExpanded] = useState(false);
@@ -629,14 +651,12 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
 
     let sessionId = '';
     let taskOutput = '';
+    let livePreview = '';
     try {
       const parsed = JSON.parse(typeof result === 'string' ? result : '{}');
       sessionId = parsed.taskId || '';
       taskOutput = (parsed.taskOutput || '').replace(/^<task_result>\n?/, '').replace(/\n?<\/task_result>$/, '').trim();
-      // Use live preview while running, final output when done
-      if (parsed.livePreview && taskStatus === 'running') {
-        taskOutput = parsed.livePreview;
-      }
+      if (typeof parsed.livePreview === 'string') livePreview = parsed.livePreview.trim();
     } catch { /* ignore */ }
 
     let statusIcon = '\u2022';
@@ -647,6 +667,10 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
 
     const handleHeaderClick = sessionId ? () => { window.location.href = `/session/${sessionId}`; } : undefined;
     const isLongOutput = taskOutput.length > 500;
+    // Show the streaming container while the task is running and we don't yet
+    // have a final output to display. Once taskOutput arrives, the final
+    // markdown output replaces the streaming preview.
+    const showStream = taskStatus === 'running' && !taskOutput && !!livePreview;
 
     return (
       <div className={`oc-tool oc-tool-task ${statusClass} ${taskExpanded ? 'oc-tool-expanded' : ''}`}>
@@ -655,6 +679,11 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
           <span className="oc-tool-label">{label}</span>
           {sessionId && <span className="oc-task-link">{'\u2197'}</span>}
         </div>
+        {showStream && (
+          <div className="oc-tool-content">
+            <TaskStreamPreview text={livePreview} />
+          </div>
+        )}
         {taskOutput && (
           <div className="oc-tool-content" onClick={() => !taskExpanded && setTaskExpanded(true)} style={!taskExpanded ? { cursor: 'pointer' } : undefined}>
             <div className="oc-tool-pre oc-tool-output oc-md"><MarkdownText text={taskOutput} /></div>
@@ -879,6 +908,19 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
   useEffect(() => { hasMoreRef.current = hasMore; }, [hasMore]);
   useEffect(() => { loadingMoreRef.current = loadingMore; }, [loadingMore]);
   useEffect(() => { onLoadMoreRef.current = onLoadMore; }, [onLoadMore]);
+
+  // Safety net for any non-markdown-rendered links in message bodies.
+  // Markdown links are handled at render time by MarkdownLink; this catches
+  // anything else that might land in the DOM with a raw href.
+  useEffect(() => {
+    const thread = threadRef.current;
+    if (!thread) return;
+    const apply = () => hardenMessageLinks(thread);
+    apply();
+    const observer = new MutationObserver(apply);
+    observer.observe(thread, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
 
   const hasAutoLoadedRef = useRef(false);
   const isJumpingRef = useRef(false);

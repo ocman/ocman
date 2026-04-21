@@ -55,6 +55,10 @@ func (a *Adapter) Capabilities() platforms.Capabilities {
 		AgentCatalog:      true,
 		ModelCatalog:      true,
 		SlashCommands:     true,
+		// OpenCode only exposes an HTTP API when it's started with an
+		// explicit --port flag. `--port 0` asks OpenCode to pick a free
+		// port and advertises it via lsof, which ocman scans.
+		LiveConnectionHint: "Start OpenCode with `opencode --port 0` so ocman can discover and connect to it.",
 	}
 }
 

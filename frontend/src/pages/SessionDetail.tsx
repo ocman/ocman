@@ -2472,6 +2472,7 @@ export function SessionDetail() {
                   onAbort={handleAbort}
                   isRunning={isRunning}
                   disabled={!portAvailable}
+                  disabledHint={caps.liveConnectionHint}
                   whisperAvailable={whisperAvailable}
                   models={composerModels}
                   modelEntries={modelEntries}

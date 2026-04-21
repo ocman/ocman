@@ -158,12 +158,20 @@ function ComposerImpl({
   tokenStats,
   selectedReasoning,
   onReasoningChange,
+  disabledHint,
 }: {
   onSend?: (text: string, images?: AttachedImage[]) => void;
   onCommand?: (command: string, args: string) => void;
   onAbort?: () => void;
   isRunning: boolean;
   disabled?: boolean;
+  /**
+   * User-facing hint explaining *why* the composer is disabled and
+   * how to fix it (e.g. "Start OpenCode with `opencode --port 0` ..."
+   * for OpenCode). Shown as the textarea placeholder when disabled.
+   * Falls back to a generic "No live connection" message.
+   */
+  disabledHint?: string;
   whisperAvailable?: boolean;
   models?: string[];
   modelEntries?: SessionModelEntry[];
@@ -1059,7 +1067,7 @@ function ComposerImpl({
           className="oc-composer-input"
           rows={1}
           disabled={disabled}
-          placeholder={disabled ? 'No live connection to the agent' : undefined}
+          placeholder={disabled ? (disabledHint || 'No live connection to the agent') : undefined}
         />
         <div className="oc-composer-bar">
           <div className="oc-composer-bar-left">
@@ -1116,7 +1124,11 @@ function ComposerImpl({
                     {selectedReasoning || 'default'}
                   </button>
                 )}
-                {disabled && <span className="oc-bar-hint">No live connection</span>}
+                {disabled && (
+                  <span className="oc-bar-hint" title={disabledHint || undefined}>
+                    No live connection
+                  </span>
+                )}
               </>
             )}
           </div>
@@ -1272,6 +1284,7 @@ function ComposerImpl({
 export const Composer = memo(ComposerImpl, (prev, next) =>
   prev.isRunning === next.isRunning &&
   prev.disabled === next.disabled &&
+  prev.disabledHint === next.disabledHint &&
   prev.whisperAvailable === next.whisperAvailable &&
   prev.activeModel === next.activeModel &&
   prev.selectedModel === next.selectedModel &&

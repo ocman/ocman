@@ -283,6 +283,13 @@ export interface PlatformCapabilities {
   agentCatalog: boolean;
   modelCatalog: boolean;
   slashCommands: boolean;
+  /**
+   * Short, user-facing message explaining how to establish the live
+   * connection to a running agent instance when it's missing (e.g.
+   * "Start OpenCode with `opencode --port 0` ..." for OpenCode).
+   * Empty / absent when the platform has no such setup step.
+   */
+  liveConnectionHint?: string;
 }
 
 export interface PlatformCapabilityEntry {

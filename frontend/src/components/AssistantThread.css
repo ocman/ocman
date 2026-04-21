@@ -458,6 +458,43 @@
   color: var(--accent);
 }
 
+/* Subagent streaming preview (while task is running, before final output).
+   Small, scroll-pinned container that tails the subagent's latest stdout. */
+.oc-tool-stream {
+  margin: 4px 0;
+  border-left: 2px solid var(--accent);
+  background: rgba(0, 0, 0, 0.3);
+  font-family: var(--font-conversation-mono);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.oc-tool-stream-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  color: var(--text-dim);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.7;
+}
+.oc-tool-stream-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.oc-tool-stream-body {
+  max-height: 120px;
+  overflow-y: auto;
+  padding: 0 10px 8px 10px;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* Inline image display */
 .oc-image-wrap {
   margin: 8px 0;

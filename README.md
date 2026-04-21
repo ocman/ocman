@@ -16,11 +16,12 @@ As of v2, ocman supports:
   SQLite database read-only and proxies live traffic (SSE events,
   composer, compact, permission replies) to running OpenCode
   instances auto-discovered via `lsof`.
-- **[Claude Code](https://code.claude.com)** — reads its per-session
-  JSONL transcripts from `~/.claude/projects/`, tracks live session
-  state via HTTP hooks that ocman installs into
+- **[Claude Code](https://code.claude.com)** _(deprecated)_ — reads
+  its per-session JSONL transcripts from `~/.claude/projects/`,
+  tracks live session state via HTTP hooks that ocman installs into
   `~/.claude/settings.json`, and injects new prompts using
-  `claude -p --resume`.
+  `claude -p --resume`. This adapter is no longer actively developed;
+  see [Claude Code integration](#claude-code-integration-deprecated).
 
 Both platforms are wired through a common `Platform` adapter interface
 (`internal/platforms/`). The frontend is platform-agnostic: it gates
@@ -85,12 +86,26 @@ graph TD
 Optional per-platform:
 
 - OpenCode: `~/.local/share/opencode/opencode.db` must exist (ocman
-  fails fast otherwise). Running OpenCode instances are discovered
-  automatically; no extra configuration needed.
-- Claude Code: ocman auto-detects `~/.claude/projects/`. On startup
-  ocman installs a managed block of hooks into `~/.claude/settings.json`
-  — see [Claude Code integration](#claude-code-integration) below.
-  Without Claude Code installed, the Claude Code adapter stays
+  fails fast otherwise). To **interact** with a running session
+  (send messages, respond to permissions/questions, abort, compact)
+  you must start OpenCode with an explicit port so its HTTP API is
+  reachable:
+
+  ```sh
+  opencode --port 0   # let OpenCode pick a free port
+  # or pin a specific port, e.g. opencode --port 4096
+  ```
+
+  Ocman discovers listening OpenCode processes via `lsof` and
+  auto-connects. Without `--port`, sessions are still readable from
+  the database but the composer and other interactive features stay
+  disabled — the UI shows a hint telling you to re-launch OpenCode
+  with `--port 0`.
+- Claude Code _(deprecated)_: ocman auto-detects
+  `~/.claude/projects/`. On startup ocman installs a managed block of
+  hooks into `~/.claude/settings.json` — see
+  [Claude Code integration](#claude-code-integration-deprecated)
+  below. Without Claude Code installed, the Claude Code adapter stays
   registered but silent.
 
 ## Quick start
@@ -105,7 +120,7 @@ make dev
 
 # OR: Production mode with auto-rebuild (for memory profiling)
 make dev-prod-watch
-# Open http://localhost:8229
+# Open http://localhost:8228
 ```
 
 **Development mode** (`make dev`): Opens on port **8228** - Vite dev server with instant HMR updates.  
@@ -122,7 +137,7 @@ This builds the frontend first (`npm ci && npm run build`), then compiles the Go
 ## Usage
 
 ```sh
-./ocman                              # default: listens on 0.0.0.0:8229, reads ~/.local/share/opencode/opencode.db
+./ocman                              # default: listens on 127.0.0.1:8228, reads ~/.local/share/opencode/opencode.db
 ./ocman -addr localhost:9090         # custom listen address
 ./ocman -db /path/to/opencode.db     # custom OpenCode database path
 ```
@@ -130,7 +145,12 @@ This builds the frontend first (`npm ci && npm run build`), then compiles the Go
 Ocman's own state (archived / seen flags, per-platform) lives in
 `~/.local/share/ocman/state.db`, auto-created on first run.
 
-## Claude Code integration
+## Claude Code integration (deprecated)
+
+> **Deprecated.** The Claude Code adapter is no longer actively
+> developed and may be removed in a future release. It is still
+> wired up for users who opt in via `-platforms claude-code`, but
+> new features and bug fixes target the OpenCode platform only.
 
 Ocman installs a small block of HTTP hooks into
 `~/.claude/settings.json` on startup so it can track live session

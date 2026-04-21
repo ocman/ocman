@@ -17,6 +17,7 @@ const EMPTY_CAPS: PlatformCapabilities = {
   agentCatalog: false,
   modelCatalog: false,
   slashCommands: false,
+  liveConnectionHint: '',
 };
 
 let cached: CapabilitiesResponse | null = null;

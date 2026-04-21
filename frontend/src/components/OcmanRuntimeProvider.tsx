@@ -217,11 +217,13 @@ function convertMessages(
                   5000,
                 );
               }
-              // While running, inject live output from the task's session if we have it.
+              // While running, inject live output from the task's session so
+              // the main thread can render a small streaming container until
+              // the final output is available.
               let livePreview = '';
               if (status === 'running' && taskId && taskLiveOutput?.[taskId]) {
                 const lines = taskLiveOutput[taskId].split('\n');
-                livePreview = lines.slice(-10).join('\n'); // last 10 lines
+                livePreview = lines.slice(-40).join('\n'); // tail of stdout
               }
               toolCalls.push({
                 type: 'tool-call' as const,

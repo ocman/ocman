@@ -64,6 +64,13 @@ type Capabilities struct {
 	AgentCatalog      bool `json:"agentCatalog"` // adapter exposes a composer-agent catalog
 	ModelCatalog      bool `json:"modelCatalog"` // adapter exposes a per-session model catalog
 	SlashCommands     bool `json:"slashCommands"`
+	// LiveConnectionHint is a short, user-facing message explaining how
+	// to establish the live connection to a running agent instance when
+	// it's missing. Shown by the frontend next to disabled composers.
+	// Empty when the platform has no such setup step (e.g. Claude Code,
+	// whose live connection is based on CLI availability rather than a
+	// discoverable port).
+	LiveConnectionHint string `json:"liveConnectionHint,omitempty"`
 }
 
 // LiveState captures in-memory live status for a session, updated by
