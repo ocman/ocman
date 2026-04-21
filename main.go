@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 
@@ -20,6 +21,12 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
+// authPasswordEnv is the environment variable consulted for the auth
+// password when neither -auth-password-file nor -auth-password is set.
+// Env wins because it's the most common deployment channel (launchd,
+// systemd, Docker) and keeps the secret out of shell history.
+const authPasswordEnv = "OCMAN_AUTH_PASSWORD"
+
 // knownPlatforms lists the valid values for the -platforms flag.
 var knownPlatforms = map[string]bool{
 	string(opencodeplatform.PlatformID):   true,
@@ -30,6 +37,9 @@ func main() {
 	addr := flag.String("addr", "127.0.0.1:8228", "listen address")
 	dbPath := flag.String("db", db.DefaultDBPath(), "path to opencode.db")
 	platformsFlag := flag.String("platforms", "opencode", "comma-separated list of platforms to enable (opencode, claude-code)")
+	authPassword := flag.String("auth-password", "", "password required for non-localhost clients (prefer "+authPasswordEnv+" env or -auth-password-file)")
+	authPasswordFile := flag.String("auth-password-file", "", "read auth password from file (trimmed of trailing whitespace)")
+	authSessionTTL := flag.Duration("auth-session-ttl", 30*24*time.Hour, "auth cookie lifetime")
 	flag.Parse()
 
 	// Parse and validate the -platforms flag.
@@ -90,10 +100,104 @@ func main() {
 		registry.Register(claudecodeplatform.New())
 	}
 
-	srv := server.New(database, stateDB, *addr, registry)
+	auth, err := buildAuth(stateDB, *authPassword, *authPasswordFile, *authSessionTTL, *addr)
+	if err != nil {
+		log.Fatalf("Failed to configure auth: %v", err)
+	}
+
+	srv := server.New(database, stateDB, *addr, registry, auth)
 	if err := srv.Start(ctx); err != nil {
 		log.Fatalf("Server error: %v", err)
 	}
 
 	log.Info("server stopped gracefully")
+}
+
+// resolveAuthPassword picks the password from env > file > flag, in
+// that order. Returns "" if no source provided a value. A set but
+// empty env var is treated as unset (so `OCMAN_AUTH_PASSWORD=` doesn't
+// accidentally disable an explicit flag).
+func resolveAuthPassword(flagValue, fileValue string) (string, error) {
+	if v := strings.TrimRight(os.Getenv(authPasswordEnv), "\r\n"); v != "" {
+		return v, nil
+	}
+	if fileValue != "" {
+		b, err := os.ReadFile(fileValue)
+		if err != nil {
+			return "", fmt.Errorf("reading %s: %w", fileValue, err)
+		}
+		// Trim trailing newlines so `echo secret > passwd` works as
+		// expected. Keep leading whitespace in case a password
+		// legitimately starts with one (unlikely, but harmless).
+		return strings.TrimRight(string(b), " \t\r\n"), nil
+	}
+	return flagValue, nil
+}
+
+// buildAuth assembles the server-side auth subsystem from the
+// resolved config. Returns (nil, nil) when no password is configured
+// — the server then runs in its pre-auth, open-by-default mode.
+func buildAuth(stateDB *state.DB, flagValue, fileValue string, ttl time.Duration, addr string) (*server.Auth, error) {
+	password, err := resolveAuthPassword(flagValue, fileValue)
+	if err != nil {
+		return nil, err
+	}
+	if password == "" {
+		return nil, nil
+	}
+
+	if flagValue != "" && os.Getenv(authPasswordEnv) == "" && fileValue == "" {
+		// -auth-password leaks the secret into `ps` output; nudge
+		// the operator toward env or file. Only warn; don't fail.
+		log.Warn("-auth-password exposes the password to other local users via ps; " +
+			"prefer " + authPasswordEnv + " or -auth-password-file")
+	}
+
+	hash, err := server.HashPassword(password)
+	if err != nil {
+		return nil, fmt.Errorf("hashing auth password: %w", err)
+	}
+
+	// Reuse the persisted HMAC key when present so cookies survive
+	// restarts. On a fresh install (or after an explicit rotation)
+	// generate and persist a new one.
+	key, err := stateDB.AuthSecret()
+	if err != nil {
+		return nil, fmt.Errorf("loading auth secret: %w", err)
+	}
+	if len(key) == 0 {
+		key, err = server.GenerateHMACKey()
+		if err != nil {
+			return nil, err
+		}
+		if err := stateDB.SetAuthSecret(key); err != nil {
+			return nil, fmt.Errorf("persisting auth secret: %w", err)
+		}
+	}
+
+	if isLoopbackAddr(addr) {
+		// Configured but listening on loopback only — auth does
+		// nothing. Likely a misconfiguration; warn loudly but keep
+		// running so the dev flow isn't broken.
+		log.WithField("addr", addr).Warn("auth is configured but -addr is loopback-only; auth will have no effect")
+	}
+
+	return server.NewAuth(server.AuthConfig{
+		PasswordHash: hash,
+		HMACKey:      key,
+		CookieTTL:    ttl,
+	})
+}
+
+// isLoopbackAddr returns true when the listener's host part is a
+// loopback literal. Pure-string check because the listener hasn't
+// opened yet at this point.
+func isLoopbackAddr(addr string) bool {
+	host := addr
+	if idx := strings.LastIndex(host, ":"); idx >= 0 {
+		host = host[:idx]
+	}
+	host = strings.TrimPrefix(host, "[")
+	host = strings.TrimSuffix(host, "]")
+	return host == "" || host == "127.0.0.1" || host == "::1" || host == "localhost"
 }

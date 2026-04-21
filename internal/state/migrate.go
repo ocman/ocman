@@ -12,11 +12,14 @@ import (
 //	2 - multi-platform: add `platform TEXT NOT NULL DEFAULT 'opencode'`
 //	    column + recreate tables with (platform, session_id) composite
 //	    primary key. See spec/multi-agent-support/architecture.md AD-10.
+//	3 - add `auth_secret` single-row table holding the HMAC key used to
+//	    sign auth cookies. Persisting the key across restarts keeps
+//	    logged-in clients logged in up to the cookie TTL.
 //
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 2
+const latestSchemaVersion = 3
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -116,6 +119,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV1(tx)
 	case 2:
 		return migrateToV2(tx)
+	case 3:
+		return migrateToV3(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -179,4 +184,18 @@ func migrateToV2(tx *sql.Tx) error {
 		}
 	}
 	return nil
+}
+
+// migrateToV3 creates the auth_secret table. The table is constrained
+// to a single row (id=1) so AuthSecret() / SetAuthSecret() can always
+// upsert without juggling row identity.
+func migrateToV3(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE auth_secret (
+			id         INTEGER PRIMARY KEY CHECK (id = 1),
+			hmac_key   BLOB    NOT NULL,
+			created_at INTEGER NOT NULL
+		)
+	`)
+	return err
 }

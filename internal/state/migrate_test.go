@@ -154,3 +154,76 @@ func TestMigrate_FreshDB_CreatesSchemaAtLatestVersion(t *testing.T) {
 		t.Fatalf("insert into fresh schema: %v", err)
 	}
 }
+
+func TestMigrate_V3_CreatesAuthSecretTable(t *testing.T) {
+	sqlDB, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer sqlDB.Close()
+
+	if err := migrate(sqlDB); err != nil {
+		t.Fatalf("migrate fresh: %v", err)
+	}
+
+	// Insert with id=1 must succeed.
+	if _, err := sqlDB.Exec(
+		`INSERT INTO auth_secret (id, hmac_key, created_at) VALUES (1, ?, ?)`,
+		[]byte{0x01, 0x02, 0x03}, 9999,
+	); err != nil {
+		t.Fatalf("insert id=1: %v", err)
+	}
+
+	// Insert with id=2 must fail the CHECK constraint (single-row table).
+	if _, err := sqlDB.Exec(
+		`INSERT INTO auth_secret (id, hmac_key, created_at) VALUES (2, ?, ?)`,
+		[]byte{0x04}, 9999,
+	); err == nil {
+		t.Error("expected CHECK constraint to reject id != 1")
+	}
+}
+
+func TestAuthSecret_RoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := dir + "/state.db"
+	sdb, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer sdb.Close()
+
+	// No secret initially.
+	got, err := sdb.AuthSecret()
+	if err != nil {
+		t.Fatalf("initial read: %v", err)
+	}
+	if got != nil {
+		t.Errorf("expected nil initial secret, got %v", got)
+	}
+
+	// Store, read back.
+	key := []byte("super-secret-32-byte-hmac-key!!!")
+	if err := sdb.SetAuthSecret(key); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	got, err = sdb.AuthSecret()
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(got) != string(key) {
+		t.Errorf("read mismatch: got %x, want %x", got, key)
+	}
+
+	// Overwrite (rotation) replaces in place.
+	key2 := []byte("another-different-key-of-32-bytes")
+	if err := sdb.SetAuthSecret(key2); err != nil {
+		t.Fatalf("rotate: %v", err)
+	}
+	got, err = sdb.AuthSecret()
+	if err != nil {
+		t.Fatalf("read after rotate: %v", err)
+	}
+	if string(got) != string(key2) {
+		t.Errorf("after rotate: got %x, want %x", got, key2)
+	}
+}

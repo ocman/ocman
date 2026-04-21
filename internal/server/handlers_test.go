@@ -230,7 +230,7 @@ func TestWritePlatformError_MapsUnknownTo502(t *testing.T) {
 }
 
 func TestSystemStats(t *testing.T) {
-	srv := New(nil, nil, "127.0.0.1:8229", nil)
+	srv := New(nil, nil, "127.0.0.1:8229", nil, nil)
 	req := httptest.NewRequest("GET", "/api/system/stats", nil)
 	rr := httptest.NewRecorder()
 

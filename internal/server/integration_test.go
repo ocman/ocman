@@ -84,7 +84,7 @@ func testServer(t *testing.T) *Server {
 
 	reg := platforms.NewRegistry()
 	reg.Register(opencodeplatform.New(database))
-	return New(database, stateDB, "127.0.0.1:0", reg)
+	return New(database, stateDB, "127.0.0.1:0", reg, nil)
 }
 
 // --- Handler integration tests ---
@@ -495,7 +495,7 @@ func testServerWithRawDB(t *testing.T) (*Server, *sql.DB) {
 
 	reg := platforms.NewRegistry()
 	reg.Register(opencodeplatform.New(database))
-	srv := New(database, stateDB, "127.0.0.1:0", reg)
+	srv := New(database, stateDB, "127.0.0.1:0", reg, nil)
 	return srv, setupDB
 }
 

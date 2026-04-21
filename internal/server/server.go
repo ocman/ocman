@@ -31,13 +31,16 @@ type Server struct {
 	stateDB   *state.DB
 	addr      string
 	registry  *platforms.Registry
+	auth      *Auth
 	startTime time.Time
 }
 
 // New creates a new server. The registry may be nil, in which case a
 // new empty registry is created. Callers that want to pre-register
 // platform adapters should pass one built with platforms.NewRegistry().
-func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Registry) *Server {
+// Pass a non-nil auth to require a password for non-localhost clients;
+// pass nil to leave the server open (the pre-auth behaviour).
+func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Registry, auth *Auth) *Server {
 	if registry == nil {
 		registry = platforms.NewRegistry()
 	}
@@ -46,6 +49,7 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		stateDB:   stateDB,
 		addr:      addr,
 		registry:  registry,
+		auth:      auth,
 		startTime: time.Now(),
 	}
 }
@@ -66,24 +70,38 @@ func (s *Server) Start(ctx context.Context) error {
 	// enforce POST. Session-scoped routes (/api/session/{id}/...) are
 	// dispatched through a single handler because net/http's ServeMux
 	// doesn't support path patterns.
-	mux.HandleFunc("/api/stats", requireGET(s.handleStats))
-	mux.HandleFunc("/api/metrics", requireGET(s.handleMetrics))
-	mux.HandleFunc("/api/projects", requireGET(s.handleProjects))
-	mux.HandleFunc("/api/system/stats", requireGET(s.handleSystemStats))
-	mux.HandleFunc("/api/sessions", s.handleSessionsRoot) // GET = list, POST = create
-	mux.HandleFunc("/api/sessions/notify", requireGET(s.handleSessionsNotify))
-	mux.HandleFunc("/api/session/", s.dispatchSessionSubpath)
-	mux.HandleFunc("/api/activity", requireGET(s.handleActivity))
-	mux.HandleFunc("/api/models", requireGET(s.handleModels))
-	mux.HandleFunc("/api/hourly", requireGET(s.handleHourly))
-	mux.HandleFunc("/api/hourly-tokens", requireGET(s.handleHourlyTokens))
-	mux.HandleFunc("/api/capabilities", requireGET(s.handleCapabilities))
-	mux.HandleFunc("/api/whisper/status", requireGET(s.handleWhisperStatus))
-	mux.HandleFunc("/api/transcribe", requirePOST(s.handleTranscribe))
-	mux.HandleFunc("/api/cost/calc", requirePOST(s.handleCalcCost))
+	//
+	// s.get / s.post compose method + auth checks so the route table
+	// stays readable. Routes that are localhost-only (tmux, debug log,
+	// hooks) skip the auth layer because isLoopback is strictly
+	// stricter than auth.
+	mux.HandleFunc("/api/stats", s.get(s.handleStats))
+	mux.HandleFunc("/api/metrics", s.get(s.handleMetrics))
+	mux.HandleFunc("/api/projects", s.get(s.handleProjects))
+	mux.HandleFunc("/api/system/stats", s.get(s.handleSystemStats))
+	mux.HandleFunc("/api/sessions", s.requireAuth(s.handleSessionsRoot)) // GET = list, POST = create
+	mux.HandleFunc("/api/sessions/notify", s.get(s.handleSessionsNotify))
+	mux.HandleFunc("/api/session/", s.requireAuth(s.dispatchSessionSubpath))
+	mux.HandleFunc("/api/activity", s.get(s.handleActivity))
+	mux.HandleFunc("/api/models", s.get(s.handleModels))
+	mux.HandleFunc("/api/hourly", s.get(s.handleHourly))
+	mux.HandleFunc("/api/hourly-tokens", s.get(s.handleHourlyTokens))
+	mux.HandleFunc("/api/capabilities", s.get(s.handleCapabilities))
+	mux.HandleFunc("/api/whisper/status", s.get(s.handleWhisperStatus))
+	mux.HandleFunc("/api/transcribe", s.post(s.handleTranscribe))
+	mux.HandleFunc("/api/cost/calc", s.post(s.handleCalcCost))
 	mux.HandleFunc("/api/tmux/clients", requireGET(requireLocalhost(s.handleTmuxClients)))
 	mux.HandleFunc("/api/tmux/sessions", requireGET(requireLocalhost(s.handleTmuxSessions)))
 	mux.HandleFunc("/api/tmux/switch", requirePOST(requireLocalhost(s.handleTmuxSwitch)))
+
+	// Auth endpoints. /me is unauthenticated by design (the SPA needs
+	// to learn its auth state before it can show the lockscreen).
+	// /login and /logout are also unauthenticated — /login is where
+	// you prove yourself; /logout just clears a cookie and is
+	// idempotent for an already-anonymous client.
+	mux.HandleFunc("/api/auth/me", requireGET(s.handleAuthMe))
+	mux.HandleFunc("/api/auth/login", requirePOST(s.handleAuthLogin))
+	mux.HandleFunc("/api/auth/logout", requirePOST(s.handleAuthLogout))
 
 	// Best-effort remote-logging sink for the frontend. Localhost-only so
 	// it can't be used to flood logs from the network. See
@@ -220,6 +238,17 @@ func requirePOST(h http.HandlerFunc) http.HandlerFunc {
 		}
 		h(w, r)
 	}
+}
+
+// get and post compose the method guard with requireAuth. They're
+// method-valued so handlers referring to s.auth can see it. When auth
+// is disabled, requireAuth is a pass-through.
+func (s *Server) get(h http.HandlerFunc) http.HandlerFunc {
+	return requireGET(s.requireAuth(h))
+}
+
+func (s *Server) post(h http.HandlerFunc) http.HandlerFunc {
+	return requirePOST(s.requireAuth(h))
 }
 
 // writeJSON writes a JSON response.

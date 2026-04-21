@@ -133,6 +133,16 @@ diffs minimal and match the surrounding code.
 - **Auto-archive**: background goroutine archives sessions inactive
   for 7+ days (checked every 24 h). Runs against all registered
   platforms.
+- **Optional password auth**: by default ocman binds `127.0.0.1:8228`
+  and is unauthenticated — localhost is trusted. When `-addr` is
+  opened to a non-loopback interface, a password can be required for
+  remote clients via `OCMAN_AUTH_PASSWORD` env var,
+  `-auth-password-file`, or `-auth-password` (precedence in that
+  order). Localhost always bypasses auth. The password is bcrypt-
+  hashed at startup; cookies are HMAC-signed (stateless) with a key
+  persisted in `state.db`'s `auth_secret` table so sessions survive
+  restarts. Login attempts from non-loopback IPs are rate-limited
+  (5/min). See `internal/server/auth.go`.
 
 ## Conventions
 
