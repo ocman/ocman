@@ -224,7 +224,7 @@ func collectPendingPromptsByDir(ports map[string]string) (permSIDs, questionSIDs
 
 // --- Fetching session data from the OpenCode HTTP API ---
 
-const maxOutputLen = 10000
+const maxOutputLen = 200000
 
 // truncatePartOutput limits the size of tool call outputs and large text
 // in a part to prevent massive responses.

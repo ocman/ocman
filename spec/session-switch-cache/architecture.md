@@ -358,7 +358,7 @@ These replace the inline expressions at `SessionDetail.tsx:476` and `:488-489`.
 
 Worst case with `SESSION_CACHE_MAX = 5` and the existing
 `MAX_RETAINED_MESSAGES = 300` per session = 1,500 messages + parts in memory.
-Each part's text/output is already truncated at 10k chars by `truncatePartField`,
+Each part's text/output is already truncated at 200k chars by `truncatePartField`,
 so a realistic upper bound is a few tens of MB — acceptable for a desktop
 browser tab. If this turns out to be too much we lower `SESSION_CACHE_MAX` or
 deep-trim entries before caching (drop `parts` data strings for evicted-from-

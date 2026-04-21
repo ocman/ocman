@@ -31,7 +31,7 @@ const TRIMMED_RETAINED_MESSAGES = 150;
 const MAX_SUBAGENT_TOKEN_ENTRIES = 256;
 
 // Maximum length for part text/output before truncation (matches backend maxOutputLen).
-const MAX_OUTPUT_LEN = 10000;
+const MAX_OUTPUT_LEN = 200000;
 
 /** Truncate large string fields in a part to keep memory usage manageable. */
 function truncatePartField(value: unknown): unknown {
