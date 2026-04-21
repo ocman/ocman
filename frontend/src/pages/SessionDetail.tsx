@@ -1746,10 +1746,10 @@ export function SessionDetail() {
     }
   }, [activeAgent, activeModel, caps.compact, portAvailable, selectedAgent, selectedModel, session]);
 
-  const handleNewSession = useCallback(async () => {
+  const handleNewSession = useCallback(async (title?: string) => {
     if (!session) return;
     try {
-      const res = await createSession(session.directory);
+      const res = await createSession(session.directory, undefined, title);
       if (res.id) navigate(`/session/${res.id}`);
     } catch (e) {
       console.error('Failed to create session', e);
@@ -1781,7 +1781,7 @@ export function SessionDetail() {
     }
 
     if (command === 'new') {
-      await handleNewSession();
+      await handleNewSession(args.trim() || undefined);
       return;
     }
 

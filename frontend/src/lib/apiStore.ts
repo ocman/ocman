@@ -58,7 +58,7 @@ type ApiStore = {
   getHourly: () => Promise<HourlyData[]>;
   getHourlyTokens: () => Promise<HourlyTokensByModel[]>;
   getCapabilities: (signal?: AbortSignal) => Promise<CapabilitiesResponse>;
-  createSession: (directory: string, platform?: string) => Promise<{ id: string }>;
+  createSession: (directory: string, platform?: string, title?: string) => Promise<{ id: string }>;
   sendMessage: (sessionId: string, message: string, images?: { url: string; mime: string }[], model?: string, agent?: string, reasoning?: string) => Promise<void>;
   listPermissions: (sessionId: string) => Promise<unknown[]>;
   respondPermission: (sessionId: string, permissionId: string, reply: 'once' | 'always' | 'reject') => Promise<void>;
@@ -174,7 +174,7 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   getHourly: () => get().runRequest('hourly:get', () => api.hourly()),
   getHourlyTokens: () => get().runRequest('hourly-tokens:get', () => api.hourlyTokens()),
   getCapabilities: (signal) => get().runRequest('capabilities:get', () => api.capabilities(signal)),
-  createSession: (directory, platform) => get().runRequest('session:create', () => api.createSession(directory, platform)),
+  createSession: (directory, platform, title) => get().runRequest('session:create', () => api.createSession(directory, platform, title)),
   sendMessage: (sessionId, message, images, model, agent, reasoning) => get().runRequest(`message:send:${sessionId}`, () => api.sendMessage(sessionId, message, images, model, agent, reasoning)),
   listPermissions: (sessionId) => get().runRequest(`permissions:list:${sessionId}`, () => api.listPermissions(sessionId)),
   respondPermission: (sessionId, permissionId, reply) => get().runRequest(`permission:respond:${sessionId}`, () => api.respondPermission(sessionId, permissionId, reply)),

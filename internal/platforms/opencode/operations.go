@@ -323,6 +323,16 @@ func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSession
 			return nil, errors.New("opencode create-session: empty response")
 		}
 	}
+
+	// If a custom title was provided, set it immediately after creation.
+	if req.Title != "" && parsed.ID != "" {
+		payload, _ := json.Marshal(map[string]string{"title": req.Title})
+		if err := patchJSON(ctx, port, fmt.Sprintf("/session/%s", parsed.ID), payload); err != nil {
+			log.WithError(err).Warn("failed to set custom title on new session")
+			// Don't fail the entire creation if title setting fails.
+		}
+	}
+
 	return &platforms.CreateSessionResponse{ID: parsed.ID}, nil
 }
 

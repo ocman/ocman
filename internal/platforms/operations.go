@@ -90,6 +90,7 @@ type RenameSessionRequest struct {
 // ?platform= query or defaults to a single registered one.
 type CreateSessionRequest struct {
 	Directory string
+	Title     string // Optional custom title for the new session
 }
 
 // CreateSessionResponse is the minimal payload returned after creating

@@ -440,11 +440,15 @@ export const api = {
     return fetchJSON<HourlyTokensByModel[]>(`/api/hourly-tokens${qs ? '?' + qs : ''}`);
   },
   capabilities: (signal?: AbortSignal) => fetchJSON<CapabilitiesResponse>('/api/capabilities', signal),
-  createSession: async (directory: string, platform?: string) => {
+  createSession: async (directory: string, platform?: string, title?: string) => {
     const resp = await fetch('/api/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ directory, ...(platform ? { platform } : {}) }),
+      body: JSON.stringify({
+        directory,
+        ...(platform ? { platform } : {}),
+        ...(title ? { title } : {}),
+      }),
     });
     if (!resp.ok) throw new Error(await resp.text());
     return resp.json() as Promise<{ id: string }>;
