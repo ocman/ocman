@@ -2,6 +2,7 @@ package claudecode
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 
 	log "github.com/sirupsen/logrus"
@@ -104,12 +105,87 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 	// static jsonl-derived defaults.
 	applyLiveState(detailSession, a.live)
 
+	// Attach the live-tool list (hook-driven) to the most recent
+	// running Task tool_use part. This is what makes the UI render
+	// "↳ Read /path/to/file" under a still-running subagent Task.
+	if a.live != nil {
+		if ls := a.live.Get(id); ls != nil && len(ls.CurrentTools) > 0 {
+			pagedParts = attachLiveToolsToRunningTask(pagedParts, ls.CurrentTools)
+		}
+	}
+
 	return &platforms.SessionDetail{
 		Session:       detailSession,
 		Messages:      pagedMessages,
 		Parts:         pagedParts,
 		TotalMessages: totalMessages,
 	}, nil
+}
+
+// attachLiveToolsToRunningTask injects the live-tool list into the
+// state.metadata.liveTools field of any running Task tool_use part in
+// parts. Returns a new slice with mutated Data for the relevant
+// parts; other parts are pass-through.
+//
+// Scope decision: we attach the full list to EVERY running Task
+// part, not filtered by sub-agent. That's because the sub-agent IDs
+// we derive from hook transcript paths don't correspond to any
+// identifier visible on the parent Task tool_use; matching them up
+// would require reading the sub-agent jsonl file (which this minimal
+// increment deliberately avoids). The frontend filters/deduplicates
+// if there are multiple concurrent Tasks; the common case is one
+// Task at a time.
+func attachLiveToolsToRunningTask(parts []db.Part, tools []platforms.LiveTool) []db.Part {
+	if len(parts) == 0 || len(tools) == 0 {
+		return parts
+	}
+	out := make([]db.Part, len(parts))
+	copy(out, parts)
+
+	// Walk from the end — the latest running Task is the one the
+	// user is watching. Only inject into the most recent match so
+	// older completed Tasks don't flicker back to "running".
+	for i := len(out) - 1; i >= 0; i-- {
+		var probe struct {
+			Type  string          `json:"type"`
+			Tool  string          `json:"tool"`
+			State json.RawMessage `json:"state"`
+		}
+		if err := json.Unmarshal(out[i].Data, &probe); err != nil {
+			continue
+		}
+		if probe.Type != "tool" {
+			continue
+		}
+		if probe.Tool != "Task" && probe.Tool != "task" && probe.Tool != "mcp_Task" && probe.Tool != "mcp_task" {
+			continue
+		}
+		var state map[string]interface{}
+		if err := json.Unmarshal(probe.State, &state); err != nil || state == nil {
+			continue
+		}
+		if status, _ := state["status"].(string); status != "running" {
+			continue
+		}
+		meta, _ := state["metadata"].(map[string]interface{})
+		if meta == nil {
+			meta = map[string]interface{}{}
+		}
+		meta["liveTools"] = tools
+		state["metadata"] = meta
+		var full map[string]interface{}
+		if err := json.Unmarshal(out[i].Data, &full); err != nil {
+			continue
+		}
+		full["state"] = state
+		replacement, err := json.Marshal(full)
+		if err != nil {
+			continue
+		}
+		out[i].Data = replacement
+		return out
+	}
+	return out
 }
 
 // applyLiveState overlays hook-driven live state onto a db.Session.

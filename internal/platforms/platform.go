@@ -81,6 +81,36 @@ type LiveState struct {
 	PendingPermission bool      `json:"pendingPermission"`
 	PendingQuestion   bool      `json:"pendingQuestion"`
 	LastEventAt       time.Time `json:"lastEventAt"`
+	// CurrentTools lists tool calls that are currently running on
+	// behalf of this session's subagents (Claude Code Task tool_use
+	// blocks). Populated from PreToolUse / PostToolUse / SubagentStop
+	// hooks; empty when no live tool activity has been observed.
+	// Consumed by the frontend to render a live list of tool calls
+	// under a running subagent Task.
+	CurrentTools []LiveTool `json:"currentTools,omitempty"`
+}
+
+// LiveTool describes one in-flight tool call observed via hook events.
+// Scoped to a parent session, optionally keyed by SubagentID so the
+// renderer can correlate it with the specific Task tool_use that
+// spawned it. Adapters without a sub-agent concept leave SubagentID
+// empty.
+type LiveTool struct {
+	// SubagentID correlates this tool call with the Task tool_use
+	// that spawned the sub-agent. Derived by Claude Code from the
+	// hook's transcript_path (agent-<id>.jsonl).
+	SubagentID string `json:"subagentId,omitempty"`
+
+	// ToolName is the raw tool identifier (e.g. "Read", "Grep").
+	ToolName string `json:"toolName"`
+
+	// Summary is an optional one-line description of what the tool
+	// is doing — for Read it's the target path, for Bash the command,
+	// etc. Best-effort; may be empty.
+	Summary string `json:"summary,omitempty"`
+
+	// StartedAt is when PreToolUse for this tool fired.
+	StartedAt time.Time `json:"startedAt"`
 }
 
 // Platform is the contract every adapter must satisfy.

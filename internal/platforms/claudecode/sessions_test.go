@@ -2,9 +2,15 @@ package claudecode
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
 // writeFixture builds a temp Claude Code projects tree with the given
@@ -295,6 +301,183 @@ func TestAdapter_SessionsInactiveBefore_FiltersByCutoff(t *testing.T) {
 	if len(fresh) != 0 {
 		t.Errorf("expected 0 stale candidates for cutoff=0, got %d", len(fresh))
 	}
+}
+
+// TestAttachLiveToolsToRunningTask_InjectsMetadata verifies the
+// helper injects the live-tool list into state.metadata.liveTools
+// of the most recent running Task part, leaving other parts alone.
+func TestAttachLiveToolsToRunningTask_InjectsMetadata(t *testing.T) {
+	parts := []db.Part{
+		{
+			ID:   "p1",
+			Data: mustJSON(t, map[string]interface{}{"type": "text", "text": "hi"}),
+		},
+		{
+			ID: "p2",
+			Data: mustJSON(t, map[string]interface{}{
+				"type": "tool",
+				"tool": "Task",
+				"id":   "tu_old",
+				"state": map[string]interface{}{
+					"status": "completed",
+					"input":  map[string]interface{}{"description": "older task"},
+				},
+			}),
+		},
+		{
+			ID: "p3",
+			Data: mustJSON(t, map[string]interface{}{
+				"type": "tool",
+				"tool": "Task",
+				"id":   "tu_open",
+				"state": map[string]interface{}{
+					"status": "running",
+					"input":  map[string]interface{}{"description": "current task"},
+				},
+			}),
+		},
+	}
+
+	tools := []platforms.LiveTool{
+		{ToolName: "Read", Summary: "/a/b"},
+		{ToolName: "Grep", Summary: "TODO"},
+	}
+	got := attachLiveToolsToRunningTask(parts, tools)
+	if len(got) != len(parts) {
+		t.Fatalf("len mismatch: got %d, want %d", len(got), len(parts))
+	}
+
+	// p1 and p2 must be unchanged.
+	if string(got[0].Data) != string(parts[0].Data) {
+		t.Errorf("p1 mutated unexpectedly: %s vs %s", got[0].Data, parts[0].Data)
+	}
+	if strings.Contains(string(got[1].Data), "liveTools") {
+		t.Errorf("p2 (older completed Task) should not have liveTools: %s", got[1].Data)
+	}
+
+	// p3 must have state.metadata.liveTools populated.
+	var probe struct {
+		State struct {
+			Metadata struct {
+				LiveTools []platforms.LiveTool `json:"liveTools"`
+			} `json:"metadata"`
+		} `json:"state"`
+	}
+	if err := json.Unmarshal(got[2].Data, &probe); err != nil {
+		t.Fatalf("unmarshal p3: %v", err)
+	}
+	if len(probe.State.Metadata.LiveTools) != 2 {
+		t.Fatalf("expected 2 liveTools on p3, got %+v", probe.State.Metadata.LiveTools)
+	}
+	if probe.State.Metadata.LiveTools[0].ToolName != "Read" {
+		t.Errorf("first liveTool = %+v, want toolName=Read", probe.State.Metadata.LiveTools[0])
+	}
+}
+
+// TestAttachLiveToolsToRunningTask_Noop verifies the helper is a
+// no-op when there are no running tasks or no live tools.
+func TestAttachLiveToolsToRunningTask_Noop(t *testing.T) {
+	parts := []db.Part{
+		{
+			ID: "p1",
+			Data: mustJSON(t, map[string]interface{}{
+				"type":  "tool",
+				"tool":  "Task",
+				"state": map[string]interface{}{"status": "completed"},
+			}),
+		},
+	}
+	// Empty tools -> return the original slice.
+	if got := attachLiveToolsToRunningTask(parts, nil); len(got) != 1 {
+		t.Errorf("unexpected slice len: %d", len(got))
+	}
+	// Non-empty tools but nothing is running -> no mutation.
+	got := attachLiveToolsToRunningTask(parts, []platforms.LiveTool{{ToolName: "Read"}})
+	if strings.Contains(string(got[0].Data), "liveTools") {
+		t.Errorf("completed-only parts should not be mutated: %s", got[0].Data)
+	}
+}
+
+// TestSession_AttachesLiveTools exercises the end-to-end wiring: a
+// fixture with a running Task tool_use + a hook-driven live-tool
+// entry must surface the liveTools metadata through Session().
+func TestSession_AttachesLiveTools(t *testing.T) {
+	// One assistant message with a Task tool_use that has NO matching
+	// tool_result — markRunningToolUses should flip it to running.
+	jsonl := `{"type":"user","uuid":"u1","sessionId":"ST","timestamp":"2026-04-08T22:49:00.000Z","cwd":"/p","message":{"role":"user","content":"go"}}
+{"type":"assistant","uuid":"a1","sessionId":"ST","timestamp":"2026-04-08T22:49:01.000Z","cwd":"/p","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Task","input":{"description":"explore"}}]}}
+`
+	root := writeFixture(t, map[string]string{
+		"-p/ST.jsonl": jsonl,
+	})
+	a := NewFromDir(root)
+
+	// Seed the live cache with an active sub-agent tool call.
+	a.live.Apply("ST", liveStateDelta{
+		Status: "busy",
+		ToolStart: &toolActivity{
+			SubagentID: "A",
+			ToolName:   "Read",
+			Summary:    "/x/y.go",
+		},
+	})
+	// Guard against the busy TTL in case the test is slow.
+	_ = time.Now
+
+	detail, err := a.Session(context.Background(), "ST", 10, 0)
+	if err != nil {
+		t.Fatalf("Session: %v", err)
+	}
+	// Find the Task part.
+	var taskPart *db.Part
+	for i := range detail.Parts {
+		var probe struct {
+			Tool string `json:"tool"`
+		}
+		if err := json.Unmarshal(detail.Parts[i].Data, &probe); err != nil {
+			continue
+		}
+		if probe.Tool == "Task" {
+			taskPart = &detail.Parts[i]
+			break
+		}
+	}
+	if taskPart == nil {
+		t.Fatal("no Task part found in detail parts")
+	}
+
+	var probe struct {
+		State struct {
+			Status   string `json:"status"`
+			Metadata struct {
+				LiveTools []platforms.LiveTool `json:"liveTools"`
+			} `json:"metadata"`
+		} `json:"state"`
+	}
+	if err := json.Unmarshal(taskPart.Data, &probe); err != nil {
+		t.Fatalf("unmarshal task part: %v", err)
+	}
+	if probe.State.Status != "running" {
+		t.Errorf("Task status = %q, want running", probe.State.Status)
+	}
+	if len(probe.State.Metadata.LiveTools) != 1 {
+		t.Fatalf("liveTools = %+v, want 1 entry", probe.State.Metadata.LiveTools)
+	}
+	if probe.State.Metadata.LiveTools[0].ToolName != "Read" {
+		t.Errorf("toolName = %q, want Read", probe.State.Metadata.LiveTools[0].ToolName)
+	}
+	if probe.State.Metadata.LiveTools[0].Summary != "/x/y.go" {
+		t.Errorf("summary = %q, want /x/y.go", probe.State.Metadata.LiveTools[0].Summary)
+	}
+}
+
+func mustJSON(t *testing.T, v interface{}) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	return b
 }
 
 // BenchmarkSessions_1000 exercises NFR-1: building session summaries

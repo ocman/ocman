@@ -179,7 +179,12 @@ function convertMessages(
                 result: undefined,
               });
               break;
-            } else if (toolName === 'task' || toolName === 'mcp_task') {
+            } else if (
+              toolName === 'task' ||
+              toolName === 'mcp_task' ||
+              toolName === 'Task' ||
+              toolName === 'mcp_Task'
+            ) {
               // Render subagent calls without the prompt, with a link to the session
               const desc = inp.description || title || 'Subagent task';
               const agentType = inp.subagent_type || '';
@@ -212,6 +217,9 @@ function convertMessages(
               // The output is the subagent result — use it directly, stripping the task_id line
               const status = (st.status as string) || 'running';
               if (typeof st.output === 'string' && st.output.trim()) {
+                // Claude Code wraps the final output in <task_result> tags;
+                // strip the OpenCode task_id line if present. Keep both
+                // transformations here so the renderer receives clean text.
                 taskOutput = truncate(
                   st.output.replace(/task_id:\s*ses_[^\s)]+[^\n]*\n?/, '').trim(),
                   5000,
@@ -219,18 +227,33 @@ function convertMessages(
               }
               // While running, inject live output from the task's session so
               // the main thread can render a small streaming container until
-              // the final output is available.
+              // the final output is available. (OpenCode path.)
               let livePreview = '';
               if (status === 'running' && taskId && taskLiveOutput?.[taskId]) {
                 const lines = taskLiveOutput[taskId].split('\n');
                 livePreview = lines.slice(-40).join('\n'); // tail of stdout
+              }
+              // Live tool list comes from the Claude Code hook cache, injected
+              // by the backend into state.metadata.liveTools for the most
+              // recent running Task tool_use. Shape: [{toolName, summary,
+              // subagentId, startedAt}, ...]. Ignored unless the Task is
+              // actually running.
+              type LiveTool = { toolName: string; summary?: string; subagentId?: string; startedAt?: string };
+              let liveTools: LiveTool[] = [];
+              if (status === 'running' && st.metadata) {
+                const meta = st.metadata as Record<string, unknown>;
+                if (Array.isArray(meta.liveTools)) {
+                  liveTools = (meta.liveTools as LiveTool[]).filter(
+                    (t) => t && typeof t.toolName === 'string' && t.toolName !== '',
+                  );
+                }
               }
               toolCalls.push({
                 type: 'tool-call' as const,
                 toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
                 toolName: '__task__',
                 argsText: `${status}\n${label}`,
-                result: JSON.stringify({ taskId, taskOutput, livePreview }),
+                result: JSON.stringify({ taskId, taskOutput, livePreview, liveTools }),
               });
               break;
             } else if (toolName === 'question' || toolName === 'mcp_question' || toolName === 'Question') {

@@ -652,11 +652,14 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
     let sessionId = '';
     let taskOutput = '';
     let livePreview = '';
+    type LiveTool = { toolName: string; summary?: string; subagentId?: string; startedAt?: string };
+    let liveTools: LiveTool[] = [];
     try {
       const parsed = JSON.parse(typeof result === 'string' ? result : '{}');
       sessionId = parsed.taskId || '';
       taskOutput = (parsed.taskOutput || '').replace(/^<task_result>\n?/, '').replace(/\n?<\/task_result>$/, '').trim();
       if (typeof parsed.livePreview === 'string') livePreview = parsed.livePreview.trim();
+      if (Array.isArray(parsed.liveTools)) liveTools = parsed.liveTools as LiveTool[];
     } catch { /* ignore */ }
 
     let statusIcon = '\u2022';
@@ -671,6 +674,9 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
     // have a final output to display. Once taskOutput arrives, the final
     // markdown output replaces the streaming preview.
     const showStream = taskStatus === 'running' && !taskOutput && !!livePreview;
+    // Live tool list is only meaningful while the task runs and we have no
+    // final output yet; once the summary arrives it replaces the list.
+    const showLiveTools = taskStatus === 'running' && !taskOutput && liveTools.length > 0;
 
     return (
       <div className={`oc-tool oc-tool-task ${statusClass} ${taskExpanded ? 'oc-tool-expanded' : ''}`}>
@@ -679,6 +685,19 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
           <span className="oc-tool-label">{label}</span>
           {sessionId && <span className="oc-task-link">{'\u2197'}</span>}
         </div>
+        {showLiveTools && (
+          <div className="oc-tool-content">
+            <ul className="oc-task-live-tools" aria-live="polite">
+              {liveTools.map((t, idx) => (
+                <li key={`${t.subagentId || ''}-${t.toolName}-${idx}`} className="oc-task-live-tool">
+                  <span className="oc-task-live-arrow">{'\u21B3'}</span>
+                  <span className="oc-task-live-name">{t.toolName}</span>
+                  {t.summary && <span className="oc-task-live-summary"> {t.summary}</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {showStream && (
           <div className="oc-tool-content">
             <TaskStreamPreview text={livePreview} />

@@ -139,3 +139,114 @@ var _ *platforms.LiveState = (&liveCache{}).GetAt("", time.Now())
 // busyTTLForTest is long enough that TTL never expires in unit tests
 // that don't explicitly exercise it.
 const busyTTLForTest = time.Hour
+
+// TestLiveCache_TrackToolStartAndEnd verifies the hook-driven
+// in-flight-tool tracking: PreToolUse pushes, PostToolUse pops, and
+// the live state surfaces the intermediate list.
+func TestLiveCache_TrackToolStartAndEnd(t *testing.T) {
+	c := newLiveCache(busyTTLForTest)
+	now := time.Now()
+
+	c.ApplyAt("s1", liveStateDelta{
+		Status:    "busy",
+		ToolStart: &toolActivity{SubagentID: "a1", ToolName: "Read", Summary: "/tmp/foo"},
+	}, now)
+	c.ApplyAt("s1", liveStateDelta{
+		Status:    "busy",
+		ToolStart: &toolActivity{SubagentID: "a1", ToolName: "Grep", Summary: "TODO"},
+	}, now.Add(10*time.Millisecond))
+
+	got := c.GetAt("s1", now.Add(20*time.Millisecond))
+	if got == nil {
+		t.Fatal("expected state, got nil")
+	}
+	if len(got.CurrentTools) != 2 {
+		t.Fatalf("CurrentTools = %+v, want 2 entries", got.CurrentTools)
+	}
+	if got.CurrentTools[0].ToolName != "Read" || got.CurrentTools[1].ToolName != "Grep" {
+		t.Errorf("unexpected order: %+v", got.CurrentTools)
+	}
+
+	// End the Read; only Grep should remain.
+	c.ApplyAt("s1", liveStateDelta{
+		Status:  "busy",
+		ToolEnd: &toolActivity{SubagentID: "a1", ToolName: "Read"},
+	}, now.Add(20*time.Millisecond))
+	got = c.GetAt("s1", now.Add(30*time.Millisecond))
+	if len(got.CurrentTools) != 1 || got.CurrentTools[0].ToolName != "Grep" {
+		t.Errorf("after PostToolUse Read: %+v", got.CurrentTools)
+	}
+}
+
+// TestLiveCache_ToolStartDeduplicates covers the re-invocation case:
+// the same (subagent, tool) pair starting twice must not stack.
+func TestLiveCache_ToolStartDeduplicates(t *testing.T) {
+	c := newLiveCache(busyTTLForTest)
+	now := time.Now()
+	c.ApplyAt("s1", liveStateDelta{
+		ToolStart: &toolActivity{SubagentID: "a1", ToolName: "Read", Summary: "/tmp/foo"},
+	}, now)
+	c.ApplyAt("s1", liveStateDelta{
+		ToolStart: &toolActivity{SubagentID: "a1", ToolName: "Read", Summary: "/tmp/bar"},
+	}, now.Add(time.Millisecond))
+	got := c.GetAt("s1", now.Add(2*time.Millisecond))
+	if len(got.CurrentTools) != 1 {
+		t.Fatalf("want 1 tool after dedup, got %+v", got.CurrentTools)
+	}
+	if got.CurrentTools[0].Summary != "/tmp/bar" {
+		t.Errorf("Summary should reflect the latest start, got %q", got.CurrentTools[0].Summary)
+	}
+}
+
+// TestLiveCache_SubagentEndClearsTools verifies that a SubagentStop
+// wipes every tool tracked for that sub-agent without touching
+// others.
+func TestLiveCache_SubagentEndClearsTools(t *testing.T) {
+	c := newLiveCache(busyTTLForTest)
+	now := time.Now()
+	c.ApplyAt("s1", liveStateDelta{ToolStart: &toolActivity{SubagentID: "a1", ToolName: "Read"}}, now)
+	c.ApplyAt("s1", liveStateDelta{ToolStart: &toolActivity{SubagentID: "a2", ToolName: "Bash"}}, now)
+	c.ApplyAt("s1", liveStateDelta{SubagentEnd: "a1"}, now.Add(time.Millisecond))
+
+	got := c.GetAt("s1", now.Add(2*time.Millisecond))
+	if len(got.CurrentTools) != 1 || got.CurrentTools[0].SubagentID != "a2" {
+		t.Errorf("after SubagentStop a1: %+v", got.CurrentTools)
+	}
+}
+
+// TestLiveCache_TerminalStatusClearsTools ensures a parent-level Stop
+// sweeps any leftover tool entries — defensive against dropped
+// PostToolUse events.
+func TestLiveCache_TerminalStatusClearsTools(t *testing.T) {
+	c := newLiveCache(busyTTLForTest)
+	now := time.Now()
+	c.ApplyAt("s1", liveStateDelta{ToolStart: &toolActivity{ToolName: "Read"}}, now)
+	c.ApplyAt("s1", liveStateDelta{Status: "done", ClearPendingPermission: true}, now.Add(time.Millisecond))
+
+	got := c.GetAt("s1", now.Add(2*time.Millisecond))
+	if got.Status != "done" {
+		t.Errorf("Status = %q, want done", got.Status)
+	}
+	if len(got.CurrentTools) != 0 {
+		t.Errorf("expected no tools after Stop, got %+v", got.CurrentTools)
+	}
+}
+
+// TestLiveCache_BusyTTLDropsTools confirms the stale-busy recovery
+// path also discards phantom tool entries, matching the "clean slate
+// on revival" contract.
+func TestLiveCache_BusyTTLDropsTools(t *testing.T) {
+	c := newLiveCache(50 * time.Millisecond)
+	start := time.Now()
+	c.ApplyAt("s1", liveStateDelta{
+		Status:    "busy",
+		ToolStart: &toolActivity{ToolName: "Read"},
+	}, start)
+	got := c.GetAt("s1", start.Add(time.Second))
+	if got.Status != "done" {
+		t.Errorf("Status after TTL = %q, want done", got.Status)
+	}
+	if len(got.CurrentTools) != 0 {
+		t.Errorf("CurrentTools should be empty after busy TTL, got %+v", got.CurrentTools)
+	}
+}

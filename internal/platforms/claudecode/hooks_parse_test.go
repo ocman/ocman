@@ -159,6 +159,92 @@ func TestParseHookPayload_InvalidJSON(t *testing.T) {
 	}
 }
 
+// TestDeriveSubagentID covers the three important shapes:
+//   - subagent transcript path returns the agent id
+//   - parent transcript path returns empty
+//   - empty input returns empty
+func TestDeriveSubagentID(t *testing.T) {
+	cases := []struct {
+		path string
+		want string
+	}{
+		{"/home/u/.claude/projects/-home-u-proj/abc/subagents/agent-xyz.jsonl", "xyz"},
+		{"/home/u/.claude/projects/-home-u-proj/abc.jsonl", ""},
+		{"", ""},
+		{"agent-only.jsonl", ""},
+	}
+	for _, c := range cases {
+		if got := deriveSubagentID(c.path); got != c.want {
+			t.Errorf("deriveSubagentID(%q) = %q, want %q", c.path, got, c.want)
+		}
+	}
+}
+
+// TestSummariseToolInput spot-checks the per-tool-name heuristic; the
+// important property is that known tool shapes produce a meaningful
+// one-line string and anything malformed returns "".
+func TestSummariseToolInput(t *testing.T) {
+	cases := []struct {
+		name  string
+		tool  string
+		input string
+		want  string
+	}{
+		{"Read", "Read", `{"file_path":"/a/b.go","offset":10}`, "/a/b.go"},
+		{"Bash", "Bash", `{"command":"go test ./..."}`, "go test ./..."},
+		{"Grep pattern only", "Grep", `{"pattern":"TODO"}`, "TODO"},
+		{"Grep pattern + path", "Grep", `{"pattern":"TODO","path":"src"}`, "TODO @ src"},
+		{"WebFetch", "WebFetch", `{"url":"https://x.y"}`, "https://x.y"},
+		{"unknown tool picks any useful field", "FutureTool", `{"path":"/z"}`, "/z"},
+		{"empty input returns empty", "Read", ``, ""},
+		{"malformed JSON returns empty", "Read", `{not json`, ""},
+		{"newline trimmed to first line", "Bash", "{\"command\":\"echo hi\\nls\"}", "echo hi"},
+	}
+	for _, c := range cases {
+		got := summariseToolInput(c.tool, []byte(c.input))
+		if got != c.want {
+			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+// TestHookEventAppliesToolActivity links parseHookPayload and
+// toLiveStateDelta end-to-end — a PreToolUse payload must yield a
+// delta with a matching ToolStart, and PostToolUse must yield a
+// matching ToolEnd.
+func TestHookEventAppliesToolActivity(t *testing.T) {
+	pre := []byte(`{
+		"session_id":"sP",
+		"hook_event_name":"PreToolUse",
+		"tool_name":"Read",
+		"tool_input":{"file_path":"/x/y.go"},
+		"transcript_path":"/h/.claude/projects/-h-p/parent/subagents/agent-A.jsonl"
+	}`)
+	ev, err := parseHookPayload(pre, time.Now())
+	if err != nil || ev.Ignored {
+		t.Fatalf("parseHookPayload PreToolUse: err=%v ignored=%v", err, ev.Ignored)
+	}
+	d := ev.toLiveStateDelta()
+	if d.ToolStart == nil || d.ToolStart.ToolName != "Read" || d.ToolStart.SubagentID != "A" {
+		t.Fatalf("PreToolUse delta: %+v", d.ToolStart)
+	}
+	if d.ToolStart.Summary != "/x/y.go" {
+		t.Errorf("summary = %q, want /x/y.go", d.ToolStart.Summary)
+	}
+
+	post := []byte(`{
+		"session_id":"sP",
+		"hook_event_name":"PostToolUse",
+		"tool_name":"Read",
+		"transcript_path":"/h/.claude/projects/-h-p/parent/subagents/agent-A.jsonl"
+	}`)
+	ev2, _ := parseHookPayload(post, time.Now())
+	d2 := ev2.toLiveStateDelta()
+	if d2.ToolEnd == nil || d2.ToolEnd.ToolName != "Read" || d2.ToolEnd.SubagentID != "A" {
+		t.Fatalf("PostToolUse delta: %+v", d2.ToolEnd)
+	}
+}
+
 // TestHookEvent_ToLiveStateDelta covers the event -> LiveState
 // transition table. The cache applies these deltas to whatever
 // current state exists for the session.
@@ -176,7 +262,12 @@ func TestHookEvent_ToLiveStateDelta(t *testing.T) {
 		{"PreToolUse stays busy", "PreToolUse", "busy", false, false, false},
 		{"PostToolUse stays busy", "PostToolUse", "busy", false, false, false},
 		{"Stop -> done", "Stop", "done", false, true, false},
-		{"SubagentStop -> done", "SubagentStop", "done", false, false, false},
+		// SubagentStop no longer forces the parent-session status to
+		// "done" — a sub-agent finishing is independent of whether
+		// the parent is still working. The next Stop / PreToolUse
+		// on the parent updates its status. Instead the delta clears
+		// the per-sub-agent live-tool list (covered by liveCache tests).
+		{"SubagentStop does not force parent status", "SubagentStop", "", false, false, false},
 		{"Notification sets pending permission", "Notification", "", true, false, false},
 	}
 	for _, c := range cases {

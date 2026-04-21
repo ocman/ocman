@@ -143,7 +143,83 @@ func parseReader(r io.Reader, mode parseMode) (*parsedFile, error) {
 		return nil, fmt.Errorf("scan: %w", err)
 	}
 
+	if mode == parseFull {
+		markRunningToolUses(pf)
+	}
+
 	return pf, nil
+}
+
+// markRunningToolUses walks the parsed parts after a full parse and
+// flips state.status to "running" for every tool_use that does not
+// yet have a matching tool_result. This is the only signal we have,
+// from a static jsonl, that a Task (or any other tool) is still in
+// flight — the CLI appends tool_result only after the tool returns.
+//
+// The UI uses the running status to render the compact "live" Task
+// card and to overlay the live-tool list from the hook-driven cache.
+func markRunningToolUses(pf *parsedFile) {
+	if pf == nil || len(pf.Parts) == 0 {
+		return
+	}
+	// Collect every tool_use_id referenced by a tool_result part.
+	resolved := make(map[string]struct{}, len(pf.Parts))
+	for _, p := range pf.Parts {
+		var probe struct {
+			Tool string `json:"tool"`
+			ID   string `json:"id"`
+		}
+		if err := json.Unmarshal(p.Data, &probe); err != nil {
+			continue
+		}
+		if probe.Tool == "result" && probe.ID != "" {
+			resolved[probe.ID] = struct{}{}
+		}
+	}
+	if len(resolved) == len(pf.Parts) {
+		// Every part is a result — nothing to mark.
+		return
+	}
+	for i, p := range pf.Parts {
+		var probe struct {
+			Type  string          `json:"type"`
+			Tool  string          `json:"tool"`
+			ID    string          `json:"id"`
+			State json.RawMessage `json:"state"`
+		}
+		if err := json.Unmarshal(p.Data, &probe); err != nil {
+			continue
+		}
+		if probe.Type != "tool" || probe.Tool == "" || probe.Tool == "result" {
+			continue
+		}
+		if probe.ID == "" {
+			continue
+		}
+		if _, ok := resolved[probe.ID]; ok {
+			continue
+		}
+		// Rewrite state.status -> "running". Preserve everything else
+		// in state verbatim by deserialising into a generic map.
+		var state map[string]interface{}
+		if len(probe.State) > 0 {
+			_ = json.Unmarshal(probe.State, &state)
+		}
+		if state == nil {
+			state = map[string]interface{}{}
+		}
+		state["status"] = "running"
+		replacement, err := json.Marshal(map[string]interface{}{
+			"type":  "tool",
+			"tool":  probe.Tool,
+			"id":    probe.ID,
+			"state": state,
+		})
+		if err != nil {
+			continue
+		}
+		pf.Parts[i].Data = replacement
+	}
 }
 
 // jsonlEvent is the minimal shape we extract from every line.
@@ -427,6 +503,7 @@ func normalizeContentBlock(block json.RawMessage) json.RawMessage {
 		Type      string          `json:"type"`
 		Text      string          `json:"text"`
 		Thinking  string          `json:"thinking"`
+		ID        string          `json:"id"`          // tool_use (Anthropic SDK)
 		Name      string          `json:"name"`        // tool_use
 		Input     json.RawMessage `json:"input"`       // tool_use
 		ToolUseID string          `json:"tool_use_id"` // tool_result
@@ -452,13 +529,14 @@ func normalizeContentBlock(block json.RawMessage) json.RawMessage {
 		return out
 	case "tool_use":
 		// Mirror OpenCode's tool-part shape: top-level tool name,
-		// with input under state.input. status="completed" is a
-		// reasonable default for historical data — we don't have
-		// the running/errored distinction in a static jsonl.
+		// with input under state.input. Default status="completed"
+		// here — a post-pass (markRunningToolUses) downgrades any
+		// tool_use without a matching tool_result to "running" so
+		// the UI can render a live indicator while work is ongoing.
 		out, _ := json.Marshal(map[string]interface{}{
 			"type": "tool",
 			"tool": probe.Name,
-			"id":   nil,
+			"id":   probe.ID,
 			"state": map[string]interface{}{
 				"status": "completed",
 				"input":  json.RawMessage(probe.Input),

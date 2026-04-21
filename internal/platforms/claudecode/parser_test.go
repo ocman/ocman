@@ -255,3 +255,54 @@ func TestParseTimestampMs(t *testing.T) {
 func quoteJSON(s string) string {
 	return `"` + s + `"`
 }
+
+// TestMarkRunningToolUses_FlipsUnmatchedToolUses verifies that a
+// tool_use without a matching tool_result is marked "running", while
+// a tool_use whose tool_result is present stays "completed".
+func TestMarkRunningToolUses_FlipsUnmatchedToolUses(t *testing.T) {
+	// Two tool uses: one has a matching tool_result, one doesn't.
+	// The full parse should leave the matched one as completed and
+	// flip the unmatched one to "running".
+	jsonl := `{"type":"assistant","uuid":"a1","sessionId":"S1","timestamp":"2026-04-08T22:49:01.500Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_done","name":"Read","input":{"file_path":"/a"}},{"type":"tool_use","id":"tu_open","name":"Task","input":{"description":"go deep"}}]}}
+{"type":"user","uuid":"u2","sessionId":"S1","timestamp":"2026-04-08T22:49:03.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_done","content":"ok"}]}}
+`
+	pf, err := parseReader(strings.NewReader(jsonl), parseFull)
+	if err != nil {
+		t.Fatalf("parseReader: %v", err)
+	}
+
+	var foundRunning, foundCompleted bool
+	for _, p := range pf.Parts {
+		var probe struct {
+			Tool  string `json:"tool"`
+			ID    string `json:"id"`
+			State struct {
+				Status string `json:"status"`
+			} `json:"state"`
+		}
+		if err := json.Unmarshal(p.Data, &probe); err != nil {
+			t.Fatalf("unmarshal part: %v (data=%s)", err, p.Data)
+		}
+		if probe.Tool == "result" {
+			continue
+		}
+		switch probe.ID {
+		case "tu_done":
+			if probe.State.Status != "completed" {
+				t.Errorf("tu_done status = %q, want completed", probe.State.Status)
+			}
+			foundCompleted = true
+		case "tu_open":
+			if probe.State.Status != "running" {
+				t.Errorf("tu_open status = %q, want running", probe.State.Status)
+			}
+			foundRunning = true
+		}
+	}
+	if !foundRunning {
+		t.Error("did not find the unmatched tool_use; parse may have dropped it")
+	}
+	if !foundCompleted {
+		t.Error("did not find the matched tool_use")
+	}
+}
