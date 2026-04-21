@@ -423,17 +423,6 @@ function ComposerImpl({
   }, [sessionId]);
 
   useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (!inputRef.current || inputRef.current.disabled) return;
-      if (target.closest('button, a, select, input, textarea, [role="button"], [contenteditable], pre, code, .oc-cmd-palette')) return;
-      inputRef.current.focus();
-    };
-    document.addEventListener('click', handleClick);
-    return () => document.removeEventListener('click', handleClick);
-  }, []);
-
-  useEffect(() => {
     const el = inputRef.current;
     return () => {
       if (draftTimerRef.current) {
