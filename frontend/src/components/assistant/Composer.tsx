@@ -129,7 +129,7 @@ const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: 'archive', description: 'Archive this session and open the most recent one' },
   { name: 'compact', description: 'Summarize conversation history to free up context window' },
   { name: 'model', description: 'Change the active model (opens a picker)' },
-  { name: 'new', description: 'Start a new session in the same project directory' },
+  { name: 'new', description: 'Start a new session in the same project directory (optionally add a title)' },
   { name: 'rename', description: 'Rename this session' },
   { name: 'tmux', description: 'Switch to the tmux session for this project' },
   { name: 'vscode', description: 'Open the project directory in VS Code' },
@@ -247,6 +247,9 @@ function ComposerImpl({
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [slashFilter, setSlashFilter] = useState('');
   const [slashIndex, setSlashIndex] = useState(0);
+  const [isBashMode, setIsBashMode] = useState(false);
+  const setIsBashModeRef = useRef(setIsBashMode);
+  useEffect(() => { setIsBashModeRef.current = setIsBashMode; }, []);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [modelPickerQuery, setModelPickerQuery] = useState('');
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
@@ -649,6 +652,7 @@ function ComposerImpl({
 
       if (e.key === 'c' && e.ctrlKey && el.value.trim() && el.selectionStart === el.selectionEnd) {
         e.preventDefault();
+        setIsBashModeRef.current(false);
         el.value = '';
         el.style.height = 'auto';
         el.dispatchEvent(new CustomEvent('oc-slash-update', { detail: { show: false, filter: '' } }));
@@ -689,8 +693,10 @@ function ComposerImpl({
           onSendRef.current?.(trimmed, imgs.length > 0 ? imgs : undefined);
         }
 
+        setIsBashModeRef.current(false);
         el.value = '';
         el.style.height = 'auto';
+        el.dispatchEvent(new CustomEvent('oc-slash-update', { detail: { show: false, filter: '' } }));
         const sid = sessionIdRef.current;
         if (sid) {
           if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
@@ -705,6 +711,9 @@ function ComposerImpl({
       el.style.height = Math.min(el.scrollHeight, 200) + 'px';
 
       const val = el.value;
+      // Detect bash mode when input starts with !
+      el.dispatchEvent(new CustomEvent('oc-bash-mode', { detail: val.startsWith('!') }));
+      
       // Only show the slash menu while the user is typing the command name
       // itself. Once a space appears (or a newline), the caret has moved on
       // to arguments (e.g. `/agent plan`) and the menu becomes noise.
@@ -803,6 +812,9 @@ function ComposerImpl({
     const handleAgentPickerOpen = (e: Event) => {
       openAgentPicker(((e as CustomEvent).detail as string) || '');
     };
+    const handleBashMode = (e: Event) => {
+      setIsBashMode((e as CustomEvent).detail as boolean);
+    };
     el.addEventListener('oc-clear-images', handleClearImages);
     el.addEventListener('oc-paste-images', handlePasteImages);
     el.addEventListener('oc-slash-update', handleSlashUpdate);
@@ -811,6 +823,7 @@ function ComposerImpl({
     el.addEventListener('oc-slash-select', handleSlashSelect);
     el.addEventListener('oc-model-picker-open', handleModelPickerOpen);
     el.addEventListener('oc-agent-picker-open', handleAgentPickerOpen);
+    el.addEventListener('oc-bash-mode', handleBashMode);
     return () => {
       el.removeEventListener('oc-clear-images', handleClearImages);
       el.removeEventListener('oc-paste-images', handlePasteImages);
@@ -820,6 +833,7 @@ function ComposerImpl({
       el.removeEventListener('oc-slash-select', handleSlashSelect);
       el.removeEventListener('oc-model-picker-open', handleModelPickerOpen);
       el.removeEventListener('oc-agent-picker-open', handleAgentPickerOpen);
+      el.removeEventListener('oc-bash-mode', handleBashMode);
     };
   }, [addImageFiles, selectSlashCommand, openModelPicker, openAgentPicker]);
 
@@ -1021,7 +1035,14 @@ function ComposerImpl({
         // Only colorize once the /agent catalog has resolved — otherwise the
         // fallback color (e.g. `build` → mauve) paints briefly before the
         // authoritative color arrives, producing a pink flash.
-        style={!disabled && effectiveAgent && agentsLoaded ? { borderLeftColor: agentColor(effectiveAgent, agents) } : undefined}
+        // Red border when in bash mode (input starts with !)
+        style={
+          isBashMode
+            ? { borderLeftColor: '#f38ba8' }
+            : !disabled && effectiveAgent && agentsLoaded
+            ? { borderLeftColor: agentColor(effectiveAgent, agents) }
+            : undefined
+        }
       >
         {images.length > 0 && (
           <div className="oc-composer-images">
@@ -1042,56 +1063,62 @@ function ComposerImpl({
         />
         <div className="oc-composer-bar">
           <div className="oc-composer-bar-left">
-            <button
-              type="button"
-              className="oc-bar-select"
-              disabled={disabled}
-              onClick={() => {
-                if (disabled) return;
-                setAgentPickerQuery('');
-                setAgentPickerOpen(true);
-              }}
-              title="Agent (click to change)"
-            >
-              {effectiveAgent && agentsLoaded && (
-                <span
-                  className="oc-agent-swatch"
-                  aria-hidden="true"
-                  style={{ background: agentColor(effectiveAgent, agents) }}
-                />
-              )}
-              {effectiveAgent || 'Agent'}
-            </button>
-            {hasModels && (
-              <button
-                type="button"
-                className="oc-bar-select"
-                disabled={disabled}
-                onClick={() => {
-                  if (disabled) return;
-                  setModelPickerQuery('');
-                  setModelPickerOpen(true);
-                }}
-                title="Model (click to change)"
-              >
-                {modelButtonLabel || 'Model'}
-              </button>
+            {isBashMode ? (
+              <span className="oc-bar-shell">shell</span>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="oc-bar-select"
+                  disabled={disabled}
+                  onClick={() => {
+                    if (disabled) return;
+                    setAgentPickerQuery('');
+                    setAgentPickerOpen(true);
+                  }}
+                  title="Agent (click to change)"
+                >
+                  {effectiveAgent && agentsLoaded && (
+                    <span
+                      className="oc-agent-swatch"
+                      aria-hidden="true"
+                      style={{ background: agentColor(effectiveAgent, agents) }}
+                    />
+                  )}
+                  {effectiveAgent || 'Agent'}
+                </button>
+                {hasModels && (
+                  <button
+                    type="button"
+                    className="oc-bar-select"
+                    disabled={disabled}
+                    onClick={() => {
+                      if (disabled) return;
+                      setModelPickerQuery('');
+                      setModelPickerOpen(true);
+                    }}
+                    title="Model (click to change)"
+                  >
+                    {modelButtonLabel || 'Model'}
+                  </button>
+                )}
+                {hasReasoning && (
+                  <button
+                    type="button"
+                    className="oc-bar-select oc-bar-reasoning"
+                    disabled={disabled}
+                    onClick={() => {
+                      if (disabled) return;
+                      setReasoningPickerOpen(true);
+                    }}
+                    title={`Reasoning level (${isMacPlatform() ? '⌥' : 'Alt'}+R to cycle)`}
+                  >
+                    {selectedReasoning || 'default'}
+                  </button>
+                )}
+                {disabled && <span className="oc-bar-hint">No live connection</span>}
+              </>
             )}
-            {hasReasoning && (
-              <button
-                type="button"
-                className="oc-bar-select oc-bar-reasoning"
-                disabled={disabled}
-                onClick={() => {
-                  if (disabled) return;
-                  setReasoningPickerOpen(true);
-                }}
-                title={`Reasoning level (${isMacPlatform() ? '⌥' : 'Alt'}+R to cycle)`}
-              >
-                {selectedReasoning || 'default'}
-              </button>
-            )}
-            {disabled && <span className="oc-bar-hint">No live connection</span>}
           </div>
           <div className="oc-composer-bar-right">
             <button
