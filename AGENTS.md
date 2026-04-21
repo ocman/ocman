@@ -47,18 +47,21 @@ new adapter + registry entry; see
 ## Dev commands
 
 ```sh
-make dev            # runs backend (air) + frontend (vite) concurrently with live reload
-make dev-backend    # air only (Go on :8080)
-make dev-frontend   # vite only (React on :8228, proxies /api to :8080)
-make test           # runs `go test ./...` + `vitest run`
-make lint           # runs go vet, tsc -b, eslint, and the platform-branching check
-make build          # production: npm ci + npm run build, then go build -o ocman .
-make clean          # removes ocman binary, tmp/, and static/assets/
+make dev              # backend (air :8229) + frontend (vite dev :8228) with HMR
+make dev-prod         # backend (air :8229) + frontend (vite preview :8228, manual rebuild)
+make dev-prod-watch   # backend (air :8229) + frontend (vite preview :8228, auto-rebuild)
+make dev-backend      # air only (Go on :8229)
+make dev-frontend     # vite only (React on :8228, proxies /api to :8229)
+make test             # runs `go test ./...` + `vitest run`
+make lint             # runs go vet, tsc -b, eslint, and the platform-branching check
+make build            # production: npm ci + npm run build, then go build -o ocman .
+make clean            # removes ocman binary, tmp/, and static/assets/
 ```
 
 - `mise` provides `air` (Go live-reload). Run `mise install` if air
   is missing.
-- The Vite dev server proxies `/api` requests to `localhost:8080`.
+- Both dev and dev-prod modes use port **8228** for frontend, **8229** for backend.
+- The frontend (Vite dev or preview) proxies `/api` requests to `localhost:8229`.
 - Air rebuilds Go on source changes but does **not** re-embed the
   frontend bundle. After editing frontend code, either (a) use the
   Vite dev server on :8228 instead of the embedded build, or (b)

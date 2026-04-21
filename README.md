@@ -99,11 +99,17 @@ Optional per-platform:
 # Install tools
 mise install
 
-# Run with live reload (backend on :8080, frontend on :8228)
+# Development mode (Vite dev server with HMR)
 make dev
+# Open http://localhost:8228
+
+# OR: Production mode with auto-rebuild (for memory profiling)
+make dev-prod-watch
+# Open http://localhost:8229
 ```
 
-Open <http://localhost:8228> during development (Vite proxies `/api` to the Go backend).
+**Development mode** (`make dev`): Opens on port **8228** - Vite dev server with instant HMR updates.  
+**Production mode** (`make dev-prod-watch`): Opens on port **8228** - Vite preview mode serves production build, auto-rebuilds on changes (**manual browser refresh required**).
 
 ## Build
 
@@ -116,7 +122,7 @@ This builds the frontend first (`npm ci && npm run build`), then compiles the Go
 ## Usage
 
 ```sh
-./ocman                              # default: listens on 0.0.0.0:8080, reads ~/.local/share/opencode/opencode.db
+./ocman                              # default: listens on 0.0.0.0:8229, reads ~/.local/share/opencode/opencode.db
 ./ocman -addr localhost:9090         # custom listen address
 ./ocman -db /path/to/opencode.db     # custom OpenCode database path
 ```
@@ -178,15 +184,47 @@ spec/multi-agent-support/                  Requirements + architecture + Phase 7
 
 ## Development
 
-| Command              | Description                                      |
-|----------------------|--------------------------------------------------|
-| `make dev`           | Backend (air) + frontend (vite) with live reload |
-| `make dev-backend`   | Go backend only (air, port 8080)                 |
-| `make dev-frontend`  | Vite dev server only (port 8228)                 |
-| `make test`          | `go test ./...` + `vitest run`                   |
-| `make lint`          | `go vet`, `tsc -b`, `eslint`, and the platform-branching check |
-| `make build`         | Production build                                 |
-| `make clean`         | Remove binary, tmp/, and static/assets/          |
+### Quick Command Reference
+
+| Command                | Port | Live Reload | Use Case |
+|------------------------|------|-------------|----------|
+| `make dev`             | 8228 | ✅ Yes (HMR) | Regular development |
+| `make dev-prod-watch`  | 8228 | ⚠️ Manual refresh | Memory profiling, production testing |
+| `make dev-prod`        | 8228 | ❌ No | One-time production test |
+
+### All Commands
+
+| Command                | Port | Description                                      |
+|------------------------|------|--------------------------------------------------|
+| `make dev`             | 8228 | Backend (air) + frontend (vite dev) with HMR |
+| `make dev-prod`        | 8228 | Backend (air) + frontend (vite preview of production build) |
+| `make dev-prod-watch`  | 8228 | Backend (air) + frontend (vite preview, auto-rebuilds on changes) |
+| `make dev-backend`     | 8229 | Go backend only (air, port 8229)                 |
+| `make dev-frontend`    | 8228 | Vite dev server only (port 8228)                 |
+| `make test`            | `go test ./...` + `vitest run`                   |
+| `make lint`            | `go vet`, `tsc -b`, `eslint`, and the platform-branching check |
+| `make build`           | Production build                                 |
+| `make clean`           | Remove binary, tmp/, and static/assets/          |
+
+### Development Workflows
+
+**Regular Frontend Development:**
+```bash
+make dev
+# → Instant HMR updates
+# → Best for UI iteration
+```
+
+**Memory Profiling / Production Testing:**
+```bash
+make dev-prod-watch
+# → Edit code → auto-rebuild → manually refresh browser
+# → Shows real production memory usage
+# → Good for debugging the 1GB memory issue
+```
+
+**Why no auto-refresh in prod mode?**  
+Vite's preview mode serves the production build but doesn't include HMR. The watcher rebuilds automatically, but you need to manually refresh your browser to see changes. This is by design - production builds are meant for testing, not rapid iteration.
 
 ### Tests
 
