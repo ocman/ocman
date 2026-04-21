@@ -58,6 +58,20 @@ export interface Session {
   pendingQuestion: boolean;
   archived: boolean;
   seen: boolean;
+  /**
+   * Live git status snapshot for the session's working directory.
+   * Populated by the backend when listing sessions; null/undefined
+   * when the directory isn't a git worktree or git isn't available.
+   */
+  gitInfo?: GitInfo | null;
+}
+
+/** Mirror of internal/db.GitInfo. */
+export interface GitInfo {
+  branch: string;
+  ahead: number;
+  behind: number;
+  dirty: boolean;
 }
 
 export interface Message {

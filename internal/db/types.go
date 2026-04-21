@@ -59,6 +59,22 @@ type Session struct {
 	PendingQuestion   bool `json:"pendingQuestion"`   // agent has a pending question for this session
 	Archived          bool `json:"archived"`
 	Seen              bool `json:"seen"`
+	// GitInfo is a live snapshot of the git status of the session's
+	// working directory. It's populated by the server when listing
+	// sessions (not by the platform adapters) and is nil when the
+	// directory isn't a git worktree or git isn't available.
+	GitInfo *GitInfo `json:"gitInfo,omitempty"`
+}
+
+// GitInfo mirrors gitinfo.Info on the wire. It lives in the db package
+// because it's part of the Session JSON payload; the server populates
+// it from the internal/gitinfo helper. Keeping the type here avoids
+// making internal/db import internal/gitinfo.
+type GitInfo struct {
+	Branch string `json:"branch"`
+	Ahead  int    `json:"ahead"`
+	Behind int    `json:"behind"`
+	Dirty  bool   `json:"dirty"`
 }
 
 // SessionArchiveCandidate carries the minimal session data needed for archive jobs.

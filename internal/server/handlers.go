@@ -13,11 +13,13 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/gitinfo"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/pricing"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -302,7 +304,83 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	applyGitInfo(ctx, all)
+
 	writeJSON(w, all)
+}
+
+// gitInfoWorkers caps the number of concurrent `git status` invocations
+// spawned per /api/sessions request. The gitinfo cache absorbs repeat
+// lookups for the same directory, but a dashboard listing 500 sessions
+// across many unique repos shouldn't fork-exec 500 git processes at
+// once.
+const gitInfoWorkers = 8
+
+// applyGitInfo populates GitInfo on every session in sessions in-place.
+// It deduplicates by directory so sessions sharing a worktree hit the
+// cache for free. A bounded worker pool limits concurrent git
+// subprocess invocations.
+func applyGitInfo(ctx context.Context, sessions []db.Session) {
+	if len(sessions) == 0 {
+		return
+	}
+
+	// Collect the unique directories first so we run `git status`
+	// once per repo even when many sessions point at the same place.
+	uniqueDirs := make(map[string]struct{}, len(sessions))
+	for _, s := range sessions {
+		if s.Directory != "" {
+			uniqueDirs[s.Directory] = struct{}{}
+		}
+	}
+	if len(uniqueDirs) == 0 {
+		return
+	}
+
+	dirs := make([]string, 0, len(uniqueDirs))
+	for d := range uniqueDirs {
+		dirs = append(dirs, d)
+	}
+
+	workers := gitInfoWorkers
+	if len(dirs) < workers {
+		workers = len(dirs)
+	}
+
+	results := make(map[string]gitinfo.Info, len(dirs))
+	var mu sync.Mutex
+	jobs := make(chan string)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for dir := range jobs {
+				info := gitinfo.Lookup(ctx, dir)
+				mu.Lock()
+				results[dir] = info
+				mu.Unlock()
+			}
+		}()
+	}
+	for _, d := range dirs {
+		jobs <- d
+	}
+	close(jobs)
+	wg.Wait()
+
+	for i := range sessions {
+		info, ok := results[sessions[i].Directory]
+		if !ok || !info.IsRepo() {
+			continue
+		}
+		sessions[i].GitInfo = &db.GitInfo{
+			Branch: info.Branch,
+			Ahead:  info.Ahead,
+			Behind: info.Behind,
+			Dirty:  info.Dirty,
+		}
+	}
 }
 
 // notifyEntry is a minimal per-session payload used by the favicon/title

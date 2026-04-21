@@ -12,7 +12,7 @@ import { QuestionPrompt, type PendingQuestion, type QuestionItem } from '../comp
 import { PermissionPrompt } from '../components/session/PermissionPrompt';
 import { StatusBadge } from '../components/StatusBadge';
 import { PlatformBadge } from '../components/PlatformBadge';
-import { ShortPath } from '../components/SessionTable';
+import { ShortPath, GitStatusLine } from '../components/SessionTable';
 import { BackendStats } from '../components/BackendStats';
 import { SidebarResizer } from '../components/SidebarResizer';
 import { useUiStore } from '../lib/uiStore';
@@ -2369,6 +2369,7 @@ export function SessionDetail() {
                     <ShortPath path={sib.directory} />
                   </span>
                 </span>
+                <GitStatusLine info={sib.gitInfo} />
               </span>
               <span className="session-sidebar-meta">
                 <span className="session-sidebar-time" title={new Date(sib.timeUpdated).toLocaleString()}>{relativeTime(sib.timeUpdated)}</span>

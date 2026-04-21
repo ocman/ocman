@@ -1,3 +1,27 @@
+/* Git status indicator under the project path.
+ * Intentionally muted — this is supplementary metadata, not a primary
+ * signal, so it stays subordinate to the title + path above it.
+ * Opacity (rather than a lighter colour) lets the whole line fade
+ * together and inherits any future theme contrast tweaks. */
+.git-status {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 2px;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 10px;
+  color: var(--overlay0, var(--text-dim));
+  line-height: 1.4;
+  opacity: 0.6;
+}
+.git-status-branch,
+.git-status-ahead,
+.git-status-behind,
+.git-status-mark {
+  color: inherit;
+  font-weight: normal;
+}
+
 /* Session row action buttons (tmux, vscode) */
 .session-row-actions {
   display: inline-flex;

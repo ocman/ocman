@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import './SessionTable.css';
 import { useNavigate } from 'react-router-dom';
-import type { Session } from '../lib/api';
+import type { Session, GitInfo } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
 import { cleanTitle, formatDuration, relativeTime, shortPath } from '../lib/format';
 import { StatusBadge } from './StatusBadge';
@@ -14,6 +14,48 @@ export function ShortPath({ path }: { path: string }) {
   const last = parts.pop() || '';
   const prefix = parts.length > 0 ? parts.slice(-1).join('/') + '/' : '';
   return <><span className="short-path-prefix">{prefix}</span><span className="short-path-last">{last}</span></>;
+}
+
+/**
+ * Tiny git status indicator rendered under the project path: branch
+ * name, optional ahead/behind counts (when upstream tracking knows
+ * about them), and a trailing `*` when the working tree is dirty.
+ *
+ * Every field carries its own `title` so hovering the specific glyph
+ * explains what it means — handier than a single combined tooltip on
+ * the whole line, especially when most of them are empty.
+ *
+ * Returns null when no git info is available so callers can just
+ * render it unconditionally.
+ */
+export function GitStatusLine({ info }: { info?: GitInfo | null }) {
+  if (!info || !info.branch) return null;
+  const dirtyCls = info.dirty ? ' git-status-dirty' : '';
+  return (
+    <div className={`git-status${dirtyCls}`}>
+      <span className="git-status-branch" title={`Current branch: ${info.branch}`}>
+        {info.branch}
+      </span>
+      {info.ahead > 0 && (
+        <span
+          className="git-status-ahead"
+          title={`${info.ahead} commit${info.ahead === 1 ? '' : 's'} ahead of upstream (not yet pushed)`}
+        >&uarr;{info.ahead}</span>
+      )}
+      {info.behind > 0 && (
+        <span
+          className="git-status-behind"
+          title={`${info.behind} commit${info.behind === 1 ? '' : 's'} behind upstream (not yet pulled)`}
+        >&darr;{info.behind}</span>
+      )}
+      {info.dirty && (
+        <span
+          className="git-status-mark"
+          title="Working tree has uncommitted changes"
+        >*</span>
+      )}
+    </div>
+  );
 }
 
 interface Props {
@@ -204,6 +246,7 @@ export function SessionTable({ sessions, showProject, loading, tmux, includeArch
                 {showProject && (
                    <td className="mono">
                     <ShortPath path={s.directory} />
+                    <GitStatusLine info={s.gitInfo} />
                     <div className="session-row-actions" style={{ marginTop: 2 }}>
                       {hasTmux && (
                         <button
