@@ -14,6 +14,8 @@ import { StatusBadge } from '../components/StatusBadge';
 import { PlatformBadge } from '../components/PlatformBadge';
 import { ShortPath } from '../components/SessionTable';
 import { BackendStats } from '../components/BackendStats';
+import { SidebarResizer } from '../components/SidebarResizer';
+import { useUiStore } from '../lib/uiStore';
 import { useTmux } from '../lib/useTmux';
 import { filterVisibleSessions } from '../lib/sessionVisibility';
 import { useApiStore } from '../lib/apiStore';
@@ -528,6 +530,7 @@ export function SessionDetail() {
   const createSession = useApiStore((state) => state.createSession);
   const setCachedSession = useApiStore((state) => state.setCachedSession);
   const updateCachedSession = useApiStore((state) => state.updateCachedSession);
+  const sidebarWidth = useUiStore((state) => state.sidebarWidth);
 
 
   useEffect(() => {
@@ -2277,7 +2280,8 @@ export function SessionDetail() {
   return (
     <Toast.Provider swipeDirection="right">
       <div className="session-layout">
-        <div className="session-sidebar">
+        <div className="session-sidebar" style={{ width: sidebarWidth }}>
+        <SidebarResizer />
         <div className="session-sidebar-header">
           <span className="session-sidebar-heading">
             <span>Recent sessions</span>
