@@ -27,7 +27,7 @@ var knownPlatforms = map[string]bool{
 }
 
 func main() {
-	addr := flag.String("addr", "127.0.0.1:8080", "listen address")
+	addr := flag.String("addr", "127.0.0.1:8229", "listen address")
 	dbPath := flag.String("db", db.DefaultDBPath(), "path to opencode.db")
 	platformsFlag := flag.String("platforms", "opencode", "comma-separated list of platforms to enable (opencode, claude-code)")
 	flag.Parse()

@@ -125,9 +125,9 @@ func TestIsLoopback(t *testing.T) {
 		remoteAddr string
 		want       bool
 	}{
-		{"127.0.0.1:8080", true},
-		{"[::1]:8080", true},
-		{"192.168.1.1:8080", false},
+		{"127.0.0.1:8229", true},
+		{"[::1]:8229", true},
+		{"192.168.1.1:8229", false},
 		{"10.0.0.1:443", false},
 	}
 	for _, tt := range tests {

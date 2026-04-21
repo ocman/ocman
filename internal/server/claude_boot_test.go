@@ -19,12 +19,12 @@ func TestHookURLFromAddr(t *testing.T) {
 		in   string
 		want string
 	}{
-		{"127.0.0.1:8080", "http://127.0.0.1:8080/api/hooks/claude"},
-		{"localhost:8080", "http://127.0.0.1:8080/api/hooks/claude"},
-		{":8080", "http://127.0.0.1:8080/api/hooks/claude"},
-		{"0.0.0.0:8080", "http://127.0.0.1:8080/api/hooks/claude"},
-		{"[::]:8080", "http://127.0.0.1:8080/api/hooks/claude"},
-		{"[::1]:8080", "http://127.0.0.1:8080/api/hooks/claude"},
+		{"127.0.0.1:8229", "http://127.0.0.1:8229/api/hooks/claude"},
+		{"localhost:8229", "http://127.0.0.1:8229/api/hooks/claude"},
+		{":8229", "http://127.0.0.1:8229/api/hooks/claude"},
+		{"0.0.0.0:8229", "http://127.0.0.1:8229/api/hooks/claude"},
+		{"[::]:8229", "http://127.0.0.1:8229/api/hooks/claude"},
+		{"[::1]:8229", "http://127.0.0.1:8229/api/hooks/claude"},
 	}
 	for _, c := range cases {
 		got := hookURLFromAddr(c.in)
