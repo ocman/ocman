@@ -1,6 +1,81 @@
+/**
+ * AuthError is thrown when the backend reports that the client is
+ * unauthenticated (HTTP 401). It's a distinct error type so callers —
+ * and in particular the global fetch wrappers — can fan out into the
+ * lockscreen flow rather than surfacing an opaque "unauthorized"
+ * message in a red banner.
+ *
+ * The `authStore.handleAuthError` hook (installed at app boot) sees
+ * instances of this class and flips the authenticated flag so the
+ * router re-renders the login page.
+ */
+export class AuthError extends Error {
+  constructor(message = 'unauthorized') {
+    super(message);
+    this.name = 'AuthError';
+  }
+}
+
+// Pluggable 401 hook. authStore installs itself here at boot so it
+// doesn't need to live inside api.ts itself (would be an import cycle).
+// The default is a no-op; replacing it is explicit opt-in.
+type AuthErrorHandler = (err: AuthError) => void;
+let onAuthError: AuthErrorHandler = () => {};
+
+/**
+ * registerAuthErrorHandler installs a callback that runs whenever any
+ * call through fetchJSON / postJSON observes a 401. The callback
+ * should not re-throw; it's fire-and-forget state plumbing.
+ * Returns the previous handler so callers can chain or restore.
+ */
+export function registerAuthErrorHandler(handler: AuthErrorHandler): AuthErrorHandler {
+  const previous = onAuthError;
+  onAuthError = handler;
+  return previous;
+}
+
+// Internal: surface a 401 as an AuthError and notify the registered
+// handler. Callers that catch this will receive an AuthError; anyone
+// who doesn't catch still lets the handler update global auth state.
+async function throwForStatus(resp: Response): Promise<never> {
+  if (resp.status === 401) {
+    const err = new AuthError(await resp.text().catch(() => 'unauthorized'));
+    onAuthError(err);
+    throw err;
+  }
+  throw new Error(await resp.text());
+}
+
 export async function fetchJSON<T>(url: string, signal?: AbortSignal): Promise<T> {
   const resp = await fetch(url, signal ? { signal } : undefined);
-  if (!resp.ok) throw new Error(await resp.text());
+  if (!resp.ok) await throwForStatus(resp);
+  return resp.json();
+}
+
+/**
+ * postJSON is the POST counterpart to fetchJSON: JSON body in, JSON
+ * body out, with identical 401 handling. Use it for new call sites;
+ * existing inline `fetch(..., { method: 'POST' })` usages in this
+ * module will migrate opportunistically.
+ *
+ * Set `parseJSON` to false when the server returns 204 No Content
+ * (login returns a body, but logout doesn't).
+ */
+export async function postJSON<TResp, TReq = unknown>(
+  url: string,
+  body: TReq,
+  opts?: { signal?: AbortSignal; parseJSON?: boolean },
+): Promise<TResp> {
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: opts?.signal,
+  });
+  if (!resp.ok) await throwForStatus(resp);
+  if (opts?.parseJSON === false || resp.status === 204) {
+    return undefined as unknown as TResp;
+  }
   return resp.json();
 }
 
@@ -637,7 +712,27 @@ export const api = {
   async systemStats(): Promise<SystemStats> {
     return fetchJSON<SystemStats>('/api/system/stats');
   },
+
+  /**
+   * Auth endpoints — see internal/server/auth.go.
+   *
+   * `authMe` reports the global auth state; the frontend calls it
+   * once at boot to decide whether to render the lockscreen.
+   * `authLogin` posts a password and sets the cookie on success;
+   * `authLogout` clears it. Neither endpoint itself returns 401 on
+   * anonymous access (that's the whole point of /me), so they
+   * intentionally don't participate in the AuthError fan-out.
+   */
+  authMe: () => fetchJSON<AuthMe>('/api/auth/me'),
+  authLogin: (password: string) =>
+    postJSON<{ ok: boolean }, { password: string }>('/api/auth/login', { password }),
+  authLogout: () => postJSON<void, Record<string, never>>('/api/auth/logout', {}, { parseJSON: false }),
 };
+
+export interface AuthMe {
+  authRequired: boolean;
+  authenticated: boolean;
+}
 
 export interface SystemStats {
   memory: {

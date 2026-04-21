@@ -1,16 +1,18 @@
-import { Component, useCallback, useMemo } from 'react';
+import { Component, useCallback, useEffect, useMemo } from 'react';
 import type { ReactNode, ErrorInfo } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { DashboardLayout, SessionsTab, ProjectsTab, StatsTab, UsageTab } from './pages/Dashboard';
 import { ProjectDetail } from './pages/ProjectDetail';
 import { SessionDetail } from './pages/SessionDetail';
+import { Login } from './pages/Login';
 import { HeaderProvider } from './lib/HeaderProvider';
 import { useHeaderInfo } from './lib/headerContext';
 import { CommandPalette } from './components/CommandPalette';
 import { PlatformBadge } from './components/PlatformBadge';
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
 import { useFaviconNotify } from './lib/useFaviconNotify';
+import { useAuthStore } from './lib/authStore';
 import { useUiStore } from './lib/uiStore';
 import { useShortcut, useShortcutDispatcher } from './lib/shortcutRegistry';
 import { usePerformanceCleanup } from './lib/usePerformanceCleanup';
@@ -40,6 +42,8 @@ function Header() {
   const location = useLocation();
   const path = location.pathname;
   const { info } = useHeaderInfo();
+  const authRequired = useAuthStore((s) => s.authRequired);
+  const logout = useAuthStore((s) => s.logout);
 
   let breadcrumb: React.ReactNode = '';
   if (path.startsWith('/session/')) {
@@ -80,7 +84,16 @@ function Header() {
           ))}
         </div>
       )}
-
+      {authRequired && (
+        <button
+          type="button"
+          className="vscode-btn"
+          onClick={() => { void logout(); }}
+          title="Sign out"
+        >
+          Sign out
+        </button>
+      )}
     </header>
   );
 }
@@ -172,32 +185,60 @@ function MemoryMonitor() {
   return null;
 }
 
+/**
+ * AuthGate short-circuits the app tree while the initial auth probe
+ * is in flight, and again whenever the client is unauthenticated
+ * against an auth-required server. The inner app is only rendered
+ * once the gate decides it's safe — this is also what prevents every
+ * store's initial fetch from firing into a 401 storm on page load.
+ */
+function AuthGate({ children }: { children: ReactNode }) {
+  const checking = useAuthStore((s) => s.checking);
+  const authRequired = useAuthStore((s) => s.authRequired);
+  const authenticated = useAuthStore((s) => s.authenticated);
+  const bootstrap = useAuthStore((s) => s.bootstrap);
+
+  useEffect(() => {
+    bootstrap();
+  }, [bootstrap]);
+
+  if (checking) {
+    return <div className="oc-login-bootstrap">Checking authentication…</div>;
+  }
+  if (authRequired && !authenticated) {
+    return <Login />;
+  }
+  return <>{children}</>;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
-      <HeaderProvider>
-        <FaviconNotify />
-        <PerformanceCleanup />
-        <MemoryMonitor />
-        <GlobalHotkeys />
-        <div className="container">
-          <Header />
-          <div className="content">
-            <ErrorBoundary>
-              <Routes>
-                <Route element={<DashboardLayout />}>
-                  <Route path="/" element={<SessionsTab />} />
-                  <Route path="/projects" element={<ProjectsTab />} />
-                  <Route path="/stats" element={<StatsTab />} />
-                  <Route path="/usage" element={<UsageTab />} />
-                </Route>
-                <Route path="/project/*" element={<ProjectDetail />} />
-                <Route path="/session/:id" element={<SessionDetail />} />
-              </Routes>
-            </ErrorBoundary>
+      <AuthGate>
+        <HeaderProvider>
+          <FaviconNotify />
+          <PerformanceCleanup />
+          <MemoryMonitor />
+          <GlobalHotkeys />
+          <div className="container">
+            <Header />
+            <div className="content">
+              <ErrorBoundary>
+                <Routes>
+                  <Route element={<DashboardLayout />}>
+                    <Route path="/" element={<SessionsTab />} />
+                    <Route path="/projects" element={<ProjectsTab />} />
+                    <Route path="/stats" element={<StatsTab />} />
+                    <Route path="/usage" element={<UsageTab />} />
+                  </Route>
+                  <Route path="/project/*" element={<ProjectDetail />} />
+                  <Route path="/session/:id" element={<SessionDetail />} />
+                </Routes>
+              </ErrorBoundary>
+            </div>
           </div>
-        </div>
-      </HeaderProvider>
+        </HeaderProvider>
+      </AuthGate>
     </BrowserRouter>
   );
 }
