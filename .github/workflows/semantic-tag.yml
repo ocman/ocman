@@ -18,17 +18,12 @@ jobs:
           fetch-depth: 0
       - name: Create semantic version tag
         env:
-          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          RELEASE_TOKEN: ${{ github.token }}
           FORGEJO_API_URL: ${{ github.api_url }}
           REPOSITORY: ${{ github.repository }}
           TARGET_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-
-          if [ -z "${RELEASE_TOKEN:-}" ]; then
-            printf '%s\n' "RELEASE_TOKEN is required"
-            exit 1
-          fi
 
           owner="${REPOSITORY%/*}"
           repo="${REPOSITORY#*/}"
