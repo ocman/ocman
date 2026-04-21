@@ -80,6 +80,24 @@ func TestResolveAuthPassword_TrimsTrailingNewline(t *testing.T) {
 	}
 }
 
+// TestParseBoolEnv covers the accepted truthy spellings and makes
+// sure empty / garbage values stay falsy so OCMAN_AUTH_TRUST_LOCALHOST=
+// doesn't accidentally enable the bypass.
+func TestParseBoolEnv(t *testing.T) {
+	truthy := []string{"1", "true", "TRUE", "True", "yes", "YES", "on", " on ", " 1\n"}
+	for _, v := range truthy {
+		if !parseBoolEnv(v) {
+			t.Errorf("parseBoolEnv(%q) = false, want true", v)
+		}
+	}
+	falsy := []string{"", " ", "0", "false", "no", "off", "maybe", "enable", "disabled"}
+	for _, v := range falsy {
+		if parseBoolEnv(v) {
+			t.Errorf("parseBoolEnv(%q) = true, want false", v)
+		}
+	}
+}
+
 func TestIsLoopbackAddr(t *testing.T) {
 	tests := []struct {
 		addr string

@@ -18,26 +18,31 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// Auth protects non-localhost clients behind a password lockscreen.
+// Auth protects clients behind a password lockscreen.
 //
 // Design:
 //   - Auth is only engaged when a password is configured. If nil, every
 //     request is allowed through and ocman behaves exactly like the
 //     pre-auth versions.
-//   - Localhost requests always bypass auth: the local user already has
-//     filesystem-level access to everything ocman exposes, so forcing a
-//     login would only break the dev flow.
+//   - By default every client must authenticate, including localhost.
+//     Set TrustLocalhost to restore the traditional "local user is
+//     trusted" escape hatch — handy for dev loops where a password
+//     prompt on every `air` restart would be tedious.
 //   - Sessions are stateless signed cookies. The HMAC key is persisted
 //     in state.db so cookies survive restarts up to their TTL; rotating
 //     the key invalidates every cookie at once.
 //   - Login attempts are rate-limited per remote IP to make online
 //     brute-force unattractive. The window is short enough not to
 //     lock out a user who fat-fingered their password a few times.
+//     Localhost clients skip the limiter only when TrustLocalhost is
+//     set; otherwise they're rate-limited like anyone else so a
+//     malicious local process can't brute-force without backoff.
 type Auth struct {
-	passwordHash []byte
-	hmacKey      []byte
-	cookieTTL    time.Duration
-	cookieName   string
+	passwordHash   []byte
+	hmacKey        []byte
+	cookieTTL      time.Duration
+	cookieName     string
+	trustLocalhost bool
 
 	// limiter gates /api/auth/login attempts per source IP. Zero
 	// value is usable.
@@ -51,6 +56,19 @@ type AuthConfig struct {
 	PasswordHash []byte        // bcrypt hash; required
 	HMACKey      []byte        // 32+ random bytes; required
 	CookieTTL    time.Duration // e.g. 30 days; zero picks the default
+	// TrustLocalhost, when true, exempts loopback clients from auth.
+	// Default (false) means every client must present a valid cookie.
+	TrustLocalhost bool
+}
+
+// TrustsLocalhost reports whether localhost clients bypass auth.
+// Exposed for diagnostics (e.g. the boot log); middleware paths
+// consult the internal field directly.
+func (a *Auth) TrustsLocalhost() bool {
+	if a == nil {
+		return false
+	}
+	return a.trustLocalhost
 }
 
 // Default cookie parameters.
@@ -81,10 +99,11 @@ func NewAuth(cfg AuthConfig) (*Auth, error) {
 		ttl = defaultCookieTTL
 	}
 	return &Auth{
-		passwordHash: append([]byte(nil), cfg.PasswordHash...),
-		hmacKey:      append([]byte(nil), cfg.HMACKey...),
-		cookieTTL:    ttl,
-		cookieName:   authCookieName,
+		passwordHash:   append([]byte(nil), cfg.PasswordHash...),
+		hmacKey:        append([]byte(nil), cfg.HMACKey...),
+		cookieTTL:      ttl,
+		cookieName:     authCookieName,
+		trustLocalhost: cfg.TrustLocalhost,
 	}, nil
 }
 
@@ -188,9 +207,11 @@ func isSecure(r *http.Request) bool {
 
 // --- middleware ---
 
-// requireAuth wraps a handler so non-localhost clients must present a
-// valid auth cookie. When auth is disabled (s.auth == nil) the wrapper
-// is a pass-through. Localhost bypasses auth unconditionally.
+// requireAuth wraps a handler so clients must present a valid auth
+// cookie. When auth is disabled (s.auth == nil) the wrapper is a
+// pass-through. When auth.trustLocalhost is true, loopback clients
+// bypass the check (the dev-mode escape hatch); otherwise even
+// localhost must authenticate.
 //
 // The middleware deliberately doesn't authenticate static asset
 // requests: the SPA and its lockscreen must be reachable even for an
@@ -201,7 +222,7 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			next(w, r)
 			return
 		}
-		if isLoopback(r) {
+		if s.auth.trustLocalhost && isLoopback(r) {
 			next(w, r)
 			return
 		}
@@ -216,9 +237,9 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 // --- handlers ---
 
 // handleAuthLogin verifies the password and sets the cookie. It's
-// intentionally rate-limited per source IP; a valid localhost request
-// bypasses the limiter entirely because the local user can't lock
-// themselves out.
+// rate-limited per source IP. When trustLocalhost is set, loopback
+// requests skip the limiter (can't lock yourself out of your own
+// dev machine); otherwise everyone is on the same clock.
 func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	if s.auth == nil {
 		// Auth is disabled — treating login as a no-op with a 204
@@ -229,7 +250,8 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ip := clientIP(r)
-	if !isLoopback(r) && !s.auth.limiter.allow(ip) {
+	skipLimiter := s.auth.trustLocalhost && isLoopback(r)
+	if !skipLimiter && !s.auth.limiter.allow(ip) {
 		http.Error(w, "too many attempts, try again later", http.StatusTooManyRequests)
 		return
 	}
@@ -274,9 +296,16 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 		"authRequired":  s.auth != nil,
 		"authenticated": true,
 	}
-	if s.auth != nil && !isLoopback(r) {
-		resp["authenticated"] = s.auth.hasValidCookie(r)
+	if s.auth == nil {
+		writeJSON(w, resp)
+		return
 	}
+	// Loopback bypass: only when the operator has explicitly opted in.
+	if s.auth.trustLocalhost && isLoopback(r) {
+		writeJSON(w, resp)
+		return
+	}
+	resp["authenticated"] = s.auth.hasValidCookie(r)
 	writeJSON(w, resp)
 }
 

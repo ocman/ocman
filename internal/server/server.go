@@ -148,7 +148,20 @@ func (s *Server) Start(ctx context.Context) error {
 	// Start the server in a goroutine so we can wait for the context.
 	errCh := make(chan error, 1)
 	go func() {
-		log.WithField("addr", s.addr).Info("ocman server started")
+		// Surface the auth posture in the boot log so operators
+		// can tell at a glance whether and how clients are gated.
+		authMode := "disabled"
+		if s.auth != nil {
+			if s.auth.TrustsLocalhost() {
+				authMode = "password (localhost exempt)"
+			} else {
+				authMode = "password (all clients)"
+			}
+		}
+		log.WithFields(log.Fields{
+			"addr": s.addr,
+			"auth": authMode,
+		}).Info("ocman server started")
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			errCh <- err
 		}

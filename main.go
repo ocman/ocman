@@ -27,6 +27,11 @@ import (
 // systemd, Docker) and keeps the secret out of shell history.
 const authPasswordEnv = "OCMAN_AUTH_PASSWORD"
 
+// authTrustLocalhostEnv opts localhost out of auth. The env var is
+// treated truthy for "1", "true", "yes", "on" (case-insensitive);
+// anything else (including empty) is false.
+const authTrustLocalhostEnv = "OCMAN_AUTH_TRUST_LOCALHOST"
+
 // knownPlatforms lists the valid values for the -platforms flag.
 var knownPlatforms = map[string]bool{
 	string(opencodeplatform.PlatformID):   true,
@@ -37,9 +42,10 @@ func main() {
 	addr := flag.String("addr", "127.0.0.1:8228", "listen address")
 	dbPath := flag.String("db", db.DefaultDBPath(), "path to opencode.db")
 	platformsFlag := flag.String("platforms", "opencode", "comma-separated list of platforms to enable (opencode, claude-code)")
-	authPassword := flag.String("auth-password", "", "password required for non-localhost clients (prefer "+authPasswordEnv+" env or -auth-password-file)")
+	authPassword := flag.String("auth-password", "", "password required to access ocman (prefer "+authPasswordEnv+" env or -auth-password-file)")
 	authPasswordFile := flag.String("auth-password-file", "", "read auth password from file (trimmed of trailing whitespace)")
 	authSessionTTL := flag.Duration("auth-session-ttl", 30*24*time.Hour, "auth cookie lifetime")
+	authTrustLocalhost := flag.Bool("auth-trust-localhost", false, "exempt loopback clients from auth (dev-mode escape hatch; also OCMAN_AUTH_TRUST_LOCALHOST)")
 	flag.Parse()
 
 	// Parse and validate the -platforms flag.
@@ -100,7 +106,7 @@ func main() {
 		registry.Register(claudecodeplatform.New())
 	}
 
-	auth, err := buildAuth(stateDB, *authPassword, *authPasswordFile, *authSessionTTL, *addr)
+	auth, err := buildAuth(stateDB, *authPassword, *authPasswordFile, *authSessionTTL, *addr, *authTrustLocalhost)
 	if err != nil {
 		log.Fatalf("Failed to configure auth: %v", err)
 	}
@@ -137,7 +143,7 @@ func resolveAuthPassword(flagValue, fileValue string) (string, error) {
 // buildAuth assembles the server-side auth subsystem from the
 // resolved config. Returns (nil, nil) when no password is configured
 // — the server then runs in its pre-auth, open-by-default mode.
-func buildAuth(stateDB *state.DB, flagValue, fileValue string, ttl time.Duration, addr string) (*server.Auth, error) {
+func buildAuth(stateDB *state.DB, flagValue, fileValue string, ttl time.Duration, addr string, trustLocalhostFlag bool) (*server.Auth, error) {
 	password, err := resolveAuthPassword(flagValue, fileValue)
 	if err != nil {
 		return nil, err
@@ -175,18 +181,32 @@ func buildAuth(stateDB *state.DB, flagValue, fileValue string, ttl time.Duration
 		}
 	}
 
-	if isLoopbackAddr(addr) {
-		// Configured but listening on loopback only — auth does
-		// nothing. Likely a misconfiguration; warn loudly but keep
-		// running so the dev flow isn't broken.
-		log.WithField("addr", addr).Warn("auth is configured but -addr is loopback-only; auth will have no effect")
+	trustLocalhost := trustLocalhostFlag || parseBoolEnv(os.Getenv(authTrustLocalhostEnv))
+
+	if !trustLocalhost && isLoopbackAddr(addr) {
+		// Configured, listener is loopback-only, and localhost is
+		// NOT trusted: the dashboard is effectively unreachable
+		// without logging in from the same browser as the operator.
+		// Still valid (and the intended posture), but worth naming.
+		log.WithField("addr", addr).Info("auth required for all clients (incl. localhost) and -addr is loopback-only")
 	}
 
 	return server.NewAuth(server.AuthConfig{
-		PasswordHash: hash,
-		HMACKey:      key,
-		CookieTTL:    ttl,
+		PasswordHash:   hash,
+		HMACKey:        key,
+		CookieTTL:      ttl,
+		TrustLocalhost: trustLocalhost,
 	})
+}
+
+// parseBoolEnv returns true for the common truthy spellings. Empty
+// is false so unsetting the env var returns the default behaviour.
+func parseBoolEnv(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 // isLoopbackAddr returns true when the listener's host part is a

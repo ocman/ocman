@@ -11,18 +11,23 @@ import (
 
 // newTestAuth builds an Auth with the given plaintext password and a
 // deterministic HMAC key so tests can exercise cookie signing without
-// fighting rand.
-func newTestAuth(t *testing.T, password string) *Auth {
+// fighting rand. The default is strict (no localhost bypass); pass
+// withTrustLocalhost to restore the dev-mode exemption.
+func newTestAuth(t *testing.T, password string, opts ...testAuthOption) *Auth {
 	t.Helper()
+	cfg := AuthConfig{
+		HMACKey:   []byte("deterministic-test-key-of-32-ch!"),
+		CookieTTL: time.Hour,
+	}
 	hash, err := HashPassword(password)
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	a, err := NewAuth(AuthConfig{
-		PasswordHash: hash,
-		HMACKey:      []byte("deterministic-test-key-of-32-ch!"),
-		CookieTTL:    time.Hour,
-	})
+	cfg.PasswordHash = hash
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	a, err := NewAuth(cfg)
 	if err != nil {
 		t.Fatalf("new auth: %v", err)
 	}
@@ -30,6 +35,12 @@ func newTestAuth(t *testing.T, password string) *Auth {
 		t.Fatal("expected non-nil auth")
 	}
 	return a
+}
+
+type testAuthOption func(*AuthConfig)
+
+func withTrustLocalhost() testAuthOption {
+	return func(c *AuthConfig) { c.TrustLocalhost = true }
 }
 
 // --- NewAuth construction ---
@@ -49,6 +60,34 @@ func TestNewAuth_ShortKeyRejected(t *testing.T) {
 	_, err := NewAuth(AuthConfig{PasswordHash: hash, HMACKey: []byte("tiny")})
 	if err == nil {
 		t.Error("expected error for short hmac key")
+	}
+}
+
+// TestNewAuth_DefaultTrustsLocalhostFalse pins the post-flip default:
+// an AuthConfig with no TrustLocalhost set produces an Auth that
+// requires every client — loopback included — to present a cookie.
+func TestNewAuth_DefaultTrustsLocalhostFalse(t *testing.T) {
+	a := newTestAuth(t, "hunter2")
+	if a.TrustsLocalhost() {
+		t.Error("default AuthConfig should not trust localhost")
+	}
+}
+
+// TestNewAuth_TrustLocalhostPropagates: the opt-in flag reaches the
+// constructed Auth verbatim.
+func TestNewAuth_TrustLocalhostPropagates(t *testing.T) {
+	a := newTestAuth(t, "hunter2", withTrustLocalhost())
+	if !a.TrustsLocalhost() {
+		t.Error("withTrustLocalhost() should produce an Auth that trusts loopback")
+	}
+}
+
+// TestTrustsLocalhost_NilSafe: the accessor survives a nil receiver,
+// which is the shape callers see when auth is disabled entirely.
+func TestTrustsLocalhost_NilSafe(t *testing.T) {
+	var a *Auth
+	if a.TrustsLocalhost() {
+		t.Error("nil *Auth should report TrustsLocalhost() = false")
 	}
 }
 
@@ -165,8 +204,11 @@ func TestRequireAuth_PassthroughWhenDisabled(t *testing.T) {
 	}
 }
 
-func TestRequireAuth_LoopbackBypasses(t *testing.T) {
-	srv := &Server{auth: newTestAuth(t, "hunter2")}
+// TestRequireAuth_LoopbackBypasses_WhenTrusted pins the opt-in
+// escape hatch: with TrustLocalhost set, loopback clients are not
+// gated and pass through without presenting a cookie.
+func TestRequireAuth_LoopbackBypasses_WhenTrusted(t *testing.T) {
+	srv := &Server{auth: newTestAuth(t, "hunter2", withTrustLocalhost())}
 	handler := srv.requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -179,6 +221,50 @@ func TestRequireAuth_LoopbackBypasses(t *testing.T) {
 		if rr.Code != http.StatusOK {
 			t.Errorf("%s: status = %d, want 200", addr, rr.Code)
 		}
+	}
+}
+
+// TestRequireAuth_LoopbackRequiresAuth_ByDefault ensures the
+// post-flip behaviour: strict by default — even localhost clients
+// are sent to the lockscreen unless TrustLocalhost is opted into.
+func TestRequireAuth_LoopbackRequiresAuth_ByDefault(t *testing.T) {
+	srv := &Server{auth: newTestAuth(t, "hunter2")}
+	handler := srv.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("handler should not be called for anonymous loopback in strict mode")
+	})
+
+	for _, addr := range []string{"127.0.0.1:12345", "[::1]:12345"} {
+		req := httptest.NewRequest("GET", "/api/stats", nil)
+		req.RemoteAddr = addr
+		rr := httptest.NewRecorder()
+		handler(rr, req)
+		if rr.Code != http.StatusUnauthorized {
+			t.Errorf("%s: status = %d, want 401", addr, rr.Code)
+		}
+	}
+}
+
+// TestRequireAuth_LoopbackWithCookie_ByDefault: a localhost client
+// with a valid cookie still passes — strict mode requires auth, it
+// doesn't *forbid* loopback.
+func TestRequireAuth_LoopbackWithCookie_ByDefault(t *testing.T) {
+	a := newTestAuth(t, "hunter2")
+	srv := &Server{auth: a}
+	handler := srv.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	w := httptest.NewRecorder()
+	a.issueCookie(w, httptest.NewRequest("GET", "/", nil))
+	cookie := w.Result().Cookies()[0]
+
+	req := httptest.NewRequest("GET", "/api/stats", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	req.AddCookie(cookie)
+	rr := httptest.NewRecorder()
+	handler(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", rr.Code)
 	}
 }
 
@@ -245,7 +331,30 @@ func TestHandleAuthMe_Disabled(t *testing.T) {
 	}
 }
 
-func TestHandleAuthMe_EnabledLoopback(t *testing.T) {
+// TestHandleAuthMe_TrustedLoopback: with the opt-in escape hatch,
+// a localhost client sees itself as already authenticated so the
+// frontend skips the lockscreen.
+func TestHandleAuthMe_TrustedLoopback(t *testing.T) {
+	srv := &Server{auth: newTestAuth(t, "hunter2", withTrustLocalhost())}
+	req := httptest.NewRequest("GET", "/api/auth/me", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rr := httptest.NewRecorder()
+	srv.handleAuthMe(rr, req)
+
+	var got map[string]interface{}
+	_ = json.Unmarshal(rr.Body.Bytes(), &got)
+	if got["authRequired"] != true {
+		t.Errorf("authRequired = %v, want true", got["authRequired"])
+	}
+	if got["authenticated"] != true {
+		t.Errorf("authenticated = %v, want true (trusted loopback)", got["authenticated"])
+	}
+}
+
+// TestHandleAuthMe_UntrustedLoopback: default mode. An anonymous
+// localhost client is NOT authenticated — the lockscreen will be
+// rendered just like for any remote client.
+func TestHandleAuthMe_UntrustedLoopback(t *testing.T) {
 	srv := &Server{auth: newTestAuth(t, "hunter2")}
 	req := httptest.NewRequest("GET", "/api/auth/me", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
@@ -257,9 +366,8 @@ func TestHandleAuthMe_EnabledLoopback(t *testing.T) {
 	if got["authRequired"] != true {
 		t.Errorf("authRequired = %v, want true", got["authRequired"])
 	}
-	// Localhost is always considered authenticated from the client's POV.
-	if got["authenticated"] != true {
-		t.Errorf("authenticated = %v, want true (loopback bypass)", got["authenticated"])
+	if got["authenticated"] != false {
+		t.Errorf("authenticated = %v, want false (strict mode)", got["authenticated"])
 	}
 }
 
@@ -368,8 +476,11 @@ func TestHandleAuthLogin_RateLimited(t *testing.T) {
 	}
 }
 
-func TestHandleAuthLogin_LoopbackSkipsRateLimit(t *testing.T) {
-	srv := &Server{auth: newTestAuth(t, "hunter2")}
+// TestHandleAuthLogin_LoopbackSkipsRateLimit_WhenTrusted keeps the
+// dev-mode property: with TrustLocalhost set, a local user can hammer
+// the login endpoint without locking themselves out.
+func TestHandleAuthLogin_LoopbackSkipsRateLimit_WhenTrusted(t *testing.T) {
+	srv := &Server{auth: newTestAuth(t, "hunter2", withTrustLocalhost())}
 	for i := 0; i < loginMaxAttempts+5; i++ {
 		req := httptest.NewRequest("POST", "/api/auth/login",
 			strings.NewReader(`{"password":"wrong"}`))
@@ -377,8 +488,34 @@ func TestHandleAuthLogin_LoopbackSkipsRateLimit(t *testing.T) {
 		rr := httptest.NewRecorder()
 		srv.handleAuthLogin(rr, req)
 		if rr.Code == http.StatusTooManyRequests {
-			t.Fatalf("loopback should never be rate-limited (attempt %d)", i)
+			t.Fatalf("trusted loopback should never be rate-limited (attempt %d)", i)
 		}
+	}
+}
+
+// TestHandleAuthLogin_LoopbackRateLimited_ByDefault: strict mode
+// treats localhost like every other IP, so a runaway local process
+// can't brute-force without backoff.
+func TestHandleAuthLogin_LoopbackRateLimited_ByDefault(t *testing.T) {
+	srv := &Server{auth: newTestAuth(t, "hunter2")}
+	for i := 0; i < loginMaxAttempts; i++ {
+		req := httptest.NewRequest("POST", "/api/auth/login",
+			strings.NewReader(`{"password":"wrong"}`))
+		req.RemoteAddr = "127.0.0.1:12345"
+		rr := httptest.NewRecorder()
+		srv.handleAuthLogin(rr, req)
+		if rr.Code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d: got %d, want 401", i, rr.Code)
+		}
+	}
+	// Next attempt must be 429 even though we're on loopback.
+	req := httptest.NewRequest("POST", "/api/auth/login",
+		strings.NewReader(`{"password":"wrong"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rr := httptest.NewRecorder()
+	srv.handleAuthLogin(rr, req)
+	if rr.Code != http.StatusTooManyRequests {
+		t.Errorf("expected 429 after %d failures from loopback in strict mode, got %d", loginMaxAttempts, rr.Code)
 	}
 }
 
