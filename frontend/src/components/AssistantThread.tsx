@@ -38,13 +38,20 @@ function CodeBlockPre(props: any) {
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function MarkdownLink(props: any) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { node: _node, ...rest } = props;
+  return <a {...rest} target="_blank" rel="noopener noreferrer" />;
+}
+
 const MarkdownText: FC<{ text: string }> = ({ text }) => {
   if (!text.trim()) return null;
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       rehypePlugins={[rehypeHighlight]}
-      components={{ pre: CodeBlockPre }}
+      components={{ pre: CodeBlockPre, a: MarkdownLink }}
     >
       {text}
     </ReactMarkdown>
