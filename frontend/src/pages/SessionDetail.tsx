@@ -29,6 +29,11 @@ const PAGE_SIZE = 30;
 const RECENT_SESSIONS_LIMIT = 15;
 const SIDEBAR_RECENT_HOURS = 12;
 const ARCHIVE_ANIMATION_MS = 220;
+// How often the Recent Sessions sidebar re-polls /api/sessions. Kept low enough
+// to feel live, but not so low that we hammer the OpenCode port-discovery +
+// per-instance HTTP fan-out on every tick. Polling is paused while the tab is
+// hidden.
+const SIDEBAR_REFRESH_MS = 3000;
 const MAX_RETAINED_MESSAGES = 200;
 const TRIMMED_RETAINED_MESSAGES = 150;
 const MAX_SUBAGENT_TOKEN_ENTRIES = 256;
@@ -677,28 +682,26 @@ export function SessionDetail() {
   const handleArchiveSession = useCallback((e: React.MouseEvent, target: Session) => {
     e.stopPropagation();
     if (archivingSessionIds.has(target.id)) return;
+    // Snapshot the sibling list and archived session's index at click time,
+    // before any background poll can reorder the list.
+    const isCurrent = target.id === id;
+    const siblingsSnapshot = recentSessionsRef.current;
+    const idxSnapshot = siblingsSnapshot.findIndex(s => s.id === target.id);
     setArchivingSessionIds(prev => new Set(prev).add(target.id));
     archiveTimeoutsRef.current[target.id] = window.setTimeout(() => {
       archiveSession(target.platform, target.id, target.timeUpdated, true)
         .then(() => {
-          // If the archived session is the one currently being viewed,
-          // auto-navigate to the session one place below it (older). If
-          // nothing survives below, fall back to the session directly
-          // above it, then to the dashboard.
-          const isCurrent = target.id === id;
-          const siblings = recentSessionsRef.current;
-          const idx = siblings.findIndex(s => s.id === target.id);
           setRecentSessions(prev => showArchivedRecent
             ? prev.map(session => (session.id === target.id ? { ...session, archived: true } : session))
             : prev.filter(session => session.id !== target.id));
           if (isCurrent) {
+            // Prefer the session directly below the archived one (older).
+            // Fall back to the session directly above (more recent).
             const visible = (s: Session) => s.id !== target.id && (showArchivedRecent || !s.archived);
             let next: Session | undefined;
-            if (idx >= 0) {
-              // Prefer the session directly below the archived one (older).
-              next = siblings.slice(idx + 1).find(visible);
-              // Fall back to the session directly above (more recent).
-              if (!next) next = siblings.slice(0, idx).reverse().find(visible);
+            if (idxSnapshot >= 0) {
+              next = siblingsSnapshot.slice(idxSnapshot + 1).find(visible);
+              if (!next) next = siblingsSnapshot.slice(0, idxSnapshot).reverse().find(visible);
             }
             navigate(next ? `/session/${next.id}` : '/');
           }
@@ -963,10 +966,34 @@ export function SessionDetail() {
   }, [showArchivedRecent, loadRecentSessions]);
 
   useEffect(() => {
-    const refreshId = window.setInterval(() => {
-      loadRecentSessions(abortControllerRef.current?.signal).catch(err => console.error('Failed to refresh recent sessions', err));
-    }, 10000);
-    return () => window.clearInterval(refreshId);
+    let refreshId: number | null = null;
+    const start = () => {
+      if (refreshId !== null) return;
+      refreshId = window.setInterval(() => {
+        loadRecentSessions(abortControllerRef.current?.signal).catch(err => console.error('Failed to refresh recent sessions', err));
+      }, SIDEBAR_REFRESH_MS);
+    };
+    const stop = () => {
+      if (refreshId === null) return;
+      window.clearInterval(refreshId);
+      refreshId = null;
+    };
+    const onVisibility = () => {
+      if (document.hidden) {
+        stop();
+      } else {
+        // Fire once immediately on re-focus so the user sees fresh data
+        // without waiting a full interval, then resume polling.
+        loadRecentSessions(abortControllerRef.current?.signal).catch(err => console.error('Failed to refresh recent sessions', err));
+        start();
+      }
+    };
+    if (!document.hidden) start();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      stop();
+    };
   }, [loadRecentSessions]);
 
   // Mirror the current session's pending-prompt state from SSE into the
