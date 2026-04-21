@@ -1694,6 +1694,13 @@ export function SessionDetail() {
 
   const handleSend = useCallback(async (text: string, images?: AttachedImage[]) => {
     if (!session || !portAvailable) return;
+    // Belt-and-suspenders: the composer is normally unmounted while a
+    // permission/question prompt is active (see the ternary in the render
+    // tree), but an Enter keystroke can still land on the old composer
+    // during the re-render / focus-transfer race after an SSE event.
+    // Refuse to submit anything while a prompt is awaiting response so
+    // the user's reply doesn't accidentally ship as a new user message.
+    if (pendingPermission || pendingQuestion) return;
 
     // Clear subagent token tracking for the new run window.
     setSubagentTokens(new Map());
@@ -1761,7 +1768,7 @@ export function SessionDetail() {
       setMessages(prev => [...prev, errMsg]);
       setParts(prev => [...prev, errPart]);
     }
-  }, [activeAgent, activeModel, portAvailable, selectedAgent, selectedModel, selectedReasoning, sendMessage, session]);
+  }, [activeAgent, activeModel, pendingPermission, pendingQuestion, portAvailable, selectedAgent, selectedModel, selectedReasoning, sendMessage, session]);
 
   // When the user picks a different model, clear the reasoning selection
   // because the new model may not support the same variants.
@@ -2472,8 +2479,16 @@ export function SessionDetail() {
                   onCommand={handleCommand}
                   onAbort={handleAbort}
                   isRunning={isRunning}
-                  disabled={!portAvailable}
-                  disabledHint={caps.liveConnectionHint}
+                  // Disable while a permission/question prompt is pending so
+                  // Enter doesn't submit the draft as a new message. Normally
+                  // the prompt replaces the composer in this slot entirely,
+                  // but when the platform lacks respondPermission/Question
+                  // capability or portAvailable is false the composer still
+                  // renders — freezing input there is the cleanest guard.
+                  disabled={!portAvailable || hasPendingPrompt}
+                  disabledHint={hasPendingPrompt
+                    ? 'Respond to the pending prompt above before sending a new message.'
+                    : caps.liveConnectionHint}
                   whisperAvailable={whisperAvailable}
                   models={composerModels}
                   modelEntries={modelEntries}
