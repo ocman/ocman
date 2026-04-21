@@ -6,3 +6,5 @@ internal/server/static/*
 !internal/server/static/index.html
 *.log
 *.local
+.envrc
+.direnv/

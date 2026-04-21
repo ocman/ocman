@@ -1,0 +1,12 @@
+# ocman local dev environment
+#
+# Copy to .envrc and run `direnv allow`. .envrc is gitignored so you can
+# put machine-specific values here without leaking them into the repo.
+
+# Extra hostnames the Vite dev/preview server will respond to. Useful when
+# accessing the dev server over Tailscale, a LAN hostname, or a reverse
+# proxy. Comma-separated; leave unset for localhost-only.
+#
+# Example:
+#   export OCMAN_ALLOWED_HOSTS=my-machine.tailnet.ts.net,foo.lan
+export OCMAN_ALLOWED_HOSTS=
