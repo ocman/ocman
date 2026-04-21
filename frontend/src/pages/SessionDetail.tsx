@@ -678,9 +678,27 @@ export function SessionDetail() {
     archiveTimeoutsRef.current[target.id] = window.setTimeout(() => {
       archiveSession(target.platform, target.id, target.timeUpdated, true)
         .then(() => {
+          // If the archived session is the one currently being viewed,
+          // auto-navigate to the session one place below it (older). If
+          // nothing survives below, fall back to the session directly
+          // above it, then to the dashboard.
+          const isCurrent = target.id === id;
+          const siblings = recentSessionsRef.current;
+          const idx = siblings.findIndex(s => s.id === target.id);
           setRecentSessions(prev => showArchivedRecent
             ? prev.map(session => (session.id === target.id ? { ...session, archived: true } : session))
             : prev.filter(session => session.id !== target.id));
+          if (isCurrent) {
+            const visible = (s: Session) => s.id !== target.id && (showArchivedRecent || !s.archived);
+            let next: Session | undefined;
+            if (idx >= 0) {
+              // Prefer the session directly below the archived one (older).
+              next = siblings.slice(idx + 1).find(visible);
+              // Fall back to the session directly above (more recent).
+              if (!next) next = siblings.slice(0, idx).reverse().find(visible);
+            }
+            navigate(next ? `/session/${next.id}` : '/');
+          }
         })
         .catch(err => {
           console.error('Failed to archive session', err);
@@ -694,7 +712,7 @@ export function SessionDetail() {
           delete archiveTimeoutsRef.current[target.id];
         });
     }, ARCHIVE_ANIMATION_MS);
-  }, [archiveSession, archivingSessionIds, showArchivedRecent]);
+  }, [archiveSession, archivingSessionIds, id, navigate, showArchivedRecent]);
 
   useEffect(() => () => {
     Object.values(archiveTimeoutsRef.current).forEach(timeoutId => window.clearTimeout(timeoutId));
@@ -1761,14 +1779,22 @@ export function SessionDetail() {
 
     // /archive is a local ocman action — it works even when the agent isn't running.
     if (command === 'archive') {
+      const siblings = recentSessionsRef.current;
+      const idx = siblings.findIndex(s => s.id === session.id);
       try {
         await archiveSession(session.platform, session.id, session.timeUpdated, true);
       } catch (e) {
         console.error('Failed to archive session', e);
         return;
       }
-      // Pick the most recent remaining, non-archived session other than the one we just archived.
-      const next = recentSessionsRef.current.find(s => s.id !== session.id && !s.archived);
+      // Prefer the session one place below in the sidebar (older).
+      // Fall back to the session directly above (more recent).
+      const visible = (s: Session) => s.id !== session.id && !s.archived;
+      let next: Session | undefined;
+      if (idx >= 0) {
+        next = siblings.slice(idx + 1).find(visible);
+        if (!next) next = siblings.slice(0, idx).reverse().find(visible);
+      }
       navigate(next ? `/session/${next.id}` : '/');
       return;
     }
