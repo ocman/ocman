@@ -682,11 +682,15 @@ export function SessionDetail() {
   const handleArchiveSession = useCallback((e: React.MouseEvent, target: Session) => {
     e.stopPropagation();
     if (archivingSessionIds.has(target.id)) return;
-    // Snapshot the sibling list and archived session's index at click time,
-    // before any background poll can reorder the list.
+    // Capture the current sibling list and the archived session's position
+    // from the displayed state, synchronously at click time. Picks the
+    // session at `idx + 1` (directly below), or `idx - 1` (directly above)
+    // if there's nothing below.
     const isCurrent = target.id === id;
-    const siblingsSnapshot = recentSessionsRef.current;
-    const idxSnapshot = siblingsSnapshot.findIndex(s => s.id === target.id);
+    const idx = recentSessions.findIndex(s => s.id === target.id);
+    const nextSession = isCurrent
+      ? (recentSessions[idx + 1] ?? recentSessions[idx - 1])
+      : undefined;
     setArchivingSessionIds(prev => new Set(prev).add(target.id));
     archiveTimeoutsRef.current[target.id] = window.setTimeout(() => {
       archiveSession(target.platform, target.id, target.timeUpdated, true)
@@ -695,15 +699,7 @@ export function SessionDetail() {
             ? prev.map(session => (session.id === target.id ? { ...session, archived: true } : session))
             : prev.filter(session => session.id !== target.id));
           if (isCurrent) {
-            // Prefer the session directly below the archived one (older).
-            // Fall back to the session directly above (more recent).
-            const visible = (s: Session) => s.id !== target.id && (showArchivedRecent || !s.archived);
-            let next: Session | undefined;
-            if (idxSnapshot >= 0) {
-              next = siblingsSnapshot.slice(idxSnapshot + 1).find(visible);
-              if (!next) next = siblingsSnapshot.slice(0, idxSnapshot).reverse().find(visible);
-            }
-            navigate(next ? `/session/${next.id}` : '/');
+            navigate(nextSession ? `/session/${nextSession.id}` : '/');
           }
         })
         .catch(err => {
@@ -718,7 +714,7 @@ export function SessionDetail() {
           delete archiveTimeoutsRef.current[target.id];
         });
     }, ARCHIVE_ANIMATION_MS);
-  }, [archiveSession, archivingSessionIds, id, navigate, showArchivedRecent]);
+  }, [archiveSession, archivingSessionIds, id, navigate, recentSessions, showArchivedRecent]);
 
   useEffect(() => () => {
     Object.values(archiveTimeoutsRef.current).forEach(timeoutId => window.clearTimeout(timeoutId));
@@ -1809,23 +1805,17 @@ export function SessionDetail() {
 
     // /archive is a local ocman action — it works even when the agent isn't running.
     if (command === 'archive') {
-      const siblings = recentSessionsRef.current;
-      const idx = siblings.findIndex(s => s.id === session.id);
+      // Pick the session at idx+1 (directly below) or idx-1 (directly above)
+      // from the displayed sidebar list, captured before the API call.
+      const idx = recentSessions.findIndex(s => s.id === session.id);
+      const nextSession = recentSessions[idx + 1] ?? recentSessions[idx - 1];
       try {
         await archiveSession(session.platform, session.id, session.timeUpdated, true);
       } catch (e) {
         console.error('Failed to archive session', e);
         return;
       }
-      // Prefer the session one place below in the sidebar (older).
-      // Fall back to the session directly above (more recent).
-      const visible = (s: Session) => s.id !== session.id && !s.archived;
-      let next: Session | undefined;
-      if (idx >= 0) {
-        next = siblings.slice(idx + 1).find(visible);
-        if (!next) next = siblings.slice(0, idx).reverse().find(visible);
-      }
-      navigate(next ? `/session/${next.id}` : '/');
+      navigate(nextSession ? `/session/${nextSession.id}` : '/');
       return;
     }
 
@@ -1919,7 +1909,7 @@ export function SessionDetail() {
       setMessages(prev => [...prev, errMsg]);
       setParts(prev => [...prev, errPart]);
     }
-  }, [activeAgent, activeModel, archiveSession, handleCompact, handleNewSession, navigate, portAvailable, selectedAgent, selectedModel, session]);
+  }, [activeAgent, activeModel, archiveSession, handleCompact, handleNewSession, navigate, portAvailable, recentSessions, selectedAgent, selectedModel, session]);
 
   const handlePermissionReply = useCallback(async (reply: 'once' | 'always' | 'reject') => {
     if (!pendingPermission || answeringPermission || !portAvailable || !caps.respondPermission || !session) return;
