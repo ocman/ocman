@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -1115,6 +1116,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Platform  string `json:"platform"`
 		Directory string `json:"directory"`
+		Title     string `json:"title"`
 	}
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
 		return
@@ -1154,7 +1156,10 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := adapter.CreateSession(r.Context(), platforms.CreateSessionRequest{Directory: req.Directory})
+	resp, err := adapter.CreateSession(r.Context(), platforms.CreateSessionRequest{
+		Directory: req.Directory,
+		Title:     req.Title,
+	})
 	if err != nil {
 		writePlatformError(w, "creating session", err)
 		return
@@ -1302,6 +1307,34 @@ func (s *Server) handleDebugLog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleSystemStats returns backend runtime statistics (memory usage, uptime, etc).
+func (s *Server) handleSystemStats(w http.ResponseWriter, r *http.Request) {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	stats := map[string]interface{}{
+		"memory": map[string]interface{}{
+			"alloc":        m.Alloc,        // bytes currently allocated
+			"totalAlloc":   m.TotalAlloc,   // cumulative bytes allocated
+			"sys":          m.Sys,          // bytes obtained from OS
+			"heapAlloc":    m.HeapAlloc,    // bytes allocated on heap
+			"heapSys":      m.HeapSys,      // bytes obtained from OS for heap
+			"heapInuse":    m.HeapInuse,    // bytes in in-use spans
+			"heapIdle":     m.HeapIdle,     // bytes in idle spans
+			"heapReleased": m.HeapReleased, // bytes released to OS
+		},
+		"gc": map[string]interface{}{
+			"numGC":   m.NumGC,
+			"lastGC":  m.LastGC,
+			"pauseNs": m.PauseNs[(m.NumGC+255)%256], // most recent GC pause
+		},
+		"goroutines": runtime.NumGoroutine(),
+		"uptime":     time.Since(s.startTime).Seconds(),
+	}
+
+	writeJSON(w, stats)
 }
 
 // enforce that the "context" import is referenced at least once from

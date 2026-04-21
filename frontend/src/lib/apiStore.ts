@@ -11,6 +11,7 @@ import type {
   Session,
   SessionDetail,
   Stats,
+  SystemStats,
   TmuxClient,
   TmuxSession,
 } from './api';
@@ -70,6 +71,7 @@ type ApiStore = {
   switchTmuxSession: (session: string, client?: string) => Promise<void>;
   getWhisperStatus: () => Promise<{ available: boolean }>;
   transcribe: (audio: Blob) => Promise<string>;
+  getSystemStats: () => Promise<SystemStats>;
 };
 
 export const useApiStore = create<ApiStore>((set, get) => ({
@@ -185,6 +187,7 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   switchTmuxSession: (session, client) => get().runRequest(`tmux:switch:${session}`, () => api.tmuxSwitch(session, client)),
   getWhisperStatus: () => get().runRequest('whisper-status:get', () => api.whisperStatus()),
   transcribe: (audio) => get().runRequest('transcribe:post', () => api.transcribe(audio)),
+  getSystemStats: () => get().runRequest('system-stats:get', () => api.systemStats()),
 }));
 
 const DEFAULT_REQUEST_STATUS: RequestStatus = { loading: true, error: null };

@@ -13,6 +13,7 @@ import { PermissionPrompt } from '../components/session/PermissionPrompt';
 import { StatusBadge } from '../components/StatusBadge';
 import { PlatformBadge } from '../components/PlatformBadge';
 import { ShortPath } from '../components/SessionTable';
+import { BackendStats } from '../components/BackendStats';
 import { useTmux } from '../lib/useTmux';
 import { filterVisibleSessions } from '../lib/sessionVisibility';
 import { useApiStore } from '../lib/apiStore';
@@ -2339,6 +2340,7 @@ export function SessionDetail() {
             );
           })}
         </div>
+        <BackendStats />
       </div>
       <div className="session-main">
         {session && (

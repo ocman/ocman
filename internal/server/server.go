@@ -27,10 +27,11 @@ const (
 
 // Server serves the web UI and API.
 type Server struct {
-	db       *db.DB
-	stateDB  *state.DB
-	addr     string
-	registry *platforms.Registry
+	db        *db.DB
+	stateDB   *state.DB
+	addr      string
+	registry  *platforms.Registry
+	startTime time.Time
 }
 
 // New creates a new server. The registry may be nil, in which case a
@@ -40,7 +41,13 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 	if registry == nil {
 		registry = platforms.NewRegistry()
 	}
-	return &Server{db: database, stateDB: stateDB, addr: addr, registry: registry}
+	return &Server{
+		db:        database,
+		stateDB:   stateDB,
+		addr:      addr,
+		registry:  registry,
+		startTime: time.Now(),
+	}
 }
 
 // Start starts the HTTP server. It blocks until the context is cancelled,
@@ -62,6 +69,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/stats", requireGET(s.handleStats))
 	mux.HandleFunc("/api/metrics", requireGET(s.handleMetrics))
 	mux.HandleFunc("/api/projects", requireGET(s.handleProjects))
+	mux.HandleFunc("/api/system/stats", requireGET(s.handleSystemStats))
 	mux.HandleFunc("/api/sessions", s.handleSessionsRoot) // GET = list, POST = create
 	mux.HandleFunc("/api/sessions/notify", requireGET(s.handleSessionsNotify))
 	mux.HandleFunc("/api/session/", s.dispatchSessionSubpath)

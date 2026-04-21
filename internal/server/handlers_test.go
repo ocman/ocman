@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -225,5 +226,52 @@ func TestWritePlatformError_MapsUnknownTo502(t *testing.T) {
 	writePlatformError(rr, "sending message", errors.New("unexpected"))
 	if rr.Code != http.StatusBadGateway {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadGateway)
+	}
+}
+
+func TestSystemStats(t *testing.T) {
+	srv := New(nil, nil, "127.0.0.1:8229", nil)
+	req := httptest.NewRequest("GET", "/api/system/stats", nil)
+	rr := httptest.NewRecorder()
+
+	srv.handleSystemStats(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+
+	var stats map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &stats); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	// Verify structure
+	memory, ok := stats["memory"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("missing or invalid 'memory' field")
+	}
+	if _, ok := memory["heapAlloc"].(float64); !ok {
+		t.Errorf("missing or invalid 'memory.heapAlloc'")
+	}
+
+	gc, ok := stats["gc"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("missing or invalid 'gc' field")
+	}
+	if _, ok := gc["numGC"].(float64); !ok {
+		t.Errorf("missing or invalid 'gc.numGC'")
+	}
+
+	if _, ok := stats["goroutines"].(float64); !ok {
+		t.Errorf("missing or invalid 'goroutines'")
+	}
+
+	uptime, ok := stats["uptime"].(float64)
+	if !ok {
+		t.Errorf("missing or invalid 'uptime'")
+	}
+	// Uptime should be very small (just started)
+	if uptime < 0 || uptime > 1 {
+		t.Errorf("uptime = %v, expected small positive value", uptime)
 	}
 }

@@ -608,4 +608,28 @@ export const api = {
     const data = await resp.json() as { text: string };
     return data.text;
   },
+
+  async systemStats(): Promise<SystemStats> {
+    return fetchJSON<SystemStats>('/api/system/stats');
+  },
 };
+
+export interface SystemStats {
+  memory: {
+    alloc: number;
+    totalAlloc: number;
+    sys: number;
+    heapAlloc: number;
+    heapSys: number;
+    heapInuse: number;
+    heapIdle: number;
+    heapReleased: number;
+  };
+  gc: {
+    numGC: number;
+    lastGC: number;
+    pauseNs: number;
+  };
+  goroutines: number;
+  uptime: number;
+}

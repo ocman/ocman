@@ -1,0 +1,50 @@
+.backend-stats {
+  position: sticky;
+  bottom: 0;
+  background: var(--mantle);
+  border-top: 1px solid var(--surface0);
+  padding: 8px 12px;
+  font-size: 10px;
+  font-family: 'SF Mono', Consolas, monospace;
+  color: var(--overlay0);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.backend-stats-item {
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.backend-stats-item:nth-child(1) {
+  flex: 0 0 70px;
+}
+
+.backend-stats-item:nth-child(2) {
+  flex: 0 0 70px;
+  text-align: center;
+}
+
+.backend-stats-item:nth-child(3) {
+  flex: 0 0 80px;
+  text-align: right;
+}
+
+.backend-stats-label {
+  cursor: help;
+  text-decoration: underline dotted;
+  text-decoration-color: var(--surface1);
+  text-underline-offset: 2px;
+}
+
+.backend-stats-item.memory-warning {
+  color: var(--yellow);
+}
+
+.backend-stats-item.memory-critical {
+  color: var(--red);
+  font-weight: 600;
+}
