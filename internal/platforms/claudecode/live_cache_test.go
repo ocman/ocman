@@ -232,6 +232,34 @@ func TestLiveCache_TerminalStatusClearsTools(t *testing.T) {
 	}
 }
 
+// TestLiveCache_ParentTaskSurvivesStrayEmptySubagentEnd is a direct
+// regression for the bug that caused sub-agent tool calls to vanish
+// from the main session's live list. In the original implementation a
+// SubagentStop with no agent_id produced SubagentEnd="" and the cache's
+// sweep loop deleted every entry with matching SubagentID — including
+// the parent's own Task entry (which has SubagentID=""). The parser
+// now guards against emitting SubagentEnd=""; this test pins the
+// cache's own behavior so the parent-level Task entry survives a
+// zero-delta regardless of upstream guards.
+func TestLiveCache_ParentTaskSurvivesStrayEmptySubagentEnd(t *testing.T) {
+	c := newLiveCache(busyTTLForTest)
+	now := time.Now()
+	// Parent fires Task tool_use (sub-agent id is "" because Task runs
+	// at the parent level).
+	c.ApplyAt("s1", liveStateDelta{
+		Status:    "busy",
+		ToolStart: &toolActivity{SubagentID: "", ToolName: "Task", Summary: "explore"},
+	}, now)
+	// Simulate the pathological case: a zero-delta (hooks_parse guards
+	// against this, but the cache must still be safe in isolation).
+	c.ApplyAt("s1", liveStateDelta{}, now.Add(time.Millisecond))
+
+	got := c.GetAt("s1", now.Add(2*time.Millisecond))
+	if len(got.CurrentTools) != 1 || got.CurrentTools[0].ToolName != "Task" {
+		t.Fatalf("parent Task was lost: %+v", got.CurrentTools)
+	}
+}
+
 // TestLiveCache_BusyTTLDropsTools confirms the stale-busy recovery
 // path also discards phantom tool entries, matching the "clean slate
 // on revival" contract.

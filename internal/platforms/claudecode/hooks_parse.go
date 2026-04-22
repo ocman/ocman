@@ -44,13 +44,26 @@ type hookEvent struct {
 	// a tool is active — dropped once we've built a Summary.
 	ToolInput json.RawMessage
 
-	// TranscriptPath is the absolute path to the jsonl that this
-	// event pertains to. Claude Code sets it to the active transcript
-	// — the parent session's file for top-level events, or the
-	// subagent's `agent-<id>.jsonl` for sub-agent work. We use it to
-	// associate a tool call with the Task tool_use that spawned the
-	// sub-agent (see deriveSubagentID).
+	// TranscriptPath is the absolute path to the parent session's jsonl.
+	// Claude Code's hook docs are clear that this field always points at
+	// the top-level transcript, even for events fired from inside a
+	// sub-agent — the sub-agent's own jsonl is surfaced via the separate
+	// AgentTranscriptPath field (SubagentStop only). We keep this field
+	// for diagnostics and as a last-resort fallback in subagentID().
 	TranscriptPath string
+
+	// AgentID / AgentType are set on every hook event fired from within
+	// a sub-agent (PreToolUse / PostToolUse / SubagentStop …). AgentID
+	// is the authoritative sub-agent identifier and is what subagentID()
+	// returns when available. Empty when the event is parent-level work.
+	AgentID   string
+	AgentType string
+
+	// AgentTranscriptPath is the absolute path to the sub-agent's jsonl.
+	// Documented on SubagentStop; Claude Code may also set it on other
+	// sub-agent-scoped events. Used as a fallback to derive the sub-agent
+	// id when AgentID is absent.
+	AgentTranscriptPath string
 
 	// ReceivedAt is when ocman observed the event (handler wall-clock).
 	// Drives staleness detection in the live-state cache.
@@ -78,12 +91,15 @@ var hookEventNames = map[string]struct{}{
 // rawHookPayload is the JSON envelope posted by the Claude Code CLI.
 // Only the fields we act on are declared; everything else is dropped.
 type rawHookPayload struct {
-	SessionID      string          `json:"session_id"`
-	HookEventName  string          `json:"hook_event_name"`
-	Cwd            string          `json:"cwd"`
-	ToolName       string          `json:"tool_name"`
-	ToolInput      json.RawMessage `json:"tool_input"`
-	TranscriptPath string          `json:"transcript_path"`
+	SessionID           string          `json:"session_id"`
+	HookEventName       string          `json:"hook_event_name"`
+	Cwd                 string          `json:"cwd"`
+	ToolName            string          `json:"tool_name"`
+	ToolInput           json.RawMessage `json:"tool_input"`
+	TranscriptPath      string          `json:"transcript_path"`
+	AgentID             string          `json:"agent_id"`              // set inside a sub-agent
+	AgentType           string          `json:"agent_type"`            // ditto
+	AgentTranscriptPath string          `json:"agent_transcript_path"` // SubagentStop (and sub-agent-scoped events)
 	// Reason, UserPrompt, Message are present on various event types
 	// but don't affect live state; ignored deliberately.
 }
@@ -97,13 +113,16 @@ func parseHookPayload(raw []byte, receivedAt time.Time) (hookEvent, error) {
 		return hookEvent{}, fmt.Errorf("decode hook payload: %w", err)
 	}
 	ev := hookEvent{
-		EventName:      p.HookEventName,
-		SessionID:      p.SessionID,
-		Cwd:            p.Cwd,
-		ToolName:       p.ToolName,
-		ToolInput:      p.ToolInput,
-		TranscriptPath: p.TranscriptPath,
-		ReceivedAt:     receivedAt,
+		EventName:           p.HookEventName,
+		SessionID:           p.SessionID,
+		Cwd:                 p.Cwd,
+		ToolName:            p.ToolName,
+		ToolInput:           p.ToolInput,
+		TranscriptPath:      p.TranscriptPath,
+		AgentID:             p.AgentID,
+		AgentType:           p.AgentType,
+		AgentTranscriptPath: p.AgentTranscriptPath,
+		ReceivedAt:          receivedAt,
 	}
 	if p.SessionID == "" {
 		ev.Ignored = true
@@ -160,6 +179,32 @@ type toolActivity struct {
 	Summary    string
 }
 
+// subagentID returns the authoritative sub-agent identifier for the
+// event, preferring the explicit AgentID field (set by Claude Code on
+// every sub-agent-scoped event) over a path-derived fallback. Returns
+// "" for parent-level work, which the cache treats as "tool belongs to
+// the parent session, not a sub-agent".
+//
+// Preference order:
+//  1. ev.AgentID — authoritative when present (docs guarantee it for
+//     every hook fired from inside a sub-agent).
+//  2. deriveSubagentID(ev.AgentTranscriptPath) — documented on
+//     SubagentStop; also a useful fallback if a future CLI version
+//     sets it on PreToolUse/PostToolUse too.
+//  3. deriveSubagentID(ev.TranscriptPath) — historical fallback kept
+//     only because it's harmless (transcript_path is the PARENT jsonl
+//     for sub-agent events, so this typically returns "" anyway) and
+//     keeps pre-existing test fixtures working.
+func (ev hookEvent) subagentID() string {
+	if ev.AgentID != "" {
+		return ev.AgentID
+	}
+	if id := deriveSubagentID(ev.AgentTranscriptPath); id != "" {
+		return id
+	}
+	return deriveSubagentID(ev.TranscriptPath)
+}
+
 // toLiveStateDelta maps a hookEvent into the cache mutation it should
 // produce. See spec/multi-agent-support/architecture.md §Phase 5 for
 // the rationale behind each mapping.
@@ -181,7 +226,7 @@ func (ev hookEvent) toLiveStateDelta() liveStateDelta {
 		return liveStateDelta{
 			Status: "busy",
 			ToolStart: &toolActivity{
-				SubagentID: deriveSubagentID(ev.TranscriptPath),
+				SubagentID: ev.subagentID(),
 				ToolName:   ev.ToolName,
 				Summary:    summariseToolInput(ev.ToolName, ev.ToolInput),
 			},
@@ -192,7 +237,7 @@ func (ev hookEvent) toLiveStateDelta() liveStateDelta {
 		return liveStateDelta{
 			Status: "busy",
 			ToolEnd: &toolActivity{
-				SubagentID: deriveSubagentID(ev.TranscriptPath),
+				SubagentID: ev.subagentID(),
 				ToolName:   ev.ToolName,
 			},
 		}
@@ -203,15 +248,24 @@ func (ev hookEvent) toLiveStateDelta() liveStateDelta {
 		// Also clears any stuck permission flag.
 		return liveStateDelta{Status: "done", ClearPendingPermission: true}
 	case "SubagentStop":
-		// A sub-agent finished; clear all its active tool entries.
+		// A sub-agent finished; clear all of ITS active tool entries.
 		// The parent session's overall status is unchanged — another
 		// PreToolUse / Stop from the parent will update again. We
 		// deliberately do NOT flip Status to "done" here (the parent
 		// may still be working); the 2 min busy TTL guards against
 		// a dropped parent Stop.
-		return liveStateDelta{
-			SubagentEnd: deriveSubagentID(ev.TranscriptPath),
+		//
+		// CRITICAL: if we can't identify the sub-agent, emit an inert
+		// delta. Without this guard, SubagentEnd="" would fall through
+		// to the cache's "clear every entry with matching SubagentID"
+		// loop and wipe the parent's own Task entry (Task tool_use has
+		// SubagentID="" because it runs at the parent level). Losing
+		// the Task entry means the UI stops showing live progress.
+		id := ev.subagentID()
+		if id == "" {
+			return liveStateDelta{}
 		}
+		return liveStateDelta{SubagentEnd: id}
 	case "Notification":
 		// Notifications currently cover permission asks; flag the
 		// session as pending. If Claude adds more notification types

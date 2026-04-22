@@ -209,20 +209,26 @@ func TestSummariseToolInput(t *testing.T) {
 }
 
 // TestHookEventAppliesToolActivity links parseHookPayload and
-// toLiveStateDelta end-to-end — a PreToolUse payload must yield a
-// delta with a matching ToolStart, and PostToolUse must yield a
-// matching ToolEnd.
+// toLiveStateDelta end-to-end for a sub-agent-scoped PreToolUse /
+// PostToolUse pair in the REAL wire shape Claude Code emits:
+// `session_id` + `transcript_path` always reference the parent, and
+// `agent_id` is the authoritative sub-agent identifier.
 func TestHookEventAppliesToolActivity(t *testing.T) {
 	pre := []byte(`{
 		"session_id":"sP",
 		"hook_event_name":"PreToolUse",
 		"tool_name":"Read",
 		"tool_input":{"file_path":"/x/y.go"},
-		"transcript_path":"/h/.claude/projects/-h-p/parent/subagents/agent-A.jsonl"
+		"transcript_path":"/h/.claude/projects/-h-p/sP.jsonl",
+		"agent_id":"A",
+		"agent_type":"Explore"
 	}`)
 	ev, err := parseHookPayload(pre, time.Now())
 	if err != nil || ev.Ignored {
 		t.Fatalf("parseHookPayload PreToolUse: err=%v ignored=%v", err, ev.Ignored)
+	}
+	if ev.SessionID != "sP" {
+		t.Fatalf("SessionID = %q, want sP (parent, not sub-agent)", ev.SessionID)
 	}
 	d := ev.toLiveStateDelta()
 	if d.ToolStart == nil || d.ToolStart.ToolName != "Read" || d.ToolStart.SubagentID != "A" {
@@ -236,12 +242,141 @@ func TestHookEventAppliesToolActivity(t *testing.T) {
 		"session_id":"sP",
 		"hook_event_name":"PostToolUse",
 		"tool_name":"Read",
-		"transcript_path":"/h/.claude/projects/-h-p/parent/subagents/agent-A.jsonl"
+		"transcript_path":"/h/.claude/projects/-h-p/sP.jsonl",
+		"agent_id":"A"
 	}`)
 	ev2, _ := parseHookPayload(post, time.Now())
 	d2 := ev2.toLiveStateDelta()
 	if d2.ToolEnd == nil || d2.ToolEnd.ToolName != "Read" || d2.ToolEnd.SubagentID != "A" {
 		t.Fatalf("PostToolUse delta: %+v", d2.ToolEnd)
+	}
+}
+
+// TestHookEvent_SubagentID_PrefersAgentID covers the preference order
+// in hookEvent.subagentID(): AgentID wins over AgentTranscriptPath,
+// which wins over TranscriptPath. Regression for the real-world case
+// where Claude Code sets `agent_id` and `transcript_path` is the
+// PARENT jsonl — we must not mistake the parent path for "no sub-agent".
+func TestHookEvent_SubagentID_PrefersAgentID(t *testing.T) {
+	cases := []struct {
+		name string
+		ev   hookEvent
+		want string
+	}{
+		{
+			name: "AgentID wins over every path",
+			ev: hookEvent{
+				AgentID:             "winner",
+				AgentTranscriptPath: "/p/parent/subagents/agent-loser1.jsonl",
+				TranscriptPath:      "/p/parent/subagents/agent-loser2.jsonl",
+			},
+			want: "winner",
+		},
+		{
+			name: "falls back to AgentTranscriptPath",
+			ev: hookEvent{
+				AgentTranscriptPath: "/p/parent/subagents/agent-fromPath.jsonl",
+				TranscriptPath:      "/p/parent.jsonl",
+			},
+			want: "fromPath",
+		},
+		{
+			name: "last-resort TranscriptPath fallback (legacy fixtures)",
+			ev: hookEvent{
+				TranscriptPath: "/p/parent/subagents/agent-legacy.jsonl",
+			},
+			want: "legacy",
+		},
+		{
+			name: "parent-level event has no sub-agent id",
+			ev: hookEvent{
+				TranscriptPath: "/p/parent.jsonl",
+			},
+			want: "",
+		},
+		{
+			name: "zero-value event has no sub-agent id",
+			ev:   hookEvent{},
+			want: "",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := c.ev.subagentID(); got != c.want {
+				t.Errorf("subagentID() = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// TestSubagentStop_WithoutAgentID_IsInert is the critical regression
+// for the bug that prompted this fix. A SubagentStop payload without
+// `agent_id` / `agent_transcript_path` must produce an inert delta —
+// NOT a `SubagentEnd: ""` that would sweep the parent's Task entry
+// out of the live-tool list and collapse the UI's live progress view.
+func TestSubagentStop_WithoutAgentID_IsInert(t *testing.T) {
+	// Real-world wire shape: transcript_path is the PARENT jsonl.
+	payload := []byte(`{
+		"session_id":"sP",
+		"hook_event_name":"SubagentStop",
+		"transcript_path":"/h/.claude/projects/-h-p/sP.jsonl"
+	}`)
+	ev, err := parseHookPayload(payload, time.Now())
+	if err != nil || ev.Ignored {
+		t.Fatalf("parseHookPayload: err=%v ignored=%v", err, ev.Ignored)
+	}
+	d := ev.toLiveStateDelta()
+	if d.SubagentEnd != "" {
+		t.Errorf("SubagentEnd = %q, want empty (inert) when agent_id is absent", d.SubagentEnd)
+	}
+	// Status must also stay unset — we don't want a phantom status
+	// mutation on the parent session.
+	if d.Status != "" {
+		t.Errorf("Status = %q, want empty (inert)", d.Status)
+	}
+}
+
+// TestSubagentStop_WithAgentID_RoutesCorrectly is the positive case:
+// when the CLI supplies agent_id, SubagentEnd carries that id so the
+// cache can wipe just that sub-agent's tool entries.
+func TestSubagentStop_WithAgentID_RoutesCorrectly(t *testing.T) {
+	payload := []byte(`{
+		"session_id":"sP",
+		"hook_event_name":"SubagentStop",
+		"transcript_path":"/h/.claude/projects/-h-p/sP.jsonl",
+		"agent_id":"A",
+		"agent_type":"Explore",
+		"agent_transcript_path":"/h/.claude/projects/-h-p/sP/subagents/agent-A.jsonl"
+	}`)
+	ev, _ := parseHookPayload(payload, time.Now())
+	d := ev.toLiveStateDelta()
+	if d.SubagentEnd != "A" {
+		t.Errorf("SubagentEnd = %q, want A", d.SubagentEnd)
+	}
+}
+
+// TestParentPreToolUse_NoSubagentID ensures a parent-level tool_use
+// (no `agent_id`, parent `transcript_path`) is stored with an empty
+// SubagentID — i.e. the Task tool_use itself, which runs at the
+// parent level.
+func TestParentPreToolUse_NoSubagentID(t *testing.T) {
+	payload := []byte(`{
+		"session_id":"sP",
+		"hook_event_name":"PreToolUse",
+		"tool_name":"Task",
+		"tool_input":{"description":"explore","subagent_type":"general-purpose"},
+		"transcript_path":"/h/.claude/projects/-h-p/sP.jsonl"
+	}`)
+	ev, _ := parseHookPayload(payload, time.Now())
+	d := ev.toLiveStateDelta()
+	if d.ToolStart == nil {
+		t.Fatal("expected ToolStart, got nil")
+	}
+	if d.ToolStart.SubagentID != "" {
+		t.Errorf("parent-level Task got SubagentID %q, want empty", d.ToolStart.SubagentID)
+	}
+	if d.ToolStart.ToolName != "Task" {
+		t.Errorf("ToolName = %q, want Task", d.ToolStart.ToolName)
 	}
 }
 
