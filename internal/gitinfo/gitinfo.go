@@ -16,6 +16,7 @@ package gitinfo
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -118,21 +119,20 @@ func fetchFromGit(ctx context.Context, dir string) Info {
 	cctx, cancel := context.WithTimeout(ctx, gitCommandTimeout)
 	defer cancel()
 
-	// --porcelain=v2 --branch gives us branch head + ahead/behind in
-	// the header lines and one line per changed/untracked file. No
-	// network, no refresh of the index beyond what `git status` does
-	// normally.
 	cmd := exec.CommandContext(cctx, "git", "-C", dir,
 		"status", "--porcelain=v2", "--branch",
 		"--untracked-files=normal", "--no-renames")
-	// Keep git from trying to open a pager or an editor.
-	cmd.Env = append(cmd.Env, "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_NO_LOCK=1")
 
 	out, err := cmd.Output()
 	if err != nil {
 		return Info{}
 	}
-	return parsePorcelainV2(string(out))
+	info := parsePorcelainV2(string(out))
+	if info.Branch == "" {
+		return Info{}
+	}
+	return info
 }
 
 // parsePorcelainV2 extracts the fields we care about from `git status
