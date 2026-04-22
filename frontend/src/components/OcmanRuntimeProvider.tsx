@@ -179,6 +179,22 @@ function convertMessages(
                 result: undefined,
               });
               break;
+            } else if (toolName === 'Skill' || toolName === 'skill' || toolName === 'mcp_Skill' || toolName === 'mcp_skill') {
+              // Skill loads are noisy by default: the tool input is just
+              // `{"name": "create-commit"}` and the output is the whole
+              // skill body wrapped in <skill_content name="…"> tags. None
+              // of that is interesting to the reader — the skill's
+              // instructions are acted on by the assistant, not surfaced.
+              // Collapse to a single muted line in the Read/Grep style.
+              const skillName = inp.name || inp.skill || title || 'unknown';
+              toolCalls.push({
+                type: 'tool-call' as const,
+                toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
+                toolName: '__skill__',
+                argsText: `Skill "${skillName}"`,
+                result: undefined,
+              });
+              break;
             } else if (
               toolName === 'task' ||
               toolName === 'mcp_task' ||

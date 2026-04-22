@@ -633,8 +633,13 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
   const [expanded, setExpanded] = useState(false);
   const [taskExpanded, setTaskExpanded] = useState(false);
 
-  // File reads/greps render as a muted inline line with an arrow icon
-  if (toolName === '__read__' || toolName === 'read' || toolName === 'mcp_read' || toolName === 'grep' || toolName === 'mcp_grep' || toolName === 'glob' || toolName === 'mcp_glob' || toolName === 'webfetch' || toolName === 'mcp_webfetch' || toolName === 'mcp_Webfetch') {
+  // File reads/greps and Skill loads render as a muted inline line
+  // with an arrow icon. Skill is here (rather than in its own branch)
+  // because its renderer is byte-for-byte identical to a read: a one
+  // line label, no collapsible body, no input JSON. The provider
+  // builds an argsText like `Skill "create-commit"` so this branch
+  // just displays whatever it gets.
+  if (toolName === '__read__' || toolName === '__skill__' || toolName === 'read' || toolName === 'mcp_read' || toolName === 'grep' || toolName === 'mcp_grep' || toolName === 'glob' || toolName === 'mcp_glob' || toolName === 'webfetch' || toolName === 'mcp_webfetch' || toolName === 'mcp_Webfetch') {
     return (
       <div className="oc-read-line">
         <span className="oc-read-arrow">{'\u2192'}</span>
