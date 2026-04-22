@@ -194,9 +194,9 @@ tr.no-port { opacity: 0.4; }
 
 /* Header */
 header { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border-bottom: 1px solid var(--border); flex-shrink: 0; gap: 16px; }
-header h1 { font-size: 24px; font-weight: 600; color: var(--text); }
-header h1 span { color: var(--text-dim); font-weight: 400; }
-header h1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+header h1 { font-size: 24px; font-weight: 600; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+header h1 > a { color: var(--text); font-weight: 600; }
+header h1 span { color: inherit; font-weight: 400; }
 
 .header-stats {
   display: grid;

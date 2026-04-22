@@ -22,6 +22,16 @@
   font-weight: normal;
 }
 
+/* Session title with ellipsis overflow */
+.session-title {
+  color: var(--accent);
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Session row action buttons (tmux, vscode) */
 .session-row-actions {
   display: inline-flex;

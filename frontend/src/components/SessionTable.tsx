@@ -219,7 +219,7 @@ export function SessionTable({ sessions, showProject, loading, tmux, includeArch
                 <td>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <StatusBadge status={s.status} compact seen={seenLatest} pending={pending} />
-                    <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{cleanTitle(s.title) || 'Untitled'}</span>
+                    <span className="session-title">{cleanTitle(s.title) || 'Untitled'}</span>
                   </div>
                   <div className="mono">
                     <PlatformBadge platform={s.platform} variant="plain" />
