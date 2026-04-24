@@ -127,6 +127,7 @@ type SessionModel struct {
 	IsSessionDefault  bool     `json:"isSessionDefault,omitempty"`
 	IsProviderDefault bool     `json:"isProviderDefault,omitempty"`
 	IsAvailable       bool     `json:"isAvailable,omitempty"`
+	IsFavorite        bool     `json:"isFavorite,omitempty"`
 	Reasoning         []string `json:"reasoning,omitempty"`
 }
 

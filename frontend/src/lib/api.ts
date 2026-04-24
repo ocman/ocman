@@ -436,7 +436,17 @@ export interface SessionModelEntry {
   isSessionDefault?: boolean;
   isProviderDefault?: boolean;
   isAvailable?: boolean;
+  isFavorite?: boolean;
   reasoning?: string[];
+}
+
+// FavoriteEntry mirrors internal/server/favorites.go:favoriteEntry.
+// Favorites are scoped per-platform in state.db so the same model id
+// can be starred independently across OpenCode and Claude Code.
+export interface FavoriteEntry {
+  platform: string;
+  provider: string;
+  model: string;
 }
 
 export interface SessionModelsResponse {
@@ -544,6 +554,27 @@ export const api = {
   },
   sessionModels: (sessionId: string) =>
     fetchJSON<SessionModelsResponse>(`/api/session/${encodeURIComponent(sessionId)}/models`),
+  // Favorites CRUD. Scoped per-platform because the same (provider,
+  // model) pair can legitimately be a favorite under one platform but
+  // not another — matches the DB's composite key.
+  listFavorites: (platform: string) =>
+    fetchJSON<FavoriteEntry[]>(`/api/favorites?platform=${encodeURIComponent(platform)}`),
+  addFavorite: async (platform: string, provider: string, model: string) => {
+    const resp = await fetch('/api/favorites', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platform, provider, model }),
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+  },
+  removeFavorite: async (platform: string, provider: string, model: string) => {
+    const resp = await fetch('/api/favorites', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platform, provider, model }),
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+  },
   hourly: (params?: { days?: number }) => {
     const q = new URLSearchParams();
     if (params?.days) q.set('days', String(params.days));

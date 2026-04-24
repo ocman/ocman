@@ -71,3 +71,36 @@
   color: var(--overlay0, var(--text-dim));
   opacity: 0.75;
 }
+
+/* Favorite-toggle star button. Sits at the end of each row. Dim by
+   default, yellow when favorited, and brightens on hover so users know
+   it's interactive. Opacity transitions in on row hover so the row
+   stays visually quiet until the user is actually targeting it. */
+.oc-model-picker .oc-model-picker-fav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  opacity: 0.35;
+  transition: opacity 80ms ease, color 80ms ease;
+  font-size: 14px;
+}
+.oc-model-picker .oc-model-picker-row:hover .oc-model-picker-fav,
+.oc-model-picker .oc-cmd-item--selected .oc-model-picker-fav {
+  opacity: 0.9;
+}
+.oc-model-picker .oc-model-picker-fav:hover {
+  color: var(--yellow, #f5c63a);
+  opacity: 1;
+}
+.oc-model-picker .oc-model-picker-fav--on {
+  color: var(--yellow, #f5c63a);
+  opacity: 1;
+}

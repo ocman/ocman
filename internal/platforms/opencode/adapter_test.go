@@ -6,21 +6,21 @@ import (
 )
 
 func TestAdapter_ID(t *testing.T) {
-	a := New(nil)
+	a := New(nil, nil)
 	if a.ID() != "opencode" {
 		t.Errorf("expected ID=opencode, got %q", a.ID())
 	}
 }
 
 func TestAdapter_DisplayName(t *testing.T) {
-	a := New(nil)
+	a := New(nil, nil)
 	if a.DisplayName() != "OpenCode" {
 		t.Errorf("expected DisplayName=OpenCode, got %q", a.DisplayName())
 	}
 }
 
 func TestAdapter_Capabilities_AllTrue(t *testing.T) {
-	a := New(nil)
+	a := New(nil, nil)
 	c := a.Capabilities()
 	cases := map[string]bool{
 		"Composer":          c.Composer,
@@ -41,14 +41,14 @@ func TestAdapter_Capabilities_AllTrue(t *testing.T) {
 }
 
 func TestAdapter_Available_NilDB(t *testing.T) {
-	a := New(nil)
+	a := New(nil, nil)
 	if a.Available(context.Background()) {
 		t.Error("Available should return false when DB is nil")
 	}
 }
 
 func TestAdapter_LiveStatus_ReturnsNil(t *testing.T) {
-	a := New(nil)
+	a := New(nil, nil)
 	// OpenCode does not track in-memory live state via hooks; it uses
 	// port discovery on demand. LiveStatus is always nil.
 	if ls := a.LiveStatus("any-session"); ls != nil {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 // This file holds the Platform-interface operation methods that were
@@ -117,13 +118,21 @@ func (a *Adapter) SessionModels(ctx context.Context, sessionID string) (*platfor
 	}
 	sessionDefault := defaults.Model
 
+	var favorites []state.ModelFavorite
+	if a.favorites != nil {
+		favorites, err = a.favorites.ModelFavorites(string(PlatformID))
+		if err != nil {
+			log.WithError(err).Warn("opencode: fetching model favorites")
+		}
+	}
+
 	var providers OpenCodeProvidersResponse
 	hasProviders := false
 	if port := discoverOpenCodePort(session.Directory); port != "" {
 		providers, hasProviders = fetchOpenCodeProviders(port)
 	}
 
-	entries := buildSessionModelEntries(recents, providers, hasProviders, sessionDefault)
+	entries := buildSessionModelEntries(recents, favorites, providers, hasProviders, sessionDefault)
 
 	var connectedDefaults map[string]string
 	if hasProviders && len(providers.Default) > 0 {

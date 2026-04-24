@@ -6,6 +6,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 // variantNamesFor extracts the enabled variant names for a model from the
@@ -27,20 +28,26 @@ func variantNamesFor(m OpenCodeProviderModel) []string {
 	return names
 }
 
-// buildSessionModelEntries merges recents, live /provider data, and the
-// session default into a single sorted list.
+// buildSessionModelEntries merges recents, live /provider data, the
+// session default, and user-marked favorites into a single sorted list.
 //
 // Sort order:
 //  1. Session default (⭐)
-//  2. Recents, preserving recency order
-//  3. Provider defaults (that aren't already above)
-//  4. All remaining available models, alphabetical by provider then model
-//  5. Any remaining DB-only recents (only reachable when providers weren't)
+//  2. Favorites, in the order they were added
+//  3. Recents, preserving recency order
+//  4. Provider defaults (that aren't already above)
+//  5. All remaining available models, alphabetical by provider then model
+//  6. Any remaining DB-only recents (only reachable when providers weren't)
+//
+// Favorites are seeded into the entry map the same way recents are, so
+// a favorited model stays visible even when its provider is currently
+// disconnected — it just shows up as "archived" instead.
 //
 // Split out from SessionModels so it's unit-testable without a running
 // OpenCode instance.
 func buildSessionModelEntries(
 	recents []db.RecentModel,
+	favorites []state.ModelFavorite,
 	providers OpenCodeProvidersResponse,
 	hasProviders bool,
 	sessionDefault string,
@@ -63,6 +70,15 @@ func buildSessionModelEntries(
 	for i, rm := range recents {
 		e := get(rm.Provider, rm.Model)
 		e.RecentRank = i + 1
+	}
+
+	// Favorites are also seeded so a favorited model keeps its star even
+	// after the provider is disconnected.
+	favoriteRank := make(map[string]int, len(favorites))
+	for i, f := range favorites {
+		e := get(f.Provider, f.Model)
+		e.IsFavorite = true
+		favoriteRank[key(f.Provider, f.Model)] = i + 1
 	}
 
 	// Index the connected provider set for cheap lookup.
@@ -134,7 +150,17 @@ func buildSessionModelEntries(
 		if a.IsSessionDefault != b.IsSessionDefault {
 			return a.IsSessionDefault
 		}
-		// 2. recents before non-recents; within recents, preserve rank
+		// 2. favorites before non-favorites; preserve the order they
+		//    were added. A favorited model that's also recent still
+		//    sorts in the favorites band — the star is the stronger
+		//    signal the user opted into.
+		if a.IsFavorite != b.IsFavorite {
+			return a.IsFavorite
+		}
+		if a.IsFavorite && b.IsFavorite {
+			return favoriteRank[key(a.Provider, a.Model)] < favoriteRank[key(b.Provider, b.Model)]
+		}
+		// 3. recents before non-recents; within recents, preserve rank
 		aRecent, bRecent := a.RecentRank > 0, b.RecentRank > 0
 		if aRecent != bRecent {
 			return aRecent
@@ -142,15 +168,15 @@ func buildSessionModelEntries(
 		if aRecent && bRecent {
 			return a.RecentRank < b.RecentRank
 		}
-		// 3. provider defaults before non-defaults
+		// 4. provider defaults before non-defaults
 		if a.IsProviderDefault != b.IsProviderDefault {
 			return a.IsProviderDefault
 		}
-		// 4. available before unavailable
+		// 5. available before unavailable
 		if a.IsAvailable != b.IsAvailable {
 			return a.IsAvailable
 		}
-		// 5. alphabetical by provider then model
+		// 6. alphabetical by provider then model
 		if a.Provider != b.Provider {
 			return a.Provider < b.Provider
 		}

@@ -14,20 +14,32 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 // PlatformID is the stable identifier used in URLs and state.db rows.
 const PlatformID platforms.ID = "opencode"
 
+// FavoritesReader is the subset of the ocman state DB the adapter
+// needs to read model favorites. Kept as an interface so tests can
+// pass a stub and so the adapter doesn't force a writable *state.DB
+// on callers that only want the read side.
+type FavoritesReader interface {
+	ModelFavorites(platform string) ([]state.ModelFavorite, error)
+}
+
 // Adapter implements platforms.Platform for OpenCode.
 type Adapter struct {
-	db *db.DB
+	db        *db.DB
+	favorites FavoritesReader
 }
 
 // New returns a new OpenCode adapter backed by the given read-only DB.
 // A nil DB is permitted so Available() can report absence cleanly.
-func New(database *db.DB) *Adapter {
-	return &Adapter{db: database}
+// A nil favorites reader is also permitted; SessionModels will then
+// skip the favorites merge step.
+func New(database *db.DB, favorites FavoritesReader) *Adapter {
+	return &Adapter{db: database, favorites: favorites}
 }
 
 // ID returns the OpenCode platform identifier.

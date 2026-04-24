@@ -981,6 +981,33 @@ export function SessionDetail() {
     return () => controller.abort();
   }, [id, portAvailable]);
 
+  // Toggle a favorite model. Optimistic: the star flips immediately in
+  // the picker, then we re-fetch so the authoritative sort (favorites
+  // move into the pinned section) comes back from the server. Failures
+  // revert the optimistic update.
+  const handleToggleFavorite = useCallback(async (provider: string, model: string, nextFavorite: boolean) => {
+    if (!session?.platform || !id) return;
+    const platform = session.platform;
+    setModelEntries((prev) => prev.map((e) =>
+      e.provider === provider && e.model === model ? { ...e, isFavorite: nextFavorite } : e,
+    ));
+    try {
+      if (nextFavorite) {
+        await api.addFavorite(platform, provider, model);
+      } else {
+        await api.removeFavorite(platform, provider, model);
+      }
+      // Re-fetch for authoritative ordering.
+      const resp = await api.sessionModels(id);
+      setModelEntries(resp.models || []);
+    } catch {
+      // Revert on error.
+      setModelEntries((prev) => prev.map((e) =>
+        e.provider === provider && e.model === model ? { ...e, isFavorite: !nextFavorite } : e,
+      ));
+    }
+  }, [session?.platform, id]);
+
   useEffect(() => {
     if (messages.length <= MAX_RETAINED_MESSAGES) return;
 
@@ -2803,6 +2830,7 @@ export function SessionDetail() {
                   activeModel={activeModel}
                   selectedModel={selectedModel}
                   onModelChange={handleModelChange}
+                  onToggleFavorite={handleToggleFavorite}
                   activeAgent={activeAgent}
                   selectedAgent={selectedAgent}
                   onAgentChange={setSelectedAgent}

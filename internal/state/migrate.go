@@ -15,11 +15,15 @@ import (
 //	3 - add `auth_secret` single-row table holding the HMAC key used to
 //	    sign auth cookies. Persisting the key across restarts keeps
 //	    logged-in clients logged in up to the cookie TTL.
+//	4 - add `model_favorite` table keyed by (platform, provider_id,
+//	    model_id). Scoped per-platform so OpenCode's "claude-opus-4"
+//	    and Claude Code's same model are tracked independently, mirroring
+//	    how archived_session / seen_session are scoped.
 //
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 3
+const latestSchemaVersion = 4
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -121,6 +125,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV2(tx)
 	case 3:
 		return migrateToV3(tx)
+	case 4:
+		return migrateToV4(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -195,6 +201,28 @@ func migrateToV3(tx *sql.Tx) error {
 			id         INTEGER PRIMARY KEY CHECK (id = 1),
 			hmac_key   BLOB    NOT NULL,
 			created_at INTEGER NOT NULL
+		)
+	`)
+	return err
+}
+
+// migrateToV4 creates the model_favorite table. The primary key is
+// (platform, provider_id, model_id) so the same provider/model pair
+// can be favorited independently across platforms — matches the
+// scoping of archived_session / seen_session.
+//
+// provider_id may be empty for platforms that don't have a provider
+// concept (Claude Code treats the model id as the whole thing), but
+// is still part of the PK so "anthropic/claude-opus-4" doesn't collide
+// with a bare "claude-opus-4".
+func migrateToV4(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE model_favorite (
+			platform    TEXT    NOT NULL,
+			provider_id TEXT    NOT NULL,
+			model_id    TEXT    NOT NULL,
+			created_at  INTEGER NOT NULL,
+			PRIMARY KEY (platform, provider_id, model_id)
 		)
 	`)
 	return err

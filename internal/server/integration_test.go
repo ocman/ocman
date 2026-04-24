@@ -83,7 +83,7 @@ func testServer(t *testing.T) *Server {
 	t.Cleanup(func() { stateDB.Close() })
 
 	reg := platforms.NewRegistry()
-	reg.Register(opencodeplatform.New(database))
+	reg.Register(opencodeplatform.New(database, stateDB))
 	return New(database, stateDB, "127.0.0.1:0", reg, nil)
 }
 
@@ -550,7 +550,7 @@ func testServerWithRawDB(t *testing.T) (*Server, *sql.DB) {
 	t.Cleanup(func() { stateDB.Close() })
 
 	reg := platforms.NewRegistry()
-	reg.Register(opencodeplatform.New(database))
+	reg.Register(opencodeplatform.New(database, stateDB))
 	srv := New(database, stateDB, "127.0.0.1:0", reg, nil)
 	return srv, setupDB
 }

@@ -100,7 +100,7 @@ func main() {
 	// Register only the platform adapters requested via -platforms.
 	registry := platforms.NewRegistry()
 	if enabledPlatforms[string(opencodeplatform.PlatformID)] {
-		registry.Register(opencodeplatform.New(database))
+		registry.Register(opencodeplatform.New(database, stateDB))
 	}
 	if enabledPlatforms[string(claudecodeplatform.PlatformID)] {
 		registry.Register(claudecodeplatform.New())

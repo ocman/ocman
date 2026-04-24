@@ -15,6 +15,12 @@ export interface ModelPickerProps {
   currentModel?: string;
   initialQuery?: string;
   onSelect: (model: string) => void;
+  // Optional star-toggle handler. When provided, each row renders a
+  // clickable star that calls back with the desired next state
+  // (true = favorite, false = unfavorite). The parent owns the
+  // persistence; the picker just flips the UI via the updated
+  // `modelEntries` it receives on re-render.
+  onToggleFavorite?: (provider: string, model: string, nextFavorite: boolean) => void;
   onClose: () => void;
   onBack?: () => void;
 }
@@ -31,6 +37,7 @@ interface PickerEntry {
   isSessionDefault: boolean;
   isProviderDefault: boolean;
   isAvailable: boolean;
+  isFavorite: boolean;
   isCurrent: boolean;
 }
 
@@ -60,6 +67,7 @@ function buildEntriesFromRich(
       isSessionDefault: !!m.isSessionDefault,
       isProviderDefault: !!m.isProviderDefault,
       isAvailable: !!m.isAvailable,
+      isFavorite: !!m.isFavorite,
       isCurrent: !!currentModel && value === currentModel,
     };
   });
@@ -83,6 +91,7 @@ function buildEntriesFromStrings(models: string[], currentModel: string | undefi
       isSessionDefault: false,
       isProviderDefault: false,
       isAvailable: false,
+      isFavorite: false,
       isCurrent: !!currentModel && m === currentModel,
     };
   });
@@ -113,10 +122,14 @@ function groupIntoItems(entries: PickerEntry[], showSections: boolean): PickerIt
     return items;
   }
 
-  // Sections: Recent (session default + recents) → Recommended (provider
-  // defaults) → All models (the rest of the available catalog) → Archived
-  // (historical entries whose provider is no longer connected).
+  // Sections: Favorites (user-starred) → Recent (session default + recents)
+  // → Recommended (provider defaults) → All models (the rest of the
+  // available catalog) → Archived (historical entries whose provider is no
+  // longer connected). A favorited model always wins the favorites bucket
+  // even when it's also the session default or a recent — the star is the
+  // stronger opt-in and keeping it in one consistent spot avoids ambiguity.
   const sectionOf = (e: PickerEntry): string => {
+    if (e.isFavorite) return 'Favorites';
     if (e.isSessionDefault || e.recentRank > 0) return 'Recent';
     if (e.isProviderDefault) return 'Recommended';
     if (e.isAvailable) return 'All models';
@@ -143,6 +156,7 @@ export function ModelPicker({
   currentModel,
   initialQuery,
   onSelect,
+  onToggleFavorite,
   onClose,
   onBack,
 }: ModelPickerProps) {
@@ -358,6 +372,22 @@ export function ModelPicker({
                     {e.providerName || e.provider || ''}
                   </span>
                 </div>
+                {onToggleFavorite && e.provider && (
+                  <button
+                    type="button"
+                    className={`oc-model-picker-fav${e.isFavorite ? ' oc-model-picker-fav--on' : ''}`}
+                    aria-label={e.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                    title={e.isFavorite ? 'Unfavorite' : 'Favorite'}
+                    // Stop propagation so clicking the star doesn't also
+                    // pick the model and close the picker.
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      onToggleFavorite(e.provider, e.model, !e.isFavorite);
+                    }}
+                  >
+                    <i className={e.isFavorite ? 'bi bi-star-fill' : 'bi bi-star'} />
+                  </button>
+                )}
               </div>
             );
           })}

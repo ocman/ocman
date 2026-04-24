@@ -147,6 +147,7 @@ function ComposerImpl({
   activeModel,
   selectedModel,
   onModelChange,
+  onToggleFavorite,
   activeAgent,
   selectedAgent,
   onAgentChange,
@@ -179,6 +180,13 @@ function ComposerImpl({
   activeModel?: string;
   selectedModel?: string;
   onModelChange?: (model: string) => void;
+  /**
+   * Toggle favorite on a model. Called with (provider, model, nextFavorite)
+   * where nextFavorite is the state to move to (true = favorite, false =
+   * unfavorite). The parent is expected to call the /api/favorites endpoint
+   * and refresh modelEntries; the picker stays dumb.
+   */
+  onToggleFavorite?: (provider: string, model: string, nextFavorite: boolean) => void;
   activeAgent?: string;
   selectedAgent?: string;
   onAgentChange?: (agent: string) => void;
@@ -1005,6 +1013,7 @@ function ComposerImpl({
           currentModel={effectiveModel}
           initialQuery={modelPickerQuery}
           onSelect={(m) => onModelChange?.(m)}
+          onToggleFavorite={onToggleFavorite}
           onClose={() => { setModelPickerOpen(false); inputRef.current?.focus(); }}
           onBack={() => { setModelPickerOpen(false); useUiStore.getState().openPalette('command'); }}
         />

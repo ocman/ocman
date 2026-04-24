@@ -90,6 +90,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/hourly", s.get(s.handleHourly))
 	mux.HandleFunc("/api/hourly-tokens", s.get(s.handleHourlyTokens))
 	mux.HandleFunc("/api/capabilities", s.get(s.handleCapabilities))
+	mux.HandleFunc("/api/favorites", s.requireAuth(s.handleFavoritesRoot)) // GET = list, POST = add, DELETE = remove
 	mux.HandleFunc("/api/whisper/status", s.get(s.handleWhisperStatus))
 	mux.HandleFunc("/api/transcribe", s.post(s.handleTranscribe))
 	mux.HandleFunc("/api/cost/calc", s.post(s.handleCalcCost))
