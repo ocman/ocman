@@ -47,6 +47,12 @@ func TestHookURLFromAddr_Invalid(t *testing.T) {
 // directory, a boot-time refresh should produce settings.json with
 // our hook entries.
 func TestMaybeInstallClaudeHooks_WritesSettingsWhenAdapterAvailable(t *testing.T) {
+	// The boot path bails out when `claude` isn't on PATH (see
+	// claude_boot.go), because installing hooks for a missing CLI
+	// would produce dead config. CI runners don't have the Claude
+	// CLI installed, so inject a dummy executable for this test.
+	withFakeClaudeOnPath(t)
+
 	// Lay out a fake ~/.claude/projects so the adapter reports
 	// Available() and RefreshHooks has a parent directory to write
 	// settings.json into.
@@ -66,6 +72,20 @@ func TestMaybeInstallClaudeHooks_WritesSettingsWhenAdapterAvailable(t *testing.T
 	if _, err := os.Stat(settingsPath); err != nil {
 		t.Fatalf("expected settings.json to exist at %s: %v", settingsPath, err)
 	}
+}
+
+// withFakeClaudeOnPath drops a no-op `claude` executable into a temp
+// directory and prepends it to PATH for the duration of t. Required
+// because maybeInstallClaudeHooks refuses to write settings.json when
+// the Claude CLI is missing from PATH.
+func withFakeClaudeOnPath(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "claude")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write fake claude: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
 // TestMaybeInstallClaudeHooks_NoopWithoutAdapter silently skips when
