@@ -25,7 +25,7 @@
  *  - Busy (409) response shows a "try again" message in the thread
  */
 
-import { test, expect, MOCK_SESSION, mockSse, sseMessage, sseEvent, mockSessionWithLiveConnection } from './fixtures';
+import { test, expect, MOCK_SESSION, mockSse, sseMessage, mockSessionWithLiveConnection } from './fixtures';
 
 const SESSION_URL = `/session/${MOCK_SESSION.id}`;
 

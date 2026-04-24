@@ -22,16 +22,9 @@
 
 import { test, expect, MOCK_SESSION } from './fixtures';
 
-// ---------------------------------------------------------------------------
-// Helper: open palette via Zustand store (reliable, avoids OS hotkey capture)
-// ---------------------------------------------------------------------------
-
-async function openPalette(page: Parameters<typeof test>[0] extends (args: infer A) => unknown ? never : never, mode: 'command' | 'search' | 'project' = 'command') {
-  // This signature is awkward; just use Page directly.
-  void mode;
-}
-
-// We use a simpler inline helper below.
+// We use a simple inline helper below to open the palette via the Zustand
+// store (reliable, avoids OS hotkey capture). A more general helper used to
+// live here but its signature was awkward; inline calls proved simpler.
 
 // ---------------------------------------------------------------------------
 // Visibility

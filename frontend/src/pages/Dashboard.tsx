@@ -83,7 +83,11 @@ export function DashboardLayout() {
   }, [setSearchParams]);
 
   const setShowArchived = useCallback((v: boolean) => {
-    setSearchParams((p) => { v ? p.set('a', '1') : p.delete('a'); return p; }, { replace: true });
+    setSearchParams((p) => {
+      if (v) p.set('a', '1');
+      else p.delete('a');
+      return p;
+    }, { replace: true });
   }, [setSearchParams]);
 
   const getSessions = useApiStore((state) => state.getSessions);

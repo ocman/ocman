@@ -107,9 +107,11 @@ test('multiple SSE messages accumulate in order', async ({ mockedPage: page }) =
 test('stop button disappears after session.idle SSE event', async ({ mockedPage: page }) => {
   // Send a user message event (no finish → running)
   const { event: userEv } = sseMessage({ sessionId: MOCK_SESSION.id, role: 'user', text: 'Running…' });
-  // Stub the SSE stream with a gate we can release
+  // Stub the SSE stream with a gate we can release. The promise side is
+  // unused — we only need the resolver — but it's kept readable rather than
+  // dropping it into a bare `new Promise(...)` expression.
   let sseResolve!: () => void;
-  const sseReady = new Promise<void>((r) => { sseResolve = r; });
+  void new Promise<void>((r) => { sseResolve = r; });
 
   await page.route(
     new RegExp(`/api/session/${MOCK_SESSION.id}/events`),

@@ -1,9 +1,25 @@
 import { useEffect } from 'react';
 
+// `performance.memory` is a Chromium-only extension that isn't in
+// lib.dom.d.ts. `window.gc` is only present when the page was launched with
+// `--js-flags=--expose-gc`. We narrow to explicit types instead of casting
+// to `any` at each site.
+interface PerformanceMemory {
+  usedJSHeapSize: number;
+  totalJSHeapSize: number;
+  jsHeapSizeLimit: number;
+}
+interface PerformanceWithMemory extends Performance {
+  memory?: PerformanceMemory;
+}
+interface WindowWithGC extends Window {
+  gc?: () => void;
+}
+
 /**
  * Monitors frontend memory usage and forces garbage collection
  * when memory exceeds thresholds.
- * 
+ *
  * This helps prevent OOM in long-running sessions by:
  * 1. Monitoring JS heap usage every 30 seconds
  * 2. Triggering manual GC when memory exceeds 800MB
@@ -17,7 +33,7 @@ export function useMemoryMonitor() {
     }
 
     const check = () => {
-      const memory = (performance as any).memory;
+      const memory = (performance as PerformanceWithMemory).memory;
       if (!memory) return;
 
       const usedMB = memory.usedJSHeapSize / (1024 * 1024);
@@ -32,12 +48,13 @@ export function useMemoryMonitor() {
       }
 
       // Force GC at 80% of heap limit if available (Chrome with --js-flags=--expose-gc)
-      if (percentage > 80 && typeof (window as any).gc === 'function') {
+      const gc = (window as WindowWithGC).gc;
+      if (percentage > 80 && typeof gc === 'function') {
         console.warn(
           `[Memory] Triggering manual GC at ${usedMB.toFixed(0)}MB (${percentage.toFixed(0)}% of ${limitMB.toFixed(0)}MB limit)`
         );
         try {
-          (window as any).gc();
+          gc();
         } catch (err) {
           console.debug('[Memory] GC call failed:', err);
         }

@@ -15,7 +15,7 @@
  *  - "No active sessions found" empty state when sessions list is empty
  */
 
-import { test, expect, MOCK_SESSION, MOCK_SESSION_2, MOCK_PROJECT } from './fixtures';
+import { test, expect, MOCK_SESSION, MOCK_PROJECT } from './fixtures';
 
 // ---------------------------------------------------------------------------
 // Navigation & tab bar

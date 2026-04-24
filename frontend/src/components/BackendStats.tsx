@@ -2,6 +2,18 @@ import { useState, useEffect } from 'react';
 import { useApiStore } from '../lib/apiStore';
 import './BackendStats.css';
 
+// `performance.memory` is a non-standard Chromium-only extension, so it isn't
+// in lib.dom.d.ts. We narrow `performance` to a type that exposes it instead
+// of casting to `any` at each read site.
+interface PerformanceMemory {
+  usedJSHeapSize: number;
+  totalJSHeapSize: number;
+  jsHeapSizeLimit: number;
+}
+interface PerformanceWithMemory extends Performance {
+  memory?: PerformanceMemory;
+}
+
 export function BackendStats() {
   const [backendMemory, setBackendMemory] = useState<number | null>(null);
   const [uptime, setUptime] = useState<number | null>(null);
@@ -17,7 +29,7 @@ export function BackendStats() {
           setBackendMemory(stats.memory.heapAlloc);
           setUptime(stats.uptime);
         }
-      } catch (err) {
+      } catch {
         // Silently ignore errors - this is just nice-to-have info
         if (!cancelled) {
           setBackendMemory(null);
@@ -26,8 +38,8 @@ export function BackendStats() {
       }
 
       // Update frontend memory if available
-      if (!cancelled && 'memory' in performance) {
-        const memory = (performance as any).memory;
+      if (!cancelled) {
+        const memory = (performance as PerformanceWithMemory).memory;
         if (memory) {
           setFrontendMemory(memory.usedJSHeapSize);
         }
@@ -45,8 +57,8 @@ export function BackendStats() {
 
   // Calculate memory percentage and warning level
   const getMemoryWarning = (): { level: 'ok' | 'warning' | 'critical', percentage?: number } => {
-    if (frontendMemory && 'memory' in performance) {
-      const memory = (performance as any).memory;
+    if (frontendMemory) {
+      const memory = (performance as PerformanceWithMemory).memory;
       if (memory) {
         const percentage = (frontendMemory / memory.jsHeapSizeLimit) * 100;
         if (percentage > 80) return { level: 'critical', percentage };

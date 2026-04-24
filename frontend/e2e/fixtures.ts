@@ -328,7 +328,7 @@ export function sseMessage(opts: {
 // set so the composer is enabled.
 // ---------------------------------------------------------------------------
 
-export function makeCapabilitiesWithPort(_sessionId: string) {
+export function makeCapabilitiesWithPort() {
   return {
     platforms: [
       {
@@ -372,6 +372,9 @@ type OcmanFixtures = {
 export const test = base.extend<OcmanFixtures>({
   mockedPage: async ({ page }, use) => {
     await installDefaultRoutes(page);
+    // Playwright's fixture `use()` is not React's `use`, but the rule's
+    // heuristic matches on the identifier. Disable the check here.
+    // eslint-disable-next-line react-hooks/rules-of-hooks
     await use(page);
   },
 });
