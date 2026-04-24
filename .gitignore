@@ -8,3 +8,6 @@ internal/server/static/*
 *.local
 .envrc
 .direnv/
+# Playwright test run artifacts (screenshots, traces, error context).
+frontend/test-results/
+frontend/playwright-report/
