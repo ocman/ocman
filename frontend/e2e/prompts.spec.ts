@@ -9,8 +9,8 @@
  *  - "Allow once" button calls POST /api/session/:id/permissions/:id with reply=once
  *  - "Allow always" button calls POST with reply=always
  *  - "Reject" button calls POST with reply=reject
- *  - Keyboard: `o` hotkey → allow once
- *  - Keyboard: `a` hotkey → allow always
+ *  - Keyboard: `a` hotkey → allow once
+ *  - Keyboard: `A` hotkey → allow always
  *  - Keyboard: `r` hotkey → reject
  *  - Keyboard: Escape → reject
  *  - Keyboard: ArrowDown/Enter → move focus and submit
@@ -159,23 +159,7 @@ test('"Reject" button POSTs reply=reject', async ({ mockedPage: page }) => {
   expect(JSON.parse(req.postData() ?? '{}')).toMatchObject({ reply: 'reject' });
 });
 
-test('hotkey "o" triggers allow-once', async ({ mockedPage: page }) => {
-  await mockSse(page, MOCK_SESSION.id, [permissionAsked('perm-o')]);
-  await page.route(
-    new RegExp(`/api/session/${MOCK_SESSION.id}/permissions/perm-o`),
-    (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }),
-  );
-  await setupLivePage(page);
-  await expect(page.locator('.oc-permission-wrap')).toBeVisible({ timeout: 5_000 });
-
-  const [req] = await Promise.all([
-    page.waitForRequest((r) => r.url().includes('/permissions/perm-o') && r.method() === 'POST'),
-    page.keyboard.press('o'),
-  ]);
-  expect(JSON.parse(req.postData() ?? '{}')).toMatchObject({ reply: 'once' });
-});
-
-test('hotkey "a" triggers allow-always', async ({ mockedPage: page }) => {
+test('hotkey "a" triggers allow-once', async ({ mockedPage: page }) => {
   await mockSse(page, MOCK_SESSION.id, [permissionAsked('perm-a')]);
   await page.route(
     new RegExp(`/api/session/${MOCK_SESSION.id}/permissions/perm-a`),
@@ -187,6 +171,22 @@ test('hotkey "a" triggers allow-always', async ({ mockedPage: page }) => {
   const [req] = await Promise.all([
     page.waitForRequest((r) => r.url().includes('/permissions/perm-a') && r.method() === 'POST'),
     page.keyboard.press('a'),
+  ]);
+  expect(JSON.parse(req.postData() ?? '{}')).toMatchObject({ reply: 'once' });
+});
+
+test('hotkey "Shift+A" triggers allow-always', async ({ mockedPage: page }) => {
+  await mockSse(page, MOCK_SESSION.id, [permissionAsked('perm-A')]);
+  await page.route(
+    new RegExp(`/api/session/${MOCK_SESSION.id}/permissions/perm-A`),
+    (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }),
+  );
+  await setupLivePage(page);
+  await expect(page.locator('.oc-permission-wrap')).toBeVisible({ timeout: 5_000 });
+
+  const [req] = await Promise.all([
+    page.waitForRequest((r) => r.url().includes('/permissions/perm-A') && r.method() === 'POST'),
+    page.keyboard.press('Shift+A'),
   ]);
   expect(JSON.parse(req.postData() ?? '{}')).toMatchObject({ reply: 'always' });
 });
