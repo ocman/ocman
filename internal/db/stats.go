@@ -72,7 +72,7 @@ type requestRow struct {
 // days is the number of days in the selected window (0 = all time); it drives bucket granularity.
 // pricing may be nil, in which case CalcCost fields are left zero.
 // sessionLimit/sessionOffset control pagination of the Sessions aggregation (most-recent activity first).
-func (d *DB) GetMetricsDashboard(agentFilter, modelFilter string, since int64, days, requestLimit, requestOffset, sessionLimit, sessionOffset int, pricing CostCalculator) (*MetricsDashboard, error) {
+func (d *DB) GetMetricsDashboard(agentFilter, modelFilter string, since int64, days, requestLimit, requestOffset, sessionLimit, sessionOffset, projectLimit, projectOffset int, pricing CostCalculator) (*MetricsDashboard, error) {
 	rows, err := d.db.Query(`
 		SELECT m.id, m.session_id, m.time_created, m.data
 		FROM message m
@@ -349,6 +349,13 @@ func (d *DB) GetMetricsDashboard(agentFilter, modelFilter string, since int64, d
 		return nil, err
 	}
 
+	// ------------------------------------------------------------------
+	// Project log: aggregate the same filtered requests by directory.
+	// ------------------------------------------------------------------
+	if err := d.populateProjectLog(dashboard, filtered, projectLimit, projectOffset); err != nil {
+		return nil, err
+	}
+
 	return dashboard, nil
 }
 
@@ -454,6 +461,107 @@ func (d *DB) populateSessionLog(dashboard *MetricsDashboard, filtered []requestR
 		paged = paged[:sessionLimit]
 	}
 	dashboard.Sessions = paged
+	return nil
+}
+
+// populateProjectLog aggregates the already-filtered request rows by project
+// directory and applies pagination. Directories are resolved from session
+// metadata in a single query. Sorted by most-recent activity first.
+func (d *DB) populateProjectLog(dashboard *MetricsDashboard, filtered []requestRow, projectLimit, projectOffset int) error {
+	if len(filtered) == 0 {
+		return nil
+	}
+
+	// Collect the unique session IDs so we can look up directories.
+	sessionIDs := make([]string, 0)
+	seenSessions := make(map[string]struct{})
+	for _, r := range filtered {
+		if _, ok := seenSessions[r.SessionID]; !ok {
+			seenSessions[r.SessionID] = struct{}{}
+			sessionIDs = append(sessionIDs, r.SessionID)
+		}
+	}
+	_, dirs, err := d.lookupSessionMetadata(sessionIDs)
+	if err != nil {
+		return err
+	}
+
+	type projectAcc struct {
+		entry          ProjectLogEntry
+		sessionSet     map[string]struct{}
+		modelSet       map[string]struct{}
+		tokPerSecTotal float64
+		durationCount  int
+	}
+	accs := make(map[string]*projectAcc)
+	order := make([]string, 0)
+
+	for _, r := range filtered {
+		dir := dirs[r.SessionID]
+		acc, ok := accs[dir]
+		if !ok {
+			acc = &projectAcc{
+				entry:      ProjectLogEntry{Directory: dir},
+				sessionSet: make(map[string]struct{}),
+				modelSet:   make(map[string]struct{}),
+			}
+			accs[dir] = acc
+			order = append(order, dir)
+		}
+		acc.sessionSet[r.SessionID] = struct{}{}
+		acc.entry.Requests++
+		acc.entry.InputTokens += r.InputTokens
+		acc.entry.OutputTokens += r.OutputTokens
+		acc.entry.CacheReadTokens += r.CacheReadTokens
+		acc.entry.CacheWriteTokens += r.CacheWriteTokens
+		acc.entry.TotalTokens += r.InputTokens + r.OutputTokens
+		acc.entry.TotalDurationMs += r.DurationMs
+		acc.entry.Cost += r.Cost
+		acc.entry.CalcCost += r.CalcCost
+		if r.DurationMs > 0 {
+			acc.tokPerSecTotal += r.TokensPerSecond
+			acc.durationCount++
+		}
+		if r.TimeCreated > acc.entry.LastRequestTime {
+			acc.entry.LastRequestTime = r.TimeCreated
+		}
+		if r.Model != "" {
+			acc.modelSet[r.Model] = struct{}{}
+		}
+		if r.StopReason == "error" {
+			acc.entry.ErrorCount++
+		}
+	}
+
+	entries := make([]ProjectLogEntry, 0, len(accs))
+	for _, dir := range order {
+		acc := accs[dir]
+		if acc.durationCount > 0 {
+			acc.entry.AvgTokensPerSec = acc.tokPerSecTotal / float64(acc.durationCount)
+		}
+		acc.entry.Sessions = len(acc.sessionSet)
+		acc.entry.Models = sortedKeys(acc.modelSet)
+		entries = append(entries, acc.entry)
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].LastRequestTime > entries[j].LastRequestTime
+	})
+
+	dashboard.TotalProjects = len(entries)
+
+	offset := projectOffset
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(entries) {
+		offset = len(entries)
+	}
+	paged := entries[offset:]
+	if projectLimit > 0 && len(paged) > projectLimit {
+		paged = paged[:projectLimit]
+	}
+	dashboard.Projects = paged
 	return nil
 }
 

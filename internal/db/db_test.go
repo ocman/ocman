@@ -612,7 +612,7 @@ func TestGetMetricsDashboard(t *testing.T) {
 		},
 	})
 
-	metrics, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 50, 0, nil)
+	metrics, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 50, 0, 50, 0, nil)
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard: %v", err)
 	}
@@ -716,7 +716,7 @@ func TestGetMetricsDashboardSessionAggregation(t *testing.T) {
 		"tokens":     map[string]interface{}{"input": 10, "output": 20},
 	})
 
-	metrics, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 50, 0, nil)
+	metrics, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 50, 0, 50, 0, nil)
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard: %v", err)
 	}
@@ -754,7 +754,7 @@ func TestGetMetricsDashboardSessionAggregation(t *testing.T) {
 	}
 
 	// Pagination: sessionLimit=1 returns just the most recent.
-	paged, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 1, 0, nil)
+	paged, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 1, 0, 50, 0, nil)
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard paged: %v", err)
 	}
@@ -766,7 +766,7 @@ func TestGetMetricsDashboardSessionAggregation(t *testing.T) {
 	}
 
 	// Offset skips the first.
-	offset, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 1, 1, nil)
+	offset, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 1, 1, 50, 0, nil)
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard offset: %v", err)
 	}

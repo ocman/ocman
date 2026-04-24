@@ -233,6 +233,25 @@ type SessionLogEntry struct {
 	ErrorCount       int      `json:"errorCount"`
 }
 
+// ProjectLogEntry holds per-project (directory) aggregated metrics.
+type ProjectLogEntry struct {
+	Directory        string   `json:"directory"`
+	Sessions         int      `json:"sessions"`
+	Requests         int      `json:"requests"`
+	InputTokens      int64    `json:"inputTokens"`
+	OutputTokens     int64    `json:"outputTokens"`
+	CacheReadTokens  int64    `json:"cacheReadTokens"`
+	CacheWriteTokens int64    `json:"cacheWriteTokens"`
+	TotalTokens      int64    `json:"totalTokens"`
+	TotalDurationMs  int64    `json:"totalDurationMs"`
+	AvgTokensPerSec  float64  `json:"avgTokensPerSec"`
+	Cost             float64  `json:"cost"`
+	CalcCost         float64  `json:"calcCost"`
+	Models           []string `json:"models"`
+	ErrorCount       int      `json:"errorCount"`
+	LastRequestTime  int64    `json:"lastRequestTime"`
+}
+
 // MetricsDashboard holds the full metrics dashboard payload.
 type MetricsDashboard struct {
 	AvailableAgents []string          `json:"availableAgents"`
@@ -244,6 +263,8 @@ type MetricsDashboard struct {
 	TotalRequests   int               `json:"totalRequests"`
 	Sessions        []SessionLogEntry `json:"sessions"`
 	TotalSessions   int               `json:"totalSessions"`
+	Projects        []ProjectLogEntry `json:"projects"`
+	TotalProjects   int               `json:"totalProjects"`
 }
 
 // ProjectStats holds per-directory aggregated data.

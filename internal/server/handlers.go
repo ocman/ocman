@@ -161,8 +161,16 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	if v := strings.TrimSpace(r.URL.Query().Get("sessionOffset")); v != "" {
 		fmt.Sscanf(v, "%d", &sessionOffset)
 	}
+	projectLimit := 20
+	if v := strings.TrimSpace(r.URL.Query().Get("projectLimit")); v != "" {
+		fmt.Sscanf(v, "%d", &projectLimit)
+	}
+	var projectOffset int
+	if v := strings.TrimSpace(r.URL.Query().Get("projectOffset")); v != "" {
+		fmt.Sscanf(v, "%d", &projectOffset)
+	}
 
-	metrics, err := s.db.GetMetricsDashboard(agent, model, since, dayCount, limit, offset, sessionLimit, sessionOffset, pricing.Load())
+	metrics, err := s.db.GetMetricsDashboard(agent, model, since, dayCount, limit, offset, sessionLimit, sessionOffset, projectLimit, projectOffset, pricing.Load())
 	if err != nil {
 		serverError(w, "fetching metrics", err)
 		return

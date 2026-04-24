@@ -309,6 +309,24 @@ export interface SessionLogEntry {
   errorCount: number;
 }
 
+export interface ProjectLogEntry {
+  directory: string;
+  sessions: number;
+  requests: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  totalTokens: number;
+  totalDurationMs: number;
+  avgTokensPerSec: number;
+  cost: number;
+  calcCost: number;
+  models: string[];
+  errorCount: number;
+  lastRequestTime: number;
+}
+
 export interface MetricsDashboard {
   availableAgents: string[];
   availableModels: string[];
@@ -319,6 +337,8 @@ export interface MetricsDashboard {
   totalRequests: number;
   sessions: SessionLogEntry[];
   totalSessions: number;
+  projects: ProjectLogEntry[];
+  totalProjects: number;
 }
 
 export interface Project {
@@ -451,7 +471,7 @@ export interface TmuxSession {
 
 export const api = {
   stats: () => fetchJSON<Stats>('/api/stats'),
-  metrics: (params?: { agent?: string; model?: string; days?: number; limit?: number; offset?: number; sessionLimit?: number; sessionOffset?: number }) => {
+  metrics: (params?: { agent?: string; model?: string; days?: number; limit?: number; offset?: number; sessionLimit?: number; sessionOffset?: number; projectLimit?: number; projectOffset?: number }) => {
     const q = new URLSearchParams();
     if (params?.agent) q.set('agent', params.agent);
     if (params?.model) q.set('model', params.model);
@@ -460,6 +480,8 @@ export const api = {
     if (params?.offset != null) q.set('offset', String(params.offset));
     if (params?.sessionLimit != null) q.set('sessionLimit', String(params.sessionLimit));
     if (params?.sessionOffset != null) q.set('sessionOffset', String(params.sessionOffset));
+    if (params?.projectLimit != null) q.set('projectLimit', String(params.projectLimit));
+    if (params?.projectOffset != null) q.set('projectOffset', String(params.projectOffset));
     const qs = q.toString();
     return fetchJSON<MetricsDashboard>(`/api/metrics${qs ? '?' + qs : ''}`);
   },
