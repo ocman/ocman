@@ -415,6 +415,46 @@ function ArchiveFilterIcon() {
   );
 }
 
+// Icon used for the "projects" sidebar-view toggle. Stack of horizontal bars
+// evokes a grouped-list.
+function ProjectsViewIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="2" y="3" width="12" height="2.2" rx="0.6" fill="currentColor" />
+      <rect x="4" y="7" width="10" height="2.2" rx="0.6" fill="currentColor" opacity="0.75" />
+      <rect x="4" y="11" width="10" height="2.2" rx="0.6" fill="currentColor" opacity="0.75" />
+    </svg>
+  );
+}
+
+// Icon used when the sidebar is *in* projects view — shows a flat list, hinting
+// that clicking will return to the flat "recent" view.
+function RecentViewIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="2" y="3" width="12" height="2.2" rx="0.6" fill="currentColor" />
+      <rect x="2" y="7" width="12" height="2.2" rx="0.6" fill="currentColor" />
+      <rect x="2" y="11" width="12" height="2.2" rx="0.6" fill="currentColor" />
+    </svg>
+  );
+}
+
+// Tiny chevron used on collapsible project group headers. `open` flips it from
+// a right-pointing triangle (collapsed) to a down-pointing one (expanded).
+function GroupChevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="10"
+      height="10"
+      viewBox="0 0 10 10"
+      aria-hidden="true"
+      style={{ transform: open ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.12s ease' }}
+    >
+      <path d="M3 2.5l3.5 2.5-3.5 2.5z" fill="currentColor" />
+    </svg>
+  );
+}
+
 
 export function SessionDetail() {
   const { id } = useParams<{ id: string }>();
@@ -538,6 +578,10 @@ export function SessionDetail() {
   const setCachedSession = useApiStore((state) => state.setCachedSession);
   const updateCachedSession = useApiStore((state) => state.updateCachedSession);
   const sidebarWidth = useUiStore((state) => state.sidebarWidth);
+  const sidebarView = useUiStore((state) => state.sidebarView);
+  const toggleSidebarView = useUiStore((state) => state.toggleSidebarView);
+  const collapsedProjects = useUiStore((state) => state.collapsedProjects);
+  const toggleCollapsedProject = useUiStore((state) => state.toggleCollapsedProject);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -2392,6 +2436,115 @@ export function SessionDetail() {
     return () => clearInterval(interval);
   }, [isRunning, messages, subagentTokens]);
 
+  // Flattened list of sidebar rows for the "projects" view. Each entry is
+  // either a project header (with its most-recent-activity timestamp) or a
+  // session row belonging to a project. Groups are sorted by most-recent
+  // activity descending; sessions within a group are sorted by timeUpdated
+  // desc. We intentionally do NOT reorder based on which session is currently
+  // viewed — users rely on the stable position of each project to build muscle
+  // memory for "where does this session live". Collapsed groups omit their
+  // child rows but still emit their header.
+  //
+  // We also roll up an "aggregate status" per group so a collapsed header
+  // can surface the most important child state without the user having to
+  // expand it. Priority matches what the user cares about when triaging:
+  //   1. pending permission/question (needs you now)
+  //   2. error (failed, still unseen)
+  //   3. busy (running)
+  //   4. none (idle/done — don't distract)
+  // For the currently-viewed session we prefer the SSE-derived
+  // `optimisticStatus`, matching the per-row logic above, so the header
+  // doesn't lag several seconds behind what the composer is showing.
+  const sidebarProjectGroups = useMemo(() => {
+    const buckets = new Map<string, Session[]>();
+    for (const s of recentSessions) {
+      const key = s.directory || '';
+      const existing = buckets.get(key);
+      if (existing) existing.push(s);
+      else buckets.set(key, [s]);
+    }
+
+    type Aggregate =
+      | { kind: 'none' }
+      | { kind: 'busy'; count: number }
+      | { kind: 'error'; count: number }
+      | { kind: 'pending'; count: number };
+
+    const rollup = (sessions: Session[]): Aggregate => {
+      let pending = 0;
+      let error = 0;
+      let busy = 0;
+      for (const s of sessions) {
+        const effectiveStatus = s.id === id ? optimisticStatus : s.status;
+        if (s.pendingPermission || s.pendingQuestion) {
+          pending += 1;
+          continue;
+        }
+        if (effectiveStatus === 'error' && !s.seen) {
+          error += 1;
+          continue;
+        }
+        if (effectiveStatus === 'busy') {
+          busy += 1;
+        }
+      }
+      if (pending > 0) return { kind: 'pending', count: pending };
+      if (error > 0) return { kind: 'error', count: error };
+      if (busy > 0) return { kind: 'busy', count: busy };
+      return { kind: 'none' };
+    };
+
+    const groups = Array.from(buckets.entries()).map(([directory, sessions]) => {
+      const sorted = [...sessions].sort((a, b) => b.timeUpdated - a.timeUpdated);
+      return {
+        directory,
+        sessions: sorted,
+        lastUpdated: sorted[0]?.timeUpdated ?? 0,
+        aggregate: rollup(sorted),
+      };
+    });
+    groups.sort((a, b) => b.lastUpdated - a.lastUpdated);
+    return groups;
+  }, [recentSessions, id, optimisticStatus]);
+
+  // Collapsed state as a Set for O(1) membership checks in render. The current
+  // session's project is force-expanded regardless of persisted state so the
+  // user can always see where they are.
+  const collapsedProjectSet = useMemo(() => {
+    const set = new Set(collapsedProjects);
+    const currentDir = recentSessions.find(s => s.id === id)?.directory;
+    if (currentDir) set.delete(currentDir);
+    return set;
+  }, [collapsedProjects, recentSessions, id]);
+
+  // Keep the active session's sidebar row visible. The list doesn't reorder
+  // to follow the cursor, so when the user switches sessions (or flips
+  // views) the active row may be off-screen in a long list. We scroll it
+  // into view with `nearest` block alignment so we don't yank the viewport
+  // unless it's actually necessary. Skipped while the recent-sessions poll
+  // is mid-flight for the initial load — the DOM may not yet contain a row
+  // for `id`.
+  const sidebarListRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!id) return;
+    const container = sidebarListRef.current;
+    if (!container) return;
+    // Run on the next frame so any just-expanded group has finished laying
+    // out before we measure offsets.
+    const raf = requestAnimationFrame(() => {
+      const active = container.querySelector('[aria-selected="true"]') as HTMLElement | null;
+      if (!active) return;
+      const cTop = container.scrollTop;
+      const cBot = cTop + container.clientHeight;
+      const aTop = active.offsetTop;
+      const aBot = aTop + active.offsetHeight;
+      if (aTop < cTop || aBot > cBot) {
+        active.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [id, sidebarView, recentSessions]);
+
   return (
     <Toast.Provider swipeDirection="right">
       <div className="session-layout">
@@ -2399,17 +2552,26 @@ export function SessionDetail() {
         <SidebarResizer />
         <div className="session-sidebar-header">
           <span className="session-sidebar-heading">
-            <span>Recent sessions</span>
+            <span>{sidebarView === 'projects' ? 'Projects' : 'Recent sessions'}</span>
           </span>
-          <button
-            type="button"
-            className={`session-sidebar-new${showArchivedRecent ? ' active' : ''}`}
-            onClick={() => {
-              setShowArchivedRecent(current => !current);
-            }}
-            title={showArchivedRecent ? 'Hide archived sessions' : 'Include archived sessions'}
-            aria-label={showArchivedRecent ? 'Hide archived sessions' : 'Include archived sessions'}
-          ><ArchiveFilterIcon /></button>
+          <div className="session-sidebar-header-actions">
+            <button
+              type="button"
+              className={`session-sidebar-new${sidebarView === 'projects' ? ' active' : ''}`}
+              onClick={toggleSidebarView}
+              title={sidebarView === 'projects' ? 'Show recent sessions' : 'Group by project'}
+              aria-label={sidebarView === 'projects' ? 'Show recent sessions' : 'Group by project'}
+            >{sidebarView === 'projects' ? <RecentViewIcon /> : <ProjectsViewIcon />}</button>
+            <button
+              type="button"
+              className={`session-sidebar-new${showArchivedRecent ? ' active' : ''}`}
+              onClick={() => {
+                setShowArchivedRecent(current => !current);
+              }}
+              title={showArchivedRecent ? 'Hide archived sessions' : 'Include archived sessions'}
+              aria-label={showArchivedRecent ? 'Hide archived sessions' : 'Include archived sessions'}
+            ><ArchiveFilterIcon /></button>
+          </div>
         </div>
         {pendingTmuxSession && pickerPos && (
           <div
@@ -2433,58 +2595,110 @@ export function SessionDetail() {
             ))}
           </div>
         )}
-        <div className="session-sidebar-list">
+        <div className="session-sidebar-list" ref={sidebarListRef}>
           {loadingRecentSessions && <div className="session-sidebar-loader"><div className="oc-spinner" /></div>}
-          {recentSessions.map(sib => {
-            // For the currently-viewed session, trust the SSE-derived status
-            // over whatever the last 10s poll returned. OpenCode's DB can lag
-            // the SSE stream by several seconds (message finish arrives on the
-            // wire before the DB write is visible to ocman's read-only
-            // handle), so using the poll value here would make the sidebar
-            // pulse keep running after the composer has already gone idle.
-            const displayStatus = sib.id === id ? optimisticStatus : sib.status;
-            return (
-            <div
-              key={sib.id}
-              role="button"
-              tabIndex={0}
-              aria-selected={sib.id === id}
-              className={`session-sidebar-item ${sib.id === id ? 'active' : ''}${archivingSessionIds.has(sib.id) ? ' archiving' : ''}`}
-              onClick={() => navigate(`/session/${sib.id}`)}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/session/${sib.id}`); } }}
-            >
-              <StatusBadge
-                status={displayStatus}
-                compact
-                seen={(displayStatus === 'waiting' || displayStatus === 'error') && sib.seen}
-                pending={sib.pendingPermission || sib.pendingQuestion}
-              />
-              <span className="session-sidebar-item-body">
-                <span className="session-sidebar-title">{cleanTitle(sib.title) || 'Untitled'}</span>
-                <span className="session-sidebar-project">
-                  <PlatformBadge platform={sib.platform} variant="plain" />
-                  <span className="session-sidebar-project-path">
-                    <ShortPath path={sib.directory} />
-                  </span>
-                </span>
-                <GitStatusLine info={sib.gitInfo} />
-              </span>
-              <span className="session-sidebar-meta">
-                <span className="session-sidebar-time" title={new Date(sib.timeUpdated).toLocaleString()}>{relativeTime(sib.timeUpdated)}</span>
-                <button
-                  type="button"
-                  className="session-archive-btn session-sidebar-archive-btn"
-                  onClick={(e) => handleArchiveSession(e, sib)}
-                  title="Archive session"
-                  aria-label="Archive session"
-                  disabled={archivingSessionIds.has(sib.id)}
+          {(() => {
+            // Shared row renderer — used by both the flat and grouped views so
+            // all live-status / archive / navigation behaviour stays identical.
+            // For the currently-viewed session we trust the SSE-derived status
+            // over the last poll (OpenCode's DB can lag SSE by several seconds;
+            // using the poll value here would leave the sidebar pulse running
+            // after the composer has already gone idle).
+            const renderRow = (sib: Session, inGroup: boolean) => {
+              const displayStatus = sib.id === id ? optimisticStatus : sib.status;
+              return (
+                <div
+                  key={sib.id}
+                  role="button"
+                  tabIndex={0}
+                  aria-selected={sib.id === id}
+                  className={`session-sidebar-item ${sib.id === id ? 'active' : ''}${archivingSessionIds.has(sib.id) ? ' archiving' : ''}${inGroup ? ' in-group' : ''}`}
+                  onClick={() => navigate(`/session/${sib.id}`)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/session/${sib.id}`); } }}
                 >
-                  <ArchiveIcon />
-                </button>
-              </span>
-            </div>
-            );
-          })}
+                  <StatusBadge
+                    status={displayStatus}
+                    compact
+                    seen={(displayStatus === 'waiting' || displayStatus === 'error') && sib.seen}
+                    pending={sib.pendingPermission || sib.pendingQuestion}
+                  />
+                  <span className="session-sidebar-item-body">
+                    <span className="session-sidebar-title">{cleanTitle(sib.title) || 'Untitled'}</span>
+                    {!inGroup && (
+                      <span className="session-sidebar-project">
+                        <PlatformBadge platform={sib.platform} variant="plain" />
+                        <span className="session-sidebar-project-path">
+                          <ShortPath path={sib.directory} />
+                        </span>
+                      </span>
+                    )}
+                    {inGroup && (
+                      <span className="session-sidebar-project">
+                        <PlatformBadge platform={sib.platform} variant="plain" />
+                      </span>
+                    )}
+                    <GitStatusLine info={sib.gitInfo} />
+                  </span>
+                  <span className="session-sidebar-meta">
+                    <span className="session-sidebar-time" title={new Date(sib.timeUpdated).toLocaleString()}>{relativeTime(sib.timeUpdated)}</span>
+                    <button
+                      type="button"
+                      className="session-archive-btn session-sidebar-archive-btn"
+                      onClick={(e) => handleArchiveSession(e, sib)}
+                      title="Archive session"
+                      aria-label="Archive session"
+                      disabled={archivingSessionIds.has(sib.id)}
+                    >
+                      <ArchiveIcon />
+                    </button>
+                  </span>
+                </div>
+              );
+            };
+
+            if (sidebarView === 'projects') {
+              return sidebarProjectGroups.map(group => {
+                const collapsed = collapsedProjectSet.has(group.directory);
+                const label = group.directory ? shortPath(group.directory) : '(unknown)';
+                // Tint the count pill with the rolled-up aggregate. Kind
+                // maps to CSS modifier classes that reuse the same colour
+                // tokens as StatusBadge, so a "running" project pill looks
+                // like a busy session dot, a "pending" pill matches the
+                // attention prompt, etc. Idle/done groups stay neutral so
+                // they don't compete for attention.
+                const agg = group.aggregate;
+                const aggTitle =
+                  agg.kind === 'pending'
+                    ? `${agg.count} session${agg.count === 1 ? '' : 's'} waiting for your response`
+                    : agg.kind === 'error'
+                      ? `${agg.count} session${agg.count === 1 ? '' : 's'} with unseen errors`
+                      : agg.kind === 'busy'
+                        ? `${agg.count} running`
+                        : `${group.sessions.length} session${group.sessions.length === 1 ? '' : 's'}`;
+                return (
+                  <div key={group.directory || '__empty__'} className="session-sidebar-group">
+                    <button
+                      type="button"
+                      className="session-sidebar-group-header"
+                      aria-expanded={!collapsed}
+                      title={group.directory || 'Unknown project'}
+                      onClick={() => toggleCollapsedProject(group.directory)}
+                    >
+                      <GroupChevron open={!collapsed} />
+                      <span className="session-sidebar-group-label">{label}</span>
+                      <span
+                        className={`session-sidebar-group-count session-sidebar-group-count-${agg.kind}`}
+                        title={aggTitle}
+                      >{group.sessions.length}</span>
+                    </button>
+                    {!collapsed && group.sessions.map(sib => renderRow(sib, true))}
+                  </div>
+                );
+              });
+            }
+
+            return recentSessions.map(sib => renderRow(sib, false));
+          })()}
         </div>
         <BackendStats />
       </div>

@@ -11,6 +11,8 @@ export type PaletteCommand =
   | { kind: 'nav'; id: string; label: string; path: string }
   | { kind: 'scoped'; id: string; label: string; description: string };
 
+export type SidebarView = 'recent' | 'projects';
+
 type UiStore = {
   shortcutsOpen: boolean;
   openShortcuts: () => void;
@@ -19,6 +21,16 @@ type UiStore = {
 
   sidebarWidth: number;
   setSidebarWidth: (width: number) => void;
+
+  sidebarView: SidebarView;
+  setSidebarView: (view: SidebarView) => void;
+  toggleSidebarView: () => void;
+
+  // Collapsed project directories in the "projects" sidebar view. Stored as
+  // a plain string[] (not Set) so Zustand's persist middleware can serialise
+  // it. Missing entries are treated as expanded.
+  collapsedProjects: string[];
+  toggleCollapsedProject: (directory: string) => void;
 
   bellEnabled: boolean;
   setBellEnabled: (enabled: boolean) => void;
@@ -51,6 +63,19 @@ export const useUiStore = create<UiStore>()(
       sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
       setSidebarWidth: (width) => set({ sidebarWidth: clampWidth(width) }),
 
+      sidebarView: 'recent',
+      setSidebarView: (view) => set({ sidebarView: view }),
+      toggleSidebarView: () =>
+        set((s) => ({ sidebarView: s.sidebarView === 'recent' ? 'projects' : 'recent' })),
+
+      collapsedProjects: [],
+      toggleCollapsedProject: (directory) =>
+        set((s) => ({
+          collapsedProjects: s.collapsedProjects.includes(directory)
+            ? s.collapsedProjects.filter((d) => d !== directory)
+            : [...s.collapsedProjects, directory],
+        })),
+
       bellEnabled: true,
       setBellEnabled: (enabled) => set({ bellEnabled: enabled }),
 
@@ -68,7 +93,12 @@ export const useUiStore = create<UiStore>()(
     {
       name: 'ocman:ui',
       // Only persist layout preferences; transient UI state (shortcutsOpen) stays in memory.
-      partialize: (s) => ({ sidebarWidth: s.sidebarWidth, bellEnabled: s.bellEnabled }),
+      partialize: (s) => ({
+        sidebarWidth: s.sidebarWidth,
+        bellEnabled: s.bellEnabled,
+        sidebarView: s.sidebarView,
+        collapsedProjects: s.collapsedProjects,
+      }),
     },
   ),
 );
