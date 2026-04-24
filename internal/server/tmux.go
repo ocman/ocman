@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
@@ -213,6 +214,84 @@ func (s *Server) handleTmuxSessions(w http.ResponseWriter, r *http.Request) {
 		"available": true,
 		"sessions":  sessions,
 	})
+}
+
+// launchOpencodeInTmux finds or creates a tmux session named after the given
+// directory, opens a new window in it, and runs `opencode --port 0` there.
+// It returns the name of the tmux session that was used/created.
+func launchOpencodeInTmux(directory string) (string, error) {
+	// Derive a safe tmux session name from the directory path.
+	// Use the base name of the directory; if empty, fall back to "opencode".
+	sessionName := filepath.Base(directory)
+	if sessionName == "" || sessionName == "." || sessionName == "/" {
+		sessionName = "opencode"
+	}
+
+	// Check whether this tmux session already exists.
+	sessionExists := false
+	existing, err := listTmuxSessions()
+	if err == nil {
+		for _, ts := range existing {
+			if ts.Name == sessionName {
+				sessionExists = true
+				break
+			}
+		}
+	}
+
+	if !sessionExists {
+		// Create a detached tmux session rooted at directory.
+		if err := exec.Command("tmux", "new-session", "-d", "-s", sessionName, "-c", directory).Run(); err != nil {
+			return "", fmt.Errorf("tmux new-session: %w", err)
+		}
+	} else {
+		// Session exists — open a new window in it, rooted at directory.
+		if err := exec.Command("tmux", "new-window", "-t", sessionName, "-c", directory).Run(); err != nil {
+			return "", fmt.Errorf("tmux new-window: %w", err)
+		}
+	}
+
+	// Send the opencode command to the current pane of the session.
+	// -t targets the most-recently-created window (the one we just made).
+	if err := exec.Command("tmux", "send-keys", "-t", sessionName, "opencode --port 0", "Enter").Run(); err != nil {
+		return sessionName, fmt.Errorf("tmux send-keys: %w", err)
+	}
+
+	return sessionName, nil
+}
+
+func (s *Server) handleTmuxLaunchOpencode(w http.ResponseWriter, r *http.Request) {
+	if !isTmuxAvailable() {
+		http.Error(w, "tmux is not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req struct {
+		Directory string `json:"directory"`
+	}
+	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+		return
+	}
+	if req.Directory == "" {
+		http.Error(w, "directory is required", http.StatusBadRequest)
+		return
+	}
+	// Basic path sanity — must be absolute to avoid ambiguity.
+	if !filepath.IsAbs(req.Directory) {
+		http.Error(w, "directory must be an absolute path", http.StatusBadRequest)
+		return
+	}
+
+	log.WithField("directory", req.Directory).Info("launching opencode in tmux")
+
+	sessionName, err := launchOpencodeInTmux(req.Directory)
+	if err != nil {
+		log.WithError(err).Error("failed to launch opencode in tmux")
+		serverError(w, "launching opencode in tmux", err)
+		return
+	}
+
+	writeJSON(w, map[string]string{"session": sessionName})
 }
 
 func (s *Server) handleTmuxSwitch(w http.ResponseWriter, r *http.Request) {

@@ -659,6 +659,15 @@ export const api = {
     });
     if (!resp.ok) throw new Error(await resp.text());
   },
+  tmuxLaunchOpencode: async (directory: string): Promise<{ session: string }> => {
+    const resp = await fetch('/api/tmux/launch-opencode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ directory }),
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    return resp.json();
+  },
   compactSession: async (sessionId: string, providerID: string, modelID: string) => {
     const resp = await fetch(`/api/session/${encodeURIComponent(sessionId)}/compact`, {
       method: 'POST',

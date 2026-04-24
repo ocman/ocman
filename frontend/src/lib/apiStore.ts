@@ -69,6 +69,7 @@ type ApiStore = {
   getTmuxClients: () => Promise<{ available: boolean; clients: TmuxClient[] }>;
   getTmuxSessions: () => Promise<{ available: boolean; sessions: TmuxSession[] }>;
   switchTmuxSession: (session: string, client?: string) => Promise<void>;
+  launchOpencodeInTmux: (directory: string) => Promise<{ session: string }>;
   getWhisperStatus: () => Promise<{ available: boolean }>;
   transcribe: (audio: Blob) => Promise<string>;
   getSystemStats: () => Promise<SystemStats>;
@@ -185,6 +186,7 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   getTmuxClients: () => get().runRequest('tmux-clients:get', () => api.tmuxClients()),
   getTmuxSessions: () => get().runRequest('tmux-sessions:get', () => api.tmuxSessions()),
   switchTmuxSession: (session, client) => get().runRequest(`tmux:switch:${session}`, () => api.tmuxSwitch(session, client)),
+  launchOpencodeInTmux: (directory) => get().runRequest(`tmux:launch-opencode:${directory}`, () => api.tmuxLaunchOpencode(directory)),
   getWhisperStatus: () => get().runRequest('whisper-status:get', () => api.whisperStatus()),
   transcribe: (audio) => get().runRequest('transcribe:post', () => api.transcribe(audio)),
   getSystemStats: () => get().runRequest('system-stats:get', () => api.systemStats()),

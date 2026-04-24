@@ -96,6 +96,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/tmux/clients", requireGET(requireLocalhost(s.handleTmuxClients)))
 	mux.HandleFunc("/api/tmux/sessions", requireGET(requireLocalhost(s.handleTmuxSessions)))
 	mux.HandleFunc("/api/tmux/switch", requirePOST(requireLocalhost(s.handleTmuxSwitch)))
+	mux.HandleFunc("/api/tmux/launch-opencode", requirePOST(requireLocalhost(s.handleTmuxLaunchOpencode)))
 
 	// Auth endpoints. /me is unauthenticated by design (the SPA needs
 	// to learn its auth state before it can show the lockscreen).

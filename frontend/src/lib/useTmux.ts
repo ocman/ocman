@@ -17,6 +17,11 @@ export interface TmuxState {
   switchSession: (tmuxSessionName: string, clientTTY?: string) => Promise<void>;
   /** Find the tmux session whose resolved path matches the given directory. */
   findSession: (directory: string) => TmuxSession | undefined;
+  /**
+   * Find or create a tmux session for the given directory and run
+   * `opencode --port 0` in a new window. Returns the tmux session name.
+   */
+  launchOpencode: (directory: string) => Promise<{ session: string }>;
 }
 
 export function useTmux(): TmuxState {
@@ -27,6 +32,7 @@ export function useTmux(): TmuxState {
   const getTmuxSessions = useApiStore((state) => state.getTmuxSessions);
   const getTmuxClients = useApiStore((state) => state.getTmuxClients);
   const switchTmuxSession = useApiStore((state) => state.switchTmuxSession);
+  const launchOpencodeInTmux = useApiStore((state) => state.launchOpencodeInTmux);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,5 +68,9 @@ export function useTmux(): TmuxState {
     return sessions.find(ts => ts.resolvedPath === directory);
   }, [sessions]);
 
-  return { available, isLocal, sessions, clients, switchSession, findSession };
+  const launchOpencode = useCallback((directory: string) => {
+    return launchOpencodeInTmux(directory);
+  }, [launchOpencodeInTmux]);
+
+  return { available, isLocal, sessions, clients, switchSession, findSession, launchOpencode };
 }
