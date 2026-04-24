@@ -25,9 +25,16 @@ export function formatSeconds(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return '0s';
   if (seconds < 10) return seconds.toFixed(1) + 's';
   if (seconds < 60) return Math.round(seconds) + 's';
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.round(seconds % 60);
-  return mins + 'm ' + secs + 's';
+  const totalMins = Math.floor(seconds / 60);
+  if (totalMins < 60) {
+    return totalMins + 'm ' + Math.round(seconds % 60) + 's';
+  }
+  const totalHours = Math.floor(totalMins / 60);
+  if (totalHours < 24) {
+    return totalHours + 'h ' + (totalMins % 60) + 'm';
+  }
+  const days = Math.floor(totalHours / 24);
+  return days + 'd ' + (totalHours % 24) + 'h';
 }
 
 export function formatPercent(value: number, digits = 0): string {
