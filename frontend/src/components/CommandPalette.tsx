@@ -7,21 +7,24 @@ import { useUiStore } from '../lib/uiStore';
 import { cleanTitle, relativeTime, shortPath } from '../lib/format';
 import type { Session, Project } from '../lib/api';
 
+type CommandItem = { kind: 'command'; id: string; label: string; description: string };
+type ScopedItem = { kind: 'scoped'; id: string; label: string; description: string };
+type NavItem = { kind: 'nav'; id: string; label: string; path: string };
+type CommandNavItem = CommandItem | ScopedItem | NavItem;
+
 type ResultItem =
   | { kind: 'session'; session: Session }
   | { kind: 'project'; project: Project }
-  | { kind: 'command'; id: string; label: string; description: string }
-  | { kind: 'scoped'; id: string; label: string; description: string }
-  | { kind: 'nav'; id: string; label: string; path: string };
+  | CommandNavItem;
 
-const NAV_ITEMS: ResultItem[] = [
+const NAV_ITEMS: NavItem[] = [
   { kind: 'nav', id: 'nav.sessions', label: 'Sessions', path: '/' },
   { kind: 'nav', id: 'nav.projects', label: 'Projects', path: '/projects' },
   { kind: 'nav', id: 'nav.stats', label: 'Stats', path: '/stats' },
   { kind: 'nav', id: 'nav.usage', label: 'Usage', path: '/usage' },
 ];
 
-const STATIC_COMMANDS: ResultItem[] = [
+const STATIC_COMMANDS: CommandItem[] = [
   { kind: 'command', id: 'cmd.sessions', label: 'sessions', description: 'Go to Sessions tab' },
   { kind: 'command', id: 'cmd.projects', label: 'projects', description: 'Go to Projects tab' },
   { kind: 'command', id: 'cmd.stats', label: 'stats', description: 'Go to Stats tab' },
@@ -29,7 +32,7 @@ const STATIC_COMMANDS: ResultItem[] = [
   { kind: 'command', id: 'cmd.shortcuts', label: 'shortcuts', description: 'Open keyboard shortcuts' },
 ];
 
-const SCOPED_COMMANDS: ResultItem[] = [
+const SCOPED_COMMANDS: ScopedItem[] = [
   { kind: 'scoped', id: 'scoped.model', label: 'model', description: 'Change model (session-scoped)' },
   { kind: 'scoped', id: 'scoped.agent', label: 'agent', description: 'Switch agent (session-scoped)' },
   { kind: 'scoped', id: 'scoped.variant', label: 'variant', description: 'Change reasoning effort' },
@@ -40,8 +43,6 @@ const SCOPED_COMMANDS: ResultItem[] = [
   { kind: 'scoped', id: 'scoped.new-project', label: 'New session in project', description: 'Create new session in project' },
   { kind: 'scoped', id: 'scoped.compact', label: 'compact', description: 'Compact view' },
 ];
-
-type CommandNavItem = { kind: 'command'; id: string; label: string; description: string } | { kind: 'nav'; id: string; label: string; path: string } | { kind: 'scoped'; id: string; label: string; description: string };
 
 function isCommandQuery(q: string): boolean {
   return q.startsWith('>') || q.startsWith(':');
@@ -179,28 +180,16 @@ export function CommandPalette() {
 
     if (isCommandQuery(query)) {
       const q = stripCommandPrefix(query).toLowerCase();
-      const commands = (STATIC_COMMANDS as CommandNavItem[]).filter((item) =>
-        item.label.toLowerCase().includes(q),
-      );
-      const scoped = (SCOPED_COMMANDS as CommandNavItem[]).filter((item) =>
-        item.label.toLowerCase().includes(q),
-      );
-      const navs = (NAV_ITEMS as CommandNavItem[]).filter((item) =>
-        item.label.toLowerCase().includes(q),
-      );
+      const commands = STATIC_COMMANDS.filter((item) => item.label.toLowerCase().includes(q));
+      const scoped = SCOPED_COMMANDS.filter((item) => item.label.toLowerCase().includes(q));
+      const navs = NAV_ITEMS.filter((item) => item.label.toLowerCase().includes(q));
       return dedupeCommandNavItems([...commands, ...scoped, ...navs]);
     }
 
     const q = query.toLowerCase();
-    const commands = (STATIC_COMMANDS as CommandNavItem[]).filter((item) =>
-      item.label.toLowerCase().includes(q),
-    );
-    const navs = (NAV_ITEMS as CommandNavItem[]).filter((item) =>
-      item.label.toLowerCase().includes(q),
-    );
-    const scoped = (SCOPED_COMMANDS as CommandNavItem[]).filter((item) =>
-      item.label.toLowerCase().includes(q),
-    );
+    const commands = STATIC_COMMANDS.filter((item) => item.label.toLowerCase().includes(q));
+    const navs = NAV_ITEMS.filter((item) => item.label.toLowerCase().includes(q));
+    const scoped = SCOPED_COMMANDS.filter((item) => item.label.toLowerCase().includes(q));
     const sessionResults = sessions
       ? sessionFuse.search(query, { limit: 10 }).map((r) => ({
           kind: 'session' as const,
