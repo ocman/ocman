@@ -21,8 +21,9 @@ import (
 var staticFS embed.FS
 
 const (
-	autoArchiveAfter    = 7 * 24 * time.Hour
-	autoArchiveInterval = 24 * time.Hour
+	autoArchiveAfter     = 72 * time.Hour
+	autoArchiveInterval  = 24 * time.Hour
+	projectsScanInterval = 5 * time.Minute
 )
 
 // Server serves the web UI and API.
@@ -33,6 +34,7 @@ type Server struct {
 	registry  *platforms.Registry
 	auth      *Auth
 	startTime time.Time
+	projects  projectsIndexState
 }
 
 // New creates a new server. The registry may be nil, in which case a
@@ -58,6 +60,7 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 // then gracefully shuts down the server.
 func (s *Server) Start(ctx context.Context) error {
 	go s.runAutoArchiveLoop(ctx)
+	go s.runProjectsIndexLoop(ctx)
 
 	// Refresh Claude Code hook registration against the current
 	// listen address. Best-effort — see maybeInstallClaudeHooks for

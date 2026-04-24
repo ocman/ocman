@@ -136,6 +136,62 @@ func TestHandleProjects_Empty(t *testing.T) {
 	}
 }
 
+func TestHandleProjects_UsesInMemoryIndexUntilRefresh(t *testing.T) {
+	srv, rawDB := testServerWithRawDB(t)
+	defer rawDB.Close()
+
+	_, err := rawDB.Exec(
+		`INSERT INTO session (id, title, directory, time_created, time_updated)
+		 VALUES ('s-1', 'one', '/repo/one', 1000, 1000)`,
+	)
+	if err != nil {
+		t.Fatalf("seeding first project session: %v", err)
+	}
+
+	if err := srv.refreshProjectsIndex(); err != nil {
+		t.Fatalf("initial projects refresh: %v", err)
+	}
+
+	_, err = rawDB.Exec(
+		`INSERT INTO session (id, title, directory, time_created, time_updated)
+		 VALUES ('s-2', 'two', '/repo/two', 2000, 2000)`,
+	)
+	if err != nil {
+		t.Fatalf("seeding second project session: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/projects", nil)
+	rr := httptest.NewRecorder()
+	srv.handleProjects(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var projects []db.ProjectStats
+	if err := json.Unmarshal(rr.Body.Bytes(), &projects); err != nil {
+		t.Fatalf("invalid JSON response: %v", err)
+	}
+	if len(projects) != 1 || projects[0].Directory != "/repo/one" {
+		t.Fatalf("expected stale in-memory index with one project, got %+v", projects)
+	}
+
+	if err := srv.refreshProjectsIndex(); err != nil {
+		t.Fatalf("second projects refresh: %v", err)
+	}
+
+	rr = httptest.NewRecorder()
+	srv.handleProjects(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &projects); err != nil {
+		t.Fatalf("invalid JSON response: %v", err)
+	}
+	if len(projects) != 2 {
+		t.Fatalf("expected refreshed index with two projects, got %+v", projects)
+	}
+}
+
 func TestHandleSessions_Empty(t *testing.T) {
 	srv := testServer(t)
 	req := httptest.NewRequest("GET", "/api/sessions", nil)
@@ -416,7 +472,7 @@ func TestAutoArchive_UsesRegistry(t *testing.T) {
 	defer rawDB.Close()
 
 	// Seed one old session (time_updated in 1970) so it qualifies as stale
-	// under the 7-day window.
+	// under the auto-archive window.
 	_, err := rawDB.Exec(
 		`INSERT INTO session (id, title, directory, time_created, time_updated)
 		 VALUES ('old-session', 'ancient', '/tmp', 1000, 1000)`,
@@ -516,22 +572,26 @@ func TestHandleSessions_MergesByTimeUpdatedDesc(t *testing.T) {
 	// adapter already registered by testServerWithRawDB. The fake
 	// returns two sessions: one newer and one older than the OpenCode
 	// rows we seed below, proving interleaving — not tail-append.
+	//
+	// Timestamps are spaced >5 min apart so each falls in its own
+	// 5-minute bucket, which is the primary sort key.
+	const minute = int64(60 * 1000)
 	srv.registry.Register(&fakePlatform{
 		id: "claude-code",
 		sessions: []db.Session{
-			{ID: "cc-newest", Platform: "claude-code", TimeUpdated: 5000, Directory: "/tmp"},
-			{ID: "cc-oldest", Platform: "claude-code", TimeUpdated: 1000, Directory: "/tmp"},
+			{ID: "cc-newest", Platform: "claude-code", TimeUpdated: 40 * minute, Directory: "/tmp"},
+			{ID: "cc-oldest", Platform: "claude-code", TimeUpdated: 5 * minute, Directory: "/tmp"},
 		},
 	})
 
 	// Seed two opencode sessions with timestamps that bracket the
 	// claude-code rows. The expected sorted order is:
-	//   cc-newest (5000) > oc-mid (4000) > oc-old (2000) > cc-oldest (1000)
+	//   cc-newest (40min) > oc-mid (30min) > oc-old (15min) > cc-oldest (5min)
 	// which is only achievable if the handler sorts the union.
 	_, err := rawDB.Exec(
 		`INSERT INTO session (id, title, directory, time_created, time_updated)
-		 VALUES ('oc-mid', 'mid', '/tmp', 4000, 4000),
-		        ('oc-old', 'old', '/tmp', 2000, 2000)`,
+		 VALUES ('oc-mid', 'mid', '/tmp', 1800000, 1800000),
+		        ('oc-old', 'old', '/tmp', 900000, 900000)`,
 	)
 	if err != nil {
 		t.Fatalf("seeding opencode sessions: %v", err)

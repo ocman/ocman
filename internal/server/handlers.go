@@ -182,10 +182,13 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 	if !s.requireDB(w) {
 		return
 	}
-	projects, err := s.db.GetProjects()
-	if err != nil {
-		serverError(w, "fetching projects", err)
-		return
+	projects, loaded := s.projectsSnapshot()
+	if !loaded {
+		if err := s.refreshProjectsIndex(); err != nil {
+			serverError(w, "fetching projects", err)
+			return
+		}
+		projects, _ = s.projectsSnapshot()
 	}
 	writeJSON(w, projects)
 }
