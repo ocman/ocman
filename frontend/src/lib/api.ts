@@ -249,6 +249,7 @@ export interface MetricsSummary {
   cacheWriteTokens: number;
   avgTokensPerSec: number;
   avgDurationMs: number;
+  totalDurationMs: number;
   cacheHitRate: number;
   totalCost: number;
   totalCalcCost: number;

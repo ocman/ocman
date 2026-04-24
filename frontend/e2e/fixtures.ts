@@ -137,6 +137,7 @@ async function installDefaultRoutes(page: Page) {
           outputTokens: 30_000,
           avgTokensPerSec: 150,
           avgDurationMs: 5_000,
+          totalDurationMs: 210_000,
           cacheHitRate: 0.35,
           cacheReadTokens: 25_000,
           cacheWriteTokens: 10_000,

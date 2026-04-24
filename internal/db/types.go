@@ -165,6 +165,7 @@ type MetricsSummary struct {
 	CacheWriteTokens int64   `json:"cacheWriteTokens"`
 	AvgTokensPerSec  float64 `json:"avgTokensPerSec"`
 	AvgDurationMs    float64 `json:"avgDurationMs"`
+	TotalDurationMs  int64   `json:"totalDurationMs"`
 	CacheHitRate     float64 `json:"cacheHitRate"`
 	TotalCost        float64 `json:"totalCost"`
 	TotalCalcCost    float64 `json:"totalCalcCost"`

@@ -203,6 +203,7 @@ func (d *DB) GetMetricsDashboard(agentFilter, modelFilter string, since int64, d
 		if entry.DurationMs > 0 {
 			dashboard.Summary.AvgDurationMs += float64(entry.DurationMs)
 			dashboard.Summary.AvgTokensPerSec += entry.TokensPerSecond
+			dashboard.Summary.TotalDurationMs += entry.DurationMs
 			validDurationCount++
 		}
 		stopCounts[entry.StopReason]++
