@@ -3,7 +3,7 @@ node_modules/
 tmp/
 dist/
 internal/server/static/*
-!internal/server/static/index.html
+!internal/server/static/robots.txt
 *.log
 *.local
 .envrc

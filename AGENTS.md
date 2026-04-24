@@ -42,7 +42,10 @@ new adapter + registry entry; see
   boot-time hook installation.
 - `frontend/` — React + TypeScript + Vite SPA (port 8228 in dev).
 - `internal/server/static/` — Vite build output; embedded into the Go
-  binary via `//go:embed`. Gitignored except for `.gitkeep`.
+  binary via `//go:embed`. Gitignored except for `robots.txt`, which
+  is kept as a permanent placeholder so `go:embed static/*` always has
+  at least one file to embed (avoiding churn from build-hashed assets
+  like `index.html`).
 
 ## Dev commands
 
