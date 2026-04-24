@@ -1922,16 +1922,20 @@ export function SessionDetail() {
     }
   }, [activeAgent, activeModel, caps.compact, portAvailable, selectedAgent, selectedModel, session]);
 
-  const handleNewSession = useCallback(async (title?: string) => {
-    if (!session) return;
+  const handleNewSessionInDirectory = useCallback(async (directory: string, title?: string) => {
     try {
-      const res = await createSession(session.directory, undefined, title);
+      const res = await createSession(directory, undefined, title);
       if (res.id) navigate(`/session/${res.id}`);
     } catch (e) {
       console.error('Failed to create session', e);
       setShowCreateSessionErrorToast(true);
     }
-  }, [session, createSession, navigate]);
+  }, [createSession, navigate]);
+
+  const handleNewSession = useCallback(async (title?: string) => {
+    if (!session) return;
+    await handleNewSessionInDirectory(session.directory, title);
+  }, [session, handleNewSessionInDirectory]);
 
   const handleCommand = useCallback(async (command: string, args: string) => {
     if (!session) return;
@@ -2726,20 +2730,34 @@ export function SessionDetail() {
                         : `${group.sessions.length} session${group.sessions.length === 1 ? '' : 's'}`;
                 return (
                   <div key={group.directory || '__empty__'} className="session-sidebar-group">
-                    <button
-                      type="button"
-                      className="session-sidebar-group-header"
-                      aria-expanded={!collapsed}
-                      title={group.directory || 'Unknown project'}
-                      onClick={() => toggleCollapsedProject(group.directory)}
-                    >
-                      <GroupChevron open={!collapsed} />
-                      <span className="session-sidebar-group-label">{label}</span>
-                      <span
-                        className={`session-sidebar-group-count session-sidebar-group-count-${agg.kind}`}
-                        title={aggTitle}
-                      >{group.sessions.length}</span>
-                    </button>
+                    <div className="session-sidebar-group-header-row">
+                      <button
+                        type="button"
+                        className="session-sidebar-group-header"
+                        aria-expanded={!collapsed}
+                        title={group.directory || 'Unknown project'}
+                        onClick={() => toggleCollapsedProject(group.directory)}
+                      >
+                        <GroupChevron open={!collapsed} />
+                        <span className="session-sidebar-group-label">{label}</span>
+                        <span
+                          className={`session-sidebar-group-count session-sidebar-group-count-${agg.kind}`}
+                          title={aggTitle}
+                        >{group.sessions.length}</span>
+                      </button>
+                      {group.directory && (
+                        <button
+                          type="button"
+                          className="session-sidebar-group-new"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleNewSessionInDirectory(group.directory);
+                          }}
+                          title={`New session in ${label}`}
+                          aria-label={`New session in ${label}`}
+                        >+</button>
+                      )}
+                    </div>
                     {!collapsed && group.sessions.map(sib => renderRow(sib, true))}
                   </div>
                 );
