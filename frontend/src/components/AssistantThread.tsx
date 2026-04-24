@@ -13,6 +13,7 @@ import { hardenMessageLinks } from '../lib/linkHardener';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
+import hljs from 'highlight.js/lib/common';
 import type { FC } from 'react';
 
 
@@ -230,7 +231,85 @@ function AssistantMeta() {
   );
 }
 
-function renderOutput(text: string) {
+const EXTENSION_LANGUAGE_MAP: Record<string, string> = {
+  c: 'c',
+  cc: 'cpp',
+  cpp: 'cpp',
+  css: 'css',
+  cts: 'typescript',
+  go: 'go',
+  h: 'c',
+  hpp: 'cpp',
+  html: 'xml',
+  htm: 'xml',
+  java: 'java',
+  js: 'javascript',
+  json: 'json',
+  jsx: 'javascript',
+  mjs: 'javascript',
+  mts: 'typescript',
+  py: 'python',
+  rb: 'ruby',
+  rs: 'rust',
+  sh: 'bash',
+  sql: 'sql',
+  toml: 'ini',
+  ts: 'typescript',
+  tsx: 'typescript',
+  xml: 'xml',
+  yml: 'yaml',
+  yaml: 'yaml',
+  zsh: 'bash',
+};
+
+function escapeHtml(text: string): string {
+  return text
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function inferLanguageFromPath(path: string): string | undefined {
+  const name = path.trim().split(/[\\/]/).pop() || path.trim();
+  if (!name) return undefined;
+
+  if (name === 'Dockerfile') return 'dockerfile';
+
+  const extMatch = name.match(/\.([a-zA-Z0-9]+)$/);
+  if (!extMatch) return undefined;
+
+  const ext = extMatch[1].toLowerCase();
+  return EXTENSION_LANGUAGE_MAP[ext];
+}
+
+function inferDiffLanguage(title: string, detail: string): string | undefined {
+  const trimmedTitle = title.trim();
+  const prefixed = trimmedTitle.match(/^(?:Edit|Write)\s+(.+)$/);
+  const fromTitle = prefixed?.[1] || trimmedTitle;
+
+  const fromTitleLang = inferLanguageFromPath(fromTitle);
+  if (fromTitleLang) return fromTitleLang;
+
+  const firstDetailLine = detail.split('\n')[0]?.trim() || '';
+  return inferLanguageFromPath(firstDetailLine);
+}
+
+function highlightDiffCode(code: string, languageHint?: string): string {
+  if (!code) return '';
+
+  try {
+    if (languageHint && hljs.getLanguage(languageHint)) {
+      return hljs.highlight(code, { language: languageHint, ignoreIllegals: true }).value;
+    }
+    return hljs.highlightAuto(code).value;
+  } catch {
+    return escapeHtml(code);
+  }
+}
+
+function renderOutput(text: string, languageHint?: string) {
   // Detect file read output: various XML formats from MCP read tools
   // Handles: <path>...</path> with optional <type>...</type> and <content>...</content>
   // Also handles truncated output where </content> may be missing
@@ -278,7 +357,9 @@ function renderOutput(text: string) {
           <div key={i} className={cls}>
             <span className="oc-diff-ln">{oldLn.trim()}</span>
             <span className="oc-diff-ln">{newLn.trim()}</span>
-            <span className="oc-diff-code">{code}</span>
+            {code
+              ? <span className="oc-diff-code" dangerouslySetInnerHTML={{ __html: highlightDiffCode(code, languageHint) }} />
+              : <span className="oc-diff-code">{' '}</span>}
           </div>
         );
       })}
@@ -847,22 +928,23 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
   const isEditTool = toolName === 'edit' || toolName === 'mcp_edit' || toolName === 'mcp_Edit';
   const isWriteTool = toolName === 'write' || toolName === 'mcp_write' || toolName === 'mcp_Write';
   if (isEditTool || isWriteTool) {
+    const diffLanguage = inferDiffLanguage(title || toolName, detail || '');
     const hasDiff = outputDisplay && outputDisplay.split('\n').some(l =>
       /^(\s*\d*)\s{2}(\s*\d*)\s{2}([+ -])\s(.*)$/.test(l)
     );
     return (
-      <div className={`oc-tool oc-tool-edit ${statusClass} ${expanded ? 'oc-tool-expanded' : ''}`}>
+      <div className={`oc-tool oc-tool-edit ${statusClass} ${expanded || hasDiff ? 'oc-tool-expanded' : ''}`}>
         <div className="oc-tool-header" onClick={() => setExpanded(!expanded)}>
           <i className={`bi bi-pencil-fill oc-tool-icon ${statusClass}`} title={statusTitle} aria-hidden="true" />
           <span className="oc-tool-label">{title || toolName}</span>
         </div>
         {outputDisplay && (
-          <div className="oc-tool-content" onClick={() => !expanded && setExpanded(true)} style={!expanded ? { cursor: 'pointer' } : undefined}>
+          <div className="oc-tool-content" onClick={() => !expanded && !hasDiff && setExpanded(true)} style={!expanded && !hasDiff ? { cursor: 'pointer' } : undefined}>
             {hasDiff
-              ? <div className="oc-tool-output">{renderOutput(outputDisplay)}</div>
+              ? <div className="oc-tool-output">{renderOutput(outputDisplay, diffLanguage)}</div>
               : <pre className="oc-tool-pre oc-tool-output">{outputDisplay}</pre>
             }
-            {!expanded && isLong && (
+            {!expanded && !hasDiff && isLong && (
               <div className="oc-tool-expand">Click to expand</div>
             )}
           </div>
