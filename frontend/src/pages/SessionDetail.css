@@ -69,6 +69,15 @@
   z-index: 1;
   background: color-mix(in srgb, var(--accent) 4%, var(--bg));
   border-bottom: 1px solid var(--border);
+  transition: background 0.12s ease;
+}
+/* Hover tint sits on the row so the highlight covers the full width
+   including the + button, not just the collapse-toggle button. */
+.session-sidebar-group-header-row:hover {
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+}
+.session-sidebar-group-header-row:hover .session-sidebar-group-header {
+  color: var(--text);
 }
 .session-sidebar-group-header {
   flex: 1;
@@ -86,10 +95,6 @@
   letter-spacing: 0.4px;
   cursor: pointer;
   text-align: left;
-}
-.session-sidebar-group-header:hover {
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
-  color: var(--text);
 }
 .session-sidebar-group-new {
   flex-shrink: 0;
@@ -123,6 +128,14 @@
   justify-content: center;
   width: 12px;
   height: 12px;
+}
+/* StatusBadge's compact variants ship a top margin meant to align with
+   the first line of a wrapping two-line session row. The group header
+   is single-line, so reset the offset to keep the dot vertically
+   centred with the label. */
+.session-sidebar-group-status .status-dot-compact,
+.session-sidebar-group-status .status-icon-compact {
+  margin-top: 0;
 }
 .session-sidebar-group-header.collapsed .session-sidebar-group-label {
   opacity: 0.75;
