@@ -18,6 +18,7 @@
 .git-status-mark {
   color: inherit;
   font-weight: normal;
+  padding-right: 2px;
 }
 
 /* Session title with ellipsis overflow */
