@@ -127,6 +127,7 @@ const KNOWN_AGENTS = ['build', 'developer', 'plan', 'architect', 'ba', 'brainsto
 const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: 'agent', description: 'Change the active agent (opens a picker)' },
   { name: 'archive', description: 'Archive this session and open the most recent one' },
+  { name: 'clear', description: 'Archive this session and start a new one in the same project directory' },
   { name: 'compact', description: 'Summarize conversation history to free up context window' },
   { name: 'model', description: 'Change the active model (opens a picker)' },
   { name: 'new', description: 'Start a new session in the same project directory (optionally add a title)' },

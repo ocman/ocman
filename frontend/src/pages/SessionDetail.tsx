@@ -1964,6 +1964,28 @@ export function SessionDetail() {
       return;
     }
 
+    if (command === 'clear') {
+      // Like /new, but archives the current session after the new one is
+      // created. Create first so a failed archive still leaves the user on
+      // a usable new session.
+      let newId: string | undefined;
+      try {
+        const res = await createSession(session.directory, undefined, args.trim() || undefined);
+        newId = res.id;
+      } catch (e) {
+        console.error('Failed to create session', e);
+        setShowCreateSessionErrorToast(true);
+        return;
+      }
+      try {
+        await archiveSession(session.platform, session.id, session.timeUpdated, true);
+      } catch (e) {
+        console.error('Failed to archive session', e);
+      }
+      if (newId) navigate(`/session/${newId}`);
+      return;
+    }
+
     if (command === 'tmux') {
       handleTmuxShortcutRef.current();
       return;
@@ -2042,7 +2064,7 @@ export function SessionDetail() {
       setMessages(prev => [...prev, errMsg]);
       setParts(prev => [...prev, errPart]);
     }
-  }, [activeAgent, activeModel, archiveSession, handleCompact, handleNewSession, navigate, portAvailable, recentSessions, selectedAgent, selectedModel, session]);
+  }, [activeAgent, activeModel, archiveSession, createSession, handleCompact, handleNewSession, navigate, portAvailable, recentSessions, selectedAgent, selectedModel, session]);
 
   const handlePermissionReply = useCallback(async (reply: 'once' | 'always' | 'reject') => {
     if (!pendingPermission || answeringPermission || !portAvailable || !caps.respondPermission || !session) return;
