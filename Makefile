@@ -89,8 +89,8 @@ run: build
 clean:
 	rm -rf ocman tmp internal/server/static/assets
 
-# Run both Go and frontend test suites
-test: test-backend test-frontend
+# Run Go, frontend unit, and Playwright e2e test suites
+test: test-backend test-frontend test-e2e
 
 test-backend:
 	go test ./...
@@ -98,11 +98,12 @@ test-backend:
 test-frontend:
 	cd frontend && npm test
 
-# Run Playwright e2e tests (requires a built frontend: make build-frontend first)
+# Run Playwright e2e tests. Playwright's webServer block runs `npm run preview`
+# which requires a built frontend, so we build first.
 # Set E2E_NO_WEBSERVER=1 and E2E_BASE_URL=http://localhost:8228 to use a running
 # dev server instead of vite preview.
 test-e2e:
-	cd frontend && npm run test:e2e
+	cd frontend && npm run build && npm run test:e2e
 
 test-e2e-ui:
 	cd frontend && npm run test:e2e:ui

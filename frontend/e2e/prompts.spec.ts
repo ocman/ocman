@@ -136,9 +136,13 @@ test('"Allow always" button POSTs reply=always', async ({ mockedPage: page }) =>
   await setupLivePage(page);
   await expect(page.locator('.oc-permission-wrap')).toBeVisible({ timeout: 5_000 });
 
+  // Two-step: "Allow always" opens a confirmation screen, then "Confirm"
+  // actually submits. See PermissionPrompt.tsx.
+  await page.locator('.oc-permission-btn', { hasText: 'Allow always' }).click();
+  await expect(page.locator('.oc-permission-wrap[aria-label="Confirm always allow"]')).toBeVisible();
   const [req] = await Promise.all([
     page.waitForRequest((r) => r.url().includes('/permissions/perm-always') && r.method() === 'POST'),
-    page.locator('.oc-permission-btn', { hasText: 'Allow always' }).click(),
+    page.locator('.oc-permission-btn', { hasText: 'Confirm' }).click(),
   ]);
   expect(JSON.parse(req.postData() ?? '{}')).toMatchObject({ reply: 'always' });
 });
@@ -184,9 +188,15 @@ test('hotkey "Shift+A" triggers allow-always', async ({ mockedPage: page }) => {
   await setupLivePage(page);
   await expect(page.locator('.oc-permission-wrap')).toBeVisible({ timeout: 5_000 });
 
+  // Two-step: Shift+A opens the confirmation screen with Cancel focused by
+  // default (CONFIRM_DEFAULT_IDX = 1), so Tab switches focus to Confirm,
+  // and Enter submits.
+  await page.keyboard.press('Shift+A');
+  await expect(page.locator('.oc-permission-wrap[aria-label="Confirm always allow"]')).toBeVisible();
+  await page.keyboard.press('Tab');
   const [req] = await Promise.all([
     page.waitForRequest((r) => r.url().includes('/permissions/perm-A') && r.method() === 'POST'),
-    page.keyboard.press('Shift+A'),
+    page.keyboard.press('Enter'),
   ]);
   expect(JSON.parse(req.postData() ?? '{}')).toMatchObject({ reply: 'always' });
 });
