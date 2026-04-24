@@ -111,6 +111,22 @@
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--text);
 }
+/* Aggregate status dot. Replaces the old chevron so a collapsed header
+   can surface the most important child state at a glance (pending "!",
+   error "!", busy pulse, idle neutral) — same visual vocabulary as
+   per-session rows. Collapse state is conveyed by `aria-expanded` and
+   a small indent on collapsed rows rather than by a chevron. */
+.session-sidebar-group-status {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+}
+.session-sidebar-group-header.collapsed .session-sidebar-group-label {
+  opacity: 0.75;
+}
 .session-sidebar-group-label {
   flex: 1;
   min-width: 0;
@@ -128,27 +144,6 @@
   border-radius: 8px;
   background: color-mix(in srgb, var(--text-dim) 12%, transparent);
   font-weight: 600;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-/* Aggregate-status tints for the count pill. Colour tokens match
-   StatusBadge so a "busy" pill reads as running, "pending" as attention,
-   "error" as failed. Idle groups stay neutral (no modifier class applied
-   \u2014 the base -none rule is a no-op so idle projects don't compete for
-   attention). */
-.session-sidebar-group-count-none { /* keep base styling */ }
-.session-sidebar-group-count-busy {
-  background: color-mix(in srgb, var(--accent4) 25%, transparent);
-  color: var(--accent4);
-  animation: pulse 1.2s ease-in-out infinite;
-}
-.session-sidebar-group-count-error {
-  background: color-mix(in srgb, var(--danger) 25%, transparent);
-  color: var(--danger);
-}
-.session-sidebar-group-count-pending {
-  background: color-mix(in srgb, var(--yellow) 25%, transparent);
-  color: var(--yellow);
-  animation: pulse 1s ease-in-out infinite;
 }
 /* Rows inside a group get a subtle left inset so the hierarchy reads at a
    glance without taking much horizontal space. */

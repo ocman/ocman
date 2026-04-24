@@ -439,23 +439,6 @@ function RecentViewIcon() {
   );
 }
 
-// Tiny chevron used on collapsible project group headers. `open` flips it from
-// a right-pointing triangle (collapsed) to a down-pointing one (expanded).
-function GroupChevron({ open }: { open: boolean }) {
-  return (
-    <svg
-      width="10"
-      height="10"
-      viewBox="0 0 10 10"
-      aria-hidden="true"
-      style={{ transform: open ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.12s ease' }}
-    >
-      <path d="M3 2.5l3.5 2.5-3.5 2.5z" fill="currentColor" />
-    </svg>
-  );
-}
-
-
 export function SessionDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -2713,13 +2696,20 @@ export function SessionDetail() {
               return sidebarProjectGroups.map(group => {
                 const collapsed = collapsedProjectSet.has(group.directory);
                 const label = group.directory ? shortPath(group.directory) : '(unknown)';
-                // Tint the count pill with the rolled-up aggregate. Kind
-                // maps to CSS modifier classes that reuse the same colour
-                // tokens as StatusBadge, so a "running" project pill looks
-                // like a busy session dot, a "pending" pill matches the
-                // attention prompt, etc. Idle/done groups stay neutral so
-                // they don't compete for attention.
+                // Replace the chevron with a compact status dot that
+                // surfaces the rolled-up aggregate: the same visual
+                // vocabulary as per-session rows (pending "!", error "!",
+                // busy pulse, idle neutral), so a collapsed header tells
+                // you at a glance which project needs attention. The
+                // header still toggles on click — collapse state is
+                // conveyed by the `aria-expanded` attribute (and a
+                // subtle CSS indent) rather than a chevron.
                 const agg = group.aggregate;
+                const dotStatus =
+                  agg.kind === 'error' ? 'error'
+                    : agg.kind === 'busy' ? 'busy'
+                      : 'done';
+                const dotPending = agg.kind === 'pending';
                 const aggTitle =
                   agg.kind === 'pending'
                     ? `${agg.count} session${agg.count === 1 ? '' : 's'} waiting for your response`
@@ -2733,17 +2723,16 @@ export function SessionDetail() {
                     <div className="session-sidebar-group-header-row">
                       <button
                         type="button"
-                        className="session-sidebar-group-header"
+                        className={`session-sidebar-group-header${collapsed ? ' collapsed' : ''}`}
                         aria-expanded={!collapsed}
                         title={group.directory || 'Unknown project'}
                         onClick={() => toggleCollapsedProject(group.directory)}
                       >
-                        <GroupChevron open={!collapsed} />
+                        <span className="session-sidebar-group-status" title={aggTitle}>
+                          <StatusBadge status={dotStatus} compact pending={dotPending} />
+                        </span>
                         <span className="session-sidebar-group-label">{label}</span>
-                        <span
-                          className={`session-sidebar-group-count session-sidebar-group-count-${agg.kind}`}
-                          title={aggTitle}
-                        >{group.sessions.length}</span>
+                        <span className="session-sidebar-group-count" title={aggTitle}>{group.sessions.length}</span>
                       </button>
                       {group.directory && (
                         <button
