@@ -297,12 +297,21 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Adapters each return their own list pre-sorted, but the combined
-	// slice must also be sorted by TimeUpdated desc so sessions from
-	// different platforms interleave by recency rather than clumping
-	// by source. Without this, e.g. every Claude Code session lands
-	// after every OpenCode session regardless of how recent it is.
+	// slice must also be sorted so sessions from different platforms
+	// interleave by recency rather than clumping by source.
+	// Sessions are bucketed into 5-minute windows (floor(timeUpdated/300s))
+	// so that small timestamp differences within the same window don't
+	// cause constant re-ordering. Within a bucket, newer sessions sort first.
+	const bucketMs = 5 * 60 * 1000
 	sort.SliceStable(all, func(i, j int) bool {
-		return all[i].TimeUpdated > all[j].TimeUpdated
+		bi, bj := all[i].TimeUpdated/bucketMs, all[j].TimeUpdated/bucketMs
+		if bi != bj {
+			return bi > bj
+		}
+		if all[i].ProjectID != all[j].ProjectID {
+			return all[i].ProjectID < all[j].ProjectID
+		}
+		return all[i].Title < all[j].Title
 	})
 
 	// Apply limit
@@ -443,7 +452,15 @@ func (s *Server) handleSessionsNotify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sort.SliceStable(all, func(i, j int) bool {
-		return all[i].TimeUpdated > all[j].TimeUpdated
+		const bucketMs = 5 * 60 * 1000
+		bi, bj := all[i].TimeUpdated/bucketMs, all[j].TimeUpdated/bucketMs
+		if bi != bj {
+			return bi > bj
+		}
+		if all[i].ProjectID != all[j].ProjectID {
+			return all[i].ProjectID < all[j].ProjectID
+		}
+		return all[i].Title < all[j].Title
 	})
 	if len(all) > limit {
 		all = all[:limit]
