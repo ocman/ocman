@@ -256,7 +256,7 @@ export function StatsTab() {
   const [selectedAgent, setSelectedAgent] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
   const [metricsDays, setMetricsDays] = useState(30);
-  const [logTab, setLogTab] = useState<'session' | 'request' | 'project'>('session');
+  const [logTab, setLogTab] = useState<'session' | 'request' | 'project'>('project');
   const [logPage, setLogPage] = useState(0);
   const [sessionLogPage, setSessionLogPage] = useState(0);
   const [projectLogPage, setProjectLogPage] = useState(0);
@@ -420,13 +420,13 @@ export function StatsTab() {
             <div className="metrics-log-header">
               <div className="nav-tabs metrics-log-tabs">
                 <button
-                  className={`nav-tab${logTab === 'session' ? ' active' : ''}`}
-                  onClick={() => setLogTab('session')}
-                >Session Log</button>
-                <button
                   className={`nav-tab${logTab === 'project' ? ' active' : ''}`}
                   onClick={() => setLogTab('project')}
                 >Project Log</button>
+                <button
+                  className={`nav-tab${logTab === 'session' ? ' active' : ''}`}
+                  onClick={() => setLogTab('session')}
+                >Session Log</button>
                 <button
                   className={`nav-tab${logTab === 'request' ? ' active' : ''}`}
                   onClick={() => setLogTab('request')}
