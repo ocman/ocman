@@ -1,7 +1,26 @@
-.PHONY: dev dev-backend dev-frontend dev-prod dev-prod-watch build run clean test test-backend test-frontend test-e2e lint lint-backend lint-frontend lint-platform-branching
+.PHONY: dev dev-backend dev-frontend dev-prod dev-prod-watch dev-kill-orphans build run clean test test-backend test-frontend test-e2e lint lint-backend lint-frontend lint-platform-branching
+
+# Free dev ports in case a previous run left orphaned children (e.g. air's
+# child ./tmp/ocman re-parented to init after an unclean `make` exit). Safe
+# to run when nothing is listening — lsof just returns empty.
+dev-kill-orphans:
+	@stale=$$(lsof -nP -tiTCP:8229 -sTCP:LISTEN 2>/dev/null); \
+		if [ -n "$$stale" ]; then \
+			echo "Killing stale process(es) on :8229: $$stale"; \
+			kill $$stale 2>/dev/null || true; \
+			sleep 1; \
+			kill -9 $$(lsof -nP -tiTCP:8229 -sTCP:LISTEN 2>/dev/null) 2>/dev/null || true; \
+		fi
+	@stale=$$(lsof -nP -tiTCP:8228 -sTCP:LISTEN 2>/dev/null); \
+		if [ -n "$$stale" ]; then \
+			echo "Killing stale process(es) on :8228: $$stale"; \
+			kill $$stale 2>/dev/null || true; \
+			sleep 1; \
+			kill -9 $$(lsof -nP -tiTCP:8228 -sTCP:LISTEN 2>/dev/null) 2>/dev/null || true; \
+		fi
 
 # Run both backend (air) and frontend (vite) with live reload
-dev:
+dev: dev-kill-orphans
 	@mkdir -p tmp
 	@echo "Starting ocman dev environment..."
 	@echo "  Backend (air):    http://localhost:8229"
@@ -15,7 +34,7 @@ dev:
 		  wait; } 2>&1 | tee tmp/debug.log
 
 # Run with production frontend build + backend live reload (manual frontend rebuild)
-dev-prod:
+dev-prod: dev-kill-orphans
 	@mkdir -p tmp
 	@echo "Starting ocman PRODUCTION MODE with live reload..."
 	@echo "  Backend (air):    http://localhost:8229"
@@ -32,7 +51,7 @@ dev-prod:
 		  wait; }
 
 # Run with production frontend build + auto-rebuild on changes + backend live reload
-dev-prod-watch:
+dev-prod-watch: dev-kill-orphans
 	@mkdir -p tmp
 	@echo "Starting ocman PRODUCTION MODE with AUTO-RELOAD..."
 	@echo "  Backend (air):    http://localhost:8229"

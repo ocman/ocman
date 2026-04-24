@@ -8,6 +8,13 @@ tmp_dir = "tmp"
   include_ext = ["go"]
   exclude_dir = ["tmp", "frontend", "internal/server/static"]
   delay = 1000
+  # Send SIGINT (not SIGKILL) to the built binary and wait for a graceful
+  # shutdown before forcing. Without this, the binary can outlive `air`
+  # when `make` is Ctrl-C'd, re-parent to init, and hold :8229 — causing
+  # the next `make dev-prod-watch` to fatal with "bind: address already
+  # in use".
+  send_interrupt = true
+  kill_delay = "2s"
 
 [log]
   time = false
