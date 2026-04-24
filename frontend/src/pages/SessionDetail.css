@@ -307,6 +307,10 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
+.oc-toast-root.error {
+  background: #b42318;
+}
+
 .oc-toast-root[data-state='open'] {
   animation: slideInUp 0.2s ease-out;
 }
@@ -330,6 +334,34 @@
 
 .oc-toast-description {
   margin: 0;
+}
+
+.oc-toast-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.oc-toast-action {
+  align-self: flex-start;
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  color: #fff;
+  font-size: 12px;
+  font-family: inherit;
+  font-weight: 600;
+  padding: 3px 10px;
+  cursor: pointer;
+  border-radius: 0;
+}
+
+.oc-toast-action:hover {
+  background: rgba(255, 255, 255, 0.32);
+}
+
+.oc-toast-action:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 @keyframes slideInUp {

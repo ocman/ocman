@@ -159,6 +159,7 @@ function ComposerImpl({
   selectedReasoning,
   onReasoningChange,
   disabledHint,
+  onLaunchRequest,
 }: {
   onSend?: (text: string, images?: AttachedImage[]) => void;
   onCommand?: (command: string, args: string) => void;
@@ -204,6 +205,13 @@ function ComposerImpl({
   };
   selectedReasoning?: string;
   onReasoningChange?: (reasoning: string) => void;
+  /**
+   * Called when the user clicks the disabled composer area. Used to surface
+   * a "no live connection" toast so the user can launch the agent process.
+   * Only wired when the composer is disabled due to a missing live connection
+   * (not while a pending prompt is active).
+   */
+  onLaunchRequest?: () => void;
 }) {
   const [showTokenPopover, setShowTokenPopover] = useState(false);
   const [estCost, setEstCost] = useState<{ cost: number; known: boolean } | null>(null);
@@ -559,7 +567,7 @@ function ComposerImpl({
 
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
-        console.error('getUserMedia not supported');
+        alert('Dictation is not supported in this browser. Please use a modern browser like Chrome or Edge.');
         return;
       }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -578,10 +586,11 @@ function ComposerImpl({
 
       recordingRef.current = { stream, audioCtx, processor, chunks };
       setMicState('recording');
-    } catch (err) {
-      console.error('Microphone access failed', err);
-      setMicState('idle');
-    }
+} catch (err) {
+        console.error('Microphone access failed', err);
+        alert('Microphone access denied. Please allow microphone access in your browser settings to use dictation.');
+        setMicState('idle');
+      }
   }, [setMicState, submitRecording]);
 
   useEffect(() => {
@@ -804,9 +813,13 @@ function ComposerImpl({
       selectSlashCommand((e as CustomEvent).detail as SlashCommand);
     };
     const handleModelPickerOpen = (e: Event) => {
+      el.value = '';
+      el.style.height = 'auto';
       openModelPicker(((e as CustomEvent).detail as string) || '');
     };
     const handleAgentPickerOpen = (e: Event) => {
+      el.value = '';
+      el.style.height = 'auto';
       openAgentPicker(((e as CustomEvent).detail as string) || '');
     };
     const handleBashMode = (e: Event) => {
@@ -932,21 +945,23 @@ function ComposerImpl({
   const handleMicClickRef = useRef(handleMicClick);
   useEffect(() => { handleMicClickRef.current = handleMicClick; }, [handleMicClick]);
 
+  const isDictationSupported = whisperAvailable && !!navigator.mediaDevices?.getUserMedia;
+
   const dictationShortcut = useMemo(() => ({
     id: 'composer.dictation',
     scope: 'composer' as const,
     keys: { code: 'KeyD', alt: true },
     description: 'Start dictation (voice input)',
-    enabled: () => !!whisperAvailable && !isRecording && !disabledRef.current,
+    enabled: () => !!(isDictationSupported && !isRecording && !disabledRef.current),
     handler: () => { void handleMicClickRef.current(); },
-  }), [whisperAvailable, isRecording]);
+  }), [isDictationSupported, isRecording]);
 
   const reasoningCycleShortcut = useMemo(() => ({
     id: 'composer.reasoning-cycle',
     scope: 'composer' as const,
     keys: { code: 'KeyR', alt: true },
     description: 'Cycle reasoning level',
-    enabled: () => reasoningOptionsRef.current.length > 0 && !disabledRef.current,
+    enabled: () => !!(reasoningOptionsRef.current.length > 0 && !disabledRef.current),
     handler: () => {
       const opts = reasoningOptionsRef.current;
       if (opts.length === 0) return;
@@ -979,6 +994,8 @@ function ComposerImpl({
       ref={wrapRef}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
+      onClick={disabled && onLaunchRequest ? onLaunchRequest : undefined}
+      style={disabled && onLaunchRequest ? { cursor: 'pointer' } : undefined}
     >
       {modelPickerOpen && (
         <ModelPicker
@@ -989,6 +1006,7 @@ function ComposerImpl({
           initialQuery={modelPickerQuery}
           onSelect={(m) => onModelChange?.(m)}
           onClose={() => { setModelPickerOpen(false); inputRef.current?.focus(); }}
+          onBack={() => { setModelPickerOpen(false); useUiStore.getState().openPalette('command'); }}
         />
       )}
       {agentPickerOpen && (
@@ -1140,7 +1158,7 @@ function ComposerImpl({
                 e.target.value = '';
               }}
             />
-            {whisperAvailable && (
+            {isDictationSupported && (
               <button
                 ref={micRef}
                 className="oc-bar-action"
@@ -1274,6 +1292,7 @@ export const Composer = memo(ComposerImpl, (prev, next) =>
   prev.isRunning === next.isRunning &&
   prev.disabled === next.disabled &&
   prev.disabledHint === next.disabledHint &&
+  prev.onLaunchRequest === next.onLaunchRequest &&
   prev.whisperAvailable === next.whisperAvailable &&
   prev.activeModel === next.activeModel &&
   prev.selectedModel === next.selectedModel &&

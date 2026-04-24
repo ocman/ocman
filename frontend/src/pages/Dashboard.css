@@ -32,6 +32,9 @@
 .metrics-chart-grid-bottom { grid-template-columns: minmax(0, 1fr) 420px; }
 .metrics-chart-card { min-height: 340px; }
 .metrics-chart-body { height: 280px; }
+.metrics-log-header { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 4px; }
+.metrics-log-tabs { margin-bottom: 0; border-bottom: none; }
+.metrics-session-project { font-size: 11px; color: var(--text-dim); font-family: 'SF Mono', Consolas, monospace; margin-top: 2px; }
 .metrics-table-wrap { overflow-x: auto; }
 .metrics-pagination { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
 .metrics-pagination-info { font-size: 12px; color: var(--text-dim); font-family: 'SF Mono', Consolas, monospace; }
@@ -176,4 +179,59 @@
   pointer-events: none;
   z-index: 9999;
   white-space: nowrap;
+}
+
+/* Settings tab */
+.settings-page { padding: 0 24px 40px; max-width: 640px; }
+.settings-section { margin-bottom: 32px; }
+.settings-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.settings-row:last-child { border-bottom: none; }
+.settings-row-info { flex: 1; min-width: 0; }
+.settings-row-label { font-size: 14px; font-weight: 500; margin-bottom: 3px; }
+.settings-row-desc { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+
+/* Toggle switch */
+.settings-toggle { position: relative; display: inline-flex; align-items: center; cursor: pointer; flex-shrink: 0; }
+.settings-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.settings-toggle-track {
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  background: var(--border);
+  border-radius: 10px;
+  transition: background 0.2s;
+  position: relative;
+}
+.settings-toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: transform 0.2s, background 0.2s;
+}
+.settings-toggle input:checked + .settings-toggle-track { background: var(--accent); }
+.settings-toggle input:checked + .settings-toggle-track::after {
+  transform: translateX(16px);
+  background: #fff;
 }

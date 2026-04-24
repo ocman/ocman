@@ -104,3 +104,17 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.oc-cmd-item-icon {
+  font-size: 12px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+}
+.oc-cmd-item--command .oc-cmd-title {
+  color: var(--accent);
+}
+.oc-cmd-item--command .oc-cmd-meta {
+  font-size: 11px;
+  color: var(--text-dim);
+}

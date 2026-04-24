@@ -16,6 +16,7 @@ export interface ModelPickerProps {
   initialQuery?: string;
   onSelect: (model: string) => void;
   onClose: () => void;
+  onBack?: () => void;
 }
 
 // Internal row type used for rendering. Derived from either `modelEntries`
@@ -143,6 +144,7 @@ export function ModelPicker({
   initialQuery,
   onSelect,
   onClose,
+  onBack,
 }: ModelPickerProps) {
   const useRich = !!(modelEntries && modelEntries.length > 0);
 
@@ -270,8 +272,11 @@ export function ModelPicker({
       e.preventDefault();
       const picked = items[activeItemIndex];
       if (picked && picked.kind === 'entry') pick(picked.entry.value);
+    } else if (e.key === 'Backspace' && !query && onBack) {
+      e.preventDefault();
+      onBack();
     }
-  }, [entryIndexes.length, effectiveIndex, items, activeItemIndex, pick, onClose]);
+  }, [entryIndexes.length, effectiveIndex, items, activeItemIndex, pick, onClose, onBack, query]);
 
   if (!open) return null;
 

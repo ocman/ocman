@@ -27,7 +27,7 @@ import { hashSession, hashMessagesAndParts } from '../lib/sessionHash';
 
 const PAGE_SIZE = 30;
 const RECENT_SESSIONS_LIMIT = 15;
-const SIDEBAR_RECENT_HOURS = 12;
+const SIDEBAR_RECENT_HOURS = 72;
 const ARCHIVE_ANIMATION_MS = 220;
 // How often the Recent Sessions sidebar re-polls /api/sessions. Kept low enough
 // to feel live, but not so low that we hammer the OpenCode port-discovery +
@@ -520,6 +520,8 @@ export function SessionDetail() {
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [renameTitle, setRenameTitle] = useState('');
   const [showRenameToast, setShowRenameToast] = useState(false);
+  const [showCreateSessionErrorToast, setShowCreateSessionErrorToast] = useState(false);
+  const [showDisconnectedToast, setShowDisconnectedToast] = useState(false);
   const getSession = useApiStore((state) => state.getSession);
   const archiveSession = useApiStore((state) => state.archiveSession);
   const getWhisperStatus = useApiStore((state) => state.getWhisperStatus);
@@ -536,6 +538,48 @@ export function SessionDetail() {
   const setCachedSession = useApiStore((state) => state.setCachedSession);
   const updateCachedSession = useApiStore((state) => state.updateCachedSession);
   const sidebarWidth = useUiStore((state) => state.sidebarWidth);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const cmd = useUiStore.getState().paletteCommand;
+      if (!cmd || cmd.kind !== 'scoped') return;
+      useUiStore.getState().closePalette();
+
+      const el = document.querySelector('.oc-composer-input') as HTMLTextAreaElement | null;
+      if (!el) return;
+
+      if (cmd.id === 'scoped.model') {
+        el.value = '/model ';
+        el.dispatchEvent(new CustomEvent('oc-model-picker-open', { detail: '' }));
+        el.focus();
+      } else if (cmd.id === 'scoped.agent') {
+        el.value = '/agent ';
+        el.dispatchEvent(new CustomEvent('oc-agent-picker-open', { detail: '' }));
+        el.focus();
+      } else if (cmd.id === 'scoped.variant') {
+        setSelectedReasoning('');
+      } else if (cmd.id === 'scoped.tmux' && tmux.available && tmux.sessions.length > 0) {
+        tmux.switchSession(tmux.sessions[0].name).catch(console.error);
+      } else if (cmd.id === 'scoped.vscode' && sessionRef.current) {
+        openVSCode(sessionRef.current.directory);
+      } else if (cmd.id === 'scoped.archive' && sessionRef.current) {
+        const s = sessionRef.current;
+        archiveSession(s.platform, s.id, s.timeUpdated, true).then(() => navigate(-1));
+      } else if (cmd.id === 'scoped.rename' && sessionRef.current) {
+        setShowRenameModal(true);
+      } else if (cmd.id === 'scoped.new-project') {
+        useUiStore.getState().openProjectPalette();
+      } else if (cmd.id === 'scoped.compact' && sessionRef.current && portAvailableRef.current && capsRef.current.compact) {
+        const s = sessionRef.current;
+        const model = selectedModelRef.current || activeModelRef.current || '';
+        const slashIdx = model.indexOf('/');
+        const providerID = slashIdx > 0 ? model.slice(0, slashIdx) : '';
+        const modelID = slashIdx > 0 ? model.slice(slashIdx + 1) : model;
+        api.compactSession(s.id, providerID, modelID).catch(console.error);
+      }
+    }, 0);
+    return () => clearInterval(interval);
+  }, [tmux, archiveSession, createSession, navigate]);
 
 
   useEffect(() => {
@@ -1748,6 +1792,16 @@ export function SessionDetail() {
       // The optimistic message is already visible to the user.
     } catch (e) {
       console.error('Failed to send message', e);
+      const msg = e instanceof Error ? e.message : '';
+      // When the error is a missing OpenCode instance, surface a toast with a
+      // launch action instead of polluting the conversation thread.
+      if (msg.includes('no running OpenCode instance')) {
+        // Roll back the optimistic message so the thread stays clean.
+        setMessages(prev => prev.filter(m => m.id !== tempId));
+        setParts(prev => prev.filter(p => p.messageId !== tempId));
+        setShowDisconnectedToast(true);
+        return;
+      }
       // Show the error as a system message in the conversation
       const errId = 'error-' + Date.now();
       const errMsg: Message = {
@@ -1762,7 +1816,7 @@ export function SessionDetail() {
         sessionId: session.id,
         data: {
           type: 'text',
-          text: `**Failed to send message:** ${e instanceof Error ? e.message : 'Unknown error'}`,
+          text: `**Failed to send message:** ${msg || 'Unknown error'}`,
         } as unknown as string,
       };
       setMessages(prev => [...prev, errMsg]);
@@ -1804,6 +1858,7 @@ export function SessionDetail() {
       if (res.id) navigate(`/session/${res.id}`);
     } catch (e) {
       console.error('Failed to create session', e);
+      setShowCreateSessionErrorToast(true);
     }
   }, [session, createSession, navigate]);
 
@@ -1988,6 +2043,19 @@ export function SessionDetail() {
     ? tmux.findSession(session.directory)
     : undefined;
 
+  const [launchingOpencode, setLaunchingOpencode] = useState(false);
+  const handleLaunchOpencode = useCallback(async () => {
+    if (!session?.directory || !tmux.available || launchingOpencode) return;
+    setLaunchingOpencode(true);
+    try {
+      await tmux.launchOpencode(session.directory);
+    } catch (e) {
+      console.error('Failed to launch opencode in tmux', e);
+    } finally {
+      setLaunchingOpencode(false);
+    }
+  }, [launchingOpencode, session?.directory, tmux]);
+
   const handleTmuxShortcut = useCallback(() => {
     if (!matchingTmuxSession) return;
     if (tmux.isLocal) {
@@ -2052,6 +2120,12 @@ export function SessionDetail() {
   useEffect(() => { sessionRef.current = session; }, [session]);
   const portAvailableRef = useRef(portAvailable);
   useEffect(() => { portAvailableRef.current = portAvailable; }, [portAvailable]);
+  const selectedModelRef = useRef(selectedModel);
+  useEffect(() => { selectedModelRef.current = selectedModel; }, [selectedModel]);
+  const activeModelRef = useRef(activeModel);
+  useEffect(() => { activeModelRef.current = activeModel; }, [activeModel]);
+  const capsRef = useRef(caps);
+  useEffect(() => { capsRef.current = caps; }, [caps]);
 
   const switchTmuxShortcut = useMemo(() => ({
     id: 'session.switch-tmux',
@@ -2083,6 +2157,23 @@ export function SessionDetail() {
   useShortcut(switchTmuxShortcut);
   useShortcut(openVscodeShortcut);
   useShortcut(newSessionShortcut);
+
+  const changeModelShortcut = useMemo(() => ({
+    id: 'session.change-model',
+    scope: 'session' as const,
+    keys: { code: 'KeyM', alt: true },
+    description: 'Change model via palette',
+    handler: () => {
+      const el = document.querySelector('.oc-composer-input') as HTMLTextAreaElement | null;
+      if (el) {
+        el.value = '/model ';
+        el.dispatchEvent(new CustomEvent('oc-model-picker-open', { detail: '' }));
+        el.focus();
+      }
+    },
+  }), []);
+
+  useShortcut(changeModelShortcut);
 
   const hasMore = messages.length < totalMessages;
   const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
@@ -2408,6 +2499,16 @@ export function SessionDetail() {
                 style={{ fontSize: 11, fontFamily: "'SF Mono', Consolas, monospace" }}
               >tmux</button>
             )}
+            {tmux.available && !portAvailable && caps.liveConnectionHint && (
+              <button
+                type="button"
+                className="session-sidebar-new"
+                onClick={() => { void handleLaunchOpencode(); }}
+                disabled={launchingOpencode}
+                title="Launch opencode --port 0 in a new tmux window"
+                style={{ fontSize: 11, fontFamily: "'SF Mono', Consolas, monospace" }}
+              >{launchingOpencode ? '…' : 'launch'}</button>
+            )}
             <button
               type="button"
               className="session-sidebar-new"
@@ -2417,14 +2518,7 @@ export function SessionDetail() {
             >&lt;/&gt;</button>
             <button
               className="session-sidebar-new"
-              onClick={async () => {
-                try {
-                  const res = await createSession(session.directory);
-                  if (res.id) navigate(`/session/${res.id}`);
-                } catch (e) {
-                  console.error('Failed to create session', e);
-                }
-              }}
+              onClick={() => { void handleNewSession(); }}
               title="New session"
             >+</button>
           </div>
@@ -2506,6 +2600,11 @@ export function SessionDetail() {
                   tokenStats={tokenStats}
                   selectedReasoning={selectedReasoning}
                   onReasoningChange={setSelectedReasoning}
+                  onLaunchRequest={
+                    !portAvailable && !hasPendingPrompt && tmux.available && caps.liveConnectionHint
+                      ? () => setShowDisconnectedToast(true)
+                      : undefined
+                  }
                 />
               ) : null}
               footer={showSseNotice || showSseDebug ? (
@@ -2585,6 +2684,39 @@ export function SessionDetail() {
       <Toast.Root className="oc-toast-root" open={showRenameToast} onOpenChange={setShowRenameToast} duration={2000}>
         <Toast.Description className="oc-toast-description">
           Session renamed
+        </Toast.Description>
+      </Toast.Root>
+      <Toast.Root
+        className="oc-toast-root error"
+        open={showCreateSessionErrorToast}
+        onOpenChange={setShowCreateSessionErrorToast}
+        duration={3500}
+      >
+        <Toast.Description className="oc-toast-description">
+          Failed to create session
+        </Toast.Description>
+      </Toast.Root>
+      <Toast.Root
+        className="oc-toast-root error"
+        open={showDisconnectedToast}
+        onOpenChange={setShowDisconnectedToast}
+        duration={8000}
+      >
+        <Toast.Description className="oc-toast-description">
+          <div className="oc-toast-body">
+            <span>OpenCode is not running for this session.</span>
+            {tmux.available && caps.liveConnectionHint && session?.directory && (
+              <button
+                type="button"
+                className="oc-toast-action"
+                disabled={launchingOpencode}
+                onClick={() => {
+                  setShowDisconnectedToast(false);
+                  void handleLaunchOpencode();
+                }}
+              >{launchingOpencode ? 'Launching…' : 'Launch opencode'}</button>
+            )}
+          </div>
         </Toast.Description>
       </Toast.Root>
       <Toast.Viewport className="oc-toast-viewport" />

@@ -5,6 +5,12 @@ export const SIDEBAR_MIN_WIDTH = 180;
 export const SIDEBAR_MAX_WIDTH = 600;
 export const SIDEBAR_DEFAULT_WIDTH = 260;
 
+type PaletteMode = 'command' | 'search' | 'project';
+
+export type PaletteCommand =
+  | { kind: 'nav'; id: string; label: string; path: string }
+  | { kind: 'scoped'; id: string; label: string; description: string };
+
 type UiStore = {
   shortcutsOpen: boolean;
   openShortcuts: () => void;
@@ -13,6 +19,20 @@ type UiStore = {
 
   sidebarWidth: number;
   setSidebarWidth: (width: number) => void;
+
+  bellEnabled: boolean;
+  setBellEnabled: (enabled: boolean) => void;
+
+  paletteOpen: boolean;
+  paletteMode: PaletteMode;
+  openCommandPalette: () => void;
+  openSearchPalette: () => void;
+  openProjectPalette: () => void;
+  openPalette: (mode: PaletteMode) => void;
+  closePalette: () => void;
+
+  paletteCommand: PaletteCommand | null;
+  dispatchCommand: (cmd: PaletteCommand) => void;
 };
 
 function clampWidth(width: number): number {
@@ -30,11 +50,25 @@ export const useUiStore = create<UiStore>()(
 
       sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
       setSidebarWidth: (width) => set({ sidebarWidth: clampWidth(width) }),
+
+      bellEnabled: true,
+      setBellEnabled: (enabled) => set({ bellEnabled: enabled }),
+
+      paletteOpen: false,
+      paletteMode: 'command',
+      openCommandPalette: () => set({ paletteOpen: true, paletteMode: 'command' }),
+      openSearchPalette: () => set({ paletteOpen: true, paletteMode: 'search' }),
+      openProjectPalette: () => set({ paletteOpen: true, paletteMode: 'project' }),
+      openPalette: (mode: PaletteMode) => set({ paletteOpen: true, paletteMode: mode }),
+      closePalette: () => set({ paletteOpen: false, paletteCommand: null }),
+
+      paletteCommand: null,
+      dispatchCommand: (cmd: PaletteCommand) => set({ paletteCommand: cmd }),
     }),
     {
       name: 'ocman:ui',
       // Only persist layout preferences; transient UI state (shortcutsOpen) stays in memory.
-      partialize: (s) => ({ sidebarWidth: s.sidebarWidth }),
+      partialize: (s) => ({ sidebarWidth: s.sidebarWidth, bellEnabled: s.bellEnabled }),
     },
   ),
 );

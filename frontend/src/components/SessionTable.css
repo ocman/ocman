@@ -4,9 +4,7 @@
  * Opacity (rather than a lighter colour) lets the whole line fade
  * together and inherits any future theme contrast tweaks. */
 .git-status {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
+  display: block;
   margin-top: 2px;
   font-family: 'SF Mono', Consolas, monospace;
   font-size: 10px;

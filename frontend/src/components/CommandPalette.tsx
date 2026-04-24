@@ -1,79 +1,128 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import './CommandPalette.css';
 import { useNavigate } from 'react-router-dom';
 import Fuse from 'fuse.js';
 import { useApiStore } from '../lib/apiStore';
+import { useUiStore } from '../lib/uiStore';
 import { cleanTitle, relativeTime, shortPath } from '../lib/format';
-import { useShortcut } from '../lib/shortcutRegistry';
-import type { Session } from '../lib/api';
+import type { Session, Project } from '../lib/api';
+
+type ResultItem =
+  | { kind: 'session'; session: Session }
+  | { kind: 'project'; project: Project }
+  | { kind: 'command'; id: string; label: string; description: string }
+  | { kind: 'scoped'; id: string; label: string; description: string }
+  | { kind: 'nav'; id: string; label: string; path: string };
+
+const NAV_ITEMS: ResultItem[] = [
+  { kind: 'nav', id: 'nav.sessions', label: 'Sessions', path: '/' },
+  { kind: 'nav', id: 'nav.projects', label: 'Projects', path: '/projects' },
+  { kind: 'nav', id: 'nav.stats', label: 'Stats', path: '/stats' },
+  { kind: 'nav', id: 'nav.usage', label: 'Usage', path: '/usage' },
+];
+
+const STATIC_COMMANDS: ResultItem[] = [
+  { kind: 'command', id: 'cmd.sessions', label: 'sessions', description: 'Go to Sessions tab' },
+  { kind: 'command', id: 'cmd.projects', label: 'projects', description: 'Go to Projects tab' },
+  { kind: 'command', id: 'cmd.stats', label: 'stats', description: 'Go to Stats tab' },
+  { kind: 'command', id: 'cmd.usage', label: 'usage', description: 'Go to Usage tab' },
+  { kind: 'command', id: 'cmd.shortcuts', label: 'shortcuts', description: 'Open keyboard shortcuts' },
+];
+
+const SCOPED_COMMANDS: ResultItem[] = [
+  { kind: 'scoped', id: 'scoped.model', label: 'model', description: 'Change model (session-scoped)' },
+  { kind: 'scoped', id: 'scoped.agent', label: 'agent', description: 'Switch agent (session-scoped)' },
+  { kind: 'scoped', id: 'scoped.variant', label: 'variant', description: 'Change reasoning effort' },
+  { kind: 'scoped', id: 'scoped.tmux', label: 'tmux', description: 'Switch tmux session' },
+  { kind: 'scoped', id: 'scoped.vscode', label: 'vscode', description: 'Open in VS Code' },
+  { kind: 'scoped', id: 'scoped.archive', label: 'archive', description: 'Archive current session' },
+  { kind: 'scoped', id: 'scoped.rename', label: 'rename', description: 'Rename session' },
+  { kind: 'scoped', id: 'scoped.new-project', label: 'New session in project', description: 'Create new session in project' },
+  { kind: 'scoped', id: 'scoped.compact', label: 'compact', description: 'Compact view' },
+];
+
+type CommandNavItem = { kind: 'command'; id: string; label: string; description: string } | { kind: 'nav'; id: string; label: string; path: string } | { kind: 'scoped'; id: string; label: string; description: string };
+
+function isCommandQuery(q: string): boolean {
+  return q.startsWith('>') || q.startsWith(':');
+}
+
+function stripCommandPrefix(q: string): string {
+  if (q.startsWith('>') || q.startsWith(':')) {
+    return q.slice(1).trimStart();
+  }
+  return q;
+}
+
+function dedupeCommandNavItems(items: CommandNavItem[]): CommandNavItem[] {
+  const seen = new Set<string>();
+  const out: CommandNavItem[] = [];
+
+  for (const item of items) {
+    const key = item.label.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+
+  return out;
+}
 
 export function CommandPalette() {
-  const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
-  // Render directly from the cached sessions in the store. The palette picks
-  // up updates automatically when the background refresh completes.
   const sessions = useApiStore((s) => s.cachedSessions);
+  const projects = useApiStore((s) => s.getProjects);
+  const createSession = useApiStore((s) => s.createSession);
   const refreshCachedSessions = useApiStore((s) => s.refreshCachedSessions);
+  const {
+    paletteOpen,
+    paletteMode,
+    closePalette: rawClosePalette,
+    openProjectPalette,
+    openShortcuts,
+  } = useUiStore();
+  const mode = paletteMode;
 
-  const close = useCallback(() => {
-    setOpen(false);
-    setQuery('');
-    setSelectedIndex(0);
-  }, []);
+  // Load projects when opening project palette
+  const [projectList, setProjectList] = useState<Project[]>([]);
 
-  const toggleOpen = useCallback(() => {
-    setOpen((prev) => {
-      if (prev) {
+  // Wrap closePalette to also clear the project list
+  const closePalette = useCallback(() => {
+    setProjectList([]);
+    rawClosePalette();
+  }, [rawClosePalette]);
+
+  useEffect(() => {
+    if (paletteOpen) {
+      requestAnimationFrame(() => {
         setQuery('');
         setSelectedIndex(0);
-        return false;
-      }
-      return true;
-    });
-  }, []);
-
-  const commandPaletteShortcut = useMemo(() => ({
-    id: 'site.command-palette',
-    scope: 'site' as const,
-    keys: [
-      { code: 'Space', alt: true },
-      { code: 'KeyF', alt: true, opt: true },
-    ],
-    description: 'Open command palette',
-    handler: toggleOpen,
-  }), [toggleOpen]);
-
-  useShortcut(commandPaletteShortcut);
-
-  // Refresh the cached session list in the background whenever the palette
-  // opens. The list itself comes straight from the store, so the palette
-  // renders instantly with whatever data we already have and then updates
-  // when the fetch resolves.
-  useEffect(() => {
-    if (!open) return;
-    const controller = new AbortController();
-    refreshCachedSessions(controller.signal).catch(() => {});
-    return () => controller.abort();
-  }, [open, refreshCachedSessions]);
-
-  // Focus input when opened
-  useEffect(() => {
-    if (open) {
-      // Small delay to ensure the DOM is ready
-      requestAnimationFrame(() => inputRef.current?.focus());
+        inputRef.current?.focus();
+      });
     }
-  }, [open]);
+  }, [paletteOpen]);
 
-  // Fuse instance
-  const fuse = useMemo(
+  useEffect(() => {
+    if (!paletteOpen) return;
+    if (mode === 'search') {
+      const controller = new AbortController();
+      refreshCachedSessions(controller.signal).catch(() => {});
+      return () => controller.abort();
+    }
+    if (mode === 'project' && projectList.length === 0) {
+      projects().then((list) => {
+        setProjectList(list);
+      }).catch(() => {});
+    }
+  }, [paletteOpen, mode, refreshCachedSessions, projects, projectList.length]);
+
+  const sessionFuse = useMemo(
     () =>
       new Fuse(sessions ?? [], {
-        // Search on the cleaned title so markdown markers (#, **, _, etc.)
-        // don't interfere with user queries. `directory` is used as-is.
         keys: [
           { name: 'title', getFn: (s) => cleanTitle(s.title) },
           'directory',
@@ -84,34 +133,149 @@ export function CommandPalette() {
     [sessions],
   );
 
-  const results = useMemo(() => {
-    if (!sessions) return [];
-    if (!query.trim()) {
-      // Show all sessions sorted by most recent
-      return sessions
-        .slice()
-        .sort((a, b) => b.timeUpdated - a.timeUpdated)
-        .slice(0, 20);
+  const results: ResultItem[] = useMemo(() => {
+    if (mode === 'search') {
+      if (!sessions) return [];
+      if (!query.trim()) {
+        return sessions
+          .slice()
+          .sort((a, b) => {
+              const bucket = 5 * 60 * 1000;
+              const ba = Math.floor(a.timeUpdated / bucket);
+              const bb = Math.floor(b.timeUpdated / bucket);
+              if (bb !== ba) return bb - ba;
+              if (a.projectId !== b.projectId) return a.projectId < b.projectId ? -1 : 1;
+              return a.title < b.title ? -1 : a.title > b.title ? 1 : 0;
+            })
+          .slice(0, 20)
+          .map((s) => ({ kind: 'session' as const, session: s }));
+      }
+      return sessionFuse.search(query, { limit: 20 }).map((r) => ({
+        kind: 'session' as const,
+        session: r.item,
+      }));
     }
-    return fuse.search(query, { limit: 20 }).map((r) => r.item);
-  }, [query, fuse, sessions]);
 
-  // Scroll selected item into view
+    if (mode === 'project') {
+      if (projectList.length === 0) return [];
+      if (!query.trim()) {
+        return projectList
+          .slice()
+          .sort((a, b) => b.lastUsed - a.lastUsed)
+          .slice(0, 20)
+          .map((p) => ({ kind: 'project' as const, project: p }));
+      }
+      const q = query.toLowerCase();
+      return projectList
+        .filter((p) => p.directory.toLowerCase().includes(q))
+        .sort((a, b) => b.lastUsed - a.lastUsed)
+        .slice(0, 20)
+        .map((p) => ({ kind: 'project' as const, project: p }));
+    }
+
+    if (!query.trim()) {
+      return dedupeCommandNavItems([...SCOPED_COMMANDS, ...STATIC_COMMANDS, ...NAV_ITEMS]);
+    }
+
+    if (isCommandQuery(query)) {
+      const q = stripCommandPrefix(query).toLowerCase();
+      const commands = (STATIC_COMMANDS as CommandNavItem[]).filter((item) =>
+        item.label.toLowerCase().includes(q),
+      );
+      const scoped = (SCOPED_COMMANDS as CommandNavItem[]).filter((item) =>
+        item.label.toLowerCase().includes(q),
+      );
+      const navs = (NAV_ITEMS as CommandNavItem[]).filter((item) =>
+        item.label.toLowerCase().includes(q),
+      );
+      return dedupeCommandNavItems([...commands, ...scoped, ...navs]);
+    }
+
+    const q = query.toLowerCase();
+    const commands = (STATIC_COMMANDS as CommandNavItem[]).filter((item) =>
+      item.label.toLowerCase().includes(q),
+    );
+    const navs = (NAV_ITEMS as CommandNavItem[]).filter((item) =>
+      item.label.toLowerCase().includes(q),
+    );
+    const scoped = (SCOPED_COMMANDS as CommandNavItem[]).filter((item) =>
+      item.label.toLowerCase().includes(q),
+    );
+    const sessionResults = sessions
+      ? sessionFuse.search(query, { limit: 10 }).map((r) => ({
+          kind: 'session' as const,
+          session: r.item,
+        }))
+      : [];
+
+    const uniqueResults: ResultItem[] = [];
+    const seen = new Set<string>();
+    for (const item of [...commands, ...scoped, ...navs, ...sessionResults]) {
+      const key =
+        item.kind === 'session'
+          ? `session:${item.session.id}`
+          : item.kind === 'command' || item.kind === 'nav'
+          ? `navcmd:${item.label.toLowerCase()}`
+          : `${item.kind}:${item.id}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniqueResults.push(item);
+      }
+    }
+
+    return uniqueResults;
+  }, [mode, query, sessions, sessionFuse, projectList]);
+
   useEffect(() => {
     if (!listRef.current) return;
     const item = listRef.current.children[selectedIndex] as HTMLElement | undefined;
     item?.scrollIntoView({ block: 'nearest' });
   }, [selectedIndex]);
 
-  function selectSession(session: Session) {
-    close();
-    navigate(`/session/${session.id}`);
+  function handleSelect(item: ResultItem) {
+    if (item.kind === 'session') {
+      closePalette();
+      navigate(`/session/${item.session.id}`);
+    } else if (item.kind === 'project') {
+      closePalette();
+      createSession(item.project.directory, undefined, undefined)
+        .then((res) => {
+          if (res.id) navigate(`/session/${res.id}`);
+        })
+        .catch(console.error);
+    } else if (item.kind === 'nav') {
+      closePalette();
+      navigate(item.path);
+    } else if (item.kind === 'scoped') {
+      if (item.id === 'scoped.new-project') {
+        setQuery('');
+        setSelectedIndex(0);
+        setProjectList([]);
+        openProjectPalette();
+        return;
+      }
+      closePalette();
+      useUiStore.getState().dispatchCommand({ kind: 'scoped', id: item.id, label: item.label, description: item.description });
+    } else {
+      closePalette();
+      if (item.id === 'cmd.shortcuts') {
+        openShortcuts();
+      } else if (item.id === 'cmd.sessions') {
+        navigate('/');
+      } else if (item.id === 'cmd.projects') {
+        navigate('/projects');
+      } else if (item.id === 'cmd.stats') {
+        navigate('/stats');
+      } else if (item.id === 'cmd.usage') {
+        navigate('/usage');
+      }
+    }
   }
 
   function onInputKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Escape') {
       e.preventDefault();
-      close();
+      closePalette();
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
       setSelectedIndex((i) => Math.min(i + 1, results.length - 1));
@@ -121,15 +285,15 @@ export function CommandPalette() {
     } else if (e.key === 'Enter') {
       e.preventDefault();
       if (results[selectedIndex]) {
-        selectSession(results[selectedIndex]);
+        handleSelect(results[selectedIndex]);
       }
     }
   }
 
-  if (!open) return null;
+  if (!paletteOpen) return null;
 
   return (
-    <div className="oc-cmd-backdrop" onClick={close}>
+    <div className="oc-cmd-backdrop" onClick={closePalette}>
       <div className="oc-cmd-palette" onClick={(e) => e.stopPropagation()}>
         <div className="oc-cmd-input-wrap">
           <i className="bi bi-search oc-cmd-search-icon" />
@@ -137,9 +301,18 @@ export function CommandPalette() {
             ref={inputRef}
             className="oc-cmd-input"
             type="text"
-            placeholder="Search sessions..."
+            placeholder={
+              mode === 'command'
+                ? '> commands, :stats, sessions...'
+                : mode === 'search'
+                ? 'Search sessions...'
+                : 'Select a project to create session in...'
+            }
             value={query}
-            onChange={(e) => { setQuery(e.target.value); setSelectedIndex(0); }}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setSelectedIndex(0);
+            }}
             onKeyDown={onInputKeyDown}
           />
           <kbd className="oc-cmd-kbd">ESC</kbd>
@@ -147,31 +320,82 @@ export function CommandPalette() {
         <div className="oc-cmd-results" ref={listRef}>
           {results.length === 0 && (
             <div className="oc-cmd-empty">
-              {sessions === null ? 'Loading sessions...' : 'No sessions found'}
+              {sessions === null && mode === 'search'
+                ? 'Loading sessions...'
+                : projectList.length === 0 && mode === 'project'
+                ? 'Loading projects...'
+                : 'No results'}
             </div>
           )}
-          {results.map((session, i) => (
-            <div
-              key={session.id}
-              className={`oc-cmd-item${i === selectedIndex ? ' oc-cmd-item--selected' : ''}`}
-              onClick={() => selectSession(session)}
-              onMouseEnter={() => setSelectedIndex(i)}
-            >
-              <span
-                className="oc-cmd-status"
-                data-status={session.pendingPermission || session.pendingQuestion ? 'pending' : session.status}
-                title={session.pendingPermission || session.pendingQuestion ? 'Waiting for your response' : undefined}
-              />
-              <div className="oc-cmd-item-content">
-                <span className="oc-cmd-title">
-                  {cleanTitle(session.title) || 'Untitled'}
-                </span>
-                <span className="oc-cmd-meta">
-                  {shortPath(session.directory)} &middot; {relativeTime(session.timeUpdated)}
-                </span>
+          {results.map((item, i) => {
+            if (item.kind === 'session') {
+              const session = item.session;
+              const pending = session.pendingPermission || session.pendingQuestion;
+              return (
+                <div
+                  key={session.id}
+                  className={`oc-cmd-item${i === selectedIndex ? ' oc-cmd-item--selected' : ''}`}
+                  onClick={() => handleSelect(item)}
+                  onMouseEnter={() => setSelectedIndex(i)}
+                >
+                  <span
+                    className="oc-cmd-status"
+                    data-status={pending ? 'pending' : session.status}
+                    title={pending ? 'Waiting for your response' : undefined}
+                  />
+                  <div className="oc-cmd-item-content">
+                    <span className="oc-cmd-title">
+                      {cleanTitle(session.title) || 'Untitled'}
+                    </span>
+                    <span className="oc-cmd-meta">
+                      {shortPath(session.directory)} &middot;{' '}
+                      {relativeTime(session.timeUpdated)}
+                    </span>
+                  </div>
+                </div>
+              );
+            }
+
+            if (item.kind === 'project') {
+              const proj = item.project;
+              return (
+                <div
+                  key={proj.directory}
+                  className={`oc-cmd-item oc-cmd-item--command${i === selectedIndex ? ' oc-cmd-item--selected' : ''}`}
+                  onClick={() => handleSelect(item)}
+                  onMouseEnter={() => setSelectedIndex(i)}
+                >
+                  <i className="bi bi-folder oc-cmd-item-icon" />
+                  <div className="oc-cmd-item-content">
+                    <span className="oc-cmd-title">{shortPath(proj.directory)}</span>
+                    <span className="oc-cmd-meta">
+                      {proj.sessionCount} session{proj.sessionCount !== 1 ? 's' : ''} &middot;{' '}
+                      {relativeTime(proj.lastUsed)}
+                    </span>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div
+                key={item.id}
+                className={`oc-cmd-item oc-cmd-item--command${i === selectedIndex ? ' oc-cmd-item--selected' : ''}`}
+                onClick={() => handleSelect(item)}
+                onMouseEnter={() => setSelectedIndex(i)}
+              >
+                <i
+                  className={`bi ${item.kind === 'nav' ? 'bi-arrow-right' : item.kind === 'scoped' ? 'bi-gear' : 'bi-terminal'} oc-cmd-item-icon`}
+                />
+                <div className="oc-cmd-item-content">
+                  <span className="oc-cmd-title">{item.label}</span>
+                  {(item.kind === 'command' || item.kind === 'scoped') && (
+                    <span className="oc-cmd-meta">{item.description}</span>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

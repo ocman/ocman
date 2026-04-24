@@ -4,7 +4,7 @@ import { useNavigate, NavLink, Outlet, useSearchParams, useLocation } from 'reac
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend, PointElement, LineElement } from 'chart.js';
 import { Bar, Doughnut, Line } from 'react-chartjs-2';
 import { api } from '../lib/api';
-import type { ActivityDay, HourlyData, HourlyTokensByModel, MetricsDashboard, ModelUsage, Project, Session } from '../lib/api';
+import type { ActivityDay, HourlyData, HourlyTokensByModel, MetricsDashboard, ModelUsage, Project, ProjectLogEntry, Session } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
 import {
   cleanTitle,
@@ -20,8 +20,9 @@ import {
 } from '../lib/format';
 import { usePageTitle } from '../lib/headerContext';
 import { SessionTable } from '../components/SessionTable';
-import { useTmux } from '../lib/useTmux';
 import { useApiRequest } from '../lib/apiStore';
+import { useUiStore } from '../lib/uiStore';
+import { useAuthStore } from '../lib/authStore';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, PointElement, LineElement, Tooltip, Legend);
 
@@ -51,7 +52,6 @@ interface DashboardCtx {
   setTimeRange: (v: number) => void;
   showArchived: boolean;
   setShowArchived: (v: boolean) => void;
-  tmux: ReturnType<typeof useTmux>;
 }
 
 const DashboardContext = createContext<DashboardCtx | null>(null);
@@ -67,11 +67,10 @@ function useDashboard(): DashboardCtx {
 // ---------------------------------------------------------------------------
 
 export function DashboardLayout() {
-  const tmux = useTmux();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const isOnDashboard = location.pathname === '/' || location.pathname === '/projects' || location.pathname === '/stats' || location.pathname === '/usage';
+  const isOnDashboard = location.pathname === '/' || location.pathname === '/projects' || location.pathname === '/stats' || location.pathname === '/usage' || location.pathname === '/settings';
 
   const [sessions, setSessions] = useState<Session[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -136,7 +135,6 @@ export function DashboardLayout() {
     setTimeRange,
     showArchived,
     setShowArchived,
-    tmux,
   };
 
   return (
@@ -147,6 +145,7 @@ export function DashboardLayout() {
           <NavLink to="/projects" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Projects</NavLink>
           <NavLink to="/stats" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Stats</NavLink>
           <NavLink to="/usage" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Usage</NavLink>
+          <NavLink to="/settings" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Settings</NavLink>
         </div>
         <Outlet />
       </div>
@@ -160,7 +159,7 @@ export function DashboardLayout() {
 
 export function SessionsTab() {
   usePageTitle('Sessions');
-  const { sessions, sessionsLoading, sessionsError, loadSessions, timeRange, setTimeRange, showArchived, setShowArchived, tmux } = useDashboard();
+  const { sessions, sessionsLoading, sessionsError, loadSessions, timeRange, setTimeRange, showArchived, setShowArchived } = useDashboard();
 
   return (
     <>
@@ -181,9 +180,9 @@ export function SessionsTab() {
         <button
           className={`oc-time-range-btn${showArchived ? ' active' : ''}`}
           onClick={() => setShowArchived(!showArchived)}
-        >Include archived</button>
+        >Exclude archived</button>
       </div>
-      <SessionTable sessions={sessions} showProject loading={sessionsLoading && sessions.length === 0} tmux={tmux} includeArchived={showArchived} />
+      <SessionTable sessions={sessions} showProject loading={sessionsLoading && sessions.length === 0} includeArchived={!showArchived} />
     </>
   );
 }
@@ -257,16 +256,20 @@ export function StatsTab() {
   const [selectedAgent, setSelectedAgent] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
   const [metricsDays, setMetricsDays] = useState(30);
+  const [logTab, setLogTab] = useState<'session' | 'request' | 'project'>('session');
   const [logPage, setLogPage] = useState(0);
   const [sessionLogPage, setSessionLogPage] = useState(0);
+  const [projectLogPage, setProjectLogPage] = useState(0);
   const [metricsLoading, setMetricsLoading] = useState(false);
   const [metricsError, setMetricsError] = useState<string | null>(null);
   const LOG_PAGE_SIZE = 20;
   const SESSION_LOG_PAGE_SIZE = 20;
+  const PROJECT_LOG_PAGE_SIZE = 20;
 
   useEffect(() => {
     setLogPage(0);
     setSessionLogPage(0);
+    setProjectLogPage(0);
   }, [selectedAgent, selectedModel, metricsDays]);
 
   useEffect(() => {
@@ -279,6 +282,8 @@ export function StatsTab() {
       offset: logPage * LOG_PAGE_SIZE,
       sessionLimit: SESSION_LOG_PAGE_SIZE,
       sessionOffset: sessionLogPage * SESSION_LOG_PAGE_SIZE,
+      projectLimit: PROJECT_LOG_PAGE_SIZE,
+      projectOffset: projectLogPage * PROJECT_LOG_PAGE_SIZE,
     };
 
     void (async () => {
@@ -303,7 +308,7 @@ export function StatsTab() {
     })();
 
     return () => { cancelled = true; };
-  }, [metricsDays, selectedAgent, selectedModel, logPage, LOG_PAGE_SIZE, sessionLogPage, SESSION_LOG_PAGE_SIZE]);
+  }, [metricsDays, selectedAgent, selectedModel, logPage, LOG_PAGE_SIZE, sessionLogPage, SESSION_LOG_PAGE_SIZE, projectLogPage, PROJECT_LOG_PAGE_SIZE]);
 
   const metricLabels = metrics?.series.map((point) => point.label) ?? [];
 
@@ -412,162 +417,255 @@ export function StatsTab() {
           </div>
 
           <div className="chart-card">
-            <h3 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span>Request Log</span>
-              <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--text-dim)', textTransform: 'none', letterSpacing: 0 }}>
-                {metrics.totalRequests > 0 && (
-                  <>
-                    {logPage * LOG_PAGE_SIZE + 1}–{Math.min((logPage + 1) * LOG_PAGE_SIZE, metrics.totalRequests)} of {metrics.totalRequests}
-                  </>
+            <div className="metrics-log-header">
+              <div className="nav-tabs metrics-log-tabs">
+                <button
+                  className={`nav-tab${logTab === 'session' ? ' active' : ''}`}
+                  onClick={() => setLogTab('session')}
+                >Session Log</button>
+                <button
+                  className={`nav-tab${logTab === 'project' ? ' active' : ''}`}
+                  onClick={() => setLogTab('project')}
+                >Project Log</button>
+                <button
+                  className={`nav-tab${logTab === 'request' ? ' active' : ''}`}
+                  onClick={() => setLogTab('request')}
+                >Request Log</button>
+              </div>
+              <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--text-dim)' }}>
+                {logTab === 'session' && metrics.totalSessions > 0 && (
+                  <>{sessionLogPage * SESSION_LOG_PAGE_SIZE + 1}–{Math.min((sessionLogPage + 1) * SESSION_LOG_PAGE_SIZE, metrics.totalSessions)} of {metrics.totalSessions}</>
+                )}
+                {logTab === 'project' && metrics.totalProjects > 0 && (
+                  <>{projectLogPage * PROJECT_LOG_PAGE_SIZE + 1}–{Math.min((projectLogPage + 1) * PROJECT_LOG_PAGE_SIZE, metrics.totalProjects)} of {metrics.totalProjects}</>
+                )}
+                {logTab === 'request' && metrics.totalRequests > 0 && (
+                  <>{logPage * LOG_PAGE_SIZE + 1}–{Math.min((logPage + 1) * LOG_PAGE_SIZE, metrics.totalRequests)} of {metrics.totalRequests}</>
                 )}
               </span>
-            </h3>
-            <div className="metrics-table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Time</th>
-                    <th>Session</th>
-                    <th>Model</th>
-                    <th>Input</th>
-                    <th>Output</th>
-                    <th>Cache</th>
-                    <th>Tok/s</th>
-                    <th>Duration</th>
-                    <th>Cost</th>
-                    <th title="Calculated from token counts using public API pricing">Est. Cost</th>
-                    <th>Stop</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {metrics.requests.length === 0 ? (
-                    <tr>
-                      <td colSpan={12} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: 24 }}>
-                        No requests matched the current filters
-                      </td>
-                    </tr>
-                  ) : metrics.requests.map((request, idx) => (
-                    <tr key={request.id} onClick={() => navigate(`/session/${encodeURIComponent(request.sessionId)}`)}>
-                      <td>{logPage * LOG_PAGE_SIZE + idx + 1}</td>
-                      <td>{formatDateTimeShort(request.timeCreated)}</td>
-                      <td className="mono">{shortSessionID(request.sessionId)}</td>
-                      <td>{renderModel(request.model)}</td>
-                      <td>{formatNumber(request.inputTokens)}</td>
-                      <td>{formatNumber(request.outputTokens)}</td>
-                      <td className="mono">{formatTokenCache(request.cacheReadTokens, request.cacheWriteTokens)}</td>
-                      <td>{request.tokensPerSecond > 0 ? request.tokensPerSecond.toFixed(1) : '-'}</td>
-                      <td>{request.durationMs > 0 ? formatSeconds(request.durationMs / 1000) : '-'}</td>
-                      <td>{request.cost > 0 ? formatCurrency(request.cost) : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
-                      <td>{request.calcCost > 0 ? <span style={{ color: 'var(--accent4)' }}>{formatCurrency(request.calcCost)}</span> : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
-                      <td><span className="metrics-stop-pill">{request.stopReason}</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             </div>
-            {metrics.totalRequests > LOG_PAGE_SIZE && (
-              <div className="metrics-pagination">
-                <button
-                  className="oc-time-range-btn"
-                  disabled={logPage === 0}
-                  onClick={() => setLogPage((p) => p - 1)}
-                >Prev</button>
-                <span className="metrics-pagination-info">
-                  Page {logPage + 1} / {Math.ceil(metrics.totalRequests / LOG_PAGE_SIZE)}
-                </span>
-                <button
-                  className="oc-time-range-btn"
-                  disabled={(logPage + 1) * LOG_PAGE_SIZE >= metrics.totalRequests}
-                  onClick={() => setLogPage((p) => p + 1)}
-                >Next</button>
-              </div>
-            )}
-          </div>
 
-          <div className="chart-card">
-            <h3 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span>Session Log</span>
-              <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--text-dim)', textTransform: 'none', letterSpacing: 0 }}>
-                {metrics.totalSessions > 0 && (
-                  <>
-                    {sessionLogPage * SESSION_LOG_PAGE_SIZE + 1}–{Math.min((sessionLogPage + 1) * SESSION_LOG_PAGE_SIZE, metrics.totalSessions)} of {metrics.totalSessions}
-                  </>
+            {logTab === 'session' && (
+              <>
+                <div className="metrics-table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Title</th>
+                        <th>Last Activity</th>
+                        <th>Requests</th>
+                        <th>Input</th>
+                        <th>Output</th>
+                        <th>Cache</th>
+                        <th>Tok/s</th>
+                        <th>Duration</th>
+                        <th>Cost</th>
+                        <th title="Calculated from token counts using public API pricing">Est. Cost</th>
+                        <th>Models</th>
+                        <th title="Assistant messages that finished with an error">Errors</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {metrics.sessions.length === 0 ? (
+                        <tr>
+                          <td colSpan={13} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: 24 }}>
+                            No sessions matched the current filters
+                          </td>
+                        </tr>
+                      ) : metrics.sessions.map((session, idx) => (
+                        <tr key={session.id} onClick={() => navigate(`/session/${encodeURIComponent(session.id)}`)}>
+                          <td>{sessionLogPage * SESSION_LOG_PAGE_SIZE + idx + 1}</td>
+                          <td title={cleanTitle(session.title)}>
+                            <div>{cleanTitle(session.title) || <span style={{ color: 'var(--text-dim)' }}>untitled</span>}</div>
+                            {session.directory && <div className="metrics-session-project">{shortPath(session.directory)}</div>}
+                          </td>
+                          <td title={formatDateTimeShort(session.lastRequestTime)}>{relativeTime(session.lastRequestTime)}</td>
+                          <td>{formatNumber(session.requests)}</td>
+                          <td>{formatNumber(session.inputTokens)}</td>
+                          <td>{formatNumber(session.outputTokens)}</td>
+                          <td className="mono">{formatTokenCache(session.cacheReadTokens, session.cacheWriteTokens)}</td>
+                          <td>{session.avgTokensPerSec > 0 ? session.avgTokensPerSec.toFixed(1) : '-'}</td>
+                          <td>{session.totalDurationMs > 0 ? formatSeconds(session.totalDurationMs / 1000) : '-'}</td>
+                          <td>{session.cost > 0 ? formatCurrency(session.cost) : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
+                          <td>{session.calcCost > 0 ? <span style={{ color: 'var(--accent4)' }}>{formatCurrency(session.calcCost)}</span> : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
+                          <td title={session.models.join(', ')}>
+                            {session.models.length === 0
+                              ? <span style={{ color: 'var(--text-dim)' }}>—</span>
+                              : session.models.length === 1
+                                ? renderModel(session.models[0])
+                                : `${renderModel(session.models[0])} +${session.models.length - 1}`}
+                          </td>
+                          <td>{session.errorCount > 0
+                            ? <span style={{ color: 'var(--accent3, #f38ba8)' }}>{session.errorCount}</span>
+                            : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {metrics.totalSessions > SESSION_LOG_PAGE_SIZE && (
+                  <div className="metrics-pagination">
+                    <button
+                      className="oc-time-range-btn"
+                      disabled={sessionLogPage === 0}
+                      onClick={() => setSessionLogPage((p) => p - 1)}
+                    >Prev</button>
+                    <span className="metrics-pagination-info">
+                      Page {sessionLogPage + 1} / {Math.ceil(metrics.totalSessions / SESSION_LOG_PAGE_SIZE)}
+                    </span>
+                    <button
+                      className="oc-time-range-btn"
+                      disabled={(sessionLogPage + 1) * SESSION_LOG_PAGE_SIZE >= metrics.totalSessions}
+                      onClick={() => setSessionLogPage((p) => p + 1)}
+                    >Next</button>
+                  </div>
                 )}
-              </span>
-            </h3>
-            <div className="metrics-table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Session</th>
-                    <th>Title</th>
-                    <th>Last Activity</th>
-                    <th>Requests</th>
-                    <th>Input</th>
-                    <th>Output</th>
-                    <th>Cache</th>
-                    <th>Tok/s</th>
-                    <th>Duration</th>
-                    <th>Cost</th>
-                    <th title="Calculated from token counts using public API pricing">Est. Cost</th>
-                    <th>Models</th>
-                    <th title="Assistant messages that finished with an error">Errors</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {metrics.sessions.length === 0 ? (
-                    <tr>
-                      <td colSpan={14} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: 24 }}>
-                        No sessions matched the current filters
-                      </td>
-                    </tr>
-                  ) : metrics.sessions.map((session, idx) => (
-                    <tr key={session.id} onClick={() => navigate(`/session/${encodeURIComponent(session.id)}`)}>
-                      <td>{sessionLogPage * SESSION_LOG_PAGE_SIZE + idx + 1}</td>
-                      <td className="mono">{shortSessionID(session.id)}</td>
-                      <td title={cleanTitle(session.title)}>{cleanTitle(session.title) || <span style={{ color: 'var(--text-dim)' }}>untitled</span>}</td>
-                      <td title={formatDateTimeShort(session.lastRequestTime)}>{relativeTime(session.lastRequestTime)}</td>
-                      <td>{formatNumber(session.requests)}</td>
-                      <td>{formatNumber(session.inputTokens)}</td>
-                      <td>{formatNumber(session.outputTokens)}</td>
-                      <td className="mono">{formatTokenCache(session.cacheReadTokens, session.cacheWriteTokens)}</td>
-                      <td>{session.avgTokensPerSec > 0 ? session.avgTokensPerSec.toFixed(1) : '-'}</td>
-                      <td>{session.totalDurationMs > 0 ? formatSeconds(session.totalDurationMs / 1000) : '-'}</td>
-                      <td>{session.cost > 0 ? formatCurrency(session.cost) : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
-                      <td>{session.calcCost > 0 ? <span style={{ color: 'var(--accent4)' }}>{formatCurrency(session.calcCost)}</span> : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
-                      <td title={session.models.join(', ')}>
-                        {session.models.length === 0
-                          ? <span style={{ color: 'var(--text-dim)' }}>—</span>
-                          : session.models.length === 1
-                            ? renderModel(session.models[0])
-                            : `${renderModel(session.models[0])} +${session.models.length - 1}`}
-                      </td>
-                      <td>{session.errorCount > 0
-                        ? <span style={{ color: 'var(--accent3, #f38ba8)' }}>{session.errorCount}</span>
-                        : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {metrics.totalSessions > SESSION_LOG_PAGE_SIZE && (
-              <div className="metrics-pagination">
-                <button
-                  className="oc-time-range-btn"
-                  disabled={sessionLogPage === 0}
-                  onClick={() => setSessionLogPage((p) => p - 1)}
-                >Prev</button>
-                <span className="metrics-pagination-info">
-                  Page {sessionLogPage + 1} / {Math.ceil(metrics.totalSessions / SESSION_LOG_PAGE_SIZE)}
-                </span>
-                <button
-                  className="oc-time-range-btn"
-                  disabled={(sessionLogPage + 1) * SESSION_LOG_PAGE_SIZE >= metrics.totalSessions}
-                  onClick={() => setSessionLogPage((p) => p + 1)}
-                >Next</button>
-              </div>
+              </>
+            )}
+
+            {logTab === 'project' && (
+              <>
+                <div className="metrics-table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Project</th>
+                        <th>Sessions</th>
+                        <th>Requests</th>
+                        <th>Input</th>
+                        <th>Output</th>
+                        <th>Cache</th>
+                        <th>Tok/s</th>
+                        <th>Duration</th>
+                        <th>Cost</th>
+                        <th title="Calculated from token counts using public API pricing">Est. Cost</th>
+                        <th>Models</th>
+                        <th title="Assistant messages that finished with an error">Errors</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {metrics.projects.length === 0 ? (
+                        <tr>
+                          <td colSpan={13} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: 24 }}>
+                            No projects matched the current filters
+                          </td>
+                        </tr>
+                      ) : metrics.projects.map((project: ProjectLogEntry, idx: number) => (
+                        <tr key={project.directory} onClick={() => navigate(`/project/${encodeURIComponent(project.directory)}`)}>
+                          <td>{projectLogPage * PROJECT_LOG_PAGE_SIZE + idx + 1}</td>
+                          <td title={project.directory}>
+                            <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{shortPath(project.directory)}</span>
+                          </td>
+                          <td>{formatNumber(project.sessions)}</td>
+                          <td>{formatNumber(project.requests)}</td>
+                          <td>{formatNumber(project.inputTokens)}</td>
+                          <td>{formatNumber(project.outputTokens)}</td>
+                          <td className="mono">{formatTokenCache(project.cacheReadTokens, project.cacheWriteTokens)}</td>
+                          <td>{project.avgTokensPerSec > 0 ? project.avgTokensPerSec.toFixed(1) : '-'}</td>
+                          <td>{project.totalDurationMs > 0 ? formatSeconds(project.totalDurationMs / 1000) : '-'}</td>
+                          <td>{project.cost > 0 ? formatCurrency(project.cost) : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
+                          <td>{project.calcCost > 0 ? <span style={{ color: 'var(--accent4)' }}>{formatCurrency(project.calcCost)}</span> : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
+                          <td title={project.models.join(', ')}>
+                            {project.models.length === 0
+                              ? <span style={{ color: 'var(--text-dim)' }}>—</span>
+                              : project.models.length === 1
+                                ? renderModel(project.models[0])
+                                : `${renderModel(project.models[0])} +${project.models.length - 1}`}
+                          </td>
+                          <td>{project.errorCount > 0
+                            ? <span style={{ color: 'var(--accent3, #f38ba8)' }}>{project.errorCount}</span>
+                            : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {metrics.totalProjects > PROJECT_LOG_PAGE_SIZE && (
+                  <div className="metrics-pagination">
+                    <button
+                      className="oc-time-range-btn"
+                      disabled={projectLogPage === 0}
+                      onClick={() => setProjectLogPage((p) => p - 1)}
+                    >Prev</button>
+                    <span className="metrics-pagination-info">
+                      Page {projectLogPage + 1} / {Math.ceil(metrics.totalProjects / PROJECT_LOG_PAGE_SIZE)}
+                    </span>
+                    <button
+                      className="oc-time-range-btn"
+                      disabled={(projectLogPage + 1) * PROJECT_LOG_PAGE_SIZE >= metrics.totalProjects}
+                      onClick={() => setProjectLogPage((p) => p + 1)}
+                    >Next</button>
+                  </div>
+                )}
+              </>
+            )}
+
+            {logTab === 'request' && (
+              <>
+                <div className="metrics-table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Time</th>
+                        <th>Session</th>
+                        <th>Model</th>
+                        <th>Input</th>
+                        <th>Output</th>
+                        <th>Cache</th>
+                        <th>Tok/s</th>
+                        <th>Duration</th>
+                        <th>Cost</th>
+                        <th title="Calculated from token counts using public API pricing">Est. Cost</th>
+                        <th>Stop</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {metrics.requests.length === 0 ? (
+                        <tr>
+                          <td colSpan={12} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: 24 }}>
+                            No requests matched the current filters
+                          </td>
+                        </tr>
+                      ) : metrics.requests.map((request, idx) => (
+                        <tr key={request.id} onClick={() => navigate(`/session/${encodeURIComponent(request.sessionId)}`)}>
+                          <td>{logPage * LOG_PAGE_SIZE + idx + 1}</td>
+                          <td>{formatDateTimeShort(request.timeCreated)}</td>
+                          <td className="mono">{shortSessionID(request.sessionId)}</td>
+                          <td>{renderModel(request.model)}</td>
+                          <td>{formatNumber(request.inputTokens)}</td>
+                          <td>{formatNumber(request.outputTokens)}</td>
+                          <td className="mono">{formatTokenCache(request.cacheReadTokens, request.cacheWriteTokens)}</td>
+                          <td>{request.tokensPerSecond > 0 ? request.tokensPerSecond.toFixed(1) : '-'}</td>
+                          <td>{request.durationMs > 0 ? formatSeconds(request.durationMs / 1000) : '-'}</td>
+                          <td>{request.cost > 0 ? formatCurrency(request.cost) : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
+                          <td>{request.calcCost > 0 ? <span style={{ color: 'var(--accent4)' }}>{formatCurrency(request.calcCost)}</span> : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
+                          <td><span className="metrics-stop-pill">{request.stopReason}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {metrics.totalRequests > LOG_PAGE_SIZE && (
+                  <div className="metrics-pagination">
+                    <button
+                      className="oc-time-range-btn"
+                      disabled={logPage === 0}
+                      onClick={() => setLogPage((p) => p - 1)}
+                    >Prev</button>
+                    <span className="metrics-pagination-info">
+                      Page {logPage + 1} / {Math.ceil(metrics.totalRequests / LOG_PAGE_SIZE)}
+                    </span>
+                    <button
+                      className="oc-time-range-btn"
+                      disabled={(logPage + 1) * LOG_PAGE_SIZE >= metrics.totalRequests}
+                      onClick={() => setLogPage((p) => p + 1)}
+                    >Next</button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </>
@@ -1043,6 +1141,62 @@ function HeatmapChart({ activity }: { activity: ActivityDay[] }) {
       {tooltip && (
         <div className="heatmap-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
           {tooltip.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Settings tab
+// ---------------------------------------------------------------------------
+
+export function SettingsTab() {
+  usePageTitle('Settings');
+  const bellEnabled = useUiStore((s) => s.bellEnabled);
+  const setBellEnabled = useUiStore((s) => s.setBellEnabled);
+  const authRequired = useAuthStore((s) => s.authRequired);
+  const logout = useAuthStore((s) => s.logout);
+
+  return (
+    <div className="settings-page">
+      <div className="settings-section">
+        <h2 className="settings-section-title">Notifications</h2>
+        <div className="settings-row">
+          <div className="settings-row-info">
+            <div className="settings-row-label">Bell sound</div>
+            <div className="settings-row-desc">
+              Play a bell sound when the app is not in focus and a session
+              finishes or asks a question.
+            </div>
+          </div>
+          <label className="settings-toggle">
+            <input
+              type="checkbox"
+              checked={bellEnabled}
+              onChange={(e) => setBellEnabled(e.target.checked)}
+            />
+            <span className="settings-toggle-track" />
+          </label>
+        </div>
+      </div>
+
+      {authRequired && (
+        <div className="settings-section">
+          <h2 className="settings-section-title">Account</h2>
+          <div className="settings-row">
+            <div className="settings-row-info">
+              <div className="settings-row-label">Session</div>
+              <div className="settings-row-desc">Sign out of the current session.</div>
+            </div>
+            <button
+              type="button"
+              className="vscode-btn"
+              onClick={() => { void logout(); }}
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       )}
     </div>

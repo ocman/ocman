@@ -2,7 +2,7 @@ import { Component, useCallback, useEffect, useMemo } from 'react';
 import type { ReactNode, ErrorInfo } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { useHotkeys } from 'react-hotkeys-hook';
-import { DashboardLayout, SessionsTab, ProjectsTab, StatsTab, UsageTab } from './pages/Dashboard';
+import { DashboardLayout, SessionsTab, ProjectsTab, StatsTab, UsageTab, SettingsTab } from './pages/Dashboard';
 import { ProjectDetail } from './pages/ProjectDetail';
 import { SessionDetail } from './pages/SessionDetail';
 import { Login } from './pages/Login';
@@ -12,6 +12,7 @@ import { CommandPalette } from './components/CommandPalette';
 import { PlatformBadge } from './components/PlatformBadge';
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
 import { useFaviconNotify } from './lib/useFaviconNotify';
+import { useBellNotify } from './lib/useBellNotify';
 import { useAuthStore } from './lib/authStore';
 import { useUiStore } from './lib/uiStore';
 import { useShortcut, useShortcutDispatcher } from './lib/shortcutRegistry';
@@ -42,8 +43,6 @@ function Header() {
   const location = useLocation();
   const path = location.pathname;
   const { info } = useHeaderInfo();
-  const authRequired = useAuthStore((s) => s.authRequired);
-  const logout = useAuthStore((s) => s.logout);
 
   let breadcrumb: React.ReactNode = '';
   if (path.startsWith('/session/')) {
@@ -84,22 +83,16 @@ function Header() {
           ))}
         </div>
       )}
-      {authRequired && (
-        <button
-          type="button"
-          className="vscode-btn"
-          onClick={() => { void logout(); }}
-          title="Sign out"
-        >
-          Sign out
-        </button>
-      )}
     </header>
   );
 }
 
 function GlobalHotkeys() {
-  const { shortcutsOpen, toggleShortcuts, closeShortcuts } = useUiStore();
+  const {
+    shortcutsOpen,
+    toggleShortcuts,
+    closeShortcuts,
+  } = useUiStore();
 
   // Single dispatcher for every shortcut registered via useShortcut.
   useShortcutDispatcher();
@@ -151,9 +144,46 @@ function GlobalHotkeys() {
     handler: scrollHalfPage,
   }), [scrollHalfPage]);
 
+  const commandPaletteShortcut = useMemo(() => ({
+    id: 'site.command-palette',
+    scope: 'site' as const,
+    keys: { code: 'Space', alt: true },
+    label: 'Alt+Space',
+    description: 'Open command palette',
+    handler: () => {
+      // eslint-disable-next-line no-console
+      console.log('[ocman] Alt+Space → command palette');
+      useUiStore.getState().openPalette('command');
+    },
+    runInEditable: true,
+  }), []);
+
+  const searchPaletteShortcut = useMemo(() => ({
+    id: 'site.search-palette',
+    scope: 'site' as const,
+    keys: { code: 'KeyF', alt: true },
+    label: 'Alt+F',
+    description: 'Search sessions',
+    handler: () => useUiStore.getState().openPalette('search'),
+    runInEditable: true,
+  }), []);
+
+  const projectPaletteShortcut = useMemo(() => ({
+    id: 'site.project-palette',
+    scope: 'site' as const,
+    keys: { code: 'KeyN', alt: true },
+    label: 'Alt+N',
+    description: 'Create new session in project',
+    handler: () => useUiStore.getState().openPalette('project'),
+    runInEditable: true,
+  }), []);
+
   useShortcut(toggleShortcutsShortcut);
   useShortcut(scrollDownShortcut);
   useShortcut(scrollUpShortcut);
+  useShortcut(commandPaletteShortcut);
+  useShortcut(searchPaletteShortcut);
+  useShortcut(projectPaletteShortcut);
 
   useHotkeys('esc', () => closeShortcuts(), {
     enabled: shortcutsOpen,
@@ -172,6 +202,11 @@ function GlobalHotkeys() {
 
 function FaviconNotify() {
   useFaviconNotify();
+  return null;
+}
+
+function BellNotify() {
+  useBellNotify();
   return null;
 }
 
@@ -217,6 +252,7 @@ export default function App() {
       <AuthGate>
         <HeaderProvider>
           <FaviconNotify />
+          <BellNotify />
           <PerformanceCleanup />
           <MemoryMonitor />
           <GlobalHotkeys />
@@ -230,6 +266,7 @@ export default function App() {
                     <Route path="/projects" element={<ProjectsTab />} />
                     <Route path="/stats" element={<StatsTab />} />
                     <Route path="/usage" element={<UsageTab />} />
+                    <Route path="/settings" element={<SettingsTab />} />
                   </Route>
                   <Route path="/project/*" element={<ProjectDetail />} />
                   <Route path="/session/:id" element={<SessionDetail />} />

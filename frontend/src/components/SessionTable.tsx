@@ -1,12 +1,11 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import './SessionTable.css';
 import { useNavigate } from 'react-router-dom';
 import type { Session, GitInfo } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
-import { cleanTitle, formatDuration, relativeTime, shortPath } from '../lib/format';
+import { cleanTitle, formatDuration, relativeTime } from '../lib/format';
 import { StatusBadge } from './StatusBadge';
 import { PlatformBadge } from './PlatformBadge';
-import type { TmuxState } from '../lib/useTmux';
 import { filterVisibleSessions } from '../lib/sessionVisibility';
 
 export function ShortPath({ path }: { path: string }) {
@@ -16,18 +15,6 @@ export function ShortPath({ path }: { path: string }) {
   return <><span className="short-path-prefix">{prefix}</span><span className="short-path-last">{last}</span></>;
 }
 
-/**
- * Tiny git status indicator rendered under the project path: branch
- * name, optional ahead/behind counts (when upstream tracking knows
- * about them), and a trailing `*` when the working tree is dirty.
- *
- * Every field carries its own `title` so hovering the specific glyph
- * explains what it means — handier than a single combined tooltip on
- * the whole line, especially when most of them are empty.
- *
- * Returns null when no git info is available so callers can just
- * render it unconditionally.
- */
 export function GitStatusLine({ info }: { info?: GitInfo | null }) {
   if (!info || !info.branch) return null;
   const dirtyCls = info.dirty ? ' git-status-dirty' : '';
@@ -58,14 +45,6 @@ export function GitStatusLine({ info }: { info?: GitInfo | null }) {
   );
 }
 
-interface Props {
-  sessions: Session[];
-  showProject?: boolean;
-  loading?: boolean;
-  tmux?: TmuxState;
-  includeArchived?: boolean;
-}
-
 function ArchiveIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
@@ -74,56 +53,18 @@ function ArchiveIcon() {
   );
 }
 
-export function SessionTable({ sessions, showProject, loading, tmux, includeArchived }: Props) {
+interface Props {
+  sessions: Session[];
+  showProject: boolean;
+  loading?: boolean;
+  includeArchived?: boolean;
+}
+
+export function SessionTable({ sessions, showProject, loading, includeArchived }: Props) {
   const navigate = useNavigate();
   const archiveSession = useApiStore((state) => state.archiveSession);
-  const [pickerFor, setPickerFor] = useState<string | null>(null);
-  const [pickerPos, setPickerPos] = useState<{ top: number; left: number } | null>(null);
   const [archivingSessionIds, setArchivingSessionIds] = useState<Set<string>>(new Set());
   const [locallyArchivedSessionIds, setLocallyArchivedSessionIds] = useState<Set<string>>(new Set());
-  const pickerRef = useRef<HTMLDivElement>(null);
-
-  // Close picker on outside click
-  useEffect(() => {
-    if (!pickerFor) return;
-    const handle = (e: MouseEvent) => {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        setPickerFor(null);
-      }
-    };
-    document.addEventListener('mousedown', handle);
-    return () => document.removeEventListener('mousedown', handle);
-  }, [pickerFor]);
-
-  const handleTmuxSwitch = (e: React.MouseEvent, directory: string) => {
-    e.stopPropagation();
-    if (!tmux) return;
-    const ts = tmux.findSession(directory);
-    if (!ts) return;
-
-    // Local user: fire directly, server defaults to /dev/ttys000
-    if (tmux.isLocal) {
-      tmux.switchSession(ts.name).catch(err => console.error('tmux switch failed', err));
-      return;
-    }
-
-    // Remote user with a single client: fire directly
-    if (tmux.clients.length === 1) {
-      tmux.switchSession(ts.name, tmux.clients[0].tty).catch(err => console.error('tmux switch failed', err));
-      return;
-    }
-
-    // Remote user with multiple clients: show floating picker
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setPickerPos({ top: rect.bottom + 4, left: rect.right });
-    setPickerFor(ts.name);
-  };
-
-  const handleClientSelect = (clientTTY: string) => {
-    if (!tmux || !pickerFor) return;
-    tmux.switchSession(pickerFor, clientTTY).catch(err => console.error('tmux switch failed', err));
-    setPickerFor(null);
-  };
 
   const handleArchiveSession = async (e: React.MouseEvent, session: Session) => {
     e.stopPropagation();
@@ -172,115 +113,60 @@ export function SessionTable({ sessions, showProject, loading, tmux, includeArch
   }
 
   return (
-    <>
-      {pickerFor && tmux && pickerPos && (
-        <div
-          ref={pickerRef}
-          className="tmux-client-popover"
-          style={{ top: pickerPos.top, left: pickerPos.left }}
-        >
-          <div className="tmux-client-picker-header">
-            <span>Select tmux client</span>
-          </div>
-          {tmux.clients.map(c => (
-            <div
-              key={c.tty}
-              className="tmux-client-picker-item"
-              onClick={() => handleClientSelect(c.tty)}
+    <table>
+      <thead>
+        <tr>
+          <th>Session</th>
+          {showProject && <th>Project</th>}
+          <th>Activity</th>
+          <th>Started</th>
+          <th style={{ width: 44 }} />
+        </tr>
+      </thead>
+      <tbody>
+        {visibleSessions.map(s => {
+          const seenLatest = (s.status === 'waiting' || s.status === 'error') && s.seen;
+          const pending = s.pendingPermission || s.pendingQuestion;
+          return (
+            <tr
+              key={s.id}
+              className={s.liveConnection ? '' : 'no-port'}
+              onClick={() => navigate(`/session/${s.id}`)}
             >
-              <span className="tmux-client-tty">{c.tty}</span>
-              <span className="tmux-client-session">{shortPath(c.session)}</span>
-              <span className="tmux-client-size">{c.width}&times;{c.height}</span>
-            </div>
-          ))}
-        </div>
-      )}
-      <table>
-        <thead>
-          <tr>
-            <th>Session</th>
-            {showProject && <th>Project</th>}
-            <th>Activity</th>
-            <th>Started</th>
-            <th style={{ width: 44 }} />
-          </tr>
-        </thead>
-        <tbody>
-          {visibleSessions.map(s => {
-            const hasTmux = tmux?.available && tmux.findSession(s.directory);
-            const seenLatest = (s.status === 'waiting' || s.status === 'error') && s.seen;
-            const pending = s.pendingPermission || s.pendingQuestion;
-            return (
-              <tr
-                key={s.id}
-                className={s.liveConnection ? '' : 'no-port'}
-                onClick={() => navigate(`/session/${s.id}`)}
-              >
-                <td>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <StatusBadge status={s.status} compact seen={seenLatest} pending={pending} />
-                    <span className="session-title">{cleanTitle(s.title) || 'Untitled'}</span>
-                  </div>
-                  <div className="mono">
-                    <PlatformBadge platform={s.platform} variant="plain" />
-                    {' '}
-                    {s.id}
-                    <span className="session-row-actions">
-                      {!showProject && hasTmux && (
-                        <button
-                          className="tmux-switch-btn"
-                          onClick={(e) => handleTmuxSwitch(e, s.directory)}
-                          title={`Switch tmux to ${shortPath(s.directory)}`}
-                        >tmux</button>
-                      )}
-                      {!showProject && (
-                        <button
-                          className="tmux-switch-btn"
-                          onClick={(e) => { e.stopPropagation(); window.location.href = `vscode://file${s.directory}`; }}
-                          title="Open in VS Code"
-                        >&lt;/&gt;</button>
-                      )}
-                    </span>
-                  </div>
-                </td>
-                {showProject && (
-                   <td className="mono">
-                    <ShortPath path={s.directory} />
-                    <GitStatusLine info={s.gitInfo} />
-                    <div className="session-row-actions" style={{ marginTop: 2 }}>
-                      {hasTmux && (
-                        <button
-                          className="tmux-switch-btn"
-                          onClick={(e) => handleTmuxSwitch(e, s.directory)}
-                          title={`Switch tmux to ${shortPath(s.directory)}`}
-                        >tmux</button>
-                      )}
-                      <button
-                        className="tmux-switch-btn"
-                        onClick={(e) => { e.stopPropagation(); window.location.href = `vscode://file${s.directory}`; }}
-                        title="Open in VS Code"
-                      >&lt;/&gt;</button>
-                    </div>
-                  </td>
-                )}
-                <td className="mono">{s.messageCount} msgs &middot; {formatDuration(s.durationMs)}</td>
-                <td><span title={new Date(s.timeCreated).toLocaleString()}>{relativeTime(s.timeCreated)}</span></td>
-                <td className="session-action-cell">
-                  <button
-                    className="session-archive-btn"
-                    onClick={(e) => handleArchiveSession(e, s)}
-                    title="Archive session (reappears on new activity)"
-                    aria-label="Archive session"
-                    disabled={archivingSessionIds.has(s.id)}
-                  >
-                    <ArchiveIcon />
-                  </button>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </>
+              <td>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <StatusBadge status={s.status} compact seen={seenLatest} pending={pending} />
+                  <span className="session-title">{cleanTitle(s.title) || 'Untitled'}</span>
+                </div>
+                <div className="mono">
+                  <PlatformBadge platform={s.platform} variant="plain" />
+                  {' '}
+                  {s.id}
+                </div>
+              </td>
+              {showProject && (
+                 <td className="mono">
+                  <ShortPath path={s.directory} />
+                  <GitStatusLine info={s.gitInfo} />
+                 </td>
+              )}
+              <td className="mono">{s.messageCount} msgs &middot; {formatDuration(s.durationMs)}</td>
+              <td><span title={new Date(s.timeCreated).toLocaleString()}>{relativeTime(s.timeCreated)}</span></td>
+              <td className="session-action-cell">
+                <button
+                  className="session-archive-btn"
+                  onClick={(e) => handleArchiveSession(e, s)}
+                  title="Archive session (reappears on new activity)"
+                  aria-label="Archive session"
+                  disabled={archivingSessionIds.has(s.id)}
+                >
+                  <ArchiveIcon />
+                </button>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }

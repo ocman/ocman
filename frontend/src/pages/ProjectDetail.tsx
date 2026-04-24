@@ -174,7 +174,7 @@ const nextSessions = await getSessions({ dir: directory, since: Date.now() - 12 
           <button type="button" className="vscode-btn" onClick={handleOpenVSCode} title="Open in VS Code (V)">VS Code</button>
         )}
       </h2>
-      <SessionTable sessions={sessions} loading={!sessionsLoaded} tmux={tmux} includeArchived />
+      <SessionTable sessions={sessions} showProject={false} loading={!sessionsLoaded} includeArchived />
     </div>
   );
 }
