@@ -1,4 +1,4 @@
-.PHONY: dev dev-backend dev-frontend dev-prod dev-prod-watch build run clean test test-backend test-frontend lint lint-backend lint-frontend lint-platform-branching
+.PHONY: dev dev-backend dev-frontend dev-prod dev-prod-watch build run clean test test-backend test-frontend test-e2e lint lint-backend lint-frontend lint-platform-branching
 
 # Run both backend (air) and frontend (vite) with live reload
 dev:
@@ -58,7 +58,8 @@ dev-frontend:
 build: build-frontend build-backend
 
 build-frontend:
-	cd frontend && npm ci && npm run build
+	cd frontend && npm ci && STRIP_TESTIDS=1 npm run build
+	./scripts/check-no-testids.sh
 
 build-backend:
 	go build -o ocman .
@@ -77,6 +78,15 @@ test-backend:
 
 test-frontend:
 	cd frontend && npm test
+
+# Run Playwright e2e tests (requires a built frontend: make build-frontend first)
+# Set E2E_NO_WEBSERVER=1 and E2E_BASE_URL=http://localhost:8228 to use a running
+# dev server instead of vite preview.
+test-e2e:
+	cd frontend && npm run test:e2e
+
+test-e2e-ui:
+	cd frontend && npm run test:e2e:ui
 
 # Run all linters and type checks
 lint: lint-backend lint-frontend lint-platform-branching
