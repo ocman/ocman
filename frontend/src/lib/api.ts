@@ -600,7 +600,19 @@ export const api = {
         ...(title ? { title } : {}),
       }),
     });
-    if (!resp.ok) throw new Error(await resp.text());
+    if (!resp.ok) {
+      const body = (await resp.text()).trim();
+      // 503 maps to platforms.ErrPlatformUnreachable on the backend —
+      // the directory is known but no live instance is running. Tag
+      // the error so callers (SessionDetail, CommandPalette) can
+      // trigger the auto-launch-in-tmux flow.
+      if (resp.status === 503) {
+        const err = new Error(body || 'No running platform instance for this directory.');
+        (err as Error & { code?: string }).code = 'unreachable';
+        throw err;
+      }
+      throw new Error(body || `HTTP ${resp.status}`);
+    }
     return resp.json() as Promise<{ id: string }>;
   },
   sendMessage: async (

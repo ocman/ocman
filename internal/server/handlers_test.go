@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -258,6 +259,60 @@ func TestWritePlatformError_MapsUnknownTo502(t *testing.T) {
 	if rr.Code != http.StatusBadGateway {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadGateway)
 	}
+}
+
+// TestWritePlatformError_MapsErrUpstreamRejectedTo422 covers the
+// "platform was reached but rejected the request" path that surfaces
+// errors like OpenCode's `ProviderModelNotFoundError` to the user.
+// The upstream-supplied human message MUST land in the response body
+// so the UI can render it instead of the generic "failed to reach
+// platform instance" banner used for true 502s.
+func TestWritePlatformError_MapsErrUpstreamRejectedTo422(t *testing.T) {
+	t.Run("with message", func(t *testing.T) {
+		rr := httptest.NewRecorder()
+		ue := &platforms.UpstreamError{Status: 400, Message: "Model anthropic/foo not found"}
+		writePlatformError(rr, "sending message", fmt.Errorf("opencode /x: %w", ue))
+		if rr.Code != http.StatusUnprocessableEntity {
+			t.Errorf("status = %d, want %d", rr.Code, http.StatusUnprocessableEntity)
+		}
+		if !strings.Contains(rr.Body.String(), "Model anthropic/foo not found") {
+			t.Errorf("body missing upstream message, got %q", rr.Body.String())
+		}
+	})
+	t.Run("empty message falls back to generic body", func(t *testing.T) {
+		rr := httptest.NewRecorder()
+		ue := &platforms.UpstreamError{Status: 400}
+		writePlatformError(rr, "sending message", ue)
+		if rr.Code != http.StatusUnprocessableEntity {
+			t.Errorf("status = %d, want %d", rr.Code, http.StatusUnprocessableEntity)
+		}
+		if !strings.Contains(rr.Body.String(), "rejected") {
+			t.Errorf("body missing fallback, got %q", rr.Body.String())
+		}
+	})
+}
+
+// TestWritePlatformError_MapsErrPlatformUnreachableTo503 ensures the
+// "no running platform instance" case surfaces as 503 Service
+// Unavailable, which the frontend uses as the trigger to launch
+// opencode in a new tmux window and retry. A wrapped error must also
+// be recognised via errors.Is.
+func TestWritePlatformError_MapsErrPlatformUnreachableTo503(t *testing.T) {
+	t.Run("sentinel", func(t *testing.T) {
+		rr := httptest.NewRecorder()
+		writePlatformError(rr, "creating session", platforms.ErrPlatformUnreachable)
+		if rr.Code != http.StatusServiceUnavailable {
+			t.Errorf("status = %d, want %d", rr.Code, http.StatusServiceUnavailable)
+		}
+	})
+	t.Run("wrapped", func(t *testing.T) {
+		rr := httptest.NewRecorder()
+		wrapped := fmt.Errorf("no running OpenCode instance for /tmp: %w", platforms.ErrPlatformUnreachable)
+		writePlatformError(rr, "creating session", wrapped)
+		if rr.Code != http.StatusServiceUnavailable {
+			t.Errorf("wrapped status = %d, want %d", rr.Code, http.StatusServiceUnavailable)
+		}
+	})
 }
 
 func TestSystemStats(t *testing.T) {

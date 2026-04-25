@@ -6,6 +6,8 @@ import { useApiStore } from '../lib/apiStore';
 import { useUiStore } from '../lib/uiStore';
 import { cleanTitle, relativeTime, shortPath } from '../lib/format';
 import type { Session, Project } from '../lib/api';
+import { useTmux } from '../lib/useTmux';
+import { createSessionWithLaunch } from '../lib/createSessionWithLaunch';
 
 type CommandItem = { kind: 'command'; id: string; label: string; description: string };
 type ScopedItem = { kind: 'scoped'; id: string; label: string; description: string };
@@ -78,7 +80,9 @@ export function CommandPalette() {
   const sessions = useApiStore((s) => s.cachedSessions);
   const projects = useApiStore((s) => s.getProjects);
   const createSession = useApiStore((s) => s.createSession);
+  const launchOpencodeInTmux = useApiStore((s) => s.launchOpencodeInTmux);
   const refreshCachedSessions = useApiStore((s) => s.refreshCachedSessions);
+  const tmux = useTmux();
   const {
     paletteOpen,
     paletteMode,
@@ -227,7 +231,14 @@ export function CommandPalette() {
       navigate(`/session/${item.session.id}`);
     } else if (item.kind === 'project') {
       closePalette();
-      createSession(item.project.directory, undefined, undefined)
+      createSessionWithLaunch(
+        {
+          createSession,
+          launchOpencodeInTmux,
+          tmuxAvailable: tmux.available,
+        },
+        { directory: item.project.directory },
+      )
         .then((res) => {
           if (res.id) navigate(`/session/${res.id}`);
         })

@@ -24,6 +24,7 @@ import { recheckFaviconNotify } from '../lib/useFaviconNotify';
 import { openVSCode } from '../lib/shortcuts';
 import { useShortcut } from '../lib/shortcutRegistry';
 import { hashSession, hashMessagesAndParts } from '../lib/sessionHash';
+import { createSessionWithLaunch, type LaunchStatus } from '../lib/createSessionWithLaunch';
 
 const PAGE_SIZE = 30;
 const RECENT_SESSIONS_LIMIT = 15;
@@ -545,6 +546,7 @@ export function SessionDetail() {
   const [showRenameToast, setShowRenameToast] = useState(false);
   const [showCreateSessionErrorToast, setShowCreateSessionErrorToast] = useState(false);
   const [showDisconnectedToast, setShowDisconnectedToast] = useState(false);
+  const [createLaunchStatus, setCreateLaunchStatus] = useState<LaunchStatus>('idle');
   const getSession = useApiStore((state) => state.getSession);
   const archiveSession = useApiStore((state) => state.archiveSession);
   const getWhisperStatus = useApiStore((state) => state.getWhisperStatus);
@@ -558,6 +560,7 @@ export function SessionDetail() {
   const respondQuestion = useApiStore((state) => state.respondQuestion);
   const rejectQuestion = useApiStore((state) => state.rejectQuestion);
   const createSession = useApiStore((state) => state.createSession);
+  const launchOpencodeInTmux = useApiStore((state) => state.launchOpencodeInTmux);
   const setCachedSession = useApiStore((state) => state.setCachedSession);
   const updateCachedSession = useApiStore((state) => state.updateCachedSession);
   const sidebarWidth = useUiStore((state) => state.sidebarWidth);
@@ -1910,13 +1913,21 @@ export function SessionDetail() {
 
   const handleNewSessionInDirectory = useCallback(async (directory: string, title?: string) => {
     try {
-      const res = await createSession(directory, undefined, title);
+      const res = await createSessionWithLaunch(
+        {
+          createSession,
+          launchOpencodeInTmux,
+          tmuxAvailable: tmux.available,
+          onStatusChange: setCreateLaunchStatus,
+        },
+        { directory, title },
+      );
       if (res.id) navigate(`/session/${res.id}`);
     } catch (e) {
       console.error('Failed to create session', e);
       setShowCreateSessionErrorToast(true);
     }
-  }, [createSession, navigate]);
+  }, [createSession, launchOpencodeInTmux, tmux.available, navigate]);
 
   const handleNewSession = useCallback(async (title?: string) => {
     if (!session) return;
@@ -1960,7 +1971,15 @@ export function SessionDetail() {
       // a usable new session.
       let newId: string | undefined;
       try {
-        const res = await createSession(session.directory, undefined, args.trim() || undefined);
+        const res = await createSessionWithLaunch(
+          {
+            createSession,
+            launchOpencodeInTmux,
+            tmuxAvailable: tmux.available,
+            onStatusChange: setCreateLaunchStatus,
+          },
+          { directory: session.directory, title: args.trim() || undefined },
+        );
         newId = res.id;
       } catch (e) {
         console.error('Failed to create session', e);
@@ -2054,7 +2073,7 @@ export function SessionDetail() {
       setMessages(prev => [...prev, errMsg]);
       setParts(prev => [...prev, errPart]);
     }
-  }, [activeAgent, activeModel, archiveSession, createSession, handleCompact, handleNewSession, navigate, portAvailable, recentSessions, selectedAgent, selectedModel, session]);
+  }, [activeAgent, activeModel, archiveSession, createSession, launchOpencodeInTmux, tmux.available, handleCompact, handleNewSession, navigate, portAvailable, recentSessions, selectedAgent, selectedModel, session]);
 
   const handlePermissionReply = useCallback(async (reply: 'once' | 'always' | 'reject') => {
     if (!pendingPermission || answeringPermission || !portAvailable || !caps.respondPermission || !session) return;
@@ -2959,6 +2978,17 @@ export function SessionDetail() {
       <Toast.Root className="oc-toast-root" open={showRenameToast} onOpenChange={setShowRenameToast} duration={2000}>
         <Toast.Description className="oc-toast-description">
           Session renamed
+        </Toast.Description>
+      </Toast.Root>
+      <Toast.Root
+        className="oc-toast-root"
+        open={createLaunchStatus !== 'idle'}
+        duration={Infinity}
+      >
+        <Toast.Description className="oc-toast-description">
+          {createLaunchStatus === 'launching'
+            ? 'Launching opencode in tmux…'
+            : 'Waiting for opencode to start…'}
         </Toast.Description>
       </Toast.Root>
       <Toast.Root

@@ -79,10 +79,17 @@ func (s *Server) resolvePlatformForSession(w http.ResponseWriter, r *http.Reques
 // writePlatformError maps a Platform error to an appropriate HTTP
 // response. Well-known sentinels map to specific status codes:
 //
-//   - ErrUnsupported -> 501 Not Implemented
-//   - ErrNotFound    -> 404 Not Found
-//   - ErrBusy        -> 409 Conflict (AD-13, Claude Code composer
+//   - ErrUnsupported         -> 501 Not Implemented
+//   - ErrNotFound            -> 404 Not Found
+//   - ErrBusy                -> 409 Conflict (AD-13, Claude Code composer
 //     refusing while session is mid-turn)
+//   - ErrPlatformUnreachable -> 503 Service Unavailable (no live instance
+//     discovered for the session's directory; the frontend uses this
+//     to offer a one-click tmux launch of opencode)
+//   - ErrUpstreamRejected    -> 422 Unprocessable Entity (the platform
+//     was reached but rejected the request, e.g. an unknown model;
+//     the upstream-supplied human message is forwarded as the body
+//     so the UI can show it to the user)
 //
 // Every other error becomes a 502 Bad Gateway (the most likely
 // cause is an unreachable upstream platform).
@@ -100,6 +107,29 @@ func writePlatformError(w http.ResponseWriter, msg string, err error) {
 		// with the current state of the resource" code. The client
 		// should retry once the session reports idle.
 		http.Error(w, "session is currently processing a prompt; try again in a moment", http.StatusConflict)
+		return
+	}
+	if errors.Is(err, platforms.ErrPlatformUnreachable) {
+		// 503 signals "the upstream isn't running right now, try
+		// again later." The frontend recognises this status and
+		// offers to launch opencode via tmux.
+		http.Error(w, "no running platform instance for this location", http.StatusServiceUnavailable)
+		return
+	}
+	if errors.Is(err, platforms.ErrUpstreamRejected) {
+		// 422 = "we reached the platform and it told us no." Pass
+		// the upstream-supplied message straight through so the UI
+		// can render the real reason (e.g. ProviderModelNotFoundError
+		// when the user picks a model the OpenCode instance hasn't
+		// authenticated for). Still log it so server-side debugging
+		// has the wrapped form.
+		log.WithError(err).Warn(msg)
+		var ue *platforms.UpstreamError
+		body := "the platform rejected the request"
+		if errors.As(err, &ue) && ue.Message != "" {
+			body = ue.Message
+		}
+		http.Error(w, body, http.StatusUnprocessableEntity)
 		return
 	}
 	log.WithError(err).Error(msg)

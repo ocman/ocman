@@ -36,7 +36,7 @@ func (a *Adapter) resolvePort(sessionID string) (port string, session *db.Sessio
 	}
 	port = discoverOpenCodePort(s.Directory)
 	if port == "" {
-		return "", s, errors.New("no running OpenCode instance for this session")
+		return "", s, fmt.Errorf("no running OpenCode instance for session %s: %w", sessionID, platforms.ErrPlatformUnreachable)
 	}
 	return port, s, nil
 }
@@ -304,7 +304,7 @@ func (a *Adapter) Compact(ctx context.Context, req platforms.CompactRequest) err
 func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 	port := discoverOpenCodePort(req.Directory)
 	if port == "" {
-		return nil, errors.New("no running OpenCode instance for this directory")
+		return nil, fmt.Errorf("no running OpenCode instance for directory %s: %w", req.Directory, platforms.ErrPlatformUnreachable)
 	}
 
 	apiURL := fmt.Sprintf("http://127.0.0.1:%s/session", port)
@@ -429,6 +429,12 @@ func patchJSON(ctx context.Context, port, path string, payload []byte) error {
 
 // sendJSON performs an HTTP request with a JSON body. Returns nil on 2xx,
 // an error describing the upstream status otherwise.
+//
+// On a 4xx response the returned error wraps a *platforms.UpstreamError
+// so callers can pass the upstream-supplied human message through to
+// the UI (errors.Is(err, platforms.ErrUpstreamRejected) will be true).
+// 5xx and transport errors fall through as plain wrapped errors and
+// land in the default "platform unreachable" bucket on the way out.
 func sendJSON(ctx context.Context, method, port, path string, payload []byte) error {
 	apiURL := fmt.Sprintf("http://127.0.0.1:%s%s", port, path)
 	req, err := http.NewRequestWithContext(ctx, method, apiURL, strings.NewReader(string(payload)))
@@ -443,12 +449,71 @@ func sendJSON(ctx context.Context, method, port, path string, payload []byte) er
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+			ue := &platforms.UpstreamError{
+				Status:  resp.StatusCode,
+				Message: extractOpenCodeErrorMessage(body),
+			}
+			return fmt.Errorf("opencode %s: %w", path, ue)
+		}
 		if len(body) == 0 {
 			return fmt.Errorf("opencode %s: upstream HTTP %d", path, resp.StatusCode)
 		}
 		return fmt.Errorf("opencode %s: upstream HTTP %d: %s", path, resp.StatusCode, string(body))
 	}
 	return nil
+}
+
+// extractOpenCodeErrorMessage best-effort parses an OpenCode error
+// response body into a single human-readable string suitable for the
+// UI. OpenCode's API errors follow the Hono `NamedError` shape:
+//
+//	{"data":{"providerID":"...","modelID":"..."},"name":"ProviderModelNotFoundError"}
+//
+// We prefer `data.message` if present (it's already a complete
+// sentence), then fall back to combining `name` with any structured
+// `data` fields, and finally to the raw body. Returns "" when the
+// body is empty so callers can apply their own fallback.
+func extractOpenCodeErrorMessage(body []byte) string {
+	trimmed := strings.TrimSpace(string(body))
+	if trimmed == "" {
+		return ""
+	}
+	var parsed struct {
+		Name string                 `json:"name"`
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil || parsed.Name == "" {
+		return trimmed
+	}
+	if msg, ok := parsed.Data["message"].(string); ok && msg != "" {
+		return msg
+	}
+	// Build "<Name>: k=v, k=v" from the structured data so callers
+	// see something useful for errors that don't carry a message
+	// (e.g. ProviderModelNotFoundError → "providerID=anthropic, modelID=claude-bogus").
+	if len(parsed.Data) == 0 {
+		return parsed.Name
+	}
+	keys := make([]string, 0, len(parsed.Data))
+	for k := range parsed.Data {
+		keys = append(keys, k)
+	}
+	// Stable order without importing sort: the data maps in practice
+	// have <=3 keys; a tiny bubble keeps the test deterministic and
+	// avoids the extra import.
+	for i := 0; i < len(keys); i++ {
+		for j := i + 1; j < len(keys); j++ {
+			if keys[j] < keys[i] {
+				keys[i], keys[j] = keys[j], keys[i]
+			}
+		}
+	}
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%v", k, parsed.Data[k]))
+	}
+	return fmt.Sprintf("%s: %s", parsed.Name, strings.Join(parts, ", "))
 }
 
 // parseOpenCodeModelRefInternal is the non-exported version used by
