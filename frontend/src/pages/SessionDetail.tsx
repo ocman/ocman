@@ -791,6 +791,40 @@ export function SessionDetail() {
     Object.values(archiveTimeoutsRef.current).forEach(timeoutId => window.clearTimeout(timeoutId));
   }, []);
 
+  // Re-fetch the session-scoped model list. Used on session entry, when
+  // OpenCode becomes reachable, and whenever the user opens the model
+  // picker (so newly-configured providers / models show up without a page
+  // reload). The optional AbortSignal lets callers tied to a useEffect
+  // tear down a stale request on cleanup.
+  const refreshModels = useCallback((signal?: AbortSignal) => {
+    if (!id) return;
+    api.sessionModels(id).then((resp) => {
+      if (signal?.aborted) return;
+      setModelEntries(resp.models || []);
+      setModelOptions(
+        Array.from(new Set((resp.models || []).map((m) => formatModelRef(m.provider, m.model)))),
+      );
+    }).catch(() => {
+      if (signal?.aborted) return;
+      // Fallback: historical-only list. Only seed empties when we don't
+      // already have data so a transient picker-open refresh failure
+      // doesn't wipe out the catalog the user is currently looking at.
+      getModels()
+        .then((models) => {
+          if (signal?.aborted) return;
+          const ordered = [...models]
+            .sort((a, b) => b.count - a.count)
+            .map((m) => formatModelRef(m.provider, m.model));
+          setModelEntries((prev) => prev.length > 0 ? prev : models.map((m) => ({
+            provider: m.provider,
+            model: m.model,
+          })));
+          setModelOptions((prev) => prev.length > 0 ? prev : Array.from(new Set(ordered)));
+        })
+        .catch(() => { /* keep existing data on failure */ });
+    });
+  }, [id, getModels]);
+
   // Reset on session change — abort any in-flight requests from the previous session
   useEffect(() => {
     // Abort previous session's pending requests
@@ -862,41 +896,14 @@ export function SessionDetail() {
     // from /config/providers). Falls back to the plain global usage list when
     // the new endpoint fails so the composer still works on older backends.
     if (id) {
-      api.sessionModels(id).then((resp) => {
-        if (signal.aborted) return;
-        setModelEntries(resp.models || []);
-        setModelOptions(
-          Array.from(new Set((resp.models || []).map((m) => formatModelRef(m.provider, m.model)))),
-        );
-      }).catch(() => {
-        if (signal.aborted) return;
-        // Fallback: historical-only list.
-        getModels()
-          .then((models) => {
-            if (signal.aborted) return;
-            const ordered = [...models]
-              .sort((a, b) => b.count - a.count)
-              .map((m) => formatModelRef(m.provider, m.model));
-            setModelOptions(Array.from(new Set(ordered)));
-            // Fallback shape: no recency info, but the picker will still
-            // render a sensible provider-grouped list.
-            setModelEntries(models.map((m) => ({
-              provider: m.provider,
-              model: m.model,
-            })));
-          })
-          .catch(() => {
-            setModelOptions([]);
-            setModelEntries([]);
-          });
-      });
+      refreshModels(signal);
     }
 
     return () => {
       controller.abort();
       window.cancelAnimationFrame(rafId);
     };
-  }, [getModels, getWhisperStatus, id, load]);
+  }, [getWhisperStatus, id, load, refreshModels]);
 
   // Keep `portAvailable` in sync with the session's live-connection flag
   // (populated by the platform adapter). SSE onopen still flips it to
@@ -954,15 +961,9 @@ export function SessionDetail() {
   useEffect(() => {
     if (!id || !portAvailable) return;
     const controller = new AbortController();
-    api.sessionModels(id).then((resp) => {
-      if (controller.signal.aborted) return;
-      setModelEntries(resp.models || []);
-      setModelOptions(
-        Array.from(new Set((resp.models || []).map((m) => formatModelRef(m.provider, m.model)))),
-      );
-    }).catch(() => { /* keep existing data on failure */ });
+    refreshModels(controller.signal);
     return () => controller.abort();
-  }, [id, portAvailable]);
+  }, [id, portAvailable, refreshModels]);
 
   // Toggle a favorite model. Optimistic: the star flips immediately in
   // the picker, then we re-fetch so the authoritative sort (favorites
@@ -2862,6 +2863,7 @@ export function SessionDetail() {
                   selectedModel={selectedModel}
                   onModelChange={handleModelChange}
                   onToggleFavorite={handleToggleFavorite}
+                  onRefreshModels={refreshModels}
                   activeAgent={activeAgent}
                   selectedAgent={selectedAgent}
                   onAgentChange={setSelectedAgent}

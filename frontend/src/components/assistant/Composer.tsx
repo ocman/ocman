@@ -149,6 +149,7 @@ function ComposerImpl({
   selectedModel,
   onModelChange,
   onToggleFavorite,
+  onRefreshModels,
   activeAgent,
   selectedAgent,
   onAgentChange,
@@ -188,6 +189,15 @@ function ComposerImpl({
    * and refresh modelEntries; the picker stays dumb.
    */
   onToggleFavorite?: (provider: string, model: string, nextFavorite: boolean) => void;
+  /**
+   * Fire-and-forget callback invoked every time the user opens the model
+   * picker (slash command, palette, model badge button, or `/model` event).
+   * Lets the parent re-fetch the session-scoped model catalog so newly
+   * configured providers / models surface without a page reload. The picker
+   * opens with whatever data is currently in `modelEntries`; the refresh
+   * flows in via the next `modelEntries` prop update.
+   */
+  onRefreshModels?: () => void;
   activeAgent?: string;
   selectedAgent?: string;
   onAgentChange?: (agent: string) => void;
@@ -286,9 +296,11 @@ function ComposerImpl({
   const modelsRef = useRef<string[] | undefined>(models);
   const onModelChangeRef = useRef(onModelChange);
   const agentsRef = useRef<AgentInfo[] | undefined>(agents);
+  const onRefreshModelsRef = useRef(onRefreshModels);
   useEffect(() => { modelsRef.current = models; }, [models]);
   useEffect(() => { onModelChangeRef.current = onModelChange; }, [onModelChange]);
   useEffect(() => { agentsRef.current = agents; }, [agents]);
+  useEffect(() => { onRefreshModelsRef.current = onRefreshModels; }, [onRefreshModels]);
   const slashMenuRef = useRef<HTMLDivElement>(null);
   const showSlashMenuRef = useRef(false);
   const slashIndexRef = useRef(0);
@@ -360,6 +372,10 @@ function ComposerImpl({
       onModelChangeRef.current?.(resolved);
       return;
     }
+    // Fire-and-forget: pull the latest provider catalog. The picker opens
+    // with current data; the refresh flows in via a `modelEntries` prop
+    // update on the next render.
+    onRefreshModelsRef.current?.();
     setModelPickerQuery(arg);
     setModelPickerOpen(true);
   }, [resolveModelArg]);
@@ -1119,6 +1135,7 @@ function ComposerImpl({
                     disabled={disabled}
                     onClick={() => {
                       if (disabled) return;
+                      onRefreshModelsRef.current?.();
                       setModelPickerQuery('');
                       setModelPickerOpen(true);
                     }}
