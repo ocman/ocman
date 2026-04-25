@@ -41,7 +41,9 @@ export function ProjectDetail() {
 
     try {
       const nextSessions = await getSessions({ dir: directory });
-      setSessions(nextSessions);
+      // Coerce a nil-slice JSON null into [] so SessionTable / its
+      // visibility filter never see null.
+      setSessions(nextSessions ?? []);
       setSessionsLoaded(true);
     } catch {
       // error tracked by useApiRequest
@@ -60,7 +62,8 @@ export function ProjectDetail() {
       try {
 const nextSessions = await getSessions({ dir: directory, since: Date.now() - 12 * 60 * 60 * 1000 });
         if (cancelled) return;
-        setSessions(nextSessions);
+        // See above: guard against JSON-null from /api/sessions.
+        setSessions(nextSessions ?? []);
         setSessionsLoaded(true);
       } catch {
         // error tracked by useApiRequest

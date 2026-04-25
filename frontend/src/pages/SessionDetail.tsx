@@ -1021,7 +1021,9 @@ export function SessionDetail() {
   const loadRecentSessions = useCallback(async (signal?: AbortSignal) => {
     try {
       const since = Date.now() - SIDEBAR_RECENT_HOURS * 60 * 60 * 1000;
-      const result = await getSessions({ since, limit: RECENT_SESSIONS_LIMIT + 5 }, signal);
+      // /api/sessions can serialize a Go nil slice as JSON `null`; coerce
+      // here so .find() / filterVisibleSessions never see null.
+      const result = (await getSessions({ since, limit: RECENT_SESSIONS_LIMIT + 5 }, signal)) ?? [];
       if (signal?.aborted) return;
       const visible = (showArchivedRecentRef.current ? result : filterVisibleSessions(result)).slice(0, RECENT_SESSIONS_LIMIT);
       const current = result.find(s => s.id === id);

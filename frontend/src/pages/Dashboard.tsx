@@ -100,7 +100,10 @@ export function DashboardLayout() {
     try {
       const since = timeRange > 0 ? Date.now() - timeRange * 60 * 60 * 1000 : Date.now() - 30 * 24 * 60 * 60 * 1000;
       const result = await getSessions({ since });
-      setSessions(result);
+      // /api/sessions sometimes serializes a Go nil slice as JSON `null`,
+      // which would crash filterVisibleSessions downstream. Coerce here
+      // so React state always holds an array.
+      setSessions(result ?? []);
       setSessionsLoaded(true);
     } catch {
       // error tracked by useApiRequest
