@@ -27,11 +27,37 @@ function truncate(text: string | undefined | null, max: number): string {
   return text.slice(0, max) + '\n... (' + text.length + ' chars total)';
 }
 
+/**
+ * Compute a path relative to the session's project directory.
+ *
+ * When the file lives under `projectDir`, returns the path with the
+ * project prefix stripped (so reads display as `internal/db/foo.go`
+ * instead of just `foo.go`). For files outside the project, or when
+ * `projectDir` is empty, returns just the basename — keeping the line
+ * short for unrelated paths like `/etc/hosts` or `~/.zshrc`.
+ */
+function relativizePath(absPath: string, projectDir: string): string {
+  if (!absPath) return absPath;
+  if (projectDir) {
+    // Normalize the project directory by stripping a single trailing
+    // slash, then check if absPath sits under it. Use `${dir}/` for the
+    // prefix check so `/foo/bar` doesn't accidentally match `/foo/barn`.
+    const dir = projectDir.replace(/\/+$/, '');
+    if (absPath === dir) return '.';
+    const prefix = dir + '/';
+    if (absPath.startsWith(prefix)) return absPath.slice(prefix.length);
+  }
+  // Fall back to the basename when the file isn't under the project root
+  // (or no project root is known).
+  return absPath.split('/').pop() || absPath;
+}
+
 function convertMessages(
   messages: Message[],
   parts: Part[],
   pendingAgent?: string,
   taskLiveOutput?: Record<string, string>,
+  projectDirectory?: string,
 ): ThreadMessageLike[] {
   const partsByMsg: Record<string, Part[]> = {};
   parts.forEach((p) => {
@@ -165,8 +191,12 @@ function convertMessages(
               }
             } else if (isRead) {
               // Render reads as a muted inline line, not a collapsible block.
+              // Paths are shown relative to the session's project directory
+              // when possible, so the reader can locate the file in their
+              // checkout. For files outside the project (or when the root is
+              // unknown) fall back to the basename.
               const readTarget = inp.filePath || argsText || title || 'file';
-              const fileName = readTarget.split('/').pop() || readTarget;
+              const displayPath = relativizePath(readTarget, projectDirectory || '');
               const params: string[] = [];
               if (inp.offset) params.push(`offset=${inp.offset}`);
               if (inp.limit) params.push(`limit=${inp.limit}`);
@@ -175,7 +205,7 @@ function convertMessages(
                 type: 'tool-call' as const,
                 toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
                 toolName: '__read__',
-                argsText: `Read ${fileName}${suffix}`,
+                argsText: `Read ${displayPath}${suffix}`,
                 result: undefined,
               });
               break;
@@ -497,6 +527,10 @@ interface Props {
   agents?: AgentInfo[];
   // Live stdout from running task sessions. Maps taskId -> last 10 lines of output.
   taskLiveOutput?: Record<string, string>;
+  // Absolute path of the session's working directory. Used to display
+  // file paths in muted read lines as project-relative instead of just
+  // basenames, so the reader can locate the file in their checkout.
+  projectDirectory?: string;
   children: React.ReactNode;
 }
 
@@ -523,13 +557,14 @@ export function OcmanRuntimeProvider({
   pendingAgent,
   agents,
   taskLiveOutput,
+  projectDirectory,
   children,
 }: Props) {
   const agentList = useMemo(() => agents ?? [], [agents]);
   const sendMessage = useApiStore((state) => state.sendMessage);
   const converted = useMemo(
-    () => convertMessages(messages, parts, pendingAgent, taskLiveOutput),
-    [messages, parts, pendingAgent, taskLiveOutput],
+    () => convertMessages(messages, parts, pendingAgent, taskLiveOutput, projectDirectory),
+    [messages, parts, pendingAgent, taskLiveOutput, projectDirectory],
   );
 
   const isRunning = useMemo(() => computeIsRunning(messages), [messages]);
