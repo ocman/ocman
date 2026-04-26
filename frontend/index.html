@@ -5,6 +5,12 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <!--
+      PWA manifest. Purely additive: browsers that don't support PWA
+      install (Safari desktop, Firefox) simply ignore it, and ocman
+      keeps working as a normal web app in any tab.
+    -->
+    <link rel="manifest" href="/manifest.webmanifest" />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content, viewport-fit=cover"

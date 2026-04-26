@@ -23,6 +23,7 @@ import { SessionTable } from '../components/SessionTable';
 import { useApiRequest } from '../lib/apiStore';
 import { useUiStore } from '../lib/uiStore';
 import { useAuthStore } from '../lib/authStore';
+import { usePwaInstall } from '../lib/usePwaInstall';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, PointElement, LineElement, Tooltip, Legend);
 
@@ -1165,6 +1166,14 @@ export function SettingsTab() {
   const setBellEnabled = useUiStore((s) => s.setBellEnabled);
   const authRequired = useAuthStore((s) => s.authRequired);
   const logout = useAuthStore((s) => s.logout);
+  const { canInstall, installed, promptInstall } = usePwaInstall();
+
+  // The "App" section only renders when there's something actionable
+  // to show: an install button (Chromium, not yet installed) or an
+  // "already installed" confirmation. On Safari/Firefox or before the
+  // browser has decided the page is installable the section is hidden
+  // entirely, keeping the settings page tidy.
+  const showAppSection = canInstall || installed;
 
   return (
     <div className="settings-page">
@@ -1188,6 +1197,30 @@ export function SettingsTab() {
           </label>
         </div>
       </div>
+
+      {showAppSection && (
+        <div className="settings-section">
+          <h2 className="settings-section-title">App</h2>
+          <div className="settings-row">
+            <div className="settings-row-info">
+              <div className="settings-row-label">Install ocman</div>
+              <div className="settings-row-desc">
+                {installed
+                  ? 'ocman is installed as an app on this device. Launch it from your dock or app launcher to use it in its own window.'
+                  : 'Install ocman as a standalone app with its own window and dock icon. The web version keeps working in any browser tab.'}
+              </div>
+            </div>
+            <button
+              type="button"
+              className="vscode-btn"
+              disabled={installed || !canInstall}
+              onClick={() => { void promptInstall(); }}
+            >
+              {installed ? 'Installed' : 'Install'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {authRequired && (
         <div className="settings-section">

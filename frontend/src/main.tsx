@@ -9,6 +9,7 @@ import './tokens.css'
 import App from './App'
 import { installRemoteLogHandlers } from './lib/remoteLog'
 import { installAuthIntegration } from './lib/authStore'
+import { registerServiceWorker } from './lib/registerServiceWorker'
 
 // Install global error -> /api/debug/log handlers before the app boots, so
 // any render-time crash is captured on the server log too.
@@ -18,6 +19,11 @@ installRemoteLogHandlers()
 // the client into the lockscreen. Must run before the first request
 // — App's effect-based bootstrap fires the first one.
 installAuthIntegration()
+
+// Register the PWA service worker (production builds only). Enables
+// the browser's install affordance + our in-app Install button.
+// No-op in dev mode and on browsers without SW support.
+registerServiceWorker()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
