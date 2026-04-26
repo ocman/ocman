@@ -1169,6 +1169,7 @@ export function SessionDetail() {
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let cancelled = false;
     let hasReceivedContentEvent = false; // tracks whether any content event arrived before reconciliation completes
+    let hasConnectedOnce = false; // distinguishes the first onopen from reconnects
 
     // Immediately fetch the latest content from the API.
     const loadNow = () => {
@@ -1292,6 +1293,16 @@ export function SessionDetail() {
           const signal = abortControllerRef.current?.signal;
           load(signal);
         }, 500);
+        // Reconnect reconciliation: on every reconnect (not the first
+        // connection), refetch authoritative session state. SSE is live-only
+        // — events emitted while the stream was disconnected are lost, so
+        // without this the UI can stay stuck on a stale `busy`/`waiting`
+        // status after a turn finished during the gap.
+        if (hasConnectedOnce) {
+          const signal = abortControllerRef.current?.signal;
+          load(signal);
+        }
+        hasConnectedOnce = true;
       };
       evtSource.onmessage = (evt) => {
         const raw = evt.data || '';
@@ -2839,6 +2850,7 @@ export function SessionDetail() {
             pendingAgent={selectedAgent || activeAgent || undefined}
             agents={agents}
             taskLiveOutput={taskLiveOutput}
+            projectDirectory={session.directory}
           >
             <AssistantThread
               hasMore={hasMore}
