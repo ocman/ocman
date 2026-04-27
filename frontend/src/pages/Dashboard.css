@@ -90,7 +90,7 @@
   white-space: nowrap;
   flex-shrink: 0;
 }
-.nav-tab:hover { color: var(--text); }
+.nav-tab:hover { color: var(--text); text-decoration: none; }
 .nav-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
 /* Time range selector */
