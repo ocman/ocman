@@ -1,0 +1,121 @@
+/* RightPanel.css — layout for the right-hand changes panel.
+ *
+ * The panel itself reuses .oc-changes-sidebar from
+ * SessionChangesSidebar.css for the outer width / collapsed strip.
+ * This file adds the tab switcher (single mode), the split layout,
+ * and per-pane headers.
+ */
+
+/* --- Single mode tab switcher --- */
+
+.oc-right-panel-tabs {
+  /* Override the existing .oc-changes-sidebar-header alignment so
+   * the tab buttons hug the left and the actions hug the right. */
+  justify-content: space-between;
+}
+
+.oc-right-panel-tab-buttons {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.oc-right-panel-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: var(--overlay0);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.oc-right-panel-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.oc-right-panel-tab.active {
+  background: var(--bg-active, var(--bg-hover));
+  color: var(--accent);
+}
+
+.oc-right-panel-actions {
+  display: inline-flex;
+  gap: 2px;
+}
+
+/* --- Split mode --- */
+
+/* The outer aside stays a row (content | strip); the column-flow for
+ * the two stacked panes lives inside .oc-changes-sidebar-content. */
+.oc-changes-sidebar.oc-right-panel-split .oc-changes-sidebar-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.oc-right-panel-pane {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.oc-right-panel-pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-hover);
+  flex-shrink: 0;
+}
+
+.oc-right-panel-pane-header.divider {
+  /* The second pane's header sits between the two panes — give it a
+   * top border too so the split is visually obvious. */
+  border-top: 2px solid var(--border);
+}
+
+.oc-right-panel-pane-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+/* "N files +A -D" summary that sits between the title and the action
+ * buttons in the pane header. The space between is flexible so the
+ * summary hugs the right edge when there's room. */
+.oc-right-panel-pane-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  color: var(--overlay0);
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.oc-pane-summary-files {
+  white-space: nowrap;
+}
+
+.oc-right-panel-pane-summary .oc-changes-add { color: var(--accent2); }
+.oc-right-panel-pane-summary .oc-changes-del { color: var(--danger); }
+
+.oc-right-panel-pane-actions {
+  display: inline-flex;
+  gap: 2px;
+  flex-shrink: 0;
+}

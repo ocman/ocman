@@ -12,8 +12,10 @@ import type {
   SessionDetail,
   Stats,
   SystemStats,
+  SessionChanges,
   TmuxClient,
   TmuxSession,
+  WorkingTreeDiff,
 } from './api';
 
 type RequestStatus = {
@@ -51,6 +53,8 @@ type ApiStore = {
   getSessions: (params?: { dir?: string; since?: number; limit?: number }, signal?: AbortSignal) => Promise<Session[]>;
   refreshCachedSessions: (signal?: AbortSignal) => Promise<Session[]>;
   getSession: (id: string, limit?: number, offset?: number, signal?: AbortSignal) => Promise<SessionDetail>;
+  getSessionChanges: (id: string, signal?: AbortSignal) => Promise<SessionChanges>;
+  getGitDiff: (dir: string, opts?: { fresh?: boolean }, signal?: AbortSignal) => Promise<WorkingTreeDiff>;
   archiveSession: (platform: string, sessionId: string, timeUpdated: number, archived?: boolean) => Promise<{ ok: boolean }>;
   markSessionSeen: (platform: string, sessionId: string, timeUpdated: number) => Promise<{ ok: boolean }>;
   getActivity: () => Promise<ActivityDay[]>;
@@ -168,6 +172,8 @@ export const useApiStore = create<ApiStore>((set, get) => ({
     });
   },
   getSession: (id, limit = 50, offset = 0, signal) => get().runRequest(`session:get:${id}`, () => api.session(id, limit, offset, signal)),
+  getSessionChanges: (id, signal) => get().runRequest(`session:changes:${id}`, () => api.sessionChanges(id, signal)),
+  getGitDiff: (dir, opts, signal) => get().runRequest(`git:diff:${dir}`, () => api.gitDiff(dir, opts, signal)),
   archiveSession: (platform, sessionId, timeUpdated, archived = true) => get().runRequest(`session:archive:${sessionId}`, () => api.archiveSession(platform, sessionId, timeUpdated, archived)),
   markSessionSeen: (platform, sessionId, timeUpdated) => get().runRequest(`session:seen:${sessionId}`, () => api.markSessionSeen(platform, sessionId, timeUpdated)),
   getActivity: () => get().runRequest('activity:get', () => api.activity()),

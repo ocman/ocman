@@ -818,6 +818,47 @@ func (s *Server) handleSessionQuestions(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, entries)
 }
 
+// handleSessionChanges aggregates every file-touching tool call in a
+// session into a per-file changes summary. Adapters that don't support
+// the operation (Claude Code) are surfaced as a Supported=false payload
+// rather than an HTTP error so the frontend has a single shape to
+// render. See spec/session-changes-sidebar/architecture.md AD-2.
+func (s *Server) handleSessionChanges(w http.ResponseWriter, r *http.Request) {
+	sessionID, _, ok := sessionSubPath(r.URL.Path, "/api/session/")
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	adapter := s.resolvePlatformForSession(w, r, sessionID)
+	if adapter == nil {
+		return
+	}
+	changes, err := adapter.SessionChanges(r.Context(), sessionID)
+	if err != nil {
+		if errors.Is(err, platforms.ErrUnsupported) {
+			writeJSON(w, &platforms.SessionChanges{
+				SessionID: sessionID,
+				Supported: false,
+				Files:     []platforms.FileChange{},
+			})
+			return
+		}
+		writePlatformError(w, "fetching session changes", err)
+		return
+	}
+	if changes == nil {
+		changes = &platforms.SessionChanges{
+			SessionID: sessionID,
+			Supported: false,
+			Files:     []platforms.FileChange{},
+		}
+	}
+	if changes.Files == nil {
+		changes.Files = []platforms.FileChange{}
+	}
+	writeJSON(w, changes)
+}
+
 // --- Session-scoped mutating endpoints ---
 
 func (s *Server) handleSessionMessage(w http.ResponseWriter, r *http.Request) {
@@ -1141,6 +1182,7 @@ func (s *Server) handleSessionsRoot(w http.ResponseWriter, r *http.Request) {
 //	/api/session/{id}/agents           GET      -> handleSessionAgents
 //	/api/session/{id}/commands         GET      -> handleSessionCommands
 //	/api/session/{id}/models           GET      -> handleSessionModels
+//	/api/session/{id}/changes          GET      -> handleSessionChanges
 //	/api/session/{id}/permissions      GET      -> handleSessionPermissions
 //	/api/session/{id}/permissions/{pid} POST    -> handleSessionPermission
 //	/api/session/{id}/questions        GET      -> handleSessionQuestions
@@ -1201,6 +1243,9 @@ func (s *Server) dispatchSessionSubpath(w http.ResponseWriter, r *http.Request) 
 			return
 		case "models":
 			s.handleSessionModels(w, r)
+			return
+		case "changes":
+			s.handleSessionChanges(w, r)
 			return
 		case "permissions":
 			// GET /api/session/{id}/permissions (no pid)

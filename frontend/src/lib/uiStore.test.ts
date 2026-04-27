@@ -1,0 +1,131 @@
+import { beforeEach, describe, expect, it } from 'vitest';
+import {
+  CHANGES_SIDEBAR_DEFAULT_WIDTH,
+  CHANGES_SIDEBAR_MAX_WIDTH,
+  CHANGES_SIDEBAR_MIN_WIDTH,
+  SIDEBAR_DEFAULT_WIDTH,
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+  useUiStore,
+} from './uiStore';
+
+// Capture defaults so we can restore them between tests; zustand stores
+// are module-level singletons, so test isolation is our responsibility.
+const initial = useUiStore.getState();
+
+describe('uiStore sidebar width clamping', () => {
+  beforeEach(() => {
+    useUiStore.setState({
+      sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
+      changesSidebarWidth: CHANGES_SIDEBAR_DEFAULT_WIDTH,
+    });
+  });
+
+  it('left sidebar clamps below the minimum', () => {
+    initial.setSidebarWidth(50);
+    expect(useUiStore.getState().sidebarWidth).toBe(SIDEBAR_MIN_WIDTH);
+  });
+
+  it('left sidebar clamps above the maximum', () => {
+    initial.setSidebarWidth(99999);
+    expect(useUiStore.getState().sidebarWidth).toBe(SIDEBAR_MAX_WIDTH);
+  });
+
+  it('left sidebar accepts in-range widths and rounds them', () => {
+    initial.setSidebarWidth(312.7);
+    expect(useUiStore.getState().sidebarWidth).toBe(313);
+  });
+
+  it('left sidebar falls back to default for non-finite input', () => {
+    initial.setSidebarWidth(Number.NaN);
+    expect(useUiStore.getState().sidebarWidth).toBe(SIDEBAR_DEFAULT_WIDTH);
+  });
+
+  it('changes sidebar clamps below the minimum', () => {
+    initial.setChangesSidebarWidth(10);
+    expect(useUiStore.getState().changesSidebarWidth).toBe(CHANGES_SIDEBAR_MIN_WIDTH);
+  });
+
+  it('changes sidebar clamps above the maximum', () => {
+    initial.setChangesSidebarWidth(99999);
+    expect(useUiStore.getState().changesSidebarWidth).toBe(CHANGES_SIDEBAR_MAX_WIDTH);
+  });
+
+  it('changes sidebar accepts in-range widths and rounds them', () => {
+    initial.setChangesSidebarWidth(517.4);
+    expect(useUiStore.getState().changesSidebarWidth).toBe(517);
+  });
+
+  it('changes sidebar falls back to default for non-finite input', () => {
+    initial.setChangesSidebarWidth(Number.POSITIVE_INFINITY);
+    expect(useUiStore.getState().changesSidebarWidth).toBe(CHANGES_SIDEBAR_DEFAULT_WIDTH);
+  });
+
+  it('exposes a sane default range for the changes sidebar', () => {
+    expect(CHANGES_SIDEBAR_MIN_WIDTH).toBeLessThan(CHANGES_SIDEBAR_DEFAULT_WIDTH);
+    expect(CHANGES_SIDEBAR_DEFAULT_WIDTH).toBeLessThan(CHANGES_SIDEBAR_MAX_WIDTH);
+  });
+});
+
+// The right-panel open-tabs reducer is the heart of the show/split/
+// hide UX: clicking a strip icon either toggles a tab in or out, and
+// closing the last open tab collapses the whole panel. These tests
+// pin that contract directly against the store actions.
+describe('uiStore changesSidebar tab management', () => {
+  beforeEach(() => {
+    useUiStore.setState({
+      changesSidebarOpenTabs: ['session'],
+      changesSidebarTabSizes: {},
+    });
+  });
+
+  it('opens a closed tab (creates a split)', () => {
+    initial.toggleChangesSidebarTab('working-tree');
+    expect(useUiStore.getState().changesSidebarOpenTabs).toEqual([
+      'session',
+      'working-tree',
+    ]);
+  });
+
+  it('closes an open tab (collapses to one or zero)', () => {
+    useUiStore.setState({
+      changesSidebarOpenTabs: ['session', 'working-tree'],
+    });
+    initial.toggleChangesSidebarTab('session');
+    expect(useUiStore.getState().changesSidebarOpenTabs).toEqual(['working-tree']);
+  });
+
+  it('toggling the only open tab closes the panel', () => {
+    initial.toggleChangesSidebarTab('session');
+    expect(useUiStore.getState().changesSidebarOpenTabs).toEqual([]);
+  });
+
+  it('closing a tab clears any user-set sizes (so survivors get an even share)', () => {
+    useUiStore.setState({
+      changesSidebarOpenTabs: ['session', 'working-tree'],
+      changesSidebarTabSizes: { session: 0.7, 'working-tree': 0.3 },
+    });
+    initial.closeChangesSidebarTab('session');
+    expect(useUiStore.getState().changesSidebarTabSizes).toEqual({});
+  });
+
+  it('setChangesSidebarOpenTabs replaces wholesale and clears sizes', () => {
+    useUiStore.setState({
+      changesSidebarTabSizes: { session: 0.5, 'working-tree': 0.5 },
+    });
+    initial.setChangesSidebarOpenTabs(['working-tree']);
+    expect(useUiStore.getState().changesSidebarOpenTabs).toEqual(['working-tree']);
+    expect(useUiStore.getState().changesSidebarTabSizes).toEqual({});
+  });
+
+  it('setChangesSidebarTabSize updates a single tab without touching the others', () => {
+    useUiStore.setState({
+      changesSidebarTabSizes: { session: 0.5, 'working-tree': 0.5 },
+    });
+    initial.setChangesSidebarTabSize('session', 0.7);
+    expect(useUiStore.getState().changesSidebarTabSizes).toEqual({
+      session: 0.7,
+      'working-tree': 0.5,
+    });
+  });
+});

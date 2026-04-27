@@ -28,6 +28,8 @@ type fakePlatform struct {
 	inactiveErr  error
 	liveStatus   *platforms.LiveState
 	sessionsHook func(ctx context.Context, dir string, since int64) ([]db.Session, error)
+	changes      *platforms.SessionChanges
+	changesErr   error
 }
 
 func (f *fakePlatform) ID() platforms.ID {
@@ -66,6 +68,13 @@ func (f *fakePlatform) Session(context.Context, string, int, int) (*platforms.Se
 
 func (f *fakePlatform) SessionsInactiveBefore(context.Context, int64) ([]db.SessionArchiveCandidate, error) {
 	return f.inactive, f.inactiveErr
+}
+
+func (f *fakePlatform) SessionChanges(context.Context, string) (*platforms.SessionChanges, error) {
+	if f.changes != nil {
+		return f.changes, f.changesErr
+	}
+	return nil, platforms.ErrUnsupported
 }
 
 func (f *fakePlatform) LiveStatus(string) *platforms.LiveState { return f.liveStatus }

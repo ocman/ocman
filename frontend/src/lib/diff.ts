@@ -8,11 +8,24 @@ export function simpleDiff(oldStr: string, newStr: string, startLine = 1): strin
   const m = oldLines.length;
   const n = newLines.length;
 
-  // For small inputs, use full LCS. For large inputs, just show removed/added.
+  // For small inputs, use full LCS. For large inputs, just show
+  // removed/added without trying to align them. The output format
+  // must match the LCS branch below — DiffView's parser expects
+  // each line to look like "<oldLn>  <newLn>  <op> <text>" — so we
+  // produce numbered lines here too.
   if (m + n > 200) {
+    const maxOldW = String(m).length;
+    const maxNewW = String(n).length;
+    const padBlankOld = ' '.repeat(maxOldW);
+    const padBlankNew = ' '.repeat(maxNewW);
+    const padNum = (s: string, w: number) => s.padStart(w, ' ');
     const out: string[] = [];
-    oldLines.forEach(l => out.push(`- ${l}`));
-    newLines.forEach(l => out.push(`+ ${l}`));
+    oldLines.forEach((l, i) => {
+      out.push(`${padNum(String(startLine + i), maxOldW)}  ${padBlankNew}  - ${l}`);
+    });
+    newLines.forEach((l, i) => {
+      out.push(`${padBlankOld}  ${padNum(String(startLine + i), maxNewW)}  + ${l}`);
+    });
     return out.join('\n');
   }
 

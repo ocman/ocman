@@ -130,7 +130,18 @@ func (a *Adapter) Capabilities() platforms.Capabilities {
 		AgentCatalog:      false,
 		ModelCatalog:      false,
 		SlashCommands:     false,
+		FileChanges:       false,
 	}
+}
+
+// SessionChanges is unsupported for Claude Code: per-edit tool input
+// captures old_string/new_string but no surrounding-context
+// filediff snapshot, so a parity feature with OpenCode isn't
+// possible without reading files from disk (which may have changed
+// since the edit). Return ErrUnsupported so handlers serve a
+// Supported=false payload.
+func (a *Adapter) SessionChanges(context.Context, string) (*platforms.SessionChanges, error) {
+	return nil, platforms.ErrUnsupported
 }
 
 // --- Interactive operations ---

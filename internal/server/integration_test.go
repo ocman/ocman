@@ -626,3 +626,130 @@ func TestHandleSessions_MergesByTimeUpdatedDesc(t *testing.T) {
 		}
 	}
 }
+
+// --- /api/session/{id}/changes ---
+
+// TestHandleSessionChanges_OpenCodeAggregates exercises the happy
+// path: an OpenCode session with two edits to a single file is
+// aggregated into one FileChange with the right counts and snapshots.
+func TestHandleSessionChanges_OpenCodeAggregates(t *testing.T) {
+	srv, rawDB := testServerWithRawDB(t)
+	defer rawDB.Close()
+
+	_, err := rawDB.Exec(
+		`INSERT INTO session (id, title, directory, time_created, time_updated)
+		 VALUES ('s1', 't', '/work', 1, 1)`,
+	)
+	if err != nil {
+		t.Fatalf("seeding session: %v", err)
+	}
+	_, err = rawDB.Exec(
+		`INSERT INTO message (id, session_id, time_created, data)
+		 VALUES ('m1', 's1', 1, '{"role":"assistant"}')`,
+	)
+	if err != nil {
+		t.Fatalf("seeding message: %v", err)
+	}
+	// Two edits to the same file, with filediff metadata.
+	editPartJSON := func(file, before, after string, adds, dels int) string {
+		raw, err := json.Marshal(map[string]any{
+			"type": "tool",
+			"tool": "edit",
+			"state": map[string]any{
+				"input": map[string]any{
+					"filePath":  file,
+					"oldString": before,
+					"newString": after,
+				},
+				"metadata": map[string]any{
+					"filediff": map[string]any{
+						"file": file, "before": before, "after": after,
+						"additions": adds, "deletions": dels,
+					},
+				},
+			},
+		})
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		return string(raw)
+	}
+	_, err = rawDB.Exec(
+		`INSERT INTO part (id, message_id, session_id, time_created, data)
+		 VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)`,
+		"p1", "m1", "s1", 100, editPartJSON("/work/hero.tsx", "v0", "v1", 2, 1),
+		"p2", "m1", "s1", 200, editPartJSON("/work/hero.tsx", "v1", "v2", 3, 0),
+	)
+	if err != nil {
+		t.Fatalf("seeding parts: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/session/s1/changes", nil)
+	req.URL.Path = "/api/session/s1/changes"
+	rr := httptest.NewRecorder()
+	srv.handleSessionChanges(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var got platforms.SessionChanges
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("invalid JSON: %v: %s", err, rr.Body.String())
+	}
+	if !got.Supported {
+		t.Errorf("Supported should be true for OpenCode")
+	}
+	if got.FilesChanged != 1 {
+		t.Fatalf("FilesChanged = %d, want 1", got.FilesChanged)
+	}
+	if got.TotalAdditions != 5 || got.TotalDeletions != 1 {
+		t.Errorf("totals = %d/%d, want 5/1", got.TotalAdditions, got.TotalDeletions)
+	}
+	f := got.Files[0]
+	if f.DisplayPath != "hero.tsx" {
+		t.Errorf("DisplayPath = %q, want hero.tsx", f.DisplayPath)
+	}
+	if f.Before != "v0" || f.After != "v2" {
+		t.Errorf("first-before/last-after = %q/%q, want v0/v2", f.Before, f.After)
+	}
+	if f.EditCount != 2 || len(f.Edits) != 2 {
+		t.Errorf("EditCount = %d, len(Edits) = %d", f.EditCount, len(f.Edits))
+	}
+}
+
+// TestHandleSessionChanges_UnsupportedReturns200 verifies that
+// adapters that report ErrUnsupported (Claude Code) yield an HTTP 200
+// response with Supported=false rather than an HTTP error, so the
+// frontend has a single shape to handle.
+func TestHandleSessionChanges_UnsupportedReturns200(t *testing.T) {
+	srv, rawDB := testServerWithRawDB(t)
+	defer rawDB.Close()
+
+	fakeSessions := []db.Session{
+		{ID: "fk-1", Platform: "fake", Directory: "/x", TimeUpdated: 1},
+	}
+	srv.registry.Register(&fakePlatform{id: "fake", sessions: fakeSessions})
+	// Pre-populate the reverse-lookup cache so resolvePlatformForSession
+	// finds the fake adapter without falling back to Session() (the fake
+	// returns ErrNotFound there).
+	srv.registry.RememberSessions("fake", fakeSessions)
+
+	req := httptest.NewRequest("GET", "/api/session/fk-1/changes", nil)
+	req.URL.Path = "/api/session/fk-1/changes"
+	rr := httptest.NewRecorder()
+	srv.handleSessionChanges(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for unsupported, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var got platforms.SessionChanges
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if got.Supported {
+		t.Errorf("Supported should be false for fake platform")
+	}
+	if got.Files == nil {
+		t.Errorf("Files should be empty slice (so JSON renders []), not nil")
+	}
+}

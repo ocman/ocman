@@ -231,6 +231,77 @@ export interface SessionDetail {
   defaultModel?: string;
 }
 
+// One file-touching tool call inside a session. Returned as part of
+// SessionChanges; the sidebar expands these inside the per-file
+// "individual edits" disclosure. before/after are best-effort: present
+// for OpenCode Edit tools (via filediff metadata), absent for older
+// versions where the renderer falls back to oldString/newString.
+export interface SessionEdit {
+  partId: string;
+  messageId: string;
+  timeCreated: number;
+  tool: string;
+  additions: number;
+  deletions: number;
+  before?: string;
+  after?: string;
+}
+
+// One file's roll-up across the entire session. The before/after
+// snapshots are first-edit-before / last-edit-after respectively, so
+// rendering a single unified diff between them shows a "current vs.
+// original" view. additions/deletions are summed per-edit and may
+// differ from the line counts of the collapsed diff (intermediate
+// edits that were later reverted still contribute).
+export interface FileChange {
+  path: string;
+  displayPath: string;
+  additions: number;
+  deletions: number;
+  editCount: number;
+  firstEditAt: number;
+  lastEditAt: number;
+  before: string;
+  after: string;
+  edits: SessionEdit[];
+}
+
+// One file in a working-tree git diff. Mirrors gitinfo.DiffFile.
+// `diff` is a unified-diff body (the full `diff --git a/... b/...`
+// section for the file) and is empty for binary files.
+export interface WorkingTreeFile {
+  path: string;
+  status: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked';
+  oldPath?: string;
+  additions: number;
+  deletions: number;
+  diff: string;
+  isBinary: boolean;
+}
+
+// Wire shape for /api/git/diff. Mirrors gitinfo.Diff.
+export interface WorkingTreeDiff {
+  repo: string;
+  branch: string;
+  ahead: number;
+  behind: number;
+  files: WorkingTreeFile[];
+  truncated: boolean;
+}
+
+// Wire shape for /api/session/{id}/changes. supported=false is
+// returned (with HTTP 200) for adapters that don't aggregate file
+// changes (Claude Code today). The frontend renders a "Not supported
+// on this platform" empty state in that case.
+export interface SessionChanges {
+  sessionId: string;
+  supported: boolean;
+  totalAdditions: number;
+  totalDeletions: number;
+  filesChanged: number;
+  files: FileChange[];
+}
+
 export interface Stats {
   totalSessions: number;
   totalMessages: number;
@@ -394,6 +465,13 @@ export interface PlatformCapabilities {
   modelCatalog: boolean;
   slashCommands: boolean;
   /**
+   * Whether the platform exposes /api/session/{id}/changes — the
+   * per-file change aggregation used by the session-changes sidebar.
+   * False for adapters that can't compute a useful summary
+   * (Claude Code today).
+   */
+  fileChanges: boolean;
+  /**
    * Short, user-facing message explaining how to establish the live
    * connection to a running agent instance when it's missing (e.g.
    * "Start OpenCode with `opencode --port 0` ..." for OpenCode).
@@ -513,6 +591,19 @@ export const api = {
     return fetchJSON<NotifyEntry[]>(`/api/sessions/notify${qs ? '?' + qs : ''}`, signal);
   },
   session: (id: string, limit = 50, offset = 0, signal?: AbortSignal) => fetchJSON<SessionDetail>(`/api/session/${id}?limit=${limit}&offset=${offset}`, signal),
+  // Aggregated per-file change summary for a session. Returns
+  // supported=false (with HTTP 200) when the owning platform doesn't
+  // implement aggregation (Claude Code today).
+  sessionChanges: (id: string, signal?: AbortSignal) =>
+    fetchJSON<SessionChanges>(`/api/session/${encodeURIComponent(id)}/changes`, signal),
+  // Working-tree git diff for an absolute directory. fresh=1 bypasses
+  // the backend's tiny in-process cache; the SSE-driven refetch path
+  // sets it so an edit-event-triggered refresh is never stale.
+  gitDiff: (dir: string, opts?: { fresh?: boolean }, signal?: AbortSignal) => {
+    const q = new URLSearchParams({ dir });
+    if (opts?.fresh) q.set('fresh', '1');
+    return fetchJSON<WorkingTreeDiff>(`/api/git/diff?${q.toString()}`, signal);
+  },
   archiveSession: async (platform: string, sessionId: string, timeUpdated: number, archived = true) => {
     const resp = await fetch('/api/session/archive', {
       method: 'POST',

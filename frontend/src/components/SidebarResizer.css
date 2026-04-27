@@ -12,6 +12,17 @@
   touch-action: none; /* prevent the browser from hijacking pointer moves */
 }
 
+/* Mirrored variant: handle sits on the LEFT edge of the sidebar
+ * (used by the right-hand session-changes sidebar). The parent has
+ * `overflow: hidden`, so we position the handle entirely INSIDE the
+ * sidebar (left: 0) to keep the full hit area visible — a negative
+ * offset would get clipped. Same 4px width as the left-sidebar
+ * handle for visual consistency. */
+.oc-sidebar-resizer.mirrored {
+  right: auto;
+  left: 0;
+}
+
 .oc-sidebar-resizer:hover,
 .oc-sidebar-resizer:focus-visible,
 .oc-sidebar-resizer.dragging {

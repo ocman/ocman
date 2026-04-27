@@ -37,6 +37,10 @@ func (f *fakePlatform) SessionsInactiveBefore(context.Context, int64) ([]db.Sess
 	return nil, nil
 }
 
+func (f *fakePlatform) SessionChanges(context.Context, string) (*SessionChanges, error) {
+	return nil, ErrUnsupported
+}
+
 func (f *fakePlatform) LiveStatus(string) *LiveState { return nil }
 
 func (f *fakePlatform) AgentCatalog(context.Context, string) ([]AgentCatalogEntry, error) {

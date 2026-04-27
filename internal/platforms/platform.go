@@ -64,6 +64,11 @@ type Capabilities struct {
 	AgentCatalog      bool `json:"agentCatalog"` // adapter exposes a composer-agent catalog
 	ModelCatalog      bool `json:"modelCatalog"` // adapter exposes a per-session model catalog
 	SlashCommands     bool `json:"slashCommands"`
+	// FileChanges reports whether the adapter can aggregate file
+	// edits performed during a session into a per-file changes
+	// summary (Platform.SessionChanges). Frontend hides the
+	// "Changes" sidebar when false.
+	FileChanges bool `json:"fileChanges"`
 	// LiveConnectionHint is a short, user-facing message explaining how
 	// to establish the live connection to a running agent instance when
 	// it's missing. Shown by the frontend next to disabled composers.
@@ -150,6 +155,12 @@ type Platform interface {
 	// SessionsInactiveBefore returns archive candidates for the
 	// background auto-archive job.
 	SessionsInactiveBefore(ctx context.Context, cutoff int64) ([]db.SessionArchiveCandidate, error)
+
+	// SessionChanges aggregates every file-touching tool call in the
+	// session into a per-file changes summary. Adapters that don't
+	// support this return ErrUnsupported; the HTTP layer translates
+	// that into Supported=false on the wire.
+	SessionChanges(ctx context.Context, sessionID string) (*SessionChanges, error)
 
 	// LiveStatus returns in-memory live status for a session (nil if
 	// none). Cheap: does not touch disk.

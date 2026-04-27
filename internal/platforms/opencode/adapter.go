@@ -67,6 +67,7 @@ func (a *Adapter) Capabilities() platforms.Capabilities {
 		AgentCatalog:      true,
 		ModelCatalog:      true,
 		SlashCommands:     true,
+		FileChanges:       true,
 		// OpenCode only exposes an HTTP API when it's started with an
 		// explicit --port flag. `--port 0` asks OpenCode to pick a free
 		// port and advertises it via lsof, which ocman scans.
@@ -164,6 +165,27 @@ func (a *Adapter) SessionsInactiveBefore(_ context.Context, cutoff int64) ([]db.
 		return nil, nil
 	}
 	return a.db.GetSessionsInactiveBefore(cutoff)
+}
+
+// SessionChanges aggregates every file-touching tool call in a session
+// into a per-file changes summary. See changes.go for the algorithm.
+func (a *Adapter) SessionChanges(_ context.Context, sessionID string) (*platforms.SessionChanges, error) {
+	if a.db == nil {
+		return nil, platforms.ErrNotFound
+	}
+	parts, err := a.db.GetSessionParts(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	session, err := a.db.GetSession(sessionID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	directory := ""
+	if session != nil {
+		directory = session.Directory
+	}
+	return aggregateChanges(sessionID, directory, parts), nil
 }
 
 // LiveStatus returns nil: OpenCode uses on-demand port discovery rather

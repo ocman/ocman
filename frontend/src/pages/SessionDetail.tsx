@@ -15,6 +15,7 @@ import { PlatformBadge } from '../components/PlatformBadge';
 import { ShortPath, GitStatusLine } from '../components/SessionTable';
 import { BackendStats } from '../components/BackendStats';
 import { SidebarResizer } from '../components/SidebarResizer';
+import { RightPanel } from '../components/RightPanel';
 import { useUiStore } from '../lib/uiStore';
 import { useTmux } from '../lib/useTmux';
 import { filterVisibleSessions } from '../lib/sessionVisibility';
@@ -472,6 +473,10 @@ export function SessionDetail() {
   // animation frame. See spec/session-switch-cache (step 4 follow-up).
   const [switching, setSwitching] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  // Increments whenever an edit/write tool part is added or updated via
+  // SSE. Consumed by the session-changes sidebar's useSessionChanges hook
+  // to debounced-refetch /api/session/{id}/changes after live edits.
+  const [changesDirtyTick, setChangesDirtyTick] = useState(0);
 
   // Capability flags for the owning platform. Used to *hide* affordances
   // the platform doesn't support (composer, abort, compact, ...). Falls
@@ -1522,6 +1527,20 @@ export function SessionDetail() {
                 }
                 return [...prev, part];
               });
+              // Mark the changes sidebar dirty when an edit/write tool
+              // part lands. The hook coalesces successive ticks via
+              // its debounce so a busy session firing many edits in
+              // quick succession only triggers one re-fetch.
+              if (partType === 'tool') {
+                const toolName = (rawPart as Record<string, unknown>).tool as string | undefined;
+                if (toolName && (
+                  toolName === 'edit' || toolName === 'write' ||
+                  toolName === 'mcp_edit' || toolName === 'mcp_write' ||
+                  toolName === 'mcp_Edit' || toolName === 'mcp_Write'
+                )) {
+                  setChangesDirtyTick((t) => t + 1);
+                }
+              }
             }
           }
         }
@@ -2987,6 +3006,14 @@ export function SessionDetail() {
           </OcmanRuntimeProvider>
         )}
       </div>
+      {id && (
+        <RightPanel
+          sessionId={id}
+          platformId={session?.platform}
+          directory={session?.directory}
+          dirtyTick={changesDirtyTick}
+        />
+      )}
       <Toast.Root className="oc-toast-root" open={showRenameToast} onOpenChange={setShowRenameToast} duration={2000}>
         <Toast.Description className="oc-toast-description">
           Session renamed
