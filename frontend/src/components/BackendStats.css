@@ -28,9 +28,26 @@
   text-align: center;
 }
 
-.backend-stats-item:nth-child(3) {
+/* The long-task counter (added when PerformanceObserver supports
+   'longtask') sits between Memory and Uptime. Aligned right so it
+   reads "lt: N" cleanly next to the uptime field. */
+.backend-stats-item.backend-stats-longtasks {
   flex: 0 0 80px;
   text-align: right;
+}
+
+.backend-stats-item.backend-stats-uptime {
+  flex: 0 0 80px;
+  text-align: right;
+}
+
+.backend-stats-item.longtasks-warning {
+  color: var(--yellow);
+}
+
+.backend-stats-item.longtasks-critical {
+  color: var(--red);
+  font-weight: 600;
 }
 
 .backend-stats-label {

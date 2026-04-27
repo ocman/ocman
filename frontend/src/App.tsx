@@ -19,6 +19,7 @@ import { useUiStore } from './lib/uiStore';
 import { useShortcut, useShortcutDispatcher } from './lib/shortcutRegistry';
 import { usePerformanceCleanup } from './lib/usePerformanceCleanup';
 import { useMemoryMonitor } from './lib/useMemoryMonitor';
+import { useLongTaskMonitor } from './lib/useLongTaskMonitor';
 
 // Top-level boundary keyed on the current pathname so navigating away from
 // a crashed route auto-recovers without forcing the user to reload. Inner
@@ -218,6 +219,15 @@ function MemoryMonitor() {
   return null;
 }
 
+// Mounts the global longtask observer at app boot so we capture
+// main-thread stalls regardless of whether BackendStats is rendered.
+// The hook is idempotent — BackendStats can also call useLongTaskMonitor
+// to read the same shared stats.
+function LongTaskMonitor() {
+  useLongTaskMonitor();
+  return null;
+}
+
 /**
  * AuthGate short-circuits the app tree while the initial auth probe
  * is in flight, and again whenever the client is unauthenticated
@@ -253,6 +263,7 @@ export default function App() {
           <BellNotify />
           <PerformanceCleanup />
           <MemoryMonitor />
+          <LongTaskMonitor />
           <GlobalHotkeys />
           <div className="container">
             <Header />

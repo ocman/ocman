@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useApiStore } from '../lib/apiStore';
+import { useLongTaskMonitor } from '../lib/useLongTaskMonitor';
 import './BackendStats.css';
 
 // `performance.memory` is a non-standard Chromium-only extension, so it isn't
@@ -18,6 +19,7 @@ export function BackendStats() {
   const [backendMemory, setBackendMemory] = useState<number | null>(null);
   const [uptime, setUptime] = useState<number | null>(null);
   const [frontendMemory, setFrontendMemory] = useState<number | null>(null);
+  const longTasks = useLongTaskMonitor();
   const getSystemStats = useApiStore((s) => s.getSystemStats);
 
   useEffect(() => {
@@ -71,6 +73,18 @@ export function BackendStats() {
 
   const memoryWarning = getMemoryWarning();
 
+  // Long-task severity. The longtask API only fires for main-thread
+  // blocks > 50ms, so any non-zero count is by definition a stall.
+  // Tier the colouring so a single 60ms blip doesn't scream the same
+  // way as a 500ms freeze does.
+  const getLongTaskSeverity = (): 'ok' | 'warning' | 'critical' => {
+    if (longTasks.count === 0) return 'ok';
+    if (longTasks.maxMs >= 250) return 'critical';
+    if (longTasks.maxMs >= 100) return 'warning';
+    return 'ok';
+  };
+  const longTaskSeverity = getLongTaskSeverity();
+
   const formatUptime = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
@@ -99,8 +113,17 @@ export function BackendStats() {
           <span className="backend-stats-label" title="Frontend Memory">fe</span>: {(frontendMemory / (1024 * 1024)).toFixed(0)}MB
         </span>
       )}
+      {longTasks.count > 0 && (
+        <span
+          className={`backend-stats-item backend-stats-longtasks${longTaskSeverity !== 'ok' ? ` longtasks-${longTaskSeverity}` : ''}`}
+          title={`Long tasks (>50ms main-thread blocks). Worst: ${longTasks.maxMs.toFixed(0)}ms`}
+        >
+          <span className="backend-stats-label" title="Long tasks (main-thread stalls > 50ms)">lt</span>: {longTasks.count}
+          {longTasks.maxMs > 0 && ` / ${longTasks.maxMs.toFixed(0)}ms`}
+        </span>
+      )}
       {uptime !== null && (
-        <span className="backend-stats-item">
+        <span className="backend-stats-item backend-stats-uptime">
           <span className="backend-stats-label" title="Uptime">up</span>: {formatUptime(uptime)}
         </span>
       )}
