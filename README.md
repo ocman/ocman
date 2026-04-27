@@ -1,20 +1,54 @@
 # ocman
 
-[![CI](https://github.com/NoUseFreak/ocman/actions/workflows/ci.yml/badge.svg)](https://github.com/NoUseFreak/ocman/actions/workflows/ci.yml)
-[![Release](https://github.com/NoUseFreak/ocman/actions/workflows/release.yml/badge.svg)](https://github.com/NoUseFreak/ocman/actions/workflows/release.yml)
-[![Go](https://img.shields.io/github/go-mod/go-version/NoUseFreak/ocman)](https://go.dev/)
+[![CI](https://forgejo.nousefreak.be/dries/ocman/actions/workflows/ci.yml/badge.svg)](https://forgejo.nousefreak.be/dries/ocman/actions?workflow=ci.yml)
+[![Release](https://forgejo.nousefreak.be/dries/ocman/actions/workflows/release.yml/badge.svg)](https://forgejo.nousefreak.be/dries/ocman/actions?workflow=release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A web dashboard for viewing [OpenCode](https://github.com/anomalyco/opencode)
-session data. The Go backend serves a React SPA that lists, searches,
-and replays sessions, and proxies live traffic (SSE events, composer,
-compact, permission replies) to running OpenCode instances
-auto-discovered via `lsof`.
+A web dashboard for browsing and driving [OpenCode](https://github.com/anomalyco/opencode)
+sessions. The Go backend serves a React SPA that lists, searches, and replays
+sessions, and proxies live traffic (SSE events, composer, compact, permission
+replies) to running OpenCode instances auto-discovered via `lsof`.
 
 Ocman is wired through a generic `Platform` adapter interface
-(`internal/platforms/`) so the frontend stays platform-agnostic —
-UI is gated on a `/api/capabilities` endpoint rather than branching
-on platform identity.
+(`internal/platforms/`) so the frontend stays platform-agnostic — UI is gated
+on a `/api/capabilities` endpoint rather than branching on platform identity.
+
+## Features
+
+- **Session browser** — List, search, archive, and replay every session in
+  your OpenCode database. The sidebar auto-refreshes every 3 s (paused when
+  the tab is hidden), is resizable via a drag handle, and offers a **Projects
+  grouping view** that buckets sessions by project with an aggregate status
+  dot, hover row, and a `+` button to start a new session in that project.
+- **Live composer** — Send messages, respond to permission prompts (with a
+  two-step confirmation on *Allow always*), abort, and compact a running
+  session straight from the browser. Streaming output is rendered live,
+  including under running subagent tasks.
+- **Bash mode** — Prefix a draft with `!` to run a shell command in the
+  session's working directory and capture the output.
+- **Command palette** — Unified palette (⌘K-style) for jumping between
+  sessions, settings, and actions. Includes a settings tab and a bell that
+  surfaces in-app notifications.
+- **Slash commands** — `/new [title]` to create a session (with an optional
+  custom title), `/clear` to archive the current session and start a fresh
+  one, plus session rename with keyboard shortcuts.
+- **Tmux integration** — Launch a fresh `opencode` instance inside a tmux
+  session from the UI, or have ocman auto-launch one when you create a new
+  session. The composer stays disabled until the live HTTP API comes up.
+- **Diff & changes view** — Syntax-highlighted edit / write diffs inline in
+  the thread, plus a *Changes* sidebar that combines session edits with the
+  working-tree `git` diff. Read-tool calls render project-relative paths;
+  Skill tool calls collapse to a single muted line.
+- **Stats dashboard** — Per-project metrics aggregation, Total Wall Clock
+  across sessions, pricing/token graphs, and a backend system stats widget.
+- **Model picker** — Per-platform favorites and a refreshable catalog so new
+  models show up without restarting ocman.
+- **Auth** — Optional password gate with bcrypt-hashed credentials,
+  HMAC-signed stateless cookies persisted across restarts, a frontend
+  lockscreen, and per-IP rate limiting. Off by default for localhost; flip
+  one env var to require auth from every client.
+- **PWA** — Installable as a Progressive Web App, with an optional in-app
+  install button.
 
 ## Architecture
 
@@ -57,10 +91,11 @@ graph TD
 ## Requirements
 
 - Go 1.26+ (CGo enabled — required by `go-sqlite3`)
-- Node.js 20+
+- Node.js 24+
 - [mise](https://mise.jdx.dev/) (provides `air` for live-reload; run `mise install`)
 - `~/.local/share/opencode/opencode.db` must exist (ocman fails fast
   otherwise).
+- `tmux` on `PATH` if you want to use the in-UI launcher.
 
 To **interact** with a running session (send messages, respond to
 permissions/questions, abort, compact) you must start OpenCode with
@@ -75,7 +110,7 @@ Ocman discovers listening OpenCode processes via `lsof` and
 auto-connects. Without `--port`, sessions are still readable from
 the database but the composer and other interactive features stay
 disabled — the UI shows a hint telling you to re-launch OpenCode
-with `--port 0`.
+with `--port 0` (or click the tmux launcher).
 
 ## Quick start
 
@@ -106,27 +141,71 @@ This builds the frontend first (`npm ci && npm run build`), then compiles the Go
 ## Usage
 
 ```sh
-./ocman                              # default: listens on 127.0.0.1:8228, reads ~/.local/share/opencode/opencode.db
+./ocman                              # default: listens on 127.0.0.1:8228
 ./ocman -addr localhost:9090         # custom listen address
 ./ocman -db /path/to/opencode.db     # custom OpenCode database path
 ```
 
-Ocman's own state (archived / seen flags, per-platform) lives in
-`~/.local/share/ocman/state.db`, auto-created on first run.
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-addr` | `127.0.0.1:8228` | Listen address. |
+| `-db` | `~/.local/share/opencode/opencode.db` | Path to OpenCode's SQLite DB. Opened read-only. |
+| `-platforms` | `opencode` | Comma-separated list of platforms to enable. |
+| `-auth-password` | _(unset)_ | Password to require. Prefer `OCMAN_AUTH_PASSWORD` or `-auth-password-file`. |
+| `-auth-password-file` | _(unset)_ | Read auth password from file (trailing whitespace trimmed). |
+| `-auth-session-ttl` | `720h` (30 days) | Auth cookie lifetime. |
+| `-auth-trust-localhost` | `false` | Exempt loopback clients from auth. Also `OCMAN_AUTH_TRUST_LOCALHOST=1`. |
+
+Ocman's own state (archived / seen flags, per-platform; auth secret;
+favorites; cached projects) lives in `~/.local/share/ocman/state.db`,
+auto-created on first run. The schema is migrated on startup.
+
+### Authentication
+
+By default ocman binds `127.0.0.1:8228` and serves unauthenticated. To
+require a password — including over a tunnel, Tailscale, or any non-loopback
+listener — set one of the following (precedence in order):
+
+1. `OCMAN_AUTH_PASSWORD` env var (preferred)
+2. `-auth-password-file /path/to/file`
+3. `-auth-password '<plaintext>'` (visible in `ps`; use only for testing)
+
+Once auth is configured it applies to **every** client, including localhost.
+For local dev loops, pass `-auth-trust-localhost` (or
+`OCMAN_AUTH_TRUST_LOCALHOST=1`) to restore the "local user is trusted"
+escape hatch.
+
+The password is bcrypt-hashed at startup; auth cookies are HMAC-signed
+(stateless) with a key persisted in `state.db`'s `auth_secret` table so
+sessions survive restarts. Login attempts are rate-limited to 5/min per IP
+(trusted-localhost clients skip the limiter). The frontend renders a
+lockscreen instead of the dashboard when the user is unauthenticated.
+
+### Other env vars
+
+| Variable | Description |
+|----------|-------------|
+| `OCMAN_AUTH_PASSWORD` | See above. Empty string is treated as unset. |
+| `OCMAN_AUTH_TRUST_LOCALHOST` | Truthy value enables the loopback bypass. |
+| `OCMAN_ALLOWED_HOSTS` | Vite dev/preview only: comma-separated extra hostnames allowed by the dev server (e.g. `foo.tailnet.ts.net,bar.lan`). |
 
 ## Project structure
 
 ```
-main.go                                    entrypoint (-addr, -db flags)
+main.go                                    entrypoint (-addr, -db, -platforms, -auth-* flags)
 frontend/                                  React + TypeScript + Vite SPA
+e2e/                                       Playwright end-to-end suite
 internal/platforms/                        Platform interface, Registry, common types/errors
 internal/platforms/opencode/               OpenCode adapter (DB + HTTP proxy)
 internal/db/                               SQLite queries against OpenCode's DB
-internal/state/                            ocman's own writable state DB
+internal/state/                            ocman's own writable state DB (archived/seen,
+                                            auth secret, favorites, cached projects)
 internal/server/                           HTTP server, API handlers, static file serving,
-                                           OpenCode port discovery
+                                            OpenCode port discovery, tmux launcher, auth
 internal/server/static/                    Vite build output (embedded into Go binary)
-spec/multi-agent-support/                  Requirements + architecture notes
+spec/                                      Requirements + architecture notes per feature
 ```
 
 ## Development
@@ -148,7 +227,7 @@ spec/multi-agent-support/                  Requirements + architecture notes
 | `make dev-prod-watch`  | 8228 | Backend (air) + frontend (vite preview, auto-rebuilds on changes) |
 | `make dev-backend`     | 8229 | Go backend only (air, port 8229)                 |
 | `make dev-frontend`    | 8228 | Vite dev server only (port 8228)                 |
-| `make test`            | `go test ./...` + `vitest run`                   |
+| `make test`            | `go test ./...`, `vitest run`, and the Playwright e2e suite |
 | `make lint`            | `go vet`, `tsc -b`, `eslint`, and the platform-branching check |
 | `make build`           | Production build                                 |
 | `make clean`           | Remove binary, tmp/, and static/assets/          |
@@ -167,7 +246,6 @@ make dev
 make dev-prod-watch
 # → Edit code → auto-rebuild → manually refresh browser
 # → Shows real production memory usage
-# → Good for debugging the 1GB memory issue
 ```
 
 **Why no auto-refresh in prod mode?**  
@@ -175,9 +253,10 @@ Vite's preview mode serves the production build but doesn't include HMR. The wat
 
 ### Tests
 
-The repo has **180+ Go tests** (unit + integration, in-package
-`*_test.go` files) and **81 frontend tests** (vitest). CI runs both
-on every PR; `make test` runs them locally.
+The repo has **180+ Go tests** (unit + integration, in-package `*_test.go`
+files), **81 frontend tests** (vitest), and a **Playwright end-to-end suite**
+covering auth, the dashboard, composer, SSE streaming, and prompts. CI runs
+all three on every PR; `make test` runs them locally.
 
 ### Platform-agnostic frontend
 
