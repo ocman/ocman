@@ -3,18 +3,22 @@ import type { FileChange, SessionEdit } from '../lib/api';
 import { DiffView } from './DiffView';
 import { RawDiffView } from './RawDiffView';
 
-// One row in the changes sidebar: header with filename + counts,
-// expand toggle, and an optional disclosure listing each individual
-// edit (rather than the collapsed file view).
+// One row in the session-changes sidebar: a single line with the
+// filename + total +A/-D, click to reveal the diff body inline.
+// Visually mirrors WorkingTreeChangesSidebar's row style so both
+// panes feel consistent.
+//
+// Rows are collapsed by default (`defaultExpanded={false}`) — opening
+// a session shouldn't dump every diff at once. Multiple rows can be
+// open at the same time; toggle state is local to each row.
 //
 // Modern OpenCode parts ship a unified-diff `patch` string per edit,
 // which we render with RawDiffView. Legacy parts only provide
 // before/after snapshots, in which case we fall back to DiffView
 // (which calls simpleDiff to compute the diff client-side).
 //
-// The collapsed diff is always shown in expanded state; the
-// "individual edits" disclosure is opt-in because for a file edited
-// once it's identical to the collapsed diff.
+// When a file has multiple edits, an additional disclosure under the
+// diff body lets the user fan them out into per-edit diffs.
 
 interface FileChangeGroupProps {
   change: FileChange;
@@ -48,32 +52,31 @@ function ChangeDiffBody({
   );
 }
 
-export function FileChangeGroup({ change, defaultExpanded = true }: FileChangeGroupProps) {
+export function FileChangeGroup({ change, defaultExpanded = false }: FileChangeGroupProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [showEdits, setShowEdits] = useState(false);
 
   const hasMultipleEdits = change.editCount > 1;
 
   return (
-    <div className="oc-change-group">
-      <div
-        className="oc-change-group-header"
+    <li>
+      <button
+        type="button"
+        className="oc-changes-list-row"
         onClick={() => setExpanded((e) => !e)}
-        role="button"
-        tabIndex={0}
         aria-expanded={expanded}
       >
-        <span className="oc-change-group-name" title={change.path}>
+        <span className="oc-changes-list-path" title={change.path}>
           {change.displayPath || change.path}
         </span>
-        <span className="oc-change-group-counts">
-          <span className="oc-changes-add">+{change.additions}</span>
-          <span className="oc-changes-del">-{change.deletions}</span>
+        <span className="oc-changes-list-counts">
+          {change.additions > 0 && <span className="oc-changes-add">+{change.additions}</span>}
+          {change.deletions > 0 && <span className="oc-changes-del">-{change.deletions}</span>}
         </span>
-      </div>
+      </button>
       {expanded && (
         <>
-          <div className="oc-change-group-body">
+          <div className="oc-changes-list-body-expanded">
             <ChangeDiffBody
               patch={change.patch}
               before={change.before}
@@ -85,13 +88,13 @@ export function FileChangeGroup({ change, defaultExpanded = true }: FileChangeGr
             <>
               <button
                 type="button"
-                className="oc-change-group-edits-toggle"
+                className="oc-changes-list-edits-toggle"
                 onClick={() => setShowEdits((s) => !s)}
               >
                 {showEdits ? 'Hide' : 'Show'} {change.editCount} individual edits
               </button>
               {showEdits && (
-                <div>
+                <div className="oc-changes-list-body-expanded">
                   {change.edits.map((edit: SessionEdit, i) => (
                     <div key={edit.partId} className="oc-change-edit">
                       <div className="oc-change-edit-meta">
@@ -115,6 +118,6 @@ export function FileChangeGroup({ change, defaultExpanded = true }: FileChangeGr
           )}
         </>
       )}
-    </div>
+    </li>
   );
 }

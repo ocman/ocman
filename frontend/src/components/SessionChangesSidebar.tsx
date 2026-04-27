@@ -5,17 +5,11 @@ import { useSessionChanges } from '../lib/useSessionChanges';
 import { useInfiniteRows } from '../lib/useInfiniteRows';
 import { FileChangeGroup } from './FileChangeGroup';
 
-// Auto-expand only the first few files. The rest start collapsed
-// (header visible, body lazy-mounted on click) so a session that
-// touched dozens of files doesn't hang the browser when the panel
-// first opens. Pairs with the per-diff infinite-scroll inside
-// DiffView for two layers of laziness: number of files, and rows
-// per file.
-const INITIAL_EXPANDED_FILES = 3;
-// Lazy-mount budget for the per-file groups themselves. Sessions
-// with hundreds of touched files need this; we only render the
-// first chunk on first paint and stream the rest in as the user
-// scrolls. Same useInfiniteRows pattern as the diff renderer.
+// Lazy-mount budget for the per-file rows themselves. Sessions with
+// hundreds of touched files need this; we only render the first
+// chunk on first paint and stream the rest in as the user scrolls.
+// Same useInfiniteRows pattern as the diff renderer. Rows always
+// start collapsed — the user expands the ones they care about.
 const INITIAL_FILE_GROUPS = 20;
 const FILE_GROUPS_CHUNK = 20;
 
@@ -49,9 +43,13 @@ interface SessionChangesSidebarProps {
   // header. The callback is also used internally by the standalone-
   // mode header. Identity is stable across renders.
   onRefresh?: (refresh: () => void) => void;
+  // Called whenever the underlying request's loading flag flips.
+  // Lets embedded parents drive a spinner on their refresh button
+  // without owning the data hook themselves.
+  onLoadingChange?: (loading: boolean) => void;
 }
 
-export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedded = false, onSummaryChange, onRefresh }: SessionChangesSidebarProps) {
+export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedded = false, onSummaryChange, onRefresh, onLoadingChange }: SessionChangesSidebarProps) {
   const caps = usePlatformCapabilities(platformId);
   const enabled = caps.fileChanges;
   const { data, loading, error, refresh } = useSessionChanges(sessionId, { enabled, dirtyTick });
@@ -99,8 +97,15 @@ export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedd
     onRefresh(refresh);
   }, [refresh, onRefresh]);
 
+  // Forward loading state so embedded parents can spin their own
+  // refresh button while a request is in flight.
+  useEffect(() => {
+    if (!onLoadingChange) return;
+    onLoadingChange(loading);
+  }, [loading, onLoadingChange]);
+
   const Body = (
-    <div className="oc-changes-sidebar-body">
+    <div className="oc-changes-sidebar-body oc-changes-list-body">
       {!enabled && (
         <div className="oc-changes-sidebar-unsupported">
           Changes view is not supported for this platform.
@@ -118,18 +123,15 @@ export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedd
         </div>
       )}
       {enabled && data && data.supported && files.length > 0 && (
-        <div>
-          {files.slice(0, visibleFileCount).map((change, idx) => (
-            <FileChangeGroup
-              key={change.path}
-              change={change}
-              // Only auto-expand the first few files. Sessions that
-              // touched dozens of files would otherwise mount thousands
-              // of diff rows up-front and lock the browser. The user
-              // expands the rest on demand.
-              defaultExpanded={idx < INITIAL_EXPANDED_FILES}
-            />
-          ))}
+        <>
+          <ul className="oc-changes-list">
+            {files.slice(0, visibleFileCount).map((change) => (
+              <FileChangeGroup
+                key={change.path}
+                change={change}
+              />
+            ))}
+          </ul>
           {hasMoreFiles && (
             <div
               ref={fileSentinelRef}
@@ -137,7 +139,7 @@ export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedd
               aria-hidden="true"
             />
           )}
-        </div>
+        </>
       )}
       {enabled && data && !data.supported && (
         <div className="oc-changes-sidebar-unsupported">

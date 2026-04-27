@@ -4,8 +4,9 @@ import { useWorkingTreeDiff } from '../lib/useWorkingTreeDiff';
 import { useInfiniteRows } from '../lib/useInfiniteRows';
 import { RawDiffView } from './RawDiffView';
 import { ChangesRefreshButton, type PaneSummary } from './SessionChangesSidebar';
+import { groupWorkingTreeFiles } from './groupWorkingTreeFiles';
 
-// Lazy-mount budget for the per-file groups. Working trees with
+// Lazy-mount budget for the per-file rows. Working trees with
 // hundreds of dirty files (post-rebase, after a generated-files
 // dump, etc.) only paint the first chunk; the rest stream in as
 // the sentinel enters the viewport. Same pattern as the session-
@@ -18,6 +19,11 @@ const FILE_GROUPS_CHUNK = 20;
 // SessionChangesSidebar — same header layout, same per-file group
 // shape — but the data source is the local working tree, not the
 // session's tool calls.
+//
+// Files are listed under section headers ("Changed (N)",
+// "Untracked (N)") and rendered as one-line entries by default;
+// clicking a row reveals its diff inline. Multiple rows can be
+// expanded at once.
 //
 // Refreshes via the same dirtyTick prop that drives
 // useSessionChanges, so an SSE edit event refreshes both views in
@@ -38,6 +44,9 @@ interface WorkingTreeChangesSidebarProps {
   // (RightPanel) can render their own refresh button in the pane
   // header. Mirrors SessionChangesSidebar.onRefresh.
   onRefresh?: (refresh: () => void) => void;
+  // Called whenever the underlying request's loading flag flips.
+  // Mirrors SessionChangesSidebar.onLoadingChange.
+  onLoadingChange?: (loading: boolean) => void;
 }
 
 const STATUS_LABELS: Record<WorkingTreeFile['status'], string> = {
@@ -48,7 +57,7 @@ const STATUS_LABELS: Record<WorkingTreeFile['status'], string> = {
   untracked: '?',
 };
 
-export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = false, onSummaryChange, onRefresh }: WorkingTreeChangesSidebarProps) {
+export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = false, onSummaryChange, onRefresh, onLoadingChange }: WorkingTreeChangesSidebarProps) {
   const enabled = !!directory;
   const { data, loading, error, notRepo, refresh } = useWorkingTreeDiff(directory, { enabled, dirtyTick });
 
@@ -87,6 +96,18 @@ export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = fal
     onRefresh(refresh);
   }, [refresh, onRefresh]);
 
+  // Forward loading state so RightPanel can spin its refresh button
+  // while a working-tree fetch is in flight.
+  useEffect(() => {
+    if (!onLoadingChange) return;
+    onLoadingChange(loading);
+  }, [loading, onLoadingChange]);
+
+  // Lazy-mount budget over the flat file list. We then group the
+  // *visible* slice so the section headers and counts adjust as
+  // more rows stream in. Counts in the section header reflect what
+  // is currently mounted, which matches the user's mental model:
+  // "I see N rows under Changed".
   const {
     visibleCount: visibleFileCount,
     sentinelRef: fileSentinelRef,
@@ -97,8 +118,13 @@ export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = fal
     chunkSize: FILE_GROUPS_CHUNK,
   });
 
+  const visibleGroups = useMemo(
+    () => groupWorkingTreeFiles(files.slice(0, visibleFileCount)),
+    [files, visibleFileCount],
+  );
+
   const Body = (
-    <div className="oc-changes-sidebar-body">
+    <div className="oc-changes-sidebar-body oc-changes-list-body">
       {!enabled && (
         <div className="oc-changes-sidebar-empty">No directory available.</div>
       )}
@@ -125,8 +151,18 @@ export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = fal
               Diff is large — some files were omitted. Use your editor to view the full diff.
             </div>
           )}
-          {files.slice(0, visibleFileCount).map((f) => (
-            <WorkingTreeFileGroup key={f.path} file={f} />
+          {visibleGroups.map((g) => (
+            <section key={g.id} className={`oc-changes-list-section oc-changes-list-section-${g.id}`}>
+              <header className="oc-changes-list-section-header">
+                <span className="oc-changes-list-section-label">{g.label}</span>
+                <span className="oc-changes-list-section-count">({g.files.length})</span>
+              </header>
+              <ul className="oc-changes-list">
+                {g.files.map((f) => (
+                  <WorkingTreeFileRow key={f.path} file={f} />
+                ))}
+              </ul>
+            </section>
           ))}
           {hasMoreFiles && (
             <div
@@ -196,19 +232,26 @@ export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = fal
   );
 }
 
-interface WorkingTreeFileGroupProps {
+interface WorkingTreeFileRowProps {
   file: WorkingTreeFile;
 }
 
-function WorkingTreeFileGroup({ file }: WorkingTreeFileGroupProps) {
-  const [expanded, setExpanded] = useState(true);
+// One file row in the working-tree list. Renders as a single line
+// (status badge + path + +A/-D counts); clicking the row toggles
+// an inline diff body underneath. Each row owns its own collapse
+// state, so multiple rows can be open at the same time.
+//
+// Default state is collapsed — opening a session shouldn't dump
+// every diff at once. Matches the screenshot reference where the
+// list reads like `git status -s` until you ask for more.
+function WorkingTreeFileRow({ file }: WorkingTreeFileRowProps) {
+  const [expanded, setExpanded] = useState(false);
   return (
-    <div className="oc-change-group">
-      <div
-        className="oc-change-group-header"
+    <li>
+      <button
+        type="button"
+        className="oc-changes-list-row"
         onClick={() => setExpanded((e) => !e)}
-        role="button"
-        tabIndex={0}
         aria-expanded={expanded}
       >
         <span
@@ -217,21 +260,21 @@ function WorkingTreeFileGroup({ file }: WorkingTreeFileGroupProps) {
         >
           {STATUS_LABELS[file.status]}
         </span>
-        <span className="oc-change-group-name" title={file.path}>
+        <span className="oc-changes-list-path" title={file.path}>
           {file.oldPath && file.status === 'renamed' ? `${file.oldPath} → ${file.path}` : file.path}
         </span>
-        <span className="oc-change-group-counts">
+        <span className="oc-changes-list-counts">
           {file.additions > 0 && <span className="oc-changes-add">+{file.additions}</span>}
           {file.deletions > 0 && <span className="oc-changes-del">-{file.deletions}</span>}
         </span>
-      </div>
+      </button>
       {expanded && (
-        <div className="oc-change-group-body">
+        <div className="oc-changes-list-body-expanded">
           {file.isBinary
             ? <div className="oc-diff-empty">Binary file — diff not shown.</div>
             : <RawDiffView diff={file.diff} filePath={file.path} />}
         </div>
       )}
-    </div>
+    </li>
   );
 }
