@@ -753,3 +753,107 @@ func TestHandleSessionChanges_UnsupportedReturns200(t *testing.T) {
 		t.Errorf("Files should be empty slice (so JSON renders []), not nil")
 	}
 }
+
+// --- /api/session/{id}/info ---
+
+// TestHandleSessionInfo_PlatformPayload verifies the happy path: an
+// adapter returning a populated SessionInfo is forwarded verbatim with
+// Supported=true, MCP/LSP slices preserved, context numbers intact.
+// Uses the fake platform so we exercise the handler without standing
+// up an actual OpenCode instance.
+func TestHandleSessionInfo_PlatformPayload(t *testing.T) {
+	srv, rawDB := testServerWithRawDB(t)
+	defer rawDB.Close()
+
+	fakeSessions := []db.Session{
+		{ID: "fk-1", Platform: "fake", Directory: "/x", TimeUpdated: 1},
+	}
+	want := &platforms.SessionInfo{
+		SessionID: "fk-1",
+		Supported: true,
+		Context: platforms.ContextInfo{
+			Tokens: 153_309,
+			Limit:  200_000,
+			Cost:   0.42,
+			Model:  "anthropic/claude-sonnet-4",
+		},
+		MCPServers: []platforms.MCPServer{
+			{Name: "devtoys", Status: "needs_auth"},
+			{Name: "weave", Status: "failed", Error: "Failed to get tools"},
+		},
+		LSPServers: []platforms.LSPServer{
+			{ID: "gopls", Name: "gopls", Status: "connected"},
+		},
+	}
+	srv.registry.Register(&fakePlatform{id: "fake", sessions: fakeSessions, info: want})
+	srv.registry.RememberSessions("fake", fakeSessions)
+
+	req := httptest.NewRequest("GET", "/api/session/fk-1/info", nil)
+	req.URL.Path = "/api/session/fk-1/info"
+	rr := httptest.NewRecorder()
+	srv.handleSessionInfo(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var got platforms.SessionInfo
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("invalid JSON: %v: %s", err, rr.Body.String())
+	}
+	if !got.Supported {
+		t.Errorf("Supported should be true")
+	}
+	if got.Context.Tokens != 153_309 || got.Context.Limit != 200_000 {
+		t.Errorf("context tokens/limit = %d/%d, want 153309/200000", got.Context.Tokens, got.Context.Limit)
+	}
+	if got.Context.Cost != 0.42 {
+		t.Errorf("context cost = %v, want 0.42", got.Context.Cost)
+	}
+	if got.Context.Model != "anthropic/claude-sonnet-4" {
+		t.Errorf("context model = %q", got.Context.Model)
+	}
+	if len(got.MCPServers) != 2 {
+		t.Fatalf("MCPServers len = %d, want 2", len(got.MCPServers))
+	}
+	if len(got.LSPServers) != 1 || got.LSPServers[0].ID != "gopls" {
+		t.Errorf("LSPServers = %+v", got.LSPServers)
+	}
+}
+
+// TestHandleSessionInfo_UnsupportedReturns200 verifies that adapters
+// reporting ErrUnsupported (Claude Code, or OpenCode without a live
+// port) yield an HTTP 200 with Supported=false and non-nil empty
+// slices, mirroring the SessionChanges contract so the frontend has
+// one shape to render.
+func TestHandleSessionInfo_UnsupportedReturns200(t *testing.T) {
+	srv, rawDB := testServerWithRawDB(t)
+	defer rawDB.Close()
+
+	fakeSessions := []db.Session{
+		{ID: "fk-1", Platform: "fake", Directory: "/x", TimeUpdated: 1},
+	}
+	srv.registry.Register(&fakePlatform{id: "fake", sessions: fakeSessions})
+	srv.registry.RememberSessions("fake", fakeSessions)
+
+	req := httptest.NewRequest("GET", "/api/session/fk-1/info", nil)
+	req.URL.Path = "/api/session/fk-1/info"
+	rr := httptest.NewRecorder()
+	srv.handleSessionInfo(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for unsupported, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var got platforms.SessionInfo
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if got.Supported {
+		t.Errorf("Supported should be false for fake platform")
+	}
+	if got.MCPServers == nil {
+		t.Errorf("MCPServers should be empty slice (not nil) so JSON renders []")
+	}
+	if got.LSPServers == nil {
+		t.Errorf("LSPServers should be empty slice (not nil) so JSON renders []")
+	}
+}

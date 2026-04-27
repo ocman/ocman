@@ -1,0 +1,176 @@
+/* SessionInfoSidebar.css — info pane for the right-hand panel.
+ *
+ * Visually mirrors the WorkingTreeChangesSidebar / SessionChangesSidebar
+ * "compact list" theme (see .oc-changes-list-* in
+ * SessionChangesSidebar.css): flat dense rows hugging the edges,
+ * accent-coloured small-caps section headers, no boxed cards, no
+ * per-section bottom borders. The panes line up visually when stacked
+ * in RightPanel and read as part of the same family.
+ */
+
+.oc-info-body {
+  /* Match .oc-changes-sidebar-body.oc-changes-list-body — tight
+   * top/bottom, no horizontal padding so rows hug the edges like
+   * `git status -s`. Per-row padding supplies the gutter. */
+  padding: 4px 0;
+  /* Belt-and-braces against horizontal overflow: in addition to the
+   * per-row min-width:0 + overflow-wrap below, suppress any stray
+   * horizontal scrollbar caused by content that escapes the wrap
+   * (e.g. an SVG or a child with its own min-content sizing). */
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+/* A section is a label + a stack of rows. Keep them flush against the
+ * edges and let a small top margin separate one from the next, the
+ * same trick .oc-changes-list-section uses. */
+.oc-info-section {
+  margin: 6px 0 4px;
+}
+
+.oc-info-section:first-child {
+  margin-top: 2px;
+}
+
+/* Section header: small monospace label, accent-coloured, with the
+ * same 12px gutter as the rows so the label aligns with the row
+ * content underneath. Mirrors .oc-changes-list-section-header. */
+.oc-info-section-header {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 12px 4px;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: capitalize;
+  color: var(--accent);
+}
+
+/* Block of metric rows under a header. No internal gap — the row
+ * padding handles vertical rhythm. */
+.oc-info-context {
+  display: flex;
+  flex-direction: column;
+}
+
+/* One metric row: label on the left, value on the right. Uses
+ * align-items:start so a value that wraps onto multiple lines stays
+ * aligned with the label's first line rather than re-centering and
+ * pushing the label off-baseline. */
+.oc-info-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 12px;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.3;
+  /* min-width:0 prevents this row from forcing the parent flex
+   * column to grow wider than its container when a child has
+   * intrinsically long content. */
+  min-width: 0;
+}
+
+.oc-info-row-label {
+  color: var(--overlay0);
+  flex-shrink: 0;
+}
+
+.oc-info-row-value {
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-align: right;
+  /* min-width:0 lets a wrapping child actually shrink inside the
+   * flex row instead of forcing the row to grow. */
+  min-width: 0;
+  /* Long unbroken tokens (paths, URLs, MCP ids) wrap inside the
+   * value column rather than scrolling the panel horizontally.
+   * AGENTS-aligned: the right panel never gets a horizontal
+   * scrollbar; users prefer a multi-line value over a hidden one. */
+  overflow-wrap: anywhere;
+}
+
+/* Capitalize the status string (the `session.status` enum is
+ * lower-case wire vocabulary: "waiting", "busy", "done", "error").
+ * The class only carries the casing rule — colour and font are
+ * inherited from the row. */
+.oc-info-status-text {
+  text-transform: capitalize;
+}
+
+/* Long values (project paths, branches) wrap onto additional lines
+ * rather than overflowing. The full string is always visible — no
+ * ellipsis — and the hover title attribute is retained for assistive
+ * tech / quick copy. */
+.oc-info-row-truncate {
+  display: inline-block;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+/* MCP / LSP server lists: same dense one-line row style as the metric
+ * rows above. The status pill is an inline value rather than a boxed
+ * badge — keeps the visual weight of the panel low. */
+.oc-info-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.oc-info-list-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 12px;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.3;
+  min-width: 0;
+}
+
+.oc-info-list-name {
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+  /* Long MCP / LSP ids (URL-style remote names) wrap to additional
+   * lines instead of overflowing the panel horizontally. */
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+/* Status text: plain muted annotation. No colour, no pill, no
+ * background — the row above already implies the server exists; the
+ * status string is just a small detail label. Matches the muted
+ * +A/-D counts in the change panes. */
+.oc-info-status {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-family: 'SF Mono', Consolas, monospace;
+  color: var(--overlay0);
+  white-space: nowrap;
+}
+
+.oc-info-empty {
+  padding: 2px 12px;
+  font-size: 12px;
+  font-family: 'SF Mono', Consolas, monospace;
+  color: var(--overlay0);
+  font-style: italic;
+}
+
+/* Tighten the todo list when it lives inside the info sidebar — give
+ * it the same 12px gutter as the other rows so the checkmarks align
+ * with the section header above. */
+.oc-info-section .oc-todo-list {
+  padding: 0 12px;
+}

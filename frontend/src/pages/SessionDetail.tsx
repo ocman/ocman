@@ -3,7 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import * as Toast from '@radix-ui/react-toast';
 import './SessionDetail.css';
 import { api, type Session, type Message, type Part, type AgentInfo, type SessionModelEntry, type SessionDetail } from '../lib/api';
-import { cleanTitle, formatDuration, formatNumber, shortPath, relativeTime } from '../lib/format';
+import { cleanTitle, shortPath, relativeTime } from '../lib/format';
 import { useHeaderInfo, usePageTitle } from '../lib/headerContext';
 import { OcmanRuntimeProvider } from '../components/OcmanRuntimeProvider';
 import { AssistantThread } from '../components/AssistantThread';
@@ -1798,27 +1798,26 @@ export function SessionDetail() {
     contextWindow: session?.contextTokenCount,
   };
 
-  // Header info
+  // Header info: the breadcrumb shows the session title + a platform
+  // badge; the right-hand slot holds the project path. The richer
+  // per-session metadata (Duration / Messages / Tokens / Changes /
+  // Cost) used to live in the header as a stats strip and is now
+  // rendered in the right-panel "Session info" pane
+  // (SessionInfoSidebar). Project stays in the header because it
+  // anchors the page (which folder am I looking at?) and is the one
+  // piece of session context worth scanning at a glance from
+  // anywhere in the page.
   useEffect(() => {
     if (!session) return;
     const s = session;
-    const stats: { label: string; value: string }[] = [
-      { label: 'Duration', value: formatDuration(s.durationMs) },
-      { label: 'Messages', value: String(totalMessages || s.messageCount) },
-      { label: 'Tokens', value: `${formatNumber(displayTokensIn)}/${formatNumber(displayTokensOut)}` },
-      { label: 'Project', value: shortPath(s.directory) },
-    ];
-    if (s.summaryFiles) {
-      const changes = [
-        s.summaryFiles + ' files',
-        s.summaryAdditions ? '+' + s.summaryAdditions : '',
-        s.summaryDeletions ? '-' + s.summaryDeletions : '',
-      ].filter(Boolean).join(' ');
-      stats.push({ label: 'Changes', value: changes });
-    }
-    setInfo({ sessionTitle: cleanTitle(s.title) || 'Untitled', sessionPlatform: s.platform, stats });
+    setInfo({
+      sessionTitle: cleanTitle(s.title) || 'Untitled',
+      sessionPlatform: s.platform,
+      sessionProject: shortPath(s.directory),
+      sessionProjectFull: s.directory,
+    });
     return () => setInfo({});
-  }, [session, totalMessages, setInfo, displayTokensIn, displayTokensOut]);
+  }, [session, setInfo]);
 
   const activeModel = ([...messages]
     .reverse()
@@ -2539,7 +2538,12 @@ export function SessionDetail() {
   //   1. pending permission/question (needs you now)
   //   2. error (failed, still unseen)
   //   3. busy (running)
-  //   4. none (idle/done — don't distract)
+  //   4. waiting (completed, still unseen — the blue "unread" dot)
+  //   5. none (idle/done — don't distract)
+  // The waiting-and-unseen rung mirrors the per-row dot: a session that
+  // finished but hasn't been opened yet keeps its blue indicator until
+  // viewed, and the group header has to surface that or it lies about
+  // child state.
   // For the currently-viewed session we prefer the SSE-derived
   // `optimisticStatus`, matching the per-row logic above, so the header
   // doesn't lag several seconds behind what the composer is showing.
@@ -2554,6 +2558,7 @@ export function SessionDetail() {
 
     type Aggregate =
       | { kind: 'none' }
+      | { kind: 'waiting'; count: number }
       | { kind: 'busy'; count: number }
       | { kind: 'error'; count: number }
       | { kind: 'pending'; count: number };
@@ -2562,6 +2567,7 @@ export function SessionDetail() {
       let pending = 0;
       let error = 0;
       let busy = 0;
+      let waiting = 0;
       for (const s of sessions) {
         const effectiveStatus = s.id === id ? optimisticStatus : s.status;
         if (s.pendingPermission || s.pendingQuestion) {
@@ -2574,11 +2580,16 @@ export function SessionDetail() {
         }
         if (effectiveStatus === 'busy') {
           busy += 1;
+          continue;
+        }
+        if (effectiveStatus === 'waiting' && !s.seen) {
+          waiting += 1;
         }
       }
       if (pending > 0) return { kind: 'pending', count: pending };
       if (error > 0) return { kind: 'error', count: error };
       if (busy > 0) return { kind: 'busy', count: busy };
+      if (waiting > 0) return { kind: 'waiting', count: waiting };
       return { kind: 'none' };
     };
 
@@ -2760,7 +2771,8 @@ export function SessionDetail() {
                 const dotStatus =
                   agg.kind === 'error' ? 'error'
                     : agg.kind === 'busy' ? 'busy'
-                      : 'done';
+                      : agg.kind === 'waiting' ? 'waiting'
+                        : 'done';
                 const dotPending = agg.kind === 'pending';
                 const aggTitle =
                   agg.kind === 'pending'
@@ -2769,7 +2781,9 @@ export function SessionDetail() {
                       ? `${agg.count} session${agg.count === 1 ? '' : 's'} with unseen errors`
                       : agg.kind === 'busy'
                         ? `${agg.count} running`
-                        : `${group.sessions.length} session${group.sessions.length === 1 ? '' : 's'}`;
+                        : agg.kind === 'waiting'
+                          ? `${agg.count} unread`
+                          : `${group.sessions.length} session${group.sessions.length === 1 ? '' : 's'}`;
                 return (
                   <div key={group.directory || '__empty__'} className="session-sidebar-group">
                     <div className="session-sidebar-group-header-row">
@@ -3012,6 +3026,7 @@ export function SessionDetail() {
           platformId={session?.platform}
           directory={session?.directory}
           dirtyTick={changesDirtyTick}
+          session={session ?? undefined}
         />
       )}
       <Toast.Root className="oc-toast-root" open={showRenameToast} onOpenChange={setShowRenameToast} duration={2000}>

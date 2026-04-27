@@ -28,18 +28,41 @@ type FavoritesReader interface {
 	ModelFavorites(platform string) ([]state.ModelFavorite, error)
 }
 
+// CostCalculator computes API-equivalent cost from token counts and a
+// model id. Mirrors the same-named interface in internal/db/stats.go
+// so the adapter can be tested without pulling in the real pricing
+// table. A nil CostCalculator is permitted; the adapter falls back
+// to whatever cost values the upstream messages carry, which is
+// often zero for subscription-plan sessions.
+type CostCalculator interface {
+	CalcCost(modelID string, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens int64) float64
+}
+
 // Adapter implements platforms.Platform for OpenCode.
 type Adapter struct {
 	db        *db.DB
 	favorites FavoritesReader
+	pricing   CostCalculator
 }
 
 // New returns a new OpenCode adapter backed by the given read-only DB.
 // A nil DB is permitted so Available() can report absence cleanly.
 // A nil favorites reader is also permitted; SessionModels will then
 // skip the favorites merge step.
+//
+// Use NewWithPricing in production to pass a pricing table; New keeps
+// the legacy two-arg shape for tests and call sites that don't need
+// calculated cost.
 func New(database *db.DB, favorites FavoritesReader) *Adapter {
 	return &Adapter{db: database, favorites: favorites}
+}
+
+// NewWithPricing is like New but also wires in a pricing table used to
+// estimate cost for assistant messages whose upstream `cost` field is
+// zero (typical of subscription-plan sessions: the API was hit but the
+// message metadata records cost=0).
+func NewWithPricing(database *db.DB, favorites FavoritesReader, pricing CostCalculator) *Adapter {
+	return &Adapter{db: database, favorites: favorites, pricing: pricing}
 }
 
 // ID returns the OpenCode platform identifier.
@@ -68,6 +91,7 @@ func (a *Adapter) Capabilities() platforms.Capabilities {
 		ModelCatalog:      true,
 		SlashCommands:     true,
 		FileChanges:       true,
+		SessionInfo:       true,
 		// OpenCode only exposes an HTTP API when it's started with an
 		// explicit --port flag. `--port 0` asks OpenCode to pick a free
 		// port and advertises it via lsof, which ocman scans.

@@ -198,28 +198,20 @@ header h1 { font-size: 24px; font-weight: 600; color: var(--text-dim); white-spa
 header h1 > a { color: var(--text); font-weight: 600; }
 header h1 span { color: inherit; font-weight: 400; }
 
-.header-stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, max-content));
-  gap: 3px 14px;
-  flex-shrink: 0;
-}
-.header-stat {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+/* Project label on the right side of the header for /session/* routes.
+ * Single muted monospace line — fills the slot that used to hold the
+ * full per-session stats strip. The richer metadata moved to the
+ * SessionInfoSidebar; project stays here because it anchors the page. */
+.header-project {
+  flex-shrink: 1;
   min-width: 0;
-  font-size: 11px;
-  font-family: 'SF Mono', Consolas, monospace;
-}
-.header-stat-label {
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-}
-.header-stat-value {
-  color: var(--subtext1);
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  color: var(--subtext1);
 }
 
 /* VS Code open button */
@@ -251,8 +243,4 @@ header h1 span { color: inherit; font-weight: 400; }
 @media (max-width: 768px) {
   .container { padding: 0; }
   header { align-items: flex-start; padding: 16px 12px; }
-  .header-stats {
-    grid-template-columns: repeat(2, minmax(0, max-content));
-    width: 100%;
-  }
 }

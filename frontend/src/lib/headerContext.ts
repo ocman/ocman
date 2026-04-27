@@ -9,7 +9,16 @@ export interface HeaderInfo {
    * sessions apart at a glance.
    */
   sessionPlatform?: string;
-  stats?: { label: string; value: string }[];
+  /**
+   * Display string for the session's project directory (typically
+   * the output of `shortPath`). Rendered as a muted, right-aligned
+   * label in the page header — fills the slot that used to hold the
+   * full session-stats strip. The full path is carried in
+   * `sessionProjectFull` so the rendered span can use it as a
+   * `title` for hover-discovery.
+   */
+  sessionProject?: string;
+  sessionProjectFull?: string;
 }
 
 export const HeaderContext = createContext<{

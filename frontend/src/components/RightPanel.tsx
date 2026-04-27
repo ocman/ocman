@@ -5,6 +5,8 @@ import { useUiStore, type ChangesSidebarTab } from '../lib/uiStore';
 import { ChangesSidebarResizer } from './ChangesSidebarResizer';
 import { ChangesRefreshButton, SessionChangesSidebar, type PaneSummary } from './SessionChangesSidebar';
 import { WorkingTreeChangesSidebar } from './WorkingTreeChangesSidebar';
+import { SessionInfoSidebar } from './SessionInfoSidebar';
+import type { Session } from '../lib/api';
 
 interface RightPanelProps {
   sessionId: string;
@@ -13,21 +15,33 @@ interface RightPanelProps {
   // SSE-driven dirty tick passed through to both child hooks so an
   // edit event refreshes both panels in lockstep.
   dirtyTick?: number;
+  // The currently-rendered session, threaded through so the
+  // SessionInfoSidebar can display cross-platform metadata
+  // (project, branch, status, message count, duration, lifetime
+  // changes summary, total cost) without re-fetching it. Undefined
+  // while the parent is still loading.
+  session?: Session;
 }
 
 const TAB_LABELS: Record<ChangesSidebarTab, string> = {
+  info: 'Session info',
   session: 'Session changes',
   'working-tree': 'Working tree',
 };
 
+// Info = info-circle icon (context / MCP / LSP overview).
 // Session = pencil icon. Working tree = git branch icon. Bootstrap
 // Icons set, same family used everywhere else in the app.
 const TAB_ICONS: Record<ChangesSidebarTab, string> = {
+  info: 'bi-info-circle',
   session: 'bi-pencil-square',
   'working-tree': 'bi-git',
 };
 
-const ALL_TABS: ChangesSidebarTab[] = ['session', 'working-tree'];
+// Strip / pane order. Info sits above the two change-related panes
+// (it's the higher-level "what is the session attached to" view),
+// matching the OpenCode TUI layout.
+const ALL_TABS: ChangesSidebarTab[] = ['info', 'session', 'working-tree'];
 
 // Minimum height fraction a single pane is allowed to occupy. Stops
 // the user dragging a pane down to zero (where it would become
@@ -49,7 +63,7 @@ const MIN_PANE_FRACTION = 0.1;
 //
 // Designed to scale to N views: adding a third entry to ALL_TABS +
 // a render branch is enough.
-export function RightPanel({ sessionId, platformId, directory, dirtyTick }: RightPanelProps) {
+export function RightPanel({ sessionId, platformId, directory, dirtyTick, session }: RightPanelProps) {
   const openTabs = useUiStore((s) => s.changesSidebarOpenTabs);
   const sizes = useUiStore((s) => s.changesSidebarTabSizes);
   const toggleTab = useUiStore((s) => s.toggleChangesSidebarTab);
@@ -121,6 +135,7 @@ export function RightPanel({ sessionId, platformId, directory, dirtyTick }: Righ
             platformId={platformId}
             directory={directory}
             dirtyTick={dirtyTick}
+            session={session}
             // First pane has no top divider; subsequent panes do.
             divider={idx > 0}
             // Flex grow proportional to the size fraction. Multiplying
@@ -192,11 +207,15 @@ interface PaneProps {
   platformId: string | undefined;
   directory: string | undefined;
   dirtyTick?: number;
+  // Forwarded to SessionInfoSidebar's Session section. Other panes
+  // ignore it. Tokens and Todos for the same pane come from the
+  // /api/session/{id}/info endpoint, not from props.
+  session?: Session;
   divider: boolean;
   size: number;
 }
 
-function Pane({ tab, sessionId, platformId, directory, dirtyTick, divider, size }: PaneProps) {
+function Pane({ tab, sessionId, platformId, directory, dirtyTick, session, divider, size }: PaneProps) {
   // Children push their summary up via onSummaryChange so we can
   // render it next to the title without coupling RightPanel to
   // each view's data hook.
@@ -248,7 +267,19 @@ function Pane({ tab, sessionId, platformId, directory, dirtyTick, divider, size 
         </span>
       </div>
       <div className="oc-right-panel-pane" style={{ flexGrow: size, flexBasis: 0 }}>
-        {tab === 'session' ? (
+        {tab === 'info' && (
+          <SessionInfoSidebar
+            sessionId={sessionId}
+            platformId={platformId}
+            dirtyTick={dirtyTick}
+            session={session}
+            embedded
+            onSummaryChange={handleSummary}
+            onRefresh={handleRefresh}
+            onLoadingChange={handleLoadingChange}
+          />
+        )}
+        {tab === 'session' && (
           <SessionChangesSidebar
             sessionId={sessionId}
             platformId={platformId}
@@ -258,7 +289,8 @@ function Pane({ tab, sessionId, platformId, directory, dirtyTick, divider, size 
             onRefresh={handleRefresh}
             onLoadingChange={handleLoadingChange}
           />
-        ) : (
+        )}
+        {tab === 'working-tree' && (
           <WorkingTreeChangesSidebar
             directory={directory}
             dirtyTick={dirtyTick}

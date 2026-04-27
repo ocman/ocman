@@ -98,9 +98,14 @@ func main() {
 	defer stop()
 
 	// Register only the platform adapters requested via -platforms.
+	// The OpenCode adapter takes the pricing table so SessionInfo can
+	// estimate cost for sessions whose upstream `cost` field is zero
+	// (subscription-plan accounts). pricing.Load() is async-safe — it
+	// returns the same Table even if the background fetch is still
+	// running; calls into it just see an empty table until then.
 	registry := platforms.NewRegistry()
 	if enabledPlatforms[string(opencodeplatform.PlatformID)] {
-		registry.Register(opencodeplatform.New(database, stateDB))
+		registry.Register(opencodeplatform.NewWithPricing(database, stateDB, pricing.Load()))
 	}
 	if enabledPlatforms[string(claudecodeplatform.PlatformID)] {
 		registry.Register(claudecodeplatform.New())

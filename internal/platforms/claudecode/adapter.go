@@ -131,6 +131,7 @@ func (a *Adapter) Capabilities() platforms.Capabilities {
 		ModelCatalog:      false,
 		SlashCommands:     false,
 		FileChanges:       false,
+		SessionInfo:       false,
 	}
 }
 
@@ -141,6 +142,16 @@ func (a *Adapter) Capabilities() platforms.Capabilities {
 // since the edit). Return ErrUnsupported so handlers serve a
 // Supported=false payload.
 func (a *Adapter) SessionChanges(context.Context, string) (*platforms.SessionChanges, error) {
+	return nil, platforms.ErrUnsupported
+}
+
+// SessionInfo is unsupported for Claude Code: the platform doesn't
+// expose a structured MCP / LSP catalog or per-session context-window
+// metadata over a stable interface. Return ErrUnsupported so handlers
+// serve a Supported=false payload (the frontend hides the info pane
+// for this platform via the SessionInfo capability flag, but the
+// graceful fallback keeps the wire shape identical across platforms).
+func (a *Adapter) SessionInfo(context.Context, string) (*platforms.SessionInfo, error) {
 	return nil, platforms.ErrUnsupported
 }
 

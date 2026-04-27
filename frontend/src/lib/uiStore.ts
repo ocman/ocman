@@ -24,7 +24,10 @@ export type SidebarView = 'recent' | 'projects';
 // One of the views available in the right-hand panel. Adding a new
 // view is just an extra entry here plus a render branch in
 // RightPanel — the strip / open-tabs logic handles n tabs uniformly.
-export type ChangesSidebarTab = 'session' | 'working-tree';
+//
+// 'info' is the per-session info view (context tokens / MCP / LSP);
+// it stacks above the change-related panes.
+export type ChangesSidebarTab = 'info' | 'session' | 'working-tree';
 
 // Per-tab height fraction in split mode. Sums to 1 across openTabs.
 // Values are pinned to a minimum of 0.1 so a pane can't be dragged

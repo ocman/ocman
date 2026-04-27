@@ -69,6 +69,12 @@ type Capabilities struct {
 	// summary (Platform.SessionChanges). Frontend hides the
 	// "Changes" sidebar when false.
 	FileChanges bool `json:"fileChanges"`
+	// SessionInfo reports whether the adapter can produce the
+	// per-session info summary (context tokens / window, configured
+	// MCP servers, configured LSP servers) consumed by the right-
+	// hand "Session info" panel. Frontend hides the panel for
+	// platforms where this is false.
+	SessionInfo bool `json:"sessionInfo"`
 	// LiveConnectionHint is a short, user-facing message explaining how
 	// to establish the live connection to a running agent instance when
 	// it's missing. Shown by the frontend next to disabled composers.
@@ -161,6 +167,15 @@ type Platform interface {
 	// support this return ErrUnsupported; the HTTP layer translates
 	// that into Supported=false on the wire.
 	SessionChanges(ctx context.Context, sessionID string) (*SessionChanges, error)
+
+	// SessionInfo returns a snapshot of session-level metadata for
+	// the right-hand "Session info" panel: context-window usage,
+	// configured MCP servers and their connection status, and
+	// configured LSP servers and their status. Adapters that don't
+	// expose this data return ErrUnsupported; the HTTP layer
+	// translates that into Supported=false on the wire so the UI
+	// has a single shape to render.
+	SessionInfo(ctx context.Context, sessionID string) (*SessionInfo, error)
 
 	// LiveStatus returns in-memory live status for a session (nil if
 	// none). Cheap: does not touch disk.

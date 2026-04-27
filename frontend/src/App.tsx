@@ -67,21 +67,24 @@ function Header() {
     breadcrumb = <>/ {name}</>;
   }
 
+  // Right-hand side of the header: the project path for the current
+  // session. The richer per-session stats (Duration / Messages /
+  // Tokens / Changes / Cost) were moved to the right-panel
+  // "Session info" pane (SessionInfoSidebar); only Project stays in
+  // the header because it anchors the page at a glance.
   return (
     <header>
       <h1>
         <Link to="/" style={{ color: 'inherit', textDecoration: 'none' }}>ocman</Link>{' '}
         <span>{breadcrumb}</span>
       </h1>
-      {path.startsWith('/session/') && info.stats && info.stats.length > 0 && (
-        <div className="header-stats">
-          {info.stats.map((s, i) => (
-            <span key={i} className="header-stat">
-              <span className="header-stat-label">{s.label}</span>
-              <span className="header-stat-value">{s.value}</span>
-            </span>
-          ))}
-        </div>
+      {path.startsWith('/session/') && info.sessionProject && (
+        <span
+          className="header-project"
+          title={info.sessionProjectFull || info.sessionProject}
+        >
+          {info.sessionProject}
+        </span>
       )}
     </header>
   );

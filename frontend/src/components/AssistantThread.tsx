@@ -10,6 +10,8 @@ import { formatSeconds } from '../lib/format';
 import { useAgentColor } from '../lib/agentColor';
 import { useShortcut } from '../lib/shortcutRegistry';
 import { hardenMessageLinks } from '../lib/linkHardener';
+import { parseTodos } from '../lib/todos';
+import { TodoList } from './TodoList';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -630,61 +632,6 @@ function AnsweredQuestionBlock({ questions, answers }: { questions: QuestionData
           <div className="oc-question-answer">{answers[index] || ''}</div>
         </div>
       ))}
-    </div>
-  );
-}
-
-interface TodoItem {
-  content: string;
-  status: string;
-  priority: string;
-}
-
-function parseTodos(argsText: string, result: unknown): TodoItem[] | null {
-  // Try to extract todos from the tool args or result
-  const sources = [argsText, typeof result === 'string' ? result : JSON.stringify(result)];
-  for (const src of sources) {
-    if (!src) continue;
-    try {
-      const parsed = JSON.parse(src);
-      const todos = parsed?.todos || parsed;
-      if (Array.isArray(todos) && todos.length > 0 && todos[0]?.content && todos[0]?.status) {
-        return todos as TodoItem[];
-      }
-    } catch {
-      // Try to find JSON within the string (may have prefix lines)
-      const jsonStart = src.indexOf('[');
-      const jsonEnd = src.lastIndexOf(']');
-      if (jsonStart >= 0 && jsonEnd > jsonStart) {
-        try {
-          const todos = JSON.parse(src.slice(jsonStart, jsonEnd + 1));
-          if (Array.isArray(todos) && todos.length > 0 && todos[0]?.content && todos[0]?.status) {
-            return todos as TodoItem[];
-          }
-        } catch { /* not JSON */ }
-      }
-    }
-  }
-  return null;
-}
-
-function TodoList({ todos }: { todos: TodoItem[] }) {
-  return (
-    <div className="oc-todo-list">
-      {todos.map((t, i) => {
-        const isDone = t.status === 'completed';
-        const isActive = t.status === 'in_progress';
-        let cls = 'oc-todo-item';
-        if (isDone) cls += ' oc-todo-done';
-        if (isActive) cls += ' oc-todo-active';
-        return (
-          <div key={i} className={cls}>
-            <span className="oc-todo-check" title={isDone ? 'Completed' : isActive ? 'In progress' : 'Pending'}>{isDone ? '\u2713' : isActive ? '\u25B6' : '\u25CB'}</span>
-            <span className="oc-todo-text">{t.content}</span>
-            {t.priority === 'high' && <span className="oc-todo-priority" title="High priority">!</span>}
-          </div>
-        );
-      })}
     </div>
   );
 }

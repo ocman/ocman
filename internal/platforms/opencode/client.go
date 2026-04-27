@@ -302,11 +302,25 @@ func fetchOpenCodeSmallModel(port string) (providerID, modelID string, ok bool) 
 // the picker. The /provider payload includes costs, capabilities, limits,
 // etc. — we strip most of it server-side to keep the frontend response
 // small, but preserve variant names so the UI can offer a reasoning picker.
+//
+// `Limit` carries the model's context-window size, consumed by the
+// SessionInfo panel to compute "% used". It's preserved on the Go
+// type but excluded from the picker's wire payload (the buildSessionModelEntries
+// path strips it explicitly when constructing SessionModelEntry).
 type OpenCodeProviderModel struct {
 	ID       string                          `json:"id"`
 	Name     string                          `json:"name,omitempty"`
 	Status   string                          `json:"status,omitempty"`
 	Variants map[string]OpenCodeModelVariant `json:"variants,omitempty"`
+	Limit    OpenCodeModelLimit              `json:"limit,omitempty"`
+}
+
+// OpenCodeModelLimit mirrors the `limit` block on a model entry:
+// `context` is the input-window size in tokens; `output` is the
+// max-completion size. We only consume `context` today.
+type OpenCodeModelLimit struct {
+	Context int64 `json:"context,omitempty"`
+	Output  int64 `json:"output,omitempty"`
 }
 
 // OpenCodeModelVariant is a single variant entry from OpenCode's /provider

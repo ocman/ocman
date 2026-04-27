@@ -859,6 +859,58 @@ func (s *Server) handleSessionChanges(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, changes)
 }
 
+// handleSessionInfo returns the per-session info snapshot consumed by
+// the right-hand "Session info" panel: lifetime token totals, the
+// latest todowrite list, and (when the platform has a live channel)
+// context-window size, configured MCP servers, and configured LSP
+// servers. Mirrors handleSessionChanges in shape: adapters that don't
+// support the operation at all (Claude Code today) surface as
+// Supported=false rather than an HTTP error so the frontend has a
+// single shape to render. OpenCode without a live port returns
+// Supported=false from the adapter directly (with the always-on
+// fields populated from the DB) — the ErrUnsupported branch below
+// covers the all-or-nothing platforms only.
+func (s *Server) handleSessionInfo(w http.ResponseWriter, r *http.Request) {
+	sessionID, _, ok := sessionSubPath(r.URL.Path, "/api/session/")
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	adapter := s.resolvePlatformForSession(w, r, sessionID)
+	if adapter == nil {
+		return
+	}
+	info, err := adapter.SessionInfo(r.Context(), sessionID)
+	if err != nil {
+		if errors.Is(err, platforms.ErrUnsupported) {
+			writeJSON(w, &platforms.SessionInfo{
+				SessionID:  sessionID,
+				Supported:  false,
+				MCPServers: []platforms.MCPServer{},
+				LSPServers: []platforms.LSPServer{},
+			})
+			return
+		}
+		writePlatformError(w, "fetching session info", err)
+		return
+	}
+	if info == nil {
+		info = &platforms.SessionInfo{
+			SessionID:  sessionID,
+			Supported:  false,
+			MCPServers: []platforms.MCPServer{},
+			LSPServers: []platforms.LSPServer{},
+		}
+	}
+	if info.MCPServers == nil {
+		info.MCPServers = []platforms.MCPServer{}
+	}
+	if info.LSPServers == nil {
+		info.LSPServers = []platforms.LSPServer{}
+	}
+	writeJSON(w, info)
+}
+
 // --- Session-scoped mutating endpoints ---
 
 func (s *Server) handleSessionMessage(w http.ResponseWriter, r *http.Request) {
@@ -1183,6 +1235,7 @@ func (s *Server) handleSessionsRoot(w http.ResponseWriter, r *http.Request) {
 //	/api/session/{id}/commands         GET      -> handleSessionCommands
 //	/api/session/{id}/models           GET      -> handleSessionModels
 //	/api/session/{id}/changes          GET      -> handleSessionChanges
+//	/api/session/{id}/info             GET      -> handleSessionInfo
 //	/api/session/{id}/permissions      GET      -> handleSessionPermissions
 //	/api/session/{id}/permissions/{pid} POST    -> handleSessionPermission
 //	/api/session/{id}/questions        GET      -> handleSessionQuestions
@@ -1246,6 +1299,9 @@ func (s *Server) dispatchSessionSubpath(w http.ResponseWriter, r *http.Request) 
 			return
 		case "changes":
 			s.handleSessionChanges(w, r)
+			return
+		case "info":
+			s.handleSessionInfo(w, r)
 			return
 		case "permissions":
 			// GET /api/session/{id}/permissions (no pid)

@@ -18,6 +18,7 @@ const EMPTY_CAPS: PlatformCapabilities = {
   modelCatalog: false,
   slashCommands: false,
   fileChanges: false,
+  sessionInfo: false,
   liveConnectionHint: '',
 };
 

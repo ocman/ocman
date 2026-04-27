@@ -306,6 +306,97 @@ export interface SessionChanges {
   files: FileChange[];
 }
 
+// One configured MCP (Model Context Protocol) server plus its current
+// connection status, as exposed by the running platform's MCP catalog.
+// Status uses the upstream platform's vocabulary verbatim ("connected"
+// / "needs_auth" / "failed" / future values) — the renderer styles known
+// values and falls back to neutral styling for the rest.
+export interface MCPServer {
+  name: string;
+  status: string;
+  error?: string;
+}
+
+// One configured LSP plus its current status. `id` is the platform-
+// supplied stable identifier; `name` is the human-friendly label
+// (often equal to id). `status` follows the same verbatim rule as
+// MCPServer.status.
+export interface LSPServer {
+  id: string;
+  name: string;
+  status: string;
+}
+
+// Context-window usage snapshot for a session. `tokens` is the
+// running count attributed to the most recent assistant turn (same
+// value as SessionDetail.contextTokenCount). `limit` is the model's
+// context-window size in tokens — 0 / absent when unknown (catalog
+// unreachable or model not in catalog). `cost` is total session
+// spend in USD.
+export interface SessionInfoContext {
+  tokens: number;
+  limit?: number;
+  /**
+   * Sum of the platform-recorded `cost` field across assistant
+   * messages — what was actually billed. Zero for subscription-plan
+   * accounts whose messages all record cost=0.
+   */
+  cost: number;
+  /**
+   * Token-derived cost estimate from the loaded pricing table,
+   * computed independently of `cost`. Surfaced as a separate "Est"
+   * row in the panel so subscription-plan sessions ($0 Cost +
+   * non-zero Est) are visible at a glance.
+   */
+  estCost: number;
+  model?: string;
+}
+
+// Lifetime token totals broken down across the four buckets the
+// SessionInfo panel surfaces. Cache read/write are not in the
+// /api/sessions wire payload; this is the only place a client can
+// reliably read them.
+export interface SessionInfoTokens {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
+
+// One row of an OpenCode / Claude Code todowrite call.
+export interface SessionInfoTodo {
+  content: string;
+  status: string;
+  priority?: string;
+}
+
+// Wire shape for /api/session/{id}/info.
+//
+// `supported` reflects the *live* tier specifically: when false, MCP
+// servers, LSP servers, and the per-model context-window limit are
+// not available because the platform doesn't have a live channel
+// (e.g. OpenCode without a discoverable --port). Lifetime token
+// totals and the latest todo list are computed from the read-only DB
+// and are populated either way.
+// User / assistant turn breakdown for the session. Both zero when
+// the platform doesn't compute the breakdown — the UI then falls back
+// to the legacy `session.messageCount` (user turns only).
+export interface SessionInfoMessages {
+  user: number;
+  assistant: number;
+}
+
+export interface SessionInfo {
+  sessionId: string;
+  supported: boolean;
+  context: SessionInfoContext;
+  tokens: SessionInfoTokens;
+  mcpServers: MCPServer[];
+  lspServers: LSPServer[];
+  messages: SessionInfoMessages;
+  todos?: SessionInfoTodo[];
+}
+
 export interface Stats {
   totalSessions: number;
   totalMessages: number;
@@ -476,6 +567,13 @@ export interface PlatformCapabilities {
    */
   fileChanges: boolean;
   /**
+   * Whether the platform exposes /api/session/{id}/info — the
+   * per-session context-window / MCP / LSP snapshot used by the
+   * "Session info" right-hand panel. False for adapters that can't
+   * produce a useful snapshot (Claude Code today).
+   */
+  sessionInfo: boolean;
+  /**
    * Short, user-facing message explaining how to establish the live
    * connection to a running agent instance when it's missing (e.g.
    * "Start OpenCode with `opencode --port 0` ..." for OpenCode).
@@ -600,6 +698,14 @@ export const api = {
   // implement aggregation (Claude Code today).
   sessionChanges: (id: string, signal?: AbortSignal) =>
     fetchJSON<SessionChanges>(`/api/session/${encodeURIComponent(id)}/changes`, signal),
+  // Per-session info snapshot consumed by the right-hand "Session info"
+  // panel: context-window usage, configured MCP servers and their
+  // status, configured LSP servers and their status. Returns
+  // supported=false (HTTP 200) when the owning platform can't produce
+  // a meaningful snapshot (Claude Code today, or OpenCode without a
+  // live port).
+  sessionInfo: (id: string, signal?: AbortSignal) =>
+    fetchJSON<SessionInfo>(`/api/session/${encodeURIComponent(id)}/info`, signal),
   // Working-tree git diff for an absolute directory. fresh=1 bypasses
   // the backend's tiny in-process cache; the SSE-driven refetch path
   // sets it so an edit-event-triggered refresh is never stale.
