@@ -20,6 +20,7 @@ import {
 } from '../lib/format';
 import { usePageTitle } from '../lib/headerContext';
 import { SessionTable } from '../components/SessionTable';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useApiRequest } from '../lib/apiStore';
 import { useUiStore } from '../lib/uiStore';
 import { useAuthStore } from '../lib/authStore';
@@ -155,7 +156,13 @@ export function DashboardLayout() {
           <NavLink to="/usage" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Usage</NavLink>
           <NavLink to="/settings" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Settings</NavLink>
         </div>
-        <Outlet />
+        {/* Per-tab boundary so a crash inside Stats / Usage / etc.
+            (chart.js render error, malformed metrics payload) doesn't
+            blank the tab bar above. resetKey on pathname auto-clears
+            when the user switches to a different tab. */}
+        <ErrorBoundary name={`dashboard:${location.pathname}`} resetKey={location.pathname}>
+          <Outlet />
+        </ErrorBoundary>
       </div>
     </DashboardContext.Provider>
   );

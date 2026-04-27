@@ -6,6 +6,7 @@ import { ChangesSidebarResizer } from './ChangesSidebarResizer';
 import { ChangesRefreshButton, SessionChangesSidebar, type PaneSummary } from './SessionChangesSidebar';
 import { WorkingTreeChangesSidebar } from './WorkingTreeChangesSidebar';
 import { SessionInfoSidebar } from './SessionInfoSidebar';
+import { ErrorBoundary } from './ErrorBoundary';
 import type { Session } from '../lib/api';
 
 interface RightPanelProps {
@@ -267,39 +268,45 @@ function Pane({ tab, sessionId, platformId, directory, dirtyTick, session, divid
         </span>
       </div>
       <div className="oc-right-panel-pane" style={{ flexGrow: size, flexBasis: 0 }}>
-        {tab === 'info' && (
-          <SessionInfoSidebar
-            sessionId={sessionId}
-            platformId={platformId}
-            dirtyTick={dirtyTick}
-            session={session}
-            embedded
-            onSummaryChange={handleSummary}
-            onRefresh={handleRefresh}
-            onLoadingChange={handleLoadingChange}
-          />
-        )}
-        {tab === 'session' && (
-          <SessionChangesSidebar
-            sessionId={sessionId}
-            platformId={platformId}
-            dirtyTick={dirtyTick}
-            embedded
-            onSummaryChange={handleSummary}
-            onRefresh={handleRefresh}
-            onLoadingChange={handleLoadingChange}
-          />
-        )}
-        {tab === 'working-tree' && (
-          <WorkingTreeChangesSidebar
-            directory={directory}
-            dirtyTick={dirtyTick}
-            embedded
-            onSummaryChange={handleSummary}
-            onRefresh={handleRefresh}
-            onLoadingChange={handleLoadingChange}
-          />
-        )}
+        {/* Each pane gets its own boundary so a crash in one (bad diff
+            payload, broken markdown, etc.) doesn't take the other panes
+            down. resetKey on sessionId clears stale crashes when the user
+            switches sessions. */}
+        <ErrorBoundary name={`right-panel:${tab}`} inline resetKey={sessionId}>
+          {tab === 'info' && (
+            <SessionInfoSidebar
+              sessionId={sessionId}
+              platformId={platformId}
+              dirtyTick={dirtyTick}
+              session={session}
+              embedded
+              onSummaryChange={handleSummary}
+              onRefresh={handleRefresh}
+              onLoadingChange={handleLoadingChange}
+            />
+          )}
+          {tab === 'session' && (
+            <SessionChangesSidebar
+              sessionId={sessionId}
+              platformId={platformId}
+              dirtyTick={dirtyTick}
+              embedded
+              onSummaryChange={handleSummary}
+              onRefresh={handleRefresh}
+              onLoadingChange={handleLoadingChange}
+            />
+          )}
+          {tab === 'working-tree' && (
+            <WorkingTreeChangesSidebar
+              directory={directory}
+              dirtyTick={dirtyTick}
+              embedded
+              onSummaryChange={handleSummary}
+              onRefresh={handleRefresh}
+              onLoadingChange={handleLoadingChange}
+            />
+          )}
+        </ErrorBoundary>
       </div>
     </>
   );

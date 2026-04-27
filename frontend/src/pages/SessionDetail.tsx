@@ -16,6 +16,7 @@ import { ShortPath, GitStatusLine } from '../components/SessionTable';
 import { BackendStats } from '../components/BackendStats';
 import { SidebarResizer } from '../components/SidebarResizer';
 import { RightPanel } from '../components/RightPanel';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useUiStore } from '../lib/uiStore';
 import { useTmux } from '../lib/useTmux';
 import { filterVisibleSessions } from '../lib/sessionVisibility';
@@ -2885,11 +2886,24 @@ export function SessionDetail() {
             taskLiveOutput={taskLiveOutput}
             projectDirectory={session.directory}
           >
+            {/* AssistantThread is the most crash-prone region in the
+                page — it renders user-supplied markdown, code blocks via
+                highlight.js, and tool-call parts that arrive in real
+                time over SSE. Isolate it so a malformed message doesn't
+                blank the rest of the page (header, sidebars, recent
+                sessions list). resetKey on session.id clears any stale
+                crash when the user navigates to another session. */}
+            <ErrorBoundary name="session:thread" resetKey={session.id}>
             <AssistantThread
               hasMore={hasMore}
               loadingMore={loadingMore}
               onLoadMore={loadMore}
-              composer={pendingPermission && portAvailable && caps.respondPermission ? (
+              composer={(
+                /* Composer/prompt slot has its own boundary so a crash
+                   in one of these doesn't take the message thread down
+                   with it (and vice versa). */
+                <ErrorBoundary name="session:composer" inline resetKey={session.id}>
+                  {pendingPermission && portAvailable && caps.respondPermission ? (
                 <PermissionPrompt
                   permission={pendingPermission}
                   onReply={handlePermissionReply}
@@ -2946,6 +2960,8 @@ export function SessionDetail() {
                   }
                 />
               ) : null}
+                </ErrorBoundary>
+              )}
               footer={showSseNotice || showSseDebug ? (
                 <>
                   {showSseNotice && (
@@ -2967,6 +2983,7 @@ export function SessionDetail() {
                 </>
               ) : undefined}
             />
+            </ErrorBoundary>
             {showRenameModal && (
               <div className="oc-rename-backdrop" onClick={() => setShowRenameModal(false)}>
                 <div className="oc-rename-dialog" onClick={e => e.stopPropagation()}>

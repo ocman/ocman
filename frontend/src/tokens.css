@@ -165,6 +165,18 @@ tr.no-port { opacity: 0.4; }
 }
 .oc-error-boundary button:hover { border-color: var(--accent); }
 
+/* Compact variant for boundaries embedded inside panels (right-panel
+   panes, composer slot, etc.) — fills the parent rather than the
+   viewport, with smaller padding/typography. */
+.oc-error-boundary.inline {
+  height: auto;
+  padding: 16px;
+  gap: 8px;
+}
+.oc-error-boundary.inline h2 { font-size: 14px; }
+.oc-error-boundary.inline p { font-size: 12px; max-width: none; }
+.oc-error-boundary.inline button { padding: 4px 12px; font-size: 12px; }
+
 /* Error banner */
 .oc-error-banner {
   display: flex;

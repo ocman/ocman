@@ -1,5 +1,5 @@
-import { Component, useCallback, useEffect, useMemo } from 'react';
-import type { ReactNode, ErrorInfo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
+import type { ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { DashboardLayout, SessionsTab, ProjectsTab, StatsTab, UsageTab, SettingsTab } from './pages/Dashboard';
@@ -11,6 +11,7 @@ import { useHeaderInfo } from './lib/headerContext';
 import { CommandPalette } from './components/CommandPalette';
 import { PlatformBadge } from './components/PlatformBadge';
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { useFaviconNotify } from './lib/useFaviconNotify';
 import { useBellNotify } from './lib/useBellNotify';
 import { useAuthStore } from './lib/authStore';
@@ -19,24 +20,18 @@ import { useShortcut, useShortcutDispatcher } from './lib/shortcutRegistry';
 import { usePerformanceCleanup } from './lib/usePerformanceCleanup';
 import { useMemoryMonitor } from './lib/useMemoryMonitor';
 
-class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
-  state = { error: null as Error | null };
-  static getDerivedStateFromError(error: Error) { return { error }; }
-  componentDidCatch(error: Error, info: ErrorInfo) { console.error('Uncaught error:', error, info); }
-  render() {
-    if (this.state.error) {
-      return (
-        <div className="oc-error-boundary">
-          <h2>Something went wrong</h2>
-          <p>{this.state.error.message}</p>
-          <button onClick={() => { this.setState({ error: null }); window.location.reload(); }}>
-            Reload
-          </button>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
+// Top-level boundary keyed on the current pathname so navigating away from
+// a crashed route auto-recovers without forcing the user to reload. Inner
+// boundaries (RightPanel panes, AssistantThread, Composer, Dashboard tabs)
+// catch crashes more locally so a single broken view doesn't blank the
+// whole app.
+function RoutesBoundary({ children }: { children: ReactNode }) {
+  const location = useLocation();
+  return (
+    <ErrorBoundary name="app:routes" resetKey={location.pathname}>
+      {children}
+    </ErrorBoundary>
+  );
 }
 
 function Header() {
@@ -262,7 +257,7 @@ export default function App() {
           <div className="container">
             <Header />
             <div className="content">
-              <ErrorBoundary>
+              <RoutesBoundary>
                 <Routes>
                   <Route element={<DashboardLayout />}>
                     <Route path="/" element={<SessionsTab />} />
@@ -274,7 +269,7 @@ export default function App() {
                   <Route path="/project/*" element={<ProjectDetail />} />
                   <Route path="/session/:id" element={<SessionDetail />} />
                 </Routes>
-              </ErrorBoundary>
+              </RoutesBoundary>
             </div>
           </div>
         </HeaderProvider>
