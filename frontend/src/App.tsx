@@ -20,6 +20,7 @@ import { useShortcut, useShortcutDispatcher } from './lib/shortcutRegistry';
 import { usePerformanceCleanup } from './lib/usePerformanceCleanup';
 import { useMemoryMonitor } from './lib/useMemoryMonitor';
 import { useLongTaskMonitor } from './lib/useLongTaskMonitor';
+import { installDevHandle as installPerfDevHandle } from './lib/perfRing';
 
 // Top-level boundary keyed on the current pathname so navigating away from
 // a crashed route auto-recovers without forcing the user to reload. Inner
@@ -228,6 +229,23 @@ function LongTaskMonitor() {
   return null;
 }
 
+// Installs `window.__ocmanPerf` so operators can inspect recent API
+// call timings from the browser devtools console:
+//
+//   __ocmanPerf.summary()        // grouped per-endpoint percentiles
+//   console.table(__ocmanPerf.entries())
+//   __ocmanPerf.clear()          // start fresh before reproducing a stall
+//
+// The ring is populated by every fetchJSON / postJSON call (see
+// lib/api.ts), so it works as soon as the app has made at least one
+// request.
+function PerfDevHandle() {
+  useEffect(() => {
+    installPerfDevHandle();
+  }, []);
+  return null;
+}
+
 /**
  * AuthGate short-circuits the app tree while the initial auth probe
  * is in flight, and again whenever the client is unauthenticated
@@ -264,6 +282,7 @@ export default function App() {
           <PerformanceCleanup />
           <MemoryMonitor />
           <LongTaskMonitor />
+          <PerfDevHandle />
           <GlobalHotkeys />
           <div className="container">
             <Header />

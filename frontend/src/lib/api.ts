@@ -1,3 +1,5 @@
+import { record as recordPerf, templatePath } from './perfRing';
+
 /**
  * AuthError is thrown when the backend reports that the client is
  * unauthenticated (HTTP 401). It's a distinct error type so callers —
@@ -47,9 +49,26 @@ async function throwForStatus(resp: Response): Promise<never> {
 }
 
 export async function fetchJSON<T>(url: string, signal?: AbortSignal): Promise<T> {
-  const resp = await fetch(url, signal ? { signal } : undefined);
-  if (!resp.ok) await throwForStatus(resp);
-  return resp.json();
+  const startedAt = performance.now();
+  let status = 0;
+  try {
+    const resp = await fetch(url, signal ? { signal } : undefined);
+    status = resp.status;
+    if (!resp.ok) await throwForStatus(resp);
+    return await resp.json();
+  } finally {
+    // Record after the JSON parse so durationMs reflects the user-
+    // visible cost, not just the HTTP round-trip. Errors and aborts
+    // also land here (status=0 for aborts, or the real status for
+    // a non-2xx that threw via throwForStatus).
+    recordPerf({
+      pathTemplate: templatePath(url),
+      method: 'GET',
+      status,
+      durationMs: performance.now() - startedAt,
+      startedAt,
+    });
+  }
 }
 
 /**
@@ -66,17 +85,30 @@ export async function postJSON<TResp, TReq = unknown>(
   body: TReq,
   opts?: { signal?: AbortSignal; parseJSON?: boolean },
 ): Promise<TResp> {
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    signal: opts?.signal,
-  });
-  if (!resp.ok) await throwForStatus(resp);
-  if (opts?.parseJSON === false || resp.status === 204) {
-    return undefined as unknown as TResp;
+  const startedAt = performance.now();
+  let status = 0;
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: opts?.signal,
+    });
+    status = resp.status;
+    if (!resp.ok) await throwForStatus(resp);
+    if (opts?.parseJSON === false || resp.status === 204) {
+      return undefined as unknown as TResp;
+    }
+    return await resp.json();
+  } finally {
+    recordPerf({
+      pathTemplate: templatePath(url),
+      method: 'POST',
+      status,
+      durationMs: performance.now() - startedAt,
+      startedAt,
+    });
   }
-  return resp.json();
 }
 
 /**
