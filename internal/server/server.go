@@ -146,9 +146,13 @@ func (s *Server) Start(ctx context.Context) error {
 		fileServer.ServeHTTP(w, r)
 	})
 
+	// Wrap the mux with the request-timing middleware so every API
+	// request emits a structured "http request" log line. SSE and the
+	// debug-log sink are skipped inside the middleware (see noiseSkip)
+	// to keep the log readable.
 	httpServer := &http.Server{
 		Addr:    s.addr,
-		Handler: mux,
+		Handler: withRequestTiming(mux),
 	}
 
 	// Start the server in a goroutine so we can wait for the context.
