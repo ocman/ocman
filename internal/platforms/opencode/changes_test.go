@@ -331,84 +331,261 @@ func TestCountLines(t *testing.T) {
 	}
 }
 
-func TestLinesEqual(t *testing.T) {
-	cases := []struct {
-		name string
-		a, b string
-		want bool
-	}{
-		{"identical", "foo\nbar", "foo\nbar", true},
-		{"empty both", "", "", true},
-		{"trailing newline only on a", "foo\nbar\n", "foo\nbar", true},
-		{"trailing newline only on b", "foo\nbar", "foo\nbar\n", true},
-		{"crlf vs lf", "foo\r\nbar\r\n", "foo\nbar\n", true},
-		{"different content", "foo", "bar", false},
-		{"different line count", "foo\nbar", "foo", false},
-		{"trailing whitespace mid-line", "foo \nbar", "foo\nbar", false},
-	}
-	for _, tc := range cases {
-		got := linesEqual(tc.a, tc.b)
-		if got != tc.want {
-			t.Errorf("%s: linesEqual(%q, %q) = %v, want %v",
-				tc.name, tc.a, tc.b, got, tc.want)
-		}
-	}
-}
-
-func TestAggregateChanges_FiltersRevertedFile(t *testing.T) {
-	// File goes A -> B -> A. Per-edit counts are non-zero (each
-	// edit did something), but the net effect is no change. The
-	// aggregator should drop the file entirely so the UI doesn't
-	// show a "(no changes)" group.
+func TestAggregateChanges_KeepsRevertedFile(t *testing.T) {
+	// File goes A -> B -> A. Per-edit counts are non-zero (each edit
+	// did real work). Under the new aggregation rule we trust those
+	// counts and surface the file rather than try to compute a "net"
+	// effect — OpenCode's own counts are authoritative, and dropping
+	// edits the user spent tokens on was actively misleading when
+	// the new patch-style schema replaced the before/after snapshots
+	// (every file looked "reverted" because Before/After were empty).
 	parts := []db.Part{
 		editPart(t, "p1", 100, "/work/x.go", "A\n", "B\n", 1, 1),
 		editPart(t, "p2", 200, "/work/x.go", "B\n", "A\n", 1, 1),
 	}
 	got := aggregateChanges("ses", "/work", parts)
-	if got.FilesChanged != 0 {
-		t.Errorf("FilesChanged = %d, want 0 (reverted file should be filtered)", got.FilesChanged)
+	if got.FilesChanged != 1 {
+		t.Errorf("FilesChanged = %d, want 1 (reverted file should still be surfaced)", got.FilesChanged)
 	}
-	if got.TotalAdditions != 0 || got.TotalDeletions != 0 {
-		t.Errorf("totals = %d/%d, want 0/0 after filtering",
+	if got.TotalAdditions != 2 || got.TotalDeletions != 2 {
+		t.Errorf("totals = %d/%d, want 2/2 (sum of per-edit counts)",
 			got.TotalAdditions, got.TotalDeletions)
 	}
 }
 
-func TestAggregateChanges_FiltersTrailingWhitespaceOnlyChange(t *testing.T) {
-	// Edit that only adds a trailing newline. The byte content
-	// differs but the line-by-line view is unchanged, so the
-	// frontend would render zero diff rows. Filter at the
-	// boundary the renderer uses.
+func TestAggregateChanges_FiltersZeroCountEdit(t *testing.T) {
+	// An edit that produces zero per-edit additions and deletions
+	// (e.g. trailing-newline noise reported as 0/0 by OpenCode) is
+	// dropped. We rely on the upstream counts as the single source
+	// of truth — no extra heuristic on whitespace/CRLF.
 	parts := []db.Part{
 		editPart(t, "p1", 1, "/work/y.go", "hello", "hello\n", 0, 0),
 	}
 	got := aggregateChanges("ses", "/work", parts)
 	if got.FilesChanged != 0 {
-		t.Errorf("FilesChanged = %d, want 0 (trailing-newline-only edit filtered)",
-			got.FilesChanged)
-	}
-}
-
-func TestAggregateChanges_FiltersCRLFOnlyChange(t *testing.T) {
-	parts := []db.Part{
-		editPart(t, "p1", 1, "/work/z.go", "a\r\nb\r\n", "a\nb\n", 0, 0),
-	}
-	got := aggregateChanges("ses", "/work", parts)
-	if got.FilesChanged != 0 {
-		t.Errorf("FilesChanged = %d, want 0 (CRLF/LF-only difference filtered)",
-			got.FilesChanged)
+		t.Errorf("FilesChanged = %d, want 0 (zero-count edit filtered)", got.FilesChanged)
 	}
 }
 
 func TestAggregateChanges_KeepsFileWithRealChange(t *testing.T) {
-	// Sanity: trailing whitespace MID-LINE is a real difference
-	// (it shows up as a changed character), so we must keep it.
+	// Sanity: any edit with non-zero per-edit counts is kept. The
+	// aggregator no longer second-guesses OpenCode's accounting.
 	parts := []db.Part{
 		editPart(t, "p1", 1, "/work/k.go", "foo\nbar", "foo \nbar", 1, 1),
 	}
 	got := aggregateChanges("ses", "/work", parts)
 	if got.FilesChanged != 1 {
-		t.Errorf("FilesChanged = %d, want 1 (mid-line whitespace IS a real change)",
-			got.FilesChanged)
+		t.Errorf("FilesChanged = %d, want 1", got.FilesChanged)
+	}
+}
+
+// patchFiledidffPart returns a part shaped like the new (patch-style)
+// OpenCode schema: state.metadata.filediff carries `{file, patch,
+// additions, deletions}` with no before/after snapshots. This is what
+// modern OpenCode versions emit.
+func patchFilediffPart(t *testing.T, id string, ts int64, file, patch string, adds, dels int) db.Part {
+	t.Helper()
+	return makePart(t, id, "msg_"+id, ts, map[string]any{
+		"type": "tool",
+		"tool": "edit",
+		"state": map[string]any{
+			"input": map[string]any{
+				"filePath":  file,
+				"oldString": "irrelevant — modern parts carry the diff in metadata",
+				"newString": "irrelevant",
+			},
+			"metadata": map[string]any{
+				"filediff": map[string]any{
+					"file":      file,
+					"patch":     patch,
+					"additions": adds,
+					"deletions": dels,
+				},
+			},
+		},
+	})
+}
+
+func TestAggregateChanges_NewSchemaPatchOnly(t *testing.T) {
+	// New OpenCode schema: filediff has a `patch` (unified diff)
+	// rather than before/after snapshots. The aggregator must read
+	// counts from filediff.{additions,deletions} and surface the
+	// patch through FileChange.Patch / Edit.Patch.
+	patch := "@@ -1,2 +1,3 @@\n line\n+added\n line2\n"
+	parts := []db.Part{
+		patchFilediffPart(t, "p1", 100, "/work/foo.go", patch, 1, 0),
+	}
+	got := aggregateChanges("ses", "/work", parts)
+	if got.FilesChanged != 1 {
+		t.Fatalf("FilesChanged = %d, want 1", got.FilesChanged)
+	}
+	f := got.Files[0]
+	if f.Additions != 1 || f.Deletions != 0 {
+		t.Errorf("counts = %d/%d, want 1/0", f.Additions, f.Deletions)
+	}
+	if f.Patch == "" {
+		t.Errorf("FileChange.Patch should be populated for new-schema parts")
+	}
+	if !strings.Contains(f.Patch, "+added") {
+		t.Errorf("FileChange.Patch missing expected hunk: %q", f.Patch)
+	}
+	if len(f.Edits) != 1 || f.Edits[0].Patch == "" {
+		t.Errorf("per-edit Patch should be populated")
+	}
+	// Legacy snapshots should be empty when only a patch is available.
+	if f.Before != "" || f.After != "" {
+		t.Errorf("Before/After should be empty for new-schema parts, got %q/%q", f.Before, f.After)
+	}
+}
+
+func TestAggregateChanges_NewSchemaMultipleEditsConcatPatch(t *testing.T) {
+	// Two patch-style edits on the same file. The per-file Patch is
+	// the concatenation of every edit's patch, in chronological
+	// order, separated by a single blank line so a multi-edit view
+	// still parses as a sequence of unified-diff hunks.
+	p1 := "@@ -1,1 +1,2 @@\n a\n+b\n"
+	p2 := "@@ -2,1 +2,2 @@\n b\n+c\n"
+	parts := []db.Part{
+		patchFilediffPart(t, "p1", 100, "/work/x.go", p1, 1, 0),
+		patchFilediffPart(t, "p2", 200, "/work/x.go", p2, 1, 0),
+	}
+	got := aggregateChanges("ses", "/work", parts)
+	if got.FilesChanged != 1 {
+		t.Fatalf("FilesChanged = %d", got.FilesChanged)
+	}
+	f := got.Files[0]
+	if f.EditCount != 2 || len(f.Edits) != 2 {
+		t.Errorf("EditCount/Edits = %d/%d, want 2/2", f.EditCount, len(f.Edits))
+	}
+	if f.Additions != 2 || f.Deletions != 0 {
+		t.Errorf("counts = %d/%d, want 2/0", f.Additions, f.Deletions)
+	}
+	if !strings.Contains(f.Patch, "+b") || !strings.Contains(f.Patch, "+c") {
+		t.Errorf("concat patch missing hunks: %q", f.Patch)
+	}
+}
+
+func TestAggregateChanges_WriteToolNoFilediff_NewSchema(t *testing.T) {
+	// Modern Write parts have no filediff at all — just
+	// state.input.content and state.metadata.{filepath,exists}.
+	// The aggregator synthesises an all-additions patch from the
+	// content so the sidebar can render it.
+	parts := []db.Part{
+		makePart(t, "p1", "m1", 1, map[string]any{
+			"type": "tool",
+			"tool": "write",
+			"state": map[string]any{
+				"input": map[string]any{
+					"filePath": "/work/new.txt",
+					"content":  "line1\nline2\nline3",
+				},
+				"metadata": map[string]any{
+					"filepath": "/work/new.txt",
+					"exists":   false,
+				},
+			},
+		}),
+	}
+	got := aggregateChanges("ses", "/work", parts)
+	if got.FilesChanged != 1 {
+		t.Fatalf("FilesChanged = %d, want 1", got.FilesChanged)
+	}
+	f := got.Files[0]
+	if f.Additions != 3 || f.Deletions != 0 {
+		t.Errorf("counts = %d/%d, want 3/0", f.Additions, f.Deletions)
+	}
+	if f.Patch == "" {
+		t.Errorf("Write tool should produce a synthetic Patch")
+	}
+	// Synthetic patch should contain every line as an addition.
+	for _, line := range []string{"+line1", "+line2", "+line3"} {
+		if !strings.Contains(f.Patch, line) {
+			t.Errorf("synthetic patch missing %q: got %q", line, f.Patch)
+		}
+	}
+}
+
+func TestAggregateChanges_ApplyPatchTool_MultiFile(t *testing.T) {
+	// apply_patch is a newer tool that ships per-file metadata in
+	// state.metadata.files[]: each entry has its own filePath, patch,
+	// additions and deletions. One part can therefore touch several
+	// files; the aggregator must emit one editInfo per file.
+	parts := []db.Part{
+		makePart(t, "p1", "m1", 100, map[string]any{
+			"type": "tool",
+			"tool": "apply_patch",
+			"state": map[string]any{
+				"input": map[string]any{
+					"patchText": "*** Begin Patch\n... (omitted)\n*** End Patch",
+				},
+				"metadata": map[string]any{
+					"files": []any{
+						map[string]any{
+							"filePath":     "/work/a.go",
+							"relativePath": "a.go",
+							"type":         "update",
+							"patch":        "@@ -1 +1 @@\n-old\n+new\n",
+							"additions":    1,
+							"deletions":    1,
+						},
+						map[string]any{
+							"filePath":     "/work/b.go",
+							"relativePath": "b.go",
+							"type":         "update",
+							"patch":        "@@ -1 +1,2 @@\n line\n+added\n",
+							"additions":    1,
+							"deletions":    0,
+						},
+					},
+				},
+			},
+		}),
+	}
+	got := aggregateChanges("ses", "/work", parts)
+	if got.FilesChanged != 2 {
+		t.Fatalf("FilesChanged = %d, want 2", got.FilesChanged)
+	}
+	if got.TotalAdditions != 2 || got.TotalDeletions != 1 {
+		t.Errorf("totals = %d/%d, want 2/1", got.TotalAdditions, got.TotalDeletions)
+	}
+	// Each file should have its own patch.
+	for _, f := range got.Files {
+		if f.Patch == "" {
+			t.Errorf("file %q missing Patch", f.DisplayPath)
+		}
+		if f.EditCount != 1 {
+			t.Errorf("file %q EditCount = %d, want 1", f.DisplayPath, f.EditCount)
+		}
+		if len(f.Edits) != 1 || f.Edits[0].Tool != "apply_patch" {
+			t.Errorf("file %q tool name not preserved", f.DisplayPath)
+		}
+	}
+}
+
+func TestAggregateChanges_MixedLegacyAndNewSchema(t *testing.T) {
+	// A session can contain both old (before/after) and new (patch)
+	// parts on the same file when the OpenCode binary upgraded
+	// mid-session. The aggregator should accept both, sum counts,
+	// and produce a non-empty Patch (concat where available).
+	parts := []db.Part{
+		editPart(t, "p1", 100, "/work/m.go", "old\n", "new\n", 1, 1),
+		patchFilediffPart(t, "p2", 200, "/work/m.go",
+			"@@ -1 +1,2 @@\n new\n+added\n", 1, 0),
+	}
+	got := aggregateChanges("ses", "/work", parts)
+	if got.FilesChanged != 1 {
+		t.Fatalf("FilesChanged = %d", got.FilesChanged)
+	}
+	f := got.Files[0]
+	if f.Additions != 2 || f.Deletions != 1 {
+		t.Errorf("counts = %d/%d, want 2/1", f.Additions, f.Deletions)
+	}
+	// The legacy snapshot from p1 should still be available so the
+	// frontend's pre-patch fallback path keeps working.
+	if f.Before != "old\n" {
+		t.Errorf("Before = %q, want legacy snapshot", f.Before)
+	}
+	if f.Patch == "" {
+		t.Errorf("Patch should include the new-schema edit's patch")
 	}
 }

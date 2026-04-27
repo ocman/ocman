@@ -233,9 +233,10 @@ export interface SessionDetail {
 
 // One file-touching tool call inside a session. Returned as part of
 // SessionChanges; the sidebar expands these inside the per-file
-// "individual edits" disclosure. before/after are best-effort: present
-// for OpenCode Edit tools (via filediff metadata), absent for older
-// versions where the renderer falls back to oldString/newString.
+// "individual edits" disclosure. `patch` is the unified-diff body
+// when OpenCode supplies one (modern schema); `before`/`after` are
+// the legacy snapshot pair preserved for older parts. Consumers
+// prefer `patch` and fall back to a Before/After diff.
 export interface SessionEdit {
   partId: string;
   messageId: string;
@@ -243,16 +244,18 @@ export interface SessionEdit {
   tool: string;
   additions: number;
   deletions: number;
+  patch?: string;
   before?: string;
   after?: string;
 }
 
-// One file's roll-up across the entire session. The before/after
-// snapshots are first-edit-before / last-edit-after respectively, so
-// rendering a single unified diff between them shows a "current vs.
-// original" view. additions/deletions are summed per-edit and may
-// differ from the line counts of the collapsed diff (intermediate
-// edits that were later reverted still contribute).
+// One file's roll-up across the entire session. `patch` is the
+// concatenation of every edit's unified-diff body in chronological
+// order — it's what the sidebar renders by default. `before` and
+// `after` are the legacy snapshot pair (first-edit-before /
+// last-edit-after) preserved for older OpenCode versions; the
+// renderer falls back to a Before/After diff when `patch` is empty.
+// `additions`/`deletions` are summed per-edit and authoritative.
 export interface FileChange {
   path: string;
   displayPath: string;
@@ -261,8 +264,9 @@ export interface FileChange {
   editCount: number;
   firstEditAt: number;
   lastEditAt: number;
-  before: string;
-  after: string;
+  patch?: string;
+  before?: string;
+  after?: string;
   edits: SessionEdit[];
 }
 

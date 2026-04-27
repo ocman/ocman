@@ -19,13 +19,13 @@ type SessionChanges struct {
 	Files          []FileChange `json:"files"`
 }
 
-// FileChange is the per-file roll-up. Before/After are the first edit's
-// before-snapshot and the last edit's after-snapshot respectively, so
-// rendering a single unified diff between them produces the
-// "current vs. original" view the sidebar shows. The summed
-// Additions/Deletions are authoritative — they may differ from the
-// line counts of the collapsed diff when an intermediate edit was
-// reverted later in the session.
+// FileChange is the per-file roll-up. The summed Additions/Deletions
+// are authoritative — they come from OpenCode's own per-edit
+// additions/deletions counts. Patch is the concatenated unified-diff
+// body across every edit on the file (newer OpenCode schema). Before
+// and After are the legacy first-before / last-after snapshots
+// preserved for older parts that still ship them; the frontend
+// prefers Patch when present and falls back to a Before/After diff.
 type FileChange struct {
 	// Path is the file path as captured by the tool call (typically
 	// absolute on the user's machine).
@@ -47,31 +47,38 @@ type FileChange struct {
 	// the earliest and latest edits.
 	FirstEditAt int64 `json:"firstEditAt"`
 	LastEditAt  int64 `json:"lastEditAt"`
-	// Before is the first edit's filediff.before (full file content
-	// before the session touched it). Empty when the first
-	// observed operation was a Write to a new file.
-	Before string `json:"before"`
-	// After is the last edit's filediff.after (or the Write
-	// content). Empty if no after-snapshot was captured.
-	After string `json:"after"`
+	// Patch is the concatenated unified-diff body for every edit on
+	// this file in chronological order. Empty for legacy parts
+	// (older OpenCode versions) that only carry Before/After.
+	Patch string `json:"patch,omitempty"`
+	// Before is the first edit's filediff.before snapshot. Populated
+	// only by the legacy schema; empty when OpenCode emitted a
+	// patch-style filediff instead. Frontend falls back to a
+	// Before/After diff when Patch is empty.
+	Before string `json:"before,omitempty"`
+	// After is the last edit's filediff.after snapshot (or the Write
+	// content). Same semantics as Before above.
+	After string `json:"after,omitempty"`
 	// Edits lists individual tool calls in chronological order.
 	Edits []Edit `json:"edits"`
 }
 
-// Edit is one file-touching tool call. Before/After are populated
-// best-effort: OpenCode supplies them via state.metadata.filediff;
-// when missing, the frontend can compute a hunk from
-// state.input.oldString/newString instead.
+// Edit is one file-touching tool call. Patch is the unified-diff body
+// for this single edit when OpenCode supplies one (newer schema).
+// Before/After are the legacy snapshot pair, kept for backward
+// compatibility with older parts in the database. Consumers prefer
+// Patch when populated.
 type Edit struct {
 	PartID      string `json:"partId"`
 	MessageID   string `json:"messageId"`
 	TimeCreated int64  `json:"timeCreated"`
 	// Tool is the lowercase tool name (e.g. "edit", "write",
-	// "mcp_edit"). Matches the value emitted on
+	// "mcp_edit", "apply_patch"). Matches the value emitted on
 	// Part.data.tool for OpenCode parts.
 	Tool      string `json:"tool"`
 	Additions int    `json:"additions"`
 	Deletions int    `json:"deletions"`
+	Patch     string `json:"patch,omitempty"`
 	Before    string `json:"before,omitempty"`
 	After     string `json:"after,omitempty"`
 }
