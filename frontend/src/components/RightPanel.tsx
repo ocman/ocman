@@ -218,6 +218,10 @@ function Pane({ tab, sessionId, platformId, directory, dirtyTick, divider, size 
   const onRefreshClick = useCallback(() => {
     refreshRef.current?.();
   }, []);
+  // Mirror the embedded sidebar's loading flag so the refresh button
+  // in the pane header can spin its icon while a request is in flight.
+  const [loading, setLoading] = useState(false);
+  const handleLoadingChange = useCallback((next: boolean) => setLoading(next), []);
 
   return (
     <>
@@ -239,7 +243,7 @@ function Pane({ tab, sessionId, platformId, directory, dirtyTick, divider, size 
         </span>
         <span className="oc-right-panel-pane-actions">
           {hasRefresh && (
-            <ChangesRefreshButton onClick={onRefreshClick} />
+            <ChangesRefreshButton onClick={onRefreshClick} loading={loading} />
           )}
         </span>
       </div>
@@ -252,6 +256,7 @@ function Pane({ tab, sessionId, platformId, directory, dirtyTick, divider, size 
             embedded
             onSummaryChange={handleSummary}
             onRefresh={handleRefresh}
+            onLoadingChange={handleLoadingChange}
           />
         ) : (
           <WorkingTreeChangesSidebar
@@ -260,6 +265,7 @@ function Pane({ tab, sessionId, platformId, directory, dirtyTick, divider, size 
             embedded
             onSummaryChange={handleSummary}
             onRefresh={handleRefresh}
+            onLoadingChange={handleLoadingChange}
           />
         )}
       </div>
