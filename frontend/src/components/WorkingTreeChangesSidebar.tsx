@@ -3,7 +3,7 @@ import type { WorkingTreeFile } from '../lib/api';
 import { useWorkingTreeDiff } from '../lib/useWorkingTreeDiff';
 import { useInfiniteRows } from '../lib/useInfiniteRows';
 import { RawDiffView } from './RawDiffView';
-import type { PaneSummary } from './SessionChangesSidebar';
+import { ChangesRefreshButton, type PaneSummary } from './SessionChangesSidebar';
 
 // Lazy-mount budget for the per-file groups. Working trees with
 // hundreds of dirty files (post-rebase, after a generated-files
@@ -34,6 +34,10 @@ interface WorkingTreeChangesSidebarProps {
   // Called whenever the underlying data updates. Used by RightPanel
   // to render the "N files +A -D" summary in the pane header.
   onSummaryChange?: (summary: PaneSummary) => void;
+  // Called once with a stable refresh callback so embedded parents
+  // (RightPanel) can render their own refresh button in the pane
+  // header. Mirrors SessionChangesSidebar.onRefresh.
+  onRefresh?: (refresh: () => void) => void;
 }
 
 const STATUS_LABELS: Record<WorkingTreeFile['status'], string> = {
@@ -44,9 +48,9 @@ const STATUS_LABELS: Record<WorkingTreeFile['status'], string> = {
   untracked: '?',
 };
 
-export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = false, onSummaryChange }: WorkingTreeChangesSidebarProps) {
+export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = false, onSummaryChange, onRefresh }: WorkingTreeChangesSidebarProps) {
   const enabled = !!directory;
-  const { data, loading, error, notRepo } = useWorkingTreeDiff(directory, { enabled, dirtyTick });
+  const { data, loading, error, notRepo, refresh } = useWorkingTreeDiff(directory, { enabled, dirtyTick });
 
   // Defensive default: a faulty backend / older deployment could
   // ship `null` instead of `[]` for files. Coerce here, memoised so
@@ -75,6 +79,13 @@ export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = fal
       deletions: totals.del,
     });
   }, [totals.files, totals.add, totals.del, onSummaryChange]);
+
+  // Forward refresh upward so RightPanel can render its own button
+  // in the embedded pane header. Mirrors SessionChangesSidebar.
+  useEffect(() => {
+    if (!onRefresh) return;
+    onRefresh(refresh);
+  }, [refresh, onRefresh]);
 
   const {
     visibleCount: visibleFileCount,
@@ -167,6 +178,7 @@ export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = fal
             </>
           )}
         </span>
+        <ChangesRefreshButton onClick={refresh} loading={loading} disabled={!enabled} />
       </div>
       {data && data.branch && (
         <div className="oc-changes-sidebar-branch">

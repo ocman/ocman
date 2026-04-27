@@ -327,3 +327,49 @@ body.oc-sidebar-resizing .oc-changes-sidebar {
   flex: 1;
   overflow-y: auto;
 }
+
+/* Refresh button rendered in the sidebar/pane header. The icon-only
+ * style mirrors the existing .oc-changes-strip-icon buttons to feel
+ * consistent across the panel. The button slot lives next to the
+ * counts in standalone mode, and inside .oc-right-panel-pane-actions
+ * in split-pane mode (RightPanel.css supplies that container). */
+.oc-changes-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--overlay0);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+  flex-shrink: 0;
+  /* Push the button to the very right edge of the header so the
+   * counts hug the title and the button has its own slot. */
+  margin-left: 4px;
+}
+
+.oc-changes-refresh-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.oc-changes-refresh-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Spin the icon while a refresh is in flight. Pure CSS animation;
+ * the .loading class is toggled by the parent based on the hook's
+ * `loading` flag. */
+.oc-changes-refresh-btn.loading i {
+  animation: oc-changes-refresh-spin 800ms linear infinite;
+}
+
+@keyframes oc-changes-refresh-spin {
+  to { transform: rotate(360deg); }
+}

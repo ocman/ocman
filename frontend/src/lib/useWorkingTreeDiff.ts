@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useApiStore } from './apiStore';
 import type { WorkingTreeDiff } from './api';
+import { DebouncedTrigger } from './debouncedTrigger';
 
-// Mirrors useSessionChanges: SSE-driven refetch via a dirtyTick
-// counter, debounced 500 ms. The two hooks share a debounce window
-// because they're often refreshed by the same event (an agent's
-// edit/write tool call) and you want them to refresh in lockstep.
+// Mirrors useSessionChanges: a 500 ms inner debounce with a 5 s
+// maxWait ceiling. The two hooks share semantics because they're
+// often refreshed by the same event (an agent's edit/write tool
+// call) and you want them to refresh in lockstep.
 const REFETCH_DEBOUNCE_MS = 500;
+const REFETCH_MAX_WAIT_MS = 5000;
 
 const EMPTY_DIFF: WorkingTreeDiff = {
   repo: '',
@@ -22,17 +24,26 @@ export interface UseWorkingTreeDiffResult {
   loading: boolean;
   error: string | null;
   notRepo: boolean;
+  /**
+   * Manually trigger an immediate refetch, bypassing the debounce.
+   * Wired to the user-facing "Refresh" button. Safe to call when
+   * `enabled` is false (no-op).
+   */
+  refresh: () => void;
 }
 
 export interface UseWorkingTreeDiffOptions {
   enabled?: boolean;
-  // Increments to request a fresh fetch (mirrors useSessionChanges).
+  // Increments to request a debounced refetch (mirrors
+  // useSessionChanges).
   dirtyTick?: number;
 }
 
 /**
  * useWorkingTreeDiff fetches /api/git/diff for the given absolute
- * directory and re-fetches on dirtyTick changes (debounced).
+ * directory and re-fetches on dirtyTick changes. Refetch timing is
+ * driven by DebouncedTrigger so a busy session still sees periodic
+ * updates within the 5 s ceiling.
  *
  * The hook distinguishes "directory isn't a git worktree" (HTTP 404)
  * from a real error; consumers can render a friendly empty state for
@@ -50,8 +61,15 @@ export function useWorkingTreeDiff(
   const getGitDiff = useApiStore((s) => s.getGitDiff);
 
   const lastDirRef = useRef<string | undefined>(undefined);
-  const timerRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const fetchRef = useRef<() => void>(() => {});
+  const triggerRef = useRef<DebouncedTrigger | null>(null);
+  if (triggerRef.current === null) {
+    triggerRef.current = new DebouncedTrigger(
+      () => fetchRef.current(),
+      { debounceMs: REFETCH_DEBOUNCE_MS, maxWaitMs: REFETCH_MAX_WAIT_MS },
+    );
+  }
 
   useEffect(() => {
     if (!enabled || !dir) {
@@ -59,6 +77,7 @@ export function useWorkingTreeDiff(
       setLoading(false);
       setError(null);
       setNotRepo(false);
+      triggerRef.current?.reset();
       return;
     }
 
@@ -68,6 +87,7 @@ export function useWorkingTreeDiff(
       setError(null);
       setNotRepo(false);
       lastDirRef.current = dir;
+      triggerRef.current?.reset();
     }
 
     const fetchNow = () => {
@@ -75,10 +95,10 @@ export function useWorkingTreeDiff(
       const controller = new AbortController();
       abortRef.current = controller;
 
-      // The frontend always asks for fresh=true on SSE-driven
-      // refetches; the backend's 1s cache still coalesces near-
-      // simultaneous requests but we don't want to render
-      // sub-second-stale data after an edit event.
+      // The frontend always asks for fresh=true on dirty refetches;
+      // the backend's 1 s cache still coalesces near-simultaneous
+      // requests but we don't want to render sub-second-stale data
+      // after an edit event or a manual refresh.
       getGitDiff(dir, { fresh: true }, controller.signal)
         .then((resp) => {
           if (controller.signal.aborted) return;
@@ -103,28 +123,30 @@ export function useWorkingTreeDiff(
           setLoading(false);
         });
     };
+    fetchRef.current = fetchNow;
 
     if (data === null) {
       fetchNow();
     } else {
-      if (timerRef.current !== null) {
-        clearTimeout(timerRef.current);
-      }
-      timerRef.current = window.setTimeout(() => {
-        timerRef.current = null;
-        fetchNow();
-      }, REFETCH_DEBOUNCE_MS);
+      triggerRef.current?.bump();
     }
 
     return () => {
-      if (timerRef.current !== null) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
       abortRef.current?.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dir, enabled, dirtyTick, getGitDiff]);
 
-  return { data, loading, error, notRepo };
+  useEffect(() => {
+    return () => {
+      triggerRef.current?.cancel();
+    };
+  }, []);
+
+  const refresh = useCallback(() => {
+    if (!enabled || !dir) return;
+    triggerRef.current?.flushNow();
+  }, [enabled, dir]);
+
+  return { data, loading, error, notRepo, refresh };
 }

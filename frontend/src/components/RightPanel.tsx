@@ -3,7 +3,7 @@ import './SessionChangesSidebar.css';
 import './RightPanel.css';
 import { useUiStore, type ChangesSidebarTab } from '../lib/uiStore';
 import { ChangesSidebarResizer } from './ChangesSidebarResizer';
-import { SessionChangesSidebar, type PaneSummary } from './SessionChangesSidebar';
+import { ChangesRefreshButton, SessionChangesSidebar, type PaneSummary } from './SessionChangesSidebar';
 import { WorkingTreeChangesSidebar } from './WorkingTreeChangesSidebar';
 
 interface RightPanelProps {
@@ -206,6 +206,19 @@ function Pane({ tab, sessionId, platformId, directory, dirtyTick, divider, size 
   // onSummaryChange identity).
   const handleSummary = useCallback((s: PaneSummary) => setSummary(s), []);
 
+  // Refresh callback exposed by the embedded sidebar. Held in a ref
+  // so re-renders don't reset it; surfaced through state only so the
+  // refresh button knows when the callback is actually wired up.
+  const refreshRef = useRef<(() => void) | null>(null);
+  const [hasRefresh, setHasRefresh] = useState(false);
+  const handleRefresh = useCallback((fn: () => void) => {
+    refreshRef.current = fn;
+    setHasRefresh(true);
+  }, []);
+  const onRefreshClick = useCallback(() => {
+    refreshRef.current?.();
+  }, []);
+
   return (
     <>
       <div className={`oc-right-panel-pane-header${divider ? ' divider' : ''}`}>
@@ -224,6 +237,11 @@ function Pane({ tab, sessionId, platformId, directory, dirtyTick, divider, size 
             </>
           )}
         </span>
+        <span className="oc-right-panel-pane-actions">
+          {hasRefresh && (
+            <ChangesRefreshButton onClick={onRefreshClick} />
+          )}
+        </span>
       </div>
       <div className="oc-right-panel-pane" style={{ flexGrow: size, flexBasis: 0 }}>
         {tab === 'session' ? (
@@ -233,6 +251,7 @@ function Pane({ tab, sessionId, platformId, directory, dirtyTick, divider, size 
             dirtyTick={dirtyTick}
             embedded
             onSummaryChange={handleSummary}
+            onRefresh={handleRefresh}
           />
         ) : (
           <WorkingTreeChangesSidebar
@@ -240,6 +259,7 @@ function Pane({ tab, sessionId, platformId, directory, dirtyTick, divider, size 
             dirtyTick={dirtyTick}
             embedded
             onSummaryChange={handleSummary}
+            onRefresh={handleRefresh}
           />
         )}
       </div>

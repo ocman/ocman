@@ -44,12 +44,17 @@ interface SessionChangesSidebarProps {
   // Called whenever the underlying data updates. Used by RightPanel
   // to render the "N files +A -D" summary in the pane header.
   onSummaryChange?: (summary: PaneSummary) => void;
+  // Called once with a stable refresh callback so embedded parents
+  // (RightPanel) can render their own refresh button in the pane
+  // header. The callback is also used internally by the standalone-
+  // mode header. Identity is stable across renders.
+  onRefresh?: (refresh: () => void) => void;
 }
 
-export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedded = false, onSummaryChange }: SessionChangesSidebarProps) {
+export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedded = false, onSummaryChange, onRefresh }: SessionChangesSidebarProps) {
   const caps = usePlatformCapabilities(platformId);
   const enabled = caps.fileChanges;
-  const { data, loading, error } = useSessionChanges(sessionId, { enabled, dirtyTick });
+  const { data, loading, error, refresh } = useSessionChanges(sessionId, { enabled, dirtyTick });
 
   // Defensive defaults: a faulty backend / older deployment could
   // ship `null` instead of `[]` for files, or omit fields entirely.
@@ -84,6 +89,15 @@ export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedd
       deletions: totalDeletions,
     });
   }, [filesChanged, totalAdditions, totalDeletions, onSummaryChange]);
+
+  // Forward the refresh callback up to RightPanel so it can wire the
+  // embedded pane's "Refresh" button. Only fires when the callback
+  // identity changes (which it doesn't, since it's stable from
+  // useSessionChanges).
+  useEffect(() => {
+    if (!onRefresh) return;
+    onRefresh(refresh);
+  }, [refresh, onRefresh]);
 
   const Body = (
     <div className="oc-changes-sidebar-body">
@@ -153,8 +167,36 @@ export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedd
             </>
           )}
         </span>
+        <ChangesRefreshButton onClick={refresh} loading={loading} disabled={!enabled} />
       </div>
       {Body}
     </aside>
+  );
+}
+
+// ChangesRefreshButton is a small icon button rendered in the
+// sidebar/pane header. Disabled when the sidebar is in its
+// "not supported" state and visually muted while a request is
+// already in flight (so back-to-back clicks don't spam the
+// backend; the underlying hook will still abort the previous
+// request if one is mid-flight).
+interface ChangesRefreshButtonProps {
+  onClick: () => void;
+  loading?: boolean;
+  disabled?: boolean;
+}
+
+export function ChangesRefreshButton({ onClick, loading = false, disabled = false }: ChangesRefreshButtonProps) {
+  return (
+    <button
+      type="button"
+      className={`oc-changes-refresh-btn${loading ? ' loading' : ''}`}
+      onClick={onClick}
+      disabled={disabled || loading}
+      title="Refresh"
+      aria-label="Refresh"
+    >
+      <i className="bi bi-arrow-clockwise" aria-hidden="true" />
+    </button>
   );
 }
