@@ -216,16 +216,38 @@ func (s *Server) handleTmuxSessions(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// tmuxSessionNameForPath derives a tmux session name from a directory path.
+//
+// To match the convention used by existing sessions (e.g.
+// "~/src/github.com/NoUseFreak/ocman"), directories under the user's home
+// are rendered as a tilde-relative path; directories outside home stay
+// absolute. tmux itself replaces dots with underscores when displaying
+// the name, so callers see e.g. "~/src/github_com/NoUseFreak/ocman".
+//
+// Empty/"."/"/" inputs fall back to "opencode" so we never hand tmux an
+// invalid name.
+func tmuxSessionNameForPath(directory string) string {
+	if directory == "" || directory == "." || directory == "/" {
+		return "opencode"
+	}
+	clean := filepath.Clean(directory)
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		homeClean := filepath.Clean(home)
+		if clean == homeClean {
+			return "~"
+		}
+		if rel, err := filepath.Rel(homeClean, clean); err == nil && !strings.HasPrefix(rel, "..") && rel != "." {
+			return "~/" + filepath.ToSlash(rel)
+		}
+	}
+	return clean
+}
+
 // launchOpencodeInTmux finds or creates a tmux session named after the given
 // directory, opens a new window in it, and runs `opencode --port 0` there.
 // It returns the name of the tmux session that was used/created.
 func launchOpencodeInTmux(directory string) (string, error) {
-	// Derive a safe tmux session name from the directory path.
-	// Use the base name of the directory; if empty, fall back to "opencode".
-	sessionName := filepath.Base(directory)
-	if sessionName == "" || sessionName == "." || sessionName == "/" {
-		sessionName = "opencode"
-	}
+	sessionName := tmuxSessionNameForPath(directory)
 
 	// Check whether this tmux session already exists.
 	sessionExists := false
