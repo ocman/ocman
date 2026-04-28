@@ -11,6 +11,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
+
+	"github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -243,18 +246,41 @@ func (a *Adapter) SessionsInactiveBefore(_ context.Context, cutoff int64) ([]db.
 
 // SessionChanges aggregates every file-touching tool call in a session
 // into a per-file changes summary. See changes.go for the algorithm.
+//
+// Instrumented with split timing — the parts query is by far the most
+// likely to dominate (it pulls every part for the session, which can
+// be hundreds of rows of JSON-blob data) so we time it separately
+// from the metadata fetch and the in-memory aggregation. The split
+// landed alongside the optimization plan in docs/profiling.md (B5):
+// a single sample showed this endpoint at 1.87s with no obvious cost
+// driver, and we want a per-call breakdown rather than a guess.
 func (a *Adapter) SessionChanges(_ context.Context, sessionID string) (*platforms.SessionChanges, error) {
 	if a.db == nil {
 		return nil, platforms.ErrNotFound
 	}
+	defer timeIt("session_changes", logrus.Fields{"sessionID": sessionID})()
+
+	partsStart := time.Now()
 	parts, err := a.db.GetSessionParts(sessionID)
+	partsDur := time.Since(partsStart)
 	if err != nil {
 		return nil, err
 	}
+
+	sessionStart := time.Now()
 	session, err := a.db.GetSession(sessionID)
+	sessionDur := time.Since(sessionStart)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
+
+	observeDuration("session_changes_db", partsDur+sessionDur, logrus.Fields{
+		"sessionID":   sessionID,
+		"parts_count": len(parts),
+		"parts_ms":    partsDur.Milliseconds(),
+		"session_ms":  sessionDur.Milliseconds(),
+	})
+
 	directory := ""
 	if session != nil {
 		directory = session.Directory
