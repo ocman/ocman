@@ -263,12 +263,81 @@ numbers. Each one is referenced from a B-task below.
    pure DB walk. Needs a server-side timing split before we know
    whether to fix anything. **B5.**
 
+## Phase 2.6 — Diagnostic patterns (lessons learned)
+
+These are heuristics for diagnosing future regressions. They came
+out of chasing the wrong thing once and not wanting to do it again.
+
+### `/api/system/stats` is the canary
+
+`/api/system/stats` does pure local work — it reads
+`runtime.MemStats` and a few uptime values. There is no path in
+that handler that can take more than single-digit milliseconds
+under any realistic load.
+
+If `__ocmanPerf.summary()` shows `/api/system/stats` slow
+**alongside** other endpoints, the **Go process itself is being
+blocked**. Causes that fit this pattern:
+
+- Upstream OpenCode is hung, and ocman has many goroutines piled up
+  waiting on it (network resource pressure, GC roots).
+- A goroutine is spinning at 100% CPU, starving the scheduler.
+- The OS is paging hard (memory pressure), so even pure-Go work
+  takes seconds.
+
+**Do not start optimising ocman code based on this signal.** Check
+upstream and the system first:
+
+```sh
+# Is OpenCode itself slow? (Replace 4096 with your actual port.)
+time curl -s http://127.0.0.1:4096/permission > /dev/null
+
+# How many running OpenCode instances?
+lsof -iTCP -sTCP:LISTEN -P -n | grep opencode
+
+# Is one ocman goroutine pegging a CPU?
+ps -o pid,pcpu,pmem,etime,command -p "$(pgrep -f 'tmp/ocman' | head -1)"
+```
+
+If `/api/system/stats` is fast (single-digit ms) but other
+endpoints are slow, *that's* when ocman code is at fault and
+optimisation work makes sense.
+
+### Idle vs. active comparison
+
+The most reliable comparison is **two `__ocmanPerf` snapshots from
+the same dashboard layout**: one with the tab idle for ≥ 30 seconds,
+one after a few minutes of normal use. The idle snapshot isolates
+ocman's polling cost; the active snapshot adds the per-session
+catalog and proxy paths. Comparing them tells you which side
+regressions live on.
+
 ## Phase 3 — Backend optimization plan
 
 Tasks are keyed `B1`…`B7`. Each is independent; any subset can be
 shipped. The order below is impact-first within reasonable risk.
 **Re-run `__ocmanPerf.summary()` after each landed task** to confirm
 the next one is still worth doing.
+
+### Status
+
+| Task | Status        | Commit                                                              |
+|------|---------------|----------------------------------------------------------------------|
+| B5   | ✅ landed      | `feat: Log per-operation timing for SessionChanges DB calls`        |
+| B1   | ✅ landed      | `feat: Cache OpenCode catalog endpoints with 30s TTL and singleflight` |
+| B3   | ✅ landed      | `feat: Singleflight OpenCode port discovery to coalesce concurrent lsof` |
+| B2   | ✅ landed      | `perf: Run liveTokensAndCost in the SessionInfo parallel fan-out`   |
+| B6   | ✅ landed (+timeout) | `fix: Cap pending-prompt fetch at 500ms…` + `perf: Cache pending-prompt fetches per port with 3s TTL` |
+| B4   | ⏸ deferred    | Needs DB-vs-live freshness verification (see open questions)        |
+| B7   | ⏸ deferred    | Only if measurements still show unexplained Go-side latency         |
+
+The B6 work landed in two commits because we discovered (via the
+canary pattern above) that a hung OpenCode instance was dragging
+every dashboard request to 10s+ via the shared 10s HTTP timeout.
+The fix is a tight 500 ms per-call timeout *plus* the planned 3s
+TTL cache; together they ensure (a) one slow instance never blocks
+the dashboard fan-out, and (b) the steady-state poll cost is
+amortised over the cache window.
 
 ### B5 — Instrument `/api/session/:id/changes` (do first, lowest risk)
 
@@ -403,15 +472,20 @@ backend wins are larger and unblock more user pain.
 - **Does B4 actually break composer freshness?** Needs a controlled
   test: open a session, send a prompt, watch the cost number.
   Verify that the DB-only path stays within ≤1 s of the live path.
-- **What's the actual story on `/api/session/:id/changes`?** B5
-  will tell us. If it's a missing index, fix it; if it's contention
-  with a sibling endpoint, the lsof singleflight (B3) probably
-  helps.
+- **What's the actual story on `/api/session/:id/changes`?** B5's
+  instrumentation now logs `parts_ms` and `session_ms` separately
+  whenever the operation exceeds 200 ms. Next time the endpoint
+  shows up slow in `__ocmanPerf`, grep the server log for
+  `op=session_changes` and look at the field breakdown — that
+  tells us whether it's the parts query, the session metadata
+  fetch, or the in-memory aggregation.
 - **Connection reuse to OpenCode:** the upstream `http.Client` has
   no custom transport. Default `http.DefaultTransport` should reuse
-  loopback connections, but the latencies are too high for warm
-  reuse. Worth a quick `httptrace` confirmation as part of B5
-  instrumentation if it's cheap to add.
+  loopback connections, but the latencies were too high for warm
+  reuse during the original measurements. After B1/B2/B3/B6 most
+  per-call latency is now upstream-bounded, so this is less
+  pressing — revisit only if measurements show OpenCode itself
+  responding instantly while ocman still reports proxy latency.
 
 ## Reference: relevant files
 
