@@ -15,6 +15,7 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -36,30 +37,91 @@ func limitedReader(data []byte) io.Reader {
 
 // --- Port discovery with TTL cache ---
 
-// portCache holds cached port discovery results.
+// portCache holds cached port discovery results. Reads are guarded
+// by an RWMutex so cache hits are non-blocking even under heavy
+// concurrency; writes happen briefly after the singleflight-protected
+// lsof scan completes.
 var portCache struct {
-	mu      sync.Mutex
+	mu      sync.RWMutex
 	ports   map[string]string
 	updated time.Time
 }
 
+// portFlight coalesces concurrent cold-cache callers into a single
+// underlying lsof invocation. Without it, a SessionDetail mount
+// firing five endpoints simultaneously paid the full lsof cost for
+// each because the previous mutex-around-lsof pattern serialized
+// the callers but didn't dedupe the work past the brief cache-hit
+// window after the first one finished.
+var portFlight singleflight.Group
+
 const portCacheTTL = 3 * time.Second
+
+// discoverPortsImpl is the indirection used so tests can swap out the
+// expensive lsof execution. Production assigns it once, lazily, to
+// the real implementation; tests override it before calling
+// discoverOpenCodePorts.
+var discoverPortsImpl = discoverOpenCodePortsUncached
+
+// resetPortCacheForTests clears the cache so each test starts with a
+// cold path. Not exported — only callable from within the package.
+func resetPortCacheForTests() {
+	portCache.mu.Lock()
+	portCache.ports = nil
+	portCache.updated = time.Time{}
+	portCache.mu.Unlock()
+	// singleflight.Group has no public reset; that's fine since
+	// in-flight calls will complete on their own and any post-test
+	// caller starts fresh.
+}
 
 // discoverOpenCodePorts returns a map of directory -> port for all running
 // OpenCode instances that are listening on TCP ports.
 // Results are cached for a few seconds to avoid calling lsof on every request.
+//
+// Cold-path behaviour: at most one in-flight lsof scan, even when
+// many callers race past the cache check. Singleflight makes
+// concurrent callers share that one scan; the read lock makes warm
+// hits non-blocking.
 func discoverOpenCodePorts() map[string]string {
-	portCache.mu.Lock()
-	defer portCache.mu.Unlock()
-
-	if time.Since(portCache.updated) < portCacheTTL && portCache.ports != nil {
-		return copyMap(portCache.ports)
+	if cached, ok := readCachedPorts(); ok {
+		return cached
 	}
 
-	result := discoverOpenCodePortsUncached()
-	portCache.ports = result
-	portCache.updated = time.Now()
-	return copyMap(result)
+	const flightKey = "discoverOpenCodePorts"
+	v, _, _ := portFlight.Do(flightKey, func() (interface{}, error) {
+		// Re-check inside the singleflight body in case another
+		// caller filled the cache between our miss and acquiring
+		// the flight slot.
+		if cached, ok := readCachedPorts(); ok {
+			return cached, nil
+		}
+		result := discoverPortsImpl()
+		portCache.mu.Lock()
+		portCache.ports = result
+		portCache.updated = time.Now()
+		portCache.mu.Unlock()
+		return copyMap(result), nil
+	})
+	if m, ok := v.(map[string]string); ok {
+		return m
+	}
+	// Defensive: this branch is not reachable because the
+	// singleflight body never returns a non-map value, but keeping
+	// the fallback means a future refactor that introduces an error
+	// path can't crash the caller.
+	return map[string]string{}
+}
+
+// readCachedPorts returns the cached port map iff the entry is fresh.
+// Lock-light: an RWMutex read lock allows N concurrent cache hits.
+func readCachedPorts() (map[string]string, bool) {
+	portCache.mu.RLock()
+	defer portCache.mu.RUnlock()
+	if time.Since(portCache.updated) < portCacheTTL && portCache.ports != nil {
+		return copyMap(portCache.ports), true
+	}
+	return nil, false
 }
 
 // copyMap returns a shallow copy of a string map to prevent callers from
