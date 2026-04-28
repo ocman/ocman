@@ -206,6 +206,22 @@ func discoverOpenCodePort(directory string) string {
 	return discoverOpenCodePorts()[directory]
 }
 
+// pendingPromptTimeout caps how long the dashboard's
+// `/api/sessions` fan-out will wait on any single OpenCode instance
+// for its `/permission` or `/question` list.
+//
+// Why so tight? Pending-prompt status is a UI hint — it lights up a
+// badge on the session row. The shared openCodeClient timeout
+// (10 s) is appropriate for the rest of the proxy traffic, but a
+// single hung OpenCode instance with that timeout dragged every
+// dashboard poll to 10 s+ and queued requests piled up behind it.
+//
+// 500 ms is well above the p99 of a healthy local response (single-
+// digit ms over loopback) but short enough that the dashboard
+// recovers within one poll cycle when an instance becomes
+// unresponsive.
+const pendingPromptTimeout = 500 * time.Millisecond
+
 // fetchPendingPrompts calls the OpenCode HTTP endpoints that list currently
 // open permission and question prompts and returns a set of session IDs that
 // have an outstanding prompt of each kind. Endpoints that return non-JSON or
@@ -220,10 +236,21 @@ func fetchPendingPrompts(port string) (permissions, questions map[string]bool) {
 
 // fetchPromptSessionIDs performs the actual HTTP call and returns the set of
 // session IDs mentioned in the JSON array response.
+//
+// Uses a per-call context with pendingPromptTimeout rather than the
+// shared openCodeClient timeout so a hung instance can't block the
+// entire dashboard fan-out for ten seconds.
 func fetchPromptSessionIDs(port, path string) map[string]bool {
 	result := map[string]bool{}
+	ctx, cancel := context.WithTimeout(context.Background(), pendingPromptTimeout)
+	defer cancel()
+
 	url := fmt.Sprintf("http://127.0.0.1:%s%s", port, path)
-	resp, err := openCodeClient.Get(url)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return result
+	}
+	resp, err := openCodeClient.Do(req)
 	if err != nil {
 		return result
 	}
