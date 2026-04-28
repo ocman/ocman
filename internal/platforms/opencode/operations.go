@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 
@@ -45,12 +46,16 @@ func (a *Adapter) resolvePort(sessionID string) (port string, session *db.Sessio
 
 // AgentCatalog returns the OpenCode /agent catalog for the session's
 // running instance. Returns an empty slice when no instance is reachable.
+//
+// Cached via catalogCache: agents.json edits propagate after at most
+// catalogCache's TTL, in exchange for not paying ~1s on every
+// SessionDetail mount.
 func (a *Adapter) AgentCatalog(ctx context.Context, sessionID string) ([]platforms.AgentCatalogEntry, error) {
 	port, _, err := a.resolvePort(sessionID)
 	if err != nil {
 		return nil, nil
 	}
-	body, ok := getJSON(ctx, port, "/agent")
+	body, ok := getJSONCached(ctx, port, "/agent")
 	if !ok {
 		return nil, nil
 	}
@@ -72,12 +77,14 @@ func (a *Adapter) AgentCatalog(ctx context.Context, sessionID string) ([]platfor
 }
 
 // SlashCommands returns the OpenCode /command catalog for the session.
+//
+// Cached via catalogCache for the same reason AgentCatalog is.
 func (a *Adapter) SlashCommands(ctx context.Context, sessionID string) ([]platforms.SlashCommandEntry, error) {
 	port, _, err := a.resolvePort(sessionID)
 	if err != nil {
 		return nil, nil
 	}
-	body, ok := getJSON(ctx, port, "/command")
+	body, ok := getJSONCached(ctx, port, "/command")
 	if !ok {
 		return nil, nil
 	}
@@ -414,6 +421,19 @@ func (a *Adapter) ProxyEvents(ctx context.Context, sessionID string, w io.Writer
 
 // --- Helpers ---
 
+// catalogCache is a process-wide TTL cache for upstream OpenCode
+// catalog endpoints (/agent, /command, /provider). 30s is the
+// trade-off between staleness when the user edits config and
+// per-poll cost: at 30s a cold dashboard mount fires one upstream
+// call per endpoint, every subsequent mount within the window is
+// instant.
+//
+// The cache is keyed by (port, path), so multiple running OpenCode
+// instances coexist correctly. See httpcache.go for the cache
+// machinery itself, including the singleflight that coalesces
+// concurrent misses for the same key.
+var catalogCache = newHTTPCache(30 * time.Second)
+
 // getJSON performs a GET to the OpenCode instance and returns the body
 // bytes and true iff the response was 200 OK with a JSON content type.
 func getJSON(ctx context.Context, port, path string) ([]byte, bool) {
@@ -438,6 +458,20 @@ func getJSON(ctx context.Context, port, path string) ([]byte, bool) {
 		return nil, false
 	}
 	return body, true
+}
+
+// getJSONCached is getJSON wrapped through catalogCache. Callers that
+// fetch effectively-immutable catalog data should use this; one-shot
+// reads of session-specific data must keep using getJSON.
+//
+// On a hit, no HTTP call is made. On a miss the underlying getJSON
+// runs (singleflighted across concurrent callers), and a successful
+// 200/JSON response is cached for catalogCache's TTL. Failures are
+// not cached — see httpCache.getOrFetch.
+func getJSONCached(ctx context.Context, port, path string) ([]byte, bool) {
+	return catalogCache.getOrFetch(port, path, func() ([]byte, bool) {
+		return getJSON(ctx, port, path)
+	})
 }
 
 // postJSON performs a POST with a JSON body. Returns nil on 2xx,

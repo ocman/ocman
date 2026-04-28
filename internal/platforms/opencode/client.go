@@ -2,6 +2,7 @@ package opencode
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -354,19 +355,20 @@ type OpenCodeProvidersResponse struct {
 // and the per-provider defaults. Returns ok=false when the endpoint is
 // unreachable or responds with a non-200 status so callers can fall back
 // gracefully (e.g. to DB-derived recent models).
+//
+// Routed through catalogCache (see operations.go) — the /provider
+// payload is the largest of the three catalog responses (≈3s
+// uncached on a cold mount per `__ocmanPerf`) and changes only when
+// the user reconfigures providers, so it's the most valuable
+// candidate for the 30s TTL cache.
 func fetchOpenCodeProviders(port string) (OpenCodeProvidersResponse, bool) {
 	var empty OpenCodeProvidersResponse
-	url := fmt.Sprintf("http://127.0.0.1:%s/provider", port)
-	resp, err := openCodeClient.Get(url)
-	if err != nil {
-		return empty, false
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	body, ok := getJSONCached(context.Background(), port, "/provider")
+	if !ok {
 		return empty, false
 	}
 	var parsed OpenCodeProvidersResponse
-	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+	if err := json.Unmarshal(body, &parsed); err != nil {
 		return empty, false
 	}
 	return parsed, true
