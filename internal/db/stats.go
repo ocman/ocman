@@ -613,11 +613,16 @@ func sortedKeys(values map[string]struct{}) []string {
 }
 
 // GetProjects returns all directories with aggregated stats using SQL aggregation.
+//
+// session_count excludes subagent sessions (titles like "... (xxx subagent)")
+// so the figure matches the sessions list, which also hides them. Message,
+// token and cost totals intentionally still include subagent activity
+// because those represent real spend against the project.
 func (d *DB) GetProjects() ([]ProjectStats, error) {
 	rows, err := d.db.Query(`
 		SELECT
 			s.directory,
-			count(s.id) AS session_count,
+			SUM(CASE WHEN s.title NOT LIKE '%(% subagent)' THEN 1 ELSE 0 END) AS session_count,
 			max(s.time_updated) AS last_used,
 			COALESCE((
 				SELECT count(*) FROM message m
