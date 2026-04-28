@@ -222,6 +222,42 @@ func discoverOpenCodePort(directory string) string {
 // unresponsive.
 const pendingPromptTimeout = 500 * time.Millisecond
 
+// pendingPromptCacheTTL bounds the staleness of the cached
+// /permission and /question responses. 3 seconds is the same TTL as
+// the lsof port cache and is short enough that prompt indicators on
+// other-than-current sessions feel live, while eliminating
+// roughly 80% of the upstream calls these endpoints would otherwise
+// receive (dashboard 5s × notify 10s × favicon + bell × N
+// instances).
+//
+// Real-time prompt updates for the *currently-viewed* session still
+// arrive via the SSE stream — this cache only affects the
+// dashboard's per-row badge and the favicon/bell pollers, all of
+// which are already polling-based.
+//
+// var rather than const so tests can dial it down without sleeping
+// for the full 3 seconds.
+var pendingPromptCacheTTL = 3 * time.Second
+
+// pendingPromptCache caches raw /permission and /question response
+// bytes per (port, path). Writers swap the cache instance via
+// swapPendingPromptCacheTTL when a test wants a non-default TTL;
+// during normal operation it's a single long-lived instance.
+var pendingPromptCache = newHTTPCache(pendingPromptCacheTTL)
+
+// swapPendingPromptCacheTTL replaces the package-level cache with a
+// fresh instance using the supplied TTL. Test-only.
+func swapPendingPromptCacheTTL(ttl time.Duration) {
+	pendingPromptCacheTTL = ttl
+	pendingPromptCache = newHTTPCache(ttl)
+}
+
+// resetPendingPromptCache empties the cache so each test starts
+// from a cold state.
+func resetPendingPromptCache() {
+	pendingPromptCache = newHTTPCache(pendingPromptCacheTTL)
+}
+
 // fetchPendingPrompts calls the OpenCode HTTP endpoints that list currently
 // open permission and question prompts and returns a set of session IDs that
 // have an outstanding prompt of each kind. Endpoints that return non-JSON or
@@ -234,35 +270,68 @@ func fetchPendingPrompts(port string) (permissions, questions map[string]bool) {
 	return permissions, questions
 }
 
-// fetchPromptSessionIDs performs the actual HTTP call and returns the set of
-// session IDs mentioned in the JSON array response.
+// fetchPromptSessionIDs returns the set of session IDs mentioned in
+// the OpenCode /permission or /question JSON array response.
 //
-// Uses a per-call context with pendingPromptTimeout rather than the
-// shared openCodeClient timeout so a hung instance can't block the
-// entire dashboard fan-out for ten seconds.
+// Routed through pendingPromptCache (TTL pendingPromptCacheTTL) so
+// the dashboard's polling fan-out doesn't re-fetch identical data
+// every 5 seconds × N running instances. The HTTP call itself uses
+// a per-call context capped at pendingPromptTimeout so a hung
+// upstream instance can't block the dashboard for the shared
+// openCodeClient timeout.
+//
+// Failures are not cached — if the upstream is unreachable, the
+// next poll retries rather than waiting for the cache TTL.
 func fetchPromptSessionIDs(port, path string) map[string]bool {
-	result := map[string]bool{}
+	body, ok := pendingPromptCache.getOrFetch(port, path, func() ([]byte, bool) {
+		return getPromptBytes(port, path)
+	})
+	if !ok {
+		return map[string]bool{}
+	}
+	return parsePromptSessionIDs(body)
+}
+
+// getPromptBytes performs the timeout-bounded HTTP fetch for a
+// /permission or /question endpoint and returns the raw response
+// bytes on success. A non-200, non-JSON, or transport error returns
+// (nil, false) — the cache treats this as a no-op and the caller
+// returns an empty result.
+func getPromptBytes(port, path string) ([]byte, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), pendingPromptTimeout)
 	defer cancel()
 
 	url := fmt.Sprintf("http://127.0.0.1:%s%s", port, path)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return result
+		return nil, false
 	}
 	resp, err := openCodeClient.Do(req)
 	if err != nil {
-		return result
+		return nil, false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return result
+		return nil, false
 	}
 	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
-		return result
+		return nil, false
 	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, false
+	}
+	return body, true
+}
+
+// parsePromptSessionIDs extracts the set of session IDs from a
+// /permission or /question JSON array response. Tolerates malformed
+// entries — anything without a string `sessionID` is silently
+// dropped, mirroring the original handler's permissive behaviour.
+func parsePromptSessionIDs(body []byte) map[string]bool {
+	result := map[string]bool{}
 	var items []map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&items); err != nil {
+	if err := json.Unmarshal(body, &items); err != nil {
 		return result
 	}
 	for _, item := range items {
