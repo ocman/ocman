@@ -118,6 +118,14 @@ func (a *Adapter) Sessions(_ context.Context, dir string, since int64) ([]db.Ses
 	ports := discoverOpenCodePorts()
 	pendingPerms, pendingQuestions := collectPendingPromptsByDir(ports)
 
+	// OpenCode emits subagent prompts with the subagent's session ID,
+	// not the parent's. The listing only contains parent sessions
+	// (subagents are filtered out by SQL), so we resolve each prompted
+	// subagent to its parent and apply the flag there. Parent prompts
+	// pass through unchanged (their id maps to themselves).
+	pendingPerms = bubbleUpPromptsToParent(pendingPerms, a.db)
+	pendingQuestions = bubbleUpPromptsToParent(pendingQuestions, a.db)
+
 	for i := range sessions {
 		sessions[i].Platform = string(PlatformID)
 		if _, ok := ports[sessions[i].Directory]; ok {
@@ -131,6 +139,48 @@ func (a *Adapter) Sessions(_ context.Context, dir string, since int64) ([]db.Ses
 		}
 	}
 	return sessions, nil
+}
+
+// bubbleUpPromptsToParent rewrites every key in `prompted` that is the
+// ID of a subagent session to its parent session ID. Keys that already
+// refer to a top-level session pass through unchanged. A nil/empty
+// input returns an empty map.
+//
+// This is what makes a subagent's permission/question prompt visible
+// on the parent session row in the listing — without it, the prompt
+// would target a session ID that the listing never includes (subagent
+// sessions are filtered out).
+func bubbleUpPromptsToParent(prompted map[string]bool, dbConn parentLookup) map[string]bool {
+	if len(prompted) == 0 {
+		return prompted
+	}
+	if dbConn == nil {
+		return prompted
+	}
+	ids := make([]string, 0, len(prompted))
+	for id := range prompted {
+		ids = append(ids, id)
+	}
+	parents, err := dbConn.GetSessionParentIDs(ids)
+	if err != nil || len(parents) == 0 {
+		return prompted
+	}
+	out := make(map[string]bool, len(prompted))
+	for id := range prompted {
+		if parent, ok := parents[id]; ok {
+			out[parent] = true
+		} else {
+			out[id] = true
+		}
+	}
+	return out
+}
+
+// parentLookup is the subset of *db.DB that bubbleUpPromptsToParent
+// needs. Defined as an interface so the helper can be unit-tested
+// without spinning up a SQLite database.
+type parentLookup interface {
+	GetSessionParentIDs(childIDs []string) (map[string]string, error)
 }
 
 // Session returns full detail for one session. Prefers live OpenCode

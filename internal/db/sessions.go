@@ -133,6 +133,77 @@ func (d *DB) GetSession(sessionID string) (*Session, error) {
 	return &s, nil
 }
 
+// GetSubagentSessionIDs returns the IDs of every session whose parent_id
+// equals parentID. Used to bubble subagent-level prompts (permission /
+// question) up to the parent session in the UI: when an OpenCode subagent
+// asks for permission, the prompt is emitted with the subagent's own
+// session ID, but the user only sees and acts on the parent session.
+//
+// Returns an empty slice (and nil error) when parentID is empty so callers
+// can blindly invoke this for any session without first checking whether
+// it might have children.
+func (d *DB) GetSubagentSessionIDs(parentID string) ([]string, error) {
+	if parentID == "" {
+		return nil, nil
+	}
+	rows, err := d.db.Query(`SELECT id FROM session WHERE parent_id = ?`, parentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			log.WithError(err).Warn("failed to scan subagent session id")
+			continue
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// GetSessionParentIDs returns a map of child→parent for every id in
+// childIDs that has a non-NULL parent_id. IDs with no parent (top-level
+// sessions) and IDs that don't exist are simply absent from the map,
+// not present with an empty value. Used to bubble subagent-level
+// pending-prompt flags up to the parent session in the listing.
+//
+// Returns an empty map (and nil error) when childIDs is empty so callers
+// can hand it the result of a fan-out without first checking len().
+func (d *DB) GetSessionParentIDs(childIDs []string) (map[string]string, error) {
+	out := make(map[string]string, len(childIDs))
+	if len(childIDs) == 0 {
+		return out, nil
+	}
+	// Build "?, ?, ?" placeholders for an IN clause.
+	placeholders := strings.Repeat("?,", len(childIDs))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]interface{}, len(childIDs))
+	for i, id := range childIDs {
+		args[i] = id
+	}
+	rows, err := d.db.Query(
+		`SELECT id, parent_id FROM session WHERE parent_id IS NOT NULL AND id IN (`+placeholders+`)`,
+		args...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id, parentID string
+		if err := rows.Scan(&id, &parentID); err != nil {
+			log.WithError(err).Warn("failed to scan session parent id")
+			continue
+		}
+		out[id] = parentID
+	}
+	return out, rows.Err()
+}
+
 // GetSessionsInactiveBefore returns non-subagent sessions last updated before the cutoff.
 func (d *DB) GetSessionsInactiveBefore(cutoff int64) ([]SessionArchiveCandidate, error) {
 	rows, err := d.db.Query(`

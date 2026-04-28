@@ -148,6 +148,72 @@ func TestSendJSON_4xxReturnsUpstreamError(t *testing.T) {
 	}
 }
 
+// TestFilterPromptsForSession covers the in-process filter that decides
+// which entries from OpenCode's /permission (or /question) array are
+// relevant to a given parent session. Subagent prompts must bubble up
+// to the parent, otherwise the user sees no UI and the flow stalls.
+func TestFilterPromptsForSession(t *testing.T) {
+	tests := []struct {
+		name        string
+		raw         []map[string]interface{}
+		sessionID   string
+		subagentIDs []string
+		wantIDs     []string
+	}{
+		{
+			name:      "exact session match",
+			raw:       []map[string]interface{}{{"id": "p1", "sessionID": "s1"}},
+			sessionID: "s1",
+			wantIDs:   []string{"p1"},
+		},
+		{
+			name:      "different session is filtered out",
+			raw:       []map[string]interface{}{{"id": "p1", "sessionID": "other"}},
+			sessionID: "s1",
+			wantIDs:   nil,
+		},
+		{
+			name:        "subagent prompt is included",
+			raw:         []map[string]interface{}{{"id": "p1", "sessionID": "child1"}},
+			sessionID:   "parent",
+			subagentIDs: []string{"child1", "child2"},
+			wantIDs:     []string{"p1"},
+		},
+		{
+			name:        "mixed: parent + subagent + unrelated",
+			raw:         []map[string]interface{}{{"id": "p1", "sessionID": "parent"}, {"id": "p2", "sessionID": "child1"}, {"id": "p3", "sessionID": "stranger"}},
+			sessionID:   "parent",
+			subagentIDs: []string{"child1"},
+			wantIDs:     []string{"p1", "p2"},
+		},
+		{
+			name:      "missing sessionID is included (legacy / parent-scoped)",
+			raw:       []map[string]interface{}{{"id": "p1"}},
+			sessionID: "s1",
+			wantIDs:   []string{"p1"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := filterPromptsForSession(tt.raw, tt.sessionID, tt.subagentIDs)
+			gotIDs := make([]string, 0, len(got))
+			for _, p := range got {
+				if id, ok := p["id"].(string); ok {
+					gotIDs = append(gotIDs, id)
+				}
+			}
+			if len(gotIDs) != len(tt.wantIDs) {
+				t.Fatalf("got %d prompts (%v), want %d (%v)", len(gotIDs), gotIDs, len(tt.wantIDs), tt.wantIDs)
+			}
+			for i, id := range tt.wantIDs {
+				if gotIDs[i] != id {
+					t.Errorf("prompt[%d] id = %q, want %q", i, gotIDs[i], id)
+				}
+			}
+		})
+	}
+}
+
 // TestSendJSON_5xxFallsThroughToGenericError ensures a 5xx response
 // is *not* tagged as ErrUpstreamRejected — those land in the
 // "platform unreachable / unknown" bucket because they typically

@@ -177,14 +177,39 @@ func (a *Adapter) listPrompts(ctx context.Context, sessionID, path string) ([]pl
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, nil
 	}
+	// Subagent prompts carry the subagent's session ID, not the parent's.
+	// Bubble them up so the parent session's UI can render and respond to
+	// them — otherwise OpenCode stalls waiting on a prompt the user can't
+	// see (the subagent sessions are hidden from the listing).
+	var subagentIDs []string
+	if a.db != nil {
+		subagentIDs, _ = a.db.GetSubagentSessionIDs(sessionID)
+	}
+	return filterPromptsForSession(raw, sessionID, subagentIDs), nil
+}
+
+// filterPromptsForSession returns the subset of OpenCode prompt entries
+// (from /permission or /question) that belong to the given session or any
+// of its subagents. Entries without a sessionID are kept as-is — older
+// OpenCode versions emit parent-scoped prompts that way.
+//
+// Kept as a pure function so the inclusion logic is testable without
+// spinning up an HTTP server or running OpenCode.
+func filterPromptsForSession(raw []map[string]interface{}, sessionID string, subagentIDs []string) []platforms.LivePrompt {
+	allowed := make(map[string]bool, 1+len(subagentIDs))
+	allowed[sessionID] = true
+	for _, id := range subagentIDs {
+		allowed[id] = true
+	}
 	out := make([]platforms.LivePrompt, 0, len(raw))
 	for _, r := range raw {
-		if sid, ok := r["sessionID"].(string); ok && sid != "" && sid != sessionID {
+		sid, hasSID := r["sessionID"].(string)
+		if hasSID && sid != "" && !allowed[sid] {
 			continue
 		}
 		out = append(out, platforms.LivePrompt(r))
 	}
-	return out, nil
+	return out
 }
 
 // --- Mutating operations ---

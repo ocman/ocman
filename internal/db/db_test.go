@@ -21,6 +21,7 @@ func openTestDB(t *testing.T) *DB {
 		CREATE TABLE session (
 			id TEXT PRIMARY KEY,
 			project_id TEXT NOT NULL DEFAULT '',
+			parent_id TEXT,
 			title TEXT NOT NULL DEFAULT '',
 			directory TEXT NOT NULL DEFAULT '',
 			time_created INTEGER NOT NULL DEFAULT 0,
@@ -59,6 +60,20 @@ func insertSession(t *testing.T, db *DB, id, title, dir string, created, updated
 	)
 	if err != nil {
 		t.Fatalf("inserting session %s: %v", id, err)
+	}
+}
+
+// insertSubagent inserts a subagent session whose parent_id points at the
+// given parent. Title follows the OpenCode "(<name> subagent)" convention so
+// the existing GetSessions filter still hides the row from the main listing.
+func insertSubagent(t *testing.T, db *DB, id, parentID, title, dir string, created, updated int64) {
+	t.Helper()
+	_, err := db.db.Exec(
+		`INSERT INTO session (id, project_id, parent_id, title, directory, time_created, time_updated) VALUES (?, '', ?, ?, ?, ?, ?)`,
+		id, parentID, title, dir, created, updated,
+	)
+	if err != nil {
+		t.Fatalf("inserting subagent %s: %v", id, err)
 	}
 }
 
@@ -783,6 +798,15 @@ func TestGetProjects(t *testing.T) {
 	insertSession(t, db, "s1", "Session 1", "/project/a", now, now)
 	insertSession(t, db, "s2", "Session 2", "/project/a", now, now)
 	insertSession(t, db, "s3", "Session 3", "/project/b", now, now)
+	// Subagent session under /project/a — must be excluded from
+	// SessionCount but its token/cost contributions must still
+	// be folded into the project totals (real spend).
+	insertSession(t, db, "s4", "Task (code subagent)", "/project/a", now, now)
+	insertMessage(t, db, "m1", "s4", now, map[string]interface{}{
+		"role":   "assistant",
+		"tokens": map[string]interface{}{"input": 100, "output": 50},
+		"cost":   0.25,
+	})
 
 	projects, err := db.GetProjects()
 	if err != nil {
@@ -791,11 +815,27 @@ func TestGetProjects(t *testing.T) {
 	if len(projects) != 2 {
 		t.Fatalf("expected 2 projects, got %d", len(projects))
 	}
-	// Both are returned; find project /a
+	var foundA bool
 	for _, p := range projects {
-		if p.Directory == "/project/a" && p.SessionCount != 2 {
-			t.Errorf("project /a: expected 2 sessions, got %d", p.SessionCount)
+		if p.Directory != "/project/a" {
+			continue
 		}
+		foundA = true
+		if p.SessionCount != 2 {
+			t.Errorf("project /a: expected 2 sessions (subagent excluded), got %d", p.SessionCount)
+		}
+		if p.TotalTokensIn != 100 {
+			t.Errorf("project /a: expected 100 input tokens (subagent included), got %d", p.TotalTokensIn)
+		}
+		if p.TotalTokensOut != 50 {
+			t.Errorf("project /a: expected 50 output tokens (subagent included), got %d", p.TotalTokensOut)
+		}
+		if p.TotalCost != 0.25 {
+			t.Errorf("project /a: expected cost 0.25 (subagent included), got %v", p.TotalCost)
+		}
+	}
+	if !foundA {
+		t.Fatalf("project /a not returned")
 	}
 }
 
@@ -1016,5 +1056,127 @@ func TestGetHourlyTokensByModel_Empty(t *testing.T) {
 	}
 	if len(result) != 0 {
 		t.Errorf("expected 0 entries, got %d", len(result))
+	}
+}
+
+// --- GetSubagentSessionIDs tests ---
+
+// TestGetSubagentSessionIDs_ReturnsChildren verifies that the DB returns
+// every session whose parent_id matches the given parent. This powers
+// the bubble-up of subagent permission/question prompts to the parent
+// session in the UI.
+func TestGetSubagentSessionIDs_ReturnsChildren(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "parent", "Parent", "/project", now, now)
+	insertSubagent(t, db, "child1", "parent", "Task (explore subagent)", "/project", now, now)
+	insertSubagent(t, db, "child2", "parent", "Task (build subagent)", "/project", now, now)
+	// A subagent of an unrelated parent — must NOT appear in the result.
+	insertSession(t, db, "other", "Other parent", "/project", now, now)
+	insertSubagent(t, db, "child3", "other", "Task (build subagent)", "/project", now, now)
+
+	got, err := db.GetSubagentSessionIDs("parent")
+	if err != nil {
+		t.Fatalf("GetSubagentSessionIDs: %v", err)
+	}
+	want := map[string]bool{"child1": true, "child2": true}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d ids, got %d (%v)", len(want), len(got), got)
+	}
+	for _, id := range got {
+		if !want[id] {
+			t.Errorf("unexpected id in result: %q", id)
+		}
+	}
+}
+
+// TestGetSubagentSessionIDs_NoChildren returns an empty slice (and nil
+// error) when the session has no subagents — most sessions don't.
+func TestGetSubagentSessionIDs_NoChildren(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "lonely", "Lonely", "/project", now, now)
+
+	got, err := db.GetSubagentSessionIDs("lonely")
+	if err != nil {
+		t.Fatalf("GetSubagentSessionIDs: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected no children, got %v", got)
+	}
+}
+
+// TestGetSubagentSessionIDs_EmptyParentID short-circuits an empty
+// argument — never returns every subagent in the DB.
+func TestGetSubagentSessionIDs_EmptyParentID(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "parent", "Parent", "/project", now, now)
+	insertSubagent(t, db, "child1", "parent", "Task (explore subagent)", "/project", now, now)
+
+	got, err := db.GetSubagentSessionIDs("")
+	if err != nil {
+		t.Fatalf("GetSubagentSessionIDs: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected no children for empty parent id, got %v", got)
+	}
+}
+
+// --- GetSessionParentIDs tests ---
+
+// TestGetSessionParentIDs_ReturnsMap returns child→parent for every
+// id that has a non-NULL parent_id. Top-level sessions are absent
+// from the map (their parent_id is NULL).
+func TestGetSessionParentIDs_ReturnsMap(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "parent", "Parent", "/project", now, now)
+	insertSubagent(t, db, "child1", "parent", "Task (explore subagent)", "/project", now, now)
+	insertSubagent(t, db, "child2", "parent", "Task (build subagent)", "/project", now, now)
+	insertSession(t, db, "lonely", "Lonely", "/project", now, now)
+	// Also seed an unrelated session that shouldn't appear in the result.
+	insertSession(t, db, "unrelated", "Unrelated", "/project", now, now)
+
+	got, err := db.GetSessionParentIDs([]string{"child1", "child2", "lonely", "missing"})
+	if err != nil {
+		t.Fatalf("GetSessionParentIDs: %v", err)
+	}
+	if got["child1"] != "parent" {
+		t.Errorf("child1 parent = %q, want parent", got["child1"])
+	}
+	if got["child2"] != "parent" {
+		t.Errorf("child2 parent = %q, want parent", got["child2"])
+	}
+	if _, ok := got["lonely"]; ok {
+		t.Errorf("lonely should not be in the map (no parent_id), got %q", got["lonely"])
+	}
+	if _, ok := got["missing"]; ok {
+		t.Errorf("missing id should not be in the map, got %q", got["missing"])
+	}
+	if _, ok := got["unrelated"]; ok {
+		t.Errorf("unrelated id was not requested but appeared in the map")
+	}
+}
+
+// TestGetSessionParentIDs_Empty short-circuits when no IDs are requested.
+func TestGetSessionParentIDs_Empty(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	got, err := db.GetSessionParentIDs(nil)
+	if err != nil {
+		t.Fatalf("GetSessionParentIDs(nil): %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected empty map for nil input, got %v", got)
 	}
 }

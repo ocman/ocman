@@ -27,6 +27,7 @@ import { openVSCode } from '../lib/shortcuts';
 import { useShortcut } from '../lib/shortcutRegistry';
 import { hashSession, hashMessagesAndParts } from '../lib/sessionHash';
 import { createSessionWithLaunch, type LaunchStatus } from '../lib/createSessionWithLaunch';
+import { isSessionRelevant } from '../lib/promptRouting';
 
 const PAGE_SIZE = 30;
 const RECENT_SESSIONS_LIMIT = 15;
@@ -177,6 +178,12 @@ interface PendingPermission {
   permissionId: string;
   permission: string;
   patterns: string[];
+  // sessionId of the (sub)agent that asked for the permission. When the
+  // prompt comes from a subagent of the page's session, the response
+  // must be POSTed to that subagent's session, not the parent's.
+  // Empty string means "asked by the page's own session" (legacy
+  // payloads without a sessionID).
+  sessionId: string;
 }
 
 interface SseDebugEvent {
@@ -230,7 +237,15 @@ function extractPendingPermission(node: unknown): PendingPermission | null {
     ? rawPatterns.filter((p): p is string => typeof p === 'string')
     : [];
 
-  return { permissionId: id, permission, patterns };
+  // sessionID is the (sub)agent that issued the prompt. Captured so the
+  // reply can be POSTed to the right /api/session/{id}/permissions/{pid}
+  // endpoint when the prompt came from a subagent of the page session.
+  const sessionId =
+    (typeof properties.sessionID === 'string' && properties.sessionID) ||
+    (typeof properties.sessionId === 'string' && properties.sessionId) ||
+    '';
+
+  return { permissionId: id, permission, patterns, sessionId };
 }
 
 function extractPendingQuestion(node: unknown): PendingQuestion | null {
@@ -1263,9 +1278,12 @@ export function SessionDetail() {
           for (const p of perms) {
             const perm = extractPendingPermission({ type: 'permission.asked', properties: p });
             if (!perm) continue;
-            // Only show if it belongs to the current session.
+            // Show prompts that belong to the current session OR any of
+            // its known subagents (whose prompts must be answered by
+            // the user from the parent session page).
             const props = p as Record<string, unknown>;
-            if (props.sessionID && props.sessionID !== sid) continue;
+            const promptSid = typeof props.sessionID === 'string' ? props.sessionID : '';
+            if (!isSessionRelevant(promptSid, sid, subagentSessionIdsRef.current)) continue;
             setPendingPermission(perm);
             setPermissionError(null);
             break; // show the first pending permission for this session
@@ -1280,13 +1298,15 @@ export function SessionDetail() {
           for (const q of questions) {
             const question = extractPendingQuestion({ type: 'question.asked', properties: q });
             if (!question) continue;
-            // Only show if it belongs to the current session
+            // Show questions belonging to the current session OR any of
+            // its known subagents (the response endpoint is keyed on
+            // requestID, not session, so any reachable session works).
             const props = q as Record<string, unknown>;
-            if (!props.sessionID || props.sessionID === sid) {
-              storePendingQuestion(sid, question);
-              setPendingQuestion((prev) => prev ?? question);
-              break; // show the first pending question for this session
-            }
+            const questionSid = typeof props.sessionID === 'string' ? props.sessionID : '';
+            if (!isSessionRelevant(questionSid, sid, subagentSessionIdsRef.current)) continue;
+            storePendingQuestion(sid, question);
+            setPendingQuestion((prev) => prev ?? question);
+            break; // show the first pending question for this session
           }
         }).catch(() => { /* ignore errors — SSE events will handle live questions */ });
         // Reconciliation: fetch the latest state only when the initial
@@ -1344,11 +1364,13 @@ export function SessionDetail() {
           ((evtProps?.info as Record<string, unknown> | undefined)?.sessionID as string) ||
           ((evtProps?.part as Record<string, unknown> | undefined)?.sessionID as string) ||
           undefined;
+        const isSubagentEvent =
+          !!evtSessionId && evtSessionId !== sid && subagentSessionIdsRef.current.has(evtSessionId);
         if (evtSessionId && evtSessionId !== sid) {
           // Capture token data from subagent sessions for the TPS indicator.
           // Track per-message tokens so we can accurately sum across multiple
           // assistant messages within a subagent session.
-          if (subagentSessionIdsRef.current.has(evtSessionId) &&
+          if (isSubagentEvent &&
               (type === 'message.created' || type === 'message.updated')) {
             const subInfo = (evtProps?.info || (evtProps as Record<string, unknown>)) as Record<string, unknown> | undefined;
             if (subInfo && typeof subInfo.id === 'string' && subInfo.role === 'assistant') {
@@ -1369,6 +1391,19 @@ export function SessionDetail() {
                 });
               }
             }
+          }
+          // Subagent prompt events bubble up to the parent session UI so
+          // the user can answer them. Without this, an OpenCode subagent
+          // that hits a permission/question stalls forever — its session
+          // is hidden from the listing, so there's no other place to ack.
+          if (isSubagentEvent && (
+            type === 'permission.asked' ||
+            type === 'permission.replied' ||
+            type === 'question.asked' ||
+            type === 'question.replied' ||
+            type === 'question.rejected'
+          )) {
+            handleParsedEvent(parsed);
           }
           return;
         }
@@ -2110,8 +2145,13 @@ export function SessionDetail() {
     setPermissionError(null);
     setAnsweringPermission(true);
     const repliedId = pendingPermission.permissionId;
+    // OpenCode's permission API is session-scoped: the URL is
+    // /session/{id}/permissions/{pid}. When the prompt comes from a
+    // subagent of the page session, route the reply to that subagent's
+    // session — the parent session knows nothing about the prompt.
+    const targetSessionId = pendingPermission.sessionId || session.id;
     try {
-      await respondPermission(session.id, repliedId, reply);
+      await respondPermission(targetSessionId, repliedId, reply);
       // Only clear the prompt if the currently pending permission is still
       // the one we just replied to. An SSE `permission.asked` event for a
       // follow-up permission may have already arrived while the POST was in
