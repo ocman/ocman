@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
-import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { DashboardLayout, SessionsTab, ProjectsTab, StatsTab, UsageTab, SettingsTab } from './pages/Dashboard';
 import { ProjectDetail } from './pages/ProjectDetail';
@@ -14,6 +14,7 @@ import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useFaviconNotify } from './lib/useFaviconNotify';
 import { useBellNotify } from './lib/useBellNotify';
+import { useNotificationNotify } from './lib/useNotificationNotify';
 import { useAuthStore } from './lib/authStore';
 import { useUiStore } from './lib/uiStore';
 import { useShortcut, useShortcutDispatcher } from './lib/shortcutRegistry';
@@ -210,6 +211,30 @@ function BellNotify() {
   return null;
 }
 
+function NotificationNotify() {
+  useNotificationNotify();
+  return null;
+}
+
+// Listens for `ocman:navigate` messages posted by the service worker
+// when the user clicks a notification. The SW prefers postMessage over
+// a hard navigation so we keep the SPA's client-side routing (and
+// don't blow away unsaved Composer drafts on the way to a session).
+function ServiceWorkerNavListener() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !navigator.serviceWorker) return;
+    function onMessage(event: MessageEvent) {
+      const data = event.data as { type?: string; url?: string } | null;
+      if (!data || data.type !== 'ocman:navigate' || typeof data.url !== 'string') return;
+      navigate(data.url);
+    }
+    navigator.serviceWorker.addEventListener('message', onMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', onMessage);
+  }, [navigate]);
+  return null;
+}
+
 function PerformanceCleanup() {
   usePerformanceCleanup();
   return null;
@@ -279,6 +304,8 @@ export default function App() {
         <HeaderProvider>
           <FaviconNotify />
           <BellNotify />
+          <NotificationNotify />
+          <ServiceWorkerNavListener />
           <PerformanceCleanup />
           <MemoryMonitor />
           <LongTaskMonitor />

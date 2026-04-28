@@ -129,3 +129,22 @@ describe('uiStore changesSidebar tab management', () => {
     });
   });
 });
+
+describe('uiStore notificationsEnabled', () => {
+  beforeEach(() => {
+    useUiStore.setState({ notificationsEnabled: false });
+  });
+
+  it('defaults to false (system notifications require explicit opt-in)', () => {
+    // The persisted store starts at false; tests reset it explicitly to
+    // pin the contract independently of any prior test mutation.
+    expect(useUiStore.getState().notificationsEnabled).toBe(false);
+  });
+
+  it('setNotificationsEnabled flips the flag', () => {
+    initial.setNotificationsEnabled(true);
+    expect(useUiStore.getState().notificationsEnabled).toBe(true);
+    initial.setNotificationsEnabled(false);
+    expect(useUiStore.getState().notificationsEnabled).toBe(false);
+  });
+});

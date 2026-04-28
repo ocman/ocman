@@ -56,6 +56,12 @@ type UiStore = {
   bellEnabled: boolean;
   setBellEnabled: (enabled: boolean) => void;
 
+  // OS-level Web Notifications. Off by default — enabling requires the
+  // user to grant browser permission, so we never preemptively claim
+  // they're enabled. Persisted alongside other preferences.
+  notificationsEnabled: boolean;
+  setNotificationsEnabled: (enabled: boolean) => void;
+
   // Ordered list of currently-open views in the right-hand panel.
   // Empty = panel is collapsed (strip-only). One entry = single
   // view. Multiple entries = vertically split, in order top-to-
@@ -137,6 +143,9 @@ export const useUiStore = create<UiStore>()(
       bellEnabled: true,
       setBellEnabled: (enabled) => set({ bellEnabled: enabled }),
 
+      notificationsEnabled: false,
+      setNotificationsEnabled: (enabled) => set({ notificationsEnabled: enabled }),
+
       changesSidebarOpenTabs: ['session'],
       changesSidebarTabSizes: {},
       toggleChangesSidebarTab: (tab) =>
@@ -216,6 +225,7 @@ export const useUiStore = create<UiStore>()(
       partialize: (s) => ({
         sidebarWidth: s.sidebarWidth,
         bellEnabled: s.bellEnabled,
+        notificationsEnabled: s.notificationsEnabled,
         sidebarView: s.sidebarView,
         collapsedProjects: s.collapsedProjects,
         changesSidebarWidth: s.changesSidebarWidth,

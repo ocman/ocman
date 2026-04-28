@@ -37,12 +37,15 @@ test('clicking Settings tab navigates to /settings', async ({ mockedPage: page }
 
 test('settings tab shows bell sound toggle', async ({ mockedPage: page }) => {
   await page.goto('/settings');
-  await expect(page.locator('.settings-row-label', { hasText: 'Bell sound' })).toBeVisible();
+  // Scope to the Bell sound row — there are now multiple toggle rows
+  // in the Notifications section (system notifications + bell sound).
+  const bellRow = page.locator('.settings-row', { has: page.locator('.settings-row-label', { hasText: 'Bell sound' }) });
+  await expect(bellRow.locator('.settings-row-label', { hasText: 'Bell sound' })).toBeVisible();
   // The <input> is visually hidden for styling (see .settings-toggle input in
   // Dashboard.css); assert on the label (which IS visible) and that the
   // checkbox is attached to the DOM.
-  await expect(page.locator('.settings-toggle')).toBeVisible();
-  await expect(page.locator('.settings-toggle input[type="checkbox"]')).toBeAttached();
+  await expect(bellRow.locator('.settings-toggle')).toBeVisible();
+  await expect(bellRow.locator('.settings-toggle input[type="checkbox"]')).toBeAttached();
 });
 
 test('Sessions tab is active by default', async ({ mockedPage: page }) => {

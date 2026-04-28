@@ -25,6 +25,10 @@ import { useApiRequest } from '../lib/apiStore';
 import { useUiStore } from '../lib/uiStore';
 import { useAuthStore } from '../lib/authStore';
 import { usePwaInstall } from '../lib/usePwaInstall';
+import {
+  notificationsSupported,
+  requestNotificationPermission,
+} from '../lib/useNotificationNotify';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, PointElement, LineElement, Tooltip, Legend);
 
@@ -1171,9 +1175,41 @@ export function SettingsTab() {
   usePageTitle('Settings');
   const bellEnabled = useUiStore((s) => s.bellEnabled);
   const setBellEnabled = useUiStore((s) => s.setBellEnabled);
+  const notificationsEnabled = useUiStore((s) => s.notificationsEnabled);
+  const setNotificationsEnabled = useUiStore((s) => s.setNotificationsEnabled);
   const authRequired = useAuthStore((s) => s.authRequired);
   const logout = useAuthStore((s) => s.logout);
   const { canInstall, installed, promptInstall } = usePwaInstall();
+
+  // System notification state. Tracked locally so we can re-render
+  // when permission changes (the browser API doesn't give us an event
+  // for that, so we read it on each render and update after a request).
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unsupported'>(
+    () => {
+      if (!notificationsSupported()) return 'unsupported';
+      return Notification.permission;
+    },
+  );
+
+  const notifSupported = notifPermission !== 'unsupported';
+  const notifBlocked = notifPermission === 'denied';
+
+  async function handleNotificationsToggle(want: boolean) {
+    if (!want) {
+      setNotificationsEnabled(false);
+      return;
+    }
+    // Turning on: ensure permission is granted first. If the user
+    // previously denied it, the browser won't re-prompt — surface that
+    // explicitly so the toggle doesn't silently fail.
+    if (notifPermission === 'granted') {
+      setNotificationsEnabled(true);
+      return;
+    }
+    const result = await requestNotificationPermission();
+    setNotifPermission(result);
+    setNotificationsEnabled(result === 'granted');
+  }
 
   // The "App" section only renders when there's something actionable
   // to show: an install button (Chromium, not yet installed) or an
@@ -1186,6 +1222,27 @@ export function SettingsTab() {
     <div className="settings-page">
       <div className="settings-section">
         <h2 className="settings-section-title">Notifications</h2>
+        {notifSupported && (
+          <div className="settings-row">
+            <div className="settings-row-info">
+              <div className="settings-row-label">System notifications</div>
+              <div className="settings-row-desc">
+                {notifBlocked
+                  ? 'Notifications are blocked by your browser. Allow them in your browser\u2019s site settings to enable this option.'
+                  : 'Show a desktop notification when a session finishes or needs your input. Works best after installing ocman as an app.'}
+              </div>
+            </div>
+            <label className="settings-toggle">
+              <input
+                type="checkbox"
+                checked={notificationsEnabled && notifPermission === 'granted'}
+                disabled={notifBlocked}
+                onChange={(e) => { void handleNotificationsToggle(e.target.checked); }}
+              />
+              <span className="settings-toggle-track" />
+            </label>
+          </div>
+        )}
         <div className="settings-row">
           <div className="settings-row-info">
             <div className="settings-row-label">Bell sound</div>
