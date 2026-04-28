@@ -292,6 +292,42 @@ test('clicking a session row in project detail navigates to session', async ({ m
   await expect(page).toHaveURL(`/session/${MOCK_SESSION.id}`);
 });
 
+test('project detail shows time-range filter buttons and "Exclude archived" toggle', async ({ mockedPage: page }) => {
+  await page.goto(`/project/${encodeURIComponent(MOCK_PROJECT.directory)}`);
+
+  const filterBar = page.locator('.oc-time-range');
+  await expect(filterBar).toBeVisible({ timeout: 5_000 });
+  // 5 time-range buttons (12h / 24h / 7d / 30d / All) plus the
+  // "Exclude archived" toggle.
+  await expect(filterBar.locator('button')).toHaveCount(6);
+  // 7d is the default for project detail.
+  await expect(filterBar.locator('button.active', { hasText: '7d' })).toBeVisible();
+  // Archived is included by default ⇒ the toggle is NOT active.
+  await expect(filterBar.locator('button', { hasText: 'Exclude archived' })).not.toHaveClass(/active/);
+});
+
+test('project detail "Exclude archived" toggle hides locally-archived sessions', async ({ mockedPage: page }) => {
+  // Mark MOCK_SESSION_2 as archived in the response.
+  const archivedSession = { ...MOCK_SESSION_2, archived: true };
+  await page.route('/api/sessions*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([MOCK_SESSION, archivedSession]),
+    }),
+  );
+
+  await page.goto(`/project/${encodeURIComponent(MOCK_PROJECT.directory)}`);
+  // Both visible by default (archived included).
+  await expect(page.locator('.session-title', { hasText: MOCK_SESSION.title })).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator('.session-title', { hasText: MOCK_SESSION_2.title })).toBeVisible();
+
+  // Click the toggle — archived row disappears.
+  await page.locator('.oc-time-range-btn', { hasText: 'Exclude archived' }).click();
+  await expect(page.locator('.session-title', { hasText: MOCK_SESSION.title })).toBeVisible();
+  await expect(page.locator('.session-title', { hasText: MOCK_SESSION_2.title })).not.toBeVisible();
+});
+
 // ===========================================================================
 // KEYBOARD SHORTCUTS DIALOG
 // ===========================================================================

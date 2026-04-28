@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import type { Session } from '../lib/api';
 import { usePageTitle } from '../lib/headerContext';
 import { SessionTable } from '../components/SessionTable';
@@ -8,6 +8,20 @@ import { useApiStore } from '../lib/apiStore';
 import { shortPath } from '../lib/format';
 import { openVSCode } from '../lib/shortcuts';
 import { useShortcut } from '../lib/shortcutRegistry';
+// ProjectDetail is mounted outside DashboardLayout, so we need to pull in
+// Dashboard.css explicitly to get the .oc-time-range / .oc-time-range-btn
+// styles used by the filter bar below.
+import './Dashboard.css';
+
+const TIME_RANGE_OPTIONS = [
+  { label: '12h', value: 12 },
+  { label: '24h', value: 24 },
+  { label: '7d', value: 168 },
+  { label: '30d', value: 720 },
+  { label: 'All', value: 0 },
+];
+
+const DEFAULT_TIME_RANGE = 168; // 7d
 
 export function ProjectDetail() {
   const { '*': directory } = useParams();
@@ -21,6 +35,27 @@ export function ProjectDetail() {
   const [pickerPos, setPickerPos] = useState<{ top: number; left: number } | null>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
   const getSessions = useApiStore((state) => state.getSessions);
+
+  // Filter state (mirrors the dashboard Sessions tab) — persisted in the
+  // URL so refresh / back-forward keep the user's view. Default to 7d
+  // (`t` absent ⇒ 168) and to "include archived" (`a` absent ⇒ false),
+  // since users navigating into a specific project usually want to see
+  // everything that's happened there, archived sessions included.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const timeRange = parseInt(searchParams.get('t') || String(DEFAULT_TIME_RANGE), 10);
+  const excludeArchived = searchParams.get('a') === '1';
+
+  const setTimeRange = useCallback((v: number) => {
+    setSearchParams((p) => { p.set('t', String(v)); return p; }, { replace: true });
+  }, [setSearchParams]);
+
+  const setExcludeArchived = useCallback((v: boolean) => {
+    setSearchParams((p) => {
+      if (v) p.set('a', '1');
+      else p.delete('a');
+      return p;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   useEffect(() => {
     if (!pendingTmuxSession) return;
@@ -40,7 +75,8 @@ export function ProjectDetail() {
     }
 
     try {
-      const nextSessions = await getSessions({ dir: directory });
+      const since = timeRange > 0 ? Date.now() - timeRange * 60 * 60 * 1000 : undefined;
+      const nextSessions = await getSessions({ dir: directory, since });
       // Coerce a nil-slice JSON null into [] so SessionTable / its
       // visibility filter never see null.
       setSessions(nextSessions ?? []);
@@ -48,8 +84,11 @@ export function ProjectDetail() {
     } catch {
       // error tracked by useApiRequest
     }
-  }, [directory, getSessions]);
+  }, [directory, getSessions, timeRange]);
 
+  // Initial load + reload whenever `directory` or the time-range filter
+  // changes. Inlined so the effect body itself doesn't synchronously
+  // call a setState-bearing callback (react-hooks/set-state-in-effect).
   useEffect(() => {
     let cancelled = false;
 
@@ -60,9 +99,11 @@ export function ProjectDetail() {
       }
 
       try {
-const nextSessions = await getSessions({ dir: directory, since: Date.now() - 12 * 60 * 60 * 1000 });
+        const since = timeRange > 0 ? Date.now() - timeRange * 60 * 60 * 1000 : undefined;
+        const nextSessions = await getSessions({ dir: directory, since });
         if (cancelled) return;
-        // See above: guard against JSON-null from /api/sessions.
+        // Coerce a nil-slice JSON null into [] so SessionTable / its
+        // visibility filter never see null.
         setSessions(nextSessions ?? []);
         setSessionsLoaded(true);
       } catch {
@@ -74,9 +115,10 @@ const nextSessions = await getSessions({ dir: directory, since: Date.now() - 12 
     return () => {
       cancelled = true;
     };
-  }, [directory, getSessions]);
+  }, [directory, getSessions, timeRange]);
 
-  // Auto-refresh every 5 seconds
+  // Auto-refresh every 5 seconds. `load` is passed to setInterval (not
+  // invoked synchronously), so this doesn't trip set-state-in-effect.
   useEffect(() => {
     const id = setInterval(load, 5000);
     return () => clearInterval(id);
@@ -177,7 +219,20 @@ const nextSessions = await getSessions({ dir: directory, since: Date.now() - 12 
           <button type="button" className="vscode-btn" onClick={handleOpenVSCode} title="Open in VS Code (V)">VS Code</button>
         )}
       </h2>
-      <SessionTable sessions={sessions} showProject={false} loading={!sessionsLoaded} includeArchived />
+      <div className="oc-time-range">
+        {TIME_RANGE_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            className={`oc-time-range-btn${timeRange === opt.value ? ' active' : ''}`}
+            onClick={() => setTimeRange(opt.value)}
+          >{opt.label}</button>
+        ))}
+        <button
+          className={`oc-time-range-btn${excludeArchived ? ' active' : ''}`}
+          onClick={() => setExcludeArchived(!excludeArchived)}
+        >Exclude archived</button>
+      </div>
+      <SessionTable sessions={sessions} showProject={false} loading={!sessionsLoaded} includeArchived={!excludeArchived} />
     </div>
   );
 }
