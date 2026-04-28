@@ -108,17 +108,24 @@ func (a *Adapter) SessionInfo(_ context.Context, sessionID string) (*platforms.S
 		}, nil
 	}
 
-	// Live tier: fan out the three independent fetches in parallel.
+	// Live tier: fan out the four independent fetches in parallel.
 	// Each failure is tolerated — the builder fills in zero values for
 	// whatever we couldn't fetch.
+	//
+	// liveTokensAndCost was previously called sequentially after the
+	// wait group completed, which made this endpoint pay
+	// max(mcp, lsp, prov) + liveTokensAndCost on a typical request.
+	// Folded into the same fan-out it now costs max(all four).
 	var (
-		mcp    map[string]rawMCPEntry
-		lsp    []rawLSPEntry
-		prov   OpenCodeProvidersResponse
-		hasPrv bool
-		wg     sync.WaitGroup
+		mcp           map[string]rawMCPEntry
+		lsp           []rawLSPEntry
+		prov          OpenCodeProvidersResponse
+		hasPrv        bool
+		liveCtxTokens int64
+		liveCost      float64
+		wg            sync.WaitGroup
 	)
-	wg.Add(3)
+	wg.Add(4)
 	go func() {
 		defer wg.Done()
 		mcp = fetchOpenCodeMCP(port)
@@ -130,6 +137,10 @@ func (a *Adapter) SessionInfo(_ context.Context, sessionID string) (*platforms.S
 	go func() {
 		defer wg.Done()
 		prov, hasPrv = fetchOpenCodeProviders(port)
+	}()
+	go func() {
+		defer wg.Done()
+		liveCtxTokens, liveCost = liveTokensAndCost(port, sessionID)
 	}()
 	wg.Wait()
 
@@ -145,7 +156,6 @@ func (a *Adapter) SessionInfo(_ context.Context, sessionID string) (*platforms.S
 	// so it overrides upstreamCost — but only when strictly larger
 	// (the live tip can lead the DB but never lag). EstCost is not
 	// time-sensitive and stays as computed off the DB.
-	liveCtxTokens, liveCost := liveTokensAndCost(port, sessionID)
 	ctxTokens := liveCtxTokens
 	if ctxTokens == 0 {
 		ctxTokens = dbCtxTokens
