@@ -190,19 +190,18 @@ func discoverOpenCodePortsUncached() map[string]string {
 }
 
 // discoverOpenCodePort finds the HTTP port of a running OpenCode instance
-// whose working directory matches the given directory.
-// If the directory is not found in the cached result, the cache is invalidated
-// and a fresh lookup is performed before giving up.
+// whose working directory matches the given directory, or "" if no
+// such instance is currently known.
+//
+// A miss does NOT invalidate the cache. The cache TTL (portCacheTTL)
+// is short enough that a genuinely-new OpenCode instance is picked up
+// within one cycle. The previous "invalidate on miss" behaviour
+// caused 2× lsof per call for any session whose OpenCode instance
+// had stopped, AND poisoned the cache for every other concurrent
+// reader (dashboard polling, /api/session/:id/info, /models, ...) —
+// turning a single dead session view into a system-wide cache
+// thrash.
 func discoverOpenCodePort(directory string) string {
-	if port := discoverOpenCodePorts()[directory]; port != "" {
-		return port
-	}
-
-	// Cache may be stale — force a fresh lookup.
-	portCache.mu.Lock()
-	portCache.ports = nil
-	portCache.mu.Unlock()
-
 	return discoverOpenCodePorts()[directory]
 }
 

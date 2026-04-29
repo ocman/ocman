@@ -98,3 +98,54 @@ func TestDiscoverOpenCodePorts_CallersGetIsolatedCopies(t *testing.T) {
 		t.Errorf("mutation in caller A leaked into the cache: %v", c)
 	}
 }
+
+// TestDiscoverOpenCodePort_UnknownDirDoesNotInvalidateCache guards
+// against a previous behaviour where a singular lookup for a
+// directory not in the cache invalidated the entire port cache and
+// forced a second lsof scan. That made every viewer of a session
+// whose OpenCode instance had stopped pay 2× lsof per request, AND
+// poisoned the cache for every other concurrent caller (dashboard,
+// info, models, ...). The cache TTL (3s) is short enough that
+// genuinely new instances are picked up quickly without this
+// thrash.
+func TestDiscoverOpenCodePort_UnknownDirDoesNotInvalidateCache(t *testing.T) {
+	prev := discoverPortsImpl
+	defer func() { discoverPortsImpl = prev }()
+
+	resetPortCacheForTests()
+
+	var calls int32
+	discoverPortsImpl = func() map[string]string {
+		atomic.AddInt32(&calls, 1)
+		return map[string]string{"/repo/known": "1234"}
+	}
+
+	// First call warms the cache; lsof runs once.
+	if got := discoverOpenCodePort("/repo/unknown"); got != "" {
+		t.Errorf("unknown dir: got port %q, want empty", got)
+	}
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Fatalf("lsof invoked %d times on cold call, want 1", got)
+	}
+
+	// Subsequent lookups for unknown directories must reuse the
+	// warm cache, not invalidate it. With the bug, this would
+	// trigger a second lsof.
+	for i := 0; i < 5; i++ {
+		if got := discoverOpenCodePort("/repo/still-unknown"); got != "" {
+			t.Errorf("iteration %d: got %q, want empty", i, got)
+		}
+	}
+
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Errorf("lsof invoked %d times after misses, want 1", got)
+	}
+
+	// Sanity: a known directory still resolves from the warm cache.
+	if got := discoverOpenCodePort("/repo/known"); got != "1234" {
+		t.Errorf("known dir: got %q, want 1234", got)
+	}
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Errorf("lsof invoked %d times after known-dir hit, want 1", got)
+	}
+}
