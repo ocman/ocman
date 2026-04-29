@@ -3,6 +3,7 @@ import './SessionChangesSidebar.css';
 import './SessionInfoSidebar.css';
 import { usePlatformCapabilities } from '../lib/useCapabilities';
 import { useSessionInfo } from '../lib/useSessionInfo';
+import { useGitInfo } from '../lib/useGitInfo';
 import { formatDuration, formatNumber } from '../lib/format';
 import { ChangesRefreshButton, type PaneSummary } from './SessionChangesSidebar';
 import { TodoList } from './TodoList';
@@ -108,6 +109,19 @@ export function SessionInfoSidebar({
     dirtyTick,
   });
 
+  // Per-session git info now comes from /api/git/info, fetched
+  // on-demand here while the sidebar is mounted, instead of being
+  // attached to every /api/sessions response by the backend (which
+  // produced fork-pressure pauses; see docs/profiling.md).
+  //
+  // useGitInfo internally normalises the input list to a stable
+  // query param so this fresh array literal on every render is
+  // fine — the hook's effect dep is the param string, not the
+  // array identity.
+  const dir = session?.directory;
+  const { infos: gitInfos } = useGitInfo(dir ? [dir] : []);
+  const gitInfo = dir ? gitInfos[dir] : undefined;
+
   const ctx = data?.context;
   const ctxTokens = ctx?.tokens ?? 0;
   const ctxLimit = ctx?.limit ?? 0;
@@ -177,15 +191,15 @@ export function SessionInfoSidebar({
     <section className="oc-info-section">
       <header className="oc-info-section-header">Session</header>
       <div className="oc-info-context">
-        {session.gitInfo?.branch && (
+        {gitInfo?.branch && (
           <div className="oc-info-row">
             <span className="oc-info-row-label">Branch</span>
             <span
               className="oc-info-row-value oc-info-row-truncate"
-              title={session.gitInfo.branch}
+              title={gitInfo.branch}
             >
-              {session.gitInfo.branch}
-              {session.gitInfo.dirty && <span className="oc-info-branch-dirty"> *</span>}
+              {gitInfo.branch}
+              {gitInfo.dirty && <span className="oc-info-branch-dirty"> *</span>}
             </span>
           </div>
         )}

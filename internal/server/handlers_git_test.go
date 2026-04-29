@@ -105,3 +105,89 @@ func TestHandleGitDiff_HappyPath(t *testing.T) {
 		t.Errorf("Status = %q, want modified", got.Files[0].Status)
 	}
 }
+
+// --- /api/git/info ---
+
+// TestHandleGitInfo_MissingDirs is the well-formedness check: callers
+// must pass at least one `dirs` query parameter. Returning 400 here
+// lets the frontend surface a clear error rather than silently
+// receiving an empty map and pretending all is well.
+func TestHandleGitInfo_MissingDirs(t *testing.T) {
+	srv := testServer(t)
+	req := httptest.NewRequest("GET", "/api/git/info", nil)
+	rr := httptest.NewRecorder()
+	srv.handleGitInfo(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing dirs, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+// TestHandleGitInfo_RelativeDirsRejected mirrors handleGitDiff: every
+// path must be absolute so the server's CWD never enters into it.
+// Even one relative path in the comma-separated list rejects the
+// whole request — partial trust would be confusing.
+func TestHandleGitInfo_RelativeDirsRejected(t *testing.T) {
+	srv := testServer(t)
+	req := httptest.NewRequest("GET", "/api/git/info?dirs=/abs/ok,relative/bad", nil)
+	rr := httptest.NewRecorder()
+	srv.handleGitInfo(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for relative dir, got %d", rr.Code)
+	}
+}
+
+// TestHandleGitInfo_HappyPath spins up two real git worktrees in
+// temp dirs and confirms the handler returns Info for each, keyed by
+// directory. We don't assert exact branch/dirty contents — those
+// belong to the gitinfo package's own tests — only that the wiring
+// works end-to-end.
+func TestHandleGitInfo_HappyPath(t *testing.T) {
+	srv := testServer(t)
+	a := t.TempDir()
+	b := t.TempDir()
+	gitInitForServerTest(t, a)
+	gitInitForServerTest(t, b)
+
+	req := httptest.NewRequest("GET", "/api/git/info?dirs="+a+","+b, nil)
+	rr := httptest.NewRecorder()
+	srv.handleGitInfo(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var got map[string]gitinfo.Info
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("invalid JSON: %v\nbody: %s", err, rr.Body.String())
+	}
+	if _, ok := got[a]; !ok {
+		t.Errorf("missing entry for %s in %v", a, got)
+	}
+	if _, ok := got[b]; !ok {
+		t.Errorf("missing entry for %s in %v", b, got)
+	}
+	if branch := got[a].Branch; branch != "main" {
+		t.Errorf("a.Branch = %q, want main", branch)
+	}
+}
+
+// TestHandleGitInfo_NonRepoDirs returns the dir as a key with a zero
+// Info. The frontend treats Info{Branch: ""} as "not a repo" and
+// renders nothing — a missing key would also work but this is more
+// explicit and matches the gitinfo.LookupMany contract.
+func TestHandleGitInfo_NonRepoDirs(t *testing.T) {
+	srv := testServer(t)
+	dir := t.TempDir() // no git init
+
+	req := httptest.NewRequest("GET", "/api/git/info?dirs="+dir, nil)
+	rr := httptest.NewRecorder()
+	srv.handleGitInfo(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var got map[string]gitinfo.Info
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if info, ok := got[dir]; ok && info.IsRepo() {
+		t.Errorf("non-repo dir reported as repo: %+v", info)
+	}
+}

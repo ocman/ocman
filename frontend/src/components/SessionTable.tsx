@@ -146,8 +146,19 @@ export function SessionTable({ sessions, showProject, loading, includeArchived }
               </td>
               {showProject && (
                  <td className="mono">
-                  <ShortPath path={s.directory} />
-                  <GitStatusLine info={s.gitInfo} />
+                   {/*
+                     Git status was previously rendered here, populated
+                     by the backend's /api/sessions handler running
+                     `git status` per directory on every dashboard
+                     poll. That fork-fan-out caused multi-second
+                     pauses across unrelated handlers (see
+                     docs/profiling.md), and dashboard branch
+                     indicators aren't worth that cost. Branch info
+                     still appears in SessionDetail's right-hand
+                     sidebar and in the sibling-sessions list there;
+                     both fetch it via /api/git/info on demand.
+                   */}
+                   <ShortPath path={s.directory} />
                  </td>
               )}
               <td className="mono">{s.messageCount} msgs &middot; {formatDuration(s.durationMs)}</td>

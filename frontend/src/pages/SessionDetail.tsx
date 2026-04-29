@@ -535,11 +535,13 @@ export function SessionDetail() {
   // We now opt in only while the sidebar is rendered, batching all
   // unique sibling dirs into one /api/git/info call refreshed on
   // a slow cadence.
-  const siblingGitDirs = useMemo(
-    () => recentSessions.map((s) => s.directory).filter(Boolean),
-    [recentSessions],
+  //
+  // The hook normalises the input list internally, so passing a
+  // fresh array literal on every render is fine — the effect dep
+  // is the canonicalised query string, not the array identity.
+  const { infos: siblingGitInfos } = useGitInfo(
+    recentSessions.map((s) => s.directory).filter(Boolean),
   );
-  const { infos: siblingGitInfos } = useGitInfo(siblingGitDirs);
 
   const [archivingSessionIds, setArchivingSessionIds] = useState<Set<string>>(new Set());
   const [showArchivedRecent, setShowArchivedRecent] = useState(false);

@@ -95,6 +95,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/transcribe", s.post(s.handleTranscribe))
 	mux.HandleFunc("/api/cost/calc", s.post(s.handleCalcCost))
 	mux.HandleFunc("/api/git/diff", s.get(s.handleGitDiff))
+	mux.HandleFunc("/api/git/info", s.get(s.handleGitInfo))
 	mux.HandleFunc("/api/tmux/clients", requireGET(requireLocalhost(s.handleTmuxClients)))
 	mux.HandleFunc("/api/tmux/sessions", requireGET(requireLocalhost(s.handleTmuxSessions)))
 	mux.HandleFunc("/api/tmux/switch", requirePOST(requireLocalhost(s.handleTmuxSwitch)))

@@ -41,7 +41,6 @@ export const MOCK_SESSION = {
   liveConnection: false,
   pendingPermission: false,
   pendingQuestion: false,
-  gitInfo: { branch: 'main', dirty: false, ahead: 0, behind: 0 },
 };
 
 export const MOCK_SESSION_2 = {

@@ -4,11 +4,68 @@ import (
 	"errors"
 	"net/http"
 	"path/filepath"
+	"strings"
 
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/gitinfo"
 )
+
+// handleGitInfo returns per-directory git status (branch, ahead,
+// behind, dirty) for every directory listed in the `dirs` query
+// parameter. Used by the frontend components that show a branch
+// indicator next to a session row, replacing the previous
+// per-`/api/sessions`-request fork-fan-out which dragged the
+// dashboard's tail latency to multi-second pauses (see
+// docs/profiling.md).
+//
+// Query parameters:
+//   - `dirs` (required): comma-separated absolute paths. At least
+//     one path must be present and every path must be absolute,
+//     mirroring handleGitDiff. A relative path anywhere in the list
+//     rejects the whole request — partial trust is confusing.
+//
+// The response is a JSON object keyed by directory:
+//
+//	{
+//	  "/abs/path/a": {"branch": "main", "ahead": 0, "behind": 0, "dirty": false},
+//	  "/abs/path/b": {"branch": "feature", "ahead": 2, "behind": 0, "dirty": true}
+//	}
+//
+// Non-repo directories are returned with the zero gitinfo.Info — the
+// frontend treats Info{Branch: ""} as "not a repo".
+//
+// Status codes:
+//
+//	200 OK         — payload above
+//	400 Bad Req    — `dirs` empty, or a path is relative
+func (s *Server) handleGitInfo(w http.ResponseWriter, r *http.Request) {
+	raw := r.URL.Query().Get("dirs")
+	if raw == "" {
+		http.Error(w, "dirs query parameter is required", http.StatusBadRequest)
+		return
+	}
+	parts := strings.Split(raw, ",")
+	dirs := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if !filepath.IsAbs(p) {
+			http.Error(w, "every dir in dirs must be an absolute path", http.StatusBadRequest)
+			return
+		}
+		dirs = append(dirs, p)
+	}
+	if len(dirs) == 0 {
+		http.Error(w, "dirs query parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	infos := gitinfo.LookupMany(r.Context(), dirs)
+	writeJSON(w, infos)
+}
 
 // handleGitDiff returns the working-tree diff for a directory. The
 // directory is taken from the `dir` query parameter — directory-

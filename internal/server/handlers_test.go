@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -431,54 +430,4 @@ func TestSystemStats_IncludesDBPoolWhenDBPresent(t *testing.T) {
 	}
 }
 
-// --- applyGitInfo ---
 
-// TestApplyGitInfo_PopulatesFromRealRepo verifies the end-to-end
-// pipeline: applyGitInfo deduplicates by directory, shells to `git`
-// for each unique dir, and writes the result back onto every matching
-// session.
-func TestApplyGitInfo_PopulatesFromRealRepo(t *testing.T) {
-	if _, err := execLookPath("git"); err != nil {
-		t.Skip("git not available")
-	}
-
-	repo := t.TempDir()
-	runGit(t, repo, "init", "-q", "-b", "main")
-	runGit(t, repo, "config", "user.email", "t@example.com")
-	runGit(t, repo, "config", "user.name", "t")
-	writeFile(t, repo, "a.txt", "hello\n")
-	runGit(t, repo, "add", "a.txt")
-	runGit(t, repo, "commit", "-q", "-m", "init")
-	// Make the worktree dirty so the indicator has something to show.
-	writeFile(t, repo, "a.txt", "hello, world\n")
-
-	notGit := t.TempDir()
-
-	sessions := []db.Session{
-		{ID: "s1", Directory: repo},
-		{ID: "s2", Directory: repo},   // same dir — should share the lookup
-		{ID: "s3", Directory: notGit}, // non-git — GitInfo stays nil
-		{ID: "s4", Directory: ""},     // empty — skipped entirely
-	}
-
-	applyGitInfo(context.Background(), sessions)
-
-	if sessions[0].GitInfo == nil {
-		t.Fatal("s1: expected GitInfo, got nil")
-	}
-	if sessions[0].GitInfo.Branch != "main" {
-		t.Errorf("s1 branch = %q, want main", sessions[0].GitInfo.Branch)
-	}
-	if !sessions[0].GitInfo.Dirty {
-		t.Error("s1: expected dirty")
-	}
-	if sessions[1].GitInfo == nil || sessions[1].GitInfo.Branch != "main" {
-		t.Errorf("s2: expected same GitInfo as s1, got %+v", sessions[1].GitInfo)
-	}
-	if sessions[2].GitInfo != nil {
-		t.Errorf("s3: expected nil GitInfo for non-git dir, got %+v", sessions[2].GitInfo)
-	}
-	if sessions[3].GitInfo != nil {
-		t.Errorf("s4: expected nil GitInfo for empty dir")
-	}
-}

@@ -172,15 +172,16 @@ export interface Session {
   pendingQuestion: boolean;
   archived: boolean;
   seen: boolean;
-  /**
-   * Live git status snapshot for the session's working directory.
-   * Populated by the backend when listing sessions; null/undefined
-   * when the directory isn't a git worktree or git isn't available.
-   */
-  gitInfo?: GitInfo | null;
 }
 
-/** Mirror of internal/db.GitInfo. */
+/**
+ * Mirror of internal/db.GitInfo. Returned per directory by
+ * /api/git/info; consumed by useGitInfo and rendered via
+ * GitStatusLine. No longer attached to Session payloads — fetching
+ * it eagerly forced the backend to fork `git status` on every
+ * dashboard poll, producing multi-second pauses (see
+ * docs/profiling.md).
+ */
 export interface GitInfo {
   branch: string;
   ahead: number;
