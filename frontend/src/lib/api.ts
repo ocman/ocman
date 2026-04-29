@@ -114,8 +114,13 @@ export async function postJSON<TResp, TReq = unknown>(
 /**
  * Minimal per-session projection returned by /api/sessions/notify.
  * Only sessions that could drive the favicon/title notification state
- * are included in the response, so the caller can simply check whether
- * the array is non-empty to decide whether to show a badge.
+ * (or the in-app prompt toast) are included in the response, so the
+ * caller can simply check whether the array is non-empty to decide
+ * whether to show a badge.
+ *
+ * `title` and `directory` are present on every row; they're optional
+ * here only because the JSON payload omits empty strings via
+ * `omitempty` on the server side.
  */
 export interface NotifyEntry {
   id: string;
@@ -123,6 +128,8 @@ export interface NotifyEntry {
   seen: boolean;
   pendingPermission?: boolean;
   pendingQuestion?: boolean;
+  title?: string;
+  directory?: string;
 }
 
 export interface Session {

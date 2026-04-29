@@ -15,6 +15,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { useFaviconNotify } from './lib/useFaviconNotify';
 import { useBellNotify } from './lib/useBellNotify';
 import { useNotificationNotify } from './lib/useNotificationNotify';
+import { PromptToastNotify } from './components/PromptToastNotify';
 import { useAuthStore } from './lib/authStore';
 import { useUiStore } from './lib/uiStore';
 import { useShortcut, useShortcutDispatcher } from './lib/shortcutRegistry';
@@ -305,6 +306,7 @@ export default function App() {
           <FaviconNotify />
           <BellNotify />
           <NotificationNotify />
+          <PromptToastNotify />
           <ServiceWorkerNavListener />
           <PerformanceCleanup />
           <MemoryMonitor />

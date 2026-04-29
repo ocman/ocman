@@ -1,0 +1,155 @@
+/* Global prompt-toast viewport — anchored top-right so blocking
+   prompts don't get hidden behind the composer or right panel. The
+   z-index matches the page-local toast viewport (SessionDetail.css)
+   so both kinds layer above every other UI. */
+.oc-prompt-toast-viewport {
+  position: fixed;
+  top: 60px;
+  right: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 320px;
+  max-width: calc(100vw - 44px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  z-index: 2147483647;
+  outline: none;
+  pointer-events: none;
+}
+
+.oc-prompt-toast-viewport > * {
+  pointer-events: auto;
+}
+
+.oc-prompt-toast {
+  background: var(--surface1, #1f2329);
+  color: var(--text, #e6e9ef);
+  border-left: 4px solid var(--accent, #5b8cff);
+  padding: 10px 14px;
+  font-size: 13px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-radius: 0;
+}
+
+/* Permission requests are slightly more urgent than questions —
+   reflect that with a warmer accent. */
+.oc-prompt-toast[data-kind='permission'] {
+  border-left-color: var(--warning, #f5a524);
+}
+
+.oc-prompt-toast[data-state='open'] {
+  animation: oc-prompt-toast-slide-in 0.18s ease-out;
+}
+
+.oc-prompt-toast[data-state='closed'] {
+  animation: oc-prompt-toast-slide-out 0.12s ease-in;
+}
+
+.oc-prompt-toast[data-swipe='move'] {
+  transform: translateX(var(--radix-toast-swipe-move-x));
+}
+
+.oc-prompt-toast[data-swipe='cancel'] {
+  transform: translateX(0);
+  transition: transform 200ms ease-out;
+}
+
+.oc-prompt-toast[data-swipe='end'] {
+  animation: oc-prompt-toast-slide-out-x 0.1s ease-out;
+}
+
+.oc-prompt-toast-heading {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim, #aab1bf);
+}
+
+.oc-prompt-toast-body {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  /* Two-line clamp keeps the toast compact even for long session
+     titles. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.oc-prompt-toast-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.oc-prompt-toast-open {
+  background: var(--accent, #5b8cff);
+  color: #fff;
+  border: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+  cursor: pointer;
+  border-radius: 0;
+}
+
+.oc-prompt-toast-open:hover {
+  filter: brightness(1.1);
+}
+
+.oc-prompt-toast-close {
+  background: transparent;
+  color: var(--text-dim, #aab1bf);
+  border: none;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  font-family: inherit;
+}
+
+.oc-prompt-toast-close:hover {
+  color: var(--text, #e6e9ef);
+}
+
+@keyframes oc-prompt-toast-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes oc-prompt-toast-slide-out {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+}
+
+@keyframes oc-prompt-toast-slide-out-x {
+  from {
+    transform: translateX(var(--radix-toast-swipe-end-x));
+  }
+  to {
+    transform: translateX(calc(100% + 20px));
+  }
+}

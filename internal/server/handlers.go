@@ -434,15 +434,22 @@ func applyGitInfo(ctx context.Context, sessions []db.Session) {
 }
 
 // notifyEntry is a minimal per-session payload used by the favicon/title
-// notification poller. Keeping the response small reduces bandwidth and
-// lets the poller query a longer time-window (e.g. 500 sessions) without
-// the cost of a full /api/sessions payload.
+// notification poller and the in-app toast notifier. Keeping the
+// response small reduces bandwidth and lets the poller query a longer
+// time-window (e.g. 500 sessions) without the cost of a full
+// /api/sessions payload.
+//
+// Title and Directory are included so the toast notifier can render a
+// useful "session needs input" message ("Refactor auth (/repo/foo)")
+// with a deep link, without a second round-trip.
 type notifyEntry struct {
 	ID                string `json:"id"`
 	Status            string `json:"status"`
 	Seen              bool   `json:"seen"`
 	PendingPermission bool   `json:"pendingPermission,omitempty"`
 	PendingQuestion   bool   `json:"pendingQuestion,omitempty"`
+	Title             string `json:"title,omitempty"`
+	Directory         string `json:"directory,omitempty"`
 }
 
 // handleSessionsNotify returns a minimal projection of the sessions
@@ -516,6 +523,8 @@ func (s *Server) handleSessionsNotify(w http.ResponseWriter, r *http.Request) {
 			Seen:              se.Seen,
 			PendingPermission: se.PendingPermission,
 			PendingQuestion:   se.PendingQuestion,
+			Title:             se.Title,
+			Directory:         se.Directory,
 		})
 	}
 

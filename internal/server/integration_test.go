@@ -857,3 +857,71 @@ func TestHandleSessionInfo_UnsupportedReturns200(t *testing.T) {
 		t.Errorf("LSPServers should be empty slice (not nil) so JSON renders []")
 	}
 }
+
+// --- /api/sessions/notify ---
+
+// TestHandleSessionsNotify_IncludesTitleAndDirectory verifies that the
+// notify projection carries enough per-session context for the in-app
+// toast notifier to render a useful "session needs input" message
+// without needing a second round-trip to /api/sessions.
+//
+// Specifically: a session with a pending question must surface its
+// title and directory so the toast can show "plan: refactor auth
+// (/repo/foo)" with a deep link.
+func TestHandleSessionsNotify_IncludesTitleAndDirectory(t *testing.T) {
+	srv := testServer(t)
+
+	srv.registry.Register(&fakePlatform{
+		id: "fake",
+		sessions: []db.Session{
+			{
+				ID:              "fk-prompt",
+				Platform:        "fake",
+				Title:           "Refactor auth flow",
+				Directory:       "/repo/foo",
+				TimeUpdated:     1000,
+				Status:          "busy",
+				PendingQuestion: true,
+			},
+			// A non-prompt, non-terminal session that should be filtered out
+			// by the existing rules — confirms the new fields don't change
+			// the filter behaviour.
+			{
+				ID:          "fk-busy",
+				Platform:    "fake",
+				Title:       "boring",
+				Directory:   "/repo/bar",
+				TimeUpdated: 1000,
+				Status:      "busy",
+			},
+		},
+	})
+
+	req := httptest.NewRequest("GET", "/api/sessions/notify", nil)
+	rr := httptest.NewRecorder()
+	srv.handleSessionsNotify(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var got []notifyEntry
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("invalid JSON: %v: %s", err, rr.Body.String())
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 notify entry (the prompt), got %d: %+v", len(got), got)
+	}
+	e := got[0]
+	if e.ID != "fk-prompt" {
+		t.Errorf("ID = %q, want %q", e.ID, "fk-prompt")
+	}
+	if !e.PendingQuestion {
+		t.Errorf("PendingQuestion should be true")
+	}
+	if e.Title != "Refactor auth flow" {
+		t.Errorf("Title = %q, want %q", e.Title, "Refactor auth flow")
+	}
+	if e.Directory != "/repo/foo" {
+		t.Errorf("Directory = %q, want %q", e.Directory, "/repo/foo")
+	}
+}
