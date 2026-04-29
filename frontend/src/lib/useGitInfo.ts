@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { GitInfo } from './api';
 
 /**
@@ -93,15 +93,25 @@ export async function fetchGitInfoOnce(
 export function _resetForTests(): void { /* intentionally empty */ }
 
 /**
- * useGitInfo is the React hook side. It memoises the dirs list to
- * stabilise the effect dependency, then drives a setInterval that
- * refreshes every REFRESH_INTERVAL_MS (paused while the tab is
- * hidden).
+ * useGitInfo is the React hook side. The effect depends on the
+ * canonical query-param *string* rather than the array reference,
+ * so callers can pass a fresh array literal on every render
+ * (`useGitInfo(sessions.map(s => s.dir))`) without making the
+ * effect re-run and aborting in-flight fetches.
+ *
+ * That subtlety bit us once: an earlier version memoised the dirs
+ * array via useMemo([...], [dirs]), which still keyed on the array
+ * reference and re-ran on every parent render. Each render aborted
+ * the previous fetch before it could land, so /api/git/info was
+ * never observed completing. Keying on the string fixes it because
+ * `buildDirsQueryParam` is deterministic on the input contents.
  */
 export function useGitInfo(dirs: string[] | undefined): UseGitInfoResult {
-  // Stabilise the dirs identity so a parent re-render that produces
-  // an equal-but-different array doesn't cause us to refetch.
-  const queryParam = useMemo(() => buildDirsQueryParam(dirs), [dirs]);
+  // Compute the canonical query param fresh on every render. It's
+  // O(n) in the dir count, which is small (a sidebar's worth), so
+  // skipping useMemo here is fine and avoids the array-identity
+  // trap.
+  const queryParam = buildDirsQueryParam(dirs);
 
   const [infos, setInfos] = useState<Record<string, GitInfo>>({});
   const [loading, setLoading] = useState(false);
