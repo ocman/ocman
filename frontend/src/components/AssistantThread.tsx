@@ -12,6 +12,7 @@ import { useShortcut } from '../lib/shortcutRegistry';
 import { hardenMessageLinks } from '../lib/linkHardener';
 import { parseTodos } from '../lib/todos';
 import { TodoList } from './TodoList';
+import { useFailedSends } from '../lib/failedSendsContext';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -80,21 +81,35 @@ const ImageDisplay: FC<{ image: string; filename?: string }> = ({ image, filenam
 
 const UserMessage: FC = () => {
   const content = useMessage((m) => m.content);
+  const id = useMessage((m) => m.id);
   const custom = useMessage((m) => m.metadata?.custom as Record<string, unknown> | undefined);
   const isQueued = custom?.queued === true;
   const agent = typeof custom?.agent === 'string' ? (custom.agent as string) : undefined;
+  const failed = (custom?.failed && typeof custom.failed === 'object')
+    ? (custom.failed as { error?: string; imagesDropped?: boolean })
+    : undefined;
+  const failedSendsCtx = useFailedSends();
   // Queued messages use their own peach accent — don't override it with the
-  // agent color until the message actually starts being processed.
+  // agent color until the message actually starts being processed. Failed
+  // sends override both with a danger-tinted border so the banner reads as
+  // attached to the right bubble.
   const agentBorder = useAgentColor(agent);
-  const borderStyle = !isQueued && agent ? { borderLeftColor: agentBorder } : undefined;
+  let borderStyle: React.CSSProperties | undefined;
+  if (failed) {
+    borderStyle = { borderLeftColor: 'var(--danger)' };
+  } else if (!isQueued && agent) {
+    borderStyle = { borderLeftColor: agentBorder };
+  }
   const hasContent = content.some(
     (p) => (p.type === 'text' && 'text' in p && (p as { text: string }).text.trim()) || p.type === 'tool-call' || p.type === 'image'
   );
-  if (!hasContent) return null;
+  // A failed send is worth showing even when its body is empty — the banner
+  // itself carries the action the user needs.
+  if (!hasContent && !failed) return null;
 
   return (
     <MessagePrimitive.Root
-      className={`oc-msg oc-msg-user${isQueued ? ' oc-msg-queued' : ''}`}
+      className={`oc-msg oc-msg-user${isQueued ? ' oc-msg-queued' : ''}${failed ? ' oc-msg-failed' : ''}`}
       style={borderStyle}
     >
       <div className="oc-msg-body">
@@ -105,10 +120,34 @@ const UserMessage: FC = () => {
           }}
         />
       </div>
-      {isQueued && (
+      {isQueued && !failed && (
         <div className="oc-msg-queued-badge">
           <span className="oc-queued-dot" title="Queued" />
           Queued
+        </div>
+      )}
+      {failed && id && (
+        <div className="oc-msg-failed-banner" role="alert">
+          <i className="bi bi-exclamation-triangle-fill" aria-hidden="true" />
+          <span className="oc-msg-failed-text">
+            Failed to send{failed.error ? `: ${failed.error}` : ''}
+            {failed.imagesDropped && (
+              <span className="oc-msg-failed-hint"> (images couldn{'\u2019'}t be saved across refresh)</span>
+            )}
+          </span>
+          <span className="oc-msg-failed-actions">
+            <button
+              type="button"
+              className="oc-msg-failed-btn oc-msg-failed-retry"
+              onClick={() => failedSendsCtx.retry(id)}
+            >Retry</button>
+            <button
+              type="button"
+              className="oc-msg-failed-btn oc-msg-failed-dismiss"
+              onClick={() => failedSendsCtx.dismiss(id)}
+              aria-label="Dismiss failed message"
+            >Dismiss</button>
+          </span>
         </div>
       )}
     </MessagePrimitive.Root>

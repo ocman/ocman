@@ -8,6 +8,8 @@ import type { AgentInfo, Message, Part, PartData, FilePart } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
 import { simpleDiff } from '../lib/diff';
 import { AgentsContext } from '../lib/agentColor';
+import { FailedSendsContext, type FailedSendsContextValue } from '../lib/failedSendsContext';
+import type { FailedSend } from '../lib/failedSends';
 
 function isImageMime(mime: string | undefined): boolean {
   return !!mime && mime.startsWith('image/');
@@ -59,6 +61,7 @@ function convertMessages(
   pendingAgent?: string,
   taskLiveOutput?: Record<string, string>,
   projectDirectory?: string,
+  failedById?: Record<string, FailedSend>,
 ): ThreadMessageLike[] {
   const partsByMsg: Record<string, Part[]> = {};
   parts.forEach((p) => {
@@ -466,12 +469,14 @@ function convertMessages(
             : { type: 'running' as const }
         : undefined;
 
+      const failedEntry = role === 'user' ? failedById?.[m.id] : undefined;
       const customMeta = {
         ...(isQueued ? { queued: true } : {}),
         ...(m.data.tokens ? { tokens: m.data.tokens } : {}),
         ...(m.data.time ? { time: m.data.time } : {}),
         ...(m.data.error ? { errorName: m.data.error.name || 'Error' } : {}),
         ...(msgAgent ? { agent: msgAgent } : {}),
+        ...(failedEntry ? { failed: { error: failedEntry.error, imagesDropped: !!failedEntry.imagesDropped } } : {}),
       };
       const metadata = Object.keys(customMeta).length > 0 ? { custom: customMeta } : undefined;
 
@@ -532,6 +537,10 @@ interface Props {
   // file paths in muted read lines as project-relative instead of just
   // basenames, so the reader can locate the file in their checkout.
   projectDirectory?: string;
+  /** Sends that failed on the client and are awaiting Retry / Dismiss. */
+  failedSends?: FailedSend[];
+  onRetryFailedSend?: (id: string) => void;
+  onDismissFailedSend?: (id: string) => void;
   children: React.ReactNode;
 }
 
@@ -559,13 +568,32 @@ export function OcmanRuntimeProvider({
   agents,
   taskLiveOutput,
   projectDirectory,
+  failedSends,
+  onRetryFailedSend,
+  onDismissFailedSend,
   children,
 }: Props) {
   const agentList = useMemo(() => agents ?? [], [agents]);
   const sendMessage = useApiStore((state) => state.sendMessage);
+
+  // Index failed sends by their optimistic message id so convertMessages can
+  // attach the failure metadata (and the AssistantThread renderer can pull
+  // the entry directly from context).
+  const failedById = useMemo(() => {
+    const out: Record<string, FailedSend> = {};
+    for (const e of failedSends ?? []) out[e.id] = e;
+    return out;
+  }, [failedSends]);
+
+  const failedCtx = useMemo<FailedSendsContextValue>(() => ({
+    byId: failedById,
+    retry: onRetryFailedSend ?? (() => {}),
+    dismiss: onDismissFailedSend ?? (() => {}),
+  }), [failedById, onRetryFailedSend, onDismissFailedSend]);
+
   const converted = useMemo(
-    () => convertMessages(messages, parts, pendingAgent, taskLiveOutput, projectDirectory),
-    [messages, parts, pendingAgent, taskLiveOutput, projectDirectory],
+    () => convertMessages(messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById),
+    [messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById],
   );
 
   const isRunning = useMemo(() => computeIsRunning(messages), [messages]);
@@ -588,9 +616,11 @@ export function OcmanRuntimeProvider({
 
   return (
     <AgentsContext.Provider value={agentList}>
-      <AssistantRuntimeProvider runtime={runtime}>
-        {children}
-      </AssistantRuntimeProvider>
+      <FailedSendsContext.Provider value={failedCtx}>
+        <AssistantRuntimeProvider runtime={runtime}>
+          {children}
+        </AssistantRuntimeProvider>
+      </FailedSendsContext.Provider>
     </AgentsContext.Provider>
   );
 }

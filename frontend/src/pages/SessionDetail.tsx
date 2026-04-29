@@ -21,6 +21,7 @@ import { useUiStore } from '../lib/uiStore';
 import { useTmux } from '../lib/useTmux';
 import { filterVisibleSessions } from '../lib/sessionVisibility';
 import { useApiStore } from '../lib/apiStore';
+import { useGitInfo } from '../lib/useGitInfo';
 import { usePlatformCapabilities } from '../lib/useCapabilities';
 import { recheckFaviconNotify } from '../lib/useFaviconNotify';
 import { openVSCode } from '../lib/shortcuts';
@@ -28,6 +29,12 @@ import { useShortcut } from '../lib/shortcutRegistry';
 import { hashSession, hashMessagesAndParts } from '../lib/sessionHash';
 import { createSessionWithLaunch, type LaunchStatus } from '../lib/createSessionWithLaunch';
 import { isSessionRelevant } from '../lib/promptRouting';
+import {
+  listFailedSends,
+  recordFailedSend,
+  removeFailedSend,
+  type FailedSend,
+} from '../lib/failedSends';
 
 const PAGE_SIZE = 30;
 const RECENT_SESSIONS_LIMIT = 15;
@@ -521,6 +528,19 @@ export function SessionDetail() {
   const [recentSessions, setRecentSessions] = useState<Session[]>([]);
   const [loadingRecentSessions, setLoadingRecentSessions] = useState(true);
 
+  // Git info for sibling rows. Was populated by the backend's
+  // /api/sessions handler via a synchronous fork-fan-out of
+  // `git status` per directory; that produced multi-second pauses
+  // across unrelated handlers under load (see docs/profiling.md).
+  // We now opt in only while the sidebar is rendered, batching all
+  // unique sibling dirs into one /api/git/info call refreshed on
+  // a slow cadence.
+  const siblingGitDirs = useMemo(
+    () => recentSessions.map((s) => s.directory).filter(Boolean),
+    [recentSessions],
+  );
+  const { infos: siblingGitInfos } = useGitInfo(siblingGitDirs);
+
   const [archivingSessionIds, setArchivingSessionIds] = useState<Set<string>>(new Set());
   const [showArchivedRecent, setShowArchivedRecent] = useState(false);
 
@@ -568,6 +588,11 @@ export function SessionDetail() {
   const [showCreateSessionErrorToast, setShowCreateSessionErrorToast] = useState(false);
   const [showDisconnectedToast, setShowDisconnectedToast] = useState(false);
   const [createLaunchStatus, setCreateLaunchStatus] = useState<LaunchStatus>('idle');
+  // Sends that failed on the client (network error, 5xx, etc.). Each entry
+  // is keyed by the optimistic message id and holds enough context to
+  // replay the send on Retry. Persisted via lib/failedSends so the user
+  // can refresh the page without losing their prompt.
+  const [failedSends, setFailedSends] = useState<FailedSend[]>([]);
   const getSession = useApiStore((state) => state.getSession);
   const archiveSession = useApiStore((state) => state.archiveSession);
   const getWhisperStatus = useApiStore((state) => state.getWhisperStatus);
@@ -911,6 +936,12 @@ export function SessionDetail() {
     setPermissionError(null);
     setPendingQuestion(null);
     setSseDebugEvents([]);
+    // Rehydrate failed sends for this session from persistent storage. The
+    // ghost user-message injection (so the bubble re-appears with its
+    // Retry banner after a refresh) happens in a separate effect below
+    // once `messages` has been populated by load() — that way we can skip
+    // entries whose prompt has already arrived through SSE.
+    setFailedSends(id ? listFailedSends(id) : []);
     load(signal);
     // portAvailable is now derived from session.liveConnection (populated
     // by the platform adapter). The state variable is kept because SSE
@@ -1015,6 +1046,79 @@ export function SessionDetail() {
       ));
     }
   }, [session?.platform, id]);
+
+  // Re-inject ghost user-message bubbles for failed sends that survived a
+  // refresh. The optimistic messages are component-local (never written to
+  // the DB), so on cold load they're absent from `messages` even though
+  // the persisted entry is back in `failedSends`. Skip entries whose text
+  // already appears as a real user message in the loaded thread — that
+  // means the request actually reached the server and SSE delivered it,
+  // so the failed banner would be a confusing duplicate.
+  useEffect(() => {
+    if (!session || failedSends.length === 0) return;
+    const existingIds = new Set(messages.map(m => m.id));
+    const realUserTexts = new Set(
+      messages
+        .filter(m => m.data?.role === 'user')
+        .flatMap(m => parts
+          .filter(p => p.messageId === m.id)
+          .map(p => {
+            try {
+              const pd = typeof p.data === 'string' ? JSON.parse(p.data) : p.data;
+              return pd?.type === 'text' ? (pd.text || '') : '';
+            } catch {
+              return '';
+            }
+          })
+          .filter(Boolean)),
+    );
+    const ghostsToInject = failedSends.filter(e => {
+      if (existingIds.has(e.id)) return false;
+      if (e.text && realUserTexts.has(e.text)) return false;
+      return true;
+    });
+    if (ghostsToInject.length === 0) return;
+
+    const newMsgs: Message[] = [];
+    const newParts: Part[] = [];
+    for (const entry of ghostsToInject) {
+      newMsgs.push({
+        id: entry.id,
+        sessionId: session.id,
+        timeCreated: entry.failedAt,
+        data: { role: 'user' },
+      });
+      if (entry.text) {
+        newParts.push({
+          id: 'part-' + entry.id,
+          messageId: entry.id,
+          sessionId: session.id,
+          data: { type: 'text', text: entry.text } as unknown as string,
+        });
+      }
+      if (entry.images) {
+        entry.images.forEach((img, i) => {
+          newParts.push({
+            id: `part-${entry.id}-img-${i}`,
+            messageId: entry.id,
+            sessionId: session.id,
+            data: { type: 'file', mime: img.mime, url: img.url } as unknown as string,
+          });
+        });
+      }
+    }
+    setMessages(prev => [...prev, ...newMsgs]);
+    setParts(prev => [...prev, ...newParts]);
+    // Drop the rehydrated entries that were filtered out (request actually
+    // succeeded on the server) so the persistent store stays clean.
+    const droppedIds = failedSends
+      .filter(e => !ghostsToInject.includes(e) && !existingIds.has(e.id))
+      .map(e => e.id);
+    if (droppedIds.length > 0) {
+      setFailedSends(prev => prev.filter(e => !droppedIds.includes(e.id)));
+      droppedIds.forEach(idToDrop => removeFailedSend(session.id, idToDrop));
+    }
+  }, [session, failedSends, messages, parts]);
 
   useEffect(() => {
     if (messages.length <= MAX_RETAINED_MESSAGES) return;
@@ -1861,6 +1965,66 @@ export function SessionDetail() {
     .find(Boolean) || session?.defaultModel || '');
   const activeAgent = [...messages].reverse().find(m => !!m.data?.agent)?.data.agent || session?.defaultAgent || '';
 
+  // Internal send that accepts an explicit tempId. Used by both the public
+  // handleSend (fresh prompt) and handleRetrySend (replay of a previously
+  // failed send) so the optimistic bubble id stays stable across retries.
+  const performSend = useCallback(async (
+    tempId: string,
+    text: string,
+    images: AttachedImage[] | undefined,
+    model: string | undefined,
+    agent: string | undefined,
+    reasoning: string | undefined,
+  ) => {
+    if (!session || !portAvailable) return;
+    if (pendingPermission || pendingQuestion) return;
+
+    // Clear subagent token tracking for the new run window.
+    setSubagentTokens(new Map());
+
+    try {
+      await sendMessage(session.id, text, images, model, agent, reasoning);
+      // Success — drop any prior failed entry for this id (only relevant on
+      // retry; recording is otherwise idempotent). SSE will deliver the
+      // real message + assistant response incrementally.
+      setFailedSends(prev => prev.filter(e => e.id !== tempId));
+      removeFailedSend(session.id, tempId);
+    } catch (e) {
+      console.error('Failed to send message', e);
+      const msg = e instanceof Error ? e.message : '';
+      // When the error is a missing OpenCode instance, surface a toast with
+      // a launch action instead of polluting the conversation thread. Roll
+      // back the optimistic bubble so retry doesn't apply here either —
+      // the user wants to launch OpenCode, not resubmit blindly.
+      if (msg.includes('no running OpenCode instance')) {
+        setMessages(prev => prev.filter(m => m.id !== tempId));
+        setParts(prev => prev.filter(p => p.messageId !== tempId));
+        setFailedSends(prev => prev.filter(e => e.id !== tempId));
+        removeFailedSend(session.id, tempId);
+        setShowDisconnectedToast(true);
+        return;
+      }
+      // Mark the optimistic bubble as failed and persist enough context to
+      // replay the send on Retry — even across a page refresh.
+      const failed: FailedSend = {
+        id: tempId,
+        text,
+        images,
+        model,
+        agent,
+        reasoning,
+        error: msg || 'Unknown error',
+        failedAt: Date.now(),
+      };
+      setFailedSends(prev => {
+        const idx = prev.findIndex(e => e.id === tempId);
+        if (idx >= 0) return prev.map((e, i) => (i === idx ? failed : e));
+        return [...prev, failed];
+      });
+      recordFailedSend(session.id, failed);
+    }
+  }, [pendingPermission, pendingQuestion, portAvailable, sendMessage, session]);
+
   const handleSend = useCallback(async (text: string, images?: AttachedImage[]) => {
     if (!session || !portAvailable) return;
     // Belt-and-suspenders: the composer is normally unmounted while a
@@ -1870,9 +2034,6 @@ export function SessionDetail() {
     // Refuse to submit anything while a prompt is awaiting response so
     // the user's reply doesn't accidentally ship as a new user message.
     if (pendingPermission || pendingQuestion) return;
-
-    // Clear subagent token tracking for the new run window.
-    setSubagentTokens(new Map());
 
     // Optimistically add user message immediately
     const tempId = 'temp-' + Date.now();
@@ -1904,50 +2065,45 @@ export function SessionDetail() {
     setMessages(prev => [...prev, optimisticMsg]);
     setParts(prev => [...prev, ...optimisticParts]);
 
-    try {
-      await sendMessage(
-        session.id,
-        text,
-        images,
-        selectedModel || activeModel || undefined,
-        selectedAgent || activeAgent || undefined,
-        selectedReasoning || undefined,
-      );
-      // SSE events will deliver the real message + assistant response incrementally.
-      // The optimistic message is already visible to the user.
-    } catch (e) {
-      console.error('Failed to send message', e);
-      const msg = e instanceof Error ? e.message : '';
-      // When the error is a missing OpenCode instance, surface a toast with a
-      // launch action instead of polluting the conversation thread.
-      if (msg.includes('no running OpenCode instance')) {
-        // Roll back the optimistic message so the thread stays clean.
-        setMessages(prev => prev.filter(m => m.id !== tempId));
-        setParts(prev => prev.filter(p => p.messageId !== tempId));
-        setShowDisconnectedToast(true);
-        return;
-      }
-      // Show the error as a system message in the conversation
-      const errId = 'error-' + Date.now();
-      const errMsg: Message = {
-        id: errId,
-        sessionId: session.id,
-        timeCreated: Date.now(),
-        data: { role: 'assistant', finish: 'error' },
-      };
-      const errPart: Part = {
-        id: 'part-' + errId,
-        messageId: errId,
-        sessionId: session.id,
-        data: {
-          type: 'text',
-          text: `**Failed to send message:** ${msg || 'Unknown error'}`,
-        } as unknown as string,
-      };
-      setMessages(prev => [...prev, errMsg]);
-      setParts(prev => [...prev, errPart]);
-    }
-  }, [activeAgent, activeModel, pendingPermission, pendingQuestion, portAvailable, selectedAgent, selectedModel, selectedReasoning, sendMessage, session]);
+    await performSend(
+      tempId,
+      text,
+      images,
+      selectedModel || activeModel || undefined,
+      selectedAgent || activeAgent || undefined,
+      selectedReasoning || undefined,
+    );
+  }, [activeAgent, activeModel, pendingPermission, pendingQuestion, performSend, portAvailable, selectedAgent, selectedModel, selectedReasoning, session]);
+
+  // Replay a previously failed send. Reuses the same optimistic message id
+  // so the bubble stays in place — the failed banner just disappears on
+  // success or updates with a new error message on a second failure.
+  // Falls back to the entry's persisted text/images so refresh-rehydrated
+  // ghost messages remain retryable even though their parts were never in
+  // the original `messages` array.
+  const handleRetrySend = useCallback((tempId: string) => {
+    if (!session) return;
+    const entry = failedSends.find(e => e.id === tempId);
+    if (!entry) return;
+    void performSend(
+      tempId,
+      entry.text,
+      entry.images,
+      entry.model,
+      entry.agent,
+      entry.reasoning,
+    );
+  }, [failedSends, performSend, session]);
+
+  // Drop a failed send (without retrying). Removes both the persisted
+  // entry and the ghost optimistic message it was attached to.
+  const handleDismissFailedSend = useCallback((tempId: string) => {
+    if (!session) return;
+    setFailedSends(prev => prev.filter(e => e.id !== tempId));
+    removeFailedSend(session.id, tempId);
+    setMessages(prev => prev.filter(m => m.id !== tempId));
+    setParts(prev => prev.filter(p => p.messageId !== tempId));
+  }, [session]);
 
   // When the user picks a different model, clear the reasoning selection
   // because the new model may not support the same variants.
@@ -2777,7 +2933,7 @@ export function SessionDetail() {
                         <PlatformBadge platform={sib.platform} variant="plain" />
                       </span>
                     )}
-                    <GitStatusLine info={sib.gitInfo} />
+                    <GitStatusLine info={siblingGitInfos[sib.directory]} />
                   </span>
                   <span className="session-sidebar-meta">
                     <span className="session-sidebar-time" title={new Date(sib.timeUpdated).toLocaleString()}>{relativeTime(sib.timeUpdated)}</span>
@@ -2925,6 +3081,9 @@ export function SessionDetail() {
             agents={agents}
             taskLiveOutput={taskLiveOutput}
             projectDirectory={session.directory}
+            failedSends={failedSends}
+            onRetryFailedSend={handleRetrySend}
+            onDismissFailedSend={handleDismissFailedSend}
           >
             {/* AssistantThread is the most crash-prone region in the
                 page — it renders user-supplied markdown, code blocks via

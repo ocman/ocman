@@ -325,10 +325,10 @@ test('slash menu closes when input is cleared', async ({ mockedPage: page }) => 
 });
 
 // ---------------------------------------------------------------------------
-// Busy (409) response
+// Busy (409) response — failed user-message banner with Retry / Dismiss
 // ---------------------------------------------------------------------------
 
-test('409 busy response shows a "try again" error in the thread', async ({ mockedPage: page }) => {
+test('409 busy response shows a retryable failed banner on the user message', async ({ mockedPage: page }) => {
   await page.route(
     new RegExp(`/api/session/${MOCK_SESSION.id}/message`),
     (route) => route.fulfill({
@@ -342,8 +342,46 @@ test('409 busy response shows a "try again" error in the thread', async ({ mocke
   await page.locator('.oc-composer-input').fill('Hello');
   await page.locator('.oc-composer-input').press('Enter');
 
-  // An inline error message should appear
-  await expect(
-    page.locator('.oc-msg-assistant').filter({ hasText: /try again|busy/i }),
-  ).toBeVisible({ timeout: 3_000 });
+  // The optimistic user bubble gets a failed banner with the error text
+  // and a Retry button — the prompt itself is preserved on screen.
+  const failedBanner = page.locator('.oc-msg-failed-banner');
+  await expect(failedBanner).toBeVisible({ timeout: 3_000 });
+  await expect(failedBanner).toContainText(/try again|busy/i);
+  await expect(failedBanner.getByRole('button', { name: 'Retry' })).toBeVisible();
+  await expect(failedBanner.getByRole('button', { name: /dismiss/i })).toBeVisible();
+});
+
+test('failed-send Retry replays the original prompt', async ({ mockedPage: page }) => {
+  // First call fails with 409, subsequent calls succeed.
+  let attempt = 0;
+  await page.route(
+    new RegExp(`/api/session/${MOCK_SESSION.id}/message`),
+    (route) => {
+      attempt += 1;
+      if (attempt === 1) {
+        return route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'session is busy, try again' }),
+        });
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true }),
+      });
+    },
+  );
+
+  await goToLiveSession(page);
+  await page.locator('.oc-composer-input').fill('Replay me');
+  await page.locator('.oc-composer-input').press('Enter');
+
+  const failedBanner = page.locator('.oc-msg-failed-banner');
+  await expect(failedBanner).toBeVisible({ timeout: 3_000 });
+  await failedBanner.getByRole('button', { name: 'Retry' }).click();
+
+  // Banner clears once the retry succeeds.
+  await expect(failedBanner).toHaveCount(0, { timeout: 3_000 });
+  expect(attempt).toBeGreaterThanOrEqual(2);
 });
