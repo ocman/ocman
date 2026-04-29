@@ -20,6 +20,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/pricing"
+	"github.com/NoUseFreak/ocman/internal/srvtiming"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -314,7 +315,9 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		if !adapter.Available(ctx) {
 			continue
 		}
+		platStart := time.Now()
 		sessions, err := adapter.Sessions(ctx, dir, since)
+		srvtiming.Record(ctx, "sessions_"+string(adapter.ID()), time.Since(platStart), "")
 		if err != nil {
 			log.WithFields(log.Fields{"platform": adapter.ID(), "error": err}).
 				Warn("listing sessions from platform")
@@ -347,7 +350,10 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		all = all[:limit]
 	}
 
-	if err := s.applySessionState(all); err != nil {
+	stateStart := time.Now()
+	err := s.applySessionState(all)
+	srvtiming.Record(ctx, "state_overlay", time.Since(stateStart), "applySessionState")
+	if err != nil {
 		serverError(w, "fetching session state", err)
 		return
 	}
@@ -941,6 +947,43 @@ func (s *Server) handleSessionCommand(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleSessionShell handles POST /api/session/{id}/shell — runs a
+// raw shell command in the session's working directory, bypassing the
+// LLM. Used by the composer's `!`-prefix routing on platforms that
+// declare caps.shellExec; adapters without the capability return
+// ErrUnsupported (mapped to 501).
+func (s *Server) handleSessionShell(w http.ResponseWriter, r *http.Request) {
+	sessionID, _, ok := sessionSubPath(r.URL.Path, "/api/session/")
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	var req struct {
+		Command string `json:"command"`
+		Agent   string `json:"agent"`
+	}
+	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+		return
+	}
+	if strings.TrimSpace(req.Command) == "" {
+		http.Error(w, "command is required", http.StatusBadRequest)
+		return
+	}
+	adapter := s.resolvePlatformForSession(w, r, sessionID)
+	if adapter == nil {
+		return
+	}
+	if err := adapter.RunShell(r.Context(), platforms.RunShellRequest{
+		SessionID: sessionID,
+		Command:   req.Command,
+		Agent:     req.Agent,
+	}); err != nil {
+		writePlatformError(w, "running shell command", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) handleSessionRename(w http.ResponseWriter, r *http.Request) {
 	sessionID, _, ok := sessionSubPath(r.URL.Path, "/api/session/")
 	if !ok {
@@ -1184,6 +1227,7 @@ func (s *Server) handleSessionsRoot(w http.ResponseWriter, r *http.Request) {
 //	/api/session/{id}/questions/{qid}/reject POST -> handleSessionQuestion
 //	/api/session/{id}/message          POST     -> handleSessionMessage
 //	/api/session/{id}/command          POST     -> handleSessionCommand
+//	/api/session/{id}/shell            POST     -> handleSessionShell
 //	/api/session/{id}/abort            POST     -> handleSessionAbort
 //	/api/session/{id}/compact          POST     -> handleSessionCompact
 //	/api/session/{id}/events           GET      -> handleSessionEvents
@@ -1266,6 +1310,9 @@ func (s *Server) dispatchSessionSubpath(w http.ResponseWriter, r *http.Request) 
 			return
 		case "command":
 			s.handleSessionCommand(w, r)
+			return
+		case "shell":
+			s.handleSessionShell(w, r)
 			return
 		case "abort":
 			s.handleSessionAbort(w, r)

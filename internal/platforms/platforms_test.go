@@ -33,6 +33,15 @@ func (f *fakePlatform) Session(context.Context, string, int, int) (*SessionDetai
 	return nil, ErrUnsupported
 }
 
+func (f *fakePlatform) Owns(_ context.Context, sessionID string) bool {
+	for _, s := range f.sessions {
+		if s.ID == sessionID {
+			return true
+		}
+	}
+	return false
+}
+
 func (f *fakePlatform) SessionsInactiveBefore(context.Context, int64) ([]db.SessionArchiveCandidate, error) {
 	return nil, nil
 }
@@ -64,6 +73,9 @@ func (f *fakePlatform) ListQuestions(context.Context, string) ([]LivePrompt, err
 }
 func (f *fakePlatform) SendMessage(context.Context, SendMessageRequest) error { return ErrUnsupported }
 func (f *fakePlatform) ExecuteCommand(context.Context, ExecuteCommandRequest) error {
+	return ErrUnsupported
+}
+func (f *fakePlatform) RunShell(context.Context, RunShellRequest) error {
 	return ErrUnsupported
 }
 func (f *fakePlatform) RespondPermission(context.Context, RespondPermissionRequest) error {
@@ -158,6 +170,41 @@ func TestRegistry_PlatformForSession_Unknown(t *testing.T) {
 
 	if _, ok := reg.PlatformForSession(context.Background(), "unknown"); ok {
 		t.Errorf("PlatformForSession on unknown id should return ok=false")
+	}
+}
+
+// TestRegistry_PlatformForSession_OwnsFanout verifies that on a cold
+// reverse-lookup cache (no RememberSessions call) the registry falls
+// back to Platform.Owns rather than Platform.Session. This is the
+// fast cold-path that avoids the heavy HTTP round-trip OpenCode's
+// Session method makes.
+func TestRegistry_PlatformForSession_OwnsFanout(t *testing.T) {
+	reg := NewRegistry()
+	a := &fakePlatform{
+		id:        "a",
+		available: true,
+		sessions:  []db.Session{{ID: "owned-by-a"}},
+	}
+	b := &fakePlatform{
+		id:        "b",
+		available: true,
+		sessions:  []db.Session{{ID: "owned-by-b"}},
+	}
+	reg.Register(a)
+	reg.Register(b)
+
+	got, ok := reg.PlatformForSession(context.Background(), "owned-by-b")
+	if !ok {
+		t.Fatalf("PlatformForSession(\"owned-by-b\") returned ok=false")
+	}
+	if got.ID() != "b" {
+		t.Errorf("expected b, got %q", got.ID())
+	}
+
+	// Second call should hit the cache and still resolve correctly.
+	got2, ok := reg.PlatformForSession(context.Background(), "owned-by-b")
+	if !ok || got2.ID() != "b" {
+		t.Errorf("cached lookup failed: ok=%v id=%q", ok, got2.ID())
 	}
 }
 

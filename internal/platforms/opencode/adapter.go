@@ -11,12 +11,14 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/srvtiming"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -93,6 +95,7 @@ func (a *Adapter) Capabilities() platforms.Capabilities {
 		AgentCatalog:      true,
 		ModelCatalog:      true,
 		SlashCommands:     true,
+		ShellExec:         true,
 		FileChanges:       true,
 		SessionInfo:       true,
 		// OpenCode only exposes an HTTP API when it's started with an
@@ -107,27 +110,42 @@ func (a *Adapter) Capabilities() platforms.Capabilities {
 // populates LiveConnection, PendingPermission, and PendingQuestion by
 // probing running OpenCode instances — the server package no longer
 // needs to know about lsof or OpenCode HTTP endpoints to list sessions.
-func (a *Adapter) Sessions(_ context.Context, dir string, since int64) ([]db.Session, error) {
+func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.Session, error) {
 	if a.db == nil {
 		return nil, nil
 	}
-	sessions, err := a.db.GetSessions(dir, since)
+	dbStart := time.Now()
+	sessions, err := getSessionsCached(a.db, dir, since)
+	srvtiming.Record(ctx, "db_get_sessions", time.Since(dbStart), "")
 	if err != nil {
 		return nil, err
 	}
+	// The cached slice is shared across concurrent readers; the
+	// per-session overlay below mutates entries by index, so we
+	// need our own slice. A shallow copy is enough — Session is a
+	// value type with no pointer-shared mutable state we'd care
+	// about here.
+	sessions = append([]db.Session(nil), sessions...)
 
 	// Fan out to every running OpenCode instance to collect liveness
 	// flags. Failures are silent — this is a best-effort UI hint.
+	portStart := time.Now()
 	ports := discoverOpenCodePorts()
+	srvtiming.Record(ctx, "lsof_ports", time.Since(portStart), "")
+
+	promptStart := time.Now()
 	pendingPerms, pendingQuestions := collectPendingPromptsByDir(ports)
+	srvtiming.Record(ctx, "pending_prompts", time.Since(promptStart), fmt.Sprintf("%d instances", len(ports)))
 
 	// OpenCode emits subagent prompts with the subagent's session ID,
 	// not the parent's. The listing only contains parent sessions
 	// (subagents are filtered out by SQL), so we resolve each prompted
 	// subagent to its parent and apply the flag there. Parent prompts
 	// pass through unchanged (their id maps to themselves).
+	bubbleStart := time.Now()
 	pendingPerms = bubbleUpPromptsToParent(pendingPerms, a.db)
 	pendingQuestions = bubbleUpPromptsToParent(pendingQuestions, a.db)
+	srvtiming.Record(ctx, "bubble_parents", time.Since(bubbleStart), "")
 
 	for i := range sessions {
 		sessions[i].Platform = string(PlatformID)
@@ -186,21 +204,39 @@ type parentLookup interface {
 	GetSessionParentIDs(childIDs []string) (map[string]string, error)
 }
 
+// Owns reports whether this OpenCode session ID exists in the local
+// OpenCode database. It does NOT touch the live HTTP API or the lsof
+// port discovery path, so it's cheap enough to call from the
+// registry's cold-cache fan-out without paying the multi-hundred-ms
+// round-trip that Session would.
+func (a *Adapter) Owns(_ context.Context, sessionID string) bool {
+	if a.db == nil || sessionID == "" {
+		return false
+	}
+	_, err := a.db.GetSession(sessionID)
+	return err == nil
+}
+
 // Session returns full detail for one session. Prefers live OpenCode
 // API data (for in-flight streams) with a fallback to the read-only
 // DB. Both paths return the same typed SessionDetail shape.
-func (a *Adapter) Session(_ context.Context, id string, limit, offset int) (*platforms.SessionDetail, error) {
+func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*platforms.SessionDetail, error) {
 	if a.db == nil {
 		return nil, platforms.ErrNotFound
 	}
 	// Try live data from OpenCode first.
-	if detail, ok := a.fetchSessionFromOpenCode(id, limit, offset); ok {
+	liveStart := time.Now()
+	detail, ok := a.fetchSessionFromOpenCodeCtx(ctx, id, limit, offset)
+	srvtiming.Record(ctx, "live_path", time.Since(liveStart), "fetchSessionFromOpenCode (incl lsof + 2x HTTP)")
+	if ok {
 		return detail, nil
 	}
 
 	// Fall back to DB.
+	dbStart := time.Now()
 	session, err := a.db.GetSession(id)
 	if err != nil {
+		srvtiming.Record(ctx, "db_fallback", time.Since(dbStart), "")
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, platforms.ErrNotFound
 		}
@@ -210,10 +246,12 @@ func (a *Adapter) Session(_ context.Context, id string, limit, offset int) (*pla
 
 	messages, err := a.db.GetSessionMessages(id)
 	if err != nil {
+		srvtiming.Record(ctx, "db_fallback", time.Since(dbStart), "")
 		return nil, err
 	}
 	parts, err := a.db.GetSessionParts(id)
 	if err != nil {
+		srvtiming.Record(ctx, "db_fallback", time.Since(dbStart), "")
 		return nil, err
 	}
 
@@ -222,7 +260,8 @@ func (a *Adapter) Session(_ context.Context, id string, limit, offset int) (*pla
 	filteredParts := db.FilterPartsForMessages(parts, pagedMessages)
 
 	contextTokens, _ := a.db.GetContextTokenCount(id)
-	defaults, _ := a.db.GetSessionDefaults(id, session.Directory)
+	defaults, _ := getSessionDefaultsCached(a.db, id, session.Directory)
+	srvtiming.Record(ctx, "db_fallback", time.Since(dbStart), "live path miss; full DB read")
 
 	return &platforms.SessionDetail{
 		Session:           session,

@@ -3,8 +3,10 @@ package platforms
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/srvtiming"
 )
 
 // Registry holds registered platform adapters and maintains a reverse
@@ -83,16 +85,24 @@ func (r *Registry) RememberSessions(platformID ID, sessions []db.Session) {
 //
 // Resolution order:
 //  1. Check the reverse-lookup cache populated by RememberSessions.
-//  2. Fan out to every available adapter asking whether it knows this
-//     session (Session call). The first adapter that returns a non-error
-//     result owns the session; its mapping is cached for next time.
+//  2. Fan out to every available adapter calling Owns. The first
+//     adapter that claims the session owns it; its mapping is cached
+//     for next time.
+//
+// Owns is required to be cheap (DB or filesystem only — no HTTP, no
+// external processes). Earlier versions of this method called
+// Platform.Session here, which for OpenCode triggered the full live
+// fetch (lsof port discovery + 2 HTTP calls) just to identify the
+// owner — adding hundreds of milliseconds to every cold-cache request.
 func (r *Registry) PlatformForSession(ctx context.Context, sessionID string) (Platform, bool) {
+	start := time.Now()
 	r.mu.RLock()
 	id, ok := r.bySID[sessionID]
 	r.mu.RUnlock()
 
 	if ok {
 		if p, ok := r.Get(id); ok {
+			srvtiming.Record(ctx, "resolve_cached", time.Since(start), "sid->platform cache hit")
 			return p, true
 		}
 	}
@@ -103,13 +113,14 @@ func (r *Registry) PlatformForSession(ctx context.Context, sessionID string) (Pl
 		if !p.Available(ctx) {
 			continue
 		}
-		detail, err := p.Session(ctx, sessionID, 1, 0)
-		if err == nil && detail != nil && detail.Session != nil {
+		if p.Owns(ctx, sessionID) {
 			r.mu.Lock()
 			r.bySID[sessionID] = p.ID()
 			r.mu.Unlock()
+			srvtiming.Record(ctx, "resolve_owns", time.Since(start), "cold-cache Owns fan-out")
 			return p, true
 		}
 	}
+	srvtiming.Record(ctx, "resolve_miss", time.Since(start), "no adapter claimed session")
 	return nil, false
 }

@@ -2298,6 +2298,49 @@ export function SessionDetail() {
     }
   }, [activeAgent, activeModel, archiveSession, createSession, launchOpencodeInTmux, tmux.available, handleCompact, handleNewSession, navigate, portAvailable, recentSessions, selectedAgent, selectedModel, session]);
 
+  // handleShell sends a `!`-prefixed composer submission to the
+  // platform's raw shell endpoint (OpenCode: POST /session/{id}/shell),
+  // bypassing the LLM. The composer has already stripped the leading
+  // `!` and trimmed whitespace; we forward verbatim.
+  //
+  // Agent attribution mirrors handleSend: prefer the user's currently
+  // selected composer agent, fall back to the session's active agent,
+  // and finally to "build" (OpenCode's universal default — its /shell
+  // endpoint requires a non-empty agent). The backend re-applies the
+  // same default when we send blank, but resolving here keeps the
+  // synthesised assistant message attributed to the agent the user
+  // sees highlighted in the composer.
+  // Optimistic rendering is skipped: SSE will deliver the synthesised
+  // assistant message + bash tool output as soon as OpenCode flushes it.
+  const handleShell = useCallback(async (command: string) => {
+    if (!session || !portAvailable) return;
+    if (pendingPermission || pendingQuestion) return;
+    const agent = selectedAgent || activeAgent || 'build';
+    try {
+      await api.runShell(session.id, command, agent);
+    } catch (e) {
+      console.error('Failed to run shell command', e);
+      const errId = 'error-' + Date.now();
+      const errMsg: Message = {
+        id: errId,
+        sessionId: session.id,
+        timeCreated: Date.now(),
+        data: { role: 'assistant', finish: 'error' },
+      };
+      const errPart: Part = {
+        id: 'part-' + errId,
+        messageId: errId,
+        sessionId: session.id,
+        data: {
+          type: 'text',
+          text: `**Failed to run shell command:** ${e instanceof Error ? e.message : 'Unknown error'}`,
+        } as unknown as string,
+      };
+      setMessages(prev => [...prev, errMsg]);
+      setParts(prev => [...prev, errPart]);
+    }
+  }, [activeAgent, pendingPermission, pendingQuestion, portAvailable, selectedAgent, session]);
+
   const handlePermissionReply = useCallback(async (reply: 'once' | 'always' | 'reject') => {
     if (!pendingPermission || answeringPermission || !portAvailable || !caps.respondPermission || !session) return;
     setPermissionError(null);
@@ -3123,6 +3166,8 @@ export function SessionDetail() {
                 <Composer
                   onSend={handleSend}
                   onCommand={handleCommand}
+                  onShell={handleShell}
+                  shellExec={caps.shellExec}
                   onAbort={handleAbort}
                   isRunning={isRunning}
                   // Disable while a permission/question prompt is pending so

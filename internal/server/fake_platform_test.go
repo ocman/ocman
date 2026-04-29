@@ -32,6 +32,10 @@ type fakePlatform struct {
 	changesErr   error
 	info         *platforms.SessionInfo
 	infoErr      error
+	// runShell, when non-nil, intercepts RunShell calls — used by
+	// the /api/session/{id}/shell handler test to record the
+	// adapter received the call.
+	runShell func() error
 }
 
 func (f *fakePlatform) ID() platforms.ID {
@@ -66,6 +70,15 @@ func (f *fakePlatform) Sessions(ctx context.Context, dir string, since int64) ([
 
 func (f *fakePlatform) Session(context.Context, string, int, int) (*platforms.SessionDetail, error) {
 	return nil, platforms.ErrNotFound
+}
+
+func (f *fakePlatform) Owns(_ context.Context, sessionID string) bool {
+	for _, s := range f.sessions {
+		if s.ID == sessionID {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *fakePlatform) SessionsInactiveBefore(context.Context, int64) ([]db.SessionArchiveCandidate, error) {
@@ -113,6 +126,13 @@ func (f *fakePlatform) SendMessage(context.Context, platforms.SendMessageRequest
 }
 
 func (f *fakePlatform) ExecuteCommand(context.Context, platforms.ExecuteCommandRequest) error {
+	return platforms.ErrUnsupported
+}
+
+func (f *fakePlatform) RunShell(context.Context, platforms.RunShellRequest) error {
+	if f.runShell != nil {
+		return f.runShell()
+	}
 	return platforms.ErrUnsupported
 }
 

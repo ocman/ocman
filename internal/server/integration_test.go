@@ -496,6 +496,13 @@ func TestAutoArchive_UsesRegistry(t *testing.T) {
 // handle to the same OpenCode database so tests can seed additional rows.
 func testServerWithRawDB(t *testing.T) (*Server, *sql.DB) {
 	t.Helper()
+	// The opencode package keeps several process-global caches
+	// (recents, session defaults, sessions list) for production
+	// performance. Tests that seed a fresh DB need a fresh cache,
+	// otherwise a row inserted after a previous test's GetSessions
+	// call won't appear in this test's result. Reset before doing
+	// anything else so the cache state matches the DB state.
+	opencodeplatform.ResetCachesForTests()
 	tmpDir := t.TempDir()
 
 	tmpOC := tmpDir + "/opencode.db"

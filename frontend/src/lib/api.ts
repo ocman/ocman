@@ -600,6 +600,13 @@ export interface PlatformCapabilities {
   modelCatalog: boolean;
   slashCommands: boolean;
   /**
+   * Whether the platform can execute raw shell commands directly,
+   * bypassing the LLM (OpenCode's POST /session/{id}/shell). Drives
+   * the composer's `!`-prefix routing: when false, `!`-prefixed
+   * input is sent as a plain prompt instead.
+   */
+  shellExec: boolean;
+  /**
    * Whether the platform exposes /api/session/{id}/changes — the
    * per-file change aggregation used by the session-changes sidebar.
    * False for adapters that can't compute a useful summary
@@ -976,6 +983,22 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ command, arguments: args, model, agent }),
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+  },
+  /**
+   * Run a raw shell command in the session's working directory,
+   * bypassing the LLM. Backed by the platform's shell-tool primitive
+   * (OpenCode: POST /session/{id}/shell). Used by the composer to
+   * route `!`-prefixed input on platforms that report
+   * caps.shellExec. The backend defaults `agent` to "build" when
+   * blank.
+   */
+  runShell: async (sessionId: string, command: string, agent?: string) => {
+    const resp = await fetch(`/api/session/${encodeURIComponent(sessionId)}/shell`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command, agent }),
     });
     if (!resp.ok) throw new Error(await resp.text());
   },

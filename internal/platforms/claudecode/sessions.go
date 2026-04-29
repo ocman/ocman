@@ -3,7 +3,10 @@ package claudecode
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 
 	log "github.com/sirupsen/logrus"
 
@@ -55,6 +58,37 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 	// dataset grows.
 	_ = ctx
 	return out, nil
+}
+
+// Owns reports whether this Claude Code session ID corresponds to a
+// jsonl on disk. It walks projectsDir/<project>/<id>.jsonl with
+// os.Stat — no parsing, no live state, and short-circuits on the
+// first hit. Cheap enough for the registry's cold-cache fan-out.
+func (a *Adapter) Owns(_ context.Context, sessionID string) bool {
+	if a.projectsDir == "" || sessionID == "" {
+		return false
+	}
+	// Reject obviously bogus IDs to avoid stat-walking the whole
+	// projects tree on garbage input. Real Claude Code session IDs
+	// are filename-safe UUIDs; anything with a path separator is
+	// definitely not one of ours.
+	if strings.ContainsAny(sessionID, `/\`) {
+		return false
+	}
+	projects, err := os.ReadDir(a.projectsDir)
+	if err != nil {
+		return false
+	}
+	target := sessionID + ".jsonl"
+	for _, pe := range projects {
+		if !pe.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(a.projectsDir, pe.Name(), target)); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // Session returns full detail for one session. Pagination is applied

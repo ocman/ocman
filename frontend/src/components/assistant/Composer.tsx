@@ -11,6 +11,7 @@ import { agentColor } from '../../lib/agentColor';
 import { ModelPicker } from './ModelPicker';
 import { AgentPicker } from './AgentPicker';
 import { ReasoningPicker } from './ReasoningPicker';
+import { routeComposerSubmit } from './composerSubmit';
 
 function encodeWav(samples: Float32Array, sampleRate: number): Blob {
   const numSamples = samples.length;
@@ -139,6 +140,8 @@ const BUILTIN_COMMANDS: SlashCommand[] = [
 function ComposerImpl({
   onSend,
   onCommand,
+  onShell,
+  shellExec,
   onAbort,
   isRunning,
   disabled,
@@ -166,6 +169,19 @@ function ComposerImpl({
 }: {
   onSend?: (text: string, images?: AttachedImage[]) => void;
   onCommand?: (command: string, args: string) => void;
+  /**
+   * Called when the user submits a `!`-prefixed shell command on a
+   * platform that reports caps.shellExec. Receives the command with
+   * the `!` already stripped. Wired in the parent to api.runShell.
+   */
+  onShell?: (command: string) => void;
+  /**
+   * Capability flag from the active platform (caps.shellExec).
+   * When false, `!`-prefixed input falls through to onSend as a
+   * normal LLM prompt — preserving today's behaviour on platforms
+   * without a shell-tool primitive (Claude Code).
+   */
+  shellExec?: boolean;
   onAbort?: () => void;
   isRunning: boolean;
   disabled?: boolean;
@@ -274,6 +290,10 @@ function ComposerImpl({
 
   const onCommandRef = useRef(onCommand);
   useEffect(() => { onCommandRef.current = onCommand; }, [onCommand]);
+  const onShellRef = useRef(onShell);
+  useEffect(() => { onShellRef.current = onShell; }, [onShell]);
+  const shellExecRef = useRef(!!shellExec);
+  useEffect(() => { shellExecRef.current = !!shellExec; }, [shellExec]);
   const agentOptionsRef = useRef<string[]>([]);
   const effectiveAgentRef = useRef<string>('');
   const onAgentChangeRef = useRef(onAgentChange);
@@ -698,16 +718,17 @@ function ComposerImpl({
 
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        const trimmed = el.value.trim();
+        const raw = el.value;
         const imgs = imagesRef.current;
-        if (!trimmed && imgs.length === 0) return;
+        const route = routeComposerSubmit(raw, { shellExec: shellExecRef.current });
 
-        if (trimmed.startsWith('/') && onCommandRef.current) {
-          const spaceIdx = trimmed.indexOf(' ');
-          const command = spaceIdx > 0 ? trimmed.slice(1, spaceIdx) : trimmed.slice(1);
-          const args = spaceIdx > 0 ? trimmed.slice(spaceIdx + 1).trim() : '';
+        // No text: only proceed if there are images to attach (sent
+        // as a plain message). Otherwise nothing to do.
+        if (route.kind === 'noop' && imgs.length === 0) return;
+
+        if (route.kind === 'command' && onCommandRef.current) {
           // /model and /agent are client-only: don't dispatch to the backend.
-          if (command === 'model' || command === 'agent') {
+          if (route.command === 'model' || route.command === 'agent') {
             el.value = '';
             el.style.height = 'auto';
             const sid = sessionIdRef.current;
@@ -715,13 +736,23 @@ function ComposerImpl({
               if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
               clearDraft(sid);
             }
-            const evt = command === 'model' ? 'oc-model-picker-open' : 'oc-agent-picker-open';
-            el.dispatchEvent(new CustomEvent(evt, { detail: args }));
+            const evt = route.command === 'model' ? 'oc-model-picker-open' : 'oc-agent-picker-open';
+            el.dispatchEvent(new CustomEvent(evt, { detail: route.args }));
             return;
           }
-          onCommandRef.current(command, args);
+          onCommandRef.current(route.command, route.args);
+        } else if (route.kind === 'shell' && onShellRef.current) {
+          onShellRef.current(route.command);
+        } else if (route.kind === 'send' || route.kind === 'noop') {
+          // `noop` only reaches here when imgs.length > 0 (image-only
+          // submission); send with empty text in that case.
+          const text = route.kind === 'send' ? route.text : '';
+          onSendRef.current?.(text, imgs.length > 0 ? imgs : undefined);
         } else {
-          onSendRef.current?.(trimmed, imgs.length > 0 ? imgs : undefined);
+          // route.kind === 'shell' but no onShell handler (capability
+          // mis-wiring). Fall back to a plain prompt rather than
+          // silently dropping the user's input.
+          onSendRef.current?.(raw.trim(), imgs.length > 0 ? imgs : undefined);
         }
 
         setIsBashModeRef.current(false);
@@ -742,8 +773,11 @@ function ComposerImpl({
       el.style.height = Math.min(el.scrollHeight, 200) + 'px';
 
       const val = el.value;
-      // Detect bash mode when input starts with !
-      el.dispatchEvent(new CustomEvent('oc-bash-mode', { detail: val.startsWith('!') }));
+      // Detect bash mode when input starts with !, but only when the
+      // active platform actually supports shell execution. On
+      // platforms without it (Claude Code) `!` is just a literal
+      // character in the prompt and shouldn't get a special pill.
+      el.dispatchEvent(new CustomEvent('oc-bash-mode', { detail: val.startsWith('!') && shellExecRef.current }));
       
       // Only show the slash menu while the user is typing the command name
       // itself. Once a space appears (or a newline), the caret has moved on

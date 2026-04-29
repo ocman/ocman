@@ -8,9 +8,11 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/srvtiming"
 )
 
 // rawMCPEntry mirrors a single value in OpenCode's `GET /mcp`
@@ -54,7 +56,7 @@ type rawLSPEntry struct {
 // data (tokens / todos) and the cross-platform Session metadata
 // (project / branch / messages / duration / changes / cost) it gets
 // from the regular session payload.
-func (a *Adapter) SessionInfo(_ context.Context, sessionID string) (*platforms.SessionInfo, error) {
+func (a *Adapter) SessionInfo(ctx context.Context, sessionID string) (*platforms.SessionInfo, error) {
 	if a.db == nil {
 		return nil, platforms.ErrNotFound
 	}
@@ -63,10 +65,10 @@ func (a *Adapter) SessionInfo(_ context.Context, sessionID string) (*platforms.S
 		return nil, err
 	}
 
-	defaults, _ := a.db.GetSessionDefaults(sessionID, dbSession.Directory)
+	defaults, _ := getSessionDefaultsCached(a.db, sessionID, dbSession.Directory)
 	modelRef := defaults.Model
 
-	port := discoverOpenCodePort(dbSession.Directory)
+	port := discoverOpenCodePortCtx(ctx, dbSession.Directory)
 	if port == "" {
 		// No live channel — compute the always-on tier from the
 		// read-only DB and return Supported=false so the frontend
@@ -112,24 +114,34 @@ func (a *Adapter) SessionInfo(_ context.Context, sessionID string) (*platforms.S
 		liveTier alwaysOnTier
 		wg       sync.WaitGroup
 	)
+	infoStart := time.Now()
 	wg.Add(4)
 	go func() {
 		defer wg.Done()
+		s := time.Now()
 		mcp = fetchOpenCodeMCP(port)
+		srvtiming.Record(ctx, "http_mcp", time.Since(s), "GET /mcp")
 	}()
 	go func() {
 		defer wg.Done()
+		s := time.Now()
 		lsp = fetchOpenCodeLSP(port)
+		srvtiming.Record(ctx, "http_lsp", time.Since(s), "GET /lsp")
 	}()
 	go func() {
 		defer wg.Done()
+		s := time.Now()
 		prov, hasPrv = fetchOpenCodeProviders(port)
+		srvtiming.Record(ctx, "http_provider", time.Since(s), "GET /provider")
 	}()
 	go func() {
 		defer wg.Done()
+		s := time.Now()
 		liveTier, liveOK = alwaysOnTierFromOpenCode(port, sessionID, a.pricing)
+		srvtiming.Record(ctx, "live_tier", time.Since(s), "GET /session/{id}/message + aggregate")
 	}()
 	wg.Wait()
+	srvtiming.Record(ctx, "http_parallel", time.Since(infoStart), "info 4-way fan-out")
 
 	var provPtr *OpenCodeProvidersResponse
 	if hasPrv {

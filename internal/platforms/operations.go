@@ -46,6 +46,20 @@ type ExecuteCommandRequest struct {
 	Reasoning string
 }
 
+// RunShellRequest runs a raw shell command in the session's working
+// directory, bypassing the LLM. Used by composers that route `!`-
+// prefixed input directly to the platform's shell-tool primitive
+// (e.g. OpenCode's POST /session/{id}/shell).
+//
+// Agent picks the role the synthesised assistant message is attributed
+// to ("build" / "plan" / subagent name on OpenCode). Platforms without
+// a composer-agent concept ignore it.
+type RunShellRequest struct {
+	SessionID string
+	Command   string
+	Agent     string
+}
+
 // CompactRequest compacts (summarizes) the session history.
 type CompactRequest struct {
 	SessionID  string

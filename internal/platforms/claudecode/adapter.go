@@ -203,6 +203,13 @@ func (a *Adapter) ExecuteCommand(context.Context, platforms.ExecuteCommandReques
 	return platforms.ErrUnsupported
 }
 
+// RunShell is unsupported on Claude Code: the CLI has no equivalent
+// of OpenCode's /shell primitive, so `!`-prefixed input falls back
+// to a normal prompt via the composer's caps.shellExec gate.
+func (a *Adapter) RunShell(context.Context, platforms.RunShellRequest) error {
+	return platforms.ErrUnsupported
+}
+
 func (a *Adapter) RespondPermission(context.Context, platforms.RespondPermissionRequest) error {
 	return platforms.ErrUnsupported
 }

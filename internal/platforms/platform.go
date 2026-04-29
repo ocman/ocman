@@ -64,6 +64,12 @@ type Capabilities struct {
 	AgentCatalog      bool `json:"agentCatalog"` // adapter exposes a composer-agent catalog
 	ModelCatalog      bool `json:"modelCatalog"` // adapter exposes a per-session model catalog
 	SlashCommands     bool `json:"slashCommands"`
+	// ShellExec reports whether the adapter can run raw shell
+	// commands directly (bypassing the LLM) via Platform.RunShell.
+	// Surfaced as caps.shellExec on the wire; the composer uses it
+	// to gate `!`-prefixed input — when false, that input falls
+	// through to a normal prompt.
+	ShellExec bool `json:"shellExec"`
 	// FileChanges reports whether the adapter can aggregate file
 	// edits performed during a session into a per-file changes
 	// summary (Platform.SessionChanges). Frontend hides the
@@ -158,6 +164,20 @@ type Platform interface {
 	// Session returns full detail for a single session.
 	Session(ctx context.Context, id string, limit, offset int) (*SessionDetail, error)
 
+	// Owns reports whether this adapter is the owning platform for
+	// the given session ID. It must be cheap — a single DB hit, an
+	// in-memory cache lookup, or a filesystem stat at most. The
+	// registry calls Owns from the cold-cache path of
+	// PlatformForSession to avoid the heavy Session fetch (HTTP
+	// round-trip + lsof port discovery on OpenCode) just to identify
+	// the session's owner.
+	//
+	// Implementations must NOT make HTTP calls or run external
+	// processes. Returning false on any error is acceptable; the
+	// registry treats both "not mine" and "I couldn't tell" as
+	// non-ownership and moves on to the next adapter.
+	Owns(ctx context.Context, sessionID string) bool
+
 	// SessionsInactiveBefore returns archive candidates for the
 	// background auto-archive job.
 	SessionsInactiveBefore(ctx context.Context, cutoff int64) ([]db.SessionArchiveCandidate, error)
@@ -207,6 +227,12 @@ type Platform interface {
 
 	// ExecuteCommand runs a slash command.
 	ExecuteCommand(ctx context.Context, req ExecuteCommandRequest) error
+
+	// RunShell executes a raw shell command in the session's
+	// working directory, bypassing the LLM. Adapters whose
+	// platform has no shell-tool primitive return ErrUnsupported;
+	// gated by Capabilities.ShellExec.
+	RunShell(ctx context.Context, req RunShellRequest) error
 
 	// RespondPermission replies to a pending permission prompt.
 	RespondPermission(ctx context.Context, req RespondPermissionRequest) error

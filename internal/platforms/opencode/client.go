@@ -19,6 +19,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/srvtiming"
 )
 
 // rePortSuffix matches a port number at the end of a string (e.g. ":4096").
@@ -55,7 +56,21 @@ var portCache struct {
 // window after the first one finished.
 var portFlight singleflight.Group
 
-const portCacheTTL = 3 * time.Second
+// portCacheTTL bounds how long a discovered port map is reused
+// before the next request triggers a fresh lsof scan. The trade-off
+// is staleness when the user starts a new OpenCode instance vs.
+// per-request lsof cost: lsof is bounded but not free (single-digit
+// ms for the global scan, plus 30+ ms per running OpenCode for the
+// cwd lookup), and the only thing a stale cache can produce is
+// momentarily "no live connection" for a freshly-started instance —
+// which the next refresh corrects within one TTL.
+//
+// 10s is the sweet spot in practice. The dashboard polls every
+// ~5s, so warm hits dominate; cold misses become a once-per-poll
+// cost rather than once-per-other-poll. If the user starts a new
+// OpenCode instance, the live-connection badge will lag by at most
+// one cycle, which is below the typical perception threshold.
+const portCacheTTL = 10 * time.Second
 
 // discoverPortsImpl is the indirection used so tests can swap out the
 // expensive lsof execution. Production assigns it once, lazily, to
@@ -135,6 +150,23 @@ func copyMap(m map[string]string) map[string]string {
 }
 
 // discoverOpenCodePortsUncached performs the actual lsof-based discovery.
+//
+// Two-phase: first a single global `lsof -iTCP -sTCP:LISTEN` enumerates
+// every opencode process listening on TCP and parses out (pid, port)
+// pairs, then a bounded-concurrency fan-out runs `lsof -a -p <pid> -d
+// cwd` against each candidate to recover its working directory.
+//
+// Why parallelize the second phase: each per-pid lsof is fast in
+// isolation (~30 ms) but one is fired per running OpenCode instance,
+// and users can easily accumulate 20+ stale instances across terminal
+// tabs. At that scale a sequential walk dominates discovery cost
+// (~700 ms in production observation, sequenced behind the 3s port
+// cache so every miss bills the user). Per-pid lsof calls don't
+// compete for any shared resource — they're pure subprocess +
+// per-process file-table lookup — so concurrency scales nearly
+// linearly. We cap at 16 workers to stay well under the default
+// macOS file-descriptor ulimit (256) even when called from a busy
+// server with other open fds.
 func discoverOpenCodePortsUncached() map[string]string {
 	result := make(map[string]string)
 
@@ -172,18 +204,56 @@ func discoverOpenCodePortsUncached() map[string]string {
 		candidates = append(candidates, pidPort{pid: pid, port: m[1]})
 	}
 
-	// Resolve each candidate's cwd.
-	for _, c := range candidates {
-		cwdOut, err := exec.Command("lsof", "-a", "-p", c.pid, "-d", "cwd", "-F", "n").Output()
-		if err != nil {
-			continue
-		}
-		for _, line := range strings.Split(string(cwdOut), "\n") {
-			if strings.HasPrefix(line, "n/") {
-				result[line[1:]] = c.port
-				break
+	if len(candidates) == 0 {
+		return result
+	}
+
+	// Resolve each candidate's cwd in parallel. Tuned for the
+	// "many stale instances" case (20+ on a developer machine);
+	// for the typical 1–2 instances the worker count is bounded by
+	// len(candidates) so there's no overhead.
+	const maxWorkers = 16
+	workers := maxWorkers
+	if len(candidates) < workers {
+		workers = len(candidates)
+	}
+
+	type cwdResult struct {
+		dir  string
+		port string
+	}
+	jobs := make(chan pidPort, len(candidates))
+	results := make(chan cwdResult, len(candidates))
+
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for c := range jobs {
+				cwdOut, err := exec.Command("lsof", "-a", "-p", c.pid, "-d", "cwd", "-F", "n").Output()
+				if err != nil {
+					continue
+				}
+				for _, line := range strings.Split(string(cwdOut), "\n") {
+					if strings.HasPrefix(line, "n/") {
+						results <- cwdResult{dir: line[1:], port: c.port}
+						break
+					}
+				}
 			}
-		}
+		}()
+	}
+
+	for _, c := range candidates {
+		jobs <- c
+	}
+	close(jobs)
+	wg.Wait()
+	close(results)
+
+	for r := range results {
+		result[r.dir] = r.port
 	}
 
 	return result
@@ -203,6 +273,24 @@ func discoverOpenCodePortsUncached() map[string]string {
 // thrash.
 func discoverOpenCodePort(directory string) string {
 	return discoverOpenCodePorts()[directory]
+}
+
+// discoverOpenCodePortCtx is discoverOpenCodePort with Server-Timing
+// instrumentation. Records "lsof_hit" when the port-cache returned a
+// fresh value (sub-millisecond) and "lsof_miss" when the lsof scan
+// actually ran. Use the ctx-aware variant from any code path that
+// has a request context; the bare discoverOpenCodePort remains for
+// internal helpers that don't.
+func discoverOpenCodePortCtx(ctx context.Context, directory string) string {
+	start := time.Now()
+	if cached, ok := readCachedPorts(); ok {
+		port := cached[directory]
+		srvtiming.Record(ctx, "lsof_hit", time.Since(start), "")
+		return port
+	}
+	port := discoverOpenCodePort(directory)
+	srvtiming.Record(ctx, "lsof_miss", time.Since(start), "ran fresh lsof scan")
+	return port
 }
 
 // pendingPromptTimeout caps how long the dashboard's
@@ -409,21 +497,48 @@ func truncatePartOutput(part map[string]interface{}) {
 }
 
 // fetchOpenCodeSession fetches session metadata from the OpenCode HTTP API.
+//
+// Routed through sessionCache (1.5s TTL + singleflight) so concurrent
+// requests for the same (port, sessionID) coalesce into one upstream
+// call. The typical trigger is a SessionDetail mount that fires both
+// /api/session/{id} and /api/session/{id}/info in parallel — both
+// land here, and the second one gets the cached response.
 func fetchOpenCodeSession(port, sessionID string) (map[string]interface{}, error) {
-	url := fmt.Sprintf("http://127.0.0.1:%s/session/%s", port, sessionID)
-	resp, err := openCodeClient.Get(url)
-	if err != nil {
-		return nil, fmt.Errorf("fetching session: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("session API returned %d", resp.StatusCode)
+	path := "/session/" + sessionID
+	body, ok := sessionCache.getOrFetch(port, path, func() ([]byte, bool) {
+		return rawGet(port, path)
+	})
+	if !ok {
+		return nil, fmt.Errorf("session API: upstream fetch failed")
 	}
 	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("decoding session: %w", err)
 	}
 	return result, nil
+}
+
+// rawGet performs a plain GET against the OpenCode instance and
+// returns the response body if the status is 200. Used by the
+// short-TTL sessionCache wrappers; mirrors getJSON but without the
+// content-type assertion (session/message responses don't always set
+// the header consistently across OpenCode versions, and the parsing
+// step downstream provides the same guard).
+func rawGet(port, path string) ([]byte, bool) {
+	url := fmt.Sprintf("http://127.0.0.1:%s%s", port, path)
+	resp, err := openCodeClient.Get(url)
+	if err != nil {
+		return nil, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, false
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, false
+	}
+	return body, true
 }
 
 // fetchOpenCodeSmallModel fetches the resolved OpenCode config from the running
@@ -532,18 +647,23 @@ func fetchOpenCodeProviders(port string) (OpenCodeProvidersResponse, bool) {
 }
 
 // fetchOpenCodeMessages fetches messages for a session from the OpenCode HTTP API.
+//
+// Routed through sessionCache (1.5s TTL + singleflight) — see
+// fetchOpenCodeSession's docstring. The /session/{id}/message
+// payload is the largest session-scoped response (full message
+// history with tool outputs) and is fetched by both
+// /api/session/{id} and /api/session/{id}/info on a typical detail
+// mount; the cache collapses those into a single round-trip.
 func fetchOpenCodeMessages(port, sessionID string) ([]map[string]interface{}, error) {
-	url := fmt.Sprintf("http://127.0.0.1:%s/session/%s/message", port, sessionID)
-	resp, err := openCodeClient.Get(url)
-	if err != nil {
-		return nil, fmt.Errorf("fetching messages: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("messages API returned %d", resp.StatusCode)
+	path := "/session/" + sessionID + "/message"
+	body, ok := sessionCache.getOrFetch(port, path, func() ([]byte, bool) {
+		return rawGet(port, path)
+	})
+	if !ok {
+		return nil, fmt.Errorf("messages API: upstream fetch failed")
 	}
 	var result []map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("decoding messages: %w", err)
 	}
 	return result, nil
@@ -726,17 +846,31 @@ func filterPartsUntyped(parts []map[string]interface{}, msgIDs map[string]bool) 
 // nil, false when the data is not available (no running instance for
 // this session's directory, upstream error, etc.) so callers can fall
 // back to the DB.
+//
+// Backwards-compatible shim around fetchSessionFromOpenCodeCtx —
+// passes a background context, so timing instrumentation is silently
+// dropped. Callers from request handlers should use the Ctx variant.
 func (a *Adapter) fetchSessionFromOpenCode(sessionID string, limit, offset int) (*platforms.SessionDetail, bool) {
+	return a.fetchSessionFromOpenCodeCtx(context.Background(), sessionID, limit, offset)
+}
+
+// fetchSessionFromOpenCodeCtx is fetchSessionFromOpenCode with
+// per-phase Server-Timing instrumentation: separate entries for the
+// initial DB lookup, the lsof port discovery, and the parallel
+// /session/{id} + /session/{id}/message HTTP round-trips.
+func (a *Adapter) fetchSessionFromOpenCodeCtx(ctx context.Context, sessionID string, limit, offset int) (*platforms.SessionDetail, bool) {
 	if a.db == nil {
 		return nil, false
 	}
 	// First get session from DB to find the directory.
+	dbStart := time.Now()
 	dbSession, err := a.db.GetSession(sessionID)
+	srvtiming.Record(ctx, "db_get_session", time.Since(dbStart), "")
 	if err != nil {
 		return nil, false
 	}
 
-	port := discoverOpenCodePort(dbSession.Directory)
+	port := discoverOpenCodePortCtx(ctx, dbSession.Directory)
 	if port == "" {
 		return nil, false
 	}
@@ -745,17 +879,23 @@ func (a *Adapter) fetchSessionFromOpenCode(sessionID string, limit, offset int) 
 	var ocSession map[string]interface{}
 	var ocMessages []map[string]interface{}
 	var sessionErr, messagesErr error
+	httpStart := time.Now()
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
+		s := time.Now()
 		ocSession, sessionErr = fetchOpenCodeSession(port, sessionID)
+		srvtiming.Record(ctx, "http_session", time.Since(s), "GET /session/{id}")
 	}()
 	go func() {
 		defer wg.Done()
+		s := time.Now()
 		ocMessages, messagesErr = fetchOpenCodeMessages(port, sessionID)
+		srvtiming.Record(ctx, "http_messages", time.Since(s), "GET /session/{id}/message")
 	}()
 	wg.Wait()
+	srvtiming.Record(ctx, "http_parallel", time.Since(httpStart), "wall-clock for both fetches")
 
 	if sessionErr != nil || messagesErr != nil || ocSession == nil {
 		return nil, false
@@ -764,13 +904,17 @@ func (a *Adapter) fetchSessionFromOpenCode(sessionID string, limit, offset int) 
 	// Untyped conversion (preserves every OpenCode-specific data key
 	// under the message/part .data map). We then re-encode .data into
 	// json.RawMessage for the typed Message/Part shape.
+	convStart := time.Now()
 	untypedMessages, untypedParts := convertOpenCodeMessages(ocMessages)
 	stats := computeMessageStats(untypedMessages)
 	totalMessages := len(untypedMessages)
 	pagedMessages, pagedMsgIDs := paginateUntyped(untypedMessages, limit, offset)
 	pagedParts := filterPartsUntyped(untypedParts, pagedMsgIDs)
+	srvtiming.Record(ctx, "convert", time.Since(convStart), "convertOpenCodeMessages + paginate")
 
-	defaults, err := a.db.GetSessionDefaults(sessionID, dbSession.Directory)
+	defaultsStart := time.Now()
+	defaults, err := getSessionDefaultsCached(a.db, sessionID, dbSession.Directory)
+	srvtiming.Record(ctx, "db_session_defaults", time.Since(defaultsStart), "")
 	if err != nil {
 		log.WithFields(log.Fields{"sessionID": sessionID, "error": err}).
 			Warn("opencode: fetching session defaults for live path")
@@ -800,9 +944,11 @@ func (a *Adapter) fetchSessionFromOpenCode(sessionID string, limit, offset int) 
 		}
 	}
 
+	typedStart := time.Now()
 	session := sessionFromOpenCode(ocSession, stats, userMsgCount, sessionStatus)
 	messages := typedMessagesFromUntyped(pagedMessages)
 	parts := typedPartsFromUntyped(pagedParts)
+	srvtiming.Record(ctx, "typed", time.Since(typedStart), "untyped->typed conversion")
 
 	return &platforms.SessionDetail{
 		Session:           session,

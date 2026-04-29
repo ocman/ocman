@@ -15,6 +15,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/srvtiming"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -27,15 +28,26 @@ import (
 // session. Returns the port and the session (so callers can use the
 // directory for logging) or an error if the session isn't known or no
 // instance is reachable.
+//
+// resolvePortCtx is the request-scoped variant that records timings
+// for the DB lookup and the port discovery phase via srvtiming. The
+// non-ctx form is preserved for internal helpers that don't have a
+// request context (e.g. background jobs).
 func (a *Adapter) resolvePort(sessionID string) (port string, session *db.Session, err error) {
+	return a.resolvePortCtx(context.Background(), sessionID)
+}
+
+func (a *Adapter) resolvePortCtx(ctx context.Context, sessionID string) (port string, session *db.Session, err error) {
 	if a.db == nil {
 		return "", nil, platforms.ErrNotFound
 	}
+	dbStart := time.Now()
 	s, err := a.db.GetSession(sessionID)
+	srvtiming.Record(ctx, "db_get_session", time.Since(dbStart), "")
 	if err != nil {
 		return "", nil, platforms.ErrNotFound
 	}
-	port = discoverOpenCodePort(s.Directory)
+	port = discoverOpenCodePortCtx(ctx, s.Directory)
 	if port == "" {
 		return "", s, fmt.Errorf("no running OpenCode instance for session %s: %w", sessionID, platforms.ErrPlatformUnreachable)
 	}
@@ -51,7 +63,7 @@ func (a *Adapter) resolvePort(sessionID string) (port string, session *db.Sessio
 // catalogCache's TTL, in exchange for not paying ~1s on every
 // SessionDetail mount.
 func (a *Adapter) AgentCatalog(ctx context.Context, sessionID string) ([]platforms.AgentCatalogEntry, error) {
-	port, _, err := a.resolvePort(sessionID)
+	port, _, err := a.resolvePortCtx(ctx, sessionID)
 	if err != nil {
 		return nil, nil
 	}
@@ -80,7 +92,7 @@ func (a *Adapter) AgentCatalog(ctx context.Context, sessionID string) ([]platfor
 //
 // Cached via catalogCache for the same reason AgentCatalog is.
 func (a *Adapter) SlashCommands(ctx context.Context, sessionID string) ([]platforms.SlashCommandEntry, error) {
-	port, _, err := a.resolvePort(sessionID)
+	port, _, err := a.resolvePortCtx(ctx, sessionID)
 	if err != nil {
 		return nil, nil
 	}
@@ -110,16 +122,28 @@ func (a *Adapter) SessionModels(ctx context.Context, sessionID string) (*platfor
 	if a.db == nil {
 		return nil, platforms.ErrNotFound
 	}
+	dbStart := time.Now()
 	session, err := a.db.GetSession(sessionID)
+	srvtiming.Record(ctx, "db_get_session", time.Since(dbStart), "")
 	if err != nil {
 		return nil, platforms.ErrNotFound
 	}
 
-	recents, err := a.db.GetRecentModels(50, 10)
+	// recents and favorites are global (same answer regardless of
+	// which session is open) and slowly-changing, so we route them
+	// through process-global TTL caches with singleflight. See
+	// models_cache.go for the rationale and TTL choices. The
+	// session-default lookup below stays uncached because it's
+	// per-session and already cheap.
+	recentsStart := time.Now()
+	recents, err := getRecentModelsCached(a.db)
+	srvtiming.Record(ctx, "db_recent_models", time.Since(recentsStart), "")
 	if err != nil {
 		log.WithError(err).Warn("opencode: fetching recent models")
 	}
-	defaults, err := a.db.GetSessionDefaults(sessionID, session.Directory)
+	defaultsStart := time.Now()
+	defaults, err := getSessionDefaultsCached(a.db, sessionID, session.Directory)
+	srvtiming.Record(ctx, "db_session_defaults", time.Since(defaultsStart), "")
 	if err != nil {
 		log.WithFields(log.Fields{"sessionID": sessionID, "error": err}).Warn("opencode: fetching session defaults")
 	}
@@ -127,7 +151,9 @@ func (a *Adapter) SessionModels(ctx context.Context, sessionID string) (*platfor
 
 	var favorites []state.ModelFavorite
 	if a.favorites != nil {
+		favStart := time.Now()
 		favorites, err = a.favorites.ModelFavorites(string(PlatformID))
+		srvtiming.Record(ctx, "db_favorites", time.Since(favStart), "")
 		if err != nil {
 			log.WithError(err).Warn("opencode: fetching model favorites")
 		}
@@ -135,8 +161,10 @@ func (a *Adapter) SessionModels(ctx context.Context, sessionID string) (*platfor
 
 	var providers OpenCodeProvidersResponse
 	hasProviders := false
-	if port := discoverOpenCodePort(session.Directory); port != "" {
+	if port := discoverOpenCodePortCtx(ctx, session.Directory); port != "" {
+		providersStart := time.Now()
 		providers, hasProviders = fetchOpenCodeProviders(port)
+		srvtiming.Record(ctx, "http_provider", time.Since(providersStart), "GET /provider")
 	}
 
 	entries := buildSessionModelEntries(recents, favorites, providers, hasProviders, sessionDefault)
@@ -172,7 +200,7 @@ func (a *Adapter) ListQuestions(ctx context.Context, sessionID string) ([]platfo
 }
 
 func (a *Adapter) listPrompts(ctx context.Context, sessionID, path string) ([]platforms.LivePrompt, error) {
-	port, _, err := a.resolvePort(sessionID)
+	port, _, err := a.resolvePortCtx(ctx, sessionID)
 	if err != nil {
 		return nil, nil
 	}
@@ -297,6 +325,42 @@ func (a *Adapter) SendMessage(ctx context.Context, req platforms.SendMessageRequ
 	}
 	payload, _ := json.Marshal(body)
 	return postJSON(ctx, port, fmt.Sprintf("/session/%s/prompt_async", req.SessionID), payload)
+}
+
+// RunShell executes a raw shell command via POST /session/{id}/shell,
+// bypassing the LLM. OpenCode synthesises an assistant message whose
+// only part is a `bash` tool with the command's stdout/stderr; no
+// tokens are spent.
+//
+// `agent` is required by OpenCode's request schema; we default to
+// "build" when the caller leaves it blank, matching the composer's
+// `!`-prefix UX (chosen with the user — see commit history).
+func (a *Adapter) RunShell(ctx context.Context, req platforms.RunShellRequest) error {
+	port, _, err := a.resolvePort(req.SessionID)
+	if err != nil {
+		return err
+	}
+	return runShellOnPort(ctx, port, req)
+}
+
+// runShellOnPort is the port-resolved core of RunShell, factored out so
+// tests can drive it against an httptest server without standing up a
+// full Adapter (which would need an OpenCode SQLite DB and a real
+// running instance for lsof to discover).
+func runShellOnPort(ctx context.Context, port string, req platforms.RunShellRequest) error {
+	command := strings.TrimSpace(req.Command)
+	if command == "" {
+		return fmt.Errorf("opencode RunShell: command is required")
+	}
+	agent := req.Agent
+	if agent == "" {
+		agent = "build"
+	}
+	payload, _ := json.Marshal(map[string]string{
+		"command": command,
+		"agent":   agent,
+	})
+	return postJSON(ctx, port, fmt.Sprintf("/session/%s/shell", req.SessionID), payload)
 }
 
 // ExecuteCommand runs a slash command via /session/{id}/command.
@@ -484,6 +548,30 @@ func (a *Adapter) ProxyEvents(ctx context.Context, sessionID string, w io.Writer
 // machinery itself, including the singleflight that coalesces
 // concurrent misses for the same key.
 var catalogCache = newHTTPCache(30 * time.Second)
+
+// sessionCache is a process-wide TTL cache for session-scoped
+// OpenCode endpoints — currently /session/{id} and
+// /session/{id}/message. It exists to absorb the multi-handler
+// fan-out that happens when the user opens a session detail page:
+// /api/session/{id} fetches both endpoints, and /api/session/{id}/info
+// fetches /session/{id}/message a second time, in parallel. Without
+// caching that's 3 simultaneous round-trips for the same session.
+//
+// 5s TTL is the trade-off between freshness and the bursty
+// "user clicks around" pattern: the dashboard fires several
+// per-session requests within a short window when the panel mounts,
+// then nothing for a few seconds, then another burst when the user
+// clicks somewhere new. Below ~3s the cache expires *between*
+// bursts, which is the worst of both worlds (we pay full cost on
+// the burst's first call, every time). Above ~5s we start serving
+// noticeably stale messages while the agent is mid-stream.
+//
+// Real-time updates for the *currently-viewed* session still come
+// through the SSE event stream, which doesn't go through this
+// cache. So the cache only affects refreshes triggered by route
+// transitions, focus events, etc. — exactly the cases where 5s of
+// staleness is invisible. Failures are not cached (see httpcache.go).
+var sessionCache = newHTTPCache(5 * time.Second)
 
 // getJSON performs a GET to the OpenCode instance and returns the body
 // bytes and true iff the response was 200 OK with a JSON content type.
