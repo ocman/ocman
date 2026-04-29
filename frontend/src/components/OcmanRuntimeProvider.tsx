@@ -32,9 +32,9 @@ function truncate(text: string | undefined | null, max: number): string {
  *
  * When the file lives under `projectDir`, returns the path with the
  * project prefix stripped (so reads display as `internal/db/foo.go`
- * instead of just `foo.go`). For files outside the project, or when
- * `projectDir` is empty, returns just the basename — keeping the line
- * short for unrelated paths like `/etc/hosts` or `~/.zshrc`.
+ * instead of just `foo.go`). For files outside the project, returns
+ * the full path so the reader can tell that the file lives outside
+ * the checkout (e.g. `/etc/hosts`, `~/.config/foo`).
  */
 function relativizePath(absPath: string, projectDir: string): string {
   if (!absPath) return absPath;
@@ -47,9 +47,10 @@ function relativizePath(absPath: string, projectDir: string): string {
     const prefix = dir + '/';
     if (absPath.startsWith(prefix)) return absPath.slice(prefix.length);
   }
-  // Fall back to the basename when the file isn't under the project root
-  // (or no project root is known).
-  return absPath.split('/').pop() || absPath;
+  // The file isn't under the project root (or no project root is known) —
+  // return the full path so it's clear the read targets something outside
+  // the checkout.
+  return absPath;
 }
 
 function convertMessages(
