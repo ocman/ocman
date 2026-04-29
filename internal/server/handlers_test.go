@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -359,6 +362,72 @@ func TestSystemStats(t *testing.T) {
 	// Uptime should be very small (just started)
 	if uptime < 0 || uptime > 1 {
 		t.Errorf("uptime = %v, expected small positive value", uptime)
+	}
+
+	// With db=nil (this test's setup), the response must NOT include
+	// a `db` block — the canary diagnostic only makes sense when a
+	// connection pool is actually in use. The frontend can rely on
+	// `db` being absent to mean "no opencode adapter registered".
+	if _, has := stats["db"]; has {
+		t.Errorf("db block present despite nil db; got %v", stats["db"])
+	}
+}
+
+// TestSystemStats_IncludesDBPoolWhenDBPresent verifies that the
+// handler surfaces the read-only DB connection-pool stats when the
+// adapter is actually registered. These fields drive the diagnostic
+// pattern documented in docs/profiling.md: if `wait_count` ever
+// climbs, ocman is throttling its own queries on the pool cap and we
+// need to either bump the cap or reduce concurrency.
+func TestSystemStats_IncludesDBPoolWhenDBPresent(t *testing.T) {
+	// Seed a minimal DB on disk so db.Open() succeeds — the same
+	// helper the db package's pool tests use.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.db")
+	rw, err := sql.Open("sqlite3", "file:"+path+"?_journal_mode=WAL")
+	if err != nil {
+		t.Fatalf("seed open: %v", err)
+	}
+	_, err = rw.Exec(`CREATE TABLE session (id TEXT PRIMARY KEY)`)
+	if err != nil {
+		_ = rw.Close()
+		t.Fatalf("seed schema: %v", err)
+	}
+	_ = rw.Close()
+
+	d, err := db.Open(path)
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+	defer d.Close()
+
+	srv := New(d, nil, "127.0.0.1:8229", nil, nil)
+	req := httptest.NewRequest("GET", "/api/system/stats", nil)
+	rr := httptest.NewRecorder()
+	srv.handleSystemStats(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+	var stats map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &stats); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	dbBlock, ok := stats["db"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("missing or invalid 'db' field; full response: %v", stats)
+	}
+	for _, key := range []string{
+		"max_open_conns", "open_conns", "in_use", "idle",
+		"wait_count", "wait_duration_ms",
+	} {
+		if _, has := dbBlock[key]; !has {
+			t.Errorf("db block missing %q field; got %v", key, dbBlock)
+		}
+	}
+	if got, _ := dbBlock["max_open_conns"].(float64); got != 4 {
+		t.Errorf("max_open_conns = %v, want 4 (matches db.maxOpenReadConns)", dbBlock["max_open_conns"])
 	}
 }
 

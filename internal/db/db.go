@@ -111,3 +111,14 @@ func OpenReadWrite(path string) (*DB, error) {
 func (d *DB) Close() error {
 	return d.db.Close()
 }
+
+// Stats returns the underlying database/sql connection-pool stats.
+// Surfaced via /api/system/stats so an operator can see at a glance
+// whether ocman is throttling on the pool cap (WaitCount climbing)
+// or holding stale handles (Idle close to MaxOpen for long periods).
+//
+// Returning the stdlib type directly avoids re-modelling fields the
+// caller would just unmarshal back into the same shape.
+func (d *DB) Stats() sql.DBStats {
+	return d.db.Stats()
+}

@@ -1547,6 +1547,20 @@ func (s *Server) handleDebugLog(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleSystemStats returns backend runtime statistics (memory usage, uptime, etc).
+//
+// The `db` block is included only when ocman has an OpenCode read-only
+// handle (i.e. when the opencode platform adapter is registered). It
+// surfaces database/sql's connection-pool stats so we can watch for
+// the failure modes documented in docs/profiling.md:
+//
+//   - wait_count climbing → request concurrency is exceeding the
+//     pool cap; queries queue. Either bump maxOpenReadConns or look
+//     for a hot path running too many parallel queries.
+//   - in_use staying high while idle is 0 → long-running transactions
+//     are pinning connections, which prevents OpenCode from
+//     checkpointing the WAL.
+//   - open_conns growing toward max_open_conns over time even when
+//     idle → handle leak somewhere.
 func (s *Server) handleSystemStats(w http.ResponseWriter, r *http.Request) {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
@@ -1569,6 +1583,18 @@ func (s *Server) handleSystemStats(w http.ResponseWriter, r *http.Request) {
 		},
 		"goroutines": runtime.NumGoroutine(),
 		"uptime":     time.Since(s.startTime).Seconds(),
+	}
+
+	if s.db != nil {
+		ds := s.db.Stats()
+		stats["db"] = map[string]interface{}{
+			"max_open_conns":   ds.MaxOpenConnections,
+			"open_conns":       ds.OpenConnections,
+			"in_use":           ds.InUse,
+			"idle":             ds.Idle,
+			"wait_count":       ds.WaitCount,
+			"wait_duration_ms": ds.WaitDuration.Milliseconds(),
+		}
 	}
 
 	writeJSON(w, stats)
