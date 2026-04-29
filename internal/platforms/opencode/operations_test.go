@@ -214,6 +214,101 @@ func TestFilterPromptsForSession(t *testing.T) {
 	}
 }
 
+// TestParseSubagentChildIDs covers the in-process parser that
+// extracts session IDs from OpenCode's GET /session/:id/children
+// response. The endpoint returns full Session objects; we only need
+// the IDs to bubble subagent prompts up to the parent in
+// listPrompts, so the parser is intentionally permissive about
+// extra fields.
+func TestParseSubagentChildIDs(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want []string
+	}{
+		{
+			name: "two children",
+			body: `[{"id":"ses_child1","title":"sub1"},{"id":"ses_child2","title":"sub2"}]`,
+			want: []string{"ses_child1", "ses_child2"},
+		},
+		{
+			name: "empty array",
+			body: `[]`,
+			want: nil,
+		},
+		{
+			name: "skips entries without an id",
+			body: `[{"id":"ses_a"},{"title":"no id here"},{"id":""},{"id":"ses_b"}]`,
+			want: []string{"ses_a", "ses_b"},
+		},
+		{
+			name: "malformed payload returns nil",
+			body: `{not json`,
+			want: nil,
+		},
+		{
+			name: "non-array payload returns nil",
+			body: `{"id":"ses_a"}`,
+			want: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseSubagentChildIDs([]byte(tt.body))
+			if len(got) != len(tt.want) {
+				t.Fatalf("len = %d (%v), want %d (%v)", len(got), got, len(tt.want), tt.want)
+			}
+			for i, id := range tt.want {
+				if got[i] != id {
+					t.Errorf("[%d] = %q, want %q", i, got[i], id)
+				}
+			}
+		})
+	}
+}
+
+// TestFetchSubagentSessionIDs exercises the HTTP+parse path against a
+// stub OpenCode server. Catalog-cache and singleflight machinery is
+// shared with the other catalog endpoints; this test focuses on the
+// happy path and on graceful failure when the upstream is broken.
+func TestFetchSubagentSessionIDs(t *testing.T) {
+	t.Run("returns child ids on 200", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/session/ses_parent/children" {
+				t.Errorf("unexpected path %q", r.URL.Path)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[{"id":"ses_a"},{"id":"ses_b"}]`))
+		}))
+		defer srv.Close()
+
+		// Reset catalog cache so this test starts cold and the
+		// HTTP call actually fires.
+		catalogCache = newHTTPCache(catalogCache.ttl)
+
+		port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+		got := fetchSubagentSessionIDs(context.Background(), port, "ses_parent")
+		if len(got) != 2 || got[0] != "ses_a" || got[1] != "ses_b" {
+			t.Errorf("got %v, want [ses_a ses_b]", got)
+		}
+	})
+
+	t.Run("returns nil on upstream 500", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer srv.Close()
+
+		catalogCache = newHTTPCache(catalogCache.ttl)
+
+		port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+		got := fetchSubagentSessionIDs(context.Background(), port, "ses_parent")
+		if got != nil {
+			t.Errorf("got %v, want nil", got)
+		}
+	})
+}
+
 // TestSendJSON_5xxFallsThroughToGenericError ensures a 5xx response
 // is *not* tagged as ErrUpstreamRejected — those land in the
 // "platform unreachable / unknown" bucket because they typically
@@ -237,5 +332,3 @@ func TestSendJSON_5xxFallsThroughToGenericError(t *testing.T) {
 		t.Errorf("error missing status, got %v", err)
 	}
 }
-
-

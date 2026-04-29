@@ -66,64 +66,51 @@ func (a *Adapter) SessionInfo(_ context.Context, sessionID string) (*platforms.S
 	defaults, _ := a.db.GetSessionDefaults(sessionID, dbSession.Directory)
 	modelRef := defaults.Model
 
-	// Always-on data: walk every message + part once. Cheap relative
-	// to the HTTP round-trips below, and avoids pagination gaps the
-	// frontend would otherwise have when looking at older todos /
-	// cache numbers.
-	parts, _ := a.db.GetSessionParts(sessionID)
-	messages, _ := a.db.GetSessionMessages(sessionID)
-	tokenTotals := tokenTotalsFromMessages(messages)
-	msgCounts := messageCountsFromMessages(messages)
-	todos := latestTodosFromParts(parts)
-	dbCtxTokens, _ := a.db.GetContextTokenCount(sessionID)
-	// Walk every assistant message twice: once for the upstream-
-	// recorded cost (what the platform billed) and once for the
-	// pricing-table estimate (what the same tokens would cost on
-	// API rates). Both are surfaced as separate rows in the panel —
-	// see ContextInfo for the rationale.
-	upstreamCost, estCost := costsFromMessages(messages, a.pricing)
-
 	port := discoverOpenCodePort(dbSession.Directory)
 	if port == "" {
-		// No live channel — return the always-on tier with
-		// Supported=false so the frontend hides MCP/LSP/context-window
-		// while still rendering tokens and todos.
+		// No live channel — compute the always-on tier from the
+		// read-only DB and return Supported=false so the frontend
+		// hides MCP/LSP/context-window while still rendering tokens
+		// and todos.
+		tier := alwaysOnTierFromDB(a.db, sessionID, a.pricing)
 		return &platforms.SessionInfo{
 			SessionID:  sessionID,
 			Supported:  false,
-			Tokens:     tokenTotals,
-			Messages:   msgCounts,
-			Todos:      todos,
+			Tokens:     tier.tokens,
+			Messages:   tier.messages,
+			Todos:      tier.todos,
 			MCPServers: []platforms.MCPServer{},
 			LSPServers: []platforms.LSPServer{},
 			Context: platforms.ContextInfo{
-				// Tokens (running context size for the latest assistant
-				// turn) is still meaningful without a live port — the
-				// DB has it.
-				Tokens:  dbCtxTokens,
-				Cost:    upstreamCost,
-				EstCost: estCost,
+				Tokens:  tier.ctxTokens,
+				Cost:    tier.cost,
+				EstCost: tier.estCost,
 				Model:   modelRef,
 			},
 		}, nil
 	}
 
-	// Live tier: fan out the four independent fetches in parallel.
-	// Each failure is tolerated — the builder fills in zero values for
+	// Live tier: fan out four independent fetches in parallel. Each
+	// failure is tolerated — the builder fills in zero values for
 	// whatever we couldn't fetch.
 	//
-	// liveTokensAndCost was previously called sequentially after the
-	// wait group completed, which made this endpoint pay
-	// max(mcp, lsp, prov) + liveTokensAndCost on a typical request.
-	// Folded into the same fan-out it now costs max(all four).
+	// The fourth slot used to fetch /session/{id}/message *just for*
+	// the context-token rollup, on top of an unconditional DB read
+	// for the other always-on data (tokens / messages / todos / cost).
+	// We now reuse that single live fetch as the source of truth for
+	// the entire always-on tier, falling back to the DB only if the
+	// live fetch fails. Net effect: live-path SessionInfo drops three
+	// DB queries (GetSessionMessages, GetSessionParts,
+	// GetContextTokenCount) and goes from "DB walk + live walk" to
+	// "live walk only".
 	var (
-		mcp           map[string]rawMCPEntry
-		lsp           []rawLSPEntry
-		prov          OpenCodeProvidersResponse
-		hasPrv        bool
-		liveCtxTokens int64
-		liveCost      float64
-		wg            sync.WaitGroup
+		mcp      map[string]rawMCPEntry
+		lsp      []rawLSPEntry
+		prov     OpenCodeProvidersResponse
+		hasPrv   bool
+		liveOK   bool
+		liveTier alwaysOnTier
+		wg       sync.WaitGroup
 	)
 	wg.Add(4)
 	go func() {
@@ -140,7 +127,7 @@ func (a *Adapter) SessionInfo(_ context.Context, sessionID string) (*platforms.S
 	}()
 	go func() {
 		defer wg.Done()
-		liveCtxTokens, liveCost = liveTokensAndCost(port, sessionID)
+		liveTier, liveOK = alwaysOnTierFromOpenCode(port, sessionID, a.pricing)
 	}()
 	wg.Wait()
 
@@ -148,28 +135,118 @@ func (a *Adapter) SessionInfo(_ context.Context, sessionID string) (*platforms.S
 	if hasPrv {
 		provPtr = &prov
 	}
-	// Context-window token count + (upstream) cost. Prefer live
-	// messages for up-to-the-second numbers during an active turn;
-	// fall back to the DB rollups when the live fetch returned
-	// nothing. liveCost mirrors upstream-recorded cost (it goes
-	// through the same `data.cost` field on the live message stream)
-	// so it overrides upstreamCost — but only when strictly larger
-	// (the live tip can lead the DB but never lag). EstCost is not
-	// time-sensitive and stays as computed off the DB.
-	ctxTokens := liveCtxTokens
-	if ctxTokens == 0 {
-		ctxTokens = dbCtxTokens
-	}
-	cost := upstreamCost
-	if liveCost > cost {
-		cost = liveCost
+	// Pick the tier we'll surface. The live fetch is preferred when
+	// it succeeds; on upstream failure we fall back to the DB so
+	// transient OpenCode problems don't blank the panel.
+	tier := liveTier
+	if !liveOK {
+		tier = alwaysOnTierFromDB(a.db, sessionID, a.pricing)
 	}
 
-	info := buildSessionInfo(sessionID, ctxTokens, cost, estCost, modelRef, mcp, lsp, provPtr)
-	info.Tokens = tokenTotals
-	info.Messages = msgCounts
-	info.Todos = todos
+	info := buildSessionInfo(sessionID, tier.ctxTokens, tier.cost, tier.estCost, modelRef, mcp, lsp, provPtr)
+	info.Tokens = tier.tokens
+	info.Messages = tier.messages
+	info.Todos = tier.todos
 	return info, nil
+}
+
+// alwaysOnTier collects the per-session data the SessionInfo panel
+// renders regardless of whether an OpenCode instance is currently
+// running. Carried as a struct so callers can swap the DB and live
+// sources interchangeably.
+type alwaysOnTier struct {
+	tokens    platforms.TokenTotals
+	messages  platforms.MessageCounts
+	todos     []platforms.TodoItem
+	cost      float64 // upstream-recorded cost (data.cost field)
+	estCost   float64 // pricing-table recompute from token counts
+	ctxTokens int64   // last assistant message with output>0: in+out+reason+cache
+}
+
+// computeAlwaysOnTier is the pure aggregator that turns a session's
+// messages and parts into the always-on tier. Both the DB and live
+// HTTP code paths funnel through this function — the only thing that
+// varies is where messages/parts come from. Keeps the per-source
+// branches at the call site free of aggregation logic.
+func computeAlwaysOnTier(messages []db.Message, parts []db.Part, pricing CostCalculator) alwaysOnTier {
+	cost, estCost := costsFromMessages(messages, pricing)
+	return alwaysOnTier{
+		tokens:    tokenTotalsFromMessages(messages),
+		messages:  messageCountsFromMessages(messages),
+		todos:     latestTodosFromParts(parts),
+		cost:      cost,
+		estCost:   estCost,
+		ctxTokens: contextTokensFromMessages(messages),
+	}
+}
+
+// contextTokensFromMessages returns the same value GetContextTokenCount
+// reads from SQLite: the input+output+reasoning+cache.read+cache.write
+// sum on the most recent assistant message that actually produced
+// output. Returns 0 when no such message exists.
+//
+// Walks newest-to-oldest so a trailing assistant message with output=0
+// (e.g. an errored turn) doesn't overwrite the prior valid snapshot.
+func contextTokensFromMessages(messages []db.Message) int64 {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if len(messages[i].Data) == 0 {
+			continue
+		}
+		var probe struct {
+			Role   string `json:"role"`
+			Tokens *struct {
+				Input     int64 `json:"input"`
+				Output    int64 `json:"output"`
+				Reasoning int64 `json:"reasoning"`
+				Cache     *struct {
+					Read  int64 `json:"read"`
+					Write int64 `json:"write"`
+				} `json:"cache"`
+			} `json:"tokens"`
+		}
+		if err := json.Unmarshal(messages[i].Data, &probe); err != nil {
+			continue
+		}
+		if probe.Role != "assistant" || probe.Tokens == nil || probe.Tokens.Output <= 0 {
+			continue
+		}
+		total := probe.Tokens.Input + probe.Tokens.Output + probe.Tokens.Reasoning
+		if probe.Tokens.Cache != nil {
+			total += probe.Tokens.Cache.Read + probe.Tokens.Cache.Write
+		}
+		return total
+	}
+	return 0
+}
+
+// alwaysOnTierFromDB pulls messages + parts from the read-only DB
+// and runs computeAlwaysOnTier. DB errors are non-fatal (the panel
+// still renders, just with zero values for whatever failed) which
+// matches the prior best-effort behaviour.
+func alwaysOnTierFromDB(database *db.DB, sessionID string, pricing CostCalculator) alwaysOnTier {
+	messages, _ := database.GetSessionMessages(sessionID)
+	parts, _ := database.GetSessionParts(sessionID)
+	return computeAlwaysOnTier(messages, parts, pricing)
+}
+
+// alwaysOnTierFromOpenCode fetches the running session's full message
+// history once over HTTP, converts it to the typed Message+Part shape
+// the aggregators expect, and runs computeAlwaysOnTier. Returns
+// (zero, false) on any upstream failure so the caller falls back to
+// the DB.
+//
+// This is the consolidated single fetch that replaces the legacy
+// pattern (DB walk for tokens/messages/todos/cost + a separate live
+// fetch only for the context-token rollup). One round-trip, one walk.
+func alwaysOnTierFromOpenCode(port, sessionID string, pricing CostCalculator) (alwaysOnTier, bool) {
+	raw, err := fetchOpenCodeMessages(port, sessionID)
+	if err != nil {
+		return alwaysOnTier{}, false
+	}
+	untypedMsgs, untypedParts := convertOpenCodeMessages(raw)
+	messages := typedMessagesFromUntyped(untypedMsgs)
+	parts := typedPartsFromUntyped(untypedParts)
+	return computeAlwaysOnTier(messages, parts, pricing), true
 }
 
 // tokenTotalsFromMessages sums the lifetime token usage for a session
@@ -515,18 +592,4 @@ func fetchOpenCodeLSP(port string) []rawLSPEntry {
 		return []rawLSPEntry{}
 	}
 	return out
-}
-
-// liveTokensAndCost fetches the running session's messages once and
-// returns the same context-token rollup + total cost that
-// fetchSessionFromOpenCode computes. Returns (0, 0) on any failure so
-// the caller can fall back to the DB.
-func liveTokensAndCost(port, sessionID string) (int64, float64) {
-	msgs, err := fetchOpenCodeMessages(port, sessionID)
-	if err != nil {
-		return 0, 0
-	}
-	untyped, _ := convertOpenCodeMessages(msgs)
-	stats := computeMessageStats(untyped)
-	return int64(stats.contextTokenCount), stats.totalCost
 }

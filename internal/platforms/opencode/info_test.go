@@ -576,3 +576,101 @@ func mustJSON(t *testing.T, v any) []byte {
 	}
 	return raw
 }
+
+// --- computeAlwaysOnTier ---
+//
+// Single source of truth for the per-session "always-on" data
+// SessionInfo renders (token totals, user/assistant counts, todos,
+// upstream + estimated cost, latest context-window tokens). Driven
+// from either the read-only DB or live HTTP responses depending on
+// availability — the pure helper makes the choice testable in
+// isolation.
+
+func TestComputeAlwaysOnTier(t *testing.T) {
+	t.Run("aggregates tokens, counts, cost, and context tokens", func(t *testing.T) {
+		messages := []db.Message{
+			makeMsg(t, map[string]any{
+				"role":   "user",
+				"tokens": map[string]any{"input": 1, "output": 0}, // ignored: user role has no contextual cost
+			}),
+			makeMsg(t, map[string]any{
+				"role":       "assistant",
+				"cost":       0.10,
+				"providerID": "anthropic",
+				"modelID":    "claude-sonnet-4",
+				"tokens": map[string]any{
+					"input": 100, "output": 50, "reasoning": 5,
+					"cache": map[string]any{"read": 200, "write": 30},
+				},
+			}),
+		}
+		// One todowrite part — the panel surfaces the latest list.
+		parts := []db.Part{
+			makeTodoPart(t, "todowrite", []any{
+				map[string]any{"content": "hello", "status": "pending", "priority": "medium"},
+			}),
+		}
+		fp := fakePricing{in: 0.001, out: 0.002}
+
+		got := computeAlwaysOnTier(messages, parts, fp)
+
+		// Tokens: cache.read/cache.write only sum from messages whose
+		// `tokens` payload includes them. The user message has no
+		// cache block; the assistant one does.
+		if got.tokens != (platforms.TokenTotals{Input: 101, Output: 50, CacheRead: 200, CacheWrite: 30}) {
+			t.Errorf("tokens = %+v", got.tokens)
+		}
+		if got.messages != (platforms.MessageCounts{User: 1, Assistant: 1}) {
+			t.Errorf("messages = %+v", got.messages)
+		}
+		if !approxEqual(got.cost, 0.10) {
+			t.Errorf("cost = %v want 0.10", got.cost)
+		}
+		// est: 100*0.001 + 50*0.002 = 0.20
+		if !approxEqual(got.estCost, 0.20) {
+			t.Errorf("estCost = %v want 0.20", got.estCost)
+		}
+		// ctxTokens = input+output+reasoning+cache.read+cache.write of
+		// the last assistant message with output > 0.
+		if got.ctxTokens != 100+50+5+200+30 {
+			t.Errorf("ctxTokens = %d want 385", got.ctxTokens)
+		}
+		if len(got.todos) != 1 || got.todos[0].Content != "hello" {
+			t.Errorf("todos = %+v", got.todos)
+		}
+	})
+
+	t.Run("empty inputs yield zero values", func(t *testing.T) {
+		got := computeAlwaysOnTier(nil, nil, nil)
+		if got.tokens != (platforms.TokenTotals{}) ||
+			got.messages != (platforms.MessageCounts{}) ||
+			got.cost != 0 || got.estCost != 0 ||
+			got.ctxTokens != 0 || got.todos != nil {
+			t.Errorf("non-zero from empty input: %+v", got)
+		}
+	})
+
+	t.Run("ctxTokens uses the last assistant message with output>0", func(t *testing.T) {
+		// A trailing assistant message with output=0 (e.g. a turn
+		// that errored before completion) must not overwrite the
+		// previous valid context-window snapshot.
+		messages := []db.Message{
+			makeMsg(t, map[string]any{
+				"role": "assistant",
+				"tokens": map[string]any{
+					"input": 10, "output": 5,
+				},
+			}),
+			makeMsg(t, map[string]any{
+				"role": "assistant",
+				"tokens": map[string]any{
+					"input": 99, "output": 0, // skipped
+				},
+			}),
+		}
+		got := computeAlwaysOnTier(messages, nil, nil)
+		if got.ctxTokens != 15 {
+			t.Errorf("ctxTokens = %d want 15", got.ctxTokens)
+		}
+	})
+}
