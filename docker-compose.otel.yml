@@ -1,0 +1,41 @@
+# Local observability stack for ocman: Grafana + Loki + Tempo + Mimir +
+# an OTel collector, all bundled in a single image. Point ocman at it
+# with one of:
+#
+#   ./ocman --otel=http://localhost:4318     # OTLP/HTTP
+#   ./ocman --otel=grpc://localhost:4317     # OTLP/gRPC (or bare host:port)
+#
+# Then open http://localhost:3000 (anonymous Admin enabled — local-dev
+# convenience, never use this image in shared environments).
+#
+# `make otel-up` / `make otel-down` / `make otel-reset` wrap the
+# common dev-loop verbs.
+
+services:
+  lgtm:
+    image: grafana/otel-lgtm:latest
+    container_name: ocman-lgtm
+    ports:
+      - "3000:3000"   # Grafana UI
+      - "4317:4317"   # OTLP/gRPC
+      - "4318:4318"   # OTLP/HTTP
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+    volumes:
+      - lgtm-data:/data
+      # Bootstrap an "ocman" Grafana dashboards provider on top of the
+      # image's defaults. The provider config (mounted read-only)
+      # points at the dashboards/ directory below.
+      - ./observability/grafana/provisioning/dashboards/ocman.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/ocman.yaml:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards/ocman:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  lgtm-data:

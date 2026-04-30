@@ -59,6 +59,10 @@ make test             # runs `go test ./...` + `vitest run`
 make lint             # runs go vet, tsc -b, eslint, and the platform-branching check
 make build            # production: npm ci + npm run build, then go build -o ocman .
 make clean            # removes ocman binary, tmp/, and static/assets/
+make otel-up          # start Grafana LGTM stack (Loki/Tempo/Mimir + OTLP) at :3000/:4317/:4318
+make otel-down        # stop the LGTM stack
+make otel-logs        # tail LGTM container logs
+make otel-reset       # stop + wipe persisted telemetry data
 ```
 
 - `mise` provides `air` (Go live-reload). Run `mise install` if air
@@ -136,6 +140,30 @@ diffs minimal and match the surrounding code.
 - **Auto-archive**: background goroutine archives sessions inactive
   for 7+ days (checked every 24 h). Runs against all registered
   platforms.
+- **OpenTelemetry (optional)**: pass `--otel=<endpoint>` (or set
+  `OTEL_EXPORTER_OTLP_ENDPOINT`) to ship traces and metrics to an OTLP
+  collector. Empty / unset = no-op (zero overhead — the SDK no-op
+  providers stay in place). The URL scheme picks the transport:
+  `http(s)://...` → OTLP/HTTP, `grpc(s)://...` or bare `host:port` →
+  OTLP/gRPC. Everything else is configured via standard `OTEL_*` env
+  vars (`OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`,
+  `OTEL_TRACES_SAMPLER`, `OTEL_EXPORTER_OTLP_HEADERS`, etc.).
+  Instrumentation: `otelhttp` on the inbound mux and outbound HTTP
+  clients, `otelsql` on both SQLite handles, custom spans/metrics
+  around the auto-archive loop, projects-index refresh, SSE event
+  streams, and the `srvtiming` phase boundaries (every existing
+  `srvtiming.Record` call also emits a span event). A logrus hook
+  decorates log lines with `trace_id`/`span_id` while a span is
+  active. For local dev: `make otel-up` starts the bundled
+  `grafana/otel-lgtm` stack (Grafana + Loki + Tempo + Mimir +
+  collector) on `:3000` / `:4317` / `:4318`; the `make dev*` targets
+  export `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` and
+  `OTEL_SERVICE_NAME=ocman-dev` automatically (override per
+  invocation, set to empty string to disable). The `ocman Overview`
+  Grafana dashboard is provisioned automatically from
+  `observability/grafana/dashboards/ocman.json` and lives in the
+  `ocman` folder once the stack starts. See `internal/telemetry` and
+  `observability/`.
 - **Optional password auth**: by default ocman binds `127.0.0.1:8228`
   and is unauthenticated. Set `OCMAN_AUTH_PASSWORD` (env, preferred),
   `-auth-password-file`, or `-auth-password` (precedence in that

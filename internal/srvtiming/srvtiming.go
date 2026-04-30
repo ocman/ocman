@@ -18,6 +18,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Collector accumulates named durations for a single request.
@@ -62,7 +65,13 @@ func FromContext(ctx context.Context) *Collector {
 // Record adds a single timing entry to the Collector in ctx, if
 // present. No-op when called outside an HTTP request. The
 // description is optional and shown as a tooltip in browser devtools.
+//
+// As a side-effect, Record also emits a span event onto the active
+// span in ctx (if any) so every existing srvtiming.Record(...) call
+// site instantly contributes to OTel traces. When tracing is
+// disabled the span is a no-op and the event call is cheap.
 func Record(ctx context.Context, name string, dur time.Duration, description string) {
+	emitSpanEvent(ctx, name, dur, description)
 	c := FromContext(ctx)
 	if c == nil {
 		return
@@ -75,14 +84,41 @@ func Record(ctx context.Context, name string, dur time.Duration, description str
 func TimeIt(ctx context.Context, name string, fn func()) {
 	c := FromContext(ctx)
 	if c == nil {
+		// Still emit the span event when there's no collector — a
+		// background job may be tracing without using Server-Timing.
+		start := time.Now()
 		fn()
+		emitSpanEvent(ctx, name, time.Since(start), "")
 		return
 	}
 	start := time.Now()
 	defer func() {
-		c.add(name, time.Since(start), "")
+		dur := time.Since(start)
+		emitSpanEvent(ctx, name, dur, "")
+		c.add(name, dur, "")
 	}()
 	fn()
+}
+
+// emitSpanEvent decorates the active span in ctx with a timed event
+// for the named phase. Cheap when no span is recording (the no-op
+// span swallows the call without allocating).
+func emitSpanEvent(ctx context.Context, name string, dur time.Duration, description string) {
+	if ctx == nil {
+		return
+	}
+	span := trace.SpanFromContext(ctx)
+	if !span.IsRecording() {
+		return
+	}
+	attrs := []attribute.KeyValue{
+		attribute.String("ocman.phase", name),
+		attribute.Float64("ocman.phase.duration_ms", float64(dur.Microseconds())/1000.0),
+	}
+	if description != "" {
+		attrs = append(attrs, attribute.String("ocman.phase.description", description))
+	}
+	span.AddEvent("phase:"+name, trace.WithAttributes(attrs...))
 }
 
 func (c *Collector) add(name string, dur time.Duration, description string) {

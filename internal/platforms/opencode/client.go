@@ -15,6 +15,7 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"golang.org/x/sync/singleflight"
 
 	"github.com/NoUseFreak/ocman/internal/db"
@@ -25,10 +26,14 @@ import (
 // rePortSuffix matches a port number at the end of a string (e.g. ":4096").
 var rePortSuffix = regexp.MustCompile(`:(\d+)$`)
 
-// openCodeClient is an HTTP client with a reasonable timeout for API calls
-// to local OpenCode instances.
+// openCodeClient is an HTTP client with a reasonable timeout for API
+// calls to local OpenCode instances. The transport is wrapped with
+// otelhttp so every request becomes a child span of the in-flight
+// server span — when telemetry is disabled the wrapping is a no-op
+// (the global TracerProvider is the SDK noop).
 var openCodeClient = &http.Client{
-	Timeout: 10 * time.Second,
+	Timeout:   10 * time.Second,
+	Transport: otelhttp.NewTransport(http.DefaultTransport),
 }
 
 // limitedReader wraps a byte slice in a reader for HTTP request bodies.

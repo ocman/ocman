@@ -7,7 +7,10 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/XSAM/otelsql"
 	_ "github.com/mattn/go-sqlite3"
+	"go.opentelemetry.io/otel/attribute"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
 
 // DB wraps the writable ocman state database.
@@ -33,7 +36,15 @@ func Open(path string) (*DB, error) {
 	}
 
 	dsn := fmt.Sprintf("file:%s?_busy_timeout=5000&_journal_mode=WAL", path)
-	db, err := sql.Open("sqlite3", dsn)
+	// See internal/db.Open for the otelsql rationale; same trade-off
+	// applies. db.name="ocman" distinguishes ocman's own state from
+	// the upstream OpenCode database in trace and metric attributes.
+	db, err := otelsql.Open("sqlite3", dsn,
+		otelsql.WithAttributes(
+			semconv.DBSystemSqlite,
+			attribute.String("db.name", "ocman"),
+		),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("opening state database: %w", err)
 	}
@@ -47,6 +58,12 @@ func Open(path string) (*DB, error) {
 		db.Close()
 		return nil, err
 	}
+	_, _ = otelsql.RegisterDBStatsMetrics(db,
+		otelsql.WithAttributes(
+			semconv.DBSystemSqlite,
+			attribute.String("db.name", "ocman"),
+		),
+	)
 
 	return stateDB, nil
 }

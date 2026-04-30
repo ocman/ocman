@@ -11,10 +11,13 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/telemetry"
 )
 
 //go:embed static/*
@@ -151,9 +154,16 @@ func (s *Server) Start(ctx context.Context) error {
 	// request emits a structured "http request" log line. SSE and the
 	// debug-log sink are skipped inside the middleware (see noiseSkip)
 	// to keep the log readable.
+	//
+	// Layering (outer -> inner): withRequestTiming -> withOTel -> mux.
+	// otelhttp sits closest to the mux so its server span wraps just
+	// the route handlers; withRequestTiming wraps the whole thing so
+	// Server-Timing captures otelhttp's overhead too. otelhttp is a
+	// no-op when telemetry is disabled (its global TracerProvider is
+	// the SDK noop in that case).
 	httpServer := &http.Server{
 		Addr:    s.addr,
-		Handler: withRequestTiming(mux),
+		Handler: withRequestTiming(withOTel(mux)),
 	}
 
 	// Start the server in a goroutine so we can wait for the context.
@@ -209,7 +219,15 @@ func (s *Server) runAutoArchiveLoop(ctx context.Context) {
 
 func (s *Server) autoArchiveInactiveSessions() {
 	cutoff := time.Now().Add(-autoArchiveAfter).UnixMilli()
-	ctx := context.Background()
+	// Each tick is its own root span so the trace tree corresponds
+	// to one independent auto-archive pass. Background work doesn't
+	// belong under any HTTP request.
+	ctx, span := telemetry.Tracer().Start(context.Background(), "ocman.auto_archive.tick")
+	defer span.End()
+
+	if autoArchiveRuns != nil {
+		autoArchiveRuns.Add(ctx, 1)
+	}
 
 	archivedCount := 0
 
@@ -219,12 +237,14 @@ func (s *Server) autoArchiveInactiveSessions() {
 		}
 		sessions, err := adapter.SessionsInactiveBefore(ctx, cutoff)
 		if err != nil {
+			span.RecordError(err)
 			log.WithFields(log.Fields{"platform": adapter.ID(), "error": err}).
 				Error("listing inactive sessions for auto-archive")
 			continue
 		}
 		for _, session := range sessions {
 			if err := s.stateDB.ArchiveSession(string(adapter.ID()), session.ID, session.TimeUpdated); err != nil {
+				span.RecordError(err)
 				log.WithFields(log.Fields{
 					"platform":  adapter.ID(),
 					"sessionID": session.ID,
@@ -233,8 +253,18 @@ func (s *Server) autoArchiveInactiveSessions() {
 				continue
 			}
 			archivedCount++
+			if autoArchiveSessions != nil {
+				autoArchiveSessions.Add(ctx, 1, metric.WithAttributes(
+					attribute.String("platform", string(adapter.ID())),
+				))
+			}
 		}
 	}
+
+	span.SetAttributes(
+		attribute.Int64("ocman.archived_count", int64(archivedCount)),
+		attribute.Int64("ocman.cutoff_ms", cutoff),
+	)
 
 	log.WithFields(log.Fields{
 		"cutoff":   cutoff,

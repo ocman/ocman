@@ -5,8 +5,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
 	log "github.com/sirupsen/logrus"
+
+	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/telemetry"
 )
 
 type projectsIndexState struct {
@@ -45,8 +47,20 @@ func (s *Server) refreshProjectsIndex() error {
 		return nil
 	}
 
+	ctx, span := telemetry.Tracer().Start(context.Background(), "ocman.projects_index.refresh")
+	defer span.End()
+
+	start := time.Now()
 	projects, err := s.db.GetProjects()
+	dur := time.Since(start)
+	if projectsIndexRefreshDuration != nil {
+		projectsIndexRefreshDuration.Record(ctx, float64(dur.Microseconds())/1000.0)
+	}
 	if err != nil {
+		span.RecordError(err)
+		if projectsIndexRefreshErrors != nil {
+			projectsIndexRefreshErrors.Add(ctx, 1)
+		}
 		return err
 	}
 

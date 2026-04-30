@@ -12,6 +12,7 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -507,7 +508,10 @@ func (a *Adapter) ProxyEvents(ctx context.Context, sessionID string, w io.Writer
 	}
 
 	// Use a client without a timeout for long-lived SSE connections.
-	sseClient := &http.Client{}
+	// otelhttp wraps the transport so the upstream connect / first
+	// byte are visible as a child span of the SSE handler's
+	// connection-lifetime span.
+	sseClient := &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
 	resp, err := sseClient.Do(httpReq)
 	if err != nil {
 		return fmt.Errorf("opencode events connect: %w", err)

@@ -1,0 +1,24 @@
+# Grafana dashboards provider for ocman. Mounted into the LGTM
+# container alongside the image's built-in providers (see
+# /otel-lgtm/grafana/conf/provisioning/dashboards/grafana-dashboards.yaml
+# inside the container).
+#
+# Dashboards live in /var/lib/grafana/dashboards/ocman, mounted from
+# observability/grafana/dashboards/ on the host. To add a new
+# dashboard, drop a *.json file into that directory and restart the
+# stack with `make otel-up` (or wait up to updateIntervalSeconds for
+# Grafana to rescan).
+
+apiVersion: 1
+
+providers:
+  - name: ocman
+    orgId: 1
+    folder: ocman
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/ocman
+      foldersFromFilesStructure: false

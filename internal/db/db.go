@@ -7,7 +7,10 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/XSAM/otelsql"
 	_ "github.com/mattn/go-sqlite3"
+	"go.opentelemetry.io/otel/attribute"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
 
 // DB wraps the SQLite connection.
@@ -77,7 +80,18 @@ func DefaultDBPath() string {
 // WAL.
 func Open(path string) (*DB, error) {
 	dsn := fmt.Sprintf("file:%s?mode=ro&_journal_mode=WAL&_query_only=1&_busy_timeout=5000", path)
-	db, err := sql.Open("sqlite3", dsn)
+	// otelsql.Open wraps the underlying sqlite3 driver so every
+	// database/sql operation produces a span and increments the
+	// standard db.client.* metrics. When telemetry is disabled the
+	// global TracerProvider/MeterProvider are no-ops, so this adds
+	// only the minimal driver-wrapper overhead (a few nanoseconds
+	// per call).
+	db, err := otelsql.Open("sqlite3", dsn,
+		otelsql.WithAttributes(
+			semconv.DBSystemSqlite,
+			attribute.String("db.name", "opencode"),
+		),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
@@ -89,6 +103,15 @@ func Open(path string) (*DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("pinging database: %w", err)
 	}
+	// Best-effort: register pool stats as OTel metrics. The error is
+	// only meaningful when telemetry is wired up; ignoring it here
+	// keeps the no-op path silent.
+	_, _ = otelsql.RegisterDBStatsMetrics(db,
+		otelsql.WithAttributes(
+			semconv.DBSystemSqlite,
+			attribute.String("db.name", "opencode"),
+		),
+	)
 	return &DB{db: db}, nil
 }
 
@@ -96,7 +119,12 @@ func Open(path string) (*DB, error) {
 // test setup where schema creation must happen before read-only access.
 func OpenReadWrite(path string) (*DB, error) {
 	dsn := fmt.Sprintf("file:%s?_journal_mode=WAL", path)
-	db, err := sql.Open("sqlite3", dsn)
+	db, err := otelsql.Open("sqlite3", dsn,
+		otelsql.WithAttributes(
+			semconv.DBSystemSqlite,
+			attribute.String("db.name", "opencode-rw"),
+		),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}

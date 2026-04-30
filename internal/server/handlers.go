@@ -16,12 +16,15 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/pricing"
 	"github.com/NoUseFreak/ocman/internal/srvtiming"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/telemetry"
 )
 
 // maxRequestBody is the maximum allowed request body size (1 MB).
@@ -1175,6 +1178,28 @@ func (s *Server) handleSessionEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// SSE is filtered out of otelhttp's auto-spanning (see otel.go) so
+	// we manage the connection-lifetime span manually here. Naming it
+	// after the route template keeps cardinality low; the session id
+	// goes on as an attribute so traces can still be filtered by it.
+	ctx, span := telemetry.Tracer().Start(r.Context(), "GET /api/session/{id}/events",
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(
+			attribute.String("ocman.session_id", sessionID),
+			attribute.String("ocman.platform", string(adapter.ID())),
+			attribute.String("http.route", "/api/session/{id}/events"),
+		),
+	)
+	defer span.End()
+
+	// Track concurrent SSE connections so dashboards can spot stuck
+	// streams. The decrement is deferred to cover the early-exit
+	// paths below (header errors etc.).
+	if sseActiveConnections != nil {
+		sseActiveConnections.Add(ctx, 1)
+		defer sseActiveConnections.Add(ctx, -1)
+	}
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -1186,10 +1211,12 @@ func (s *Server) handleSessionEvents(w http.ResponseWriter, r *http.Request) {
 		flush = flusher.Flush
 	}
 
-	if err := adapter.ProxyEvents(r.Context(), sessionID, w, flush); err != nil {
+	if err := adapter.ProxyEvents(ctx, sessionID, w, flush); err != nil {
 		if errors.Is(err, context.Canceled) {
+			span.AddEvent("client disconnected")
 			return
 		}
+		span.RecordError(err)
 		log.WithFields(log.Fields{"sessionID": sessionID, "error": err}).
 			Warn("SSE proxy stream ended with error")
 	}

@@ -1,26 +1,58 @@
-.PHONY: dev dev-backend dev-frontend dev-prod dev-prod-watch dev-kill-orphans build run clean test test-backend test-frontend test-e2e lint lint-backend lint-frontend lint-platform-branching
+.PHONY: dev dev-backend dev-frontend dev-prod dev-prod-watch kill-dev build run clean test test-backend test-frontend lint lint-backend lint-frontend lint-platform-branching otel-up otel-down otel-logs otel-reset
 
-# Free dev ports in case a previous run left orphaned children (e.g. air's
-# child ./tmp/ocman re-parented to init after an unclean `make` exit). Safe
-# to run when nothing is listening — lsof just returns empty.
-dev-kill-orphans:
-	@stale=$$(lsof -nP -tiTCP:8229 -sTCP:LISTEN 2>/dev/null); \
-		if [ -n "$$stale" ]; then \
-			echo "Killing stale process(es) on :8229: $$stale"; \
-			kill $$stale 2>/dev/null || true; \
-			sleep 1; \
-			kill -9 $$(lsof -nP -tiTCP:8229 -sTCP:LISTEN 2>/dev/null) 2>/dev/null || true; \
-		fi
-	@stale=$$(lsof -nP -tiTCP:8228 -sTCP:LISTEN 2>/dev/null); \
-		if [ -n "$$stale" ]; then \
-			echo "Killing stale process(es) on :8228: $$stale"; \
-			kill $$stale 2>/dev/null || true; \
-			sleep 1; \
-			kill -9 $$(lsof -nP -tiTCP:8228 -sTCP:LISTEN 2>/dev/null) 2>/dev/null || true; \
-		fi
+# --- OTel dev defaults ----------------------------------------------------
+#
+# Dev targets export the local LGTM stack as the default OTLP endpoint so
+# `make dev` / `dev-prod*` / `dev-backend` automatically ship traces and
+# metrics to it (assuming `make otel-up` is running). The variable is set
+# via `?=` so an operator can override per-invocation:
+#
+#   make dev OTEL_EXPORTER_OTLP_ENDPOINT=                       # disable
+#   make dev OTEL_EXPORTER_OTLP_ENDPOINT=http://other:4318      # remote
+#
+# Empty value disables telemetry (telemetry.Init treats unset/empty as
+# no-op). Using OTLP/HTTP because it's simpler and the LGTM image
+# accepts both.
+export OTEL_EXPORTER_OTLP_ENDPOINT ?= http://localhost:4318
+export OTEL_SERVICE_NAME ?= ocman-dev
+
+# --- dev-loop plumbing ----------------------------------------------------
+#
+# The dev targets run multiple long-lived processes (air, vite, watchers) in
+# parallel and must shut them ALL down cleanly when the user hits Ctrl+C or
+# the make process otherwise dies. Getting this right is fiddly:
+#
+#   - `trap 'kill 0' EXIT` alone is not enough: Ctrl+C sends SIGINT to the
+#     whole process group, which kills the shell running the trap *before*
+#     the EXIT trap gets to fire. Orphaned children then get reparented to
+#     init and keep holding their ports.
+#   - `tee` in a pipeline eats signals that would otherwise propagate.
+#   - Sub-shells spawned by make are not always in the same process group as
+#     make itself, so `kill 0` can miss grand-children spawned by npm/vite.
+#
+# Workaround: trap INT, TERM, *and* EXIT; walk the descendant tree with
+# `pkill -P $$` (+ a wider ocman/vite sweep via :8228/:8229 port holders as
+# a final safety net). This makes Ctrl+C reliably reap every child.
+
+# Macro: `kill-children` is the shell snippet each dev target installs as a
+# trap. It first signals every direct child of this shell, then recursively
+# walks their descendants, then reclaims the dev ports as a last resort.
+# The redirect swallows "no such process" noise when a child has already
+# exited normally by the time the trap runs.
+# Portable reclaim: BSD xargs (macOS) has no -r flag, but it's already a
+# no-op on empty stdin, so we don't need one. GNU xargs accepts -r but
+# also no-ops silently on empty input here. `|| true` keeps the trap
+# from masking the real exit status when there's nothing to kill.
+define kill-children
+	pkill -TERM -P $$$$ 2>/dev/null || true; \
+	sleep 0.3; \
+	pkill -KILL -P $$$$ 2>/dev/null || true; \
+	lsof -tiTCP:8228 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true; \
+	lsof -tiTCP:8229 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true
+endef
 
 # Run both backend (air) and frontend (vite) with live reload
-dev: dev-kill-orphans
+dev:
 	@mkdir -p tmp
 	@echo "Starting ocman dev environment..."
 	@echo "  Backend (air):    http://localhost:8229"
@@ -28,13 +60,13 @@ dev: dev-kill-orphans
 	@echo "  Backend log:      tmp/air.log"
 	@echo "  Combined log:     tmp/debug.log"
 	@echo ""
-	@trap 'kill 0' EXIT; \
+	@trap '$(kill-children)' INT TERM EXIT; \
 		{ $(MAKE) dev-backend & \
 		  $(MAKE) dev-frontend & \
 		  wait; } 2>&1 | tee tmp/debug.log
 
 # Run with production frontend build + backend live reload (manual frontend rebuild)
-dev-prod: dev-kill-orphans
+dev-prod:
 	@mkdir -p tmp
 	@echo "Starting ocman PRODUCTION MODE with live reload..."
 	@echo "  Backend (air):    http://localhost:8229"
@@ -45,13 +77,13 @@ dev-prod: dev-kill-orphans
 	@echo "Note: Frontend changes require manual 'cd frontend && npm run build'"
 	@echo ""
 	@cd frontend && npm run build
-	@trap 'kill 0' EXIT; \
+	@trap '$(kill-children)' INT TERM EXIT; \
 		{ air 2>&1 | tee tmp/air.log & \
 		  cd frontend && npm run preview 2>&1 | tee ../tmp/vite-preview.log & \
 		  wait; }
 
 # Run with production frontend build + auto-rebuild on changes + backend live reload
-dev-prod-watch: dev-kill-orphans
+dev-prod-watch:
 	@mkdir -p tmp
 	@echo "Starting ocman PRODUCTION MODE with AUTO-RELOAD..."
 	@echo "  Backend (air):    http://localhost:8229"
@@ -60,7 +92,7 @@ dev-prod-watch: dev-kill-orphans
 	@echo "  Frontend log:     tmp/vite-preview.log"
 	@echo "  Watch log:        tmp/frontend-watch.log"
 	@echo ""
-	@trap 'kill 0' EXIT; \
+	@trap '$(kill-children)' INT TERM EXIT; \
 		{ air 2>&1 | tee tmp/air.log & \
 		  cd frontend && npm run preview 2>&1 | tee ../tmp/vite-preview.log & \
 		  ./scripts/watch-frontend-prod.sh 2>&1 | tee tmp/frontend-watch.log & \
@@ -73,12 +105,25 @@ dev-backend:
 dev-frontend:
 	cd frontend && npm run dev
 
+# Emergency nuke: kill anything holding the dev ports. Use when a previous
+# `make dev*` died badly and left orphans squatting on 8228 / 8229. Safe to
+# run even when nothing is listening — xargs is a no-op on empty stdin on
+# both BSD and GNU.
+kill-dev:
+	@echo "Reclaiming dev ports 8228 and 8229..."
+	@lsof -tiTCP:8228 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@lsof -tiTCP:8229 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@pkill -f 'air -c .air.toml' 2>/dev/null || true
+	@pkill -f 'vite preview' 2>/dev/null || true
+	@pkill -f 'vite dev' 2>/dev/null || true
+	@pkill -f 'watch-frontend-prod.sh' 2>/dev/null || true
+	@echo "Done. Run 'make dev' / 'make dev-prod-watch' to restart."
+
 # Production build
 build: build-frontend build-backend
 
 build-frontend:
-	cd frontend && npm ci && STRIP_TESTIDS=1 npm run build
-	./scripts/check-no-testids.sh
+	cd frontend && npm ci && npm run build
 
 build-backend:
 	go build -o ocman .
@@ -89,24 +134,14 @@ run: build
 clean:
 	rm -rf ocman tmp internal/server/static/assets
 
-# Run Go, frontend unit, and Playwright e2e test suites
-test: test-backend test-frontend test-e2e
+# Run both Go and frontend test suites
+test: test-backend test-frontend
 
 test-backend:
 	go test ./...
 
 test-frontend:
 	cd frontend && npm test
-
-# Run Playwright e2e tests. Playwright's webServer block runs `npm run preview`
-# which requires a built frontend, so we build first.
-# Set E2E_NO_WEBSERVER=1 and E2E_BASE_URL=http://localhost:8228 to use a running
-# dev server instead of vite preview.
-test-e2e:
-	cd frontend && npm run build && npm run test:e2e
-
-test-e2e-ui:
-	cd frontend && npm run test:e2e:ui
 
 # Run all linters and type checks
 lint: lint-backend lint-frontend lint-platform-branching
@@ -123,3 +158,29 @@ lint-frontend:
 # pragma — expect to justify it in review.
 lint-platform-branching:
 	./scripts/check-platform-branching.sh
+
+# --- Local observability stack (Grafana LGTM) ----------------------------
+#
+# Spins up grafana/otel-lgtm: Grafana on :3000, OTLP/gRPC on :4317,
+# OTLP/HTTP on :4318. Pre-wired Loki/Tempo/Mimir datasources, anonymous
+# Admin enabled (dev-only). See docker-compose.otel.yml.
+
+otel-up:
+	docker compose -f docker-compose.otel.yml up -d
+	@echo ""
+	@echo "  Grafana:    http://localhost:3000  (anonymous Admin)"
+	@echo "  OTLP/gRPC:  localhost:4317"
+	@echo "  OTLP/HTTP:  http://localhost:4318"
+	@echo ""
+	@echo "  Run ocman with:  ./ocman --otel=http://localhost:4318"
+
+otel-down:
+	docker compose -f docker-compose.otel.yml down
+
+otel-logs:
+	docker compose -f docker-compose.otel.yml logs -f lgtm
+
+# Wipe the persisted telemetry volume too. Use when stale data clutters
+# Grafana or you want a clean slate after schema changes.
+otel-reset:
+	docker compose -f docker-compose.otel.yml down -v

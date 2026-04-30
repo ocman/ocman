@@ -19,7 +19,12 @@ import (
 	"github.com/NoUseFreak/ocman/internal/pricing"
 	"github.com/NoUseFreak/ocman/internal/server"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/telemetry"
 )
+
+// version is overridden at build time via -ldflags='-X main.version=...'.
+// It's surfaced as service.version on every OTel resource.
+var version = "dev"
 
 // authPasswordEnv is the environment variable consulted for the auth
 // password when neither -auth-password-file nor -auth-password is set.
@@ -46,6 +51,7 @@ func main() {
 	authPasswordFile := flag.String("auth-password-file", "", "read auth password from file (trimmed of trailing whitespace)")
 	authSessionTTL := flag.Duration("auth-session-ttl", 30*24*time.Hour, "auth cookie lifetime")
 	authTrustLocalhost := flag.Bool("auth-trust-localhost", false, "exempt loopback clients from auth (dev-mode escape hatch; also OCMAN_AUTH_TRUST_LOCALHOST)")
+	otelEndpoint := flag.String("otel", "", "OTLP endpoint URL (e.g. http://localhost:4318 or grpc://localhost:4317). Empty disables telemetry. Falls back to OTEL_EXPORTER_OTLP_ENDPOINT.")
 	flag.Parse()
 
 	// Parse and validate the -platforms flag.
@@ -65,6 +71,33 @@ func main() {
 		fmt.Fprintf(os.Stderr, "No platforms enabled. Use -platforms with at least one of: opencode, claude-code\n")
 		os.Exit(1)
 	}
+
+	// Create a context that is cancelled on SIGINT or SIGTERM. Built
+	// up-front so telemetry init and DB open can use it for cancellation.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	// Initialise OpenTelemetry as early as possible so DB / HTTP client
+	// instrumentation registered later picks up the global providers.
+	// When --otel is empty (and OTEL_EXPORTER_OTLP_ENDPOINT is unset)
+	// this returns a no-op shutdown and leaves the SDK no-op providers
+	// in place — every otel call site stays cheap.
+	//
+	// The shutdown is deferred *here* (before the DB defers below) so
+	// LIFO ordering flushes spans/metrics first, then closes DBs.
+	shutdownTel, err := telemetry.Init(ctx, *otelEndpoint, version)
+	if err != nil {
+		log.Fatalf("Failed to initialise telemetry: %v", err)
+	}
+	defer func() {
+		// Use a fresh context with timeout: the main ctx is
+		// already cancelled by the time defers run.
+		sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdownTel(sctx); err != nil {
+			log.WithError(err).Warn("OTel shutdown error")
+		}
+	}()
 
 	// Open the OpenCode database only when the opencode platform is enabled.
 	var database *db.DB
@@ -92,10 +125,6 @@ func main() {
 	// Pre-warm the pricing table in the background so the first metrics request
 	// doesn't block on a remote fetch.
 	go pricing.Load()
-
-	// Create a context that is cancelled on SIGINT or SIGTERM.
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	// Register only the platform adapters requested via -platforms.
 	// The OpenCode adapter takes the pricing table so SessionInfo can

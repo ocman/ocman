@@ -13,6 +13,7 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 const liteLLMPricingURL = "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
@@ -62,7 +63,10 @@ type liteLLMEntry struct {
 }
 
 func (t *Table) fetch() error {
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := &http.Client{
+		Timeout:   15 * time.Second,
+		Transport: otelhttp.NewTransport(http.DefaultTransport),
+	}
 	resp, err := client.Get(liteLLMPricingURL)
 	if err != nil {
 		return fmt.Errorf("GET pricing: %w", err)
