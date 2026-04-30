@@ -21,6 +21,8 @@ import {
 import { usePageTitle } from '../lib/headerContext';
 import { SessionTable } from '../components/SessionTable';
 import { ErrorBoundary } from '../components/ErrorBoundary';
+import { ProjectScopePicker } from '../components/ProjectScopePicker';
+import { matchesScope } from '../lib/projectTree';
 import { useApiRequest } from '../lib/apiStore';
 import { useUiStore } from '../lib/uiStore';
 import { useAuthStore } from '../lib/authStore';
@@ -58,6 +60,14 @@ interface DashboardCtx {
   setTimeRange: (v: number) => void;
   showArchived: boolean;
   setShowArchived: (v: boolean) => void;
+  /**
+   * Active project-prefix scope, persisted in the URL as `?dir=`. Empty
+   * string means "all projects". Shared across the Stats / Usage /
+   * Projects tabs so a chosen scope survives tab switches.
+   * See spec/stats-project-filter/architecture.md (AD-3, AD-5).
+   */
+  dirScope: string;
+  setDirScope: (v: string) => void;
 }
 
 const DashboardContext = createContext<DashboardCtx | null>(null);
@@ -82,6 +92,7 @@ export function DashboardLayout() {
   const [projects, setProjects] = useState<Project[]>([]);
   const timeRange = parseInt(searchParams.get('t') || '12', 10);
   const showArchived = searchParams.get('a') === '1';
+  const dirScope = searchParams.get('dir') ?? '';
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
 
   const setTimeRange = useCallback((v: number) => {
@@ -92,6 +103,18 @@ export function DashboardLayout() {
     setSearchParams((p) => {
       if (v) p.set('a', '1');
       else p.delete('a');
+      return p;
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  // setDirScope writes the chosen scope to the URL so it survives refresh
+  // and is preserved when the user switches between the Stats/Usage/Projects
+  // tabs. Empty value clears the param entirely so the URL stays clean
+  // ('?t=24' rather than '?t=24&dir=').
+  const setDirScope = useCallback((v: string) => {
+    setSearchParams((p) => {
+      if (v) p.set('dir', v);
+      else p.delete('dir');
       return p;
     }, { replace: true });
   }, [setSearchParams]);
@@ -148,6 +171,8 @@ export function DashboardLayout() {
     setTimeRange,
     showArchived,
     setShowArchived,
+    dirScope,
+    setDirScope,
   };
 
   return (
@@ -212,8 +237,16 @@ export function SessionsTab() {
 
 export function ProjectsTab() {
   usePageTitle('Projects');
-  const { projects, projectsLoading } = useDashboard();
+  const { projects, projectsLoading, dirScope, setDirScope } = useDashboard();
   const navigate = useNavigate();
+
+  // The picker is sourced from the full project list (so the user can
+  // navigate up/down the tree); the table itself is filtered to the
+  // active scope. matchesScope mirrors the SQL predicate used by the
+  // backend (see spec/stats-project-filter/architecture.md, AD-7).
+  const visibleProjects = projects
+    .filter((p) => p.sessionCount > 0)
+    .filter((p) => matchesScope(p.directory, dirScope));
 
   return projectsLoading && projects.length === 0 ? (
     <div className="oc-list-loading">
@@ -221,6 +254,10 @@ export function ProjectsTab() {
       Loading projects...
     </div>
   ) : (
+    <div className="metrics-page" style={{ padding: 0 }}>
+      <div className="metrics-filters">
+        <ProjectScopePicker projects={projects} value={dirScope} onChange={setDirScope} />
+      </div>
     <table>
       <thead>
         <tr>
@@ -232,13 +269,13 @@ export function ProjectsTab() {
         </tr>
       </thead>
       <tbody>
-        {projects.filter((p) => p.sessionCount > 0).length === 0 ? (
+        {visibleProjects.length === 0 ? (
           <tr>
             <td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: 24 }}>
               No projects found
             </td>
           </tr>
-        ) : projects.filter((p) => p.sessionCount > 0).map((p) => (
+        ) : visibleProjects.map((p) => (
           <tr key={p.directory} onClick={() => navigate(`/project/${encodeURIComponent(p.directory)}`)}>
             <td>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -260,6 +297,7 @@ export function ProjectsTab() {
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
 
@@ -270,6 +308,7 @@ export function ProjectsTab() {
 export function StatsTab() {
   usePageTitle('Stats');
   const navigate = useNavigate();
+  const { projects, dirScope, setDirScope } = useDashboard();
 
   const [metrics, setMetrics] = useState<MetricsDashboard | null>(null);
   const [selectedAgent, setSelectedAgent] = useState('');
@@ -289,7 +328,7 @@ export function StatsTab() {
     setLogPage(0);
     setSessionLogPage(0);
     setProjectLogPage(0);
-  }, [selectedAgent, selectedModel, metricsDays]);
+  }, [selectedAgent, selectedModel, metricsDays, dirScope]);
 
   useEffect(() => {
     let cancelled = false;
@@ -303,6 +342,7 @@ export function StatsTab() {
       sessionOffset: sessionLogPage * SESSION_LOG_PAGE_SIZE,
       projectLimit: PROJECT_LOG_PAGE_SIZE,
       projectOffset: projectLogPage * PROJECT_LOG_PAGE_SIZE,
+      dir: dirScope || undefined,
     };
 
     void (async () => {
@@ -327,13 +367,14 @@ export function StatsTab() {
     })();
 
     return () => { cancelled = true; };
-  }, [metricsDays, selectedAgent, selectedModel, logPage, LOG_PAGE_SIZE, sessionLogPage, SESSION_LOG_PAGE_SIZE, projectLogPage, PROJECT_LOG_PAGE_SIZE]);
+  }, [metricsDays, selectedAgent, selectedModel, logPage, LOG_PAGE_SIZE, sessionLogPage, SESSION_LOG_PAGE_SIZE, projectLogPage, PROJECT_LOG_PAGE_SIZE, dirScope]);
 
   const metricLabels = metrics?.series.map((point) => point.label) ?? [];
 
   return (
     <div className="metrics-page">
       <div className="metrics-filters">
+        <ProjectScopePicker projects={projects} value={dirScope} onChange={setDirScope} />
         <label className="metrics-filter">
           <span>Agent</span>
           <select value={selectedAgent} onChange={(e) => setSelectedAgent(e.target.value)}>
@@ -842,6 +883,7 @@ const USAGE_RANGE_OPTIONS = [
 
 export function UsageTab() {
   usePageTitle('Usage');
+  const { projects, dirScope, setDirScope } = useDashboard();
   const [activity, setActivity] = useState<ActivityDay[]>([]);
   const [models, setModels] = useState<ModelUsage[]>([]);
   const [hourly, setHourly] = useState<HourlyData[]>([]);
@@ -850,25 +892,26 @@ export function UsageTab() {
   const [selectedModel, setSelectedModel] = useState('');
   const [usageDays, setUsageDays] = useState(30);
 
-  // All charts respect model + days filters.
+  // All charts respect model + days + scope filters.
   useEffect(() => {
     let cancelled = false;
-    const params = { days: usageDays || undefined, model: selectedModel || undefined };
+    const dir = dirScope || undefined;
+    const params = { days: usageDays || undefined, model: selectedModel || undefined, dir };
 
     startTransition(() => setLoading(true));
 
     // Activity heatmap always shows the full year regardless of the days filter.
-    api.activity({ model: selectedModel || undefined }).then((nextActivity) => {
+    api.activity({ model: selectedModel || undefined, dir }).then((nextActivity) => {
       if (cancelled) return;
       startTransition(() => setActivity(nextActivity));
     }).catch(() => {});
 
-    api.models({ days: params.days }).then((nextModels) => {
+    api.models({ days: params.days, dir }).then((nextModels) => {
       if (cancelled) return;
       startTransition(() => setModels(nextModels));
     }).catch(() => {});
 
-    api.hourly({ days: params.days }).then((nextHourly) => {
+    api.hourly({ days: params.days, dir }).then((nextHourly) => {
       if (cancelled) return;
       startTransition(() => setHourly(nextHourly));
     }).catch(() => {});
@@ -884,7 +927,7 @@ export function UsageTab() {
     });
 
     return () => { cancelled = true; };
-  }, [usageDays, selectedModel]);
+  }, [usageDays, selectedModel, dirScope]);
 
   // Derive available models for the filter dropdown from loaded model usage data.
   const allModels = [...models].sort((a, b) => b.count - a.count);
@@ -893,6 +936,7 @@ export function UsageTab() {
   return (
     <div className="metrics-page">
       <div className="metrics-filters">
+        <ProjectScopePicker projects={projects} value={dirScope} onChange={setDirScope} />
         <label className="metrics-filter">
           <span>Model</span>
           <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}>

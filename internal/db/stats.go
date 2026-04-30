@@ -10,6 +10,30 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// directoryWhere builds a SQL fragment that scopes a query to a project
+// subtree. The returned fragment is intended to be AND'd into an existing
+// WHERE clause; the args go into the same parameter list.
+//
+// Behaviour (see spec/stats-project-filter/architecture.md, AD-7):
+//
+//   - Empty `dir` returns `("", nil)`. Callers append the fragment only when
+//     non-empty so the unfiltered query plan is unchanged.
+//   - Non-empty `dir` returns the two-predicate form
+//     `(s.directory = ? OR s.directory LIKE ?)` with args `[dir, dir+"/%"]`.
+//
+// The two-predicate form (rather than a single `LIKE dir||'%'`) is what
+// prevents the sibling-prefix trap: scope `/repo/foo` must NOT match
+// `/repo/foobar`. Tested explicitly in stats_dir_filter_test.go.
+//
+// The fragment uses the alias `s` for the session table; queries that don't
+// already alias their session join `s` should do so before applying it.
+func directoryWhere(dir string) (string, []interface{}) {
+	if dir == "" {
+		return "", nil
+	}
+	return "(s.directory = ? OR s.directory LIKE ?)", []interface{}{dir, dir + "/%"}
+}
+
 // extractModelProvider returns the provider and model from a MessageData,
 // handling the fallback from top-level fields to nested Model fields.
 func extractModelProvider(md MessageData) (provider, model string) {
@@ -72,14 +96,30 @@ type requestRow struct {
 // days is the number of days in the selected window (0 = all time); it drives bucket granularity.
 // pricing may be nil, in which case CalcCost fields are left zero.
 // sessionLimit/sessionOffset control pagination of the Sessions aggregation (most-recent activity first).
-func (d *DB) GetMetricsDashboard(agentFilter, modelFilter string, since int64, days, requestLimit, requestOffset, sessionLimit, sessionOffset, projectLimit, projectOffset int, pricing CostCalculator) (*MetricsDashboard, error) {
-	rows, err := d.db.Query(`
+// dir, when non-empty, scopes the query to sessions whose directory equals dir or starts with dir+"/" (see directoryWhere).
+func (d *DB) GetMetricsDashboard(agentFilter, modelFilter string, since int64, days, requestLimit, requestOffset, sessionLimit, sessionOffset, projectLimit, projectOffset int, pricing CostCalculator, dir string) (*MetricsDashboard, error) {
+	dirFrag, dirArgs := directoryWhere(dir)
+	query := `
 		SELECT m.id, m.session_id, m.time_created, m.data
-		FROM message m
+		FROM message m`
+	if dirFrag != "" {
+		// Join only when scoping; preserves the existing query plan for the
+		// unfiltered case.
+		query += `
+		JOIN session s ON s.id = m.session_id`
+	}
+	query += `
 		WHERE json_extract(m.data, '$.role') = 'assistant'
-		  AND (? <= 0 OR m.time_created >= ?)
+		  AND (? <= 0 OR m.time_created >= ?)`
+	args := []interface{}{since, since}
+	if dirFrag != "" {
+		query += "\n		  AND " + dirFrag
+		args = append(args, dirArgs...)
+	}
+	query += `
 		ORDER BY m.time_created ASC
-	`, since, since)
+	`
+	rows, err := d.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -690,28 +730,39 @@ func (d *DB) GetProjects() ([]ProjectStats, error) {
 
 // GetDailyActivity returns activity per day for the last N days.
 // GetDailyActivity returns daily session/message counts for the last 365 days,
-// optionally filtered by a time window (since) and model (modelFilter = "provider/model" or "model").
-func (d *DB) GetDailyActivity(since int64, modelFilter string) ([]DailyActivity, error) {
+// optionally filtered by a time window (since), model (modelFilter = "provider/model" or "model"),
+// and directory prefix (dir; see directoryWhere).
+func (d *DB) GetDailyActivity(since int64, modelFilter, dir string) ([]DailyActivity, error) {
 	days := 365
 	cutoff := time.Now().AddDate(0, 0, -days).UnixMilli()
 	if since > cutoff {
 		cutoff = since
 	}
 
+	dirFrag, dirArgs := directoryWhere(dir)
+
 	dayMap := make(map[string]*DailyActivity)
 
 	if modelFilter == "" {
 		// No model filter: count all sessions per day (excluding subagent sessions).
-		rows, err := d.db.Query(`
+		// Alias `session` as `s` so directoryWhere's fragment binds to the same alias.
+		query := `
 			SELECT
-				date(time_created / 1000, 'unixepoch', 'localtime') as day,
+				date(s.time_created / 1000, 'unixepoch', 'localtime') as day,
 				count(*) as sessions
-			FROM session
-			WHERE time_created >= ?
-			  AND title NOT LIKE '%(% subagent)'
+			FROM session s
+			WHERE s.time_created >= ?
+			  AND s.title NOT LIKE '%(% subagent)'`
+		args := []interface{}{cutoff}
+		if dirFrag != "" {
+			query += "\n			  AND " + dirFrag
+			args = append(args, dirArgs...)
+		}
+		query += `
 			GROUP BY day
 			ORDER BY day
-		`, cutoff)
+		`
+		rows, err := d.db.Query(query, args...)
 		if err != nil {
 			return nil, err
 		}
@@ -730,7 +781,7 @@ func (d *DB) GetDailyActivity(since int64, modelFilter string) ([]DailyActivity,
 	}
 
 	// Count assistant messages per day, excluding messages from subagent sessions.
-	rows2, err := d.db.Query(`
+	query2 := `
 		SELECT
 			date(m.time_created / 1000, 'unixepoch', 'localtime') as day,
 			m.data
@@ -738,9 +789,16 @@ func (d *DB) GetDailyActivity(since int64, modelFilter string) ([]DailyActivity,
 		JOIN session s ON s.id = m.session_id
 		WHERE json_extract(m.data, '$.role') = 'assistant'
 		  AND m.time_created >= ?
-		  AND s.title NOT LIKE '%(% subagent)'
+		  AND s.title NOT LIKE '%(% subagent)'`
+	args2 := []interface{}{cutoff}
+	if dirFrag != "" {
+		query2 += "\n		  AND " + dirFrag
+		args2 = append(args2, dirArgs...)
+	}
+	query2 += `
 		ORDER BY day
-	`, cutoff)
+	`
+	rows2, err := d.db.Query(query2, args2...)
 	if err != nil {
 		return nil, err
 	}
@@ -787,13 +845,26 @@ func (d *DB) GetDailyActivity(since int64, modelFilter string) ([]DailyActivity,
 	return result, nil
 }
 
-// GetModelUsage returns usage stats per model, optionally filtered by time window.
-func (d *DB) GetModelUsage(since int64) ([]ModelUsage, error) {
-	rows, err := d.db.Query(`
-		SELECT data FROM message
-		WHERE json_extract(data, '$.role') = 'assistant'
-		  AND (? <= 0 OR time_created >= ?)
-	`, since, since)
+// GetModelUsage returns usage stats per model, optionally filtered by time
+// window (since) and directory prefix (dir; see directoryWhere).
+func (d *DB) GetModelUsage(since int64, dir string) ([]ModelUsage, error) {
+	dirFrag, dirArgs := directoryWhere(dir)
+	query := `SELECT m.data FROM message m`
+	if dirFrag != "" {
+		// Only join when scoping; preserves the existing query plan
+		// for the unfiltered case.
+		query += `
+		JOIN session s ON s.id = m.session_id`
+	}
+	query += `
+		WHERE json_extract(m.data, '$.role') = 'assistant'
+		  AND (? <= 0 OR m.time_created >= ?)`
+	args := []interface{}{since, since}
+	if dirFrag != "" {
+		query += "\n		  AND " + dirFrag
+		args = append(args, dirArgs...)
+	}
+	rows, err := d.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -914,8 +985,9 @@ func (d *DB) GetRecentModels(sessionLimit, maxResults int) ([]RecentModel, error
 }
 
 // GetHourlyTokensByModel returns token counts per calendar hour, broken down by provider/model.
-// windowDays controls how many days back to look (default 7); modelFilter optionally restricts to one model key ("provider/model").
-func (d *DB) GetHourlyTokensByModel(windowDays int, since int64, modelFilter string) ([]HourlyTokensByModel, error) {
+// windowDays controls how many days back to look (default 7); modelFilter optionally restricts
+// to one model key ("provider/model"); dir optionally scopes to a project subtree (see directoryWhere).
+func (d *DB) GetHourlyTokensByModel(windowDays int, since int64, modelFilter, dir string) ([]HourlyTokensByModel, error) {
 	if windowDays <= 0 {
 		windowDays = 7
 	}
@@ -924,14 +996,25 @@ func (d *DB) GetHourlyTokensByModel(windowDays int, since int64, modelFilter str
 		cutoff = since
 	}
 
-	rows, err := d.db.Query(`
+	dirFrag, dirArgs := directoryWhere(dir)
+	query := `
 		SELECT
-			strftime('%Y-%m-%d %H', time_created / 1000, 'unixepoch', 'localtime') as datetime,
-			data
-		FROM message
-		WHERE json_extract(data, '$.role') = 'assistant'
-		  AND time_created >= ?
-	`, cutoff)
+			strftime('%Y-%m-%d %H', m.time_created / 1000, 'unixepoch', 'localtime') as datetime,
+			m.data
+		FROM message m`
+	if dirFrag != "" {
+		query += `
+		JOIN session s ON s.id = m.session_id`
+	}
+	query += `
+		WHERE json_extract(m.data, '$.role') = 'assistant'
+		  AND m.time_created >= ?`
+	args := []interface{}{cutoff}
+	if dirFrag != "" {
+		query += "\n		  AND " + dirFrag
+		args = append(args, dirArgs...)
+	}
+	rows, err := d.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -994,17 +1077,26 @@ func (d *DB) GetHourlyTokensByModel(windowDays int, since int64, modelFilter str
 	return result, nil
 }
 
-// GetHourlyActivity returns session counts per hour of day.
-func (d *DB) GetHourlyActivity(since int64) ([]HourlyActivity, error) {
-	rows, err := d.db.Query(`
+// GetHourlyActivity returns session counts per hour of day, optionally scoped
+// to a directory subtree (dir; see directoryWhere).
+func (d *DB) GetHourlyActivity(since int64, dir string) ([]HourlyActivity, error) {
+	dirFrag, dirArgs := directoryWhere(dir)
+	query := `
 		SELECT
-			cast(strftime('%H', time_created / 1000, 'unixepoch', 'localtime') as integer) as hour,
+			cast(strftime('%H', s.time_created / 1000, 'unixepoch', 'localtime') as integer) as hour,
 			count(*) as sessions
-		FROM session
-		WHERE (? <= 0 OR time_created >= ?)
+		FROM session s
+		WHERE (? <= 0 OR s.time_created >= ?)`
+	args := []interface{}{since, since}
+	if dirFrag != "" {
+		query += "\n		  AND " + dirFrag
+		args = append(args, dirArgs...)
+	}
+	query += `
 		GROUP BY hour
 		ORDER BY hour
-	`, since, since)
+	`
+	rows, err := d.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}

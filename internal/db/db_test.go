@@ -627,7 +627,7 @@ func TestGetMetricsDashboard(t *testing.T) {
 		},
 	})
 
-	metrics, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 50, 0, 50, 0, nil)
+	metrics, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 50, 0, 50, 0, nil, "")
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard: %v", err)
 	}
@@ -731,7 +731,7 @@ func TestGetMetricsDashboardSessionAggregation(t *testing.T) {
 		"tokens":     map[string]interface{}{"input": 10, "output": 20},
 	})
 
-	metrics, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 50, 0, 50, 0, nil)
+	metrics, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 50, 0, 50, 0, nil, "")
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard: %v", err)
 	}
@@ -769,7 +769,7 @@ func TestGetMetricsDashboardSessionAggregation(t *testing.T) {
 	}
 
 	// Pagination: sessionLimit=1 returns just the most recent.
-	paged, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 1, 0, 50, 0, nil)
+	paged, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 1, 0, 50, 0, nil, "")
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard paged: %v", err)
 	}
@@ -781,7 +781,7 @@ func TestGetMetricsDashboardSessionAggregation(t *testing.T) {
 	}
 
 	// Offset skips the first.
-	offset, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 1, 1, 50, 0, nil)
+	offset, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 1, 1, 50, 0, nil, "")
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard offset: %v", err)
 	}
@@ -843,7 +843,7 @@ func TestGetHourlyActivity(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	result, err := db.GetHourlyActivity(0)
+	result, err := db.GetHourlyActivity(0, "")
 	if err != nil {
 		t.Fatalf("GetHourlyActivity: %v", err)
 	}
@@ -876,7 +876,7 @@ func TestGetModelUsage(t *testing.T) {
 		"tokens":     map[string]interface{}{"input": 200, "output": 100},
 	})
 
-	result, err := db.GetModelUsage(0)
+	result, err := db.GetModelUsage(0, "")
 	if err != nil {
 		t.Fatalf("GetModelUsage: %v", err)
 	}
@@ -909,7 +909,7 @@ func TestGetModelUsage_SortedOutput(t *testing.T) {
 		"tokens": map[string]interface{}{"input": 20, "output": 10},
 	})
 
-	result, err := db.GetModelUsage(0)
+	result, err := db.GetModelUsage(0, "")
 	if err != nil {
 		t.Fatalf("GetModelUsage: %v", err)
 	}
@@ -940,7 +940,7 @@ func TestGetModelUsage_FallbackToNestedModel(t *testing.T) {
 		"tokens": map[string]interface{}{"input": 50, "output": 25},
 	})
 
-	result, err := db.GetModelUsage(0)
+	result, err := db.GetModelUsage(0, "")
 	if err != nil {
 		t.Fatalf("GetModelUsage: %v", err)
 	}
@@ -956,7 +956,7 @@ func TestGetDailyActivity(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	result, err := db.GetDailyActivity(0, "")
+	result, err := db.GetDailyActivity(0, "", "")
 	if err != nil {
 		t.Fatalf("GetDailyActivity: %v", err)
 	}
@@ -1031,7 +1031,7 @@ func TestGetHourlyTokensByModel(t *testing.T) {
 		"tokens":     map[string]interface{}{"input": 200, "output": 100},
 	})
 
-	result, err := db.GetHourlyTokensByModel(7, 0, "")
+	result, err := db.GetHourlyTokensByModel(7, 0, "", "")
 	if err != nil {
 		t.Fatalf("GetHourlyTokensByModel: %v", err)
 	}
@@ -1050,7 +1050,7 @@ func TestGetHourlyTokensByModel_Empty(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	result, err := db.GetHourlyTokensByModel(7, 0, "")
+	result, err := db.GetHourlyTokensByModel(7, 0, "", "")
 	if err != nil {
 		t.Fatalf("GetHourlyTokensByModel: %v", err)
 	}

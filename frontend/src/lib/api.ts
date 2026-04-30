@@ -709,7 +709,7 @@ export interface TmuxSession {
 
 export const api = {
   stats: () => fetchJSON<Stats>('/api/stats'),
-  metrics: (params?: { agent?: string; model?: string; days?: number; limit?: number; offset?: number; sessionLimit?: number; sessionOffset?: number; projectLimit?: number; projectOffset?: number }) => {
+  metrics: (params?: { agent?: string; model?: string; days?: number; limit?: number; offset?: number; sessionLimit?: number; sessionOffset?: number; projectLimit?: number; projectOffset?: number; dir?: string }) => {
     const q = new URLSearchParams();
     if (params?.agent) q.set('agent', params.agent);
     if (params?.model) q.set('model', params.model);
@@ -720,6 +720,7 @@ export const api = {
     if (params?.sessionOffset != null) q.set('sessionOffset', String(params.sessionOffset));
     if (params?.projectLimit != null) q.set('projectLimit', String(params.projectLimit));
     if (params?.projectOffset != null) q.set('projectOffset', String(params.projectOffset));
+    if (params?.dir) q.set('dir', params.dir);
     const qs = q.toString();
     return fetchJSON<MetricsDashboard>(`/api/metrics${qs ? '?' + qs : ''}`);
   },
@@ -788,16 +789,18 @@ export const api = {
     if (!resp.ok) throw new Error(await resp.text());
     return resp.json() as Promise<{ cost: number; known: boolean }>;
   },
-  activity: (params?: { days?: number; model?: string }) => {
+  activity: (params?: { days?: number; model?: string; dir?: string }) => {
     const q = new URLSearchParams();
     if (params?.days) q.set('days', String(params.days));
     if (params?.model) q.set('model', params.model);
+    if (params?.dir) q.set('dir', params.dir);
     const qs = q.toString();
     return fetchJSON<ActivityDay[]>(`/api/activity${qs ? '?' + qs : ''}`);
   },
-  models: (params?: { days?: number }) => {
+  models: (params?: { days?: number; dir?: string }) => {
     const q = new URLSearchParams();
     if (params?.days) q.set('days', String(params.days));
+    if (params?.dir) q.set('dir', params.dir);
     const qs = q.toString();
     return fetchJSON<ModelUsage[]>(`/api/models${qs ? '?' + qs : ''}`);
   },
@@ -824,16 +827,18 @@ export const api = {
     });
     if (!resp.ok) throw new Error(await resp.text());
   },
-  hourly: (params?: { days?: number }) => {
+  hourly: (params?: { days?: number; dir?: string }) => {
     const q = new URLSearchParams();
     if (params?.days) q.set('days', String(params.days));
+    if (params?.dir) q.set('dir', params.dir);
     const qs = q.toString();
     return fetchJSON<HourlyData[]>(`/api/hourly${qs ? '?' + qs : ''}`);
   },
-  hourlyTokens: (params?: { days?: number; model?: string }) => {
+  hourlyTokens: (params?: { days?: number; model?: string; dir?: string }) => {
     const q = new URLSearchParams();
     if (params?.days) q.set('days', String(params.days));
     if (params?.model) q.set('model', params.model);
+    if (params?.dir) q.set('dir', params.dir);
     const qs = q.toString();
     return fetchJSON<HourlyTokensByModel[]>(`/api/hourly-tokens${qs ? '?' + qs : ''}`);
   },
