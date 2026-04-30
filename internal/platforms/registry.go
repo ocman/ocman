@@ -95,20 +95,27 @@ func (r *Registry) RememberSessions(platformID ID, sessions []db.Session) {
 // fetch (lsof port discovery + 2 HTTP calls) just to identify the
 // owner — adding hundreds of milliseconds to every cold-cache request.
 func (r *Registry) PlatformForSession(ctx context.Context, sessionID string) (Platform, bool) {
-	start := time.Now()
 	r.mu.RLock()
 	id, ok := r.bySID[sessionID]
 	r.mu.RUnlock()
 
 	if ok {
 		if p, ok := r.Get(id); ok {
-			srvtiming.Record(ctx, "resolve_cached", time.Since(start), "sid->platform cache hit")
+			cached := srvtiming.Begin(ctx, "resolve_cached")
+			cached.EndWithDesc("sid->platform cache hit")
 			return p, true
 		}
 	}
 
 	// Fan-out fallback. Kept in a method so tests that only register
 	// fake platforms without a populated bySID still work deterministically.
+	//
+	// Phase naming reflects the outcome: a successful match emits
+	// `resolve_owns`, a total miss emits `resolve_miss`. We can't
+	// rename a phase after Begin, so we don't decide on a name until
+	// we know which case we're in — in practice that means measuring
+	// the work with time.Since on a small stack-local start time.
+	start := time.Now()
 	for _, p := range r.Platforms() {
 		if !p.Available(ctx) {
 			continue

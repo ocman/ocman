@@ -201,8 +201,9 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	if v := strings.TrimSpace(r.URL.Query().Get("projectOffset")); v != "" {
 		fmt.Sscanf(v, "%d", &projectOffset)
 	}
+	dir := normaliseDirParam(r.URL.Query().Get("dir"))
 
-	metrics, err := s.db.GetMetricsDashboard(agent, model, since, dayCount, limit, offset, sessionLimit, sessionOffset, projectLimit, projectOffset, pricing.Load())
+	metrics, err := s.db.GetMetricsDashboard(agent, model, since, dayCount, limit, offset, sessionLimit, sessionOffset, projectLimit, projectOffset, pricing.Load(), dir)
 	if err != nil {
 		serverError(w, "fetching metrics", err)
 		return
@@ -231,7 +232,8 @@ func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 	}
 	since := parseSinceParam(r)
 	model := strings.TrimSpace(r.URL.Query().Get("model"))
-	activity, err := s.db.GetDailyActivity(since, model)
+	dir := normaliseDirParam(r.URL.Query().Get("dir"))
+	activity, err := s.db.GetDailyActivity(since, model, dir)
 	if err != nil {
 		serverError(w, "fetching activity", err)
 		return
@@ -244,7 +246,8 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	since := parseSinceParam(r)
-	models, err := s.db.GetModelUsage(since)
+	dir := normaliseDirParam(r.URL.Query().Get("dir"))
+	models, err := s.db.GetModelUsage(since, dir)
 	if err != nil {
 		serverError(w, "fetching model usage", err)
 		return
@@ -258,11 +261,12 @@ func (s *Server) handleHourlyTokens(w http.ResponseWriter, r *http.Request) {
 	}
 	since := parseSinceParam(r)
 	model := strings.TrimSpace(r.URL.Query().Get("model"))
+	dir := normaliseDirParam(r.URL.Query().Get("dir"))
 	var dayCount int
 	if v := strings.TrimSpace(r.URL.Query().Get("days")); v != "" {
 		fmt.Sscanf(v, "%d", &dayCount)
 	}
-	data, err := s.db.GetHourlyTokensByModel(dayCount, since, model)
+	data, err := s.db.GetHourlyTokensByModel(dayCount, since, model, dir)
 	if err != nil {
 		serverError(w, "fetching hourly tokens by model", err)
 		return
@@ -275,12 +279,31 @@ func (s *Server) handleHourly(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	since := parseSinceParam(r)
-	hourly, err := s.db.GetHourlyActivity(since)
+	dir := normaliseDirParam(r.URL.Query().Get("dir"))
+	hourly, err := s.db.GetHourlyActivity(since, dir)
 	if err != nil {
 		serverError(w, "fetching hourly activity", err)
 		return
 	}
 	writeJSON(w, hourly)
+}
+
+// normaliseDirParam trims surrounding whitespace and a single trailing slash
+// from a directory-prefix filter so that "/repo/foo", "/repo/foo/", and
+// "  /repo/foo  " are all treated the same. Returns "" when the input is
+// blank, which the DB layer interprets as "no filter".
+func normaliseDirParam(raw string) string {
+	dir := strings.TrimSpace(raw)
+	if dir == "" {
+		return ""
+	}
+	// Strip exactly one trailing slash. We don't strip more than one because
+	// "//" is a meaningful absolute path on some platforms (and never a
+	// session.directory value we'd see in practice — defensive only).
+	if strings.HasSuffix(dir, "/") && dir != "/" {
+		dir = dir[:len(dir)-1]
+	}
+	return dir
 }
 
 // parseSinceParam reads the ?days= query param and returns a Unix
@@ -318,9 +341,9 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		if !adapter.Available(ctx) {
 			continue
 		}
-		platStart := time.Now()
+		platPhase := srvtiming.Begin(ctx, "sessions_"+string(adapter.ID()))
 		sessions, err := adapter.Sessions(ctx, dir, since)
-		srvtiming.Record(ctx, "sessions_"+string(adapter.ID()), time.Since(platStart), "")
+		platPhase.End()
 		if err != nil {
 			log.WithFields(log.Fields{"platform": adapter.ID(), "error": err}).
 				Warn("listing sessions from platform")
@@ -353,9 +376,9 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		all = all[:limit]
 	}
 
-	stateStart := time.Now()
+	statePhase := srvtiming.Begin(ctx, "state_overlay")
 	err := s.applySessionState(all)
-	srvtiming.Record(ctx, "state_overlay", time.Since(stateStart), "applySessionState")
+	statePhase.EndWithDesc("applySessionState")
 	if err != nil {
 		serverError(w, "fetching session state", err)
 		return

@@ -287,14 +287,17 @@ func discoverOpenCodePort(directory string) string {
 // has a request context; the bare discoverOpenCodePort remains for
 // internal helpers that don't.
 func discoverOpenCodePortCtx(ctx context.Context, directory string) string {
-	start := time.Now()
 	if cached, ok := readCachedPorts(); ok {
+		// Cache hit: still record it so the trace shows the port
+		// resolution happened at all, but End() right away.
+		hit := srvtiming.Begin(ctx, "lsof_hit")
 		port := cached[directory]
-		srvtiming.Record(ctx, "lsof_hit", time.Since(start), "")
+		hit.End()
 		return port
 	}
+	miss := srvtiming.Begin(ctx, "lsof_miss")
 	port := discoverOpenCodePort(directory)
-	srvtiming.Record(ctx, "lsof_miss", time.Since(start), "ran fresh lsof scan")
+	miss.EndWithDesc("ran fresh lsof scan")
 	return port
 }
 
@@ -868,9 +871,9 @@ func (a *Adapter) fetchSessionFromOpenCodeCtx(ctx context.Context, sessionID str
 		return nil, false
 	}
 	// First get session from DB to find the directory.
-	dbStart := time.Now()
+	dbPhase := srvtiming.Begin(ctx, "db_get_session")
 	dbSession, err := a.db.GetSession(sessionID)
-	srvtiming.Record(ctx, "db_get_session", time.Since(dbStart), "")
+	dbPhase.End()
 	if err != nil {
 		return nil, false
 	}
@@ -884,23 +887,23 @@ func (a *Adapter) fetchSessionFromOpenCodeCtx(ctx context.Context, sessionID str
 	var ocSession map[string]interface{}
 	var ocMessages []map[string]interface{}
 	var sessionErr, messagesErr error
-	httpStart := time.Now()
+	parallelPhase := srvtiming.Begin(ctx, "http_parallel")
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		s := time.Now()
+		p := srvtiming.Begin(ctx, "http_session")
 		ocSession, sessionErr = fetchOpenCodeSession(port, sessionID)
-		srvtiming.Record(ctx, "http_session", time.Since(s), "GET /session/{id}")
+		p.EndWithDesc("GET /session/{id}")
 	}()
 	go func() {
 		defer wg.Done()
-		s := time.Now()
+		p := srvtiming.Begin(ctx, "http_messages")
 		ocMessages, messagesErr = fetchOpenCodeMessages(port, sessionID)
-		srvtiming.Record(ctx, "http_messages", time.Since(s), "GET /session/{id}/message")
+		p.EndWithDesc("GET /session/{id}/message")
 	}()
 	wg.Wait()
-	srvtiming.Record(ctx, "http_parallel", time.Since(httpStart), "wall-clock for both fetches")
+	parallelPhase.EndWithDesc("wall-clock for both fetches")
 
 	if sessionErr != nil || messagesErr != nil || ocSession == nil {
 		return nil, false
@@ -909,17 +912,17 @@ func (a *Adapter) fetchSessionFromOpenCodeCtx(ctx context.Context, sessionID str
 	// Untyped conversion (preserves every OpenCode-specific data key
 	// under the message/part .data map). We then re-encode .data into
 	// json.RawMessage for the typed Message/Part shape.
-	convStart := time.Now()
+	convPhase := srvtiming.Begin(ctx, "convert")
 	untypedMessages, untypedParts := convertOpenCodeMessages(ocMessages)
 	stats := computeMessageStats(untypedMessages)
 	totalMessages := len(untypedMessages)
 	pagedMessages, pagedMsgIDs := paginateUntyped(untypedMessages, limit, offset)
 	pagedParts := filterPartsUntyped(untypedParts, pagedMsgIDs)
-	srvtiming.Record(ctx, "convert", time.Since(convStart), "convertOpenCodeMessages + paginate")
+	convPhase.EndWithDesc("convertOpenCodeMessages + paginate")
 
-	defaultsStart := time.Now()
+	defaultsPhase := srvtiming.Begin(ctx, "db_session_defaults")
 	defaults, err := getSessionDefaultsCached(a.db, sessionID, dbSession.Directory)
-	srvtiming.Record(ctx, "db_session_defaults", time.Since(defaultsStart), "")
+	defaultsPhase.End()
 	if err != nil {
 		log.WithFields(log.Fields{"sessionID": sessionID, "error": err}).
 			Warn("opencode: fetching session defaults for live path")
@@ -949,11 +952,11 @@ func (a *Adapter) fetchSessionFromOpenCodeCtx(ctx context.Context, sessionID str
 		}
 	}
 
-	typedStart := time.Now()
+	typedPhase := srvtiming.Begin(ctx, "typed")
 	session := sessionFromOpenCode(ocSession, stats, userMsgCount, sessionStatus)
 	messages := typedMessagesFromUntyped(pagedMessages)
 	parts := typedPartsFromUntyped(pagedParts)
-	srvtiming.Record(ctx, "typed", time.Since(typedStart), "untyped->typed conversion")
+	typedPhase.EndWithDesc("untyped->typed conversion")
 
 	return &platforms.SessionDetail{
 		Session:           session,

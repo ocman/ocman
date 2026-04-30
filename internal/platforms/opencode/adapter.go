@@ -114,9 +114,9 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 	if a.db == nil {
 		return nil, nil
 	}
-	dbStart := time.Now()
+	dbPhase := srvtiming.Begin(ctx, "db_get_sessions")
 	sessions, err := getSessionsCached(a.db, dir, since)
-	srvtiming.Record(ctx, "db_get_sessions", time.Since(dbStart), "")
+	dbPhase.End()
 	if err != nil {
 		return nil, err
 	}
@@ -129,23 +129,23 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 
 	// Fan out to every running OpenCode instance to collect liveness
 	// flags. Failures are silent — this is a best-effort UI hint.
-	portStart := time.Now()
+	portsPhase := srvtiming.Begin(ctx, "lsof_ports")
 	ports := discoverOpenCodePorts()
-	srvtiming.Record(ctx, "lsof_ports", time.Since(portStart), "")
+	portsPhase.End()
 
-	promptStart := time.Now()
+	promptsPhase := srvtiming.Begin(ctx, "pending_prompts")
 	pendingPerms, pendingQuestions := collectPendingPromptsByDir(ports)
-	srvtiming.Record(ctx, "pending_prompts", time.Since(promptStart), fmt.Sprintf("%d instances", len(ports)))
+	promptsPhase.EndWithDesc(fmt.Sprintf("%d instances", len(ports)))
 
 	// OpenCode emits subagent prompts with the subagent's session ID,
 	// not the parent's. The listing only contains parent sessions
 	// (subagents are filtered out by SQL), so we resolve each prompted
 	// subagent to its parent and apply the flag there. Parent prompts
 	// pass through unchanged (their id maps to themselves).
-	bubbleStart := time.Now()
+	bubblePhase := srvtiming.Begin(ctx, "bubble_parents")
 	pendingPerms = bubbleUpPromptsToParent(pendingPerms, a.db)
 	pendingQuestions = bubbleUpPromptsToParent(pendingQuestions, a.db)
-	srvtiming.Record(ctx, "bubble_parents", time.Since(bubbleStart), "")
+	bubblePhase.End()
 
 	for i := range sessions {
 		sessions[i].Platform = string(PlatformID)
@@ -225,18 +225,20 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 		return nil, platforms.ErrNotFound
 	}
 	// Try live data from OpenCode first.
-	liveStart := time.Now()
+	livePhase := srvtiming.Begin(ctx, "live_path")
 	detail, ok := a.fetchSessionFromOpenCodeCtx(ctx, id, limit, offset)
-	srvtiming.Record(ctx, "live_path", time.Since(liveStart), "fetchSessionFromOpenCode (incl lsof + 2x HTTP)")
+	livePhase.EndWithDesc("fetchSessionFromOpenCode (incl lsof + 2x HTTP)")
 	if ok {
 		return detail, nil
 	}
 
-	// Fall back to DB.
-	dbStart := time.Now()
+	// Fall back to DB. Wrap the whole DB-read sequence in a single
+	// phase so the trace shows one bar that ends when the entire
+	// fallback finishes (success or any of the early-error returns).
+	fallbackPhase := srvtiming.Begin(ctx, "db_fallback")
 	session, err := a.db.GetSession(id)
 	if err != nil {
-		srvtiming.Record(ctx, "db_fallback", time.Since(dbStart), "")
+		fallbackPhase.End()
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, platforms.ErrNotFound
 		}
@@ -246,12 +248,12 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 
 	messages, err := a.db.GetSessionMessages(id)
 	if err != nil {
-		srvtiming.Record(ctx, "db_fallback", time.Since(dbStart), "")
+		fallbackPhase.End()
 		return nil, err
 	}
 	parts, err := a.db.GetSessionParts(id)
 	if err != nil {
-		srvtiming.Record(ctx, "db_fallback", time.Since(dbStart), "")
+		fallbackPhase.End()
 		return nil, err
 	}
 
@@ -261,7 +263,7 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 
 	contextTokens, _ := a.db.GetContextTokenCount(id)
 	defaults, _ := getSessionDefaultsCached(a.db, id, session.Directory)
-	srvtiming.Record(ctx, "db_fallback", time.Since(dbStart), "live path miss; full DB read")
+	fallbackPhase.EndWithDesc("live path miss; full DB read")
 
 	return &platforms.SessionDetail{
 		Session:           session,

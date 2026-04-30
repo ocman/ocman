@@ -444,13 +444,31 @@
       ],
       "options": { "showHeader": true }
     },
+    {
+      "type": "table",
+      "title": "Slowest phases",
+      "description": "Internal phases (srvtiming spans) ranked by duration. Use to find which phase under a slow request is the bottleneck (e.g. lsof_miss, http_messages, db_get_sessions).",
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 86 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "tempo", "uid": "tempo" },
+          "queryType": "traceql",
+          "query": "{resource.service.name=\"$service\" && name=~\"phase:.*\" && span.duration > 50ms} | select(span.duration, name)",
+          "limit": 100,
+          "tableType": "spans"
+        }
+      ],
+      "options": { "showHeader": true }
+    },
 
-    { "type": "row", "title": "Logs", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 86 }, "collapsed": true, "panels": [
+    { "type": "row", "title": "Logs", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 96 }, "collapsed": true, "panels": [
       {
         "type": "logs",
         "title": "Errors and warnings",
         "datasource": { "type": "loki", "uid": "loki" },
-        "gridPos": { "h": 12, "w": 24, "x": 0, "y": 87 },
+        "gridPos": { "h": 12, "w": 24, "x": 0, "y": 97 },
         "targets": [
           {
             "refId": "A",

@@ -23,6 +23,13 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// tracerName is the OTel instrumentation scope used for the child
+// spans started by Begin. Kept under the srvtiming module path so
+// back-ends can group "ocman phase" spans separately from the
+// other server-side spans (which live under the ocman/server scope
+// via internal/telemetry).
+const tracerName = "github.com/NoUseFreak/ocman/internal/srvtiming"
+
 // Collector accumulates named durations for a single request.
 // Goroutine-safe: handlers may fan out work and have each goroutine
 // record its own slice of the latency.
@@ -80,24 +87,110 @@ func Record(ctx context.Context, name string, dur time.Duration, description str
 }
 
 // TimeIt times the execution of fn and records the result. Convenience
-// wrapper for the common case of "time this single call".
+// wrapper for the common case of "time this single call". Equivalent
+// to a Begin/End pair around fn().
 func TimeIt(ctx context.Context, name string, fn func()) {
-	c := FromContext(ctx)
-	if c == nil {
-		// Still emit the span event when there's no collector — a
-		// background job may be tracing without using Server-Timing.
-		start := time.Now()
-		fn()
-		emitSpanEvent(ctx, name, time.Since(start), "")
+	p := Begin(ctx, name)
+	defer p.End()
+	fn()
+}
+
+// Phase is the handle returned by Begin. Call End (or EndWithDesc)
+// when the work being timed has finished. Phases are zero-cost when
+// no collector and no recording span are present, so wrapping
+// short-lived work freely is fine.
+//
+// A zero Phase is valid and behaves as a no-op, which lets helpers
+// return early without making the caller's `defer phase.End()` line
+// nil-panic.
+type Phase struct {
+	ctx       context.Context
+	collector *Collector
+	span      trace.Span // child span; set when tracing is active
+	name      string
+	start     time.Time
+}
+
+// Begin marks the start of a named phase. The returned Phase carries
+// both a srvtiming entry (so the Server-Timing header still works
+// for browser devtools) and an OTel child span (so the phase shows
+// up as a real span in Tempo with proper duration and is queryable
+// via TraceQL like any other span).
+//
+// When tracing is disabled, the OTel side is the SDK no-op and only
+// the srvtiming entry is emitted. When neither a collector nor a
+// recording span is in ctx, Phase.End is itself a no-op.
+//
+// Typical use:
+//
+//	p := srvtiming.Begin(ctx, "db_get_session")
+//	defer p.End()
+//	row, err := d.db.QueryRowContext(p.Context(), ...)
+//
+// Pass `p.Context()` to downstream calls so any spans they create
+// nest under this phase span.
+func Begin(ctx context.Context, name string) Phase {
+	p := Phase{
+		ctx:       ctx,
+		collector: FromContext(ctx),
+		name:      name,
+		start:     time.Now(),
+	}
+	// Only start a real span when something in ctx is recording.
+	// Calling Tracer().Start unconditionally would clutter Tempo
+	// with parent-less zero-duration spans for every srvtiming
+	// call that happens outside an HTTP request (tests, boot, ...).
+	if parent := trace.SpanFromContext(ctx); parent.IsRecording() {
+		p.ctx, p.span = parent.TracerProvider().Tracer(tracerName).
+			Start(ctx, "phase:"+name, trace.WithAttributes(
+				attribute.String("ocman.phase", name),
+			))
+	}
+	return p
+}
+
+// Context returns the context that should be used for downstream
+// work inside the phase. When a child span was started this carries
+// it, so spans created via the returned context nest correctly.
+// Falls back to the original parent context when tracing is off.
+func (p Phase) Context() context.Context {
+	if p.ctx == nil {
+		return context.Background()
+	}
+	return p.ctx
+}
+
+// End closes the phase. Records the elapsed time on the
+// Server-Timing collector (if any) and ends the child span (if
+// any). Safe to call on the zero Phase value.
+func (p Phase) End() {
+	p.endWith("")
+}
+
+// EndWithDesc is End plus a Server-Timing description. The
+// description appears as the `desc=...` attribute in browser
+// devtools and as `ocman.phase.description` on the OTel span.
+func (p Phase) EndWithDesc(desc string) {
+	p.endWith(desc)
+}
+
+func (p Phase) endWith(desc string) {
+	if p.name == "" {
 		return
 	}
-	start := time.Now()
-	defer func() {
-		dur := time.Since(start)
-		emitSpanEvent(ctx, name, dur, "")
-		c.add(name, dur, "")
-	}()
-	fn()
+	dur := time.Since(p.start)
+	if p.collector != nil {
+		p.collector.add(p.name, dur, desc)
+	}
+	if p.span != nil {
+		if desc != "" {
+			p.span.SetAttributes(attribute.String("ocman.phase.description", desc))
+		}
+		p.span.SetAttributes(
+			attribute.Float64("ocman.phase.duration_ms", float64(dur.Microseconds())/1000.0),
+		)
+		p.span.End()
+	}
 }
 
 // emitSpanEvent decorates the active span in ctx with a timed event

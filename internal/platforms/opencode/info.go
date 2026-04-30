@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -114,34 +113,34 @@ func (a *Adapter) SessionInfo(ctx context.Context, sessionID string) (*platforms
 		liveTier alwaysOnTier
 		wg       sync.WaitGroup
 	)
-	infoStart := time.Now()
+	parallelPhase := srvtiming.Begin(ctx, "http_parallel")
 	wg.Add(4)
 	go func() {
 		defer wg.Done()
-		s := time.Now()
+		p := srvtiming.Begin(ctx, "http_mcp")
 		mcp = fetchOpenCodeMCP(port)
-		srvtiming.Record(ctx, "http_mcp", time.Since(s), "GET /mcp")
+		p.EndWithDesc("GET /mcp")
 	}()
 	go func() {
 		defer wg.Done()
-		s := time.Now()
+		p := srvtiming.Begin(ctx, "http_lsp")
 		lsp = fetchOpenCodeLSP(port)
-		srvtiming.Record(ctx, "http_lsp", time.Since(s), "GET /lsp")
+		p.EndWithDesc("GET /lsp")
 	}()
 	go func() {
 		defer wg.Done()
-		s := time.Now()
+		p := srvtiming.Begin(ctx, "http_provider")
 		prov, hasPrv = fetchOpenCodeProviders(port)
-		srvtiming.Record(ctx, "http_provider", time.Since(s), "GET /provider")
+		p.EndWithDesc("GET /provider")
 	}()
 	go func() {
 		defer wg.Done()
-		s := time.Now()
+		p := srvtiming.Begin(ctx, "live_tier")
 		liveTier, liveOK = alwaysOnTierFromOpenCode(port, sessionID, a.pricing)
-		srvtiming.Record(ctx, "live_tier", time.Since(s), "GET /session/{id}/message + aggregate")
+		p.EndWithDesc("GET /session/{id}/message + aggregate")
 	}()
 	wg.Wait()
-	srvtiming.Record(ctx, "http_parallel", time.Since(infoStart), "info 4-way fan-out")
+	parallelPhase.EndWithDesc("info 4-way fan-out")
 
 	var provPtr *OpenCodeProvidersResponse
 	if hasPrv {
