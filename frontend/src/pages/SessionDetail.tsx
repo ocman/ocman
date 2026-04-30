@@ -24,6 +24,7 @@ import { useApiStore } from '../lib/apiStore';
 import { useGitInfo } from '../lib/useGitInfo';
 import { usePlatformCapabilities } from '../lib/useCapabilities';
 import { recheckFaviconNotify } from '../lib/useFaviconNotify';
+import { notifyPromptDismissed } from '../lib/useToastNotify';
 import { openVSCode } from '../lib/shortcuts';
 import { useShortcut } from '../lib/shortcutRegistry';
 import { hashSession, hashMessagesAndParts } from '../lib/sessionHash';
@@ -2358,6 +2359,10 @@ export function SessionDetail() {
       // follow-up permission may have already arrived while the POST was in
       // flight — clearing unconditionally would hide that new prompt.
       setPendingPermission(prev => (prev && prev.permissionId === repliedId ? null : prev));
+      // Drop any global prompt toast pointing at this session — the
+      // user just answered. Cross-tab clients still get pruned on
+      // their next poll.
+      notifyPromptDismissed(targetSessionId);
       // SSE events will deliver the updated session state incrementally.
     } catch (e) {
       setPermissionError(e instanceof Error ? e.message : 'Failed to respond to permission request');
@@ -2375,6 +2380,7 @@ export function SessionDetail() {
       setPendingQuestion(null);
       setQuestionError(null);
       clearPendingQuestion(session.id);
+      notifyPromptDismissed(session.id);
       // SSE events will deliver the updated session state incrementally.
     } catch (e) {
       console.error('Failed to respond to question', e);
@@ -2391,6 +2397,7 @@ export function SessionDetail() {
       await rejectQuestion(session.id, pendingQuestion.requestId);
       setPendingQuestion(null);
       clearPendingQuestion(session.id);
+      notifyPromptDismissed(session.id);
       // SSE events will deliver the updated session state incrementally.
     } catch (e) {
       console.error('Failed to dismiss question', e);

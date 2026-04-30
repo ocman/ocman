@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   __evaluateForTests,
   __resetForTests,
+  notifyPromptDismissed,
   type ToastNotifyShape,
 } from './useToastNotify';
 
@@ -125,6 +126,40 @@ describe('useToastNotify controller', () => {
     // When the state goes back to "no prompt" then forward to "prompt"
     // again, we treat that as a brand-new prompt and toast again.
     expect(third).toHaveLength(1);
+  });
+
+  it('re-fires after notifyPromptDismissed clears the dedupe entry', () => {
+    // Simulates the same-tab "user just answered the prompt" path:
+    // SessionDetail calls notifyPromptDismissed(sessionId) on reply,
+    // which clears the dedupe key so a *fresh* prompt for that
+    // session toasts immediately on the next evaluate — even if the
+    // backend snapshot still shows the same state key (poll lag).
+    const sessions = [s('a', { pendingQuestion: true })];
+    const first = __evaluateForTests({ sessions, currentPath: '/', baseline: null });
+    expect(first).toHaveLength(1);
+
+    const dedupedSecond = __evaluateForTests({ sessions, currentPath: '/', baseline: null });
+    expect(dedupedSecond).toEqual([]);
+
+    notifyPromptDismissed('a');
+
+    const refired = __evaluateForTests({ sessions, currentPath: '/', baseline: null });
+    expect(refired).toHaveLength(1);
+    expect(refired[0].sessionId).toBe('a');
+  });
+
+  it('notifyPromptDismissed only clears dedupe for the named session', () => {
+    const sessions = [
+      s('a', { pendingQuestion: true }),
+      s('b', { pendingPermission: true }),
+    ];
+    __evaluateForTests({ sessions, currentPath: '/', baseline: null });
+
+    // Dismissing 'a' must not let 'b' re-fire on the next tick.
+    notifyPromptDismissed('a');
+    const next = __evaluateForTests({ sessions, currentPath: '/', baseline: null });
+    expect(next).toHaveLength(1);
+    expect(next[0].sessionId).toBe('a');
   });
 
   it('prefers permission over question when both are flagged on the same session', () => {

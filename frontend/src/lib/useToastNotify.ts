@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { api, type NotifyEntry } from './api';
 
@@ -53,6 +53,28 @@ function stateKey(s: ToastNotifyShape): string {
 // state key. Tracked at module scope so re-renders don't drop dedupe
 // state, and so tests can flush via __resetForTests.
 let firedKeys = new Set<string>();
+
+// Module-scoped pub/sub for "this session's prompt was just resolved".
+// Lets the SessionDetail page (which knows about resolution via SSE
+// the moment it happens) tell the toast hook to drop any matching
+// toast immediately, without waiting for the next 10s poll.
+type DismissListener = (sessionId: string) => void;
+const dismissListeners = new Set<DismissListener>();
+
+/**
+ * Notify the toast hook that the prompt for `sessionId` has been
+ * resolved (answered, rejected, or otherwise no longer pending).
+ * Removes any rendered toast for that session and clears its dedupe
+ * entry so a fresh prompt later in the same session will re-toast.
+ */
+export function notifyPromptDismissed(sessionId: string): void {
+  // Drop dedupe keys for this session so a future prompt can re-fire
+  // even if the polled `notify` snapshot hasn't caught up yet.
+  for (const k of firedKeys) {
+    if (k.startsWith(`${sessionId}|`)) firedKeys.delete(k);
+  }
+  for (const listener of dismissListeners) listener(sessionId);
+}
 
 type EvaluateInput = {
   sessions: ToastNotifyShape[];
@@ -122,6 +144,7 @@ export function __evaluateForTests(input: EvaluateInput): ToastDecision[] {
 /** Test-only: flush the per-tab "already fired" cache. */
 export function __resetForTests() {
   firedKeys = new Set();
+  dismissListeners.clear();
 }
 
 /**
@@ -164,6 +187,31 @@ export function useToastNotify(): UseToastNotifyResult {
     setToasts((prev) => prev.filter((t) => t.toastId !== toastId));
   }, []);
 
+  // Hide any toast whose session matches the page the user is
+  // currently on. Computed at render time rather than mutated via an
+  // effect — both because it avoids a cascading-render lint warning
+  // and because it correctly handles the case where the user
+  // navigates *away* from the session before the prompt resolves
+  // (the toast should reappear in the viewport once they leave).
+  const visibleToasts = useMemo(() => {
+    const active = activeSessionId(location.pathname);
+    if (!active) return toasts;
+    return toasts.filter((t) => t.sessionId !== active);
+  }, [toasts, location.pathname]);
+
+  // Subscribe to module-scoped "prompt resolved" events fired by
+  // SessionDetail when a permission/question reply is sent. Lets us
+  // remove the toast instantly instead of waiting for the next poll.
+  useEffect(() => {
+    const listener: DismissListener = (sessionId) => {
+      setToasts((prev) => prev.filter((t) => t.sessionId !== sessionId));
+    };
+    dismissListeners.add(listener);
+    return () => {
+      dismissListeners.delete(listener);
+    };
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -187,19 +235,35 @@ export function useToastNotify(): UseToastNotifyResult {
           limit: TOAST_LIMIT,
         });
         if (cancelled) return;
+
+        // Build the "still has a pending prompt of kind X" set so we
+        // can prune resolved toasts. Defensive backstop for cross-tab
+        // resolutions and any same-tab path that didn't fire
+        // notifyPromptDismissed (e.g. session.idle event flow).
+        const stillPending = new Set<string>();
+        for (const s of sessions) {
+          if (s.pendingPermission) stillPending.add(`${s.id}|permission`);
+          if (s.pendingQuestion) stillPending.add(`${s.id}|question`);
+        }
+
         const decisions = __evaluateForTests({
           sessions,
           currentPath: pathRef.current,
           baseline: baselineRef.current,
         });
-        if (decisions.length === 0) return;
 
         const now = Date.now();
         setToasts((prev) => {
+          // First prune toasts whose underlying prompt resolved.
+          const pruned = prev.filter((t) =>
+            stillPending.has(`${t.sessionId}|${t.kind}`),
+          );
+          if (decisions.length === 0) return pruned;
+
           // Drop any pre-existing toast for the same session — the
           // newest decision supersedes it (e.g. question -> permission).
           const ids = new Set(decisions.map((d) => d.sessionId));
-          const kept = prev.filter((t) => !ids.has(t.sessionId));
+          const kept = pruned.filter((t) => !ids.has(t.sessionId));
           const next = decisions.map<ToastEntry>((d) => ({
             ...d,
             toastId: `${d.sessionId}:${now}`,
@@ -224,5 +288,5 @@ export function useToastNotify(): UseToastNotifyResult {
     };
   }, []);
 
-  return { toasts, dismiss };
+  return { toasts: visibleToasts, dismiss };
 }
