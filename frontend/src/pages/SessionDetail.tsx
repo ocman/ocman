@@ -4,6 +4,7 @@ import * as Toast from '@radix-ui/react-toast';
 import './SessionDetail.css';
 import { api, type Session, type Message, type Part, type AgentInfo, type SessionModelEntry, type SessionDetail } from '../lib/api';
 import { cleanTitle, shortPath, relativeTime } from '../lib/format';
+import { projectRootForDirectory } from '../lib/worktrees';
 import { useHeaderInfo, usePageTitle } from '../lib/headerContext';
 import { OcmanRuntimeProvider } from '../components/OcmanRuntimeProvider';
 import { AssistantThread } from '../components/AssistantThread';
@@ -569,6 +570,7 @@ export function SessionDetail() {
 
   // Tmux state
   const tmux = useTmux();
+  const openWorktreeForm = useUiStore((s) => s.openWorktreeForm);
   const [pendingTmuxSession, setPendingTmuxSession] = useState<string | null>(null);
   const [pickerPos, setPickerPos] = useState<{ top: number; left: number } | null>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -2177,6 +2179,17 @@ export function SessionDetail() {
       return;
     }
 
+    // /wt is a local ocman action too: it opens the worktree-creation
+    // modal prefilled from the current session's directory, optionally
+    // seeding the branch from the command args (`/wt feature/login`).
+    if (command === 'wt') {
+      openWorktreeForm({
+        projectDir: session.directory,
+        branch: args.trim() || undefined,
+      });
+      return;
+    }
+
     if (!portAvailable) return;
 
     if (command === 'compact') {
@@ -2297,7 +2310,7 @@ export function SessionDetail() {
       setMessages(prev => [...prev, errMsg]);
       setParts(prev => [...prev, errPart]);
     }
-  }, [activeAgent, activeModel, archiveSession, createSession, launchOpencodeInTmux, tmux.available, handleCompact, handleNewSession, navigate, portAvailable, recentSessions, selectedAgent, selectedModel, session]);
+  }, [activeAgent, activeModel, archiveSession, createSession, launchOpencodeInTmux, openWorktreeForm, tmux.available, handleCompact, handleNewSession, navigate, portAvailable, recentSessions, selectedAgent, selectedModel, session]);
 
   // handleShell sends a `!`-prefixed composer submission to the
   // platform's raw shell endpoint (OpenCode: POST /session/{id}/shell),
@@ -2797,9 +2810,14 @@ export function SessionDetail() {
   // `optimisticStatus`, matching the per-row logic above, so the header
   // doesn't lag several seconds behind what the composer is showing.
   const sidebarProjectGroups = useMemo(() => {
+    // Bucket sessions by *project root*, not raw cwd, so that worktrees
+    // of the same repo live under one parent. projectRootForDirectory
+    // folds <prefix>/.worktrees/<repo>/<slug> back to <prefix>/<repo>;
+    // anything outside that layout passes through unchanged, so
+    // unrelated projects keep their own groups.
     const buckets = new Map<string, Session[]>();
     for (const s of recentSessions) {
-      const key = s.directory || '';
+      const key = projectRootForDirectory(s.directory || '');
       const existing = buckets.get(key);
       if (existing) existing.push(s);
       else buckets.set(key, [s]);
@@ -2860,8 +2878,15 @@ export function SessionDetail() {
   // user can always see where they are.
   const collapsedProjectSet = useMemo(() => {
     const set = new Set(collapsedProjects);
+    // Force the current session's group expanded so the user always
+    // sees where they are. Groups are keyed by project root (so
+    // worktrees of the same repo live under one parent), so look the
+    // current session's directory up under the same fold.
     const currentDir = recentSessions.find(s => s.id === id)?.directory;
-    if (currentDir) set.delete(currentDir);
+    if (currentDir) {
+      set.delete(currentDir); // legacy keys persisted before fold
+      set.delete(projectRootForDirectory(currentDir));
+    }
     return set;
   }, [collapsedProjects, recentSessions, id]);
 
@@ -2954,6 +2979,16 @@ export function SessionDetail() {
             // after the composer has already gone idle).
             const renderRow = (sib: Session, inGroup: boolean) => {
               const displayStatus = sib.id === id ? optimisticStatus : sib.status;
+              // When a row sits inside a project group, surface the
+              // worktree distinction (if any) next to the platform
+              // badge so siblings stay distinguishable. The group
+              // header already shows the project root; we only add a
+              // hint when the session's actual cwd diverges from it
+              // (i.e. it's a worktree, not the main checkout).
+              const projectRoot = projectRootForDirectory(sib.directory || '');
+              const worktreeHint = inGroup && sib.directory && sib.directory !== projectRoot
+                ? sib.directory.slice(projectRoot.length).replace(/^\/+/, '')
+                : '';
               return (
                 <div
                   key={sib.id}
@@ -2983,6 +3018,14 @@ export function SessionDetail() {
                     {inGroup && (
                       <span className="session-sidebar-project">
                         <PlatformBadge platform={sib.platform} variant="plain" />
+                        {worktreeHint && (
+                          <span
+                            className="session-sidebar-project-path"
+                            title={sib.directory}
+                          >
+                            {worktreeHint}
+                          </span>
+                        )}
                       </span>
                     )}
                     <GitStatusLine info={siblingGitInfos[sib.directory]} />

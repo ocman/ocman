@@ -18,6 +18,14 @@ Both platforms are wired through a common `Platform` adapter interface
 new adapter + registry entry; see
 `spec/multi-agent-support/architecture.md` for the design.
 
+Ocman also supports **on-demand OpenCode worktree sessions** via the
+`/wt` command in the command palette and the per-project Worktrees
+view (`/project/<dir>/worktrees`). The feature shells out to
+`git worktree add` under `<repo-parent>/.worktrees/<repo>/<slug>/`,
+then launches `opencode --port 0` in tmux rooted at that worktree so
+parallel sessions stop interfering with each other's files, rebuilds,
+and staging area.
+
 ## Repository layout
 
 - `main.go` — entrypoint; parses `-addr`, `-db`, and `-platforms`

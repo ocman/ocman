@@ -100,6 +100,30 @@ describe('createSessionWithLaunch', () => {
     expect(createSession).toHaveBeenCalledTimes(1);
   });
 
+  it('retries without launching when alreadyLaunched=true and tmux is unavailable', async () => {
+    // /wt path: the worktree backend has already started opencode in
+    // a tmux window; we must not call launchOpencodeInTmux a second
+    // time, but we must keep retrying until the lsof scan picks up
+    // the new instance and createSession succeeds.
+    const createSession = vi
+      .fn()
+      .mockRejectedValueOnce(unreachable())
+      .mockRejectedValueOnce(unreachable())
+      .mockResolvedValueOnce({ id: 'wt-session' });
+    const launchOpencodeInTmux = vi.fn();
+
+    const promise = createSessionWithLaunch(
+      { createSession, launchOpencodeInTmux, tmuxAvailable: false },
+      { directory: '/tmp/wt', alreadyLaunched: true },
+    );
+    await vi.runAllTimersAsync();
+    const res = await promise;
+
+    expect(res).toEqual({ id: 'wt-session' });
+    expect(launchOpencodeInTmux).not.toHaveBeenCalled();
+    expect(createSession).toHaveBeenCalledTimes(3);
+  });
+
   it('gives up retrying if the retry returns a non-unreachable error', async () => {
     const fatal = new Error('auth required');
     const createSession = vi

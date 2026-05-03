@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import './CommandPalette.css';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import Fuse from 'fuse.js';
 import { useApiStore } from '../lib/apiStore';
 import { useUiStore } from '../lib/uiStore';
+import { useWorktreeSessions } from '../lib/useCapabilities';
 import { cleanTitle, relativeTime, shortPath } from '../lib/format';
 import type { Session, Project } from '../lib/api';
 import { useTmux } from '../lib/useTmux';
@@ -33,6 +34,16 @@ const STATIC_COMMANDS: CommandItem[] = [
   { kind: 'command', id: 'cmd.usage', label: 'usage', description: 'Go to Usage tab' },
   { kind: 'command', id: 'cmd.shortcuts', label: 'shortcuts', description: 'Open keyboard shortcuts' },
 ];
+
+// `cmd.worktree` is the /wt palette entry. Listed separately so it can
+// be filtered out by useWorktreeSessions() without mutating
+// STATIC_COMMANDS in place.
+const WORKTREE_COMMAND: CommandItem = {
+  kind: 'command',
+  id: 'cmd.worktree',
+  label: 'wt',
+  description: 'New worktree session',
+};
 
 const SCOPED_COMMANDS: ScopedItem[] = [
   { kind: 'scoped', id: 'scoped.model', label: 'model', description: 'Change model (session-scoped)' },
@@ -77,12 +88,15 @@ export function CommandPalette() {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const location = useLocation();
   const sessions = useApiStore((s) => s.cachedSessions);
   const projects = useApiStore((s) => s.getProjects);
   const createSession = useApiStore((s) => s.createSession);
   const launchOpencodeInTmux = useApiStore((s) => s.launchOpencodeInTmux);
   const refreshCachedSessions = useApiStore((s) => s.refreshCachedSessions);
   const tmux = useTmux();
+  const worktreeSessionsAllowed = useWorktreeSessions();
+  const openWorktreeForm = useUiStore((s) => s.openWorktreeForm);
   const {
     paletteOpen,
     paletteMode,
@@ -100,6 +114,45 @@ export function CommandPalette() {
     setProjectList([]);
     rawClosePalette();
   }, [rawClosePalette]);
+
+  // Effective static commands list. WORKTREE_COMMAND only appears when
+  // the host supports the /wt feature (capability-gated; AD-7).
+  const staticCommands = useMemo(
+    () => (worktreeSessionsAllowed ? [...STATIC_COMMANDS, WORKTREE_COMMAND] : STATIC_COMMANDS),
+    [worktreeSessionsAllowed],
+  );
+
+  // Best-effort project inference for `cmd.worktree` so invoking /wt
+  // from a project page or session page pre-fills the project field.
+  // Falls back to undefined on global pages.
+  const inferredProjectDir = useMemo(() => {
+    const path = location.pathname;
+
+    // Project detail routes are mounted under /project/<encoded-dir>
+    // with optional child paths like /worktrees.
+    if (path.startsWith('/project/')) {
+      const rest = path.slice('/project/'.length);
+      const encodedDir = rest.split('/')[0];
+      if (encodedDir) {
+        try {
+          return decodeURIComponent(encodedDir);
+        } catch {
+          return undefined;
+        }
+      }
+      return undefined;
+    }
+
+    // Session detail route: look up the session in cachedSessions and
+    // use its working directory as the inferred project.
+    if (path.startsWith('/session/')) {
+      const sessionID = path.slice('/session/'.length).split('/')[0];
+      const session = sessions?.find((s) => s.id === sessionID);
+      return session?.directory;
+    }
+
+    return undefined;
+  }, [location.pathname, sessions]);
 
   useEffect(() => {
     if (paletteOpen) {
@@ -179,19 +232,19 @@ export function CommandPalette() {
     }
 
     if (!query.trim()) {
-      return dedupeCommandNavItems([...SCOPED_COMMANDS, ...STATIC_COMMANDS, ...NAV_ITEMS]);
+      return dedupeCommandNavItems([...SCOPED_COMMANDS, ...staticCommands, ...NAV_ITEMS]);
     }
 
     if (isCommandQuery(query)) {
       const q = stripCommandPrefix(query).toLowerCase();
-      const commands = STATIC_COMMANDS.filter((item) => item.label.toLowerCase().includes(q));
+      const commands = staticCommands.filter((item) => item.label.toLowerCase().includes(q));
       const scoped = SCOPED_COMMANDS.filter((item) => item.label.toLowerCase().includes(q));
       const navs = NAV_ITEMS.filter((item) => item.label.toLowerCase().includes(q));
       return dedupeCommandNavItems([...commands, ...scoped, ...navs]);
     }
 
     const q = query.toLowerCase();
-    const commands = STATIC_COMMANDS.filter((item) => item.label.toLowerCase().includes(q));
+    const commands = staticCommands.filter((item) => item.label.toLowerCase().includes(q));
     const navs = NAV_ITEMS.filter((item) => item.label.toLowerCase().includes(q));
     const scoped = SCOPED_COMMANDS.filter((item) => item.label.toLowerCase().includes(q));
     const sessionResults = sessions
@@ -217,7 +270,7 @@ export function CommandPalette() {
     }
 
     return uniqueResults;
-  }, [mode, query, sessions, sessionFuse, projectList]);
+  }, [mode, query, sessions, sessionFuse, projectList, staticCommands]);
 
   useEffect(() => {
     if (!listRef.current) return;
@@ -260,6 +313,8 @@ export function CommandPalette() {
       closePalette();
       if (item.id === 'cmd.shortcuts') {
         openShortcuts();
+      } else if (item.id === 'cmd.worktree') {
+        openWorktreeForm({ projectDir: inferredProjectDir });
       } else if (item.id === 'cmd.sessions') {
         navigate('/');
       } else if (item.id === 'cmd.projects') {

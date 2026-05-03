@@ -4,11 +4,13 @@ import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 're
 import { useHotkeys } from 'react-hotkeys-hook';
 import { DashboardLayout, SessionsTab, ProjectsTab, StatsTab, UsageTab, SettingsTab } from './pages/Dashboard';
 import { ProjectDetail } from './pages/ProjectDetail';
+import { WorktreesView } from './pages/WorktreesView';
 import { SessionDetail } from './pages/SessionDetail';
 import { Login } from './pages/Login';
 import { HeaderProvider } from './lib/HeaderProvider';
 import { useHeaderInfo } from './lib/headerContext';
 import { CommandPalette } from './components/CommandPalette';
+import { WorktreeFormModal } from './components/WorktreeFormModal';
 import { PlatformBadge } from './components/PlatformBadge';
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -61,7 +63,7 @@ function Header() {
       </>
     );
   } else if (path.startsWith('/project/')) {
-    const dir = decodeURIComponent(path.slice('/project/'.length));
+    const dir = decodeURIComponent(path.slice('/project/'.length).split('/')[0]);
     const name = dir.split('/').pop();
     breadcrumb = <>/ {name}</>;
   }
@@ -197,6 +199,7 @@ function GlobalHotkeys() {
   return (
     <>
       <CommandPalette />
+      <WorktreeFormModal />
       <KeyboardShortcutsDialog open={shortcutsOpen} onClose={closeShortcuts} />
     </>
   );
@@ -325,7 +328,8 @@ export default function App() {
                     <Route path="/usage" element={<UsageTab />} />
                     <Route path="/settings" element={<SettingsTab />} />
                   </Route>
-                  <Route path="/project/*" element={<ProjectDetail />} />
+                  <Route path="/project/:dir/worktrees" element={<WorktreesView />} />
+                  <Route path="/project/:dir" element={<ProjectDetail />} />
                   <Route path="/session/:id" element={<SessionDetail />} />
                 </Routes>
               </RoutesBoundary>

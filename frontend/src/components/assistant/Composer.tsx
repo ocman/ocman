@@ -134,6 +134,7 @@ const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: 'new', description: 'Start a new session in the same project directory (optionally add a title)' },
   { name: 'rename', description: 'Rename this session' },
   { name: 'tmux', description: 'Switch to the tmux session for this project' },
+  { name: 'wt', description: 'Create a worktree session for this project (optionally prefill the branch)' },
   { name: 'vscode', description: 'Open the project directory in VS Code' },
 ];
 

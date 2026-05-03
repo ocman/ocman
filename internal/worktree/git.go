@@ -1,0 +1,252 @@
+package worktree
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+// gitCommandTimeout bounds each git invocation. Worktree operations
+// touch the filesystem and may be slower than a plain rev-parse, so
+// give them more headroom than gitinfo's 2s ceiling.
+const gitCommandTimeout = 15 * time.Second
+
+// Entry is one row from `git worktree list --porcelain`.
+type Entry struct {
+	Path   string `json:"path"`
+	Branch string `json:"branch"` // short name; empty for detached
+	Head   string `json:"head"`
+	Bare   bool   `json:"bare"`
+	Locked bool   `json:"locked"`
+	Main   bool   `json:"main"` // true for the primary worktree
+}
+
+// CreateRequest captures the user's choice from the form.
+type CreateRequest struct {
+	// RepoRoot is the absolute path of the main checkout.
+	RepoRoot string
+	// Branch is the (un-slugified) branch name. Required.
+	Branch string
+	// NewBranch is true when we should create a new branch off
+	// BaseRef. False = check out an existing branch.
+	NewBranch bool
+	// BaseRef is the base when NewBranch is true. Ignored otherwise.
+	BaseRef string
+}
+
+// CreateResult tells the caller what happened.
+type CreateResult struct {
+	Path   string `json:"path"`
+	Branch string `json:"branch"`
+	Reused bool   `json:"reused"` // true when the worktree already existed for the same branch
+}
+
+// List runs `git worktree list --porcelain` and returns the parsed
+// entries. The first entry is always the main checkout (Main=true).
+func List(ctx context.Context, repoRoot string) ([]Entry, error) {
+	cctx, cancel := context.WithTimeout(ctx, gitCommandTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(cctx, "git", "-C", repoRoot, "worktree", "list", "--porcelain")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git worktree list: %w", err)
+	}
+	return parseWorktreeList(string(out))
+}
+
+// parseWorktreeList parses the porcelain output of `git worktree list`.
+// The format is line-oriented with blank-line-separated stanzas:
+//
+//	worktree <path>
+//	HEAD <sha>
+//	branch refs/heads/<short>          (or `bare` or `detached`)
+//	locked                              (optional)
+//
+// We translate `refs/heads/foo` to the short form `foo`.
+func parseWorktreeList(in string) ([]Entry, error) {
+	var entries []Entry
+	var cur Entry
+	var open bool
+	flush := func() {
+		if open {
+			entries = append(entries, cur)
+		}
+		cur = Entry{}
+		open = false
+	}
+
+	for _, line := range strings.Split(in, "\n") {
+		if line == "" {
+			flush()
+			continue
+		}
+		open = true
+		switch {
+		case strings.HasPrefix(line, "worktree "):
+			cur.Path = strings.TrimPrefix(line, "worktree ")
+		case strings.HasPrefix(line, "HEAD "):
+			cur.Head = strings.TrimPrefix(line, "HEAD ")
+		case strings.HasPrefix(line, "branch "):
+			ref := strings.TrimPrefix(line, "branch ")
+			cur.Branch = strings.TrimPrefix(ref, "refs/heads/")
+		case line == "bare":
+			cur.Bare = true
+		case line == "detached":
+			// Leave Branch empty.
+		case line == "locked" || strings.HasPrefix(line, "locked "):
+			cur.Locked = true
+		}
+	}
+	flush()
+
+	if len(entries) > 0 {
+		entries[0].Main = true
+	}
+	return entries, nil
+}
+
+// Create runs `git worktree add` with the right flags and handles
+// idempotent reuse. The target path is computed via PathFor.
+//
+// Behaviour:
+//   - If the target path already exists and `git worktree list`
+//     reports a worktree there with the requested branch, return
+//     Reused=true without invoking git.
+//   - If the target path exists but is not the right worktree, return
+//     ErrPathConflict.
+//   - If the branch is already attached to another worktree, return
+//     ErrBranchCheckedOutElsewhere.
+func Create(ctx context.Context, req CreateRequest) (*CreateResult, error) {
+	if req.RepoRoot == "" || req.Branch == "" {
+		return nil, fmt.Errorf("worktree: RepoRoot and Branch are required")
+	}
+
+	target := PathFor(req.RepoRoot, req.Branch)
+
+	// Idempotency check: is there already a worktree at `target` for
+	// the requested branch?
+	existing, err := List(ctx, req.RepoRoot)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range existing {
+		if filepath.Clean(e.Path) == filepath.Clean(target) {
+			if e.Branch == req.Branch {
+				return &CreateResult{
+					Path:   target,
+					Branch: req.Branch,
+					Reused: true,
+				}, nil
+			}
+			return nil, fmt.Errorf("%w: %s -> %s", ErrPathConflict, target, e.Branch)
+		}
+		// If the user asked to attach an existing branch and that
+		// branch is already in another worktree, fail fast — this
+		// matches what git itself would do, but we surface the
+		// typed error before the shell-out for cleaner UX.
+		if !req.NewBranch && e.Branch == req.Branch {
+			return nil, fmt.Errorf("%w: %s at %s",
+				ErrBranchCheckedOutElsewhere, req.Branch, e.Path)
+		}
+	}
+
+	// If `target` exists on disk but git doesn't know about it (a
+	// stale dir from a previous `git worktree remove --force` or
+	// manual rm), refuse rather than overwrite.
+	if _, statErr := os.Stat(target); statErr == nil {
+		return nil, fmt.Errorf("%w: %s exists but is not a tracked worktree",
+			ErrPathConflict, target)
+	}
+
+	// Make sure the parent dir (.worktrees/<repo>) exists. git
+	// worktree add creates the leaf, but not arbitrary intermediate
+	// directories.
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return nil, fmt.Errorf("worktree: mkdir parent: %w", err)
+	}
+
+	args := []string{"-C", req.RepoRoot, "worktree", "add"}
+	if req.NewBranch {
+		args = append(args, "-b", req.Branch, target)
+		if req.BaseRef != "" {
+			args = append(args, req.BaseRef)
+		}
+	} else {
+		args = append(args, target, req.Branch)
+	}
+
+	cctx, cancel := context.WithTimeout(ctx, gitCommandTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(cctx, "git", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, classifyAddError(err, string(out))
+	}
+
+	return &CreateResult{
+		Path:   target,
+		Branch: req.Branch,
+		Reused: false,
+	}, nil
+}
+
+// classifyAddError translates a `git worktree add` failure into one of
+// our typed errors when the message matches a known pattern. Falls
+// back to a wrapped error preserving git's own output.
+func classifyAddError(err error, output string) error {
+	out := strings.ToLower(output)
+	switch {
+	case strings.Contains(out, "is already used by worktree"),
+		strings.Contains(out, "already checked out"):
+		return fmt.Errorf("%w: %s", ErrBranchCheckedOutElsewhere, strings.TrimSpace(output))
+	case strings.Contains(out, "already exists"):
+		return fmt.Errorf("%w: %s", ErrPathConflict, strings.TrimSpace(output))
+	default:
+		return fmt.Errorf("git worktree add: %w: %s", err, strings.TrimSpace(output))
+	}
+}
+
+// ResolveBaseRef returns the best-guess base ref for new branches in
+// the given repo (AD-5):
+//
+//  1. origin/HEAD's target (the upstream's default branch).
+//  2. The repo's currently checked-out branch.
+//  3. Literal "main".
+//
+// Errors at any step fall through to the next option silently — the
+// returned value is *always* a usable string. Used to pre-fill the
+// "base ref" field in the worktree-creation form.
+func ResolveBaseRef(ctx context.Context, repoRoot string) string {
+	// (1) origin/HEAD
+	if ref := runGitOutput(ctx, repoRoot, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"); ref != "" {
+		// Output looks like "origin/main"; strip the remote prefix.
+		if idx := strings.IndexByte(ref, '/'); idx >= 0 {
+			return ref[idx+1:]
+		}
+		return ref
+	}
+	// (2) current branch
+	if ref := runGitOutput(ctx, repoRoot, "rev-parse", "--abbrev-ref", "HEAD"); ref != "" && ref != "HEAD" {
+		return ref
+	}
+	// (3) sentinel
+	return "main"
+}
+
+// runGitOutput is a small helper around exec.CommandContext that
+// returns trimmed stdout on success and an empty string on any error.
+func runGitOutput(ctx context.Context, repoRoot string, args ...string) string {
+	cctx, cancel := context.WithTimeout(ctx, gitCommandTimeout)
+	defer cancel()
+	full := append([]string{"-C", repoRoot}, args...)
+	cmd := exec.CommandContext(cctx, "git", full...)
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}

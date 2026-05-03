@@ -101,6 +101,18 @@ type UiStore = {
 
   paletteCommand: PaletteCommand | null;
   dispatchCommand: (cmd: PaletteCommand) => void;
+
+  // Worktree-creation modal (the /wt flow). Opening the modal also
+  // closes the palette so the two never overlap. `worktreeFormGen`
+  // increments on each open so the inner form component can be keyed
+  // for a clean remount (fresh useState defaults) without reading
+  // refs during render.
+  worktreeFormOpen: boolean;
+  worktreeFormGen: number;
+  worktreeFormProject: string | undefined;
+  worktreeFormBranch: string | undefined;
+  openWorktreeForm: (opts?: { projectDir?: string; branch?: string }) => void;
+  closeWorktreeForm: () => void;
 };
 
 function clampWidth(width: number): number {
@@ -196,6 +208,25 @@ export const useUiStore = create<UiStore>()(
 
       paletteCommand: null,
       dispatchCommand: (cmd: PaletteCommand) => set({ paletteCommand: cmd }),
+
+      worktreeFormOpen: false,
+      worktreeFormGen: 0,
+      worktreeFormProject: undefined,
+      worktreeFormBranch: undefined,
+      openWorktreeForm: (opts) => set((s) => ({
+        worktreeFormOpen: true,
+        worktreeFormGen: s.worktreeFormGen + 1,
+        worktreeFormProject: opts?.projectDir,
+        worktreeFormBranch: opts?.branch,
+        // Close the palette if it happened to be open — the modal
+        // takes over the focus.
+        paletteOpen: false,
+      })),
+      closeWorktreeForm: () => set({
+        worktreeFormOpen: false,
+        worktreeFormProject: undefined,
+        worktreeFormBranch: undefined,
+      }),
     }),
     {
       name: 'ocman:ui',

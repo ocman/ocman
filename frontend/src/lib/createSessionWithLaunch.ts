@@ -10,8 +10,13 @@
  *      `launchOpencodeInTmux`, then retry the createSession call a few
  *      times while the new opencode process comes up and starts
  *      listening.
- *   3. If tmux isn't available, or the retry loop exhausts, or any
- *      other error occurs, re-throw.
+ *   3. The /wt flow has already launched opencode in a tmux window, so
+ *      it sets `alreadyLaunched: true` to skip the launch step but
+ *      still benefit from the retry loop while the new instance
+ *      finishes booting and the lsof scan picks it up.
+ *   4. If tmux isn't available AND the launch wasn't done externally,
+ *      or the retry loop exhausts, or any other error occurs,
+ *      re-throw.
  *
  * Callers supply a status callback so the UI can render
  * "Launching opencode…" while the retry loop runs.
@@ -30,6 +35,14 @@ export interface CreateSessionWithLaunchOptions {
   directory: string;
   platform?: string;
   title?: string;
+  /**
+   * When true, the caller has already launched opencode in the target
+   * directory (e.g. the /wt flow does this via the worktree backend).
+   * createSessionWithLaunch will skip the `launchOpencodeInTmux` step
+   * but still retry on `unreachable` while the freshly-spawned opencode
+   * binds its port and gets picked up by the backend's lsof scan.
+   */
+  alreadyLaunched?: boolean;
 }
 
 // Retry loop parameters. After launching opencode we poll the create
@@ -50,22 +63,29 @@ export async function createSessionWithLaunch(
   opts: CreateSessionWithLaunchOptions,
 ): Promise<{ id: string }> {
   const { createSession, launchOpencodeInTmux, tmuxAvailable, onStatusChange } = deps;
-  const { directory, platform, title } = opts;
+  const { directory, platform, title, alreadyLaunched } = opts;
 
   try {
     return await createSession(directory, platform, title);
   } catch (err) {
-    if (!isUnreachable(err) || !tmuxAvailable) throw err;
+    if (!isUnreachable(err)) throw err;
+    // We retry-on-unreachable in two situations:
+    //   - tmux is available and we can launch opencode ourselves
+    //   - the caller already launched opencode and just wants us to
+    //     wait until the lsof scan + port bind catch up
+    if (!tmuxAvailable && !alreadyLaunched) throw err;
 
-    onStatusChange?.('launching');
-    try {
-      await launchOpencodeInTmux(directory);
-    } catch (launchErr) {
-      onStatusChange?.('idle');
-      // Fall through to rethrow the original "unreachable" error so
-      // the UI's error message still matches what the user requested.
-      console.error('Failed to launch opencode in tmux', launchErr);
-      throw err;
+    if (!alreadyLaunched) {
+      onStatusChange?.('launching');
+      try {
+        await launchOpencodeInTmux(directory);
+      } catch (launchErr) {
+        onStatusChange?.('idle');
+        // Fall through to rethrow the original "unreachable" error so
+        // the UI's error message still matches what the user requested.
+        console.error('Failed to launch opencode in tmux', launchErr);
+        throw err;
+      }
     }
 
     onStatusChange?.('retrying');

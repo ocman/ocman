@@ -1456,6 +1456,11 @@ type capabilityEntry struct {
 // handleCapabilities returns the current capability set of every
 // registered platform so the frontend can gate UI without branching
 // on platform identity.
+//
+// In addition to per-platform flags, the response carries a small set
+// of *server-wide* capability booleans for features whose availability
+// depends on the host environment rather than any one platform —
+// today that's just `worktreeSessions` (AD-7).
 func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	out := make([]capabilityEntry, 0)
@@ -1468,7 +1473,8 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, map[string]interface{}{
-		"platforms": out,
+		"platforms":        out,
+		"worktreeSessions": worktreeSessionsAvailable(s.registry),
 	})
 }
 

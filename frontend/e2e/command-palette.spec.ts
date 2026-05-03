@@ -120,6 +120,12 @@ test('default palette shows Usage nav item', async ({ mockedPage: page }) => {
   await expect(page.locator('.oc-cmd-item', { hasText: 'Usage' })).toBeVisible();
 });
 
+test('default palette shows wt command when worktree sessions are available', async ({ mockedPage: page }) => {
+  await page.goto('/');
+  await openPaletteStore(page);
+  await expect(page.locator('.oc-cmd-item', { hasText: 'wt' })).toBeVisible();
+});
+
 // ---------------------------------------------------------------------------
 // Filtering
 // ---------------------------------------------------------------------------
@@ -130,6 +136,15 @@ test('typing "stat" filters results to Stats-related items', async ({ mockedPage
   await page.fill('.oc-cmd-input', 'stat');
   // Results should include "Stats"
   await expect(page.locator('.oc-cmd-item', { hasText: 'Stats' })).toBeVisible();
+});
+
+test('selecting wt opens the worktree form modal', async ({ mockedPage: page }) => {
+  await page.goto('/');
+  await openPaletteStore(page);
+  await page.fill('.oc-cmd-input', '>wt');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.oc-wt-modal')).toBeVisible();
+  await expect(page.locator('.oc-wt-modal', { hasText: 'New worktree session' })).toBeVisible();
 });
 
 test('"> " prefix shows only command items (no session status indicators)', async ({

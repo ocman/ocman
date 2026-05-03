@@ -104,6 +104,14 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/tmux/switch", requirePOST(requireLocalhost(s.handleTmuxSwitch)))
 	mux.HandleFunc("/api/tmux/launch-opencode", requirePOST(requireLocalhost(s.handleTmuxLaunchOpencode)))
 
+	// Worktree endpoints. List + default-base-ref are read-only and
+	// safe to expose to authenticated clients; create-and-launch
+	// runs `git worktree add` and spawns tmux/opencode, so it's
+	// localhost-only like the other launch endpoints.
+	mux.HandleFunc("/api/worktree/list", s.get(s.handleWorktreeList))
+	mux.HandleFunc("/api/worktree/default-base-ref", s.get(s.handleWorktreeDefaultBaseRef))
+	mux.HandleFunc("/api/worktree/create-and-launch", requirePOST(requireLocalhost(s.handleWorktreeCreateAndLaunch)))
+
 	// Auth endpoints. /me is unauthenticated by design (the SPA needs
 	// to learn its auth state before it can show the lockscreen).
 	// /login and /logout are also unauthenticated — /login is where

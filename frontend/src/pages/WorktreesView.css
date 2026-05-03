@@ -1,0 +1,50 @@
+.oc-worktrees-page {
+  padding: 0;
+}
+
+.oc-worktrees-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.oc-worktrees-project {
+  color: var(--text-dim);
+}
+
+.oc-worktrees-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.oc-worktrees-branch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.oc-worktrees-chip {
+  font-size: 11px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  background: var(--surface0);
+}
+
+.oc-worktrees-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.oc-worktrees-empty {
+  text-align: center;
+  color: var(--text-dim);
+  padding: 24px;
+}

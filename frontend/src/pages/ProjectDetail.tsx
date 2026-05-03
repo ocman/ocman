@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Session } from '../lib/api';
 import { usePageTitle } from '../lib/headerContext';
 import { SessionTable } from '../components/SessionTable';
 import { useTmux } from '../lib/useTmux';
 import { useApiStore } from '../lib/apiStore';
+import { useWorktreeSessions } from '../lib/useCapabilities';
 import { shortPath } from '../lib/format';
 import { openVSCode } from '../lib/shortcuts';
 import { useShortcut } from '../lib/shortcutRegistry';
@@ -24,10 +25,13 @@ const TIME_RANGE_OPTIONS = [
 const DEFAULT_TIME_RANGE = 168; // 7d
 
 export function ProjectDetail() {
-  const { '*': directory } = useParams();
+  const { dir } = useParams();
+  const directory = dir ? decodeURIComponent(dir) : undefined;
   const projectName = directory?.split('/').pop() || 'Project';
   usePageTitle(projectName);
+  const navigate = useNavigate();
   const tmux = useTmux();
+  const worktreeSessionsAllowed = useWorktreeSessions();
   const matchingTmuxSession = directory ? tmux.findSession(directory) : undefined;
   const [sessions, setSessions] = useState<Session[]>([]);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
@@ -217,6 +221,16 @@ export function ProjectDetail() {
         )}
         {directory && (
           <button type="button" className="vscode-btn" onClick={handleOpenVSCode} title="Open in VS Code (V)">VS Code</button>
+        )}
+        {directory && worktreeSessionsAllowed && (
+          <button
+            type="button"
+            className="oc-time-range-btn"
+            onClick={() => navigate(`/project/${encodeURIComponent(directory)}/worktrees`)}
+            title="View project worktrees"
+          >
+            Worktrees
+          </button>
         )}
       </h2>
       <div className="oc-time-range">

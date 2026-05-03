@@ -115,3 +115,18 @@ export function useMultiPlatform(): boolean {
   const all = useCapabilities();
   return (all?.platforms.length ?? 0) > 1;
 }
+
+/**
+ * Returns true when the host can run the /wt (worktree-sessions) flow:
+ * git + tmux + opencode all available, AND an OpenCode adapter is
+ * registered. Used to gate the `/wt` palette command, the project-
+ * page Worktrees link, and the per-project Worktrees view (AD-7).
+ *
+ * Returns false during the initial /api/capabilities load — same
+ * conservative default as every other capability flag — so gated UI
+ * stays hidden until we have authoritative data.
+ */
+export function useWorktreeSessions(): boolean {
+  const all = useCapabilities();
+  return all?.worktreeSessions === true;
+}

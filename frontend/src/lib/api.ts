@@ -638,6 +638,56 @@ export interface PlatformCapabilityEntry {
 
 export interface CapabilitiesResponse {
   platforms: PlatformCapabilityEntry[];
+  /**
+   * Server-wide flag for the /wt (worktree-sessions) feature. True
+   * when (a) at least one OpenCode adapter is registered AND (b) git,
+   * tmux, and opencode are all on the host's PATH. False otherwise —
+   * the frontend uses this to hide the palette command, the project-
+   * page link, and the per-project Worktrees view (AD-7).
+   */
+  worktreeSessions?: boolean;
+}
+
+/**
+ * One row from `git worktree list --porcelain`, mirroring the Go
+ * type internal/worktree.Entry on the wire.
+ */
+export interface WorktreeEntry {
+  path: string;
+  branch: string; // empty for detached HEAD
+  head: string;
+  bare: boolean;
+  locked: boolean;
+  main: boolean; // true for the primary worktree
+}
+
+/**
+ * Request body for POST /api/worktree/create-and-launch.
+ * `baseRef` is required when `newBranch` is true.
+ */
+export interface WorktreeCreateRequest {
+  projectDir: string;
+  branch: string;
+  newBranch: boolean;
+  baseRef?: string;
+}
+
+/**
+ * Response from POST /api/worktree/create-and-launch.
+ *
+ * - `reused` is true when the target worktree already existed for
+ *   the same branch (idempotent re-run).
+ * - `opencodeLaunched` is false when the tmux session pre-existed
+ *   and we skipped the relaunch (AD-4). The user can still attach
+ *   to the existing session via tmuxSession.
+ */
+export interface WorktreeCreateResponse {
+  worktreePath: string;
+  branch: string;
+  reused: boolean;
+  tmuxSession: string;
+  tmuxTarget?: string;
+  opencodeLaunched: boolean;
 }
 
 export interface SlashCommand {
@@ -964,6 +1014,31 @@ export const api = {
     });
     if (!resp.ok) throw new Error(await resp.text());
     return resp.json();
+  },
+  /**
+   * Worktree-sessions endpoints (the /wt flow). See
+   * spec/worktree-sessions/architecture.md for the design.
+   */
+  worktree: {
+    list: (dir: string, signal?: AbortSignal) =>
+      fetchJSON<{ worktrees: WorktreeEntry[] }>(
+        `/api/worktree/list?dir=${encodeURIComponent(dir)}`,
+        signal,
+      ),
+    defaultBaseRef: (dir: string, signal?: AbortSignal) =>
+      fetchJSON<{ baseRef: string }>(
+        `/api/worktree/default-base-ref?dir=${encodeURIComponent(dir)}`,
+        signal,
+      ),
+    createAndLaunch: async (req: WorktreeCreateRequest): Promise<WorktreeCreateResponse> => {
+      const resp = await fetch('/api/worktree/create-and-launch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req),
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      return resp.json();
+    },
   },
   compactSession: async (sessionId: string, providerID: string, modelID: string) => {
     const resp = await fetch(`/api/session/${encodeURIComponent(sessionId)}/compact`, {

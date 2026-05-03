@@ -100,6 +100,7 @@ async function installDefaultRoutes(page: Page) {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
+        worktreeSessions: true,
         platforms: [
           {
             id: 'opencode',
@@ -330,6 +331,7 @@ export function sseMessage(opts: {
 
 export function makeCapabilitiesWithPort() {
   return {
+    worktreeSessions: true,
     platforms: [
       {
         id: 'opencode',

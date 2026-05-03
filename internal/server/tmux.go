@@ -27,6 +27,12 @@ type tmuxSession struct {
 	Windows      int    `json:"windows"`
 }
 
+// tmuxWindow represents one window inside a tmux session.
+type tmuxWindow struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
 // resolveTmuxSessionPath expands a tmux session name (which may use ~ and
 // underscores in place of dots) into an absolute filesystem path for matching
 // against OpenCode session directories.
@@ -161,6 +167,58 @@ func listTmuxSessions() ([]tmuxSession, error) {
 	return sessions, nil
 }
 
+// listTmuxWindows returns all windows for the given tmux session. The
+// `Path` is the current pane's working directory, which is good enough
+// for worktree-window matching because each worktree session runs a
+// single opencode process rooted at that directory.
+func listTmuxWindows(sessionName string) ([]tmuxWindow, error) {
+	out, err := exec.Command("tmux", "list-windows", "-t", sessionName, "-F", "#{window_name}\t#{pane_current_path}").Output()
+	if err != nil {
+		return nil, err
+	}
+	var windows []tmuxWindow
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) < 2 {
+			continue
+		}
+		windows = append(windows, tmuxWindow{Name: parts[0], Path: filepath.Clean(parts[1])})
+	}
+	return windows, nil
+}
+
+// tmuxWindowNameForDirectory derives the named tmux window used for a
+// worktree rooted at directory. We only use the final path segment
+// (which is already the slugified branch directory name) and prefix it
+// with `wt-` so it stands out from the project's ordinary windows.
+func tmuxWindowNameForDirectory(directory string) string {
+	base := filepath.Base(filepath.Clean(directory))
+	if base == "." || base == "/" || base == "" {
+		return "wt"
+	}
+	return "wt-" + base
+}
+
+// findTmuxSessionByPathIn returns the tmux session whose resolved path
+// matches directory, using the actual session name tmux reports (which
+// may have dots replaced with underscores). This is the reliable way to
+// target an existing project session — deriving a fresh name from the
+// path and handing it back to tmux can fail because tmux's displayed
+// name is not always byte-for-byte what we originally requested.
+func findTmuxSessionByPathIn(existing []tmuxSession, directory string) *tmuxSession {
+	want := filepath.Clean(directory)
+	for _, ts := range existing {
+		if filepath.Clean(ts.ResolvedPath) == want {
+			copy := ts
+			return &copy
+		}
+	}
+	return nil
+}
+
 // switchTmuxClient switches the given tmux client to the given session.
 func switchTmuxClient(clientTTY, targetSession string) error {
 	return exec.Command("tmux", "switch-client", "-c", clientTTY, "-t", targetSession).Run()
@@ -243,16 +301,120 @@ func tmuxSessionNameForPath(directory string) string {
 	return clean
 }
 
+// tmuxRunner abstracts the tmux side-effects so unit tests can stub
+// them. Production code uses defaultTmuxRunner; tests inject a fake.
+//
+// `command` arguments to newSession/newWindow/newNamedWindow are passed
+// to tmux as the positional shell-command argument: tmux runs that
+// command directly in the new pane *in place of the user's shell*. We
+// use this for opencode launches because the user's shell rc files
+// (mise, starship, etc.) can otherwise consume keystrokes from
+// `send-keys` via interactive prompts ("mise: trust this config?")
+// and silently mangle the command (e.g. eating the leading "open" of
+// "opencode" so the shell only sees "code --port 0" — see the bug
+// referenced in the comment below).
+//
+// Pass an empty `command` to start an ordinary login shell.
+type tmuxRunner struct {
+	listSessions   func() ([]tmuxSession, error)
+	listWindows    func(sessionName string) ([]tmuxWindow, error)
+	newSession     func(name, directory, command string) error
+	newWindow      func(name, directory, command string) error
+	newNamedWindow func(sessionName, windowName, directory, command string) error
+}
+
+var defaultTmuxRunner = tmuxRunner{
+	listSessions: listTmuxSessions,
+	listWindows:  listTmuxWindows,
+	newSession: func(name, directory, command string) error {
+		args := []string{"new-session", "-d", "-s", name, "-c", directory}
+		if command != "" {
+			args = append(args, command)
+		}
+		return exec.Command("tmux", args...).Run()
+	},
+	newWindow: func(name, directory, command string) error {
+		args := []string{"new-window", "-t", name, "-c", directory}
+		if command != "" {
+			args = append(args, command)
+		}
+		return exec.Command("tmux", args...).Run()
+	},
+	newNamedWindow: func(sessionName, windowName, directory, command string) error {
+		args := []string{"new-window", "-t", sessionName, "-n", windowName, "-c", directory}
+		if command != "" {
+			args = append(args, command)
+		}
+		return exec.Command("tmux", args...).Run()
+	},
+}
+
+// opencodeCommand is the shell command tmux runs in the worktree
+// window. We invoke it via `sh -lc` so the user's PATH is initialised
+// (opencode is installed via a mise/asdf/homebrew shim that depends on
+// shell init), but pass the command as a single literal argument so
+// nothing in the rc file (mise, starship, …) can race for keystrokes.
+const opencodeCommand = "exec opencode --port 0"
+
 // launchOpencodeInTmux finds or creates a tmux session named after the given
 // directory, opens a new window in it, and runs `opencode --port 0` there.
 // It returns the name of the tmux session that was used/created.
+//
+// This is the original (non-idempotent) launcher kept for callers that
+// explicitly want a fresh window every time. The /wt flow uses
+// launchOpencodeInTmuxIdempotent instead.
 func launchOpencodeInTmux(directory string) (string, error) {
+	name, _, err := launchOpencodeInTmuxWith(defaultTmuxRunner, directory, false)
+	return name, err
+}
+
+// launchOpencodeInTmuxIdempotent is the worktree-flow variant of
+// launchOpencodeInTmux. When the target tmux session already exists,
+// it does NOT open a new window and does NOT re-run `opencode --port 0`
+// — it simply returns the existing session name with launched=false.
+// This makes /wt safely re-runnable: the second invocation lands the
+// user back in their existing session instead of stacking duplicate
+// opencode instances (AD-4).
+//
+// Returns:
+//   - sessionName: the tmux session name (existing or newly created).
+//   - launched:    true iff we actually ran `opencode --port 0`.
+//                  False means the caller can rely on the session
+//                  already hosting opencode (or the user manually
+//                  re-launching it; see AD-4).
+//   - err:         any tmux failure.
+func launchOpencodeInTmuxIdempotent(directory string) (sessionName string, launched bool, err error) {
+	return launchOpencodeInTmuxWith(defaultTmuxRunner, directory, true)
+}
+
+// launchOpencodeInProjectTmuxWindow launches a worktree session inside
+// the *existing* tmux session for the project checkout, under a named
+// window rooted at the worktree directory.
+//
+// This matches the intended UX for /wt:
+//   - one tmux session per project checkout
+//   - one named window per worktree session
+//
+// The function is idempotent: if the named window already exists in the
+// project session, it returns the `session:window` target with
+// launched=false and does not re-send `opencode --port 0`.
+func launchOpencodeInProjectTmuxWindow(projectDirectory, worktreeDirectory string) (target string, launched bool, err error) {
+	return launchOpencodeInProjectTmuxWindowWith(defaultTmuxRunner, projectDirectory, worktreeDirectory)
+}
+
+// launchOpencodeInTmuxWith is the shared core for both launcher
+// variants. When idempotent=true and the session already exists, it
+// short-circuits without creating a new window, and returns
+// launched=false. Otherwise it creates the session (or opens a new
+// window in an existing one) and runs `opencode --port 0` directly as
+// the pane's foreground command — bypassing the user's shell rc files
+// so interactive prompts in mise/starship/etc. can't race against
+// `send-keys`.
+func launchOpencodeInTmuxWith(r tmuxRunner, directory string, idempotent bool) (string, bool, error) {
 	sessionName := tmuxSessionNameForPath(directory)
 
-	// Check whether this tmux session already exists.
 	sessionExists := false
-	existing, err := listTmuxSessions()
-	if err == nil {
+	if existing, err := r.listSessions(); err == nil {
 		for _, ts := range existing {
 			if ts.Name == sessionName {
 				sessionExists = true
@@ -261,25 +423,53 @@ func launchOpencodeInTmux(directory string) (string, error) {
 		}
 	}
 
+	if idempotent && sessionExists {
+		return sessionName, false, nil
+	}
+
 	if !sessionExists {
-		// Create a detached tmux session rooted at directory.
-		if err := exec.Command("tmux", "new-session", "-d", "-s", sessionName, "-c", directory).Run(); err != nil {
-			return "", fmt.Errorf("tmux new-session: %w", err)
+		if err := r.newSession(sessionName, directory, opencodeCommand); err != nil {
+			return "", false, fmt.Errorf("tmux new-session: %w", err)
 		}
 	} else {
-		// Session exists — open a new window in it, rooted at directory.
-		if err := exec.Command("tmux", "new-window", "-t", sessionName, "-c", directory).Run(); err != nil {
-			return "", fmt.Errorf("tmux new-window: %w", err)
+		if err := r.newWindow(sessionName, directory, opencodeCommand); err != nil {
+			return "", false, fmt.Errorf("tmux new-window: %w", err)
 		}
 	}
 
-	// Send the opencode command to the current pane of the session.
-	// -t targets the most-recently-created window (the one we just made).
-	if err := exec.Command("tmux", "send-keys", "-t", sessionName, "opencode --port 0", "Enter").Run(); err != nil {
-		return sessionName, fmt.Errorf("tmux send-keys: %w", err)
+	return sessionName, true, nil
+}
+
+// launchOpencodeInProjectTmuxWindowWith is the shared implementation of
+// launchOpencodeInProjectTmuxWindow. It reuses the existing tmux session
+// for projectDirectory and creates/reuses a named window for
+// worktreeDirectory.
+func launchOpencodeInProjectTmuxWindowWith(r tmuxRunner, projectDirectory, worktreeDirectory string) (string, bool, error) {
+	existingSessions, err := r.listSessions()
+	if err != nil {
+		return "", false, fmt.Errorf("listing tmux sessions: %w", err)
+	}
+	projectSession := findTmuxSessionByPathIn(existingSessions, projectDirectory)
+	if projectSession == nil {
+		return "", false, fmt.Errorf("tmux project session not found for %s", projectDirectory)
+	}
+	windowName := tmuxWindowNameForDirectory(worktreeDirectory)
+	target := projectSession.Name + ":" + windowName
+
+	windows, err := r.listWindows(projectSession.Name)
+	if err != nil {
+		return "", false, fmt.Errorf("listing tmux windows: %w", err)
+	}
+	for _, w := range windows {
+		if w.Name == windowName {
+			return target, false, nil
+		}
 	}
 
-	return sessionName, nil
+	if err := r.newNamedWindow(projectSession.Name, windowName, worktreeDirectory, opencodeCommand); err != nil {
+		return "", false, fmt.Errorf("tmux new-window: %w", err)
+	}
+	return target, true, nil
 }
 
 func (s *Server) handleTmuxLaunchOpencode(w http.ResponseWriter, r *http.Request) {
@@ -340,16 +530,24 @@ func (s *Server) handleTmuxSwitch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate the session actually exists to avoid passing arbitrary
-	// strings to tmux.
+	// Validate the target actually exists to avoid passing arbitrary
+	// strings to tmux. Targets may be either a plain session name or a
+	// `session:window` pair (used by worktree sessions, which open in a
+	// named window inside the existing project session).
 	existingSessions, err := listTmuxSessions()
 	if err != nil {
 		serverError(w, "verifying tmux session", err)
 		return
 	}
+	sessionName := req.Session
+	windowName := ""
+	if idx := strings.Index(req.Session, ":"); idx >= 0 {
+		sessionName = req.Session[:idx]
+		windowName = req.Session[idx+1:]
+	}
 	sessionExists := false
 	for _, ts := range existingSessions {
-		if ts.Name == req.Session {
+		if ts.Name == sessionName {
 			sessionExists = true
 			break
 		}
@@ -357,6 +555,24 @@ func (s *Server) handleTmuxSwitch(w http.ResponseWriter, r *http.Request) {
 	if !sessionExists {
 		http.Error(w, "tmux session not found", http.StatusNotFound)
 		return
+	}
+	if windowName != "" {
+		windows, err := listTmuxWindows(sessionName)
+		if err != nil {
+			serverError(w, "verifying tmux window", err)
+			return
+		}
+		windowExists := false
+		for _, w := range windows {
+			if w.Name == windowName {
+				windowExists = true
+				break
+			}
+		}
+		if !windowExists {
+			http.Error(w, "tmux window not found", http.StatusNotFound)
+			return
+		}
 	}
 
 	// Determine the client TTY.
