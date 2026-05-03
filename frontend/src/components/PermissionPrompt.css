@@ -1,13 +1,8 @@
 /* Permission prompt — replaces the composer, TUI-style */
 .oc-permission-wrap {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
   padding: 12px 0px 12px 0px;
   padding-bottom: max(12px, env(safe-area-inset-bottom));
   background: var(--bg);
-  z-index: 50;
   outline: none;
 }
 

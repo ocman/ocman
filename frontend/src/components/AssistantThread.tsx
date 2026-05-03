@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import './AssistantThread.css';
 import {
   ThreadPrimitive,
@@ -991,9 +991,6 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
 export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, footer }: { hasMore?: boolean; loadingMore?: boolean; onLoadMore?: () => void; composer?: React.ReactNode; footer?: React.ReactNode }) {
   const threadRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
-  const [showScrollBtn, setShowScrollBtn] = useState(false);
-  const [bottomInset, setBottomInset] = useState(140);
-  const wasAtBottomRef = useRef(true);
   const hasMoreRef = useRef(hasMore);
   const loadingMoreRef = useRef(loadingMore);
   const onLoadMoreRef = useRef(onLoadMore);
@@ -1049,128 +1046,19 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
     isJumpingRef.current = false;
   }, [hasMore, loadingMore, onLoadMore]);
 
-  const isAtBottom = useCallback(() => {
-    const el = viewportRef.current;
-    if (!el) return true;
-    return el.scrollHeight - el.clientHeight - el.scrollTop < 100;
-  }, []);
-
-  const checkScroll = useCallback(() => {
-    const atBottom = isAtBottom();
-    wasAtBottomRef.current = atBottom;
-    setShowScrollBtn(!atBottom);
-
-    // Auto-load older messages when scrolled near the top
-    const el = viewportRef.current;
-    if (el && el.scrollTop < 200 && hasMoreRef.current && !loadingMoreRef.current) {
-      onLoadMoreRef.current?.();
-    }
-  }, [isAtBottom]);
-
-  // Track the bottom inset (height of the composer/permission/question
-  // overlay) so the viewport padding stays correct. Uses a
-  // MutationObserver on direct children only (not subtree) to detect
-  // when the overlay mounts/unmounts, plus a ResizeObserver for size
-  // changes. The mutation callback is RAF-coalesced to avoid layout
-  // thrash during streaming (P9 fix).
-  useLayoutEffect(() => {
-    const thread = threadRef.current;
-    if (!thread) return;
-
-    const updateBottomInset = () => {
-      const overlay = thread.querySelector<HTMLElement>('.oc-composer-wrap, .oc-permission-wrap, .oc-question-wrap');
-      setBottomInset((overlay?.offsetHeight || 124) + 16);
-      return overlay;
-    };
-
-    const resizeObserver = new ResizeObserver(() => {
-      updateBottomInset();
-    });
-
-    let rafPending = false;
-    const mutationObserver = new MutationObserver(() => {
-      if (rafPending) return;
-      rafPending = true;
-      requestAnimationFrame(() => {
-        rafPending = false;
-        const overlay = updateBottomInset();
-        resizeObserver.disconnect();
-        if (overlay) resizeObserver.observe(overlay);
-      });
-    });
-
-    const overlay = thread.querySelector<HTMLElement>('.oc-composer-wrap, .oc-permission-wrap, .oc-question-wrap');
-    if (overlay) resizeObserver.observe(overlay);
-    const frame = requestAnimationFrame(updateBottomInset);
-
-    // Observe only direct children — the overlay is a direct child of
-    // the thread root. subtree: true would fire on every text-node
-    // mutation during streaming.
-    mutationObserver.observe(thread, { childList: true });
-    return () => {
-      cancelAnimationFrame(frame);
-      mutationObserver.disconnect();
-      resizeObserver.disconnect();
-    };
-  }, [composer]);
-
-  // Auto-scroll when content changes (messages added, tool calls updated,
-  // etc.). The observer callback is RAF-coalesced so layout-forcing
-  // writes (scrollTop = scrollHeight) happen at most once per frame
-  // instead of on every DOM mutation during streaming (P1/P9 fix).
-  // `characterData` is dropped — React re-renders already trigger
-  // childList mutations for text updates, and characterData was the
-  // main driver of the observer storm during SSE streaming.
+  // Auto-load older messages when scrolled near the top of the viewport.
+  // Attaches a passive scroll listener to the viewport element.
   useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
-    el.addEventListener('scroll', checkScroll, { passive: true });
-
-    let rafPending = false;
-    const observer = new MutationObserver(() => {
-      if (rafPending) return;
-      rafPending = true;
-      requestAnimationFrame(() => {
-        rafPending = false;
-        if (wasAtBottomRef.current) {
-          el.scrollTop = el.scrollHeight;
-        }
-        checkScroll();
-      });
-    });
-    observer.observe(el, { childList: true, subtree: true });
-
-    const frame = requestAnimationFrame(checkScroll);
-    return () => {
-      cancelAnimationFrame(frame);
-      el.removeEventListener('scroll', checkScroll);
-      observer.disconnect();
-    };
-  }, [checkScroll]);
-
-  useEffect(() => {
-    const el = viewportRef.current;
-    if (!el) return;
-
-    requestAnimationFrame(() => {
-      if (wasAtBottomRef.current) {
-        el.scrollTop = el.scrollHeight;
+    const onScroll = () => {
+      if (el.scrollTop < 200 && hasMoreRef.current && !loadingMoreRef.current) {
+        onLoadMoreRef.current?.();
       }
-      checkScroll();
-    });
-  }, [bottomInset, checkScroll]);
-
-  // Auto-scroll to bottom on initial load
-  useEffect(() => {
-    const el = viewportRef.current;
-    if (el) {
-      const timer = setTimeout(() => {
-        el.scrollTop = el.scrollHeight;
-        checkScroll();
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [checkScroll]);
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
 
   // Preserve scroll position when older messages are prepended
   const prevScrollHeightRef = useRef(0);
@@ -1194,11 +1082,6 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
     wasLoadingRef.current = !!loadingMore;
   }, [loadingMore]);
 
-  const scrollToBottom = () => {
-    const el = viewportRef.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-  };
-
   // Alt+H / Alt+L (Option+H / Option+L on Mac) jump between user messages in
   // the history. Alt+H: previous user message (up). Alt+L: next user message
   // (down). The registry handles key-matching and preventDefault; this code
@@ -1207,7 +1090,7 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
   // Alt+L past the last user message scrolls to the very bottom of the
   // viewport so the most recent assistant response is visible — otherwise we'd
   // re-snap to the last user message and leave the response hidden below.
-const jumpToUserMessage = useCallback((direction: 'prev' | 'next') => {
+  const jumpToUserMessage = useCallback((direction: 'prev' | 'next') => {
     const viewport = viewportRef.current;
     if (!viewport) return;
 
@@ -1276,12 +1159,33 @@ const jumpToUserMessage = useCallback((direction: 'prev' | 'next') => {
   useShortcut(prevUserMessageShortcut);
   useShortcut(nextUserMessageShortcut);
 
+  // Merge our viewportRef with the library's auto-scroll ref callback.
+  // ThreadPrimitive.Viewport provides auto-scroll, isAtBottom tracking,
+  // and content-resize handling out of the box.
+  const setViewportRef = useCallback((el: HTMLDivElement | null) => {
+    (viewportRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+  }, []);
 
+  // Track the ViewportFooter height so the scroll-to-bottom button
+  // (positioned absolute inside .oc-thread) can float just above it.
+  const footerRef = useCallback((el: HTMLDivElement | null) => {
+    if (!el) return;
+    const update = () => {
+      const thread = el.closest('.oc-thread') as HTMLElement | null;
+      if (thread) thread.style.setProperty('--oc-footer-height', `${el.offsetHeight}px`);
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    // Cleanup via the ref callback contract: when el is removed, React
+    // calls the ref with null (handled by the early return above).
+    // The ResizeObserver is GC'd with the element.
+  }, []);
 
   return (
     <div ref={threadRef} style={{ display: 'flex', flex: 1, minHeight: 0 }}>
       <ThreadPrimitive.Root className="oc-thread">
-        <div ref={viewportRef} className="oc-thread-viewport" style={{ paddingBottom: bottomInset }}>
+        <ThreadPrimitive.Viewport ref={setViewportRef} className="oc-thread-viewport" autoScroll>
           {hasMore && loadingMore && (
             <div className="oc-load-more">
               <span className="oc-spinner" /> Loading older messages...
@@ -1293,14 +1197,14 @@ const jumpToUserMessage = useCallback((direction: 'prev' | 'next') => {
           <ThreadPrimitive.Messages
             components={{ UserMessage, AssistantMessage }}
           />
-        </div>
-        {footer && <div className="oc-thread-overlay">{footer}</div>}
-        {showScrollBtn && (
-          <button className="oc-scroll-btn" onClick={scrollToBottom} style={{ bottom: `calc(${bottomInset}px - 40px)` }}>
-            Scroll to bottom
-          </button>
-        )}
-        {composer}
+          {footer && <div className="oc-thread-footer">{footer}</div>}
+          <ThreadPrimitive.ViewportFooter ref={footerRef} className="oc-viewport-footer">
+            {composer}
+          </ThreadPrimitive.ViewportFooter>
+        </ThreadPrimitive.Viewport>
+        <ThreadPrimitive.ScrollToBottom className="oc-scroll-btn">
+          Scroll to bottom
+        </ThreadPrimitive.ScrollToBottom>
       </ThreadPrimitive.Root>
     </div>
   );

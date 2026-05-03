@@ -86,15 +86,10 @@
 
 /* Composer - OpenCode style */
 .oc-composer-wrap {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
   padding: 12px 22px 12px 0px;
   padding-top: 32px;
   padding-bottom: max(12px, env(safe-area-inset-bottom));
   background: linear-gradient(to bottom, transparent, var(--bg) 20px);
-  z-index: 50;
 }
 .oc-composer {
   background: var(--bg-card);
