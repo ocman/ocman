@@ -8,14 +8,33 @@ import (
 //   - "error"   = last assistant message has an error or finish == "error"
 //   - "waiting" = last assistant message has a finish reason (turn complete)
 //   - "busy"    = last message is assistant with no finish reason (still streaming)
-//   - "done"    = no messages or last message is from the user
-func InferSessionStatus(lastRole, lastFinish, lastError string) string {
+//   - "done"    = no messages, last message is from the user, or last message
+//                 is a synthesized non-LLM assistant message that has already
+//                 reached its terminal state (e.g. the assistant envelope
+//                 produced by POST /session/{id}/shell, which holds a single
+//                 completed bash tool part and never receives a `finish`
+//                 because no LLM turn ran).
+//
+// synthesizedTerminal is true when the last message is an assistant message
+// whose parts indicate a non-LLM origin that has already finished:
+//   - the message has at least one part,
+//   - none of the parts is a `step-start` (no LLM turn was initiated), and
+//   - none of the parts is in a `running` state (no tool still in flight).
+//
+// When synthesizedTerminal is true and the message has no `finish`/`error`,
+// the session is reported as "done" instead of the misleading "busy". This
+// stops the busy spinner — and the cascading "queued" badge on subsequent
+// user messages — from sticking forever after a `!`-prefixed shell command.
+func InferSessionStatus(lastRole, lastFinish, lastError string, synthesizedTerminal bool) string {
 	if lastRole == "assistant" {
 		if lastFinish == "error" || lastError != "" {
 			return "error"
 		}
 		if lastFinish != "" {
 			return "waiting"
+		}
+		if synthesizedTerminal {
+			return "done"
 		}
 		return "busy"
 	}

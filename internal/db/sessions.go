@@ -53,7 +53,36 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 			(
 				SELECT json_extract(data, '$.error') FROM message
 				WHERE session_id = s.id ORDER BY time_created DESC LIMIT 1
-			) AS last_error
+			) AS last_error,
+			-- The last message is "synthesized terminal" when:
+			--   (a) it has at least one part,
+			--   (b) it has no 'step-start' part (so no LLM turn started), AND
+			--   (c) no part is in a 'running' state (no in-flight tool).
+			-- This identifies the assistant envelope produced by
+			-- POST /session/{id}/shell, which never receives a 'finish'
+			-- because no LLM turn ran. Without this signal, such
+			-- sessions appear permanently "busy". See InferSessionStatus
+			-- for how the flag is consumed.
+			COALESCE((
+				SELECT
+					CASE
+						WHEN EXISTS (SELECT 1 FROM part WHERE message_id = m.id)
+							AND NOT EXISTS (
+								SELECT 1 FROM part
+								WHERE message_id = m.id
+								  AND json_extract(data, '$.type') = 'step-start'
+							)
+							AND NOT EXISTS (
+								SELECT 1 FROM part
+								WHERE message_id = m.id
+								  AND json_extract(data, '$.state.status') = 'running'
+							)
+						THEN 1 ELSE 0
+					END
+				FROM message m
+				WHERE m.session_id = s.id
+				ORDER BY m.time_created DESC LIMIT 1
+			), 0) AS last_synth_terminal
 		FROM session s
 	`
 	var conditions []string
@@ -83,6 +112,7 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 	for rows.Next() {
 		var s Session
 		var lastRole, lastFinish, lastError *string
+		var lastSynthTerminal int
 		err := rows.Scan(
 			&s.ID, &s.ProjectID, &s.Title, &s.Directory,
 			&s.TimeCreated, &s.TimeUpdated,
@@ -90,7 +120,7 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 			&s.ShareURL,
 			&s.MessageCount,
 			&s.TotalInputTokens, &s.TotalOutputTokens, &s.TotalCost,
-			&lastRole, &lastFinish, &lastError,
+			&lastRole, &lastFinish, &lastError, &lastSynthTerminal,
 		)
 		if err != nil {
 			log.WithError(err).Warn("failed to scan session row")
@@ -100,7 +130,7 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 
 		// Determine session status based on the last message.
 		role, finish, lastErr := derefStr(lastRole), derefStr(lastFinish), derefStr(lastError)
-		s.Status = InferSessionStatus(role, finish, lastErr)
+		s.Status = InferSessionStatus(role, finish, lastErr, lastSynthTerminal == 1)
 
 		sessions = append(sessions, s)
 	}

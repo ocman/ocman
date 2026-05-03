@@ -677,6 +677,41 @@ func fetchOpenCodeMessages(port, sessionID string) ([]map[string]interface{}, er
 	return result, nil
 }
 
+// isSynthesizedTerminal reports whether the given raw OpenCode message
+// (in `{info: {...}, parts: [...]}` shape, as returned by GET
+// /session/{id}/message) is an assistant envelope that originated from a
+// non-LLM source — most notably POST /session/{id}/shell — and has
+// already finished. Such messages never receive a `finish` field because
+// no LLM turn ran, so without this signal `InferSessionStatus` would
+// keep reporting them as "busy" forever.
+//
+// The rule (mirrored in the SQL of GetSessions): the message has at
+// least one part, none of them is a `step-start` (no LLM turn started),
+// and none is in a `running` state (no in-flight tool).
+func isSynthesizedTerminal(raw map[string]interface{}) bool {
+	rawParts, ok := raw["parts"].([]interface{})
+	if !ok || len(rawParts) == 0 {
+		return false
+	}
+	hasPart := false
+	for _, p := range rawParts {
+		part, ok := p.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		hasPart = true
+		if t, _ := part["type"].(string); t == "step-start" {
+			return false
+		}
+		if state, ok := part["state"].(map[string]interface{}); ok {
+			if status, _ := state["status"].(string); status == "running" {
+				return false
+			}
+		}
+	}
+	return hasPart
+}
+
 // convertOpenCodeMessages transforms raw OpenCode API messages into the format
 // expected by the frontend (separate messages and parts arrays).
 func convertOpenCodeMessages(ocMessages []map[string]interface{}) (
@@ -929,6 +964,10 @@ func (a *Adapter) fetchSessionFromOpenCodeCtx(ctx context.Context, sessionID str
 	}
 
 	// Determine status from the last message using shared logic.
+	// The "synthesized terminal" flag is derived from the raw OpenCode
+	// message parts (which still include `step-start` etc — those are
+	// stripped by convertOpenCodeMessages further down). See
+	// db.InferSessionStatus for the meaning.
 	sessionStatus := "done"
 	if n := len(untypedMessages); n > 0 {
 		if info, ok := untypedMessages[n-1]["data"].(map[string]interface{}); ok {
@@ -938,7 +977,11 @@ func (a *Adapter) fetchSessionFromOpenCodeCtx(ctx context.Context, sessionID str
 			if _, hasError := info["error"]; hasError {
 				lastErr = "true"
 			}
-			sessionStatus = db.InferSessionStatus(role, finish, lastErr)
+			synthTerminal := false
+			if rawIdx := len(ocMessages) - 1; rawIdx >= 0 {
+				synthTerminal = isSynthesizedTerminal(ocMessages[rawIdx])
+			}
+			sessionStatus = db.InferSessionStatus(role, finish, lastErr, synthTerminal)
 		}
 	}
 

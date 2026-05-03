@@ -188,6 +188,74 @@ func TestConvertOpenCodeMessages_RemovesSummaryAndPath(t *testing.T) {
 	}
 }
 
+// --- isSynthesizedTerminal tests ---
+
+func TestIsSynthesizedTerminal_ShellOnlyMessage(t *testing.T) {
+	// Mirrors the synthesized envelope produced by POST /session/{id}/shell:
+	// a single completed bash tool part, no step-start.
+	raw := map[string]interface{}{
+		"info": map[string]interface{}{"id": "msg-1", "role": "assistant"},
+		"parts": []interface{}{
+			map[string]interface{}{
+				"type": "tool",
+				"tool": "bash",
+				"state": map[string]interface{}{"status": "completed"},
+			},
+		},
+	}
+	if !isSynthesizedTerminal(raw) {
+		t.Error("expected shell-only assistant envelope to be classified as synthesized terminal")
+	}
+}
+
+func TestIsSynthesizedTerminal_LLMTurnWithStepStart(t *testing.T) {
+	raw := map[string]interface{}{
+		"info": map[string]interface{}{"id": "msg-1", "role": "assistant"},
+		"parts": []interface{}{
+			map[string]interface{}{"type": "step-start"},
+			map[string]interface{}{"type": "text", "text": "hello"},
+		},
+	}
+	if isSynthesizedTerminal(raw) {
+		t.Error("LLM turn with step-start must not be classified as synthesized terminal")
+	}
+}
+
+func TestIsSynthesizedTerminal_RunningToolMidFlight(t *testing.T) {
+	raw := map[string]interface{}{
+		"info": map[string]interface{}{"id": "msg-1", "role": "assistant"},
+		"parts": []interface{}{
+			map[string]interface{}{
+				"type":  "tool",
+				"tool":  "bash",
+				"state": map[string]interface{}{"status": "running"},
+			},
+		},
+	}
+	if isSynthesizedTerminal(raw) {
+		t.Error("running tool must not be classified as synthesized terminal")
+	}
+}
+
+func TestIsSynthesizedTerminal_NoParts(t *testing.T) {
+	raw := map[string]interface{}{
+		"info":  map[string]interface{}{"id": "msg-1", "role": "assistant"},
+		"parts": []interface{}{},
+	}
+	if isSynthesizedTerminal(raw) {
+		t.Error("empty parts must not be classified as synthesized terminal (still genuinely busy)")
+	}
+}
+
+func TestIsSynthesizedTerminal_NilParts(t *testing.T) {
+	raw := map[string]interface{}{
+		"info": map[string]interface{}{"id": "msg-1", "role": "assistant"},
+	}
+	if isSynthesizedTerminal(raw) {
+		t.Error("missing parts key must not be classified as synthesized terminal")
+	}
+}
+
 // --- computeMessageStats tests ---
 
 func TestComputeMessageStats_Empty(t *testing.T) {

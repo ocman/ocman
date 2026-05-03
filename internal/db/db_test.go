@@ -111,26 +111,36 @@ func insertPart(t *testing.T, db *DB, id, messageID, sessionID string, created i
 
 func TestInferSessionStatus(t *testing.T) {
 	tests := []struct {
-		name       string
-		role       string
-		finish     string
-		lastError  string
-		wantStatus string
+		name                string
+		role                string
+		finish              string
+		lastError           string
+		synthesizedTerminal bool
+		wantStatus          string
 	}{
-		{"no messages (empty role)", "", "", "", "done"},
-		{"user message last", "user", "", "", "done"},
-		{"assistant busy (no finish)", "assistant", "", "", "busy"},
-		{"assistant waiting (finish set)", "assistant", "end_turn", "", "waiting"},
-		{"assistant error (finish=error)", "assistant", "error", "", "error"},
-		{"assistant error (lastError set)", "assistant", "", "something broke", "error"},
-		{"assistant error (both set)", "assistant", "error", "also error", "error"},
+		{"no messages (empty role)", "", "", "", false, "done"},
+		{"user message last", "user", "", "", false, "done"},
+		{"assistant busy (no finish)", "assistant", "", "", false, "busy"},
+		{"assistant waiting (finish set)", "assistant", "end_turn", "", false, "waiting"},
+		{"assistant error (finish=error)", "assistant", "error", "", false, "error"},
+		{"assistant error (lastError set)", "assistant", "", "something broke", false, "error"},
+		{"assistant error (both set)", "assistant", "error", "also error", false, "error"},
+		// Synthesized terminal: assistant envelope with no LLM turn (e.g.
+		// POST /session/{id}/shell). Never receives a `finish`; should be
+		// reported as "done", not "busy".
+		{"assistant synth-terminal (shell only)", "assistant", "", "", true, "done"},
+		// finish/error still take precedence over the synth flag.
+		{"assistant synth-terminal but finished", "assistant", "stop", "", true, "waiting"},
+		{"assistant synth-terminal but errored", "assistant", "", "boom", true, "error"},
+		// User messages ignore the synth flag.
+		{"user message synth-terminal flag ignored", "user", "", "", true, "done"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := InferSessionStatus(tt.role, tt.finish, tt.lastError)
+			got := InferSessionStatus(tt.role, tt.finish, tt.lastError, tt.synthesizedTerminal)
 			if got != tt.wantStatus {
-				t.Errorf("InferSessionStatus(%q, %q, %q) = %q, want %q",
-					tt.role, tt.finish, tt.lastError, got, tt.wantStatus)
+				t.Errorf("InferSessionStatus(%q, %q, %q, %v) = %q, want %q",
+					tt.role, tt.finish, tt.lastError, tt.synthesizedTerminal, got, tt.wantStatus)
 			}
 		})
 	}
@@ -305,6 +315,108 @@ func TestGetSessions_StatusDone(t *testing.T) {
 	}
 	if sessions[0].Status != "done" {
 		t.Errorf("expected status 'done', got %q", sessions[0].Status)
+	}
+}
+
+// TestGetSessions_StatusShellOnlySynthTerminal exercises the
+// "synthesized terminal" path: a user types `!cmd` in the composer,
+// which OpenCode persists as an assistant message containing a single
+// completed bash tool part and *no* `finish` field. Without the
+// parts-aware status check, this would be classified as "busy"
+// indefinitely (and the next user message would be tagged "Queued").
+func TestGetSessions_StatusShellOnlySynthTerminal(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Shell Session", "/project", now, now)
+	insertMessage(t, db, "m_user", "s1", now-1000, map[string]interface{}{"role": "user"})
+	// Synthesised assistant envelope: no `finish`, no LLM step-start,
+	// just one completed bash tool.
+	insertMessage(t, db, "m_shell", "s1", now, map[string]interface{}{"role": "assistant"})
+	insertPart(t, db, "p1", "m_shell", "s1", now, map[string]interface{}{
+		"type": "tool",
+		"tool": "bash",
+		"state": map[string]interface{}{"status": "completed"},
+	})
+
+	sessions, err := db.GetSessions("", 0)
+	if err != nil {
+		t.Fatalf("GetSessions: %v", err)
+	}
+	if sessions[0].Status != "done" {
+		t.Errorf("expected status 'done' for shell-only synthesised message, got %q", sessions[0].Status)
+	}
+}
+
+// TestGetSessions_StatusLLMMidFlight ensures the synth-terminal heuristic
+// does NOT misclassify a real LLM turn that has started streaming. A
+// `step-start` part means an LLM turn is genuinely in flight and the
+// session is busy until `finish` lands.
+func TestGetSessions_StatusLLMMidFlight(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Live LLM Session", "/project", now, now)
+	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{"role": "assistant"})
+	insertPart(t, db, "p1", "m1", "s1", now, map[string]interface{}{"type": "step-start"})
+
+	sessions, err := db.GetSessions("", 0)
+	if err != nil {
+		t.Fatalf("GetSessions: %v", err)
+	}
+	if sessions[0].Status != "busy" {
+		t.Errorf("expected status 'busy' for mid-flight LLM (step-start present), got %q", sessions[0].Status)
+	}
+}
+
+// TestGetSessions_StatusLLMRunningTool ensures a real LLM turn with an
+// in-flight tool call is not misclassified as done either. The `running`
+// state on any part keeps the session "busy".
+func TestGetSessions_StatusLLMRunningTool(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Running Tool Session", "/project", now, now)
+	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{"role": "assistant"})
+	// A tool with state.status=running should keep the session busy
+	// even if no step-start is present (defensive: the SQL doesn't
+	// require both signals — either is enough to refuse the synth flag).
+	insertPart(t, db, "p1", "m1", "s1", now, map[string]interface{}{
+		"type": "tool",
+		"tool": "bash",
+		"state": map[string]interface{}{"status": "running"},
+	})
+
+	sessions, err := db.GetSessions("", 0)
+	if err != nil {
+		t.Fatalf("GetSessions: %v", err)
+	}
+	if sessions[0].Status != "busy" {
+		t.Errorf("expected status 'busy' for in-flight tool, got %q", sessions[0].Status)
+	}
+}
+
+// TestGetSessions_StatusEmptyPartsBusy ensures an assistant message with
+// zero parts (just-created envelope, parts haven't streamed yet) stays
+// "busy" — we only flip to done when there is concrete evidence of
+// non-LLM origin (≥1 part with no step-start, no running).
+func TestGetSessions_StatusEmptyPartsBusy(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Empty Parts", "/project", now, now)
+	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{"role": "assistant"})
+
+	sessions, err := db.GetSessions("", 0)
+	if err != nil {
+		t.Fatalf("GetSessions: %v", err)
+	}
+	if sessions[0].Status != "busy" {
+		t.Errorf("expected status 'busy' for assistant message with no parts, got %q", sessions[0].Status)
 	}
 }
 
