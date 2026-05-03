@@ -441,6 +441,115 @@ func TestApplySessionState_ScopesByPlatform(t *testing.T) {
 	}
 }
 
+// --- Pin handler tests ---
+
+func TestHandlePinSession_Pin(t *testing.T) {
+	srv := testServer(t)
+	body := strings.NewReader(`{"platform":"opencode","sessionId":"abc123","pinned":true}`)
+	req := httptest.NewRequest("POST", "/api/session/pin", body)
+	rr := httptest.NewRecorder()
+	srv.handlePinSession(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	pinned, _ := srv.stateDB.PinnedSessions()
+	if _, ok := pinned[state.Key{Platform: "opencode", SessionID: "abc123"}]; !ok {
+		t.Error("session should be pinned after POST")
+	}
+}
+
+func TestHandlePinSession_Unpin(t *testing.T) {
+	srv := testServer(t)
+	_ = srv.stateDB.PinSession("opencode", "abc123")
+
+	body := strings.NewReader(`{"platform":"opencode","sessionId":"abc123","pinned":false}`)
+	req := httptest.NewRequest("POST", "/api/session/pin", body)
+	rr := httptest.NewRecorder()
+	srv.handlePinSession(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	pinned, _ := srv.stateDB.PinnedSessions()
+	if _, ok := pinned[state.Key{Platform: "opencode", SessionID: "abc123"}]; ok {
+		t.Error("session should be unpinned after POST")
+	}
+}
+
+func TestHandlePinSession_InvalidID(t *testing.T) {
+	srv := testServer(t)
+	body := strings.NewReader(`{"platform":"opencode","sessionId":"invalid!","pinned":true}`)
+	req := httptest.NewRequest("POST", "/api/session/pin", body)
+	rr := httptest.NewRecorder()
+	srv.handlePinSession(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rr.Code)
+	}
+}
+
+func TestHandlePinSession_InvalidJSON(t *testing.T) {
+	srv := testServer(t)
+	body := strings.NewReader(`{invalid}`)
+	req := httptest.NewRequest("POST", "/api/session/pin", body)
+	rr := httptest.NewRecorder()
+	srv.handlePinSession(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rr.Code)
+	}
+}
+
+// --- applySessionState pinned overlay ---
+
+func TestApplySessionState_MarksPinned(t *testing.T) {
+	srv := testServer(t)
+	if err := srv.stateDB.PinSession("opencode", "s1"); err != nil {
+		t.Fatal(err)
+	}
+
+	sessions := []db.Session{
+		{ID: "s1", Platform: "opencode", TimeUpdated: 2000},
+		{ID: "s2", Platform: "opencode", TimeUpdated: 3000},
+	}
+	if err := srv.applySessionState(sessions); err != nil {
+		t.Fatalf("applySessionState: %v", err)
+	}
+	if !sessions[0].Pinned {
+		t.Error("s1 should be marked as pinned")
+	}
+	if sessions[0].PinnedAt <= 0 {
+		t.Error("s1 should have a positive PinnedAt")
+	}
+	if sessions[1].Pinned {
+		t.Error("s2 should not be marked as pinned")
+	}
+}
+
+func TestApplySessionState_PinnedScopesByPlatform(t *testing.T) {
+	srv := testServer(t)
+	if err := srv.stateDB.PinSession("opencode", "shared-id"); err != nil {
+		t.Fatal(err)
+	}
+
+	sessions := []db.Session{
+		{ID: "shared-id", Platform: "opencode", TimeUpdated: 1000},
+		{ID: "shared-id", Platform: "claude-code", TimeUpdated: 1000},
+	}
+	if err := srv.applySessionState(sessions); err != nil {
+		t.Fatalf("applySessionState: %v", err)
+	}
+	if !sessions[0].Pinned {
+		t.Error("opencode/shared-id should be pinned")
+	}
+	if sessions[1].Pinned {
+		t.Error("claude-code/shared-id must NOT inherit opencode's pin state")
+	}
+}
+
 // --- graceful shutdown test ---
 
 func TestServerStart_ShutdownOnCancel(t *testing.T) {

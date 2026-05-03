@@ -76,8 +76,10 @@ type Session struct {
 	LiveConnection    bool `json:"liveConnection"`
 	PendingPermission bool `json:"pendingPermission"` // agent has a pending permission request for this session
 	PendingQuestion   bool `json:"pendingQuestion"`   // agent has a pending question for this session
-	Archived bool `json:"archived"`
-	Seen     bool `json:"seen"`
+	Archived bool  `json:"archived"`
+	Seen     bool  `json:"seen"`
+	Pinned   bool  `json:"pinned"`
+	PinnedAt int64 `json:"pinnedAt"`
 	// Note: GitInfo used to live here, populated by /api/sessions on
 	// the request path via a synchronous fan-out of `git status` per
 	// directory. It now lives in the gitinfo package (gitinfo.Info)
@@ -182,15 +184,16 @@ type MetricsSummary struct {
 // MetricsPoint holds chart data for a time bucket (hour or day).
 type MetricsPoint struct {
 	// Label is the human-readable bucket label ("2026-04-16 14" or "2026-04-16").
-	Label              string  `json:"label"`
-	AvgOutputTokensSec float64 `json:"avgOutputTokensSec"`
-	CumulativeCost     float64 `json:"cumulativeCost"`
-	InputTokens        int64   `json:"inputTokens"`
-	CacheReadTokens    int64   `json:"cacheReadTokens"`
-	OutputTokens       int64   `json:"outputTokens"`
-	AvgDurationMs      float64 `json:"avgDurationMs"`
-	AvgCacheEfficiency float64 `json:"avgCacheEfficiency"`
-	Count              int     `json:"count"`
+	Label               string  `json:"label"`
+	AvgOutputTokensSec  float64 `json:"avgOutputTokensSec"`
+	CumulativeCost      float64 `json:"cumulativeCost"`
+	CumulativeCalcCost  float64 `json:"cumulativeCalcCost"`
+	InputTokens         int64   `json:"inputTokens"`
+	CacheReadTokens     int64   `json:"cacheReadTokens"`
+	OutputTokens        int64   `json:"outputTokens"`
+	AvgDurationMs       float64 `json:"avgDurationMs"`
+	AvgCacheEfficiency  float64 `json:"avgCacheEfficiency"`
+	Count               int     `json:"count"`
 }
 
 // StopReasonCount holds the count for a stop reason.

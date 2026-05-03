@@ -600,6 +600,7 @@ export function SessionDetail() {
   const [failedSends, setFailedSends] = useState<FailedSend[]>([]);
   const getSession = useApiStore((state) => state.getSession);
   const archiveSession = useApiStore((state) => state.archiveSession);
+  const pinSession = useApiStore((state) => state.pinSession);
   const getWhisperStatus = useApiStore((state) => state.getWhisperStatus);
   const getModels = useApiStore((state) => state.getModels);
   const getSessions = useApiStore((state) => state.getSessions);
@@ -848,6 +849,28 @@ export function SessionDetail() {
         });
     }, ARCHIVE_ANIMATION_MS);
   }, [archiveSession, archivingSessionIds, id, navigate, recentSessions, showArchivedRecent]);
+
+  const handlePinSession = useCallback((e: React.MouseEvent, target: Session) => {
+    e.stopPropagation();
+    const nextPinned = !target.pinned;
+
+    // Optimistic update
+    setRecentSessions(prev => prev.map(s =>
+      s.id === target.id
+        ? { ...s, pinned: nextPinned, pinnedAt: nextPinned ? Date.now() : 0 }
+        : s
+    ));
+
+    pinSession(target.platform, target.id, nextPinned).catch(err => {
+      console.error('Failed to pin/unpin session', err);
+      // Revert on failure
+      setRecentSessions(prev => prev.map(s =>
+        s.id === target.id
+          ? { ...s, pinned: target.pinned, pinnedAt: target.pinnedAt }
+          : s
+      ));
+    });
+  }, [pinSession]);
 
   useEffect(() => () => {
     Object.values(archiveTimeoutsRef.current).forEach(timeoutId => window.clearTimeout(timeoutId));
@@ -2847,7 +2870,7 @@ export function SessionDetail() {
       return { kind: 'none' };
     };
 
-    const groups = Array.from(buckets.entries()).map(([directory, sessions]) => {
+    const groups: { directory: string; sessions: Session[]; lastUpdated: number; aggregate: Aggregate; isPinned?: boolean }[] = Array.from(buckets.entries()).map(([directory, sessions]) => {
       const sorted = [...sessions].sort((a, b) => b.timeUpdated - a.timeUpdated);
       return {
         directory,
@@ -2857,6 +2880,21 @@ export function SessionDetail() {
       };
     });
     groups.sort((a, b) => b.lastUpdated - a.lastUpdated);
+
+    // Prepend a "Pinned" group if any sessions are pinned.
+    const pinnedSessions = recentSessions
+      .filter(s => s.pinned)
+      .sort((a, b) => b.pinnedAt - a.pinnedAt);
+    if (pinnedSessions.length > 0) {
+      groups.unshift({
+        directory: '__pinned__',
+        sessions: pinnedSessions,
+        lastUpdated: pinnedSessions[0]?.timeUpdated ?? 0,
+        aggregate: rollup(pinnedSessions),
+        isPinned: true,
+      });
+    }
+
     return groups;
   }, [recentSessions, id, optimisticStatus]);
 
@@ -3019,16 +3057,27 @@ export function SessionDetail() {
                   </span>
                   <span className="session-sidebar-meta">
                     <span className="session-sidebar-time" title={new Date(sib.timeUpdated).toLocaleString()}>{relativeTime(sib.timeUpdated)}</span>
-                    <button
-                      type="button"
-                      className="session-archive-btn session-sidebar-archive-btn"
-                      onClick={(e) => handleArchiveSession(e, sib)}
-                      title="Archive session"
-                      aria-label="Archive session"
-                      disabled={archivingSessionIds.has(sib.id)}
-                    >
-                      <ArchiveIcon />
-                    </button>
+                    <span className="session-sidebar-actions">
+                      <button
+                        type="button"
+                        className={`session-pin-btn session-sidebar-pin-btn${sib.pinned ? ' pinned' : ''}`}
+                        onClick={(e) => handlePinSession(e, sib)}
+                        title={sib.pinned ? 'Unpin session' : 'Pin session'}
+                        aria-label={sib.pinned ? 'Unpin session' : 'Pin session'}
+                      >
+                        <i className={`bi ${sib.pinned ? 'bi-pin-fill' : 'bi-pin'}`} aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        className="session-archive-btn session-sidebar-archive-btn"
+                        onClick={(e) => handleArchiveSession(e, sib)}
+                        title="Archive session"
+                        aria-label="Archive session"
+                        disabled={archivingSessionIds.has(sib.id)}
+                      >
+                        <ArchiveIcon />
+                      </button>
+                    </span>
                   </span>
                 </div>
               );
@@ -3036,6 +3085,33 @@ export function SessionDetail() {
 
             if (sidebarView === 'projects') {
               return sidebarProjectGroups.map(group => {
+                // The "Pinned" group is always expanded and has a
+                // distinct header (pin icon, no collapse, no "+").
+                if (group.isPinned) {
+                  const agg = group.aggregate;
+                  const dotStatus =
+                    agg.kind === 'error' ? 'error'
+                      : agg.kind === 'busy' ? 'busy'
+                        : agg.kind === 'waiting' ? 'waiting'
+                          : 'done';
+                  const dotPending = agg.kind === 'pending';
+                  return (
+                    <div key="__pinned__" className="session-sidebar-group session-sidebar-group-pinned">
+                      <div className="session-sidebar-group-header-row">
+                        <div className="session-sidebar-group-header" title="Pinned sessions">
+                          <span className="session-sidebar-group-status">
+                            <StatusBadge status={dotStatus} compact pending={dotPending} />
+                          </span>
+                          <i className="bi bi-pin-fill session-sidebar-pinned-icon" aria-hidden="true" />
+                          <span className="session-sidebar-group-label">Pinned</span>
+                          <span className="session-sidebar-group-count">{group.sessions.length}</span>
+                        </div>
+                      </div>
+                      {group.sessions.map(sib => renderRow(sib, false))}
+                    </div>
+                  );
+                }
+
                 const collapsed = collapsedProjectSet.has(group.directory);
                 const label = group.directory ? shortPath(group.directory) : '(unknown)';
                 // Replace the chevron with a compact status dot that
@@ -3098,7 +3174,22 @@ export function SessionDetail() {
               });
             }
 
-            return recentSessions.map(sib => renderRow(sib, false));
+            // Flat view: pinned sessions at the top, then the rest.
+            // Pinned sessions are deduplicated (shown only in the
+            // pinned section, not repeated in the chronological list).
+            const pinnedFlat = recentSessions
+              .filter(s => s.pinned)
+              .sort((a, b) => b.pinnedAt - a.pinnedAt);
+            const unpinnedFlat = recentSessions.filter(s => !s.pinned);
+            return (
+              <>
+                {pinnedFlat.map(sib => renderRow(sib, false))}
+                {pinnedFlat.length > 0 && unpinnedFlat.length > 0 && (
+                  <div className="session-sidebar-divider" />
+                )}
+                {unpinnedFlat.map(sib => renderRow(sib, false))}
+              </>
+            );
           })()}
         </div>
         <BackendStats />

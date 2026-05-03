@@ -59,6 +59,7 @@ type ApiStore = {
   getGitDiff: (dir: string, opts?: { fresh?: boolean }, signal?: AbortSignal) => Promise<WorkingTreeDiff>;
   archiveSession: (platform: string, sessionId: string, timeUpdated: number, archived?: boolean) => Promise<{ ok: boolean }>;
   markSessionSeen: (platform: string, sessionId: string, timeUpdated: number) => Promise<{ ok: boolean }>;
+  pinSession: (platform: string, sessionId: string, pinned: boolean) => Promise<{ ok: boolean }>;
   getActivity: (signal?: AbortSignal) => Promise<ActivityDay[]>;
   getModels: (signal?: AbortSignal) => Promise<ModelUsage[]>;
   getHourly: (signal?: AbortSignal) => Promise<HourlyData[]>;
@@ -185,6 +186,7 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   getGitDiff: (dir, opts, signal) => get().runRequest(`git:diff:${dir}`, () => api.gitDiff(dir, opts, signal)),
   archiveSession: (platform, sessionId, timeUpdated, archived = true) => get().runRequest(`session:archive:${sessionId}`, () => api.archiveSession(platform, sessionId, timeUpdated, archived)),
   markSessionSeen: (platform, sessionId, timeUpdated) => get().runRequest(`session:seen:${sessionId}`, () => api.markSessionSeen(platform, sessionId, timeUpdated)),
+  pinSession: (platform, sessionId, pinned) => get().runRequest(`session:pin:${sessionId}`, () => api.pinSession(platform, sessionId, pinned)),
   getActivity: (signal) => get().runRequest('activity:get', () => api.activity(undefined, signal)),
   getModels: (signal) => get().runRequest('models:get', () => api.models(undefined, signal)),
   getHourly: (signal) => get().runRequest('hourly:get', () => api.hourly(undefined, signal)),

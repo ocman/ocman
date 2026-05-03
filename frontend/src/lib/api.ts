@@ -172,6 +172,8 @@ export interface Session {
   pendingQuestion: boolean;
   archived: boolean;
   seen: boolean;
+  pinned: boolean;
+  pinnedAt: number;
 }
 
 /**
@@ -465,6 +467,7 @@ export interface MetricsPoint {
   label: string;
   avgOutputTokensSec: number;
   cumulativeCost: number;
+  cumulativeCalcCost: number;
   inputTokens: number;
   cacheReadTokens: number;
   outputTokens: number;
@@ -836,6 +839,15 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ platform, sessionId, timeUpdated }),
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    return resp.json() as Promise<{ ok: boolean }>;
+  },
+  pinSession: async (platform: string, sessionId: string, pinned: boolean) => {
+    const resp = await fetch('/api/session/pin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platform, sessionId, pinned }),
     });
     if (!resp.ok) throw new Error(await resp.text());
     return resp.json() as Promise<{ ok: boolean }>;

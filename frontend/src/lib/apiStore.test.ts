@@ -26,6 +26,8 @@ function makeSessionDetail(id: string, overrides: Partial<SessionDetail> = {}): 
     pendingQuestion: false,
     archived: false,
     seen: true,
+    pinned: false,
+    pinnedAt: 0,
   };
   return {
     session,

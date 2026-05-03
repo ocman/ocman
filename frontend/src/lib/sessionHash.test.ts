@@ -34,6 +34,8 @@ function makeSession(overrides: Partial<Session & {
     pendingQuestion: false,
     archived: false,
     seen: true,
+    pinned: false,
+    pinnedAt: 0,
     ...overrides,
   };
 }

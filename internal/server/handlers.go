@@ -353,6 +353,31 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		all = append(all, sessions...)
 	}
 
+	// Force-include pinned sessions that fell outside the time window.
+	// The pinned set is typically <10 entries; each miss is a single
+	// adapter lookup. Silently skip sessions that are deleted or
+	// inaccessible.
+	if pinned, err := s.stateDB.PinnedSessions(); err == nil && len(pinned) > 0 {
+		have := make(map[state.Key]bool, len(all))
+		for _, sess := range all {
+			have[state.Key{Platform: sess.Platform, SessionID: sess.ID}] = true
+		}
+		for key := range pinned {
+			if have[key] {
+				continue
+			}
+			adapter, ok := s.registry.Get(platforms.ID(key.Platform))
+			if !ok || !adapter.Available(ctx) {
+				continue
+			}
+			detail, err := adapter.Session(ctx, key.SessionID, 0, 0)
+			if err != nil || detail == nil || detail.Session == nil {
+				continue
+			}
+			all = append(all, *detail.Session)
+		}
+	}
+
 	// Adapters each return their own list pre-sorted, but the combined
 	// slice must also be sorted so sessions from different platforms
 	// interleave by recency rather than clumping by source.
@@ -504,6 +529,10 @@ func (s *Server) applySessionState(sessions []db.Session) error {
 	if err != nil {
 		return err
 	}
+	pinned, err := s.stateDB.PinnedSessions()
+	if err != nil {
+		return err
+	}
 
 	for i := range sessions {
 		key := state.Key{Platform: sessions[i].Platform, SessionID: sessions[i].ID}
@@ -511,6 +540,11 @@ func (s *Server) applySessionState(sessions []db.Session) error {
 		seenAtUpdate, ok := seen[key]
 		if ok && seenAtUpdate >= sessions[i].TimeUpdated {
 			sessions[i].Seen = true
+		}
+
+		if pinnedAt, ok := pinned[key]; ok {
+			sessions[i].Pinned = true
+			sessions[i].PinnedAt = pinnedAt
 		}
 
 		archivedAtUpdate, ok := archived[key]
@@ -614,6 +648,38 @@ func (s *Server) handleArchiveSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		serverError(w, "updating archived session state", err)
+		return
+	}
+
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+func (s *Server) handlePinSession(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Platform  string `json:"platform"`
+		SessionID string `json:"sessionId"`
+		Pinned    bool   `json:"pinned"`
+	}
+	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+		return
+	}
+	if !validateID(req.SessionID) {
+		http.Error(w, "invalid session ID", http.StatusBadRequest)
+		return
+	}
+	platform, ok := s.resolvePlatformIDForState(w, r, req.SessionID, req.Platform)
+	if !ok {
+		return
+	}
+
+	var err error
+	if req.Pinned {
+		err = s.stateDB.PinSession(platform, req.SessionID)
+	} else {
+		err = s.stateDB.UnpinSession(platform, req.SessionID)
+	}
+	if err != nil {
+		serverError(w, "updating pinned session state", err)
 		return
 	}
 
@@ -1343,6 +1409,7 @@ func (s *Server) handleSessionsRoot(w http.ResponseWriter, r *http.Request) {
 //
 //	/api/session/archive               POST     -> handleArchiveSession
 //	/api/session/seen                  POST     -> handleSeenSession
+//	/api/session/pin                   POST     -> handlePinSession
 //	/api/session/{id}                  GET      -> handleSession
 //	/api/session/{id}                  PATCH    -> handleSessionRename
 //	/api/session/{id}/agents           GET      -> handleSessionAgents
@@ -1375,6 +1442,11 @@ func (s *Server) dispatchSessionSubpath(w http.ResponseWriter, r *http.Request) 
 	case "seen":
 		if r.Method == http.MethodPost {
 			s.handleSeenSession(w, r)
+			return
+		}
+	case "pin":
+		if r.Method == http.MethodPost {
+			s.handlePinSession(w, r)
 			return
 		}
 	}

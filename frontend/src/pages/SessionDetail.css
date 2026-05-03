@@ -266,12 +266,50 @@
   flex-shrink: 0;
   padding-top: 2px;
 }
+/* Row container for pin + archive buttons */
+.session-sidebar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: auto;
+}
+
+/* Pin button — hidden by default, visible on hover or when pinned.
+   Matches the archive button's border + hover style. */
+.session-sidebar-pin-btn {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+}
+.session-sidebar-pin-btn:hover {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.session-sidebar-pin-btn.pinned { opacity: 1; color: var(--accent4); }
+.session-sidebar-pin-btn.pinned:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+.session-sidebar-item:hover .session-sidebar-pin-btn,
+.session-sidebar-item:focus-visible .session-sidebar-pin-btn,
+.session-sidebar-item.active .session-sidebar-pin-btn {
+  opacity: 1;
+}
+
 .session-sidebar-archive-btn {
   width: 20px;
   height: 20px;
   min-width: 20px;
-  align-self: flex-end;
-  margin-top: auto;
   opacity: 0;
   transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
@@ -279,6 +317,20 @@
 .session-sidebar-item:focus-visible .session-sidebar-archive-btn,
 .session-sidebar-item.active .session-sidebar-archive-btn {
   opacity: 1;
+}
+
+/* Pinned group header icon */
+.session-sidebar-pinned-icon {
+  font-size: 10px;
+  color: var(--accent4);
+  flex-shrink: 0;
+}
+
+/* Divider between pinned and unpinned sections in flat view */
+.session-sidebar-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 16px;
 }
 .session-main {
   flex: 1;
@@ -316,6 +368,7 @@
   .session-main { padding-left: 0; }
   .session-detail-actions { padding-top: 12px; }
   .session-sidebar-archive-btn { opacity: 1; }
+  .session-sidebar-pin-btn { opacity: 1; }
 }
 
 .oc-rename-backdrop {

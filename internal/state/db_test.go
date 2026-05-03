@@ -422,3 +422,114 @@ func TestModelFavorites_OrderedByCreatedAt(t *testing.T) {
 		}
 	}
 }
+
+// --- Pinned session tests ---
+
+func TestPinSession_RoundTrip(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+
+	if err := db.PinSession("opencode", "s1"); err != nil {
+		t.Fatalf("PinSession: %v", err)
+	}
+
+	pinned, err := db.PinnedSessions()
+	if err != nil {
+		t.Fatalf("PinnedSessions: %v", err)
+	}
+	if len(pinned) != 1 {
+		t.Fatalf("expected 1 pinned session, got %d", len(pinned))
+	}
+	if pinnedAt, ok := pinned[k("opencode", "s1")]; !ok || pinnedAt <= 0 {
+		t.Errorf("expected positive pinnedAt for opencode/s1, got %d", pinnedAt)
+	}
+}
+
+func TestPinSession_Idempotent(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+
+	if err := db.PinSession("opencode", "s1"); err != nil {
+		t.Fatalf("PinSession: %v", err)
+	}
+	firstPinned, _ := db.PinnedSessions()
+	firstAt := firstPinned[k("opencode", "s1")]
+
+	// Pin again — should be a no-op (pinned_at unchanged).
+	if err := db.PinSession("opencode", "s1"); err != nil {
+		t.Fatalf("PinSession (repeat): %v", err)
+	}
+	secondPinned, _ := db.PinnedSessions()
+	if len(secondPinned) != 1 {
+		t.Errorf("expected 1 pinned session after repeat, got %d", len(secondPinned))
+	}
+	if secondPinned[k("opencode", "s1")] != firstAt {
+		t.Errorf("pinned_at changed on repeat pin: %d → %d", firstAt, secondPinned[k("opencode", "s1")])
+	}
+}
+
+func TestUnpinSession(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+
+	_ = db.PinSession("opencode", "s1")
+	if err := db.UnpinSession("opencode", "s1"); err != nil {
+		t.Fatalf("UnpinSession: %v", err)
+	}
+
+	pinned, _ := db.PinnedSessions()
+	if len(pinned) != 0 {
+		t.Errorf("expected 0 pinned sessions after unpin, got %d", len(pinned))
+	}
+}
+
+func TestUnpinSession_Nonexistent(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+
+	if err := db.UnpinSession("opencode", "nonexistent"); err != nil {
+		t.Fatalf("UnpinSession on nonexistent: %v", err)
+	}
+}
+
+func TestPinSession_PerPlatformIsolation(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+
+	_ = db.PinSession("opencode", "s1")
+	_ = db.PinSession("claude-code", "s1")
+
+	pinned, _ := db.PinnedSessions()
+	if len(pinned) != 2 {
+		t.Fatalf("expected 2 pinned sessions, got %d", len(pinned))
+	}
+	if _, ok := pinned[k("opencode", "s1")]; !ok {
+		t.Error("opencode/s1 should be pinned")
+	}
+	if _, ok := pinned[k("claude-code", "s1")]; !ok {
+		t.Error("claude-code/s1 should be pinned")
+	}
+
+	// Unpinning one platform must leave the other alone.
+	_ = db.UnpinSession("opencode", "s1")
+	pinned, _ = db.PinnedSessions()
+	if _, ok := pinned[k("opencode", "s1")]; ok {
+		t.Error("opencode/s1 should be gone")
+	}
+	if _, ok := pinned[k("claude-code", "s1")]; !ok {
+		t.Error("claude-code/s1 should survive opencode unpin")
+	}
+}
+
+func TestPinnedSessions_Empty(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+
+	pinned, err := db.PinnedSessions()
+	if err != nil {
+		t.Fatalf("PinnedSessions: %v", err)
+	}
+	if len(pinned) != 0 {
+		t.Errorf("expected 0 pinned sessions on fresh db, got %d", len(pinned))
+	}
+}

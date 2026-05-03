@@ -19,11 +19,15 @@ import (
 //	    model_id). Scoped per-platform so OpenCode's "claude-opus-4"
 //	    and Claude Code's same model are tracked independently, mirroring
 //	    how archived_session / seen_session are scoped.
+//	5 - add `pinned_session` table keyed by (platform, session_id).
+//	    Lets the user pin sessions to the top of the sidebar. The
+//	    pinned_at timestamp determines sort order within the pinned
+//	    group (most recently pinned first).
 //
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 4
+const latestSchemaVersion = 5
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -127,6 +131,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV3(tx)
 	case 4:
 		return migrateToV4(tx)
+	case 5:
+		return migrateToV5(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -223,6 +229,23 @@ func migrateToV4(tx *sql.Tx) error {
 			model_id    TEXT    NOT NULL,
 			created_at  INTEGER NOT NULL,
 			PRIMARY KEY (platform, provider_id, model_id)
+		)
+	`)
+	return err
+}
+
+// migrateToV5 creates the pinned_session table. The primary key is
+// (platform, session_id), matching the scoping of archived_session /
+// seen_session. pinned_at stores the Unix-millisecond timestamp of
+// when the user pinned the session, used for sort order within the
+// pinned group.
+func migrateToV5(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE pinned_session (
+			platform   TEXT    NOT NULL,
+			session_id TEXT    NOT NULL,
+			pinned_at  INTEGER NOT NULL,
+			PRIMARY KEY (platform, session_id)
 		)
 	`)
 	return err
