@@ -2746,7 +2746,10 @@ export function SessionDetail() {
   // a turn begins or ends, without waiting for the 10-second poll to
   // /api/sessions. The derivation mirrors internal/db/types.go exactly so what
   // we set optimistically matches what the next poll will confirm (no flicker).
-  const optimisticStatus: Session['status'] = (() => {
+  // Raw status derived from the last message — may flicker between
+  // "busy" and "waiting" during tool-call turn boundaries when the
+  // agent finishes one turn and immediately starts another.
+  const rawOptimisticStatus: Session['status'] = (() => {
     if (!lastMsg) return 'done';
     const data = lastMsg.data;
     if (data?.role !== 'assistant') return 'done';
@@ -2754,6 +2757,44 @@ export function SessionDetail() {
     if (data?.finish) return 'waiting';
     return 'busy';
   })();
+
+  // Debounced status: when transitioning from "busy" to "waiting",
+  // hold "busy" for a grace period (3 s) before committing. If the
+  // agent starts a new turn within that window the "waiting" flash
+  // is suppressed entirely. Transitions to "error", "done", or
+  // "busy" are applied immediately.
+  const [optimisticStatus, setOptimisticStatus] = useState(rawOptimisticStatus);
+  const statusGraceRef = useRef<number | null>(null);
+  useEffect(() => {
+    // Clear any pending grace timer on unmount.
+    return () => { if (statusGraceRef.current !== null) window.clearTimeout(statusGraceRef.current); };
+  }, []);
+  useEffect(() => {
+    if (rawOptimisticStatus === optimisticStatus) {
+      // Already in sync — clear any pending grace timer.
+      if (statusGraceRef.current !== null) {
+        window.clearTimeout(statusGraceRef.current);
+        statusGraceRef.current = null;
+      }
+      return;
+    }
+    // Busy → waiting: delay the transition so tool-call gaps don't flicker.
+    if (optimisticStatus === 'busy' && rawOptimisticStatus === 'waiting') {
+      if (statusGraceRef.current !== null) return; // timer already running
+      statusGraceRef.current = window.setTimeout(() => {
+        statusGraceRef.current = null;
+        setOptimisticStatus(rawOptimisticStatus);
+      }, 3000);
+      return;
+    }
+    // All other transitions: apply immediately.
+    if (statusGraceRef.current !== null) {
+      window.clearTimeout(statusGraceRef.current);
+      statusGraceRef.current = null;
+    }
+    setOptimisticStatus(rawOptimisticStatus);
+  }, [rawOptimisticStatus, optimisticStatus]);
+
   useEffect(() => {
     if (!id) return;
     setRecentSessions(prev => {
