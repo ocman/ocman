@@ -121,3 +121,49 @@ describe('session cache', () => {
     expect(useApiStore.getState().getCachedSession('a')).not.toBeNull();
   });
 });
+
+describe('runRequest AbortError handling', () => {
+  beforeEach(() => {
+    useApiStore.setState({ requests: {} });
+  });
+
+  it('does not write an error state for AbortError', async () => {
+    const store = useApiStore.getState();
+    const abortError = new DOMException('The operation was aborted.', 'AbortError');
+
+    await expect(
+      store.runRequest('test:abort', () => Promise.reject(abortError)),
+    ).rejects.toThrow(abortError);
+
+    // The request should still be in loading state (not error) because
+    // AbortError is not a real failure.
+    const req = useApiStore.getState().requests['test:abort'];
+    expect(req).toBeDefined();
+    expect(req.error).toBeNull();
+  });
+
+  it('writes an error state for non-abort errors', async () => {
+    const store = useApiStore.getState();
+    const error = new Error('Network failure');
+
+    await expect(
+      store.runRequest('test:fail', () => Promise.reject(error)),
+    ).rejects.toThrow(error);
+
+    const req = useApiStore.getState().requests['test:fail'];
+    expect(req).toBeDefined();
+    expect(req.error).toBe('Network failure');
+    expect(req.loading).toBe(false);
+  });
+
+  it('writes success state for resolved tasks', async () => {
+    const store = useApiStore.getState();
+    const result = await store.runRequest('test:ok', () => Promise.resolve(42));
+    expect(result).toBe(42);
+
+    const req = useApiStore.getState().requests['test:ok'];
+    expect(req).toBeDefined();
+    expect(req.loading).toBe(false);
+    expect(req.error).toBeNull();
+  });
+});

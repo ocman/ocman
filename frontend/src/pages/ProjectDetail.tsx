@@ -1,14 +1,13 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import type { Session } from '../lib/api';
 import { usePageTitle } from '../lib/headerContext';
 import { SessionTable } from '../components/SessionTable';
 import { useTmux } from '../lib/useTmux';
-import { useApiStore } from '../lib/apiStore';
 import { useWorktreeSessions } from '../lib/useCapabilities';
 import { shortPath } from '../lib/format';
 import { openVSCode } from '../lib/shortcuts';
 import { useShortcut } from '../lib/shortcutRegistry';
+import { useSessions } from '../lib/queries';
 // ProjectDetail is mounted outside DashboardLayout, so we need to pull in
 // Dashboard.css explicitly to get the .oc-time-range / .oc-time-range-btn
 // styles used by the filter bar below.
@@ -33,12 +32,9 @@ export function ProjectDetail() {
   const tmux = useTmux();
   const worktreeSessionsAllowed = useWorktreeSessions();
   const matchingTmuxSession = directory ? tmux.findSession(directory) : undefined;
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [pendingTmuxSession, setPendingTmuxSession] = useState<string | null>(null);
   const [pickerPos, setPickerPos] = useState<{ top: number; left: number } | null>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
-  const getSessions = useApiStore((state) => state.getSessions);
 
   // Filter state (mirrors the dashboard Sessions tab) — persisted in the
   // URL so refresh / back-forward keep the user's view. Default to 7d
@@ -72,61 +68,17 @@ export function ProjectDetail() {
     return () => document.removeEventListener('mousedown', handle);
   }, [pendingTmuxSession]);
 
-  const load = useCallback(async () => {
-    if (!directory) {
-      setSessions([]);
-      return;
-    }
-
-    try {
-      const since = timeRange > 0 ? Date.now() - timeRange * 60 * 60 * 1000 : undefined;
-      const nextSessions = await getSessions({ dir: directory, since });
-      // Coerce a nil-slice JSON null into [] so SessionTable / its
-      // visibility filter never see null.
-      setSessions(nextSessions ?? []);
-      setSessionsLoaded(true);
-    } catch {
-      // error tracked by useApiRequest
-    }
-  }, [directory, getSessions, timeRange]);
-
-  // Initial load + reload whenever `directory` or the time-range filter
-  // changes. Inlined so the effect body itself doesn't synchronously
-  // call a setState-bearing callback (react-hooks/set-state-in-effect).
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadProject() {
-      if (!directory) {
-        if (!cancelled) setSessions([]);
-        return;
-      }
-
-      try {
-        const since = timeRange > 0 ? Date.now() - timeRange * 60 * 60 * 1000 : undefined;
-        const nextSessions = await getSessions({ dir: directory, since });
-        if (cancelled) return;
-        // Coerce a nil-slice JSON null into [] so SessionTable / its
-        // visibility filter never see null.
-        setSessions(nextSessions ?? []);
-        setSessionsLoaded(true);
-      } catch {
-        // error tracked by useApiRequest
-      }
-    }
-
-    void loadProject();
-    return () => {
-      cancelled = true;
-    };
-  }, [directory, getSessions, timeRange]);
-
-  // Auto-refresh every 5 seconds. `load` is passed to setInterval (not
-  // invoked synchronously), so this doesn't trip set-state-in-effect.
-  useEffect(() => {
-    const id = setInterval(load, 5000);
-    return () => clearInterval(id);
-  }, [load]);
+  // TanStack Query handles dedup, cancellation, stale-while-revalidate,
+  // and visibility pausing automatically (Wave 3 / P4+P5 fix).
+  // sinceHours produces a stable query key; the actual timestamp is
+  // computed inside the queryFn at fetch time.
+  const sinceHours = timeRange > 0 ? timeRange : undefined;
+  const sessionsQ = useSessions(
+    { dir: directory, sinceHours },
+    { refetchInterval: 5000, enabled: !!directory },
+  );
+  const sessions = sessionsQ.data ?? [];
+  const sessionsLoaded = !sessionsQ.isLoading;
 
   const handleTmuxSwitch = useCallback((anchor?: HTMLElement | null) => {
     if (!matchingTmuxSession) return;

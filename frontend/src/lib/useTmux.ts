@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { TmuxClient, TmuxSession } from './api';
 import { useApiStore } from './apiStore';
 
@@ -72,5 +72,8 @@ export function useTmux(): TmuxState {
     return launchOpencodeInTmux(directory);
   }, [launchOpencodeInTmux]);
 
-  return { available, isLocal, sessions, clients, switchSession, findSession, launchOpencode };
+  return useMemo(
+    () => ({ available, isLocal, sessions, clients, switchSession, findSession, launchOpencode }),
+    [available, isLocal, sessions, clients, switchSession, findSession, launchOpencode],
+  );
 }

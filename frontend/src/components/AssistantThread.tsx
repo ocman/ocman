@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import './AssistantThread.css';
 import {
   ThreadPrimitive,
@@ -1004,14 +1004,36 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
   // Safety net for any non-markdown-rendered links in message bodies.
   // Markdown links are handled at render time by MarkdownLink; this catches
   // anything else that might land in the DOM with a raw href.
+  //
+  // Debounced via requestIdleCallback (with a 200ms timeout fallback) so
+  // the link scan runs at most once per idle period instead of on every
+  // DOM mutation during streaming (P1 fix).
   useEffect(() => {
     const thread = threadRef.current;
     if (!thread) return;
     const apply = () => hardenMessageLinks(thread);
     apply();
-    const observer = new MutationObserver(apply);
+    let idleHandle: number | ReturnType<typeof setTimeout> | null = null;
+    const scheduleApply = () => {
+      if (idleHandle !== null) return;
+      if (typeof requestIdleCallback === 'function') {
+        idleHandle = requestIdleCallback(() => { idleHandle = null; apply(); }, { timeout: 200 });
+      } else {
+        idleHandle = setTimeout(() => { idleHandle = null; apply(); }, 200);
+      }
+    };
+    const observer = new MutationObserver(scheduleApply);
     observer.observe(thread, { childList: true, subtree: true });
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (idleHandle !== null) {
+        if (typeof cancelIdleCallback === 'function' && typeof idleHandle === 'number') {
+          cancelIdleCallback(idleHandle);
+        } else {
+          clearTimeout(idleHandle as ReturnType<typeof setTimeout>);
+        }
+      }
+    };
   }, []);
 
   const hasAutoLoadedRef = useRef(false);
@@ -1045,7 +1067,13 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
     }
   }, [isAtBottom]);
 
-  useEffect(() => {
+  // Track the bottom inset (height of the composer/permission/question
+  // overlay) so the viewport padding stays correct. Uses a
+  // MutationObserver on direct children only (not subtree) to detect
+  // when the overlay mounts/unmounts, plus a ResizeObserver for size
+  // changes. The mutation callback is RAF-coalesced to avoid layout
+  // thrash during streaming (P9 fix).
+  useLayoutEffect(() => {
     const thread = threadRef.current;
     if (!thread) return;
 
@@ -1058,16 +1086,26 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
     const resizeObserver = new ResizeObserver(() => {
       updateBottomInset();
     });
+
+    let rafPending = false;
     const mutationObserver = new MutationObserver(() => {
-      const overlay = updateBottomInset();
-      resizeObserver.disconnect();
-      if (overlay) resizeObserver.observe(overlay);
+      if (rafPending) return;
+      rafPending = true;
+      requestAnimationFrame(() => {
+        rafPending = false;
+        const overlay = updateBottomInset();
+        resizeObserver.disconnect();
+        if (overlay) resizeObserver.observe(overlay);
+      });
     });
 
     const overlay = thread.querySelector<HTMLElement>('.oc-composer-wrap, .oc-permission-wrap, .oc-question-wrap');
     if (overlay) resizeObserver.observe(overlay);
     const frame = requestAnimationFrame(updateBottomInset);
 
+    // Observe only direct children — the overlay is a direct child of
+    // the thread root. subtree: true would fire on every text-node
+    // mutation during streaming.
     mutationObserver.observe(thread, { childList: true, subtree: true });
     return () => {
       cancelAnimationFrame(frame);
@@ -1076,19 +1114,31 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
     };
   }, [composer]);
 
+  // Auto-scroll when content changes (messages added, tool calls updated,
+  // etc.). The observer callback is RAF-coalesced so layout-forcing
+  // writes (scrollTop = scrollHeight) happen at most once per frame
+  // instead of on every DOM mutation during streaming (P1/P9 fix).
+  // `characterData` is dropped — React re-renders already trigger
+  // childList mutations for text updates, and characterData was the
+  // main driver of the observer storm during SSE streaming.
   useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
     el.addEventListener('scroll', checkScroll, { passive: true });
 
-    // Auto-scroll when content changes (messages added, tool calls updated, etc.)
+    let rafPending = false;
     const observer = new MutationObserver(() => {
-      if (wasAtBottomRef.current) {
-        el.scrollTop = el.scrollHeight;
-      }
-      checkScroll();
+      if (rafPending) return;
+      rafPending = true;
+      requestAnimationFrame(() => {
+        rafPending = false;
+        if (wasAtBottomRef.current) {
+          el.scrollTop = el.scrollHeight;
+        }
+        checkScroll();
+      });
     });
-    observer.observe(el, { childList: true, subtree: true, characterData: true });
+    observer.observe(el, { childList: true, subtree: true });
 
     const frame = requestAnimationFrame(checkScroll);
     return () => {

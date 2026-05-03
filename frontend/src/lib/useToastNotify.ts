@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { api, type NotifyEntry } from './api';
+import type { NotifyEntry } from './api';
+import { useNotifyStore } from './useNotifyData';
 
 /**
  * In-app Radix toast notifier for sessions that need user input
  * (pending permission request or question).
  *
  * Sibling to useFaviconNotify / useBellNotify / useNotificationNotify
- * — same `/api/sessions/notify` source, same baseline-snapshot pattern,
- * same 10s cadence. Each hook is independent.
+ * — same data source, same baseline-snapshot pattern. Each hook is
+ * independent.
+ *
+ * Now consumes the shared `useNotifyStore` instead of polling
+ * `/api/sessions/notify` independently (P2 fix).
  *
  * Why a fourth hook rather than reusing the OS notification path:
  *
@@ -39,10 +43,6 @@ export type ToastDecision = {
   title: string;
   directory: string;
 };
-
-const POLL_INTERVAL_MS = 10_000;
-const TOAST_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
-const TOAST_LIMIT = 500;
 
 /** State key used to dedupe across polls. Mirrors useNotificationNotify. */
 function stateKey(s: ToastNotifyShape): string {
@@ -173,9 +173,10 @@ export function useToastNotify(): UseToastNotifyResult {
   const location = useLocation();
   const pathRef = useRef(location.pathname);
 
-  // Mirror the latest pathname into a ref so the polling closure can
-  // read it without re-running the effect on every navigation. Done in
-  // its own effect so we don't write to the ref during render.
+  // Mirror the latest pathname into a ref so the store subscription
+  // closure can read it without re-running the effect on every
+  // navigation. Done in its own effect so we don't write to the ref
+  // during render.
   useEffect(() => {
     pathRef.current = location.pathname;
   }, [location.pathname]);
@@ -213,78 +214,62 @@ export function useToastNotify(): UseToastNotifyResult {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
+    // Subscribe to the shared notify store.
+    useNotifyStore.getState().subscribe();
 
-    async function takeBaseline() {
-      try {
-        const sessions = await api.sessionsNotify({
-          since: Date.now() - TOAST_LOOKBACK_MS,
-          limit: TOAST_LIMIT,
-        });
-        if (cancelled) return;
-        baselineRef.current = new Map(sessions.map((s) => [s.id, stateKey(s)]));
-      } catch {
-        baselineRef.current = null;
+    function check(sessions: NotifyEntry[]) {
+      // Build the "still has a pending prompt of kind X" set so we
+      // can prune resolved toasts. Defensive backstop for cross-tab
+      // resolutions and any same-tab path that didn't fire
+      // notifyPromptDismissed (e.g. session.idle event flow).
+      const stillPending = new Set<string>();
+      for (const s of sessions) {
+        if (s.pendingPermission) stillPending.add(`${s.id}|permission`);
+        if (s.pendingQuestion) stillPending.add(`${s.id}|question`);
       }
-    }
 
-    async function check() {
-      try {
-        const sessions = await api.sessionsNotify({
-          since: Date.now() - TOAST_LOOKBACK_MS,
-          limit: TOAST_LIMIT,
-        });
-        if (cancelled) return;
+      const decisions = __evaluateForTests({
+        sessions,
+        currentPath: pathRef.current,
+        baseline: baselineRef.current,
+      });
 
-        // Build the "still has a pending prompt of kind X" set so we
-        // can prune resolved toasts. Defensive backstop for cross-tab
-        // resolutions and any same-tab path that didn't fire
-        // notifyPromptDismissed (e.g. session.idle event flow).
-        const stillPending = new Set<string>();
-        for (const s of sessions) {
-          if (s.pendingPermission) stillPending.add(`${s.id}|permission`);
-          if (s.pendingQuestion) stillPending.add(`${s.id}|question`);
-        }
+      const now = Date.now();
+      setToasts((prev) => {
+        // First prune toasts whose underlying prompt resolved.
+        const pruned = prev.filter((t) =>
+          stillPending.has(`${t.sessionId}|${t.kind}`),
+        );
+        if (decisions.length === 0) return pruned;
 
-        const decisions = __evaluateForTests({
-          sessions,
-          currentPath: pathRef.current,
-          baseline: baselineRef.current,
-        });
-
-        const now = Date.now();
-        setToasts((prev) => {
-          // First prune toasts whose underlying prompt resolved.
-          const pruned = prev.filter((t) =>
-            stillPending.has(`${t.sessionId}|${t.kind}`),
-          );
-          if (decisions.length === 0) return pruned;
-
-          // Drop any pre-existing toast for the same session — the
-          // newest decision supersedes it (e.g. question -> permission).
-          const ids = new Set(decisions.map((d) => d.sessionId));
-          const kept = pruned.filter((t) => !ids.has(t.sessionId));
-          const next = decisions.map<ToastEntry>((d) => ({
-            ...d,
-            toastId: `${d.sessionId}:${now}`,
-            createdAt: now,
-          }));
-          return [...kept, ...next];
-        });
-      } catch {
-        // network errors shouldn't break anything — next poll retries
-      }
+        // Drop any pre-existing toast for the same session — the
+        // newest decision supersedes it (e.g. question -> permission).
+        const ids = new Set(decisions.map((d) => d.sessionId));
+        const kept = pruned.filter((t) => !ids.has(t.sessionId));
+        const next = decisions.map<ToastEntry>((d) => ({
+          ...d,
+          toastId: `${d.sessionId}:${now}`,
+          createdAt: now,
+        }));
+        return [...kept, ...next];
+      });
     }
 
     // Snapshot baseline at mount so prompts that were *already* there
-    // when the app loaded don't toast retroactively. Then poll on the
-    // standard cadence.
-    void takeBaseline();
-    const id = setInterval(() => void check(), POLL_INTERVAL_MS);
+    // when the app loaded don't toast retroactively.
+    const initial = useNotifyStore.getState().data;
+    if (initial) {
+      baselineRef.current = new Map(initial.map((s) => [s.id, stateKey(s)]));
+    }
+
+    // Subscribe to store changes to react when new data arrives.
+    const unsub = useNotifyStore.subscribe((state) => {
+      if (state.data) check(state.data);
+    });
 
     return () => {
-      cancelled = true;
-      clearInterval(id);
+      unsub();
+      useNotifyStore.getState().unsubscribe();
     };
   }, []);
 

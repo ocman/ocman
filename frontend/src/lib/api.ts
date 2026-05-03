@@ -758,8 +758,8 @@ export interface TmuxSession {
 }
 
 export const api = {
-  stats: () => fetchJSON<Stats>('/api/stats'),
-  metrics: (params?: { agent?: string; model?: string; days?: number; limit?: number; offset?: number; sessionLimit?: number; sessionOffset?: number; projectLimit?: number; projectOffset?: number; dir?: string }) => {
+  stats: (signal?: AbortSignal) => fetchJSON<Stats>('/api/stats', signal),
+  metrics: (params?: { agent?: string; model?: string; days?: number; limit?: number; offset?: number; sessionLimit?: number; sessionOffset?: number; projectLimit?: number; projectOffset?: number; dir?: string }, signal?: AbortSignal) => {
     const q = new URLSearchParams();
     if (params?.agent) q.set('agent', params.agent);
     if (params?.model) q.set('model', params.model);
@@ -772,9 +772,9 @@ export const api = {
     if (params?.projectOffset != null) q.set('projectOffset', String(params.projectOffset));
     if (params?.dir) q.set('dir', params.dir);
     const qs = q.toString();
-    return fetchJSON<MetricsDashboard>(`/api/metrics${qs ? '?' + qs : ''}`);
+    return fetchJSON<MetricsDashboard>(`/api/metrics${qs ? '?' + qs : ''}`, signal);
   },
-  projects: () => fetchJSON<Project[]>('/api/projects'),
+  projects: (signal?: AbortSignal) => fetchJSON<Project[]>('/api/projects', signal),
   sessions: (params?: { dir?: string; since?: number; limit?: number }, signal?: AbortSignal) => {
     const q = new URLSearchParams();
     if (params?.dir) q.set('dir', params.dir);
@@ -804,6 +804,16 @@ export const api = {
   // live port).
   sessionInfo: (id: string, signal?: AbortSignal) =>
     fetchJSON<SessionInfo>(`/api/session/${encodeURIComponent(id)}/info`, signal),
+  /**
+   * Batch-fetch the latest tool output for multiple running sub-task
+   * sessions in a single request. Returns a map of taskId -> output text.
+   * Replaces the per-task polling loop (P7 fix).
+   */
+  sessionTasks: (sessionId: string, taskIds: string[], signal?: AbortSignal) =>
+    fetchJSON<{ tasks: Record<string, string> }>(
+      `/api/session/${encodeURIComponent(sessionId)}/tasks?ids=${taskIds.map(encodeURIComponent).join(',')}`,
+      signal,
+    ),
   // Working-tree git diff for an absolute directory. fresh=1 bypasses
   // the backend's tiny in-process cache; the SSE-driven refetch path
   // sets it so an edit-event-triggered refresh is never stale.
@@ -839,20 +849,20 @@ export const api = {
     if (!resp.ok) throw new Error(await resp.text());
     return resp.json() as Promise<{ cost: number; known: boolean }>;
   },
-  activity: (params?: { days?: number; model?: string; dir?: string }) => {
+  activity: (params?: { days?: number; model?: string; dir?: string }, signal?: AbortSignal) => {
     const q = new URLSearchParams();
     if (params?.days) q.set('days', String(params.days));
     if (params?.model) q.set('model', params.model);
     if (params?.dir) q.set('dir', params.dir);
     const qs = q.toString();
-    return fetchJSON<ActivityDay[]>(`/api/activity${qs ? '?' + qs : ''}`);
+    return fetchJSON<ActivityDay[]>(`/api/activity${qs ? '?' + qs : ''}`, signal);
   },
-  models: (params?: { days?: number; dir?: string }) => {
+  models: (params?: { days?: number; dir?: string }, signal?: AbortSignal) => {
     const q = new URLSearchParams();
     if (params?.days) q.set('days', String(params.days));
     if (params?.dir) q.set('dir', params.dir);
     const qs = q.toString();
-    return fetchJSON<ModelUsage[]>(`/api/models${qs ? '?' + qs : ''}`);
+    return fetchJSON<ModelUsage[]>(`/api/models${qs ? '?' + qs : ''}`, signal);
   },
   sessionModels: (sessionId: string) =>
     fetchJSON<SessionModelsResponse>(`/api/session/${encodeURIComponent(sessionId)}/models`),
@@ -877,20 +887,20 @@ export const api = {
     });
     if (!resp.ok) throw new Error(await resp.text());
   },
-  hourly: (params?: { days?: number; dir?: string }) => {
+  hourly: (params?: { days?: number; dir?: string }, signal?: AbortSignal) => {
     const q = new URLSearchParams();
     if (params?.days) q.set('days', String(params.days));
     if (params?.dir) q.set('dir', params.dir);
     const qs = q.toString();
-    return fetchJSON<HourlyData[]>(`/api/hourly${qs ? '?' + qs : ''}`);
+    return fetchJSON<HourlyData[]>(`/api/hourly${qs ? '?' + qs : ''}`, signal);
   },
-  hourlyTokens: (params?: { days?: number; model?: string; dir?: string }) => {
+  hourlyTokens: (params?: { days?: number; model?: string; dir?: string }, signal?: AbortSignal) => {
     const q = new URLSearchParams();
     if (params?.days) q.set('days', String(params.days));
     if (params?.model) q.set('model', params.model);
     if (params?.dir) q.set('dir', params.dir);
     const qs = q.toString();
-    return fetchJSON<HourlyTokensByModel[]>(`/api/hourly-tokens${qs ? '?' + qs : ''}`);
+    return fetchJSON<HourlyTokensByModel[]>(`/api/hourly-tokens${qs ? '?' + qs : ''}`, signal);
   },
   capabilities: (signal?: AbortSignal) => fetchJSON<CapabilitiesResponse>('/api/capabilities', signal),
   createSession: async (directory: string, platform?: string, title?: string) => {
@@ -994,8 +1004,8 @@ export const api = {
     });
     if (!resp.ok) throw new Error(await resp.text());
   },
-  tmuxClients: () => fetchJSON<{ available: boolean; clients: TmuxClient[] }>('/api/tmux/clients'),
-  tmuxSessions: () => fetchJSON<{ available: boolean; sessions: TmuxSession[] }>('/api/tmux/sessions'),
+  tmuxClients: (signal?: AbortSignal) => fetchJSON<{ available: boolean; clients: TmuxClient[] }>('/api/tmux/clients', signal),
+  tmuxSessions: (signal?: AbortSignal) => fetchJSON<{ available: boolean; sessions: TmuxSession[] }>('/api/tmux/sessions', signal),
   tmuxSwitch: async (session: string, client?: string) => {
     const body: Record<string, string> = { session };
     if (client) body.client = client;
@@ -1107,7 +1117,7 @@ export const api = {
       // Deliberately ignored.
     }
   },
-  whisperStatus: () => fetchJSON<{ available: boolean }>('/api/whisper/status'),
+  whisperStatus: (signal?: AbortSignal) => fetchJSON<{ available: boolean }>('/api/whisper/status', signal),
   transcribe: async (audio: Blob): Promise<string> => {
     // Pick a filename extension the backend can use to identify the format
     const extMap: Record<string, string> = {
@@ -1128,8 +1138,8 @@ export const api = {
     return data.text;
   },
 
-  async systemStats(): Promise<SystemStats> {
-    return fetchJSON<SystemStats>('/api/system/stats');
+  async systemStats(signal?: AbortSignal): Promise<SystemStats> {
+    return fetchJSON<SystemStats>('/api/system/stats', signal);
   },
 
   /**

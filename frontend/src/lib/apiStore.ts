@@ -48,9 +48,9 @@ type ApiStore = {
   updateCachedSession: (id: string, updater: (prev: SessionDetail) => SessionDetail) => void;
   clearCachedSession: (id: string) => void;
   runRequest: <T>(key: string, task: () => Promise<T>) => Promise<T>;
-  getStats: () => Promise<Stats>;
-  getMetrics: (params?: { agent?: string; model?: string; days?: number }) => Promise<MetricsDashboard>;
-  getProjects: () => Promise<Project[]>;
+  getStats: (signal?: AbortSignal) => Promise<Stats>;
+  getMetrics: (params?: { agent?: string; model?: string; days?: number }, signal?: AbortSignal) => Promise<MetricsDashboard>;
+  getProjects: (signal?: AbortSignal) => Promise<Project[]>;
   getSessions: (params?: { dir?: string; since?: number; limit?: number }, signal?: AbortSignal) => Promise<Session[]>;
   refreshCachedSessions: (signal?: AbortSignal) => Promise<Session[]>;
   getSession: (id: string, limit?: number, offset?: number, signal?: AbortSignal) => Promise<SessionDetail>;
@@ -59,10 +59,10 @@ type ApiStore = {
   getGitDiff: (dir: string, opts?: { fresh?: boolean }, signal?: AbortSignal) => Promise<WorkingTreeDiff>;
   archiveSession: (platform: string, sessionId: string, timeUpdated: number, archived?: boolean) => Promise<{ ok: boolean }>;
   markSessionSeen: (platform: string, sessionId: string, timeUpdated: number) => Promise<{ ok: boolean }>;
-  getActivity: () => Promise<ActivityDay[]>;
-  getModels: () => Promise<ModelUsage[]>;
-  getHourly: () => Promise<HourlyData[]>;
-  getHourlyTokens: () => Promise<HourlyTokensByModel[]>;
+  getActivity: (signal?: AbortSignal) => Promise<ActivityDay[]>;
+  getModels: (signal?: AbortSignal) => Promise<ModelUsage[]>;
+  getHourly: (signal?: AbortSignal) => Promise<HourlyData[]>;
+  getHourlyTokens: (signal?: AbortSignal) => Promise<HourlyTokensByModel[]>;
   getCapabilities: (signal?: AbortSignal) => Promise<CapabilitiesResponse>;
   createSession: (directory: string, platform?: string, title?: string) => Promise<{ id: string }>;
   sendMessage: (sessionId: string, message: string, images?: { url: string; mime: string }[], model?: string, agent?: string, reasoning?: string) => Promise<void>;
@@ -72,13 +72,13 @@ type ApiStore = {
   respondQuestion: (sessionId: string, requestId: string, answers: string[][]) => Promise<void>;
   rejectQuestion: (sessionId: string, requestId: string) => Promise<void>;
   abortSession: (sessionId: string) => Promise<void>;
-  getTmuxClients: () => Promise<{ available: boolean; clients: TmuxClient[] }>;
-  getTmuxSessions: () => Promise<{ available: boolean; sessions: TmuxSession[] }>;
+  getTmuxClients: (signal?: AbortSignal) => Promise<{ available: boolean; clients: TmuxClient[] }>;
+  getTmuxSessions: (signal?: AbortSignal) => Promise<{ available: boolean; sessions: TmuxSession[] }>;
   switchTmuxSession: (session: string, client?: string) => Promise<void>;
   launchOpencodeInTmux: (directory: string) => Promise<{ session: string }>;
-  getWhisperStatus: () => Promise<{ available: boolean }>;
+  getWhisperStatus: (signal?: AbortSignal) => Promise<{ available: boolean }>;
   transcribe: (audio: Blob) => Promise<string>;
-  getSystemStats: () => Promise<SystemStats>;
+  getSystemStats: (signal?: AbortSignal) => Promise<SystemStats>;
 };
 
 export const useApiStore = create<ApiStore>((set, get) => ({
@@ -138,6 +138,12 @@ export const useApiStore = create<ApiStore>((set, get) => ({
       }));
       return result;
     } catch (error) {
+      // Aborted requests are not real failures — don't write an error
+      // state for them so the UI doesn't flash error messages during
+      // rapid navigation or filter changes (P4 fix).
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw error;
+      }
       const message = error instanceof Error ? error.message : 'Request failed';
       set((state) => ({
         requests: {
@@ -148,9 +154,9 @@ export const useApiStore = create<ApiStore>((set, get) => ({
       throw error;
     }
   },
-  getStats: () => get().runRequest('stats:get', () => api.stats()),
-  getMetrics: (params) => get().runRequest(`metrics:get:${params?.agent ?? ''}:${params?.model ?? ''}:${params?.days ?? ''}`, () => api.metrics(params)),
-  getProjects: () => get().runRequest('projects:get', () => api.projects()),
+  getStats: (signal) => get().runRequest('stats:get', () => api.stats(signal)),
+  getMetrics: (params, signal) => get().runRequest(`metrics:get:${params?.agent ?? ''}:${params?.model ?? ''}:${params?.days ?? ''}`, () => api.metrics(params, signal)),
+  getProjects: (signal) => get().runRequest('projects:get', () => api.projects(signal)),
   getSessions: (params, signal) => {
     // Stable key so useApiRequest('sessions:get') sees status transitions.
     // Per-params variance (since, limit) doesn't need its own loading row —
@@ -179,10 +185,10 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   getGitDiff: (dir, opts, signal) => get().runRequest(`git:diff:${dir}`, () => api.gitDiff(dir, opts, signal)),
   archiveSession: (platform, sessionId, timeUpdated, archived = true) => get().runRequest(`session:archive:${sessionId}`, () => api.archiveSession(platform, sessionId, timeUpdated, archived)),
   markSessionSeen: (platform, sessionId, timeUpdated) => get().runRequest(`session:seen:${sessionId}`, () => api.markSessionSeen(platform, sessionId, timeUpdated)),
-  getActivity: () => get().runRequest('activity:get', () => api.activity()),
-  getModels: () => get().runRequest('models:get', () => api.models()),
-  getHourly: () => get().runRequest('hourly:get', () => api.hourly()),
-  getHourlyTokens: () => get().runRequest('hourly-tokens:get', () => api.hourlyTokens()),
+  getActivity: (signal) => get().runRequest('activity:get', () => api.activity(undefined, signal)),
+  getModels: (signal) => get().runRequest('models:get', () => api.models(undefined, signal)),
+  getHourly: (signal) => get().runRequest('hourly:get', () => api.hourly(undefined, signal)),
+  getHourlyTokens: (signal) => get().runRequest('hourly-tokens:get', () => api.hourlyTokens(undefined, signal)),
   getCapabilities: (signal) => get().runRequest('capabilities:get', () => api.capabilities(signal)),
   createSession: (directory, platform, title) => get().runRequest('session:create', () => api.createSession(directory, platform, title)),
   sendMessage: (sessionId, message, images, model, agent, reasoning) => get().runRequest(`message:send:${sessionId}`, () => api.sendMessage(sessionId, message, images, model, agent, reasoning)),
@@ -192,13 +198,13 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   respondQuestion: (sessionId, requestId, answers) => get().runRequest(`question:respond:${sessionId}`, () => api.respondQuestion(sessionId, requestId, answers)),
   rejectQuestion: (sessionId, requestId) => get().runRequest(`question:reject:${sessionId}`, () => api.rejectQuestion(sessionId, requestId)),
   abortSession: (sessionId) => get().runRequest(`session:abort:${sessionId}`, () => api.abortSession(sessionId)),
-  getTmuxClients: () => get().runRequest('tmux-clients:get', () => api.tmuxClients()),
-  getTmuxSessions: () => get().runRequest('tmux-sessions:get', () => api.tmuxSessions()),
+  getTmuxClients: (signal) => get().runRequest('tmux-clients:get', () => api.tmuxClients(signal)),
+  getTmuxSessions: (signal) => get().runRequest('tmux-sessions:get', () => api.tmuxSessions(signal)),
   switchTmuxSession: (session, client) => get().runRequest(`tmux:switch:${session}`, () => api.tmuxSwitch(session, client)),
   launchOpencodeInTmux: (directory) => get().runRequest(`tmux:launch-opencode:${directory}`, () => api.tmuxLaunchOpencode(directory)),
-  getWhisperStatus: () => get().runRequest('whisper-status:get', () => api.whisperStatus()),
+  getWhisperStatus: (signal) => get().runRequest('whisper-status:get', () => api.whisperStatus(signal)),
   transcribe: (audio) => get().runRequest('transcribe:post', () => api.transcribe(audio)),
-  getSystemStats: () => get().runRequest('system-stats:get', () => api.systemStats()),
+  getSystemStats: (signal) => get().runRequest('system-stats:get', () => api.systemStats(signal)),
 }));
 
 const DEFAULT_REQUEST_STATUS: RequestStatus = { loading: true, error: null };

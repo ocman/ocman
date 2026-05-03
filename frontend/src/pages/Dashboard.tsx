@@ -1,11 +1,9 @@
-import { startTransition, useState, useEffect, useCallback, useContext, createContext, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, useContext, createContext, type ReactNode } from 'react';
 import './Dashboard.css';
 import { useNavigate, NavLink, Outlet, useSearchParams, useLocation } from 'react-router-dom';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend, PointElement, LineElement } from 'chart.js';
 import { Bar, Doughnut, Line } from 'react-chartjs-2';
-import { api } from '../lib/api';
-import type { ActivityDay, HourlyData, HourlyTokensByModel, MetricsDashboard, ModelUsage, Project, ProjectLogEntry, Session } from '../lib/api';
-import { useApiStore } from '../lib/apiStore';
+import type { ActivityDay, HourlyTokensByModel, Project, ProjectLogEntry, Session } from '../lib/api';
 import {
   cleanTitle,
   formatCompactNumber,
@@ -23,7 +21,7 @@ import { SessionTable } from '../components/SessionTable';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { ProjectScopePicker } from '../components/ProjectScopePicker';
 import { matchesScope } from '../lib/projectTree';
-import { useApiRequest } from '../lib/apiStore';
+
 import { useUiStore } from '../lib/uiStore';
 import { useAuthStore } from '../lib/authStore';
 import { usePwaInstall } from '../lib/usePwaInstall';
@@ -31,6 +29,7 @@ import {
   notificationsSupported,
   requestNotificationPermission,
 } from '../lib/useNotificationNotify';
+import { useSessions as useTQSessions, useProjects as useTQProjects, useActivity, useModels, useHourly, useHourlyTokens, useMetrics } from '../lib/queries';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, PointElement, LineElement, Tooltip, Legend);
 
@@ -88,12 +87,9 @@ export function DashboardLayout() {
 
   const isOnDashboard = location.pathname === '/' || location.pathname === '/projects' || location.pathname === '/stats' || location.pathname === '/usage' || location.pathname === '/settings';
 
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
   const timeRange = parseInt(searchParams.get('t') || '12', 10);
   const showArchived = searchParams.get('a') === '1';
   const dirScope = searchParams.get('dir') ?? '';
-  const [sessionsLoaded, setSessionsLoaded] = useState(false);
 
   const setTimeRange = useCallback((v: number) => {
     setSearchParams((p) => { p.set('t', String(v)); return p; }, { replace: true });
@@ -119,54 +115,27 @@ export function DashboardLayout() {
     }, { replace: true });
   }, [setSearchParams]);
 
-  const getSessions = useApiStore((state) => state.getSessions);
-  const getProjects = useApiStore((state) => state.getProjects);
+  // TanStack Query handles dedup, cancellation, stale-while-revalidate,
+  // and visibility pausing automatically (Wave 3 / P4+P5 fix).
+  // sinceHours produces a stable query key; the actual timestamp is
+  // computed inside the queryFn at fetch time.
+  const sinceHours = timeRange > 0 ? timeRange : 30 * 24;
+  const sessionsQ = useTQSessions(
+    { sinceHours },
+    { refetchInterval: isOnDashboard ? 5000 : undefined },
+  );
+  const projectsQ = useTQProjects();
 
-  const sessionsRequest = useApiRequest('sessions:get');
-  const projectsRequest = useApiRequest('projects:get');
-
-  const loadSessions = useCallback(async () => {
-    try {
-      const since = timeRange > 0 ? Date.now() - timeRange * 60 * 60 * 1000 : Date.now() - 30 * 24 * 60 * 60 * 1000;
-      const result = await getSessions({ since });
-      // /api/sessions sometimes serializes a Go nil slice as JSON `null`,
-      // which would crash filterVisibleSessions downstream. Coerce here
-      // so React state always holds an array.
-      setSessions(result ?? []);
-      setSessionsLoaded(true);
-    } catch {
-      // error tracked by useApiRequest
-    }
-  }, [getSessions, timeRange]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadInitialData() {
-      try {
-        const [nextProjects] = await Promise.all([getProjects(), loadSessions()]);
-        if (cancelled) return;
-        setProjects(nextProjects);
-      } catch {
-        // errors tracked by useApiRequest
-      }
-    }
-    void loadInitialData();
-    return () => { cancelled = true; };
-  }, [getProjects, loadSessions]);
-
-  useEffect(() => {
-    if (!isOnDashboard) return;
-    const id = setInterval(loadSessions, 5000);
-    return () => clearInterval(id);
-  }, [loadSessions, isOnDashboard]);
+  const sessions = sessionsQ.data ?? [];
+  const projects = projectsQ.data ?? [];
 
   const ctx: DashboardCtx = {
     sessions,
     projects,
-    sessionsLoading: !sessionsLoaded,
-    sessionsError: sessionsRequest.error,
-    projectsLoading: projectsRequest.loading,
-    loadSessions,
+    sessionsLoading: sessionsQ.isLoading,
+    sessionsError: sessionsQ.error instanceof Error ? sessionsQ.error.message : null,
+    projectsLoading: projectsQ.isLoading,
+    loadSessions: () => { void sessionsQ.refetch(); },
     timeRange,
     setTimeRange,
     showArchived,
@@ -310,64 +279,54 @@ export function StatsTab() {
   const navigate = useNavigate();
   const { projects, dirScope, setDirScope } = useDashboard();
 
-  const [metrics, setMetrics] = useState<MetricsDashboard | null>(null);
-  const [selectedAgent, setSelectedAgent] = useState('');
-  const [selectedModel, setSelectedModel] = useState('');
-  const [metricsDays, setMetricsDays] = useState(30);
+  const [selectedAgent, setSelectedAgentRaw] = useState('');
+  const [selectedModel, setSelectedModelRaw] = useState('');
+  const [metricsDays, setMetricsDaysRaw] = useState(30);
   const [logTab, setLogTab] = useState<'session' | 'request' | 'project'>('project');
   const [logPage, setLogPage] = useState(0);
   const [sessionLogPage, setSessionLogPage] = useState(0);
   const [projectLogPage, setProjectLogPage] = useState(0);
-  const [metricsLoading, setMetricsLoading] = useState(false);
-  const [metricsError, setMetricsError] = useState<string | null>(null);
   const LOG_PAGE_SIZE = 20;
   const SESSION_LOG_PAGE_SIZE = 20;
   const PROJECT_LOG_PAGE_SIZE = 20;
 
-  useEffect(() => {
+  // Reset pagination when filters change. Done in the setter wrappers
+  // rather than a useEffect to avoid cascading renders.
+  const resetPages = useCallback(() => {
     setLogPage(0);
     setSessionLogPage(0);
     setProjectLogPage(0);
-  }, [selectedAgent, selectedModel, metricsDays, dirScope]);
+  }, []);
+  const setSelectedAgent = useCallback((v: string) => { setSelectedAgentRaw(v); resetPages(); }, [resetPages]);
+  const setSelectedModel = useCallback((v: string) => { setSelectedModelRaw(v); resetPages(); }, [resetPages]);
+  const setMetricsDays = useCallback((v: number) => { setMetricsDaysRaw(v); resetPages(); }, [resetPages]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const params = {
-      agent: selectedAgent || undefined,
-      model: selectedModel || undefined,
-      days: metricsDays,
-      limit: LOG_PAGE_SIZE,
-      offset: logPage * LOG_PAGE_SIZE,
-      sessionLimit: SESSION_LOG_PAGE_SIZE,
-      sessionOffset: sessionLogPage * SESSION_LOG_PAGE_SIZE,
-      projectLimit: PROJECT_LOG_PAGE_SIZE,
-      projectOffset: projectLogPage * PROJECT_LOG_PAGE_SIZE,
-      dir: dirScope || undefined,
-    };
+  // Also reset pages when dirScope changes (comes from the URL / ProjectScopePicker).
+  // This is a well-known React pattern for resetting derived state when a
+  // prop/context value changes. The lint rule flags it because it's a
+  // cascading render, but the alternative (key-based remount) would lose
+  // all local filter state.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { resetPages(); }, [dirScope, resetPages]);
 
-    void (async () => {
-      startTransition(() => {
-        setMetricsLoading(true);
-        setMetricsError(null);
-      });
-      try {
-        const nextMetrics = await api.metrics(params);
-        if (cancelled) return;
-        startTransition(() => {
-          setMetrics(nextMetrics);
-          setMetricsLoading(false);
-        });
-      } catch (err) {
-        if (cancelled) return;
-        startTransition(() => {
-          setMetricsError(err instanceof Error ? err.message : 'Failed to load metrics');
-          setMetricsLoading(false);
-        });
-      }
-    })();
+  // TanStack Query handles cancellation, dedup, and stale-while-revalidate
+  // automatically (Wave 3 / P4+P5 fix).
+  const metricsQ = useMetrics({
+    agent: selectedAgent || undefined,
+    model: selectedModel || undefined,
+    days: metricsDays,
+    limit: LOG_PAGE_SIZE,
+    offset: logPage * LOG_PAGE_SIZE,
+    sessionLimit: SESSION_LOG_PAGE_SIZE,
+    sessionOffset: sessionLogPage * SESSION_LOG_PAGE_SIZE,
+    projectLimit: PROJECT_LOG_PAGE_SIZE,
+    projectOffset: projectLogPage * PROJECT_LOG_PAGE_SIZE,
+    dir: dirScope || undefined,
+  });
 
-    return () => { cancelled = true; };
-  }, [metricsDays, selectedAgent, selectedModel, logPage, LOG_PAGE_SIZE, sessionLogPage, SESSION_LOG_PAGE_SIZE, projectLogPage, PROJECT_LOG_PAGE_SIZE, dirScope]);
+  const metrics = metricsQ.data ?? null;
+  const metricsLoading = metricsQ.isLoading;
+  const metricsError = metricsQ.error instanceof Error ? metricsQ.error.message : null;
 
   const metricLabels = metrics?.series.map((point) => point.label) ?? [];
 
@@ -884,50 +843,25 @@ const USAGE_RANGE_OPTIONS = [
 export function UsageTab() {
   usePageTitle('Usage');
   const { projects, dirScope, setDirScope } = useDashboard();
-  const [activity, setActivity] = useState<ActivityDay[]>([]);
-  const [models, setModels] = useState<ModelUsage[]>([]);
-  const [hourly, setHourly] = useState<HourlyData[]>([]);
-  const [hourlyTokens, setHourlyTokens] = useState<HourlyTokensByModel[]>([]);
-  const [loading, setLoading] = useState(true);
   const [selectedModel, setSelectedModel] = useState('');
   const [usageDays, setUsageDays] = useState(30);
 
-  // All charts respect model + days + scope filters.
-  useEffect(() => {
-    let cancelled = false;
-    const dir = dirScope || undefined;
-    const params = { days: usageDays || undefined, model: selectedModel || undefined, dir };
+  const dir = dirScope || undefined;
+  const daysParam = usageDays || undefined;
 
-    startTransition(() => setLoading(true));
+  // TanStack Query handles cancellation, dedup, and stale-while-revalidate
+  // automatically — no manual AbortController needed (Wave 3 / P4+P5 fix).
+  // Activity heatmap always shows the full year regardless of the days filter.
+  const activityQ = useActivity({ model: selectedModel || undefined, dir });
+  const modelsQ = useModels({ days: daysParam, dir });
+  const hourlyQ = useHourly({ days: daysParam, dir });
+  const hourlyTokensQ = useHourlyTokens({ days: daysParam, model: selectedModel || undefined, dir });
 
-    // Activity heatmap always shows the full year regardless of the days filter.
-    api.activity({ model: selectedModel || undefined, dir }).then((nextActivity) => {
-      if (cancelled) return;
-      startTransition(() => setActivity(nextActivity));
-    }).catch(() => {});
-
-    api.models({ days: params.days, dir }).then((nextModels) => {
-      if (cancelled) return;
-      startTransition(() => setModels(nextModels));
-    }).catch(() => {});
-
-    api.hourly({ days: params.days, dir }).then((nextHourly) => {
-      if (cancelled) return;
-      startTransition(() => setHourly(nextHourly));
-    }).catch(() => {});
-
-    api.hourlyTokens(params).then((nextHourlyTokens) => {
-      if (cancelled) return;
-      startTransition(() => {
-        setHourlyTokens(nextHourlyTokens);
-        setLoading(false);
-      });
-    }).catch(() => {
-      if (!cancelled) startTransition(() => setLoading(false));
-    });
-
-    return () => { cancelled = true; };
-  }, [usageDays, selectedModel, dirScope]);
+  const activity = activityQ.data ?? [];
+  const models = modelsQ.data ?? [];
+  const hourly = hourlyQ.data ?? [];
+  const hourlyTokens = hourlyTokensQ.data ?? [];
+  const loading = activityQ.isLoading || modelsQ.isLoading || hourlyQ.isLoading || hourlyTokensQ.isLoading;
 
   // Derive available models for the filter dropdown from loaded model usage data.
   const allModels = [...models].sort((a, b) => b.count - a.count);

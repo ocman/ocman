@@ -620,47 +620,55 @@ export function SessionDetail() {
   const collapsedProjects = useUiStore((state) => state.collapsedProjects);
   const toggleCollapsedProject = useUiStore((state) => state.toggleCollapsedProject);
 
+  // Refs for values used by the scoped-command dispatch so the effect
+  // only re-runs when `paletteCommand` changes (fixes the P0 hot loop).
+  const tmuxRef = useRef(tmux);
+  useEffect(() => { tmuxRef.current = tmux; }, [tmux]);
+  const archiveSessionRef = useRef(archiveSession);
+  useEffect(() => { archiveSessionRef.current = archiveSession; }, [archiveSession]);
+  const navigateRef = useRef(navigate);
+  useEffect(() => { navigateRef.current = navigate; }, [navigate]);
+
+  const paletteCommand = useUiStore((s) => s.paletteCommand);
   useEffect(() => {
-    const interval = setInterval(() => {
-      const cmd = useUiStore.getState().paletteCommand;
-      if (!cmd || cmd.kind !== 'scoped') return;
-      useUiStore.getState().closePalette();
+    if (!paletteCommand || paletteCommand.kind !== 'scoped') return;
+    useUiStore.getState().closePalette();
 
-      const el = document.querySelector('.oc-composer-input') as HTMLTextAreaElement | null;
-      if (!el) return;
+    const el = document.querySelector('.oc-composer-input') as HTMLTextAreaElement | null;
+    if (!el) return;
 
-      if (cmd.id === 'scoped.model') {
-        el.value = '/model ';
-        el.dispatchEvent(new CustomEvent('oc-model-picker-open', { detail: '' }));
-        el.focus();
-      } else if (cmd.id === 'scoped.agent') {
-        el.value = '/agent ';
-        el.dispatchEvent(new CustomEvent('oc-agent-picker-open', { detail: '' }));
-        el.focus();
-      } else if (cmd.id === 'scoped.variant') {
-        setSelectedReasoning('');
-      } else if (cmd.id === 'scoped.tmux' && tmux.available && tmux.sessions.length > 0) {
-        tmux.switchSession(tmux.sessions[0].name).catch(console.error);
-      } else if (cmd.id === 'scoped.vscode' && sessionRef.current) {
-        openVSCode(sessionRef.current.directory);
-      } else if (cmd.id === 'scoped.archive' && sessionRef.current) {
-        const s = sessionRef.current;
-        archiveSession(s.platform, s.id, s.timeUpdated, true).then(() => navigate(-1));
-      } else if (cmd.id === 'scoped.rename' && sessionRef.current) {
-        setShowRenameModal(true);
-      } else if (cmd.id === 'scoped.new-project') {
-        useUiStore.getState().openProjectPalette();
-      } else if (cmd.id === 'scoped.compact' && sessionRef.current && portAvailableRef.current && capsRef.current.compact) {
-        const s = sessionRef.current;
-        const model = selectedModelRef.current || activeModelRef.current || '';
-        const slashIdx = model.indexOf('/');
-        const providerID = slashIdx > 0 ? model.slice(0, slashIdx) : '';
-        const modelID = slashIdx > 0 ? model.slice(slashIdx + 1) : model;
-        api.compactSession(s.id, providerID, modelID).catch(console.error);
-      }
-    }, 0);
-    return () => clearInterval(interval);
-  }, [tmux, archiveSession, createSession, navigate]);
+    const cmd = paletteCommand;
+    const t = tmuxRef.current;
+    if (cmd.id === 'scoped.model') {
+      el.value = '/model ';
+      el.dispatchEvent(new CustomEvent('oc-model-picker-open', { detail: '' }));
+      el.focus();
+    } else if (cmd.id === 'scoped.agent') {
+      el.value = '/agent ';
+      el.dispatchEvent(new CustomEvent('oc-agent-picker-open', { detail: '' }));
+      el.focus();
+    } else if (cmd.id === 'scoped.variant') {
+      setSelectedReasoning('');
+    } else if (cmd.id === 'scoped.tmux' && t.available && t.sessions.length > 0) {
+      t.switchSession(t.sessions[0].name).catch(console.error);
+    } else if (cmd.id === 'scoped.vscode' && sessionRef.current) {
+      openVSCode(sessionRef.current.directory);
+    } else if (cmd.id === 'scoped.archive' && sessionRef.current) {
+      const s = sessionRef.current;
+      archiveSessionRef.current(s.platform, s.id, s.timeUpdated, true).then(() => navigateRef.current(-1));
+    } else if (cmd.id === 'scoped.rename' && sessionRef.current) {
+      setShowRenameModal(true);
+    } else if (cmd.id === 'scoped.new-project') {
+      useUiStore.getState().openProjectPalette();
+    } else if (cmd.id === 'scoped.compact' && sessionRef.current && portAvailableRef.current && capsRef.current.compact) {
+      const s = sessionRef.current;
+      const model = selectedModelRef.current || activeModelRef.current || '';
+      const slashIdx = model.indexOf('/');
+      const providerID = slashIdx > 0 ? model.slice(0, slashIdx) : '';
+      const modelID = slashIdx > 0 ? model.slice(slashIdx + 1) : model;
+      api.compactSession(s.id, providerID, modelID).catch(console.error);
+    }
+  }, [paletteCommand]);
 
 
   useEffect(() => {
@@ -2640,42 +2648,21 @@ export function SessionDetail() {
   // Fetches the task's session messages and extracts stdout from tool outputs.
   useEffect(() => {
     if (runningTaskIds.length === 0) return;
-    let cancelled = false;
+    const controller = new AbortController();
+    const taskIdList = runningTaskIds.map(({ taskId }) => taskId);
     const poll = async () => {
-      for (const { taskId } of runningTaskIds) {
-        if (cancelled) break;
-        try {
-          const resp = await fetch(`/api/session/${taskId}?limit=1`);
-          if (!resp.ok || cancelled) continue;
-          const data: { messages?: Message[]; parts?: Part[] } = await resp.json();
-          // Find the latest assistant message with tool call output
-          const msgs = data.messages || [];
-          let stdout = '';
-          for (let i = msgs.length - 1; i >= 0; i--) {
-            const m = msgs[i];
-            if (m.data?.role !== 'assistant') continue;
-            const msgParts = data.parts?.filter((p: Part) => p.messageId === m.id) || [];
-            for (const p of msgParts) {
-              const pd = typeof p.data === 'string' ? (() => { try { return JSON.parse(p.data); } catch { return null; } })() : p.data;
-              if (!pd || typeof pd !== 'object') continue;
-              // stdout lives in state.output for bash/builtin tools
-              const state = pd.state as Record<string, unknown> | undefined;
-              if (state?.output && typeof state.output === 'string') {
-                stdout = state.output;
-                break;
-              }
-            }
-            if (stdout) break;
-          }
-          if (stdout && !cancelled) {
-            setTaskLiveOutput((prev: Record<string, string>) => ({ ...prev, [taskId]: stdout }));
-          }
-        } catch { /* ignore poll errors */ }
-      }
+      try {
+        const resp = await api.sessionTasks(id!, taskIdList, controller.signal);
+        if (controller.signal.aborted) return;
+        const tasks = resp.tasks || {};
+        if (Object.keys(tasks).length > 0) {
+          setTaskLiveOutput((prev: Record<string, string>) => ({ ...prev, ...tasks }));
+        }
+      } catch { /* ignore poll errors */ }
     };
     poll();
     const interval = setInterval(poll, 2000);
-    return () => { cancelled = true; clearInterval(interval); };
+    return () => { controller.abort(); clearInterval(interval); };
   }, [runningTaskIds.length]); // only depends on count, not contents
 
   // The assistant is still working if:

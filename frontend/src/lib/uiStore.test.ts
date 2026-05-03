@@ -130,6 +130,32 @@ describe('uiStore changesSidebar tab management', () => {
   });
 });
 
+describe('uiStore paletteCommand dispatch', () => {
+  beforeEach(() => {
+    useUiStore.setState({ paletteOpen: false, paletteCommand: null });
+  });
+
+  it('dispatchCommand sets the command', () => {
+    const cmd = { kind: 'scoped' as const, id: 'scoped.model', label: 'Model', description: 'Pick model' };
+    initial.dispatchCommand(cmd);
+    expect(useUiStore.getState().paletteCommand).toEqual(cmd);
+  });
+
+  it('closePalette clears the command', () => {
+    const cmd = { kind: 'scoped' as const, id: 'scoped.archive', label: 'Archive', description: 'Archive session' };
+    initial.dispatchCommand(cmd);
+    expect(useUiStore.getState().paletteCommand).not.toBeNull();
+    initial.closePalette();
+    expect(useUiStore.getState().paletteCommand).toBeNull();
+  });
+
+  it('nav commands are dispatched with path', () => {
+    const cmd = { kind: 'nav' as const, id: 'nav.dashboard', label: 'Dashboard', path: '/' };
+    initial.dispatchCommand(cmd);
+    expect(useUiStore.getState().paletteCommand).toEqual(cmd);
+  });
+});
+
 describe('uiStore notificationsEnabled', () => {
   beforeEach(() => {
     useUiStore.setState({ notificationsEnabled: false });

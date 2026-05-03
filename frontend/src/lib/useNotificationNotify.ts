@@ -1,15 +1,19 @@
 import { useEffect, useRef } from 'react';
-import { api, type NotifyEntry } from './api';
+import type { NotifyEntry } from './api';
+import { useNotifyStore } from './useNotifyData';
 import { useUiStore } from './uiStore';
 
 /**
  * Fires OS-level Web Notifications (system toasts / installed-PWA
  * notifications) when sessions complete or block on user input.
  *
- * Sibling to useFaviconNotify and useBellNotify — same `/api/sessions/notify`
- * source, same baseline-snapshot pattern, same 10s cadence. Each hook is
- * independent so users can enable any subset of {favicon, bell, notification}
- * without one affecting the others.
+ * Sibling to useFaviconNotify and useBellNotify — same data source,
+ * same baseline-snapshot pattern. Each hook is independent so users can
+ * enable any subset of {favicon, bell, notification} without one
+ * affecting the others.
+ *
+ * Now consumes the shared `useNotifyStore` instead of polling
+ * `/api/sessions/notify` independently (P2 fix).
  *
  * Two trigger paths:
  *
@@ -28,13 +32,6 @@ import { useUiStore } from './uiStore';
  * (handles clicks when no page is open, e.g. the installed PWA was
  * launched fresh from the dock).
  */
-
-// We keep the same lookback / limit / cadence as the favicon hook so
-// the three pollers can later be deduplicated (see docs/profiling.md
-// S4) without changing observable behaviour.
-const POLL_INTERVAL_MS = 10_000;
-const NOTIFICATION_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
-const NOTIFICATION_LIMIT = 500;
 
 /** Minimal notify-entry shape consumed by the controller. Exported for tests. */
 export type NotifyShape = NotifyEntry;
@@ -186,42 +183,26 @@ export function useNotificationNotify() {
   }, [enabled]);
 
   useEffect(() => {
-    async function takeBaseline() {
-      try {
-        const sessions = await api.sessionsNotify({
-          since: Date.now() - NOTIFICATION_LOOKBACK_MS,
-          limit: NOTIFICATION_LIMIT,
-        });
-        baselineRef.current = new Map(sessions.map((s) => [s.id, stateKey(s)]));
-      } catch {
-        baselineRef.current = null;
-      }
-    }
+    // Subscribe to the shared notify store.
+    useNotifyStore.getState().subscribe();
 
-    async function check() {
+    function check(sessions: NotifyEntry[]) {
       if (!enabledRef.current) return;
       const permission = readPermission();
       if (permission !== 'granted') return;
 
-      try {
-        const sessions = await api.sessionsNotify({
-          since: Date.now() - NOTIFICATION_LOOKBACK_MS,
-          limit: NOTIFICATION_LIMIT,
-        });
-        const decisions = __evaluateForTests({
-          sessions,
-          hidden: document.hidden,
-          permission,
-          enabled: enabledRef.current,
-          baseline: baselineRef.current,
-        });
-        for (const d of decisions) spawnNotification(d);
-      } catch {
-        // network errors shouldn't break anything — the next poll retries
-      }
+      const decisions = __evaluateForTests({
+        sessions,
+        hidden: document.hidden,
+        permission,
+        enabled: enabledRef.current,
+        baseline: baselineRef.current,
+      });
+      for (const d of decisions) spawnNotification(d);
     }
 
     function onVisibilityChange() {
+      const sessions = useNotifyStore.getState().data;
       if (!document.hidden) {
         // Visible again — reset baseline + dedupe so the next
         // hide-then-complete cycle starts fresh.
@@ -229,26 +210,34 @@ export function useNotificationNotify() {
         firedKeys = new Set();
       } else {
         // Snapshot then check, mirroring useBellNotify.
-        void takeBaseline().then(() => void check());
+        if (sessions) {
+          baselineRef.current = new Map(sessions.map((s) => [s.id, stateKey(s)]));
+          check(sessions);
+        }
       }
     }
 
     document.addEventListener('visibilitychange', onVisibilityChange);
 
-    if (document.hidden) {
-      void takeBaseline().then(() => void check());
-    } else {
-      // Take a baseline at mount even when visible so a prompt that
-      // arrives while the user is on another app still triggers — but
-      // a prompt that was *already* there before mount doesn't.
-      void takeBaseline();
+    // Take a baseline at mount so a prompt that arrives while the user
+    // is on another app still triggers — but a prompt that was *already*
+    // there before mount doesn't.
+    const initial = useNotifyStore.getState().data;
+    if (document.hidden && initial) {
+      baselineRef.current = new Map(initial.map((s) => [s.id, stateKey(s)]));
+    } else if (initial) {
+      baselineRef.current = new Map(initial.map((s) => [s.id, stateKey(s)]));
     }
 
-    const id = setInterval(() => void check(), POLL_INTERVAL_MS);
+    // Subscribe to store changes to react when new data arrives.
+    const unsub = useNotifyStore.subscribe((state) => {
+      if (state.data) check(state.data);
+    });
 
     return () => {
-      clearInterval(id);
+      unsub();
       document.removeEventListener('visibilitychange', onVisibilityChange);
+      useNotifyStore.getState().unsubscribe();
     };
   }, []);
 }

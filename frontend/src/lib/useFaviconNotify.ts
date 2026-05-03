@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { api } from './api';
+import type { NotifyEntry } from './api';
+import { useNotifyStore, recheckNotifyData } from './useNotifyData';
 
 // Favicon variants.  We swap all three link tags so the notification state is
 // visible everywhere: SVG for modern desktop browsers, PNG as a generic
@@ -24,17 +25,6 @@ const FAVICON_VARIANTS = {
 } as const;
 type VariantName = keyof typeof FAVICON_VARIANTS;
 
-const POLL_INTERVAL_MS = 10_000;
-// Lookback window for /api/sessions/notify. Any reasonable upper bound
-// works — the endpoint already filters server-side to only sessions
-// that could drive the notification, so the response stays small even
-// at 7 days.
-const FAVICON_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
-const FAVICON_LIMIT = 500;
-
-// Module-level recheck trigger set by the active hook instance.
-let _recheck: (() => void) | null = null;
-
 /**
  * Triggers a recheck of pending sessions and clears the favicon/title
  * notification if there are none remaining.  Call this after marking a
@@ -42,7 +32,7 @@ let _recheck: (() => void) | null = null;
  * notification clears immediately even when the tab is already visible.
  */
 export function recheckFaviconNotify() {
-  _recheck?.();
+  recheckNotifyData();
 }
 
 /**
@@ -61,16 +51,21 @@ export function recheckFaviconNotify() {
  *
  * Prompt wins over notify when both are active.  Individual sessions are
  * marked seen separately by the session detail page when they are opened.
+ *
+ * Now consumes the shared `useNotifyStore` instead of polling
+ * `/api/sessions/notify` independently (P2 fix).
  */
 export function useFaviconNotify() {
   const currentVariantRef = useRef<VariantName>('default');
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Snapshot of session statuses taken when the tab goes hidden.
   // Only sessions that transition to waiting/error *after* this snapshot
   // count toward the notify badge.
   const baselineRef = useRef<Map<string, string> | null>(null);
 
   useEffect(() => {
+    // Subscribe to the shared notify store.
+    useNotifyStore.getState().subscribe();
+
     function setLinkHref(selector: string, href: string, create: () => HTMLLinkElement) {
       let link = document.querySelector<HTMLLinkElement>(selector);
       if (!link) {
@@ -121,103 +116,67 @@ export function useFaviconNotify() {
       if (document.title !== expected) setTitlePrefix(titlePrefix);
     }
 
-    async function checkPending() {
-      try {
-        const sessions = await api.sessionsNotify({
-          since: Date.now() - FAVICON_LOOKBACK_MS,
-          limit: FAVICON_LIMIT,
-        });
+    function checkPending(sessions: NotifyEntry[]) {
+      // Prompt state: any session currently blocked on user input.  We do
+      // not apply the baseline filter here — a pending permission/question
+      // is blocking *right now*, regardless of when it started.
+      const hasPrompt = sessions.some(s => s.pendingPermission || s.pendingQuestion);
 
-        // Prompt state: any session currently blocked on user input.  We do
-        // not apply the baseline filter here — a pending permission/question
-        // is blocking *right now*, regardless of when it started.
-        const hasPrompt = sessions.some(s => s.pendingPermission || s.pendingQuestion);
-
-        if (hasPrompt) {
-          applyState('prompt', '(!)');
-          return;
-        }
-
-        // Notify state: sessions that transitioned to a terminal state
-        // *after* the tab went hidden and have not been seen. The endpoint
-        // already filters out seen sessions and non-terminal statuses, so
-        // we only need to apply the baseline filter here.
-        const baseline = baselineRef.current;
-        const notifyCount = sessions.filter(s => {
-          if (baseline !== null && baseline.get(s.id) === s.status) return false;
-          return true;
-        }).length;
-
-        if (notifyCount > 0 && document.hidden) {
-          applyState('notify', `(${notifyCount})`);
-        } else {
-          applyState('default', null);
-        }
-      } catch {
-        // silently ignore — network errors shouldn't break anything
+      if (hasPrompt) {
+        applyState('prompt', '(!)');
+        return;
       }
-    }
 
-    async function takeBaseline() {
-      try {
-        const sessions = await api.sessionsNotify({
-          since: Date.now() - FAVICON_LOOKBACK_MS,
-          limit: FAVICON_LIMIT,
-        });
-        baselineRef.current = new Map(sessions.map(s => [s.id, s.status]));
-      } catch {
-        baselineRef.current = null;
-      }
-    }
+      // Notify state: sessions that transitioned to a terminal state
+      // *after* the tab went hidden and have not been seen. The endpoint
+      // already filters out seen sessions and non-terminal statuses, so
+      // we only need to apply the baseline filter here.
+      const baseline = baselineRef.current;
+      const notifyCount = sessions.filter(s => {
+        if (baseline !== null && baseline.get(s.id) === s.status) return false;
+        return true;
+      }).length;
 
-    _recheck = () => void checkPending();
-
-    function startPolling() {
-      if (intervalRef.current === null) {
-        intervalRef.current = setInterval(() => void checkPending(), POLL_INTERVAL_MS);
-      }
-    }
-
-    function stopPolling() {
-      if (intervalRef.current !== null) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
+      if (notifyCount > 0 && document.hidden) {
+        applyState('notify', `(${notifyCount})`);
+      } else {
+        applyState('default', null);
       }
     }
 
     function onVisibilityChange() {
+      const sessions = useNotifyStore.getState().data;
       if (!document.hidden) {
         // Tab became visible — reset the notify baseline so the next
         // hide-then-complete cycle starts fresh.  The prompt state may
         // still apply even while visible, so checkPending() decides
         // whether to clear or keep the favicon.
         baselineRef.current = null;
-        void checkPending();
+        if (sessions) checkPending(sessions);
       } else {
         // Tab became hidden — snapshot current statuses, then recheck.
-        void takeBaseline().then(() => void checkPending());
+        if (sessions) {
+          baselineRef.current = new Map(sessions.map(s => [s.id, s.status]));
+          checkPending(sessions);
+        }
       }
     }
 
     document.addEventListener('visibilitychange', onVisibilityChange);
 
-    // Poll continuously (visible or hidden) so the prompt favicon appears
-    // promptly when a permission/question arrives, even while the user is
-    // on a different tab in the same window.  Sessions list is cheap and
-    // already polled elsewhere; one extra request per 10s is negligible.
-    if (document.hidden) {
-      // Hidden on startup — take a baseline so notify counts only NEW
-      // completions rather than every already-finished session.
-      void takeBaseline().then(() => void checkPending());
-    } else {
-      void checkPending();
-    }
-    startPolling();
+    // Subscribe to store changes to react when new data arrives.
+    const unsub = useNotifyStore.subscribe((state) => {
+      if (state.data) checkPending(state.data);
+    });
+
+    // Initial check with current data.
+    const initial = useNotifyStore.getState().data;
+    if (initial) checkPending(initial);
 
     return () => {
-      _recheck = null;
+      unsub();
       document.removeEventListener('visibilitychange', onVisibilityChange);
-      stopPolling();
+      useNotifyStore.getState().unsubscribe();
       applyState('default', null);
     };
   }, []);

@@ -129,7 +129,6 @@ export function useGitInfo(dirs: string[] | undefined): UseGitInfoResult {
     // antipattern.
     if (queryParam === null) return;
 
-    let cancelled = false;
     const dirList = decodeURIComponent(queryParam).split(',');
 
     const runFetch = () => {
@@ -145,13 +144,13 @@ export function useGitInfo(dirs: string[] | undefined): UseGitInfoResult {
       setLoading(true);
       fetchGitInfoOnce(dirList, controller.signal)
         .then((res) => {
-          if (cancelled || controller.signal.aborted) return;
+          if (controller.signal.aborted) return;
           setInfos(res);
           setError(null);
           setLoading(false);
         })
         .catch((err: unknown) => {
-          if (cancelled || controller.signal.aborted) return;
+          if (controller.signal.aborted) return;
           if (err instanceof Error && err.name === 'AbortError') return;
           setError(err instanceof Error ? err.message : 'Failed to load git info');
           setLoading(false);
@@ -172,7 +171,6 @@ export function useGitInfo(dirs: string[] | undefined): UseGitInfoResult {
     }
 
     return () => {
-      cancelled = true;
       clearInterval(id);
       abortRef.current?.abort();
       if (typeof document !== 'undefined') {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { DashboardLayout, SessionsTab, ProjectsTab, StatsTab, UsageTab, SettingsTab } from './pages/Dashboard';
 import { ProjectDetail } from './pages/ProjectDetail';
@@ -301,9 +302,32 @@ function AuthGate({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+// Shared QueryClient for TanStack Query. Sensible defaults:
+// - staleTime: 10s — data is considered fresh for 10s after fetch,
+//   so rapid navigation doesn't re-fetch immediately.
+// - No auto-retry on 4xx (client errors are not transient).
+// - Retry once on 5xx / network errors.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 10_000,
+      retry: (failureCount, error) => {
+        // Don't retry client errors (4xx) or aborts.
+        if (error instanceof DOMException && error.name === 'AbortError') return false;
+        if (error instanceof Error && error.message.match(/^HTTP [45]\d\d/)) {
+          const status = parseInt(error.message.slice(5), 10);
+          if (status >= 400 && status < 500) return false;
+        }
+        return failureCount < 1;
+      },
+    },
+  },
+});
+
 export default function App() {
   return (
     <BrowserRouter>
+      <QueryClientProvider client={queryClient}>
       <AuthGate>
         <HeaderProvider>
           <FaviconNotify />
@@ -337,6 +361,7 @@ export default function App() {
           </div>
         </HeaderProvider>
       </AuthGate>
+      </QueryClientProvider>
     </BrowserRouter>
   );
 }

@@ -665,6 +665,86 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleSessionTasks returns the latest tool output for a batch of
+// running sub-task sessions. The frontend uses this to show live
+// previews of Task tool calls without making N separate
+// /api/session/{taskId}?limit=1 requests (P7 fix).
+//
+// Query params:
+//   - ids: comma-separated list of task session IDs.
+//
+// Response: { "tasks": { "<taskId>": "<latest output text>", ... } }
+func (s *Server) handleSessionTasks(w http.ResponseWriter, r *http.Request) {
+	idsParam := r.URL.Query().Get("ids")
+	if idsParam == "" {
+		writeJSON(w, map[string]interface{}{"tasks": map[string]string{}})
+		return
+	}
+
+	ids := strings.Split(idsParam, ",")
+	const maxBatch = 20
+	if len(ids) > maxBatch {
+		ids = ids[:maxBatch]
+	}
+
+	result := make(map[string]string, len(ids))
+	for _, taskID := range ids {
+		taskID = strings.TrimSpace(taskID)
+		if taskID == "" {
+			continue
+		}
+
+		adapter, ok := s.registry.PlatformForSession(r.Context(), taskID)
+		if !ok {
+			continue
+		}
+
+		detail, err := adapter.Session(r.Context(), taskID, 1, 0)
+		if err != nil {
+			continue
+		}
+
+		// Walk the latest assistant message's parts to find tool output.
+		var stdout string
+		for i := len(detail.Messages) - 1; i >= 0; i-- {
+			m := detail.Messages[i]
+			// Parse the message data to check the role.
+			var md struct {
+				Role string `json:"role"`
+			}
+			if err := json.Unmarshal(m.Data, &md); err != nil || md.Role != "assistant" {
+				continue
+			}
+			for _, p := range detail.Parts {
+				if p.MessageID != m.ID {
+					continue
+				}
+				// Parse the part data to extract state.output.
+				var pd struct {
+					State struct {
+						Output interface{} `json:"output"`
+					} `json:"state"`
+				}
+				if err := json.Unmarshal(p.Data, &pd); err != nil {
+					continue
+				}
+				if out, ok := pd.State.Output.(string); ok && out != "" {
+					stdout = out
+					break
+				}
+			}
+			if stdout != "" {
+				break
+			}
+		}
+		if stdout != "" {
+			result[taskID] = stdout
+		}
+	}
+
+	writeJSON(w, map[string]interface{}{"tasks": result})
+}
+
 // --- Session-scoped read endpoints ---
 
 // sessionSubPath splits "/api/session/{id}/{rest}" into id and rest.
@@ -1281,6 +1361,7 @@ func (s *Server) handleSessionsRoot(w http.ResponseWriter, r *http.Request) {
 //	/api/session/{id}/abort            POST     -> handleSessionAbort
 //	/api/session/{id}/compact          POST     -> handleSessionCompact
 //	/api/session/{id}/events           GET      -> handleSessionEvents
+//	/api/session/{id}/tasks            GET      -> handleSessionTasks
 func (s *Server) dispatchSessionSubpath(w http.ResponseWriter, r *http.Request) {
 	trimmed := strings.TrimPrefix(r.URL.Path, "/api/session/")
 
@@ -1351,6 +1432,9 @@ func (s *Server) dispatchSessionSubpath(w http.ResponseWriter, r *http.Request) 
 			}
 		case "events":
 			s.handleSessionEvents(w, r)
+			return
+		case "tasks":
+			s.handleSessionTasks(w, r)
 			return
 		}
 	case http.MethodPost:

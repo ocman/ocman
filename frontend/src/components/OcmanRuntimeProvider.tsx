@@ -15,12 +15,25 @@ function isImageMime(mime: string | undefined): boolean {
   return !!mime && mime.startsWith('image/');
 }
 
+/**
+ * WeakMap cache for parsed part data. Keyed on the Part object identity —
+ * when a part is updated immutably (new reference), the old entry is
+ * automatically garbage-collected. This avoids re-running JSON.parse on
+ * every SSE delta for parts that haven't changed (P3 fix).
+ */
+const parsedPartCache = new WeakMap<Part, PartData>();
+
 function parsePart(p: Part): PartData {
+  const cached = parsedPartCache.get(p);
+  if (cached !== undefined) return cached;
+  let result: PartData;
   try {
-    return typeof p.data === 'string' ? JSON.parse(p.data) : p.data;
+    result = typeof p.data === 'string' ? JSON.parse(p.data) : p.data;
   } catch {
-    return (p.data || {}) as PartData;
+    result = (p.data || {}) as PartData;
   }
+  parsedPartCache.set(p, result);
+  return result;
 }
 
 function truncate(text: string | undefined | null, max: number): string {
@@ -54,6 +67,29 @@ function relativizePath(absPath: string, projectDir: string): string {
   // the checkout.
   return absPath;
 }
+
+/**
+ * Per-message conversion cache. Stores the last conversion result for
+ * each message, keyed on the message reference. The cache entry also
+ * records the parts array reference and context values that were used,
+ * so we can detect when a recomputation is needed.
+ *
+ * This avoids re-converting the entire thread on every SSE delta —
+ * only the message whose parts changed gets recomputed (P3 fix).
+ */
+type ConvertedCacheEntry = {
+  parts: Part[];
+  pendingAgent: string | undefined;
+  taskLiveOutput: Record<string, string> | undefined;
+  projectDirectory: string | undefined;
+  failedById: Record<string, FailedSend> | undefined;
+  /** Whether this message was queued (depends on neighbors). */
+  isQueued: boolean;
+  /** Resolved agent for this message (depends on neighbors). */
+  msgAgent: string | undefined;
+  result: ThreadMessageLike;
+};
+const convertedMessageCache = new WeakMap<Message, ConvertedCacheEntry>();
 
 function convertMessages(
   messages: Message[],
@@ -110,7 +146,29 @@ function convertMessages(
         }
         if (!msgAgent) msgAgent = pendingAgent || undefined;
       }
-      const msgParts = (partsByMsg[m.id] || []).map(parsePart);
+
+      // Per-message cache check (P3 fix): reuse the previous conversion
+      // result when the message reference, its parts, and all context
+      // values are unchanged. This avoids re-running the expensive
+      // parsePart + tool-call rendering for every message on every SSE
+      // delta — only the message whose parts actually changed gets
+      // recomputed.
+      const msgPartsRaw = partsByMsg[m.id] || [];
+      const cached = convertedMessageCache.get(m);
+      if (
+        cached &&
+        cached.parts === msgPartsRaw &&
+        cached.pendingAgent === pendingAgent &&
+        cached.taskLiveOutput === taskLiveOutput &&
+        cached.projectDirectory === projectDirectory &&
+        cached.failedById === failedById &&
+        cached.isQueued === isQueued &&
+        cached.msgAgent === msgAgent
+      ) {
+        return cached.result;
+      }
+
+      const msgParts = msgPartsRaw.map(parsePart);
 
       // Build content as string | content array. Using string for simple text,
       // and the full content array format for messages with tool calls or images.
@@ -480,9 +538,12 @@ function convertMessages(
       };
       const metadata = Object.keys(customMeta).length > 0 ? { custom: customMeta } : undefined;
 
+      // Build the final ThreadMessageLike result.
+      let result: ThreadMessageLike;
+
       // If only text (no tool calls or images), use simple string content
       if (visibleToolCalls.length === 0 && imageParts.length === 0) {
-        return {
+        result = {
           role,
           id: m.id,
           content: textPieces.join('\n\n') || '',
@@ -490,28 +551,42 @@ function convertMessages(
           status: msgStatus,
           ...(metadata ? { metadata } : {}),
         };
+      } else {
+        // Mix of text, images, and tool calls
+        const content: ThreadMessageLike['content'] = [];
+        if (textPieces.length > 0) {
+          (content as Array<{ type: 'text'; text: string }>).push({ type: 'text', text: textPieces.join('\n\n') });
+        }
+        imageParts.forEach((img) => {
+          (content as Array<unknown>).push(img);
+        });
+        visibleToolCalls.forEach((tc) => {
+          (content as Array<unknown>).push(tc);
+        });
+
+        result = {
+          role,
+          id: m.id,
+          content,
+          createdAt: new Date(m.timeCreated),
+          status: msgStatus,
+          ...(metadata ? { metadata } : {}),
+        };
       }
 
-      // Mix of text, images, and tool calls
-      const content: ThreadMessageLike['content'] = [];
-      if (textPieces.length > 0) {
-        (content as Array<{ type: 'text'; text: string }>).push({ type: 'text', text: textPieces.join('\n\n') });
-      }
-      imageParts.forEach((img) => {
-        (content as Array<unknown>).push(img);
-      });
-      visibleToolCalls.forEach((tc) => {
-        (content as Array<unknown>).push(tc);
+      // Store in per-message cache (P3 fix).
+      convertedMessageCache.set(m, {
+        parts: msgPartsRaw,
+        pendingAgent,
+        taskLiveOutput,
+        projectDirectory,
+        failedById,
+        isQueued,
+        msgAgent,
+        result,
       });
 
-      return {
-        role,
-        id: m.id,
-        content,
-        createdAt: new Date(m.timeCreated),
-        status: msgStatus,
-        ...(metadata ? { metadata } : {}),
-      };
+      return result;
     });
 }
 

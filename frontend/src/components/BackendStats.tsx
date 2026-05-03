@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useApiStore } from '../lib/apiStore';
 import { useLongTaskMonitor } from '../lib/useLongTaskMonitor';
 import './BackendStats.css';
@@ -22,36 +22,39 @@ export function BackendStats() {
   const longTasks = useLongTaskMonitor();
   const getSystemStats = useApiStore((s) => s.getSystemStats);
 
+  const abortRef = useRef<AbortController | null>(null);
+
   useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const stats = await getSystemStats();
-        if (!cancelled) {
+    const load = () => {
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      getSystemStats(controller.signal)
+        .then((stats) => {
+          if (controller.signal.aborted) return;
           setBackendMemory(stats.memory.heapAlloc);
           setUptime(stats.uptime);
-        }
-      } catch {
-        // Silently ignore errors - this is just nice-to-have info
-        if (!cancelled) {
+        })
+        .catch(() => {
+          if (controller.signal.aborted) return;
           setBackendMemory(null);
           setUptime(null);
-        }
-      }
-
-      // Update frontend memory if available
-      if (!cancelled) {
-        const memory = (performance as PerformanceWithMemory).memory;
-        if (memory) {
-          setFrontendMemory(memory.usedJSHeapSize);
-        }
-      }
+        })
+        .finally(() => {
+          if (controller.signal.aborted) return;
+          // Update frontend memory if available
+          const memory = (performance as PerformanceWithMemory).memory;
+          if (memory) {
+            setFrontendMemory(memory.usedJSHeapSize);
+          }
+        });
     };
     load(); // Initial load
     const interval = setInterval(load, 5000);
     return () => {
-      cancelled = true;
       clearInterval(interval);
+      abortRef.current?.abort();
     };
   }, [getSystemStats]);
 
