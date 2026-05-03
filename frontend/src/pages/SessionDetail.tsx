@@ -3041,11 +3041,11 @@ export function SessionDetail() {
 
   return (
     <Toast.Provider swipeDirection="right">
-      <div className="session-layout">
-        <div className="session-sidebar" style={{ width: sidebarWidth }}>
+      <div className="session-layout" data-testid="session-layout">
+        <div className="session-sidebar" data-testid="session-sidebar" style={{ width: sidebarWidth }}>
         <SidebarResizer />
         <div className="session-sidebar-header">
-          <span className="session-sidebar-heading">
+          <span className="session-sidebar-heading" data-testid="sidebar-heading">
             <span>{sidebarView === 'projects' ? 'Projects' : 'Recent sessions'}</span>
           </span>
           <div className="session-sidebar-header-actions">
@@ -3316,12 +3316,14 @@ export function SessionDetail() {
               className="session-sidebar-new"
               onClick={handleVSCodeShortcut}
               title="Open in VS Code (V)"
+              aria-label="Open in VS Code"
               style={{ textDecoration: 'none', fontSize: 11 }}
             >&lt;/&gt;</button>
             <button
               className="session-sidebar-new"
               onClick={() => { void handleNewSession(); }}
               title="New session"
+              aria-label="New session"
             >+</button>
           </div>
         )}
@@ -3330,12 +3332,12 @@ export function SessionDetail() {
           // play against an empty viewport so navigation reads clearly.
           <div style={{ flex: 1, minHeight: 0 }} />
         ) : loading ? (
-          <div className="oc-loading">
+          <div className="oc-loading" data-testid="loading-spinner">
             <div className="oc-spinner" />
             Loading conversation...
           </div>
         ) : loadError ? (
-          <div className="oc-error-banner" style={{ margin: 24 }}>
+          <div className="oc-error-banner" data-testid="error-banner" style={{ margin: 24 }}>
             {loadError}
             <button onClick={() => { setLoadError(null); load(abortControllerRef.current?.signal); }}>Retry</button>
           </div>

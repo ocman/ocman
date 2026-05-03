@@ -206,3 +206,17 @@ diffs minimal and match the surrounding code.
 - Tests live alongside code as `*_test.go` / `*.test.ts(x)`. Prefer
   table-driven tests in Go. The server package has a shared
   `fakePlatform` for integration tests.
+- **E2e test locators.** Playwright e2e tests (`frontend/e2e/`) must
+  prefer stable locators over CSS class selectors. Priority order:
+  1. **ARIA roles / labels** — `getByRole`, `getByLabel`,
+     `getByText`. Preferred when the element has a natural accessible
+     name; doubles as an accessibility check.
+  2. **`data-testid`** — `getByTestId('loading-spinner')`. Use for
+     structural / state elements that lack a meaningful accessible
+     name (loading states, layout containers, backdrops).
+  3. **CSS class selectors** — `.oc-foo` — last resort only. Fragile
+     across refactors and styling changes.
+  When fixing a broken e2e test, replace the CSS-class locator with
+  an ARIA or `data-testid` locator rather than patching the class
+  name. New components should add `data-testid` attributes for any
+  element that e2e tests need to target.

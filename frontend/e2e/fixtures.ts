@@ -38,6 +38,8 @@ export const MOCK_SESSION = {
   timeUpdated: Date.now() - 60_000,
   seen: false,
   archived: false,
+  pinned: false,
+  pinnedAt: 0,
   liveConnection: false,
   pendingPermission: false,
   pendingQuestion: false,

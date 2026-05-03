@@ -12,7 +12,7 @@
  *  - "New session" (+) button is visible
  *  - "Open in VS Code" button is visible
  *  - Archive button is present on sidebar session items
- *  - Sidebar item for the active session has 'active' class
+ *  - Sidebar item for the active session has aria-selected
  */
 
 import { test, expect, MOCK_SESSION, MOCK_SESSION_2 } from './fixtures';
@@ -25,15 +25,17 @@ const SESSION_URL = `/session/${MOCK_SESSION.id}`;
 
 test('session detail page renders without crashing', async ({ mockedPage: page }) => {
   await page.goto(SESSION_URL);
-  // The layout should render (sidebar + main area)
-  await expect(page.locator('.session-layout')).toBeVisible();
+  await expect(page.getByTestId('session-layout')).toBeVisible();
 });
 
 test('shows loading spinner while session data is loading', async ({ mockedPage: page }) => {
   let resolveSession!: () => void;
   const sessionReadyP = new Promise<void>((resolve) => { resolveSession = resolve; });
 
-  await page.route(`/api/session/${MOCK_SESSION.id}`, async (route) => {
+  // Use a regex so the route matches the session URL with query parameters
+  // (e.g. ?limit=30&offset=0) that the frontend appends. A plain string
+  // pattern only matches the exact path and misses the actual request.
+  await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}`), async (route) => {
     const url = route.request().url();
     if (url.includes('/agents') || url.includes('/commands') || url.includes('/models') ||
         url.includes('/permissions') || url.includes('/questions') || url.includes('/events')) {
@@ -55,10 +57,12 @@ test('shows loading spinner while session data is loading', async ({ mockedPage:
     });
   });
 
-  const gotoPromise = page.goto(SESSION_URL);
-  await expect(page.locator('.oc-loading, .oc-spinner')).toBeVisible({ timeout: 3_000 });
+  // Use waitUntil:'commit' so the navigation resolves as soon as the
+  // response headers arrive, giving the expect a chance to observe the
+  // loading spinner before the delayed session response resolves.
+  await page.goto(SESSION_URL, { waitUntil: 'commit' });
+  await expect(page.getByTestId('loading-spinner')).toBeVisible({ timeout: 5_000 });
   resolveSession();
-  await gotoPromise;
 });
 
 test('shows error banner when session fetch fails', async ({ mockedPage: page }) => {
@@ -70,8 +74,8 @@ test('shows error banner when session fetch fails', async ({ mockedPage: page })
   );
 
   await page.goto(SESSION_URL);
-  await expect(page.locator('.oc-error-banner')).toBeVisible({ timeout: 5_000 });
-  await expect(page.locator('button', { hasText: 'Retry' })).toBeVisible();
+  await expect(page.getByTestId('error-banner')).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible();
 });
 
 // ---------------------------------------------------------------------------
@@ -80,13 +84,12 @@ test('shows error banner when session fetch fails', async ({ mockedPage: page })
 
 test('session title appears in header breadcrumb', async ({ mockedPage: page }) => {
   await page.goto(SESSION_URL);
-  // The header should eventually contain the session title
-  await expect(page.locator('header')).toContainText(MOCK_SESSION.title, { timeout: 5_000 });
+  await expect(page.getByRole('banner')).toContainText(MOCK_SESSION.title, { timeout: 5_000 });
 });
 
 test('header logo links back to dashboard', async ({ mockedPage: page }) => {
   await page.goto(SESSION_URL);
-  await page.locator('h1 a', { hasText: 'ocman' }).click();
+  await page.getByRole('heading', { level: 1 }).getByRole('link', { name: 'ocman' }).click();
   await expect(page).toHaveURL('/');
 });
 
@@ -96,38 +99,30 @@ test('header logo links back to dashboard', async ({ mockedPage: page }) => {
 
 test('sidebar shows "Recent sessions" heading', async ({ mockedPage: page }) => {
   await page.goto(SESSION_URL);
-  await expect(page.locator('.session-sidebar-heading')).toContainText('Recent sessions');
+  await expect(page.getByTestId('sidebar-heading')).toContainText('Recent sessions');
 });
 
 test('sidebar shows both mock sessions', async ({ mockedPage: page }) => {
   await page.goto(SESSION_URL);
-  // Both sessions should appear in the sidebar list
-  await expect(
-    page.locator('.session-sidebar-title', { hasText: 'Fix the login bug' }),
-  ).toBeVisible({ timeout: 5_000 });
-  await expect(
-    page.locator('.session-sidebar-title', { hasText: 'Refactor auth module' }),
-  ).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByRole('button', { name: /Fix the login bug/ })).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByRole('button', { name: /Refactor auth module/ })).toBeVisible({ timeout: 5_000 });
 });
 
-test('active session sidebar item has active class', async ({ mockedPage: page }) => {
+test('active session sidebar item is aria-selected', async ({ mockedPage: page }) => {
   await page.goto(SESSION_URL);
-  const activeItem = page.locator('.session-sidebar-item.active');
+  const activeItem = page.locator('[aria-selected="true"]', { hasText: 'Fix the login bug' });
   await expect(activeItem).toBeVisible({ timeout: 5_000 });
-  await expect(activeItem).toContainText('Fix the login bug');
 });
 
 test('clicking a sidebar session navigates to that session', async ({ mockedPage: page }) => {
   await page.goto(SESSION_URL);
-  // Click the other session in the sidebar
-  await page.locator('.session-sidebar-title', { hasText: 'Refactor auth module' }).click();
+  await page.getByRole('button', { name: /Refactor auth module/ }).click();
   await expect(page).toHaveURL(`/session/${MOCK_SESSION_2.id}`);
 });
 
 test('sidebar archive button is visible on session items', async ({ mockedPage: page }) => {
   await page.goto(SESSION_URL);
-  const archiveBtns = page.locator('.session-sidebar-archive-btn');
-  // At least one archive button exists
+  const archiveBtns = page.getByRole('button', { name: 'Archive session' });
   await expect(archiveBtns.first()).toBeVisible({ timeout: 5_000 });
 });
 
@@ -137,18 +132,12 @@ test('sidebar archive button is visible on session items', async ({ mockedPage: 
 
 test('"New session" button is visible in session detail', async ({ mockedPage: page }) => {
   await page.goto(SESSION_URL);
-  // The + button for creating a new session
-  await expect(page.locator('.session-detail-actions button', { hasText: '+' })).toBeVisible({
-    timeout: 5_000,
-  });
+  await expect(page.getByRole('button', { name: 'New session' })).toBeVisible({ timeout: 5_000 });
 });
 
 test('"Open in VS Code" button is visible', async ({ mockedPage: page }) => {
   await page.goto(SESSION_URL);
-  // The </> button
-  await expect(page.locator('.session-detail-actions button', { hasText: '</>' })).toBeVisible({
-    timeout: 5_000,
-  });
+  await expect(page.getByRole('button', { name: /Open in VS Code/ })).toBeVisible({ timeout: 5_000 });
 });
 
 // ---------------------------------------------------------------------------
@@ -159,19 +148,17 @@ test('navigating directly to a session URL loads the correct session', async ({
   mockedPage: page,
 }) => {
   await page.goto(`/session/${MOCK_SESSION_2.id}`);
-  await expect(page.locator('.session-layout')).toBeVisible();
-  // The header should contain the second session's title
-  await expect(page.locator('header')).toContainText(MOCK_SESSION_2.title, { timeout: 5_000 });
+  await expect(page.getByTestId('session-layout')).toBeVisible();
+  await expect(page.getByRole('banner')).toContainText(MOCK_SESSION_2.title, { timeout: 5_000 });
 });
 
 test('unknown session ID shows an error', async ({ mockedPage: page }) => {
   // Override the session detail fetch for the unknown ID to return 404.
-  // Use a regex to match the base URL with optional query string.
   await page.route(
     new RegExp('/api/session/nonexistent-id(\\?|$)'),
     (route) => route.fulfill({ status: 404, body: 'Not Found' }),
   );
 
   await page.goto('/session/nonexistent-id');
-  await expect(page.locator('.oc-error-banner')).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByTestId('error-banner')).toBeVisible({ timeout: 5_000 });
 });
