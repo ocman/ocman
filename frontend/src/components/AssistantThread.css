@@ -673,11 +673,14 @@
 
 /* Viewport footer — wraps the composer/permission/question overlay.
    Uses sticky positioning so the library's ViewportFooter can measure
-   its height and the viewport auto-accounts for it in scroll math. */
+   its height and the viewport auto-accounts for it in scroll math.
+   margin-top: auto pushes the footer to the bottom of the flex-column
+   viewport when the conversation is empty or too short to fill it. */
 .oc-viewport-footer {
   position: sticky;
   bottom: 0;
   z-index: 50;
+  margin-top: auto;
 }
 
 /* Scroll to bottom - floats above composer */
