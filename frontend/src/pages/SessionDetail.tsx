@@ -2822,10 +2822,10 @@ export function SessionDetail() {
   //
   // We sum per-message durations (time.completed - time.created for finished
   // messages, Date.now() - time.created for in-flight ones) instead of using
-  // wall-clock elapsed from the earliest message. This excludes idle time spent
-  // on permission prompts, question prompts, tool execution between messages,
-  // etc., so the indicator reflects actual LLM generation speed rather than
-  // end-to-end session pace.
+  // wall-clock elapsed from the earliest message. This excludes idle time
+  // between messages (tool execution, etc.). When a permission or question
+  // prompt is pending, in-flight messages are excluded entirely since the
+  // LLM isn't generating — this prevents user think time from deflating TPS.
   const [liveTokensPerSecond, setLiveTokensPerSecond] = useState<number | null>(null);
   useEffect(() => {
     if (!isRunning) {
@@ -2844,6 +2844,12 @@ export function SessionDetail() {
       // messages in the window. For completed messages we use the stored
       // time.completed; for still-streaming messages we use Date.now() so the
       // rate updates live while a response is being generated.
+      //
+      // When a permission or question prompt is pending, the in-flight
+      // message's duration would include the user's think time (which can
+      // be tens of seconds). We freeze the in-flight message's end time
+      // to avoid inflating the denominator with idle wait time.
+      const promptPending = pendingPermission !== null || pendingQuestion !== null;
       let totalOutput = 0;
       let totalDurationMs = 0;
       const now = Date.now();
@@ -2854,7 +2860,12 @@ export function SessionDetail() {
         if (!created) continue;
         const output = m.data.tokens?.output || 0;
         const completed = m.data.time?.completed;
-        const endTime = completed && completed > created ? completed : now;
+        const isInFlight = !completed || completed <= created;
+        // Skip in-flight messages entirely when a prompt is pending —
+        // the LLM isn't generating, so including Date.now() would
+        // artificially deflate the TPS.
+        if (isInFlight && promptPending) continue;
+        const endTime = isInFlight ? now : completed;
         const durationMs = endTime - created;
         if (durationMs <= 0) continue;
         totalOutput += output;
@@ -2878,7 +2889,7 @@ export function SessionDetail() {
     computeTps();
     const interval = setInterval(computeTps, 1000);
     return () => clearInterval(interval);
-  }, [isRunning, messages, subagentTokens]);
+  }, [isRunning, messages, subagentTokens, pendingPermission, pendingQuestion]);
 
   // Flattened list of sidebar rows for the "projects" view. Each entry is
   // either a project header (with its most-recent-activity timestamp) or a
