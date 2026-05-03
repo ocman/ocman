@@ -228,16 +228,17 @@ test('stats tab project log sub-tab switches view', async ({ mockedPage: page })
 // Usage tab
 // ---------------------------------------------------------------------------
 
-test('usage tab renders model and date-range filters', async ({ mockedPage: page }) => {
+test('usage tab renders project-scope, model, and date-range filters', async ({ mockedPage: page }) => {
   await page.goto('/usage');
-  // Two <select> controls: Model and Last N days
+  // Three <select> controls: Project scope, Model, and Last N days
   const selects = page.locator('.metrics-filter select');
-  await expect(selects).toHaveCount(2);
+  await expect(selects).toHaveCount(3);
 });
 
 test('usage tab shows "All models" option in model filter', async ({ mockedPage: page }) => {
   await page.goto('/usage');
-  const modelSelect = page.locator('.metrics-filter select').first();
+  // Model filter is the second select (after Project scope picker)
+  const modelSelect = page.locator('.metrics-filter select').nth(1);
   await expect(modelSelect.locator('option', { hasText: 'All models' })).toBeAttached();
 });
 

@@ -1106,7 +1106,7 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
     // Observe only direct children — the overlay is a direct child of
     // the thread root. subtree: true would fire on every text-node
     // mutation during streaming.
-    mutationObserver.observe(thread, { childList: true, subtree: true });
+    mutationObserver.observe(thread, { childList: true });
     return () => {
       cancelAnimationFrame(frame);
       mutationObserver.disconnect();

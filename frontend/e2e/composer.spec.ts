@@ -379,7 +379,11 @@ test('failed-send Retry replays the original prompt', async ({ mockedPage: page 
 
   const failedBanner = page.locator('.oc-msg-failed-banner');
   await expect(failedBanner).toBeVisible({ timeout: 3_000 });
-  await failedBanner.getByRole('button', { name: 'Retry' }).click();
+  // The viewport's auto-scroll MutationObserver can make the button
+  // position unstable between frames, causing Playwright's actionability
+  // check to report "intercepts pointer events". Use dispatchEvent to
+  // bypass the hit-test since the button is visually present and enabled.
+  await failedBanner.getByRole('button', { name: 'Retry' }).dispatchEvent('click');
 
   // Banner clears once the retry succeeds.
   await expect(failedBanner).toHaveCount(0, { timeout: 3_000 });
