@@ -1286,6 +1286,50 @@ export function SessionDetail() {
     });
   }, [id, pendingPermission, pendingQuestion, hasPendingPrompt]);
 
+  // Reverse sync: sidebar poll → detail view. The sidebar polls
+  // /api/sessions every 3 seconds and the backend computes
+  // pendingPermission / pendingQuestion from live OpenCode instances.
+  // If the sidebar discovers a prompt that the detail view doesn't
+  // know about (e.g. SSE event was missed), trigger a fetch of the
+  // actual permission/question data so the prompt dialog appears.
+  const sidebarCurrentSession = recentSessions.find(s => s.id === id);
+  const sidebarHasPerm = sidebarCurrentSession?.pendingPermission ?? false;
+  const sidebarHasQuestion = sidebarCurrentSession?.pendingQuestion ?? false;
+  useEffect(() => {
+    if (!id) return;
+    // Only fetch if the sidebar says there's a prompt but the detail
+    // view doesn't have one yet. Avoids redundant fetches when SSE
+    // already delivered the event.
+    if (sidebarHasPerm && pendingPermission === null) {
+      listPermissions(id).then((perms) => {
+        for (const p of perms) {
+          const perm = extractPendingPermission({ type: 'permission.asked', properties: p });
+          if (!perm) continue;
+          const props = p as Record<string, unknown>;
+          const promptSid = typeof props.sessionID === 'string' ? props.sessionID : '';
+          if (!isSessionRelevant(promptSid, id, subagentSessionIdsRef.current)) continue;
+          setPendingPermission(perm);
+          setPermissionError(null);
+          break;
+        }
+      }).catch(() => { /* sidebar will retry on next poll */ });
+    }
+    if (sidebarHasQuestion && pendingQuestion === null) {
+      listQuestions(id).then((questions) => {
+        for (const q of questions) {
+          const question = extractPendingQuestion({ type: 'question.asked', properties: q });
+          if (!question) continue;
+          const props = q as Record<string, unknown>;
+          const questionSid = typeof props.sessionID === 'string' ? props.sessionID : '';
+          if (!isSessionRelevant(questionSid, id, subagentSessionIdsRef.current)) continue;
+          storePendingQuestion(id, question);
+          setPendingQuestion((prev) => prev ?? question);
+          break;
+        }
+      }).catch(() => { /* sidebar will retry on next poll */ });
+    }
+  }, [id, sidebarHasPerm, sidebarHasQuestion, pendingPermission, pendingQuestion, listPermissions, listQuestions]);
+
   const sessionSeenId = session?.id;
   const sessionSeenPlatform = session?.platform;
   const sessionSeenUpdated = session?.timeUpdated || 0;
