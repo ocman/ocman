@@ -1251,7 +1251,7 @@ function ComposerImpl({
                   ? { '--oc-dot-color': agentColor(effectiveAgent, agents) } as Record<string, string>
                   : undefined}
               >
-                <span className="oc-thinking-dot" /><span className="oc-thinking-dot" /><span className="oc-thinking-dot" />
+                <span className="oc-thinking-dot" /><span className="oc-thinking-dot" /><span className="oc-thinking-dot" /><span className="oc-thinking-dot" /><span className="oc-thinking-dot" />
               </span>
               {tokensPerSecond != null && tokensPerSecond > 0 && (
                 <span className="oc-tps-hint">{tokensPerSecond.toFixed(1)} tok/s</span>

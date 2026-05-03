@@ -1168,18 +1168,22 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
 
   // Track the ViewportFooter height so the scroll-to-bottom button
   // (positioned absolute inside .oc-thread) can float just above it.
+  // RAF-coalesced to avoid layout thrash when the textarea resizes on
+  // every keystroke.
   const footerRef = useCallback((el: HTMLDivElement | null) => {
     if (!el) return;
+    let rafId = 0;
     const update = () => {
-      const thread = el.closest('.oc-thread') as HTMLElement | null;
-      if (thread) thread.style.setProperty('--oc-footer-height', `${el.offsetHeight}px`);
+      if (rafId) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        const thread = el.closest('.oc-thread') as HTMLElement | null;
+        if (thread) thread.style.setProperty('--oc-footer-height', `${el.offsetHeight}px`);
+      });
     };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
-    // Cleanup via the ref callback contract: when el is removed, React
-    // calls the ref with null (handled by the early return above).
-    // The ResizeObserver is GC'd with the element.
   }, []);
 
   return (
