@@ -93,19 +93,7 @@ jobs:
             exit 1
           fi
 
-          create_response="$(curl --silent --show-error --write-out '\n%{http_code}' \
-            --header "Authorization: token ${RELEASE_TOKEN}" \
-            --header "Content-Type: application/json" \
-            --request POST \
-            --data "{\"tag_name\":\"${next_tag}\",\"target\":\"${TARGET_SHA}\",\"message\":\"Release ${next_tag}\"}" \
-            "${api_base}/tags")"
+          git tag "${next_tag}" "${TARGET_SHA}"
+          git push origin "${next_tag}"
 
-          create_status="${create_response##*$'\n'}"
-          create_body="${create_response%$'\n'*}"
-
-          if [ "${create_status}" != "200" ] && [ "${create_status}" != "201" ]; then
-            printf '%s\n' "${create_body}"
-            exit 1
-          fi
-
-          printf 'Created tag %s from %s\n' "${next_tag}" "${TARGET_SHA}"
+          printf 'Created and pushed tag %s from %s\n' "${next_tag}" "${TARGET_SHA}"
