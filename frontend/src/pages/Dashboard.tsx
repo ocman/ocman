@@ -397,7 +397,10 @@ export function StatsTab() {
             <ChartCard title="Cumulative Cost (USD)">
               <Line data={{
                 labels: metricLabels,
-                datasets: [{ label: 'Cost', data: metrics.series.map((point) => point.cumulativeCost), borderColor: '#a6e3a1', backgroundColor: 'rgba(166, 227, 161, 0.18)', fill: true, tension: 0.2, pointRadius: 0 }],
+                datasets: [
+                  { label: 'Cost', data: metrics.series.map((point) => point.cumulativeCost), borderColor: '#a6e3a1', backgroundColor: 'rgba(166, 227, 161, 0.18)', fill: true, tension: 0.2, pointRadius: 0 },
+                  { label: 'Est. Cost', data: metrics.series.map((point) => point.cumulativeCalcCost), borderColor: '#fab387', backgroundColor: 'rgba(250, 179, 135, 0.18)', fill: true, tension: 0.2, pointRadius: 0 },
+                ],
               }} options={LINE_OPTIONS_COST} />
             </ChartCard>
 

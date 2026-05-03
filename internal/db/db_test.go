@@ -1279,6 +1279,83 @@ func TestGetSessionParentIDs_ReturnsMap(t *testing.T) {
 	}
 }
 
+// stubPricing is a CostCalculator that returns a fixed per-token cost.
+type stubPricing struct {
+	inputRate  float64
+	outputRate float64
+}
+
+func (s stubPricing) CalcCost(_ string, in, out, _, _ int64) float64 {
+	return float64(in)*s.inputRate + float64(out)*s.outputRate
+}
+
+func TestGetMetricsDashboardCumulativeCalcCost(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Session 1", "/a", now-10000, now)
+
+	// Two messages with known token counts and reported cost.
+	insertMessage(t, db, "m1", "s1", now-5000, map[string]interface{}{
+		"role":       "assistant",
+		"agent":      "build",
+		"providerID": "anthropic",
+		"modelID":    "opus-4.1",
+		"finish":     "end_turn",
+		"cost":       0.25,
+		"time":       map[string]interface{}{"created": float64(now - 7000), "completed": float64(now - 5000)},
+		"tokens": map[string]interface{}{
+			"input":  100,
+			"output": 200,
+			"cache":  map[string]interface{}{"read": 0, "write": 0},
+		},
+	})
+	insertMessage(t, db, "m2", "s1", now-1000, map[string]interface{}{
+		"role":       "assistant",
+		"agent":      "build",
+		"providerID": "anthropic",
+		"modelID":    "opus-4.1",
+		"finish":     "end_turn",
+		"cost":       0.75,
+		"time":       map[string]interface{}{"created": float64(now - 3000), "completed": float64(now - 1000)},
+		"tokens": map[string]interface{}{
+			"input":  200,
+			"output": 400,
+			"cache":  map[string]interface{}{"read": 0, "write": 0},
+		},
+	})
+
+	// inputRate=0.01, outputRate=0.02 → m1 calc = 100*0.01 + 200*0.02 = 5.0
+	//                                   m2 calc = 200*0.01 + 400*0.02 = 10.0
+	pricing := stubPricing{inputRate: 0.01, outputRate: 0.02}
+
+	metrics, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 50, 0, 50, 0, pricing, "")
+	if err != nil {
+		t.Fatalf("GetMetricsDashboard: %v", err)
+	}
+
+	// Summary should have both cost types.
+	if metrics.Summary.TotalCost != 1.0 {
+		t.Errorf("Summary.TotalCost = %v, want 1.0", metrics.Summary.TotalCost)
+	}
+	if metrics.Summary.TotalCalcCost != 15.0 {
+		t.Errorf("Summary.TotalCalcCost = %v, want 15.0", metrics.Summary.TotalCalcCost)
+	}
+
+	// The last series point should have the full cumulative values.
+	if len(metrics.Series) == 0 {
+		t.Fatal("Series is empty")
+	}
+	last := metrics.Series[len(metrics.Series)-1]
+	if last.CumulativeCost != 1.0 {
+		t.Errorf("last Series.CumulativeCost = %v, want 1.0", last.CumulativeCost)
+	}
+	if last.CumulativeCalcCost != 15.0 {
+		t.Errorf("last Series.CumulativeCalcCost = %v, want 15.0", last.CumulativeCalcCost)
+	}
+}
+
 // TestGetSessionParentIDs_Empty short-circuits when no IDs are requested.
 func TestGetSessionParentIDs_Empty(t *testing.T) {
 	db := openTestDB(t)

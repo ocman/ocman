@@ -223,6 +223,7 @@ func (d *DB) GetMetricsDashboard(agentFilter, modelFilter string, since int64, d
 		totalDurationMs   float64
 		totalCacheEff     float64
 		totalCost         float64
+		totalCalcCost     float64
 		durationCount     int
 		count             int
 	}
@@ -270,6 +271,7 @@ func (d *DB) GetMetricsDashboard(agentFilter, modelFilter string, since int64, d
 		}
 		b.totalCacheEff += cacheEff
 		b.totalCost += entry.Cost
+		b.totalCalcCost += entry.CalcCost
 		b.count++
 	}
 
@@ -308,10 +310,12 @@ func (d *DB) GetMetricsDashboard(agentFilter, modelFilter string, since int64, d
 	}
 
 	cumCost := 0.0
+	cumCalcCost := 0.0
 	for _, label := range seriesLabels {
 		b := buckets[label] // nil for empty buckets
 		var (
 			totalCost         float64
+			totalCalcCost     float64
 			totalOutputTokSec float64
 			totalCacheEff     float64
 			totalDurationMs   float64
@@ -323,6 +327,7 @@ func (d *DB) GetMetricsDashboard(agentFilter, modelFilter string, since int64, d
 		)
 		if b != nil {
 			totalCost = b.totalCost
+			totalCalcCost = b.totalCalcCost
 			totalOutputTokSec = b.totalOutputTokSec
 			totalCacheEff = b.totalCacheEff
 			totalDurationMs = b.totalDurationMs
@@ -333,6 +338,7 @@ func (d *DB) GetMetricsDashboard(agentFilter, modelFilter string, since int64, d
 			count = b.count
 		}
 		cumCost += totalCost
+		cumCalcCost += totalCalcCost
 		avgDur := 0.0
 		if durationCount > 0 {
 			avgDur = totalDurationMs / float64(durationCount)
@@ -345,6 +351,7 @@ func (d *DB) GetMetricsDashboard(agentFilter, modelFilter string, since int64, d
 			Label:              label,
 			AvgOutputTokensSec: totalOutputTokSec / float64(n),
 			CumulativeCost:     cumCost,
+			CumulativeCalcCost: cumCalcCost,
 			InputTokens:        inputTokens,
 			CacheReadTokens:    cacheReadTokens,
 			OutputTokens:       outputTokens,
