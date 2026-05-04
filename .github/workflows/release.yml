@@ -56,8 +56,6 @@ jobs:
       - name: Build binary
         env:
           CGO_ENABLED: 1
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
         run: go build -o ocman-${{ matrix.goos }}-${{ matrix.goarch }} -ldflags="-s -w" .
       - name: Package binary
         run: tar -czf ocman-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz ocman-${{ matrix.goos }}-${{ matrix.goarch }}
