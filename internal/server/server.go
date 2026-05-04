@@ -64,6 +64,7 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 func (s *Server) Start(ctx context.Context) error {
 	go s.runAutoArchiveLoop(ctx)
 	go s.runProjectsIndexLoop(ctx)
+	go s.runLLMMetricsLoop(ctx)
 
 	// Register observable gauges for the top-line stats (session /
 	// message / project counts, lifetime tokens and cost). The

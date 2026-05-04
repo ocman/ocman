@@ -1170,3 +1170,86 @@ func (d *DB) GetHourlyActivity(since int64, dir string) ([]HourlyActivity, error
 	}
 	return result, nil
 }
+
+// GetNewAssistantMessages returns assistant messages created after `since`
+// (exclusive), ordered by time_created ASC. It also returns the new
+// high-water mark (the max time_created seen, or `since` if no rows).
+//
+// This is the data source for the LLM metrics scanner: it runs every
+// collection interval, feeds each row into OTel counters/histograms,
+// and advances the high-water mark so the next call only sees new data.
+func (d *DB) GetNewAssistantMessages(since int64) ([]LLMMessageRow, int64, error) {
+	rows, err := d.db.Query(`
+		SELECT m.time_created, m.data
+		FROM message m
+		WHERE json_extract(m.data, '$.role') = 'assistant'
+		  AND m.time_created > ?
+		ORDER BY m.time_created ASC
+	`, since)
+	if err != nil {
+		return nil, since, err
+	}
+	defer rows.Close()
+
+	var result []LLMMessageRow
+	hwm := since
+	for rows.Next() {
+		var tc int64
+		var raw string
+		if err := rows.Scan(&tc, &raw); err != nil {
+			log.WithError(err).Warn("failed to scan LLM message row")
+			continue
+		}
+		var md MessageData
+		if err := json.Unmarshal([]byte(raw), &md); err != nil {
+			log.WithError(err).Warn("failed to unmarshal LLM message data")
+			continue
+		}
+
+		provider, model := extractModelProvider(md)
+		modelKey := model
+		if provider != "" && model != "" {
+			modelKey = provider + "/" + model
+		}
+
+		r := LLMMessageRow{
+			TimeCreated: tc,
+			Model:       modelKey,
+			Cost:        md.Cost,
+		}
+		if md.Tokens != nil {
+			r.InputTokens = md.Tokens.Input
+			r.OutputTokens = md.Tokens.Output
+			if md.Tokens.Cache != nil {
+				r.CacheReadTokens = md.Tokens.Cache.Read
+				r.CacheWriteTokens = md.Tokens.Cache.Write
+			}
+		}
+		r.StopReason = strings.TrimSpace(md.Finish)
+		if r.StopReason == "" {
+			r.StopReason = "none"
+		}
+		if md.Time != nil && md.Time.Completed > md.Time.Created {
+			r.DurationMs = md.Time.Completed - md.Time.Created
+		}
+
+		result = append(result, r)
+		if tc > hwm {
+			hwm = tc
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, since, err
+	}
+	return result, hwm, nil
+}
+
+// GetMaxMessageTime returns the maximum time_created across all messages,
+// or 0 if the table is empty. Used to initialise the LLM metrics scanner's
+// high-water mark so it only emits metrics for messages arriving after
+// ocman starts.
+func (d *DB) GetMaxMessageTime() (int64, error) {
+	var maxTime int64
+	err := d.db.QueryRow(`SELECT COALESCE(MAX(time_created), 0) FROM message`).Scan(&maxTime)
+	return maxTime, err
+}

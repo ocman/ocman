@@ -319,6 +319,21 @@ type HourlyActivity struct {
 	Sessions int `json:"sessions"`
 }
 
+// LLMMessageRow is a lightweight projection of an assistant message used by
+// the LLM metrics scanner. It contains only the fields needed to emit OTel
+// counters and histograms — no raw JSON, no session metadata.
+type LLMMessageRow struct {
+	TimeCreated      int64
+	Model            string  // "provider/model"
+	InputTokens      int64
+	OutputTokens     int64
+	CacheReadTokens  int64
+	CacheWriteTokens int64
+	Cost             float64
+	StopReason       string
+	DurationMs       int64 // time.completed - time.created; 0 if unavailable
+}
+
 // HourlyTokensByModel holds token counts for a specific calendar hour and model.
 type HourlyTokensByModel struct {
 	Datetime  string `json:"datetime"` // "YYYY-MM-DD HH" in local time

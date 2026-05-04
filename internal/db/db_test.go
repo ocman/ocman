@@ -1126,6 +1126,94 @@ func TestGetDailyActivity_UserMessages(t *testing.T) {
 	}
 }
 
+// --- GetNewAssistantMessages tests ---
+
+func TestGetNewAssistantMessages(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Session", "/project", now, now)
+
+	// Insert messages at known timestamps.
+	insertMessage(t, db, "u1", "s1", now-3000, map[string]interface{}{"role": "user"})
+	insertMessage(t, db, "a1", "s1", now-2000, map[string]interface{}{
+		"role": "assistant", "providerID": "anthropic", "modelID": "claude-3",
+		"tokens": map[string]interface{}{"input": 100, "output": 50, "cache": map[string]interface{}{"read": 80, "write": 20}},
+		"cost":   0.005,
+		"finish": "end_turn",
+		"time":   map[string]interface{}{"created": now - 3000, "completed": now - 2000},
+	})
+	insertMessage(t, db, "a2", "s1", now-1000, map[string]interface{}{
+		"role": "assistant", "providerID": "google", "modelID": "gemini",
+		"tokens": map[string]interface{}{"input": 200, "output": 100},
+		"cost":   0.01,
+		"finish": "error",
+		"time":   map[string]interface{}{"created": now - 2000, "completed": now - 1000},
+	})
+
+	// Query all messages since before the first one.
+	rows, hwm, err := db.GetNewAssistantMessages(now - 5000)
+	if err != nil {
+		t.Fatalf("GetNewAssistantMessages: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(rows))
+	}
+	if hwm != now-1000 {
+		t.Errorf("high-water mark = %d, want %d", hwm, now-1000)
+	}
+
+	// First row should be a1 (oldest first).
+	r := rows[0]
+	if r.Model != "anthropic/claude-3" {
+		t.Errorf("row[0].Model = %q, want %q", r.Model, "anthropic/claude-3")
+	}
+	if r.InputTokens != 100 || r.OutputTokens != 50 {
+		t.Errorf("row[0] tokens = %d/%d, want 100/50", r.InputTokens, r.OutputTokens)
+	}
+	if r.CacheReadTokens != 80 || r.CacheWriteTokens != 20 {
+		t.Errorf("row[0] cache = %d/%d, want 80/20", r.CacheReadTokens, r.CacheWriteTokens)
+	}
+	if r.Cost != 0.005 {
+		t.Errorf("row[0].Cost = %f, want 0.005", r.Cost)
+	}
+	if r.StopReason != "end_turn" {
+		t.Errorf("row[0].StopReason = %q, want %q", r.StopReason, "end_turn")
+	}
+	if r.DurationMs != 1000 {
+		t.Errorf("row[0].DurationMs = %d, want 1000", r.DurationMs)
+	}
+
+	// Second query with the returned high-water mark should return nothing.
+	rows2, hwm2, err := db.GetNewAssistantMessages(hwm)
+	if err != nil {
+		t.Fatalf("GetNewAssistantMessages (second call): %v", err)
+	}
+	if len(rows2) != 0 {
+		t.Errorf("expected 0 rows on second call, got %d", len(rows2))
+	}
+	if hwm2 != hwm {
+		t.Errorf("high-water mark changed: %d -> %d", hwm, hwm2)
+	}
+}
+
+func TestGetNewAssistantMessages_Empty(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	rows, hwm, err := db.GetNewAssistantMessages(0)
+	if err != nil {
+		t.Fatalf("GetNewAssistantMessages: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Errorf("expected 0 rows, got %d", len(rows))
+	}
+	if hwm != 0 {
+		t.Errorf("high-water mark = %d, want 0", hwm)
+	}
+}
+
 // --- extractModelProvider tests ---
 
 func TestExtractModelProvider(t *testing.T) {
