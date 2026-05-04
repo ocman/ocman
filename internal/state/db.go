@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/XSAM/otelsql"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 	"go.opentelemetry.io/otel/attribute"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
@@ -39,7 +39,7 @@ func Open(path string) (*DB, error) {
 	// See internal/db.Open for the otelsql rationale; same trade-off
 	// applies. db.name="ocman" distinguishes ocman's own state from
 	// the upstream OpenCode database in trace and metric attributes.
-	db, err := otelsql.Open("sqlite3", dsn,
+	db, err := otelsql.Open("sqlite", dsn,
 		otelsql.WithAttributes(
 			semconv.DBSystemSqlite,
 			attribute.String("db.name", "ocman"),

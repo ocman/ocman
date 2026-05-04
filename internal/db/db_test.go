@@ -6,14 +6,14 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // openTestDB creates an in-memory SQLite database with the OpenCode schema
 // and returns a *DB suitable for testing. The caller should defer db.Close().
 func openTestDB(t *testing.T) *DB {
 	t.Helper()
-	sqlDB, err := sql.Open("sqlite3", ":memory:")
+	sqlDB, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("opening test db: %v", err)
 	}

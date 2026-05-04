@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/XSAM/otelsql"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 	"go.opentelemetry.io/otel/attribute"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
@@ -86,7 +86,7 @@ func Open(path string) (*DB, error) {
 	// global TracerProvider/MeterProvider are no-ops, so this adds
 	// only the minimal driver-wrapper overhead (a few nanoseconds
 	// per call).
-	db, err := otelsql.Open("sqlite3", dsn,
+	db, err := otelsql.Open("sqlite", dsn,
 		otelsql.WithAttributes(
 			semconv.DBSystemSqlite,
 			attribute.String("db.name", "opencode"),
@@ -119,7 +119,7 @@ func Open(path string) (*DB, error) {
 // test setup where schema creation must happen before read-only access.
 func OpenReadWrite(path string) (*DB, error) {
 	dsn := fmt.Sprintf("file:%s?_journal_mode=WAL", path)
-	db, err := otelsql.Open("sqlite3", dsn,
+	db, err := otelsql.Open("sqlite", dsn,
 		otelsql.WithAttributes(
 			semconv.DBSystemSqlite,
 			attribute.String("db.name", "opencode-rw"),

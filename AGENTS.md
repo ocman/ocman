@@ -121,7 +121,7 @@ diffs minimal and match the surrounding code.
   Only the listed adapters are registered; the OpenCode database is
   not required when `opencode` is omitted from the list. Example:
   `-platforms opencode,claude-code`.
-- **CGo required**: `github.com/mattn/go-sqlite3` needs a C compiler.
+- **Pure-Go SQLite**: uses `modernc.org/sqlite` (no CGo, no C compiler required).
 - **Two databases**: OpenCode's DB is opened read-only
   (`?mode=ro&_journal_mode=WAL`, default `~/.local/share/opencode/opencode.db`).
   Ocman's own state DB is writable (`~/.local/share/ocman/state.db`),

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -30,7 +30,7 @@ func testServer(t *testing.T) *Server {
 
 	// Create and seed the OpenCode database using a writable connection first.
 	tmpOC := tmpDir + "/opencode.db"
-	setupDB, err := sql.Open("sqlite3", tmpOC)
+	setupDB, err := sql.Open("sqlite", tmpOC)
 	if err != nil {
 		t.Fatalf("opening temp oc file: %v", err)
 	}
@@ -615,7 +615,7 @@ func testServerWithRawDB(t *testing.T) (*Server, *sql.DB) {
 	tmpDir := t.TempDir()
 
 	tmpOC := tmpDir + "/opencode.db"
-	setupDB, err := sql.Open("sqlite3", tmpOC)
+	setupDB, err := sql.Open("sqlite", tmpOC)
 	if err != nil {
 		t.Fatalf("opening temp oc file: %v", err)
 	}

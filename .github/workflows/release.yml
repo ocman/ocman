@@ -34,42 +34,27 @@ jobs:
         include:
           - goos: linux
             goarch: amd64
-            zig_target: x86_64-linux-musl
           - goos: linux
             goarch: arm64
-            zig_target: aarch64-linux-musl
           - goos: darwin
             goarch: amd64
-            zig_target: x86_64-macos-none
           - goos: darwin
             goarch: arm64
-            zig_target: aarch64-macos-none
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: Install zig
-        run: |
-          curl -sSfL https://ziglang.org/download/0.14.1/zig-aarch64-linux-0.14.1.tar.xz | tar -xJ
-          echo "$PWD/zig-aarch64-linux-0.14.1" >> "$GITHUB_PATH"
       - uses: actions/download-artifact@v3
         with:
           name: frontend-dist
           path: internal/server/static/
       - name: Build binary
         env:
-          CGO_ENABLED: 1
+          CGO_ENABLED: 0
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-          CC: zigcc
-        run: |
-          cat > /usr/local/bin/zigcc <<'WRAPPER'
-          #!/bin/sh
-          exec zig cc -target ${{ matrix.zig_target }} "$@"
-          WRAPPER
-          chmod +x /usr/local/bin/zigcc
-          go build -o ocman-${{ matrix.goos }}-${{ matrix.goarch }} -ldflags="-s -w -linkmode external" .
+        run: go build -o ocman-${{ matrix.goos }}-${{ matrix.goarch }} -ldflags="-s -w" .
       - name: Package binary
         run: tar -czf ocman-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz ocman-${{ matrix.goos }}-${{ matrix.goarch }}
       - uses: actions/upload-artifact@v3

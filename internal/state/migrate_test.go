@@ -4,14 +4,14 @@ import (
 	"database/sql"
 	"testing"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // openLegacyDB creates a database that looks like a pre-migration
 // state.db: old single-column PK, two pre-existing rows in each table.
 func openLegacyDB(t *testing.T) *sql.DB {
 	t.Helper()
-	sqlDB, err := sql.Open("sqlite3", ":memory:")
+	sqlDB, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestMigrate_CompositePrimaryKey(t *testing.T) {
 }
 
 func TestMigrate_FreshDB_CreatesSchemaAtLatestVersion(t *testing.T) {
-	sqlDB, err := sql.Open("sqlite3", ":memory:")
+	sqlDB, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestMigrate_FreshDB_CreatesSchemaAtLatestVersion(t *testing.T) {
 }
 
 func TestMigrate_V3_CreatesAuthSecretTable(t *testing.T) {
-	sqlDB, err := sql.Open("sqlite3", ":memory:")
+	sqlDB, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}

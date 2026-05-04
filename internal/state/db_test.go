@@ -6,14 +6,14 @@ import (
 	"path/filepath"
 	"testing"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // openTestStateDB creates an in-memory state database with the schema
 // migrated to the latest version.
 func openTestStateDB(t *testing.T) *DB {
 	t.Helper()
-	sqlDB, err := sql.Open("sqlite3", ":memory:")
+	sqlDB, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("opening test state db: %v", err)
 	}

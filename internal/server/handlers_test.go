@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -383,7 +383,7 @@ func TestSystemStats_IncludesDBPoolWhenDBPresent(t *testing.T) {
 	// helper the db package's pool tests use.
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.db")
-	rw, err := sql.Open("sqlite3", "file:"+path+"?_journal_mode=WAL")
+	rw, err := sql.Open("sqlite", "file:"+path+"?_journal_mode=WAL")
 	if err != nil {
 		t.Fatalf("seed open: %v", err)
 	}

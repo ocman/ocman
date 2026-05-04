@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // makeTempDB seeds a temporary SQLite file with the minimal OpenCode
@@ -26,7 +26,7 @@ func makeTempDB(t *testing.T) string {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.db")
 
-	rw, err := sql.Open("sqlite3", "file:"+path+"?_journal_mode=WAL")
+	rw, err := sql.Open("sqlite", "file:"+path+"?_journal_mode=WAL")
 	if err != nil {
 		t.Fatalf("seed open: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestOpen_AppliesQueryOnlyPragma(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected write to fail under _query_only / mode=ro, got nil error")
 	}
-	// We don't assert the exact error message — go-sqlite3 phrases
+	// We don't assert the exact error message — the sqlite driver phrases
 	// it differently for read-only mode vs query_only mode. Either
 	// flavour is fine; the contract is "it must not succeed".
 }
