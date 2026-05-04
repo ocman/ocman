@@ -153,6 +153,14 @@ func TestGetDailyActivity_DirFilter(t *testing.T) {
 	defer db.Close()
 	seedDirFilter(t, db)
 
+	// Add user messages to each session so we can verify dir-scoping
+	// applies to user messages too.
+	now := time.Now().UnixMilli()
+	insertMessage(t, db, "u_exact", "s_exact", now, map[string]interface{}{"role": "user"})
+	insertMessage(t, db, "u_desc", "s_desc", now, map[string]interface{}{"role": "user"})
+	insertMessage(t, db, "u_sib", "s_sib", now, map[string]interface{}{"role": "user"})
+	insertMessage(t, db, "u_other", "s_other", now, map[string]interface{}{"role": "user"})
+
 	all, err := db.GetDailyActivity(0, "", "")
 	if err != nil {
 		t.Fatalf("GetDailyActivity (no dir): %v", err)
@@ -164,17 +172,26 @@ func TestGetDailyActivity_DirFilter(t *testing.T) {
 
 	// Sum messages across the full window for a coarse-but-decisive check.
 	var allMsg, scopedMsg int
+	var allUser, scopedUser int
 	for _, d := range all {
 		allMsg += d.Messages
+		allUser += d.UserMessages
 	}
 	for _, d := range scoped {
 		scopedMsg += d.Messages
+		scopedUser += d.UserMessages
 	}
 	if allMsg != 4 {
 		t.Errorf("unfiltered messages = %d, want 4", allMsg)
 	}
 	if scopedMsg != 2 {
 		t.Errorf("scoped messages = %d, want 2 (exact + descendant; sibling /repo/foobar must be excluded)", scopedMsg)
+	}
+	if allUser != 4 {
+		t.Errorf("unfiltered userMessages = %d, want 4", allUser)
+	}
+	if scopedUser != 2 {
+		t.Errorf("scoped userMessages = %d, want 2 (exact + descendant; sibling /repo/foobar must be excluded)", scopedUser)
 	}
 }
 

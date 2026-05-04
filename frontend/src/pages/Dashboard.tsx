@@ -795,7 +795,7 @@ const BAR_OPTIONS_SESSIONS = {
   responsive: true,
   maintainAspectRatio: false,
   animation: false as const,
-  plugins: { legend: { display: false } },
+  plugins: { legend: { position: 'top' as const, labels: { color: '#bac2de', boxWidth: 12, padding: 8, font: { size: 11 } } } },
   scales: {
     x: { grid: { display: false }, ticks: { maxTicksLimit: 12, callback: (_: unknown, idx: number, ticks: unknown[]) => idx === 0 || idx === ticks.length - 1 || idx % Math.ceil(ticks.length / 12) === 0 ? undefined : null } },
     y: { beginAtZero: true },
@@ -909,7 +909,10 @@ export function UsageTab() {
           <div className="metrics-chart-body">
             <Bar data={{
               labels: activity.map((d) => d.date.slice(5)),
-              datasets: [{ label: 'Messages', data: activity.map((d) => d.messages), backgroundColor: 'rgba(137, 180, 250, 0.6)', borderRadius: 2 }],
+              datasets: [
+                { label: 'User Prompts', data: activity.map((d) => d.userMessages), backgroundColor: 'rgba(166, 227, 161, 0.6)', borderRadius: 2 },
+                { label: 'Assistant Turns', data: activity.map((d) => d.messages), backgroundColor: 'rgba(137, 180, 250, 0.6)', borderRadius: 2 },
+              ],
             }} options={BAR_OPTIONS_SESSIONS} />
           </div>
         </div>

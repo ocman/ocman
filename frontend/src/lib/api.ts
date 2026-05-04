@@ -564,6 +564,7 @@ export interface ActivityDay {
   date: string;
   sessions: number;
   messages: number;
+  userMessages: number;
 }
 
 export interface ModelUsage {

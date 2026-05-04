@@ -292,9 +292,10 @@ type ProjectStats struct {
 
 // DailyActivity holds activity counts per day.
 type DailyActivity struct {
-	Date     string `json:"date"`
-	Sessions int    `json:"sessions"`
-	Messages int    `json:"messages"`
+	Date         string `json:"date"`
+	Sessions     int    `json:"sessions"`
+	Messages     int    `json:"messages"`
+	UserMessages int    `json:"userMessages"`
 }
 
 // ModelUsage holds per-model usage info.

@@ -839,6 +839,48 @@ func (d *DB) GetDailyActivity(since int64, modelFilter, dir string) ([]DailyActi
 		return nil, err
 	}
 
+	// Count user messages per day (prompts sent by the human).
+	query3 := `
+		SELECT
+			date(m.time_created / 1000, 'unixepoch', 'localtime') as day,
+			count(*) as user_messages
+		FROM message m
+		JOIN session s ON s.id = m.session_id
+		WHERE json_extract(m.data, '$.role') = 'user'
+		  AND m.time_created >= ?
+		  AND s.title NOT LIKE '%(% subagent)'`
+	args3 := []interface{}{cutoff}
+	if dirFrag != "" {
+		query3 += "\n		  AND " + dirFrag
+		args3 = append(args3, dirArgs...)
+	}
+	query3 += `
+		GROUP BY day
+		ORDER BY day
+	`
+	rows3, err := d.db.Query(query3, args3...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows3.Close()
+
+	for rows3.Next() {
+		var day string
+		var count int
+		if err := rows3.Scan(&day, &count); err != nil {
+			log.WithError(err).Warn("failed to scan user message activity row")
+			continue
+		}
+		if da, ok := dayMap[day]; ok {
+			da.UserMessages = count
+		} else {
+			dayMap[day] = &DailyActivity{Date: day, UserMessages: count}
+		}
+	}
+	if err := rows3.Err(); err != nil {
+		return nil, err
+	}
+
 	// Fill in gaps and sort
 	var result []DailyActivity
 	for i := days; i >= 0; i-- {

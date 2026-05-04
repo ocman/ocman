@@ -1078,6 +1078,54 @@ func TestGetDailyActivity(t *testing.T) {
 	}
 }
 
+func TestGetDailyActivity_UserMessages(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Session", "/project", now, now)
+
+	// Insert 2 user messages and 3 assistant messages today.
+	insertMessage(t, db, "u1", "s1", now, map[string]interface{}{"role": "user"})
+	insertMessage(t, db, "u2", "s1", now, map[string]interface{}{"role": "user"})
+	insertMessage(t, db, "a1", "s1", now, map[string]interface{}{
+		"role": "assistant", "providerID": "anthropic", "modelID": "claude",
+		"tokens": map[string]interface{}{"input": 10, "output": 5},
+	})
+	insertMessage(t, db, "a2", "s1", now, map[string]interface{}{
+		"role": "assistant", "providerID": "anthropic", "modelID": "claude",
+		"tokens": map[string]interface{}{"input": 10, "output": 5},
+	})
+	insertMessage(t, db, "a3", "s1", now, map[string]interface{}{
+		"role": "assistant", "providerID": "anthropic", "modelID": "claude",
+		"tokens": map[string]interface{}{"input": 10, "output": 5},
+	})
+
+	result, err := db.GetDailyActivity(0, "", "")
+	if err != nil {
+		t.Fatalf("GetDailyActivity: %v", err)
+	}
+
+	// Find today's entry and verify counts.
+	today := time.Now().Format("2006-01-02")
+	var found bool
+	for _, d := range result {
+		if d.Date == today {
+			found = true
+			if d.Messages != 3 {
+				t.Errorf("Messages = %d, want 3 (assistant messages)", d.Messages)
+			}
+			if d.UserMessages != 2 {
+				t.Errorf("UserMessages = %d, want 2", d.UserMessages)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatal("today's entry not found in result")
+	}
+}
+
 // --- extractModelProvider tests ---
 
 func TestExtractModelProvider(t *testing.T) {
