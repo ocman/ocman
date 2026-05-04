@@ -178,79 +178,138 @@
 
     { "type": "row", "title": "Business Stats", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 }, "collapsed": false, "panels": [] },
     {
-      "type": "stat",
-      "title": "Sessions",
-      "description": "Total number of coding sessions.",
+      "type": "stat", "title": "Sessions", "description": "Total coding sessions.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 7 },
-      "targets": [{ "refId": "A", "expr": "ocman_stats_sessions{service_name=\"$service\"}", "legendFormat": "sessions" }],
+      "gridPos": { "h": 4, "w": 3, "x": 0, "y": 7 },
+      "targets": [{ "refId": "A", "expr": "ocman_stats_sessions{service_name=\"$service\"}" }],
       "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 } },
       "options": { "colorMode": "value", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } }
     },
     {
-      "type": "stat",
-      "title": "User Messages",
-      "description": "Total user prompts sent across all sessions.",
+      "type": "stat", "title": "User Messages", "description": "Total user prompts.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 7 },
-      "targets": [{ "refId": "A", "expr": "ocman_stats_messages{service_name=\"$service\"}", "legendFormat": "messages" }],
+      "gridPos": { "h": 4, "w": 3, "x": 3, "y": 7 },
+      "targets": [{ "refId": "A", "expr": "ocman_stats_messages{service_name=\"$service\"}" }],
       "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 } },
       "options": { "colorMode": "value", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } }
     },
     {
-      "type": "stat",
-      "title": "Projects",
-      "description": "Distinct project directories.",
+      "type": "stat", "title": "LLM Requests", "description": "Total LLM assistant turns.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 7 },
-      "targets": [{ "refId": "A", "expr": "ocman_stats_projects{service_name=\"$service\"}", "legendFormat": "projects" }],
+      "gridPos": { "h": 4, "w": 3, "x": 6, "y": 7 },
+      "targets": [{ "refId": "A", "expr": "sum(ocman_llm_requests_total{service_name=\"$service\"})" }],
       "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 } },
       "options": { "colorMode": "value", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } }
     },
     {
-      "type": "stat",
-      "title": "Input Tokens",
-      "description": "Lifetime input tokens across all sessions.",
+      "type": "stat", "title": "Projects", "description": "Distinct project directories.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 7 },
-      "targets": [{ "refId": "A", "expr": "ocman_stats_tokens_input{service_name=\"$service\"}", "legendFormat": "input" }],
+      "gridPos": { "h": 4, "w": 3, "x": 9, "y": 7 },
+      "targets": [{ "refId": "A", "expr": "ocman_stats_projects{service_name=\"$service\"}" }],
       "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 } },
       "options": { "colorMode": "value", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } }
     },
     {
-      "type": "stat",
-      "title": "Output Tokens",
-      "description": "Lifetime output tokens across all sessions.",
+      "type": "stat", "title": "Total Tokens", "description": "Lifetime input + output tokens.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 7 },
-      "targets": [{ "refId": "A", "expr": "ocman_stats_tokens_output{service_name=\"$service\"}", "legendFormat": "output" }],
+      "gridPos": { "h": 4, "w": 3, "x": 12, "y": 7 },
+      "targets": [{ "refId": "A", "expr": "ocman_stats_tokens_input{service_name=\"$service\"} + ocman_stats_tokens_output{service_name=\"$service\"}" }],
       "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 } },
       "options": { "colorMode": "value", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } }
     },
     {
-      "type": "stat",
-      "title": "Total Cost",
-      "description": "Lifetime API cost across all sessions.",
+      "type": "stat", "title": "Total Cost", "description": "Lifetime platform-reported API cost.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 7 },
-      "targets": [{ "refId": "A", "expr": "ocman_stats_cost{service_name=\"$service\"}", "legendFormat": "cost" }],
+      "gridPos": { "h": 4, "w": 3, "x": 15, "y": 7 },
+      "targets": [{ "refId": "A", "expr": "ocman_stats_cost{service_name=\"$service\"}" }],
       "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 2 } },
       "options": { "colorMode": "value", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } }
     },
     {
-      "type": "timeseries",
-      "title": "User messages over time",
-      "description": "Rate of new user prompts. Derived from the ocman.stats.messages gauge (increase per collection interval).",
+      "type": "stat", "title": "Est. API Cost", "description": "Estimated cost from token counts and public pricing.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 11 },
+      "gridPos": { "h": 4, "w": 3, "x": 18, "y": 7 },
+      "targets": [{ "refId": "A", "expr": "sum(ocman_llm_calc_cost_total{service_name=\"$service\"})" }],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 2 } },
+      "options": { "colorMode": "value", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "stat", "title": "Cache Hit Rate", "description": "Cache-read tokens as % of total cache tokens.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 3, "x": 21, "y": 7 },
+      "targets": [{ "refId": "A", "expr": "sum(ocman_llm_tokens_cache_read_total{service_name=\"$service\"}) / clamp_min(sum(ocman_llm_tokens_cache_read_total{service_name=\"$service\"}) + sum(ocman_llm_tokens_cache_write_total{service_name=\"$service\"}), 1) * 100" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "decimals": 1, "min": 0, "max": 100 } },
+      "options": { "colorMode": "value", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "stat", "title": "Avg Tok/s", "description": "Average output tokens per second across LLM turns.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 3, "x": 0, "y": 11 },
+      "targets": [{ "refId": "A", "expr": "sum(rate(ocman_llm_tokens_output_total{service_name=\"$service\"}[5m])) / clamp_min(sum(rate(ocman_llm_request_duration_seconds_sum{service_name=\"$service\"}[5m])), 0.001)" }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 1 } },
+      "options": { "colorMode": "value", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "stat", "title": "Avg Duration", "description": "Average LLM turn duration.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 3, "x": 3, "y": 11 },
+      "targets": [{ "refId": "A", "expr": "sum(rate(ocman_llm_request_duration_seconds_sum{service_name=\"$service\"}[5m])) / clamp_min(sum(rate(ocman_llm_request_duration_seconds_count{service_name=\"$service\"}[5m])), 0.001)" }],
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 2 } },
+      "options": { "colorMode": "value", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "stat", "title": "Total Wall Clock", "description": "Sum of all LLM turn durations.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 3, "x": 6, "y": 11 },
+      "targets": [{ "refId": "A", "expr": "sum(ocman_llm_request_duration_seconds_sum{service_name=\"$service\"})" }],
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 0 } },
+      "options": { "colorMode": "value", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "stat", "title": "Input Tokens", "description": "Lifetime input tokens.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 3, "x": 9, "y": 11 },
+      "targets": [{ "refId": "A", "expr": "ocman_stats_tokens_input{service_name=\"$service\"}" }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 } },
+      "options": { "colorMode": "value", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "stat", "title": "Output Tokens", "description": "Lifetime output tokens.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 3, "x": 12, "y": 11 },
+      "targets": [{ "refId": "A", "expr": "ocman_stats_tokens_output{service_name=\"$service\"}" }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 } },
+      "options": { "colorMode": "value", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Daily messages",
+      "description": "User prompts and assistant turns over time.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 15 },
       "targets": [
-        {
-          "refId": "A",
-          "expr": "increase(ocman_stats_messages{service_name=\"$service\"}[5m])",
-          "legendFormat": "user messages / 5m"
-        }
+        { "refId": "A", "expr": "increase(ocman_stats_messages{service_name=\"$service\"}[5m])", "legendFormat": "User Prompts" },
+        { "refId": "B", "expr": "sum(rate(ocman_llm_requests_total{service_name=\"$service\"}[5m]))", "legendFormat": "Assistant Turns" }
       ],
-      "fieldConfig": { "defaults": { "unit": "short", "decimals": 1, "custom": { "drawStyle": "bars", "fillOpacity": 60 } } },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "decimals": 1, "custom": { "drawStyle": "bars", "fillOpacity": 60 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "User Prompts" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#a6e3a1" } }] },
+          { "matcher": { "id": "byName", "options": "Assistant Turns" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#89b4fa" } }] }
+        ]
+      },
+      "options": { "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Avg output tok/s",
+      "description": "Average output tokens per second of wall-clock time, over time.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 15 },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(ocman_llm_tokens_output_total{service_name=\"$service\"}[5m])) / clamp_min(sum(rate(ocman_llm_request_duration_seconds_sum{service_name=\"$service\"}[5m])), 0.001)", "legendFormat": "tok/s" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 1, "custom": { "drawStyle": "line", "fillOpacity": 15 } } },
       "options": { "legend": { "showLegend": false } }
     },
 
@@ -259,7 +318,7 @@
       "title": "Token usage over time",
       "description": "Input, output, and cache-read tokens per 5-minute window, broken down by type.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 18 },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 22 },
       "targets": [
         { "refId": "A", "expr": "sum(rate(ocman_llm_tokens_input_total{service_name=\"$service\"}[5m]))", "legendFormat": "Input" },
         { "refId": "B", "expr": "sum(rate(ocman_llm_tokens_cache_read_total{service_name=\"$service\"}[5m]))", "legendFormat": "Cache Read" },
@@ -277,22 +336,29 @@
     },
     {
       "type": "timeseries",
-      "title": "Cost over time",
-      "description": "LLM API cost rate (USD per 5-minute window).",
+      "title": "Cumulative cost (USD)",
+      "description": "Running total of platform-reported and estimated API cost.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 18 },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 22 },
       "targets": [
-        { "refId": "A", "expr": "sum(rate(ocman_llm_cost_total{service_name=\"$service\"}[5m]))", "legendFormat": "cost/5m" }
+        { "refId": "A", "expr": "sum(ocman_llm_cost_total{service_name=\"$service\"})", "legendFormat": "Reported Cost" },
+        { "refId": "B", "expr": "sum(ocman_llm_calc_cost_total{service_name=\"$service\"})", "legendFormat": "Est. Cost" }
       ],
-      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 4, "custom": { "drawStyle": "line", "fillOpacity": 20 } } },
-      "options": { "legend": { "showLegend": false } }
+      "fieldConfig": {
+        "defaults": { "unit": "currencyUSD", "decimals": 2, "custom": { "drawStyle": "line", "fillOpacity": 15, "pointSize": 0 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Reported Cost" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#a6e3a1" } }] },
+          { "matcher": { "id": "byName", "options": "Est. Cost" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#fab387" } }] }
+        ]
+      },
+      "options": { "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" } }
     },
     {
       "type": "timeseries",
       "title": "LLM request duration p50 / p95",
       "description": "Wall-clock time from request to completion for LLM turns.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 25 },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 29 },
       "targets": [
         { "refId": "A", "expr": "histogram_quantile(0.5, sum by (le) (rate(ocman_llm_request_duration_seconds_bucket{service_name=\"$service\"}[5m])))", "legendFormat": "p50" },
         { "refId": "B", "expr": "histogram_quantile(0.95, sum by (le) (rate(ocman_llm_request_duration_seconds_bucket{service_name=\"$service\"}[5m])))", "legendFormat": "p95" }
@@ -305,7 +371,7 @@
       "title": "LLM requests by model",
       "description": "LLM turn rate broken down by model.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 25 },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 29 },
       "targets": [
         { "refId": "A", "expr": "sum by (model) (rate(ocman_llm_requests_total{service_name=\"$service\"}[5m]))", "legendFormat": "{{model}}" }
       ],
@@ -317,7 +383,7 @@
       "title": "Cache efficiency",
       "description": "Ratio of cache-read tokens to total cache tokens (read + write). Higher is better.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 32 },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 36 },
       "targets": [
         {
           "refId": "A",
@@ -333,7 +399,7 @@
       "title": "Stop reason distribution",
       "description": "Distribution of LLM turn stop reasons over the dashboard time range.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 32 },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 36 },
       "targets": [
         { "refId": "A", "expr": "sum by (stop_reason) (increase(ocman_llm_requests_total{service_name=\"$service\"}[$__range]))", "legendFormat": "{{stop_reason}}" }
       ],
@@ -341,12 +407,26 @@
       "options": { "legend": { "showLegend": true, "displayMode": "list", "placement": "right" }, "pieType": "donut", "reduceOptions": { "calcs": ["lastNotNull"] } }
     },
 
-    { "type": "row", "title": "HTTP", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 39 }, "collapsed": false, "panels": [] },
+    {
+      "type": "barchart",
+      "title": "Tokens by model",
+      "description": "Input and output token totals broken down by model.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 43 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (model) (ocman_llm_tokens_input_total{service_name=\"$service\"})", "legendFormat": "{{model}} input", "format": "table", "instant": true },
+        { "refId": "B", "expr": "sum by (model) (ocman_llm_tokens_output_total{service_name=\"$service\"})", "legendFormat": "{{model}} output", "format": "table", "instant": true }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "options": { "orientation": "horizontal", "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" } }
+    },
+
+    { "type": "row", "title": "HTTP", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 50 }, "collapsed": false, "panels": [] },
     {
       "type": "timeseries",
       "title": "Request rate by route",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 40 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 51 },
       "targets": [
         {
           "refId": "A",
@@ -361,7 +441,7 @@
       "type": "timeseries",
       "title": "p95 latency by route",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 40 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 51 },
       "targets": [
         {
           "refId": "A",
@@ -376,7 +456,7 @@
       "type": "timeseries",
       "title": "Status code mix",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 48 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 59 },
       "targets": [
         {
           "refId": "A",
@@ -403,7 +483,7 @@
       "title": "Outbound HTTP latency p95",
       "description": "p95 of outgoing HTTP calls (OpenCode upstream + LiteLLM pricing).",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 48 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 59 },
       "targets": [
         {
           "refId": "A",
@@ -415,12 +495,12 @@
       "options": { "legend": { "showLegend": true, "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] } }
     },
 
-    { "type": "row", "title": "Database", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 56 }, "collapsed": false, "panels": [] },
+    { "type": "row", "title": "Database", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 67 }, "collapsed": false, "panels": [] },
     {
       "type": "timeseries",
       "title": "Query rate by database",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 57 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 68 },
       "targets": [
         {
           "refId": "A",
@@ -435,7 +515,7 @@
       "type": "timeseries",
       "title": "Query latency p95 by database",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 57 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 68 },
       "targets": [
         {
           "refId": "A",
@@ -450,7 +530,7 @@
       "type": "timeseries",
       "title": "Open connections",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 65 },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 76 },
       "targets": [
         {
           "refId": "A",
@@ -470,7 +550,7 @@
       "title": "Connection wait time",
       "description": "Total time clients spent waiting for a free pool slot.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 65 },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 76 },
       "targets": [
         {
           "refId": "A",
@@ -481,12 +561,12 @@
       "fieldConfig": { "defaults": { "unit": "ms", "custom": { "drawStyle": "line", "fillOpacity": 10 } } }
     },
 
-    { "type": "row", "title": "Background work", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 72 }, "collapsed": false, "panels": [] },
+    { "type": "row", "title": "Background work", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 83 }, "collapsed": false, "panels": [] },
     {
       "type": "timeseries",
       "title": "Auto-archive sessions/run",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 73 },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 84 },
       "targets": [
         {
           "refId": "A",
@@ -506,7 +586,7 @@
       "title": "Projects-index refresh latency",
       "description": "p50/p95 of the periodic projects index rebuild.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 73 },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 84 },
       "targets": [
         {
           "refId": "A",
@@ -522,12 +602,12 @@
       "fieldConfig": { "defaults": { "unit": "ms", "decimals": 2, "custom": { "drawStyle": "line", "fillOpacity": 10 } } }
     },
 
-    { "type": "row", "title": "Runtime", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 80 }, "collapsed": false, "panels": [] },
+    { "type": "row", "title": "Runtime", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 91 }, "collapsed": false, "panels": [] },
     {
       "type": "timeseries",
       "title": "Memory",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 81 },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 92 },
       "targets": [
         { "refId": "A", "expr": "go_memory_used_bytes{service_name=\"$service\"}", "legendFormat": "in use" },
         { "refId": "B", "expr": "go_memory_gc_goal_bytes{service_name=\"$service\"}", "legendFormat": "GC goal" }
@@ -538,7 +618,7 @@
       "type": "timeseries",
       "title": "Allocations",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 81 },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 92 },
       "targets": [
         {
           "refId": "A",
@@ -554,13 +634,13 @@
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 10 } } }
     },
 
-    { "type": "row", "title": "Traces", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 88 }, "collapsed": false, "panels": [] },
+    { "type": "row", "title": "Traces", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 99 }, "collapsed": false, "panels": [] },
     {
       "type": "table",
       "title": "Recent traces",
       "description": "Recent ocman traces. Click a Trace ID to drill into Tempo.",
       "datasource": { "type": "tempo", "uid": "tempo" },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 89 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 100 },
       "targets": [
         {
           "refId": "A",
@@ -578,7 +658,7 @@
       "title": "Slow API calls (>500ms)",
       "description": "Recent ocman traces with span duration over 500ms.",
       "datasource": { "type": "tempo", "uid": "tempo" },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 99 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 110 },
       "targets": [
         {
           "refId": "A",
@@ -596,7 +676,7 @@
       "title": "Trace errors",
       "description": "Recent ocman traces containing at least one span with status=error.",
       "datasource": { "type": "tempo", "uid": "tempo" },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 109 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 120 },
       "targets": [
         {
           "refId": "A",
@@ -614,7 +694,7 @@
       "title": "Slowest phases",
       "description": "Internal phases (srvtiming spans) ranked by duration. Use to find which phase under a slow request is the bottleneck (e.g. lsof_miss, http_messages, db_get_sessions).",
       "datasource": { "type": "tempo", "uid": "tempo" },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 119 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 130 },
       "targets": [
         {
           "refId": "A",
@@ -628,12 +708,12 @@
       "options": { "showHeader": true }
     },
 
-    { "type": "row", "title": "Logs", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 129 }, "collapsed": true, "panels": [
+    { "type": "row", "title": "Logs", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 140 }, "collapsed": true, "panels": [
       {
         "type": "logs",
         "title": "Errors and warnings",
         "datasource": { "type": "loki", "uid": "loki" },
-        "gridPos": { "h": 12, "w": 24, "x": 0, "y": 130 },
+        "gridPos": { "h": 12, "w": 24, "x": 0, "y": 141 },
         "targets": [
           {
             "refId": "A",

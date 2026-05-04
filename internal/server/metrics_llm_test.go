@@ -21,6 +21,7 @@ func TestLLMMetrics_Record(t *testing.T) {
 	}
 
 	ctx := context.Background()
+	// Pass nil pricing table — calc_cost should be 0 (no pricing data).
 	m.record(ctx, db.LLMMessageRow{
 		Model:            "anthropic/claude-3",
 		InputTokens:      100,
@@ -30,7 +31,7 @@ func TestLLMMetrics_Record(t *testing.T) {
 		Cost:             0.005,
 		StopReason:       "end_turn",
 		DurationMs:       1500,
-	})
+	}, nil)
 	m.record(ctx, db.LLMMessageRow{
 		Model:        "google/gemini",
 		InputTokens:  200,
@@ -38,7 +39,7 @@ func TestLLMMetrics_Record(t *testing.T) {
 		Cost:         0.01,
 		StopReason:   "error",
 		DurationMs:   0, // no duration — should not record histogram
-	})
+	}, nil)
 
 	var rm metricdata.ResourceMetrics
 	if err := reader.Collect(ctx, &rm); err != nil {
@@ -52,7 +53,9 @@ func TestLLMMetrics_Record(t *testing.T) {
 		}
 	}
 
-	// Verify all instruments are present.
+	// Verify all instruments are present (calc_cost is absent because
+	// nil pricing means no cost was computed, so the counter was never
+	// incremented and OTel omits it).
 	expected := []string{
 		"ocman.llm.requests",
 		"ocman.llm.tokens.input",

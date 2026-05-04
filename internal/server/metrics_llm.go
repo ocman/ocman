@@ -9,6 +9,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/pricing"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
 )
 
@@ -22,6 +23,7 @@ type llmMetrics struct {
 	cacheRead      metric.Int64Counter
 	cacheWrite     metric.Int64Counter
 	cost           metric.Float64Counter
+	calcCost       metric.Float64Counter
 	duration       metric.Float64Histogram
 }
 
@@ -62,7 +64,13 @@ func newLLMMetrics(meter metric.Meter) (*llmMetrics, error) {
 		return nil, err
 	}
 	if m.cost, err = meter.Float64Counter("ocman.llm.cost",
-		metric.WithDescription("API cost of LLM turns."),
+		metric.WithDescription("Platform-reported API cost of LLM turns."),
+		metric.WithUnit("{USD}"),
+	); err != nil {
+		return nil, err
+	}
+	if m.calcCost, err = meter.Float64Counter("ocman.llm.calc_cost",
+		metric.WithDescription("Estimated API cost calculated from token counts and public pricing."),
 		metric.WithUnit("{USD}"),
 	); err != nil {
 		return nil, err
@@ -77,7 +85,9 @@ func newLLMMetrics(meter metric.Meter) (*llmMetrics, error) {
 }
 
 // record emits OTel metrics for a single assistant message row.
-func (m *llmMetrics) record(ctx context.Context, row db.LLMMessageRow) {
+// The pricing table is used to compute the estimated cost from token
+// counts; pass nil to skip the calc_cost counter.
+func (m *llmMetrics) record(ctx context.Context, row db.LLMMessageRow, pt *pricing.Table) {
 	attrs := metric.WithAttributes(
 		attribute.String("model", row.Model),
 	)
@@ -92,6 +102,12 @@ func (m *llmMetrics) record(ctx context.Context, row db.LLMMessageRow) {
 	m.cacheRead.Add(ctx, row.CacheReadTokens, attrs)
 	m.cacheWrite.Add(ctx, row.CacheWriteTokens, attrs)
 	m.cost.Add(ctx, row.Cost, attrs)
+	if pt != nil {
+		cc := pt.CalcCost(row.Model, row.InputTokens, row.OutputTokens, row.CacheReadTokens, row.CacheWriteTokens)
+		if cc > 0 {
+			m.calcCost.Add(ctx, cc, attrs)
+		}
+	}
 	if row.DurationMs > 0 {
 		m.duration.Record(ctx, float64(row.DurationMs)/1000.0, attrs)
 	}
@@ -136,8 +152,9 @@ func (s *Server) runLLMMetricsLoop(ctx context.Context) {
 				log.WithError(err).Warn("LLM metrics: scan failed")
 				continue
 			}
+			pt := pricing.Load()
 			for _, row := range rows {
-				m.record(ctx, row)
+				m.record(ctx, row, pt)
 			}
 			hwm = newHWM
 		}
