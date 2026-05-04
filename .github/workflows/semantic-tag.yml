@@ -16,10 +16,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.RELEASE_PAT }}
       - name: Create semantic version tag
         env:
-          RELEASE_TOKEN: ${{ secrets.RELEASE_PAT }}
+          RELEASE_TOKEN: ${{ github.token }}
           FORGEJO_API_URL: ${{ github.api_url }}
           REPOSITORY: ${{ github.repository }}
           TARGET_SHA: ${{ github.sha }}
