@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   frontend:
@@ -101,5 +101,90 @@ jobs:
     name: Semantic Tag
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [frontend, backend, e2e, build]
-    uses: ./.github/workflows/semantic-tag.yml
-    secrets: inherit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT }}
+      - name: Create semantic version tag
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_PAT }}
+          FORGEJO_API_URL: ${{ github.api_url }}
+          REPOSITORY: ${{ github.repository }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          owner="${REPOSITORY%/*}"
+          repo="${REPOSITORY#*/}"
+          api_base="${FORGEJO_API_URL}/repos/${owner}/${repo}"
+
+          git fetch --force --tags origin
+
+          latest_tag="$(git tag -l 'v*' --sort=-version:refname | head -n 1)"
+          if [ -n "${latest_tag}" ]; then
+            commit_range="${latest_tag}..${TARGET_SHA}"
+            current_version="${latest_tag#v}"
+          else
+            commit_range="${TARGET_SHA}"
+            current_version="0.0.0"
+          fi
+
+          subjects="$(git log --format=%s "${commit_range}")"
+          if [ -z "${subjects}" ]; then
+            printf '%s\n' "No commits to evaluate for a new release"
+            exit 0
+          fi
+
+          bodies="$(git log --format=%b "${commit_range}")"
+
+          if printf '%s\n%s\n' "${subjects}" "${bodies}" | grep -Eq 'BREAKING CHANGE:|^[a-z]+(\([^)]+\))?!:'; then
+            bump="major"
+          elif printf '%s\n' "${subjects}" | grep -Eq '^feat(\([^)]+\))?:'; then
+            bump="minor"
+          elif printf '%s\n' "${subjects}" | grep -Eq '^(fix|perf|refactor)(\([^)]+\))?:'; then
+            bump="patch"
+          else
+            printf '%s\n' "No releasable conventional commits found"
+            exit 0
+          fi
+
+          IFS=. read -r major minor patch <<EOF
+          ${current_version}
+          EOF
+
+          case "${bump}" in
+            major)
+              major=$((major + 1))
+              minor=0
+              patch=0
+              ;;
+            minor)
+              minor=$((minor + 1))
+              patch=0
+              ;;
+            patch)
+              patch=$((patch + 1))
+              ;;
+          esac
+
+          next_tag="v${major}.${minor}.${patch}"
+          tag_lookup="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            --header "Authorization: token ${RELEASE_TOKEN}" \
+            "${api_base}/tags/${next_tag}")"
+
+          if [ "${tag_lookup}" = "200" ]; then
+            printf 'Tag already exists: %s\n' "${next_tag}"
+            exit 0
+          fi
+
+          if [ "${tag_lookup}" != "404" ]; then
+            printf 'Unexpected tag lookup response: %s\n' "${tag_lookup}"
+            exit 1
+          fi
+
+          git tag "${next_tag}" "${TARGET_SHA}"
+          git push origin "${next_tag}"
+
+          printf 'Created and pushed tag %s from %s\n' "${next_tag}" "${TARGET_SHA}"
