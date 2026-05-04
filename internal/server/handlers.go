@@ -17,6 +17,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/NoUseFreak/ocman/internal/db"
@@ -1383,12 +1384,16 @@ func (s *Server) handleSessionEvents(w http.ResponseWriter, r *http.Request) {
 	if err := adapter.ProxyEvents(ctx, sessionID, w, flush); err != nil {
 		if errors.Is(err, context.Canceled) {
 			span.AddEvent("client disconnected")
+			span.SetStatus(codes.Ok, "client disconnected")
 			return
 		}
 		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		log.WithFields(log.Fields{"sessionID": sessionID, "error": err}).
 			Warn("SSE proxy stream ended with error")
+		return
 	}
+	span.SetStatus(codes.Ok, "stream ended")
 }
 
 // --- /api/sessions (GET = list, POST = create) ---
