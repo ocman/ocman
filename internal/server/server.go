@@ -65,6 +65,16 @@ func (s *Server) Start(ctx context.Context) error {
 	go s.runAutoArchiveLoop(ctx)
 	go s.runProjectsIndexLoop(ctx)
 
+	// Register observable gauges for the top-line stats (session /
+	// message / project counts, lifetime tokens and cost). The
+	// callback runs once per OTel collection interval; it's a no-op
+	// when telemetry is disabled or the OpenCode DB is absent.
+	if reg, err := s.registerStatsMetrics(telemetry.Meter()); err != nil {
+		log.WithError(err).Warn("failed to register stats metrics")
+	} else if reg != nil {
+		defer reg.Unregister()
+	}
+
 	// Refresh Claude Code hook registration against the current
 	// listen address. Best-effort — see maybeInstallClaudeHooks for
 	// the no-op preconditions.
