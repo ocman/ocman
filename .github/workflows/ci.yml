@@ -96,3 +96,10 @@ jobs:
           name: ocman-linux-amd64
           path: ocman
           retention-days: 7
+
+  tag:
+    name: Semantic Tag
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [frontend, backend, e2e, build]
+    uses: ./.github/workflows/semantic-tag.yml
+    secrets: inherit

@@ -1,9 +1,7 @@
 name: Semantic Tag
 
 on:
-  push:
-    branches:
-      - main
+  workflow_call:
   workflow_dispatch:
 
 permissions:
