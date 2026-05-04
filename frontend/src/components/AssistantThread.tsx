@@ -13,6 +13,7 @@ import { hardenMessageLinks } from '../lib/linkHardener';
 import { parseTodos } from '../lib/todos';
 import { TodoList } from './TodoList';
 import { useFailedSends } from '../lib/failedSendsContext';
+import { isMutedTool, isMutedLineTool } from '../lib/mutedTools';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -166,8 +167,7 @@ const AssistantMessage: FC = () => {
     (p) => {
       if (p.type === 'text' && 'text' in p && !(p as { text: string }).text.trim()) return true;
       if (p.type !== 'tool-call' || !('toolName' in p)) return false;
-      const name = (p as { toolName: string }).toolName;
-      return name === '__read__' || name === 'read' || name === 'mcp_read' || name === 'grep' || name === 'mcp_grep' || name === 'glob' || name === 'mcp_glob' || name === 'webfetch' || name === 'mcp_webfetch' || name === 'mcp_Webfetch';
+      return isMutedTool((p as { toolName: string }).toolName);
     }
   );
 
@@ -215,8 +215,7 @@ function AssistantMeta() {
     (p) => {
       if (p.type === 'text' && 'text' in p && !(p as { text: string }).text.trim()) return true;
       if (p.type !== 'tool-call' || !('toolName' in p)) return false;
-      const name = (p as { toolName: string }).toolName;
-      return name === '__read__' || name === 'read' || name === 'mcp_read' || name === 'grep' || name === 'mcp_grep' || name === 'glob' || name === 'mcp_glob' || name === 'webfetch' || name === 'mcp_webfetch' || name === 'mcp_Webfetch';
+      return isMutedTool((p as { toolName: string }).toolName);
     }
   );
   if (onlyReads) return null;
@@ -706,7 +705,7 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
   // line label, no collapsible body, no input JSON. The provider
   // builds an argsText like `Skill "create-commit"` so this branch
   // just displays whatever it gets.
-  if (toolName === '__read__' || toolName === '__skill__' || toolName === 'read' || toolName === 'mcp_read' || toolName === 'grep' || toolName === 'mcp_grep' || toolName === 'glob' || toolName === 'mcp_glob' || toolName === 'webfetch' || toolName === 'mcp_webfetch' || toolName === 'mcp_Webfetch') {
+  if (isMutedLineTool(toolName)) {
     return (
       <div className="oc-read-line">
         <span className="oc-read-arrow">{'\u2192'}</span>

@@ -32,6 +32,23 @@ import { hashSession, hashMessagesAndParts } from '../lib/sessionHash';
 import { createSessionWithLaunch, type LaunchStatus } from '../lib/createSessionWithLaunch';
 import { isSessionRelevant } from '../lib/promptRouting';
 import {
+  insertMessageByTime,
+  mergeParts,
+  upsertPart,
+  inferStatusFromMessage,
+  truncatePartField,
+} from '../lib/sseMessageHelpers';
+import {
+  formatModelRef,
+  deriveRawStatus,
+  isSessionRunning,
+  computeLiveTokens,
+  mergeTokenStats,
+  deriveActiveModelAndAgent,
+} from '../lib/sessionStatus';
+import { extractTaskId, isTaskTool } from '../lib/taskId';
+import { computeSidebarHash, rollupGroupStatus } from '../lib/sidebarHelpers';
+import {
   listFailedSends,
   recordFailedSend,
   removeFailedSend,
@@ -50,17 +67,6 @@ const SIDEBAR_REFRESH_MS = 3000;
 const MAX_RETAINED_MESSAGES = 200;
 const TRIMMED_RETAINED_MESSAGES = 150;
 const MAX_SUBAGENT_TOKEN_ENTRIES = 256;
-
-// Maximum length for part text/output before truncation (matches backend maxOutputLen).
-const MAX_OUTPUT_LEN = 200000;
-
-/** Truncate large string fields in a part to keep memory usage manageable. */
-function truncatePartField(value: unknown): unknown {
-  if (typeof value === 'string' && value.length > MAX_OUTPUT_LEN) {
-    return value.slice(0, MAX_OUTPUT_LEN) + '\n... (truncated)';
-  }
-  return value;
-}
 
 function trimSubagentTokens(
   prev: Map<string, { output: number; created: number }>,
@@ -199,11 +205,6 @@ interface SseDebugEvent {
   at: number;
   event: string;
   data: string;
-}
-
-function formatModelRef(providerId?: string, modelId?: string): string {
-  if (!modelId) return '';
-  return providerId ? `${providerId}/${modelId}` : modelId;
 }
 
 // Checks whether a parsed `session.status` SSE event reports the session as
@@ -720,11 +721,7 @@ export function SessionDetail() {
           const older = prev.filter(m => !newIds.has(m.id) && !m.id.startsWith('temp-') && !m.id.startsWith('error-'));
           return [...older, ...newMsgs];
         });
-        setParts(prev => {
-          const newIds = new Set(newParts.map(p => p.id));
-          const older = prev.filter(p => !newIds.has(p.id) && !p.id.startsWith('part-temp-') && !p.id.startsWith('part-error-'));
-          return [...older, ...newParts];
-        });
+        setParts(prev => mergeParts(prev, newParts));
       }
       // Seed the session detail cache so revisits render instantly. The
       // SSE mirror effect keeps it in sync with live updates after this
@@ -1195,9 +1192,7 @@ export function SessionDetail() {
       const nextRecentSessions = current && !visible.some(s => s.id === current.id)
         ? [current, ...visible].slice(0, RECENT_SESSIONS_LIMIT)
         : visible;
-      const hash = nextRecentSessions
-        .map(s => `${s.id}|${s.status}|${s.timeUpdated}|${s.pendingPermission ? 'p' : ''}${s.pendingQuestion ? 'q' : ''}`)
-        .join(',');
+      const hash = computeSidebarHash(nextRecentSessions);
       if (hash !== lastSiblingsHashRef.current) {
         lastSiblingsHashRef.current = hash;
         setRecentSessions(nextRecentSessions);
@@ -1277,9 +1272,7 @@ export function SessionDetail() {
       });
       if (changed) {
         // Keep the hash cache in sync so the next poll still diffs correctly.
-        lastSiblingsHashRef.current = next
-          .map(s => `${s.id}|${s.status}|${s.timeUpdated}|${s.pendingPermission ? 'p' : ''}${s.pendingQuestion ? 'q' : ''}`)
-          .join(',');
+        lastSiblingsHashRef.current = computeSidebarHash(next);
         return next;
       }
       return prev;
@@ -1610,32 +1603,13 @@ export function SessionDetail() {
           const extracted = extractMessageFromEvent(parsed, sid);
           if (extracted) {
             hasReceivedContentEvent = true;
-            setMessages(prev => {
-              const filtered = prev.filter(
-                m => m.id !== extracted.message.id && !m.id.startsWith('temp-') && !m.id.startsWith('error-'),
-              );
-              const idx = filtered.findIndex(m => m.timeCreated > extracted.message.timeCreated);
-              if (idx === -1) return [...filtered, extracted.message];
-              return [...filtered.slice(0, idx), extracted.message, ...filtered.slice(idx)];
-            });
+            setMessages(prev => insertMessageByTime(prev, extracted.message));
             if (extracted.parts.length > 0) {
-              setParts(prev => {
-                const newIds = new Set(extracted.parts.map(p => p.id));
-                const filtered = prev.filter(
-                  p => !newIds.has(p.id) && !p.id.startsWith('part-temp-') && !p.id.startsWith('part-error-'),
-                );
-                return [...filtered, ...extracted.parts];
-              });
+              setParts(prev => mergeParts(prev, extracted.parts));
             }
             setSession(prev => {
               if (!prev) return prev;
-              const msg = extracted.message;
-              let status: Session['status'] = 'done';
-              if (msg.data.role === 'assistant') {
-                if (msg.data.finish === 'error' || msg.data.error) status = 'error';
-                else if (msg.data.finish) status = 'waiting';
-                else status = 'busy';
-              }
+              const status = inferStatusFromMessage(extracted.message);
               if (prev.status === status) return prev;
               return { ...prev, status };
             });
@@ -1649,32 +1623,13 @@ export function SessionDetail() {
           const extracted = extractMessageFromEvent(parsed, sid);
           if (extracted) {
             hasReceivedContentEvent = true;
-            setMessages(prev => {
-              const filtered = prev.filter(
-                m => m.id !== extracted.message.id && !m.id.startsWith('temp-') && !m.id.startsWith('error-'),
-              );
-              const idx = filtered.findIndex(m => m.timeCreated > extracted.message.timeCreated);
-              if (idx === -1) return [...filtered, extracted.message];
-              return [...filtered.slice(0, idx), extracted.message, ...filtered.slice(idx)];
-            });
+            setMessages(prev => insertMessageByTime(prev, extracted.message));
             if (extracted.parts.length > 0) {
-              setParts(prev => {
-                const newIds = new Set(extracted.parts.map(p => p.id));
-                const filtered = prev.filter(
-                  p => !newIds.has(p.id) && !p.id.startsWith('part-temp-') && !p.id.startsWith('part-error-'),
-                );
-                return [...filtered, ...extracted.parts];
-              });
+              setParts(prev => mergeParts(prev, extracted.parts));
             }
             setSession(prev => {
               if (!prev) return prev;
-              const msg = extracted.message;
-              let status: Session['status'] = 'done';
-              if (msg.data.role === 'assistant') {
-                if (msg.data.finish === 'error' || msg.data.error) status = 'error';
-                else if (msg.data.finish) status = 'waiting';
-                else status = 'busy';
-              }
+              const status = inferStatusFromMessage(extracted.message);
               if (prev.status === status) return prev;
               return { ...prev, status };
             });
@@ -1702,14 +1657,22 @@ export function SessionDetail() {
               });
               setSession(prev => {
                 if (!prev) return prev;
-                let status: Session['status'] = prev.status;
                 const role = info.role as string | undefined;
-                if (role === 'assistant') {
-                  const finish = info.finish as string | undefined;
-                  if (finish === 'error' || info.error) status = 'error';
-                  else if (finish) status = 'waiting';
-                  else status = 'busy';
-                }
+                // Only assistant updates can drive a status change; other
+                // roles keep the previous status. When this is an
+                // assistant update, share the inference logic with the
+                // full-message handlers above.
+                if (role !== 'assistant') return prev;
+                const status = inferStatusFromMessage({
+                  id: msgId,
+                  sessionId: sid,
+                  timeCreated: 0,
+                  data: {
+                    role: 'assistant',
+                    finish: info.finish as string | undefined,
+                    error: info.error as Message['data']['error'],
+                  },
+                });
                 if (prev.status === status) return prev;
                 return { ...prev, status };
               });
@@ -1738,15 +1701,7 @@ export function SessionDetail() {
                 sessionId: (rawPart.sessionID as string) || sid,
                 data: rawPart as unknown as string,
               };
-              setParts(prev => {
-                const idx = prev.findIndex(p => p.id === part.id);
-                if (idx >= 0) {
-                  const updated = [...prev];
-                  updated[idx] = part;
-                  return updated;
-                }
-                return [...prev, part];
-              });
+              setParts(prev => upsertPart(prev, part));
               // Mark the changes sidebar dirty when an edit/write tool
               // part lands. The hook coalesces successive ticks via
               // its debounce so a busy session firing many edits in
@@ -1840,15 +1795,7 @@ export function SessionDetail() {
             if (part) {
               hasReceivedContentEvent = true;
               handled = true;
-              setParts(prev => {
-                const idx = prev.findIndex(p => p.id === part.id);
-                if (idx >= 0) {
-                  const updated = [...prev];
-                  updated[idx] = part;
-                  return updated;
-                }
-                return [...prev, part];
-              });
+              setParts(prev => upsertPart(prev, part));
             }
           }
 
@@ -1867,15 +1814,7 @@ export function SessionDetail() {
                   sessionId: (rawPart.sessionID as string) || sid,
                   data: rawPart as unknown as string,
                 };
-                setParts(prev => {
-                  const idx = prev.findIndex(p => p.id === part.id);
-                  if (idx >= 0) {
-                    const updated = [...prev];
-                    updated[idx] = part;
-                    return updated;
-                  }
-                  return [...prev, part];
-                });
+                setParts(prev => upsertPart(prev, part));
               }
             }
           }
@@ -1885,22 +1824,9 @@ export function SessionDetail() {
             const extracted = extractMessageFromEvent(parsed, sid);
             if (extracted) {
               hasReceivedContentEvent = true;
-              setMessages(prev => {
-                const filtered = prev.filter(
-                  m => m.id !== extracted.message.id && !m.id.startsWith('temp-') && !m.id.startsWith('error-'),
-                );
-                const idx = filtered.findIndex(m => m.timeCreated > extracted.message.timeCreated);
-                if (idx === -1) return [...filtered, extracted.message];
-                return [...filtered.slice(0, idx), extracted.message, ...filtered.slice(idx)];
-              });
+              setMessages(prev => insertMessageByTime(prev, extracted.message));
               if (extracted.parts.length > 0) {
-                setParts(prev => {
-                  const newIds = new Set(extracted.parts.map(p => p.id));
-                  const filtered = prev.filter(
-                    p => !newIds.has(p.id) && !p.id.startsWith('part-temp-') && !p.id.startsWith('part-error-'),
-                  );
-                  return [...filtered, ...extracted.parts];
-                });
+                setParts(prev => mergeParts(prev, extracted.parts));
               }
             }
           }
@@ -1986,37 +1912,11 @@ export function SessionDetail() {
 
   // Compute aggregate token/cost stats from the messages array so the header
   // stays up-to-date from SSE events without needing a server round-trip.
-  const liveTokens = (() => {
-    let tokensIn = 0, tokensOut = 0, tokensReasoning = 0, cacheRead = 0, cacheWrite = 0, totalCost = 0;
-    for (const m of messages) {
-      if (m.data?.role === 'assistant' && m.data.tokens) {
-        tokensIn += m.data.tokens.input || 0;
-        tokensOut += m.data.tokens.output || 0;
-        tokensReasoning += m.data.tokens.reasoning || 0;
-        cacheRead += m.data.tokens.cache?.read || 0;
-        cacheWrite += m.data.tokens.cache?.write || 0;
-      }
-      if (m.data?.role === 'assistant' && m.data.cost) {
-        totalCost += m.data.cost;
-      }
-    }
-    return { tokensIn, tokensOut, tokensReasoning, cacheRead, cacheWrite, totalCost };
-  })();
-
   // Use the larger of server-provided totals and locally-computed totals.
   // The server value covers all messages including paginated-out ones;
   // the local value picks up incremental SSE updates before the next load().
-  const displayTokensIn = Math.max(session?.totalInputTokens || 0, liveTokens.tokensIn);
-  const displayTokensOut = Math.max(session?.totalOutputTokens || 0, liveTokens.tokensOut);
-  const tokenStats = {
-    input: displayTokensIn,
-    output: displayTokensOut,
-    reasoning: liveTokens.tokensReasoning,
-    cacheRead: liveTokens.cacheRead,
-    cacheWrite: liveTokens.cacheWrite,
-    totalCost: liveTokens.totalCost,
-    contextWindow: session?.contextTokenCount,
-  };
+  const liveTokens = computeLiveTokens(messages);
+  const tokenStats = mergeTokenStats(session, liveTokens);
 
   // Header info: the breadcrumb shows the session title + a platform
   // badge; the right-hand slot holds the project path. The richer
@@ -2039,11 +1939,7 @@ export function SessionDetail() {
     return () => setInfo({});
   }, [session, setInfo]);
 
-  const activeModel = ([...messages]
-    .reverse()
-    .map((m) => formatModelRef(m.data?.providerID, m.data?.modelID))
-    .find(Boolean) || session?.defaultModel || '');
-  const activeAgent = [...messages].reverse().find(m => !!m.data?.agent)?.data.agent || session?.defaultAgent || '';
+  const { activeModel, activeAgent } = deriveActiveModelAndAgent(messages, session);
 
   // Internal send that accepts an explicit tempId. Used by both the public
   // handleSend (fresh prompt) and handleRetrySend (replay of a previously
@@ -2660,27 +2556,9 @@ export function SessionDetail() {
       const d = typeof p.data === 'string' ? (() => { try { return JSON.parse(p.data); } catch { return null; } })() : p.data;
       if (!d || typeof d !== 'object') continue;
       const toolName = (d as Record<string, unknown>).tool as string | undefined;
-      if (toolName !== 'task' && toolName !== 'mcp_task' && toolName !== 'Task' && toolName !== 'mcp_Task') continue;
+      if (!isTaskTool(toolName)) continue;
       const st = (d as Record<string, unknown>).state as Record<string, unknown> | undefined;
-      const inp = st?.input as Record<string, unknown> | undefined;
-      // Extract task_id from various locations (same logic as OcmanRuntimeProvider)
-      let taskId = '';
-      if (inp && typeof inp.task_id === 'string') taskId = inp.task_id;
-      if (!taskId && st) {
-        const outputStr = typeof st.output === 'string' ? st.output : JSON.stringify(st.output || '');
-        const idMatch = outputStr.match(/task_id:\s*(ses_[^\s)]+)/);
-        if (idMatch) taskId = idMatch[1];
-        if (!taskId && st.output && typeof st.output === 'object') {
-          const out = st.output as Record<string, unknown>;
-          if (typeof out.task_id === 'string') taskId = out.task_id;
-        }
-        if (!taskId && st.metadata) {
-          const meta = st.metadata as Record<string, unknown>;
-          if (typeof meta.sessionId === 'string') taskId = meta.sessionId;
-          else if (typeof meta.taskId === 'string') taskId = meta.taskId;
-          else if (typeof meta.task_id === 'string') taskId = meta.task_id;
-        }
-      }
+      const taskId = extractTaskId(st);
       if (taskId) ids.add(taskId);
     }
     return ids;
@@ -2695,17 +2573,11 @@ export function SessionDetail() {
       const d = typeof p.data === 'string' ? (() => { try { return JSON.parse(p.data); } catch { return null; } })() : p.data;
       if (!d || typeof d !== 'object') continue;
       const toolName = (d as Record<string, unknown>).tool as string | undefined;
-      if (toolName !== 'task' && toolName !== 'mcp_task' && toolName !== 'Task' && toolName !== 'mcp_Task') continue;
+      if (!isTaskTool(toolName)) continue;
       const st = (d as Record<string, unknown>).state as Record<string, unknown> | undefined;
-      const inp = st?.input as Record<string, unknown> | undefined;
       const status = (st?.status as string) || 'running';
       if (status !== 'running') continue; // only track running tasks
-      let taskId = '';
-      if (inp && typeof inp.task_id === 'string') taskId = inp.task_id;
-      if (!taskId && st?.output && typeof st.output === 'object') {
-        const out = st.output as Record<string, unknown>;
-        if (typeof out.task_id === 'string') taskId = out.task_id;
-      }
+      const taskId = extractTaskId(st);
       if (taskId) running.push({ taskId, status });
     }
     return running;
@@ -2732,14 +2604,11 @@ export function SessionDetail() {
     return () => { controller.abort(); clearInterval(interval); };
   }, [runningTaskIds.length]); // only depends on count, not contents
 
-  // The assistant is still working if:
-  // - the last message is from the user (assistant hasn't replied yet), or
-  // - the last message is from the assistant with no finish reason and no error (still streaming).
-  // Once finish is set to any value ("stop", "tool-calls", etc.), that turn is done.
-  // A message with an error object is also not running.
-  const isRunning = lastMsg
-    ? lastMsg.data?.role === 'user' || (lastMsg.data?.role === 'assistant' && !lastMsg.data?.finish && !lastMsg.data?.error)
-    : false;
+  // The assistant is still working if the last message is from the
+  // user (assistant hasn't replied yet) or from the assistant with no
+  // finish reason and no error (still streaming). See
+  // `isSessionRunning` for the canonical predicate.
+  const isRunning = isSessionRunning(lastMsg);
 
   // Mirror the current session's status from SSE-driven message state into the
   // sidebar list entry so its status dot starts/stops pulsing immediately when
@@ -2749,14 +2618,7 @@ export function SessionDetail() {
   // Raw status derived from the last message — may flicker between
   // "busy" and "waiting" during tool-call turn boundaries when the
   // agent finishes one turn and immediately starts another.
-  const rawOptimisticStatus: Session['status'] = (() => {
-    if (!lastMsg) return 'done';
-    const data = lastMsg.data;
-    if (data?.role !== 'assistant') return 'done';
-    if (data?.finish === 'error' || data?.error) return 'error';
-    if (data?.finish) return 'waiting';
-    return 'busy';
-  })();
+  const rawOptimisticStatus = deriveRawStatus(lastMsg);
 
   // Debounced status: when transitioning from "busy" to "waiting",
   // hold "busy" for a grace period (3 s) before committing. If the
@@ -2807,9 +2669,7 @@ export function SessionDetail() {
       });
       if (changed) {
         // Keep the hash cache in sync so the next poll still diffs correctly.
-        lastSiblingsHashRef.current = next
-          .map(s => `${s.id}|${s.status}|${s.timeUpdated}|${s.pendingPermission ? 'p' : ''}${s.pendingQuestion ? 'q' : ''}`)
-          .join(',');
+        lastSiblingsHashRef.current = computeSidebarHash(next);
         return next;
       }
       return prev;
@@ -2929,44 +2789,14 @@ export function SessionDetail() {
       else buckets.set(key, [s]);
     }
 
-    type Aggregate =
-      | { kind: 'none' }
-      | { kind: 'waiting'; count: number }
-      | { kind: 'busy'; count: number }
-      | { kind: 'error'; count: number }
-      | { kind: 'pending'; count: number };
+    // Override the page session's recorded status with our optimistic
+    // value so the sidebar dot starts/stops pulsing in lock-step with
+    // the assistant's turn boundary, without waiting for the next poll.
+    const effectiveStatus = (s: Session): Session['status'] =>
+      s.id === id ? optimisticStatus : s.status;
+    const rollup = (sessions: Session[]) => rollupGroupStatus(sessions, effectiveStatus);
 
-    const rollup = (sessions: Session[]): Aggregate => {
-      let pending = 0;
-      let error = 0;
-      let busy = 0;
-      let waiting = 0;
-      for (const s of sessions) {
-        const effectiveStatus = s.id === id ? optimisticStatus : s.status;
-        if (s.pendingPermission || s.pendingQuestion) {
-          pending += 1;
-          continue;
-        }
-        if (effectiveStatus === 'error' && !s.seen) {
-          error += 1;
-          continue;
-        }
-        if (effectiveStatus === 'busy') {
-          busy += 1;
-          continue;
-        }
-        if (effectiveStatus === 'waiting' && !s.seen) {
-          waiting += 1;
-        }
-      }
-      if (pending > 0) return { kind: 'pending', count: pending };
-      if (error > 0) return { kind: 'error', count: error };
-      if (busy > 0) return { kind: 'busy', count: busy };
-      if (waiting > 0) return { kind: 'waiting', count: waiting };
-      return { kind: 'none' };
-    };
-
-    const groups: { directory: string; sessions: Session[]; lastUpdated: number; aggregate: Aggregate; isPinned?: boolean }[] = Array.from(buckets.entries()).map(([directory, sessions]) => {
+    const groups: { directory: string; sessions: Session[]; lastUpdated: number; aggregate: ReturnType<typeof rollup>; isPinned?: boolean }[] = Array.from(buckets.entries()).map(([directory, sessions]) => {
       const sorted = [...sessions].sort((a, b) => b.timeUpdated - a.timeUpdated);
       return {
         directory,
