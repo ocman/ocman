@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*"
+  create:
 
 permissions:
   contents: write
@@ -11,6 +12,7 @@ permissions:
 jobs:
   build-frontend:
     name: Build Frontend
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
