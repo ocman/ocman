@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import * as Toast from '@radix-ui/react-toast';
 import './SessionDetail.css';
@@ -108,6 +108,97 @@ function RecentViewIcon() {
     </svg>
   );
 }
+
+/**
+ * Memoized Toast subtree. Radix Toast's `composeRefs` inside
+ * `Toast.Viewport` triggers a `setState` during the React commit
+ * phase, which can cascade into "Maximum update depth exceeded" when
+ * the parent re-renders rapidly (SSE deltas, polling). Wrapping the
+ * Toast tree in `memo` ensures it only re-renders when its own props
+ * change, not on every SessionDetail state update.
+ */
+const SessionToasts = memo(function SessionToasts({
+  showRenameToast,
+  setShowRenameToast,
+  createLaunchStatus,
+  showCreateSessionErrorToast,
+  setShowCreateSessionErrorToast,
+  showDisconnectedToast,
+  setShowDisconnectedToast,
+  tmuxAvailable,
+  liveConnectionHint,
+  hasDirectory,
+  launchingOpencode,
+  onLaunch,
+}: {
+  showRenameToast: boolean;
+  setShowRenameToast: (v: boolean) => void;
+  createLaunchStatus: string;
+  showCreateSessionErrorToast: boolean;
+  setShowCreateSessionErrorToast: (v: boolean) => void;
+  showDisconnectedToast: boolean;
+  setShowDisconnectedToast: (v: boolean) => void;
+  tmuxAvailable: boolean;
+  liveConnectionHint: boolean;
+  hasDirectory: boolean;
+  launchingOpencode: boolean;
+  onLaunch: () => void;
+}) {
+  return (
+    <>
+      <Toast.Root className="oc-toast-root" open={showRenameToast} onOpenChange={setShowRenameToast} duration={2000}>
+        <Toast.Description className="oc-toast-description">
+          Session renamed
+        </Toast.Description>
+      </Toast.Root>
+      <Toast.Root
+        className="oc-toast-root"
+        open={createLaunchStatus !== 'idle'}
+        duration={Infinity}
+      >
+        <Toast.Description className="oc-toast-description">
+          {createLaunchStatus === 'launching'
+            ? 'Launching opencode in tmux…'
+            : 'Waiting for opencode to start…'}
+        </Toast.Description>
+      </Toast.Root>
+      <Toast.Root
+        className="oc-toast-root error"
+        open={showCreateSessionErrorToast}
+        onOpenChange={setShowCreateSessionErrorToast}
+        duration={3500}
+      >
+        <Toast.Description className="oc-toast-description">
+          Failed to create session
+        </Toast.Description>
+      </Toast.Root>
+      <Toast.Root
+        className="oc-toast-root error"
+        open={showDisconnectedToast}
+        onOpenChange={setShowDisconnectedToast}
+        duration={8000}
+      >
+        <Toast.Description className="oc-toast-description">
+          <div className="oc-toast-body">
+            <span>OpenCode is not running for this session.</span>
+            {tmuxAvailable && liveConnectionHint && hasDirectory && (
+              <button
+                type="button"
+                className="oc-toast-action"
+                disabled={launchingOpencode}
+                onClick={() => {
+                  setShowDisconnectedToast(false);
+                  onLaunch();
+                }}
+              >{launchingOpencode ? 'Launching…' : 'Launch opencode'}</button>
+            )}
+          </div>
+        </Toast.Description>
+      </Toast.Root>
+      <Toast.Viewport className="oc-toast-viewport" />
+    </>
+  );
+});
 
 export function SessionDetail() {
   const { id } = useParams<{ id: string }>();
@@ -1863,56 +1954,20 @@ export function SessionDetail() {
           session={session ?? undefined}
         />
       )}
-      <Toast.Root className="oc-toast-root" open={showRenameToast} onOpenChange={setShowRenameToast} duration={2000}>
-        <Toast.Description className="oc-toast-description">
-          Session renamed
-        </Toast.Description>
-      </Toast.Root>
-      <Toast.Root
-        className="oc-toast-root"
-        open={createLaunchStatus !== 'idle'}
-        duration={Infinity}
-      >
-        <Toast.Description className="oc-toast-description">
-          {createLaunchStatus === 'launching'
-            ? 'Launching opencode in tmux…'
-            : 'Waiting for opencode to start…'}
-        </Toast.Description>
-      </Toast.Root>
-      <Toast.Root
-        className="oc-toast-root error"
-        open={showCreateSessionErrorToast}
-        onOpenChange={setShowCreateSessionErrorToast}
-        duration={3500}
-      >
-        <Toast.Description className="oc-toast-description">
-          Failed to create session
-        </Toast.Description>
-      </Toast.Root>
-      <Toast.Root
-        className="oc-toast-root error"
-        open={showDisconnectedToast}
-        onOpenChange={setShowDisconnectedToast}
-        duration={8000}
-      >
-        <Toast.Description className="oc-toast-description">
-          <div className="oc-toast-body">
-            <span>OpenCode is not running for this session.</span>
-            {tmux.available && caps.liveConnectionHint && session?.directory && (
-              <button
-                type="button"
-                className="oc-toast-action"
-                disabled={launchingOpencode}
-                onClick={() => {
-                  setShowDisconnectedToast(false);
-                  void handleLaunchOpencode();
-                }}
-              >{launchingOpencode ? 'Launching…' : 'Launch opencode'}</button>
-            )}
-          </div>
-        </Toast.Description>
-      </Toast.Root>
-      <Toast.Viewport className="oc-toast-viewport" />
+      <SessionToasts
+        showRenameToast={showRenameToast}
+        setShowRenameToast={setShowRenameToast}
+        createLaunchStatus={createLaunchStatus}
+        showCreateSessionErrorToast={showCreateSessionErrorToast}
+        setShowCreateSessionErrorToast={setShowCreateSessionErrorToast}
+        showDisconnectedToast={showDisconnectedToast}
+        setShowDisconnectedToast={setShowDisconnectedToast}
+        tmuxAvailable={tmux.available}
+        liveConnectionHint={caps.liveConnectionHint}
+        hasDirectory={!!session?.directory}
+        launchingOpencode={launchingOpencode}
+        onLaunch={handleLaunchOpencode}
+      />
     </div>
     </Toast.Provider>
   );
