@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useContext, createContext, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, useContext, useMemo, createContext, type ReactNode } from 'react';
 import './Dashboard.css';
 import { useNavigate, NavLink, Outlet, useSearchParams, useLocation } from 'react-router-dom';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend, PointElement, LineElement } from 'chart.js';
@@ -143,7 +143,7 @@ export function DashboardLayout() {
   const sessions = sessionsQ.data ?? [];
   const projects = projectsQ.data ?? [];
 
-  const ctx: DashboardCtx = {
+  const ctx: DashboardCtx = useMemo(() => ({
     sessions,
     projects,
     sessionsLoading: sessionsQ.isLoading,
@@ -156,7 +156,18 @@ export function DashboardLayout() {
     setShowArchived,
     dirScope,
     setDirScope,
-  };
+  }), [
+    sessions,
+    projects,
+    sessionsQ,
+    projectsQ.isLoading,
+    timeRange,
+    setTimeRange,
+    showArchived,
+    setShowArchived,
+    dirScope,
+    setDirScope,
+  ]);
 
   return (
     <DashboardContext.Provider value={ctx}>

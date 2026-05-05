@@ -90,6 +90,9 @@ const ImageDisplay: FC<{ image: string; filename?: string }> = ({ image, filenam
   );
 };
 
+const UserTextPart: FC<{ text: string }> = ({ text }) =>
+  text.trim() ? <span style={{ whiteSpace: 'pre-wrap' }}>{text}</span> : null;
+
 const UserMessage: FC = () => {
   const content = useMessage((m) => m.content);
   const id = useMessage((m) => m.id);
@@ -126,7 +129,7 @@ const UserMessage: FC = () => {
       <div className="oc-msg-body">
         <MessagePrimitive.Content
           components={{
-            Text: ({ text }) => text.trim() ? <span style={{ whiteSpace: 'pre-wrap' }}>{text}</span> : null,
+            Text: UserTextPart,
             Image: ImageDisplay,
           }}
         />
