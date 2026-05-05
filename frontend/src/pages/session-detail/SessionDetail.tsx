@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import * as Toast from '@radix-ui/react-toast';
 import './SessionDetail.css';
-import { api, type Session, type Message, type Part, type AgentInfo, type SessionModelEntry, type SessionDetail } from '../../lib/api';
+import { api, type Session, type Message, type Part, type SessionDetail } from '../../lib/api';
 import { cleanTitle, shortPath, relativeTime } from '../../lib/format';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { useHeaderInfo, usePageTitle } from '../../lib/headerContext';
@@ -20,43 +20,26 @@ import { RightPanel } from '../../components/RightPanel';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { useUiStore } from '../../lib/uiStore';
 import { useTmux } from '../../lib/useTmux';
-import { filterVisibleSessions } from '../../lib/sessionVisibility';
 import { useApiStore } from '../../lib/apiStore';
 import { useGitInfo } from '../../lib/useGitInfo';
 import { usePlatformCapabilities } from '../../lib/useCapabilities';
 import { recheckFaviconNotify } from '../../lib/useFaviconNotify';
-import { notifyPromptDismissed } from '../../lib/useToastNotify';
 import { openVSCode } from '../../lib/shortcuts';
-import { useShortcut } from '../../lib/shortcutRegistry';
 import { hashSession, hashMessagesAndParts } from '../../lib/sessionHash';
 import { createSessionWithLaunch, type LaunchStatus } from '../../lib/createSessionWithLaunch';
 import { isSessionRelevant } from '../../lib/promptRouting';
 import {
-  insertMessageByTime,
-  mergeParts,
-  upsertPart,
-  inferStatusFromMessage,
-  truncatePartField,
-} from '../../lib/sseMessageHelpers';
-import {
-  formatModelRef,
-  deriveRawStatus,
   isSessionRunning,
   computeLiveTokens,
   mergeTokenStats,
   deriveActiveModelAndAgent,
 } from '../../lib/sessionStatus';
-import { extractTaskId, isTaskTool } from '../../lib/taskId';
 import { computeSidebarHash, rollupGroupStatus } from '../../lib/sidebarHelpers';
 import {
-  extractMessageFromEvent,
-  extractPartFromEvent,
-  isSessionStatusIdle,
   extractPendingPermission,
   extractPendingQuestion,
   extractPendingQuestionFromParts,
   hasPendingQuestionInParts,
-  truncateSseData,
   type PendingPermission,
 } from '../../lib/sseHelpers';
 import {
@@ -65,59 +48,24 @@ import {
   removeFailedSend,
   type FailedSend,
 } from '../../lib/failedSends';
+import { useSubagentTracking } from './useSubagentTracking';
+import { useTmuxActions } from './useTmuxActions';
+import { useSessionStatus } from './useSessionStatus';
+import { useSidebarSessions } from './useSidebarSessions';
+import { useSessionMessages } from './useSessionMessages';
+import { useSessionCapabilities } from './useSessionCapabilities';
+import {
+  usePromptHandlers,
+  storePendingQuestion,
+  loadPendingQuestion,
+} from './usePromptHandlers';
+import { useSessionShortcuts } from './useSessionShortcuts';
+import { useSessionSSE } from './useSessionSSE';
 
-const PAGE_SIZE = 30;
-const RECENT_SESSIONS_LIMIT = 15;
-const SIDEBAR_RECENT_HOURS = 72;
-const ARCHIVE_ANIMATION_MS = 220;
-// How often the Recent Sessions sidebar re-polls /api/sessions. Kept low enough
-// to feel live, but not so low that we hammer the OpenCode port-discovery +
-// per-instance HTTP fan-out on every tick. Polling is paused while the tab is
-// hidden.
-const SIDEBAR_REFRESH_MS = 3000;
 const MAX_RETAINED_MESSAGES = 200;
 const TRIMMED_RETAINED_MESSAGES = 150;
-const MAX_SUBAGENT_TOKEN_ENTRIES = 256;
 
-function trimSubagentTokens(
-  prev: Map<string, { output: number; created: number }>,
-): Map<string, { output: number; created: number }> {
-  if (prev.size <= MAX_SUBAGENT_TOKEN_ENTRIES) return prev;
-  const entries = Array.from(prev.entries());
-  return new Map(entries.slice(entries.length - MAX_SUBAGENT_TOKEN_ENTRIES));
-}
 
-interface SseDebugEvent {
-  at: number;
-  event: string;
-  data: string;
-}
-
-const PENDING_QUESTION_KEY = 'ocman:pendingQuestion:';
-
-function storePendingQuestion(sessionId: string, question: PendingQuestion) {
-  try {
-    sessionStorage.setItem(PENDING_QUESTION_KEY + sessionId, JSON.stringify(question));
-  } catch { /* quota exceeded or unavailable */ }
-}
-
-function loadPendingQuestion(sessionId: string): PendingQuestion | null {
-  try {
-    const raw = sessionStorage.getItem(PENDING_QUESTION_KEY + sessionId);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (parsed && parsed.requestId && Array.isArray(parsed.questions) && parsed.questions.length > 0) {
-      return parsed as PendingQuestion;
-    }
-  } catch { /* corrupt or unavailable */ }
-  return null;
-}
-
-function clearPendingQuestion(sessionId: string) {
-  try {
-    sessionStorage.removeItem(PENDING_QUESTION_KEY + sessionId);
-  } catch { /* unavailable */ }
-}
 
 function ArchiveIcon() {
   return (
@@ -179,22 +127,43 @@ export function SessionDetail() {
         }
       : null,
   );
-  const [messages, setMessages] = useState<Message[]>(initialCached?.messages ?? []);
-  const [parts, setParts] = useState<Part[]>(initialCached?.parts ?? []);
-  const [totalMessages, setTotalMessages] = useState(
-    initialCached?.totalMessages ?? initialCached?.session.messageCount ?? 0,
-  );
-  const [loading, setLoading] = useState(!initialCached);
-  // Briefly hides the thread viewport between sessions so the fade-in
-  // animation plays against a blank backdrop rather than swapping content
-  // in place. Set to true synchronously on id change, cleared on the next
-  // animation frame. See spec/session-switch-cache (step 4 follow-up).
-  const [switching, setSwitching] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  // Increments whenever an edit/write tool part is added or updated via
-  // SSE. Consumed by the session-changes sidebar's useSessionChanges hook
-  // to debounced-refetch /api/session/{id}/changes after live edits.
-  const [changesDirtyTick, setChangesDirtyTick] = useState(0);
+  // The remaining message-state declarations (messages, parts,
+  // totalMessages, loading, loadingMore, loadError, switching,
+  // changesDirtyTick) plus load() / loadMore() live in
+  // useSessionMessages. Refs the hook needs (lastSessionHashRef,
+  // abortSignalRef, droppedMessageCountRef) are declared further
+  // down and threaded in via the options object — they're created
+  // here so the SSE / cache mirror effects can reset them.
+  const lastSessionHashRef = useRef('');
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const droppedMessageCountRef = useRef(0);
+  const {
+    messages,
+    setMessages,
+    parts,
+    setParts,
+    totalMessages,
+    setTotalMessages,
+    loading,
+    setLoading,
+    loadingMore,
+    loadError,
+    setLoadError,
+    switching,
+    setSwitching,
+    changesDirtyTick,
+    setChangesDirtyTick,
+    lastHashRef,
+    load,
+    loadMore,
+  } = useSessionMessages({
+    id,
+    initialCached,
+    setSession,
+    lastSessionHashRef,
+    abortSignalRef: abortControllerRef,
+    droppedMessageCountRef,
+  });
 
   // Capability flags for the owning platform. Used to *hide* affordances
   // the platform doesn't support (composer, abort, compact, ...). Falls
@@ -206,22 +175,78 @@ export function SessionDetail() {
   // platform process (e.g. OpenCode on a discovered --port). Capability
   // flags describe what the platform supports in principle; an action
   // should generally be enabled iff both are true.
-  const [portAvailable, setPortAvailable] = useState(false);
   const [whisperAvailable, setWhisperAvailable] = useState(false);
-  const [modelOptions, setModelOptions] = useState<string[]>([]);
-  const [modelEntries, setModelEntries] = useState<SessionModelEntry[]>([]);
-  const [selectedModel, setSelectedModel] = useState('');
-  const [selectedAgent, setSelectedAgent] = useState('');
-  const [selectedReasoning, setSelectedReasoning] = useState('');
-  const [agents, setAgents] = useState<AgentInfo[]>([]);
-  // Tracks whether we've finished attempting to load the /agent catalog for
-  // the current session's directory. UI that colors by agent should stay
-  // muted until this flips true — otherwise we flash a fallback color (e.g.
-  // `build`'s mauve default) before the authoritative color arrives from the
-  // API, which reads as a jarring pink flash on the composer.
-  const [agentsLoaded, setAgentsLoaded] = useState(false);
-  const [recentSessions, setRecentSessions] = useState<Session[]>([]);
-  const [loadingRecentSessions, setLoadingRecentSessions] = useState(true);
+
+  // Per-session capability state — port availability, agent
+  // catalog, model picker, selected model/agent/reasoning, plus
+  // refreshModels and handleToggleFavorite. Encapsulated in
+  // useSessionCapabilities; the page exposes setters because the
+  // session-change effect resets them on navigation.
+  const {
+    portAvailable,
+    setPortAvailable,
+    portAvailableRef,
+    agentsLoaded,
+    agents,
+    modelOptions,
+    modelEntries,
+    selectedModel,
+    setSelectedModel,
+    selectedAgent,
+    setSelectedAgent,
+    selectedReasoning,
+    setSelectedReasoning,
+    refreshModels,
+    handleToggleFavorite,
+  } = useSessionCapabilities({
+    id,
+    platform: session?.platform,
+    liveConnection: session?.liveConnection ?? false,
+    directory: session?.directory,
+  });
+
+  // Subagent tracking — token snapshots per subagent message (for
+  // the TPS indicator), live stdout per running task (rendered
+  // inline in the assistant thread), and the set of known subagent
+  // session ids (used by the SSE handler to route subagent prompts
+  // back to this page). Encapsulated in useSubagentTracking; the
+  // setSubagentTokens setter is exposed because the SSE effect
+  // observes subagent token events and writes into the same map.
+  const {
+    subagentSessionIdsRef,
+    subagentTokens,
+    setSubagentTokens,
+    taskLiveOutput,
+  } = useSubagentTracking(parts, id);
+  const { setInfo } = useHeaderInfo();
+  usePageTitle(cleanTitle(session?.title) || 'Session');
+
+  // Sidebar polling, archive/pin handlers, archived-toggle, and the
+  // collapsed-projects fold-out. The hook owns recentSessions; the
+  // page-level cross-cutting effects (status mirror, permission
+  // mirror, seen mirror, SSE-derived sidebar updates) write through
+  // the exposed setRecentSessions and lastSiblingsHashRef.
+  const collapsedProjects = useUiStore((state) => state.collapsedProjects);
+  const {
+    recentSessions,
+    setRecentSessions,
+    recentSessionsRef,
+    loadingRecentSessions,
+    archivingSessionIds,
+    showArchivedRecent,
+    setShowArchivedRecent,
+    showArchivedRecentRef,
+    lastSiblingsHashRef,
+    handleArchiveSession,
+    handlePinSession,
+    collapsedProjectSet,
+  } = useSidebarSessions({
+    id,
+    sessionId: session?.id,
+    collapsedProjects,
+    abortSignalRef: abortControllerRef,
+    navigate,
+  });
 
   // Git info for sibling rows. Was populated by the backend's
   // /api/sessions handler via a synchronous fork-fan-out of
@@ -237,49 +262,59 @@ export function SessionDetail() {
   const { infos: siblingGitInfos } = useGitInfo(
     recentSessions.map((s) => s.directory).filter(Boolean),
   );
-
-  const [archivingSessionIds, setArchivingSessionIds] = useState<Set<string>>(new Set());
-  const [showArchivedRecent, setShowArchivedRecent] = useState(false);
-
-  // Track token data from subagent sessions so the TPS indicator includes their output.
-  // Maps subagent messageId -> { output: output tokens for that message, created: time.created }
-  const [subagentTokens, setSubagentTokens] = useState<Map<string, { output: number; created: number }>>(new Map());
-  // Track live output from running tasks. Maps taskId (child session) -> last 10 lines of stdout.
-  // Fetched by polling the task's session while it runs.
-  const [taskLiveOutput, setTaskLiveOutput] = useState<Record<string, string>>({});
-  const { setInfo } = useHeaderInfo();
-  usePageTitle(cleanTitle(session?.title) || 'Session');
-  const lastHashRef = useRef('');
-  const lastSessionHashRef = useRef('');
-  const lastSiblingsHashRef = useRef('');
-  const archiveTimeoutsRef = useRef<Record<string, number>>({});
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const showArchivedRecentRef = useRef(showArchivedRecent);
-  const droppedMessageCountRef = useRef(0);
   // Tracks the currently-rendered session's directory so the session-change
   // effect can compare it against the incoming one without subscribing to
   // `session` (which would cause the effect to fire on every render).
   const currentDirectoryRef = useRef<string | undefined>(session?.directory);
 
-  // Tmux state
+  // Tmux state lives in two layers: useTmux() owns the upstream
+  // catalog (sessions/clients/availability) and useTmuxActions wires
+  // the per-page interactions (matching session, picker state,
+  // launch flow, shortcut). The page consumes both because the
+  // palette command dispatcher also reads tmux directly.
   const tmux = useTmux();
   const openWorktreeForm = useUiStore((s) => s.openWorktreeForm);
-  const [pendingTmuxSession, setPendingTmuxSession] = useState<string | null>(null);
-  const [pickerPos, setPickerPos] = useState<{ top: number; left: number } | null>(null);
-  const pickerRef = useRef<HTMLDivElement>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  // Mirrored so SSE's onopen closure can read the latest value without
-  // re-subscribing. Used to gate the reconciliation fetch (step 5 of
-  // spec/session-switch-cache).
+  const tmuxActions = useTmuxActions(tmux, session?.directory);
+  const {
+    matchingTmuxSession,
+    pendingTmuxSession,
+    pickerPos,
+    pickerRef,
+    handleTmuxSwitch,
+    handleClientSelect,
+    handleLaunchOpencode,
+    launchingOpencode,
+    handleTmuxShortcut,
+  } = tmuxActions;
+  // Mirrored so SSE's onopen closure can read the latest value
+  // without re-subscribing. Used to gate the reconciliation fetch
+  // (step 5 of spec/session-switch-cache).
   const loadErrorRef = useRef<string | null>(null);
   loadErrorRef.current = loadError;
-  const [answeringPermission, setAnsweringPermission] = useState(false);
+  // Pending state lives at the page level so the SSE handler can
+  // mirror it; the post-back side (in-flight flag, error, allow /
+  // reply / reject handlers) is encapsulated in usePromptHandlers.
   const [pendingPermission, setPendingPermission] = useState<PendingPermission | null>(null);
-  const [permissionError, setPermissionError] = useState<string | null>(null);
   const [pendingQuestion, setPendingQuestion] = useState<PendingQuestion | null>(null);
-  const [answeringQuestion, setAnsweringQuestion] = useState(false);
-  const [questionError, setQuestionError] = useState<string | null>(null);
-  const [sseDebugEvents, setSseDebugEvents] = useState<SseDebugEvent[]>([]);
+
+  const {
+    answeringPermission,
+    permissionError,
+    setPermissionError,
+    answeringQuestion,
+    questionError,
+    handlePermissionReply,
+    handleQuestionReply,
+    handleQuestionReject,
+  } = usePromptHandlers({
+    session,
+    portAvailable,
+    caps,
+    pendingPermission,
+    setPendingPermission,
+    pendingQuestion,
+    setPendingQuestion,
+  });
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [renameTitle, setRenameTitle] = useState('');
   const [showRenameToast, setShowRenameToast] = useState(false);
@@ -291,27 +326,18 @@ export function SessionDetail() {
   // replay the send on Retry. Persisted via lib/failedSends so the user
   // can refresh the page without losing their prompt.
   const [failedSends, setFailedSends] = useState<FailedSend[]>([]);
-  const getSession = useApiStore((state) => state.getSession);
   const archiveSession = useApiStore((state) => state.archiveSession);
-  const pinSession = useApiStore((state) => state.pinSession);
   const getWhisperStatus = useApiStore((state) => state.getWhisperStatus);
-  const getModels = useApiStore((state) => state.getModels);
-  const getSessions = useApiStore((state) => state.getSessions);
   const markSessionSeen = useApiStore((state) => state.markSessionSeen);
   const sendMessage = useApiStore((state) => state.sendMessage);
   const listPermissions = useApiStore((state) => state.listPermissions);
-  const respondPermission = useApiStore((state) => state.respondPermission);
   const listQuestions = useApiStore((state) => state.listQuestions);
-  const respondQuestion = useApiStore((state) => state.respondQuestion);
-  const rejectQuestion = useApiStore((state) => state.rejectQuestion);
   const createSession = useApiStore((state) => state.createSession);
   const launchOpencodeInTmux = useApiStore((state) => state.launchOpencodeInTmux);
-  const setCachedSession = useApiStore((state) => state.setCachedSession);
   const updateCachedSession = useApiStore((state) => state.updateCachedSession);
   const sidebarWidth = useUiStore((state) => state.sidebarWidth);
   const sidebarView = useUiStore((state) => state.sidebarView);
   const toggleSidebarView = useUiStore((state) => state.toggleSidebarView);
-  const collapsedProjects = useUiStore((state) => state.collapsedProjects);
   const toggleCollapsedProject = useUiStore((state) => state.toggleCollapsedProject);
 
   // Refs for values used by the scoped-command dispatch so the effect
@@ -376,229 +402,10 @@ export function SessionDetail() {
     currentDirectoryRef.current = session?.directory;
   }, [session?.directory]);
 
-  // Load the latest page (newest messages). Merges with older loaded messages.
-  const load = useCallback(async (signal?: AbortSignal) => {
-    if (!id) return;
-    try {
-      const result = await getSession(id, PAGE_SIZE, 0, signal);
 
-      // If this request was aborted, don't update state
-      if (signal?.aborted) return;
-
-      // Only update session metadata if it actually changed
-      const sessionData = {
-        ...result.session,
-        contextTokenCount: result.session.contextTokenCount ?? result.contextTokenCount,
-        defaultAgent: result.defaultAgent,
-        defaultModel: result.defaultModel,
-      };
-      const sessionHash = hashSession(sessionData);
-      if (sessionHash !== lastSessionHashRef.current) {
-        lastSessionHashRef.current = sessionHash;
-        setSession(sessionData);
-      }
-      const nextTotalMessages = result.totalMessages || result.session.messageCount || 0;
-      setTotalMessages(nextTotalMessages);
-
-      // Only update messages if the latest page actually changed
-      const newMsgs = result.messages || [];
-      const newParts = result.parts || [];
-      const hash = hashMessagesAndParts(newMsgs, newParts);
-      if (hash !== lastHashRef.current) {
-        lastHashRef.current = hash;
-        // Merge: keep older loaded messages, replace the newest page.
-        // Also remove optimistic (temp-*) and error (error-*) messages once real data arrives.
-        setMessages(prev => {
-          const newIds = new Set(newMsgs.map(m => m.id));
-          const older = prev.filter(m => !newIds.has(m.id) && !m.id.startsWith('temp-') && !m.id.startsWith('error-'));
-          return [...older, ...newMsgs];
-        });
-        setParts(prev => mergeParts(prev, newParts));
-      }
-      // Seed the session detail cache so revisits render instantly. The
-      // SSE mirror effect keeps it in sync with live updates after this
-      // point. See spec/session-switch-cache.
-      setCachedSession(id, {
-        session: sessionData,
-        messages: newMsgs,
-        parts: newParts,
-        totalMessages: nextTotalMessages,
-        contextTokenCount: result.contextTokenCount,
-        defaultAgent: result.defaultAgent,
-        defaultModel: result.defaultModel,
-      });
-      setLoadError(null);
-    } catch (e) {
-      // Silently ignore aborted requests
-      if (e instanceof DOMException && e.name === 'AbortError') return;
-      console.error('Failed to load session', e);
-      setLoadError(e instanceof Error ? e.message : 'Failed to load session');
-    }
-    setLoading(false);
-  }, [getSession, id, setCachedSession]);
-
-  // Load older messages (prepend)
-  const loadMore = useCallback(async () => {
-    if (!id || loadingMore) return;
-    const signal = abortControllerRef.current?.signal;
-    setLoadingMore(true);
-    try {
-      const result = await getSession(id, PAGE_SIZE, messages.length + droppedMessageCountRef.current, signal);
-      if (signal?.aborted) return;
-      const newMsgs = result.messages || [];
-      const newParts = result.parts || [];
-      if (newMsgs.length) {
-        setMessages(prev => {
-          const existingIds = new Set(prev.map(m => m.id));
-          const unique = newMsgs.filter(m => !existingIds.has(m.id));
-          return [...unique, ...prev];
-        });
-        setParts(prev => {
-          const existingIds = new Set(prev.map(p => p.id));
-          const unique = newParts.filter(p => !existingIds.has(p.id));
-          return [...unique, ...prev];
-        });
-      }
-    } catch (e) {
-      if (e instanceof DOMException && e.name === 'AbortError') return;
-      throw e;
-    } finally {
-      setLoadingMore(false);
-    }
-  }, [getSession, id, messages.length, loadingMore]);
-
-  // Close picker on outside click
-  useEffect(() => {
-    if (!pendingTmuxSession) return;
-    const handle = (e: MouseEvent) => {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        setPendingTmuxSession(null);
-      }
-    };
-    document.addEventListener('mousedown', handle);
-    return () => document.removeEventListener('mousedown', handle);
-  }, [pendingTmuxSession]);
-
-  const handleTmuxSwitch = useCallback((e: React.MouseEvent, tmuxSessionName: string) => {
-    // Local user: fire directly, server defaults to /dev/ttys000
-    if (tmux.isLocal) {
-      tmux.switchSession(tmuxSessionName).catch(err => console.error('tmux switch failed', err));
-      return;
-    }
-    // Remote user with single client
-    if (tmux.clients.length === 1) {
-      tmux.switchSession(tmuxSessionName, tmux.clients[0].tty).catch(err => console.error('tmux switch failed', err));
-      return;
-    }
-    // Remote user with multiple clients: show floating picker
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setPickerPos({ top: rect.bottom + 4, left: rect.right });
-    setPendingTmuxSession(tmuxSessionName);
-  }, [tmux]);
-
-  const handleClientSelect = useCallback((clientTTY: string) => {
-    if (!pendingTmuxSession) return;
-    tmux.switchSession(pendingTmuxSession, clientTTY).catch(err => console.error('tmux switch failed', err));
-    setPendingTmuxSession(null);
-  }, [pendingTmuxSession, tmux]);
-
-  const handleArchiveSession = useCallback((e: React.MouseEvent, target: Session) => {
-    e.stopPropagation();
-    if (archivingSessionIds.has(target.id)) return;
-    // Capture the current sibling list and the archived session's position
-    // from the displayed state, synchronously at click time. Picks the
-    // session at `idx + 1` (directly below), or `idx - 1` (directly above)
-    // if there's nothing below.
-    const isCurrent = target.id === id;
-    const idx = recentSessions.findIndex(s => s.id === target.id);
-    const nextSession = isCurrent
-      ? (recentSessions[idx + 1] ?? recentSessions[idx - 1])
-      : undefined;
-    setArchivingSessionIds(prev => new Set(prev).add(target.id));
-    archiveTimeoutsRef.current[target.id] = window.setTimeout(() => {
-      archiveSession(target.platform, target.id, target.timeUpdated, true)
-        .then(() => {
-          setRecentSessions(prev => showArchivedRecent
-            ? prev.map(session => (session.id === target.id ? { ...session, archived: true } : session))
-            : prev.filter(session => session.id !== target.id));
-          if (isCurrent) {
-            navigate(nextSession ? `/session/${nextSession.id}` : '/');
-          }
-        })
-        .catch(err => {
-          console.error('Failed to archive session', err);
-        })
-        .finally(() => {
-          setArchivingSessionIds(prev => {
-            const next = new Set(prev);
-            next.delete(target.id);
-            return next;
-          });
-          delete archiveTimeoutsRef.current[target.id];
-        });
-    }, ARCHIVE_ANIMATION_MS);
-  }, [archiveSession, archivingSessionIds, id, navigate, recentSessions, showArchivedRecent]);
-
-  const handlePinSession = useCallback((e: React.MouseEvent, target: Session) => {
-    e.stopPropagation();
-    const nextPinned = !target.pinned;
-
-    // Optimistic update
-    setRecentSessions(prev => prev.map(s =>
-      s.id === target.id
-        ? { ...s, pinned: nextPinned, pinnedAt: nextPinned ? Date.now() : 0 }
-        : s
-    ));
-
-    pinSession(target.platform, target.id, nextPinned).catch(err => {
-      console.error('Failed to pin/unpin session', err);
-      // Revert on failure
-      setRecentSessions(prev => prev.map(s =>
-        s.id === target.id
-          ? { ...s, pinned: target.pinned, pinnedAt: target.pinnedAt }
-          : s
-      ));
-    });
-  }, [pinSession]);
-
-  useEffect(() => () => {
-    Object.values(archiveTimeoutsRef.current).forEach(timeoutId => window.clearTimeout(timeoutId));
-  }, []);
 
   // Re-fetch the session-scoped model list. Used on session entry, when
   // OpenCode becomes reachable, and whenever the user opens the model
-  // picker (so newly-configured providers / models show up without a page
-  // reload). The optional AbortSignal lets callers tied to a useEffect
-  // tear down a stale request on cleanup.
-  const refreshModels = useCallback((signal?: AbortSignal) => {
-    if (!id) return;
-    api.sessionModels(id).then((resp) => {
-      if (signal?.aborted) return;
-      setModelEntries(resp.models || []);
-      setModelOptions(
-        Array.from(new Set((resp.models || []).map((m) => formatModelRef(m.provider, m.model)))),
-      );
-    }).catch(() => {
-      if (signal?.aborted) return;
-      // Fallback: historical-only list. Only seed empties when we don't
-      // already have data so a transient picker-open refresh failure
-      // doesn't wipe out the catalog the user is currently looking at.
-      getModels()
-        .then((models) => {
-          if (signal?.aborted) return;
-          const ordered = [...models]
-            .sort((a, b) => b.count - a.count)
-            .map((m) => formatModelRef(m.provider, m.model));
-          setModelEntries((prev) => prev.length > 0 ? prev : models.map((m) => ({
-            provider: m.provider,
-            model: m.model,
-          })));
-          setModelOptions((prev) => prev.length > 0 ? prev : Array.from(new Set(ordered)));
-        })
-        .catch(() => { /* keep existing data on failure */ });
-    });
-  }, [id, getModels]);
-
   // Reset on session change — abort any in-flight requests from the previous session
   useEffect(() => {
     // Abort previous session's pending requests
@@ -684,93 +491,6 @@ export function SessionDetail() {
       window.cancelAnimationFrame(rafId);
     };
   }, [getWhisperStatus, id, load, refreshModels]);
-
-  // Keep `portAvailable` in sync with the session's live-connection flag
-  // (populated by the platform adapter). SSE onopen still flips it to
-  // true on a successful connection; this just seeds the initial value
-  // from the session payload so the composer isn't disabled for a frame
-  // on entry to a live session.
-  useEffect(() => {
-    if (session?.liveConnection) setPortAvailable(true);
-  }, [session?.liveConnection]);
-
-  // Fetch the platform's composer-agent catalog (OpenCode's /agent
-  // endpoint when available) so we can color UI by agent. Platforms
-  // without an agent catalog return an empty list via the
-  // GET /api/session/{id}/agents endpoint, leaving agentColor to fall
-  // back to its deterministic defaults.
-  useEffect(() => {
-    const dir = session?.directory;
-    if (!dir) {
-      setAgents([]);
-      setAgentsLoaded(false);
-      return;
-    }
-    if (!portAvailable) {
-      // No OpenCode instance to query — the fallback colors are all we'll ever
-      // have, so mark as "loaded" immediately. The composer/UI can apply them
-      // without risk of a subsequent color change.
-      setAgents([]);
-      setAgentsLoaded(true);
-      return;
-    }
-    if (!id) {
-      setAgents([]);
-      setAgentsLoaded(true);
-      return;
-    }
-    setAgentsLoaded(false);
-    const controller = new AbortController();
-    api.agents(id, controller.signal)
-      .then((list) => {
-        if (controller.signal.aborted) return;
-        setAgents(list || []);
-        setAgentsLoaded(true);
-      })
-      .catch((e) => {
-        if (e instanceof DOMException && e.name === 'AbortError') return;
-        setAgents([]);
-        setAgentsLoaded(true);
-      });
-    return () => controller.abort();
-  }, [id, session?.directory, portAvailable]);
-
-  // Re-fetch the session-scoped model list once OpenCode becomes reachable so
-  // the picker picks up the full /config/providers catalog. The initial fetch
-  // in the main load effect may have run before discovery completed.
-  useEffect(() => {
-    if (!id || !portAvailable) return;
-    const controller = new AbortController();
-    refreshModels(controller.signal);
-    return () => controller.abort();
-  }, [id, portAvailable, refreshModels]);
-
-  // Toggle a favorite model. Optimistic: the star flips immediately in
-  // the picker, then we re-fetch so the authoritative sort (favorites
-  // move into the pinned section) comes back from the server. Failures
-  // revert the optimistic update.
-  const handleToggleFavorite = useCallback(async (provider: string, model: string, nextFavorite: boolean) => {
-    if (!session?.platform || !id) return;
-    const platform = session.platform;
-    setModelEntries((prev) => prev.map((e) =>
-      e.provider === provider && e.model === model ? { ...e, isFavorite: nextFavorite } : e,
-    ));
-    try {
-      if (nextFavorite) {
-        await api.addFavorite(platform, provider, model);
-      } else {
-        await api.removeFavorite(platform, provider, model);
-      }
-      // Re-fetch for authoritative ordering.
-      const resp = await api.sessionModels(id);
-      setModelEntries(resp.models || []);
-    } catch {
-      // Revert on error.
-      setModelEntries((prev) => prev.map((e) =>
-        e.provider === provider && e.model === model ? { ...e, isFavorite: !nextFavorite } : e,
-      ));
-    }
-  }, [session?.platform, id]);
 
   // Re-inject ghost user-message bubbles for failed sends that survived a
   // refresh. The optimistic messages are component-local (never written to
@@ -871,78 +591,6 @@ export function SessionDetail() {
       totalMessages: Math.max(prev.totalMessages ?? 0, totalMessages),
     }));
   }, [id, session, messages, parts, totalMessages, updateCachedSession]);
-
-  const loadRecentSessions = useCallback(async (signal?: AbortSignal) => {
-    try {
-      const since = Date.now() - SIDEBAR_RECENT_HOURS * 60 * 60 * 1000;
-      // /api/sessions can serialize a Go nil slice as JSON `null`; coerce
-      // here so .find() / filterVisibleSessions never see null.
-      const result = (await getSessions({ since, limit: RECENT_SESSIONS_LIMIT + 5 }, signal)) ?? [];
-      if (signal?.aborted) return;
-      const visible = (showArchivedRecentRef.current ? result : filterVisibleSessions(result)).slice(0, RECENT_SESSIONS_LIMIT);
-      const current = result.find(s => s.id === id);
-      const nextRecentSessions = current && !visible.some(s => s.id === current.id)
-        ? [current, ...visible].slice(0, RECENT_SESSIONS_LIMIT)
-        : visible;
-      const hash = computeSidebarHash(nextRecentSessions);
-      if (hash !== lastSiblingsHashRef.current) {
-        lastSiblingsHashRef.current = hash;
-        setRecentSessions(nextRecentSessions);
-      }
-      setLoadingRecentSessions(false);
-    } catch (e) {
-      if (e instanceof DOMException && e.name === 'AbortError') return;
-      throw e;
-    }
-  }, [getSessions, id]);
-
-  const sessionId = session?.id;
-  useEffect(() => {
-    if (!sessionId) return;
-    void loadRecentSessions(abortControllerRef.current?.signal);
-  }, [sessionId, loadRecentSessions]);
-
-  const showArchivedRecentMounted = useRef(true);
-  useEffect(() => {
-    showArchivedRecentRef.current = showArchivedRecent;
-    // Skip the initial mount -- the sessionId effect already handles the first load.
-    if (showArchivedRecentMounted.current) {
-      showArchivedRecentMounted.current = false;
-      return;
-    }
-    void loadRecentSessions(abortControllerRef.current?.signal);
-  }, [showArchivedRecent, loadRecentSessions]);
-
-  useEffect(() => {
-    let refreshId: number | null = null;
-    const start = () => {
-      if (refreshId !== null) return;
-      refreshId = window.setInterval(() => {
-        loadRecentSessions(abortControllerRef.current?.signal).catch(err => console.error('Failed to refresh recent sessions', err));
-      }, SIDEBAR_REFRESH_MS);
-    };
-    const stop = () => {
-      if (refreshId === null) return;
-      window.clearInterval(refreshId);
-      refreshId = null;
-    };
-    const onVisibility = () => {
-      if (document.hidden) {
-        stop();
-      } else {
-        // Fire once immediately on re-focus so the user sees fresh data
-        // without waiting a full interval, then resume polling.
-        loadRecentSessions(abortControllerRef.current?.signal).catch(err => console.error('Failed to refresh recent sessions', err));
-        start();
-      }
-    };
-    if (!document.hidden) start();
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibility);
-      stop();
-    };
-  }, [loadRecentSessions]);
 
   // Mirror the current session's pending-prompt state from SSE into the
   // sidebar list entry so its badge lights up/clears immediately, without
@@ -1050,557 +698,34 @@ export function SessionDetail() {
     }
   }, [parts, session?.id, portAvailable, pendingQuestion]);
 
-  // SSE with reconnection
-  const [sseActive, setSseActive] = useState(false);
-  useEffect(() => {
-    if (!session?.id) return;
-    const sid = session.id;
-    let evtSource: EventSource | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let cancelled = false;
-    let hasReceivedContentEvent = false; // tracks whether any content event arrived before reconciliation completes
-    let hasConnectedOnce = false; // distinguishes the first onopen from reconnects
-
-    // Immediately fetch the latest content from the API.
-    const loadNow = () => {
-      if (cancelled) return;
-      const signal = abortControllerRef.current?.signal;
-      load(signal);
-    };
-
-    // Process a parsed SSE event: handle permission/question prompts and
-    // clear stale prompts. Only triggers state updates when values change.
-    const handleParsedEvent = (parsed: Record<string, unknown>) => {
-      const type = (parsed.type as string) || '';
-
-      const perm = extractPendingPermission(parsed);
-      if (perm) {
-        setPendingPermission(perm);
-        setPermissionError(null);
-      }
-      const question = extractPendingQuestion(parsed);
-      if (question) {
-        const questionSid = question.sessionID || sid;
-        storePendingQuestion(questionSid, question);
-        if (!question.sessionID || question.sessionID === sid) {
-          setPendingQuestion(question);
-        }
-      }
-      // Only clear permission/question state on specific event types,
-      // and only if there's something to clear (avoids no-op renders).
-      // Do NOT clear on message.updated — that event fires for queued user
-      // messages and would prematurely dismiss the permission/question prompt.
-      // For permission.replied, only clear if the replied permission matches
-      // the currently displayed one — otherwise a back-to-back permission
-      // request that was already set by a preceding permission.asked event
-      // would be wiped out.
-      if (type === 'permission.replied') {
-        // OpenCode's permission.replied event uses `requestID` to reference
-        // the permission that was answered. `id`/`permissionID` are included
-        // as fallbacks for older/alternate payload shapes.
-        const props = parsed.properties as Record<string, unknown> | undefined;
-        const repliedId =
-          (typeof props?.requestID === 'string' && props.requestID) ||
-          (typeof props?.requestId === 'string' && props.requestId) ||
-          (typeof props?.id === 'string' && props.id) ||
-          (typeof props?.permissionID === 'string' && props.permissionID) ||
-          '';
-        setPendingPermission(prev => {
-          if (prev === null) return prev;
-          // If we can't identify which permission was replied to, leave state
-          // alone — a new permission.asked may have already replaced it.
-          if (!repliedId) return prev;
-          return prev.permissionId === repliedId ? null : prev;
-        });
-      } else if (type === 'session.idle' || (type === 'session.status' && isSessionStatusIdle(parsed))) {
-        // Only clear on terminal session states. Intermediate session.status
-        // events (busy / retry) fire during normal tool execution — including
-        // right after a permission is asked — and must NOT wipe the prompt.
-        setPendingPermission(prev => prev === null ? prev : null);
-      }
-      if (
-        type === 'question.replied' ||
-        type === 'question.rejected' ||
-        type === 'session.idle' ||
-        (type === 'session.status' && isSessionStatusIdle(parsed))
-      ) {
-        setPendingQuestion(prev => {
-          if (prev === null) return prev;
-          clearPendingQuestion(sid);
-          return null;
-        });
-      }
-    };
-
-    const connect = () => {
-      if (cancelled) return;
-      evtSource = new EventSource(`/api/session/${encodeURIComponent(sid)}/events`);
-      evtSource.onopen = () => {
-        setSseActive(true);
-        // SSE connected means OpenCode is running — mark port as available.
-        setPortAvailable(true);
-        // Fetch any permissions that were already pending when we connected.
-        // SSE only delivers new events; existing pending permissions need to
-        // be retrieved explicitly so the dialog shows immediately.
-        listPermissions(sid).then((perms) => {
-          if (cancelled) return;
-          for (const p of perms) {
-            const perm = extractPendingPermission({ type: 'permission.asked', properties: p });
-            if (!perm) continue;
-            // Show prompts that belong to the current session OR any of
-            // its known subagents (whose prompts must be answered by
-            // the user from the parent session page).
-            const props = p as Record<string, unknown>;
-            const promptSid = typeof props.sessionID === 'string' ? props.sessionID : '';
-            if (!isSessionRelevant(promptSid, sid, subagentSessionIdsRef.current)) continue;
-            setPendingPermission(perm);
-            setPermissionError(null);
-            break; // show the first pending permission for this session
-          }
-        }).catch(() => { /* ignore errors — SSE events will handle live permissions */ });
-        // Fetch any questions that were already pending when we connected.
-        // Mirrors the permissions recovery above: the question.asked SSE
-        // event only fires once, so a user who wasn't viewing the session
-        // when it fired would otherwise never see the prompt.
-        listQuestions(sid).then((questions) => {
-          if (cancelled) return;
-          for (const q of questions) {
-            const question = extractPendingQuestion({ type: 'question.asked', properties: q });
-            if (!question) continue;
-            // Show questions belonging to the current session OR any of
-            // its known subagents (the response endpoint is keyed on
-            // requestID, not session, so any reachable session works).
-            const props = q as Record<string, unknown>;
-            const questionSid = typeof props.sessionID === 'string' ? props.sessionID : '';
-            if (!isSessionRelevant(questionSid, sid, subagentSessionIdsRef.current)) continue;
-            storePendingQuestion(sid, question);
-            setPendingQuestion((prev) => prev ?? question);
-            break; // show the first pending question for this session
-          }
-        }).catch(() => { /* ignore errors — SSE events will handle live questions */ });
-        // Reconciliation: fetch the latest state only when the initial
-        // load() failed AND no SSE content events have arrived. In the happy
-        // path the initial load in the session-change effect is authoritative
-        // and SSE takes over for live updates, so this timer is a no-op.
-        setTimeout(() => {
-          if (cancelled || hasReceivedContentEvent) return;
-          if (!loadErrorRef.current) return;
-          const signal = abortControllerRef.current?.signal;
-          load(signal);
-        }, 500);
-        // Reconnect reconciliation: on every reconnect (not the first
-        // connection), refetch authoritative session state. SSE is live-only
-        // — events emitted while the stream was disconnected are lost, so
-        // without this the UI can stay stuck on a stale `busy`/`waiting`
-        // status after a turn finished during the gap.
-        if (hasConnectedOnce) {
-          const signal = abortControllerRef.current?.signal;
-          load(signal);
-        }
-        hasConnectedOnce = true;
-      };
-      evtSource.onmessage = (evt) => {
-        const raw = evt.data || '';
-        if (!raw || !raw.trim()) return;
-
-        // Debug logging — only when debug mode is active
-        if (debugModeRef.current) {
-          setSseDebugEvents((prev) => {
-            const next = [...prev, { at: Date.now(), event: 'message', data: truncateSseData(raw) }];
-            return next.slice(-10);
-          });
-        }
-
-        let parsed: Record<string, unknown>;
-        try {
-          parsed = JSON.parse(raw) as Record<string, unknown>;
-        } catch {
-          return; // not JSON, ignore
-        }
-
-        const type = (parsed.type as string) || '';
-
-        // Filter out events for other sessions. The session ID can live in
-        // several places depending on the event type:
-        //   properties.info.sessionID  (message.created / message.updated)
-        //   properties.part.sessionID  (message.part.updated / message.part.delta)
-        //   properties.sessionID       (session.status, part events, questions)
-        const evtProps = (parsed.properties && typeof parsed.properties === 'object')
-          ? parsed.properties as Record<string, unknown>
-          : null;
-        const evtSessionId: string | undefined =
-          (evtProps?.sessionID as string) ||
-          ((evtProps?.info as Record<string, unknown> | undefined)?.sessionID as string) ||
-          ((evtProps?.part as Record<string, unknown> | undefined)?.sessionID as string) ||
-          undefined;
-        const isSubagentEvent =
-          !!evtSessionId && evtSessionId !== sid && subagentSessionIdsRef.current.has(evtSessionId);
-        if (evtSessionId && evtSessionId !== sid) {
-          // Capture token data from subagent sessions for the TPS indicator.
-          // Track per-message tokens so we can accurately sum across multiple
-          // assistant messages within a subagent session.
-          if (isSubagentEvent &&
-              (type === 'message.created' || type === 'message.updated')) {
-            const subInfo = (evtProps?.info || (evtProps as Record<string, unknown>)) as Record<string, unknown> | undefined;
-            if (subInfo && typeof subInfo.id === 'string' && subInfo.role === 'assistant') {
-              const msgId = subInfo.id as string;
-              const subTokens = subInfo.tokens as { input?: number; output?: number } | undefined;
-              const subTime = subInfo.time as { created?: number } | undefined;
-              if (subTokens?.output || subTime?.created) {
-                setSubagentTokens(prev => {
-                  const existing = prev.get(msgId);
-                  const output = subTokens?.output || existing?.output || 0;
-                  const created = subTime?.created || existing?.created || Date.now();
-                  const updated = new Map(prev);
-                  updated.set(msgId, {
-                    output: Math.max(existing?.output || 0, output),
-                    created: existing ? Math.min(existing.created, created) : created,
-                  });
-                  return trimSubagentTokens(updated);
-                });
-              }
-            }
-          }
-          // Subagent prompt events bubble up to the parent session UI so
-          // the user can answer them. Without this, an OpenCode subagent
-          // that hits a permission/question stalls forever — its session
-          // is hidden from the listing, so there's no other place to ack.
-          if (isSubagentEvent && (
-            type === 'permission.asked' ||
-            type === 'permission.replied' ||
-            type === 'question.asked' ||
-            type === 'question.replied' ||
-            type === 'question.rejected'
-          )) {
-            handleParsedEvent(parsed);
-          }
-          return;
-        }
-
-        // Handle permission/question prompts
-        handleParsedEvent(parsed);
-
-        // Apply content updates incrementally.
-        // OpenCode SSE event types:
-        //   message.created  — properties.info + properties.parts (full message)
-        //   message.updated  — properties.info (metadata only, no parts)
-        //   message.part.updated — properties.part (single part with incremental content)
-        //   message.part.delta   — properties.part (text delta to append)
-        //   session.status   — properties.status
-
-        const props = evtProps;
-
-        // message.created carries full message + parts
-        if (type === 'message.created') {
-          const extracted = extractMessageFromEvent(parsed, sid);
-          if (extracted) {
-            hasReceivedContentEvent = true;
-            setMessages(prev => insertMessageByTime(prev, extracted.message));
-            if (extracted.parts.length > 0) {
-              setParts(prev => mergeParts(prev, extracted.parts));
-            }
-            setSession(prev => {
-              if (!prev) return prev;
-              const status = inferStatusFromMessage(extracted.message);
-              if (prev.status === status) return prev;
-              return { ...prev, status };
-            });
-          }
-        }
-
-        // message.updated carries metadata (finish, tokens, cost) and may also
-        // include parts during streaming depending on the OpenCode version.
-        if (type === 'message.updated' && props) {
-          // First, try to extract as a full message with parts (some versions bundle them)
-          const extracted = extractMessageFromEvent(parsed, sid);
-          if (extracted) {
-            hasReceivedContentEvent = true;
-            setMessages(prev => insertMessageByTime(prev, extracted.message));
-            if (extracted.parts.length > 0) {
-              setParts(prev => mergeParts(prev, extracted.parts));
-            }
-            setSession(prev => {
-              if (!prev) return prev;
-              const status = inferStatusFromMessage(extracted.message);
-              if (prev.status === status) return prev;
-              return { ...prev, status };
-            });
-          } else {
-            // Fallback: metadata-only update (no parts in this event)
-            const info = props.info as Record<string, unknown> | undefined;
-            if (info && info.id) {
-              hasReceivedContentEvent = true;
-              const msgId = info.id as string;
-              setMessages(prev => {
-                const idx = prev.findIndex(m => m.id === msgId);
-                if (idx < 0) return prev;
-                const updated = { ...prev[idx] };
-                updated.data = {
-                  ...updated.data,
-                  finish: info.finish as string | undefined,
-                  tokens: info.tokens as Message['data']['tokens'],
-                  time: (info.time ?? updated.data.time) as Message['data']['time'],
-                  cost: typeof info.cost === 'number' ? info.cost : updated.data.cost,
-                  error: info.error as Message['data']['error'],
-                };
-                const next = [...prev];
-                next[idx] = updated;
-                return next;
-              });
-              setSession(prev => {
-                if (!prev) return prev;
-                const role = info.role as string | undefined;
-                // Only assistant updates can drive a status change; other
-                // roles keep the previous status. When this is an
-                // assistant update, share the inference logic with the
-                // full-message handlers above.
-                if (role !== 'assistant') return prev;
-                const status = inferStatusFromMessage({
-                  id: msgId,
-                  sessionId: sid,
-                  timeCreated: 0,
-                  data: {
-                    role: 'assistant',
-                    finish: info.finish as string | undefined,
-                    error: info.error as Message['data']['error'],
-                  },
-                });
-                if (prev.status === status) return prev;
-                return { ...prev, status };
-              });
-            }
-          }
-        }
-
-        // message.part.updated — carries the full part content (replacement).
-        if (type === 'message.part.updated' && props) {
-          const rawPart = props.part as Record<string, unknown> | undefined;
-          if (rawPart && rawPart.id && rawPart.messageID) {
-            hasReceivedContentEvent = true;
-            const partType = rawPart.type as string | undefined;
-            if (partType !== 'step-start' && partType !== 'step-finish' && partType !== 'snapshot') {
-              // Truncate large fields
-              if (typeof rawPart.text === 'string') rawPart.text = truncatePartField(rawPart.text) as string;
-              const state = rawPart.state as Record<string, unknown> | undefined;
-              if (state) {
-                if (typeof state.output === 'string') state.output = truncatePartField(state.output) as string;
-                const meta = state.metadata as Record<string, unknown> | undefined;
-                if (meta && typeof meta.output === 'string') meta.output = truncatePartField(meta.output) as string;
-              }
-              const part: Part = {
-                id: rawPart.id as string,
-                messageId: rawPart.messageID as string,
-                sessionId: (rawPart.sessionID as string) || sid,
-                data: rawPart as unknown as string,
-              };
-              setParts(prev => upsertPart(prev, part));
-              // Mark the changes sidebar dirty when an edit/write tool
-              // part lands. The hook coalesces successive ticks via
-              // its debounce so a busy session firing many edits in
-              // quick succession only triggers one re-fetch.
-              if (partType === 'tool') {
-                const toolName = (rawPart as Record<string, unknown>).tool as string | undefined;
-                if (toolName && (
-                  toolName === 'edit' || toolName === 'write' ||
-                  toolName === 'mcp_edit' || toolName === 'mcp_write' ||
-                  toolName === 'mcp_Edit' || toolName === 'mcp_Write'
-                )) {
-                  setChangesDirtyTick((t) => t + 1);
-                }
-              }
-            }
-          }
-        }
-
-        // message.part.delta — per-token incremental text during streaming.
-        // Shape: { type: "message.part.delta", properties: { sessionID, messageID, partID, field, delta } }
-        // The `delta` field contains the new text chunk to append.
-        // The `field` indicates which part field is being updated (usually "text").
-        if (type === 'message.part.delta' && props) {
-          const partId = props.partID as string | undefined;
-          const messageId = props.messageID as string | undefined;
-          const deltaText = (props.delta as string) || '';
-          const field = (props.field as string) || 'text';
-          if (partId && messageId && deltaText) {
-            hasReceivedContentEvent = true;
-            setParts(prev => {
-              const idx = prev.findIndex(p => p.id === partId);
-              if (idx >= 0) {
-                // Append delta to the target field of the existing part.
-                // `field` may be a dotted path like "state.output" — handle
-                // one level of nesting so tool output streams incrementally.
-                const existing = prev[idx];
-                let existingData: Record<string, unknown>;
-                try {
-                  existingData = typeof existing.data === 'string'
-                    ? JSON.parse(existing.data) as Record<string, unknown>
-                    : existing.data as unknown as Record<string, unknown>;
-                } catch {
-                  existingData = {};
-                }
-                let updatedData: Record<string, unknown>;
-                const dotIdx = field.indexOf('.');
-                if (dotIdx > 0) {
-                  const parent = field.slice(0, dotIdx);
-                  const child = field.slice(dotIdx + 1);
-                  const parentObj = (existingData[parent] as Record<string, unknown> | undefined) || {};
-                  const currentVal = (parentObj[child] as string) || '';
-                  updatedData = {
-                    ...existingData,
-                    [parent]: { ...parentObj, [child]: currentVal + deltaText },
-                  };
-                } else {
-                  const currentVal = (existingData[field] as string) || '';
-                  updatedData = { ...existingData, [field]: currentVal + deltaText };
-                }
-                const updated = [...prev];
-                updated[idx] = {
-                  ...existing,
-                  data: updatedData as unknown as string,
-                };
-                return updated;
-              }
-              // Part doesn't exist yet — create it with the delta as initial content.
-              // This can happen if the message.part.updated for text-start hasn't
-              // arrived yet. Use a minimal text part shape.
-              const newPart: Part = {
-                id: partId,
-                messageId,
-                sessionId: (props.sessionID as string) || sid,
-                data: { type: 'text', [field]: deltaText } as unknown as string,
-              };
-              return [...prev, newPart];
-            });
-          }
-        }
-
-        // Catch-all for any event carrying part data — handles legacy event
-        // names (part.updated, tool.updated) and any unknown event types that
-        // still contain renderable part content. We try multiple extraction
-        // strategies to be as permissive as possible.
-        if (type !== 'message.created' && type !== 'message.updated' && type !== 'message.part.updated' && type !== 'message.part.delta' && type !== 'session.status') {
-          let handled = false;
-
-          // Strategy 1: properties contains a part directly
-          if (props) {
-            const part = extractPartFromEvent(parsed, sid);
-            if (part) {
-              hasReceivedContentEvent = true;
-              handled = true;
-              setParts(prev => upsertPart(prev, part));
-            }
-          }
-
-          // Strategy 2: properties.part contains the part (like message.part.updated)
-          if (!handled && props) {
-            const rawPart = props.part as Record<string, unknown> | undefined;
-            if (rawPart && rawPart.id && rawPart.messageID) {
-              hasReceivedContentEvent = true;
-              handled = true;
-              const partType = rawPart.type as string | undefined;
-              if (partType !== 'step-start' && partType !== 'step-finish' && partType !== 'snapshot') {
-                if (typeof rawPart.text === 'string') rawPart.text = truncatePartField(rawPart.text) as string;
-                const part: Part = {
-                  id: rawPart.id as string,
-                  messageId: rawPart.messageID as string,
-                  sessionId: (rawPart.sessionID as string) || sid,
-                  data: rawPart as unknown as string,
-                };
-                setParts(prev => upsertPart(prev, part));
-              }
-            }
-          }
-
-          // Strategy 3: try as a full message with parts
-          if (!handled) {
-            const extracted = extractMessageFromEvent(parsed, sid);
-            if (extracted) {
-              hasReceivedContentEvent = true;
-              setMessages(prev => insertMessageByTime(prev, extracted.message));
-              if (extracted.parts.length > 0) {
-                setParts(prev => mergeParts(prev, extracted.parts));
-              }
-            }
-          }
-        }
-
-        // session.status — update the session status locally.
-        if (type === 'session.status' && props) {
-          const statusObj = props.status as Record<string, unknown> | string | undefined;
-          const status = typeof statusObj === 'string'
-            ? statusObj
-            : (typeof statusObj === 'object' && statusObj !== null)
-              ? (statusObj.type as string | undefined)
-              : (props.status as string | undefined);
-          if (status === 'waiting' || status === 'busy' || status === 'done' || status === 'error' || status === 'idle') {
-            const mapped = status === 'idle' ? 'done' : status;
-            setSession(prev => prev && prev.status !== mapped ? { ...prev, status: mapped as Session['status'] } : prev);
-            // When the session finishes (idle), fetch the final state from
-            // the API to reconcile any events we may have missed.
-            if (status === 'idle') {
-              loadNow();
-            }
-          }
-        }
-
-        // session.idle — explicit idle signal, fetch final state.
-        if (type === 'session.idle') {
-          loadNow();
-        }
-
-        // message.updated — message metadata changed (tokens, finish, etc.).
-        // Also triggers a load to pick up any content not delivered via
-        // part events (e.g. the assistant message itself on finish-step).
-        if (type === 'message.updated') {
-          loadNow();
-        }
-      };
-      // Some OpenCode SSE updates may use named events, not default "message".
-      ['question', 'permission', 'approval', 'tool', 'error'].forEach((eventName) => {
-        evtSource?.addEventListener(eventName, (evt) => {
-          const raw = (evt as MessageEvent).data || '';
-          if (!raw) return;
-          if (debugModeRef.current) {
-            setSseDebugEvents((prev) => {
-              const next = [...prev, { at: Date.now(), event: eventName, data: truncateSseData(raw) }];
-              return next.slice(-50);
-            });
-          }
-          try {
-            const parsed = JSON.parse(raw) as Record<string, unknown>;
-            handleParsedEvent(parsed);
-          } catch { /* not JSON */ }
-        });
-      });
-      evtSource.onerror = () => {
-        setSseActive(false);
-        evtSource?.close();
-        evtSource = null;
-        // Retry after 5 seconds
-        if (!cancelled) {
-          reconnectTimer = setTimeout(connect, 5000);
-        }
-      };
-    };
-
-    connect();
-
-    // Fallback polling when SSE is not active
-    const fallback = setInterval(() => {
-      if (!evtSource || evtSource.readyState !== EventSource.OPEN) {
-        const signal = abortControllerRef.current?.signal;
-        load(signal);
-      }
-    }, 10000);
-
-    return () => {
-      cancelled = true;
-      evtSource?.close();
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      clearInterval(fallback);
-      setSseActive(false);
-    };
-  }, [session?.directory, session?.id, load, listPermissions, listQuestions]);
+  // SSE — owns the EventSource lifecycle, reconnection back-off,
+  // event parsing, and write-through into the page's message /
+  // part / session / prompt / subagent state. The hook reads
+  // session id + directory and the various setters; everything
+  // else stays in the page so the SSE handler doesn't need to
+  // know about composer / sidebar / palette concerns.
+  const {
+    sseActive,
+    sseDebugEvents,
+    setSseDebugEvents,
+  } = useSessionSSE({
+    sessionId: session?.id,
+    directory: session?.directory,
+    load,
+    abortSignalRef: abortControllerRef,
+    loadErrorRef,
+    debugModeRef,
+    subagentSessionIdsRef,
+    setMessages,
+    setParts,
+    setSession,
+    setPortAvailable,
+    setPendingPermission,
+    setPermissionError,
+    setPendingQuestion,
+    setSubagentTokens,
+    setChangesDirtyTick,
+  });
 
   // Compute aggregate token/cost stats from the messages array so the header
   // stays up-to-date from SSE events without needing a server round-trip.
@@ -1896,12 +1021,12 @@ export function SessionDetail() {
     }
 
     if (command === 'tmux') {
-      handleTmuxShortcutRef.current();
+      handleTmuxShortcut();
       return;
     }
 
     if (command === 'vscode') {
-      handleVSCodeShortcutRef.current();
+      handleVSCodeShortcut();
       return;
     }
 
@@ -2018,70 +1143,6 @@ export function SessionDetail() {
     }
   }, [activeAgent, pendingPermission, pendingQuestion, portAvailable, selectedAgent, session]);
 
-  const handlePermissionReply = useCallback(async (reply: 'once' | 'always' | 'reject') => {
-    if (!pendingPermission || answeringPermission || !portAvailable || !caps.respondPermission || !session) return;
-    setPermissionError(null);
-    setAnsweringPermission(true);
-    const repliedId = pendingPermission.permissionId;
-    // OpenCode's permission API is session-scoped: the URL is
-    // /session/{id}/permissions/{pid}. When the prompt comes from a
-    // subagent of the page session, route the reply to that subagent's
-    // session — the parent session knows nothing about the prompt.
-    const targetSessionId = pendingPermission.sessionId || session.id;
-    try {
-      await respondPermission(targetSessionId, repliedId, reply);
-      // Only clear the prompt if the currently pending permission is still
-      // the one we just replied to. An SSE `permission.asked` event for a
-      // follow-up permission may have already arrived while the POST was in
-      // flight — clearing unconditionally would hide that new prompt.
-      setPendingPermission(prev => (prev && prev.permissionId === repliedId ? null : prev));
-      // Drop any global prompt toast pointing at this session — the
-      // user just answered. Cross-tab clients still get pruned on
-      // their next poll.
-      notifyPromptDismissed(targetSessionId);
-      // SSE events will deliver the updated session state incrementally.
-    } catch (e) {
-      setPermissionError(e instanceof Error ? e.message : 'Failed to respond to permission request');
-    } finally {
-      setAnsweringPermission(false);
-    }
-  }, [answeringPermission, caps.respondPermission, pendingPermission, portAvailable, respondPermission, session]);
-
-  const handleQuestionReply = useCallback(async (answers: string[][]) => {
-    if (!pendingQuestion || answeringQuestion || !portAvailable || !caps.respondQuestion || !session) return;
-    setQuestionError(null);
-    setAnsweringQuestion(true);
-    try {
-      await respondQuestion(session.id, pendingQuestion.requestId, answers);
-      setPendingQuestion(null);
-      setQuestionError(null);
-      clearPendingQuestion(session.id);
-      notifyPromptDismissed(session.id);
-      // SSE events will deliver the updated session state incrementally.
-    } catch (e) {
-      console.error('Failed to respond to question', e);
-      setQuestionError(e instanceof Error ? e.message : 'Failed to submit answer');
-    } finally {
-      setAnsweringQuestion(false);
-    }
-  }, [answeringQuestion, caps.respondQuestion, pendingQuestion, portAvailable, respondQuestion, session]);
-
-  const handleQuestionReject = useCallback(async () => {
-    if (!pendingQuestion || answeringQuestion || !portAvailable || !caps.respondQuestion || !session) return;
-    setAnsweringQuestion(true);
-    try {
-      await rejectQuestion(session.id, pendingQuestion.requestId);
-      setPendingQuestion(null);
-      clearPendingQuestion(session.id);
-      notifyPromptDismissed(session.id);
-      // SSE events will deliver the updated session state incrementally.
-    } catch (e) {
-      console.error('Failed to dismiss question', e);
-    } finally {
-      setAnsweringQuestion(false);
-    }
-  }, [answeringQuestion, caps.respondQuestion, pendingQuestion, portAvailable, rejectQuestion, session]);
-
   const abortSession = useApiStore((state) => state.abortSession);
 
   const handleAbort = useCallback(async () => {
@@ -2094,46 +1155,10 @@ export function SessionDetail() {
     }
   }, [abortSession, caps.abort, portAvailable, session]);
 
-  // Find the tmux session whose resolved path matches the current project directory.
-  const matchingTmuxSession = session
-    ? tmux.findSession(session.directory)
-    : undefined;
-
-  const [launchingOpencode, setLaunchingOpencode] = useState(false);
-  const handleLaunchOpencode = useCallback(async () => {
-    if (!session?.directory || !tmux.available || launchingOpencode) return;
-    setLaunchingOpencode(true);
-    try {
-      await tmux.launchOpencode(session.directory);
-    } catch (e) {
-      console.error('Failed to launch opencode in tmux', e);
-    } finally {
-      setLaunchingOpencode(false);
-    }
-  }, [launchingOpencode, session?.directory, tmux]);
-
-  const handleTmuxShortcut = useCallback(() => {
-    if (!matchingTmuxSession) return;
-    if (tmux.isLocal) {
-      tmux.switchSession(matchingTmuxSession.name).catch(err => console.error('tmux switch failed', err));
-      return;
-    }
-    if (tmux.clients.length === 1) {
-      tmux.switchSession(matchingTmuxSession.name, tmux.clients[0].tty).catch(err => console.error('tmux switch failed', err));
-      return;
-    }
-
-    setPickerPos({ top: 88, left: Math.min(window.innerWidth - 24, 420) });
-    setPendingTmuxSession(matchingTmuxSession.name);
-  }, [matchingTmuxSession, tmux]);
-
   const handleVSCodeShortcut = useCallback(() => {
     if (!session) return;
     openVSCode(session.directory);
   }, [session]);
-
-  const recentSessionsRef = useRef<Session[]>([]);
-  useEffect(() => { recentSessionsRef.current = recentSessions; }, [recentSessions]);
 
   // Alt+J / Alt+K: navigate between recent sessions. Handlers read from refs
   // so they can capture the latest recentSessions without re-registering.
@@ -2145,37 +1170,11 @@ export function SessionDetail() {
     if (target) navigate(`/session/${target.id}`);
   }, [id, navigate]);
 
-  const navNextShortcut = useMemo(() => ({
-    id: 'session.nav-next',
-    scope: 'session' as const,
-    keys: { code: 'KeyJ', alt: true },
-    description: 'Go to next session',
-    handler: () => jumpToSession(1),
-  }), [jumpToSession]);
-
-  const navPrevShortcut = useMemo(() => ({
-    id: 'session.nav-prev',
-    scope: 'session' as const,
-    keys: { code: 'KeyK', alt: true },
-    description: 'Go to previous session',
-    handler: () => jumpToSession(-1),
-  }), [jumpToSession]);
-
-  useShortcut(navNextShortcut);
-  useShortcut(navPrevShortcut);
-
-  const handleTmuxShortcutRef = useRef(handleTmuxShortcut);
-  useEffect(() => { handleTmuxShortcutRef.current = handleTmuxShortcut; }, [handleTmuxShortcut]);
-  const handleVSCodeShortcutRef = useRef(handleVSCodeShortcut);
-  useEffect(() => { handleVSCodeShortcutRef.current = handleVSCodeShortcut; }, [handleVSCodeShortcut]);
-  const handleNewSessionRef = useRef(handleNewSession);
-  useEffect(() => { handleNewSessionRef.current = handleNewSession; }, [handleNewSession]);
-  const matchingTmuxSessionRef = useRef(matchingTmuxSession);
-  useEffect(() => { matchingTmuxSessionRef.current = matchingTmuxSession; }, [matchingTmuxSession]);
+  // Keep the page-level refs that the palette dispatcher reads.
+  // They mirror values used by both the dispatcher and (indirectly,
+  // through useSessionShortcuts) the shortcut handlers.
   const sessionRef = useRef(session);
   useEffect(() => { sessionRef.current = session; }, [session]);
-  const portAvailableRef = useRef(portAvailable);
-  useEffect(() => { portAvailableRef.current = portAvailable; }, [portAvailable]);
   const selectedModelRef = useRef(selectedModel);
   useEffect(() => { selectedModelRef.current = selectedModel; }, [selectedModel]);
   const activeModelRef = useRef(activeModel);
@@ -2183,118 +1182,25 @@ export function SessionDetail() {
   const capsRef = useRef(caps);
   useEffect(() => { capsRef.current = caps; }, [caps]);
 
-  const switchTmuxShortcut = useMemo(() => ({
-    id: 'session.switch-tmux',
-    scope: 'session' as const,
-    keys: { code: 'KeyT', alt: true },
-    description: 'Switch tmux for current session',
-    enabled: () => !!matchingTmuxSessionRef.current,
-    handler: () => handleTmuxShortcutRef.current(),
-  }), []);
-
-  const openVscodeShortcut = useMemo(() => ({
-    id: 'session.open-vscode',
-    scope: 'session' as const,
-    keys: { code: 'KeyV', alt: true },
-    description: 'Open current session in VS Code',
-    enabled: () => !!sessionRef.current,
-    handler: () => handleVSCodeShortcutRef.current(),
-  }), []);
-
-  const newSessionShortcut = useMemo(() => ({
-    id: 'session.new-session',
-    scope: 'session' as const,
-    keys: { code: 'KeyC', alt: true },
-    description: 'Create new session in current project',
-    enabled: () => !!sessionRef.current && portAvailableRef.current,
-    handler: () => handleNewSessionRef.current(),
-  }), []);
-
-  useShortcut(switchTmuxShortcut);
-  useShortcut(openVscodeShortcut);
-  useShortcut(newSessionShortcut);
-
-  const changeModelShortcut = useMemo(() => ({
-    id: 'session.change-model',
-    scope: 'session' as const,
-    keys: { code: 'KeyM', alt: true },
-    description: 'Change model via palette',
-    handler: () => {
-      const el = document.querySelector('.oc-composer-input') as HTMLTextAreaElement | null;
-      if (el) {
-        el.value = '/model ';
-        el.dispatchEvent(new CustomEvent('oc-model-picker-open', { detail: '' }));
-        el.focus();
-      }
-    },
-  }), []);
-
-  useShortcut(changeModelShortcut);
+  // Keyboard shortcuts: Alt+J/K (navigate), Alt+T (tmux), Alt+V
+  // (VS Code), Alt+C (new session), Alt+M (model picker). Encapsulated
+  // in useSessionShortcuts; the hook owns its own ref-mirrors so the
+  // shortcut descriptors don't re-bind on every render.
+  useSessionShortcuts({
+    session,
+    portAvailable,
+    matchingTmuxSession,
+    jumpToSession,
+    handleTmuxShortcut,
+    handleVSCodeShortcut,
+    handleNewSession,
+  });
 
   const hasMore = messages.length < totalMessages;
   const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
   const composerModels = Array.from(new Set([activeModel, session?.defaultModel, ...modelOptions].filter((model): model is string => !!model)));
   const showSseNotice = portAvailable && !sseActive;
   const showSseDebug = debugMode && sseDebugEvents.length > 0;
-  // Keep a ref so the SSE handler can access the latest subagent IDs without
-  // needing to be in the useEffect dependency list (which would reconnect SSE).
-  const subagentSessionIdsRef = useRef<Set<string>>(new Set());
-
-  // Derive subagent session IDs from task/mcp_task tool call parts.
-  // These are needed to capture SSE token events from subagent sessions.
-  const subagentSessionIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const p of parts) {
-      const d = typeof p.data === 'string' ? (() => { try { return JSON.parse(p.data); } catch { return null; } })() : p.data;
-      if (!d || typeof d !== 'object') continue;
-      const toolName = (d as Record<string, unknown>).tool as string | undefined;
-      if (!isTaskTool(toolName)) continue;
-      const st = (d as Record<string, unknown>).state as Record<string, unknown> | undefined;
-      const taskId = extractTaskId(st);
-      if (taskId) ids.add(taskId);
-    }
-    return ids;
-  }, [parts]);
-  subagentSessionIdsRef.current = subagentSessionIds;
-
-  // Derive running task IDs and their live output from task tool calls.
-  // While a task runs, we poll its session to get stdout for live preview.
-  const runningTaskIds = useMemo(() => {
-    const running: { taskId: string; status: string }[] = [];
-    for (const p of parts) {
-      const d = typeof p.data === 'string' ? (() => { try { return JSON.parse(p.data); } catch { return null; } })() : p.data;
-      if (!d || typeof d !== 'object') continue;
-      const toolName = (d as Record<string, unknown>).tool as string | undefined;
-      if (!isTaskTool(toolName)) continue;
-      const st = (d as Record<string, unknown>).state as Record<string, unknown> | undefined;
-      const status = (st?.status as string) || 'running';
-      if (status !== 'running') continue; // only track running tasks
-      const taskId = extractTaskId(st);
-      if (taskId) running.push({ taskId, status });
-    }
-    return running;
-  }, [parts]);
-
-  // Poll running task sessions every 2s for live stdout output.
-  // Fetches the task's session messages and extracts stdout from tool outputs.
-  useEffect(() => {
-    if (runningTaskIds.length === 0) return;
-    const controller = new AbortController();
-    const taskIdList = runningTaskIds.map(({ taskId }) => taskId);
-    const poll = async () => {
-      try {
-        const resp = await api.sessionTasks(id!, taskIdList, controller.signal);
-        if (controller.signal.aborted) return;
-        const tasks = resp.tasks || {};
-        if (Object.keys(tasks).length > 0) {
-          setTaskLiveOutput((prev: Record<string, string>) => ({ ...prev, ...tasks }));
-        }
-      } catch { /* ignore poll errors */ }
-    };
-    poll();
-    const interval = setInterval(poll, 2000);
-    return () => { controller.abort(); clearInterval(interval); };
-  }, [runningTaskIds.length]); // only depends on count, not contents
 
   // The assistant is still working if the last message is from the
   // user (assistant hasn't replied yet) or from the assistant with no
@@ -2307,47 +1213,19 @@ export function SessionDetail() {
   // a turn begins or ends, without waiting for the 10-second poll to
   // /api/sessions. The derivation mirrors internal/db/types.go exactly so what
   // we set optimistically matches what the next poll will confirm (no flicker).
-  // Raw status derived from the last message — may flicker between
-  // "busy" and "waiting" during tool-call turn boundaries when the
-  // agent finishes one turn and immediately starts another.
-  const rawOptimisticStatus = deriveRawStatus(lastMsg);
-
-  // Debounced status: when transitioning from "busy" to "waiting",
-  // hold "busy" for a grace period (3 s) before committing. If the
-  // agent starts a new turn within that window the "waiting" flash
-  // is suppressed entirely. Transitions to "error", "done", or
-  // "busy" are applied immediately.
-  const [optimisticStatus, setOptimisticStatus] = useState(rawOptimisticStatus);
-  const statusGraceRef = useRef<number | null>(null);
-  useEffect(() => {
-    // Clear any pending grace timer on unmount.
-    return () => { if (statusGraceRef.current !== null) window.clearTimeout(statusGraceRef.current); };
-  }, []);
-  useEffect(() => {
-    if (rawOptimisticStatus === optimisticStatus) {
-      // Already in sync — clear any pending grace timer.
-      if (statusGraceRef.current !== null) {
-        window.clearTimeout(statusGraceRef.current);
-        statusGraceRef.current = null;
-      }
-      return;
-    }
-    // Busy → waiting: delay the transition so tool-call gaps don't flicker.
-    if (optimisticStatus === 'busy' && rawOptimisticStatus === 'waiting') {
-      if (statusGraceRef.current !== null) return; // timer already running
-      statusGraceRef.current = window.setTimeout(() => {
-        statusGraceRef.current = null;
-        setOptimisticStatus(rawOptimisticStatus);
-      }, 3000);
-      return;
-    }
-    // All other transitions: apply immediately.
-    if (statusGraceRef.current !== null) {
-      window.clearTimeout(statusGraceRef.current);
-      statusGraceRef.current = null;
-    }
-    setOptimisticStatus(rawOptimisticStatus);
-  }, [rawOptimisticStatus, optimisticStatus]);
+  // Optimistic status + live tokens-per-second live in
+  // useSessionStatus. The hook owns the busy→waiting debounce timer
+  // and the per-message TPS computation; the page just reads the
+  // results and forwards them to the badge / sidebar mirror.
+  const { optimisticStatus, liveTokensPerSecond } = useSessionStatus({
+    lastMsg,
+    messages,
+    subagentTokens,
+    setSubagentTokens,
+    isRunning,
+    pendingPermission,
+    pendingQuestion,
+  });
 
   useEffect(() => {
     if (!id) return;
@@ -2367,81 +1245,6 @@ export function SessionDetail() {
       return prev;
     });
   }, [id, optimisticStatus]);
-
-  // Live tokens-per-second: sum output tokens across all assistant messages in the
-  // current run window (since the last user message) plus tokens from subagent
-  // sessions, divided by the sum of per-message LLM durations.
-  //
-  // We sum per-message durations (time.completed - time.created for finished
-  // messages, Date.now() - time.created for in-flight ones) instead of using
-  // wall-clock elapsed from the earliest message. This excludes idle time
-  // between messages (tool execution, etc.). When a permission or question
-  // prompt is pending, in-flight messages are excluded entirely since the
-  // LLM isn't generating — this prevents user think time from deflating TPS.
-  const [liveTokensPerSecond, setLiveTokensPerSecond] = useState<number | null>(null);
-  useEffect(() => {
-    if (!isRunning) {
-      setLiveTokensPerSecond(null);
-      // Clear subagent token tracking when the run ends so the next run starts fresh.
-      setSubagentTokens(prev => prev.size > 0 ? new Map() : prev);
-      return;
-    }
-    const computeTps = () => {
-      // Find the start of the current run window: the index after the last user message.
-      let windowStart = 0;
-      for (let i = messages.length - 1; i >= 0; i--) {
-        if (messages[i].data?.role === 'user') { windowStart = i + 1; break; }
-      }
-      // Sum per-message output tokens and LLM durations across all assistant
-      // messages in the window. For completed messages we use the stored
-      // time.completed; for still-streaming messages we use Date.now() so the
-      // rate updates live while a response is being generated.
-      //
-      // When a permission or question prompt is pending, the in-flight
-      // message's duration would include the user's think time (which can
-      // be tens of seconds). We freeze the in-flight message's end time
-      // to avoid inflating the denominator with idle wait time.
-      const promptPending = pendingPermission !== null || pendingQuestion !== null;
-      let totalOutput = 0;
-      let totalDurationMs = 0;
-      const now = Date.now();
-      for (let i = windowStart; i < messages.length; i++) {
-        const m = messages[i];
-        if (m.data?.role !== 'assistant') continue;
-        const created = m.data.time?.created;
-        if (!created) continue;
-        const output = m.data.tokens?.output || 0;
-        const completed = m.data.time?.completed;
-        const isInFlight = !completed || completed <= created;
-        // Skip in-flight messages entirely when a prompt is pending —
-        // the LLM isn't generating, so including Date.now() would
-        // artificially deflate the TPS.
-        if (isInFlight && promptPending) continue;
-        const endTime = isInFlight ? now : completed;
-        const durationMs = endTime - created;
-        if (durationMs <= 0) continue;
-        totalOutput += output;
-        totalDurationMs += durationMs;
-      }
-      // Include output tokens and durations from subagent sessions (captured
-      // via SSE). Subagent entries only track `created`, so we always treat
-      // them as in-flight and use now - created for the duration.
-      for (const entry of subagentTokens.values()) {
-        const durationMs = now - entry.created;
-        if (durationMs <= 0) continue;
-        totalOutput += entry.output;
-        totalDurationMs += durationMs;
-      }
-      if (totalOutput > 0 && totalDurationMs > 100) {
-        setLiveTokensPerSecond(totalOutput / (totalDurationMs / 1000));
-        return;
-      }
-      setLiveTokensPerSecond(null);
-    };
-    computeTps();
-    const interval = setInterval(computeTps, 1000);
-    return () => clearInterval(interval);
-  }, [isRunning, messages, subagentTokens, pendingPermission, pendingQuestion]);
 
   // Flattened list of sidebar rows for the "projects" view. Each entry is
   // either a project header (with its most-recent-activity timestamp) or a
@@ -2515,23 +1318,6 @@ export function SessionDetail() {
 
     return groups;
   }, [recentSessions, id, optimisticStatus]);
-
-  // Collapsed state as a Set for O(1) membership checks in render. The current
-  // session's project is force-expanded regardless of persisted state so the
-  // user can always see where they are.
-  const collapsedProjectSet = useMemo(() => {
-    const set = new Set(collapsedProjects);
-    // Force the current session's group expanded so the user always
-    // sees where they are. Groups are keyed by project root (so
-    // worktrees of the same repo live under one parent), so look the
-    // current session's directory up under the same fold.
-    const currentDir = recentSessions.find(s => s.id === id)?.directory;
-    if (currentDir) {
-      set.delete(currentDir); // legacy keys persisted before fold
-      set.delete(projectRootForDirectory(currentDir));
-    }
-    return set;
-  }, [collapsedProjects, recentSessions, id]);
 
   // Keep the active session's sidebar row visible. The list doesn't reorder
   // to follow the cursor, so when the user switches sessions (or flips
