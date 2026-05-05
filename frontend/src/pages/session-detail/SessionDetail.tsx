@@ -49,6 +49,7 @@ import {
   removeFailedSend,
   type FailedSend,
 } from '../../lib/failedSends';
+import { useSyncRef } from '../../lib/useSyncRef';
 import { useSubagentTracking } from './useSubagentTracking';
 import { useTmuxActions } from './useTmuxActions';
 import { useSessionStatus } from './useSessionStatus';
@@ -165,6 +166,13 @@ export function SessionDetail() {
     abortSignalRef: abortControllerRef,
     droppedMessageCountRef,
   });
+
+  // Stable refs for messages/parts — used by the ghost-injection effect
+  // so it can read the latest values without listing them as deps (which
+  // would create a cascade with the memory-trimming effect that also
+  // depends on and mutates `messages`).
+  const messagesRef = useSyncRef(messages);
+  const partsRef = useSyncRef(parts);
 
   // Capability flags for the owning platform. Used to *hide* affordances
   // the platform doesn't support (composer, abort, compact, ...). Falls
@@ -507,14 +515,25 @@ export function SessionDetail() {
   // as a result of the injection itself). Without this guard the effect
   // can cascade: inject → setMessages → effect re-fires → inject again
   // if the timing races with SSE or the memory-trimming effect.
+  //
+  // IMPORTANT: `messages` and `parts` are read via refs (messagesRef,
+  // partsRef) instead of being listed as dependencies. This breaks the
+  // cascade where ghost injection appends to `messages`, the memory-
+  // trimming effect trims `messages`, and the changed `messages` re-
+  // triggers ghost injection — an infinite loop that hits React's
+  // maximum update depth. The effect only needs to fire when `session`
+  // or `failedSends` change; the current messages/parts are consulted
+  // for deduplication but should not trigger re-runs.
   const injectedGhostIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!session || failedSends.length === 0) return;
-    const existingIds = new Set(messages.map(m => m.id));
+    const currentMessages = messagesRef.current;
+    const currentParts = partsRef.current;
+    const existingIds = new Set(currentMessages.map(m => m.id));
     const realUserTexts = new Set(
-      messages
+      currentMessages
         .filter(m => m.data?.role === 'user')
-        .flatMap(m => parts
+        .flatMap(m => currentParts
           .filter(p => p.messageId === m.id)
           .map(p => {
             try {
@@ -574,7 +593,8 @@ export function SessionDetail() {
       setFailedSends(prev => prev.filter(e => !droppedIds.includes(e.id)));
       droppedIds.forEach(idToDrop => removeFailedSend(session.id, idToDrop));
     }
-  }, [session, failedSends, messages, parts]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- messagesRef/partsRef are stable refs; listing messages/parts here would create an infinite loop with the memory-trimming effect.
+  }, [session, failedSends]);
 
   useEffect(() => {
     if (messages.length <= MAX_RETAINED_MESSAGES) return;

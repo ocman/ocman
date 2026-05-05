@@ -14,6 +14,7 @@ import {
   makeSessionDetail,
   renderSessionPage,
 } from './harness';
+import { recordFailedSend, clearFailedSends } from '../../../lib/failedSends';
 
 beforeEach(() => {
   // jsdom does not implement scrollIntoView or scrollTo; the
@@ -106,6 +107,50 @@ describe('SessionDetail — initial mount', () => {
     expect(maxDepthCalls).toHaveLength(0);
 
     errorSpy.mockRestore();
+  }, 10_000);
+
+  it('does not loop when failedSends exist near the memory-trim threshold', async () => {
+    // Regression: ghost injection and memory trimming both depended on
+    // `messages` and both called `setMessages`. When failedSends were
+    // present and the message count was near MAX_RETAINED_MESSAGES (200),
+    // the two effects cascaded into an infinite loop:
+    //   inject ghosts → messages grows past 200 → trim fires → trim
+    //   removes ghosts → injection re-fires → ...
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const sessionId = 'sess_trim_loop';
+    // Seed 195 messages — close to the 200 threshold.
+    const msgs = Array.from({ length: 195 }, (_, i) => ({
+      id: `msg_${i}`,
+      sessionId,
+      timeCreated: Date.now() - (195 - i) * 1000,
+      data: { role: i % 2 === 0 ? 'user' as const : 'assistant' as const },
+    }));
+
+    const sess = makeSession({ id: sessionId, status: 'busy' });
+    const detail = makeSessionDetail(sess, { messages: msgs, totalMessages: 195 });
+
+    // Persist a failed send so the ghost-injection effect has work to do.
+    recordFailedSend(sessionId, {
+      id: 'ghost_1',
+      text: 'a prompt that failed',
+      error: 'network error',
+      failedAt: Date.now(),
+    });
+
+    try {
+      renderSessionPage({ sessionId, detail, sessions: [sess] });
+      await flushPromises(12);
+      await act(async () => { await flushPromises(8); });
+
+      const maxDepthCalls = errorSpy.mock.calls.filter(
+        (args) => args.some((a) => typeof a === 'string' && a.includes('Maximum update depth exceeded')),
+      );
+      expect(maxDepthCalls).toHaveLength(0);
+    } finally {
+      clearFailedSends(sessionId);
+      errorSpy.mockRestore();
+    }
   }, 10_000);
 
   it('shows the loading state before the first response', async () => {

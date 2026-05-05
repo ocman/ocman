@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { Message, Session } from '../../lib/api';
 import { deriveRawStatus } from '../../lib/sessionStatus';
+import { useSyncRef } from '../../lib/useSyncRef';
 import type { PendingPermission } from '../../lib/sseHelpers';
 import type { PendingQuestion } from '../../components/session/QuestionPrompt';
 import type { SubagentTokenMap } from './useSubagentTracking';
@@ -83,6 +84,7 @@ export function useSessionStatus({
   // suppressed entirely. Transitions to "error", "done", or "busy"
   // are applied immediately.
   const [optimisticStatus, setOptimisticStatus] = useState<Session['status']>(rawOptimisticStatus);
+  const optimisticStatusRef = useSyncRef(optimisticStatus);
   const statusGraceRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -96,8 +98,15 @@ export function useSessionStatus({
   // busy→waiting transition, we want the badge to update on the
   // very next paint. Debouncing busy→waiting via the timeout
   // arm above is the only path that defers the update.
+  //
+  // IMPORTANT: `optimisticStatus` is read via ref instead of being
+  // listed as a dependency. Listing it would create a self-referencing
+  // cycle (the effect sets the value it depends on), doubling the
+  // render count per status change and amplifying other re-render
+  // cascades.
   useEffect(() => {
-    if (rawOptimisticStatus === optimisticStatus) {
+    const currentOptimistic = optimisticStatusRef.current;
+    if (rawOptimisticStatus === currentOptimistic) {
       // Already in sync — clear any pending grace timer.
       if (statusGraceRef.current !== null) {
         window.clearTimeout(statusGraceRef.current);
@@ -105,7 +114,7 @@ export function useSessionStatus({
       }
       return;
     }
-    if (optimisticStatus === 'busy' && rawOptimisticStatus === 'waiting') {
+    if (currentOptimistic === 'busy' && rawOptimisticStatus === 'waiting') {
       if (statusGraceRef.current !== null) return; // timer already running
       statusGraceRef.current = window.setTimeout(() => {
         statusGraceRef.current = null;
@@ -119,7 +128,8 @@ export function useSessionStatus({
     }
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setOptimisticStatus(rawOptimisticStatus);
-  }, [rawOptimisticStatus, optimisticStatus]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- optimisticStatusRef is a stable ref; listing optimisticStatus here would create a self-referencing render cycle.
+  }, [rawOptimisticStatus]);
 
   // Live tokens-per-second: sum output tokens across all assistant
   // messages in the current run window (since the last user message)
