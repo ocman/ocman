@@ -113,6 +113,14 @@ type ConvertedCacheEntry = {
 };
 const convertedMessageCache = new WeakMap<Message, ConvertedCacheEntry>();
 
+/**
+ * Module-level cache of the last convertMessages result array. When
+ * every element in the new result is the same reference as the
+ * previous one (all per-message caches hit), we return the old array
+ * to preserve referential equality for useSyncExternalStore.
+ */
+let lastConvertedResult: ThreadMessageLike[] | null = null;
+
 /** Stable empty array for messages with no parts. */
 const EMPTY_PARTS: Part[] = [];
 
@@ -166,7 +174,7 @@ export function convertMessages(
   });
 
   const filtered = messages.filter((m) => m.data?.role === 'user' || m.data?.role === 'assistant');
-  return filtered.map((m, idx): ThreadMessageLike => {
+  const result = filtered.map((m, idx): ThreadMessageLike => {
     const role = m.data.role as 'user' | 'assistant';
 
     // A user message is "queued" when it follows an unfinished
@@ -622,4 +630,19 @@ export function convertMessages(
 
     return result;
   });
+
+  // Return the previous result array when every element is the same
+  // reference. This prevents useSyncExternalStore (inside
+  // @assistant-ui/react's useExternalStoreRuntime) from seeing a new
+  // snapshot on every call, which would trigger a forceStoreRerender
+  // loop during the passive-effect phase.
+  if (
+    lastConvertedResult &&
+    lastConvertedResult.length === result.length &&
+    result.every((r, i) => r === lastConvertedResult[i])
+  ) {
+    return lastConvertedResult;
+  }
+  lastConvertedResult = result;
+  return result;
 }
