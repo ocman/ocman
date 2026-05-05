@@ -2,42 +2,42 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import * as Toast from '@radix-ui/react-toast';
 import './SessionDetail.css';
-import { api, type Session, type Message, type Part, type AgentInfo, type SessionModelEntry, type SessionDetail } from '../lib/api';
-import { cleanTitle, shortPath, relativeTime } from '../lib/format';
-import { projectRootForDirectory } from '../lib/worktrees';
-import { useHeaderInfo, usePageTitle } from '../lib/headerContext';
-import { OcmanRuntimeProvider } from '../components/OcmanRuntimeProvider';
-import { AssistantThread } from '../components/AssistantThread';
-import { Composer, type AttachedImage } from '../components/assistant/Composer';
-import { QuestionPrompt, type PendingQuestion } from '../components/session/QuestionPrompt';
-import { PermissionPrompt } from '../components/session/PermissionPrompt';
-import { StatusBadge } from '../components/StatusBadge';
-import { PlatformBadge } from '../components/PlatformBadge';
-import { ShortPath, GitStatusLine } from '../components/SessionTable';
-import { BackendStats } from '../components/BackendStats';
-import { SidebarResizer } from '../components/SidebarResizer';
-import { RightPanel } from '../components/RightPanel';
-import { ErrorBoundary } from '../components/ErrorBoundary';
-import { useUiStore } from '../lib/uiStore';
-import { useTmux } from '../lib/useTmux';
-import { filterVisibleSessions } from '../lib/sessionVisibility';
-import { useApiStore } from '../lib/apiStore';
-import { useGitInfo } from '../lib/useGitInfo';
-import { usePlatformCapabilities } from '../lib/useCapabilities';
-import { recheckFaviconNotify } from '../lib/useFaviconNotify';
-import { notifyPromptDismissed } from '../lib/useToastNotify';
-import { openVSCode } from '../lib/shortcuts';
-import { useShortcut } from '../lib/shortcutRegistry';
-import { hashSession, hashMessagesAndParts } from '../lib/sessionHash';
-import { createSessionWithLaunch, type LaunchStatus } from '../lib/createSessionWithLaunch';
-import { isSessionRelevant } from '../lib/promptRouting';
+import { api, type Session, type Message, type Part, type AgentInfo, type SessionModelEntry, type SessionDetail } from '../../lib/api';
+import { cleanTitle, shortPath, relativeTime } from '../../lib/format';
+import { projectRootForDirectory } from '../../lib/worktrees';
+import { useHeaderInfo, usePageTitle } from '../../lib/headerContext';
+import { OcmanRuntimeProvider } from '../../components/OcmanRuntimeProvider';
+import { AssistantThread } from '../../components/AssistantThread';
+import { Composer, type AttachedImage } from '../../components/assistant/Composer';
+import { QuestionPrompt, type PendingQuestion } from '../../components/session/QuestionPrompt';
+import { PermissionPrompt } from '../../components/session/PermissionPrompt';
+import { StatusBadge } from '../../components/StatusBadge';
+import { PlatformBadge } from '../../components/PlatformBadge';
+import { ShortPath, GitStatusLine } from '../../components/SessionTable';
+import { BackendStats } from '../../components/BackendStats';
+import { SidebarResizer } from '../../components/SidebarResizer';
+import { RightPanel } from '../../components/RightPanel';
+import { ErrorBoundary } from '../../components/ErrorBoundary';
+import { useUiStore } from '../../lib/uiStore';
+import { useTmux } from '../../lib/useTmux';
+import { filterVisibleSessions } from '../../lib/sessionVisibility';
+import { useApiStore } from '../../lib/apiStore';
+import { useGitInfo } from '../../lib/useGitInfo';
+import { usePlatformCapabilities } from '../../lib/useCapabilities';
+import { recheckFaviconNotify } from '../../lib/useFaviconNotify';
+import { notifyPromptDismissed } from '../../lib/useToastNotify';
+import { openVSCode } from '../../lib/shortcuts';
+import { useShortcut } from '../../lib/shortcutRegistry';
+import { hashSession, hashMessagesAndParts } from '../../lib/sessionHash';
+import { createSessionWithLaunch, type LaunchStatus } from '../../lib/createSessionWithLaunch';
+import { isSessionRelevant } from '../../lib/promptRouting';
 import {
   insertMessageByTime,
   mergeParts,
   upsertPart,
   inferStatusFromMessage,
   truncatePartField,
-} from '../lib/sseMessageHelpers';
+} from '../../lib/sseMessageHelpers';
 import {
   formatModelRef,
   deriveRawStatus,
@@ -45,9 +45,9 @@ import {
   computeLiveTokens,
   mergeTokenStats,
   deriveActiveModelAndAgent,
-} from '../lib/sessionStatus';
-import { extractTaskId, isTaskTool } from '../lib/taskId';
-import { computeSidebarHash, rollupGroupStatus } from '../lib/sidebarHelpers';
+} from '../../lib/sessionStatus';
+import { extractTaskId, isTaskTool } from '../../lib/taskId';
+import { computeSidebarHash, rollupGroupStatus } from '../../lib/sidebarHelpers';
 import {
   extractMessageFromEvent,
   extractPartFromEvent,
@@ -58,13 +58,13 @@ import {
   hasPendingQuestionInParts,
   truncateSseData,
   type PendingPermission,
-} from '../lib/sseHelpers';
+} from '../../lib/sseHelpers';
 import {
   listFailedSends,
   recordFailedSend,
   removeFailedSend,
   type FailedSend,
-} from '../lib/failedSends';
+} from '../../lib/failedSends';
 
 const PAGE_SIZE = 30;
 const RECENT_SESSIONS_LIMIT = 15;
