@@ -14,8 +14,24 @@ import {
   formatSeconds,
   formatTokenCache,
   relativeTime,
+  renderModel,
   shortPath,
+  shortSessionID,
 } from '../lib/format';
+import {
+  BAR_OPTIONS_TOKS,
+  BAR_OPTIONS_DURATION,
+  BAR_OPTIONS_STACKED,
+  BAR_OPTIONS_HOURLY,
+  BAR_OPTIONS_HOURLY_TOKENS,
+  BAR_OPTIONS_SESSIONS,
+  BAR_OPTIONS_TOKENS_BY_MODEL,
+  LINE_OPTIONS_COST,
+  LINE_OPTIONS_CACHE,
+  DOUGHNUT_OPTIONS,
+  CHART_COLORS,
+  STOP_REASON_COLORS,
+} from '../lib/chartConfig';
 import { usePageTitle } from '../lib/headerContext';
 import { SessionTable } from '../components/SessionTable';
 import { ErrorBoundary } from '../components/ErrorBoundary';
@@ -32,8 +48,6 @@ import {
 import { useSessions as useTQSessions, useProjects as useTQProjects, useActivity, useModels, useHourly, useHourlyTokens, useMetrics } from '../lib/queries';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, PointElement, LineElement, Tooltip, Legend);
-
-const STOP_REASON_COLORS = ['#f38ba8', '#a6e3a1', '#f9e2af', '#89b4fa', '#cba6f7', '#fab387', '#94e2d5'];
 
 const METRICS_RANGE_OPTIONS = [
   { label: '24 hours', value: 1 },
@@ -720,121 +734,9 @@ function ChartCard({ title, children }: { title: string; children: ReactNode }) 
   );
 }
 
-const CHART_X_TICKS = { maxTicksLimit: 10, maxRotation: 45, minRotation: 45 };
-
-const BAR_OPTIONS_TOKS = {
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: false as const,
-  plugins: { legend: { display: false } },
-  scales: {
-    x: { grid: { display: false }, ticks: CHART_X_TICKS },
-    y: { beginAtZero: true, ticks: { callback: (v: string | number) => `${v}Tok/s` } },
-  },
-} as const;
-
-const BAR_OPTIONS_DURATION = {
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: false as const,
-  plugins: { legend: { display: false } },
-  scales: {
-    x: { grid: { display: false }, ticks: CHART_X_TICKS },
-    y: { beginAtZero: true, ticks: { callback: (v: string | number) => `${v}s` } },
-  },
-} as const;
-
-const BAR_OPTIONS_STACKED = {
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: false as const,
-  plugins: { legend: { position: 'top' as const, labels: { color: '#bac2de', boxWidth: 12, padding: 12 } } },
-  scales: {
-    x: { stacked: true, grid: { display: false }, ticks: CHART_X_TICKS },
-    y: { stacked: true, beginAtZero: true, ticks: { callback: (v: string | number) => formatCompactNumber(Number(v)) } },
-  },
-} as const;
-
-const LINE_OPTIONS_COST = {
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: false as const,
-  plugins: { legend: { display: false } },
-  scales: {
-    x: { grid: { display: false }, ticks: CHART_X_TICKS },
-    y: { beginAtZero: true, ticks: { callback: (v: string | number) => formatCurrency(Number(v), 2) } },
-  },
-} as const;
-
-const LINE_OPTIONS_CACHE = {
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: false as const,
-  plugins: { legend: { display: false } },
-  scales: {
-    x: { grid: { display: false }, ticks: CHART_X_TICKS },
-    y: { beginAtZero: true, max: 100, ticks: { callback: (v: string | number) => `${Number(v).toFixed(0)}%` } },
-  },
-} as const;
-
-const DOUGHNUT_OPTIONS = {
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: false as const,
-  cutout: '62%',
-  plugins: { legend: { position: 'right' as const, labels: { color: '#bac2de', boxWidth: 12, padding: 12 } } },
-} as const;
-
 // ---------------------------------------------------------------------------
 // Usage charts (restored): heatmap + hourly/daily/model breakdowns
 // ---------------------------------------------------------------------------
-
-const COLORS = ['#89b4fa', '#a6e3a1', '#cba6f7', '#fab387', '#f38ba8', '#74c7ec', '#94e2d5', '#f9e2af'];
-
-const BAR_OPTIONS_SESSIONS = {
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: false as const,
-  plugins: { legend: { position: 'top' as const, labels: { color: '#bac2de', boxWidth: 12, padding: 8, font: { size: 11 } } } },
-  scales: {
-    x: { grid: { display: false }, ticks: { maxTicksLimit: 12, callback: (_: unknown, idx: number, ticks: unknown[]) => idx === 0 || idx === ticks.length - 1 || idx % Math.ceil(ticks.length / 12) === 0 ? undefined : null } },
-    y: { beginAtZero: true },
-  },
-} as const;
-
-const BAR_OPTIONS_HOURLY = {
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: false as const,
-  plugins: { legend: { display: false } },
-  scales: {
-    x: { grid: { display: false } },
-    y: { beginAtZero: true },
-  },
-} as const;
-
-const BAR_OPTIONS_TOKENS_BY_MODEL = {
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: false as const,
-  indexAxis: 'y' as const,
-  plugins: { legend: { position: 'bottom' as const, labels: { color: '#bac2de', boxWidth: 12, padding: 8, font: { size: 11 } } } },
-  scales: {
-    x: { beginAtZero: true, stacked: true, ticks: { callback: (v: string | number) => formatCompactNumber(Number(v)) } },
-    y: { grid: { display: false }, stacked: true },
-  },
-} as const;
-
-const BAR_OPTIONS_HOURLY_TOKENS = {
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: false as const,
-  plugins: { legend: { position: 'bottom' as const, labels: { color: '#bac2de', boxWidth: 12, padding: 8, font: { size: 11 } } } },
-  scales: {
-    x: { stacked: true, grid: { display: false }, ticks: { maxRotation: 0, autoSkip: false } },
-    y: { stacked: true, beginAtZero: true, ticks: { callback: (v: string | number) => formatCompactNumber(Number(v)) } },
-  },
-} as const;
 
 const USAGE_RANGE_OPTIONS = [
   { label: '7 days', value: 7 },
@@ -921,7 +823,7 @@ export function UsageTab() {
           <div className="metrics-chart-body">
             <Doughnut data={{
               labels: sortedModels.map((m) => m.model),
-              datasets: [{ data: sortedModels.map((m) => m.count), backgroundColor: COLORS, borderWidth: 0 }],
+              datasets: [{ data: sortedModels.map((m) => m.count), backgroundColor: CHART_COLORS, borderWidth: 0 }],
             }} options={{ responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { position: 'bottom', labels: { color: '#bac2de', boxWidth: 12, padding: 8, font: { size: 11 } } } } }} />
           </div>
         </div>
@@ -988,7 +890,7 @@ function HourlyTokensChart({ data }: { data: HourlyTokensByModel[] }) {
     return {
       label: label.length > 25 ? label.slice(0, 25) + '...' : label,
       data: slots.map((s) => dtMap.get(s) ?? 0),
-      backgroundColor: COLORS[idx % COLORS.length],
+      backgroundColor: CHART_COLORS[idx % CHART_COLORS.length],
       borderRadius: 1,
     };
   });
@@ -1292,12 +1194,4 @@ export function SettingsTab() {
   );
 }
 
-function renderModel(model: string): string {
-  if (!model) return 'unknown';
-  return model.includes('/') ? model.split('/').slice(-1)[0] : model;
-}
 
-function shortSessionID(sessionID: string): string {
-  if (sessionID.length <= 12) return sessionID;
-  return `${sessionID.slice(0, 4)}...${sessionID.slice(-8)}`;
-}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cleanTitle } from './format';
+import { cleanTitle, renderModel, shortSessionID } from './format';
 
 describe('cleanTitle', () => {
   it('returns empty string for nullish input', () => {
@@ -55,5 +55,35 @@ describe('cleanTitle', () => {
 
   it('trims surrounding whitespace', () => {
     expect(cleanTitle('   **title**   ')).toBe('title');
+  });
+});
+
+describe('renderModel', () => {
+  it('returns "unknown" for empty input', () => {
+    expect(renderModel('')).toBe('unknown');
+  });
+
+  it('returns the trailing path segment for provider-prefixed ids', () => {
+    expect(renderModel('anthropic/claude-opus-4')).toBe('claude-opus-4');
+    expect(renderModel('openai/gpt-4o')).toBe('gpt-4o');
+  });
+
+  it('returns the input unchanged when there is no slash', () => {
+    expect(renderModel('claude-opus-4')).toBe('claude-opus-4');
+  });
+
+  it('keeps only the last segment for multi-slash ids', () => {
+    expect(renderModel('a/b/c')).toBe('c');
+  });
+});
+
+describe('shortSessionID', () => {
+  it('returns short ids unchanged (length ≤ 12)', () => {
+    expect(shortSessionID('abc')).toBe('abc');
+    expect(shortSessionID('123456789012')).toBe('123456789012');
+  });
+
+  it('compresses long ids to first-4 + ... + last-8', () => {
+    expect(shortSessionID('1234567890abcdef0123456789')).toBe('1234...23456789');
   });
 });

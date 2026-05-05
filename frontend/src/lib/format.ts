@@ -118,3 +118,22 @@ export function cleanTitle(str: string | null | undefined): string {
   out = out.replace(/(^|\s)[*_]+(\s|$)/g, '$1$2');
   return out.trim();
 }
+
+/**
+ * Render a model id as the short basename for display in lists.
+ * `anthropic/claude-opus-4` → `claude-opus-4`. Empty inputs return
+ * `unknown` so a missing value never renders as a blank cell.
+ */
+export function renderModel(model: string): string {
+  if (!model) return 'unknown';
+  return model.includes('/') ? model.split('/').slice(-1)[0] : model;
+}
+
+/**
+ * Compress a session id into a fixed-width display form. Short ids
+ * pass through; long ones become `aaaa...zzzzzzzz` (4 + 3 + 8 chars).
+ */
+export function shortSessionID(sessionID: string): string {
+  if (sessionID.length <= 12) return sessionID;
+  return `${sessionID.slice(0, 4)}...${sessionID.slice(-8)}`;
+}
