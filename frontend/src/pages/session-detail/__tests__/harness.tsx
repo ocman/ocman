@@ -7,6 +7,13 @@
 // store (useCapabilities, useTmux, useGitInfo). The harness keeps a
 // reference to the most recently constructed FakeEventSource so
 // tests can dispatch SSE events.
+//
+// Module mocks are installed once at module-load via `vi.mock`
+// (auto-hoisted by vitest). Each test then mutates the shared
+// `mockState` to control the per-test return values; this avoids
+// the cost of `vi.resetModules()` + re-importing the entire React
+// tree before every test, which on CI ran each mount past the
+// async-util timeout.
 
 import { vi } from 'vitest';
 import { render, type RenderResult } from '@testing-library/react';
@@ -16,8 +23,6 @@ import type {
   SessionDetail as SessionDetailPayload,
   AgentInfo,
   PlatformCapabilities,
-  WorkingTreeDiff,
-  TmuxSession,
 } from '../../../lib/api';
 
 /**
@@ -89,6 +94,53 @@ export class FakeEventSource {
   }
 }
 
+// Install fake EventSource + ResizeObserver on globalThis so the
+// module mocks below (and the real component code) see them when
+// the page first imports. These globals are set in module scope so
+// they're in place before any vi.mock factory runs.
+(globalThis as unknown as { EventSource: typeof FakeEventSource }).EventSource = FakeEventSource;
+if (typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver === 'undefined') {
+  class StubResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  (globalThis as unknown as { ResizeObserver: typeof StubResizeObserver }).ResizeObserver = StubResizeObserver;
+}
+
+/** Default capabilities — full live OpenCode adapter. */
+export function fullCaps(): PlatformCapabilities {
+  return {
+    composer: true,
+    respondPermission: true,
+    respondQuestion: true,
+    abort: true,
+    compact: true,
+    events: true,
+    agentCatalog: true,
+    modelCatalog: true,
+    slashCommands: true,
+    shellExec: true,
+    fileChanges: true,
+    sessionInfo: true,
+    liveConnectionHint: '',
+  };
+}
+
+/**
+ * Per-test mutable state read by the module-scoped mocks. Tests
+ * adjust these via `renderSessionPage(opts)`; the mock factories
+ * read them at call time so behaviour can change between tests
+ * without re-importing the page.
+ */
+const mockState: {
+  caps: PlatformCapabilities;
+  apiStub: ReturnType<typeof makeApiStub>;
+} = {
+  caps: fullCaps(),
+  apiStub: makeApiStub(),
+};
+
 /**
  * Stub the entire `api` module surface used by SessionDetail. Tests
  * can override individual fields by spreading their own implementations
@@ -113,24 +165,98 @@ export function makeApiStub() {
   };
 }
 
-/** Default capabilities — full live OpenCode adapter. */
-export function fullCaps(): PlatformCapabilities {
+// ---------------------------------------------------------------------------
+// Module mocks. Vitest auto-hoists `vi.mock` calls to the top of the
+// module, so these run before any of our imports — including the
+// imports inside the SUT — even though they appear here textually.
+// Each factory reads from `mockState` at call time so per-test
+// changes take effect without re-importing.
+// ---------------------------------------------------------------------------
+
+vi.mock('../../../lib/api', async () => {
+  const real = await vi.importActual<typeof import('../../../lib/api')>('../../../lib/api');
   return {
-    composer: true,
-    respondPermission: true,
-    respondQuestion: true,
-    abort: true,
-    compact: true,
-    events: true,
-    agentCatalog: true,
-    modelCatalog: true,
-    slashCommands: true,
-    shellExec: true,
-    fileChanges: true,
-    sessionInfo: true,
-    liveConnectionHint: '',
+    ...real,
+    api: new Proxy({} as typeof real.api, {
+      get(_target, prop: string) {
+        const stub = mockState.apiStub as unknown as Record<string, unknown>;
+        if (prop in stub) return stub[prop];
+        return (real.api as unknown as Record<string, unknown>)[prop];
+      },
+    }),
   };
-}
+});
+
+vi.mock('../../../lib/useCapabilities', () => ({
+  useCapabilities: () => ({
+    platforms: [{
+      id: 'opencode',
+      displayName: 'OpenCode',
+      available: true,
+      capabilities: mockState.caps,
+    }],
+  }),
+  usePlatformCapabilities: () => mockState.caps,
+  useMultiPlatform: () => false,
+  useWorktreeSessions: () => false,
+}));
+
+vi.mock('../../../lib/useTmux', () => ({
+  useTmux: () => ({
+    available: false,
+    isLocal: false,
+    sessions: [],
+    clients: [],
+    switchSession: vi.fn().mockResolvedValue(undefined),
+    findSession: () => undefined,
+    launchOpencode: vi.fn().mockResolvedValue({ session: '' }),
+  }),
+}));
+
+vi.mock('../../../lib/useGitInfo', () => ({
+  useGitInfo: () => ({ infos: {}, loading: false, error: null }),
+}));
+
+vi.mock('../../../lib/useSessionChanges', () => ({
+  useSessionChanges: () => ({
+    data: { sessionId: '', supported: false, totalAdditions: 0, totalDeletions: 0, filesChanged: 0, files: [] },
+    loading: false,
+    error: null,
+    refresh: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../lib/useSessionInfo', () => ({
+  useSessionInfo: () => ({
+    data: null,
+    loading: false,
+    error: null,
+    refresh: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../lib/useWorkingTreeDiff', () => ({
+  useWorkingTreeDiff: () => ({
+    data: { repo: '', branch: '', ahead: 0, behind: 0, files: [], truncated: false },
+    loading: false,
+    error: null,
+    notRepo: false,
+    refresh: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../lib/useFaviconNotify', () => ({
+  recheckFaviconNotify: vi.fn(),
+}));
+
+vi.mock('../../../lib/useToastNotify', () => ({
+  notifyPromptDismissed: vi.fn(),
+}));
+
+// Eagerly import the page + apiStore once. Subsequent test calls
+// reuse the cached modules instead of paying re-import cost.
+import { SessionDetail } from '../SessionDetail';
+import { useApiStore } from '../../../lib/apiStore';
 
 /** Build a Session fixture with sensible defaults. */
 export function makeSession(overrides: Partial<Session> = {}): Session {
@@ -188,20 +314,8 @@ export interface RenderOptions {
   caps?: PlatformCapabilities;
   /** Override apiStore actions individually. */
   storeOverrides?: Record<string, unknown>;
-  /** Override window.location for git-info / fetch checks. */
 }
 
-/**
- * Render the SessionDetail page with all external dependencies
- * stubbed. Returns:
- *   - the @testing-library/react RenderResult
- *   - a `store` proxy giving direct access to vi spies for sessionDetail's
- *     apiStore actions
- *   - the FakeEventSource (after the page mounts the first time)
- *
- * Callers are responsible for restoring vi mocks between tests via
- * `afterEach(() => { ... })`.
- */
 export interface RenderHandle {
   result: RenderResult;
   store: {
@@ -227,108 +341,23 @@ export interface RenderHandle {
   sse: () => FakeEventSource | undefined;
 }
 
-export async function renderSessionPage(opts: RenderOptions = {}): Promise<RenderHandle> {
-  // Reset module-level caches between tests.
+/**
+ * Render the page with all dependencies stubbed. Cheap to call —
+ * the SUT is imported once at module load and reused across tests;
+ * per-test customisation flows through `mockState` and the
+ * `useApiStore.setState` patch.
+ */
+export function renderSessionPage(opts: RenderOptions = {}): RenderHandle {
+  // Reset any FakeEventSource instances from the previous test so
+  // `sse()` only returns this run's stream.
   FakeEventSource.reset();
-  vi.resetModules();
 
-  // Install fake EventSource on globalThis. Vite/Vitest hoists
-  // vi.mock so it must run before importing the page.
-  (globalThis as unknown as { EventSource: typeof FakeEventSource }).EventSource = FakeEventSource;
+  // Refresh the per-test mock state. The caps object is read
+  // lazily by usePlatformCapabilities; the api stub is read via the
+  // proxy installed in vi.mock('../../../lib/api') above.
+  mockState.caps = opts.caps ?? fullCaps();
+  mockState.apiStub = makeApiStub();
 
-  // jsdom does not implement ResizeObserver — AssistantThread uses
-  // one to track the scroll viewport. A minimal no-op stub is enough.
-  if (typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver === 'undefined') {
-    class StubResizeObserver {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    }
-    (globalThis as unknown as { ResizeObserver: typeof StubResizeObserver }).ResizeObserver = StubResizeObserver;
-  }
-
-  // Stub the api module — page imports api.* directly for a few calls.
-  const apiStub = makeApiStub();
-  vi.doMock('../../../lib/api', async () => {
-    const real = await vi.importActual<typeof import('../../../lib/api')>(
-      '../../../lib/api',
-    );
-    return { ...real, api: { ...real.api, ...apiStub } };
-  });
-
-  // Stub useCapabilities so we don't fire a real /api/capabilities.
-  vi.doMock('../../../lib/useCapabilities', () => ({
-    useCapabilities: () => ({ platforms: [{ id: 'opencode', displayName: 'OpenCode', available: true, capabilities: opts.caps ?? fullCaps() }] }),
-    usePlatformCapabilities: () => opts.caps ?? fullCaps(),
-    useMultiPlatform: () => false,
-    useWorktreeSessions: () => false,
-  }));
-
-  // Stub useTmux: report unavailable so tmux-only branches stay quiet.
-  vi.doMock('../../../lib/useTmux', () => ({
-    useTmux: () => ({
-      available: false,
-      isLocal: false,
-      sessions: [] as TmuxSession[],
-      clients: [],
-      switchSession: vi.fn().mockResolvedValue(undefined),
-      findSession: () => undefined,
-      launchOpencode: vi.fn().mockResolvedValue({ session: '' }),
-    }),
-  }));
-
-  // Stub useGitInfo: no live git checks. The real hook returns
-  // `{ infos: Record<string, GitInfo>, loading, error }` and the page
-  // looks up `infos[directory]` per row.
-  vi.doMock('../../../lib/useGitInfo', () => ({
-    useGitInfo: () => ({ infos: {}, loading: false, error: null }),
-  }));
-
-  // Stub the changes / info / diff hooks so RightPanel doesn't error.
-  vi.doMock('../../../lib/useSessionChanges', () => ({
-    useSessionChanges: () => ({
-      data: { sessionId: 'sess_1', supported: false, totalAdditions: 0, totalDeletions: 0, filesChanged: 0, files: [] },
-      loading: false,
-      error: null,
-      refresh: vi.fn(),
-    }),
-  }));
-  vi.doMock('../../../lib/useSessionInfo', () => ({
-    useSessionInfo: () => ({
-      data: null,
-      loading: false,
-      error: null,
-      refresh: vi.fn(),
-    }),
-  }));
-  vi.doMock('../../../lib/useWorkingTreeDiff', () => ({
-    useWorkingTreeDiff: () => ({
-      data: { repo: '', branch: '', ahead: 0, behind: 0, files: [], truncated: false } as WorkingTreeDiff,
-      loading: false,
-      error: null,
-      notRepo: false,
-      refresh: vi.fn(),
-    }),
-  }));
-
-  // Stub favicon / toast hooks — they touch the document title.
-  vi.doMock('../../../lib/useFaviconNotify', () => ({
-    recheckFaviconNotify: vi.fn(),
-  }));
-  vi.doMock('../../../lib/useToastNotify', () => ({
-    notifyPromptDismissed: vi.fn(),
-  }));
-
-  // Stub TanStack Query hooks used elsewhere — not needed by the page itself.
-
-  // Now lazily import the page and the apiStore so all vi.doMock
-  // registrations apply.
-  const { useApiStore } = await import('../../../lib/apiStore');
-  const { SessionDetail } = await import('../SessionDetail');
-
-  // Build the store action spies and merge into the real store. Each
-  // spy delegates to a fixture by default; tests can override via
-  // opts.storeOverrides.
   const detail =
     opts.detail ?? makeSessionDetail(makeSession({ id: opts.sessionId ?? 'sess_1' }));
   const storeSpies: RenderHandle['store'] = {
@@ -353,8 +382,8 @@ export async function renderSessionPage(opts: RenderOptions = {}): Promise<Rende
     refreshCachedSessions: vi.fn().mockResolvedValue([]),
   };
 
-  // Apply spies to the real store. Zustand merges the patch onto the
-  // existing slice so untouched selectors keep working.
+  // Apply spies to the real store. Zustand merges the patch onto
+  // the existing slice so untouched selectors keep working.
   useApiStore.setState({
     ...storeSpies,
     ...(opts.storeOverrides ?? {}),
@@ -372,7 +401,7 @@ export async function renderSessionPage(opts: RenderOptions = {}): Promise<Rende
   return {
     result,
     store: storeSpies,
-    api: apiStub,
+    api: mockState.apiStub,
     sse: () => FakeEventSource.latest(),
   };
 }

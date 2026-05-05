@@ -30,7 +30,7 @@ afterEach(() => {
 
 describe('SessionDetail — initial mount', () => {
   it('renders the layout and fetches the session detail', async () => {
-    const { store } = await renderSessionPage({ sessionId: 'sess_1' });
+    const { store } = renderSessionPage({ sessionId: 'sess_1' });
     await flushPromises();
     await waitFor(() => {
       expect(store.getSession).toHaveBeenCalled();
@@ -43,7 +43,7 @@ describe('SessionDetail — initial mount', () => {
     const pending = new Promise<ReturnType<typeof makeSessionDetail>>((r) => {
       resolveDetail = r;
     });
-    const handle = await renderSessionPage({
+    const handle = renderSessionPage({
       storeOverrides: { getSession: vi.fn().mockReturnValue(pending) },
     });
     // The page renders a `switching` blank frame on first mount; the
@@ -59,7 +59,7 @@ describe('SessionDetail — initial mount', () => {
   });
 
   it('renders the error banner when getSession rejects', async () => {
-    await renderSessionPage({
+    renderSessionPage({
       storeOverrides: {
         getSession: vi.fn().mockRejectedValue(new Error('boom')),
       },
@@ -73,7 +73,7 @@ describe('SessionDetail — initial mount', () => {
 
 describe('SessionDetail — SSE stream', () => {
   it('opens an EventSource against the active session id', async () => {
-    const { sse } = await renderSessionPage({ sessionId: 'sess_42' });
+    const { sse } = renderSessionPage({ sessionId: 'sess_42' });
     await flushPromises();
     await waitFor(() => {
       expect(sse()).toBeDefined();
@@ -86,7 +86,7 @@ describe('SessionDetail — SSE stream', () => {
     // via updateCachedSession. Asserting on its calls verifies the
     // SSE handler reached setMessages without depending on
     // assistant-ui's render scheduling.
-    const handle = await renderSessionPage({ sessionId: 'sess_1' });
+    const handle = renderSessionPage({ sessionId: 'sess_1' });
     await flushPromises();
     await waitFor(() => expect(handle.sse()).toBeDefined());
     // Reset the spy so we ignore mirror calls from the initial load.
@@ -131,7 +131,7 @@ describe('SessionDetail — SSE stream', () => {
   });
 
   it('appends streamed delta text to an existing part', async () => {
-    const handle = await renderSessionPage({ sessionId: 'sess_1' });
+    const handle = renderSessionPage({ sessionId: 'sess_1' });
     await flushPromises();
     await waitFor(() => expect(handle.sse()).toBeDefined());
 
@@ -188,7 +188,7 @@ describe('SessionDetail — SSE stream', () => {
 describe('SessionDetail — sidebar polling', () => {
   it('lists the recent sessions returned by getSessions', async () => {
     const sib = makeSession({ id: 'sess_other', title: 'Other session', timeUpdated: Date.now() });
-    const handle = await renderSessionPage({
+    const handle = renderSessionPage({
       sessionId: 'sess_1',
       sessions: [makeSession({ id: 'sess_1', title: 'Active' }), sib],
     });
@@ -202,7 +202,7 @@ describe('SessionDetail — sidebar polling', () => {
   });
 
   it('passes the SIDEBAR_RECENT_HOURS window via the `since` filter', async () => {
-    const handle = await renderSessionPage({ sessionId: 'sess_1' });
+    const handle = renderSessionPage({ sessionId: 'sess_1' });
     await flushPromises();
     await waitFor(() => expect(handle.store.getSessions).toHaveBeenCalled());
     const [params] = handle.store.getSessions.mock.calls[0] as [{ since?: number; limit?: number }];
@@ -227,7 +227,7 @@ describe('SessionDetail — permission prompt', () => {
 
   it('renders the prompt when listPermissions returns one', async () => {
     const listPermissionsSpy = vi.fn().mockResolvedValue([permPayload]);
-    const handle = await renderSessionPage({
+    const handle = renderSessionPage({
       sessionId: 'sess_1',
       detail: makeSessionDetail(sessionWithPerm),
       sessions: [sessionWithPerm],
@@ -245,7 +245,7 @@ describe('SessionDetail — permission prompt', () => {
   });
 
   it('posts the reply when Allow once is clicked', async () => {
-    const handle = await renderSessionPage({
+    const handle = renderSessionPage({
       sessionId: 'sess_1',
       detail: makeSessionDetail(sessionWithPerm),
       sessions: [sessionWithPerm],
@@ -280,7 +280,7 @@ describe('SessionDetail — question prompt', () => {
   };
 
   it('renders the question when listQuestions returns one', async () => {
-    const handle = await renderSessionPage({
+    const handle = renderSessionPage({
       sessionId: 'sess_1',
       detail: makeSessionDetail(sessionWithQ),
       sessions: [sessionWithQ],
@@ -302,7 +302,7 @@ describe('SessionDetail — composer send', () => {
   // observable contract: typing a prompt and submitting must reach
   // useApiStore.sendMessage with the correct session id and text.
   it('routes a composed message through useApiStore.sendMessage', async () => {
-    const handle = await renderSessionPage({ sessionId: 'sess_1' });
+    const handle = renderSessionPage({ sessionId: 'sess_1' });
     await flushPromises();
     await waitFor(() => expect(handle.sse()).toBeDefined());
     act(() => {
@@ -336,7 +336,7 @@ describe('SessionDetail — composer send', () => {
 
 describe('SessionDetail — composer abort', () => {
   it('calls abortSession when the SSE marks the assistant running and the user clicks abort', async () => {
-    const handle = await renderSessionPage({ sessionId: 'sess_1' });
+    const handle = renderSessionPage({ sessionId: 'sess_1' });
     await flushPromises();
     await waitFor(() => expect(handle.sse()).toBeDefined());
     act(() => {
@@ -377,7 +377,7 @@ describe('SessionDetail — composer abort', () => {
 describe('SessionDetail — sidebar archive', () => {
   it('calls archiveSession when the archive button is clicked', async () => {
     const sib = makeSession({ id: 'sess_other', title: 'Other one', timeUpdated: Date.now() });
-    const handle = await renderSessionPage({
+    const handle = renderSessionPage({
       sessionId: 'sess_1',
       sessions: [makeSession({ id: 'sess_1' }), sib],
     });
@@ -404,7 +404,7 @@ describe('SessionDetail — sidebar archive', () => {
 
 describe('SessionDetail — error finish on assistant message', () => {
   it('flips the session status to error when the SSE message reports finish=error', async () => {
-    const handle = await renderSessionPage({ sessionId: 'sess_1' });
+    const handle = renderSessionPage({ sessionId: 'sess_1' });
     await flushPromises();
     await waitFor(() => expect(handle.sse()).toBeDefined());
 
