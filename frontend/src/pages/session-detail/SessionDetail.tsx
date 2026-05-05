@@ -475,6 +475,7 @@ export function SessionDetail() {
     // once `messages` has been populated by load() — that way we can skip
     // entries whose prompt has already arrived through SSE.
     setFailedSends(id ? listFailedSends(id) : []);
+    injectedGhostIdsRef.current = new Set();
     load(signal);
     // portAvailable is now derived from session.liveConnection (populated
     // by the platform adapter). The state variable is kept because SSE
@@ -500,6 +501,13 @@ export function SessionDetail() {
   // already appears as a real user message in the loaded thread — that
   // means the request actually reached the server and SSE delivered it,
   // so the failed banner would be a confusing duplicate.
+  //
+  // Guard: track which ghost IDs we've already injected so the effect
+  // is idempotent even when `messages` / `parts` change (which they do
+  // as a result of the injection itself). Without this guard the effect
+  // can cascade: inject → setMessages → effect re-fires → inject again
+  // if the timing races with SSE or the memory-trimming effect.
+  const injectedGhostIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!session || failedSends.length === 0) return;
     const existingIds = new Set(messages.map(m => m.id));
@@ -520,6 +528,7 @@ export function SessionDetail() {
     );
     const ghostsToInject = failedSends.filter(e => {
       if (existingIds.has(e.id)) return false;
+      if (injectedGhostIdsRef.current.has(e.id)) return false;
       if (e.text && realUserTexts.has(e.text)) return false;
       return true;
     });
@@ -528,6 +537,7 @@ export function SessionDetail() {
     const newMsgs: Message[] = [];
     const newParts: Part[] = [];
     for (const entry of ghostsToInject) {
+      injectedGhostIdsRef.current.add(entry.id);
       newMsgs.push({
         id: entry.id,
         sessionId: session.id,

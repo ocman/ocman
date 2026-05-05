@@ -468,4 +468,34 @@ describe('SessionDetail — rate-limit notice', () => {
 
     errorSpy.mockRestore();
   });
+
+  it('does not loop when a non-notice session renders', async () => {
+    // Regression: ensure the hashSession change (adding notice: null
+    // for sessions without a notice) doesn't cause setSession to fire
+    // on every poll, creating a cascade through the many useCallback
+    // hooks that depend on `session`.
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const sess = makeSession({ id: 'sess_plain', status: 'done' });
+    const detail = makeSessionDetail(sess);
+
+    const handle = renderSessionPage({
+      sessionId: 'sess_plain',
+      detail,
+      sessions: [sess],
+    });
+
+    await flushPromises();
+    await waitFor(() => {
+      expect(handle.store.getSession).toHaveBeenCalled();
+    });
+
+    const maxDepthCalls = errorSpy.mock.calls.filter(
+      (args) => typeof args[0] === 'string' && args[0].includes('Maximum update depth exceeded'),
+    );
+    expect(maxDepthCalls).toHaveLength(0);
+    expect(screen.getByTestId('session-layout')).toBeInTheDocument();
+
+    errorSpy.mockRestore();
+  });
 });
