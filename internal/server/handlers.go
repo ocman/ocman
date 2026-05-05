@@ -204,7 +204,20 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 	dir := normaliseDirParam(r.URL.Query().Get("dir"))
 
-	metrics, err := s.db.GetMetricsDashboard(agent, model, since, dayCount, limit, offset, sessionLimit, sessionOffset, projectLimit, projectOffset, pricing.Load(), dir)
+	metrics, err := s.db.GetMetricsDashboard(db.MetricsDashboardOptions{
+		AgentFilter:   agent,
+		ModelFilter:   model,
+		Since:         since,
+		Days:          dayCount,
+		RequestLimit:  limit,
+		RequestOffset: offset,
+		SessionLimit:  sessionLimit,
+		SessionOffset: sessionOffset,
+		ProjectLimit:  projectLimit,
+		ProjectOffset: projectOffset,
+		Pricing:       pricing.Load(),
+		Dir:           dir,
+	})
 	if err != nil {
 		serverError(w, "fetching metrics", err)
 		return
@@ -1409,141 +1422,118 @@ func (s *Server) handleSessionsRoot(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// dispatchSessionSubpath routes every /api/session/... request to the
-// right session-scoped handler. Structure:
+// sessionSubRoute describes a single /api/session/... entry. The
+// pattern is matched against the path *after* the "/api/session/"
+// prefix, with literal segments and `{name}` placeholders. Examples:
 //
-//	/api/session/archive               POST     -> handleArchiveSession
-//	/api/session/seen                  POST     -> handleSeenSession
-//	/api/session/pin                   POST     -> handlePinSession
-//	/api/session/{id}                  GET      -> handleSession
-//	/api/session/{id}                  PATCH    -> handleSessionRename
-//	/api/session/{id}/agents           GET      -> handleSessionAgents
-//	/api/session/{id}/commands         GET      -> handleSessionCommands
-//	/api/session/{id}/models           GET      -> handleSessionModels
-//	/api/session/{id}/changes          GET      -> handleSessionChanges
-//	/api/session/{id}/info             GET      -> handleSessionInfo
-//	/api/session/{id}/permissions      GET      -> handleSessionPermissions
-//	/api/session/{id}/permissions/{pid} POST    -> handleSessionPermission
-//	/api/session/{id}/questions        GET      -> handleSessionQuestions
-//	/api/session/{id}/questions/{qid}  POST     -> handleSessionQuestion
-//	/api/session/{id}/questions/{qid}/reject POST -> handleSessionQuestion
-//	/api/session/{id}/message          POST     -> handleSessionMessage
-//	/api/session/{id}/command          POST     -> handleSessionCommand
-//	/api/session/{id}/shell            POST     -> handleSessionShell
-//	/api/session/{id}/abort            POST     -> handleSessionAbort
-//	/api/session/{id}/compact          POST     -> handleSessionCompact
-//	/api/session/{id}/events           GET      -> handleSessionEvents
-//	/api/session/{id}/tasks            GET      -> handleSessionTasks
+//	pattern "archive"                       matches /api/session/archive
+//	pattern "{id}"                          matches /api/session/abc
+//	pattern "{id}/permissions/{pid}"        matches /api/session/abc/permissions/p1
+//
+// The matched URL params are not returned to the handler today —
+// every handler re-parses r.URL.Path from scratch (an artefact of
+// the pre-table dispatcher). Switching them over is a future
+// refactor; the table is the single source of truth that makes that
+// switch easy.
+type sessionSubRoute struct {
+	method  string
+	pattern string
+	handler func(s *Server, w http.ResponseWriter, r *http.Request)
+}
+
+// sessionSubRoutes is the canonical registry of every supported
+// /api/session/... endpoint. Adding a sub-path is one line here.
+//
+// Order matters when patterns could overlap: more-specific entries
+// must come before less-specific ones (e.g. "{id}/questions/{qid}/reject"
+// before "{id}/questions/{qid}"). The router walks the table top-to-
+// bottom and stops at the first match.
+var sessionSubRoutes = []sessionSubRoute{
+	// Non-session reserved sub-paths (no {id}).
+	{http.MethodPost, "archive", (*Server).handleArchiveSession},
+	{http.MethodPost, "seen", (*Server).handleSeenSession},
+	{http.MethodPost, "pin", (*Server).handlePinSession},
+
+	// Session-scoped GETs.
+	{http.MethodGet, "{id}/agents", (*Server).handleSessionAgents},
+	{http.MethodGet, "{id}/commands", (*Server).handleSessionCommands},
+	{http.MethodGet, "{id}/models", (*Server).handleSessionModels},
+	{http.MethodGet, "{id}/changes", (*Server).handleSessionChanges},
+	{http.MethodGet, "{id}/info", (*Server).handleSessionInfo},
+	{http.MethodGet, "{id}/permissions", (*Server).handleSessionPermissions},
+	{http.MethodGet, "{id}/questions", (*Server).handleSessionQuestions},
+	{http.MethodGet, "{id}/events", (*Server).handleSessionEvents},
+	{http.MethodGet, "{id}/tasks", (*Server).handleSessionTasks},
+
+	// Session-scoped POSTs (specific patterns first).
+	{http.MethodPost, "{id}/questions/{qid}/reject", (*Server).handleSessionQuestion},
+	{http.MethodPost, "{id}/questions/{qid}", (*Server).handleSessionQuestion},
+	{http.MethodPost, "{id}/permissions/{pid}", (*Server).handleSessionPermission},
+	{http.MethodPost, "{id}/message", (*Server).handleSessionMessage},
+	{http.MethodPost, "{id}/command", (*Server).handleSessionCommand},
+	{http.MethodPost, "{id}/shell", (*Server).handleSessionShell},
+	{http.MethodPost, "{id}/abort", (*Server).handleSessionAbort},
+	{http.MethodPost, "{id}/compact", (*Server).handleSessionCompact},
+
+	// Bare /api/session/{id} (kept last so longer matches win).
+	{http.MethodGet, "{id}", (*Server).handleSession},
+	{http.MethodPatch, "{id}", (*Server).handleSessionRename},
+}
+
+// matchSessionSubRoute matches a path (already trimmed of the
+// "/api/session/" prefix) against pattern. Returns the captured
+// params and true on a full match. The returned map is non-nil even
+// when no params are captured.
+func matchSessionSubRoute(pattern, subpath string) (map[string]string, bool) {
+	patSegs := strings.Split(pattern, "/")
+	pathSegs := strings.Split(subpath, "/")
+	if len(patSegs) != len(pathSegs) {
+		return nil, false
+	}
+	params := make(map[string]string)
+	for i, ps := range patSegs {
+		if len(ps) >= 2 && ps[0] == '{' && ps[len(ps)-1] == '}' {
+			name := ps[1 : len(ps)-1]
+			if pathSegs[i] == "" {
+				return nil, false
+			}
+			params[name] = pathSegs[i]
+			continue
+		}
+		if ps != pathSegs[i] {
+			return nil, false
+		}
+	}
+	return params, true
+}
+
+// dispatchSessionSubpath routes every /api/session/... request via
+// the [sessionSubRoutes] table. On no match, returns 404 with a body
+// that includes the offending path so a typo is visible in logs.
+//
+// Method mismatches return 405 — but only when *some* route's pattern
+// matched the path with a different method. A request whose path
+// matches no pattern at all is a 404, not a 405.
 func (s *Server) dispatchSessionSubpath(w http.ResponseWriter, r *http.Request) {
 	trimmed := strings.TrimPrefix(r.URL.Path, "/api/session/")
 
-	// Non-session reserved subpaths.
-	switch trimmed {
-	case "archive":
-		if r.Method == http.MethodPost {
-			s.handleArchiveSession(w, r)
-			return
+	pathMatched := false
+	for _, route := range sessionSubRoutes {
+		if _, ok := matchSessionSubRoute(route.pattern, trimmed); !ok {
+			continue
 		}
-	case "seen":
-		if r.Method == http.MethodPost {
-			s.handleSeenSession(w, r)
-			return
+		pathMatched = true
+		if r.Method != route.method {
+			continue
 		}
-	case "pin":
-		if r.Method == http.MethodPost {
-			s.handlePinSession(w, r)
-			return
-		}
+		route.handler(s, w, r)
+		return
 	}
-
-	// Split {id}/{rest}.
-	slash := strings.IndexByte(trimmed, '/')
-	if slash < 0 {
-		// /api/session/{id}
-		if r.Method == http.MethodGet {
-			s.handleSession(w, r)
-			return
-		}
-		if r.Method == http.MethodPatch {
-			s.handleSessionRename(w, r)
-			return
-		}
+	if pathMatched {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	rest := trimmed[slash+1:]
-	head := rest
-	if i := strings.IndexByte(rest, '/'); i >= 0 {
-		head = rest[:i]
-	}
-
-	// Route by (method, head).
-	switch r.Method {
-	case http.MethodGet:
-		switch head {
-		case "agents":
-			s.handleSessionAgents(w, r)
-			return
-		case "commands":
-			s.handleSessionCommands(w, r)
-			return
-		case "models":
-			s.handleSessionModels(w, r)
-			return
-		case "changes":
-			s.handleSessionChanges(w, r)
-			return
-		case "info":
-			s.handleSessionInfo(w, r)
-			return
-		case "permissions":
-			// GET /api/session/{id}/permissions (no pid)
-			if rest == "permissions" {
-				s.handleSessionPermissions(w, r)
-				return
-			}
-		case "questions":
-			if rest == "questions" {
-				s.handleSessionQuestions(w, r)
-				return
-			}
-		case "events":
-			s.handleSessionEvents(w, r)
-			return
-		case "tasks":
-			s.handleSessionTasks(w, r)
-			return
-		}
-	case http.MethodPost:
-		switch head {
-		case "message":
-			s.handleSessionMessage(w, r)
-			return
-		case "command":
-			s.handleSessionCommand(w, r)
-			return
-		case "shell":
-			s.handleSessionShell(w, r)
-			return
-		case "abort":
-			s.handleSessionAbort(w, r)
-			return
-		case "compact":
-			s.handleSessionCompact(w, r)
-			return
-		case "permissions":
-			// POST /api/session/{id}/permissions/{pid}
-			s.handleSessionPermission(w, r)
-			return
-		case "questions":
-			// POST /api/session/{id}/questions/{qid}
-			// POST /api/session/{id}/questions/{qid}/reject
-			s.handleSessionQuestion(w, r)
-			return
-		}
-	}
-
-	http.Error(w, "not found", http.StatusNotFound)
+	http.Error(w, "not found: "+r.URL.Path, http.StatusNotFound)
 }
 
 // --- /api/sessions POST (create session) ---

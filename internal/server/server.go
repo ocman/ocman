@@ -220,8 +220,13 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 }
 
+// autoArchiveTickFn is the per-tick body of runAutoArchiveLoop, lifted
+// to a package-level variable so tests can inject a panicking
+// implementation (FR-11) and assert the loop survives.
+var autoArchiveTickFn = func(s *Server) { s.autoArchiveInactiveSessions() }
+
 func (s *Server) runAutoArchiveLoop(ctx context.Context) {
-	s.autoArchiveInactiveSessions()
+	runWithRecover("auto-archive", func() { autoArchiveTickFn(s) })
 
 	ticker := time.NewTicker(autoArchiveInterval)
 	defer ticker.Stop()
@@ -231,7 +236,7 @@ func (s *Server) runAutoArchiveLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.autoArchiveInactiveSessions()
+			runWithRecover("auto-archive", func() { autoArchiveTickFn(s) })
 		}
 	}
 }

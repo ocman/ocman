@@ -1,6 +1,8 @@
 package server
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,14 +13,43 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// whisperState caches the resolved binary path and model path.
-var whisperState struct {
-	once      sync.Once
-	binary    string
-	model     string
-	ffmpeg    string
-	available bool
+// executor abstracts the bits of os/exec that whisper.go uses, so the
+// package can be unit-tested without the real `whisper` and `ffmpeg`
+// binaries on $PATH.
+//
+// LookPath mirrors exec.LookPath. Run mirrors exec.CommandContext +
+// cmd.Run, returning stdout and stderr as separate byte slices and any
+// error from the underlying process. The interface deliberately
+// matches the existing tmuxRunner pattern in tmux.go (small, with one
+// production implementation and a fake for tests) — see AD-2 in the
+// backend-hardening architecture doc.
+type executor interface {
+	LookPath(name string) (string, error)
+	Run(ctx context.Context, name string, args ...string) (stdout, stderr []byte, err error)
 }
+
+// fileStat abstracts os.Stat for the model-discovery walk so tests can
+// provide a virtual filesystem.
+type fileStat interface {
+	Stat(path string) (os.FileInfo, error)
+}
+
+// osExecutor is the production executor — calls os/exec directly.
+type osExecutor struct{}
+
+func (osExecutor) LookPath(name string) (string, error) { return exec.LookPath(name) }
+
+func (osExecutor) Run(ctx context.Context, name string, args ...string) ([]byte, []byte, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
+	return stdout.Bytes(), stderr.Bytes(), err
+}
+
+type osFileStat struct{}
+
+func (osFileStat) Stat(path string) (os.FileInfo, error) { return os.Stat(path) }
 
 // knownBinaries lists the binary names to search for in $PATH.
 var knownBinaries = []string{"whisper-cpp", "whisper-cli", "whisper"}
@@ -36,8 +67,34 @@ var whisperNativeFormats = map[string]bool{
 	".wav": true, ".mp3": true, ".ogg": true, ".flac": true,
 }
 
+// Whisper is a self-contained transcription helper. It resolves the
+// whisper / ffmpeg binaries and a model file lazily on first use; the
+// resolution is then cached for the lifetime of the instance.
+//
+// Production code uses the package-level default created in
+// init() (see [defaultWhisper]); tests construct their own with
+// [newWhisper] passing in a fake [executor] and [fileStat].
+type Whisper struct {
+	exec executor
+	fs   fileStat
+
+	once      sync.Once
+	binary    string
+	model     string
+	ffmpeg    string
+	available bool
+}
+
+// newWhisper returns a fresh Whisper backed by the given executor and
+// filesystem stub. Both must be non-nil.
+func newWhisper(exec executor, fs fileStat) *Whisper {
+	return &Whisper{exec: exec, fs: fs}
+}
+
 // modelSearchDirs returns directories where whisper models might live.
-func modelSearchDirs() []string {
+// It is a method (not a free function) because it can extend the
+// search list with the resolved binary's own directory.
+func (w *Whisper) modelSearchDirs() []string {
 	home, _ := os.UserHomeDir()
 	dirs := []string{
 		filepath.Join(home, ".local", "share", "whisper-cpp"),
@@ -46,99 +103,94 @@ func modelSearchDirs() []string {
 		"/opt/homebrew/share/whisper-cpp",
 	}
 	// Also check next to the binary itself
-	if whisperState.binary != "" {
-		binDir := filepath.Dir(whisperState.binary)
+	if w.binary != "" {
+		binDir := filepath.Dir(w.binary)
 		dirs = append(dirs, filepath.Join(binDir, "..", "share", "whisper-cpp"))
 		dirs = append(dirs, filepath.Join(binDir, "models"))
 	}
 	return dirs
 }
 
-// initWhisper resolves the whisper binary and model paths once.
-func initWhisper() {
-	whisperState.once.Do(func() {
+// init resolves the whisper binary, ffmpeg binary, and model path. It
+// runs at most once per Whisper instance.
+func (w *Whisper) init() {
+	w.once.Do(func() {
 		// Find binary
 		for _, name := range knownBinaries {
-			path, err := exec.LookPath(name)
+			path, err := w.exec.LookPath(name)
 			if err == nil {
-				whisperState.binary = path
+				w.binary = path
 				log.WithField("binary", path).Info("found whisper binary")
 				break
 			}
 		}
-		if whisperState.binary == "" {
+		if w.binary == "" {
 			log.Warn("whisper binary not found — voice transcription disabled")
 			return
 		}
 
 		// Find model
-		for _, dir := range modelSearchDirs() {
+		for _, dir := range w.modelSearchDirs() {
 			for _, name := range defaultModelNames {
 				path := filepath.Join(dir, name)
-				if _, err := os.Stat(path); err == nil {
-					whisperState.model = path
+				if _, err := w.fs.Stat(path); err == nil {
+					w.model = path
 					log.WithField("model", path).Info("found whisper model")
 					break
 				}
 			}
-			if whisperState.model != "" {
+			if w.model != "" {
 				break
 			}
 		}
-		if whisperState.model == "" {
+		if w.model == "" {
 			log.Warn("whisper model not found — voice transcription disabled")
 			return
 		}
 
 		// Find ffmpeg for format conversion
-		if path, err := exec.LookPath("ffmpeg"); err == nil {
-			whisperState.ffmpeg = path
+		if path, err := w.exec.LookPath("ffmpeg"); err == nil {
+			w.ffmpeg = path
 			log.WithField("ffmpeg", path).Info("found ffmpeg for audio conversion")
 		} else {
 			log.Warn("ffmpeg not found — only wav/mp3/ogg/flac uploads will work")
 		}
 
-		whisperState.available = true
+		w.available = true
 	})
 }
 
-// whisperAvailable returns true if the whisper binary and model are found.
-func whisperAvailable() bool {
-	initWhisper()
-	return whisperState.available
+// Available reports whether the whisper binary and model were found.
+func (w *Whisper) Available() bool {
+	w.init()
+	return w.available
 }
 
-// convertToWav uses ffmpeg to convert an audio file to 16kHz mono WAV
-// (the format whisper expects). Returns the path to the converted file.
-func convertToWav(inputPath string) (string, error) {
-	if whisperState.ffmpeg == "" {
+// convertToWav uses ffmpeg to convert an audio file to 16kHz mono WAV.
+func (w *Whisper) convertToWav(ctx context.Context, inputPath string) (string, error) {
+	if w.ffmpeg == "" {
 		return "", fmt.Errorf("ffmpeg not available for audio conversion")
 	}
-
 	outputPath := inputPath + ".wav"
-	cmd := exec.Command(
-		whisperState.ffmpeg,
+	log.WithFields(log.Fields{"input": inputPath, "output": outputPath}).Debug("converting audio to WAV")
+	_, stderr, err := w.exec.Run(ctx, w.ffmpeg,
 		"-i", inputPath,
 		"-ar", "16000", // 16kHz sample rate
 		"-ac", "1", // mono
 		"-y", // overwrite
 		outputPath,
 	)
-
-	log.WithFields(log.Fields{"input": inputPath, "output": outputPath}).Debug("converting audio to WAV")
-
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("ffmpeg conversion failed: %s", string(out))
+	if err != nil {
+		return "", fmt.Errorf("ffmpeg conversion failed: %s: %w", strings.TrimSpace(string(stderr)), err)
 	}
 	return outputPath, nil
 }
 
-// transcribeAudio runs whisper on the given audio file and returns the text.
-// If the file is not in a format whisper supports natively, it will be
-// converted to WAV via ffmpeg first.
-func transcribeAudio(audioPath string) (string, error) {
-	initWhisper()
-	if !whisperState.available {
+// Transcribe runs whisper on audioPath and returns the transcribed
+// text, transparently converting non-native formats via ffmpeg first.
+func (w *Whisper) Transcribe(ctx context.Context, audioPath string) (string, error) {
+	w.init()
+	if !w.available {
 		return "", fmt.Errorf("whisper is not available")
 	}
 
@@ -146,7 +198,7 @@ func transcribeAudio(audioPath string) (string, error) {
 	ext := strings.ToLower(filepath.Ext(audioPath))
 	whisperInput := audioPath
 	if !whisperNativeFormats[ext] {
-		converted, err := convertToWav(audioPath)
+		converted, err := w.convertToWav(ctx, audioPath)
 		if err != nil {
 			return "", fmt.Errorf("audio conversion failed: %w", err)
 		}
@@ -154,26 +206,37 @@ func transcribeAudio(audioPath string) (string, error) {
 		whisperInput = converted
 	}
 
-	cmd := exec.Command(
-		whisperState.binary,
-		"-m", whisperState.model,
+	log.WithField("file", whisperInput).Info("transcribing audio")
+
+	stdout, stderr, err := w.exec.Run(ctx, w.binary,
+		"-m", w.model,
 		"-f", whisperInput,
 		"-np",        // no extra prints
 		"-nt",        // no timestamps
 		"-l", "auto", // auto-detect language
 	)
-
-	log.WithField("file", whisperInput).Info("transcribing audio")
-
-	out, err := cmd.Output()
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return "", fmt.Errorf("whisper failed: %s", string(exitErr.Stderr))
+		stderrTrim := strings.TrimSpace(string(stderr))
+		if stderrTrim != "" {
+			return "", fmt.Errorf("whisper failed: %s: %w", stderrTrim, err)
 		}
 		return "", fmt.Errorf("whisper failed: %w", err)
 	}
 
-	text := strings.TrimSpace(string(out))
+	text := strings.TrimSpace(string(stdout))
 	log.WithField("length", len(text)).Info("transcription complete")
 	return text, nil
+}
+
+// defaultWhisper is the process-wide instance used by the package
+// wrappers below. It is constructed with the production executor /
+// filesystem so behaviour is identical to the pre-refactor code.
+var defaultWhisper = newWhisper(osExecutor{}, osFileStat{})
+
+// whisperAvailable returns true if the whisper binary and model are found.
+func whisperAvailable() bool { return defaultWhisper.Available() }
+
+// transcribeAudio runs whisper on the given audio file and returns the text.
+func transcribeAudio(audioPath string) (string, error) {
+	return defaultWhisper.Transcribe(context.Background(), audioPath)
 }

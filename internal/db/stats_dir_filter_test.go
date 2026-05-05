@@ -92,7 +92,9 @@ func TestGetMetricsDashboard_DirFilter(t *testing.T) {
 	seedDirFilter(t, db)
 
 	t.Run("empty dir matches everything (regression)", func(t *testing.T) {
-		got, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 50, 0, 50, 0, nil, "")
+		got, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+			RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
+		})
 		if err != nil {
 			t.Fatalf("GetMetricsDashboard: %v", err)
 		}
@@ -105,7 +107,10 @@ func TestGetMetricsDashboard_DirFilter(t *testing.T) {
 	})
 
 	t.Run("dir scope includes self and descendants but not siblings", func(t *testing.T) {
-		got, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 50, 0, 50, 0, nil, "/repo/foo")
+		got, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+			RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
+			Dir: "/repo/foo",
+		})
 		if err != nil {
 			t.Fatalf("GetMetricsDashboard: %v", err)
 		}
@@ -119,7 +124,10 @@ func TestGetMetricsDashboard_DirFilter(t *testing.T) {
 	})
 
 	t.Run("dir scope filters the project log too", func(t *testing.T) {
-		got, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 50, 0, 50, 0, nil, "/repo/foo")
+		got, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+			RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
+			Dir: "/repo/foo",
+		})
 		if err != nil {
 			t.Fatalf("GetMetricsDashboard: %v", err)
 		}
@@ -136,7 +144,10 @@ func TestGetMetricsDashboard_DirFilter(t *testing.T) {
 	})
 
 	t.Run("dir scope with no matches yields zero rows", func(t *testing.T) {
-		got, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 50, 0, 50, 0, nil, "/nonexistent")
+		got, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+			RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
+			Dir: "/nonexistent",
+		})
 		if err != nil {
 			t.Fatalf("GetMetricsDashboard: %v", err)
 		}

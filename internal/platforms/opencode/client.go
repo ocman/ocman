@@ -79,9 +79,45 @@ const portCacheTTL = 10 * time.Second
 
 // discoverPortsImpl is the indirection used so tests can swap out the
 // expensive lsof execution. Production assigns it once, lazily, to
-// the real implementation; tests override it before calling
-// discoverOpenCodePorts.
-var discoverPortsImpl = discoverOpenCodePortsUncached
+// the real implementation; tests override it (always paired with a
+// matching restore in t.Cleanup) before calling discoverOpenCodePorts.
+//
+// Reads and writes are guarded by discoverPortsImplMu so a parallel
+// test that swaps the seam can't race with a production-style caller
+// reading it (FR-12). Tests are still expected to be serial within a
+// single t.Run: the swap is per-package-process, not per-test, and
+// concurrent overrides of the seam to different fakes would clobber
+// each other regardless of the mutex.
+var (
+	discoverPortsImplMu sync.RWMutex
+	discoverPortsImpl   = discoverOpenCodePortsUncached
+)
+
+// getDiscoverPortsImpl returns the current implementation under the
+// read lock. All call sites in the discovery path use this rather
+// than reading the var directly, so a test swap is observable
+// safely.
+func getDiscoverPortsImpl() func() map[string]string {
+	discoverPortsImplMu.RLock()
+	defer discoverPortsImplMu.RUnlock()
+	return discoverPortsImpl
+}
+
+// setDiscoverPortsImplForTests installs fn as the seam and returns a
+// restore func that re-installs the previous value. The mutex makes
+// the swap safe under -race even if a production-style caller is
+// reading the seam concurrently.
+func setDiscoverPortsImplForTests(fn func() map[string]string) func() {
+	discoverPortsImplMu.Lock()
+	prev := discoverPortsImpl
+	discoverPortsImpl = fn
+	discoverPortsImplMu.Unlock()
+	return func() {
+		discoverPortsImplMu.Lock()
+		discoverPortsImpl = prev
+		discoverPortsImplMu.Unlock()
+	}
+}
 
 // resetPortCacheForTests clears the cache so each test starts with a
 // cold path. Not exported — only callable from within the package.
@@ -116,7 +152,7 @@ func discoverOpenCodePorts() map[string]string {
 		if cached, ok := readCachedPorts(); ok {
 			return cached, nil
 		}
-		result := discoverPortsImpl()
+		result := getDiscoverPortsImpl()()
 		portCache.mu.Lock()
 		portCache.ports = result
 		portCache.updated = time.Now()
@@ -330,6 +366,14 @@ const pendingPromptTimeout = 500 * time.Millisecond
 // dashboard's per-row badge and the favicon/bell pollers, all of
 // which are already polling-based.
 //
+// pendingPromptCacheMu guards the pendingPromptCache* globals below.
+// Reads use the RLock variant so production hot-path callers
+// (fetchPromptSessionIDs) don't contend with each other; only the
+// test-only swap helpers take the write lock. Without this, parallel
+// tests that swap the TTL via swapPendingPromptCacheTTL race against
+// concurrent reads under `-race -p N`.
+var pendingPromptCacheMu sync.RWMutex
+
 // var rather than const so tests can dial it down without sleeping
 // for the full 3 seconds.
 var pendingPromptCacheTTL = 3 * time.Second
@@ -338,11 +382,33 @@ var pendingPromptCacheTTL = 3 * time.Second
 // bytes per (port, path). Writers swap the cache instance via
 // swapPendingPromptCacheTTL when a test wants a non-default TTL;
 // during normal operation it's a single long-lived instance.
+//
+// All reads must go through getPendingPromptCache so they observe
+// swaps atomically with the TTL.
 var pendingPromptCache = newHTTPCache(pendingPromptCacheTTL)
+
+// getPendingPromptCache returns the current cache under the read
+// lock so a concurrent test-only swap can't tear the read.
+func getPendingPromptCache() *httpCache {
+	pendingPromptCacheMu.RLock()
+	defer pendingPromptCacheMu.RUnlock()
+	return pendingPromptCache
+}
+
+// getPendingPromptCacheTTL returns the current TTL under the read
+// lock. Test-only — production code never asks for the TTL value
+// directly; callers go through getPendingPromptCache instead.
+func getPendingPromptCacheTTL() time.Duration {
+	pendingPromptCacheMu.RLock()
+	defer pendingPromptCacheMu.RUnlock()
+	return pendingPromptCacheTTL
+}
 
 // swapPendingPromptCacheTTL replaces the package-level cache with a
 // fresh instance using the supplied TTL. Test-only.
 func swapPendingPromptCacheTTL(ttl time.Duration) {
+	pendingPromptCacheMu.Lock()
+	defer pendingPromptCacheMu.Unlock()
 	pendingPromptCacheTTL = ttl
 	pendingPromptCache = newHTTPCache(ttl)
 }
@@ -350,6 +416,8 @@ func swapPendingPromptCacheTTL(ttl time.Duration) {
 // resetPendingPromptCache empties the cache so each test starts
 // from a cold state.
 func resetPendingPromptCache() {
+	pendingPromptCacheMu.Lock()
+	defer pendingPromptCacheMu.Unlock()
 	pendingPromptCache = newHTTPCache(pendingPromptCacheTTL)
 }
 
@@ -378,7 +446,7 @@ func fetchPendingPrompts(port string) (permissions, questions map[string]bool) {
 // Failures are not cached — if the upstream is unreachable, the
 // next poll retries rather than waiting for the cache TTL.
 func fetchPromptSessionIDs(port, path string) map[string]bool {
-	body, ok := pendingPromptCache.getOrFetch(port, path, func() ([]byte, bool) {
+	body, ok := getPendingPromptCache().getOrFetch(port, path, func() ([]byte, bool) {
 		return getPromptBytes(port, path)
 	})
 	if !ok {
@@ -714,16 +782,33 @@ func isSynthesizedTerminal(raw map[string]interface{}) bool {
 
 // convertOpenCodeMessages transforms raw OpenCode API messages into the format
 // expected by the frontend (separate messages and parts arrays).
+//
+// Messages whose top-level `info` is missing or not a map are
+// silently skipped — the public contract is "best-effort decode",
+// not "fail on bad input". To make those skips observable (FR-9)
+// the function emits a single DEBUG line per call summarising the
+// total skipped count, rather than one line per skipped message
+// (which would dominate the log on a corrupt batch).
 func convertOpenCodeMessages(ocMessages []map[string]interface{}) (
 	messages []map[string]interface{},
 	parts []map[string]interface{},
 ) {
 	messages = make([]map[string]interface{}, 0, len(ocMessages))
 	parts = make([]map[string]interface{}, 0)
+	skipped := 0
+	defer func() {
+		if skipped > 0 {
+			log.WithFields(log.Fields{
+				"skipped": skipped,
+				"total":   len(ocMessages),
+			}).Debug("opencode: skipped messages with missing/invalid info")
+		}
+	}()
 
 	for _, m := range ocMessages {
 		info, _ := m["info"].(map[string]interface{})
 		if info == nil {
+			skipped++
 			continue
 		}
 

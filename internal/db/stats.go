@@ -92,12 +92,71 @@ type requestRow struct {
 	RequestLogEntry
 }
 
-// GetMetricsDashboard returns filtered request-level analytics for the dashboard.
-// days is the number of days in the selected window (0 = all time); it drives bucket granularity.
-// pricing may be nil, in which case CalcCost fields are left zero.
-// sessionLimit/sessionOffset control pagination of the Sessions aggregation (most-recent activity first).
-// dir, when non-empty, scopes the query to sessions whose directory equals dir or starts with dir+"/" (see directoryWhere).
-func (d *DB) GetMetricsDashboard(agentFilter, modelFilter string, since int64, days, requestLimit, requestOffset, sessionLimit, sessionOffset, projectLimit, projectOffset int, pricing CostCalculator, dir string) (*MetricsDashboard, error) {
+// MetricsDashboardOptions groups the inputs to GetMetricsDashboard
+// so callers don't have to remember the order of 11 positional
+// parameters. Zero values for limit/offset fields are treated as
+// "unbounded" / "no offset" — same as before the refactor.
+//
+// Field semantics:
+//
+//   - AgentFilter / ModelFilter: when non-empty, only rows whose
+//     agent / "provider/model" match are kept in the aggregation.
+//     Available* slices in the response always reflect the
+//     pre-filter set so the dropdowns stay populated.
+//   - Since: lower bound on `time_created` in milliseconds; <=0 = all time.
+//   - Days: window length in days (0 = all time); drives bucket
+//     granularity (hourly when 0 < Days <= 7, daily otherwise).
+//   - RequestLimit / RequestOffset: pagination of the request log
+//     (Requests slice). The window picks the most recent
+//     RequestLimit entries.
+//   - SessionLimit / SessionOffset: pagination of the per-session
+//     aggregation (Sessions slice). Entries are sorted by total
+//     Cost descending so the dashboard surfaces the most expensive
+//     sessions first; ties break by most-recent activity.
+//   - ProjectLimit / ProjectOffset: pagination of the per-project
+//     aggregation (Projects slice). Same Cost-descending sort as
+//     Sessions.
+//   - Pricing: CostCalculator for computing CalcCost fields. Nil
+//     leaves those fields zero (subscription-plan sessions surface
+//     a zero CalcCost when pricing isn't configured).
+//   - Dir: when non-empty, scopes the query to sessions whose
+//     directory equals Dir or starts with Dir+"/". See directoryWhere.
+type MetricsDashboardOptions struct {
+	AgentFilter   string
+	ModelFilter   string
+	Since         int64
+	Days          int
+	RequestLimit  int
+	RequestOffset int
+	SessionLimit  int
+	SessionOffset int
+	ProjectLimit  int
+	ProjectOffset int
+	Pricing       CostCalculator
+	Dir           string
+}
+
+// GetMetricsDashboard returns filtered request-level analytics for
+// the dashboard. See [MetricsDashboardOptions] for field semantics.
+//
+// Returns a fully-populated *MetricsDashboard even on an empty result
+// set — Series is zero-filled to opts.Days buckets so the frontend
+// chart library can render a "no data" placeholder without a nil
+// guard.
+func (d *DB) GetMetricsDashboard(opts MetricsDashboardOptions) (*MetricsDashboard, error) {
+	agentFilter := opts.AgentFilter
+	modelFilter := opts.ModelFilter
+	since := opts.Since
+	days := opts.Days
+	requestLimit := opts.RequestLimit
+	requestOffset := opts.RequestOffset
+	sessionLimit := opts.SessionLimit
+	sessionOffset := opts.SessionOffset
+	projectLimit := opts.ProjectLimit
+	projectOffset := opts.ProjectOffset
+	pricing := opts.Pricing
+	dir := opts.Dir
+
 	dirFrag, dirArgs := directoryWhere(dir)
 	query := `
 		SELECT m.id, m.session_id, m.time_created, m.data
@@ -489,8 +548,16 @@ func (d *DB) populateSessionLog(dashboard *MetricsDashboard, filtered []requestR
 		entries = append(entries, acc.entry)
 	}
 
-	// Sort by most-recent activity first.
+	// Sort by total cost descending so the dashboard surfaces the
+	// most expensive sessions first — that's what users actually
+	// want to scan when they open the metrics view. Ties (including
+	// zero-cost subscription-plan sessions) break by most-recent
+	// activity so the order is deterministic and intuitive.
 	sort.Slice(entries, func(i, j int) bool {
+		ci, cj := entries[i].Cost, entries[j].Cost
+		if ci != cj {
+			return ci > cj
+		}
 		return entries[i].LastRequestTime > entries[j].LastRequestTime
 	})
 
@@ -592,7 +659,14 @@ func (d *DB) populateProjectLog(dashboard *MetricsDashboard, filtered []requestR
 		entries = append(entries, acc.entry)
 	}
 
+	// Sort by total cost descending so the most expensive projects
+	// surface first. Ties break by most-recent activity for
+	// determinism. Mirrors the per-session sort above.
 	sort.Slice(entries, func(i, j int) bool {
+		ci, cj := entries[i].Cost, entries[j].Cost
+		if ci != cj {
+			return ci > cj
+		}
 		return entries[i].LastRequestTime > entries[j].LastRequestTime
 	})
 

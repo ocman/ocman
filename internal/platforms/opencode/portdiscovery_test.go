@@ -14,20 +14,17 @@ import (
 // callers but still pays the lsof cost for every staggered miss
 // (anyone whose check landed before the cache was filled).
 func TestDiscoverOpenCodePorts_SingleflightsConcurrentMisses(t *testing.T) {
-	prev := discoverPortsImpl
-	defer func() { discoverPortsImpl = prev }()
-
-	resetPortCacheForTests()
-
 	var calls int32
-	discoverPortsImpl = func() map[string]string {
+	restore := setDiscoverPortsImplForTests(func() map[string]string {
 		atomic.AddInt32(&calls, 1)
 		// Slow the call enough that all goroutines pile onto the
 		// same in-flight singleflight slot. Without singleflight
 		// the test would observe up to N calls.
 		time.Sleep(50 * time.Millisecond)
 		return map[string]string{"/repo/a": "1234"}
-	}
+	})
+	defer restore()
+	resetPortCacheForTests()
 
 	const concurrency = 25
 	var wg sync.WaitGroup
@@ -52,16 +49,13 @@ func TestDiscoverOpenCodePorts_SingleflightsConcurrentMisses(t *testing.T) {
 // TTL cache short-circuits the singleflight entirely — within the
 // TTL window we should never enter the lsof path at all.
 func TestDiscoverOpenCodePorts_CacheHitDoesNotRunLsof(t *testing.T) {
-	prev := discoverPortsImpl
-	defer func() { discoverPortsImpl = prev }()
-
-	resetPortCacheForTests()
-
 	var calls int32
-	discoverPortsImpl = func() map[string]string {
+	restore := setDiscoverPortsImplForTests(func() map[string]string {
 		atomic.AddInt32(&calls, 1)
 		return map[string]string{"/x": "9999"}
-	}
+	})
+	defer restore()
+	resetPortCacheForTests()
 
 	_ = discoverOpenCodePorts()
 	_ = discoverOpenCodePorts()
@@ -77,14 +71,11 @@ func TestDiscoverOpenCodePorts_CacheHitDoesNotRunLsof(t *testing.T) {
 // copies. (Pre-existing copyMap behaviour; we keep the test so the
 // singleflight refactor doesn't accidentally drop it.)
 func TestDiscoverOpenCodePorts_CallersGetIsolatedCopies(t *testing.T) {
-	prev := discoverPortsImpl
-	defer func() { discoverPortsImpl = prev }()
-
-	resetPortCacheForTests()
-
-	discoverPortsImpl = func() map[string]string {
+	restore := setDiscoverPortsImplForTests(func() map[string]string {
 		return map[string]string{"/repo": "5555"}
-	}
+	})
+	defer restore()
+	resetPortCacheForTests()
 
 	a := discoverOpenCodePorts()
 	b := discoverOpenCodePorts()
@@ -109,16 +100,13 @@ func TestDiscoverOpenCodePorts_CallersGetIsolatedCopies(t *testing.T) {
 // genuinely new instances are picked up quickly without this
 // thrash.
 func TestDiscoverOpenCodePort_UnknownDirDoesNotInvalidateCache(t *testing.T) {
-	prev := discoverPortsImpl
-	defer func() { discoverPortsImpl = prev }()
-
-	resetPortCacheForTests()
-
 	var calls int32
-	discoverPortsImpl = func() map[string]string {
+	restore := setDiscoverPortsImplForTests(func() map[string]string {
 		atomic.AddInt32(&calls, 1)
 		return map[string]string{"/repo/known": "1234"}
-	}
+	})
+	defer restore()
+	resetPortCacheForTests()
 
 	// First call warms the cache; lsof runs once.
 	if got := discoverOpenCodePort("/repo/unknown"); got != "" {

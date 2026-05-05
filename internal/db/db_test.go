@@ -739,7 +739,9 @@ func TestGetMetricsDashboard(t *testing.T) {
 		},
 	})
 
-	metrics, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 50, 0, 50, 0, nil, "")
+	metrics, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+		RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
+	})
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard: %v", err)
 	}
@@ -843,7 +845,9 @@ func TestGetMetricsDashboardSessionAggregation(t *testing.T) {
 		"tokens":     map[string]interface{}{"input": 10, "output": 20},
 	})
 
-	metrics, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 50, 0, 50, 0, nil, "")
+	metrics, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+		RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
+	})
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard: %v", err)
 	}
@@ -854,16 +858,16 @@ func TestGetMetricsDashboardSessionAggregation(t *testing.T) {
 	if len(metrics.Sessions) != 2 {
 		t.Fatalf("Sessions len = %d, want 2", len(metrics.Sessions))
 	}
-	// Most-recent activity first -> s2 then s1.
-	if metrics.Sessions[0].ID != "s2" {
-		t.Errorf("Sessions[0].ID = %q, want s2", metrics.Sessions[0].ID)
+	// Cost descending — s1 (Cost=0.15) outranks s2 (Cost=0.01).
+	if metrics.Sessions[0].ID != "s1" {
+		t.Errorf("Sessions[0].ID = %q, want s1 (highest cost)", metrics.Sessions[0].ID)
 	}
-	if metrics.Sessions[1].ID != "s1" {
-		t.Errorf("Sessions[1].ID = %q, want s1", metrics.Sessions[1].ID)
+	if metrics.Sessions[1].ID != "s2" {
+		t.Errorf("Sessions[1].ID = %q, want s2", metrics.Sessions[1].ID)
 	}
 
 	// s1 aggregation.
-	s1 := metrics.Sessions[1]
+	s1 := metrics.Sessions[0]
 	if s1.Requests != 2 {
 		t.Errorf("s1.Requests = %d, want 2", s1.Requests)
 	}
@@ -880,25 +884,29 @@ func TestGetMetricsDashboardSessionAggregation(t *testing.T) {
 		t.Errorf("s1.Agents = %#v, want 2 entries", s1.Agents)
 	}
 
-	// Pagination: sessionLimit=1 returns just the most recent.
-	paged, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 1, 0, 50, 0, nil, "")
+	// Pagination: sessionLimit=1 returns just the most expensive.
+	paged, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+		RequestLimit: 50, SessionLimit: 1, ProjectLimit: 50,
+	})
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard paged: %v", err)
 	}
-	if len(paged.Sessions) != 1 || paged.Sessions[0].ID != "s2" {
-		t.Errorf("paged sessions = %#v, want [s2]", paged.Sessions)
+	if len(paged.Sessions) != 1 || paged.Sessions[0].ID != "s1" {
+		t.Errorf("paged sessions = %#v, want [s1] (highest cost)", paged.Sessions)
 	}
 	if paged.TotalSessions != 2 {
 		t.Errorf("paged.TotalSessions = %d, want 2", paged.TotalSessions)
 	}
 
-	// Offset skips the first.
-	offset, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 1, 1, 50, 0, nil, "")
+	// Offset skips the most expensive (s1) — what's left is s2.
+	offset, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+		RequestLimit: 50, SessionLimit: 1, SessionOffset: 1, ProjectLimit: 50,
+	})
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard offset: %v", err)
 	}
-	if len(offset.Sessions) != 1 || offset.Sessions[0].ID != "s1" {
-		t.Errorf("offset sessions = %#v, want [s1]", offset.Sessions)
+	if len(offset.Sessions) != 1 || offset.Sessions[0].ID != "s2" {
+		t.Errorf("offset sessions = %#v, want [s2]", offset.Sessions)
 	}
 }
 
@@ -1466,7 +1474,10 @@ func TestGetMetricsDashboardCumulativeCalcCost(t *testing.T) {
 	//                                   m2 calc = 200*0.01 + 400*0.02 = 10.0
 	pricing := stubPricing{inputRate: 0.01, outputRate: 0.02}
 
-	metrics, err := db.GetMetricsDashboard("", "", 0, 0, 50, 0, 50, 0, 50, 0, pricing, "")
+	metrics, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+		RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
+		Pricing: pricing,
+	})
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard: %v", err)
 	}

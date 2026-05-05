@@ -1,0 +1,145 @@
+package opencode
+
+import (
+	"context"
+	"testing"
+)
+
+func TestFetchSessionFromOpenCodeCtx_Healthy(t *testing.T) {
+	const sid = "sess-1"
+	const dir = "/tmp/proj"
+
+	fake := newOpencodeFake(t)
+	fake.SetSession(sid, []byte(`{"id":"sess-1","title":"hello","directory":"/tmp/proj","time":{"created":1000,"updated":1500}}`))
+	fake.AddMessage(sid, []byte(`{
+		"info": {"id":"m1","sessionID":"sess-1","role":"user","time":{"created":1100}},
+		"parts": [{"id":"p1","messageID":"m1","sessionID":"sess-1","type":"text","text":"hi"}]
+	}`))
+
+	withTestPort(t, dir, fake.Port())
+	database := newTestDBWithSession(t, sid, dir)
+
+	a := New(database, nil)
+	detail, ok := a.fetchSessionFromOpenCodeCtx(context.Background(), sid, 30, 0)
+	if !ok {
+		t.Fatalf("fetchSessionFromOpenCodeCtx: ok=false; hits=%v", fake.hits)
+	}
+	if detail == nil || detail.Session == nil {
+		t.Fatalf("nil detail or session")
+	}
+	if detail.Session.ID != sid {
+		t.Errorf("session id = %q, want %q", detail.Session.ID, sid)
+	}
+	if len(detail.Messages) != 1 {
+		t.Errorf("got %d messages, want 1", len(detail.Messages))
+	}
+}
+
+func TestFetchSessionFromOpenCodeCtx_Upstream500(t *testing.T) {
+	const sid = "sess-1"
+	const dir = "/tmp/proj"
+
+	fake := newOpencodeFake(t)
+	fake.sessionStatus = 500
+	fake.messagesStatus = 500
+	withTestPort(t, dir, fake.Port())
+	database := newTestDBWithSession(t, sid, dir)
+
+	a := New(database, nil)
+	detail, ok := a.fetchSessionFromOpenCodeCtx(context.Background(), sid, 0, 0)
+	if ok || detail != nil {
+		t.Fatalf("expected ok=false, detail=nil on 500; got ok=%v detail=%+v", ok, detail)
+	}
+}
+
+func TestFetchSessionFromOpenCodeCtx_MalformedJSON(t *testing.T) {
+	const sid = "sess-1"
+	const dir = "/tmp/proj"
+
+	fake := newOpencodeFake(t)
+	fake.SetSession(sid, []byte(`{"id":"sess-1"}`))
+	fake.failJSON = true
+	withTestPort(t, dir, fake.Port())
+	database := newTestDBWithSession(t, sid, dir)
+
+	a := New(database, nil)
+	_, ok := a.fetchSessionFromOpenCodeCtx(context.Background(), sid, 0, 0)
+	if ok {
+		t.Fatalf("expected ok=false on malformed JSON")
+	}
+}
+
+func TestFetchSessionFromOpenCodeCtx_NoLivePort(t *testing.T) {
+	const sid = "sess-1"
+	const dir = "/tmp/proj"
+	// No fake; no port mapping.
+	restore := setDiscoverPortsImplForTests(func() map[string]string {
+		return map[string]string{}
+	})
+	resetPortCacheForTests()
+	t.Cleanup(func() {
+		restore()
+		resetPortCacheForTests()
+	})
+	database := newTestDBWithSession(t, sid, dir)
+
+	a := New(database, nil)
+	_, ok := a.fetchSessionFromOpenCodeCtx(context.Background(), sid, 0, 0)
+	if ok {
+		t.Fatalf("expected ok=false when no live port; got ok=true")
+	}
+}
+
+func TestFetchSessionFromOpenCodeCtx_PaginationCutoff(t *testing.T) {
+	const sid = "sess-1"
+	const dir = "/tmp/proj"
+
+	fake := newOpencodeFake(t)
+	fake.SetSession(sid, []byte(`{"id":"sess-1","time":{"created":1000,"updated":1500}}`))
+	for i := 0; i < 5; i++ {
+		fake.AddMessage(sid, []byte(`{
+			"info":{"id":"m","sessionID":"sess-1","role":"user","time":{"created":1100}},
+			"parts":[]
+		}`))
+	}
+	withTestPort(t, dir, fake.Port())
+	database := newTestDBWithSession(t, sid, dir)
+
+	a := New(database, nil)
+	detail, ok := a.fetchSessionFromOpenCodeCtx(context.Background(), sid, 2, 0)
+	if !ok {
+		t.Fatalf("fetchSessionFromOpenCodeCtx: ok=false")
+	}
+	if detail.TotalMessages != 5 {
+		t.Errorf("TotalMessages = %d, want 5 (count is unaffected by pagination)", detail.TotalMessages)
+	}
+	if len(detail.Messages) != 2 {
+		t.Errorf("paged Messages len = %d, want 2", len(detail.Messages))
+	}
+}
+
+func TestFetchSessionFromOpenCodeCtx_SkipsMessagesWithMissingInfo(t *testing.T) {
+	const sid = "sess-1"
+	const dir = "/tmp/proj"
+
+	fake := newOpencodeFake(t)
+	fake.SetSession(sid, []byte(`{"id":"sess-1","time":{"created":1000,"updated":1500}}`))
+	// One valid + one with no info field at all.
+	fake.AddMessage(sid, []byte(`{
+		"info":{"id":"m1","sessionID":"sess-1","role":"user","time":{"created":1100}},
+		"parts":[]
+	}`))
+	fake.AddMessage(sid, []byte(`{"noinfo":true}`))
+
+	withTestPort(t, dir, fake.Port())
+	database := newTestDBWithSession(t, sid, dir)
+
+	a := New(database, nil)
+	detail, ok := a.fetchSessionFromOpenCodeCtx(context.Background(), sid, 30, 0)
+	if !ok {
+		t.Fatalf("fetchSessionFromOpenCodeCtx: ok=false")
+	}
+	if detail.TotalMessages != 1 {
+		t.Errorf("expected exactly 1 valid message, got TotalMessages=%d", detail.TotalMessages)
+	}
+}

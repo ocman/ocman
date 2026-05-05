@@ -61,7 +61,7 @@ func TestFetchPromptSessionIDs_CacheExpiresAfterTTL(t *testing.T) {
 	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
 
 	// Burn through the cache TTL with a short test-only override.
-	prev := pendingPromptCacheTTL
+	prev := getPendingPromptCacheTTL()
 	swapPendingPromptCacheTTL(20 * time.Millisecond)
 	defer swapPendingPromptCacheTTL(prev)
 

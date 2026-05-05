@@ -63,17 +63,32 @@ func (a *Adapter) resolvePortCtx(ctx context.Context, sessionID string) (port st
 // Cached via catalogCache: agents.json edits propagate after at most
 // catalogCache's TTL, in exchange for not paying ~1s on every
 // SessionDetail mount.
+//
+// Upstream failures (no live instance, /agent fetch fails, JSON
+// decode fails) intentionally surface as `(nil, nil)` so the
+// frontend keeps rendering an empty catalog. To make those failures
+// observable to the maintainer, each branch logs a single WARN line
+// (FR-9) including the upstream port + the underlying error.
 func (a *Adapter) AgentCatalog(ctx context.Context, sessionID string) ([]platforms.AgentCatalogEntry, error) {
 	port, _, err := a.resolvePortCtx(ctx, sessionID)
 	if err != nil {
+		// Common: no live OpenCode instance for this session's
+		// directory. Logged at DEBUG to avoid spamming the noise
+		// every poll.
+		log.WithFields(log.Fields{"sessionID": sessionID, "error": err}).
+			Debug("opencode: agent catalog unavailable (no live port)")
 		return nil, nil
 	}
 	body, ok := getJSONCached(ctx, port, "/agent")
 	if !ok {
+		log.WithFields(log.Fields{"sessionID": sessionID, "port": port, "endpoint": "/agent"}).
+			Warn("opencode: agent catalog fetch failed; returning empty list")
 		return nil, nil
 	}
 	var raw []map[string]interface{}
 	if err := json.Unmarshal(body, &raw); err != nil {
+		log.WithFields(log.Fields{"sessionID": sessionID, "port": port, "error": err}).
+			Warn("opencode: agent catalog decode failed; returning empty list")
 		return nil, nil
 	}
 	entries := make([]platforms.AgentCatalogEntry, 0, len(raw))
@@ -92,17 +107,26 @@ func (a *Adapter) AgentCatalog(ctx context.Context, sessionID string) ([]platfor
 // SlashCommands returns the OpenCode /command catalog for the session.
 //
 // Cached via catalogCache for the same reason AgentCatalog is.
+//
+// Like [AgentCatalog], upstream failures return `(nil, nil)` for
+// frontend compat but emit a single WARN line per failure (FR-9).
 func (a *Adapter) SlashCommands(ctx context.Context, sessionID string) ([]platforms.SlashCommandEntry, error) {
 	port, _, err := a.resolvePortCtx(ctx, sessionID)
 	if err != nil {
+		log.WithFields(log.Fields{"sessionID": sessionID, "error": err}).
+			Debug("opencode: slash commands unavailable (no live port)")
 		return nil, nil
 	}
 	body, ok := getJSONCached(ctx, port, "/command")
 	if !ok {
+		log.WithFields(log.Fields{"sessionID": sessionID, "port": port, "endpoint": "/command"}).
+			Warn("opencode: slash commands fetch failed; returning empty list")
 		return nil, nil
 	}
 	var raw []map[string]interface{}
 	if err := json.Unmarshal(body, &raw); err != nil {
+		log.WithFields(log.Fields{"sessionID": sessionID, "port": port, "error": err}).
+			Warn("opencode: slash commands decode failed; returning empty list")
 		return nil, nil
 	}
 	entries := make([]platforms.SlashCommandEntry, 0, len(raw))

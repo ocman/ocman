@@ -1,4 +1,4 @@
-.PHONY: dev dev-backend dev-frontend dev-prod dev-prod-watch kill-dev build run clean test test-backend test-frontend lint lint-backend lint-frontend lint-platform-branching otel-up otel-down otel-logs otel-reset
+.PHONY: dev dev-backend dev-frontend dev-prod dev-prod-watch kill-dev build run clean test test-backend test-frontend test-race test-fuzz test-coverage lint lint-backend lint-frontend lint-platform-branching otel-up otel-down otel-logs otel-reset help
 
 # --- OTel dev defaults ----------------------------------------------------
 #
@@ -143,6 +143,28 @@ test-backend:
 test-frontend:
 	cd frontend && npm test
 
+# Run Go tests with the race detector. Frontend tests are not race-detector
+# relevant so they're skipped here — run `make test` for the full suite.
+test-race: ## Run Go tests with -race
+	go test -race ./internal/...
+
+# Run every Fuzz* target across internal/ for a short time budget. Fuzzing
+# is opt-in: `go test` skips fuzz targets unless -fuzz is passed, so the
+# regular test suite stays fast.
+test-fuzz: ## Run all Fuzz* targets for 10s each
+	@for pkg in $$(go list ./internal/...); do \
+		fuzzfns=$$(go test -list 'Fuzz.*' $$pkg 2>/dev/null | grep '^Fuzz' || true); \
+		for fn in $$fuzzfns; do \
+			echo "==> $$pkg $$fn"; \
+			go test -run='^$$' -fuzz=$$fn -fuzztime=10s $$pkg || exit 1; \
+		done; \
+	done
+
+# Print per-package coverage for internal/. Used to verify the NFR-3
+# coverage targets in spec/backend-hardening.
+test-coverage: ## Print per-package Go coverage for internal/
+	go test -cover ./internal/...
+
 # Run all linters and type checks
 lint: lint-backend lint-frontend lint-platform-branching
 
@@ -184,3 +206,13 @@ otel-logs:
 # Grafana or you want a clean slate after schema changes.
 otel-reset:
 	docker compose -f docker-compose.otel.yml down -v
+
+# --- Help ----------------------------------------------------------------
+#
+# `make help` lists every target with a `## ` doc comment after the
+# colon. Targets without a doc comment are intentionally hidden from
+# the listing — most of them are dev-loop internals (kill-children,
+# build-frontend, etc) that the user shouldn't need to invoke
+# directly.
+help: ## Show this help
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)

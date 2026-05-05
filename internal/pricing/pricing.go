@@ -3,6 +3,7 @@
 package pricing
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -27,10 +28,36 @@ type ModelPrice struct {
 }
 
 // Table is a loaded pricing table.
+//
+// A *Table can be constructed in two ways:
+//
+//   - Production callers use [Load], which returns a process-wide
+//     default Table populated lazily from the LiteLLM URL.
+//   - Tests use [New] (with a [httptest.Server] URL and a real
+//     [*http.Client]) to obtain a fully isolated instance with no
+//     shared global state.
 type Table struct {
+	httpClient *http.Client
+	url        string
+
 	mu     sync.RWMutex
 	prices map[string]ModelPrice // key: lower-cased model name from LiteLLM
 	keys   []string              // sorted keys for prefix/suffix matching
+}
+
+// New returns a fresh Table that fetches pricing from url using client.
+// The Table is empty until [Table.LoadCtx] is called.
+//
+// New does not consult or mutate any package-level state, so each call
+// returns a fully independent Table — safe for parallel tests.
+func New(client *http.Client, url string) *Table {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	return &Table{
+		httpClient: client,
+		url:        url,
+	}
 }
 
 var (
@@ -38,14 +65,27 @@ var (
 	globalTableOnce sync.Once
 )
 
-// Load fetches the LiteLLM pricing JSON and returns a Table.
-// It is safe to call from multiple goroutines; the fetch happens only once.
+// Load fetches the LiteLLM pricing JSON and returns the process-wide
+// default Table. It is safe to call from multiple goroutines; the
+// fetch happens only once.
+//
+// Tests should prefer [New] + [Table.LoadCtx] for isolated state.
 func Load() *Table {
 	globalTableOnce.Do(func() {
-		t := &Table{}
-		if err := t.fetch(); err != nil {
-			log.WithError(err).Warn("pricing: failed to fetch model pricing; calculated costs will be zero")
-			t.prices = map[string]ModelPrice{}
+		t := New(&http.Client{
+			Timeout:   15 * time.Second,
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
+		}, liteLLMPricingURL)
+		if err := t.LoadCtx(context.Background()); err != nil {
+			// FR-3: failure to load pricing is observable via the
+			// existing logrus logger. We deliberately keep the
+			// returned Table non-nil with an empty price map so
+			// callers continue to see "no match" / cost=0 — the
+			// behaviour they had before — but the maintainer can
+			// see in the logs that pricing was never populated.
+			log.WithError(err).
+				WithField("url", liteLLMPricingURL).
+				Warn("pricing: failed to fetch model pricing; calculated costs will be zero")
 		}
 		globalTable = t
 	})
@@ -62,33 +102,55 @@ type liteLLMEntry struct {
 	CacheCreationInputTokenCost float64 `json:"cache_creation_input_token_cost"`
 }
 
-func (t *Table) fetch() error {
-	client := &http.Client{
-		Timeout:   15 * time.Second,
-		Transport: otelhttp.NewTransport(http.DefaultTransport),
+// LoadCtx fetches the pricing JSON, parses it, and replaces the
+// Table's contents on success. On error it returns the error and
+// leaves the table empty (or as it was — fetch is all-or-nothing).
+//
+// LoadCtx logs a single WARN line on failure (FR-3) including the
+// configured URL and the underlying error so a misconfigured pricing
+// source is observable in production.
+func (t *Table) LoadCtx(ctx context.Context) error {
+	if t == nil {
+		return fmt.Errorf("pricing: nil table")
 	}
-	resp, err := client.Get(liteLLMPricingURL)
+	url := t.url
+	if url == "" {
+		url = liteLLMPricingURL
+	}
+	client := t.httpClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
+		t.logFetchFailure(url, err)
+		return fmt.Errorf("build pricing request: %w", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.logFetchFailure(url, err)
 		return fmt.Errorf("GET pricing: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("GET pricing: HTTP %d", resp.StatusCode)
+		err := fmt.Errorf("GET pricing: HTTP %d", resp.StatusCode)
+		t.logFetchFailure(url, err)
+		return err
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		t.logFetchFailure(url, err)
 		return fmt.Errorf("read pricing body: %w", err)
 	}
 
 	raw := make(map[string]json.RawMessage)
 	if err := json.Unmarshal(body, &raw); err != nil {
+		t.logFetchFailure(url, err)
 		return fmt.Errorf("unmarshal pricing: %w", err)
 	}
 
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.prices = make(map[string]ModelPrice, len(raw))
-
+	prices := make(map[string]ModelPrice, len(raw))
 	for key, val := range raw {
 		var entry liteLLMEntry
 		if err := json.Unmarshal(val, &entry); err != nil {
@@ -100,7 +162,7 @@ func (t *Table) fetch() error {
 		if entry.InputCostPerToken == 0 && entry.OutputCostPerToken == 0 {
 			continue
 		}
-		t.prices[strings.ToLower(key)] = ModelPrice{
+		prices[strings.ToLower(key)] = ModelPrice{
 			InputPerToken:      entry.InputCostPerToken,
 			OutputPerToken:     entry.OutputCostPerToken,
 			CacheReadPerToken:  entry.CacheReadInputTokenCost,
@@ -108,6 +170,24 @@ func (t *Table) fetch() error {
 		}
 	}
 
+	t.mu.Lock()
+	t.prices = prices
+	t.rebuildKeysLocked()
+	t.mu.Unlock()
+
+	log.WithField("models", len(prices)).Info("pricing: loaded model pricing table")
+	return nil
+}
+
+func (t *Table) logFetchFailure(url string, err error) {
+	log.WithError(err).
+		WithField("url", url).
+		Warn("pricing: failed to fetch model pricing; calculated costs will be zero")
+}
+
+// rebuildKeysLocked rebuilds the sorted-by-length-desc key list. The
+// caller must hold t.mu for write.
+func (t *Table) rebuildKeysLocked() {
 	t.keys = make([]string, 0, len(t.prices))
 	for k := range t.prices {
 		t.keys = append(t.keys, k)
@@ -116,14 +196,35 @@ func (t *Table) fetch() error {
 	sort.Slice(t.keys, func(i, j int) bool {
 		return len(t.keys[i]) > len(t.keys[j])
 	})
-
-	log.WithField("models", len(t.prices)).Info("pricing: loaded model pricing table")
-	return nil
 }
 
-// Lookup finds pricing for modelID (e.g. "claude-opus-4-5" or "anthropic/claude-opus-4-5").
-// It tries exact match first, then suffix/substring matching on the table keys.
-// Returns zero ModelPrice if not found.
+// rebuildKeys is a test helper (no lock).
+func (t *Table) rebuildKeys() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.rebuildKeysLocked()
+}
+
+// Lookup finds pricing for modelID (e.g. "claude-opus-4-5" or
+// "anthropic/claude-opus-4-5"). Matching rules, in order:
+//
+//  1. The provider prefix ("foo/") is stripped if present.
+//  2. An exact (case-insensitive) match against a table key wins.
+//  3. Otherwise we look for the longest table key that is either a
+//     prefix of the query (handles versioned names like
+//     "gpt-4-turbo-2024-04-09" → "gpt-4-turbo") or contains the
+//     query as a substring.
+//
+// Returns zero [ModelPrice] when no match is found. A nil receiver is
+// safe and returns zero — callers that fall back to "no pricing"
+// behaviour don't need a nil check.
+//
+// Known limitation: if the table contains both "gpt-4" and "gpt-4o",
+// the query "gpt-4" returns the exact match (rule 2). The query
+// "gpt-4o" likewise wins exactly. Ambiguity only arises for queries
+// that are not exact matches — there we prefer the longest prefix,
+// which is usually correct (the model id includes a version
+// suffix).
 func (t *Table) Lookup(modelID string) ModelPrice {
 	if t == nil {
 		return ModelPrice{}
@@ -145,12 +246,28 @@ func (t *Table) Lookup(modelID string) ModelPrice {
 		return p
 	}
 
-	// 2. Find the longest key that contains needle as a substring, or
-	//    needle contains the key as a substring (handles versioned names).
+	// 2. Find the longest key that is a prefix of needle, OR (as a
+	//    fallback) any longer key that contains needle. Prefix-of-needle
+	//    handles the common case of a versioned id ("gpt-4-turbo-2024")
+	//    mapping to its base entry ("gpt-4-turbo"). The contains-needle
+	//    fallback covers a handful of upstream rows whose key is a
+	//    decorated form of the model id ("gpt-4o-2024-05-13" in the
+	//    table, queried as "gpt-4o").
 	bestKey := ""
 	bestLen := 0
 	for _, k := range t.keys {
-		if strings.Contains(k, needle) || strings.Contains(needle, k) {
+		if strings.HasPrefix(needle, k) {
+			if len(k) > bestLen {
+				bestKey = k
+				bestLen = len(k)
+			}
+		}
+	}
+	if bestKey != "" {
+		return t.prices[bestKey]
+	}
+	for _, k := range t.keys {
+		if strings.Contains(k, needle) {
 			if len(k) > bestLen {
 				bestKey = k
 				bestLen = len(k)
