@@ -126,7 +126,6 @@ export function useSessionStatus({
       window.clearTimeout(statusGraceRef.current);
       statusGraceRef.current = null;
     }
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setOptimisticStatus(rawOptimisticStatus);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- optimisticStatusRef is a stable ref; listing optimisticStatus here would create a self-referencing render cycle.
   }, [rawOptimisticStatus]);
@@ -147,7 +146,6 @@ export function useSessionStatus({
   // `isRunning` flips from true to false, not on every render.
   // The polling branch only writes through setLiveTokensPerSecond
   // inside `setInterval` callbacks (already deferred).
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!isRunning) {
       setLiveTokensPerSecond(null);
@@ -203,7 +201,6 @@ export function useSessionStatus({
     const interval = setInterval(computeTps, 1000);
     return () => clearInterval(interval);
   }, [isRunning, messages, subagentTokens, setSubagentTokens, pendingPermission, pendingQuestion]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   return { rawOptimisticStatus, optimisticStatus, liveTokensPerSecond };
 }

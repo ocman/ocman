@@ -397,12 +397,12 @@ export function SessionDetail() {
       const modelID = slashIdx > 0 ? model.slice(slashIdx + 1) : model;
       api.compactSession(s.id, providerID, modelID).catch(console.error);
     }
-  }, [paletteCommand]);
+  }, [paletteCommand, portAvailableRef, setSelectedReasoning]);
 
 
   useEffect(() => {
     showArchivedRecentRef.current = showArchivedRecent;
-  }, [showArchivedRecent]);
+  }, [showArchivedRecent, showArchivedRecentRef]);
 
   // Keep the directory ref aligned with the currently-rendered session so the
   // next session-change effect can read the correct previous directory even
@@ -500,7 +500,8 @@ export function SessionDetail() {
       controller.abort();
       window.cancelAnimationFrame(rafId);
     };
-  }, [getWhisperStatus, id, load, refreshModels]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- setSseDebugEvents comes from useSessionSSE (declared after this effect); it's a stable useState setter and safe to omit.
+  }, [getWhisperStatus, id, load, refreshModels, lastHashRef, setLoading, setMessages, setParts, setPermissionError, setPortAvailable, setSelectedAgent, setSelectedModel, setSelectedReasoning, setSwitching, setTotalMessages]);
 
   // Re-inject ghost user-message bubbles for failed sends that survived a
   // refresh. The optimistic messages are component-local (never written to
@@ -606,7 +607,7 @@ export function SessionDetail() {
 
     setMessages(retainedMessages);
     setParts((prev) => prev.filter((part) => retainedMessageIds.has(part.messageId)));
-  }, [messages]);
+  }, [messages, setMessages, setParts]);
 
   // Mirror live session data into the per-session detail cache so switching
   // away and back renders instantly. `updateCachedSession` no-ops when the
@@ -648,7 +649,7 @@ export function SessionDetail() {
       }
       return prev;
     });
-  }, [id, pendingPermission, pendingQuestion, hasPendingPrompt]);
+  }, [id, pendingPermission, pendingQuestion, hasPendingPrompt, lastSiblingsHashRef, setRecentSessions]);
 
   // Reverse sync: sidebar poll → detail view. The sidebar polls
   // /api/sessions every 3 seconds and the backend computes
@@ -692,7 +693,7 @@ export function SessionDetail() {
         }
       }).catch(() => { /* sidebar will retry on next poll */ });
     }
-  }, [id, sidebarHasPerm, sidebarHasQuestion, pendingPermission, pendingQuestion, listPermissions, listQuestions]);
+  }, [id, sidebarHasPerm, sidebarHasQuestion, pendingPermission, pendingQuestion, listPermissions, listQuestions, setPermissionError, subagentSessionIdsRef]);
 
   const sessionSeenId = session?.id;
   const sessionSeenPlatform = session?.platform;
@@ -707,7 +708,7 @@ export function SessionDetail() {
         recheckFaviconNotify();
       })
       .catch(err => console.error('Failed to mark session seen', err));
-  }, [markSessionSeen, sessionSeenId, sessionSeenPlatform, sessionSeenUpdated]);
+  }, [markSessionSeen, sessionSeenId, sessionSeenPlatform, sessionSeenUpdated, setRecentSessions]);
 
   // Restore pending question when navigating to a page.
   // Check sessionStorage for a previously received question (stored when the
@@ -847,7 +848,7 @@ export function SessionDetail() {
       });
       recordFailedSend(session.id, failed);
     }
-  }, [pendingPermission, pendingQuestion, portAvailable, sendMessage, session]);
+  }, [pendingPermission, pendingQuestion, portAvailable, sendMessage, session, setMessages, setParts, setSubagentTokens]);
 
   const handleSend = useCallback(async (text: string, images?: AttachedImage[]) => {
     if (!session || !portAvailable) return;
@@ -897,7 +898,7 @@ export function SessionDetail() {
       selectedAgent || activeAgent || undefined,
       selectedReasoning || undefined,
     );
-  }, [activeAgent, activeModel, pendingPermission, pendingQuestion, performSend, portAvailable, selectedAgent, selectedModel, selectedReasoning, session]);
+  }, [activeAgent, activeModel, pendingPermission, pendingQuestion, performSend, portAvailable, selectedAgent, selectedModel, selectedReasoning, session, setMessages, setParts]);
 
   // Replay a previously failed send. Reuses the same optimistic message id
   // so the bubble stays in place — the failed banner just disappears on
@@ -927,14 +928,14 @@ export function SessionDetail() {
     removeFailedSend(session.id, tempId);
     setMessages(prev => prev.filter(m => m.id !== tempId));
     setParts(prev => prev.filter(p => p.messageId !== tempId));
-  }, [session]);
+  }, [session, setMessages, setParts]);
 
   // When the user picks a different model, clear the reasoning selection
   // because the new model may not support the same variants.
   const handleModelChange = useCallback((model: string) => {
     setSelectedModel(model);
     setSelectedReasoning('');
-  }, []);
+  }, [setSelectedModel, setSelectedReasoning]);
 
   const handleCompact = useCallback(async () => {
     if (!session || !portAvailable || !caps.compact) return;
@@ -954,7 +955,7 @@ export function SessionDetail() {
     } catch (e) {
       console.error('Failed to compact session', e);
     }
-  }, [activeAgent, activeModel, caps.compact, portAvailable, selectedAgent, selectedModel, session]);
+  }, [activeAgent, activeModel, caps.compact, portAvailable, selectedAgent, selectedModel, session, setSelectedAgent]);
 
   const handleNewSessionInDirectory = useCallback(async (directory: string, title?: string) => {
     try {
@@ -1129,7 +1130,8 @@ export function SessionDetail() {
       setMessages(prev => [...prev, errMsg]);
       setParts(prev => [...prev, errPart]);
     }
-  }, [activeAgent, activeModel, archiveSession, createSession, launchOpencodeInTmux, openWorktreeForm, tmux.available, handleCompact, handleNewSession, navigate, portAvailable, recentSessions, selectedAgent, selectedModel, session]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- handleVSCodeShortcut is declared after this callback; it's a stable useCallback and safe to omit.
+  }, [activeAgent, activeModel, archiveSession, createSession, launchOpencodeInTmux, openWorktreeForm, tmux.available, handleCompact, handleNewSession, handleTmuxShortcut, navigate, portAvailable, recentSessions, selectedAgent, selectedModel, session, setMessages, setParts]);
 
   // handleShell sends a `!`-prefixed composer submission to the
   // platform's raw shell endpoint (OpenCode: POST /session/{id}/shell),
@@ -1172,7 +1174,7 @@ export function SessionDetail() {
       setMessages(prev => [...prev, errMsg]);
       setParts(prev => [...prev, errPart]);
     }
-  }, [activeAgent, pendingPermission, pendingQuestion, portAvailable, selectedAgent, session]);
+  }, [activeAgent, pendingPermission, pendingQuestion, portAvailable, selectedAgent, session, setMessages, setParts]);
 
   const abortSession = useApiStore((state) => state.abortSession);
 
@@ -1199,7 +1201,7 @@ export function SessionDetail() {
     if (currentIndex === -1) return;
     const target = sessions[currentIndex + direction];
     if (target) navigate(`/session/${target.id}`);
-  }, [id, navigate]);
+  }, [id, navigate, recentSessionsRef]);
 
   // Keep the page-level refs that the palette dispatcher reads.
   // They mirror values used by both the dispatcher and (indirectly,
@@ -1275,7 +1277,7 @@ export function SessionDetail() {
       }
       return prev;
     });
-  }, [id, optimisticStatus]);
+  }, [id, optimisticStatus, lastSiblingsHashRef, setRecentSessions]);
 
   // Flattened list of sidebar rows for the "projects" view. Each entry is
   // either a project header (with its most-recent-activity timestamp) or a

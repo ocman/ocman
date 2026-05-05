@@ -58,6 +58,7 @@ dev:
 	@echo "  Backend (air):    http://localhost:8229"
 	@echo "  Frontend (vite):  http://localhost:8228"
 	@echo "  Backend log:      tmp/air.log"
+	@echo "  Frontend log:     tmp/vite-dev.log"
 	@echo "  Combined log:     tmp/debug.log"
 	@echo ""
 	@trap '$(kill-children)' INT TERM EXIT; \
@@ -73,6 +74,7 @@ dev-prod:
 	@echo "  Frontend (vite):  http://localhost:8228 (serves production build)"
 	@echo "  Backend log:      tmp/air.log"
 	@echo "  Frontend log:     tmp/vite-preview.log"
+	@echo "  Combined log:     tmp/debug.log"
 	@echo ""
 	@echo "Note: Frontend changes require manual 'cd frontend && npm run build'"
 	@echo ""
@@ -80,7 +82,7 @@ dev-prod:
 	@trap '$(kill-children)' INT TERM EXIT; \
 		{ air 2>&1 | tee tmp/air.log & \
 		  cd frontend && npm run preview 2>&1 | tee ../tmp/vite-preview.log & \
-		  wait; }
+		  wait; } 2>&1 | tee tmp/debug.log
 
 # Run with production frontend build + auto-rebuild on changes + backend live reload
 dev-prod-watch:
@@ -91,19 +93,21 @@ dev-prod-watch:
 	@echo "  Backend log:      tmp/air.log"
 	@echo "  Frontend log:     tmp/vite-preview.log"
 	@echo "  Watch log:        tmp/frontend-watch.log"
+	@echo "  Combined log:     tmp/debug.log"
 	@echo ""
 	@trap '$(kill-children)' INT TERM EXIT; \
 		{ air 2>&1 | tee tmp/air.log & \
 		  cd frontend && npm run preview 2>&1 | tee ../tmp/vite-preview.log & \
 		  ./scripts/watch-frontend-prod.sh 2>&1 | tee tmp/frontend-watch.log & \
-		  wait; }
+		  wait; } 2>&1 | tee tmp/debug.log
 
 dev-backend:
 	@mkdir -p tmp
 	@air 2>&1 | tee tmp/air.log
 
 dev-frontend:
-	cd frontend && npm run dev
+	@mkdir -p tmp
+	cd frontend && npm run dev 2>&1 | tee ../tmp/vite-dev.log
 
 # Emergency nuke: kill anything holding the dev ports. Use when a previous
 # `make dev*` died badly and left orphans squatting on 8228 / 8229. Safe to

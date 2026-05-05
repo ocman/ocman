@@ -49,6 +49,11 @@ import { useSessions as useTQSessions, useProjects as useTQProjects, useActivity
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, PointElement, LineElement, Tooltip, Legend);
 
+// Stable empty arrays so `data ?? []` doesn't create a new reference on
+// every render while the query is still loading.
+const EMPTY_SESSIONS: Session[] = [];
+const EMPTY_PROJECTS: Project[] = [];
+
 const METRICS_RANGE_OPTIONS = [
   { label: '24 hours', value: 1 },
   { label: '7 days', value: 7 },
@@ -140,16 +145,24 @@ export function DashboardLayout() {
   );
   const projectsQ = useTQProjects();
 
-  const sessions = sessionsQ.data ?? [];
-  const projects = projectsQ.data ?? [];
+  // Module-level constants avoid creating a new [] on every render when
+  // the query hasn't resolved yet (undefined ?? [] would be a fresh ref).
+  const sessions = sessionsQ.data ?? EMPTY_SESSIONS;
+  const projects = projectsQ.data ?? EMPTY_PROJECTS;
+
+  const sessionsError = sessionsQ.error instanceof Error ? sessionsQ.error.message : null;
+  const { isLoading: sessionsLoading, refetch: refetchSessions } = sessionsQ;
+  const { isLoading: projectsLoading } = projectsQ;
+
+  const loadSessions = useCallback(() => { void refetchSessions(); }, [refetchSessions]);
 
   const ctx: DashboardCtx = useMemo(() => ({
     sessions,
     projects,
-    sessionsLoading: sessionsQ.isLoading,
-    sessionsError: sessionsQ.error instanceof Error ? sessionsQ.error.message : null,
-    projectsLoading: projectsQ.isLoading,
-    loadSessions: () => { void sessionsQ.refetch(); },
+    sessionsLoading,
+    sessionsError,
+    projectsLoading,
+    loadSessions,
     timeRange,
     setTimeRange,
     showArchived,
@@ -159,8 +172,10 @@ export function DashboardLayout() {
   }), [
     sessions,
     projects,
-    sessionsQ,
-    projectsQ.isLoading,
+    sessionsLoading,
+    sessionsError,
+    projectsLoading,
+    loadSessions,
     timeRange,
     setTimeRange,
     showArchived,

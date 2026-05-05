@@ -16,7 +16,7 @@
     "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
-    "@assistant-ui/react": "^0.12.24",
+    "@assistant-ui/react": "^0.12.28",
     "@assistant-ui/react-markdown": "^0.12.8",
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@radix-ui/react-toast": "^1.2.15",

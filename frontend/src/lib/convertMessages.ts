@@ -113,6 +113,25 @@ type ConvertedCacheEntry = {
 };
 const convertedMessageCache = new WeakMap<Message, ConvertedCacheEntry>();
 
+/** Stable empty array for messages with no parts. */
+const EMPTY_PARTS: Part[] = [];
+
+/**
+ * Shallow element-wise equality for Part arrays. Returns true when both
+ * arrays have the same length and every element is the same reference.
+ * This is needed because `partsByMsg` builds a fresh array on every
+ * `convertMessages` call, so reference equality (`===`) always fails
+ * even when the underlying Part objects haven't changed.
+ */
+function partsEqual(a: Part[], b: Part[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
 /**
  * Convert ocman's `Message` + `Part` arrays into the
  * `ThreadMessageLike[]` shape that assistant-ui's external-store
@@ -191,12 +210,14 @@ export function convertMessages(
 
     // Per-message cache check: reuse the previous conversion result
     // when the message reference, its parts, and all context values
-    // are unchanged.
-    const msgPartsRaw = partsByMsg[m.id] || [];
+    // are unchanged. Parts are compared element-wise (same length +
+    // same Part references) because `partsByMsg` builds a fresh array
+    // on every call even when the underlying Part objects are stable.
+    const msgPartsRaw = partsByMsg[m.id] || EMPTY_PARTS;
     const cached = convertedMessageCache.get(m);
     if (
       cached &&
-      cached.parts === msgPartsRaw &&
+      partsEqual(cached.parts, msgPartsRaw) &&
       cached.pendingAgent === pendingAgent &&
       cached.taskLiveOutput === taskLiveOutput &&
       cached.projectDirectory === projectDirectory &&
