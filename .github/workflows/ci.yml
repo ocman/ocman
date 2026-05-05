@@ -107,7 +107,8 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_PAT }}
-      - name: Create semantic version tag
+      - name: Decide next tag
+        id: decide
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_PAT }}
           FORGEJO_API_URL: ${{ github.api_url }}
@@ -134,6 +135,7 @@ jobs:
           subjects="$(git log --format=%s "${commit_range}")"
           if [ -z "${subjects}" ]; then
             printf '%s\n' "No commits to evaluate for a new release"
+            printf 'release=false\n' >> "${GITHUB_OUTPUT}"
             exit 0
           fi
 
@@ -147,6 +149,7 @@ jobs:
             bump="patch"
           else
             printf '%s\n' "No releasable conventional commits found"
+            printf 'release=false\n' >> "${GITHUB_OUTPUT}"
             exit 0
           fi
 
@@ -176,6 +179,7 @@ jobs:
 
           if [ "${tag_lookup}" = "200" ]; then
             printf 'Tag already exists: %s\n' "${next_tag}"
+            printf 'release=false\n' >> "${GITHUB_OUTPUT}"
             exit 0
           fi
 
@@ -184,7 +188,65 @@ jobs:
             exit 1
           fi
 
-          git tag "${next_tag}" "${TARGET_SHA}"
-          git push origin "${next_tag}"
+          {
+            printf 'release=true\n'
+            printf 'next_tag=%s\n' "${next_tag}"
+            printf 'previous_tag=%s\n' "${latest_tag}"
+            printf 'target_sha=%s\n' "${TARGET_SHA}"
+          } >> "${GITHUB_OUTPUT}"
 
-          printf 'Created and pushed tag %s from %s\n' "${next_tag}" "${TARGET_SHA}"
+          printf 'Will create tag %s from %s (previous=%s)\n' \
+            "${next_tag}" "${TARGET_SHA}" "${latest_tag:-<none>}"
+      - name: Compute changelog range
+        id: range
+        if: steps.decide.outputs.release == 'true'
+        env:
+          PREVIOUS_TAG: ${{ steps.decide.outputs.previous_tag }}
+        run: |
+          set -euo pipefail
+          if [ -n "${PREVIOUS_TAG}" ]; then
+            printf 'range=%s..HEAD\n' "${PREVIOUS_TAG}" >> "${GITHUB_OUTPUT}"
+          else
+            # First release: let git-cliff walk the full history.
+            printf 'range=\n' >> "${GITHUB_OUTPUT}"
+          fi
+      - name: Render changelog
+        if: steps.decide.outputs.release == 'true'
+        uses: orhun/git-cliff-action@v3
+        with:
+          config: cliff.toml
+          args: --tag ${{ steps.decide.outputs.next_tag }} ${{ steps.range.outputs.range }}
+        env:
+          OUTPUT: changelog.md
+      - name: Append compare link
+        if: steps.decide.outputs.release == 'true' && steps.decide.outputs.previous_tag != ''
+        env:
+          FORGEJO_API_URL: ${{ github.api_url }}
+          SERVER_URL: ${{ github.server_url }}
+          REPOSITORY: ${{ github.repository }}
+          PREVIOUS_TAG: ${{ steps.decide.outputs.previous_tag }}
+          NEXT_TAG: ${{ steps.decide.outputs.next_tag }}
+        run: |
+          set -euo pipefail
+          {
+            printf '\n**Full changelog**: %s/%s/compare/%s...%s\n' \
+              "${SERVER_URL}" "${REPOSITORY}" "${PREVIOUS_TAG}" "${NEXT_TAG}"
+          } >> changelog.md
+          printf -- '--- changelog.md ---\n'
+          cat changelog.md
+      - name: Create and push annotated tag
+        if: steps.decide.outputs.release == 'true'
+        env:
+          NEXT_TAG: ${{ steps.decide.outputs.next_tag }}
+          TARGET_SHA: ${{ steps.decide.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          # Annotated tag carries the changelog as its message; the
+          # release workflow recovers it via `git tag -l --format`.
+          # `--cleanup=verbatim` preserves `### Heading` lines that
+          # git would otherwise strip as comments.
+          git tag -a -F changelog.md --cleanup=verbatim "${NEXT_TAG}" "${TARGET_SHA}"
+          git push origin "${NEXT_TAG}"
+          printf 'Created and pushed tag %s from %s\n' "${NEXT_TAG}" "${TARGET_SHA}"

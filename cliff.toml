@@ -1,0 +1,72 @@
+# git-cliff configuration for ocman release changelogs.
+# See spec/release-changelog/architecture.md for design rationale.
+
+[changelog]
+# No top-level heading: the Forgejo release name and the annotated tag
+# already carry "vX.Y.Z" as the heading.
+header = ""
+
+# Tera template. Iterates groups in the order defined by
+# `commit_parsers` (group_by index), skips empty groups, hoists
+# breaking changes to a top section.
+body = """
+{% if version %}{% else %}{% endif %}\
+{% set breaking = commits | filter(attribute="breaking", value=true) %}\
+{% if breaking | length > 0 %}\
+### Breaking changes
+
+{% for commit in breaking %}\
+- {% if commit.scope %}**{{ commit.scope }}**: {% endif %}\
+{{ commit.message | upper_first }} ({{ commit.id | truncate(length=7, end="") }})
+{% endfor %}
+
+{% endif %}\
+{% for group, commits in commits | filter(attribute="breaking", value=false) | group_by(attribute="group") %}\
+### {{ group | split(pat="-") | slice(start=1) | join(sep="-") }}
+
+{% for commit in commits %}\
+- {% if commit.scope %}**{{ commit.scope }}**: {% endif %}\
+{{ commit.message | upper_first }} ({{ commit.id | truncate(length=7, end="") }})
+{% endfor %}
+
+{% endfor %}\
+"""
+
+# Footer is intentionally empty: the workflow appends the
+# "Full changelog" compare link after rendering so we don't have to
+# hard-code the Forgejo/GitHub host in the template.
+footer = ""
+
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+filter_commits = true
+tag_pattern = "v[0-9]*"
+sort_commits = "newest"
+protect_breaking_commits = true
+
+# Order matters: parsers are evaluated top-to-bottom and the first
+# match wins. Groups are surfaced in this declaration order via the
+# numeric prefix (Tera's group_by sorts lexicographically).
+commit_parsers = [
+    # Hidden types: never appear in the changelog.
+    { message = "^chore", skip = true },
+    { message = "^docs", skip = true },
+    { message = "^test", skip = true },
+    { message = "^ci", skip = true },
+    { message = "^build", skip = true },
+    { message = "^style", skip = true },
+    { message = "^lint", skip = true },
+
+    # Visible groups. The "1-/2-/3-/4-" prefix only controls render
+    # order; it is stripped by `striptags | trim` in the template.
+    { message = "^feat",     group = "1-Features" },
+    { message = "^fix",      group = "2-Bug fixes" },
+    { message = "^perf",     group = "3-Performance" },
+    { message = "^refactor", group = "4-Maintenance" },
+
+    # Anything that did not match a known type is dropped.
+    { message = ".*", skip = true },
+]
