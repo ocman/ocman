@@ -14,10 +14,20 @@ import { parseTodos } from '../lib/todos';
 import { TodoList } from './TodoList';
 import { useFailedSends } from '../lib/failedSendsContext';
 import { isMutedTool, isMutedLineTool } from '../lib/mutedTools';
+import {
+  inferDiffLanguage,
+  highlightDiffCode,
+  extractPatchPayload,
+  splitToolArgs,
+  shortenPatchPath,
+  summarizePatch,
+  parseQuestionAnswers,
+  parseQuestions,
+  type QuestionData,
+} from '../lib/threadHelpers';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
-import hljs from 'highlight.js/lib/common';
 import type { FC } from 'react';
 
 
@@ -271,84 +281,6 @@ function AssistantMeta() {
   );
 }
 
-const EXTENSION_LANGUAGE_MAP: Record<string, string> = {
-  c: 'c',
-  cc: 'cpp',
-  cpp: 'cpp',
-  css: 'css',
-  cts: 'typescript',
-  go: 'go',
-  h: 'c',
-  hpp: 'cpp',
-  html: 'xml',
-  htm: 'xml',
-  java: 'java',
-  js: 'javascript',
-  json: 'json',
-  jsx: 'javascript',
-  mjs: 'javascript',
-  mts: 'typescript',
-  py: 'python',
-  rb: 'ruby',
-  rs: 'rust',
-  sh: 'bash',
-  sql: 'sql',
-  toml: 'ini',
-  ts: 'typescript',
-  tsx: 'typescript',
-  xml: 'xml',
-  yml: 'yaml',
-  yaml: 'yaml',
-  zsh: 'bash',
-};
-
-function escapeHtml(text: string): string {
-  return text
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
-
-function inferLanguageFromPath(path: string): string | undefined {
-  const name = path.trim().split(/[\\/]/).pop() || path.trim();
-  if (!name) return undefined;
-
-  if (name === 'Dockerfile') return 'dockerfile';
-
-  const extMatch = name.match(/\.([a-zA-Z0-9]+)$/);
-  if (!extMatch) return undefined;
-
-  const ext = extMatch[1].toLowerCase();
-  return EXTENSION_LANGUAGE_MAP[ext];
-}
-
-function inferDiffLanguage(title: string, detail: string): string | undefined {
-  const trimmedTitle = title.trim();
-  const prefixed = trimmedTitle.match(/^(?:Edit|Write)\s+(.+)$/);
-  const fromTitle = prefixed?.[1] || trimmedTitle;
-
-  const fromTitleLang = inferLanguageFromPath(fromTitle);
-  if (fromTitleLang) return fromTitleLang;
-
-  const firstDetailLine = detail.split('\n')[0]?.trim() || '';
-  return inferLanguageFromPath(firstDetailLine);
-}
-
-function highlightDiffCode(code: string, languageHint?: string): string {
-  if (!code) return '';
-
-  try {
-    if (languageHint && hljs.getLanguage(languageHint)) {
-      return hljs.highlight(code, { language: languageHint, ignoreIllegals: true }).value;
-    }
-    return hljs.highlightAuto(code).value;
-  } catch {
-    return escapeHtml(code);
-  }
-}
-
 function renderOutput(text: string, languageHint?: string) {
   // Detect file read output: various XML formats from MCP read tools
   // Handles: <path>...</path> with optional <type>...</type> and <content>...</content>
@@ -407,105 +339,6 @@ function renderOutput(text: string, languageHint?: string) {
   );
 }
 
-interface PatchSection {
-  action: 'add' | 'update' | 'delete';
-  path: string;
-}
-
-interface PatchPayload {
-  patchText: string | null;
-  preamble: string;
-}
-
-function parseJsonObject(text: string): Record<string, unknown> | null {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return null;
-  try {
-    const parsed = JSON.parse(trimmed);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
-  } catch {
-    return null;
-  }
-}
-
-function parseJsonObjectFromMixedText(text: string): Record<string, unknown> | null {
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start < 0 || end <= start) return null;
-  return parseJsonObject(text.slice(start, end + 1));
-}
-
-function extractPatchPayload(text: string): PatchPayload {
-  const parsed = parseJsonObject(text) || parseJsonObjectFromMixedText(text);
-  if (typeof parsed?.patchText === 'string') {
-    const jsonStart = text.indexOf('{');
-    const preamble = jsonStart > 0 ? text.slice(0, jsonStart).trim() : '';
-    return { patchText: parsed.patchText, preamble };
-  }
-
-  return { patchText: null, preamble: text.trim() };
-}
-
-function splitToolArgs(toolName: string, rawArgs: string): { title: string; detail: string } {
-  const argLines = rawArgs.split('\n');
-  const firstLine = argLines[0] || '';
-  const rest = argLines.slice(1).join('\n').trim();
-
-  // Some tools, notably apply_patch, send structured JSON without a title.
-  // In that case the first line is part of the payload, not a display label.
-  if (toolName === 'apply_patch' && (firstLine.trim().startsWith('{') || !rest)) {
-    return { title: '', detail: rawArgs.trim() };
-  }
-
-  return { title: firstLine, detail: rest };
-}
-
-function parsePatchSections(patchText: string): PatchSection[] {
-  return patchText.split('\n').flatMap<PatchSection>((line) => {
-    const updateMatch = line.match(/^\*\*\* Update File: (.+)$/);
-    if (updateMatch) return [{ action: 'update' as const, path: updateMatch[1] }];
-    const addMatch = line.match(/^\*\*\* Add File: (.+)$/);
-    if (addMatch) return [{ action: 'add' as const, path: addMatch[1] }];
-    const deleteMatch = line.match(/^\*\*\* Delete File: (.+)$/);
-    if (deleteMatch) return [{ action: 'delete' as const, path: deleteMatch[1] }];
-    return [];
-  });
-}
-
-function summarizePatch(patchText: string): string {
-  const sections = parsePatchSections(patchText);
-  if (sections.length === 0) return 'Patch';
-  if (sections.length === 1) {
-    const section = sections[0];
-    const action = section.action === 'add' ? 'Add' : section.action === 'delete' ? 'Delete' : 'Update';
-    return `${action} ${shortenPatchPath(section.path)}`;
-  }
-
-  const counts = sections.reduce<{ add: number; update: number; delete: number }>((acc, section) => {
-    acc[section.action] += 1;
-    return acc;
-  }, { add: 0, update: 0, delete: 0 });
-  const parts = [
-    counts.add ? `${counts.add} add${counts.add === 1 ? '' : 's'}` : null,
-    counts.update ? `${counts.update} update${counts.update === 1 ? '' : 's'}` : null,
-    counts.delete ? `${counts.delete} delete${counts.delete === 1 ? '' : 's'}` : null,
-  ].filter(Boolean);
-  return `Patch ${sections.length} files${parts.length ? ` (${parts.join(', ')})` : ''}`;
-}
-
-function shortenPatchPath(path: string): string {
-  if (!path.startsWith('/')) return path;
-
-  const markers = ['/frontend/', '/internal/', '/docs/', '/.github/'];
-  for (const marker of markers) {
-    const index = path.indexOf(marker);
-    if (index >= 0) return path.slice(index + 1);
-  }
-
-  const parts = path.split('/').filter(Boolean);
-  return parts.slice(-2).join('/');
-}
-
 function renderPatch(patchText: string) {
   const lines = patchText.split('\n');
   return (
@@ -525,140 +358,6 @@ function renderPatch(patchText: string) {
       })}
     </div>
   );
-}
-
-interface QuestionOption {
-  label: string;
-  description: string;
-}
-
-interface QuestionData {
-  header: string;
-  question: string;
-  options: QuestionOption[];
-}
-
-function parseQuestionAnswers(result: unknown): string[] | null {
-  if (typeof result !== 'string' || !result.trim()) return null;
-
-  const normalizeAnswer = (value: string): string => {
-    const trimmed = value.trim();
-    const quotedMatch = trimmed.match(/^"([\s\S]+)"$/);
-    if (quotedMatch) return quotedMatch[1].trim();
-    return trimmed;
-  };
-
-  // Extract `"question"="answer"` pairs from the prose format emitted by the
-  // MCP question tool:
-  //   User has answered your questions: "Q1"="A1", "Q2"="A2". You can now ...
-  // Question and answer bodies may themselves contain escaped quotes and
-  // multiple lines, so we walk the string matching balanced quoted segments
-  // separated by `=`.
-  const extractProseAnswers = (raw: string): string[] | null => {
-    const answers: string[] = [];
-    let i = 0;
-    const len = raw.length;
-    const readQuoted = (): string | null => {
-      if (i >= len || raw[i] !== '"') return null;
-      i++; // skip opening quote
-      let out = '';
-      while (i < len) {
-        const ch = raw[i];
-        if (ch === '\\' && i + 1 < len) {
-          out += raw[i + 1];
-          i += 2;
-          continue;
-        }
-        if (ch === '"') {
-          i++; // skip closing quote
-          return out;
-        }
-        out += ch;
-        i++;
-      }
-      return null; // unterminated
-    };
-
-    while (i < len) {
-      // Advance to the next opening quote.
-      while (i < len && raw[i] !== '"') i++;
-      if (i >= len) break;
-      const q = readQuoted();
-      if (q === null) break;
-      // Expect `=` (optional whitespace).
-      while (i < len && (raw[i] === ' ' || raw[i] === '\t')) i++;
-      if (raw[i] !== '=') continue;
-      i++;
-      while (i < len && (raw[i] === ' ' || raw[i] === '\t')) i++;
-      const a = readQuoted();
-      if (a === null) break;
-      answers.push(a.trim());
-    }
-    return answers.length > 0 ? answers : null;
-  };
-
-  // The result may be JSON-stringified multiple times (e.g. a JSON string
-  // inside another JSON string). Unwrap up to two levels.
-  const unwrap = (raw: string): unknown => {
-    try {
-      const first = JSON.parse(raw);
-      if (typeof first === 'string') {
-        try { return JSON.parse(first); } catch { return first; }
-      }
-      return first;
-    } catch { return raw; }
-  };
-
-  const parsed = unwrap(result);
-
-  if (Array.isArray(parsed)) {
-    const answers = parsed.map((entry) => {
-      if (Array.isArray(entry)) return entry.join(', ').trim();
-      if (typeof entry === 'string') return normalizeAnswer(entry);
-      if (entry && typeof entry === 'object') {
-        // Handle {label: "..."} or {answer: "..."} shaped objects
-        const obj = entry as Record<string, unknown>;
-        const val = obj.label || obj.answer || obj.value || obj.text;
-        if (typeof val === 'string') return normalizeAnswer(val);
-        return JSON.stringify(entry);
-      }
-      return '';
-    }).filter(Boolean);
-    return answers.length > 0 ? answers : null;
-  }
-  if (typeof parsed === 'string' && parsed.trim()) {
-    // MCP question tool returns prose like:
-    //   User has answered your questions: "Q"="A", "Q2"="A2". You can now ...
-    // Extract the answer from each "question"="answer" pair.
-    const prose = extractProseAnswers(parsed);
-    if (prose) return prose;
-    return [normalizeAnswer(parsed)];
-  }
-
-  // Fallback for non-JSON result
-  if (typeof result === 'string') {
-    const prose = extractProseAnswers(result);
-    if (prose) return prose;
-    const raw = normalizeAnswer(result);
-    if (raw && raw !== '""' && raw !== '[]') return [raw];
-  }
-  return null;
-}
-
-function parseQuestions(argsText: string): QuestionData[] | null {
-  // argsText format: "status\njsonData"
-  const lines = argsText.split('\n');
-  const jsonStr = lines.slice(1).join('\n').trim();
-  if (!jsonStr) return null;
-  try {
-    const parsed = JSON.parse(jsonStr);
-    // Could be { questions: [...] } or just [...]
-    const questions = parsed?.questions || parsed;
-    if (Array.isArray(questions) && questions.length > 0 && questions[0]?.question) {
-      return questions as QuestionData[];
-    }
-  } catch { /* not JSON */ }
-  return null;
 }
 
 function AnsweredQuestionBlock({ questions, answers }: { questions: QuestionData[]; answers: string[] }) {

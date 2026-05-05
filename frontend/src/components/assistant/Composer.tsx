@@ -12,38 +12,9 @@ import { ModelPicker } from './ModelPicker';
 import { AgentPicker } from './AgentPicker';
 import { ReasoningPicker } from './ReasoningPicker';
 import { routeComposerSubmit } from './composerSubmit';
-
-function encodeWav(samples: Float32Array, sampleRate: number): Blob {
-  const numSamples = samples.length;
-  const buffer = new ArrayBuffer(44 + numSamples * 2);
-  const view = new DataView(buffer);
-
-  function writeString(offset: number, str: string) {
-    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
-  }
-
-  writeString(0, 'RIFF');
-  view.setUint32(4, 36 + numSamples * 2, true);
-  writeString(8, 'WAVE');
-  writeString(12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  writeString(36, 'data');
-  view.setUint32(40, numSamples * 2, true);
-
-  let offset = 44;
-  for (let i = 0; i < numSamples; i++, offset += 2) {
-    const s = Math.max(-1, Math.min(1, samples[i]));
-    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-  }
-
-  return new Blob([buffer], { type: 'audio/wav' });
-}
+import { encodeWav } from '../../lib/audio/encodeWav';
+import { getContextWindow, formatTokenCount } from '../../lib/models/contextWindows';
+import { BUILTIN_COMMANDS, KNOWN_AGENTS } from '../../lib/commands/builtinCommands';
 
 interface RecordingCtx {
   stream: MediaStream;
@@ -65,78 +36,6 @@ function readFileAsDataURL(file: File): Promise<string> {
     reader.readAsDataURL(file);
   });
 }
-
-const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
-  'gpt-4o': 128_000,
-  'gpt-4o-mini': 128_000,
-  'gpt-4-turbo': 128_000,
-  'gpt-4': 8_192,
-  'gpt-4.1': 1_047_576,
-  'gpt-4.1-mini': 1_047_576,
-  'gpt-4.1-nano': 1_047_576,
-  'o1': 200_000,
-  'o1-mini': 128_000,
-  'o1-pro': 200_000,
-  'o3': 200_000,
-  'o3-mini': 200_000,
-  'o3-pro': 200_000,
-  'o4-mini': 200_000,
-  'claude-sonnet-4-20250514': 200_000,
-  'claude-opus-4-20250514': 200_000,
-  'claude-opus-4-6-20250616': 200_000,
-  'claude-3-7-sonnet-20250219': 200_000,
-  'claude-3-5-sonnet-20241022': 200_000,
-  'claude-3-5-sonnet-20240620': 200_000,
-  'claude-3-5-haiku-20241022': 200_000,
-  'claude-3-opus-20240229': 200_000,
-  'claude-3-haiku-20240307': 200_000,
-  'claude-sonnet-4': 200_000,
-  'claude-opus-4-6': 200_000,
-  'claude-opus-4': 200_000,
-  'gemini-2.5-pro': 1_048_576,
-  'gemini-2.5-flash': 1_048_576,
-  'gemini-2.0-flash': 1_048_576,
-  'gemini-1.5-pro': 2_097_152,
-  'gemini-1.5-flash': 1_048_576,
-  'grok-3': 131_072,
-  'grok-3-mini': 131_072,
-  'deepseek-chat': 64_000,
-  'deepseek-reasoner': 64_000,
-  'mistral-large-latest': 128_000,
-  'codestral-latest': 256_000,
-};
-
-function getContextWindow(modelId: string | undefined): number | null {
-  if (!modelId) return null;
-  if (MODEL_CONTEXT_WINDOWS[modelId]) return MODEL_CONTEXT_WINDOWS[modelId];
-  const lower = modelId.toLowerCase();
-  const sorted = Object.entries(MODEL_CONTEXT_WINDOWS).sort((a, b) => b[0].length - a[0].length);
-  for (const [key, value] of sorted) {
-    if (lower.endsWith(key) || lower.includes(key)) return value;
-  }
-  return null;
-}
-
-function formatTokenCount(n: number): string {
-  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
-  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
-  return String(n);
-}
-
-const KNOWN_AGENTS = ['build', 'developer', 'plan', 'architect', 'ba', 'brainstormer', 'reviewer', 'security'];
-
-const BUILTIN_COMMANDS: SlashCommand[] = [
-  { name: 'agent', description: 'Change the active agent (opens a picker)' },
-  { name: 'archive', description: 'Archive this session and open the most recent one' },
-  { name: 'clear', description: 'Archive this session and start a new one in the same project directory' },
-  { name: 'compact', description: 'Summarize conversation history to free up context window' },
-  { name: 'model', description: 'Change the active model (opens a picker)' },
-  { name: 'new', description: 'Start a new session in the same project directory (optionally add a title)' },
-  { name: 'rename', description: 'Rename this session' },
-  { name: 'tmux', description: 'Switch to the tmux session for this project' },
-  { name: 'wt', description: 'Create a worktree session for this project (optionally prefill the branch)' },
-  { name: 'vscode', description: 'Open the project directory in VS Code' },
-];
 
 function ComposerImpl({
   onSend,
