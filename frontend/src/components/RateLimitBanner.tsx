@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import type { SessionNotice } from '../lib/api';
 import { formatDuration } from '../lib/format';
 
@@ -7,23 +7,39 @@ interface RateLimitBannerProps {
 }
 
 /**
- * Renders a passive informational banner when the session is blocked
- * by a rate limit. Shows the backend-normalized message and, when
- * available, a relative retry countdown and attempt number.
+ * Compute the remaining milliseconds until `retryAt`, clamped to 0.
+ * Pure helper — no hooks, safe to call anywhere.
+ */
+function remainingMs(retryAt: number): number {
+  return retryAt > 0 ? Math.max(0, retryAt - Date.now()) : 0;
+}
+
+/**
+ * Renders a warning banner when the session is blocked by a rate
+ * limit. Shows the backend-normalized message, a live countdown
+ * that ticks every second until the retry time, and the attempt
+ * number when known.
  *
- * Platform-agnostic: consumes the normalized `SessionNotice` from the
- * API without inspecting the platform field.
+ * Platform-agnostic: consumes the normalized `SessionNotice` from
+ * the API without inspecting the platform field.
  */
 export function RateLimitBanner({ notice }: RateLimitBannerProps) {
-  // Compute the retry text once per render via useMemo so the linter
-  // doesn't flag Date.now() as an impure call in the render body.
-  // The value is intentionally not live-updating — the banner is
-  // passive information, not a countdown timer.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const retryText = useMemo(() => {
-    if (!notice.retryAt) return null;
-    const remaining = notice.retryAt - Date.now();
-    return remaining > 0 ? `Retrying in ~${formatDuration(remaining)}` : null;
+  // Seed with the current remaining time; the interval below keeps
+  // it ticking. When `retryAt` changes (new attempt), React
+  // re-creates the component via the parent's key/conditional, so
+  // the initializer runs again with the fresh value.
+  const [remaining, setRemaining] = useState(() => remainingMs(notice.retryAt));
+
+  useEffect(() => {
+    if (!notice.retryAt) return;
+
+    const id = window.setInterval(() => {
+      const ms = remainingMs(notice.retryAt);
+      setRemaining(ms);
+      if (ms <= 0) window.clearInterval(id);
+    }, 1000);
+
+    return () => window.clearInterval(id);
   }, [notice.retryAt]);
 
   if (notice.kind !== 'rate_limit') return null;
@@ -35,9 +51,9 @@ export function RateLimitBanner({ notice }: RateLimitBannerProps) {
         <strong>Rate limited</strong>
         {' — '}
         {notice.message}
-        {retryText && (
+        {remaining > 0 && (
           <span className="oc-rate-limit-retry">
-            {' · '}{retryText}
+            {' · '}Retrying in ~{formatDuration(remaining)}
           </span>
         )}
         {notice.attempt > 0 && (
