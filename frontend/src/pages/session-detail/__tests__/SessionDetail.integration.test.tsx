@@ -38,6 +38,76 @@ describe('SessionDetail — initial mount', () => {
     expect(screen.getByTestId('session-layout')).toBeInTheDocument();
   });
 
+  it('does not trigger maximum update depth on mount', async () => {
+    // Regression guard: React throws "Maximum update depth exceeded"
+    // when a component calls setState > 50 times in a single commit.
+    // Spy on console.error to detect the error message React logs
+    // just before throwing.
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const sess = makeSession({ id: 'sess_depth', status: 'busy' });
+    const detail = makeSessionDetail(sess, {
+      messages: [
+        { id: 'msg1', sessionId: 'sess_depth', timeCreated: Date.now() - 1000, data: { role: 'user' } },
+        { id: 'msg2', sessionId: 'sess_depth', timeCreated: Date.now(), data: { role: 'assistant' } },
+      ],
+      totalMessages: 2,
+    });
+
+    renderSessionPage({ sessionId: 'sess_depth', detail, sessions: [sess] });
+    await flushPromises(8);
+
+    const maxDepthCalls = errorSpy.mock.calls.filter(
+      (args) => args.some((a) => typeof a === 'string' && a.includes('Maximum update depth exceeded')),
+    );
+    expect(maxDepthCalls).toHaveLength(0);
+
+    errorSpy.mockRestore();
+  });
+
+  it('does not loop when getSession returns fresh objects each call', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const mkDetail = () => {
+      const s = makeSession({ id: 'sess_fresh', status: 'busy' });
+      return makeSessionDetail(s, {
+        messages: [
+          { id: 'msg1', sessionId: 'sess_fresh', timeCreated: Date.now() - 1000, data: { role: 'user' } },
+          { id: 'msg2', sessionId: 'sess_fresh', timeCreated: Date.now(), data: { role: 'assistant' } },
+        ],
+        totalMessages: 2,
+      });
+    };
+
+    // Each call returns a structurally identical but referentially
+    // new object — exactly what a real API does.
+    const getSessionSpy = vi.fn().mockImplementation(() => Promise.resolve(mkDetail()));
+    const getSessionsSpy = vi.fn().mockImplementation(() =>
+      Promise.resolve([makeSession({ id: 'sess_fresh', status: 'busy' })]),
+    );
+
+    renderSessionPage({
+      sessionId: 'sess_fresh',
+      detail: mkDetail(),
+      sessions: [makeSession({ id: 'sess_fresh', status: 'busy' })],
+      storeOverrides: {
+        getSession: getSessionSpy,
+        getSessions: getSessionsSpy,
+      },
+    });
+
+    // Let several render cycles settle.
+    await flushPromises(12);
+    await act(async () => { await flushPromises(4); });
+
+    const maxDepthCalls = errorSpy.mock.calls.filter(
+      (args) => args.some((a) => typeof a === 'string' && a.includes('Maximum update depth exceeded')),
+    );
+    expect(maxDepthCalls).toHaveLength(0);
+
+    errorSpy.mockRestore();
+  }, 10_000);
+
   it('shows the loading state before the first response', async () => {
     let resolveDetail!: (d: ReturnType<typeof makeSessionDetail>) => void;
     const pending = new Promise<ReturnType<typeof makeSessionDetail>>((r) => {
