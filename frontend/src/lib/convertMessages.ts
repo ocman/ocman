@@ -636,12 +636,13 @@ export function convertMessages(
   // @assistant-ui/react's useExternalStoreRuntime) from seeing a new
   // snapshot on every call, which would trigger a forceStoreRerender
   // loop during the passive-effect phase.
+  const prev = lastConvertedResult;
   if (
-    lastConvertedResult &&
-    lastConvertedResult.length === result.length &&
-    result.every((r, i) => r === lastConvertedResult[i])
+    prev &&
+    prev.length === result.length &&
+    result.every((r, i) => r === prev[i])
   ) {
-    return lastConvertedResult;
+    return prev;
   }
   lastConvertedResult = result;
   return result;

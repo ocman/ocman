@@ -61,13 +61,20 @@ function MarkdownLink(props: any) {
   return <a {...rest} target="_blank" rel="noopener noreferrer" />;
 }
 
+// Module-scoped to keep prop references stable across renders. Fresh
+// array/object literals here would invalidate react-markdown's
+// internal unified-processor cache on every streaming chunk.
+const REMARK_PLUGINS = [remarkGfm];
+const REHYPE_PLUGINS = [rehypeHighlight];
+const MARKDOWN_COMPONENTS = { pre: CodeBlockPre, a: MarkdownLink };
+
 const MarkdownText: FC<{ text: string }> = ({ text }) => {
   if (!text.trim()) return null;
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeHighlight]}
-      components={{ pre: CodeBlockPre, a: MarkdownLink }}
+      remarkPlugins={REMARK_PLUGINS}
+      rehypePlugins={REHYPE_PLUGINS}
+      components={MARKDOWN_COMPONENTS}
     >
       {text}
     </ReactMarkdown>
@@ -127,12 +134,7 @@ const UserMessage: FC = () => {
       style={borderStyle}
     >
       <div className="oc-msg-body">
-        <MessagePrimitive.Content
-          components={{
-            Text: UserTextPart,
-            Image: ImageDisplay,
-          }}
-        />
+        <MessagePrimitive.Content components={USER_PART_COMPONENTS} />
       </div>
       {isQueued && !failed && (
         <div className="oc-msg-queued-badge">
@@ -187,13 +189,7 @@ const AssistantMessage: FC = () => {
   if (onlyMuted) {
     return (
       <MessagePrimitive.Root className="oc-msg oc-msg-muted">
-        <MessagePrimitive.Content
-          components={{
-            Text: MarkdownText,
-            Image: ImageDisplay,
-            tools: { Fallback: ToolCallDisplay },
-          }}
-        />
+        <MessagePrimitive.Content components={ASSISTANT_PART_COMPONENTS} />
       </MessagePrimitive.Root>
     );
   }
@@ -201,13 +197,7 @@ const AssistantMessage: FC = () => {
   return (
     <MessagePrimitive.Root className="oc-msg oc-msg-assistant">
       <div className="oc-msg-body oc-md">
-        <MessagePrimitive.Content
-          components={{
-            Text: MarkdownText,
-            Image: ImageDisplay,
-            tools: { Fallback: ToolCallDisplay },
-          }}
-        />
+        <MessagePrimitive.Content components={ASSISTANT_PART_COMPONENTS} />
       </div>
       <AssistantMeta />
     </MessagePrimitive.Root>
@@ -689,6 +679,19 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
 };
 
 
+// Module-scoped component maps. MessagePrimitive.Content and
+// ThreadPrimitive.Messages memoize internally on the `components`
+// identity — a fresh object each render busts that cache for every
+// mounted message. Declared here (after all referenced FCs) to keep
+// references stable across renders.
+const USER_PART_COMPONENTS = { Text: UserTextPart, Image: ImageDisplay };
+const ASSISTANT_PART_COMPONENTS = {
+  Text: MarkdownText,
+  Image: ImageDisplay,
+  tools: { Fallback: ToolCallDisplay },
+};
+const THREAD_MESSAGE_COMPONENTS = { UserMessage, AssistantMessage };
+
 export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, footer }: { hasMore?: boolean; loadingMore?: boolean; onLoadMore?: () => void; composer?: React.ReactNode; footer?: React.ReactNode }) {
   const threadRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -899,9 +902,7 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
           <ThreadPrimitive.Empty>
             <div className="oc-empty">No messages yet.</div>
           </ThreadPrimitive.Empty>
-          <ThreadPrimitive.Messages
-            components={{ UserMessage, AssistantMessage }}
-          />
+          <ThreadPrimitive.Messages components={THREAD_MESSAGE_COMPONENTS} />
           {footer && <div className="oc-thread-footer">{footer}</div>}
           <ThreadPrimitive.ViewportFooter ref={footerRef} className="oc-viewport-footer">
             {composer}

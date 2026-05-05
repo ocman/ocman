@@ -2,6 +2,7 @@ import { useCallback, useMemo } from 'react';
 import {
   AssistantRuntimeProvider,
   useExternalStoreRuntime,
+  type AppendMessage,
   type ThreadMessageLike,
 } from '@assistant-ui/react';
 import type { AgentInfo, Message, Part } from '../lib/api';
@@ -82,7 +83,7 @@ export function OcmanRuntimeProvider({
   // Stable onNew callback — only changes when canSend, sessionId, or
   // sendMessage change. This prevents the store adapter object from
   // getting a new `onNew` reference on every render.
-  const onNew = useCallback(async (message: { content: Array<{ type: string; text?: string; image?: string }> }) => {
+  const onNew = useCallback(async (message: AppendMessage) => {
     if (!canSend) return;
     const textPart = message.content.find((c) => c.type === 'text');
     const text = textPart && textPart.type === 'text' ? textPart.text : '';

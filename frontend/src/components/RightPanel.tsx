@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './SessionChangesSidebar.css';
 import './RightPanel.css';
 import { useUiStore, type ChangesSidebarTab } from '../lib/uiStore';
@@ -75,6 +75,33 @@ export function RightPanel({ sessionId, platformId, directory, dirtyTick, sessio
 
   const collapsed = openTabs.length === 0;
 
+  // Render panes in the canonical strip order (ALL_TABS) regardless
+  // of the order the user clicked them. The store's openTabs is a
+  // *set* of which tabs are visible; the layout is fixed by the
+  // strip's icon order so users get a stable spatial mapping
+  // (Session changes always above Working tree).
+  // Memoised so PaneResizer's drag effect (which depends on this
+  // array) doesn't tear down + re-bind window mousemove/mouseup
+  // listeners on every render during a drag.
+  const orderedOpenTabs = useMemo(
+    () => ALL_TABS.filter((t) => openTabs.includes(t)),
+    [openTabs],
+  );
+
+  // Normalise the size fractions so they sum to 1 across the ordered
+  // open tabs. Tabs without a stored size get an even share of
+  // whatever's left after the explicit sizes are honoured.
+  const normalisedSizes = useMemo(
+    () => normaliseSizes(orderedOpenTabs, sizes),
+    [orderedOpenTabs, sizes],
+  );
+
+  // Stable handler factory for the per-pair resize.
+  const handlePaneResize = useCallback((idx: number, beforeSize: number, afterSize: number) => {
+    setTabSize(orderedOpenTabs[idx], beforeSize);
+    setTabSize(orderedOpenTabs[idx + 1], afterSize);
+  }, [orderedOpenTabs, setTabSize]);
+
   // Strip is rendered identically in every mode — it's the panel's
   // right edge. Active tabs are highlighted; clicking an active tab
   // closes it.
@@ -107,18 +134,6 @@ export function RightPanel({ sessionId, platformId, directory, dirtyTick, sessio
       </aside>
     );
   }
-
-  // Render panes in the canonical strip order (ALL_TABS) regardless
-  // of the order the user clicked them. The store's openTabs is a
-  // *set* of which tabs are visible; the layout is fixed by the
-  // strip's icon order so users get a stable spatial mapping
-  // (Session changes always above Working tree).
-  const orderedOpenTabs = ALL_TABS.filter((t) => openTabs.includes(t));
-
-  // Normalise the size fractions so they sum to 1 across the ordered
-  // open tabs. Tabs without a stored size get an even share of
-  // whatever's left after the explicit sizes are honoured.
-  const normalisedSizes = normaliseSizes(orderedOpenTabs, sizes);
 
   return (
     <aside
@@ -155,10 +170,7 @@ export function RightPanel({ sessionId, platformId, directory, dirtyTick, sessio
             beforeIdx={idx}
             openTabs={orderedOpenTabs}
             sizes={normalisedSizes}
-            onUpdate={(beforeSize, afterSize) => {
-              setTabSize(orderedOpenTabs[idx], beforeSize);
-              setTabSize(orderedOpenTabs[idx + 1], afterSize);
-            }}
+            onUpdate={(beforeSize, afterSize) => handlePaneResize(idx, beforeSize, afterSize)}
           />
         ))}
       </div>

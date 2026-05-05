@@ -721,6 +721,14 @@ export function SessionDetail() {
   // entries still rely on the poll, since their pending state is owned by
   // the backend (fetched from each running OpenCode instance).
   const hasPendingPrompt = pendingPermission !== null || pendingQuestion !== null;
+
+  // Stable handler + flag for the composer's "launch opencode" hint.
+  // The Composer is wrapped in React.memo with a hand-written
+  // comparator that checks `onLaunchRequest === ` — so passing a
+  // fresh arrow on every render would force Composer to re-render on
+  // every SSE delta and every keystroke during streaming.
+  const handleLaunchHintClick = useCallback(() => setShowDisconnectedToast(true), []);
+  const launchHintActive = !portAvailable && !hasPendingPrompt && tmux.available && !!caps.liveConnectionHint;
   useEffect(() => {
     if (!id) return;
     setRecentSessions(prev => {
@@ -1861,11 +1869,7 @@ export function SessionDetail() {
                   tokenStats={tokenStats}
                   selectedReasoning={selectedReasoning}
                   onReasoningChange={setSelectedReasoning}
-                  onLaunchRequest={
-                    !portAvailable && !hasPendingPrompt && tmux.available && caps.liveConnectionHint
-                      ? () => setShowDisconnectedToast(true)
-                      : undefined
-                  }
+                  onLaunchRequest={launchHintActive ? handleLaunchHintClick : undefined}
                 />
               ) : null}
                 </ErrorBoundary>
@@ -1963,7 +1967,7 @@ export function SessionDetail() {
         showDisconnectedToast={showDisconnectedToast}
         setShowDisconnectedToast={setShowDisconnectedToast}
         tmuxAvailable={tmux.available}
-        liveConnectionHint={caps.liveConnectionHint}
+        liveConnectionHint={!!caps.liveConnectionHint}
         hasDirectory={!!session?.directory}
         launchingOpencode={launchingOpencode}
         onLaunch={handleLaunchOpencode}
