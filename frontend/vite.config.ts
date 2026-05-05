@@ -1,5 +1,6 @@
 import { defineConfig, type Plugin } from 'vite'
-import react from '@vitejs/plugin-react'
+import react, { reactCompilerPreset } from '@vitejs/plugin-react'
+import babel from '@rolldown/plugin-babel'
 
 // Extra hostnames (Tailscale, LAN, reverse proxies, etc.) that Vite's dev
 // and preview servers are allowed to respond to. Comma-separated list,
@@ -53,6 +54,12 @@ export default defineConfig({
   plugins: [
     ...(stripTestIds ? [stripTestIdsPlugin()] : []),
     react(),
+    // React Compiler — auto-memoizes components and hooks at build
+    // time so we don't have to remember useMemo/useCallback for every
+    // prop/store-adapter object. Catches the class of "unstable
+    // reference passed to a hook running an unconditional effect"
+    // bugs that have plagued this codebase (see commits a1d1140 etc).
+    babel({ presets: [reactCompilerPreset()] }),
   ],
   build: {
     outDir: '../internal/server/static',
