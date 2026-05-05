@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import {
   AssistantRuntimeProvider,
   useExternalStoreRuntime,
@@ -79,21 +79,33 @@ export function OcmanRuntimeProvider({
 
   const isRunning = useMemo(() => computeIsRunning(messages), [messages]);
 
-  const runtime = useExternalStoreRuntime({
+  // Stable onNew callback — only changes when canSend, sessionId, or
+  // sendMessage change. This prevents the store adapter object from
+  // getting a new `onNew` reference on every render.
+  const onNew = useCallback(async (message: { content: Array<{ type: string; text?: string; image?: string }> }) => {
+    if (!canSend) return;
+    const textPart = message.content.find((c) => c.type === 'text');
+    const text = textPart && textPart.type === 'text' ? textPart.text : '';
+    const imageParts = message.content
+      .filter((c): c is { type: 'image'; image: string } => c.type === 'image' && 'image' in c)
+      .map((c) => ({ url: c.image, mime: 'image/png' }));
+    if (!text && imageParts.length === 0) return;
+    await sendMessage(sessionId, text, imageParts.length > 0 ? imageParts : undefined);
+  }, [canSend, sendMessage, sessionId]);
+
+  // Memoize the store adapter so useExternalStoreRuntime's
+  // unconditional useEffect (`runtime.setAdapter(store)`) receives
+  // the same object reference when nothing changed. Without this,
+  // every render creates a new adapter object → setAdapter fires →
+  // store subscribers re-render → infinite loop.
+  const store = useMemo(() => ({
     messages: converted,
     isRunning,
     convertMessage: (m: ThreadMessageLike) => m,
-    onNew: async (message) => {
-      if (!canSend) return;
-      const textPart = message.content.find((c) => c.type === 'text');
-      const text = textPart && textPart.type === 'text' ? textPart.text : '';
-      const imageParts = message.content
-        .filter((c): c is { type: 'image'; image: string } => c.type === 'image' && 'image' in c)
-        .map((c) => ({ url: c.image, mime: 'image/png' }));
-      if (!text && imageParts.length === 0) return;
-      await sendMessage(sessionId, text, imageParts.length > 0 ? imageParts : undefined);
-    },
-  });
+    onNew,
+  }), [converted, isRunning, onNew]);
+
+  const runtime = useExternalStoreRuntime(store);
 
   return (
     <AgentsContext.Provider value={agentList}>
