@@ -73,6 +73,28 @@ export interface Session {
   seen: boolean;
   pinned: boolean;
   pinnedAt: number;
+  /**
+   * Normalized, platform-agnostic explanation of a transient session
+   * condition (e.g. rate-limit backoff). Absent when no notice applies.
+   * The frontend renders this as a banner / tooltip without inspecting
+   * the platform field.
+   */
+  notice?: SessionNotice;
+}
+
+/**
+ * A normalized session notice surfaced by the backend when the latest
+ * assistant error matches a known transient pattern. Currently the only
+ * kind is `"rate_limit"`.
+ */
+export interface SessionNotice {
+  kind: 'rate_limit' | string;
+  /** User-facing summary of the condition. */
+  message: string;
+  /** Unix ms timestamp when retry is expected, or 0 when unknown. */
+  retryAt: number;
+  /** Retry attempt number, or 0 when unknown. */
+  attempt: number;
 }
 
 /**

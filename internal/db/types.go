@@ -80,11 +80,34 @@ type Session struct {
 	Seen     bool  `json:"seen"`
 	Pinned   bool  `json:"pinned"`
 	PinnedAt int64 `json:"pinnedAt"`
+	// Notice carries a normalized, platform-agnostic explanation of a
+	// transient session condition (e.g. rate-limit backoff). Populated
+	// by the server's applySessionNotice step; nil when no notice
+	// applies. Omitted from JSON when nil.
+	Notice *SessionNotice `json:"notice,omitempty"`
 	// Note: GitInfo used to live here, populated by /api/sessions on
 	// the request path via a synchronous fan-out of `git status` per
 	// directory. It now lives in the gitinfo package (gitinfo.Info)
 	// and is served by /api/git/info, fetched on demand by the
 	// frontend components that need it. See docs/profiling.md.
+
+	// Internal-only fields used by the notice normalizer. Populated
+	// by the DB query / adapter but never serialized to JSON.
+	LastErrorName    string `json:"-"`
+	LastErrorMessage string `json:"-"`
+	LastErrorAt      int64  `json:"-"`
+}
+
+// SessionNotice carries a normalized, platform-agnostic explanation of a
+// transient session condition. Currently the only kind is "rate_limit",
+// surfaced when the latest assistant error matches a known rate-limit
+// pattern. The frontend renders this as a banner / tooltip without
+// inspecting the platform field.
+type SessionNotice struct {
+	Kind    string `json:"kind"`    // e.g. "rate_limit"
+	Message string `json:"message"` // user-facing summary
+	RetryAt int64  `json:"retryAt"` // unix ms when retry is expected, 0 when unknown
+	Attempt int    `json:"attempt"` // retry attempt number, 0 when unknown
 }
 
 // SessionArchiveCandidate carries the minimal session data needed for archive jobs.

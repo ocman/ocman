@@ -8,6 +8,8 @@ interface StatusBadgeProps {
   seen?: boolean;
   /** A pending permission/question prompt needs the user's attention. */
   pending?: boolean;
+  /** Override the default tooltip text (e.g. to surface a rate-limit notice). */
+  titleOverride?: string;
 }
 
 function ExclamationIcon() {
@@ -20,7 +22,7 @@ function ExclamationIcon() {
   );
 }
 
-export function StatusBadge({ status, compact, seen, pending }: StatusBadgeProps) {
+export function StatusBadge({ status, compact, seen, pending, titleOverride }: StatusBadgeProps) {
   if (compact) {
     // A pending permission/question outranks the normal status because it
     // requires user action — show a pulsing "!" icon in the attention color.
@@ -38,7 +40,7 @@ export function StatusBadge({ status, compact, seen, pending }: StatusBadgeProps
       return (
         <span
           className={`status-icon-compact status-error${seen ? ' status-seen' : ''}`}
-          title={labels[status] || status}
+          title={titleOverride || labels[status] || status}
         >
           <ExclamationIcon />
         </span>
@@ -47,7 +49,7 @@ export function StatusBadge({ status, compact, seen, pending }: StatusBadgeProps
     return (
       <span
         className={`status-dot-compact status-${status}${seen ? ' status-seen' : ''}`}
-        title={labels[status] || status}
+        title={titleOverride || labels[status] || status}
       />
     );
   }

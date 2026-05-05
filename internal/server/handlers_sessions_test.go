@@ -317,3 +317,113 @@ func mustUnmarshal(t *testing.T, data []byte, dst any) {
 		t.Fatalf("unmarshal: %v; body=%s", err, string(data))
 	}
 }
+
+// --- Session notice integration tests ---
+
+func TestHandleSessions_NoticeAppearsForRateLimitedSession(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	fp := &fakePlatform{
+		id: "opencode",
+		sessions: []db.Session{
+			{
+				ID:               "s1",
+				Platform:         "opencode",
+				Title:            "Rate limited session",
+				Status:           "error",
+				TimeUpdated:      1700000000000,
+				TimeCreated:      1700000000000 - 1000,
+				LastErrorMessage: "this request would exceed your account's rate limit. Please try again later [retrying in 5m attempt 1]",
+				LastErrorAt:      1700000000000,
+			},
+			{
+				ID:          "s2",
+				Platform:    "opencode",
+				Title:       "Normal session",
+				Status:      "done",
+				TimeUpdated: 1700000000000,
+				TimeCreated: 1700000000000 - 1000,
+			},
+		},
+	}
+	reg.Register(fp)
+
+	req := httptest.NewRequest("GET", "/api/sessions", nil)
+	rr := httptest.NewRecorder()
+	srv.handleSessions(rr, req)
+
+	if rr.Code != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body)
+	}
+
+	// Decode into a list and find each session by ID.
+	type sessionWithNotice struct {
+		ID     string            `json:"id"`
+		Notice *db.SessionNotice `json:"notice"`
+	}
+	var got []sessionWithNotice
+	mustUnmarshal(t, rr.Body.Bytes(), &got)
+	if len(got) != 2 {
+		t.Fatalf("got %d sessions, want 2", len(got))
+	}
+
+	byID := make(map[string]*db.SessionNotice, len(got))
+	for _, s := range got {
+		byID[s.ID] = s.Notice
+	}
+
+	// s1 should have a notice.
+	notice := byID["s1"]
+	if notice == nil {
+		t.Fatal("s1 should have a notice")
+	}
+	if notice.Kind != "rate_limit" {
+		t.Errorf("notice.kind = %q, want rate_limit", notice.Kind)
+	}
+	if notice.Attempt != 1 {
+		t.Errorf("notice.attempt = %d, want 1", notice.Attempt)
+	}
+	wantRetryAt := int64(1700000000000 + 5*60*1000)
+	if notice.RetryAt != wantRetryAt {
+		t.Errorf("notice.retryAt = %d, want %d", notice.RetryAt, wantRetryAt)
+	}
+
+	// s2 should NOT have a notice.
+	if byID["s2"] != nil {
+		t.Errorf("s2 should not have a notice, got %+v", byID["s2"])
+	}
+}
+
+func TestHandleSessions_NoNoticeForNonRateLimitError(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	fp := &fakePlatform{
+		id: "opencode",
+		sessions: []db.Session{
+			{
+				ID:               "s1",
+				Platform:         "opencode",
+				Title:            "Generic error",
+				Status:           "error",
+				TimeUpdated:      1700000000000,
+				TimeCreated:      1700000000000 - 1000,
+				LastErrorMessage: "connection refused",
+				LastErrorAt:      1700000000000,
+			},
+		},
+	}
+	reg.Register(fp)
+
+	req := httptest.NewRequest("GET", "/api/sessions", nil)
+	rr := httptest.NewRecorder()
+	srv.handleSessions(rr, req)
+
+	var sessions []struct {
+		Notice *db.SessionNotice `json:"notice"`
+	}
+	mustUnmarshal(t, rr.Body.Bytes(), &sessions)
+	if len(sessions) != 1 {
+		t.Fatalf("got %d sessions, want 1", len(sessions))
+	}
+	if sessions[0].Notice != nil {
+		t.Errorf("non-rate-limit error should not have a notice, got %+v", sessions[0].Notice)
+	}
+}

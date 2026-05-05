@@ -433,3 +433,39 @@ describe('SessionDetail — error finish on assistant message', () => {
     });
   });
 });
+
+describe('SessionDetail — rate-limit notice', () => {
+  it('renders without maximum-update-depth when session has a notice', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const notice = {
+      kind: 'rate_limit' as const,
+      message: 'rate limit exceeded',
+      retryAt: Date.now() + 300_000,
+      attempt: 1,
+    };
+    const sess = makeSession({ id: 'sess_rl', status: 'error', notice });
+    const detail = makeSessionDetail(sess);
+
+    const handle = renderSessionPage({
+      sessionId: 'sess_rl',
+      detail,
+      sessions: [sess],
+    });
+
+    await flushPromises();
+    await waitFor(() => {
+      expect(handle.store.getSession).toHaveBeenCalled();
+    });
+
+    // React logs "Maximum update depth exceeded" to console.error
+    // before throwing; if we see that message the test fails.
+    const maxDepthCalls = errorSpy.mock.calls.filter(
+      (args) => typeof args[0] === 'string' && args[0].includes('Maximum update depth exceeded'),
+    );
+    expect(maxDepthCalls).toHaveLength(0);
+    expect(screen.getByTestId('session-layout')).toBeInTheDocument();
+
+    errorSpy.mockRestore();
+  });
+});

@@ -66,6 +66,22 @@ describe('computeSidebarHash', () => {
     const b = computeSidebarHash([makeSession({ id: 'a', timeUpdated: 2 })]);
     expect(a).not.toBe(b);
   });
+
+  it('changes when a notice appears or changes', () => {
+    const without = computeSidebarHash([makeSession({ id: 'a', status: 'error', timeUpdated: 1 })]);
+    const withNotice = computeSidebarHash([makeSession({
+      id: 'a', status: 'error', timeUpdated: 1,
+      notice: { kind: 'rate_limit', message: 'rate limited', retryAt: 999, attempt: 1 },
+    })]);
+    expect(without).not.toBe(withNotice);
+  });
+
+  it('is stable when notice is identical across calls', () => {
+    const notice = { kind: 'rate_limit' as const, message: 'rate limited', retryAt: 999, attempt: 1 };
+    const a = computeSidebarHash([makeSession({ id: 'a', status: 'error', timeUpdated: 1, notice })]);
+    const b = computeSidebarHash([makeSession({ id: 'a', status: 'error', timeUpdated: 1, notice })]);
+    expect(a).toBe(b);
+  });
 });
 
 describe('rollupGroupStatus', () => {

@@ -23,6 +23,7 @@ export function hashSession(
     ctx: s.contextTokenCount,
     agent: s.defaultAgent,
     model: s.defaultModel,
+    notice: s.notice ?? null,
   });
 }
 

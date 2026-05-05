@@ -54,6 +54,20 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 				SELECT json_extract(data, '$.error') FROM message
 				WHERE session_id = s.id ORDER BY time_created DESC LIMIT 1
 			) AS last_error,
+			-- Error metadata for the notice normalizer. Carried on
+			-- Session as internal-only fields (json:"-").
+			(
+				SELECT json_extract(data, '$.error.name') FROM message
+				WHERE session_id = s.id ORDER BY time_created DESC LIMIT 1
+			) AS last_error_name,
+			(
+				SELECT json_extract(data, '$.error.data.message') FROM message
+				WHERE session_id = s.id ORDER BY time_created DESC LIMIT 1
+			) AS last_error_message,
+			(
+				SELECT time_created FROM message
+				WHERE session_id = s.id ORDER BY time_created DESC LIMIT 1
+			) AS last_error_at,
 			-- The last message is "synthesized terminal" when:
 			--   (a) it has at least one part,
 			--   (b) it has no 'step-start' part (so no LLM turn started), AND
@@ -112,6 +126,8 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 	for rows.Next() {
 		var s Session
 		var lastRole, lastFinish, lastError *string
+		var lastErrorName, lastErrorMessage *string
+		var lastErrorAt *int64
 		var lastSynthTerminal int
 		err := rows.Scan(
 			&s.ID, &s.ProjectID, &s.Title, &s.Directory,
@@ -120,7 +136,9 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 			&s.ShareURL,
 			&s.MessageCount,
 			&s.TotalInputTokens, &s.TotalOutputTokens, &s.TotalCost,
-			&lastRole, &lastFinish, &lastError, &lastSynthTerminal,
+			&lastRole, &lastFinish, &lastError,
+			&lastErrorName, &lastErrorMessage, &lastErrorAt,
+			&lastSynthTerminal,
 		)
 		if err != nil {
 			log.WithError(err).Warn("failed to scan session row")
@@ -131,6 +149,13 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 		// Determine session status based on the last message.
 		role, finish, lastErr := derefStr(lastRole), derefStr(lastFinish), derefStr(lastError)
 		s.Status = InferSessionStatus(role, finish, lastErr, lastSynthTerminal == 1)
+
+		// Carry error metadata for the notice normalizer.
+		s.LastErrorName = derefStr(lastErrorName)
+		s.LastErrorMessage = derefStr(lastErrorMessage)
+		if lastErrorAt != nil {
+			s.LastErrorAt = *lastErrorAt
+		}
 
 		sessions = append(sessions, s)
 	}

@@ -18,6 +18,7 @@ import { BackendStats } from '../../components/BackendStats';
 import { SidebarResizer } from '../../components/SidebarResizer';
 import { RightPanel } from '../../components/RightPanel';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
+import { RateLimitBanner } from '../../components/RateLimitBanner';
 import { useUiStore } from '../../lib/uiStore';
 import { useTmux } from '../../lib/useTmux';
 import { useApiStore } from '../../lib/apiStore';
@@ -1433,6 +1434,7 @@ export function SessionDetail() {
                     compact
                     seen={(displayStatus === 'waiting' || displayStatus === 'error') && sib.seen}
                     pending={sib.pendingPermission || sib.pendingQuestion}
+                    titleOverride={sib.notice?.message}
                   />
                   <span className="session-sidebar-item-body">
                     <span className="session-sidebar-title">{cleanTitle(sib.title) || 'Untitled'}</span>
@@ -1681,6 +1683,9 @@ export function SessionDetail() {
                    in one of these doesn't take the message thread down
                    with it (and vice versa). */
                 <ErrorBoundary name="session:composer" inline resetKey={session.id}>
+                  {session.notice?.kind === 'rate_limit' && (
+                    <RateLimitBanner notice={session.notice} />
+                  )}
                   {pendingPermission && portAvailable && caps.respondPermission ? (
                 <PermissionPrompt
                   permission={pendingPermission}

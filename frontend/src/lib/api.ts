@@ -52,6 +52,7 @@ export type {
   TmuxSession,
   AuthMe,
   SystemStats,
+  SessionNotice,
 } from './api.types';
 
 // Type imports used by the api object below.
@@ -399,6 +400,14 @@ export const api = {
           body || 'The session is still responding to a previous prompt. Try again in a moment.',
         );
         (err as Error & { code?: string }).code = 'busy';
+        throw err;
+      }
+      // 422 Unprocessable Entity carries upstream-rejected errors.
+      // When the body matches a rate-limit pattern, tag the error so
+      // the failed-send banner can show rate-limit-specific copy.
+      if (resp.status === 422 && /rate.limit|would exceed your account/i.test(body)) {
+        const err = new Error(body);
+        (err as Error & { code?: string }).code = 'rate_limit';
         throw err;
       }
       throw new Error(body || `HTTP ${resp.status}`);

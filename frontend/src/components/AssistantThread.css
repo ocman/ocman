@@ -711,6 +711,33 @@
 .chat-input-status { font-size: 12px; color: var(--text-dim); margin-top: 6px; font-family: 'SF Mono', Consolas, monospace; }
 .chat-input-status.error { color: var(--danger); }
 
+/* Rate-limit banner */
+.oc-rate-limit-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 16px 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--warning, #fab387);
+  background: color-mix(in srgb, var(--warning, #fab387) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning, #fab387) 30%, transparent);
+  border-radius: 4px;
+}
+.oc-rate-limit-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+}
+.oc-rate-limit-body strong {
+  font-weight: 600;
+}
+.oc-rate-limit-retry,
+.oc-rate-limit-attempt {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
 /* SSE status indicator */
 .oc-sse-indicator {
   text-align: center;

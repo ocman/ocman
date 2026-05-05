@@ -102,6 +102,22 @@ describe('hashSession', () => {
     const b = makeSession({ timeUpdated: 99_999 });
     expect(hashSession(a)).toBe(hashSession(b));
   });
+
+  it('changes when a notice appears', () => {
+    const a = makeSession({ status: 'error' });
+    const b = makeSession({
+      status: 'error',
+      notice: { kind: 'rate_limit', message: 'rate limited', retryAt: 999, attempt: 1 },
+    });
+    expect(hashSession(a)).not.toBe(hashSession(b));
+  });
+
+  it('is stable when notice is identical', () => {
+    const notice = { kind: 'rate_limit' as const, message: 'rate limited', retryAt: 999, attempt: 1 };
+    const a = makeSession({ status: 'error', notice });
+    const b = makeSession({ status: 'error', notice });
+    expect(hashSession(a)).toBe(hashSession(b));
+  });
 });
 
 describe('hashMessagesAndParts', () => {

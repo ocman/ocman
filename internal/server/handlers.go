@@ -423,6 +423,11 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Enrich errored sessions with normalized notices (e.g. rate-limit
+	// backoff) so the frontend can surface the reason without
+	// platform-specific parsing.
+	applySessionNotice(all)
+
 	// Note: git status info is no longer attached here. The
 	// /api/sessions handler used to fan out up to 8 concurrent
 	// `git status` subprocesses per request, which produced
@@ -733,6 +738,10 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if detail.Parts == nil {
 		detail.Parts = []db.Part{}
+	}
+	// Enrich the session with a normalized notice (e.g. rate-limit).
+	if detail.Session != nil {
+		detail.Session.Notice = deriveSessionNotice(*detail.Session)
 	}
 	writeJSON(w, map[string]interface{}{
 		"session":           detail.Session,
