@@ -11,3 +11,5 @@ internal/server/static/*
 # Playwright test run artifacts (screenshots, traces, error context).
 frontend/test-results/
 frontend/playwright-report/
+# Local working notes — not part of the project history.
+feedback.md
