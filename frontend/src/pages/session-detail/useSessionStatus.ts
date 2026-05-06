@@ -156,29 +156,35 @@ export function useSessionStatus({
 
   // SSE-freshness override: when an SSE event arrived within
   // SSE_ACTIVE_MS, treat the session as actively producing output
-  // even if the last message in our snapshot has finished. We hold a
-  // boolean in state (rather than recomputing from `Date.now()` on
-  // every render) so the override flips off via a real React update
-  // when the window expires, even when no other props change.
-  const [sseActive, setSseActive] = useState(false);
+  // even if the last message in our snapshot has finished.
+  //
+  // Implementation: derive the displayed status purely from
+  // `lastSseEventAt` and the current time at render — no separate
+  // boolean state to keep in sync. When we're inside the freshness
+  // window, arm a one-shot timer that re-renders the hook (via the
+  // tick counter) the moment the window expires, so the badge flips
+  // back to `waiting` even though no input changed.
+  //
+  // We deliberately don't write state inside the effect body itself:
+  // setState calls scheduled during a commit phase can land in
+  // React's `flushSpawnedWork` path, which has been observed to
+  // mis-interact with sibling components when the dispatcher is
+  // torn down on a session swap. The setState only fires from the
+  // setTimeout callback, which always runs after the commit phase.
+  const [, setExpiryTick] = useState(0);
   useEffect(() => {
-    if (lastSseEventAt === null) {
-      if (sseActive) setSseActive(false);
-      return;
-    }
+    if (lastSseEventAt === null) return;
     const elapsed = Date.now() - lastSseEventAt;
     const remaining = SSE_ACTIVE_MS - elapsed;
-    if (remaining <= 0) {
-      if (sseActive) setSseActive(false);
-      return;
-    }
-    if (!sseActive) setSseActive(true);
-    const handle = window.setTimeout(() => setSseActive(false), remaining);
+    if (remaining <= 0) return;
+    const handle = window.setTimeout(() => setExpiryTick((n) => n + 1), remaining);
     return () => window.clearTimeout(handle);
-  }, [lastSseEventAt, sseActive]);
+  }, [lastSseEventAt]);
 
   // Final displayed status: SSE freshness upgrades `waiting` to
   // `busy` (terminal states `error` / `done` are not overridden).
+  const sseActive =
+    lastSseEventAt !== null && Date.now() - lastSseEventAt < SSE_ACTIVE_MS;
   const displayedOptimisticStatus: Session['status'] =
     sseActive && optimisticStatus === 'waiting' ? 'busy' : optimisticStatus;
 
