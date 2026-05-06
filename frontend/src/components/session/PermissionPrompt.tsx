@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import '../PermissionPrompt.css';
 
 export interface PendingPermission {
@@ -8,6 +8,34 @@ export interface PendingPermission {
 }
 
 type Reply = 'once' | 'always' | 'reject';
+type KeyEvent = KeyboardEvent | React.KeyboardEvent<HTMLDivElement>;
+const PROMPT_EVENT_HANDLED = '__ocmanPromptHandled';
+
+function wasHandledByPrompt(e: KeyEvent): boolean {
+  return Boolean((e as KeyEvent & Record<string, unknown>)[PROMPT_EVENT_HANDLED]);
+}
+
+function markHandledByPrompt(e: KeyboardEvent): void {
+  (e as KeyboardEvent & Record<string, unknown>)[PROMPT_EVENT_HANDLED] = true;
+}
+
+function numberKeyIndex(e: KeyEvent, max: number): number {
+  const codeMatch = /^Digit([1-9])$/.exec(e.code) ?? /^Numpad([1-9])$/.exec(e.code);
+  if (codeMatch) {
+    const idx = Number(codeMatch[1]) - 1;
+    return idx < max ? idx : -1;
+  }
+  if (e.key >= '1' && e.key <= String(max)) {
+    return Number(e.key) - 1;
+  }
+  return -1;
+}
+
+function choiceHotkeyIndex(e: KeyEvent): number {
+  if (e.code === 'KeyA') return e.shiftKey ? 1 : 0;
+  if (e.code === 'KeyR' && !e.shiftKey) return 2;
+  return CHOICES.findIndex((c) => c.hotkey === e.key);
+}
 
 const CHOICES: { reply: Reply; label: string; hotkey: string }[] = [
   { reply: 'once', label: 'Allow once', hotkey: 'a' },
@@ -39,6 +67,16 @@ export function PermissionPrompt({
   const [focusedIdx, setFocusedIdx] = useState(0);
   const [confirmIdx, setConfirmIdx] = useState(CONFIRM_DEFAULT_IDX);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const confirmButtonRef = useRef<HTMLButtonElement>(null);
+  const cancelButtonRef = useRef<HTMLButtonElement>(null);
+  const stepRef = useRef(step);
+  const focusedIdxRef = useRef(focusedIdx);
+  const confirmIdxRef = useRef(confirmIdx);
+  useLayoutEffect(() => {
+    stepRef.current = step;
+    focusedIdxRef.current = focusedIdx;
+    confirmIdxRef.current = confirmIdx;
+  }, [step, focusedIdx, confirmIdx]);
 
   // If the permission itself changes (new prompt pushed in), reset back to
   // the chooser. Tracking the last-seen id and resetting during render is
@@ -53,7 +91,11 @@ export function PermissionPrompt({
   }
 
   // Auto-focus on mount and when the step changes so keys work without a click.
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (step === 'confirm-always') {
+      cancelButtonRef.current?.focus();
+      return;
+    }
     wrapRef.current?.focus();
   }, [step]);
 
@@ -67,6 +109,8 @@ export function PermissionPrompt({
     if (reply === 'always') {
       // Two-step: show a confirmation screen with the patterns that will be
       // allowed. Matches OpenCode's TUI behavior.
+      confirmIdxRef.current = CONFIRM_DEFAULT_IDX;
+      stepRef.current = 'confirm-always';
       setConfirmIdx(CONFIRM_DEFAULT_IDX);
       setStep('confirm-always');
       return;
@@ -74,8 +118,8 @@ export function PermissionPrompt({
     submit(reply);
   }, [disabled, submit]);
 
-  const handleChooseKeyDown = (e: React.KeyboardEvent) => {
-    if (disabled) return;
+  const handleChooseKeyDown = useCallback((e: KeyEvent) => {
+    if (disabled || wasHandledByPrompt(e)) return;
 
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -86,53 +130,65 @@ export function PermissionPrompt({
 
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      pick(CHOICES[focusedIdx].reply);
+      pick(CHOICES[focusedIdxRef.current].reply);
       return;
     }
 
     if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
       e.preventDefault();
-      setFocusedIdx((i) => (i + 1) % CHOICES.length);
+      setFocusedIdx((i) => {
+        const next = (i + 1) % CHOICES.length;
+        focusedIdxRef.current = next;
+        return next;
+      });
       return;
     }
     if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
       e.preventDefault();
-      setFocusedIdx((i) => (i - 1 + CHOICES.length) % CHOICES.length);
+      setFocusedIdx((i) => {
+        const next = (i - 1 + CHOICES.length) % CHOICES.length;
+        focusedIdxRef.current = next;
+        return next;
+      });
       return;
     }
 
     // Letter hotkeys & 1/2/3. Case-sensitive so 'a' (allow once) and
     // 'A' (allow always) are distinct.
-    const hotkeyMatch = CHOICES.findIndex((c) => c.hotkey === e.key);
+    const hotkeyMatch = choiceHotkeyIndex(e);
     if (hotkeyMatch >= 0 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
+      focusedIdxRef.current = hotkeyMatch;
       setFocusedIdx(hotkeyMatch);
       pick(CHOICES[hotkeyMatch].reply);
       return;
     }
-    if (e.key >= '1' && e.key <= String(CHOICES.length) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const idx = numberKeyIndex(e, CHOICES.length);
+    if (idx >= 0 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
-      const idx = Number(e.key) - 1;
+      focusedIdxRef.current = idx;
       setFocusedIdx(idx);
       pick(CHOICES[idx].reply);
     }
-  };
+  }, [disabled, pick, submit]);
 
-  const handleConfirmKeyDown = (e: React.KeyboardEvent) => {
-    if (disabled) return;
+  const handleConfirmKeyDown = useCallback((e: KeyEvent) => {
+    if (disabled || wasHandledByPrompt(e)) return;
 
     if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
+      stepRef.current = 'choose';
       setStep('choose');
       return;
     }
 
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if (CONFIRM_CHOICES[confirmIdx].action === 'confirm') {
+      if (CONFIRM_CHOICES[confirmIdxRef.current].action === 'confirm') {
         submit('always');
       } else {
+        stepRef.current = 'choose';
         setStep('choose');
       }
       return;
@@ -144,9 +200,30 @@ export function PermissionPrompt({
       || e.key === 'Tab'
     ) {
       e.preventDefault();
-      setConfirmIdx((i) => (i + 1) % CONFIRM_CHOICES.length);
+      setConfirmIdx((i) => {
+        const next = (i + 1) % CONFIRM_CHOICES.length;
+        confirmIdxRef.current = next;
+        if (CONFIRM_CHOICES[next].action === 'confirm') confirmButtonRef.current?.focus();
+        else cancelButtonRef.current?.focus();
+        return next;
+      });
     }
-  };
+  }, [disabled, submit]);
+
+  useLayoutEffect(() => {
+    const onWindowKeyDown = (e: KeyboardEvent) => {
+      if (wasHandledByPrompt(e)) return;
+      if (stepRef.current === 'confirm-always') {
+        handleConfirmKeyDown(e);
+        markHandledByPrompt(e);
+        return;
+      }
+      handleChooseKeyDown(e);
+      markHandledByPrompt(e);
+    };
+    window.addEventListener('keydown', onWindowKeyDown, true);
+    return () => window.removeEventListener('keydown', onWindowKeyDown, true);
+  }, [handleChooseKeyDown, handleConfirmKeyDown]);
 
   if (step === 'confirm-always') {
     return (
@@ -186,12 +263,21 @@ export function PermissionPrompt({
             {CONFIRM_CHOICES.map((c, i) => (
               <button
                 key={c.action}
+                ref={c.action === 'confirm' ? confirmButtonRef : cancelButtonRef}
                 type="button"
                 className={`oc-permission-btn${i === confirmIdx ? ' oc-permission-btn-active' : ''}`}
                 onClick={() => {
                   setConfirmIdx(i);
+                  confirmIdxRef.current = i;
                   if (c.action === 'confirm') submit('always');
-                  else setStep('choose');
+                  else {
+                    stepRef.current = 'choose';
+                    setStep('choose');
+                  }
+                }}
+                onFocus={() => {
+                  setConfirmIdx(i);
+                  confirmIdxRef.current = i;
                 }}
                 onMouseEnter={() => setConfirmIdx(i)}
                 disabled={disabled}

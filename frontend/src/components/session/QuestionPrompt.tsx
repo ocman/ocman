@@ -1,5 +1,29 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import './QuestionPrompt.css';
+
+type KeyEvent = KeyboardEvent | React.KeyboardEvent<HTMLDivElement>;
+const PROMPT_EVENT_HANDLED = '__ocmanPromptHandled';
+
+function wasHandledByPrompt(e: KeyEvent): boolean {
+  return Boolean((e as KeyEvent & Record<string, unknown>)[PROMPT_EVENT_HANDLED]);
+}
+
+function markHandledByPrompt(e: KeyboardEvent): void {
+  (e as KeyboardEvent & Record<string, unknown>)[PROMPT_EVENT_HANDLED] = true;
+}
+
+function optionIndexFromNumberKey(e: KeyEvent, max: number): number {
+  const codeMatch = /^Digit([1-9])$/.exec(e.code) ?? /^Numpad([1-9])$/.exec(e.code);
+  if (codeMatch) {
+    const idx = Number(codeMatch[1]) - 1;
+    return idx < max ? idx : -1;
+  }
+  if (e.key >= '1' && e.key <= '9') {
+    const idx = Number(e.key) - 1;
+    return idx < max ? idx : -1;
+  }
+  return -1;
+}
 
 interface QuestionOption {
   label: string;
@@ -115,7 +139,7 @@ export function QuestionPrompt({
   // Reset row focus & move DOM focus onto the wrapper whenever the visible
   // step changes (or on mount). Sync focusedRow to whatever's currently
   // selected so keyboard nav continues from the user's last choice.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const sel = selectedIndices[currentStep];
     if (sel != null && sel >= 0) setFocusedRow(sel);
     else if (customTexts[currentStep]?.trim()) setFocusedRow(CUSTOM_ROW);
@@ -126,7 +150,7 @@ export function QuestionPrompt({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentStep]);
 
-  const moveFocus = (direction: 1 | -1) => {
+  const moveFocus = useCallback((direction: 1 | -1) => {
     if (!currentQ) return;
     const rows: number[] = [...currentQ.options.map((_, i) => i), CUSTOM_ROW];
     const currentIdx = rows.indexOf(focusedRow);
@@ -142,12 +166,12 @@ export function QuestionPrompt({
       }
       wrapRef.current?.focus();
     }
-  };
+  }, [currentQ, focusedRow]);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (disabled) return;
-    const target = e.target as HTMLElement;
-    const isInputFocused = target.tagName === 'INPUT';
+  const handleKeyDown = useCallback((e: KeyEvent) => {
+    if (disabled || wasHandledByPrompt(e)) return;
+    const target = e.target instanceof HTMLElement ? e.target : null;
+    const isInputFocused = target?.tagName === 'INPUT';
 
     // Escape always dismisses, even from inside the text input.
     if (e.key === 'Escape') {
@@ -206,13 +230,11 @@ export function QuestionPrompt({
     }
 
     // Number keys 1-9 directly select the matching option.
-    if (e.key >= '1' && e.key <= '9' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      const idx = Number(e.key) - 1;
-      if (idx < currentQ.options.length) {
-        e.preventDefault();
-        selectOption(currentStep, idx);
-        setFocusedRow(idx);
-      }
+    const idx = optionIndexFromNumberKey(e, currentQ.options.length);
+    if (idx >= 0 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      selectOption(currentStep, idx);
+      setFocusedRow(idx);
       return;
     }
 
@@ -226,7 +248,17 @@ export function QuestionPrompt({
         goPrev();
       }
     }
-  };
+  }, [currentQ.options.length, currentStep, disabled, goNext, goPrev, isStepAnswered, isStepped, moveFocus, onReject, selectOption, submit, totalSteps, focusedRow, customTexts]);
+
+  useLayoutEffect(() => {
+    const onWindowKeyDown = (e: KeyboardEvent) => {
+      if (wasHandledByPrompt(e)) return;
+      handleKeyDown(e);
+      markHandledByPrompt(e);
+    };
+    window.addEventListener('keydown', onWindowKeyDown, true);
+    return () => window.removeEventListener('keydown', onWindowKeyDown, true);
+  }, [handleKeyDown]);
 
   const allAnswered = getAnswers().every(a => a.length > 0);
   const isLastStep = currentStep === totalSteps - 1;

@@ -391,7 +391,7 @@ export function CommandPalette() {
                   key={session.id}
                   className={`oc-cmd-item${i === selectedIndex ? ' oc-cmd-item--selected' : ''}`}
                   onClick={() => handleSelect(item)}
-                  onMouseEnter={() => setSelectedIndex(i)}
+                  onMouseMove={() => setSelectedIndex(i)}
                 >
                   <span
                     className="oc-cmd-status"
@@ -418,7 +418,7 @@ export function CommandPalette() {
                   key={proj.directory}
                   className={`oc-cmd-item oc-cmd-item--command${i === selectedIndex ? ' oc-cmd-item--selected' : ''}`}
                   onClick={() => handleSelect(item)}
-                  onMouseEnter={() => setSelectedIndex(i)}
+                  onMouseMove={() => setSelectedIndex(i)}
                 >
                   <i className="bi bi-folder oc-cmd-item-icon" />
                   <div className="oc-cmd-item-content">
@@ -437,7 +437,7 @@ export function CommandPalette() {
                 key={item.id}
                 className={`oc-cmd-item oc-cmd-item--command${i === selectedIndex ? ' oc-cmd-item--selected' : ''}`}
                 onClick={() => handleSelect(item)}
-                onMouseEnter={() => setSelectedIndex(i)}
+                onMouseMove={() => setSelectedIndex(i)}
               >
                 <i
                   className={`bi ${item.kind === 'nav' ? 'bi-arrow-right' : item.kind === 'scoped' ? 'bi-gear' : 'bi-terminal'} oc-cmd-item-icon`}
