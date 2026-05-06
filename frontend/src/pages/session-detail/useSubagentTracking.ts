@@ -77,12 +77,21 @@ export function useSubagentTracking(
   const [subagentTokens, setSubagentTokensRaw] = useState<SubagentTokenMap>(new Map());
   const [taskLiveOutput, setTaskLiveOutput] = useState<Record<string, string>>({});
 
-  // Wrap the setter in a stable reference that always trims trailing
-  // entries past the cap. Callers can safely pass plain SetStateAction
-  // values without worrying about the cap.
+  // Wrap the setter in a reference that always trims trailing
+  // entries past the cap. Callers can safely pass plain
+  // SetStateAction values without worrying about the cap.
+  //
+  // NOTE: deliberately not memoised. A previous attempt
+  // (`64ec0ea`) wrapped this in `useCallback([])` to stabilise
+  // identity for downstream effect deps; that change was reverted
+  // because the recompute-on-every-render behaviour of the TPS
+  // effect in `useSessionStatus` is desirable — the rounding via
+  // `formatTokensPerSecond` already smooths the display.
   const setSubagentTokens: Dispatch<SetStateAction<SubagentTokenMap>> = (next) => {
     setSubagentTokensRaw((prev) => {
-      const updated = typeof next === 'function' ? (next as (p: SubagentTokenMap) => SubagentTokenMap)(prev) : next;
+      const updated = typeof next === 'function'
+        ? (next as (p: SubagentTokenMap) => SubagentTokenMap)(prev)
+        : next;
       return trimSubagentTokens(updated);
     });
   };
