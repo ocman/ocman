@@ -1,6 +1,7 @@
 package opencode
 
 import (
+	"context"
 	"strconv"
 	"sync"
 	"time"
@@ -8,7 +9,49 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/telemetry"
 )
+
+// Cache-instrumentation handles for the bare-map caches in this file.
+// httpCache instances carry their own handle inside the struct;
+// here we mirror the pattern at package level because each cache has
+// its own (cache-specific) data layout. Names match the convention
+// used elsewhere ("opencode.<purpose>") so all ocman caches sit
+// under one filterable label in Grafana/Mimir.
+var (
+	recentModelsMetrics    = telemetry.CacheMetrics{Name: "opencode.recent_models"}
+	sessionDefaultsMetrics = telemetry.CacheMetrics{Name: "opencode.session_defaults"}
+	sessionsListMetrics    = telemetry.CacheMetrics{Name: "opencode.sessions_list"}
+)
+
+func init() {
+	// Size gauges for the bare-map caches. Each closure takes its
+	// matching mutex under the read lock so a concurrent write to
+	// the cache during metric collection can't trigger a map-read
+	// race. The closures stay valid for the lifetime of the
+	// process; tests never re-register because the var bindings
+	// above are package-level.
+	telemetry.RegisterCacheSizeGauge("opencode.recent_models", func() int64 {
+		recentModelsMu.RLock()
+		defer recentModelsMu.RUnlock()
+		// recentModelsCached is a single-entry struct (not a map).
+		// Report 1 when a value is cached, 0 when expired or unset.
+		if recentModelsCached.expiresAt.IsZero() || time.Now().After(recentModelsCached.expiresAt) {
+			return 0
+		}
+		return 1
+	})
+	telemetry.RegisterCacheSizeGauge("opencode.session_defaults", func() int64 {
+		sessionDefaultsMu.RLock()
+		defer sessionDefaultsMu.RUnlock()
+		return int64(len(sessionDefaultsCached))
+	})
+	telemetry.RegisterCacheSizeGauge("opencode.sessions_list", func() int64 {
+		sessionsMu.RLock()
+		defer sessionsMu.RUnlock()
+		return int64(len(sessionsCached))
+	})
+}
 
 // SessionModels feeds the model picker with three slowly-changing
 // global ingredients (recently-used model pairs from the OpenCode DB,
@@ -55,17 +98,22 @@ type dbRecentModels interface {
 // d.GetRecentModels(50, 10). Concurrent callers on a cold cache are
 // coalesced via singleflight so only one DB scan runs.
 func getRecentModelsCached(d dbRecentModels) ([]db.RecentModel, error) {
+	ctx := context.Background()
 	recentModelsMu.RLock()
 	if !time.Now().After(recentModelsCached.expiresAt) {
 		out := recentModelsCached.models
 		recentModelsMu.RUnlock()
+		recentModelsMetrics.RecordHit(ctx)
 		return out, nil
 	}
 	recentModelsMu.RUnlock()
+	recentModelsMetrics.RecordMiss(ctx)
 
 	v, err, _ := recentModelsFlight.Do("recents", func() (interface{}, error) {
 		// Re-check inside the flight slot; another caller may have
-		// just refilled the cache while we were queuing.
+		// just refilled the cache while we were queuing. Not
+		// counted as a hit — see the corresponding comment in
+		// httpCache.getOrFetch for why.
 		recentModelsMu.RLock()
 		if !time.Now().After(recentModelsCached.expiresAt) {
 			out := recentModelsCached.models
@@ -140,18 +188,22 @@ type dbSessionDefaults interface {
 // via singleflight so a SessionDetail mount fan-out runs the
 // expensive join exactly once.
 func getSessionDefaultsCached(d dbSessionDefaults, excludeSessionID, directory string) (db.SessionDefaults, error) {
+	ctx := context.Background()
 	key := sessionDefaultsKey{excludeSessionID: excludeSessionID, directory: directory}
 
 	sessionDefaultsMu.RLock()
 	if e, ok := sessionDefaultsCached[key]; ok && !time.Now().After(e.expiresAt) {
 		sessionDefaultsMu.RUnlock()
+		sessionDefaultsMetrics.RecordHit(ctx)
 		return e.defaults, nil
 	}
 	sessionDefaultsMu.RUnlock()
+	sessionDefaultsMetrics.RecordMiss(ctx)
 
 	flightKey := excludeSessionID + "|" + directory
 	v, err, _ := sessionDefaultsFlight.Do(flightKey, func() (interface{}, error) {
-		// Re-check inside the flight slot.
+		// Re-check inside the flight slot. Not counted as a hit;
+		// see httpCache.getOrFetch for the rationale.
 		sessionDefaultsMu.RLock()
 		if e, ok := sessionDefaultsCached[key]; ok && !time.Now().After(e.expiresAt) {
 			sessionDefaultsMu.RUnlock()
@@ -251,18 +303,22 @@ type dbGetSessions interface {
 // to the slice itself, so this is safe in practice. If a future
 // caller needs to mutate the result, copy it first.
 func getSessionsCached(d dbGetSessions, directory string, since int64) ([]db.Session, error) {
+	ctx := context.Background()
 	key := sessionsKey{directory: directory, since: since}
 
 	sessionsMu.RLock()
 	if e, ok := sessionsCached[key]; ok && !time.Now().After(e.expiresAt) {
 		sessionsMu.RUnlock()
+		sessionsListMetrics.RecordHit(ctx)
 		return e.sessions, nil
 	}
 	sessionsMu.RUnlock()
+	sessionsListMetrics.RecordMiss(ctx)
 
 	flightKey := directory + "|" + strconv.FormatInt(since, 10)
 	v, err, _ := sessionsFlight.Do(flightKey, func() (interface{}, error) {
-		// Re-check inside the flight slot.
+		// Re-check inside the flight slot. Not counted as a hit;
+		// see httpCache.getOrFetch for the rationale.
 		sessionsMu.RLock()
 		if e, ok := sessionsCached[key]; ok && !time.Now().After(e.expiresAt) {
 			sessionsMu.RUnlock()

@@ -1,10 +1,13 @@
 package opencode
 
 import (
+	"context"
 	"sync"
 	"time"
 
 	"golang.org/x/sync/singleflight"
+
+	"github.com/NoUseFreak/ocman/internal/telemetry"
 )
 
 // httpCache is a small TTL + singleflight cache for upstream OpenCode
@@ -33,6 +36,12 @@ type httpCache struct {
 	entries map[httpCacheKey]httpCacheEntry
 
 	flight singleflight.Group
+
+	// metrics is the per-cache instrumentation handle. Zero value
+	// (empty Name) makes every Record* call a no-op so the cache
+	// works fine in tests that construct it via newHTTPCache without
+	// a name.
+	metrics telemetry.CacheMetrics
 }
 
 type httpCacheKey struct {
@@ -50,6 +59,24 @@ func newHTTPCache(ttl time.Duration) *httpCache {
 		ttl:     ttl,
 		entries: make(map[httpCacheKey]httpCacheEntry),
 	}
+}
+
+// newHTTPCacheNamed is newHTTPCache plus telemetry: it tags every
+// hit/miss/eviction with the supplied name and registers a
+// process-wide observable gauge that reports the current entry count.
+//
+// Production caches use this constructor so we can chart hit rate
+// and growth in Grafana; tests keep using newHTTPCache to stay
+// unaffected by the global metric registry.
+func newHTTPCacheNamed(ttl time.Duration, name string) *httpCache {
+	c := newHTTPCache(ttl)
+	c.metrics = telemetry.CacheMetrics{Name: name}
+	telemetry.RegisterCacheSizeGauge(name, func() int64 {
+		c.mu.RLock()
+		defer c.mu.RUnlock()
+		return int64(len(c.entries))
+	})
+	return c
 }
 
 // get returns the cached body for (port, path) iff a non-expired
@@ -85,8 +112,12 @@ func (c *httpCache) put(port, path string, body []byte) {
 // unused; provided for future call sites.
 func (c *httpCache) invalidate(port, path string) {
 	c.mu.Lock()
+	_, existed := c.entries[httpCacheKey{port, path}]
 	delete(c.entries, httpCacheKey{port, path})
 	c.mu.Unlock()
+	if existed {
+		c.metrics.RecordEvictions(context.Background(), 1)
+	}
 }
 
 // invalidatePort drops every entry for a port. Called when port
@@ -94,12 +125,15 @@ func (c *httpCache) invalidate(port, path string) {
 // disappeared, so we don't keep its cached catalog around forever.
 func (c *httpCache) invalidatePort(port string) {
 	c.mu.Lock()
+	var dropped int64
 	for k := range c.entries {
 		if k.port == port {
 			delete(c.entries, k)
+			dropped++
 		}
 	}
 	c.mu.Unlock()
+	c.metrics.RecordEvictions(context.Background(), dropped)
 }
 
 // getOrFetch returns the cached body if present, otherwise calls
@@ -110,10 +144,20 @@ func (c *httpCache) invalidatePort(port string) {
 // fetcher is a closure rather than a method receiver / interface so
 // each call site can capture exactly the URL + parsing it needs
 // without us building yet another HTTP-call abstraction.
+//
+// Hit/miss telemetry is recorded once per top-level call: a hit on
+// the fast path, a miss otherwise. The second-check inside the
+// singleflight body is intentionally not double-counted — it's an
+// implementation detail of the coalescing strategy, not a real
+// lookup. Counting it would inflate the hit-rate denominator under
+// concurrent traffic and obscure the actual behaviour of the cache.
 func (c *httpCache) getOrFetch(port, path string, fetcher func() ([]byte, bool)) ([]byte, bool) {
+	ctx := context.Background()
 	if body, ok := c.get(port, path); ok {
+		c.metrics.RecordHit(ctx)
 		return body, true
 	}
+	c.metrics.RecordMiss(ctx)
 
 	key := port + "|" + path
 	v, err, _ := c.flight.Do(key, func() (interface{}, error) {

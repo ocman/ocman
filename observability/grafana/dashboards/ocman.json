@@ -4,7 +4,7 @@
   "description": "Single-pane view of ocman's business stats, HTTP, DB, background, and runtime metrics, plus recent traces.",
   "tags": ["ocman"],
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "editable": true,
   "graphTooltip": 1,
   "time": { "from": "now-30m", "to": "now" },
@@ -602,12 +602,72 @@
       "fieldConfig": { "defaults": { "unit": "ms", "decimals": 2, "custom": { "drawStyle": "line", "fillOpacity": 10 } } }
     },
 
-    { "type": "row", "title": "Runtime", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 91 }, "collapsed": false, "panels": [] },
+    { "type": "row", "title": "Caches", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 91 }, "collapsed": false, "panels": [] },
+    {
+      "type": "timeseries",
+      "title": "Cache entries",
+      "description": "Current entry count per in-memory cache. A monotonic climb on an unbounded cache is the signature of a key-cardinality leak (see the opencode.sessions_list investigation). Bounded caches (claudecode.jsonl, max 20) should stay flat near their cap once warm.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 92 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "ocman_cache_entries{service_name=\"$service\"}",
+          "legendFormat": "{{cache}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10 } } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Cache hit rate",
+      "description": "Fraction of lookups served from cache, per cache, over the last 5 min. A consistently low hit rate on a TTL'd cache usually means the key includes a high-cardinality field that varies between callers (e.g. a per-poll timestamp).",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 92 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (cache) (rate(ocman_cache_lookups_total{service_name=\"$service\", result=\"hit\"}[5m])) / clamp_min(sum by (cache) (rate(ocman_cache_lookups_total{service_name=\"$service\"}[5m])), 1e-9)",
+          "legendFormat": "{{cache}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 2,
+          "min": 0,
+          "max": 1,
+          "custom": { "drawStyle": "line", "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Lookup rate (hits vs misses)",
+      "description": "Lookups/sec per cache, split by hit/miss. Total height = traffic against the cache. A flat hit-only series for a cache that's supposed to expire (e.g. opencode.sessions_list with a 3 s TTL) suggests miss handling has degraded; a flat miss-only series suggests the cache is permanently cold (key cardinality issue).",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 92 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (cache, result) (rate(ocman_cache_lookups_total{service_name=\"$service\"}[5m]))",
+          "legendFormat": "{{cache}} ({{result}})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "stacking": { "mode": "normal" } }
+        }
+      }
+    },
+
+    { "type": "row", "title": "Runtime", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 99 }, "collapsed": false, "panels": [] },
     {
       "type": "timeseries",
       "title": "Memory",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 92 },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 100 },
       "targets": [
         { "refId": "A", "expr": "go_memory_used_bytes{service_name=\"$service\"}", "legendFormat": "in use" },
         { "refId": "B", "expr": "go_memory_gc_goal_bytes{service_name=\"$service\"}", "legendFormat": "GC goal" }
@@ -618,7 +678,7 @@
       "type": "timeseries",
       "title": "Allocations",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 92 },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 100 },
       "targets": [
         {
           "refId": "A",
@@ -634,13 +694,13 @@
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 10 } } }
     },
 
-    { "type": "row", "title": "Traces", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 99 }, "collapsed": false, "panels": [] },
+    { "type": "row", "title": "Traces", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 107 }, "collapsed": false, "panels": [] },
     {
       "type": "table",
       "title": "Recent traces",
       "description": "Recent ocman traces. Click a Trace ID to drill into Tempo.",
       "datasource": { "type": "tempo", "uid": "tempo" },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 100 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 108 },
       "targets": [
         {
           "refId": "A",
@@ -658,7 +718,7 @@
       "title": "Slow API calls (>500ms)",
       "description": "Recent ocman traces with span duration over 500ms.",
       "datasource": { "type": "tempo", "uid": "tempo" },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 110 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 118 },
       "targets": [
         {
           "refId": "A",
@@ -676,7 +736,7 @@
       "title": "Trace errors",
       "description": "Recent ocman traces containing at least one span with status=error.",
       "datasource": { "type": "tempo", "uid": "tempo" },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 120 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 128 },
       "targets": [
         {
           "refId": "A",
@@ -694,7 +754,7 @@
       "title": "Slowest phases",
       "description": "Internal phases (srvtiming spans) ranked by duration. Use to find which phase under a slow request is the bottleneck (e.g. lsof_miss, http_messages, db_get_sessions).",
       "datasource": { "type": "tempo", "uid": "tempo" },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 130 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 138 },
       "targets": [
         {
           "refId": "A",
@@ -708,12 +768,12 @@
       "options": { "showHeader": true }
     },
 
-    { "type": "row", "title": "Logs", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 140 }, "collapsed": true, "panels": [
+    { "type": "row", "title": "Logs", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 148 }, "collapsed": true, "panels": [
       {
         "type": "logs",
         "title": "Errors and warnings",
         "datasource": { "type": "loki", "uid": "loki" },
-        "gridPos": { "h": 12, "w": 24, "x": 0, "y": 141 },
+        "gridPos": { "h": 12, "w": 24, "x": 0, "y": 149 },
         "targets": [
           {
             "refId": "A",

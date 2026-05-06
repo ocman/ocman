@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/telemetry"
 )
 
 // defaultBusyTTL is how long a "busy" state persists without a
@@ -44,6 +45,14 @@ type liveCache struct {
 	states    map[string]*platforms.LiveState
 	liveTools map[string][]platforms.LiveTool
 	busyTTL   time.Duration
+
+	// metricsName, when non-empty, drives the registered size gauge.
+	// We don't track hit/miss for liveCache because every Apply is
+	// effectively a write and Get's "miss" semantics (no entry yet)
+	// don't model a cache miss in the usual sense — there's no
+	// alternative source to fall back to. Tracking size growth is
+	// the signal we actually need for the leak investigation.
+	metricsName string
 }
 
 // newLiveCache creates an empty cache with the given busy-state TTL.
@@ -54,6 +63,24 @@ func newLiveCache(busyTTL time.Duration) *liveCache {
 		liveTools: make(map[string][]platforms.LiveTool),
 		busyTTL:   busyTTL,
 	}
+}
+
+// registerMetrics registers a process-wide observable gauge under
+// the given name that reports the current number of session states
+// the cache holds. Liveset growth is the dominant signal — we don't
+// track hit/miss because every Apply is a write and Get has no
+// alternative-source semantics.
+//
+// Production calls this from the adapter constructor; tests that
+// build a cache directly via newLiveCache leave it bare so the
+// global registry stays empty.
+func (c *liveCache) registerMetrics(name string) {
+	c.metricsName = name
+	telemetry.RegisterCacheSizeGauge(name, func() int64 {
+		c.mu.RLock()
+		defer c.mu.RUnlock()
+		return int64(len(c.states))
+	})
 }
 
 // Apply mutates the cache entry for sessionID using the given delta,

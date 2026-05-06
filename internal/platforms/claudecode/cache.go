@@ -1,6 +1,11 @@
 package claudecode
 
-import "sync"
+import (
+	"context"
+	"sync"
+
+	"github.com/NoUseFreak/ocman/internal/telemetry"
+)
 
 // cacheEntry holds a parsed jsonl file. The file's (mtime, size) pair
 // is the invalidation key: if the file is appended to or rewritten,
@@ -22,11 +27,19 @@ type cache struct {
 	mu      sync.RWMutex
 	entries map[string]*cacheEntry
 	order   []string
+
+	// metrics is the per-cache instrumentation handle. Zero value
+	// is a no-op so newCache() (used by tests) stays unaffected by
+	// telemetry; production uses newCacheNamed() to bind a name and
+	// register the size gauge.
+	metrics telemetry.CacheMetrics
 }
 
 const maxCacheEntries = 20
 
-// newCache returns an empty cache.
+// newCache returns an empty cache without telemetry. Used by tests
+// that don't want their assertions to interact with the global
+// metric registry.
 func newCache() *cache {
 	return &cache{
 		entries: make(map[string]*cacheEntry),
@@ -34,20 +47,46 @@ func newCache() *cache {
 	}
 }
 
+// registerMetrics wires telemetry into an existing cache: every
+// subsequent hit/miss/eviction is tagged with the supplied name, and
+// a process-wide observable gauge is registered to report the
+// current entry count.
+//
+// Production calls this from the adapter constructor (New); tests
+// that build a cache via newCache() leave it bare to keep their
+// assertions independent of the global metric registry.
+func (c *cache) registerMetrics(name string) {
+	c.metrics = telemetry.CacheMetrics{Name: name}
+	telemetry.RegisterCacheSizeGauge(name, func() int64 {
+		c.mu.RLock()
+		defer c.mu.RUnlock()
+		return int64(len(c.entries))
+	})
+}
+
 // getByMtime returns the cached parsed value for path if and only if
 // the cache key (mtime, size) matches the caller's observed values.
 // On a miss or a stale entry, returns nil.
 func (c *cache) getByMtime(path string, mtimeMs, size int64) *parsedFile {
+	ctx := context.Background()
 	c.mu.RLock()
-	defer c.mu.RUnlock()
 	entry, ok := c.entries[path]
 	if !ok || entry.value == nil {
+		c.mu.RUnlock()
+		c.metrics.RecordMiss(ctx)
 		return nil
 	}
 	if entry.mtimeMs != mtimeMs || entry.size != size {
+		c.mu.RUnlock()
+		// Stale (file mtime/size moved): treat as a miss for
+		// hit-rate purposes — the caller will re-parse.
+		c.metrics.RecordMiss(ctx)
 		return nil
 	}
-	return entry.value
+	value := entry.value
+	c.mu.RUnlock()
+	c.metrics.RecordHit(ctx)
+	return value
 }
 
 // putByMtime stores a parsed value under path with the given
@@ -55,7 +94,13 @@ func (c *cache) getByMtime(path string, mtimeMs, size int64) *parsedFile {
 // Enforces maxCacheEntries with LRU eviction.
 func (c *cache) putByMtime(path string, mtimeMs, size int64, value *parsedFile) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	var evicted int64
+	defer func() {
+		c.mu.Unlock()
+		if evicted > 0 {
+			c.metrics.RecordEvictions(context.Background(), evicted)
+		}
+	}()
 
 	// If updating existing, move to end (most recent)
 	if _, exists := c.entries[path]; exists {
@@ -69,6 +114,7 @@ func (c *cache) putByMtime(path string, mtimeMs, size int64, value *parsedFile) 
 			evict := c.order[0]
 			delete(c.entries, evict)
 			c.order = c.order[1:]
+			evicted++
 		}
 	}
 

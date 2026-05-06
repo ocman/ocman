@@ -385,7 +385,7 @@ var pendingPromptCacheTTL = 3 * time.Second
 //
 // All reads must go through getPendingPromptCache so they observe
 // swaps atomically with the TTL.
-var pendingPromptCache = newHTTPCache(pendingPromptCacheTTL)
+var pendingPromptCache = newHTTPCacheNamed(pendingPromptCacheTTL, "opencode.pending_prompt_http")
 
 // getPendingPromptCache returns the current cache under the read
 // lock so a concurrent test-only swap can't tear the read.

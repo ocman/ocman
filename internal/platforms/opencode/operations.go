@@ -575,7 +575,7 @@ func (a *Adapter) ProxyEvents(ctx context.Context, sessionID string, w io.Writer
 // instances coexist correctly. See httpcache.go for the cache
 // machinery itself, including the singleflight that coalesces
 // concurrent misses for the same key.
-var catalogCache = newHTTPCache(30 * time.Second)
+var catalogCache = newHTTPCacheNamed(30*time.Second, "opencode.catalog_http")
 
 // sessionCache is a process-wide TTL cache for session-scoped
 // OpenCode endpoints — currently /session/{id} and
@@ -599,7 +599,7 @@ var catalogCache = newHTTPCache(30 * time.Second)
 // cache. So the cache only affects refreshes triggered by route
 // transitions, focus events, etc. — exactly the cases where 5s of
 // staleness is invisible. Failures are not cached (see httpcache.go).
-var sessionCache = newHTTPCache(5 * time.Second)
+var sessionCache = newHTTPCacheNamed(5*time.Second, "opencode.session_http")
 
 // getJSON performs a GET to the OpenCode instance and returns the body
 // bytes and true iff the response was 200 OK with a JSON content type.

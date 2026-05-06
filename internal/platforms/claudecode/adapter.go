@@ -61,15 +61,25 @@ type Adapter struct {
 // projects directory. Returns an adapter whose Available() is false
 // when $HOME can't be determined — ocman must keep running without
 // Claude Code if the user hasn't installed it.
+//
+// In addition to NewFromDir's wiring this also registers cache
+// telemetry: jsonl-parse cache hit/miss/size and live-state cache
+// size. We do it here rather than in NewFromDir so tests using
+// NewFromDir stay independent of the process-wide metric registry.
 func New() *Adapter {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		// Even an unavailable adapter needs an initialised live cache
 		// so that handler code can call ApplyHookEvent without first
 		// checking whether the adapter found its projects dir.
-		return &Adapter{live: newLiveCache(defaultBusyTTL)}
+		live := newLiveCache(defaultBusyTTL)
+		live.registerMetrics("claudecode.live")
+		return &Adapter{live: live}
 	}
-	return NewFromDir(filepath.Join(home, defaultProjectsDir))
+	a := NewFromDir(filepath.Join(home, defaultProjectsDir))
+	a.cache.registerMetrics("claudecode.jsonl")
+	a.live.registerMetrics("claudecode.live")
+	return a
 }
 
 // NewFromDir returns a Claude Code adapter rooted at the given
