@@ -427,3 +427,72 @@ describe('useSessionSSE activity tracking', () => {
     expect(result.current.recentWorkEventAt).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Regression: cleanup must not flush buffered SSE deltas. The previous
+// implementation called `deltaBuffer.flush()` followed by `cancel()` in
+// the effect cleanup, which fed leftover deltas from session A into the
+// (now-shared) `setParts` setter — corrupting session B's parts state
+// with phantom entries on every navigation.
+// ---------------------------------------------------------------------------
+
+describe('useSessionSSE cleanup', () => {
+  it('does not call setParts during teardown for buffered deltas', () => {
+    const noop = () => {};
+    const stableLoad = vi.fn(async () => {});
+    const setParts = vi.fn();
+
+    const { unmount } = renderHook(() => {
+      const abortRef = useRef<AbortController | null>(null);
+      const loadErrorRef = useRef<string | null>(null);
+      const debugModeRef = useRef<boolean>(false);
+      const subagentSessionIdsRef = useRef<Set<string>>(new Set());
+      const activeSessionIdRef = useRef<string | undefined>('s1');
+      return useSessionSSE({
+        sessionId: 's1',
+        directory: '/tmp/x',
+        load: stableLoad,
+        abortSignalRef: abortRef,
+        loadErrorRef,
+        debugModeRef,
+        subagentSessionIdsRef,
+        activeSessionIdRef,
+        setMessages: noop,
+        setParts,
+        setSession: noop,
+        setPortAvailable: noop,
+        setPendingPermission: noop,
+        setPermissionError: noop,
+        setPendingQuestion: noop,
+        setSubagentTokens: noop,
+        setChangesDirtyTick: noop,
+      });
+    });
+
+    // Simulate a delta arriving on the wire. The hook routes
+    // message.part.delta events through the rAF-coalesced buffer,
+    // so setParts is NOT invoked synchronously.
+    act(() => {
+      EventSourceStub.instances[0].triggerMessage({
+        type: 'message.part.delta',
+        properties: {
+          partID: 'p-pending',
+          messageID: 'm-pending',
+          sessionID: 's1',
+          field: 'text',
+          delta: 'in-flight token',
+        },
+      });
+    });
+    expect(setParts).not.toHaveBeenCalled();
+
+    // Tear down before the rAF fires — same shape as a navigation
+    // away from the session while a delta is still in the buffer.
+    unmount();
+
+    // The cleanup must NOT flush the pending delta. Any setParts
+    // call here would land on the next session's state because the
+    // setter reference is owned by the parent component.
+    expect(setParts).not.toHaveBeenCalled();
+  });
+});

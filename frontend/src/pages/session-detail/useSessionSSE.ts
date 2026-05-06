@@ -700,11 +700,13 @@ export function useSessionSSE({
       if (reconnectTimer) clearTimeout(reconnectTimer);
       clearInterval(fallback);
       retryNowRef.current = null;
-      // Flush any deltas that arrived between the last paint and the
-      // teardown so the user sees the final tokens of the previous
-      // session before we tear down. `flush()` is a no-op if there's
-      // nothing pending, so this is safe.
-      deltaBuffer.flush();
+      // Drop any deltas that were buffered but not yet committed.
+      // We must NOT flush here: the `setParts` reference is owned by
+      // the parent component and now points at the next session's
+      // state. Flushing would inject session-A deltas into session-B's
+      // parts array as phantom entries that never resolve to a real
+      // message. The user has navigated away and won't see those final
+      // tokens regardless — `cancel()` is the correct teardown.
       deltaBuffer.cancel();
       setSseActive(false);
       setSseReconnecting(false);
