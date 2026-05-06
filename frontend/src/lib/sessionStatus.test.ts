@@ -101,6 +101,14 @@ describe('isSessionRunning', () => {
     expect(isSessionRunning(makeMessage('m', { role: 'user' }))).toBe(false);
   });
 
+  it('returns true when waiting for the first assistant response after a user send', () => {
+    expect(isSessionRunning(makeMessage('m', { role: 'user' }), 'done', true)).toBe(true);
+  });
+
+  it('returns true when the server reports busy even if the last assistant message finished', () => {
+    expect(isSessionRunning(makeMessage('m', { role: 'assistant', finish: 'stop' }), 'busy')).toBe(true);
+  });
+
   it('returns true for a streaming assistant message (no finish, no error)', () => {
     expect(isSessionRunning(makeMessage('m', { role: 'assistant' }))).toBe(true);
   });

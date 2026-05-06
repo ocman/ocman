@@ -78,7 +78,14 @@ export function deriveRawStatus(lastMsg: Message | null): Session['status'] {
  * to a false "working" indicator that persists indefinitely after
  * tool executions.
  */
-export function isSessionRunning(lastMsg: Message | null): boolean {
+export function isSessionRunning(
+  lastMsg: Message | null,
+  sessionStatus?: Session['status'] | null,
+  awaitingAssistantResponse = false,
+): boolean {
+  if (awaitingAssistantResponse && lastMsg?.data?.role === 'user') return true;
+  if (sessionStatus === 'busy') return true;
+  if (sessionStatus === 'error' || sessionStatus === 'done') return false;
   if (!lastMsg) return false;
   const data = lastMsg.data;
   if (data?.role === 'assistant' && !data?.finish && !data?.error) return true;

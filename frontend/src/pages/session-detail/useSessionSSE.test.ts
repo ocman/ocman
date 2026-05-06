@@ -48,6 +48,9 @@ class EventSourceStub {
   triggerError() {
     this.onerror?.(new Event('error'));
   }
+  triggerMessage(data: Record<string, unknown>) {
+    this.onmessage?.(new MessageEvent('message', { data: JSON.stringify(data) }));
+  }
 }
 
 // --- Hook harness ------------------------------------------------------
@@ -275,5 +278,104 @@ describe('useSessionSSE reconnect behaviour', () => {
       expect(result.current.sseNextRetryAt - Date.now()).toBeLessThanOrEqual(60_000);
     }
     randomSpy.mockRestore();
+  });
+});
+
+describe('useSessionSSE activity tracking', () => {
+  it('marks the parent session busy and records activity for a tool part update', () => {
+    const stableLoad = vi.fn(async () => {});
+    const setSession = vi.fn();
+    const noop = vi.fn();
+    renderHook(() => {
+      const abortRef = useRef<AbortController | null>(null);
+      const loadErrorRef = useRef<string | null>(null);
+      const debugModeRef = useRef(false);
+      const subagentSessionIdsRef = useRef<Set<string>>(new Set());
+      return useSessionSSE({
+        sessionId: 's1',
+        directory: '/tmp/x',
+        load: stableLoad,
+        abortSignalRef: abortRef,
+        loadErrorRef,
+        debugModeRef,
+        subagentSessionIdsRef,
+        setMessages: noop,
+        setParts: noop,
+        setSession,
+        setPortAvailable: noop,
+        setPendingPermission: noop,
+        setPermissionError: noop,
+        setPendingQuestion: noop,
+        setSubagentTokens: noop,
+        setChangesDirtyTick: noop,
+      });
+    });
+
+    act(() => {
+      EventSourceStub.instances[0].triggerMessage({
+        type: 'message.part.updated',
+        properties: {
+          part: {
+            id: 'p1',
+            messageID: 'm1',
+            sessionID: 's1',
+            type: 'tool',
+            tool: 'bash',
+          },
+        },
+      });
+    });
+
+    const updater = setSession.mock.calls[0]?.[0] as ((prev: { status: string } | null) => { status: string } | null) | undefined;
+    expect(updater?.({ status: 'waiting' } as never)).toMatchObject({ status: 'busy' });
+  });
+
+  it('treats subagent message events as parent-session activity', () => {
+    const stableLoad = vi.fn(async () => {});
+    const setSession = vi.fn();
+    const noop = vi.fn();
+    renderHook(() => {
+      const abortRef = useRef<AbortController | null>(null);
+      const loadErrorRef = useRef<string | null>(null);
+      const debugModeRef = useRef(false);
+      const subagentSessionIdsRef = useRef<Set<string>>(new Set(['sub-1']));
+      return useSessionSSE({
+        sessionId: 's1',
+        directory: '/tmp/x',
+        load: stableLoad,
+        abortSignalRef: abortRef,
+        loadErrorRef,
+        debugModeRef,
+        subagentSessionIdsRef,
+        setMessages: noop,
+        setParts: noop,
+        setSession,
+        setPortAvailable: noop,
+        setPendingPermission: noop,
+        setPermissionError: noop,
+        setPendingQuestion: noop,
+        setSubagentTokens: noop,
+        setChangesDirtyTick: noop,
+      });
+    });
+
+    act(() => {
+      EventSourceStub.instances[0].triggerMessage({
+        type: 'message.updated',
+        properties: {
+          sessionID: 'sub-1',
+          info: {
+            sessionID: 'sub-1',
+            id: 'm-sub-1',
+            role: 'assistant',
+            tokens: { output: 12 },
+            time: { created: Date.now() - 100 },
+          },
+        },
+      });
+    });
+
+    const updater = setSession.mock.calls[0]?.[0] as ((prev: { status: string } | null) => { status: string } | null) | undefined;
+    expect(updater?.({ status: 'waiting' } as never)).toMatchObject({ status: 'busy' });
   });
 });

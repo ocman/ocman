@@ -473,6 +473,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const [showRenameToast, setShowRenameToast] = useState(false);
   const [showCreateSessionErrorToast, setShowCreateSessionErrorToast] = useState(false);
   const [showDisconnectedToast, setShowDisconnectedToast] = useState(false);
+  const [awaitingAssistantResponse, setAwaitingAssistantResponse] = useState(false);
   const [createLaunchStatus, setCreateLaunchStatus] = useState<LaunchStatus>('idle');
   // Sends that failed on the client (network error, 5xx, etc.). Each entry
   // is keyed by the optimistic message id and holds enough context to
@@ -895,7 +896,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // else stays in the page so the SSE handler doesn't need to
   // know about composer / sidebar / palette concerns.
   const {
-    lastSseEventAt,
     sseActive,
     sseReconnecting,
     sseReconnectAttempt,
@@ -983,6 +983,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
 
     // Clear subagent token tracking for the new run window.
     setSubagentTokens(new Map());
+    setAwaitingAssistantResponse(true);
 
     try {
       await sendMessage(session.id, text, images, model, agent, reasoning);
@@ -992,6 +993,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
       setFailedSends(prev => prev.filter(e => e.id !== tempId));
       removeFailedSend(session.id, tempId);
     } catch (e) {
+      setAwaitingAssistantResponse(false);
       console.error('Failed to send message', e);
       const msg = e instanceof Error ? e.message : '';
       // When the error is a missing OpenCode instance, surface a toast with
@@ -1418,11 +1420,26 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const showSseNotice = portAvailable && !sseActive;
   const showSseDebug = debugMode && sseDebugEvents.length > 0;
 
-  // The assistant is still working if the last message is from the
-  // user (assistant hasn't replied yet) or from the assistant with no
-  // finish reason and no error (still streaming). See
-  // `isSessionRunning` for the canonical predicate.
-  const isRunning = isSessionRunning(lastMsg);
+  useEffect(() => {
+    setAwaitingAssistantResponse(false);
+  }, [id]);
+
+  // The "awaiting first assistant response" flag is armed when the
+  // user submits a prompt and cleared once the turn visibly advances
+  // (assistant message arrives) or terminates. This bridges the gap
+  // where the last visible message is still the user's optimistic
+  // bubble, but the run is already queued/busy.
+  useEffect(() => {
+    if (lastMsg?.data?.role === 'assistant') {
+      setAwaitingAssistantResponse(false);
+      return;
+    }
+    if (session?.status === 'done' || session?.status === 'error') {
+      setAwaitingAssistantResponse(false);
+    }
+  }, [lastMsg, session?.status]);
+
+  const isRunning = isSessionRunning(lastMsg, session?.status, awaitingAssistantResponse);
 
   // Mirror the current session's status from SSE-driven message state into the
   // sidebar list entry so its status dot starts/stops pulsing immediately when
@@ -1438,10 +1455,11 @@ export function SessionDetail({ id }: SessionDetailProps) {
     messages,
     subagentTokens,
     setSubagentTokens,
+    sessionStatus: session?.status,
+    awaitingAssistantResponse,
     isRunning,
     pendingPermission,
     pendingQuestion,
-    lastSseEventAt,
   });
   logChange('SessionDetail.optimisticStatus', optimisticStatus);
   logChange('SessionDetail.liveTokensPerSecond', liveTokensPerSecond);

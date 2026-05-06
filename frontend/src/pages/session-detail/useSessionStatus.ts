@@ -16,20 +16,6 @@ import { trackRender } from '../../lib/renderRateMonitor';
  */
 const STATUS_GRACE_MS = 3000;
 
-/**
- * If we received an SSE event for the session within this window,
- * treat the session as actively producing output and surface
- * `busy` even when the last assistant message has flipped to a
- * finished state. This catches the common case where the session
- * is mid-turn but the message snapshot we have hasn't been
- * reconciled yet — a steady stream of part deltas means *something*
- * is still happening.
- *
- * Terminal states (`error`, `done`) are never overridden — the SSE
- * freshness rule only upgrades `waiting → busy`.
- */
-const SSE_ACTIVE_MS = 500;
-
 export interface UseSessionStatusOptions {
   /** Most recent message in the page's messages array (or null). */
   lastMsg: Message | null;
@@ -40,19 +26,21 @@ export interface UseSessionStatusOptions {
   subagentTokens: SubagentTokenMap;
   /** Setter for the subagent token map; cleared when a run ends. */
   setSubagentTokens: Dispatch<SetStateAction<SubagentTokenMap>>;
+  /** Latest session status mirrored from the API/SSE session object. */
+  sessionStatus?: Session['status'] | null;
+  /**
+   * True after the user sends a new prompt and before the session has
+   * produced its first assistant message for that turn. This covers
+   * the gap where the last message is still the user's optimistic
+   * bubble, but the model is already queued/running.
+   */
+  awaitingAssistantResponse?: boolean;
   /** Whether the assistant is currently producing output. */
   isRunning: boolean;
   /** Pending permission, when one is waiting on the user. */
   pendingPermission: PendingPermission | null;
   /** Pending question, when one is waiting on the user. */
   pendingQuestion: PendingQuestion | null;
-  /**
-   * Epoch-ms timestamp of the last SSE event received for this
-   * session, or `null` when no event has arrived (or SSE is not
-   * connected). When set and within `SSE_ACTIVE_MS`, the displayed
-   * `optimisticStatus` is upgraded from `waiting` to `busy`.
-   */
-  lastSseEventAt?: number | null;
 }
 
 export interface UseSessionStatusResult {
@@ -91,16 +79,25 @@ export function useSessionStatus({
   messages,
   subagentTokens,
   setSubagentTokens,
+  sessionStatus = null,
+  awaitingAssistantResponse = false,
   isRunning,
   pendingPermission,
   pendingQuestion,
-  lastSseEventAt = null,
 }: UseSessionStatusOptions): UseSessionStatusResult {
   trackRender('useSessionStatus', { isRunning, lastMsgId: lastMsg?.id });
   // Raw status derived from the last message — may flicker between
   // "busy" and "waiting" during tool-call turn boundaries when the
   // agent finishes one turn and immediately starts another.
-  const rawOptimisticStatus = deriveRawStatus(lastMsg);
+  const rawStatusFromMessage = deriveRawStatus(lastMsg);
+  let rawOptimisticStatus = rawStatusFromMessage;
+  if (sessionStatus === 'error') {
+    rawOptimisticStatus = 'error';
+  } else if (awaitingAssistantResponse && lastMsg?.data?.role === 'user') {
+    rawOptimisticStatus = 'busy';
+  } else if (sessionStatus === 'busy' && rawStatusFromMessage !== 'error') {
+    rawOptimisticStatus = 'busy';
+  }
 
   // Debounced status: when transitioning from "busy" to "waiting",
   // hold "busy" for a grace period before committing. If the agent
@@ -153,40 +150,6 @@ export function useSessionStatus({
     setOptimisticStatus(rawOptimisticStatus);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- optimisticStatusRef is a stable ref; listing optimisticStatus here would create a self-referencing render cycle.
   }, [rawOptimisticStatus]);
-
-  // SSE-freshness override: when an SSE event arrived within
-  // SSE_ACTIVE_MS, treat the session as actively producing output
-  // even if the last message in our snapshot has finished.
-  //
-  // Implementation: derive the displayed status purely from
-  // `lastSseEventAt` and the current time at render — no separate
-  // boolean state to keep in sync. When we're inside the freshness
-  // window, arm a one-shot timer that re-renders the hook (via the
-  // tick counter) the moment the window expires, so the badge flips
-  // back to `waiting` even though no input changed.
-  //
-  // We deliberately don't write state inside the effect body itself:
-  // setState calls scheduled during a commit phase can land in
-  // React's `flushSpawnedWork` path, which has been observed to
-  // mis-interact with sibling components when the dispatcher is
-  // torn down on a session swap. The setState only fires from the
-  // setTimeout callback, which always runs after the commit phase.
-  const [, setExpiryTick] = useState(0);
-  useEffect(() => {
-    if (lastSseEventAt === null) return;
-    const elapsed = Date.now() - lastSseEventAt;
-    const remaining = SSE_ACTIVE_MS - elapsed;
-    if (remaining <= 0) return;
-    const handle = window.setTimeout(() => setExpiryTick((n) => n + 1), remaining);
-    return () => window.clearTimeout(handle);
-  }, [lastSseEventAt]);
-
-  // Final displayed status: SSE freshness upgrades `waiting` to
-  // `busy` (terminal states `error` / `done` are not overridden).
-  const sseActive =
-    lastSseEventAt !== null && Date.now() - lastSseEventAt < SSE_ACTIVE_MS;
-  const displayedOptimisticStatus: Session['status'] =
-    sseActive && optimisticStatus === 'waiting' ? 'busy' : optimisticStatus;
 
   // Live tokens-per-second: sum output tokens across all assistant
   // messages in the current run window (since the last user message)
@@ -262,7 +225,7 @@ export function useSessionStatus({
 
   return {
     rawOptimisticStatus,
-    optimisticStatus: displayedOptimisticStatus,
+    optimisticStatus,
     liveTokensPerSecond,
   };
 }
