@@ -192,45 +192,28 @@ export function useSessionStatus({
   // pending, in-flight messages are excluded entirely since the LLM
   // isn't generating — this prevents user think time from deflating
   // TPS.
-  //
-  // The math is intentionally cumulative (totalOutput / totalDuration
-  // over the run window). What we throttle here is the *UI update
-  // rate*: every input — `messages`, `subagentTokens`, the prompt
-  // refs, *and* the `setSubagentTokens` setter — flows through a ref
-  // so the polling effect's dependency list only contains
-  // `[isRunning]`. Without the setter ref, every parent render
-  // (which happens many times per second during streaming because
-  // `setSubagentTokens` from useSubagentTracking is recreated on
-  // each render) would tear down + re-arm the interval and re-run
-  // `computeTps` synchronously, defeating the 1 Hz budget. With it,
-  // the interval is created once when a run starts and runs strictly
-  // at 1 Hz until the run ends.
   const [liveTokensPerSecond, setLiveTokensPerSecond] = useState<number | null>(null);
-  const messagesRef = useSyncRef(messages);
-  const subagentTokensRef = useSyncRef(subagentTokens);
-  const pendingPermissionRef = useSyncRef(pendingPermission);
-  const pendingQuestionRef = useSyncRef(pendingQuestion);
-  const setSubagentTokensRef = useSyncRef(setSubagentTokens);
-
+  // The synchronous setLiveTokensPerSecond / setSubagentTokens
+  // calls below are the cleanup arm: they fire once when
+  // `isRunning` flips from true to false, not on every render.
+  // The polling branch only writes through setLiveTokensPerSecond
+  // inside `setInterval` callbacks (already deferred).
   useEffect(() => {
     if (!isRunning) {
       setLiveTokensPerSecond(null);
       // Clear subagent token tracking when the run ends so the next
       // run starts fresh.
-      setSubagentTokensRef.current((prev) => (prev.size > 0 ? new Map() : prev));
+      setSubagentTokens((prev) => (prev.size > 0 ? new Map() : prev));
       return;
     }
     const computeTps = () => {
-      const messages = messagesRef.current;
-      const subagentTokens = subagentTokensRef.current;
-      const promptPending =
-        pendingPermissionRef.current !== null || pendingQuestionRef.current !== null;
       // Find the start of the current run window: the index after
       // the last user message.
       let windowStart = 0;
       for (let i = messages.length - 1; i >= 0; i--) {
         if (messages[i].data?.role === 'user') { windowStart = i + 1; break; }
       }
+      const promptPending = pendingPermission !== null || pendingQuestion !== null;
       let totalOutput = 0;
       let totalDurationMs = 0;
       const now = Date.now();
@@ -269,8 +252,7 @@ export function useSessionStatus({
     computeTps();
     const interval = setInterval(computeTps, 1000);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- inputs are read via refs to keep the update rate at 1 Hz; ref objects are stable, and isRunning is the only signal that should re-arm the interval.
-  }, [isRunning]);
+  }, [isRunning, messages, subagentTokens, setSubagentTokens, pendingPermission, pendingQuestion]);
 
   return {
     rawOptimisticStatus,
