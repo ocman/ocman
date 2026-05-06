@@ -16,6 +16,14 @@ import { trackRender } from '../../lib/renderRateMonitor';
  */
 const STATUS_GRACE_MS = 3000;
 
+/**
+ * Work-event freshness window. Only real work-producing events
+ * (assistant message streaming, tool-part updates/deltas, subagent
+ * assistant activity, explicit `session.status=busy`) should bump
+ * this clock. Transport/session bookkeeping must not.
+ */
+const WORK_EVENT_ACTIVE_MS = 500;
+
 export interface UseSessionStatusOptions {
   /** Most recent message in the page's messages array (or null). */
   lastMsg: Message | null;
@@ -35,6 +43,12 @@ export interface UseSessionStatusOptions {
    * bubble, but the model is already queued/running.
    */
   awaitingAssistantResponse?: boolean;
+  /**
+   * Epoch-ms timestamp of the most recent *work-producing* event for
+   * this session tree (current session + bubbled subagent activity),
+   * or `null` when none has arrived recently.
+   */
+  recentWorkEventAt?: number | null;
   /** Whether the assistant is currently producing output. */
   isRunning: boolean;
   /** Pending permission, when one is waiting on the user. */
@@ -81,22 +95,39 @@ export function useSessionStatus({
   setSubagentTokens,
   sessionStatus = null,
   awaitingAssistantResponse = false,
+  recentWorkEventAt = null,
   isRunning,
   pendingPermission,
   pendingQuestion,
 }: UseSessionStatusOptions): UseSessionStatusResult {
   trackRender('useSessionStatus', { isRunning, lastMsgId: lastMsg?.id });
-  // Raw status derived from the last message — may flicker between
-  // "busy" and "waiting" during tool-call turn boundaries when the
-  // agent finishes one turn and immediately starts another.
+  // Base semantic status from the visible message snapshot.
   const rawStatusFromMessage = deriveRawStatus(lastMsg);
+
+  // Active work is the union of four semantic signals:
+  //   1. user send is queued, first assistant message not visible yet
+  //   2. latest assistant message is still streaming
+  //   3. session status explicitly reports busy
+  //   4. a recent *work* event landed (tool/subagent/assistant)
+  // Bookkeeping noise like prompt sync / old-session hydration must
+  // not contribute here.
+  const assistantStreaming =
+    lastMsg?.data?.role === 'assistant' && !lastMsg.data.finish && !lastMsg.data.error;
+  const recentWorkActive =
+    recentWorkEventAt !== null && Date.now() - recentWorkEventAt < WORK_EVENT_ACTIVE_MS;
+  const hasActiveWork =
+    (awaitingAssistantResponse && lastMsg?.data?.role === 'user') ||
+    assistantStreaming ||
+    sessionStatus === 'busy' ||
+    recentWorkActive;
+
   let rawOptimisticStatus = rawStatusFromMessage;
-  if (sessionStatus === 'error') {
+  if (sessionStatus === 'error' || rawStatusFromMessage === 'error') {
     rawOptimisticStatus = 'error';
-  } else if (awaitingAssistantResponse && lastMsg?.data?.role === 'user') {
+  } else if (hasActiveWork) {
     rawOptimisticStatus = 'busy';
-  } else if (sessionStatus === 'busy' && rawStatusFromMessage !== 'error') {
-    rawOptimisticStatus = 'busy';
+  } else if (sessionStatus === 'done') {
+    rawOptimisticStatus = 'done';
   }
 
   // Debounced status: when transitioning from "busy" to "waiting",
@@ -150,6 +181,16 @@ export function useSessionStatus({
     setOptimisticStatus(rawOptimisticStatus);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- optimisticStatusRef is a stable ref; listing optimisticStatus here would create a self-referencing render cycle.
   }, [rawOptimisticStatus]);
+
+  const [, setWorkExpiryTick] = useState(0);
+  useEffect(() => {
+    if (recentWorkEventAt === null) return;
+    const elapsed = Date.now() - recentWorkEventAt;
+    const remaining = WORK_EVENT_ACTIVE_MS - elapsed;
+    if (remaining <= 0) return;
+    const handle = window.setTimeout(() => setWorkExpiryTick((n) => n + 1), remaining);
+    return () => window.clearTimeout(handle);
+  }, [recentWorkEventAt]);
 
   // Live tokens-per-second: sum output tokens across all assistant
   // messages in the current run window (since the last user message)

@@ -184,6 +184,7 @@ describe('SessionDetail — initial mount', () => {
       expect(screen.getByTestId('error-banner')).toBeInTheDocument();
     });
   });
+
 });
 
 describe('SessionDetail — SSE stream', () => {

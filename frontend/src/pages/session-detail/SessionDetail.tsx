@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { flushSync } from 'react-dom';
 import { useStickyNavigate } from '../../lib/useStickyNavigate';
 import * as Toast from '@radix-ui/react-toast';
 import './SessionDetail.css';
@@ -230,6 +231,18 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const navigate = useStickyNavigate();
   const [searchParams] = useSearchParams();
   const debugMode = searchParams.has('debug');
+  const activeSessionIdRef = useRef<string | undefined>(id);
+  activeSessionIdRef.current = id;
+  // Route changes must win over in-flight streaming work. Wrapping
+  // session navigation in flushSync forces React Router's location
+  // update to commit immediately, after which the old session's
+  // SSE lifecycle is torn down (keyed off the route id) and stale
+  // work is cancelled instead of continuing to race the click.
+  const navigateToSession = useCallback((nextId: string) => {
+    flushSync(() => {
+      navigate(`/session/${nextId}`);
+    });
+  }, [navigate]);
   // Diagnostic instrumentation — gated on ?debug. Counts renders per
   // key so a runaway loop is visible in the console, and emits a
   // one-shot log whenever the URL :id flips so we can see exactly
@@ -296,6 +309,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     lastSessionHashRef,
     abortSignalRef: abortControllerRef,
     droppedMessageCountRef,
+    activeSessionIdRef,
   });
 
   // Stable refs for messages/parts — used by the ghost-injection effect
@@ -901,6 +915,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // else stays in the page so the SSE handler doesn't need to
   // know about composer / sidebar / palette concerns.
   const {
+    recentWorkEventAt,
     sseActive,
     sseReconnecting,
     sseReconnectAttempt,
@@ -909,7 +924,18 @@ export function SessionDetail({ id }: SessionDetailProps) {
     sseDebugEvents,
     setSseDebugEvents,
   } = useSessionSSE({
-    sessionId: session?.id,
+    // IMPORTANT: key the SSE lifecycle off the ROUTE id, not the
+    // currently-rendered session object. When the user clicks to a
+    // different session while the current one is still streaming,
+    // `session?.id` can lag behind the route for a render or two
+    // (the page still holds the old session snapshot until the
+    // session-change effect resets it). If SSE stays keyed to the old
+    // session object, its EventSource keeps delivering updates for the
+    // previous session after navigation has already started, and those
+    // writes race with / delay the route transition. Using the route
+    // id tears down the old EventSource immediately on click so stale
+    // session work is cancelled with navigation priority.
+    sessionId: id,
     directory: session?.directory,
     load,
     abortSignalRef: abortControllerRef,
@@ -925,6 +951,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     setPendingQuestion,
     setSubagentTokens,
     setChangesDirtyTick,
+    activeSessionIdRef,
   });
 
   // Compute aggregate token/cost stats from the messages array so the header
@@ -1197,12 +1224,12 @@ export function SessionDetail({ id }: SessionDetailProps) {
         },
         { directory, title },
       );
-      if (res.id) navigate(`/session/${res.id}`);
+      if (res.id) navigateToSession(res.id);
     } catch (e) {
       console.error('Failed to create session', e);
       setShowCreateSessionErrorToast(true);
     }
-  }, [createSession, launchOpencodeInTmux, tmux.available, navigate]);
+  }, [createSession, launchOpencodeInTmux, tmux.available, navigateToSession]);
 
   const handleNewSession = useCallback(async (title?: string) => {
     if (!session) return;
@@ -1224,7 +1251,13 @@ export function SessionDetail({ id }: SessionDetailProps) {
         console.error('Failed to archive session', e);
         return;
       }
-      navigate(nextSession ? `/session/${nextSession.id}` : '/');
+      if (nextSession) {
+        navigateToSession(nextSession.id);
+      } else {
+        flushSync(() => {
+          navigate('/');
+        });
+      }
       return;
     }
 
@@ -1277,7 +1310,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
       } catch (e) {
         console.error('Failed to archive session', e);
       }
-      if (newId) navigate(`/session/${newId}`);
+      if (newId) navigateToSession(newId);
       return;
     }
 
@@ -1429,8 +1462,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
     const currentIndex = sessions.findIndex((s) => s.id === id);
     if (currentIndex === -1) return;
     const target = sessions[currentIndex + direction];
-    if (target) navigate(`/session/${target.id}`);
-  }, [id, navigate, recentSessionsRef]);
+    if (target) navigateToSession(target.id);
+  }, [id, navigateToSession, recentSessionsRef]);
 
   // Keep the page-level refs that the palette dispatcher reads.
   // They mirror values used by both the dispatcher and (indirectly,
@@ -1507,6 +1540,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     setSubagentTokens,
     sessionStatus: session?.status,
     awaitingAssistantResponse,
+    recentWorkEventAt,
     isRunning,
     pendingPermission,
     pendingQuestion,
@@ -1722,7 +1756,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                         at: performance.now(),
                       });
                     }
-                    navigate(`/session/${sib.id}`);
+                    navigateToSession(sib.id);
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
@@ -1734,7 +1768,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                           at: performance.now(),
                         });
                       }
-                      navigate(`/session/${sib.id}`);
+                      navigateToSession(sib.id);
                     }
                   }}
                 >

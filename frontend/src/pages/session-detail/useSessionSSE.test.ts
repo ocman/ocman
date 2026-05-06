@@ -75,6 +75,7 @@ function makeOptions(sessionId: string | undefined) {
     const loadErrorRef = useRef<string | null>(null);
     const debugModeRef = useRef<boolean>(false);
     const subagentSessionIdsRef = useRef<Set<string>>(new Set());
+    const activeSessionIdRef = useRef<string | undefined>(sessionId);
     return {
       sessionId,
       directory: '/tmp/x',
@@ -83,6 +84,7 @@ function makeOptions(sessionId: string | undefined) {
       loadErrorRef,
       debugModeRef,
       subagentSessionIdsRef,
+      activeSessionIdRef,
       setMessages: noop,
       setParts: noop,
       setSession: noop,
@@ -282,15 +284,16 @@ describe('useSessionSSE reconnect behaviour', () => {
 });
 
 describe('useSessionSSE activity tracking', () => {
-  it('marks the parent session busy and records activity for a tool part update', () => {
+  it('records activity for a tool part update', () => {
     const stableLoad = vi.fn(async () => {});
     const setSession = vi.fn();
     const noop = vi.fn();
-    renderHook(() => {
+    const { result } = renderHook(() => {
       const abortRef = useRef<AbortController | null>(null);
       const loadErrorRef = useRef<string | null>(null);
       const debugModeRef = useRef(false);
       const subagentSessionIdsRef = useRef<Set<string>>(new Set());
+      const activeSessionIdRef = useRef<string | undefined>('s1');
       return useSessionSSE({
         sessionId: 's1',
         directory: '/tmp/x',
@@ -299,6 +302,7 @@ describe('useSessionSSE activity tracking', () => {
         loadErrorRef,
         debugModeRef,
         subagentSessionIdsRef,
+        activeSessionIdRef,
         setMessages: noop,
         setParts: noop,
         setSession,
@@ -326,19 +330,19 @@ describe('useSessionSSE activity tracking', () => {
       });
     });
 
-    const updater = setSession.mock.calls[0]?.[0] as ((prev: { status: string } | null) => { status: string } | null) | undefined;
-    expect(updater?.({ status: 'waiting' } as never)).toMatchObject({ status: 'busy' });
+    expect(result.current.recentWorkEventAt).not.toBeNull();
   });
 
   it('treats subagent message events as parent-session activity', () => {
     const stableLoad = vi.fn(async () => {});
     const setSession = vi.fn();
     const noop = vi.fn();
-    renderHook(() => {
+    const { result } = renderHook(() => {
       const abortRef = useRef<AbortController | null>(null);
       const loadErrorRef = useRef<string | null>(null);
       const debugModeRef = useRef(false);
       const subagentSessionIdsRef = useRef<Set<string>>(new Set(['sub-1']));
+      const activeSessionIdRef = useRef<string | undefined>('s1');
       return useSessionSSE({
         sessionId: 's1',
         directory: '/tmp/x',
@@ -347,6 +351,7 @@ describe('useSessionSSE activity tracking', () => {
         loadErrorRef,
         debugModeRef,
         subagentSessionIdsRef,
+        activeSessionIdRef,
         setMessages: noop,
         setParts: noop,
         setSession,
@@ -375,7 +380,50 @@ describe('useSessionSSE activity tracking', () => {
       });
     });
 
-    const updater = setSession.mock.calls[0]?.[0] as ((prev: { status: string } | null) => { status: string } | null) | undefined;
-    expect(updater?.({ status: 'waiting' } as never)).toMatchObject({ status: 'busy' });
+    expect(result.current.recentWorkEventAt).not.toBeNull();
+  });
+
+  it('does not treat prompt bookkeeping alone as work activity', () => {
+    const stableLoad = vi.fn(async () => {});
+    const noop = vi.fn();
+    const { result } = renderHook(() => {
+      const abortRef = useRef<AbortController | null>(null);
+      const loadErrorRef = useRef<string | null>(null);
+      const debugModeRef = useRef(false);
+      const subagentSessionIdsRef = useRef<Set<string>>(new Set());
+      const activeSessionIdRef = useRef<string | undefined>('s1');
+      return useSessionSSE({
+        sessionId: 's1',
+        directory: '/tmp/x',
+        load: stableLoad,
+        abortSignalRef: abortRef,
+        loadErrorRef,
+        debugModeRef,
+        subagentSessionIdsRef,
+        activeSessionIdRef,
+        setMessages: noop,
+        setParts: noop,
+        setSession: noop,
+        setPortAvailable: noop,
+        setPendingPermission: noop,
+        setPermissionError: noop,
+        setPendingQuestion: noop,
+        setSubagentTokens: noop,
+        setChangesDirtyTick: noop,
+      });
+    });
+
+    act(() => {
+      EventSourceStub.instances[0].triggerMessage({
+        type: 'question.asked',
+        properties: {
+          sessionID: 's1',
+          id: 'q1',
+          text: 'Continue?',
+        },
+      });
+    });
+
+    expect(result.current.recentWorkEventAt).toBeNull();
   });
 });

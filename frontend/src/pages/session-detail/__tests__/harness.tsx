@@ -136,9 +136,13 @@ export function fullCaps(): PlatformCapabilities {
 const mockState: {
   caps: PlatformCapabilities;
   apiStub: ReturnType<typeof makeApiStub>;
+  assistantThreadCrashMessage: string | null;
+  assistantThreadCrashCount: number;
 } = {
   caps: fullCaps(),
   apiStub: makeApiStub(),
+  assistantThreadCrashMessage: null,
+  assistantThreadCrashCount: 0,
 };
 
 /**
@@ -253,6 +257,22 @@ vi.mock('../../../lib/useToastNotify', () => ({
   notifyPromptDismissed: vi.fn(),
 }));
 
+vi.mock('../../../components/AssistantThread', () => ({
+  AssistantThread: ({ composer, footer }: { composer?: React.ReactNode; footer?: React.ReactNode }) => {
+    if (mockState.assistantThreadCrashCount > 0) {
+      mockState.assistantThreadCrashCount -= 1;
+      throw new Error(mockState.assistantThreadCrashMessage ?? 'mock AssistantThread crash');
+    }
+
+    return (
+      <div data-testid="assistant-thread">
+        <div data-testid="assistant-thread-composer">{composer}</div>
+        <div data-testid="assistant-thread-footer">{footer}</div>
+      </div>
+    );
+  },
+}));
+
 // Eagerly import the page + apiStore once. Subsequent test calls
 // reuse the cached modules instead of paying re-import cost.
 import { SessionDetail } from '../SessionDetail';
@@ -326,6 +346,8 @@ export interface RenderOptions {
   detail?: SessionDetailPayload;
   sessions?: Session[];
   caps?: PlatformCapabilities;
+  assistantThreadCrashMessage?: string;
+  assistantThreadCrashCount?: number;
   /** Override apiStore actions individually. */
   storeOverrides?: Record<string, unknown>;
 }
@@ -371,6 +393,8 @@ export function renderSessionPage(opts: RenderOptions = {}): RenderHandle {
   // proxy installed in vi.mock('../../../lib/api') above.
   mockState.caps = opts.caps ?? fullCaps();
   mockState.apiStub = makeApiStub();
+  mockState.assistantThreadCrashMessage = opts.assistantThreadCrashMessage ?? null;
+  mockState.assistantThreadCrashCount = opts.assistantThreadCrashCount ?? 0;
 
   const detail =
     opts.detail ?? makeSessionDetail(makeSession({ id: opts.sessionId ?? 'sess_1' }));

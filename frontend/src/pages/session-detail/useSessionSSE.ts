@@ -67,9 +67,18 @@ export interface UseSessionSSEOptions {
   setPendingQuestion: Dispatch<SetStateAction<PendingQuestion | null>>;
   setSubagentTokens: Dispatch<SetStateAction<SubagentTokenMap>>;
   setChangesDirtyTick: Dispatch<SetStateAction<number>>;
+  /** Current route session id. Async callbacks must still belong to
+   *  this id before mutating page state. */
+  activeSessionIdRef: MutableRefObject<string | undefined>;
 }
 
 export interface UseSessionSSEResult {
+  /**
+   * Epoch-ms timestamp of the most recent work-producing event for
+   * the session tree (current session + bubbled subagent activity),
+   * or `null` when none has landed since connect/reset.
+   */
+  recentWorkEventAt: number | null;
   /** True while the SSE EventSource reports `OPEN`. The composer
    *  uses this to surface a "reconnecting…" pill when SSE drops
    *  even though portAvailable stayed true. */
@@ -143,6 +152,7 @@ export function useSessionSSE({
   setPendingQuestion,
   setSubagentTokens,
   setChangesDirtyTick,
+  activeSessionIdRef,
 }: UseSessionSSEOptions): UseSessionSSEResult {
   trackRender('useSessionSSE', { sessionId });
   const listPermissions = useApiStore((s) => s.listPermissions);
@@ -153,6 +163,8 @@ export function useSessionSSE({
   const [sseReconnectAttempt, setSseReconnectAttempt] = useState(0);
   const [sseNextRetryAt, setSseNextRetryAt] = useState<number | null>(null);
   const [sseDebugEvents, setSseDebugEvents] = useState<SseDebugEvent[]>([]);
+  const [recentWorkEventAt, setRecentWorkEventAt] = useState<number | null>(null);
+  const recentWorkEventBumpRef = useRef<number>(0);
 
   // The effect installs its imperative "reconnect right now" handle
   // here so the public `retryNow` callback can reach across the
@@ -174,18 +186,19 @@ export function useSessionSSE({
     // React state because both `onerror` and `retryNow` need to read
     // and mutate it synchronously without waiting for a re-render.
     let attempt = 0;
+    const isCurrentSession = () => !cancelled && activeSessionIdRef.current === sid;
 
     const loadNow = () => {
-      if (cancelled) return;
+      if (!isCurrentSession()) return;
       const signal = abortSignalRef.current?.signal;
       load(signal);
     };
-    const markSessionBusy = () => {
-      setSession((prev) => {
-        if (!prev) return prev;
-        if (prev.status === 'busy' || prev.status === 'error') return prev;
-        return { ...prev, status: 'busy' };
-      });
+    const WORK_BUMP_THROTTLE_MS = 100;
+    const bumpRecentWorkEventAt = () => {
+      const now = Date.now();
+      if (now - recentWorkEventBumpRef.current < WORK_BUMP_THROTTLE_MS) return;
+      recentWorkEventBumpRef.current = now;
+      setRecentWorkEventAt(now);
     };
 
     // Coalesces `message.part.delta` events into one setParts call
@@ -253,6 +266,7 @@ export function useSessionSSE({
       if (cancelled) return;
       evtSource = new EventSource(`/api/session/${encodeURIComponent(sid)}/events`);
       evtSource.onopen = () => {
+        if (!isCurrentSession()) return;
         setSseActive(true);
         // Successful (re)connect: clear all reconnect bookkeeping so
         // the indicator disappears and the next disconnect starts a
@@ -268,7 +282,7 @@ export function useSessionSSE({
         // permissions need to be retrieved explicitly so the dialog
         // shows immediately.
         listPermissions(sid).then((perms) => {
-          if (cancelled) return;
+          if (!isCurrentSession()) return;
           for (const p of perms) {
             const perm = extractPendingPermission({ type: 'permission.asked', properties: p });
             if (!perm) continue;
@@ -281,7 +295,7 @@ export function useSessionSSE({
           }
         }).catch(() => { /* ignore — SSE will deliver live permissions */ });
         listQuestions(sid).then((questions) => {
-          if (cancelled) return;
+          if (!isCurrentSession()) return;
           for (const q of questions) {
             const question = extractPendingQuestion({ type: 'question.asked', properties: q });
             if (!question) continue;
@@ -298,7 +312,7 @@ export function useSessionSSE({
         // arrived. In the happy path the initial load is
         // authoritative and SSE takes over for live updates.
         setTimeout(() => {
-          if (cancelled || hasReceivedContentEvent) return;
+          if (!isCurrentSession() || hasReceivedContentEvent) return;
           if (!loadErrorRef.current) return;
           const signal = abortSignalRef.current?.signal;
           load(signal);
@@ -312,6 +326,7 @@ export function useSessionSSE({
         hasConnectedOnce = true;
       };
       evtSource.onmessage = (evt) => {
+        if (!isCurrentSession()) return;
         const raw = evt.data || '';
         if (!raw || !raw.trim()) return;
 
@@ -345,9 +360,6 @@ export function useSessionSSE({
         const isSubagentEvent =
           !!evtSessionId && evtSessionId !== sid && subagentSessionIdsRef.current.has(evtSessionId);
         if (evtSessionId && evtSessionId !== sid) {
-          if (isSubagentEvent) {
-            markSessionBusy();
-          }
           // Capture token data from subagent sessions for the TPS
           // indicator. Track per-message tokens so we can sum
           // accurately across multiple assistant messages within a
@@ -372,6 +384,18 @@ export function useSessionSSE({
                 });
               }
             }
+            bumpRecentWorkEventAt();
+          }
+          if (isSubagentEvent && type === 'message.part.updated') bumpRecentWorkEventAt();
+          if (isSubagentEvent && type === 'message.part.delta') bumpRecentWorkEventAt();
+          if (isSubagentEvent && type === 'session.status') {
+            const statusObj = evtProps?.status as Record<string, unknown> | string | undefined;
+            const status = typeof statusObj === 'string'
+              ? statusObj
+              : (typeof statusObj === 'object' && statusObj !== null)
+                ? (statusObj.type as string | undefined)
+                : (evtProps?.status as string | undefined);
+            if (status === 'busy') bumpRecentWorkEventAt();
           }
           // Subagent prompt events bubble up to the parent session
           // UI so the user can answer them.
@@ -387,10 +411,6 @@ export function useSessionSSE({
           return;
         }
 
-        if (type !== 'session.idle' && !(type === 'session.status' && isSessionStatusIdle(parsed))) {
-          markSessionBusy();
-        }
-
         handleParsedEvent(parsed);
 
         // Apply content updates incrementally.
@@ -400,6 +420,7 @@ export function useSessionSSE({
           const extracted = extractMessageFromEvent(parsed, sid);
           if (extracted) {
             hasReceivedContentEvent = true;
+            if (extracted.message.data.role === 'assistant') bumpRecentWorkEventAt();
             setMessages((prev) => insertMessageByTime(prev, extracted.message));
             if (extracted.parts.length > 0) {
               setParts((prev) => mergeParts(prev, extracted.parts));
@@ -418,6 +439,7 @@ export function useSessionSSE({
           const extracted = extractMessageFromEvent(parsed, sid);
           if (extracted) {
             hasReceivedContentEvent = true;
+            if (extracted.message.data.role === 'assistant') bumpRecentWorkEventAt();
             setMessages((prev) => insertMessageByTime(prev, extracted.message));
             if (extracted.parts.length > 0) {
               setParts((prev) => mergeParts(prev, extracted.parts));
@@ -433,6 +455,7 @@ export function useSessionSSE({
             const info = props.info as Record<string, unknown> | undefined;
             if (info && info.id) {
               hasReceivedContentEvent = true;
+              if (info.role === 'assistant') bumpRecentWorkEventAt();
               const msgId = info.id as string;
               setMessages((prev) => {
                 const idx = prev.findIndex((m) => m.id === msgId);
@@ -475,6 +498,7 @@ export function useSessionSSE({
           const rawPart = props.part as Record<string, unknown> | undefined;
           if (rawPart && rawPart.id && rawPart.messageID) {
             hasReceivedContentEvent = true;
+            bumpRecentWorkEventAt();
             const partType = rawPart.type as string | undefined;
             if (partType !== 'step-start' && partType !== 'step-finish' && partType !== 'snapshot') {
               if (typeof rawPart.text === 'string') rawPart.text = truncatePartField(rawPart.text) as string;
@@ -514,6 +538,7 @@ export function useSessionSSE({
           const field = (props.field as string) || 'text';
           if (partId && messageId && deltaText) {
             hasReceivedContentEvent = true;
+            bumpRecentWorkEventAt();
             // Coalesce into the rAF-flushed buffer instead of calling
             // setParts synchronously. The user still sees each delta
             // on the very next frame; we just cap React commits at
@@ -570,6 +595,7 @@ export function useSessionSSE({
             const extracted = extractMessageFromEvent(parsed, sid);
             if (extracted) {
               hasReceivedContentEvent = true;
+              if (extracted.message.data.role === 'assistant') bumpRecentWorkEventAt();
               setMessages((prev) => insertMessageByTime(prev, extracted.message));
               if (extracted.parts.length > 0) {
                 setParts((prev) => mergeParts(prev, extracted.parts));
@@ -586,6 +612,7 @@ export function useSessionSSE({
               ? (statusObj.type as string | undefined)
               : (props.status as string | undefined);
           if (status === 'waiting' || status === 'busy' || status === 'done' || status === 'error' || status === 'idle') {
+            if (status === 'busy') bumpRecentWorkEventAt();
             const mapped = status === 'idle' ? 'done' : status;
             setSession((prev) => prev && prev.status !== mapped
               ? { ...prev, status: mapped as 'waiting' | 'busy' | 'done' | 'error' }
@@ -683,15 +710,18 @@ export function useSessionSSE({
       setSseReconnecting(false);
       setSseReconnectAttempt(0);
       setSseNextRetryAt(null);
+      setRecentWorkEventAt(null);
+      recentWorkEventBumpRef.current = 0;
     };
     // We deliberately keep the dep list narrow: `directory` and
     // `sessionId` re-open the stream on session swap; `load`,
     // `listPermissions`, `listQuestions` are stable function
     // references owned by the apiStore. Setters are stable too.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [_directory, sessionId, load, listPermissions, listQuestions]);
+  }, [_directory, sessionId, load, listPermissions, listQuestions, activeSessionIdRef]);
 
   return {
+    recentWorkEventAt,
     sseActive,
     sseReconnecting,
     sseReconnectAttempt,

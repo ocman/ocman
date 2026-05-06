@@ -36,6 +36,9 @@ export interface UseSessionMessagesOptions {
    *  (kept by SessionDetail for memory bounding). loadMore reads
    *  this so its offset accounts for trimmed messages. */
   droppedMessageCountRef: MutableRefObject<number>;
+  /** Current route session id. Async callbacks must still belong to
+   *  this id before mutating page state. */
+  activeSessionIdRef: MutableRefObject<string | undefined>;
 }
 
 export interface UseSessionMessagesResult {
@@ -82,6 +85,7 @@ export function useSessionMessages({
   lastSessionHashRef,
   abortSignalRef,
   droppedMessageCountRef,
+  activeSessionIdRef,
 }: UseSessionMessagesOptions): UseSessionMessagesResult {
   trackRender('useSessionMessages', { id });
   const getSession = useApiStore((s) => s.getSession);
@@ -107,7 +111,7 @@ export function useSessionMessages({
     if (!id) return;
     try {
       const result = await getSession(id, PAGE_SIZE, 0, signal);
-      if (signal?.aborted) return;
+      if (signal?.aborted || activeSessionIdRef.current !== id) return;
 
       // Only push session metadata if it actually changed.
       const sessionData: SessionWithDefaults = {
@@ -157,11 +161,12 @@ export function useSessionMessages({
       setLoadError(null);
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return;
+      if (activeSessionIdRef.current !== id) return;
       console.error('Failed to load session', e);
       setLoadError(e instanceof Error ? e.message : 'Failed to load session');
     }
-    setLoading(false);
-  }, [getSession, id, setCachedSession, setSession, lastSessionHashRef]);
+    if (activeSessionIdRef.current === id) setLoading(false);
+  }, [activeSessionIdRef, getSession, id, setCachedSession, setSession, lastSessionHashRef]);
 
   // Load older messages (prepend). Offset accounts for any messages
   // already trimmed from the head via the memory bound.
@@ -176,7 +181,7 @@ export function useSessionMessages({
         messages.length + droppedMessageCountRef.current,
         signal,
       );
-      if (signal?.aborted) return;
+      if (signal?.aborted || activeSessionIdRef.current !== id) return;
       const newMsgs = result.messages || [];
       const newParts = result.parts || [];
       if (newMsgs.length) {
@@ -195,9 +200,9 @@ export function useSessionMessages({
       if (e instanceof DOMException && e.name === 'AbortError') return;
       throw e;
     } finally {
-      setLoadingMore(false);
+      if (activeSessionIdRef.current === id) setLoadingMore(false);
     }
-  }, [getSession, id, messages.length, loadingMore, abortSignalRef, droppedMessageCountRef]);
+  }, [activeSessionIdRef, getSession, id, messages.length, loadingMore, abortSignalRef, droppedMessageCountRef]);
 
   return {
     messages,

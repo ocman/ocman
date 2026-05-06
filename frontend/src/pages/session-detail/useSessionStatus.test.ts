@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import type { Message } from '../../lib/api';
 import { useSessionStatus } from './useSessionStatus';
 import type { SubagentTokenMap } from './useSubagentTracking';
@@ -61,6 +61,7 @@ interface HookProps {
   subagentTokens: SubagentTokenMap;
   sessionStatus?: 'busy' | 'waiting' | 'done' | 'error';
   awaitingAssistantResponse?: boolean;
+  recentWorkEventAt?: number | null;
   isRunning: boolean;
   pendingPermission: null;
   pendingQuestion: null;
@@ -77,6 +78,7 @@ function buildHook(initial: HookProps) {
         setSubagentTokens: (next) => setSubagentTokens(next),
         sessionStatus: props.sessionStatus,
         awaitingAssistantResponse: props.awaitingAssistantResponse,
+        recentWorkEventAt: props.recentWorkEventAt ?? null,
         isRunning: props.isRunning,
         pendingPermission: props.pendingPermission,
         pendingQuestion: props.pendingQuestion,
@@ -208,5 +210,86 @@ describe('useSessionStatus', () => {
 
     expect(result.current.rawOptimisticStatus).toBe('busy');
     expect(result.current.optimisticStatus).toBe('busy');
+  });
+
+  it('treats recent work events as busy during tool/subagent gaps', () => {
+    const t0 = Date.now();
+    const messages: Message[] = [
+      userMessage('u1', t0 - 5_000),
+      finishedAssistantMessage('a1', t0 - 1_000),
+    ];
+
+    const { result } = buildHook({
+      lastMsg: messages[messages.length - 1],
+      messages,
+      subagentTokens: new Map(),
+      sessionStatus: 'waiting',
+      awaitingAssistantResponse: false,
+      recentWorkEventAt: t0 - 100,
+      isRunning: true,
+      pendingPermission: null,
+      pendingQuestion: null,
+    });
+
+    expect(result.current.rawOptimisticStatus).toBe('busy');
+    expect(result.current.optimisticStatus).toBe('busy');
+  });
+
+  it('shows done immediately for an old finished conversation when session status is done', () => {
+    const t0 = Date.now();
+    const messages: Message[] = [
+      userMessage('u1', t0 - 20_000),
+      finishedAssistantMessage('a1', t0 - 19_000),
+    ];
+
+    const { result } = buildHook({
+      lastMsg: messages[messages.length - 1],
+      messages,
+      subagentTokens: new Map(),
+      sessionStatus: 'done',
+      awaitingAssistantResponse: false,
+      recentWorkEventAt: null,
+      isRunning: false,
+      pendingPermission: null,
+      pendingQuestion: null,
+    });
+
+    expect(result.current.rawOptimisticStatus).toBe('done');
+    expect(result.current.optimisticStatus).toBe('done');
+  });
+
+  it('drops back to waiting when the work-event window expires', () => {
+    const t0 = Date.now();
+    const messages: Message[] = [
+      userMessage('u1', t0 - 5_000),
+      finishedAssistantMessage('a1', t0 - 1_000),
+    ];
+
+    const { result } = buildHook({
+      lastMsg: messages[messages.length - 1],
+      messages,
+      subagentTokens: new Map(),
+      sessionStatus: 'waiting',
+      awaitingAssistantResponse: false,
+      recentWorkEventAt: t0,
+      isRunning: true,
+      pendingPermission: null,
+      pendingQuestion: null,
+    });
+
+    expect(result.current.rawOptimisticStatus).toBe('busy');
+
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+
+    expect(result.current.rawOptimisticStatus).toBe('waiting');
+    expect(result.current.optimisticStatus).toBe('busy');
+
+    act(() => {
+      vi.advanceTimersByTime(3_100);
+    });
+
+    expect(result.current.optimisticStatus).toBe('waiting');
   });
 });
