@@ -14,6 +14,7 @@ import { parseTodos } from '../lib/todos';
 import { TodoList } from './TodoList';
 import { useFailedSends } from '../lib/failedSendsContext';
 import { isMutedTool, isMutedLineTool } from '../lib/mutedTools';
+import { useStickyBottom } from '../lib/useStickyBottom';
 import {
   inferDiffLanguage,
   highlightDiffCode,
@@ -785,6 +786,16 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
     }
     wasLoadingRef.current = !!loadingMore;
   }, [loadingMore]);
+
+  // Companion auto-scroll. ThreadPrimitive.Viewport's built-in
+  // `autoScroll` decides "is at bottom" with a hardcoded 1px
+  // tolerance, which is too strict for streaming chats: the composer
+  // textarea growing or a code block reflowing during streaming
+  // routinely leaves the user a few pixels above the bottom, after
+  // which the library stops following new messages. useStickyBottom
+  // relaxes that to ~80px so the conversation keeps tracking the
+  // bottom while the user is "near" it. See lib/useStickyBottom.ts.
+  useStickyBottom(viewportRef);
 
   // Alt+H / Alt+L (Option+H / Option+L on Mac) jump between user messages in
   // the history. Alt+H: previous user message (up). Alt+L: next user message
