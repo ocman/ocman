@@ -25,6 +25,7 @@ import { storePendingQuestion, clearPendingQuestion } from './usePromptHandlers'
 import type { SessionWithDefaults } from '../../lib/sessionStatus';
 import type { SubagentTokenMap } from './useSubagentTracking';
 import { trackRender } from '../../lib/renderRateMonitor';
+import { createSseDeltaBuffer } from './sseDeltaBuffer';
 
 /** Single SSE event row in the debug overlay. */
 export interface SseDebugEvent {
@@ -143,6 +144,7 @@ export function useSessionSSE({
   setSubagentTokens,
   setChangesDirtyTick,
 }: UseSessionSSEOptions): UseSessionSSEResult {
+  trackRender('useSessionSSE', { sessionId });
   const listPermissions = useApiStore((s) => s.listPermissions);
   const listQuestions = useApiStore((s) => s.listQuestions);
 
@@ -178,6 +180,14 @@ export function useSessionSSE({
       const signal = abortSignalRef.current?.signal;
       load(signal);
     };
+
+    // Coalesces `message.part.delta` events into one setParts call
+    // per animation frame. This keeps the streaming UI live (each
+    // delta still paints on the very next frame) while capping the
+    // React commit frequency at the browser paint rate, which keeps
+    // user-initiated updates (clicks, navigation) responsive even
+    // while the wire is hot. See sseDeltaBuffer.ts for details.
+    const deltaBuffer = createSseDeltaBuffer(setParts);
 
     // Process a parsed SSE event: handle permission/question prompts
     // and clear stale prompts. Only triggers state updates when
@@ -311,6 +321,7 @@ export function useSessionSSE({
         } catch {
           return;
         }
+
 
         const type = (parsed.type as string) || '';
 
@@ -487,50 +498,18 @@ export function useSessionSSE({
           const field = (props.field as string) || 'text';
           if (partId && messageId && deltaText) {
             hasReceivedContentEvent = true;
-            setParts((prev) => {
-              const idx = prev.findIndex((p) => p.id === partId);
-              if (idx >= 0) {
-                const existing = prev[idx];
-                let existingData: Record<string, unknown>;
-                try {
-                  existingData = typeof existing.data === 'string'
-                    ? JSON.parse(existing.data) as Record<string, unknown>
-                    : existing.data as unknown as Record<string, unknown>;
-                } catch {
-                  existingData = {};
-                }
-                let updatedData: Record<string, unknown>;
-                const dotIdx = field.indexOf('.');
-                if (dotIdx > 0) {
-                  const parent = field.slice(0, dotIdx);
-                  const child = field.slice(dotIdx + 1);
-                  const parentObj = (existingData[parent] as Record<string, unknown> | undefined) || {};
-                  const currentVal = (parentObj[child] as string) || '';
-                  updatedData = {
-                    ...existingData,
-                    [parent]: { ...parentObj, [child]: currentVal + deltaText },
-                  };
-                } else {
-                  const currentVal = (existingData[field] as string) || '';
-                  updatedData = { ...existingData, [field]: currentVal + deltaText };
-                }
-                const updated = [...prev];
-                updated[idx] = {
-                  ...existing,
-                  data: updatedData as unknown as string,
-                };
-                return updated;
-              }
-              // Part doesn't exist yet — create it with the delta as
-              // initial content. Happens when the message.part.updated
-              // for text-start hasn't arrived yet.
-              const newPart: Part = {
-                id: partId,
-                messageId,
-                sessionId: (props.sessionID as string) || sid,
-                data: { type: 'text', [field]: deltaText } as unknown as string,
-              };
-              return [...prev, newPart];
+            // Coalesce into the rAF-flushed buffer instead of calling
+            // setParts synchronously. The user still sees each delta
+            // on the very next frame; we just cap React commits at
+            // the browser's paint rate so the scheduler isn't
+            // saturated when deltas arrive faster than the browser
+            // can paint.
+            deltaBuffer.enqueue({
+              partId,
+              messageId,
+              sessionId: (props.sessionID as string) || sid,
+              field,
+              delta: deltaText,
             });
           }
         }
@@ -678,6 +657,12 @@ export function useSessionSSE({
       if (reconnectTimer) clearTimeout(reconnectTimer);
       clearInterval(fallback);
       retryNowRef.current = null;
+      // Flush any deltas that arrived between the last paint and the
+      // teardown so the user sees the final tokens of the previous
+      // session before we tear down. `flush()` is a no-op if there's
+      // nothing pending, so this is safe.
+      deltaBuffer.flush();
+      deltaBuffer.cancel();
       setSseActive(false);
       setSseReconnecting(false);
       setSseReconnectAttempt(0);

@@ -17,7 +17,7 @@
 
 import { vi } from 'vitest';
 import { render, type RenderResult } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
 import type {
   Session,
   SessionDetail as SessionDetailPayload,
@@ -258,6 +258,20 @@ vi.mock('../../../lib/useToastNotify', () => ({
 import { SessionDetail } from '../SessionDetail';
 import { useApiStore } from '../../../lib/apiStore';
 
+/**
+ * Adapter that reads the URL :id and forwards it as a prop to the
+ * inner SessionDetail. Mirrors the production wrapper in
+ * `../index.tsx` so tests exercise the inner component the same way
+ * the app does. The eslint disable is for `react-refresh/only-export-
+ * components`, which doesn't apply to test harness files anyway —
+ * Vite's HMR never touches __tests__/.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+function SessionDetailRouteAdapter() {
+  const { id } = useParams<{ id: string }>();
+  return <SessionDetail id={id} />;
+}
+
 /** Build a Session fixture with sensible defaults. */
 export function makeSession(overrides: Partial<Session> = {}): Session {
   const now = Date.now();
@@ -390,10 +404,14 @@ export function renderSessionPage(opts: RenderOptions = {}): RenderHandle {
   } as unknown as Parameters<typeof useApiStore.setState>[0]);
 
   const sessionId = opts.sessionId ?? detail.session.id;
+  // Mirror what `pages/session-detail/index.tsx` does in production:
+  // read the :id from useParams and pass it to the inner component
+  // as a prop. Tests target the inner component directly so they
+  // exercise its behaviour without the param-propagation indirection.
   const result = render(
     <MemoryRouter initialEntries={[`/session/${sessionId}`]}>
       <Routes>
-        <Route path="/session/:id" element={<SessionDetail />} />
+        <Route path="/session/:id" element={<SessionDetailRouteAdapter />} />
       </Routes>
     </MemoryRouter>,
   );

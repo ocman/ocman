@@ -83,13 +83,36 @@ export function useStickyBottom(
       stickyRef.current = nextSticky;
     };
 
-    const onContentChange = () => {
-      const { nextSticky, scroll } = decideStickyAction({
-        isNear: isNearBottom(metrics(), threshold),
-        kind: 'content',
+    // rAF-coalesced content-change handler.
+    //
+    // The Mutation/ResizeObservers below fire on every DOM mutation
+    // inside the viewport — and during streaming (~30 deltas/sec)
+    // that means dozens of synchronous handler invocations per
+    // second. Each invocation reads `scrollTop` / `scrollHeight` /
+    // `clientHeight`, which forces the browser to flush layout. A
+    // forced layout takes a few ms each but it BLOCKS the main
+    // thread, including click event dispatch — which manifests as
+    // "navigation only happens when the LLM finishes a complete
+    // block" because that's when streaming tokens pause briefly and
+    // the click handler finally gets to run.
+    //
+    // Coalesce all mutations within a frame into one layout read by
+    // queuing the work into a rAF. A single rAF callback per
+    // animation frame is the canonical pattern for "react to DOM
+    // changes without spamming layout" — the browser already
+    // batches paint work at this granularity.
+    let rafHandle: number | null = null;
+    const scheduleContentCheck = () => {
+      if (rafHandle !== null) return;
+      rafHandle = requestAnimationFrame(() => {
+        rafHandle = null;
+        const { nextSticky, scroll } = decideStickyAction({
+          isNear: isNearBottom(metrics(), threshold),
+          kind: 'content',
+        });
+        stickyRef.current = nextSticky;
+        if (scroll) scrollToBottom();
       });
-      stickyRef.current = nextSticky;
-      if (scroll) scrollToBottom();
     };
 
     el.addEventListener('scroll', onUserScroll, { passive: true });
@@ -98,8 +121,9 @@ export function useStickyBottom(
     // size changes (images decoding, code blocks reflowing, composer
     // resizing). We mirror the library's own observation surface so
     // we react to the same events at the same time — just with a
-    // looser at-bottom check.
-    const resizeObserver = new ResizeObserver(onContentChange);
+    // looser at-bottom check, and rAF-coalesced so we read layout at
+    // most once per paint.
+    const resizeObserver = new ResizeObserver(scheduleContentCheck);
     resizeObserver.observe(el);
 
     const mutationObserver = new MutationObserver((mutations) => {
@@ -110,7 +134,7 @@ export function useStickyBottom(
       const hasRelevantMutation = mutations.some(
         (m) => m.type !== 'attributes' || m.attributeName !== 'style',
       );
-      if (hasRelevantMutation) onContentChange();
+      if (hasRelevantMutation) scheduleContentCheck();
     });
     mutationObserver.observe(el, {
       childList: true,
@@ -123,6 +147,7 @@ export function useStickyBottom(
       el.removeEventListener('scroll', onUserScroll);
       resizeObserver.disconnect();
       mutationObserver.disconnect();
+      if (rafHandle !== null) cancelAnimationFrame(rafHandle);
     };
     // viewportRef is stable across renders; threshold is a number so
     // re-running on change is cheap and correct.

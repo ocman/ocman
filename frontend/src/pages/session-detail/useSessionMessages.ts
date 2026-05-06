@@ -4,6 +4,7 @@ import type { Message, Part, SessionDetail } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
 import { hashMessagesAndParts, hashSession } from '../../lib/sessionHash';
 import { mergeParts } from '../../lib/sseMessageHelpers';
+import { trackRender } from '../../lib/renderRateMonitor';
 
 /** How many messages we request per `getSession` call. */
 const PAGE_SIZE = 30;
@@ -82,6 +83,7 @@ export function useSessionMessages({
   abortSignalRef,
   droppedMessageCountRef,
 }: UseSessionMessagesOptions): UseSessionMessagesResult {
+  trackRender('useSessionMessages', { id });
   const getSession = useApiStore((s) => s.getSession);
   const setCachedSession = useApiStore((s) => s.setCachedSession);
 

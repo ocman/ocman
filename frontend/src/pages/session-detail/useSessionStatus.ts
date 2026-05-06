@@ -6,6 +6,7 @@ import { useSyncRef } from '../../lib/useSyncRef';
 import type { PendingPermission } from '../../lib/sseHelpers';
 import type { PendingQuestion } from '../../components/session/QuestionPrompt';
 import type { SubagentTokenMap } from './useSubagentTracking';
+import { trackRender } from '../../lib/renderRateMonitor';
 
 /**
  * How long to keep the session marked `busy` after the underlying
@@ -73,6 +74,7 @@ export function useSessionStatus({
   pendingPermission,
   pendingQuestion,
 }: UseSessionStatusOptions): UseSessionStatusResult {
+  trackRender('useSessionStatus', { isRunning, lastMsgId: lastMsg?.id });
   // Raw status derived from the last message — may flicker between
   // "busy" and "waiting" during tool-call turn boundaries when the
   // agent finishes one turn and immediately starts another.

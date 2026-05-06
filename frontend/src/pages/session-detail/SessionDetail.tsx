@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
+import { useStickyNavigate } from '../../lib/useStickyNavigate';
 import * as Toast from '@radix-ui/react-toast';
 import './SessionDetail.css';
 import { api, type Session, type Message, type Part, type SessionDetail } from '../../lib/api';
@@ -65,6 +66,7 @@ import { useSessionShortcuts } from './useSessionShortcuts';
 import { useSessionSSE } from './useSessionSSE';
 import { SseStatusIndicator } from './SseStatusIndicator';
 import { trackRender, logChange } from '../../lib/renderRateMonitor';
+import { remoteLog } from '../../lib/remoteLog';
 
 const MAX_RETAINED_MESSAGES = 200;
 const TRIMMED_RETAINED_MESSAGES = 150;
@@ -202,9 +204,27 @@ const SessionToasts = memo(function SessionToasts({
   );
 });
 
-export function SessionDetail() {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
+/**
+ * Props for the inner SessionDetail component.
+ *
+ * `id` is threaded in from the wrapper in `./index.tsx` rather than
+ * being read via `useParams()` here. Bypassing the param subscription
+ * forces a re-render whenever the URL changes — function-component
+ * identity equality only short-circuits when ALL inputs are equal,
+ * so a new id prop guarantees React schedules an update even if
+ * react-router's context propagation is contended (which we have
+ * observed in practice under sustained SSE activity).
+ */
+export interface SessionDetailProps {
+  id: string | undefined;
+}
+
+export function SessionDetail({ id }: SessionDetailProps) {
+  // Use the sticky-navigate wrapper so diagnostic flags like ?debug
+  // survive when the user clicks across sessions. Without this the
+  // search string gets dropped on the first navigation and the
+  // remoteLog instrumentation silently turns off.
+  const navigate = useStickyNavigate();
   const [searchParams] = useSearchParams();
   const debugMode = searchParams.has('debug');
   // Diagnostic instrumentation — gated on ?debug. Counts renders per
@@ -214,6 +234,14 @@ export function SessionDetail() {
   // the URL changed but the page never re-rendered with the new id).
   trackRender('SessionDetail', { id });
   logChange('SessionDetail.id', id);
+  // RENDER-LOOP DIAGNOSTICS — these `logChange` calls fire only when
+  // the value differs from the previous one observed. They cost ~1
+  // Map.get + 1 cmp per render in production (?debug not set →
+  // returns early); under ?debug they emit one remoteLog line per
+  // actual transition. The point is to identify which piece of
+  // state is flipping at 10-30 Hz when the parent loop kicks in:
+  // keys that flip frequently in the air log are the culprit.
+  // Remove once the loop is fixed.
   const debugModeRef = useRef(debugMode);
   debugModeRef.current = debugMode;
   // Read the cache once at mount time via getState() — we want a snapshot
@@ -330,6 +358,21 @@ export function SessionDetail() {
   const { setInfo } = useHeaderInfo();
   usePageTitle(cleanTitle(session?.title) || 'Session');
 
+  // Render-loop diagnostics — scalar-only versions to keep the
+  // air log payloads small. Each line logs only when the value
+  // actually differs from the previous render. The `.ref` checks
+  // we used to log were producing multi-KB JSON dumps per change;
+  // tracking the *length* (or status) is enough to identify which
+  // setState is firing.
+  logChange('SessionDetail.session.id', session?.id);
+  logChange('SessionDetail.session.status', session?.status);
+  logChange('SessionDetail.messages.len', messages.length);
+  logChange('SessionDetail.parts.len', parts.length);
+  logChange('SessionDetail.loading', loading);
+  logChange('SessionDetail.switching', switching);
+  logChange('SessionDetail.subagentTokens.size', subagentTokens?.size);
+  logChange('SessionDetail.taskLiveOutput.keys', taskLiveOutput ? Object.keys(taskLiveOutput).length : 0);
+
   // Sidebar polling, archive/pin handlers, archived-toggle, and the
   // collapsed-projects fold-out. The hook owns recentSessions; the
   // page-level cross-cutting effects (status mirror, permission
@@ -356,6 +399,7 @@ export function SessionDetail() {
     abortSignalRef: abortControllerRef,
     navigate,
   });
+  logChange('SessionDetail.recentSessions.len', recentSessions.length);
 
   // Git info for sibling rows. Was populated by the backend's
   // /api/sessions handler via a synchronous fork-fan-out of
@@ -765,7 +809,13 @@ export function SessionDetail() {
   // If the sidebar discovers a prompt that the detail view doesn't
   // know about (e.g. SSE event was missed), trigger a fetch of the
   // actual permission/question data so the prompt dialog appears.
-  const sidebarCurrentSession = recentSessions.find(s => s.id === id);
+  // Memoise the active row lookup so derived booleans below keep
+  // a stable reference when recentSessions identity changes but
+  // the row in question hasn't.
+  const sidebarCurrentSession = useMemo(
+    () => recentSessions.find(s => s.id === id),
+    [recentSessions, id],
+  );
   const sidebarHasPerm = sidebarCurrentSession?.pendingPermission ?? false;
   const sidebarHasQuestion = sidebarCurrentSession?.pendingQuestion ?? false;
   useEffect(() => {
@@ -876,8 +926,19 @@ export function SessionDetail() {
   // Use the larger of server-provided totals and locally-computed totals.
   // The server value covers all messages including paginated-out ones;
   // the local value picks up incremental SSE updates before the next load().
-  const liveTokens = computeLiveTokens(messages);
-  const tokenStats = mergeTokenStats(session, liveTokens);
+  // Memoise per-message walks so they don't re-execute on every
+  // SSE-driven re-render. With messages.length around 200 and ~10–30
+  // renders/sec during streaming we'd otherwise burn thousands of
+  // array iterations per second on these three helpers; the work
+  // is unchanged on stable input but skipped when the dep tuple
+  // hasn't changed identity. `messages` is a fresh array reference
+  // on every meaningful update from useSessionMessages, so the
+  // memo invalidates exactly once per real change.
+  const liveTokens = useMemo(() => computeLiveTokens(messages), [messages]);
+  const tokenStats = useMemo(
+    () => mergeTokenStats(session, liveTokens),
+    [session, liveTokens],
+  );
 
   // Header info: the breadcrumb shows the session title + a platform
   // badge; the right-hand slot holds the project path. The richer
@@ -900,7 +961,10 @@ export function SessionDetail() {
     return () => setInfo({});
   }, [session, setInfo]);
 
-  const { activeModel, activeAgent } = deriveActiveModelAndAgent(messages, session);
+  const { activeModel, activeAgent } = useMemo(
+    () => deriveActiveModelAndAgent(messages, session),
+    [messages, session],
+  );
 
   // Internal send that accepts an explicit tempId. Used by both the public
   // handleSend (fresh prompt) and handleRetrySend (replay of a previously
@@ -1343,7 +1407,13 @@ export function SessionDetail() {
 
   const hasMore = messages.length < totalMessages;
   const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
-  const composerModels = Array.from(new Set([activeModel, session?.defaultModel, ...modelOptions].filter((model): model is string => !!model)));
+  // Memoise the composer model list — a fresh Set + Array.from every
+  // render produced a new array reference that invalidated downstream
+  // memoised consumers (e.g. the composer's select options).
+  const composerModels = useMemo(
+    () => Array.from(new Set([activeModel, session?.defaultModel, ...modelOptions].filter((model): model is string => !!model))),
+    [activeModel, session?.defaultModel, modelOptions],
+  );
   const showSseNotice = portAvailable && !sseActive;
   const showSseDebug = debugMode && sseDebugEvents.length > 0;
 
@@ -1371,6 +1441,10 @@ export function SessionDetail() {
     pendingPermission,
     pendingQuestion,
   });
+  logChange('SessionDetail.optimisticStatus', optimisticStatus);
+  logChange('SessionDetail.liveTokensPerSecond', liveTokensPerSecond);
+  logChange('SessionDetail.isRunning', isRunning);
+  logChange('SessionDetail.lastMsg.id', lastMsg?.id);
 
   useEffect(() => {
     if (!id) return;
@@ -1570,8 +1644,29 @@ export function SessionDetail() {
                   tabIndex={0}
                   aria-selected={sib.id === id}
                   className={`session-sidebar-item ${sib.id === id ? 'active' : ''}${archivingSessionIds.has(sib.id) ? ' archiving' : ''}${inGroup ? ' in-group' : ''}`}
-                  onClick={() => navigate(`/session/${sib.id}`)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/session/${sib.id}`); } }}
+                  onClick={() => {
+                    if (debugMode) {
+                      remoteLog.info('[ocman:nav] sidebar click', {
+                        from: id,
+                        to: sib.id,
+                        at: performance.now(),
+                      });
+                    }
+                    navigate(`/session/${sib.id}`);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      if (debugMode) {
+                        remoteLog.info('[ocman:nav] sidebar key', {
+                          from: id,
+                          to: sib.id,
+                          at: performance.now(),
+                        });
+                      }
+                      navigate(`/session/${sib.id}`);
+                    }
+                  }}
                 >
                   <StatusBadge
                     status={displayStatus}

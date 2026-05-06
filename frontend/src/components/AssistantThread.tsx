@@ -15,6 +15,7 @@ import { TodoList } from './TodoList';
 import { useFailedSends } from '../lib/failedSendsContext';
 import { isMutedTool, isMutedLineTool } from '../lib/mutedTools';
 import { useStickyBottom } from '../lib/useStickyBottom';
+import { trackRender } from '../lib/renderRateMonitor';
 import {
   inferDiffLanguage,
   highlightDiffCode,
@@ -694,6 +695,7 @@ const ASSISTANT_PART_COMPONENTS = {
 const THREAD_MESSAGE_COMPONENTS = { UserMessage, AssistantMessage };
 
 export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, footer }: { hasMore?: boolean; loadingMore?: boolean; onLoadMore?: () => void; composer?: React.ReactNode; footer?: React.ReactNode }) {
+  trackRender('AssistantThread');
   const threadRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const hasMoreRef = useRef(hasMore);
