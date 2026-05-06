@@ -1,4 +1,4 @@
-.PHONY: dev dev-backend dev-frontend dev-prod dev-prod-watch kill-dev build run clean test test-backend test-frontend test-race test-fuzz test-coverage lint lint-backend lint-frontend lint-platform-branching otel-up otel-down otel-logs otel-reset help
+.PHONY: dev dev-backend dev-frontend dev-prod dev-prod-watch kill-dev build run clean test test-backend test-frontend test-e2e test-e2e-dev install-e2e-browsers test-race test-fuzz test-coverage lint lint-backend lint-frontend lint-platform-branching otel-up otel-down otel-logs otel-reset help
 
 # --- OTel dev defaults ----------------------------------------------------
 #
@@ -146,6 +146,20 @@ test-backend:
 
 test-frontend:
 	cd frontend && npm test
+
+# Run Playwright end-to-end tests. Build the frontend first so the
+# Playwright webServer can serve `vite preview` from a fresh dist/.
+test-e2e: ## Run Playwright end-to-end tests
+	cd frontend && npm run build && npm run test:e2e
+
+# Run Playwright against the Vite dev server (StrictMode, HMRless test run).
+# Use this when a regression reproduces only in local dev mode.
+test-e2e-dev: ## Run Playwright end-to-end tests against Vite dev mode
+	cd frontend && E2E_USE_DEV_SERVER=1 npm run test:e2e
+
+# Install Playwright browser binaries used by e2e tests.
+install-e2e-browsers: ## Install Playwright browser binaries
+	cd frontend && npx playwright install
 
 # Run Go tests with the race detector. Frontend tests are not race-detector
 # relevant so they're skipped here — run `make test` for the full suite.

@@ -15,6 +15,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:8228';
 const noWebServer = process.env.E2E_NO_WEBSERVER === '1';
+const useDevServer = process.env.E2E_USE_DEV_SERVER === '1';
 
 export default defineConfig({
   testDir: './e2e',
@@ -34,12 +35,18 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
+    {
+      name: 'webkit',
+      use: { ...devices['Desktop Safari'] },
+    },
   ],
 
   webServer: noWebServer
     ? undefined
     : {
-        command: 'npm run preview',
+        command: useDevServer
+          ? 'npm run dev -- --host 127.0.0.1 --port 8228'
+          : 'npm run preview',
         url: baseURL,
         reuseExistingServer: true,
         timeout: 30_000,
