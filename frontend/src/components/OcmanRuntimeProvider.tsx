@@ -10,7 +10,7 @@ import { useApiStore } from '../lib/apiStore';
 import { AgentsContext } from '../lib/agentColor';
 import { FailedSendsContext, type FailedSendsContextValue } from '../lib/failedSendsContext';
 import type { FailedSend } from '../lib/failedSends';
-import { convertMessages, computeIsRunning } from '../lib/convertMessages';
+import { computeIsRunning, createConvertMessages } from '../lib/convertMessages';
 
 interface Props {
   messages: Message[];
@@ -73,9 +73,21 @@ export function OcmanRuntimeProvider({
     dismiss: onDismissFailedSend ?? (() => {}),
   }), [failedById, onRetryFailedSend, onDismissFailedSend]);
 
+  // Per-instance converter: each session-detail page mounts its own
+  // OcmanRuntimeProvider, so the result-array cache and the
+  // `partsByMsg` memo live for the lifetime of THIS session's
+  // provider — never cross-contaminating across sessions. The
+  // closure is rebuilt on `sessionId` change so a stale cache can't
+  // survive a navigation between sessions sharing the same page
+  // mount. `sessionId` is in the dep list deliberately even though
+  // `createConvertMessages()` doesn't read it — the dep is the
+  // *trigger* that drops the previous closure.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- sessionId is the intentional cache-key trigger
+  const convert = useMemo(() => createConvertMessages(), [sessionId]);
+
   const converted = useMemo(
-    () => convertMessages(messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById),
-    [messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById],
+    () => convert(messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById),
+    [convert, messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById],
   );
 
   const isRunning = useMemo(() => computeIsRunning(messages), [messages]);

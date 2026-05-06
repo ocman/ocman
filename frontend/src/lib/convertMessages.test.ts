@@ -8,6 +8,7 @@ import {
   relativizePath,
   computeIsRunning,
   convertMessages,
+  createConvertMessages,
 } from './convertMessages';
 
 function makeMessage(id: string, data: Partial<Message['data']> & { role: 'user' | 'assistant' }, timeCreated = 0): Message {
@@ -498,5 +499,68 @@ describe('convertMessages', () => {
     const m = makeMessage('m', { role: 'assistant', finish: 'stop' });
     const out = convertMessages([m], []);
     expect(out[0].status).toEqual({ type: 'complete', reason: 'stop' });
+  });
+});
+
+describe('createConvertMessages (per-instance cache)', () => {
+  it('preserves the result array reference across identical calls', () => {
+    // useExternalStoreRuntime (assistant-ui) reads the result via
+    // useSyncExternalStore and re-renders whenever the snapshot
+    // identity changes. The factory must return the same array
+    // reference on consecutive calls with identical inputs so the
+    // store doesn't see a "new" snapshot every render.
+    const convert = createConvertMessages();
+    const m = makeMessage('m', { role: 'assistant' });
+    const parts = [makePart('m', { type: 'text', text: 'hello' })];
+    const first = convert([m], parts);
+    const second = convert([m], parts);
+    expect(second).toBe(first);
+  });
+
+  it('returns a new array reference when message identity changes', () => {
+    const convert = createConvertMessages();
+    const parts: Part[] = [];
+    const first = convert([makeMessage('m1', { role: 'user' })], parts);
+    const second = convert([makeMessage('m2', { role: 'user' })], parts);
+    expect(second).not.toBe(first);
+  });
+
+  it('does not share the result-array cache across instances', () => {
+    // Two different sessions use two different factories. Identical
+    // inputs to both must NOT make the second factory return the
+    // first's cached result array (cross-session leak).
+    const convertA = createConvertMessages();
+    const convertB = createConvertMessages();
+    const m = makeMessage('m', { role: 'user' });
+    const parts: Part[] = [];
+    const fromA = convertA([m], parts);
+    const fromB = convertB([m], parts);
+    expect(fromB).not.toBe(fromA);
+    // ...but they should be deeply equal — same inputs.
+    expect(fromB[0]).toEqual(fromA[0]);
+  });
+
+  it('preserves identity when only the result-array cache hits (no per-message changes)', () => {
+    // The per-message WeakMap cache is module-level (keyed on Message
+    // identity). When every per-message lookup is a cache hit, the
+    // factory must reuse its own previous result array — not produce
+    // a fresh one whose elements happen to match.
+    const convert = createConvertMessages();
+    const m1 = makeMessage('m1', { role: 'user' });
+    const m2 = makeMessage('m2', { role: 'assistant' });
+    const messages = [m1, m2];
+    const parts = [makePart('m2', { type: 'text', text: 'hi' })];
+    const first = convert(messages, parts);
+    const second = convert(messages, parts);
+    expect(second).toBe(first);
+  });
+
+  it('still invalidates correctly when context inputs change', () => {
+    const convert = createConvertMessages();
+    const m = makeMessage('u', { role: 'user' }, 1);
+    const first = convert([m], [], 'plan');
+    const second = convert([m], [], 'build');
+    expect(second).not.toBe(first);
+    expect((second[0].metadata?.custom as { agent?: string })?.agent).toBe('build');
   });
 });

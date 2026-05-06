@@ -113,16 +113,38 @@ type ConvertedCacheEntry = {
 };
 const convertedMessageCache = new WeakMap<Message, ConvertedCacheEntry>();
 
-/**
- * Module-level cache of the last convertMessages result array. When
- * every element in the new result is the same reference as the
- * previous one (all per-message caches hit), we return the old array
- * to preserve referential equality for useSyncExternalStore.
- */
-let lastConvertedResult: ThreadMessageLike[] | null = null;
-
 /** Stable empty array for messages with no parts. */
 const EMPTY_PARTS: Part[] = [];
+
+/**
+ * Per-instance state owned by a `createConvertMessages()` closure.
+ * Held outside the module so two simultaneously-mounted converters
+ * (one per OcmanRuntimeProvider instance, which is one per session
+ * detail page) don't share their result-array cache or their
+ * `partsByMsg` index — a cross-session hit would smuggle the
+ * previous session's array into the next session's snapshot.
+ */
+interface ConvertState {
+  /** Last result array returned. Reused when the next call would
+   *  produce an element-wise identical array, so the assistant-ui
+   *  external store sees a stable snapshot reference. */
+  lastResult: ThreadMessageLike[] | null;
+  /** Last `parts` reference seen. When the new call passes the same
+   *  reference we skip the `partsByMsg` rebuild. */
+  lastPartsRef: Part[] | null;
+  /** Memoised `partsByMsg` keyed on `lastPartsRef`. */
+  lastPartsByMsg: Record<string, Part[]> | null;
+}
+
+/** Build (or rebuild) the `messageId → parts[]` index. */
+function buildPartsByMsg(parts: Part[]): Record<string, Part[]> {
+  const partsByMsg: Record<string, Part[]> = {};
+  for (const p of parts) {
+    if (!partsByMsg[p.messageId]) partsByMsg[p.messageId] = [];
+    partsByMsg[p.messageId].push(p);
+  }
+  return partsByMsg;
+}
 
 /**
  * Shallow element-wise equality for Part arrays. Returns true when both
@@ -141,13 +163,29 @@ function partsEqual(a: Part[], b: Part[]): boolean {
 }
 
 /**
- * Convert ocman's `Message` + `Part` arrays into the
- * `ThreadMessageLike[]` shape that assistant-ui's external-store
- * runtime expects. Pure function, with a per-message WeakMap cache
- * keyed on input identities so streaming deltas only re-render the
- * one message that actually changed.
+ * Type of the function returned by `createConvertMessages()`. The
+ * exported `convertMessages` matches this shape via a default
+ * instance.
+ */
+export type ConvertMessagesFn = (
+  messages: Message[],
+  parts: Part[],
+  pendingAgent?: string,
+  taskLiveOutput?: Record<string, string>,
+  projectDirectory?: string,
+  failedById?: Record<string, FailedSend>,
+) => ThreadMessageLike[];
+
+/**
+ * Build a per-instance `convertMessages` closure. Use this from
+ * components so each consumer (one per session detail page) owns
+ * its own result-array cache and `partsByMsg` memo. The shared
+ * module-level WeakMap caches (`parsedPartCache`,
+ * `convertedMessageCache`) are still used for cross-instance reuse
+ * — they're keyed on the `Part` / `Message` identity so they're
+ * safe to share across sessions.
  *
- * Behaviour notes:
+ * Returned function:
  *   - Filters to user/assistant messages only (system / tool roles
  *     are dropped).
  *   - Detects "queued" user messages — a user message that follows
@@ -158,22 +196,36 @@ function partsEqual(a: Part[], b: Part[]): boolean {
  *     bubbles consistently.
  *   - Special-cases tool calls (read/grep/glob/webfetch/edit/write/
  *     skill/task/question) into their compact rendering forms.
+ *   - Returns the previous result-array reference when every element
+ *     is unchanged (`useSyncExternalStore` snapshot stability).
  */
-export function convertMessages(
-  messages: Message[],
-  parts: Part[],
-  pendingAgent?: string,
-  taskLiveOutput?: Record<string, string>,
-  projectDirectory?: string,
-  failedById?: Record<string, FailedSend>,
-): ThreadMessageLike[] {
-  const partsByMsg: Record<string, Part[]> = {};
-  parts.forEach((p) => {
-    if (!partsByMsg[p.messageId]) partsByMsg[p.messageId] = [];
-    partsByMsg[p.messageId].push(p);
-  });
+export function createConvertMessages(): ConvertMessagesFn {
+  const state: ConvertState = {
+    lastResult: null,
+    lastPartsRef: null,
+    lastPartsByMsg: null,
+  };
+  return function convert(
+    messages: Message[],
+    parts: Part[],
+    pendingAgent?: string,
+    taskLiveOutput?: Record<string, string>,
+    projectDirectory?: string,
+    failedById?: Record<string, FailedSend>,
+  ): ThreadMessageLike[] {
+    // Reuse the bucketed `partsByMsg` index when the input parts
+    // array is the same reference we saw last time. Saves an O(N)
+    // scan per call when SSE deltas leave parts identity stable.
+    let partsByMsg: Record<string, Part[]>;
+    if (state.lastPartsRef === parts && state.lastPartsByMsg) {
+      partsByMsg = state.lastPartsByMsg;
+    } else {
+      partsByMsg = buildPartsByMsg(parts);
+      state.lastPartsRef = parts;
+      state.lastPartsByMsg = partsByMsg;
+    }
 
-  const filtered = messages.filter((m) => m.data?.role === 'user' || m.data?.role === 'assistant');
+    const filtered = messages.filter((m) => m.data?.role === 'user' || m.data?.role === 'assistant');
   const result = filtered.map((m, idx): ThreadMessageLike => {
     const role = m.data.role as 'user' | 'assistant';
 
@@ -631,19 +683,34 @@ export function convertMessages(
     return result;
   });
 
-  // Return the previous result array when every element is the same
-  // reference. This prevents useSyncExternalStore (inside
-  // @assistant-ui/react's useExternalStoreRuntime) from seeing a new
-  // snapshot on every call, which would trigger a forceStoreRerender
-  // loop during the passive-effect phase.
-  const prev = lastConvertedResult;
-  if (
-    prev &&
-    prev.length === result.length &&
-    result.every((r, i) => r === prev[i])
-  ) {
-    return prev;
-  }
-  lastConvertedResult = result;
-  return result;
+    // Return the previous result array when every element is the same
+    // reference. This prevents useSyncExternalStore (inside
+    // @assistant-ui/react's useExternalStoreRuntime) from seeing a new
+    // snapshot on every call, which would trigger a forceStoreRerender
+    // loop during the passive-effect phase. Per-instance so two
+    // simultaneously-mounted converters can't see each other's
+    // arrays.
+    const prev = state.lastResult;
+    if (
+      prev &&
+      prev.length === result.length &&
+      result.every((r, i) => r === prev[i])
+    ) {
+      return prev;
+    }
+    state.lastResult = result;
+    return result;
+  };
 }
+
+/**
+ * Default-instance `convertMessages` for non-React callers and
+ * legacy call sites. New code mounted inside a component should
+ * use `createConvertMessages()` via `useMemo([sessionId])` so the
+ * cache lifetime matches the component's lifetime.
+ *
+ * Two callers using this shared instance will compete for the
+ * result-array cache slot — fine for tests, **not** safe to use
+ * from two simultaneously-mounted components.
+ */
+export const convertMessages: ConvertMessagesFn = createConvertMessages();
