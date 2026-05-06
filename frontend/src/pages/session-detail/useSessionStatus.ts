@@ -16,6 +16,20 @@ import { trackRender } from '../../lib/renderRateMonitor';
  */
 const STATUS_GRACE_MS = 3000;
 
+/**
+ * If we received an SSE event for the session within this window,
+ * treat the session as actively producing output and surface
+ * `busy` even when the last assistant message has flipped to a
+ * finished state. This catches the common case where the session
+ * is mid-turn but the message snapshot we have hasn't been
+ * reconciled yet — a steady stream of part deltas means *something*
+ * is still happening.
+ *
+ * Terminal states (`error`, `done`) are never overridden — the SSE
+ * freshness rule only upgrades `waiting → busy`.
+ */
+const SSE_ACTIVE_MS = 500;
+
 export interface UseSessionStatusOptions {
   /** Most recent message in the page's messages array (or null). */
   lastMsg: Message | null;
@@ -32,6 +46,13 @@ export interface UseSessionStatusOptions {
   pendingPermission: PendingPermission | null;
   /** Pending question, when one is waiting on the user. */
   pendingQuestion: PendingQuestion | null;
+  /**
+   * Epoch-ms timestamp of the last SSE event received for this
+   * session, or `null` when no event has arrived (or SSE is not
+   * connected). When set and within `SSE_ACTIVE_MS`, the displayed
+   * `optimisticStatus` is upgraded from `waiting` to `busy`.
+   */
+  lastSseEventAt?: number | null;
 }
 
 export interface UseSessionStatusResult {
@@ -73,6 +94,7 @@ export function useSessionStatus({
   isRunning,
   pendingPermission,
   pendingQuestion,
+  lastSseEventAt = null,
 }: UseSessionStatusOptions): UseSessionStatusResult {
   trackRender('useSessionStatus', { isRunning, lastMsgId: lastMsg?.id });
   // Raw status derived from the last message — may flicker between
@@ -131,6 +153,34 @@ export function useSessionStatus({
     setOptimisticStatus(rawOptimisticStatus);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- optimisticStatusRef is a stable ref; listing optimisticStatus here would create a self-referencing render cycle.
   }, [rawOptimisticStatus]);
+
+  // SSE-freshness override: when an SSE event arrived within
+  // SSE_ACTIVE_MS, treat the session as actively producing output
+  // even if the last message in our snapshot has finished. We hold a
+  // boolean in state (rather than recomputing from `Date.now()` on
+  // every render) so the override flips off via a real React update
+  // when the window expires, even when no other props change.
+  const [sseActive, setSseActive] = useState(false);
+  useEffect(() => {
+    if (lastSseEventAt === null) {
+      if (sseActive) setSseActive(false);
+      return;
+    }
+    const elapsed = Date.now() - lastSseEventAt;
+    const remaining = SSE_ACTIVE_MS - elapsed;
+    if (remaining <= 0) {
+      if (sseActive) setSseActive(false);
+      return;
+    }
+    if (!sseActive) setSseActive(true);
+    const handle = window.setTimeout(() => setSseActive(false), remaining);
+    return () => window.clearTimeout(handle);
+  }, [lastSseEventAt, sseActive]);
+
+  // Final displayed status: SSE freshness upgrades `waiting` to
+  // `busy` (terminal states `error` / `done` are not overridden).
+  const displayedOptimisticStatus: Session['status'] =
+    sseActive && optimisticStatus === 'waiting' ? 'busy' : optimisticStatus;
 
   // Live tokens-per-second: sum output tokens across all assistant
   // messages in the current run window (since the last user message)
@@ -222,5 +272,9 @@ export function useSessionStatus({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- inputs are read via refs to keep the update rate at 1 Hz; ref objects are stable, and isRunning is the only signal that should re-arm the interval.
   }, [isRunning]);
 
-  return { rawOptimisticStatus, optimisticStatus, liveTokensPerSecond };
+  return {
+    rawOptimisticStatus,
+    optimisticStatus: displayedOptimisticStatus,
+    liveTokensPerSecond,
+  };
 }

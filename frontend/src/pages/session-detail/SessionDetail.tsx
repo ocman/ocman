@@ -895,6 +895,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // else stays in the page so the SSE handler doesn't need to
   // know about composer / sidebar / palette concerns.
   const {
+    lastSseEventAt,
     sseActive,
     sseReconnecting,
     sseReconnectAttempt,
@@ -1440,6 +1441,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     isRunning,
     pendingPermission,
     pendingQuestion,
+    lastSseEventAt,
   });
   logChange('SessionDetail.optimisticStatus', optimisticStatus);
   logChange('SessionDetail.liveTokensPerSecond', liveTokensPerSecond);

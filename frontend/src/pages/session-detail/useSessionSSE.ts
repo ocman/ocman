@@ -70,6 +70,15 @@ export interface UseSessionSSEOptions {
 }
 
 export interface UseSessionSSEResult {
+  /**
+   * Epoch-ms timestamp of the most recent SSE event received for
+   * the current session, or `null` when no event has been received
+   * since the hook (re)connected. Subagent events are not counted —
+   * they belong to a different session id. Consumers feed this
+   * into `useSessionStatus` to upgrade `waiting → busy` while the
+   * stream is fresh.
+   */
+  lastSseEventAt: number | null;
   /** True while the SSE EventSource reports `OPEN`. The composer
    *  uses this to surface a "reconnecting…" pill when SSE drops
    *  even though portAvailable stayed true. */
@@ -153,6 +162,14 @@ export function useSessionSSE({
   const [sseReconnectAttempt, setSseReconnectAttempt] = useState(0);
   const [sseNextRetryAt, setSseNextRetryAt] = useState<number | null>(null);
   const [sseDebugEvents, setSseDebugEvents] = useState<SseDebugEvent[]>([]);
+  // Most recent SSE event timestamp for the current session. Drives
+  // the SSE-freshness override in useSessionStatus (see
+  // SSE_ACTIVE_MS). We rate-limit React state updates to once per
+  // SSE_ACTIVE_THROTTLE_MS so a hot stream of part deltas doesn't
+  // re-render the page on every byte; the override window is much
+  // larger than the throttle, so the indicator stays stable.
+  const [lastSseEventAt, setLastSseEventAt] = useState<number | null>(null);
+  const lastSseEventBumpRef = useRef<number>(0);
 
   // The effect installs its imperative "reconnect right now" handle
   // here so the public `retryNow` callback can reach across the
@@ -179,6 +196,19 @@ export function useSessionSSE({
       if (cancelled) return;
       const signal = abortSignalRef.current?.signal;
       load(signal);
+    };
+
+    // Bump the lastSseEventAt timestamp, throttled so a hot stream
+    // of part deltas doesn't trigger a React re-render per event.
+    // The override window in useSessionStatus is 500 ms, which is
+    // an order of magnitude larger than the throttle interval, so
+    // the indicator stays stable across the throttle.
+    const SSE_BUMP_THROTTLE_MS = 100;
+    const bumpLastSseEventAt = () => {
+      const now = Date.now();
+      if (now - lastSseEventBumpRef.current < SSE_BUMP_THROTTLE_MS) return;
+      lastSseEventBumpRef.current = now;
+      setLastSseEventAt(now);
     };
 
     // Coalesces `message.part.delta` events into one setParts call
@@ -376,6 +406,12 @@ export function useSessionSSE({
           }
           return;
         }
+
+        // Event is for the current session — record its arrival
+        // time so the status badge can show "busy" while the stream
+        // is fresh, even when our message snapshot has briefly
+        // flipped to a finished state between turns.
+        bumpLastSseEventAt();
 
         handleParsedEvent(parsed);
 
@@ -667,6 +703,10 @@ export function useSessionSSE({
       setSseReconnecting(false);
       setSseReconnectAttempt(0);
       setSseNextRetryAt(null);
+      // Reset the SSE-freshness clock so a session swap doesn't
+      // briefly inherit the previous session's "active" override.
+      setLastSseEventAt(null);
+      lastSseEventBumpRef.current = 0;
     };
     // We deliberately keep the dep list narrow: `directory` and
     // `sessionId` re-open the stream on session swap; `load`,
@@ -676,6 +716,7 @@ export function useSessionSSE({
   }, [_directory, sessionId, load, listPermissions, listQuestions]);
 
   return {
+    lastSseEventAt,
     sseActive,
     sseReconnecting,
     sseReconnectAttempt,
