@@ -280,15 +280,19 @@ func TestGetSessionDefaultsCached_ExpiresAfterTTL(t *testing.T) {
 // fakeGetSessionsDB counts GetSessions calls and returns a fixed
 // slice. The slice is intentionally shared between calls so tests
 // can assert that getSessionsCached doesn't accidentally hand out
-// a slice that the caller has already mutated.
+// a slice that the caller has already mutated. lastSince records
+// the most recent `since` argument so tests can assert the cache
+// always queries the unfiltered (since=0) superset.
 type fakeGetSessionsDB struct {
-	calls atomic.Int64
-	out   []db.Session
-	err   error
+	calls     atomic.Int64
+	lastSince atomic.Int64
+	out       []db.Session
+	err       error
 }
 
 func (f *fakeGetSessionsDB) GetSessions(directory string, since int64) ([]db.Session, error) {
 	f.calls.Add(1)
+	f.lastSince.Store(since)
 	return f.out, f.err
 }
 
@@ -319,11 +323,11 @@ func TestGetSessionsCached_CachesAcrossCalls(t *testing.T) {
 	}
 }
 
-func TestGetSessionsCached_KeyDistinguishesDirectoryAndSince(t *testing.T) {
+func TestGetSessionsCached_KeyDistinguishesDirectoryOnly(t *testing.T) {
 	resetSessionsCache()
 	t.Cleanup(resetSessionsCache)
 
-	d := &fakeGetSessionsDB{out: []db.Session{{ID: "s"}}}
+	d := &fakeGetSessionsDB{out: []db.Session{{ID: "s", TimeUpdated: 1000}}}
 
 	if _, err := getSessionsCached(d, "/a", 0); err != nil {
 		t.Fatal(err)
@@ -331,15 +335,82 @@ func TestGetSessionsCached_KeyDistinguishesDirectoryAndSince(t *testing.T) {
 	if _, err := getSessionsCached(d, "/b", 0); err != nil {
 		t.Fatal(err)
 	}
+	// A different `since` value MUST NOT mint a new cache slot —
+	// otherwise a frontend poller using a rolling
+	// `Date.now() - LOOKBACK` would leak one map entry per poll.
 	if _, err := getSessionsCached(d, "/a", 100); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := getSessionsCached(d, "/a", 999); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := getSessionsCached(d, "/a", 0); err != nil {
 		t.Fatal(err)
 	}
-	// 3 distinct keys -> 3 DB calls; the 4th call hits the cache.
-	if c := d.calls.Load(); c != 3 {
-		t.Errorf("expected 3 DB calls (one per (dir, since) pair), got %d", c)
+	// 2 distinct directories -> 2 DB calls; all the /a calls
+	// regardless of `since` share one cache slot.
+	if c := d.calls.Load(); c != 2 {
+		t.Errorf("expected 2 DB calls (one per directory), got %d", c)
+	}
+}
+
+func TestGetSessionsCached_AlwaysFetchesUnfiltered(t *testing.T) {
+	resetSessionsCache()
+	t.Cleanup(resetSessionsCache)
+
+	d := &fakeGetSessionsDB{out: []db.Session{{ID: "s", TimeUpdated: 1000}}}
+
+	// Caller passes a non-zero `since`, but the cache must fetch
+	// the unfiltered superset so subsequent callers with smaller
+	// `since` values still see all rows.
+	if _, err := getSessionsCached(d, "/repo", 500); err != nil {
+		t.Fatal(err)
+	}
+	if got := d.lastSince.Load(); got != 0 {
+		t.Errorf("expected GetSessions called with since=0, got since=%d", got)
+	}
+}
+
+func TestGetSessionsCached_PostFiltersBySince(t *testing.T) {
+	resetSessionsCache()
+	t.Cleanup(resetSessionsCache)
+
+	// Three sessions spanning a wide time range.
+	d := &fakeGetSessionsDB{out: []db.Session{
+		{ID: "new", TimeUpdated: 2000},
+		{ID: "mid", TimeUpdated: 1500},
+		{ID: "old", TimeUpdated: 500},
+	}}
+
+	// First call warms the cache (since=0 -> all three).
+	all, err := getSessionsCached(d, "/repo", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("warm: expected 3 sessions, got %d", len(all))
+	}
+
+	// Second call with since=1000 must filter to {new, mid} from
+	// the cached slice — and must NOT incur a second DB call.
+	got, err := getSessionsCached(d, "/repo", 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].ID != "new" || got[1].ID != "mid" {
+		t.Fatalf("filtered: unexpected result: %#v", got)
+	}
+	if c := d.calls.Load(); c != 1 {
+		t.Errorf("expected 1 DB call (cache hit on filter), got %d", c)
+	}
+
+	// Third call with a since past every row returns empty.
+	got, err = getSessionsCached(d, "/repo", 9999)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("filter-all: expected empty, got %#v", got)
 	}
 }
 
@@ -395,7 +466,7 @@ func TestGetSessionsCached_ExpiresAfterTTL(t *testing.T) {
 	}
 
 	// Force the cached entry to expire.
-	key := sessionsKey{directory: "/repo", since: 0}
+	key := sessionsKey{directory: "/repo"}
 	sessionsMu.Lock()
 	e := sessionsCached[key]
 	e.expiresAt = time.Now().Add(-time.Second)

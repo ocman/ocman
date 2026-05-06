@@ -2,7 +2,6 @@ package opencode
 
 import (
 	"context"
-	"strconv"
 	"sync"
 	"time"
 
@@ -241,18 +240,26 @@ func getSessionDefaultsCached(d dbSessionDefaults, excludeSessionID, directory s
 // 3s TTL is the trade-off: short enough that "I started a new
 // session in another tab" feels instant, long enough that the
 // 5s poll cycle hits the cache after the first miss. The cache
-// is keyed by (directory, since) so directory-filtered listings
-// (the project drill-down view) and the global listing are
-// independent. Subsequent stats overlay (live connection,
-// pending prompts) still runs uncached because it depends on
-// transient OpenCode HTTP state that's already cached at
-// finer granularity (pendingPromptCache, port discovery).
+// is keyed by directory only — directory-filtered listings (the
+// project drill-down view) and the global listing are
+// independent, but the `since` filter is applied to the cached
+// (unfiltered) slice in Go so callers passing a rolling
+// `Date.now() - LOOKBACK` value don't blow up the keyspace
+// (each poll would otherwise be a fresh key, leaking ~one map
+// entry per poll forever — see the heap-growth investigation
+// in spec/perf-notes). The post-filter is cheap: a single
+// integer compare per row, applied to a slice that's already
+// in cache.
+//
+// Subsequent stats overlay (live connection, pending prompts)
+// still runs uncached because it depends on transient OpenCode
+// HTTP state that's already cached at finer granularity
+// (pendingPromptCache, port discovery).
 
 const sessionsTTL = 3 * time.Second
 
 type sessionsKey struct {
 	directory string
-	since     int64
 }
 
 type sessionsEntry struct {
@@ -294,8 +301,21 @@ type dbGetSessions interface {
 }
 
 // getSessionsCached returns a (possibly cached) result of
-// d.GetSessions. Concurrent callers on the same key share a single
+// d.GetSessions(directory, 0), then applies the `since` filter
+// in Go. Concurrent callers on the same directory share a single
 // underlying query via singleflight.
+//
+// `since` is intentionally NOT part of the cache key. The
+// frontend's notify poller passes Date.now() - LOOKBACK on every
+// tick, so a since-keyed cache would never hit and would leak
+// one map entry per poll. By caching the unfiltered slice and
+// filtering on read, every poll within the TTL window hits cache
+// and the keyspace stays bounded by the number of distinct
+// directories (a small finite set: "" + per-project-detail).
+//
+// The DB query for since=0 returns a small superset of any
+// since>0 query; cost is dominated by the join, not the row
+// count, so this is effectively free vs. the previous behaviour.
 //
 // The returned slice is shared with other cache readers; callers
 // must NOT mutate it. The OpenCode adapter only ever appends
@@ -304,19 +324,18 @@ type dbGetSessions interface {
 // caller needs to mutate the result, copy it first.
 func getSessionsCached(d dbGetSessions, directory string, since int64) ([]db.Session, error) {
 	ctx := context.Background()
-	key := sessionsKey{directory: directory, since: since}
+	key := sessionsKey{directory: directory}
 
 	sessionsMu.RLock()
 	if e, ok := sessionsCached[key]; ok && !time.Now().After(e.expiresAt) {
 		sessionsMu.RUnlock()
 		sessionsListMetrics.RecordHit(ctx)
-		return e.sessions, nil
+		return filterSessionsBySince(e.sessions, since), nil
 	}
 	sessionsMu.RUnlock()
 	sessionsListMetrics.RecordMiss(ctx)
 
-	flightKey := directory + "|" + strconv.FormatInt(since, 10)
-	v, err, _ := sessionsFlight.Do(flightKey, func() (interface{}, error) {
+	v, err, _ := sessionsFlight.Do(directory, func() (interface{}, error) {
 		// Re-check inside the flight slot. Not counted as a hit;
 		// see httpCache.getOrFetch for the rationale.
 		sessionsMu.RLock()
@@ -326,7 +345,7 @@ func getSessionsCached(d dbGetSessions, directory string, since int64) ([]db.Ses
 		}
 		sessionsMu.RUnlock()
 
-		sessions, err := d.GetSessions(directory, since)
+		sessions, err := d.GetSessions(directory, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -342,5 +361,25 @@ func getSessionsCached(d dbGetSessions, directory string, since int64) ([]db.Ses
 		return nil, err
 	}
 	sessions, _ := v.([]db.Session)
-	return sessions, nil
+	return filterSessionsBySince(sessions, since), nil
+}
+
+// filterSessionsBySince returns the subset of `sessions` whose
+// TimeUpdated is >= since. When since <= 0 the input slice is
+// returned unchanged (no allocation). The input is sorted by
+// time_updated DESC so we could short-circuit on the first
+// non-matching row, but a linear scan over a few hundred rows
+// is below the noise floor and the explicit filter is easier
+// to reason about under future query changes.
+func filterSessionsBySince(sessions []db.Session, since int64) []db.Session {
+	if since <= 0 {
+		return sessions
+	}
+	out := make([]db.Session, 0, len(sessions))
+	for _, s := range sessions {
+		if s.TimeUpdated >= since {
+			out = append(out, s)
+		}
+	}
+	return out
 }
