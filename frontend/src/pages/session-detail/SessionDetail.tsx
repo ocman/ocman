@@ -18,7 +18,7 @@ import { ShortPath, GitStatusLine } from '../../components/SessionTable';
 import { BackendStats } from '../../components/BackendStats';
 import { SidebarResizer } from '../../components/SidebarResizer';
 import { RightPanel } from '../../components/RightPanel';
-import { ErrorBoundary } from '../../components/ErrorBoundary';
+import { ErrorBoundary, type FallbackRender } from '../../components/ErrorBoundary';
 import { RateLimitBanner } from '../../components/RateLimitBanner';
 import { useUiStore } from '../../lib/uiStore';
 import { useTmux } from '../../lib/useTmux';
@@ -67,9 +67,12 @@ import { useSessionSSE } from './useSessionSSE';
 import { SseStatusIndicator } from './SseStatusIndicator';
 import { trackRender, logChange } from '../../lib/renderRateMonitor';
 import { remoteLog } from '../../lib/remoteLog';
+import { isRecoverableThreadBoundaryError } from './threadBoundaryRecovery';
+import { ThreadBoundaryFallback } from './ThreadBoundaryFallback';
 
 const MAX_RETAINED_MESSAGES = 200;
 const TRIMMED_RETAINED_MESSAGES = 150;
+const THREAD_BOUNDARY_AUTO_RECOVERY_COOLDOWN_MS = 5_000;
 
 
 
@@ -474,6 +477,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const [showCreateSessionErrorToast, setShowCreateSessionErrorToast] = useState(false);
   const [showDisconnectedToast, setShowDisconnectedToast] = useState(false);
   const [awaitingAssistantResponse, setAwaitingAssistantResponse] = useState(false);
+  const [threadBoundaryResetNonce, setThreadBoundaryResetNonce] = useState(0);
   const [createLaunchStatus, setCreateLaunchStatus] = useState<LaunchStatus>('idle');
   // Sends that failed on the client (network error, 5xx, etc.). Each entry
   // is keyed by the optimistic message id and holds enough context to
@@ -493,6 +497,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const sidebarView = useUiStore((state) => state.sidebarView);
   const toggleSidebarView = useUiStore((state) => state.toggleSidebarView);
   const toggleCollapsedProject = useUiStore((state) => state.toggleCollapsedProject);
+  const threadBoundaryRecoveryRef = useRef<{ sessionId: string | undefined; message: string; at: number } | null>(null);
 
   // Refs for values used by the scoped-command dispatch so the effect
   // only re-runs when `paletteCommand` changes (fixes the P0 hot loop).
@@ -1108,6 +1113,51 @@ export function SessionDetail({ id }: SessionDetailProps) {
     setMessages(prev => prev.filter(m => m.id !== tempId));
     setParts(prev => prev.filter(p => p.messageId !== tempId));
   }, [session, setMessages, setParts]);
+
+  const handleThreadBoundaryRetry = useCallback((error: Error, force = false) => {
+    const now = Date.now();
+    const previous = threadBoundaryRecoveryRef.current;
+    if (
+      !force
+      &&
+      previous
+      && previous.sessionId === id
+      && previous.message === error.message
+      && now - previous.at < THREAD_BOUNDARY_AUTO_RECOVERY_COOLDOWN_MS
+    ) {
+      return false;
+    }
+
+    threadBoundaryRecoveryRef.current = { sessionId: id, message: error.message, at: now };
+    remoteLog.warn('SessionDetail auto-recovering thread boundary', {
+      sessionId: id,
+      message: error.message,
+    });
+    setThreadBoundaryResetNonce((value) => value + 1);
+    setLoadError(null);
+    void load();
+    return true;
+  }, [id, load, setLoadError]);
+
+  const renderThreadBoundaryFallback = useCallback<FallbackRender>(({ error, reset }) => {
+    const previous = threadBoundaryRecoveryRef.current;
+    const autoRecover = isRecoverableThreadBoundaryError(error)
+      && (!previous
+        || previous.sessionId !== id
+        || previous.message !== error.message
+        || Date.now() - previous.at >= THREAD_BOUNDARY_AUTO_RECOVERY_COOLDOWN_MS);
+
+    return (
+      <ThreadBoundaryFallback
+        error={error}
+        reset={reset}
+        autoRecover={autoRecover}
+        onReload={() => {
+          handleThreadBoundaryRetry(error, !autoRecover);
+        }}
+      />
+    );
+  }, [handleThreadBoundaryRetry, id]);
 
   // When the user picks a different model, clear the reasoning selection
   // because the new model may not support the same variants.
@@ -1932,7 +1982,11 @@ export function SessionDetail({ id }: SessionDetailProps) {
                 blank the rest of the page (header, sidebars, recent
                 sessions list). resetKey on session.id clears any stale
                 crash when the user navigates to another session. */}
-            <ErrorBoundary name="session:thread" resetKey={session.id}>
+            <ErrorBoundary
+              name="session:thread"
+              resetKey={`${session.id}:${threadBoundaryResetNonce}`}
+              fallbackRender={renderThreadBoundaryFallback}
+            >
             <AssistantThread
               hasMore={hasMore}
               loadingMore={loadingMore}
