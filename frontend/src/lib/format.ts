@@ -41,6 +41,24 @@ export function formatPercent(value: number, digits = 0): string {
   return `${(value * 100).toFixed(digits)}%`;
 }
 
+/**
+ * Render a tokens-per-second rate for the streaming-progress hint.
+ *
+ * The composer's tok/s indicator updates at 1 Hz (see
+ * `useSessionStatus`); a fixed 1-decimal display would visibly tick
+ * the trailing digit on every refresh even though the operator only
+ * cares about the order of magnitude. Whole numbers are stable
+ * enough to read at a glance — sub-1 rates fall back to one decimal
+ * so an in-progress agent never appears to be doing zero work.
+ *
+ * Non-finite, zero, or negative inputs return "0".
+ */
+export function formatTokensPerSecond(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '0';
+  if (value >= 1) return Math.round(value).toString();
+  return value.toFixed(1);
+}
+
 export function formatCurrency(value: number, digits = 4): string {
   return `$${value.toFixed(digits)}`;
 }

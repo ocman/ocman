@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { Part } from '../../lib/api';
 import { api } from '../../lib/api';
@@ -80,12 +80,18 @@ export function useSubagentTracking(
   // Wrap the setter in a stable reference that always trims trailing
   // entries past the cap. Callers can safely pass plain SetStateAction
   // values without worrying about the cap.
-  const setSubagentTokens: Dispatch<SetStateAction<SubagentTokenMap>> = (next) => {
+  //
+  // useCallback with `[]` keeps the function identity stable across
+  // renders: downstream `useEffect`s that depend on this setter (e.g.
+  // useSessionStatus's 1 Hz polling effect) won't tear down + re-arm
+  // on every parent rerender, which would otherwise pin the TPS
+  // refresh rate to the SSE delta rate.
+  const setSubagentTokens = useCallback<Dispatch<SetStateAction<SubagentTokenMap>>>((next) => {
     setSubagentTokensRaw((prev) => {
       const updated = typeof next === 'function' ? (next as (p: SubagentTokenMap) => SubagentTokenMap)(prev) : next;
       return trimSubagentTokens(updated);
     });
-  };
+  }, []);
 
   // Derive subagent session IDs from task-tool parts. Recomputes
   // whenever parts changes; the result is fed into a ref so the SSE

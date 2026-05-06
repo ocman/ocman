@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cleanTitle, renderModel, shortSessionID } from './format';
+import { cleanTitle, formatTokensPerSecond, renderModel, shortSessionID } from './format';
 
 describe('cleanTitle', () => {
   it('returns empty string for nullish input', () => {
@@ -74,6 +74,31 @@ describe('renderModel', () => {
 
   it('keeps only the last segment for multi-slash ids', () => {
     expect(renderModel('a/b/c')).toBe('c');
+  });
+});
+
+describe('formatTokensPerSecond', () => {
+  it('rounds values >= 1 to whole numbers', () => {
+    expect(formatTokensPerSecond(1)).toBe('1');
+    expect(formatTokensPerSecond(1.4)).toBe('1');
+    expect(formatTokensPerSecond(1.6)).toBe('2');
+    expect(formatTokensPerSecond(42.7)).toBe('43');
+    expect(formatTokensPerSecond(199.49)).toBe('199');
+  });
+
+  it('keeps one decimal for values below 1 so they don\'t collapse to 0', () => {
+    expect(formatTokensPerSecond(0.94)).toBe('0.9');
+    expect(formatTokensPerSecond(0.05)).toBe('0.1');
+  });
+
+  it('returns "0" for zero or negative inputs', () => {
+    expect(formatTokensPerSecond(0)).toBe('0');
+    expect(formatTokensPerSecond(-3)).toBe('0');
+  });
+
+  it('returns "0" for non-finite inputs', () => {
+    expect(formatTokensPerSecond(Number.NaN)).toBe('0');
+    expect(formatTokensPerSecond(Number.POSITIVE_INFINITY)).toBe('0');
   });
 });
 

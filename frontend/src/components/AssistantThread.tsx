@@ -6,7 +6,7 @@ import {
   useMessage,
   type ToolCallMessagePartProps,
 } from '@assistant-ui/react';
-import { formatSeconds } from '../lib/format';
+import { formatSeconds, formatTokensPerSecond } from '../lib/format';
 import { useAgentColor } from '../lib/agentColor';
 import { useShortcut } from '../lib/shortcutRegistry';
 import { hardenMessageLinks } from '../lib/linkHardener';
@@ -267,7 +267,7 @@ function AssistantMeta() {
         {tps !== null && (
           <>
             <span className="oc-meta-sep">|</span>
-            <span className="oc-meta-tps">{tps.toFixed(1)} tok/s</span>
+            <span className="oc-meta-tps">{formatTokensPerSecond(tps)} tok/s</span>
           </>
         )}
       </div>

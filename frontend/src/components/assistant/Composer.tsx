@@ -14,6 +14,7 @@ import { ReasoningPicker } from './ReasoningPicker';
 import { routeComposerSubmit } from './composerSubmit';
 import { encodeWav } from '../../lib/audio/encodeWav';
 import { getContextWindow, formatTokenCount } from '../../lib/models/contextWindows';
+import { formatTokensPerSecond } from '../../lib/format';
 import { BUILTIN_COMMANDS, KNOWN_AGENTS } from '../../lib/commands/builtinCommands';
 
 interface RecordingCtx {
@@ -1153,7 +1154,7 @@ function ComposerImpl({
                 <span className="oc-thinking-dot" /><span className="oc-thinking-dot" /><span className="oc-thinking-dot" /><span className="oc-thinking-dot" /><span className="oc-thinking-dot" />
               </span>
               {tokensPerSecond != null && tokensPerSecond > 0 && (
-                <span className="oc-tps-hint">{tokensPerSecond.toFixed(1)} tok/s</span>
+                <span className="oc-tps-hint">{formatTokensPerSecond(tokensPerSecond)} tok/s</span>
               )}
               <button
                 type="button"
