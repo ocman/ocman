@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { Message, Part } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
@@ -11,6 +11,7 @@ import {
   truncateSseData,
   type PendingPermission,
 } from '../../lib/sseHelpers';
+import { computeReconnectDelay } from './sseBackoff';
 import {
   inferStatusFromMessage,
   insertMessageByTime,
@@ -23,6 +24,7 @@ import { isSessionRelevant } from '../../lib/promptRouting';
 import { storePendingQuestion, clearPendingQuestion } from './usePromptHandlers';
 import type { SessionWithDefaults } from '../../lib/sessionStatus';
 import type { SubagentTokenMap } from './useSubagentTracking';
+import { trackRender } from '../../lib/renderRateMonitor';
 
 /** Single SSE event row in the debug overlay. */
 export interface SseDebugEvent {
@@ -71,6 +73,24 @@ export interface UseSessionSSEResult {
    *  uses this to surface a "reconnecting…" pill when SSE drops
    *  even though portAvailable stayed true. */
   sseActive: boolean;
+  /** True from the moment the EventSource errors out until it
+   *  reconnects. Distinguishes "we briefly lost contact and are
+   *  trying again" from the cold-start case where SSE never came up
+   *  in the first place. */
+  sseReconnecting: boolean;
+  /** 1-based count of consecutive reconnect attempts since the last
+   *  successful open. Resets to 0 on `onopen`. The UI uses this to
+   *  show "attempt N" alongside the reconnecting indicator. */
+  sseReconnectAttempt: number;
+  /** Epoch-ms timestamp at which the next reconnect attempt is
+   *  scheduled, or `null` when no reconnect is pending. The UI
+   *  derives a live countdown from this value. */
+  sseNextRetryAt: number | null;
+  /** Cancel the pending backoff timer and reconnect immediately.
+   *  Wired to a "Retry now" link in the reconnecting indicator so
+   *  users don't have to wait out the (capped) one-minute interval
+   *  after a long outage. No-op when no reconnect is pending. */
+  retryNow: () => void;
   /** Last 50 SSE events as captured for the debug overlay. Empty
    *  when `?debug` is not set. */
   sseDebugEvents: SseDebugEvent[];
@@ -82,9 +102,12 @@ export interface UseSessionSSEResult {
 /**
  * Owns the live SSE subscription for the page session. Connects to
  * `/api/session/{id}/events`, processes message / part / permission /
- * question events incrementally, and reconnects with a 5 s back-off
- * on errors. Falls back to a 10 s polling load when the
- * EventSource isn't open.
+ * question events incrementally, and reconnects with exponential
+ * backoff (500 ms → 60 s, equal jitter) on errors. Falls back to a
+ * 10 s polling load when the EventSource isn't open. Reconnect
+ * progress is exposed via `sseReconnecting` / `sseReconnectAttempt`
+ * / `sseNextRetryAt` / `retryNow` so the page can render an inline
+ * "reconnecting…" indicator with a manual retry escape hatch.
  *
  * Behaviour notes:
  *   - On `onopen`, fetches any pending permissions / questions that
@@ -124,7 +147,18 @@ export function useSessionSSE({
   const listQuestions = useApiStore((s) => s.listQuestions);
 
   const [sseActive, setSseActive] = useState(false);
+  const [sseReconnecting, setSseReconnecting] = useState(false);
+  const [sseReconnectAttempt, setSseReconnectAttempt] = useState(0);
+  const [sseNextRetryAt, setSseNextRetryAt] = useState<number | null>(null);
   const [sseDebugEvents, setSseDebugEvents] = useState<SseDebugEvent[]>([]);
+
+  // The effect installs its imperative "reconnect right now" handle
+  // here so the public `retryNow` callback can reach across the
+  // closure boundary without re-running the whole effect.
+  const retryNowRef = useRef<(() => void) | null>(null);
+  const retryNow = useCallback(() => {
+    retryNowRef.current?.();
+  }, []);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -134,6 +168,10 @@ export function useSessionSSE({
     let cancelled = false;
     let hasReceivedContentEvent = false;
     let hasConnectedOnce = false;
+    // Counter for the exponential-backoff schedule. Lives outside
+    // React state because both `onerror` and `retryNow` need to read
+    // and mutate it synchronously without waiting for a re-render.
+    let attempt = 0;
 
     const loadNow = () => {
       if (cancelled) return;
@@ -199,6 +237,13 @@ export function useSessionSSE({
       evtSource = new EventSource(`/api/session/${encodeURIComponent(sid)}/events`);
       evtSource.onopen = () => {
         setSseActive(true);
+        // Successful (re)connect: clear all reconnect bookkeeping so
+        // the indicator disappears and the next disconnect starts a
+        // fresh exponential schedule.
+        attempt = 0;
+        setSseReconnecting(false);
+        setSseReconnectAttempt(0);
+        setSseNextRetryAt(null);
         // SSE connected means OpenCode is running — mark port as available.
         setPortAvailable(true);
         // Fetch any permissions that were already pending when we
@@ -587,10 +632,34 @@ export function useSessionSSE({
         setSseActive(false);
         evtSource?.close();
         evtSource = null;
-        if (!cancelled) {
-          reconnectTimer = setTimeout(connect, 5000);
-        }
+        if (cancelled) return;
+        // Exponential backoff with equal jitter: 500 ms → ~1 s → ~2 s
+        // → … → 60 s (capped). See sseBackoff.ts for the schedule.
+        const delay = computeReconnectDelay(attempt);
+        attempt += 1;
+        setSseReconnecting(true);
+        setSseReconnectAttempt(attempt);
+        setSseNextRetryAt(Date.now() + delay);
+        reconnectTimer = setTimeout(connect, delay);
       };
+    };
+
+    // Imperative handle for the public `retryNow` callback. We expose
+    // it through a ref so the cleanup function and the timer logic
+    // share the same `reconnectTimer`/`evtSource` closures without
+    // having to re-run the effect on every render.
+    retryNowRef.current = () => {
+      if (cancelled) return;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      // Tear down any half-open EventSource so we don't end up with
+      // two parallel connections after a manual retry.
+      evtSource?.close();
+      evtSource = null;
+      setSseNextRetryAt(null);
+      connect();
     };
 
     connect();
@@ -608,7 +677,11 @@ export function useSessionSSE({
       evtSource?.close();
       if (reconnectTimer) clearTimeout(reconnectTimer);
       clearInterval(fallback);
+      retryNowRef.current = null;
       setSseActive(false);
+      setSseReconnecting(false);
+      setSseReconnectAttempt(0);
+      setSseNextRetryAt(null);
     };
     // We deliberately keep the dep list narrow: `directory` and
     // `sessionId` re-open the stream on session swap; `load`,
@@ -617,5 +690,13 @@ export function useSessionSSE({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [_directory, sessionId, load, listPermissions, listQuestions]);
 
-  return { sseActive, sseDebugEvents, setSseDebugEvents };
+  return {
+    sseActive,
+    sseReconnecting,
+    sseReconnectAttempt,
+    sseNextRetryAt,
+    retryNow,
+    sseDebugEvents,
+    setSseDebugEvents,
+  };
 }

@@ -63,6 +63,8 @@ import {
 } from './usePromptHandlers';
 import { useSessionShortcuts } from './useSessionShortcuts';
 import { useSessionSSE } from './useSessionSSE';
+import { SseStatusIndicator } from './SseStatusIndicator';
+import { trackRender, logChange } from '../../lib/renderRateMonitor';
 
 const MAX_RETAINED_MESSAGES = 200;
 const TRIMMED_RETAINED_MESSAGES = 150;
@@ -205,6 +207,13 @@ export function SessionDetail() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const debugMode = searchParams.has('debug');
+  // Diagnostic instrumentation — gated on ?debug. Counts renders per
+  // key so a runaway loop is visible in the console, and emits a
+  // one-shot log whenever the URL :id flips so we can see exactly
+  // when the param propagates to the page (vs the bug case where
+  // the URL changed but the page never re-rendered with the new id).
+  trackRender('SessionDetail', { id });
+  logChange('SessionDetail.id', id);
   const debugModeRef = useRef(debugMode);
   debugModeRef.current = debugMode;
   // Read the cache once at mount time via getState() — we want a snapshot
@@ -837,6 +846,10 @@ export function SessionDetail() {
   // know about composer / sidebar / palette concerns.
   const {
     sseActive,
+    sseReconnecting,
+    sseReconnectAttempt,
+    sseNextRetryAt,
+    retryNow: sseRetryNow,
     sseDebugEvents,
     setSseDebugEvents,
   } = useSessionSSE({
@@ -1877,7 +1890,13 @@ export function SessionDetail() {
               footer={showSseNotice || showSseDebug ? (
                 <>
                   {showSseNotice && (
-                    <div className="oc-sse-indicator">Live updates unavailable -- polling every 10s</div>
+                    <SseStatusIndicator
+                      active={sseActive}
+                      reconnecting={sseReconnecting}
+                      attempt={sseReconnectAttempt}
+                      nextRetryAt={sseNextRetryAt}
+                      onRetryNow={sseRetryNow}
+                    />
                   )}
                   {showSseDebug && (
                     <details className="oc-sse-debug">

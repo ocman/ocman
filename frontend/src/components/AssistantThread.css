@@ -747,6 +747,47 @@
   color: var(--overlay0);
 }
 
+/* Reconnecting variant: warmer accent + a pulsing dot so the
+ * "we're trying" cue is visible at a glance, while staying inside
+ * the existing color tokens. */
+.oc-sse-indicator-reconnecting {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--warning, #fab387);
+}
+
+.oc-sse-indicator-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: oc-sse-dot-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes oc-sse-dot-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+.oc-sse-indicator-retry {
+  background: none;
+  border: none;
+  padding: 0 4px;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.oc-sse-indicator-retry:hover,
+.oc-sse-indicator-retry:focus-visible {
+  color: var(--text);
+  outline: none;
+}
+
 .oc-sse-debug {
   margin: 0 16px 8px;
   border: 1px solid var(--border);
