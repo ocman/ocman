@@ -97,8 +97,8 @@ describe('isSessionRunning', () => {
     expect(isSessionRunning(null)).toBe(false);
   });
 
-  it('returns true when the last message is from the user', () => {
-    expect(isSessionRunning(makeMessage('m', { role: 'user' }))).toBe(true);
+  it('returns false when the last message is from the user', () => {
+    expect(isSessionRunning(makeMessage('m', { role: 'user' }))).toBe(false);
   });
 
   it('returns true for a streaming assistant message (no finish, no error)', () => {

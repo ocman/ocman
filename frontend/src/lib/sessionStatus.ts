@@ -67,19 +67,20 @@ export function deriveRawStatus(lastMsg: Message | null): Session['status'] {
 }
 
 /**
- * The assistant is "running" whenever:
- *   - the last message is from the user (assistant hasn't replied
- *     yet), or
- *   - the last message is from the assistant with no `finish` reason
- *     and no `error` (still streaming).
+ * The assistant is "running" whenever the last message is from the
+ * assistant with no `finish` reason and no `error` (still streaming).
  *
- * Once a finish reason is set the turn is over, even if no new user
- * message has been sent yet.
+ * A trailing user message does NOT count as running — it may be a
+ * manual tool execution (e.g. `git stash`) that doesn't trigger an
+ * LLM call. This aligns with the server-side `InferSessionStatus`
+ * which returns "done" for user messages. The brief gap between
+ * sending a prompt and the first SSE assistant chunk is preferable
+ * to a false "working" indicator that persists indefinitely after
+ * tool executions.
  */
 export function isSessionRunning(lastMsg: Message | null): boolean {
   if (!lastMsg) return false;
   const data = lastMsg.data;
-  if (data?.role === 'user') return true;
   if (data?.role === 'assistant' && !data?.finish && !data?.error) return true;
   return false;
 }
