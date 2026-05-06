@@ -30,13 +30,34 @@ describe('extractTaskId', () => {
     expect(extractTaskId({})).toBe('');
   });
 
-  it('prefers state.input.task_id (resume case)', () => {
+  it('prefers the regex on string output over input.task_id (resume-fork case)', () => {
+    // The user passed `task_id: ses_input_1` to resume, but the
+    // server forked a fresh subagent session and reported it via
+    // the streamed output. The renderer must navigate to the live
+    // id, not the (now stale) resume hint.
     expect(
       extractTaskId({
         input: { task_id: 'ses_input_1' },
         output: 'task_id: ses_output_1',
       }),
-    ).toBe('ses_input_1');
+    ).toBe('ses_output_1');
+  });
+
+  it('falls back to input.task_id when no output has arrived yet', () => {
+    // Early in the streaming lifecycle the output is still empty;
+    // the input hint is the only id we have.
+    expect(extractTaskId({ input: { task_id: 'ses_input_only' } })).toBe(
+      'ses_input_only',
+    );
+  });
+
+  it('falls back to input.task_id when the output has no task_id line', () => {
+    expect(
+      extractTaskId({
+        input: { task_id: 'ses_input_only' },
+        output: 'streaming output without an id marker yet',
+      }),
+    ).toBe('ses_input_only');
   });
 
   it('finds task_id in a string output via regex', () => {
@@ -57,6 +78,15 @@ describe('extractTaskId', () => {
         output: { task_id: 'ses_obj_1', text: 'irrelevant' },
       }),
     ).toBe('ses_obj_1');
+  });
+
+  it('prefers structured output.task_id over input.task_id', () => {
+    expect(
+      extractTaskId({
+        input: { task_id: 'ses_input_stale' },
+        output: { task_id: 'ses_obj_live' },
+      }),
+    ).toBe('ses_obj_live');
   });
 
   it('falls back to metadata.sessionId', () => {
