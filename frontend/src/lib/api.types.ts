@@ -140,6 +140,9 @@ export interface Part {
   id: string;
   messageId: string;
   sessionId: string;
+  /** Unix ms timestamp when the part was created. Present in DB
+   *  responses; absent for SSE-constructed parts during streaming. */
+  timeCreated?: number;
   data: string | PartData;
 }
 
@@ -192,6 +195,16 @@ export interface SessionDetail {
   contextTokenCount?: number;
   defaultAgent?: string;
   defaultModel?: string;
+}
+
+/**
+ * Per-task sub-session data returned by /api/session/{id}/tasks.
+ * Contains the messages and parts needed to render an embedded
+ * thread preview inside a Task tool card.
+ */
+export interface TaskSessionData {
+  messages: Message[];
+  parts: Part[];
 }
 
 // One file-touching tool call inside a session. Returned as part of

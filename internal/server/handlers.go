@@ -754,19 +754,20 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleSessionTasks returns the latest tool output for a batch of
-// running sub-task sessions. The frontend uses this to show live
-// previews of Task tool calls without making N separate
-// /api/session/{taskId}?limit=1 requests (P7 fix).
+// handleSessionTasks returns sub-session data for a batch of task
+// sessions. The frontend uses this to render embedded thread previews
+// inside Task tool cards and to show live streaming output while a
+// subagent is still running.
 //
 // Query params:
 //   - ids: comma-separated list of task session IDs.
+//   - limit: max messages per sub-session (default 10, max 30).
 //
-// Response: { "tasks": { "<taskId>": "<latest output text>", ... } }
+// Response: { "tasks": { "<taskId>": { "messages": [...], "parts": [...] } } }
 func (s *Server) handleSessionTasks(w http.ResponseWriter, r *http.Request) {
 	idsParam := r.URL.Query().Get("ids")
 	if idsParam == "" {
-		writeJSON(w, map[string]interface{}{"tasks": map[string]string{}})
+		writeJSON(w, map[string]interface{}{"tasks": map[string]interface{}{}})
 		return
 	}
 
@@ -776,7 +777,22 @@ func (s *Server) handleSessionTasks(w http.ResponseWriter, r *http.Request) {
 		ids = ids[:maxBatch]
 	}
 
-	result := make(map[string]string, len(ids))
+	limit := 10
+	if v := r.URL.Query().Get("limit"); v != "" {
+		fmt.Sscanf(v, "%d", &limit)
+	}
+	if limit < 1 {
+		limit = 1
+	}
+	if limit > 30 {
+		limit = 30
+	}
+
+	type taskData struct {
+		Messages json.RawMessage `json:"messages"`
+		Parts    json.RawMessage `json:"parts"`
+	}
+	result := make(map[string]taskData, len(ids))
 	for _, taskID := range ids {
 		taskID = strings.TrimSpace(taskID)
 		if taskID == "" {
@@ -788,47 +804,30 @@ func (s *Server) handleSessionTasks(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		detail, err := adapter.Session(r.Context(), taskID, 1, 0)
+		detail, err := adapter.Session(r.Context(), taskID, limit, 0)
 		if err != nil {
 			continue
 		}
 
-		// Walk the latest assistant message's parts to find tool output.
-		var stdout string
-		for i := len(detail.Messages) - 1; i >= 0; i-- {
-			m := detail.Messages[i]
-			// Parse the message data to check the role.
-			var md struct {
-				Role string `json:"role"`
-			}
-			if err := json.Unmarshal(m.Data, &md); err != nil || md.Role != "assistant" {
-				continue
-			}
-			for _, p := range detail.Parts {
-				if p.MessageID != m.ID {
-					continue
-				}
-				// Parse the part data to extract state.output.
-				var pd struct {
-					State struct {
-						Output interface{} `json:"output"`
-					} `json:"state"`
-				}
-				if err := json.Unmarshal(p.Data, &pd); err != nil {
-					continue
-				}
-				if out, ok := pd.State.Output.(string); ok && out != "" {
-					stdout = out
-					break
-				}
-			}
-			if stdout != "" {
-				break
-			}
+		msgs := detail.Messages
+		if msgs == nil {
+			msgs = []db.Message{}
 		}
-		if stdout != "" {
-			result[taskID] = stdout
+		pts := detail.Parts
+		if pts == nil {
+			pts = []db.Part{}
 		}
+
+		msgsJSON, err := json.Marshal(msgs)
+		if err != nil {
+			continue
+		}
+		ptsJSON, err := json.Marshal(pts)
+		if err != nil {
+			continue
+		}
+
+		result[taskID] = taskData{Messages: msgsJSON, Parts: ptsJSON}
 	}
 
 	writeJSON(w, map[string]interface{}{"tasks": result})

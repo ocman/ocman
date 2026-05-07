@@ -5,7 +5,7 @@ import {
   type AppendMessage,
   type ThreadMessageLike,
 } from '@assistant-ui/react';
-import type { AgentInfo, Message, Part } from '../lib/api';
+import type { AgentInfo, Message, Part, TaskSessionData } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
 import { AgentsContext } from '../lib/agentColor';
 import { FailedSendsContext, type FailedSendsContextValue } from '../lib/failedSendsContext';
@@ -28,8 +28,8 @@ interface Props {
   pendingAgent?: string;
   // Agent metadata (including colors) loaded from the OpenCode /agent API.
   agents?: AgentInfo[];
-  // Live stdout from running task sessions. Maps taskId -> last 10 lines of output.
-  taskLiveOutput?: Record<string, string>;
+  // Sub-session data from task sessions for embedded thread rendering.
+  taskLiveOutput?: Record<string, TaskSessionData>;
   // Absolute path of the session's working directory. Used to display
   // file paths in muted read lines as project-relative instead of just
   // basenames, so the reader can locate the file in their checkout.

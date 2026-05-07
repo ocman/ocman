@@ -15,11 +15,12 @@ function makeMessage(id: string, data: Partial<Message['data']> & { role: 'user'
   return { id, sessionId: 's', timeCreated, data: { ...data } };
 }
 
-function makePart(messageId: string, data: PartData, id = ''): Part {
+function makePart(messageId: string, data: PartData, id = '', timeCreated = 0): Part {
   return {
     id: id || `${messageId}-part-${Math.random().toString(36).slice(2, 8)}`,
     messageId,
     sessionId: 's',
+    timeCreated,
     data: data as unknown as string, // Part.data accepts string|PartData; tests use the object form
   };
 }
@@ -299,8 +300,12 @@ describe('convertMessages', () => {
     expect((tc as { argsText: string }).argsText).toBe('Skill "create-commit"');
   });
 
-  it('renders task calls with subagent metadata + live preview', () => {
+  it('renders task calls with subagent metadata + sub-session data', () => {
     const m = makeMessage('m', { role: 'assistant' });
+    const subSession = {
+      messages: [{ id: 'sub-m1', sessionId: 'ses_live_1', timeCreated: 0, data: { role: 'assistant' } }],
+      parts: [{ id: 'sub-p1', messageId: 'sub-m1', sessionId: 'ses_live_1', data: { type: 'text', text: 'found it' } }],
+    };
     const out = convertMessages(
       [m],
       [makePart('m', {
@@ -312,7 +317,7 @@ describe('convertMessages', () => {
         },
       } as PartData)],
       undefined,
-      { ses_live_1: 'line1\nline2\nline3' },
+      { ses_live_1: subSession },
     );
     const items = asContentArray(out[0].content);
     const tc = items.find((i) => i.type === 'tool-call' && (i as { toolName: string }).toolName === '__task__') as
@@ -320,9 +325,35 @@ describe('convertMessages', () => {
       | undefined;
     expect(tc).toBeDefined();
     expect(tc!.argsText).toBe('running\ndo thing (build)');
-    const parsedResult = JSON.parse(tc!.result as string) as { taskId: string; livePreview: string };
+    const parsedResult = JSON.parse(tc!.result as string) as { taskId: string; subSession: { messages: unknown[]; parts: unknown[] } };
     expect(parsedResult.taskId).toBe('ses_live_1');
-    expect(parsedResult.livePreview).toContain('line3');
+    expect(parsedResult.subSession.messages).toHaveLength(1);
+    expect(parsedResult.subSession.parts).toHaveLength(1);
+  });
+
+  it('renders completed task with taskOutput when no sub-session data is available', () => {
+    const m = makeMessage('m', { role: 'assistant' });
+    const out = convertMessages(
+      [m],
+      [makePart('m', {
+        type: 'tool',
+        tool: 'Task',
+        state: {
+          status: 'completed',
+          input: { description: 'explore' },
+          output: 'task_id: ses_abc\n\nFound 5 files matching the pattern.',
+        },
+      } as PartData)],
+    );
+    const items = asContentArray(out[0].content);
+    const tc = items.find((i) => i.type === 'tool-call' && (i as { toolName: string }).toolName === '__task__') as
+      | { argsText: string; result?: string }
+      | undefined;
+    expect(tc).toBeDefined();
+    const parsedResult = JSON.parse(tc!.result as string) as { taskId: string; taskOutput: string; subSession?: unknown };
+    expect(parsedResult.taskId).toBe('ses_abc');
+    expect(parsedResult.taskOutput).toContain('Found 5 files');
+    expect(parsedResult.subSession).toBeUndefined();
   });
 
   it('renders question calls as __question__ tool-calls', () => {
@@ -499,6 +530,61 @@ describe('convertMessages', () => {
     const m = makeMessage('m', { role: 'assistant', finish: 'stop' });
     const out = convertMessages([m], []);
     expect(out[0].status).toEqual({ type: 'complete', reason: 'stop' });
+  });
+
+  it('encodes @time: suffix in tool-call argsText when parts have timeCreated', () => {
+    const m = makeMessage('m', { role: 'assistant', time: { created: 1000, completed: 5000 } });
+    const out = convertMessages([m], [
+      makePart('m', {
+        type: 'tool',
+        tool: 'bash',
+        state: { status: 'completed', input: { command: 'ls' }, output: 'file.txt' },
+      } as PartData, '', 2000),
+    ]);
+    const items = asContentArray(out[0].content);
+    const tc = items.find((i) => i.type === 'tool-call') as { argsText: string } | undefined;
+    expect(tc).toBeDefined();
+    // The @time: line should be present with startedAt=2000 and
+    // completedAt=5000 (message completed, since there's no next tool part).
+    expect(tc!.argsText).toContain('@time:2000,5000');
+  });
+
+  it('uses next tool part timeCreated as completedAt when multiple tools exist', () => {
+    const m = makeMessage('m', { role: 'assistant', time: { created: 1000, completed: 10000 } });
+    const out = convertMessages([m], [
+      makePart('m', {
+        type: 'tool',
+        tool: 'bash',
+        state: { status: 'completed', input: { command: 'ls' }, output: 'a' },
+      } as PartData, '', 2000),
+      makePart('m', {
+        type: 'tool',
+        tool: 'bash',
+        state: { status: 'completed', input: { command: 'pwd' }, output: '/home' },
+      } as PartData, '', 5000),
+    ]);
+    const items = asContentArray(out[0].content);
+    const tcs = items.filter((i) => i.type === 'tool-call') as Array<{ argsText: string }>;
+    expect(tcs).toHaveLength(2);
+    // First tool: completedAt = next tool's timeCreated (5000)
+    expect(tcs[0].argsText).toContain('@time:2000,5000');
+    // Second tool: completedAt = message completed (10000)
+    expect(tcs[1].argsText).toContain('@time:5000,10000');
+  });
+
+  it('omits @time: suffix when parts have no timeCreated', () => {
+    const m = makeMessage('m', { role: 'assistant' });
+    const out = convertMessages([m], [
+      makePart('m', {
+        type: 'tool',
+        tool: 'bash',
+        state: { status: 'completed', input: { command: 'ls' }, output: 'ok' },
+      } as PartData),
+    ]);
+    const items = asContentArray(out[0].content);
+    const tc = items.find((i) => i.type === 'tool-call') as { argsText: string } | undefined;
+    expect(tc).toBeDefined();
+    expect(tc!.argsText).not.toContain('@time:');
   });
 });
 

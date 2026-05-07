@@ -12,6 +12,7 @@ export type {
   FilePart,
   PartData,
   SessionDetail,
+  TaskSessionData,
   SessionEdit,
   FileChange,
   WorkingTreeFile,
@@ -72,6 +73,7 @@ import type {
   SlashCommand,
   Stats,
   SystemStats,
+  TaskSessionData,
   TmuxClient,
   TmuxSession,
   WorktreeCreateRequest,
@@ -244,12 +246,12 @@ export const api = {
   sessionInfo: (id: string, signal?: AbortSignal) =>
     fetchJSON<SessionInfo>(`/api/session/${encodeURIComponent(id)}/info`, signal),
   /**
-   * Batch-fetch the latest tool output for multiple running sub-task
-   * sessions in a single request. Returns a map of taskId -> output text.
-   * Replaces the per-task polling loop (P7 fix).
+   * Batch-fetch sub-session data for multiple task sessions. Returns
+   * messages + parts per task so the frontend can render an embedded
+   * thread preview inside Task tool cards.
    */
   sessionTasks: (sessionId: string, taskIds: string[], signal?: AbortSignal) =>
-    fetchJSON<{ tasks: Record<string, string> }>(
+    fetchJSON<{ tasks: Record<string, TaskSessionData> }>(
       `/api/session/${encodeURIComponent(sessionId)}/tasks?ids=${taskIds.map(encodeURIComponent).join(',')}`,
       signal,
     ),

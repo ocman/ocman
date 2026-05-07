@@ -306,3 +306,88 @@ func TestMarkRunningToolUses_FlipsUnmatchedToolUses(t *testing.T) {
 		t.Error("did not find the matched tool_use")
 	}
 }
+
+// TestMarkRunningToolUses_CopiesOutputOntoToolUse verifies that the
+// tool_result's output text is copied onto the matching tool_use
+// part's state.output. This normalises Claude Code's split
+// representation into the same shape OpenCode uses so the frontend
+// can read state.output without platform-specific branching.
+func TestMarkRunningToolUses_CopiesOutputOntoToolUse(t *testing.T) {
+	jsonl := `{"type":"assistant","uuid":"a1","sessionId":"S1","timestamp":"2026-04-08T22:49:01.500Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Task","input":{"description":"explore codebase"}},{"type":"tool_use","id":"tu2","name":"Read","input":{"file_path":"/a"}}]}}
+{"type":"user","uuid":"u2","sessionId":"S1","timestamp":"2026-04-08T22:49:03.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu1","content":"task_id: ses_abc123\n\n<task_result>\nFound 3 files.\n</task_result>"},{"type":"tool_result","tool_use_id":"tu2","content":"file contents here"}]}}
+`
+	pf, err := parseReader(strings.NewReader(jsonl), parseFull)
+	if err != nil {
+		t.Fatalf("parseReader: %v", err)
+	}
+
+	for _, p := range pf.Parts {
+		var probe struct {
+			Tool  string `json:"tool"`
+			ID    string `json:"id"`
+			State struct {
+				Status string `json:"status"`
+				Output string `json:"output"`
+			} `json:"state"`
+		}
+		if err := json.Unmarshal(p.Data, &probe); err != nil {
+			t.Fatalf("unmarshal part: %v (data=%s)", err, p.Data)
+		}
+		if probe.Tool == "result" {
+			continue
+		}
+		switch probe.ID {
+		case "tu1":
+			if probe.State.Status != "completed" {
+				t.Errorf("tu1 status = %q, want completed", probe.State.Status)
+			}
+			if probe.State.Output == "" {
+				t.Error("tu1 state.output should be populated from tool_result")
+			}
+			if !strings.Contains(probe.State.Output, "Found 3 files") {
+				t.Errorf("tu1 state.output = %q, want it to contain the task result", probe.State.Output)
+			}
+		case "tu2":
+			if probe.State.Status != "completed" {
+				t.Errorf("tu2 status = %q, want completed", probe.State.Status)
+			}
+			if probe.State.Output != "file contents here" {
+				t.Errorf("tu2 state.output = %q, want %q", probe.State.Output, "file contents here")
+			}
+		}
+	}
+}
+
+// TestMarkRunningToolUses_EmptyOutputNotCopied verifies that when a
+// tool_result has empty output, the tool_use part is not rewritten
+// (no spurious empty state.output field).
+func TestMarkRunningToolUses_EmptyOutputNotCopied(t *testing.T) {
+	jsonl := `{"type":"assistant","uuid":"a1","sessionId":"S1","timestamp":"2026-04-08T22:49:01.500Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"bash","input":{"command":"true"}}]}}
+{"type":"user","uuid":"u2","sessionId":"S1","timestamp":"2026-04-08T22:49:03.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu1","content":""}]}}
+`
+	pf, err := parseReader(strings.NewReader(jsonl), parseFull)
+	if err != nil {
+		t.Fatalf("parseReader: %v", err)
+	}
+
+	for _, p := range pf.Parts {
+		var probe struct {
+			Tool  string `json:"tool"`
+			ID    string `json:"id"`
+			State struct {
+				Output string `json:"output"`
+			} `json:"state"`
+		}
+		if err := json.Unmarshal(p.Data, &probe); err != nil {
+			continue
+		}
+		if probe.Tool == "result" || probe.ID != "tu1" {
+			continue
+		}
+		// The original tool_use part should not have been rewritten
+		// since the tool_result output was empty.
+		if probe.State.Output != "" {
+			t.Errorf("tu1 state.output = %q, want empty (no rewrite for empty output)", probe.State.Output)
+		}
+	}
+}

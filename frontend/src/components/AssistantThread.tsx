@@ -25,13 +25,41 @@ import {
   summarizePatch,
   parseQuestionAnswers,
   parseQuestions,
+  parseToolTime,
+  formatToolDuration,
   type QuestionData,
 } from '../lib/threadHelpers';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import type { FC } from 'react';
+import { EmbeddedThread } from './EmbeddedThread';
 
+/**
+ * Renders a duration badge for a tool card. For completed tools it
+ * shows a static duration; for running tools it shows a live elapsed
+ * counter that ticks every second.
+ */
+const ToolDuration: FC<{ startedAt: number; completedAt: number; isRunning: boolean }> = ({
+  startedAt,
+  completedAt,
+  isRunning,
+}) => {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!isRunning) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [isRunning]);
+
+  const elapsed = isRunning
+    ? now - startedAt
+    : completedAt > startedAt
+      ? completedAt - startedAt
+      : 0;
+  if (elapsed <= 0) return null;
+  return <span className="oc-tool-duration">{formatToolDuration(elapsed)}</span>;
+};
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function CodeBlockPre(props: any) {
@@ -368,30 +396,14 @@ function AnsweredQuestionBlock({ questions, answers }: { questions: QuestionData
   );
 }
 
-// Compact live-streaming preview for a running subagent task. Renders the
-// tail of the subagent's latest stdout in a small scroll-pinned container so
-// the main thread shows progress while the final output is still being
-// produced. Replaced by the final Markdown output once the task completes.
-const TaskStreamPreview: FC<{ text: string }> = ({ text }) => {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [text]);
-  return (
-    <div className="oc-tool-stream" aria-live="polite">
-      <div className="oc-tool-stream-header">
-        <span className="oc-tool-stream-dot" />
-        <span>streaming</span>
-      </div>
-      <div ref={ref} className="oc-tool-stream-body">{text}</div>
-    </div>
-  );
-};
 
-const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, result }) => {
+const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArgsText, result }) => {
   const [expanded, setExpanded] = useState(false);
   const [taskExpanded, setTaskExpanded] = useState(false);
+
+  // Extract timing data from the @time: line, if present.
+  const timeInfo = parseToolTime(rawArgsText || '');
+  const argsText = timeInfo ? timeInfo.strippedArgs : (rawArgsText || '');
 
   // File reads/greps and Skill loads render as a muted inline line
   // with an arrow icon. Skill is here (rather than in its own branch)
@@ -408,7 +420,8 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
     );
   }
 
-  // Subagent tasks render as a compact card with output, clicking header opens the session
+  // Subagent tasks render as a compact card with an embedded thread preview.
+  // Clicking the header navigates to the full sub-session page.
   if (toolName === '__task__') {
     const lines = (argsText || '').split('\n');
     const taskStatus = lines[0] || 'running';
@@ -416,15 +429,20 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
 
     let sessionId = '';
     let taskOutput = '';
-    let livePreview = '';
     type LiveTool = { toolName: string; summary?: string; subagentId?: string; startedAt?: string };
     let liveTools: LiveTool[] = [];
+    let subMessages: import('../lib/api').Message[] = [];
+    let subParts: import('../lib/api').Part[] = [];
     try {
       const parsed = JSON.parse(typeof result === 'string' ? result : '{}');
       sessionId = parsed.taskId || '';
       taskOutput = (parsed.taskOutput || '').replace(/^<task_result>\n?/, '').replace(/\n?<\/task_result>$/, '').trim();
-      if (typeof parsed.livePreview === 'string') livePreview = parsed.livePreview.trim();
       if (Array.isArray(parsed.liveTools)) liveTools = parsed.liveTools as LiveTool[];
+      if (parsed.subSession) {
+        const sub = parsed.subSession as { messages?: unknown[]; parts?: unknown[] };
+        if (Array.isArray(sub.messages)) subMessages = sub.messages as import('../lib/api').Message[];
+        if (Array.isArray(sub.parts)) subParts = sub.parts as import('../lib/api').Part[];
+      }
     } catch { /* ignore */ }
 
     let statusIcon = '\u2022';
@@ -434,20 +452,18 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
     else if (taskStatus === 'error') { statusIcon = '\u2717'; statusClass = 'oc-tool-error'; statusTitle = 'Error'; }
 
     const handleHeaderClick = sessionId ? () => { window.location.href = `/session/${sessionId}`; } : undefined;
-    const isLongOutput = taskOutput.length > 500;
-    // Show the streaming container while the task is running and we don't yet
-    // have a final output to display. Once taskOutput arrives, the final
-    // markdown output replaces the streaming preview.
-    const showStream = taskStatus === 'running' && !taskOutput && !!livePreview;
-    // Live tool list is only meaningful while the task runs and we have no
-    // final output yet; once the summary arrives it replaces the list.
-    const showLiveTools = taskStatus === 'running' && !taskOutput && liveTools.length > 0;
+    // Show the embedded thread when we have sub-session data.
+    const hasSubSession = subMessages.length > 0;
+    // Live tool list is only meaningful while the task runs and we
+    // have no sub-session data or summary yet.
+    const showLiveTools = taskStatus === 'running' && !hasSubSession && !taskOutput && liveTools.length > 0;
 
     return (
       <div className={`oc-tool oc-tool-task ${statusClass} ${taskExpanded ? 'oc-tool-expanded' : ''}`}>
         <div className="oc-tool-header" onClick={handleHeaderClick} style={sessionId ? { cursor: 'pointer' } : undefined}>
           <span className={`oc-tool-icon ${statusClass}`} title={statusTitle}>{statusIcon}</span>
           <span className="oc-tool-label">{label}</span>
+          {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={taskStatus === 'running'} />}
           {sessionId && <span className="oc-task-link">{'\u2197'}</span>}
         </div>
         {showLiveTools && (
@@ -463,15 +479,18 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
             </ul>
           </div>
         )}
-        {showStream && (
-          <div className="oc-tool-content">
-            <TaskStreamPreview text={livePreview} />
+        {hasSubSession && (
+          <div className="oc-tool-content" onClick={() => !taskExpanded && setTaskExpanded(true)} style={!taskExpanded ? { cursor: 'pointer' } : undefined}>
+            <EmbeddedThread messages={subMessages} parts={subParts} />
+            {!taskExpanded && (
+              <div className="oc-tool-expand">Click to expand</div>
+            )}
           </div>
         )}
-        {taskOutput && (
+        {!hasSubSession && taskOutput && (
           <div className="oc-tool-content" onClick={() => !taskExpanded && setTaskExpanded(true)} style={!taskExpanded ? { cursor: 'pointer' } : undefined}>
             <div className="oc-tool-pre oc-tool-output oc-md"><MarkdownText text={taskOutput} /></div>
-            {!taskExpanded && isLongOutput && (
+            {!taskExpanded && taskOutput.length > 500 && (
               <div className="oc-tool-expand">Click to expand</div>
             )}
           </div>
@@ -561,6 +580,7 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
         <div className="oc-tool-header" onClick={() => setExpanded(!expanded)}>
           <i className={`bi bi-check2-square oc-tool-icon ${statusClass}`} title={statusTitle} aria-hidden="true" />
           <span className="oc-tool-label">{title && title !== toolName ? title : 'Task list'}</span>
+          {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} />}
         </div>
         <div className="oc-tool-content">
           <TodoList todos={todos} />
@@ -583,6 +603,7 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
         <div className="oc-tool-header" onClick={() => setExpanded(!expanded)}>
           <span className={`oc-tool-icon ${statusClass}`} title={statusTitle}>{statusIcon}</span>
           <span className="oc-tool-label">{patchSummary}</span>
+          {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} />}
         </div>
         {(fileLines.length > 0 || patchBody) && (
           <div className="oc-tool-content" onClick={() => !expanded && setExpanded(true)} style={!expanded ? { cursor: 'pointer' } : undefined}>
@@ -616,6 +637,7 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
         <div className="oc-tool-header" onClick={() => setExpanded(!expanded)}>
           <i className={`bi bi-pencil-fill oc-tool-icon ${statusClass}`} title={statusTitle} aria-hidden="true" />
           <span className="oc-tool-label">{title || toolName}</span>
+          {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} />}
         </div>
         {outputDisplay && (
           <div className="oc-tool-content" onClick={() => !expanded && !hasDiff && setExpanded(true)} style={!expanded && !hasDiff ? { cursor: 'pointer' } : undefined}>
@@ -644,6 +666,7 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
         <div className="oc-tool-header" onClick={() => setExpanded(!expanded)}>
           <i className={`bi bi-terminal-fill oc-tool-icon ${statusClass}`} title={statusTitle} aria-hidden="true" />
           <span className="oc-tool-label">{title && title !== command ? title : toolName}</span>
+          {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} />}
         </div>
         <div className="oc-tool-content" onClick={() => !bashExpanded && setExpanded(true)} style={!bashExpanded ? { cursor: 'pointer' } : undefined}>
           <pre className="oc-shell-block">
@@ -662,6 +685,7 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText, res
       <div className="oc-tool-header" onClick={() => setExpanded(!expanded)}>
         <span className={`oc-tool-icon ${statusClass}`} title={statusTitle}>{statusIcon}</span>
         <span className="oc-tool-label">{title || toolName}</span>
+        {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} />}
       </div>
       {(detail || outputDisplay) && (
         <div className="oc-tool-content" onClick={() => !expanded && setExpanded(true)} style={!expanded ? { cursor: 'pointer' } : undefined}>

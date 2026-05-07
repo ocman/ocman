@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
-import type { Part } from '../../lib/api';
+import type { Part, TaskSessionData } from '../../lib/api';
 import { api } from '../../lib/api';
 import { extractTaskId, isTaskTool } from '../../lib/taskId';
 
@@ -49,9 +49,9 @@ export interface UseSubagentTrackingResult {
   /** Per-message token snapshots, keyed by subagent message id. */
   subagentTokens: SubagentTokenMap;
   setSubagentTokens: Dispatch<SetStateAction<SubagentTokenMap>>;
-  /** Live stdout per subagent task, keyed by task id. */
-  taskLiveOutput: Record<string, string>;
-  setTaskLiveOutput: Dispatch<SetStateAction<Record<string, string>>>;
+  /** Sub-session data per subagent task, keyed by task id. */
+  taskLiveOutput: Record<string, TaskSessionData>;
+  setTaskLiveOutput: Dispatch<SetStateAction<Record<string, TaskSessionData>>>;
 }
 
 /**
@@ -63,19 +63,20 @@ export interface UseSubagentTrackingResult {
  *      subagent sessions (their session id differs from the page's).
  *   2. The token-output snapshot per subagent assistant message,
  *      used to compute live tokens-per-second across subagent runs.
- *   3. The live stdout cache per running task, fed to the runtime
- *      provider so the assistant thread can show streaming output
- *      while a subagent is still going.
+ *   3. The sub-session data cache per task, fed to the runtime
+ *      provider so the assistant thread can render an embedded
+ *      thread preview of the subagent conversation.
  *
- * The hook also runs the 2-second poll against /api/session/{id}/tasks
- * so live stdout stays fresh while at least one subagent is running.
+ * The hook runs a 2-second poll against /api/session/{id}/tasks for
+ * running tasks, and a one-shot fetch for completed tasks whose
+ * sub-session data hasn't been loaded yet.
  */
 export function useSubagentTracking(
   parts: Part[],
   sessionId: string | undefined,
 ): UseSubagentTrackingResult {
   const [subagentTokens, setSubagentTokensRaw] = useState<SubagentTokenMap>(new Map());
-  const [taskLiveOutput, setTaskLiveOutput] = useState<Record<string, string>>({});
+  const [taskLiveOutput, setTaskLiveOutput] = useState<Record<string, TaskSessionData>>({});
 
   // Wrap the setter in a reference that always trims trailing
   // entries past the cap. Callers can safely pass plain
@@ -139,10 +140,10 @@ export function useSubagentTracking(
     return running;
   }, [parts]);
 
-  // Poll the running tasks for their live stdout. Effect re-fires
-  // whenever the *count* of running tasks changes — using the contents
-  // would re-create the interval on every status flip, which costs an
-  // extra request without any payoff.
+  // Poll the running tasks for their sub-session data. Effect
+  // re-fires whenever the *count* of running tasks changes — using
+  // the contents would re-create the interval on every status flip,
+  // which costs an extra request without any payoff.
   useEffect(() => {
     if (!sessionId || runningTaskIds.length === 0) return;
     const controller = new AbortController();
@@ -152,8 +153,15 @@ export function useSubagentTracking(
         const resp = await api.sessionTasks(sessionId, taskIdList, controller.signal);
         if (controller.signal.aborted) return;
         const tasks = resp.tasks || {};
-        if (Object.keys(tasks).length > 0) {
-          setTaskLiveOutput((prev) => ({ ...prev, ...tasks }));
+        const entries = Object.entries(tasks);
+        if (entries.length > 0) {
+          setTaskLiveOutput((prev) => {
+            const next = { ...prev };
+            for (const [id, data] of entries) {
+              next[id] = data;
+            }
+            return next;
+          });
         }
       } catch {
         /* ignore poll errors — next tick retries */
@@ -169,6 +177,65 @@ export function useSubagentTracking(
     // is itself signalled by the next memo recomputation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runningTaskIds.length, sessionId]);
+
+  // Fetch sub-session data for completed tasks that we don't have
+  // data for yet. This covers the case where the user navigates
+  // away and comes back — the task is completed, the live poll
+  // isn't running, but we still need the sub-session messages to
+  // render the embedded thread preview.
+  const completedTaskIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const p of parts) {
+      const d = typeof p.data === 'string'
+        ? (() => { try { return JSON.parse(p.data); } catch { return null; } })()
+        : p.data;
+      if (!d || typeof d !== 'object') continue;
+      const toolName = (d as Record<string, unknown>).tool as string | undefined;
+      if (!isTaskTool(toolName)) continue;
+      const st = (d as Record<string, unknown>).state as Record<string, unknown> | undefined;
+      const status = (st?.status as string) || 'running';
+      if (status === 'running') continue; // handled by the poll above
+      const taskId = extractTaskId(st);
+      if (taskId) ids.push(taskId);
+    }
+    return ids;
+  }, [parts]);
+
+  // Ref to track which completed task ids we've already fetched so
+  // we don't re-fetch on every render.
+  const fetchedCompletedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!sessionId || completedTaskIds.length === 0) return;
+    // Only fetch tasks we haven't fetched yet.
+    const needed = completedTaskIds.filter((id) => !fetchedCompletedRef.current.has(id));
+    if (needed.length === 0) return;
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const resp = await api.sessionTasks(sessionId, needed, controller.signal);
+        if (controller.signal.aborted) return;
+        const tasks = resp.tasks || {};
+        const entries = Object.entries(tasks);
+        if (entries.length > 0) {
+          for (const [id] of entries) {
+            fetchedCompletedRef.current.add(id);
+          }
+          setTaskLiveOutput((prev) => {
+            const next = { ...prev };
+            for (const [id, data] of entries) {
+              next[id] = data;
+            }
+            return next;
+          });
+        }
+      } catch {
+        /* ignore — will retry on next parts change */
+      }
+    })();
+    return () => { controller.abort(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [completedTaskIds.length, sessionId]);
 
   return {
     subagentSessionIds,

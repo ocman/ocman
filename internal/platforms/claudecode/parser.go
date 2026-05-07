@@ -156,24 +156,40 @@ func parseReader(r io.Reader, mode parseMode) (*parsedFile, error) {
 // from a static jsonl, that a Task (or any other tool) is still in
 // flight — the CLI appends tool_result only after the tool returns.
 //
+// For resolved tool_uses (those with a matching tool_result), the
+// tool_result's output is copied onto the tool_use part's
+// state.output. This normalises Claude Code's split representation
+// (tool_use on the assistant message, tool_result on the user
+// message) into the same shape OpenCode uses (output on the tool
+// part itself), so the frontend can read state.output without
+// platform-specific logic.
+//
 // The UI uses the running status to render the compact "live" Task
 // card and to overlay the live-tool list from the hook-driven cache.
 func markRunningToolUses(pf *parsedFile) {
 	if pf == nil || len(pf.Parts) == 0 {
 		return
 	}
-	// Collect every tool_use_id referenced by a tool_result part.
-	resolved := make(map[string]struct{}, len(pf.Parts))
+	// Collect every tool_use_id referenced by a tool_result part,
+	// along with its output text so we can copy it onto the matching
+	// tool_use part below.
+	type resultInfo struct {
+		output string
+	}
+	resolved := make(map[string]resultInfo, len(pf.Parts))
 	for _, p := range pf.Parts {
 		var probe struct {
-			Tool string `json:"tool"`
-			ID   string `json:"id"`
+			Tool  string `json:"tool"`
+			ID    string `json:"id"`
+			State struct {
+				Output string `json:"output"`
+			} `json:"state"`
 		}
 		if err := json.Unmarshal(p.Data, &probe); err != nil {
 			continue
 		}
 		if probe.Tool == "result" && probe.ID != "" {
-			resolved[probe.ID] = struct{}{}
+			resolved[probe.ID] = resultInfo{output: probe.State.Output}
 		}
 	}
 	if len(resolved) == len(pf.Parts) {
@@ -196,11 +212,36 @@ func markRunningToolUses(pf *parsedFile) {
 		if probe.ID == "" {
 			continue
 		}
-		if _, ok := resolved[probe.ID]; ok {
+		ri, isResolved := resolved[probe.ID]
+		if isResolved {
+			// Resolved: copy the tool_result output onto this
+			// tool_use part so the frontend can read state.output
+			// directly, matching the OpenCode data shape.
+			if ri.output != "" {
+				var state map[string]interface{}
+				if len(probe.State) > 0 {
+					_ = json.Unmarshal(probe.State, &state)
+				}
+				if state == nil {
+					state = map[string]interface{}{}
+				}
+				state["output"] = ri.output
+				replacement, err := json.Marshal(map[string]interface{}{
+					"type":  "tool",
+					"tool":  probe.Tool,
+					"id":    probe.ID,
+					"state": state,
+				})
+				if err != nil {
+					continue
+				}
+				pf.Parts[i].Data = replacement
+			}
 			continue
 		}
-		// Rewrite state.status -> "running". Preserve everything else
-		// in state verbatim by deserialising into a generic map.
+		// Unresolved: rewrite state.status -> "running". Preserve
+		// everything else in state verbatim by deserialising into a
+		// generic map.
 		var state map[string]interface{}
 		if len(probe.State) > 0 {
 			_ = json.Unmarshal(probe.State, &state)

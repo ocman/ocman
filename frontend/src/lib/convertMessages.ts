@@ -1,5 +1,5 @@
 import type { ThreadMessageLike } from '@assistant-ui/react';
-import type { Message, Part, PartData, FilePart } from './api';
+import type { Message, Part, PartData, FilePart, TaskSessionData } from './api';
 import type { FailedSend } from './failedSends';
 import { simpleDiff } from './diff';
 import { extractTaskId } from './taskId';
@@ -102,7 +102,7 @@ export function computeIsRunning(messages: Message[]): boolean {
 type ConvertedCacheEntry = {
   parts: Part[];
   pendingAgent: string | undefined;
-  taskLiveOutput: Record<string, string> | undefined;
+  taskLiveOutput: Record<string, TaskSessionData> | undefined;
   projectDirectory: string | undefined;
   failedById: Record<string, FailedSend> | undefined;
   /** Whether this message was queued (depends on neighbors). */
@@ -171,7 +171,7 @@ export type ConvertMessagesFn = (
   messages: Message[],
   parts: Part[],
   pendingAgent?: string,
-  taskLiveOutput?: Record<string, string>,
+  taskLiveOutput?: Record<string, TaskSessionData>,
   projectDirectory?: string,
   failedById?: Record<string, FailedSend>,
 ) => ThreadMessageLike[];
@@ -209,7 +209,7 @@ export function createConvertMessages(): ConvertMessagesFn {
     messages: Message[],
     parts: Part[],
     pendingAgent?: string,
-    taskLiveOutput?: Record<string, string>,
+    taskLiveOutput?: Record<string, TaskSessionData>,
     projectDirectory?: string,
     failedById?: Record<string, FailedSend>,
   ): ThreadMessageLike[] {
@@ -303,7 +303,29 @@ export function createConvertMessages(): ConvertMessagesFn {
       result?: string;
     }> = [];
 
-    msgParts.forEach((pd) => {
+    // Build a time-suffix string for a tool part. `startedAt` is the
+    // part's own timeCreated; `completedAt` is the next part's
+    // timeCreated (or the message's time.completed for the last tool).
+    // Returns '' when no useful timing is available.
+    const msgCompleted = (m.data.time as { completed?: number } | undefined)?.completed || 0;
+    function toolTimeSuffix(partIdx: number): string {
+      const started = msgPartsRaw[partIdx]?.timeCreated || 0;
+      if (!started) return '';
+      // Walk forward to find the next tool part's timeCreated.
+      let ended = 0;
+      for (let j = partIdx + 1; j < msgPartsRaw.length; j++) {
+        const nextPd = msgParts[j];
+        const nextTime = msgPartsRaw[j].timeCreated ?? 0;
+        if (nextPd && nextPd.type === 'tool' && nextTime) {
+          ended = nextTime;
+          break;
+        }
+      }
+      if (!ended) ended = msgCompleted;
+      return `\n@time:${started},${ended || 0}`;
+    }
+
+    msgParts.forEach((pd, partIdx) => {
       // Skip non-renderable lifecycle parts
       if (pd.type === 'step-start' || pd.type === 'step-finish' || pd.type === 'snapshot') return;
 
@@ -426,13 +448,12 @@ export function createConvertMessages(): ConvertMessagesFn {
                 5000,
               );
             }
-            // While running, inject live output from the task's
-            // session so the main thread can render a small
-            // streaming container until the final output is available.
-            let livePreview = '';
-            if (status === 'running' && taskId && taskLiveOutput?.[taskId]) {
-              const lines = taskLiveOutput[taskId].split('\n');
-              livePreview = lines.slice(-40).join('\n'); // tail of stdout
+            // Sub-session data for rendering an embedded thread
+            // preview. Available both while running (from polling)
+            // and after completion (from the persisted session).
+            let subSession: TaskSessionData | undefined;
+            if (taskId && taskLiveOutput?.[taskId]) {
+              subSession = taskLiveOutput[taskId];
             }
             // Live tool list comes from the Claude Code hook cache,
             // injected by the backend into state.metadata.liveTools
@@ -451,8 +472,8 @@ export function createConvertMessages(): ConvertMessagesFn {
               type: 'tool-call' as const,
               toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
               toolName: '__task__',
-              argsText: `${status}\n${label}`,
-              result: JSON.stringify({ taskId, taskOutput, livePreview, liveTools }),
+              argsText: `${status}${toolTimeSuffix(partIdx)}\n${label}`,
+              result: JSON.stringify({ taskId, taskOutput, subSession, liveTools }),
             });
             break;
           } else if (toolName === 'question' || toolName === 'mcp_question' || toolName === 'Question') {
@@ -522,7 +543,7 @@ export function createConvertMessages(): ConvertMessagesFn {
             type: 'tool-call' as const,
             toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
             toolName,
-            argsText: `${st.status || 'running'}\n${title ? title + '\n' : ''}${argsText}`,
+            argsText: `${st.status || 'running'}${toolTimeSuffix(partIdx)}\n${title ? title + '\n' : ''}${argsText}`,
             result: resultText || undefined,
           });
 
@@ -590,7 +611,7 @@ export function createConvertMessages(): ConvertMessagesFn {
             type: 'tool-call' as const,
             toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
             toolName,
-            argsText: `${st.status || 'running'}\n${title ? title + '\n' : ''}${argsText}`,
+            argsText: `${st.status || 'running'}${toolTimeSuffix(partIdx)}\n${title ? title + '\n' : ''}${argsText}`,
             result: resultText || undefined,
           });
           break;

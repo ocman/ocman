@@ -261,6 +261,16 @@
   white-space: nowrap;
 }
 
+.oc-tool-duration {
+  font-size: 11px;
+  color: var(--text-dim);
+  opacity: 0.5;
+  flex-shrink: 0;
+  font-family: var(--font-conversation-mono);
+  white-space: nowrap;
+}
+.oc-tool-running .oc-tool-duration { opacity: 0.7; }
+
 .oc-tool-content { padding: 0 12px 10px 12px; }
 .oc-tool-pre {
   background: rgba(0, 0, 0, 0.3);
@@ -834,4 +844,65 @@
   font-family: 'SF Mono', Consolas, monospace;
   font-size: 11px;
   color: var(--text);
+}
+
+/* Embedded sub-session thread preview inside Task tool cards.
+   Compact, scrollable, read-only view of the subagent conversation. */
+.oc-embedded-thread {
+  max-height: 300px;
+  overflow-y: auto;
+  border-left: 2px solid var(--surface2);
+  padding: 4px 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.oc-embedded-thread .oc-msg {
+  padding: 2px 10px;
+  margin: 0;
+  border: none;
+}
+.oc-embedded-thread .oc-msg-body {
+  padding: 0;
+}
+.oc-embedded-thread .oc-msg-user {
+  border-left: none;
+  opacity: 0.7;
+  font-size: 12px;
+}
+.oc-embedded-thread .oc-tool {
+  margin: 2px 0;
+  padding: 2px 0;
+}
+.oc-embedded-thread .oc-tool-content {
+  padding: 0 8px;
+}
+.oc-embedded-thread .oc-tool-pre {
+  max-height: 80px;
+  overflow: hidden;
+  font-size: 11px;
+}
+.oc-embedded-thread .oc-read-line {
+  font-size: 11px;
+}
+.oc-embedded-thread .oc-md {
+  font-size: 13px;
+}
+.oc-embedded-thread .oc-md p {
+  margin: 2px 0;
+}
+.oc-embedded-thread .oc-md pre {
+  margin: 4px 0;
+  font-size: 11px;
+  max-height: 120px;
+  overflow: hidden;
+}
+/* Expanded state for the embedded thread */
+.oc-tool-task.oc-tool-expanded .oc-embedded-thread {
+  max-height: none;
+}
+.oc-tool-task.oc-tool-expanded .oc-embedded-thread .oc-tool-pre {
+  max-height: none;
+}
+.oc-tool-task.oc-tool-expanded .oc-embedded-thread .oc-md pre {
+  max-height: none;
 }
