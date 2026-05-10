@@ -1325,19 +1325,15 @@ export function SessionDetail({ id }: SessionDetailProps) {
     }
 
     if (command === 'rename') {
-      console.log('Rename command triggered', { args, sessionId: session.id, title: session.title });
       if (args.trim()) {
         try {
-          console.log('Calling renameSession API');
           await api.renameSession(session.id, args.trim());
-          console.log('API call successful, updating state');
           setSession(prev => prev ? { ...prev, title: args.trim() } : prev);
           setShowRenameToast(true);
         } catch (e) {
           console.error('Failed to rename session', e);
         }
       } else {
-        console.log('Showing rename modal');
         setRenameTitle(session.title || '');
         setShowRenameModal(true);
       }

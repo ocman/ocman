@@ -156,7 +156,6 @@ function GlobalHotkeys() {
     label: 'Alt+Space',
     description: 'Open command palette',
     handler: () => {
-      console.log('[ocman] Alt+Space → command palette');
       useUiStore.getState().openPalette('command');
     },
     runInEditable: true,

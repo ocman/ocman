@@ -146,7 +146,7 @@ diffs minimal and match the surrounding code.
   Code it's inferred from the last `type` in the JSONL + overlaid
   with the live cache.
 - **Auto-archive**: background goroutine archives sessions inactive
-  for 7+ days (checked every 24 h). Runs against all registered
+  for 3+ days (checked every 24 h). Runs against all registered
   platforms.
 - **OpenTelemetry (optional)**: pass `--otel=<endpoint>` (or set
   `OTEL_EXPORTER_OTLP_ENDPOINT`) to ship traces and metrics to an OTLP

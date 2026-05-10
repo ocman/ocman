@@ -1,6 +1,7 @@
 package opencode
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -663,7 +664,7 @@ func patchJSON(ctx context.Context, port, path string, payload []byte) error {
 // land in the default "platform unreachable" bucket on the way out.
 func sendJSON(ctx context.Context, method, port, path string, payload []byte) error {
 	apiURL := fmt.Sprintf("http://127.0.0.1:%s%s", port, path)
-	req, err := http.NewRequestWithContext(ctx, method, apiURL, strings.NewReader(string(payload)))
+	req, err := http.NewRequestWithContext(ctx, method, apiURL, bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}
@@ -675,7 +676,7 @@ func sendJSON(ctx context.Context, method, port, path string, payload []byte) er
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
-		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+		if resp.StatusCode < 500 {
 			ue := &platforms.UpstreamError{
 				Status:  resp.StatusCode,
 				Message: extractOpenCodeErrorMessage(body),

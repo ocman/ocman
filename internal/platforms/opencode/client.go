@@ -1,7 +1,6 @@
 package opencode
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -34,11 +33,6 @@ var rePortSuffix = regexp.MustCompile(`:(\d+)$`)
 var openCodeClient = &http.Client{
 	Timeout:   10 * time.Second,
 	Transport: otelhttp.NewTransport(http.DefaultTransport),
-}
-
-// limitedReader wraps a byte slice in a reader for HTTP request bodies.
-func limitedReader(data []byte) io.Reader {
-	return bytes.NewReader(data)
 }
 
 // --- Port discovery with TTL cache ---

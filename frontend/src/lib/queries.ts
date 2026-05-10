@@ -44,16 +44,6 @@ type SessionsParams = {
  * SessionDetail sidebar) can call this with the same params and TanStack
  * deduplicates to a single in-flight request.
  *
- * @param params  Filter params forwarded to `/api/sessions`.
- * @param options.refetchInterval  Per-consumer polling interval (ms).
- *                                 TanStack deduplicates when keys match.
- * @param options.enabled          Whether the query should run.
- */
-/**
- * Shared sessions-list query. Multiple components (Dashboard, ProjectDetail,
- * SessionDetail sidebar) can call this with the same params and TanStack
- * deduplicates to a single in-flight request.
- *
  * `sinceHours` is preferred over a raw `since` timestamp because
  * `Date.now()` is impure and would change the query key on every render,
  * defeating TanStack's caching. The actual timestamp is computed inside
