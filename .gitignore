@@ -13,3 +13,5 @@ frontend/test-results/
 frontend/playwright-report/
 # Local working notes — not part of the project history.
 feedback.md
+# graphify output (generated, not project history)
+graphify-out/
