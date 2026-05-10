@@ -429,7 +429,7 @@
 }
 .oc-todo-item {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 6px;
   padding: 1px 0;
   color: var(--text);
