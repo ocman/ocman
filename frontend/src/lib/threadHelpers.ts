@@ -402,3 +402,46 @@ export function parseQuestions(argsText: string): QuestionData[] | null {
   }
   return null;
 }
+
+/**
+ * Extract tool timing from the `@time:` line encoded in argsText.
+ * Returns `{ startedAt, completedAt }` in unix ms, or null when no
+ * timing data is present. Also strips the `@time:` line from the
+ * remaining args so downstream parsers don't see it.
+ */
+export function parseToolTime(argsText: string): {
+  startedAt: number;
+  completedAt: number;
+  strippedArgs: string;
+} | null {
+  const lines = argsText.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].startsWith('@time:')) {
+      const payload = lines[i].slice(6);
+      const [startStr, endStr] = payload.split(',');
+      const startedAt = parseInt(startStr, 10) || 0;
+      const completedAt = parseInt(endStr, 10) || 0;
+      if (!startedAt) return null;
+      const stripped = [...lines.slice(0, i), ...lines.slice(i + 1)].join('\n');
+      return { startedAt, completedAt, strippedArgs: stripped };
+    }
+  }
+  return null;
+}
+
+/**
+ * Format a duration in milliseconds into a compact human-readable
+ * string for tool cards. Uses decimal seconds for sub-minute
+ * durations so the reader can see sub-second precision.
+ */
+export function formatToolDuration(ms: number): string {
+  if (ms < 0) return '';
+  if (ms < 1000) return '< 1s';
+  const s = ms / 1000;
+  if (s < 60) return s.toFixed(1) + 's';
+  const m = Math.floor(s / 60);
+  const rem = Math.round(s % 60);
+  if (m < 60) return m + 'm ' + rem + 's';
+  const h = Math.floor(m / 60);
+  return h + 'h ' + (m % 60) + 'm';
+}
