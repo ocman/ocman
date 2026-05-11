@@ -187,9 +187,9 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 4px;
-  margin-top: 10px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--surface1);
+  margin-top: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--surface1);
   font-family: 'SF Mono', Consolas, monospace;
   font-size: 11px;
   color: var(--text-dim);
