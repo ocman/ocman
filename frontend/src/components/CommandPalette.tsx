@@ -93,6 +93,7 @@ export function CommandPalette() {
   const projects = useApiStore((s) => s.getProjects);
   const createSession = useApiStore((s) => s.createSession);
   const launchOpencodeInTmux = useApiStore((s) => s.launchOpencodeInTmux);
+  const seedNewSession = useApiStore((s) => s.seedNewSession);
   const refreshCachedSessions = useApiStore((s) => s.refreshCachedSessions);
   const tmux = useTmux();
   const worktreeSessionsAllowed = useWorktreeSessions();
@@ -284,16 +285,22 @@ export function CommandPalette() {
       navigate(`/session/${item.session.id}`);
     } else if (item.kind === 'project') {
       closePalette();
+      const projectDir = item.project.directory;
+      // Infer the platform from any existing session for this directory.
+      const inferredPlatform = sessions?.find((s) => s.directory === projectDir)?.platform ?? '';
       createSessionWithLaunch(
         {
           createSession,
           launchOpencodeInTmux,
           tmuxAvailable: tmux.available,
         },
-        { directory: item.project.directory },
+        { directory: projectDir },
       )
         .then((res) => {
-          if (res.id) navigate(`/session/${res.id}`);
+          if (res.id) {
+            seedNewSession(res.id, projectDir, inferredPlatform);
+            navigate(`/session/${res.id}`);
+          }
         })
         .catch(console.error);
     } else if (item.kind === 'nav') {

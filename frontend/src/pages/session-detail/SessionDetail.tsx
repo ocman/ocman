@@ -507,6 +507,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const createSession = useApiStore((state) => state.createSession);
   const launchOpencodeInTmux = useApiStore((state) => state.launchOpencodeInTmux);
   const updateCachedSession = useApiStore((state) => state.updateCachedSession);
+  const seedNewSession = useApiStore((state) => state.seedNewSession);
   const sidebarWidth = useUiStore((state) => state.sidebarWidth);
   const sidebarView = useUiStore((state) => state.sidebarView);
   const toggleSidebarView = useUiStore((state) => state.toggleSidebarView);
@@ -1224,12 +1225,17 @@ export function SessionDetail({ id }: SessionDetailProps) {
         },
         { directory, title },
       );
-      if (res.id) navigateToSession(res.id);
+      if (res.id) {
+        // Seed the cache with a minimal stub so the navigation target
+        // renders an empty thread immediately instead of a loading spinner.
+        seedNewSession(res.id, directory, session?.platform ?? '', title);
+        navigateToSession(res.id);
+      }
     } catch (e) {
       console.error('Failed to create session', e);
       setShowCreateSessionErrorToast(true);
     }
-  }, [createSession, launchOpencodeInTmux, tmux.available, navigateToSession]);
+  }, [createSession, launchOpencodeInTmux, tmux.available, navigateToSession, seedNewSession, session?.platform]);
 
   const handleNewSession = useCallback(async (title?: string) => {
     if (!session) return;
@@ -1289,6 +1295,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
       // created. Create first so a failed archive still leaves the user on
       // a usable new session.
       let newId: string | undefined;
+      const clearTitle = args.trim() || undefined;
       try {
         const res = await createSessionWithLaunch(
           {
@@ -1297,7 +1304,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
             tmuxAvailable: tmux.available,
             onStatusChange: setCreateLaunchStatus,
           },
-          { directory: session.directory, title: args.trim() || undefined },
+          { directory: session.directory, title: clearTitle },
         );
         newId = res.id;
       } catch (e) {
@@ -1310,7 +1317,10 @@ export function SessionDetail({ id }: SessionDetailProps) {
       } catch (e) {
         console.error('Failed to archive session', e);
       }
-      if (newId) navigateToSession(newId);
+      if (newId) {
+        seedNewSession(newId, session.directory, session.platform, clearTitle);
+        navigateToSession(newId);
+      }
       return;
     }
 
@@ -1389,7 +1399,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
       setParts(prev => [...prev, errPart]);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- handleVSCodeShortcut is declared after this callback; it's a stable useCallback and safe to omit.
-  }, [activeAgent, activeModel, archiveSession, createSession, launchOpencodeInTmux, openWorktreeForm, tmux.available, handleCompact, handleNewSession, handleTmuxShortcut, navigate, portAvailable, recentSessions, selectedAgent, selectedModel, session, setMessages, setParts]);
+  }, [activeAgent, activeModel, archiveSession, createSession, launchOpencodeInTmux, openWorktreeForm, tmux.available, handleCompact, handleNewSession, handleTmuxShortcut, navigate, portAvailable, recentSessions, selectedAgent, selectedModel, seedNewSession, session, setMessages, setParts]);
 
   // handleShell sends a `!`-prefixed composer submission to the
   // platform's raw shell endpoint (OpenCode: POST /session/{id}/shell),

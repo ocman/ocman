@@ -99,6 +99,7 @@ function WorktreeForm({ initialProject, initialBranch, close }: WorktreeFormProp
   const projectsLoader = useApiStore((s) => s.getProjects);
   const createSession = useApiStore((s) => s.createSession);
   const launchOpencodeInTmux = useApiStore((s) => s.launchOpencodeInTmux);
+  const seedNewSession = useApiStore((s) => s.seedNewSession);
   const navigate = useNavigate();
 
   // Fresh defaults on every mount (which happens on every open
@@ -224,6 +225,7 @@ function WorktreeForm({ initialProject, initialBranch, close }: WorktreeFormProp
       setStage('idle');
       close();
       if (created.id) {
+        seedNewSession(created.id, resp.worktreePath, '', branch.trim());
         navigate(`/session/${created.id}`);
       } else {
         navigate(`/project/${encodeURIComponent(resp.worktreePath)}`);

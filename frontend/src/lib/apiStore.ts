@@ -47,6 +47,14 @@ type ApiStore = {
   setCachedSession: (id: string, data: SessionDetail) => void;
   updateCachedSession: (id: string, updater: (prev: SessionDetail) => SessionDetail) => void;
   clearCachedSession: (id: string) => void;
+  /**
+   * Plant a minimal SessionDetail stub for a brand-new session so that
+   * navigating to /session/<id> renders an empty thread immediately
+   * instead of showing the "Loading conversation…" spinner while the
+   * first getSession fetch completes.  The real payload will overwrite
+   * this stub as soon as the fetch resolves.
+   */
+  seedNewSession: (id: string, directory: string, platform: string, title?: string) => void;
   runRequest: <T>(key: string, task: () => Promise<T>) => Promise<T>;
   getStats: (signal?: AbortSignal) => Promise<Stats>;
   getMetrics: (params?: { agent?: string; model?: string; days?: number }, signal?: AbortSignal) => Promise<MetricsDashboard>;
@@ -120,6 +128,48 @@ export const useApiStore = create<ApiStore>((set, get) => ({
       const nextOrder = state.sessionCacheOrder.filter((entry) => entry !== id);
       return { sessionCache: nextCache, sessionCacheOrder: nextOrder };
     });
+  },
+  seedNewSession: (id, directory, platform, title) => {
+    const now = Date.now();
+    const stub: SessionDetail = {
+      session: {
+        id,
+        platform,
+        projectId: '',
+        title: title ?? '',
+        directory,
+        timeCreated: now,
+        timeUpdated: now,
+        summaryAdditions: null,
+        summaryDeletions: null,
+        summaryFiles: null,
+        shareUrl: null,
+        messageCount: 0,
+        durationMs: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCost: 0,
+        status: 'waiting',
+        liveConnection: false,
+        pendingPermission: false,
+        pendingQuestion: false,
+        archived: false,
+        seen: false,
+        pinned: false,
+        pinnedAt: 0,
+      },
+      messages: [],
+      parts: [],
+      totalMessages: 0,
+    };
+    // Seed the detail cache so SessionDetail skips the loading spinner.
+    get().setCachedSession(id, stub);
+    // Prepend the stub to cachedSessions so sidebar renders it immediately.
+    set((state) => ({
+      cachedSessions: state.cachedSessions
+        ? [stub.session, ...state.cachedSessions.filter((s) => s.id !== id)]
+        : [stub.session],
+    }));
   },
   runRequest: async <T,>(key: string, task: () => Promise<T>) => {
     set((state) => ({
