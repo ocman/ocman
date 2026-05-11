@@ -213,8 +213,13 @@ jobs:
       - name: Install git-cliff
         if: steps.decide.outputs.release == 'true'
         run: |
-          curl -sSfL https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-x86_64-unknown-linux-musl.tar.gz \
-            | tar -xz --strip-components=1 -C /usr/local/bin git-cliff-2.13.1/git-cliff
+          case "$(uname -m)" in
+            x86_64)  arch=x86_64 ;;
+            aarch64) arch=aarch64 ;;
+            *)       echo "Unsupported arch: $(uname -m)"; exit 1 ;;
+          esac
+          curl -sSfL "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-${arch}-unknown-linux-musl.tar.gz" \
+            | tar -xz --strip-components=1 -C /usr/local/bin "git-cliff-2.13.1/git-cliff"
           git-cliff --version
       - name: Render changelog
         if: steps.decide.outputs.release == 'true'
