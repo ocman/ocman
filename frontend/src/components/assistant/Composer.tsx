@@ -5,24 +5,17 @@ import { getDraft, saveDraft, clearDraft } from '../../lib/composerDraft';
 import { isMacPlatform } from '../../lib/shortcuts';
 import { useShortcut } from '../../lib/shortcutRegistry';
 import { useUiStore } from '../../lib/uiStore';
-import { useApiStore } from '../../lib/apiStore';
 import { api, type SlashCommand, type AgentInfo, type SessionModelEntry } from '../../lib/api';
 import { agentColor } from '../../lib/agentColor';
 import { ModelPicker } from './ModelPicker';
 import { AgentPicker } from './AgentPicker';
 import { ReasoningPicker } from './ReasoningPicker';
+import { SlashCommandMenu } from './SlashCommandMenu';
+import { useComposerAudio } from './useComposerAudio';
 import { routeComposerSubmit } from './composerSubmit';
-import { encodeWav } from '../../lib/audio/encodeWav';
 import { getContextWindow, formatTokenCount } from '../../lib/models/contextWindows';
 import { formatTokensPerSecond } from '../../lib/format';
 import { BUILTIN_COMMANDS, KNOWN_AGENTS } from '../../lib/commands/builtinCommands';
-
-interface RecordingCtx {
-  stream: MediaStream;
-  audioCtx: AudioContext;
-  processor: ScriptProcessorNode;
-  chunks: Float32Array[];
-}
 
 export interface AttachedImage {
   url: string;
@@ -157,14 +150,10 @@ function ComposerImpl({
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const micRef = useRef<HTMLButtonElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const onSendRef = useRef(onSend);
   const isRunningRef = useRef(isRunning);
   const disabledRef = useRef(disabled);
-  const recordingRef = useRef<RecordingCtx | null>(null);
-  const [isRecording, setIsRecording] = useState(false);
-  const [micError, setMicError] = useState<string | null>(null);
   const [images, setImages] = useState<AttachedImage[]>([]);
   const imagesRef = useRef<AttachedImage[]>([]);
   const sessionIdRef = useRef(sessionId);
@@ -421,125 +410,18 @@ function ComposerImpl({
     el.disabled = !!disabled;
   }, [disabled]);
 
-  const setMicState = useCallback((state: 'idle' | 'recording' | 'transcribing') => {
-    setIsRecording(state === 'recording');
-    const btn = micRef.current;
-    if (!btn) return;
-    const icon = btn.querySelector('.oc-mic-icon');
-    if (!(icon instanceof HTMLElement)) return;
-    btn.classList.remove('oc-mic-recording', 'oc-mic-transcribing');
-    btn.disabled = state === 'transcribing' || !!disabledRef.current;
-    icon.className = 'bi oc-mic-icon';
-    if (state === 'recording') {
-      btn.classList.add('oc-mic-recording');
-      icon.classList.add('bi-stop-fill');
-    } else if (state === 'transcribing') {
-      btn.classList.add('oc-mic-transcribing');
-      icon.classList.add('bi-hourglass-split');
-    } else {
-      icon.classList.add('bi-mic-fill');
-    }
-  }, []);
-  const transcribe = useApiStore((state) => state.transcribe);
+  // ---------------------------------------------------------------------------
+  // Audio recording — delegated to useComposerAudio hook
+  // ---------------------------------------------------------------------------
 
-  const stopRecording = useCallback((): Blob | null => {
-    const ctx = recordingRef.current;
-    if (!ctx) return null;
-    recordingRef.current = null;
-
-    ctx.processor.disconnect();
-    ctx.stream.getTracks().forEach(t => t.stop());
-
-    const totalLen = ctx.chunks.reduce((sum, c) => sum + c.length, 0);
-    const merged = new Float32Array(totalLen);
-    let offset = 0;
-    for (const chunk of ctx.chunks) {
-      merged.set(chunk, offset);
-      offset += chunk.length;
-    }
-
-    const origRate = ctx.audioCtx.sampleRate;
-    ctx.audioCtx.close();
-
-    let samples = merged;
-    if (origRate !== 16000) {
-      const ratio = origRate / 16000;
-      const newLen = Math.floor(merged.length / ratio);
-      const downsampled = new Float32Array(newLen);
-      for (let i = 0; i < newLen; i++) {
-        downsampled[i] = merged[Math.floor(i * ratio)];
-      }
-      samples = downsampled;
-    }
-
-    return encodeWav(samples, 16000);
-  }, []);
-
-  const submitRecording = useCallback(async () => {
-    if (!recordingRef.current) return;
-    setMicState('transcribing');
-    const blob = stopRecording();
-    if (blob && blob.size > 44) {
-      try {
-        const text = await transcribe(blob);
-        if (text && inputRef.current) {
-          inputRef.current.value += (inputRef.current.value ? ' ' : '') + text;
-          inputRef.current.dispatchEvent(new Event('input'));
-          inputRef.current.focus();
-        }
-      } catch (err) {
-        console.error('Transcription failed', err);
-      }
-    }
-    setMicState('idle');
-  }, [setMicState, stopRecording, transcribe]);
-
-  const cancelRecording = useCallback(() => {
-    if (!recordingRef.current) return;
-    const ctx = recordingRef.current;
-    recordingRef.current = null;
-    ctx.processor.disconnect();
-    ctx.stream.getTracks().forEach(t => t.stop());
-    ctx.audioCtx.close();
-    setMicState('idle');
-  }, [setMicState]);
-
-  const handleMicClick = useCallback(async () => {
-    if (disabledRef.current) return;
-
-    if (recordingRef.current) {
-      await submitRecording();
-      return;
-    }
-
-    try {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setMicError('Dictation is not supported in this browser. Please use a modern browser like Chrome or Edge.');
-        return;
-      }
-      setMicError(null);
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-      const source = audioCtx.createMediaStreamSource(stream);
-      const processor = audioCtx.createScriptProcessor(4096, 1, 1);
-      const chunks: Float32Array[] = [];
-
-      processor.onaudioprocess = (e) => {
-        const data = e.inputBuffer.getChannelData(0);
-        chunks.push(new Float32Array(data));
-      };
-
-      source.connect(processor);
-      processor.connect(audioCtx.destination);
-
-      recordingRef.current = { stream, audioCtx, processor, chunks };
-      setMicState('recording');
-} catch (err) {
-        console.error('Microphone access failed', err);
-        setMicError('Microphone access denied. Please allow microphone access in your browser settings to use dictation.');
-        setMicState('idle');
-      }
-  }, [setMicState, submitRecording]);
+  const {
+    isRecording,
+    micError,
+    setMicError,
+    micRef,
+    handleMicClick,
+    isDictationSupported,
+  } = useComposerAudio({ whisperAvailable, disabled, inputRef });
 
   useEffect(() => {
     const el = inputRef.current;
@@ -889,25 +771,8 @@ function ComposerImpl({
   const reasoningOptionsRef = useRef(reasoningOptions);
   useEffect(() => { reasoningOptionsRef.current = reasoningOptions; }, [reasoningOptions]);
 
-  useEffect(() => {
-    if (!isRecording) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Escape') {
-        e.preventDefault();
-        cancelRecording();
-      } else {
-        e.preventDefault();
-        void submitRecording();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [isRecording, submitRecording, cancelRecording]);
-
   const handleMicClickRef = useRef(handleMicClick);
   useEffect(() => { handleMicClickRef.current = handleMicClick; }, [handleMicClick]);
-
-  const isDictationSupported = whisperAvailable && !!navigator.mediaDevices?.getUserMedia;
 
   const dictationShortcut = useMemo(() => ({
     id: 'composer.dictation',
@@ -942,7 +807,7 @@ function ComposerImpl({
   return (
     <>
     {isRecording && createPortal(
-      <div className="oc-recording-overlay" onClick={() => void submitRecording()}>
+      <div className="oc-recording-overlay" onClick={() => void handleMicClick()}>
         <div className="oc-recording-inner">
           <div className="oc-recording-pulse" />
           <div className="oc-recording-label">Recording</div>
@@ -993,20 +858,14 @@ function ComposerImpl({
           onClose={() => { setReasoningPickerOpen(false); inputRef.current?.focus(); }}
         />
       )}
-      {showSlashMenu && filteredCommands.length > 0 && (
-        <div className="oc-slash-menu" ref={slashMenuRef}>
-          {filteredCommands.map((cmd, i) => (
-            <div
-              key={cmd.name}
-              className={`oc-slash-item${i === slashIndex ? ' active' : ''}`}
-              onMouseDown={(e) => { e.preventDefault(); selectSlashCommand(cmd); }}
-              onMouseEnter={() => setSlashIndex(i)}
-            >
-              <span className="oc-slash-name">/{cmd.name}</span>
-              {cmd.description && <span className="oc-slash-desc">{cmd.description}</span>}
-            </div>
-          ))}
-        </div>
+      {showSlashMenu && (
+        <SlashCommandMenu
+          commands={filteredCommands}
+          activeIndex={slashIndex}
+          menuRef={slashMenuRef}
+          onSelect={selectSlashCommand}
+          onHover={setSlashIndex}
+        />
       )}
       <div
         className="oc-composer"
