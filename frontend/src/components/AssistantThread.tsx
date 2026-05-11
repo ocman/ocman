@@ -61,6 +61,23 @@ const ToolDuration: FC<{ startedAt: number; completedAt: number; isRunning: bool
   return <span className="oc-tool-duration">{formatToolDuration(elapsed)}</span>;
 };
 
+function fallbackCopy(text: string) {
+  const el = document.createElement('div');
+  el.contentEditable = 'true';
+  el.style.position = 'fixed';
+  el.style.opacity = '0';
+  el.innerText = text;
+  document.body.appendChild(el);
+  // iOS requires selecting a range inside a contenteditable element
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  const sel = window.getSelection();
+  sel?.removeAllRanges();
+  sel?.addRange(range);
+  document.execCommand('copy');
+  document.body.removeChild(el);
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function CodeBlockPre(props: any) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -69,15 +86,19 @@ function CodeBlockPre(props: any) {
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
     const text = codeRef.current?.textContent || '';
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
+    // Show feedback immediately — don't wait for the async clipboard promise
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+    } else {
+      fallbackCopy(text);
+    }
   };
   return (
     <div className="oc-code-block">
-      <button className="oc-code-copy" onClick={handleCopy} title="Copy code">
-        {copied ? 'Copied' : 'Copy'}
+      <button className={`oc-code-copy${copied ? ' oc-code-copy--copied' : ''}`} onClick={handleCopy} title="Copy code">
+        <i className={`bi ${copied ? 'bi-check2' : 'bi-copy'}`} aria-hidden="true" />
       </button>
       <pre ref={codeRef} {...rest}>{children}</pre>
     </div>
