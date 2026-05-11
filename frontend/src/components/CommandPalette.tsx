@@ -157,11 +157,10 @@ export function CommandPalette() {
 
   useEffect(() => {
     if (paletteOpen) {
-      requestAnimationFrame(() => {
-        setQuery('');
-        setSelectedIndex(0);
-        inputRef.current?.focus();
-      });
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setQuery('');
+      setSelectedIndex(0);
+      inputRef.current?.focus();
     }
   }, [paletteOpen]);
 

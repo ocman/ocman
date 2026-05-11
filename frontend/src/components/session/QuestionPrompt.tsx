@@ -5,7 +5,13 @@ type KeyEvent = KeyboardEvent | React.KeyboardEvent<HTMLDivElement>;
 const PROMPT_EVENT_HANDLED = '__ocmanPromptHandled';
 
 function wasHandledByPrompt(e: KeyEvent): boolean {
-  return Boolean((e as KeyEvent & Record<string, unknown>)[PROMPT_EVENT_HANDLED]);
+  if ((e as KeyEvent & Record<string, unknown>)[PROMPT_EVENT_HANDLED]) return true;
+  // Also check the native event when called from a React synthetic event
+  // handler — the native event and the synthetic wrapper are different objects,
+  // so a mark set on one isn't visible on the other without this bridge.
+  const native = (e as React.KeyboardEvent<HTMLDivElement>).nativeEvent;
+  if (native && (native as KeyboardEvent & Record<string, unknown>)[PROMPT_EVENT_HANDLED]) return true;
+  return false;
 }
 
 function markHandledByPrompt(e: KeyboardEvent): void {
@@ -70,6 +76,7 @@ export function QuestionPrompt({
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const customInputRef = useRef<HTMLInputElement>(null);
+  const handleKeyDownRef = useRef<((e: KeyEvent) => void) | null>(null);
 
   const totalSteps = question.questions.length;
   const isStepped = totalSteps > 1;
@@ -250,15 +257,22 @@ export function QuestionPrompt({
     }
   }, [currentQ.options.length, currentStep, disabled, goNext, goPrev, isStepAnswered, isStepped, moveFocus, onReject, selectOption, submit, totalSteps, focusedRow, customTexts]);
 
+  // Keep a stable ref so the window listener always calls the latest version
+  // of handleKeyDown, avoiding the "stale closure" problem when deps change
+  // due to SSE updates racing with a keypress.
+  useLayoutEffect(() => {
+    handleKeyDownRef.current = handleKeyDown;
+  });
+
   useLayoutEffect(() => {
     const onWindowKeyDown = (e: KeyboardEvent) => {
       if (wasHandledByPrompt(e)) return;
-      handleKeyDown(e);
+      handleKeyDownRef.current?.(e);
       markHandledByPrompt(e);
     };
     window.addEventListener('keydown', onWindowKeyDown, true);
     return () => window.removeEventListener('keydown', onWindowKeyDown, true);
-  }, [handleKeyDown]);
+  }, []);
 
   const allAnswered = getAnswers().every(a => a.length > 0);
   const isLastStep = currentStep === totalSteps - 1;

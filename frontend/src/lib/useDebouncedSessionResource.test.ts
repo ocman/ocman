@@ -102,7 +102,7 @@ describe('useDebouncedSessionResource', () => {
   });
 
   it('returns emptyValue and loading=false when enabled=false', async () => {
-    const { mod, fetchFn, reactMock } = await loadHarness({ fetchImpl: fetchFn as FetchFn });
+    const { mod, fetchFn, reactMock } = await loadHarness();
     const result = mod.useDebouncedSessionResource('sess-1', fetchFn, EMPTY, 'fail', { enabled: false });
     expect(result.loading).toBe(false);
     expect(result.error).toBeNull();
@@ -126,14 +126,14 @@ describe('useDebouncedSessionResource', () => {
   });
 
   it('fires the initial fetch with sessionId and AbortSignal', async () => {
-    const { mod, fetchFn } = await loadHarness({ fetchImpl: fetchFn as FetchFn });
+    const { mod, fetchFn } = await loadHarness();
     mod.useDebouncedSessionResource('sess-1', fetchFn, EMPTY, 'fail');
     expect(fetchFn).toHaveBeenCalledTimes(1);
     expect(fetchFn).toHaveBeenCalledWith('sess-1', expect.any(AbortSignal));
   });
 
   it('sets loading=true on initial mount with a sessionId', async () => {
-    const { mod, fetchFn, reactMock } = await loadHarness({ fetchImpl: fetchFn as FetchFn });
+    const { mod, fetchFn, reactMock } = await loadHarness();
     const result = mod.useDebouncedSessionResource('sess-1', fetchFn, EMPTY, 'fail');
     // Initial loading state is set based on enabled && !!sessionId
     expect(result.loading).toBe(true);
@@ -177,9 +177,10 @@ describe('useDebouncedSessionResource', () => {
     const { mod, reactMock } = await loadHarness({ fetchImpl: fetchFn });
     mod.useDebouncedSessionResource('sess-1', fetchFn, EMPTY, 'fallback error');
 
-    // Wait for the rejected promise to settle. Since vi.fn().mockRejectedValue
-    // is a microtask, we flush with a resolved promise.
-    await Promise.resolve();
+    // Flush the microtask queue fully: the hook calls fetch(), which
+    // returns a rejected promise. The .catch() handler runs in a
+    // subsequent microtask tick, so we need multiple flushes.
+    await new Promise((r) => setTimeout(r, 0));
 
     // error state is states[2] (data=0, loading=1, error=2)
     expect(reactMock.states[2]).toBe('network failure');
@@ -192,7 +193,7 @@ describe('useDebouncedSessionResource', () => {
     const { mod, reactMock } = await loadHarness({ fetchImpl: fetchFn });
     mod.useDebouncedSessionResource('sess-1', fetchFn, EMPTY, 'my fallback');
 
-    await Promise.resolve();
+    await new Promise((r) => setTimeout(r, 0));
 
     expect(reactMock.states[2]).toBe('my fallback');
   });
@@ -203,7 +204,7 @@ describe('useDebouncedSessionResource', () => {
     const { mod, reactMock } = await loadHarness({ fetchImpl: fetchFn });
     mod.useDebouncedSessionResource('sess-1', fetchFn, EMPTY, 'fallback');
 
-    await Promise.resolve();
+    await new Promise((r) => setTimeout(r, 0));
 
     // error stays null (states[2] is initialized to null)
     expect(reactMock.states[2]).toBeNull();

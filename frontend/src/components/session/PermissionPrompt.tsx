@@ -12,7 +12,13 @@ type KeyEvent = KeyboardEvent | React.KeyboardEvent<HTMLDivElement>;
 const PROMPT_EVENT_HANDLED = '__ocmanPromptHandled';
 
 function wasHandledByPrompt(e: KeyEvent): boolean {
-  return Boolean((e as KeyEvent & Record<string, unknown>)[PROMPT_EVENT_HANDLED]);
+  // Check both the event object itself (native keydown events) and the
+  // underlying native event (React synthetic events wrap the native event
+  // but don't copy custom properties set on it).
+  if ((e as KeyEvent & Record<string, unknown>)[PROMPT_EVENT_HANDLED]) return true;
+  const native = (e as React.KeyboardEvent<HTMLDivElement>).nativeEvent;
+  if (native && (native as KeyboardEvent & Record<string, unknown>)[PROMPT_EVENT_HANDLED]) return true;
+  return false;
 }
 
 function markHandledByPrompt(e: KeyboardEvent): void {
@@ -72,6 +78,8 @@ export function PermissionPrompt({
   const stepRef = useRef(step);
   const focusedIdxRef = useRef(focusedIdx);
   const confirmIdxRef = useRef(confirmIdx);
+  const handleChooseKeyDownRef = useRef<((e: KeyEvent) => void) | null>(null);
+  const handleConfirmKeyDownRef = useRef<((e: KeyEvent) => void) | null>(null);
   useLayoutEffect(() => {
     stepRef.current = step;
     focusedIdxRef.current = focusedIdx;
@@ -200,30 +208,38 @@ export function PermissionPrompt({
       || e.key === 'Tab'
     ) {
       e.preventDefault();
-      setConfirmIdx((i) => {
-        const next = (i + 1) % CONFIRM_CHOICES.length;
-        confirmIdxRef.current = next;
-        if (CONFIRM_CHOICES[next].action === 'confirm') confirmButtonRef.current?.focus();
-        else cancelButtonRef.current?.focus();
-        return next;
-      });
+      const next = (confirmIdxRef.current + 1) % CONFIRM_CHOICES.length;
+      confirmIdxRef.current = next;
+      setConfirmIdx(next);
+      const targetRef = CONFIRM_CHOICES[next].action === 'confirm' ? confirmButtonRef : cancelButtonRef;
+      // Defer focus so the browser has finished processing the keydown event
+      // before we move focus programmatically (synchronous focus() calls inside
+      // keydown handlers are silently ignored in some browsers).
+      setTimeout(() => { targetRef.current?.focus(); }, 0);
     }
   }, [disabled, submit]);
+
+  // Keep stable refs so the window listener always calls the latest handlers
+  // regardless of when deps (like onReply) change due to SSE updates.
+  useLayoutEffect(() => {
+    handleChooseKeyDownRef.current = handleChooseKeyDown;
+    handleConfirmKeyDownRef.current = handleConfirmKeyDown;
+  });
 
   useLayoutEffect(() => {
     const onWindowKeyDown = (e: KeyboardEvent) => {
       if (wasHandledByPrompt(e)) return;
       if (stepRef.current === 'confirm-always') {
-        handleConfirmKeyDown(e);
+        handleConfirmKeyDownRef.current?.(e);
         markHandledByPrompt(e);
         return;
       }
-      handleChooseKeyDown(e);
+      handleChooseKeyDownRef.current?.(e);
       markHandledByPrompt(e);
     };
     window.addEventListener('keydown', onWindowKeyDown, true);
     return () => window.removeEventListener('keydown', onWindowKeyDown, true);
-  }, [handleChooseKeyDown, handleConfirmKeyDown]);
+  }, []);
 
   if (step === 'confirm-always') {
     return (
@@ -275,10 +291,7 @@ export function PermissionPrompt({
                     setStep('choose');
                   }
                 }}
-                onFocus={() => {
-                  setConfirmIdx(i);
-                  confirmIdxRef.current = i;
-                }}
+
                 onMouseEnter={() => setConfirmIdx(i)}
                 disabled={disabled}
                 tabIndex={-1}
