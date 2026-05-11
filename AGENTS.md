@@ -83,6 +83,27 @@ make otel-reset       # stop + wipe persisted telemetry data
   run `cd frontend && npm run build` and touch a `.go` file to
   trigger Air.
 
+## Repository hosting
+
+This repository is self-hosted on **Forgejo** (not GitHub). Use the
+`tea` CLI for all issue and pull-request operations — `gh` is not
+configured for this remote.
+
+```sh
+# Issues
+tea issues ls                          # list open issues
+tea issues create -t "title" -d "body" # open a new issue
+tea issues close <id>                  # close an issue
+
+# Pull requests
+tea pulls ls                           # list open PRs
+tea pulls create -t "title" -d "body"  # open a PR (branch must be pushed first)
+tea pulls merge <id>                   # merge a PR
+
+# Always pass --repo dries/ocman when running outside the repo root,
+# or when the remote is not auto-detected.
+```
+
 ## Build pipeline
 
 1. `cd frontend && npm ci && npm run build` — builds frontend into
