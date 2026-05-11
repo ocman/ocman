@@ -149,7 +149,7 @@
 }
 .oc-msg:hover .oc-msg-meta {
   opacity: 1;
-  transition: opacity 0s 2s; /* 2s delay before showing on hover */
+  transition: opacity 0s 500ms; /* 500ms delay before showing on hover */
 }
 .oc-meta-dot {
   width: 8px;
