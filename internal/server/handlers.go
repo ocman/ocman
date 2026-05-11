@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -12,6 +11,7 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -170,38 +170,17 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 	agent := strings.TrimSpace(r.URL.Query().Get("agent"))
 	model := strings.TrimSpace(r.URL.Query().Get("model"))
+	dayCount := parseIntParam(r, "days", 0)
 	var since int64
-	var dayCount int
-	if daysStr := strings.TrimSpace(r.URL.Query().Get("days")); daysStr != "" && daysStr != "0" {
-		fmt.Sscanf(daysStr, "%d", &dayCount)
-		if dayCount > 0 {
-			since = time.Now().Add(-time.Duration(dayCount) * 24 * time.Hour).UnixMilli()
-		}
+	if dayCount > 0 {
+		since = time.Now().Add(-time.Duration(dayCount) * 24 * time.Hour).UnixMilli()
 	}
-	limit := 20
-	if v := strings.TrimSpace(r.URL.Query().Get("limit")); v != "" {
-		fmt.Sscanf(v, "%d", &limit)
-	}
-	var offset int
-	if v := strings.TrimSpace(r.URL.Query().Get("offset")); v != "" {
-		fmt.Sscanf(v, "%d", &offset)
-	}
-	sessionLimit := 20
-	if v := strings.TrimSpace(r.URL.Query().Get("sessionLimit")); v != "" {
-		fmt.Sscanf(v, "%d", &sessionLimit)
-	}
-	var sessionOffset int
-	if v := strings.TrimSpace(r.URL.Query().Get("sessionOffset")); v != "" {
-		fmt.Sscanf(v, "%d", &sessionOffset)
-	}
-	projectLimit := 20
-	if v := strings.TrimSpace(r.URL.Query().Get("projectLimit")); v != "" {
-		fmt.Sscanf(v, "%d", &projectLimit)
-	}
-	var projectOffset int
-	if v := strings.TrimSpace(r.URL.Query().Get("projectOffset")); v != "" {
-		fmt.Sscanf(v, "%d", &projectOffset)
-	}
+	limit := parseIntParam(r, "limit", 20)
+	offset := parseIntParam(r, "offset", 0)
+	sessionLimit := parseIntParam(r, "sessionLimit", 20)
+	sessionOffset := parseIntParam(r, "sessionOffset", 0)
+	projectLimit := parseIntParam(r, "projectLimit", 20)
+	projectOffset := parseIntParam(r, "projectOffset", 0)
 	dir := normaliseDirParam(r.URL.Query().Get("dir"))
 
 	metrics, err := s.db.GetMetricsDashboard(db.MetricsDashboardOptions{
@@ -276,10 +255,7 @@ func (s *Server) handleHourlyTokens(w http.ResponseWriter, r *http.Request) {
 	since := parseSinceParam(r)
 	model := strings.TrimSpace(r.URL.Query().Get("model"))
 	dir := normaliseDirParam(r.URL.Query().Get("dir"))
-	var dayCount int
-	if v := strings.TrimSpace(r.URL.Query().Get("days")); v != "" {
-		fmt.Sscanf(v, "%d", &dayCount)
-	}
+	dayCount := parseIntParam(r, "days", 0)
 	data, err := s.db.GetHourlyTokensByModel(dayCount, since, model, dir)
 	if err != nil {
 		serverError(w, "fetching hourly tokens by model", err)
@@ -302,6 +278,28 @@ func (s *Server) handleHourly(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, hourly)
 }
 
+// sortAndLimitSessions sorts a combined multi-platform session slice by
+// recency (bucketed into 5-minute windows to prevent constant re-ordering
+// from tiny timestamp jitter) and then truncates it to at most limit entries.
+// Both handleSessions and handleSessionsNotify apply this identically.
+func sortAndLimitSessions(sessions []db.Session, limit int) []db.Session {
+	const bucketMs = 5 * 60 * 1000
+	sort.SliceStable(sessions, func(i, j int) bool {
+		bi, bj := sessions[i].TimeUpdated/bucketMs, sessions[j].TimeUpdated/bucketMs
+		if bi != bj {
+			return bi > bj
+		}
+		if sessions[i].ProjectID != sessions[j].ProjectID {
+			return sessions[i].ProjectID < sessions[j].ProjectID
+		}
+		return sessions[i].Title < sessions[j].Title
+	})
+	if len(sessions) > limit {
+		return sessions[:limit]
+	}
+	return sessions
+}
+
 // normaliseDirParam trims surrounding whitespace and a single trailing slash
 // from a directory-prefix filter so that "/repo/foo", "/repo/foo/", and
 // "  /repo/foo  " are all treated the same. Returns "" when the input is
@@ -320,14 +318,43 @@ func normaliseDirParam(raw string) string {
 	return dir
 }
 
+// parseIntParam reads an integer query parameter by name. Returns
+// fallback when the parameter is absent, empty, or not a valid integer.
+// Using strconv.Atoi surfaces parse errors instead of silently
+// swallowing them as fmt.Sscanf would.
+func parseIntParam(r *http.Request, name string, fallback int) int {
+	v := strings.TrimSpace(r.URL.Query().Get(name))
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return fallback
+	}
+	return n
+}
+
+// parseInt64Param is like parseIntParam but returns int64. Used for
+// millisecond timestamps that overflow int on 32-bit platforms.
+func parseInt64Param(r *http.Request, name string, fallback int64) int64 {
+	v := strings.TrimSpace(r.URL.Query().Get(name))
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return fallback
+	}
+	return n
+}
+
 // parseSinceParam reads the ?days= query param and returns a Unix
 // millisecond cutoff. Returns 0 (no filter) when the param is absent
 // or zero.
 func parseSinceParam(r *http.Request) int64 {
 	if v := strings.TrimSpace(r.URL.Query().Get("days")); v != "" && v != "0" {
-		var dayCount int64
-		fmt.Sscanf(v, "%d", &dayCount)
-		if dayCount > 0 {
+		dayCount, err := strconv.ParseInt(v, 10, 64)
+		if err == nil && dayCount > 0 {
 			return time.Now().Add(-time.Duration(dayCount) * 24 * time.Hour).UnixMilli()
 		}
 	}
@@ -340,14 +367,8 @@ func parseSinceParam(r *http.Request) int64 {
 // session data, then applies local state (archived / seen).
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	dir := r.URL.Query().Get("dir")
-	var since int64
-	if sinceStr := r.URL.Query().Get("since"); sinceStr != "" {
-		fmt.Sscanf(sinceStr, "%d", &since)
-	}
-	limit := 500
-	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
-		fmt.Sscanf(limitStr, "%d", &limit)
-	}
+	since := parseInt64Param(r, "since", 0)
+	limit := parseIntParam(r, "limit", 500)
 
 	ctx := r.Context()
 	var all []db.Session
@@ -392,28 +413,8 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Adapters each return their own list pre-sorted, but the combined
-	// slice must also be sorted so sessions from different platforms
-	// interleave by recency rather than clumping by source.
-	// Sessions are bucketed into 5-minute windows (floor(timeUpdated/300s))
-	// so that small timestamp differences within the same window don't
-	// cause constant re-ordering. Within a bucket, newer sessions sort first.
-	const bucketMs = 5 * 60 * 1000
-	sort.SliceStable(all, func(i, j int) bool {
-		bi, bj := all[i].TimeUpdated/bucketMs, all[j].TimeUpdated/bucketMs
-		if bi != bj {
-			return bi > bj
-		}
-		if all[i].ProjectID != all[j].ProjectID {
-			return all[i].ProjectID < all[j].ProjectID
-		}
-		return all[i].Title < all[j].Title
-	})
-
-	// Apply limit
-	if len(all) > limit {
-		all = all[:limit]
-	}
+	// Sort all platforms together by recency, then apply the limit.
+	all = sortAndLimitSessions(all, limit)
 
 	statePhase := srvtiming.Begin(ctx, "state_overlay")
 	err := s.applySessionState(all)
@@ -472,14 +473,8 @@ type notifyEntry struct {
 // Everything else is filtered out server-side so the response stays
 // tiny even with a large time window.
 func (s *Server) handleSessionsNotify(w http.ResponseWriter, r *http.Request) {
-	var since int64
-	if sinceStr := r.URL.Query().Get("since"); sinceStr != "" {
-		fmt.Sscanf(sinceStr, "%d", &since)
-	}
-	limit := 500
-	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
-		fmt.Sscanf(limitStr, "%d", &limit)
-	}
+	since := parseInt64Param(r, "since", 0)
+	limit := parseIntParam(r, "limit", 500)
 
 	ctx := r.Context()
 	var all []db.Session
@@ -496,20 +491,7 @@ func (s *Server) handleSessionsNotify(w http.ResponseWriter, r *http.Request) {
 		all = append(all, sessions...)
 	}
 
-	sort.SliceStable(all, func(i, j int) bool {
-		const bucketMs = 5 * 60 * 1000
-		bi, bj := all[i].TimeUpdated/bucketMs, all[j].TimeUpdated/bucketMs
-		if bi != bj {
-			return bi > bj
-		}
-		if all[i].ProjectID != all[j].ProjectID {
-			return all[i].ProjectID < all[j].ProjectID
-		}
-		return all[i].Title < all[j].Title
-	})
-	if len(all) > limit {
-		all = all[:limit]
-	}
+	all = sortAndLimitSessions(all, limit)
 
 	if err := s.applySessionState(all); err != nil {
 		serverError(w, "fetching session state for notify", err)
@@ -710,15 +692,8 @@ func (s *Server) handlePinSession(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	sessionID := strings.TrimPrefix(r.URL.Path, "/api/session/")
 
-	// Parse pagination params
-	limit := 30
-	offset := 0
-	if v := r.URL.Query().Get("limit"); v != "" {
-		fmt.Sscanf(v, "%d", &limit)
-	}
-	if v := r.URL.Query().Get("offset"); v != "" {
-		fmt.Sscanf(v, "%d", &offset)
-	}
+	limit := parseIntParam(r, "limit", 30)
+	offset := parseIntParam(r, "offset", 0)
 
 	adapter := s.resolvePlatformForSession(w, r, sessionID)
 	if adapter == nil {
@@ -777,10 +752,7 @@ func (s *Server) handleSessionTasks(w http.ResponseWriter, r *http.Request) {
 		ids = ids[:maxBatch]
 	}
 
-	limit := 10
-	if v := r.URL.Query().Get("limit"); v != "" {
-		fmt.Sscanf(v, "%d", &limit)
-	}
+	limit := parseIntParam(r, "limit", 10)
 	if limit < 1 {
 		limit = 1
 	}

@@ -164,6 +164,7 @@ function ComposerImpl({
   const disabledRef = useRef(disabled);
   const recordingRef = useRef<RecordingCtx | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [micError, setMicError] = useState<string | null>(null);
   const [images, setImages] = useState<AttachedImage[]>([]);
   const imagesRef = useRef<AttachedImage[]>([]);
   const sessionIdRef = useRef(sessionId);
@@ -513,9 +514,10 @@ function ComposerImpl({
 
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
-        alert('Dictation is not supported in this browser. Please use a modern browser like Chrome or Edge.');
+        setMicError('Dictation is not supported in this browser. Please use a modern browser like Chrome or Edge.');
         return;
       }
+      setMicError(null);
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
       const source = audioCtx.createMediaStreamSource(stream);
@@ -534,7 +536,7 @@ function ComposerImpl({
       setMicState('recording');
 } catch (err) {
         console.error('Microphone access failed', err);
-        alert('Microphone access denied. Please allow microphone access in your browser settings to use dictation.');
+        setMicError('Microphone access denied. Please allow microphone access in your browser settings to use dictation.');
         setMicState('idle');
       }
   }, [setMicState, submitRecording]);
@@ -1130,6 +1132,17 @@ function ComposerImpl({
               >
                 <i className="bi bi-mic-fill oc-mic-icon" aria-hidden="true" />
               </button>
+            )}
+            {micError && (
+              <span className="oc-mic-error" role="alert">
+                {micError}
+                <button
+                  type="button"
+                  className="oc-mic-error-dismiss"
+                  onClick={() => setMicError(null)}
+                  aria-label="Dismiss"
+                >×</button>
+              </span>
             )}
           </div>
         </div>

@@ -1,16 +1,12 @@
 import { create } from 'zustand';
 import { api } from './api';
 import type {
-  ActivityDay,
   CapabilitiesResponse,
-  HourlyData,
-  HourlyTokensByModel,
   MetricsDashboard,
   ModelUsage,
   Project,
   Session,
   SessionDetail,
-  Stats,
   SystemStats,
   SessionChanges,
   SessionInfo,
@@ -56,7 +52,6 @@ type ApiStore = {
    */
   seedNewSession: (id: string, directory: string, platform: string, title?: string) => void;
   runRequest: <T>(key: string, task: () => Promise<T>) => Promise<T>;
-  getStats: (signal?: AbortSignal) => Promise<Stats>;
   getMetrics: (params?: { agent?: string; model?: string; days?: number }, signal?: AbortSignal) => Promise<MetricsDashboard>;
   getProjects: (signal?: AbortSignal) => Promise<Project[]>;
   getSessions: (params?: { dir?: string; since?: number; limit?: number }, signal?: AbortSignal) => Promise<Session[]>;
@@ -68,10 +63,7 @@ type ApiStore = {
   archiveSession: (platform: string, sessionId: string, timeUpdated: number, archived?: boolean) => Promise<{ ok: boolean }>;
   markSessionSeen: (platform: string, sessionId: string, timeUpdated: number) => Promise<{ ok: boolean }>;
   pinSession: (platform: string, sessionId: string, pinned: boolean) => Promise<{ ok: boolean }>;
-  getActivity: (signal?: AbortSignal) => Promise<ActivityDay[]>;
   getModels: (signal?: AbortSignal) => Promise<ModelUsage[]>;
-  getHourly: (signal?: AbortSignal) => Promise<HourlyData[]>;
-  getHourlyTokens: (signal?: AbortSignal) => Promise<HourlyTokensByModel[]>;
   getCapabilities: (signal?: AbortSignal) => Promise<CapabilitiesResponse>;
   createSession: (directory: string, platform?: string, title?: string) => Promise<{ id: string }>;
   sendMessage: (sessionId: string, message: string, images?: { url: string; mime: string }[], model?: string, agent?: string, reasoning?: string) => Promise<void>;
@@ -205,7 +197,6 @@ export const useApiStore = create<ApiStore>((set, get) => ({
       throw error;
     }
   },
-  getStats: (signal) => get().runRequest('stats:get', () => api.stats(signal)),
   getMetrics: (params, signal) => get().runRequest(`metrics:get:${params?.agent ?? ''}:${params?.model ?? ''}:${params?.days ?? ''}`, () => api.metrics(params, signal)),
   getProjects: (signal) => get().runRequest('projects:get', () => api.projects(signal)),
   getSessions: (params, signal) => {
@@ -237,10 +228,7 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   archiveSession: (platform, sessionId, timeUpdated, archived = true) => get().runRequest(`session:archive:${sessionId}`, () => api.archiveSession(platform, sessionId, timeUpdated, archived)),
   markSessionSeen: (platform, sessionId, timeUpdated) => get().runRequest(`session:seen:${sessionId}`, () => api.markSessionSeen(platform, sessionId, timeUpdated)),
   pinSession: (platform, sessionId, pinned) => get().runRequest(`session:pin:${sessionId}`, () => api.pinSession(platform, sessionId, pinned)),
-  getActivity: (signal) => get().runRequest('activity:get', () => api.activity(undefined, signal)),
   getModels: (signal) => get().runRequest('models:get', () => api.models(undefined, signal)),
-  getHourly: (signal) => get().runRequest('hourly:get', () => api.hourly(undefined, signal)),
-  getHourlyTokens: (signal) => get().runRequest('hourly-tokens:get', () => api.hourlyTokens(undefined, signal)),
   getCapabilities: (signal) => get().runRequest('capabilities:get', () => api.capabilities(signal)),
   createSession: (directory, platform, title) => get().runRequest('session:create', () => api.createSession(directory, platform, title)),
   sendMessage: (sessionId, message, images, model, agent, reasoning) => get().runRequest(`message:send:${sessionId}`, () => api.sendMessage(sessionId, message, images, model, agent, reasoning)),

@@ -422,6 +422,31 @@
 .oc-token-popover-cost .oc-token-popover-label { color: var(--subtext0); }
 .oc-token-popover-cost .oc-token-popover-value { color: var(--text); font-weight: 600; }
 
+/* Mic error inline message */
+.oc-mic-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--red, #f38ba8);
+  background: color-mix(in srgb, var(--red, #f38ba8) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--red, #f38ba8) 30%, transparent);
+  border-radius: 4px;
+  padding: 2px 6px;
+  max-width: 300px;
+}
+.oc-mic-error-dismiss {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.7;
+}
+.oc-mic-error-dismiss:hover { opacity: 1; }
+
 /* Mic icon in bar action */
 .oc-bar-action .oc-mic-icon { font-size: 12px; }
 .oc-bar-action.oc-mic-recording { color: #f38ba8; border-color: #f38ba8; animation: oc-mic-pulse 1s ease-in-out infinite; }
