@@ -583,6 +583,78 @@ func TestHandleAuthLogout_Disabled204(t *testing.T) {
 	}
 }
 
+// --- loginLimiter ---
+
+// TestLoginLimiter_WindowExpiry verifies that once the fixed window has
+// elapsed (windowStart is older than loginWindow), a new request resets
+// the bucket and is allowed — even if the previous window was exhausted.
+func TestLoginLimiter_WindowExpiry(t *testing.T) {
+	var l loginLimiter
+
+	const ip = "10.0.0.42"
+
+	// Fill the window to exhaustion.
+	for i := 0; i < loginMaxAttempts; i++ {
+		if !l.allow(ip) {
+			t.Fatalf("attempt %d should be allowed inside the window", i)
+		}
+	}
+	// One more should be blocked.
+	if l.allow(ip) {
+		t.Fatal("window should be exhausted; expected allow=false")
+	}
+
+	// Backdate the window start so it looks expired.
+	l.mu.Lock()
+	l.buckets[ip].windowStart = l.buckets[ip].windowStart.Add(-(loginWindow + time.Second))
+	l.mu.Unlock()
+
+	// After the window expires, the next call must reset the bucket and allow.
+	if !l.allow(ip) {
+		t.Error("expired window: expected allow=true after window reset")
+	}
+
+	// The attempt counter must have been reset to 1 (just this call).
+	l.mu.Lock()
+	attempts := l.buckets[ip].attempts
+	l.mu.Unlock()
+	if attempts != 1 {
+		t.Errorf("attempts after window reset = %d, want 1", attempts)
+	}
+}
+
+// TestLoginLimiter_EmptyIPAlwaysAllowed guards the empty-string fast-path.
+func TestLoginLimiter_EmptyIPAlwaysAllowed(t *testing.T) {
+	var l loginLimiter
+	for i := 0; i < loginMaxAttempts+10; i++ {
+		if !l.allow("") {
+			t.Fatalf("empty IP must always be allowed (attempt %d)", i)
+		}
+	}
+}
+
+// TestLoginLimiter_ResetClearsBucket ensures reset() removes the entry
+// so the next call starts a fresh window.
+func TestLoginLimiter_ResetClearsBucket(t *testing.T) {
+	var l loginLimiter
+	const ip = "192.168.1.1"
+
+	// Exhaust the window.
+	for i := 0; i < loginMaxAttempts; i++ {
+		l.allow(ip)
+	}
+	if l.allow(ip) {
+		t.Fatal("expected blocked after exhaustion")
+	}
+
+	l.reset(ip)
+
+	// After reset the first attempt should be allowed.
+	if !l.allow(ip) {
+		t.Error("expected allow=true after reset")
+	}
+}
+
 // --- clientIP ---
 
 func TestClientIP(t *testing.T) {

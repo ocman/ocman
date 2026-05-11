@@ -2,10 +2,13 @@ package opencode
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -330,5 +333,133 @@ func TestSendJSON_5xxFallsThroughToGenericError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "500") {
 		t.Errorf("error missing status, got %v", err)
+	}
+}
+
+// TestCreateSession_TitleIsSetAfterCreation verifies the title-setting
+// branch: when CreateSessionRequest.Title is non-empty, a PATCH request
+// to /session/{id} must be issued immediately after the session is
+// created. The title-setting failure must not fail the overall creation.
+func TestCreateSession_TitleIsSetAfterCreation(t *testing.T) {
+	const newID = "ses_newone"
+	const wantTitle = "My custom title"
+	const dir = "/tmp/test-create-session"
+
+	var patchCalls int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/session":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"` + newID + `"}`))
+
+		case r.Method == http.MethodPatch && r.URL.Path == "/session/"+newID:
+			atomic.AddInt32(&patchCalls, 1)
+			body, _ := io.ReadAll(r.Body)
+			var got map[string]string
+			if err := json.Unmarshal(body, &got); err != nil {
+				t.Errorf("PATCH body not valid JSON: %v", err)
+			}
+			if got["title"] != wantTitle {
+				t.Errorf("PATCH title = %q, want %q", got["title"], wantTitle)
+			}
+			w.WriteHeader(http.StatusOK)
+
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+	withTestPort(t, dir, port)
+
+	a := &Adapter{}
+	resp, err := a.CreateSession(context.Background(), platforms.CreateSessionRequest{
+		Directory: dir,
+		Title:     wantTitle,
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	if resp.ID != newID {
+		t.Errorf("resp.ID = %q, want %q", resp.ID, newID)
+	}
+	if got := atomic.LoadInt32(&patchCalls); got != 1 {
+		t.Errorf("PATCH /session/%s called %d times, want 1", newID, got)
+	}
+}
+
+// TestCreateSession_TitlePatchFailureDoesNotFailCreation confirms that
+// a non-2xx PATCH response for title-setting is a soft failure — the
+// session ID is still returned.
+func TestCreateSession_TitlePatchFailure_SessionStillReturned(t *testing.T) {
+	const newID = "ses_titlebad"
+	const dir = "/tmp/test-create-session-patchfail"
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/session" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"` + newID + `"}`))
+			return
+		}
+		// PATCH fails with 500
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+	withTestPort(t, dir, port)
+
+	a := &Adapter{}
+	resp, err := a.CreateSession(context.Background(), platforms.CreateSessionRequest{
+		Directory: dir,
+		Title:     "whatever",
+	})
+	if err != nil {
+		t.Fatalf("CreateSession must not fail when title-patch fails, got: %v", err)
+	}
+	if resp.ID != newID {
+		t.Errorf("resp.ID = %q, want %q", resp.ID, newID)
+	}
+}
+
+// TestCreateSession_NoTitleSkipsPatch asserts that when no title is
+// requested, no PATCH is issued.
+func TestCreateSession_NoTitleSkipsPatch(t *testing.T) {
+	const newID = "ses_notitle"
+	const dir = "/tmp/test-create-session-notitle"
+
+	var patchCalls int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPatch {
+			atomic.AddInt32(&patchCalls, 1)
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/session" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"` + newID + `"}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+	withTestPort(t, dir, port)
+
+	a := &Adapter{}
+	resp, err := a.CreateSession(context.Background(), platforms.CreateSessionRequest{
+		Directory: dir,
+		// Title deliberately omitted
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	if resp.ID != newID {
+		t.Errorf("resp.ID = %q, want %q", resp.ID, newID)
+	}
+	if atomic.LoadInt32(&patchCalls) != 0 {
+		t.Error("PATCH must not be called when no title is requested")
 	}
 }
