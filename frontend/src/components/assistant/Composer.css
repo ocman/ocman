@@ -86,8 +86,7 @@
 
 /* Composer - OpenCode style */
 .oc-composer-wrap {
-  padding: 12px 0px 12px 0px;
-  padding-top: 32px;
+  padding: 16px 0px 12px 0px;
   padding-bottom: max(12px, env(safe-area-inset-bottom));
   background: linear-gradient(to bottom, transparent, var(--bg) 20px);
 }
