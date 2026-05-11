@@ -16,7 +16,7 @@ import (
 // p99 of every endpoint we measured during a healthy session list
 // build, so anything elevated to INFO is worth an operator's
 // attention.
-const slowRequestThreshold = 250 * time.Millisecond
+const slowRequestThreshold = 2500 * time.Millisecond
 
 // statusRecorder is a tiny http.ResponseWriter shim that captures the
 // final status code written by the wrapped handler. We need this
@@ -106,12 +106,12 @@ func noiseSkip(path string) bool {
 // Fields written:
 //   - method      — HTTP method ("GET", "POST", ...)
 //   - path        — URL path *without* query string (low cardinality
-//                   so the log can be aggregated by endpoint)
+//     so the log can be aggregated by endpoint)
 //   - status      — HTTP status code as an int (200, 500, ...)
 //   - duration_ms — handler wall-clock latency in milliseconds
 //   - timings     — pipe-separated "phase=ms" pairs for slow
-//                   requests, useful when devtools isn't available
-//                   (e.g. cron-driven calls or curl)
+//     requests, useful when devtools isn't available
+//     (e.g. cron-driven calls or curl)
 //
 // SSE and the debug-log sink are skipped (see noiseSkip).
 func withRequestTiming(next http.Handler) http.Handler {

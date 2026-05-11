@@ -13,7 +13,6 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -533,10 +532,13 @@ func (a *Adapter) ProxyEvents(ctx context.Context, sessionID string, w io.Writer
 	}
 
 	// Use a client without a timeout for long-lived SSE connections.
-	// otelhttp wraps the transport so the upstream connect / first
-	// byte are visible as a child span of the SSE handler's
-	// connection-lifetime span.
-	sseClient := &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
+	// Do NOT wrap with otelhttp.NewTransport here: the transport span
+	// would span the entire streaming body read, and when the client
+	// disconnects the context cancellation would mark that span as an
+	// error — flooding Grafana with false positives. The parent
+	// connection-lifetime span in handleSessionEvents already covers
+	// the full SSE session and handles context.Canceled correctly.
+	sseClient := &http.Client{Transport: http.DefaultTransport}
 	resp, err := sseClient.Do(httpReq)
 	if err != nil {
 		return fmt.Errorf("opencode events connect: %w", err)
