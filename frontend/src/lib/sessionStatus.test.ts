@@ -258,4 +258,26 @@ describe('deriveActiveModelAndAgent', () => {
     // model from the same scan
     expect(out.activeModel).toBe('p/m');
   });
+
+  it('ignores model from skill/tool messages after the last user turn', () => {
+    // A skill ran with 'skill-model' after the user message, but the
+    // primary response used 'primary-model'. Only 'primary-model' should
+    // be reflected as activeModel.
+    const messages = [
+      makeMessage('a', { role: 'assistant', providerID: 'anthropic', modelID: 'primary-model' }),
+      makeMessage('b', { role: 'user' }),
+      makeMessage('c', { role: 'assistant', providerID: 'anthropic', modelID: 'skill-model' }),
+      makeMessage('d', { role: 'assistant', providerID: 'anthropic', modelID: 'skill-model' }),
+    ];
+    expect(deriveActiveModelAndAgent(messages, null).activeModel).toBe('anthropic/primary-model');
+  });
+
+  it('falls back to session default when there is no user message in history', () => {
+    const session = makeSession();
+    session.defaultModel = 'default-model';
+    const messages = [
+      makeMessage('a', { role: 'assistant', providerID: 'anthropic', modelID: 'some-model' }),
+    ];
+    expect(deriveActiveModelAndAgent(messages, session).activeModel).toBe('default-model');
+  });
 });

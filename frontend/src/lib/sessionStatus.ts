@@ -147,6 +147,12 @@ export function mergeTokenStats(
  * Derive the active model + agent for the composer footer by
  * scanning the message history newest-first. Falls back to the
  * session's defaults, then to empty strings.
+ *
+ * For `activeModel` we only consider assistant messages that are the
+ * *direct primary response* to a user message — i.e. the first
+ * assistant message that follows the most recent user turn. This
+ * prevents skills or tool sub-calls (which may run with a different
+ * model) from changing the displayed active model.
  */
 export function deriveActiveModelAndAgent(
   messages: Message[],
@@ -154,17 +160,37 @@ export function deriveActiveModelAndAgent(
 ): { activeModel: string; activeAgent: string } {
   let activeModel = '';
   let activeAgent = '';
+
+  // Walk newest-first to find the most recent user message, then
+  // take the model from the very next assistant message after it.
+  // That assistant message is the primary response; anything before
+  // the user message (i.e. earlier in the turn or from tool calls)
+  // is ignored for model purposes.
+  let seenUserMessage = false;
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
-    if (!activeModel) {
-      const ref = formatModelRef(m.data?.providerID, m.data?.modelID);
-      if (ref) activeModel = ref;
+    const role = m.data?.role;
+
+    if (role === 'user') {
+      seenUserMessage = true;
+      continue;
     }
-    if (!activeAgent && m.data?.agent) {
-      activeAgent = m.data.agent;
+
+    if (role === 'assistant') {
+      // Only pick up the model from assistant messages that directly
+      // follow a user message (primary response in a turn).
+      if (!activeModel && seenUserMessage) {
+        const ref = formatModelRef(m.data?.providerID, m.data?.modelID);
+        if (ref) activeModel = ref;
+      }
+      if (!activeAgent && m.data?.agent) {
+        activeAgent = m.data.agent;
+      }
     }
+
     if (activeModel && activeAgent) break;
   }
+
   if (!activeModel) activeModel = session?.defaultModel || '';
   if (!activeAgent) activeAgent = session?.defaultAgent || '';
   return { activeModel, activeAgent };
