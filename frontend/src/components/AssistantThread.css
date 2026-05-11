@@ -144,12 +144,16 @@
   font-family: 'SF Mono', Consolas, monospace;
   font-size: 11px;
   color: var(--text-dim);
+  visibility: hidden;
+}
+.oc-msg:hover .oc-msg-meta {
+  visibility: visible;
 }
 .oc-meta-dot {
   width: 8px;
   height: 8px;
   border-radius: 0;
-  background: color-mix(in srgb, var(--accent3) 55%, var(--surface0) 45%);
+  background: var(--surface2);
   flex-shrink: 0;
 }
 .oc-meta-sep { color: var(--overlay0); }
@@ -172,6 +176,57 @@
 .oc-meta-tps {
   color: var(--overlay0);
   font-variant-numeric: tabular-nums;
+}
+
+/* Turn summary bar — always visible, rendered after the last assistant
+   message of each turn. */
+.oc-turn-stats {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--surface1);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.oc-turn-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 0;
+  flex-shrink: 0;
+  background: var(--overlay0);
+  margin-right: 2px;
+}
+.oc-turn-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--overlay0);
+  font-variant-numeric: tabular-nums;
+}
+.oc-turn-stat .bi {
+  font-size: 10px;
+  opacity: 0.7;
+}
+.oc-turn-sep {
+  color: var(--surface2);
+}
+/* Pulsing dot shown while the turn is still in progress */
+.oc-turn-live {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent3);
+  margin-left: 4px;
+  animation: oc-turn-pulse 1.4s ease-in-out infinite;
+}
+@keyframes oc-turn-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.25; }
 }
 
 /* Markdown in assistant messages */
