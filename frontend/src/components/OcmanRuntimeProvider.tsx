@@ -11,6 +11,7 @@ import { AgentsContext } from '../lib/agentColor';
 import { FailedSendsContext, type FailedSendsContextValue } from '../lib/failedSendsContext';
 import type { FailedSend } from '../lib/failedSends';
 import { computeIsRunning, createConvertMessages } from '../lib/convertMessages';
+import { computeTurnStats, TurnStatsContext } from '../lib/turnStats';
 
 interface Props {
   messages: Message[];
@@ -92,6 +93,8 @@ export function OcmanRuntimeProvider({
 
   const isRunning = useMemo(() => computeIsRunning(messages), [messages]);
 
+  const turnStatsMap = useMemo(() => computeTurnStats(messages, parts), [messages, parts]);
+
   // Stable onNew callback — only changes when canSend, sessionId, or
   // sendMessage change. This prevents the store adapter object from
   // getting a new `onNew` reference on every render.
@@ -123,9 +126,11 @@ export function OcmanRuntimeProvider({
   return (
     <AgentsContext.Provider value={agentList}>
       <FailedSendsContext.Provider value={failedCtx}>
-        <AssistantRuntimeProvider runtime={runtime}>
-          {children}
-        </AssistantRuntimeProvider>
+        <TurnStatsContext.Provider value={turnStatsMap}>
+          <AssistantRuntimeProvider runtime={runtime}>
+            {children}
+          </AssistantRuntimeProvider>
+        </TurnStatsContext.Provider>
       </FailedSendsContext.Provider>
     </AgentsContext.Provider>
   );

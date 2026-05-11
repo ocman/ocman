@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import './AssistantThread.css';
 import {
   ThreadPrimitive,
@@ -6,7 +6,8 @@ import {
   useMessage,
   type ToolCallMessagePartProps,
 } from '@assistant-ui/react';
-import { formatSeconds, formatTokensPerSecond } from '../lib/format';
+import { formatSeconds, formatTokensPerSecond, formatCompactNumber, formatCurrency } from '../lib/format';
+import { useTurnStats } from '../lib/turnStats';
 import { useAgentColor } from '../lib/agentColor';
 import { useShortcut } from '../lib/shortcutRegistry';
 import { hardenMessageLinks } from '../lib/linkHardener';
@@ -223,6 +224,7 @@ const UserMessage: FC = () => {
 
 const AssistantMessage: FC = () => {
   const content = useMessage((m) => m.content);
+  const messageId = useMessage((m) => m.id);
   const hasContent = content.some(
     (p) => (p.type === 'text' && 'text' in p && (p as { text: string }).text.trim()) || p.type === 'tool-call' || p.type === 'image'
   );
@@ -241,6 +243,7 @@ const AssistantMessage: FC = () => {
     return (
       <MessagePrimitive.Root className="oc-msg oc-msg-muted">
         <MessagePrimitive.Content components={ASSISTANT_PART_COMPONENTS} />
+        <TurnSummaryBar messageId={messageId} />
       </MessagePrimitive.Root>
     );
   }
@@ -251,6 +254,7 @@ const AssistantMessage: FC = () => {
         <MessagePrimitive.Content components={ASSISTANT_PART_COMPONENTS} />
       </div>
       <AssistantMeta />
+      <TurnSummaryBar messageId={messageId} />
     </MessagePrimitive.Root>
   );
 };
@@ -261,7 +265,6 @@ function AssistantMeta() {
   const content = useMessage((m) => m.content);
   const custom = useMessage((m) => m.metadata?.custom as Record<string, unknown> | undefined);
   const agent = typeof custom?.agent === 'string' ? (custom.agent as string) : undefined;
-  const agentColor = useAgentColor(agent);
   if (!createdAt || createdAt.getTime() === 0) return null;
   if (status?.type === 'running') return null;
   // Hide timestamp when message only contains file reads
@@ -304,24 +307,121 @@ function AssistantMeta() {
       <div className="oc-msg-meta">
         <span
           className="oc-meta-dot"
-          style={isError ? { background: 'var(--danger)' } : agent ? { background: agentColor } : undefined}
+          style={isError ? { background: 'var(--danger)' } : undefined}
           title={isError ? 'Error' : agent ? `agent: ${agent}` : 'Message group'}
         />
         <span>{time}</span>
         {durationSec !== null && (
           <>
-            <span className="oc-meta-sep">|</span>
+            <span className="oc-meta-sep">·</span>
             <span className="oc-meta-tps">{formatSeconds(durationSec)}</span>
           </>
         )}
         {tps !== null && (
           <>
-            <span className="oc-meta-sep">|</span>
+            <span className="oc-meta-sep">·</span>
             <span className="oc-meta-tps">{formatTokensPerSecond(tps)} tok/s</span>
           </>
         )}
       </div>
     </>
+  );
+}
+
+/**
+ * Always-visible summary bar rendered after the last assistant message of
+ * each turn. Shows wall-clock duration, total tokens in+out, tool-call
+ * count, and average tok/s. While the turn is still in progress the bar
+ * shows whatever data is available so far.
+ */
+function TurnSummaryBar({ messageId }: { messageId: string }) {
+  const stats = useTurnStats(messageId);
+  const custom = useMessage((m) => m.metadata?.custom as Record<string, unknown> | undefined);
+  const agent = typeof custom?.agent === 'string' ? (custom.agent as string) : undefined;
+  const agentColor = useAgentColor(agent);
+  const [now, setNow] = useState(Date.now);
+
+  // Tick every second so the live wall-clock increments visibly.
+  useEffect(() => {
+    if (!stats?.isLive) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [stats?.isLive]);
+
+  if (!stats) return null;
+
+  const { wallClockMs, tokensOut, tokensIn, cost, toolCalls, tps, isLive, startedAt } = stats;
+
+  // For a live turn, compute elapsed wall-clock from startedAt → now.
+  const displayMs = isLive ? now - startedAt : wallClockMs;
+  const wallSec = displayMs !== null && displayMs > 0 ? displayMs / 1000 : null;
+
+  const totalTokens = tokensIn + tokensOut;
+
+  const time = new Date(startedAt).toLocaleTimeString('en-US', {
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+
+  const items: React.ReactNode[] = [];
+  if (!isLive) {
+    items.push(
+      <span key="time" className="oc-turn-stat">
+        {time}
+      </span>
+    );
+  }
+  if (wallSec !== null) {
+    items.push(
+      <span key="wall" className="oc-turn-stat">
+        <i className="bi bi-clock" aria-hidden="true" />
+        {formatSeconds(wallSec)}
+      </span>
+    );
+  }
+  if (totalTokens > 0) {
+    items.push(
+      <span key="tok" className="oc-turn-stat">
+        <i className="bi bi-stars" aria-hidden="true" />
+        {formatCompactNumber(totalTokens)} tok
+      </span>
+    );
+  }
+  if (toolCalls > 0) {
+    items.push(
+      <span key="tools" className="oc-turn-stat">
+        <i className="bi bi-tools" aria-hidden="true" />
+        {toolCalls} {toolCalls === 1 ? 'tool' : 'tools'}
+      </span>
+    );
+  }
+  if (tps !== null) {
+    items.push(
+      <span key="tps" className="oc-turn-stat">
+        {formatTokensPerSecond(tps)} tok/s
+      </span>
+    );
+  }
+  if (cost > 0) {
+    items.push(
+      <span key="cost" className="oc-turn-stat">
+        {formatCurrency(cost, cost < 0.001 ? 4 : 2)}
+      </span>
+    );
+  }
+
+  if (items.length === 0 && !isLive) return null;
+
+  return (
+    <div className="oc-turn-stats">
+      <span className="oc-turn-dot" style={agent ? { background: agentColor } : undefined} />
+      {items.map((item, i) => (
+        <React.Fragment key={i}>
+          {item}
+          {i < items.length - 1 && <span className="oc-turn-sep">·</span>}
+        </React.Fragment>
+      ))}
+      {isLive && <span className="oc-turn-live" title="Turn in progress" />}
+    </div>
   );
 }
 
