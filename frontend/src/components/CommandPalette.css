@@ -81,10 +81,14 @@
   background: var(--text-dim);
 }
 .oc-cmd-status[data-status="waiting"] { background: var(--accent); }
-.oc-cmd-status[data-status="busy"]    { background: var(--accent4); animation: pulse 1.2s ease-in-out infinite; }
-.oc-cmd-status[data-status="done"]    { background: var(--text-dim); }
+/* busy = working: blue blinking */
+.oc-cmd-status[data-status="busy"]    { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+/* done (unread) = blue; seen/idle sessions fall back to the default text-dim */
+.oc-cmd-status[data-status="done"]    { background: var(--accent); }
+.oc-cmd-status[data-status="done"][data-seen="true"] { background: var(--text-dim); }
 .oc-cmd-status[data-status="error"]   { background: var(--danger); }
-.oc-cmd-status[data-status="pending"] { background: var(--yellow); animation: pulse 1s ease-in-out infinite; }
+/* pending = needs attention: orange blinking */
+.oc-cmd-status[data-status="pending"] { background: var(--accent4); animation: pulse 1s ease-in-out infinite; }
 .oc-cmd-item-content {
   display: flex;
   flex-direction: column;

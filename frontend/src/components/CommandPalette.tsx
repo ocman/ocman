@@ -393,6 +393,7 @@ export function CommandPalette() {
             if (item.kind === 'session') {
               const session = item.session;
               const pending = session.pendingPermission || session.pendingQuestion;
+              const cmdSeen = (session.status === 'waiting' || session.status === 'error' || session.status === 'done') && session.seen;
               return (
                 <div
                   key={session.id}
@@ -403,6 +404,7 @@ export function CommandPalette() {
                   <span
                     className="oc-cmd-status"
                     data-status={pending ? 'pending' : session.status}
+                    data-seen={cmdSeen ? 'true' : undefined}
                     title={pending ? 'Waiting for your response' : undefined}
                   />
                   <div className="oc-cmd-item-content">

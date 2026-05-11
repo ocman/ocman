@@ -3,10 +3,12 @@
 .status-indicator .status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .status-waiting .status-dot { background: var(--accent); }
 .status-waiting { background: rgba(88, 166, 255, 0.15); color: var(--accent); }
-.status-busy .status-dot { background: var(--accent4); animation: pulse 1.2s ease-in-out infinite; }
-.status-busy { background: rgba(240, 136, 62, 0.15); color: var(--accent4); }
-.status-done .status-dot { background: var(--text-dim); }
-.status-done { background: rgba(139, 148, 158, 0.1); color: var(--text-dim); }
+/* busy = working: blue blinking */
+.status-busy .status-dot { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+.status-busy { background: rgba(88, 166, 255, 0.15); color: var(--accent); }
+/* done (unread) = blue; done (seen/idle) handled by .status-seen below */
+.status-done .status-dot { background: var(--accent); }
+.status-done { background: rgba(88, 166, 255, 0.15); color: var(--accent); }
 .status-error .status-dot { background: var(--danger); }
 .status-error { background: rgba(243, 139, 168, 0.15); color: var(--danger); }
 
@@ -20,10 +22,13 @@
   margin-top: 5px;
 }
 .status-dot-compact.status-waiting { background: var(--accent); }
-.status-dot-compact.status-busy { background: var(--accent4); animation: pulse 1.2s ease-in-out infinite; }
-.status-dot-compact.status-done { background: var(--text-dim); }
+/* busy = working: blue blinking */
+.status-dot-compact.status-busy { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+/* done (unread) = blue */
+.status-dot-compact.status-done { background: var(--accent); }
 .status-dot-compact.status-error { background: var(--danger); }
-.status-dot-compact.status-seen { background: var(--overlay0); animation: none; }
+/* seen/idle = grey, cancels any animation */
+.status-dot-compact.status-seen { background: var(--text-dim); animation: none; }
 
 /* Compact error icon (replaces dot with ! icon) */
 .status-icon-compact {
@@ -39,20 +44,20 @@
 .status-icon-compact.status-seen { color: var(--overlay0); }
 
 /* Pending prompt — a permission/question is waiting for the user. Uses a
-   pulsing yellow "!" icon so it is unmistakable versus the red error icon
-   and the neutral grey/blue/orange status dots. */
+   pulsing orange "!" icon so it is unmistakable versus the red error icon
+   and the neutral grey/blue status dots. */
 .status-icon-compact.status-pending {
-  color: var(--yellow);
+  color: var(--accent4);
   animation: pulse 1s ease-in-out infinite;
 }
 .status-indicator.status-pending {
-  background: rgba(249, 226, 175, 0.15);
-  color: var(--yellow);
+  background: rgba(240, 136, 62, 0.15);
+  color: var(--accent4);
 }
 .status-indicator.status-pending .status-pending-icon {
   display: inline-flex;
   width: 10px;
   height: 10px;
-  color: var(--yellow);
+  color: var(--accent4);
   animation: pulse 1s ease-in-out infinite;
 }

@@ -1781,7 +1781,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                   <StatusBadge
                     status={displayStatus}
                     compact
-                    seen={(displayStatus === 'waiting' || displayStatus === 'error') && sib.seen}
+                    seen={(displayStatus === 'waiting' || displayStatus === 'error' || displayStatus === 'done') && sib.seen}
                     pending={sib.pendingPermission || sib.pendingQuestion}
                     titleOverride={sib.notice?.message}
                   />

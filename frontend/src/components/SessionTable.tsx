@@ -125,7 +125,7 @@ export function SessionTable({ sessions, showProject, loading, includeArchived }
       </thead>
       <tbody>
         {visibleSessions.map(s => {
-          const seenLatest = (s.status === 'waiting' || s.status === 'error') && s.seen;
+          const seenLatest = (s.status === 'waiting' || s.status === 'error' || s.status === 'done') && s.seen;
           const pending = s.pendingPermission || s.pendingQuestion;
           return (
             <tr
