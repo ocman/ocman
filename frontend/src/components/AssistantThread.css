@@ -144,10 +144,12 @@
   font-family: 'SF Mono', Consolas, monospace;
   font-size: 11px;
   color: var(--text-dim);
-  visibility: hidden;
+  opacity: 0;
+  transition: opacity 0s 0s; /* instant hide on mouse-out */
 }
 .oc-msg:hover .oc-msg-meta {
-  visibility: visible;
+  opacity: 1;
+  transition: opacity 0s 2s; /* 2s delay before showing on hover */
 }
 .oc-meta-dot {
   width: 8px;
