@@ -35,10 +35,12 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
-    {
+    // WebKit is excluded from CI (only Chromium is installed there).
+    // Run locally with `npx playwright test --project=webkit`.
+    ...(!process.env.CI ? [{
       name: 'webkit',
       use: { ...devices['Desktop Safari'] },
-    },
+    }] : []),
   ],
 
   webServer: noWebServer
