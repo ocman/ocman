@@ -1,0 +1,294 @@
+package server
+
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"time"
+
+	log "github.com/sirupsen/logrus"
+
+	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/pricing"
+)
+
+func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDB(w) {
+		return
+	}
+	stats, err := s.db.GetStats()
+	if err != nil {
+		serverError(w, "fetching stats", err)
+		return
+	}
+	writeJSON(w, stats)
+}
+
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDB(w) {
+		return
+	}
+	agent := strings.TrimSpace(r.URL.Query().Get("agent"))
+	model := strings.TrimSpace(r.URL.Query().Get("model"))
+	dayCount := parseIntParam(r, "days", 0)
+	var since int64
+	if dayCount > 0 {
+		since = time.Now().Add(-time.Duration(dayCount) * 24 * time.Hour).UnixMilli()
+	}
+	limit := parseIntParam(r, "limit", 20)
+	offset := parseIntParam(r, "offset", 0)
+	sessionLimit := parseIntParam(r, "sessionLimit", 20)
+	sessionOffset := parseIntParam(r, "sessionOffset", 0)
+	projectLimit := parseIntParam(r, "projectLimit", 20)
+	projectOffset := parseIntParam(r, "projectOffset", 0)
+	dir := normaliseDirParam(r.URL.Query().Get("dir"))
+
+	metrics, err := s.db.GetMetricsDashboard(db.MetricsDashboardOptions{
+		AgentFilter:   agent,
+		ModelFilter:   model,
+		Since:         since,
+		Days:          dayCount,
+		RequestLimit:  limit,
+		RequestOffset: offset,
+		SessionLimit:  sessionLimit,
+		SessionOffset: sessionOffset,
+		ProjectLimit:  projectLimit,
+		ProjectOffset: projectOffset,
+		Pricing:       pricing.Load(),
+		Dir:           dir,
+	})
+	if err != nil {
+		serverError(w, "fetching metrics", err)
+		return
+	}
+	writeJSON(w, metrics)
+}
+
+func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDB(w) {
+		return
+	}
+	projects, loaded := s.projectsSnapshot()
+	if !loaded {
+		if err := s.refreshProjectsIndex(); err != nil {
+			serverError(w, "fetching projects", err)
+			return
+		}
+		projects, _ = s.projectsSnapshot()
+	}
+	writeJSON(w, projects)
+}
+
+func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDB(w) {
+		return
+	}
+	since := parseSinceParam(r)
+	model := strings.TrimSpace(r.URL.Query().Get("model"))
+	dir := normaliseDirParam(r.URL.Query().Get("dir"))
+	activity, err := s.db.GetDailyActivity(since, model, dir)
+	if err != nil {
+		serverError(w, "fetching activity", err)
+		return
+	}
+	writeJSON(w, activity)
+}
+
+func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDB(w) {
+		return
+	}
+	since := parseSinceParam(r)
+	dir := normaliseDirParam(r.URL.Query().Get("dir"))
+	models, err := s.db.GetModelUsage(since, dir)
+	if err != nil {
+		serverError(w, "fetching model usage", err)
+		return
+	}
+	writeJSON(w, models)
+}
+
+func (s *Server) handleHourlyTokens(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDB(w) {
+		return
+	}
+	since := parseSinceParam(r)
+	model := strings.TrimSpace(r.URL.Query().Get("model"))
+	dir := normaliseDirParam(r.URL.Query().Get("dir"))
+	dayCount := parseIntParam(r, "days", 0)
+	data, err := s.db.GetHourlyTokensByModel(dayCount, since, model, dir)
+	if err != nil {
+		serverError(w, "fetching hourly tokens by model", err)
+		return
+	}
+	writeJSON(w, data)
+}
+
+func (s *Server) handleHourly(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDB(w) {
+		return
+	}
+	since := parseSinceParam(r)
+	dir := normaliseDirParam(r.URL.Query().Get("dir"))
+	hourly, err := s.db.GetHourlyActivity(since, dir)
+	if err != nil {
+		serverError(w, "fetching hourly activity", err)
+		return
+	}
+	writeJSON(w, hourly)
+}
+
+func (s *Server) handleWhisperStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]interface{}{
+		"available": whisperAvailable(),
+	})
+}
+
+func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
+	if !whisperAvailable() {
+		http.Error(w, "whisper is not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxAudioUpload)
+
+	file, header, err := r.FormFile("audio")
+	if err != nil {
+		log.WithError(err).Warn("failed to read audio upload")
+		http.Error(w, "failed to read audio file", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	ext := filepath.Ext(header.Filename)
+	if ext == "" {
+		ext = ".wav"
+	}
+	tmp, err := os.CreateTemp("", "ocman-audio-*"+ext)
+	if err != nil {
+		serverError(w, "creating temp file", err)
+		return
+	}
+	defer os.Remove(tmp.Name())
+	defer tmp.Close()
+
+	if _, err := io.Copy(tmp, file); err != nil {
+		serverError(w, "writing audio to temp file", err)
+		return
+	}
+	tmp.Close()
+
+	text, err := transcribeAudio(tmp.Name())
+	if err != nil {
+		log.WithError(err).Error("transcription failed")
+		http.Error(w, "transcription failed", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]interface{}{"text": text})
+}
+
+func (s *Server) handleCalcCost(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ModelID    string `json:"modelID"`
+		Input      int64  `json:"input"`
+		Output     int64  `json:"output"`
+		CacheRead  int64  `json:"cacheRead"`
+		CacheWrite int64  `json:"cacheWrite"`
+	}
+	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+		return
+	}
+
+	table := pricing.Load()
+	cost := table.CalcCost(req.ModelID, req.Input, req.Output, req.CacheRead, req.CacheWrite)
+	price := table.Lookup(req.ModelID)
+	known := price.InputPerToken != 0 || price.OutputPerToken != 0
+
+	writeJSON(w, map[string]interface{}{
+		"cost":  cost,
+		"known": known,
+	})
+}
+
+func (s *Server) handleDebugLog(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Level   string          `json:"level"`
+		Message string          `json:"message"`
+		Data    json.RawMessage `json:"data"`
+	}
+	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+		return
+	}
+
+	fields := log.Fields{"source": "fe"}
+	if ua := r.Header.Get("User-Agent"); ua != "" {
+		fields["ua"] = ua
+	}
+	if len(req.Data) > 0 {
+		fields["data"] = string(req.Data)
+	}
+
+	entry := log.WithFields(fields)
+	switch strings.ToLower(strings.TrimSpace(req.Level)) {
+	case "error":
+		entry.Error(req.Message)
+	case "warn", "warning":
+		entry.Warn(req.Message)
+	case "debug":
+		entry.Debug(req.Message)
+	default:
+		entry.Info(req.Message)
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleSystemStats returns backend runtime statistics (memory usage, uptime, etc).
+//
+// The `db` block is included only when ocman has an OpenCode read-only
+// handle (i.e. when the opencode platform adapter is registered). It
+// surfaces database/sql's connection-pool stats so we can watch for
+// the failure modes documented in docs/profiling.md.
+func (s *Server) handleSystemStats(w http.ResponseWriter, r *http.Request) {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	stats := map[string]interface{}{
+		"memory": map[string]interface{}{
+			"alloc":        m.Alloc,
+			"totalAlloc":   m.TotalAlloc,
+			"sys":          m.Sys,
+			"heapAlloc":    m.HeapAlloc,
+			"heapSys":      m.HeapSys,
+			"heapInuse":    m.HeapInuse,
+			"heapIdle":     m.HeapIdle,
+			"heapReleased": m.HeapReleased,
+		},
+		"gc": map[string]interface{}{
+			"numGC":   m.NumGC,
+			"lastGC":  m.LastGC,
+			"pauseNs": m.PauseNs[(m.NumGC+255)%256],
+		},
+		"goroutines": runtime.NumGoroutine(),
+		"uptime":     time.Since(s.startTime).Seconds(),
+	}
+
+	if s.db != nil {
+		ds := s.db.Stats()
+		stats["db"] = map[string]interface{}{
+			"max_open_conns":   ds.MaxOpenConnections,
+			"open_conns":       ds.OpenConnections,
+			"in_use":           ds.InUse,
+			"idle":             ds.Idle,
+			"wait_count":       ds.WaitCount,
+			"wait_duration_ms": ds.WaitDuration.Milliseconds(),
+		}
+	}
+
+	writeJSON(w, stats)
+}
