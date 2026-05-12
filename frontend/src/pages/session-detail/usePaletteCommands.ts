@@ -10,6 +10,7 @@
 import { useEffect, useRef } from 'react';
 import { useUiStore } from '../../lib/uiStore';
 import { openVSCode } from '../../lib/shortcuts';
+import { api } from '../../lib/api';
 export interface TmuxHandle {
   available: boolean;
   sessions: { name: string }[];
@@ -97,9 +98,7 @@ export function usePaletteCommands({
       const slashIdx = model.indexOf('/');
       const providerID = slashIdx > 0 ? model.slice(0, slashIdx) : '';
       const modelID = slashIdx > 0 ? model.slice(slashIdx + 1) : model;
-      import('../../lib/api').then(({ api }) =>
-        api.compactSession(sessionRef.current!.id, providerID, modelID).catch(console.error)
-      );
+      api.compactSession(sessionRef.current!.id, providerID, modelID).catch(console.error);
     }
   }, [paletteCommand, sessionRef, archiveSessionRef, navigateRef, portAvailableRef, capsRef, selectedModelRef, activeModelRef]);
 }
