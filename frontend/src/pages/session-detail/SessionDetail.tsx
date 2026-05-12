@@ -30,7 +30,6 @@ import { recheckFaviconNotify } from '../../lib/useFaviconNotify';
 import { openVSCode } from '../../lib/shortcuts';
 import { hashSession, hashMessagesAndParts } from '../../lib/sessionHash';
 import { createSessionWithLaunch, type LaunchStatus } from '../../lib/createSessionWithLaunch';
-import { isSessionRelevant } from '../../lib/promptRouting';
 import {
   isSessionRunning,
   computeLiveTokens,
@@ -39,8 +38,6 @@ import {
 } from '../../lib/sessionStatus';
 import { computeSidebarHash, rollupGroupStatus } from '../../lib/sidebarHelpers';
 import {
-  extractPendingPermission,
-  extractPendingQuestion,
   extractPendingQuestionFromParts,
   hasPendingQuestionInParts,
   type PendingPermission,
@@ -65,8 +62,10 @@ import {
 } from './usePromptHandlers';
 import { useSessionShortcuts } from './useSessionShortcuts';
 import { useSessionSSE } from './useSessionSSE';
+import { usePaletteCommands } from './usePaletteCommands';
+import { useGhostInjection } from './useGhostInjection';
+import { usePendingPromptSync } from './usePendingPromptSync';
 import { SseStatusIndicator } from './SseStatusIndicator';
-import { trackRender, logChange } from '../../lib/renderRateMonitor';
 import { remoteLog } from '../../lib/remoteLog';
 import { isRecoverableThreadBoundaryError } from './threadBoundaryRecovery';
 import { ThreadBoundaryFallback } from './ThreadBoundaryFallback';
@@ -243,21 +242,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
       navigate(`/session/${nextId}`);
     });
   }, [navigate]);
-  // Diagnostic instrumentation — gated on ?debug. Counts renders per
-  // key so a runaway loop is visible in the console, and emits a
-  // one-shot log whenever the URL :id flips so we can see exactly
-  // when the param propagates to the page (vs the bug case where
-  // the URL changed but the page never re-rendered with the new id).
-  trackRender('SessionDetail', { id });
-  logChange('SessionDetail.id', id);
-  // RENDER-LOOP DIAGNOSTICS — these `logChange` calls fire only when
-  // the value differs from the previous one observed. They cost ~1
-  // Map.get + 1 cmp per render in production (?debug not set →
-  // returns early); under ?debug they emit one remoteLog line per
-  // actual transition. The point is to identify which piece of
-  // state is flipping at 10-30 Hz when the parent loop kicks in:
-  // keys that flip frequently in the air log are the culprit.
-  // Remove once the loop is fixed.
   const debugModeRef = useRef(debugMode);
   debugModeRef.current = debugMode;
   // Read the cache once at mount time via getState() — we want a snapshot
@@ -375,21 +359,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const { setInfo } = useHeaderInfo();
   usePageTitle(cleanTitle(session?.title) || 'Session');
 
-  // Render-loop diagnostics — scalar-only versions to keep the
-  // air log payloads small. Each line logs only when the value
-  // actually differs from the previous render. The `.ref` checks
-  // we used to log were producing multi-KB JSON dumps per change;
-  // tracking the *length* (or status) is enough to identify which
-  // setState is firing.
-  logChange('SessionDetail.session.id', session?.id);
-  logChange('SessionDetail.session.status', session?.status);
-  logChange('SessionDetail.messages.len', messages.length);
-  logChange('SessionDetail.parts.len', parts.length);
-  logChange('SessionDetail.loading', loading);
-  logChange('SessionDetail.switching', switching);
-  logChange('SessionDetail.subagentTokens.size', subagentTokens?.size);
-  logChange('SessionDetail.taskLiveOutput.keys', taskLiveOutput ? Object.keys(taskLiveOutput).length : 0);
-
   // Sidebar polling, archive/pin handlers, archived-toggle, and the
   // collapsed-projects fold-out. The hook owns recentSessions; the
   // page-level cross-cutting effects (status mirror, permission
@@ -416,8 +385,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
     abortSignalRef: abortControllerRef,
     navigate,
   });
-  logChange('SessionDetail.recentSessions.len', recentSessions.length);
-
   // Git info for sibling rows. Was populated by the backend's
   // /api/sessions handler via a synchronous fork-fan-out of
   // `git status` per directory; that produced multi-second pauses
@@ -514,55 +481,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const toggleCollapsedProject = useUiStore((state) => state.toggleCollapsedProject);
   const threadBoundaryRecoveryRef = useRef<{ sessionId: string | undefined; message: string; at: number } | null>(null);
 
-  // Refs for values used by the scoped-command dispatch so the effect
-  // only re-runs when `paletteCommand` changes (fixes the P0 hot loop).
-  const tmuxRef = useRef(tmux);
-  useEffect(() => { tmuxRef.current = tmux; }, [tmux]);
-  const archiveSessionRef = useRef(archiveSession);
-  useEffect(() => { archiveSessionRef.current = archiveSession; }, [archiveSession]);
-  const navigateRef = useRef(navigate);
-  useEffect(() => { navigateRef.current = navigate; }, [navigate]);
 
-  const paletteCommand = useUiStore((s) => s.paletteCommand);
-  useEffect(() => {
-    if (!paletteCommand || paletteCommand.kind !== 'scoped') return;
-    useUiStore.getState().closePalette();
-
-    const el = document.querySelector('.oc-composer-input') as HTMLTextAreaElement | null;
-    if (!el) return;
-
-    const cmd = paletteCommand;
-    const t = tmuxRef.current;
-    if (cmd.id === 'scoped.model') {
-      el.value = '/model ';
-      el.dispatchEvent(new CustomEvent('oc-model-picker-open', { detail: '' }));
-      el.focus();
-    } else if (cmd.id === 'scoped.agent') {
-      el.value = '/agent ';
-      el.dispatchEvent(new CustomEvent('oc-agent-picker-open', { detail: '' }));
-      el.focus();
-    } else if (cmd.id === 'scoped.variant') {
-      setSelectedReasoning('');
-    } else if (cmd.id === 'scoped.tmux' && t.available && t.sessions.length > 0) {
-      t.switchSession(t.sessions[0].name).catch(console.error);
-    } else if (cmd.id === 'scoped.vscode' && sessionRef.current) {
-      openVSCode(sessionRef.current.directory);
-    } else if (cmd.id === 'scoped.archive' && sessionRef.current) {
-      const s = sessionRef.current;
-      archiveSessionRef.current(s.platform, s.id, s.timeUpdated, true).then(() => navigateRef.current(-1));
-    } else if (cmd.id === 'scoped.rename' && sessionRef.current) {
-      setShowRenameModal(true);
-    } else if (cmd.id === 'scoped.new-project') {
-      useUiStore.getState().openProjectPalette();
-    } else if (cmd.id === 'scoped.compact' && sessionRef.current && portAvailableRef.current && capsRef.current.compact) {
-      const s = sessionRef.current;
-      const model = selectedModelRef.current || activeModelRef.current || '';
-      const slashIdx = model.indexOf('/');
-      const providerID = slashIdx > 0 ? model.slice(0, slashIdx) : '';
-      const modelID = slashIdx > 0 ? model.slice(slashIdx + 1) : model;
-      api.compactSession(s.id, providerID, modelID).catch(console.error);
-    }
-  }, [paletteCommand, portAvailableRef, setSelectedReasoning]);
 
 
   useEffect(() => {
@@ -648,7 +567,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
     // once `messages` has been populated by load() — that way we can skip
     // entries whose prompt has already arrived through SSE.
     setFailedSends(id ? listFailedSends(id) : []);
-    injectedGhostIdsRef.current = new Set();
     load(signal);
     // portAvailable is now derived from session.liveConnection (populated
     // by the platform adapter). The state variable is kept because SSE
@@ -668,99 +586,15 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- setSseDebugEvents comes from useSessionSSE (declared after this effect); it's a stable useState setter and safe to omit.
   }, [getWhisperStatus, id, load, refreshModels, lastHashRef, setLoading, setMessages, setParts, setPermissionError, setPortAvailable, setSelectedAgent, setSelectedModel, setSelectedReasoning, setSwitching, setTotalMessages]);
 
-  // Re-inject ghost user-message bubbles for failed sends that survived a
-  // refresh. The optimistic messages are component-local (never written to
-  // the DB), so on cold load they're absent from `messages` even though
-  // the persisted entry is back in `failedSends`. Skip entries whose text
-  // already appears as a real user message in the loaded thread — that
-  // means the request actually reached the server and SSE delivered it,
-  // so the failed banner would be a confusing duplicate.
-  //
-  // Guard: track which ghost IDs we've already injected so the effect
-  // is idempotent even when `messages` / `parts` change (which they do
-  // as a result of the injection itself). Without this guard the effect
-  // can cascade: inject → setMessages → effect re-fires → inject again
-  // if the timing races with SSE or the memory-trimming effect.
-  //
-  // IMPORTANT: `messages` and `parts` are read via refs (messagesRef,
-  // partsRef) instead of being listed as dependencies. This breaks the
-  // cascade where ghost injection appends to `messages`, the memory-
-  // trimming effect trims `messages`, and the changed `messages` re-
-  // triggers ghost injection — an infinite loop that hits React's
-  // maximum update depth. The effect only needs to fire when `session`
-  // or `failedSends` change; the current messages/parts are consulted
-  // for deduplication but should not trigger re-runs.
-  const injectedGhostIdsRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (!session || failedSends.length === 0) return;
-    const currentMessages = messagesRef.current;
-    const currentParts = partsRef.current;
-    const existingIds = new Set(currentMessages.map(m => m.id));
-    const realUserTexts = new Set(
-      currentMessages
-        .filter(m => m.data?.role === 'user')
-        .flatMap(m => currentParts
-          .filter(p => p.messageId === m.id)
-          .map(p => {
-            try {
-              const pd = typeof p.data === 'string' ? JSON.parse(p.data) : p.data;
-              return pd?.type === 'text' ? (pd.text || '') : '';
-            } catch {
-              return '';
-            }
-          })
-          .filter(Boolean)),
-    );
-    const ghostsToInject = failedSends.filter(e => {
-      if (existingIds.has(e.id)) return false;
-      if (injectedGhostIdsRef.current.has(e.id)) return false;
-      if (e.text && realUserTexts.has(e.text)) return false;
-      return true;
-    });
-    if (ghostsToInject.length === 0) return;
-
-    const newMsgs: Message[] = [];
-    const newParts: Part[] = [];
-    for (const entry of ghostsToInject) {
-      injectedGhostIdsRef.current.add(entry.id);
-      newMsgs.push({
-        id: entry.id,
-        sessionId: session.id,
-        timeCreated: entry.failedAt,
-        data: { role: 'user' },
-      });
-      if (entry.text) {
-        newParts.push({
-          id: 'part-' + entry.id,
-          messageId: entry.id,
-          sessionId: session.id,
-          data: { type: 'text', text: entry.text } as unknown as string,
-        });
-      }
-      if (entry.images) {
-        entry.images.forEach((img, i) => {
-          newParts.push({
-            id: `part-${entry.id}-img-${i}`,
-            messageId: entry.id,
-            sessionId: session.id,
-            data: { type: 'file', mime: img.mime, url: img.url } as unknown as string,
-          });
-        });
-      }
-    }
-    setMessages(prev => [...prev, ...newMsgs]);
-    setParts(prev => [...prev, ...newParts]);
-    // Drop the rehydrated entries that were filtered out (request actually
-    // succeeded on the server) so the persistent store stays clean.
-    const droppedIds = failedSends
-      .filter(e => !ghostsToInject.includes(e) && !existingIds.has(e.id))
-      .map(e => e.id);
-    if (droppedIds.length > 0) {
-      setFailedSends(prev => prev.filter(e => !droppedIds.includes(e.id)));
-      droppedIds.forEach(idToDrop => removeFailedSend(session.id, idToDrop));
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- messagesRef/partsRef are stable refs; listing messages/parts here would create an infinite loop with the memory-trimming effect.
-  }, [session, failedSends]);
+  useGhostInjection({
+    session,
+    failedSends,
+    setFailedSends,
+    messagesRef,
+    partsRef,
+    setMessages,
+    setParts,
+  });
 
   useEffect(() => {
     if (messages.length <= MAX_RETAINED_MESSAGES) return;
@@ -789,12 +623,22 @@ export function SessionDetail({ id }: SessionDetailProps) {
     }));
   }, [id, session, messages, parts, totalMessages, updateCachedSession]);
 
-  // Mirror the current session's pending-prompt state from SSE into the
-  // sidebar list entry so its badge lights up/clears immediately, without
-  // waiting for the 10-second background poll to /api/sessions. The sibling
-  // entries still rely on the poll, since their pending state is owned by
-  // the backend (fetched from each running OpenCode instance).
   const hasPendingPrompt = pendingPermission !== null || pendingQuestion !== null;
+
+  usePendingPromptSync({
+    id,
+    pendingPermission,
+    pendingQuestion,
+    setPendingPermission,
+    setPendingQuestion,
+    setPermissionError,
+    recentSessions,
+    setRecentSessions,
+    lastSiblingsHashRef,
+    subagentSessionIdsRef,
+    listPermissions,
+    listQuestions,
+  });
 
   // Stable handler + flag for the composer's "launch opencode" hint.
   // The Composer is wrapped in React.memo with a hand-written
@@ -803,76 +647,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // every SSE delta and every keystroke during streaming.
   const handleLaunchHintClick = useCallback(() => setShowDisconnectedToast(true), []);
   const launchHintActive = !portAvailable && !hasPendingPrompt && tmux.available && !!caps.liveConnectionHint;
-  useEffect(() => {
-    if (!id) return;
-    setRecentSessions(prev => {
-      let changed = false;
-      const next = prev.map(s => {
-        if (s.id !== id) return s;
-        const newPerm = pendingPermission !== null;
-        const newQuestion = pendingQuestion !== null;
-        if (s.pendingPermission === newPerm && s.pendingQuestion === newQuestion) return s;
-        changed = true;
-        return { ...s, pendingPermission: newPerm, pendingQuestion: newQuestion };
-      });
-      if (changed) {
-        // Keep the hash cache in sync so the next poll still diffs correctly.
-        lastSiblingsHashRef.current = computeSidebarHash(next);
-        return next;
-      }
-      return prev;
-    });
-  }, [id, pendingPermission, pendingQuestion, hasPendingPrompt, lastSiblingsHashRef, setRecentSessions]);
-
-  // Reverse sync: sidebar poll → detail view. The sidebar polls
-  // /api/sessions every 3 seconds and the backend computes
-  // pendingPermission / pendingQuestion from live OpenCode instances.
-  // If the sidebar discovers a prompt that the detail view doesn't
-  // know about (e.g. SSE event was missed), trigger a fetch of the
-  // actual permission/question data so the prompt dialog appears.
-  // Memoise the active row lookup so derived booleans below keep
-  // a stable reference when recentSessions identity changes but
-  // the row in question hasn't.
-  const sidebarCurrentSession = useMemo(
-    () => recentSessions.find(s => s.id === id),
-    [recentSessions, id],
-  );
-  const sidebarHasPerm = sidebarCurrentSession?.pendingPermission ?? false;
-  const sidebarHasQuestion = sidebarCurrentSession?.pendingQuestion ?? false;
-  useEffect(() => {
-    if (!id) return;
-    // Only fetch if the sidebar says there's a prompt but the detail
-    // view doesn't have one yet. Avoids redundant fetches when SSE
-    // already delivered the event.
-    if (sidebarHasPerm && pendingPermission === null) {
-      listPermissions(id).then((perms) => {
-        for (const p of perms) {
-          const perm = extractPendingPermission({ type: 'permission.asked', properties: p });
-          if (!perm) continue;
-          const props = p as Record<string, unknown>;
-          const promptSid = typeof props.sessionID === 'string' ? props.sessionID : '';
-          if (!isSessionRelevant(promptSid, id, subagentSessionIdsRef.current)) continue;
-          setPendingPermission(perm);
-          setPermissionError(null);
-          break;
-        }
-      }).catch(() => { /* sidebar will retry on next poll */ });
-    }
-    if (sidebarHasQuestion && pendingQuestion === null) {
-      listQuestions(id).then((questions) => {
-        for (const q of questions) {
-          const question = extractPendingQuestion({ type: 'question.asked', properties: q });
-          if (!question) continue;
-          const props = q as Record<string, unknown>;
-          const questionSid = typeof props.sessionID === 'string' ? props.sessionID : '';
-          if (!isSessionRelevant(questionSid, id, subagentSessionIdsRef.current)) continue;
-          storePendingQuestion(id, question);
-          setPendingQuestion((prev) => prev ?? question);
-          break;
-        }
-      }).catch(() => { /* sidebar will retry on next poll */ });
-    }
-  }, [id, sidebarHasPerm, sidebarHasQuestion, pendingPermission, pendingQuestion, listPermissions, listQuestions, setPermissionError, subagentSessionIdsRef]);
 
   const sessionSeenId = session?.id;
   const sessionSeenPlatform = session?.platform;
@@ -1471,9 +1245,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     if (target) navigateToSession(target.id);
   }, [id, navigateToSession, recentSessionsRef]);
 
-  // Keep the page-level refs that the palette dispatcher reads.
-  // They mirror values used by both the dispatcher and (indirectly,
-  // through useSessionShortcuts) the shortcut handlers.
+  // Keep the page-level refs that the palette dispatcher and shortcut handlers read.
   const sessionRef = useRef(session);
   useEffect(() => { sessionRef.current = session; }, [session]);
   const selectedModelRef = useRef(selectedModel);
@@ -1482,6 +1254,23 @@ export function SessionDetail({ id }: SessionDetailProps) {
   useEffect(() => { activeModelRef.current = activeModel; }, [activeModel]);
   const capsRef = useRef(caps);
   useEffect(() => { capsRef.current = caps; }, [caps]);
+  const archiveSessionRef = useRef(archiveSession);
+  useEffect(() => { archiveSessionRef.current = archiveSession; }, [archiveSession]);
+  const navigateRef = useRef(navigate);
+  useEffect(() => { navigateRef.current = navigate; }, [navigate]);
+
+  usePaletteCommands({
+    sessionRef,
+    archiveSessionRef: archiveSessionRef as React.MutableRefObject<(platform: string, id: string, timeUpdated: number, archive: boolean) => Promise<unknown>>,
+    navigateRef: navigateRef as React.MutableRefObject<(to: string | number) => void>,
+    portAvailableRef,
+    capsRef,
+    selectedModelRef,
+    activeModelRef,
+    tmux,
+    setSelectedReasoning,
+    setShowRenameModal,
+  });
 
   // Keyboard shortcuts: Alt+J/K (navigate), Alt+T (tmux), Alt+V
   // (VS Code), Alt+C (new session), Alt+M (model picker). Encapsulated
@@ -1551,11 +1340,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
     pendingPermission,
     pendingQuestion,
   });
-  logChange('SessionDetail.optimisticStatus', optimisticStatus);
-  logChange('SessionDetail.liveTokensPerSecond', liveTokensPerSecond);
-  logChange('SessionDetail.isRunning', isRunning);
-  logChange('SessionDetail.lastMsg.id', lastMsg?.id);
-
   useEffect(() => {
     if (!id) return;
     setRecentSessions(prev => {
