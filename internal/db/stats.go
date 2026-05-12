@@ -144,20 +144,45 @@ type MetricsDashboardOptions struct {
 // chart library can render a "no data" placeholder without a nil
 // guard.
 func (d *DB) GetMetricsDashboard(opts MetricsDashboardOptions) (*MetricsDashboard, error) {
-	agentFilter := opts.AgentFilter
-	modelFilter := opts.ModelFilter
-	since := opts.Since
-	days := opts.Days
-	requestLimit := opts.RequestLimit
-	requestOffset := opts.RequestOffset
-	sessionLimit := opts.SessionLimit
-	sessionOffset := opts.SessionOffset
-	projectLimit := opts.ProjectLimit
-	projectOffset := opts.ProjectOffset
-	pricing := opts.Pricing
-	dir := opts.Dir
+	filtered, agentSet, modelSet, err := d.scanDashboardRows(opts)
+	if err != nil {
+		return nil, err
+	}
 
-	dirFrag, dirArgs := directoryWhere(dir)
+	dashboard := &MetricsDashboard{
+		AvailableAgents: sortedKeys(agentSet),
+		AvailableModels: sortedKeys(modelSet),
+	}
+
+	stopCounts := d.aggregateSummaryAndBuckets(dashboard, filtered, opts.Days, opts.Since)
+
+	for reason, count := range stopCounts {
+		dashboard.StopReasons = append(dashboard.StopReasons, StopReasonCount{Reason: reason, Count: count})
+	}
+	sort.Slice(dashboard.StopReasons, func(i, j int) bool {
+		if dashboard.StopReasons[i].Count != dashboard.StopReasons[j].Count {
+			return dashboard.StopReasons[i].Count > dashboard.StopReasons[j].Count
+		}
+		return dashboard.StopReasons[i].Reason < dashboard.StopReasons[j].Reason
+	})
+
+	dashboard.TotalRequests = len(filtered)
+	dashboard.Requests = paginateRequests(filtered, opts.RequestLimit, opts.RequestOffset)
+
+	if err := d.populateSessionLog(dashboard, filtered, opts.SessionLimit, opts.SessionOffset); err != nil {
+		return nil, err
+	}
+	if err := d.populateProjectLog(dashboard, filtered, opts.ProjectLimit, opts.ProjectOffset); err != nil {
+		return nil, err
+	}
+	return dashboard, nil
+}
+
+// scanDashboardRows queries assistant messages within the given options window
+// and returns the filtered request rows plus the pre-filter agent/model sets
+// (used to keep dropdowns populated even when a filter is active).
+func (d *DB) scanDashboardRows(opts MetricsDashboardOptions) (filtered []requestRow, agentSet, modelSet map[string]struct{}, err error) {
+	dirFrag, dirArgs := directoryWhere(opts.Dir)
 	query := `
 		SELECT m.id, m.session_id, m.time_created, m.data
 		FROM message m`
@@ -170,7 +195,7 @@ func (d *DB) GetMetricsDashboard(opts MetricsDashboardOptions) (*MetricsDashboar
 	query += `
 		WHERE json_extract(m.data, '$.role') = 'assistant'
 		  AND (? <= 0 OR m.time_created >= ?)`
-	args := []interface{}{since, since}
+	args := []interface{}{opts.Since, opts.Since}
 	if dirFrag != "" {
 		query += "\n		  AND " + dirFrag
 		args = append(args, dirArgs...)
@@ -178,17 +203,14 @@ func (d *DB) GetMetricsDashboard(opts MetricsDashboardOptions) (*MetricsDashboar
 	query += `
 		ORDER BY m.time_created ASC
 	`
-	rows, err := d.db.Query(query, args...)
-	if err != nil {
-		return nil, err
+	rows, qErr := d.db.Query(query, args...)
+	if qErr != nil {
+		return nil, nil, nil, qErr
 	}
 	defer rows.Close()
 
-	dashboard := &MetricsDashboard{}
-	agentSet := make(map[string]struct{})
-	modelSet := make(map[string]struct{})
-	stopCounts := make(map[string]int)
-	filtered := make([]requestRow, 0)
+	agentSet = make(map[string]struct{})
+	modelSet = make(map[string]struct{})
 
 	for rows.Next() {
 		var id, sessionID string
@@ -198,7 +220,6 @@ func (d *DB) GetMetricsDashboard(opts MetricsDashboardOptions) (*MetricsDashboar
 			log.WithError(err).Warn("failed to scan metrics dashboard row")
 			continue
 		}
-
 		var md MessageData
 		if err := json.Unmarshal([]byte(raw), &md); err != nil {
 			log.WithError(err).Warn("failed to unmarshal metrics dashboard message")
@@ -219,10 +240,10 @@ func (d *DB) GetMetricsDashboard(opts MetricsDashboardOptions) (*MetricsDashboar
 			modelSet[modelKey] = struct{}{}
 		}
 
-		if agentFilter != "" && agent != agentFilter {
+		if opts.AgentFilter != "" && agent != opts.AgentFilter {
 			continue
 		}
-		if modelFilter != "" && modelKey != modelFilter {
+		if opts.ModelFilter != "" && modelKey != opts.ModelFilter {
 			continue
 		}
 
@@ -252,48 +273,51 @@ func (d *DB) GetMetricsDashboard(opts MetricsDashboardOptions) (*MetricsDashboar
 		if entry.StopReason == "" {
 			entry.StopReason = "none"
 		}
-		if pricing != nil {
-			entry.CalcCost = pricing.CalcCost(modelKey, entry.InputTokens, entry.OutputTokens, entry.CacheReadTokens, entry.CacheWriteTokens)
+		if opts.Pricing != nil {
+			entry.CalcCost = opts.Pricing.CalcCost(modelKey, entry.InputTokens, entry.OutputTokens, entry.CacheReadTokens, entry.CacheWriteTokens)
 		}
 
 		filtered = append(filtered, entry)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
+	return filtered, agentSet, modelSet, nil
+}
 
-	dashboard.AvailableAgents = sortedKeys(agentSet)
-	dashboard.AvailableModels = sortedKeys(modelSet)
+// bucketAcc accumulates per-time-bucket metrics while building the series.
+type bucketAcc struct {
+	label             string
+	inputTokens       int64
+	cacheReadTokens   int64
+	cacheWriteTokens  int64
+	outputTokens      int64
+	totalOutputTokSec float64
+	totalDurationMs   float64
+	totalCacheEff     float64
+	totalCost         float64
+	totalCalcCost     float64
+	durationCount     int
+	count             int
+}
 
-	// Choose bucket granularity: hourly for short windows, daily otherwise.
+// aggregateSummaryAndBuckets populates dashboard.Summary and dashboard.Series
+// from the filtered rows and returns the stop-reason counts for later use.
+func (d *DB) aggregateSummaryAndBuckets(dashboard *MetricsDashboard, filtered []requestRow, days int, since int64) map[string]int {
 	hourly := days > 0 && days <= 7
 	bucketFmt := "2006-01-02"
 	if hourly {
 		bucketFmt = "2006-01-02 15"
 	}
 
-	type bucketAcc struct {
-		label             string
-		inputTokens       int64
-		cacheReadTokens   int64
-		cacheWriteTokens  int64
-		outputTokens      int64
-		totalOutputTokSec float64
-		totalDurationMs   float64
-		totalCacheEff     float64
-		totalCost         float64
-		totalCalcCost     float64
-		durationCount     int
-		count             int
-	}
 	bucketOrder := make([]string, 0)
 	buckets := make(map[string]*bucketAcc)
-
+	stopCounts := make(map[string]int)
 	validDurationCount := 0
+
 	for _, entry := range filtered {
-		totalTokens := entry.InputTokens + entry.OutputTokens
 		dashboard.Summary.Requests++
-		dashboard.Summary.TotalTokens += totalTokens
+		dashboard.Summary.TotalTokens += entry.InputTokens + entry.OutputTokens
 		dashboard.Summary.InputTokens += entry.InputTokens
 		dashboard.Summary.OutputTokens += entry.OutputTokens
 		dashboard.Summary.CacheReadTokens += entry.CacheReadTokens
@@ -338,25 +362,31 @@ func (d *DB) GetMetricsDashboard(opts MetricsDashboardOptions) (*MetricsDashboar
 		dashboard.Summary.AvgDurationMs /= float64(validDurationCount)
 		dashboard.Summary.AvgTokensPerSec /= float64(validDurationCount)
 	}
-	if totalCache := dashboard.Summary.CacheReadTokens + dashboard.Summary.CacheWriteTokens; totalCache > 0 {
-		dashboard.Summary.CacheHitRate = float64(dashboard.Summary.CacheReadTokens) / float64(totalCache)
+	if tc := dashboard.Summary.CacheReadTokens + dashboard.Summary.CacheWriteTokens; tc > 0 {
+		dashboard.Summary.CacheHitRate = float64(dashboard.Summary.CacheReadTokens) / float64(tc)
 	}
 
-	// Build the series with gap-filling: enumerate every bucket in the window so
-	// empty days/hours are represented as zero-valued points.
+	dashboard.Series = buildDashboardSeries(buckets, bucketOrder, bucketFmt, days, since)
+	return stopCounts
+}
+
+// buildDashboardSeries assembles the time-series with gap-filling. When days > 0
+// every bucket in the window is emitted (with zeros for empty intervals) so the
+// chart library can render a "no data" placeholder. All-time mode emits only
+// the buckets that have data.
+func buildDashboardSeries(buckets map[string]*bucketAcc, bucketOrder []string, bucketFmt string, days int, since int64) []MetricsPoint {
 	var seriesLabels []string
 	if days > 0 {
 		start := time.UnixMilli(since).Local()
 		now := time.Now().Local()
+		hourly := days <= 7
 		if hourly {
-			// Truncate to the hour and walk forward hour by hour.
 			cur := start.Truncate(time.Hour)
 			for !cur.After(now) {
 				seriesLabels = append(seriesLabels, cur.Format(bucketFmt))
 				cur = cur.Add(time.Hour)
 			}
 		} else {
-			// Truncate to the day and walk forward day by day.
 			cur := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, start.Location())
 			for !cur.After(now) {
 				seriesLabels = append(seriesLabels, cur.Format(bucketFmt))
@@ -364,106 +394,65 @@ func (d *DB) GetMetricsDashboard(opts MetricsDashboardOptions) (*MetricsDashboar
 			}
 		}
 	} else {
-		// All-time: fall back to only the buckets that have data.
 		seriesLabels = bucketOrder
 	}
 
-	cumCost := 0.0
-	cumCalcCost := 0.0
+	series := make([]MetricsPoint, 0, len(seriesLabels))
+	cumCost, cumCalcCost := 0.0, 0.0
 	for _, label := range seriesLabels {
 		b := buckets[label] // nil for empty buckets
-		var (
-			totalCost         float64
-			totalCalcCost     float64
-			totalOutputTokSec float64
-			totalCacheEff     float64
-			totalDurationMs   float64
-			inputTokens       int64
-			cacheReadTokens   int64
-			outputTokens      int64
-			durationCount     int
-			count             int
-		)
+		var pt MetricsPoint
+		pt.Label = label
 		if b != nil {
-			totalCost = b.totalCost
-			totalCalcCost = b.totalCalcCost
-			totalOutputTokSec = b.totalOutputTokSec
-			totalCacheEff = b.totalCacheEff
-			totalDurationMs = b.totalDurationMs
-			inputTokens = b.inputTokens
-			cacheReadTokens = b.cacheReadTokens
-			outputTokens = b.outputTokens
-			durationCount = b.durationCount
-			count = b.count
+			cumCost += b.totalCost
+			cumCalcCost += b.totalCalcCost
+			n := b.count
+			if n < 1 {
+				n = 1
+			}
+			avgDur := 0.0
+			if b.durationCount > 0 {
+				avgDur = b.totalDurationMs / float64(b.durationCount)
+			}
+			pt = MetricsPoint{
+				Label:              label,
+				AvgOutputTokensSec: b.totalOutputTokSec / float64(n),
+				CumulativeCost:     cumCost,
+				CumulativeCalcCost: cumCalcCost,
+				InputTokens:        b.inputTokens,
+				CacheReadTokens:    b.cacheReadTokens,
+				OutputTokens:       b.outputTokens,
+				AvgDurationMs:      avgDur,
+				AvgCacheEfficiency: b.totalCacheEff / float64(n),
+				Count:              b.count,
+			}
+		} else {
+			pt = MetricsPoint{Label: label, CumulativeCost: cumCost, CumulativeCalcCost: cumCalcCost}
 		}
-		cumCost += totalCost
-		cumCalcCost += totalCalcCost
-		avgDur := 0.0
-		if durationCount > 0 {
-			avgDur = totalDurationMs / float64(durationCount)
-		}
-		n := count
-		if n < 1 {
-			n = 1
-		}
-		dashboard.Series = append(dashboard.Series, MetricsPoint{
-			Label:              label,
-			AvgOutputTokensSec: totalOutputTokSec / float64(n),
-			CumulativeCost:     cumCost,
-			CumulativeCalcCost: cumCalcCost,
-			InputTokens:        inputTokens,
-			CacheReadTokens:    cacheReadTokens,
-			OutputTokens:       outputTokens,
-			AvgDurationMs:      avgDur,
-			AvgCacheEfficiency: totalCacheEff / float64(n),
-			Count:              count,
-		})
+		series = append(series, pt)
 	}
+	return series
+}
 
-	for reason, count := range stopCounts {
-		dashboard.StopReasons = append(dashboard.StopReasons, StopReasonCount{Reason: reason, Count: count})
+// paginateRequests returns the request log page for the given offset/limit,
+// ordered most-recent-first.
+func paginateRequests(filtered []requestRow, limit, offset int) []RequestLogEntry {
+	if offset < 0 {
+		offset = 0
 	}
-	sort.Slice(dashboard.StopReasons, func(i, j int) bool {
-		if dashboard.StopReasons[i].Count != dashboard.StopReasons[j].Count {
-			return dashboard.StopReasons[i].Count > dashboard.StopReasons[j].Count
-		}
-		return dashboard.StopReasons[i].Reason < dashboard.StopReasons[j].Reason
-	})
-
-	dashboard.TotalRequests = len(filtered)
-
-	// Reverse so most-recent is first, then apply offset + limit.
-	start := requestOffset
-	if start < 0 {
-		start = 0
+	if offset > len(filtered) {
+		offset = len(filtered)
 	}
-	if start > len(filtered) {
-		start = len(filtered)
-	}
-	end := len(filtered) - start
+	end := len(filtered) - offset
 	page := filtered[:end]
-	if requestLimit > 0 && len(page) > requestLimit {
-		page = page[len(page)-requestLimit:]
+	if limit > 0 && len(page) > limit {
+		page = page[len(page)-limit:]
 	}
-	for i := len(page) - 1; i >= 0; i-- {
-		dashboard.Requests = append(dashboard.Requests, page[i].RequestLogEntry)
+	out := make([]RequestLogEntry, len(page))
+	for i, j := 0, len(page)-1; j >= 0; i, j = i+1, j-1 {
+		out[i] = page[j].RequestLogEntry
 	}
-
-	// ------------------------------------------------------------------
-	// Session log: aggregate the same filtered requests by session id.
-	// ------------------------------------------------------------------
-	if err := d.populateSessionLog(dashboard, filtered, sessionLimit, sessionOffset); err != nil {
-		return nil, err
-	}
-
-	// ------------------------------------------------------------------
-	// Project log: aggregate the same filtered requests by directory.
-	// ------------------------------------------------------------------
-	if err := d.populateProjectLog(dashboard, filtered, projectLimit, projectOffset); err != nil {
-		return nil, err
-	}
-
-	return dashboard, nil
+	return out
 }
 
 // populateSessionLog aggregates the already-filtered request rows by session id

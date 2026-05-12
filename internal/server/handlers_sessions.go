@@ -300,108 +300,73 @@ func (s *Server) handleSessionTasks(w http.ResponseWriter, r *http.Request) {
 // --- Session-scoped read endpoints ---
 
 func (s *Server) handleSessionAgents(w http.ResponseWriter, r *http.Request) {
-	sessionID, _, ok := sessionSubPath(r.URL.Path, "/api/session/")
-	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	adapter := s.resolvePlatformForSession(w, r, sessionID)
-	if adapter == nil {
-		return
-	}
-	entries, err := adapter.AgentCatalog(r.Context(), sessionID)
-	if err != nil {
-		writePlatformError(w, "fetching agent catalog", err)
-		return
-	}
-	if entries == nil {
-		entries = []platforms.AgentCatalogEntry{}
-	}
-	writeJSON(w, entries)
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+		entries, err := adapter.AgentCatalog(r.Context(), sessionID)
+		if err != nil {
+			writePlatformError(w, "fetching agent catalog", err)
+			return
+		}
+		if entries == nil {
+			entries = []platforms.AgentCatalogEntry{}
+		}
+		writeJSON(w, entries)
+	})
 }
 
 func (s *Server) handleSessionCommands(w http.ResponseWriter, r *http.Request) {
-	sessionID, _, ok := sessionSubPath(r.URL.Path, "/api/session/")
-	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	adapter := s.resolvePlatformForSession(w, r, sessionID)
-	if adapter == nil {
-		return
-	}
-	entries, err := adapter.SlashCommands(r.Context(), sessionID)
-	if err != nil {
-		writePlatformError(w, "fetching slash commands", err)
-		return
-	}
-	if entries == nil {
-		entries = []platforms.SlashCommandEntry{}
-	}
-	writeJSON(w, entries)
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+		entries, err := adapter.SlashCommands(r.Context(), sessionID)
+		if err != nil {
+			writePlatformError(w, "fetching slash commands", err)
+			return
+		}
+		if entries == nil {
+			entries = []platforms.SlashCommandEntry{}
+		}
+		writeJSON(w, entries)
+	})
 }
 
 func (s *Server) handleSessionModels(w http.ResponseWriter, r *http.Request) {
-	sessionID, _, ok := sessionSubPath(r.URL.Path, "/api/session/")
-	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	adapter := s.resolvePlatformForSession(w, r, sessionID)
-	if adapter == nil {
-		return
-	}
-	resp, err := adapter.SessionModels(r.Context(), sessionID)
-	if err != nil {
-		writePlatformError(w, "fetching session models", err)
-		return
-	}
-	if resp == nil {
-		resp = &platforms.SessionModelsResponse{Models: []platforms.SessionModel{}}
-	}
-	writeJSON(w, resp)
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+		resp, err := adapter.SessionModels(r.Context(), sessionID)
+		if err != nil {
+			writePlatformError(w, "fetching session models", err)
+			return
+		}
+		if resp == nil {
+			resp = &platforms.SessionModelsResponse{Models: []platforms.SessionModel{}}
+		}
+		writeJSON(w, resp)
+	})
 }
 
 func (s *Server) handleSessionPermissions(w http.ResponseWriter, r *http.Request) {
-	sessionID, _, ok := sessionSubPath(r.URL.Path, "/api/session/")
-	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	adapter := s.resolvePlatformForSession(w, r, sessionID)
-	if adapter == nil {
-		return
-	}
-	entries, err := adapter.ListPermissions(r.Context(), sessionID)
-	if err != nil {
-		writePlatformError(w, "listing permissions", err)
-		return
-	}
-	if entries == nil {
-		entries = []platforms.LivePrompt{}
-	}
-	writeJSON(w, entries)
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+		entries, err := adapter.ListPermissions(r.Context(), sessionID)
+		if err != nil {
+			writePlatformError(w, "listing permissions", err)
+			return
+		}
+		if entries == nil {
+			entries = []platforms.LivePrompt{}
+		}
+		writeJSON(w, entries)
+	})
 }
 
 func (s *Server) handleSessionQuestions(w http.ResponseWriter, r *http.Request) {
-	sessionID, _, ok := sessionSubPath(r.URL.Path, "/api/session/")
-	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	adapter := s.resolvePlatformForSession(w, r, sessionID)
-	if adapter == nil {
-		return
-	}
-	entries, err := adapter.ListQuestions(r.Context(), sessionID)
-	if err != nil {
-		writePlatformError(w, "listing questions", err)
-		return
-	}
-	if entries == nil {
-		entries = []platforms.LivePrompt{}
-	}
-	writeJSON(w, entries)
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+		entries, err := adapter.ListQuestions(r.Context(), sessionID)
+		if err != nil {
+			writePlatformError(w, "listing questions", err)
+			return
+		}
+		if entries == nil {
+			entries = []platforms.LivePrompt{}
+		}
+		writeJSON(w, entries)
+	})
 }
 
 // handleSessionChanges aggregates every file-touching tool call in a
@@ -409,92 +374,55 @@ func (s *Server) handleSessionQuestions(w http.ResponseWriter, r *http.Request) 
 // the operation (Claude Code) are surfaced as a Supported=false payload
 // rather than an HTTP error so the frontend has a single shape to render.
 func (s *Server) handleSessionChanges(w http.ResponseWriter, r *http.Request) {
-	sessionID, _, ok := sessionSubPath(r.URL.Path, "/api/session/")
-	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	adapter := s.resolvePlatformForSession(w, r, sessionID)
-	if adapter == nil {
-		return
-	}
-	changes, err := adapter.SessionChanges(r.Context(), sessionID)
-	if err != nil {
-		if errors.Is(err, platforms.ErrUnsupported) {
-			writeJSON(w, &platforms.SessionChanges{
-				SessionID: sessionID,
-				Supported: false,
-				Files:     []platforms.FileChange{},
-			})
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+		changes, err := adapter.SessionChanges(r.Context(), sessionID)
+		if err != nil {
+			if errors.Is(err, platforms.ErrUnsupported) {
+				writeJSON(w, &platforms.SessionChanges{SessionID: sessionID, Files: []platforms.FileChange{}})
+				return
+			}
+			writePlatformError(w, "fetching session changes", err)
 			return
 		}
-		writePlatformError(w, "fetching session changes", err)
-		return
-	}
-	if changes == nil {
-		changes = &platforms.SessionChanges{
-			SessionID: sessionID,
-			Supported: false,
-			Files:     []platforms.FileChange{},
+		if changes == nil {
+			changes = &platforms.SessionChanges{SessionID: sessionID, Files: []platforms.FileChange{}}
 		}
-	}
-	if changes.Files == nil {
-		changes.Files = []platforms.FileChange{}
-	}
-	writeJSON(w, changes)
+		if changes.Files == nil {
+			changes.Files = []platforms.FileChange{}
+		}
+		writeJSON(w, changes)
+	})
 }
 
 // handleSessionInfo returns the per-session info snapshot consumed by
 // the right-hand "Session info" panel.
 func (s *Server) handleSessionInfo(w http.ResponseWriter, r *http.Request) {
-	sessionID, _, ok := sessionSubPath(r.URL.Path, "/api/session/")
-	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	adapter := s.resolvePlatformForSession(w, r, sessionID)
-	if adapter == nil {
-		return
-	}
-	info, err := adapter.SessionInfo(r.Context(), sessionID)
-	if err != nil {
-		if errors.Is(err, platforms.ErrUnsupported) {
-			writeJSON(w, &platforms.SessionInfo{
-				SessionID:  sessionID,
-				Supported:  false,
-				MCPServers: []platforms.MCPServer{},
-				LSPServers: []platforms.LSPServer{},
-			})
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+		info, err := adapter.SessionInfo(r.Context(), sessionID)
+		if err != nil {
+			if errors.Is(err, platforms.ErrUnsupported) {
+				writeJSON(w, &platforms.SessionInfo{SessionID: sessionID, MCPServers: []platforms.MCPServer{}, LSPServers: []platforms.LSPServer{}})
+				return
+			}
+			writePlatformError(w, "fetching session info", err)
 			return
 		}
-		writePlatformError(w, "fetching session info", err)
-		return
-	}
-	if info == nil {
-		info = &platforms.SessionInfo{
-			SessionID:  sessionID,
-			Supported:  false,
-			MCPServers: []platforms.MCPServer{},
-			LSPServers: []platforms.LSPServer{},
+		if info == nil {
+			info = &platforms.SessionInfo{SessionID: sessionID, MCPServers: []platforms.MCPServer{}, LSPServers: []platforms.LSPServer{}}
 		}
-	}
-	if info.MCPServers == nil {
-		info.MCPServers = []platforms.MCPServer{}
-	}
-	if info.LSPServers == nil {
-		info.LSPServers = []platforms.LSPServer{}
-	}
-	writeJSON(w, info)
+		if info.MCPServers == nil {
+			info.MCPServers = []platforms.MCPServer{}
+		}
+		if info.LSPServers == nil {
+			info.LSPServers = []platforms.LSPServer{}
+		}
+		writeJSON(w, info)
+	})
 }
 
 // --- Session-scoped mutating endpoints ---
 
 func (s *Server) handleSessionMessage(w http.ResponseWriter, r *http.Request) {
-	sessionID, _, ok := sessionSubPath(r.URL.Path, "/api/session/")
-	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
 	var req struct {
 		Message string `json:"message"`
 		Images  []struct {
@@ -512,37 +440,27 @@ func (s *Server) handleSessionMessage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "message or images required", http.StatusBadRequest)
 		return
 	}
-
-	adapter := s.resolvePlatformForSession(w, r, sessionID)
-	if adapter == nil {
-		return
-	}
-
-	images := make([]platforms.ImageAttachment, 0, len(req.Images))
-	for _, img := range req.Images {
-		images = append(images, platforms.ImageAttachment{URL: img.URL, Mime: img.Mime})
-	}
-	err := adapter.SendMessage(r.Context(), platforms.SendMessageRequest{
-		SessionID: sessionID,
-		Message:   req.Message,
-		Images:    images,
-		Model:     req.Model,
-		Agent:     req.Agent,
-		Reasoning: req.Reasoning,
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+		images := make([]platforms.ImageAttachment, 0, len(req.Images))
+		for _, img := range req.Images {
+			images = append(images, platforms.ImageAttachment{URL: img.URL, Mime: img.Mime})
+		}
+		if err := adapter.SendMessage(r.Context(), platforms.SendMessageRequest{
+			SessionID: sessionID,
+			Message:   req.Message,
+			Images:    images,
+			Model:     req.Model,
+			Agent:     req.Agent,
+			Reasoning: req.Reasoning,
+		}); err != nil {
+			writePlatformError(w, "sending message", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	})
-	if err != nil {
-		writePlatformError(w, "sending message", err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleSessionCommand(w http.ResponseWriter, r *http.Request) {
-	sessionID, _, ok := sessionSubPath(r.URL.Path, "/api/session/")
-	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
 	var req struct {
 		Command   string `json:"command"`
 		Arguments string `json:"arguments"`
@@ -557,33 +475,25 @@ func (s *Server) handleSessionCommand(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "command is required", http.StatusBadRequest)
 		return
 	}
-	adapter := s.resolvePlatformForSession(w, r, sessionID)
-	if adapter == nil {
-		return
-	}
-	err := adapter.ExecuteCommand(r.Context(), platforms.ExecuteCommandRequest{
-		SessionID: sessionID,
-		Command:   req.Command,
-		Arguments: req.Arguments,
-		Model:     req.Model,
-		Agent:     req.Agent,
-		Reasoning: req.Reasoning,
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+		if err := adapter.ExecuteCommand(r.Context(), platforms.ExecuteCommandRequest{
+			SessionID: sessionID,
+			Command:   req.Command,
+			Arguments: req.Arguments,
+			Model:     req.Model,
+			Agent:     req.Agent,
+			Reasoning: req.Reasoning,
+		}); err != nil {
+			writePlatformError(w, "executing command", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	})
-	if err != nil {
-		writePlatformError(w, "executing command", err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleSessionShell handles POST /api/session/{id}/shell — runs a
 // raw shell command in the session's working directory, bypassing the LLM.
 func (s *Server) handleSessionShell(w http.ResponseWriter, r *http.Request) {
-	sessionID, _, ok := sessionSubPath(r.URL.Path, "/api/session/")
-	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
 	var req struct {
 		Command string `json:"command"`
 		Agent   string `json:"agent"`
@@ -595,27 +505,20 @@ func (s *Server) handleSessionShell(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "command is required", http.StatusBadRequest)
 		return
 	}
-	adapter := s.resolvePlatformForSession(w, r, sessionID)
-	if adapter == nil {
-		return
-	}
-	if err := adapter.RunShell(r.Context(), platforms.RunShellRequest{
-		SessionID: sessionID,
-		Command:   req.Command,
-		Agent:     req.Agent,
-	}); err != nil {
-		writePlatformError(w, "running shell command", err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+		if err := adapter.RunShell(r.Context(), platforms.RunShellRequest{
+			SessionID: sessionID,
+			Command:   req.Command,
+			Agent:     req.Agent,
+		}); err != nil {
+			writePlatformError(w, "running shell command", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 }
 
 func (s *Server) handleSessionRename(w http.ResponseWriter, r *http.Request) {
-	sessionID, _, ok := sessionSubPath(r.URL.Path, "/api/session/")
-	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
 	var req struct {
 		Title string `json:"title"`
 	}
@@ -626,43 +529,29 @@ func (s *Server) handleSessionRename(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "title is required", http.StatusBadRequest)
 		return
 	}
-	adapter := s.resolvePlatformForSession(w, r, sessionID)
-	if adapter == nil {
-		return
-	}
-	if err := adapter.RenameSession(r.Context(), platforms.RenameSessionRequest{
-		SessionID: sessionID,
-		Title:     req.Title,
-	}); err != nil {
-		writePlatformError(w, "renaming session", err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+		if err := adapter.RenameSession(r.Context(), platforms.RenameSessionRequest{
+			SessionID: sessionID,
+			Title:     req.Title,
+		}); err != nil {
+			writePlatformError(w, "renaming session", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 }
 
 func (s *Server) handleSessionAbort(w http.ResponseWriter, r *http.Request) {
-	sessionID, _, ok := sessionSubPath(r.URL.Path, "/api/session/")
-	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	adapter := s.resolvePlatformForSession(w, r, sessionID)
-	if adapter == nil {
-		return
-	}
-	if err := adapter.Abort(r.Context(), platforms.AbortRequest{SessionID: sessionID}); err != nil {
-		writePlatformError(w, "aborting session", err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+		if err := adapter.Abort(r.Context(), platforms.AbortRequest{SessionID: sessionID}); err != nil {
+			writePlatformError(w, "aborting session", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 }
 
 func (s *Server) handleSessionCompact(w http.ResponseWriter, r *http.Request) {
-	sessionID, _, ok := sessionSubPath(r.URL.Path, "/api/session/")
-	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
 	var req struct {
 		ProviderID string `json:"providerID"`
 		ModelID    string `json:"modelID"`
@@ -674,34 +563,21 @@ func (s *Server) handleSessionCompact(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "providerID and modelID are required", http.StatusBadRequest)
 		return
 	}
-	adapter := s.resolvePlatformForSession(w, r, sessionID)
-	if adapter == nil {
-		return
-	}
-	err := adapter.Compact(r.Context(), platforms.CompactRequest{
-		SessionID:  sessionID,
-		ProviderID: req.ProviderID,
-		ModelID:    req.ModelID,
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+		if err := adapter.Compact(r.Context(), platforms.CompactRequest{
+			SessionID:  sessionID,
+			ProviderID: req.ProviderID,
+			ModelID:    req.ModelID,
+		}); err != nil {
+			writePlatformError(w, "compacting session", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	})
-	if err != nil {
-		writePlatformError(w, "compacting session", err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleSessionPermission handles POST /api/session/{id}/permissions/{pid}
 func (s *Server) handleSessionPermission(w http.ResponseWriter, r *http.Request) {
-	sessionID, rest, ok := sessionSubPath(r.URL.Path, "/api/session/")
-	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	permissionID := strings.TrimPrefix(rest, "permissions/")
-	if !validateID(permissionID) {
-		http.Error(w, "invalid permission ID", http.StatusBadRequest)
-		return
-	}
 	var req struct {
 		Reply string `json:"reply"`
 	}
@@ -714,93 +590,82 @@ func (s *Server) handleSessionPermission(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "invalid reply value: expected once, always, or reject", http.StatusBadRequest)
 		return
 	}
-	adapter := s.resolvePlatformForSession(w, r, sessionID)
-	if adapter == nil {
-		return
-	}
-	err := adapter.RespondPermission(r.Context(), platforms.RespondPermissionRequest{
-		SessionID:    sessionID,
-		PermissionID: permissionID,
-		Reply:        req.Reply,
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, rest string, adapter platforms.Platform) {
+		permissionID := strings.TrimPrefix(rest, "permissions/")
+		if !validateID(permissionID) {
+			http.Error(w, "invalid permission ID", http.StatusBadRequest)
+			return
+		}
+		if err := adapter.RespondPermission(r.Context(), platforms.RespondPermissionRequest{
+			SessionID:    sessionID,
+			PermissionID: permissionID,
+			Reply:        req.Reply,
+		}); err != nil {
+			writePlatformError(w, "responding to permission", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	})
-	if err != nil {
-		writePlatformError(w, "responding to permission", err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleSessionQuestion dispatches POST /api/session/{id}/questions/{qid}
 // and POST /api/session/{id}/questions/{qid}/reject.
 func (s *Server) handleSessionQuestion(w http.ResponseWriter, r *http.Request) {
-	sessionID, rest, ok := sessionSubPath(r.URL.Path, "/api/session/")
-	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	rest = strings.TrimPrefix(rest, "questions/")
-	questionID := rest
-	reject := false
-	if slash := strings.IndexByte(rest, '/'); slash >= 0 {
-		questionID = rest[:slash]
-		if rest[slash+1:] == "reject" {
-			reject = true
-		} else {
-			http.Error(w, "unknown question subpath", http.StatusNotFound)
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, rest string, adapter platforms.Platform) {
+		rest = strings.TrimPrefix(rest, "questions/")
+		questionID := rest
+		reject := false
+		if slash := strings.IndexByte(rest, '/'); slash >= 0 {
+			questionID = rest[:slash]
+			if rest[slash+1:] == "reject" {
+				reject = true
+			} else {
+				http.Error(w, "unknown question subpath", http.StatusNotFound)
+				return
+			}
+		}
+		if !validateID(questionID) {
+			http.Error(w, "invalid question ID", http.StatusBadRequest)
 			return
 		}
-	}
-	if !validateID(questionID) {
-		http.Error(w, "invalid question ID", http.StatusBadRequest)
-		return
-	}
-	adapter := s.resolvePlatformForSession(w, r, sessionID)
-	if adapter == nil {
-		return
-	}
-	if reject {
-		if err := adapter.RejectQuestion(r.Context(), platforms.RejectQuestionRequest{
+		if reject {
+			if err := adapter.RejectQuestion(r.Context(), platforms.RejectQuestionRequest{
+				SessionID: sessionID,
+				RequestID: questionID,
+			}); err != nil {
+				writePlatformError(w, "rejecting question", err)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		var req struct {
+			Answers [][]string `json:"answers"`
+		}
+		if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+			return
+		}
+		if err := adapter.RespondQuestion(r.Context(), platforms.RespondQuestionRequest{
 			SessionID: sessionID,
 			RequestID: questionID,
+			Answers:   req.Answers,
 		}); err != nil {
-			writePlatformError(w, "rejecting question", err)
+			writePlatformError(w, "responding to question", err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-
-	var req struct {
-		Answers [][]string `json:"answers"`
-	}
-	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
-		return
-	}
-	err := adapter.RespondQuestion(r.Context(), platforms.RespondQuestionRequest{
-		SessionID: sessionID,
-		RequestID: questionID,
-		Answers:   req.Answers,
 	})
-	if err != nil {
-		writePlatformError(w, "responding to question", err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 // --- Session-scoped SSE event stream ---
 
 func (s *Server) handleSessionEvents(w http.ResponseWriter, r *http.Request) {
-	sessionID, _, ok := sessionSubPath(r.URL.Path, "/api/session/")
-	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	adapter := s.resolvePlatformForSession(w, r, sessionID)
-	if adapter == nil {
-		return
-	}
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+		s.serveSessionEvents(w, r, sessionID, adapter)
+	})
+}
 
+func (s *Server) serveSessionEvents(w http.ResponseWriter, r *http.Request, sessionID string, adapter platforms.Platform) {
 	ctx, span := telemetry.Tracer().Start(r.Context(), "GET /api/session/{id}/events",
 		trace.WithSpanKind(trace.SpanKindServer),
 		trace.WithAttributes(

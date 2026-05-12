@@ -68,6 +68,28 @@ func (s *Server) resolvePlatformForSession(w http.ResponseWriter, r *http.Reques
 	return p
 }
 
+// sessionHandlerFunc is a handler that already has the session ID and
+// adapter resolved. rest is the URL segment after the session ID (empty
+// for bare /{id} routes).
+type sessionHandlerFunc func(w http.ResponseWriter, r *http.Request, sessionID, rest string, adapter platforms.Platform)
+
+// withSessionAdapter extracts the session ID and adapter from the request
+// and calls fn. It writes appropriate HTTP errors and returns early when
+// the session ID is missing or unknown, eliminating the repeated 5-line
+// preamble across all session-scoped handlers.
+func (s *Server) withSessionAdapter(w http.ResponseWriter, r *http.Request, fn sessionHandlerFunc) {
+	sessionID, rest, ok := sessionSubPath(r.URL.Path, "/api/session/")
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	adapter := s.resolvePlatformForSession(w, r, sessionID)
+	if adapter == nil {
+		return
+	}
+	fn(w, r, sessionID, rest, adapter)
+}
+
 // writePlatformError maps a Platform error to an appropriate HTTP response.
 func writePlatformError(w http.ResponseWriter, msg string, err error) {
 	if errors.Is(err, platforms.ErrUnsupported) {

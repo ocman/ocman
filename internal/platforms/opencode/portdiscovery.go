@@ -18,12 +18,11 @@ import (
 // rePortSuffix matches a port number at the end of a string (e.g. ":4096").
 var rePortSuffix = regexp.MustCompile(`:(\d+)$`)
 
-// portCache holds cached port discovery results. Reads are guarded
-// by an RWMutex so cache hits are non-blocking even under heavy
-// concurrency; writes happen briefly after the singleflight-protected
-// lsof scan completes.
+// portCache holds cached port discovery results with a single mutex
+// for simplicity; port discovery is infrequent enough that read/write
+// contention is not a concern.
 var portCache struct {
-	mu      sync.RWMutex
+	mu      sync.Mutex
 	ports   map[string]string
 	updated time.Time
 }
@@ -39,13 +38,13 @@ const portCacheTTL = 10 * time.Second
 // discoverPortsImpl is the indirection used so tests can swap out the
 // expensive lsof execution.
 var (
-	discoverPortsImplMu sync.RWMutex
+	discoverPortsImplMu sync.Mutex
 	discoverPortsImpl   = discoverOpenCodePortsUncached
 )
 
 func getDiscoverPortsImpl() func() map[string]string {
-	discoverPortsImplMu.RLock()
-	defer discoverPortsImplMu.RUnlock()
+	discoverPortsImplMu.Lock()
+	defer discoverPortsImplMu.Unlock()
 	return discoverPortsImpl
 }
 
@@ -97,8 +96,8 @@ func discoverOpenCodePorts() map[string]string {
 }
 
 func readCachedPorts() (map[string]string, bool) {
-	portCache.mu.RLock()
-	defer portCache.mu.RUnlock()
+	portCache.mu.Lock()
+	defer portCache.mu.Unlock()
 	if time.Since(portCache.updated) < portCacheTTL && portCache.ports != nil {
 		return copyMap(portCache.ports), true
 	}
