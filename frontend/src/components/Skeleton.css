@@ -1,0 +1,97 @@
+/* Skeleton shimmer — matches the Catppuccin Mocha palette used
+   throughout the app. The shimmer sweeps from surface1 to surface2
+   and back, giving enough contrast to read as "placeholder content"
+   without fighting the dark background. */
+@keyframes oc-skeleton-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+.oc-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--surface1) 25%,
+    var(--surface2) 50%,
+    var(--surface1) 75%
+  );
+  background-size: 200% 100%;
+  animation: oc-skeleton-shimmer 1.4s ease-in-out infinite;
+  border-radius: 3px;
+  display: block;
+}
+
+/* ── Preset sizes ──────────────────────────────────────────────── */
+
+/* One-line text placeholder (default height 12 px). Pass an inline
+   width or set a class with a fixed width for variety. */
+.oc-skeleton-line {
+  height: 12px;
+}
+
+/* Taller line for headings / titles */
+.oc-skeleton-line-lg {
+  height: 16px;
+}
+
+/* A full table-row-height block */
+.oc-skeleton-row {
+  height: 38px;
+  border-radius: 0;
+}
+
+/* Small badge / pill */
+.oc-skeleton-badge {
+  height: 18px;
+  width: 48px;
+  border-radius: 9px;
+  display: inline-block;
+}
+
+/* ── Skeleton table rows ───────────────────────────────────────── */
+
+/* Wraps one "fake" table row with column cells matching the real
+   table structure. Rendered inside a <tbody> so the browser sizes
+   the cells the same way. */
+.oc-skeleton-tbody tr {
+  /* kill hover highlight — these aren't interactive */
+  pointer-events: none;
+}
+.oc-skeleton-tbody tr:hover {
+  background: transparent;
+  cursor: default;
+}
+.oc-skeleton-tbody td {
+  vertical-align: middle;
+}
+
+/* ── Sidebar skeleton rows ─────────────────────────────────────── */
+
+.oc-skeleton-sidebar-rows {
+  padding: 8px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.oc-skeleton-sidebar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Info-section skeleton ─────────────────────────────────────── */
+
+.oc-skeleton-info-section {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.oc-skeleton-info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}

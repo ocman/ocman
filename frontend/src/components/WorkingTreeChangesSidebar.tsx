@@ -5,6 +5,7 @@ import { useInfiniteRows } from '../lib/useInfiniteRows';
 import { RawDiffView } from './RawDiffView';
 import { ChangesRefreshButton, type PaneSummary } from './SessionChangesSidebar';
 import { groupWorkingTreeFiles } from './groupWorkingTreeFiles';
+import { SidebarFileListSkeleton } from './Skeleton';
 
 // Lazy-mount budget for the per-file rows. Working trees with
 // hundreds of dirty files (post-rebase, after a generated-files
@@ -129,7 +130,7 @@ export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = fal
         <div className="oc-changes-sidebar-empty">No directory available.</div>
       )}
       {enabled && loading && !data && (
-        <div className="oc-changes-sidebar-loading">Loading working tree…</div>
+        <SidebarFileListSkeleton rows={6} />
       )}
       {enabled && notRepo && (
         <div className="oc-changes-sidebar-empty">

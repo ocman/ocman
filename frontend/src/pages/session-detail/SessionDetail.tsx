@@ -66,6 +66,7 @@ import { usePaletteCommands } from './usePaletteCommands';
 import { useGhostInjection } from './useGhostInjection';
 import { usePendingPromptSync } from './usePendingPromptSync';
 import { SseStatusIndicator } from './SseStatusIndicator';
+import { SessionSidebarListSkeleton } from '../../components/Skeleton';
 import { remoteLog } from '../../lib/remoteLog';
 import { isRecoverableThreadBoundaryError } from './threadBoundaryRecovery';
 import { ThreadBoundaryFallback } from './ThreadBoundaryFallback';
@@ -1511,7 +1512,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
           </div>
         )}
         <div className="session-sidebar-list" ref={sidebarListRef}>
-          {loadingRecentSessions && <div className="session-sidebar-loader"><div className="oc-spinner" /></div>}
+          {loadingRecentSessions && <SessionSidebarListSkeleton rows={5} />}
           {(() => {
             // Shared row renderer — used by both the flat and grouped views so
             // all live-status / archive / navigation behaviour stays identical.
@@ -1634,12 +1635,13 @@ export function SessionDetail({ id }: SessionDetailProps) {
                         : agg.kind === 'waiting' ? 'waiting'
                           : 'done';
                   const dotPending = agg.kind === 'pending';
+                  const dotSeen = agg.kind === 'none';
                   return (
                     <div key="__pinned__" className="session-sidebar-group session-sidebar-group-pinned">
                       <div className="session-sidebar-group-header-row">
                         <div className="session-sidebar-group-header" title="Pinned sessions">
                           <span className="session-sidebar-group-status">
-                            <StatusBadge status={dotStatus} compact pending={dotPending} />
+                            <StatusBadge status={dotStatus} compact pending={dotPending} seen={dotSeen} />
                           </span>
                           <i className="bi bi-pin-fill session-sidebar-pinned-icon" aria-hidden="true" />
                           <span className="session-sidebar-group-label">Pinned</span>
@@ -1668,6 +1670,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                       : agg.kind === 'waiting' ? 'waiting'
                         : 'done';
                 const dotPending = agg.kind === 'pending';
+                const dotSeen = agg.kind === 'none';
                 const aggTitle =
                   agg.kind === 'pending'
                     ? `${agg.count} session${agg.count === 1 ? '' : 's'} waiting for your response`

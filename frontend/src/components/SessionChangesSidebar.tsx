@@ -4,6 +4,7 @@ import { usePlatformCapabilities } from '../lib/useCapabilities';
 import { useSessionChanges } from '../lib/useSessionChanges';
 import { useInfiniteRows } from '../lib/useInfiniteRows';
 import { FileChangeGroup } from './FileChangeGroup';
+import { SidebarFileListSkeleton } from './Skeleton';
 
 // Lazy-mount budget for the per-file rows themselves. Sessions with
 // hundreds of touched files need this; we only render the first
@@ -112,7 +113,7 @@ export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedd
         </div>
       )}
       {enabled && loading && !data && (
-        <div className="oc-changes-sidebar-loading">Loading changes…</div>
+        <SidebarFileListSkeleton rows={6} />
       )}
       {enabled && error && (
         <div className="oc-changes-sidebar-error">Failed to load changes: {error}</div>

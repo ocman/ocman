@@ -7,6 +7,7 @@ import { useGitInfo } from '../lib/useGitInfo';
 import { formatDuration, formatNumber } from '../lib/format';
 import { ChangesRefreshButton, type PaneSummary } from './SessionChangesSidebar';
 import { TodoList } from './TodoList';
+import { InfoSidebarSkeleton } from './Skeleton';
 import type { Session } from '../lib/api';
 import type { TodoItem } from '../lib/todos';
 
@@ -304,9 +305,7 @@ export function SessionInfoSidebar({
   const LiveSection = liveEnabled ? (
     <>
       {loading && !data && (
-        <section className="oc-info-section">
-          <div className="oc-changes-sidebar-loading">Loading live info…</div>
-        </section>
+        <InfoSidebarSkeleton sections={2} rowsPerSection={3} />
       )}
       {error && (
         <section className="oc-info-section">

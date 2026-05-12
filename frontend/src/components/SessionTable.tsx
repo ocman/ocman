@@ -7,6 +7,7 @@ import { cleanTitle, formatDuration, relativeTime } from '../lib/format';
 import { StatusBadge } from './StatusBadge';
 import { PlatformBadge } from './PlatformBadge';
 import { filterVisibleSessions } from '../lib/sessionVisibility';
+import { SessionTableSkeleton } from './Skeleton';
 
 export function ShortPath({ path }: { path: string }) {
   const parts = (path || '').split('/').filter(Boolean);
@@ -86,12 +87,7 @@ export function SessionTable({ sessions, showProject, loading, includeArchived }
   };
 
   if (loading) {
-    return (
-      <div className="oc-list-loading">
-        <div className="oc-spinner" />
-        Loading sessions...
-      </div>
-    );
+    return <SessionTableSkeleton rows={5} showProject={showProject} />;
   }
 
   const colCount = showProject ? 5 : 4;

@@ -10,6 +10,7 @@ import { useTmux } from '../lib/useTmux';
 import { useUiStore } from '../lib/uiStore';
 import { useWorktreeSessions } from '../lib/useCapabilities';
 import { sessionsForWorktree, tmuxTargetForWorktree } from '../lib/worktrees';
+import { WorktreesTableSkeleton } from '../components/Skeleton';
 import './Dashboard.css';
 import './WorktreesView.css';
 
@@ -97,10 +98,7 @@ export function WorktreesView() {
       </div>
 
       {loading ? (
-        <div className="oc-list-loading">
-          <div className="oc-spinner" />
-          Loading worktrees...
-        </div>
+        <WorktreesTableSkeleton rows={3} />
       ) : error ? (
         <div className="oc-list-error">{error}</div>
       ) : (
