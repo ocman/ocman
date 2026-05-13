@@ -133,7 +133,7 @@ test('sessions tab shows empty state when no sessions', async ({ mockedPage: pag
   await expect(page.locator('td').filter({ hasText: /No (active )?sessions found/ })).toBeVisible();
 });
 
-test('sessions tab shows loading spinner before data arrives', async ({ mockedPage: page }) => {
+test('sessions tab shows loading skeleton before data arrives', async ({ mockedPage: page }) => {
   let resolveSessions!: (v: unknown) => void;
   const sessionsPromise = new Promise((resolve) => { resolveSessions = resolve; });
 
@@ -147,7 +147,7 @@ test('sessions tab shows loading spinner before data arrives', async ({ mockedPa
   });
 
   const gotoPromise = page.goto('/');
-  await expect(page.locator('.oc-spinner')).toBeVisible({ timeout: 3_000 });
+  await expect(page.locator('.oc-skeleton-tbody').first()).toBeVisible({ timeout: 3_000 });
   resolveSessions(null);
   await gotoPromise;
 });
