@@ -10,7 +10,7 @@
 // permission/question data so the dialog appears.
 
 import { useEffect } from 'react';
-import { computeSidebarHash } from '../../lib/sidebarHelpers';
+import { useApiStore } from '../../lib/apiStore';
 import { extractPendingPermission, extractPendingQuestion } from '../../lib/sseHelpers';
 import { storePendingQuestion } from './usePromptHandlers';
 import { isSessionRelevant } from '../../lib/promptRouting';
@@ -26,8 +26,6 @@ interface PendingPromptSyncOptions {
   setPendingQuestion: React.Dispatch<React.SetStateAction<PendingQuestion | null>>;
   setPermissionError: (e: string | null) => void;
   recentSessions: Session[];
-  setRecentSessions: React.Dispatch<React.SetStateAction<Session[]>>;
-  lastSiblingsHashRef: React.MutableRefObject<string>;
   subagentSessionIdsRef: React.MutableRefObject<Set<string>>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   listPermissions: (id: string) => Promise<any[]>;
@@ -43,32 +41,20 @@ export function usePendingPromptSync({
   setPendingQuestion,
   setPermissionError,
   recentSessions,
-  setRecentSessions,
-  lastSiblingsHashRef,
   subagentSessionIdsRef,
   listPermissions,
   listQuestions,
 }: PendingPromptSyncOptions): void {
+  const patchRecentSession = useApiStore((s) => s.patchRecentSession);
+
   // Forward: detail → sidebar badge.
   useEffect(() => {
     if (!id) return;
-    setRecentSessions(prev => {
-      let changed = false;
-      const next = prev.map(s => {
-        if (s.id !== id) return s;
-        const newPerm = pendingPermission !== null;
-        const newQuestion = pendingQuestion !== null;
-        if (s.pendingPermission === newPerm && s.pendingQuestion === newQuestion) return s;
-        changed = true;
-        return { ...s, pendingPermission: newPerm, pendingQuestion: newQuestion };
-      });
-      if (changed) {
-        lastSiblingsHashRef.current = computeSidebarHash(next);
-        return next;
-      }
-      return prev;
+    patchRecentSession(id, {
+      pendingPermission: pendingPermission !== null,
+      pendingQuestion: pendingQuestion !== null,
     });
-  }, [id, pendingPermission, pendingQuestion, lastSiblingsHashRef, setRecentSessions]);
+  }, [id, pendingPermission, pendingQuestion, patchRecentSession]);
 
   // Reverse: sidebar poll → detail prompt dialog.
   const sidebarCurrentSession = recentSessions.find(s => s.id === id);

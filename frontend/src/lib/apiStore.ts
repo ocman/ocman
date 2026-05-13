@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api } from './api';
+import { computeSidebarHash } from './sidebarHelpers';
 import type {
   CapabilitiesResponse,
   MetricsDashboard,
@@ -35,6 +36,27 @@ type ApiStore = {
   // fetched; components can render immediately from this value while
   // `refreshCachedSessions` updates it in the background.
   cachedSessions: Session[] | null;
+  /**
+   * The sidebar session list, shared across all components so that optimistic
+   * writes from the session-detail page (SSE-derived status, seen, pending
+   * prompt flags) survive navigation without being clobbered by the next poll.
+   *
+   * Write protocol:
+   *   - `setRecentSessions(sessions, hash)` — full replace from the poll.
+   *     `hash` is the pre-computed computeSidebarHash value so the polling
+   *     loop can skip redundant writes without recomputing.
+   *   - `patchRecentSession(id, patch)` — merges a partial update into the
+   *     matching row and updates the hash. No-op when the session is not yet
+   *     in the list. Always wins over a concurrent poll write because Zustand
+   *     reducers are synchronous.
+   *
+   * `recentSessionsHash` tracks the last hash written by the poll so it can
+   * cheaply skip no-op full-replaces.
+   */
+  recentSessions: Session[];
+  recentSessionsHash: string;
+  setRecentSessions: (sessions: Session[], hash: string) => void;
+  patchRecentSession: (id: string, patch: Partial<Session>) => void;
   // LRU cache of session detail responses, used to render recently-viewed
   // sessions instantly on return. See spec/session-switch-cache.
   sessionCache: Map<string, SessionDetail>;
@@ -85,6 +107,24 @@ type ApiStore = {
 export const useApiStore = create<ApiStore>((set, get) => ({
   requests: {},
   cachedSessions: null,
+  recentSessions: [],
+  recentSessionsHash: '',
+  setRecentSessions: (sessions, hash) => {
+    // Skip when hash unchanged — same guard previously in the hook.
+    if (get().recentSessionsHash === hash) return;
+    set({ recentSessions: sessions, recentSessionsHash: hash });
+  },
+  patchRecentSession: (id, patch) => {
+    set((state) => {
+      const idx = state.recentSessions.findIndex((s) => s.id === id);
+      if (idx === -1) return state;
+      const updated = { ...state.recentSessions[idx], ...patch };
+      const next = [...state.recentSessions];
+      next[idx] = updated;
+      // Recompute hash so the next poll's dedup check stays accurate.
+      return { recentSessions: next, recentSessionsHash: computeSidebarHash(next) };
+    });
+  },
   sessionCache: new Map(),
   sessionCacheOrder: [],
   getCachedSession: (id) => get().sessionCache.get(id) ?? null,

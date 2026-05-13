@@ -36,7 +36,7 @@ import {
   mergeTokenStats,
   deriveActiveModelAndAgent,
 } from '../../lib/sessionStatus';
-import { computeSidebarHash, rollupGroupStatus } from '../../lib/sidebarHelpers';
+import { rollupGroupStatus } from '../../lib/sidebarHelpers';
 import {
   extractPendingQuestionFromParts,
   hasPendingQuestionInParts,
@@ -361,21 +361,19 @@ export function SessionDetail({ id }: SessionDetailProps) {
   usePageTitle(cleanTitle(session?.title) || 'Session');
 
   // Sidebar polling, archive/pin handlers, archived-toggle, and the
-  // collapsed-projects fold-out. The hook owns recentSessions; the
-  // page-level cross-cutting effects (status mirror, permission
-  // mirror, seen mirror, SSE-derived sidebar updates) write through
-  // the exposed setRecentSessions and lastSiblingsHashRef.
+  // collapsed-projects fold-out. recentSessions now lives in Zustand so
+  // SSE-derived optimistic writes survive navigation without being clobbered
+  // by the next poll — any writer calls patchRecentSession and last wins.
   const collapsedProjects = useUiStore((state) => state.collapsedProjects);
+  const patchRecentSession = useApiStore((state) => state.patchRecentSession);
   const {
     recentSessions,
-    setRecentSessions,
     recentSessionsRef,
     loadingRecentSessions,
     archivingSessionIds,
     showArchivedRecent,
     setShowArchivedRecent,
     showArchivedRecentRef,
-    lastSiblingsHashRef,
     handleArchiveSession,
     handlePinSession,
     collapsedProjectSet,
@@ -476,6 +474,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const launchOpencodeInTmux = useApiStore((state) => state.launchOpencodeInTmux);
   const updateCachedSession = useApiStore((state) => state.updateCachedSession);
   const seedNewSession = useApiStore((state) => state.seedNewSession);
+
   const sidebarWidth = useUiStore((state) => state.sidebarWidth);
   const sidebarView = useUiStore((state) => state.sidebarView);
   const toggleSidebarView = useUiStore((state) => state.toggleSidebarView);
@@ -634,8 +633,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
     setPendingQuestion,
     setPermissionError,
     recentSessions,
-    setRecentSessions,
-    lastSiblingsHashRef,
     subagentSessionIdsRef,
     listPermissions,
     listQuestions,
@@ -658,11 +655,11 @@ export function SessionDetail({ id }: SessionDetailProps) {
     void markSessionSeen(sessionSeenPlatform, sessionSeenId, sessionSeenUpdated)
       .then(() => {
         setSession(prev => prev && prev.id === sessionSeenId ? { ...prev, seen: true } : prev);
-        setRecentSessions(prev => prev.map(s => (s.id === sessionSeenId ? { ...s, seen: true } : s)));
+        patchRecentSession(sessionSeenId, { seen: true });
         recheckFaviconNotify();
       })
       .catch(err => console.error('Failed to mark session seen', err));
-  }, [markSessionSeen, sessionSeenId, sessionSeenPlatform, sessionSeenUpdated, setRecentSessions]);
+  }, [markSessionSeen, sessionSeenId, sessionSeenPlatform, sessionSeenUpdated, patchRecentSession]);
 
   // Restore pending question when navigating to a page.
   // Check sessionStorage for a previously received question (stored when the
@@ -1343,22 +1340,10 @@ export function SessionDetail({ id }: SessionDetailProps) {
   });
   useEffect(() => {
     if (!id) return;
-    setRecentSessions(prev => {
-      let changed = false;
-      const next = prev.map(s => {
-        if (s.id !== id) return s;
-        if (s.status === optimisticStatus) return s;
-        changed = true;
-        return { ...s, status: optimisticStatus };
-      });
-      if (changed) {
-        // Keep the hash cache in sync so the next poll still diffs correctly.
-        lastSiblingsHashRef.current = computeSidebarHash(next);
-        return next;
-      }
-      return prev;
-    });
-  }, [id, optimisticStatus, lastSiblingsHashRef, setRecentSessions]);
+    // Write the SSE-derived status directly into the shared store so it
+    // survives navigation and wins over any concurrent stale poll replace.
+    patchRecentSession(id, { status: optimisticStatus });
+  }, [id, optimisticStatus, patchRecentSession]);
 
   // Flattened list of sidebar rows for the "projects" view. Each entry is
   // either a project header (with its most-recent-activity timestamp) or a
@@ -1692,7 +1677,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                         onClick={() => toggleCollapsedProject(group.directory)}
                       >
                         <span className="session-sidebar-group-status" title={aggTitle}>
-                          <StatusBadge status={dotStatus} compact pending={dotPending} />
+                          <StatusBadge status={dotStatus} compact pending={dotPending} seen={dotSeen} />
                         </span>
                         <span className="session-sidebar-group-label">{label}</span>
                         <span className="session-sidebar-group-count" title={aggTitle}>{group.sessions.length}</span>

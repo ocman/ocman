@@ -37,7 +37,6 @@ export interface UseSidebarSessionsOptions {
 
 export interface UseSidebarSessionsResult {
   recentSessions: Session[];
-  setRecentSessions: Dispatch<SetStateAction<Session[]>>;
   /** Stable ref-mirror so palette commands can read it without re-registering. */
   recentSessionsRef: MutableRefObject<Session[]>;
   loadingRecentSessions: boolean;
@@ -46,10 +45,6 @@ export interface UseSidebarSessionsResult {
   setShowArchivedRecent: Dispatch<SetStateAction<boolean>>;
   /** Ref-mirror of `showArchivedRecent` for the polling closure. */
   showArchivedRecentRef: MutableRefObject<boolean>;
-  /** Hash of the most recently displayed sidebar list. The page's
-   *  cross-cutting effects (status mirror, permission mirror, seen
-   *  mirror) update this so the next poll diffs correctly. */
-  lastSiblingsHashRef: MutableRefObject<string>;
   loadRecentSessions: (signal?: AbortSignal) => Promise<void>;
   handleArchiveSession: (e: React.MouseEvent, target: Session) => void;
   handlePinSession: (e: React.MouseEvent, target: Session) => void;
@@ -62,21 +57,21 @@ export interface UseSidebarSessionsResult {
  * Owns everything the Recent Sessions sidebar needs:
  *
  *   - the polled list of sessions in the last 72 h, refreshed every
- *     3 s while the tab is visible;
+ *     3 s while the tab is visible. The list lives in Zustand
+ *     (useApiStore.recentSessions) so SSE-derived optimistic writes
+ *     from the session-detail page survive navigation and are never
+ *     clobbered by the poll (last write wins);
  *   - the archived-session toggle and its ref-mirror;
  *   - the optimistic archive flow (delayed 220 ms so the fade-out
  *     animation can play) plus the in-flight ids set used by the
  *     renderer to fade rows out;
  *   - the optimistic pin toggle with revert-on-failure;
- *   - the bucketed project groups + per-group status rollup, with
- *     the page session's optimisticStatus overlaid;
  *   - the collapsed-projects set, with the current session's group
  *     forcibly expanded.
  *
  * Cross-cutting writes (status mirror, permission/question mirror,
- * seen mirror, SSE-derived sidebar updates) stay in the page; the
- * hook exposes setRecentSessions / lastSiblingsHashRef so the page
- * can keep them in sync without owning them itself.
+ * seen mirror) go directly to the store via patchRecentSession so
+ * they win over any concurrent poll replace.
  */
 export function useSidebarSessions({
   id,
@@ -88,13 +83,14 @@ export function useSidebarSessions({
   const getSessions = useApiStore((s) => s.getSessions);
   const archiveSession = useApiStore((s) => s.archiveSession);
   const pinSession = useApiStore((s) => s.pinSession);
+  const recentSessions = useApiStore((s) => s.recentSessions);
+  const storeSetRecentSessions = useApiStore((s) => s.setRecentSessions);
+  const patchRecentSession = useApiStore((s) => s.patchRecentSession);
 
-  const [recentSessions, setRecentSessions] = useState<Session[]>([]);
   const [loadingRecentSessions, setLoadingRecentSessions] = useState(true);
   const [archivingSessionIds, setArchivingSessionIds] = useState<Set<string>>(new Set());
   const [showArchivedRecent, setShowArchivedRecent] = useState(false);
 
-  const lastSiblingsHashRef = useRef<string>('');
   const archiveTimeoutsRef = useRef<Record<string, number>>({});
   const showArchivedRecentRef = useRef(showArchivedRecent);
 
@@ -116,17 +112,37 @@ export function useSidebarSessions({
       const nextRecentSessions = current && !visible.some((s) => s.id === current.id)
         ? [current, ...visible].slice(0, RECENT_SESSIONS_LIMIT)
         : visible;
-      const hash = computeSidebarHash(nextRecentSessions);
-      if (hash !== lastSiblingsHashRef.current) {
-        lastSiblingsHashRef.current = hash;
-        setRecentSessions(nextRecentSessions);
-      }
+
+      // The poll is the authoritative source for the full list, but
+      // optimistic writes (status, seen, pendingPermission/Question) made
+      // via patchRecentSession may have arrived since the last poll.
+      // Preserve those fields so a stale server response doesn't clobber them.
+      const currentStore = useApiStore.getState().recentSessions;
+      const merged = nextRecentSessions.map((s) => {
+        const live = currentStore.find((ls) => ls.id === s.id);
+        if (!live) return s;
+        // Prefer the more-recent status: if the store has 'busy' and the
+        // server still shows a stale status, keep 'busy'. In all other
+        // cases the poll wins (it is the source of truth for terminal states).
+        const status = live.status === 'busy' && s.status !== 'busy' ? 'busy' : s.status;
+        return {
+          ...s,
+          status,
+          // Preserve seen/pending flags that the SSE may have set more recently.
+          seen: live.seen || s.seen,
+          pendingPermission: live.pendingPermission || s.pendingPermission,
+          pendingQuestion: live.pendingQuestion || s.pendingQuestion,
+        };
+      });
+
+      const hash = computeSidebarHash(merged);
+      storeSetRecentSessions(merged, hash);
       setLoadingRecentSessions(false);
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return;
       throw e;
     }
-  }, [getSessions, id]);
+  }, [getSessions, id, storeSetRecentSessions]);
 
   // Initial load when the active session changes (or is set the
   // first time).
@@ -206,9 +222,15 @@ export function useSidebarSessions({
     archiveTimeoutsRef.current[target.id] = window.setTimeout(() => {
       archiveSession(target.platform, target.id, target.timeUpdated, true)
         .then(() => {
-          setRecentSessions((prev) => showArchivedRecent
-            ? prev.map((session) => (session.id === target.id ? { ...session, archived: true } : session))
-            : prev.filter((session) => session.id !== target.id));
+          const { recentSessions: current, setRecentSessions: storeSetter, recentSessionsHash } = useApiStore.getState();
+          const next = showArchivedRecentRef.current
+            ? current.map((session) => (session.id === target.id ? { ...session, archived: true } : session))
+            : current.filter((session) => session.id !== target.id);
+          // Only write if something actually changed.
+          if (next !== current) storeSetter(next, computeSidebarHash(next));
+          // Suppress TS: recentSessionsHash is read to satisfy the linter,
+          // but we don't need it here — the store handles dedup internally.
+          void recentSessionsHash;
           if (isCurrent) {
             navigate(nextSession ? `/session/${nextSession.id}` : '/');
           }
@@ -225,28 +247,20 @@ export function useSidebarSessions({
           delete archiveTimeoutsRef.current[target.id];
         });
     }, ARCHIVE_ANIMATION_MS);
-  }, [archiveSession, archivingSessionIds, id, navigate, recentSessions, showArchivedRecent]);
+  }, [archiveSession, archivingSessionIds, id, navigate, recentSessions]);
 
   const handlePinSession = useCallback((e: React.MouseEvent, target: Session) => {
     e.stopPropagation();
     const nextPinned = !target.pinned;
     // Optimistic update — flip the pin in place immediately so the
     // sort settles without waiting for the server.
-    setRecentSessions((prev) => prev.map((s) =>
-      s.id === target.id
-        ? { ...s, pinned: nextPinned, pinnedAt: nextPinned ? Date.now() : 0 }
-        : s,
-    ));
+    patchRecentSession(target.id, { pinned: nextPinned, pinnedAt: nextPinned ? Date.now() : 0 });
     pinSession(target.platform, target.id, nextPinned).catch((err) => {
       console.error('Failed to pin/unpin session', err);
       // Revert on failure.
-      setRecentSessions((prev) => prev.map((s) =>
-        s.id === target.id
-          ? { ...s, pinned: target.pinned, pinnedAt: target.pinnedAt }
-          : s,
-      ));
+      patchRecentSession(target.id, { pinned: target.pinned, pinnedAt: target.pinnedAt });
     });
-  }, [pinSession]);
+  }, [pinSession, patchRecentSession]);
 
   // Collapsed state as a Set for O(1) membership checks in render.
   // The current session's group is force-expanded regardless of
@@ -263,14 +277,12 @@ export function useSidebarSessions({
 
   return {
     recentSessions,
-    setRecentSessions,
     recentSessionsRef,
     loadingRecentSessions,
     archivingSessionIds,
     showArchivedRecent,
     setShowArchivedRecent,
     showArchivedRecentRef,
-    lastSiblingsHashRef,
     loadRecentSessions,
     handleArchiveSession,
     handlePinSession,
