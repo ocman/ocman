@@ -13,6 +13,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/gui"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	claudecodeplatform "github.com/NoUseFreak/ocman/internal/platforms/claudecode"
 	opencodeplatform "github.com/NoUseFreak/ocman/internal/platforms/opencode"
@@ -44,7 +45,17 @@ var knownPlatforms = map[string]bool{
 }
 
 func main() {
+	// Wails's binding generator runs the binary with WAILS_BINDINGS set to
+	// collect exported method signatures.  We have no bound methods, so
+	// there is nothing to do — exit cleanly so the generator doesn't
+	// mistake a server startup error for a binding failure.
+	if os.Getenv("WAILS_BINDINGS") != "" {
+		os.Exit(0)
+	}
+
 	addr := flag.String("addr", "127.0.0.1:8228", "listen address")
+	guiMode := flag.Bool("gui", isAppBundle(), "open a native desktop window (Wails) instead of just serving HTTP")
+	guiAddr := flag.String("gui-addr", "127.0.0.1:0", "listen address for the backend when --gui is set (default picks an ephemeral port)")
 	dbPath := flag.String("db", db.DefaultDBPath(), "path to opencode.db")
 	platformsFlag := flag.String("platforms", "opencode", "comma-separated list of platforms to enable (opencode, claude-code)")
 	authPassword := flag.String("auth-password", "", "password required to access ocman (prefer "+authPasswordEnv+" env or -auth-password-file)")
@@ -145,9 +156,22 @@ func main() {
 		log.Fatalf("Failed to configure auth: %v", err)
 	}
 
-	srv := server.New(database, stateDB, *addr, registry, auth)
-	if err := srv.Start(ctx); err != nil {
-		log.Fatalf("Server error: %v", err)
+	// In GUI mode the server listens on an ephemeral loopback port that
+	// is only reachable from the Wails WebView proxy.  In headless mode
+	// it listens on *addr as before.
+	if *guiMode {
+		// gui-addr defaults to 127.0.0.1:0 (ephemeral). Callers can
+		// pin a port with --gui-addr=127.0.0.1:8229 if needed.
+		listenAddr := *guiAddr
+		srv := server.New(database, stateDB, listenAddr, registry, auth)
+		if err := gui.RunGUI(ctx, srv, listenAddr); err != nil {
+			log.Fatalf("GUI error: %v", err)
+		}
+	} else {
+		srv := server.New(database, stateDB, *addr, registry, auth)
+		if err := srv.Start(ctx); err != nil {
+			log.Fatalf("Server error: %v", err)
+		}
 	}
 
 	log.Info("server stopped gracefully")
@@ -241,6 +265,18 @@ func parseBoolEnv(v string) bool {
 		return true
 	}
 	return false
+}
+
+// isAppBundle reports whether the running executable is inside a macOS .app
+// bundle (i.e. its path contains ".app/Contents/MacOS/"). When true, --gui
+// defaults to on so double-clicking the .app opens a window without needing
+// any flags.
+func isAppBundle() bool {
+	exe, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(exe, ".app/Contents/MacOS/")
 }
 
 // isLoopbackAddr returns true when the listener's host part is a

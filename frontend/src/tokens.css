@@ -210,6 +210,27 @@ header h1 { font-size: 24px; font-weight: 600; color: var(--text-dim); white-spa
 header h1 > a { color: var(--text); font-weight: 600; }
 header h1 span { color: inherit; font-weight: 400; }
 
+/* Wails desktop: compact native-feeling titlebar.
+ * - Reduced padding so the bar sits closer to system titlebar height (~38px).
+ * - Smaller font to match native app conventions.
+ * - padding-left clears the macOS inset traffic-light buttons (~72px + gap). */
+.wails-app header {
+  --wails-draggable: drag;
+  padding: 12px 16px 12px 96px;
+}
+.wails-app header h1 {
+  font-size: 16px;
+  font-weight: 500;
+}
+/* Interactive children must opt out of dragging so clicks work. */
+.wails-app header h1,
+.wails-app header a,
+.wails-app header button,
+.wails-app header input,
+.wails-app header .header-project {
+  --wails-draggable: no-drag;
+}
+
 /* Project label on the right side of the header for /session/* routes.
  * Single muted monospace line — fills the slot that used to hold the
  * full per-session stats strip. The richer metadata moved to the

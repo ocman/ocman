@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -62,6 +63,18 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 // Start starts the HTTP server. It blocks until the context is cancelled,
 // then gracefully shuts down the server.
 func (s *Server) Start(ctx context.Context) error {
+	ln, err := net.Listen("tcp", s.addr)
+	if err != nil {
+		return fmt.Errorf("listen %s: %w", s.addr, err)
+	}
+	return s.StartOnListener(ctx, ln)
+}
+
+// StartOnListener starts the HTTP server on an already-bound listener. It
+// blocks until the context is cancelled, then gracefully shuts down.
+// This variant is used by the GUI mode, which picks the port before handing
+// the listener here so Wails can point its proxy at the correct address.
+func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	go s.runAutoArchiveLoop(ctx)
 	go s.runProjectsIndexLoop(ctx)
 	go s.runLLMMetricsLoop(ctx)
@@ -181,7 +194,7 @@ func (s *Server) Start(ctx context.Context) error {
 	// no-op when telemetry is disabled (its global TracerProvider is
 	// the SDK noop in that case).
 	httpServer := &http.Server{
-		Addr:    s.addr,
+		Addr:    ln.Addr().String(),
 		Handler: withRequestTiming(withOTel(mux)),
 	}
 
@@ -199,10 +212,10 @@ func (s *Server) Start(ctx context.Context) error {
 			}
 		}
 		log.WithFields(log.Fields{
-			"addr": s.addr,
+			"addr": ln.Addr().String(),
 			"auth": authMode,
 		}).Info("ocman server started")
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := httpServer.Serve(ln); err != nil && err != http.ErrServerClosed {
 			errCh <- err
 		}
 		close(errCh)

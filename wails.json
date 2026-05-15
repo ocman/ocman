@@ -1,0 +1,21 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "ocman",
+  "outputfilename": "ocman-desktop",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "http://localhost:8228",
+  "wailsjsdir": "./frontend/src/wailsjs",
+  "version": "2",
+  "info": {
+    "companyName": "ocman",
+    "productName": "ocman",
+    "productVersion": "1.0.0",
+    "copyright": "Copyright © ocman",
+    "comments": "Coding-agent session dashboard"
+  },
+  "nsisType": "multiple",
+  "obfuscated": false,
+  "garbleargs": ""
+}

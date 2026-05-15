@@ -50,6 +50,12 @@ function stripTestIdsPlugin(): Plugin {
   }
 }
 
+// When building for the Wails desktop bundle, output into the standard
+// Wails dist dir so `wails build` picks it up.  The normal `make build`
+// still targets ../internal/server/static (the go:embed source).
+const isWailsBuild = process.env.WAILS_BUILD === '1'
+const buildOutDir = isWailsBuild ? '../frontend/dist' : '../internal/server/static'
+
 export default defineConfig({
   plugins: [
     ...(stripTestIds ? [stripTestIdsPlugin()] : []),
@@ -62,7 +68,7 @@ export default defineConfig({
     babel({ presets: [reactCompilerPreset()] }),
   ],
   build: {
-    outDir: '../internal/server/static',
+    outDir: buildOutDir,
     emptyOutDir: true,
   },
   server: {

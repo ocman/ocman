@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // TestInitNoEndpointNoOp verifies that an empty endpoint leaves
@@ -34,6 +36,44 @@ func TestInitInvalidEndpoint(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid scheme, got nil")
 	}
+}
+
+// TestBuildResource_SetsUniqueInstanceID verifies that every call to
+// buildResource produces a distinct service.instance.id. Two ocman
+// processes pushing to the same OTLP endpoint without this attribute
+// collide on a single Prometheus series, which makes rate() lie by
+// orders of magnitude because every interleaved sample looks like a
+// counter reset.
+func TestBuildResource_SetsUniqueInstanceID(t *testing.T) {
+	r1, err := buildResource(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("buildResource (1): %v", err)
+	}
+	r2, err := buildResource(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("buildResource (2): %v", err)
+	}
+
+	id1, ok1 := lookupAttr(r1.Attributes(), "service.instance.id")
+	id2, ok2 := lookupAttr(r2.Attributes(), "service.instance.id")
+	if !ok1 || !ok2 {
+		t.Fatalf("service.instance.id missing: r1=%v r2=%v", ok1, ok2)
+	}
+	if id1 == "" || id2 == "" {
+		t.Fatalf("service.instance.id empty: %q %q", id1, id2)
+	}
+	if id1 == id2 {
+		t.Fatalf("service.instance.id collided across calls: %q", id1)
+	}
+}
+
+func lookupAttr(attrs []attribute.KeyValue, key string) (string, bool) {
+	for _, kv := range attrs {
+		if string(kv.Key) == key {
+			return kv.Value.AsString(), true
+		}
+	}
+	return "", false
 }
 
 // TestTracerMeterNoOpWithoutInit ensures that callers can fetch the

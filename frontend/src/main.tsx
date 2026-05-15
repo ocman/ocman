@@ -11,6 +11,14 @@ import { installRemoteLogHandlers } from './lib/remoteLog'
 import { installAuthIntegration } from './lib/authStore'
 import { registerServiceWorker } from './lib/registerServiceWorker'
 
+// When running inside a Wails desktop window, the Go runtime injects
+// `window.runtime`. Tag <body> with `wails-app` so CSS can apply
+// platform-specific styles (traffic-light clearance, drag region, etc.)
+// without any build-time branching.
+if (typeof window !== 'undefined' && 'runtime' in window) {
+  document.body.classList.add('wails-app')
+}
+
 // Install global error -> /api/debug/log handlers before the app boots, so
 // any render-time crash is captured on the server log too.
 installRemoteLogHandlers()

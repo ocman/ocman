@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/uptrace/opentelemetry-go-extra/otellogrus"
 	"go.opentelemetry.io/contrib/instrumentation/runtime"
@@ -149,6 +150,14 @@ func Init(ctx context.Context, endpoint, version string) (ShutdownFunc, error) {
 // (service.name, service.version) are stable across schema versions,
 // so dropping the URL has no observable effect on the data.
 //
+// service.instance.id is a per-process UUID. Without it, two ocman
+// processes pushing to the same OTLP endpoint (e.g. the Air-built dev
+// binary and a separately-installed GUI build) collide on a single
+// Prometheus series — the counters interleave, every push looks like
+// a counter reset to rate(), and dashboards report rates orders of
+// magnitude higher than reality. Setting it forces each process into
+// its own series and the dashboards become accurate again.
+//
 // OTEL_SERVICE_NAME / OTEL_RESOURCE_ATTRIBUTES still win because
 // resource.WithFromEnv runs last and Merge prefers the latter.
 func buildResource(ctx context.Context, version string) (*resource.Resource, error) {
@@ -163,6 +172,7 @@ func buildResource(ctx context.Context, version string) (*resource.Resource, err
 		resource.WithAttributes(
 			attribute.String("service.name", "ocman"),
 			attribute.String("service.version", version),
+			attribute.String("service.instance.id", uuid.NewString()),
 		),
 		resource.WithTelemetrySDK(),
 		resource.WithProcessRuntimeName(),

@@ -2,6 +2,8 @@ ocman
 node_modules/
 tmp/
 dist/
+build/appicon.png
+build/bin/
 internal/server/static/*
 !internal/server/static/robots.txt
 *.log

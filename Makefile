@@ -1,4 +1,4 @@
-.PHONY: dev dev-backend dev-frontend dev-prod dev-prod-watch kill-dev build run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev install-e2e-browsers test-race test-fuzz test-coverage lint lint-backend lint-frontend lint-platform-branching otel-up otel-down otel-logs otel-reset help
+.PHONY: dev dev-backend dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev install-e2e-browsers test-race test-fuzz test-coverage lint lint-backend lint-frontend lint-platform-branching otel-up otel-down otel-logs otel-reset help
 
 # --- OTel dev defaults ----------------------------------------------------
 #
@@ -131,6 +131,97 @@ build-frontend:
 
 build-backend:
 	go build -o ocman .
+
+# Desktop (Wails) build — produces a native .app / binary via `wails build`.
+# The frontend is built with WAILS_BUILD=1 so Vite outputs to frontend/dist
+# (the path wails.json expects) instead of internal/server/static.
+build-desktop: ## Build the Wails desktop app (outputs to build/bin/)
+	cd frontend && WAILS_BUILD=1 npm run build
+	@mkdir -p build
+	rsvg-convert -w 1024 -h 1024 frontend/public/favicon.svg -o build/appicon.png
+	wails build -skipbindings -s -o ocman-desktop
+	@# Flush the macOS icon/LaunchServices cache so the Dock shows the
+	@# updated icon immediately without a logout. No-op on non-macOS.
+	@if [ "$$(uname)" = "Darwin" ]; then \
+		/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister \
+			-f build/bin/ocman.app 2>/dev/null || true; \
+		killall Dock 2>/dev/null || true; \
+	fi
+
+# ---- macOS DMG installer --------------------------------------------------
+#
+# Requires: brew install create-dmg
+#
+# Produces dist/ocman.dmg — a drag-to-Applications installer with:
+#   • Custom background colour (matches the app's dark UI)
+#   • Icon position tuned for a single-app window
+#   • Symlink to /Applications so the user just drags the .app
+#
+# Usage:
+#   make installer-mac              # build .app then wrap in .dmg
+#   make installer-mac BUILD=0      # skip the wails build (already done)
+#
+BUILD ?= 1
+
+installer-mac: ## Build macOS DMG installer (requires create-dmg)
+	@command -v create-dmg >/dev/null 2>&1 || { \
+		echo "create-dmg not found. Install with:  brew install create-dmg"; exit 1; }
+	@if [ "$(BUILD)" = "1" ]; then $(MAKE) build-desktop; fi
+	@mkdir -p dist
+	@rm -f dist/ocman.dmg
+	@# Use the app icon if present (wails build produces build/appicon.png).
+	@# Omit --volicon / --background when the file doesn't exist yet.
+	@if [ -f build/appicon.png ]; then \
+		create-dmg \
+			--volname "ocman" \
+			--volicon "build/appicon.png" \
+			--window-pos 200 120 \
+			--window-size 540 380 \
+			--icon-size 128 \
+			--icon "ocman.app" 140 190 \
+			--hide-extension "ocman.app" \
+			--app-drop-link 400 190 \
+			--no-internet-enable \
+			"dist/ocman.dmg" \
+			"build/bin/"; \
+	else \
+		create-dmg \
+			--volname "ocman" \
+			--window-pos 200 120 \
+			--window-size 540 380 \
+			--icon-size 128 \
+			--icon "ocman.app" 140 190 \
+			--hide-extension "ocman.app" \
+			--app-drop-link 400 190 \
+			--no-internet-enable \
+			"dist/ocman.dmg" \
+			"build/bin/"; \
+	fi
+	@echo ""
+	@echo "  Installer: dist/ocman.dmg"
+
+# ---- Linux AppImage / tar.gz ----------------------------------------------
+#
+# The Wails Linux build produces a standalone binary (no bundled WebKit —
+# the system GTK WebKitGTK is used). We package it as both:
+#   dist/ocman-linux-amd64.tar.gz   — plain archive, no runtime deps listed
+#   (AppImage support requires appimagetool; see the comment below)
+#
+# Usage:
+#   make installer-linux
+
+installer-linux: ## Build Linux binary archive (cross-compiled from any host)
+	@mkdir -p dist
+	cd frontend && WAILS_BUILD=1 npm run build
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
+		go build -ldflags="-s -w" -tags desktop,exclude_graphdriver_devicemapper \
+		-o dist/ocman-linux-amd64 .
+	tar -czf dist/ocman-linux-amd64.tar.gz -C dist ocman-linux-amd64
+	@echo ""
+	@echo "  Archive: dist/ocman-linux-amd64.tar.gz"
+	@echo ""
+	@echo "  Note: --gui on Linux requires libwebkit2gtk-4.0 and libgtk-3."
+	@echo "  Without them, run without --gui for the browser-based UI."
 
 run: build
 	./ocman -addr 0.0.0.0:8228
