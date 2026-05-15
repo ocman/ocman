@@ -56,6 +56,18 @@ export interface StickyDecisionInput {
    *  - 'user-scroll': the user scrolled the viewport
    */
   kind: StickyEventKind;
+  /**
+   * The sticky state *before* this event. Only used for 'content' events.
+   *
+   * When `true`, content growth keeps sticky engaged and scrolls to the
+   * bottom even if `isNear` is momentarily false — this handles the race
+   * where new DOM is appended but the browser hasn't yet propagated the
+   * scroll position, causing a false "not near bottom" reading.
+   *
+   * Defaults to `false` when omitted (preserves old behaviour for callers
+   * that don't track sticky state).
+   */
+  currentSticky?: boolean;
 }
 
 export interface StickyDecision {
@@ -73,20 +85,28 @@ export interface StickyDecision {
  *
  * Rules:
  *  1. Content growth while near-bottom: stay/become sticky and scroll.
- *  2. Content growth while NOT near-bottom: do nothing — the user is
- *     reading older content.
- *  3. User scrolls into the near-bottom band: re-engage sticky (so
+ *  2. Content growth while NOT near-bottom AND already sticky: stay
+ *     sticky and scroll. This handles the common race where new DOM
+ *     is appended (scrollHeight grows) but the browser hasn't yet
+ *     propagated the updated scroll offset, so `isNear` transiently
+ *     reads false even though the user never moved. Without this
+ *     rule, a single bad rAF tick disengages sticky and the chat
+ *     stops following new messages silently.
+ *  3. Content growth while NOT near-bottom AND NOT sticky: do nothing —
+ *     the user is deliberately reading older content.
+ *  4. User scrolls into the near-bottom band: re-engage sticky (so
  *     subsequent content events resume pulling) but do NOT scroll
  *     (the user is already where they want to be).
- *  4. User scrolls out of the near-bottom band: disengage sticky.
+ *  5. User scrolls out of the near-bottom band: disengage sticky.
  *     Programmatic scrolling here would fight the user.
  */
-export function decideStickyAction({ isNear, kind }: StickyDecisionInput): StickyDecision {
+export function decideStickyAction({ isNear, kind, currentSticky = false }: StickyDecisionInput): StickyDecision {
   if (kind === 'content') {
-    if (isNear) return { nextSticky: true, scroll: true };
-    // Content grew while the user was reading older messages — leave
-    // them alone. Sticky must drop to false so a future user-scroll
-    // back into the near-bottom band re-engages it cleanly.
+    if (isNear || currentSticky) return { nextSticky: true, scroll: true };
+    // Content grew while the user was deliberately reading older messages
+    // (sticky was already off and they're not near the bottom) — leave
+    // them alone. Sticky stays false so a future user-scroll back into
+    // the near-bottom band re-engages it cleanly.
     return { nextSticky: false, scroll: false };
   }
   // kind === 'user-scroll' — never scroll programmatically (would fight

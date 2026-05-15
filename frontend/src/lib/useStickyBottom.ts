@@ -63,6 +63,12 @@ export function useStickyBottom(
       clientHeight: el.clientHeight,
     });
 
+    // Initialise sticky state from the actual scroll position instead of
+    // blindly assuming the user starts at the bottom. If the hook mounts
+    // while the user is far up (e.g. an already-scrolled conversation), we
+    // must not drag them back down on the first content event.
+    stickyRef.current = isNearBottom(metrics(), threshold);
+
     const scrollToBottom = () => {
       // 'auto' (instant) — `behavior: 'smooth'` would visibly chase
       // streaming chunks and disorient the user. The library uses
@@ -109,6 +115,11 @@ export function useStickyBottom(
         const { nextSticky, scroll } = decideStickyAction({
           isNear: isNearBottom(metrics(), threshold),
           kind: 'content',
+          // Pass the current sticky state so that a transient "not near
+          // bottom" reading (caused by scrollHeight growing before the
+          // browser updates scrollTop) does not disengage sticky when we
+          // were already following the tail.
+          currentSticky: stickyRef.current,
         });
         stickyRef.current = nextSticky;
         if (scroll) scrollToBottom();

@@ -67,9 +67,10 @@ describe('decideStickyAction', () => {
   //   - nextSticky: should the hook keep pulling the user to the bottom?
   //   - scroll: should we programmatically scrollTo the bottom now?
   //
-  // The decision depends only on the current near-bottom status and
-  // the event kind — sticky has no hidden hysteresis, which keeps the
-  // hook's state machine boring and easy to reason about.
+  // For content events the decision also depends on `currentSticky`: when
+  // the hook was already following the tail, a transient "not near bottom"
+  // reading (caused by scrollHeight growing before scrollTop updates) must
+  // not disengage sticky.
 
   it('engages sticky on content growth when the user is near the bottom', () => {
     expect(
@@ -77,7 +78,25 @@ describe('decideStickyAction', () => {
     ).toEqual({ nextSticky: true, scroll: true });
   });
 
-  it('does not engage sticky on content growth when the user has scrolled up', () => {
+  it('does not engage sticky on content growth when the user has scrolled up and was not sticky', () => {
+    expect(
+      decideStickyAction({ isNear: false, kind: 'content', currentSticky: false }),
+    ).toEqual({ nextSticky: false, scroll: false });
+  });
+
+  it('stays sticky and scrolls on content growth when sticky was true but isNear is momentarily false (race condition fix)', () => {
+    // This is the core bug fix: when new DOM is appended, scrollHeight
+    // grows before the browser updates scrollTop. The rAF tick may see
+    // isNear === false even though the user never scrolled up. Without
+    // passing currentSticky, decideStickyAction would disengage the tail
+    // and the chat would stop following new messages silently.
+    expect(
+      decideStickyAction({ isNear: false, kind: 'content', currentSticky: true }),
+    ).toEqual({ nextSticky: true, scroll: true });
+  });
+
+  it('defaults currentSticky to false when omitted (backward-compatible)', () => {
+    // Callers that don't pass currentSticky behave as they did before.
     expect(
       decideStickyAction({ isNear: false, kind: 'content' }),
     ).toEqual({ nextSticky: false, scroll: false });
@@ -113,5 +132,16 @@ describe('decideStickyAction', () => {
     for (const c of cases) {
       expect(decideStickyAction(c).scroll).toBe(false);
     }
+  });
+
+  it('currentSticky has no effect on user-scroll events (user intent always wins)', () => {
+    // currentSticky is only meaningful for content events. User-scroll
+    // events always reflect explicit intent and must not be overridden.
+    expect(
+      decideStickyAction({ isNear: false, kind: 'user-scroll', currentSticky: true }),
+    ).toEqual({ nextSticky: false, scroll: false });
+    expect(
+      decideStickyAction({ isNear: true, kind: 'user-scroll', currentSticky: false }),
+    ).toEqual({ nextSticky: true, scroll: false });
   });
 });
