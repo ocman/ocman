@@ -1,23 +1,18 @@
-import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { flushSync } from 'react-dom';
 import { useStickyNavigate } from '../../lib/useStickyNavigate';
 import * as Toast from '@radix-ui/react-toast';
 import './SessionDetail.css';
-import { api, type Session, type Message, type Part, type SessionDetail } from '../../lib/api';
-import { cleanTitle, shortPath, relativeTime } from '../../lib/format';
+import { api, type SessionDetail } from '../../lib/api';
+import { cleanTitle, shortPath } from '../../lib/format';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { useHeaderInfo, usePageTitle } from '../../lib/headerContext';
 import { OcmanRuntimeProvider } from '../../components/OcmanRuntimeProvider';
 import { AssistantThread } from '../../components/AssistantThread';
-import { Composer, type AttachedImage } from '../../components/assistant/Composer';
+import { Composer } from '../../components/assistant/Composer';
 import { QuestionPrompt, type PendingQuestion } from '../../components/session/QuestionPrompt';
 import { PermissionPrompt } from '../../components/session/PermissionPrompt';
-import { StatusBadge } from '../../components/StatusBadge';
-import { PlatformBadge } from '../../components/PlatformBadge';
-import { ShortPath, GitStatusLine } from '../../components/SessionTable';
-import { BackendStats } from '../../components/BackendStats';
-import { SidebarResizer } from '../../components/SidebarResizer';
 import { RightPanel } from '../../components/RightPanel';
 import { ErrorBoundary, type FallbackRender } from '../../components/ErrorBoundary';
 import { RateLimitBanner } from '../../components/RateLimitBanner';
@@ -26,8 +21,8 @@ import { useTmux } from '../../lib/useTmux';
 import { useApiStore } from '../../lib/apiStore';
 import { useGitInfo } from '../../lib/useGitInfo';
 import { usePlatformCapabilities } from '../../lib/useCapabilities';
+import { listFailedSends, type FailedSend } from '../../lib/failedSends';
 import { recheckFaviconNotify } from '../../lib/useFaviconNotify';
-import { openVSCode } from '../../lib/shortcuts';
 import { hashSession, hashMessagesAndParts } from '../../lib/sessionHash';
 import { createSessionWithLaunch, type LaunchStatus } from '../../lib/createSessionWithLaunch';
 import {
@@ -42,12 +37,6 @@ import {
   hasPendingQuestionInParts,
   type PendingPermission,
 } from '../../lib/sseHelpers';
-import {
-  listFailedSends,
-  recordFailedSend,
-  removeFailedSend,
-  type FailedSend,
-} from '../../lib/failedSends';
 import { useSyncRef } from '../../lib/useSyncRef';
 import { useSubagentTracking } from './useSubagentTracking';
 import { useTmuxActions } from './useTmuxActions';
@@ -66,147 +55,17 @@ import { usePaletteCommands } from './usePaletteCommands';
 import { useGhostInjection } from './useGhostInjection';
 import { usePendingPromptSync } from './usePendingPromptSync';
 import { SseStatusIndicator } from './SseStatusIndicator';
-import { SessionSidebarListSkeleton } from '../../components/Skeleton';
 import { remoteLog } from '../../lib/remoteLog';
 import { isRecoverableThreadBoundaryError } from './threadBoundaryRecovery';
 import { ThreadBoundaryFallback } from './ThreadBoundaryFallback';
+import { SessionToasts } from './SessionToasts';
+import { SessionSidebar, type SidebarProjectGroup } from './SessionSidebar';
+import { RenameModal } from './RenameModal';
+import { useSessionActions } from './useSessionActions';
 
 const MAX_RETAINED_MESSAGES = 200;
 const TRIMMED_RETAINED_MESSAGES = 150;
 const THREAD_BOUNDARY_AUTO_RECOVERY_COOLDOWN_MS = 5_000;
-
-
-
-function ArchiveIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M2 3.5h12v2H2zm1 3h10v6H3zm3 2.5h4" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function ArchiveFilterIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M2.5 3h11l-4.25 4.9v3.35l-2.5 1.25V7.9z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-// Icon used for the "projects" sidebar-view toggle. Stack of horizontal bars
-// evokes a grouped-list.
-function ProjectsViewIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
-      <rect x="2" y="3" width="12" height="2.2" rx="0.6" fill="currentColor" />
-      <rect x="4" y="7" width="10" height="2.2" rx="0.6" fill="currentColor" opacity="0.75" />
-      <rect x="4" y="11" width="10" height="2.2" rx="0.6" fill="currentColor" opacity="0.75" />
-    </svg>
-  );
-}
-
-// Icon used when the sidebar is *in* projects view — shows a flat list, hinting
-// that clicking will return to the flat "recent" view.
-function RecentViewIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
-      <rect x="2" y="3" width="12" height="2.2" rx="0.6" fill="currentColor" />
-      <rect x="2" y="7" width="12" height="2.2" rx="0.6" fill="currentColor" />
-      <rect x="2" y="11" width="12" height="2.2" rx="0.6" fill="currentColor" />
-    </svg>
-  );
-}
-
-/**
- * Memoized Toast subtree. Radix Toast's `composeRefs` inside
- * `Toast.Viewport` triggers a `setState` during the React commit
- * phase, which can cascade into "Maximum update depth exceeded" when
- * the parent re-renders rapidly (SSE deltas, polling). Wrapping the
- * Toast tree in `memo` ensures it only re-renders when its own props
- * change, not on every SessionDetail state update.
- */
-const SessionToasts = memo(function SessionToasts({
-  showRenameToast,
-  setShowRenameToast,
-  createLaunchStatus,
-  showCreateSessionErrorToast,
-  setShowCreateSessionErrorToast,
-  showDisconnectedToast,
-  setShowDisconnectedToast,
-  tmuxAvailable,
-  liveConnectionHint,
-  hasDirectory,
-  launchingOpencode,
-  onLaunch,
-}: {
-  showRenameToast: boolean;
-  setShowRenameToast: (v: boolean) => void;
-  createLaunchStatus: string;
-  showCreateSessionErrorToast: boolean;
-  setShowCreateSessionErrorToast: (v: boolean) => void;
-  showDisconnectedToast: boolean;
-  setShowDisconnectedToast: (v: boolean) => void;
-  tmuxAvailable: boolean;
-  liveConnectionHint: boolean;
-  hasDirectory: boolean;
-  launchingOpencode: boolean;
-  onLaunch: () => void;
-}) {
-  return (
-    <>
-      <Toast.Root className="oc-toast-root" open={showRenameToast} onOpenChange={setShowRenameToast} duration={2000}>
-        <Toast.Description className="oc-toast-description">
-          Session renamed
-        </Toast.Description>
-      </Toast.Root>
-      <Toast.Root
-        className="oc-toast-root"
-        open={createLaunchStatus !== 'idle'}
-        duration={Infinity}
-      >
-        <Toast.Description className="oc-toast-description">
-          {createLaunchStatus === 'launching'
-            ? 'Launching opencode in tmux…'
-            : 'Waiting for opencode to start…'}
-        </Toast.Description>
-      </Toast.Root>
-      <Toast.Root
-        className="oc-toast-root error"
-        open={showCreateSessionErrorToast}
-        onOpenChange={setShowCreateSessionErrorToast}
-        duration={3500}
-      >
-        <Toast.Description className="oc-toast-description">
-          Failed to create session
-        </Toast.Description>
-      </Toast.Root>
-      <Toast.Root
-        className="oc-toast-root error"
-        open={showDisconnectedToast}
-        onOpenChange={setShowDisconnectedToast}
-        duration={8000}
-      >
-        <Toast.Description className="oc-toast-description">
-          <div className="oc-toast-body">
-            <span>OpenCode is not running for this session.</span>
-            {tmuxAvailable && liveConnectionHint && hasDirectory && (
-              <button
-                type="button"
-                className="oc-toast-action"
-                disabled={launchingOpencode}
-                onClick={() => {
-                  setShowDisconnectedToast(false);
-                  onLaunch();
-                }}
-              >{launchingOpencode ? 'Launching…' : 'Launch opencode'}</button>
-            )}
-          </div>
-        </Toast.Description>
-      </Toast.Root>
-      <Toast.Viewport className="oc-toast-viewport" />
-    </>
-  );
-});
 
 /**
  * Props for the inner SessionDetail component.
@@ -452,11 +311,9 @@ export function SessionDetail({ id }: SessionDetailProps) {
     setPendingQuestion,
   });
   const [showRenameModal, setShowRenameModal] = useState(false);
-  const [renameTitle, setRenameTitle] = useState('');
   const [showRenameToast, setShowRenameToast] = useState(false);
   const [showCreateSessionErrorToast, setShowCreateSessionErrorToast] = useState(false);
   const [showDisconnectedToast, setShowDisconnectedToast] = useState(false);
-  const [awaitingAssistantResponse, setAwaitingAssistantResponse] = useState(false);
   const [threadBoundaryResetNonce, setThreadBoundaryResetNonce] = useState(0);
   const [createLaunchStatus, setCreateLaunchStatus] = useState<LaunchStatus>('idle');
   // Sends that failed on the client (network error, 5xx, etc.). Each entry
@@ -467,22 +324,18 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const archiveSession = useApiStore((state) => state.archiveSession);
   const getWhisperStatus = useApiStore((state) => state.getWhisperStatus);
   const markSessionSeen = useApiStore((state) => state.markSessionSeen);
-  const sendMessage = useApiStore((state) => state.sendMessage);
-  const listPermissions = useApiStore((state) => state.listPermissions);
-  const listQuestions = useApiStore((state) => state.listQuestions);
   const createSession = useApiStore((state) => state.createSession);
   const launchOpencodeInTmux = useApiStore((state) => state.launchOpencodeInTmux);
   const updateCachedSession = useApiStore((state) => state.updateCachedSession);
   const seedNewSession = useApiStore((state) => state.seedNewSession);
+  const listPermissions = useApiStore((state) => state.listPermissions);
+  const listQuestions = useApiStore((state) => state.listQuestions);
 
   const sidebarWidth = useUiStore((state) => state.sidebarWidth);
   const sidebarView = useUiStore((state) => state.sidebarView);
   const toggleSidebarView = useUiStore((state) => state.toggleSidebarView);
   const toggleCollapsedProject = useUiStore((state) => state.toggleCollapsedProject);
   const threadBoundaryRecoveryRef = useRef<{ sessionId: string | undefined; message: string; at: number } | null>(null);
-
-
-
 
   useEffect(() => {
     showArchivedRecentRef.current = showArchivedRecent;
@@ -494,8 +347,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
   useEffect(() => {
     currentDirectoryRef.current = session?.directory;
   }, [session?.directory]);
-
-
 
   // Re-fetch the session-scoped model list. Used on session entry, when
   // OpenCode becomes reachable, and whenever the user opens the model
@@ -772,147 +623,92 @@ export function SessionDetail({ id }: SessionDetailProps) {
     [messages, session],
   );
 
-  // Internal send that accepts an explicit tempId. Used by both the public
-  // handleSend (fresh prompt) and handleRetrySend (replay of a previously
-  // failed send) so the optimistic bubble id stays stable across retries.
-  const performSend = useCallback(async (
-    tempId: string,
-    text: string,
-    images: AttachedImage[] | undefined,
-    model: string | undefined,
-    agent: string | undefined,
-    reasoning: string | undefined,
-  ) => {
-    if (!session || !portAvailable) return;
-    if (pendingPermission || pendingQuestion) return;
-
-    // Clear subagent token tracking for the new run window.
-    setSubagentTokens(new Map());
-    setAwaitingAssistantResponse(true);
-
+  const handleNewSessionInDirectory = useCallback(async (directory: string, title?: string) => {
     try {
-      await sendMessage(session.id, text, images, model, agent, reasoning);
-      // Success — drop any prior failed entry for this id (only relevant on
-      // retry; recording is otherwise idempotent). SSE will deliver the
-      // real message + assistant response incrementally.
-      setFailedSends(prev => prev.filter(e => e.id !== tempId));
-      removeFailedSend(session.id, tempId);
-    } catch (e) {
-      setAwaitingAssistantResponse(false);
-      console.error('Failed to send message', e);
-      const msg = e instanceof Error ? e.message : '';
-      // When the error is a missing OpenCode instance, surface a toast with
-      // a launch action instead of polluting the conversation thread. Roll
-      // back the optimistic bubble so retry doesn't apply here either —
-      // the user wants to launch OpenCode, not resubmit blindly.
-      if (msg.includes('no running OpenCode instance')) {
-        setMessages(prev => prev.filter(m => m.id !== tempId));
-        setParts(prev => prev.filter(p => p.messageId !== tempId));
-        setFailedSends(prev => prev.filter(e => e.id !== tempId));
-        removeFailedSend(session.id, tempId);
-        setShowDisconnectedToast(true);
-        return;
+      const res = await createSessionWithLaunch(
+        {
+          createSession,
+          launchOpencodeInTmux,
+          tmuxAvailable: tmux.available,
+          onStatusChange: setCreateLaunchStatus,
+        },
+        { directory, title },
+      );
+      if (res.id) {
+        // Seed the cache with a minimal stub so the navigation target
+        // renders an empty thread immediately instead of a loading spinner.
+        seedNewSession(res.id, directory, session?.platform ?? '', title);
+        navigateToSession(res.id);
       }
-      // Mark the optimistic bubble as failed and persist enough context to
-      // replay the send on Retry — even across a page refresh.
-      const failed: FailedSend = {
-        id: tempId,
-        text,
-        images,
-        model,
-        agent,
-        reasoning,
-        error: msg || 'Unknown error',
-        failedAt: Date.now(),
-      };
-      setFailedSends(prev => {
-        const idx = prev.findIndex(e => e.id === tempId);
-        if (idx >= 0) return prev.map((e, i) => (i === idx ? failed : e));
-        return [...prev, failed];
-      });
-      recordFailedSend(session.id, failed);
+    } catch (e) {
+      console.error('Failed to create session', e);
+      setShowCreateSessionErrorToast(true);
     }
-  }, [pendingPermission, pendingQuestion, portAvailable, sendMessage, session, setMessages, setParts, setSubagentTokens]);
+  }, [createSession, launchOpencodeInTmux, tmux.available, navigateToSession, seedNewSession, session?.platform]);
 
-  const handleSend = useCallback(async (text: string, images?: AttachedImage[]) => {
-    if (!session || !portAvailable) return;
-    // Belt-and-suspenders: the composer is normally unmounted while a
-    // permission/question prompt is active (see the ternary in the render
-    // tree), but an Enter keystroke can still land on the old composer
-    // during the re-render / focus-transfer race after an SSE event.
-    // Refuse to submit anything while a prompt is awaiting response so
-    // the user's reply doesn't accidentally ship as a new user message.
-    if (pendingPermission || pendingQuestion) return;
-
-    // Optimistically add user message immediately
-    const tempId = 'temp-' + Date.now();
-    const optimisticMsg: Message = {
-      id: tempId,
-      sessionId: session.id,
-      timeCreated: Date.now(),
-      data: { role: 'user' },
-    };
-    const optimisticParts: Part[] = [];
-    if (text) {
-      optimisticParts.push({
-        id: 'part-' + tempId,
-        messageId: tempId,
-        sessionId: session.id,
-        data: { type: 'text', text } as unknown as string,
-      });
-    }
-    if (images) {
-      images.forEach((img, i) => {
-        optimisticParts.push({
-          id: `part-${tempId}-img-${i}`,
-          messageId: tempId,
-          sessionId: session.id,
-          data: { type: 'file', mime: img.mime, url: img.url } as unknown as string,
-        });
-      });
-    }
-    setMessages(prev => [...prev, optimisticMsg]);
-    setParts(prev => [...prev, ...optimisticParts]);
-
-    await performSend(
-      tempId,
-      text,
-      images,
-      selectedModel || activeModel || undefined,
-      selectedAgent || activeAgent || undefined,
-      selectedReasoning || undefined,
-    );
-  }, [activeAgent, activeModel, pendingPermission, pendingQuestion, performSend, portAvailable, selectedAgent, selectedModel, selectedReasoning, session, setMessages, setParts]);
-
-  // Replay a previously failed send. Reuses the same optimistic message id
-  // so the bubble stays in place — the failed banner just disappears on
-  // success or updates with a new error message on a second failure.
-  // Falls back to the entry's persisted text/images so refresh-rehydrated
-  // ghost messages remain retryable even though their parts were never in
-  // the original `messages` array.
-  const handleRetrySend = useCallback((tempId: string) => {
+  const handleNewSession = useCallback(async (title?: string) => {
     if (!session) return;
-    const entry = failedSends.find(e => e.id === tempId);
-    if (!entry) return;
-    void performSend(
-      tempId,
-      entry.text,
-      entry.images,
-      entry.model,
-      entry.agent,
-      entry.reasoning,
-    );
-  }, [failedSends, performSend, session]);
+    await handleNewSessionInDirectory(session.directory, title);
+  }, [session, handleNewSessionInDirectory]);
 
-  // Drop a failed send (without retrying). Removes both the persisted
-  // entry and the ghost optimistic message it was attached to.
-  const handleDismissFailedSend = useCallback((tempId: string) => {
-    if (!session) return;
-    setFailedSends(prev => prev.filter(e => e.id !== tempId));
-    removeFailedSend(session.id, tempId);
-    setMessages(prev => prev.filter(m => m.id !== tempId));
-    setParts(prev => prev.filter(p => p.messageId !== tempId));
-  }, [session, setMessages, setParts]);
+  const handleCompact = useCallback(async () => {
+    if (!session || !portAvailable || !caps.compact) return;
+    const model = selectedModel || activeModel || '';
+    const slashIdx = model.indexOf('/');
+    const providerID = slashIdx > 0 ? model.slice(0, slashIdx) : '';
+    const modelID = slashIdx > 0 ? model.slice(slashIdx + 1) : model;
+    // Snapshot the effective agent before compact. OpenCode's summarize adds a
+    // message whose agent becomes the new `activeAgent` (derived from the last
+    // message with an agent), which would override the user's selection. Pin
+    // the pre-compact agent via `selectedAgent` so the next send continues to
+    // use it.
+    const agentBeforeCompact = selectedAgent || activeAgent || '';
+    try {
+      await api.compactSession(session.id, providerID, modelID);
+      if (agentBeforeCompact) setSelectedAgent(agentBeforeCompact);
+    } catch (e) {
+      console.error('Failed to compact session', e);
+    }
+  }, [activeAgent, activeModel, caps.compact, portAvailable, selectedAgent, selectedModel, session, setSelectedAgent]);
+
+  const {
+    awaitingAssistantResponse,
+    setAwaitingAssistantResponse,
+    handleSend,
+    handleRetrySend,
+    handleDismissFailedSend,
+    handleShell,
+    handleAbort,
+    handleVSCodeShortcut,
+    handleCommand,
+  } = useSessionActions({
+    session,
+    portAvailable,
+    caps,
+    pendingPermission,
+    pendingQuestion,
+    selectedModel,
+    selectedAgent,
+    selectedReasoning,
+    activeModel,
+    activeAgent,
+    recentSessionsRef,
+    tmuxAvailable: tmux.available,
+    failedSends,
+    setFailedSends,
+    setMessages,
+    setParts,
+    setSubagentTokens,
+    navigate,
+    navigateToSession,
+    openWorktreeForm,
+    handleCompact,
+    handleNewSession,
+    handleTmuxShortcut,
+    setShowRenameModal,
+    setShowRenameToast,
+    setShowDisconnectedToast,
+  });
 
   const handleThreadBoundaryRetry = useCallback((error: Error, force = false) => {
     const now = Date.now();
@@ -965,273 +761,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
     setSelectedModel(model);
     setSelectedReasoning('');
   }, [setSelectedModel, setSelectedReasoning]);
-
-  const handleCompact = useCallback(async () => {
-    if (!session || !portAvailable || !caps.compact) return;
-    const model = selectedModel || activeModel || '';
-    const slashIdx = model.indexOf('/');
-    const providerID = slashIdx > 0 ? model.slice(0, slashIdx) : '';
-    const modelID = slashIdx > 0 ? model.slice(slashIdx + 1) : model;
-    // Snapshot the effective agent before compact. OpenCode's summarize adds a
-    // message whose agent becomes the new `activeAgent` (derived from the last
-    // message with an agent), which would override the user's selection. Pin
-    // the pre-compact agent via `selectedAgent` so the next send continues to
-    // use it.
-    const agentBeforeCompact = selectedAgent || activeAgent || '';
-    try {
-      await api.compactSession(session.id, providerID, modelID);
-      if (agentBeforeCompact) setSelectedAgent(agentBeforeCompact);
-    } catch (e) {
-      console.error('Failed to compact session', e);
-    }
-  }, [activeAgent, activeModel, caps.compact, portAvailable, selectedAgent, selectedModel, session, setSelectedAgent]);
-
-  const handleNewSessionInDirectory = useCallback(async (directory: string, title?: string) => {
-    try {
-      const res = await createSessionWithLaunch(
-        {
-          createSession,
-          launchOpencodeInTmux,
-          tmuxAvailable: tmux.available,
-          onStatusChange: setCreateLaunchStatus,
-        },
-        { directory, title },
-      );
-      if (res.id) {
-        // Seed the cache with a minimal stub so the navigation target
-        // renders an empty thread immediately instead of a loading spinner.
-        seedNewSession(res.id, directory, session?.platform ?? '', title);
-        navigateToSession(res.id);
-      }
-    } catch (e) {
-      console.error('Failed to create session', e);
-      setShowCreateSessionErrorToast(true);
-    }
-  }, [createSession, launchOpencodeInTmux, tmux.available, navigateToSession, seedNewSession, session?.platform]);
-
-  const handleNewSession = useCallback(async (title?: string) => {
-    if (!session) return;
-    await handleNewSessionInDirectory(session.directory, title);
-  }, [session, handleNewSessionInDirectory]);
-
-  const handleCommand = useCallback(async (command: string, args: string) => {
-    if (!session) return;
-
-    // /archive is a local ocman action — it works even when the agent isn't running.
-    if (command === 'archive') {
-      // Pick the session at idx+1 (directly below) or idx-1 (directly above)
-      // from the displayed sidebar list, captured before the API call.
-      const idx = recentSessions.findIndex(s => s.id === session.id);
-      const nextSession = recentSessions[idx + 1] ?? recentSessions[idx - 1];
-      try {
-        await archiveSession(session.platform, session.id, session.timeUpdated, true);
-      } catch (e) {
-        console.error('Failed to archive session', e);
-        return;
-      }
-      if (nextSession) {
-        navigateToSession(nextSession.id);
-      } else {
-        flushSync(() => {
-          navigate('/');
-        });
-      }
-      return;
-    }
-
-    // /wt is a local ocman action too: it opens the worktree-creation
-    // modal prefilled from the current session's directory, optionally
-    // seeding the branch from the command args (`/wt feature/login`).
-    if (command === 'wt') {
-      openWorktreeForm({
-        projectDir: session.directory,
-        branch: args.trim() || undefined,
-      });
-      return;
-    }
-
-    if (!portAvailable) return;
-
-    if (command === 'compact') {
-      await handleCompact();
-      return;
-    }
-
-    if (command === 'new') {
-      await handleNewSession(args.trim() || undefined);
-      return;
-    }
-
-    if (command === 'clear') {
-      // Like /new, but archives the current session after the new one is
-      // created. Create first so a failed archive still leaves the user on
-      // a usable new session.
-      let newId: string | undefined;
-      const clearTitle = args.trim() || undefined;
-      try {
-        const res = await createSessionWithLaunch(
-          {
-            createSession,
-            launchOpencodeInTmux,
-            tmuxAvailable: tmux.available,
-            onStatusChange: setCreateLaunchStatus,
-          },
-          { directory: session.directory, title: clearTitle },
-        );
-        newId = res.id;
-      } catch (e) {
-        console.error('Failed to create session', e);
-        setShowCreateSessionErrorToast(true);
-        return;
-      }
-      try {
-        await archiveSession(session.platform, session.id, session.timeUpdated, true);
-      } catch (e) {
-        console.error('Failed to archive session', e);
-      }
-      if (newId) {
-        seedNewSession(newId, session.directory, session.platform, clearTitle);
-        navigateToSession(newId);
-      }
-      return;
-    }
-
-    if (command === 'tmux') {
-      handleTmuxShortcut();
-      return;
-    }
-
-    if (command === 'vscode') {
-      handleVSCodeShortcut();
-      return;
-    }
-
-    if (command === 'rename') {
-      if (args.trim()) {
-        try {
-          await api.renameSession(session.id, args.trim());
-          setSession(prev => prev ? { ...prev, title: args.trim() } : prev);
-          setShowRenameToast(true);
-        } catch (e) {
-          console.error('Failed to rename session', e);
-        }
-      } else {
-        setRenameTitle(session.title || '');
-        setShowRenameModal(true);
-      }
-      return;
-    }
-
-    // Optimistic user message showing the command
-    const tempId = 'temp-' + Date.now();
-    const optimisticMsg: Message = {
-      id: tempId,
-      sessionId: session.id,
-      timeCreated: Date.now(),
-      data: { role: 'user' },
-    };
-    const displayText = args ? `/${command} ${args}` : `/${command}`;
-    const optimisticParts: Part[] = [{
-      id: 'part-' + tempId,
-      messageId: tempId,
-      sessionId: session.id,
-      data: { type: 'text', text: displayText } as unknown as string,
-    }];
-    setMessages(prev => [...prev, optimisticMsg]);
-    setParts(prev => [...prev, ...optimisticParts]);
-
-    try {
-      await api.executeCommand(
-        session.id,
-        command,
-        args,
-        selectedModel || activeModel || undefined,
-        selectedAgent || activeAgent || undefined,
-      );
-      // SSE events will deliver the command response incrementally.
-    } catch (e) {
-      console.error('Failed to execute command', e);
-      const errId = 'error-' + Date.now();
-      const errMsg: Message = {
-        id: errId,
-        sessionId: session.id,
-        timeCreated: Date.now(),
-        data: { role: 'assistant', finish: 'error' },
-      };
-      const errPart: Part = {
-        id: 'part-' + errId,
-        messageId: errId,
-        sessionId: session.id,
-        data: {
-          type: 'text',
-          text: `**Failed to execute command:** ${e instanceof Error ? e.message : 'Unknown error'}`,
-        } as unknown as string,
-      };
-      setMessages(prev => [...prev, errMsg]);
-      setParts(prev => [...prev, errPart]);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- handleVSCodeShortcut is declared after this callback; it's a stable useCallback and safe to omit.
-  }, [activeAgent, activeModel, archiveSession, createSession, launchOpencodeInTmux, openWorktreeForm, tmux.available, handleCompact, handleNewSession, handleTmuxShortcut, navigate, portAvailable, recentSessions, selectedAgent, selectedModel, seedNewSession, session, setMessages, setParts]);
-
-  // handleShell sends a `!`-prefixed composer submission to the
-  // platform's raw shell endpoint (OpenCode: POST /session/{id}/shell),
-  // bypassing the LLM. The composer has already stripped the leading
-  // `!` and trimmed whitespace; we forward verbatim.
-  //
-  // Agent attribution mirrors handleSend: prefer the user's currently
-  // selected composer agent, fall back to the session's active agent,
-  // and finally to "build" (OpenCode's universal default — its /shell
-  // endpoint requires a non-empty agent). The backend re-applies the
-  // same default when we send blank, but resolving here keeps the
-  // synthesised assistant message attributed to the agent the user
-  // sees highlighted in the composer.
-  // Optimistic rendering is skipped: SSE will deliver the synthesised
-  // assistant message + bash tool output as soon as OpenCode flushes it.
-  const handleShell = useCallback(async (command: string) => {
-    if (!session || !portAvailable) return;
-    if (pendingPermission || pendingQuestion) return;
-    const agent = selectedAgent || activeAgent || 'build';
-    try {
-      await api.runShell(session.id, command, agent);
-    } catch (e) {
-      console.error('Failed to run shell command', e);
-      const errId = 'error-' + Date.now();
-      const errMsg: Message = {
-        id: errId,
-        sessionId: session.id,
-        timeCreated: Date.now(),
-        data: { role: 'assistant', finish: 'error' },
-      };
-      const errPart: Part = {
-        id: 'part-' + errId,
-        messageId: errId,
-        sessionId: session.id,
-        data: {
-          type: 'text',
-          text: `**Failed to run shell command:** ${e instanceof Error ? e.message : 'Unknown error'}`,
-        } as unknown as string,
-      };
-      setMessages(prev => [...prev, errMsg]);
-      setParts(prev => [...prev, errPart]);
-    }
-  }, [activeAgent, pendingPermission, pendingQuestion, portAvailable, selectedAgent, session, setMessages, setParts]);
-
-  const abortSession = useApiStore((state) => state.abortSession);
-
-  const handleAbort = useCallback(async () => {
-    if (!session || !portAvailable || !caps.abort) return;
-    try {
-      await abortSession(session.id);
-      // SSE events will deliver the updated session state incrementally.
-    } catch (e) {
-      console.error('Failed to abort session', e);
-    }
-  }, [abortSession, caps.abort, portAvailable, session]);
-
-  const handleVSCodeShortcut = useCallback(() => {
-    if (!session) return;
-    openVSCode(session.directory);
-  }, [session]);
 
   // Alt+J / Alt+K: navigate between recent sessions. Handlers read from refs
   // so they can capture the latest recentSessions without re-registering.
@@ -1298,7 +827,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
 
   useEffect(() => {
     setAwaitingAssistantResponse(false);
-  }, [id]);
+  }, [id, setAwaitingAssistantResponse]);
 
   // The "awaiting first assistant response" flag is armed when the
   // user submits a prompt and cleared once the turn visibly advances
@@ -1313,7 +842,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     if (session?.status === 'done' || session?.status === 'error') {
       setAwaitingAssistantResponse(false);
     }
-  }, [lastMsg, session?.status]);
+  }, [lastMsg, session?.status, setAwaitingAssistantResponse]);
 
   const isRunning = isSessionRunning(lastMsg, session?.status, awaitingAssistantResponse);
 
@@ -1369,13 +898,13 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // For the currently-viewed session we prefer the SSE-derived
   // `optimisticStatus`, matching the per-row logic above, so the header
   // doesn't lag several seconds behind what the composer is showing.
-  const sidebarProjectGroups = useMemo(() => {
+  const sidebarProjectGroups = useMemo<SidebarProjectGroup[]>(() => {
     // Bucket sessions by *project root*, not raw cwd, so that worktrees
     // of the same repo live under one parent. projectRootForDirectory
     // folds <prefix>/.worktrees/<repo>/<slug> back to <prefix>/<repo>;
     // anything outside that layout passes through unchanged, so
     // unrelated projects keep their own groups.
-    const buckets = new Map<string, Session[]>();
+    const buckets = new Map<string, typeof recentSessions>();
     for (const s of recentSessions) {
       const key = projectRootForDirectory(s.directory || '');
       const existing = buckets.get(key);
@@ -1386,11 +915,11 @@ export function SessionDetail({ id }: SessionDetailProps) {
     // Override the page session's recorded status with our optimistic
     // value so the sidebar dot starts/stops pulsing in lock-step with
     // the assistant's turn boundary, without waiting for the next poll.
-    const effectiveStatus = (s: Session): Session['status'] =>
+    const effectiveStatus = (s: typeof recentSessions[0]): typeof s.status =>
       s.id === id ? optimisticStatus : s.status;
-    const rollup = (sessions: Session[]) => rollupGroupStatus(sessions, effectiveStatus);
+    const rollup = (sessions: typeof recentSessions) => rollupGroupStatus(sessions, effectiveStatus);
 
-    const groups: { directory: string; sessions: Session[]; lastUpdated: number; aggregate: ReturnType<typeof rollup>; isPinned?: boolean }[] = Array.from(buckets.entries()).map(([directory, sessions]) => {
+    const groups: SidebarProjectGroup[] = Array.from(buckets.entries()).map(([directory, sessions]) => {
       const sorted = [...sessions].sort((a, b) => b.timeUpdated - a.timeUpdated);
       return {
         directory,
@@ -1418,561 +947,248 @@ export function SessionDetail({ id }: SessionDetailProps) {
     return groups;
   }, [recentSessions, id, optimisticStatus]);
 
-  // Keep the active session's sidebar row visible. The list doesn't reorder
-  // to follow the cursor, so when the user switches sessions (or flips
-  // views) the active row may be off-screen in a long list. We scroll it
-  // into view with `nearest` block alignment so we don't yank the viewport
-  // unless it's actually necessary. Skipped while the recent-sessions poll
-  // is mid-flight for the initial load — the DOM may not yet contain a row
-  // for `id`.
-  const sidebarListRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!id) return;
-    const container = sidebarListRef.current;
-    if (!container) return;
-    // Run on the next frame so any just-expanded group has finished laying
-    // out before we measure offsets.
-    const raf = requestAnimationFrame(() => {
-      const active = container.querySelector('[aria-selected="true"]') as HTMLElement | null;
-      if (!active) return;
-      const cTop = container.scrollTop;
-      const cBot = cTop + container.clientHeight;
-      const aTop = active.offsetTop;
-      const aBot = aTop + active.offsetHeight;
-      if (aTop < cTop || aBot > cBot) {
-        active.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      }
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [id, sidebarView, recentSessions]);
-
   return (
     <Toast.Provider swipeDirection="right">
       <div className="session-layout" data-testid="session-layout">
-        <div className="session-sidebar" data-testid="session-sidebar" style={{ width: sidebarWidth }}>
-        <SidebarResizer />
-        <div className="session-sidebar-header">
-          <span className="session-sidebar-heading" data-testid="sidebar-heading">
-            <span>{sidebarView === 'projects' ? 'Projects' : 'Recent sessions'}</span>
-          </span>
-          <div className="session-sidebar-header-actions">
-            <button
-              type="button"
-              className={`session-sidebar-new${sidebarView === 'projects' ? ' active' : ''}`}
-              onClick={toggleSidebarView}
-              title={sidebarView === 'projects' ? 'Show recent sessions' : 'Group by project'}
-              aria-label={sidebarView === 'projects' ? 'Show recent sessions' : 'Group by project'}
-            >{sidebarView === 'projects' ? <RecentViewIcon /> : <ProjectsViewIcon />}</button>
-            <button
-              type="button"
-              className={`session-sidebar-new${showArchivedRecent ? ' active' : ''}`}
-              onClick={() => {
-                setShowArchivedRecent(current => !current);
-              }}
-              title={showArchivedRecent ? 'Hide archived sessions' : 'Include archived sessions'}
-              aria-label={showArchivedRecent ? 'Hide archived sessions' : 'Include archived sessions'}
-            ><ArchiveFilterIcon /></button>
-          </div>
-        </div>
-        {pendingTmuxSession && pickerPos && (
-          <div
-            ref={pickerRef}
-            className="tmux-client-popover"
-            style={{ top: pickerPos.top, left: pickerPos.left }}
-          >
-            <div className="tmux-client-picker-header">
-              <span>Select tmux client</span>
-            </div>
-            {tmux.clients.map(c => (
-              <div
-                key={c.tty}
-                className="tmux-client-picker-item"
-                onClick={() => handleClientSelect(c.tty)}
-              >
-                <span className="tmux-client-tty">{c.tty}</span>
-                <span className="tmux-client-session">{shortPath(c.session)}</span>
-                <span className="tmux-client-size">{c.width}&times;{c.height}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="session-sidebar-list" ref={sidebarListRef}>
-          {loadingRecentSessions && <SessionSidebarListSkeleton rows={5} />}
-          {(() => {
-            // Shared row renderer — used by both the flat and grouped views so
-            // all live-status / archive / navigation behaviour stays identical.
-            // For the currently-viewed session we trust the SSE-derived status
-            // over the last poll (OpenCode's DB can lag SSE by several seconds;
-            // using the poll value here would leave the sidebar pulse running
-            // after the composer has already gone idle).
-            const renderRow = (sib: Session, inGroup: boolean) => {
-              const displayStatus = sib.id === id ? optimisticStatus : sib.status;
-              // When a row sits inside a project group, surface the
-              // worktree distinction (if any) next to the platform
-              // badge so siblings stay distinguishable. The group
-              // header already shows the project root; we only add a
-              // hint when the session's actual cwd diverges from it
-              // (i.e. it's a worktree, not the main checkout).
-              const projectRoot = projectRootForDirectory(sib.directory || '');
-              const worktreeHint = inGroup && sib.directory && sib.directory !== projectRoot
-                ? sib.directory.slice(projectRoot.length).replace(/^\/+/, '')
-                : '';
-              return (
-                <div
-                  key={sib.id}
-                  role="button"
-                  tabIndex={0}
-                  aria-selected={sib.id === id}
-                  className={`session-sidebar-item ${sib.id === id ? 'active' : ''}${archivingSessionIds.has(sib.id) ? ' archiving' : ''}${inGroup ? ' in-group' : ''}`}
-                  onClick={() => {
-                    if (debugMode) {
-                      remoteLog.info('[ocman:nav] sidebar click', {
-                        from: id,
-                        to: sib.id,
-                        at: performance.now(),
-                      });
-                    }
-                    navigateToSession(sib.id);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      if (debugMode) {
-                        remoteLog.info('[ocman:nav] sidebar key', {
-                          from: id,
-                          to: sib.id,
-                          at: performance.now(),
-                        });
-                      }
-                      navigateToSession(sib.id);
-                    }
-                  }}
-                >
-                  <StatusBadge
-                    status={displayStatus}
-                    compact
-                    seen={(displayStatus === 'waiting' || displayStatus === 'error' || displayStatus === 'done') && sib.seen}
-                    pending={sib.pendingPermission || sib.pendingQuestion}
-                    titleOverride={sib.notice?.message}
-                  />
-                  <span className="session-sidebar-item-body">
-                    <span className="session-sidebar-title">{cleanTitle(sib.title) || 'Untitled'}</span>
-                    {!inGroup && (
-                      <span className="session-sidebar-project">
-                        <PlatformBadge platform={sib.platform} variant="plain" />
-                        <span className="session-sidebar-project-path">
-                          <ShortPath path={sib.directory} />
-                        </span>
-                      </span>
-                    )}
-                    {inGroup && (
-                      <span className="session-sidebar-project">
-                        <PlatformBadge platform={sib.platform} variant="plain" />
-                        {worktreeHint && (
-                          <span
-                            className="session-sidebar-project-path"
-                            title={sib.directory}
-                          >
-                            {worktreeHint}
-                          </span>
-                        )}
-                      </span>
-                    )}
-                    <GitStatusLine info={siblingGitInfos[sib.directory]} />
-                  </span>
-                  <span className="session-sidebar-meta">
-                    <span className="session-sidebar-time" title={new Date(sib.timeUpdated).toLocaleString()}>{relativeTime(sib.timeUpdated)}</span>
-                    <span className="session-sidebar-actions">
-                      <button
-                        type="button"
-                        className={`session-pin-btn session-sidebar-pin-btn${sib.pinned ? ' pinned' : ''}`}
-                        onClick={(e) => handlePinSession(e, sib)}
-                        title={sib.pinned ? 'Unpin session' : 'Pin session'}
-                        aria-label={sib.pinned ? 'Unpin session' : 'Pin session'}
-                      >
-                        <i className={`bi ${sib.pinned ? 'bi-pin-fill' : 'bi-pin'}`} aria-hidden="true" />
-                      </button>
-                      <button
-                        type="button"
-                        className="session-archive-btn session-sidebar-archive-btn"
-                        onClick={(e) => handleArchiveSession(e, sib)}
-                        title="Archive session"
-                        aria-label="Archive session"
-                        disabled={archivingSessionIds.has(sib.id)}
-                      >
-                        <ArchiveIcon />
-                      </button>
-                    </span>
-                  </span>
-                </div>
-              );
-            };
-
-            if (sidebarView === 'projects') {
-              return sidebarProjectGroups.map(group => {
-                // The "Pinned" group is always expanded and has a
-                // distinct header (pin icon, no collapse, no "+").
-                if (group.isPinned) {
-                  const agg = group.aggregate;
-                  const dotStatus =
-                    agg.kind === 'error' ? 'error'
-                      : agg.kind === 'busy' ? 'busy'
-                        : agg.kind === 'waiting' ? 'waiting'
-                          : 'done';
-                  const dotPending = agg.kind === 'pending';
-                  const dotSeen = agg.kind === 'none';
-                  return (
-                    <div key="__pinned__" className="session-sidebar-group session-sidebar-group-pinned">
-                      <div className="session-sidebar-group-header-row">
-                        <div className="session-sidebar-group-header" title="Pinned sessions">
-                          <span className="session-sidebar-group-status">
-                            <StatusBadge status={dotStatus} compact pending={dotPending} seen={dotSeen} />
-                          </span>
-                          <i className="bi bi-pin-fill session-sidebar-pinned-icon" aria-hidden="true" />
-                          <span className="session-sidebar-group-label">Pinned</span>
-                          <span className="session-sidebar-group-count">{group.sessions.length}</span>
-                        </div>
-                      </div>
-                      {group.sessions.map(sib => renderRow(sib, false))}
-                    </div>
-                  );
-                }
-
-                const collapsed = collapsedProjectSet.has(group.directory);
-                const label = group.directory ? shortPath(group.directory) : '(unknown)';
-                // Replace the chevron with a compact status dot that
-                // surfaces the rolled-up aggregate: the same visual
-                // vocabulary as per-session rows (pending "!", error "!",
-                // busy pulse, idle neutral), so a collapsed header tells
-                // you at a glance which project needs attention. The
-                // header still toggles on click — collapse state is
-                // conveyed by the `aria-expanded` attribute (and a
-                // subtle CSS indent) rather than a chevron.
-                const agg = group.aggregate;
-                const dotStatus =
-                  agg.kind === 'error' ? 'error'
-                    : agg.kind === 'busy' ? 'busy'
-                      : agg.kind === 'waiting' ? 'waiting'
-                        : 'done';
-                const dotPending = agg.kind === 'pending';
-                const dotSeen = agg.kind === 'none';
-                const aggTitle =
-                  agg.kind === 'pending'
-                    ? `${agg.count} session${agg.count === 1 ? '' : 's'} waiting for your response`
-                    : agg.kind === 'error'
-                      ? `${agg.count} session${agg.count === 1 ? '' : 's'} with unseen errors`
-                      : agg.kind === 'busy'
-                        ? `${agg.count} running`
-                        : agg.kind === 'waiting'
-                          ? `${agg.count} unread`
-                          : `${group.sessions.length} session${group.sessions.length === 1 ? '' : 's'}`;
-                return (
-                  <div key={group.directory || '__empty__'} className="session-sidebar-group">
-                    <div className="session-sidebar-group-header-row">
-                      <button
-                        type="button"
-                        className={`session-sidebar-group-header${collapsed ? ' collapsed' : ''}`}
-                        aria-expanded={!collapsed}
-                        title={group.directory || 'Unknown project'}
-                        onClick={() => toggleCollapsedProject(group.directory)}
-                      >
-                        <span className="session-sidebar-group-status" title={aggTitle}>
-                          <StatusBadge status={dotStatus} compact pending={dotPending} seen={dotSeen} />
-                        </span>
-                        <span className="session-sidebar-group-label">{label}</span>
-                        <span className="session-sidebar-group-count" title={aggTitle}>{group.sessions.length}</span>
-                      </button>
-                      {group.directory && (
-                        <button
-                          type="button"
-                          className="session-sidebar-group-new"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void handleNewSessionInDirectory(group.directory);
-                          }}
-                          title={`New session in ${label}`}
-                          aria-label={`New session in ${label}`}
-                        >+</button>
-                      )}
-                    </div>
-                    {!collapsed && group.sessions.map(sib => renderRow(sib, true))}
-                  </div>
-                );
-              });
-            }
-
-            // Flat view: pinned sessions at the top, then the rest.
-            // Pinned sessions are deduplicated (shown only in the
-            // pinned section, not repeated in the chronological list).
-            const pinnedFlat = recentSessions
-              .filter(s => s.pinned)
-              .sort((a, b) => b.pinnedAt - a.pinnedAt);
-            const unpinnedFlat = recentSessions.filter(s => !s.pinned);
-            return (
-              <>
-                {pinnedFlat.map(sib => renderRow(sib, false))}
-                {pinnedFlat.length > 0 && unpinnedFlat.length > 0 && (
-                  <div className="session-sidebar-divider" />
-                )}
-                {unpinnedFlat.map(sib => renderRow(sib, false))}
-              </>
-            );
-          })()}
-        </div>
-        <BackendStats />
-      </div>
-      <div className="session-main">
-        {session && (
-          <div className="session-detail-actions">
-            {tmux.available && matchingTmuxSession && (
-              <button
-                className="session-sidebar-new"
-                onClick={(e) => handleTmuxSwitch(e, matchingTmuxSession.name)}
-                title={`Switch tmux to ${shortPath(matchingTmuxSession.name)} (T)`}
-                style={{ fontSize: 11, fontFamily: "'SF Mono', Consolas, monospace" }}
-              >tmux</button>
-            )}
-            {tmux.available && !portAvailable && caps.liveConnectionHint && (
+        <SessionSidebar
+          activeId={id}
+          sidebarWidth={sidebarWidth}
+          sidebarView={sidebarView}
+          toggleSidebarView={toggleSidebarView}
+          showArchivedRecent={showArchivedRecent}
+          setShowArchivedRecent={setShowArchivedRecent}
+          loadingRecentSessions={loadingRecentSessions}
+          recentSessions={recentSessions}
+          sidebarProjectGroups={sidebarProjectGroups}
+          archivingSessionIds={archivingSessionIds}
+          collapsedProjectSet={collapsedProjectSet}
+          toggleCollapsedProject={toggleCollapsedProject}
+          siblingGitInfos={siblingGitInfos}
+          optimisticStatus={optimisticStatus}
+          debugMode={debugMode}
+          pendingTmuxSession={pendingTmuxSession}
+          pickerPos={pickerPos}
+          pickerRef={pickerRef}
+          tmux={tmux}
+          onNavigateToSession={navigateToSession}
+          onArchiveSession={handleArchiveSession}
+          onPinSession={handlePinSession}
+          onClientSelect={handleClientSelect}
+          onNewSessionInDirectory={handleNewSessionInDirectory}
+        />
+        <div className="session-main">
+          {session && (
+            <div className="session-detail-actions">
+              {tmux.available && matchingTmuxSession && (
+                <button
+                  className="session-sidebar-new"
+                  onClick={(e) => handleTmuxSwitch(e, matchingTmuxSession.name)}
+                  title={`Switch tmux to ${shortPath(matchingTmuxSession.name)} (T)`}
+                  style={{ fontSize: 11, fontFamily: "'SF Mono', Consolas, monospace" }}
+                >tmux</button>
+              )}
+              {tmux.available && !portAvailable && caps.liveConnectionHint && (
+                <button
+                  type="button"
+                  className="session-sidebar-new"
+                  onClick={() => { void handleLaunchOpencode(); }}
+                  disabled={launchingOpencode}
+                  title="Launch opencode --port 0 in a new tmux window"
+                  style={{ fontSize: 11, fontFamily: "'SF Mono', Consolas, monospace" }}
+                >{launchingOpencode ? '…' : 'launch'}</button>
+              )}
               <button
                 type="button"
                 className="session-sidebar-new"
-                onClick={() => { void handleLaunchOpencode(); }}
-                disabled={launchingOpencode}
-                title="Launch opencode --port 0 in a new tmux window"
-                style={{ fontSize: 11, fontFamily: "'SF Mono', Consolas, monospace" }}
-              >{launchingOpencode ? '…' : 'launch'}</button>
-            )}
-            <button
-              type="button"
-              className="session-sidebar-new"
-              onClick={handleVSCodeShortcut}
-              title="Open in VS Code (V)"
-              aria-label="Open in VS Code"
-              style={{ textDecoration: 'none', fontSize: 11 }}
-            >&lt;/&gt;</button>
-            <button
-              className="session-sidebar-new"
-              onClick={() => { void handleNewSession(); }}
-              title="New session"
-              aria-label="New session"
-            >+</button>
-          </div>
-        )}
-        {switching ? (
-          // Blank paint frame between sessions — lets the fade-in animation
-          // play against an empty viewport so navigation reads clearly.
-          <div style={{ flex: 1, minHeight: 0 }} />
-        ) : loading ? (
-          <div className="oc-loading" data-testid="loading-spinner">
-            <div className="oc-spinner" />
-            Loading conversation...
-          </div>
-        ) : loadError ? (
-          <div className="oc-error-banner" data-testid="error-banner" style={{ margin: 24 }}>
-            {loadError}
-            <button onClick={() => { setLoadError(null); load(abortControllerRef.current?.signal); }}>Retry</button>
-          </div>
-        ) : session && (
-          <OcmanRuntimeProvider
-            key={session.id}
-            messages={messages}
-            parts={parts}
-            sessionId={session.id}
-            canSend={portAvailable && caps.composer}
-            pendingAgent={selectedAgent || activeAgent || undefined}
-            agents={agents}
-            taskLiveOutput={taskLiveOutput}
-            projectDirectory={session.directory}
-            failedSends={failedSends}
-            onRetryFailedSend={handleRetrySend}
-            onDismissFailedSend={handleDismissFailedSend}
-          >
-            {/* AssistantThread is the most crash-prone region in the
-                page — it renders user-supplied markdown, code blocks via
-                highlight.js, and tool-call parts that arrive in real
-                time over SSE. Isolate it so a malformed message doesn't
-                blank the rest of the page (header, sidebars, recent
-                sessions list). resetKey on session.id clears any stale
-                crash when the user navigates to another session. */}
-            <ErrorBoundary
-              name="session:thread"
-              resetKey={`${session.id}:${threadBoundaryResetNonce}`}
-              fallbackRender={renderThreadBoundaryFallback}
+                onClick={handleVSCodeShortcut}
+                title="Open in VS Code (V)"
+                aria-label="Open in VS Code"
+                style={{ textDecoration: 'none', fontSize: 11 }}
+              >&lt;/&gt;</button>
+              <button
+                className="session-sidebar-new"
+                onClick={() => { void handleNewSession(); }}
+                title="New session"
+                aria-label="New session"
+              >+</button>
+            </div>
+          )}
+          {switching ? (
+            // Blank paint frame between sessions — lets the fade-in animation
+            // play against an empty viewport so navigation reads clearly.
+            <div style={{ flex: 1, minHeight: 0 }} />
+          ) : loading ? (
+            <div className="oc-loading" data-testid="loading-spinner">
+              <div className="oc-spinner" />
+              Loading conversation...
+            </div>
+          ) : loadError ? (
+            <div className="oc-error-banner" data-testid="error-banner" style={{ margin: 24 }}>
+              {loadError}
+              <button onClick={() => { setLoadError(null); load(abortControllerRef.current?.signal); }}>Retry</button>
+            </div>
+          ) : session && (
+            <OcmanRuntimeProvider
+              key={session.id}
+              messages={messages}
+              parts={parts}
+              sessionId={session.id}
+              canSend={portAvailable && caps.composer}
+              pendingAgent={selectedAgent || activeAgent || undefined}
+              agents={agents}
+              taskLiveOutput={taskLiveOutput}
+              projectDirectory={session.directory}
+              failedSends={failedSends}
+              onRetryFailedSend={handleRetrySend}
+              onDismissFailedSend={handleDismissFailedSend}
             >
-            <AssistantThread
-              hasMore={hasMore}
-              loadingMore={loadingMore}
-              onLoadMore={loadMore}
-              composer={(
-                /* Composer/prompt slot has its own boundary so a crash
-                   in one of these doesn't take the message thread down
-                   with it (and vice versa). */
-                <ErrorBoundary name="session:composer" inline resetKey={session.id}>
-                  {session.notice?.kind === 'rate_limit' && (
-                    <RateLimitBanner notice={session.notice} />
-                  )}
-                  {pendingPermission && portAvailable && caps.respondPermission ? (
-                <PermissionPrompt
-                  permission={pendingPermission}
-                  onReply={handlePermissionReply}
-                  disabled={answeringPermission}
-                  error={permissionError}
-                />
-              ) : pendingQuestion && portAvailable && caps.respondQuestion ? (
-                <QuestionPrompt
-                  question={pendingQuestion}
-                  onReply={handleQuestionReply}
-                  onReject={handleQuestionReject}
-                  disabled={answeringQuestion}
-                  error={questionError}
-                />
-              ) : caps.composer ? (
-                <Composer
-                  onSend={handleSend}
-                  onCommand={handleCommand}
-                  onShell={handleShell}
-                  shellExec={caps.shellExec}
-                  onAbort={handleAbort}
-                  isRunning={isRunning}
-                  // Disable while a permission/question prompt is pending so
-                  // Enter doesn't submit the draft as a new message. Normally
-                  // the prompt replaces the composer in this slot entirely,
-                  // but when the platform lacks respondPermission/Question
-                  // capability or portAvailable is false the composer still
-                  // renders — freezing input there is the cleanest guard.
-                  disabled={!portAvailable || hasPendingPrompt}
-                  disabledHint={hasPendingPrompt
-                    ? 'Respond to the pending prompt above before sending a new message.'
-                    : caps.liveConnectionHint}
-                  whisperAvailable={whisperAvailable}
-                  models={composerModels}
-                  modelEntries={modelEntries}
-                  activeModel={activeModel}
-                  selectedModel={selectedModel}
-                  onModelChange={handleModelChange}
-                  onToggleFavorite={handleToggleFavorite}
-                  onRefreshModels={refreshModels}
-                  activeAgent={activeAgent}
-                  selectedAgent={selectedAgent}
-                  onAgentChange={setSelectedAgent}
-                  agents={agents}
-                  agentsLoaded={agentsLoaded}
-                  contextTokens={session?.contextTokenCount || undefined}
-                  sessionId={session?.id}
-                  tokensPerSecond={liveTokensPerSecond ?? undefined}
-                  tokenStats={tokenStats}
-                  selectedReasoning={selectedReasoning}
-                  onReasoningChange={setSelectedReasoning}
-                  onLaunchRequest={launchHintActive ? handleLaunchHintClick : undefined}
-                />
-              ) : null}
-                </ErrorBoundary>
-              )}
-              footer={showSseNotice || showSseDebug ? (
-                <>
-                  {showSseNotice && (
-                    <SseStatusIndicator
-                      active={sseActive}
-                      reconnecting={sseReconnecting}
-                      attempt={sseReconnectAttempt}
-                      nextRetryAt={sseNextRetryAt}
-                      onRetryNow={sseRetryNow}
-                    />
-                  )}
-                  {showSseDebug && (
-                    <details className="oc-sse-debug">
-                      <summary>SSE debug ({sseDebugEvents.length})</summary>
-                      <div className="oc-sse-debug-list">
-                        {[...sseDebugEvents].reverse().map((evt, idx) => (
-                          <div key={evt.at + ':' + idx} className="oc-sse-debug-item">
-                            <span className="oc-sse-debug-meta">{new Date(evt.at).toLocaleTimeString()} [{evt.event}]</span>
-                            <pre className="oc-sse-debug-data">{evt.data}</pre>
-                          </div>
-                        ))}
-                      </div>
-                    </details>
-                  )}
-                </>
-              ) : undefined}
-            />
-            </ErrorBoundary>
-            {showRenameModal && (
-              <div className="oc-rename-backdrop" onClick={() => setShowRenameModal(false)}>
-                <div className="oc-rename-dialog" onClick={e => e.stopPropagation()}>
-                  <h3>Rename Session</h3>
-                  <input
-                    className="oc-rename-input"
-                    type="text"
-                    value={renameTitle}
-                    onChange={e => setRenameTitle(e.target.value)}
-                    placeholder="Session title"
-                    autoFocus
-                    onFocus={e => e.target.select()}
-                    onKeyDown={async e => {
-                      if (e.key === 'Enter' && session) {
-                        try {
-                          await api.renameSession(session.id, renameTitle.trim());
-                          setSession(prev => prev ? { ...prev, title: renameTitle.trim() } : prev);
-                          setShowRenameModal(false);
-                          setShowRenameToast(true);
-                        } catch (err) {
-                          console.error('Failed to rename session', err);
-                        }
-                      }
-                      if (e.key === 'Escape') setShowRenameModal(false);
-                    }}
+              {/* AssistantThread is the most crash-prone region in the
+                  page — it renders user-supplied markdown, code blocks via
+                  highlight.js, and tool-call parts that arrive in real
+                  time over SSE. Isolate it so a malformed message doesn't
+                  blank the rest of the page (header, sidebars, recent
+                  sessions list). resetKey on session.id clears any stale
+                  crash when the user navigates to another session. */}
+              <ErrorBoundary
+                name="session:thread"
+                resetKey={`${session.id}:${threadBoundaryResetNonce}`}
+                fallbackRender={renderThreadBoundaryFallback}
+              >
+              <AssistantThread
+                hasMore={hasMore}
+                loadingMore={loadingMore}
+                onLoadMore={loadMore}
+                composer={(
+                  /* Composer/prompt slot has its own boundary so a crash
+                     in one of these doesn't take the message thread down
+                     with it (and vice versa). */
+                  <ErrorBoundary name="session:composer" inline resetKey={session.id}>
+                    {session.notice?.kind === 'rate_limit' && (
+                      <RateLimitBanner notice={session.notice} />
+                    )}
+                    {pendingPermission && portAvailable && caps.respondPermission ? (
+                  <PermissionPrompt
+                    permission={pendingPermission}
+                    onReply={handlePermissionReply}
+                    disabled={answeringPermission}
+                    error={permissionError}
                   />
-                  <div className="oc-rename-actions">
-                    <button
-                      className="oc-rename-btn oc-rename-btn-submit"
-                      onClick={async () => {
-                        if (!session) return;
-                        try {
-                          await api.renameSession(session.id, renameTitle.trim());
-                          setSession(prev => prev ? { ...prev, title: renameTitle.trim() } : prev);
-                          setShowRenameModal(false);
-                          setShowRenameToast(true);
-                        } catch (err) {
-                          console.error('Failed to rename session', err);
-                        }
-                      }}
-                    >
-                      Rename
-                    </button>
-                    <button className="oc-rename-btn oc-rename-btn-cancel" onClick={() => setShowRenameModal(false)}>
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </OcmanRuntimeProvider>
+                ) : pendingQuestion && portAvailable && caps.respondQuestion ? (
+                  <QuestionPrompt
+                    question={pendingQuestion}
+                    onReply={handleQuestionReply}
+                    onReject={handleQuestionReject}
+                    disabled={answeringQuestion}
+                    error={questionError}
+                  />
+                ) : caps.composer ? (
+                  <Composer
+                    onSend={handleSend}
+                    onCommand={handleCommand}
+                    onShell={handleShell}
+                    shellExec={caps.shellExec}
+                    onAbort={handleAbort}
+                    isRunning={isRunning}
+                    // Disable while a permission/question prompt is pending so
+                    // Enter doesn't submit the draft as a new message. Normally
+                    // the prompt replaces the composer in this slot entirely,
+                    // but when the platform lacks respondPermission/Question
+                    // capability or portAvailable is false the composer still
+                    // renders — freezing input there is the cleanest guard.
+                    disabled={!portAvailable || hasPendingPrompt}
+                    disabledHint={hasPendingPrompt
+                      ? 'Respond to the pending prompt above before sending a new message.'
+                      : caps.liveConnectionHint}
+                    whisperAvailable={whisperAvailable}
+                    models={composerModels}
+                    modelEntries={modelEntries}
+                    activeModel={activeModel}
+                    selectedModel={selectedModel}
+                    onModelChange={handleModelChange}
+                    onToggleFavorite={handleToggleFavorite}
+                    onRefreshModels={refreshModels}
+                    activeAgent={activeAgent}
+                    selectedAgent={selectedAgent}
+                    onAgentChange={setSelectedAgent}
+                    agents={agents}
+                    agentsLoaded={agentsLoaded}
+                    contextTokens={session?.contextTokenCount || undefined}
+                    sessionId={session?.id}
+                    tokensPerSecond={liveTokensPerSecond ?? undefined}
+                    tokenStats={tokenStats}
+                    selectedReasoning={selectedReasoning}
+                    onReasoningChange={setSelectedReasoning}
+                    onLaunchRequest={launchHintActive ? handleLaunchHintClick : undefined}
+                  />
+                ) : null}
+                  </ErrorBoundary>
+                )}
+                footer={showSseNotice || showSseDebug ? (
+                  <>
+                    {showSseNotice && (
+                      <SseStatusIndicator
+                        active={sseActive}
+                        reconnecting={sseReconnecting}
+                        attempt={sseReconnectAttempt}
+                        nextRetryAt={sseNextRetryAt}
+                        onRetryNow={sseRetryNow}
+                      />
+                    )}
+                    {showSseDebug && (
+                      <details className="oc-sse-debug">
+                        <summary>SSE debug ({sseDebugEvents.length})</summary>
+                        <div className="oc-sse-debug-list">
+                          {[...sseDebugEvents].reverse().map((evt, idx) => (
+                            <div key={evt.at + ':' + idx} className="oc-sse-debug-item">
+                              <span className="oc-sse-debug-meta">{new Date(evt.at).toLocaleTimeString()} [{evt.event}]</span>
+                              <pre className="oc-sse-debug-data">{evt.data}</pre>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                  </>
+                ) : undefined}
+              />
+              </ErrorBoundary>
+              {showRenameModal && session && (
+                <RenameModal
+                  sessionId={session.id}
+                  initialTitle={session.title || ''}
+                  onClose={() => setShowRenameModal(false)}
+                  onRenamed={(newTitle) => {
+                    setSession(prev => prev ? { ...prev, title: newTitle } : prev);
+                    setShowRenameToast(true);
+                  }}
+                />
+              )}
+            </OcmanRuntimeProvider>
+          )}
+        </div>
+        {id && (
+          <RightPanel
+            sessionId={id}
+            platformId={session?.platform}
+            directory={session?.directory}
+            dirtyTick={changesDirtyTick}
+            session={session ?? undefined}
+          />
         )}
-      </div>
-      {id && (
-        <RightPanel
-          sessionId={id}
-          platformId={session?.platform}
-          directory={session?.directory}
-          dirtyTick={changesDirtyTick}
-          session={session ?? undefined}
+        <SessionToasts
+          showRenameToast={showRenameToast}
+          setShowRenameToast={setShowRenameToast}
+          createLaunchStatus={createLaunchStatus}
+          showCreateSessionErrorToast={showCreateSessionErrorToast}
+          setShowCreateSessionErrorToast={setShowCreateSessionErrorToast}
+          showDisconnectedToast={showDisconnectedToast}
+          setShowDisconnectedToast={setShowDisconnectedToast}
+          tmuxAvailable={tmux.available}
+          liveConnectionHint={!!caps.liveConnectionHint}
+          hasDirectory={!!session?.directory}
+          launchingOpencode={launchingOpencode}
+          onLaunch={handleLaunchOpencode}
         />
-      )}
-      <SessionToasts
-        showRenameToast={showRenameToast}
-        setShowRenameToast={setShowRenameToast}
-        createLaunchStatus={createLaunchStatus}
-        showCreateSessionErrorToast={showCreateSessionErrorToast}
-        setShowCreateSessionErrorToast={setShowCreateSessionErrorToast}
-        showDisconnectedToast={showDisconnectedToast}
-        setShowDisconnectedToast={setShowDisconnectedToast}
-        tmuxAvailable={tmux.available}
-        liveConnectionHint={!!caps.liveConnectionHint}
-        hasDirectory={!!session?.directory}
-        launchingOpencode={launchingOpencode}
-        onLaunch={handleLaunchOpencode}
-      />
-    </div>
+      </div>
     </Toast.Provider>
   );
 }
