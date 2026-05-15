@@ -413,14 +413,17 @@ function TurnSummaryBar({ messageId }: { messageId: string }) {
 
   return (
     <div className="oc-turn-stats">
-      <span className="oc-turn-dot" style={agent ? { background: agentColor } : undefined} />
+      <span
+        className={`oc-turn-dot${isLive ? ' oc-turn-dot--live' : ''}`}
+        style={agent ? { background: agentColor } : undefined}
+        title={isLive ? 'Turn in progress' : undefined}
+      />
       {items.map((item, i) => (
         <React.Fragment key={i}>
           {item}
           {i < items.length - 1 && <span className="oc-turn-sep">·</span>}
         </React.Fragment>
       ))}
-      {isLive && <span className="oc-turn-live" title="Turn in progress" />}
     </div>
   );
 }

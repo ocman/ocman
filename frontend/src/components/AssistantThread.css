@@ -216,14 +216,9 @@
 .oc-turn-sep {
   color: var(--surface2);
 }
-/* Pulsing dot shown while the turn is still in progress */
-.oc-turn-live {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent3);
-  margin-left: 4px;
+/* Square dot blinks while the turn is in progress */
+.oc-turn-dot--live {
+  background: var(--accent3) !important;
   animation: oc-turn-pulse 1.4s ease-in-out infinite;
 }
 @keyframes oc-turn-pulse {
