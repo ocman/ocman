@@ -15,12 +15,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 25
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
+      # Forgejo Actions can't fetch pnpm/action-setup from GitHub, and
+      # Node 25 no longer ships Corepack. Install pnpm directly to
+      # match the version pinned via packageManager / mise.toml.
+      - name: Install pnpm
+        run: npm install -g pnpm@10.11.1
       - name: Install dependencies
         working-directory: frontend
         run: pnpm install --frozen-lockfile
@@ -52,12 +54,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 25
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install pnpm
+        run: npm install -g pnpm@10.11.1
       - name: Install dependencies
         working-directory: frontend
         run: pnpm install --frozen-lockfile
@@ -84,12 +85,11 @@ jobs:
     needs: [frontend, backend]
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 25
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install pnpm
+        run: npm install -g pnpm@10.11.1
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod

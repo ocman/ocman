@@ -14,12 +14,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 25
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install pnpm
+        run: npm install -g pnpm@10.11.1
       - run: make build-frontend
       - uses: actions/upload-artifact@v3
         with:
