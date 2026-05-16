@@ -4,6 +4,7 @@ tmp/
 dist/
 build/appicon.png
 build/bin/
+frontend/src/wailsjs/
 internal/server/static/*
 !internal/server/static/robots.txt
 *.log
