@@ -251,6 +251,33 @@
   direction: rtl;
   text-align: left;
 }
+/*
+ * Worktree slug chip shown inside a project group when a session's
+ * cwd diverges from the group's root. A small diagram icon plus the
+ * worktree slug (== branch name supplied to /wt). Left-to-right
+ * ellipsis: the slug's prefix is the meaningful part, so trim from
+ * the right if it overflows.
+ */
+.session-sidebar-worktree {
+  min-width: 0;
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+}
+.session-sidebar-worktree-icon {
+  flex-shrink: 0;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--overlay1, var(--text-dim));
+}
+.session-sidebar-worktree-slug {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .session-sidebar-meta {
   display: flex;
   flex-direction: column;

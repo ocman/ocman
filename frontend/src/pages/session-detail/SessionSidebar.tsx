@@ -122,10 +122,19 @@ export function SessionSidebar({
     // badge so siblings stay distinguishable. The group
     // header already shows the project root; we only add a
     // hint when the session's actual cwd diverges from it
-    // (i.e. it's a worktree, not the main checkout).
+    // (i.e. it's a worktree, not the main checkout). For
+    // those, the worktree slug — the final path segment of
+    // <repo-parent>/.worktrees/<repo>/<slug> — is what the
+    // user typed as the branch name in /wt, so we show that
+    // alone with a small worktree icon. (Earlier versions
+    // tried to slice the cwd by the project-root length,
+    // but projectRoot isn't a prefix of cwd for worktrees,
+    // so the result was a meaningless `.worktrees/<repo>/…`
+    // string that got RTL-ellipsised into "trees/<repo>/…".)
     const projectRoot = projectRootForDirectory(sib.directory || '');
-    const worktreeHint = inGroup && sib.directory && sib.directory !== projectRoot
-      ? sib.directory.slice(projectRoot.length).replace(/^\/+/, '')
+    const isWorktree = inGroup && !!sib.directory && sib.directory !== projectRoot;
+    const worktreeSlug = isWorktree
+      ? (sib.directory.replace(/\/+$/, '').split('/').filter(Boolean).pop() || '')
       : '';
     return (
       <div
@@ -178,12 +187,16 @@ export function SessionSidebar({
           {inGroup && (
             <span className="session-sidebar-project">
               <PlatformBadge platform={sib.platform} variant="plain" />
-              {worktreeHint && (
+              {isWorktree && (
                 <span
-                  className="session-sidebar-project-path"
+                  className="session-sidebar-worktree"
                   title={sib.directory}
                 >
-                  {worktreeHint}
+                  <i
+                    className="bi bi-diagram-2 session-sidebar-worktree-icon"
+                    aria-hidden="true"
+                  />
+                  <span className="session-sidebar-worktree-slug">{worktreeSlug}</span>
                 </span>
               )}
             </span>
