@@ -49,7 +49,7 @@ jobs:
   build-desktop-mac:
     name: Build Desktop (macOS)
     needs: build-frontend-wails
-    runs-on: macos-latest
+    runs-on: [self-hosted, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
