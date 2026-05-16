@@ -1,6 +1,17 @@
 /**
- * useComposerAudio — recording start/stop, ScriptProcessorNode wiring,
- * WAV encoding, transcription call, micError state and inline error display.
+ * useComposerAudio — recording start/stop, transcription, and dictation state.
+ *
+ * Two recording paths, tried in order:
+ *
+ *  1. Web Speech API (SpeechRecognition / webkitSpeechRecognition)
+ *     Natively supported in Safari/iOS/iPad and Chrome. Provides streaming
+ *     interim results so text appears while the user is still speaking.
+ *     No server-side whisper required.
+ *
+ *  2. Whisper fallback (MediaRecorder → WAV → /api/transcribe)
+ *     Used when the Speech API is unavailable (Firefox, etc.) and the
+ *     server-side whisper binary is present. Records everything then
+ *     transcribes on stop.
  *
  * Extracted from Composer.tsx per issue #14.
  */
@@ -8,12 +19,47 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { encodeWav } from '../../lib/audio/encodeWav';
 import { useApiStore } from '../../lib/apiStore';
 
-interface RecordingCtx {
+// ---------------------------------------------------------------------------
+// Web Speech API types (not yet in TypeScript's lib.dom.d.ts)
+// ---------------------------------------------------------------------------
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((ev: SpeechRecognitionEvent) => void) | null;
+  onerror: ((ev: SpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+  abort(): void;
+}
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface WhisperCtx {
+  kind: 'whisper';
   stream: MediaStream;
   audioCtx: AudioContext;
   processor: ScriptProcessorNode;
   chunks: Float32Array[];
 }
+
+interface SpeechCtx {
+  kind: 'speech';
+  recognition: SpeechRecognition;
+  /**
+   * Number of interim characters currently appended at the tail of the
+   * textarea. On each onresult event we strip exactly this many chars off the
+   * end, then re-append the latest interim text. This means we never touch
+   * anything the user typed before or during the session.
+   */
+  interimLen: number;
+}
+
+type RecordingCtx = WhisperCtx | SpeechCtx;
 
 export interface ComposerAudioControls {
   isRecording: boolean;
@@ -21,8 +67,35 @@ export interface ComposerAudioControls {
   setMicError: (err: string | null) => void;
   micRef: React.RefObject<HTMLButtonElement | null>;
   handleMicClick: () => Promise<void>;
+  /** True when at least one recording path is available */
   isDictationSupported: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Web Speech API feature detection
+// ---------------------------------------------------------------------------
+
+function getSpeechRecognitionCtor(): (new () => SpeechRecognition) | null {
+  if (typeof window === 'undefined') return null;
+  // Both the Speech API and getUserMedia require a secure context
+  // (HTTPS or localhost). On insecure HTTP origins Safari/Chrome define
+  // the constructor but refuse to start it, so we gate on isSecureContext.
+  if (!window.isSecureContext) return null;
+  // Standard and webkit-prefixed variants
+  const w = window as unknown as {
+    SpeechRecognition?: new () => SpeechRecognition;
+    webkitSpeechRecognition?: new () => SpeechRecognition;
+  };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+}
+
+function isSpeechApiAvailable(): boolean {
+  return getSpeechRecognitionCtor() !== null;
+}
+
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
 
 export function useComposerAudio({
   whisperAvailable,
@@ -41,6 +114,10 @@ export function useComposerAudio({
   useEffect(() => { disabledRef.current = disabled; }, [disabled]);
 
   const transcribe = useApiStore((state) => state.transcribe);
+
+  // -------------------------------------------------------------------------
+  // Button visual state
+  // -------------------------------------------------------------------------
 
   const setMicState = useCallback((state: 'idle' | 'recording' | 'transcribing') => {
     setIsRecording(state === 'recording');
@@ -62,9 +139,25 @@ export function useComposerAudio({
     }
   }, []);
 
-  const stopRecording = useCallback((): Blob | null => {
+  // -------------------------------------------------------------------------
+  // Append text to the composer input
+  // -------------------------------------------------------------------------
+
+  const appendText = useCallback((text: string) => {
+    const el = inputRef.current;
+    if (!el || !text) return;
+    el.value = (el.value ? el.value + ' ' : '') + text;
+    el.dispatchEvent(new Event('input'));
+    el.focus();
+  }, [inputRef]);
+
+  // -------------------------------------------------------------------------
+  // Whisper path: stop recording and upload
+  // -------------------------------------------------------------------------
+
+  const stopWhisperRecording = useCallback((): Blob | null => {
     const ctx = recordingRef.current;
-    if (!ctx) return null;
+    if (!ctx || ctx.kind !== 'whisper') return null;
     recordingRef.current = null;
 
     ctx.processor.disconnect();
@@ -95,28 +188,24 @@ export function useComposerAudio({
     return encodeWav(samples, 16000);
   }, []);
 
-  const submitRecording = useCallback(async () => {
-    if (!recordingRef.current) return;
+  const submitWhisperRecording = useCallback(async () => {
+    if (!recordingRef.current || recordingRef.current.kind !== 'whisper') return;
     setMicState('transcribing');
-    const blob = stopRecording();
+    const blob = stopWhisperRecording();
     if (blob && blob.size > 44) {
       try {
         const text = await transcribe(blob);
-        if (text && inputRef.current) {
-          inputRef.current.value += (inputRef.current.value ? ' ' : '') + text;
-          inputRef.current.dispatchEvent(new Event('input'));
-          inputRef.current.focus();
-        }
+        appendText(text);
       } catch (err) {
         console.error('Transcription failed', err);
       }
     }
     setMicState('idle');
-  }, [setMicState, stopRecording, transcribe, inputRef]);
+  }, [setMicState, stopWhisperRecording, transcribe, appendText]);
 
-  const cancelRecording = useCallback(() => {
-    if (!recordingRef.current) return;
+  const cancelWhisperRecording = useCallback(() => {
     const ctx = recordingRef.current;
+    if (!ctx || ctx.kind !== 'whisper') return;
     recordingRef.current = null;
     ctx.processor.disconnect();
     ctx.stream.getTracks().forEach(t => t.stop());
@@ -124,60 +213,193 @@ export function useComposerAudio({
     setMicState('idle');
   }, [setMicState]);
 
+  // -------------------------------------------------------------------------
+  // Speech API path: stop recognition
+  // -------------------------------------------------------------------------
+
+  const stopSpeechRecognition = useCallback(() => {
+    const ctx = recordingRef.current;
+    if (!ctx || ctx.kind !== 'speech') return;
+    recordingRef.current = null;
+    try { ctx.recognition.stop(); } catch { /* ignore */ }
+    setMicState('idle');
+  }, [setMicState]);
+
+  // -------------------------------------------------------------------------
+  // Unified stop / cancel
+  // -------------------------------------------------------------------------
+
+  const stopRecording = useCallback(async () => {
+    const ctx = recordingRef.current;
+    if (!ctx) return;
+    if (ctx.kind === 'speech') {
+      stopSpeechRecognition();
+    } else {
+      await submitWhisperRecording();
+    }
+  }, [stopSpeechRecognition, submitWhisperRecording]);
+
+  const cancelRecording = useCallback(() => {
+    const ctx = recordingRef.current;
+    if (!ctx) return;
+    if (ctx.kind === 'speech') {
+      stopSpeechRecognition();
+    } else {
+      cancelWhisperRecording();
+    }
+  }, [stopSpeechRecognition, cancelWhisperRecording]);
+
+  // -------------------------------------------------------------------------
+  // Start recording: Speech API first, Whisper as fallback
+  // -------------------------------------------------------------------------
+
+  const startSpeechRecognition = useCallback(() => {
+    const Ctor = getSpeechRecognitionCtor()!;
+    const recognition = new Ctor();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = ''; // use browser/OS default language
+
+    const ctx: SpeechCtx = { kind: 'speech', recognition, interimLen: 0 };
+    recordingRef.current = ctx;
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      const el = inputRef.current;
+      if (!el) return;
+
+      let newConfirmed = '';
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (result.isFinal) {
+          newConfirmed += result[0].transcript;
+        } else {
+          interim += result[0].transcript;
+        }
+      }
+
+      // Strip the interim tail we appended last time, then build the new tail.
+      // This way we never rewrite text the user typed themselves.
+      const current = el.value;
+      const base = current.slice(0, current.length - ctx.interimLen);
+
+      // Helper: append text to a string, inserting a space separator if needed.
+      const join = (a: string, b: string) =>
+        b ? (a && !a.endsWith(' ') ? a + ' ' + b : a + b) : a;
+
+      // Build the confirmed portion (permanently appended to base).
+      const confirmed = join(base, newConfirmed.trimStart());
+
+      // Build the interim preview tail (will be stripped next event).
+      const withInterim = join(confirmed, interim.trimStart());
+
+      // Track exactly how many chars the interim tail is so we can strip it.
+      ctx.interimLen = withInterim.length - confirmed.length;
+
+      if (el.value !== withInterim) {
+        el.value = withInterim;
+        el.dispatchEvent(new Event('input'));
+      }
+    };
+
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      // 'no-speech' and 'aborted' are not real errors
+      if (event.error === 'no-speech' || event.error === 'aborted') return;
+      console.error('SpeechRecognition error', event.error);
+      setMicError('Dictation error: ' + event.error);
+      recordingRef.current = null;
+      setMicState('idle');
+    };
+
+    recognition.onend = () => {
+      // onend fires both on manual stop and on natural silence timeout.
+      // If we still hold a reference, the recognition ended by itself —
+      // clean up and go idle.
+      if (recordingRef.current?.kind === 'speech') {
+        recordingRef.current = null;
+        setMicState('idle');
+      }
+    };
+
+    recognition.start();
+    setMicState('recording');
+  }, [inputRef, setMicState, setMicError]);
+
+  const startWhisperRecording = useCallback(async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setMicError('Dictation is not supported in this browser. Please use a modern browser like Chrome or Edge.');
+      return;
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+    const source = audioCtx.createMediaStreamSource(stream);
+    const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+    const chunks: Float32Array[] = [];
+
+    processor.onaudioprocess = (e) => {
+      const data = e.inputBuffer.getChannelData(0);
+      chunks.push(new Float32Array(data));
+    };
+
+    source.connect(processor);
+    processor.connect(audioCtx.destination);
+
+    recordingRef.current = { kind: 'whisper', stream, audioCtx, processor, chunks };
+    setMicState('recording');
+  }, [setMicState, setMicError]);
+
+  // -------------------------------------------------------------------------
+  // Mic button handler
+  // -------------------------------------------------------------------------
+
   const handleMicClick = useCallback(async () => {
     if (disabledRef.current) return;
 
     if (recordingRef.current) {
-      await submitRecording();
+      await stopRecording();
       return;
     }
 
+    setMicError(null);
     try {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setMicError('Dictation is not supported in this browser. Please use a modern browser like Chrome or Edge.');
-        return;
+      if (isSpeechApiAvailable()) {
+        startSpeechRecognition();
+      } else if (whisperAvailable) {
+        await startWhisperRecording();
+      } else {
+        setMicError('Dictation is not supported in this browser.');
       }
-      setMicError(null);
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-      const source = audioCtx.createMediaStreamSource(stream);
-      const processor = audioCtx.createScriptProcessor(4096, 1, 1);
-      const chunks: Float32Array[] = [];
-
-      processor.onaudioprocess = (e) => {
-        const data = e.inputBuffer.getChannelData(0);
-        chunks.push(new Float32Array(data));
-      };
-
-      source.connect(processor);
-      processor.connect(audioCtx.destination);
-
-      recordingRef.current = { stream, audioCtx, processor, chunks };
-      setMicState('recording');
     } catch (err) {
       console.error('Microphone access failed', err);
       setMicError('Microphone access denied. Please allow microphone access in your browser settings to use dictation.');
       setMicState('idle');
     }
-  }, [setMicState, submitRecording]);
+  }, [setMicState, setMicError, stopRecording, startSpeechRecognition, startWhisperRecording, whisperAvailable]);
 
-  // While recording, any key submits (except Escape which cancels).
+  // -------------------------------------------------------------------------
+  // Keyboard shortcuts while recording
+  // -------------------------------------------------------------------------
+
   useEffect(() => {
     if (!isRecording) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Escape') {
         e.preventDefault();
         cancelRecording();
-      } else {
-        e.preventDefault();
-        void submitRecording();
       }
+      // Do NOT intercept other keys — the user should be able to type
+      // alongside dictation when using the Speech API.
     };
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [isRecording, submitRecording, cancelRecording]);
+  }, [isRecording, cancelRecording]);
 
-  const isDictationSupported = !!whisperAvailable && !!navigator.mediaDevices?.getUserMedia;
+  // -------------------------------------------------------------------------
+  // isDictationSupported: true when at least one path is available
+  // -------------------------------------------------------------------------
+
+  const isDictationSupported =
+    isSpeechApiAvailable() || (!!whisperAvailable && !!navigator.mediaDevices?.getUserMedia);
 
   return {
     isRecording,

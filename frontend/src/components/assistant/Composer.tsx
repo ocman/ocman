@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
-import { createPortal } from 'react-dom';
 import './Composer.css';
 import { getDraft, saveDraft, clearDraft } from '../../lib/composerDraft';
 import { isMacPlatform } from '../../lib/shortcuts';
@@ -806,16 +805,6 @@ function ComposerImpl({
 
   return (
     <>
-    {isRecording && createPortal(
-      <div className="oc-recording-overlay" onClick={() => void handleMicClick()}>
-        <div className="oc-recording-inner">
-          <div className="oc-recording-pulse" />
-          <div className="oc-recording-label">Recording</div>
-          <div className="oc-recording-hint">Press any key or click to submit &nbsp;·&nbsp; Esc to cancel</div>
-        </div>
-      </div>,
-      document.body,
-    )}
     <div
       className={`oc-composer-wrap${disabled ? ' oc-composer-disabled' : ''}`}
       ref={wrapRef}
@@ -866,6 +855,19 @@ function ComposerImpl({
           onSelect={selectSlashCommand}
           onHover={setSlashIndex}
         />
+      )}
+      {isRecording && (
+        <div className="oc-recording-banner">
+          <div className="oc-recording-pulse" />
+          <span className="oc-recording-label">Listening</span>
+          <span className="oc-recording-hint">Esc to cancel</span>
+          <button
+            type="button"
+            className="oc-recording-stop"
+            onClick={() => void handleMicClick()}
+            aria-label="Stop recording"
+          >Stop</button>
+        </div>
       )}
       <div
         className="oc-composer"

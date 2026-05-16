@@ -1,4 +1,4 @@
-.PHONY: dev dev-backend dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev install-e2e-browsers test-race test-fuzz test-coverage lint lint-backend lint-frontend lint-platform-branching otel-up otel-down otel-logs otel-reset help
+.PHONY: dev dev-backend dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev install-e2e-browsers test-race test-fuzz test-coverage lint lint-backend lint-frontend lint-platform-branching otel-up otel-down otel-logs otel-reset caddy-up caddy-down caddy-cert help
 
 # --- OTel dev defaults ----------------------------------------------------
 #
@@ -389,6 +389,42 @@ otel-logs:
 # Grafana or you want a clean slate after schema changes.
 otel-reset:
 	docker compose -f docker-compose.otel.yml down -v
+
+# --- Local HTTPS via Caddy + Tailscale -----------------------------------
+#
+# Exposes ocman at https://driess-macbook-pro.tail5f13e4.ts.net so that
+# browser APIs requiring a secure context (microphone, Web Speech API)
+# work on iPads connected to your tailnet.
+#
+# Caddy uses `get_certificate tailscale` — it delegates cert issuance to
+# the Tailscale daemon, which gets a Let's Encrypt cert for your ts.net
+# hostname. No manual CA installation needed on the iPad; the cert is
+# already trusted by all devices.
+#
+# One-time setup:
+#   1. brew install caddy
+#   2. make caddy-up            # Caddy fetches the cert automatically on first start
+#
+# Then open https://driess-macbook-pro.tail5f13e4.ts.net on your iPad
+# (both devices must be connected to Tailscale).
+
+caddy-up: ## Start Caddy HTTPS proxy (https://driess-macbook-pro.tail5f13e4.ts.net → :8228)
+	@command -v caddy >/dev/null 2>&1 || { \
+		echo "caddy not found. Install with:  brew install caddy"; exit 1; }
+	@command -v tailscale >/dev/null 2>&1 || { \
+		echo "tailscale not found or not running"; exit 1; }
+	caddy start --config Caddyfile
+	@echo ""
+	@echo "  ocman is now available at:"
+	@echo "  https://driess-macbook-pro.tail5f13e4.ts.net"
+
+caddy-down: ## Stop the Caddy HTTPS proxy
+	caddy stop
+
+caddy-cert: ## Pre-fetch the Tailscale TLS cert (optional; caddy-up does this automatically)
+	@command -v tailscale >/dev/null 2>&1 || { \
+		echo "tailscale not found or not running"; exit 1; }
+	tailscale cert driess-macbook-pro.tail5f13e4.ts.net
 
 # --- Help ----------------------------------------------------------------
 #

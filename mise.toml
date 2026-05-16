@@ -1,3 +1,4 @@
 [tools]
 air = "latest"
+caddy = "latest"
 git-cliff = "latest"

@@ -1,0 +1,24 @@
+# HTTPS proxy for ocman via Tailscale.
+#
+# Caddy fetches a Let's Encrypt certificate for your Tailscale hostname using
+# `tailscale cert`. The cert is trusted by all devices on your tailnet without
+# any manual CA installation.
+#
+# Prerequisites:
+#   brew install caddy
+#   tailscale cert driess-macbook-pro.tail5f13e4.ts.net   # pre-fetch the cert (optional)
+#
+# Usage:
+#   make caddy-up           # start (background)
+#   make caddy-down         # stop
+#
+# Then open https://driess-macbook-pro.tail5f13e4.ts.net on your iPad
+# (must be connected to Tailscale).
+
+driess-macbook-pro.tail5f13e4.ts.net {
+	reverse_proxy localhost:8228
+
+	tls {
+		get_certificate tailscale
+	}
+}
