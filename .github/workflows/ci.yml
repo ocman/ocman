@@ -15,23 +15,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 25
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
       - name: Install dependencies
         working-directory: frontend
-        run: npm ci
+        run: pnpm install --frozen-lockfile
       - name: Lint
         working-directory: frontend
-        run: npm run lint
+        run: pnpm lint
       - name: Typecheck
         working-directory: frontend
-        run: npx tsc -b
+        run: pnpm exec tsc -b
       - name: Test
         working-directory: frontend
-        run: npm test
+        run: pnpm test
       - name: Platform-branching guard
         run: ./scripts/check-platform-branching.sh
 
@@ -51,23 +52,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 25
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
       - name: Install dependencies
         working-directory: frontend
-        run: npm ci
+        run: pnpm install --frozen-lockfile
       - name: Install Playwright browsers
         working-directory: frontend
-        run: npx playwright install --with-deps chromium
+        run: pnpm exec playwright install --with-deps chromium
       - name: Build frontend
         working-directory: frontend
-        run: npm run build
+        run: pnpm build
       - name: Run Playwright tests
         working-directory: frontend
-        run: npm run test:e2e
+        run: pnpm test:e2e
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@v3
@@ -82,11 +84,12 @@ jobs:
     needs: [frontend, backend]
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 25
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod

@@ -2,3 +2,5 @@
 air = "latest"
 caddy = "latest"
 git-cliff = "latest"
+node = "25"
+pnpm = "10.11.1"

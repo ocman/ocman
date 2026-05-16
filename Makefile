@@ -76,12 +76,12 @@ dev-prod:
 	@echo "  Frontend log:     tmp/vite-preview.log"
 	@echo "  Combined log:     tmp/debug.log"
 	@echo ""
-	@echo "Note: Frontend changes require manual 'cd frontend && npm run build'"
+	@echo "Note: Frontend changes require manual 'cd frontend && pnpm build'"
 	@echo ""
-	@cd frontend && npm run build
+	@cd frontend && pnpm build
 	@trap '$(kill-children)' INT TERM EXIT; \
 		{ air 2>&1 | tee tmp/air.log & \
-		  cd frontend && npm run preview 2>&1 | tee ../tmp/vite-preview.log & \
+		  cd frontend && pnpm preview 2>&1 | tee ../tmp/vite-preview.log & \
 		  wait; } 2>&1 | tee tmp/debug.log
 
 # Run with production frontend build + auto-rebuild on changes + backend live reload
@@ -97,7 +97,7 @@ dev-prod-watch:
 	@echo ""
 	@trap '$(kill-children)' INT TERM EXIT; \
 		{ air 2>&1 | tee tmp/air.log & \
-		  cd frontend && npm run preview 2>&1 | tee ../tmp/vite-preview.log & \
+		  cd frontend && pnpm preview 2>&1 | tee ../tmp/vite-preview.log & \
 		  ./scripts/watch-frontend-prod.sh 2>&1 | tee tmp/frontend-watch.log & \
 		  wait; } 2>&1 | tee tmp/debug.log
 
@@ -107,7 +107,7 @@ dev-backend:
 
 dev-frontend:
 	@mkdir -p tmp
-	cd frontend && npm run dev 2>&1 | tee ../tmp/vite-dev.log
+	cd frontend && pnpm dev 2>&1 | tee ../tmp/vite-dev.log
 
 # Emergency nuke: kill anything holding the dev ports. Use when a previous
 # `make dev*` died badly and left orphans squatting on 8228 / 8229. Safe to
@@ -127,7 +127,7 @@ kill-dev:
 build: build-frontend build-backend
 
 build-frontend:
-	cd frontend && npm ci && npm run build
+	cd frontend && pnpm install --frozen-lockfile && pnpm build
 
 build-backend:
 	go build -o ocman .
@@ -136,7 +136,7 @@ build-backend:
 # The frontend is built with WAILS_BUILD=1 so Vite outputs to frontend/dist
 # (the path wails.json expects) instead of internal/server/static.
 build-desktop: ## Build the Wails desktop app (outputs to build/bin/)
-	cd frontend && WAILS_BUILD=1 npm run build
+	cd frontend && WAILS_BUILD=1 pnpm build
 	@mkdir -p build
 	rsvg-convert -w 1024 -h 1024 frontend/public/favicon.svg -o build/appicon.png
 	wails build -skipbindings -s -o ocman-desktop
@@ -212,7 +212,7 @@ installer-mac: ## Build macOS DMG installer (requires create-dmg)
 
 installer-linux: ## Build Linux binary archive (cross-compiled from any host)
 	@mkdir -p dist
-	cd frontend && WAILS_BUILD=1 npm run build
+	cd frontend && WAILS_BUILD=1 pnpm build
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
 		go build -ldflags="-s -w" -tags desktop,exclude_graphdriver_devicemapper \
 		-o dist/ocman-linux-amd64 .
@@ -272,8 +272,8 @@ test-all-fast: ## Run backend, frontend, and e2e suites in parallel (fail fast)
 		}; \
 		trap cleanup INT TERM EXIT; \
 		start_suite backend go test -failfast ./...; \
-		start_suite frontend bash -lc "cd frontend && npm test -- --bail=1"; \
-		start_suite e2e bash -lc "cd frontend && npm run build && npm run test:e2e -- --max-failures=1"; \
+		start_suite frontend bash -lc "cd frontend && pnpm test -- --bail=1"; \
+		start_suite e2e bash -lc "cd frontend && pnpm build && pnpm test:e2e -- --max-failures=1"; \
 		remaining="$${#pids[@]}"; \
 		status=0; \
 		failed_name=""; failed_log=""; \
@@ -310,21 +310,21 @@ test-backend:
 	go test ./...
 
 test-frontend:
-	cd frontend && npm test
+	cd frontend && pnpm test
 
 # Run Playwright end-to-end tests. Build the frontend first so the
 # Playwright webServer can serve `vite preview` from a fresh dist/.
 test-e2e: ## Run Playwright end-to-end tests
-	cd frontend && npm run build && npm run test:e2e
+	cd frontend && pnpm build && pnpm test:e2e
 
 # Run Playwright against the Vite dev server (StrictMode, HMRless test run).
 # Use this when a regression reproduces only in local dev mode.
 test-e2e-dev: ## Run Playwright end-to-end tests against Vite dev mode
-	cd frontend && E2E_USE_DEV_SERVER=1 npm run test:e2e
+	cd frontend && E2E_USE_DEV_SERVER=1 pnpm test:e2e
 
 # Install Playwright browser binaries used by e2e tests.
 install-e2e-browsers: ## Install Playwright browser binaries
-	cd frontend && npx playwright install
+	cd frontend && pnpm exec playwright install
 
 # Run Go tests with the race detector. Frontend tests are not race-detector
 # relevant so they're skipped here — run `make test` for the full suite.
@@ -355,7 +355,7 @@ lint-backend:
 	go vet ./...
 
 lint-frontend:
-	cd frontend && npx tsc -b && npm run lint
+	cd frontend && pnpm exec tsc -b && pnpm lint
 
 # Guard against reintroducing `session.platform === 'foo'` branching,
 # which would undermine the multi-platform architecture.

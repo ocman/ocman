@@ -36,7 +36,7 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
     // WebKit is excluded from CI (only Chromium is installed there).
-    // Run locally with `npx playwright test --project=webkit`.
+    // Run locally with `pnpm exec playwright test --project=webkit`.
     ...(!process.env.CI ? [{
       name: 'webkit',
       use: { ...devices['Desktop Safari'] },
@@ -47,8 +47,8 @@ export default defineConfig({
     ? undefined
     : {
         command: useDevServer
-          ? 'npm run dev -- --host 127.0.0.1 --port 8228'
-          : 'npm run preview',
+          ? 'pnpm dev -- --host 127.0.0.1 --port 8228'
+          : 'pnpm preview',
         url: baseURL,
         reuseExistingServer: true,
         timeout: 30_000,

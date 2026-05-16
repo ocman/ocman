@@ -730,7 +730,7 @@ passes.
 .PHONY: test-race
 test-race: ## Run Go tests with the race detector.
 	go test -race ./internal/...
-	cd frontend && npm test
+	cd frontend && pnpm test
 
 .PHONY: test-fuzz
 test-fuzz: ## Run every Fuzz* target for 10s each.

@@ -1109,7 +1109,7 @@ agnostic UI from day one.
    - Add `Session.Agent` field; populate as `"opencode"`.
    - Rename `Session.HasPort` -> `Session.LiveConnection` (backend +
      frontend + tests).
-   - No user-visible behavior change expected. `go vet` + `npm run lint`
+   - No user-visible behavior change expected. `go vet` + `pnpm lint`
      + `tsc -b` + `make build` must pass.
    - Why first: establishes the contract without touching any new
      agent code. If the interface is wrong, this phase surfaces it.

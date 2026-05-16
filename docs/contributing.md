@@ -61,9 +61,14 @@ spec/                                      Requirements + architecture notes per
 ### Requirements
 
 - Go 1.24+
-- Node.js 22+
-- [mise](https://mise.jdx.dev/) — provides `air` for live-reload (`mise install`)
+- Node.js 22+ (provided by `mise`)
+- [pnpm](https://pnpm.io/) (provided by `mise`; pinned via `packageManager` in `frontend/package.json`)
+- [mise](https://mise.jdx.dev/) — provides `air`, `node`, and `pnpm` (`mise install`)
 - `tmux` on `PATH` for the in-UI launcher
+
+> **Note:** All Node-side commands use `pnpm`. `npm` is no longer
+> supported — running `npm install` will not produce the expected
+> `pnpm-lock.yaml` and will be rejected by CI.
 
 ### Quick command reference
 
@@ -89,7 +94,7 @@ spec/                                      Requirements + architecture notes per
 
 ### Build pipeline
 
-1. `cd frontend && npm ci && npm run build` — builds frontend into `internal/server/static/`
+1. `cd frontend && pnpm install --frozen-lockfile && pnpm build` — builds frontend into `internal/server/static/`
 2. `go build -o ocman .` — embeds `internal/server/static/` via `//go:embed`
 
 Order matters: the frontend must be built before `go build`.

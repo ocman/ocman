@@ -525,7 +525,7 @@ sessions appear in `/api/sessions` even outside the time window.
 
 1. Add `pinned` and `pinnedAt` to the `Session` interface.
 2. Add `api.pinSession()` method.
-3. `npm test`
+3. `pnpm test`
 
 **Done when**: types compile, API method exists.
 
@@ -535,7 +535,7 @@ sessions appear in `/api/sessions` even outside the time window.
 2. Add `handlePinSession` callback with optimistic update.
 3. Extend `sidebarProjectGroups` to prepend a "Pinned" group.
 4. Add CSS for pin button, pinned indicator, pinned group header.
-5. `npm test`
+5. `pnpm test`
 
 **Done when**: clicking pin moves the session to the "Pinned" group.
 

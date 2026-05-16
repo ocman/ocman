@@ -65,7 +65,7 @@ make dev-backend      # air only (Go on :8229)
 make dev-frontend     # vite only (React on :8228, proxies /api to :8229)
 make test             # runs `go test ./...` + `vitest run`
 make lint             # runs go vet, tsc -b, eslint, and the platform-branching check
-make build            # production: npm ci + npm run build, then go build -o ocman .
+make build            # production: pnpm install + pnpm build, then go build -o ocman .
 make clean            # removes ocman binary, tmp/, and static/assets/
 make otel-up          # start Grafana LGTM stack (Loki/Tempo/Mimir + OTLP) at :3000/:4317/:4318
 make otel-down        # stop the LGTM stack
@@ -73,14 +73,17 @@ make otel-logs        # tail LGTM container logs
 make otel-reset       # stop + wipe persisted telemetry data
 ```
 
-- `mise` provides `air` (Go live-reload). Run `mise install` if air
-  is missing.
+- `mise` provides `air` (Go live-reload), `node`, and `pnpm`. Run
+  `mise install` if any of them are missing. **Use `pnpm`** for all
+  Node-side commands — `npm` is no longer the supported package
+  manager. The version is pinned via the `packageManager` field in
+  `frontend/package.json` and via `mise.toml`.
 - Both dev and dev-prod modes use port **8228** for frontend, **8229** for backend.
 - The frontend (Vite dev or preview) proxies `/api` requests to `localhost:8229`.
 - Air rebuilds Go on source changes but does **not** re-embed the
   frontend bundle. After editing frontend code, either (a) use the
   Vite dev server on :8228 instead of the embedded build, or (b)
-  run `cd frontend && npm run build` and touch a `.go` file to
+  run `cd frontend && pnpm build` and touch a `.go` file to
   trigger Air.
 
 ## Repository hosting
@@ -106,8 +109,8 @@ tea pulls merge <id>                   # merge a PR
 
 ## Build pipeline
 
-1. `cd frontend && npm ci && npm run build` — builds frontend into
-   `internal/server/static/`.
+1. `cd frontend && pnpm install --frozen-lockfile && pnpm build` —
+   builds frontend into `internal/server/static/`.
 2. `go build -o ocman .` — embeds `internal/server/static/` via
    `//go:embed`.
 
@@ -119,9 +122,9 @@ assets are embedded.
 CI runs these checks (`.github/workflows/ci.yml`):
 
 ```sh
-cd frontend && npm run lint       # ESLint
-cd frontend && npx tsc -b         # TypeScript typecheck
-cd frontend && npm test           # vitest (81 tests)
+cd frontend && pnpm lint          # ESLint
+cd frontend && pnpm exec tsc -b   # TypeScript typecheck
+cd frontend && pnpm test          # vitest (81 tests)
 go test ./...                     # Go unit + integration tests (180+ tests)
 go vet ./...                      # Go vet
 ./scripts/check-platform-branching.sh

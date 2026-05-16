@@ -826,7 +826,7 @@ idempotent path passes.
 4. Tests: extend `api.test.ts` with mocked-fetch round-trips for
    the three new methods.
 
-**Done when**: `npm test` passes; types compile.
+**Done when**: `pnpm test` passes; types compile.
 
 ### Step 6 — `WorktreeFormModal` component
 

@@ -13,19 +13,19 @@ echo "[Frontend Watcher] Any file change will trigger rebuild"
 echo ""
 
 # Initial build
-npm run build
+pnpm build
 
 # Use fswatch if available, otherwise fall back to basic polling
 if command -v fswatch &>/dev/null; then
 	echo "[Frontend Watcher] Using fswatch for file monitoring"
 	fswatch -o src/ | while read -r; do
 		echo "[Frontend Watcher] Change detected, rebuilding..."
-		npm run build
+		pnpm build
 		echo "[Frontend Watcher] Build complete"
 	done
 else
 	echo "[Frontend Watcher] fswatch not found, using polling (install with: brew install fswatch)"
-	echo "[Frontend Watcher] Run 'cd frontend && npm run build' manually after changes"
+	echo "[Frontend Watcher] Run 'cd frontend && pnpm build' manually after changes"
 
 	# Simple polling fallback
 	prev_checksum=""
@@ -34,7 +34,7 @@ else
 		current_checksum=$(find src -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.css" \) | xargs md5 2>/dev/null | md5)
 		if [ "$current_checksum" != "$prev_checksum" ] && [ -n "$prev_checksum" ]; then
 			echo "[Frontend Watcher] Change detected, rebuilding..."
-			npm run build
+			pnpm build
 			echo "[Frontend Watcher] Build complete - refresh your browser"
 			echo ""
 		fi
