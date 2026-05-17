@@ -16,11 +16,13 @@ export function ShortPath({ path }: { path: string }) {
   return <><span className="short-path-prefix">{prefix}</span><span className="short-path-last">{last}</span></>;
 }
 
-export function GitStatusLine({ info }: { info?: GitInfo | null }) {
+export function GitStatusLine({ info, icon }: { info?: GitInfo | null; icon?: 'branch' | 'worktree' }) {
   if (!info || !info.branch) return null;
   const dirtyCls = info.dirty ? ' git-status-dirty' : '';
+  const iconCls = icon === 'worktree' ? 'bi bi-diagram-2' : 'bi bi-git';
   return (
     <div className={`git-status${dirtyCls}`}>
+      <i className={`${iconCls} git-status-icon`} aria-hidden="true" />
       <span className="git-status-branch" title={`Current branch: ${info.branch}`}>
         {info.branch}
       </span>

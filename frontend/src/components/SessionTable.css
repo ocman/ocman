@@ -12,6 +12,12 @@
   line-height: 1.4;
   opacity: 0.6;
 }
+.git-status-icon {
+  font-size: 11px;
+  margin-right: 4px;
+  vertical-align: -1px;
+  color: inherit;
+}
 .git-status-branch,
 .git-status-ahead,
 .git-status-behind,

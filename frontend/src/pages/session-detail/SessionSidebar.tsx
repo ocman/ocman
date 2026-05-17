@@ -132,10 +132,7 @@ export function SessionSidebar({
     // so the result was a meaningless `.worktrees/<repo>/…`
     // string that got RTL-ellipsised into "trees/<repo>/…".)
     const projectRoot = projectRootForDirectory(sib.directory || '');
-    const isWorktree = inGroup && !!sib.directory && sib.directory !== projectRoot;
-    const worktreeSlug = isWorktree
-      ? (sib.directory.replace(/\/+$/, '').split('/').filter(Boolean).pop() || '')
-      : '';
+    const isWorktree = !!sib.directory && sib.directory !== projectRoot;
     return (
       <div
         key={sib.id}
@@ -180,28 +177,16 @@ export function SessionSidebar({
             <span className="session-sidebar-project">
               <PlatformBadge platform={sib.platform} variant="plain" />
               <span className="session-sidebar-project-path">
-                <ShortPath path={sib.directory} />
+                <ShortPath path={isWorktree ? projectRoot : sib.directory} />
               </span>
             </span>
           )}
           {inGroup && (
             <span className="session-sidebar-project">
               <PlatformBadge platform={sib.platform} variant="plain" />
-              {isWorktree && (
-                <span
-                  className="session-sidebar-worktree"
-                  title={sib.directory}
-                >
-                  <i
-                    className="bi bi-diagram-2 session-sidebar-worktree-icon"
-                    aria-hidden="true"
-                  />
-                  <span className="session-sidebar-worktree-slug">{worktreeSlug}</span>
-                </span>
-              )}
             </span>
           )}
-          <GitStatusLine info={siblingGitInfos[sib.directory]} />
+          <GitStatusLine info={siblingGitInfos[sib.directory]} icon={isWorktree ? 'worktree' : 'branch'} />
         </span>
         <span className="session-sidebar-meta">
           <span className="session-sidebar-time" title={new Date(sib.timeUpdated).toLocaleString()}>{relativeTime(sib.timeUpdated)}</span>
