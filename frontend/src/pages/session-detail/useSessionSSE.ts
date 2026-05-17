@@ -539,6 +539,29 @@ export function useSessionSSE({
           if (partId && messageId && deltaText) {
             hasReceivedContentEvent = true;
             bumpRecentWorkEventAt();
+            // OpenCode sometimes starts streaming `message.part.delta`
+            // events before emitting `message.created` for the
+            // owning assistant message. Without a Message record,
+            // convertMessages() skips the part entirely and the user
+            // sees nothing until a refresh re-fetches the full thread.
+            // Synthesise a stub assistant Message so the deltas have
+            // somewhere to land; a later `message.updated` (or the
+            // next load()) will replace it with the real record.
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === messageId)) return prev;
+              const stub: Message = {
+                id: messageId,
+                sessionId: (props.sessionID as string) || sid,
+                timeCreated: Date.now(),
+                data: { role: 'assistant' },
+              };
+              return insertMessageByTime(prev, stub);
+            });
+            setSession((prev) => {
+              if (!prev) return prev;
+              if (prev.status === 'busy') return prev;
+              return { ...prev, status: 'busy' };
+            });
             // Coalesce into the rAF-flushed buffer instead of calling
             // setParts synchronously. The user still sees each delta
             // on the very next frame; we just cap React commits at

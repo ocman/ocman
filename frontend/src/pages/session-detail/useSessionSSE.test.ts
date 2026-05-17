@@ -496,3 +496,125 @@ describe('useSessionSSE cleanup', () => {
     expect(setParts).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Regression: OpenCode sometimes starts streaming `message.part.delta`
+// events for an assistant message without first emitting a
+// `message.created` event. Without a stub Message in the messages
+// array, convertMessages() filters the orphan part out and the user
+// sees nothing until the next page load — exactly the "send message,
+// nothing renders until refresh" symptom from #brokenstream.
+// ---------------------------------------------------------------------------
+
+describe('useSessionSSE message.part.delta arriving before message.created', () => {
+  it('synthesises a stub assistant Message so deltas have somewhere to land', () => {
+    const noop = () => {};
+    const stableLoad = vi.fn(async () => {});
+    const setMessages = vi.fn();
+    const setSession = vi.fn();
+
+    renderHook(() => {
+      const abortRef = useRef<AbortController | null>(null);
+      const loadErrorRef = useRef<string | null>(null);
+      const debugModeRef = useRef<boolean>(false);
+      const subagentSessionIdsRef = useRef<Set<string>>(new Set());
+      const activeSessionIdRef = useRef<string | undefined>('s1');
+      return useSessionSSE({
+        sessionId: 's1',
+        directory: '/tmp/x',
+        load: stableLoad,
+        abortSignalRef: abortRef,
+        loadErrorRef,
+        debugModeRef,
+        subagentSessionIdsRef,
+        activeSessionIdRef,
+        setMessages,
+        setParts: noop,
+        setSession,
+        setPortAvailable: noop,
+        setPendingPermission: noop,
+        setPermissionError: noop,
+        setPendingQuestion: noop,
+        setSubagentTokens: noop,
+        setChangesDirtyTick: noop,
+      });
+    });
+
+    act(() => {
+      EventSourceStub.instances[0].triggerMessage({
+        type: 'message.part.delta',
+        properties: {
+          sessionID: 's1',
+          messageID: 'msg-stub',
+          partID: 'p-stub',
+          field: 'text',
+          delta: 'Hello',
+        },
+      });
+    });
+
+    // setMessages is called with an updater function. Run it against
+    // an empty array and verify the stub Message appears.
+    expect(setMessages).toHaveBeenCalled();
+    const updater = setMessages.mock.calls.at(-1)?.[0] as (prev: unknown[]) => unknown[];
+    const next = updater([]);
+    expect(next).toHaveLength(1);
+    expect(next[0]).toMatchObject({
+      id: 'msg-stub',
+      sessionId: 's1',
+      data: { role: 'assistant' },
+    });
+  });
+
+  it('does not duplicate the Message when one already exists', () => {
+    const noop = () => {};
+    const stableLoad = vi.fn(async () => {});
+    const setMessages = vi.fn();
+
+    renderHook(() => {
+      const abortRef = useRef<AbortController | null>(null);
+      const loadErrorRef = useRef<string | null>(null);
+      const debugModeRef = useRef<boolean>(false);
+      const subagentSessionIdsRef = useRef<Set<string>>(new Set());
+      const activeSessionIdRef = useRef<string | undefined>('s1');
+      return useSessionSSE({
+        sessionId: 's1',
+        directory: '/tmp/x',
+        load: stableLoad,
+        abortSignalRef: abortRef,
+        loadErrorRef,
+        debugModeRef,
+        subagentSessionIdsRef,
+        activeSessionIdRef,
+        setMessages,
+        setParts: noop,
+        setSession: noop,
+        setPortAvailable: noop,
+        setPendingPermission: noop,
+        setPermissionError: noop,
+        setPendingQuestion: noop,
+        setSubagentTokens: noop,
+        setChangesDirtyTick: noop,
+      });
+    });
+
+    act(() => {
+      EventSourceStub.instances[0].triggerMessage({
+        type: 'message.part.delta',
+        properties: {
+          sessionID: 's1',
+          messageID: 'msg-existing',
+          partID: 'p-existing',
+          field: 'text',
+          delta: 'world',
+        },
+      });
+    });
+
+    const updater = setMessages.mock.calls.at(-1)?.[0] as (prev: unknown[]) => unknown[];
+    const existing = [{ id: 'msg-existing', sessionId: 's1', timeCreated: 0, data: { role: 'assistant' } }];
+    const next = updater(existing);
+    // Same reference — no churn when the message is already present.
+    expect(next).toBe(existing);
+  });
+});
