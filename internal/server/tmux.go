@@ -601,11 +601,30 @@ func (s *Server) handleTmuxSwitch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Determine the client TTY.
-	// If no client is specified, default to /dev/ttys000 for localhost.
+	// Determine the client TTY. The previous default of /dev/ttys000
+	// was macOS-specific and broke on Linux (PTYs are /dev/pts/N), and
+	// even on macOS would target the wrong terminal when more than one
+	// was open. Instead, if no client is supplied, look at the live
+	// list of connected tmux clients: if exactly one exists, use it;
+	// otherwise the caller must disambiguate.
+	existingClients, err := listTmuxClients()
+	if err != nil {
+		serverError(w, "verifying tmux client", err)
+		return
+	}
+
 	clientTTY := req.Client
 	if clientTTY == "" {
-		clientTTY = "/dev/ttys000"
+		switch len(existingClients) {
+		case 1:
+			clientTTY = existingClients[0].TTY
+		case 0:
+			http.Error(w, "no tmux clients connected; cannot infer target", http.StatusBadRequest)
+			return
+		default:
+			http.Error(w, "multiple tmux clients connected; specify which one", http.StatusBadRequest)
+			return
+		}
 	}
 
 	// Validate the client TTY path.
@@ -615,11 +634,6 @@ func (s *Server) handleTmuxSwitch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate the client is actually a connected tmux client.
-	existingClients, err := listTmuxClients()
-	if err != nil {
-		serverError(w, "verifying tmux client", err)
-		return
-	}
 	clientExists := false
 	for _, c := range existingClients {
 		if c.TTY == clientTTY {
