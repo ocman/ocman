@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -652,6 +653,84 @@ func TestLoginLimiter_ResetClearsBucket(t *testing.T) {
 	// After reset the first attempt should be allowed.
 	if !l.allow(ip) {
 		t.Error("expected allow=true after reset")
+	}
+}
+
+// TestLoginLimiter_GCSweepsExpiredEntries verifies that once the bucket
+// map crosses the GC threshold, expired entries are dropped on the next
+// allow() call. This prevents the map from growing unbounded when a
+// scanner or IPv6-rotating client probes from many distinct addresses.
+func TestLoginLimiter_GCSweepsExpiredEntries(t *testing.T) {
+	var l loginLimiter
+
+	// Seed the map past the threshold with stale entries (windowStart
+	// well beyond 2*loginWindow ago — older than any live request
+	// could be).
+	const stale = 1500
+	l.mu.Lock()
+	l.buckets = make(map[string]*loginBucket, stale)
+	staleStart := time.Now().Add(-(3 * loginWindow))
+	for i := 0; i < stale; i++ {
+		l.buckets[fmt.Sprintf("10.%d.%d.%d", i%256, (i/256)%256, (i/65536)%256)] = &loginBucket{
+			windowStart: staleStart,
+			attempts:    1,
+		}
+	}
+	l.mu.Unlock()
+
+	// Any subsequent allow() should trigger the sweep and leave just
+	// the fresh entry behind.
+	if !l.allow("203.0.113.1") {
+		t.Fatal("fresh IP should be allowed")
+	}
+
+	l.mu.Lock()
+	remaining := len(l.buckets)
+	_, kept := l.buckets["203.0.113.1"]
+	l.mu.Unlock()
+
+	if remaining != 1 {
+		t.Errorf("after GC: bucket count = %d, want 1", remaining)
+	}
+	if !kept {
+		t.Error("after GC: the fresh bucket was unexpectedly removed")
+	}
+}
+
+// TestLoginLimiter_GCKeepsActiveEntries verifies that the sweep doesn't
+// evict buckets that are still inside the live window — even when the
+// map is over the GC threshold.
+func TestLoginLimiter_GCKeepsActiveEntries(t *testing.T) {
+	var l loginLimiter
+
+	// Seed past the threshold, half stale and half fresh.
+	const total = 1100
+	l.mu.Lock()
+	l.buckets = make(map[string]*loginBucket, total)
+	now := time.Now()
+	for i := 0; i < total; i++ {
+		key := fmt.Sprintf("198.51.%d.%d", i/256, i%256)
+		ws := now
+		if i%2 == 0 {
+			ws = now.Add(-(3 * loginWindow))
+		}
+		l.buckets[key] = &loginBucket{windowStart: ws, attempts: 1}
+	}
+	l.mu.Unlock()
+
+	if !l.allow("203.0.113.2") {
+		t.Fatal("fresh IP should be allowed")
+	}
+
+	l.mu.Lock()
+	remaining := len(l.buckets)
+	l.mu.Unlock()
+
+	// Half were stale (total/2 = 550) and got swept; the other half
+	// stay, plus the new entry.
+	wantMin := total / 2
+	if remaining < wantMin || remaining > wantMin+5 {
+		t.Errorf("after GC: bucket count = %d, want ~%d", remaining, wantMin+1)
 	}
 }
 

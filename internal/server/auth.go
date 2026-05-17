@@ -315,6 +315,11 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 // intentionally naive (no sliding window, no per-user buckets) because
 // ocman is single-user and the threat is casual brute-force, not a
 // resourceful attacker.
+//
+// The bucket map is GC'd opportunistically when it grows past
+// loginLimiterGCThreshold so a long-running ocman instance exposed to
+// scanners (or IPv6-rotating clients) can't accumulate stale entries
+// forever. Sweeping inside allow() keeps the limiter zero-goroutine.
 type loginLimiter struct {
 	mu      sync.Mutex
 	buckets map[string]*loginBucket
@@ -324,6 +329,11 @@ type loginBucket struct {
 	windowStart time.Time
 	attempts    int
 }
+
+// loginLimiterGCThreshold is the bucket-count high-water mark that
+// triggers an opportunistic sweep of expired entries. Sized generously
+// so the sweep is rare in normal use but bounded.
+const loginLimiterGCThreshold = 1024
 
 func (l *loginLimiter) allow(ip string) bool {
 	if ip == "" {
@@ -336,6 +346,19 @@ func (l *loginLimiter) allow(ip string) bool {
 	}
 
 	now := time.Now()
+
+	// Opportunistic GC: drop expired entries when the map is large.
+	// Buckets older than 2*loginWindow can never gate a request — the
+	// next allow() for that IP resets the window unconditionally — so
+	// removing them is safe regardless of attempt count.
+	if len(l.buckets) > loginLimiterGCThreshold {
+		for k, b := range l.buckets {
+			if now.Sub(b.windowStart) > 2*loginWindow {
+				delete(l.buckets, k)
+			}
+		}
+	}
+
 	b, ok := l.buckets[ip]
 	if !ok || now.Sub(b.windowStart) > loginWindow {
 		l.buckets[ip] = &loginBucket{windowStart: now, attempts: 1}
