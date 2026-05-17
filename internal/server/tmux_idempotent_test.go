@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -245,5 +246,58 @@ func TestLaunchOpencodeInProjectTmuxWindowWith_ReusesExistingWindow(t *testing.T
 	}
 	if len(f.newNamedWindowCalls) != 0 {
 		t.Errorf("newNamedWindowCalls = %v; want none", f.newNamedWindowCalls)
+	}
+}
+
+// TestLaunchOpencodeInTmuxWith_RejectsInvalidDerivedName verifies that a
+// directory whose derived session name would confuse tmux's target
+// parser (e.g. contains a `:`) is rejected before any tmux command is
+// issued. Otherwise tmux would interpret part of the name as a window,
+// either erroring or silently targeting the wrong place.
+func TestLaunchOpencodeInTmuxWith_RejectsInvalidDerivedName(t *testing.T) {
+	// Outside-home path so tmuxSessionNameForPath returns it verbatim
+	// and the `:` ends up in the derived name.
+	dir := "/var/projects/has:colon"
+
+	f := &fakeTmuxRunner{}
+
+	_, _, err := launchOpencodeInTmuxWith(f.toRunner(), dir, true)
+	if err == nil {
+		t.Fatal("expected error for derived name with invalid characters")
+	}
+	if !strings.Contains(err.Error(), "invalid characters") {
+		t.Errorf("error = %v; want invalid-characters error", err)
+	}
+	if len(f.newSessionCalls) != 0 || len(f.newWindowCalls) != 0 {
+		t.Error("no tmux command should fire when the derived name fails validation")
+	}
+}
+
+// TestLaunchOpencodeInProjectTmuxWindowWith_RejectsInvalidDerivedWindowName
+// verifies the same protection for the per-worktree window-naming path.
+func TestLaunchOpencodeInProjectTmuxWindowWith_RejectsInvalidDerivedWindowName(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projectDir := filepath.Join(home, "src/proj")
+	projectSessionName := tmuxSessionNameForPath(projectDir)
+	// filepath.Base("/a/wt:bad") = "wt:bad", which the windowName
+	// derivation prefixes with "wt-" -> "wt-wt:bad". The `:` then
+	// trips the validator.
+	worktreeDir := "/tmp/wt:bad"
+
+	f := &fakeTmuxRunner{
+		existing: []tmuxSession{{Name: projectSessionName, ResolvedPath: projectDir}},
+	}
+
+	_, _, err := launchOpencodeInProjectTmuxWindowWith(f.toRunner(), projectDir, worktreeDir)
+	if err == nil {
+		t.Fatal("expected error for derived window name with invalid characters")
+	}
+	if !strings.Contains(err.Error(), "invalid characters") {
+		t.Errorf("error = %v; want invalid-characters error", err)
+	}
+	if len(f.newNamedWindowCalls) != 0 {
+		t.Error("newNamedWindow must not fire when the derived window name fails validation")
 	}
 }

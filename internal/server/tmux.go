@@ -104,8 +104,17 @@ func requireLocalhost(h http.HandlerFunc) http.HandlerFunc {
 
 // validTmuxName matches safe tmux session/client names.
 // Allows alphanumeric, hyphens, underscores, dots, forward slashes,
-// colons, and tildes (paths used as session names).
+// colons, and tildes (paths used as session names). Colons are allowed
+// because user-supplied target identifiers may take the form
+// `session:window`.
 var validTmuxName = regexp.MustCompile(`^[a-zA-Z0-9._/~:-]+$`)
+
+// validTmuxComponent matches a single tmux session or window name
+// (no `:` allowed — that's the target separator). Used to validate
+// names *derived from filesystem paths* before they're handed to tmux,
+// where an embedded `:` would split into session/window and either
+// error or silently mis-target.
+var validTmuxComponent = regexp.MustCompile(`^[a-zA-Z0-9._/~-]+$`)
 
 // validTTYPath matches /dev/ttysNNN or /dev/pts/N style TTY paths.
 var validTTYPath = regexp.MustCompile(`^/dev/(ttys?\d+|pts/\d+)$`)
@@ -413,6 +422,15 @@ func launchOpencodeInProjectTmuxWindow(projectDirectory, worktreeDirectory strin
 func launchOpencodeInTmuxWith(r tmuxRunner, directory string, idempotent bool) (string, bool, error) {
 	sessionName := tmuxSessionNameForPath(directory)
 
+	// tmux treats `:` and whitespace specially in target identifiers
+	// (session:window[.pane]), so a directory like /home/u/my:project
+	// would derive a session name tmux silently mis-targets. Validate
+	// against the stricter component allowlist (no `:` permitted) so
+	// the derived name can never collide with the target separator.
+	if !validTmuxComponent.MatchString(sessionName) {
+		return "", false, fmt.Errorf("derived tmux session name %q contains invalid characters", sessionName)
+	}
+
 	sessionExists := false
 	if existing, err := r.listSessions(); err == nil {
 		for _, ts := range existing {
@@ -453,7 +471,15 @@ func launchOpencodeInProjectTmuxWindowWith(r tmuxRunner, projectDirectory, workt
 	if projectSession == nil {
 		return "", false, fmt.Errorf("tmux project session not found for %s", projectDirectory)
 	}
+	// projectSession.Name is what tmux itself reported back, so we
+	// trust it. The derived window name, however, is built from
+	// worktreeDirectory and could in theory contain `:` or other
+	// characters tmux would mis-parse — validate before use against
+	// the stricter component allowlist.
 	windowName := tmuxWindowNameForDirectory(worktreeDirectory)
+	if !validTmuxComponent.MatchString(windowName) {
+		return "", false, fmt.Errorf("derived tmux window name %q contains invalid characters", windowName)
+	}
 	target := projectSession.Name + ":" + windowName
 
 	windows, err := r.listWindows(projectSession.Name)
