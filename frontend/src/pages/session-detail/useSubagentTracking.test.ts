@@ -9,6 +9,19 @@ import { act, renderHook } from '@testing-library/react';
 import { useSubagentTracking } from './useSubagentTracking';
 
 describe('useSubagentTracking', () => {
+  it('exposes a stable setSubagentTokens identity across renders', () => {
+    // Regression: a previous version returned a fresh function
+    // every render. Listing the setter in `useSessionStatus`'s TPS
+    // effect deps then caused a render loop ("Maximum update depth
+    // exceeded") during active streaming.
+    const { result, rerender } = renderHook(() => useSubagentTracking([], 's1'));
+    const first = result.current.setSubagentTokens;
+    rerender();
+    expect(result.current.setSubagentTokens).toBe(first);
+    rerender();
+    expect(result.current.setSubagentTokens).toBe(first);
+  });
+
   it('trims subagent token entries past the cap', () => {
     const { result } = renderHook(() => useSubagentTracking([], 's1'));
 

@@ -31,10 +31,10 @@ afterEach(() => {
 
 describe('SessionDetail — initial mount', () => {
   it('renders the layout and fetches the session detail', async () => {
-    const { store } = renderSessionPage({ sessionId: 'sess_1' });
+    const { api } = renderSessionPage({ sessionId: 'sess_1' });
     await flushPromises();
     await waitFor(() => {
-      expect(store.getSession).toHaveBeenCalled();
+      expect(api.session).toHaveBeenCalled();
     });
     expect(screen.getByTestId('session-layout')).toBeInTheDocument();
   });
@@ -82,7 +82,7 @@ describe('SessionDetail — initial mount', () => {
 
     // Each call returns a structurally identical but referentially
     // new object — exactly what a real API does.
-    const getSessionSpy = vi.fn().mockImplementation(() => Promise.resolve(mkDetail()));
+    const apiSessionSpy = vi.fn().mockImplementation(() => Promise.resolve(mkDetail()));
     const getSessionsSpy = vi.fn().mockImplementation(() =>
       Promise.resolve([makeSession({ id: 'sess_fresh', status: 'busy' })]),
     );
@@ -91,8 +91,8 @@ describe('SessionDetail — initial mount', () => {
       sessionId: 'sess_fresh',
       detail: mkDetail(),
       sessions: [makeSession({ id: 'sess_fresh', status: 'busy' })],
+      apiOverrides: { session: apiSessionSpy },
       storeOverrides: {
-        getSession: getSessionSpy,
         getSessions: getSessionsSpy,
       },
     });
@@ -159,10 +159,8 @@ describe('SessionDetail — initial mount', () => {
       resolveDetail = r;
     });
     const handle = renderSessionPage({
-      storeOverrides: { getSession: vi.fn().mockReturnValue(pending) },
+      apiOverrides: { session: vi.fn().mockReturnValue(pending) },
     });
-    // The page renders a `switching` blank frame on first mount; the
-    // loading spinner takes its place after the next animation frame.
     await waitFor(() => {
       expect(handle.result.queryByTestId('loading-spinner')).toBeInTheDocument();
     });
@@ -173,10 +171,10 @@ describe('SessionDetail — initial mount', () => {
     });
   });
 
-  it('renders the error banner when getSession rejects', async () => {
+  it('renders the error banner when api.session rejects', async () => {
     renderSessionPage({
-      storeOverrides: {
-        getSession: vi.fn().mockRejectedValue(new Error('boom')),
+      apiOverrides: {
+        session: vi.fn().mockRejectedValue(new Error('boom')),
       },
     });
     await flushPromises(8);
@@ -311,7 +309,7 @@ describe('SessionDetail — SSE stream', () => {
     // `message.created` / `message.updated` — they have no
     // standalone `message.part.delta` channel. Dropping that
     // snapshot makes tool blocks invisible until the user
-    // refreshes. See sseMessageHelpers.mergePartsNonClobbering.
+    // refreshes. See lib/partReducer.ts.
     const handle = renderSessionPage({ sessionId: 'sess_1' });
     await flushPromises();
     await waitFor(() => expect(handle.sse()).toBeDefined());
@@ -357,6 +355,188 @@ describe('SessionDetail — SSE stream', () => {
     await waitFor(() => {
       const parts = collectedParts();
       expect(parts.some((p) => p.id === 'p_tool' && (p.data as { type?: string }).type === 'tool')).toBe(true);
+    });
+  });
+
+  it('routes a live message.part.updated into the cache as a tool part', async () => {
+    // Regression: the symptom is "tool blocks / question answers
+    // don't show up live, only after refresh". The new reducer
+    // pipeline writes tool parts to state on every part.updated
+    // SSE event, then mirrors into the apiStore cache. We assert
+    // via the cache mirror because the AssistantThread is mocked
+    // out at the harness level (see harness.tsx). End-to-end DOM
+    // rendering of `.oc-tool` is covered by the Playwright e2e
+    // suite.
+    const handle = renderSessionPage({ sessionId: 'sess_1' });
+    await flushPromises();
+    await waitFor(() => expect(handle.sse()).toBeDefined());
+    handle.store.updateCachedSession.mockClear();
+
+    act(() => {
+      handle.sse()!.open();
+      handle.sse()!.emitMessage({
+        type: 'message.created',
+        properties: {
+          info: { id: 'msg_a', sessionID: 'sess_1', role: 'assistant', time: { created: Date.now() } },
+        },
+      });
+      handle.sse()!.emitMessage({
+        type: 'message.part.updated',
+        properties: {
+          part: {
+            id: 'p_bash',
+            type: 'tool',
+            tool: 'bash',
+            messageID: 'msg_a',
+            sessionID: 'sess_1',
+            state: {
+              status: 'running',
+              input: { command: 'echo hello' },
+              title: 'echo hello',
+            },
+          },
+        },
+      });
+    });
+
+    await waitFor(() => {
+      const calls = handle.store.updateCachedSession.mock.calls;
+      expect(calls.length).toBeGreaterThan(0);
+      type SeedDetail = {
+        session: never;
+        messages: { id: string; data: { role: string } }[];
+        parts: { id: string; data: unknown }[];
+        totalMessages: number;
+      };
+      const seedDetail: SeedDetail = { session: {} as never, messages: [], parts: [], totalMessages: 0 };
+      const lastCall = calls.at(-1)!;
+      const updater = lastCall[1] as (prev: SeedDetail) => SeedDetail;
+      const result = updater(seedDetail);
+      const toolPart = result.parts.find((p) => p.id === 'p_bash');
+      expect(toolPart).toBeDefined();
+      const data = typeof toolPart!.data === 'string' ? JSON.parse(toolPart!.data) : toolPart!.data;
+      expect((data as { type: string }).type).toBe('tool');
+      expect((data as { tool: string }).tool).toBe('bash');
+    });
+  });
+
+  it('does not let a trailing snapshot clobber delta-accumulated text', async () => {
+    // Regression: the previous length-comparison reconciliation
+    // would replace local delta-built text whenever a snapshot
+    // happened to be longer OR shorter than the local copy, leaving
+    // visible mid-text gaps and "rewinds". The reducer now treats
+    // deltas as authoritative for the `text` field: once a delta
+    // lands, subsequent snapshots leave that field alone (other
+    // metadata still updates). See lib/partReducer.ts.
+    const handle = renderSessionPage({ sessionId: 'sess_1' });
+    await flushPromises();
+    await waitFor(() => expect(handle.sse()).toBeDefined());
+
+    type SeedDetail = {
+      session: never;
+      messages: { id: string; data: unknown }[];
+      parts: { id: string; data: unknown }[];
+      totalMessages: number;
+    };
+    const seedDetail: SeedDetail = {
+      session: {} as never,
+      messages: [],
+      parts: [],
+      totalMessages: 0,
+    };
+    const latestParts = () => {
+      const calls = handle.store.updateCachedSession.mock.calls;
+      // Reduce all updater calls in order to get the final state.
+      let detail: SeedDetail = seedDetail;
+      for (const call of calls) {
+        const [, updater] = call as [string, (prev: SeedDetail) => SeedDetail];
+        detail = updater(detail);
+      }
+      return detail.parts.map((p) => ({
+        id: p.id,
+        data: typeof p.data === 'string' ? JSON.parse(p.data) : p.data,
+      }));
+    };
+
+    handle.store.updateCachedSession.mockClear();
+    act(() => {
+      handle.sse()!.open();
+      handle.sse()!.emitMessage({
+        type: 'message.created',
+        properties: {
+          info: { id: 'msg_drift', sessionID: 'sess_1', role: 'assistant', time: { created: Date.now() } },
+          parts: [{ id: 'p_drift', type: 'text', text: 'Hello', messageID: 'msg_drift' }],
+        },
+      });
+      // Stream a few deltas so the local copy gets to "Hello world".
+      handle.sse()!.emitMessage({
+        type: 'message.part.delta',
+        properties: { partID: 'p_drift', messageID: 'msg_drift', field: 'text', delta: ' world' },
+      });
+    });
+
+    await waitFor(() => {
+      const parts = latestParts();
+      const drift = parts.find((p) => p.id === 'p_drift');
+      expect((drift?.data as { text?: string })?.text).toBe('Hello world');
+    });
+
+    // A trailing snapshot arrives carrying stale text (server-side
+    // commit lagged the deltas) plus updated metadata. The reducer
+    // must preserve the delta-built text while still applying any
+    // new metadata fields.
+    act(() => {
+      handle.sse()!.emitMessage({
+        type: 'message.part.updated',
+        properties: {
+          part: {
+            id: 'p_drift',
+            type: 'text',
+            text: 'Hello',
+            messageID: 'msg_drift',
+            sessionID: 'sess_1',
+            // A field that does NOT participate in delta streaming —
+            // we want to see this land while text stays put.
+            completed: true,
+          },
+        },
+      });
+    });
+
+    await waitFor(() => {
+      const parts = latestParts();
+      const drift = parts.find((p) => p.id === 'p_drift');
+      const data = drift?.data as { text?: string; completed?: boolean };
+      expect(data?.text).toBe('Hello world');
+      expect(data?.completed).toBe(true);
+    });
+
+    // And a snapshot that jumps AHEAD of the deltas must also leave
+    // the local field alone — once deltas are authoritative they
+    // stay authoritative for the rest of the part's life.
+    act(() => {
+      handle.sse()!.emitMessage({
+        type: 'message.part.updated',
+        properties: {
+          part: {
+            id: 'p_drift',
+            type: 'text',
+            text: 'Hello world how are you doing today',
+            messageID: 'msg_drift',
+            sessionID: 'sess_1',
+          },
+        },
+      });
+    });
+
+    // The text should still be the delta-accumulated value — the
+    // reducer does NOT let snapshots overwrite a delta-streamed
+    // field, even when they appear to extend it. The next real
+    // content extension must come via more deltas.
+    await waitFor(() => {
+      const parts = latestParts();
+      const drift = parts.find((p) => p.id === 'p_drift');
+      expect((drift?.data as { text?: string })?.text).toBe('Hello world');
     });
   });
 });
@@ -510,6 +690,241 @@ describe('SessionDetail — composer send', () => {
   });
 });
 
+// ---------------------------------------------------------------
+// Regression tests for the five user-visible behaviours called out
+// in spec/sse-rewrite/requirements.md §User-visible behaviour.
+// Each test maps to one bullet there; the tests above cover the
+// other three (tool blocks live, streaming text never rewinds,
+// question round-trip).
+// ---------------------------------------------------------------
+
+describe('SessionDetail — regression: user message appears immediately and stays', () => {
+  it('survives the SSE round-trip: real user message lands without losing the bubble', async () => {
+    // After the user submits a prompt:
+    //   1) handleSend calls pending.begin(...) — the bubble is
+    //      visible immediately at the render layer.
+    //   2) sendMessage POSTs. SSE delivers `message.created` for
+    //      the real user message id.
+    //   3) usePendingSend.observeMessages clears the pending slot
+    //      because a new user-message id appeared in the messages
+    //      list.
+    //
+    // The user-visible bubble's text content is identical between
+    // (1) and (3) so no flicker is observed. We assert via the
+    // cache mirror: the server-acked user message lands in state
+    // exactly once.
+    const handle = renderSessionPage({ sessionId: 'sess_1' });
+    await flushPromises();
+    await waitFor(() => expect(handle.sse()).toBeDefined());
+    act(() => handle.sse()!.open());
+
+    let composer: HTMLTextAreaElement | null = null;
+    await waitFor(() => {
+      composer = handle.result.container.querySelector('textarea');
+      expect(composer).not.toBeNull();
+    }, { timeout: 4000 });
+    composer!.focus();
+    await act(async () => {
+      composer!.value = 'hello agent';
+      composer!.dispatchEvent(new Event('input', { bubbles: true }));
+      composer!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      await flushPromises();
+    });
+    // sendMessage was reached — the page didn't refuse the send.
+    await waitFor(() => {
+      expect(handle.store.sendMessage).toHaveBeenCalled();
+    }, { timeout: 4000 });
+    const [sid, text] = handle.store.sendMessage.mock.calls[0] as [string, string];
+    expect(sid).toBe('sess_1');
+    expect(text).toContain('hello agent');
+
+    // Server delivers the real user message via SSE.
+    act(() => {
+      handle.sse()!.emitMessage({
+        type: 'message.created',
+        properties: {
+          info: { id: 'msg_real', sessionID: 'sess_1', role: 'user', time: { created: Date.now() } },
+          parts: [
+            { id: 'p_real', type: 'text', text: 'hello agent', messageID: 'msg_real' },
+          ],
+        },
+      });
+    });
+
+    // The cache mirror now reflects the real user message with
+    // the original prompt text. No `temp-*` id has leaked into the
+    // cache (legacy bug: optimistic-id reparenting could produce
+    // duplicate bubbles).
+    type SeedDetail = {
+      session: never;
+      messages: { id: string; data: { role: string } }[];
+      parts: { id: string; data: unknown }[];
+      totalMessages: number;
+    };
+    const seed: SeedDetail = { session: {} as never, messages: [], parts: [], totalMessages: 0 };
+    await waitFor(() => {
+      const calls = handle.store.updateCachedSession.mock.calls;
+      expect(calls.length).toBeGreaterThan(0);
+      const lastCall = calls.at(-1)!;
+      const updater = lastCall[1] as (prev: SeedDetail) => SeedDetail;
+      const result = updater(seed);
+      const userMessages = result.messages.filter((m) => m.data.role === 'user');
+      // Exactly one user message — no temp-id residue.
+      expect(userMessages).toHaveLength(1);
+      expect(userMessages[0].id).toBe('msg_real');
+      expect(userMessages[0].id.startsWith('temp-')).toBe(false);
+    });
+  });
+});
+
+describe('SessionDetail — regression: no max-update-depth loop during streaming', () => {
+  it('renders many SSE deltas back-to-back without triggering setState-in-loop warning', async () => {
+    // Regression: a previous version of the rewrite left
+    // useSessionStatus.ts:257 (`setLiveTokensPerSecond`) caught in a
+    // render loop because `setSubagentTokens` had fresh identity
+    // each render (deliberate non-memoised setter). With the TPS
+    // effect listing it as a dep, every setState fired the effect
+    // again. The fix (useCallback + observeMessages-in-useEffect)
+    // must hold under sustained delta streams.
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const handle = renderSessionPage({ sessionId: 'sess_1' });
+    await flushPromises();
+    await waitFor(() => expect(handle.sse()).toBeDefined());
+    act(() => handle.sse()!.open());
+
+    // Seed an assistant message with non-zero token output so the
+    // TPS effect hits the `setLiveTokensPerSecond(value)` branch
+    // (not the early `null` short-circuit). The loop only fires
+    // when a real numeric value is being written.
+    const start = Date.now() - 5_000; // 5s of "elapsed" stream
+    act(() => {
+      handle.sse()!.emitMessage({
+        type: 'message.created',
+        properties: {
+          info: {
+            id: 'msg_busy',
+            sessionID: 'sess_1',
+            role: 'assistant',
+            time: { created: start },
+            tokens: { input: 0, output: 500 },
+          },
+        },
+      });
+    });
+    // Burst of 30 deltas + interleaved message.updated events that
+    // bump the output token count. Each message.updated changes
+    // `messages` identity (because the reducer reassigns the message
+    // object), which is the dep useSessionStatus reacts to.
+    act(() => {
+      for (let i = 0; i < 30; i++) {
+        handle.sse()!.emitMessage({
+          type: 'message.part.delta',
+          properties: {
+            partID: 'p_text',
+            messageID: 'msg_busy',
+            sessionID: 'sess_1',
+            field: 'text',
+            delta: `token ${i} `,
+          },
+        });
+        handle.sse()!.emitMessage({
+          type: 'message.updated',
+          properties: {
+            info: {
+              id: 'msg_busy',
+              sessionID: 'sess_1',
+              role: 'assistant',
+              time: { created: start },
+              tokens: { input: 0, output: 500 + i * 5 },
+            },
+          },
+        });
+      }
+    });
+    await flushPromises(8);
+
+    const maxDepthCalls = errorSpy.mock.calls.filter(
+      (args) => args.some((a) => typeof a === 'string' && a.includes('Maximum update depth exceeded')),
+    );
+    expect(maxDepthCalls).toHaveLength(0);
+
+    errorSpy.mockRestore();
+  });
+});
+
+describe('SessionDetail — regression: session.diff triggers an immediate refetch', () => {
+  it('refetches /api/session/{id} as soon as session.diff arrives', async () => {
+    // The user-reported regression: tool blocks (edit/write) carry
+    // their diff result via `state.metadata.filediff` on the part,
+    // which the server fills in after emitting the corresponding
+    // `session.diff` event. Without observing `session.diff` and
+    // triggering a refetch, the tool block's diff stays empty in
+    // the UI until the user refreshes the page.
+    //
+    // The refetch fires immediately (not debounced) so the diff
+    // appears as soon as it's ready. The doFetch AbortController
+    // ensures overlapping diff events don't pile up — only one
+    // request is ever in flight.
+    const handle = renderSessionPage({ sessionId: 'sess_1' });
+    await flushPromises();
+    await waitFor(() => expect(handle.sse()).toBeDefined());
+    act(() => handle.sse()!.open());
+    await flushPromises();
+
+    const initialCallCount = handle.api.session.mock.calls.length;
+    act(() => {
+      handle.sse()!.emitMessage({
+        type: 'session.diff',
+        properties: {
+          sessionID: 'sess_1',
+          diff: [
+            { file: 'src/foo.ts', patch: 'diff body', additions: 5, deletions: 1, status: 'modified' },
+          ],
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(handle.api.session.mock.calls.length).toBeGreaterThan(initialCallCount);
+    });
+  });
+});
+
+describe('SessionDetail — regression: disconnect-reconnect recovers cleanly', () => {
+  it('refetches the session detail on reconnect after an EventSource error', async () => {
+    const handle = renderSessionPage({ sessionId: 'sess_1' });
+    await flushPromises();
+    await waitFor(() => expect(handle.sse()).toBeDefined());
+    act(() => handle.sse()!.open());
+
+    // Reset the api.session spy so we can count the reconnect-driven
+    // refetch in isolation.
+    const apiSession = handle.api.session;
+    const initialCallCount = apiSession.mock.calls.length;
+
+    // Simulate a disconnect.
+    act(() => {
+      handle.sse()!.onerror?.(new Event('error'));
+    });
+
+    // The hook schedules a reconnect via computeReconnectDelay
+    // (default schedule starts at 500ms). To avoid waiting, we
+    // poll for a new EventSource and open it. The page wires a
+    // 500ms+ backoff, so we wait long enough.
+    await waitFor(() => {
+      expect((globalThis as unknown as { EventSource: { instances: unknown[] } }).EventSource.instances.length).toBeGreaterThanOrEqual(2);
+    }, { timeout: 4000 });
+
+    act(() => handle.sse()!.open());
+
+    // On reconnect, the hook refetches /api/session/{id} so any
+    // events emitted during the gap reconcile in one shot.
+    await waitFor(() => {
+      expect(apiSession.mock.calls.length).toBeGreaterThan(initialCallCount);
+    });
+  });
+});
+
 describe('SessionDetail — composer abort', () => {
   it('calls abortSession when the SSE marks the assistant running and the user clicks abort', async () => {
     const handle = renderSessionPage({ sessionId: 'sess_1' });
@@ -631,7 +1046,7 @@ describe('SessionDetail — rate-limit notice', () => {
 
     await flushPromises();
     await waitFor(() => {
-      expect(handle.store.getSession).toHaveBeenCalled();
+      expect(handle.api.session).toHaveBeenCalled();
     });
 
     // React logs "Maximum update depth exceeded" to console.error
@@ -646,10 +1061,9 @@ describe('SessionDetail — rate-limit notice', () => {
   });
 
   it('does not loop when a non-notice session renders', async () => {
-    // Regression: ensure the hashSession change (adding notice: null
-    // for sessions without a notice) doesn't cause setSession to fire
-    // on every poll, creating a cascade through the many useCallback
-    // hooks that depend on `session`.
+    // Regression: ensure the new reducer pipeline doesn't cause a
+    // cascade through any useCallback hook that depends on
+    // `session`.
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const sess = makeSession({ id: 'sess_plain', status: 'done' });
@@ -663,7 +1077,7 @@ describe('SessionDetail — rate-limit notice', () => {
 
     await flushPromises();
     await waitFor(() => {
-      expect(handle.store.getSession).toHaveBeenCalled();
+      expect(handle.api.session).toHaveBeenCalled();
     });
 
     const maxDepthCalls = errorSpy.mock.calls.filter(

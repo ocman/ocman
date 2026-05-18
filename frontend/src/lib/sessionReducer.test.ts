@@ -1,0 +1,611 @@
+// Pure reducer for the SessionDetail page. Tests live next to the
+// implementation and exercise the action table from
+// spec/sse-rewrite/architecture.md directly — no React, no SSE.
+//
+// The five user-visible behaviours from requirements.md each have a
+// dedicated `regression:` block so a future developer can grep for
+// them when investigating a bug.
+
+import { describe, it, expect } from 'vitest';
+import type { Message, Part, SessionDetail } from './api';
+import type { QuestionItem } from '../components/session/QuestionPrompt';
+
+type SessionRow = SessionDetail['session'];
+import {
+  initialSessionView,
+  reduceSessionView,
+  type SessionView,
+  type SseEvent,
+} from './sessionReducer';
+
+const SID = 'sess-1';
+
+function makeSession(overrides: Partial<SessionRow> = {}): SessionRow {
+  return {
+    id: SID,
+    platform: 'opencode',
+    projectId: 'proj-1',
+    title: 'Test session',
+    directory: '/tmp/proj',
+    timeCreated: 1_000,
+    timeUpdated: 2_000,
+    summaryAdditions: null,
+    summaryDeletions: null,
+    summaryFiles: null,
+    shareUrl: null,
+    messageCount: 0,
+    durationMs: 0,
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    totalCost: 0,
+    status: 'done',
+    liveConnection: true,
+    pendingPermission: false,
+    pendingQuestion: false,
+    archived: false,
+    seen: true,
+    pinned: false,
+    pinnedAt: 0,
+    ...overrides,
+  };
+}
+
+function makeMessage(id: string, timeCreated: number, overrides: Partial<Message['data']> = {}): Message {
+  return {
+    id,
+    sessionId: SID,
+    timeCreated,
+    data: { role: 'assistant', ...overrides },
+  };
+}
+
+function makeTextPart(id: string, messageId: string, text: string, extra: Record<string, unknown> = {}): Part {
+  return {
+    id,
+    messageId,
+    sessionId: SID,
+    data: { type: 'text', text, ...extra } as unknown as string,
+  };
+}
+
+function makeToolPart(id: string, messageId: string, tool: string, state: Record<string, unknown>): Part {
+  return {
+    id,
+    messageId,
+    sessionId: SID,
+    data: { type: 'tool', tool, state } as unknown as string,
+  };
+}
+
+function decode(p: Part): Record<string, unknown> {
+  const d = p.data as unknown;
+  return typeof d === 'string' ? JSON.parse(d) as Record<string, unknown> : d as Record<string, unknown>;
+}
+
+function makeView(overrides: Partial<SessionView> = {}): SessionView {
+  return {
+    ...initialSessionView(SID),
+    session: makeSession(),
+    ...overrides,
+  };
+}
+
+// Helper to wrap an SSE event body into the `{type, properties}`
+// shape that OpenCode emits over the wire.
+function sseEvent(type: string, properties: Record<string, unknown>): SseEvent {
+  return { type, properties };
+}
+
+// Inline factory so tests don't repeat the QuestionOption shape.
+function yesNoQuestion(label = 'Continue?'): QuestionItem {
+  return {
+    question: label,
+    header: label,
+    options: [
+      { label: 'yes', description: '' },
+      { label: 'no', description: '' },
+    ],
+  };
+}
+
+describe('reduceSessionView — load action', () => {
+  it('replaces state wholesale on `load`', () => {
+    const before = makeView({
+      messages: [makeMessage('m-old', 1)],
+      parts: [makeTextPart('p-old', 'm-old', 'stale')],
+      pendingPermission: { permissionId: 'p1', permission: 'old', patterns: [], sessionId: SID },
+    });
+    const fresh = makeView({
+      messages: [makeMessage('m-new', 10)],
+      parts: [makeTextPart('p-new', 'm-new', 'fresh')],
+    });
+    const after = reduceSessionView(before, { type: 'load', view: fresh });
+    expect(after.messages.map((m) => m.id)).toEqual(['m-new']);
+    expect(after.parts.map((p) => p.id)).toEqual(['p-new']);
+    // load replaces side-channels too — disconnect-reload semantics
+    // (requirement: disconnect = reload).
+    expect(after.pendingPermission).toBe(null);
+  });
+
+  it('discards delta-ownership tracking on load (fresh snapshot is authoritative)', () => {
+    // After a reload we trust the server: any field that was
+    // delta-owned in the previous session lifetime is irrelevant
+    // because we just refetched the whole conversation.
+    const before = makeView({
+      messages: [makeMessage('m1', 1)],
+      parts: [makeTextPart('p1', 'm1', 'streamed locally')],
+    });
+    const withDelta = reduceSessionView(before, {
+      type: 'sse',
+      event: sseEvent('message.part.delta', {
+        partID: 'p1', messageID: 'm1', sessionID: SID, field: 'text', delta: ' more',
+      }),
+    });
+    const reloaded = reduceSessionView(withDelta, {
+      type: 'load',
+      view: makeView({
+        messages: [makeMessage('m1', 1)],
+        parts: [makeTextPart('p1', 'm1', 'authoritative')],
+      }),
+    });
+    expect(decode(reloaded.parts[0]).text).toBe('authoritative');
+  });
+
+  it('does not reconcile messages across different sessions', () => {
+    // Reconcile is intentionally sticky for the same session because
+    // OpenCode can emit SSE before its SQLite snapshot catches up.
+    // A route change is a different contract: preserving in-memory
+    // messages from the previous session leaks stale streamed content
+    // into the target session until the next refresh.
+    const before = makeView({
+      session: makeSession({ id: 'sess-old' }),
+      sessionId: 'sess-old',
+      messages: [{ ...makeMessage('m-old', 1), sessionId: 'sess-old' }],
+      parts: [{ ...makeTextPart('p-old', 'm-old', 'stale stream'), sessionId: 'sess-old' }],
+    });
+    const incoming = makeView({
+      session: makeSession({ id: 'sess-new', title: 'New session' }),
+      sessionId: 'sess-new',
+      messages: [{ ...makeMessage('m-new', 2), sessionId: 'sess-new' }],
+      parts: [{ ...makeTextPart('p-new', 'm-new', 'fresh target'), sessionId: 'sess-new' }],
+    });
+
+    const after = reduceSessionView(before, { type: 'load', view: incoming, mode: 'reconcile' });
+
+    expect(after.sessionId).toBe('sess-new');
+    expect(after.session?.id).toBe('sess-new');
+    expect(after.messages.map((m) => m.id)).toEqual(['m-new']);
+    expect(after.parts.map((p) => p.id)).toEqual(['p-new']);
+  });
+});
+
+describe('reduceSessionView — message.created / message.updated', () => {
+  it('upserts the message info sorted by timeCreated', () => {
+    let view = makeView({ messages: [makeMessage('m1', 100)] });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.created', {
+        info: { id: 'm0', sessionID: SID, role: 'user', time: { created: 50 } },
+        parts: [],
+      }),
+    });
+    expect(view.messages.map((m) => m.id)).toEqual(['m0', 'm1']);
+  });
+
+  it('appends embedded parts (id-deduped) from the snapshot', () => {
+    let view = makeView();
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.created', {
+        info: { id: 'm1', sessionID: SID, role: 'assistant', time: { created: 1 } },
+        parts: [
+          { id: 'p1', messageID: 'm1', sessionID: SID, type: 'text', text: 'hello' },
+          { id: 'p2', messageID: 'm1', sessionID: SID, type: 'tool', tool: 'bash', state: { status: 'running' } },
+        ],
+      }),
+    });
+    expect(view.parts.map((p) => p.id)).toEqual(['p1', 'p2']);
+    expect(decode(view.parts[0]).text).toBe('hello');
+  });
+
+  it('replaces a part on collision (same id, new snapshot)', () => {
+    let view = makeView({
+      messages: [makeMessage('m1', 1)],
+      parts: [makeTextPart('p1', 'm1', 'old')],
+    });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.updated', {
+        info: { id: 'm1', sessionID: SID, role: 'assistant', time: { created: 1 } },
+        parts: [
+          { id: 'p1', messageID: 'm1', sessionID: SID, type: 'text', text: 'new' },
+        ],
+      }),
+    });
+    expect(view.parts).toHaveLength(1);
+    expect(decode(view.parts[0]).text).toBe('new');
+  });
+
+  it('regression: tool block from message.created renders immediately', () => {
+    // Requirement: tool blocks must appear in the conversation
+    // thread within one animation frame.
+    let view = makeView();
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.created', {
+        info: { id: 'm1', sessionID: SID, role: 'assistant', time: { created: 1 } },
+        parts: [
+          { id: 'p-tool', messageID: 'm1', sessionID: SID, type: 'tool', tool: 'bash', state: { status: 'running' } },
+        ],
+      }),
+    });
+    const toolPart = view.parts.find((p) => p.id === 'p-tool');
+    expect(toolPart).toBeDefined();
+    expect(decode(toolPart!).type).toBe('tool');
+  });
+});
+
+describe('reduceSessionView — message.part.updated (snapshot)', () => {
+  it('upserts a single part by id', () => {
+    let view = makeView({
+      messages: [makeMessage('m1', 1)],
+      parts: [makeTextPart('p1', 'm1', 'hi')],
+    });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.part.updated', {
+        part: { id: 'p2', messageID: 'm1', sessionID: SID, type: 'text', text: 'second' },
+      }),
+    });
+    expect(view.parts.map((p) => p.id)).toEqual(['p1', 'p2']);
+  });
+
+  it('snapshot wins on fields that have not received deltas', () => {
+    let view = makeView({
+      messages: [makeMessage('m1', 1)],
+      parts: [makeTextPart('p1', 'm1', 'old text')],
+    });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.part.updated', {
+        part: { id: 'p1', messageID: 'm1', sessionID: SID, type: 'text', text: 'new text' },
+      }),
+    });
+    expect(decode(view.parts[0]).text).toBe('new text');
+  });
+
+  it('delta-owned text field is preserved when a later snapshot lands', () => {
+    let view = makeView({ messages: [makeMessage('m1', 1)] });
+    // First delta arrives — establishes ownership of `text`.
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.part.delta', {
+        partID: 'p1', messageID: 'm1', sessionID: SID, field: 'text', delta: 'Hello ',
+      }),
+    });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.part.delta', {
+        partID: 'p1', messageID: 'm1', sessionID: SID, field: 'text', delta: 'world',
+      }),
+    });
+    // Stale snapshot arrives later — must not clobber delta value.
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.part.updated', {
+        part: { id: 'p1', messageID: 'm1', sessionID: SID, type: 'text', text: 'stale' },
+      }),
+    });
+    expect(decode(view.parts[0]).text).toBe('Hello world');
+  });
+
+  it('delta-owned state.output is preserved while non-streamed fields update', () => {
+    let view = makeView({ messages: [makeMessage('m1', 1)] });
+    // Establish delta ownership on state.output.
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.part.delta', {
+        partID: 'p1', messageID: 'm1', sessionID: SID, field: 'state.output', delta: 'streamed',
+      }),
+    });
+    // Snapshot updates status (non-streaming field, must win) and
+    // output (streaming field, must be preserved).
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.part.updated', {
+        part: {
+          id: 'p1', messageID: 'm1', sessionID: SID, type: 'tool', tool: 'bash',
+          state: { status: 'completed', output: 'stale' },
+        },
+      }),
+    });
+    const decoded = decode(view.parts[0]);
+    expect(decoded.tool).toBe('bash');
+    expect((decoded.state as Record<string, unknown>).status).toBe('completed');
+    expect((decoded.state as Record<string, unknown>).output).toBe('streamed');
+  });
+});
+
+describe('reduceSessionView — message.part.delta', () => {
+  it('appends to text field by partId', () => {
+    let view = makeView({
+      messages: [makeMessage('m1', 1)],
+      parts: [makeTextPart('p1', 'm1', 'Hello')],
+    });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.part.delta', {
+        partID: 'p1', messageID: 'm1', sessionID: SID, field: 'text', delta: ' world',
+      }),
+    });
+    expect(decode(view.parts[0]).text).toBe('Hello world');
+  });
+
+  it('synthesises a stub part if the partId is unknown', () => {
+    let view = makeView({ messages: [makeMessage('m1', 1)] });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.part.delta', {
+        partID: 'p-new', messageID: 'm1', sessionID: SID, field: 'text', delta: 'orphan',
+      }),
+    });
+    expect(view.parts).toHaveLength(1);
+    expect(view.parts[0].id).toBe('p-new');
+    expect(decode(view.parts[0]).text).toBe('orphan');
+  });
+
+  it('synthesises a stub assistant message when delta arrives before message.created', () => {
+    // OpenCode quirk: some streams deliver part deltas before the
+    // owning message.created. The reducer must keep a stub so the
+    // converter has a Message to attach the parts to.
+    let view = makeView();
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.part.delta', {
+        partID: 'p1', messageID: 'm-future', sessionID: SID, field: 'text', delta: 'hello',
+      }),
+    });
+    const stub = view.messages.find((m) => m.id === 'm-future');
+    expect(stub).toBeDefined();
+    expect(stub!.data.role).toBe('assistant');
+  });
+
+  it('regression: streaming text never rewinds (deltas always append)', () => {
+    // Requirement: text in the bubble only grows — never shortens,
+    // never blanks, never replaces with a different prefix.
+    let view = makeView({ messages: [makeMessage('m1', 1)] });
+    const tokens = ['Hello', ' ', 'world', ',', ' how', ' are', ' you'];
+    for (const t of tokens) {
+      view = reduceSessionView(view, {
+        type: 'sse',
+        event: sseEvent('message.part.delta', {
+          partID: 'p1', messageID: 'm1', sessionID: SID, field: 'text', delta: t,
+        }),
+      });
+    }
+    expect(decode(view.parts[0]).text).toBe('Hello world, how are you');
+  });
+
+  it('uses dotted path resolution for state.output', () => {
+    let view = makeView({
+      messages: [makeMessage('m1', 1)],
+      parts: [makeToolPart('p1', 'm1', 'bash', { status: 'running', output: 'line 1\n' })],
+    });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.part.delta', {
+        partID: 'p1', messageID: 'm1', sessionID: SID, field: 'state.output', delta: 'line 2\n',
+      }),
+    });
+    const state = decode(view.parts[0]).state as Record<string, unknown>;
+    expect(state.output).toBe('line 1\nline 2\n');
+  });
+});
+
+describe('reduceSessionView — session.status / session.idle', () => {
+  it('updates session.status from properties.status', () => {
+    let view = makeView();
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('session.status', { status: 'busy' }),
+    });
+    expect(view.session?.status).toBe('busy');
+  });
+
+  it('accepts nested object status shape', () => {
+    let view = makeView();
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('session.status', { status: { type: 'busy' } }),
+    });
+    expect(view.session?.status).toBe('busy');
+  });
+
+  it('maps `idle` to `done` and flags a refetch via the reducer result', () => {
+    let view = makeView({ session: makeSession({ status: 'busy' }) });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('session.idle', {}),
+    });
+    expect(view.session?.status).toBe('done');
+    expect(view._refetchRequested).toBe(true);
+  });
+});
+
+describe('reduceSessionView — permission prompts', () => {
+  it('sets pendingPermission on permission.asked', () => {
+    let view = makeView();
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('permission.asked', {
+        id: 'perm-1', permission: 'Allow shell?', patterns: ['ls'], sessionID: SID,
+      }),
+    });
+    expect(view.pendingPermission?.permissionId).toBe('perm-1');
+  });
+
+  it('clears pendingPermission when permission.replied matches id', () => {
+    let view = makeView({
+      pendingPermission: { permissionId: 'perm-1', permission: 'X', patterns: [], sessionId: SID },
+    });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('permission.replied', { requestID: 'perm-1' }),
+    });
+    expect(view.pendingPermission).toBe(null);
+  });
+
+  it('does not clear pendingPermission when id mismatches', () => {
+    const initial = { permissionId: 'perm-1', permission: 'X', patterns: [], sessionId: SID };
+    let view = makeView({ pendingPermission: initial });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('permission.replied', { requestID: 'perm-other' }),
+    });
+    expect(view.pendingPermission).toBe(initial);
+  });
+});
+
+describe('reduceSessionView — question prompts', () => {
+  it('sets pendingQuestion on question.asked', () => {
+    let view = makeView();
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('question.asked', {
+        id: 'q-1', sessionID: SID,
+        questions: [yesNoQuestion()],
+      }),
+    });
+    expect(view.pendingQuestion?.requestId).toBe('q-1');
+    expect(view.pendingQuestion?.questions).toHaveLength(1);
+  });
+
+  it('clears pendingQuestion on question.replied with matching id', () => {
+    let view = makeView({
+      pendingQuestion: {
+        requestId: 'q-1', sessionID: SID,
+        questions: [yesNoQuestion()],
+      },
+    });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('question.replied', { requestID: 'q-1' }),
+    });
+    expect(view.pendingQuestion).toBe(null);
+  });
+
+  it('clears pendingQuestion on question.rejected with matching id', () => {
+    let view = makeView({
+      pendingQuestion: {
+        requestId: 'q-1', sessionID: SID,
+        questions: [yesNoQuestion()],
+      },
+    });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('question.rejected', { requestID: 'q-1' }),
+    });
+    expect(view.pendingQuestion).toBe(null);
+  });
+
+  it('regression: question → reply → assistant follow-up renders without refresh', () => {
+    // Requirement: when the agent posts a question prompt and the
+    // user answers, the answered question and the assistant follow-up
+    // both render via SSE alone.
+    let view = makeView();
+    // 1) Question arrives.
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('question.asked', {
+        id: 'q-1', sessionID: SID,
+        questions: [yesNoQuestion()],
+      }),
+    });
+    expect(view.pendingQuestion?.requestId).toBe('q-1');
+    // 2) User replies — prompt clears.
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('question.replied', { requestID: 'q-1' }),
+    });
+    expect(view.pendingQuestion).toBe(null);
+    // 3) Assistant follow-up message arrives.
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.created', {
+        info: { id: 'm-reply', sessionID: SID, role: 'assistant', time: { created: 100 } },
+        parts: [
+          { id: 'p-reply', messageID: 'm-reply', sessionID: SID, type: 'text', text: 'Continuing.' },
+        ],
+      }),
+    });
+    expect(view.messages.find((m) => m.id === 'm-reply')).toBeDefined();
+    expect(decode(view.parts.find((p) => p.id === 'p-reply')!).text).toBe('Continuing.');
+  });
+});
+
+describe('reduceSessionView — cross-session events', () => {
+  it('ignores events whose sessionID belongs to a different session', () => {
+    const before = makeView({ messages: [makeMessage('m1', 1)] });
+    const after = reduceSessionView(before, {
+      type: 'sse',
+      event: sseEvent('message.created', {
+        info: { id: 'other-msg', sessionID: 'sess-other', role: 'assistant', time: { created: 5 } },
+        parts: [],
+      }),
+    });
+    expect(after).toBe(before);
+  });
+
+  it('treats missing sessionID as "belongs to current session"', () => {
+    // Defensive: some legacy payloads omit sessionID and the only
+    // reasonable interpretation is "this is for the active stream".
+    let view = makeView();
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.created', {
+        info: { id: 'm1', role: 'assistant', time: { created: 1 } },
+        parts: [],
+      }),
+    });
+    expect(view.messages.find((m) => m.id === 'm1')).toBeDefined();
+  });
+});
+
+describe('reduceSessionView — clearPrompt action', () => {
+  it('clears permission when type matches', () => {
+    const view = makeView({
+      pendingPermission: { permissionId: 'p1', permission: 'X', patterns: [], sessionId: SID },
+    });
+    const after = reduceSessionView(view, { type: 'clearPrompt', kind: 'permission', id: 'p1' });
+    expect(after.pendingPermission).toBe(null);
+  });
+
+  it('clears question when type matches', () => {
+    const view = makeView({
+      pendingQuestion: {
+        requestId: 'q1', sessionID: SID,
+        questions: [yesNoQuestion('Q?')],
+      },
+    });
+    const after = reduceSessionView(view, { type: 'clearPrompt', kind: 'question', id: 'q1' });
+    expect(after.pendingQuestion).toBe(null);
+  });
+
+  it('does not clear when id mismatches', () => {
+    const perm = { permissionId: 'p1', permission: 'X', patterns: [], sessionId: SID };
+    const view = makeView({ pendingPermission: perm });
+    const after = reduceSessionView(view, { type: 'clearPrompt', kind: 'permission', id: 'p-other' });
+    expect(after.pendingPermission).toBe(perm);
+  });
+});
+
+describe('reduceSessionView — unknown events', () => {
+  it('returns the same state reference for unknown event types', () => {
+    const before = makeView();
+    const after = reduceSessionView(before, {
+      type: 'sse',
+      event: sseEvent('unknown.event.type', { foo: 'bar' }),
+    });
+    expect(after).toBe(before);
+  });
+});

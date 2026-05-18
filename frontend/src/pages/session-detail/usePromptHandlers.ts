@@ -6,6 +6,11 @@ import type { PendingPermission } from '../../lib/sseHelpers';
 import type { PendingQuestion } from '../../components/session/QuestionPrompt';
 import { notifyPromptDismissed } from '../../lib/useToastNotify';
 
+/** Page-side callback fired after a prompt has been answered.
+ *  Routes through the session reducer's `clearPrompt` action so the
+ *  view-state mutation stays in one place. */
+export type ClearPromptFn = (kind: 'permission' | 'question', id: string) => void;
+
 /**
  * sessionStorage key prefix used to persist a pending question
  * across reloads. The state is per-session so two browser tabs
@@ -51,9 +56,9 @@ export interface UsePromptHandlersOptions {
   portAvailable: boolean;
   caps: PlatformCapabilities;
   pendingPermission: PendingPermission | null;
-  setPendingPermission: Dispatch<SetStateAction<PendingPermission | null>>;
   pendingQuestion: PendingQuestion | null;
-  setPendingQuestion: Dispatch<SetStateAction<PendingQuestion | null>>;
+  /** Clears the prompt in the reducer once the reply POST succeeds. */
+  clearPrompt: ClearPromptFn;
 }
 
 export interface UsePromptHandlersResult {
@@ -90,9 +95,8 @@ export function usePromptHandlers({
   portAvailable,
   caps,
   pendingPermission,
-  setPendingPermission,
   pendingQuestion,
-  setPendingQuestion,
+  clearPrompt,
 }: UsePromptHandlersOptions): UsePromptHandlersResult {
   const respondPermission = useApiStore((s) => s.respondPermission);
   const respondQuestion = useApiStore((s) => s.respondQuestion);
@@ -108,39 +112,32 @@ export function usePromptHandlers({
     setPermissionError(null);
     setAnsweringPermission(true);
     const repliedId = pendingPermission.permissionId;
-    // OpenCode's permission API is session-scoped: the URL is
-    // /session/{id}/permissions/{pid}. When the prompt comes from a
-    // subagent of the page session, route the reply to that
-    // subagent's session — the parent session knows nothing about
-    // the prompt.
+    // OpenCode's permission API is session-scoped: route subagent
+    // replies to the subagent's session.
     const targetSessionId = pendingPermission.sessionId || session.id;
     try {
       await respondPermission(targetSessionId, repliedId, reply);
-      // Only clear the prompt if the currently pending permission
-      // is still the one we just replied to. An SSE
-      // `permission.asked` event for a follow-up may have already
-      // arrived while the POST was in flight — clearing
-      // unconditionally would hide that new prompt.
-      setPendingPermission((prev) => (prev && prev.permissionId === repliedId ? null : prev));
-      // Drop any global prompt toast pointing at this session — the
-      // user just answered. Cross-tab clients still get pruned on
-      // their next poll.
+      // The reducer's clearPrompt action no-ops if the currently
+      // pending permission has a different id (e.g. an SSE
+      // `permission.asked` for a follow-up arrived while the POST
+      // was in flight). No extra guard needed here.
+      clearPrompt('permission', repliedId);
       notifyPromptDismissed(targetSessionId);
-      // SSE events will deliver the updated session state incrementally.
     } catch (e) {
       setPermissionError(e instanceof Error ? e.message : 'Failed to respond to permission request');
     } finally {
       setAnsweringPermission(false);
     }
-  }, [answeringPermission, caps.respondPermission, pendingPermission, portAvailable, respondPermission, session, setPendingPermission]);
+  }, [answeringPermission, caps.respondPermission, pendingPermission, portAvailable, respondPermission, session, clearPrompt]);
 
   const handleQuestionReply = useCallback(async (answers: string[][]) => {
     if (!pendingQuestion || answeringQuestion || !portAvailable || !caps.respondQuestion || !session) return;
     setQuestionError(null);
     setAnsweringQuestion(true);
+    const repliedId = pendingQuestion.requestId;
     try {
-      await respondQuestion(session.id, pendingQuestion.requestId, answers);
-      setPendingQuestion(null);
+      await respondQuestion(session.id, repliedId, answers);
+      clearPrompt('question', repliedId);
       setQuestionError(null);
       clearPendingQuestion(session.id);
       notifyPromptDismissed(session.id);
@@ -150,14 +147,15 @@ export function usePromptHandlers({
     } finally {
       setAnsweringQuestion(false);
     }
-  }, [answeringQuestion, caps.respondQuestion, pendingQuestion, portAvailable, respondQuestion, session, setPendingQuestion]);
+  }, [answeringQuestion, caps.respondQuestion, pendingQuestion, portAvailable, respondQuestion, session, clearPrompt]);
 
   const handleQuestionReject = useCallback(async () => {
     if (!pendingQuestion || answeringQuestion || !portAvailable || !caps.respondQuestion || !session) return;
     setAnsweringQuestion(true);
+    const repliedId = pendingQuestion.requestId;
     try {
-      await rejectQuestion(session.id, pendingQuestion.requestId);
-      setPendingQuestion(null);
+      await rejectQuestion(session.id, repliedId);
+      clearPrompt('question', repliedId);
       clearPendingQuestion(session.id);
       notifyPromptDismissed(session.id);
     } catch (e) {
@@ -165,7 +163,7 @@ export function usePromptHandlers({
     } finally {
       setAnsweringQuestion(false);
     }
-  }, [answeringQuestion, caps.respondQuestion, pendingQuestion, portAvailable, rejectQuestion, session, setPendingQuestion]);
+  }, [answeringQuestion, caps.respondQuestion, pendingQuestion, portAvailable, rejectQuestion, session, clearPrompt]);
 
   return {
     answeringPermission,

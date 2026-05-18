@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { Part, TaskSessionData } from '../../lib/api';
 import { api } from '../../lib/api';
@@ -78,24 +78,22 @@ export function useSubagentTracking(
   const [subagentTokens, setSubagentTokensRaw] = useState<SubagentTokenMap>(new Map());
   const [taskLiveOutput, setTaskLiveOutput] = useState<Record<string, TaskSessionData>>({});
 
-  // Wrap the setter in a reference that always trims trailing
-  // entries past the cap. Callers can safely pass plain
-  // SetStateAction values without worrying about the cap.
-  //
-  // NOTE: deliberately not memoised. A previous attempt
-  // (`64ec0ea`) wrapped this in `useCallback([])` to stabilise
-  // identity for downstream effect deps; that change was reverted
-  // because the recompute-on-every-render behaviour of the TPS
-  // effect in `useSessionStatus` is desirable — the rounding via
-  // `formatTokensPerSecond` already smooths the display.
-  const setSubagentTokens: Dispatch<SetStateAction<SubagentTokenMap>> = (next) => {
+  // Wrap the setter in a stable identity that always trims trailing
+  // entries past the cap. Stability matters because the new
+  // pipeline lists `setSubagentTokens` as an effect dependency in
+  // `useSessionStatus`; a fresh identity per render would cause the
+  // 1 Hz TPS interval to be torn down + re-armed on every render,
+  // and (worse) re-fire the effect synchronously, producing a
+  // "Maximum update depth exceeded" warning during active
+  // streaming.
+  const setSubagentTokens = useCallback<Dispatch<SetStateAction<SubagentTokenMap>>>((next) => {
     setSubagentTokensRaw((prev) => {
       const updated = typeof next === 'function'
         ? (next as (p: SubagentTokenMap) => SubagentTokenMap)(prev)
         : next;
       return trimSubagentTokens(updated);
     });
-  };
+  }, []);
 
   // Derive subagent session IDs from task-tool parts. Recomputes
   // whenever parts changes; the result is fed into a ref so the SSE

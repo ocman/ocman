@@ -153,6 +153,11 @@ const mockState: {
 export function makeApiStub() {
   return {
     capabilities: vi.fn().mockResolvedValue({ platforms: [] }),
+    // `session` is the raw module-level fetch used by the new
+    // useSession hook. Tests override the resolved value per-test
+    // via `apiOverrides.session = ...`; the default is set in
+    // renderSessionPage from the per-test `detail` fixture.
+    session: vi.fn().mockResolvedValue(null),
     sessionModels: vi.fn().mockResolvedValue({
       sessionDefault: undefined,
       providerDefaults: {},
@@ -166,6 +171,8 @@ export function makeApiStub() {
     renameSession: vi.fn().mockResolvedValue(undefined),
     executeCommand: vi.fn().mockResolvedValue(undefined),
     runShell: vi.fn().mockResolvedValue(undefined),
+    listPermissions: vi.fn().mockResolvedValue([]),
+    listQuestions: vi.fn().mockResolvedValue([]),
   };
 }
 
@@ -350,6 +357,10 @@ export interface RenderOptions {
   assistantThreadCrashCount?: number;
   /** Override apiStore actions individually. */
   storeOverrides?: Record<string, unknown>;
+  /** Override module-level api.* functions (e.g. `session`). The
+   *  new SSE pipeline calls api.session directly instead of going
+   *  through the store. */
+  apiOverrides?: Record<string, unknown>;
 }
 
 export interface RenderHandle {
@@ -398,6 +409,13 @@ export function renderSessionPage(opts: RenderOptions = {}): RenderHandle {
 
   const detail =
     opts.detail ?? makeSessionDetail(makeSession({ id: opts.sessionId ?? 'sess_1' }));
+  // Wire the api.session module-level call (used by useSession) to
+  // return the per-test detail fixture. Tests that need different
+  // behaviour can override via `apiOverrides.session = ...`.
+  mockState.apiStub.session = vi.fn().mockResolvedValue(detail);
+  if (opts.apiOverrides) {
+    Object.assign(mockState.apiStub, opts.apiOverrides);
+  }
   const storeSpies: RenderHandle['store'] = {
     getSession: vi.fn().mockResolvedValue(detail),
     getSessions: vi.fn().mockResolvedValue(opts.sessions ?? [detail.session]),

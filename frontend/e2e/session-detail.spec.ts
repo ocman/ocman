@@ -545,3 +545,179 @@ test('navigating back to dashboard while the current session is streaming is imm
   // should switch immediately even while SSE deltas keep flowing.
   await expect(page).toHaveURL('/', { timeout: 500 });
 });
+
+// ---------------------------------------------------------------------------
+// Regression: streaming counter (live SSE deltas during a turn)
+// ---------------------------------------------------------------------------
+//
+// Reproducer for the user-reported regression "tool/text blocks don't
+// show until refresh". A counter stream sends `message.part.delta`
+// events at 1-second intervals carrying the text "1", "2", ..., "5".
+// Each number must be visible in the DOM *while the stream is still
+// running* — never after a refresh, never only after the final event.
+//
+// This is the most surgical streaming test we have: minimal payload,
+// no tool parts, no embedded `parts` snapshot, just deltas accruing
+// on a single text part. If text deltas don't render live, every
+// other streaming surface (tool output, edit diffs, etc.) breaks the
+// same way.
+test('streaming counter renders each number live as deltas arrive', async ({ mockedPage: page }) => {
+  const streamSessionId = MOCK_SESSION.id;
+  const liveSession = mockSessionWithLiveConnection({
+    ...MOCK_SESSION,
+    status: 'busy',
+    liveConnection: true,
+  });
+
+  // Install a fake EventSource that emits one delta per second for
+  // the numbers 1..5. The delta accumulates onto a single text part
+  // already created by `message.created`. After the last number,
+  // emit `session.idle` so the session transitions out of busy —
+  // but the test asserts each number appears *before* idle lands.
+  await page.addInitScript(({ streamSessionId }) => {
+    class CounterEventSource {
+      static CONNECTING = 0;
+      static OPEN = 1;
+      static CLOSED = 2;
+
+      url: string;
+      readyState = CounterEventSource.CONNECTING;
+      onopen: ((evt: Event) => void) | null = null;
+      onerror: ((evt: Event) => void) | null = null;
+      onmessage: ((evt: MessageEvent) => void) | null = null;
+      listeners: Record<string, Array<(evt: Event) => void>> = {};
+      private intervalId: number | null = null;
+      private msgId = `msg-counter-${streamSessionId}`;
+      private partId = `part-counter-${streamSessionId}`;
+
+      constructor(url: string) {
+        this.url = url;
+        queueMicrotask(() => {
+          if (this.readyState === CounterEventSource.CLOSED) return;
+          this.readyState = CounterEventSource.OPEN;
+          this.onopen?.(new Event('open'));
+
+          if (!url.includes(`/api/session/${streamSessionId}/events`)) return;
+
+          // Seed an assistant message with one empty text part.
+          const created = JSON.stringify({
+            type: 'message.created',
+            properties: {
+              sessionID: streamSessionId,
+              info: {
+                id: this.msgId,
+                sessionID: streamSessionId,
+                role: 'assistant',
+                time: { created: Date.now() },
+              },
+              parts: [
+                { id: this.partId, type: 'text', text: '' },
+              ],
+            },
+          });
+          this.onmessage?.(new MessageEvent('message', { data: created }));
+
+          // Stream the counter: one delta per second carrying the
+          // next number. The user must see each number appear in
+          // real time, not at the end.
+          let i = 0;
+          const COUNT_TO = 5;
+          // Use a short interval so the e2e doesn't take a full
+          // 5 seconds. The contract we're testing is "delta lands
+          // → DOM shows" regardless of cadence; 100ms is plenty
+          // to expose the bug.
+          const INTERVAL_MS = 100;
+          this.intervalId = window.setInterval(() => {
+            if (this.readyState === CounterEventSource.CLOSED) return;
+            i += 1;
+            const delta = JSON.stringify({
+              type: 'message.part.delta',
+              properties: {
+                sessionID: streamSessionId,
+                messageID: this.msgId,
+                partID: this.partId,
+                field: 'text',
+                // Each delta appends one number + space so the
+                // accumulated text is "1 2 3 4 5 ".
+                delta: `${i} `,
+              },
+            });
+            this.onmessage?.(new MessageEvent('message', { data: delta }));
+            if (i >= COUNT_TO) {
+              window.clearInterval(this.intervalId!);
+              this.intervalId = null;
+              // Emit session.idle so the test exercises the
+              // end-of-turn refetch path too. Before the
+              // reconcile-mode fix, this refetch was a wholesale
+              // replace — when the mocked API response returned
+              // empty messages/parts (server hadn't caught up
+              // with the SSE stream), it wiped the streamed
+              // numbers from the DOM. The reconcile mode keeps
+              // in-memory state alive when the server's response
+              // doesn't yet include it.
+              const idle = JSON.stringify({
+                type: 'session.idle',
+                properties: { sessionID: streamSessionId },
+              });
+              this.onmessage?.(new MessageEvent('message', { data: idle }));
+            }
+          }, INTERVAL_MS);
+        });
+      }
+
+      addEventListener(name: string, cb: (evt: Event) => void) {
+        (this.listeners[name] ||= []).push(cb);
+      }
+
+      close() {
+        this.readyState = CounterEventSource.CLOSED;
+        if (this.intervalId !== null) window.clearInterval(this.intervalId);
+      }
+    }
+
+    Object.defineProperty(window, 'EventSource', {
+      configurable: true,
+      writable: true,
+      value: CounterEventSource,
+    });
+  }, { streamSessionId });
+
+  await page.route('/api/sessions*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([liveSession, MOCK_SESSION_2]),
+    }),
+  );
+
+  await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        session: liveSession,
+        messages: [],
+        parts: [],
+        totalMessages: 0,
+        defaultAgent: 'build',
+        defaultModel: 'anthropic/claude-3-5-sonnet-20241022',
+      }),
+    });
+  });
+
+  await page.goto(SESSION_URL);
+  await expect(page.getByTestId('session-layout')).toBeVisible();
+
+  // Each number must appear *while* the stream is still running.
+  // The whole stream takes ~500ms (5 numbers × 100ms), so we give
+  // each assertion 3s of headroom while the rest of the stream
+  // continues to land.
+  const assistantBubble = page.locator('.oc-msg-assistant');
+  for (let n = 1; n <= 5; n++) {
+    await expect(assistantBubble).toContainText(String(n), { timeout: 3_000 });
+  }
+
+  // Once all 5 numbers have streamed, the full accumulated text
+  // should be visible. We check that no number was dropped.
+  await expect(assistantBubble).toContainText('1 2 3 4 5');
+});

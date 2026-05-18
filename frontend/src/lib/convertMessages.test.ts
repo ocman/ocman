@@ -49,17 +49,19 @@ describe('isImageMime', () => {
 });
 
 describe('parsePart', () => {
-  it('parses a JSON-string data field once and caches the result', () => {
+  it('parses a JSON-string data field', () => {
     const part: Part = {
       id: 'p1',
       messageId: 'm1',
       sessionId: 's',
       data: JSON.stringify({ type: 'text', text: 'hi' }) as unknown as string,
     };
-    const first = parsePart(part);
-    const second = parsePart(part);
-    expect(first).toEqual({ type: 'text', text: 'hi' });
-    expect(second).toBe(first); // referentially identical => cache hit
+    const result = parsePart(part);
+    expect(result).toEqual({ type: 'text', text: 'hi' });
+    // The previous version cached results in a module-level
+    // WeakMap, but that cache was one of the invalidation surfaces
+    // the SSE rewrite removed (spec/sse-rewrite). No identity
+    // guarantee for repeat calls.
   });
 
   it('returns the data object as-is when it is already parsed', () => {
@@ -648,5 +650,73 @@ describe('createConvertMessages (per-instance cache)', () => {
     const second = convert([m], [], 'build');
     expect(second).not.toBe(first);
     expect((second[0].metadata?.custom as { agent?: string })?.agent).toBe('build');
+  });
+
+  it('regression: invalidates when a tool part is added to an existing assistant message', () => {
+    // The user-reported regression: tool calls and output blocks
+    // don't appear until refresh. The exact scenario:
+    //
+    //   1. `message.created` for assistant message (no parts yet).
+    //   2. `message.part.updated` lands a tool part.
+    //
+    // Between (1) and (2) the Message reference stays the same
+    // (the reducer doesn't touch messages on part.updated). The
+    // parts array is fresh. The converter must recompute the
+    // assistant message's content to include the tool block.
+    const convert = createConvertMessages();
+    const m = makeMessage('a', { role: 'assistant' }, 1);
+
+    const before = convert([m], []);
+    // Before the part lands the content is either an empty string
+    // or an empty array — either way, no tool calls.
+    const beforeContent = before[0].content;
+    if (Array.isArray(beforeContent)) {
+      const items = asContentArray(beforeContent);
+      expect(items.filter((c) => c.type === 'tool-call')).toHaveLength(0);
+    }
+
+    // SSE delivers a tool part via message.part.updated. The parts
+    // array grows; the Message reference is unchanged.
+    const toolPart = makePart('a', {
+      type: 'tool',
+      tool: 'bash',
+      state: { status: 'running', input: { command: 'echo hi' } },
+    }, 'p_bash');
+
+    const after = convert([m], [toolPart]);
+    const afterContent = asContentArray(after[0].content);
+    expect(afterContent.some((c) => c.type === 'tool-call')).toBe(true);
+  });
+
+  it('regression: a delta-update to a tool part renders the new output', () => {
+    // A live tool block streams output via `message.part.delta`
+    // with field=state.output. The reducer mutates the parts array
+    // immutably — a new array, a new part object, but identical
+    // Message identity. The converter must surface the new output.
+    const convert = createConvertMessages();
+    const m = makeMessage('a', { role: 'assistant' }, 1);
+
+    // Initial render with running tool part, no output yet.
+    const partV1 = makePart('a', {
+      type: 'tool',
+      tool: 'bash',
+      state: { status: 'running', input: { command: 'echo hi' }, output: '' },
+    }, 'p_bash');
+    const before = convert([m], [partV1]);
+    const beforeTool = asContentArray(before[0].content).find((c) => c.type === 'tool-call');
+    expect(beforeTool).toBeDefined();
+    expect(beforeTool!.result ?? '').toBe('');
+
+    // Reducer applies a delta — fresh part object with state.output
+    // populated. The user must see the new output without refresh.
+    const partV2 = makePart('a', {
+      type: 'tool',
+      tool: 'bash',
+      state: { status: 'completed', input: { command: 'echo hi' }, output: 'hi\n' },
+    }, 'p_bash');
+    const after = convert([m], [partV2]);
+    const afterTool = asContentArray(after[0].content).find((c) => c.type === 'tool-call');
+    expect(afterTool).toBeDefined();
+    expect(afterTool!.result ?? '').toContain('hi');
   });
 });

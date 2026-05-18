@@ -86,16 +86,14 @@ export function useSessionCapabilities({
     portAvailableRef.current = portAvailable;
   }, [portAvailable]);
 
-  // Mirror session.liveConnection into portAvailable. The SSE
-  // handler also flips this to true on connection so the composer
-  // un-greys without waiting for the next /api/sessions poll. The
-  // synchronous setState here is intentional — `liveConnection`
-  // changes infrequently (once per session-load) so the cascading
-  // render is unavoidable and harmless.
+  // Mirror session.liveConnection into portAvailable. This must flow
+  // both ways: once a previous session made the composer available,
+  // navigating to a disconnected session must explicitly clear the
+  // bit or the next page inherits a stale write capability.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (liveConnection) setPortAvailable(true);
-  }, [liveConnection]);
+    setPortAvailable(liveConnection);
+  }, [id, liveConnection]);
 
   // Fetch the platform's composer-agent catalog. Platforms without
   // an agent catalog return an empty list, leaving agentColor to
