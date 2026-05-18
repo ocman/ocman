@@ -5,7 +5,9 @@ import {
   truncatePartField,
   insertMessageByTime,
   mergeParts,
+  mergePartsNonClobbering,
   upsertPart,
+  upsertPartNonClobbering,
   inferStatusFromMessage,
 } from './sseMessageHelpers';
 
@@ -137,6 +139,137 @@ describe('upsertPart', () => {
     const result = upsertPart(prev, makePart('p1', 'm1', 'new'));
     expect(prev[0].data).toBe('old');
     expect(result).not.toBe(prev);
+  });
+});
+
+describe('upsertPartNonClobbering', () => {
+  // The SSE handler stores `data` as the raw decoded object (cast
+  // through the `string` type) because the rest of the pipeline
+  // accepts both shapes. These helpers mirror that shape.
+  function partWithText(id: string, text: string): Part {
+    return {
+      id,
+      messageId: 'm1',
+      sessionId: 'sess',
+      data: { type: 'text', text } as unknown as string,
+    };
+  }
+  function partWithOutput(id: string, output: string, status = 'running'): Part {
+    return {
+      id,
+      messageId: 'm1',
+      sessionId: 'sess',
+      data: {
+        type: 'tool',
+        tool: 'bash',
+        state: { status, output },
+      } as unknown as string,
+    };
+  }
+  function decode(part: Part): Record<string, unknown> {
+    const d = part.data as unknown;
+    return typeof d === 'string' ? JSON.parse(d) as Record<string, unknown> : d as Record<string, unknown>;
+  }
+
+  it('appends when the id is not present', () => {
+    const prev = [partWithText('p1', 'hi')];
+    const result = upsertPartNonClobbering(prev, partWithText('p2', 'yo'));
+    expect(result.map((p) => p.id)).toEqual(['p1', 'p2']);
+  });
+
+  it('accepts the snapshot wholesale when its text is at least as long', () => {
+    const prev = [partWithText('p1', 'hello')];
+    const incoming = partWithText('p1', 'hello world');
+    const result = upsertPartNonClobbering(prev, incoming);
+    expect(result[0]).toBe(incoming);
+  });
+
+  it('preserves longer local text when the snapshot would shorten it', () => {
+    // Local copy has accumulated more tokens than the snapshot saw.
+    const prev = [partWithText('p1', 'hello world from deltas')];
+    const incoming = partWithText('p1', 'hello world');
+    const result = upsertPartNonClobbering(prev, incoming);
+    expect((decode(result[0]).text as string)).toBe('hello world from deltas');
+  });
+
+  it('preserves longer local state.output when the snapshot would shorten it', () => {
+    const prev = [partWithOutput('p1', 'tool output streamed long')];
+    const incoming = partWithOutput('p1', 'tool output streamed', 'completed');
+    const result = upsertPartNonClobbering(prev, incoming);
+    const data = decode(result[0]) as { state: { status: string; output: string } };
+    // status came from the (newer) snapshot...
+    expect(data.state.status).toBe('completed');
+    // ...but the output stayed at the longer local value.
+    expect(data.state.output).toBe('tool output streamed long');
+  });
+
+  it('falls back to wholesale replace when data cannot be decoded', () => {
+    const corrupted: Part = {
+      id: 'p1',
+      messageId: 'm1',
+      sessionId: 'sess',
+      data: '<<<not json>>>' as unknown as string,
+    };
+    const incoming = partWithText('p1', 'fresh');
+    const result = upsertPartNonClobbering([corrupted], incoming);
+    expect(result[0]).toBe(incoming);
+  });
+
+  it('does not mutate the original array', () => {
+    const prev = [partWithText('p1', 'long local text')];
+    upsertPartNonClobbering(prev, partWithText('p1', 'short'));
+    expect((decode(prev[0]).text as string)).toBe('long local text');
+  });
+});
+
+describe('mergePartsNonClobbering', () => {
+  function partWithText(id: string, text: string): Part {
+    return {
+      id,
+      messageId: 'm1',
+      sessionId: 'sess',
+      data: { type: 'text', text } as unknown as string,
+    };
+  }
+  function toolPart(id: string, state: Record<string, unknown> = { status: 'running' }): Part {
+    return {
+      id,
+      messageId: 'm1',
+      sessionId: 'sess',
+      data: { type: 'tool', tool: 'bash', state } as unknown as string,
+    };
+  }
+  function decode(part: Part): Record<string, unknown> {
+    const d = part.data as unknown;
+    return typeof d === 'string' ? JSON.parse(d) as Record<string, unknown> : d as Record<string, unknown>;
+  }
+
+  it('returns prev unchanged when there are no incoming parts', () => {
+    const prev = [partWithText('p1', 'hi')];
+    expect(mergePartsNonClobbering(prev, [])).toBe(prev);
+  });
+
+  it('appends new parts that the local copy does not know about', () => {
+    const prev = [partWithText('p1', 'hi')];
+    const result = mergePartsNonClobbering(prev, [toolPart('p_tool')]);
+    expect(result.map((p) => p.id)).toEqual(['p1', 'p_tool']);
+    expect((decode(result[1]) as { type: string }).type).toBe('tool');
+  });
+
+  it('preserves longer local text when the snapshot would shorten it', () => {
+    const prev = [partWithText('p1', 'hello world from deltas')];
+    const result = mergePartsNonClobbering(prev, [partWithText('p1', 'hello world')]);
+    expect((decode(result[0]).text as string)).toBe('hello world from deltas');
+  });
+
+  it('drops part-temp- and part-error- placeholders', () => {
+    const prev: Part[] = [
+      { id: 'part-temp-1', messageId: 'm1', sessionId: 'sess', data: '{}' as unknown as string },
+      { id: 'part-error-1', messageId: 'm1', sessionId: 'sess', data: '{}' as unknown as string },
+      partWithText('p1', 'hi'),
+    ];
+    const result = mergePartsNonClobbering(prev, [toolPart('p_tool')]);
+    expect(result.map((p) => p.id)).toEqual(['p1', 'p_tool']);
   });
 });
 

@@ -271,6 +271,11 @@ describe('SessionDetail — SSE stream', () => {
     handle.store.updateCachedSession.mockClear();
     act(() => {
       handle.sse()!.open();
+      // Seed the message and its initial part via the same
+      // `message.created` event OpenCode emits in practice — the
+      // embedded parts snapshot is the only channel that carries
+      // tool / question blocks before they finalise, so the SSE
+      // handler must merge it into the parts array.
       handle.sse()!.emitMessage({
         type: 'message.created',
         properties: {
@@ -297,6 +302,61 @@ describe('SessionDetail — SSE stream', () => {
 
     await waitFor(() => {
       expect(partTextsFromUpdaters().some((t) => t.includes('Hi there'))).toBe(true);
+    });
+  });
+
+  it('renders a tool part embedded in message.created without a refresh', async () => {
+    // Regression: tool blocks (including `question` prompts) arrive
+    // exclusively via the embedded `parts` snapshot on
+    // `message.created` / `message.updated` — they have no
+    // standalone `message.part.delta` channel. Dropping that
+    // snapshot makes tool blocks invisible until the user
+    // refreshes. See sseMessageHelpers.mergePartsNonClobbering.
+    const handle = renderSessionPage({ sessionId: 'sess_1' });
+    await flushPromises();
+    await waitFor(() => expect(handle.sse()).toBeDefined());
+
+    const seedDetail = {
+      session: {} as never,
+      messages: [],
+      parts: [],
+      totalMessages: 0,
+    };
+    const collectedParts = () => {
+      const calls = handle.store.updateCachedSession.mock.calls;
+      return calls.flatMap((call) => {
+        const [, updater] = call as [string, (prev: typeof seedDetail) => { parts: { id: string; data: unknown }[] }];
+        return updater(seedDetail).parts.map((p) => ({
+          id: p.id,
+          data: typeof p.data === 'string' ? JSON.parse(p.data) : p.data,
+        }));
+      });
+    };
+
+    handle.store.updateCachedSession.mockClear();
+    act(() => {
+      handle.sse()!.open();
+      handle.sse()!.emitMessage({
+        type: 'message.created',
+        properties: {
+          info: { id: 'msg_tool', sessionID: 'sess_1', role: 'assistant', time: { created: Date.now() } },
+          parts: [
+            {
+              id: 'p_tool',
+              type: 'tool',
+              tool: 'bash',
+              messageID: 'msg_tool',
+              sessionID: 'sess_1',
+              state: { status: 'running', input: { command: 'ls' } },
+            },
+          ],
+        },
+      });
+    });
+
+    await waitFor(() => {
+      const parts = collectedParts();
+      expect(parts.some((p) => p.id === 'p_tool' && (p.data as { type?: string }).type === 'tool')).toBe(true);
     });
   });
 });

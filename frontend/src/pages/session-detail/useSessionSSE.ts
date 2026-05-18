@@ -16,8 +16,10 @@ import {
   inferStatusFromMessage,
   insertMessageByTime,
   mergeParts,
+  mergePartsNonClobbering,
   truncatePartField,
   upsertPart,
+  upsertPartNonClobbering,
 } from '../../lib/sseMessageHelpers';
 import type { PendingQuestion } from '../../components/session/QuestionPrompt';
 import { isSessionRelevant } from '../../lib/promptRouting';
@@ -422,8 +424,18 @@ export function useSessionSSE({
             hasReceivedContentEvent = true;
             if (extracted.message.data.role === 'assistant') bumpRecentWorkEventAt();
             setMessages((prev) => insertMessageByTime(prev, extracted.message));
+            // Merge embedded parts via the length-non-decreasing
+            // helper. The embedded `parts` array is a snapshot that
+            // can lag the live `message.part.delta` stream for
+            // streaming text parts, but it is the **only** channel
+            // that carries most tool parts (status transitions,
+            // `state.input`, question prompts) — dropping it here
+            // means tool blocks don't render until the user
+            // refreshes. `mergePartsNonClobbering` keeps the longer
+            // of the local vs. incoming `text` / `state.output` so
+            // we don't snap streaming text backward.
             if (extracted.parts.length > 0) {
-              setParts((prev) => mergeParts(prev, extracted.parts));
+              setParts((prev) => mergePartsNonClobbering(prev, extracted.parts));
             }
             setSession((prev) => {
               if (!prev) return prev;
@@ -441,8 +453,12 @@ export function useSessionSSE({
             hasReceivedContentEvent = true;
             if (extracted.message.data.role === 'assistant') bumpRecentWorkEventAt();
             setMessages((prev) => insertMessageByTime(prev, extracted.message));
+            // Same reasoning as in `message.created` above — merge
+            // the embedded parts snapshot through the length-non-
+            // decreasing helper so tool / question blocks land
+            // without clobbering live-streamed text deltas.
             if (extracted.parts.length > 0) {
-              setParts((prev) => mergeParts(prev, extracted.parts));
+              setParts((prev) => mergePartsNonClobbering(prev, extracted.parts));
             }
             setSession((prev) => {
               if (!prev) return prev;
@@ -514,7 +530,17 @@ export function useSessionSSE({
                 sessionId: (rawPart.sessionID as string) || sid,
                 data: rawPart as unknown as string,
               };
-              setParts((prev) => upsertPart(prev, part));
+              // Non-clobbering upsert: when both the incoming snapshot
+              // and the local copy carry an accumulating string field
+              // (`text`, `state.output`), keep whichever is longer.
+              // OpenCode emits `message.part.updated` snapshots in
+              // parallel with `message.part.delta` events; both
+              // describe the same part and either channel can be a
+              // few tokens ahead of the other. Length-non-decreasing
+              // merging means the snapshot can fill in non-text
+              // metadata (status, tool fields, time.end) without
+              // ever shortening live-streamed text.
+              setParts((prev) => upsertPartNonClobbering(prev, part));
               // Mark the changes sidebar dirty when an edit/write
               // tool part lands. Hooks coalesce successive ticks.
               if (partType === 'tool') {
@@ -651,9 +677,15 @@ export function useSessionSSE({
           loadNow();
         }
 
-        if (type === 'message.updated') {
-          loadNow();
-        }
+        // NOTE: we used to trigger loadNow() on every message.updated
+        // here, ostensibly to pick up "any content not delivered via
+        // part events". In practice it fired a full /session/{id}
+        // round-trip against a 5s-TTL cache for every metadata bump,
+        // then mergeParts'd the stale snapshot back over the live
+        // delta-built text — producing the "stream pauses, snaps
+        // backward, resumes" symptom. Real-time content arrives via
+        // message.part.updated / message.part.delta; session.idle
+        // above handles the final reconciliation.
       };
       // Some OpenCode SSE updates may use named events, not default
       // "message". Listen for the known custom names too.
