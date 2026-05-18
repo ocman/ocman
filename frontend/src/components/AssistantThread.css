@@ -426,6 +426,32 @@
   color: var(--accent2);
 }
 
+/* ANSI escape rendering for terminal output (bash tool, etc.).
+ * Colors map to the Catppuccin palette so they remain legible on
+ * the dark `oc-shell-block` background. Bright and dim variants
+ * share names with their base counterparts.
+ */
+.oc-ansi-fg-black   { color: var(--overlay0); }
+.oc-ansi-fg-red     { color: var(--danger); }
+.oc-ansi-fg-green   { color: var(--accent2); }
+.oc-ansi-fg-yellow  { color: var(--yellow); }
+.oc-ansi-fg-blue    { color: var(--accent); }
+.oc-ansi-fg-magenta { color: var(--pink); }
+.oc-ansi-fg-cyan    { color: var(--teal); }
+.oc-ansi-fg-white   { color: var(--text); }
+.oc-ansi-bg-black   { background: var(--mantle); }
+.oc-ansi-bg-red     { background: rgba(243, 139, 168, 0.25); }
+.oc-ansi-bg-green   { background: rgba(166, 227, 161, 0.25); }
+.oc-ansi-bg-yellow  { background: rgba(249, 226, 175, 0.25); }
+.oc-ansi-bg-blue    { background: rgba(137, 180, 250, 0.25); }
+.oc-ansi-bg-magenta { background: rgba(245, 194, 231, 0.25); }
+.oc-ansi-bg-cyan    { background: rgba(148, 226, 213, 0.25); }
+.oc-ansi-bg-white   { background: rgba(205, 214, 244, 0.25); }
+.oc-ansi-bold      { font-weight: 600; }
+.oc-ansi-dim       { opacity: 0.7; }
+.oc-ansi-italic    { font-style: italic; }
+.oc-ansi-underline { text-decoration: underline; }
+
 /* Diff table - GitHub style */
 .oc-diff-table {
   font-family: 'SF Mono', Consolas, monospace;

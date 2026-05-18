@@ -15,6 +15,7 @@ import { parseTodos } from '../lib/todos';
 import { TodoList } from './TodoList';
 import { useFailedSends } from '../lib/failedSendsContext';
 import { isMutedTool, isMutedLineTool } from '../lib/mutedTools';
+import { parseAnsi, hasAnsi, hasStyle, type AnsiSegment } from '../lib/ansi';
 import { useStickyBottom } from '../lib/useStickyBottom';
 import { trackRender } from '../lib/renderRateMonitor';
 import {
@@ -521,6 +522,36 @@ function AnsweredQuestionBlock({ questions, answers }: { questions: QuestionData
 }
 
 
+// Renders shell output that may contain ANSI escape sequences. Falls
+// back to a plain text node when no escapes are present so we don't
+// pay any DOM-overhead cost on uncolored output (the common case for
+// successful commands).
+function AnsiText({ text }: { text: string }) {
+  if (!hasAnsi(text)) return <>{text}</>;
+  const segments = parseAnsi(text);
+  return (
+    <>
+      {segments.map((seg, i) => {
+        if (!hasStyle(seg)) return <React.Fragment key={i}>{seg.text}</React.Fragment>;
+        return (
+          <span key={i} className={ansiClassNames(seg)}>{seg.text}</span>
+        );
+      })}
+    </>
+  );
+}
+
+function ansiClassNames(seg: AnsiSegment): string {
+  const classes: string[] = ['oc-ansi'];
+  if (seg.fg) classes.push(`oc-ansi-fg-${seg.fg}`);
+  if (seg.bg) classes.push(`oc-ansi-bg-${seg.bg}`);
+  if (seg.bold) classes.push('oc-ansi-bold');
+  if (seg.dim) classes.push('oc-ansi-dim');
+  if (seg.italic) classes.push('oc-ansi-italic');
+  if (seg.underline) classes.push('oc-ansi-underline');
+  return classes.join(' ');
+}
+
 const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArgsText, result }) => {
   const [expanded, setExpanded] = useState(false);
   const [taskExpanded, setTaskExpanded] = useState(false);
@@ -794,7 +825,7 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: raw
         </div>
         <div className="oc-tool-content" onClick={() => !bashExpanded && setExpanded(true)} style={!bashExpanded ? { cursor: 'pointer' } : undefined}>
           <pre className="oc-shell-block">
-{command && <><span className="oc-shell-prompt">$</span> <span className="oc-shell-cmd">{command}</span>{outputDisplay ? '\n' : ''}</>}{outputDisplay}
+{command && <><span className="oc-shell-prompt">$</span> <span className="oc-shell-cmd">{command}</span>{outputDisplay ? '\n' : ''}</>}{outputDisplay && <AnsiText text={outputDisplay} />}
           </pre>
           {!bashExpanded && isLong && (
             <div className="oc-tool-expand">Click to expand</div>
