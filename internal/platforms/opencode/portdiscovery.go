@@ -112,27 +112,31 @@ func copyMap(m map[string]string) map[string]string {
 	return cp
 }
 
-// discoverOpenCodePortsUncached performs the actual lsof-based discovery.
-// Two-phase: enumerate listening opencode PIDs, then fan-out to resolve cwds.
-func discoverOpenCodePortsUncached() map[string]string {
-	result := make(map[string]string)
+// pidPort is a (pid, port) pair extracted from `lsof -iTCP -sTCP:LISTEN`.
+type pidPort struct {
+	pid  string
+	port string
+}
 
-	out, err := exec.Command("lsof", "-iTCP", "-sTCP:LISTEN", "-P", "-n").Output()
-	if err != nil {
-		return result
-	}
-
-	type pidPort struct {
-		pid  string
-		port string
-	}
+// parseOpenCodeListeners extracts (pid, port) pairs for OpenCode
+// processes from the output of `lsof -iTCP -sTCP:LISTEN -P -n`.
+//
+// Factored out of discoverOpenCodePortsUncached so the matching rules
+// (including lsof's 9-char COMMAND truncation) can be unit-tested
+// without spawning a real lsof.
+func parseOpenCodeListeners(lsofOut string) []pidPort {
 	var candidates []pidPort
-	for _, line := range strings.Split(string(out), "\n") {
+	for _, line := range strings.Split(lsofOut, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 9 {
 			continue
 		}
-		if fields[0] != "opencode" {
+		// lsof's COMMAND column is truncated to 9 characters by
+		// default, so the OpenCode v2+ single-file binary
+		// "opencode.exe" appears as "opencode.". Accept any command
+		// that starts with "opencode" so we keep working across
+		// renames and the lsof truncation boundary.
+		if !strings.HasPrefix(fields[0], "opencode") {
 			continue
 		}
 		pid := fields[1]
@@ -147,7 +151,20 @@ func discoverOpenCodePortsUncached() map[string]string {
 		}
 		candidates = append(candidates, pidPort{pid: pid, port: m[1]})
 	}
+	return candidates
+}
 
+// discoverOpenCodePortsUncached performs the actual lsof-based discovery.
+// Two-phase: enumerate listening opencode PIDs, then fan-out to resolve cwds.
+func discoverOpenCodePortsUncached() map[string]string {
+	result := make(map[string]string)
+
+	out, err := exec.Command("lsof", "-iTCP", "-sTCP:LISTEN", "-P", "-n").Output()
+	if err != nil {
+		return result
+	}
+
+	candidates := parseOpenCodeListeners(string(out))
 	if len(candidates) == 0 {
 		return result
 	}
