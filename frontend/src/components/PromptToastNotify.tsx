@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import * as Toast from '@radix-ui/react-toast';
 import { useToastNotify, type ToastEntry } from '../lib/useToastNotify';
+import { cleanTitle } from '../lib/format';
 import './PromptToastNotify.css';
 
 /**
@@ -29,7 +30,10 @@ export function PromptToastNotify() {
 
   function describe(entry: ToastEntry): { heading: string; body: string } {
     const project = basename(entry.directory);
-    const titlePart = entry.title.trim() || 'Untitled session';
+    // Session titles often come from LLM output and contain markdown
+    // decorations (e.g. `**Important** fix`). Strip them so the toast
+    // shows plain text, matching every other place we render a title.
+    const titlePart = cleanTitle(entry.title) || 'Untitled session';
     const projectPart = project ? ` · ${project}` : '';
     return {
       heading: entry.kind === 'permission'

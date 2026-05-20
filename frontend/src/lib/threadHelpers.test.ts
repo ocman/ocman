@@ -184,6 +184,18 @@ describe('splitToolArgs', () => {
     expect(out.title).toBe('only line');
     expect(out.detail).toBe('');
   });
+
+  it('keeps multi-line JSON payloads together instead of using the opening brace as a title', () => {
+    const payload = [
+      '{',
+      '  "target": "convertMessages",',
+      '  "direction": "upstream"',
+      '}',
+    ].join('\n');
+    const out = splitToolArgs('gitnexus_impact', payload);
+    expect(out.title).toBe('');
+    expect(out.detail).toBe(payload);
+  });
 });
 
 describe('parsePatchSections', () => {

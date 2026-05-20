@@ -194,6 +194,14 @@ export function splitToolArgs(toolName: string, rawArgs: string): { title: strin
   const firstLine = argLines[0] || '';
   const rest = argLines.slice(1).join('\n').trim();
 
+  const trimmed = rawArgs.trim();
+  if (
+    (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+    (trimmed.startsWith('[') && trimmed.endsWith(']'))
+  ) {
+    return { title: '', detail: trimmed };
+  }
+
   if (toolName === 'apply_patch' && (firstLine.trim().startsWith('{') || !rest)) {
     return { title: '', detail: rawArgs.trim() };
   }
