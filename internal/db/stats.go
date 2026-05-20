@@ -297,9 +297,24 @@ type bucketAcc struct {
 	totalCacheEff     float64
 	totalCost         float64
 	totalCalcCost     float64
-	durationCount     int
-	count             int
+	// costByModel sums the platform-reported Cost in this bucket
+	// partitioned by model key ("provider/model" or "" when missing).
+	// Used by buildDashboardSeries to assemble the cost-by-model
+	// cumulative series.
+	costByModel   map[string]float64
+	durationCount int
+	count         int
 }
+
+// costByModelTopN is the maximum number of distinct models surfaced in
+// the cost-by-model stacked chart. Remaining models are folded into an
+// "Other" bucket so the legend stays readable.
+const costByModelTopN = 6
+
+// costByModelOtherKey is the synthetic model key used for the "Other"
+// rollup bucket. Empty model strings (rows where the model couldn't be
+// resolved) are also mapped onto this key.
+const costByModelOtherKey = "Other"
 
 // aggregateSummaryAndBuckets populates dashboard.Summary and dashboard.Series
 // from the filtered rows and returns the stop-reason counts for later use.
@@ -335,7 +350,7 @@ func (d *DB) aggregateSummaryAndBuckets(dashboard *MetricsDashboard, filtered []
 		label := time.UnixMilli(entry.TimeCreated).Local().Format(bucketFmt)
 		b, ok := buckets[label]
 		if !ok {
-			b = &bucketAcc{label: label}
+			b = &bucketAcc{label: label, costByModel: make(map[string]float64)}
 			buckets[label] = b
 			bucketOrder = append(bucketOrder, label)
 		}
@@ -355,6 +370,7 @@ func (d *DB) aggregateSummaryAndBuckets(dashboard *MetricsDashboard, filtered []
 		b.totalCacheEff += cacheEff
 		b.totalCost += entry.Cost
 		b.totalCalcCost += entry.CalcCost
+		b.costByModel[entry.Model] += entry.Cost
 		b.count++
 	}
 
@@ -367,6 +383,7 @@ func (d *DB) aggregateSummaryAndBuckets(dashboard *MetricsDashboard, filtered []
 	}
 
 	dashboard.Series = buildDashboardSeries(buckets, bucketOrder, bucketFmt, days, since)
+	dashboard.CostByModel = buildCostByModelSeries(buckets, dashboard.Series)
 	return stopCounts
 }
 
@@ -432,6 +449,119 @@ func buildDashboardSeries(buckets map[string]*bucketAcc, bucketOrder []string, b
 		series = append(series, pt)
 	}
 	return series
+}
+
+// buildCostByModelSeries derives the per-model cumulative cost series
+// used by the stacked cost chart. Models are ranked by total
+// (whole-window) platform-reported cost; the top costByModelTopN are
+// kept individually and the remainder folded into a single "Other"
+// bucket. Empty model keys (rows without a resolved model) are also
+// rolled into "Other" rather than rendering an unlabelled stack.
+//
+// The returned MetricsCostByModel.Series mirrors mainSeries one bucket
+// for one bucket — including the gap-filled empty buckets — so the
+// frontend can render it with the same x-axis labels as
+// MetricsDashboard.Series.
+func buildCostByModelSeries(buckets map[string]*bucketAcc, mainSeries []MetricsPoint) MetricsCostByModel {
+	totals := make(map[string]float64)
+	for _, b := range buckets {
+		for model, cost := range b.costByModel {
+			key := model
+			if key == "" {
+				key = costByModelOtherKey
+			}
+			totals[key] += cost
+		}
+	}
+	if len(totals) == 0 {
+		return MetricsCostByModel{Models: []string{}, Series: emptyModelCostSeries(mainSeries)}
+	}
+
+	// Stable ranking: cost desc, then name asc.
+	type modelTotal struct {
+		name string
+		cost float64
+	}
+	ranked := make([]modelTotal, 0, len(totals))
+	for name, cost := range totals {
+		ranked = append(ranked, modelTotal{name: name, cost: cost})
+	}
+	sort.Slice(ranked, func(i, j int) bool {
+		if ranked[i].cost != ranked[j].cost {
+			return ranked[i].cost > ranked[j].cost
+		}
+		return ranked[i].name < ranked[j].name
+	})
+
+	// Build the ordered model list and a key→column index map. The
+	// "Other" bucket (if present) always sits at the tail.
+	topModels := make([]string, 0, costByModelTopN)
+	hasOther := false
+	for _, mt := range ranked {
+		if mt.name == costByModelOtherKey {
+			// "Other" emerging organically (e.g. from empty model
+			// rows) defers to the tail position even if its total
+			// happens to rank inside the top-N window.
+			hasOther = true
+			continue
+		}
+		if len(topModels) < costByModelTopN {
+			topModels = append(topModels, mt.name)
+			continue
+		}
+		hasOther = true
+	}
+	// Always allocate a real slice (never nil) so JSON serialization
+	// emits `[]` instead of `null` — the frontend's chart code relies
+	// on `models.length` being defined.
+	models := make([]string, 0, len(topModels)+1)
+	models = append(models, topModels...)
+	if hasOther {
+		models = append(models, costByModelOtherKey)
+	}
+
+	colIdx := make(map[string]int, len(models))
+	for i, m := range models {
+		colIdx[m] = i
+	}
+	otherCol, hasOtherCol := colIdx[costByModelOtherKey]
+
+	cum := make([]float64, len(models))
+	out := MetricsCostByModel{
+		Models: models,
+		Series: make([]ModelCostPoint, 0, len(mainSeries)),
+	}
+	for _, pt := range mainSeries {
+		if b, ok := buckets[pt.Label]; ok {
+			for model, cost := range b.costByModel {
+				key := model
+				if key == "" {
+					key = costByModelOtherKey
+				}
+				if idx, present := colIdx[key]; present {
+					cum[idx] += cost
+				} else if hasOtherCol {
+					// Model didn't make the top-N; fold into "Other".
+					cum[otherCol] += cost
+				}
+			}
+		}
+		costs := make([]float64, len(cum))
+		copy(costs, cum)
+		out.Series = append(out.Series, ModelCostPoint{Label: pt.Label, Costs: costs})
+	}
+	return out
+}
+
+// emptyModelCostSeries returns a CostByModel payload with no model
+// columns but a label-aligned (all-zero-width) bucket list. Lets the
+// frontend treat the field as always-present.
+func emptyModelCostSeries(mainSeries []MetricsPoint) []ModelCostPoint {
+	out := make([]ModelCostPoint, len(mainSeries))
+	for i, pt := range mainSeries {
+		out[i] = ModelCostPoint{Label: pt.Label, Costs: []float64{}}
+	}
+	return out
 }
 
 // paginateRequests returns the request log page for the given offset/limit,

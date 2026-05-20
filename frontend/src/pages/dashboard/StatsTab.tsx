@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bar, Doughnut, Line } from 'react-chartjs-2';
-import type { ProjectLogEntry } from '../../lib/api';
+import type { MetricsDashboard, ProjectLogEntry } from '../../lib/api';
 import {
   cleanTitle,
   formatCompactNumber,
@@ -20,9 +20,10 @@ import {
   BAR_OPTIONS_TOKS,
   BAR_OPTIONS_DURATION,
   BAR_OPTIONS_STACKED,
-  LINE_OPTIONS_COST,
+  LINE_OPTIONS_COST_STACKED,
   LINE_OPTIONS_CACHE,
   DOUGHNUT_OPTIONS,
+  CHART_COLORS,
   STOP_REASON_COLORS,
 } from '../../lib/chartConfig';
 import { usePageTitle } from '../../lib/headerContext';
@@ -31,6 +32,64 @@ import { useMetrics } from '../../lib/queries';
 import { useDashboard } from './context';
 import { MetricCard, ChartCard } from './shared';
 import { METRICS_RANGE_OPTIONS } from './constants';
+
+/**
+ * Convert a hex colour (e.g. "#89b4fa") to an rgba string with the
+ * given alpha. Used to give each model stack a translucent fill while
+ * keeping its border at full opacity.
+ */
+function hexToRgba(hex: string, alpha: number): string {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!m) return hex;
+  const r = parseInt(m[1], 16);
+  const g = parseInt(m[2], 16);
+  const b = parseInt(m[3], 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+/**
+ * Build the Chart.js datasets for the stacked cumulative cost chart.
+ * Falls back to a single "Cost" line when the backend reports no
+ * per-model breakdown (empty database, or a window where every row
+ * has zero cost — the legacy chart's behaviour).
+ */
+function buildCostByModelDatasets(metrics: MetricsDashboard) {
+  // Defensive defaults: a stale-but-cached MetricsDashboard from an
+  // older backend won't have costByModel at all, and a JSON nil-slice
+  // from Go would deserialize as `null` rather than `[]`. Treat both
+  // as "no per-model breakdown" and fall through to the legacy line.
+  const cbm = metrics.costByModel;
+  const series = metrics.series ?? [];
+  const models = cbm?.models ?? [];
+  const cbmSeries = cbm?.series ?? [];
+  if (models.length === 0) {
+    return [
+      {
+        label: 'Cost',
+        data: series.map((p) => p.cumulativeCost),
+        borderColor: '#a6e3a1',
+        backgroundColor: 'rgba(166, 227, 161, 0.18)',
+        fill: 'origin' as const,
+        tension: 0.2,
+        pointRadius: 0,
+      },
+    ];
+  }
+  return models.map((model, idx) => {
+    const colour = CHART_COLORS[idx % CHART_COLORS.length];
+    return {
+      label: renderModel(model),
+      data: cbmSeries.map((pt) => pt.costs?.[idx] ?? 0),
+      borderColor: colour,
+      backgroundColor: hexToRgba(colour, 0.35),
+      fill: true,
+      stack: 'cost',
+      tension: 0.2,
+      pointRadius: 0,
+      borderWidth: 1,
+    };
+  });
+}
 
 export function StatsTab() {
   usePageTitle('Stats');
@@ -152,14 +211,11 @@ export function StatsTab() {
               }} options={BAR_OPTIONS_TOKS} />
             </ChartCard>
 
-            <ChartCard title="Cumulative Cost (USD)">
+            <ChartCard title="Cumulative Cost by Model (USD)">
               <Line data={{
                 labels: metricLabels,
-                datasets: [
-                  { label: 'Cost', data: metrics.series.map((point) => point.cumulativeCost), borderColor: '#a6e3a1', backgroundColor: 'rgba(166, 227, 161, 0.18)', fill: true, tension: 0.2, pointRadius: 0 },
-                  { label: 'Est. Cost', data: metrics.series.map((point) => point.cumulativeCalcCost), borderColor: '#fab387', backgroundColor: 'rgba(250, 179, 135, 0.18)', fill: true, tension: 0.2, pointRadius: 0 },
-                ],
-              }} options={LINE_OPTIONS_COST} />
+                datasets: buildCostByModelDatasets(metrics),
+              }} options={LINE_OPTIONS_COST_STACKED} />
             </ChartCard>
 
             <ChartCard title="Token Usage per Bucket">

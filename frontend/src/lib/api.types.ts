@@ -476,6 +476,7 @@ export interface MetricsDashboard {
   availableModels: string[];
   summary: MetricsSummary;
   series: MetricsPoint[];
+  costByModel: MetricsCostByModel;
   stopReasons: StopReasonCount[];
   requests: RequestMetricsRow[];
   totalRequests: number;
@@ -483,6 +484,24 @@ export interface MetricsDashboard {
   totalSessions: number;
   projects: ProjectLogEntry[];
   totalProjects: number;
+}
+
+/**
+ * Per-model cumulative cost series used by the stacked cost-by-model
+ * chart on the Stats tab. `models` is the ordered legend (top N by
+ * total spend, with an "Other" bucket trailing when there are more
+ * distinct models than the chart can show). `series` mirrors
+ * `MetricsDashboard.series` bucket-for-bucket; each `costs` array is
+ * parallel to `models`.
+ */
+export interface MetricsCostByModel {
+  models: string[];
+  series: ModelCostPoint[];
+}
+
+export interface ModelCostPoint {
+  label: string;
+  costs: number[];
 }
 
 export interface Project {

@@ -271,3 +271,157 @@ func TestGetMetricsDashboard_SessionLog_TieBreaksByRecency(t *testing.T) {
 		t.Errorf("Sessions[0].ID = %q, want %q (tie-break by recency)", dash.Sessions[0].ID, "newer")
 	}
 }
+
+// TestGetMetricsDashboard_CostByModel_BasicSplit asserts that requests
+// from two different models produce two stacked series whose final
+// cumulative totals equal each model's total platform-reported cost.
+func TestGetMetricsDashboard_CostByModel_BasicSplit(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "session", "/p", now, now)
+
+	// Two requests with model A, total cost 0.30.
+	insertMessage(t, db, "a1", "s1", now-2000, map[string]interface{}{
+		"role": "assistant", "finish": "end_turn", "cost": 0.10,
+		"providerID": "anthropic", "modelID": "claude-sonnet-4",
+		"time": map[string]interface{}{"created": now - 2500, "completed": now - 2000},
+	})
+	insertMessage(t, db, "a2", "s1", now-1000, map[string]interface{}{
+		"role": "assistant", "finish": "end_turn", "cost": 0.20,
+		"providerID": "anthropic", "modelID": "claude-sonnet-4",
+		"time": map[string]interface{}{"created": now - 1500, "completed": now - 1000},
+	})
+	// One request with model B, cost 0.05.
+	insertMessage(t, db, "b1", "s1", now, map[string]interface{}{
+		"role": "assistant", "finish": "end_turn", "cost": 0.05,
+		"providerID": "openai", "modelID": "gpt-4",
+		"time": map[string]interface{}{"created": now - 500, "completed": now},
+	})
+
+	dash, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+		Days: 30, RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
+	})
+	if err != nil {
+		t.Fatalf("GetMetricsDashboard: %v", err)
+	}
+	cbm := dash.CostByModel
+	if len(cbm.Models) != 2 {
+		t.Fatalf("CostByModel.Models len = %d, want 2; got %v", len(cbm.Models), cbm.Models)
+	}
+	// Top model (highest total) should rank first.
+	if cbm.Models[0] != "anthropic/claude-sonnet-4" {
+		t.Errorf("CostByModel.Models[0] = %q, want %q", cbm.Models[0], "anthropic/claude-sonnet-4")
+	}
+	if cbm.Models[1] != "openai/gpt-4" {
+		t.Errorf("CostByModel.Models[1] = %q, want %q", cbm.Models[1], "openai/gpt-4")
+	}
+	if len(cbm.Series) != len(dash.Series) {
+		t.Fatalf("CostByModel.Series len = %d, want %d (aligned with dashboard.Series)",
+			len(cbm.Series), len(dash.Series))
+	}
+	// Final bucket should hold the full cumulative totals.
+	last := cbm.Series[len(cbm.Series)-1]
+	if len(last.Costs) != 2 {
+		t.Fatalf("final ModelCostPoint.Costs len = %d, want 2", len(last.Costs))
+	}
+	if got, want := last.Costs[0], 0.30; floatNotClose(got, want) {
+		t.Errorf("final cumulative cost for top model = %v, want %v", got, want)
+	}
+	if got, want := last.Costs[1], 0.05; floatNotClose(got, want) {
+		t.Errorf("final cumulative cost for second model = %v, want %v", got, want)
+	}
+}
+
+// TestGetMetricsDashboard_CostByModel_TopNAndOther verifies the "Top N
+// + Other" rollup: when more than costByModelTopN distinct models
+// appear, the lower-ranked ones are folded into a single trailing
+// "Other" bucket and the total cost is preserved.
+func TestGetMetricsDashboard_CostByModel_TopNAndOther(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "session", "/p", now, now)
+
+	// costByModelTopN+2 models, descending cost so ranking is stable.
+	// Top N: each gets a unique row; the last 2 should roll into Other.
+	totalModels := costByModelTopN + 2
+	expectTopCost := 0.0
+	expectOtherCost := 0.0
+	for i := 0; i < totalModels; i++ {
+		cost := float64(totalModels-i) * 0.10 // descending
+		if i < costByModelTopN {
+			expectTopCost += cost
+		} else {
+			expectOtherCost += cost
+		}
+		insertMessage(t, db, "m"+string(rune('a'+i)), "s1", now-int64(i)*1000, map[string]interface{}{
+			"role": "assistant", "finish": "end_turn", "cost": cost,
+			"providerID": "p",
+			"modelID":    "model-" + string(rune('a'+i)),
+			"time":       map[string]interface{}{"created": now - int64(i)*1000 - 500, "completed": now - int64(i)*1000},
+		})
+	}
+
+	dash, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+		Days: 30, RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
+	})
+	if err != nil {
+		t.Fatalf("GetMetricsDashboard: %v", err)
+	}
+	cbm := dash.CostByModel
+	if got, want := len(cbm.Models), costByModelTopN+1; got != want {
+		t.Fatalf("CostByModel.Models len = %d, want %d (top N + Other)", got, want)
+	}
+	if cbm.Models[len(cbm.Models)-1] != costByModelOtherKey {
+		t.Errorf("last model = %q, want %q (Other rollup must trail)",
+			cbm.Models[len(cbm.Models)-1], costByModelOtherKey)
+	}
+
+	last := cbm.Series[len(cbm.Series)-1]
+	topSum := 0.0
+	for i := 0; i < costByModelTopN; i++ {
+		topSum += last.Costs[i]
+	}
+	if floatNotClose(topSum, expectTopCost) {
+		t.Errorf("top-N cumulative sum = %v, want %v", topSum, expectTopCost)
+	}
+	if floatNotClose(last.Costs[len(last.Costs)-1], expectOtherCost) {
+		t.Errorf("Other cumulative sum = %v, want %v",
+			last.Costs[len(last.Costs)-1], expectOtherCost)
+	}
+}
+
+// TestGetMetricsDashboard_CostByModel_EmptyDB asserts the contract
+// that an empty DB still returns a well-shaped (empty-models)
+// payload: the frontend treats this field as always-present.
+func TestGetMetricsDashboard_CostByModel_EmptyDB(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	dash, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+		Days: 30, RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
+	})
+	if err != nil {
+		t.Fatalf("GetMetricsDashboard: %v", err)
+	}
+	if dash.CostByModel.Models == nil {
+		t.Errorf("CostByModel.Models = nil, want empty slice")
+	}
+	if len(dash.CostByModel.Models) != 0 {
+		t.Errorf("CostByModel.Models len = %d, want 0", len(dash.CostByModel.Models))
+	}
+	if len(dash.CostByModel.Series) != len(dash.Series) {
+		t.Errorf("CostByModel.Series len = %d, want %d", len(dash.CostByModel.Series), len(dash.Series))
+	}
+}
+
+func floatNotClose(a, b float64) bool {
+	d := a - b
+	if d < 0 {
+		d = -d
+	}
+	return d > 1e-9
+}

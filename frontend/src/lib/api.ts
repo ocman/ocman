@@ -33,6 +33,8 @@ export type {
   SessionLogEntry,
   ProjectLogEntry,
   MetricsDashboard,
+  MetricsCostByModel,
+  ModelCostPoint,
   Project,
   ActivityDay,
   ModelUsage,

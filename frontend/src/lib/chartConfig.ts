@@ -80,6 +80,35 @@ export const LINE_OPTIONS_COST = {
   },
 } as const;
 
+/**
+ * Stacked-area cumulative cost chart split by model. Tooltip shows the
+ * per-model contribution as currency and the legend names each model
+ * stack.
+ */
+export const LINE_OPTIONS_COST_STACKED = {
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: false as const,
+  interaction: { mode: 'index' as const, intersect: false },
+  plugins: {
+    legend: { position: 'bottom' as const, labels: { ...baseLegendLabels, padding: 8, font: { size: 11 } } },
+    tooltip: {
+      callbacks: {
+        label: (ctx: { dataset: { label?: string }; parsed: { y: number | null } }) =>
+          `${ctx.dataset.label ?? ''}: ${formatCurrency(Number(ctx.parsed.y ?? 0), 2)}`,
+      },
+    },
+  },
+  scales: {
+    x: { grid: { display: false }, ticks: CHART_X_TICKS },
+    y: {
+      stacked: true,
+      beginAtZero: true,
+      ticks: { callback: (v: string | number) => formatCurrency(Number(v), 2) },
+    },
+  },
+} as const;
+
 /** Cache-efficiency line chart capped at 100 % with `%` suffix. */
 export const LINE_OPTIONS_CACHE = {
   responsive: true,
