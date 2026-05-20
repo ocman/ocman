@@ -324,6 +324,33 @@ describe('reduceSessionView — message.part.updated (snapshot)', () => {
     expect((decoded.state as Record<string, unknown>).status).toBe('completed');
     expect((decoded.state as Record<string, unknown>).output).toBe('streamed');
   });
+
+  it('synthesises a stub assistant message when a tool snapshot arrives first', () => {
+    // OpenCode can stream `message.part.updated` for a running tool
+    // before the owning `message.created`/`message.updated` lands.
+    // Without a stub Message, the tool part exists in reducer state
+    // but convertMessages() has no assistant message to attach it to,
+    // so the user sees the tool only after completion or refresh.
+    let view = makeView();
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.part.updated', {
+        part: {
+          id: 'p-tool-first',
+          messageID: 'm-tool-first',
+          sessionID: SID,
+          type: 'tool',
+          tool: 'bash',
+          state: { status: 'running', input: { command: 'sleep 1' } },
+        },
+      }),
+    });
+
+    const stub = view.messages.find((m) => m.id === 'm-tool-first');
+    expect(stub).toBeDefined();
+    expect(stub!.data.role).toBe('assistant');
+    expect(view.parts.find((p) => p.id === 'p-tool-first')).toBeDefined();
+  });
 });
 
 describe('reduceSessionView — message.part.delta', () => {

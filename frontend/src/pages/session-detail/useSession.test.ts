@@ -244,6 +244,68 @@ describe('useSession — SSE event dispatch', () => {
     expect(data.text).toBe('named ');
   });
 
+  it('routes raw named message.part.updated payloads as live tool snapshots', async () => {
+    const detail = makeDetail();
+    const fetchSession = vi.fn().mockResolvedValue(detail);
+    const { result } = renderHook(() => useSession(SID, { fetchSession }));
+
+    await waitFor(() => {
+      expect(result.current.session?.id).toBe(SID);
+    });
+
+    const sse = FakeEventSource.latest()!;
+    act(() => sse.open());
+    act(() => {
+      sse.emitNamed('message.part.updated', {
+        id: 'p-tool-live',
+        messageID: 'm-tool-live',
+        sessionID: SID,
+        type: 'tool',
+        tool: 'bash',
+        state: { status: 'running', input: { command: 'sleep 10' } },
+      });
+    });
+
+    const stub = result.current.messages.find((m) => m.id === 'm-tool-live');
+    expect(stub).toBeDefined();
+    const part = result.current.parts.find((p) => p.id === 'p-tool-live');
+    const data = typeof part?.data === 'string' ? JSON.parse(part.data) : part?.data;
+    expect(data.type).toBe('tool');
+    expect(data.tool).toBe('bash');
+    expect((data.state as { status?: string }).status).toBe('running');
+  });
+
+  it('routes raw named tool payloads as live tool snapshots', async () => {
+    const detail = makeDetail();
+    const fetchSession = vi.fn().mockResolvedValue(detail);
+    const { result } = renderHook(() => useSession(SID, { fetchSession }));
+
+    await waitFor(() => {
+      expect(result.current.session?.id).toBe(SID);
+    });
+
+    const sse = FakeEventSource.latest()!;
+    act(() => sse.open());
+    act(() => {
+      sse.emitNamed('tool', {
+        id: 'p-tool-channel',
+        messageID: 'm-tool-channel',
+        sessionID: SID,
+        type: 'tool',
+        tool: 'bash',
+        state: { status: 'running', input: { command: 'go test ./...' } },
+      });
+    });
+
+    const stub = result.current.messages.find((m) => m.id === 'm-tool-channel');
+    expect(stub).toBeDefined();
+    const part = result.current.parts.find((p) => p.id === 'p-tool-channel');
+    const data = typeof part?.data === 'string' ? JSON.parse(part.data) : part?.data;
+    expect(data.type).toBe('tool');
+    expect(data.tool).toBe('bash');
+    expect((data.state as { status?: string }).status).toBe('running');
+  });
+
   it('opens the EventSource against the correct URL', async () => {
     const detail = makeDetail();
     const fetchSession = vi.fn().mockResolvedValue(detail);

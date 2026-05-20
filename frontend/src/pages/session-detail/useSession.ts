@@ -529,9 +529,31 @@ export function useSession(
         }
         // Some servers omit the `type` field when using a named
         // channel (the event name IS the type). Fill it in so the
-        // reducer's switch matches.
-        if (!parsed.type) {
-          parsed = { ...parsed, type: eventName };
+        // reducer's switch matches. Named channels may also send the
+        // raw payload instead of the default-channel envelope; wrap
+        // those shapes into the reducer's expected `properties`
+        // contract so live tool-start snapshots render immediately
+        // rather than waiting for the completed REST snapshot.
+        {
+          const rawPayload = parsed as unknown as Record<string, unknown>;
+          const rawProperties = rawPayload.properties && typeof rawPayload.properties === 'object'
+            ? rawPayload.properties as Record<string, unknown>
+            : null;
+          const rawLooksLikePart = typeof rawPayload.id === 'string' && (
+            typeof rawPayload.messageID === 'string' || typeof rawPayload.messageId === 'string'
+          );
+          const shouldNormalize = !parsed.type || rawLooksLikePart || (
+            eventName === 'message.part.updated' && parsed.type !== eventName
+          );
+          if (shouldNormalize) {
+          if (eventName === 'message.part.updated') {
+            parsed = rawProperties
+              ? { type: eventName, properties: rawProperties }
+              : { type: eventName, properties: { part: rawPayload } };
+          } else {
+            parsed = { type: eventName, properties: rawProperties ?? rawPayload };
+          }
+          }
         }
         if (debug) {
           console.log('[ocman:sse:' + eventName + ']', parsed.type, parsed.properties);

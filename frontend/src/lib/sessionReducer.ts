@@ -481,8 +481,23 @@ function reduceSseEvent(state: SessionView, event: SseEvent): SessionView {
     case 'question.rejected':
       return reduceQuestionCleared(state, props);
     default:
-      // Unknown events are dropped after the event-shape audit in
-      // spec/sse-rewrite/event-audit.md.
+      // Unknown / named-channel events may still carry a message or
+      // part payload. OpenCode has used raw `tool` named events for
+      // live tool-start snapshots; dropping those means the user sees
+      // no tool block until completion. Recover the known payload
+      // shapes here while still treating truly unknown events as no-ops.
+      if (props.info) {
+        const next = reduceMessageSnapshot(state, event);
+        if (next !== state) return next;
+      }
+      if (props.part) {
+        const next = reducePartSnapshot(state, props);
+        if (next !== state) return next;
+      }
+      if (typeof props.id === 'string' && (typeof props.messageID === 'string' || typeof props.messageId === 'string')) {
+        const next = reducePartSnapshot(state, { part: props });
+        if (next !== state) return next;
+      }
       return state;
   }
 }
@@ -533,7 +548,8 @@ function reduceMessageSnapshot(state: SessionView, event: SseEvent): SessionView
 
 function reducePartSnapshot(state: SessionView, props: Record<string, unknown>): SessionView {
   const rawPart = props.part as Record<string, unknown> | undefined;
-  if (!rawPart || typeof rawPart.id !== 'string' || typeof rawPart.messageID !== 'string') {
+  const messageId = (rawPart?.messageID as string | undefined) || (rawPart?.messageId as string | undefined);
+  if (!rawPart || typeof rawPart.id !== 'string' || typeof messageId !== 'string') {
     return state;
   }
   const partType = rawPart.type as string | undefined;
@@ -542,13 +558,39 @@ function reducePartSnapshot(state: SessionView, props: Record<string, unknown>):
   }
   const part: Part = {
     id: rawPart.id,
-    messageId: rawPart.messageID,
+    messageId,
     sessionId: (rawPart.sessionID as string) || state.sessionId,
     data: rawPart as unknown as string,
   };
   const nextParts = upsertSnapshotPart(state.parts, part, state._deltaOwnedFields);
-  if (nextParts === state.parts) return state;
-  return { ...state, parts: nextParts };
+
+  // `message.part.updated` can lead `message.created` for active
+  // tools. Keep a minimal assistant message so the converter has a
+  // parent row to attach the running tool block to immediately;
+  // the later message snapshot will replace it with authoritative
+  // metadata (tokens, finish reason, timestamps).
+  let nextMessages = state.messages;
+  if (!state.messages.some((m) => m.id === messageId)) {
+    const rawTime = rawPart.time as Record<string, unknown> | undefined;
+    const created = typeof rawTime?.created === 'number' ? rawTime.created : Date.now();
+    const stub: Message = {
+      id: messageId,
+      sessionId: (rawPart.sessionID as string) || state.sessionId,
+      timeCreated: created,
+      data: { role: 'assistant' },
+    };
+    nextMessages = upsertMessage(state.messages, stub);
+  }
+
+  let nextSession = state.session;
+  const rawState = rawPart.state as Record<string, unknown> | undefined;
+  const status = rawState?.status;
+  if ((status === 'running' || status === 'pending') && state.session && state.session.status !== 'busy') {
+    nextSession = { ...state.session, status: 'busy' };
+  }
+
+  if (nextParts === state.parts && nextMessages === state.messages && nextSession === state.session) return state;
+  return { ...state, messages: nextMessages, parts: nextParts, session: nextSession };
 }
 
 function reducePartDelta(state: SessionView, props: Record<string, unknown>): SessionView {

@@ -721,3 +721,147 @@ test('streaming counter renders each number live as deltas arrive', async ({ moc
   // should be visible. We check that no number was dropped.
   await expect(assistantBubble).toContainText('1 2 3 4 5');
 });
+
+test('long-running tool call renders partial output before completion', async ({ mockedPage: page }) => {
+  const streamSessionId = MOCK_SESSION.id;
+  const liveSession = mockSessionWithLiveConnection({
+    ...MOCK_SESSION,
+    status: 'busy',
+    liveConnection: true,
+  });
+
+  await page.addInitScript(({ streamSessionId }) => {
+    class LongToolEventSource {
+      static CONNECTING = 0;
+      static OPEN = 1;
+      static CLOSED = 2;
+
+      url: string;
+      readyState = LongToolEventSource.CONNECTING;
+      onopen: ((evt: Event) => void) | null = null;
+      onerror: ((evt: Event) => void) | null = null;
+      onmessage: ((evt: MessageEvent) => void) | null = null;
+      listeners: Record<string, Array<(evt: MessageEvent) => void>> = {};
+      private timers: number[] = [];
+
+      constructor(url: string) {
+        this.url = url;
+        queueMicrotask(() => {
+          if (this.readyState === LongToolEventSource.CLOSED) return;
+          this.readyState = LongToolEventSource.OPEN;
+          this.onopen?.(new Event('open'));
+          if (!url.includes(`/api/session/${streamSessionId}/events`)) return;
+
+          const messageId = `msg-long-tool-${streamSessionId}`;
+          const partId = `part-long-tool-${streamSessionId}`;
+
+          // Exercise the raw named `tool` channel shape: if the app
+          // drops this start event, no tool block is visible until
+          // the completed snapshot arrives at the end of the command.
+          this.dispatchNamed('tool', {
+            id: partId,
+            messageID: messageId,
+            sessionID: streamSessionId,
+            type: 'tool',
+            tool: 'bash',
+            state: {
+              status: 'running',
+              input: { command: 'for i in 1 2 3 4 5; do echo tool-second-$i; sleep 1; done' },
+              output: '',
+            },
+          });
+
+          for (let i = 1; i <= 5; i += 1) {
+            this.timers.push(window.setTimeout(() => {
+              if (this.readyState === LongToolEventSource.CLOSED) return;
+              this.dispatchDefault({
+                type: 'message.part.delta',
+                properties: {
+                  sessionID: streamSessionId,
+                  messageID: messageId,
+                  partID: partId,
+                  field: 'state.output',
+                  delta: `tool-second-${i}\n`,
+                },
+              });
+            }, i * 1_000));
+          }
+
+          this.timers.push(window.setTimeout(() => {
+            if (this.readyState === LongToolEventSource.CLOSED) return;
+            this.dispatchNamed('message.part.updated', {
+              id: partId,
+              messageID: messageId,
+              sessionID: streamSessionId,
+              type: 'tool',
+              tool: 'bash',
+              state: {
+                status: 'completed',
+                input: { command: 'for i in 1 2 3 4 5; do echo tool-second-$i; sleep 1; done' },
+                output: 'tool-second-1\ntool-second-2\ntool-second-3\ntool-second-4\ntool-second-5\n',
+              },
+            });
+            this.dispatchDefault({ type: 'session.idle', properties: { sessionID: streamSessionId } });
+          }, 5_500));
+        });
+      }
+
+      addEventListener(name: string, cb: (evt: MessageEvent) => void) {
+        (this.listeners[name] ||= []).push(cb);
+      }
+
+      close() {
+        this.readyState = LongToolEventSource.CLOSED;
+        for (const timer of this.timers) window.clearTimeout(timer);
+        this.timers = [];
+      }
+
+      private dispatchDefault(payload: Record<string, unknown>) {
+        const event = new MessageEvent('message', { data: JSON.stringify(payload) });
+        this.onmessage?.(event);
+      }
+
+      private dispatchNamed(name: string, payload: Record<string, unknown>) {
+        const event = new MessageEvent(name, { data: JSON.stringify(payload) });
+        for (const cb of this.listeners[name] || []) cb(event);
+      }
+    }
+
+    Object.defineProperty(window, 'EventSource', {
+      configurable: true,
+      writable: true,
+      value: LongToolEventSource,
+    });
+  }, { streamSessionId });
+
+  await page.route('/api/sessions*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([liveSession, MOCK_SESSION_2]),
+    }),
+  );
+
+  await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        session: liveSession,
+        messages: [],
+        parts: [],
+        totalMessages: 0,
+        defaultAgent: 'build',
+        defaultModel: 'anthropic/claude-3-5-sonnet-20241022',
+      }),
+    }),
+  );
+
+  await page.goto(SESSION_URL);
+  await expect(page.getByTestId('session-layout')).toBeVisible();
+
+  await expect(page.getByText('tool-second-1')).toBeVisible({ timeout: 2_500 });
+  await expect(page.getByText('tool-second-2')).toBeVisible({ timeout: 1_500 });
+  await expect(page.getByText('tool-second-3')).toBeVisible({ timeout: 1_500 });
+  await expect(page.getByText('tool-second-5')).toHaveCount(0, { timeout: 100 });
+});
