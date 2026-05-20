@@ -111,6 +111,7 @@ function WorktreeForm({ initialProject, initialBranch, close }: WorktreeFormProp
   const [baseRef, setBaseRef] = useState('');
   const [stage, setStage] = useState<SubmitStage>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const branchInputRef = useRef<HTMLInputElement>(null);
 
   const submitting = stage !== 'idle';
@@ -185,6 +186,17 @@ function WorktreeForm({ initialProject, initialBranch, close }: WorktreeFormProp
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);
       return;
+    }
+
+    // Backend fell back to checking out a pre-existing branch
+    // because one with that name already existed locally. Surface
+    // it as a non-blocking notice and pause briefly so the user
+    // notices before we navigate away.
+    if (resp.branchExisted) {
+      setWarning(
+        `Branch "${branch.trim()}" already existed — reusing it instead of creating a new one.`,
+      );
+      await new Promise((r) => setTimeout(r, 1500));
     }
 
     // tmux switch is best-effort: it can fail when the user ran ocman
@@ -328,6 +340,15 @@ function WorktreeForm({ initialProject, initialBranch, close }: WorktreeFormProp
           )}
 
           {error && <div className="oc-wt-error" role="alert">{error}</div>}
+          {warning && (
+            <div
+              className="oc-wt-warning"
+              role="status"
+              data-testid="worktree-warning"
+            >
+              {warning}
+            </div>
+          )}
           {submitting && stageLabel && (
             <div className="oc-wt-spinner" aria-live="polite">
               {stageLabel}

@@ -634,6 +634,10 @@ export interface WorktreeCreateRequest {
  *
  * - `reused` is true when the target worktree already existed for
  *   the same branch (idempotent re-run).
+ * - `branchExisted` is true when the caller asked to create a new
+ *   branch but one with that name already existed locally, so the
+ *   backend fell back to checking it out instead. The UI should warn
+ *   the user that they're working on a pre-existing branch.
  * - `opencodeLaunched` is false when the tmux session pre-existed
  *   and we skipped the relaunch (AD-4). The user can still attach
  *   to the existing session via tmuxSession.
@@ -642,6 +646,7 @@ export interface WorktreeCreateResponse {
   worktreePath: string;
   branch: string;
   reused: boolean;
+  branchExisted: boolean;
   tmuxSession: string;
   tmuxTarget?: string;
   opencodeLaunched: boolean;

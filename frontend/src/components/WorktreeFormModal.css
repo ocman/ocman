@@ -105,6 +105,15 @@
   white-space: pre-wrap;
 }
 
+.oc-wt-warning {
+  background: rgba(220, 170, 50, 0.14);
+  border: 1px solid rgba(220, 170, 50, 0.45);
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
 .oc-wt-spinner {
   font-size: 13px;
   color: var(--text-dim);

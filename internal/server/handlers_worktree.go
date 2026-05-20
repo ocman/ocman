@@ -211,6 +211,7 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 		"worktreePath":     res.Path,
 		"branch":           res.Branch,
 		"reused":           res.Reused,
+		"branchExisted":    res.BranchExisted,
 		"tmuxSession":      tmuxSession,
 		"tmuxTarget":       tmuxTarget,
 		"opencodeLaunched": launched,

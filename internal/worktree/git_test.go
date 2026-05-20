@@ -220,6 +220,65 @@ func TestCreate_BranchAlreadyCheckedOutElsewhere(t *testing.T) {
 	}
 }
 
+func TestCreate_NewBranchButBranchAlreadyExists(t *testing.T) {
+	repo := initTestRepo(t)
+
+	// Pre-create a local branch with no associated worktree. This
+	// is the case where `git worktree add -b <name>` would refuse
+	// ("fatal: a branch named 'X' already exists"). We expect
+	// Create to detect this and fall back to a plain checkout.
+	if err := exec.Command("git", "-C", repo, "branch", "preexisting", "main").Run(); err != nil {
+		t.Fatalf("seed branch: %v", err)
+	}
+
+	res, err := Create(context.Background(), CreateRequest{
+		RepoRoot:  repo,
+		Branch:    "preexisting",
+		NewBranch: true,
+		BaseRef:   "main",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if !res.BranchExisted {
+		t.Errorf("res.BranchExisted = false, want true")
+	}
+	if res.Reused {
+		t.Errorf("res.Reused = true, want false (the *worktree* did not pre-exist)")
+	}
+	if res.Branch != "preexisting" {
+		t.Errorf("res.Branch = %q, want preexisting", res.Branch)
+	}
+
+	// The worktree dir must exist on disk now.
+	if _, err := os.Stat(filepath.Join(res.Path, ".git")); err != nil {
+		t.Errorf("worktree .git missing: %v", err)
+	}
+
+	// And `git worktree list` must report two entries.
+	list, err := List(context.Background(), repo)
+	if err != nil {
+		t.Fatalf("List after create: %v", err)
+	}
+	if len(list) != 2 {
+		t.Errorf("after create, got %d entries, want 2", len(list))
+	}
+}
+
+func TestBranchExists(t *testing.T) {
+	repo := initTestRepo(t)
+	if !branchExists(context.Background(), repo, "main") {
+		t.Errorf("branchExists(main) = false, want true")
+	}
+	if branchExists(context.Background(), repo, "does-not-exist") {
+		t.Errorf("branchExists(does-not-exist) = true, want false")
+	}
+	// Non-repo dirs should return false rather than panic.
+	if branchExists(context.Background(), t.TempDir(), "main") {
+		t.Errorf("branchExists on non-repo returned true; want false")
+	}
+}
+
 func TestResolveBaseRef(t *testing.T) {
 	repo := initTestRepo(t)
 

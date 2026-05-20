@@ -43,6 +43,13 @@ type CreateResult struct {
 	Path   string `json:"path"`
 	Branch string `json:"branch"`
 	Reused bool   `json:"reused"` // true when the worktree already existed for the same branch
+	// BranchExisted is true when the caller asked to create a new
+	// branch (NewBranch=true) but a branch with that name already
+	// existed locally, so we fell back to checking it out instead
+	// of creating it. The caller (and ultimately the UI) should
+	// warn the user that they're working on a pre-existing branch
+	// rather than a freshly-cut one.
+	BranchExisted bool `json:"branchExisted"`
 }
 
 // List runs `git worktree list --porcelain` and returns the parsed
@@ -169,8 +176,23 @@ func Create(ctx context.Context, req CreateRequest) (*CreateResult, error) {
 		return nil, fmt.Errorf("worktree: mkdir parent: %w", err)
 	}
 
+	// If the caller asked to create a new branch but one with that
+	// name already exists locally, fall back to a plain checkout
+	// rather than failing. The handler surfaces BranchExisted=true
+	// so the UI can warn the user that they're working on a
+	// pre-existing branch instead of a fresh one. The branch may
+	// still be checked out elsewhere; the loop above already caught
+	// that, and `git worktree add` will reject it below if some
+	// other worktree picked it up between our List() and the add.
+	newBranch := req.NewBranch
+	branchExisted := false
+	if newBranch && branchExists(ctx, req.RepoRoot, req.Branch) {
+		newBranch = false
+		branchExisted = true
+	}
+
 	args := []string{"-C", req.RepoRoot, "worktree", "add"}
-	if req.NewBranch {
+	if newBranch {
 		args = append(args, "-b", req.Branch, target)
 		if req.BaseRef != "" {
 			args = append(args, req.BaseRef)
@@ -188,10 +210,23 @@ func Create(ctx context.Context, req CreateRequest) (*CreateResult, error) {
 	}
 
 	return &CreateResult{
-		Path:   target,
-		Branch: req.Branch,
-		Reused: false,
+		Path:          target,
+		Branch:        req.Branch,
+		Reused:        false,
+		BranchExisted: branchExisted,
 	}, nil
+}
+
+// branchExists reports whether a local branch named `branch` exists
+// in repoRoot. Errors (including the branch genuinely not existing)
+// are coerced to false — callers treat "unknown" the same as "no" and
+// let `git worktree add` produce the authoritative error if any.
+func branchExists(ctx context.Context, repoRoot, branch string) bool {
+	cctx, cancel := context.WithTimeout(ctx, gitCommandTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(cctx, "git", "-C", repoRoot,
+		"show-ref", "--verify", "--quiet", "refs/heads/"+branch)
+	return cmd.Run() == nil
 }
 
 // classifyAddError translates a `git worktree add` failure into one of

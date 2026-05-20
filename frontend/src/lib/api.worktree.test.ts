@@ -51,6 +51,7 @@ describe('api.worktree', () => {
         worktreePath: '/a/.worktrees/r/feature',
         branch: 'feature',
         reused: false,
+        branchExisted: false,
         tmuxSession: '~/r-feature',
         opencodeLaunched: true,
       }), { status: 200 });
