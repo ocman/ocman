@@ -357,6 +357,14 @@
   font-weight: 500;
 }
 
+/* Session cost indicator (sits next to the context-usage token count) */
+.oc-session-cost {
+  color: var(--overlay0);
+  white-space: nowrap;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Context usage indicator */
 .oc-context-usage-wrap {
   position: relative;

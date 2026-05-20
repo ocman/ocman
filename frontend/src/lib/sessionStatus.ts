@@ -121,10 +121,11 @@ export function computeLiveTokens(messages: Message[]): LiveTokens {
 
 /**
  * Combine server-reported totals with locally-computed live tokens,
- * picking the larger value for input/output so the display never
- * regresses while a turn is in progress. The server-side cost is
- * not included here because the live cost is derived from the same
- * messages and stays consistent.
+ * picking the larger value for input/output/cost so the display
+ * never regresses while a turn is in progress and so the cost shows
+ * up immediately when the session page renders before the message
+ * list has streamed in (the live cost is only populated as
+ * assistant messages arrive in the `messages` array).
  */
 export function mergeTokenStats(
   session: SessionWithDefaults | null,
@@ -132,13 +133,14 @@ export function mergeTokenStats(
 ): TokenStats {
   const displayTokensIn = Math.max(session?.totalInputTokens || 0, liveTokens.tokensIn);
   const displayTokensOut = Math.max(session?.totalOutputTokens || 0, liveTokens.tokensOut);
+  const displayCost = Math.max(session?.totalCost || 0, liveTokens.totalCost);
   return {
     input: displayTokensIn,
     output: displayTokensOut,
     reasoning: liveTokens.tokensReasoning,
     cacheRead: liveTokens.cacheRead,
     cacheWrite: liveTokens.cacheWrite,
-    totalCost: liveTokens.totalCost,
+    totalCost: displayCost,
     contextWindow: session?.contextTokenCount,
   };
 }

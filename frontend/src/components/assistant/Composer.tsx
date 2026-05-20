@@ -13,7 +13,7 @@ import { SlashCommandMenu } from './SlashCommandMenu';
 import { useComposerAudio } from './useComposerAudio';
 import { routeComposerSubmit } from './composerSubmit';
 import { getContextWindow, formatTokenCount } from '../../lib/models/contextWindows';
-import { formatTokensPerSecond } from '../../lib/format';
+import { formatCurrency, formatTokensPerSecond } from '../../lib/format';
 import { BUILTIN_COMMANDS, KNOWN_AGENTS } from '../../lib/commands/builtinCommands';
 
 export interface AttachedImage {
@@ -1045,6 +1045,14 @@ function ComposerImpl({
           )}
         </span>
         <span className="oc-composer-footer-right">
+          {tokenStats && tokenStats.totalCost > 0 && (
+            <span
+              className="oc-session-cost"
+              title="Session cost reported by the platform"
+            >
+              {formatCurrency(tokenStats.totalCost)}
+            </span>
+          )}
           {contextTokens != null && contextTokens > 0 && (() => {
             const contextWindow = getContextWindow(activeModel);
             const pct = contextWindow ? Math.min(100, (contextTokens / contextWindow) * 100) : null;
