@@ -30,6 +30,7 @@ import {
   test,
   expect,
   MOCK_SESSION,
+  MOCK_SESSION_2,
   mockSse,
   sseEvent,
   mockSessionWithLiveConnection,
@@ -336,6 +337,258 @@ test('multi-step: selecting option advances to next step', async ({ mockedPage: 
   // Click first option on step 1 — should auto-advance to step 2
   await page.locator('.oc-question-opt-btn', { hasText: 'Option A' }).click();
   await expect(page.locator('.oc-question-step-label')).toContainText('2 / 2', { timeout: 2_000 });
+});
+
+// ===========================================================================
+// INSTANT PROMPT ON SESSION SWITCH (regression: prompt was delayed until sidebar poll)
+// ===========================================================================
+
+/**
+ * When navigating directly to a session that already has a pending permission
+ * (or question), the prompt must appear immediately — without waiting for the
+ * sidebar poll cycle to fire the reverse-sync effect.
+ *
+ * The bug: SessionDetail's reverse-sync effect is gated on `sidebarHasPerm`
+ * (derived from the sidebar poll), so the permission prompt doesn't show
+ * until the first /api/sessions poll completes (~100–500 ms) AND
+ * /api/session/{id}/permissions resolves on top of that.
+ *
+ * The fix: also trigger the `listPermissions`/`listQuestions` fetch when the
+ * initial REST response for the session has `pendingPermission: true` /
+ * `pendingQuestion: true`, without waiting for the sidebar poll.
+ *
+ * This test sets up:
+ *  - /api/session/{id} → pendingPermission: true (no SSE event)
+ *  - /api/sessions     → no pendingPermission flag (sidebar poll must NOT be
+ *                        the trigger; we omit it to isolate the fast path)
+ *  - /api/session/{id}/permissions → the actual permission data
+ *
+ * And asserts the PermissionPrompt is visible within 1 s of landing on the
+ * page — well below the sidebar-poll round-trip time.
+ */
+test('permission prompt appears immediately on session load when pendingPermission is true', async ({ mockedPage: page }) => {
+  const PERM_ID = 'perm-instant';
+  const liveSession = {
+    ...mockSessionWithLiveConnection(),
+    pendingPermission: true,
+  };
+
+  // REST detail: session has pendingPermission: true.
+  // No SSE permission.asked event is delivered — the prompt must come
+  // purely from the initial fetch, not from the stream.
+  await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        session: liveSession,
+        messages: [],
+        parts: [],
+        totalMessages: 0,
+        defaultAgent: 'build',
+        defaultModel: '',
+      }),
+    }),
+  );
+
+  // Permissions endpoint: return the full detail for the waiting prompt.
+  await page.route(
+    new RegExp(`/api/session/${MOCK_SESSION.id}/permissions`),
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: PERM_ID,
+            requestID: PERM_ID,
+            sessionID: MOCK_SESSION.id,
+            permission: 'Write to /tmp/instant.txt',
+            patterns: [],
+          },
+        ]),
+      }),
+  );
+
+  // Sidebar: session WITHOUT pendingPermission flag — ensures the prompt
+  // is not triggered by the sidebar poll path but by the initial load.
+  await page.route('/api/sessions*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([{ ...liveSession, pendingPermission: false }]),
+    }),
+  );
+
+  // SSE: abort immediately — no permission.asked event will arrive.
+  await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}/events`), (route) =>
+    route.abort(),
+  );
+
+  await page.goto(`/session/${MOCK_SESSION.id}`);
+  await expect(page.locator('.session-layout')).toBeVisible();
+
+  // The prompt must appear within 1 s — fast enough to rule out the
+  // sidebar-poll path (which requires at least one /api/sessions round-trip
+  // plus a /api/session/{id}/permissions fetch on top).
+  await expect(page.locator('.oc-permission-desc')).toContainText('/tmp/instant.txt', { timeout: 1_000 });
+});
+
+/**
+ * Same for question prompts: when the initial REST response has
+ * `pendingQuestion: true`, the QuestionPrompt must appear immediately
+ * without waiting for the sidebar poll.
+ */
+test('question prompt appears immediately on session load when pendingQuestion is true', async ({ mockedPage: page }) => {
+  const Q_ID = 'q-instant';
+  const liveSession = {
+    ...mockSessionWithLiveConnection(),
+    pendingQuestion: true,
+  };
+
+  await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        session: liveSession,
+        messages: [],
+        parts: [],
+        totalMessages: 0,
+        defaultAgent: 'build',
+        defaultModel: '',
+      }),
+    }),
+  );
+
+  await page.route(
+    new RegExp(`/api/session/${MOCK_SESSION.id}/questions`),
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: Q_ID,
+            requestID: Q_ID,
+            requestId: Q_ID,
+            sessionID: MOCK_SESSION.id,
+            questions: [
+              {
+                question: 'Instant question text?',
+                header: 'Confirm',
+                options: [
+                  { label: 'Yes', description: '' },
+                  { label: 'No', description: '' },
+                ],
+                multiple: false,
+                custom: false,
+              },
+            ],
+          },
+        ]),
+      }),
+  );
+
+  await page.route('/api/sessions*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([{ ...liveSession, pendingQuestion: false }]),
+    }),
+  );
+
+  await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}/events`), (route) =>
+    route.abort(),
+  );
+
+  await page.goto(`/session/${MOCK_SESSION.id}`);
+  await expect(page.locator('.session-layout')).toBeVisible();
+
+  await expect(page.locator('.oc-question-box-text')).toContainText('Instant question text?', { timeout: 1_000 });
+});
+
+/**
+ * Navigating from another session to one with a pending permission must
+ * also show the prompt immediately — not only on a cold page load.
+ */
+test('permission prompt appears immediately when switching to a session with a pending permission', async ({ mockedPage: page }) => {
+  const PERM_ID = 'perm-switch';
+  const liveSessionA = {
+    ...mockSessionWithLiveConnection(),
+    id: MOCK_SESSION.id,
+    title: MOCK_SESSION.title,
+    pendingPermission: false,
+  };
+  const liveSessionB = {
+    ...mockSessionWithLiveConnection(),
+    id: MOCK_SESSION_2.id,
+    title: MOCK_SESSION_2.title,
+    pendingPermission: true,
+  };
+
+  // Session A — no prompt.
+  await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ session: liveSessionA, messages: [], parts: [], totalMessages: 0, defaultAgent: 'build', defaultModel: '' }),
+    }),
+  );
+
+  // Session B — has a pending permission.
+  await page.route(new RegExp(`/api/session/${MOCK_SESSION_2.id}(\\?|$)`), (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ session: liveSessionB, messages: [], parts: [], totalMessages: 0, defaultAgent: 'build', defaultModel: '' }),
+    }),
+  );
+
+  await page.route(
+    new RegExp(`/api/session/${MOCK_SESSION_2.id}/permissions`),
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: PERM_ID,
+            requestID: PERM_ID,
+            sessionID: MOCK_SESSION_2.id,
+            permission: 'Read /etc/hosts',
+            patterns: [],
+          },
+        ]),
+      }),
+  );
+
+  // Sidebar: neither session has the boolean set — isolates the fast path.
+  await page.route('/api/sessions*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        { ...liveSessionA, pendingPermission: false },
+        { ...liveSessionB, pendingPermission: false },
+      ]),
+    }),
+  );
+
+  await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}/events`), (route) => route.abort());
+  await page.route(new RegExp(`/api/session/${MOCK_SESSION_2.id}/events`), (route) => route.abort());
+
+  // 1. Start on session A — no prompt.
+  await page.goto(`/session/${MOCK_SESSION.id}`);
+  await expect(page.locator('.session-layout')).toBeVisible();
+  await expect(page.locator('.oc-permission-wrap')).toHaveCount(0);
+
+  // 2. Switch to session B.
+  await page.locator('.session-sidebar-item', { hasText: MOCK_SESSION_2.title }).click();
+  await expect(page.getByRole('heading', { name: new RegExp(MOCK_SESSION_2.title) })).toBeVisible({ timeout: 5_000 });
+
+  // 3. The permission prompt must appear within 1 s of landing on session B.
+  await expect(page.locator('.oc-permission-desc')).toContainText('/etc/hosts', { timeout: 1_000 });
 });
 
 test('custom text input accepts typed text', async ({ mockedPage: page }) => {

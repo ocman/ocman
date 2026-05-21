@@ -385,15 +385,25 @@ export function SessionDetail({ id }: SessionDetailProps) {
     });
   }, [id, pendingPermission, pendingQuestion, patchRecentSession]);
 
-  // Reverse sync: when the sidebar poll discovers a prompt we don't
-  // know about (missed SSE event), fetch the data so the dialog
-  // appears.
+  // Reverse sync: when the session REST response or the sidebar poll
+  // reports a pending prompt we don't yet have in state, fetch the
+  // full detail so the dialog appears.
+  //
+  // Two sources signal "a prompt exists":
+  //   1. session.pendingPermission / session.pendingQuestion (boolean)
+  //      from the initial /api/session/{id} fetch — fires immediately on
+  //      page load or session switch, without waiting for a sidebar poll.
+  //   2. sidebarHasPerm / sidebarHasQuestion from the /api/sessions poll
+  //      — catches prompts that arrive while the SSE stream is open but
+  //      the permission.asked event was somehow missed.
   const sidebarCurrentSession = recentSessions.find((s) => s.id === id);
   const sidebarHasPerm = sidebarCurrentSession?.pendingPermission ?? false;
   const sidebarHasQuestion = sidebarCurrentSession?.pendingQuestion ?? false;
+  const restHasPerm = session?.pendingPermission ?? false;
+  const restHasQuestion = session?.pendingQuestion ?? false;
   useEffect(() => {
     if (!id) return;
-    if (sidebarHasPerm && pendingPermission === null) {
+    if ((restHasPerm || sidebarHasPerm) && pendingPermission === null) {
       listPermissions(id)
         .then((perms) => {
           for (const raw of perms) {
@@ -409,7 +419,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
         })
         .catch(() => { /* sidebar will retry */ });
     }
-    if (sidebarHasQuestion && pendingQuestion === null) {
+    if ((restHasQuestion || sidebarHasQuestion) && pendingQuestion === null) {
       listQuestions(id)
         .then((questions) => {
           for (const raw of questions) {
@@ -425,7 +435,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
         })
         .catch(() => { /* sidebar will retry */ });
     }
-  }, [id, sidebarHasPerm, sidebarHasQuestion, pendingPermission, pendingQuestion,
+  }, [id, restHasPerm, restHasQuestion, sidebarHasPerm, sidebarHasQuestion,
+    pendingPermission, pendingQuestion,
     listPermissions, listQuestions, setPermissionError, setPendingPermission,
     setPendingQuestion, subagentSessionIdsRef]);
 
