@@ -1,13 +1,15 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import './SessionTable.css';
 import { useNavigate } from 'react-router-dom';
 import type { Session, GitInfo } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
-import { cleanTitle, formatDuration, relativeTime } from '../lib/format';
+import { cleanTitle, formatDuration, relativeTime, shortPath } from '../lib/format';
 import { StatusBadge } from './StatusBadge';
 import { PlatformBadge } from './PlatformBadge';
 import { filterVisibleSessions } from '../lib/sessionVisibility';
 import { SessionTableSkeleton } from './Skeleton';
+import { projectRootForDirectory } from '../lib/worktrees';
+import { rollupGroupStatus } from '../lib/sidebarHelpers';
 
 export function ShortPath({ path }: { path: string }) {
   const parts = (path || '').split('/').filter(Boolean);
@@ -61,6 +63,181 @@ interface Props {
   showProject: boolean;
   loading?: boolean;
   includeArchived?: boolean;
+}
+
+interface GroupedProps {
+  sessions: Session[];
+  loading?: boolean;
+  includeArchived?: boolean;
+  /** Set of project directory keys currently collapsed. */
+  collapsedProjects: ReadonlySet<string>;
+  /** Toggle the collapsed state of a project key. */
+  toggleCollapsedProject: (directory: string) => void;
+}
+
+/**
+ * Renders sessions grouped by their project root directory, with
+ * collapsible group headers. Uses the same `collapsedProjects` /
+ * `toggleCollapsedProject` state as the sidebar "projects" view so
+ * collapse state is shared between both places.
+ */
+export function GroupedSessionTable({
+  sessions,
+  loading,
+  includeArchived,
+  collapsedProjects,
+  toggleCollapsedProject,
+}: GroupedProps) {
+  const navigate = useNavigate();
+  const archiveSession = useApiStore((state) => state.archiveSession);
+  const [archivingSessionIds, setArchivingSessionIds] = useState<Set<string>>(new Set());
+  const [locallyArchivedSessionIds, setLocallyArchivedSessionIds] = useState<Set<string>>(new Set());
+
+  const handleArchiveSession = async (e: React.MouseEvent, session: Session) => {
+    e.stopPropagation();
+    if (archivingSessionIds.has(session.id)) return;
+    setArchivingSessionIds(prev => new Set(prev).add(session.id));
+    try {
+      await archiveSession(session.platform, session.id, session.timeUpdated, true);
+      setLocallyArchivedSessionIds(prev => new Set(prev).add(session.id));
+    } catch (err) {
+      console.error('Failed to archive session', err);
+    } finally {
+      setArchivingSessionIds(prev => {
+        const next = new Set(prev);
+        next.delete(session.id);
+        return next;
+      });
+    }
+  };
+
+  const groups = useMemo(() => {
+    const visible = (includeArchived ? sessions : filterVisibleSessions(sessions))
+      .filter(s => includeArchived || !locallyArchivedSessionIds.has(s.id));
+
+    const buckets = new Map<string, Session[]>();
+    for (const s of visible) {
+      const key = projectRootForDirectory(s.directory || '');
+      const existing = buckets.get(key);
+      if (existing) existing.push(s);
+      else buckets.set(key, [s]);
+    }
+
+    return Array.from(buckets.entries())
+      .map(([directory, groupSessions]) => {
+        const sorted = [...groupSessions].sort((a, b) => b.timeUpdated - a.timeUpdated);
+        return {
+          directory,
+          sessions: sorted,
+          lastUpdated: sorted[0]?.timeUpdated ?? 0,
+          aggregate: rollupGroupStatus(sorted),
+        };
+      })
+      .sort((a, b) => b.lastUpdated - a.lastUpdated);
+  }, [sessions, includeArchived, locallyArchivedSessionIds]);
+
+  if (loading) {
+    return <SessionTableSkeleton rows={5} showProject={false} />;
+  }
+
+  if (groups.length === 0) {
+    return (
+      <table>
+        <tbody>
+          <tr>
+            <td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: 24 }}>
+              {includeArchived ? 'No sessions found' : 'No active sessions found'}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    );
+  }
+
+  return (
+    <>
+      {groups.map(group => {
+        const collapsed = collapsedProjects.has(group.directory);
+        const label = group.directory ? shortPath(group.directory) : '(unknown)';
+        const agg = group.aggregate;
+        const dotStatus: Session['status'] =
+          agg.kind === 'none' ? 'done' :
+          agg.kind === 'pending' ? 'waiting' :
+          agg.kind;
+        const dotPending = agg.kind === 'pending';
+
+        return (
+          <div key={group.directory || '__empty__'} className="oc-session-group">
+            <div className="oc-session-group-header-row">
+              <button
+                type="button"
+                className={`oc-session-group-header${collapsed ? ' collapsed' : ''}`}
+                aria-expanded={!collapsed}
+                title={group.directory || 'Unknown project'}
+                onClick={() => toggleCollapsedProject(group.directory)}
+              >
+                <span className="oc-session-group-status">
+                  <StatusBadge status={dotStatus} compact pending={dotPending} />
+                </span>
+                <span className="oc-session-group-label">{label}</span>
+                <span className="oc-session-group-count">{group.sessions.length}</span>
+              </button>
+            </div>
+            {!collapsed && (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Session</th>
+                    <th>Activity</th>
+                    <th>Started</th>
+                    <th style={{ width: 44 }} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {group.sessions.map(s => {
+                    const seenLatest = (s.status === 'waiting' || s.status === 'error' || s.status === 'done') && s.seen;
+                    const pending = s.pendingPermission || s.pendingQuestion;
+                    return (
+                      <tr
+                        key={s.id}
+                        className={s.liveConnection ? '' : 'no-port'}
+                        onClick={() => navigate(`/session/${s.id}`)}
+                      >
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <StatusBadge status={s.status} compact seen={seenLatest} pending={pending} />
+                            <span className="session-title">{cleanTitle(s.title) || 'Untitled'}</span>
+                          </div>
+                          <div className="mono">
+                            <PlatformBadge platform={s.platform} variant="plain" />
+                            {' '}
+                            {s.id}
+                          </div>
+                        </td>
+                        <td className="mono">{s.messageCount} msgs &middot; {formatDuration(s.durationMs)}</td>
+                        <td><span title={new Date(s.timeCreated).toLocaleString()}>{relativeTime(s.timeCreated)}</span></td>
+                        <td className="session-action-cell">
+                          <button
+                            className="session-archive-btn"
+                            onClick={(e) => { void handleArchiveSession(e, s); }}
+                            title="Archive session (reappears on new activity)"
+                            aria-label="Archive session"
+                            disabled={archivingSessionIds.has(s.id)}
+                          >
+                            <ArchiveIcon />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
 }
 
 export function SessionTable({ sessions, showProject, loading, includeArchived }: Props) {

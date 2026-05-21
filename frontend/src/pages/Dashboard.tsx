@@ -9,7 +9,7 @@ import {
   shortPath,
 } from '../lib/format';
 import { usePageTitle } from '../lib/headerContext';
-import { SessionTable } from '../components/SessionTable';
+import { SessionTable, GroupedSessionTable } from '../components/SessionTable';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { ProjectScopePicker } from '../components/ProjectScopePicker';
 import { matchesScope } from '../lib/projectTree';
@@ -152,6 +152,15 @@ export function DashboardLayout() {
 export function SessionsTab() {
   usePageTitle('Sessions');
   const { sessions, sessionsLoading, sessionsError, loadSessions, timeRange, setTimeRange, showArchived, setShowArchived } = useDashboardCtx();
+  const dashboardGrouped = useUiStore((s) => s.dashboardGrouped);
+  const toggleDashboardGrouped = useUiStore((s) => s.toggleDashboardGrouped);
+  const collapsedProjects = useUiStore((s) => s.collapsedProjects);
+  const toggleCollapsedProject = useUiStore((s) => s.toggleCollapsedProject);
+
+  const collapsedProjectSet = useMemo(
+    () => new Set(collapsedProjects),
+    [collapsedProjects],
+  );
 
   return (
     <>
@@ -173,8 +182,23 @@ export function SessionsTab() {
           className={`oc-time-range-btn${showArchived ? ' active' : ''}`}
           onClick={() => setShowArchived(!showArchived)}
         >Exclude archived</button>
+        <button
+          className={`oc-time-range-btn${dashboardGrouped ? ' active' : ''}`}
+          onClick={toggleDashboardGrouped}
+          title="Group sessions by project"
+        >Group by project</button>
       </div>
-      <SessionTable sessions={sessions} showProject loading={sessionsLoading && sessions.length === 0} includeArchived={!showArchived} />
+      {dashboardGrouped ? (
+        <GroupedSessionTable
+          sessions={sessions}
+          loading={sessionsLoading && sessions.length === 0}
+          includeArchived={!showArchived}
+          collapsedProjects={collapsedProjectSet}
+          toggleCollapsedProject={toggleCollapsedProject}
+        />
+      ) : (
+        <SessionTable sessions={sessions} showProject loading={sessionsLoading && sessions.length === 0} includeArchived={!showArchived} />
+      )}
     </>
   );
 }

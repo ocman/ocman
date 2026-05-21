@@ -53,6 +53,12 @@ type UiStore = {
   collapsedProjects: string[];
   toggleCollapsedProject: (directory: string) => void;
 
+  // Whether the Sessions tab on the dashboard groups sessions by project.
+  // Uses the same collapsedProjects / toggleCollapsedProject state as the
+  // sidebar "projects" view so collapse state is shared between both places.
+  dashboardGrouped: boolean;
+  toggleDashboardGrouped: () => void;
+
   bellEnabled: boolean;
   setBellEnabled: (enabled: boolean) => void;
 
@@ -151,6 +157,9 @@ export const useUiStore = create<UiStore>()(
             ? s.collapsedProjects.filter((d) => d !== directory)
             : [...s.collapsedProjects, directory],
         })),
+
+      dashboardGrouped: false,
+      toggleDashboardGrouped: () => set((s) => ({ dashboardGrouped: !s.dashboardGrouped })),
 
       bellEnabled: true,
       setBellEnabled: (enabled) => set({ bellEnabled: enabled }),
@@ -259,6 +268,7 @@ export const useUiStore = create<UiStore>()(
         notificationsEnabled: s.notificationsEnabled,
         sidebarView: s.sidebarView,
         collapsedProjects: s.collapsedProjects,
+        dashboardGrouped: s.dashboardGrouped,
         changesSidebarWidth: s.changesSidebarWidth,
         changesSidebarOpenTabs: s.changesSidebarOpenTabs,
         changesSidebarTabSizes: s.changesSidebarTabSizes,
