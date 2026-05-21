@@ -439,3 +439,4 @@ describe('useSession — unmount', () => {
     expect(sse.closed).toBe(true);
   });
 });
+

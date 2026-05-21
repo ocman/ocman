@@ -1,6 +1,7 @@
 package opencode
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,88 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
+
+// TestProxyEvents_SessionCacheInvalidatedOnDisconnect reproduces the
+// "missing messages after switching sessions" bug.
+//
+// Scenario:
+//  1. Fetch session A → sessionCache is populated.
+//  2. ProxyEvents runs for session A, then the client disconnects
+//     (simulating the user navigating away to another session).
+//  3. A new message arrives on session A while the user is away.
+//  4. The user returns → fetchSessionFromOpenCodeCtx is called again.
+//
+// Before the fix: step 4 returns the stale cached response (missing
+// the message from step 3) because the sessionCache TTL has not yet
+// expired.
+// After the fix: ProxyEvents invalidates the cache on disconnect so
+// step 4 hits the upstream and returns the fresh response.
+func TestProxyEvents_SessionCacheInvalidatedOnDisconnect(t *testing.T) {
+	const sid = "sess-cache-bust"
+	const dir = "/tmp/proj-cache-bust"
+
+	fake := newOpencodeFake(t)
+	fake.SetSession(sid, []byte(`{"id":"`+sid+`","title":"hello","directory":"`+dir+`","time":{"created":1000,"updated":1500}}`))
+	fake.AddMessage(sid, []byte(`{
+		"info":{"id":"m1","sessionID":"`+sid+`","role":"user","time":{"created":1100}},
+		"parts":[]
+	}`))
+
+	// Add /event endpoint to the fake — returns a minimal SSE stream
+	// that ends immediately so ProxyEvents returns.
+	var eventHits int32
+	fake.server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/event" {
+			atomic.AddInt32(&eventHits, 1)
+			w.Header().Set("Content-Type", "text/event-stream")
+			// Write one keepalive comment then close — simulates the
+			// upstream closing when the session becomes idle.
+			_, _ = w.Write([]byte(": keepalive\n\n"))
+			return
+		}
+		fake.serveHTTP(w, r)
+	})
+
+	withTestPort(t, dir, fake.Port())
+	database := newTestDBWithSession(t, sid, dir)
+
+	// Reset the session cache so we start clean regardless of test
+	// ordering.
+	sessionCache = newHTTPCacheNamed(sessionCache.ttl, "opencode.session_http.test")
+
+	a := New(database, nil)
+
+	// Step 1: first fetch — populates sessionCache.
+	detail1, ok := a.fetchSessionFromOpenCodeCtx(context.Background(), sid, 30, 0)
+	if !ok {
+		t.Fatalf("first fetch: ok=false")
+	}
+	if len(detail1.Messages) != 1 {
+		t.Fatalf("first fetch: got %d messages, want 1", len(detail1.Messages))
+	}
+
+	// Step 2: ProxyEvents runs then disconnects (context cancelled).
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately — simulates navigating away
+	var buf bytes.Buffer
+	_ = a.ProxyEvents(ctx, sid, &buf, nil)
+
+	// Step 3: new message arrives while the user is away.
+	fake.AddMessage(sid, []byte(`{
+		"info":{"id":"m2","sessionID":"`+sid+`","role":"assistant","time":{"created":1200}},
+		"parts":[{"id":"p2","messageID":"m2","sessionID":"`+sid+`","type":"text","text":"reply"}]
+	}`))
+
+	// Step 4: user returns — fetch again. Must NOT serve the stale
+	// one-message cache; must return both messages.
+	detail2, ok := a.fetchSessionFromOpenCodeCtx(context.Background(), sid, 30, 0)
+	if !ok {
+		t.Fatalf("second fetch: ok=false")
+	}
+	if len(detail2.Messages) != 2 {
+		t.Errorf("second fetch: got %d messages, want 2 (cache was not invalidated on SSE disconnect)", len(detail2.Messages))
+	}
+}
 
 func TestParseOpenCodeModelRef(t *testing.T) {
 	tests := []struct {

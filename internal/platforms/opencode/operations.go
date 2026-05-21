@@ -531,6 +531,18 @@ func (a *Adapter) ProxyEvents(ctx context.Context, sessionID string, w io.Writer
 		return fmt.Errorf("opencode events: %w", err)
 	}
 
+	// Invalidate the session cache when the SSE stream ends, regardless
+	// of how it ends (clean EOF, client disconnect, or context cancel).
+	// Without this, a user switching sessions and returning within the
+	// cache TTL (5 s) would receive a stale snapshot that's missing
+	// messages that arrived while they were away — the SSE stream was
+	// closed so those events were never delivered, and the cache
+	// prevents the reconcile fetch from picking them up.
+	defer func() {
+		sessionCache.invalidate(port, "/session/"+sessionID)
+		sessionCache.invalidate(port, "/session/"+sessionID+"/message")
+	}()
+
 	// Use a client without a timeout for long-lived SSE connections.
 	// Do NOT wrap with otelhttp.NewTransport here: the transport span
 	// would span the entire streaming body read, and when the client
