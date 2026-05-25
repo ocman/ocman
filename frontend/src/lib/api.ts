@@ -616,4 +616,48 @@ export const api = {
   authLogin: (password: string) =>
     postJSON<{ ok: boolean }, { password: string }>('/api/auth/login', { password }),
   authLogout: () => postJSON<void, Record<string, never>>('/api/auth/logout', {}, { parseJSON: false }),
+
+  approvedPermissions: (sessionId: string) =>
+    fetchJSON<Array<{
+      permissionId: string;
+      permission: string;
+      patterns: string[];
+      judgeSessionId: string;
+      approvedAt: number;
+    }>>(`/api/session/${encodeURIComponent(sessionId)}/approved-permissions`),
+
+  getAutoApprove: (sessionId: string) =>
+    fetchJSON<{ enabled: boolean; overridden: boolean }>(
+      `/api/session/${encodeURIComponent(sessionId)}/auto-approve`,
+    ),
+
+  setAutoApprove: async (sessionId: string, enabled: boolean): Promise<void> => {
+    const resp = await fetch(
+      `/api/session/${encodeURIComponent(sessionId)}/auto-approve`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      },
+    );
+    if (!resp.ok) throw new Error(await resp.text());
+  },
+
+  judgePermission: async (
+    sessionId: string,
+    permissionId: string,
+    permission: string,
+    patterns: string[],
+  ): Promise<{ verdict: 'safe' | 'unsafe'; judgeSessionId: string }> => {
+    const resp = await fetch(
+      `/api/session/${encodeURIComponent(sessionId)}/permissions/${encodeURIComponent(permissionId)}/judge`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ permission, patterns }),
+      },
+    );
+    if (!resp.ok) throw new Error(await resp.text());
+    return resp.json() as Promise<{ verdict: 'safe' | 'unsafe'; judgeSessionId: string }>;
+  },
 };

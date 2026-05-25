@@ -132,3 +132,84 @@
   font-family: inherit;
   font-weight: 600;
 }
+
+/* AI review banner — shown between header and content while the judge runs
+   or after it flagged the permission as needing human review. */
+.oc-permission-ai-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 8px;
+  padding: 7px 10px;
+  background: var(--surface0);
+  border: 1px solid var(--surface1);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* Use a smaller spinner than the global .oc-spinner (20 px) */
+.oc-permission-ai-spinner {
+  width: 13px;
+  height: 13px;
+  border-width: 2px;
+  flex-shrink: 0;
+}
+
+.oc-permission-ai-label {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.oc-permission-ai-label--done {
+  color: var(--overlay0);
+}
+
+/* "View reasoning" button — inline link style */
+.oc-permission-judge-link {
+  background: transparent;
+  border: none;
+  color: var(--accent4);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+  margin-left: auto;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color 0.1s;
+}
+
+.oc-permission-judge-link:hover {
+  color: var(--text);
+}
+
+/* Auto-approve footer row */
+.oc-permission-autoapprove {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--surface1);
+  flex-shrink: 0;
+}
+
+.oc-permission-autoapprove-btn {
+  background: transparent;
+  border: none;
+  color: var(--overlay0);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color 0.1s;
+}
+
+.oc-permission-autoapprove-btn:hover {
+  color: var(--subtext0);
+}
+
+.oc-permission-autoapprove-on {
+  color: var(--overlay0);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+}

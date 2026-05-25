@@ -21,6 +21,7 @@ const EMPTY_CAPS: PlatformCapabilities = {
   fileChanges: false,
   sessionInfo: false,
   liveConnectionHint: '',
+  autoApprove: false,
 };
 
 let cached: CapabilitiesResponse | null = null;

@@ -124,6 +124,7 @@ export function fullCaps(): PlatformCapabilities {
     fileChanges: true,
     sessionInfo: true,
     liveConnectionHint: '',
+    autoApprove: true,
   };
 }
 

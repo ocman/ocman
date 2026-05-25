@@ -63,6 +63,7 @@ func main() {
 	authSessionTTL := flag.Duration("auth-session-ttl", 30*24*time.Hour, "auth cookie lifetime")
 	authTrustLocalhost := flag.Bool("auth-trust-localhost", false, "exempt loopback clients from auth (dev-mode escape hatch; also OCMAN_AUTH_TRUST_LOCALHOST)")
 	otelEndpoint := flag.String("otel", "", "OTLP endpoint URL (e.g. http://localhost:4318 or grpc://localhost:4317). Empty disables telemetry. Falls back to OTEL_EXPORTER_OTLP_ENDPOINT.")
+	autoApprove := flag.Bool("auto-approve", false, "default new sessions to auto-approve mode (uses OpenCode's running instance as the LLM judge)")
 	flag.Parse()
 
 	// Parse and validate the -platforms flag.
@@ -163,12 +164,14 @@ func main() {
 		// gui-addr defaults to 127.0.0.1:0 (ephemeral). Callers can
 		// pin a port with --gui-addr=127.0.0.1:8229 if needed.
 		listenAddr := *guiAddr
-		srv := server.New(database, stateDB, listenAddr, registry, auth)
+		srv := server.New(database, stateDB, listenAddr, registry, auth).
+			WithAutoApproveDefault(*autoApprove)
 		if err := gui.RunGUI(ctx, srv, listenAddr); err != nil {
 			log.Fatalf("GUI error: %v", err)
 		}
 	} else {
-		srv := server.New(database, stateDB, *addr, registry, auth)
+		srv := server.New(database, stateDB, *addr, registry, auth).
+			WithAutoApproveDefault(*autoApprove)
 		if err := srv.Start(ctx); err != nil {
 			log.Fatalf("Server error: %v", err)
 		}

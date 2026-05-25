@@ -98,6 +98,7 @@ func (a *Adapter) Capabilities() platforms.Capabilities {
 		ShellExec:         true,
 		FileChanges:       true,
 		SessionInfo:       true,
+		AutoApprove:       true,
 		// OpenCode only exposes an HTTP API when it's started with an
 		// explicit --port flag. `--port 0` asks OpenCode to pick a free
 		// port and advertises it via lsof, which ocman scans.

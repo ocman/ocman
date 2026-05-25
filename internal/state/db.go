@@ -2,6 +2,7 @@ package state
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -131,6 +132,132 @@ func (d *DB) SeenSessions() (map[Key]int64, error) {
 // Close closes the state database.
 func (d *DB) Close() error {
 	return d.db.Close()
+}
+
+// SetAutoApprove enables or disables the auto-approve judge for a
+// specific (platform, session) pair. Overwrites any existing row.
+func (d *DB) SetAutoApprove(platform, sessionID string, enabled bool) error {
+	val := 0
+	if enabled {
+		val = 1
+	}
+	_, err := d.db.Exec(`
+		INSERT INTO session_auto_approve (platform, session_id, enabled, updated_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(platform, session_id) DO UPDATE SET
+			enabled    = excluded.enabled,
+			updated_at = excluded.updated_at
+	`, platform, sessionID, val, time.Now().UnixMilli())
+	if err != nil {
+		return fmt.Errorf("setting auto-approve: %w", err)
+	}
+	return nil
+}
+
+// ApprovedPermission holds the data for one auto-approved permission,
+// used to re-inject the notice into the conversation thread on reload.
+type ApprovedPermission struct {
+	PermissionID   string
+	PermissionText string
+	Patterns       []string
+	JudgeSessionID string
+	ApprovedAt     int64
+}
+
+// RecordApprovedPermission persists one auto-approved permission for a
+// session. Idempotent: repeated calls with the same permission_id
+// silently overwrite the existing row.
+func (d *DB) RecordApprovedPermission(platform, sessionID string, p ApprovedPermission) error {
+	patternsJSON, err := encodePatterns(p.Patterns)
+	if err != nil {
+		return fmt.Errorf("encoding patterns: %w", err)
+	}
+	_, err = d.db.Exec(`
+		INSERT INTO auto_approved_permission
+			(platform, session_id, permission_id, permission_text, patterns_json, judge_session_id, approved_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(platform, session_id, permission_id) DO UPDATE SET
+			permission_text  = excluded.permission_text,
+			patterns_json    = excluded.patterns_json,
+			judge_session_id = excluded.judge_session_id,
+			approved_at      = excluded.approved_at
+	`, platform, sessionID, p.PermissionID, p.PermissionText, patternsJSON, p.JudgeSessionID, p.ApprovedAt)
+	if err != nil {
+		return fmt.Errorf("recording approved permission: %w", err)
+	}
+	return nil
+}
+
+// ListApprovedPermissions returns all auto-approved permissions for a
+// session, ordered by approval time ascending.
+func (d *DB) ListApprovedPermissions(platform, sessionID string) ([]ApprovedPermission, error) {
+	rows, err := d.db.Query(`
+		SELECT permission_id, permission_text, patterns_json, judge_session_id, approved_at
+		FROM auto_approved_permission
+		WHERE platform = ? AND session_id = ?
+		ORDER BY approved_at ASC
+	`, platform, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("listing approved permissions: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ApprovedPermission
+	for rows.Next() {
+		var p ApprovedPermission
+		var patternsJSON string
+		if err := rows.Scan(&p.PermissionID, &p.PermissionText, &patternsJSON, &p.JudgeSessionID, &p.ApprovedAt); err != nil {
+			return nil, fmt.Errorf("scanning approved permission: %w", err)
+		}
+		p.Patterns, err = decodePatterns(patternsJSON)
+		if err != nil {
+			p.Patterns = nil
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading approved permissions: %w", err)
+	}
+	return out, nil
+}
+
+// encodePatterns marshals a string slice to a JSON array string.
+func encodePatterns(patterns []string) (string, error) {
+	if patterns == nil {
+		patterns = []string{}
+	}
+	b, err := json.Marshal(patterns)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// decodePatterns unmarshals a JSON array string to a string slice.
+func decodePatterns(s string) ([]string, error) {
+	var out []string
+	if err := json.Unmarshal([]byte(s), &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// GetAutoApprove returns whether the auto-approve judge is explicitly
+// enabled for the given session. The second return value is false when
+// no per-session override exists (caller should use the global default).
+func (d *DB) GetAutoApprove(platform, sessionID string) (enabled bool, exists bool, err error) {
+	var val int
+	err = d.db.QueryRow(
+		`SELECT enabled FROM session_auto_approve WHERE platform = ? AND session_id = ?`,
+		platform, sessionID,
+	).Scan(&val)
+	if err == sql.ErrNoRows {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, fmt.Errorf("getting auto-approve: %w", err)
+	}
+	return val != 0, true, nil
 }
 
 // ArchiveSession records a session as archived at its current update

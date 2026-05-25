@@ -1,0 +1,61 @@
+package server
+
+import (
+	"testing"
+)
+
+func TestParseVerdict(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  judgeVerdict
+	}{
+		// JSON happy path.
+		{
+			"json safe",
+			`{"verdict":"safe","reasoning":"Read-only operation.","risk_factors":[]}`,
+			verdictSafe,
+		},
+		{
+			"json unsafe",
+			`{"verdict":"unsafe","reasoning":"Writes to .env file.","risk_factors":[".env"]}`,
+			verdictUnsafe,
+		},
+		{
+			"json uppercase verdict",
+			`{"verdict":"SAFE","reasoning":"OK"}`,
+			verdictSafe,
+		},
+		{
+			"json with leading text",
+			"Here is the result:\n" + `{"verdict":"safe","reasoning":"Fine.","risk_factors":[]}`,
+			verdictSafe,
+		},
+		{
+			"json in markdown fences",
+			"```json\n{\"verdict\":\"unsafe\",\"reasoning\":\"Dangerous.\"}\n```",
+			verdictUnsafe,
+		},
+		// Fallback keyword scan.
+		{"bare SAFE", "SAFE", verdictSafe},
+		{"bare UNSAFE", "UNSAFE", verdictUnsafe},
+		{"lowercase safe fallback", "safe", verdictSafe},
+		{"lowercase unsafe fallback", "unsafe", verdictUnsafe},
+		{"SAFE with leading whitespace", "  SAFE  ", verdictSafe},
+		{"explanation with UNSAFE", "This is UNSAFE because it modifies files.", verdictUnsafe},
+		{"explanation with SAFE", "The action is SAFE — it only reads files.", verdictSafe},
+		{"empty string defaults unsafe", "", verdictUnsafe},
+		{"unrelated text defaults unsafe", "I cannot determine this.", verdictUnsafe},
+		// UNSAFE contains SAFE as a substring — must detect UNSAFE first.
+		{"UNSAFE keyword scan", "UNSAFE", verdictUnsafe},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseVerdict(tt.input)
+			if got != tt.want {
+				t.Errorf("parseVerdict(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}

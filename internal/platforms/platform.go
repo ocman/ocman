@@ -88,6 +88,12 @@ type Capabilities struct {
 	// whose live connection is based on CLI availability rather than a
 	// discoverable port).
 	LiveConnectionHint string `json:"liveConnectionHint,omitempty"`
+
+	// AutoApprove reports whether this platform supports the per-session
+	// auto-approve judge (POST /api/session/{id}/permissions/{pid}/judge).
+	// When true the frontend shows the auto-approve toggle and "Checking..."
+	// indicator on the permission prompt.
+	AutoApprove bool `json:"autoApprove"`
 }
 
 // LiveState captures in-memory live status for a session, updated by

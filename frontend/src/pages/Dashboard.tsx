@@ -283,6 +283,10 @@ export function SettingsTab() {
   const setBellEnabled = useUiStore((s) => s.setBellEnabled);
   const notificationsEnabled = useUiStore((s) => s.notificationsEnabled);
   const setNotificationsEnabled = useUiStore((s) => s.setNotificationsEnabled);
+  const autoApproveDefault = useUiStore((s) => s.autoApproveDefault);
+  const setAutoApproveDefault = useUiStore((s) => s.setAutoApproveDefault);
+  const autoApproveDelayMs = useUiStore((s) => s.autoApproveDelayMs);
+  const setAutoApproveDelayMs = useUiStore((s) => s.setAutoApproveDelayMs);
   const authRequired = useAuthStore((s) => s.authRequired);
   const logout = useAuthStore((s) => s.logout);
   const { canInstall, installed, promptInstall } = usePwaInstall();
@@ -365,6 +369,50 @@ export function SettingsTab() {
             />
             <span className="settings-toggle-track" />
           </label>
+        </div>
+      </div>
+
+      <div className="settings-section">
+        <h2 className="settings-section-title">Auto-approve</h2>
+        <div className="settings-row">
+          <div className="settings-row-info">
+            <div className="settings-row-label">Enable by default</div>
+            <div className="settings-row-desc">
+              Automatically start the AI permission reviewer for every new session.
+              You can also enable or disable it per session from the permission prompt.
+            </div>
+          </div>
+          <label className="settings-toggle">
+            <input
+              type="checkbox"
+              checked={autoApproveDefault}
+              onChange={(e) => setAutoApproveDefault(e.target.checked)}
+            />
+            <span className="settings-toggle-track" />
+          </label>
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-info">
+            <div className="settings-row-label">Human review window</div>
+            <div className="settings-row-desc">
+              How long to wait after a permission prompt appears before the AI
+              reviewer starts. Gives you time to approve or reject manually.
+            </div>
+          </div>
+          <div className="settings-delay-input">
+            <input
+              type="number"
+              min={0}
+              max={60}
+              step={1}
+              value={Math.round(autoApproveDelayMs / 1000)}
+              onChange={(e) => {
+                const secs = Math.max(0, Math.min(60, Number(e.target.value) || 0));
+                setAutoApproveDelayMs(secs * 1000);
+              }}
+            />
+            <span className="settings-delay-unit">s</span>
+          </div>
         </div>
       </div>
 

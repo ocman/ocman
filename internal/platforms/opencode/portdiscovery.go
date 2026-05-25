@@ -222,6 +222,14 @@ func discoverOpenCodePort(directory string) string {
 	return discoverOpenCodePorts()[directory]
 }
 
+// DiscoverOpenCodePort is the exported equivalent of discoverOpenCodePort,
+// provided so packages outside the opencode package (e.g. server) can
+// resolve the port for a directory without creating an import cycle
+// through the Platform adapter interface.
+func DiscoverOpenCodePort(directory string) string {
+	return discoverOpenCodePort(directory)
+}
+
 // discoverOpenCodePortCtx is discoverOpenCodePort with Server-Timing instrumentation.
 func discoverOpenCodePortCtx(ctx context.Context, directory string) string {
 	if cached, ok := readCachedPorts(); ok {

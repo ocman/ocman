@@ -94,6 +94,9 @@ type ApiStore = {
   listQuestions: (sessionId: string) => Promise<unknown[]>;
   respondQuestion: (sessionId: string, requestId: string, answers: string[][]) => Promise<void>;
   rejectQuestion: (sessionId: string, requestId: string) => Promise<void>;
+  getAutoApprove: (sessionId: string) => Promise<{ enabled: boolean; overridden: boolean }>;
+  setAutoApprove: (sessionId: string, enabled: boolean) => Promise<void>;
+  judgePermission: (sessionId: string, permissionId: string, permission: string, patterns: string[]) => Promise<{ verdict: 'safe' | 'unsafe'; judgeSessionId: string }>;
   abortSession: (sessionId: string) => Promise<void>;
   getTmuxClients: (signal?: AbortSignal) => Promise<{ available: boolean; clients: TmuxClient[] }>;
   getTmuxSessions: (signal?: AbortSignal) => Promise<{ available: boolean; sessions: TmuxSession[] }>;
@@ -277,6 +280,9 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   listQuestions: (sessionId) => get().runRequest(`questions:list:${sessionId}`, () => api.listQuestions(sessionId)),
   respondQuestion: (sessionId, requestId, answers) => get().runRequest(`question:respond:${sessionId}`, () => api.respondQuestion(sessionId, requestId, answers)),
   rejectQuestion: (sessionId, requestId) => get().runRequest(`question:reject:${sessionId}`, () => api.rejectQuestion(sessionId, requestId)),
+  getAutoApprove: (sessionId) => get().runRequest(`auto-approve:get:${sessionId}`, () => api.getAutoApprove(sessionId)),
+  setAutoApprove: (sessionId, enabled) => get().runRequest(`auto-approve:set:${sessionId}`, () => api.setAutoApprove(sessionId, enabled)),
+  judgePermission: (sessionId, permissionId, permission, patterns) => api.judgePermission(sessionId, permissionId, permission, patterns),
   abortSession: (sessionId) => get().runRequest(`session:abort:${sessionId}`, () => api.abortSession(sessionId)),
   getTmuxClients: (signal) => get().runRequest('tmux-clients:get', () => api.tmuxClients(signal)),
   getTmuxSessions: (signal) => get().runRequest('tmux-sessions:get', () => api.tmuxSessions(signal)),

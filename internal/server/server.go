@@ -32,13 +32,15 @@ const (
 
 // Server serves the web UI and API.
 type Server struct {
-	db        *db.DB
-	stateDB   *state.DB
-	addr      string
-	registry  *platforms.Registry
-	auth      *Auth
-	startTime time.Time
-	projects  projectsIndexState
+	db                  *db.DB
+	stateDB             *state.DB
+	addr                string
+	registry            *platforms.Registry
+	auth                *Auth
+	startTime           time.Time
+	projects            projectsIndexState
+	autoApproveDefault  bool
+	judge               *PermissionJudge
 }
 
 // New creates a new server. The registry may be nil, in which case a
@@ -57,7 +59,16 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		registry:  registry,
 		auth:      auth,
 		startTime: time.Now(),
+		judge:     newPermissionJudge(),
 	}
+}
+
+// WithAutoApproveDefault sets the server-wide default for auto-approve.
+// When true, sessions that have no per-session override start with
+// auto-approve enabled. Must be called before Start.
+func (s *Server) WithAutoApproveDefault(enabled bool) *Server {
+	s.autoApproveDefault = enabled
+	return s
 }
 
 // Start starts the HTTP server. It blocks until the context is cancelled,

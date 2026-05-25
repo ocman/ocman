@@ -157,6 +157,10 @@ export interface PartData {
   type: string;
   text?: string;
   tool?: string;
+  /** Present when type === 'auto-approved' (synthetic notice part). */
+  permission?: string;
+  patterns?: string[];
+  judgeSessionId?: string;
   // File part fields (for type === 'file')
   mime?: string;
   url?: string;
@@ -584,6 +588,14 @@ export interface PlatformCapabilities {
    * Empty / absent when the platform has no such setup step.
    */
   liveConnectionHint?: string;
+  /**
+   * Whether this platform supports per-session auto-approve:
+   * GET/POST /api/session/{id}/auto-approve and
+   * POST /api/session/{id}/permissions/{pid}/judge.
+   * When true the permission prompt shows an auto-approve toggle and
+   * a "Checking..." indicator while the judge runs.
+   */
+  autoApprove: boolean;
 }
 
 export interface PlatformCapabilityEntry {

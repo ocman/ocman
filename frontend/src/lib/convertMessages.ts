@@ -225,8 +225,32 @@ export function createConvertMessages(): ConvertMessagesFn {
       state.lastPartsByMsg = partsByMsg;
     }
 
-    const filtered = messages.filter((m) => m.data?.role === 'user' || m.data?.role === 'assistant');
+    const filtered = messages.filter(
+      (m) => m.data?.role === 'user' || m.data?.role === 'assistant' || m.data?.role === 'notice',
+    );
   const result = filtered.map((m, idx): ThreadMessageLike => {
+    // Synthetic notice messages (auto-approve, etc.) are rendered as a
+    // special assistant-role entry so they appear inline in the thread.
+    if (m.data?.role === 'notice') {
+      const noticeParts = (partsByMsg[m.id] || EMPTY_PARTS).map(parsePart);
+      const noticeContent: ThreadMessageLike['content'] = noticeParts
+        .filter((pd) => pd.type === 'auto-approved')
+        .map((pd) => ({
+          type: 'tool-call' as const,
+          toolCallId: m.id,
+          toolName: 'ocman:auto-approved',
+          argsText: JSON.stringify({ permission: pd.permission, patterns: pd.patterns, judgeSessionId: pd.judgeSessionId }),
+          result: undefined,
+        }));
+      return {
+        role: 'assistant' as const,
+        id: m.id,
+        content: noticeContent.length > 0 ? noticeContent : [{ type: 'text' as const, text: '' }],
+        createdAt: new Date(m.timeCreated),
+        status: { type: 'complete' as const, reason: 'stop' as const },
+      };
+    }
+
     const role = m.data.role as 'user' | 'assistant';
 
     // A user message is "queued" when it follows an unfinished

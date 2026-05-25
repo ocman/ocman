@@ -235,3 +235,31 @@
   transform: translateX(16px);
   background: #fff;
 }
+
+/* Delay input for auto-approve human review window */
+.settings-delay-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.settings-delay-input input[type="number"] {
+  width: 52px;
+  padding: 4px 6px;
+  background: var(--surface0);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 13px;
+  text-align: right;
+  -moz-appearance: textfield;
+}
+.settings-delay-input input[type="number"]::-webkit-inner-spin-button,
+.settings-delay-input input[type="number"]::-webkit-outer-spin-button {
+  opacity: 1;
+}
+.settings-delay-unit {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-family: 'SF Mono', Consolas, monospace;
+}

@@ -92,6 +92,21 @@ export interface SseEvent {
   properties?: Record<string, unknown>;
 }
 
+/**
+ * Payload for a synthetic auto-approve notice injected into the
+ * conversation thread. Stored as a Part with type 'auto-approved'
+ * attached to a synthetic Message with role 'notice'.
+ */
+export interface AutoApprovedNoticePayload {
+  permission: string;
+  patterns: string[];
+  judgeSessionId: string;
+  /** Unix-ms timestamp of when the permission was approved.
+   *  When present, used as the notice message's timeCreated so it
+   *  sorts into the correct chronological position. */
+  approvedAt?: number;
+}
+
 export type SessionAction =
   /**
    * Load action. `mode` controls how the new view interacts with
@@ -116,7 +131,8 @@ export type SessionAction =
   | { type: 'load'; view: SessionView; mode?: 'replace' | 'reconcile' }
   | { type: 'sse'; event: SseEvent }
   | { type: 'clearPrompt'; kind: 'permission' | 'question'; id: string }
-  | { type: 'patchSession'; patch: Partial<SessionMetadata> };
+  | { type: 'patchSession'; patch: Partial<SessionMetadata> }
+  | { type: 'addNotice'; notice: AutoApprovedNoticePayload };
 
 /**
  * Fresh, empty view for a given session id. The hook seeds the
@@ -447,6 +463,38 @@ export function reduceSessionView(state: SessionView, action: SessionAction): Se
       // by composing a second `useSession(subagentId)`.
       if (evtSid && evtSid !== state.sessionId) return state;
       return reduceSseEvent(state, event);
+    }
+    case 'addNotice': {
+      // Use the judge session ID as a stable key so re-dispatching
+      // the same approval (e.g. on reconcile refetch) is a no-op.
+      const stableKey = `ocman-notice-${action.notice.judgeSessionId}`;
+      if (state.messages.some((m) => m.id === stableKey)) {
+        return state; // already present — deduplicate
+      }
+      const ts = action.notice.approvedAt ?? Date.now();
+      const noticeMsg: Message = {
+        id: stableKey,
+        sessionId: state.sessionId,
+        timeCreated: ts,
+        data: { role: 'notice' },
+      };
+      const noticePart: Part = {
+        id: `${stableKey}-part`,
+        messageId: stableKey,
+        sessionId: state.sessionId,
+        timeCreated: ts,
+        data: JSON.stringify({
+          type: 'auto-approved',
+          permission: action.notice.permission,
+          patterns: action.notice.patterns,
+          judgeSessionId: action.notice.judgeSessionId,
+        }),
+      };
+      return {
+        ...state,
+        messages: [...state.messages, noticeMsg],
+        parts: [...state.parts, noticePart],
+      };
     }
     default:
       return state;

@@ -986,3 +986,58 @@
 .oc-tool-task.oc-tool-expanded .oc-embedded-thread .oc-md pre {
   max-height: none;
 }
+
+/* Auto-approved notice — inline in the conversation thread */
+.oc-auto-approved-notice {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 5px 10px;
+  margin: 2px 0;
+  background: color-mix(in srgb, var(--green) 8%, transparent);
+  border-left: 2px solid var(--green, #a6e3a1);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.oc-auto-approved-icon {
+  color: var(--green, #a6e3a1);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.oc-auto-approved-label {
+  color: var(--green, #a6e3a1);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.oc-auto-approved-action {
+  color: var(--text);
+}
+
+.oc-auto-approved-patterns {
+  color: var(--overlay0);
+  font-size: 11px;
+}
+
+.oc-auto-approved-link {
+  background: transparent;
+  border: none;
+  color: var(--overlay0);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+  margin-left: auto;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color 0.1s;
+}
+
+.oc-auto-approved-link:hover {
+  color: var(--subtext0);
+}
+

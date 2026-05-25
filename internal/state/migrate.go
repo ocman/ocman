@@ -23,11 +23,18 @@ import (
 //	    Lets the user pin sessions to the top of the sidebar. The
 //	    pinned_at timestamp determines sort order within the pinned
 //	    group (most recently pinned first).
+//	6 - add `session_auto_approve` table keyed by (platform, session_id).
+//	    Records sessions where the user has enabled the auto-approve
+//	    judge. Absent row = not enabled (or inherits the server default).
+//	7 - add `auto_approved_permission` table. Each row records one
+//	    permission that was auto-approved by the LLM judge, so the
+//	    approval notice can be re-injected into the conversation thread
+//	    after a page refresh.
 //
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 5
+const latestSchemaVersion = 7
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -133,6 +140,10 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV4(tx)
 	case 5:
 		return migrateToV5(tx)
+	case 6:
+		return migrateToV6(tx)
+	case 7:
+		return migrateToV7(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -245,6 +256,44 @@ func migrateToV5(tx *sql.Tx) error {
 			platform   TEXT    NOT NULL,
 			session_id TEXT    NOT NULL,
 			pinned_at  INTEGER NOT NULL,
+			PRIMARY KEY (platform, session_id)
+		)
+	`)
+	return err
+}
+
+// migrateToV7 creates the auto_approved_permission table. Each row
+// records one permission auto-approved by the LLM judge so the notice
+// can survive a page refresh. permission_id is the OpenCode-assigned
+// request ID; patterns_json stores the patterns array as a JSON string.
+func migrateToV7(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE auto_approved_permission (
+			platform         TEXT    NOT NULL,
+			session_id       TEXT    NOT NULL,
+			permission_id    TEXT    NOT NULL,
+			permission_text  TEXT    NOT NULL,
+			patterns_json    TEXT    NOT NULL DEFAULT '[]',
+			judge_session_id TEXT    NOT NULL DEFAULT '',
+			approved_at      INTEGER NOT NULL,
+			PRIMARY KEY (platform, session_id, permission_id)
+		)
+	`)
+	return err
+}
+
+// migrateToV6 creates the session_auto_approve table. Presence of a
+// row means auto-approve is explicitly enabled for that session. Absence
+// means the server's global default applies. The enabled column is kept
+// for forward compatibility (future: allow explicit per-session disable
+// even when the global default is on).
+func migrateToV6(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE session_auto_approve (
+			platform   TEXT    NOT NULL,
+			session_id TEXT    NOT NULL,
+			enabled    INTEGER NOT NULL DEFAULT 1,
+			updated_at INTEGER NOT NULL,
 			PRIMARY KEY (platform, session_id)
 		)
 	`)

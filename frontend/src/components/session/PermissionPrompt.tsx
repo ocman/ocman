@@ -63,11 +63,32 @@ export function PermissionPrompt({
   onReply,
   disabled,
   error,
+  autoApproveCapable,
+  autoApproveEnabled,
+  autoApproveChecking,
+  judgeSessionId,
+  onEnableAutoApprove,
+  onViewJudgeSession,
 }: {
   permission: PendingPermission;
   onReply: (reply: Reply) => void;
   disabled?: boolean;
   error?: string | null;
+  /** Whether the platform supports auto-approve at all. */
+  autoApproveCapable?: boolean;
+  /** Whether auto-approve is currently enabled for this session. */
+  autoApproveEnabled?: boolean;
+  /** True while the LLM judge is evaluating this permission. */
+  autoApproveChecking?: boolean;
+  /**
+   * Session ID of the OpenCode judge session, when available.
+   * Shown as a "View reasoning" link so the user can inspect the model's thinking.
+   */
+  judgeSessionId?: string | null;
+  /** Called when the user clicks "Enable auto-approve". */
+  onEnableAutoApprove?: () => void;
+  /** Called when the user clicks "View reasoning" — navigates to the judge session. */
+  onViewJudgeSession?: (sessionId: string) => void;
 }) {
   const [step, setStep] = useState<'choose' | 'confirm-always'>('choose');
   const [focusedIdx, setFocusedIdx] = useState(0);
@@ -309,7 +330,7 @@ export function PermissionPrompt({
   return (
     <div
       ref={wrapRef}
-      className="oc-permission-wrap"
+      className={`oc-permission-wrap${autoApproveChecking ? ' oc-permission-wrap--checking' : ''}`}
       tabIndex={-1}
       role="dialog"
       aria-label="Permission required"
@@ -320,6 +341,32 @@ export function PermissionPrompt({
           <span className="oc-permission-icon">&#9651;</span>
           <span>Permission required</span>
         </div>
+        {(autoApproveChecking || judgeSessionId) && (
+          <div className="oc-permission-ai-row" aria-live="polite">
+            {autoApproveChecking ? (
+              <>
+                <span className="oc-spinner oc-permission-ai-spinner" />
+                <span className="oc-permission-ai-label">AI is reviewing this permission&hellip;</span>
+              </>
+            ) : (
+              <>
+                <span className="oc-permission-ai-label oc-permission-ai-label--done">
+                  AI flagged for review
+                </span>
+                {judgeSessionId && onViewJudgeSession && (
+                  <button
+                    type="button"
+                    className="oc-permission-judge-link"
+                    onClick={() => onViewJudgeSession(judgeSessionId)}
+                    data-testid="view-judge-session"
+                  >
+                    View reasoning
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
         <div className="oc-permission-content">
           <div className="oc-permission-desc">
             &larr; {permission.permission}
@@ -344,7 +391,7 @@ export function PermissionPrompt({
               className={`oc-permission-btn${i === focusedIdx ? ' oc-permission-btn-active' : ''}`}
               onClick={() => { setFocusedIdx(i); pick(c.reply); }}
               onMouseEnter={() => setFocusedIdx(i)}
-              disabled={disabled}
+              disabled={disabled || autoApproveChecking}
               tabIndex={-1}
             >{c.label}</button>
           ))}
@@ -352,6 +399,24 @@ export function PermissionPrompt({
             <kbd>↑↓</kbd> move &middot; <kbd>a</kbd>/<kbd>A</kbd>/<kbd>r</kbd> pick &middot; <kbd>enter</kbd> submit &middot; <kbd>esc</kbd> reject
           </span>
         </div>
+        {autoApproveCapable && (
+          <div className="oc-permission-autoapprove">
+            {!autoApproveEnabled ? (
+              <button
+                type="button"
+                className="oc-permission-autoapprove-btn"
+                onClick={onEnableAutoApprove}
+                data-testid="enable-auto-approve"
+              >
+                Enable auto-approve for this session
+              </button>
+            ) : (
+              <span className="oc-permission-autoapprove-on">
+                Auto-approve on
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

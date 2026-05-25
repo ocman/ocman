@@ -552,9 +552,65 @@ function ansiClassNames(seg: AnsiSegment): string {
   return classes.join(' ');
 }
 
+function AutoApprovedNotice({
+  permission,
+  patterns,
+  judgeSessionId,
+}: {
+  permission: string;
+  patterns: string[];
+  judgeSessionId: string;
+}) {
+  return (
+    <div className="oc-auto-approved-notice">
+      <span className="oc-auto-approved-icon" aria-hidden="true">&#10003;</span>
+      <span className="oc-auto-approved-label">Auto-approved by AI</span>
+      <span className="oc-auto-approved-action">{permission}</span>
+      {patterns.length > 0 && (
+        <span className="oc-auto-approved-patterns">
+          {patterns.join(', ')}
+        </span>
+      )}
+      {judgeSessionId && (
+        <button
+          type="button"
+          className="oc-auto-approved-link"
+          onClick={() => { window.location.href = `/session/${judgeSessionId}`; }}
+        >
+          View reasoning
+        </button>
+      )}
+    </div>
+  );
+}
+
 const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArgsText, result }) => {
   const [expanded, setExpanded] = useState(false);
   const [taskExpanded, setTaskExpanded] = useState(false);
+
+  // Auto-approved notice — rendered inline before any timing/tool logic.
+  if (toolName === 'ocman:auto-approved') {
+    let permission = '';
+    let patterns: string[] = [];
+    let judgeSessionId = '';
+    try {
+      const parsed = JSON.parse(rawArgsText || '{}') as {
+        permission?: string;
+        patterns?: string[];
+        judgeSessionId?: string;
+      };
+      permission = parsed.permission || '';
+      patterns = parsed.patterns || [];
+      judgeSessionId = parsed.judgeSessionId || '';
+    } catch { /* ignore */ }
+    return (
+      <AutoApprovedNotice
+        permission={permission}
+        patterns={patterns}
+        judgeSessionId={judgeSessionId}
+      />
+    );
+  }
 
   // Extract timing data from the @time: line, if present.
   const timeInfo = parseToolTime(rawArgsText || '');

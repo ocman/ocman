@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel/attribute"
@@ -654,6 +655,140 @@ func (s *Server) handleSessionQuestion(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+// --- Auto-approve endpoints ---
+
+// handleSessionAutoApproveGet handles GET /api/session/{id}/auto-approve.
+// Returns the effective auto-approve state for the session: the per-session
+// override when set, otherwise the server-wide default.
+func (s *Server) handleSessionAutoApproveGet(w http.ResponseWriter, r *http.Request) {
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+		enabled, exists, err := s.stateDB.GetAutoApprove(string(adapter.ID()), sessionID)
+		if err != nil {
+			serverError(w, "getting auto-approve state", err)
+			return
+		}
+		effective := s.autoApproveDefault
+		if exists {
+			effective = enabled
+		}
+		writeJSON(w, map[string]interface{}{
+			"enabled":    effective,
+			"overridden": exists,
+		})
+	})
+}
+
+// handleSessionAutoApproveSet handles POST /api/session/{id}/auto-approve.
+// Body: {"enabled": true|false}
+func (s *Server) handleSessionAutoApproveSet(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+		return
+	}
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+		if err := s.stateDB.SetAutoApprove(string(adapter.ID()), sessionID, req.Enabled); err != nil {
+			serverError(w, "setting auto-approve state", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+// handleSessionApprovedPermissions handles GET /api/session/{id}/approved-permissions.
+// Returns all permissions that were auto-approved by the LLM judge for this
+// session, ordered by approval time. Used by the frontend to re-inject
+// approval notices into the conversation thread after a page refresh.
+func (s *Server) handleSessionApprovedPermissions(w http.ResponseWriter, r *http.Request) {
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+		approved, err := s.stateDB.ListApprovedPermissions(string(adapter.ID()), sessionID)
+		if err != nil {
+			serverError(w, "listing approved permissions", err)
+			return
+		}
+		type entry struct {
+			PermissionID   string   `json:"permissionId"`
+			Permission     string   `json:"permission"`
+			Patterns       []string `json:"patterns"`
+			JudgeSessionID string   `json:"judgeSessionId"`
+			ApprovedAt     int64    `json:"approvedAt"`
+		}
+		out := make([]entry, 0, len(approved))
+		for _, p := range approved {
+			patterns := p.Patterns
+			if patterns == nil {
+				patterns = []string{}
+			}
+			out = append(out, entry{
+				PermissionID:   p.PermissionID,
+				Permission:     p.PermissionText,
+				Patterns:       patterns,
+				JudgeSessionID: p.JudgeSessionID,
+				ApprovedAt:     p.ApprovedAt,
+			})
+		}
+		writeJSON(w, out)
+	})
+}
+
+// handleSessionPermissionJudge handles POST /api/session/{id}/permissions/{pid}/judge.
+// Runs the LLM judge against the given permission and returns the verdict.
+// The frontend calls this when auto-approve is enabled, shows a "checking"
+// indicator while waiting, then either auto-submits (SAFE) or leaves the
+// prompt for the human (UNSAFE).
+func (s *Server) handleSessionPermissionJudge(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Permission string   `json:"permission"`
+		Patterns   []string `json:"patterns"`
+	}
+	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+		return
+	}
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, rest string, adapter platforms.Platform) {
+		// Resolve the session directory so the judge can find the
+		// running OpenCode instance's port.
+		if s.db == nil {
+			http.Error(w, "OpenCode platform not available", http.StatusServiceUnavailable)
+			return
+		}
+		dbSession, err := s.db.GetSession(sessionID)
+		if err != nil || dbSession == nil {
+			http.Error(w, "session not found", http.StatusNotFound)
+			return
+		}
+
+		// Extract the permission ID from the URL path: "permissions/{pid}/judge"
+		permissionID := strings.TrimPrefix(rest, "permissions/")
+		permissionID = strings.TrimSuffix(permissionID, "/judge")
+
+		result := s.judge.Judge(r.Context(), dbSession.Directory, req.Permission, req.Patterns)
+
+		// Persist the approval so the notice survives a page refresh.
+		if result.Verdict == verdictSafe && s.stateDB != nil {
+			if err := s.stateDB.RecordApprovedPermission(
+				string(adapter.ID()),
+				sessionID,
+				state.ApprovedPermission{
+					PermissionID:   permissionID,
+					PermissionText: req.Permission,
+					Patterns:       req.Patterns,
+					JudgeSessionID: result.SessionID,
+					ApprovedAt:     time.Now().UnixMilli(),
+				},
+			); err != nil {
+				log.WithError(err).Warn("failed to persist auto-approved permission")
+				// Non-fatal — the verdict is still returned to the frontend.
+			}
+		}
+
+		writeJSON(w, map[string]interface{}{
+			"verdict":        string(result.Verdict),
+			"judgeSessionId": result.SessionID,
+		})
 	})
 }
 

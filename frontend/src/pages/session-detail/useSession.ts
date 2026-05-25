@@ -19,7 +19,7 @@
 //   populated when the caller opts in),
 // - the loadMore pagination shim against the same reducer.
 
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { api, type SessionDetail } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
 import {
@@ -121,6 +121,10 @@ export interface UseSessionResult extends SessionView {
   /** Apply a partial patch to the session metadata. Used for
    *  page-local self-mutations like rename / mark-seen. */
   patchSession: (patch: Partial<import('../../lib/sessionReducer').SessionMetadata>) => void;
+  /** Raw reducer dispatch. Exposed so callers can inject synthetic
+   *  actions (e.g. auto-approve notices) without coupling to internal
+   *  reducer helpers. */
+  dispatch: React.Dispatch<import('../../lib/sessionReducer').SessionAction>;
 }
 
 const DEFAULT_PAGE_SIZE = 30;
@@ -142,7 +146,43 @@ async function defaultFetchSession(
 }
 
 /** Build a SessionView from a freshly-fetched SessionDetail. */
-function viewFromDetail(id: string, detail: SessionDetail): SessionView {
+function viewFromDetail(
+  id: string,
+  detail: SessionDetail,
+  approved?: Array<{ permission: string; patterns: string[]; judgeSessionId: string; approvedAt: number }>,
+): SessionView {
+  const messages = [...(detail.messages ?? [])];
+  const parts = [...(detail.parts ?? [])];
+
+  // Bake persisted auto-approve notices into the view so they
+  // survive every load/reconcile dispatch without a separate
+  // async injection step.
+  if (approved) {
+    for (const p of approved) {
+      const stableKey = `ocman-notice-${p.judgeSessionId}`;
+      if (messages.some((m) => m.id === stableKey)) continue; // deduplicate
+      const ts = p.approvedAt;
+      messages.push({
+        id: stableKey,
+        sessionId: id,
+        timeCreated: ts,
+        data: { role: 'notice' },
+      });
+      parts.push({
+        id: `${stableKey}-part`,
+        messageId: stableKey,
+        sessionId: id,
+        timeCreated: ts,
+        data: JSON.stringify({
+          type: 'auto-approved',
+          permission: p.permission,
+          patterns: p.patterns,
+          judgeSessionId: p.judgeSessionId,
+        }),
+      });
+    }
+  }
+
   return {
     ...initialSessionView(id),
     session: {
@@ -151,8 +191,8 @@ function viewFromDetail(id: string, detail: SessionDetail): SessionView {
       defaultAgent: detail.defaultAgent,
       defaultModel: detail.defaultModel,
     },
-    messages: detail.messages ?? [],
-    parts: detail.parts ?? [],
+    messages,
+    parts,
   };
 }
 
@@ -377,11 +417,19 @@ export function useSession(
       const controller = new AbortController();
       abortRef.current = controller;
       try {
-        const detail = await fetchSession(sessionId, pageSize, 0, controller.signal);
+        // Fetch session detail and persisted auto-approve notices in
+        // parallel. The notices are baked into the view so every load
+        // dispatch already contains them — no separate async injection
+        // step that could race against reconcile refetches.
+        const [detail, approved] = await Promise.all([
+          fetchSession(sessionId, pageSize, 0, controller.signal),
+          api.approvedPermissions(sessionId).catch(() => [] as Array<{ permission: string; patterns: string[]; judgeSessionId: string; approvedAt: number }>),
+        ]);
         if (cancelled || controller.signal.aborted) return;
-        dispatch({ type: 'load', view: viewFromDetail(sessionId, detail), mode });
+        dispatch({ type: 'load', view: viewFromDetail(sessionId, detail, approved), mode });
         setTotalMessages(detail.totalMessages || detail.session.messageCount || 0);
         setLoadError(null);
+
         setCachedSession(sessionId, {
           session: {
             ...detail.session,
@@ -699,6 +747,7 @@ export function useSession(
     setPendingPermission,
     setPendingQuestion,
     patchSession,
+    dispatch,
   };
 }
 

@@ -30,6 +30,7 @@ function makeResponse(overrides: Partial<CapabilitiesResponse> = {}): Capabiliti
           fileChanges: true,
           sessionInfo: true,
           liveConnectionHint: 'opencode --port 0',
+          autoApprove: true,
         },
       },
     ],

@@ -72,6 +72,7 @@ import { RenameModal } from './RenameModal';
 import { useSessionActions } from './useSessionActions';
 import { useSession } from './useSession';
 import { usePendingSend, materializePending } from './usePendingSend';
+import { useAutoApprove } from '../../lib/useAutoApprove';
 
 /** Memory bound on the in-memory message list. */
 const MAX_RETAINED_MESSAGES = 200;
@@ -137,6 +138,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     setPendingPermission,
     setPendingQuestion,
     patchSession,
+    dispatch,
   } = view;
 
   // Optimistic user-send slot. Lives outside the SessionView; the
@@ -277,6 +279,38 @@ export function SessionDetail({ id }: SessionDetailProps) {
     pendingQuestion,
     clearPrompt,
   });
+
+  // Auto-approve judge for permission prompts.
+  const autoApprove = useAutoApprove({
+    sessionId: session?.id ?? '',
+    capable: caps.autoApprove && portAvailable,
+    dispatch,
+  });
+  const { enabled: autoApproveEnabled, runJudge, cancelJudge } = autoApprove;
+
+  // Wrap handlePermissionReply so a manual human reply during the delay
+  // window cancels any pending judge before it fires.
+  const handlePermissionReplyWithCancel = useCallback(
+    (reply: 'once' | 'always' | 'reject') => {
+      if (pendingPermission) cancelJudge(pendingPermission.permissionId);
+      return handlePermissionReply(reply);
+    },
+    [pendingPermission, cancelJudge, handlePermissionReply],
+  );
+
+  // When a new pending permission arrives and auto-approve is enabled,
+  // immediately kick off the judge. If the verdict is safe the judge
+  // calls handlePermissionReply('once') directly.
+  const lastJudgedPermissionId = useRef<string | null>(null);
+  useEffect(() => {
+    if (!pendingPermission) return;
+    if (!autoApproveEnabled) return;
+    if (lastJudgedPermissionId.current === pendingPermission.permissionId) return;
+    lastJudgedPermissionId.current = pendingPermission.permissionId;
+    runJudge(pendingPermission, (permissionId) => {
+      clearPrompt('permission', permissionId);
+    });
+  }, [pendingPermission, autoApproveEnabled, runJudge, clearPrompt]);
 
   // Toast / modal state.
   const [showRenameModal, setShowRenameModal] = useState(false);
@@ -870,9 +904,15 @@ export function SessionDetail({ id }: SessionDetailProps) {
                       {pendingPermission && portAvailable && caps.respondPermission ? (
                         <PermissionPrompt
                           permission={pendingPermission}
-                          onReply={handlePermissionReply}
+                          onReply={handlePermissionReplyWithCancel}
                           disabled={answeringPermission}
                           error={permissionError}
+                          autoApproveCapable={caps.autoApprove}
+                          autoApproveEnabled={autoApprove.enabled}
+                          autoApproveChecking={autoApprove.checking}
+                          judgeSessionId={autoApprove.judgeSessionId}
+                          onEnableAutoApprove={() => autoApprove.setEnabled(true)}
+                          onViewJudgeSession={navigateToSession}
                         />
                       ) : pendingQuestion && portAvailable && caps.respondQuestion ? (
                         <QuestionPrompt

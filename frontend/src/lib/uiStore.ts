@@ -68,6 +68,17 @@ type UiStore = {
   notificationsEnabled: boolean;
   setNotificationsEnabled: (enabled: boolean) => void;
 
+  // Auto-approve: global default and human-review delay.
+  // autoApproveDefault — when true, new sessions start with auto-approve
+  //   enabled (unless overridden per-session on the server).
+  // autoApproveDelayMs — how long to wait after a permission prompt
+  //   arrives before starting the AI judge, giving the human a window
+  //   to respond manually. Default 5 000 ms.
+  autoApproveDefault: boolean;
+  setAutoApproveDefault: (enabled: boolean) => void;
+  autoApproveDelayMs: number;
+  setAutoApproveDelayMs: (ms: number) => void;
+
   // Ordered list of currently-open views in the right-hand panel.
   // Empty = panel is collapsed (strip-only). One entry = single
   // view. Multiple entries = vertically split, in order top-to-
@@ -167,6 +178,11 @@ export const useUiStore = create<UiStore>()(
       notificationsEnabled: false,
       setNotificationsEnabled: (enabled) => set({ notificationsEnabled: enabled }),
 
+      autoApproveDefault: false,
+      setAutoApproveDefault: (enabled) => set({ autoApproveDefault: enabled }),
+      autoApproveDelayMs: 5000,
+      setAutoApproveDelayMs: (ms) => set({ autoApproveDelayMs: Math.max(0, Math.round(ms)) }),
+
       changesSidebarOpenTabs: ['session'],
       changesSidebarTabSizes: {},
       toggleChangesSidebarTab: (tab) =>
@@ -239,10 +255,9 @@ export const useUiStore = create<UiStore>()(
     }),
     {
       name: 'ocman:ui',
-      // Bumped from implicit 0 -> 1 when the right-panel tab id was
-      // renamed from 'thread' to 'session'. The migrate step below
-      // rewrites persisted values for users who saved the old id.
-      version: 1,
+      // v1: renamed right-panel tab id 'thread' -> 'session'.
+      // v2: added autoApproveDefault + autoApproveDelayMs.
+      version: 2,
       migrate: (persisted, version) => {
         if (!persisted || typeof persisted !== 'object') return persisted;
         const next = persisted as Record<string, unknown>;
@@ -272,6 +287,8 @@ export const useUiStore = create<UiStore>()(
         changesSidebarWidth: s.changesSidebarWidth,
         changesSidebarOpenTabs: s.changesSidebarOpenTabs,
         changesSidebarTabSizes: s.changesSidebarTabSizes,
+        autoApproveDefault: s.autoApproveDefault,
+        autoApproveDelayMs: s.autoApproveDelayMs,
       }),
     },
   ),
