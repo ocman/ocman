@@ -211,6 +211,15 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	if detail.Session != nil {
 		detail.Session.Notice = deriveSessionNotice(*detail.Session)
 	}
+
+	// Inject persisted auto-approve notice messages/parts so they
+	// arrive pre-sorted with the real messages. The frontend never
+	// needs a separate fetch or client-side injection; the notices
+	// land in chronological order alongside the real conversation.
+	if s.stateDB != nil {
+		injectApprovalNotices(string(adapter.ID()), sessionID, s.stateDB, &detail.Messages, &detail.Parts)
+	}
+
 	writeJSON(w, map[string]interface{}{
 		"session":           detail.Session,
 		"messages":          detail.Messages,
@@ -220,6 +229,95 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		"defaultAgent":      detail.DefaultAgent,
 		"defaultModel":      detail.DefaultModel,
 	})
+}
+
+// injectApprovalNotices fetches persisted auto-approve records from
+// state and inserts synthetic notice messages/parts into msgs and parts,
+// keeping both slices sorted by timeCreated ascending. Existing notice
+// messages (identified by their "ocman-notice-" prefix) are skipped so
+// repeated calls are idempotent.
+func injectApprovalNotices(platform, sessionID string, stateDB interface {
+	ListApprovedPermissions(platform, sessionID string) ([]state.ApprovedPermission, error)
+}, msgs *[]db.Message, parts *[]db.Part) {
+	approved, err := stateDB.ListApprovedPermissions(platform, sessionID)
+	if err != nil || len(approved) == 0 {
+		return
+	}
+
+	// Build a set of notice IDs already present so we never double-inject.
+	existing := make(map[string]bool, len(*msgs))
+	for _, m := range *msgs {
+		existing[m.ID] = true
+	}
+
+	for _, p := range approved {
+		stableKey := "ocman-notice-" + p.JudgeSessionID
+		if existing[stableKey] {
+			continue
+		}
+		existing[stableKey] = true
+
+		patterns := p.Patterns
+		if patterns == nil {
+			patterns = []string{}
+		}
+		partData, _ := json.Marshal(map[string]interface{}{
+			"type":           "auto-approved",
+			"permission":     p.PermissionText,
+			"patterns":       patterns,
+			"judgeSessionId": p.JudgeSessionID,
+		})
+		ts := p.ApprovedAt
+
+		noticeMsg := db.Message{
+			ID:          stableKey,
+			SessionID:   sessionID,
+			TimeCreated: ts,
+			Data:        json.RawMessage(`{"role":"notice"}`),
+		}
+		noticePart := db.Part{
+			ID:          stableKey + "-part",
+			MessageID:   stableKey,
+			SessionID:   sessionID,
+			TimeCreated: ts,
+			Data:        json.RawMessage(partData),
+		}
+
+		// Insert the message in chronological order.
+		inserted := false
+		for i, m := range *msgs {
+			if m.TimeCreated > ts {
+				newMsgs := make([]db.Message, 0, len(*msgs)+1)
+				newMsgs = append(newMsgs, (*msgs)[:i]...)
+				newMsgs = append(newMsgs, noticeMsg)
+				newMsgs = append(newMsgs, (*msgs)[i:]...)
+				*msgs = newMsgs
+				inserted = true
+				break
+			}
+		}
+		if !inserted {
+			*msgs = append(*msgs, noticeMsg)
+		}
+
+		// Insert the part in chronological order (parts are matched by
+		// messageId at render time, so order here just keeps the slice tidy).
+		partInserted := false
+		for i, pt := range *parts {
+			if pt.TimeCreated > ts {
+				newParts := make([]db.Part, 0, len(*parts)+1)
+				newParts = append(newParts, (*parts)[:i]...)
+				newParts = append(newParts, noticePart)
+				newParts = append(newParts, (*parts)[i:]...)
+				*parts = newParts
+				partInserted = true
+				break
+			}
+		}
+		if !partInserted {
+			*parts = append(*parts, noticePart)
+		}
+	}
 }
 
 // handleSessionTasks returns sub-session data for a batch of task

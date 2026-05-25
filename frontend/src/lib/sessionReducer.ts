@@ -107,6 +107,21 @@ export interface AutoApprovedNoticePayload {
   approvedAt?: number;
 }
 
+/**
+ * Payload for a synthetic notice injected into the thread when the
+ * AI judge blocks (rejects) a permission request. The human is still
+ * shown the original prompt — this notice just records why the AI
+ * flagged it so it's visible in the thread history.
+ */
+export interface AutoRejectedNoticePayload {
+  permission: string;
+  patterns: string[];
+  judgeSessionId: string;
+  reasoning?: string;
+  /** Unix-ms timestamp of when the rejection occurred. */
+  rejectedAt?: number;
+}
+
 export type SessionAction =
   /**
    * Load action. `mode` controls how the new view interacts with
@@ -132,7 +147,8 @@ export type SessionAction =
   | { type: 'sse'; event: SseEvent }
   | { type: 'clearPrompt'; kind: 'permission' | 'question'; id: string }
   | { type: 'patchSession'; patch: Partial<SessionMetadata> }
-  | { type: 'addNotice'; notice: AutoApprovedNoticePayload };
+  | { type: 'addNotice'; notice: AutoApprovedNoticePayload }
+  | { type: 'addRejectedNotice'; notice: AutoRejectedNoticePayload };
 
 /**
  * Fresh, empty view for a given session id. The hook seeds the
@@ -490,9 +506,12 @@ export function reduceSessionView(state: SessionView, action: SessionAction): Se
           judgeSessionId: action.notice.judgeSessionId,
         }),
       };
+      // Insert the notice into the sorted message list so it appears
+      // at the correct chronological position rather than always at
+      // the bottom. upsertMessage does a sorted insert by timeCreated.
       return {
         ...state,
-        messages: [...state.messages, noticeMsg],
+        messages: upsertMessage(state.messages, noticeMsg),
         parts: [...state.parts, noticePart],
       };
     }

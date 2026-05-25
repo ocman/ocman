@@ -146,43 +146,7 @@ async function defaultFetchSession(
 }
 
 /** Build a SessionView from a freshly-fetched SessionDetail. */
-function viewFromDetail(
-  id: string,
-  detail: SessionDetail,
-  approved?: Array<{ permission: string; patterns: string[]; judgeSessionId: string; approvedAt: number }>,
-): SessionView {
-  const messages = [...(detail.messages ?? [])];
-  const parts = [...(detail.parts ?? [])];
-
-  // Bake persisted auto-approve notices into the view so they
-  // survive every load/reconcile dispatch without a separate
-  // async injection step.
-  if (approved) {
-    for (const p of approved) {
-      const stableKey = `ocman-notice-${p.judgeSessionId}`;
-      if (messages.some((m) => m.id === stableKey)) continue; // deduplicate
-      const ts = p.approvedAt;
-      messages.push({
-        id: stableKey,
-        sessionId: id,
-        timeCreated: ts,
-        data: { role: 'notice' },
-      });
-      parts.push({
-        id: `${stableKey}-part`,
-        messageId: stableKey,
-        sessionId: id,
-        timeCreated: ts,
-        data: JSON.stringify({
-          type: 'auto-approved',
-          permission: p.permission,
-          patterns: p.patterns,
-          judgeSessionId: p.judgeSessionId,
-        }),
-      });
-    }
-  }
-
+function viewFromDetail(id: string, detail: SessionDetail): SessionView {
   return {
     ...initialSessionView(id),
     session: {
@@ -191,8 +155,8 @@ function viewFromDetail(
       defaultAgent: detail.defaultAgent,
       defaultModel: detail.defaultModel,
     },
-    messages,
-    parts,
+    messages: detail.messages ?? [],
+    parts: detail.parts ?? [],
   };
 }
 
@@ -417,16 +381,9 @@ export function useSession(
       const controller = new AbortController();
       abortRef.current = controller;
       try {
-        // Fetch session detail and persisted auto-approve notices in
-        // parallel. The notices are baked into the view so every load
-        // dispatch already contains them — no separate async injection
-        // step that could race against reconcile refetches.
-        const [detail, approved] = await Promise.all([
-          fetchSession(sessionId, pageSize, 0, controller.signal),
-          api.approvedPermissions(sessionId).catch(() => [] as Array<{ permission: string; patterns: string[]; judgeSessionId: string; approvedAt: number }>),
-        ]);
+        const detail = await fetchSession(sessionId, pageSize, 0, controller.signal);
         if (cancelled || controller.signal.aborted) return;
-        dispatch({ type: 'load', view: viewFromDetail(sessionId, detail, approved), mode });
+        dispatch({ type: 'load', view: viewFromDetail(sessionId, detail), mode });
         setTotalMessages(detail.totalMessages || detail.session.messageCount || 0);
         setLoadError(null);
 
