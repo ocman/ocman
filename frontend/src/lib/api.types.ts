@@ -33,17 +33,17 @@ export interface NotifyEntry {
 
 export interface Session {
   id: string;
-  /**
-   * Stable identifier of the coding-agent platform that owns this
-   * session (e.g. 'opencode', 'claude-code'). Populated by the backend.
-   *
-   * The frontend must not branch on this value — use the capabilities
-   * endpoint for feature gating instead.
-   *
-   * Terminology: this is the *platform* (the tool that produced the
-   * session), not the composer-level *agent* role ("build", "plan",
-   * subagent, ...) that OpenCode surfaces in MessageData.agent.
-   */
+	/**
+	 * Stable identifier of the coding-agent platform that owns this
+	 * session (e.g. 'opencode'). Populated by the backend.
+	 *
+	 * The frontend must not branch on this value — use the capabilities
+	 * endpoint for feature gating instead.
+	 *
+	 * Terminology: this is the *platform* (the tool that produced the
+	 * session), not the composer-level *agent* role ("build", "plan",
+	 * subagent, ...) that OpenCode surfaces in MessageData.agent.
+	 */
   platform: string;
   projectId: string;
   title: string;
@@ -60,12 +60,11 @@ export interface Session {
   totalOutputTokens: number;
   totalCost: number;
   status: 'waiting' | 'busy' | 'done' | 'error';
-  /**
-   * True when the owning adapter has a live channel to this session's
-   * running agent process. For OpenCode this means a --port was
-   * discovered for the session's directory; for Claude Code (future)
-   * it means the session's jsonl is held open or a hook fired recently.
-   */
+	/**
+	 * True when the owning adapter has a live channel to this session's
+	 * running agent process. For OpenCode this means a --port was
+	 * discovered for the session's directory.
+	 */
   liveConnection: boolean;
   pendingPermission: boolean;
   pendingQuestion: boolean;
@@ -275,8 +274,8 @@ export interface WorkingTreeDiff {
 
 // Wire shape for /api/session/{id}/changes. supported=false is
 // returned (with HTTP 200) for adapters that don't aggregate file
-// changes (Claude Code today). The frontend renders a "Not supported
-// on this platform" empty state in that case.
+// changes. The frontend renders a "Not supported on this platform"
+// empty state in that case.
 export interface SessionChanges {
   sessionId: string;
   supported: boolean;
@@ -343,7 +342,7 @@ export interface SessionInfoTokens {
   cacheWrite: number;
 }
 
-// One row of an OpenCode / Claude Code todowrite call.
+// One row of an OpenCode todowrite call.
 export interface SessionInfoTodo {
   content: string;
   status: string;
@@ -567,19 +566,18 @@ export interface PlatformCapabilities {
    * input is sent as a plain prompt instead.
    */
   shellExec: boolean;
-  /**
-   * Whether the platform exposes /api/session/{id}/changes — the
-   * per-file change aggregation used by the session-changes sidebar.
-   * False for adapters that can't compute a useful summary
-   * (Claude Code today).
-   */
+	/**
+	 * Whether the platform exposes /api/session/{id}/changes — the
+	 * per-file change aggregation used by the session-changes sidebar.
+	 * False for adapters that can't compute a useful summary.
+	 */
   fileChanges: boolean;
-  /**
-   * Whether the platform exposes /api/session/{id}/info — the
-   * per-session context-window / MCP / LSP snapshot used by the
-   * "Session info" right-hand panel. False for adapters that can't
-   * produce a useful snapshot (Claude Code today).
-   */
+	/**
+	 * Whether the platform exposes /api/session/{id}/info — the
+	 * per-session context-window / MCP / LSP snapshot used by the
+	 * "Session info" right-hand panel. False for adapters that can't
+	 * produce a useful snapshot.
+	 */
   sessionInfo: boolean;
   /**
    * Short, user-facing message explaining how to establish the live
@@ -694,7 +692,7 @@ export interface SessionModelEntry {
 
 // FavoriteEntry mirrors internal/server/favorites.go:favoriteEntry.
 // Favorites are scoped per-platform in state.db so the same model id
-// can be starred independently across OpenCode and Claude Code.
+// can be starred independently across platforms.
 export interface FavoriteEntry {
   platform: string;
   provider: string;

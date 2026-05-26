@@ -15,7 +15,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/gui"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	claudecodeplatform "github.com/NoUseFreak/ocman/internal/platforms/claudecode"
 	opencodeplatform "github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/pricing"
 	"github.com/NoUseFreak/ocman/internal/server"
@@ -40,8 +39,7 @@ const authTrustLocalhostEnv = "OCMAN_AUTH_TRUST_LOCALHOST"
 
 // knownPlatforms lists the valid values for the -platforms flag.
 var knownPlatforms = map[string]bool{
-	string(opencodeplatform.PlatformID):   true,
-	string(claudecodeplatform.PlatformID): true,
+	string(opencodeplatform.PlatformID): true,
 }
 
 func main() {
@@ -57,7 +55,7 @@ func main() {
 	guiMode := flag.Bool("gui", isAppBundle(), "open a native desktop window (Wails) instead of just serving HTTP")
 	guiAddr := flag.String("gui-addr", "127.0.0.1:0", "listen address for the backend when --gui is set (default picks an ephemeral port)")
 	dbPath := flag.String("db", db.DefaultDBPath(), "path to opencode.db")
-	platformsFlag := flag.String("platforms", "opencode", "comma-separated list of platforms to enable (opencode, claude-code)")
+	platformsFlag := flag.String("platforms", "opencode", "comma-separated list of platforms to enable (opencode)")
 	authPassword := flag.String("auth-password", "", "password required to access ocman (prefer "+authPasswordEnv+" env or -auth-password-file)")
 	authPasswordFile := flag.String("auth-password-file", "", "read auth password from file (trimmed of trailing whitespace)")
 	authSessionTTL := flag.Duration("auth-session-ttl", 30*24*time.Hour, "auth cookie lifetime")
@@ -74,13 +72,13 @@ func main() {
 			continue
 		}
 		if !knownPlatforms[name] {
-			fmt.Fprintf(os.Stderr, "Unknown platform: %q (known: opencode, claude-code)\n", name)
+			fmt.Fprintf(os.Stderr, "Unknown platform: %q (known: opencode)\n", name)
 			os.Exit(1)
 		}
 		enabledPlatforms[name] = true
 	}
 	if len(enabledPlatforms) == 0 {
-		fmt.Fprintf(os.Stderr, "No platforms enabled. Use -platforms with at least one of: opencode, claude-code\n")
+		fmt.Fprintf(os.Stderr, "No platforms enabled. Use -platforms with at least one of: opencode\n")
 		os.Exit(1)
 	}
 
@@ -148,10 +146,6 @@ func main() {
 	if enabledPlatforms[string(opencodeplatform.PlatformID)] {
 		registry.Register(opencodeplatform.NewWithPricing(database, stateDB, pricing.Load()))
 	}
-	if enabledPlatforms[string(claudecodeplatform.PlatformID)] {
-		registry.Register(claudecodeplatform.New())
-	}
-
 	auth, err := buildAuth(stateDB, *authPassword, *authPasswordFile, *authSessionTTL, *addr, *authTrustLocalhost)
 	if err != nil {
 		log.Fatalf("Failed to configure auth: %v", err)

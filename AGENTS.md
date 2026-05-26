@@ -2,19 +2,14 @@
 
 ## What is ocman
 
-A web dashboard for viewing coding-agent session data across multiple
-platforms. As of v2, ocman supports:
+A web dashboard for viewing coding-agent session data. Ocman supports:
 
 - **OpenCode** — reads OpenCode's SQLite database (read-only) and
   proxies live data from running OpenCode instances via their HTTP
   API.
-- **Claude Code** — reads Claude Code's per-session JSONL transcripts
-  from `~/.claude/projects/` and installs HTTP hooks into
-  `~/.claude/settings.json` to track live session state. Can inject
-  new prompts into any session via `claude -p --resume`.
 
-Both platforms are wired through a common `Platform` adapter interface
-(`internal/platforms/`). Adding a third platform (e.g. Codex) is a
+Platforms are wired through a common `Platform` adapter interface
+(`internal/platforms/`). Adding a new platform (e.g. Codex) is a
 new adapter + registry entry; see
 `spec/multi-agent-support/architecture.md` for the design.
 
@@ -35,9 +30,6 @@ and staging area.
   types/errors.
 - `internal/platforms/opencode/` — OpenCode adapter wrapping the DB
   + HTTP proxy client.
-- `internal/platforms/claudecode/` — Claude Code adapter: JSONL
-  scanner, parser, mtime-keyed cache, in-memory live-state cache,
-  hook settings installer, `claude -p` composer.
 - `internal/db/` — read-only SQLite queries against OpenCode's
   `session`, `message`, `part` tables; uses `json_extract` heavily.
 - `internal/state/` — writable SQLite database
@@ -46,8 +38,7 @@ and staging area.
   can scope state per platform.
 - `internal/server/` — HTTP server, API handlers, static file serving
   with SPA fallback, OpenCode port discovery via `lsof`, tmux
-  integration, whisper transcription, Claude Code hook handler +
-  boot-time hook installation.
+  integration, whisper transcription.
 - `frontend/` — React + TypeScript + Vite SPA (port 8228 in dev).
 - `internal/server/static/` — Vite build output; embedded into the Go
   binary via `//go:embed`. Gitignored except for `robots.txt`, which
@@ -141,10 +132,9 @@ diffs minimal and match the surrounding code.
 ## Key details
 
 - **`-platforms` flag**: comma-separated list of platforms to enable
-  (default `"opencode"`). Valid values: `opencode`, `claude-code`.
+  (default `"opencode"`). Currently the only valid value is `opencode`.
   Only the listed adapters are registered; the OpenCode database is
-  not required when `opencode` is omitted from the list. Example:
-  `-platforms opencode,claude-code`.
+  not required when `opencode` is omitted from the list.
 - **Pure-Go SQLite**: uses `modernc.org/sqlite` (no CGo, no C compiler required).
 - **Two databases**: OpenCode's DB is opened read-only
   (`?mode=ro&_journal_mode=WAL`, default `~/.local/share/opencode/opencode.db`).
@@ -153,22 +143,8 @@ diffs minimal and match the surrounding code.
 - **OpenCode port discovery** uses `lsof` to find processes named
   `opencode` listening on TCP, then resolves their cwd. macOS/Linux
   only. Cached with a 3-second TTL.
-- **Claude Code live state** is driven by HTTP hooks fired from the
-  `claude` CLI. Ocman installs a managed block of hooks into
-  `~/.claude/settings.json` on startup (sentinel `_owner: "ocman"`
-  marks them for idempotent re-install / removal); hooks POST to
-  `/api/hooks/claude` on loopback. Live state is kept in-memory only
-  (`liveCache`), with a 2 min TTL on `busy` to recover from missed
-  `Stop` events.
-- **Claude Code composer** spawns `claude -p --resume <id> <message>`
-  detached from the request context (so the subprocess outlives the
-  HTTP handler). Refuses to send while the target session is
-  reported `busy` (see AD-13 / R1); returns HTTP 409 with a
-  "try again" body.
 - **Session status** for OpenCode is inferred at query time from the
-  last message's `role`, `finish`, and `error` fields. For Claude
-  Code it's inferred from the last `type` in the JSONL + overlaid
-  with the live cache.
+  last message's `role`, `finish`, and `error` fields.
 - **Auto-archive**: background goroutine archives sessions inactive
   for 3+ days (checked every 24 h). Runs against all registered
   platforms.
@@ -219,9 +195,8 @@ diffs minimal and match the surrounding code.
   The pragma `// ocman:allow-platform-branch` can suppress false
   positives when the comparison is part of a generic helper.
 - **Terminology**: *platform* = the tool that produced the session
-  (OpenCode / Claude Code). *Agent* = a composer-level role within a
-  session (OpenCode's `build` / `plan` / user-defined subagent).
-  Claude Code has no per-session agent concept.
+  (OpenCode). *Agent* = a composer-level role within a session
+  (OpenCode's `build` / `plan` / user-defined subagent).
 - API routes use `requireGET` / `requirePOST` wrappers for method
   enforcement. Some routes (tmux, hook receiver) additionally require
   `localhost` origin via `requireLocalhost`.

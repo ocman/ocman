@@ -133,8 +133,8 @@ func TestArchive_PerPlatformIsolation(t *testing.T) {
 	if err := db.ArchiveSession("opencode", "s1", 1000); err != nil {
 		t.Fatalf("ArchiveSession opencode: %v", err)
 	}
-	if err := db.ArchiveSession("claude-code", "s1", 2000); err != nil {
-		t.Fatalf("ArchiveSession claude-code: %v", err)
+	if err := db.ArchiveSession("other-platform", "s1", 2000); err != nil {
+		t.Fatalf("ArchiveSession other-platform: %v", err)
 	}
 	archived, err := db.ArchivedSessions()
 	if err != nil {
@@ -143,8 +143,8 @@ func TestArchive_PerPlatformIsolation(t *testing.T) {
 	if archived[k("opencode", "s1")] != 1000 {
 		t.Errorf("opencode/s1: expected 1000, got %d", archived[k("opencode", "s1")])
 	}
-	if archived[k("claude-code", "s1")] != 2000 {
-		t.Errorf("claude-code/s1: expected 2000, got %d", archived[k("claude-code", "s1")])
+	if archived[k("other-platform", "s1")] != 2000 {
+		t.Errorf("other-platform/s1: expected 2000, got %d", archived[k("other-platform", "s1")])
 	}
 
 	// Unarchiving one platform's entry must leave the other's alone.
@@ -158,8 +158,8 @@ func TestArchive_PerPlatformIsolation(t *testing.T) {
 	if _, ok := archived[k("opencode", "s1")]; ok {
 		t.Error("opencode/s1 should be gone")
 	}
-	if archived[k("claude-code", "s1")] != 2000 {
-		t.Error("claude-code/s1 should survive opencode unarchive")
+	if archived[k("other-platform", "s1")] != 2000 {
+		t.Error("other-platform/s1 should survive opencode unarchive")
 	}
 }
 
@@ -360,23 +360,23 @@ func TestModelFavorites_PerPlatformIsolation(t *testing.T) {
 	defer db.Close()
 
 	_ = db.AddModelFavorite("opencode", "anthropic", "claude-opus-4")
-	_ = db.AddModelFavorite("claude-code", "anthropic", "claude-opus-4")
+	_ = db.AddModelFavorite("other-platform", "anthropic", "claude-opus-4")
 
 	oc, _ := db.ModelFavorites("opencode")
-	cc, _ := db.ModelFavorites("claude-code")
+	cc, _ := db.ModelFavorites("other-platform")
 	if len(oc) != 1 || len(cc) != 1 {
-		t.Fatalf("expected 1 favorite per platform, got opencode=%d, claude-code=%d", len(oc), len(cc))
+		t.Fatalf("expected 1 favorite per platform, got opencode=%d, other-platform=%d", len(oc), len(cc))
 	}
 
 	// Unfavoriting one platform must leave the other alone.
 	_ = db.RemoveModelFavorite("opencode", "anthropic", "claude-opus-4")
 	oc, _ = db.ModelFavorites("opencode")
-	cc, _ = db.ModelFavorites("claude-code")
+	cc, _ = db.ModelFavorites("other-platform")
 	if len(oc) != 0 {
 		t.Errorf("opencode favorites should be empty, got %d", len(oc))
 	}
 	if len(cc) != 1 {
-		t.Errorf("claude-code favorite should survive, got %d", len(cc))
+		t.Errorf("other-platform favorite should survive, got %d", len(cc))
 	}
 }
 
@@ -497,7 +497,7 @@ func TestPinSession_PerPlatformIsolation(t *testing.T) {
 	defer db.Close()
 
 	_ = db.PinSession("opencode", "s1")
-	_ = db.PinSession("claude-code", "s1")
+	_ = db.PinSession("other-platform", "s1")
 
 	pinned, _ := db.PinnedSessions()
 	if len(pinned) != 2 {
@@ -506,8 +506,8 @@ func TestPinSession_PerPlatformIsolation(t *testing.T) {
 	if _, ok := pinned[k("opencode", "s1")]; !ok {
 		t.Error("opencode/s1 should be pinned")
 	}
-	if _, ok := pinned[k("claude-code", "s1")]; !ok {
-		t.Error("claude-code/s1 should be pinned")
+	if _, ok := pinned[k("other-platform", "s1")]; !ok {
+		t.Error("other-platform/s1 should be pinned")
 	}
 
 	// Unpinning one platform must leave the other alone.
@@ -516,8 +516,8 @@ func TestPinSession_PerPlatformIsolation(t *testing.T) {
 	if _, ok := pinned[k("opencode", "s1")]; ok {
 		t.Error("opencode/s1 should be gone")
 	}
-	if _, ok := pinned[k("claude-code", "s1")]; !ok {
-		t.Error("claude-code/s1 should survive opencode unpin")
+	if _, ok := pinned[k("other-platform", "s1")]; !ok {
+		t.Error("other-platform/s1 should survive opencode unpin")
 	}
 }
 

@@ -125,9 +125,9 @@ func TestMigrate_CompositePrimaryKey(t *testing.T) {
 	// Two rows may exist with the same session_id if they belong to
 	// different platforms (this is the whole point of the migration).
 	_, err := raw.Exec(`INSERT INTO archived_session (platform, session_id, session_time_updated, archived_at)
-	                     VALUES ('claude-code', 's1', 5000, 9999)`)
+	                     VALUES ('other-platform', 's1', 5000, 9999)`)
 	if err != nil {
-		t.Fatalf("insert claude-code s1: %v", err)
+		t.Fatalf("insert other-platform s1: %v", err)
 	}
 	// But re-inserting an existing (platform, session_id) pair must fail.
 	_, err = raw.Exec(`INSERT INTO archived_session (platform, session_id, session_time_updated, archived_at)

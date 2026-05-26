@@ -123,7 +123,7 @@ func TestRegistry_GetUnknown(t *testing.T) {
 func TestRegistry_Platforms_StableOrder(t *testing.T) {
 	reg := NewRegistry()
 	reg.Register(&fakePlatform{id: "opencode"})
-	reg.Register(&fakePlatform{id: "claude-code"})
+	reg.Register(&fakePlatform{id: "other-platform"})
 	reg.Register(&fakePlatform{id: "codex"})
 
 	got := reg.Platforms()
@@ -131,7 +131,7 @@ func TestRegistry_Platforms_StableOrder(t *testing.T) {
 		t.Fatalf("expected 3 platforms, got %d", len(got))
 	}
 	// Registration order is preserved.
-	want := []ID{"opencode", "claude-code", "codex"}
+	want := []ID{"opencode", "other-platform", "codex"}
 	for i, p := range got {
 		if p.ID() != want[i] {
 			t.Errorf("platform %d: expected %q, got %q", i, want[i], p.ID())

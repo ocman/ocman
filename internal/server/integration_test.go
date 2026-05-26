@@ -428,7 +428,7 @@ func TestApplySessionState_ScopesByPlatform(t *testing.T) {
 
 	sessions := []db.Session{
 		{ID: "shared-id", Platform: "opencode", TimeUpdated: 1000},
-		{ID: "shared-id", Platform: "claude-code", TimeUpdated: 1000},
+		{ID: "shared-id", Platform: "other-platform", TimeUpdated: 1000},
 	}
 	if err := srv.applySessionState(sessions); err != nil {
 		t.Fatalf("applySessionState: %v", err)
@@ -437,7 +437,7 @@ func TestApplySessionState_ScopesByPlatform(t *testing.T) {
 		t.Error("opencode/shared-id should be archived")
 	}
 	if sessions[1].Archived {
-		t.Error("claude-code/shared-id must NOT inherit opencode's archive state")
+		t.Error("other-platform/shared-id must NOT inherit opencode's archive state")
 	}
 }
 
@@ -537,7 +537,7 @@ func TestApplySessionState_PinnedScopesByPlatform(t *testing.T) {
 
 	sessions := []db.Session{
 		{ID: "shared-id", Platform: "opencode", TimeUpdated: 1000},
-		{ID: "shared-id", Platform: "claude-code", TimeUpdated: 1000},
+		{ID: "shared-id", Platform: "other-platform", TimeUpdated: 1000},
 	}
 	if err := srv.applySessionState(sessions); err != nil {
 		t.Fatalf("applySessionState: %v", err)
@@ -546,7 +546,7 @@ func TestApplySessionState_PinnedScopesByPlatform(t *testing.T) {
 		t.Error("opencode/shared-id should be pinned")
 	}
 	if sessions[1].Pinned {
-		t.Error("claude-code/shared-id must NOT inherit opencode's pin state")
+		t.Error("other-platform/shared-id must NOT inherit opencode's pin state")
 	}
 }
 
@@ -674,12 +674,12 @@ func testServerWithRawDB(t *testing.T) (*Server, *sql.DB) {
 // TestHandleSessions_MergesByTimeUpdatedDesc guards the list merge
 // order across platforms. Each adapter returns its own sessions already
 // sorted by TimeUpdated desc, but the combined /api/sessions response
-// must also interleave across platforms so a recent Claude Code
-// session is not hidden behind hundreds of older OpenCode rows.
+// must also interleave across platforms so a recent session from a
+// second platform is not hidden behind hundreds of older OpenCode rows.
 //
 // Regression: prior to the sort.SliceStable in handleSessions the
 // combined slice was a naive concatenation, which placed every
-// claude-code row after every opencode row regardless of recency.
+// secondary-platform row after every opencode row regardless of recency.
 func TestHandleSessions_MergesByTimeUpdatedDesc(t *testing.T) {
 	srv, rawDB := testServerWithRawDB(t)
 	defer rawDB.Close()
@@ -693,15 +693,15 @@ func TestHandleSessions_MergesByTimeUpdatedDesc(t *testing.T) {
 	// 5-minute bucket, which is the primary sort key.
 	const minute = int64(60 * 1000)
 	srv.registry.Register(&fakePlatform{
-		id: "claude-code",
+		id: "other-platform",
 		sessions: []db.Session{
-			{ID: "cc-newest", Platform: "claude-code", TimeUpdated: 40 * minute, Directory: "/tmp"},
-			{ID: "cc-oldest", Platform: "claude-code", TimeUpdated: 5 * minute, Directory: "/tmp"},
+			{ID: "cc-newest", Platform: "other-platform", TimeUpdated: 40 * minute, Directory: "/tmp"},
+			{ID: "cc-oldest", Platform: "other-platform", TimeUpdated: 5 * minute, Directory: "/tmp"},
 		},
 	})
 
 	// Seed two opencode sessions with timestamps that bracket the
-	// claude-code rows. The expected sorted order is:
+	// other-platform rows. The expected sorted order is:
 	//   cc-newest (40min) > oc-mid (30min) > oc-old (15min) > cc-oldest (5min)
 	// which is only achievable if the handler sorts the union.
 	_, err := rawDB.Exec(
@@ -727,7 +727,7 @@ func TestHandleSessions_MergesByTimeUpdatedDesc(t *testing.T) {
 	if len(got) != 4 {
 		t.Fatalf("expected 4 sessions, got %d: %+v", len(got), got)
 	}
-	wantIDs := []string{"cc-newest", "oc-mid", "oc-old", "cc-oldest"}
+	wantIDs := []string{"cc-newest", "oc-mid", "oc-old", "cc-oldest"} //nolint:gocritic // IDs are stable test fixtures
 	for i, want := range wantIDs {
 		if got[i].ID != want {
 			t.Errorf("position %d: got %s, want %s (full order: %v)",

@@ -9,7 +9,6 @@ import { useMultiPlatform } from '../lib/useCapabilities';
  */
 const META: Record<string, { label: string; short: string }> = {
   opencode: { label: 'OpenCode', short: 'OC' },
-  'claude-code': { label: 'Claude Code', short: 'CC' },
 };
 
 interface PlatformBadgeProps {

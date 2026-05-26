@@ -103,11 +103,6 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 		defer reg.Unregister()
 	}
 
-	// Refresh Claude Code hook registration against the current
-	// listen address. Best-effort — see maybeInstallClaudeHooks for
-	// the no-op preconditions.
-	s.maybeInstallClaudeHooks()
-
 	mux := http.NewServeMux()
 
 	// API routes — read-only endpoints enforce GET, mutating endpoints
@@ -168,13 +163,6 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// it can't be used to flood logs from the network. See
 	// handleDebugLog for the JSON shape.
 	mux.HandleFunc("/api/debug/log", requirePOST(requireLocalhost(s.handleDebugLog)))
-
-	// Claude Code hook sink. The hook installer (auto-run at ocman
-	// launch when the `claude` CLI is on PATH) writes a block into
-	// ~/.claude/settings.json that POSTs every hook event here.
-	// Localhost-only for the same reason as tmux — only a local
-	// process can legitimately fire these events.
-	mux.HandleFunc("/api/hooks/claude", requirePOST(requireLocalhost(s.handleClaudeHook)))
 
 	// Static files with SPA fallback
 	staticContent, err := fs.Sub(staticFS, "static")
