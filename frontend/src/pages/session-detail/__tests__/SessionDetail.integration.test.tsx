@@ -162,12 +162,12 @@ describe('SessionDetail — initial mount', () => {
       apiOverrides: { session: vi.fn().mockReturnValue(pending) },
     });
     await waitFor(() => {
-      expect(handle.result.queryByTestId('loading-spinner')).toBeInTheDocument();
+      expect(handle.result.queryByTestId('thread-skeleton')).toBeInTheDocument();
     });
     resolveDetail(makeSessionDetail(makeSession()));
     await flushPromises();
     await waitFor(() => {
-      expect(handle.result.queryByTestId('loading-spinner')).not.toBeInTheDocument();
+      expect(handle.result.queryByTestId('thread-skeleton')).not.toBeInTheDocument();
     });
   });
 
