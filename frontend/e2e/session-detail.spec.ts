@@ -355,6 +355,23 @@ async function setupStreamingSessionPage(page: import('@playwright/test').Page) 
     });
   });
 
+  // Explicitly mock session 2 with no delay so navigation to it
+  // resolves immediately and the 500 ms header assertions are reliable.
+  await page.route(new RegExp(`/api/session/${MOCK_SESSION_2.id}(\\?|$)`), (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        session: MOCK_SESSION_2,
+        messages: [],
+        parts: [],
+        totalMessages: 0,
+        defaultAgent: '',
+        defaultModel: '',
+      }),
+    }),
+  );
+
   await page.goto(SESSION_URL);
   await expect(page.getByTestId('session-layout')).toBeVisible();
   // Prove the stream is actively appending while we prepare to

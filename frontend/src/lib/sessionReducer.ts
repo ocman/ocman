@@ -405,18 +405,27 @@ function reconcileLoad(state: SessionView, incoming: SessionView): SessionView {
   // to the current one.
   const nextSession = incoming.session ?? state.session;
 
-  // Prompts: clear them. Reconcile-load is triggered by signals
-  // (session.idle, session.diff) that don't represent a fresh
-  // prompt — the server's response is the authority on whether
-  // any prompt is still pending.
+  // Prompts: prefer SSE-set in-memory state over the REST snapshot.
+  // The REST response's pendingPermission/pendingQuestion fields are
+  // boolean flags derived from the DB, which lags SSE by hundreds of
+  // ms. If the SSE stream has already delivered permission.asked or
+  // question.asked, we must not overwrite it with the stale REST
+  // value. Only clear when the in-memory state is null (nothing to
+  // preserve) and the REST response also has no pending prompt.
+  const nextPendingPermission = state.pendingPermission !== null
+    ? state.pendingPermission
+    : incoming.pendingPermission;
+  const nextPendingQuestion = state.pendingQuestion !== null
+    ? state.pendingQuestion
+    : incoming.pendingQuestion;
   return {
     ...state,
     sessionId: incoming.sessionId,
     session: nextSession,
     messages: mergedMessages,
     parts: mergedParts,
-    pendingPermission: incoming.pendingPermission,
-    pendingQuestion: incoming.pendingQuestion,
+    pendingPermission: nextPendingPermission,
+    pendingQuestion: nextPendingQuestion,
     _deltaOwnedFields: ownedFields,
     _refetchRequested: false,
   };
