@@ -9,7 +9,7 @@ function checkIsLocal(): boolean {
 
 export interface TmuxState {
   available: boolean;
-  /** True when accessing from localhost -- client defaults to /dev/ttys000. */
+  /** True when accessing from localhost. */
   isLocal: boolean;
   sessions: TmuxSession[];
   clients: TmuxClient[];
@@ -38,27 +38,21 @@ export function useTmux(): TmuxState {
     let cancelled = false;
     (async () => {
       try {
-        // Always fetch sessions. Only fetch clients for remote users
-        // (local users always use /dev/ttys000 via the server default).
-        const sessRes = await getTmuxSessions();
+        const [sessRes, cliRes] = await Promise.all([
+          getTmuxSessions(),
+          getTmuxClients(),
+        ]);
         if (cancelled) return;
-
-        let tmuxClients: TmuxClient[] = [];
-        if (!isLocal) {
-          const cliRes = await getTmuxClients();
-          if (cancelled) return;
-          tmuxClients = cliRes.clients || [];
-        }
 
         setAvailable(sessRes.available);
         setSessions(sessRes.sessions || []);
-        setClients(tmuxClients);
+        setClients(cliRes.clients || []);
       } catch {
         if (!cancelled) setAvailable(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [getTmuxClients, getTmuxSessions, isLocal]);
+  }, [getTmuxClients, getTmuxSessions]);
 
   const switchSession = useCallback(async (tmuxSessionName: string, clientTTY?: string) => {
     await switchTmuxSession(tmuxSessionName, clientTTY);

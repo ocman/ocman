@@ -40,10 +40,8 @@ export interface UseTmuxActionsResult {
   /**
    * Click handler for the per-session "switch tmux" affordance.
    * Routes the request based on tmux topology:
-   *   - local users: switch directly (server defaults the client to
-   *     the user's tty);
-   *   - remote single-client: switch with that client;
-   *   - remote multi-client: open the picker so the user can pick
+   *   - single client (local or remote): switch with that client;
+   *   - multiple clients: open the picker so the user can pick
    *     which tty to send the switch to.
    */
   handleTmuxSwitch: (e: React.MouseEvent, tmuxSessionName: string) => void;
@@ -98,19 +96,14 @@ export function useTmuxActions(
   const matchingTmuxSession = directory ? tmux.findSession(directory) : undefined;
 
   const handleTmuxSwitch = useCallback((e: React.MouseEvent, tmuxSessionName: string) => {
-    // Local user: fire directly, server defaults to /dev/ttys000.
-    if (tmux.isLocal) {
-      tmux.switchSession(tmuxSessionName).catch((err) => remoteLog.error('tmux switch failed', err));
-      return;
-    }
-    // Remote user with single client: route to that client.
+    // Single client: route directly to it.
     if (tmux.clients.length === 1) {
       tmux.switchSession(tmuxSessionName, tmux.clients[0].tty)
         .catch((err) => remoteLog.error('tmux switch failed', err));
       return;
     }
-    // Remote user with multiple clients: open the picker anchored to
-    // the click target so the user can choose.
+    // Multiple clients: open the picker anchored to the click target
+    // so the user can choose which terminal to switch.
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setPickerPos({ top: rect.bottom + 4, left: rect.right });
     setPendingTmuxSession(tmuxSessionName);
@@ -138,17 +131,13 @@ export function useTmuxActions(
 
   const handleTmuxShortcut = useCallback(() => {
     if (!matchingTmuxSession) return;
-    if (tmux.isLocal) {
-      tmux.switchSession(matchingTmuxSession.name)
-        .catch((err) => remoteLog.error('tmux switch failed', err));
-      return;
-    }
+    // Single client: route directly to it.
     if (tmux.clients.length === 1) {
       tmux.switchSession(matchingTmuxSession.name, tmux.clients[0].tty)
         .catch((err) => remoteLog.error('tmux switch failed', err));
       return;
     }
-    // Shortcut path has no anchor element — pin the picker near the
+    // Multiple clients: no anchor element — pin the picker near the
     // top-right of the viewport instead.
     setPickerPos({ top: 88, left: Math.min(window.innerWidth - 24, 420) });
     setPendingTmuxSession(matchingTmuxSession.name);

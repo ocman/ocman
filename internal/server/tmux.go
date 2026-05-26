@@ -233,6 +233,23 @@ func switchTmuxClient(clientTTY, targetSession string) error {
 	return exec.Command("tmux", "switch-client", "-c", clientTTY, "-t", targetSession).Run()
 }
 
+// tmuxSwitchRunner abstracts the side-effectful calls used by
+// handleTmuxSwitch so that unit tests can inject fakes without
+// requiring a real tmux binary.
+type tmuxSwitchRunner struct {
+	listSessions func() ([]tmuxSession, error)
+	listClients  func() ([]tmuxClient, error)
+	listWindows  func(sessionName string) ([]tmuxWindow, error)
+	switchClient func(clientTTY, targetSession string) error
+}
+
+var defaultTmuxSwitchRunner = tmuxSwitchRunner{
+	listSessions: listTmuxSessions,
+	listClients:  listTmuxClients,
+	listWindows:  listTmuxWindows,
+	switchClient: switchTmuxClient,
+}
+
 func (s *Server) handleTmuxClients(w http.ResponseWriter, r *http.Request) {
 	if !isTmuxAvailable() {
 		writeJSON(w, map[string]interface{}{
@@ -533,6 +550,10 @@ func (s *Server) handleTmuxLaunchOpencode(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleTmuxSwitch(w http.ResponseWriter, r *http.Request) {
+	s.handleTmuxSwitchWith(w, r, defaultTmuxSwitchRunner)
+}
+
+func (s *Server) handleTmuxSwitchWith(w http.ResponseWriter, r *http.Request, runner tmuxSwitchRunner) {
 	if !isTmuxAvailable() {
 		http.Error(w, "tmux is not available", http.StatusServiceUnavailable)
 		return
@@ -560,7 +581,7 @@ func (s *Server) handleTmuxSwitch(w http.ResponseWriter, r *http.Request) {
 	// strings to tmux. Targets may be either a plain session name or a
 	// `session:window` pair (used by worktree sessions, which open in a
 	// named window inside the existing project session).
-	existingSessions, err := listTmuxSessions()
+	existingSessions, err := runner.listSessions()
 	if err != nil {
 		serverError(w, "verifying tmux session", err)
 		return
@@ -583,7 +604,7 @@ func (s *Server) handleTmuxSwitch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if windowName != "" {
-		windows, err := listTmuxWindows(sessionName)
+		windows, err := runner.listWindows(sessionName)
 		if err != nil {
 			serverError(w, "verifying tmux window", err)
 			return
@@ -607,7 +628,7 @@ func (s *Server) handleTmuxSwitch(w http.ResponseWriter, r *http.Request) {
 	// was open. Instead, if no client is supplied, look at the live
 	// list of connected tmux clients: if exactly one exists, use it;
 	// otherwise the caller must disambiguate.
-	existingClients, err := listTmuxClients()
+	existingClients, err := runner.listClients()
 	if err != nil {
 		serverError(w, "verifying tmux client", err)
 		return
@@ -651,7 +672,7 @@ func (s *Server) handleTmuxSwitch(w http.ResponseWriter, r *http.Request) {
 		"session": req.Session,
 	}).Info("switching tmux client")
 
-	if err := switchTmuxClient(clientTTY, req.Session); err != nil {
+	if err := runner.switchClient(clientTTY, req.Session); err != nil {
 		log.WithFields(log.Fields{
 			"client":  clientTTY,
 			"session": req.Session,
