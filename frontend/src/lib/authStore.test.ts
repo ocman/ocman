@@ -21,10 +21,14 @@ function stubFetch(responder: (url: string, init?: RequestInit) => Response | Pr
   }));
 }
 
-beforeEach(resetStore);
+beforeEach(() => {
+  resetStore();
+  sessionStorage.clear();
+});
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  sessionStorage.clear();
 });
 
 describe('bootstrap', () => {
@@ -58,6 +62,30 @@ describe('bootstrap', () => {
     expect(s.checking).toBe(false);
     expect(s.authRequired).toBe(false);
     expect(s.authenticated).toBe(true);
+  });
+
+  it('writes authRequired=true to sessionStorage after a successful auth-on response', async () => {
+    stubFetch(() => new Response(
+      JSON.stringify({ authRequired: true, authenticated: false }),
+      { status: 200 },
+    ));
+    await useAuthStore.getState().bootstrap();
+    expect(sessionStorage.getItem('ocman:authRequired')).toBe('true');
+  });
+
+  it('writes authRequired=false to sessionStorage after a successful auth-off response', async () => {
+    stubFetch(() => new Response(
+      JSON.stringify({ authRequired: false, authenticated: true }),
+      { status: 200 },
+    ));
+    await useAuthStore.getState().bootstrap();
+    expect(sessionStorage.getItem('ocman:authRequired')).toBe('false');
+  });
+
+  it('writes authRequired=false to sessionStorage when /api/auth/me fails (fail-open)', async () => {
+    stubFetch(() => new Response('nope', { status: 500 }));
+    await useAuthStore.getState().bootstrap();
+    expect(sessionStorage.getItem('ocman:authRequired')).toBe('false');
   });
 });
 

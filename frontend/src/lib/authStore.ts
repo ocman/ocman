@@ -19,7 +19,53 @@ import { api, AuthError, registerAuthErrorHandler } from './api';
  * registerAuthErrorHandler) so a 401 from any API call — typically
  * an expired cookie — immediately flips `authenticated` to false
  * and re-routes the SPA into the lockscreen.
+ *
+ * PWA optimisation: we cache `authRequired` in sessionStorage so
+ * that on iOS Safari PWA cold-starts (where the JS context is torn
+ * down on background) we can skip the blocking "Checking…" render
+ * when auth is known to be off.  We only skip blocking for the
+ * authRequired=false case — when auth is required we still need the
+ * server to confirm the cookie is valid before showing the app.
+ * bootstrap() always runs in the background to keep the cache fresh.
  */
+
+const AUTH_REQUIRED_KEY = 'ocman:authRequired';
+
+/**
+ * Read the last-known authRequired value from sessionStorage.
+ * Returns null when the cache is absent or unreadable.
+ */
+function readCachedAuthRequired(): boolean | null {
+  try {
+    const raw = sessionStorage.getItem(AUTH_REQUIRED_KEY);
+    if (raw === 'true') return true;
+    if (raw === 'false') return false;
+  } catch {
+    // sessionStorage unavailable (private-browsing restrictions, etc.)
+  }
+  return null;
+}
+
+function writeCachedAuthRequired(value: boolean): void {
+  try {
+    sessionStorage.setItem(AUTH_REQUIRED_KEY, String(value));
+  } catch {
+    // ignore — cache is best-effort
+  }
+}
+
+/**
+ * When the cached authRequired is false we know no password is
+ * configured, so we can start with checking=false and render the
+ * app immediately.  bootstrap() still runs in the background to
+ * refresh the cache.
+ *
+ * When the cache is absent or true, we default to checking=true so
+ * AuthGate blocks until /api/auth/me responds.
+ */
+const cachedAuthRequired = readCachedAuthRequired();
+const initialChecking = cachedAuthRequired !== false;
+
 type AuthStore = {
   /** True until the first /api/auth/me response (or its failure). */
   checking: boolean;
@@ -40,8 +86,8 @@ type AuthStore = {
 };
 
 export const useAuthStore = create<AuthStore>((set, get) => ({
-  checking: true,
-  authRequired: false,
+  checking: initialChecking,
+  authRequired: cachedAuthRequired ?? false,
   authenticated: true,
   error: null,
   submitting: false,
@@ -49,6 +95,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   bootstrap: async () => {
     try {
       const me = await api.authMe();
+      writeCachedAuthRequired(me.authRequired);
       set({
         checking: false,
         authRequired: me.authRequired,
@@ -58,6 +105,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       // If /api/auth/me itself fails we fail open: assume no auth is
       // required so the app still loads on a legacy backend. The next
       // real API call will surface any 401 via handleAuthError.
+      writeCachedAuthRequired(false);
       set({ checking: false, authRequired: false, authenticated: true });
     }
   },
