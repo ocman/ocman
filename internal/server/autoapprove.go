@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -8,11 +9,14 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	opencode "github.com/NoUseFreak/ocman/internal/platforms/opencode"
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 // judgeVerdict is the result of the auto-approve judge.
@@ -282,6 +286,50 @@ func (j *PermissionJudge) sendPrompt(ctx context.Context, port, sessionID, permi
 	return nil
 }
 
+// recentUserMessagesLimit is the number of recent messages to fetch
+// when building the user-intent context for the judge prompt.
+const recentUserMessagesLimit = 6
+
+// recentUserMessages fetches the last N messages from a running
+// OpenCode session and returns the plain text of user-role messages.
+// Returns nil when the fetch fails so callers can proceed without context.
+func (j *PermissionJudge) recentUserMessages(ctx context.Context, port, sessionID string) []string {
+	apiURL := fmt.Sprintf("http://127.0.0.1:%s/session/%s/messages?limit=%d", port, sessionID, recentUserMessagesLimit)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return nil
+	}
+	resp, err := j.httpClient.Do(req)
+	if err != nil {
+		return nil
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil || resp.StatusCode >= 400 {
+		return nil
+	}
+
+	var messages []map[string]interface{}
+	if err := json.Unmarshal(body, &messages); err != nil {
+		return nil
+	}
+
+	var out []string
+	for _, m := range messages {
+		info, _ := m["info"].(map[string]interface{})
+		if info == nil {
+			continue
+		}
+		if role, _ := info["role"].(string); role != "user" {
+			continue
+		}
+		if txt := extractTextFromParts(m); txt != "" {
+			out = append(out, txt)
+		}
+	}
+	return out
+}
+
 // pollInterval is the delay between message-list polls while waiting
 // for the judge model to finish its response.
 const pollInterval = 500 * time.Millisecond
@@ -370,6 +418,254 @@ func extractTextFromParts(msg map[string]interface{}) string {
 	return b.String()
 }
 
+
+// --- Background (server-side) auto-approve ---
+
+// ssePermissionTee wraps an io.Writer and tees the SSE byte stream to a
+// side-channel that parses permission.asked events. When one is seen,
+// onPermission is called in a new goroutine so the main write path is
+// never blocked.
+//
+// Parsing is line-based: SSE lines are terminated by '\n'. We buffer
+// across Read boundaries so events split across multiple Write calls
+// are still detected. The tee is intentionally lossy on parse errors —
+// it always forwards every byte to the underlying writer unchanged.
+type ssePermissionTee struct {
+	w             io.Writer
+	buf           []byte
+	mu            sync.Mutex
+	onPermission  func(permissionID, permission string, patterns []string)
+}
+
+func (t *ssePermissionTee) Write(p []byte) (int, error) {
+	// Always forward bytes to the real writer first.
+	n, err := t.w.Write(p)
+
+	// Parse in the background, never blocking the response writer.
+	t.mu.Lock()
+	t.buf = append(t.buf, p[:n]...)
+	t.mu.Unlock()
+
+	go t.drain()
+
+	return n, err
+}
+
+// drain processes all complete SSE events currently in the buffer.
+// Called in a goroutine so it never holds up the HTTP write path.
+func (t *ssePermissionTee) drain() {
+	t.mu.Lock()
+	data := t.buf
+	t.mu.Unlock()
+
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+
+	var (
+		eventType string
+		dataLines []string
+		consumed  int
+	)
+
+	rawLines := splitSSELines(data)
+	pos := 0
+	for _, line := range rawLines {
+		lineLen := len(line) + 1 // +1 for '\n'
+		if pos+lineLen > len(data) {
+			break
+		}
+		raw := string(line)
+
+		switch {
+		case raw == "":
+			// Blank line = end of event. Dispatch if we have data.
+			if eventType != "" && len(dataLines) > 0 {
+				t.dispatchEvent(eventType, strings.Join(dataLines, "\n"))
+			}
+			eventType = ""
+			dataLines = dataLines[:0]
+			consumed = pos + lineLen
+
+		case strings.HasPrefix(raw, "event:"):
+			eventType = strings.TrimSpace(strings.TrimPrefix(raw, "event:"))
+
+		case strings.HasPrefix(raw, "data:"):
+			dataLines = append(dataLines, strings.TrimSpace(strings.TrimPrefix(raw, "data:")))
+		}
+
+		pos += lineLen
+	}
+	_ = scanner // suppress unused warning from import
+
+	// Trim the consumed prefix from the buffer.
+	if consumed > 0 {
+		t.mu.Lock()
+		if consumed <= len(t.buf) {
+			t.buf = t.buf[consumed:]
+		}
+		t.mu.Unlock()
+	}
+}
+
+// splitSSELines splits b into lines (split on '\n'), omitting the
+// terminator. Lines whose terminator has not yet arrived are excluded
+// (they remain in the buffer for the next drain pass).
+func splitSSELines(b []byte) [][]byte {
+	var lines [][]byte
+	for {
+		idx := bytes.IndexByte(b, '\n')
+		if idx < 0 {
+			break
+		}
+		line := b[:idx]
+		// Trim '\r' for \r\n line endings.
+		if len(line) > 0 && line[len(line)-1] == '\r' {
+			line = line[:len(line)-1]
+		}
+		lines = append(lines, line)
+		b = b[idx+1:]
+	}
+	return lines
+}
+
+// dispatchEvent is called when a complete SSE event has been parsed.
+// It fires onPermission if the event type is "permission.asked" and
+// the payload carries the expected fields.
+func (t *ssePermissionTee) dispatchEvent(eventType, dataJSON string) {
+	if eventType != "permission.asked" {
+		return
+	}
+	var props struct {
+		ID         string   `json:"id"`
+		Permission string   `json:"permission"`
+		Patterns   []string `json:"pattern"`
+	}
+	if err := json.Unmarshal([]byte(dataJSON), &props); err != nil {
+		return
+	}
+	if props.ID == "" || props.Permission == "" {
+		return
+	}
+	go t.onPermission(props.ID, props.Permission, props.Patterns)
+}
+
+// backgroundAutoApprove is the server-side counterpart of the
+// frontend's useAutoApprove hook. It is called whenever an SSE
+// permission.asked event is observed on a proxied event stream —
+// meaning it fires even when no browser tab has the session open.
+//
+// It checks whether auto-approve is enabled for the session, runs the
+// LLM judge, and if the verdict is safe, responds "once" directly
+// to the running OpenCode instance. The approval is also persisted to
+// stateDB so the notice survives a page refresh.
+//
+// This function blocks (it calls judge.Judge which polls OpenCode) and
+// must always be called in a goroutine.
+func (s *Server) backgroundAutoApprove(
+	ctx context.Context,
+	platformID platforms.ID,
+	adapter platforms.Platform,
+	sessionID string,
+	permissionID string,
+	permission string,
+	patterns []string,
+) {
+	logger := log.WithFields(log.Fields{
+		"sessionID":    sessionID,
+		"permissionID": permissionID,
+	})
+
+	// Check auto-approve state: per-session override, then server default.
+	enabled := s.autoApproveDefault
+	if s.stateDB != nil {
+		if perSession, exists, err := s.stateDB.GetAutoApprove(string(platformID), sessionID); err == nil && exists {
+			enabled = perSession
+		}
+	}
+	if !enabled {
+		return
+	}
+
+	// Resolve directory for port discovery.
+	if s.db == nil {
+		logger.Warn("background auto-approve: no OpenCode DB, cannot resolve session directory")
+		return
+	}
+	dbSession, err := s.db.GetSession(sessionID)
+	if err != nil || dbSession == nil {
+		logger.WithError(err).Warn("background auto-approve: session not found in DB")
+		return
+	}
+
+	logger.Info("background auto-approve: judging permission")
+
+	// Build a user-intent section from recent messages in this session
+	// so the judge can factor in what the user explicitly asked for.
+	var extraSections []PromptSection
+	if s.judge != nil && s.judge.openCodePort != nil {
+		port := s.judge.openCodePort(dbSession.Directory)
+		if port != "" {
+			msgs := s.judge.recentUserMessages(ctx, port, sessionID)
+			if len(msgs) > 0 {
+				var b strings.Builder
+				b.WriteString("The user recently sent these messages (oldest first):\n")
+				for _, m := range msgs {
+					b.WriteString("  - ")
+					// Truncate very long messages to keep the prompt concise.
+					if len(m) > 300 {
+						m = m[:300] + "…"
+					}
+					b.WriteString(m)
+					b.WriteString("\n")
+				}
+				b.WriteString("\nIf the permission request is a direct and proportionate consequence of what the user asked for, lean toward SAFE.")
+				extraSections = []PromptSection{{
+					Title:   "Recent user intent",
+					Content: b.String(),
+				}}
+			}
+		}
+	}
+
+	result := s.judge.Judge(ctx, dbSession.Directory, permission, patterns, extraSections)
+
+	logger.WithFields(log.Fields{
+		"verdict":        string(result.Verdict),
+		"judgeSessionID": result.SessionID,
+	}).Info("background auto-approve: judge returned")
+
+	if result.Verdict != verdictSafe {
+		return
+	}
+
+	// Respond "once" to the pending permission.
+	if err := adapter.RespondPermission(ctx, platforms.RespondPermissionRequest{
+		SessionID:    sessionID,
+		PermissionID: permissionID,
+		Reply:        "once",
+	}); err != nil {
+		logger.WithError(err).Warn("background auto-approve: failed to respond to permission")
+		return
+	}
+
+	// Persist the approval so the UI notice survives a page refresh.
+	if s.stateDB != nil {
+		if err := s.stateDB.RecordApprovedPermission(
+			string(platformID),
+			sessionID,
+			state.ApprovedPermission{
+				PermissionID:   permissionID,
+				PermissionText: permission,
+				Patterns:       patterns,
+				JudgeSessionID: result.SessionID,
+				ApprovedAt:     time.Now().UnixMilli(),
+			},
+		); err != nil {
+			logger.WithError(err).Warn("background auto-approve: failed to persist approval")
+		}
+	}
+
+	logger.Info("background auto-approve: permission approved")
+}
 
 // parseVerdict extracts the verdict from the LLM response text.
 // Tries to parse a JSON object with a "verdict" field first; falls

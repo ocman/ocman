@@ -926,7 +926,24 @@ func (s *Server) serveSessionEvents(w http.ResponseWriter, r *http.Request, sess
 		flush = flusher.Flush
 	}
 
-	if err := adapter.ProxyEvents(ctx, sessionID, w, flush); err != nil {
+	// Tee the SSE stream so permission.asked events trigger server-side
+	// auto-approve even when no browser tab has this session open.
+	tee := &ssePermissionTee{
+		w: w,
+		onPermission: func(permissionID, permission string, patterns []string) {
+			go s.backgroundAutoApprove(
+				context.Background(),
+				adapter.ID(),
+				adapter,
+				sessionID,
+				permissionID,
+				permission,
+				patterns,
+			)
+		},
+	}
+
+	if err := adapter.ProxyEvents(ctx, sessionID, tee, flush); err != nil {
 		if errors.Is(err, context.Canceled) {
 			span.AddEvent("client disconnected")
 			span.SetStatus(codes.Ok, "client disconnected")
