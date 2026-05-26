@@ -333,6 +333,33 @@ export function useSession(
       return;
     }
 
+    // Immediately reset reducer state to the target session so the
+    // header and thread update synchronously with the URL change —
+    // before the REST fetch resolves. Without this, the previous
+    // session's title/messages remain visible until doFetch() lands,
+    // which can take 150–500 ms on a slow connection or under load.
+    // Use the cache when available so revisits feel instant; fall
+    // back to a blank view (session: null → loading spinner).
+    const nextCached = useApiStore.getState().getCachedSession(sessionId);
+    const nextInitial: SessionView = nextCached
+      ? {
+          ...initialSessionView(sessionId),
+          session: {
+            ...nextCached.session,
+            contextTokenCount: nextCached.session.contextTokenCount ?? nextCached.contextTokenCount,
+            defaultAgent: nextCached.defaultAgent,
+            defaultModel: nextCached.defaultModel,
+          },
+          messages: nextCached.messages,
+          parts: nextCached.parts,
+        }
+      : initialSessionView(sessionId);
+    dispatch({ type: 'load', view: nextInitial });
+    setStatus(nextCached ? 'live' : 'loading');
+    setLoading(!nextCached);
+    setLoadError(null);
+    setTotalMessages(nextCached?.totalMessages || nextCached?.session.messageCount || 0);
+
     let cancelled = false;
     let evtSource: EventSource | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;

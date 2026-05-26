@@ -532,10 +532,6 @@ test('navigating to another session during text streaming shows the target sessi
 
   await page.getByRole('button', { name: /Refactor auth module/ }).click();
 
-  // This should be effectively instant. Today the app often stays on
-  // the streaming session until the worker reaches a quieter/block
-  // boundary, so this assertion is expected to FAIL until the bug is
-  // fixed.
   await expect(page).toHaveURL(`/session/${MOCK_SESSION_2.id}`, { timeout: 500 });
   await expect(page.getByRole('banner')).toContainText(MOCK_SESSION_2.title, { timeout: 500 });
   await expect(page.locator('.oc-msg-assistant').filter({ hasText: 'Streaming response start' })).toHaveCount(0, { timeout: 500 });
