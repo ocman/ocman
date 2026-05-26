@@ -394,6 +394,25 @@ graph TD
   open a new window and do **not** `send-keys`. Just return
   `(name, false, nil)`. If the session did not exist, follow today's
   flow (create session, send-keys) and return `(name, true, nil)`.
+- **Character set constraints**: Two regular expressions govern which
+  characters are safe for tmux identifiers:
+  - `validTmuxName` (`[a-zA-Z0-9._/~:-]+`) — user-supplied target
+    identifiers (e.g. `session:window` pairs from `tmux switch-client`).
+  - `validTmuxComponent` (`[a-zA-Z0-9._/~-]+`) — names *derived from
+    filesystem paths*. The colon is excluded because tmux treats `:`
+    as the session/window separator in target identifiers; an embedded
+    `:` would silently mis-target the wrong pane.
+  `launchOpencodeInTmuxWith` and `launchOpencodeInProjectTmuxWindowWith`
+  validate their derived names against `validTmuxComponent` and return
+  an error if the check fails (surfaced as HTTP 422 by the worktree
+  handler). tmux itself replaces dots with underscores when *displaying*
+  session names (e.g. `~/src/github.com/foo` becomes
+  `~/src/github_com/foo` in `tmux list-sessions` output); the
+  `resolveTmuxSessionPath` helper reverses this substitution when
+  matching sessions back to filesystem paths. In practice the worktree
+  slug rules (AD-9) strip everything outside `[a-z0-9._-]` before a
+  path reaches tmux, so only atypical *project* directory names
+  (containing `:` or spaces) can trigger the validation error.
 
 ### `frontend/src/components/CommandPalette.tsx` (extended)
 
@@ -923,6 +942,18 @@ the maintainer can use `/wt` in their daily workflow.
     explicit; the modal could show a small inline notice "tmux
     session reused; opencode not relaunched — start it manually
     if needed". Optional polish for v1.
+- **Risk**: The project checkout directory contains characters that are
+  invalid in a tmux session name (e.g. a path like
+  `/home/u/my:project` contains `:`, which tmux uses as the
+  session/window separator).
+  - **Mitigation**: `launchOpencodeInTmuxWith` validates the derived
+    session name against `validTmuxComponent` (`[a-zA-Z0-9._/~-]+`)
+    before calling tmux. Invalid names result in an error that surfaces
+    as HTTP 422 from the worktree handler, with a clear message
+    identifying the offending name. The worktree slug (AD-9) already
+    strips all non-`[a-z0-9._-]` characters from the branch portion of
+    the path, so this guard is primarily for project root directories
+    with unusual naming.
 - **Risk**: `cachedSessions` is empty when the Worktrees view loads
   (associated-session column shows 0 even when sessions exist).
   - **Mitigation**: the view triggers a refresh via

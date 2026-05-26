@@ -172,6 +172,26 @@ diffs minimal and match the surrounding code.
   `observability/grafana/dashboards/ocman.json` and lives in the
   `ocman` folder once the stack starts. See `internal/telemetry` and
   `observability/`.
+- **Tmux session name character limitations**: `tmuxSessionNameForPath`
+  derives a session name from the worktree directory. tmux itself
+  replaces dots with underscores when displaying session names, so a
+  path like `/home/u/src/github.com/foo` becomes the session name
+  `~/src/github_com/foo` in `tmux list-sessions` output. Two
+  character sets are enforced in `internal/server/tmux.go`:
+  - `validTmuxName` (`[a-zA-Z0-9._/~:-]+`) — used for user-supplied
+    target identifiers such as `session:window` pairs.
+  - `validTmuxComponent` (`[a-zA-Z0-9._/~-]+`) — used for names
+    *derived from filesystem paths* (session names, window names).
+    The colon is **excluded** because tmux uses `:` as the
+    session/window separator in target identifiers; an embedded `:`
+    would silently mis-target the wrong pane.
+  If a derived session or window name contains any character outside
+  `validTmuxComponent`, `launchOpencodeInTmuxWith` /
+  `launchOpencodeInProjectTmuxWindowWith` return an error (HTTP 422
+  from the worktree handler). In practice this is rare: the worktree
+  slug rules (AD-9) strip everything except `[a-z0-9._-]` before the
+  path reaches tmux, so only atypical *project* directory names
+  (e.g. those containing `:` or spaces) can trigger this error.
 - **Optional password auth**: by default ocman binds `127.0.0.1:8228`
   and is unauthenticated. Set `OCMAN_AUTH_PASSWORD` (env, preferred),
   `-auth-password-file`, or `-auth-password` (precedence in that
