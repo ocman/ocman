@@ -840,8 +840,9 @@ func (s *Server) handleSessionApprovedPermissions(w http.ResponseWriter, r *http
 // prompt for the human (UNSAFE).
 func (s *Server) handleSessionPermissionJudge(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Permission string   `json:"permission"`
-		Patterns   []string `json:"patterns"`
+		Permission     string               `json:"permission"`
+		Patterns       []string             `json:"patterns"`
+		PromptSections []PromptSection      `json:"promptSections"`
 	}
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
 		return
@@ -863,7 +864,7 @@ func (s *Server) handleSessionPermissionJudge(w http.ResponseWriter, r *http.Req
 		permissionID := strings.TrimPrefix(rest, "permissions/")
 		permissionID = strings.TrimSuffix(permissionID, "/judge")
 
-		result := s.judge.Judge(r.Context(), dbSession.Directory, req.Permission, req.Patterns)
+		result := s.judge.Judge(r.Context(), dbSession.Directory, req.Permission, req.Patterns, req.PromptSections)
 
 		// Persist the approval so the notice survives a page refresh.
 		if result.Verdict == verdictSafe && s.stateDB != nil {

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -57,5 +58,38 @@ func TestParseVerdict(t *testing.T) {
 				t.Errorf("parseVerdict(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestJudgePromptCustomSections(t *testing.T) {
+	// No custom sections — output should not contain "##" beyond the built-in ones.
+	base := judgePrompt("read file", []string{"*.go"}, nil)
+	if strings.Contains(base, "Feature branch") {
+		t.Errorf("unexpected custom section in base prompt")
+	}
+
+	// One custom section.
+	sections := []PromptSection{
+		{Title: "Feature branch rule", Content: "git push to feature branches is SAFE."},
+	}
+	with := judgePrompt("git push", []string{"origin/feat"}, sections)
+	if !strings.Contains(with, "## Feature branch rule") {
+		t.Errorf("custom section title not found in prompt")
+	}
+	if !strings.Contains(with, "git push to feature branches is SAFE.") {
+		t.Errorf("custom section content not found in prompt")
+	}
+
+	// Empty title and content are skipped — no new sections added beyond base.
+	base2 := judgePrompt("git push", nil, nil)
+	empty := judgePrompt("git push", nil, []PromptSection{{Title: "", Content: ""}})
+	if empty != base2 {
+		t.Errorf("empty section should produce identical output to no sections")
+	}
+
+	// Blank title falls back to "Additional rule".
+	noTitle := judgePrompt("git push", nil, []PromptSection{{Title: "", Content: "some rule"}})
+	if !strings.Contains(noTitle, "## Additional rule") {
+		t.Errorf("blank title should fall back to 'Additional rule'")
 	}
 }

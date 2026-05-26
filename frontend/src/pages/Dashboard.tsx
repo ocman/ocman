@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import './Dashboard.css';
 import { useNavigate, NavLink, Outlet, useSearchParams, useLocation } from 'react-router-dom';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend, PointElement, LineElement } from 'chart.js';
@@ -274,6 +274,59 @@ export function ProjectsTab() {
 }
 
 // ---------------------------------------------------------------------------
+// Prompt section editor (used inside SettingsTab)
+// ---------------------------------------------------------------------------
+
+function PromptSectionEditor({
+  section,
+  onChange,
+  onRemove,
+}: {
+  section: { title: string; content: string };
+  onChange: (s: { title: string; content: string }) => void;
+  onRemove: () => void;
+}) {
+  // Track textarea height so it grows with content.
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  return (
+    <div className="settings-prompt-section">
+      <div className="settings-prompt-section-header">
+        <input
+          type="text"
+          className="settings-prompt-section-title"
+          placeholder="Section title"
+          value={section.title}
+          onChange={(e) => onChange({ ...section, title: e.target.value })}
+        />
+        <button
+          type="button"
+          className="settings-prompt-section-remove"
+          aria-label="Remove section"
+          onClick={onRemove}
+        >
+          &#x2715;
+        </button>
+      </div>
+      <textarea
+        ref={textareaRef}
+        className="settings-prompt-section-content"
+        placeholder="Describe the rule in plain language. The AI reviewer will follow this as an additional instruction."
+        value={section.content}
+        rows={3}
+        onChange={(e) => {
+          onChange({ ...section, content: e.target.value });
+          // Auto-grow: reset height first so shrinking works too.
+          if (textareaRef.current) {
+            textareaRef.current.style.height = 'auto';
+            textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+          }
+        }}
+      />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Settings tab
 // ---------------------------------------------------------------------------
 
@@ -287,6 +340,8 @@ export function SettingsTab() {
   const setAutoApproveDefault = useUiStore((s) => s.setAutoApproveDefault);
   const autoApproveDelayMs = useUiStore((s) => s.autoApproveDelayMs);
   const setAutoApproveDelayMs = useUiStore((s) => s.setAutoApproveDelayMs);
+  const promptSections = useUiStore((s) => s.promptSections);
+  const setPromptSections = useUiStore((s) => s.setPromptSections);
   const authRequired = useAuthStore((s) => s.authRequired);
   const logout = useAuthStore((s) => s.logout);
   const { canInstall, installed, promptInstall } = usePwaInstall();
@@ -412,6 +467,42 @@ export function SettingsTab() {
               }}
             />
             <span className="settings-delay-unit">s</span>
+          </div>
+        </div>
+
+        <div className="settings-row settings-row--block">
+          <div className="settings-row-info">
+            <div className="settings-row-label">Reviewer prompt sections</div>
+            <div className="settings-row-desc">
+              Extra rules appended to the AI reviewer&apos;s prompt. Each section
+              appears as a named block the model reads before deciding. Use this
+              to allow or deny specific patterns your team knows are safe.
+            </div>
+          </div>
+          <div className="settings-prompt-sections">
+            {promptSections.map((section, i) => (
+              <PromptSectionEditor
+                key={i}
+                section={section}
+                onChange={(updated) => {
+                  const next = [...promptSections];
+                  next[i] = updated;
+                  setPromptSections(next);
+                }}
+                onRemove={() => {
+                  setPromptSections(promptSections.filter((_, j) => j !== i));
+                }}
+              />
+            ))}
+            <button
+              type="button"
+              className="settings-prompt-add"
+              onClick={() =>
+                setPromptSections([...promptSections, { title: '', content: '' }])
+              }
+            >
+              + Add section
+            </button>
           </div>
         </div>
       </div>

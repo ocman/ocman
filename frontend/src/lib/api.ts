@@ -648,13 +648,14 @@ export const api = {
     permissionId: string,
     permission: string,
     patterns: string[],
+    promptSections?: Array<{ title: string; content: string }>,
   ): Promise<{ verdict: 'safe' | 'unsafe'; judgeSessionId: string }> => {
     const resp = await fetch(
       `/api/session/${encodeURIComponent(sessionId)}/permissions/${encodeURIComponent(permissionId)}/judge`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ permission, patterns }),
+        body: JSON.stringify({ permission, patterns, promptSections }),
       },
     );
     if (!resp.ok) throw new Error(await resp.text());

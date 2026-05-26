@@ -79,6 +79,13 @@ type UiStore = {
   autoApproveDelayMs: number;
   setAutoApproveDelayMs: (ms: number) => void;
 
+  // Custom sections appended to the AI judge prompt. Each section is
+  // rendered as "## <title>\n<content>" and injected after the built-in
+  // assessment criteria, allowing users to extend the default ruleset
+  // (e.g. "allow commits to feature branches").
+  promptSections: Array<{ title: string; content: string }>;
+  setPromptSections: (sections: Array<{ title: string; content: string }>) => void;
+
   // Ordered list of currently-open views in the right-hand panel.
   // Empty = panel is collapsed (strip-only). One entry = single
   // view. Multiple entries = vertically split, in order top-to-
@@ -183,6 +190,16 @@ export const useUiStore = create<UiStore>()(
       autoApproveDelayMs: 5000,
       setAutoApproveDelayMs: (ms) => set({ autoApproveDelayMs: Math.max(0, Math.round(ms)) }),
 
+      promptSections: [
+        {
+          title: 'Feature branch commits and pushes',
+          content:
+            'git commit and git push are SAFE when the target branch is not "main" or "master". ' +
+            'If the patterns or action mention a branch name that is not main or master, treat commit/push as safe.',
+        },
+      ],
+      setPromptSections: (sections) => set({ promptSections: sections }),
+
       changesSidebarOpenTabs: ['session'],
       changesSidebarTabSizes: {},
       toggleChangesSidebarTab: (tab) =>
@@ -257,7 +274,8 @@ export const useUiStore = create<UiStore>()(
       name: 'ocman:ui',
       // v1: renamed right-panel tab id 'thread' -> 'session'.
       // v2: added autoApproveDefault + autoApproveDelayMs.
-      version: 2,
+      // v3: added promptSections with a default feature-branch rule.
+      version: 3,
       migrate: (persisted, version) => {
         if (!persisted || typeof persisted !== 'object') return persisted;
         const next = persisted as Record<string, unknown>;
@@ -289,6 +307,7 @@ export const useUiStore = create<UiStore>()(
         changesSidebarTabSizes: s.changesSidebarTabSizes,
         autoApproveDefault: s.autoApproveDefault,
         autoApproveDelayMs: s.autoApproveDelayMs,
+        promptSections: s.promptSections,
       }),
     },
   ),

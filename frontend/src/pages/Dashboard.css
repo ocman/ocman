@@ -263,3 +263,81 @@
   color: var(--text-dim);
   font-family: 'SF Mono', Consolas, monospace;
 }
+
+/* Prompt sections editor */
+.settings-row--block {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+.settings-prompt-sections {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.settings-prompt-section {
+  background: var(--surface0);
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-prompt-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.settings-prompt-section-title {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 2px 0;
+  outline: none;
+}
+.settings-prompt-section-title::placeholder { color: var(--text-dim); }
+.settings-prompt-section-title:focus { border-bottom-color: var(--accent); }
+.settings-prompt-section-remove {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 4px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.settings-prompt-section-remove:hover { color: var(--text); }
+.settings-prompt-section-content {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 12px;
+  font-family: 'SF Mono', Consolas, monospace;
+  line-height: 1.5;
+  resize: none;
+  outline: none;
+  box-sizing: border-box;
+  min-height: 56px;
+}
+.settings-prompt-section-content::placeholder { color: var(--text-dim); }
+.settings-prompt-add {
+  background: none;
+  border: 1px dashed var(--border);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 6px 12px;
+  text-align: left;
+  width: 100%;
+}
+.settings-prompt-add:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}

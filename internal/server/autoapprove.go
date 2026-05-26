@@ -75,8 +75,18 @@ or
 
 {"verdict":"unsafe","reasoning":"<one sentence>","risk_factors":["<reason1>","<reason2>"]}`
 
+// PromptSection is a user-defined extra section appended to the judge prompt.
+// Sent from the frontend settings page; each section is rendered as
+// "## <Title>\n<Content>" below the built-in assessment criteria.
+type PromptSection struct {
+	Title   string `json:"title"`
+	Content string `json:"content"`
+}
+
 // judgePrompt formats the full prompt for the given permission request.
-func judgePrompt(permission string, patterns []string) string {
+// customSections are user-defined rules appended after the built-in
+// assessment criteria so the model reads them before deciding.
+func judgePrompt(permission string, patterns []string, customSections []PromptSection) string {
 	var patternSection string
 	if len(patterns) > 0 {
 		var b strings.Builder
@@ -88,7 +98,28 @@ func judgePrompt(permission string, patterns []string) string {
 		}
 		patternSection = b.String()
 	}
-	return fmt.Sprintf(judgePromptTemplate, permission, patternSection)
+	base := fmt.Sprintf(judgePromptTemplate, permission, patternSection)
+	if len(customSections) == 0 {
+		return base
+	}
+	var b strings.Builder
+	b.WriteString(base)
+	for _, s := range customSections {
+		title := strings.TrimSpace(s.Title)
+		content := strings.TrimSpace(s.Content)
+		if title == "" && content == "" {
+			continue
+		}
+		b.WriteString("\n\n## ")
+		if title != "" {
+			b.WriteString(title)
+		} else {
+			b.WriteString("Additional rule")
+		}
+		b.WriteString("\n")
+		b.WriteString(content)
+	}
+	return b.String()
 }
 
 // PermissionJudge runs an LLM via a running OpenCode instance to
@@ -135,7 +166,7 @@ type JudgeResult struct {
 // always has a Verdict; SessionID is non-empty when a judge session
 // was successfully created (regardless of verdict), giving the caller
 // a link for the user to inspect the reasoning.
-func (j *PermissionJudge) Judge(ctx context.Context, directory, permission string, patterns []string) JudgeResult {
+func (j *PermissionJudge) Judge(ctx context.Context, directory, permission string, patterns []string, customSections []PromptSection) JudgeResult {
 	if j == nil || j.openCodePort == nil {
 		return JudgeResult{Verdict: verdictUnsafe}
 	}
@@ -160,7 +191,7 @@ func (j *PermissionJudge) Judge(ctx context.Context, directory, permission strin
 	// can navigate to it and read the model's reasoning.
 
 	// Send the judge prompt.
-	if err := j.sendPrompt(ctx, port, sessionID, permission, patterns); err != nil {
+	if err := j.sendPrompt(ctx, port, sessionID, permission, patterns, customSections); err != nil {
 		log.WithError(err).Warn("auto-approve judge: failed to send prompt")
 		return JudgeResult{Verdict: verdictUnsafe, SessionID: sessionID}
 	}
@@ -220,10 +251,10 @@ func (j *PermissionJudge) createSession(ctx context.Context, port, directory, ti
 }
 
 // sendPrompt sends the judge prompt to the session.
-func (j *PermissionJudge) sendPrompt(ctx context.Context, port, sessionID, permission string, patterns []string) error {
+func (j *PermissionJudge) sendPrompt(ctx context.Context, port, sessionID, permission string, patterns []string, customSections []PromptSection) error {
 	payload, _ := json.Marshal(map[string]interface{}{
 		"parts": []map[string]string{
-			{"type": "text", "text": judgePrompt(permission, patterns)},
+			{"type": "text", "text": judgePrompt(permission, patterns, customSections)},
 		},
 		// model must be a structured object; a raw string is ignored by OpenCode.
 		"model": map[string]string{

@@ -67,6 +67,7 @@ export function useAutoApprove({
   // Global defaults from settings.
   const autoApproveDefault = useUiStore((s) => s.autoApproveDefault);
   const autoApproveDelayMs = useUiStore((s) => s.autoApproveDelayMs);
+  const promptSections = useUiStore((s) => s.promptSections);
 
   const [enabled, setEnabledState] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -76,8 +77,10 @@ export function useAutoApprove({
   // Keep stable refs so judge callbacks see the latest values.
   const enabledRef = useRef(enabled);
   const delayRef = useRef(autoApproveDelayMs);
+  const promptSectionsRef = useRef(promptSections);
   useEffect(() => { enabledRef.current = enabled; }, [enabled]);
   useEffect(() => { delayRef.current = autoApproveDelayMs; }, [autoApproveDelayMs]);
+  useEffect(() => { promptSectionsRef.current = promptSections; }, [promptSections]);
 
   // Track the permission ID currently being judged to avoid firing the
   // judge twice for the same permission (e.g. on rapid re-renders).
@@ -126,6 +129,7 @@ export function useAutoApprove({
     const targetSessionId = permission.sessionId || sessionId;
     const permissionId = permission.permissionId;
     const delay = delayRef.current;
+    const sections = promptSectionsRef.current;
 
     void (async () => {
       // Human-review window: wait before starting the judge so the
@@ -143,6 +147,7 @@ export function useAutoApprove({
           permissionId,
           permission.permission,
           permission.patterns,
+          sections,
         );
         if (result.judgeSessionId) {
           setJudgeSessionId(result.judgeSessionId);
