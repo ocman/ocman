@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -38,31 +39,21 @@ var portFlight singleflight.Group
 // before the next request triggers a fresh lsof scan.
 const portCacheTTL = 10 * time.Second
 
-// discoverPortsImpl is the indirection used so tests can swap out the
-// expensive lsof execution.
-var (
-	discoverPortsImplMu sync.Mutex
-	discoverPortsImpl   = discoverOpenCodePortsUncached
-)
+// discoverPortsImpl is the seam used so tests can swap out the expensive
+// lsof execution. Stored as an atomic pointer so reads and writes are
+// race-free without a mutex.
+var discoverPortsImpl atomic.Pointer[func() map[string]string]
 
-func getDiscoverPortsImpl() func() map[string]string {
-	discoverPortsImplMu.Lock()
-	defer discoverPortsImplMu.Unlock()
-	return discoverPortsImpl
+func init() {
+	fn := func() map[string]string { return discoverOpenCodePortsUncached() }
+	discoverPortsImpl.Store(&fn)
 }
 
 // setDiscoverPortsImplForTests installs fn as the seam and returns a
 // restore func that re-installs the previous value.
 func setDiscoverPortsImplForTests(fn func() map[string]string) func() {
-	discoverPortsImplMu.Lock()
-	prev := discoverPortsImpl
-	discoverPortsImpl = fn
-	discoverPortsImplMu.Unlock()
-	return func() {
-		discoverPortsImplMu.Lock()
-		discoverPortsImpl = prev
-		discoverPortsImplMu.Unlock()
-	}
+	prev := discoverPortsImpl.Swap(&fn)
+	return func() { discoverPortsImpl.Store(prev) }
 }
 
 // resetPortCacheForTests clears the cache so each test starts with a cold path.
@@ -85,7 +76,7 @@ func discoverOpenCodePorts() map[string]string {
 		if cached, ok := readCachedPorts(); ok {
 			return cached, nil
 		}
-		result := getDiscoverPortsImpl()()
+		result := (*discoverPortsImpl.Load())()
 		portCache.mu.Lock()
 		portCache.ports = result
 		portCache.updated = time.Now()
