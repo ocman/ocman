@@ -151,31 +151,31 @@ describe('reduceSessionView — load action', () => {
     expect(decode(reloaded.parts[0]).text).toBe('authoritative');
   });
 
-  it('does not reconcile messages across different sessions', () => {
-    // Reconcile is intentionally sticky for the same session because
-    // OpenCode can emit SSE before its SQLite snapshot catches up.
-    // A route change is a different contract: preserving in-memory
-    // messages from the previous session leaks stale streamed content
-    // into the target session until the next refresh.
+  it('drops a reconcile load whose sessionId does not match the current state', () => {
+    // A stale doFetch from a previous navigation can resolve after the user
+    // has already switched to a new session. Applying it wholesale would paint
+    // the old session's messages into the current view and, via the cache-mirror
+    // effect, corrupt the cache for the current session. The correct behaviour
+    // is to return the current state unchanged and discard the stale incoming data.
     const before = makeView({
+      session: makeSession({ id: 'sess-new' }),
+      sessionId: 'sess-new',
+      messages: [{ ...makeMessage('m-new', 2), sessionId: 'sess-new' }],
+      parts: [{ ...makeTextPart('p-new', 'm-new', 'current content'), sessionId: 'sess-new' }],
+    });
+    const stale = makeView({
       session: makeSession({ id: 'sess-old' }),
       sessionId: 'sess-old',
       messages: [{ ...makeMessage('m-old', 1), sessionId: 'sess-old' }],
       parts: [{ ...makeTextPart('p-old', 'm-old', 'stale stream'), sessionId: 'sess-old' }],
     });
-    const incoming = makeView({
-      session: makeSession({ id: 'sess-new', title: 'New session' }),
-      sessionId: 'sess-new',
-      messages: [{ ...makeMessage('m-new', 2), sessionId: 'sess-new' }],
-      parts: [{ ...makeTextPart('p-new', 'm-new', 'fresh target'), sessionId: 'sess-new' }],
-    });
 
-    const after = reduceSessionView(before, { type: 'load', view: incoming, mode: 'reconcile' });
+    const after = reduceSessionView(before, { type: 'load', view: stale, mode: 'reconcile' });
 
+    // State must be unchanged — the stale load is dropped entirely.
+    expect(after).toBe(before);
     expect(after.sessionId).toBe('sess-new');
-    expect(after.session?.id).toBe('sess-new');
     expect(after.messages.map((m) => m.id)).toEqual(['m-new']);
-    expect(after.parts.map((p) => p.id)).toEqual(['p-new']);
   });
 });
 

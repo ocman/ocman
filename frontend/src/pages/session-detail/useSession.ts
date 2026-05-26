@@ -313,8 +313,16 @@ export function useSession(
   // Cache mirror — write the latest view into the per-session cache
   // so revisits render instantly. No-ops when the session isn't
   // cached. Only runs after the first successful load.
+  //
+  // Guard: only write when the reducer's sessionId matches the prop.
+  // After a navigation the prop (sessionId) changes synchronously, but
+  // the reducer state still reflects the old session until the dispatch
+  // inside the main useEffect fires. Without this guard the cache mirror
+  // would run with sessionId=B / view.messages=A_messages, corrupting
+  // session B's cache entry with session A's content.
   useEffect(() => {
     if (!sessionId || !view.session) return;
+    if (view.sessionId !== sessionId) return;
     const { defaultAgent, defaultModel, ...sessionForCache } = view.session;
     void defaultAgent;
     void defaultModel;
@@ -325,7 +333,7 @@ export function useSession(
       parts: view.parts,
       totalMessages: Math.max(prev.totalMessages ?? 0, totalMessages),
     }));
-  }, [sessionId, view.session, view.messages, view.parts, totalMessages, updateCachedSession]);
+  }, [sessionId, view.sessionId, view.session, view.messages, view.parts, totalMessages, updateCachedSession]);
 
   useEffect(() => {
     if (!sessionId) {

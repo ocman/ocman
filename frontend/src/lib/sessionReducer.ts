@@ -373,11 +373,13 @@ function inferStatusFromMessage(msg: Message): SessionMetadata['status'] | null 
  */
 function reconcileLoad(state: SessionView, incoming: SessionView): SessionView {
   if (state.sessionId !== incoming.sessionId) {
-    return {
-      ...incoming,
-      _deltaOwnedFields: new Map(),
-      _refetchRequested: false,
-    };
+    // The incoming data is for a different session than the one currently
+    // displayed. This happens when a doFetch from a previous navigation
+    // resolves after the user has already switched sessions. Applying it
+    // wholesale would paint the wrong session's messages into the current
+    // view and, via the cache-mirror effect, corrupt the cache for the
+    // current session. Drop the stale data entirely.
+    return state;
   }
 
   // Messages: server's data wins per-id; in-memory-only entries

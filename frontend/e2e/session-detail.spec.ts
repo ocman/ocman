@@ -878,3 +878,108 @@ test('long-running tool call renders partial output before completion', async ({
   await expect(page.getByText('tool-second-3')).toBeVisible({ timeout: 2_000 });
   await expect(page.getByText('tool-second-5')).toHaveCount(0, { timeout: 100 });
 });
+
+test('rapid session switching always shows the correct session thread', async ({ mockedPage: page }) => {
+  // Regression: reconcileLoad replaced state wholesale when incoming.sessionId
+  // didn't match state.sessionId. A stale doFetch for session A could resolve
+  // while the view showed session B, pushing A's session+messages into the
+  // reducer. The cache mirror then wrote A's data into B's cache entry. On the
+  // next visit to B, getCachedSession(B) returned A's messages, corrupting the
+  // thread permanently.
+  //
+  // Fix: reconcileLoad must return `state` unchanged (drop the incoming data)
+  // when session IDs don't match instead of replacing wholesale.
+  const SESSION_A = MOCK_SESSION.id;
+  const SESSION_B = MOCK_SESSION_2.id;
+
+  const msgA = {
+    id: 'rapid-msg-a',
+    sessionId: SESSION_A,
+    timeCreated: Date.now() - 1000,
+    timeUpdated: Date.now() - 1000,
+    data: { role: 'assistant', finish: 'end_turn' },
+  };
+  const partA = {
+    id: 'rapid-part-a',
+    messageId: msgA.id,
+    sessionId: SESSION_A,
+    timeCreated: Date.now() - 1000,
+    timeUpdated: Date.now() - 1000,
+    data: { type: 'text', text: 'Message unique to session A' },
+  };
+
+  const sessionA = mockSessionWithLiveConnection();
+  const sessionB = { ...MOCK_SESSION_2, liveConnection: false };
+
+  // Session A: delayed so its fetch is still in-flight when the user
+  // clicks to B. This makes doFetch_A resolve after B's initial dispatch,
+  // triggering the stale-dispatch race.
+  await page.route(new RegExp(`/api/session/${SESSION_A}(\\?|$)`), async (route) => {
+    await new Promise((r) => setTimeout(r, 400));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        session: sessionA,
+        messages: [msgA],
+        parts: [partA],
+        totalMessages: 1,
+        defaultAgent: 'build',
+        defaultModel: '',
+      }),
+    });
+  });
+
+  // Session B: fast, no messages.
+  await page.route(new RegExp(`/api/session/${SESSION_B}(\\?|$)`), (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        session: sessionB,
+        messages: [],
+        parts: [],
+        totalMessages: 0,
+        defaultAgent: '',
+        defaultModel: '',
+      }),
+    }),
+  );
+
+  await page.route(new RegExp(`/api/session/${SESSION_A}/events`), (route) => route.abort());
+  await page.route(new RegExp(`/api/session/${SESSION_B}/events`), (route) => route.abort());
+
+  await page.route('/api/sessions*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([sessionA, sessionB]),
+    }),
+  );
+
+  // Open A and wait for its message (confirms A's fetch completed and cached).
+  await page.goto(`/session/${SESSION_A}`);
+  await expect(page.getByTestId('session-layout')).toBeVisible();
+  await expect(page.locator('.oc-msg-assistant', { hasText: 'Message unique to session A' })).toBeVisible({ timeout: 5_000 });
+
+  // Switch to B — A's next fetch will be delayed 400 ms.
+  await page.locator('.session-sidebar-item', { hasText: MOCK_SESSION_2.title }).click();
+  await expect(page.getByRole('banner')).toContainText(MOCK_SESSION_2.title, { timeout: 1_000 });
+
+  // Wait for A's delayed fetch to resolve while we're on B. The stale
+  // doFetch_A resolves here; without the fix it corrupts B's reducer state
+  // and then B's cache via the cache-mirror effect.
+  await page.waitForTimeout(600);
+
+  // A's messages must NOT bleed into B's thread.
+  await expect(page.locator('.oc-msg-assistant', { hasText: 'Message unique to session A' })).toHaveCount(0);
+
+  // Navigate back to A and then return to B. If B's cache was corrupted
+  // by the stale dispatch, this second visit to B shows A's messages.
+  await page.locator('.session-sidebar-item', { hasText: MOCK_SESSION.title }).click();
+  await expect(page.locator('.oc-msg-assistant', { hasText: 'Message unique to session A' })).toBeVisible({ timeout: 3_000 });
+  await page.locator('.session-sidebar-item', { hasText: MOCK_SESSION_2.title }).click();
+  await expect(page.getByRole('banner')).toContainText(MOCK_SESSION_2.title, { timeout: 1_000 });
+  // This is the final assertion: B must show its empty thread, not A's messages.
+  await expect(page.locator('.oc-msg-assistant', { hasText: 'Message unique to session A' })).toHaveCount(0, { timeout: 2_000 });
+});
