@@ -30,10 +30,11 @@
   box-sizing: border-box;
 }
 
-.gh-preview:hover {
+.gh-preview:hover,
+.oc-md .gh-preview:hover {
   background: var(--surface0);
-  text-decoration: none;
   color: var(--text);
+  text-decoration: none;
 }
 
 /* State colours for left border */
@@ -69,6 +70,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-decoration: none;
 }
 
 .gh-preview__meta {
