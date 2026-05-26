@@ -236,6 +236,14 @@ async function installDefaultRoutes(page: Page) {
   await page.route('/api/whisper/status', (route: Route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ available: false }) }),
   );
+
+  // Tmux — not available in CI / test environment
+  await page.route('/api/tmux/sessions', (route: Route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ available: false, sessions: [] }) }),
+  );
+  await page.route('/api/tmux/clients', (route: Route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ available: false, clients: [] }) }),
+  );
 }
 
 // ---------------------------------------------------------------------------
