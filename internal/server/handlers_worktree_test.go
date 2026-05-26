@@ -55,12 +55,23 @@ func TestCapabilities_WorktreeSessions_FalseWithoutOpenCode(t *testing.T) {
 // commit on `main`. Mirrors the helper in internal/worktree/ but lives
 // here so handler tests don't depend on internal/worktree's package
 // internals.
+//
+// The repo is nested one level inside the temp dir (as "repo/") so
+// that the `.worktrees` directory produced by PathFor lands inside the
+// test's own isolated temp root and never collides with concurrent
+// tests in other packages.
 func initWorktreeTestRepo(t *testing.T) string {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")
 	}
-	dir := t.TempDir()
+	// Nest the repo under "repo/" so .worktrees/ stays inside this test's
+	// unique temp root and never collides with other concurrent tests.
+	root := t.TempDir()
+	dir := filepath.Join(root, "repo")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir repo: %v", err)
+	}
 	// Resolve symlinks (macOS /var → /private/var) so later string
 	// comparisons against `git rev-parse --show-toplevel` match.
 	if real, err := filepath.EvalSymlinks(dir); err == nil {
@@ -70,7 +81,10 @@ func initWorktreeTestRepo(t *testing.T) string {
 		t.Helper()
 		cmd := exec.Command("git", args...)
 		cmd.Dir = dir
-		cmd.Env = append(os.Environ(),
+		// Strip git context variables so pre-commit hooks (or other
+		// git tooling that sets GIT_DIR etc.) don't redirect these
+		// commands into the wrong repository.
+		cmd.Env = append(cleanGitEnvForTest(),
 			"GIT_AUTHOR_NAME=test",
 			"GIT_AUTHOR_EMAIL=test@example.com",
 			"GIT_COMMITTER_NAME=test",

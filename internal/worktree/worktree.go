@@ -25,6 +25,10 @@ var (
 	// ErrNotARepo indicates the input directory isn't inside a git
 	// repository.
 	ErrNotARepo = errors.New("directory is not a git repository")
+
+	// ErrIndexLocked indicates that a concurrent git process holds
+	// the index lock. The caller should retry after a short delay.
+	ErrIndexLocked = errors.New("git index is locked by another process")
 )
 
 // PathFor returns the deterministic on-disk path for a worktree:

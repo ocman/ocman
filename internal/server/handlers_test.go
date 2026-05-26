@@ -23,12 +23,37 @@ import (
 
 func execLookPath(name string) (string, error) { return exec.LookPath(name) }
 
+// cleanGitEnvForTest returns os.Environ() with git context variables
+// stripped. Pre-commit hooks inject GIT_DIR, GIT_INDEX_FILE, etc. which
+// would redirect git subprocesses into the wrong repository.
+func cleanGitEnvForTest() []string {
+	env := os.Environ()
+	out := env[:0]
+	for _, e := range env {
+		key := e
+		if idx := strings.IndexByte(e, '='); idx >= 0 {
+			key = e[:idx]
+		}
+		switch key {
+		case "GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE",
+			"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+			"GIT_COMMON_DIR", "GIT_CEILING_DIRECTORIES":
+			// skip
+		default:
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 func runGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
-	// Suppress the "hint:" output from modern git about default branch naming etc.
-	cmd.Env = append(os.Environ(),
+	// Suppress "hint:" output from modern git. Strip git context variables
+	// so pre-commit (or other tooling that sets GIT_DIR etc.) doesn't
+	// redirect these commands into the wrong repository.
+	cmd.Env = append(cleanGitEnvForTest(),
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_CONFIG_GLOBAL=/dev/null",
 		"GIT_CONFIG_SYSTEM=/dev/null",

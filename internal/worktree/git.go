@@ -2,6 +2,7 @@ package worktree
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,6 +15,54 @@ import (
 // touch the filesystem and may be slower than a plain rev-parse, so
 // give them more headroom than gitinfo's 2s ceiling.
 const gitCommandTimeout = 15 * time.Second
+
+// gitContextVars lists environment variables that override git's
+// repository location. We strip these from every subprocess so that
+// callers running inside a git hook (e.g. pre-commit, which sets
+// GIT_DIR / GIT_INDEX_FILE) don't redirect our commands into the
+// wrong repository.
+var gitContextVars = map[string]bool{
+	"GIT_DIR":                           true,
+	"GIT_INDEX_FILE":                    true,
+	"GIT_WORK_TREE":                     true,
+	"GIT_OBJECT_DIRECTORY":              true,
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES": true,
+	"GIT_COMMON_DIR":                    true,
+	"GIT_CEILING_DIRECTORIES":           true,
+}
+
+// gitEnv returns os.Environ() with git context variables removed.
+func gitEnv() []string {
+	env := os.Environ()
+	out := make([]string, 0, len(env))
+	for _, e := range env {
+		key := e
+		if idx := strings.IndexByte(e, '='); idx >= 0 {
+			key = e[:idx]
+		}
+		if !gitContextVars[key] {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// gitCmd constructs a git command with a clean environment.
+func gitCmd(ctx context.Context, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Env = gitEnv()
+	return cmd
+}
+
+// addRetryMax is the number of times Create will retry a `git worktree
+// add` that fails due to a git index lock held by a concurrent git
+// process. The back-off starts at addRetryDelay and doubles each
+// attempt (capped at addRetryDelayMax).
+const (
+	addRetryMax      = 5
+	addRetryDelay    = 50 * time.Millisecond
+	addRetryDelayMax = 500 * time.Millisecond
+)
 
 // Entry is one row from `git worktree list --porcelain`.
 type Entry struct {
@@ -57,7 +106,7 @@ type CreateResult struct {
 func List(ctx context.Context, repoRoot string) ([]Entry, error) {
 	cctx, cancel := context.WithTimeout(ctx, gitCommandTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(cctx, "git", "-C", repoRoot, "worktree", "list", "--porcelain")
+	cmd := gitCmd(cctx, "-C", repoRoot, "worktree", "list", "--porcelain")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("git worktree list: %w", err)
@@ -201,20 +250,39 @@ func Create(ctx context.Context, req CreateRequest) (*CreateResult, error) {
 		args = append(args, target, req.Branch)
 	}
 
-	cctx, cancel := context.WithTimeout(ctx, gitCommandTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(cctx, "git", args...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, classifyAddError(err, string(out))
-	}
+	delay := addRetryDelay
+	var addErr error
+	for attempt := 0; attempt <= addRetryMax; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(delay):
+			}
+			if delay*2 <= addRetryDelayMax {
+				delay *= 2
+			} else {
+				delay = addRetryDelayMax
+			}
+		}
 
-	return &CreateResult{
-		Path:          target,
-		Branch:        req.Branch,
-		Reused:        false,
-		BranchExisted: branchExisted,
-	}, nil
+		cctx, cancel := context.WithTimeout(ctx, gitCommandTimeout)
+		out, err := gitCmd(cctx, args...).CombinedOutput()
+		cancel()
+		if err == nil {
+			return &CreateResult{
+				Path:          target,
+				Branch:        req.Branch,
+				Reused:        false,
+				BranchExisted: branchExisted,
+			}, nil
+		}
+		addErr = classifyAddError(err, string(out))
+		if !errors.Is(addErr, ErrIndexLocked) {
+			return nil, addErr
+		}
+	}
+	return nil, addErr
 }
 
 // branchExists reports whether a local branch named `branch` exists
@@ -224,9 +292,8 @@ func Create(ctx context.Context, req CreateRequest) (*CreateResult, error) {
 func branchExists(ctx context.Context, repoRoot, branch string) bool {
 	cctx, cancel := context.WithTimeout(ctx, gitCommandTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(cctx, "git", "-C", repoRoot,
-		"show-ref", "--verify", "--quiet", "refs/heads/"+branch)
-	return cmd.Run() == nil
+	return gitCmd(cctx, "-C", repoRoot,
+		"show-ref", "--verify", "--quiet", "refs/heads/"+branch).Run() == nil
 }
 
 // classifyAddError translates a `git worktree add` failure into one of
@@ -240,6 +307,9 @@ func classifyAddError(err error, output string) error {
 		return fmt.Errorf("%w: %s", ErrBranchCheckedOutElsewhere, strings.TrimSpace(output))
 	case strings.Contains(out, "already exists"):
 		return fmt.Errorf("%w: %s", ErrPathConflict, strings.TrimSpace(output))
+	case strings.Contains(out, "index.lock"),
+		strings.Contains(out, "index file open failed"):
+		return fmt.Errorf("%w: %s", ErrIndexLocked, strings.TrimSpace(output))
 	default:
 		return fmt.Errorf("git worktree add: %w: %s", err, strings.TrimSpace(output))
 	}
@@ -278,8 +348,7 @@ func runGitOutput(ctx context.Context, repoRoot string, args ...string) string {
 	cctx, cancel := context.WithTimeout(ctx, gitCommandTimeout)
 	defer cancel()
 	full := append([]string{"-C", repoRoot}, args...)
-	cmd := exec.CommandContext(cctx, "git", full...)
-	out, err := cmd.Output()
+	out, err := gitCmd(cctx, full...).Output()
 	if err != nil {
 		return ""
 	}

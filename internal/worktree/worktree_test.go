@@ -9,6 +9,30 @@ import (
 	"testing"
 )
 
+// cleanGitEnv returns os.Environ() with git context variables stripped.
+// Pre-commit hooks (and other git tooling) inject GIT_DIR, GIT_INDEX_FILE,
+// GIT_WORK_TREE, etc. which would cause git commands in test subprocesses
+// to operate on the wrong repository.
+func cleanGitEnv() []string {
+	env := os.Environ()
+	out := env[:0]
+	for _, e := range env {
+		key := e
+		if idx := strings.IndexByte(e, '='); idx >= 0 {
+			key = e[:idx]
+		}
+		switch key {
+		case "GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE",
+			"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+			"GIT_COMMON_DIR", "GIT_CEILING_DIRECTORIES":
+			// skip
+		default:
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 func TestPathFor(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -56,12 +80,25 @@ func TestPathFor(t *testing.T) {
 // initTestRepo creates a fresh git repo in a temp directory with one
 // commit on `main` and returns the absolute path. The returned dir is
 // cleaned up by t.TempDir.
+//
+// The repo is nested one level inside the temp dir (as "repo/") so
+// that the `.worktrees` directory produced by PathFor lands inside the
+// test's own isolated temp root rather than the shared OS temp
+// directory. Without this nesting, concurrent test packages that all
+// use branch names like "feature/login" can collide on the same
+// `.worktrees/001/feature-login` path.
 func initTestRepo(t *testing.T) string {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")
 	}
-	dir := t.TempDir()
+	// Nest the repo under "repo/" so .worktrees/ stays inside this test's
+	// unique temp root and never collides with other concurrent tests.
+	root := t.TempDir()
+	dir := filepath.Join(root, "repo")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir repo: %v", err)
+	}
 	// Resolve symlinks (macOS /var → /private/var) so later string
 	// comparisons against `git rev-parse --show-toplevel` match.
 	if real, err := filepath.EvalSymlinks(dir); err == nil {
@@ -72,8 +109,10 @@ func initTestRepo(t *testing.T) string {
 		t.Helper()
 		cmd := exec.Command("git", args...)
 		cmd.Dir = dir
-		// Quiet user.email/name prompts on CI.
-		cmd.Env = append(os.Environ(),
+		// Quiet user.email/name prompts on CI. Strip git context
+		// variables so hooks (e.g. pre-commit) don't redirect git
+		// commands into the wrong repository.
+		cmd.Env = append(cleanGitEnv(),
 			"GIT_AUTHOR_NAME=test",
 			"GIT_AUTHOR_EMAIL=test@example.com",
 			"GIT_COMMITTER_NAME=test",

@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: make-test
+        name: make test
+        language: system
+        entry: make test
+        pass_filenames: false
+        always_run: true

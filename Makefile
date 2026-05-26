@@ -1,4 +1,4 @@
-.PHONY: dev dev-backend dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev install-e2e-browsers test-race test-fuzz test-coverage lint lint-backend lint-frontend lint-platform-branching otel-up otel-down otel-logs otel-reset caddy-up caddy-down caddy-cert help
+.PHONY: dev dev-backend dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev install-e2e-browsers test-race test-fuzz test-coverage lint lint-backend lint-frontend lint-platform-branching otel-up otel-down otel-logs otel-reset caddy-up caddy-down caddy-cert install-hooks help
 
 # --- OTel dev defaults ----------------------------------------------------
 #
@@ -425,6 +425,9 @@ caddy-cert: ## Pre-fetch the Tailscale TLS cert (optional; caddy-up does this au
 	@command -v tailscale >/dev/null 2>&1 || { \
 		echo "tailscale not found or not running"; exit 1; }
 	tailscale cert driess-macbook-pro.tail5f13e4.ts.net
+
+install-hooks: ## Install pre-commit hooks (requires pre-commit: pip install pre-commit)
+	pre-commit install
 
 # --- Help ----------------------------------------------------------------
 #

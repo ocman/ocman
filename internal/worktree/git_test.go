@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -181,9 +182,9 @@ func TestCreate_BranchAlreadyCheckedOutElsewhere(t *testing.T) {
 	// to bypass our PathFor.
 	parent := filepath.Dir(repo)
 	otherPath := filepath.Join(parent, "manual-shared")
-	cmd := exec.Command("git", "-C", repo, "worktree", "add", otherPath, "shared")
-	cmd.Env = os.Environ()
-	out, err := cmd.CombinedOutput()
+	addCmd := exec.Command("git", "-C", repo, "worktree", "add", otherPath, "shared")
+	addCmd.Env = cleanGitEnv()
+	out, err := addCmd.CombinedOutput()
 	if err == nil {
 		// Some git versions allow this; in that case the test isn't
 		// applicable and we skip rather than fail.
@@ -199,9 +200,13 @@ func TestCreate_BranchAlreadyCheckedOutElsewhere(t *testing.T) {
 	//
 	// Simulate by manually creating *another* worktree on a new
 	// branch and then pointing Create at it.
-	_ = exec.Command("git", "-C", repo, "branch", "another", "main").Run()
-	if err := exec.Command("git", "-C", repo, "worktree", "add",
-		filepath.Join(parent, "manual-another"), "another").Run(); err != nil {
+	branchCmd := exec.Command("git", "-C", repo, "branch", "another", "main")
+	branchCmd.Env = cleanGitEnv()
+	_ = branchCmd.Run()
+	seedCmd := exec.Command("git", "-C", repo, "worktree", "add",
+		filepath.Join(parent, "manual-another"), "another")
+	seedCmd.Env = cleanGitEnv()
+	if err := seedCmd.Run(); err != nil {
 		t.Fatalf("seed second worktree: %v", err)
 	}
 
@@ -227,7 +232,9 @@ func TestCreate_NewBranchButBranchAlreadyExists(t *testing.T) {
 	// is the case where `git worktree add -b <name>` would refuse
 	// ("fatal: a branch named 'X' already exists"). We expect
 	// Create to detect this and fall back to a plain checkout.
-	if err := exec.Command("git", "-C", repo, "branch", "preexisting", "main").Run(); err != nil {
+	seedBranch := exec.Command("git", "-C", repo, "branch", "preexisting", "main")
+	seedBranch.Env = cleanGitEnv()
+	if err := seedBranch.Run(); err != nil {
 		t.Fatalf("seed branch: %v", err)
 	}
 
@@ -296,5 +303,75 @@ func TestResolveBaseRef_FallsBackToMain(t *testing.T) {
 	got := ResolveBaseRef(context.Background(), t.TempDir())
 	if got != "main" {
 		t.Errorf("ResolveBaseRef on non-repo = %q, want main", got)
+	}
+}
+
+func TestClassifyAddError_IndexLocked(t *testing.T) {
+	// Both lock message patterns must produce ErrIndexLocked.
+	cases := []string{
+		"error: Unable to create '/repo/.git/index.lock': File exists.\nAnother git process seems to be running in this repository",
+		"fatal: .git/index: index file open failed: Not a directory",
+	}
+	for _, msg := range cases {
+		err := classifyAddError(errors.New("exit status 128"), msg)
+		if !errors.Is(err, ErrIndexLocked) {
+			t.Errorf("classifyAddError(%q) = %v, want ErrIndexLocked", msg, err)
+		}
+	}
+}
+
+// TestCreate_ConcurrentSameBranch fires two Create calls for the same
+// branch against the same repo in parallel. One must succeed; the
+// other must either succeed (Reused=true) or fail with a typed error —
+// it must not leave the test binary crashing with an unrecognised git
+// error.
+func TestCreate_ConcurrentSameBranch(t *testing.T) {
+	repo := initTestRepo(t)
+
+	req := CreateRequest{
+		RepoRoot:  repo,
+		Branch:    "feature/concurrent",
+		NewBranch: true,
+		BaseRef:   "main",
+	}
+
+	type result struct {
+		res *CreateResult
+		err error
+	}
+	results := make([]result, 2)
+	var wg sync.WaitGroup
+	for i := range results {
+		i := i
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			res, err := Create(context.Background(), req)
+			results[i] = result{res, err}
+		}()
+	}
+	wg.Wait()
+
+	// At least one must succeed.
+	successes := 0
+	for _, r := range results {
+		if r.err == nil {
+			successes++
+		}
+	}
+	if successes == 0 {
+		t.Fatalf("both concurrent Create calls failed: %v / %v", results[0].err, results[1].err)
+	}
+
+	// Any failure must be a typed error, not a raw git output dump.
+	for _, r := range results {
+		if r.err == nil {
+			continue
+		}
+		if !errors.Is(r.err, ErrIndexLocked) &&
+			!errors.Is(r.err, ErrBranchCheckedOutElsewhere) &&
+			!errors.Is(r.err, ErrPathConflict) {
+			t.Errorf("unexpected error from concurrent Create: %v", r.err)
+		}
 	}
 }
