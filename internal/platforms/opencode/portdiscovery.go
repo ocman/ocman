@@ -2,8 +2,11 @@ package opencode
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -154,6 +157,31 @@ func parseOpenCodeListeners(lsofOut string) []pidPort {
 	return candidates
 }
 
+// pidCwd returns the working directory of the process with the given PID.
+//
+// On Linux it reads /proc/<pid>/cwd via a single readlink(2) syscall,
+// avoiding a second lsof fork entirely. On other platforms (and as a
+// fallback when /proc is unavailable) it shells out to
+// `lsof -a -p <pid> -d cwd -F n`.
+func pidCwd(pid string) (string, bool) {
+	if runtime.GOOS == "linux" {
+		if dir, err := os.Readlink(fmt.Sprintf("/proc/%s/cwd", pid)); err == nil {
+			return dir, true
+		}
+		// /proc unavailable (container without procfs, etc.) — fall through.
+	}
+	cwdOut, err := exec.Command("lsof", "-a", "-p", pid, "-d", "cwd", "-F", "n").Output()
+	if err != nil {
+		return "", false
+	}
+	for _, line := range strings.Split(string(cwdOut), "\n") {
+		if strings.HasPrefix(line, "n/") {
+			return line[1:], true
+		}
+	}
+	return "", false
+}
+
 // discoverOpenCodePortsUncached performs the actual lsof-based discovery.
 // Two-phase: enumerate listening opencode PIDs, then fan-out to resolve cwds.
 func discoverOpenCodePortsUncached() map[string]string {
@@ -188,15 +216,8 @@ func discoverOpenCodePortsUncached() map[string]string {
 		go func() {
 			defer wg.Done()
 			for c := range jobs {
-				cwdOut, err := exec.Command("lsof", "-a", "-p", c.pid, "-d", "cwd", "-F", "n").Output()
-				if err != nil {
-					continue
-				}
-				for _, line := range strings.Split(string(cwdOut), "\n") {
-					if strings.HasPrefix(line, "n/") {
-						results <- cwdResult{dir: line[1:], port: c.port}
-						break
-					}
+				if dir, ok := pidCwd(c.pid); ok {
+					results <- cwdResult{dir: dir, port: c.port}
 				}
 			}
 		}()

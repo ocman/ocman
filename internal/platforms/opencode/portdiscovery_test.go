@@ -1,11 +1,47 @@
 package opencode
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+// TestPidCwd_ProcFsLinux verifies that pidCwd reads the cwd via /proc
+// on Linux without spawning a second lsof process.
+func TestPidCwd_ProcFsLinux(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("proc-based fast path is Linux-only")
+	}
+
+	// Use our own PID; /proc/<self>/cwd is always available.
+	pid := fmt.Sprintf("%d", os.Getpid())
+	dir, ok := pidCwd(pid)
+	if !ok {
+		t.Fatal("pidCwd returned false for own PID on Linux")
+	}
+	// The returned path should be an absolute directory that exists.
+	if !filepath.IsAbs(dir) {
+		t.Errorf("pidCwd returned non-absolute path %q", dir)
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Errorf("pidCwd returned path that does not exist: %v", err)
+	}
+}
+
+// TestPidCwd_InvalidPidReturnsFalse verifies that an invalid/non-existent
+// PID returns (_, false) without panicking on all platforms.
+func TestPidCwd_InvalidPidReturnsFalse(t *testing.T) {
+	// PID "0" is reserved (kernel) and will not have an accessible cwd.
+	dir, ok := pidCwd("0")
+	if ok {
+		t.Errorf("expected pidCwd(\"0\") to fail, got dir=%q", dir)
+	}
+}
 
 // TestParseOpenCodeListeners_MatchesAcrossBinaryRenames pins the
 // COMMAND-column matching used by the lsof scan. OpenCode v1 ships as
