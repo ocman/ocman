@@ -73,6 +73,7 @@ import { useSessionActions } from './useSessionActions';
 import { useSession } from './useSession';
 import { usePendingSend, materializePending } from './usePendingSend';
 import { useAutoApprove } from '../../lib/useAutoApprove';
+import { ThreadSkeleton } from '../../components/Skeleton';
 
 /** Memory bound on the in-memory message list. */
 const MAX_RETAINED_MESSAGES = 200;
@@ -863,10 +864,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
             </div>
           )}
           {loading ? (
-            <div className="oc-loading" data-testid="loading-spinner">
-              <div className="oc-spinner" />
-              Loading conversation...
-            </div>
+            <ThreadSkeleton rows={5} />
           ) : loadError ? (
             <div className="oc-error-banner" data-testid="error-banner" style={{ margin: 24 }}>
               {loadError}

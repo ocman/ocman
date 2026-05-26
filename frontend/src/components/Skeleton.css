@@ -95,3 +95,39 @@
   justify-content: space-between;
   gap: 8px;
 }
+
+/* ── Thread skeleton ───────────────────────────────────────────── */
+
+.oc-skeleton-thread {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: 16px 0;
+  overflow: hidden;
+  gap: 0;
+}
+
+/* Assistant bubble: left-aligned, no background, multi-line */
+.oc-skeleton-bubble {
+  padding: 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* User bubble: right-aligned with card background + accent border */
+.oc-skeleton-bubble--user {
+  align-items: flex-end;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent3);
+  padding: 16px 20px;
+  margin-bottom: 4px;
+}
+
+.oc-skeleton-bubble-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}

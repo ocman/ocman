@@ -390,7 +390,7 @@ test('session detail page renders without crashing', async ({ mockedPage: page }
   await expect(page.getByTestId('session-layout')).toBeVisible();
 });
 
-test('shows loading spinner while session data is loading', async ({ mockedPage: page }) => {
+test('shows loading skeleton while session data is loading', async ({ mockedPage: page }) => {
   let resolveSession!: () => void;
   const sessionReadyP = new Promise<void>((resolve) => { resolveSession = resolve; });
 
@@ -423,7 +423,7 @@ test('shows loading spinner while session data is loading', async ({ mockedPage:
   // response headers arrive, giving the expect a chance to observe the
   // loading spinner before the delayed session response resolves.
   await page.goto(SESSION_URL, { waitUntil: 'commit' });
-  await expect(page.getByTestId('loading-spinner')).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByTestId('thread-skeleton')).toBeVisible({ timeout: 5_000 });
   resolveSession();
 });
 

@@ -179,6 +179,54 @@ export function InfoSidebarSkeleton({ sections = 2, rowsPerSection = 3 }: InfoSi
 }
 
 // ---------------------------------------------------------------------------
+// ThreadSkeleton — placeholder for the conversation thread while a session
+// is loading. Renders alternating user / assistant bubble shapes.
+// ---------------------------------------------------------------------------
+
+interface ThreadSkeletonProps {
+  rows?: number;
+}
+
+export function ThreadSkeleton({ rows = 4 }: ThreadSkeletonProps) {
+  // Alternate between user (right-aligned, narrower) and assistant
+  // (left-aligned, wider with a multi-line body) bubbles.
+  const bubbles = Array.from({ length: rows }, (_, i) => ({
+    isUser: i % 2 === 0,
+    lines: i % 2 === 0 ? 1 : 2 + (i % 3),
+  }));
+  return (
+    <div
+      className="oc-skeleton-thread"
+      aria-busy="true"
+      aria-label="Loading conversation"
+      data-testid="thread-skeleton"
+    >
+      {bubbles.map((b, i) => (
+        <div
+          key={i}
+          className={`oc-skeleton-bubble${b.isUser ? ' oc-skeleton-bubble--user' : ''}`}
+        >
+          <div className="oc-skeleton-bubble-body">
+            {Array.from({ length: b.lines }, (_, li) => (
+              <Skeleton
+                key={li}
+                className="oc-skeleton-line"
+                style={{
+                  width: b.isUser
+                    ? `${50 + (i % 3) * 10}%`
+                    : `${65 + (li % 3) * 10}%`,
+                  ...(li < b.lines - 1 ? {} : { width: b.isUser ? '40%' : '45%' }),
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // SessionSidebarListSkeleton — placeholder rows for the left session-list
 // sidebar in SessionDetail.
 // ---------------------------------------------------------------------------
