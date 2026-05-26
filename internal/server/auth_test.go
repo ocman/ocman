@@ -624,12 +624,14 @@ func TestLoginLimiter_WindowExpiry(t *testing.T) {
 	}
 }
 
-// TestLoginLimiter_EmptyIPAlwaysAllowed guards the empty-string fast-path.
-func TestLoginLimiter_EmptyIPAlwaysAllowed(t *testing.T) {
+// TestLoginLimiter_EmptyIPAlwaysDenied guards that an unknown/empty IP is
+// never allowed through the rate limiter — it should be treated as blocked,
+// not as a free pass that bypasses rate limiting entirely.
+func TestLoginLimiter_EmptyIPAlwaysDenied(t *testing.T) {
 	var l loginLimiter
 	for i := 0; i < loginMaxAttempts+10; i++ {
-		if !l.allow("") {
-			t.Fatalf("empty IP must always be allowed (attempt %d)", i)
+		if l.allow("") {
+			t.Fatalf("empty IP must always be denied (attempt %d)", i)
 		}
 	}
 }

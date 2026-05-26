@@ -337,7 +337,7 @@ const loginLimiterGCThreshold = 1024
 
 func (l *loginLimiter) allow(ip string) bool {
 	if ip == "" {
-		return true
+		return false
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
