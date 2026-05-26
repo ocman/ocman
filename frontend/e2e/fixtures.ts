@@ -119,6 +119,10 @@ async function installDefaultRoutes(page: Page) {
               modelCatalog: true,
               slashCommands: true,
               liveConnectionHint: '',
+              autoApprove: false,
+              shellExec: false,
+              fileChanges: false,
+              sessionInfo: false,
             },
           },
         ],
@@ -197,6 +201,9 @@ async function installDefaultRoutes(page: Page) {
     if (url.includes('/questions')) {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
     }
+    if (url.includes('/auto-approve')) {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ enabled: false, overridden: false }) });
+    }
     // Full session detail — must match the SessionDetail interface:
     // { session: Session, messages: Message[], parts: Part[], totalMessages?, defaultAgent?, defaultModel? }
     // Determine which mock session to return based on the session ID in the URL.
@@ -260,6 +267,13 @@ export function sseEvent(payload: { type: string; properties?: Record<string, un
  * events immediately when the EventSource connects, then keeps the
  * connection open (sends no further data).
  *
+ * The first SSE connection receives all events. Any subsequent reconnect
+ * attempts are aborted so the browser's EventSource does not fire `onopen`
+ * again. Without this guard, useSession's `onopen` handler calls
+ * doFetch('reconcile') on reconnect, which calls viewFromDetail — always
+ * setting pendingPermission/pendingQuestion to null — wiping any in-memory
+ * prompt state that was set by the initial SSE events.
+ *
  * Usage:
  *   await mockSse(page, 'sess-abc123', [
  *     sseEvent({ type: 'session.status', properties: { status: 'busy' } }),
@@ -270,9 +284,17 @@ export async function mockSse(
   sessionId: string,
   events: string[],
 ): Promise<void> {
+  let hasServed = false;
   await page.route(
     new RegExp(`/api/session/${sessionId}/events`),
     async (route) => {
+      if (hasServed) {
+        // Abort reconnect attempts to prevent useSession from running
+        // doFetch('reconcile'), which would clear SSE-derived prompt state.
+        await route.abort();
+        return;
+      }
+      hasServed = true;
       await route.fulfill({
         status: 200,
         contentType: 'text/event-stream',
@@ -350,6 +372,10 @@ export function makeCapabilitiesWithPort() {
           modelCatalog: true,
           slashCommands: true,
           liveConnectionHint: '',
+          autoApprove: false,
+          shellExec: false,
+          fileChanges: false,
+          sessionInfo: false,
         },
       },
     ],

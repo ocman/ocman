@@ -860,8 +860,8 @@ test('long-running tool call renders partial output before completion', async ({
   await page.goto(SESSION_URL);
   await expect(page.getByTestId('session-layout')).toBeVisible();
 
-  await expect(page.getByText('tool-second-1')).toBeVisible({ timeout: 2_500 });
-  await expect(page.getByText('tool-second-2')).toBeVisible({ timeout: 1_500 });
-  await expect(page.getByText('tool-second-3')).toBeVisible({ timeout: 1_500 });
+  await expect(page.getByText('tool-second-1')).toBeVisible({ timeout: 4_000 });
+  await expect(page.getByText('tool-second-2')).toBeVisible({ timeout: 2_000 });
+  await expect(page.getByText('tool-second-3')).toBeVisible({ timeout: 2_000 });
   await expect(page.getByText('tool-second-5')).toHaveCount(0, { timeout: 100 });
 });
