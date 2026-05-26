@@ -30,6 +30,7 @@ import {
 } from '../../lib/sessionReducer';
 import { computeReconnectDelay } from './sseBackoff';
 import { truncateSseData } from '../../lib/sseHelpers';
+import { remoteLog } from '../../lib/remoteLog';
 
 /** Live-pipeline status surfaced to the page. */
 export type UseSessionStatus = 'loading' | 'live' | 'reconnecting' | 'error';
@@ -713,7 +714,7 @@ export function useSession(
       if (err instanceof DOMException && err.name === 'AbortError') return;
       // Surface but don't clobber loadError — the head load is more
       // important.
-      console.error('loadMore failed', err);
+      remoteLog.error('loadMore failed', err);
     } finally {
       setLoadingMore(false);
     }

@@ -487,7 +487,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
         patchRecentSession(sessionSeenId, { seen: true });
         recheckFaviconNotify();
       })
-      .catch((err) => console.error('Failed to mark session seen', err));
+      .catch((err) => remoteLog.error('Failed to mark session seen', err));
   }, [markSessionSeen, sessionSeenId, sessionSeenPlatform, sessionSeenUpdated, patchRecentSession, patchSession]);
 
   // Restore pending question from sessionStorage when navigating
@@ -547,7 +547,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
         navigateToSession(res.id);
       }
     } catch (e) {
-      console.error('Failed to create session', e);
+      remoteLog.error('Failed to create session', e);
       setShowCreateSessionErrorToast(true);
     }
   }, [createSession, launchOpencodeInTmux, tmux.available, navigateToSession, seedNewSession, session?.platform]);
@@ -568,7 +568,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
       await api.compactSession(session.id, providerID, modelID);
       if (agentBeforeCompact) setSelectedAgent(agentBeforeCompact);
     } catch (e) {
-      console.error('Failed to compact session', e);
+      remoteLog.error('Failed to compact session', e);
     }
   }, [activeAgent, activeModel, caps.compact, portAvailable, selectedAgent, selectedModel, session, setSelectedAgent]);
 

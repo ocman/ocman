@@ -10,6 +10,7 @@ import { filterVisibleSessions } from '../lib/sessionVisibility';
 import { SessionTableSkeleton } from './Skeleton';
 import { projectRootForDirectory } from '../lib/worktrees';
 import { rollupGroupStatus } from '../lib/sidebarHelpers';
+import { remoteLog } from '../lib/remoteLog';
 
 export function ShortPath({ path }: { path: string }) {
   const parts = (path || '').split('/').filter(Boolean);
@@ -101,7 +102,7 @@ export function GroupedSessionTable({
       await archiveSession(session.platform, session.id, session.timeUpdated, true);
       setLocallyArchivedSessionIds(prev => new Set(prev).add(session.id));
     } catch (err) {
-      console.error('Failed to archive session', err);
+      remoteLog.error('Failed to archive session', err);
     } finally {
       setArchivingSessionIds(prev => {
         const next = new Set(prev);
@@ -255,7 +256,7 @@ export function SessionTable({ sessions, showProject, loading, includeArchived }
       await archiveSession(session.platform, session.id, session.timeUpdated, true);
       setLocallyArchivedSessionIds(prev => new Set(prev).add(session.id));
     } catch (err) {
-      console.error('Failed to archive session', err);
+      remoteLog.error('Failed to archive session', err);
     } finally {
       setArchivingSessionIds(prev => {
         const next = new Set(prev);

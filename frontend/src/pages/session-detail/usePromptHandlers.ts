@@ -5,6 +5,7 @@ import type { PlatformCapabilities } from '../../lib/api';
 import type { PendingPermission } from '../../lib/sseHelpers';
 import type { PendingQuestion } from '../../components/session/QuestionPrompt';
 import { notifyPromptDismissed } from '../../lib/useToastNotify';
+import { remoteLog } from '../../lib/remoteLog';
 
 /** Page-side callback fired after a prompt has been answered.
  *  Routes through the session reducer's `clearPrompt` action so the
@@ -142,7 +143,7 @@ export function usePromptHandlers({
       clearPendingQuestion(session.id);
       notifyPromptDismissed(session.id);
     } catch (e) {
-      console.error('Failed to respond to question', e);
+      remoteLog.error('Failed to respond to question', e);
       setQuestionError(e instanceof Error ? e.message : 'Failed to submit answer');
     } finally {
       setAnsweringQuestion(false);
@@ -159,7 +160,7 @@ export function usePromptHandlers({
       clearPendingQuestion(session.id);
       notifyPromptDismissed(session.id);
     } catch (e) {
-      console.error('Failed to dismiss question', e);
+      remoteLog.error('Failed to dismiss question', e);
     } finally {
       setAnsweringQuestion(false);
     }

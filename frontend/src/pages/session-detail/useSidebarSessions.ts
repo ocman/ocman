@@ -5,6 +5,7 @@ import { useApiStore } from '../../lib/apiStore';
 import { filterVisibleSessions } from '../../lib/sessionVisibility';
 import { computeSidebarHash } from '../../lib/sidebarHelpers';
 import { projectRootForDirectory } from '../../lib/worktrees';
+import { remoteLog } from '../../lib/remoteLog';
 
 const RECENT_SESSIONS_LIMIT = 15;
 const SIDEBAR_RECENT_HOURS = 72;
@@ -173,7 +174,7 @@ export function useSidebarSessions({
       if (refreshId !== null) return;
       refreshId = window.setInterval(() => {
         loadRecentSessions(abortSignalRef.current?.signal)
-          .catch((err) => console.error('Failed to refresh recent sessions', err));
+          .catch((err) => remoteLog.error('Failed to refresh recent sessions', err));
       }, SIDEBAR_REFRESH_MS);
     };
     const stop = () => {
@@ -188,7 +189,7 @@ export function useSidebarSessions({
         // Fire once immediately on re-focus so the user sees fresh
         // data without waiting a full interval, then resume polling.
         loadRecentSessions(abortSignalRef.current?.signal)
-          .catch((err) => console.error('Failed to refresh recent sessions', err));
+          .catch((err) => remoteLog.error('Failed to refresh recent sessions', err));
         start();
       }
     };
@@ -236,7 +237,7 @@ export function useSidebarSessions({
           }
         })
         .catch((err) => {
-          console.error('Failed to archive session', err);
+          remoteLog.error('Failed to archive session', err);
         })
         .finally(() => {
           setArchivingSessionIds((prev) => {
@@ -256,7 +257,7 @@ export function useSidebarSessions({
     // sort settles without waiting for the server.
     patchRecentSession(target.id, { pinned: nextPinned, pinnedAt: nextPinned ? Date.now() : 0 });
     pinSession(target.platform, target.id, nextPinned).catch((err) => {
-      console.error('Failed to pin/unpin session', err);
+      remoteLog.error('Failed to pin/unpin session', err);
       // Revert on failure.
       patchRecentSession(target.id, { pinned: target.pinned, pinnedAt: target.pinnedAt });
     });

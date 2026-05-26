@@ -9,6 +9,7 @@ import { cleanTitle, relativeTime, shortPath } from '../lib/format';
 import type { Session, Project } from '../lib/api';
 import { useTmux } from '../lib/useTmux';
 import { createSessionWithLaunch } from '../lib/createSessionWithLaunch';
+import { remoteLog } from '../lib/remoteLog';
 
 type CommandItem = { kind: 'command'; id: string; label: string; description: string };
 type ScopedItem = { kind: 'scoped'; id: string; label: string; description: string };
@@ -301,7 +302,7 @@ export function CommandPalette() {
             navigate(`/session/${res.id}`);
           }
         })
-        .catch(console.error);
+        .catch((err) => remoteLog.error('Failed to create session', err));
     } else if (item.kind === 'nav') {
       closePalette();
       navigate(item.path);

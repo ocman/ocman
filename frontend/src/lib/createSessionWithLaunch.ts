@@ -22,6 +22,8 @@
  * "Launching opencode…" while the retry loop runs.
  */
 
+import { remoteLog } from './remoteLog';
+
 export type LaunchStatus = 'idle' | 'launching' | 'retrying';
 
 export interface CreateSessionWithLaunchDeps {
@@ -83,7 +85,7 @@ export async function createSessionWithLaunch(
         onStatusChange?.('idle');
         // Fall through to rethrow the original "unreachable" error so
         // the UI's error message still matches what the user requested.
-        console.error('Failed to launch opencode in tmux', launchErr);
+        remoteLog.error('Failed to launch opencode in tmux', launchErr);
         throw err;
       }
     }

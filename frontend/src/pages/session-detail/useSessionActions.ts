@@ -14,6 +14,7 @@ import { createSessionWithLaunch } from '../../lib/createSessionWithLaunch';
 import { useApiStore } from '../../lib/apiStore';
 import { openVSCode } from '../../lib/shortcuts';
 import type { UsePendingSendResult } from './usePendingSend';
+import { remoteLog } from '../../lib/remoteLog';
 
 // Narrowed session shape — only the fields needed by these handlers.
 interface ActionSession {
@@ -144,7 +145,7 @@ export function useSessionActions({
       removeFailedSend(session.id, entryId);
     } catch (e) {
       setAwaitingAssistantResponse(false);
-      console.error('Failed to send message', e);
+      remoteLog.error('Failed to send message', e);
       const msg = e instanceof Error ? e.message : '';
       if (msg.includes('no running OpenCode instance')) {
         // Drop the optimistic bubble — the user wants to launch
@@ -239,7 +240,7 @@ export function useSessionActions({
     try {
       await api.runShell(session.id, command, agent);
     } catch (e) {
-      console.error('Failed to run shell command', e);
+      remoteLog.error('Failed to run shell command', e);
       // Shell errors don't go through the pending slot — they're
       // rare enough that we just log and rely on the platform to
       // surface the error.
@@ -251,7 +252,7 @@ export function useSessionActions({
     try {
       await abortSession(session.id);
     } catch (e) {
-      console.error('Failed to abort session', e);
+      remoteLog.error('Failed to abort session', e);
     }
   }, [abortSession, caps.abort, portAvailable, session]);
 
@@ -270,7 +271,7 @@ export function useSessionActions({
       try {
         await archiveSession(session.platform, session.id, session.timeUpdated, true);
       } catch (e) {
-        console.error('Failed to archive session', e);
+        remoteLog.error('Failed to archive session', e);
         return;
       }
       if (nextSession) {
@@ -313,13 +314,13 @@ export function useSessionActions({
         );
         newId = res.id;
       } catch (e) {
-        console.error('Failed to create session', e);
+        remoteLog.error('Failed to create session', e);
         return;
       }
       try {
         await archiveSession(session.platform, session.id, session.timeUpdated, true);
       } catch (e) {
-        console.error('Failed to archive session', e);
+        remoteLog.error('Failed to archive session', e);
       }
       if (newId) {
         seedNewSession(newId, session.directory, session.platform, clearTitle);
@@ -344,7 +345,7 @@ export function useSessionActions({
           await api.renameSession(session.id, args.trim());
           setShowRenameToast(true);
         } catch (e) {
-          console.error('Failed to rename session', e);
+          remoteLog.error('Failed to rename session', e);
         }
       } else {
         setShowRenameModal(true);
@@ -370,7 +371,7 @@ export function useSessionActions({
         selectedAgent || activeAgent || undefined,
       );
     } catch (e) {
-      console.error('Failed to execute command', e);
+      remoteLog.error('Failed to execute command', e);
       pending.fail(e instanceof Error ? e.message : 'Unknown error');
     }
   }, [activeAgent, activeModel, archiveSession, createSession, launchOpencodeInTmux, tmuxAvailable, seedNewSession, handleCompact, handleNewSession, handleTmuxShortcut, handleVSCodeShortcut, navigate, navigateToSession, openWorktreeForm, portAvailable, recentSessionsRef, selectedAgent, selectedModel, session, setShowRenameModal, setShowRenameToast, pending]);

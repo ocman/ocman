@@ -8,6 +8,7 @@ import { shortPath } from '../lib/format';
 import { openVSCode } from '../lib/shortcuts';
 import { useShortcut } from '../lib/shortcutRegistry';
 import { useSessions } from '../lib/queries';
+import { remoteLog } from '../lib/remoteLog';
 // ProjectDetail is mounted outside DashboardLayout, so we need to pull in
 // Dashboard.css explicitly to get the .oc-time-range / .oc-time-range-btn
 // styles used by the filter bar below.
@@ -83,11 +84,11 @@ export function ProjectDetail() {
   const handleTmuxSwitch = useCallback((anchor?: HTMLElement | null) => {
     if (!matchingTmuxSession) return;
     if (tmux.isLocal) {
-      tmux.switchSession(matchingTmuxSession.name).catch(err => console.error('tmux switch failed', err));
+      tmux.switchSession(matchingTmuxSession.name).catch(err => remoteLog.error('tmux switch failed', err));
       return;
     }
     if (tmux.clients.length === 1) {
-      tmux.switchSession(matchingTmuxSession.name, tmux.clients[0].tty).catch(err => console.error('tmux switch failed', err));
+      tmux.switchSession(matchingTmuxSession.name, tmux.clients[0].tty).catch(err => remoteLog.error('tmux switch failed', err));
       return;
     }
 
@@ -98,7 +99,7 @@ export function ProjectDetail() {
 
   const handleClientSelect = useCallback((clientTTY: string) => {
     if (!pendingTmuxSession) return;
-    tmux.switchSession(pendingTmuxSession, clientTTY).catch(err => console.error('tmux switch failed', err));
+    tmux.switchSession(pendingTmuxSession, clientTTY).catch(err => remoteLog.error('tmux switch failed', err));
     setPendingTmuxSession(null);
   }, [pendingTmuxSession, tmux]);
 

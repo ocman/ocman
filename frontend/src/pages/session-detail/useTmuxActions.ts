@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import type { TmuxState } from '../../lib/useTmux';
 import type { TmuxSession } from '../../lib/api';
+import { remoteLog } from '../../lib/remoteLog';
 
 /**
  * Coordinates of the floating tmux-client picker, in viewport pixels.
@@ -99,13 +100,13 @@ export function useTmuxActions(
   const handleTmuxSwitch = useCallback((e: React.MouseEvent, tmuxSessionName: string) => {
     // Local user: fire directly, server defaults to /dev/ttys000.
     if (tmux.isLocal) {
-      tmux.switchSession(tmuxSessionName).catch((err) => console.error('tmux switch failed', err));
+      tmux.switchSession(tmuxSessionName).catch((err) => remoteLog.error('tmux switch failed', err));
       return;
     }
     // Remote user with single client: route to that client.
     if (tmux.clients.length === 1) {
       tmux.switchSession(tmuxSessionName, tmux.clients[0].tty)
-        .catch((err) => console.error('tmux switch failed', err));
+        .catch((err) => remoteLog.error('tmux switch failed', err));
       return;
     }
     // Remote user with multiple clients: open the picker anchored to
@@ -118,7 +119,7 @@ export function useTmuxActions(
   const handleClientSelect = useCallback((clientTTY: string) => {
     if (!pendingTmuxSession) return;
     tmux.switchSession(pendingTmuxSession, clientTTY)
-      .catch((err) => console.error('tmux switch failed', err));
+      .catch((err) => remoteLog.error('tmux switch failed', err));
     setPendingTmuxSession(null);
   }, [pendingTmuxSession, tmux]);
 
@@ -129,7 +130,7 @@ export function useTmuxActions(
     try {
       await tmux.launchOpencode(directory);
     } catch (e) {
-      console.error('Failed to launch opencode in tmux', e);
+      remoteLog.error('Failed to launch opencode in tmux', e);
     } finally {
       setLaunchingOpencode(false);
     }
@@ -139,12 +140,12 @@ export function useTmuxActions(
     if (!matchingTmuxSession) return;
     if (tmux.isLocal) {
       tmux.switchSession(matchingTmuxSession.name)
-        .catch((err) => console.error('tmux switch failed', err));
+        .catch((err) => remoteLog.error('tmux switch failed', err));
       return;
     }
     if (tmux.clients.length === 1) {
       tmux.switchSession(matchingTmuxSession.name, tmux.clients[0].tty)
-        .catch((err) => console.error('tmux switch failed', err));
+        .catch((err) => remoteLog.error('tmux switch failed', err));
       return;
     }
     // Shortcut path has no anchor element — pin the picker near the

@@ -18,6 +18,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { encodeWav } from '../../lib/audio/encodeWav';
 import { useApiStore } from '../../lib/apiStore';
+import { remoteLog } from '../../lib/remoteLog';
 
 // ---------------------------------------------------------------------------
 // Web Speech API types (not yet in TypeScript's lib.dom.d.ts)
@@ -197,7 +198,7 @@ export function useComposerAudio({
         const text = await transcribe(blob);
         appendText(text);
       } catch (err) {
-        console.error('Transcription failed', err);
+        remoteLog.error('Transcription failed', err);
       }
     }
     setMicState('idle');
@@ -305,7 +306,7 @@ export function useComposerAudio({
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
       // 'no-speech' and 'aborted' are not real errors
       if (event.error === 'no-speech' || event.error === 'aborted') return;
-      console.error('SpeechRecognition error', event.error);
+      remoteLog.error('SpeechRecognition error', event.error);
       setMicError('Dictation error: ' + event.error);
       recordingRef.current = null;
       setMicState('idle');
@@ -370,7 +371,7 @@ export function useComposerAudio({
         setMicError('Dictation is not supported in this browser.');
       }
     } catch (err) {
-      console.error('Microphone access failed', err);
+      remoteLog.error('Microphone access failed', err);
       setMicError('Microphone access denied. Please allow microphone access in your browser settings to use dictation.');
       setMicState('idle');
     }

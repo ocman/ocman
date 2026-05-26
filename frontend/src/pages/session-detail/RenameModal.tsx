@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api } from '../../lib/api';
+import { remoteLog } from '../../lib/remoteLog';
 
 export interface RenameModalProps {
   sessionId: string;
@@ -21,7 +22,7 @@ export function RenameModal({ sessionId, initialTitle, onClose, onRenamed }: Ren
       onRenamed(renameTitle.trim());
       onClose();
     } catch (err) {
-      console.error('Failed to rename session', err);
+      remoteLog.error('Failed to rename session', err);
     }
   };
 

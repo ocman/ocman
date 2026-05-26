@@ -11,6 +11,7 @@ import { useEffect, useRef } from 'react';
 import { useUiStore } from '../../lib/uiStore';
 import { openVSCode } from '../../lib/shortcuts';
 import { api } from '../../lib/api';
+import { remoteLog } from '../../lib/remoteLog';
 export interface TmuxHandle {
   available: boolean;
   sessions: { name: string }[];
@@ -81,14 +82,14 @@ export function usePaletteCommands({
     } else if (cmd.id === 'scoped.variant') {
       setSelectedReasoningRef.current('');
     } else if (cmd.id === 'scoped.tmux' && t.available && t.sessions.length > 0) {
-      t.switchSession(t.sessions[0].name).catch(console.error);
+      t.switchSession(t.sessions[0].name).catch((err) => remoteLog.error('tmux switch failed', err));
     } else if (cmd.id === 'scoped.vscode' && sessionRef.current) {
       openVSCode(sessionRef.current.directory);
     } else if (cmd.id === 'scoped.archive' && sessionRef.current) {
       const s = sessionRef.current;
       archiveSessionRef.current(s.platform, s.id, s.timeUpdated, true)
         .then(() => navigateRef.current(-1))
-        .catch(console.error);
+        .catch((err) => remoteLog.error('Failed to archive session', err));
     } else if (cmd.id === 'scoped.rename') {
       setShowRenameModalRef.current(true);
     } else if (cmd.id === 'scoped.new-project') {
@@ -98,7 +99,7 @@ export function usePaletteCommands({
       const slashIdx = model.indexOf('/');
       const providerID = slashIdx > 0 ? model.slice(0, slashIdx) : '';
       const modelID = slashIdx > 0 ? model.slice(slashIdx + 1) : model;
-      api.compactSession(sessionRef.current!.id, providerID, modelID).catch(console.error);
+      api.compactSession(sessionRef.current!.id, providerID, modelID).catch((err) => remoteLog.error('Failed to compact session', err));
     }
   }, [paletteCommand, sessionRef, archiveSessionRef, navigateRef, portAvailableRef, capsRef, selectedModelRef, activeModelRef]);
 }

@@ -15,6 +15,7 @@ import { routeComposerSubmit } from './composerSubmit';
 import { getContextWindow, formatTokenCount } from '../../lib/models/contextWindows';
 import { formatCurrency, formatTokensPerSecond } from '../../lib/format';
 import { BUILTIN_COMMANDS, KNOWN_AGENTS } from '../../lib/commands/builtinCommands';
+import { remoteLog } from '../../lib/remoteLog';
 
 export interface AttachedImage {
   url: string;
@@ -393,7 +394,7 @@ function ComposerImpl({
         const url = await readFileAsDataURL(file);
         newImages.push({ url, mime: file.type });
       } catch (err) {
-        console.error('Failed to read image', err);
+        remoteLog.error('Failed to read image', err);
       }
     }
     setImages(prev => [...prev, ...newImages]);

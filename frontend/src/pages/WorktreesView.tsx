@@ -11,6 +11,7 @@ import { useUiStore } from '../lib/uiStore';
 import { useWorktreeSessions } from '../lib/useCapabilities';
 import { sessionsForWorktree, tmuxTargetForWorktree } from '../lib/worktrees';
 import { WorktreesTableSkeleton } from '../components/Skeleton';
+import { remoteLog } from '../lib/remoteLog';
 import './Dashboard.css';
 import './WorktreesView.css';
 
@@ -150,7 +151,7 @@ export function WorktreesView() {
                           if (!projectTmuxSession) return;
                           const client = !tmux.isLocal && tmux.clients.length === 1 ? tmux.clients[0].tty : undefined;
                           const target = tmuxTargetForWorktree(projectTmuxSession.name, wt);
-                          tmux.switchSession(target, client).catch((err) => console.error('tmux switch failed', err));
+                          tmux.switchSession(target, client).catch((err) => remoteLog.error('tmux switch failed', err));
                         }}
                       >
                         tmux
