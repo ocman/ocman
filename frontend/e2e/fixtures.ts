@@ -244,6 +244,29 @@ async function installDefaultRoutes(page: Page) {
   await page.route('/api/tmux/clients', (route: Route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ available: false, clients: [] }) }),
   );
+
+  // System stats (debug/perf panel)
+  await page.route('/api/system/stats', (route: Route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        memory: { alloc: 0, totalAlloc: 0, sys: 0, heapAlloc: 0, heapSys: 0, heapInuse: 0, heapIdle: 0, heapReleased: 0 },
+        gc: { numGC: 0, lastGC: 0, pauseNs: 0 },
+        goroutines: 1,
+        uptime: 0,
+      }),
+    }),
+  );
+
+  // Git info (branch/dirty status shown on session/project cards)
+  await page.route('/api/git/info*', (route: Route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ branch: 'main', ahead: 0, behind: 0, dirty: false }),
+    }),
+  );
 }
 
 // ---------------------------------------------------------------------------
