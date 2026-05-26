@@ -16,6 +16,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/integrations"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
@@ -37,6 +38,7 @@ type Server struct {
 	addr                string
 	registry            *platforms.Registry
 	auth                *Auth
+	integrations        *integrations.Registry
 	startTime           time.Time
 	projects            projectsIndexState
 	autoApproveDefault  bool
@@ -53,13 +55,14 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		registry = platforms.NewRegistry()
 	}
 	return &Server{
-		db:        database,
-		stateDB:   stateDB,
-		addr:      addr,
-		registry:  registry,
-		auth:      auth,
-		startTime: time.Now(),
-		judge:     newPermissionJudge(),
+		db:           database,
+		stateDB:      stateDB,
+		addr:         addr,
+		registry:     registry,
+		auth:         auth,
+		integrations: integrations.New(),
+		startTime:    time.Now(),
+		judge:        newPermissionJudge(),
 	}
 }
 
@@ -155,6 +158,11 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	mux.HandleFunc("/api/auth/me", requireGET(s.handleAuthMe))
 	mux.HandleFunc("/api/auth/login", requirePOST(s.handleAuthLogin))
 	mux.HandleFunc("/api/auth/logout", requirePOST(s.handleAuthLogout))
+
+	// Integration endpoints. These proxy requests to third-party APIs
+	// using server-side credentials discovered at startup.
+	mux.HandleFunc("/api/integrations/status", s.get(s.handleIntegrationsStatus))
+	mux.HandleFunc("/api/integrations/github/preview", s.get(s.handleGitHubPreview))
 
 	// Best-effort remote-logging sink for the frontend. Localhost-only so
 	// it can't be used to flood logs from the network. See

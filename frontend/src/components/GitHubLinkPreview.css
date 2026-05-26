@@ -1,0 +1,133 @@
+/* ====== GitHub link preview strip ====== */
+
+.gh-preview-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+/* ====== GitHub link preview card ====== */
+
+.gh-preview {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 6px 0 2px 0;
+  padding: 10px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--surface2);
+  border-radius: 0;
+  text-decoration: none;
+  color: var(--text);
+  font-family: var(--font-conversation-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  transition: background 120ms ease, border-color 120ms ease;
+  /* Prevent the card itself from inheriting the <p> inline context */
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.gh-preview:hover {
+  background: var(--surface0);
+  text-decoration: none;
+  color: var(--text);
+}
+
+/* State colours for left border */
+.gh-preview--open   { border-left-color: #3fb950; }
+.gh-preview--merged { border-left-color: #a371f7; }
+.gh-preview--closed { border-left-color: #f85149; }
+.gh-preview--commit { border-left-color: var(--accent2, #58a6ff); }
+
+/* State icon column */
+.gh-preview__icon {
+  flex-shrink: 0;
+  font-size: 16px;
+  line-height: 1;
+  margin-top: 1px;
+}
+.gh-preview--open   .gh-preview__icon { color: #3fb950; }
+.gh-preview--merged .gh-preview__icon { color: #a371f7; }
+.gh-preview--closed .gh-preview__icon { color: #f85149; }
+.gh-preview--commit .gh-preview__icon { color: var(--accent2, #58a6ff); }
+
+/* Body */
+.gh-preview__body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.gh-preview__title {
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gh-preview__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.gh-preview__state {
+  font-weight: 600;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.gh-preview__state--open   { color: #3fb950; }
+.gh-preview__state--merged { color: #a371f7; }
+.gh-preview__state--closed { color: #f85149; }
+.gh-preview__state--commit { color: var(--accent2, #58a6ff); }
+
+.gh-preview__sep {
+  color: var(--surface2);
+}
+
+.gh-preview__repo {
+  color: var(--text-dim);
+}
+
+.gh-preview__sha {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  color: var(--overlay0);
+}
+
+.gh-preview__avatar {
+  border-radius: 50%;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.gh-preview__author {
+  color: var(--text-dim);
+}
+
+.gh-preview__date {
+  color: var(--overlay0);
+}
+
+/* External link chevron */
+.gh-preview__external {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--overlay0);
+  opacity: 0;
+  transition: opacity 120ms ease;
+  margin-top: 1px;
+}
+.gh-preview:hover .gh-preview__external {
+  opacity: 1;
+}

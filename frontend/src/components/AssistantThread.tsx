@@ -36,6 +36,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import type { FC } from 'react';
 import { EmbeddedThread } from './EmbeddedThread';
+import { LinkPreviewStrip } from './GitHubLinkPreview';
 
 /**
  * Renders a duration badge for a tool card. For completed tools it
@@ -124,13 +125,16 @@ const MARKDOWN_COMPONENTS = { pre: CodeBlockPre, a: MarkdownLink };
 const MarkdownText: FC<{ text: string }> = ({ text }) => {
   if (!text.trim()) return null;
   return (
-    <ReactMarkdown
-      remarkPlugins={REMARK_PLUGINS}
-      rehypePlugins={REHYPE_PLUGINS}
-      components={MARKDOWN_COMPONENTS}
-    >
-      {text}
-    </ReactMarkdown>
+    <>
+      <ReactMarkdown
+        remarkPlugins={REMARK_PLUGINS}
+        rehypePlugins={REHYPE_PLUGINS}
+        components={MARKDOWN_COMPONENTS}
+      >
+        {text}
+      </ReactMarkdown>
+      <LinkPreviewStrip text={text} />
+    </>
   );
 };
 
@@ -150,8 +154,15 @@ const ImageDisplay: FC<{ image: string; filename?: string }> = ({ image, filenam
   );
 };
 
-const UserTextPart: FC<{ text: string }> = ({ text }) =>
-  text.trim() ? <span style={{ whiteSpace: 'pre-wrap' }}>{text}</span> : null;
+const UserTextPart: FC<{ text: string }> = ({ text }) => {
+  if (!text.trim()) return null;
+  return (
+    <>
+      <span style={{ whiteSpace: 'pre-wrap' }}>{text}</span>
+      <LinkPreviewStrip text={text} />
+    </>
+  );
+};
 
 const UserMessage: FC = () => {
   const content = useMessage((m) => m.content);
