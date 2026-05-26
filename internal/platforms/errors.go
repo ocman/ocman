@@ -30,6 +30,13 @@ var ErrBusy = errors.New("platforms: session is currently processing a prompt")
 // can offer to launch the missing process (see launchOpencodeInTmux).
 var ErrPlatformUnreachable = errors.New("platforms: no running instance for this location")
 
+// ErrSSEIdleTimeout is returned by ProxyEvents when no bytes have arrived
+// from the upstream within the idle window (currently 60 s). It is not a
+// fatal error — the browser's EventSource will reconnect automatically.
+// Handlers should treat it the same as a clean stream end (no warning log,
+// no error span).
+var ErrSSEIdleTimeout = errors.New("platforms: SSE idle timeout")
+
 // ErrUpstreamRejected is returned when a live platform process *did*
 // reach us but refused the request with a 4xx response (e.g.
 // OpenCode rejecting a SendMessage with `ProviderModelNotFoundError`

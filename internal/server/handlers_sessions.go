@@ -932,6 +932,11 @@ func (s *Server) serveSessionEvents(w http.ResponseWriter, r *http.Request, sess
 			span.SetStatus(codes.Ok, "client disconnected")
 			return
 		}
+		if errors.Is(err, platforms.ErrSSEIdleTimeout) {
+			span.AddEvent("SSE idle timeout — client will reconnect")
+			span.SetStatus(codes.Ok, "idle timeout")
+			return
+		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		log.WithFields(log.Fields{"sessionID": sessionID, "error": err}).
