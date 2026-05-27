@@ -1,9 +1,15 @@
 repos:
   - repo: local
     hooks:
-      - id: make-test
-        name: make test
+      - id: test-backend
+        name: go tests
         language: system
-        entry: make test
+        entry: make test-backend
         pass_filenames: false
-        always_run: true
+        files: '\.go$'
+      - id: test-frontend
+        name: pnpm tests
+        language: system
+        entry: make test-frontend
+        pass_filenames: false
+        files: '^frontend/'
