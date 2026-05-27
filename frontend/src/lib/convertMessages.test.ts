@@ -390,8 +390,10 @@ describe('convertMessages', () => {
       | undefined;
     expect(tc).toBeDefined();
     expect(tc!.argsText).toMatch(/Write a\.txt/);
-    expect(tc!.result).toContain('+ one');
-    expect(tc!.result).toContain('+ two');
+    const payload = JSON.parse(tc!.result!);
+    expect(payload.__diff).toBe(true);
+    expect(payload.before).toBe('');
+    expect(payload.after).toBe('one\ntwo');
   });
 
   it('renders edit tool using oldString/newString fallback diff', () => {

@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
+import { MultiFileDiff } from '@pierre/diffs/react';
+import { DIFF_OPTIONS } from './diffOptions';
 import './AssistantThread.css';
 import {
   ThreadPrimitive,
@@ -19,7 +21,6 @@ import { parseAnsi, hasAnsi, hasStyle, type AnsiSegment } from '../lib/ansi';
 import { useStickyBottom } from '../lib/useStickyBottom';
 import { trackRender } from '../lib/renderRateMonitor';
 import {
-  inferDiffLanguage,
   highlightDiffCode,
   extractPatchPayload,
   splitToolArgs,
@@ -440,6 +441,38 @@ function TurnSummaryBar({ messageId }: { messageId: string }) {
   );
 }
 
+// Structured diff payload emitted by convertMessages.ts for edit/write tools.
+interface DiffPayload {
+  __diff: true;
+  filePath: string;
+  before: string;
+  after: string;
+}
+
+function parseDiffPayload(result: string | null | undefined): DiffPayload | null {
+  if (!result) return null;
+  try {
+    const obj = JSON.parse(result);
+    if (obj && obj.__diff === true) return obj as DiffPayload;
+  } catch { /* not JSON */ }
+  return null;
+}
+
+// Renders a before/after diff using @pierre/diffs.
+function InlineDiff({ payload }: { payload: DiffPayload }) {
+  const name = payload.filePath || 'file';
+  return (
+    <Suspense fallback={null}>
+      <MultiFileDiff
+        oldFile={{ name, contents: payload.before }}
+        newFile={{ name, contents: payload.after }}
+        options={DIFF_OPTIONS}
+        disableWorkerPool
+      />
+    </Suspense>
+  );
+}
+
 function renderOutput(text: string, languageHint?: string) {
   // Detect file read output: various XML formats from MCP read tools
   // Handles: <path>...</path> with optional <type>...</type> and <content>...</content>
@@ -850,24 +883,21 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: raw
   const isEditTool = toolName === 'edit' || toolName === 'mcp_edit' || toolName === 'mcp_Edit';
   const isWriteTool = toolName === 'write' || toolName === 'mcp_write' || toolName === 'mcp_Write';
   if (isEditTool || isWriteTool) {
-    const diffLanguage = inferDiffLanguage(title || toolName, detail || '');
-    const hasDiff = outputDisplay && outputDisplay.split('\n').some(l =>
-      /^(\s*\d*)\s{2}(\s*\d*)\s{2}([+ -])\s(.*)$/.test(l)
-    );
+    const diffPayload = parseDiffPayload(result as string | null | undefined);
     return (
-      <div className={`oc-tool oc-tool-edit ${statusClass} ${expanded || hasDiff ? 'oc-tool-expanded' : ''}`}>
+      <div className={`oc-tool oc-tool-edit ${statusClass} ${expanded || diffPayload ? 'oc-tool-expanded' : ''}`}>
         <div className="oc-tool-header" onClick={() => setExpanded(!expanded)}>
           <i className={`bi bi-pencil-fill oc-tool-icon ${statusClass}`} title={statusTitle} aria-hidden="true" />
           <span className="oc-tool-label">{title || toolName}</span>
           {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} />}
         </div>
-        {outputDisplay && (
-          <div className="oc-tool-content" onClick={() => !expanded && !hasDiff && setExpanded(true)} style={!expanded && !hasDiff ? { cursor: 'pointer' } : undefined}>
-            {hasDiff
-              ? <div className="oc-tool-output">{renderOutput(outputDisplay, diffLanguage)}</div>
+        {(diffPayload || outputDisplay) && (
+          <div className="oc-tool-content" onClick={() => !expanded && !diffPayload && setExpanded(true)} style={!expanded && !diffPayload ? { cursor: 'pointer' } : undefined}>
+            {diffPayload
+              ? <div className="oc-tool-output"><InlineDiff payload={diffPayload} /></div>
               : <pre className="oc-tool-pre oc-tool-output">{outputDisplay}</pre>
             }
-            {!expanded && !hasDiff && isLong && (
+            {!expanded && !diffPayload && isLong && (
               <div className="oc-tool-expand">Click to expand</div>
             )}
           </div>

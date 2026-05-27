@@ -1,7 +1,6 @@
 import type { ThreadMessageLike } from '@assistant-ui/react';
 import type { Message, Part, PartData, FilePart, TaskSessionData } from './api';
 import type { FailedSend } from './failedSends';
-import { simpleDiff } from './diff';
 import { extractTaskId } from './taskId';
 
 /**
@@ -379,44 +378,39 @@ export function createConvertMessages(): ConvertMessagesFn {
           const isRead = toolName === 'read' || toolName === 'mcp_read';
           const isWrite = toolName === 'write' || toolName === 'mcp_write' || toolName === 'mcp_Write';
           if (isWrite && inp.content) {
-            // Show the written content as a full-addition diff (all green lines)
+            // Show the written content as a full-addition diff.
+            // Pass a structured payload so AssistantThread can render
+            // it with @pierre/diffs instead of the old text format.
             const writeTarget = inp.filePath || title || 'file';
             title = 'Write ' + writeTarget;
             argsText = ''; // diff is shown as result, no need for args
-            const lines = (inp.content as string).split('\n');
-            const maxLn = String(lines.length).length;
-            const pad = (s: string, w: number) => s.padStart(w, ' ');
-            resultText = lines
-              .map((line: string, i: number) => `${' '.repeat(maxLn)}  ${pad(String(i + 1), maxLn)}  + ${line}`)
-              .join('\n');
+            resultText = JSON.stringify({
+              __diff: true,
+              filePath: inp.filePath || '',
+              before: '',
+              after: inp.content as string,
+            });
           } else if (isEdit && inp.oldString && inp.newString) {
             const editTarget = inp.filePath || title || 'file';
             title = 'Edit ' + editTarget;
             argsText = ''; // diff is shown as result, no need for args
-            // Prefer the full before/after file contents from filediff
-            // metadata when available. This lets simpleDiff compute real
-            // surrounding context, so even a single-line change shows a
-            // few lines around it instead of just the changed line.
+            // Prefer full before/after from filediff metadata so the
+            // diff shows real surrounding context.
             const fd = st.metadata?.filediff;
             if (fd && typeof fd.before === 'string' && typeof fd.after === 'string') {
-              resultText = simpleDiff(fd.before, fd.after, 1);
+              resultText = JSON.stringify({
+                __diff: true,
+                filePath: inp.filePath || '',
+                before: fd.before,
+                after: fd.after,
+              });
             } else {
-              // Fallback: diff just oldString vs newString. Try to
-              // determine the starting line number from the tool
-              // output. The output often contains the modified
-              // content prefixed with line numbers like "123: code".
-              let startLine = 1;
-              const outputText = typeof st.output === 'string' ? st.output : '';
-              const contentMatch = outputText.match(/<content>\n?(\d+): /);
-              if (contentMatch) {
-                startLine = parseInt(contentMatch[1], 10) || 1;
-              } else {
-                const lineRefMatch = outputText.match(/[Ll]ine\s+(\d+)/);
-                if (lineRefMatch) {
-                  startLine = parseInt(lineRefMatch[1], 10) || 1;
-                }
-              }
-              resultText = simpleDiff(inp.oldString, inp.newString, startLine);
+              resultText = JSON.stringify({
+                __diff: true,
+                filePath: inp.filePath || '',
+                before: inp.oldString,
+                after: inp.newString,
+              });
             }
           } else if (isRead) {
             // Render reads as a muted inline line, not a collapsible
