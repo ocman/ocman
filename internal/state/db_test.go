@@ -533,3 +533,250 @@ func TestPinnedSessions_Empty(t *testing.T) {
 		t.Errorf("expected 0 pinned sessions on fresh db, got %d", len(pinned))
 	}
 }
+
+// --- Child session tests ---
+
+func makeChildSession(id, parentID string) ChildSession {
+	return ChildSession{
+		ID:              id,
+		Platform:        "opencode",
+		ParentSessionID: parentID,
+		Intent:          "fix the linting issue",
+		ComposedPrompt:  "## Task\nfix the linting issue\n",
+		Status:          "starting",
+		CreatedAt:       1000,
+	}
+}
+
+func TestInsertChildSession_RoundTrip(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+
+	cs := makeChildSession("child-1", "parent-1")
+	cs.WorktreePath = "/tmp/worktrees/repo/fix-lint"
+	cs.Branch = "fix-lint"
+	cs.TmuxTarget = "~/src/repo:wt-fix-lint"
+
+	if err := db.InsertChildSession(cs); err != nil {
+		t.Fatalf("InsertChildSession: %v", err)
+	}
+
+	got, err := db.GetChildSession("child-1")
+	if err != nil {
+		t.Fatalf("GetChildSession: %v", err)
+	}
+	if got.ID != cs.ID {
+		t.Errorf("ID: got %q, want %q", got.ID, cs.ID)
+	}
+	if got.ParentSessionID != cs.ParentSessionID {
+		t.Errorf("ParentSessionID: got %q, want %q", got.ParentSessionID, cs.ParentSessionID)
+	}
+	if got.Intent != cs.Intent {
+		t.Errorf("Intent: got %q, want %q", got.Intent, cs.Intent)
+	}
+	if got.WorktreePath != cs.WorktreePath {
+		t.Errorf("WorktreePath: got %q, want %q", got.WorktreePath, cs.WorktreePath)
+	}
+	if got.Branch != cs.Branch {
+		t.Errorf("Branch: got %q, want %q", got.Branch, cs.Branch)
+	}
+	if got.TmuxTarget != cs.TmuxTarget {
+		t.Errorf("TmuxTarget: got %q, want %q", got.TmuxTarget, cs.TmuxTarget)
+	}
+	if got.Status != "starting" {
+		t.Errorf("Status: got %q, want %q", got.Status, "starting")
+	}
+	if got.CompletedAt != 0 {
+		t.Errorf("CompletedAt: expected 0, got %d", got.CompletedAt)
+	}
+}
+
+func TestInsertChildSession_NullableFields(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+
+	// split_to_session: no worktree, no branch, no tmux target
+	cs := makeChildSession("child-2", "parent-1")
+	if err := db.InsertChildSession(cs); err != nil {
+		t.Fatalf("InsertChildSession: %v", err)
+	}
+
+	got, err := db.GetChildSession("child-2")
+	if err != nil {
+		t.Fatalf("GetChildSession: %v", err)
+	}
+	if got.WorktreePath != "" {
+		t.Errorf("WorktreePath: expected empty, got %q", got.WorktreePath)
+	}
+	if got.Branch != "" {
+		t.Errorf("Branch: expected empty, got %q", got.Branch)
+	}
+	if got.TmuxTarget != "" {
+		t.Errorf("TmuxTarget: expected empty, got %q", got.TmuxTarget)
+	}
+}
+
+func TestUpdateChildSession_StatusTransition(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+
+	cs := makeChildSession("child-3", "parent-1")
+	if err := db.InsertChildSession(cs); err != nil {
+		t.Fatalf("InsertChildSession: %v", err)
+	}
+
+	// Transition to running
+	if err := db.UpdateChildSession("child-3", "running", "", 0); err != nil {
+		t.Fatalf("UpdateChildSession running: %v", err)
+	}
+	got, _ := db.GetChildSession("child-3")
+	if got.Status != "running" {
+		t.Errorf("expected status=running, got %q", got.Status)
+	}
+	if got.CompletedAt != 0 {
+		t.Errorf("expected completedAt=0, got %d", got.CompletedAt)
+	}
+
+	// Transition to completed with summary
+	if err := db.UpdateChildSession("child-3", "completed", "Fixed 3 lint errors.", 9999); err != nil {
+		t.Fatalf("UpdateChildSession completed: %v", err)
+	}
+	got, _ = db.GetChildSession("child-3")
+	if got.Status != "completed" {
+		t.Errorf("expected status=completed, got %q", got.Status)
+	}
+	if got.Summary != "Fixed 3 lint errors." {
+		t.Errorf("expected summary, got %q", got.Summary)
+	}
+	if got.CompletedAt != 9999 {
+		t.Errorf("expected completedAt=9999, got %d", got.CompletedAt)
+	}
+}
+
+func TestListChildSessionsByParent(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+
+	// Two children for parent-1, one for parent-2
+	cs1 := makeChildSession("child-a", "parent-1")
+	cs1.CreatedAt = 100
+	cs2 := makeChildSession("child-b", "parent-1")
+	cs2.CreatedAt = 200
+	cs3 := makeChildSession("child-c", "parent-2")
+	cs3.CreatedAt = 300
+
+	for _, cs := range []ChildSession{cs1, cs2, cs3} {
+		if err := db.InsertChildSession(cs); err != nil {
+			t.Fatalf("InsertChildSession %s: %v", cs.ID, err)
+		}
+	}
+
+	children, err := db.ListChildSessionsByParent("parent-1")
+	if err != nil {
+		t.Fatalf("ListChildSessionsByParent: %v", err)
+	}
+	if len(children) != 2 {
+		t.Fatalf("expected 2 children for parent-1, got %d", len(children))
+	}
+	// Ordered by created_at DESC: child-b first
+	if children[0].ID != "child-b" {
+		t.Errorf("expected child-b first (newest), got %q", children[0].ID)
+	}
+	if children[1].ID != "child-a" {
+		t.Errorf("expected child-a second, got %q", children[1].ID)
+	}
+
+	// parent-2 has exactly one child
+	children2, _ := db.ListChildSessionsByParent("parent-2")
+	if len(children2) != 1 || children2[0].ID != "child-c" {
+		t.Errorf("parent-2: expected [child-c], got %v", children2)
+	}
+
+	// Unknown parent returns empty slice
+	children3, _ := db.ListChildSessionsByParent("no-such-parent")
+	if len(children3) != 0 {
+		t.Errorf("expected empty for unknown parent, got %d", len(children3))
+	}
+}
+
+func TestListNonTerminalChildSessions(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+
+	cs1 := makeChildSession("child-x", "parent-1")
+	cs1.Status = "starting"
+	cs2 := makeChildSession("child-y", "parent-1")
+	cs2.Status = "running"
+	cs3 := makeChildSession("child-z", "parent-1")
+	cs3.Status = "completed"
+
+	for _, cs := range []ChildSession{cs1, cs2, cs3} {
+		if err := db.InsertChildSession(cs); err != nil {
+			t.Fatalf("InsertChildSession %s: %v", cs.ID, err)
+		}
+	}
+
+	active, err := db.ListNonTerminalChildSessions()
+	if err != nil {
+		t.Fatalf("ListNonTerminalChildSessions: %v", err)
+	}
+	if len(active) != 2 {
+		t.Fatalf("expected 2 non-terminal sessions, got %d", len(active))
+	}
+	ids := map[string]bool{active[0].ID: true, active[1].ID: true}
+	if !ids["child-x"] || !ids["child-y"] {
+		t.Errorf("expected child-x and child-y, got %v", ids)
+	}
+}
+
+func TestCancelChildSession(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+
+	cs := makeChildSession("child-cancel", "parent-1")
+	if err := db.InsertChildSession(cs); err != nil {
+		t.Fatalf("InsertChildSession: %v", err)
+	}
+
+	if err := db.CancelChildSession("child-cancel", 5000); err != nil {
+		t.Fatalf("CancelChildSession: %v", err)
+	}
+
+	got, _ := db.GetChildSession("child-cancel")
+	if got.Status != "cancelled" {
+		t.Errorf("expected status=cancelled, got %q", got.Status)
+	}
+	if got.CompletedAt != 5000 {
+		t.Errorf("expected completedAt=5000, got %d", got.CompletedAt)
+	}
+}
+
+func TestCancelChildSession_Idempotent(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+
+	cs := makeChildSession("child-idem", "parent-1")
+	cs.Status = "completed"
+	if err := db.InsertChildSession(cs); err != nil {
+		t.Fatalf("InsertChildSession: %v", err)
+	}
+
+	// Cancelling a completed session is a no-op
+	if err := db.CancelChildSession("child-idem", 9999); err != nil {
+		t.Fatalf("CancelChildSession on completed: %v", err)
+	}
+	got, _ := db.GetChildSession("child-idem")
+	if got.Status != "completed" {
+		t.Errorf("expected status to remain completed, got %q", got.Status)
+	}
+}
+
+func TestGetChildSession_NotFound(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+
+	_, err := db.GetChildSession("nonexistent")
+	if err == nil {
+		t.Fatal("expected error for nonexistent child session")
+	}
+}

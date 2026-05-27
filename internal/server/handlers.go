@@ -402,5 +402,9 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]interface{}{
 		"platforms":        out,
 		"worktreeSessions": worktreeSessionsAvailable(s.registry),
+		"mcpServer": map[string]interface{}{
+			"enabled": true,
+			"url":     s.mcpServerURL(),
+		},
 	})
 }

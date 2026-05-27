@@ -21,6 +21,13 @@ then launches `opencode --port 0` in tmux rooted at that worktree so
 parallel sessions stop interfering with each other's files, rebuilds,
 and staging area.
 
+Ocman also embeds an **MCP (Model Context Protocol) server** at
+`http://localhost:8229/mcp` (Go backend) / `http://localhost:8228/mcp`
+(via Vite dev proxy). This lets AI coding agents (and users via
+the agent) split work from an active session into new parallel sessions
+or isolated git worktrees. See the **MCP server** section below for
+setup and available tools.
+
 ## Repository layout
 
 - `main.go` — entrypoint; parses `-addr`, `-db`, and `-platforms`
@@ -36,6 +43,10 @@ and staging area.
   (`~/.local/share/ocman/state.db`) for ocman's own state (archived
   / seen sessions). Primary key is `(platform, session_id)` so it
   can scope state per platform.
+- `internal/mcp/` — MCP server implementation. `PromptComposer`
+  enriches caller-provided intent with session context; `SessionLauncher`
+  creates child sessions via the Platform interface; tool handlers
+  implement the five MCP tools. Mounted at `/mcp` by the server package.
 - `internal/server/` — HTTP server, API handlers, static file serving
   with SPA fallback, OpenCode port discovery via `lsof`, tmux
   integration, whisper transcription.
@@ -204,6 +215,57 @@ diffs minimal and match the surrounding code.
   survive restarts. Login attempts are rate-limited (5/min per IP);
   trusted-localhost clients skip the limiter. See
   `internal/server/auth.go`.
+
+## MCP server
+
+Ocman embeds an MCP server at `http://localhost:8229/mcp` (Streamable HTTP
+transport). It exposes five tools for splitting work from an active session:
+
+| Tool | Description |
+|------|-------------|
+| `split_to_session` | Launch a new OpenCode session in the same directory with a context-enriched prompt |
+| `split_to_worktree` | Launch a new OpenCode session in a fresh git worktree |
+| `get_session_status` | Check the status of a previously spawned child session |
+| `list_child_sessions` | List all child sessions spawned from a parent session |
+| `cancel_session` | Cancel a running child session (kills its tmux window) |
+
+### Setup
+
+Add the following to your project's `opencode.json` (or global
+`~/.config/opencode/config.json`):
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "ocman": {
+      "type": "remote",
+      "url": "http://localhost:8228/mcp",
+      "enabled": true
+    }
+  }
+}
+```
+
+Use port **8228** (Vite dev proxy) during development — the proxy
+forwards `/mcp` to the Go backend at :8229. Use port **8229** directly
+when running the production binary (no Vite). The MCP server URL is
+also exposed via `/api/capabilities` as `mcpServer.url`.
+
+### How it works
+
+1. The model (or user) calls `split_to_session` or `split_to_worktree`
+   with a brief `intent` and the current `session_id`.
+2. ocman fetches the last 10 messages, current git branch, and
+   `git diff --stat` from the parent session's directory.
+3. A structured Markdown prompt is assembled and sent to a new OpenCode
+   session via `POST /session/{id}/prompt_async`.
+4. A background watcher polls every 5 seconds; when the child session
+   completes, ocman injects a result summary back into the parent
+   session via `SendMessage`.
+
+Child session records are stored in `state.db`'s `child_sessions` table
+(migration v9). The MCP endpoint is localhost-only.
 
 ## Conventions
 

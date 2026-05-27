@@ -414,6 +414,84 @@ describe('convertMessages', () => {
     expect(tc!.result).toBeTruthy();
   });
 
+  it('strips the project prefix from the write tool title when path is under projectDir', () => {
+    const m = makeMessage('m', { role: 'assistant' });
+    const out = convertMessages(
+      [m],
+      [makePart('m', {
+        type: 'tool',
+        tool: 'write',
+        state: { input: { filePath: '/repo/internal/db/foo.go', content: 'package db\n' } },
+      } as PartData)],
+      undefined, undefined, '/repo',
+    );
+    const items = asContentArray(out[0].content);
+    const tc = items.find((i) => i.type === 'tool-call' && (i as { toolName: string }).toolName === 'write') as
+      | { argsText: string; result?: string }
+      | undefined;
+    expect(tc).toBeDefined();
+    expect(tc!.argsText).toMatch(/Write internal\/db\/foo\.go/);
+    expect(tc!.argsText).not.toContain('/repo/');
+  });
+
+  it('strips the project prefix from the edit tool title when path is under projectDir', () => {
+    const m = makeMessage('m', { role: 'assistant' });
+    const out = convertMessages(
+      [m],
+      [makePart('m', {
+        type: 'tool',
+        tool: 'edit',
+        state: { input: { filePath: '/repo/internal/db/foo.go', oldString: 'foo', newString: 'bar' }, output: '' },
+      } as PartData)],
+      undefined, undefined, '/repo',
+    );
+    const items = asContentArray(out[0].content);
+    const tc = items.find((i) => i.type === 'tool-call' && (i as { toolName: string }).toolName === 'edit') as
+      | { argsText: string; result?: string }
+      | undefined;
+    expect(tc).toBeDefined();
+    expect(tc!.argsText).toMatch(/Edit internal\/db\/foo\.go/);
+    expect(tc!.argsText).not.toContain('/repo/');
+  });
+
+  it('keeps the full path in write title when path is outside projectDir', () => {
+    const m = makeMessage('m', { role: 'assistant' });
+    const out = convertMessages(
+      [m],
+      [makePart('m', {
+        type: 'tool',
+        tool: 'write',
+        state: { input: { filePath: '/etc/hosts', content: '127.0.0.1 localhost\n' } },
+      } as PartData)],
+      undefined, undefined, '/repo',
+    );
+    const items = asContentArray(out[0].content);
+    const tc = items.find((i) => i.type === 'tool-call' && (i as { toolName: string }).toolName === 'write') as
+      | { argsText: string }
+      | undefined;
+    expect(tc).toBeDefined();
+    expect(tc!.argsText).toContain('/etc/hosts');
+  });
+
+  it('keeps the full path in edit title when path is outside projectDir', () => {
+    const m = makeMessage('m', { role: 'assistant' });
+    const out = convertMessages(
+      [m],
+      [makePart('m', {
+        type: 'tool',
+        tool: 'edit',
+        state: { input: { filePath: '/etc/hosts', oldString: 'old', newString: 'new' }, output: '' },
+      } as PartData)],
+      undefined, undefined, '/repo',
+    );
+    const items = asContentArray(out[0].content);
+    const tc = items.find((i) => i.type === 'tool-call' && (i as { toolName: string }).toolName === 'edit') as
+      | { argsText: string }
+      | undefined;
+    expect(tc).toBeDefined();
+    expect(tc!.argsText).toContain('/etc/hosts');
+  });
+
   it('renders unknown tool types via the default branch', () => {
     const m = makeMessage('m', { role: 'assistant' });
     const out = convertMessages([m], [

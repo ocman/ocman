@@ -69,6 +69,18 @@ func Open(path string) (*DB, error) {
 	return stateDB, nil
 }
 
+// OpenFromSQL wraps an existing *sql.DB in a state.DB and runs
+// migrations. Intended for tests that open an in-memory database
+// directly rather than via Open (which also handles directory creation
+// and OTel instrumentation).
+func OpenFromSQL(sqlDB *sql.DB) (*DB, error) {
+	d := &DB{db: sqlDB}
+	if err := d.init(); err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
 // init bootstraps the schema to latestSchemaVersion. See migrate.go
 // for the migration plan.
 func (d *DB) init() error {
@@ -267,6 +279,214 @@ func (d *DB) SetPromptSections(sections []PromptSection) error {
 		return fmt.Errorf("saving prompt sections: %w", err)
 	}
 	return nil
+}
+
+// DefaultJudgeDelayMs is the delay used when no row exists in judge_settings.
+const DefaultJudgeDelayMs = 5000
+
+// GetJudgeDelayMs returns the configured delay (ms) the backend waits
+// after a permission.asked event before starting the LLM judge.
+// Returns defaultJudgeDelayMs when no row has been saved yet.
+func (d *DB) GetJudgeDelayMs() (int64, error) {
+	var ms int64
+	err := d.db.QueryRow(`SELECT delay_ms FROM judge_settings WHERE id = 1`).Scan(&ms)
+	if err == sql.ErrNoRows {
+		return DefaultJudgeDelayMs, nil
+	}
+	if err != nil {
+		return DefaultJudgeDelayMs, fmt.Errorf("reading judge delay: %w", err)
+	}
+	return ms, nil
+}
+
+// SetJudgeDelayMs persists the judge delay. A value of 0 means no delay
+// (judge fires immediately). Negative values are clamped to 0.
+func (d *DB) SetJudgeDelayMs(ms int64) error {
+	if ms < 0 {
+		ms = 0
+	}
+	_, err := d.db.Exec(`
+		INSERT INTO judge_settings (id, delay_ms) VALUES (1, ?)
+		ON CONFLICT(id) DO UPDATE SET delay_ms = excluded.delay_ms
+	`, ms)
+	if err != nil {
+		return fmt.Errorf("saving judge delay: %w", err)
+	}
+	return nil
+}
+
+// ChildSession holds the data for one MCP-spawned child session.
+type ChildSession struct {
+	ID               string
+	Platform         string
+	ParentSessionID  string
+	Intent           string
+	ComposedPrompt   string
+	WorktreePath     string // empty for split_to_session
+	Branch           string // empty for split_to_session
+	TmuxTarget       string // tmux session or session:window
+	Status           string // starting, running, completed, error, cancelled
+	CreatedAt        int64
+	CompletedAt      int64  // 0 until terminal state
+	Summary          string // populated on completion
+}
+
+// InsertChildSession persists a new child session record. The initial
+// status is always "starting"; callers update it via UpdateChildSession.
+func (d *DB) InsertChildSession(cs ChildSession) error {
+	_, err := d.db.Exec(`
+		INSERT INTO child_sessions
+			(id, platform, parent_session_id, intent, composed_prompt,
+			 worktree_path, branch, tmux_target, status, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		cs.ID, cs.Platform, cs.ParentSessionID, cs.Intent, cs.ComposedPrompt,
+		nullableString(cs.WorktreePath), nullableString(cs.Branch),
+		nullableString(cs.TmuxTarget), cs.Status, cs.CreatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("inserting child session: %w", err)
+	}
+	return nil
+}
+
+// UpdateChildSession updates the mutable fields of a child session
+// (status, completed_at, summary). Only the fields that are non-zero
+// are updated; callers set CompletedAt and Summary when transitioning
+// to a terminal state.
+func (d *DB) UpdateChildSession(id, status, summary string, completedAt int64) error {
+	_, err := d.db.Exec(`
+		UPDATE child_sessions
+		SET status       = ?,
+		    summary      = CASE WHEN ? != '' THEN ? ELSE summary END,
+		    completed_at = CASE WHEN ? != 0  THEN ? ELSE completed_at END
+		WHERE id = ?
+	`, status, summary, summary, completedAt, completedAt, id)
+	if err != nil {
+		return fmt.Errorf("updating child session: %w", err)
+	}
+	return nil
+}
+
+// GetChildSession returns a single child session by ID, or an error
+// wrapping sql.ErrNoRows when not found.
+func (d *DB) GetChildSession(id string) (*ChildSession, error) {
+	var cs ChildSession
+	var worktreePath, branch, tmuxTarget, summary sql.NullString
+	var completedAt sql.NullInt64
+	err := d.db.QueryRow(`
+		SELECT id, platform, parent_session_id, intent, composed_prompt,
+		       worktree_path, branch, tmux_target, status,
+		       created_at, completed_at, summary
+		FROM child_sessions WHERE id = ?
+	`, id).Scan(
+		&cs.ID, &cs.Platform, &cs.ParentSessionID, &cs.Intent, &cs.ComposedPrompt,
+		&worktreePath, &branch, &tmuxTarget, &cs.Status,
+		&cs.CreatedAt, &completedAt, &summary,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("getting child session: %w", err)
+	}
+	cs.WorktreePath = worktreePath.String
+	cs.Branch = branch.String
+	cs.TmuxTarget = tmuxTarget.String
+	cs.Summary = summary.String
+	if completedAt.Valid {
+		cs.CompletedAt = completedAt.Int64
+	}
+	return &cs, nil
+}
+
+// ListChildSessionsByParent returns all child sessions for the given
+// parent session ID, ordered by created_at descending (newest first).
+func (d *DB) ListChildSessionsByParent(parentSessionID string) ([]ChildSession, error) {
+	rows, err := d.db.Query(`
+		SELECT id, platform, parent_session_id, intent, composed_prompt,
+		       worktree_path, branch, tmux_target, status,
+		       created_at, completed_at, summary
+		FROM child_sessions
+		WHERE parent_session_id = ?
+		ORDER BY created_at DESC
+	`, parentSessionID)
+	if err != nil {
+		return nil, fmt.Errorf("listing child sessions: %w", err)
+	}
+	defer rows.Close()
+	return scanChildSessions(rows)
+}
+
+// ListNonTerminalChildSessions returns all child sessions whose status
+// is "starting" or "running". Used by the watcher loop to find sessions
+// that need their completion status checked.
+func (d *DB) ListNonTerminalChildSessions() ([]ChildSession, error) {
+	rows, err := d.db.Query(`
+		SELECT id, platform, parent_session_id, intent, composed_prompt,
+		       worktree_path, branch, tmux_target, status,
+		       created_at, completed_at, summary
+		FROM child_sessions
+		WHERE status IN ('starting', 'running')
+		ORDER BY created_at ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("listing non-terminal child sessions: %w", err)
+	}
+	defer rows.Close()
+	return scanChildSessions(rows)
+}
+
+// CancelChildSession sets the status of a child session to "cancelled"
+// and records the completion time. Idempotent: cancelling an already-
+// terminal session is a no-op (returns nil).
+func (d *DB) CancelChildSession(id string, cancelledAt int64) error {
+	_, err := d.db.Exec(`
+		UPDATE child_sessions
+		SET status       = 'cancelled',
+		    completed_at = ?
+		WHERE id = ? AND status NOT IN ('completed', 'error', 'cancelled')
+	`, cancelledAt, id)
+	if err != nil {
+		return fmt.Errorf("cancelling child session: %w", err)
+	}
+	return nil
+}
+
+// scanChildSessions scans a *sql.Rows result into a []ChildSession.
+func scanChildSessions(rows *sql.Rows) ([]ChildSession, error) {
+	var out []ChildSession
+	for rows.Next() {
+		var cs ChildSession
+		var worktreePath, branch, tmuxTarget, summary sql.NullString
+		var completedAt sql.NullInt64
+		if err := rows.Scan(
+			&cs.ID, &cs.Platform, &cs.ParentSessionID, &cs.Intent, &cs.ComposedPrompt,
+			&worktreePath, &branch, &tmuxTarget, &cs.Status,
+			&cs.CreatedAt, &completedAt, &summary,
+		); err != nil {
+			return nil, fmt.Errorf("scanning child session: %w", err)
+		}
+		cs.WorktreePath = worktreePath.String
+		cs.Branch = branch.String
+		cs.TmuxTarget = tmuxTarget.String
+		cs.Summary = summary.String
+		if completedAt.Valid {
+			cs.CompletedAt = completedAt.Int64
+		}
+		out = append(out, cs)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading child sessions: %w", err)
+	}
+	return out, nil
+}
+
+// nullableString converts an empty string to a nil interface (stored as
+// NULL in SQLite) and a non-empty string to itself. This keeps nullable
+// TEXT columns clean rather than storing empty strings.
+func nullableString(s string) interface{} {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 // encodePatterns marshals a string slice to a JSON array string.

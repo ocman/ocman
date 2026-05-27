@@ -77,6 +77,19 @@ export default defineConfig({
     allowedHosts: extraAllowedHosts,
     proxy: {
       '/api': 'http://localhost:8229',
+      // MCP server — Streamable HTTP transport (POST + GET/SSE).
+      // configure: disables response buffering so SSE events are
+      // forwarded to the client immediately rather than held until
+      // the stream closes.
+      '/mcp': {
+        target: 'http://localhost:8229',
+        configure: (proxy) => {
+          proxy.on('proxyRes', (proxyRes) => {
+            // Flush each chunk immediately; required for SSE streams.
+            proxyRes.on('data', () => {})
+          })
+        },
+      },
     },
   },
   preview: {
@@ -85,6 +98,14 @@ export default defineConfig({
     allowedHosts: extraAllowedHosts,
     proxy: {
       '/api': 'http://localhost:8229',
+      '/mcp': {
+        target: 'http://localhost:8229',
+        configure: (proxy) => {
+          proxy.on('proxyRes', (proxyRes) => {
+            proxyRes.on('data', () => {})
+          })
+        },
+      },
     },
   },
 })

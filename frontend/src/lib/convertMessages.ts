@@ -381,7 +381,7 @@ export function createConvertMessages(): ConvertMessagesFn {
             // Show the written content as a full-addition diff.
             // Pass a structured payload so AssistantThread can render
             // it with @pierre/diffs instead of the old text format.
-            const writeTarget = inp.filePath || title || 'file';
+            const writeTarget = relativizePath(inp.filePath || title || 'file', projectDirectory || '');
             title = 'Write ' + writeTarget;
             argsText = ''; // diff is shown as result, no need for args
             resultText = JSON.stringify({
@@ -391,7 +391,7 @@ export function createConvertMessages(): ConvertMessagesFn {
               after: inp.content as string,
             });
           } else if (isEdit && inp.oldString && inp.newString) {
-            const editTarget = inp.filePath || title || 'file';
+            const editTarget = relativizePath(inp.filePath || title || 'file', projectDirectory || '');
             title = 'Edit ' + editTarget;
             argsText = ''; // diff is shown as result, no need for args
             // Prefer full before/after from filediff metadata so the

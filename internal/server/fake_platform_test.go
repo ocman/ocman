@@ -36,6 +36,10 @@ type fakePlatform struct {
 	// the /api/session/{id}/shell handler test to record the
 	// adapter received the call.
 	runShell func() error
+	// sendMessageFn, when non-nil, intercepts SendMessage calls.
+	sendMessageFn func(req platforms.SendMessageRequest) error
+	// sessionDetailFn, when non-nil, intercepts Session calls.
+	sessionDetailFn func(id string) (*platforms.SessionDetail, error)
 }
 
 func (f *fakePlatform) ID() platforms.ID {
@@ -68,7 +72,10 @@ func (f *fakePlatform) Sessions(ctx context.Context, dir string, since int64) ([
 	return f.sessions, f.sessionsErr
 }
 
-func (f *fakePlatform) Session(context.Context, string, int, int) (*platforms.SessionDetail, error) {
+func (f *fakePlatform) Session(_ context.Context, id string, _, _ int) (*platforms.SessionDetail, error) {
+	if f.sessionDetailFn != nil {
+		return f.sessionDetailFn(id)
+	}
 	return nil, platforms.ErrNotFound
 }
 
@@ -121,7 +128,10 @@ func (f *fakePlatform) ListQuestions(context.Context, string) ([]platforms.LiveP
 	return nil, nil
 }
 
-func (f *fakePlatform) SendMessage(context.Context, platforms.SendMessageRequest) error {
+func (f *fakePlatform) SendMessage(_ context.Context, req platforms.SendMessageRequest) error {
+	if f.sendMessageFn != nil {
+		return f.sendMessageFn(req)
+	}
 	return platforms.ErrUnsupported
 }
 

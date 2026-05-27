@@ -35,11 +35,22 @@ import (
 //	    are appended to the judge prompt. Persisting them server-side
 //	    means the backend's headless auto-approve uses the same rules
 //	    as the frontend settings page.
+//	9 - add `child_sessions` table. Tracks sessions spawned by the
+//	    MCP session-split tools (split_to_session, split_to_worktree).
+//	    Keyed by the child session ID; stores the parent session ID,
+//	    intent, composed prompt, worktree path, tmux target, status,
+//	    and completion summary. Index on (parent_session_id, status)
+//	    for the watcher loop and list_child_sessions tool.
+//	10 - add `judge_settings` single-row table. Stores the delay (ms)
+//	    the backend waits after a permission.asked event before starting
+//	    the LLM judge, giving the human a window to respond manually.
+//	    Default 5000 ms. Stored server-side so the delay is consistent
+//	    across all clients and headless runs.
 //
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 8
+const latestSchemaVersion = 10
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -151,6 +162,10 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV7(tx)
 	case 8:
 		return migrateToV8(tx)
+	case 9:
+		return migrateToV9(tx)
+	case 10:
+		return migrateToV10(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -322,4 +337,52 @@ func migrateToV6(tx *sql.Tx) error {
 		)
 	`)
 	return err
+}
+
+// migrateToV10 creates the judge_settings table. It holds a single row
+// (id=1) with the delay_ms column: how long the backend waits after a
+// permission.asked event before starting the LLM judge. Default 5000 ms.
+func migrateToV10(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE judge_settings (
+			id       INTEGER PRIMARY KEY CHECK (id = 1),
+			delay_ms INTEGER NOT NULL DEFAULT 5000
+		);
+		INSERT INTO judge_settings (id, delay_ms) VALUES (1, 5000);
+	`)
+	return err
+}
+
+// migrateToV9 creates the child_sessions table used by the MCP
+// session-split tools. Each row tracks one child session spawned from
+// a parent session via split_to_session or split_to_worktree.
+//
+// The index on (parent_session_id, status) serves two hot paths:
+//   - list_child_sessions: WHERE parent_session_id = ?
+//   - the watcher loop: WHERE status IN ('starting','running')
+func migrateToV9(tx *sql.Tx) error {
+	stmts := []string{
+		`CREATE TABLE child_sessions (
+			id                TEXT    NOT NULL PRIMARY KEY,
+			platform          TEXT    NOT NULL,
+			parent_session_id TEXT    NOT NULL,
+			intent            TEXT    NOT NULL,
+			composed_prompt   TEXT    NOT NULL DEFAULT '',
+			worktree_path     TEXT,
+			branch            TEXT,
+			tmux_target       TEXT,
+			status            TEXT    NOT NULL DEFAULT 'starting',
+			created_at        INTEGER NOT NULL,
+			completed_at      INTEGER,
+			summary           TEXT
+		)`,
+		`CREATE INDEX child_sessions_parent_status
+			ON child_sessions (parent_session_id, status)`,
+	}
+	for _, s := range stmts {
+		if _, err := tx.Exec(s); err != nil {
+			return err
+		}
+	}
+	return nil
 }

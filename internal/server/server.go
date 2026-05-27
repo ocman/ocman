@@ -92,6 +92,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	go s.runAutoArchiveLoop(ctx)
 	go s.runProjectsIndexLoop(ctx)
 	go s.runLLMMetricsLoop(ctx)
+	go s.runChildSessionWatcher(ctx)
 
 	// Register observable gauges for the top-line stats (session /
 	// message / project counts, lifetime tokens and cost). The
@@ -144,6 +145,13 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	mux.HandleFunc("/api/worktree/list", s.get(s.handleWorktreeList))
 	mux.HandleFunc("/api/worktree/default-base-ref", s.get(s.handleWorktreeDefaultBaseRef))
 	mux.HandleFunc("/api/worktree/create-and-launch", requirePOST(requireLocalhost(s.handleWorktreeCreateAndLaunch)))
+
+	// MCP server — localhost-only, enabled by default. Exposes the
+	// session-split tools (split_to_session, split_to_worktree, etc.)
+	// to AI coding agents via the Model Context Protocol.
+	mcpHandler := requireLocalhost(s.buildMCPHandler().ServeHTTP)
+	mux.HandleFunc("/mcp", mcpHandler)
+	mux.HandleFunc("/mcp/", mcpHandler)
 
 	// Auth endpoints. /me is unauthenticated by design (the SPA needs
 	// to learn its auth state before it can show the lockscreen).
