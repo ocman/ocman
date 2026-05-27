@@ -81,11 +81,11 @@ type portDiscoverer = PortDiscoverer
 
 // SessionLauncher orchestrates the creation of child sessions.
 type SessionLauncher struct {
-	stateDB         childSessionStore
-	platform        platformAdapter
-	createWorktree  worktreeCreator
-	launchTmux      tmuxLauncher
-	discoverPort    portDiscoverer
+	stateDB        childSessionStore
+	platform       platformAdapter
+	createWorktree worktreeCreator
+	launchTmux     tmuxLauncher
+	discoverPort   portDiscoverer
 }
 
 // NewSessionLauncher creates a SessionLauncher with production dependencies.

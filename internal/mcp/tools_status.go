@@ -31,8 +31,8 @@ type childSessionDB interface {
 
 // statusTools holds the dependencies for the status/management tool handlers.
 type statusTools struct {
-	stateDB  childSessionDB
-	ocDB     statusSessionReader // may be nil when OpenCode DB is unavailable
+	stateDB childSessionDB
+	ocDB    statusSessionReader // may be nil when OpenCode DB is unavailable
 }
 
 // getSessionStatusTool returns the tool definition for get_session_status.

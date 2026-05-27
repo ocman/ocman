@@ -15,11 +15,11 @@ import (
 // It is only registered when the OpenCode platform adapter is present.
 func (s *Server) buildMCPHandler() http.Handler {
 	deps := internalmcp.Deps{
-		OcDB:       s.db,
-		StateDB:    s.stateDB,
-		Registry:   s.registry,
-		PlatformID: "opencode",
-		LaunchTmux: internalmcp.TmuxLauncher(launchOpencodeInProjectTmuxWindow),
+		OcDB:         s.db,
+		StateDB:      s.stateDB,
+		Registry:     s.registry,
+		PlatformID:   "opencode",
+		LaunchTmux:   internalmcp.TmuxLauncher(launchOpencodeInProjectTmuxWindow),
 		DiscoverPort: internalmcp.PortDiscoverer(opencode.DiscoverOpenCodePort),
 	}
 	return internalmcp.New(deps).Handler()

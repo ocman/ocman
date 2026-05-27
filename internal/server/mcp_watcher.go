@@ -12,8 +12,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
-
-
 const (
 	// childSessionWatchInterval is how often the watcher polls for
 	// child session completion.

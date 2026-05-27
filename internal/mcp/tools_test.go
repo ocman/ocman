@@ -13,8 +13,8 @@ import (
 	"github.com/mark3labs/mcp-go/mcptest"
 	_ "modernc.org/sqlite"
 
-	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/db"
+	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/worktree"
@@ -65,9 +65,9 @@ func (f *fakePlatformForTools) SendMessage(_ context.Context, req platforms.Send
 // fakePlatformBase provides no-op implementations of all Platform methods.
 type fakePlatformBase struct{}
 
-func (fakePlatformBase) ID() platforms.ID                  { return "fake" }
-func (fakePlatformBase) DisplayName() string               { return "Fake" }
-func (fakePlatformBase) Available(_ context.Context) bool  { return true }
+func (fakePlatformBase) ID() platforms.ID                     { return "fake" }
+func (fakePlatformBase) DisplayName() string                  { return "Fake" }
+func (fakePlatformBase) Available(_ context.Context) bool     { return true }
 func (fakePlatformBase) Capabilities() platforms.Capabilities { return platforms.Capabilities{} }
 func (fakePlatformBase) Sessions(_ context.Context, _ string, _ int64) ([]db.Session, error) {
 	return nil, nil

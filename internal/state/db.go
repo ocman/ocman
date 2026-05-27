@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/XSAM/otelsql"
-	_ "modernc.org/sqlite"
 	"go.opentelemetry.io/otel/attribute"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	_ "modernc.org/sqlite"
 )
 
 // DB wraps the writable ocman state database.
@@ -317,18 +317,18 @@ func (d *DB) SetJudgeDelayMs(ms int64) error {
 
 // ChildSession holds the data for one MCP-spawned child session.
 type ChildSession struct {
-	ID               string
-	Platform         string
-	ParentSessionID  string
-	Intent           string
-	ComposedPrompt   string
-	WorktreePath     string // empty for split_to_session
-	Branch           string // empty for split_to_session
-	TmuxTarget       string // tmux session or session:window
-	Status           string // starting, running, completed, error, cancelled
-	CreatedAt        int64
-	CompletedAt      int64  // 0 until terminal state
-	Summary          string // populated on completion
+	ID              string
+	Platform        string
+	ParentSessionID string
+	Intent          string
+	ComposedPrompt  string
+	WorktreePath    string // empty for split_to_session
+	Branch          string // empty for split_to_session
+	TmuxTarget      string // tmux session or session:window
+	Status          string // starting, running, completed, error, cancelled
+	CreatedAt       int64
+	CompletedAt     int64  // 0 until terminal state
+	Summary         string // populated on completion
 }
 
 // InsertChildSession persists a new child session record. The initial

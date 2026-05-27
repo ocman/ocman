@@ -74,8 +74,8 @@ func defaultGitRunner(ctx context.Context, dir string, args ...string) (string, 
 // PromptComposer assembles an enriched prompt for a child session from
 // the caller's intent and automatically extracted context sources.
 type PromptComposer struct {
-	db         sessionReader
-	runGit     gitRunner
+	db     sessionReader
+	runGit gitRunner
 }
 
 // NewPromptComposer creates a PromptComposer backed by the given DB.

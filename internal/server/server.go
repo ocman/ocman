@@ -33,16 +33,16 @@ const (
 
 // Server serves the web UI and API.
 type Server struct {
-	db                  *db.DB
-	stateDB             *state.DB
-	addr                string
-	registry            *platforms.Registry
-	auth                *Auth
-	integrations        *integrations.Registry
-	startTime           time.Time
-	projects            projectsIndexState
-	autoApproveDefault  bool
-	judge               *PermissionJudge
+	db                 *db.DB
+	stateDB            *state.DB
+	addr               string
+	registry           *platforms.Registry
+	auth               *Auth
+	integrations       *integrations.Registry
+	startTime          time.Time
+	projects           projectsIndexState
+	autoApproveDefault bool
+	judge              *PermissionJudge
 }
 
 // New creates a new server. The registry may be nil, in which case a
