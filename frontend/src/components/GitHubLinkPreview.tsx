@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import type { FC } from 'react';
-import { extractGitHubUrls, cachedGitHubPreview } from '../lib/githubPreview';
+import { extractGitHubUrls, cachedGitHubPreview, refreshGitHubPreview } from '../lib/githubPreview';
 import type { GitHubPreviewData } from '../lib/githubPreview';
 import './GitHubLinkPreview.css';
 
@@ -73,13 +73,20 @@ const PreviewCard: FC<{ data: GitHubPreviewData }> = ({ data }) => (
   </a>
 );
 
+const REFRESH_INTERVAL_MS = 5_000;
+
 /**
  * Fetches and renders a single preview card for one URL.
- * Returns null while loading or if the fetch failed / URL unrecognised.
+ * Silently refreshes every 5 s while the card is in the viewport,
+ * and immediately on entering the viewport.
  */
 const SinglePreview: FC<{ url: string }> = ({ url }) => {
   const [data, setData] = useState<GitHubPreviewData | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const inViewRef = useRef(false);
 
+  // Initial load from cache (or first fetch)
   useEffect(() => {
     let cancelled = false;
     cachedGitHubPreview(url).then((d) => {
@@ -88,8 +95,49 @@ const SinglePreview: FC<{ url: string }> = ({ url }) => {
     return () => { cancelled = true; };
   }, [url]);
 
-  if (!data) return null;
-  return <PreviewCard data={data} />;
+  const doRefresh = useCallback(() => {
+    refreshGitHubPreview(url).then((d) => {
+      if (d) setData(d);
+    });
+  }, [url]);
+
+  const startPolling = useCallback(() => {
+    if (intervalRef.current !== null) return;
+    intervalRef.current = setInterval(doRefresh, REFRESH_INTERVAL_MS);
+  }, [doRefresh]);
+
+  const stopPolling = useCallback(() => {
+    if (intervalRef.current === null) return;
+    clearInterval(intervalRef.current);
+    intervalRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !inViewRef.current) {
+          inViewRef.current = true;
+          doRefresh();
+          startPolling();
+        } else if (!entry.isIntersecting && inViewRef.current) {
+          inViewRef.current = false;
+          stopPolling();
+        }
+      },
+      { threshold: 0 },
+    );
+
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      stopPolling();
+    };
+  }, [doRefresh, startPolling, stopPolling]);
+
+  return <div ref={ref}>{data && <PreviewCard data={data} />}</div>;
 };
 
 /**

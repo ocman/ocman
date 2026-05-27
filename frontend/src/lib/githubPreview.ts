@@ -174,3 +174,18 @@ export async function cachedGitHubPreview(url: string): Promise<GitHubPreviewDat
     return null;
   }
 }
+
+/**
+ * Fetches fresh data from the backend, bypassing the in-memory cache.
+ * Updates the cache on success; leaves any existing cached value intact on error.
+ */
+export async function refreshGitHubPreview(url: string): Promise<GitHubPreviewData | null> {
+  if (!parseGitHubUrl(url)) return null;
+  try {
+    const data = await fetchFromBackend(url);
+    cache.set(url, data);
+    return data;
+  } catch {
+    return null;
+  }
+}
