@@ -529,6 +529,8 @@ export interface ModelUsage {
   count: number;
   tokensIn: number;
   tokensOut: number;
+  cacheRead: number;
+  cacheWrite: number;
 }
 
 export interface HourlyData {

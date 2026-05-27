@@ -14,7 +14,7 @@ vi.mock('./api', () => ({
       { date: '2025-01-01', messages: 5 },
     ]),
     models: vi.fn().mockResolvedValue([
-      { provider: 'openai', model: 'gpt-4', count: 10, tokensIn: 100, tokensOut: 200 },
+      { provider: 'openai', model: 'gpt-4', count: 10, tokensIn: 100, tokensOut: 200, cacheRead: 0, cacheWrite: 0 },
     ]),
     hourly: vi.fn().mockResolvedValue([
       { hour: 9, sessions: 3 },

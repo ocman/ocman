@@ -1138,6 +1138,10 @@ func (d *DB) GetModelUsage(since int64, dir string) ([]ModelUsage, error) {
 		if md.Tokens != nil {
 			mu.TokensIn += md.Tokens.Input
 			mu.TokensOut += md.Tokens.Output
+			if md.Tokens.Cache != nil {
+				mu.CacheRead += md.Tokens.Cache.Read
+				mu.CacheWrite += md.Tokens.Cache.Write
+			}
 		}
 	}
 	if err := rows.Err(); err != nil {

@@ -125,6 +125,8 @@ export function UsageTab() {
               datasets: [
                 { label: 'Input', data: sortedModels.map((m) => m.tokensIn), backgroundColor: 'rgba(137, 180, 250, 0.6)', borderRadius: 2 },
                 { label: 'Output', data: sortedModels.map((m) => m.tokensOut), backgroundColor: 'rgba(203, 166, 247, 0.6)', borderRadius: 2 },
+                { label: 'Cache Read', data: sortedModels.map((m) => m.cacheRead ?? 0), backgroundColor: 'rgba(166, 227, 161, 0.6)', borderRadius: 2 },
+                { label: 'Cache Write', data: sortedModels.map((m) => m.cacheWrite ?? 0), backgroundColor: 'rgba(249, 226, 175, 0.6)', borderRadius: 2 },
               ],
             }} options={BAR_OPTIONS_TOKENS_BY_MODEL} />
           </div>

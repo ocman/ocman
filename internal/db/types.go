@@ -341,11 +341,13 @@ type DailyActivity struct {
 
 // ModelUsage holds per-model usage info.
 type ModelUsage struct {
-	Provider  string `json:"provider"`
-	Model     string `json:"model"`
-	Count     int    `json:"count"`
-	TokensIn  int64  `json:"tokensIn"`
-	TokensOut int64  `json:"tokensOut"`
+	Provider   string `json:"provider"`
+	Model      string `json:"model"`
+	Count      int    `json:"count"`
+	TokensIn   int64  `json:"tokensIn"`
+	TokensOut  int64  `json:"tokensOut"`
+	CacheRead  int64  `json:"cacheRead"`
+	CacheWrite int64  `json:"cacheWrite"`
 }
 
 // SessionDefaults holds the fallback composer settings for a session.

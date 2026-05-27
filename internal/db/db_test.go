@@ -1012,6 +1012,54 @@ func TestGetModelUsage(t *testing.T) {
 	if result[0].TokensIn != 300 || result[0].TokensOut != 150 {
 		t.Errorf("expected tokens 300/150, got %d/%d", result[0].TokensIn, result[0].TokensOut)
 	}
+	if result[0].CacheRead != 0 || result[0].CacheWrite != 0 {
+		t.Errorf("expected cache 0/0 (no cache data), got %d/%d", result[0].CacheRead, result[0].CacheWrite)
+	}
+}
+
+func TestGetModelUsage_CacheTokens(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Session", "/project", now, now)
+	// Message with cache tokens (Anthropic-style prompt caching).
+	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{
+		"role":       "assistant",
+		"providerID": "anthropic",
+		"modelID":    "claude-3-5-sonnet",
+		"tokens": map[string]interface{}{
+			"input":  500,
+			"output": 200,
+			"cache":  map[string]interface{}{"read": 1000, "write": 300},
+		},
+	})
+	// Second message: only cache read, no write.
+	insertMessage(t, db, "m2", "s1", now, map[string]interface{}{
+		"role":       "assistant",
+		"providerID": "anthropic",
+		"modelID":    "claude-3-5-sonnet",
+		"tokens": map[string]interface{}{
+			"input":  400,
+			"output": 150,
+			"cache":  map[string]interface{}{"read": 800, "write": 0},
+		},
+	})
+
+	result, err := db.GetModelUsage(0, "")
+	if err != nil {
+		t.Fatalf("GetModelUsage: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 model, got %d", len(result))
+	}
+	r := result[0]
+	if r.TokensIn != 900 || r.TokensOut != 350 {
+		t.Errorf("tokensIn/Out = %d/%d, want 900/350", r.TokensIn, r.TokensOut)
+	}
+	if r.CacheRead != 1800 || r.CacheWrite != 300 {
+		t.Errorf("cacheRead/Write = %d/%d, want 1800/300", r.CacheRead, r.CacheWrite)
+	}
 }
 
 func TestGetModelUsage_SortedOutput(t *testing.T) {
