@@ -80,6 +80,14 @@ export interface SessionView {
    *  Consumers must reset this flag once the refetch has been
    *  scheduled. */
   _refetchRequested: boolean;
+  /**
+   * Set by the backend-emitted `ocman.permission.checking` SSE event.
+   * Contains the permission ID currently being evaluated by the
+   * server-side LLM judge. Cleared when a `permission.replied` or
+   * `ocman.permission.auto-approved` event arrives for the same ID.
+   * The UI uses this to show a "checking" spinner on the prompt.
+   */
+  checkingPermissionId: string | null;
 }
 
 /**
@@ -165,6 +173,7 @@ export function initialSessionView(sessionId: string): SessionView {
     pendingQuestion: null,
     _deltaOwnedFields: new Map(),
     _refetchRequested: false,
+    checkingPermissionId: null,
   };
 }
 
@@ -553,6 +562,10 @@ function reduceSseEvent(state: SessionView, event: SseEvent): SessionView {
       return reducePermissionAsked(state, event);
     case 'permission.replied':
       return reducePermissionReplied(state, props);
+    case 'ocman.permission.checking':
+      return reducePermissionChecking(state, props);
+    case 'ocman.permission.auto-approved':
+      return reducePermissionAutoApproved(state, props);
     case 'question.asked':
       return reduceQuestionAsked(state, event);
     case 'question.replied':
@@ -772,7 +785,78 @@ function reducePermissionReplied(state: SessionView, props: Record<string, unkno
     (typeof props.permissionID === 'string' && props.permissionID) ||
     '';
   if (!repliedId || state.pendingPermission.permissionId !== repliedId) return state;
-  return { ...state, pendingPermission: null };
+  return {
+    ...state,
+    pendingPermission: null,
+    checkingPermissionId: state.checkingPermissionId === repliedId ? null : state.checkingPermissionId,
+  };
+}
+
+/**
+ * Fired by the backend when the LLM judge has started evaluating a
+ * permission. Sets `checkingPermissionId` so the UI can show a spinner.
+ */
+function reducePermissionChecking(state: SessionView, props: Record<string, unknown>): SessionView {
+  const permId = typeof props.permissionId === 'string' ? props.permissionId : null;
+  if (!permId) return state;
+  if (state.checkingPermissionId === permId) return state;
+  return { ...state, checkingPermissionId: permId };
+}
+
+/**
+ * Fired by the backend when the LLM judge approved a permission.
+ * Injects the approval notice into the thread and clears the pending
+ * permission prompt and checking indicator.
+ */
+function reducePermissionAutoApproved(state: SessionView, props: Record<string, unknown>): SessionView {
+  const permId = typeof props.permissionId === 'string' ? props.permissionId : '';
+  const permission = typeof props.permission === 'string' ? props.permission : '';
+  const patterns = Array.isArray(props.patterns)
+    ? (props.patterns as unknown[]).filter((p): p is string => typeof p === 'string')
+    : [];
+  const judgeSessionId = typeof props.judgeSessionId === 'string' ? props.judgeSessionId : '';
+  const approvedAt = typeof props.approvedAt === 'number' ? props.approvedAt : Date.now();
+
+  if (!permId || !permission) return state;
+
+  // Inject the approval notice.
+  const stableKey = `ocman-notice-${judgeSessionId || permId}`;
+  let messages = state.messages;
+  let parts = state.parts;
+  if (!messages.some((m) => m.id === stableKey)) {
+    const noticeMsg: import('./api').Message = {
+      id: stableKey,
+      sessionId: state.sessionId,
+      timeCreated: approvedAt,
+      data: { role: 'notice' },
+    };
+    const noticePart: import('./api').Part = {
+      id: `${stableKey}-part`,
+      messageId: stableKey,
+      sessionId: state.sessionId,
+      timeCreated: approvedAt,
+      data: JSON.stringify({
+        type: 'auto-approved',
+        permission,
+        patterns,
+        judgeSessionId,
+      }),
+    };
+    messages = upsertMessage(messages, noticeMsg);
+    parts = [...parts, noticePart];
+  }
+
+  // Clear the pending permission if it matches.
+  const pendingPermission =
+    state.pendingPermission?.permissionId === permId ? null : state.pendingPermission;
+
+  return {
+    ...state,
+    messages,
+    parts,
+    pendingPermission,
+    checkingPermissionId: state.checkingPermissionId === permId ? null : state.checkingPermissionId,
+  };
 }
 
 function reduceQuestionAsked(state: SessionView, event: SseEvent): SessionView {

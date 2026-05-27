@@ -255,7 +255,6 @@ var sessionSubRoutes = []sessionSubRoute{
 	// Session-scoped POSTs (specific patterns first).
 	{http.MethodPost, "{id}/questions/{qid}/reject", (*Server).handleSessionQuestion},
 	{http.MethodPost, "{id}/questions/{qid}", (*Server).handleSessionQuestion},
-	{http.MethodPost, "{id}/permissions/{pid}/judge", (*Server).handleSessionPermissionJudge},
 	{http.MethodPost, "{id}/permissions/{pid}", (*Server).handleSessionPermission},
 	{http.MethodPost, "{id}/auto-approve", (*Server).handleSessionAutoApproveSet},
 	{http.MethodPost, "{id}/message", (*Server).handleSessionMessage},

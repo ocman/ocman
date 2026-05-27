@@ -294,7 +294,7 @@ const recentUserMessagesLimit = 6
 // OpenCode session and returns the plain text of user-role messages.
 // Returns nil when the fetch fails so callers can proceed without context.
 func (j *PermissionJudge) recentUserMessages(ctx context.Context, port, sessionID string) []string {
-	apiURL := fmt.Sprintf("http://127.0.0.1:%s/session/%s/messages?limit=%d", port, sessionID, recentUserMessagesLimit)
+	apiURL := fmt.Sprintf("http://127.0.0.1:%s/session/%s/message", port, sessionID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return nil
@@ -326,6 +326,10 @@ func (j *PermissionJudge) recentUserMessages(ctx context.Context, port, sessionI
 		if txt := extractTextFromParts(m); txt != "" {
 			out = append(out, txt)
 		}
+	}
+	// Return only the most recent N messages to keep the prompt concise.
+	if len(out) > recentUserMessagesLimit {
+		out = out[len(out)-recentUserMessagesLimit:]
 	}
 	return out
 }
@@ -419,6 +423,17 @@ func extractTextFromParts(msg map[string]interface{}) string {
 }
 
 
+// writeSSEEvent writes a single named SSE event to w and calls flush if
+// non-nil. This is used by backgroundAutoApprove to push synthetic
+// ocman-originated events (e.g. permission.checking, permission.auto-approved)
+// back to connected browser clients through the proxied event stream.
+func writeSSEEvent(w io.Writer, flush func(), eventType string, data []byte) {
+	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", eventType, string(data))
+	if flush != nil {
+		flush()
+	}
+}
+
 // --- Background (server-side) auto-approve ---
 
 // ssePermissionTee wraps an io.Writer and tees the SSE byte stream to a
@@ -431,10 +446,11 @@ func extractTextFromParts(msg map[string]interface{}) string {
 // are still detected. The tee is intentionally lossy on parse errors —
 // it always forwards every byte to the underlying writer unchanged.
 type ssePermissionTee struct {
-	w             io.Writer
-	buf           []byte
-	mu            sync.Mutex
-	onPermission  func(permissionID, permission string, patterns []string)
+	w            io.Writer
+	flush        func()
+	buf          []byte
+	mu           sync.Mutex
+	onPermission func(permissionID, permission string, patterns []string)
 }
 
 func (t *ssePermissionTee) Write(p []byte) (int, error) {
@@ -548,15 +564,22 @@ func (t *ssePermissionTee) dispatchEvent(eventType, dataJSON string) {
 	go t.onPermission(props.ID, props.Permission, props.Patterns)
 }
 
-// backgroundAutoApprove is the server-side counterpart of the
-// frontend's useAutoApprove hook. It is called whenever an SSE
-// permission.asked event is observed on a proxied event stream —
-// meaning it fires even when no browser tab has the session open.
+// backgroundAutoApprove is the authoritative auto-approve engine.
+// It fires whenever an SSE permission.asked event is observed on a
+// proxied event stream — even when no browser tab has the session open.
 //
-// It checks whether auto-approve is enabled for the session, runs the
-// LLM judge, and if the verdict is safe, responds "once" directly
-// to the running OpenCode instance. The approval is also persisted to
-// stateDB so the notice survives a page refresh.
+// When auto-approve is enabled for the session it:
+//  1. Emits an "ocman.permission.checking" SSE event to any connected
+//     clients so the UI can show a "checking" indicator immediately.
+//  2. Loads the user-defined judge prompt sections from stateDB.
+//  3. Runs the LLM judge.
+//  4. If the verdict is SAFE, responds "once" directly to the running
+//     OpenCode instance, persists the approval, and emits an
+//     "ocman.permission.auto-approved" SSE event back to clients.
+//
+// sseW and sseFlush are the response writer and flusher for the
+// currently-connected SSE client. Both may be nil when the function
+// is called without a live client (e.g. in tests).
 //
 // This function blocks (it calls judge.Judge which polls OpenCode) and
 // must always be called in a goroutine.
@@ -568,6 +591,8 @@ func (s *Server) backgroundAutoApprove(
 	permissionID string,
 	permission string,
 	patterns []string,
+	sseW io.Writer,
+	sseFlush func(),
 ) {
 	logger := log.WithFields(log.Fields{
 		"sessionID":    sessionID,
@@ -596,11 +621,33 @@ func (s *Server) backgroundAutoApprove(
 		return
 	}
 
+	// Notify connected clients that the judge is running.
+	if sseW != nil {
+		checkingPayload, _ := json.Marshal(map[string]string{
+			"permissionId": permissionID,
+			"sessionId":    sessionID,
+		})
+		writeSSEEvent(sseW, sseFlush, "ocman.permission.checking", checkingPayload)
+	}
+
 	logger.Info("background auto-approve: judging permission")
+
+	// Load user-defined prompt sections from stateDB so headless runs
+	// use the same custom rules as the settings page.
+	var customSections []PromptSection
+	if s.stateDB != nil {
+		if stored, err := s.stateDB.GetPromptSections(); err == nil {
+			for _, ps := range stored {
+				customSections = append(customSections, PromptSection{
+					Title:   ps.Title,
+					Content: ps.Content,
+				})
+			}
+		}
+	}
 
 	// Build a user-intent section from recent messages in this session
 	// so the judge can factor in what the user explicitly asked for.
-	var extraSections []PromptSection
 	if s.judge != nil && s.judge.openCodePort != nil {
 		port := s.judge.openCodePort(dbSession.Directory)
 		if port != "" {
@@ -618,15 +665,15 @@ func (s *Server) backgroundAutoApprove(
 					b.WriteString("\n")
 				}
 				b.WriteString("\nIf the permission request is a direct and proportionate consequence of what the user asked for, lean toward SAFE.")
-				extraSections = []PromptSection{{
+				customSections = append(customSections, PromptSection{
 					Title:   "Recent user intent",
 					Content: b.String(),
-				}}
+				})
 			}
 		}
 	}
 
-	result := s.judge.Judge(ctx, dbSession.Directory, permission, patterns, extraSections)
+	result := s.judge.Judge(ctx, dbSession.Directory, permission, patterns, customSections)
 
 	logger.WithFields(log.Fields{
 		"verdict":        string(result.Verdict),
@@ -647,6 +694,8 @@ func (s *Server) backgroundAutoApprove(
 		return
 	}
 
+	approvedAt := time.Now().UnixMilli()
+
 	// Persist the approval so the UI notice survives a page refresh.
 	if s.stateDB != nil {
 		if err := s.stateDB.RecordApprovedPermission(
@@ -657,11 +706,28 @@ func (s *Server) backgroundAutoApprove(
 				PermissionText: permission,
 				Patterns:       patterns,
 				JudgeSessionID: result.SessionID,
-				ApprovedAt:     time.Now().UnixMilli(),
+				ApprovedAt:     approvedAt,
 			},
 		); err != nil {
 			logger.WithError(err).Warn("background auto-approve: failed to persist approval")
 		}
+	}
+
+	// Notify connected clients so they can inject the notice immediately
+	// without waiting for a page reload.
+	if sseW != nil {
+		if patterns == nil {
+			patterns = []string{}
+		}
+		approvedPayload, _ := json.Marshal(map[string]interface{}{
+			"permissionId":   permissionID,
+			"sessionId":      sessionID,
+			"permission":     permission,
+			"patterns":       patterns,
+			"judgeSessionId": result.SessionID,
+			"approvedAt":     approvedAt,
+		})
+		writeSSEEvent(sseW, sseFlush, "ocman.permission.auto-approved", approvedPayload)
 	}
 
 	logger.Info("background auto-approve: permission approved")

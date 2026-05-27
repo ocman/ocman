@@ -221,6 +221,54 @@ func (d *DB) ListApprovedPermissions(platform, sessionID string) ([]ApprovedPerm
 	return out, nil
 }
 
+// PromptSection is a user-defined extra section appended to the judge prompt.
+// Matches the PromptSection type in internal/server/autoapprove.go.
+type PromptSection struct {
+	Title   string `json:"title"`
+	Content string `json:"content"`
+}
+
+// GetPromptSections returns the persisted judge prompt sections, or an
+// empty slice if none have been saved yet.
+func (d *DB) GetPromptSections() ([]PromptSection, error) {
+	var sectionsJSON string
+	err := d.db.QueryRow(`SELECT sections_json FROM judge_prompt_sections WHERE id = 1`).Scan(&sectionsJSON)
+	if err == sql.ErrNoRows {
+		return []PromptSection{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading prompt sections: %w", err)
+	}
+	var out []PromptSection
+	if err := json.Unmarshal([]byte(sectionsJSON), &out); err != nil {
+		return []PromptSection{}, nil
+	}
+	return out, nil
+}
+
+// SetPromptSections persists the judge prompt sections, overwriting any
+// existing row. Pass an empty slice to clear all custom sections.
+func (d *DB) SetPromptSections(sections []PromptSection) error {
+	if sections == nil {
+		sections = []PromptSection{}
+	}
+	b, err := json.Marshal(sections)
+	if err != nil {
+		return fmt.Errorf("encoding prompt sections: %w", err)
+	}
+	_, err = d.db.Exec(`
+		INSERT INTO judge_prompt_sections (id, sections_json, updated_at)
+		VALUES (1, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			sections_json = excluded.sections_json,
+			updated_at    = excluded.updated_at
+	`, string(b), time.Now().UnixMilli())
+	if err != nil {
+		return fmt.Errorf("saving prompt sections: %w", err)
+	}
+	return nil
+}
+
 // encodePatterns marshals a string slice to a JSON array string.
 func encodePatterns(patterns []string) (string, error) {
 	if patterns == nil {

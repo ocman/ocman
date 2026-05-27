@@ -30,11 +30,16 @@ import (
 //	    permission that was auto-approved by the LLM judge, so the
 //	    approval notice can be re-injected into the conversation thread
 //	    after a page refresh.
+//	8 - add `judge_prompt_sections` single-row table. Stores the
+//	    user-defined extra prompt sections (title + content pairs) that
+//	    are appended to the judge prompt. Persisting them server-side
+//	    means the backend's headless auto-approve uses the same rules
+//	    as the frontend settings page.
 //
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 7
+const latestSchemaVersion = 8
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -144,6 +149,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV6(tx)
 	case 7:
 		return migrateToV7(tx)
+	case 8:
+		return migrateToV8(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -277,6 +284,23 @@ func migrateToV7(tx *sql.Tx) error {
 			judge_session_id TEXT    NOT NULL DEFAULT '',
 			approved_at      INTEGER NOT NULL,
 			PRIMARY KEY (platform, session_id, permission_id)
+		)
+	`)
+	return err
+}
+
+// migrateToV8 creates the judge_prompt_sections table. It holds a
+// single row (id=1) containing the user-defined extra sections
+// appended to the LLM judge prompt. Stored as a JSON array of
+// {title, content} objects matching the PromptSection type used in
+// internal/server/autoapprove.go. An empty JSON array means no extra
+// sections.
+func migrateToV8(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE judge_prompt_sections (
+			id            INTEGER PRIMARY KEY CHECK (id = 1),
+			sections_json TEXT    NOT NULL DEFAULT '[]',
+			updated_at    INTEGER NOT NULL
 		)
 	`)
 	return err

@@ -121,6 +121,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     parts: rawParts,
     pendingPermission,
     pendingQuestion,
+    checkingPermissionId,
     status: sseStatus,
     loading,
     loadingMore,
@@ -139,7 +140,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
     setPendingPermission,
     setPendingQuestion,
     patchSession,
-    dispatch,
   } = view;
 
   // Optimistic user-send slot. Lives outside the SessionView; the
@@ -281,37 +281,18 @@ export function SessionDetail({ id }: SessionDetailProps) {
     clearPrompt,
   });
 
-  // Auto-approve judge for permission prompts.
+  // Auto-approve enabled/disabled state. The actual judge runs server-side;
+  // checking/approval state arrives via SSE (ocman.permission.checking and
+  // ocman.permission.auto-approved) and is reflected through the reducer.
   const autoApprove = useAutoApprove({
     sessionId: session?.id ?? '',
     capable: caps.autoApprove && portAvailable,
-    dispatch,
   });
-  const { enabled: autoApproveEnabled, runJudge, cancelJudge } = autoApprove;
 
-  // Wrap handlePermissionReply so a manual human reply during the delay
-  // window cancels any pending judge before it fires.
-  const handlePermissionReplyWithCancel = useCallback(
-    (reply: 'once' | 'always' | 'reject') => {
-      if (pendingPermission) cancelJudge(pendingPermission.permissionId);
-      return handlePermissionReply(reply);
-    },
-    [pendingPermission, cancelJudge, handlePermissionReply],
-  );
-
-  // When a new pending permission arrives and auto-approve is enabled,
-  // immediately kick off the judge. If the verdict is safe the judge
-  // calls handlePermissionReply('once') directly.
-  const lastJudgedPermissionId = useRef<string | null>(null);
-  useEffect(() => {
-    if (!pendingPermission) return;
-    if (!autoApproveEnabled) return;
-    if (lastJudgedPermissionId.current === pendingPermission.permissionId) return;
-    lastJudgedPermissionId.current = pendingPermission.permissionId;
-    runJudge(pendingPermission, (permissionId) => {
-      clearPrompt('permission', permissionId);
-    });
-  }, [pendingPermission, autoApproveEnabled, runJudge, clearPrompt]);
+  // Whether the backend judge is currently evaluating the pending permission.
+  const autoApproveChecking =
+    pendingPermission !== null &&
+    checkingPermissionId === pendingPermission.permissionId;
 
   // Toast / modal state.
   const [showRenameModal, setShowRenameModal] = useState(false);
@@ -902,13 +883,13 @@ export function SessionDetail({ id }: SessionDetailProps) {
                       {pendingPermission && portAvailable && caps.respondPermission ? (
                         <PermissionPrompt
                           permission={pendingPermission}
-                          onReply={handlePermissionReplyWithCancel}
-                          disabled={answeringPermission}
+                          onReply={handlePermissionReply}
+                          disabled={answeringPermission || autoApproveChecking}
                           error={permissionError}
                           autoApproveCapable={caps.autoApprove}
                           autoApproveEnabled={autoApprove.enabled}
-                          autoApproveChecking={autoApprove.checking}
-                          judgeSessionId={autoApprove.judgeSessionId}
+                          autoApproveChecking={autoApproveChecking}
+                          judgeSessionId={null}
                           onEnableAutoApprove={() => autoApprove.setEnabled(true)}
                           onViewJudgeSession={navigateToSession}
                         />

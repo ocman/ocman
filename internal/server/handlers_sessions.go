@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel/attribute"
@@ -833,64 +832,6 @@ func (s *Server) handleSessionApprovedPermissions(w http.ResponseWriter, r *http
 	})
 }
 
-// handleSessionPermissionJudge handles POST /api/session/{id}/permissions/{pid}/judge.
-// Runs the LLM judge against the given permission and returns the verdict.
-// The frontend calls this when auto-approve is enabled, shows a "checking"
-// indicator while waiting, then either auto-submits (SAFE) or leaves the
-// prompt for the human (UNSAFE).
-func (s *Server) handleSessionPermissionJudge(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Permission     string               `json:"permission"`
-		Patterns       []string             `json:"patterns"`
-		PromptSections []PromptSection      `json:"promptSections"`
-	}
-	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
-		return
-	}
-	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, rest string, adapter platforms.Platform) {
-		// Resolve the session directory so the judge can find the
-		// running OpenCode instance's port.
-		if s.db == nil {
-			http.Error(w, "OpenCode platform not available", http.StatusServiceUnavailable)
-			return
-		}
-		dbSession, err := s.db.GetSession(sessionID)
-		if err != nil || dbSession == nil {
-			http.Error(w, "session not found", http.StatusNotFound)
-			return
-		}
-
-		// Extract the permission ID from the URL path: "permissions/{pid}/judge"
-		permissionID := strings.TrimPrefix(rest, "permissions/")
-		permissionID = strings.TrimSuffix(permissionID, "/judge")
-
-		result := s.judge.Judge(r.Context(), dbSession.Directory, req.Permission, req.Patterns, req.PromptSections)
-
-		// Persist the approval so the notice survives a page refresh.
-		if result.Verdict == verdictSafe && s.stateDB != nil {
-			if err := s.stateDB.RecordApprovedPermission(
-				string(adapter.ID()),
-				sessionID,
-				state.ApprovedPermission{
-					PermissionID:   permissionID,
-					PermissionText: req.Permission,
-					Patterns:       req.Patterns,
-					JudgeSessionID: result.SessionID,
-					ApprovedAt:     time.Now().UnixMilli(),
-				},
-			); err != nil {
-				log.WithError(err).Warn("failed to persist auto-approved permission")
-				// Non-fatal — the verdict is still returned to the frontend.
-			}
-		}
-
-		writeJSON(w, map[string]interface{}{
-			"verdict":        string(result.Verdict),
-			"judgeSessionId": result.SessionID,
-		})
-	})
-}
-
 // --- Session-scoped SSE event stream ---
 
 func (s *Server) handleSessionEvents(w http.ResponseWriter, r *http.Request) {
@@ -928,8 +869,12 @@ func (s *Server) serveSessionEvents(w http.ResponseWriter, r *http.Request, sess
 
 	// Tee the SSE stream so permission.asked events trigger server-side
 	// auto-approve even when no browser tab has this session open.
+	// Pass the response writer and flusher so backgroundAutoApprove can
+	// emit synthetic ocman SSE events (checking, auto-approved) back to
+	// any connected browser client.
 	tee := &ssePermissionTee{
-		w: w,
+		w:     w,
+		flush: flush,
 		onPermission: func(permissionID, permission string, patterns []string) {
 			go s.backgroundAutoApprove(
 				context.Background(),
@@ -939,6 +884,8 @@ func (s *Server) serveSessionEvents(w http.ResponseWriter, r *http.Request, sess
 				permissionID,
 				permission,
 				patterns,
+				w,
+				flush,
 			)
 		},
 	}

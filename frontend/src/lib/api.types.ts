@@ -588,10 +588,9 @@ export interface PlatformCapabilities {
   liveConnectionHint?: string;
   /**
    * Whether this platform supports per-session auto-approve:
-   * GET/POST /api/session/{id}/auto-approve and
-   * POST /api/session/{id}/permissions/{pid}/judge.
+   * GET/POST /api/session/{id}/auto-approve.
    * When true the permission prompt shows an auto-approve toggle and
-   * a "Checking..." indicator while the judge runs.
+   * a "Checking..." indicator while the server-side judge runs.
    */
   autoApprove: boolean;
 }

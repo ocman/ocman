@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import './Dashboard.css';
 import { useNavigate, NavLink, Outlet, useSearchParams, useLocation } from 'react-router-dom';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend, PointElement, LineElement } from 'chart.js';
@@ -15,6 +15,7 @@ import { ProjectScopePicker } from '../components/ProjectScopePicker';
 import { matchesScope } from '../lib/projectTree';
 
 import { useUiStore } from '../lib/uiStore';
+import { useApiStore } from '../lib/apiStore';
 import { useAuthStore } from '../lib/authStore';
 import { usePwaInstall } from '../lib/usePwaInstall';
 import {
@@ -342,7 +343,19 @@ export function SettingsTab() {
   const setAutoApproveDelayMs = useUiStore((s) => s.setAutoApproveDelayMs);
   const promptSections = useUiStore((s) => s.promptSections);
   const setPromptSections = useUiStore((s) => s.setPromptSections);
+  const getPromptSections = useApiStore((s) => s.getPromptSections);
+  const setPromptSectionsApi = useApiStore((s) => s.setPromptSectionsApi);
   const authRequired = useAuthStore((s) => s.authRequired);
+
+  // On mount, load prompt sections from the server and sync to uiStore.
+  // This ensures the settings page reflects what the backend judge actually uses,
+  // even if another client or direct API call changed them.
+  useEffect(() => {
+    getPromptSections().then((serverSections) => {
+      setPromptSections(serverSections);
+    }).catch(() => { /* best-effort — uiStore value survives */ });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const logout = useAuthStore((s) => s.logout);
   const { canInstall, installed, promptInstall } = usePwaInstall();
 
@@ -488,18 +501,23 @@ export function SettingsTab() {
                   const next = [...promptSections];
                   next[i] = updated;
                   setPromptSections(next);
+                  void setPromptSectionsApi(next);
                 }}
                 onRemove={() => {
-                  setPromptSections(promptSections.filter((_, j) => j !== i));
+                  const next = promptSections.filter((_, j) => j !== i);
+                  setPromptSections(next);
+                  void setPromptSectionsApi(next);
                 }}
               />
             ))}
             <button
               type="button"
               className="settings-prompt-add"
-              onClick={() =>
-                setPromptSections([...promptSections, { title: '', content: '' }])
-              }
+              onClick={() => {
+                const next = [...promptSections, { title: '', content: '' }];
+                setPromptSections(next);
+                void setPromptSectionsApi(next);
+              }}
             >
               + Add section
             </button>

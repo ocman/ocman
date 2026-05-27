@@ -643,22 +643,15 @@ export const api = {
     if (!resp.ok) throw new Error(await resp.text());
   },
 
-  judgePermission: async (
-    sessionId: string,
-    permissionId: string,
-    permission: string,
-    patterns: string[],
-    promptSections?: Array<{ title: string; content: string }>,
-  ): Promise<{ verdict: 'safe' | 'unsafe'; judgeSessionId: string }> => {
-    const resp = await fetch(
-      `/api/session/${encodeURIComponent(sessionId)}/permissions/${encodeURIComponent(permissionId)}/judge`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ permission, patterns, promptSections }),
-      },
-    );
+  getPromptSections: () =>
+    fetchJSON<Array<{ title: string; content: string }>>('/api/settings/prompt-sections'),
+
+  setPromptSections: async (sections: Array<{ title: string; content: string }>): Promise<void> => {
+    const resp = await fetch('/api/settings/prompt-sections', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sections),
+    });
     if (!resp.ok) throw new Error(await resp.text());
-    return resp.json() as Promise<{ verdict: 'safe' | 'unsafe'; judgeSessionId: string }>;
   },
 };

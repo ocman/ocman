@@ -159,6 +159,10 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	mux.HandleFunc("/api/integrations/status", s.get(s.handleIntegrationsStatus))
 	mux.HandleFunc("/api/integrations/github/preview", s.get(s.handleGitHubPreview))
 
+	// Settings endpoints — user preferences that must be shared with the
+	// backend (e.g. judge prompt sections used by headless auto-approve).
+	mux.HandleFunc("/api/settings/prompt-sections", s.requireAuth(s.handlePromptSections))
+
 	// Best-effort remote-logging sink for the frontend. Localhost-only so
 	// it can't be used to flood logs from the network. See
 	// handleDebugLog for the JSON shape.
