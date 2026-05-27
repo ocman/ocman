@@ -500,8 +500,7 @@ body.oc-sidebar-resizing .oc-changes-sidebar {
  * relationship to the row above is visually obvious without
  * needing a card border. */
 .oc-changes-list-body-expanded {
-  padding: 6px 8px 10px 28px;
-  overflow-x: auto;
+  padding: 6px 0 10px 0;
   border-bottom: 1px solid var(--border);
 }
 
