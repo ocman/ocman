@@ -39,7 +39,15 @@ export default defineConfig({
     // Run locally with `pnpm exec playwright test --project=webkit`.
     ...(!process.env.CI ? [{
       name: 'webkit',
-      use: { ...devices['Desktop Safari'] },
+      use: {
+        ...devices['Desktop Safari'],
+        // Block the PWA service worker so Playwright's page.route()
+        // intercepts fetch() calls reliably. Without this, WebKit
+        // routes requests through the service worker process, which
+        // bypasses Playwright's network interception layer for fetches
+        // triggered by React event handlers (user gestures).
+        serviceWorkers: 'block' as const,
+      },
     }] : []),
   ],
 
