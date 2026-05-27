@@ -20,6 +20,12 @@ const CATPPUCCIN_CSS = `
     --diffs-font-size: 12px;
     --diffs-line-height: 18px;
   }
+
+  /* Hide the "No newline at end of file" indicator — it adds noise without
+     actionable value in the context of an AI session diff view. */
+  [data-no-newline] {
+    display: none;
+  }
 `;
 
 export const DIFF_OPTIONS: NonNullable<MultiFileDiffProps<undefined>['options']> = {
