@@ -12,11 +12,12 @@ import (
 
 // slowRequestThreshold is the wall-clock duration above which a request
 // is logged at INFO instead of DEBUG. The intent is "show in normal
-// production logs without manual filtering". 250ms is well above the
-// p99 of every endpoint we measured during a healthy session list
-// build, so anything elevated to INFO is worth an operator's
-// attention.
-const slowRequestThreshold = 2500 * time.Millisecond
+// production logs without manual filtering" — anything elevated to
+// INFO is worth an operator's attention. Set above the p99 of healthy
+// session-list builds (which can spend ~2-3s in db_get_sessions on
+// large OpenCode databases) so the steady-state idle dashboard polls
+// stay at DEBUG.
+const slowRequestThreshold = 5 * time.Second
 
 // statusRecorder is a tiny http.ResponseWriter shim that captures the
 // final status code written by the wrapped handler. We need this
