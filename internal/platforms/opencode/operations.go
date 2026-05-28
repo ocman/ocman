@@ -425,7 +425,18 @@ func (a *Adapter) RespondPermission(ctx context.Context, req platforms.RespondPe
 	if err != nil {
 		return fmt.Errorf("marshal request: %w", err)
 	}
-	return postJSON(ctx, port, fmt.Sprintf("/session/%s/permissions/%s", req.SessionID, req.PermissionID), payload)
+	if err := postJSON(ctx, port, fmt.Sprintf("/session/%s/permissions/%s", req.SessionID, req.PermissionID), payload); err != nil {
+		return err
+	}
+	// The pending-prompt cache (3 s TTL) backs the sidebar's
+	// pendingPermission flag. Without this invalidation, the sidebar
+	// keeps showing the bell for up to ~6 s after auto-approve (one TTL
+	// before the cache expires, plus one sidebar poll interval) — long
+	// enough to feel like the auto-approve didn't fire. Drop the entry
+	// so the next /api/sessions fan-out fetches a fresh list from
+	// OpenCode without the just-resolved prompt.
+	getPendingPromptCache().invalidate(port, "/permission")
+	return nil
 }
 
 // RespondQuestion replies to a pending question prompt.
@@ -438,7 +449,13 @@ func (a *Adapter) RespondQuestion(ctx context.Context, req platforms.RespondQues
 	if err != nil {
 		return fmt.Errorf("marshal request: %w", err)
 	}
-	return postJSON(ctx, port, fmt.Sprintf("/question/%s/reply", req.RequestID), payload)
+	if err := postJSON(ctx, port, fmt.Sprintf("/question/%s/reply", req.RequestID), payload); err != nil {
+		return err
+	}
+	// See RespondPermission: drop the cached /question list so the
+	// sidebar's pendingQuestion flag clears immediately on the next poll.
+	getPendingPromptCache().invalidate(port, "/question")
+	return nil
 }
 
 // RejectQuestion dismisses a pending question prompt.
@@ -447,7 +464,11 @@ func (a *Adapter) RejectQuestion(ctx context.Context, req platforms.RejectQuesti
 	if err != nil {
 		return err
 	}
-	return postJSON(ctx, port, fmt.Sprintf("/question/%s/reject", req.RequestID), []byte("{}"))
+	if err := postJSON(ctx, port, fmt.Sprintf("/question/%s/reject", req.RequestID), []byte("{}")); err != nil {
+		return err
+	}
+	getPendingPromptCache().invalidate(port, "/question")
+	return nil
 }
 
 // Abort cancels the in-flight response for a session.

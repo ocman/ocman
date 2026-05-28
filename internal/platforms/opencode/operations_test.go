@@ -591,3 +591,92 @@ func TestCreateSession_NoTitleSkipsPatch(t *testing.T) {
 		t.Error("PATCH must not be called when no title is requested")
 	}
 }
+
+// TestRespondPermission_InvalidatesPendingPromptCache is the regression
+// guard for the "sidebar still shows the bell after auto-approve" bug.
+//
+// The sidebar's pendingPermission flag is derived from a 3-second TTL
+// cache of OpenCode's /permission listing. Without explicit cache
+// invalidation, after auto-approve calls RespondPermission, the next
+// /api/sessions fan-out still served the cached (pre-respond) listing
+// and kept the bell on for up to ~6 seconds.
+//
+// Contract: after a successful RespondPermission call, the cache entry
+// for (port, "/permission") must be dropped so the next fetch returns
+// the upstream's fresh listing.
+func TestRespondPermission_InvalidatesPendingPromptCache(t *testing.T) {
+	const sid = "sess-1"
+	const pid = "perm-1"
+	const dir = "/tmp/proj-respond"
+
+	// Track upstream calls so we can confirm the cache was actually
+	// consulted before invalidation and bypassed after.
+	var permListHits int32
+	var permRespondHits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/permission" && r.Method == http.MethodGet:
+			atomic.AddInt32(&permListHits, 1)
+			w.Header().Set("Content-Type", "application/json")
+			// First call returns the pending permission; subsequent
+			// fetches return an empty list (i.e. the upstream has
+			// resolved it after our POST).
+			if atomic.LoadInt32(&permRespondHits) == 0 {
+				_, _ = w.Write([]byte(`[{"id":"` + pid + `","sessionID":"` + sid + `"}]`))
+			} else {
+				_, _ = w.Write([]byte(`[]`))
+			}
+		case r.URL.Path == "/session/"+sid+"/permissions/"+pid && r.Method == http.MethodPost:
+			atomic.AddInt32(&permRespondHits, 1)
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+	withTestPort(t, dir, port)
+	database := newTestDBWithSession(t, sid, dir)
+
+	// Reset the pending-prompt cache so test ordering can't pollute
+	// us with a stale entry from an earlier test.
+	resetPendingPromptCache()
+	t.Cleanup(resetPendingPromptCache)
+
+	a := New(database, nil)
+
+	// Step 1: prime the cache with the pre-respond listing.
+	got := fetchPromptSessionIDs(port, "/permission")
+	if !got[sid] {
+		t.Fatalf("initial fetch: expected session %q in pending list, got %v", sid, got)
+	}
+	if hits := atomic.LoadInt32(&permListHits); hits != 1 {
+		t.Fatalf("initial fetch: expected 1 upstream hit, got %d", hits)
+	}
+
+	// Step 2: a second fetch within the TTL must come from the cache.
+	_ = fetchPromptSessionIDs(port, "/permission")
+	if hits := atomic.LoadInt32(&permListHits); hits != 1 {
+		t.Fatalf("within TTL: expected cache hit (still 1 upstream call), got %d", hits)
+	}
+
+	// Step 3: respond to the permission. This is the call under test.
+	if err := a.RespondPermission(context.Background(), platforms.RespondPermissionRequest{
+		SessionID:    sid,
+		PermissionID: pid,
+		Reply:        "once",
+	}); err != nil {
+		t.Fatalf("RespondPermission: %v", err)
+	}
+
+	// Step 4: the next fetch must bypass the cache and see the
+	// upstream's now-empty listing — proof the invalidation fired.
+	after := fetchPromptSessionIDs(port, "/permission")
+	if hits := atomic.LoadInt32(&permListHits); hits != 2 {
+		t.Errorf("after respond: expected fresh upstream fetch (2 total), got %d hits (cache was not invalidated)", hits)
+	}
+	if after[sid] {
+		t.Errorf("after respond: session %q must no longer be in pending list, got %v", sid, after)
+	}
+}
