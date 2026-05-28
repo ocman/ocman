@@ -46,11 +46,16 @@ import (
 //	    the LLM judge, giving the human a window to respond manually.
 //	    Default 5000 ms. Stored server-side so the delay is consistent
 //	    across all clients and headless runs.
+//	11 - add `reasoning` column to `auto_approved_permission`. Stores
+//	    the LLM judge's one-line conclusion so the UI can show *why*
+//	    a permission was approved without opening the judge session.
+//	    NOT NULL DEFAULT '' so pre-v11 rows show no reasoning rather
+//	    than NULL, matching how the judge_session_id column was added.
 //
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 10
+const latestSchemaVersion = 11
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -166,6 +171,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV9(tx)
 	case 10:
 		return migrateToV10(tx)
+	case 11:
+		return migrateToV11(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -349,6 +356,20 @@ func migrateToV10(tx *sql.Tx) error {
 			delay_ms INTEGER NOT NULL DEFAULT 5000
 		);
 		INSERT INTO judge_settings (id, delay_ms) VALUES (1, 5000);
+	`)
+	return err
+}
+
+// migrateToV11 adds the `reasoning` column to auto_approved_permission.
+// The column stores the LLM judge's one-line conclusion ("reasoning"
+// field of the JSON it emits) so the UI can show *why* an action was
+// approved or flagged without opening the judge session. NOT NULL with
+// a '' default keeps pre-v11 rows readable and matches the convention
+// used for judge_session_id in v7.
+func migrateToV11(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		ALTER TABLE auto_approved_permission
+		ADD COLUMN reasoning TEXT NOT NULL DEFAULT ''
 	`)
 	return err
 }

@@ -81,6 +81,14 @@ export interface SessionView {
    *  scheduled. */
   _refetchRequested: boolean;
   /**
+   * Set by the backend-emitted `ocman.permission.pending` SSE event.
+   * Unix-ms timestamp of when the LLM judge will start (after the
+   * configured delay). The UI counts down to this time. Cleared when
+   * `ocman.permission.checking` arrives (judge has started) or when
+   * the permission is cleared.
+   */
+  judgeStartsAt: number | null;
+  /**
    * Set by the backend-emitted `ocman.permission.checking` SSE event.
    * Contains the permission ID currently being evaluated by the
    * server-side LLM judge. Cleared when a `permission.replied` or
@@ -88,6 +96,18 @@ export interface SessionView {
    * The UI uses this to show a "checking" spinner on the prompt.
    */
   checkingPermissionId: string | null;
+  /**
+   * The judge's one-line conclusion (the "reasoning" field of the JSON
+   * it emits), surfaced on the prompt so the user can see *why* the AI
+   * flagged a permission. Set by `ocman.permission.flagged` and
+   * cleared when `pendingPermission` is cleared.
+   *
+   * The transient OpenCode session that produced this reasoning is
+   * deleted by the backend as soon as the verdict is parsed, so the
+   * UI no longer offers a "view judge session" link — `judgeReasoning`
+   * is the only judge artifact carried in client state.
+   */
+  judgeReasoning: string | null;
 }
 
 /**
@@ -106,9 +126,14 @@ export interface SseEvent {
  * attached to a synthetic Message with role 'notice'.
  */
 export interface AutoApprovedNoticePayload {
+  /** The OpenCode permission ID. Used as the stable notice key so
+   *  repeated dispatches (reconcile refetches, SSE replays) dedupe. */
+  permissionId: string;
   permission: string;
   patterns: string[];
-  judgeSessionId: string;
+  /** Judge's one-line conclusion. Optional — empty for legacy
+   *  pre-v11 rows or when the model omitted the field. */
+  reasoning?: string;
   /** Unix-ms timestamp of when the permission was approved.
    *  When present, used as the notice message's timeCreated so it
    *  sorts into the correct chronological position. */
@@ -122,9 +147,10 @@ export interface AutoApprovedNoticePayload {
  * flagged it so it's visible in the thread history.
  */
 export interface AutoRejectedNoticePayload {
+  /** The OpenCode permission ID — used as the stable notice key. */
+  permissionId: string;
   permission: string;
   patterns: string[];
-  judgeSessionId: string;
   reasoning?: string;
   /** Unix-ms timestamp of when the rejection occurred. */
   rejectedAt?: number;
@@ -173,7 +199,9 @@ export function initialSessionView(sessionId: string): SessionView {
     pendingQuestion: null,
     _deltaOwnedFields: new Map(),
     _refetchRequested: false,
+    judgeStartsAt: null,
     checkingPermissionId: null,
+    judgeReasoning: null,
   };
 }
 
@@ -501,9 +529,12 @@ export function reduceSessionView(state: SessionView, action: SessionAction): Se
       return reduceSseEvent(state, event);
     }
     case 'addNotice': {
-      // Use the judge session ID as a stable key so re-dispatching
+      // Use the OpenCode permission ID as a stable key so re-dispatching
       // the same approval (e.g. on reconcile refetch) is a no-op.
-      const stableKey = `ocman-notice-${action.notice.judgeSessionId}`;
+      // Previously this was the judge session ID, but those sessions are
+      // now deleted as soon as the verdict is parsed — permissionId is
+      // the only durable, unique handle for a given approval.
+      const stableKey = `ocman-notice-${action.notice.permissionId}`;
       if (state.messages.some((m) => m.id === stableKey)) {
         return state; // already present — deduplicate
       }
@@ -523,7 +554,7 @@ export function reduceSessionView(state: SessionView, action: SessionAction): Se
           type: 'auto-approved',
           permission: action.notice.permission,
           patterns: action.notice.patterns,
-          judgeSessionId: action.notice.judgeSessionId,
+          reasoning: action.notice.reasoning ?? '',
         }),
       };
       // Insert the notice into the sorted message list so it appears
@@ -562,8 +593,12 @@ function reduceSseEvent(state: SessionView, event: SseEvent): SessionView {
       return reducePermissionAsked(state, event);
     case 'permission.replied':
       return reducePermissionReplied(state, props);
+    case 'ocman.permission.pending':
+      return reducePermissionPending(state, props);
     case 'ocman.permission.checking':
       return reducePermissionChecking(state, props);
+    case 'ocman.permission.flagged':
+      return reducePermissionFlagged(state, props);
     case 'ocman.permission.auto-approved':
       return reducePermissionAutoApproved(state, props);
     case 'question.asked':
@@ -773,7 +808,13 @@ function reducePermissionAsked(state: SessionView, event: SseEvent): SessionView
   if (state.pendingPermission && state.pendingPermission.permissionId === perm.permissionId) {
     return state;
   }
-  return { ...state, pendingPermission: perm };
+  // New permission: clear any stale judge state from the previous prompt.
+  return {
+    ...state,
+    pendingPermission: perm,
+    judgeStartsAt: null,
+    judgeReasoning: null,
+  };
 }
 
 function reducePermissionReplied(state: SessionView, props: Record<string, unknown>): SessionView {
@@ -788,8 +829,27 @@ function reducePermissionReplied(state: SessionView, props: Record<string, unkno
   return {
     ...state,
     pendingPermission: null,
+    judgeStartsAt: null,
     checkingPermissionId: state.checkingPermissionId === repliedId ? null : state.checkingPermissionId,
+    judgeReasoning: null,
   };
+}
+
+/**
+ * Fired by the backend immediately after a permission.asked event when
+ * auto-approve is enabled. Carries `judgeStartsAt` (Unix-ms) so the UI
+ * can show a live countdown without any local timer state.
+ */
+function reducePermissionPending(state: SessionView, props: Record<string, unknown>): SessionView {
+  const permId = typeof props.permissionId === 'string' ? props.permissionId : null;
+  const judgeStartsAt = typeof props.judgeStartsAt === 'number' ? props.judgeStartsAt : null;
+  if (!permId || judgeStartsAt === null) return state;
+  // Accept even if pendingPermission isn't set yet — the event may arrive
+  // before or after permission.asked depending on goroutine scheduling.
+  // Only apply if the permission IDs match when pendingPermission is set.
+  if (state.pendingPermission !== null && state.pendingPermission.permissionId !== permId) return state;
+  if (state.judgeStartsAt === judgeStartsAt) return state;
+  return { ...state, judgeStartsAt };
 }
 
 /**
@@ -800,7 +860,33 @@ function reducePermissionChecking(state: SessionView, props: Record<string, unkn
   const permId = typeof props.permissionId === 'string' ? props.permissionId : null;
   if (!permId) return state;
   if (state.checkingPermissionId === permId) return state;
-  return { ...state, checkingPermissionId: permId };
+  // Countdown is over — clear judgeStartsAt and set checking.
+  return { ...state, judgeStartsAt: null, checkingPermissionId: permId };
+}
+
+/**
+ * Fired by the backend when the LLM judge returned an unsafe verdict and
+ * handed the permission back to the human. Stores the one-line reasoning
+ * so the prompt can show *why* the AI flagged it.
+ */
+function reducePermissionFlagged(state: SessionView, props: Record<string, unknown>): SessionView {
+  const permId = typeof props.permissionId === 'string' ? props.permissionId : null;
+  const reasoning = typeof props.reasoning === 'string' && props.reasoning
+    ? props.reasoning
+    : null;
+  // Need at least one of the two to be useful. The judge session ID
+  // used to be required (and rendered as a magnifying-glass link), but
+  // those sessions are now deleted post-verdict — reasoning is the only
+  // surviving signal.
+  if (!permId || !reasoning) return state;
+  // Apply if the permission IDs match (or pendingPermission is null — the
+  // event may arrive just as the user manually replied).
+  if (state.pendingPermission !== null && state.pendingPermission.permissionId !== permId) return state;
+  return {
+    ...state,
+    checkingPermissionId: state.checkingPermissionId === permId ? null : state.checkingPermissionId,
+    judgeReasoning: reasoning,
+  };
 }
 
 /**
@@ -814,13 +900,15 @@ function reducePermissionAutoApproved(state: SessionView, props: Record<string, 
   const patterns = Array.isArray(props.patterns)
     ? (props.patterns as unknown[]).filter((p): p is string => typeof p === 'string')
     : [];
-  const judgeSessionId = typeof props.judgeSessionId === 'string' ? props.judgeSessionId : '';
+  const reasoning = typeof props.reasoning === 'string' ? props.reasoning : '';
   const approvedAt = typeof props.approvedAt === 'number' ? props.approvedAt : Date.now();
 
   if (!permId || !permission) return state;
 
-  // Inject the approval notice.
-  const stableKey = `ocman-notice-${judgeSessionId || permId}`;
+  // Inject the approval notice. Stable key uses the permission ID so
+  // repeated deliveries (SSE reconnect + initial GET re-injection)
+  // dedupe deterministically.
+  const stableKey = `ocman-notice-${permId}`;
   let messages = state.messages;
   let parts = state.parts;
   if (!messages.some((m) => m.id === stableKey)) {
@@ -839,7 +927,7 @@ function reducePermissionAutoApproved(state: SessionView, props: Record<string, 
         type: 'auto-approved',
         permission,
         patterns,
-        judgeSessionId,
+        reasoning,
       }),
     };
     messages = upsertMessage(messages, noticeMsg);
@@ -855,7 +943,9 @@ function reducePermissionAutoApproved(state: SessionView, props: Record<string, 
     messages,
     parts,
     pendingPermission,
+    judgeStartsAt: pendingPermission === null ? null : state.judgeStartsAt,
     checkingPermissionId: state.checkingPermissionId === permId ? null : state.checkingPermissionId,
+    judgeReasoning: pendingPermission === null ? null : state.judgeReasoning,
   };
 }
 

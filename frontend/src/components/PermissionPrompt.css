@@ -164,7 +164,11 @@
   color: var(--overlay0);
 }
 
-/* "View reasoning" button — inline link style */
+/* "View reasoning" button — inline link style.
+ * Default style is the legacy underlined-text link. The `--icon`
+ * modifier drops the underline and renders only a magnifying-glass
+ * icon, used everywhere the judge reasoning is surfaced as an
+ * adjacent inline conclusion. */
 .oc-permission-judge-link {
   background: transparent;
   border: none;
@@ -181,6 +185,31 @@
 
 .oc-permission-judge-link:hover {
   color: var(--text);
+}
+
+.oc-permission-judge-link--icon {
+  text-decoration: none;
+  padding: 2px 4px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 13px;
+  line-height: 1;
+}
+
+/* Inline one-line conclusion shown next to the magnifying-glass icon. */
+.oc-permission-judge-reasoning {
+  color: var(--overlay1, var(--overlay0));
+  font-style: italic;
+  font-size: 11px;
+  /* Reasonings can be a sentence long; allow wrap and take the
+   * available row space so the icon stays right-aligned. */
+  flex: 1 1 auto;
+  min-width: 0;
+  /* Don't blow out the prompt height: clamp to two lines. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* Auto-approve footer row */
@@ -212,4 +241,25 @@
   color: var(--overlay0);
   font-family: 'SF Mono', Consolas, monospace;
   font-size: 11px;
+}
+
+/* Inline status line shown when auto-approve is on */
+.oc-permission-autoapprove-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--overlay0);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+}
+
+/* Countdown badge shown before the AI judge fires */
+.oc-permission-ai-countdown {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent4);
+  min-width: 2.5ch;
+  text-align: right;
+  flex-shrink: 0;
 }

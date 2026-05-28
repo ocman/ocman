@@ -1,10 +1,13 @@
-import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import '../PermissionPrompt.css';
 
 export interface PendingPermission {
   permissionId: string;
   permission: string;
   patterns: string[];
+  /** Unix-ms timestamp of when this permission was first received.
+   *  Used to anchor the countdown so it survives component remounts. */
+  askedAt?: number;
 }
 
 type Reply = 'once' | 'always' | 'reject';
@@ -66,9 +69,9 @@ export function PermissionPrompt({
   autoApproveCapable,
   autoApproveEnabled,
   autoApproveChecking,
-  judgeSessionId,
+  judgeStartsAt,
+  judgeReasoning,
   onEnableAutoApprove,
-  onViewJudgeSession,
 }: {
   permission: PendingPermission;
   onReply: (reply: Reply) => void;
@@ -81,14 +84,21 @@ export function PermissionPrompt({
   /** True while the LLM judge is evaluating this permission. */
   autoApproveChecking?: boolean;
   /**
-   * Session ID of the OpenCode judge session, when available.
-   * Shown as a "View reasoning" link so the user can inspect the model's thinking.
+   * Unix-ms timestamp of when the backend will start the LLM judge.
+   * Set by the `ocman.permission.pending` SSE event. When present and
+   * in the future, a live countdown is shown. Null = no countdown.
    */
-  judgeSessionId?: string | null;
+  judgeStartsAt?: number | null;
+  /**
+   * Judge's one-line conclusion (the "reasoning" field of the JSON it
+   * emits). Shown inline on the prompt when the judge flagged the
+   * permission as unsafe. Null when unavailable. The transient judge
+   * session is deleted after the verdict is extracted, so this is the
+   * only surviving artifact of the model's analysis.
+   */
+  judgeReasoning?: string | null;
   /** Called when the user clicks "Enable auto-approve". */
   onEnableAutoApprove?: () => void;
-  /** Called when the user clicks "View reasoning" — navigates to the judge session. */
-  onViewJudgeSession?: (sessionId: string) => void;
 }) {
   const [step, setStep] = useState<'choose' | 'confirm-always'>('choose');
   const [focusedIdx, setFocusedIdx] = useState(0);
@@ -118,6 +128,39 @@ export function PermissionPrompt({
     setFocusedIdx(0);
     setConfirmIdx(CONFIRM_DEFAULT_IDX);
   }
+
+  // Countdown: driven entirely by the server-provided `judgeStartsAt`
+  // timestamp. Seeded immediately from judgeStartsAt so the first render
+  // already shows the correct value. The interval refreshes it every 250ms.
+  // When judgeStartsAt is null or in the past, countdownMs is 0/null and
+  // the footer shows "starting…" (the backend hasn't responded yet, or the
+  // delay has elapsed and we're waiting for the checking event).
+  const [countdownMs, setCountdownMs] = useState<number | null>(() =>
+    judgeStartsAt != null ? Math.max(0, judgeStartsAt - Date.now()) : null,
+  );
+  // When judgeStartsAt is cleared (checking arrived, permission replied, etc.)
+  // reset countdownMs to null immediately so the footer transitions cleanly.
+  // When judgeStartsAt changes to a new value the interval re-seeds within 250ms.
+  const [lastJudgeStartsAt, setLastJudgeStartsAt] = useState(judgeStartsAt);
+  if (lastJudgeStartsAt !== judgeStartsAt) {
+    setLastJudgeStartsAt(judgeStartsAt);
+    if (judgeStartsAt == null) setCountdownMs(null);
+  }
+  useEffect(() => {
+    if (judgeStartsAt == null) return;
+    const id = setInterval(() => {
+      setCountdownMs(Math.max(0, judgeStartsAt - Date.now()));
+    }, 250);
+    return () => clearInterval(id);
+  }, [judgeStartsAt]);
+
+  // Whole seconds remaining, rounded up so "5s" shows until the last tick.
+  const countdownSec = countdownMs !== null && countdownMs > 0
+    ? Math.ceil(countdownMs / 1000)
+    : null;
+
+  // Effective "checking" state: backend confirmed via SSE.
+  const effectiveChecking = autoApproveChecking ?? false;
 
   // Auto-focus on mount and when the step changes so keys work without a click.
   useLayoutEffect(() => {
@@ -330,7 +373,7 @@ export function PermissionPrompt({
   return (
     <div
       ref={wrapRef}
-      className={`oc-permission-wrap${autoApproveChecking ? ' oc-permission-wrap--checking' : ''}`}
+      className={`oc-permission-wrap${effectiveChecking ? ' oc-permission-wrap--checking' : ''}`}
       tabIndex={-1}
       role="dialog"
       aria-label="Permission required"
@@ -341,32 +384,7 @@ export function PermissionPrompt({
           <span className="oc-permission-icon">&#9651;</span>
           <span>Permission required</span>
         </div>
-        {(autoApproveChecking || judgeSessionId) && (
-          <div className="oc-permission-ai-row" aria-live="polite">
-            {autoApproveChecking ? (
-              <>
-                <span className="oc-spinner oc-permission-ai-spinner" />
-                <span className="oc-permission-ai-label">AI is reviewing this permission&hellip;</span>
-              </>
-            ) : (
-              <>
-                <span className="oc-permission-ai-label oc-permission-ai-label--done">
-                  AI flagged for review
-                </span>
-                {judgeSessionId && onViewJudgeSession && (
-                  <button
-                    type="button"
-                    className="oc-permission-judge-link"
-                    onClick={() => onViewJudgeSession(judgeSessionId)}
-                    data-testid="view-judge-session"
-                  >
-                    View reasoning
-                  </button>
-                )}
-              </>
-            )}
-          </div>
-        )}
+
         <div className="oc-permission-content">
           <div className="oc-permission-desc">
             &larr; {permission.permission}
@@ -391,7 +409,7 @@ export function PermissionPrompt({
               className={`oc-permission-btn${i === focusedIdx ? ' oc-permission-btn-active' : ''}`}
               onClick={() => { setFocusedIdx(i); pick(c.reply); }}
               onMouseEnter={() => setFocusedIdx(i)}
-              disabled={disabled || autoApproveChecking}
+              disabled={disabled}
               tabIndex={-1}
             >{c.label}</button>
           ))}
@@ -400,8 +418,9 @@ export function PermissionPrompt({
           </span>
         </div>
         {autoApproveCapable && (
-          <div className="oc-permission-autoapprove">
+          <div className="oc-permission-autoapprove" aria-live="polite">
             {!autoApproveEnabled ? (
+              // State 0: auto-approve off — offer to enable it.
               <button
                 type="button"
                 className="oc-permission-autoapprove-btn"
@@ -410,9 +429,39 @@ export function PermissionPrompt({
               >
                 Enable auto-approve for this session
               </button>
+            ) : effectiveChecking ? (
+              // State 2: "running" — judge is evaluating.
+              // Checking wins over the countdown (backend confirmed running).
+              // No "view judge session" link any more: the session is deleted
+              // immediately after the verdict is parsed.
+              <span className="oc-permission-autoapprove-status">
+                <span className="oc-spinner oc-permission-ai-spinner" />
+                <span>Auto-approve on &middot; running</span>
+              </span>
+            ) : countdownSec !== null ? (
+              // State 1: "starting in Ns" — pending event received, countdown active.
+              <span className="oc-permission-autoapprove-status">
+                Auto-approve on &middot; starting in{' '}
+                <span data-testid="auto-approve-countdown">{countdownSec}s</span>
+              </span>
+            ) : judgeReasoning ? (
+              // State 3: "reason unsafe" — judge flagged it. Show the one-line
+              // conclusion inline; the full reasoning is no longer reachable
+              // because the judge session has been deleted.
+              <span className="oc-permission-autoapprove-status">
+                <span>Auto-approve on &middot; unsafe</span>
+                <span
+                  className="oc-permission-judge-reasoning"
+                  data-testid="judge-reasoning"
+                  title={judgeReasoning}
+                >
+                  {judgeReasoning}
+                </span>
+              </span>
             ) : (
-              <span className="oc-permission-autoapprove-on">
-                Auto-approve on
+              // Fallback: auto-approve on, waiting for backend to respond.
+              <span className="oc-permission-autoapprove-status">
+                Auto-approve on &middot; starting&hellip;
               </span>
             )}
           </div>

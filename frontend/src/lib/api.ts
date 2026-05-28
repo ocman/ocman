@@ -622,7 +622,7 @@ export const api = {
       permissionId: string;
       permission: string;
       patterns: string[];
-      judgeSessionId: string;
+      reasoning: string;
       approvedAt: number;
     }>>(`/api/session/${encodeURIComponent(sessionId)}/approved-permissions`),
 
@@ -651,6 +651,18 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(sections),
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+  },
+
+  getJudgeDelay: () =>
+    fetchJSON<{ delayMs: number }>('/api/settings/judge-delay').then((r) => r.delayMs),
+
+  setJudgeDelay: async (delayMs: number): Promise<void> => {
+    const resp = await fetch('/api/settings/judge-delay', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ delayMs }),
     });
     if (!resp.ok) throw new Error(await resp.text());
   },

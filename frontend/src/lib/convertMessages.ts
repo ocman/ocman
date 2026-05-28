@@ -238,7 +238,11 @@ export function createConvertMessages(): ConvertMessagesFn {
           type: 'tool-call' as const,
           toolCallId: m.id,
           toolName: 'ocman:auto-approved',
-          argsText: JSON.stringify({ permission: pd.permission, patterns: pd.patterns, judgeSessionId: pd.judgeSessionId }),
+          argsText: JSON.stringify({
+            permission: pd.permission,
+            patterns: pd.patterns,
+            reasoning: pd.reasoning ?? '',
+          }),
           result: undefined,
         }));
       return {

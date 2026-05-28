@@ -1041,3 +1041,26 @@
   color: var(--subtext0);
 }
 
+/* Icon-only variant — drops the underline and adds a small hit area
+ * around the magnifying glass so it's still clickable at 11px. */
+.oc-auto-approved-link--icon {
+  text-decoration: none;
+  padding: 2px 4px;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  font-size: 13px;
+  line-height: 1;
+}
+
+/* Judge's one-line conclusion shown inline. Italicized so it reads
+ * as commentary, dimmed so it sits behind the action text. */
+.oc-auto-approved-reasoning {
+  color: var(--overlay1, var(--overlay0));
+  font-style: italic;
+  font-size: 11px;
+  /* Allow long reasonings to wrap rather than blow out the row. */
+  flex: 1 1 auto;
+  min-width: 0;
+}
+

@@ -5,10 +5,12 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -43,6 +45,104 @@ type Server struct {
 	projects           projectsIndexState
 	autoApproveDefault bool
 	judge              *PermissionJudge
+	// judgeDelayMs is the cached value of the judge delay setting.
+	// Loaded at startup and updated whenever the setting is changed via
+	// the API. Accessed without a lock — reads/writes are int64 and
+	// the worst case is a stale value for one permission event.
+	judgeDelayMs int64
+
+	// sseSessions maps sessionID -> the live SSE writer for any
+	// currently-connected client. Used to deliver synthetic
+	// ocman.permission.* events from non-SSE code paths (REST
+	// resurrection of pending permissions, REST permission listing).
+	// Values are pointers so callers that capture the sink survive a
+	// registry mutation and see the same close() flag.
+	sseSessions   map[string]*sseSink
+	sseSessionsMu sync.Mutex
+
+	// autoApproveInFlight tracks permission IDs that already have a
+	// backgroundAutoApprove goroutine running, so the same permission
+	// is never judged twice (e.g. when the SSE tee sees permission.asked
+	// AND the REST handler returns the same prompt to a polling client).
+	//
+	// The value is the cancel func of the goroutine's context, so a
+	// reply from the user (via ocman API or directly via the OpenCode
+	// TUI's permission.replied event) can short-circuit the judge:
+	// any pending delay is interrupted, the running judge's HTTP polls
+	// see ctx.Done(), and the result is discarded before RespondPermission
+	// is called.
+	autoApproveInFlight   map[string]context.CancelFunc
+	autoApproveInFlightMu sync.Mutex
+
+	// judgedPermissions caches the verdict of every permission the
+	// judge has already evaluated in this ocman process. Keyed by
+	// "sessionID|permissionID" (matching autoApproveInFlight).
+	//
+	// Why: an unsafe verdict leaves the permission pending in OpenCode
+	// (we deliberately don't auto-reject — the user must decide). If the
+	// user later opens the session, handleSessionPermissions sees the
+	// prompt still pending and would call ensureAutoApprove again,
+	// re-judging the exact same request and burning tokens. The cache
+	// short-circuits the second judge call.
+	//
+	// Process-lifetime only: safe verdicts persist via the
+	// ApprovedPermission DB row, so they survive restarts naturally.
+	// Unsafe verdicts are forgotten on restart, costing at most one
+	// re-judge per pending prompt — an acceptable one-off cost.
+	//
+	// OpenCode generates a unique permissionID per request, so running
+	// the same command twice produces two different IDs and re-judges
+	// independently (which is the desired behaviour — context may have
+	// shifted between attempts).
+	judgedPermissions   map[string]judgeVerdict
+	judgedPermissionsMu sync.Mutex
+}
+
+// sseSink wraps an SSE response writer with the synchronisation needed
+// to safely emit events from background goroutines.
+//
+// The server-side auto-approve pipeline emits events long after the
+// triggering permission.asked has been processed (after the configured
+// delay + judge execution). The originating SSE connection may have
+// closed in the meantime; without coordination, writes to the
+// underlying http.ResponseWriter would panic the moment Go's
+// connection bookkeeping recycles the bufio.Writer.
+//
+// close() sets closed=true under mu so any concurrent write either
+// completes against the live writer or sees closed=true and skips. All
+// writes go through write(), which takes the same mutex.
+type sseSink struct {
+	w      io.Writer
+	flush  func()
+	mu     sync.Mutex
+	closed bool
+}
+
+// write emits a single named SSE event. It is a no-op if the sink has
+// been closed (the originating connection went away). Safe to call
+// concurrently with close() and with other write() calls — they
+// serialise on the sink's mutex.
+func (s *sseSink) write(eventType string, data []byte) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return
+	}
+	writeSSEEvent(s.w, s.flush, eventType, data)
+}
+
+// close marks the sink as closed so future write() calls become no-ops.
+// Idempotent.
+func (s *sseSink) close() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.closed = true
+	s.mu.Unlock()
 }
 
 // New creates a new server. The registry may be nil, in which case a
@@ -55,14 +155,17 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		registry = platforms.NewRegistry()
 	}
 	return &Server{
-		db:           database,
-		stateDB:      stateDB,
-		addr:         addr,
-		registry:     registry,
-		auth:         auth,
-		integrations: integrations.New(),
-		startTime:    time.Now(),
-		judge:        newPermissionJudge(),
+		db:                  database,
+		stateDB:             stateDB,
+		addr:                addr,
+		registry:            registry,
+		auth:                auth,
+		integrations:        integrations.New(),
+		startTime:           time.Now(),
+		judge:               newPermissionJudge(),
+		sseSessions:         make(map[string]*sseSink),
+		autoApproveInFlight: make(map[string]context.CancelFunc),
+		judgedPermissions:   make(map[string]judgeVerdict),
 	}
 }
 
@@ -89,6 +192,18 @@ func (s *Server) Start(ctx context.Context) error {
 // This variant is used by the GUI mode, which picks the port before handing
 // the listener here so Wails can point its proxy at the correct address.
 func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
+	// Seed the cached judge delay so the first permission event has it
+	// available without a DB round-trip.
+	if s.stateDB != nil {
+		if d, err := s.stateDB.GetJudgeDelayMs(); err == nil {
+			s.judgeDelayMs = d
+		} else {
+			s.judgeDelayMs = state.DefaultJudgeDelayMs
+		}
+	} else {
+		s.judgeDelayMs = state.DefaultJudgeDelayMs
+	}
+
 	go s.runAutoArchiveLoop(ctx)
 	go s.runProjectsIndexLoop(ctx)
 	go s.runLLMMetricsLoop(ctx)
@@ -170,6 +285,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// Settings endpoints — user preferences that must be shared with the
 	// backend (e.g. judge prompt sections used by headless auto-approve).
 	mux.HandleFunc("/api/settings/prompt-sections", s.requireAuth(s.handlePromptSections))
+	mux.HandleFunc("/api/settings/judge-delay", s.requireAuth(s.handleJudgeDelay))
 
 	// Best-effort remote-logging sink for the frontend. Localhost-only so
 	// it can't be used to flood logs from the network. See

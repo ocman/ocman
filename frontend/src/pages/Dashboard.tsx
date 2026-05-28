@@ -345,14 +345,19 @@ export function SettingsTab() {
   const setPromptSections = useUiStore((s) => s.setPromptSections);
   const getPromptSections = useApiStore((s) => s.getPromptSections);
   const setPromptSectionsApi = useApiStore((s) => s.setPromptSectionsApi);
+  const getJudgeDelay = useApiStore((s) => s.getJudgeDelay);
+  const setJudgeDelayApi = useApiStore((s) => s.setJudgeDelayApi);
   const authRequired = useAuthStore((s) => s.authRequired);
 
-  // On mount, load prompt sections from the server and sync to uiStore.
+  // On mount, load settings from the server and sync to uiStore.
   // This ensures the settings page reflects what the backend judge actually uses,
   // even if another client or direct API call changed them.
   useEffect(() => {
     getPromptSections().then((serverSections) => {
       setPromptSections(serverSections);
+    }).catch(() => { /* best-effort — uiStore value survives */ });
+    getJudgeDelay().then((ms) => {
+      setAutoApproveDelayMs(ms);
     }).catch(() => { /* best-effort — uiStore value survives */ });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -476,7 +481,9 @@ export function SettingsTab() {
               value={Math.round(autoApproveDelayMs / 1000)}
               onChange={(e) => {
                 const secs = Math.max(0, Math.min(60, Number(e.target.value) || 0));
-                setAutoApproveDelayMs(secs * 1000);
+                const ms = secs * 1000;
+                setAutoApproveDelayMs(ms);
+                void setJudgeDelayApi(ms);
               }}
             />
             <span className="settings-delay-unit">s</span>

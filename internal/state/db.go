@@ -168,11 +168,16 @@ func (d *DB) SetAutoApprove(platform, sessionID string, enabled bool) error {
 
 // ApprovedPermission holds the data for one auto-approved permission,
 // used to re-inject the notice into the conversation thread on reload.
+//
+// Reasoning is the LLM judge's one-line conclusion (the "reasoning"
+// field of the JSON it emits). Empty when the judge response could
+// not be parsed or pre-dates schema v11.
 type ApprovedPermission struct {
 	PermissionID   string
 	PermissionText string
 	Patterns       []string
 	JudgeSessionID string
+	Reasoning      string
 	ApprovedAt     int64
 }
 
@@ -186,14 +191,15 @@ func (d *DB) RecordApprovedPermission(platform, sessionID string, p ApprovedPerm
 	}
 	_, err = d.db.Exec(`
 		INSERT INTO auto_approved_permission
-			(platform, session_id, permission_id, permission_text, patterns_json, judge_session_id, approved_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+			(platform, session_id, permission_id, permission_text, patterns_json, judge_session_id, reasoning, approved_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(platform, session_id, permission_id) DO UPDATE SET
 			permission_text  = excluded.permission_text,
 			patterns_json    = excluded.patterns_json,
 			judge_session_id = excluded.judge_session_id,
+			reasoning        = excluded.reasoning,
 			approved_at      = excluded.approved_at
-	`, platform, sessionID, p.PermissionID, p.PermissionText, patternsJSON, p.JudgeSessionID, p.ApprovedAt)
+	`, platform, sessionID, p.PermissionID, p.PermissionText, patternsJSON, p.JudgeSessionID, p.Reasoning, p.ApprovedAt)
 	if err != nil {
 		return fmt.Errorf("recording approved permission: %w", err)
 	}
@@ -204,7 +210,7 @@ func (d *DB) RecordApprovedPermission(platform, sessionID string, p ApprovedPerm
 // session, ordered by approval time ascending.
 func (d *DB) ListApprovedPermissions(platform, sessionID string) ([]ApprovedPermission, error) {
 	rows, err := d.db.Query(`
-		SELECT permission_id, permission_text, patterns_json, judge_session_id, approved_at
+		SELECT permission_id, permission_text, patterns_json, judge_session_id, reasoning, approved_at
 		FROM auto_approved_permission
 		WHERE platform = ? AND session_id = ?
 		ORDER BY approved_at ASC
@@ -218,7 +224,7 @@ func (d *DB) ListApprovedPermissions(platform, sessionID string) ([]ApprovedPerm
 	for rows.Next() {
 		var p ApprovedPermission
 		var patternsJSON string
-		if err := rows.Scan(&p.PermissionID, &p.PermissionText, &patternsJSON, &p.JudgeSessionID, &p.ApprovedAt); err != nil {
+		if err := rows.Scan(&p.PermissionID, &p.PermissionText, &patternsJSON, &p.JudgeSessionID, &p.Reasoning, &p.ApprovedAt); err != nil {
 			return nil, fmt.Errorf("scanning approved permission: %w", err)
 		}
 		p.Patterns, err = decodePatterns(patternsJSON)

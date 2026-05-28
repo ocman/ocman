@@ -75,37 +75,50 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 8228,
     allowedHosts: extraAllowedHosts,
-    proxy: {
-      '/api': 'http://localhost:8229',
-      // MCP server — Streamable HTTP transport (POST + GET/SSE).
-      // configure: disables response buffering so SSE events are
-      // forwarded to the client immediately rather than held until
-      // the stream closes.
-      '/mcp': {
-        target: 'http://localhost:8229',
-        configure: (proxy) => {
-          proxy.on('proxyRes', (proxyRes) => {
-            // Flush each chunk immediately; required for SSE streams.
-            proxyRes.on('data', () => {})
-          })
-        },
-      },
-    },
-  },
-  preview: {
-    host: '0.0.0.0',
-    port: 8228,
-    allowedHosts: extraAllowedHosts,
-    proxy: {
-      '/api': 'http://localhost:8229',
-      '/mcp': {
-        target: 'http://localhost:8229',
-        configure: (proxy) => {
-          proxy.on('proxyRes', (proxyRes) => {
-            proxyRes.on('data', () => {})
-          })
-        },
-      },
-    },
-  },
+     proxy: {
+       // Disable response buffering for /api so SSE event streams
+       // (e.g. /api/session/{id}/events) are forwarded to the client
+       // immediately rather than held until the stream closes.
+       '/api': {
+         target: 'http://localhost:8229',
+         configure: (proxy) => {
+           proxy.on('proxyRes', (proxyRes) => {
+             proxyRes.on('data', () => {})
+           })
+         },
+       },
+       // MCP server — Streamable HTTP transport (POST + GET/SSE).
+       '/mcp': {
+         target: 'http://localhost:8229',
+         configure: (proxy) => {
+           proxy.on('proxyRes', (proxyRes) => {
+             proxyRes.on('data', () => {})
+           })
+         },
+       },
+     },
+   },
+   preview: {
+     host: '0.0.0.0',
+     port: 8228,
+     allowedHosts: extraAllowedHosts,
+     proxy: {
+       '/api': {
+         target: 'http://localhost:8229',
+         configure: (proxy) => {
+           proxy.on('proxyRes', (proxyRes) => {
+             proxyRes.on('data', () => {})
+           })
+         },
+       },
+       '/mcp': {
+         target: 'http://localhost:8229',
+         configure: (proxy) => {
+           proxy.on('proxyRes', (proxyRes) => {
+             proxyRes.on('data', () => {})
+           })
+         },
+       },
+     },
+   },
 })

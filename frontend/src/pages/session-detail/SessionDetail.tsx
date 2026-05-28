@@ -122,6 +122,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
     pendingPermission,
     pendingQuestion,
     checkingPermissionId,
+    judgeStartsAt,
+    judgeReasoning,
     status: sseStatus,
     loading,
     loadingMore,
@@ -316,6 +318,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const sidebarView = useUiStore((state) => state.sidebarView);
   const toggleSidebarView = useUiStore((state) => state.toggleSidebarView);
   const toggleCollapsedProject = useUiStore((state) => state.toggleCollapsedProject);
+
   const threadBoundaryRecoveryRef = useRef<{ sessionId: string | undefined; message: string; at: number } | null>(null);
 
   useEffect(() => {
@@ -884,14 +887,14 @@ export function SessionDetail({ id }: SessionDetailProps) {
                         <PermissionPrompt
                           permission={pendingPermission}
                           onReply={handlePermissionReply}
-                          disabled={answeringPermission || autoApproveChecking}
+                          disabled={answeringPermission}
                           error={permissionError}
                           autoApproveCapable={caps.autoApprove}
                           autoApproveEnabled={autoApprove.enabled}
                           autoApproveChecking={autoApproveChecking}
-                          judgeSessionId={null}
+                          judgeStartsAt={judgeStartsAt}
+                          judgeReasoning={judgeReasoning}
                           onEnableAutoApprove={() => autoApprove.setEnabled(true)}
-                          onViewJudgeSession={navigateToSession}
                         />
                       ) : pendingQuestion && portAvailable && caps.respondQuestion ? (
                         <QuestionPrompt

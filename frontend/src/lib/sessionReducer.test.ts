@@ -113,7 +113,7 @@ describe('reduceSessionView — load action', () => {
     const before = makeView({
       messages: [makeMessage('m-old', 1)],
       parts: [makeTextPart('p-old', 'm-old', 'stale')],
-      pendingPermission: { permissionId: 'p1', permission: 'old', patterns: [], sessionId: SID },
+      pendingPermission: { permissionId: 'p1', permission: 'old', patterns: [], sessionId: SID, askedAt: 0 },
     });
     const fresh = makeView({
       messages: [makeMessage('m-new', 10)],
@@ -473,7 +473,7 @@ describe('reduceSessionView — permission prompts', () => {
 
   it('clears pendingPermission when permission.replied matches id', () => {
     let view = makeView({
-      pendingPermission: { permissionId: 'perm-1', permission: 'X', patterns: [], sessionId: SID },
+      pendingPermission: { permissionId: 'perm-1', permission: 'X', patterns: [], sessionId: SID, askedAt: 0 },
     });
     view = reduceSessionView(view, {
       type: 'sse',
@@ -483,7 +483,7 @@ describe('reduceSessionView — permission prompts', () => {
   });
 
   it('does not clear pendingPermission when id mismatches', () => {
-    const initial = { permissionId: 'perm-1', permission: 'X', patterns: [], sessionId: SID };
+    const initial = { permissionId: 'perm-1', permission: 'X', patterns: [], sessionId: SID, askedAt: 0 };
     let view = makeView({ pendingPermission: initial });
     view = reduceSessionView(view, {
       type: 'sse',
@@ -601,7 +601,7 @@ describe('reduceSessionView — cross-session events', () => {
 describe('reduceSessionView — clearPrompt action', () => {
   it('clears permission when type matches', () => {
     const view = makeView({
-      pendingPermission: { permissionId: 'p1', permission: 'X', patterns: [], sessionId: SID },
+      pendingPermission: { permissionId: 'p1', permission: 'X', patterns: [], sessionId: SID, askedAt: 0 },
     });
     const after = reduceSessionView(view, { type: 'clearPrompt', kind: 'permission', id: 'p1' });
     expect(after.pendingPermission).toBe(null);
@@ -619,10 +619,77 @@ describe('reduceSessionView — clearPrompt action', () => {
   });
 
   it('does not clear when id mismatches', () => {
-    const perm = { permissionId: 'p1', permission: 'X', patterns: [], sessionId: SID };
+    const perm = { permissionId: 'p1', permission: 'X', patterns: [], sessionId: SID, askedAt: 0 };
     const view = makeView({ pendingPermission: perm });
     const after = reduceSessionView(view, { type: 'clearPrompt', kind: 'permission', id: 'p-other' });
     expect(after.pendingPermission).toBe(perm);
+  });
+});
+
+describe('regression: ocman.permission.auto-approved routing', () => {
+  // Bug: the backend used to emit `sessionId` (camelCase) but the
+  // reducer's eventSessionId() reads `sessionID` (caps, OpenCode style).
+  // The mismatch made cross-session filtering a no-op, so an event
+  // generated for session B would be applied to whichever session's
+  // reducer was currently running — the user saw the "auto-approved by
+  // AI" notice attached to whatever session they happened to be viewing.
+  it('drops auto-approved events whose sessionID belongs to another session', () => {
+    const before = makeView();
+    const after = reduceSessionView(before, {
+      type: 'sse',
+      event: sseEvent('ocman.permission.auto-approved', {
+        permissionId: 'perm-1',
+        sessionID: 'other-session', // wire-format key, different session
+        permission: 'read /etc/passwd',
+        patterns: [],
+        approvedAt: 1234,
+      }),
+    });
+    // No mutation: the notice must not be injected into this session.
+    expect(after).toBe(before);
+  });
+
+  it('applies auto-approved events that target this session', () => {
+    const before = makeView();
+    const after = reduceSessionView(before, {
+      type: 'sse',
+      event: sseEvent('ocman.permission.auto-approved', {
+        permissionId: 'perm-1',
+        sessionID: SID, // matches this reducer
+        permission: 'read /etc/passwd',
+        patterns: [],
+        approvedAt: 1234,
+      }),
+    });
+    // Notice injected, keyed by permissionId (judge session no longer exists).
+    expect(after.messages.some((m) => m.id === 'ocman-notice-perm-1')).toBe(true);
+  });
+
+  it('drops checking events whose sessionID belongs to another session', () => {
+    const before = makeView({ pendingPermission: { permissionId: 'perm-1', permission: 'x', patterns: [], sessionId: SID, askedAt: 0 } });
+    const after = reduceSessionView(before, {
+      type: 'sse',
+      event: sseEvent('ocman.permission.checking', {
+        permissionId: 'perm-1',
+        sessionID: 'other-session',
+      }),
+    });
+    expect(after.checkingPermissionId).toBeNull();
+    expect(after).toBe(before);
+  });
+
+  it('drops pending events whose sessionID belongs to another session', () => {
+    const before = makeView();
+    const after = reduceSessionView(before, {
+      type: 'sse',
+      event: sseEvent('ocman.permission.pending', {
+        permissionId: 'perm-1',
+        sessionID: 'other-session',
+        judgeStartsAt: Date.now() + 5000,
+      }),
+    });
+    expect(after.judgeStartsAt).toBeNull();
+    expect(after).toBe(before);
   });
 });
 
@@ -634,5 +701,113 @@ describe('reduceSessionView — unknown events', () => {
       event: sseEvent('unknown.event.type', { foo: 'bar' }),
     });
     expect(after).toBe(before);
+  });
+});
+
+describe('reduceSessionView — judge reasoning surfacing', () => {
+  // The transient judge session is deleted by the backend as soon as
+  // the verdict is parsed, so the SSE payloads no longer carry a
+  // judgeSessionId and the reducer no longer exposes one. Only the
+  // one-line reasoning survives — these tests pin that contract.
+  it('captures reasoning from a flagged SSE event', () => {
+    const perm = { permissionId: 'p1', permission: 'rm -rf', patterns: [], sessionId: SID, askedAt: 0 };
+    const before = makeView({ pendingPermission: perm });
+    const after = reduceSessionView(before, {
+      type: 'sse',
+      event: sseEvent('ocman.permission.flagged', {
+        permissionId: 'p1',
+        sessionID: SID,
+        reasoning: 'Deletes the entire repository.',
+      }),
+    });
+    expect(after.judgeReasoning).toBe('Deletes the entire repository.');
+  });
+
+  it('ignores flagged events that omit the reasoning', () => {
+    // Without reasoning the event carries no actionable signal (the
+    // judge session it used to point at is already gone), so the
+    // reducer should leave state untouched rather than flicker a UI
+    // marker with no content.
+    const perm = { permissionId: 'p1', permission: 'rm -rf', patterns: [], sessionId: SID, askedAt: 0 };
+    const before = makeView({ pendingPermission: perm });
+    const after = reduceSessionView(before, {
+      type: 'sse',
+      event: sseEvent('ocman.permission.flagged', {
+        permissionId: 'p1',
+        sessionID: SID,
+      }),
+    });
+    expect(after.judgeReasoning).toBeNull();
+    expect(after).toBe(before);
+  });
+
+  it('clears reasoning when a new permission is asked', () => {
+    const before = makeView({
+      pendingPermission: { permissionId: 'p1', permission: 'x', patterns: [], sessionId: SID, askedAt: 0 },
+      judgeReasoning: 'Previous reasoning.',
+    });
+    const after = reduceSessionView(before, {
+      type: 'sse',
+      event: sseEvent('permission.asked', {
+        id: 'p2',
+        permission: 'edit',
+        patterns: ['/tmp/foo'],
+        sessionID: SID,
+      }),
+    });
+    expect(after.judgeReasoning).toBeNull();
+  });
+
+  it('clears reasoning when the user replies to the permission', () => {
+    const before = makeView({
+      pendingPermission: { permissionId: 'p1', permission: 'x', patterns: [], sessionId: SID, askedAt: 0 },
+      judgeReasoning: 'Some reasoning.',
+    });
+    const after = reduceSessionView(before, {
+      type: 'sse',
+      event: sseEvent('permission.replied', {
+        requestID: 'p1',
+        sessionID: SID,
+        response: 'once',
+      }),
+    });
+    expect(after.judgeReasoning).toBeNull();
+  });
+
+  it('embeds reasoning in the injected auto-approved notice part', () => {
+    const before = makeView();
+    const after = reduceSessionView(before, {
+      type: 'sse',
+      event: sseEvent('ocman.permission.auto-approved', {
+        permissionId: 'perm-1',
+        sessionID: SID,
+        permission: 'read /etc/hosts',
+        patterns: [],
+        reasoning: 'Read-only system file.',
+        approvedAt: 1234,
+      }),
+    });
+    // Notice key uses the permissionId now that judge session IDs are
+    // ephemeral (deleted post-verdict).
+    const noticePart = after.parts.find((p) => p.id === 'ocman-notice-perm-1-part');
+    expect(noticePart).toBeDefined();
+    expect(decode(noticePart!).reasoning).toBe('Read-only system file.');
+  });
+
+  it('includes reasoning when addNotice carries it', () => {
+    const before = makeView();
+    const after = reduceSessionView(before, {
+      type: 'addNotice',
+      notice: {
+        permissionId: 'perm-3',
+        permission: 'write file',
+        patterns: ['*.md'],
+        reasoning: 'Modifies documentation only.',
+        approvedAt: 5000,
+      },
+    });
+    const noticePart = after.parts.find((p) => p.id === 'ocman-notice-perm-3-part');
+    expect(noticePart).toBeDefined();
+    expect(decode(noticePart!).reasoning).toBe('Modifies documentation only.');
   });
 });

@@ -599,11 +599,13 @@ function ansiClassNames(seg: AnsiSegment): string {
 function AutoApprovedNotice({
   permission,
   patterns,
-  judgeSessionId,
+  reasoning,
 }: {
   permission: string;
   patterns: string[];
-  judgeSessionId: string;
+  /** Judge's one-line conclusion shown inline on the notice. Empty for
+   *  legacy approvals or when the model omitted the field. */
+  reasoning?: string;
 }) {
   return (
     <div className="oc-auto-approved-notice">
@@ -615,14 +617,14 @@ function AutoApprovedNotice({
           {patterns.join(', ')}
         </span>
       )}
-      {judgeSessionId && (
-        <button
-          type="button"
-          className="oc-auto-approved-link"
-          onClick={() => { window.location.href = `/session/${judgeSessionId}`; }}
+      {reasoning && (
+        <span
+          className="oc-auto-approved-reasoning"
+          data-testid="auto-approved-reasoning"
+          title={reasoning}
         >
-          View reasoning
-        </button>
+          {reasoning}
+        </span>
       )}
     </div>
   );
@@ -636,22 +638,22 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: raw
   if (toolName === 'ocman:auto-approved') {
     let permission = '';
     let patterns: string[] = [];
-    let judgeSessionId = '';
+    let reasoning = '';
     try {
       const parsed = JSON.parse(rawArgsText || '{}') as {
         permission?: string;
         patterns?: string[];
-        judgeSessionId?: string;
+        reasoning?: string;
       };
       permission = parsed.permission || '';
       patterns = parsed.patterns || [];
-      judgeSessionId = parsed.judgeSessionId || '';
+      reasoning = parsed.reasoning || '';
     } catch { /* ignore */ }
     return (
       <AutoApprovedNotice
         permission={permission}
         patterns={patterns}
-        judgeSessionId={judgeSessionId}
+        reasoning={reasoning}
       />
     );
   }

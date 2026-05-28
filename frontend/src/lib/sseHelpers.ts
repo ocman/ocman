@@ -17,6 +17,10 @@ export interface PendingPermission {
   permission: string;
   patterns: string[];
   sessionId: string;
+  /** Unix-ms timestamp of when this permission prompt was first received.
+   *  Used to anchor the auto-approve countdown so it survives session
+   *  switches (the component remounts but the remaining time is correct). */
+  askedAt: number;
 }
 
 /** Tool names that the question prompt can be carried under. */
@@ -199,7 +203,7 @@ export function extractPendingPermission(node: unknown): PendingPermission | nul
     (typeof properties.sessionId === 'string' && properties.sessionId) ||
     '';
 
-  return { permissionId: id, permission, patterns, sessionId };
+  return { permissionId: id, permission, patterns, sessionId, askedAt: Date.now() };
 }
 
 /**

@@ -159,7 +159,10 @@ export interface PartData {
   /** Present when type === 'auto-approved' (synthetic notice part). */
   permission?: string;
   patterns?: string[];
-  judgeSessionId?: string;
+  /** Judge's one-line conclusion shown inline on the auto-approved
+   *  notice. Optional — may be empty for legacy approvals or when the
+   *  model omitted the field. */
+  reasoning?: string;
   // File part fields (for type === 'file')
   mime?: string;
   url?: string;

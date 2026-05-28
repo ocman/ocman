@@ -250,7 +250,17 @@ func injectApprovalNotices(platform, sessionID string, stateDB interface {
 	}
 
 	for _, p := range approved {
-		stableKey := "ocman-notice-" + p.JudgeSessionID
+		// Stable key uses the OpenCode permission ID, which is guaranteed
+		// to be unique per approval. Legacy rows (written before the
+		// judge session was deleted post-verdict) populated this with the
+		// judge session ID instead — we fall back to that only when
+		// permission_id is empty, which should never happen for any
+		// row produced by RecordApprovedPermission.
+		keyPart := p.PermissionID
+		if keyPart == "" {
+			keyPart = p.JudgeSessionID
+		}
+		stableKey := "ocman-notice-" + keyPart
 		if existing[stableKey] {
 			continue
 		}
@@ -261,10 +271,10 @@ func injectApprovalNotices(platform, sessionID string, stateDB interface {
 			patterns = []string{}
 		}
 		partData, _ := json.Marshal(map[string]interface{}{
-			"type":           "auto-approved",
-			"permission":     p.PermissionText,
-			"patterns":       patterns,
-			"judgeSessionId": p.JudgeSessionID,
+			"type":       "auto-approved",
+			"permission": p.PermissionText,
+			"patterns":   patterns,
+			"reasoning":  p.Reasoning,
 		})
 		ts := p.ApprovedAt
 
@@ -449,8 +459,63 @@ func (s *Server) handleSessionPermissions(w http.ResponseWriter, r *http.Request
 		if entries == nil {
 			entries = []platforms.LivePrompt{}
 		}
+		// Kick off auto-approve for any pending permissions resurrected
+		// via REST. Without this, prompts that exist before the SSE
+		// stream connects (page reload, navigation to a session that
+		// already has a pending permission) would never trigger the
+		// judge, leaving the UI stuck on the prompt indefinitely.
+		// ensureAutoApprove deduplicates against the SSE tee so we
+		// don't double-judge a permission that arrives via both paths.
+		for _, entry := range entries {
+			permissionID, _ := entry["id"].(string)
+			permission, _ := entry["permission"].(string)
+			if permissionID == "" || permission == "" {
+				continue
+			}
+			patterns := extractPermissionPatterns(entry)
+			metadata := extractPermissionMetadata(entry)
+			s.ensureAutoApprove(adapter.ID(), adapter, sessionID, permissionID, permission, patterns, metadata)
+		}
 		writeJSON(w, entries)
 	})
+}
+
+// extractPermissionPatterns reads the "patterns" array from a
+// LivePrompt map, tolerating both []string (rare) and []interface{}
+// (the default after json.Unmarshal into a generic map).
+func extractPermissionPatterns(entry platforms.LivePrompt) []string {
+	raw, ok := entry["patterns"]
+	if !ok {
+		return nil
+	}
+	switch v := raw.(type) {
+	case []string:
+		return v
+	case []interface{}:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// extractPermissionMetadata reads the "metadata" object from a
+// LivePrompt map. Returns nil when absent or not an object — the
+// judge prompt formatter handles nil cleanly (no metadata block
+// appears in the prompt).
+func extractPermissionMetadata(entry platforms.LivePrompt) map[string]any {
+	raw, ok := entry["metadata"]
+	if !ok {
+		return nil
+	}
+	if m, ok := raw.(map[string]any); ok {
+		return m
+	}
+	return nil
 }
 
 func (s *Server) handleSessionQuestions(w http.ResponseWriter, r *http.Request) {
@@ -694,6 +759,12 @@ func (s *Server) handleSessionPermission(w http.ResponseWriter, r *http.Request)
 			http.Error(w, "invalid permission ID", http.StatusBadRequest)
 			return
 		}
+		// Cancel any in-flight auto-approve judge before we forward the
+		// reply: the user has decided, so we must not race their answer
+		// with the AI's verdict, and we must not pay for a judge whose
+		// result will be discarded anyway. cancelAutoApprove is safe to
+		// call when no judge is running (returns false; we don't care).
+		s.cancelAutoApprove(sessionID, permissionID)
 		if err := adapter.RespondPermission(r.Context(), platforms.RespondPermissionRequest{
 			SessionID:    sessionID,
 			PermissionID: permissionID,
@@ -808,11 +879,11 @@ func (s *Server) handleSessionApprovedPermissions(w http.ResponseWriter, r *http
 			return
 		}
 		type entry struct {
-			PermissionID   string   `json:"permissionId"`
-			Permission     string   `json:"permission"`
-			Patterns       []string `json:"patterns"`
-			JudgeSessionID string   `json:"judgeSessionId"`
-			ApprovedAt     int64    `json:"approvedAt"`
+			PermissionID string   `json:"permissionId"`
+			Permission   string   `json:"permission"`
+			Patterns     []string `json:"patterns"`
+			Reasoning    string   `json:"reasoning"`
+			ApprovedAt   int64    `json:"approvedAt"`
 		}
 		out := make([]entry, 0, len(approved))
 		for _, p := range approved {
@@ -821,11 +892,11 @@ func (s *Server) handleSessionApprovedPermissions(w http.ResponseWriter, r *http
 				patterns = []string{}
 			}
 			out = append(out, entry{
-				PermissionID:   p.PermissionID,
-				Permission:     p.PermissionText,
-				Patterns:       patterns,
-				JudgeSessionID: p.JudgeSessionID,
-				ApprovedAt:     p.ApprovedAt,
+				PermissionID: p.PermissionID,
+				Permission:   p.PermissionText,
+				Patterns:     patterns,
+				Reasoning:    p.Reasoning,
+				ApprovedAt:   p.ApprovedAt,
 			})
 		}
 		writeJSON(w, out)
@@ -867,26 +938,42 @@ func (s *Server) serveSessionEvents(w http.ResponseWriter, r *http.Request, sess
 		flush = flusher.Flush
 	}
 
+	// Register this writer so non-SSE code paths (REST permission
+	// listing, prompt resurrection on session re-open) can push
+	// synthetic ocman.permission.* events into the same connection.
+	// Both the tee's onPermission callback and handleSessionPermissions
+	// flow through ensureAutoApprove → emitPermissionPending → this sink.
+	// The deferred unregister both removes the registry entry and marks
+	// the sink closed, so any in-flight backgroundAutoApprove emit
+	// turns into a no-op rather than panicking on a recycled writer.
+	sink := s.registerSseSink(sessionID, w, flush)
+	defer s.unregisterSseSink(sessionID, sink)
+
 	// Tee the SSE stream so permission.asked events trigger server-side
 	// auto-approve even when no browser tab has this session open.
-	// Pass the response writer and flusher so backgroundAutoApprove can
-	// emit synthetic ocman SSE events (checking, auto-approved) back to
-	// any connected browser client.
+	//
+	// OpenCode's /event stream is process-wide — every event for every
+	// session in that OpenCode process flows through this connection.
+	// The callback's `evtSessionID` argument carries the *event's*
+	// session ID (extracted from the payload) so the auto-approve
+	// pipeline routes the verdict, the persistence, and the
+	// ocman.permission.* SSE event back to the correct session.
+	// Using the connection's `sessionID` for routing was a bug — it
+	// attributed every other session's auto-approved notice to
+	// whichever session the user was currently viewing.
 	tee := &ssePermissionTee{
 		w:     w,
 		flush: flush,
-		onPermission: func(permissionID, permission string, patterns []string) {
-			go s.backgroundAutoApprove(
-				context.Background(),
-				adapter.ID(),
-				adapter,
-				sessionID,
-				permissionID,
-				permission,
-				patterns,
-				w,
-				flush,
-			)
+		onPermission: func(evtSessionID, permissionID, permission string, patterns []string, metadata map[string]any) {
+			s.ensureAutoApprove(adapter.ID(), adapter, evtSessionID, permissionID, permission, patterns, metadata)
+		},
+		// permission.replied fires when the user (or any non-ocman
+		// client, e.g. the OpenCode TUI) answers the prompt. Cancel
+		// any in-flight judge so we stop polling immediately and the
+		// verdict — if it arrives later — is discarded before it can
+		// race the user's answer.
+		onPermissionReplied: func(evtSessionID, permissionID string) {
+			s.cancelAutoApprove(evtSessionID, permissionID)
 		},
 	}
 

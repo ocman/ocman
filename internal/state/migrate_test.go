@@ -183,6 +183,97 @@ func TestMigrate_V3_CreatesAuthSecretTable(t *testing.T) {
 	}
 }
 
+func TestMigrate_V11_AddsReasoningColumn(t *testing.T) {
+	sqlDB, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer sqlDB.Close()
+
+	if err := migrate(sqlDB); err != nil {
+		t.Fatalf("migrate fresh: %v", err)
+	}
+
+	// The reasoning column exists and accepts the standard insert
+	// shape (NOT NULL, DEFAULT ''). Inserting without reasoning must
+	// succeed and read back the empty default.
+	if _, err := sqlDB.Exec(`
+		INSERT INTO auto_approved_permission
+			(platform, session_id, permission_id, permission_text,
+			 patterns_json, judge_session_id, approved_at)
+		VALUES ('opencode', 's1', 'p1', 'read file', '[]', 'judge-1', 100)
+	`); err != nil {
+		t.Fatalf("insert without reasoning: %v", err)
+	}
+	var reasoning string
+	if err := sqlDB.QueryRow(
+		`SELECT reasoning FROM auto_approved_permission WHERE permission_id = 'p1'`,
+	).Scan(&reasoning); err != nil {
+		t.Fatalf("read reasoning: %v", err)
+	}
+	if reasoning != "" {
+		t.Errorf("expected empty default reasoning, got %q", reasoning)
+	}
+
+	// Inserting with a reasoning value must round-trip.
+	if _, err := sqlDB.Exec(`
+		INSERT INTO auto_approved_permission
+			(platform, session_id, permission_id, permission_text,
+			 patterns_json, judge_session_id, reasoning, approved_at)
+		VALUES ('opencode', 's1', 'p2', 'write file', '[]', 'judge-2', 'Writes to docs only.', 200)
+	`); err != nil {
+		t.Fatalf("insert with reasoning: %v", err)
+	}
+	if err := sqlDB.QueryRow(
+		`SELECT reasoning FROM auto_approved_permission WHERE permission_id = 'p2'`,
+	).Scan(&reasoning); err != nil {
+		t.Fatalf("read reasoning p2: %v", err)
+	}
+	if reasoning != "Writes to docs only." {
+		t.Errorf("reasoning round-trip mismatch: got %q", reasoning)
+	}
+}
+
+// TestMigrate_V11_PreservesExistingRows ensures the v11 migration adds
+// the reasoning column to existing rows (which were inserted under v7)
+// without losing data.
+func TestMigrate_V11_PreservesExistingRows(t *testing.T) {
+	sqlDB, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer sqlDB.Close()
+
+	if err := migrate(sqlDB); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	// Insert a row that pre-dates v11 (no reasoning provided).
+	if _, err := sqlDB.Exec(`
+		INSERT INTO auto_approved_permission
+			(platform, session_id, permission_id, permission_text,
+			 patterns_json, judge_session_id, approved_at)
+		VALUES ('opencode', 's1', 'legacy', 'mkdir foo', '["foo"]', 'judge-x', 999)
+	`); err != nil {
+		t.Fatalf("seed legacy row: %v", err)
+	}
+	// Running migrate again must be a no-op (idempotency check).
+	if err := migrate(sqlDB); err != nil {
+		t.Fatalf("re-migrate: %v", err)
+	}
+	var permText, reasoning string
+	if err := sqlDB.QueryRow(
+		`SELECT permission_text, reasoning FROM auto_approved_permission WHERE permission_id = 'legacy'`,
+	).Scan(&permText, &reasoning); err != nil {
+		t.Fatalf("read legacy row: %v", err)
+	}
+	if permText != "mkdir foo" {
+		t.Errorf("permission_text lost: got %q", permText)
+	}
+	if reasoning != "" {
+		t.Errorf("expected empty reasoning for legacy row, got %q", reasoning)
+	}
+}
+
 func TestAuthSecret_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := dir + "/state.db"
