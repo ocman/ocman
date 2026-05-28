@@ -60,42 +60,38 @@ type Server struct {
 	sseSessions   map[string]*sseSink
 	sseSessionsMu sync.Mutex
 
-	// autoApproveInFlight tracks permission IDs that already have a
-	// backgroundAutoApprove goroutine running, so the same permission
-	// is never judged twice (e.g. when the SSE tee sees permission.asked
-	// AND the REST handler returns the same prompt to a polling client).
+	// autoApprove tracks the per-permission state of the auto-approve
+	// pipeline for the lifetime of the ocman process. Keyed by
+	// "sessionID|permissionID".
 	//
-	// The value is the cancel func of the goroutine's context, so a
-	// reply from the user (via ocman API or directly via the OpenCode
-	// TUI's permission.replied event) can short-circuit the judge:
-	// any pending delay is interrupted, the running judge's HTTP polls
-	// see ctx.Done(), and the result is discarded before RespondPermission
-	// is called.
-	autoApproveInFlight   map[string]context.CancelFunc
-	autoApproveInFlightMu sync.Mutex
-
-	// judgedPermissions caches the verdict of every permission the
-	// judge has already evaluated in this ocman process. Keyed by
-	// "sessionID|permissionID" (matching autoApproveInFlight).
+	// Combines what used to be two parallel maps:
+	//   - in-flight: a non-nil status.cancel means a judge goroutine
+	//     is still running, so a second ensureAutoApprove call must
+	//     not start another one. cancel is invoked when the user
+	//     replies to the prompt (via ocman API or the OpenCode TUI's
+	//     permission.replied event) so the judge aborts before its
+	//     verdict can race the user's manual answer.
+	//   - judged: status.verdict (and status.reasoning for unsafe
+	//     verdicts) record the result so re-firing ensureAutoApprove
+	//     for the same permissionID (e.g. when the user re-opens the
+	//     session and handleSessionPermissions resurrects the prompt
+	//     via REST) short-circuits instead of re-running the LLM.
 	//
-	// Why: an unsafe verdict leaves the permission pending in OpenCode
-	// (we deliberately don't auto-reject — the user must decide). If the
-	// user later opens the session, handleSessionPermissions sees the
-	// prompt still pending and would call ensureAutoApprove again,
-	// re-judging the exact same request and burning tokens. The cache
-	// short-circuits the second judge call.
+	// The combined map also stores status.judgeStartsAt and
+	// status.checking so a freshly-connected SSE sink (the bug case:
+	// the headless watcher claimed the permission before any frontend
+	// tab was open) can be brought up to date with a synthetic replay
+	// of the most recent applicable ocman.permission.* event when the
+	// frontend's REST resurrection path calls ensureAutoApprove.
+	// Without that replay the prompt UI would stay frozen waiting for
+	// an event that already fired.
 	//
 	// Process-lifetime only: safe verdicts persist via the
 	// ApprovedPermission DB row, so they survive restarts naturally.
 	// Unsafe verdicts are forgotten on restart, costing at most one
-	// re-judge per pending prompt — an acceptable one-off cost.
-	//
-	// OpenCode generates a unique permissionID per request, so running
-	// the same command twice produces two different IDs and re-judges
-	// independently (which is the desired behaviour — context may have
-	// shifted between attempts).
-	judgedPermissions   map[string]judgeVerdict
-	judgedPermissionsMu sync.Mutex
+	// re-judge per pending prompt.
+	autoApprove   map[string]*autoApproveStatus
+	autoApproveMu sync.Mutex
 }
 
 // sseSink wraps an SSE response writer with the synchronisation needed
@@ -162,10 +158,9 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		auth:                auth,
 		integrations:        integrations.New(),
 		startTime:           time.Now(),
-		judge:               newPermissionJudge(),
-		sseSessions:         make(map[string]*sseSink),
-		autoApproveInFlight: make(map[string]context.CancelFunc),
-		judgedPermissions:   make(map[string]judgeVerdict),
+		judge:        newPermissionJudge(),
+		sseSessions:  make(map[string]*sseSink),
+		autoApprove:  make(map[string]*autoApproveStatus),
 	}
 }
 
@@ -208,6 +203,13 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	go s.runProjectsIndexLoop(ctx)
 	go s.runLLMMetricsLoop(ctx)
 	go s.runChildSessionWatcher(ctx)
+	// Headless auto-approve: subscribe directly to each OpenCode
+	// instance's /event SSE stream so permission.asked events drive
+	// the judge even when no browser tab is open. Without this, the
+	// auto-approve pipeline only fires when a frontend SSE connection
+	// happens to be active for some session in the same OpenCode
+	// process.
+	go s.runAutoApproveWatcher(ctx)
 
 	// Register observable gauges for the top-line stats (session /
 	// message / project counts, lifetime tokens and cost). The

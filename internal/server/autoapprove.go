@@ -631,57 +631,145 @@ func (s *Server) lookupSseSink(sessionID string) *sseSink {
 	return s.sseSessions[sessionID]
 }
 
-// --- In-flight auto-approve tracking ---
+// --- Auto-approve per-permission state tracking ---
 
-// autoApproveKey is the registry key for a single in-flight judge run.
+// autoApproveStatus is the per-permission state remembered for the
+// lifetime of the ocman process. A non-nil cancel means a judge
+// goroutine is still running; a non-empty verdict means the judge
+// finished. The two are mutually exclusive only in steady state — a
+// running judge transitions from (cancel non-nil, verdict "") to
+// (cancel nil, verdict non-empty) when recordJudged is called.
+//
+// judgeStartsAt and checking exist so a freshly-connected SSE sink
+// (the headless-watcher case where the watcher claimed the permission
+// before the frontend was open) can replay the most recent applicable
+// ocman.permission.* event when ensureAutoApprove short-circuits.
+type autoApproveStatus struct {
+	// cancel cancels the judge goroutine's context. Non-nil while the
+	// goroutine is running; cleared by releaseAutoApprove.
+	cancel context.CancelFunc
+
+	// judgeStartsAt is the wall-clock Unix-ms at which the judge will
+	// start running (i.e. now + configured delay). Used to replay
+	// ocman.permission.pending with a stable countdown anchor when a
+	// frontend connects mid-delay.
+	judgeStartsAt int64
+
+	// checking indicates whether the configured delay has elapsed and
+	// the judge is actually running. Toggled by markAutoApproveChecking
+	// after the delay sleep finishes.
+	checking bool
+
+	// verdict is the final verdict once the judge has finished. Empty
+	// while the judge is still running.
+	verdict judgeVerdict
+
+	// reasoning is the one-line conclusion extracted from the judge's
+	// JSON response. Populated when verdict is non-empty. Surfaced to
+	// the UI on the ocman.permission.flagged event so the user sees
+	// *why* the judge made its call.
+	reasoning string
+}
+
+// autoApproveKey is the registry key for a single permission record.
 func autoApproveKey(sessionID, permissionID string) string {
 	return sessionID + "|" + permissionID
 }
 
-// claimAutoApprove atomically registers a new in-flight judge for
+// claimAutoApprove atomically registers a new judge run for
 // (sessionID, permissionID) and returns a cancellable context derived
 // from parent. The second return value is true if the claim was
 // granted; false if another goroutine is already handling this
-// permission (the caller must abort).
+// permission, OR a verdict for it has already been recorded.
 //
-// The returned cancel func is stored in the registry so external
-// signals (cancelAutoApprove from the API handler or the SSE tee) can
-// interrupt the goroutine. The goroutine itself must call
-// releaseAutoApprove on exit to remove the registry entry.
+// Callers that already know the judgeStartsAt anchor (the standard
+// ensureAutoApprove path) should use claimAutoApproveWithStart so the
+// anchor is stored for later replay. This helper exists for symmetry
+// with the pre-watcher API and defaults judgeStartsAt to 0.
 func (s *Server) claimAutoApprove(parent context.Context, sessionID, permissionID string) (context.Context, bool) {
+	return s.claimAutoApproveWithStart(parent, sessionID, permissionID, 0)
+}
+
+// claimAutoApproveWithStart is claimAutoApprove plus a judgeStartsAt
+// anchor. The anchor is stored on the status record so a later
+// short-circuit replay can re-emit ocman.permission.pending with the
+// same value, letting the frontend resume the countdown without a
+// fresh clock.
+func (s *Server) claimAutoApproveWithStart(parent context.Context, sessionID, permissionID string, judgeStartsAt int64) (context.Context, bool) {
 	if s == nil {
 		// Nil-Server only happens in test setups that don't exercise
-		// cancellation; return the parent unchanged rather than allocate
-		// a cancellable derivative we couldn't track.
+		// cancellation; return the parent unchanged.
 		return parent, true
 	}
 	key := autoApproveKey(sessionID, permissionID)
-	s.autoApproveInFlightMu.Lock()
-	defer s.autoApproveInFlightMu.Unlock()
-	if s.autoApproveInFlight == nil {
-		s.autoApproveInFlight = make(map[string]context.CancelFunc)
+	s.autoApproveMu.Lock()
+	defer s.autoApproveMu.Unlock()
+	if s.autoApprove == nil {
+		s.autoApprove = make(map[string]*autoApproveStatus)
 	}
-	if _, exists := s.autoApproveInFlight[key]; exists {
+	if existing := s.autoApprove[key]; existing != nil {
+		// Either still in flight or already judged — either way the
+		// caller must not start a second goroutine. Replay logic in
+		// ensureAutoApprove handles the bring-up of any newly-connected
+		// sink.
 		return nil, false
 	}
 	ctx, cancel := context.WithCancel(parent)
-	s.autoApproveInFlight[key] = cancel
+	s.autoApprove[key] = &autoApproveStatus{
+		cancel:        cancel,
+		judgeStartsAt: judgeStartsAt,
+	}
 	return ctx, true
 }
 
-// releaseAutoApprove removes the in-flight entry and invokes the
-// registered cancel func (idempotent — safe to call after
-// cancelAutoApprove). Must be called by the goroutine that successfully
-// claimed the entry, typically in a deferred block.
+// markAutoApproveChecking flips the status's checking flag, signalling
+// that the configured delay has elapsed and the judge is now running.
+// Used by the replay path to choose between emitting
+// ocman.permission.pending (still waiting) and .checking (judge
+// active). No-op if no status exists for the permission.
+func (s *Server) markAutoApproveChecking(sessionID, permissionID string) {
+	if s == nil {
+		return
+	}
+	key := autoApproveKey(sessionID, permissionID)
+	s.autoApproveMu.Lock()
+	if st := s.autoApprove[key]; st != nil {
+		st.checking = true
+	}
+	s.autoApproveMu.Unlock()
+}
+
+// releaseAutoApprove invokes the registered cancel func and clears it
+// on the status record. The status itself is retained so a later
+// ensureAutoApprove call for the same permissionID can still replay
+// the recorded verdict (or, for an in-flight goroutine that exits
+// before a verdict is recorded, recognise that the slot is free for
+// a fresh claim).
+//
+// Idempotent — safe to call after cancelAutoApprove. Must be called by
+// the goroutine that successfully claimed the entry, typically in a
+// deferred block.
 func (s *Server) releaseAutoApprove(sessionID, permissionID string) {
 	if s == nil {
 		return
 	}
 	key := autoApproveKey(sessionID, permissionID)
-	s.autoApproveInFlightMu.Lock()
-	cancel := s.autoApproveInFlight[key]
-	delete(s.autoApproveInFlight, key)
-	s.autoApproveInFlightMu.Unlock()
+	s.autoApproveMu.Lock()
+	st := s.autoApprove[key]
+	if st == nil {
+		s.autoApproveMu.Unlock()
+		return
+	}
+	cancel := st.cancel
+	st.cancel = nil
+	// If the judge exited without recording a verdict (cancelled
+	// before completion, panic, etc.) drop the record so a fresh
+	// permission with the same key can claim again. Recorded
+	// verdicts are kept so REST resurrection can replay them.
+	if st.verdict == "" {
+		delete(s.autoApprove, key)
+	}
+	s.autoApproveMu.Unlock()
 	if cancel != nil {
 		cancel()
 	}
@@ -690,10 +778,10 @@ func (s *Server) releaseAutoApprove(sessionID, permissionID string) {
 // cancelAutoApprove signals the in-flight judge for (sessionID,
 // permissionID) to abort. No-op if there is no judge running. The
 // goroutine sees ctx.Done() at its next select point and drops the
-// result. The registry entry is left in place — releaseAutoApprove
-// (from the goroutine's defer) removes it. This way two cancels in
-// quick succession don't fight a re-entry; the entry only clears
-// when the goroutine actually exits.
+// result. The status record is left in place — releaseAutoApprove
+// (from the goroutine's defer) is what evicts it. This way two
+// cancels in quick succession don't fight a re-entry; the slot only
+// frees when the goroutine actually exits.
 //
 // Returns true if a cancel was sent (something was running), false
 // if there was nothing to cancel.
@@ -702,9 +790,13 @@ func (s *Server) cancelAutoApprove(sessionID, permissionID string) bool {
 		return false
 	}
 	key := autoApproveKey(sessionID, permissionID)
-	s.autoApproveInFlightMu.Lock()
-	cancel := s.autoApproveInFlight[key]
-	s.autoApproveInFlightMu.Unlock()
+	s.autoApproveMu.Lock()
+	st := s.autoApprove[key]
+	var cancel context.CancelFunc
+	if st != nil {
+		cancel = st.cancel
+	}
+	s.autoApproveMu.Unlock()
 	if cancel == nil {
 		return false
 	}
@@ -716,33 +808,71 @@ func (s *Server) cancelAutoApprove(sessionID, permissionID string) bool {
 // later ensureAutoApprove call for the same OpenCode permission ID
 // short-circuits instead of running the judge again. Called by
 // backgroundAutoApprove on every terminal path (safe or unsafe).
+//
+// Equivalent to recordJudgedWithReasoning with reasoning="". Retained
+// so call-sites that don't have reasoning handy stay readable.
 func (s *Server) recordJudged(sessionID, permissionID string, verdict judgeVerdict) {
+	s.recordJudgedWithReasoning(sessionID, permissionID, verdict, "")
+}
+
+// recordJudgedWithReasoning is recordJudged plus the one-line reasoning
+// extracted from the judge's response. Surfaced to the UI on the
+// ocman.permission.flagged event during replay so users see *why* the
+// judge said unsafe.
+func (s *Server) recordJudgedWithReasoning(sessionID, permissionID string, verdict judgeVerdict, reasoning string) {
 	if s == nil || permissionID == "" {
 		return
 	}
 	key := autoApproveKey(sessionID, permissionID)
-	s.judgedPermissionsMu.Lock()
-	if s.judgedPermissions == nil {
-		s.judgedPermissions = make(map[string]judgeVerdict)
+	s.autoApproveMu.Lock()
+	if s.autoApprove == nil {
+		s.autoApprove = make(map[string]*autoApproveStatus)
 	}
-	s.judgedPermissions[key] = verdict
-	s.judgedPermissionsMu.Unlock()
+	st := s.autoApprove[key]
+	if st == nil {
+		st = &autoApproveStatus{}
+		s.autoApprove[key] = st
+	}
+	st.verdict = verdict
+	st.reasoning = reasoning
+	s.autoApproveMu.Unlock()
 }
 
 // lookupJudged returns the cached verdict for (sessionID, permissionID)
-// and ok=true if the judge already ran in this process. Used to
-// short-circuit ensureAutoApprove when the user re-opens a session
-// whose permissions were already flagged unsafe — without this, every
-// REST poll would re-run the judge.
+// and ok=true if the judge already produced a verdict in this process.
+// Pure read of the verdict field; the status may still be in flight if
+// verdict is empty (in which case ok is false).
 func (s *Server) lookupJudged(sessionID, permissionID string) (judgeVerdict, bool) {
 	if s == nil {
 		return "", false
 	}
 	key := autoApproveKey(sessionID, permissionID)
-	s.judgedPermissionsMu.Lock()
-	defer s.judgedPermissionsMu.Unlock()
-	v, ok := s.judgedPermissions[key]
-	return v, ok
+	s.autoApproveMu.Lock()
+	defer s.autoApproveMu.Unlock()
+	st := s.autoApprove[key]
+	if st == nil || st.verdict == "" {
+		return "", false
+	}
+	return st.verdict, true
+}
+
+// lookupAutoApproveStatus returns a snapshot copy of the current status
+// for (sessionID, permissionID) and ok=true if any state is recorded
+// (in-flight OR judged). The returned struct is a value copy so callers
+// can read fields without holding the mutex. Returns the zero status
+// and ok=false when no record exists.
+func (s *Server) lookupAutoApproveStatus(sessionID, permissionID string) (autoApproveStatus, bool) {
+	if s == nil {
+		return autoApproveStatus{}, false
+	}
+	key := autoApproveKey(sessionID, permissionID)
+	s.autoApproveMu.Lock()
+	defer s.autoApproveMu.Unlock()
+	st := s.autoApprove[key]
+	if st == nil {
+		return autoApproveStatus{}, false
+	}
+	return *st, true
 }
 
 // emitSessionSseEvent writes an SSE event to the currently-registered
@@ -762,10 +892,14 @@ func (s *Server) emitSessionSseEvent(sessionID, eventType string, payload []byte
 // anchors the frontend countdown to an absolute wall-clock time so the
 // remaining seconds are correct even if the client reconnects.
 //
+// judgeStartsAt is the Unix-ms moment the judge will start running
+// (i.e. the moment the configured delay elapses). Passed in by callers
+// so the same anchor used during the initial emit can be re-emitted on
+// a replay — letting the frontend resume the countdown rather than
+// restarting from zero.
+//
 // No-op when no client is listening; the judge runs anyway.
-func (s *Server) emitPermissionPending(sessionID, permissionID string) {
-	delayMs := s.judgeDelayMs
-	judgeStartsAt := time.Now().Add(time.Duration(delayMs) * time.Millisecond).UnixMilli()
+func (s *Server) emitPermissionPending(sessionID, permissionID string, judgeStartsAt int64) {
 	// sessionID matches OpenCode's wire-format casing so the frontend
 	// reducer's eventSessionId() correctly routes this event to the
 	// reducer for `sessionID`. Without this, ocman events would be
@@ -781,24 +915,90 @@ func (s *Server) emitPermissionPending(sessionID, permissionID string) {
 	log.WithFields(log.Fields{
 		"permissionID":  permissionID,
 		"sessionID":     sessionID,
-		"delayMs":       delayMs,
 		"judgeStartsAt": judgeStartsAt,
 	}).Info("emitting ocman.permission.pending")
 	s.emitSessionSseEvent(sessionID, "ocman.permission.pending", payload)
 }
 
+// replayAutoApproveState emits the most recent applicable
+// ocman.permission.* event for an already-known permission to the
+// currently-registered SSE sink.
+//
+// Why this exists: the headless autoApproveWatcher subscribes to
+// OpenCode's /event stream from server startup, so it routinely
+// observes (and claims, judges, or completes) permission.asked events
+// before any frontend tab is open. When the user later opens the
+// session, the REST resurrection path calls ensureAutoApprove again —
+// which short-circuits because the work is already done. Without this
+// replay, the just-registered SSE sink would never receive the
+// pending / checking / flagged / auto-approved events that drive the
+// countdown UI, leaving the prompt frozen.
+//
+// The frontend reducer is idempotent against repeat events (it dedups
+// on permissionId / judgeStartsAt), so a replay during the same tab's
+// lifetime is harmless.
+func (s *Server) replayAutoApproveState(sessionID, permissionID, permission string, patterns []string) {
+	st, ok := s.lookupAutoApproveStatus(sessionID, permissionID)
+	if !ok {
+		return
+	}
+	switch {
+	case st.verdict == verdictSafe:
+		// Safe verdicts: nothing to replay over SSE. OpenCode has
+		// already cleared the prompt via RespondPermission, so the
+		// REST /permissions list won't even include it on a fresh
+		// page load. The approval notice is injected into the
+		// message stream by injectApprovalNotices when the session
+		// detail loads.
+		return
+	case st.verdict == verdictUnsafe:
+		// Unsafe verdicts: the prompt stays pending for the human, so
+		// the frontend needs the flagged reasoning to render the
+		// "AI flagged this" annotation.
+		if st.reasoning == "" {
+			return
+		}
+		payload, err := json.Marshal(map[string]string{
+			"permissionId": permissionID,
+			"sessionID":    sessionID,
+			"reasoning":    st.reasoning,
+		})
+		if err != nil {
+			return
+		}
+		s.emitSessionSseEvent(sessionID, "ocman.permission.flagged", payload)
+	case st.checking:
+		// Judge is currently running — emit checking so the UI shows
+		// a spinner instead of a frozen countdown.
+		payload, err := json.Marshal(map[string]string{
+			"permissionId": permissionID,
+			"sessionID":    sessionID,
+		})
+		if err != nil {
+			return
+		}
+		s.emitSessionSseEvent(sessionID, "ocman.permission.checking", payload)
+	default:
+		// Still in the pre-judge delay — emit pending with the original
+		// judgeStartsAt anchor so the countdown resumes from the right
+		// remaining time.
+		s.emitPermissionPending(sessionID, permissionID, st.judgeStartsAt)
+	}
+}
+
 // ensureAutoApprove is the single entry point for kicking off the
 // auto-approve pipeline for a given permission. It:
 //
-//  1. Short-circuits if this exact permissionID has already been
-//     judged in this process (the verdict is cached for the lifetime
-//     of the ocman process — see judgedPermissions).
-//  2. Deduplicates against any in-flight goroutine for the same
-//     permission so two code paths (live SSE event + REST polling
-//     resurrection) never run two judges in parallel.
-//  3. Emits ocman.permission.pending to the connected SSE client so
-//     the countdown starts immediately.
-//  4. Launches backgroundAutoApprove in a goroutine.
+//  1. If this permission already has state (in-flight goroutine or a
+//     recorded verdict), replays the most recent applicable
+//     ocman.permission.* event to the SSE sink — this brings a
+//     freshly-connected frontend up to date with work the headless
+//     watcher has already done — and returns without starting a
+//     second goroutine.
+//  2. Otherwise computes the judge start anchor, claims the slot,
+//     emits ocman.permission.pending so the countdown starts
+//     immediately on any connected client, and launches
+//     backgroundAutoApprove in a goroutine.
 //
 // Safe to call from any handler; safe to call multiple times for the
 // same permission. backgroundAutoApprove looks up the SSE sink on each
@@ -810,24 +1010,27 @@ func (s *Server) ensureAutoApprove(
 	patterns []string,
 	metadata map[string]any,
 ) {
-	// If the judge already ran for this permissionID in this process,
-	// skip. Unsafe verdicts leave the permission pending in OpenCode
-	// (we deliberately don't auto-reject); without this guard, every
-	// subsequent REST poll for /permissions would re-run the LLM
-	// against the exact same request, burning tokens to reach the
-	// exact same verdict.
-	if _, alreadyJudged := s.lookupJudged(sessionID, permissionID); alreadyJudged {
+	// Read the configured delay once so both the cache anchor and the
+	// goroutine's sleep use the same value. The goroutine re-reads it
+	// inside backgroundAutoApprove for cases where the setting was
+	// changed between the asked event and the judge starting.
+	delayMs := s.judgeDelayMs
+	judgeStartsAt := time.Now().Add(time.Duration(delayMs) * time.Millisecond).UnixMilli()
+
+	ctx, ok := s.claimAutoApproveWithStart(context.Background(), sessionID, permissionID, judgeStartsAt)
+	if !ok {
+		// Cache hit. Either another goroutine is already handling the
+		// judge for this permission, or a verdict was recorded earlier
+		// in this process. Replay the current state to the (possibly
+		// just-registered) sink so the frontend's UI catches up.
 		log.WithFields(log.Fields{
 			"sessionID":    sessionID,
 			"permissionID": permissionID,
-		}).Debug("auto-approve: permission already judged in this process, skipping")
+		}).Debug("auto-approve: cache hit, replaying state to sink")
+		s.replayAutoApproveState(sessionID, permissionID, permission, patterns)
 		return
 	}
-	ctx, ok := s.claimAutoApprove(context.Background(), sessionID, permissionID)
-	if !ok {
-		return
-	}
-	s.emitPermissionPending(sessionID, permissionID)
+	s.emitPermissionPending(sessionID, permissionID, judgeStartsAt)
 	go func() {
 		defer s.releaseAutoApprove(sessionID, permissionID)
 		s.backgroundAutoApprove(
@@ -1110,8 +1313,12 @@ func metadataKeys(m map[string]any) []string {
 }
 
 // backgroundAutoApprove is the authoritative auto-approve engine.
-// It fires whenever an SSE permission.asked event is observed on a
-// proxied event stream — even when no browser tab has the session open.
+// It fires whenever an SSE permission.asked event is observed on an
+// OpenCode /event stream — either via the frontend-driven tee in
+// serveSessionEvents (active while a browser tab is open) or via the
+// headless runAutoApproveWatcher (active for the lifetime of the
+// ocman process). Both entry points funnel through ensureAutoApprove,
+// which deduplicates so the judge runs at most once per permission.
 //
 // When auto-approve is enabled for the session it:
 //  1. Emits an "ocman.permission.checking" SSE event to any connected
@@ -1192,6 +1399,11 @@ func (s *Server) backgroundAutoApprove(
 		case <-time.After(time.Duration(delayMs) * time.Millisecond):
 		}
 	}
+
+	// Flip the status to "checking" so replayAutoApproveState can
+	// route a freshly-connected sink to ocman.permission.checking
+	// rather than a stale countdown.
+	s.markAutoApproveChecking(sessionID, permissionID)
 
 	logger.Info("background auto-approve: judging permission")
 
@@ -1279,16 +1491,18 @@ func (s *Server) backgroundAutoApprove(
 		return
 	}
 
-	// Record the verdict so a later ensureAutoApprove call for the
-	// same permissionID (e.g. the user re-opens the session and
-	// handleSessionPermissions resurrects it via REST) short-circuits
-	// instead of paying for another judge run. Recorded regardless of
-	// verdict — unsafe verdicts are the main reason this cache exists:
-	// safe verdicts already auto-respond and the permission disappears
-	// from OpenCode's pending list, but unsafe verdicts deliberately
-	// leave the prompt pending for the human, so without this cache
-	// every REST poll would re-judge.
-	s.recordJudged(sessionID, permissionID, result.Verdict)
+	// Record the verdict (and reasoning) so a later ensureAutoApprove
+	// call for the same permissionID (e.g. the user re-opens the
+	// session and handleSessionPermissions resurrects it via REST)
+	// short-circuits instead of paying for another judge run, and so
+	// replayAutoApproveState can surface the flagged reasoning to a
+	// newly-connected sink. Recorded regardless of verdict — unsafe
+	// verdicts are the main reason this cache exists: safe verdicts
+	// already auto-respond and the permission disappears from
+	// OpenCode's pending list, but unsafe verdicts deliberately leave
+	// the prompt pending for the human, so without this cache every
+	// REST poll would re-judge.
+	s.recordJudgedWithReasoning(sessionID, permissionID, result.Verdict, result.Reasoning)
 
 	logger.WithFields(log.Fields{
 		"verdict":        string(result.Verdict),

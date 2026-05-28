@@ -210,3 +210,31 @@ func TestDiscoverOpenCodePort_UnknownDirDoesNotInvalidateCache(t *testing.T) {
 		t.Errorf("lsof invoked %d times after known-dir hit, want 1", got)
 	}
 }
+
+// TestDiscoverOpenCodePorts_Exported is a smoke test for the exported
+// wrapper used by the headless auto-approve watcher. It must return the
+// full directory -> port map and a mutation by the caller must not leak
+// into subsequent calls (same isolation guarantee as the unexported
+// path, which the watcher relies on so a faulty caller can't poison
+// the cache).
+func TestDiscoverOpenCodePorts_Exported(t *testing.T) {
+	restore := setDiscoverPortsImplForTests(func() map[string]string {
+		return map[string]string{
+			"/repo/a": "1111",
+			"/repo/b": "2222",
+		}
+	})
+	defer restore()
+	resetPortCacheForTests()
+
+	got := DiscoverOpenCodePorts()
+	if got["/repo/a"] != "1111" || got["/repo/b"] != "2222" {
+		t.Errorf("DiscoverOpenCodePorts: got %v, want a=1111 b=2222", got)
+	}
+
+	got["/repo/a"] = "MUTATED"
+	again := DiscoverOpenCodePorts()
+	if again["/repo/a"] != "1111" {
+		t.Errorf("caller mutation leaked into cache: %v", again)
+	}
+}

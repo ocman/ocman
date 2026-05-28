@@ -967,7 +967,12 @@ func (s *Server) serveSessionEvents(w http.ResponseWriter, r *http.Request, sess
 	defer s.unregisterSseSink(sessionID, sink)
 
 	// Tee the SSE stream so permission.asked events trigger server-side
-	// auto-approve even when no browser tab has this session open.
+	// auto-approve. This is one of two entry points into the
+	// auto-approve pipeline; the other is runAutoApproveWatcher, which
+	// keeps the pipeline running headlessly when no browser tab is
+	// open. Both flow through ensureAutoApprove, which deduplicates
+	// against in-flight goroutines so only one judge ever runs per
+	// permission.
 	//
 	// OpenCode's /event stream is process-wide — every event for every
 	// session in that OpenCode process flows through this connection.

@@ -242,6 +242,18 @@ func DiscoverOpenCodePort(directory string) string {
 	return discoverOpenCodePort(directory)
 }
 
+// DiscoverOpenCodePorts returns a fresh snapshot of every running
+// OpenCode instance as a directory -> port map. The result is a copy,
+// safe for the caller to mutate.
+//
+// Used by the headless auto-approve watcher (internal/server) to
+// enumerate OpenCode processes it should subscribe to. Goes through the
+// same cached path as DiscoverOpenCodePort so back-to-back calls do not
+// run lsof again within portCacheTTL.
+func DiscoverOpenCodePorts() map[string]string {
+	return discoverOpenCodePorts()
+}
+
 // discoverOpenCodePortCtx is discoverOpenCodePort with Server-Timing instrumentation.
 func discoverOpenCodePortCtx(ctx context.Context, directory string) string {
 	if cached, ok := readCachedPorts(); ok {

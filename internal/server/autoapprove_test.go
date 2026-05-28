@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"reflect"
 	"strings"
 	"sync"
@@ -14,7 +15,7 @@ import (
 // first claim for a (session, permission) pair succeeds; subsequent
 // claims return ok=false until releaseAutoApprove runs.
 func TestClaimAutoApprove(t *testing.T) {
-	s := &Server{autoApproveInFlight: make(map[string]context.CancelFunc)}
+	s := &Server{autoApprove: make(map[string]*autoApproveStatus)}
 
 	ctx1, ok := s.claimAutoApprove(context.Background(), "ses-1", "perm-1")
 	if !ok {
@@ -49,7 +50,7 @@ func TestClaimAutoApprove(t *testing.T) {
 // TestClaimAutoApproveConcurrent stresses the dedup under heavy parallel
 // load to catch any locking bug.
 func TestClaimAutoApproveConcurrent(t *testing.T) {
-	s := &Server{autoApproveInFlight: make(map[string]context.CancelFunc)}
+	s := &Server{autoApprove: make(map[string]*autoApproveStatus)}
 	const goroutines = 100
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
@@ -76,7 +77,7 @@ func TestClaimAutoApproveConcurrent(t *testing.T) {
 // false otherwise, and that the entry survives until release (so
 // double-cancel doesn't allow a new claimant to slip in).
 func TestCancelAutoApprove(t *testing.T) {
-	s := &Server{autoApproveInFlight: make(map[string]context.CancelFunc)}
+	s := &Server{autoApprove: make(map[string]*autoApproveStatus)}
 
 	if s.cancelAutoApprove("ses-1", "perm-1") {
 		t.Errorf("cancel with no claim should return false")
@@ -114,7 +115,7 @@ func TestCancelAutoApprove(t *testing.T) {
 // TestJudgedPermissionsCache verifies that recordJudged / lookupJudged
 // roundtrip correctly and that the key is (sessionID, permissionID).
 func TestJudgedPermissionsCache(t *testing.T) {
-	s := &Server{judgedPermissions: make(map[string]judgeVerdict)}
+	s := &Server{autoApprove: make(map[string]*autoApproveStatus)}
 
 	if _, ok := s.lookupJudged("ses-1", "perm-1"); ok {
 		t.Errorf("lookup before record should miss")
@@ -168,9 +169,8 @@ func TestJudgedPermissionsCache(t *testing.T) {
 // already contains a verdict.
 func TestEnsureAutoApproveSkipsAlreadyJudged(t *testing.T) {
 	s := &Server{
-		autoApproveInFlight: make(map[string]context.CancelFunc),
-		judgedPermissions:   make(map[string]judgeVerdict),
-		autoApproveDefault:  true,
+		autoApprove:        make(map[string]*autoApproveStatus),
+		autoApproveDefault: true,
 	}
 
 	// Pre-seed the cache with an unsafe verdict (the canonical
@@ -179,15 +179,12 @@ func TestEnsureAutoApproveSkipsAlreadyJudged(t *testing.T) {
 	// ensureAutoApprove).
 	s.recordJudged("ses-1", "perm-1", verdictUnsafe)
 
-	// Call ensureAutoApprove. It should short-circuit before even
-	// trying to claim, so the in-flight map stays empty.
+	// Call ensureAutoApprove. It should short-circuit before claiming,
+	// so no goroutine starts (cancel stays nil for the cached entry).
 	s.ensureAutoApprove("opencode", nil, "ses-1", "perm-1", "Bash command", nil, nil)
 
-	s.autoApproveInFlightMu.Lock()
-	inflight := len(s.autoApproveInFlight)
-	s.autoApproveInFlightMu.Unlock()
-	if inflight != 0 {
-		t.Errorf("cached permission should not claim a slot; got %d in-flight entries", inflight)
+	if n := countInFlight(s); n != 0 {
+		t.Errorf("cached permission should not claim a slot; got %d in-flight entries", n)
 	}
 
 	// A different permissionID for the same session must still run
@@ -202,10 +199,7 @@ func TestEnsureAutoApproveSkipsAlreadyJudged(t *testing.T) {
 	// Wait briefly for the goroutine to finish releasing its slot.
 	deadline := time.Now().Add(500 * time.Millisecond)
 	for time.Now().Before(deadline) {
-		s.autoApproveInFlightMu.Lock()
-		n := len(s.autoApproveInFlight)
-		s.autoApproveInFlightMu.Unlock()
-		if n == 0 {
+		if countInFlight(s) == 0 {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -215,11 +209,201 @@ func TestEnsureAutoApproveSkipsAlreadyJudged(t *testing.T) {
 	// short-circuit kicks in for it as well.
 	s.recordJudged("ses-1", "perm-DIFFERENT", verdictSafe)
 	s.ensureAutoApprove("opencode", nil, "ses-1", "perm-DIFFERENT", "Bash command", nil, nil)
-	s.autoApproveInFlightMu.Lock()
-	inflight2 := len(s.autoApproveInFlight)
-	s.autoApproveInFlightMu.Unlock()
-	if inflight2 != 0 {
-		t.Errorf("cached safe verdict should also short-circuit; got %d in-flight entries", inflight2)
+	if n := countInFlight(s); n != 0 {
+		t.Errorf("cached safe verdict should also short-circuit; got %d in-flight entries", n)
+	}
+}
+
+// countInFlight returns the number of status records currently
+// representing a running judge goroutine (non-nil cancel). Replaces
+// the pre-refactor `len(autoApproveInFlight)` reads scattered across
+// these tests.
+func countInFlight(s *Server) int {
+	s.autoApproveMu.Lock()
+	defer s.autoApproveMu.Unlock()
+	n := 0
+	for _, st := range s.autoApprove {
+		if st != nil && st.cancel != nil {
+			n++
+		}
+	}
+	return n
+}
+
+// TestEnsureAutoApproveReplaysStateOnShortCircuit is the regression for
+// the "frontend opens after the watcher already processed the
+// permission" bug. The headless autoApproveWatcher claims permissions
+// before any frontend tab is open. When the user later opens the
+// session, the REST permission resurrection calls ensureAutoApprove
+// again, which previously just returned silently — leaving the
+// frontend without ocman.permission.pending / .checking / .flagged /
+// .auto-approved and therefore with no countdown and a stuck prompt.
+//
+// The fix: ensureAutoApprove must replay the most recent applicable
+// state event to the (potentially newly-registered) sink whenever it
+// short-circuits.
+func TestEnsureAutoApproveReplaysStateOnShortCircuit(t *testing.T) {
+	tests := []struct {
+		name          string
+		setup         func(*Server, string, string) // pre-seed cache state
+		wantEvent     string                        // SSE event type expected on the sink
+		wantPayloadIn string                        // substring expected in the SSE payload
+	}{
+		{
+			name: "in-flight: pending state replays as ocman.permission.pending",
+			setup: func(s *Server, sid, pid string) {
+				// Simulate the watcher having claimed but not yet finished.
+				// judgeStartsAt in the near future so the reducer would
+				// resume a live countdown.
+				s.claimAutoApproveWithStart(context.Background(), sid, pid, time.Now().Add(2*time.Second).UnixMilli())
+			},
+			wantEvent:     "ocman.permission.pending",
+			wantPayloadIn: `"judgeStartsAt":`,
+		},
+		{
+			name: "in-flight + checking: replays as ocman.permission.checking",
+			setup: func(s *Server, sid, pid string) {
+				s.claimAutoApproveWithStart(context.Background(), sid, pid, time.Now().UnixMilli())
+				s.markAutoApproveChecking(sid, pid)
+			},
+			wantEvent:     "ocman.permission.checking",
+			wantPayloadIn: `"permissionId":"perm-replay"`,
+		},
+		{
+			name: "judged unsafe with reasoning: replays as ocman.permission.flagged",
+			setup: func(s *Server, sid, pid string) {
+				s.recordJudgedWithReasoning(sid, pid, verdictUnsafe, "Writes to .env file.")
+			},
+			wantEvent:     "ocman.permission.flagged",
+			wantPayloadIn: `"reasoning":"Writes to .env file."`,
+		},
+		{
+			name: "judged safe: no replay (OpenCode cleared the prompt; DB has the notice)",
+			setup: func(s *Server, sid, pid string) {
+				s.recordJudgedWithReasoning(sid, pid, verdictSafe, "Read-only.")
+			},
+			wantEvent: "", // no event expected
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := &bytes.Buffer{}
+			s := &Server{
+				sseSessions:        make(map[string]*sseSink),
+				autoApprove:        make(map[string]*autoApproveStatus),
+				autoApproveDefault: true,
+				judgeDelayMs:       0,
+			}
+			s.registerSseSink("ses-1", buf, nil)
+
+			tc.setup(s, "ses-1", "perm-replay")
+
+			// Call ensureAutoApprove. It should short-circuit (cache
+			// hit) and replay the current state to the sink instead of
+			// starting a new judge goroutine.
+			before := buf.Len()
+			s.ensureAutoApprove("opencode", nil, "ses-1", "perm-replay", "Bash command", nil, nil)
+			got := buf.String()[before:]
+
+			if tc.wantEvent == "" {
+				if got != "" {
+					t.Errorf("expected no event on safe-verdict short-circuit, got:\n%s", got)
+				}
+				return
+			}
+			wantHeader := "event: " + tc.wantEvent
+			if !strings.Contains(got, wantHeader) {
+				t.Errorf("expected %q in replay output, got:\n%s", wantHeader, got)
+			}
+			if tc.wantPayloadIn != "" && !strings.Contains(got, tc.wantPayloadIn) {
+				t.Errorf("expected payload to contain %q, got:\n%s", tc.wantPayloadIn, got)
+			}
+		})
+	}
+}
+
+// TestEnsureAutoApprove_BugRepro_FrontendConnectsAfterWatcherClaimed is
+// the integration-flavoured reproduction of the reported bug:
+//
+//  1. Headless autoApproveWatcher observes permission.asked and claims
+//     the slot before any frontend tab is open.
+//  2. User then opens the session page. Frontend's REST /permissions
+//     call lists the still-pending permission and fires
+//     ensureAutoApprove for it.
+//  3. The frontend's SSE connection is open and its sink is registered.
+//
+// Before the fix, step 2 short-circuited silently and no
+// ocman.permission.pending ever reached the sink — the countdown
+// never started and the prompt UI stayed frozen. After the fix, step 2
+// replays the cached pending state to the now-connected sink.
+func TestEnsureAutoApprove_BugRepro_FrontendConnectsAfterWatcherClaimed(t *testing.T) {
+	s := &Server{
+		sseSessions:        make(map[string]*sseSink),
+		autoApprove:        make(map[string]*autoApproveStatus),
+		autoApproveDefault: true,
+		judgeDelayMs:       3000,
+	}
+
+	// 1. Simulate the watcher claiming first — frontend not yet open,
+	//    no sink registered.
+	originalAnchor := time.Now().Add(2 * time.Second).UnixMilli()
+	_, ok := s.claimAutoApproveWithStart(context.Background(), "ses-1", "perm-1", originalAnchor)
+	if !ok {
+		t.Fatalf("simulated watcher claim should succeed")
+	}
+
+	// 2. Frontend opens session — sink registers, then REST resurrection
+	//    fires ensureAutoApprove for the still-pending permission.
+	buf := &bytes.Buffer{}
+	s.registerSseSink("ses-1", buf, nil)
+
+	s.ensureAutoApprove("opencode", nil, "ses-1", "perm-1", "Bash command", nil, nil)
+
+	got := buf.String()
+	if !strings.Contains(got, "event: ocman.permission.pending") {
+		t.Fatalf("expected ocman.permission.pending on the sink after REST resurrection, got:\n%s", got)
+	}
+	// The replayed anchor must match the one the watcher recorded, so
+	// the frontend countdown shows the remaining time rather than
+	// restarting from zero. The exact value is what the watcher stored.
+	wantAnchor := fmt.Sprintf(`"judgeStartsAt":%d`, originalAnchor)
+	if !strings.Contains(got, wantAnchor) {
+		t.Errorf("replay should preserve the original judgeStartsAt anchor (%d); got:\n%s", originalAnchor, got)
+	}
+
+	// And the replay must not have started a second goroutine.
+	if n := countInFlight(s); n != 1 {
+		t.Errorf("expected exactly 1 in-flight entry (the original watcher claim); got %d", n)
+	}
+}
+
+// TestEnsureAutoApproveDoesNotStartSecondJudgeOnReplay verifies that
+// the replay path never starts a new judge goroutine — replaying state
+// for an already-judged permission must not race with the original
+// judge or burn extra tokens.
+func TestEnsureAutoApproveDoesNotStartSecondJudgeOnReplay(t *testing.T) {
+	s := &Server{
+		sseSessions:        make(map[string]*sseSink),
+		autoApprove:        make(map[string]*autoApproveStatus),
+		autoApproveDefault: true,
+	}
+	s.recordJudgedWithReasoning("ses-1", "perm-1", verdictUnsafe, "Bad.")
+
+	// In-flight slot must stay empty: replay path must not claim.
+	s.ensureAutoApprove("opencode", nil, "ses-1", "perm-1", "Bash command", nil, nil)
+
+	s.autoApproveMu.Lock()
+	defer s.autoApproveMu.Unlock()
+	st := s.autoApprove["ses-1|perm-1"]
+	if st == nil {
+		t.Fatal("expected status to remain in cache after replay")
+	}
+	if st.cancel != nil {
+		t.Errorf("replay must not create a new goroutine; cancel = %v", st.cancel)
+	}
+	if st.verdict != verdictUnsafe {
+		t.Errorf("verdict should still be unsafe; got %q", st.verdict)
 	}
 }
 
@@ -306,12 +490,12 @@ func TestSseSinkWriteAfterClose(t *testing.T) {
 func TestEmitPermissionPending(t *testing.T) {
 	buf := &bytes.Buffer{}
 	s := &Server{
-		sseSessions:  make(map[string]*sseSink),
-		judgeDelayMs: 3000,
+		sseSessions: make(map[string]*sseSink),
 	}
 	s.registerSseSink("ses-1", buf, nil)
 
-	s.emitPermissionPending("ses-1", "perm-1")
+	const wantJudgeStartsAt int64 = 1700000000123
+	s.emitPermissionPending("ses-1", "perm-1", wantJudgeStartsAt)
 
 	got := buf.String()
 	if !strings.Contains(got, "event: ocman.permission.pending") {
@@ -330,13 +514,16 @@ func TestEmitPermissionPending(t *testing.T) {
 	if strings.Contains(got, `"sessionId":`) {
 		t.Errorf("payload must use sessionID (caps), not sessionId:\n%s", got)
 	}
-	if !strings.Contains(got, `"judgeStartsAt":`) {
-		t.Errorf("missing judgeStartsAt in payload:\n%s", got)
+	// The judgeStartsAt anchor passed by the caller must round-trip
+	// verbatim — replays rely on the same value being emitted twice so
+	// the frontend reducer dedupes the second event.
+	if !strings.Contains(got, `"judgeStartsAt":1700000000123`) {
+		t.Errorf("expected judgeStartsAt to round-trip verbatim:\n%s", got)
 	}
 
 	// No sink registered → no-op (must not panic).
 	s2 := &Server{sseSessions: make(map[string]*sseSink)}
-	s2.emitPermissionPending("missing", "perm-1")
+	s2.emitPermissionPending("missing", "perm-1", wantJudgeStartsAt)
 }
 
 func TestParseJudgeResponse(t *testing.T) {
@@ -768,7 +955,7 @@ func TestSsePermissionTeeRepliedDispatch(t *testing.T) {
 // is the contract that lets backgroundAutoApprove's ctx.Err() check
 // short-circuit before RespondPermission is called.
 func TestEnsureAutoApproveCancellation(t *testing.T) {
-	s := &Server{autoApproveInFlight: make(map[string]context.CancelFunc)}
+	s := &Server{autoApprove: make(map[string]*autoApproveStatus)}
 	ctx, ok := s.claimAutoApprove(context.Background(), "ses-1", "perm-1")
 	if !ok {
 		t.Fatalf("claim failed")
