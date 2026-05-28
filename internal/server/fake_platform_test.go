@@ -40,6 +40,11 @@ type fakePlatform struct {
 	sendMessageFn func(req platforms.SendMessageRequest) error
 	// sessionDetailFn, when non-nil, intercepts Session calls.
 	sessionDetailFn func(id string) (*platforms.SessionDetail, error)
+	// proxyEventsFn, when non-nil, intercepts ProxyEvents calls so
+	// SSE-handler tests can drive both the success path (write some
+	// bytes, return nil) and the unreachable path (return
+	// ErrPlatformUnreachable without writing).
+	proxyEventsFn func(ctx context.Context, sessionID string, w io.Writer, flush func()) error
 }
 
 func (f *fakePlatform) ID() platforms.ID {
@@ -174,6 +179,9 @@ func (f *fakePlatform) CreateSession(context.Context, platforms.CreateSessionReq
 	return nil, platforms.ErrUnsupported
 }
 
-func (f *fakePlatform) ProxyEvents(context.Context, string, io.Writer, func()) error {
+func (f *fakePlatform) ProxyEvents(ctx context.Context, sessionID string, w io.Writer, flush func()) error {
+	if f.proxyEventsFn != nil {
+		return f.proxyEventsFn(ctx, sessionID, w, flush)
+	}
 	return platforms.ErrUnsupported
 }
