@@ -38,6 +38,10 @@ type fakePlatform struct {
 	runShell func() error
 	// sendMessageFn, when non-nil, intercepts SendMessage calls.
 	sendMessageFn func(req platforms.SendMessageRequest) error
+	// createSessionFn, when non-nil, intercepts CreateSession calls
+	// (used by the PR/Issue sidebar "handle" tests to verify a
+	// session is launched without spinning up a real OpenCode).
+	createSessionFn func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error)
 	// sessionDetailFn, when non-nil, intercepts Session calls.
 	sessionDetailFn func(id string) (*platforms.SessionDetail, error)
 	// proxyEventsFn, when non-nil, intercepts ProxyEvents calls so
@@ -45,6 +49,11 @@ type fakePlatform struct {
 	// bytes, return nil) and the unreachable path (return
 	// ErrPlatformUnreachable without writing).
 	proxyEventsFn func(ctx context.Context, sessionID string, w io.Writer, flush func()) error
+	// respondPermissionFn, when non-nil, intercepts RespondPermission
+	// calls — used by the auto-approve cache-hit test to verify the
+	// background pipeline invoked the adapter to clear a pending
+	// permission without ever calling the LLM judge.
+	respondPermissionFn func(req platforms.RespondPermissionRequest) error
 }
 
 func (f *fakePlatform) ID() platforms.ID {
@@ -151,7 +160,10 @@ func (f *fakePlatform) RunShell(context.Context, platforms.RunShellRequest) erro
 	return platforms.ErrUnsupported
 }
 
-func (f *fakePlatform) RespondPermission(context.Context, platforms.RespondPermissionRequest) error {
+func (f *fakePlatform) RespondPermission(_ context.Context, req platforms.RespondPermissionRequest) error {
+	if f.respondPermissionFn != nil {
+		return f.respondPermissionFn(req)
+	}
 	return platforms.ErrUnsupported
 }
 
@@ -175,7 +187,10 @@ func (f *fakePlatform) Compact(context.Context, platforms.CompactRequest) error 
 	return platforms.ErrUnsupported
 }
 
-func (f *fakePlatform) CreateSession(context.Context, platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+func (f *fakePlatform) CreateSession(_ context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+	if f.createSessionFn != nil {
+		return f.createSessionFn(req)
+	}
 	return nil, platforms.ErrUnsupported
 }
 

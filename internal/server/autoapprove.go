@@ -3,6 +3,8 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -875,6 +877,95 @@ func (s *Server) lookupAutoApproveStatus(sessionID, permissionID string) (autoAp
 	return *st, true
 }
 
+// --- Per-session safe-command cache ---
+//
+// The autoApprove map above caches verdicts by the OpenCode-generated
+// permissionID, so resurrecting *the same prompt* short-circuits the
+// judge. But every fresh permission for the same logical action (e.g.
+// the user running `pnpm test` five times in a row) gets a new
+// permissionID, so the user pays for the judge each time.
+//
+// The safe-command cache fills that gap: when the judge returns "safe"
+// for a Bash command, we additionally remember the verdict keyed by
+// md5(metadata["command"]) inside the session. The next time the same
+// raw command shows up — even with a different permissionID — we skip
+// the LLM and respond "once" immediately.
+//
+// Only **safe** verdicts are cached. Unsafe verdicts always re-run
+// through the judge so the user gets fresh reasoning if a flagged
+// command resurfaces (and so a one-off "unsafe" classification can't
+// permanently block a benign command).
+//
+// Per-session scope: the same command in a different session goes
+// through the judge again. This keeps the cache narrow and avoids
+// surprising cross-session approvals.
+//
+// In-memory, process lifetime — cleared on restart. The persisted
+// ApprovedPermission DB rows cover audit and notice replay; this
+// cache is purely a performance optimisation.
+
+// commandHash returns the md5 hex of metadata["command"] when present
+// and non-empty, or "" otherwise. Empty means "not cacheable" — callers
+// must not record or look up against an empty hash.
+//
+// Only Bash permission requests carry a "command" key; all other tools
+// (Edit/Write/Webfetch/…) return "" and fall through to the judge on
+// every request. This matches the design constraint that the cache is
+// keyed on the *exact* command string, which only makes sense for
+// shell commands.
+func commandHash(metadata map[string]any) string {
+	if len(metadata) == 0 {
+		return ""
+	}
+	raw, ok := metadata["command"]
+	if !ok {
+		return ""
+	}
+	cmd, ok := raw.(string)
+	if !ok || cmd == "" {
+		return ""
+	}
+	sum := md5.Sum([]byte(cmd))
+	return hex.EncodeToString(sum[:])
+}
+
+// lookupSafeCommandVerdict returns the cached safe-verdict reasoning
+// for (sessionID, hash) and ok=true if an entry exists. Returns
+// ("", false) on miss, nil receiver, or empty hash.
+func (s *Server) lookupSafeCommandVerdict(sessionID, hash string) (string, bool) {
+	if s == nil || hash == "" {
+		return "", false
+	}
+	s.safeCommandCacheMu.Lock()
+	defer s.safeCommandCacheMu.Unlock()
+	bySession, ok := s.safeCommandCache[sessionID]
+	if !ok {
+		return "", false
+	}
+	reasoning, ok := bySession[hash]
+	return reasoning, ok
+}
+
+// recordSafeCommandVerdict stores reasoning for (sessionID, hash) in
+// the cache. No-op on nil receiver or empty hash. Overwrites any
+// existing entry — the latest verdict wins.
+func (s *Server) recordSafeCommandVerdict(sessionID, hash, reasoning string) {
+	if s == nil || hash == "" {
+		return
+	}
+	s.safeCommandCacheMu.Lock()
+	defer s.safeCommandCacheMu.Unlock()
+	if s.safeCommandCache == nil {
+		s.safeCommandCache = make(map[string]map[string]string)
+	}
+	bySession, ok := s.safeCommandCache[sessionID]
+	if !ok {
+		bySession = make(map[string]string)
+		s.safeCommandCache[sessionID] = bySession
+	}
+	bySession[hash] = reasoning
+}
+
 // emitSessionSseEvent writes an SSE event to the currently-registered
 // writer for sessionID. If no client is connected, the call is a no-op.
 //
@@ -1366,6 +1457,32 @@ func (s *Server) backgroundAutoApprove(
 		return
 	}
 
+	// Per-session safe-command cache short-circuit. When the user has
+	// previously approved the *exact same* Bash command in this
+	// session, skip the LLM judge and the configured delay entirely:
+	// respond "once", persist the audit row, and emit the SSE
+	// notice. The "cached: " prefix on the stored reasoning makes the
+	// origin visible in the UI and DB.
+	//
+	// commandHash returns "" for non-Bash tools (Edit/Write/Webfetch/…)
+	// and for malformed metadata, so the cache is opt-in by data
+	// shape — no Edit permission can ever auto-approve from this
+	// cache, regardless of metadata content.
+	if hash := commandHash(metadata); hash != "" {
+		if cachedReason, ok := s.lookupSafeCommandVerdict(sessionID, hash); ok {
+			logger.WithField("hash", hash).Info("background auto-approve: safe-command cache hit, skipping judge")
+			finalReason := "cached: " + cachedReason
+			s.recordJudgedWithReasoning(sessionID, permissionID, verdictSafe, finalReason)
+			s.respondAndPersistSafeApproval(
+				platformID, adapter,
+				sessionID, permissionID, permission,
+				patterns, finalReason,
+				logger,
+			)
+			return
+		}
+	}
+
 	// Resolve directory for port discovery.
 	if s.db == nil {
 		logger.Warn("background auto-approve: no OpenCode DB, cannot resolve session directory")
@@ -1530,11 +1647,47 @@ func (s *Server) backgroundAutoApprove(
 		return
 	}
 
-	// Respond "once" to the pending permission. Use a fresh context
-	// (not the cancellable one) so a race where the user replies between
-	// the ctx.Err() check above and this call doesn't leave OpenCode
-	// without our response. The ctx.Err() check is the primary guard;
-	// this fresh context is belt-and-braces against the narrow window.
+	// Populate the per-session safe-command cache so subsequent
+	// permission.asked events for the same raw command (different
+	// permissionID, same session) skip the judge entirely. Only
+	// safe verdicts are cached — unsafe verdicts always re-judge so
+	// the user gets fresh reasoning. Skipped when metadata has no
+	// "command" key (non-Bash tools).
+	if hash := commandHash(metadata); hash != "" {
+		s.recordSafeCommandVerdict(sessionID, hash, result.Reasoning)
+	}
+
+	s.respondAndPersistSafeApproval(
+		platformID, adapter,
+		sessionID, permissionID, permission,
+		patterns, result.Reasoning,
+		logger,
+	)
+}
+
+// respondAndPersistSafeApproval clears a pending permission in OpenCode
+// (Reply="once"), persists an ApprovedPermission audit row, and emits
+// ocman.permission.auto-approved to any connected SSE sink for the
+// session.
+//
+// Shared between the live-verdict path (judge ran, returned safe) and
+// the safe-command cache-hit path (judge skipped). Both paths produce
+// identical user-visible outcomes — the only durable difference is the
+// "cached: " prefix on `reasoning` for cache-hit rows.
+//
+// Uses a fresh context (not the caller's cancellable ctx) so a late
+// user-reply race between the verdict and this call doesn't leave
+// OpenCode without our response. Errors from the adapter are logged
+// and swallowed — at worst the permission stays pending and the user
+// answers it manually.
+func (s *Server) respondAndPersistSafeApproval(
+	platformID platforms.ID,
+	adapter platforms.Platform,
+	sessionID, permissionID, permission string,
+	patterns []string,
+	reasoning string,
+	logger *log.Entry,
+) {
 	respondCtx, respondCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer respondCancel()
 	if err := adapter.RespondPermission(respondCtx, platforms.RespondPermissionRequest{
@@ -1550,10 +1703,11 @@ func (s *Server) backgroundAutoApprove(
 
 	// Persist the approval so the UI notice survives a page refresh.
 	// JudgeSessionID is intentionally written as the empty string: the
-	// judge session has already been deleted by JudgeWithCallback. The
-	// column is retained for backwards-compat with rows written before
-	// the cleanup change so existing notices keep rendering, but new
-	// rows leave it empty.
+	// judge session has already been deleted by JudgeWithCallback (or
+	// never existed for cache-hit approvals). The column is retained
+	// for backwards-compat with rows written before the cleanup
+	// change so existing notices keep rendering, but new rows leave
+	// it empty.
 	if s.stateDB != nil {
 		if err := s.stateDB.RecordApprovedPermission(
 			string(platformID),
@@ -1563,7 +1717,7 @@ func (s *Server) backgroundAutoApprove(
 				PermissionText: permission,
 				Patterns:       patterns,
 				JudgeSessionID: "",
-				Reasoning:      result.Reasoning,
+				Reasoning:      reasoning,
 				ApprovedAt:     approvedAt,
 			},
 		); err != nil {
@@ -1583,7 +1737,7 @@ func (s *Server) backgroundAutoApprove(
 		"sessionID":    sessionID,
 		"permission":   permission,
 		"patterns":     patterns,
-		"reasoning":    result.Reasoning,
+		"reasoning":    reasoning,
 		"approvedAt":   approvedAt,
 	})
 	if err == nil {

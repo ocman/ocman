@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
 // TestClaimAutoApprove verifies the in-flight dedup behaviour: the
@@ -982,4 +984,332 @@ func TestEnsureAutoApproveCancellation(t *testing.T) {
 		t.Fatalf("goroutine did not unblock within 1s of cancel")
 	}
 	s.releaseAutoApprove("ses-1", "perm-1")
+}
+
+// TestCommandHash verifies the per-session safe-command cache key
+// derivation. The hash must:
+//   - return md5(metadata["command"]) as hex when a Bash command is
+//     present (deterministic, identical inputs → identical hashes).
+//   - return "" when metadata is nil, empty, missing the "command"
+//     key, or the command is a non-string / empty string (no caching
+//     for non-Bash tools or malformed payloads).
+//   - differ for different command strings — even whitespace
+//     variants produce distinct hashes, matching the user's
+//     "exact command" requirement.
+func TestCommandHash(t *testing.T) {
+	// Same command → same hash.
+	h1 := commandHash(map[string]any{"command": "ls -la"})
+	h2 := commandHash(map[string]any{"command": "ls -la"})
+	if h1 == "" {
+		t.Fatalf("expected non-empty hash for valid Bash command")
+	}
+	if h1 != h2 {
+		t.Errorf("identical commands should hash equal; got %q vs %q", h1, h2)
+	}
+	if len(h1) != 32 {
+		t.Errorf("md5 hex should be 32 chars; got %d", len(h1))
+	}
+
+	// Different command → different hash.
+	if commandHash(map[string]any{"command": "rm -rf /"}) == h1 {
+		t.Errorf("different commands should hash differently")
+	}
+
+	// Whitespace difference → different hash (exact-command rule).
+	if commandHash(map[string]any{"command": "ls  -la"}) == h1 {
+		t.Errorf("whitespace-variant commands should hash differently (exact match required)")
+	}
+
+	// Missing key / nil / empty / wrong type → empty hash (no cache).
+	cases := []map[string]any{
+		nil,
+		{},
+		{"filePath": "/etc/passwd"},          // Edit tool, no "command"
+		{"command": ""},                      // empty command string
+		{"command": 42},                      // non-string command
+		{"command": nil},                     // nil command
+	}
+	for i, m := range cases {
+		if got := commandHash(m); got != "" {
+			t.Errorf("case %d: expected empty hash for non-Bash/invalid metadata, got %q (input=%v)", i, got, m)
+		}
+	}
+
+	// Extra metadata keys are ignored — only "command" matters.
+	withExtras := commandHash(map[string]any{
+		"command":     "ls -la",
+		"description": "list files",
+		"cwd":         "/tmp",
+	})
+	if withExtras != h1 {
+		t.Errorf("extra metadata keys should not affect hash; got %q vs %q", withExtras, h1)
+	}
+}
+
+// TestSafeCommandCache verifies the per-session in-memory cache that
+// short-circuits the LLM judge for identical Bash commands previously
+// judged "safe" in the same session.
+//
+// Contract:
+//   - lookup before record → miss.
+//   - record then lookup → hit, returns the stored reasoning.
+//   - cache is scoped per sessionID (same hash in different session → miss).
+//   - empty hash is rejected (defensive — commandHash returns "" for
+//     non-cacheable inputs, callers must not record empty keys).
+//   - nil receiver is a no-op (defensive — matches the pattern used
+//     by recordJudged / lookupJudged).
+func TestSafeCommandCache(t *testing.T) {
+	s := &Server{}
+
+	hash := commandHash(map[string]any{"command": "git status"})
+	if hash == "" {
+		t.Fatalf("commandHash returned empty for valid command")
+	}
+
+	// Lookup before record → miss.
+	if _, ok := s.lookupSafeCommandVerdict("ses-1", hash); ok {
+		t.Errorf("lookup before record should miss")
+	}
+
+	// Record then lookup → hit, returns reasoning.
+	s.recordSafeCommandVerdict("ses-1", hash, "Read-only git status.")
+	reasoning, ok := s.lookupSafeCommandVerdict("ses-1", hash)
+	if !ok {
+		t.Fatalf("lookup after record should hit")
+	}
+	if reasoning != "Read-only git status." {
+		t.Errorf("got reasoning=%q, want %q", reasoning, "Read-only git status.")
+	}
+
+	// Different session → miss (per-session scoping).
+	if _, ok := s.lookupSafeCommandVerdict("ses-2", hash); ok {
+		t.Errorf("same hash in different session should miss")
+	}
+
+	// Different command → miss (different hash).
+	otherHash := commandHash(map[string]any{"command": "git diff"})
+	if _, ok := s.lookupSafeCommandVerdict("ses-1", otherHash); ok {
+		t.Errorf("different command should miss")
+	}
+
+	// Record on empty hash is a no-op (defensive: commandHash returns
+	// "" for non-cacheable inputs).
+	s.recordSafeCommandVerdict("ses-1", "", "should be ignored")
+	if _, ok := s.lookupSafeCommandVerdict("ses-1", ""); ok {
+		t.Errorf("empty hash should not be cached")
+	}
+
+	// Re-record overwrites.
+	s.recordSafeCommandVerdict("ses-1", hash, "Updated reasoning.")
+	reasoning, _ = s.lookupSafeCommandVerdict("ses-1", hash)
+	if reasoning != "Updated reasoning." {
+		t.Errorf("re-record should overwrite; got %q", reasoning)
+	}
+
+	// nil-receiver short-circuit (defensive).
+	var nilS *Server
+	nilS.recordSafeCommandVerdict("ses-1", hash, "x")
+	if _, ok := nilS.lookupSafeCommandVerdict("ses-1", hash); ok {
+		t.Errorf("nil-receiver lookup should miss")
+	}
+}
+
+// TestBackgroundAutoApprove_SafeCommandCacheHit verifies the wire-in:
+// when the per-session safe-command cache already has an entry for
+// md5(metadata["command"]), backgroundAutoApprove must:
+//
+//  1. Skip the LLM judge entirely (proven by s.judge=nil: any judge
+//     call would panic the test).
+//  2. Skip the configured delay (cache hits are immediate; the delay
+//     exists so the human can intervene before a *new* judgment runs).
+//  3. Call adapter.RespondPermission with Reply="once" to clear the
+//     pending prompt in OpenCode.
+//  4. Record a judged verdict in the per-permissionID cache, prefixed
+//     with "cached: " so the audit row makes the source clear.
+//  5. Emit ocman.permission.auto-approved on the SSE sink so connected
+//     clients render the approval notice without waiting for a reload.
+func TestBackgroundAutoApprove_SafeCommandCacheHit(t *testing.T) {
+	const (
+		sessionID    = "ses-cache"
+		permissionID = "perm-cache"
+		command      = "pnpm test"
+		permission   = "Bash command"
+		origReason   = "Read-only test runner."
+	)
+
+	respondCh := make(chan platforms.RespondPermissionRequest, 1)
+	fp := &fakePlatform{
+		id: "opencode",
+		respondPermissionFn: func(req platforms.RespondPermissionRequest) error {
+			respondCh <- req
+			return nil
+		},
+	}
+
+	buf := &bytes.Buffer{}
+	s := &Server{
+		sseSessions:        make(map[string]*sseSink),
+		autoApprove:        make(map[string]*autoApproveStatus),
+		autoApproveDefault: true,
+		safeCommandCache:   make(map[string]map[string]string),
+		// judgeDelayMs deliberately large: a cache hit must bypass the
+		// delay. If the implementation incorrectly waits, the test
+		// will time out below.
+		judgeDelayMs: 30000,
+		// judge=nil: any attempt to consult the LLM panics, proving
+		// the cache short-circuit fired.
+	}
+	s.registerSseSink(sessionID, buf, nil)
+
+	// Seed the safe-command cache as if the judge had previously
+	// approved this exact command in this session.
+	hash := commandHash(map[string]any{"command": command})
+	if hash == "" {
+		t.Fatalf("test setup: commandHash returned empty")
+	}
+	s.recordSafeCommandVerdict(sessionID, hash, origReason)
+
+	// Run backgroundAutoApprove directly with a fresh context. No
+	// goroutine wrapping — we want to observe completion before
+	// checking side effects.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	s.backgroundAutoApprove(
+		ctx,
+		platforms.ID("opencode"),
+		fp,
+		sessionID,
+		permissionID,
+		permission,
+		nil,
+		map[string]any{"command": command},
+	)
+
+	// 1+3. RespondPermission must have been called with Reply="once".
+	select {
+	case req := <-respondCh:
+		if req.Reply != "once" {
+			t.Errorf("RespondPermission reply = %q, want %q", req.Reply, "once")
+		}
+		if req.SessionID != sessionID || req.PermissionID != permissionID {
+			t.Errorf("RespondPermission routing wrong: session=%q permission=%q", req.SessionID, req.PermissionID)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("RespondPermission was not called — cache hit did not short-circuit")
+	}
+
+	// 4. recordJudgedWithReasoning must have stamped the per-permissionID
+	//    cache so a later REST resurrection short-circuits without
+	//    even checking the safe-command cache again.
+	verdict, ok := s.lookupJudged(sessionID, permissionID)
+	if !ok {
+		t.Errorf("lookupJudged should hit after cache-driven approval")
+	}
+	if verdict != verdictSafe {
+		t.Errorf("verdict = %q, want safe", verdict)
+	}
+	st, _ := s.lookupAutoApproveStatus(sessionID, permissionID)
+	if !strings.HasPrefix(st.reasoning, "cached: ") {
+		t.Errorf("stored reasoning should be prefixed with %q to mark cache origin; got %q", "cached: ", st.reasoning)
+	}
+	if !strings.Contains(st.reasoning, origReason) {
+		t.Errorf("stored reasoning should preserve original judge reasoning %q; got %q", origReason, st.reasoning)
+	}
+
+	// 5. SSE sink must have received ocman.permission.auto-approved.
+	got := buf.String()
+	if !strings.Contains(got, "event: ocman.permission.auto-approved") {
+		t.Errorf("expected ocman.permission.auto-approved on the sink, got:\n%s", got)
+	}
+}
+
+// TestBackgroundAutoApprove_SafeCommandCacheMiss_DifferentSession is
+// the per-session-scoping regression: caching `pnpm test` as safe in
+// session A must NOT auto-approve the same raw command in session B.
+// Cache scope is per-session by design.
+//
+// We exercise this by seeding session A's cache with a "safe" entry,
+// then calling backgroundAutoApprove for session B. With s.judge=nil
+// and no OpenCode DB, the function should fall through past the cache
+// check (no hit) and attempt the normal judge path; the
+// dbSession lookup returns nil because s.db is nil, so the function
+// warn-returns BEFORE ever touching the nil judge. Observable: no
+// RespondPermission call.
+func TestBackgroundAutoApprove_SafeCommandCacheMiss_DifferentSession(t *testing.T) {
+	const command = "pnpm test"
+
+	respondCalls := 0
+	fp := &fakePlatform{
+		id: "opencode",
+		respondPermissionFn: func(req platforms.RespondPermissionRequest) error {
+			respondCalls++
+			return nil
+		},
+	}
+
+	s := &Server{
+		sseSessions:        make(map[string]*sseSink),
+		autoApprove:        make(map[string]*autoApproveStatus),
+		autoApproveDefault: true,
+		safeCommandCache:   make(map[string]map[string]string),
+		judgeDelayMs:       0,
+	}
+
+	// Cache hit exists for session A only.
+	hash := commandHash(map[string]any{"command": command})
+	s.recordSafeCommandVerdict("ses-A", hash, "Read-only.")
+
+	// Run for session B — different sessionID, same hash.
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	s.backgroundAutoApprove(
+		ctx,
+		platforms.ID("opencode"),
+		fp,
+		"ses-B",
+		"perm-B",
+		"Bash command",
+		nil,
+		map[string]any{"command": command},
+	)
+
+	if respondCalls != 0 {
+		t.Errorf("session B should NOT have been auto-approved from session A's cache; RespondPermission called %d times", respondCalls)
+	}
+	// And no per-permissionID verdict should be recorded for the B
+	// permission — the function bailed before reaching that path.
+	if _, ok := s.lookupJudged("ses-B", "perm-B"); ok {
+		t.Errorf("session B permission should not have a cached verdict")
+	}
+}
+
+// TestSafeCommandCacheConcurrent stresses the cache under heavy parallel
+// load to catch any locking bug. All goroutines write/read the same key;
+// the final state must be consistent and no goroutine may panic.
+func TestSafeCommandCacheConcurrent(t *testing.T) {
+	s := &Server{}
+	hash := commandHash(map[string]any{"command": "pnpm test"})
+	if hash == "" {
+		t.Fatalf("commandHash returned empty for valid command")
+	}
+
+	const goroutines = 100
+	var wg sync.WaitGroup
+	wg.Add(goroutines * 2)
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			defer wg.Done()
+			s.recordSafeCommandVerdict("ses-x", hash, "Read-only test run.")
+		}()
+		go func() {
+			defer wg.Done()
+			_, _ = s.lookupSafeCommandVerdict("ses-x", hash)
+		}()
+	}
+	wg.Wait()
+
+	reasoning, ok := s.lookupSafeCommandVerdict("ses-x", hash)
+	if !ok || reasoning != "Read-only test run." {
+		t.Errorf("after concurrent writes/reads, lookup should hit; got (%q, %v)", reasoning, ok)
+	}
 }

@@ -92,6 +92,21 @@ type Server struct {
 	// re-judge per pending prompt.
 	autoApprove   map[string]*autoApproveStatus
 	autoApproveMu sync.Mutex
+
+	// safeCommandCache remembers safe Bash-command verdicts per
+	// session keyed by md5(metadata["command"]). When the same raw
+	// command shows up again in the same session (with a fresh
+	// permissionID), backgroundAutoApprove skips the LLM judge and
+	// auto-approves immediately using the cached reasoning. Only
+	// safe verdicts are cached — unsafe always re-judges so the
+	// user gets fresh reasoning and a one-off flag can't permanently
+	// block a benign command. In-memory, process-lifetime only.
+	//
+	// Outer key: sessionID. Inner key: md5 hex of the command.
+	// Inner value: the original judge reasoning (rendered into the
+	// "cached: <…>" audit row when a hit fires).
+	safeCommandCache   map[string]map[string]string
+	safeCommandCacheMu sync.Mutex
 }
 
 // sseSink wraps an SSE response writer with the synchronisation needed
@@ -158,9 +173,10 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		auth:                auth,
 		integrations:        integrations.New(),
 		startTime:           time.Now(),
-		judge:        newPermissionJudge(),
-		sseSessions:  make(map[string]*sseSink),
-		autoApprove:  make(map[string]*autoApproveStatus),
+		judge:            newPermissionJudge(),
+		sseSessions:      make(map[string]*sseSink),
+		autoApprove:      make(map[string]*autoApproveStatus),
+		safeCommandCache: make(map[string]map[string]string),
 	}
 }
 
