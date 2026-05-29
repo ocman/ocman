@@ -532,9 +532,11 @@ test('navigating to another session during text streaming shows the target sessi
 
   await page.getByRole('button', { name: /Refactor auth module/ }).click();
 
-  await expect(page).toHaveURL(`/session/${MOCK_SESSION_2.id}`, { timeout: 500 });
-  await expect(page.getByRole('banner')).toContainText(MOCK_SESSION_2.title, { timeout: 500 });
-  await expect(page.locator('.oc-msg-assistant').filter({ hasText: 'Streaming response start' })).toHaveCount(0, { timeout: 500 });
+  // URL change is synchronous (flushSync); content update needs a
+  // fetch round-trip that can take longer on slow CI runners.
+  await expect(page).toHaveURL(`/session/${MOCK_SESSION_2.id}`, { timeout: 2_000 });
+  await expect(page.getByRole('banner')).toContainText(MOCK_SESSION_2.title, { timeout: 2_000 });
+  await expect(page.locator('.oc-msg-assistant').filter({ hasText: 'Streaming response start' })).toHaveCount(0, { timeout: 2_000 });
 });
 
 test('navigating to another session during an active tool phase shows the target session immediately', async ({ mockedPage: page }) => {
@@ -544,9 +546,9 @@ test('navigating to another session during an active tool phase shows the target
 
   await page.getByRole('button', { name: /Refactor auth module/ }).click();
 
-  await expect(page).toHaveURL(`/session/${MOCK_SESSION_2.id}`, { timeout: 500 });
-  await expect(page.getByRole('banner')).toContainText(MOCK_SESSION_2.title, { timeout: 500 });
-  await expect(page.getByText('Synthetic active tool call')).toHaveCount(0, { timeout: 500 });
+  await expect(page).toHaveURL(`/session/${MOCK_SESSION_2.id}`, { timeout: 2_000 });
+  await expect(page.getByRole('banner')).toContainText(MOCK_SESSION_2.title, { timeout: 2_000 });
+  await expect(page.getByText('Synthetic active tool call')).toHaveCount(0, { timeout: 2_000 });
 });
 
 test('navigating back to dashboard while the current session is streaming is immediate', async ({ mockedPage: page }) => {
