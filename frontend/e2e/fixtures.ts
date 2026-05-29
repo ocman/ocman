@@ -267,6 +267,22 @@ async function installDefaultRoutes(page: Page) {
       body: JSON.stringify({ branch: 'main', ahead: 0, behind: 0, dirty: false }),
     }),
   );
+
+  // Settings endpoints (loaded on mount of the Settings tab). When a
+  // real ocman backend is running on :8229 with auth enabled, the
+  // Vite proxy will forward unmocked /api/settings/* requests and the
+  // backend returns 401 — which flips the auth store to unauthenticated
+  // and unmounts whatever page the test is on. Stubbing these here
+  // keeps tests deterministic regardless of host environment.
+  await page.route('/api/settings/prompt-sections', (route: Route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }),
+  );
+  await page.route('/api/settings/judge-delay', (route: Route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ delayMs: 0 }) }),
+  );
+  await page.route('/api/settings/prompt-templates', (route: Route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({}) }),
+  );
 }
 
 // ---------------------------------------------------------------------------

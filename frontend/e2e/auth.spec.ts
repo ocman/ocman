@@ -145,16 +145,7 @@ test.describe('auth required', () => {
     await page.goto('/settings');
     await expect(page.locator('.nav-tab', { hasText: 'Settings' })).toHaveClass(/active/);
 
-    // Simulate the auth store reading unauthenticated after logout
-    await page.route('/api/auth/me', (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ authenticated: false, authRequired: true }),
-      }),
-    );
-
-    await page.locator('button', { hasText: 'Sign out' }).click();
+    await page.getByRole('button', { name: 'Sign out' }).click();
     await expect(page.locator('.oc-login-card')).toBeVisible({ timeout: 5_000 });
   });
 });
