@@ -420,14 +420,26 @@ describe('SessionDetail — SSE stream', () => {
     });
   });
 
-  it('does not let a trailing snapshot clobber delta-accumulated text', async () => {
-    // Regression: the previous length-comparison reconciliation
-    // would replace local delta-built text whenever a snapshot
-    // happened to be longer OR shorter than the local copy, leaving
-    // visible mid-text gaps and "rewinds". The reducer now treats
-    // deltas as authoritative for the `text` field: once a delta
-    // lands, subsequent snapshots leave that field alone (other
-    // metadata still updates). See lib/partReducer.ts.
+  it('reconciles delta-accumulated text against trailing snapshots using longest-wins', async () => {
+    // Contract for delta-owned streaming fields: the longer of (local,
+    // snapshot) wins — streaming fields are append-only on the wire,
+    // so the shorter string is always a prefix of the longer one, and
+    // the longer string is the more-complete value.
+    //
+    // History:
+    //  - Originally the reducer compared lengths naïvely and would
+    //    rewind local text when a snapshot happened to be shorter,
+    //    leaving mid-text gaps.
+    //  - That was replaced with "local always wins for delta-owned
+    //    fields", which fixed the rewind but introduced a new bug:
+    //    after a session-switch round-trip the cache-seeded local
+    //    text could not grow even when the server snapshot had moved
+    //    ahead, and (because the cache doesn't persist the ownership
+    //    map) a DB-lagging snapshot could wipe the cached text.
+    //  - The current rule is "longest-wins" — strictly safe given the
+    //    append-only contract, and it heals both gaps from
+    //    cache-seeded revisits and the original rewind. See
+    //    seedDeltaOwnedFields / upsertSnapshotPart in sessionReducer.
     const handle = renderSessionPage({ sessionId: 'sess_1' });
     await flushPromises();
     await waitFor(() => expect(handle.sse()).toBeDefined());
@@ -511,9 +523,12 @@ describe('SessionDetail — SSE stream', () => {
       expect(data?.completed).toBe(true);
     });
 
-    // And a snapshot that jumps AHEAD of the deltas must also leave
-    // the local field alone — once deltas are authoritative they
-    // stay authoritative for the rest of the part's life.
+    // A snapshot that jumps AHEAD of the deltas takes over: it
+    // carries strictly more content (append-only), so refusing it
+    // would leave the user's view permanently truncated relative to
+    // the server. This is the path that heals "missing sections"
+    // after a session-switch round-trip when the DB has caught up
+    // past the cached text.
     act(() => {
       handle.sse()!.emitMessage({
         type: 'message.part.updated',
@@ -529,14 +544,10 @@ describe('SessionDetail — SSE stream', () => {
       });
     });
 
-    // The text should still be the delta-accumulated value — the
-    // reducer does NOT let snapshots overwrite a delta-streamed
-    // field, even when they appear to extend it. The next real
-    // content extension must come via more deltas.
     await waitFor(() => {
       const parts = latestParts();
       const drift = parts.find((p) => p.id === 'p_drift');
-      expect((drift?.data as { text?: string })?.text).toBe('Hello world');
+      expect((drift?.data as { text?: string })?.text).toBe('Hello world how are you doing today');
     });
   });
 });

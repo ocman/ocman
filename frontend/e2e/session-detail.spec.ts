@@ -983,3 +983,264 @@ test('rapid session switching always shows the correct session thread', async ({
   // This is the final assertion: B must show its empty thread, not A's messages.
   await expect(page.locator('.oc-msg-assistant', { hasText: 'Message unique to session A' })).toHaveCount(0, { timeout: 2_000 });
 });
+
+// ---------------------------------------------------------------------------
+// Regression: streaming text survives a session-switch round-trip
+// ---------------------------------------------------------------------------
+//
+// User-reported bug: while session A is actively streaming, the user
+// switches to session B and back to A. After the round-trip, the
+// streamed text shows gaps ("text with missing sections") that only a
+// browser refresh restores. The previous backend fix (cache invalidation
+// on SSE close, sse.spec.ts:292) handled the *whole-message* variant
+// where an entire new message arrives during the gap. This test guards
+// the more subtle *partial-text* variant: delta-accumulated text loses
+// chunks that were already streamed before the gap.
+//
+// Root cause: when the user returns to A, the cache restores
+// "1 2 3 4 5 " (everything previously streamed via SSE). doFetch
+// ('reconcile') refetches the server snapshot which — due to OpenCode's
+// DB lagging its SSE stream by hundreds of ms — only has "1 2 3 ".
+// `upsertSnapshotPart` runs with an empty `_deltaOwnedFields` map (the
+// cache mirror doesn't persist it) and so the snapshot wins fully,
+// wiping the cached "4 5 ". New deltas from the reattached EventSource
+// then append "6 7 " onto "1 2 3 " → final text "1 2 3 6 7 ", with
+// the 4 and 5 chunks gone.
+//
+// Fix: useSession re-seeds `_deltaOwnedFields` from cached parts on
+// revisit, and `upsertSnapshotPart` uses a "longest string wins" rule
+// for delta-owned streaming fields (which are append-only on the wire).
+test('partial streamed text survives switching away and back', async ({ mockedPage: page }) => {
+  const SESSION_A = MOCK_SESSION.id;
+  const SESSION_B = MOCK_SESSION_2.id;
+
+  const liveSessionA = mockSessionWithLiveConnection({
+    ...MOCK_SESSION,
+    status: 'busy',
+    liveConnection: true,
+  });
+
+  // Track how many times A's REST endpoint has been called so we can
+  // serve different bodies on initial-load vs reconcile-after-return.
+  let sessionAFetchCount = 0;
+
+  const MSG_ID = 'stream-msg-a';
+  const PART_ID = 'stream-part-a';
+  const MSG_CREATED_AT = Date.now() - 5_000;
+
+  // The reconcile snapshot returns DB-lagging text. It must be a
+  // strict prefix of what the cache holds — that's the precondition
+  // that triggers the bug.
+  const RECONCILE_TEXT = '1 2 3 ';
+
+  await page.route(new RegExp(`/api/session/${SESSION_A}(\\?|$)`), (route) => {
+    sessionAFetchCount += 1;
+    // First call: empty thread — SSE will stream everything.
+    // Subsequent calls (reconcile on return): part exists, text reflects
+    // the stale DB state that lags the live SSE stream.
+    const messages = sessionAFetchCount === 1
+      ? []
+      : [
+          {
+            id: MSG_ID,
+            sessionId: SESSION_A,
+            timeCreated: MSG_CREATED_AT,
+            timeUpdated: MSG_CREATED_AT,
+            data: { role: 'assistant' as const },
+          },
+        ];
+    const parts = sessionAFetchCount === 1
+      ? []
+      : [
+          {
+            id: PART_ID,
+            messageId: MSG_ID,
+            sessionId: SESSION_A,
+            timeCreated: MSG_CREATED_AT,
+            timeUpdated: MSG_CREATED_AT + 100,
+            data: { type: 'text', text: RECONCILE_TEXT },
+          },
+        ];
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        session: liveSessionA,
+        messages,
+        parts,
+        totalMessages: messages.length,
+        defaultAgent: 'build',
+        defaultModel: 'anthropic/claude-3-5-sonnet-20241022',
+      }),
+    });
+  });
+
+  // Session B: idle, no messages, no live connection.
+  await page.route(new RegExp(`/api/session/${SESSION_B}(\\?|$)`), (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        session: MOCK_SESSION_2,
+        messages: [],
+        parts: [],
+        totalMessages: 0,
+        defaultAgent: '',
+        defaultModel: '',
+      }),
+    }),
+  );
+
+  // Session B's SSE endpoint: empty stream, kept open.
+  await page.route(new RegExp(`/api/session/${SESSION_B}/events`), (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'text/event-stream',
+      headers: { 'Cache-Control': 'no-cache', Connection: 'keep-alive' },
+      body: '',
+    }),
+  );
+
+  await page.route('/api/sessions*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([liveSessionA, MOCK_SESSION_2]),
+    }),
+  );
+
+  // Install a fake EventSource for session A that streams deltas in
+  // two phases:
+  //   1st connection (visit A): "1 " "2 " "3 " "4 " "5 "
+  //   2nd connection (return to A): "6 " "7 "
+  // No replay of 4/5 on reconnect — that mirrors OpenCode's behaviour
+  // (its /event stream is live-only, no buffering).
+  await page.addInitScript(({ sessionAId, msgId, partId }) => {
+    type Phase = { deltas: string[]; intervalMs: number };
+    const phases: Phase[] = [
+      { deltas: ['1 ', '2 ', '3 ', '4 ', '5 '], intervalMs: 60 },
+      { deltas: ['6 ', '7 '], intervalMs: 60 },
+    ];
+    let phaseIndex = 0;
+
+    class GapStreamingEventSource {
+      static CONNECTING = 0;
+      static OPEN = 1;
+      static CLOSED = 2;
+
+      url: string;
+      readyState = GapStreamingEventSource.CONNECTING;
+      onopen: ((evt: Event) => void) | null = null;
+      onerror: ((evt: Event) => void) | null = null;
+      onmessage: ((evt: MessageEvent) => void) | null = null;
+      listeners: Record<string, Array<(evt: Event) => void>> = {};
+      private timer: number | null = null;
+      private isATarget: boolean;
+
+      constructor(url: string) {
+        this.url = url;
+        this.isATarget = url.includes(`/api/session/${sessionAId}/events`);
+
+        queueMicrotask(() => {
+          if (this.readyState === GapStreamingEventSource.CLOSED) return;
+          this.readyState = GapStreamingEventSource.OPEN;
+          this.onopen?.(new Event('open'));
+          if (!this.isATarget) return;
+
+          const phase = phases[phaseIndex] ?? null;
+          if (!phase) return;
+          const isFirstPhase = phaseIndex === 0;
+
+          let i = 0;
+          this.timer = window.setInterval(() => {
+            if (this.readyState === GapStreamingEventSource.CLOSED) return;
+
+            // Emit message.created on the first delta of phase 0 only.
+            // Phase 1 (after returning) builds on the reconciled message
+            // that the REST fetch returns; re-creating it would mask
+            // the bug by feeding a fresh empty text snapshot.
+            if (i === 0 && isFirstPhase) {
+              const created = JSON.stringify({
+                type: 'message.created',
+                properties: {
+                  sessionID: sessionAId,
+                  info: {
+                    id: msgId,
+                    sessionID: sessionAId,
+                    role: 'assistant',
+                    time: { created: Date.now() },
+                  },
+                  parts: [{ id: partId, type: 'text', text: '' }],
+                },
+              });
+              this.onmessage?.(new MessageEvent('message', { data: created }));
+            }
+
+            if (i >= phase.deltas.length) {
+              window.clearInterval(this.timer!);
+              this.timer = null;
+              // Advance to the next phase so the next EventSource
+              // construction (after the user returns) streams the
+              // continuation.
+              phaseIndex += 1;
+              return;
+            }
+
+            const delta = JSON.stringify({
+              type: 'message.part.delta',
+              properties: {
+                sessionID: sessionAId,
+                messageID: msgId,
+                partID: partId,
+                field: 'text',
+                delta: phase.deltas[i],
+              },
+            });
+            this.onmessage?.(new MessageEvent('message', { data: delta }));
+            i += 1;
+          }, phase.intervalMs);
+        });
+      }
+
+      addEventListener(name: string, cb: (evt: Event) => void) {
+        (this.listeners[name] ||= []).push(cb);
+      }
+
+      close() {
+        this.readyState = GapStreamingEventSource.CLOSED;
+        if (this.timer !== null) window.clearInterval(this.timer);
+      }
+    }
+
+    Object.defineProperty(window, 'EventSource', {
+      configurable: true,
+      writable: true,
+      value: GapStreamingEventSource,
+    });
+  }, { sessionAId: SESSION_A, msgId: MSG_ID, partId: PART_ID });
+
+  // 1. Visit session A and wait until all five numbers from phase 1
+  //    have streamed in. The cache mirror records "1 2 3 4 5 ".
+  await page.goto(`/session/${SESSION_A}`);
+  await expect(page.getByTestId('session-layout')).toBeVisible();
+  const bubble = page.locator('.oc-msg-assistant');
+  await expect(bubble).toContainText('1 2 3 4 5', { timeout: 5_000 });
+
+  // 2. Switch to session B. A's EventSource closes; A's REST cache
+  //    still has the cached "1 2 3 4 5 " content via the cache mirror.
+  await page.locator('.session-sidebar-item', { hasText: MOCK_SESSION_2.title }).click();
+  await expect(page.getByRole('banner')).toContainText(MOCK_SESSION_2.title, { timeout: 2_000 });
+
+  // 3. Return to session A. The reconcile fetch returns the
+  //    DB-lagging "1 2 3 " snapshot. Phase 2 then streams "6 " "7 ".
+  await page.locator('.session-sidebar-item', { hasText: MOCK_SESSION.title }).click();
+  await expect(page.getByRole('banner')).toContainText(MOCK_SESSION.title, { timeout: 2_000 });
+
+  // 4. Wait for phase 2 to finish ("6 " + "7 " arrived).
+  await expect(bubble).toContainText('6 7', { timeout: 5_000 });
+
+  // 5. The full accumulated text must contain every number 1..7 in
+  //    order, with no gaps. Without the fix, the snapshot wipes
+  //    "4 5 " and the final text is "1 2 3 6 7 ".
+  await expect(bubble).toContainText('1 2 3 4 5 6 7', { timeout: 2_000 });
+});

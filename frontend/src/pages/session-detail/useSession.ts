@@ -25,6 +25,7 @@ import { useApiStore } from '../../lib/apiStore';
 import {
   initialSessionView,
   reduceSessionView,
+  seedDeltaOwnedFields,
   type SessionView,
   type SseEvent,
 } from '../../lib/sessionReducer';
@@ -349,6 +350,14 @@ export function useSession(
     // which can take 150–500 ms on a slow connection or under load.
     // Use the cache when available so revisits feel instant; fall
     // back to a blank view (session: null → loading spinner).
+    //
+    // When seeding from cache we also rebuild the reducer's
+    // `_deltaOwnedFields` map from the cached parts. The cache stores
+    // text/output that was accumulated from SSE deltas, but the
+    // ownership map is reducer-internal and isn't persisted. Without
+    // re-seeding it, a reconcile-mode load against a DB-lagging server
+    // response would wipe chunks that the server hadn't recorded yet
+    // — the "missing sections after switching sessions" regression.
     const nextCached = useApiStore.getState().getCachedSession(sessionId);
     const nextInitial: SessionView = nextCached
       ? {
@@ -361,6 +370,7 @@ export function useSession(
           },
           messages: nextCached.messages,
           parts: nextCached.parts,
+          _deltaOwnedFields: seedDeltaOwnedFields(nextCached.parts),
         }
       : initialSessionView(sessionId);
     dispatch({ type: 'load', view: nextInitial });

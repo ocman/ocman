@@ -14,6 +14,7 @@ type SessionRow = SessionDetail['session'];
 import {
   initialSessionView,
   reduceSessionView,
+  seedDeltaOwnedFields,
   type SessionView,
   type SseEvent,
 } from './sessionReducer';
@@ -809,5 +810,146 @@ describe('reduceSessionView — judge reasoning surfacing', () => {
     const noticePart = after.parts.find((p) => p.id === 'ocman-notice-perm-3-part');
     expect(noticePart).toBeDefined();
     expect(decode(noticePart!).reasoning).toBe('Modifies documentation only.');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// seedDeltaOwnedFields — helper used by the host hook on cache revisit
+// ---------------------------------------------------------------------------
+//
+// Regression: "missing sections after switching sessions" (see the
+// e2e in session-detail.spec.ts). When the user returns to a session
+// that was streaming, the reducer is seeded from the cache. The cache
+// stores parts but not the `_deltaOwnedFields` map — without
+// re-seeding it, the reconcile load wipes streamed chunks the server
+// DB hasn't recorded yet.
+
+describe('seedDeltaOwnedFields', () => {
+  it('marks parts with non-empty text as delta-owned on the `text` field', () => {
+    const parts = [makeTextPart('p1', 'm1', 'Hello world')];
+    const map = seedDeltaOwnedFields(parts);
+    expect(map.get('p1')?.has('text')).toBe(true);
+  });
+
+  it('does not mark parts whose text is empty', () => {
+    const parts = [makeTextPart('p1', 'm1', '')];
+    const map = seedDeltaOwnedFields(parts);
+    expect(map.has('p1')).toBe(false);
+  });
+
+  it('marks tool parts with non-empty state.output as delta-owned on `state.output`', () => {
+    const parts = [makeToolPart('p1', 'm1', 'bash', { status: 'completed', output: 'tool log line\n' })];
+    const map = seedDeltaOwnedFields(parts);
+    expect(map.get('p1')?.has('state.output')).toBe(true);
+    expect(map.get('p1')?.has('text')).toBe(false);
+  });
+
+  it('returns an empty map when given no parts', () => {
+    const map = seedDeltaOwnedFields([]);
+    expect(map.size).toBe(0);
+  });
+
+  it('handles parts whose data is a JSON-encoded string', () => {
+    // The cache normalises some parts to JSON-encoded `data` fields.
+    // The seeder must decode them before reading streaming fields.
+    const part: Part = {
+      id: 'p1',
+      messageId: 'm1',
+      sessionId: SID,
+      data: JSON.stringify({ type: 'text', text: 'streamed' }),
+    };
+    const map = seedDeltaOwnedFields([part]);
+    expect(map.get('p1')?.has('text')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// upsertSnapshotPart longest-wins rule (via reconcile load)
+// ---------------------------------------------------------------------------
+
+describe('reconcile load — longest-wins for delta-owned streaming fields', () => {
+  it('keeps the local value when the reconcile snapshot has shorter text', () => {
+    // Simulates: cache had "1 2 3 4 5 " (delta-owned by seed). Server
+    // is DB-lagging and returns "1 2 3 ". Local (longer) must win.
+    const before = makeView({
+      messages: [makeMessage('m1', 1)],
+      parts: [makeTextPart('p1', 'm1', '1 2 3 4 5 ')],
+      _deltaOwnedFields: new Map([['p1', new Set(['text'])]]),
+    });
+    const incoming = makeView({
+      messages: [makeMessage('m1', 1)],
+      parts: [makeTextPart('p1', 'm1', '1 2 3 ')],
+    });
+    const after = reduceSessionView(before, { type: 'load', view: incoming, mode: 'reconcile' });
+    expect(decode(after.parts[0]).text).toBe('1 2 3 4 5 ');
+  });
+
+  it('takes the snapshot value when it is longer than the local value', () => {
+    // Inverse case: the user was away long enough that the DB caught
+    // up *past* the cached text. The longer snapshot must win so the
+    // user doesn't see permanently-truncated content.
+    const before = makeView({
+      messages: [makeMessage('m1', 1)],
+      parts: [makeTextPart('p1', 'm1', '1 2 3 ')],
+      _deltaOwnedFields: new Map([['p1', new Set(['text'])]]),
+    });
+    const incoming = makeView({
+      messages: [makeMessage('m1', 1)],
+      parts: [makeTextPart('p1', 'm1', '1 2 3 4 5 6 7 ')],
+    });
+    const after = reduceSessionView(before, { type: 'load', view: incoming, mode: 'reconcile' });
+    expect(decode(after.parts[0]).text).toBe('1 2 3 4 5 6 7 ');
+  });
+
+  it('keeps the local value when the snapshot has equal-length text', () => {
+    // Ties go to the local value (avoid churning state with a no-op
+    // replacement when the strings happen to match).
+    const before = makeView({
+      messages: [makeMessage('m1', 1)],
+      parts: [makeTextPart('p1', 'm1', 'same')],
+      _deltaOwnedFields: new Map([['p1', new Set(['text'])]]),
+    });
+    const incoming = makeView({
+      messages: [makeMessage('m1', 1)],
+      parts: [makeTextPart('p1', 'm1', 'same')],
+    });
+    const after = reduceSessionView(before, { type: 'load', view: incoming, mode: 'reconcile' });
+    expect(decode(after.parts[0]).text).toBe('same');
+  });
+
+  it('keeps the local value when the snapshot omits the streaming field entirely', () => {
+    // Defensive: a snapshot that doesn't return `text` at all (e.g.
+    // because the part shape changed) must not blank the local value.
+    const before = makeView({
+      messages: [makeMessage('m1', 1)],
+      parts: [makeTextPart('p1', 'm1', '1 2 3 4 5 ')],
+      _deltaOwnedFields: new Map([['p1', new Set(['text'])]]),
+    });
+    const incoming = makeView({
+      messages: [makeMessage('m1', 1)],
+      // Part with no `text` field at all.
+      parts: [{ id: 'p1', messageId: 'm1', sessionId: SID, data: { type: 'text' } as unknown as string }],
+    });
+    const after = reduceSessionView(before, { type: 'load', view: incoming, mode: 'reconcile' });
+    expect(decode(after.parts[0]).text).toBe('1 2 3 4 5 ');
+  });
+
+  it('still replaces non-streaming fields wholesale when the snapshot lands', () => {
+    // Tool part: state.status (non-streaming) must come from the
+    // snapshot; state.output (streaming, delta-owned) must keep local
+    // when it is the longer of the two.
+    const before = makeView({
+      messages: [makeMessage('m1', 1)],
+      parts: [makeToolPart('p1', 'm1', 'bash', { status: 'running', output: 'line1\nline2\n' })],
+      _deltaOwnedFields: new Map([['p1', new Set(['state.output'])]]),
+    });
+    const incoming = makeView({
+      messages: [makeMessage('m1', 1)],
+      parts: [makeToolPart('p1', 'm1', 'bash', { status: 'completed', output: 'line1\n' })],
+    });
+    const after = reduceSessionView(before, { type: 'load', view: incoming, mode: 'reconcile' });
+    const decoded = decode(after.parts[0]);
+    expect((decoded.state as Record<string, unknown>).status).toBe('completed');
+    expect((decoded.state as Record<string, unknown>).output).toBe('line1\nline2\n');
   });
 });
