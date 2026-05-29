@@ -1020,9 +1020,16 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
     liveConnection: true,
   });
 
-  // Track how many times A's REST endpoint has been called so we can
-  // serve different bodies on initial-load vs reconcile-after-return.
-  let sessionAFetchCount = 0;
+  // Track whether the user has navigated away from session A so the
+  // mock can serve different bodies on initial-load vs reconcile-after-
+  // return. A boolean flag is used instead of a request counter because
+  // the useSession hook fires multiple fetches on the initial visit
+  // (the initial doFetch plus a reconcile triggered by the SSE
+  // onopen handler). A counter-based check (`=== 1`) would let the
+  // second fetch serve the reconcile snapshot before the user ever
+  // leaves, causing the snapshot's text to collide with in-flight SSE
+  // deltas and produce duplicated or missing tokens.
+  let hasLeftSessionA = false;
 
   const MSG_ID = 'stream-msg-a';
   const PART_ID = 'stream-part-a';
@@ -1034,13 +1041,12 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
   const RECONCILE_TEXT = '1 2 3 ';
 
   await page.route(new RegExp(`/api/session/${SESSION_A}(\\?|$)`), (route) => {
-    sessionAFetchCount += 1;
-    // First call: empty thread — SSE will stream everything.
-    // Subsequent calls (reconcile on return): part exists, text reflects
-    // the stale DB state that lags the live SSE stream.
-    const messages = sessionAFetchCount === 1
-      ? []
-      : [
+    // Before the user navigates away: empty thread — SSE will stream
+    // everything. After returning: part exists, text reflects the
+    // stale DB state that lags the live SSE stream.
+    const isReconcile = hasLeftSessionA;
+    const messages = isReconcile
+      ? [
           {
             id: MSG_ID,
             sessionId: SESSION_A,
@@ -1048,10 +1054,10 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
             timeUpdated: MSG_CREATED_AT,
             data: { role: 'assistant' as const },
           },
-        ];
-    const parts = sessionAFetchCount === 1
-      ? []
-      : [
+        ]
+      : [];
+    const parts = isReconcile
+      ? [
           {
             id: PART_ID,
             messageId: MSG_ID,
@@ -1060,7 +1066,8 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
             timeUpdated: MSG_CREATED_AT + 100,
             data: { type: 'text', text: RECONCILE_TEXT },
           },
-        ];
+        ]
+      : [];
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -1076,7 +1083,9 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
   });
 
   // Session B: idle, no messages, no live connection.
-  await page.route(new RegExp(`/api/session/${SESSION_B}(\\?|$)`), (route) =>
+  // Fetching B means the user has navigated away from A.
+  await page.route(new RegExp(`/api/session/${SESSION_B}(\\?|$)`), (route) => {
+    hasLeftSessionA = true;
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -1088,8 +1097,8 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
         defaultAgent: '',
         defaultModel: '',
       }),
-    }),
-  );
+    });
+  });
 
   // Session B's SSE endpoint: empty stream, kept open.
   await page.route(new RegExp(`/api/session/${SESSION_B}/events`), (route) =>
