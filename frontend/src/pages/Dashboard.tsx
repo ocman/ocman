@@ -13,6 +13,7 @@ import { SessionTable, GroupedSessionTable } from '../components/SessionTable';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { ProjectScopePicker } from '../components/ProjectScopePicker';
 import { matchesScope } from '../lib/projectTree';
+import { PromptTemplateSettings } from '../components/upstream/PromptTemplateSettings';
 
 import { useUiStore } from '../lib/uiStore';
 import { useApiStore } from '../lib/apiStore';
@@ -529,6 +530,22 @@ export function SettingsTab() {
               + Add section
             </button>
           </div>
+        </div>
+      </div>
+
+      <div className="settings-section">
+        <h2 className="settings-section-title">PR &amp; Issue templates</h2>
+        <div className="settings-row settings-row--block">
+          <div className="settings-row-info">
+            <div className="settings-row-label">Launch prompt templates</div>
+            <div className="settings-row-desc">
+              The prompt sent to a new agent session when you click
+              &ldquo;Handle this PR/Issue&rdquo; in the sidebar. Edit the
+              templates below; placeholders are substituted at launch
+              time.
+            </div>
+          </div>
+          <PromptTemplateSettings />
         </div>
       </div>
 

@@ -6,7 +6,9 @@ import { ChangesSidebarResizer } from './ChangesSidebarResizer';
 import { ChangesRefreshButton, SessionChangesSidebar, type PaneSummary } from './SessionChangesSidebar';
 import { WorkingTreeChangesSidebar } from './WorkingTreeChangesSidebar';
 import { SessionInfoSidebar } from './SessionInfoSidebar';
+import { UpstreamPane } from './upstream/UpstreamPane';
 import { ErrorBoundary } from './ErrorBoundary';
+import { useUpstreams } from '../lib/useUpstreams';
 import type { Session } from '../lib/api';
 
 interface RightPanelProps {
@@ -28,21 +30,28 @@ const TAB_LABELS: Record<ChangesSidebarTab, string> = {
   info: 'Session info',
   session: 'Session changes',
   'working-tree': 'Working tree',
+  upstream: 'PRs & Issues',
 };
 
 // Info = info-circle icon (context / MCP / LSP overview).
-// Session = pencil icon. Working tree = git branch icon. Bootstrap
-// Icons set, same family used everywhere else in the app.
+// Session = pencil icon. Working tree = git branch icon. Upstream =
+// inbox icon (incoming PRs / issues from the upstream forge —
+// Bootstrap Icons doesn't ship a pull-request glyph, so inbox is
+// the closest semantic neighbour). Same icon family used everywhere
+// else in the app.
 const TAB_ICONS: Record<ChangesSidebarTab, string> = {
   info: 'bi-info-circle',
   session: 'bi-pencil-square',
   'working-tree': 'bi-git',
+  upstream: 'bi-inbox',
 };
 
 // Strip / pane order. Info sits above the two change-related panes
 // (it's the higher-level "what is the session attached to" view),
-// matching the OpenCode TUI layout.
-const ALL_TABS: ChangesSidebarTab[] = ['info', 'session', 'working-tree'];
+// matching the OpenCode TUI layout. 'upstream' sits below the rest
+// because it's the most "external" view (lives outside the local
+// repo), and it only shows when a forge upstream is detected.
+const BASE_TABS: ChangesSidebarTab[] = ['info', 'session', 'working-tree', 'upstream'];
 
 // Minimum height fraction a single pane is allowed to occupy. Stops
 // the user dragging a pane down to zero (where it would become
@@ -73,6 +82,15 @@ export function RightPanel({ sessionId, platformId, directory, dirtyTick, sessio
   // on the LEFT edge of the panel and writes back to the store.
   const width = useUiStore((s) => s.changesSidebarWidth);
 
+  // Detect supported upstreams for the current project. The
+  // 'upstream' pane is always available in the strip — when no
+  // remote is detected the pane content explains why (e.g. "no
+  // GitHub/Forgejo remote on this project"), keeping the feature
+  // discoverable without cluttering projects that genuinely have
+  // no upstream.
+  const upstreamsResult = useUpstreams(directory);
+  const ALL_TABS = BASE_TABS;
+
   const collapsed = openTabs.length === 0;
 
   // Render panes in the canonical strip order (ALL_TABS) regardless
@@ -85,7 +103,7 @@ export function RightPanel({ sessionId, platformId, directory, dirtyTick, sessio
   // listeners on every render during a drag.
   const orderedOpenTabs = useMemo(
     () => ALL_TABS.filter((t) => openTabs.includes(t)),
-    [openTabs],
+    [openTabs, ALL_TABS],
   );
 
   // Normalise the size fractions so they sum to 1 across the ordered
@@ -152,6 +170,7 @@ export function RightPanel({ sessionId, platformId, directory, dirtyTick, sessio
             directory={directory}
             dirtyTick={dirtyTick}
             session={session}
+            upstreams={upstreamsResult.upstreams}
             // First pane has no top divider; subsequent panes do.
             divider={idx > 0}
             // Flex grow proportional to the size fraction. Multiplying
@@ -224,11 +243,15 @@ interface PaneProps {
   // ignore it. Tokens and Todos for the same pane come from the
   // /api/session/{id}/info endpoint, not from props.
   session?: Session;
+  // Upstream remotes for the current project. Only the 'upstream' pane
+  // consumes this; the other panes ignore it. Resolved at RightPanel
+  // level so we don't re-detect per pane.
+  upstreams: import('../lib/upstreamApi').Upstream[];
   divider: boolean;
   size: number;
 }
 
-function Pane({ tab, sessionId, platformId, directory, dirtyTick, session, divider, size }: PaneProps) {
+function Pane({ tab, sessionId, platformId, directory, dirtyTick, session, upstreams, divider, size }: PaneProps) {
   // Children push their summary up via onSummaryChange so we can
   // render it next to the title without coupling RightPanel to
   // each view's data hook.
@@ -312,6 +335,16 @@ function Pane({ tab, sessionId, platformId, directory, dirtyTick, session, divid
             <WorkingTreeChangesSidebar
               directory={directory}
               dirtyTick={dirtyTick}
+              embedded
+              onSummaryChange={handleSummary}
+              onRefresh={handleRefresh}
+              onLoadingChange={handleLoadingChange}
+            />
+          )}
+          {tab === 'upstream' && (
+            <UpstreamPane
+              directory={directory}
+              upstreams={upstreams}
               embedded
               onSummaryChange={handleSummary}
               onRefresh={handleRefresh}

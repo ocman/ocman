@@ -26,8 +26,10 @@ export type SidebarView = 'recent' | 'projects';
 // RightPanel — the strip / open-tabs logic handles n tabs uniformly.
 //
 // 'info' is the per-session info view (context tokens / MCP / LSP);
-// it stacks above the change-related panes.
-export type ChangesSidebarTab = 'info' | 'session' | 'working-tree';
+// it stacks above the change-related panes. 'upstream' is the PR/Issue
+// sidebar (spec/pr-issue-sidebar/), only shown when the current project
+// has a supported GitHub/Forgejo remote.
+export type ChangesSidebarTab = 'info' | 'session' | 'working-tree' | 'upstream';
 
 // Per-tab height fraction in split mode. Sums to 1 across openTabs.
 // Values are pinned to a minimum of 0.1 so a pane can't be dragged

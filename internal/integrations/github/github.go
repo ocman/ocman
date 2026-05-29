@@ -25,12 +25,17 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const apiBase = "https://api.github.com"
+// DefaultAPIBase is the canonical GitHub REST API endpoint. Overridable
+// per-Client (see apiBase field) for tests against httptest.Server.
+const DefaultAPIBase = "https://api.github.com"
 
 // Client is a minimal GitHub REST API client.
 type Client struct {
-	token  string
-	http   *http.Client
+	token string
+	http  *http.Client
+	// apiBase is the API root URL. Empty means DefaultAPIBase; tests
+	// set this to an httptest.Server URL so requests stay in-process.
+	apiBase string
 }
 
 // New creates a Client and discovers a GitHub token from the environment.
@@ -39,6 +44,26 @@ func New() *Client {
 		token: discoverToken(),
 		http:  &http.Client{Timeout: 10 * time.Second},
 	}
+}
+
+// NewForTest returns a Client wired against the given apiBase and
+// token. Intended for tests that need to point the client at a
+// httptest.Server; not used in production paths.
+func NewForTest(apiBase, token string, httpClient *http.Client) *Client {
+	return &Client{
+		token:   token,
+		http:    httpClient,
+		apiBase: apiBase,
+	}
+}
+
+// base returns the effective API base URL, falling back to
+// DefaultAPIBase when apiBase is empty.
+func (c *Client) base() string {
+	if c.apiBase != "" {
+		return c.apiBase
+	}
+	return DefaultAPIBase
 }
 
 // Authenticated reports whether a token was found.
@@ -60,7 +85,7 @@ func (c *Client) GetCommit(owner, repo, sha string) (map[string]interface{}, err
 }
 
 func (c *Client) get(path string) (map[string]interface{}, error) {
-	req, err := http.NewRequest(http.MethodGet, apiBase+path, nil)
+	req, err := http.NewRequest(http.MethodGet, c.base()+path, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -279,6 +279,16 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	mux.HandleFunc("/api/worktree/default-base-ref", s.get(s.handleWorktreeDefaultBaseRef))
 	mux.HandleFunc("/api/worktree/create-and-launch", requirePOST(requireLocalhost(s.handleWorktreeCreateAndLaunch)))
 
+	// PR/Issue sidebar endpoints — see spec/pr-issue-sidebar/. Read-only
+	// proxies to GitHub / Forgejo, scoped to the project at ?dir=<abs>.
+	mux.HandleFunc("/api/project/upstreams", s.get(s.handleProjectUpstreams))
+	mux.HandleFunc("/api/project/prs", s.get(s.handleProjectPRs))
+	mux.HandleFunc("/api/project/issues", s.get(s.handleProjectIssues))
+	mux.HandleFunc("/api/project/forge-user", s.get(s.handleProjectForgeUser))
+	// Launch endpoint: spawns tmux/opencode, so localhost-only like
+	// the worktree create-and-launch endpoint.
+	mux.HandleFunc("/api/project/handle", requirePOST(requireLocalhost(s.handleProjectHandle)))
+
 	// MCP server — localhost-only, enabled by default. Exposes the
 	// session-split tools (split_to_session, split_to_worktree, etc.)
 	// to AI coding agents via the Model Context Protocol.
@@ -304,6 +314,9 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// backend (e.g. judge prompt sections used by headless auto-approve).
 	mux.HandleFunc("/api/settings/prompt-sections", s.requireAuth(s.handlePromptSections))
 	mux.HandleFunc("/api/settings/judge-delay", s.requireAuth(s.handleJudgeDelay))
+	// Prompt templates for the PR/Issue sidebar's "Handle this" launch
+	// action. Stored in state.db's generic `setting` table (schema v12).
+	mux.HandleFunc("/api/settings/prompt-templates", s.requireAuth(s.handlePromptTemplates))
 
 	// Best-effort remote-logging sink for the frontend. Localhost-only so
 	// it can't be used to flood logs from the network. See

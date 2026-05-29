@@ -1,0 +1,721 @@
+/* UpstreamPane styling — matches the dashboard's tab / filter design:
+ *   - Internal tabs use the .nav-tab look (underline active indicator,
+ *     accent color, sans-serif 13px scaled down a touch for the
+ *     right-panel context).
+ *   - Filter pills use the .oc-time-range-btn look (bordered, square
+ *     corners, 11px monospace, accent border + text on active).
+ *   - Catppuccin tokens (var(--accent), var(--text-dim), var(--border))
+ *     keep colors consistent with the rest of the app.
+ *
+ * Kept self-contained so the feature can be lifted wholesale.
+ */
+
+.oc-upstream-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+}
+
+/* ---- Internal tabs (PRs / Issues) ---- */
+
+.oc-upstream-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.oc-upstream-tab {
+  position: relative;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 8px 16px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  transition: color 0.15s;
+}
+
+.oc-upstream-tab:hover {
+  color: var(--text);
+}
+
+.oc-upstream-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* ---- Tab content (scrollable) ---- */
+
+.oc-upstream-tab-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* ---- Filter strip ---- */
+
+.oc-upstream-filters {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.oc-upstream-filter-group {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.oc-upstream-filter {
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 3px 10px;
+  cursor: pointer;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  text-transform: lowercase;
+  transition: all 0.15s;
+}
+
+.oc-upstream-filter:hover {
+  color: var(--text);
+  border-color: var(--overlay0);
+}
+
+.oc-upstream-filter.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.oc-upstream-mine {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--text-dim);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.oc-upstream-mine input[type='checkbox'] {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* ---- Per-remote group ---- */
+
+.oc-upstream-group {
+  border-bottom: 1px solid var(--border);
+}
+
+.oc-upstream-group:last-child {
+  border-bottom: none;
+}
+
+.oc-upstream-group-header {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 6px 10px;
+  background: var(--mantle);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+}
+
+.oc-upstream-group-host {
+  color: var(--subtext0);
+  font-weight: 500;
+}
+
+.oc-upstream-group-repo {
+  color: var(--text-dim);
+}
+
+/* ---- List + rows ---- */
+
+.oc-upstream-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.oc-upstream-row {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.oc-upstream-row:last-child {
+  border-bottom: none;
+}
+
+.oc-upstream-row.expanded {
+  background: var(--mantle);
+}
+
+.oc-upstream-row-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.oc-upstream-row-number {
+  color: var(--text-dim);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.oc-upstream-row-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.oc-upstream-row.expanded .oc-upstream-row-title {
+  white-space: normal;
+}
+
+/* Status badges — square corners, muted backgrounds at 15% opacity to
+ * match the .tag pattern in tokens.css. Colors map to Catppuccin
+ * tokens: open→green (accent2), draft→muted, merged→mauve (accent3),
+ * closed→red (danger). */
+
+.oc-upstream-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 0;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: lowercase;
+  flex-shrink: 0;
+}
+
+.oc-upstream-status-open {
+  background: rgba(166, 227, 161, 0.15);
+  color: var(--accent2);
+}
+
+.oc-upstream-status-draft {
+  background: rgba(108, 112, 134, 0.2);
+  color: var(--text-dim);
+}
+
+.oc-upstream-status-merged {
+  background: rgba(203, 166, 247, 0.15);
+  color: var(--accent3);
+}
+
+.oc-upstream-status-closed {
+  background: rgba(243, 139, 168, 0.15);
+  color: var(--danger);
+}
+
+.oc-upstream-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.oc-upstream-row-author {
+  color: var(--subtext0);
+}
+
+.oc-upstream-row-time::before {
+  content: '·';
+  margin-right: 8px;
+  opacity: 0.5;
+}
+
+.oc-upstream-row-labels {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.oc-upstream-row-label {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 0;
+  border: 1px solid transparent; /* matched by inline-styled chips */
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 10px;
+  background: var(--surface1);
+  color: var(--text);
+}
+
+.oc-upstream-row-assignees {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.oc-upstream-row-assignee {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--surface0);
+  border: 1px solid var(--border);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--subtext0);
+}
+
+.oc-upstream-row-assignee-more {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  align-self: center;
+}
+
+/* ---- Row detail (expanded) ---- */
+
+.oc-upstream-row-detail {
+  padding-top: 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.oc-upstream-row-link {
+  display: inline-block;
+  margin-bottom: 8px;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.oc-upstream-row-link:hover {
+  text-decoration: underline;
+}
+
+.oc-upstream-row-fork-note {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  color: var(--accent4);
+  margin-bottom: 8px;
+}
+
+.oc-upstream-row-body {
+  max-height: 18em;
+  overflow-y: auto;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.oc-upstream-row-body p {
+  margin: 0.4em 0;
+}
+
+.oc-upstream-row-body pre {
+  overflow-x: auto;
+  padding: 8px;
+  background: var(--crust);
+  font-size: 12px;
+}
+
+.oc-upstream-row-body code {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 0.92em;
+  padding: 1px 4px;
+  background: var(--crust);
+}
+
+.oc-upstream-row-body pre code {
+  padding: 0;
+  background: transparent;
+}
+
+/* ---- Pagination ---- */
+
+.oc-upstream-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
+}
+
+.oc-upstream-pagination button {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  color: var(--text-dim);
+  padding: 3px 10px;
+  cursor: pointer;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  transition: all 0.15s;
+}
+
+.oc-upstream-pagination button:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--overlay0);
+}
+
+.oc-upstream-pagination button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ---- Empty / no-upstream ---- */
+
+.oc-upstream-empty {
+  padding: 16px 10px;
+  text-align: center;
+  color: var(--text-dim);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  font-style: italic;
+}
+
+.oc-upstream-no-upstream {
+  padding: 20px 16px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.oc-upstream-no-upstream p {
+  margin: 0 0 12px;
+}
+
+.oc-upstream-no-upstream-title {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.oc-upstream-no-upstream-hint {
+  color: var(--text-dim);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+}
+
+.oc-upstream-no-upstream code {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 0.92em;
+  padding: 1px 5px;
+  background: var(--crust);
+  color: var(--subtext0);
+}
+
+/* ---- Error banners ---- */
+
+.oc-upstream-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  margin: 6px 10px;
+  background: rgba(243, 139, 168, 0.1);
+  border: 1px solid var(--danger);
+  border-radius: 0;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  color: var(--danger);
+}
+
+.oc-upstream-error-rate-limited {
+  background: rgba(249, 226, 175, 0.1);
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+
+.oc-upstream-error-auth {
+  background: rgba(137, 180, 250, 0.1);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.oc-upstream-error code {
+  font-family: inherit;
+  background: var(--crust);
+  padding: 1px 4px;
+}
+
+.oc-upstream-error button {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 0;
+  color: inherit;
+  padding: 2px 10px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.oc-upstream-error button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.oc-upstream-error button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ---- Launch split button ---- */
+
+.oc-upstream-launch {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  margin-top: 4px;
+}
+
+.oc-upstream-launch-main,
+.oc-upstream-launch-chevron {
+  background: var(--accent);
+  color: var(--crust);
+  border: 1px solid var(--accent);
+  border-radius: 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 12px;
+  transition: background 0.15s;
+}
+
+.oc-upstream-launch-chevron {
+  border-left-color: rgba(0, 0, 0, 0.25);
+  padding: 5px 8px;
+}
+
+.oc-upstream-launch-main:hover:not(:disabled),
+.oc-upstream-launch-chevron:hover:not(:disabled) {
+  background: var(--sapphire);
+}
+
+.oc-upstream-launch-main:disabled,
+.oc-upstream-launch-chevron:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.oc-upstream-launch-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  list-style: none;
+  padding: 4px 0;
+  margin: 0;
+  background: var(--surface0);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  z-index: 10;
+  min-width: 14em;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.oc-upstream-launch-menu button {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text);
+  text-align: left;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.oc-upstream-launch-menu button:hover {
+  background: var(--surface1);
+}
+
+.oc-upstream-launch-hint {
+  margin-left: 6px;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.oc-upstream-launch-confirm {
+  display: block;
+  margin-top: 6px;
+  padding: 10px;
+  border: 1px solid var(--accent4);
+  background: rgba(250, 179, 135, 0.1);
+  font-size: 12px;
+}
+
+.oc-upstream-launch-confirm p {
+  margin: 0 0 8px;
+}
+
+.oc-upstream-launch-confirm code {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 0.92em;
+  padding: 1px 5px;
+  background: var(--crust);
+  color: var(--subtext0);
+}
+
+.oc-upstream-launch-confirm-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.oc-upstream-launch-confirm-buttons button {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  border-radius: 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.oc-upstream-launch-confirm-buttons button:first-child {
+  background: var(--accent4);
+  color: var(--crust);
+  border-color: var(--accent4);
+}
+
+.oc-upstream-launch-confirm-buttons button:first-child:hover {
+  background: var(--peach, #fab387);
+}
+
+.oc-upstream-launch-confirm-buttons button:last-child:hover {
+  border-color: var(--overlay0);
+}
+
+.oc-upstream-launch-error {
+  display: block;
+  margin-top: 6px;
+  padding: 6px 10px;
+  background: rgba(243, 139, 168, 0.1);
+  border: 1px solid var(--danger);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  color: var(--danger);
+}
+
+/* ---- Settings: prompt templates ---- */
+
+.settings-prompt-templates {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+}
+
+.settings-prompt-template {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-prompt-template-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings-prompt-template-header label {
+  font-weight: 500;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.settings-prompt-template-header button {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.settings-prompt-template-header button:hover {
+  color: var(--text);
+  border-color: var(--overlay0);
+}
+
+.settings-prompt-template textarea {
+  width: 100%;
+  font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  padding: 8px 10px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  resize: vertical;
+}
+
+.settings-prompt-template textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.settings-prompt-template-note {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.settings-prompt-templates-status {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.settings-prompt-templates-error {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  color: var(--danger);
+}

@@ -28,6 +28,23 @@ the agent) split work from an active session into new parallel sessions
 or isolated git worktrees. See the **MCP server** section below for
 setup and available tools.
 
+Ocman also surfaces **PRs and Issues** from the active project's
+upstream forge (GitHub or Forgejo) in a sidebar pane next to Session
+Info / Session Changes / Working Tree. The pane only appears when at
+least one supported remote is detected (a `github.com` remote or a
+Forgejo host present in `~/.config/tea/config.yml`). Auth uses env-var
+tokens (`GITHUB_TOKEN`, `FORGEJO_TOKEN` / `GITEA_TOKEN`) with a fallback
+to the `gh auth token` / `tea login` configuration. Clicking a row
+expands it to show the body (markdown-rendered) and a split-button:
+default action launches a new OpenCode session in the project
+directory; the menu offers "new worktree" instead, which checks out
+the PR's source branch into a fresh worktree (or fetches the PR head
+ref into `ocman/pr-<n>` for cross-fork PRs after explicit
+confirmation). The prompt sent to the new session is rendered from a
+user-customizable template under Settings → "PR & Issue templates",
+persisted in the `setting` table of `state.db` (migration v12). See
+`spec/pr-issue-sidebar/` for the full spec.
+
 ## Repository layout
 
 - `main.go` — entrypoint; parses `-addr`, `-db`, and `-platforms`

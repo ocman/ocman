@@ -780,3 +780,85 @@ func TestGetChildSession_NotFound(t *testing.T) {
 		t.Fatal("expected error for nonexistent child session")
 	}
 }
+
+// --- Setting tests (schema v12) ---
+
+func TestSetting_GetMissingReturnsOkFalse(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+
+	val, ok, err := db.GetSetting("pr_prompt_template")
+	if err != nil {
+		t.Fatalf("GetSetting: %v", err)
+	}
+	if ok {
+		t.Errorf("expected ok=false for missing key, got ok=true (val=%q)", val)
+	}
+	if val != "" {
+		t.Errorf("expected empty value for missing key, got %q", val)
+	}
+}
+
+func TestSetting_SetThenGet(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+
+	if err := db.SetSetting("pr_prompt_template", "Handle PR #{number}"); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+
+	val, ok, err := db.GetSetting("pr_prompt_template")
+	if err != nil {
+		t.Fatalf("GetSetting: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected ok=true after SetSetting")
+	}
+	if val != "Handle PR #{number}" {
+		t.Errorf("expected stored value, got %q", val)
+	}
+}
+
+func TestSetting_OverwritesExistingValue(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+
+	if err := db.SetSetting("issue_prompt_template", "first"); err != nil {
+		t.Fatalf("SetSetting first: %v", err)
+	}
+	if err := db.SetSetting("issue_prompt_template", "second"); err != nil {
+		t.Fatalf("SetSetting second: %v", err)
+	}
+
+	val, ok, err := db.GetSetting("issue_prompt_template")
+	if err != nil {
+		t.Fatalf("GetSetting: %v", err)
+	}
+	if !ok || val != "second" {
+		t.Errorf("expected (\"second\", true), got (%q, %v)", val, ok)
+	}
+}
+
+func TestSetting_KeysAreIndependent(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+
+	if err := db.SetSetting("a", "alpha"); err != nil {
+		t.Fatalf("SetSetting a: %v", err)
+	}
+	if err := db.SetSetting("b", "beta"); err != nil {
+		t.Fatalf("SetSetting b: %v", err)
+	}
+
+	a, _, err := db.GetSetting("a")
+	if err != nil {
+		t.Fatalf("GetSetting a: %v", err)
+	}
+	b, _, err := db.GetSetting("b")
+	if err != nil {
+		t.Fatalf("GetSetting b: %v", err)
+	}
+	if a != "alpha" || b != "beta" {
+		t.Errorf("expected (alpha, beta), got (%q, %q)", a, b)
+	}
+}

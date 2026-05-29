@@ -4,17 +4,20 @@
 package integrations
 
 import (
+	"github.com/NoUseFreak/ocman/internal/integrations/forgejo"
 	"github.com/NoUseFreak/ocman/internal/integrations/github"
 )
 
 // Registry holds all configured integrations.
 type Registry struct {
-	GitHub *github.Client
+	GitHub  *github.Client
+	Forgejo *forgejo.Registry
 }
 
 // New creates a Registry and initialises every integration.
 func New() *Registry {
 	return &Registry{
-		GitHub: github.New(),
+		GitHub:  github.New(),
+		Forgejo: forgejo.NewRegistry(),
 	}
 }

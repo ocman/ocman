@@ -51,11 +51,15 @@ import (
 //	    a permission was approved without opening the judge session.
 //	    NOT NULL DEFAULT '' so pre-v11 rows show no reasoning rather
 //	    than NULL, matching how the judge_session_id column was added.
+//	12 - add generic `setting` key/value table. Stores small singleton
+//	    settings that don't justify their own dedicated table (e.g. the
+//	    PR/Issue prompt templates from the pr-issue-sidebar feature).
+//	    Future small settings can reuse this without a new migration.
 //
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 11
+const latestSchemaVersion = 12
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -173,6 +177,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV10(tx)
 	case 11:
 		return migrateToV11(tx)
+	case 12:
+		return migrateToV12(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -406,4 +412,19 @@ func migrateToV9(tx *sql.Tx) error {
 		}
 	}
 	return nil
+}
+
+// migrateToV12 creates the generic `setting` key/value table. Used by
+// the pr-issue-sidebar feature to persist user-customizable prompt
+// templates, and available to any future small singleton setting that
+// doesn't justify its own dedicated table.
+func migrateToV12(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE setting (
+			key        TEXT    PRIMARY KEY,
+			value      TEXT    NOT NULL,
+			updated_at INTEGER NOT NULL
+		)
+	`)
+	return err
 }
