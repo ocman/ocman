@@ -310,6 +310,140 @@ func TestComputeMessageStats_Aggregation(t *testing.T) {
 	}
 }
 
+// TestComputeMessageStats_ActiveDuration verifies that activeDurationMs sums
+// (time.completed - time.created) across assistant messages only, excluding
+// idle gaps between turns (user think time / permission waits between
+// assistant turns).
+func TestComputeMessageStats_ActiveDuration(t *testing.T) {
+	// Timeline (timeCreated of each message):
+	//   t=1000: user message
+	//   t=2000..3500: assistant turn 1 (1500 ms active)
+	//   t=3500..7000: user reads + responds at t=7000 (idle gap, excluded)
+	//   t=7000: user message
+	//   t=7100..9100: assistant turn 2 (2000 ms active)
+	// Wall-clock duration (last timeCreated - first timeCreated)
+	//                             = 7100 - 1000 = 6100 ms
+	// Active duration             = 1500 + 2000 = 3500 ms
+	messages := []map[string]interface{}{
+		{
+			"timeCreated": int64(1000),
+			"data": map[string]interface{}{
+				"role": "user",
+			},
+		},
+		{
+			"timeCreated": int64(2000),
+			"data": map[string]interface{}{
+				"role": "assistant",
+				"time": map[string]interface{}{
+					"created":   float64(2000),
+					"completed": float64(3500),
+				},
+			},
+		},
+		{
+			"timeCreated": int64(7000),
+			"data": map[string]interface{}{
+				"role": "user",
+			},
+		},
+		{
+			"timeCreated": int64(7100),
+			"data": map[string]interface{}{
+				"role": "assistant",
+				"time": map[string]interface{}{
+					"created":   float64(7100),
+					"completed": float64(9100),
+				},
+			},
+		},
+	}
+	stats := computeMessageStats(messages)
+	if stats.durationMs != 6100 {
+		t.Errorf("durationMs = %d, want 6100 (wall-clock)", stats.durationMs)
+	}
+	if stats.activeDurationMs != 3500 {
+		t.Errorf("activeDurationMs = %d, want 3500 (sum of assistant turn durations)", stats.activeDurationMs)
+	}
+}
+
+// TestComputeMessageStats_ActiveDuration_InFlightAssistant verifies that an
+// assistant message still in flight (no time.completed) does not contribute
+// to activeDurationMs. We can't know how long it has actually run vs. been
+// waiting, so we skip it rather than guess.
+func TestComputeMessageStats_ActiveDuration_InFlightAssistant(t *testing.T) {
+	messages := []map[string]interface{}{
+		{
+			"timeCreated": int64(1000),
+			"data": map[string]interface{}{
+				"role": "assistant",
+				"time": map[string]interface{}{
+					"created":   float64(1000),
+					"completed": float64(2500), // completed turn: 1500 ms
+				},
+			},
+		},
+		{
+			"timeCreated": int64(3000),
+			"data": map[string]interface{}{
+				"role": "assistant",
+				"time": map[string]interface{}{
+					"created": float64(3000),
+					// no completed -> in flight, skip
+				},
+			},
+		},
+	}
+	stats := computeMessageStats(messages)
+	if stats.activeDurationMs != 1500 {
+		t.Errorf("activeDurationMs = %d, want 1500 (in-flight message skipped)", stats.activeDurationMs)
+	}
+}
+
+// TestComputeMessageStats_ActiveDuration_IgnoresUserAndBogusTimes ensures user
+// messages are never counted (they have no LLM duration) and that malformed
+// time data (completed <= created) is skipped rather than producing a
+// negative contribution.
+func TestComputeMessageStats_ActiveDuration_IgnoresUserAndBogusTimes(t *testing.T) {
+	messages := []map[string]interface{}{
+		{
+			"timeCreated": int64(1000),
+			"data": map[string]interface{}{
+				"role": "user",
+				// A user message with a (nonsensical) time block must not contribute.
+				"time": map[string]interface{}{
+					"created":   float64(1000),
+					"completed": float64(9999999),
+				},
+			},
+		},
+		{
+			"timeCreated": int64(2000),
+			"data": map[string]interface{}{
+				"role": "assistant",
+				"time": map[string]interface{}{
+					"created":   float64(2000),
+					"completed": float64(1000), // bogus: completed before created
+				},
+			},
+		},
+		{
+			"timeCreated": int64(3000),
+			"data": map[string]interface{}{
+				"role": "assistant",
+				"time": map[string]interface{}{
+					"created":   float64(3000),
+					"completed": float64(3700),
+				},
+			},
+		},
+	}
+	stats := computeMessageStats(messages)
+	if stats.activeDurationMs != 700 {
+		t.Errorf("activeDurationMs = %d, want 700 (user + bogus skipped)", stats.activeDurationMs)
+	}
+}
+
 // --- paginateUntyped tests ---
 
 func TestPaginateUntyped(t *testing.T) {

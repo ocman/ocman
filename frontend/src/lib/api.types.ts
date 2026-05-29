@@ -56,6 +56,18 @@ export interface Session {
   shareUrl: string | null;
   messageCount: number;
   durationMs: number;
+  /**
+   * Time the agent was actually working on a turn — the sum of
+   * (time.completed - time.created) across assistant messages.
+   * Excludes the idle gap between an assistant's `completed` and the
+   * next user message (user think time, permission prompts answered
+   * between turns).
+   *
+   * 0 when the platform doesn't expose per-turn timestamps, or when
+   * the session payload was served from the listing endpoint (which
+   * doesn't scan messages). The session-detail endpoint populates it.
+   */
+  activeDurationMs: number;
   totalInputTokens: number;
   totalOutputTokens: number;
   totalCost: number;

@@ -101,11 +101,26 @@ func convertOpenCodeMessages(ocMessages []map[string]interface{}) (
 }
 
 // messageStats aggregates token counts, cost, and duration from converted messages.
+//
+// durationMs is wall-clock from the first to the last message in the
+// session (includes idle time waiting for the user between turns).
+//
+// activeDurationMs is the sum of (time.completed - time.created) across
+// assistant messages — i.e. the time the agent was actually working on a
+// turn. It excludes the gap between an assistant `completed` timestamp
+// and the next user message (user think time, permission prompts answered
+// between turns). It does NOT subtract permission waits that occur within
+// a single assistant turn, because OpenCode does not persist
+// permission.asked/replied timestamps in the historical message log —
+// those are only available as live SSE events. Assistant messages still
+// in flight (no `time.completed`) are skipped so we don't conflate
+// "still working" with "active duration so far".
 type messageStats struct {
 	totalInputTokens  float64
 	totalOutputTokens float64
 	totalCost         float64
 	durationMs        int64
+	activeDurationMs  int64
 	contextTokenCount float64
 }
 
@@ -158,6 +173,18 @@ func computeMessageStats(messages []map[string]interface{}) messageStats {
 		}
 		if c, ok := info["cost"].(float64); ok {
 			stats.totalCost += c
+		}
+		// Accumulate active duration: sum of completed assistant turn
+		// durations. Only assistant messages with both timestamps and
+		// completed > created contribute.
+		if role, _ := info["role"].(string); role == "assistant" {
+			if timeBlock, ok := info["time"].(map[string]interface{}); ok {
+				created, hasCreated := timeBlock["created"].(float64)
+				completed, hasCompleted := timeBlock["completed"].(float64)
+				if hasCreated && hasCompleted && completed > created {
+					stats.activeDurationMs += int64(completed - created)
+				}
+			}
 		}
 	}
 	if lastTime > firstTime {
@@ -269,6 +296,7 @@ func sessionFromOpenCode(oc map[string]interface{}, stats messageStats, userMsgC
 		ShareURL:          strPtr(oc, "shareURL"),
 		MessageCount:      userMsgCount,
 		DurationMs:        stats.durationMs,
+		ActiveDurationMs:  stats.activeDurationMs,
 		TotalInputTokens:  int64(stats.totalInputTokens),
 		TotalOutputTokens: int64(stats.totalOutputTokens),
 		TotalCost:         stats.totalCost,

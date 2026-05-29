@@ -226,6 +226,23 @@ export function SessionInfoSidebar({
           <span className="oc-info-row-label">Duration</span>
           <span className="oc-info-row-value">{formatDuration(session.durationMs)}</span>
         </div>
+        {/* Active duration: time the agent was actually working on a
+          * turn (sum of per-assistant-message completed-minus-created).
+          * Hidden when zero (older platforms / list-only payloads) or
+          * when it equals total duration (would be a duplicate row).
+          * Populated by the session-detail endpoint only — list rows
+          * don't scan messages and ship 0 here. */}
+        {session.activeDurationMs > 0 && session.activeDurationMs < session.durationMs && (
+          <div className="oc-info-row">
+            <span
+              className="oc-info-row-label"
+              title="Time the agent was actually working, excluding idle gaps between turns (user think time, permission prompts answered between turns)."
+            >
+              Active
+            </span>
+            <span className="oc-info-row-value">{formatDuration(session.activeDurationMs)}</span>
+          </div>
+        )}
         {(session.summaryFiles || session.summaryAdditions || session.summaryDeletions) ? (
           <div className="oc-info-row">
             <span className="oc-info-row-label">Changes</span>

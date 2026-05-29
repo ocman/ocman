@@ -25,6 +25,7 @@ function makeSession(overrides: Partial<Session & {
     shareUrl: null,
     messageCount: 0,
     durationMs: 500,
+    activeDurationMs: 0,
     totalInputTokens: 0,
     totalOutputTokens: 0,
     totalCost: 0,

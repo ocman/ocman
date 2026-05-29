@@ -17,6 +17,7 @@ function makeSessionDetail(id: string, overrides: Partial<SessionDetail> = {}): 
     shareUrl: null,
     messageCount: 0,
     durationMs: 0,
+    activeDurationMs: 0,
     totalInputTokens: 0,
     totalOutputTokens: 0,
     totalCost: 0,

@@ -34,6 +34,7 @@ function makeSession(overrides: Partial<SessionWithDefaults> = {}): SessionWithD
     shareUrl: null,
     messageCount: 0,
     durationMs: 0,
+    activeDurationMs: 0,
     totalInputTokens: 0,
     totalOutputTokens: 0,
     totalCost: 0,

@@ -65,6 +65,12 @@ type Session struct {
 	ShareURL          *string `json:"shareUrl"`
 	MessageCount      int     `json:"messageCount"`
 	DurationMs        int64   `json:"durationMs"`
+	// ActiveDurationMs is the time the agent was actually working on a
+	// turn, computed as the sum of (time.completed - time.created)
+	// across assistant messages. Excludes idle gaps between turns
+	// (user think time, permission prompts answered between turns).
+	// Zero when the platform doesn't expose per-turn timestamps.
+	ActiveDurationMs  int64   `json:"activeDurationMs"`
 	TotalInputTokens  int64   `json:"totalInputTokens"`
 	TotalOutputTokens int64   `json:"totalOutputTokens"`
 	TotalCost         float64 `json:"totalCost"`
