@@ -550,15 +550,18 @@ func (s *Server) handleTmuxLaunchOpencode(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleTmuxSwitch(w http.ResponseWriter, r *http.Request) {
-	s.handleTmuxSwitchWith(w, r, defaultTmuxSwitchRunner)
-}
-
-func (s *Server) handleTmuxSwitchWith(w http.ResponseWriter, r *http.Request, runner tmuxSwitchRunner) {
+	// The tmux-availability guard lives in this outer wrapper rather than
+	// in handleTmuxSwitchWith so unit tests (which call the *With variant
+	// directly with a stub runner) can exercise the handler on CI runners
+	// that have no tmux binary installed.
 	if !isTmuxAvailable() {
 		http.Error(w, "tmux is not available", http.StatusServiceUnavailable)
 		return
 	}
+	s.handleTmuxSwitchWith(w, r, defaultTmuxSwitchRunner)
+}
 
+func (s *Server) handleTmuxSwitchWith(w http.ResponseWriter, r *http.Request, runner tmuxSwitchRunner) {
 	var req struct {
 		Client  string `json:"client"`
 		Session string `json:"session"`
