@@ -668,6 +668,63 @@ describe('convertMessages', () => {
     expect(tc).toBeDefined();
     expect(tc!.argsText).not.toContain('@time:');
   });
+
+  it('moves user tool execution notice into bash tool metadata', () => {
+    const m = makeMessage('m', { role: 'assistant' });
+    const out = convertMessages([m], [
+      makePart('m', { type: 'text', text: 'The following tool was executed by the user' } as PartData),
+      makePart('m', {
+        type: 'tool',
+        tool: 'bash',
+        state: { status: 'completed', input: { command: 'ls' }, output: 'file.txt' },
+      } as PartData),
+    ]);
+
+    const items = asContentArray(out[0].content);
+    expect(items.some((i) => i.type === 'text')).toBe(false);
+    const tc = items.find((i) => i.type === 'tool-call') as { argsText: string } | undefined;
+    expect(tc!.argsText).toContain('@user-executed-tool');
+  });
+
+  it('marks backend-tagged user shell tools as user executed', () => {
+    const m = makeMessage('m', { role: 'assistant' });
+    const out = convertMessages([m], [
+      makePart('m', {
+        type: 'tool',
+        tool: 'bash',
+        state: {
+          status: 'completed',
+          input: { command: 'ls' },
+          metadata: { ocmanUserExecutedShell: true },
+          output: 'file.txt',
+        },
+      } as PartData),
+    ]);
+
+    const tc = asContentArray(out[0].content).find((i) => i.type === 'tool-call') as { argsText: string } | undefined;
+    expect(tc!.argsText).toContain('@user-executed-tool');
+  });
+
+  it('does not mark unrelated bash tools as user executed', () => {
+    const m = makeMessage('m', { role: 'assistant' });
+    const out = convertMessages([m], [
+      makePart('m', { type: 'text', text: 'The following tool was executed by the user' } as PartData),
+      makePart('m', {
+        type: 'tool',
+        tool: 'bash',
+        state: { status: 'completed', input: { command: 'ls' }, output: 'file.txt' },
+      } as PartData),
+      makePart('m', {
+        type: 'tool',
+        tool: 'bash',
+        state: { status: 'completed', input: { command: 'pwd' }, output: '/tmp' },
+      } as PartData),
+    ]);
+
+    const toolCalls = asContentArray(out[0].content).filter((i) => i.type === 'tool-call') as Array<{ argsText: string }>;
+    expect(toolCalls[0].argsText).toContain('@user-executed-tool');
+    expect(toolCalls[1].argsText).not.toContain('@user-executed-tool');
+  });
 });
 
 describe('createConvertMessages (per-instance cache)', () => {

@@ -19,6 +19,8 @@ export function isImageMime(mime: string | undefined): boolean {
  * `JSON.parse` on every SSE delta for parts that haven't changed.
  */
 const parsedPartCache = new WeakMap<Part, PartData>();
+const USER_TOOL_EXECUTION_NOTICE = 'The following tool was executed by the user';
+const USER_EXECUTED_TOOL_META = '@user-executed-tool';
 
 /**
  * Parse a `Part`'s `data` field into a typed `PartData`. The result
@@ -316,6 +318,7 @@ export function createConvertMessages(): ConvertMessagesFn {
     }
 
     const msgParts = msgPartsRaw.map(parsePart);
+    let pendingUserToolExecutionNotice = false;
 
     // Build content as string | content array. Using string for
     // simple text, and the full content array format for messages
@@ -352,6 +355,20 @@ export function createConvertMessages(): ConvertMessagesFn {
       return `\n@time:${started},${ended || 0}`;
     }
 
+    function userExecutedToolSuffix(toolName: string): string {
+      if (!pendingUserToolExecutionNotice) return '';
+      pendingUserToolExecutionNotice = false;
+      return toolName === 'bash' || toolName === 'mcp_bash' ? `\n${USER_EXECUTED_TOOL_META}` : '';
+    }
+
+    function shellUserExecutedSuffix(toolName: string, metadata: NonNullable<PartData['state']>['metadata']): string {
+      if (metadata?.ocmanUserExecutedShell && (toolName === 'bash' || toolName === 'mcp_bash')) {
+        pendingUserToolExecutionNotice = false;
+        return `\n${USER_EXECUTED_TOOL_META}`;
+      }
+      return userExecutedToolSuffix(toolName);
+    }
+
     msgParts.forEach((pd, partIdx) => {
       // Skip non-renderable lifecycle parts
       if (pd.type === 'step-start' || pd.type === 'step-finish' || pd.type === 'snapshot') return;
@@ -359,6 +376,10 @@ export function createConvertMessages(): ConvertMessagesFn {
       switch (pd.type) {
         case 'text':
           if (pd.text?.trim()) {
+            if (pd.text.trim() === USER_TOOL_EXECUTION_NOTICE) {
+              pendingUserToolExecutionNotice = true;
+              break;
+            }
             textPieces.push(pd.text);
           }
           break;
@@ -565,7 +586,7 @@ export function createConvertMessages(): ConvertMessagesFn {
             type: 'tool-call' as const,
             toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
             toolName,
-            argsText: `${st.status || 'running'}${toolTimeSuffix(partIdx)}\n${title ? title + '\n' : ''}${argsText}`,
+            argsText: `${st.status || 'running'}${toolTimeSuffix(partIdx)}${shellUserExecutedSuffix(toolName, st.metadata)}\n${title ? title + '\n' : ''}${argsText}`,
             result: resultText || undefined,
           });
 
@@ -633,7 +654,7 @@ export function createConvertMessages(): ConvertMessagesFn {
             type: 'tool-call' as const,
             toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
             toolName,
-            argsText: `${st.status || 'running'}${toolTimeSuffix(partIdx)}\n${title ? title + '\n' : ''}${argsText}`,
+            argsText: `${st.status || 'running'}${toolTimeSuffix(partIdx)}${shellUserExecutedSuffix(toolName, st.metadata)}\n${title ? title + '\n' : ''}${argsText}`,
             result: resultText || undefined,
           });
           break;

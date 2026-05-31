@@ -660,7 +660,10 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: raw
 
   // Extract timing data from the @time: line, if present.
   const timeInfo = parseToolTime(rawArgsText || '');
-  const argsText = timeInfo ? timeInfo.strippedArgs : (rawArgsText || '');
+  const argsTextWithMeta = timeInfo ? timeInfo.strippedArgs : (rawArgsText || '');
+  const argsLines = argsTextWithMeta.split('\n');
+  const userExecutedTool = argsLines.includes('@user-executed-tool');
+  const argsText = argsLines.filter((line) => line !== '@user-executed-tool').join('\n');
 
   // File reads/greps and Skill loads render as a muted inline line
   // with an arrow icon. Skill is here (rather than in its own branch)
@@ -916,7 +919,7 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: raw
     const isRunningWithOutput = toolStatus === 'running' && !!outputDisplay;
     const bashExpanded = expanded || isRunningWithOutput;
     return (
-      <div className={`oc-tool oc-tool-shell ${statusClass} ${bashExpanded ? 'oc-tool-expanded' : ''}`}>
+      <div className={`oc-tool oc-tool-shell ${userExecutedTool ? 'oc-tool-shell-user' : ''} ${statusClass} ${bashExpanded ? 'oc-tool-expanded' : ''}`}>
         <div className="oc-tool-header" onClick={() => setExpanded(!expanded)}>
           <i className={`bi bi-terminal-fill oc-tool-icon ${statusClass}`} title={statusTitle} aria-hidden="true" />
           <span className="oc-tool-label">{title && title !== command ? title : toolName}</span>
@@ -926,6 +929,9 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: raw
           <pre className="oc-shell-block">
 {command && <><span className="oc-shell-prompt">$</span> <span className="oc-shell-cmd">{command}</span>{outputDisplay ? '\n' : ''}</>}{outputDisplay && <AnsiText text={outputDisplay} />}
           </pre>
+          {userExecutedTool && (
+            <div className="oc-shell-attribution">The following tool was executed by the user</div>
+          )}
           {!bashExpanded && isLong && (
             <div className="oc-tool-expand">Click to expand</div>
           )}

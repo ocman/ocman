@@ -106,6 +106,41 @@ func TestConvertOpenCodeMessages_ToolPart(t *testing.T) {
 	}
 }
 
+func TestConvertOpenCodeMessages_MarksSynthesizedShellTool(t *testing.T) {
+	input := []map[string]interface{}{
+		{
+			"info": map[string]interface{}{
+				"id":   "m-shell",
+				"role": "assistant",
+			},
+			"parts": []interface{}{
+				map[string]interface{}{
+					"id":        "p-tool",
+					"messageID": "m-shell",
+					"sessionID": "s",
+					"type":      "tool",
+					"tool":      "bash",
+					"state": map[string]interface{}{
+						"status": "completed",
+						"input":  map[string]interface{}{"command": "ls"},
+						"output": "file.txt",
+					},
+				},
+			},
+		},
+	}
+	_, parts := convertOpenCodeMessages(input)
+	if len(parts) != 1 {
+		t.Fatalf("got %d parts, want 1", len(parts))
+	}
+	data := parts[0]["data"].(map[string]interface{})
+	state := data["state"].(map[string]interface{})
+	metadata := state["metadata"].(map[string]interface{})
+	if metadata["ocmanUserExecutedShell"] != true {
+		t.Fatalf("ocmanUserExecutedShell = %v, want true", metadata["ocmanUserExecutedShell"])
+	}
+}
+
 // TestConvertOpenCodeMessages_FilePart exercises the file-attachment
 // part type. ocman's frontend doesn't render the binary contents but
 // it does render the filename + mime type, so both must survive the

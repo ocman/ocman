@@ -77,6 +77,7 @@ func convertOpenCodeMessages(ocMessages []map[string]interface{}) (
 		messages = append(messages, msg)
 
 		if msgParts, ok := m["parts"].([]interface{}); ok {
+			userExecutedShell := isSynthesizedTerminal(m)
 			for _, p := range msgParts {
 				part, ok := p.(map[string]interface{})
 				if !ok {
@@ -85,6 +86,21 @@ func convertOpenCodeMessages(ocMessages []map[string]interface{}) (
 				partType, _ := part["type"].(string)
 				if partType == "step-start" || partType == "step-finish" || partType == "snapshot" {
 					continue
+				}
+				if userExecutedShell && partType == "tool" {
+					if toolName, _ := part["tool"].(string); toolName == "bash" {
+						state, _ := part["state"].(map[string]interface{})
+						if state == nil {
+							state = map[string]interface{}{}
+							part["state"] = state
+						}
+						metadata, _ := state["metadata"].(map[string]interface{})
+						if metadata == nil {
+							metadata = map[string]interface{}{}
+							state["metadata"] = metadata
+						}
+						metadata["ocmanUserExecutedShell"] = true
+					}
 				}
 				truncatePartOutput(part)
 				partEntry := map[string]interface{}{

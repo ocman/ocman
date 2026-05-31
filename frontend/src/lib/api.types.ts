@@ -196,6 +196,7 @@ export interface PartData {
         additions?: number;
         deletions?: number;
       };
+      ocmanUserExecutedShell?: boolean;
     };
     attachments?: FilePart[];
   };
