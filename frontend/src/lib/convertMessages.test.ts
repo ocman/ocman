@@ -3,6 +3,7 @@ import type { ThreadMessageLike } from '@assistant-ui/react';
 import type { Message, Part, PartData } from './api';
 import {
   isImageMime,
+  isSynthesizedTerminal,
   parsePart,
   truncate,
   relativizePath,
@@ -165,6 +166,46 @@ describe('computeIsRunning', () => {
 
   it('returns false when the last assistant message has an error', () => {
     expect(computeIsRunning([makeMessage('m', { role: 'assistant', error: { name: 'x' } })])).toBe(false);
+  });
+});
+
+describe('isSynthesizedTerminal', () => {
+  it('returns false for an empty parts array', () => {
+    expect(isSynthesizedTerminal([])).toBe(false);
+  });
+
+  it('returns true for a completed bash tool part (shell command)', () => {
+    const parts = [makePart('m', { type: 'tool', tool: 'bash', state: { status: 'completed' } } as PartData)];
+    expect(isSynthesizedTerminal(parts)).toBe(true);
+  });
+
+  it('returns false when a part has status running', () => {
+    const parts = [makePart('m', { type: 'tool', tool: 'bash', state: { status: 'running' } } as PartData)];
+    expect(isSynthesizedTerminal(parts)).toBe(false);
+  });
+
+  it('returns false when a step-start part is present (LLM turn in flight)', () => {
+    const parts = [
+      makePart('m', { type: 'step-start' } as PartData),
+      makePart('m', { type: 'tool', tool: 'bash', state: { status: 'completed' } } as PartData),
+    ];
+    expect(isSynthesizedTerminal(parts)).toBe(false);
+  });
+
+  it('returns true for multiple completed tool parts with no step-start', () => {
+    const parts = [
+      makePart('m', { type: 'tool', tool: 'bash', state: { status: 'completed' } } as PartData),
+      makePart('m', { type: 'tool', tool: 'bash', state: { status: 'completed' } } as PartData),
+    ];
+    expect(isSynthesizedTerminal(parts)).toBe(true);
+  });
+
+  it('returns false when any part among multiple is still running', () => {
+    const parts = [
+      makePart('m', { type: 'tool', tool: 'bash', state: { status: 'completed' } } as PartData),
+      makePart('m', { type: 'tool', tool: 'bash', state: { status: 'running' } } as PartData),
+    ];
+    expect(isSynthesizedTerminal(parts)).toBe(false);
   });
 });
 
@@ -523,6 +564,101 @@ describe('convertMessages', () => {
       makeMessage('u2', { role: 'user' }, 3),
     ];
     const out = convertMessages(messages, []);
+    const u2 = out.find((m) => m.id === 'u2');
+    expect((u2?.metadata?.custom as { queued?: boolean })?.queued).toBe(true);
+  });
+
+  it('does NOT flag user message as queued after a shell-command assistant (synthesized terminal)', () => {
+    // Shell commands (e.g. `!ls`) produce an assistant message with no
+    // `finish` field but a single completed bash tool part. The queue
+    // detection must recognise this as a terminal message and NOT mark
+    // the following user message as queued.
+    const messages: Message[] = [
+      makeMessage('u1', { role: 'user' }, 1),
+      makeMessage('a1', { role: 'assistant' }, 2), // no finish — shell command
+      makeMessage('u2', { role: 'user' }, 3),
+    ];
+    const parts: Part[] = [
+      makePart('a1', {
+        type: 'tool',
+        tool: 'bash',
+        state: { status: 'completed' },
+      } as PartData),
+    ];
+    const out = convertMessages(messages, parts);
+    const u2 = out.find((m) => m.id === 'u2');
+    expect((u2?.metadata?.custom as { queued?: boolean } | undefined)?.queued).toBeUndefined();
+  });
+
+  it('does NOT cascade queued badges after multiple shell commands', () => {
+    // Regression: after a shell command, every subsequent user message
+    // was incorrectly flagged as queued because the shell-command
+    // assistant message has no `finish`.
+    const messages: Message[] = [
+      makeMessage('u1', { role: 'user' }, 1),
+      makeMessage('a1', { role: 'assistant' }, 2), // shell — no finish
+      makeMessage('u2', { role: 'user' }, 3),
+      makeMessage('a2', { role: 'assistant', finish: 'stop' }, 4), // normal reply
+      makeMessage('u3', { role: 'user' }, 5),
+      makeMessage('a3', { role: 'assistant' }, 6), // another shell — no finish
+      makeMessage('u4', { role: 'user' }, 7),
+    ];
+    const parts: Part[] = [
+      makePart('a1', {
+        type: 'tool',
+        tool: 'bash',
+        state: { status: 'completed' },
+      } as PartData),
+      makePart('a3', {
+        type: 'tool',
+        tool: 'bash',
+        state: { status: 'completed' },
+      } as PartData),
+    ];
+    const out = convertMessages(messages, parts);
+    // None of the user messages should be queued — the shell commands
+    // are synthesized terminals, not genuinely unfinished turns.
+    for (const m of out) {
+      if (m.role === 'user') {
+        expect(
+          (m.metadata?.custom as { queued?: boolean } | undefined)?.queued,
+          `user message ${m.id} should not be queued`,
+        ).toBeUndefined();
+      }
+    }
+  });
+
+  it('does NOT flag user message as queued when the model has already replied', () => {
+    // Even if the previous assistant message has no `finish`, once the
+    // model has replied to the user message (there's an assistant
+    // message after it), the turn was processed — not queued.
+    const messages: Message[] = [
+      makeMessage('u1', { role: 'user' }, 1),
+      makeMessage('a1', { role: 'assistant' }, 2), // no finish (e.g. shell or stale)
+      makeMessage('u2', { role: 'user' }, 3),
+      makeMessage('a2', { role: 'assistant', finish: 'stop' }, 4), // model replied
+    ];
+    const out = convertMessages(messages, []);
+    const u2 = out.find((m) => m.id === 'u2');
+    expect((u2?.metadata?.custom as { queued?: boolean } | undefined)?.queued).toBeUndefined();
+  });
+
+  it('still flags genuinely queued messages when a running tool is present', () => {
+    // An assistant message with a tool still in `running` state is NOT
+    // a synthesized terminal — the user message after it IS queued.
+    const messages: Message[] = [
+      makeMessage('u1', { role: 'user' }, 1),
+      makeMessage('a1', { role: 'assistant' }, 2), // tool still running
+      makeMessage('u2', { role: 'user' }, 3),
+    ];
+    const parts: Part[] = [
+      makePart('a1', {
+        type: 'tool',
+        tool: 'bash',
+        state: { status: 'running' },
+      } as PartData),
+    ];
+    const out = convertMessages(messages, parts);
     const u2 = out.find((m) => m.id === 'u2');
     expect((u2?.metadata?.custom as { queued?: boolean })?.queued).toBe(true);
   });

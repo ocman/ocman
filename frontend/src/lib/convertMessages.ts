@@ -137,6 +137,29 @@ interface ConvertState {
   lastPartsByMsg: Record<string, Part[]> | null;
 }
 
+/**
+ * Returns true when an assistant message's parts indicate a non-LLM
+ * operation that has already finished — e.g. a `!cmd` shell command
+ * that OpenCode wraps in an assistant envelope without ever setting
+ * `finish`. Mirrors the backend's `synthesizedTerminal` heuristic in
+ * `internal/db/types.go`.
+ *
+ * Conditions (all must hold):
+ *   1. The message has at least one part.
+ *   2. None of the parts is a `step-start` (no LLM turn was initiated).
+ *   3. None of the parts is in a `running` state (no tool still in flight).
+ */
+export function isSynthesizedTerminal(msgParts: Part[]): boolean {
+  if (msgParts.length === 0) return false;
+  for (const p of msgParts) {
+    const pd = parsePart(p);
+    if (pd.type === 'step-start') return false;
+    const state = pd.state as Record<string, unknown> | undefined;
+    if (state && state.status === 'running') return false;
+  }
+  return true;
+}
+
 /** Build (or rebuild) the `messageId → parts[]` index. */
 function buildPartsByMsg(parts: Part[]): Record<string, Part[]> {
   const partsByMsg: Record<string, Part[]> = {};
@@ -263,6 +286,16 @@ export function createConvertMessages(): ConvertMessagesFn {
     // New UI-created sessions can start with an assistant bootstrap
     // message, which should not make the first user message look
     // queued.
+    //
+    // Shell commands (`!cmd`) produce an assistant message with no
+    // `finish` field but completed tool parts and no LLM step-start.
+    // These "synthesized terminal" messages are NOT genuinely
+    // unfinished — the queue badge must not appear after them.
+    //
+    // Additionally, a user message is only queued when it hasn't been
+    // processed yet. If the model has already replied (there's an
+    // assistant message after this user message), the turn was
+    // processed and the message is not queued.
     let isQueued = false;
     if (role === 'user' && idx > 0) {
       const prev = filtered[idx - 1];
@@ -273,7 +306,21 @@ export function createConvertMessages(): ConvertMessagesFn {
         !prev.data.finish &&
         !prev.data.error
       ) {
-        isQueued = true;
+        // If the model already replied to this user message, it was
+        // processed — not queued. Check if there's an assistant
+        // message after this user message.
+        const hasReply = idx + 1 < filtered.length && filtered[idx + 1]?.data?.role === 'assistant';
+        if (hasReply) {
+          // Already processed — not queued.
+        } else {
+          // Check whether the previous assistant message is a
+          // synthesized terminal (e.g. shell command). If so, it's
+          // already done and the next user message is not queued.
+          const prevParts = partsByMsg[prev.id] || EMPTY_PARTS;
+          if (!isSynthesizedTerminal(prevParts)) {
+            isQueued = true;
+          }
+        }
       }
     }
 

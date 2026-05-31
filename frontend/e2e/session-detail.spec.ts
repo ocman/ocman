@@ -1262,3 +1262,218 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
   //    "4 5 " and the final text is "1 2 3 6 7 ".
   await expect(bubble).toContainText('1 2 3 4 5 6 7', { timeout: 2_000 });
 });
+
+// ---------------------------------------------------------------------------
+// Queued-message regression tests
+// ---------------------------------------------------------------------------
+
+test('user message after a shell command is NOT flagged as queued', async ({ mockedPage: page }) => {
+  // Regression: shell commands (`!cmd`) produce an assistant message
+  // with no `finish` field. The old queue detection treated this as
+  // "unfinished" and incorrectly showed a "Queued" badge on the next
+  // user message.
+  const sessionId = MOCK_SESSION.id;
+  const now = Date.now();
+
+  const messages = [
+    {
+      id: 'u1', sessionId, timeCreated: now - 3000,
+      data: { role: 'user', time: { created: now - 3000 } },
+    },
+    {
+      // Shell-command assistant: no `finish`, no `error`
+      id: 'a1-shell', sessionId, timeCreated: now - 2000,
+      data: { role: 'assistant', time: { created: now - 2000, completed: now - 1500 } },
+    },
+    {
+      id: 'u2', sessionId, timeCreated: now - 1000,
+      data: { role: 'user', time: { created: now - 1000 } },
+    },
+    {
+      id: 'a2', sessionId, timeCreated: now,
+      data: { role: 'assistant', finish: 'stop', time: { created: now, completed: now + 500 } },
+    },
+  ];
+
+  const parts = [
+    {
+      id: 'p-u1', sessionId, messageId: 'u1', timeCreated: now - 3000,
+      data: { type: 'text', text: 'First prompt' },
+    },
+    {
+      // Completed bash tool — synthesized terminal
+      id: 'p-shell', sessionId, messageId: 'a1-shell', timeCreated: now - 2000,
+      data: { type: 'tool', tool: 'bash', state: { status: 'completed', input: { command: 'ls' }, output: 'file.txt' } },
+    },
+    {
+      id: 'p-u2', sessionId, messageId: 'u2', timeCreated: now - 1000,
+      data: { type: 'text', text: 'Second prompt after shell' },
+    },
+    {
+      id: 'p-a2-text', sessionId, messageId: 'a2', timeCreated: now,
+      data: { type: 'text', text: 'Here is the reply.' },
+    },
+  ];
+
+  await page.route(new RegExp(`/api/session/${sessionId}(\\?|$)`), (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        session: { ...MOCK_SESSION, status: 'waiting' },
+        messages,
+        parts,
+        totalMessages: messages.length,
+      }),
+    }),
+  );
+
+  await page.goto(SESSION_URL);
+  await expect(page.getByTestId('session-layout')).toBeVisible();
+
+  // Wait for the thread to render all messages.
+  await expect(page.locator('.oc-msg-user')).toHaveCount(2, { timeout: 5_000 });
+
+  // The second user message should be visible and NOT have a "Queued" badge.
+  const secondUserMsg = page.locator('.oc-msg-user', { hasText: 'Second prompt after shell' });
+  await expect(secondUserMsg).toBeVisible({ timeout: 3_000 });
+  // The queued badge should NOT be present.
+  await expect(secondUserMsg.locator('.oc-msg-queued-badge')).toHaveCount(0);
+  // The message element itself should not have the queued class.
+  await expect(secondUserMsg).not.toHaveClass(/oc-msg-queued/);
+});
+
+test('multiple user messages after shell commands do NOT cascade as queued', async ({ mockedPage: page }) => {
+  // Regression: after a shell command, every subsequent user message
+  // was incorrectly flagged as queued because the shell-command
+  // assistant message has no `finish`.
+  const sessionId = MOCK_SESSION.id;
+  const now = Date.now();
+
+  const messages = [
+    {
+      id: 'u1', sessionId, timeCreated: now - 6000,
+      data: { role: 'user', time: { created: now - 6000 } },
+    },
+    {
+      // First shell command — no finish
+      id: 'a1-shell', sessionId, timeCreated: now - 5000,
+      data: { role: 'assistant', time: { created: now - 5000, completed: now - 4500 } },
+    },
+    {
+      id: 'u2', sessionId, timeCreated: now - 4000,
+      data: { role: 'user', time: { created: now - 4000 } },
+    },
+    {
+      id: 'a2', sessionId, timeCreated: now - 3000,
+      data: { role: 'assistant', finish: 'stop', time: { created: now - 3000, completed: now - 2500 } },
+    },
+    {
+      id: 'u3', sessionId, timeCreated: now - 2000,
+      data: { role: 'user', time: { created: now - 2000 } },
+    },
+    {
+      // Second shell command — no finish
+      id: 'a3-shell', sessionId, timeCreated: now - 1000,
+      data: { role: 'assistant', time: { created: now - 1000, completed: now - 500 } },
+    },
+    {
+      id: 'u4', sessionId, timeCreated: now,
+      data: { role: 'user', time: { created: now } },
+    },
+  ];
+
+  const parts = [
+    { id: 'p-u1', sessionId, messageId: 'u1', timeCreated: now - 6000, data: { type: 'text', text: 'Prompt one' } },
+    { id: 'p-shell1', sessionId, messageId: 'a1-shell', timeCreated: now - 5000, data: { type: 'tool', tool: 'bash', state: { status: 'completed', input: { command: 'ls' }, output: 'a.txt' } } },
+    { id: 'p-u2', sessionId, messageId: 'u2', timeCreated: now - 4000, data: { type: 'text', text: 'Prompt two' } },
+    { id: 'p-a2', sessionId, messageId: 'a2', timeCreated: now - 3000, data: { type: 'text', text: 'Reply two' } },
+    { id: 'p-u3', sessionId, messageId: 'u3', timeCreated: now - 2000, data: { type: 'text', text: 'Prompt three' } },
+    { id: 'p-shell2', sessionId, messageId: 'a3-shell', timeCreated: now - 1000, data: { type: 'tool', tool: 'bash', state: { status: 'completed', input: { command: 'pwd' }, output: '/home' } } },
+    { id: 'p-u4', sessionId, messageId: 'u4', timeCreated: now, data: { type: 'text', text: 'Prompt four' } },
+  ];
+
+  await page.route(new RegExp(`/api/session/${sessionId}(\\?|$)`), (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        session: { ...MOCK_SESSION, status: 'done' },
+        messages,
+        parts,
+        totalMessages: messages.length,
+      }),
+    }),
+  );
+
+  await page.goto(SESSION_URL);
+  await expect(page.getByTestId('session-layout')).toBeVisible();
+
+  // All four user messages should be visible.
+  for (const text of ['Prompt one', 'Prompt two', 'Prompt three', 'Prompt four']) {
+    await expect(page.locator('.oc-msg-user', { hasText: text })).toBeVisible({ timeout: 3_000 });
+  }
+
+  // None of the user messages should have a "Queued" badge.
+  const queuedBadges = page.locator('.oc-msg-queued-badge');
+  await expect(queuedBadges).toHaveCount(0);
+  // No user message should have the queued class.
+  const queuedMessages = page.locator('.oc-msg-queued');
+  await expect(queuedMessages).toHaveCount(0);
+});
+
+test('genuinely queued user message still shows the Queued badge', async ({ mockedPage: page }) => {
+  // Sanity check: a user message that follows a genuinely unfinished
+  // assistant turn (still streaming, no completed parts) SHOULD show
+  // the "Queued" badge.
+  const sessionId = MOCK_SESSION.id;
+  const now = Date.now();
+
+  const messages = [
+    {
+      id: 'u1', sessionId, timeCreated: now - 3000,
+      data: { role: 'user', time: { created: now - 3000 } },
+    },
+    {
+      // Genuinely unfinished assistant: no finish, tool still running
+      id: 'a1-running', sessionId, timeCreated: now - 2000,
+      data: { role: 'assistant', time: { created: now - 2000 } },
+    },
+    {
+      id: 'u2-queued', sessionId, timeCreated: now - 1000,
+      data: { role: 'user', time: { created: now - 1000 } },
+    },
+  ];
+
+  const parts = [
+    { id: 'p-u1', sessionId, messageId: 'u1', timeCreated: now - 3000, data: { type: 'text', text: 'First prompt' } },
+    {
+      // Tool still running — NOT a synthesized terminal
+      id: 'p-running', sessionId, messageId: 'a1-running', timeCreated: now - 2000,
+      data: { type: 'tool', tool: 'bash', state: { status: 'running', input: { command: 'sleep 60' } } },
+    },
+    { id: 'p-u2', sessionId, messageId: 'u2-queued', timeCreated: now - 1000, data: { type: 'text', text: 'Queued prompt' } },
+  ];
+
+  await page.route(new RegExp(`/api/session/${sessionId}(\\?|$)`), (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        session: { ...MOCK_SESSION, status: 'busy' },
+        messages,
+        parts,
+        totalMessages: messages.length,
+      }),
+    }),
+  );
+
+  await page.goto(SESSION_URL);
+  await expect(page.getByTestId('session-layout')).toBeVisible();
+
+  // The second user message should be visible and SHOULD have a "Queued" badge.
+  const queuedMsg = page.locator('.oc-msg-user', { hasText: 'Queued prompt' });
+  await expect(queuedMsg).toBeVisible({ timeout: 3_000 });
+  await expect(queuedMsg).toHaveClass(/oc-msg-queued/);
+  await expect(queuedMsg.locator('.oc-msg-queued-badge')).toBeVisible();
+});
