@@ -1197,6 +1197,9 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
               return;
             }
 
+            const deltaText = phase.deltas[i];
+            i += 1;
+
             const delta = JSON.stringify({
               type: 'message.part.delta',
               properties: {
@@ -1204,11 +1207,15 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
                 messageID: msgId,
                 partID: partId,
                 field: 'text',
-                delta: phase.deltas[i],
+                delta: deltaText,
               },
             });
             this.onmessage?.(new MessageEvent('message', { data: delta }));
-            i += 1;
+            if (i >= phase.deltas.length) {
+              phaseIndex += 1;
+              window.clearInterval(this.timer!);
+              this.timer = null;
+            }
           }, phase.intervalMs);
         });
       }
