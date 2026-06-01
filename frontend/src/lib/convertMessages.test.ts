@@ -782,13 +782,29 @@ describe('convertMessages', () => {
     expect(tc!.argsText).toMatch(/^completed\n@time:2000,5000\nls$/);
   });
 
-  it('keeps shell tools running when status and completed time are missing', () => {
+  it('marks synthesized shell messages complete when OpenCode omits finish and tool status', () => {
     const m = makeMessage('m', { role: 'assistant' });
     const out = convertMessages([m], [
       makePart('m', {
         type: 'tool',
         tool: 'bash',
-        state: { input: { command: 'sleep 10' }, output: 'started' },
+        state: { input: { command: 'ls' }, output: 'file.txt' },
+      } as PartData, '', 2000),
+    ]);
+    expect(out[0].status).toEqual({ type: 'complete', reason: 'stop' });
+    const items = asContentArray(out[0].content);
+    const tc = items.find((i) => i.type === 'tool-call') as { argsText: string } | undefined;
+    expect(tc).toBeDefined();
+    expect(tc!.argsText).toMatch(/^completed\n@time:2000,0\nls$/);
+  });
+
+  it('keeps shell tools running when OpenCode reports a running status', () => {
+    const m = makeMessage('m', { role: 'assistant' });
+    const out = convertMessages([m], [
+      makePart('m', {
+        type: 'tool',
+        tool: 'bash',
+        state: { status: 'running', input: { command: 'sleep 10' }, output: 'started' },
       } as PartData, '', 2000),
     ]);
     const items = asContentArray(out[0].content);

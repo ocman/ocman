@@ -406,6 +406,7 @@ export function createConvertMessages(): ConvertMessagesFn {
 
     function toolStatus(status: unknown, partIdx: number): string {
       if (typeof status === 'string' && status) return status;
+      if (isSynthesizedTerminal(msgPartsRaw)) return 'completed';
       return toolCompletedAt(partIdx) ? 'completed' : 'running';
     }
 
@@ -731,10 +732,11 @@ export function createConvertMessages(): ConvertMessagesFn {
     // User messages cannot contain tool-call parts in assistant-ui.
     const visibleToolCalls = role === 'assistant' ? toolCalls : [];
 
+    const synthesizedTerminal = role === 'assistant' && isSynthesizedTerminal(msgPartsRaw);
     const msgStatus = role === 'assistant'
       ? (m.data.finish === 'error' || m.data.error)
         ? { type: 'incomplete' as const, reason: 'error' as const }
-        : m.data.finish
+        : m.data.finish || synthesizedTerminal
           ? { type: 'complete' as const, reason: 'stop' as const }
           : { type: 'running' as const }
       : undefined;
