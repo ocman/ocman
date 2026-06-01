@@ -767,6 +767,36 @@ describe('convertMessages', () => {
     expect(tc!.argsText).toContain('@time:2000,5000');
   });
 
+  it('infers completed status for shell tools with missing status and completed time', () => {
+    const m = makeMessage('m', { role: 'assistant', time: { created: 1000, completed: 5000 } });
+    const out = convertMessages([m], [
+      makePart('m', {
+        type: 'tool',
+        tool: 'bash',
+        state: { input: { command: 'ls' }, output: 'file.txt' },
+      } as PartData, '', 2000),
+    ]);
+    const items = asContentArray(out[0].content);
+    const tc = items.find((i) => i.type === 'tool-call') as { argsText: string } | undefined;
+    expect(tc).toBeDefined();
+    expect(tc!.argsText).toMatch(/^completed\n@time:2000,5000\nls$/);
+  });
+
+  it('keeps shell tools running when status and completed time are missing', () => {
+    const m = makeMessage('m', { role: 'assistant' });
+    const out = convertMessages([m], [
+      makePart('m', {
+        type: 'tool',
+        tool: 'bash',
+        state: { input: { command: 'sleep 10' }, output: 'started' },
+      } as PartData, '', 2000),
+    ]);
+    const items = asContentArray(out[0].content);
+    const tc = items.find((i) => i.type === 'tool-call') as { argsText: string } | undefined;
+    expect(tc).toBeDefined();
+    expect(tc!.argsText).toMatch(/^running\n@time:2000,0\nsleep 10$/);
+  });
+
   it('uses next tool part timeCreated as completedAt when multiple tools exist', () => {
     const m = makeMessage('m', { role: 'assistant', time: { created: 1000, completed: 10000 } });
     const out = convertMessages([m], [

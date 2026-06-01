@@ -385,21 +385,28 @@ export function createConvertMessages(): ConvertMessagesFn {
     // timeCreated (or the message's time.completed for the last tool).
     // Returns '' when no useful timing is available.
     const msgCompleted = (m.data.time as { completed?: number } | undefined)?.completed || 0;
-    function toolTimeSuffix(partIdx: number): string {
-      const started = msgPartsRaw[partIdx]?.timeCreated || 0;
-      if (!started) return '';
+    function toolCompletedAt(partIdx: number): number {
       // Walk forward to find the next tool part's timeCreated.
-      let ended = 0;
       for (let j = partIdx + 1; j < msgPartsRaw.length; j++) {
         const nextPd = msgParts[j];
         const nextTime = msgPartsRaw[j].timeCreated ?? 0;
         if (nextPd && nextPd.type === 'tool' && nextTime) {
-          ended = nextTime;
-          break;
+          return nextTime;
         }
       }
-      if (!ended) ended = msgCompleted;
+      return msgCompleted;
+    }
+
+    function toolTimeSuffix(partIdx: number): string {
+      const started = msgPartsRaw[partIdx]?.timeCreated || 0;
+      if (!started) return '';
+      const ended = toolCompletedAt(partIdx);
       return `\n@time:${started},${ended || 0}`;
+    }
+
+    function toolStatus(status: unknown, partIdx: number): string {
+      if (typeof status === 'string' && status) return status;
+      return toolCompletedAt(partIdx) ? 'completed' : 'running';
     }
 
     function userExecutedToolSuffix(toolName: string): string {
@@ -529,7 +536,7 @@ export function createConvertMessages(): ConvertMessagesFn {
             const label = agentType ? `${desc} (${agentType})` : desc;
             const taskId = extractTaskId(st);
             let taskOutput = '';
-            const status = (st.status as string) || 'running';
+            const status = toolStatus(st.status, partIdx);
             if (typeof st.output === 'string' && st.output.trim()) {
               // Claude Code wraps the final output in <task_result>
               // tags; strip the OpenCode task_id line if present.
@@ -579,7 +586,7 @@ export function createConvertMessages(): ConvertMessagesFn {
               type: 'tool-call' as const,
               toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
               toolName: '__question__',
-              argsText: `${st.status || 'running'}\n${questionsJson}`,
+              argsText: `${toolStatus(st.status, partIdx)}\n${questionsJson}`,
               result:
                 typeof st.output === 'string' && st.output.trim()
                   ? st.output
@@ -633,7 +640,7 @@ export function createConvertMessages(): ConvertMessagesFn {
             type: 'tool-call' as const,
             toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
             toolName,
-            argsText: `${st.status || 'running'}${toolTimeSuffix(partIdx)}${shellUserExecutedSuffix(toolName, st.metadata)}\n${title ? title + '\n' : ''}${argsText}`,
+            argsText: `${toolStatus(st.status, partIdx)}${toolTimeSuffix(partIdx)}${shellUserExecutedSuffix(toolName, st.metadata)}\n${title ? title + '\n' : ''}${argsText}`,
             result: resultText || undefined,
           });
 
@@ -701,7 +708,7 @@ export function createConvertMessages(): ConvertMessagesFn {
             type: 'tool-call' as const,
             toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
             toolName,
-            argsText: `${st.status || 'running'}${toolTimeSuffix(partIdx)}${shellUserExecutedSuffix(toolName, st.metadata)}\n${title ? title + '\n' : ''}${argsText}`,
+            argsText: `${toolStatus(st.status, partIdx)}${toolTimeSuffix(partIdx)}${shellUserExecutedSuffix(toolName, st.metadata)}\n${title ? title + '\n' : ''}${argsText}`,
             result: resultText || undefined,
           });
           break;
