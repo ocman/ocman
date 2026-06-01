@@ -122,7 +122,7 @@ func fetchFromGit(ctx context.Context, dir string) Info {
 	cmd := exec.CommandContext(cctx, "git", "-C", dir,
 		"status", "--porcelain=v2", "--branch",
 		"--untracked-files=normal", "--no-renames")
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_NO_LOCK=1")
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")
 
 	out, err := cmd.Output()
 	if err != nil {

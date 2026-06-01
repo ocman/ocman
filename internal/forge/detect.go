@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -28,6 +29,7 @@ func Detect(ctx context.Context, repoRoot string, hosts ForgejoHostMap) ([]Remot
 		return nil, fmt.Errorf("forge: Detect requires repoRoot")
 	}
 	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "remote", "-v")
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("git remote -v: %w", err)

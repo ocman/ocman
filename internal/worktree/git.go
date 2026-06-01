@@ -22,13 +22,13 @@ const gitCommandTimeout = 15 * time.Second
 // GIT_DIR / GIT_INDEX_FILE) don't redirect our commands into the
 // wrong repository.
 var gitContextVars = map[string]bool{
-	"GIT_DIR":                           true,
-	"GIT_INDEX_FILE":                    true,
-	"GIT_WORK_TREE":                     true,
-	"GIT_OBJECT_DIRECTORY":              true,
+	"GIT_DIR":                          true,
+	"GIT_INDEX_FILE":                   true,
+	"GIT_WORK_TREE":                    true,
+	"GIT_OBJECT_DIRECTORY":             true,
 	"GIT_ALTERNATE_OBJECT_DIRECTORIES": true,
-	"GIT_COMMON_DIR":                    true,
-	"GIT_CEILING_DIRECTORIES":           true,
+	"GIT_COMMON_DIR":                   true,
+	"GIT_CEILING_DIRECTORIES":          true,
 }
 
 // gitEnv returns os.Environ() with git context variables removed.
@@ -51,6 +51,14 @@ func gitEnv() []string {
 func gitCmd(ctx context.Context, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Env = gitEnv()
+	return cmd
+}
+
+// gitReadOnlyCmd constructs a git command that must not take optional
+// index locks while refreshing read-only repository state.
+func gitReadOnlyCmd(ctx context.Context, args ...string) *exec.Cmd {
+	cmd := gitCmd(ctx, args...)
+	cmd.Env = append(cmd.Env, "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")
 	return cmd
 }
 
@@ -106,7 +114,7 @@ type CreateResult struct {
 func List(ctx context.Context, repoRoot string) ([]Entry, error) {
 	cctx, cancel := context.WithTimeout(ctx, gitCommandTimeout)
 	defer cancel()
-	cmd := gitCmd(cctx, "-C", repoRoot, "worktree", "list", "--porcelain")
+	cmd := gitReadOnlyCmd(cctx, "-C", repoRoot, "worktree", "list", "--porcelain")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("git worktree list: %w", err)
@@ -292,7 +300,7 @@ func Create(ctx context.Context, req CreateRequest) (*CreateResult, error) {
 func branchExists(ctx context.Context, repoRoot, branch string) bool {
 	cctx, cancel := context.WithTimeout(ctx, gitCommandTimeout)
 	defer cancel()
-	return gitCmd(cctx, "-C", repoRoot,
+	return gitReadOnlyCmd(cctx, "-C", repoRoot,
 		"show-ref", "--verify", "--quiet", "refs/heads/"+branch).Run() == nil
 }
 
@@ -348,7 +356,7 @@ func runGitOutput(ctx context.Context, repoRoot string, args ...string) string {
 	cctx, cancel := context.WithTimeout(ctx, gitCommandTimeout)
 	defer cancel()
 	full := append([]string{"-C", repoRoot}, args...)
-	out, err := gitCmd(cctx, full...).Output()
+	out, err := gitReadOnlyCmd(cctx, full...).Output()
 	if err != nil {
 		return ""
 	}
