@@ -236,7 +236,8 @@ diffs minimal and match the surrounding code.
 ## MCP server
 
 Ocman embeds an MCP server at `http://localhost:8229/mcp` (Streamable HTTP
-transport). It exposes six tools for splitting work from an active session:
+transport). It exposes tools for splitting work from an active session and
+communicating between parent/child sessions:
 
 | Tool | Description |
 |------|-------------|
@@ -246,6 +247,8 @@ transport). It exposes six tools for splitting work from an active session:
 | `get_session_status` | Check the status of a previously spawned child session |
 | `list_child_sessions` | List all child sessions spawned from a parent session |
 | `cancel_session` | Cancel a running child session (kills its tmux window) |
+| `send_message_to_child` | Send a message from a parent session to one of its child sessions |
+| `send_message_to_parent` | Send a message from a child session back to its parent session |
 
 ### Setup
 

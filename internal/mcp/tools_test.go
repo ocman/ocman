@@ -466,3 +466,106 @@ func TestListChildSessions_WithChildren(t *testing.T) {
 		t.Errorf("expected both intents in result: %q", text)
 	}
 }
+
+func TestSendMessageToChild_DeliversToLinkedChild(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	if err := stateDB.InsertChildSession(state.ChildSession{
+		ID:              "child-comm-test",
+		Platform:        "opencode",
+		ParentSessionID: "parent-comm-test",
+		Intent:          "inspect logs",
+		ComposedPrompt:  "inspect logs",
+		Status:          "running",
+		CreatedAt:       1000,
+	}); err != nil {
+		t.Fatalf("InsertChildSession: %v", err)
+	}
+
+	platform := &fakePlatformForTools{}
+	srv := buildTestMCPServer(t, stateDB, platform)
+
+	result := callTool(t, srv, "send_message_to_child", map[string]interface{}{
+		"session_id":       "parent-comm-test",
+		"child_session_id": "child-comm-test",
+		"message":          "What did you find?",
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", resultText(result))
+	}
+	if len(platform.sentMessages) != 1 {
+		t.Fatalf("expected one sent message, got %d", len(platform.sentMessages))
+	}
+	msg := platform.sentMessages[0]
+	if msg.SessionID != "child-comm-test" {
+		t.Fatalf("expected message to child session, got %q", msg.SessionID)
+	}
+	if !strings.Contains(msg.Message, "Message from parent session parent-comm-test") || !strings.Contains(msg.Message, "What did you find?") {
+		t.Fatalf("unexpected delivered message: %q", msg.Message)
+	}
+}
+
+func TestSendMessageToChild_RejectsUnlinkedChild(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	if err := stateDB.InsertChildSession(state.ChildSession{
+		ID:              "child-other-parent",
+		Platform:        "opencode",
+		ParentSessionID: "actual-parent",
+		Intent:          "inspect logs",
+		ComposedPrompt:  "inspect logs",
+		Status:          "running",
+		CreatedAt:       1000,
+	}); err != nil {
+		t.Fatalf("InsertChildSession: %v", err)
+	}
+
+	platform := &fakePlatformForTools{}
+	srv := buildTestMCPServer(t, stateDB, platform)
+
+	result := callTool(t, srv, "send_message_to_child", map[string]interface{}{
+		"session_id":       "wrong-parent",
+		"child_session_id": "child-other-parent",
+		"message":          "hello",
+	})
+	if !result.IsError {
+		t.Fatalf("expected error for unlinked child")
+	}
+	if len(platform.sentMessages) != 0 {
+		t.Fatalf("expected no sent messages, got %d", len(platform.sentMessages))
+	}
+}
+
+func TestSendMessageToParent_DeliversToParent(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	if err := stateDB.InsertChildSession(state.ChildSession{
+		ID:              "child-to-parent-test",
+		Platform:        "opencode",
+		ParentSessionID: "parent-to-parent-test",
+		Intent:          "inspect logs",
+		ComposedPrompt:  "inspect logs",
+		Status:          "running",
+		CreatedAt:       1000,
+	}); err != nil {
+		t.Fatalf("InsertChildSession: %v", err)
+	}
+
+	platform := &fakePlatformForTools{}
+	srv := buildTestMCPServer(t, stateDB, platform)
+
+	result := callTool(t, srv, "send_message_to_parent", map[string]interface{}{
+		"child_session_id": "child-to-parent-test",
+		"message":          "I found the failing test.",
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", resultText(result))
+	}
+	if len(platform.sentMessages) != 1 {
+		t.Fatalf("expected one sent message, got %d", len(platform.sentMessages))
+	}
+	msg := platform.sentMessages[0]
+	if msg.SessionID != "parent-to-parent-test" {
+		t.Fatalf("expected message to parent session, got %q", msg.SessionID)
+	}
+	if !strings.Contains(msg.Message, "Message from child session child-to-parent-test") || !strings.Contains(msg.Message, "I found the failing test.") {
+		t.Fatalf("unexpected delivered message: %q", msg.Message)
+	}
+}

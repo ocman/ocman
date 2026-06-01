@@ -1,0 +1,157 @@
+package mcp
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"strings"
+
+	mcplib "github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
+
+	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/state"
+)
+
+// commChildSessionDB is the subset of state.DB needed by the communication tools.
+type commChildSessionDB interface {
+	GetChildSession(id string) (*state.ChildSession, error)
+}
+
+// commTools holds dependencies for parent <-> child messaging.
+type commTools struct {
+	stateDB  commChildSessionDB
+	platform platformAdapter
+}
+
+// sendMessageToChildTool returns the tool definition for send_message_to_child.
+func sendMessageToChildTool() mcplib.Tool {
+	return mcplib.NewTool("send_message_to_child",
+		mcplib.WithDescription("Send a message from a parent session to one of its child sessions. The child session must have been spawned by split_to_session or split_to_worktree."),
+		mcplib.WithString("session_id",
+			mcplib.Required(),
+			mcplib.Description("The parent session ID (the current session's ID)."),
+		),
+		mcplib.WithString("child_session_id",
+			mcplib.Required(),
+			mcplib.Description("The child session ID returned by split_to_session or split_to_worktree."),
+		),
+		mcplib.WithString("message",
+			mcplib.Required(),
+			mcplib.Description("Message to deliver to the child session."),
+		),
+	)
+}
+
+// sendMessageToParentTool returns the tool definition for send_message_to_parent.
+func sendMessageToParentTool() mcplib.Tool {
+	return mcplib.NewTool("send_message_to_parent",
+		mcplib.WithDescription("Send a message from a child session back to its parent session."),
+		mcplib.WithString("child_session_id",
+			mcplib.Required(),
+			mcplib.Description("The child session ID (the current session's ID)."),
+		),
+		mcplib.WithString("message",
+			mcplib.Required(),
+			mcplib.Description("Message to deliver to the parent session."),
+		),
+	)
+}
+
+// addCommTools registers parent <-> child messaging tools on the MCP server.
+func addCommTools(s *server.MCPServer, t *commTools) {
+	s.AddTool(sendMessageToChildTool(), t.handleSendMessageToChild)
+	s.AddTool(sendMessageToParentTool(), t.handleSendMessageToParent)
+}
+
+// handleSendMessageToChild handles the send_message_to_child tool call.
+func (t *commTools) handleSendMessageToChild(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	parentID, err := req.RequireString("session_id")
+	if err != nil {
+		return mcplib.NewToolResultError("session_id is required"), nil
+	}
+	childID, err := req.RequireString("child_session_id")
+	if err != nil {
+		return mcplib.NewToolResultError("child_session_id is required"), nil
+	}
+	message, err := req.RequireString("message")
+	if err != nil || strings.TrimSpace(message) == "" {
+		return mcplib.NewToolResultError("message is required"), nil
+	}
+
+	cs, toolErr := t.getChildSession(childID)
+	if toolErr != nil {
+		return toolErr, nil
+	}
+	if cs.ParentSessionID != parentID {
+		return mcplib.NewToolResultError(fmt.Sprintf("child session %s does not belong to parent session %s", childID, parentID)), nil
+	}
+
+	delivered := fmt.Sprintf("Message from parent session %s:\n\n%s", parentID, message)
+	if err := t.sendMessage(ctx, childID, delivered); err != nil {
+		return mcplib.NewToolResultError(fmt.Sprintf("sending message to child: %v", err)), nil
+	}
+
+	return toolResultJSON(map[string]interface{}{
+		"delivered":        true,
+		"to_session_id":    childID,
+		"from_session_id":  parentID,
+		"relationship":     "parent_to_child",
+		"child_session_id": childID,
+	}), nil
+}
+
+// handleSendMessageToParent handles the send_message_to_parent tool call.
+func (t *commTools) handleSendMessageToParent(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	childID, err := req.RequireString("child_session_id")
+	if err != nil {
+		return mcplib.NewToolResultError("child_session_id is required"), nil
+	}
+	message, err := req.RequireString("message")
+	if err != nil || strings.TrimSpace(message) == "" {
+		return mcplib.NewToolResultError("message is required"), nil
+	}
+
+	cs, toolErr := t.getChildSession(childID)
+	if toolErr != nil {
+		return toolErr, nil
+	}
+	if cs.ParentSessionID == "" {
+		return mcplib.NewToolResultError(fmt.Sprintf("child session %s has no parent session", childID)), nil
+	}
+
+	delivered := fmt.Sprintf("Message from child session %s (%s):\n\n%s", childID, cs.Intent, message)
+	if err := t.sendMessage(ctx, cs.ParentSessionID, delivered); err != nil {
+		return mcplib.NewToolResultError(fmt.Sprintf("sending message to parent: %v", err)), nil
+	}
+
+	return toolResultJSON(map[string]interface{}{
+		"delivered":        true,
+		"to_session_id":    cs.ParentSessionID,
+		"from_session_id":  childID,
+		"relationship":     "child_to_parent",
+		"child_session_id": childID,
+	}), nil
+}
+
+func (t *commTools) getChildSession(childID string) (*state.ChildSession, *mcplib.CallToolResult) {
+	cs, err := t.stateDB.GetChildSession(childID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, mcplib.NewToolResultError(fmt.Sprintf("child session not found: %s", childID))
+		}
+		return nil, mcplib.NewToolResultError(fmt.Sprintf("looking up child session: %v", err))
+	}
+	return cs, nil
+}
+
+func (t *commTools) sendMessage(ctx context.Context, sessionID, message string) error {
+	if t.platform == nil {
+		return fmt.Errorf("platform adapter unavailable")
+	}
+	return t.platform.SendMessage(ctx, platforms.SendMessageRequest{
+		SessionID: sessionID,
+		Message:   message,
+	})
+}

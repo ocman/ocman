@@ -110,6 +110,12 @@ func New(deps Deps) *Server {
 	}
 	addStatusTools(s, status)
 
+	comm := &commTools{
+		stateDB:  deps.StateDB,
+		platform: adapter,
+	}
+	addCommTools(s, comm)
+
 	// Wrap in a StreamableHTTPServer (implements http.Handler).
 	httpHandler := mcpserver.NewStreamableHTTPServer(s,
 		mcpserver.WithStateLess(true),
@@ -171,6 +177,10 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 		stateDB: deps.StateDB,
 		ocDB:    ocDB,
 	}
+	comm := &commTools{
+		stateDB:  deps.StateDB,
+		platform: adapter,
+	}
 
 	return []mcpserver.ServerTool{
 		{Tool: splitToSessionTool(), Handler: split.handleSplitToSession},
@@ -179,6 +189,8 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 		{Tool: getCurrentSessionIDTool(), Handler: status.handleGetCurrentSessionID},
 		{Tool: listChildSessionsTool(), Handler: status.handleListChildSessions},
 		{Tool: cancelSessionTool(), Handler: status.handleCancelSession},
+		{Tool: sendMessageToChildTool(), Handler: comm.handleSendMessageToChild},
+		{Tool: sendMessageToParentTool(), Handler: comm.handleSendMessageToParent},
 	}
 }
 
@@ -233,6 +245,12 @@ func NewRawServer(deps Deps) *mcpserver.MCPServer {
 		ocDB:    ocDB,
 	}
 	addStatusTools(s, status)
+
+	comm := &commTools{
+		stateDB:  deps.StateDB,
+		platform: adapter,
+	}
+	addCommTools(s, comm)
 
 	return s
 }
