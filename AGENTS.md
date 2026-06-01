@@ -236,12 +236,13 @@ diffs minimal and match the surrounding code.
 ## MCP server
 
 Ocman embeds an MCP server at `http://localhost:8229/mcp` (Streamable HTTP
-transport). It exposes five tools for splitting work from an active session:
+transport). It exposes six tools for splitting work from an active session:
 
 | Tool | Description |
 |------|-------------|
 | `split_to_session` | Launch a new OpenCode session in the same directory with a context-enriched prompt |
 | `split_to_worktree` | Launch a new OpenCode session in a fresh git worktree |
+| `get_current_session_id` | Return the most recently updated OpenCode session ID known to ocman, optionally filtered by project directory |
 | `get_session_status` | Check the status of a previously spawned child session |
 | `list_child_sessions` | List all child sessions spawned from a parent session |
 | `cancel_session` | Cancel a running child session (kills its tmux window) |

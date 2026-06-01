@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -33,6 +34,70 @@ func openTestStateDB(t *testing.T) *state.DB {
 		t.Fatalf("initializing state schema: %v", err)
 	}
 	return sdb
+}
+
+// openTestOpenCodeDB creates a file-backed OpenCode DB fixture. The MCP
+// server opens this read-only, so tests seed it before handing it to ocman.
+func openTestOpenCodeDB(t *testing.T, sessions []db.Session) *db.DB {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "opencode.db")
+	sqlDB, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("opening test opencode db: %v", err)
+	}
+	_, err = sqlDB.Exec(`
+		CREATE TABLE session (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL DEFAULT '',
+			parent_id TEXT,
+			title TEXT NOT NULL DEFAULT '',
+			directory TEXT NOT NULL DEFAULT '',
+			time_created INTEGER NOT NULL DEFAULT 0,
+			time_updated INTEGER NOT NULL DEFAULT 0,
+			summary_additions INTEGER,
+			summary_deletions INTEGER,
+			summary_files INTEGER,
+			share_url TEXT
+		);
+		CREATE TABLE message (
+			id TEXT PRIMARY KEY,
+			session_id TEXT NOT NULL,
+			time_created INTEGER NOT NULL DEFAULT 0,
+			data TEXT NOT NULL DEFAULT '{}'
+		);
+		CREATE TABLE part (
+			id TEXT PRIMARY KEY,
+			message_id TEXT NOT NULL,
+			session_id TEXT NOT NULL,
+			time_created INTEGER NOT NULL DEFAULT 0,
+			data TEXT NOT NULL DEFAULT '{}'
+		);
+	`)
+	if err != nil {
+		sqlDB.Close()
+		t.Fatalf("creating opencode schema: %v", err)
+	}
+	for _, s := range sessions {
+		_, err = sqlDB.Exec(
+			`INSERT INTO session (id, project_id, title, directory, time_created, time_updated) VALUES (?, '', ?, ?, ?, ?)`,
+			s.ID, s.Title, s.Directory, s.TimeCreated, s.TimeUpdated,
+		)
+		if err != nil {
+			sqlDB.Close()
+			t.Fatalf("inserting opencode session %s: %v", s.ID, err)
+		}
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("closing setup db: %v", err)
+	}
+
+	ocDB, err := db.Open(path)
+	if err != nil {
+		t.Fatalf("opening readonly opencode db: %v", err)
+	}
+	t.Cleanup(func() { ocDB.Close() })
+	return ocDB
 }
 
 // fakePlatformForTools implements platforms.Platform for tool tests.
@@ -137,6 +202,10 @@ func (fakePlatformBase) ProxyEvents(_ context.Context, _ string, _ io.Writer, _ 
 
 // buildTestMCPServer builds an mcptest.Server with fake dependencies.
 func buildTestMCPServer(t *testing.T, stateDB *state.DB, platform *fakePlatformForTools) *mcptest.Server {
+	return buildTestMCPServerWithOpenCodeDB(t, stateDB, platform, nil)
+}
+
+func buildTestMCPServerWithOpenCodeDB(t *testing.T, stateDB *state.DB, platform *fakePlatformForTools, ocDB *db.DB) *mcptest.Server {
 	t.Helper()
 
 	reg := platforms.NewRegistry()
@@ -154,6 +223,7 @@ func buildTestMCPServer(t *testing.T, stateDB *state.DB, platform *fakePlatformF
 	fakePort := internalmcp.PortDiscoverer(func(_ string) string { return "12345" })
 
 	deps := internalmcp.Deps{
+		OcDB:           ocDB,
 		StateDB:        stateDB,
 		Registry:       reg,
 		PlatformID:     "opencode",
@@ -223,6 +293,66 @@ func TestListChildSessions_Empty(t *testing.T) {
 	var arr []interface{}
 	if err := json.Unmarshal([]byte(text), &arr); err != nil {
 		t.Errorf("expected JSON array, got: %q (err: %v)", text, err)
+	}
+}
+
+func TestGetCurrentSessionID_ReturnsMostRecentSession(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	ocDB := openTestOpenCodeDB(t, []db.Session{
+		{ID: "ses_old", Title: "old", Directory: "/repo", TimeCreated: 1000, TimeUpdated: 2000},
+		{ID: "ses_new", Title: "new", Directory: "/repo", TimeCreated: 3000, TimeUpdated: 4000},
+	})
+	platform := &fakePlatformForTools{}
+	srv := buildTestMCPServerWithOpenCodeDB(t, stateDB, platform, ocDB)
+
+	result := callTool(t, srv, "get_current_session_id", map[string]interface{}{})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", resultText(result))
+	}
+
+	var got struct {
+		SessionID     string `json:"session_id"`
+		Directory     string `json:"directory"`
+		SelectionMode string `json:"selection_mode"`
+	}
+	if err := json.Unmarshal([]byte(resultText(result)), &got); err != nil {
+		t.Fatalf("expected JSON object: %v", err)
+	}
+	if got.SessionID != "ses_new" {
+		t.Fatalf("expected newest session ID, got %q", got.SessionID)
+	}
+	if got.Directory != "/repo" {
+		t.Fatalf("expected directory /repo, got %q", got.Directory)
+	}
+	if got.SelectionMode != "most_recent_session" {
+		t.Fatalf("expected selection mode, got %q", got.SelectionMode)
+	}
+}
+
+func TestGetCurrentSessionID_FiltersByDirectory(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	ocDB := openTestOpenCodeDB(t, []db.Session{
+		{ID: "ses_other", Title: "other", Directory: "/other", TimeCreated: 1000, TimeUpdated: 9000},
+		{ID: "ses_repo", Title: "repo", Directory: "/repo", TimeCreated: 1000, TimeUpdated: 2000},
+	})
+	platform := &fakePlatformForTools{}
+	srv := buildTestMCPServerWithOpenCodeDB(t, stateDB, platform, ocDB)
+
+	result := callTool(t, srv, "get_current_session_id", map[string]interface{}{
+		"directory": "/repo",
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", resultText(result))
+	}
+
+	var got struct {
+		SessionID string `json:"session_id"`
+	}
+	if err := json.Unmarshal([]byte(resultText(result)), &got); err != nil {
+		t.Fatalf("expected JSON object: %v", err)
+	}
+	if got.SessionID != "ses_repo" {
+		t.Fatalf("expected directory-filtered session ID, got %q", got.SessionID)
 	}
 }
 

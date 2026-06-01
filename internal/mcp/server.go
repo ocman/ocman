@@ -48,7 +48,7 @@ type Server struct {
 }
 
 // New constructs a Server from the given dependencies, registers all
-// five tools, and wraps the result in a StreamableHTTPServer.
+// MCP tools, and wraps the result in a StreamableHTTPServer.
 func New(deps Deps) *Server {
 	// Apply defaults for injectable functions.
 	if deps.CreateWorktree == nil {
@@ -176,6 +176,7 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 		{Tool: splitToSessionTool(), Handler: split.handleSplitToSession},
 		{Tool: splitToWorktreeTool(), Handler: split.handleSplitToWorktree},
 		{Tool: getSessionStatusTool(), Handler: status.handleGetSessionStatus},
+		{Tool: getCurrentSessionIDTool(), Handler: status.handleGetCurrentSessionID},
 		{Tool: listChildSessionsTool(), Handler: status.handleListChildSessions},
 		{Tool: cancelSessionTool(), Handler: status.handleCancelSession},
 	}

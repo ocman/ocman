@@ -17,7 +17,7 @@ import (
 )
 
 // statusSessionReader is the subset of db.DB needed by the status tools
-// to infer child session completion from OpenCode's database.
+// to inspect OpenCode sessions.
 type statusSessionReader interface {
 	GetSessions(directory string, since int64) ([]db.Session, error)
 }
@@ -57,6 +57,16 @@ func listChildSessionsTool() mcplib.Tool {
 	)
 }
 
+// getCurrentSessionIDTool returns the tool definition for get_current_session_id.
+func getCurrentSessionIDTool() mcplib.Tool {
+	return mcplib.NewTool("get_current_session_id",
+		mcplib.WithDescription("Return the most recently updated OpenCode session ID known to ocman. Optionally filter by project directory."),
+		mcplib.WithString("directory",
+			mcplib.Description("Optional project directory. When provided, only sessions in this directory are considered."),
+		),
+	)
+}
+
 // cancelSessionTool returns the tool definition for cancel_session.
 func cancelSessionTool() mcplib.Tool {
 	return mcplib.NewTool("cancel_session",
@@ -71,6 +81,7 @@ func cancelSessionTool() mcplib.Tool {
 // addStatusTools registers the status/management tools on the MCP server.
 func addStatusTools(s *server.MCPServer, t *statusTools) {
 	s.AddTool(getSessionStatusTool(), t.handleGetSessionStatus)
+	s.AddTool(getCurrentSessionIDTool(), t.handleGetCurrentSessionID)
 	s.AddTool(listChildSessionsTool(), t.handleListChildSessions)
 	s.AddTool(cancelSessionTool(), t.handleCancelSession)
 }
@@ -142,6 +153,34 @@ func (t *statusTools) handleListChildSessions(_ context.Context, req mcplib.Call
 	}
 
 	return toolResultJSON(entries), nil
+}
+
+// handleGetCurrentSessionID handles the get_current_session_id tool call.
+func (t *statusTools) handleGetCurrentSessionID(_ context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	if t.ocDB == nil {
+		return mcplib.NewToolResultError("OpenCode database is unavailable"), nil
+	}
+
+	directory := req.GetString("directory", "")
+	sessions, err := t.ocDB.GetSessions(directory, 0)
+	if err != nil {
+		return mcplib.NewToolResultError(fmt.Sprintf("looking up current session: %v", err)), nil
+	}
+	if len(sessions) == 0 {
+		if directory != "" {
+			return mcplib.NewToolResultError(fmt.Sprintf("no sessions found for directory: %s", directory)), nil
+		}
+		return mcplib.NewToolResultError("no sessions found"), nil
+	}
+
+	s := sessions[0]
+	return toolResultJSON(map[string]interface{}{
+		"session_id":     s.ID,
+		"directory":      s.Directory,
+		"title":          s.Title,
+		"time_updated":   s.TimeUpdated,
+		"selection_mode": "most_recent_session",
+	}), nil
 }
 
 // handleCancelSession handles the cancel_session tool call.
