@@ -374,6 +374,54 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+.oc-patch-diffs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.oc-patch-diff-file {
+  overflow: hidden;
+  border: 1px solid var(--surface1);
+  background: rgba(0, 0, 0, 0.12);
+}
+.oc-patch-diff-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--surface1);
+  font-family: var(--font-conversation-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.oc-patch-diff-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border: 1px solid currentColor;
+  font-weight: 700;
+  line-height: 1;
+}
+.oc-patch-diff-action {
+  flex: 0 0 auto;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.oc-patch-diff-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.oc-patch-diff-header-add { color: var(--accent2); }
+.oc-patch-diff-header-update { color: var(--accent); }
+.oc-patch-diff-header-delete { color: var(--danger); }
+.oc-patch-diff-header-rename { color: var(--accent4); }
 .oc-patch-line {
   white-space: pre-wrap;
   word-break: break-word;

@@ -10,6 +10,8 @@ import {
   extractPatchPayload,
   splitToolArgs,
   parsePatchSections,
+  applyPatchToUnifiedFileDiffs,
+  applyPatchToUnifiedDiff,
   shortenPatchPath,
   summarizePatch,
   parseQuestionAnswers,
@@ -158,6 +160,12 @@ describe('extractPatchPayload', () => {
     expect(out.patchText).toBe('x');
     expect(out.preamble).toBe('');
   });
+
+  it('detects raw apply_patch text without a JSON wrapper', () => {
+    const out = extractPatchPayload('Applying patch\n*** Begin Patch\n*** Add File: a.txt\n+x\n*** End Patch');
+    expect(out.patchText).toBe('*** Begin Patch\n*** Add File: a.txt\n+x\n*** End Patch');
+    expect(out.preamble).toBe('Applying patch');
+  });
 });
 
 describe('splitToolArgs', () => {
@@ -269,6 +277,130 @@ describe('summarizePatch', () => {
     ].join('\n');
     // 2 sections -> multi-section path
     expect(summarizePatch(patch)).toBe('Patch 2 files (1 add, 1 update)');
+  });
+});
+
+describe('applyPatchToUnifiedDiff', () => {
+  it('preserves per-file actions for patch rendering', () => {
+    const patch = [
+      '*** Begin Patch',
+      '*** Update File: a.txt',
+      '-old',
+      '+new',
+      '*** Delete File: b.txt',
+      '-gone',
+      '*** End Patch',
+    ].join('\n');
+
+    expect(applyPatchToUnifiedFileDiffs(patch).map((file) => ({
+      action: file.action,
+      path: file.path,
+    }))).toEqual([
+      { action: 'update', path: 'a.txt' },
+      { action: 'delete', path: 'b.txt' },
+    ]);
+  });
+
+  it('converts multi-file apply_patch payloads into unified diff sections', () => {
+    const patch = [
+      '*** Begin Patch',
+      '*** Update File: internal/a.go',
+      '@@',
+      ' func old() {',
+      '-\treturn 1',
+      '+\treturn 2',
+      ' }',
+      '*** Add File: docs/new.md',
+      '+# New',
+      '+content',
+      '*** End Patch',
+    ].join('\n');
+
+    expect(applyPatchToUnifiedDiff(patch)).toBe([
+      'diff --git a/internal/a.go b/internal/a.go',
+      '--- a/internal/a.go',
+      '+++ b/internal/a.go',
+      '@@ -1,3 +1,3 @@',
+      ' func old() {',
+      '-\treturn 1',
+      '+\treturn 2',
+      ' }',
+      'diff --git a/docs/new.md b/docs/new.md',
+      '--- /dev/null',
+      '+++ b/docs/new.md',
+      '@@ -0,0 +1,2 @@',
+      '+# New',
+      '+content',
+    ].join('\n'));
+  });
+
+  it('returns null when no apply_patch sections are present', () => {
+    expect(applyPatchToUnifiedDiff('no patch here')).toBeNull();
+  });
+
+  it('does not add phantom context after the end marker', () => {
+    const patch = [
+      '*** Begin Patch',
+      '*** Add File: a.txt',
+      '+one',
+      '*** End Patch',
+      '',
+    ].join('\n');
+
+    expect(applyPatchToUnifiedDiff(patch)).toBe([
+      'diff --git a/a.txt b/a.txt',
+      '--- /dev/null',
+      '+++ b/a.txt',
+      '@@ -0,0 +1 @@',
+      '+one',
+    ].join('\n'));
+  });
+
+  it('accepts indented apply_patch markers', () => {
+    const patch = [
+      '  *** Begin Patch',
+      '  *** Update File: internal/a.go',
+      '@@',
+      ' value',
+      '-old',
+      '+new',
+      '  *** End Patch',
+    ].join('\n');
+
+    expect(applyPatchToUnifiedDiff(patch)).toBe([
+      'diff --git a/internal/a.go b/internal/a.go',
+      '--- a/internal/a.go',
+      '+++ b/internal/a.go',
+      '@@ -1,2 +1,2 @@',
+      ' value',
+      '-old',
+      '+new',
+    ].join('\n'));
+  });
+
+  it('marks moved files as renames', () => {
+    const patch = [
+      '*** Begin Patch',
+      '*** Update File: old.txt',
+      '*** Move to: new.txt',
+      '-old',
+      '+new',
+      '*** End Patch',
+    ].join('\n');
+
+    expect(applyPatchToUnifiedFileDiffs(patch)[0]).toMatchObject({
+      action: 'rename',
+      oldPath: 'old.txt',
+      path: 'new.txt',
+      patch: [
+        'diff --git a/old.txt b/new.txt',
+        '--- a/old.txt',
+        '+++ b/new.txt',
+        '@@ -1 +1 @@',
+        '-old',
+        '+new',
+      ].join('\n'),
+    });
   });
 });
 

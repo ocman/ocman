@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
-import { MultiFileDiff } from '@pierre/diffs/react';
+import { MultiFileDiff, PatchDiff } from '@pierre/diffs/react';
 import { DIFF_OPTIONS } from './diffOptions';
 import './AssistantThread.css';
 import {
@@ -26,10 +26,12 @@ import {
   splitToolArgs,
   shortenPatchPath,
   summarizePatch,
+  applyPatchToUnifiedFileDiffs,
   parseQuestionAnswers,
   parseQuestions,
   parseToolTime,
   formatToolDuration,
+  type ApplyPatchFileDiff,
   type QuestionData,
 } from '../lib/threadHelpers';
 import ReactMarkdown from 'react-markdown';
@@ -531,7 +533,45 @@ function renderOutput(text: string, languageHint?: string) {
   );
 }
 
+function patchActionMeta(action: ApplyPatchFileDiff['action']): { label: string; text: string } {
+  switch (action) {
+    case 'add': return { label: 'A', text: 'Added' };
+    case 'delete': return { label: 'D', text: 'Deleted' };
+    case 'rename': return { label: 'R', text: 'Renamed' };
+    case 'update': return { label: 'M', text: 'Modified' };
+  }
+}
+
 function renderPatch(patchText: string) {
+  const fileDiffs = applyPatchToUnifiedFileDiffs(patchText);
+  if (fileDiffs.length > 0) {
+    return (
+      <Suspense fallback={null}>
+        <div className="oc-patch-diffs">
+          {fileDiffs.map((file, index) => {
+            const meta = patchActionMeta(file.action);
+            return (
+              <div key={`${file.action}:${file.oldPath || ''}:${file.path}:${index}`} className="oc-patch-diff-file">
+                <div className={`oc-patch-diff-header oc-patch-diff-header-${file.action}`}>
+                  <span className="oc-patch-diff-badge">{meta.label}</span>
+                  <span className="oc-patch-diff-action">{meta.text}</span>
+                  <span className="oc-patch-diff-path">
+                    {file.oldPath ? `${shortenPatchPath(file.oldPath)} -> ${shortenPatchPath(file.path)}` : shortenPatchPath(file.path)}
+                  </span>
+                </div>
+                <PatchDiff
+                  patch={file.patch}
+                  options={{ ...DIFF_OPTIONS, disableFileHeader: true }}
+                  disableWorkerPool
+                />
+              </div>
+            );
+          })}
+        </div>
+      </Suspense>
+    );
+  }
+
   const lines = patchText.split('\n');
   return (
     <div className="oc-patch-block">
@@ -852,11 +892,9 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: raw
   const isApplyPatch = toolName === 'apply_patch';
   if (isApplyPatch) {
     const patchSource = remainingArgs.trim();
-    const { patchText, preamble } = extractPatchPayload(patchSource || detail);
+    const { patchText } = extractPatchPayload(patchSource || detail);
     const patchSummary = patchText ? summarizePatch(patchText) : 'Apply patch';
     const patchBody = patchText || '';
-    const patchIsLong = patchBody.length > 500;
-    const fileLines = preamble.split('\n').map((line) => line.trim()).filter((line) => /^([MADRCU?!]|->)\s/.test(line));
 
     return (
       <div className={`oc-tool oc-tool-patch ${statusClass} ${expanded ? 'oc-tool-expanded' : ''}`}>
@@ -865,19 +903,9 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: raw
           <span className="oc-tool-label">{patchSummary}</span>
           {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} />}
         </div>
-        {(fileLines.length > 0 || patchBody) && (
+        {patchBody && (
           <div className="oc-tool-content" onClick={() => !expanded && setExpanded(true)} style={!expanded ? { cursor: 'pointer' } : undefined}>
-            {fileLines.length > 0 && (
-              <div className="oc-patch-files">
-                {fileLines.map((line, index) => (
-                  <div key={index} className="oc-patch-files-line">{line}</div>
-                ))}
-              </div>
-            )}
-            {patchBody && <div className="oc-tool-pre oc-tool-output">{renderPatch(patchBody)}</div>}
-            {!expanded && patchIsLong && (
-              <div className="oc-tool-expand">Click to expand</div>
-            )}
+            {renderPatch(patchBody)}
           </div>
         )}
       </div>

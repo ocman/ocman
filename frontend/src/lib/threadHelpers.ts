@@ -43,6 +43,13 @@ export interface PatchSection {
   path: string;
 }
 
+export interface ApplyPatchFileDiff {
+  action: 'add' | 'update' | 'delete' | 'rename';
+  path: string;
+  oldPath?: string;
+  patch: string;
+}
+
 /**
  * Result of `extractPatchPayload`: `patchText` is the raw patch body
  * when a structured payload was detected, otherwise `null`. The
@@ -179,6 +186,14 @@ export function extractPatchPayload(text: string): PatchPayload {
     return { patchText: parsed.patchText, preamble };
   }
 
+  const patchStart = text.indexOf('*** Begin Patch');
+  if (patchStart >= 0) {
+    return {
+      patchText: text.slice(patchStart).trim(),
+      preamble: text.slice(0, patchStart).trim(),
+    };
+  }
+
   return { patchText: null, preamble: text.trim() };
 }
 
@@ -223,6 +238,132 @@ export function parsePatchSections(patchText: string): PatchSection[] {
     if (deleteMatch) return [{ action: 'delete' as const, path: deleteMatch[1] }];
     return [];
   });
+}
+
+interface PatchSectionWithLines {
+  action: ApplyPatchFileDiff['action'];
+  lines: string[];
+  oldPath?: string;
+  path: string;
+}
+
+function parsePatchSectionsWithLines(patchText: string): PatchSectionWithLines[] {
+  const sections: PatchSectionWithLines[] = [];
+  let current: PatchSectionWithLines | null = null;
+
+  const pushCurrent = () => {
+    if (current) sections.push(current);
+  };
+
+  for (const line of patchText.split('\n')) {
+    const markerLine = line.trimStart();
+
+    if (markerLine === '*** Begin Patch') continue;
+    if (markerLine === '*** End Patch') {
+      pushCurrent();
+      current = null;
+      continue;
+    }
+
+    const headerMatch = markerLine.match(/^\*\*\* (Add|Update|Delete) File: (.+)$/);
+    if (headerMatch) {
+      pushCurrent();
+      const action = headerMatch[1] === 'Add'
+        ? 'add'
+        : headerMatch[1] === 'Delete'
+          ? 'delete'
+          : 'update';
+      current = { action, path: headerMatch[2], lines: [] };
+      continue;
+    }
+
+    if (!current) continue;
+    const moveMatch = markerLine.match(/^\*\*\* Move to: (.+)$/);
+    if (moveMatch) {
+      current.oldPath = current.path;
+      current.action = 'rename';
+      current.path = moveMatch[1];
+      continue;
+    }
+    current.lines.push(line);
+  }
+
+  pushCurrent();
+  return sections;
+}
+
+function unifiedRange(start: number, count: number): string {
+  if (count === 0) return `${start},0`;
+  if (count === 1) return `${start}`;
+  return `${start},${count}`;
+}
+
+/**
+ * Convert apply_patch's envelope format into a synthetic unified diff.
+ * The patch format only contains changed hunks, not full file contents,
+ * so line numbers are snippet-relative; that is enough for the diff
+ * renderer to display clean multi-file sections without raw markers.
+ */
+export function applyPatchToUnifiedFileDiffs(patchText: string): ApplyPatchFileDiff[] {
+  const sections = parsePatchSectionsWithLines(patchText);
+  if (sections.length === 0) return [];
+
+  return sections.map((section) => {
+    let oldCount = 0;
+    let newCount = 0;
+    const hunkLines: string[] = [];
+
+    for (const rawLine of section.lines) {
+      if (rawLine.startsWith('@@')) continue;
+      if (rawLine.startsWith('\\ No newline at end of file')) {
+        hunkLines.push(rawLine);
+        continue;
+      }
+
+      if (rawLine.startsWith('+')) {
+        newCount += 1;
+        hunkLines.push(rawLine);
+      } else if (rawLine.startsWith('-')) {
+        oldCount += 1;
+        hunkLines.push(rawLine);
+      } else {
+        oldCount += 1;
+        newCount += 1;
+        hunkLines.push(rawLine.startsWith(' ') ? rawLine : ` ${rawLine}`);
+      }
+    }
+
+    const diffOldPath = section.oldPath ?? section.path;
+    const oldPath = section.action === 'add' ? '/dev/null' : `a/${diffOldPath}`;
+    const newPath = section.action === 'delete' ? '/dev/null' : `b/${section.path}`;
+    const oldStart = oldCount === 0 ? 0 : 1;
+    const newStart = newCount === 0 ? 0 : 1;
+
+    const patch = [
+      `diff --git a/${diffOldPath} b/${section.path}`,
+      `--- ${oldPath}`,
+      `+++ ${newPath}`,
+      `@@ -${unifiedRange(oldStart, oldCount)} +${unifiedRange(newStart, newCount)} @@`,
+      ...hunkLines,
+    ].join('\n');
+
+    return {
+      action: section.action,
+      path: section.path,
+      oldPath: section.oldPath,
+      patch,
+    };
+  });
+}
+
+export function applyPatchToUnifiedDiffs(patchText: string): string[] {
+  return applyPatchToUnifiedFileDiffs(patchText).map((file) => file.patch);
+}
+
+export function applyPatchToUnifiedDiff(patchText: string): string | null {
+  const files = applyPatchToUnifiedDiffs(patchText);
+  if (files.length === 0) return null;
+  return files.join('\n');
 }
 
 /**
