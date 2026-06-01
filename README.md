@@ -54,6 +54,50 @@ still readable but the composer stays disabled — the UI shows a hint to re-lau
 
 See [docs/configuration.md](docs/configuration.md) for the full flag and environment variable reference, including authentication setup.
 
+## Optional agent integration
+
+Ocman works as a dashboard without any agent integration. Install the optional
+MCP integration if you want an agent to split work into child OpenCode sessions,
+launch isolated git worktrees, check child status, cancel child sessions, or
+send parent/child follow-up messages.
+
+Add the local MCP server to your OpenCode config:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "ocman": {
+      "type": "remote",
+      "url": "http://localhost:8229/mcp",
+      "enabled": true
+    }
+  }
+}
+```
+
+Use `http://localhost:8228/mcp` when running ocman through the Vite dev server
+(`make dev`); the dev server proxies MCP requests to the Go backend. Use
+`http://localhost:8229/mcp` when running the production binary directly.
+
+The MCP server is localhost-only and provides small action tools such as
+`split_to_session`, `split_to_worktree`, `get_session_status`,
+`list_child_sessions`, `cancel_session`, and parent/child message tools.
+
+Ocman also ships an optional OpenCode skill for deciding when and how to split
+work. Install it if you want the agent to use better split heuristics without
+putting long policy text into every MCP tool description:
+
+```text
+.opencode/skills/ocman-session-splitting/SKILL.md
+```
+
+When working in this repository, OpenCode loads the skill from the project
+config automatically after restart. To use the same guidance in another
+project, copy that folder into the target project's `.opencode/skills/`
+directory, or add this repository's `.opencode/skills` path to that project's
+OpenCode `skills.paths` config.
+
 ## Documentation
 
 - [Configuration](docs/configuration.md) — flags, env vars, authentication

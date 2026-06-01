@@ -38,10 +38,10 @@ type statusTools struct {
 // getSessionStatusTool returns the tool definition for get_session_status.
 func getSessionStatusTool() mcplib.Tool {
 	return mcplib.NewTool("get_session_status",
-		mcplib.WithDescription("Get the current status of a child session previously spawned by split_to_session or split_to_worktree."),
+		mcplib.WithDescription("Get child session status."),
 		mcplib.WithString("child_session_id",
 			mcplib.Required(),
-			mcplib.Description("The child session ID returned by split_to_session or split_to_worktree."),
+			mcplib.Description("Child session ID."),
 		),
 	)
 }
@@ -49,10 +49,10 @@ func getSessionStatusTool() mcplib.Tool {
 // listChildSessionsTool returns the tool definition for list_child_sessions.
 func listChildSessionsTool() mcplib.Tool {
 	return mcplib.NewTool("list_child_sessions",
-		mcplib.WithDescription("List all sessions spawned from a given parent session, with their current status."),
+		mcplib.WithDescription("List child sessions for a parent."),
 		mcplib.WithString("session_id",
 			mcplib.Required(),
-			mcplib.Description("The parent session ID."),
+			mcplib.Description("Parent session ID."),
 		),
 	)
 }
@@ -60,9 +60,9 @@ func listChildSessionsTool() mcplib.Tool {
 // getCurrentSessionIDTool returns the tool definition for get_current_session_id.
 func getCurrentSessionIDTool() mcplib.Tool {
 	return mcplib.NewTool("get_current_session_id",
-		mcplib.WithDescription("Return the most recently updated OpenCode session ID known to ocman. Optionally filter by project directory."),
+		mcplib.WithDescription("Return the most recent OpenCode session ID."),
 		mcplib.WithString("directory",
-			mcplib.Description("Optional project directory. When provided, only sessions in this directory are considered."),
+			mcplib.Description("Optional project directory filter."),
 		),
 	)
 }
@@ -70,10 +70,10 @@ func getCurrentSessionIDTool() mcplib.Tool {
 // cancelSessionTool returns the tool definition for cancel_session.
 func cancelSessionTool() mcplib.Tool {
 	return mcplib.NewTool("cancel_session",
-		mcplib.WithDescription("Cancel a running child session by terminating its tmux window. Idempotent: cancelling an already-terminal session is a no-op."),
+		mcplib.WithDescription("Cancel a running child session."),
 		mcplib.WithString("child_session_id",
 			mcplib.Required(),
-			mcplib.Description("The child session ID to cancel."),
+			mcplib.Description("Child session ID."),
 		),
 	)
 }

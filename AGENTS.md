@@ -63,7 +63,7 @@ persisted in the `setting` table of `state.db` (migration v12). See
 - `internal/mcp/` — MCP server implementation. `PromptComposer`
   enriches caller-provided intent with session context; `SessionLauncher`
   creates child sessions via the Platform interface; tool handlers
-  implement the five MCP tools. Mounted at `/mcp` by the server package.
+  implement the MCP tools. Mounted at `/mcp` by the server package.
 - `internal/server/` — HTTP server, API handlers, static file serving
   with SPA fallback, OpenCode port discovery via `lsof`, tmux
   integration, whisper transcription.
@@ -288,6 +288,10 @@ also exposed via `/api/capabilities` as `mcpServer.url`.
 Child session records are stored in `state.db`'s `child_sessions` table
 (migration v9). The MCP endpoint is localhost-only.
 
+Agent splitting policy lives in the repo-local
+`.opencode/skills/ocman-session-splitting/SKILL.md` skill so MCP tool
+descriptions can stay short and action-focused.
+
 ## Conventions
 
 - All Go packages live under `internal/` — nothing is exported.
@@ -326,7 +330,7 @@ Child session records are stored in `state.db`'s `child_sessions` table
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **ocman** (10134 symbols, 21261 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **ocman** (12203 symbols, 25342 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

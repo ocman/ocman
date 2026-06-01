@@ -28,18 +28,18 @@ type commTools struct {
 // sendMessageToChildTool returns the tool definition for send_message_to_child.
 func sendMessageToChildTool() mcplib.Tool {
 	return mcplib.NewTool("send_message_to_child",
-		mcplib.WithDescription("Send a message from a parent session to one of its child sessions. The child session must have been spawned by split_to_session or split_to_worktree."),
+		mcplib.WithDescription("Send a message to a child session."),
 		mcplib.WithString("session_id",
 			mcplib.Required(),
-			mcplib.Description("The parent session ID (the current session's ID)."),
+			mcplib.Description("Parent session ID."),
 		),
 		mcplib.WithString("child_session_id",
 			mcplib.Required(),
-			mcplib.Description("The child session ID returned by split_to_session or split_to_worktree."),
+			mcplib.Description("Child session ID."),
 		),
 		mcplib.WithString("message",
 			mcplib.Required(),
-			mcplib.Description("Message to deliver to the child session."),
+			mcplib.Description("Message."),
 		),
 	)
 }
@@ -47,14 +47,14 @@ func sendMessageToChildTool() mcplib.Tool {
 // sendMessageToParentTool returns the tool definition for send_message_to_parent.
 func sendMessageToParentTool() mcplib.Tool {
 	return mcplib.NewTool("send_message_to_parent",
-		mcplib.WithDescription("Send a message from a child session back to its parent session."),
+		mcplib.WithDescription("Send a message to the parent session."),
 		mcplib.WithString("child_session_id",
 			mcplib.Required(),
-			mcplib.Description("The child session ID (the current session's ID)."),
+			mcplib.Description("Child session ID."),
 		),
 		mcplib.WithString("message",
 			mcplib.Required(),
-			mcplib.Description("Message to deliver to the parent session."),
+			mcplib.Description("Message."),
 		),
 	)
 }
