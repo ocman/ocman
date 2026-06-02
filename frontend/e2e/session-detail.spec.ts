@@ -1152,7 +1152,12 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
         this.url = url;
         this.isATarget = url.includes(`/api/session/${sessionAId}/events`);
 
-        queueMicrotask(() => {
+        // Start emitting after the page has had a chance to settle the
+        // mount/revisit REST fetch. The regression this test guards is the
+        // stale snapshot reconciliation itself, not a race between the first
+        // reconnect delta and the mocked fetch handler on slower CI workers.
+        this.timer = window.setTimeout(() => {
+          this.timer = null;
           if (this.readyState === GapStreamingEventSource.CLOSED) return;
           this.readyState = GapStreamingEventSource.OPEN;
           this.onopen?.(new Event('open'));
@@ -1217,7 +1222,7 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
               this.timer = null;
             }
           }, phase.intervalMs);
-        });
+        }, 100);
       }
 
       addEventListener(name: string, cb: (evt: Event) => void) {
