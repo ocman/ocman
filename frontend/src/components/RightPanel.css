@@ -119,3 +119,155 @@
   gap: 2px;
   flex-shrink: 0;
 }
+
+.oc-bookmarks-empty {
+  padding: 16px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.oc-bookmarks-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.oc-bookmarks-groups {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.oc-bookmarks-group {
+  border-bottom: 1px solid var(--border);
+}
+
+.oc-bookmarks-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--accent4) 5%, var(--bg));
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.oc-bookmarks-current {
+  color: var(--accent4);
+}
+
+.oc-bookmark-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  background: transparent;
+  color: var(--text-dim);
+  text-align: left;
+  cursor: pointer;
+}
+
+.oc-bookmark-row:hover,
+.oc-bookmark-row.active {
+  background: color-mix(in srgb, var(--accent4) 10%, transparent);
+  color: var(--text);
+}
+
+.oc-bookmark-row.active {
+  box-shadow: inset 3px 0 0 var(--accent4);
+}
+
+.oc-bookmark-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 10px;
+  color: var(--accent4);
+  text-transform: uppercase;
+}
+
+.oc-bookmark-row-meta span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--overlay0);
+}
+
+.oc-bookmark-row-preview {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.oc-bookmark-detail {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  padding: 12px;
+  background: var(--bg-card);
+}
+
+.oc-bookmark-detail-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 10px;
+  color: var(--overlay0);
+  text-transform: uppercase;
+}
+
+.oc-bookmark-detail-session {
+  margin-bottom: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.oc-bookmark-detail-text {
+  max-height: 128px;
+  overflow-y: auto;
+  font-family: var(--font-conversation-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.oc-bookmark-detail-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.oc-bookmark-detail-actions button {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.oc-bookmark-detail-actions button:hover {
+  background: var(--surface1);
+  color: var(--text);
+}

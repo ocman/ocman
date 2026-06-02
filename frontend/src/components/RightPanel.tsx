@@ -10,6 +10,7 @@ import { UpstreamPane } from './upstream/UpstreamPane';
 import { ErrorBoundary } from './ErrorBoundary';
 import { useUpstreams } from '../lib/useUpstreams';
 import type { Session } from '../lib/api';
+import { messageBookmarkKey, type MessageBookmark, type MessageBookmarkGroup } from '../lib/messageBookmarks';
 
 interface RightPanelProps {
   sessionId: string;
@@ -24,12 +25,18 @@ interface RightPanelProps {
   // changes summary, total cost) without re-fetching it. Undefined
   // while the parent is still loading.
   session?: Session;
+  messageBookmarkGroups: MessageBookmarkGroup[];
+  selectedMessageBookmarkKey: string | null;
+  onOpenMessageBookmark: (key: string) => void;
+  onRemoveMessageBookmark: (bookmark: MessageBookmark) => void;
+  onScrollToMessageBookmark: (bookmark: MessageBookmark) => void;
 }
 
 const TAB_LABELS: Record<ChangesSidebarTab, string> = {
   info: 'Session info',
   session: 'Session changes',
   'working-tree': 'Working tree',
+  bookmarks: 'Bookmarks',
   upstream: 'PRs & Issues',
 };
 
@@ -43,6 +50,7 @@ const TAB_ICONS: Record<ChangesSidebarTab, string> = {
   info: 'bi-info-circle',
   session: 'bi-pencil-square',
   'working-tree': 'bi-git',
+  bookmarks: 'bi-bookmarks',
   upstream: 'bi-inbox',
 };
 
@@ -51,7 +59,7 @@ const TAB_ICONS: Record<ChangesSidebarTab, string> = {
 // matching the OpenCode TUI layout. 'upstream' sits below the rest
 // because it's the most "external" view (lives outside the local
 // repo), and it only shows when a forge upstream is detected.
-const BASE_TABS: ChangesSidebarTab[] = ['info', 'session', 'working-tree', 'upstream'];
+const BASE_TABS: ChangesSidebarTab[] = ['info', 'session', 'working-tree', 'bookmarks', 'upstream'];
 
 // Minimum height fraction a single pane is allowed to occupy. Stops
 // the user dragging a pane down to zero (where it would become
@@ -73,7 +81,18 @@ const MIN_PANE_FRACTION = 0.1;
 //
 // Designed to scale to N views: adding a third entry to ALL_TABS +
 // a render branch is enough.
-export function RightPanel({ sessionId, platformId, directory, dirtyTick, session }: RightPanelProps) {
+export function RightPanel({
+  sessionId,
+  platformId,
+  directory,
+  dirtyTick,
+  session,
+  messageBookmarkGroups,
+  selectedMessageBookmarkKey,
+  onOpenMessageBookmark,
+  onRemoveMessageBookmark,
+  onScrollToMessageBookmark,
+}: RightPanelProps) {
   const openTabs = useUiStore((s) => s.changesSidebarOpenTabs);
   const sizes = useUiStore((s) => s.changesSidebarTabSizes);
   const toggleTab = useUiStore((s) => s.toggleChangesSidebarTab);
@@ -170,6 +189,11 @@ export function RightPanel({ sessionId, platformId, directory, dirtyTick, sessio
             directory={directory}
             dirtyTick={dirtyTick}
             session={session}
+            messageBookmarkGroups={messageBookmarkGroups}
+            selectedMessageBookmarkKey={selectedMessageBookmarkKey}
+            onOpenMessageBookmark={onOpenMessageBookmark}
+            onRemoveMessageBookmark={onRemoveMessageBookmark}
+            onScrollToMessageBookmark={onScrollToMessageBookmark}
             upstreams={upstreamsResult.upstreams}
             // First pane has no top divider; subsequent panes do.
             divider={idx > 0}
@@ -243,6 +267,11 @@ interface PaneProps {
   // ignore it. Tokens and Todos for the same pane come from the
   // /api/session/{id}/info endpoint, not from props.
   session?: Session;
+  messageBookmarkGroups: MessageBookmarkGroup[];
+  selectedMessageBookmarkKey: string | null;
+  onOpenMessageBookmark: (key: string) => void;
+  onRemoveMessageBookmark: (bookmark: MessageBookmark) => void;
+  onScrollToMessageBookmark: (bookmark: MessageBookmark) => void;
   // Upstream remotes for the current project. Only the 'upstream' pane
   // consumes this; the other panes ignore it. Resolved at RightPanel
   // level so we don't re-detect per pane.
@@ -251,7 +280,22 @@ interface PaneProps {
   size: number;
 }
 
-function Pane({ tab, sessionId, platformId, directory, dirtyTick, session, upstreams, divider, size }: PaneProps) {
+function Pane({
+  tab,
+  sessionId,
+  platformId,
+  directory,
+  dirtyTick,
+  session,
+  messageBookmarkGroups,
+  selectedMessageBookmarkKey,
+  onOpenMessageBookmark,
+  onRemoveMessageBookmark,
+  onScrollToMessageBookmark,
+  upstreams,
+  divider,
+  size,
+}: PaneProps) {
   // Children push their summary up via onSummaryChange so we can
   // render it next to the title without coupling RightPanel to
   // each view's data hook.
@@ -341,6 +385,15 @@ function Pane({ tab, sessionId, platformId, directory, dirtyTick, session, upstr
               onLoadingChange={handleLoadingChange}
             />
           )}
+          {tab === 'bookmarks' && (
+            <MessageBookmarksPane
+              groups={messageBookmarkGroups}
+              selectedKey={selectedMessageBookmarkKey}
+              onOpen={onOpenMessageBookmark}
+              onRemove={onRemoveMessageBookmark}
+              onScrollToMessage={onScrollToMessageBookmark}
+            />
+          )}
           {tab === 'upstream' && (
             <UpstreamPane
               directory={directory}
@@ -354,6 +407,78 @@ function Pane({ tab, sessionId, platformId, directory, dirtyTick, session, upstr
         </ErrorBoundary>
       </div>
     </>
+  );
+}
+
+function MessageBookmarksPane({
+  groups,
+  selectedKey,
+  onOpen,
+  onRemove,
+  onScrollToMessage,
+}: {
+  groups: MessageBookmarkGroup[];
+  selectedKey: string | null;
+  onOpen: (key: string) => void;
+  onRemove: (bookmark: MessageBookmark) => void;
+  onScrollToMessage: (bookmark: MessageBookmark) => void;
+}) {
+  const selectedBookmark = groups
+    .flatMap((group) => group.bookmarks)
+    .find((bookmark) => messageBookmarkKey(bookmark) === selectedKey) ?? null;
+
+  if (groups.length === 0) {
+    return <div className="oc-bookmarks-empty">No bookmarked messages yet.</div>;
+  }
+
+  return (
+    <div className="oc-bookmarks-pane">
+      <div className="oc-bookmarks-groups">
+        {groups.map((group) => (
+          <section key={group.projectDirectory} className="oc-bookmarks-group">
+            <div className="oc-bookmarks-group-header">
+              <span>{group.label}</span>
+              {group.current && <span className="oc-bookmarks-current">Current</span>}
+            </div>
+            {group.bookmarks.map((bookmark) => {
+              const key = messageBookmarkKey(bookmark);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  className={`oc-bookmark-row${key === selectedKey ? ' active' : ''}`}
+                  onClick={() => onOpen(key)}
+                >
+                  <span className="oc-bookmark-row-meta">
+                    <span>{bookmark.role}</span>
+                    {bookmark.sessionTitle && <span>{bookmark.sessionTitle}</span>}
+                  </span>
+                  <span className="oc-bookmark-row-preview">{bookmark.preview || 'Empty message'}</span>
+                </button>
+              );
+            })}
+          </section>
+        ))}
+      </div>
+      {selectedBookmark && (
+        <div className="oc-bookmark-detail">
+          <div className="oc-bookmark-detail-meta">
+            <span>{selectedBookmark.role}</span>
+            {selectedBookmark.timeCreated > 0 && (
+              <span>{new Date(selectedBookmark.timeCreated).toLocaleString()}</span>
+            )}
+          </div>
+          {selectedBookmark.sessionTitle && (
+            <div className="oc-bookmark-detail-session">{selectedBookmark.sessionTitle}</div>
+          )}
+          <div className="oc-bookmark-detail-text">{selectedBookmark.preview || 'Empty message'}</div>
+          <div className="oc-bookmark-detail-actions">
+            <button type="button" onClick={() => onScrollToMessage(selectedBookmark)}>Scroll to message</button>
+            <button type="button" onClick={() => onRemove(selectedBookmark)}>Remove</button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

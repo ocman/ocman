@@ -29,6 +29,44 @@
 /* Messages */
 .oc-msg {
   padding: 16px 0;
+  position: relative;
+}
+.oc-msg-bookmark-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: color-mix(in srgb, var(--bg-card) 92%, transparent);
+  color: var(--text-dim);
+  cursor: pointer;
+  opacity: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.15s ease, color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  z-index: 2;
+}
+.oc-msg:hover .oc-msg-bookmark-btn,
+.oc-msg:focus-within .oc-msg-bookmark-btn,
+.oc-msg-bookmark-btn.active {
+  opacity: 1;
+}
+.oc-msg-bookmark-btn:hover,
+.oc-msg-bookmark-btn.active {
+  color: var(--accent4);
+  border-color: color-mix(in srgb, var(--accent4) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent4) 12%, var(--bg-card));
+}
+.oc-msg-scroll-highlight {
+  animation: oc-msg-scroll-highlight 1.2s ease-out;
+}
+@keyframes oc-msg-scroll-highlight {
+  0% { box-shadow: inset 3px 0 0 var(--accent4), 0 0 0 1px color-mix(in srgb, var(--accent4) 60%, transparent); }
+  100% { box-shadow: inset 3px 0 0 transparent, 0 0 0 1px transparent; }
 }
 .oc-thread-viewport > .oc-msg:first-of-type {
   margin-top: 16px;

@@ -41,6 +41,38 @@ import type { FC } from 'react';
 import { EmbeddedThread } from './EmbeddedThread';
 import { LinkPreviewStrip } from './GitHubLinkPreview';
 
+interface MessageBookmarkContextValue {
+  bookmarkedIds: Set<string>;
+  onToggleBookmark?: (messageId: string) => void;
+}
+
+const EMPTY_BOOKMARK_IDS = new Set<string>();
+const MessageBookmarkContext = React.createContext<MessageBookmarkContextValue>({
+  bookmarkedIds: EMPTY_BOOKMARK_IDS,
+});
+
+function MessageBookmarkButton({ messageId }: { messageId: string }) {
+  const { bookmarkedIds, onToggleBookmark } = React.useContext(MessageBookmarkContext);
+  if (!onToggleBookmark) return null;
+  const bookmarked = bookmarkedIds.has(messageId);
+  return (
+    <button
+      type="button"
+      className={`oc-msg-bookmark-btn${bookmarked ? ' active' : ''}`}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onToggleBookmark(messageId);
+      }}
+      title={bookmarked ? 'Remove bookmark' : 'Bookmark message'}
+      aria-label={bookmarked ? 'Remove bookmark' : 'Bookmark message'}
+      aria-pressed={bookmarked}
+    >
+      <i className={`bi ${bookmarked ? 'bi-bookmark-fill' : 'bi-bookmark'}`} aria-hidden="true" />
+    </button>
+  );
+}
+
 /**
  * Renders a duration badge for a tool card. For completed tools it
  * shows a static duration; for running tools it shows a live elapsed
@@ -198,8 +230,10 @@ const UserMessage: FC = () => {
   return (
     <MessagePrimitive.Root
       className={`oc-msg oc-msg-user${isQueued ? ' oc-msg-queued' : ''}${failed ? ' oc-msg-failed' : ''}`}
+      data-message-id={id}
       style={borderStyle}
     >
+      <MessageBookmarkButton messageId={id} />
       <div className="oc-msg-body">
         <MessagePrimitive.Content components={USER_PART_COMPONENTS} />
       </div>
@@ -256,7 +290,8 @@ const AssistantMessage: FC = () => {
 
   if (onlyMuted) {
     return (
-      <MessagePrimitive.Root className="oc-msg oc-msg-muted">
+      <MessagePrimitive.Root className="oc-msg oc-msg-muted" data-message-id={messageId}>
+        <MessageBookmarkButton messageId={messageId} />
         <MessagePrimitive.Content components={ASSISTANT_PART_COMPONENTS} />
         <TurnSummaryBar messageId={messageId} />
       </MessagePrimitive.Root>
@@ -264,7 +299,8 @@ const AssistantMessage: FC = () => {
   }
 
   return (
-    <MessagePrimitive.Root className="oc-msg oc-msg-assistant">
+    <MessagePrimitive.Root className="oc-msg oc-msg-assistant" data-message-id={messageId}>
+      <MessageBookmarkButton messageId={messageId} />
       <div className="oc-msg-body oc-md">
         <MessagePrimitive.Content components={ASSISTANT_PART_COMPONENTS} />
       </div>
@@ -1015,7 +1051,27 @@ function toolOutputPreview(output: string, expanded: boolean): string {
   return `${output.slice(0, TOOL_OUTPUT_PREVIEW_CHARS)}\n... (${output.length} chars total)`;
 }
 
-export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, footer }: { hasMore?: boolean; loadingMore?: boolean; onLoadMore?: () => void; composer?: React.ReactNode; footer?: React.ReactNode }) {
+export function AssistantThread({
+  hasMore,
+  loadingMore,
+  onLoadMore,
+  composer,
+  footer,
+  bookmarkedMessageIds,
+  onToggleMessageBookmark,
+  scrollToMessageId,
+  scrollToMessageTick,
+}: {
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  onLoadMore?: () => void;
+  composer?: React.ReactNode;
+  footer?: React.ReactNode;
+  bookmarkedMessageIds?: Set<string>;
+  onToggleMessageBookmark?: (messageId: string) => void;
+  scrollToMessageId?: string | null;
+  scrollToMessageTick?: number;
+}) {
   trackRender('AssistantThread');
   const threadRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -1204,6 +1260,21 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
     (viewportRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
   }, []);
 
+  useEffect(() => {
+    if (!scrollToMessageId || !scrollToMessageTick) return;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const escaped = CSS.escape(scrollToMessageId);
+    const target = viewport.querySelector<HTMLElement>(`[data-message-id="${escaped}"]`);
+    if (!target) return;
+    const viewportTop = viewport.getBoundingClientRect().top;
+    const targetTop = target.getBoundingClientRect().top - viewportTop + viewport.scrollTop;
+    viewport.scrollTo({ top: Math.max(0, targetTop - 12), behavior: 'smooth' });
+    target.classList.add('oc-msg-scroll-highlight');
+    const timeout = setTimeout(() => target.classList.remove('oc-msg-scroll-highlight'), 1200);
+    return () => clearTimeout(timeout);
+  }, [scrollToMessageId, scrollToMessageTick]);
+
   // Track the ViewportFooter height so the scroll-to-bottom button
   // (positioned absolute inside .oc-thread) can float just above it.
   // RAF-coalesced to avoid layout thrash when the textarea resizes on
@@ -1224,8 +1295,14 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
     ro.observe(el);
   }, []);
 
+  const bookmarkContextValue = useMemo(() => ({
+    bookmarkedIds: bookmarkedMessageIds ?? EMPTY_BOOKMARK_IDS,
+    onToggleBookmark: onToggleMessageBookmark,
+  }), [bookmarkedMessageIds, onToggleMessageBookmark]);
+
   return (
     <div ref={threadRef} style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+      <MessageBookmarkContext.Provider value={bookmarkContextValue}>
       <ThreadPrimitive.Root className="oc-thread">
         <ThreadPrimitive.Viewport ref={setViewportRef} className="oc-thread-viewport" autoScroll>
           {hasMore && loadingMore && (
@@ -1246,6 +1323,7 @@ export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, fo
           Scroll to bottom
         </ThreadPrimitive.ScrollToBottom>
       </ThreadPrimitive.Root>
+      </MessageBookmarkContext.Provider>
     </div>
   );
 }
