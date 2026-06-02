@@ -449,19 +449,19 @@
 
 /* Shell command - terminal style */
 .oc-tool-shell-user {
-  border-left: 3px solid var(--danger);
-  background: color-mix(in srgb, var(--danger) 6%, var(--bg-card));
+  border-left: 3px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: var(--bg-card);
 }
 .oc-tool-shell-user .oc-tool-header:hover {
-  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  background: rgba(255,255,255,0.02);
 }
 .oc-tool-shell-user .oc-tool-icon,
 .oc-tool-shell-user .oc-tool-label {
-  color: var(--danger);
+  color: var(--text-dim);
   opacity: 0.85;
 }
 .oc-tool-shell-user .oc-tool-duration {
-  color: color-mix(in srgb, var(--danger) 55%, var(--text-dim));
+  color: var(--text-dim);
 }
 .oc-shell-block {
   background: rgba(0, 0, 0, 0.35);
@@ -489,16 +489,16 @@
   color: var(--accent2);
 }
 .oc-tool-shell-user .oc-shell-prompt {
-  color: var(--danger);
+  color: var(--accent);
 }
 .oc-tool-shell-user .oc-shell-cmd {
-  color: color-mix(in srgb, var(--danger) 55%, var(--text));
+  color: var(--accent2);
 }
 .oc-shell-attribution {
   margin-top: -3px;
   font-family: var(--font-conversation-mono);
   font-size: 11px;
-  color: color-mix(in srgb, var(--danger) 45%, var(--text-dim));
+  color: var(--text-dim);
   opacity: 0.75;
 }
 
