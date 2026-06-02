@@ -550,7 +550,7 @@ export function reduceSessionView(state: SessionView, action: SessionAction): Se
       // server state is now authoritative.
       return {
         ...action.view,
-        _deltaOwnedFields: new Map(),
+        _deltaOwnedFields: action.view._deltaOwnedFields,
         _refetchRequested: false,
       };
     }

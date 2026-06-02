@@ -153,6 +153,19 @@ describe('reduceSessionView — load action', () => {
     expect(decode(reloaded.parts[0]).text).toBe('authoritative');
   });
 
+  it('preserves delta-ownership supplied by a cache-seeded load', () => {
+    const seeded = new Map([['p1', new Set(['text'])]]);
+    const cached = makeView({
+      messages: [makeMessage('m1', 1)],
+      parts: [makeTextPart('p1', 'm1', '1 2 3 4 5 ')],
+      _deltaOwnedFields: seeded,
+    });
+
+    const after = reduceSessionView(initialSessionView(SID), { type: 'load', view: cached });
+
+    expect(after._deltaOwnedFields.get('p1')?.has('text')).toBe(true);
+  });
+
   it('drops a reconcile load whose sessionId does not match the current state', () => {
     // A stale doFetch from a previous navigation can resolve after the user
     // has already switched to a new session. Applying it wholesale would paint
