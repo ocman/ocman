@@ -944,10 +944,10 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: raw
   const isBash = toolName === 'bash' || toolName === 'mcp_bash';
   if (isBash) {
     const command = detail || title;
-    // Auto-expand while the command is running so output streams visibly.
-    const isRunningWithOutput = toolStatus === 'running' && !!outputDisplay;
-    const bashExpanded = expanded || isRunningWithOutput;
-    const bashOutputDisplay = toolOutputPreview(outputDisplay, bashExpanded);
+    // Shell output is terminal-like content; show it in full by default
+    // so users do not need an extra click to see command output.
+    const bashExpanded = true;
+    const bashOutputDisplay = outputDisplay;
     return (
       <div className={`oc-tool oc-tool-shell ${userExecutedTool ? 'oc-tool-shell-user' : ''} ${statusClass} ${bashExpanded ? 'oc-tool-expanded' : ''}`}>
         <div className="oc-tool-header" onClick={() => setExpanded(!expanded)}>

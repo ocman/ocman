@@ -1343,7 +1343,7 @@ test('user message after a shell command is NOT flagged as queued', async ({ moc
   await expect(secondUserMsg).not.toHaveClass(/oc-msg-queued/);
 });
 
-test('long shell output expands from preview to full output', async ({ mockedPage: page }) => {
+test('long shell output renders in full without a collapsed preview', async ({ mockedPage: page }) => {
   const sessionId = MOCK_SESSION.id;
   const now = Date.now();
   const fullOutput = `${'x'.repeat(6000)}\nfull-output-sentinel`;
@@ -1373,11 +1373,6 @@ test('long shell output expands from preview to full output', async ({ mockedPag
 
   await page.goto(SESSION_URL);
   await expect(page.getByTestId('session-layout')).toBeVisible();
-  await expect(page.getByText('... (6021 chars total)')).toBeVisible();
-  await expect(page.getByText('full-output-sentinel')).toHaveCount(0);
-
-  await page.getByText('Click to expand').click();
-
   await expect(page.getByText('full-output-sentinel')).toBeVisible();
   await expect(page.getByText('... (6021 chars total)')).toHaveCount(0);
 });
