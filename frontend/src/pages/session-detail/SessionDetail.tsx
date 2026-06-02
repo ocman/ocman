@@ -416,13 +416,22 @@ export function SessionDetail({ id }: SessionDetailProps) {
   }, [id, stateForActiveSession]);
 
   const handleScrollToMessageBookmark = useCallback((bookmark: MessageBookmark) => {
-    setScrollToMessageBookmark((current) => ({
-      sessionId: bookmark.sessionId,
-      id: bookmark.id,
-      tick: (current?.tick ?? 0) + 1,
-    }));
-    if (bookmark.sessionId !== id) navigateToSession(bookmark.sessionId);
-  }, [id, navigateToSession]);
+    const updateScrollRequest = () => {
+      setScrollToMessageBookmark((current) => ({
+        sessionId: bookmark.sessionId,
+        id: bookmark.id,
+        tick: (current?.tick ?? 0) + 1,
+      }));
+    };
+    if (bookmark.sessionId === id) {
+      updateScrollRequest();
+      return;
+    }
+    flushSync(() => {
+      updateScrollRequest();
+      navigate(`/session/${bookmark.sessionId}`);
+    });
+  }, [id, navigate]);
 
   const sseActive = sseStatus === 'live';
 
