@@ -74,6 +74,8 @@ export interface UseSessionOptions {
    * Floor target after trimming kicks in. Must be <= maxMessages.
    */
   trimTo?: number;
+  /** Message that must stay in memory while a jump target is being loaded. */
+  protectedMessageId?: string | null;
 }
 
 export interface UseSessionResult extends SessionView {
@@ -189,6 +191,7 @@ export function useSession(
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
   const maxMessages = options.maxMessages ?? 0;
   const trimTo = options.trimTo ?? maxMessages;
+  const protectedMessageId = options.protectedMessageId ?? null;
   const debug = options.debug ?? false;
 
   // Read cache once at mount via getState() — we want a snapshot,
@@ -310,19 +313,26 @@ export function useSession(
     if (maxMessages <= 0) return;
     if (view.messages.length <= maxMessages) return;
     if (lastTrimmedLengthRef.current === view.messages.length) return;
+    const protectedIndex = protectedMessageId
+      ? view.messages.findIndex((m) => m.id === protectedMessageId)
+      : -1;
+    if (protectedMessageId && protectedIndex === -1) return;
     lastTrimmedLengthRef.current = view.messages.length;
     const retained = view.messages.slice(-trimTo);
-    const retainedIds = new Set(retained.map((m) => m.id));
+    const retainedMessages = protectedIndex >= 0 && !retained.some((m) => m.id === protectedMessageId)
+      ? [view.messages[protectedIndex], ...retained.slice(1)]
+      : retained;
+    const retainedIds = new Set(retainedMessages.map((m) => m.id));
     const retainedParts = view.parts.filter((p) => retainedIds.has(p.messageId));
     dispatch({
       type: 'load',
       view: {
         ...view,
-        messages: retained,
+        messages: retainedMessages,
         parts: retainedParts,
       },
     });
-  }, [view, maxMessages, trimTo]);
+  }, [view, maxMessages, trimTo, protectedMessageId]);
 
   // Cache mirror — write the latest view into the per-session cache
   // so revisits render instantly. No-ops when the session isn't

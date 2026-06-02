@@ -246,6 +246,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const navigate = useStickyNavigate();
   const [searchParams] = useSearchParams();
   const debugMode = searchParams.has('debug');
+  const [scrollToMessageBookmark, setScrollToMessageBookmark] = useState<{ sessionId: string; id: string; tick: number } | null>(null);
   // Route changes must win over in-flight streaming work. flushSync
   // forces React Router's location update to commit immediately so
   // the SSE lifecycle (keyed off the route id) tears down before
@@ -260,10 +261,14 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // initial fetch + reload + loadMore, the cache mirror, and the
   // memory bound. Returns the rendered view plus a small set of
   // lifecycle signals.
+  const protectedMessageId = scrollToMessageBookmark && scrollToMessageBookmark.sessionId === id
+    ? scrollToMessageBookmark.id
+    : null;
   const view = useSession(id, {
     debug: debugMode,
     maxMessages: MAX_RETAINED_MESSAGES,
     trimTo: TRIMMED_RETAINED_MESSAGES,
+    protectedMessageId,
   });
   const {
     session,
@@ -329,7 +334,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
     bookmarks: loadedMessageBookmarks,
     selectedKey: loadedMessageBookmarks[0] ? messageBookmarkKey(loadedMessageBookmarks[0]) : null,
   }));
-  const [scrollToMessageBookmark, setScrollToMessageBookmark] = useState<{ sessionId: string; id: string; tick: number } | null>(null);
   const [messageBookmarkStorageTick, setMessageBookmarkStorageTick] = useState(0);
 
   const activeMessageBookmarkState = messageBookmarkState.sessionId === id

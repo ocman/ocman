@@ -1266,14 +1266,17 @@ export function AssistantThread({
     if (!viewport) return;
     const escaped = CSS.escape(scrollToMessageId);
     const target = viewport.querySelector<HTMLElement>(`[data-message-id="${escaped}"]`);
-    if (!target) return;
+    if (!target) {
+      if (hasMore && !loadingMore) void onLoadMore?.();
+      return;
+    }
     const viewportTop = viewport.getBoundingClientRect().top;
     const targetTop = target.getBoundingClientRect().top - viewportTop + viewport.scrollTop;
     viewport.scrollTo({ top: Math.max(0, targetTop - 12), behavior: 'smooth' });
     target.classList.add('oc-msg-scroll-highlight');
     const timeout = setTimeout(() => target.classList.remove('oc-msg-scroll-highlight'), 1200);
     return () => clearTimeout(timeout);
-  }, [scrollToMessageId, scrollToMessageTick]);
+  }, [scrollToMessageId, scrollToMessageTick, hasMore, loadingMore, onLoadMore]);
 
   // Track the ViewportFooter height so the scroll-to-bottom button
   // (positioned absolute inside .oc-thread) can float just above it.
