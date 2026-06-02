@@ -162,10 +162,12 @@
 }
 
 .oc-bookmark-row {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  width: 100%;
+  width: calc(100% - 24px);
+  margin: 0 12px;
   padding: 9px 12px;
   border: 0;
   border-top: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
@@ -207,67 +209,40 @@
 .oc-bookmark-row-preview {
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-size: 12px;
-}
-
-.oc-bookmark-detail {
-  flex-shrink: 0;
-  border-top: 1px solid var(--border);
-  padding: 12px;
-  background: var(--bg-card);
-}
-
-.oc-bookmark-detail-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
-  font-family: 'SF Mono', Consolas, monospace;
-  font-size: 10px;
-  color: var(--overlay0);
-  text-transform: uppercase;
-}
-
-.oc-bookmark-detail-session {
-  margin-bottom: 6px;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  color: var(--text-dim);
-}
-
-.oc-bookmark-detail-text {
-  max-height: 128px;
-  overflow-y: auto;
-  font-family: var(--font-conversation-mono);
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--text);
+  line-height: 1.45;
   white-space: pre-wrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 10;
 }
 
-.oc-bookmark-detail-actions {
-  display: flex;
-  gap: 6px;
-  margin-top: 10px;
-}
-
-.oc-bookmark-detail-actions button {
-  padding: 4px 8px;
+.oc-bookmark-row-remove {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
   border: 1px solid var(--border);
   border-radius: 0;
-  background: transparent;
+  background: var(--bg-card);
   color: var(--text-dim);
-  font-family: 'SF Mono', Consolas, monospace;
-  font-size: 11px;
+  opacity: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
-.oc-bookmark-detail-actions button:hover {
-  background: var(--surface1);
-  color: var(--text);
+.oc-bookmark-row:hover .oc-bookmark-row-remove,
+.oc-bookmark-row:focus-within .oc-bookmark-row-remove {
+  opacity: 1;
+}
+
+.oc-bookmark-row-remove:hover {
+  background: color-mix(in srgb, var(--danger) 12%, var(--bg-card));
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
 }

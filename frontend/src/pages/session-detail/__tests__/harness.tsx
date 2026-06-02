@@ -266,7 +266,17 @@ vi.mock('../../../lib/useToastNotify', () => ({
 }));
 
 vi.mock('../../../components/AssistantThread', () => ({
-  AssistantThread: ({ composer, footer }: { composer?: React.ReactNode; footer?: React.ReactNode }) => {
+  AssistantThread: ({
+    composer,
+    footer,
+    scrollToMessageId,
+    scrollToMessageTick,
+  }: {
+    composer?: React.ReactNode;
+    footer?: React.ReactNode;
+    scrollToMessageId?: string | null;
+    scrollToMessageTick?: number;
+  }) => {
     if (mockState.assistantThreadCrashCount > 0) {
       mockState.assistantThreadCrashCount -= 1;
       throw new Error(mockState.assistantThreadCrashMessage ?? 'mock AssistantThread crash');
@@ -274,6 +284,8 @@ vi.mock('../../../components/AssistantThread', () => ({
 
     return (
       <div data-testid="assistant-thread">
+        <div data-testid="assistant-thread-scroll-target">{scrollToMessageId || ''}</div>
+        <div data-testid="assistant-thread-scroll-tick">{scrollToMessageTick || 0}</div>
         <div data-testid="assistant-thread-composer">{composer}</div>
         <div data-testid="assistant-thread-footer">{footer}</div>
       </div>

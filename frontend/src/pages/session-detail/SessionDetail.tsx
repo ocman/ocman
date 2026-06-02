@@ -387,10 +387,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
     });
   }, [currentMessageBookmarks, stateForActiveSession]);
 
-  const handleOpenMessageBookmark = useCallback((key: string) => {
-    setMessageBookmarkState((current) => ({ ...stateForActiveSession(current), selectedKey: key }));
-  }, [stateForActiveSession]);
-
   const handleRemoveMessageBookmark = useCallback((bookmark: MessageBookmark) => {
     if (bookmark.sessionId !== id) {
       const key = messageBookmarkKey(bookmark);
@@ -1272,7 +1268,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
             session={session ?? undefined}
             messageBookmarkGroups={messageBookmarkGroups}
             selectedMessageBookmarkKey={selectedMessageBookmarkKey}
-            onOpenMessageBookmark={handleOpenMessageBookmark}
             onRemoveMessageBookmark={handleRemoveMessageBookmark}
             onScrollToMessageBookmark={handleScrollToMessageBookmark}
           />

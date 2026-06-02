@@ -10,7 +10,8 @@ import { UpstreamPane } from './upstream/UpstreamPane';
 import { ErrorBoundary } from './ErrorBoundary';
 import { useUpstreams } from '../lib/useUpstreams';
 import type { Session } from '../lib/api';
-import { messageBookmarkKey, type MessageBookmark, type MessageBookmarkGroup } from '../lib/messageBookmarks';
+import type { MessageBookmark, MessageBookmarkGroup } from '../lib/messageBookmarks';
+import { MessageBookmarksPane } from './MessageBookmarksPane';
 
 interface RightPanelProps {
   sessionId: string;
@@ -27,7 +28,6 @@ interface RightPanelProps {
   session?: Session;
   messageBookmarkGroups: MessageBookmarkGroup[];
   selectedMessageBookmarkKey: string | null;
-  onOpenMessageBookmark: (key: string) => void;
   onRemoveMessageBookmark: (bookmark: MessageBookmark) => void;
   onScrollToMessageBookmark: (bookmark: MessageBookmark) => void;
 }
@@ -89,7 +89,6 @@ export function RightPanel({
   session,
   messageBookmarkGroups,
   selectedMessageBookmarkKey,
-  onOpenMessageBookmark,
   onRemoveMessageBookmark,
   onScrollToMessageBookmark,
 }: RightPanelProps) {
@@ -191,7 +190,6 @@ export function RightPanel({
             session={session}
             messageBookmarkGroups={messageBookmarkGroups}
             selectedMessageBookmarkKey={selectedMessageBookmarkKey}
-            onOpenMessageBookmark={onOpenMessageBookmark}
             onRemoveMessageBookmark={onRemoveMessageBookmark}
             onScrollToMessageBookmark={onScrollToMessageBookmark}
             upstreams={upstreamsResult.upstreams}
@@ -269,7 +267,6 @@ interface PaneProps {
   session?: Session;
   messageBookmarkGroups: MessageBookmarkGroup[];
   selectedMessageBookmarkKey: string | null;
-  onOpenMessageBookmark: (key: string) => void;
   onRemoveMessageBookmark: (bookmark: MessageBookmark) => void;
   onScrollToMessageBookmark: (bookmark: MessageBookmark) => void;
   // Upstream remotes for the current project. Only the 'upstream' pane
@@ -289,7 +286,6 @@ function Pane({
   session,
   messageBookmarkGroups,
   selectedMessageBookmarkKey,
-  onOpenMessageBookmark,
   onRemoveMessageBookmark,
   onScrollToMessageBookmark,
   upstreams,
@@ -389,7 +385,6 @@ function Pane({
             <MessageBookmarksPane
               groups={messageBookmarkGroups}
               selectedKey={selectedMessageBookmarkKey}
-              onOpen={onOpenMessageBookmark}
               onRemove={onRemoveMessageBookmark}
               onScrollToMessage={onScrollToMessageBookmark}
             />
@@ -407,78 +402,6 @@ function Pane({
         </ErrorBoundary>
       </div>
     </>
-  );
-}
-
-function MessageBookmarksPane({
-  groups,
-  selectedKey,
-  onOpen,
-  onRemove,
-  onScrollToMessage,
-}: {
-  groups: MessageBookmarkGroup[];
-  selectedKey: string | null;
-  onOpen: (key: string) => void;
-  onRemove: (bookmark: MessageBookmark) => void;
-  onScrollToMessage: (bookmark: MessageBookmark) => void;
-}) {
-  const selectedBookmark = groups
-    .flatMap((group) => group.bookmarks)
-    .find((bookmark) => messageBookmarkKey(bookmark) === selectedKey) ?? null;
-
-  if (groups.length === 0) {
-    return <div className="oc-bookmarks-empty">No bookmarked messages yet.</div>;
-  }
-
-  return (
-    <div className="oc-bookmarks-pane">
-      <div className="oc-bookmarks-groups">
-        {groups.map((group) => (
-          <section key={group.projectDirectory} className="oc-bookmarks-group">
-            <div className="oc-bookmarks-group-header">
-              <span>{group.label}</span>
-              {group.current && <span className="oc-bookmarks-current">Current</span>}
-            </div>
-            {group.bookmarks.map((bookmark) => {
-              const key = messageBookmarkKey(bookmark);
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  className={`oc-bookmark-row${key === selectedKey ? ' active' : ''}`}
-                  onClick={() => onOpen(key)}
-                >
-                  <span className="oc-bookmark-row-meta">
-                    <span>{bookmark.role}</span>
-                    {bookmark.sessionTitle && <span>{bookmark.sessionTitle}</span>}
-                  </span>
-                  <span className="oc-bookmark-row-preview">{bookmark.preview || 'Empty message'}</span>
-                </button>
-              );
-            })}
-          </section>
-        ))}
-      </div>
-      {selectedBookmark && (
-        <div className="oc-bookmark-detail">
-          <div className="oc-bookmark-detail-meta">
-            <span>{selectedBookmark.role}</span>
-            {selectedBookmark.timeCreated > 0 && (
-              <span>{new Date(selectedBookmark.timeCreated).toLocaleString()}</span>
-            )}
-          </div>
-          {selectedBookmark.sessionTitle && (
-            <div className="oc-bookmark-detail-session">{selectedBookmark.sessionTitle}</div>
-          )}
-          <div className="oc-bookmark-detail-text">{selectedBookmark.preview || 'Empty message'}</div>
-          <div className="oc-bookmark-detail-actions">
-            <button type="button" onClick={() => onScrollToMessage(selectedBookmark)}>Scroll to message</button>
-            <button type="button" onClick={() => onRemove(selectedBookmark)}>Remove</button>
-          </div>
-        </div>
-      )}
-    </div>
   );
 }
 

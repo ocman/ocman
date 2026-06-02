@@ -29,6 +29,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+
 describe('SessionDetail — initial mount', () => {
   it('renders the layout and fetches the session detail', async () => {
     const { api } = renderSessionPage({ sessionId: 'sess_1' });
