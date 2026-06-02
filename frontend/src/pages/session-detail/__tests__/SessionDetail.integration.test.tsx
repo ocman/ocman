@@ -303,6 +303,180 @@ describe('SessionDetail — SSE stream', () => {
     });
   });
 
+  it('appends streamed delta text from documented OpenCode payload events', async () => {
+    const handle = renderSessionPage({ sessionId: 'sess_1' });
+    await flushPromises();
+    await waitFor(() => expect(handle.sse()).toBeDefined());
+
+    const seedDetail = {
+      session: {} as never,
+      messages: [],
+      parts: [],
+      totalMessages: 0,
+    };
+    const partTextsFromUpdaters = () => {
+      const calls = handle.store.updateCachedSession.mock.calls;
+      return calls.flatMap((call) => {
+        const [, updater] = call as [string, (prev: typeof seedDetail) => { parts: { data: unknown }[] }];
+        return updater(seedDetail).parts.map((p) => {
+          const data = typeof p.data === 'string' ? JSON.parse(p.data) : p.data;
+          return (data as { text?: string })?.text ?? '';
+        });
+      });
+    };
+
+    handle.store.updateCachedSession.mockClear();
+    act(() => {
+      handle.sse()!.open();
+      handle.sse()!.emitMessage({
+        id: 'evt-created',
+        type: 'message.created',
+        payload: {
+          info: { id: 'msg_1', sessionID: 'sess_1', role: 'assistant', time: { created: Date.now() } },
+          parts: [{ id: 'p_1', type: 'text', text: 'Hi', messageID: 'msg_1' }],
+        },
+      });
+    });
+    await waitFor(() => {
+      expect(partTextsFromUpdaters().some((t) => t.includes('Hi'))).toBe(true);
+    });
+
+    act(() => {
+      handle.sse()!.emitMessage({
+        id: 'evt-delta',
+        type: 'message.part.delta',
+        payload: {
+          sessionID: 'sess_1',
+          partID: 'p_1',
+          messageID: 'msg_1',
+          field: 'text',
+          delta: ' there',
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(partTextsFromUpdaters().some((t) => t.includes('Hi there'))).toBe(true);
+    });
+  });
+
+  it('appends streamed tool output from documented OpenCode payload events', async () => {
+    const handle = renderSessionPage({ sessionId: 'sess_1' });
+    await flushPromises();
+    await waitFor(() => expect(handle.sse()).toBeDefined());
+
+    const seedDetail = {
+      session: {} as never,
+      messages: [],
+      parts: [],
+      totalMessages: 0,
+    };
+    const partOutputsFromUpdaters = () => {
+      const calls = handle.store.updateCachedSession.mock.calls;
+      return calls.flatMap((call) => {
+        const [, updater] = call as [string, (prev: typeof seedDetail) => { parts: { data: unknown }[] }];
+        return updater(seedDetail).parts.map((p) => {
+          const data = typeof p.data === 'string' ? JSON.parse(p.data) : p.data;
+          return (data as { state?: { output?: string } })?.state?.output ?? '';
+        });
+      });
+    };
+
+    handle.store.updateCachedSession.mockClear();
+    act(() => {
+      handle.sse()!.open();
+      handle.sse()!.emitMessage({
+        id: 'evt-tool',
+        type: 'message.part.updated',
+        payload: {
+          id: 'p_tool',
+          sessionID: 'sess_1',
+          messageID: 'msg_1',
+          type: 'tool',
+          tool: 'bash',
+          state: {
+            status: 'running',
+            input: { command: 'for i in 1 2; do echo $i; sleep 1; done' },
+            output: '',
+          },
+        },
+      });
+    });
+    await waitFor(() => {
+      expect(partOutputsFromUpdaters()).toContain('');
+    });
+
+    act(() => {
+      handle.sse()!.emitMessage({
+        id: 'evt-tool-delta',
+        type: 'message.part.delta',
+        payload: {
+          sessionID: 'sess_1',
+          partID: 'p_tool',
+          messageID: 'msg_1',
+          field: 'state.output',
+          delta: 'line 1\n',
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(partOutputsFromUpdaters().some((out) => out.includes('line 1'))).toBe(true);
+    });
+  });
+
+  it('accepts OpenCode global payload wrappers for running bash metadata output', async () => {
+    const handle = renderSessionPage({ sessionId: 'sess_1' });
+    await flushPromises();
+    await waitFor(() => expect(handle.sse()).toBeDefined());
+
+    const seedDetail = {
+      session: {} as never,
+      messages: [],
+      parts: [],
+      totalMessages: 0,
+    };
+    const metadataOutputsFromUpdaters = () => {
+      const calls = handle.store.updateCachedSession.mock.calls;
+      return calls.flatMap((call) => {
+        const [, updater] = call as [string, (prev: typeof seedDetail) => { parts: { data: unknown }[] }];
+        return updater(seedDetail).parts.map((p) => {
+          const data = typeof p.data === 'string' ? JSON.parse(p.data) : p.data;
+          return (data as { state?: { metadata?: { output?: string } } })?.state?.metadata?.output ?? '';
+        });
+      });
+    };
+
+    handle.store.updateCachedSession.mockClear();
+    act(() => {
+      handle.sse()!.open();
+      handle.sse()!.emitMessage({
+        type: 'event',
+        payload: {
+          type: 'message.part.updated',
+          properties: {
+            part: {
+              id: 'p_tool',
+              sessionID: 'sess_1',
+              messageID: 'msg_1',
+              type: 'tool',
+              tool: 'bash',
+              state: {
+                status: 'running',
+                input: { command: 'ping -c 6 8.8.8.8' },
+                metadata: { output: '64 bytes from 8.8.8.8: icmp_seq=0\n' },
+              },
+            },
+          },
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(metadataOutputsFromUpdaters().some((out) => out.includes('icmp_seq=0'))).toBe(true);
+    });
+  });
+
   it('renders a tool part embedded in message.created without a refresh', async () => {
     // Regression: tool blocks (including `question` prompts) arrive
     // exclusively via the embedded `parts` snapshot on

@@ -813,6 +813,24 @@ describe('convertMessages', () => {
     expect(tc!.argsText).toMatch(/^running\n@time:2000,0\nsleep 10$/);
   });
 
+  it('renders live bash output from OpenCode running-tool metadata', () => {
+    const m = makeMessage('m', { role: 'assistant' });
+    const out = convertMessages([m], [
+      makePart('m', {
+        type: 'tool',
+        tool: 'bash',
+        state: {
+          status: 'running',
+          input: { command: 'ping -c 6 8.8.8.8' },
+          metadata: { output: '64 bytes from 8.8.8.8: icmp_seq=0\n' },
+        },
+      } as PartData, '', 2000),
+    ]);
+    const tc = asContentArray(out[0].content).find((i) => i.type === 'tool-call') as { result?: string } | undefined;
+    expect(tc).toBeDefined();
+    expect(tc!.result).toContain('icmp_seq=0');
+  });
+
   it('uses next tool part timeCreated as completedAt when multiple tools exist', () => {
     const m = makeMessage('m', { role: 'assistant', time: { created: 1000, completed: 10000 } });
     const out = convertMessages([m], [

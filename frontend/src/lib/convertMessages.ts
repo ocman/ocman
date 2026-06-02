@@ -424,6 +424,13 @@ export function createConvertMessages(): ConvertMessagesFn {
       return userExecutedToolSuffix(toolName);
     }
 
+    function toolOutput(st: NonNullable<PartData['state']>): string {
+      const output = st.output ?? st.metadata?.output;
+      if (typeof output === 'string') return truncate(output, 5000);
+      if (output != null) return truncate(JSON.stringify(output, null, 2), 5000);
+      return '';
+    }
+
     msgParts.forEach((pd, partIdx) => {
       // Skip non-renderable lifecycle parts
       if (pd.type === 'step-start' || pd.type === 'step-finish' || pd.type === 'snapshot') return;
@@ -631,10 +638,8 @@ export function createConvertMessages(): ConvertMessagesFn {
               result: undefined,
             });
             break;
-          } else if (typeof st.output === 'string') {
-            resultText = truncate(st.output, 5000);
-          } else if (st.output != null) {
-            resultText = truncate(JSON.stringify(st.output, null, 2), 5000);
+          } else {
+            resultText = toolOutput(st);
           }
 
           toolCalls.push({
@@ -699,12 +704,7 @@ export function createConvertMessages(): ConvertMessagesFn {
             const s = JSON.stringify(input, null, 2);
             if (s !== '{}') argsText = s;
           }
-          let resultText = '';
-          if (typeof st.output === 'string') {
-            resultText = truncate(st.output, 5000);
-          } else if (st.output != null) {
-            resultText = truncate(JSON.stringify(st.output, null, 2), 5000);
-          }
+          const resultText = toolOutput(st);
           toolCalls.push({
             type: 'tool-call' as const,
             toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,

@@ -186,6 +186,7 @@ export interface PartData {
     title?: string;
     metadata?: {
       description?: string;
+      output?: unknown;
       // Edit/Write tools include a filediff with the full file before/after
       // the change. We use this to render a diff with surrounding context
       // beyond what oldString/newString alone would show.

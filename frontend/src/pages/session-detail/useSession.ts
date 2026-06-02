@@ -133,6 +133,18 @@ const DEFAULT_PAGE_SIZE = 30;
 const WORK_BUMP_THROTTLE_MS = 100;
 const DEBUG_RING_SIZE = 50;
 
+function normalizeSseEnvelope(event: SseEvent): SseEvent {
+  if (event.properties) return event;
+  const raw = event as unknown as Record<string, unknown>;
+  const payload = raw.payload;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return event;
+  const payloadEvent = payload as Record<string, unknown>;
+  if (typeof payloadEvent.type === 'string' && payloadEvent.properties && typeof payloadEvent.properties === 'object') {
+    return payloadEvent as unknown as SseEvent;
+  }
+  return { ...event, properties: payload as Record<string, unknown> };
+}
+
 /**
  * Default fetcher — wraps `api.session`. Pagination shape mirrors
  * what useApiStore.getSession exposed; we hit the raw module helper
@@ -495,7 +507,7 @@ export function useSession(
         }
         let parsed: SseEvent;
         try {
-          parsed = JSON.parse(raw) as SseEvent;
+          parsed = normalizeSseEnvelope(JSON.parse(raw) as SseEvent);
         } catch {
           return;
         }
@@ -574,7 +586,7 @@ export function useSession(
         }
         let parsed: SseEvent;
         try {
-          parsed = JSON.parse(raw) as SseEvent;
+          parsed = normalizeSseEnvelope(JSON.parse(raw) as SseEvent);
         } catch {
           return;
         }

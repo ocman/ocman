@@ -726,7 +726,8 @@ function reduceMessageSnapshot(state: SessionView, event: SseEvent): SessionView
 }
 
 function reducePartSnapshot(state: SessionView, props: Record<string, unknown>): SessionView {
-  const rawPart = props.part as Record<string, unknown> | undefined;
+  const rawPart = props.part as Record<string, unknown> | undefined
+    || (typeof props.id === 'string' ? props : undefined);
   const messageId = (rawPart?.messageID as string | undefined) || (rawPart?.messageId as string | undefined);
   if (!rawPart || typeof rawPart.id !== 'string' || typeof messageId !== 'string') {
     return state;
