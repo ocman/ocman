@@ -831,6 +831,21 @@ describe('convertMessages', () => {
     expect(tc!.result).toContain('icmp_seq=0');
   });
 
+  it('keeps full bash output so expanded tool cards can show it', () => {
+    const longOutput = `${'x'.repeat(6000)}\nfinal line`;
+    const m = makeMessage('m', { role: 'assistant' });
+    const out = convertMessages([m], [
+      makePart('m', {
+        type: 'tool',
+        tool: 'bash',
+        state: { status: 'completed', input: { command: 'yes | head' }, output: longOutput },
+      } as PartData, '', 2000),
+    ]);
+    const tc = asContentArray(out[0].content).find((i) => i.type === 'tool-call') as { result?: string } | undefined;
+    expect(tc).toBeDefined();
+    expect(tc!.result).toBe(longOutput);
+  });
+
   it('uses next tool part timeCreated as completedAt when multiple tools exist', () => {
     const m = makeMessage('m', { role: 'assistant', time: { created: 1000, completed: 10000 } });
     const out = convertMessages([m], [

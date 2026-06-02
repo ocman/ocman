@@ -869,6 +869,7 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: raw
   const title = parsedTitle || toolName;
 
   const isLong = outputDisplay.length > 500 || (detail && detail.length > 300);
+  const outputPreview = toolOutputPreview(outputDisplay, expanded);
 
   // Detect TodoWrite tool calls and render as a checklist
   const isTodo = toolName === 'mcp_todowrite' || toolName === 'todowrite' || toolName === 'TodoWrite';
@@ -928,7 +929,7 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: raw
           <div className="oc-tool-content" onClick={() => !expanded && !diffPayload && setExpanded(true)} style={!expanded && !diffPayload ? { cursor: 'pointer' } : undefined}>
             {diffPayload
               ? <div className="oc-tool-output"><InlineDiff payload={diffPayload} /></div>
-              : <pre className="oc-tool-pre oc-tool-output">{outputDisplay}</pre>
+              : <pre className="oc-tool-pre oc-tool-output">{outputPreview}</pre>
             }
             {!expanded && !diffPayload && isLong && (
               <div className="oc-tool-expand">Click to expand</div>
@@ -946,6 +947,7 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: raw
     // Auto-expand while the command is running so output streams visibly.
     const isRunningWithOutput = toolStatus === 'running' && !!outputDisplay;
     const bashExpanded = expanded || isRunningWithOutput;
+    const bashOutputDisplay = toolOutputPreview(outputDisplay, bashExpanded);
     return (
       <div className={`oc-tool oc-tool-shell ${userExecutedTool ? 'oc-tool-shell-user' : ''} ${statusClass} ${bashExpanded ? 'oc-tool-expanded' : ''}`}>
         <div className="oc-tool-header" onClick={() => setExpanded(!expanded)}>
@@ -955,7 +957,7 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: raw
         </div>
         <div className="oc-tool-content" onClick={() => !bashExpanded && setExpanded(true)} style={!bashExpanded ? { cursor: 'pointer' } : undefined}>
           <pre className="oc-shell-block">
-{command && <><span className="oc-shell-prompt">$</span> <span className="oc-shell-cmd">{command}</span>{outputDisplay ? '\n' : ''}</>}{outputDisplay && <AnsiText text={outputDisplay} />}
+{command && <><span className="oc-shell-prompt">$</span> <span className="oc-shell-cmd">{command}</span>{bashOutputDisplay ? '\n' : ''}</>}{bashOutputDisplay && <AnsiText text={bashOutputDisplay} />}
           </pre>
           {userExecutedTool && (
             <div className="oc-shell-attribution">The following tool was executed by the user</div>
@@ -979,7 +981,7 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: raw
         <div className="oc-tool-content" onClick={() => !expanded && setExpanded(true)} style={!expanded ? { cursor: 'pointer' } : undefined}>
           {detail && <pre className="oc-tool-pre">{detail}</pre>}
           {outputDisplay && (
-            <pre className="oc-tool-pre oc-tool-output">{renderOutput(outputDisplay)}</pre>
+            <pre className="oc-tool-pre oc-tool-output">{renderOutput(outputPreview)}</pre>
           )}
           {!expanded && isLong && (
             <div className="oc-tool-expand">
@@ -1005,6 +1007,13 @@ const ASSISTANT_PART_COMPONENTS = {
   tools: { Fallback: ToolCallDisplay },
 };
 const THREAD_MESSAGE_COMPONENTS = { UserMessage, AssistantMessage };
+
+const TOOL_OUTPUT_PREVIEW_CHARS = 5000;
+
+function toolOutputPreview(output: string, expanded: boolean): string {
+  if (expanded || output.length <= TOOL_OUTPUT_PREVIEW_CHARS) return output;
+  return `${output.slice(0, TOOL_OUTPUT_PREVIEW_CHARS)}\n... (${output.length} chars total)`;
+}
 
 export function AssistantThread({ hasMore, loadingMore, onLoadMore, composer, footer }: { hasMore?: boolean; loadingMore?: boolean; onLoadMore?: () => void; composer?: React.ReactNode; footer?: React.ReactNode }) {
   trackRender('AssistantThread');

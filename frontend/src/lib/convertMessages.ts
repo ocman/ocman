@@ -426,8 +426,8 @@ export function createConvertMessages(): ConvertMessagesFn {
 
     function toolOutput(st: NonNullable<PartData['state']>): string {
       const output = st.output ?? st.metadata?.output;
-      if (typeof output === 'string') return truncate(output, 5000);
-      if (output != null) return truncate(JSON.stringify(output, null, 2), 5000);
+      if (typeof output === 'string') return output;
+      if (output != null) return JSON.stringify(output, null, 2);
       return '';
     }
 
