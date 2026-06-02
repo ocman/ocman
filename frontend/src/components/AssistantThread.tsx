@@ -783,7 +783,7 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: raw
           <div className="oc-tool-content" onClick={() => !taskExpanded && setTaskExpanded(true)} style={!taskExpanded ? { cursor: 'pointer' } : undefined}>
             <EmbeddedThread messages={subMessages} parts={subParts} />
             {!taskExpanded && (
-              <div className="oc-tool-expand">Click to expand</div>
+              <div className="oc-tool-expand">Click to expand full output</div>
             )}
           </div>
         )}
@@ -963,7 +963,7 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: raw
             <div className="oc-shell-attribution">The following tool was executed by the user</div>
           )}
           {!bashExpanded && isLong && (
-            <div className="oc-tool-expand">Click to expand</div>
+            <div className="oc-tool-expand">Click to expand full output</div>
           )}
         </div>
       </div>
@@ -985,7 +985,7 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: raw
           )}
           {!expanded && isLong && (
             <div className="oc-tool-expand">
-              Click to expand
+              Click to expand full output
             </div>
           )}
         </div>

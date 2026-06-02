@@ -1343,6 +1343,45 @@ test('user message after a shell command is NOT flagged as queued', async ({ moc
   await expect(secondUserMsg).not.toHaveClass(/oc-msg-queued/);
 });
 
+test('long shell output expands from preview to full output', async ({ mockedPage: page }) => {
+  const sessionId = MOCK_SESSION.id;
+  const now = Date.now();
+  const fullOutput = `${'x'.repeat(6000)}\nfull-output-sentinel`;
+
+  await page.route(new RegExp(`/api/session/${sessionId}(\\?|$)`), (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        session: { ...MOCK_SESSION, status: 'waiting' },
+        messages: [{
+          id: 'a-long-shell', sessionId, timeCreated: now,
+          data: { role: 'assistant', time: { created: now, completed: now + 500 } },
+        }],
+        parts: [{
+          id: 'p-long-shell', sessionId, messageId: 'a-long-shell', timeCreated: now,
+          data: {
+            type: 'tool',
+            tool: 'bash',
+            state: { status: 'completed', input: { command: 'long-output-command' }, output: fullOutput },
+          },
+        }],
+        totalMessages: 1,
+      }),
+    }),
+  );
+
+  await page.goto(SESSION_URL);
+  await expect(page.getByTestId('session-layout')).toBeVisible();
+  await expect(page.getByText('... (6021 chars total)')).toBeVisible();
+  await expect(page.getByText('full-output-sentinel')).toHaveCount(0);
+
+  await page.getByText('Click to expand').click();
+
+  await expect(page.getByText('full-output-sentinel')).toBeVisible();
+  await expect(page.getByText('... (6021 chars total)')).toHaveCount(0);
+});
+
 test('multiple user messages after shell commands do NOT cascade as queued', async ({ mockedPage: page }) => {
   // Regression: after a shell command, every subsequent user message
   // was incorrectly flagged as queued because the shell-command
