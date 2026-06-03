@@ -68,7 +68,7 @@ describe('MessageBookmarksPane', () => {
     expect(previews[1]).toHaveTextContent('other bookmark');
   });
 
-  it('renders the full row text and relies on CSS for ten-line clamping', () => {
+  it('renders the full preview text and relies on CSS for line clamping', () => {
     const preview = Array.from({ length: 12 }, (_, i) => `line ${i + 1}`).join('\n');
     const { container } = render(
       <MessageBookmarksPane
@@ -81,13 +81,13 @@ describe('MessageBookmarksPane', () => {
 
     const previewEl = container.querySelector('.oc-bookmark-row-preview');
     expect(previewEl).toHaveTextContent('line 1');
-    expect(previewEl).toHaveTextContent('line 10');
+    expect(previewEl).toHaveTextContent('line 5');
     expect(previewEl).toHaveTextContent('line 12');
   });
 
-  it('clicking a row scrolls directly without rendering an in-tab preview action', () => {
+  it('clicking a row toggles its expanded state without scrolling', () => {
     const onScrollToMessage = vi.fn();
-    const target = bookmark({ id: 'msg_target', preview: 'go here' });
+    const target = bookmark({ id: 'msg_target', preview: 'expand me' });
     render(
       <MessageBookmarksPane
         groups={[group({ bookmarks: [target] })]}
@@ -97,16 +97,21 @@ describe('MessageBookmarksPane', () => {
       />,
     );
 
-    expect(screen.queryByText('Scroll to message')).not.toBeInTheDocument();
-    const row = screen.getByText('go here').closest('.oc-bookmark-row');
-    expect(row).not.toBeNull();
+    const row = screen.getByText('expand me').closest('.oc-bookmark-row') as HTMLElement;
     expect(row).toHaveClass('active');
-    fireEvent.click(row as HTMLElement);
+    expect(row).not.toHaveClass('expanded');
+    expect(row).toHaveAttribute('aria-expanded', 'false');
 
-    expect(onScrollToMessage).toHaveBeenCalledWith(target);
+    fireEvent.click(row);
+    expect(row).toHaveClass('expanded');
+    expect(row).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(row);
+    expect(row).not.toHaveClass('expanded');
+    expect(onScrollToMessage).not.toHaveBeenCalled();
   });
 
-  it('supports keyboard row activation', () => {
+  it('toggles expansion via keyboard activation', () => {
     const onScrollToMessage = vi.fn();
     const target = bookmark({ id: 'msg_key', preview: 'keyboard target' });
     render(
@@ -120,13 +125,32 @@ describe('MessageBookmarksPane', () => {
 
     const row = screen.getByText('keyboard target').closest('.oc-bookmark-row') as HTMLElement;
     fireEvent.keyDown(row, { key: 'Enter' });
+    expect(row).toHaveClass('expanded');
     fireEvent.keyDown(row, { key: ' ' });
-
-    expect(onScrollToMessage).toHaveBeenCalledTimes(2);
-    expect(onScrollToMessage).toHaveBeenLastCalledWith(target);
+    expect(row).not.toHaveClass('expanded');
+    expect(onScrollToMessage).not.toHaveBeenCalled();
   });
 
-  it('removes a bookmark from the hover delete button without scrolling', () => {
+  it('navigates to the bookmark via the inline "Go to" button without toggling the row', () => {
+    const onScrollToMessage = vi.fn();
+    const target = bookmark({ id: 'msg_goto', preview: 'jump here' });
+    render(
+      <MessageBookmarksPane
+        groups={[group({ bookmarks: [target] })]}
+        selectedKey={null}
+        onRemove={vi.fn()}
+        onScrollToMessage={onScrollToMessage}
+      />,
+    );
+
+    const row = screen.getByText('jump here').closest('.oc-bookmark-row') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: 'Go to bookmark' }));
+
+    expect(onScrollToMessage).toHaveBeenCalledWith(target);
+    expect(row).not.toHaveClass('expanded');
+  });
+
+  it('removes a bookmark from the inline delete button without scrolling or toggling', () => {
     const onRemove = vi.fn();
     const onScrollToMessage = vi.fn();
     const target = bookmark({ id: 'msg_remove', preview: 'remove me' });
@@ -144,5 +168,6 @@ describe('MessageBookmarksPane', () => {
 
     expect(onRemove).toHaveBeenCalledWith(target);
     expect(onScrollToMessage).not.toHaveBeenCalled();
+    expect(row).not.toHaveClass('expanded');
   });
 });

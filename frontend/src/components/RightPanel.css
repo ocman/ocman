@@ -165,10 +165,10 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   width: calc(100% - 24px);
   margin: 0 12px;
-  padding: 9px 12px;
+  padding: 10px 12px;
   border: 0;
   border-top: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
   background: transparent;
@@ -187,11 +187,19 @@
   box-shadow: inset 3px 0 0 var(--accent4);
 }
 
+.oc-bookmark-row-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .oc-bookmark-row-meta {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
+  flex: 1;
   font-family: 'SF Mono', Consolas, monospace;
   font-size: 10px;
   color: var(--accent4);
@@ -206,6 +214,41 @@
   color: var(--overlay0);
 }
 
+.oc-bookmark-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.oc-bookmark-row-action {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--bg-card);
+  color: var(--text-dim);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.oc-bookmark-row-action:hover {
+  background: color-mix(in srgb, var(--accent4) 12%, var(--bg-card));
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent4) 45%, var(--border));
+}
+
+.oc-bookmark-row-remove:hover {
+  background: color-mix(in srgb, var(--danger) 12%, var(--bg-card));
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+
 .oc-bookmark-row-preview {
   min-width: 0;
   overflow: hidden;
@@ -214,35 +257,10 @@
   white-space: pre-wrap;
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 10;
+  -webkit-line-clamp: 5;
 }
 
-.oc-bookmark-row-remove {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 0;
-  background: var(--bg-card);
-  color: var(--text-dim);
-  opacity: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-}
-
-.oc-bookmark-row:hover .oc-bookmark-row-remove,
-.oc-bookmark-row:focus-within .oc-bookmark-row-remove {
-  opacity: 1;
-}
-
-.oc-bookmark-row-remove:hover {
-  background: color-mix(in srgb, var(--danger) 12%, var(--bg-card));
-  color: var(--danger);
-  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+.oc-bookmark-row.expanded .oc-bookmark-row-preview {
+  display: block;
+  -webkit-line-clamp: unset;
 }
