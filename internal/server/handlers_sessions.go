@@ -851,6 +851,16 @@ func (s *Server) handleSessionAutoApproveGet(w http.ResponseWriter, r *http.Requ
 
 // handleSessionAutoApproveSet handles POST /api/session/{id}/auto-approve.
 // Body: {"enabled": true|false}
+//
+// When toggling from disabled to enabled, the handler additionally
+// kicks off the auto-approve judge for any *already-pending* permission
+// in this session. Without this, a user who sees a permission prompt
+// and only then clicks "Enable auto-approve" would be stuck on the
+// "starting…" UI forever: the original permission.asked event already
+// fired (and was discarded because auto-approve was off at the time),
+// no new event ever arrives for the same prompt, and the frontend
+// doesn't refetch permissions on toggle. See
+// PermissionPrompt.tsx fallback at "Auto-approve on · starting…".
 func (s *Server) handleSessionAutoApproveSet(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Enabled bool `json:"enabled"`
@@ -863,8 +873,47 @@ func (s *Server) handleSessionAutoApproveSet(w http.ResponseWriter, r *http.Requ
 			serverError(w, "setting auto-approve state", err)
 			return
 		}
+		// When enabling, resurrect any pending permissions so the judge
+		// runs on prompts that arrived while auto-approve was off.
+		// ensureAutoApprove dedups against in-flight goroutines and
+		// recorded verdicts, so this is safe to call unconditionally.
+		// Errors here are non-fatal — the toggle itself succeeded; at
+		// worst the user still has to answer the existing prompt
+		// manually.
+		if req.Enabled {
+			s.resumeAutoApproveForPending(r.Context(), adapter, sessionID)
+		}
 		w.WriteHeader(http.StatusNoContent)
 	})
+}
+
+// resumeAutoApproveForPending lists every pending permission for the
+// session and kicks off ensureAutoApprove on each. Called from the
+// auto-approve enable path so prompts that arrived while auto-approve
+// was off get judged as soon as the user opts in.
+//
+// Errors listing permissions are logged but otherwise swallowed: the
+// caller is the toggle handler, which has already persisted the new
+// state and must not fail on a best-effort resurrection.
+func (s *Server) resumeAutoApproveForPending(ctx context.Context, adapter platforms.Platform, sessionID string) {
+	entries, err := adapter.ListPermissions(ctx, sessionID)
+	if err != nil {
+		log.WithError(err).WithFields(log.Fields{
+			"sessionID": sessionID,
+			"platform":  adapter.ID(),
+		}).Warn("auto-approve toggle: failed to list pending permissions for resume")
+		return
+	}
+	for _, entry := range entries {
+		permissionID, _ := entry["id"].(string)
+		permission, _ := entry["permission"].(string)
+		if permissionID == "" || permission == "" {
+			continue
+		}
+		patterns := extractPermissionPatterns(entry)
+		metadata := extractPermissionMetadata(entry)
+		s.ensureAutoApprove(adapter.ID(), adapter, sessionID, permissionID, permission, patterns, metadata)
+	}
 }
 
 // handleSessionApprovedPermissions handles GET /api/session/{id}/approved-permissions.

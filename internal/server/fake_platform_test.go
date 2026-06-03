@@ -54,6 +54,11 @@ type fakePlatform struct {
 	// background pipeline invoked the adapter to clear a pending
 	// permission without ever calling the LLM judge.
 	respondPermissionFn func(req platforms.RespondPermissionRequest) error
+	// listPermissionsFn, when non-nil, intercepts ListPermissions
+	// calls — used by the auto-approve enable-toggle test to drive a
+	// pending prompt through the resume-on-enable path without
+	// needing a real OpenCode instance.
+	listPermissionsFn func(sessionID string) ([]platforms.LivePrompt, error)
 }
 
 func (f *fakePlatform) ID() platforms.ID {
@@ -134,7 +139,10 @@ func (f *fakePlatform) SessionModels(context.Context, string) (*platforms.Sessio
 	return nil, nil
 }
 
-func (f *fakePlatform) ListPermissions(context.Context, string) ([]platforms.LivePrompt, error) {
+func (f *fakePlatform) ListPermissions(_ context.Context, sessionID string) ([]platforms.LivePrompt, error) {
+	if f.listPermissionsFn != nil {
+		return f.listPermissionsFn(sessionID)
+	}
 	return nil, nil
 }
 
