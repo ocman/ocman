@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect } from 'react';
 
 export interface HeaderInfo {
+  /** Session id the header metadata belongs to. Used to avoid showing stale session context after route changes. */
+  sessionId?: string;
   sessionTitle?: string;
   /**
    * Stable identifier of the coding-agent platform that owns the

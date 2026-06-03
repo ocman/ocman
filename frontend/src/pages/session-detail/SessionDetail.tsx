@@ -774,6 +774,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     if (!session) return;
     const s = session;
     setInfo({
+      sessionId: s.id,
       sessionTitle: cleanTitle(s.title) || 'Untitled',
       sessionPlatform: s.platform,
       sessionProject: shortPath(s.directory),

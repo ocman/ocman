@@ -45,20 +45,24 @@ function Header() {
   const location = useLocation();
   const path = location.pathname;
   const { info } = useHeaderInfo();
+  const routeSessionId = path.startsWith('/session/')
+    ? decodeURIComponent(path.slice('/session/'.length).split('/')[0])
+    : undefined;
+  const sessionInfo = routeSessionId && info.sessionId === routeSessionId ? info : {};
 
   let breadcrumb: React.ReactNode = '';
-  if (path.startsWith('/session/')) {
+  if (routeSessionId) {
     breadcrumb = (
       <>
-        {info.sessionTitle && (
+        {sessionInfo.sessionTitle && (
           <>
             {' / '}
-            {info.sessionPlatform && (
+            {sessionInfo.sessionPlatform && (
               <>
-                <PlatformBadge platform={info.sessionPlatform} />{' '}
+                <PlatformBadge platform={sessionInfo.sessionPlatform} />{' '}
               </>
             )}
-            {info.sessionTitle}
+            {sessionInfo.sessionTitle}
           </>
         )}
       </>
@@ -80,12 +84,12 @@ function Header() {
         <Link to="/" style={{ color: 'inherit', textDecoration: 'none' }}>ocman</Link>{' '}
         <span>{breadcrumb}</span>
       </h1>
-      {path.startsWith('/session/') && info.sessionProject && (
+      {routeSessionId && sessionInfo.sessionProject && (
         <span
           className="header-project"
-          title={info.sessionProjectFull || info.sessionProject}
+          title={sessionInfo.sessionProjectFull || sessionInfo.sessionProject}
         >
-          {info.sessionProject}
+          {sessionInfo.sessionProject}
         </span>
       )}
     </header>
