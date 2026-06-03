@@ -798,10 +798,11 @@ export function SessionDetail({ id }: SessionDetailProps) {
           tmuxAvailable: tmux.available,
           onStatusChange: setCreateLaunchStatus,
         },
-        { directory, title },
+        { directory, fallbackDirectory: projectRootForDirectory(directory), title },
       );
       if (res.id) {
-        seedNewSession(res.id, directory, session?.platform ?? '', title);
+        const sessionDirectory = res.directory ?? directory;
+        seedNewSession(res.id, sessionDirectory, session?.platform ?? '', title);
         navigateToSession(res.id);
       }
     } catch (e) {

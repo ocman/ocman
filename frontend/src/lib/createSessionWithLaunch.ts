@@ -35,6 +35,7 @@ export interface CreateSessionWithLaunchDeps {
 
 export interface CreateSessionWithLaunchOptions {
   directory: string;
+  fallbackDirectory?: string;
   platform?: string;
   title?: string;
   /**
@@ -63,9 +64,30 @@ function sleep(ms: number): Promise<void> {
 export async function createSessionWithLaunch(
   deps: CreateSessionWithLaunchDeps,
   opts: CreateSessionWithLaunchOptions,
-): Promise<{ id: string }> {
+): Promise<{ id: string; directory?: string }> {
   const { createSession, launchOpencodeInTmux, tmuxAvailable, onStatusChange } = deps;
-  const { directory, platform, title, alreadyLaunched } = opts;
+  const { directory, fallbackDirectory, platform, title, alreadyLaunched } = opts;
+
+  async function retryCreate(targetDirectory: string, err: unknown): Promise<{ id: string }> {
+    onStatusChange?.('retrying');
+    let lastErr: unknown = err;
+    for (const delay of RETRY_DELAYS_MS) {
+      await sleep(delay);
+      try {
+        const res = await createSession(targetDirectory, platform, title);
+        onStatusChange?.('idle');
+        return res;
+      } catch (retryErr) {
+        lastErr = retryErr;
+        // Keep retrying only while we're still seeing "unreachable".
+        // A different error (e.g. auth, validation) means opencode is
+        // up but the request can't succeed — don't spin.
+        if (!isUnreachable(retryErr)) break;
+      }
+    }
+    onStatusChange?.('idle');
+    throw lastErr;
+  }
 
   try {
     return await createSession(directory, platform, title);
@@ -82,6 +104,32 @@ export async function createSessionWithLaunch(
       try {
         await launchOpencodeInTmux(directory);
       } catch (launchErr) {
+        if (fallbackDirectory && fallbackDirectory !== directory) {
+          remoteLog.error('Failed to launch opencode in tmux', launchErr);
+
+          try {
+            const res = await createSession(fallbackDirectory, platform, title);
+            onStatusChange?.('idle');
+            return { ...res, directory: fallbackDirectory };
+          } catch (fallbackErr) {
+            if (!isUnreachable(fallbackErr)) {
+              onStatusChange?.('idle');
+              throw fallbackErr;
+            }
+          }
+
+          try {
+            await launchOpencodeInTmux(fallbackDirectory);
+          } catch (fallbackLaunchErr) {
+            onStatusChange?.('idle');
+            remoteLog.error('Failed to launch opencode in fallback tmux directory', fallbackLaunchErr);
+            throw err;
+          }
+
+          const res = await retryCreate(fallbackDirectory, err);
+          return { ...res, directory: fallbackDirectory };
+        }
+
         onStatusChange?.('idle');
         // Fall through to rethrow the original "unreachable" error so
         // the UI's error message still matches what the user requested.
@@ -90,23 +138,6 @@ export async function createSessionWithLaunch(
       }
     }
 
-    onStatusChange?.('retrying');
-    let lastErr: unknown = err;
-    for (const delay of RETRY_DELAYS_MS) {
-      await sleep(delay);
-      try {
-        const res = await createSession(directory, platform, title);
-        onStatusChange?.('idle');
-        return res;
-      } catch (retryErr) {
-        lastErr = retryErr;
-        // Keep retrying only while we're still seeing "unreachable".
-        // A different error (e.g. auth, validation) means opencode is
-        // up but the request can't succeed — don't spin.
-        if (!isUnreachable(retryErr)) break;
-      }
-    }
-    onStatusChange?.('idle');
-    throw lastErr;
+    return retryCreate(directory, err);
   }
 }

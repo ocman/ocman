@@ -100,6 +100,59 @@ describe('createSessionWithLaunch', () => {
     expect(createSession).toHaveBeenCalledTimes(1);
   });
 
+  it('falls back to an active main project after the requested directory launch fails', async () => {
+    const createSession = vi
+      .fn()
+      .mockRejectedValueOnce(unreachable())
+      .mockResolvedValueOnce({ id: 'main-id' });
+    const launchOpencodeInTmux = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('directory missing'));
+    const statuses: LaunchStatus[] = [];
+
+    const res = await createSessionWithLaunch(
+      {
+        createSession,
+        launchOpencodeInTmux,
+        tmuxAvailable: true,
+        onStatusChange: (s) => statuses.push(s),
+      },
+      { directory: '/tmp/.worktrees/repo/deleted', fallbackDirectory: '/tmp/repo' },
+    );
+
+    expect(res).toEqual({ id: 'main-id', directory: '/tmp/repo' });
+    expect(createSession).toHaveBeenNthCalledWith(1, '/tmp/.worktrees/repo/deleted', undefined, undefined);
+    expect(createSession).toHaveBeenNthCalledWith(2, '/tmp/repo', undefined, undefined);
+    expect(launchOpencodeInTmux).toHaveBeenCalledTimes(1);
+    expect(launchOpencodeInTmux).toHaveBeenCalledWith('/tmp/.worktrees/repo/deleted');
+    expect(statuses).toEqual(['launching', 'idle']);
+  });
+
+  it('starts opencode in the fallback directory when no active instance exists there', async () => {
+    const createSession = vi
+      .fn()
+      .mockRejectedValueOnce(unreachable())
+      .mockRejectedValueOnce(unreachable())
+      .mockResolvedValueOnce({ id: 'main-id' });
+    const launchOpencodeInTmux = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('directory missing'))
+      .mockResolvedValueOnce({ session: 'main' });
+
+    const promise = createSessionWithLaunch(
+      { createSession, launchOpencodeInTmux, tmuxAvailable: true },
+      { directory: '/tmp/.worktrees/repo/deleted', fallbackDirectory: '/tmp/repo' },
+    );
+
+    await vi.runAllTimersAsync();
+    const res = await promise;
+
+    expect(res).toEqual({ id: 'main-id', directory: '/tmp/repo' });
+    expect(launchOpencodeInTmux).toHaveBeenNthCalledWith(1, '/tmp/.worktrees/repo/deleted');
+    expect(launchOpencodeInTmux).toHaveBeenNthCalledWith(2, '/tmp/repo');
+    expect(createSession).toHaveBeenNthCalledWith(3, '/tmp/repo', undefined, undefined);
+  });
+
   it('retries without launching when alreadyLaunched=true and tmux is unavailable', async () => {
     // /wt path: the worktree backend has already started opencode in
     // a tmux window; we must not call launchOpencodeInTmux a second

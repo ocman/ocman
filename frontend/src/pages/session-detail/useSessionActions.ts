@@ -15,6 +15,7 @@ import { useApiStore } from '../../lib/apiStore';
 import { openVSCode } from '../../lib/shortcuts';
 import type { UsePendingSendResult } from './usePendingSend';
 import { remoteLog } from '../../lib/remoteLog';
+import { projectRootForDirectory } from '../../lib/worktrees';
 
 // Narrowed session shape — only the fields needed by these handlers.
 interface ActionSession {
@@ -306,13 +307,19 @@ export function useSessionActions({
 
     if (command === 'clear') {
       let newId: string | undefined;
+      let newDirectory = session.directory;
       const clearTitle = args.trim() || undefined;
       try {
         const res = await createSessionWithLaunch(
           { createSession, launchOpencodeInTmux, tmuxAvailable, onStatusChange: () => {} },
-          { directory: session.directory, title: clearTitle },
+          {
+            directory: session.directory,
+            fallbackDirectory: projectRootForDirectory(session.directory),
+            title: clearTitle,
+          },
         );
         newId = res.id;
+        newDirectory = res.directory ?? session.directory;
       } catch (e) {
         remoteLog.error('Failed to create session', e);
         return;
@@ -323,7 +330,7 @@ export function useSessionActions({
         remoteLog.error('Failed to archive session', e);
       }
       if (newId) {
-        seedNewSession(newId, session.directory, session.platform, clearTitle);
+        seedNewSession(newId, newDirectory, session.platform, clearTitle);
         navigateToSession(newId);
       }
       return;
