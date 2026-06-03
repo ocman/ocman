@@ -34,6 +34,26 @@ Supports [OpenCode](https://github.com/anomalyco/opencode) and [Claude Code](htt
 Download the latest binary from the [releases page](https://forgejo.nousefreak.be/dries/ocman/releases),
 or build from source with `make build` (requires Go 1.24+ and Node.js 22+).
 
+### macOS desktop app
+
+The releases page also ships `ocman-darwin-arm64.dmg` — a drag-to-Applications
+installer for the native desktop build. The DMG is **not signed or notarized**,
+so macOS Gatekeeper will refuse to open the app on first launch with a
+"cannot be opened because the developer cannot be verified" warning.
+
+To bypass:
+
+1. Open the DMG and drag `ocman.app` to `/Applications`.
+2. In Finder, right-click (or Control-click) `ocman.app` → **Open**.
+3. Confirm **Open** in the dialog. macOS remembers the choice and subsequent
+   launches work normally.
+
+Alternative — strip the quarantine attribute from a terminal:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/ocman.app
+```
+
 For interactive features (composer, permission replies, abort) start OpenCode with an explicit port:
 
 ```sh
