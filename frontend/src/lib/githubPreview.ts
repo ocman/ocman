@@ -82,7 +82,6 @@ export function extractGitHubUrls(text: string): string[] {
 // Backend proxy fetch + shape mapping
 // ---------------------------------------------------------------------------
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function fetchFromBackend(url: string): Promise<GitHubPreviewData> {
   const res = await fetch(
     `/api/integrations/github/preview?url=${encodeURIComponent(url)}`,
