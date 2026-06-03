@@ -183,11 +183,13 @@ describe('extractPendingPermission', () => {
         id: 'p1',
         permission: 'Run shell command?',
         patterns: ['ls *', 1, 'git status'],
+        metadata: { command: 'git status' },
         sessionID: 'sub_1',
       },
     });
     expect(out?.permission).toBe('Run shell command?');
     expect(out?.patterns).toEqual(['ls *', 'git status']); // non-string filtered
+    expect(out?.metadata).toEqual({ command: 'git status' });
     expect(out?.sessionId).toBe('sub_1');
   });
 });

@@ -33,6 +33,18 @@ describe('PermissionPrompt', () => {
     await waitFor(() => expect(onReply).toHaveBeenCalledWith('reject'));
   });
 
+  it('shows the concrete action from permission metadata', () => {
+    render(
+      <PermissionPrompt
+        permission={{ ...permission, metadata: { command: 'git status --short' } }}
+        onReply={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId('permission-action')).toHaveTextContent('Action');
+    expect(screen.getByText('git status --short')).toBeInTheDocument();
+  });
+
   describe('auto-approve footer (server-driven)', () => {
     beforeEach(() => {
       vi.useFakeTimers();

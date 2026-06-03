@@ -16,6 +16,7 @@ export interface PendingPermission {
   permissionId: string;
   permission: string;
   patterns: string[];
+  metadata?: Record<string, unknown>;
   sessionId: string;
   /** Unix-ms timestamp of when this permission prompt was first received.
    *  Used to anchor the auto-approve countdown so it survives session
@@ -197,13 +198,24 @@ export function extractPendingPermission(node: unknown): PendingPermission | nul
     ? rawPatterns.filter((p): p is string => typeof p === 'string')
     : [];
 
+  const metadata = properties.metadata && typeof properties.metadata === 'object' && !Array.isArray(properties.metadata)
+    ? properties.metadata as Record<string, unknown>
+    : undefined;
+
   // sessionID is the (sub)agent that issued the prompt.
   const sessionId =
     (typeof properties.sessionID === 'string' && properties.sessionID) ||
     (typeof properties.sessionId === 'string' && properties.sessionId) ||
     '';
 
-  return { permissionId: id, permission, patterns, sessionId, askedAt: Date.now() };
+  return {
+    permissionId: id,
+    permission,
+    patterns,
+    ...(metadata ? { metadata } : {}),
+    sessionId,
+    askedAt: Date.now(),
+  };
 }
 
 /**

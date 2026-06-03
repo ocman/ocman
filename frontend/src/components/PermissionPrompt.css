@@ -48,6 +48,24 @@
   margin-bottom: 10px;
 }
 
+.oc-permission-action {
+  padding-left: 22px;
+  margin-bottom: 12px;
+}
+
+.oc-permission-action-label {
+  display: block;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+.oc-permission-action-value {
+  display: block;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .oc-permission-patterns {
   padding-left: 4px;
   margin-bottom: 12px;

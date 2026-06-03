@@ -266,6 +266,7 @@ export function useSession(
             id: perm.permissionId,
             permission: perm.permission,
             patterns: perm.patterns,
+            metadata: perm.metadata,
             sessionID: perm.sessionId,
           },
         },

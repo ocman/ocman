@@ -5,6 +5,7 @@ export interface PendingPermission {
   permissionId: string;
   permission: string;
   patterns: string[];
+  metadata?: Record<string, unknown>;
   /** Unix-ms timestamp of when this permission was first received.
    *  Used to anchor the countdown so it survives component remounts. */
   askedAt?: number;
@@ -60,6 +61,21 @@ const CONFIRM_CHOICES: { action: 'confirm' | 'cancel'; label: string }[] = [
   { action: 'cancel', label: 'Cancel' },
 ];
 const CONFIRM_DEFAULT_IDX = 1; // Cancel
+
+function permissionAction(metadata: Record<string, unknown> | undefined): string {
+  if (!metadata) return '';
+  for (const key of ['command', 'filePath', 'path', 'pattern', 'url', 'description']) {
+    const value = metadata[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  const entries = Object.entries(metadata)
+    .filter(([, value]) => value !== undefined && value !== null)
+    .sort(([a], [b]) => a.localeCompare(b));
+  if (entries.length === 0) return '';
+  return entries
+    .map(([key, value]) => `${key}: ${typeof value === 'string' ? value : JSON.stringify(value)}`)
+    .join(', ');
+}
 
 export function PermissionPrompt({
   permission,
@@ -161,6 +177,7 @@ export function PermissionPrompt({
 
   // Effective "checking" state: backend confirmed via SSE.
   const effectiveChecking = autoApproveChecking ?? false;
+  const action = permissionAction(permission.metadata);
 
   // Auto-focus on mount and when the step changes so keys work without a click.
   useLayoutEffect(() => {
@@ -389,6 +406,12 @@ export function PermissionPrompt({
           <div className="oc-permission-desc">
             &larr; {permission.permission}
           </div>
+          {action && (
+            <div className="oc-permission-action" data-testid="permission-action">
+              <span className="oc-permission-action-label">Action</span>
+              <span className="oc-permission-action-value">{action}</span>
+            </div>
+          )}
           {permission.patterns.length > 0 && (
             <div className="oc-permission-patterns">
               <div className="oc-permission-patterns-label">Patterns</div>
