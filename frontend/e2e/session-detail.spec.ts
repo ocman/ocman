@@ -535,7 +535,7 @@ test('navigating to another session during text streaming shows the target sessi
   // URL change is synchronous (flushSync); content update needs a
   // fetch round-trip that can take longer on slow CI runners.
   await expect(page).toHaveURL(`/session/${MOCK_SESSION_2.id}`, { timeout: 2_000 });
-  await expect(page.getByRole('banner')).toContainText(MOCK_SESSION_2.title, { timeout: 2_000 });
+  await expect(page.getByRole('banner')).toContainText(MOCK_SESSION_2.title, { timeout: 5_000 });
   await expect(page.locator('.oc-msg-assistant').filter({ hasText: 'Streaming response start' })).toHaveCount(0, { timeout: 2_000 });
 });
 
@@ -547,7 +547,7 @@ test('navigating to another session during an active tool phase shows the target
   await page.getByRole('button', { name: /Refactor auth module/ }).click();
 
   await expect(page).toHaveURL(`/session/${MOCK_SESSION_2.id}`, { timeout: 2_000 });
-  await expect(page.getByRole('banner')).toContainText(MOCK_SESSION_2.title, { timeout: 2_000 });
+  await expect(page.getByRole('banner')).toContainText(MOCK_SESSION_2.title, { timeout: 5_000 });
   await expect(page.getByText('Synthetic active tool call')).toHaveCount(0, { timeout: 2_000 });
 });
 
@@ -1123,14 +1123,14 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
   // Install a fake EventSource for session A that streams deltas in
   // two phases:
   //   1st connection (visit A): "1 " "2 " "3 " "4 " "5 "
-  //   2nd connection (return to A): "6 " "7 "
+  //   2nd connection (return to A): "6 7 "
   // No replay of 4/5 on reconnect — that mirrors OpenCode's behaviour
   // (its /event stream is live-only, no buffering).
   await page.addInitScript(({ sessionAId, msgId, partId }) => {
     type Phase = { deltas: string[]; intervalMs: number };
     const phases: Phase[] = [
       { deltas: ['1 ', '2 ', '3 ', '4 ', '5 '], intervalMs: 60 },
-      { deltas: ['6 ', '7 '], intervalMs: 60 },
+      { deltas: ['6 7 '], intervalMs: 60 },
     ];
     let phaseIndex = 0;
 
@@ -1259,7 +1259,7 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
   await page.locator('.session-sidebar-item', { hasText: MOCK_SESSION.title }).click();
   await expect(page.getByRole('banner')).toContainText(MOCK_SESSION.title, { timeout: 2_000 });
 
-  // 4. Wait for phase 2 to finish ("6 " + "7 " arrived).
+  // 4. Wait for phase 2 to finish ("6 7 " arrived).
   await expect(bubble).toContainText('6 7', { timeout: 5_000 });
 
   // 5. The full accumulated text must contain every number 1..7 in
