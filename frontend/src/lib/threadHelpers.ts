@@ -225,6 +225,115 @@ export function splitToolArgs(toolName: string, rawArgs: string): { title: strin
 }
 
 /**
+ * Priority list of argument keys that are most useful as a one-line
+ * label for a generic / MCP tool call. The first key found in the
+ * args wins. Order matters: things like `target` and `name` are more
+ * identifying than `repo` or `branch`.
+ */
+const SUMMARY_PRIORITY_KEYS: ReadonlyArray<string> = [
+  'target',
+  'name',
+  'route',
+  'symbol_name',
+  'symbolName',
+  'filePath',
+  'file_path',
+  'file',
+  'path',
+  'query',
+  'goal',
+  'intent',
+  'command',
+  'url',
+  'branch',
+  'repo',
+  'tool',
+];
+
+const SUMMARY_VALUE_MAX = 60;
+
+/**
+ * Render a single scalar value for the summary line. Strings are
+ * quoted (e.g. `target="x"`), numbers and booleans are not
+ * (`depth=4`). Returns null for non-scalar / empty values so callers
+ * can keep searching.
+ */
+function formatSummaryEntry(key: string, value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') {
+    const trimmed = value.replace(/\s+/g, ' ').trim();
+    if (!trimmed) return null;
+    const truncated = trimmed.length > SUMMARY_VALUE_MAX
+      ? `${trimmed.slice(0, SUMMARY_VALUE_MAX - 1)}\u2026`
+      : trimmed;
+    return `${key}="${truncated}"`;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return `${key}=${String(value)}`;
+  }
+  return null;
+}
+
+/**
+ * Build a compact one-line summary for a tool call's arguments. Used
+ * by the muted-line renderer for MCP and other generic tools so we
+ * don't dump full JSON payloads into the conversation UI.
+ *
+ * Heuristic: if the args are JSON-shaped, look for a value under one
+ * of `SUMMARY_PRIORITY_KEYS`; fall back to the first short scalar
+ * field. If the args are plain text, return the first line. Returns
+ * an empty string when nothing useful can be extracted (the caller
+ * should fall back to rendering the bare tool name).
+ */
+export function summarizeToolArgs(rawArgs: string): string {
+  const trimmed = (rawArgs || '').trim();
+  if (!trimmed) return '';
+
+  const looksLikeJson =
+    (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+    (trimmed.startsWith('[') && trimmed.endsWith(']'));
+
+  if (looksLikeJson) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      return '';
+    }
+
+    if (Array.isArray(parsed)) {
+      return parsed.length === 1 ? `[1 item]` : `[${parsed.length} items]`;
+    }
+    if (!parsed || typeof parsed !== 'object') return '';
+
+    const obj = parsed as Record<string, unknown>;
+
+    for (const key of SUMMARY_PRIORITY_KEYS) {
+      if (key in obj) {
+        const formatted = formatSummaryEntry(key, obj[key]);
+        if (formatted !== null) return formatted;
+      }
+    }
+
+    // Fallback: first scalar entry in iteration order.
+    for (const [key, value] of Object.entries(obj)) {
+      const formatted = formatSummaryEntry(key, value);
+      if (formatted !== null) return formatted;
+    }
+
+    return '';
+  }
+
+  // Plain-text args: first non-empty line, truncated.
+  const firstLine = trimmed.split('\n').find((line) => line.trim()) || '';
+  const compact = firstLine.replace(/\s+/g, ' ').trim();
+  if (!compact) return '';
+  return compact.length > SUMMARY_VALUE_MAX
+    ? `${compact.slice(0, SUMMARY_VALUE_MAX - 1)}\u2026`
+    : compact;
+}
+
+/**
  * Walk a `*** … File: <path>` patch and return one entry per file
  * touched. Order matches the order of the corresponding header lines.
  */

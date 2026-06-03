@@ -722,6 +722,65 @@
   flex-shrink: 0;
 }
 
+/* Compact muted-line treatment for generic / MCP tool calls.
+   Default state matches .oc-read-line so MCP tool calls blend in
+   with read/grep/glob lines instead of taking up a full card. The
+   line is clickable to reveal args + output below it. */
+.oc-tool-compact {
+  margin: -1px 0;
+}
+.oc-tool-compact-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  color: var(--overlay0);
+  padding: 0;
+  line-height: 1.4;
+  user-select: none;
+}
+.oc-tool-compact-line:hover {
+  color: var(--text);
+}
+.oc-tool-compact-line .oc-read-arrow {
+  color: var(--surface2);
+  font-size: 10px;
+  flex-shrink: 0;
+}
+.oc-tool-compact-name {
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+.oc-tool-compact-summary {
+  color: var(--overlay0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.oc-tool-compact-running .oc-read-arrow {
+  color: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.oc-tool-compact-error,
+.oc-tool-compact-error .oc-tool-compact-name,
+.oc-tool-compact-error .oc-tool-compact-summary {
+  color: var(--danger, var(--red, #f38ba8));
+}
+.oc-tool-compact-error .oc-read-arrow {
+  color: var(--danger, var(--red, #f38ba8));
+  opacity: 0.75;
+}
+.oc-tool-compact-body {
+  margin: 4px 0 4px 16px;
+  padding-left: 8px;
+  border-left: 2px solid var(--surface1, rgba(255, 255, 255, 0.05));
+}
+.oc-tool-compact-body .oc-tool-pre {
+  margin: 4px 0;
+}
+
 /* Subagent task link */
 .oc-task-link {
   color: var(--overlay0);

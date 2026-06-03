@@ -9,6 +9,7 @@ import {
   parseJsonObjectFromMixedText,
   extractPatchPayload,
   splitToolArgs,
+  summarizeToolArgs,
   parsePatchSections,
   applyPatchToUnifiedFileDiffs,
   applyPatchToUnifiedDiff,
@@ -203,6 +204,68 @@ describe('splitToolArgs', () => {
     const out = splitToolArgs('gitnexus_impact', payload);
     expect(out.title).toBe('');
     expect(out.detail).toBe(payload);
+  });
+});
+
+describe('summarizeToolArgs', () => {
+  it('picks the highest-priority key from a JSON payload', () => {
+    const payload = JSON.stringify({
+      direction: 'upstream',
+      target: 'convertMessages',
+      maxDepth: 3,
+    });
+    expect(summarizeToolArgs(payload)).toBe('target="convertMessages"');
+  });
+
+  it('uses intent when no higher-priority key is present', () => {
+    const payload = JSON.stringify({ intent: 'refactor the thread component', branch: 'x' });
+    expect(summarizeToolArgs(payload)).toBe('intent="refactor the thread component"');
+  });
+
+  it('falls back to the first scalar entry when no priority keys match', () => {
+    const payload = JSON.stringify({ depth: 4, weird: 'value' });
+    expect(summarizeToolArgs(payload)).toBe('depth=4');
+  });
+
+  it('truncates long values with an ellipsis', () => {
+    const long = 'x'.repeat(120);
+    const payload = JSON.stringify({ target: long });
+    const out = summarizeToolArgs(payload);
+    expect(out.startsWith('target="')).toBe(true);
+    expect(out.endsWith('\u2026"')).toBe(true);
+    expect(out.length).toBeLessThanOrEqual('target="'.length + 60 + 1);
+  });
+
+  it('handles array payloads by reporting the count', () => {
+    expect(summarizeToolArgs('[]')).toBe('[0 items]');
+    expect(summarizeToolArgs('[1]')).toBe('[1 item]');
+    expect(summarizeToolArgs('[1, 2, 3]')).toBe('[3 items]');
+  });
+
+  it('returns the first non-empty line for plain-text args', () => {
+    expect(summarizeToolArgs('hello world\nsecond line')).toBe('hello world');
+  });
+
+  it('returns an empty string for blank input', () => {
+    expect(summarizeToolArgs('')).toBe('');
+    expect(summarizeToolArgs('   ')).toBe('');
+  });
+
+  it('returns an empty string for balanced but malformed JSON', () => {
+    expect(summarizeToolArgs('{not valid json}')).toBe('');
+  });
+
+  it('treats unbalanced input as plain text', () => {
+    expect(summarizeToolArgs('{not valid json')).toBe('{not valid json');
+  });
+
+  it('returns an empty string when JSON object has no usable scalar values', () => {
+    expect(summarizeToolArgs(JSON.stringify({ nested: { a: 1 } }))).toBe('');
+  });
+
+  it('skips priority keys whose values are non-scalar', () => {
+    const payload = JSON.stringify({ target: { complex: true }, name: 'fallback' });
+    expect(summarizeToolArgs(payload)).toBe('name="fallback"');
   });
 });
 

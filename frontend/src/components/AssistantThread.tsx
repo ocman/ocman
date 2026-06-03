@@ -24,6 +24,7 @@ import {
   highlightDiffCode,
   extractPatchPayload,
   splitToolArgs,
+  summarizeToolArgs,
   shortenPatchPath,
   summarizePatch,
   applyPatchToUnifiedFileDiffs,
@@ -1015,23 +1016,38 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: raw
     );
   }
 
+  // Generic / MCP tool calls render as a single muted line by default,
+  // matching the look of read/grep/glob lines. Click to expand into
+  // an inline panel showing the raw args and result. Errors get a red
+  // accent but stay collapsed — same compact treatment as success so
+  // the conversation stays scannable.
+  const summary = parsedTitle || summarizeToolArgs(remainingArgs);
+  const arrowIcon = toolStatus === 'running' ? '\u223C' : toolStatus === 'error' ? '\u2717' : '\u2192';
+  const compactClass = [
+    'oc-tool-compact',
+    toolStatus === 'error' ? 'oc-tool-compact-error' : '',
+    toolStatus === 'running' ? 'oc-tool-compact-running' : '',
+    expanded ? 'oc-tool-compact-expanded' : '',
+  ].filter(Boolean).join(' ');
+  const hasBody = !!(detail || outputDisplay);
+
   return (
-    <div className={`oc-tool ${statusClass} ${expanded ? 'oc-tool-expanded' : ''}`}>
-      <div className="oc-tool-header" onClick={() => setExpanded(!expanded)}>
-        <span className={`oc-tool-icon ${statusClass}`} title={statusTitle}>{statusIcon}</span>
-        <span className="oc-tool-label">{title || toolName}</span>
+    <div className={compactClass}>
+      <div
+        className="oc-tool-compact-line"
+        onClick={hasBody ? () => setExpanded(!expanded) : undefined}
+        style={hasBody ? { cursor: 'pointer' } : undefined}
+      >
+        <span className="oc-read-arrow" aria-hidden="true" title={statusTitle}>{arrowIcon}</span>
+        <span className="oc-tool-compact-name">{toolName}</span>
+        {summary && <span className="oc-tool-compact-summary">{summary}</span>}
         {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} />}
       </div>
-      {(detail || outputDisplay) && (
-        <div className="oc-tool-content" onClick={() => !expanded && setExpanded(true)} style={!expanded ? { cursor: 'pointer' } : undefined}>
+      {expanded && hasBody && (
+        <div className="oc-tool-compact-body">
           {detail && <pre className="oc-tool-pre">{detail}</pre>}
           {outputDisplay && (
             <pre className="oc-tool-pre oc-tool-output">{renderOutput(outputPreview)}</pre>
-          )}
-          {!expanded && isLong && (
-            <div className="oc-tool-expand">
-              Click to expand full output
-            </div>
           )}
         </div>
       )}
