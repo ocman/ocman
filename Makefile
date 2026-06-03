@@ -160,8 +160,17 @@ build-desktop: ## Build the Wails desktop app (outputs to build/bin/)
 # Usage:
 #   make installer-mac              # build .app then wrap in .dmg
 #   make installer-mac BUILD=0      # skip the wails build (already done)
+#   make installer-mac CI=1         # skip the Finder-prettifying AppleScript
+#                                   #   (auto-set when $CI is non-empty; required
+#                                   #    for headless runners — Forgejo Actions,
+#                                   #    GitHub Actions, `act`, etc. — where
+#                                   #    Finder times out with AppleEvent -1712)
 #
 BUILD ?= 1
+# Auto-detect CI environments. GitHub Actions / Forgejo / GitLab / CircleCI all
+# export $CI=true. `act` also exports $CI. Locally CI is empty, so the DMG keeps
+# its pretty Finder layout.
+CREATE_DMG_CI_FLAGS := $(if $(CI),--skip-jenkins,)
 
 installer-mac: ## Build macOS DMG installer (requires create-dmg)
 	@command -v create-dmg >/dev/null 2>&1 || { \
@@ -173,6 +182,7 @@ installer-mac: ## Build macOS DMG installer (requires create-dmg)
 	@# Omit --volicon / --background when the file doesn't exist yet.
 	@if [ -f build/appicon.png ]; then \
 		create-dmg \
+			$(CREATE_DMG_CI_FLAGS) \
 			--volname "ocman" \
 			--volicon "build/appicon.png" \
 			--window-pos 200 120 \
@@ -186,6 +196,7 @@ installer-mac: ## Build macOS DMG installer (requires create-dmg)
 			"build/bin/"; \
 	else \
 		create-dmg \
+			$(CREATE_DMG_CI_FLAGS) \
 			--volname "ocman" \
 			--window-pos 200 120 \
 			--window-size 540 380 \
