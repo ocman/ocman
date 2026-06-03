@@ -340,7 +340,6 @@
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  padding-left: 24px;
   overflow: hidden;
   position: relative;
 }
@@ -353,7 +352,7 @@
   display: flex;
   justify-content: flex-end;
   gap: 4px;
-  padding: 8px 24px 8px 0;
+  padding: 8px 16px 8px 0;
   background: transparent;
   pointer-events: none;
 }
@@ -366,7 +365,6 @@
 @media (max-width: 768px) {
   .session-layout { flex-direction: column; }
   .session-sidebar { width: 100% !important; height: 160px; border-right: none; border-bottom: 1px solid var(--border); }
-  .session-main { padding-left: 0; }
   .session-detail-actions { padding-top: 12px; }
   .session-sidebar-archive-btn { opacity: 1; }
   .session-sidebar-pin-btn { opacity: 1; }
