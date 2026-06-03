@@ -133,10 +133,17 @@ build-backend:
 	go build -o ocman .
 
 # Desktop (Wails) build — produces a native .app / binary via `wails build`.
-# The frontend is built with WAILS_BUILD=1 so Vite outputs to frontend/dist
-# (the path wails.json expects) instead of internal/server/static.
+#
+# Asset architecture: the desktop binary boots the same Go HTTP server used
+# in CLI mode and proxies the Wails WebView to it (see internal/gui/app.go).
+# All assets are therefore served from the Go `//go:embed static/*` FS in
+# internal/server/static — NOT from Wails's own asset server. So the frontend
+# must be built into internal/server/static (the default `pnpm build` output),
+# not frontend/dist. If you set WAILS_BUILD=1 here the embed picks up only
+# the gitignored robots.txt placeholder and the desktop app shows a blank
+# page with "robots.txt" as the only visible content.
 build-desktop: ## Build the Wails desktop app (outputs to build/bin/)
-	cd frontend && WAILS_BUILD=1 pnpm build
+	cd frontend && pnpm install --frozen-lockfile && pnpm build
 	@mkdir -p build
 	rsvg-convert -w 1024 -h 1024 frontend/public/favicon.svg -o build/appicon.png
 	wails build -skipbindings -s -o ocman-desktop
@@ -223,7 +230,10 @@ installer-mac: ## Build macOS DMG installer (requires create-dmg)
 
 installer-linux: ## Build Linux binary archive (cross-compiled from any host)
 	@mkdir -p dist
-	cd frontend && WAILS_BUILD=1 pnpm build
+	# Frontend must land in internal/server/static so go:embed picks it up.
+	# See the build-desktop comment for why WAILS_BUILD=1 (frontend/dist) is
+	# wrong for this proxy-based architecture.
+	cd frontend && pnpm install --frozen-lockfile && pnpm build
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
 		go build -ldflags="-s -w" -tags desktop,exclude_graphdriver_devicemapper \
 		-o dist/ocman-linux-amd64 .
