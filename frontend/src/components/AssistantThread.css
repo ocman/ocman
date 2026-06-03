@@ -517,7 +517,7 @@
   word-break: break-word;
   margin: 4px 0;
   overflow: auto;
-  max-height: calc(30 * 1.5em + 16px);
+  max-height: min(calc(30 * 1.5em + 16px), 80vh);
 }
 .oc-tool-expanded .oc-shell-block {
   max-height: none;
