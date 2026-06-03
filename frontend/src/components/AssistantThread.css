@@ -385,6 +385,10 @@
 .oc-tool-output { color: var(--text); }
 
 .oc-tool-expand {
+  display: block;
+  width: fit-content;
+  border: 0;
+  background: transparent;
   font-size: 11px;
   color: var(--text-dim);
   cursor: pointer;
@@ -512,8 +516,8 @@
   white-space: pre-wrap;
   word-break: break-word;
   margin: 4px 0;
-  overflow: hidden;
-  max-height: 150px;
+  overflow: auto;
+  max-height: calc(30 * 1.5em + 16px);
 }
 .oc-tool-expanded .oc-shell-block {
   max-height: none;

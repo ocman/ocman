@@ -976,14 +976,14 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: raw
     );
   }
 
-   // Shell commands get a terminal-style rendering
+  // Shell commands get a terminal-style rendering
   const isBash = toolName === 'bash' || toolName === 'mcp_bash';
   if (isBash) {
-    const command = detail || title;
-    // Shell output is terminal-like content; show it in full by default
-    // so users do not need an extra click to see command output.
-    const bashExpanded = true;
-    const bashOutputDisplay = outputDisplay;
+    const command = outputDisplay ? (detail || title) : title;
+    const bashOutput = outputDisplay || detail;
+    const bashIsLong = shellOutputIsLong(bashOutput);
+    const bashExpanded = expanded || !bashIsLong;
+    const toggleLabel = expanded ? 'Collapse output' : 'Show full output';
     return (
       <div className={`oc-tool oc-tool-shell ${userExecutedTool ? 'oc-tool-shell-user' : ''} ${statusClass} ${bashExpanded ? 'oc-tool-expanded' : ''}`}>
         <div className="oc-tool-header" onClick={() => setExpanded(!expanded)}>
@@ -992,14 +992,23 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: raw
           {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} />}
         </div>
         <div className="oc-tool-content" onClick={() => !bashExpanded && setExpanded(true)} style={!bashExpanded ? { cursor: 'pointer' } : undefined}>
-          <pre className="oc-shell-block">
-{command && <><span className="oc-shell-prompt">$</span> <span className="oc-shell-cmd">{command}</span>{bashOutputDisplay ? '\n' : ''}</>}{bashOutputDisplay && <AnsiText text={bashOutputDisplay} />}
+          <pre className="oc-shell-block" data-testid="shell-output-block">
+{command && <><span className="oc-shell-prompt">$</span> <span className="oc-shell-cmd">{command}</span>{bashOutput ? '\n' : ''}</>}{bashOutput && <AnsiText text={bashOutput} />}
           </pre>
           {userExecutedTool && (
             <div className="oc-shell-attribution">The following tool was executed by the user</div>
           )}
-          {!bashExpanded && isLong && (
-            <div className="oc-tool-expand">Click to expand full output</div>
+          {bashIsLong && (
+            <button
+              type="button"
+              className="oc-tool-expand"
+              onClick={(event) => {
+                event.stopPropagation();
+                setExpanded(!expanded);
+              }}
+            >
+              {toggleLabel}
+            </button>
           )}
         </div>
       </div>
@@ -1045,10 +1054,15 @@ const ASSISTANT_PART_COMPONENTS = {
 const THREAD_MESSAGE_COMPONENTS = { UserMessage, AssistantMessage };
 
 const TOOL_OUTPUT_PREVIEW_CHARS = 5000;
+const SHELL_OUTPUT_PREVIEW_LINES = 30;
 
 function toolOutputPreview(output: string, expanded: boolean): string {
   if (expanded || output.length <= TOOL_OUTPUT_PREVIEW_CHARS) return output;
   return `${output.slice(0, TOOL_OUTPUT_PREVIEW_CHARS)}\n... (${output.length} chars total)`;
+}
+
+function shellOutputIsLong(output: string): boolean {
+  return output.split('\n').length > SHELL_OUTPUT_PREVIEW_LINES;
 }
 
 export function AssistantThread({
