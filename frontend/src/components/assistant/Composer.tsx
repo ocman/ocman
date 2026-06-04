@@ -900,6 +900,14 @@ function ComposerImpl({
           rows={1}
           disabled={disabled}
           placeholder={disabled ? (disabledHint || 'No live connection to the agent') : undefined}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          data-1p-ignore
+          data-lpignore="true"
+          data-bwignore
+          data-form-type="other"
         />
         <div className="oc-composer-bar">
           <div className="oc-composer-bar-left">
