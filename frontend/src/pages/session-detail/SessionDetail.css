@@ -344,28 +344,10 @@
   position: relative;
 }
 
-.session-detail-actions {
-  position: absolute;
-  top: 0;
-  right: 0;
-  z-index: 20;
-  display: flex;
-  justify-content: flex-end;
-  gap: 4px;
-  padding: 8px 16px 8px 0;
-  background: transparent;
-  pointer-events: none;
-}
-.session-detail-actions > * {
-  pointer-events: auto;
-  background: var(--bg);
-}
-
 /* Responsive */
 @media (max-width: 768px) {
   .session-layout { flex-direction: column; }
   .session-sidebar { width: 100% !important; height: 160px; border-right: none; border-bottom: 1px solid var(--border); }
-  .session-detail-actions { padding-top: 12px; }
   .session-sidebar-archive-btn { opacity: 1; }
   .session-sidebar-pin-btn { opacity: 1; }
 }

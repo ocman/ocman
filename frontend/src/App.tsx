@@ -84,14 +84,22 @@ function Header() {
         <Link to="/" style={{ color: 'inherit', textDecoration: 'none' }}>ocman</Link>{' '}
         <span>{breadcrumb}</span>
       </h1>
-      {routeSessionId && sessionInfo.sessionProject && (
-        <span
-          className="header-project"
-          title={sessionInfo.sessionProjectFull || sessionInfo.sessionProject}
-        >
-          {sessionInfo.sessionProject}
-        </span>
-      )}
+      <div className="header-right">
+        {routeSessionId && sessionInfo.sessionProject && (
+          <span
+            className="header-project"
+            title={sessionInfo.sessionProjectFull || sessionInfo.sessionProject}
+          >
+            {sessionInfo.sessionProject}
+          </span>
+        )}
+        {/* Portal target for per-route header action buttons (tmux,
+         * launch, VS Code, new session). SessionDetail mounts its
+         * action strip here via createPortal so the buttons appear
+         * stacked under the project name instead of hovering over
+         * the conversation. */}
+        <div id="header-actions-slot" className="header-actions" />
+      </div>
     </header>
   );
 }

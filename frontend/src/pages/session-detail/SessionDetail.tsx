@@ -10,9 +10,9 @@
 // `useSession`; the page is mostly props plumbing from there to the
 // individual UI surfaces.
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { flushSync } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import { useStickyNavigate } from '../../lib/useStickyNavigate';
 import * as Toast from '@radix-ui/react-toast';
 import './SessionDetail.css';
@@ -76,6 +76,29 @@ import { useSession } from './useSession';
 import { usePendingSend, materializePending } from './usePendingSend';
 import { useAutoApprove } from '../../lib/useAutoApprove';
 import { ThreadSkeleton } from '../../components/Skeleton';
+
+/**
+ * Portal helper: mounts its children into the `#header-actions-slot`
+ * div rendered by the top-level `<Header>` (see App.tsx). The slot
+ * lives under the project name in the page header; rendering here
+ * keeps the action strip (tmux / launch / VS Code / new session)
+ * stacked under the project label instead of floating over the
+ * conversation thread.
+ *
+ * Subscribes to the external DOM (the slot element lives outside
+ * this component's subtree). `useLayoutEffect` runs after `<Header>`
+ * has committed its DOM but before paint, so the buttons appear on
+ * the first frame without flicker.
+ */
+function HeaderActionsPortal({ children }: { children: React.ReactNode }) {
+  const [target, setTarget] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing with an external DOM node owned by <Header />; documented as a legitimate use of setState-in-effect.
+    setTarget(document.getElementById('header-actions-slot'));
+  }, []);
+  if (!target) return null;
+  return createPortal(children, target);
+}
 
 /** Memory bound on the in-memory message list. */
 const MAX_RETAINED_MESSAGES = 200;
@@ -1086,42 +1109,40 @@ export function SessionDetail({ id }: SessionDetailProps) {
           onNewSessionInDirectory={handleNewSessionInDirectory}
         />
         <div className="session-main">
-          {session && (
-            <div className="session-detail-actions">
-              {tmux.available && matchingTmuxSession && (
-                <button
-                  className="session-sidebar-new"
-                  onClick={(e) => handleTmuxSwitch(e, matchingTmuxSession.name)}
-                  title={`Switch tmux to ${shortPath(matchingTmuxSession.name)} (T)`}
-                  style={{ fontSize: 11, fontFamily: "'SF Mono', Consolas, monospace" }}
-                >tmux</button>
-              )}
-              {tmux.available && !portAvailable && caps.liveConnectionHint && (
-                <button
-                  type="button"
-                  className="session-sidebar-new"
-                  onClick={() => { void handleLaunchOpencode(); }}
-                  disabled={launchingOpencode}
-                  title="Launch opencode --port 0 in a new tmux window"
-                  style={{ fontSize: 11, fontFamily: "'SF Mono', Consolas, monospace" }}
-                >{launchingOpencode ? '…' : 'launch'}</button>
-              )}
+          {session && <HeaderActionsPortal>
+            {tmux.available && matchingTmuxSession && (
+              <button
+                className="session-sidebar-new"
+                onClick={(e) => handleTmuxSwitch(e, matchingTmuxSession.name)}
+                title={`Switch tmux to ${shortPath(matchingTmuxSession.name)} (T)`}
+                style={{ fontSize: 11, fontFamily: "'SF Mono', Consolas, monospace" }}
+              >tmux</button>
+            )}
+            {tmux.available && !portAvailable && caps.liveConnectionHint && (
               <button
                 type="button"
                 className="session-sidebar-new"
-                onClick={handleVSCodeShortcut}
-                title="Open in VS Code (V)"
-                aria-label="Open in VS Code"
-                style={{ textDecoration: 'none', fontSize: 11 }}
-              >&lt;/&gt;</button>
-              <button
-                className="session-sidebar-new"
-                onClick={() => { void handleNewSession(); }}
-                title="New session"
-                aria-label="New session"
-              >+</button>
-            </div>
-          )}
+                onClick={() => { void handleLaunchOpencode(); }}
+                disabled={launchingOpencode}
+                title="Launch opencode --port 0 in a new tmux window"
+                style={{ fontSize: 11, fontFamily: "'SF Mono', Consolas, monospace" }}
+              >{launchingOpencode ? '…' : 'launch'}</button>
+            )}
+            <button
+              type="button"
+              className="session-sidebar-new"
+              onClick={handleVSCodeShortcut}
+              title="Open in VS Code (V)"
+              aria-label="Open in VS Code"
+              style={{ textDecoration: 'none', fontSize: 11 }}
+            >&lt;/&gt;</button>
+            <button
+              className="session-sidebar-new"
+              onClick={() => { void handleNewSession(); }}
+              title="New session"
+              aria-label="New session"
+            >+</button>
+          </HeaderActionsPortal>}
           {loading ? (
             <ThreadSkeleton rows={5} />
           ) : loadError ? (
