@@ -4,6 +4,7 @@ import { useUpstreamList } from '../../lib/useUpstreamList';
 import type { PR, Issue, StateFilter, Upstream } from '../../lib/upstreamApi';
 import type { PaneSummary } from '../SessionChangesSidebar';
 import { useForgeUser } from '../../lib/useForgeUser';
+import { useGitInfo } from '../../lib/useGitInfo';
 import { PRRow } from './PRRow';
 import { IssueRow } from './IssueRow';
 import { RemoteErrorBanner } from './RemoteErrorBanner';
@@ -272,6 +273,15 @@ function UpstreamRemoteGroup({
   const myLogin = useForgeUser(directory, upstream.remote);
   const mineFilter = mine && myLogin ? myLogin : undefined;
 
+  // Working-tree branch for the project, used to highlight PRs whose
+  // source branch matches what the user has checked out locally.
+  // useGitInfo polls every 30s; only relevant for PRs, but cheap
+  // enough to fetch unconditionally (the result is shared via the
+  // backend cache).
+  const gitInfoDirs = useMemo(() => [directory], [directory]);
+  const { infos: gitInfos } = useGitInfo(gitInfoDirs);
+  const currentBranch = gitInfos[directory]?.branch;
+
   const list = useUpstreamList<PR | Issue>({
     kind,
     dir: directory,
@@ -331,7 +341,13 @@ function UpstreamRemoteGroup({
         {list.items.map((item) => {
           if (kind === 'prs') {
             return (
-              <PRRow key={item.number} pr={item as PR} directory={directory} remote={upstream.remote} />
+              <PRRow
+                key={item.number}
+                pr={item as PR}
+                directory={directory}
+                remote={upstream.remote}
+                currentBranch={currentBranch}
+              />
             );
           }
           return (

@@ -170,6 +170,33 @@
   background: var(--mantle);
 }
 
+/* Highlights a PR row whose source branch matches the working tree's
+ * current branch. Mirrors the left-accent-rail pattern used elsewhere
+ * (PermissionPrompt, AssistantThread) so it reads as "the one that's
+ * about you" without competing with the status badge colors. */
+.oc-upstream-row.current-branch {
+  border-left: 3px solid var(--accent);
+  padding-left: 7px; /* 10px - 3px border to keep summary aligned */
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.oc-upstream-row.current-branch.expanded {
+  background: color-mix(in srgb, var(--accent) 10%, var(--mantle));
+}
+
+.oc-upstream-row-current-branch {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid var(--accent);
+  border-radius: 0;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: lowercase;
+}
+
 .oc-upstream-row-summary {
   display: flex;
   align-items: center;

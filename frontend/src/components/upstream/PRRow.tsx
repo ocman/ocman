@@ -9,6 +9,14 @@ interface PRRowProps {
   pr: PR;
   directory: string;
   remote: string;
+  /**
+   * The branch currently checked out in the project's working tree.
+   * When this matches the PR's source branch (and the PR isn't from
+   * a fork), the row is highlighted so the user can quickly spot the
+   * PR that corresponds to whatever they're working on locally.
+   * Undefined when git info is still loading or unavailable.
+   */
+  currentBranch?: string;
 }
 
 /**
@@ -20,12 +28,22 @@ interface PRRowProps {
  * doesn't enforce single-expansion in v1 (matches the "best-effort"
  * note in FR-7; can be tightened later).
  */
-export function PRRow({ pr, directory, remote }: PRRowProps) {
+export function PRRow({ pr, directory, remote, currentBranch }: PRRowProps) {
   const [expanded, setExpanded] = useState(false);
+
+  // Cross-fork PRs share their head branch name with the user's
+  // local tree by coincidence at best (different repo entirely), so
+  // skip the match in that case to avoid false positives.
+  const isCurrentBranch =
+    !pr.crossFork && !!currentBranch && pr.branch === currentBranch;
 
   return (
     <li
-      className={`oc-upstream-row oc-upstream-row-pr${expanded ? ' expanded' : ''}`}
+      className={
+        `oc-upstream-row oc-upstream-row-pr` +
+        (expanded ? ' expanded' : '') +
+        (isCurrentBranch ? ' current-branch' : '')
+      }
       data-testid={`pr-row-${pr.number}`}
     >
       <button
@@ -36,6 +54,15 @@ export function PRRow({ pr, directory, remote }: PRRowProps) {
       >
         <span className="oc-upstream-row-number">#{pr.number}</span>
         <span className="oc-upstream-row-title">{pr.title}</span>
+        {isCurrentBranch && (
+          <span
+            className="oc-upstream-row-current-branch"
+            title={`Matches your current branch: ${pr.branch}`}
+            data-testid={`pr-row-${pr.number}-current-branch`}
+          >
+            current
+          </span>
+        )}
         <StatusBadge status={pr.status} />
       </button>
       <RowMeta
