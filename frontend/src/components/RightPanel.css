@@ -82,6 +82,69 @@
   border-top: 2px solid var(--border);
 }
 
+/* Headers in 2nd+ panes double as vertical resize handles. The
+ * pointer hint signals draggability; child buttons (refresh, etc.)
+ * keep their own cursor via more specific rules. */
+.oc-right-panel-pane-header.resizable {
+  cursor: ns-resize;
+  user-select: none;
+  touch-action: none;
+}
+
+/* Larger hit area along the top edge so the user doesn't need to
+ * pixel-hunt to grab the boundary. The 2px visual border-top stays
+ * intact — this is a transparent extension above it. */
+.oc-right-panel-pane-header.resizable::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -4px;
+  height: 8px;
+  cursor: ns-resize;
+}
+
+.oc-right-panel-pane-header.resizable {
+  position: relative;
+}
+
+.oc-right-panel-pane-header.resizable:hover,
+.oc-right-panel-pane-header.resizable.dragging {
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-hover));
+}
+
+.oc-right-panel-pane-header.resizable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Visible drag affordance on the strip icons (right edge). The
+ * dragging icon is hoisted above its siblings by inline style;
+ * this is the rest state. touch-action: none lets the touch
+ * sensor preempt page-scroll gestures on the strip. */
+.oc-changes-strip-icon {
+  touch-action: none;
+}
+
+/* The floating drag preview rendered by DragOverlay. Lifted to the
+ * document root so it escapes the sidebar's `overflow: hidden`,
+ * with a strong shadow + accent ring so the user can see what
+ * they're dragging. */
+.oc-changes-strip-icon.dragging-overlay {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  background: var(--bg-active, var(--bg-hover));
+  color: var(--accent);
+  font-size: 14px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+  cursor: grabbing;
+  pointer-events: none;
+}
+
 .oc-right-panel-pane-title {
   display: inline-flex;
   align-items: center;

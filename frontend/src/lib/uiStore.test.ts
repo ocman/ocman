@@ -76,6 +76,7 @@ describe('uiStore changesSidebar tab management', () => {
     useUiStore.setState({
       changesSidebarOpenTabs: ['session'],
       changesSidebarTabSizes: {},
+      changesSidebarTabOrder: ['info', 'session', 'working-tree', 'bookmarks', 'upstream'],
     });
   });
 
@@ -100,22 +101,42 @@ describe('uiStore changesSidebar tab management', () => {
     expect(useUiStore.getState().changesSidebarOpenTabs).toEqual([]);
   });
 
-  it('closing a tab clears any user-set sizes (so survivors get an even share)', () => {
+  it('closing a tab preserves user-set sizes (so reopening resumes the prior height)', () => {
     useUiStore.setState({
       changesSidebarOpenTabs: ['session', 'working-tree'],
       changesSidebarTabSizes: { session: 0.7, 'working-tree': 0.3 },
     });
     initial.closeChangesSidebarTab('session');
-    expect(useUiStore.getState().changesSidebarTabSizes).toEqual({});
+    // Sizes survive so a re-opened pane resumes at its previous
+    // fraction — normalisation happens at render time in RightPanel.
+    expect(useUiStore.getState().changesSidebarTabSizes).toEqual({
+      session: 0.7,
+      'working-tree': 0.3,
+    });
   });
 
-  it('setChangesSidebarOpenTabs replaces wholesale and clears sizes', () => {
+  it('toggleChangesSidebarTab preserves user-set sizes on close', () => {
+    useUiStore.setState({
+      changesSidebarOpenTabs: ['session', 'working-tree'],
+      changesSidebarTabSizes: { session: 0.6, 'working-tree': 0.4 },
+    });
+    initial.toggleChangesSidebarTab('working-tree');
+    expect(useUiStore.getState().changesSidebarTabSizes).toEqual({
+      session: 0.6,
+      'working-tree': 0.4,
+    });
+  });
+
+  it('setChangesSidebarOpenTabs replaces wholesale and preserves sizes', () => {
     useUiStore.setState({
       changesSidebarTabSizes: { session: 0.5, 'working-tree': 0.5 },
     });
     initial.setChangesSidebarOpenTabs(['working-tree']);
     expect(useUiStore.getState().changesSidebarOpenTabs).toEqual(['working-tree']);
-    expect(useUiStore.getState().changesSidebarTabSizes).toEqual({});
+    expect(useUiStore.getState().changesSidebarTabSizes).toEqual({
+      session: 0.5,
+      'working-tree': 0.5,
+    });
   });
 
   it('setChangesSidebarTabSize updates a single tab without touching the others', () => {
@@ -127,6 +148,17 @@ describe('uiStore changesSidebar tab management', () => {
       session: 0.7,
       'working-tree': 0.5,
     });
+  });
+
+  it('setChangesSidebarTabOrder persists a user-reordered strip', () => {
+    initial.setChangesSidebarTabOrder(['working-tree', 'session', 'info', 'bookmarks', 'upstream']);
+    expect(useUiStore.getState().changesSidebarTabOrder).toEqual([
+      'working-tree',
+      'session',
+      'info',
+      'bookmarks',
+      'upstream',
+    ]);
   });
 });
 

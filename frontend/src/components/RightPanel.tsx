@@ -12,6 +12,26 @@ import { useUpstreams } from '../lib/useUpstreams';
 import type { Session } from '../lib/api';
 import type { MessageBookmark, MessageBookmarkGroup } from '../lib/messageBookmarks';
 import { MessageBookmarksPane } from './MessageBookmarksPane';
+import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  MouseSensor,
+  TouchSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 interface RightPanelProps {
   sessionId: string;
@@ -54,23 +74,49 @@ const TAB_ICONS: Record<ChangesSidebarTab, string> = {
   upstream: 'bi-inbox',
 };
 
-// Strip / pane order. Info sits above the two change-related panes
-// (it's the higher-level "what is the session attached to" view),
-// matching the OpenCode TUI layout. 'upstream' sits below the rest
-// because it's the most "external" view (lives outside the local
-// repo), and it only shows when a forge upstream is detected.
-const BASE_TABS: ChangesSidebarTab[] = ['info', 'session', 'working-tree', 'bookmarks', 'upstream'];
+// Default strip order, used as a fallback when the persisted order
+// is missing entries (e.g. a new tab was added in a later ocman
+// version). The user's drag-reordered list lives in the ui store.
+const DEFAULT_TAB_ORDER: ChangesSidebarTab[] = [
+  'info',
+  'session',
+  'working-tree',
+  'bookmarks',
+  'upstream',
+];
 
 // Minimum height fraction a single pane is allowed to occupy. Stops
 // the user dragging a pane down to zero (where it would become
 // unrecoverable without keyboard support).
 const MIN_PANE_FRACTION = 0.1;
 
+// reconcileTabOrder returns a complete ordering of every known tab,
+// starting from the user's persisted order and appending any tabs
+// that have been introduced since (or removing any that no longer
+// exist). The result always contains exactly DEFAULT_TAB_ORDER's
+// entries, in the user's preferred sequence where specified.
+function reconcileTabOrder(persisted: ChangesSidebarTab[]): ChangesSidebarTab[] {
+  const known = new Set<ChangesSidebarTab>(DEFAULT_TAB_ORDER);
+  const seen = new Set<ChangesSidebarTab>();
+  const result: ChangesSidebarTab[] = [];
+  for (const t of persisted) {
+    if (known.has(t) && !seen.has(t)) {
+      result.push(t);
+      seen.add(t);
+    }
+  }
+  for (const t of DEFAULT_TAB_ORDER) {
+    if (!seen.has(t)) result.push(t);
+  }
+  return result;
+}
+
 // RightPanel renders the right-hand changes panel:
 //   - Strip on the right edge with one icon per available view —
-//     always visible.
+//     always visible. Icons can be drag-reordered via @dnd-kit.
 //   - Content area to the left of the strip showing the currently-
-//     open views, stacked vertically. Resizers sit between them.
+//     open views, stacked vertically. Each pane header doubles as
+//     a resize handle for the boundary above it.
 //
 // Click semantics on the strip:
 //   - icon for a closed view  -> open it (appended to the bottom of
@@ -78,9 +124,11 @@ const MIN_PANE_FRACTION = 0.1;
 //                                open, this becomes a split).
 //   - icon for the active view -> close it. If it was the only open
 //                                 view, the panel collapses.
+//   - drag an icon            -> reorder both the strip and the
+//                                stacked panes.
 //
-// Designed to scale to N views: adding a third entry to ALL_TABS +
-// a render branch is enough.
+// Designed to scale to N views: adding a third entry to
+// DEFAULT_TAB_ORDER + a render branch is enough.
 export function RightPanel({
   sessionId,
   platformId,
@@ -94,8 +142,10 @@ export function RightPanel({
 }: RightPanelProps) {
   const openTabs = useUiStore((s) => s.changesSidebarOpenTabs);
   const sizes = useUiStore((s) => s.changesSidebarTabSizes);
+  const persistedOrder = useUiStore((s) => s.changesSidebarTabOrder);
   const toggleTab = useUiStore((s) => s.toggleChangesSidebarTab);
   const setTabSize = useUiStore((s) => s.setChangesSidebarTabSize);
+  const setTabOrder = useUiStore((s) => s.setChangesSidebarTabOrder);
   // User-controlled width for the panel as a whole. The resizer lives
   // on the LEFT edge of the panel and writes back to the store.
   const width = useUiStore((s) => s.changesSidebarWidth);
@@ -107,21 +157,23 @@ export function RightPanel({
   // discoverable without cluttering projects that genuinely have
   // no upstream.
   const upstreamsResult = useUpstreams(directory);
-  const ALL_TABS = BASE_TABS;
+
+  // Reconcile the persisted order against the known tab set: this
+  // tolerates older persisted state that's missing newer tabs.
+  const stripOrder = useMemo(
+    () => reconcileTabOrder(persistedOrder),
+    [persistedOrder],
+  );
 
   const collapsed = openTabs.length === 0;
 
-  // Render panes in the canonical strip order (ALL_TABS) regardless
-  // of the order the user clicked them. The store's openTabs is a
-  // *set* of which tabs are visible; the layout is fixed by the
-  // strip's icon order so users get a stable spatial mapping
-  // (Session changes always above Working tree).
-  // Memoised so PaneResizer's drag effect (which depends on this
-  // array) doesn't tear down + re-bind window mousemove/mouseup
-  // listeners on every render during a drag.
+  // Render panes in the user-defined strip order (stripOrder),
+  // filtered down to the panes currently open. Sorting follows the
+  // strip so dragging an icon visually moves the corresponding pane
+  // alongside it.
   const orderedOpenTabs = useMemo(
-    () => ALL_TABS.filter((t) => openTabs.includes(t)),
-    [openTabs, ALL_TABS],
+    () => stripOrder.filter((t) => openTabs.includes(t)),
+    [stripOrder, openTabs],
   );
 
   // Normalise the size fractions so they sum to 1 across the ordered
@@ -138,29 +190,80 @@ export function RightPanel({
     setTabSize(orderedOpenTabs[idx + 1], afterSize);
   }, [orderedOpenTabs, setTabSize]);
 
+  // dnd-kit sensors: split Mouse + Touch sensors (instead of
+  // PointerSensor) because PointerSensor on a <button> tends to
+  // swallow the click that should toggle the tab — Mouse + Touch
+  // give us cleaner coexistence. Activation distance of 4px is
+  // enough to disambiguate a tap from a drag without feeling
+  // sluggish.
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  // Track the currently-dragged tab so the DragOverlay (portal-
+  // rendered outside `.oc-changes-sidebar`'s `overflow: hidden`)
+  // can show a floating preview that isn't clipped by the strip.
+  const [draggingTab, setDraggingTab] = useState<ChangesSidebarTab | null>(null);
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setDraggingTab(event.active.id as ChangesSidebarTab);
+  }, []);
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      setDraggingTab(null);
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      const from = stripOrder.indexOf(active.id as ChangesSidebarTab);
+      const to = stripOrder.indexOf(over.id as ChangesSidebarTab);
+      if (from === -1 || to === -1) return;
+      setTabOrder(arrayMove(stripOrder, from, to));
+    },
+    [stripOrder, setTabOrder],
+  );
+
+  const handleDragCancel = useCallback(() => {
+    setDraggingTab(null);
+  }, []);
+
   // Strip is rendered identically in every mode — it's the panel's
   // right edge. Active tabs are highlighted; clicking an active tab
-  // closes it.
+  // closes it; dragging an icon reorders the strip + pane stack.
+  // The DragOverlay renders the floating drag preview at the body
+  // root so it escapes the sidebar's `overflow: hidden` clipping.
   const strip = (
-    <div className="oc-changes-strip" role="tablist" aria-label="Changes views">
-      {ALL_TABS.map((t) => {
-        const isActive = openTabs.includes(t);
-        return (
-          <button
-            key={t}
-            type="button"
-            role="tab"
-            aria-selected={isActive}
-            className={`oc-changes-strip-icon${isActive ? ' active' : ''}`}
-            onClick={() => toggleTab(t)}
-            title={TAB_LABELS[t]}
-            aria-label={TAB_LABELS[t]}
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
+    >
+      <SortableContext items={stripOrder} strategy={verticalListSortingStrategy}>
+        <div className="oc-changes-strip" role="tablist" aria-label="Changes views">
+          {stripOrder.map((t) => (
+            <SortableStripIcon
+              key={t}
+              tab={t}
+              active={openTabs.includes(t)}
+              onToggle={() => toggleTab(t)}
+            />
+          ))}
+        </div>
+      </SortableContext>
+      <DragOverlay dropAnimation={null}>
+        {draggingTab ? (
+          <div
+            className={`oc-changes-strip-icon active dragging-overlay`}
+            aria-hidden="true"
           >
-            <i className={`bi ${TAB_ICONS[t]}`} aria-hidden="true" />
-          </button>
-        );
-      })}
-    </div>
+            <i className={`bi ${TAB_ICONS[draggingTab]}`} aria-hidden="true" />
+          </div>
+        ) : null}
+      </DragOverlay>
+    </DndContext>
   );
 
   if (collapsed) {
@@ -193,30 +296,75 @@ export function RightPanel({
             onRemoveMessageBookmark={onRemoveMessageBookmark}
             onScrollToMessageBookmark={onScrollToMessageBookmark}
             upstreams={upstreamsResult.upstreams}
-            // First pane has no top divider; subsequent panes do.
+            // First pane has no top divider; subsequent panes do
+            // and their header doubles as a resize handle for the
+            // boundary above.
             divider={idx > 0}
             // Flex grow proportional to the size fraction. Multiplying
             // by 100 gives integer-ish values that flexbox handles
             // smoothly.
             size={normalisedSizes[idx]}
-          />
-        ))}
-        {/* Vertical resize handles between adjacent panes. Each
-            handle adjusts the pair of panes it sits between. */}
-        {orderedOpenTabs.slice(0, -1).map((tab, idx) => (
-          <PaneResizer
-            key={`resizer-${tab}`}
-            // Index of the pane *above* the handle, used to look up
-            // the right pair to grow/shrink during a drag.
-            beforeIdx={idx}
+            resizeAboveIdx={idx > 0 ? idx - 1 : null}
             openTabs={orderedOpenTabs}
             sizes={normalisedSizes}
-            onUpdate={(beforeSize, afterSize) => handlePaneResize(idx, beforeSize, afterSize)}
+            onResize={handlePaneResize}
           />
         ))}
       </div>
       {strip}
     </aside>
+  );
+}
+
+// SortableStripIcon wraps a single strip button with dnd-kit's
+// useSortable hook. A 5px PointerSensor activation distance ensures
+// a plain click still toggles the tab — dragging only kicks in once
+// the user moves the pointer past that threshold.
+function SortableStripIcon({
+  tab,
+  active,
+  onToggle,
+}: {
+  tab: ChangesSidebarTab;
+  active: boolean;
+  onToggle: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: tab });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    // The DragOverlay renders the floating preview at the document
+    // root; the in-place icon fades while the drag is active so the
+    // user has a clear visual anchor for the source position.
+    opacity: isDragging ? 0.3 : undefined,
+  };
+  // dnd-kit's `attributes` ships its own role ('button') for a11y
+  // semantics on the drag handle. We override it back to 'tab'
+  // *after* the spread so the strip stays a proper tablist; the
+  // drag behaviour is unaffected.
+  return (
+    <button
+      ref={setNodeRef}
+      type="button"
+      className={`oc-changes-strip-icon${active ? ' active' : ''}${isDragging ? ' dragging' : ''}`}
+      onClick={onToggle}
+      title={TAB_LABELS[tab]}
+      style={style}
+      {...attributes}
+      {...listeners}
+      role="tab"
+      aria-selected={active}
+      aria-label={TAB_LABELS[tab]}
+    >
+      <i className={`bi ${TAB_ICONS[tab]}`} aria-hidden="true" />
+    </button>
   );
 }
 
@@ -275,6 +423,12 @@ interface PaneProps {
   upstreams: import('../lib/upstreamApi').Upstream[];
   divider: boolean;
   size: number;
+  // When non-null, the pane header doubles as a resize handle for
+  // the boundary between pane[resizeAboveIdx] and this pane.
+  resizeAboveIdx: number | null;
+  openTabs: ChangesSidebarTab[];
+  sizes: number[];
+  onResize: (idx: number, beforeSize: number, afterSize: number) => void;
 }
 
 function Pane({
@@ -291,6 +445,10 @@ function Pane({
   upstreams,
   divider,
   size,
+  resizeAboveIdx,
+  openTabs,
+  sizes,
+  onResize,
 }: PaneProps) {
   // Children push their summary up via onSummaryChange so we can
   // render it next to the title without coupling RightPanel to
@@ -320,28 +478,18 @@ function Pane({
 
   return (
     <>
-      <div className={`oc-right-panel-pane-header${divider ? ' divider' : ''}`}>
-        <span className="oc-right-panel-pane-title">
-          <i className={`bi ${TAB_ICONS[tab]}`} aria-hidden="true" />
-          {TAB_LABELS[tab]}
-        </span>
-        <span className="oc-right-panel-pane-summary">
-          {summary.files > 0 && (
-            <>
-              <span className="oc-pane-summary-files">
-                {summary.files} {summary.files === 1 ? 'file' : 'files'}
-              </span>
-              <span className="oc-changes-add">+{summary.additions}</span>
-              <span className="oc-changes-del">-{summary.deletions}</span>
-            </>
-          )}
-        </span>
-        <span className="oc-right-panel-pane-actions">
-          {hasRefresh && (
-            <ChangesRefreshButton onClick={onRefreshClick} loading={loading} />
-          )}
-        </span>
-      </div>
+      <PaneHeader
+        tab={tab}
+        divider={divider}
+        summary={summary}
+        hasRefresh={hasRefresh}
+        loading={loading}
+        onRefreshClick={onRefreshClick}
+        resizeAboveIdx={resizeAboveIdx}
+        openTabs={openTabs}
+        sizes={sizes}
+        onResize={onResize}
+      />
       <div className="oc-right-panel-pane" style={{ flexGrow: size, flexBasis: 0 }}>
         {/* Each pane gets its own boundary so a crash in one (bad diff
             payload, broken markdown, etc.) doesn't take the other panes
@@ -405,98 +553,167 @@ function Pane({
   );
 }
 
-interface PaneResizerProps {
-  beforeIdx: number;
+interface PaneHeaderProps {
+  tab: ChangesSidebarTab;
+  divider: boolean;
+  summary: PaneSummary;
+  hasRefresh: boolean;
+  loading: boolean;
+  onRefreshClick: () => void;
+  // When non-null, this header doubles as a resize handle for the
+  // boundary between pane[resizeAboveIdx] and the current pane.
+  resizeAboveIdx: number | null;
   openTabs: ChangesSidebarTab[];
   sizes: number[];
-  onUpdate: (beforeSize: number, afterSize: number) => void;
+  onResize: (idx: number, beforeSize: number, afterSize: number) => void;
 }
 
-// PaneResizer renders an absolutely-positioned drag handle between
-// two adjacent panes in the split. Dragging adjusts the size fractions
-// of just those two panes; the rest of the stack is unaffected.
-//
-// The handle is positioned dynamically via a ref because the panes
-// themselves are flex children with grow/shrink — we measure the
-// running offset from the top of the content area each render.
-function PaneResizer({ beforeIdx, openTabs, sizes, onUpdate }: PaneResizerProps) {
+// PaneHeader renders the title / summary / refresh row at the top
+// of each open pane. When `resizeAboveIdx` is set (i.e. this is the
+// 2nd+ pane in the stack), the header is wired up as a vertical
+// drag handle that resizes the boundary above it. Buttons inside
+// the header still receive clicks normally — the drag only kicks
+// in when the user mouse-downs on the header background.
+function PaneHeader({
+  tab,
+  divider,
+  summary,
+  hasRefresh,
+  loading,
+  onRefreshClick,
+  resizeAboveIdx,
+  openTabs,
+  sizes,
+  onResize,
+}: PaneHeaderProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
+  const isResizable = resizeAboveIdx !== null;
+
+  // Capture pointer-event start data so the drag move math can run
+  // off the stored baseline rather than re-reading flex children
+  // on every move (which would compound rounding error).
+  const startRef = useRef<{
+    startY: number;
+    startBefore: number;
+    startAfter: number;
+    containerHeight: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!dragging) return;
     document.body.classList.add('oc-sidebar-resizing');
 
-    const onMove = (e: MouseEvent) => {
-      const handle = ref.current;
-      if (!handle) return;
-      const container = handle.parentElement;
-      if (!container) return;
-      const rect = container.getBoundingClientRect();
-      // Total span occupied by the two panes we control = their
-      // combined fraction times container height.
-      const beforeSize = sizes[beforeIdx];
-      const afterSize = sizes[beforeIdx + 1];
-      const pairSpan = (beforeSize + afterSize) * rect.height;
-
-      // Top of the "before" pane in screen space — sum of all
-      // earlier panes plus their header heights. Approximated as
-      // proportional to size fractions; small inaccuracy from the
-      // header bands is acceptable because the handle is ±1 px.
-      let topFrac = 0;
-      for (let i = 0; i < beforeIdx; i++) topFrac += sizes[i];
-      const pairTop = rect.top + topFrac * rect.height;
-
-      // Y position of the cursor, clamped to the legal range
-      // (leaving each pane at least MIN_PANE_FRACTION of the pair).
-      const minBefore = MIN_PANE_FRACTION * (beforeSize + afterSize);
-      const maxBefore = (beforeSize + afterSize) - MIN_PANE_FRACTION * (beforeSize + afterSize);
-      const offsetWithinPair = e.clientY - pairTop;
-      const offsetFraction = pairSpan > 0 ? offsetWithinPair / rect.height : 0;
-      const clamped = Math.max(minBefore, Math.min(maxBefore, offsetFraction));
-      const newBefore = clamped;
-      const newAfter = (beforeSize + afterSize) - clamped;
-      onUpdate(newBefore, newAfter);
+    const onMove = (e: PointerEvent) => {
+      const s = startRef.current;
+      if (!s || resizeAboveIdx === null) return;
+      const pairSpan = s.startBefore + s.startAfter;
+      const deltaPx = e.clientY - s.startY;
+      const deltaFrac = s.containerHeight > 0 ? deltaPx / s.containerHeight : 0;
+      const minBefore = MIN_PANE_FRACTION;
+      const maxBefore = pairSpan - MIN_PANE_FRACTION;
+      const newBefore = Math.max(minBefore, Math.min(maxBefore, s.startBefore + deltaFrac));
+      const newAfter = pairSpan - newBefore;
+      onResize(resizeAboveIdx, newBefore, newAfter);
     };
 
     const onUp = () => setDragging(false);
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
     return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
       document.body.classList.remove('oc-sidebar-resizing');
     };
-  }, [dragging, beforeIdx, sizes, openTabs, onUpdate]);
+  }, [dragging, resizeAboveIdx, onResize]);
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isResizable || resizeAboveIdx === null) return;
+    // Skip drags that originate from interactive children (refresh
+    // button, future menu buttons, etc.). The header background
+    // itself initiates the drag.
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, input, select, textarea')) return;
+    const container = ref.current?.parentElement;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    startRef.current = {
+      startY: e.clientY,
+      startBefore: sizes[resizeAboveIdx],
+      startAfter: sizes[resizeAboveIdx + 1],
+      containerHeight: rect.height,
+    };
+    e.preventDefault();
+    setDragging(true);
+  };
+
+  // Keyboard resize: ArrowUp/Down nudges the boundary in 4% steps,
+  // PageUp/PageDown in 10% steps. Only active when this header is a
+  // resize handle.
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!isResizable || resizeAboveIdx === null) return;
+    const step = e.key === 'PageUp' || e.key === 'PageDown' ? 0.1 : 0.04;
+    let delta = 0;
+    if (e.key === 'ArrowUp' || e.key === 'PageUp') delta = -step;
+    else if (e.key === 'ArrowDown' || e.key === 'PageDown') delta = step;
+    else return;
+    e.preventDefault();
+    const before = sizes[resizeAboveIdx];
+    const after = sizes[resizeAboveIdx + 1];
+    const pairSpan = before + after;
+    const minBefore = MIN_PANE_FRACTION;
+    const maxBefore = pairSpan - MIN_PANE_FRACTION;
+    const newBefore = Math.max(minBefore, Math.min(maxBefore, before + delta));
+    onResize(resizeAboveIdx, newBefore, pairSpan - newBefore);
+  };
+
+  // ariaValueNow describes the share of the resizable PAIR taken
+  // by the pane above the handle, expressed as a 0–100 integer.
+  const ariaValueNow = isResizable && resizeAboveIdx !== null
+    ? Math.round((sizes[resizeAboveIdx] / (sizes[resizeAboveIdx] + sizes[resizeAboveIdx + 1])) * 100)
+    : undefined;
 
   return (
     <div
       ref={ref}
-      className={`oc-pane-resizer${dragging ? ' dragging' : ''}`}
-      // Position the handle so it floats over the boundary between
-      // pane[beforeIdx] and pane[beforeIdx+1]. We let CSS handle
-      // ordering via flex (the resizer is absolutely positioned so
-      // it doesn't take a flex slot).
-      style={{ top: paneBoundaryPercent(beforeIdx, sizes) }}
-      onMouseDown={(e) => {
-        e.preventDefault();
-        setDragging(true);
-      }}
-      role="separator"
-      aria-orientation="horizontal"
-    />
+      className={[
+        'oc-right-panel-pane-header',
+        divider ? 'divider' : '',
+        isResizable ? 'resizable' : '',
+        dragging ? 'dragging' : '',
+      ].filter(Boolean).join(' ')}
+      onPointerDown={isResizable ? onPointerDown : undefined}
+      onKeyDown={isResizable ? onKeyDown : undefined}
+      role={isResizable ? 'separator' : undefined}
+      aria-orientation={isResizable ? 'horizontal' : undefined}
+      aria-valuenow={ariaValueNow}
+      aria-valuemin={isResizable ? Math.round(MIN_PANE_FRACTION * 100) : undefined}
+      aria-valuemax={isResizable ? Math.round((1 - MIN_PANE_FRACTION) * 100) : undefined}
+      aria-label={isResizable ? `Resize ${TAB_LABELS[openTabs[resizeAboveIdx]]} / ${TAB_LABELS[tab]}` : undefined}
+      tabIndex={isResizable ? 0 : undefined}
+    >
+      <span className="oc-right-panel-pane-title">
+        <i className={`bi ${TAB_ICONS[tab]}`} aria-hidden="true" />
+        {TAB_LABELS[tab]}
+      </span>
+      <span className="oc-right-panel-pane-summary">
+        {summary.files > 0 && (
+          <>
+            <span className="oc-pane-summary-files">
+              {summary.files} {summary.files === 1 ? 'file' : 'files'}
+            </span>
+            <span className="oc-changes-add">+{summary.additions}</span>
+            <span className="oc-changes-del">-{summary.deletions}</span>
+          </>
+        )}
+      </span>
+      <span className="oc-right-panel-pane-actions">
+        {hasRefresh && (
+          <ChangesRefreshButton onClick={onRefreshClick} loading={loading} />
+        )}
+      </span>
+    </div>
   );
-}
-
-// paneBoundaryPercent returns the CSS top-percent for the boundary
-// after pane index `beforeIdx`. Used to position the absolute resizer
-// handle. This is a quick approximation: it doesn't account for the
-// per-pane header heights, so the handle may be a few pixels off the
-// real boundary in edge cases. Acceptable because the handle has a
-// tall hit area (8 px) and the visual position lines up after a few
-// frames of grow/shrink.
-function paneBoundaryPercent(beforeIdx: number, sizes: number[]): string {
-  let frac = 0;
-  for (let i = 0; i <= beforeIdx; i++) frac += sizes[i];
-  return `${Math.min(99, Math.max(1, frac * 100))}%`;
 }

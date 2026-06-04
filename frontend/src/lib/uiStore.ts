@@ -94,6 +94,14 @@ type UiStore = {
   // bottom. Order matches the click sequence so the most recently
   // opened view appears at the bottom.
   changesSidebarOpenTabs: ChangesSidebarTab[];
+  // User-controlled order of ALL tabs in the strip (open or
+  // closed). Mutated by drag-and-drop reordering of the icon strip.
+  // The rendered pane stack uses this order, filtered by openTabs.
+  // Missing entries (newly-introduced tabs in newer ocman versions)
+  // are appended at the end on first render so old persisted state
+  // remains compatible.
+  changesSidebarTabOrder: ChangesSidebarTab[];
+  setChangesSidebarTabOrder: (order: ChangesSidebarTab[]) => void;
   // Per-tab vertical size as a fraction of the panel content area.
   // Values for tabs not present in openTabs are ignored. Missing
   // entries default to "even share" (1 / openTabs.length).
@@ -102,6 +110,8 @@ type UiStore = {
   //   - tab not open  -> add it (creating a split if another view
   //                      was already open).
   //   - tab is open   -> close it (collapse if it was the only one).
+  // Per-tab sizes are preserved across toggles so a re-opened pane
+  // resumes at its previous height.
   toggleChangesSidebarTab: (tab: ChangesSidebarTab) => void;
   // Direct setters used by tests, command palette, and pane action
   // buttons (e.g. "show only this view" / "close this pane").
@@ -203,35 +213,34 @@ export const useUiStore = create<UiStore>()(
       setPromptSections: (sections) => set({ promptSections: sections }),
 
       changesSidebarOpenTabs: ['session'],
+      changesSidebarTabOrder: ['info', 'session', 'working-tree', 'bookmarks', 'upstream'],
+      setChangesSidebarTabOrder: (order) => set({ changesSidebarTabOrder: order }),
       changesSidebarTabSizes: {},
       toggleChangesSidebarTab: (tab) =>
         set((s) => {
           const open = s.changesSidebarOpenTabs;
           if (open.includes(tab)) {
-            // Closing — drop the tab. The other panes' size
-            // fractions are dropped too so the remaining tabs get
-            // an even share again. (User-set sizes are most
-            // intuitive when they describe the *current* split,
-            // not historical configurations.)
-            const next = open.filter((t) => t !== tab);
+            // Closing — drop the tab. Per-tab sizes for the
+            // remaining open panes are preserved so reopening a
+            // closed pane resumes at its previous height. The
+            // closed tab's own size entry is kept too — it just
+            // becomes inert until the tab reopens.
             return {
-              changesSidebarOpenTabs: next,
-              changesSidebarTabSizes: {},
+              changesSidebarOpenTabs: open.filter((t) => t !== tab),
             };
           }
-          // Opening — append. The most recently opened tab goes
-          // at the bottom of the split.
+          // Opening — append. Sizes are preserved; normaliseSizes
+          // in RightPanel handles new tabs by giving them an even
+          // share of the remaining space.
           return {
             changesSidebarOpenTabs: [...open, tab],
-            changesSidebarTabSizes: {},
           };
         }),
       setChangesSidebarOpenTabs: (tabs) =>
-        set({ changesSidebarOpenTabs: tabs, changesSidebarTabSizes: {} }),
+        set({ changesSidebarOpenTabs: tabs }),
       closeChangesSidebarTab: (tab) =>
         set((s) => ({
           changesSidebarOpenTabs: s.changesSidebarOpenTabs.filter((t) => t !== tab),
-          changesSidebarTabSizes: {},
         })),
       setChangesSidebarTabSize: (tab, size) =>
         set((s) => ({
@@ -277,7 +286,10 @@ export const useUiStore = create<UiStore>()(
       // v1: renamed right-panel tab id 'thread' -> 'session'.
       // v2: added autoApproveDefault + autoApproveDelayMs.
       // v3: added promptSections with a default feature-branch rule.
-      version: 3,
+      // v4: added changesSidebarTabOrder (user-controlled strip order
+      //     via drag-and-drop). Default seeded from the legacy
+      //     hardcoded BASE_TABS so existing users see no change.
+      version: 4,
       migrate: (persisted, version) => {
         if (!persisted || typeof persisted !== 'object') return persisted;
         const next = persisted as Record<string, unknown>;
@@ -294,6 +306,11 @@ export const useUiStore = create<UiStore>()(
             }
           }
         }
+        if (version < 4) {
+          // Seed tab order from the legacy fixed order so the strip
+          // looks identical on first load after the upgrade.
+          next.changesSidebarTabOrder = ['info', 'session', 'working-tree', 'bookmarks', 'upstream'];
+        }
         return next;
       },
       // Only persist layout preferences; transient UI state (shortcutsOpen) stays in memory.
@@ -306,6 +323,7 @@ export const useUiStore = create<UiStore>()(
         dashboardGrouped: s.dashboardGrouped,
         changesSidebarWidth: s.changesSidebarWidth,
         changesSidebarOpenTabs: s.changesSidebarOpenTabs,
+        changesSidebarTabOrder: s.changesSidebarTabOrder,
         changesSidebarTabSizes: s.changesSidebarTabSizes,
         autoApproveDefault: s.autoApproveDefault,
         autoApproveDelayMs: s.autoApproveDelayMs,
