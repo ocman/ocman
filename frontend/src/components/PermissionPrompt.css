@@ -16,7 +16,7 @@
   font-size: 13px;
   line-height: 1.5;
   color: var(--text);
-  max-height: 50vh;
+  max-height: 32vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
