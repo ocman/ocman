@@ -150,19 +150,7 @@ func (s *Server) handleProjectPRs(w http.ResponseWriter, r *http.Request) {
 		prs = filterPRsForUser(prs, opts.Mine)
 	}
 
-	if rl.Limited {
-		writeJSON(w, map[string]interface{}{
-			"prs":        prs,
-			"pagination": map[string]interface{}{"page": opts.Page, "hasMore": false},
-			"rateLimit":  rl,
-		})
-		return
-	}
-	writeJSON(w, map[string]interface{}{
-		"prs":        prs,
-		"pagination": map[string]interface{}{"page": opts.Page, "hasMore": len(prs) >= effectivePerPage(opts)},
-		"rateLimit":  rl,
-	})
+	writeForgeListResponse(w, "prs", prs, rl, opts)
 }
 
 // handleProjectIssues lists issues for one remote of the current project.
@@ -191,17 +179,18 @@ func (s *Server) handleProjectIssues(w http.ResponseWriter, r *http.Request) {
 		issues = filterIssuesForUser(issues, opts.Mine)
 	}
 
-	if rl.Limited {
-		writeJSON(w, map[string]interface{}{
-			"issues":     issues,
-			"pagination": map[string]interface{}{"page": opts.Page, "hasMore": false},
-			"rateLimit":  rl,
-		})
-		return
-	}
+	writeForgeListResponse(w, "issues", issues, rl, opts)
+}
+
+// writeForgeListResponse writes the shared { <key>, pagination,
+// rateLimit } envelope for the PR/Issue list endpoints. hasMore is
+// false when rate-limited (the page is incomplete) and otherwise uses
+// the "full page implies more" heuristic.
+func writeForgeListResponse[T any](w http.ResponseWriter, key string, items []T, rl forge.RateLimit, opts forge.ListOptions) {
+	hasMore := !rl.Limited && len(items) >= effectivePerPage(opts)
 	writeJSON(w, map[string]interface{}{
-		"issues":     issues,
-		"pagination": map[string]interface{}{"page": opts.Page, "hasMore": len(issues) >= effectivePerPage(opts)},
+		key:          items,
+		"pagination": map[string]interface{}{"page": opts.Page, "hasMore": hasMore},
 		"rateLimit":  rl,
 	})
 }
@@ -305,36 +294,41 @@ func effectivePerPage(opts forge.ListOptions) int {
 	return 30
 }
 
-// filterPRsForUser keeps PRs where login is author, an assignee, or
-// a requested reviewer. Implements FR-5's "mine" semantics.
-func filterPRsForUser(prs []forge.PR, login string) []forge.PR {
-	out := prs[:0]
-	for _, p := range prs {
-		if matchesUser(p.Author, login) {
-			out = append(out, p)
+// filterForUser keeps items whose author, assignees, or any of the
+// extra user lists (e.g. requested reviewers) match login. The accessor
+// funcs adapt the concrete PR/Issue shape to the common fields.
+func filterForUser[T any](items []T, login string, author func(T) string, userLists func(T) [][]forge.User) []T {
+	out := items[:0]
+	for _, it := range items {
+		if matchesUser(author(it), login) {
+			out = append(out, it)
 			continue
 		}
-		if anyUserMatches(p.Assignees, login) ||
-			anyUserMatches(p.RequestedReviewers, login) {
-			out = append(out, p)
+		for _, list := range userLists(it) {
+			if anyUserMatches(list, login) {
+				out = append(out, it)
+				break
+			}
 		}
 	}
 	return out
 }
 
+// filterPRsForUser keeps PRs where login is author, an assignee, or
+// a requested reviewer. Implements FR-5's "mine" semantics.
+func filterPRsForUser(prs []forge.PR, login string) []forge.PR {
+	return filterForUser(prs, login,
+		func(p forge.PR) string { return p.Author },
+		func(p forge.PR) [][]forge.User { return [][]forge.User{p.Assignees, p.RequestedReviewers} },
+	)
+}
+
 // filterIssuesForUser keeps issues where login is author or assignee.
 func filterIssuesForUser(issues []forge.Issue, login string) []forge.Issue {
-	out := issues[:0]
-	for _, i := range issues {
-		if matchesUser(i.Author, login) {
-			out = append(out, i)
-			continue
-		}
-		if anyUserMatches(i.Assignees, login) {
-			out = append(out, i)
-		}
-	}
-	return out
+	return filterForUser(issues, login,
+		func(i forge.Issue) string { return i.Author },
+		func(i forge.Issue) [][]forge.User { return [][]forge.User{i.Assignees} },
+	)
 }
 
 func matchesUser(a, b string) bool {
