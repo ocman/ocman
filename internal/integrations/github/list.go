@@ -4,14 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/forge"
+	"github.com/NoUseFreak/ocman/internal/integrations/forgehttp"
 )
 
 // HostName is the canonical GitHub host string. Used both by the forge
@@ -184,42 +183,7 @@ func (c *Client) fetch(ctx context.Context, path string) ([]byte, forge.RateLimi
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
-
-	httpClient := c.http
-	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 10 * time.Second}
-	}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, forge.RateLimit{}, 0, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, forge.RateLimit{}, resp.StatusCode, err
-	}
-	rl := parseRateLimit(resp.Header, resp.StatusCode == http.StatusTooManyRequests)
-	return body, rl, resp.StatusCode, nil
-}
-
-// parseRateLimit extracts Retry-After (seconds) or X-RateLimit-Reset
-// (Unix seconds) from a response header. Returns Limited=false when
-// neither header is present AND limited=false; otherwise Limited
-// follows the limited flag and ResetAt is set when a header is parseable.
-func parseRateLimit(h http.Header, limited bool) forge.RateLimit {
-	if v := h.Get("Retry-After"); v != "" {
-		// Retry-After can be HTTP-date or delta-seconds. We accept seconds.
-		if secs, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
-			return forge.RateLimit{Limited: limited, ResetAt: time.Now().Add(time.Duration(secs) * time.Second)}
-		}
-	}
-	if v := h.Get("X-RateLimit-Reset"); v != "" {
-		if ts, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil {
-			return forge.RateLimit{Limited: limited, ResetAt: time.Unix(ts, 0)}
-		}
-	}
-	return forge.RateLimit{Limited: limited}
+	return forgehttp.Get(ctx, c.http, req)
 }
 
 // --- JSON shapes returned by GitHub's API ---

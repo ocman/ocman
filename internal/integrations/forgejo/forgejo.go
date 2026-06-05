@@ -15,7 +15,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -25,6 +24,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/forge"
 	"github.com/NoUseFreak/ocman/internal/gitexec"
+	"github.com/NoUseFreak/ocman/internal/integrations/forgehttp"
 )
 
 // defaultPerPage matches the GitHub adapter — small enough to keep
@@ -226,39 +226,11 @@ func (c *Client) fetch(ctx context.Context, path string) ([]byte, forge.RateLimi
 	}
 	req.Header.Set("Accept", "application/json")
 	if c.token != "" {
+		// Forgejo/Gitea use the "token <t>" scheme (matches what tea
+		// writes), unlike GitHub's "Bearer <t>".
 		req.Header.Set("Authorization", "token "+c.token)
 	}
-	httpClient := c.http
-	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 10 * time.Second}
-	}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, forge.RateLimit{}, 0, err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, forge.RateLimit{}, resp.StatusCode, err
-	}
-	rl := parseRateLimit(resp.Header, resp.StatusCode == http.StatusTooManyRequests)
-	return body, rl, resp.StatusCode, nil
-}
-
-// parseRateLimit duplicates the github adapter's logic. Forgejo
-// uses similar headers (Retry-After, sometimes X-RateLimit-Reset).
-func parseRateLimit(h http.Header, limited bool) forge.RateLimit {
-	if v := h.Get("Retry-After"); v != "" {
-		if secs, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
-			return forge.RateLimit{Limited: limited, ResetAt: time.Now().Add(time.Duration(secs) * time.Second)}
-		}
-	}
-	if v := h.Get("X-RateLimit-Reset"); v != "" {
-		if ts, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil {
-			return forge.RateLimit{Limited: limited, ResetAt: time.Unix(ts, 0)}
-		}
-	}
-	return forge.RateLimit{Limited: limited}
+	return forgehttp.Get(ctx, c.http, req)
 }
 
 // --- JSON shapes ---
