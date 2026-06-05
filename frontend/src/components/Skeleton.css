@@ -102,7 +102,9 @@
   display: flex;
   flex-direction: column;
   flex: 1;
-  padding: 16px 0;
+  /* Match the real thread's horizontal padding (.oc-thread-viewport)
+     so skeleton bubbles don't stick to the edge. */
+  padding: 16px;
   overflow: hidden;
   gap: 0;
 }
