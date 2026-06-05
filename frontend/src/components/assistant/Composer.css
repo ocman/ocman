@@ -88,8 +88,10 @@
 
 /* Composer - OpenCode style */
 .oc-composer-wrap {
-  padding: 16px 0px 12px 0px;
-  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  padding: 16px 0px 0px 0px;
+  /* No bottom padding on desktop; keep the mobile safe-area inset so the
+     composer clears notches / home indicators. */
+  padding-bottom: env(safe-area-inset-bottom);
   background: linear-gradient(to bottom, transparent, var(--bg) 20px);
 }
 .oc-composer {
