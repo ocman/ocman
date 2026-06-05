@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"os/exec"
 	"time"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/tmux"
 )
 
 // statusSessionReader is the subset of db.DB needed by the status tools
@@ -209,7 +209,7 @@ func (t *statusTools) handleCancelSession(_ context.Context, req mcplib.CallTool
 
 	// Kill the tmux window/session if we have a target.
 	if cs.TmuxTarget != "" {
-		if err := killTmuxTarget(cs.TmuxTarget); err != nil {
+		if err := tmux.KillTarget(cs.TmuxTarget); err != nil {
 			log.WithFields(log.Fields{
 				"childSessionID": childID,
 				"tmuxTarget":     cs.TmuxTarget,
@@ -240,30 +240,4 @@ func isTerminalStatus(status string) bool {
 	return false
 }
 
-// killTmuxTarget kills a tmux window or session by target identifier.
-// For a "session:window" target it uses kill-window; for a plain session
-// name it uses kill-session. Errors are non-fatal (the window may already
-// be gone).
-func killTmuxTarget(target string) error {
-	var args []string
-	if containsColon(target) {
-		args = []string{"kill-window", "-t", target}
-	} else {
-		args = []string{"kill-session", "-t", target}
-	}
-	out, err := exec.Command("tmux", args...).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("tmux %v: %w: %s", args, err, string(out))
-	}
-	return nil
-}
 
-// containsColon reports whether s contains a colon character.
-func containsColon(s string) bool {
-	for _, c := range s {
-		if c == ':' {
-			return true
-		}
-	}
-	return false
-}
