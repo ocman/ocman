@@ -747,6 +747,17 @@ export interface TmuxSession {
   windows: number;
 }
 
+/**
+ * A dedicated in-app terminal window. `name` is the tmux window
+ * (`ocman-term-<slug>-<n>`); `title` is a display label derived from the
+ * program-set pane title or running command (empty for an idle shell —
+ * the UI falls back to the tab number).
+ */
+export interface TermWindow {
+  name: string;
+  title: string;
+}
+
 export interface AuthMe {
   authRequired: boolean;
   authenticated: boolean;

@@ -79,8 +79,14 @@ export default defineConfig({
        // Disable response buffering for /api so SSE event streams
        // (e.g. /api/session/{id}/events) are forwarded to the client
        // immediately rather than held until the stream closes.
+       //
+       // `ws: true` is required so WebSocket upgrade requests (the live
+       // terminal at /api/term/ws) are proxied to the Go backend.
+       // Without it Vite silently drops the upgrade and the socket hangs
+       // in "Connecting…".
        '/api': {
          target: 'http://localhost:8229',
+         ws: true,
          configure: (proxy) => {
            proxy.on('proxyRes', (proxyRes) => {
              proxyRes.on('data', () => {})
@@ -105,6 +111,7 @@ export default defineConfig({
      proxy: {
        '/api': {
          target: 'http://localhost:8229',
+         ws: true,
          configure: (proxy) => {
            proxy.on('proxyRes', (proxyRes) => {
              proxyRes.on('data', () => {})

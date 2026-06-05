@@ -131,3 +131,22 @@
   gap: 6px;
   width: 100%;
 }
+
+/* ── Terminal skeleton ─────────────────────────────────────────── */
+
+.oc-skeleton-terminal {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+  padding: 10px 12px;
+  box-sizing: border-box;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.oc-skeleton-terminal-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

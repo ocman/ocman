@@ -270,6 +270,16 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	mux.HandleFunc("/api/tmux/sessions", requireGET(requireLocalhost(s.handleTmuxSessions)))
 	mux.HandleFunc("/api/tmux/switch", requirePOST(requireLocalhost(s.handleTmuxSwitch)))
 	mux.HandleFunc("/api/tmux/launch-opencode", requirePOST(requireLocalhost(s.handleTmuxLaunchOpencode)))
+	// Live terminal: WebSocket bridge that attaches an in-app xterm.js
+	// terminal to an existing tmux target via a PTY. localhost-only —
+	// this is a live shell. The WS upgrade is a GET that hijacks the
+	// connection, so it is NOT wrapped in requireGET (that wrapper can
+	// interfere with the upgrade).
+	mux.HandleFunc("/api/term/ws", requireLocalhost(s.handleTermWS))
+	// Terminal-window management (list / create / kill the dedicated
+	// `ocman-term-*` windows backing the in-app terminal tabs). Method
+	// is dispatched inside the handler (GET/POST/DELETE). localhost-only.
+	mux.HandleFunc("/api/term/windows", requireLocalhost(s.handleTermWindows))
 
 	// Worktree endpoints. List + default-base-ref are read-only and
 	// safe to expose to authenticated clients; create-and-launch
@@ -363,6 +373,12 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 		Addr:    ln.Addr().String(),
 		Handler: withRequestTiming(withOTel(mux)),
 	}
+
+	// Sweep orphaned ephemeral terminal-viewer sessions left by an
+	// earlier process (e.g. after an air rebuild / crash). They can
+	// never belong to a live connection at boot, so this self-heals the
+	// old per-viewer session leak. Cheap and safe when tmux is absent.
+	sweepLegacyTermSessions()
 
 	// Start the server in a goroutine so we can wait for the context.
 	errCh := make(chan error, 1)

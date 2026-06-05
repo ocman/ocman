@@ -53,6 +53,7 @@ export type {
   AgentInfo,
   TmuxClient,
   TmuxSession,
+  TermWindow,
   AuthMe,
   SystemStats,
   SessionNotice,
@@ -78,6 +79,7 @@ import type {
   TaskSessionData,
   TmuxClient,
   TmuxSession,
+  TermWindow,
   WorktreeCreateRequest,
   WorktreeCreateResponse,
   WorktreeEntry,
@@ -484,6 +486,34 @@ export const api = {
     });
     if (!resp.ok) throw new Error(await resp.text());
     return resp.json();
+  },
+  /**
+   * In-app terminal windows. Each entry is a dedicated tmux window
+   * (`ocman-term-<slug>-<n>`) backing a terminal tab in the UI.
+   */
+  term: {
+    listWindows: (dir: string, signal?: AbortSignal) =>
+      fetchJSON<{ windows: TermWindow[] }>(
+        `/api/term/windows?dir=${encodeURIComponent(dir)}`,
+        signal,
+      ),
+    createWindow: async (dir: string): Promise<{ window: string }> => {
+      const resp = await fetch('/api/term/windows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dir }),
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      return resp.json();
+    },
+    killWindow: async (dir: string, window: string): Promise<void> => {
+      const resp = await fetch('/api/term/windows', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dir, window }),
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+    },
   },
   /**
    * Worktree-sessions endpoints (the /wt flow). See

@@ -1,6 +1,9 @@
 package server
 
 import (
+	"bufio"
+	"errors"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -62,6 +65,19 @@ func (r *statusRecorder) Write(b []byte) (int, error) {
 		r.wroteHeader = true
 	}
 	return r.ResponseWriter.Write(b)
+}
+
+// Hijack lets WebSocket upgrades (e.g. the live terminal at
+// /api/term/ws) take over the underlying TCP connection. Without this
+// method the request flows through statusRecorder, which would
+// otherwise mask the embedded ResponseWriter's http.Hijacker and cause
+// gorilla/websocket's Upgrade() to fail with a 500. We delegate to the
+// embedded writer when it supports hijacking.
+func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := r.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, errors.New("underlying ResponseWriter does not support hijacking")
 }
 
 // flushTiming writes the Server-Timing header from the collector, if

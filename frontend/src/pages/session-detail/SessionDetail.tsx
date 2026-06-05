@@ -28,6 +28,7 @@ import { Composer } from '../../components/assistant/Composer';
 import { QuestionPrompt } from '../../components/session/QuestionPrompt';
 import { PermissionPrompt } from '../../components/session/PermissionPrompt';
 import { RightPanel } from '../../components/RightPanel';
+import { SessionTerminalDock } from '../../components/SessionTerminalDock';
 import { ErrorBoundary, type FallbackRender } from '../../components/ErrorBoundary';
 import { RateLimitBanner } from '../../components/RateLimitBanner';
 import { useUiStore } from '../../lib/uiStore';
@@ -1280,6 +1281,12 @@ export function SessionDetail({ id }: SessionDetailProps) {
                 />
               )}
             </OcmanRuntimeProvider>
+          )}
+          {session && (
+            <SessionTerminalDock
+              tmuxAvailable={tmux.available}
+              directory={session.directory}
+            />
           )}
         </div>
         {id && (

@@ -260,3 +260,38 @@ export function SessionSidebarListSkeleton({ rows = 5 }: SessionSidebarListSkele
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// TerminalSkeleton — placeholder for the in-app terminal while a tab is
+// (re)connecting. Renders a few fake monospace command lines so clicking
+// a terminal tab gives instant visual feedback before the PTY attaches.
+// ---------------------------------------------------------------------------
+
+interface TerminalSkeletonProps {
+  rows?: number;
+}
+
+export function TerminalSkeleton({ rows = 6 }: TerminalSkeletonProps) {
+  // Pseudo-random but stable line widths so the fake output looks like
+  // a real terminal scrollback rather than uniform bars.
+  const widths = [38, 64, 22, 52, 30, 70, 18, 46];
+  return (
+    <div
+      className="oc-skeleton-terminal"
+      aria-busy="true"
+      aria-label="Connecting terminal"
+      data-testid="terminal-skeleton"
+    >
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="oc-skeleton-terminal-row">
+          {/* prompt glyph */}
+          <Skeleton className="oc-skeleton-line" style={{ width: 10, flexShrink: 0 }} />
+          <Skeleton
+            className="oc-skeleton-line"
+            style={{ width: `${widths[i % widths.length]}%` }}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}

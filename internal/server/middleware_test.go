@@ -1,6 +1,9 @@
 package server
 
 import (
+	"bufio"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -149,4 +152,52 @@ func findEntry(hook *logtest.Hook, path string) *log.Entry {
 		}
 	}
 	return nil
+}
+
+// ── statusRecorder Hijacker support ──────────────────────────────────
+//
+// statusRecorder must expose http.Hijacker so WebSocket upgrades (the
+// in-app terminal at /api/term/ws) can take over the TCP connection.
+// Without this the request flowed through statusRecorder, masking the
+// underlying writer's Hijacker and breaking the upgrade with a 500.
+
+// hijackableWriter is a ResponseWriter that records that Hijack was
+// called and returns a sentinel so the delegation can be asserted.
+type hijackableWriter struct {
+	http.ResponseWriter
+	hijacked bool
+}
+
+var errSentinelHijack = errors.New("sentinel hijack")
+
+func (h *hijackableWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h.hijacked = true
+	return nil, nil, errSentinelHijack
+}
+
+func TestStatusRecorder_DelegatesHijack(t *testing.T) {
+	inner := &hijackableWriter{ResponseWriter: httptest.NewRecorder()}
+	rec := &statusRecorder{ResponseWriter: inner}
+
+	// statusRecorder must satisfy http.Hijacker.
+	hj, ok := any(rec).(http.Hijacker)
+	if !ok {
+		t.Fatal("statusRecorder does not implement http.Hijacker")
+	}
+	_, _, err := hj.Hijack()
+	if !inner.hijacked {
+		t.Fatal("Hijack was not delegated to the embedded ResponseWriter")
+	}
+	if !errors.Is(err, errSentinelHijack) {
+		t.Fatalf("expected sentinel error from inner writer, got %v", err)
+	}
+}
+
+func TestStatusRecorder_HijackUnsupported(t *testing.T) {
+	// httptest.ResponseRecorder does NOT implement http.Hijacker, so the
+	// recorder must return a clear error rather than panicking.
+	rec := &statusRecorder{ResponseWriter: httptest.NewRecorder()}
+	if _, _, err := rec.Hijack(); err == nil {
+		t.Fatal("expected an error when the underlying writer can't hijack")
+	}
 }
