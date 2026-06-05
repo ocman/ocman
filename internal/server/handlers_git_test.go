@@ -23,7 +23,7 @@ func gitInitForServerTest(t *testing.T, dir string) {
 	run := func(args ...string) {
 		t.Helper()
 		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-		cmd.Env = append(os.Environ(),
+		cmd.Env = append(cleanGitEnvForTest(),
 			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test",
 			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test",
 			"GIT_CONFIG_GLOBAL=/dev/null",

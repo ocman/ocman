@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/NoUseFreak/ocman/internal/gitexec"
 )
 
 // Errors surfaced by Create. Handlers translate these into specific
@@ -53,8 +54,7 @@ func ResolveRepoRoot(ctx context.Context, dir string) (string, error) {
 	if dir == "" {
 		return "", ErrNotARepo
 	}
-	cmd := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--show-toplevel")
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")
+	cmd := gitexec.Command(ctx, "-C", dir, "rev-parse", "--show-toplevel")
 	out, err := cmd.Output()
 	if err != nil {
 		// git exits non-zero outside a repo. Distinguish "not a

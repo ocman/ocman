@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/NoUseFreak/ocman/internal/gitexec"
 )
 
 // gitInit prepares a fresh repo at dir with a single committed file
@@ -20,7 +22,7 @@ func gitInit(t *testing.T, dir string) {
 	run := func(args ...string) {
 		t.Helper()
 		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-		cmd.Env = append(os.Environ(),
+		cmd.Env = append(gitexec.CleanEnv(),
 			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test",
 			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test",
 			// Avoid user gitconfig leaking into the test (e.g.
@@ -117,7 +119,7 @@ func TestGetDiff_AddedFile_StagedAndUnstaged(t *testing.T) {
 	}
 	// Stage it so it shows up as `added`, not `untracked`.
 	cmd := exec.Command("git", "-C", dir, "add", "new.txt")
-	cmd.Env = append(os.Environ(),
+	cmd.Env = append(gitexec.CleanEnv(),
 		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git add: %v\n%s", err, out)

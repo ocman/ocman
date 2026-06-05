@@ -3,8 +3,9 @@ package github
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"strings"
+
+	"github.com/NoUseFreak/ocman/internal/gitexec"
 )
 
 // FetchPRHead fetches the PR's head ref from the given remote into a
@@ -27,7 +28,7 @@ func (c *Client) FetchPRHead(ctx context.Context, repoRoot, remoteName string, p
 	branch := fmt.Sprintf("ocman/pr-%d", prNumber)
 	refspec := fmt.Sprintf("+refs/pull/%d/head:refs/heads/%s", prNumber, branch)
 
-	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "fetch", remoteName, refspec)
+	cmd := gitexec.Command(ctx, "-C", repoRoot, "fetch", remoteName, refspec)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("git fetch %s %s: %w: %s",

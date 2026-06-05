@@ -16,6 +16,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/gitexec"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -27,23 +28,7 @@ func execLookPath(name string) (string, error) { return exec.LookPath(name) }
 // stripped. Pre-commit hooks inject GIT_DIR, GIT_INDEX_FILE, etc. which
 // would redirect git subprocesses into the wrong repository.
 func cleanGitEnvForTest() []string {
-	env := os.Environ()
-	out := env[:0]
-	for _, e := range env {
-		key := e
-		if idx := strings.IndexByte(e, '='); idx >= 0 {
-			key = e[:idx]
-		}
-		switch key {
-		case "GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE",
-			"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-			"GIT_COMMON_DIR", "GIT_CEILING_DIRECTORIES":
-			// skip
-		default:
-			out = append(out, e)
-		}
-	}
-	return out
+	return gitexec.CleanEnv()
 }
 
 func runGit(t *testing.T, dir string, args ...string) {

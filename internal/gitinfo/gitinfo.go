@@ -16,12 +16,12 @@ package gitinfo
 
 import (
 	"context"
-	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/gitexec"
 )
 
 // Info is the per-directory snapshot surfaced to callers. The zero
@@ -119,16 +119,13 @@ func fetchFromGit(ctx context.Context, dir string) Info {
 	cctx, cancel := context.WithTimeout(ctx, gitCommandTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(cctx, "git", "-C", dir,
+	out, err := gitexec.Output(cctx, dir,
 		"status", "--porcelain=v2", "--branch",
 		"--untracked-files=normal", "--no-renames")
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")
-
-	out, err := cmd.Output()
 	if err != nil {
 		return Info{}
 	}
-	info := parsePorcelainV2(string(out))
+	info := parsePorcelainV2(out)
 	if info.Branch == "" {
 		return Info{}
 	}

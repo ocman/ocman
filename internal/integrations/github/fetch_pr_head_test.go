@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/NoUseFreak/ocman/internal/gitexec"
 )
 
 // TestFetchPRHead_FetchesAndCreatesLocalBranch verifies the
@@ -29,7 +31,7 @@ func TestFetchPRHead_FetchesAndCreatesLocalBranch(t *testing.T) {
 		t.Helper()
 		cmd := exec.Command("git", args...)
 		cmd.Dir = dir
-		cmd.Env = append(os.Environ(),
+		cmd.Env = append(gitexec.CleanEnv(),
 			"GIT_AUTHOR_NAME=test",
 			"GIT_AUTHOR_EMAIL=test@example.com",
 			"GIT_COMMITTER_NAME=test",
@@ -76,6 +78,7 @@ func TestFetchPRHead_FetchesAndCreatesLocalBranch(t *testing.T) {
 	headSha := func() string {
 		cmd := exec.Command("git", "rev-parse", "feature")
 		cmd.Dir = source
+		cmd.Env = gitexec.CleanEnv()
 		out, err := cmd.Output()
 		if err != nil {
 			t.Fatalf("rev-parse: %v", err)
@@ -90,6 +93,7 @@ func TestFetchPRHead_FetchesAndCreatesLocalBranch(t *testing.T) {
 	// Sanity: local does NOT yet have an "ocman/pr-7" branch.
 	cmd := exec.Command("git", "rev-parse", "--verify", "refs/heads/ocman/pr-7")
 	cmd.Dir = local
+	cmd.Env = gitexec.CleanEnv()
 	if err := cmd.Run(); err == nil {
 		t.Fatal("pre-condition failed: ocman/pr-7 already exists locally")
 	}
@@ -106,6 +110,7 @@ func TestFetchPRHead_FetchesAndCreatesLocalBranch(t *testing.T) {
 	// Verify the branch was created and points at the same SHA.
 	cmd = exec.Command("git", "rev-parse", "refs/heads/ocman/pr-7")
 	cmd.Dir = local
+	cmd.Env = gitexec.CleanEnv()
 	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("rev-parse ocman/pr-7: %v", err)

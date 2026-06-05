@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"os"
-	"os/exec"
 	"sort"
 	"strings"
+
+	"github.com/NoUseFreak/ocman/internal/gitexec"
 )
 
 // ForgejoHostMap is the small subset of forgejo.Registry that
@@ -28,13 +28,11 @@ func Detect(ctx context.Context, repoRoot string, hosts ForgejoHostMap) ([]Remot
 	if repoRoot == "" {
 		return nil, fmt.Errorf("forge: Detect requires repoRoot")
 	}
-	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "remote", "-v")
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")
-	out, err := cmd.Output()
+	out, err := gitexec.Output(ctx, repoRoot, "remote", "-v")
 	if err != nil {
 		return nil, fmt.Errorf("git remote -v: %w", err)
 	}
-	raw := parseGitRemoteV(string(out))
+	raw := parseGitRemoteV(out)
 	return classifyRemotes(raw, hosts), nil
 }
 

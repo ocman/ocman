@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/NoUseFreak/ocman/internal/gitexec"
 )
 
 // cleanGitEnv returns os.Environ() with git context variables stripped.
@@ -14,23 +16,7 @@ import (
 // GIT_WORK_TREE, etc. which would cause git commands in test subprocesses
 // to operate on the wrong repository.
 func cleanGitEnv() []string {
-	env := os.Environ()
-	out := env[:0]
-	for _, e := range env {
-		key := e
-		if idx := strings.IndexByte(e, '='); idx >= 0 {
-			key = e[:idx]
-		}
-		switch key {
-		case "GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE",
-			"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-			"GIT_COMMON_DIR", "GIT_CEILING_DIRECTORIES":
-			// skip
-		default:
-			out = append(out, e)
-		}
-	}
-	return out
+	return gitexec.CleanEnv()
 }
 
 func TestPathFor(t *testing.T) {

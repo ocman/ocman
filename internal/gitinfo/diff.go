@@ -4,11 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/gitexec"
 )
 
 // Diff is the structured response of a `git diff HEAD` for a working
@@ -263,20 +264,10 @@ func readBranchSummary(ctx context.Context, dir string) (string, int, int) {
 	return info.Branch, info.Ahead, info.Behind
 }
 
-// gitOutput runs `git -C dir <args...>` and returns combined stdout.
+// gitOutput runs `git -C dir <args...>` and returns stdout.
 // stderr is discarded; failure is signalled by a non-nil error.
 func gitOutput(ctx context.Context, dir string, args ...string) (string, error) {
-	allArgs := append([]string{"-C", dir}, args...)
-	cmd := exec.CommandContext(ctx, "git", allArgs...)
-	cmd.Env = append(os.Environ(),
-		"GIT_TERMINAL_PROMPT=0",
-		"GIT_OPTIONAL_LOCKS=0",
-	)
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return string(out), nil
+	return gitexec.Output(ctx, dir, args...)
 }
 
 // parseUnifiedDiff splits a multi-file `git diff` output into per-file
