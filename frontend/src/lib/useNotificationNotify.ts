@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { NotifyEntry } from './api';
-import { useNotifyStore } from './useNotifyData';
+import { notifyStateKey, useNotifyBaseline } from './useNotifyBaseline';
 import { useUiStore } from './uiStore';
 
 /**
@@ -50,10 +50,8 @@ type EvaluateInput = {
   baseline: Map<string, string> | null;
 };
 
-/** State key used to dedupe notifications across polls. */
-function stateKey(s: NotifyShape): string {
-  return `${s.status}|${s.pendingPermission ? '1' : '0'}|${s.pendingQuestion ? '1' : '0'}`;
-}
+// State key used to dedupe notifications across polls.
+const stateKey = notifyStateKey;
 
 // Sessions that have *already triggered* a notification this tab session.
 // Cleared on visibility change (mirrors how the bell/favicon baselines
@@ -176,17 +174,12 @@ function spawnNotification(d: Decision) {
 export function useNotificationNotify() {
   const enabled = useUiStore((s) => s.notificationsEnabled);
   const enabledRef = useRef(enabled);
-  const baselineRef = useRef<Map<string, string> | null>(null);
-
   useEffect(() => {
     enabledRef.current = enabled;
   }, [enabled]);
 
-  useEffect(() => {
-    // Subscribe to the shared notify store.
-    useNotifyStore.getState().subscribe();
-
-    function check(sessions: NotifyEntry[]) {
+  useNotifyBaseline(
+    (sessions, baseline) => {
       if (!enabledRef.current) return;
       const permission = readPermission();
       if (permission !== 'granted') return;
@@ -196,48 +189,20 @@ export function useNotificationNotify() {
         hidden: document.hidden,
         permission,
         enabled: enabledRef.current,
-        baseline: baselineRef.current,
+        baseline,
       });
       for (const d of decisions) spawnNotification(d);
-    }
-
-    function onVisibilityChange() {
-      const sessions = useNotifyStore.getState().data;
-      if (!document.hidden) {
-        // Visible again — reset baseline + dedupe so the next
-        // hide-then-complete cycle starts fresh.
-        baselineRef.current = null;
+    },
+    {
+      // Snapshot at mount even when visible, so a prompt that arrives
+      // while the user is on another app still triggers — but a prompt
+      // that was *already* there before mount doesn't.
+      initialBaselineWhenVisible: true,
+      // Reset the per-tab dedupe set when the tab becomes visible so the
+      // next hide-then-complete cycle starts fresh.
+      onVisibleReset: () => {
         firedKeys = new Set();
-      } else {
-        // Snapshot then check, mirroring useBellNotify.
-        if (sessions) {
-          baselineRef.current = new Map(sessions.map((s) => [s.id, stateKey(s)]));
-          check(sessions);
-        }
-      }
-    }
-
-    document.addEventListener('visibilitychange', onVisibilityChange);
-
-    // Take a baseline at mount so a prompt that arrives while the user
-    // is on another app still triggers — but a prompt that was *already*
-    // there before mount doesn't.
-    const initial = useNotifyStore.getState().data;
-    if (document.hidden && initial) {
-      baselineRef.current = new Map(initial.map((s) => [s.id, stateKey(s)]));
-    } else if (initial) {
-      baselineRef.current = new Map(initial.map((s) => [s.id, stateKey(s)]));
-    }
-
-    // Subscribe to store changes to react when new data arrives.
-    const unsub = useNotifyStore.subscribe((state) => {
-      if (state.data) check(state.data);
-    });
-
-    return () => {
-      unsub();
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      useNotifyStore.getState().unsubscribe();
-    };
-  }, []);
+      },
+    },
+  );
 }
