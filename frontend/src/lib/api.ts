@@ -162,26 +162,33 @@ export async function fetchJSON<T>(url: string, signal?: AbortSignal): Promise<T
 }
 
 /**
- * postJSON is the POST counterpart to fetchJSON: JSON body in, JSON
- * body out, with identical 401 handling. Use it for new call sites;
- * existing inline `fetch(..., { method: 'POST' })` usages in this
- * module will migrate opportunistically.
+ * postJSON is the mutation counterpart to fetchJSON: JSON body in,
+ * JSON body out, with identical 401 handling and perf recording. Use
+ * it for every mutating call so they all participate in the AuthError
+ * fan-out and the perf ring.
  *
- * Set `parseJSON` to false when the server returns 204 No Content
- * (login returns a body, but logout doesn't).
+ * Options:
+ * - `method`: override the HTTP verb (defaults to POST; pass DELETE /
+ *   PATCH as needed).
+ * - `body`: omit (pass `undefined`) for verb-only requests that send
+ *   no JSON body; the Content-Type header is then dropped too.
+ * - `parseJSON`: set false when the server returns 204 No Content
+ *   (login returns a body, but logout doesn't).
  */
 export async function postJSON<TResp, TReq = unknown>(
   url: string,
   body: TReq,
-  opts?: { signal?: AbortSignal; parseJSON?: boolean },
+  opts?: { signal?: AbortSignal; parseJSON?: boolean; method?: 'POST' | 'PATCH' | 'DELETE' },
 ): Promise<TResp> {
+  const method = opts?.method ?? 'POST';
   const startedAt = performance.now();
   let status = 0;
   try {
+    const hasBody = body !== undefined;
     const resp = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      method,
+      headers: hasBody ? { 'Content-Type': 'application/json' } : undefined,
+      body: hasBody ? JSON.stringify(body) : undefined,
       signal: opts?.signal,
     });
     status = resp.status;
@@ -193,7 +200,7 @@ export async function postJSON<TResp, TReq = unknown>(
   } finally {
     recordPerf({
       pathTemplate: templatePath(url),
-      method: 'POST',
+      method,
       status,
       durationMs: performance.now() - startedAt,
       startedAt,
@@ -267,42 +274,14 @@ export const api = {
     if (opts?.fresh) q.set('fresh', '1');
     return fetchJSON<WorkingTreeDiff>(`/api/git/diff?${q.toString()}`, signal);
   },
-  archiveSession: async (platform: string, sessionId: string, timeUpdated: number, archived = true) => {
-    const resp = await fetch('/api/session/archive', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ platform, sessionId, timeUpdated, archived }),
-    });
-    if (!resp.ok) throw new Error(await resp.text());
-    return resp.json() as Promise<{ ok: boolean }>;
-  },
-  markSessionSeen: async (platform: string, sessionId: string, timeUpdated: number) => {
-    const resp = await fetch('/api/session/seen', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ platform, sessionId, timeUpdated }),
-    });
-    if (!resp.ok) throw new Error(await resp.text());
-    return resp.json() as Promise<{ ok: boolean }>;
-  },
-  pinSession: async (platform: string, sessionId: string, pinned: boolean) => {
-    const resp = await fetch('/api/session/pin', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ platform, sessionId, pinned }),
-    });
-    if (!resp.ok) throw new Error(await resp.text());
-    return resp.json() as Promise<{ ok: boolean }>;
-  },
-  calcCost: async (req: { modelID: string; input: number; output: number; cacheRead: number; cacheWrite: number }) => {
-    const resp = await fetch('/api/cost/calc', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req),
-    });
-    if (!resp.ok) throw new Error(await resp.text());
-    return resp.json() as Promise<{ cost: number; known: boolean }>;
-  },
+  archiveSession: (platform: string, sessionId: string, timeUpdated: number, archived = true) =>
+    postJSON<{ ok: boolean }>('/api/session/archive', { platform, sessionId, timeUpdated, archived }),
+  markSessionSeen: (platform: string, sessionId: string, timeUpdated: number) =>
+    postJSON<{ ok: boolean }>('/api/session/seen', { platform, sessionId, timeUpdated }),
+  pinSession: (platform: string, sessionId: string, pinned: boolean) =>
+    postJSON<{ ok: boolean }>('/api/session/pin', { platform, sessionId, pinned }),
+  calcCost: (req: { modelID: string; input: number; output: number; cacheRead: number; cacheWrite: number }) =>
+    postJSON<{ cost: number; known: boolean }>('/api/cost/calc', req),
   activity: (params?: { days?: number; model?: string; dir?: string }, signal?: AbortSignal) => {
     const q = new URLSearchParams();
     if (params?.days) q.set('days', String(params.days));
@@ -325,22 +304,10 @@ export const api = {
   // not another — matches the DB's composite key.
   listFavorites: (platform: string) =>
     fetchJSON<FavoriteEntry[]>(`/api/favorites?platform=${encodeURIComponent(platform)}`),
-  addFavorite: async (platform: string, provider: string, model: string) => {
-    const resp = await fetch('/api/favorites', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ platform, provider, model }),
-    });
-    if (!resp.ok) throw new Error(await resp.text());
-  },
-  removeFavorite: async (platform: string, provider: string, model: string) => {
-    const resp = await fetch('/api/favorites', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ platform, provider, model }),
-    });
-    if (!resp.ok) throw new Error(await resp.text());
-  },
+  addFavorite: (platform: string, provider: string, model: string) =>
+    postJSON<void>('/api/favorites', { platform, provider, model }, { parseJSON: false }),
+  removeFavorite: (platform: string, provider: string, model: string) =>
+    postJSON<void>('/api/favorites', { platform, provider, model }, { method: 'DELETE', parseJSON: false }),
   hourly: (params?: { days?: number; dir?: string }, signal?: AbortSignal) => {
     const q = new URLSearchParams();
     if (params?.days) q.set('days', String(params.days));
@@ -421,72 +388,49 @@ export const api = {
   },
   listPermissions: (sessionId: string) =>
     fetchJSON<unknown[]>(`/api/session/${encodeURIComponent(sessionId)}/permissions`),
-  respondPermission: async (
+  respondPermission: (
     sessionId: string,
     permissionId: string,
     reply: 'once' | 'always' | 'reject',
-  ) => {
-    const resp = await fetch(
+  ) =>
+    postJSON<void>(
       `/api/session/${encodeURIComponent(sessionId)}/permissions/${encodeURIComponent(permissionId)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reply }),
-      },
-    );
-    if (!resp.ok) throw new Error(await resp.text());
-  },
+      { reply },
+      { parseJSON: false },
+    ),
   listQuestions: (sessionId: string) =>
     fetchJSON<unknown[]>(`/api/session/${encodeURIComponent(sessionId)}/questions`),
-  respondQuestion: async (
+  respondQuestion: (
     sessionId: string,
     requestId: string,
     answers: string[][],
-  ) => {
-    const resp = await fetch(
+  ) =>
+    postJSON<void>(
       `/api/session/${encodeURIComponent(sessionId)}/questions/${encodeURIComponent(requestId)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ answers }),
-      },
-    );
-    if (!resp.ok) throw new Error(await resp.text());
-  },
-  rejectQuestion: async (sessionId: string, requestId: string) => {
-    const resp = await fetch(
+      { answers },
+      { parseJSON: false },
+    ),
+  rejectQuestion: (sessionId: string, requestId: string) =>
+    postJSON<void>(
       `/api/session/${encodeURIComponent(sessionId)}/questions/${encodeURIComponent(requestId)}/reject`,
-      { method: 'POST' },
-    );
-    if (!resp.ok) throw new Error(await resp.text());
-  },
-  abortSession: async (sessionId: string) => {
-    const resp = await fetch(`/api/session/${encodeURIComponent(sessionId)}/abort`, {
-      method: 'POST',
-    });
-    if (!resp.ok) throw new Error(await resp.text());
-  },
+      undefined,
+      { parseJSON: false },
+    ),
+  abortSession: (sessionId: string) =>
+    postJSON<void>(
+      `/api/session/${encodeURIComponent(sessionId)}/abort`,
+      undefined,
+      { parseJSON: false },
+    ),
   tmuxClients: (signal?: AbortSignal) => fetchJSON<{ available: boolean; clients: TmuxClient[] }>('/api/tmux/clients', signal),
   tmuxSessions: (signal?: AbortSignal) => fetchJSON<{ available: boolean; sessions: TmuxSession[] }>('/api/tmux/sessions', signal),
-  tmuxSwitch: async (session: string, client?: string) => {
+  tmuxSwitch: (session: string, client?: string) => {
     const body: Record<string, string> = { session };
     if (client) body.client = client;
-    const resp = await fetch('/api/tmux/switch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!resp.ok) throw new Error(await resp.text());
+    return postJSON<void>('/api/tmux/switch', body, { parseJSON: false });
   },
-  tmuxLaunchOpencode: async (directory: string): Promise<{ session: string }> => {
-    const resp = await fetch('/api/tmux/launch-opencode', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ directory }),
-    });
-    if (!resp.ok) throw new Error(await resp.text());
-    return resp.json();
-  },
+  tmuxLaunchOpencode: (directory: string): Promise<{ session: string }> =>
+    postJSON<{ session: string }>('/api/tmux/launch-opencode', { directory }),
   /**
    * In-app terminal windows. Each entry is a dedicated tmux window
    * (`ocman-term-<slug>-<n>`) backing a terminal tab in the UI.
@@ -530,42 +474,31 @@ export const api = {
         `/api/worktree/default-base-ref?dir=${encodeURIComponent(dir)}`,
         signal,
       ),
-    createAndLaunch: async (req: WorktreeCreateRequest): Promise<WorktreeCreateResponse> => {
-      const resp = await fetch('/api/worktree/create-and-launch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(req),
-      });
-      if (!resp.ok) throw new Error(await resp.text());
-      return resp.json();
-    },
+    createAndLaunch: (req: WorktreeCreateRequest): Promise<WorktreeCreateResponse> =>
+      postJSON<WorktreeCreateResponse>('/api/worktree/create-and-launch', req),
   },
-  compactSession: async (sessionId: string, providerID: string, modelID: string) => {
-    const resp = await fetch(`/api/session/${encodeURIComponent(sessionId)}/compact`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ providerID, modelID }),
-    });
-    if (!resp.ok) throw new Error(await resp.text());
-  },
+  compactSession: (sessionId: string, providerID: string, modelID: string) =>
+    postJSON<void>(
+      `/api/session/${encodeURIComponent(sessionId)}/compact`,
+      { providerID, modelID },
+      { parseJSON: false },
+    ),
   commands: (sessionId: string, signal?: AbortSignal) =>
     fetchJSON<SlashCommand[]>(`/api/session/${encodeURIComponent(sessionId)}/commands`, signal),
   agents: (sessionId: string, signal?: AbortSignal) =>
     fetchJSON<AgentInfo[]>(`/api/session/${encodeURIComponent(sessionId)}/agents`, signal),
-  executeCommand: async (
+  executeCommand: (
     sessionId: string,
     command: string,
     args: string,
     model?: string,
     agent?: string,
-  ) => {
-    const resp = await fetch(`/api/session/${encodeURIComponent(sessionId)}/command`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command, arguments: args, model, agent }),
-    });
-    if (!resp.ok) throw new Error(await resp.text());
-  },
+  ) =>
+    postJSON<void>(
+      `/api/session/${encodeURIComponent(sessionId)}/command`,
+      { command, arguments: args, model, agent },
+      { parseJSON: false },
+    ),
   /**
    * Run a raw shell command in the session's working directory,
    * bypassing the LLM. Backed by the platform's shell-tool primitive
@@ -574,22 +507,18 @@ export const api = {
    * caps.shellExec. The backend defaults `agent` to "build" when
    * blank.
    */
-  runShell: async (sessionId: string, command: string, agent?: string) => {
-    const resp = await fetch(`/api/session/${encodeURIComponent(sessionId)}/shell`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command, agent }),
-    });
-    if (!resp.ok) throw new Error(await resp.text());
-  },
-  renameSession: async (sessionId: string, title: string) => {
-    const resp = await fetch(`/api/session/${encodeURIComponent(sessionId)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title }),
-    });
-    if (!resp.ok) throw new Error(await resp.text());
-  },
+  runShell: (sessionId: string, command: string, agent?: string) =>
+    postJSON<void>(
+      `/api/session/${encodeURIComponent(sessionId)}/shell`,
+      { command, agent },
+      { parseJSON: false },
+    ),
+  renameSession: (sessionId: string, title: string) =>
+    postJSON<void>(
+      `/api/session/${encodeURIComponent(sessionId)}`,
+      { title },
+      { method: 'PATCH', parseJSON: false },
+    ),
   // Best-effort remote log. Used by remoteLog.* to ship debug output to the
   // backend when browser devtools aren't reachable (e.g. on iPad). Errors
   // are swallowed so a failing log call never breaks the caller.
@@ -661,39 +590,22 @@ export const api = {
       `/api/session/${encodeURIComponent(sessionId)}/auto-approve`,
     ),
 
-  setAutoApprove: async (sessionId: string, enabled: boolean): Promise<void> => {
-    const resp = await fetch(
+  setAutoApprove: (sessionId: string, enabled: boolean): Promise<void> =>
+    postJSON<void>(
       `/api/session/${encodeURIComponent(sessionId)}/auto-approve`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled }),
-      },
-    );
-    if (!resp.ok) throw new Error(await resp.text());
-  },
+      { enabled },
+      { parseJSON: false },
+    ),
 
   getPromptSections: () =>
     fetchJSON<Array<{ title: string; content: string }>>('/api/settings/prompt-sections'),
 
-  setPromptSections: async (sections: Array<{ title: string; content: string }>): Promise<void> => {
-    const resp = await fetch('/api/settings/prompt-sections', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(sections),
-    });
-    if (!resp.ok) throw new Error(await resp.text());
-  },
+  setPromptSections: (sections: Array<{ title: string; content: string }>): Promise<void> =>
+    postJSON<void>('/api/settings/prompt-sections', sections, { parseJSON: false }),
 
   getJudgeDelay: () =>
     fetchJSON<{ delayMs: number }>('/api/settings/judge-delay').then((r) => r.delayMs),
 
-  setJudgeDelay: async (delayMs: number): Promise<void> => {
-    const resp = await fetch('/api/settings/judge-delay', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ delayMs }),
-    });
-    if (!resp.ok) throw new Error(await resp.text());
-  },
+  setJudgeDelay: (delayMs: number): Promise<void> =>
+    postJSON<void>('/api/settings/judge-delay', { delayMs }, { parseJSON: false }),
 };
