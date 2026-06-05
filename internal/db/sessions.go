@@ -436,57 +436,12 @@ func (d *DB) GetSessionDefaults(sessionID, directory string) (SessionDefaults, e
 func (d *DB) lookupSessionDefaults(sessionID, directory string) (SessionDefaults, bool, error) {
 	const candidatesLimit = 5
 
-	// Two near-identical queries because directory filtering changes
-	// the WHERE shape. Keeping them as named SQL strings rather than
-	// programmatically building a query makes the query plan reviewable.
-	const queryWithDir = `
-		WITH candidate_sessions AS (
-			SELECT id, time_updated FROM session
-			WHERE directory = ?
-			  AND id != ?
-			  AND title NOT LIKE '%(% subagent)'
-			ORDER BY time_updated DESC
-			LIMIT ?
-		)
-		SELECT
-			COALESCE(NULLIF(json_extract(m.data, '$.agent'), ''), '') AS agent,
-			COALESCE(
-				CASE
-					WHEN COALESCE(NULLIF(json_extract(m.data, '$.providerID'), ''), '') != ''
-						AND COALESCE(NULLIF(json_extract(m.data, '$.modelID'), ''), '') != ''
-					THEN json_extract(m.data, '$.providerID') || '/' || json_extract(m.data, '$.modelID')
-					WHEN COALESCE(NULLIF(json_extract(m.data, '$.model.providerID'), ''), '') != ''
-						AND COALESCE(NULLIF(json_extract(m.data, '$.model.modelID'), ''), '') != ''
-					THEN json_extract(m.data, '$.model.providerID') || '/' || json_extract(m.data, '$.model.modelID')
-					ELSE COALESCE(
-						NULLIF(json_extract(m.data, '$.modelID'), ''),
-						NULLIF(json_extract(m.data, '$.model.modelID'), ''),
-						''
-					)
-				END,
-				''
-			) AS model
-		FROM candidate_sessions cs
-		JOIN message m ON m.session_id = cs.id
-		WHERE json_extract(m.data, '$.role') = 'assistant'
-		  AND (
-				COALESCE(NULLIF(json_extract(m.data, '$.agent'), ''), '') != ''
-				OR COALESCE(NULLIF(json_extract(m.data, '$.providerID'), ''), '') != ''
-				OR COALESCE(NULLIF(json_extract(m.data, '$.modelID'), ''), '') != ''
-				OR COALESCE(NULLIF(json_extract(m.data, '$.model.providerID'), ''), '') != ''
-				OR COALESCE(NULLIF(json_extract(m.data, '$.model.modelID'), ''), '') != ''
-		  )
-		ORDER BY cs.time_updated DESC, m.time_created DESC
-		LIMIT 1
-	`
-	const queryNoDir = `
-		WITH candidate_sessions AS (
-			SELECT id, time_updated FROM session
-			WHERE id != ?
-			  AND title NOT LIKE '%(% subagent)'
-			ORDER BY time_updated DESC
-			LIMIT ?
-		)
+	// The only difference between the directory-scoped and global
+	// lookups is the candidate-CTE's WHERE shape; the bulk of the query
+	// (the agent + model resolution over the candidate sessions) is
+	// identical, so it lives in one constant. Args are appended in the
+	// same order the CTE placeholders appear.
+	const sessionDefaultsTail = `
 		SELECT
 			COALESCE(NULLIF(json_extract(m.data, '$.agent'), ''), '') AS agent,
 			COALESCE(
@@ -519,15 +474,34 @@ func (d *DB) lookupSessionDefaults(sessionID, directory string) (SessionDefaults
 		LIMIT 1
 	`
 
-	var defaults SessionDefaults
-	var err error
+	var cte string
+	var args []interface{}
 	if directory != "" {
-		err = d.db.QueryRow(queryWithDir, directory, sessionID, candidatesLimit).
-			Scan(&defaults.Agent, &defaults.Model)
+		cte = `
+		WITH candidate_sessions AS (
+			SELECT id, time_updated FROM session
+			WHERE directory = ?
+			  AND id != ?
+			  AND title NOT LIKE '%(% subagent)'
+			ORDER BY time_updated DESC
+			LIMIT ?
+		)`
+		args = []interface{}{directory, sessionID, candidatesLimit}
 	} else {
-		err = d.db.QueryRow(queryNoDir, sessionID, candidatesLimit).
-			Scan(&defaults.Agent, &defaults.Model)
+		cte = `
+		WITH candidate_sessions AS (
+			SELECT id, time_updated FROM session
+			WHERE id != ?
+			  AND title NOT LIKE '%(% subagent)'
+			ORDER BY time_updated DESC
+			LIMIT ?
+		)`
+		args = []interface{}{sessionID, candidatesLimit}
 	}
+
+	var defaults SessionDefaults
+	err := d.db.QueryRow(cte+sessionDefaultsTail, args...).
+		Scan(&defaults.Agent, &defaults.Model)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return SessionDefaults{}, false, nil
