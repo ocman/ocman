@@ -2,6 +2,10 @@ ocman
 node_modules/
 tmp/
 dist/
+# Coverage output (CI ratchet, spec/ci-coverage-ratchet). Baselines
+# live on the gh-pages branch, never on main.
+coverage/
+frontend/coverage/
 build/appicon.png
 build/bin/
 frontend/src/wailsjs/

@@ -49,6 +49,49 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
 
+  coverage:
+    name: Coverage Ratchet
+    runs-on: ubuntu-latest
+    needs: [frontend, backend]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 25
+      - name: Install pnpm
+        run: npm install -g pnpm@10.11.1
+      - name: Install dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: Collect coverage
+        run: make coverage
+      - name: Fetch baseline from gh-pages
+        run: ./scripts/coverage-fetch-baseline.sh baseline
+      - name: Check coverage ratchet
+        id: ratchet
+        run: make coverage-check BASELINE_DIR=baseline
+      - name: Comment coverage delta on PR
+        if: always() && github.event_name == 'pull_request'
+        env:
+          FORGEJO_API_URL: ${{ github.api_url }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          TOKEN: ${{ github.token }}
+        run: ./scripts/coverage-pr-comment.sh
+      - name: Publish baseline to gh-pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          SERVER_URL: ${{ github.server_url }}
+          REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          TOKEN: ${{ secrets.RELEASE_PAT || github.token }}
+        run: ./scripts/coverage-publish-baseline.sh
+
   e2e:
     name: Playwright E2E
     runs-on: ubuntu-latest

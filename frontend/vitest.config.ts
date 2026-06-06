@@ -23,5 +23,19 @@ export default defineConfig({
       '**/dist/**',
       'e2e/**',
     ],
+    coverage: {
+      // @vitest/coverage-v8 is a devDependency. The CI coverage
+      // ratchet (spec/ci-coverage-ratchet) reads total.lines.pct from
+      // the json-summary reporter's coverage-summary.json.
+      provider: 'v8',
+      reporter: ['text', 'json-summary'],
+      reportsDirectory: './coverage',
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: [
+        'src/**/*.test.{ts,tsx}',
+        'src/**/*.d.ts',
+        'src/main.tsx',
+      ],
+    },
   },
 });

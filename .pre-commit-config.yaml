@@ -13,3 +13,25 @@ repos:
         entry: make test-frontend
         pass_filenames: false
         files: '^frontend/'
+      # Coverage ratchet runs at push time (not on every commit /
+      # `make test`) so the inner loop stays fast. Split per side so
+      # the `files:` filter only runs the suite that actually changed
+      # in the pushed range — editing Go won't trigger the (slower)
+      # frontend coverage run and vice-versa. Each collects coverage,
+      # fetches the gh-pages baseline, and fails the push if that
+      # suite's coverage dropped beyond the grace tolerance. A missing
+      # baseline (first run, offline) is a pass.
+      - id: coverage-ratchet-backend
+        name: coverage ratchet (go)
+        language: system
+        entry: ./scripts/coverage-local-check.sh go
+        pass_filenames: false
+        files: '\.go$'
+        stages: [pre-push]
+      - id: coverage-ratchet-frontend
+        name: coverage ratchet (frontend)
+        language: system
+        entry: ./scripts/coverage-local-check.sh frontend
+        pass_filenames: false
+        files: '^frontend/'
+        stages: [pre-push]

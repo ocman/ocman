@@ -1,4 +1,4 @@
-.PHONY: dev dev-backend dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev install-e2e-browsers test-race test-fuzz test-coverage lint lint-backend lint-frontend lint-platform-branching otel-up otel-down otel-logs otel-reset caddy-up caddy-down caddy-cert install-hooks help
+.PHONY: dev dev-backend dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-platform-branching otel-up otel-down otel-logs otel-reset caddy-up caddy-down caddy-cert install-hooks help
 
 # --- OTel dev defaults ----------------------------------------------------
 #
@@ -369,6 +369,19 @@ test-fuzz: ## Run all Fuzz* targets for 10s each
 test-coverage: ## Print per-package Go coverage for internal/
 	go test -cover ./internal/...
 
+# Collect total line coverage into coverage/*.json. Pass SUITE=go or
+# SUITE=frontend to collect just one side (default: both). Drives the
+# CI coverage ratchet (spec/ci-coverage-ratchet).
+coverage: ## Collect coverage into coverage/*.json (SUITE=go|frontend|all)
+	./scripts/coverage-collect.sh $(SUITE)
+
+# Compare the collected coverage/*.json against a baseline directory
+# and fail if any suite dropped beyond the grace tolerance. CI passes
+# BASELINE_DIR pointing at the gh-pages baseline; missing baseline =
+# pass.
+coverage-check: ## Compare coverage/*.json against $(BASELINE_DIR)
+	./scripts/coverage-ratchet.sh "$(BASELINE_DIR)" $(SUITE)
+
 # Run all linters and type checks
 lint: lint-backend lint-frontend lint-platform-branching
 
@@ -447,8 +460,9 @@ caddy-cert: ## Pre-fetch the Tailscale TLS cert (optional; caddy-up does this au
 		echo "tailscale not found or not running"; exit 1; }
 	tailscale cert driess-macbook-pro.tail5f13e4.ts.net
 
-install-hooks: ## Install pre-commit hooks (requires pre-commit: pip install pre-commit)
+install-hooks: ## Install pre-commit + pre-push hooks (requires pre-commit: pip install pre-commit)
 	pre-commit install
+	pre-commit install --hook-type pre-push
 
 # --- Help ----------------------------------------------------------------
 #
