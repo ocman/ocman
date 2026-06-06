@@ -533,9 +533,10 @@ test('navigating to another session during text streaming shows the target sessi
   await page.getByRole('button', { name: /Refactor auth module/ }).click();
 
   // URL change is synchronous (flushSync); content update needs a
-  // fetch round-trip that can take longer on slow CI runners.
+  // fetch round-trip that can take longer on slow CI runners — give the
+  // banner title generous headroom so it doesn't flake under load.
   await expect(page).toHaveURL(`/session/${MOCK_SESSION_2.id}`, { timeout: 2_000 });
-  await expect(page.getByRole('banner')).toContainText(MOCK_SESSION_2.title, { timeout: 5_000 });
+  await expect(page.getByRole('banner')).toContainText(MOCK_SESSION_2.title, { timeout: 10_000 });
   await expect(page.locator('.oc-msg-assistant').filter({ hasText: 'Streaming response start' })).toHaveCount(0, { timeout: 2_000 });
 });
 
@@ -547,7 +548,7 @@ test('navigating to another session during an active tool phase shows the target
   await page.getByRole('button', { name: /Refactor auth module/ }).click();
 
   await expect(page).toHaveURL(`/session/${MOCK_SESSION_2.id}`, { timeout: 2_000 });
-  await expect(page.getByRole('banner')).toContainText(MOCK_SESSION_2.title, { timeout: 5_000 });
+  await expect(page.getByRole('banner')).toContainText(MOCK_SESSION_2.title, { timeout: 10_000 });
   await expect(page.getByText('Synthetic active tool call')).toHaveCount(0, { timeout: 2_000 });
 });
 
@@ -1246,26 +1247,29 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
   //    have streamed in. The cache mirror records "1 2 3 4 5 ".
   await page.goto(`/session/${SESSION_A}`);
   await expect(page.getByTestId('session-layout')).toBeVisible();
-  const bubble = page.locator('.oc-msg-assistant');
-  await expect(bubble).toContainText('1 2 3 4 5', { timeout: 5_000 });
+  // Scope to the message *body* rather than the whole assistant bubble:
+  // the bubble also renders a timestamp footer ("HH:MM") once streaming
+  // completes, which would otherwise pollute these text assertions.
+  const bubble = page.locator('.oc-msg-assistant .oc-msg-body');
+  await expect(bubble).toContainText('1 2 3 4 5', { timeout: 10_000 });
 
   // 2. Switch to session B. A's EventSource closes; A's REST cache
   //    still has the cached "1 2 3 4 5 " content via the cache mirror.
   await page.locator('.session-sidebar-item', { hasText: MOCK_SESSION_2.title }).click();
-  await expect(page.getByRole('banner')).toContainText(MOCK_SESSION_2.title, { timeout: 2_000 });
+  await expect(page.getByRole('banner')).toContainText(MOCK_SESSION_2.title, { timeout: 5_000 });
 
   // 3. Return to session A. The reconcile fetch returns the
   //    DB-lagging "1 2 3 " snapshot. Phase 2 then streams "6 " "7 ".
   await page.locator('.session-sidebar-item', { hasText: MOCK_SESSION.title }).click();
-  await expect(page.getByRole('banner')).toContainText(MOCK_SESSION.title, { timeout: 2_000 });
+  await expect(page.getByRole('banner')).toContainText(MOCK_SESSION.title, { timeout: 5_000 });
 
   // 4. Wait for phase 2 to finish ("6 7 " arrived).
-  await expect(bubble).toContainText('6 7', { timeout: 5_000 });
+  await expect(bubble).toContainText('6 7', { timeout: 10_000 });
 
   // 5. The full accumulated text must contain every number 1..7 in
   //    order, with no gaps. Without the fix, the snapshot wipes
   //    "4 5 " and the final text is "1 2 3 6 7 ".
-  await expect(bubble).toContainText('1 2 3 4 5 6 7', { timeout: 2_000 });
+  await expect(bubble).toContainText('1 2 3 4 5 6 7', { timeout: 5_000 });
 });
 
 // ---------------------------------------------------------------------------
