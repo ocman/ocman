@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo } from 'react';
 import { fetchUpstreams, type Upstream } from './upstreamApi';
+import { useAsyncResource } from './useAsyncResource';
 
 export interface UseUpstreamsResult {
   upstreams: Upstream[];
@@ -8,6 +9,8 @@ export interface UseUpstreamsResult {
   /** True once the first fetch has resolved (success or empty). */
   ready: boolean;
 }
+
+const EMPTY: Upstream[] = [];
 
 /**
  * useUpstreams subscribes to /api/project/upstreams for the given
@@ -19,56 +22,16 @@ export interface UseUpstreamsResult {
  * - other network errors → error string set, list empty.
  */
 export function useUpstreams(directory: string | undefined): UseUpstreamsResult {
-  const [upstreams, setUpstreams] = useState<Upstream[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [ready, setReady] = useState(false);
-
-  // Stable abort handle so a quick remount doesn't pile up requests.
-  const abortRef = useRef<AbortController | null>(null);
-
   // Memoise on the trimmed string so callers can pass props directly.
   const dir = useMemo(() => (directory ?? '').trim(), [directory]);
 
-  useEffect(() => {
-    // Defer the actual work into a closure so the lint rule's
-    // "no synchronous setState in effects" check is satisfied
-    // (matches useGitInfo's structure). Functionally equivalent.
-    const reset = () => {
-      setUpstreams([]);
-      setReady(false);
-    };
-    if (!dir) {
-      reset();
-      return;
-    }
-    const run = () => {
-      abortRef.current?.abort();
-      const ctrl = new AbortController();
-      abortRef.current = ctrl;
-      setLoading(true);
-      setError(null);
-      fetchUpstreams(dir, ctrl.signal)
-        .then((list) => {
-          if (ctrl.signal.aborted) return;
-          setUpstreams(list);
-          setLoading(false);
-          setReady(true);
-        })
-        .catch((err: unknown) => {
-          if (ctrl.signal.aborted) return;
-          if (err instanceof DOMException && err.name === 'AbortError') return;
-          setUpstreams([]);
-          setError(err instanceof Error ? err.message : 'failed to detect upstreams');
-          setLoading(false);
-          setReady(true);
-        });
-    };
-    run();
-    return () => {
-      abortRef.current?.abort();
-    };
-  }, [dir]);
+  const { data, loading, error, ready } = useAsyncResource<Upstream[]>({
+    fetcher: (signal) => fetchUpstreams(dir, signal),
+    deps: [dir],
+    initial: EMPTY,
+    enabled: !!dir,
+    errorMessage: (err) => (err instanceof Error ? err.message : 'failed to detect upstreams'),
+  });
 
-  return { upstreams, loading, error, ready };
+  return { upstreams: data, loading, error, ready };
 }

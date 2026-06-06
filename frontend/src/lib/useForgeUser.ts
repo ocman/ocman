@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
 import { fetchForgeUser } from './upstreamApi';
+import { useAsyncResource } from './useAsyncResource';
 
 /**
  * useForgeUser resolves the authenticated user's login for the given
@@ -12,29 +12,15 @@ import { fetchForgeUser } from './upstreamApi';
  * affected remote.
  */
 export function useForgeUser(dir: string | undefined, remote: string | undefined): string | null {
-  const [login, setLogin] = useState<string | null>(null);
+  // Errors (e.g. 401 unauthenticated) resolve to null — the resource's
+  // initial value — which is exactly the "no login" signal callers want.
+  const { data } = useAsyncResource<string | null>({
+    fetcher: (signal) =>
+      fetchForgeUser({ dir: dir!, remote: remote!, signal }).then((u) => u?.login ?? null),
+    deps: [dir, remote],
+    initial: null,
+    enabled: !!dir && !!remote,
+  });
 
-  useEffect(() => {
-    const run = () => {
-      if (!dir || !remote) {
-        setLogin(null);
-        return undefined;
-      }
-      const ctrl = new AbortController();
-      fetchForgeUser({ dir, remote, signal: ctrl.signal })
-        .then((u) => {
-          if (ctrl.signal.aborted) return;
-          setLogin(u?.login ?? null);
-        })
-        .catch(() => {
-          if (ctrl.signal.aborted) return;
-          setLogin(null);
-        });
-      return ctrl;
-    };
-    const ctrl = run();
-    return () => ctrl?.abort();
-  }, [dir, remote]);
-
-  return login;
+  return data;
 }
