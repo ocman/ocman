@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { markHandledByPrompt, wasHandledByPrompt, type PromptKeyEvent as KeyEvent } from './promptKeyboard';
 import '../PermissionPrompt.css';
 
 export interface PendingPermission {
@@ -12,22 +13,6 @@ export interface PendingPermission {
 }
 
 type Reply = 'once' | 'always' | 'reject';
-type KeyEvent = KeyboardEvent | React.KeyboardEvent<HTMLDivElement>;
-const PROMPT_EVENT_HANDLED = '__ocmanPromptHandled';
-
-function wasHandledByPrompt(e: KeyEvent): boolean {
-  // Check both the event object itself (native keydown events) and the
-  // underlying native event (React synthetic events wrap the native event
-  // but don't copy custom properties set on it).
-  if ((e as KeyEvent & Record<string, unknown>)[PROMPT_EVENT_HANDLED]) return true;
-  const native = (e as React.KeyboardEvent<HTMLDivElement>).nativeEvent;
-  if (native && (native as KeyboardEvent & Record<string, unknown>)[PROMPT_EVENT_HANDLED]) return true;
-  return false;
-}
-
-function markHandledByPrompt(e: KeyboardEvent): void {
-  (e as KeyboardEvent & Record<string, unknown>)[PROMPT_EVENT_HANDLED] = true;
-}
 
 function numberKeyIndex(e: KeyEvent, max: number): number {
   const codeMatch = /^Digit([1-9])$/.exec(e.code) ?? /^Numpad([1-9])$/.exec(e.code);

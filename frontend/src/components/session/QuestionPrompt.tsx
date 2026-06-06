@@ -1,22 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { markHandledByPrompt, wasHandledByPrompt, type PromptKeyEvent as KeyEvent } from './promptKeyboard';
 import './QuestionPrompt.css';
-
-type KeyEvent = KeyboardEvent | React.KeyboardEvent<HTMLDivElement>;
-const PROMPT_EVENT_HANDLED = '__ocmanPromptHandled';
-
-function wasHandledByPrompt(e: KeyEvent): boolean {
-  if ((e as KeyEvent & Record<string, unknown>)[PROMPT_EVENT_HANDLED]) return true;
-  // Also check the native event when called from a React synthetic event
-  // handler — the native event and the synthetic wrapper are different objects,
-  // so a mark set on one isn't visible on the other without this bridge.
-  const native = (e as React.KeyboardEvent<HTMLDivElement>).nativeEvent;
-  if (native && (native as KeyboardEvent & Record<string, unknown>)[PROMPT_EVENT_HANDLED]) return true;
-  return false;
-}
-
-function markHandledByPrompt(e: KeyboardEvent): void {
-  (e as KeyboardEvent & Record<string, unknown>)[PROMPT_EVENT_HANDLED] = true;
-}
 
 function optionIndexFromNumberKey(e: KeyEvent, max: number): number {
   const codeMatch = /^Digit([1-9])$/.exec(e.code) ?? /^Numpad([1-9])$/.exec(e.code);
