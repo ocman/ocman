@@ -85,6 +85,20 @@ export interface Session {
   pinned: boolean;
   pinnedAt: number;
   /**
+   * The session's timeUpdated at the moment the user last viewed it.
+   * Zero when the user has never opened the session. Used to compute
+   * the "first unread" marker and unread badge on the session list
+   * without an extra round-trip.
+   */
+  seenTimeUpdated: number;
+  /**
+   * Number of messages in this session with timeCreated strictly
+   * greater than seenTimeUpdated. Zero when the session is fully
+   * seen, when the platform doesn't expose per-message timestamps,
+   * or when the count is suppressed for performance.
+   */
+  unreadCount: number;
+  /**
    * Normalized, platform-agnostic explanation of a transient session
    * condition (e.g. rate-limit backoff). Absent when no notice applies.
    * The frontend renders this as a banner / tooltip without inspecting

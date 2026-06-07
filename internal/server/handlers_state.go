@@ -1,7 +1,10 @@
 package server
 
 import (
+	"context"
 	"net/http"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -146,17 +149,38 @@ func (s *Server) applySessionState(sessions []db.Session) error {
 		return err
 	}
 
+	// Build the per-platform "I want unread counts for these sessions
+	// at this cutoff" maps. Skip sessions that are fully seen
+	// (Seen==true) — their count would be zero by definition.
+	// Sessions never seen pass cutoff=0 so every message counts.
+	unreadCutoffs := map[string]map[string]int64{}
+
 	for i := range sessions {
 		key := state.Key{Platform: sessions[i].Platform, SessionID: sessions[i].ID}
 
 		seenAtUpdate, ok := seen[key]
-		if ok && seenAtUpdate >= sessions[i].TimeUpdated {
-			sessions[i].Seen = true
+		if ok {
+			sessions[i].SeenTimeUpdated = seenAtUpdate
+			if seenAtUpdate >= sessions[i].TimeUpdated {
+				sessions[i].Seen = true
+			}
 		}
 
 		if pinnedAt, ok := pinned[key]; ok {
 			sessions[i].Pinned = true
 			sessions[i].PinnedAt = pinnedAt
+		}
+
+		// Queue unread-count lookup for unseen sessions. The
+		// cutoff is the user's last-seen time_updated for this
+		// session, or 0 (= count every message) when never seen.
+		if !sessions[i].Seen {
+			byPlatform, ok := unreadCutoffs[sessions[i].Platform]
+			if !ok {
+				byPlatform = map[string]int64{}
+				unreadCutoffs[sessions[i].Platform] = byPlatform
+			}
+			byPlatform[sessions[i].ID] = seenAtUpdate
 		}
 
 		archivedAtUpdate, ok := archived[key]
@@ -172,5 +196,57 @@ func (s *Server) applySessionState(sessions []db.Session) error {
 		sessions[i].Archived = true
 	}
 
+	// Resolve unread counts per platform via the optional
+	// UnreadCounter interface. Platforms that don't implement it
+	// leave UnreadCount at zero; the frontend still shows the
+	// "new" affordance via Seen==false.
+	if err := s.overlayUnreadCounts(sessions, unreadCutoffs); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// overlayUnreadCounts asks each platform's optional UnreadCounter for
+// counts at the cutoffs collected by applySessionState, then writes
+// them onto the matching session entries. Errors from a single
+// platform are logged but not fatal — a missing unread count
+// degrades gracefully to zero.
+func (s *Server) overlayUnreadCounts(sessions []db.Session, cutoffsByPlatform map[string]map[string]int64) error {
+	if len(cutoffsByPlatform) == 0 {
+		return nil
+	}
+
+	// One call per platform, then one O(N) pass to write the
+	// numbers back onto the session slice.
+	counts := map[state.Key]int{}
+	for platformID, cutoffs := range cutoffsByPlatform {
+		adapter, ok := s.registry.Get(platforms.ID(platformID))
+		if !ok {
+			continue
+		}
+		counter, ok := adapter.(platforms.UnreadCounter)
+		if !ok {
+			continue
+		}
+		got, err := counter.UnreadCounts(context.Background(), cutoffs)
+		if err != nil {
+			log.WithFields(log.Fields{
+				"platform": platformID,
+				"error":    err,
+			}).Warn("UnreadCounts failed; treating as zero")
+			continue
+		}
+		for sid, n := range got {
+			counts[state.Key{Platform: platformID, SessionID: sid}] = n
+		}
+	}
+
+	for i := range sessions {
+		key := state.Key{Platform: sessions[i].Platform, SessionID: sessions[i].ID}
+		if n, ok := counts[key]; ok {
+			sessions[i].UnreadCount = n
+		}
+	}
 	return nil
 }

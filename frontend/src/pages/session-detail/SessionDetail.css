@@ -267,6 +267,26 @@
   flex-shrink: 0;
   padding-top: 2px;
 }
+/* Unread message count badge.
+   Uses the same "blue = new since last view" vocabulary as the
+   status dot (see StatusBadge.css). Hidden when:
+   - the session is fully seen (unreadCount=0 or seen=true)
+   - this row is the currently-open session (the SessionDetail
+     useEffect marks it seen on mount, so the badge would
+     immediately flicker off). */
+.session-sidebar-unread {
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--base);
+  background: var(--blue);
+  border-radius: 8px;
+  padding: 2px 6px;
+  min-width: 16px;
+  text-align: center;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 /* Row container for pin + archive buttons */
 .session-sidebar-actions {
   display: flex;
@@ -539,4 +559,32 @@
   to {
     transform: translateX(calc(100% + 22px));
   }
+}
+
+/* Jump-to-first-unread pill rendered above the composer when the
+   user has unread agent messages in the loaded thread. Matches the
+   "blue = new since last view" status vocabulary. */
+.oc-jump-unread {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--base);
+  background: var(--blue);
+  border: none;
+  border-radius: 12px;
+  padding: 6px 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: filter 0.12s ease;
+}
+.oc-jump-unread:hover {
+  filter: brightness(1.1);
+}
+.oc-jump-unread:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

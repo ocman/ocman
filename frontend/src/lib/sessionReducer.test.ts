@@ -48,6 +48,8 @@ function makeSession(overrides: Partial<SessionRow> = {}): SessionRow {
     seen: true,
     pinned: false,
     pinnedAt: 0,
+    seenTimeUpdated: 0,
+    unreadCount: 0,
     ...overrides,
   };
 }

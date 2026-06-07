@@ -196,6 +196,8 @@ export const useApiStore = create<ApiStore>((set, get) => ({
         seen: false,
         pinned: false,
         pinnedAt: 0,
+        seenTimeUpdated: 0,
+        unreadCount: 0,
       },
       messages: [],
       parts: [],

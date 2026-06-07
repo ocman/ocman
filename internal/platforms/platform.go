@@ -279,3 +279,22 @@ type Lifecycle interface {
 	Start(ctx context.Context) error
 	Stop(ctx context.Context) error
 }
+
+// UnreadCounter is optional: adapters that can cheaply count messages
+// created after a per-session "seen" timestamp implement it. Used by
+// applySessionState to populate Session.UnreadCount in the session
+// listing.
+//
+// The cutoffs map carries the user's last-seen time_updated per
+// session ID; the implementation returns a count of messages with
+// time_created > cutoff for each session it knows about. Sessions
+// missing from the returned map (e.g. never seen, or the adapter
+// chose to skip) are treated as zero unread by the caller — the
+// frontend renders the "all new" affordance via Seen==false instead.
+//
+// Implementations must be cheap (one batched query, no row visits)
+// since this runs on every /api/sessions and /api/sessions/notify
+// poll. See spec/multi-agent-support/architecture.md for the design.
+type UnreadCounter interface {
+	UnreadCounts(ctx context.Context, cutoffs map[string]int64) (map[string]int, error)
+}

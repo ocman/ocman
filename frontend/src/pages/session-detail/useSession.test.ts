@@ -111,6 +111,8 @@ function makeDetail(overrides: Partial<SessionDetail> = {}): SessionDetail {
       seen: true,
       pinned: false,
       pinnedAt: 0,
+      seenTimeUpdated: 0,
+      unreadCount: 0,
     },
     messages: [],
     parts: [],

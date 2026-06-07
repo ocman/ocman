@@ -29,6 +29,8 @@ function makeSessionDetail(id: string, overrides: Partial<SessionDetail> = {}): 
     seen: true,
     pinned: false,
     pinnedAt: 0,
+    seenTimeUpdated: 0,
+    unreadCount: 0,
   };
   return {
     session,

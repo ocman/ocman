@@ -284,6 +284,71 @@ func (d *DB) GetSessionsInactiveBefore(cutoff int64) ([]SessionArchiveCandidate,
 	return sessions, rows.Err()
 }
 
+// MessageCountsSince returns, for each (sessionID, cutoff) pair in
+// cutoffs, the number of messages in that session with
+// time_created > cutoff. Sessions absent from the input map are
+// absent from the output; sessions with zero unread are omitted to
+// keep the response small.
+//
+// Implementation: a single CTE built from a VALUES clause batches
+// every session into one query. The message table's covering index
+// (session_id, time_created, id) makes each row a pure index range
+// scan — no table reads, no JSON parsing. Measured at ~4 ms for
+// 200 sessions on a 92k-message DB; see spec investigation in the
+// PR for #70.
+//
+// Empty input returns an empty map and no error without touching
+// the DB.
+func (d *DB) MessageCountsSince(cutoffs map[string]int64) (map[string]int, error) {
+	if len(cutoffs) == 0 {
+		return map[string]int{}, nil
+	}
+
+	// Build a (?, ?), (?, ?), ... VALUES clause. We can't use a
+	// table-valued subquery from Go-side bindings cleanly, so we
+	// generate the placeholder list and bind the flattened args.
+	var sb strings.Builder
+	sb.WriteString(`
+		WITH cutoffs(sid, cutoff) AS (VALUES `)
+	args := make([]interface{}, 0, len(cutoffs)*2)
+	first := true
+	for sid, cutoff := range cutoffs {
+		if !first {
+			sb.WriteString(`,`)
+		}
+		sb.WriteString(`(?, ?)`)
+		args = append(args, sid, cutoff)
+		first = false
+	}
+	sb.WriteString(`)
+		SELECT c.sid, COALESCE((
+			SELECT count(*) FROM message m
+			WHERE m.session_id = c.sid AND m.time_created > c.cutoff
+		), 0) AS unread
+		FROM cutoffs c
+	`)
+
+	rows, err := d.db.Query(sb.String(), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[string]int, len(cutoffs))
+	for rows.Next() {
+		var sid string
+		var unread int
+		if err := rows.Scan(&sid, &unread); err != nil {
+			log.WithError(err).Warn("failed to scan unread count row")
+			continue
+		}
+		if unread > 0 {
+			out[sid] = unread
+		}
+	}
+	return out, rows.Err()
+}
+
 // GetSessionMessages returns all messages for a session.
 func (d *DB) GetSessionMessages(sessionID string) ([]Message, error) {
 	rows, err := d.db.Query(`

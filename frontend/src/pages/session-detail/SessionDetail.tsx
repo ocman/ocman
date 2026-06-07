@@ -68,6 +68,7 @@ import { usePaletteCommands } from './usePaletteCommands';
 import { SseStatusIndicator } from './SseStatusIndicator';
 import { remoteLog } from '../../lib/remoteLog';
 import { isRecoverableThreadBoundaryError } from './threadBoundaryRecovery';
+import { findFirstUnreadMessageId, countUnreadMessages } from './unreadMarker';
 import { ThreadBoundaryFallback } from './ThreadBoundaryFallback';
 import { SessionToasts } from './SessionToasts';
 import { SessionSidebar, type SidebarProjectGroup } from './SessionSidebar';
@@ -352,6 +353,37 @@ export function SessionDetail({ id }: SessionDetailProps) {
     directory: session?.directory,
     sessionTitle: session?.title,
   }), [messages, parts, session?.id, session?.directory, session?.title, id]);
+
+  // Snapshot of the user's last-seen cutoff for the current session.
+  // Used to compute the "first unread" marker and the "N new
+  // messages" jump pill. Captured once per session id; subsequent
+  // updates (markSessionSeen, SSE) do NOT move the cutoff so the
+  // marker stays at the same message even after the persisted seen
+  // state has been bumped forward. Resets on session navigation.
+  //
+  // Stored as state (not a ref) so the eslint react-hooks/refs rule
+  // doesn't trip on render-time reads. The state initialisation
+  // tracks the active session id alongside the cutoff so we can
+  // detect navigation without an effect (the setState-during-render
+  // pattern React supports for derived state).
+  const [unreadCutoffState, setUnreadCutoffState] = useState<{ sessionId: string; cutoff: number } | null>(null);
+  if (session && unreadCutoffState?.sessionId !== session.id) {
+    setUnreadCutoffState({
+      sessionId: session.id,
+      cutoff: session.seenTimeUpdated || 0,
+    });
+  }
+  const unreadCutoff = unreadCutoffState?.sessionId === session?.id
+    ? (unreadCutoffState?.cutoff ?? 0)
+    : 0;
+  const firstUnreadMessageId = useMemo(
+    () => session ? findFirstUnreadMessageId(messages, unreadCutoff) : null,
+    [session, messages, unreadCutoff],
+  );
+  const unreadMessageCount = useMemo(
+    () => firstUnreadMessageId ? countUnreadMessages(messages, unreadCutoff) : 0,
+    [messages, firstUnreadMessageId, unreadCutoff],
+  );
   const loadedMessageBookmarks = useMemo(() => loadMessageBookmarks(id), [id]);
   const [messageBookmarkState, setMessageBookmarkState] = useState<MessageBookmarkState>(() => ({
     sessionId: id,
@@ -1181,6 +1213,23 @@ export function SessionDetail({ id }: SessionDetailProps) {
                   scrollToMessageTick={scrollToMessageBookmark?.sessionId === session.id ? scrollToMessageBookmark.tick : 0}
                   composer={(
                     <ErrorBoundary name="session:composer" inline resetKey={session.id}>
+                      {firstUnreadMessageId && unreadMessageCount > 0 && (
+                        <button
+                          type="button"
+                          className="oc-jump-unread"
+                          data-testid="jump-to-first-unread"
+                          onClick={() => setScrollToMessageBookmark({
+                            sessionId: session.id,
+                            id: firstUnreadMessageId,
+                            tick: Date.now(),
+                          })}
+                          title="Scroll to the first message you haven't seen yet"
+                        >
+                          <i className="bi bi-arrow-up" aria-hidden="true" />
+                          {' '}
+                          {unreadMessageCount} new message{unreadMessageCount === 1 ? '' : 's'}
+                        </button>
+                      )}
                       {session.notice?.kind === 'rate_limit' && (
                         <RateLimitBanner notice={session.notice} />
                       )}

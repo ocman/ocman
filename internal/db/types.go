@@ -86,6 +86,19 @@ type Session struct {
 	Seen     bool  `json:"seen"`
 	Pinned   bool  `json:"pinned"`
 	PinnedAt int64 `json:"pinnedAt"`
+	// SeenTimeUpdated is the session's time_updated at the moment the
+	// user last viewed it (0 when never seen). Used by the frontend to
+	// compute a "first unread" marker and a per-session unread badge
+	// without an extra round-trip. Populated by applySessionState.
+	SeenTimeUpdated int64 `json:"seenTimeUpdated"`
+	// UnreadCount is the number of messages in this session whose
+	// time_created is strictly greater than SeenTimeUpdated. Zero when
+	// the session is fully seen, when the platform doesn't expose
+	// per-message timestamps, or when the user has never opened it
+	// (in which case the frontend treats the whole session as new).
+	// Populated by applySessionState via the platform's optional
+	// UnreadCounter interface.
+	UnreadCount int `json:"unreadCount"`
 	// Notice carries a normalized, platform-agnostic explanation of a
 	// transient session condition (e.g. rate-limit backoff). Populated
 	// by the server's applySessionNotice step; nil when no notice

@@ -1564,3 +1564,96 @@ func TestGetSessionParentIDs_Empty(t *testing.T) {
 		t.Errorf("expected empty map for nil input, got %v", got)
 	}
 }
+
+// --- MessageCountsSince tests ---
+
+func TestMessageCountsSince_EmptyInput(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	got, err := db.MessageCountsSince(nil)
+	if err != nil {
+		t.Fatalf("MessageCountsSince(nil): %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected empty map for nil input, got %v", got)
+	}
+}
+
+func TestMessageCountsSince_Basic(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	// s1 has 3 messages at t=100, 200, 300.
+	// s2 has 2 messages at t=150, 250.
+	// s3 has no messages.
+	insertSession(t, db, "s1", "S1", "/d", 100, 300)
+	insertSession(t, db, "s2", "S2", "/d", 150, 250)
+	insertSession(t, db, "s3", "S3", "/d", 100, 100)
+	insertMessage(t, db, "s1-m1", "s1", 100, nil)
+	insertMessage(t, db, "s1-m2", "s1", 200, nil)
+	insertMessage(t, db, "s1-m3", "s1", 300, nil)
+	insertMessage(t, db, "s2-m1", "s2", 150, nil)
+	insertMessage(t, db, "s2-m2", "s2", 250, nil)
+
+	tests := []struct {
+		name    string
+		cutoffs map[string]int64
+		want    map[string]int
+	}{
+		{
+			name:    "cutoff zero counts everything",
+			cutoffs: map[string]int64{"s1": 0, "s2": 0, "s3": 0},
+			want:    map[string]int{"s1": 3, "s2": 2}, // s3 omitted (zero)
+		},
+		{
+			name:    "partial cutoff",
+			cutoffs: map[string]int64{"s1": 150, "s2": 200},
+			want:    map[string]int{"s1": 2, "s2": 1},
+		},
+		{
+			name:    "cutoff at or past last message",
+			cutoffs: map[string]int64{"s1": 300, "s2": 250},
+			want:    map[string]int{}, // both fully read, omitted
+		},
+		{
+			name:    "unknown session id returns no row",
+			cutoffs: map[string]int64{"nope": 0},
+			want:    map[string]int{},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := db.MessageCountsSince(tc.cutoffs)
+			if err != nil {
+				t.Fatalf("MessageCountsSince: %v", err)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("len: want %d, got %d (%v)", len(tc.want), len(got), got)
+			}
+			for k, v := range tc.want {
+				if got[k] != v {
+					t.Errorf("%s: want %d, got %d", k, v, got[k])
+				}
+			}
+		})
+	}
+}
+
+func TestMessageCountsSince_StrictlyGreater(t *testing.T) {
+	// The cutoff uses strict > so a session that has exactly one
+	// message at time_created == cutoff reports zero unread.
+	db := openTestDB(t)
+	defer db.Close()
+
+	insertSession(t, db, "s1", "S1", "/d", 100, 100)
+	insertMessage(t, db, "m1", "s1", 100, nil)
+
+	got, err := db.MessageCountsSince(map[string]int64{"s1": 100})
+	if err != nil {
+		t.Fatalf("MessageCountsSince: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected no unread when cutoff equals last message time, got %v", got)
+	}
+}

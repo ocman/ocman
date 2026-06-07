@@ -29,6 +29,8 @@ function makeSession(overrides: Partial<Session> = {}): Session {
     seen: true,
     pinned: false,
     pinnedAt: 0,
+    seenTimeUpdated: 0,
+    unreadCount: 0,
     ...overrides,
   };
 }

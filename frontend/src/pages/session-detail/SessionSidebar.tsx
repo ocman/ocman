@@ -189,6 +189,15 @@ export function SessionSidebar({
           <GitStatusLine info={siblingGitInfos[sib.directory]} icon={isWorktree ? 'worktree' : 'branch'} />
         </span>
         <span className="session-sidebar-meta">
+          {sib.unreadCount > 0 && !sib.seen && sib.id !== activeId && (
+            <span
+              className="session-sidebar-unread"
+              data-testid="session-sidebar-unread"
+              title={`${sib.unreadCount} new message${sib.unreadCount === 1 ? '' : 's'} since you last viewed this session`}
+            >
+              {sib.unreadCount > 99 ? '99+' : sib.unreadCount}
+            </span>
+          )}
           <span className="session-sidebar-time" title={new Date(sib.timeUpdated).toLocaleString()}>{relativeTime(sib.timeUpdated)}</span>
           <span className="session-sidebar-actions">
             <button

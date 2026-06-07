@@ -12,6 +12,28 @@ import { projectRootForDirectory } from '../lib/worktrees';
 import { rollupGroupStatus } from '../lib/sidebarHelpers';
 import { remoteLog } from '../lib/remoteLog';
 
+/**
+ * UnreadBadge renders a small "N new" pill on a session row when
+ * the session has unread messages and is not currently active.
+ * Returns null otherwise so it stays out of the layout entirely.
+ *
+ * Matches the "blue = new since last view" vocabulary used by the
+ * status dot (see StatusBadge.css).
+ */
+export function UnreadBadge({ session }: { session: Session }) {
+  if (!session.unreadCount || session.seen) return null;
+  const label = session.unreadCount > 99 ? '99+' : String(session.unreadCount);
+  return (
+    <span
+      className="session-unread-badge"
+      data-testid="session-unread-badge"
+      title={`${session.unreadCount} new message${session.unreadCount === 1 ? '' : 's'} since you last viewed this session`}
+    >
+      {label}
+    </span>
+  );
+}
+
 export function ShortPath({ path }: { path: string }) {
   const parts = (path || '').split('/').filter(Boolean);
   const last = parts.pop() || '';
@@ -208,6 +230,7 @@ export function GroupedSessionTable({
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                             <StatusBadge status={s.status} compact seen={seenLatest} pending={pending} />
                             <span className="session-title">{cleanTitle(s.title) || 'Untitled'}</span>
+                            <UnreadBadge session={s} />
                           </div>
                           <div className="mono">
                             <PlatformBadge platform={s.platform} variant="plain" />
@@ -313,6 +336,7 @@ export function SessionTable({ sessions, showProject, loading, includeArchived }
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <StatusBadge status={s.status} compact seen={seenLatest} pending={pending} />
                   <span className="session-title">{cleanTitle(s.title) || 'Untitled'}</span>
+                  <UnreadBadge session={s} />
                 </div>
                 <div className="mono">
                   <PlatformBadge platform={s.platform} variant="plain" />

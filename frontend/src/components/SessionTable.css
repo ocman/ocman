@@ -233,3 +233,20 @@ div.session-row-actions {
   font-size: 10px;
   flex-shrink: 0;
 }
+
+/* Unread message count badge — see UnreadBadge in SessionTable.tsx.
+   Mirrors the "blue = new since last view" status vocabulary. */
+.session-unread-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--base);
+  background: var(--blue);
+  border-radius: 8px;
+  padding: 2px 6px;
+  min-width: 16px;
+  text-align: center;
+  white-space: nowrap;
+  flex-shrink: 0;
+}

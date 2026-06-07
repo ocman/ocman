@@ -416,6 +416,117 @@ func TestApplySessionState_AutoUnarchivesUpdatedSession(t *testing.T) {
 	}
 }
 
+// TestApplySessionState_SeenTimeUpdated verifies that the user's
+// last-seen cutoff for a session is surfaced on the Session struct
+// even when the session has since received new updates (so .Seen is
+// false but the frontend still needs the cutoff to render a
+// "jump to first unread" marker).
+func TestApplySessionState_SeenTimeUpdated(t *testing.T) {
+	srv := testServer(t)
+	if err := srv.stateDB.MarkSessionSeen("opencode", "s1", 1500); err != nil {
+		t.Fatal(err)
+	}
+
+	sessions := []db.Session{
+		{ID: "s1", Platform: "opencode", TimeUpdated: 2500}, // updated since seen
+		{ID: "s2", Platform: "opencode", TimeUpdated: 3000}, // never seen
+	}
+	if err := srv.applySessionState(sessions); err != nil {
+		t.Fatalf("applySessionState: %v", err)
+	}
+	if sessions[0].SeenTimeUpdated != 1500 {
+		t.Errorf("s1 SeenTimeUpdated: want 1500, got %d", sessions[0].SeenTimeUpdated)
+	}
+	if sessions[0].Seen {
+		t.Error("s1 should not be marked .Seen (updated since)")
+	}
+	if sessions[1].SeenTimeUpdated != 0 {
+		t.Errorf("s2 (never seen) SeenTimeUpdated: want 0, got %d", sessions[1].SeenTimeUpdated)
+	}
+}
+
+// TestApplySessionState_UnreadCount inserts messages into the
+// fake OpenCode DB so the adapter's UnreadCounter implementation
+// has real rows to count against. Verifies the overlay correctly
+// surfaces unread counts on the Session struct.
+func TestApplySessionState_UnreadCount(t *testing.T) {
+	srv, rawDB := testServerWithRawDB(t)
+	defer rawDB.Close()
+
+	// Seed the OpenCode DB with two sessions and a few messages.
+	mustExec := func(q string, args ...interface{}) {
+		t.Helper()
+		if _, err := rawDB.Exec(q, args...); err != nil {
+			t.Fatalf("exec %q: %v", q, err)
+		}
+	}
+	mustExec(`INSERT INTO session (id, title, directory, time_created, time_updated) VALUES ('s1', 'S1', '/d', 100, 400)`)
+	mustExec(`INSERT INTO session (id, title, directory, time_created, time_updated) VALUES ('s2', 'S2', '/d', 100, 300)`)
+	mustExec(`INSERT INTO message (id, session_id, time_created, data) VALUES ('m1', 's1', 100, '{}')`)
+	mustExec(`INSERT INTO message (id, session_id, time_created, data) VALUES ('m2', 's1', 250, '{}')`)
+	mustExec(`INSERT INTO message (id, session_id, time_created, data) VALUES ('m3', 's1', 400, '{}')`)
+	mustExec(`INSERT INTO message (id, session_id, time_created, data) VALUES ('m4', 's2', 150, '{}')`)
+	mustExec(`INSERT INTO message (id, session_id, time_created, data) VALUES ('m5', 's2', 300, '{}')`)
+
+	// s1: user saw up to time_updated=200 → 2 messages newer (m2, m3).
+	// s2: user saw up to time_updated=300 → fully seen, count omitted.
+	if err := srv.stateDB.MarkSessionSeen("opencode", "s1", 200); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.stateDB.MarkSessionSeen("opencode", "s2", 300); err != nil {
+		t.Fatal(err)
+	}
+
+	sessions := []db.Session{
+		{ID: "s1", Platform: "opencode", TimeUpdated: 400},
+		{ID: "s2", Platform: "opencode", TimeUpdated: 300},
+	}
+	if err := srv.applySessionState(sessions); err != nil {
+		t.Fatalf("applySessionState: %v", err)
+	}
+	if sessions[0].UnreadCount != 2 {
+		t.Errorf("s1 UnreadCount: want 2, got %d", sessions[0].UnreadCount)
+	}
+	if sessions[1].UnreadCount != 0 {
+		t.Errorf("s2 UnreadCount: want 0 (fully seen), got %d", sessions[1].UnreadCount)
+	}
+	if !sessions[1].Seen {
+		t.Error("s2 should be marked .Seen")
+	}
+}
+
+// TestApplySessionState_UnreadCount_NeverSeen verifies that a
+// session the user has never opened reports all its messages as
+// unread (cutoff defaults to 0).
+func TestApplySessionState_UnreadCount_NeverSeen(t *testing.T) {
+	srv, rawDB := testServerWithRawDB(t)
+	defer rawDB.Close()
+
+	mustExec := func(q string, args ...interface{}) {
+		t.Helper()
+		if _, err := rawDB.Exec(q, args...); err != nil {
+			t.Fatalf("exec %q: %v", q, err)
+		}
+	}
+	mustExec(`INSERT INTO session (id, title, directory, time_created, time_updated) VALUES ('s1', 'S1', '/d', 100, 500)`)
+	mustExec(`INSERT INTO message (id, session_id, time_created, data) VALUES ('m1', 's1', 100, '{}')`)
+	mustExec(`INSERT INTO message (id, session_id, time_created, data) VALUES ('m2', 's1', 200, '{}')`)
+	mustExec(`INSERT INTO message (id, session_id, time_created, data) VALUES ('m3', 's1', 300, '{}')`)
+
+	sessions := []db.Session{
+		{ID: "s1", Platform: "opencode", TimeUpdated: 500},
+	}
+	if err := srv.applySessionState(sessions); err != nil {
+		t.Fatalf("applySessionState: %v", err)
+	}
+	if sessions[0].UnreadCount != 3 {
+		t.Errorf("never-seen UnreadCount: want 3, got %d", sessions[0].UnreadCount)
+	}
+	if sessions[0].SeenTimeUpdated != 0 {
+		t.Errorf("never-seen SeenTimeUpdated: want 0, got %d", sessions[0].SeenTimeUpdated)
+	}
+}
+
 // TestApplySessionState_ScopesByPlatform verifies that marking a
 // session seen / archived under one platform has no effect on a
 // session with the same ID under a different platform — the

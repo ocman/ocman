@@ -286,6 +286,22 @@ func (a *Adapter) SessionsInactiveBefore(_ context.Context, cutoff int64) ([]db.
 	return a.db.GetSessionsInactiveBefore(cutoff)
 }
 
+// UnreadCounts implements platforms.UnreadCounter. For each
+// (sessionID, cutoff) pair, it returns the number of messages in
+// that OpenCode session with time_created > cutoff. Sessions with
+// zero unread are omitted to keep the response compact.
+//
+// The OpenCode message table has a covering index on
+// (session_id, time_created, id), so this is a pure index-only
+// range scan. Called from applySessionState on every /api/sessions
+// poll; budget is sub-10ms even on large databases.
+func (a *Adapter) UnreadCounts(_ context.Context, cutoffs map[string]int64) (map[string]int, error) {
+	if a.db == nil {
+		return nil, nil
+	}
+	return a.db.MessageCountsSince(cutoffs)
+}
+
 // SessionChanges aggregates every file-touching tool call in a session
 // into a per-file changes summary. See changes.go for the algorithm.
 //
