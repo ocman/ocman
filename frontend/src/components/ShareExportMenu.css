@@ -1,0 +1,144 @@
+.oc-share-menu {
+  position: relative;
+  display: inline-block;
+}
+
+.oc-share-menu-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  width: 320px;
+  max-width: 90vw;
+  padding: 8px;
+  background: var(--oc-surface, #1e1e1e);
+  border: 1px solid var(--oc-border, #333);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+}
+
+.oc-share-menu-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.oc-share-menu-divider {
+  height: 1px;
+  margin: 8px 0;
+  background: var(--oc-border, #333);
+}
+
+.oc-share-menu-item {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--oc-text, #e0e0e0);
+  font-size: 13px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.oc-share-menu-item:hover {
+  background: var(--oc-surface-hover, #2a2a2a);
+}
+
+.oc-share-menu-create {
+  font-weight: 600;
+}
+
+.oc-share-menu-create:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.oc-share-menu-label {
+  padding: 4px 10px 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--oc-text-muted, #888);
+}
+
+.oc-share-menu-hint {
+  margin: 0;
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--oc-text-muted, #888);
+}
+
+.oc-share-menu-error {
+  margin: 4px 10px 0;
+  font-size: 12px;
+  color: var(--oc-danger, #e06c75);
+}
+
+.oc-share-menu-empty {
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--oc-text-muted, #888);
+}
+
+.oc-share-menu-links {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.oc-share-menu-link {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--oc-border, #333);
+  border-radius: 6px;
+}
+
+.oc-share-menu-url {
+  width: 100%;
+  padding: 5px 7px;
+  background: var(--oc-bg, #141414);
+  border: 1px solid var(--oc-border, #333);
+  border-radius: 4px;
+  color: var(--oc-text, #e0e0e0);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+}
+
+.oc-share-menu-link-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.oc-share-menu-link-actions button {
+  flex: 1;
+  padding: 5px 8px;
+  background: var(--oc-surface-hover, #2a2a2a);
+  border: 1px solid var(--oc-border, #333);
+  border-radius: 4px;
+  color: var(--oc-text, #e0e0e0);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.oc-share-menu-link-actions button:hover {
+  background: var(--oc-surface, #333);
+}
+
+.oc-share-menu-revoke {
+  color: var(--oc-danger, #e06c75) !important;
+}
+
+.oc-share-menu-revoke:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

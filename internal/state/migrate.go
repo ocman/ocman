@@ -55,11 +55,16 @@ import (
 //	    settings that don't justify their own dedicated table (e.g. the
 //	    PR/Issue prompt templates from the pr-issue-sidebar feature).
 //	    Future small settings can reuse this without a new migration.
+//	13 - add `share_link` table. Backs the conversation export/share
+//	    feature: each row is an unguessable token granting public,
+//	    read-only access to a single session's conversation. Keyed by
+//	    the token; stores the owning (platform, session_id), creation
+//	    time, an optional expiry, and an optional revocation time.
 //
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 12
+const latestSchemaVersion = 13
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -179,6 +184,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV11(tx)
 	case 12:
 		return migrateToV12(tx)
+	case 13:
+		return migrateToV13(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -370,7 +377,7 @@ func migrateToV10(tx *sql.Tx) error {
 // The column stores the LLM judge's one-line conclusion ("reasoning"
 // field of the JSON it emits) so the UI can show *why* an action was
 // approved or flagged without opening the judge session. NOT NULL with
-// a '' default keeps pre-v11 rows readable and matches the convention
+// a ” default keeps pre-v11 rows readable and matches the convention
 // used for judge_session_id in v7.
 func migrateToV11(tx *sql.Tx) error {
 	_, err := tx.Exec(`
@@ -427,4 +434,28 @@ func migrateToV12(tx *sql.Tx) error {
 		)
 	`)
 	return err
+}
+
+// migrateToV13 creates the `share_link` table that backs the
+// conversation export/share feature. Each row maps an unguessable
+// token to a single session, granting public read-only access.
+func migrateToV13(tx *sql.Tx) error {
+	stmts := []string{
+		`CREATE TABLE share_link (
+			token      TEXT    PRIMARY KEY,
+			platform   TEXT    NOT NULL,
+			session_id TEXT    NOT NULL,
+			created_at INTEGER NOT NULL,
+			expires_at INTEGER,
+			revoked_at INTEGER
+		)`,
+		`CREATE INDEX share_link_session
+			ON share_link (platform, session_id)`,
+	}
+	for _, s := range stmts {
+		if _, err := tx.Exec(s); err != nil {
+			return err
+		}
+	}
+	return nil
 }

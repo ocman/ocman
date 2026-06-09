@@ -251,17 +251,22 @@ var sessionSubRoutes = []sessionSubRoute{
 	{http.MethodGet, "{id}/tasks", (*Server).handleSessionTasks},
 	{http.MethodGet, "{id}/auto-approve", (*Server).handleSessionAutoApproveGet},
 	{http.MethodGet, "{id}/approved-permissions", (*Server).handleSessionApprovedPermissions},
+	{http.MethodGet, "{id}/export.md", (*Server).handleSessionExportMarkdown},
+	{http.MethodGet, "{id}/shares", (*Server).handleSessionShares},
 
 	// Session-scoped POSTs (specific patterns first).
 	{http.MethodPost, "{id}/questions/{qid}/reject", (*Server).handleSessionQuestion},
 	{http.MethodPost, "{id}/questions/{qid}", (*Server).handleSessionQuestion},
 	{http.MethodPost, "{id}/permissions/{pid}", (*Server).handleSessionPermission},
 	{http.MethodPost, "{id}/auto-approve", (*Server).handleSessionAutoApproveSet},
+	{http.MethodPost, "{id}/attachment", (*Server).handleSessionAttachment},
 	{http.MethodPost, "{id}/message", (*Server).handleSessionMessage},
 	{http.MethodPost, "{id}/command", (*Server).handleSessionCommand},
 	{http.MethodPost, "{id}/shell", (*Server).handleSessionShell},
 	{http.MethodPost, "{id}/abort", (*Server).handleSessionAbort},
 	{http.MethodPost, "{id}/compact", (*Server).handleSessionCompact},
+	{http.MethodPost, "{id}/share", (*Server).handleCreateSessionShare},
+	{http.MethodDelete, "{id}/share/{token}", (*Server).handleRevokeSessionShare},
 
 	// Bare /api/session/{id} (kept last so longer matches win).
 	{http.MethodGet, "{id}", (*Server).handleSession},

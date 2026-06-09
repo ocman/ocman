@@ -24,6 +24,7 @@ import { messageBookmarkKey, type MessageBookmark, type MessageBookmarkGroup } f
 import { useHeaderInfo, usePageTitle } from '../../lib/headerContext';
 import { OcmanRuntimeProvider } from '../../components/OcmanRuntimeProvider';
 import { AssistantThread } from '../../components/AssistantThread';
+import { ShareExportMenu } from '../../components/ShareExportMenu';
 import { Composer } from '../../components/assistant/Composer';
 import { QuestionPrompt } from '../../components/session/QuestionPrompt';
 import { PermissionPrompt } from '../../components/session/PermissionPrompt';
@@ -1169,6 +1170,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
               aria-label="Open in VS Code"
               style={{ textDecoration: 'none', fontSize: 11 }}
             >&lt;/&gt;</button>
+            <ShareExportMenu sessionId={session.id} />
             <button
               className="session-sidebar-new"
               onClick={() => { void handleNewSession(); }}

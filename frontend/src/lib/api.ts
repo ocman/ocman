@@ -57,6 +57,8 @@ export type {
   AuthMe,
   SystemStats,
   SessionNotice,
+  ShareLink,
+  SharedConversation,
 } from './api.types';
 
 // Type imports used by the api object below.
@@ -88,7 +90,26 @@ import type {
   ActivityDay,
   HourlyData,
   HourlyTokensByModel,
+  ShareLink,
+  SharedConversation,
 } from './api.types';
+
+/**
+ * Absolute URL for downloading a session's conversation as Markdown.
+ * Used directly as an <a href> / download target. Auth-gated (the
+ * browser sends the auth cookie automatically).
+ */
+export function sessionExportMarkdownUrl(id: string): string {
+  return `/api/session/${encodeURIComponent(id)}/export.md`;
+}
+
+/**
+ * Absolute URL for the public Markdown export of a shared conversation.
+ * Unauthenticated — usable from the read-only share page.
+ */
+export function sharedExportMarkdownUrl(token: string): string {
+  return `/api/share/${encodeURIComponent(token)}/export.md`;
+}
 
 /**
  * AuthError is thrown when the backend reports that the client is
@@ -243,6 +264,25 @@ export const api = {
     return fetchJSON<NotifyEntry[]>(`/api/sessions/notify${qs ? '?' + qs : ''}`, signal);
   },
   session: (id: string, limit = 50, offset = 0, signal?: AbortSignal) => fetchJSON<SessionDetail>(`/api/session/${id}?limit=${limit}&offset=${offset}`, signal),
+  // --- Conversation export / share ---
+  // List the active public share links for a session.
+  listShareLinks: (id: string, signal?: AbortSignal) =>
+    fetchJSON<ShareLink[]>(`/api/session/${encodeURIComponent(id)}/shares`, signal),
+  // Mint a new public, read-only share link for a session.
+  createShareLink: (id: string) =>
+    postJSON<ShareLink>(`/api/session/${encodeURIComponent(id)}/share`, undefined),
+  // Revoke a previously created share link.
+  revokeShareLink: (id: string, token: string) =>
+    postJSON<void>(
+      `/api/session/${encodeURIComponent(id)}/share/${encodeURIComponent(token)}`,
+      undefined,
+      { method: 'DELETE', parseJSON: false },
+    ),
+  // Fetch a shared conversation by token. UNAUTHENTICATED endpoint:
+  // the token is the only credential. Used by the public /share/:token
+  // page.
+  sharedConversation: (token: string, signal?: AbortSignal) =>
+    fetchJSON<SharedConversation>(`/api/share/${encodeURIComponent(token)}`, signal),
   // Aggregated per-file change summary for a session. Returns
   // supported=false (with HTTP 200) when the owning platform doesn't
   // implement aggregation (Claude Code today).
@@ -385,6 +425,19 @@ export const api = {
       }
       throw new Error(body || `HTTP ${resp.status}`);
     }
+  },
+  uploadComposerAttachment: async (sessionId: string, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    const resp = await fetch(`/api/session/${encodeURIComponent(sessionId)}/attachment`, {
+      method: 'POST',
+      body: form,
+    });
+    if (!resp.ok) {
+      const body = (await resp.text()).trim();
+      throw new Error(body || `HTTP ${resp.status}`);
+    }
+    return resp.json() as Promise<{ path: string; name: string; mime: string; size: number }>;
   },
   listPermissions: (sessionId: string) =>
     fetchJSON<unknown[]>(`/api/session/${encodeURIComponent(sessionId)}/permissions`),

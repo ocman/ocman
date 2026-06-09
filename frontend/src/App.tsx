@@ -7,6 +7,7 @@ import { DashboardLayout, SessionsTab, ProjectsTab, StatsTab, UsageTab, Settings
 import { ProjectDetail } from './pages/ProjectDetail';
 import { WorktreesView } from './pages/WorktreesView';
 import { SessionDetail } from './pages/session-detail';
+import { SharedConversationView } from './pages/SharedConversationView';
 import { Login } from './pages/Login';
 import { HeaderProvider } from './lib/HeaderProvider';
 import { useHeaderInfo } from './lib/headerContext';
@@ -338,40 +339,51 @@ export default function App() {
   return (
     <BrowserRouter>
       <QueryClientProvider client={queryClient}>
-      <AuthGate>
-        <HeaderProvider>
-          <FaviconNotify />
-          <BellNotify />
-          <NotificationNotify />
-          <PromptToastNotify />
-          <ServiceWorkerNavListener />
-          <PerformanceCleanup />
-          <MemoryMonitor />
-          <LongTaskMonitor />
-          <PerfDevHandle />
-          <GlobalHotkeys />
-          <div className="container">
-            <Header />
-            <div className="content">
-              <RoutesBoundary>
-                <Routes>
-                  <Route element={<DashboardLayout />}>
-                    <Route path="/" element={<SessionsTab />} />
-                    <Route path="/projects" element={<ProjectsTab />} />
-                    <Route path="/stats" element={<StatsTab />} />
-                    <Route path="/usage" element={<UsageTab />} />
-                    <Route path="/settings" element={<SettingsTab />} />
-                  </Route>
-                  <Route path="/project/:dir/worktrees" element={<WorktreesView />} />
-                  <Route path="/project/:dir" element={<ProjectDetail />} />
-                  <Route path="/session/:id" element={<SessionDetail />} />
-                </Routes>
-              </RoutesBoundary>
-            </div>
-          </div>
-        </HeaderProvider>
-      </AuthGate>
+        <Routes>
+          {/* Public, unauthenticated read-only conversation view. */}
+          <Route path="/share/:token" element={<SharedConversationView />} />
+          {/* Everything else is the authenticated app. */}
+          <Route path="*" element={<AuthenticatedApp />} />
+        </Routes>
       </QueryClientProvider>
     </BrowserRouter>
+  );
+}
+
+function AuthenticatedApp() {
+  return (
+    <AuthGate>
+      <HeaderProvider>
+        <FaviconNotify />
+        <BellNotify />
+        <NotificationNotify />
+        <PromptToastNotify />
+        <ServiceWorkerNavListener />
+        <PerformanceCleanup />
+        <MemoryMonitor />
+        <LongTaskMonitor />
+        <PerfDevHandle />
+        <GlobalHotkeys />
+        <div className="container">
+          <Header />
+          <div className="content">
+            <RoutesBoundary>
+              <Routes>
+                <Route element={<DashboardLayout />}>
+                  <Route path="/" element={<SessionsTab />} />
+                  <Route path="/projects" element={<ProjectsTab />} />
+                  <Route path="/stats" element={<StatsTab />} />
+                  <Route path="/usage" element={<UsageTab />} />
+                  <Route path="/settings" element={<SettingsTab />} />
+                </Route>
+                <Route path="/project/:dir/worktrees" element={<WorktreesView />} />
+                <Route path="/project/:dir" element={<ProjectDetail />} />
+                <Route path="/session/:id" element={<SessionDetail />} />
+              </Routes>
+            </RoutesBoundary>
+          </div>
+        </div>
+      </HeaderProvider>
+    </AuthGate>
   );
 }

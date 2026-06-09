@@ -22,6 +22,12 @@ export interface AttachedImage {
   mime: string;
 }
 
+interface AttachedFileRef {
+  path: string;
+  name: string;
+  mime: string;
+}
+
 function readFileAsDataURL(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -155,12 +161,15 @@ function ComposerImpl({
   const isRunningRef = useRef(isRunning);
   const disabledRef = useRef(disabled);
   const [images, setImages] = useState<AttachedImage[]>([]);
+  const [files, setFiles] = useState<AttachedFileRef[]>([]);
   const imagesRef = useRef<AttachedImage[]>([]);
+  const filesRef = useRef<AttachedFileRef[]>([]);
   const sessionIdRef = useRef(sessionId);
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onAbortRef = useRef(onAbort);
 
   useEffect(() => { imagesRef.current = images; }, [images]);
+  useEffect(() => { filesRef.current = files; }, [files]);
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
   useEffect(() => { onSendRef.current = onSend; }, [onSend]);
   useEffect(() => { onAbortRef.current = onAbort; }, [onAbort]);
@@ -387,7 +396,6 @@ function ComposerImpl({
 
   const addImageFiles = useCallback(async (files: File[]) => {
     const imageFiles = files.filter(f => f.type.startsWith('image/'));
-    if (imageFiles.length === 0) return;
     const newImages: AttachedImage[] = [];
     for (const file of imageFiles) {
       try {
@@ -397,11 +405,34 @@ function ComposerImpl({
         remoteLog.error('Failed to read image', err);
       }
     }
-    setImages(prev => [...prev, ...newImages]);
+    if (newImages.length > 0) setImages(prev => [...prev, ...newImages]);
+
+    const otherFiles = files.filter(f => !f.type.startsWith('image/'));
+    if (otherFiles.length === 0) return;
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    const newFiles: AttachedFileRef[] = [];
+    for (const file of otherFiles) {
+      try {
+        const saved = await api.uploadComposerAttachment(sid, file);
+        newFiles.push({
+          path: saved.path,
+          name: saved.name || file.name,
+          mime: saved.mime || file.type || 'application/octet-stream',
+        });
+      } catch (err) {
+        remoteLog.error('Failed to save attachment', err);
+      }
+    }
+    if (newFiles.length > 0) setFiles(prev => [...prev, ...newFiles]);
   }, []);
 
   const removeImage = useCallback((index: number) => {
     setImages(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const removeFile = useCallback((index: number) => {
+    setFiles(prev => prev.filter((_, i) => i !== index));
   }, []);
 
   useEffect(() => {
@@ -493,6 +524,7 @@ function ComposerImpl({
         el.style.height = 'auto';
         el.dispatchEvent(new CustomEvent('oc-slash-update', { detail: { show: false, filter: '' } }));
         el.dispatchEvent(new CustomEvent('oc-clear-images'));
+        el.dispatchEvent(new CustomEvent('oc-clear-files'));
         const sid = sessionIdRef.current;
         if (sid) {
           if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
@@ -505,11 +537,16 @@ function ComposerImpl({
         e.preventDefault();
         const raw = el.value;
         const imgs = imagesRef.current;
+        const fileRefs = filesRef.current;
         const route = routeComposerSubmit(raw, { shellExec: shellExecRef.current });
 
-        // No text: only proceed if there are images to attach (sent
-        // as a plain message). Otherwise nothing to do.
-        if (route.kind === 'noop' && imgs.length === 0) return;
+        // No text: only proceed if there are attachments to reference.
+        if (route.kind === 'noop' && imgs.length === 0 && fileRefs.length === 0) return;
+
+        const fileReferenceText = fileRefs.length > 0
+          ? `Attached files saved on disk:\n${fileRefs.map(f => `- ${f.path} (${f.mime})`).join('\n')}`
+          : '';
+        const withFileReferences = (text: string) => [text, fileReferenceText].filter(Boolean).join('\n\n');
 
         if (route.kind === 'command' && onCommandRef.current) {
           // /model and /agent are client-only: don't dispatch to the backend.
@@ -529,15 +566,15 @@ function ComposerImpl({
         } else if (route.kind === 'shell' && onShellRef.current) {
           onShellRef.current(route.command);
         } else if (route.kind === 'send' || route.kind === 'noop') {
-          // `noop` only reaches here when imgs.length > 0 (image-only
-          // submission); send with empty text in that case.
+          // `noop` only reaches here when attachments are present; send
+          // with empty text in that case.
           const text = route.kind === 'send' ? route.text : '';
-          onSendRef.current?.(text, imgs.length > 0 ? imgs : undefined);
+          onSendRef.current?.(withFileReferences(text), imgs.length > 0 ? imgs : undefined);
         } else {
           // route.kind === 'shell' but no onShell handler (capability
           // mis-wiring). Fall back to a plain prompt rather than
           // silently dropping the user's input.
-          onSendRef.current?.(raw.trim(), imgs.length > 0 ? imgs : undefined);
+          onSendRef.current?.(withFileReferences(raw.trim()), imgs.length > 0 ? imgs : undefined);
         }
 
         setIsBashModeRef.current(false);
@@ -550,6 +587,7 @@ function ComposerImpl({
           clearDraft(sid);
         }
         el.dispatchEvent(new CustomEvent('oc-clear-images'));
+        el.dispatchEvent(new CustomEvent('oc-clear-files'));
       }
     };
 
@@ -635,6 +673,7 @@ function ComposerImpl({
     const el = inputRef.current;
     if (!el) return;
     const handleClearImages = () => setImages([]);
+    const handleClearFiles = () => setFiles([]);
     const handlePasteImages = (e: Event) => {
       const files = (e as CustomEvent).detail as File[];
       addImageFiles(files);
@@ -670,6 +709,7 @@ function ComposerImpl({
       setIsBashMode((e as CustomEvent).detail as boolean);
     };
     el.addEventListener('oc-clear-images', handleClearImages);
+    el.addEventListener('oc-clear-files', handleClearFiles);
     el.addEventListener('oc-paste-images', handlePasteImages);
     el.addEventListener('oc-slash-update', handleSlashUpdate);
     el.addEventListener('oc-slash-nav', handleSlashNav);
@@ -680,6 +720,7 @@ function ComposerImpl({
     el.addEventListener('oc-bash-mode', handleBashMode);
     return () => {
       el.removeEventListener('oc-clear-images', handleClearImages);
+      el.removeEventListener('oc-clear-files', handleClearFiles);
       el.removeEventListener('oc-paste-images', handlePasteImages);
       el.removeEventListener('oc-slash-update', handleSlashUpdate);
       el.removeEventListener('oc-slash-nav', handleSlashNav);
@@ -884,12 +925,19 @@ function ComposerImpl({
             : undefined
         }
       >
-        {images.length > 0 && (
+        {(images.length > 0 || files.length > 0) && (
           <div className="oc-composer-images">
             {images.map((img, i) => (
               <div key={i} className="oc-composer-image-thumb">
                 <img src={img.url} alt={`Attachment ${i + 1}`} />
                 <button className="oc-composer-image-remove" onClick={() => removeImage(i)}>{'\u00D7'}</button>
+              </div>
+            ))}
+            {files.map((file, i) => (
+              <div key={file.path} className="oc-composer-file-thumb" title={file.path}>
+                <span className="oc-composer-file-icon">file</span>
+                <span className="oc-composer-file-name">{file.name}</span>
+                <button className="oc-composer-image-remove" onClick={() => removeFile(i)}>{'\u00D7'}</button>
               </div>
             ))}
           </div>
@@ -978,12 +1026,11 @@ function ComposerImpl({
               className="oc-bar-action"
               onClick={() => fileInputRef.current?.click()}
               disabled={disabled}
-              title="Attach image"
+              title="Attach file"
             >+</button>
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
               multiple
               style={{ display: 'none' }}
               onChange={(e) => {

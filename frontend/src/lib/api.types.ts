@@ -232,6 +232,30 @@ export interface SessionDetail {
 }
 
 /**
+ * A public, read-only share link for a session's conversation. The
+ * token is embedded in `url`; anyone with that URL can view the
+ * conversation without authenticating.
+ */
+export interface ShareLink {
+  token: string;
+  url: string;
+  createdAt: number;
+  expiresAt?: number;
+}
+
+/**
+ * Public conversation payload returned by GET /api/share/{token}.
+ * Deliberately a subset of SessionDetail — no live/actionable fields,
+ * just enough to render the conversation read-only.
+ */
+export interface SharedConversation {
+  session: Session | null;
+  messages: Message[];
+  parts: Part[];
+  readOnly: boolean;
+}
+
+/**
  * Per-task sub-session data returned by /api/session/{id}/tasks.
  * Contains the messages and parts needed to render an embedded
  * thread preview inside a Task tool card.

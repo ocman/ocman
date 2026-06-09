@@ -37,6 +37,13 @@ const authPasswordEnv = "OCMAN_AUTH_PASSWORD"
 // anything else (including empty) is false.
 const authTrustLocalhostEnv = "OCMAN_AUTH_TRUST_LOCALHOST"
 
+// publicBaseURLEnv supplies the externally reachable base URL used to
+// build absolute share links. Set this when ocman runs behind a reverse
+// proxy on a stable hostname (e.g. "https://ocman.example.com"). When
+// unset, share links derive their origin from the incoming request's
+// scheme + Host header, which is correct for localhost / dev.
+const publicBaseURLEnv = "OCMAN_PUBLIC_BASE_URL"
+
 // knownPlatforms lists the valid values for the -platforms flag.
 var knownPlatforms = map[string]bool{
 	string(opencodeplatform.PlatformID): true,
@@ -62,7 +69,15 @@ func main() {
 	authTrustLocalhost := flag.Bool("auth-trust-localhost", false, "exempt loopback clients from auth (dev-mode escape hatch; also OCMAN_AUTH_TRUST_LOCALHOST)")
 	otelEndpoint := flag.String("otel", "", "OTLP endpoint URL (e.g. http://localhost:4318 or grpc://localhost:4317). Empty disables telemetry. Falls back to OTEL_EXPORTER_OTLP_ENDPOINT.")
 	autoApprove := flag.Bool("auto-approve", false, "default new sessions to auto-approve mode (uses OpenCode's running instance as the LLM judge)")
+	publicBaseURL := flag.String("public-base-url", "", "externally reachable base URL for share links (e.g. https://ocman.example.com); falls back to "+publicBaseURLEnv+" env, then the request Host")
 	flag.Parse()
+
+	// Resolve the public base URL: flag wins, then env. Empty leaves
+	// the "derive from request Host" behaviour in the server.
+	resolvedBaseURL := *publicBaseURL
+	if resolvedBaseURL == "" {
+		resolvedBaseURL = strings.TrimSpace(os.Getenv(publicBaseURLEnv))
+	}
 
 	// Parse and validate the -platforms flag.
 	enabledPlatforms := map[string]bool{}
@@ -159,13 +174,15 @@ func main() {
 		// pin a port with --gui-addr=127.0.0.1:8229 if needed.
 		listenAddr := *guiAddr
 		srv := server.New(database, stateDB, listenAddr, registry, auth).
-			WithAutoApproveDefault(*autoApprove)
+			WithAutoApproveDefault(*autoApprove).
+			WithPublicBaseURL(resolvedBaseURL)
 		if err := gui.RunGUI(ctx, srv, listenAddr); err != nil {
 			log.Fatalf("GUI error: %v", err)
 		}
 	} else {
 		srv := server.New(database, stateDB, *addr, registry, auth).
-			WithAutoApproveDefault(*autoApprove)
+			WithAutoApproveDefault(*autoApprove).
+			WithPublicBaseURL(resolvedBaseURL)
 		if err := srv.Start(ctx); err != nil {
 			log.Fatalf("Server error: %v", err)
 		}

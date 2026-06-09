@@ -1,11 +1,15 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime/multipart"
+	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -285,6 +289,65 @@ func TestHandleSessions_PlatformErrorDoesNotAbortRequest(t *testing.T) {
 	mustUnmarshal(t, rr.Body.Bytes(), &got)
 	if len(got) != 1 || got[0].ID != "z" {
 		t.Fatalf("expected only the healthy platform's session; got %+v", got)
+	}
+}
+
+func TestHandleSessionAttachment_SavesFileToCache(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	srv, reg := newSessionsTestServer(t)
+	projectDir := t.TempDir()
+	reg.Register(&fakePlatformWithDetail{
+		fakePlatform: fakePlatform{id: "opencode"},
+		detailSession: &db.Session{
+			ID:        "s1",
+			Platform:  "opencode",
+			Directory: projectDir,
+		},
+	})
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "notes & data.bin")
+	if err != nil {
+		t.Fatalf("CreateFormFile: %v", err)
+	}
+	if _, err := part.Write([]byte("attachment body")); err != nil {
+		t.Fatalf("write multipart: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart: %v", err)
+	}
+
+	req := httptest.NewRequest("POST", "/api/session/s1/attachment", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	rr := httptest.NewRecorder()
+	srv.dispatchSessionSubpath(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body.String())
+	}
+	var got struct {
+		Path string `json:"path"`
+		Name string `json:"name"`
+		Mime string `json:"mime"`
+		Size int64  `json:"size"`
+	}
+	mustUnmarshal(t, rr.Body.Bytes(), &got)
+	if got.Name != "notes___data.bin" {
+		t.Fatalf("name = %q, want sanitized filename", got.Name)
+	}
+	if got.Size != int64(len("attachment body")) {
+		t.Fatalf("size = %d", got.Size)
+	}
+	data, err := os.ReadFile(got.Path)
+	if err != nil {
+		t.Fatalf("read saved attachment: %v", err)
+	}
+	if string(data) != "attachment body" {
+		t.Fatalf("saved data = %q", string(data))
+	}
+	if strings.Contains(got.Path, projectDir) {
+		t.Fatalf("attachment path should not be inside project dir: %s", got.Path)
 	}
 }
 

@@ -1,0 +1,93 @@
+.oc-shared-view {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+
+.oc-shared-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--oc-border, #333);
+}
+
+.oc-shared-title-block {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.oc-shared-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--oc-text, #e0e0e0);
+  overflow-wrap: anywhere;
+}
+
+.oc-shared-badge {
+  flex: none;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--oc-text-muted, #888);
+  background: var(--oc-surface, #1e1e1e);
+  border: 1px solid var(--oc-border, #333);
+  border-radius: 999px;
+}
+
+.oc-shared-toolbar {
+  display: flex;
+  gap: 8px;
+}
+
+.oc-shared-action {
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--oc-text, #e0e0e0);
+  text-decoration: none;
+  background: var(--oc-surface, #1e1e1e);
+  border: 1px solid var(--oc-border, #333);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.oc-shared-action:hover {
+  background: var(--oc-surface-hover, #2a2a2a);
+}
+
+.oc-shared-loading,
+.oc-shared-error {
+  padding: 48px 16px;
+  text-align: center;
+  color: var(--oc-text-muted, #888);
+}
+
+.oc-shared-error {
+  color: var(--oc-danger, #e06c75);
+}
+
+/* Print stylesheet: drop interactive chrome so the browser's
+   "Save as PDF" produces a clean transcript. */
+@media print {
+  .oc-shared-toolbar,
+  .oc-shared-badge {
+    display: none !important;
+  }
+
+  .oc-shared-view {
+    max-width: none;
+    padding: 0;
+  }
+
+  .oc-shared-header {
+    border-bottom: 1px solid #ccc;
+  }
+}

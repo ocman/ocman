@@ -248,7 +248,7 @@
   flex-shrink: 0;
 }
 
-/* Image preview strip inside composer */
+/* Attachment preview strip inside composer */
 .oc-composer-images {
   display: flex;
   gap: 8px;
@@ -291,6 +291,30 @@
   transition: opacity 0.15s;
 }
 .oc-composer-image-thumb:hover .oc-composer-image-remove { opacity: 1; }
+.oc-composer-file-thumb {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  min-height: 34px;
+  padding: 8px 26px 8px 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: 11px;
+}
+.oc-composer-file-icon {
+  color: var(--overlay0);
+  font-family: 'SF Mono', Consolas, monospace;
+  text-transform: uppercase;
+}
+.oc-composer-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.oc-composer-file-thumb:hover .oc-composer-image-remove { opacity: 1; }
 
 .oc-composer-bar {
   display: flex;

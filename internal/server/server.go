@@ -44,6 +44,13 @@ type Server struct {
 	startTime          time.Time
 	projects           projectsIndexState
 	autoApproveDefault bool
+	// publicBaseURL is the externally reachable base URL used to build
+	// absolute share links (e.g. "https://ocman.example.com"). Empty
+	// means "derive from the incoming request's scheme + Host header",
+	// which works out of the box for localhost / dev. Set via
+	// WithPublicBaseURL from the OCMAN_PUBLIC_BASE_URL env or
+	// -public-base-url flag. Trailing slash is trimmed.
+	publicBaseURL string
 	judge              *PermissionJudge
 	// judgeDelayMs is the cached value of the judge delay setting.
 	// Loaded at startup and updated whenever the setting is changed via
@@ -188,6 +195,15 @@ func (s *Server) WithAutoApproveDefault(enabled bool) *Server {
 	return s
 }
 
+// WithPublicBaseURL sets the externally reachable base URL used to build
+// absolute share links. Empty leaves the "derive from request Host"
+// behaviour in place. The trailing slash is trimmed so callers can
+// concatenate paths directly. Must be called before Start.
+func (s *Server) WithPublicBaseURL(base string) *Server {
+	s.publicBaseURL = strings.TrimRight(strings.TrimSpace(base), "/")
+	return s
+}
+
 // Start starts the HTTP server. It blocks until the context is cancelled,
 // then gracefully shuts down the server.
 func (s *Server) Start(ctx context.Context) error {
@@ -255,6 +271,10 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	mux.HandleFunc("/api/sessions", s.requireAuth(s.handleSessionsRoot)) // GET = list, POST = create
 	mux.HandleFunc("/api/sessions/notify", s.get(s.handleSessionsNotify))
 	mux.HandleFunc("/api/session/", s.requireAuth(s.dispatchSessionSubpath))
+	// Public, UNAUTHENTICATED share endpoints. A valid share token is
+	// the only credential: anyone with the unguessable URL can view the
+	// conversation read-only, even when password auth is configured.
+	mux.HandleFunc("/api/share/", requireGET(s.handleSharePublic))
 	mux.HandleFunc("/api/activity", s.get(s.handleActivity))
 	mux.HandleFunc("/api/models", s.get(s.handleModels))
 	mux.HandleFunc("/api/hourly", s.get(s.handleHourly))
