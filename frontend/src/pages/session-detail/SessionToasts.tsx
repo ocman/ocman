@@ -1,11 +1,9 @@
 import { memo } from 'react';
 import * as Toast from '@radix-ui/react-toast';
-import type { LaunchStatus } from '../../lib/createSessionWithLaunch';
 
 export interface SessionToastsProps {
   showRenameToast: boolean;
   setShowRenameToast: (v: boolean) => void;
-  createLaunchStatus: LaunchStatus;
   showCreateSessionErrorToast: boolean;
   setShowCreateSessionErrorToast: (v: boolean) => void;
   showDisconnectedToast: boolean;
@@ -28,7 +26,6 @@ export interface SessionToastsProps {
 export const SessionToasts = memo(function SessionToasts({
   showRenameToast,
   setShowRenameToast,
-  createLaunchStatus,
   showCreateSessionErrorToast,
   setShowCreateSessionErrorToast,
   showDisconnectedToast,
@@ -44,17 +41,6 @@ export const SessionToasts = memo(function SessionToasts({
       <Toast.Root className="oc-toast-root" open={showRenameToast} onOpenChange={setShowRenameToast} duration={2000}>
         <Toast.Description className="oc-toast-description">
           Session renamed
-        </Toast.Description>
-      </Toast.Root>
-      <Toast.Root
-        className="oc-toast-root"
-        open={createLaunchStatus !== 'idle'}
-        duration={Infinity}
-      >
-        <Toast.Description className="oc-toast-description">
-          {createLaunchStatus === 'launching'
-            ? 'Launching opencode in tmux…'
-            : 'Waiting for opencode to start…'}
         </Toast.Description>
       </Toast.Root>
       <Toast.Root

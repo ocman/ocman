@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createSessionWithLaunch, type LaunchStatus } from './createSessionWithLaunch';
+import { createSessionWithLaunch } from './createSessionWithLaunch';
+import { useLaunchProgressStore } from './launchProgressStore';
 
 function unreachable(): Error & { code: string } {
   const err = new Error('no running platform instance') as Error & { code: string };
@@ -7,9 +8,37 @@ function unreachable(): Error & { code: string } {
   return err;
 }
 
+/**
+ * Records deduplicated `phase:step:attempt` transitions from the
+ * global launch-progress store. Zustand notifies on every setState
+ * call (even no-op merges), so consecutive identical signatures are
+ * collapsed to keep assertions stable.
+ */
+function trackProgress() {
+  const events: string[] = [];
+  let last = '';
+  const unsub = useLaunchProgressStore.subscribe((s) => {
+    const sig = `${s.phase}:${s.step}:${s.attempt}`;
+    if (sig !== last) {
+      last = sig;
+      events.push(sig);
+    }
+  });
+  return { events, unsub };
+}
+
 describe('createSessionWithLaunch', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    useLaunchProgressStore.setState({
+      phase: 'idle',
+      directory: '',
+      step: 'launch',
+      attempt: 0,
+      maxAttempts: 0,
+      skipLaunch: false,
+      error: null,
+    });
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -27,6 +56,8 @@ describe('createSessionWithLaunch', () => {
     expect(res).toEqual({ id: 'abc' });
     expect(createSession).toHaveBeenCalledTimes(1);
     expect(launchOpencodeInTmux).not.toHaveBeenCalled();
+    // Fast path: the progress overlay never appears.
+    expect(useLaunchProgressStore.getState().phase).toBe('idle');
   });
 
   it('rethrows non-unreachable errors without launching', async () => {
@@ -41,6 +72,7 @@ describe('createSessionWithLaunch', () => {
       ),
     ).rejects.toBe(err);
     expect(launchOpencodeInTmux).not.toHaveBeenCalled();
+    expect(useLaunchProgressStore.getState().phase).toBe('idle');
   });
 
   it('rethrows unreachable errors when tmux is unavailable', async () => {
@@ -55,23 +87,19 @@ describe('createSessionWithLaunch', () => {
       ),
     ).rejects.toBe(err);
     expect(launchOpencodeInTmux).not.toHaveBeenCalled();
+    expect(useLaunchProgressStore.getState().phase).toBe('idle');
   });
 
-  it('launches opencode and retries, reporting status transitions', async () => {
+  it('launches opencode and retries, reporting step-by-step progress', async () => {
     const createSession = vi
       .fn()
       .mockRejectedValueOnce(unreachable())
       .mockResolvedValueOnce({ id: 'new-id' });
     const launchOpencodeInTmux = vi.fn().mockResolvedValue({ session: 'foo' });
-    const statuses: LaunchStatus[] = [];
+    const { events, unsub } = trackProgress();
 
     const promise = createSessionWithLaunch(
-      {
-        createSession,
-        launchOpencodeInTmux,
-        tmuxAvailable: true,
-        onStatusChange: (s) => statuses.push(s),
-      },
+      { createSession, launchOpencodeInTmux, tmuxAvailable: true },
       { directory: '/tmp/foo' },
     );
 
@@ -79,11 +107,19 @@ describe('createSessionWithLaunch', () => {
     // runs, then we wait for the retry delay before the retry call.
     await vi.runAllTimersAsync();
     const res = await promise;
+    unsub();
 
     expect(res).toEqual({ id: 'new-id' });
     expect(launchOpencodeInTmux).toHaveBeenCalledWith('/tmp/foo');
     expect(createSession).toHaveBeenCalledTimes(2);
-    expect(statuses).toEqual(['launching', 'retrying', 'idle']);
+    expect(events).toEqual([
+      'running:launch:0',
+      'running:wait:0',
+      'running:wait:1',
+      'running:create:1',
+      'success:create:1',
+    ]);
+    expect(useLaunchProgressStore.getState().directory).toBe('/tmp/foo');
   });
 
   it('rethrows the original error when launch itself fails', async () => {
@@ -98,6 +134,9 @@ describe('createSessionWithLaunch', () => {
       ),
     ).rejects.toBe(originalErr);
     expect(createSession).toHaveBeenCalledTimes(1);
+    const state = useLaunchProgressStore.getState();
+    expect(state.phase).toBe('error');
+    expect(state.error).toMatch(/Failed to launch opencode in tmux/);
   });
 
   it('falls back to an active main project after the requested directory launch fails', async () => {
@@ -108,15 +147,9 @@ describe('createSessionWithLaunch', () => {
     const launchOpencodeInTmux = vi
       .fn()
       .mockRejectedValueOnce(new Error('directory missing'));
-    const statuses: LaunchStatus[] = [];
 
     const res = await createSessionWithLaunch(
-      {
-        createSession,
-        launchOpencodeInTmux,
-        tmuxAvailable: true,
-        onStatusChange: (s) => statuses.push(s),
-      },
+      { createSession, launchOpencodeInTmux, tmuxAvailable: true },
       { directory: '/tmp/.worktrees/repo/deleted', fallbackDirectory: '/tmp/repo' },
     );
 
@@ -125,7 +158,9 @@ describe('createSessionWithLaunch', () => {
     expect(createSession).toHaveBeenNthCalledWith(2, '/tmp/repo', undefined, undefined);
     expect(launchOpencodeInTmux).toHaveBeenCalledTimes(1);
     expect(launchOpencodeInTmux).toHaveBeenCalledWith('/tmp/.worktrees/repo/deleted');
-    expect(statuses).toEqual(['launching', 'idle']);
+    const state = useLaunchProgressStore.getState();
+    expect(state.phase).toBe('success');
+    expect(state.directory).toBe('/tmp/repo');
   });
 
   it('starts opencode in the fallback directory when no active instance exists there', async () => {
@@ -151,6 +186,7 @@ describe('createSessionWithLaunch', () => {
     expect(launchOpencodeInTmux).toHaveBeenNthCalledWith(1, '/tmp/.worktrees/repo/deleted');
     expect(launchOpencodeInTmux).toHaveBeenNthCalledWith(2, '/tmp/repo');
     expect(createSession).toHaveBeenNthCalledWith(3, '/tmp/repo', undefined, undefined);
+    expect(useLaunchProgressStore.getState().phase).toBe('success');
   });
 
   it('retries without launching when alreadyLaunched=true and tmux is unavailable', async () => {
@@ -175,6 +211,28 @@ describe('createSessionWithLaunch', () => {
     expect(res).toEqual({ id: 'wt-session' });
     expect(launchOpencodeInTmux).not.toHaveBeenCalled();
     expect(createSession).toHaveBeenCalledTimes(3);
+    // The launch step is skipped for externally-launched opencode.
+    const state = useLaunchProgressStore.getState();
+    expect(state.phase).toBe('success');
+    expect(state.skipLaunch).toBe(true);
+  });
+
+  it('does not touch the progress store when reportProgress=false', async () => {
+    const createSession = vi
+      .fn()
+      .mockRejectedValueOnce(unreachable())
+      .mockResolvedValueOnce({ id: 'wt-session' });
+    const launchOpencodeInTmux = vi.fn();
+
+    const promise = createSessionWithLaunch(
+      { createSession, launchOpencodeInTmux, tmuxAvailable: false },
+      { directory: '/tmp/wt', alreadyLaunched: true, reportProgress: false },
+    );
+    await vi.runAllTimersAsync();
+    const res = await promise;
+
+    expect(res).toEqual({ id: 'wt-session' });
+    expect(useLaunchProgressStore.getState().phase).toBe('idle');
   });
 
   it('gives up retrying if the retry returns a non-unreachable error', async () => {
@@ -196,5 +254,27 @@ describe('createSessionWithLaunch', () => {
     await assertion;
     // Only one retry attempt after launch.
     expect(createSession).toHaveBeenCalledTimes(2);
+    const state = useLaunchProgressStore.getState();
+    expect(state.phase).toBe('error');
+    expect(state.error).toBe('auth required');
+  });
+
+  it('reports a timeout error when retries exhaust on unreachable', async () => {
+    const createSession = vi.fn().mockRejectedValue(unreachable());
+    const launchOpencodeInTmux = vi.fn().mockResolvedValue({ session: 'foo' });
+
+    const promise = createSessionWithLaunch(
+      { createSession, launchOpencodeInTmux, tmuxAvailable: true },
+      { directory: '/tmp/foo' },
+    );
+    const assertion = expect(promise).rejects.toMatchObject({ code: 'unreachable' });
+    await vi.runAllTimersAsync();
+    await assertion;
+
+    const state = useLaunchProgressStore.getState();
+    expect(state.phase).toBe('error');
+    expect(state.error).toMatch(/did not start in time/);
+    expect(state.attempt).toBe(5);
+    expect(state.maxAttempts).toBe(5);
   });
 });

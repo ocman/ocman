@@ -39,7 +39,7 @@ import { useGitInfo } from '../../lib/useGitInfo';
 import { usePlatformCapabilities } from '../../lib/useCapabilities';
 import { listFailedSends, type FailedSend } from '../../lib/failedSends';
 import { recheckFaviconNotify } from '../../lib/useFaviconNotify';
-import { createSessionWithLaunch, type LaunchStatus } from '../../lib/createSessionWithLaunch';
+import { createSessionWithLaunch } from '../../lib/createSessionWithLaunch';
 import {
   isSessionRunning,
   computeLiveTokens,
@@ -632,7 +632,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const [showCreateSessionErrorToast, setShowCreateSessionErrorToast] = useState(false);
   const [showDisconnectedToast, setShowDisconnectedToast] = useState(false);
   const [threadBoundaryResetNonce, setThreadBoundaryResetNonce] = useState(0);
-  const [createLaunchStatus, setCreateLaunchStatus] = useState<LaunchStatus>('idle');
   const [failedSends, setFailedSends] = useState<FailedSend[]>([]);
 
   const archiveSession = useApiStore((state) => state.archiveSession);
@@ -853,7 +852,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
           createSession,
           launchOpencodeInTmux,
           tmuxAvailable: tmux.available,
-          onStatusChange: setCreateLaunchStatus,
         },
         { directory, fallbackDirectory: projectRootForDirectory(directory), title },
       );
@@ -1356,7 +1354,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
         <SessionToasts
           showRenameToast={showRenameToast}
           setShowRenameToast={setShowRenameToast}
-          createLaunchStatus={createLaunchStatus}
           showCreateSessionErrorToast={showCreateSessionErrorToast}
           setShowCreateSessionErrorToast={setShowCreateSessionErrorToast}
           showDisconnectedToast={showDisconnectedToast}

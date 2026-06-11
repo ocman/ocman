@@ -226,13 +226,10 @@ function WorktreeForm({ initialProject, initialBranch, close }: WorktreeFormProp
           createSession,
           launchOpencodeInTmux,
           tmuxAvailable: false,
-          onStatusChange: (s) => {
-            if (s === 'launching' || s === 'retrying') {
-              setStage('awaiting-opencode');
-            }
-          },
         },
-        { directory: resp.worktreePath, title: branch.trim(), alreadyLaunched: true },
+        // reportProgress=false: this modal renders its own stage
+        // label, so suppress the global launch-progress overlay.
+        { directory: resp.worktreePath, title: branch.trim(), alreadyLaunched: true, reportProgress: false },
       );
       setStage('idle');
       close();

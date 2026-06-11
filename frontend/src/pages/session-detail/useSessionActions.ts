@@ -311,7 +311,7 @@ export function useSessionActions({
       const clearTitle = args.trim() || undefined;
       try {
         const res = await createSessionWithLaunch(
-          { createSession, launchOpencodeInTmux, tmuxAvailable, onStatusChange: () => {} },
+          { createSession, launchOpencodeInTmux, tmuxAvailable },
           {
             directory: session.directory,
             fallbackDirectory: projectRootForDirectory(session.directory),
