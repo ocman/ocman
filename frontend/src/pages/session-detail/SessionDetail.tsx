@@ -844,7 +844,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
     [messages, session],
   );
 
-  // eslint-disable-next-line react-hooks/preserve-manual-memoization -- React Compiler can't prove the deps cover the closure; the manual list matches the legacy hook exactly.
   const handleNewSessionInDirectory = useCallback(async (directory: string, title?: string) => {
     try {
       const res = await createSessionWithLaunch(
