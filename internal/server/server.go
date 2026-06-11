@@ -67,6 +67,13 @@ type Server struct {
 	sseSessions   map[string]*sseSink
 	sseSessionsMu sync.Mutex
 
+	// broadcastHub fans out events to every connected /api/events
+	// client regardless of which session (if any) they're viewing.
+	// Used for cross-page signals such as "permission resolved" so
+	// in-app prompt toasts can clear instantly rather than waiting for
+	// the next /api/sessions/notify poll.
+	broadcastHub *broadcastHub
+
 	// autoApprove tracks the per-permission state of the auto-approve
 	// pipeline for the lifetime of the ocman process. Keyed by
 	// "sessionID|permissionID".
@@ -182,6 +189,7 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		startTime:           time.Now(),
 		judge:            newPermissionJudge(),
 		sseSessions:      make(map[string]*sseSink),
+		broadcastHub:     newBroadcastHub(),
 		autoApprove:      make(map[string]*autoApproveStatus),
 		safeCommandCache: make(map[string]map[string]string),
 	}
@@ -270,6 +278,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	mux.HandleFunc("/api/system/stats", s.get(s.handleSystemStats))
 	mux.HandleFunc("/api/sessions", s.requireAuth(s.handleSessionsRoot)) // GET = list, POST = create
 	mux.HandleFunc("/api/sessions/notify", s.get(s.handleSessionsNotify))
+	mux.HandleFunc("/api/events", s.get(s.handleGlobalEvents))
 	mux.HandleFunc("/api/session/", s.requireAuth(s.dispatchSessionSubpath))
 	// Public, UNAUTHENTICATED share endpoints. A valid share token is
 	// the only credential: anyone with the unguessable URL can view the

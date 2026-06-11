@@ -117,6 +117,11 @@ func newAutoApproveWatcher(server *Server) *autoApproveWatcher {
 		}
 		w.onPermissionReplied = func(sessionID, permissionID string) {
 			server.cancelAutoApprove(sessionID, permissionID)
+			// Broadcast the resolution so cross-page prompt toasts clear
+			// instantly even when the user answered from the OpenCode TUI
+			// or another browser tab. The watcher is always connected, so
+			// this fires regardless of which (if any) tab is open.
+			server.broadcastPermissionResolved(sessionID, permissionID, "replied")
 		}
 	}
 	return w
@@ -280,6 +285,16 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 		onPermissionReplied: func(sessionID, permissionID string) {
 			if w.onPermissionReplied != nil {
 				w.onPermissionReplied(sessionID, permissionID)
+			}
+		},
+		onQuestionResolved: func(sessionID, requestID, reason string) {
+			if w.server != nil {
+				w.server.broadcastQuestionResolved(sessionID, requestID, reason)
+			}
+		},
+		onSessionIdle: func(sessionID string) {
+			if w.server != nil {
+				w.server.broadcastSessionIdle(sessionID)
 			}
 		},
 	}

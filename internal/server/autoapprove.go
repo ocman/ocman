@@ -1172,6 +1172,14 @@ type ssePermissionTee struct {
 	// race the user's manual answer. sessionID is the event payload's
 	// sessionID for the same reason as onPermission.
 	onPermissionReplied func(sessionID, permissionID string)
+	// onQuestionResolved fires when the upstream emits question.replied
+	// or question.rejected, so cross-page prompt toasts for the
+	// session's question can clear. reason is "replied" or "rejected".
+	// Optional — nil means questions aren't observed on this tee.
+	onQuestionResolved func(sessionID, requestID, reason string)
+	// onSessionIdle fires when the upstream emits session.idle (the
+	// agent finished a turn). Optional — nil means idle isn't observed.
+	onSessionIdle func(sessionID string)
 }
 
 func (t *ssePermissionTee) Write(p []byte) (int, error) {
@@ -1294,6 +1302,12 @@ func (t *ssePermissionTee) dispatchEvent(eventType, dataJSON string) {
 		t.dispatchPermissionAsked(dataJSON)
 	case "permission.replied":
 		t.dispatchPermissionReplied(dataJSON)
+	case "question.replied":
+		t.dispatchQuestionResolved(dataJSON, "replied")
+	case "question.rejected":
+		t.dispatchQuestionResolved(dataJSON, "rejected")
+	case "session.idle":
+		t.dispatchSessionIdle(dataJSON)
 	}
 }
 
@@ -1386,6 +1400,87 @@ func (t *ssePermissionTee) dispatchPermissionReplied(dataJSON string) {
 	if t.onPermissionReplied != nil {
 		t.onPermissionReplied(props.SessionID, permissionID)
 	}
+}
+
+// dispatchQuestionResolved extracts the session + request IDs from a
+// question.replied / question.rejected event and fires
+// onQuestionResolved. OpenCode uses `requestID`; both casings and the
+// `id` fallback are accepted for robustness across shapes. sessionID is
+// taken from the payload (the tee sees every session's events).
+func (t *ssePermissionTee) dispatchQuestionResolved(dataJSON, reason string) {
+	if t.onQuestionResolved == nil {
+		return
+	}
+	type qProps struct {
+		SessionID  string `json:"sessionID"`
+		SessionID2 string `json:"sessionId"`
+		RequestID  string `json:"requestID"`
+		RequestID2 string `json:"requestId"`
+		ID         string `json:"id"`
+	}
+	var envelope struct {
+		Properties *qProps `json:"properties"`
+	}
+	if err := json.Unmarshal([]byte(dataJSON), &envelope); err != nil {
+		return
+	}
+	var props qProps
+	if envelope.Properties != nil {
+		props = *envelope.Properties
+	} else {
+		if err := json.Unmarshal([]byte(dataJSON), &props); err != nil {
+			return
+		}
+	}
+	sessionID := firstNonEmpty(props.SessionID, props.SessionID2)
+	requestID := firstNonEmpty(props.RequestID, props.RequestID2, props.ID)
+	if sessionID == "" {
+		return
+	}
+	t.onQuestionResolved(sessionID, requestID, reason)
+}
+
+// dispatchSessionIdle extracts the session ID from a session.idle event
+// and fires onSessionIdle. Accepts both casings and both the enveloped
+// and flat payload shapes.
+func (t *ssePermissionTee) dispatchSessionIdle(dataJSON string) {
+	if t.onSessionIdle == nil {
+		return
+	}
+	type idleProps struct {
+		SessionID  string `json:"sessionID"`
+		SessionID2 string `json:"sessionId"`
+	}
+	var envelope struct {
+		Properties *idleProps `json:"properties"`
+	}
+	if err := json.Unmarshal([]byte(dataJSON), &envelope); err != nil {
+		return
+	}
+	var props idleProps
+	if envelope.Properties != nil {
+		props = *envelope.Properties
+	} else {
+		if err := json.Unmarshal([]byte(dataJSON), &props); err != nil {
+			return
+		}
+	}
+	sessionID := firstNonEmpty(props.SessionID, props.SessionID2)
+	if sessionID == "" {
+		return
+	}
+	t.onSessionIdle(sessionID)
+}
+
+// firstNonEmpty returns the first non-empty string from the arguments,
+// or "" if all are empty.
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // metadataKeys returns the sorted key list for log fields. Useful for
@@ -1642,6 +1737,10 @@ func (s *Server) backgroundAutoApprove(
 			})
 			if err == nil {
 				s.emitSessionSseEvent(sessionID, "ocman.permission.flagged", flaggedPayload)
+				// Broadcast so background sessions that the judge flagged
+				// for human review surface in the bell / favicon / toast
+				// immediately instead of waiting for the next notify poll.
+				s.broadcastGlobalEvent("ocman.permission.flagged", flaggedPayload)
 			}
 		}
 		return
@@ -1743,6 +1842,12 @@ func (s *Server) respondAndPersistSafeApproval(
 	if err == nil {
 		s.emitSessionSseEvent(sessionID, "ocman.permission.auto-approved", approvedPayload)
 	}
+
+	// Broadcast the resolution to *every* connected client (not just the
+	// per-session SSE sink) so cross-page prompt toasts for this session
+	// can clear immediately instead of lingering until the next
+	// /api/sessions/notify poll.
+	s.broadcastPermissionResolved(sessionID, permissionID, "auto-approved")
 
 	logger.Info("background auto-approve: permission approved")
 }

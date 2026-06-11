@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import * as Toast from '@radix-ui/react-toast';
 import { useToastNotify, type ToastEntry } from '../lib/useToastNotify';
+import { useGlobalEvents } from '../lib/useGlobalEvents';
 import { cleanTitle } from '../lib/format';
 import './PromptToastNotify.css';
 
@@ -27,6 +28,10 @@ import './PromptToastNotify.css';
 export function PromptToastNotify() {
   const navigate = useNavigate();
   const { toasts, dismiss } = useToastNotify();
+  // Subscribe to the app-wide /api/events stream so a permission that's
+  // auto-approved by the LLM judge clears its toast immediately rather
+  // than waiting for the next notify poll.
+  useGlobalEvents();
 
   function describe(entry: ToastEntry): { heading: string; body: string } {
     const project = basename(entry.directory);
