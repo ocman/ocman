@@ -121,7 +121,15 @@ export async function createSessionWithLaunch(
     //   - tmux is available and we can launch opencode ourselves
     //   - the caller already launched opencode and just wants us to
     //     wait until the lsof scan + port bind catch up
-    if (!tmuxAvailable && !alreadyLaunched) throw err;
+    if (!tmuxAvailable && !alreadyLaunched) {
+      // We can't auto-launch (tmux unavailable) and nobody launched
+      // opencode for us, so the session genuinely can't be created.
+      // Surface it in the overlay rather than failing silently — the
+      // command-palette caller otherwise only logs the error.
+      progress.begin(directory, { skipLaunch: true });
+      progress.fail('No running OpenCode instance here, and tmux is unavailable to start one.');
+      throw err;
+    }
 
     progress.begin(directory, { skipLaunch: !!alreadyLaunched });
 

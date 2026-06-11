@@ -75,7 +75,7 @@ describe('createSessionWithLaunch', () => {
     expect(useLaunchProgressStore.getState().phase).toBe('idle');
   });
 
-  it('rethrows unreachable errors when tmux is unavailable', async () => {
+  it('rethrows unreachable errors when tmux is unavailable, surfacing an error in the overlay', async () => {
     const err = unreachable();
     const createSession = vi.fn().mockRejectedValue(err);
     const launchOpencodeInTmux = vi.fn();
@@ -87,7 +87,9 @@ describe('createSessionWithLaunch', () => {
       ),
     ).rejects.toBe(err);
     expect(launchOpencodeInTmux).not.toHaveBeenCalled();
-    expect(useLaunchProgressStore.getState().phase).toBe('idle');
+    const state = useLaunchProgressStore.getState();
+    expect(state.phase).toBe('error');
+    expect(state.error).toMatch(/tmux is unavailable/);
   });
 
   it('launches opencode and retries, reporting step-by-step progress', async () => {
