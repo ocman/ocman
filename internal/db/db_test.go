@@ -1563,6 +1563,10 @@ func TestGetMetricsDashboardCumulativeCalcCost(t *testing.T) {
 	if metrics.Summary.TotalCalcCost != 15.0 {
 		t.Errorf("Summary.TotalCalcCost = %v, want 15.0", metrics.Summary.TotalCalcCost)
 	}
+	// Both requests report a billed cost, so effective == reported.
+	if metrics.Summary.TotalEffectiveCost != 1.0 {
+		t.Errorf("Summary.TotalEffectiveCost = %v, want 1.0", metrics.Summary.TotalEffectiveCost)
+	}
 
 	// The last series point should have the full cumulative values.
 	if len(metrics.Series) == 0 {
@@ -1574,6 +1578,88 @@ func TestGetMetricsDashboardCumulativeCalcCost(t *testing.T) {
 	}
 	if last.CumulativeCalcCost != 15.0 {
 		t.Errorf("last Series.CumulativeCalcCost = %v, want 15.0", last.CumulativeCalcCost)
+	}
+	if last.CumulativeEffectiveCost != 1.0 {
+		t.Errorf("last Series.CumulativeEffectiveCost = %v, want 1.0", last.CumulativeEffectiveCost)
+	}
+}
+
+// TestGetMetricsDashboardEffectiveCost covers the subscription-plan
+// fallback: when the platform reports $0 cost, the effective cost
+// should fall back to the token-derived estimate, and the per-row
+// session/request aggregates must reconcile with the summary.
+func TestGetMetricsDashboardEffectiveCost(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Billed", "/a", now-10000, now)
+	insertSession(t, db, "s2", "Subscription", "/b", now-10000, now)
+
+	// s1: reported cost 0.25 (billed).
+	insertMessage(t, db, "m1", "s1", now-5000, map[string]interface{}{
+		"role": "assistant", "agent": "build",
+		"providerID": "anthropic", "modelID": "opus-4.1", "finish": "end_turn",
+		"cost": 0.25,
+		"time": map[string]interface{}{"created": float64(now - 7000), "completed": float64(now - 5000)},
+		"tokens": map[string]interface{}{
+			"input": 100, "output": 200,
+			"cache": map[string]interface{}{"read": 0, "write": 0},
+		},
+	})
+	// s2: reported cost 0 → effective should use estimate.
+	insertMessage(t, db, "m2", "s2", now-1000, map[string]interface{}{
+		"role": "assistant", "agent": "build",
+		"providerID": "anthropic", "modelID": "opus-4.1", "finish": "end_turn",
+		"cost": 0,
+		"time": map[string]interface{}{"created": float64(now - 3000), "completed": float64(now - 1000)},
+		"tokens": map[string]interface{}{
+			"input": 200, "output": 400,
+			"cache": map[string]interface{}{"read": 0, "write": 0},
+		},
+	})
+
+	// inputRate=0.01, outputRate=0.02 →
+	//   m1 calc = 100*0.01 + 200*0.02 = 5.0  (but reported 0.25 wins)
+	//   m2 calc = 200*0.01 + 400*0.02 = 10.0 (reported 0 → est wins)
+	pricing := stubPricing{inputRate: 0.01, outputRate: 0.02}
+
+	metrics, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+		RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
+		Pricing: pricing,
+	})
+	if err != nil {
+		t.Fatalf("GetMetricsDashboard: %v", err)
+	}
+
+	// reported = 0.25, calc = 15.0, effective = 0.25 + 10.0 = 10.25
+	if metrics.Summary.TotalCost != 0.25 {
+		t.Errorf("Summary.TotalCost = %v, want 0.25", metrics.Summary.TotalCost)
+	}
+	if metrics.Summary.TotalCalcCost != 15.0 {
+		t.Errorf("Summary.TotalCalcCost = %v, want 15.0", metrics.Summary.TotalCalcCost)
+	}
+	if metrics.Summary.TotalEffectiveCost != 10.25 {
+		t.Errorf("Summary.TotalEffectiveCost = %v, want 10.25", metrics.Summary.TotalEffectiveCost)
+	}
+
+	// Per-session effective costs must reconcile with the summary.
+	var sumSessionEffective float64
+	for _, s := range metrics.Sessions {
+		sumSessionEffective += s.EffectiveCost
+		switch s.ID {
+		case "s1":
+			if s.EffectiveCost != 0.25 {
+				t.Errorf("s1 EffectiveCost = %v, want 0.25", s.EffectiveCost)
+			}
+		case "s2":
+			if s.EffectiveCost != 10.0 {
+				t.Errorf("s2 EffectiveCost = %v, want 10.0", s.EffectiveCost)
+			}
+		}
+	}
+	if sumSessionEffective != metrics.Summary.TotalEffectiveCost {
+		t.Errorf("sum of session EffectiveCost = %v, want %v (summary)", sumSessionEffective, metrics.Summary.TotalEffectiveCost)
 	}
 }
 

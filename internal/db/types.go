@@ -228,15 +228,22 @@ type MetricsSummary struct {
 	CacheHitRate     float64 `json:"cacheHitRate"`
 	TotalCost        float64 `json:"totalCost"`
 	TotalCalcCost    float64 `json:"totalCalcCost"`
+	// TotalEffectiveCost is the headline cost: per request it uses the
+	// platform-reported cost when that is non-zero, otherwise the
+	// token-derived estimate. This reconciles subscription-plan
+	// sessions (reported $0) with API-priced sessions so the summary
+	// matches what the per-row tables show.
+	TotalEffectiveCost float64 `json:"totalEffectiveCost"`
 }
 
 // MetricsPoint holds chart data for a time bucket (hour or day).
 type MetricsPoint struct {
 	// Label is the human-readable bucket label ("2026-04-16 14" or "2026-04-16").
 	Label               string  `json:"label"`
-	AvgOutputTokensSec  float64 `json:"avgOutputTokensSec"`
-	CumulativeCost      float64 `json:"cumulativeCost"`
-	CumulativeCalcCost  float64 `json:"cumulativeCalcCost"`
+	AvgOutputTokensSec      float64 `json:"avgOutputTokensSec"`
+	CumulativeCost          float64 `json:"cumulativeCost"`
+	CumulativeCalcCost      float64 `json:"cumulativeCalcCost"`
+	CumulativeEffectiveCost float64 `json:"cumulativeEffectiveCost"`
 	InputTokens         int64   `json:"inputTokens"`
 	CacheReadTokens     int64   `json:"cacheReadTokens"`
 	OutputTokens        int64   `json:"outputTokens"`
@@ -266,7 +273,9 @@ type RequestLogEntry struct {
 	DurationMs       int64   `json:"durationMs"`
 	Cost             float64 `json:"cost"`
 	CalcCost         float64 `json:"calcCost"`
-	StopReason       string  `json:"stopReason"`
+	// EffectiveCost is Cost when reported (>0), otherwise CalcCost.
+	EffectiveCost float64 `json:"effectiveCost"`
+	StopReason    string  `json:"stopReason"`
 }
 
 // SessionLogEntry holds per-session aggregated metrics for the session log table.
@@ -289,9 +298,12 @@ type SessionLogEntry struct {
 	AvgTokensPerSec  float64  `json:"avgTokensPerSec"`
 	Cost             float64  `json:"cost"`
 	CalcCost         float64  `json:"calcCost"`
-	Agents           []string `json:"agents"`
-	Models           []string `json:"models"`
-	ErrorCount       int      `json:"errorCount"`
+	// EffectiveCost sums each request's effective cost (reported when
+	// >0, else estimate) so it reconciles with the dashboard summary.
+	EffectiveCost float64  `json:"effectiveCost"`
+	Agents        []string `json:"agents"`
+	Models        []string `json:"models"`
+	ErrorCount    int      `json:"errorCount"`
 }
 
 // ProjectLogEntry holds per-project (directory) aggregated metrics.
@@ -308,9 +320,12 @@ type ProjectLogEntry struct {
 	AvgTokensPerSec  float64  `json:"avgTokensPerSec"`
 	Cost             float64  `json:"cost"`
 	CalcCost         float64  `json:"calcCost"`
-	Models           []string `json:"models"`
-	ErrorCount       int      `json:"errorCount"`
-	LastRequestTime  int64    `json:"lastRequestTime"`
+	// EffectiveCost sums each request's effective cost (reported when
+	// >0, else estimate) so it reconciles with the dashboard summary.
+	EffectiveCost   float64  `json:"effectiveCost"`
+	Models          []string `json:"models"`
+	ErrorCount      int      `json:"errorCount"`
+	LastRequestTime int64    `json:"lastRequestTime"`
 }
 
 // MetricsDashboard holds the full metrics dashboard payload.

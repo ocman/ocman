@@ -35,6 +35,7 @@
 .metrics-log-header { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 4px; }
 .metrics-log-tabs { margin-bottom: 0; border-bottom: none; }
 .metrics-session-project { font-size: 11px; color: var(--text-dim); font-family: 'SF Mono', Consolas, monospace; margin-top: 2px; }
+.metrics-cost-detail { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
 .metrics-table-wrap { overflow-x: auto; }
 .metrics-pagination { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
 .metrics-pagination-info { font-size: 12px; color: var(--text-dim); font-family: 'SF Mono', Consolas, monospace; }

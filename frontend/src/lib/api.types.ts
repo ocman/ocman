@@ -460,6 +460,13 @@ export interface MetricsSummary {
   cacheHitRate: number;
   totalCost: number;
   totalCalcCost: number;
+  /**
+   * Headline cost: per request, the platform-reported cost when it's
+   * non-zero, otherwise the token-derived estimate. Reconciles
+   * subscription-plan sessions (reported $0) with API-priced ones so
+   * the summary matches the per-row tables.
+   */
+  totalEffectiveCost: number;
 }
 
 export interface MetricsPoint {
@@ -467,6 +474,7 @@ export interface MetricsPoint {
   avgOutputTokensSec: number;
   cumulativeCost: number;
   cumulativeCalcCost: number;
+  cumulativeEffectiveCost: number;
   inputTokens: number;
   cacheReadTokens: number;
   outputTokens: number;
@@ -494,6 +502,7 @@ export interface RequestMetricsRow {
   durationMs: number;
   cost: number;
   calcCost: number;
+  effectiveCost: number;
   stopReason: string;
 }
 
@@ -513,6 +522,7 @@ export interface SessionLogEntry {
   avgTokensPerSec: number;
   cost: number;
   calcCost: number;
+  effectiveCost: number;
   agents: string[];
   models: string[];
   errorCount: number;
@@ -531,6 +541,7 @@ export interface ProjectLogEntry {
   avgTokensPerSec: number;
   cost: number;
   calcCost: number;
+  effectiveCost: number;
   models: string[];
   errorCount: number;
   lastRequestTime: number;

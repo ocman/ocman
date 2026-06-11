@@ -66,7 +66,7 @@ function buildCostByModelDatasets(metrics: MetricsDashboard) {
     return [
       {
         label: 'Cost',
-        data: series.map((p) => p.cumulativeCost),
+        data: series.map((p) => p.cumulativeEffectiveCost),
         borderColor: '#a6e3a1',
         backgroundColor: 'rgba(166, 227, 161, 0.18)',
         fill: 'origin' as const,
@@ -199,8 +199,8 @@ export function StatsTab() {
             <MetricCard label="Avg Duration" value={formatSeconds(metrics.summary.avgDurationMs / 1000)} tone="blue" />
             <MetricCard label="Total Wall Clock" value={formatSeconds(metrics.summary.totalDurationMs / 1000)} tone="blue" subvalue="sum of response times" />
             <MetricCard label="Cache Hit Rate" value={formatPercent(metrics.summary.cacheHitRate)} tone="green" subvalue={formatTokenCache(metrics.summary.cacheReadTokens, metrics.summary.cacheWriteTokens)} />
-            <MetricCard label="Total Cost" value={formatCurrency(metrics.summary.totalCost)} tone="green" subvalue="reported by platform" />
-            <MetricCard label="Est. API Cost" value={formatCurrency(metrics.summary.totalCalcCost)} tone="orange" subvalue="calculated from tokens" />
+            <MetricCard label="Total Cost" value={formatCurrency(metrics.summary.totalEffectiveCost)} tone="green" subvalue="billed, est. when plan reports $0" />
+            <MetricCard label="Reported / Est." value={`${formatCurrency(metrics.summary.totalCost)} / ${formatCurrency(metrics.summary.totalCalcCost)}`} tone="orange" subvalue="platform-billed / token estimate" />
           </div>
 
           <div className="metrics-chart-grid metrics-chart-grid-top">
@@ -297,8 +297,8 @@ export function StatsTab() {
                         <th>Cache</th>
                         <th>Tok/s</th>
                         <th>Duration</th>
-                        <th>Cost</th>
-                        <th title="Calculated from token counts using public API pricing">Est. Cost</th>
+                        <th title="Platform-billed cost; falls back to the token-based estimate when the plan reports $0">Cost</th>
+                        <th title="Platform-reported (billed) / token-based estimate">Reported / Est.</th>
                         <th>Models</th>
                         <th title="Assistant messages that finished with an error">Errors</th>
                       </tr>
@@ -324,8 +324,12 @@ export function StatsTab() {
                           <td className="mono">{formatTokenCache(session.cacheReadTokens, session.cacheWriteTokens)}</td>
                           <td>{session.avgTokensPerSec > 0 ? session.avgTokensPerSec.toFixed(1) : '-'}</td>
                           <td>{session.totalDurationMs > 0 ? formatSeconds(session.totalDurationMs / 1000) : '-'}</td>
-                          <td>{session.cost > 0 ? formatCurrency(session.cost) : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
-                          <td>{session.calcCost > 0 ? <span style={{ color: 'var(--accent4)' }}>{formatCurrency(session.calcCost)}</span> : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
+                          <td>{session.effectiveCost > 0 ? formatCurrency(session.effectiveCost) : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
+                          <td className="metrics-cost-detail">
+                            <span title="Platform-reported (billed)">{session.cost > 0 ? formatCurrency(session.cost) : <span style={{ color: 'var(--text-dim)' }}>—</span>}</span>
+                            <span style={{ color: 'var(--text-dim)' }}> / </span>
+                            <span title="Token-based estimate" style={{ color: 'var(--accent4)' }}>{session.calcCost > 0 ? formatCurrency(session.calcCost) : '—'}</span>
+                          </td>
                           <td title={session.models.join(', ')}>
                             {session.models.length === 0
                               ? <span style={{ color: 'var(--text-dim)' }}>—</span>
@@ -376,8 +380,8 @@ export function StatsTab() {
                         <th>Cache</th>
                         <th>Tok/s</th>
                         <th>Duration</th>
-                        <th>Cost</th>
-                        <th title="Calculated from token counts using public API pricing">Est. Cost</th>
+                        <th title="Platform-billed cost; falls back to the token-based estimate when the plan reports $0">Cost</th>
+                        <th title="Platform-reported (billed) / token-based estimate">Reported / Est.</th>
                         <th>Models</th>
                         <th title="Assistant messages that finished with an error">Errors</th>
                       </tr>
@@ -402,8 +406,12 @@ export function StatsTab() {
                           <td className="mono">{formatTokenCache(project.cacheReadTokens, project.cacheWriteTokens)}</td>
                           <td>{project.avgTokensPerSec > 0 ? project.avgTokensPerSec.toFixed(1) : '-'}</td>
                           <td>{project.totalDurationMs > 0 ? formatSeconds(project.totalDurationMs / 1000) : '-'}</td>
-                          <td>{project.cost > 0 ? formatCurrency(project.cost) : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
-                          <td>{project.calcCost > 0 ? <span style={{ color: 'var(--accent4)' }}>{formatCurrency(project.calcCost)}</span> : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
+                          <td>{project.effectiveCost > 0 ? formatCurrency(project.effectiveCost) : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
+                          <td className="metrics-cost-detail">
+                            <span title="Platform-reported (billed)">{project.cost > 0 ? formatCurrency(project.cost) : <span style={{ color: 'var(--text-dim)' }}>—</span>}</span>
+                            <span style={{ color: 'var(--text-dim)' }}> / </span>
+                            <span title="Token-based estimate" style={{ color: 'var(--accent4)' }}>{project.calcCost > 0 ? formatCurrency(project.calcCost) : '—'}</span>
+                          </td>
                           <td title={project.models.join(', ')}>
                             {project.models.length === 0
                               ? <span style={{ color: 'var(--text-dim)' }}>—</span>
@@ -454,8 +462,8 @@ export function StatsTab() {
                         <th>Cache</th>
                         <th>Tok/s</th>
                         <th>Duration</th>
-                        <th>Cost</th>
-                        <th title="Calculated from token counts using public API pricing">Est. Cost</th>
+                        <th title="Platform-billed cost; falls back to the token-based estimate when the plan reports $0">Cost</th>
+                        <th title="Platform-reported (billed) / token-based estimate">Reported / Est.</th>
                         <th>Stop</th>
                       </tr>
                     </thead>
@@ -477,8 +485,12 @@ export function StatsTab() {
                           <td className="mono">{formatTokenCache(request.cacheReadTokens, request.cacheWriteTokens)}</td>
                           <td>{request.tokensPerSecond > 0 ? request.tokensPerSecond.toFixed(1) : '-'}</td>
                           <td>{request.durationMs > 0 ? formatSeconds(request.durationMs / 1000) : '-'}</td>
-                          <td>{request.cost > 0 ? formatCurrency(request.cost) : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
-                          <td>{request.calcCost > 0 ? <span style={{ color: 'var(--accent4)' }}>{formatCurrency(request.calcCost)}</span> : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
+                          <td>{request.effectiveCost > 0 ? formatCurrency(request.effectiveCost) : <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
+                          <td className="metrics-cost-detail">
+                            <span title="Platform-reported (billed)">{request.cost > 0 ? formatCurrency(request.cost) : <span style={{ color: 'var(--text-dim)' }}>—</span>}</span>
+                            <span style={{ color: 'var(--text-dim)' }}> / </span>
+                            <span title="Token-based estimate" style={{ color: 'var(--accent4)' }}>{request.calcCost > 0 ? formatCurrency(request.calcCost) : '—'}</span>
+                          </td>
                           <td><span className="metrics-stop-pill">{request.stopReason}</span></td>
                         </tr>
                       ))}
