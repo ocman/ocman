@@ -300,3 +300,77 @@ header h1 span { color: inherit; font-weight: 400; }
   .container { padding: 0; }
   header { align-items: flex-start; padding: 16px 12px; }
 }
+
+/* Print stylesheet for the authenticated session view.
+ *
+ * "Print / Save as PDF" (ShareExportMenu) calls window.print() on the
+ * live app, which has no dedicated print page. Without these rules the
+ * left sidebar, right panel, app header and composer would all print,
+ * and the conversation would be clipped to a single viewport because
+ * the on-screen layout pins everything to 100dvh with overflow:hidden.
+ *
+ * Here we (1) hide all chrome so only the conversation remains, and
+ * (2) release the height/overflow constraints so the full transcript
+ * flows naturally across pages. (The public /share/:token page has its
+ * own print rules in SharedConversationView.css.) */
+@media print {
+  /* Chrome that is not part of the conversation. The right panel
+     (RightPanel) renders as an <aside class="oc-changes-sidebar">, the
+     third flex child of .session-layout — target it via the element so
+     we don't accidentally hide embedded changes sidebars elsewhere. */
+  header,
+  .session-sidebar,
+  .session-layout > aside,
+  .oc-changes-sidebar,
+  .header-actions,
+  .oc-term-dock,
+  .oc-viewport-footer,
+  .oc-scroll-btn {
+    display: none !important;
+  }
+
+  /* Release the full-height, clipped scroll containers so content
+     paginates instead of being cut off at one screenful. */
+  html,
+  body,
+  #root,
+  .container,
+  .content,
+  .session-layout,
+  .session-main,
+  .oc-thread,
+  .oc-thread-viewport {
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    display: block !important;
+  }
+
+  /* Avoid breaking a single message across two pages where possible. */
+  .oc-msg {
+    break-inside: avoid;
+  }
+
+  /* Collapsed tool blocks: the on-screen UI caps body height and shows
+     a "click to expand" affordance. For a printed transcript we want
+     the full content and no dead click hints. ToolCallDisplay also
+     force-expands its React-gated bodies while printing (useIsPrinting),
+     so between that and these rules the export is complete. The JS
+     length cap in toolOutputPreview (5000 chars) is intentionally kept,
+     so a single huge output can't balloon the PDF. */
+  .oc-tool-pre,
+  .oc-shell-block,
+  .oc-tool-compact-body,
+  .oc-embedded-thread,
+  .oc-tool-content {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  /* The "click to expand" / "Show full output" affordances are
+     meaningless on paper. */
+  .oc-tool-expand {
+    display: none !important;
+  }
+}

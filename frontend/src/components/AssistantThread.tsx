@@ -19,6 +19,7 @@ import { useFailedSends } from '../lib/failedSendsContext';
 import { isMutedTool, isMutedLineTool } from '../lib/mutedTools';
 import { parseAnsi, hasAnsi, hasStyle, type AnsiSegment } from '../lib/ansi';
 import { useStickyBottom } from '../lib/useStickyBottom';
+import { useIsPrinting } from '../lib/useIsPrinting';
 import { trackRender } from '../lib/renderRateMonitor';
 import {
   highlightDiffCode,
@@ -708,8 +709,17 @@ function AutoApprovedNotice({
 }
 
 const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArgsText, result }) => {
-  const [expanded, setExpanded] = useState(false);
-  const [taskExpanded, setTaskExpanded] = useState(false);
+  const [expandedState, setExpanded] = useState(false);
+  const [taskExpandedState, setTaskExpanded] = useState(false);
+  // While printing / saving to PDF, force every block open so the
+  // exported transcript is complete. CSS lifts the max-height caps
+  // (see the @media print block in tokens.css); this additionally
+  // reveals the few bodies that are gated on React state and would
+  // otherwise be absent from the DOM. Length caps (toolOutputPreview)
+  // still apply, so a single huge log can't balloon the PDF.
+  const isPrinting = useIsPrinting();
+  const expanded = expandedState || isPrinting;
+  const taskExpanded = taskExpandedState || isPrinting;
 
   // Auto-approved notice — rendered inline before any timing/tool logic.
   if (toolName === 'ocman:auto-approved') {
@@ -906,7 +916,10 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: raw
   const title = parsedTitle || toolName;
 
   const isLong = outputDisplay.length > 500 || (detail && detail.length > 300);
-  const outputPreview = toolOutputPreview(outputDisplay, expanded);
+  // Truncation honors the *real* expand state (not the print-forced
+  // one) so the 5000-char cap still applies in PDFs — printing reveals
+  // collapsed blocks but does not lift the length cap on huge outputs.
+  const outputPreview = toolOutputPreview(outputDisplay, expandedState);
 
   // Detect TodoWrite tool calls and render as a checklist
   const isTodo = toolName === 'mcp_todowrite' || toolName === 'todowrite' || toolName === 'TodoWrite';

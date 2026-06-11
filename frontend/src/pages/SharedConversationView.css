@@ -1,7 +1,51 @@
 .oc-shared-view {
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 24px 16px 64px;
+  /* #root pins height to 100dvh with overflow:hidden (tokens.css), and
+     this page renders directly under it with no app chrome / scroll
+     container of its own. Own the viewport height and scroll here so the
+     transcript isn't clipped — the scrollbar stays at the window edge
+     while the content is centered at 80% width via the inner blocks. */
+  width: 100%;
+  height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 24px 0 64px;
+}
+
+/* Center the conversation at 80% of the window width. Applied to the
+   inner blocks (not .oc-shared-view) so the scrollbar sits at the window
+   edge rather than the content boundary. min-width:0 lets the flex/grid
+   children shrink so wide code blocks wrap instead of stretching the
+   column past 80%. */
+.oc-shared-header,
+.oc-shared-thread {
+  width: 80%;
+  min-width: 0;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* The shared page reuses AssistantThread, whose .oc-thread /
+   .oc-thread-viewport are built for a flex column that fills a fixed-
+   height pane and scrolls internally. Here there is no such pane, so
+   let the thread flow at its natural height and scroll the page
+   (.oc-shared-view) instead — otherwise the internal overflow:hidden
+   collapses the transcript to zero height. */
+.oc-shared-thread .oc-thread,
+.oc-shared-thread .oc-thread-viewport {
+  flex: none;
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 0;
+  /* Only the vertical scroll moves to the page; keep horizontal content
+     clamped so wide code blocks / long lines wrap inside the 80% column
+     instead of stretching it past the window. */
+  overflow-x: hidden;
+  overflow-y: visible;
+}
+
+.oc-shared-thread .oc-scroll-btn {
+  display: none;
 }
 
 .oc-shared-header {
@@ -85,6 +129,12 @@
   .oc-shared-view {
     max-width: none;
     padding: 0;
+  }
+
+  /* Use the full page width on paper instead of the on-screen 80%. */
+  .oc-shared-header,
+  .oc-shared-thread {
+    width: 100%;
   }
 
   .oc-shared-header {
