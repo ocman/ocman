@@ -23,6 +23,7 @@ import type { Message, Part, SessionDetail } from './api';
 import type { PendingPermission } from './sseHelpers';
 import type { PendingQuestion } from '../components/session/QuestionPrompt';
 import {
+  answeredQuestionRequestId,
   extractMessageFromEvent,
   extractPendingPermission,
   extractPendingQuestion,
@@ -769,8 +770,34 @@ function reducePartSnapshot(state: SessionView, props: Record<string, unknown>):
     nextSession = { ...state.session, status: 'busy' };
   }
 
-  if (nextParts === state.parts && nextMessages === state.messages && nextSession === state.session) return state;
-  return { ...state, messages: nextMessages, parts: nextParts, session: nextSession };
+  // If this snapshot is the question tool part that backs the current
+  // pending prompt, and it has now been answered (e.g. the user
+  // replied in the OpenCode CLI rather than in ocman), dismiss the
+  // prompt. OpenCode doesn't reliably emit `question.replied` for
+  // out-of-band answers, so the resolved tool part is our signal.
+  let nextPendingQuestion = state.pendingQuestion;
+  if (state.pendingQuestion) {
+    const answeredId = answeredQuestionRequestId(part);
+    if (answeredId && answeredId === state.pendingQuestion.requestId) {
+      nextPendingQuestion = null;
+    }
+  }
+
+  if (
+    nextParts === state.parts
+    && nextMessages === state.messages
+    && nextSession === state.session
+    && nextPendingQuestion === state.pendingQuestion
+  ) {
+    return state;
+  }
+  return {
+    ...state,
+    messages: nextMessages,
+    parts: nextParts,
+    session: nextSession,
+    pendingQuestion: nextPendingQuestion,
+  };
 }
 
 function reducePartDelta(state: SessionView, props: Record<string, unknown>): SessionView {

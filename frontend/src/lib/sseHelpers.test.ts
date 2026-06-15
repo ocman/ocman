@@ -11,6 +11,7 @@ import {
   extractPendingQuestionFromPart,
   extractPendingQuestionFromParts,
   hasPendingQuestionInParts,
+  answeredQuestionRequestId,
   truncateSseData,
 } from './sseHelpers';
 
@@ -417,6 +418,57 @@ describe('hasPendingQuestionInParts', () => {
 
   it('skips non-tool / non-question parts', () => {
     expect(hasPendingQuestionInParts([makePart({ type: 'text' })], SID)).toBe(false);
+  });
+});
+
+describe('answeredQuestionRequestId', () => {
+  it('returns the requestId for an answered question tool part', () => {
+    const part = makePart({
+      type: 'tool',
+      tool: 'question',
+      state: { status: 'completed', output: 'yes', input: { requestId: 'req_1' } },
+    });
+    expect(answeredQuestionRequestId(part)).toBe('req_1');
+  });
+
+  it('returns null while the question is still running', () => {
+    const part = makePart({
+      type: 'tool',
+      tool: 'question',
+      state: { status: 'running', output: '', input: { requestId: 'req_1' } },
+    });
+    expect(answeredQuestionRequestId(part)).toBeNull();
+  });
+
+  it('returns null when completed but output is empty', () => {
+    const part = makePart({
+      type: 'tool',
+      tool: 'question',
+      state: { status: 'completed', output: '', input: { requestId: 'req_1' } },
+    });
+    expect(answeredQuestionRequestId(part)).toBeNull();
+  });
+
+  it('falls back to metadata for the requestId', () => {
+    const part = makePart({
+      type: 'tool',
+      tool: 'mcp_Question',
+      state: { status: 'completed', output: 'x', input: {}, metadata: { id: 'meta_id' } },
+    });
+    expect(answeredQuestionRequestId(part)).toBe('meta_id');
+  });
+
+  it('returns null for non-question tool parts', () => {
+    const part = makePart({
+      type: 'tool',
+      tool: 'bash',
+      state: { status: 'completed', output: 'x', input: { requestId: 'req_1' } },
+    });
+    expect(answeredQuestionRequestId(part)).toBeNull();
+  });
+
+  it('returns null for malformed JSON-string data', () => {
+    expect(answeredQuestionRequestId(makePart('{bad json' as unknown))).toBeNull();
   });
 });
 

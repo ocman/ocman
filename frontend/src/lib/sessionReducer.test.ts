@@ -585,6 +585,77 @@ describe('reduceSessionView — question prompts', () => {
     expect(view.messages.find((m) => m.id === 'm-reply')).toBeDefined();
     expect(decode(view.parts.find((p) => p.id === 'p-reply')!).text).toBe('Continuing.');
   });
+
+  it('regression: clears pendingQuestion when its tool part resolves out-of-band (CLI answer)', () => {
+    // The user answers in the OpenCode CLI. OpenCode streams a
+    // `message.part.updated` with the question tool now completed and
+    // an output set, but no `question.replied` event. The prompt must
+    // still be dismissed.
+    let view = makeView({
+      pendingQuestion: {
+        requestId: 'q-cli', sessionID: SID,
+        questions: [yesNoQuestion()],
+      },
+    });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.part.updated', {
+        part: {
+          id: 'p-q', messageID: 'm-q', sessionID: SID, type: 'tool', tool: 'question',
+          state: {
+            status: 'completed',
+            input: { requestId: 'q-cli', questions: [yesNoQuestion()] },
+            output: 'yes',
+          },
+        },
+      }),
+    });
+    expect(view.pendingQuestion).toBe(null);
+  });
+
+  it('keeps pendingQuestion while its tool part is still running', () => {
+    const pending = {
+      requestId: 'q-cli', sessionID: SID,
+      questions: [yesNoQuestion()],
+    };
+    let view = makeView({ pendingQuestion: pending });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.part.updated', {
+        part: {
+          id: 'p-q', messageID: 'm-q', sessionID: SID, type: 'tool', tool: 'question',
+          state: {
+            status: 'running',
+            input: { requestId: 'q-cli', questions: [yesNoQuestion()] },
+            output: '',
+          },
+        },
+      }),
+    });
+    expect(view.pendingQuestion).toBe(pending);
+  });
+
+  it('does not clear pendingQuestion when a different question resolves', () => {
+    const pending = {
+      requestId: 'q-current', sessionID: SID,
+      questions: [yesNoQuestion()],
+    };
+    let view = makeView({ pendingQuestion: pending });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.part.updated', {
+        part: {
+          id: 'p-q', messageID: 'm-q', sessionID: SID, type: 'tool', tool: 'question',
+          state: {
+            status: 'completed',
+            input: { requestId: 'q-other', questions: [yesNoQuestion()] },
+            output: 'yes',
+          },
+        },
+      }),
+    });
+    expect(view.pendingQuestion).toBe(pending);
+  });
 });
 
 describe('reduceSessionView — cross-session events', () => {

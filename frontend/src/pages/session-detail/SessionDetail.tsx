@@ -63,6 +63,7 @@ import {
   usePromptHandlers,
   storePendingQuestion,
   loadPendingQuestion,
+  clearPendingQuestion,
 } from './usePromptHandlers';
 import { useSessionShortcuts } from './useSessionShortcuts';
 import { usePaletteCommands } from './usePaletteCommands';
@@ -787,6 +788,49 @@ export function SessionDetail({ id }: SessionDetailProps) {
     pendingPermission, pendingQuestion,
     listPermissions, listQuestions, setPermissionError, setPendingPermission,
     setPendingQuestion, subagentSessionIdsRef]);
+
+  // Poll-driven dismissal fallback. When a question is answered
+  // outside ocman (e.g. directly in the OpenCode CLI), OpenCode does
+  // not reliably emit a `question.replied` SSE event, so the reducer
+  // never clears the prompt and it stays on screen indefinitely.
+  //
+  // We can't trust the sidebar's pendingQuestion flag here: the
+  // sidebar poll merges with `live.pendingQuestion || server` (see
+  // useSidebarSessions), so once SSE sets it true it never flips back
+  // to false. Instead, poll OpenCode's authoritative live `/question`
+  // list directly: when the currently-pending requestId is no longer
+  // in it, the question has been answered/cancelled somewhere and the
+  // prompt must come down. Matching on the requestId (rather than an
+  // empty list) avoids dismissing a freshly-asked follow-up question.
+  const pendingQuestionRequestId = pendingQuestion?.requestId ?? null;
+  useEffect(() => {
+    if (!id || !pendingQuestionRequestId || !portAvailable) return;
+    let cancelled = false;
+
+    const check = () => {
+      listQuestions(id)
+        .then((questions) => {
+          if (cancelled) return;
+          const stillPending = questions.some((raw) => {
+            const q = extractPendingQuestion({ type: 'question.asked', properties: raw as Record<string, unknown> });
+            return q?.requestId === pendingQuestionRequestId;
+          });
+          if (stillPending) return;
+          setPendingQuestion(null);
+          clearPendingQuestion(id);
+        })
+        .catch(() => { /* leave the prompt up; the next tick retries */ });
+    };
+
+    check();
+    const timer = window.setInterval(() => {
+      if (!document.hidden) check();
+    }, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [id, pendingQuestionRequestId, portAvailable, listQuestions, setPendingQuestion]);
 
   // Mark session as seen on entry.
   const sessionSeenId = session?.id;

@@ -359,6 +359,61 @@ export function extractPendingQuestionFromParts(parts: Part[], sessionId: string
   return null;
 }
 
+/**
+ * If `part` is a question tool call that has now been *answered*
+ * (status is no longer `running` and it carries real output), return
+ * its requestId so the caller can clear a matching pending question.
+ * Returns `null` for non-question parts and for questions still
+ * awaiting an answer.
+ *
+ * This covers the case where the user answers a question in the
+ * OpenCode CLI (or any other client): OpenCode fills in the tool
+ * part's output and streams a `message.part.updated`, but does not
+ * always emit a `question.replied` / `question.rejected` event. The
+ * reducer uses this to dismiss ocman's own prompt when the backing
+ * tool part resolves.
+ */
+export function answeredQuestionRequestId(part: Part): string | null {
+  let pd: Record<string, unknown>;
+  try {
+    pd = typeof part.data === 'string'
+      ? JSON.parse(part.data)
+      : (part.data as unknown as Record<string, unknown>);
+  } catch {
+    return null;
+  }
+
+  if (pd.type !== 'tool') return null;
+  const toolName = pd.tool as string | undefined;
+  if (!toolName || !QUESTION_TOOL_NAMES.includes(toolName)) return null;
+
+  const state = pd.state as Record<string, unknown> | undefined;
+  if (!state) return null;
+
+  const status = state.status as string | undefined;
+  // Still waiting on the user — not answered yet.
+  if (status === 'running' || status === 'pending') return null;
+  if (!hasQuestionOutput(state.output)) return null;
+
+  const input = (state.input && typeof state.input === 'object' && !Array.isArray(state.input))
+    ? state.input as Record<string, unknown>
+    : {};
+  const metadata = (state.metadata && typeof state.metadata === 'object' && !Array.isArray(state.metadata))
+    ? state.metadata as Record<string, unknown>
+    : {};
+
+  const requestId =
+    (typeof input.requestId === 'string' && input.requestId) ||
+    (typeof input.requestID === 'string' && input.requestID) ||
+    (typeof input.id === 'string' && input.id) ||
+    (typeof metadata.requestId === 'string' && metadata.requestId) ||
+    (typeof metadata.requestID === 'string' && metadata.requestID) ||
+    (typeof metadata.id === 'string' && metadata.id) ||
+    '';
+
+  return requestId || null;
+}
+
 /** Check if loaded parts contain a pending (unanswered) question tool call. */
 export function hasPendingQuestionInParts(parts: Part[], sessionId: string): boolean {
   if (extractPendingQuestionFromParts(parts, sessionId)) return true;
