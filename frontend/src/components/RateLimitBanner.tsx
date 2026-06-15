@@ -15,10 +15,10 @@ function remainingMs(retryAt: number): number {
 }
 
 /**
- * Renders a warning banner when the session is blocked by a rate
- * limit. Shows the backend-normalized message, a live countdown
- * that ticks every second until the retry time, and the attempt
- * number when known.
+ * Renders a warning banner when the session is blocked by a transient
+ * provider condition. Shows the backend-normalized message, a live
+ * countdown that ticks every second until the retry time, and the
+ * attempt number when known.
  *
  * Platform-agnostic: consumes the normalized `SessionNotice` from
  * the API without inspecting the platform field.
@@ -42,13 +42,15 @@ export function RateLimitBanner({ notice }: RateLimitBannerProps) {
     return () => window.clearInterval(id);
   }, [notice.retryAt]);
 
-  if (notice.kind !== 'rate_limit') return null;
+  if (notice.kind !== 'rate_limit' && notice.kind !== 'provider_overloaded') return null;
+
+  const title = notice.kind === 'rate_limit' ? 'Rate limited' : 'Provider overloaded';
 
   return (
     <div className="oc-rate-limit-banner" role="status" data-testid="rate-limit-banner">
       <i className="bi bi-hourglass-split" aria-hidden="true" />
       <span className="oc-rate-limit-body">
-        <strong>Rate limited</strong>
+        <strong>{title}</strong>
         {' — '}
         {notice.message}
         {remaining > 0 && (

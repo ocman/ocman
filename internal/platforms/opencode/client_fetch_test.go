@@ -35,6 +35,46 @@ func TestFetchSessionFromOpenCodeCtx_Healthy(t *testing.T) {
 	}
 }
 
+func TestFetchSessionFromOpenCodeCtx_CarriesLastErrorMetadata(t *testing.T) {
+	const sid = "sess-1"
+	const dir = "/tmp/proj"
+
+	fake := newOpencodeFake(t)
+	fake.SetSession(sid, []byte(`{"id":"sess-1","title":"hello","directory":"/tmp/proj","time":{"created":1000,"updated":1500}}`))
+	fake.AddMessage(sid, []byte(`{
+		"info": {
+			"id":"m1",
+			"sessionID":"sess-1",
+			"role":"assistant",
+			"finish":"error",
+			"time":{"created":1100},
+			"error":{"name":"ProviderOverloadedError","data":{"message":"provider is overloaded"}}
+		},
+		"parts": []
+	}`))
+
+	withTestPort(t, dir, fake.Port())
+	database := newTestDBWithSession(t, sid, dir)
+
+	a := New(database, nil)
+	detail, ok := a.fetchSessionFromOpenCodeCtx(context.Background(), sid, 30, 0)
+	if !ok {
+		t.Fatalf("fetchSessionFromOpenCodeCtx: ok=false; hits=%v", fake.hits)
+	}
+	if detail.Session.Status != "error" {
+		t.Errorf("status = %q, want error", detail.Session.Status)
+	}
+	if detail.Session.LastErrorName != "ProviderOverloadedError" {
+		t.Errorf("LastErrorName = %q, want ProviderOverloadedError", detail.Session.LastErrorName)
+	}
+	if detail.Session.LastErrorMessage != "provider is overloaded" {
+		t.Errorf("LastErrorMessage = %q, want provider is overloaded", detail.Session.LastErrorMessage)
+	}
+	if detail.Session.LastErrorAt != 1100 {
+		t.Errorf("LastErrorAt = %d, want 1100", detail.Session.LastErrorAt)
+	}
+}
+
 func TestFetchSessionFromOpenCodeCtx_Upstream500(t *testing.T) {
 	const sid = "sess-1"
 	const dir = "/tmp/proj"

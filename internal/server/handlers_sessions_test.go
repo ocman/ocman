@@ -492,6 +492,90 @@ func TestHandleSessions_NoNoticeForNonRateLimitError(t *testing.T) {
 	}
 }
 
+func TestHandleSessions_NoticeAppearsForProviderOverload(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	fp := &fakePlatform{
+		id: "opencode",
+		sessions: []db.Session{
+			{
+				ID:               "s1",
+				Platform:         "opencode",
+				Title:            "Overloaded session",
+				Status:           "error",
+				TimeUpdated:      1700000000000,
+				TimeCreated:      1700000000000 - 1000,
+				LastErrorMessage: "provider is overloaded [retrying in 30s attempt 2]",
+				LastErrorAt:      1700000000000,
+			},
+		},
+	}
+	reg.Register(fp)
+
+	req := httptest.NewRequest("GET", "/api/sessions", nil)
+	rr := httptest.NewRecorder()
+	srv.handleSessions(rr, req)
+
+	var sessions []struct {
+		Notice *db.SessionNotice `json:"notice"`
+	}
+	mustUnmarshal(t, rr.Body.Bytes(), &sessions)
+	if len(sessions) != 1 {
+		t.Fatalf("got %d sessions, want 1", len(sessions))
+	}
+	if sessions[0].Notice == nil {
+		t.Fatal("expected provider overload notice")
+	}
+	if sessions[0].Notice.Kind != "provider_overloaded" {
+		t.Errorf("kind = %q, want provider_overloaded", sessions[0].Notice.Kind)
+	}
+	if sessions[0].Notice.RetryAt != 1700000030000 {
+		t.Errorf("retryAt = %d, want 1700000030000", sessions[0].Notice.RetryAt)
+	}
+	if sessions[0].Notice.Attempt != 2 {
+		t.Errorf("attempt = %d, want 2", sessions[0].Notice.Attempt)
+	}
+}
+
+func TestHandleSession_NoticeAppearsForProviderOverload(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	sess := &db.Session{
+		ID:               "s1",
+		Platform:         "opencode",
+		Title:            "Overloaded session",
+		Status:           "error",
+		TimeUpdated:      1700000000000,
+		TimeCreated:      1700000000000 - 1000,
+		LastErrorMessage: "provider is overloaded",
+		LastErrorAt:      1700000000000,
+	}
+	fp := &fakePlatform{
+		id:       "opencode",
+		sessions: []db.Session{*sess},
+		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+			if id != sess.ID {
+				return nil, platforms.ErrNotFound
+			}
+			return &platforms.SessionDetail{Session: sess}, nil
+		},
+	}
+	reg.Register(fp)
+
+	req := httptest.NewRequest("GET", "/api/session/s1", nil)
+	rr := httptest.NewRecorder()
+	srv.handleSession(rr, req)
+
+	var body struct {
+		Session *db.Session `json:"session"`
+	}
+	mustUnmarshal(t, rr.Body.Bytes(), &body)
+	if body.Session == nil || body.Session.Notice == nil {
+		t.Fatalf("expected detail session provider overload notice, got %+v", body.Session)
+	}
+	if body.Session.Notice.Kind != "provider_overloaded" {
+		t.Errorf("kind = %q, want provider_overloaded", body.Session.Notice.Kind)
+	}
+}
+
 // --- POST /api/session/{id}/auto-approve ---
 
 // TestHandleSessionAutoApproveSet_EnablingTriggersJudgeForPending is the

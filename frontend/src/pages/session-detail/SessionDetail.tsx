@@ -1273,7 +1273,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                           {unreadMessageCount} new message{unreadMessageCount === 1 ? '' : 's'}
                         </button>
                       )}
-                      {session.notice?.kind === 'rate_limit' && (
+                      {session.notice && (
                         <RateLimitBanner notice={session.notice} />
                       )}
                       {pendingPermission && portAvailable && caps.respondPermission ? (

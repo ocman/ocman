@@ -10,6 +10,7 @@ package opencode
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -252,6 +253,7 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 		fallbackPhase.End()
 		return nil, err
 	}
+	applySessionDetailMetadataFromMessages(session, messages)
 	parts, err := a.db.GetSessionParts(id)
 	if err != nil {
 		fallbackPhase.End()
@@ -275,6 +277,40 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 		DefaultAgent:      defaults.Agent, // composer-agent (OpenCode role), unchanged name
 		DefaultModel:      defaults.Model,
 	}, nil
+}
+
+func applySessionDetailMetadataFromMessages(session *db.Session, messages []db.Message) {
+	if session == nil {
+		return
+	}
+	if len(messages) == 0 {
+		session.Status = db.InferSessionStatus("", "", "", false)
+		return
+	}
+	last := messages[len(messages)-1]
+	var data struct {
+		Role   string `json:"role"`
+		Finish string `json:"finish"`
+		Error  *struct {
+			Name string `json:"name"`
+			Data *struct {
+				Message string `json:"message"`
+			} `json:"data"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(last.Data, &data); err != nil {
+		return
+	}
+	lastErr := ""
+	if data.Error != nil {
+		lastErr = "true"
+		session.LastErrorName = data.Error.Name
+		if data.Error.Data != nil {
+			session.LastErrorMessage = data.Error.Data.Message
+		}
+		session.LastErrorAt = last.TimeCreated
+	}
+	session.Status = db.InferSessionStatus(data.Role, data.Finish, lastErr, false)
 }
 
 // SessionsInactiveBefore returns OpenCode sessions last updated before the

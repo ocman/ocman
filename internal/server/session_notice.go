@@ -17,6 +17,16 @@ var rateLimitPhrases = []string{
 	"would exceed your account",
 }
 
+// providerOverloadPhrases identify transient provider-side capacity
+// failures. Keep these tied to overload/capacity wording so permanent
+// errors like invalid API keys or missing models do not become notices.
+var providerOverloadPhrases = []string{
+	"overloaded",
+	"overload",
+	"at capacity",
+	"capacity exceeded",
+}
+
 // retrySuffixRe matches the "[retrying in <delay> attempt <n>]" suffix
 // that OpenCode appends to rate-limit error messages. Both the delay
 // and the attempt are optional captures.
@@ -27,6 +37,12 @@ var retrySuffixRe = regexp.MustCompile(
 // parsedRateLimit holds the normalized fields extracted from a
 // rate-limit error message.
 type parsedRateLimit struct {
+	Message string
+	RetryAt int64
+	Attempt int
+}
+
+type parsedProviderOverload struct {
 	Message string
 	RetryAt int64
 	Attempt int
@@ -72,6 +88,34 @@ func parseRateLimitNotice(msg string, at int64) (*parsedRateLimit, bool) {
 	return result, true
 }
 
+func parseProviderOverloadNotice(msg string, at int64) (*parsedProviderOverload, bool) {
+	lower := strings.ToLower(msg)
+	matched := false
+	for _, phrase := range providerOverloadPhrases {
+		if strings.Contains(lower, phrase) {
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		return nil, false
+	}
+
+	result := &parsedProviderOverload{Message: msg}
+	if m := retrySuffixRe.FindStringSubmatch(msg); m != nil {
+		if delay, ok := parseDuration(m[1]); ok {
+			result.RetryAt = at + delay
+		}
+		if len(m) > 2 && m[2] != "" {
+			if n, err := strconv.Atoi(m[2]); err == nil {
+				result.Attempt = n
+			}
+		}
+		result.Message = strings.TrimSpace(retrySuffixRe.ReplaceAllString(msg, ""))
+	}
+	return result, true
+}
+
 // parseDuration converts a compact duration string like "5m", "30s",
 // or "2h" into milliseconds. Returns (0, false) for unrecognized input.
 func parseDuration(s string) (int64, bool) {
@@ -112,6 +156,14 @@ func deriveSessionNotice(s db.Session) *db.SessionNotice {
 		if ok {
 			return &db.SessionNotice{
 				Kind:    "rate_limit",
+				Message: parsed.Message,
+				RetryAt: parsed.RetryAt,
+				Attempt: parsed.Attempt,
+			}
+		}
+		if parsed, ok := parseProviderOverloadNotice(text, s.LastErrorAt); ok {
+			return &db.SessionNotice{
+				Kind:    "provider_overloaded",
 				Message: parsed.Message,
 				RetryAt: parsed.RetryAt,
 				Attempt: parsed.Attempt,

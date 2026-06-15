@@ -19,11 +19,21 @@ afterEach(() => {
 });
 
 describe('RateLimitBanner', () => {
-  it('renders nothing for non-rate-limit notices', () => {
+  it('renders nothing for unknown notices', () => {
     const { container } = render(
       <RateLimitBanner notice={{ kind: 'other', message: 'x', retryAt: 0, attempt: 0 }} />,
     );
     expect(container.innerHTML).toBe('');
+  });
+
+  it('renders provider overload notices', () => {
+    render(
+      <RateLimitBanner
+        notice={{ kind: 'provider_overloaded', message: 'provider is overloaded', retryAt: 0, attempt: 0 }}
+      />,
+    );
+    expect(screen.getByText(/Provider overloaded/)).toBeInTheDocument();
+    expect(screen.getByText(/provider is overloaded/)).toBeInTheDocument();
   });
 
   it('renders the message and attempt', () => {

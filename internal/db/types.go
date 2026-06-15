@@ -118,12 +118,12 @@ type Session struct {
 }
 
 // SessionNotice carries a normalized, platform-agnostic explanation of a
-// transient session condition. Currently the only kind is "rate_limit",
-// surfaced when the latest assistant error matches a known rate-limit
-// pattern. The frontend renders this as a banner / tooltip without
-// inspecting the platform field.
+// transient session condition. Kinds include "rate_limit" and
+// "provider_overloaded", surfaced when the latest assistant error matches a
+// known transient provider pattern. The frontend renders this as a banner /
+// tooltip without inspecting the platform field.
 type SessionNotice struct {
-	Kind    string `json:"kind"`    // e.g. "rate_limit"
+	Kind    string `json:"kind"`    // e.g. "rate_limit" or "provider_overloaded"
 	Message string `json:"message"` // user-facing summary
 	RetryAt int64  `json:"retryAt"` // unix ms when retry is expected, 0 when unknown
 	Attempt int    `json:"attempt"` // retry attempt number, 0 when unknown

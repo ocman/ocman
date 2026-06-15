@@ -377,13 +377,29 @@ func (a *Adapter) fetchSessionFromOpenCodeCtx(ctx context.Context, sessionID str
 	}
 
 	sessionStatus := "done"
+	lastErrorName := ""
+	lastErrorMessage := ""
+	lastErrorAt := int64(0)
 	if n := len(untypedMessages); n > 0 {
-		if info, ok := untypedMessages[n-1]["data"].(map[string]interface{}); ok {
+		lastMessage := untypedMessages[n-1]
+		if info, ok := lastMessage["data"].(map[string]interface{}); ok {
 			role, _ := info["role"].(string)
 			finish, _ := info["finish"].(string)
 			lastErr := ""
-			if _, hasError := info["error"]; hasError {
+			if rawError, hasError := info["error"]; hasError {
 				lastErr = "true"
+				if errorMap, ok := rawError.(map[string]interface{}); ok {
+					lastErrorName, _ = errorMap["name"].(string)
+					if dataMap, ok := errorMap["data"].(map[string]interface{}); ok {
+						lastErrorMessage, _ = dataMap["message"].(string)
+					}
+				}
+			}
+			switch v := lastMessage["timeCreated"].(type) {
+			case float64:
+				lastErrorAt = int64(v)
+			case int64:
+				lastErrorAt = v
 			}
 			synthTerminal := false
 			if rawIdx := len(ocMessages) - 1; rawIdx >= 0 {
@@ -404,6 +420,9 @@ func (a *Adapter) fetchSessionFromOpenCodeCtx(ctx context.Context, sessionID str
 
 	typedPhase := srvtiming.Begin(ctx, "typed")
 	session := sessionFromOpenCode(ocSession, stats, userMsgCount, sessionStatus)
+	session.LastErrorName = lastErrorName
+	session.LastErrorMessage = lastErrorMessage
+	session.LastErrorAt = lastErrorAt
 	messages := typedMessagesFromUntyped(pagedMessages)
 	parts := typedPartsFromUntyped(pagedParts)
 	typedPhase.EndWithDesc("untyped->typed conversion")

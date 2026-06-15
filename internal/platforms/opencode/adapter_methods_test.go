@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -98,6 +99,33 @@ func TestAdapter_Session_FallsBackToDBWhenNoLivePort(t *testing.T) {
 	// No messages were inserted by the helper.
 	if len(detail.Messages) != 0 {
 		t.Errorf("got %d messages, want 0", len(detail.Messages))
+	}
+}
+
+func TestApplySessionDetailMetadataFromMessages_CarriesErrorNoticeFields(t *testing.T) {
+	session := &db.Session{ID: "sess-1"}
+	messages := []db.Message{
+		{
+			ID:          "m1",
+			SessionID:   "sess-1",
+			TimeCreated: 1100,
+			Data:        []byte(`{"role":"assistant","finish":"error","error":{"name":"ProviderOverloadedError","data":{"message":"provider is overloaded"}}}`),
+		},
+	}
+
+	applySessionDetailMetadataFromMessages(session, messages)
+
+	if session.Status != "error" {
+		t.Errorf("Status = %q, want error", session.Status)
+	}
+	if session.LastErrorName != "ProviderOverloadedError" {
+		t.Errorf("LastErrorName = %q, want ProviderOverloadedError", session.LastErrorName)
+	}
+	if session.LastErrorMessage != "provider is overloaded" {
+		t.Errorf("LastErrorMessage = %q, want provider is overloaded", session.LastErrorMessage)
+	}
+	if session.LastErrorAt != 1100 {
+		t.Errorf("LastErrorAt = %d, want 1100", session.LastErrorAt)
 	}
 }
 

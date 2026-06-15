@@ -121,6 +121,50 @@ func TestParseRateLimitNotice_MalformedBracketSuffix(t *testing.T) {
 	}
 }
 
+func TestParseProviderOverloadNotice(t *testing.T) {
+	tests := []string{
+		"provider is overloaded, please try again later",
+		"model is currently at capacity [retrying in 30s attempt 2]",
+		"ProviderOverloadedError",
+	}
+	for _, msg := range tests {
+		if _, ok := parseProviderOverloadNotice(msg, 1700000000000); !ok {
+			t.Errorf("expected provider overload match for %q", msg)
+		}
+	}
+}
+
+func TestParseProviderOverloadNotice_RetrySuffix(t *testing.T) {
+	msg := "provider is overloaded [retrying in 30s attempt 2]"
+	got, ok := parseProviderOverloadNotice(msg, 1700000000000)
+	if !ok {
+		t.Fatal("expected match")
+	}
+	if got.Message != "provider is overloaded" {
+		t.Errorf("message = %q, want retry suffix stripped", got.Message)
+	}
+	if got.RetryAt != 1700000030000 {
+		t.Errorf("retryAt = %d, want 1700000030000", got.RetryAt)
+	}
+	if got.Attempt != 2 {
+		t.Errorf("attempt = %d, want 2", got.Attempt)
+	}
+}
+
+func TestParseProviderOverloadNotice_UnrelatedError(t *testing.T) {
+	tests := []string{
+		"connection refused",
+		"model not found",
+		"invalid api key",
+		"temporarily unavailable API key",
+	}
+	for _, msg := range tests {
+		if _, ok := parseProviderOverloadNotice(msg, 0); ok {
+			t.Errorf("should not match %q", msg)
+		}
+	}
+}
+
 // --- deriveSessionNotice tests ---
 
 func TestDeriveSessionNotice_ErroredWithRateLimit(t *testing.T) {
@@ -156,6 +200,41 @@ func TestDeriveSessionNotice_ErroredWithRateLimitInName(t *testing.T) {
 	}
 	if notice.Kind != "rate_limit" {
 		t.Errorf("kind = %q, want rate_limit", notice.Kind)
+	}
+}
+
+func TestDeriveSessionNotice_ErroredWithProviderOverload(t *testing.T) {
+	s := db.Session{
+		Status:           "error",
+		LastErrorMessage: "provider is overloaded [retrying in 30s attempt 2]",
+		LastErrorAt:      1700000000000,
+	}
+	notice := deriveSessionNotice(s)
+	if notice == nil {
+		t.Fatal("expected notice")
+	}
+	if notice.Kind != "provider_overloaded" {
+		t.Errorf("kind = %q, want provider_overloaded", notice.Kind)
+	}
+	if notice.RetryAt != 1700000030000 {
+		t.Errorf("retryAt = %d, want 1700000030000", notice.RetryAt)
+	}
+	if notice.Attempt != 2 {
+		t.Errorf("attempt = %d, want 2", notice.Attempt)
+	}
+}
+
+func TestDeriveSessionNotice_ErroredWithProviderOverloadInName(t *testing.T) {
+	s := db.Session{
+		Status:        "error",
+		LastErrorName: "ProviderOverloadedError",
+	}
+	notice := deriveSessionNotice(s)
+	if notice == nil {
+		t.Fatal("expected notice from error name")
+	}
+	if notice.Kind != "provider_overloaded" {
+		t.Errorf("kind = %q, want provider_overloaded", notice.Kind)
 	}
 }
 

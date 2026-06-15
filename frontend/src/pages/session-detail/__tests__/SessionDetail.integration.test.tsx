@@ -1274,4 +1274,25 @@ describe('SessionDetail — rate-limit notice', () => {
 
     errorSpy.mockRestore();
   });
+
+  it('renders provider overload notices', async () => {
+    const notice = {
+      kind: 'provider_overloaded' as const,
+      message: 'provider is overloaded, please try again later',
+      retryAt: 0,
+      attempt: 0,
+    };
+    const sess = makeSession({ id: 'sess_overloaded', status: 'error', notice });
+    const detail = makeSessionDetail(sess);
+
+    renderSessionPage({
+      sessionId: 'sess_overloaded',
+      detail,
+      sessions: [sess],
+    });
+
+    await flushPromises();
+    expect(await screen.findByText(/Provider overloaded/)).toBeInTheDocument();
+    expect(screen.getByText(/provider is overloaded/)).toBeInTheDocument();
+  });
 });
