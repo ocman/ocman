@@ -541,6 +541,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
 
   // Sidebar state, archive/pin handlers, archived toggle, collapsed groups.
   const collapsedProjects = useUiStore((state) => state.collapsedProjects);
+  const projectOrder = useUiStore((state) => state.projectOrder);
+  const setProjectOrder = useUiStore((state) => state.setProjectOrder);
   const patchRecentSession = useApiStore((state) => state.patchRecentSession);
   const abortControllerRef = useRef<AbortController | null>(null);
   const {
@@ -1136,7 +1138,27 @@ export function SessionDetail({ id }: SessionDetailProps) {
         aggregate: rollup(sorted),
       };
     });
-    groups.sort((a, b) => b.lastUpdated - a.lastUpdated);
+    // Sort project groups alphabetically by their short display path
+    // (no longer by activity), then apply the user's saved manual
+    // drag-and-drop order: directories present in projectOrder come
+    // first (in that order); any project not yet ordered (new or never
+    // dragged) keeps its alphabetical position at the end.
+    groups.sort((a, b) =>
+      shortPath(a.directory).localeCompare(shortPath(b.directory), undefined, {
+        sensitivity: 'base',
+      }),
+    );
+    if (projectOrder.length > 0) {
+      const rank = new Map(projectOrder.map((dir, i) => [dir, i]));
+      groups.sort((a, b) => {
+        const ra = rank.get(a.directory);
+        const rb = rank.get(b.directory);
+        if (ra === undefined && rb === undefined) return 0; // keep alphabetical
+        if (ra === undefined) return 1; // unordered after ordered
+        if (rb === undefined) return -1;
+        return ra - rb;
+      });
+    }
 
     const pinnedSessions = recentSessions
       .filter((s) => s.pinned)
@@ -1152,7 +1174,17 @@ export function SessionDetail({ id }: SessionDetailProps) {
     }
 
     return groups;
-  }, [recentSessions, id, optimisticStatus]);
+  }, [recentSessions, id, optimisticStatus, projectOrder]);
+
+  // Persist a new drag-and-drop order of the (non-pinned) project
+  // groups. The synthetic "__pinned__" group is excluded — it always
+  // stays at the top regardless of the saved order.
+  const handleReorderProjects = useCallback(
+    (orderedDirectories: string[]) => {
+      setProjectOrder(orderedDirectories.filter((d) => d && d !== '__pinned__'));
+    },
+    [setProjectOrder],
+  );
 
   return (
     <Toast.Provider swipeDirection="right">
@@ -1167,6 +1199,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
           loadingRecentSessions={loadingRecentSessions}
           recentSessions={recentSessions}
           sidebarProjectGroups={sidebarProjectGroups}
+          onReorderProjects={handleReorderProjects}
           archivingSessionIds={archivingSessionIds}
           collapsedProjectSet={collapsedProjectSet}
           toggleCollapsedProject={toggleCollapsedProject}

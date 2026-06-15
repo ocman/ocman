@@ -61,6 +61,16 @@ type UiStore = {
   dashboardGrouped: boolean;
   toggleDashboardGrouped: () => void;
 
+  // User-controlled order of project groups in the "projects" sidebar
+  // view. Stored as an ordered list of project root directories. The
+  // sidebar sorts project groups alphabetically by default; any
+  // directories present here are honoured first (in this order), with
+  // unknown / newly-seen projects appended alphabetically. Mutated by
+  // drag-and-drop reordering of the group headers. The synthetic
+  // "__pinned__" group is never stored here — it stays pinned to the top.
+  projectOrder: string[];
+  setProjectOrder: (order: string[]) => void;
+
   bellEnabled: boolean;
   setBellEnabled: (enabled: boolean) => void;
 
@@ -190,6 +200,9 @@ export const useUiStore = create<UiStore>()(
 
       dashboardGrouped: false,
       toggleDashboardGrouped: () => set((s) => ({ dashboardGrouped: !s.dashboardGrouped })),
+
+      projectOrder: [],
+      setProjectOrder: (order) => set({ projectOrder: order }),
 
       bellEnabled: true,
       setBellEnabled: (enabled) => set({ bellEnabled: enabled }),
@@ -321,6 +334,7 @@ export const useUiStore = create<UiStore>()(
         sidebarView: s.sidebarView,
         collapsedProjects: s.collapsedProjects,
         dashboardGrouped: s.dashboardGrouped,
+        projectOrder: s.projectOrder,
         changesSidebarWidth: s.changesSidebarWidth,
         changesSidebarOpenTabs: s.changesSidebarOpenTabs,
         changesSidebarTabOrder: s.changesSidebarTabOrder,

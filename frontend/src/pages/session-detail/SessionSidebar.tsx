@@ -1,4 +1,22 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useCallback, useMemo } from 'react';
+import {
+  DndContext,
+  KeyboardSensor,
+  MouseSensor,
+  TouchSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import type { Session } from '../../lib/api';
 import { cleanTitle, shortPath, relativeTime } from '../../lib/format';
 import { projectRootForDirectory } from '../../lib/worktrees';
@@ -33,6 +51,8 @@ export interface SessionSidebarProps {
   loadingRecentSessions: boolean;
   recentSessions: Session[];
   sidebarProjectGroups: SidebarProjectGroup[];
+  /** Persist a new drag-and-drop order of the project groups (directories). */
+  onReorderProjects: (orderedDirectories: string[]) => void;
   archivingSessionIds: Set<string>;
   collapsedProjectSet: Set<string>;
   toggleCollapsedProject: (dir: string) => void;
@@ -64,6 +84,7 @@ export function SessionSidebar({
   loadingRecentSessions,
   recentSessions,
   sidebarProjectGroups,
+  onReorderProjects,
   archivingSessionIds,
   collapsedProjectSet,
   toggleCollapsedProject,
@@ -225,45 +246,73 @@ export function SessionSidebar({
     );
   };
 
-  const renderProjectsView = () => sidebarProjectGroups.map(group => {
-    // The "Pinned" group is always expanded and has a
-    // distinct header (pin icon, no collapse, no "+").
-    if (group.isPinned) {
-      const agg = group.aggregate;
-      const dotStatus =
-        agg.kind === 'error' ? 'error'
-          : agg.kind === 'busy' ? 'busy'
-            : agg.kind === 'waiting' ? 'waiting'
-              : 'done';
-      const dotPending = agg.kind === 'pending';
-      const dotSeen = agg.kind === 'none';
-      return (
-        <div key="__pinned__" className="session-sidebar-group session-sidebar-group-pinned">
-          <div className="session-sidebar-group-header-row">
-            <div className="session-sidebar-group-header" title="Pinned sessions">
-              <span className="session-sidebar-group-status">
-                <StatusBadge status={dotStatus} compact pending={dotPending} seen={dotSeen} />
-              </span>
-              <i className="bi bi-pin-fill session-sidebar-pinned-icon" aria-hidden="true" />
-              <span className="session-sidebar-group-label">Pinned</span>
-              <span className="session-sidebar-group-count">{group.sessions.length}</span>
-            </div>
-          </div>
-          {group.sessions.map(sib => renderRow(sib, false))}
-        </div>
-      );
-    }
+  // The pinned group always renders first and is never reorderable;
+  // the remaining project groups are drag-sortable.
+  const pinnedGroup = sidebarProjectGroups.find((g) => g.isPinned);
+  const sortableGroups = useMemo(
+    () => sidebarProjectGroups.filter((g) => !g.isPinned),
+    [sidebarProjectGroups],
+  );
 
+  const dndSensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleGroupDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      const dirs = sortableGroups.map((g) => g.directory);
+      const from = dirs.indexOf(active.id as string);
+      const to = dirs.indexOf(over.id as string);
+      if (from === -1 || to === -1) return;
+      onReorderProjects(arrayMove(dirs, from, to));
+    },
+    [sortableGroups, onReorderProjects],
+  );
+
+  const renderPinnedGroup = (group: SidebarProjectGroup) => {
+    // The "Pinned" group is always expanded and has a
+    // distinct header (pin icon, no collapse, no "+", not draggable).
+    const agg = group.aggregate;
+    const dotStatus =
+      agg.kind === 'error' ? 'error'
+        : agg.kind === 'busy' ? 'busy'
+          : agg.kind === 'waiting' ? 'waiting'
+            : 'done';
+    const dotPending = agg.kind === 'pending';
+    const dotSeen = agg.kind === 'none';
+    return (
+      <div key="__pinned__" className="session-sidebar-group session-sidebar-group-pinned">
+        <div className="session-sidebar-group-header-row">
+          <div className="session-sidebar-group-header" title="Pinned sessions">
+            <span className="session-sidebar-group-status">
+              <StatusBadge status={dotStatus} compact pending={dotPending} seen={dotSeen} />
+            </span>
+            <i className="bi bi-pin-fill session-sidebar-pinned-icon" aria-hidden="true" />
+            <span className="session-sidebar-group-label">Pinned</span>
+            <span className="session-sidebar-group-count">{group.sessions.length}</span>
+          </div>
+        </div>
+        {group.sessions.map(sib => renderRow(sib, false))}
+      </div>
+    );
+  };
+
+  // Header + session rows for a single (non-pinned) project group.
+  // `dragHandle` is injected by SortableProjectGroup so the grip lives
+  // in the header row but the drag listeners stay scoped to the handle
+  // (the header button itself still toggles collapse on click).
+  const renderGroupBody = (group: SidebarProjectGroup, dragHandle: React.ReactNode) => {
     const collapsed = collapsedProjectSet.has(group.directory);
     const label = group.directory ? shortPath(group.directory) : '(unknown)';
-    // Replace the chevron with a compact status dot that
-    // surfaces the rolled-up aggregate: the same visual
-    // vocabulary as per-session rows (pending "!", error "!",
-    // busy pulse, idle neutral), so a collapsed header tells
-    // you at a glance which project needs attention. The
-    // header still toggles on click — collapse state is
-    // conveyed by the `aria-expanded` attribute (and a
-    // subtle CSS indent) rather than a chevron.
+    // The status dot surfaces the rolled-up aggregate: the same visual
+    // vocabulary as per-session rows (pending "!", error "!", busy
+    // pulse, idle neutral), so a collapsed header tells you at a glance
+    // which project needs attention. The header toggles collapse on
+    // click; state is conveyed by `aria-expanded`.
     const agg = group.aggregate;
     const dotStatus =
       agg.kind === 'error' ? 'error'
@@ -283,8 +332,9 @@ export function SessionSidebar({
               ? `${agg.count} unread`
               : `${group.sessions.length} session${group.sessions.length === 1 ? '' : 's'}`;
     return (
-      <div key={group.directory || '__empty__'} className="session-sidebar-group">
+      <>
         <div className="session-sidebar-group-header-row">
+          {dragHandle}
           <button
             type="button"
             className={`session-sidebar-group-header${collapsed ? ' collapsed' : ''}`}
@@ -312,9 +362,34 @@ export function SessionSidebar({
           )}
         </div>
         {!collapsed && group.sessions.map(sib => renderRow(sib, true))}
-      </div>
+      </>
     );
-  });
+  };
+
+  const renderProjectsView = () => (
+    <>
+      {pinnedGroup && renderPinnedGroup(pinnedGroup)}
+      <DndContext
+        sensors={dndSensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleGroupDragEnd}
+      >
+        <SortableContext
+          items={sortableGroups.map((g) => g.directory || '__empty__')}
+          strategy={verticalListSortingStrategy}
+        >
+          {sortableGroups.map((group) => (
+            <SortableProjectGroup
+              key={group.directory || '__empty__'}
+              id={group.directory || '__empty__'}
+            >
+              {(dragHandle) => renderGroupBody(group, dragHandle)}
+            </SortableProjectGroup>
+          ))}
+        </SortableContext>
+      </DndContext>
+    </>
+  );
 
   const renderFlatView = () => {
     // Flat view: pinned sessions at the top, then the rest.
@@ -388,6 +463,46 @@ export function SessionSidebar({
         {sidebarView === 'projects' ? renderProjectsView() : renderFlatView()}
       </div>
       <BackendStats />
+    </div>
+  );
+}
+
+// SortableProjectGroup wraps one project group with dnd-kit's
+// useSortable. It renders the group container and hands a drag-handle
+// element to its render-prop child; the handle owns the drag listeners
+// so the collapse-toggle button and "+" button stay clickable. A 4px
+// activation distance lets a plain click through while still allowing
+// a deliberate drag.
+function SortableProjectGroup({
+  id,
+  children,
+}: {
+  id: string;
+  children: (dragHandle: React.ReactNode) => React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : undefined,
+  };
+  const dragHandle = (
+    <button
+      type="button"
+      className="session-sidebar-group-drag"
+      title="Drag to reorder"
+      aria-label="Drag to reorder project"
+      {...attributes}
+      {...listeners}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <i className="bi bi-grip-vertical" aria-hidden="true" />
+    </button>
+  );
+  return (
+    <div ref={setNodeRef} style={style} className="session-sidebar-group">
+      {children(dragHandle)}
     </div>
   );
 }
