@@ -47,6 +47,16 @@ const CONFIRM_CHOICES: { action: 'confirm' | 'cancel'; label: string }[] = [
 ];
 const CONFIRM_DEFAULT_IDX = 1; // Cancel
 
+// Mount-time "settle" window. For this many milliseconds after the prompt
+// first appears (or a new permission is pushed in), affirmative actions
+// (Allow once / Allow always / the "Confirm" of the always-step) are
+// ignored. This absorbs a reflexive Enter or held-down key that was already
+// in flight when the prompt mounted under the user's finger — a common way
+// to accidentally accept a permission. Destructive-safe actions (Reject /
+// Escape) and navigation (arrows) are never gated, since suppressing a deny
+// is never harmful.
+const SETTLE_MS = 350;
+
 function permissionAction(metadata: Record<string, unknown> | undefined): string {
   if (!metadata) return '';
   for (const key of ['command', 'filePath', 'path', 'pattern', 'url', 'description']) {
@@ -112,6 +122,13 @@ export function PermissionPrompt({
   const confirmIdxRef = useRef(confirmIdx);
   const handleChooseKeyDownRef = useRef<((e: KeyEvent) => void) | null>(null);
   const handleConfirmKeyDownRef = useRef<((e: KeyEvent) => void) | null>(null);
+  // Unix-ms deadline before which affirmative actions are suppressed. Seeded
+  // on mount and re-seeded when a new permission is pushed in (see the effect
+  // below). A ref (not state) so the capture-phase window listener always
+  // reads the live value without re-subscribing. Initialised to 0 and armed
+  // in an effect to keep render pure (no Date.now() during render).
+  const settleUntilRef = useRef(0);
+  const isSettling = useCallback(() => Date.now() < settleUntilRef.current, []);
   useLayoutEffect(() => {
     stepRef.current = step;
     focusedIdxRef.current = focusedIdx;
@@ -129,6 +146,14 @@ export function PermissionPrompt({
     setFocusedIdx(0);
     setConfirmIdx(CONFIRM_DEFAULT_IDX);
   }
+
+  // Arm the settle window on mount and re-arm whenever a new permission is
+  // pushed in: a brand-new permission replacing the old one is just as
+  // susceptible to an in-flight keystroke as a fresh mount. Done in an effect
+  // (not during render) so the render stays pure — Date.now() is impure.
+  useLayoutEffect(() => {
+    settleUntilRef.current = Date.now() + SETTLE_MS;
+  }, [permission.permissionId]);
 
   // Countdown: driven entirely by the server-provided `judgeStartsAt`
   // timestamp. Seeded immediately from judgeStartsAt so the first render
@@ -204,6 +229,9 @@ export function PermissionPrompt({
 
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
+      // During the settle window swallow Enter entirely so an in-flight
+      // keystroke can't accept the default-focused choice (Allow once).
+      if (isSettling()) return;
       pick(CHOICES[focusedIdxRef.current].reply);
       return;
     }
@@ -234,6 +262,9 @@ export function PermissionPrompt({
       e.preventDefault();
       focusedIdxRef.current = hotkeyMatch;
       setFocusedIdx(hotkeyMatch);
+      // Move focus during settle, but defer the affirmative pick. Reject is
+      // always safe to fire immediately.
+      if (isSettling() && CHOICES[hotkeyMatch].reply !== 'reject') return;
       pick(CHOICES[hotkeyMatch].reply);
       return;
     }
@@ -242,9 +273,10 @@ export function PermissionPrompt({
       e.preventDefault();
       focusedIdxRef.current = idx;
       setFocusedIdx(idx);
+      if (isSettling() && CHOICES[idx].reply !== 'reject') return;
       pick(CHOICES[idx].reply);
     }
-  }, [disabled, pick, submit]);
+  }, [disabled, isSettling, pick, submit]);
 
   const handleConfirmKeyDown = useCallback((e: KeyEvent) => {
     if (disabled || wasHandledByPrompt(e)) return;
@@ -260,6 +292,9 @@ export function PermissionPrompt({
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       if (CONFIRM_CHOICES[confirmIdxRef.current].action === 'confirm') {
+        // Settle guard mirrors the chooser: swallow an in-flight Enter that
+        // would otherwise commit the broad allow-always rule.
+        if (isSettling()) return;
         submit('always');
       } else {
         stepRef.current = 'choose';
@@ -283,7 +318,7 @@ export function PermissionPrompt({
       // keydown handlers are silently ignored in some browsers).
       setTimeout(() => { targetRef.current?.focus(); }, 0);
     }
-  }, [disabled, submit]);
+  }, [disabled, isSettling, submit]);
 
   // Keep stable refs so the window listener always calls the latest handlers
   // regardless of when deps (like onReply) change due to SSE updates.

@@ -10,6 +10,12 @@ const permission: PendingPermission = {
   patterns: [],
 };
 
+// The component suppresses affirmative actions for SETTLE_MS (350ms) after
+// mount. Tests that exercise affirmative keys must wait out that window; the
+// `key` helper below sleeps past it before dispatching.
+const SETTLE_MS = 350;
+const sleepPastSettle = () => new Promise((r) => setTimeout(r, SETTLE_MS + 20));
+
 describe('PermissionPrompt', () => {
   it('handles allow-once hotkey even when the dialog is not focused', async () => {
     const onReply = vi.fn();
@@ -17,6 +23,7 @@ describe('PermissionPrompt', () => {
 
     screen.getByRole('dialog', { name: 'Permission required' });
     document.body.focus();
+    await sleepPastSettle();
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
 
     await waitFor(() => expect(onReply).toHaveBeenCalledWith('once'));
@@ -31,6 +38,85 @@ describe('PermissionPrompt', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', bubbles: true }));
 
     await waitFor(() => expect(onReply).toHaveBeenCalledWith('reject'));
+  });
+
+  describe('mount-time settle window', () => {
+    beforeEach(() => { vi.useFakeTimers(); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    function pressEnter() {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    }
+    function pressKey(key: string) {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+    }
+
+    it('ignores Enter fired immediately after mount (in-flight keystroke)', () => {
+      const onReply = vi.fn();
+      render(<PermissionPrompt permission={permission} onReply={onReply} />);
+      document.body.focus();
+
+      // Enter before the settle window elapses must not accept anything.
+      pressEnter();
+      expect(onReply).not.toHaveBeenCalled();
+    });
+
+    it('accepts Enter once the settle window has elapsed', () => {
+      const onReply = vi.fn();
+      render(<PermissionPrompt permission={permission} onReply={onReply} />);
+      document.body.focus();
+
+      act(() => { vi.advanceTimersByTime(SETTLE_MS + 1); });
+      pressEnter();
+      expect(onReply).toHaveBeenCalledWith('once');
+    });
+
+    it('ignores the affirmative allow-once hotkey during the settle window', () => {
+      const onReply = vi.fn();
+      render(<PermissionPrompt permission={permission} onReply={onReply} />);
+      document.body.focus();
+
+      pressKey('a');
+      expect(onReply).not.toHaveBeenCalled();
+
+      act(() => { vi.advanceTimersByTime(SETTLE_MS + 1); });
+      pressKey('a');
+      expect(onReply).toHaveBeenCalledWith('once');
+    });
+
+    it('always allows Reject during the settle window', () => {
+      const onReply = vi.fn();
+      render(<PermissionPrompt permission={permission} onReply={onReply} />);
+      document.body.focus();
+
+      // Reject (deny) is never gated — suppressing a deny is never harmful.
+      pressKey('r');
+      expect(onReply).toHaveBeenCalledWith('reject');
+    });
+
+    it('re-arms the settle window when a new permission is pushed in', () => {
+      const onReply = vi.fn();
+      const { rerender } = render(
+        <PermissionPrompt permission={permission} onReply={onReply} />,
+      );
+      document.body.focus();
+      act(() => { vi.advanceTimersByTime(SETTLE_MS + 1); });
+
+      // New permission replaces the old one — settle window must re-arm.
+      rerender(
+        <PermissionPrompt
+          permission={{ ...permission, permissionId: 'perm-2' }}
+          onReply={onReply}
+        />,
+      );
+
+      pressEnter();
+      expect(onReply).not.toHaveBeenCalled();
+
+      act(() => { vi.advanceTimersByTime(SETTLE_MS + 1); });
+      pressEnter();
+      expect(onReply).toHaveBeenCalledWith('once');
+    });
   });
 
   it('shows the concrete action from permission metadata', () => {
