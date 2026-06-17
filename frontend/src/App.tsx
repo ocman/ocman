@@ -24,6 +24,8 @@ import { LaunchProgressOverlay } from './components/LaunchProgressOverlay';
 import { useAuthStore } from './lib/authStore';
 import { useUiStore } from './lib/uiStore';
 import { useShortcut, useShortcutDispatcher } from './lib/shortcutRegistry';
+import { useApiStore } from './lib/apiStore';
+import { remoteLog } from './lib/remoteLog';
 import { usePerformanceCleanup } from './lib/usePerformanceCleanup';
 import { useMemoryMonitor } from './lib/useMemoryMonitor';
 import { useLongTaskMonitor } from './lib/useLongTaskMonitor';
@@ -112,9 +114,24 @@ function GlobalHotkeys() {
     toggleShortcuts,
     closeShortcuts,
   } = useUiStore();
+  const navigate = useNavigate();
 
   // Single dispatcher for every shortcut registered via useShortcut.
   useShortcutDispatcher();
+
+  // Alt+Shift+N — reopen the most recently closed (archived) session.
+  // Pops the closed-session stack, unarchives it on the server, flips the
+  // optimistic flag in the recent-sessions list, then navigates to it.
+  const reopenClosedSession = useCallback(() => {
+    const { popClosedSession, archiveSession, patchRecentSession } = useApiStore.getState();
+    const closed = popClosedSession();
+    if (!closed) return;
+    archiveSession(closed.platform, closed.id, closed.timeUpdated, false).catch((err) => {
+      remoteLog.error('Failed to reopen closed session', err);
+    });
+    patchRecentSession(closed.id, { archived: false });
+    navigate(`/session/${closed.id}`);
+  }, [navigate]);
 
   const scrollHalfPage = useCallback((e: KeyboardEvent) => {
     let el: Element | null = document.activeElement;
@@ -195,12 +212,24 @@ function GlobalHotkeys() {
     runInEditable: true,
   }), []);
 
+  const reopenClosedShortcut = useMemo(() => ({
+    id: 'site.reopen-closed-session',
+    scope: 'site' as const,
+    keys: { code: 'KeyN', alt: true, shift: true },
+    label: 'Alt+Shift+N',
+    description: 'Reopen last closed session',
+    enabled: () => useApiStore.getState().closedSessionStack.length > 0,
+    handler: reopenClosedSession,
+    runInEditable: true,
+  }), [reopenClosedSession]);
+
   useShortcut(toggleShortcutsShortcut);
   useShortcut(scrollDownShortcut);
   useShortcut(scrollUpShortcut);
   useShortcut(commandPaletteShortcut);
   useShortcut(searchPaletteShortcut);
   useShortcut(projectPaletteShortcut);
+  useShortcut(reopenClosedShortcut);
 
   useHotkeys('esc', () => closeShortcuts(), {
     enabled: shortcutsOpen,

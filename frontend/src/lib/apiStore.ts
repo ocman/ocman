@@ -22,6 +22,24 @@ type RequestStatus = {
 };
 
 /**
+ * A session that was just archived ("closed") and can be reopened via the
+ * Alt+Shift+N shortcut. Carries everything needed to unarchive and navigate
+ * back to it without re-fetching first.
+ */
+export type ClosedSession = {
+  platform: string;
+  id: string;
+  timeUpdated: number;
+};
+
+/**
+ * Maximum number of recently-closed sessions to remember for the
+ * "reopen last closed" shortcut. A small stack lets the user reopen
+ * several in a row without unbounded growth.
+ */
+export const CLOSED_SESSION_STACK_MAX = 10;
+
+/**
  * Maximum number of session detail responses to keep in the client-side
  * cache. Entries are evicted in LRU order when this limit is exceeded.
  * Kept small because each entry can hold hundreds of messages and their
@@ -57,6 +75,14 @@ type ApiStore = {
   recentSessionsHash: string;
   setRecentSessions: (sessions: Session[], hash: string) => void;
   patchRecentSession: (id: string, patch: Partial<Session>) => void;
+  /**
+   * Stack of recently-closed (archived) sessions, most-recent last. Pushed
+   * by the archive call sites and popped by the "reopen last closed session"
+   * shortcut (Alt+Shift+N). Capped at CLOSED_SESSION_STACK_MAX.
+   */
+  closedSessionStack: ClosedSession[];
+  pushClosedSession: (session: ClosedSession) => void;
+  popClosedSession: () => ClosedSession | null;
   // LRU cache of session detail responses, used to render recently-viewed
   // sessions instantly on return. See spec/session-switch-cache.
   sessionCache: Map<string, SessionDetail>;
@@ -130,6 +156,26 @@ export const useApiStore = create<ApiStore>((set, get) => ({
       // Recompute hash so the next poll's dedup check stays accurate.
       return { recentSessions: next, recentSessionsHash: computeSidebarHash(next) };
     });
+  },
+  closedSessionStack: [],
+  pushClosedSession: (session) => {
+    set((state) => {
+      // Drop any earlier entry for the same session so reopening then
+      // re-closing keeps it at the top of the stack.
+      const filtered = state.closedSessionStack.filter((s) => s.id !== session.id);
+      const next = [...filtered, session];
+      if (next.length > CLOSED_SESSION_STACK_MAX) {
+        next.splice(0, next.length - CLOSED_SESSION_STACK_MAX);
+      }
+      return { closedSessionStack: next };
+    });
+  },
+  popClosedSession: () => {
+    const stack = get().closedSessionStack;
+    if (stack.length === 0) return null;
+    const session = stack[stack.length - 1];
+    set({ closedSessionStack: stack.slice(0, -1) });
+    return session;
   },
   sessionCache: new Map(),
   sessionCacheOrder: [],

@@ -223,6 +223,13 @@ export function useSidebarSessions({
     archiveTimeoutsRef.current[target.id] = window.setTimeout(() => {
       archiveSession(target.platform, target.id, target.timeUpdated, true)
         .then(() => {
+          // Remember the just-closed session so it can be reopened via the
+          // Alt+Shift+N "reopen last closed session" shortcut.
+          useApiStore.getState().pushClosedSession({
+            platform: target.platform,
+            id: target.id,
+            timeUpdated: target.timeUpdated,
+          });
           const { recentSessions: current, setRecentSessions: storeSetter, recentSessionsHash } = useApiStore.getState();
           const next = showArchivedRecentRef.current
             ? current.map((session) => (session.id === target.id ? { ...session, archived: true } : session))

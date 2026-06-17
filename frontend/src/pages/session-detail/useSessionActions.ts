@@ -275,6 +275,13 @@ export function useSessionActions({
         remoteLog.error('Failed to archive session', e);
         return;
       }
+      // Remember the just-closed session so it can be reopened via the
+      // Alt+Shift+N "reopen last closed session" shortcut.
+      useApiStore.getState().pushClosedSession({
+        platform: session.platform,
+        id: session.id,
+        timeUpdated: session.timeUpdated,
+      });
       if (nextSession) {
         navigateToSession(nextSession.id);
       } else {
