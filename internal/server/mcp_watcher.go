@@ -127,15 +127,28 @@ func (s *Server) inferChildStatus(ctx context.Context, cs state.ChildSession) (s
 
 	sess := detail.Session
 	// Map OpenCode's session status to our child session status.
+	//
+	// OpenCode documents four statuses ("waiting", "busy", "done",
+	// "error"; see db.Session.Status), but only "busy" means the LLM is
+	// still working. Any other value — including an empty string or a
+	// status this code doesn't recognise — means the turn is no longer
+	// running, so we treat it as terminal. Previously the switch fell
+	// through to ("", "") for unrecognised statuses, which left the
+	// child session stuck in "starting"/"running" forever: the watcher
+	// kept re-polling it every tick, never marked it terminal, and never
+	// injected a result into the parent. That is the "prompt handled by
+	// the LLM but the session never closes" bug.
 	switch sess.Status {
-	case "waiting", "done":
-		return "completed", extractSummaryFromSession(*sess)
-	case "error":
-		return "error", sess.LastErrorMessage
 	case "busy":
 		return "running", ""
+	case "error":
+		return "error", sess.LastErrorMessage
+	default:
+		// "waiting", "done", "", and any unrecognised status: the LLM
+		// turn has finished (or the session is no longer active), so
+		// close the child session.
+		return "completed", extractSummaryFromSession(*sess)
 	}
-	return "", ""
 }
 
 // extractSummaryFromSession builds a brief summary from a completed session.

@@ -182,6 +182,123 @@ func TestCheckAndInjectChildResults_UpdatesStatus(t *testing.T) {
 	}
 }
 
+// TestInferChildStatus_Mapping verifies how OpenCode session statuses map to
+// child session statuses. The previously-buggy cases are the unrecognised /
+// empty statuses: they used to fall through to ("", "") which left the child
+// session stuck in a non-terminal state forever (the "prompt handled by the
+// LLM but the session never closes" bug). They must now resolve to a terminal
+// "completed" status so the watcher closes the session and notifies the parent.
+func TestInferChildStatus_Mapping(t *testing.T) {
+	tests := []struct {
+		name           string
+		opencodeStatus string
+		lastErr        string
+		wantStatus     string
+		wantTerminal   bool
+	}{
+		{"busy is still running", "busy", "", "running", false},
+		{"waiting closes the session", "waiting", "", "completed", true},
+		{"done closes the session", "done", "", "completed", true},
+		{"error closes the session", "error", "boom", "error", true},
+		// Regression cases: statuses the watcher does not explicitly
+		// handle. These previously returned ("", "") and never closed.
+		{"empty status closes the session", "", "", "completed", true},
+		{"unknown status closes the session", "idle", "", "completed", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fp := &fakePlatform{
+				id: "opencode",
+				sessions: []db.Session{
+					{ID: "child-x", Status: tt.opencodeStatus, LastErrorMessage: tt.lastErr},
+				},
+			}
+			fp.sessionDetailFn = func(id string) (*platforms.SessionDetail, error) {
+				for _, s := range fp.sessions {
+					if s.ID == id {
+						sess := s
+						return &platforms.SessionDetail{Session: &sess}, nil
+					}
+				}
+				return nil, platforms.ErrNotFound
+			}
+
+			reg := platforms.NewRegistry()
+			reg.Register(fp)
+			s := &Server{registry: reg}
+
+			cs := state.ChildSession{ID: "child-x", Status: "running"}
+			got, _ := s.inferChildStatus(context.Background(), cs)
+			if got != tt.wantStatus {
+				t.Errorf("inferChildStatus(%q) status = %q, want %q",
+					tt.opencodeStatus, got, tt.wantStatus)
+			}
+			if isTerminalStatus(got) != tt.wantTerminal {
+				t.Errorf("inferChildStatus(%q) terminal = %v, want %v",
+					tt.opencodeStatus, isTerminalStatus(got), tt.wantTerminal)
+			}
+		})
+	}
+}
+
+// TestCheckAndInjectChildResults_UnknownStatusCloses proves the regression fix
+// end-to-end: a child session whose OpenCode session reports a status the
+// watcher does not explicitly handle (here, an empty status) must still be
+// marked terminal and have its result injected into the parent — rather than
+// being left in "running" forever, which is the bug the user reported.
+func TestCheckAndInjectChildResults_UnknownStatusCloses(t *testing.T) {
+	sdb := openWatcherTestStateDB(t)
+	insertWatcherChildSession(t, sdb, "child-stuck", "parent-1", "running")
+
+	var sentMessages []platforms.SendMessageRequest
+	fp := &fakePlatform{
+		id: "opencode",
+		sessions: []db.Session{
+			// Empty status: the LLM finished but OpenCode reports a
+			// status the watcher's switch did not previously recognise.
+			{ID: "child-stuck", Status: "", MessageCount: 3, Title: "Do the thing"},
+			{ID: "parent-1", Status: "waiting"},
+		},
+	}
+	fp.sendMessageFn = func(req platforms.SendMessageRequest) error {
+		sentMessages = append(sentMessages, req)
+		return nil
+	}
+	fp.sessionDetailFn = func(id string) (*platforms.SessionDetail, error) {
+		for _, s := range fp.sessions {
+			if s.ID == id {
+				sess := s
+				return &platforms.SessionDetail{Session: &sess}, nil
+			}
+		}
+		return nil, platforms.ErrNotFound
+	}
+
+	reg := platforms.NewRegistry()
+	reg.Register(fp)
+	s := &Server{stateDB: sdb, registry: reg}
+
+	s.checkAndInjectChildResults(context.Background())
+
+	cs, err := sdb.GetChildSession("child-stuck")
+	if err != nil {
+		t.Fatalf("GetChildSession: %v", err)
+	}
+	if cs.Status != "completed" {
+		t.Errorf("expected status=completed (session must close), got %q", cs.Status)
+	}
+	if cs.CompletedAt == 0 {
+		t.Error("expected CompletedAt to be set")
+	}
+	if len(sentMessages) != 1 {
+		t.Fatalf("expected 1 injected message into parent, got %d", len(sentMessages))
+	}
+	if sentMessages[0].SessionID != "parent-1" {
+		t.Errorf("message sent to wrong session: %q", sentMessages[0].SessionID)
+	}
+}
+
 func TestCheckAndInjectChildResults_AlreadyTerminal(t *testing.T) {
 	sdb := openWatcherTestStateDB(t)
 	insertWatcherChildSession(t, sdb, "child-done", "parent-1", "completed")
