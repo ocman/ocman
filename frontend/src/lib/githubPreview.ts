@@ -1,9 +1,14 @@
 /**
- * GitHub URL preview utilities.
+ * Forge URL preview utilities (GitHub + Forgejo/Gitea).
  *
- * Fetches metadata via the ocman backend (/api/integrations/github/preview)
- * which discovers and injects a GitHub token server-side (GITHUB_TOKEN env
- * var or gh CLI config). Works for both public and private repos.
+ * Fetches metadata via the ocman backend:
+ *   - /api/integrations/github/preview  (GitHub, fixed host)
+ *   - /api/integrations/forgejo/preview (Forgejo/Gitea, dynamic hosts)
+ * The backend discovers and injects the appropriate token server-side, so
+ * previews work for both public and private repos.
+ *
+ * GitHub's host is fixed (github.com); Forgejo hosts are self-hosted and
+ * therefore discovered at runtime from /api/integrations/status.
  */
 
 export type GitHubPreviewKind = 'pr' | 'issue' | 'commit';
@@ -93,9 +98,12 @@ async function fetchFromBackend(url: string): Promise<GitHubPreviewData> {
   return mapRawToPreviewData(url, raw);
 }
 
+// mapRawToPreviewData converts a forge API JSON payload into the preview
+// shape. `ref` may be supplied by the caller (Forgejo URLs don't match the
+// GitHub parser); when omitted it is derived from the GitHub URL.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function mapRawToPreviewData(url: string, raw: any): GitHubPreviewData {
-  const ref = parseGitHubUrl(url)!;
+function mapRawToPreviewData(url: string, raw: any, ref?: GitHubPreviewRef): GitHubPreviewData {
+  ref = ref ?? parseGitHubUrl(url)!;
   const repoFull = `${ref.owner}/${ref.repo}`;
 
   if (ref.kind === 'pr' || raw.pull_request !== undefined) {
@@ -182,6 +190,140 @@ export async function refreshGitHubPreview(url: string): Promise<GitHubPreviewDa
   if (!parseGitHubUrl(url)) return null;
   try {
     const data = await fetchFromBackend(url);
+    cache.set(url, data);
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+// ===========================================================================
+// Forgejo / Gitea
+//
+// Same preview shape as GitHub, but the host is dynamic. The set of
+// previewable hosts is provided by the caller (loaded from
+// /api/integrations/status). Forgejo's web UI uses the plural "/pulls/" path
+// for pull requests (the API uses the same), unlike GitHub's "/pull/".
+// ===========================================================================
+
+// escapeRegExp escapes a hostname for safe interpolation into a RegExp.
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// ---------------------------------------------------------------------------
+// Forgejo host discovery
+//
+// The previewable Forgejo hosts come from /api/integrations/status. The
+// result is cached for the page lifetime (hosts are fixed at server startup);
+// concurrent callers share one in-flight request.
+// ---------------------------------------------------------------------------
+
+let forgejoHostsCache: string[] | null = null;
+let forgejoHostsInflight: Promise<string[]> | null = null;
+
+export async function loadForgejoHosts(): Promise<string[]> {
+  if (forgejoHostsCache) return forgejoHostsCache;
+  if (forgejoHostsInflight) return forgejoHostsInflight;
+  forgejoHostsInflight = (async () => {
+    try {
+      const res = await fetch('/api/integrations/status');
+      if (!res.ok) return [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw: any = await res.json();
+      const hosts: string[] = Array.isArray(raw?.forgejo?.hosts) ? raw.forgejo.hosts : [];
+      forgejoHostsCache = hosts;
+      return hosts;
+    } catch {
+      return [];
+    } finally {
+      forgejoHostsInflight = null;
+    }
+  })();
+  return forgejoHostsInflight;
+}
+
+/**
+ * Parses a Forgejo PR / issue / commit URL for one of the given hosts.
+ * Returns null when the URL host is not in `hosts` or the path is not a
+ * previewable resource.
+ */
+export function parseForgejoUrl(url: string, hosts: string[]): GitHubPreviewRef | null {
+  if (hosts.length === 0) return null;
+  const hostAlt = hosts.map(escapeRegExp).join('|');
+  const prefix = `^https?://(?:${hostAlt})/([^/]+)/([^/]+)`;
+
+  let m = url.match(new RegExp(`${prefix}/pulls/(\\d+)`));
+  if (m) return { kind: 'pr', owner: m[1], repo: m[2], number: parseInt(m[3], 10) };
+
+  m = url.match(new RegExp(`${prefix}/issues/(\\d+)`));
+  if (m) return { kind: 'issue', owner: m[1], repo: m[2], number: parseInt(m[3], 10) };
+
+  m = url.match(new RegExp(`${prefix}/commit/([0-9a-f]{5,40})`));
+  if (m) return { kind: 'commit', owner: m[1], repo: m[2], sha: m[3] };
+
+  return null;
+}
+
+/**
+ * Extracts all previewable Forgejo URLs from `text` for the given hosts,
+ * deduplicated and in first-occurrence order.
+ */
+export function extractForgejoUrls(text: string, hosts: string[]): string[] {
+  if (hosts.length === 0) return [];
+  const hostAlt = hosts.map(escapeRegExp).join('|');
+  const scan = new RegExp(`https?://(?:${hostAlt})/[^\\s<>"')]+`, 'g');
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of text.matchAll(scan)) {
+    const url = raw[0].replace(/[.,;:!?]+$/, '');
+    if (!seen.has(url) && parseForgejoUrl(url, hosts)) {
+      seen.add(url);
+      out.push(url);
+    }
+  }
+  return out;
+}
+
+async function fetchForgejoFromBackend(url: string, ref: GitHubPreviewRef): Promise<GitHubPreviewData> {
+  const res = await fetch(
+    `/api/integrations/forgejo/preview?url=${encodeURIComponent(url)}`,
+  );
+  if (!res.ok) throw new Error(`forgejo preview proxy ${res.status}`);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const raw: any = await res.json();
+  // Forgejo/Gitea returns GitHub-like JSON, so reuse the same mapper.
+  return mapRawToPreviewData(url, raw, ref);
+}
+
+export async function cachedForgejoPreview(
+  url: string,
+  hosts: string[],
+): Promise<GitHubPreviewData | null> {
+  if (cache.has(url)) {
+    const hit = cache.get(url)!;
+    return hit === 'error' ? null : hit;
+  }
+  const ref = parseForgejoUrl(url, hosts);
+  if (!ref) return null;
+  try {
+    const data = await fetchForgejoFromBackend(url, ref);
+    cache.set(url, data);
+    return data;
+  } catch {
+    cache.set(url, 'error');
+    return null;
+  }
+}
+
+export async function refreshForgejoPreview(
+  url: string,
+  hosts: string[],
+): Promise<GitHubPreviewData | null> {
+  const ref = parseForgejoUrl(url, hosts);
+  if (!ref) return null;
+  try {
+    const data = await fetchForgejoFromBackend(url, ref);
     cache.set(url, data);
     return data;
   } catch {

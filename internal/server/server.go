@@ -348,6 +348,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// using server-side credentials discovered at startup.
 	mux.HandleFunc("/api/integrations/status", s.get(s.handleIntegrationsStatus))
 	mux.HandleFunc("/api/integrations/github/preview", s.get(s.handleGitHubPreview))
+	mux.HandleFunc("/api/integrations/forgejo/preview", s.get(s.handleForgejoPreview))
 
 	// Settings endpoints — user preferences that must be shared with the
 	// backend (e.g. judge prompt sections used by headless auto-approve).

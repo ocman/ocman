@@ -45,6 +45,12 @@ func NewRegistry() *Registry {
 	return r
 }
 
+// NewRegistryForTest builds a Registry from a host->client map. Intended
+// for tests; not used in production paths.
+func NewRegistryForTest(clients map[string]*Client) *Registry {
+	return &Registry{clients: clients}
+}
+
 // ForHost returns the client for the given host, or nil when no
 // client is configured. Callers must nil-check before use; the
 // upstream-detection layer skips remotes whose host isn't in the

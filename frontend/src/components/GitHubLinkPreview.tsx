@@ -1,6 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { FC } from 'react';
-import { extractGitHubUrls, cachedGitHubPreview, refreshGitHubPreview } from '../lib/githubPreview';
+import {
+  extractGitHubUrls,
+  cachedGitHubPreview,
+  refreshGitHubPreview,
+  extractForgejoUrls,
+  cachedForgejoPreview,
+  refreshForgejoPreview,
+  loadForgejoHosts,
+} from '../lib/githubPreview';
 import type { GitHubPreviewData } from '../lib/githubPreview';
 import './GitHubLinkPreview.css';
 
@@ -80,7 +88,11 @@ const REFRESH_INTERVAL_MS = 5_000;
  * Silently refreshes every 5 s while the card is in the viewport,
  * and immediately on entering the viewport.
  */
-const SinglePreview: FC<{ url: string }> = ({ url }) => {
+const SinglePreview: FC<{
+  url: string;
+  load: (url: string) => Promise<GitHubPreviewData | null>;
+  refresh: (url: string) => Promise<GitHubPreviewData | null>;
+}> = ({ url, load, refresh }) => {
   const [data, setData] = useState<GitHubPreviewData | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -89,17 +101,17 @@ const SinglePreview: FC<{ url: string }> = ({ url }) => {
   // Initial load from cache (or first fetch)
   useEffect(() => {
     let cancelled = false;
-    cachedGitHubPreview(url).then((d) => {
+    load(url).then((d) => {
       if (!cancelled) setData(d);
     });
     return () => { cancelled = true; };
-  }, [url]);
+  }, [url, load]);
 
   const doRefresh = useCallback(() => {
-    refreshGitHubPreview(url).then((d) => {
+    refresh(url).then((d) => {
       if (d) setData(d);
     });
-  }, [url]);
+  }, [url, refresh]);
 
   const startPolling = useCallback(() => {
     if (intervalRef.current !== null) return;
@@ -140,17 +152,46 @@ const SinglePreview: FC<{ url: string }> = ({ url }) => {
   return <div ref={ref}>{data && <PreviewCard data={data} />}</div>;
 };
 
+// Stable references so SinglePreview's effect deps don't churn.
+const ghLoad = (url: string) => cachedGitHubPreview(url);
+const ghRefresh = (url: string) => refreshGitHubPreview(url);
+
 /**
- * Scans `text` for previewable GitHub URLs and renders a card for each one
- * below the text block. Renders nothing when there are no matching URLs.
+ * Scans `text` for previewable forge URLs (GitHub + any configured Forgejo
+ * hosts) and renders a card for each one below the text block. Renders
+ * nothing when there are no matching URLs.
  */
 export const LinkPreviewStrip: FC<{ text: string }> = ({ text }) => {
-  const urls = extractGitHubUrls(text);
-  if (urls.length === 0) return null;
+  const [forgejoHosts, setForgejoHosts] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadForgejoHosts().then((hosts) => {
+      if (!cancelled) setForgejoHosts(hosts);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const ghUrls = extractGitHubUrls(text);
+  const fjUrls = extractForgejoUrls(text, forgejoHosts);
+
+  const fjLoad = useCallback(
+    (url: string) => cachedForgejoPreview(url, forgejoHosts),
+    [forgejoHosts],
+  );
+  const fjRefresh = useCallback(
+    (url: string) => refreshForgejoPreview(url, forgejoHosts),
+    [forgejoHosts],
+  );
+
+  if (ghUrls.length === 0 && fjUrls.length === 0) return null;
   return (
     <div className="gh-preview-strip" data-testid="gh-preview-strip">
-      {urls.map((url) => (
-        <SinglePreview key={url} url={url} />
+      {ghUrls.map((url) => (
+        <SinglePreview key={url} url={url} load={ghLoad} refresh={ghRefresh} />
+      ))}
+      {fjUrls.map((url) => (
+        <SinglePreview key={url} url={url} load={fjLoad} refresh={fjRefresh} />
       ))}
     </div>
   );

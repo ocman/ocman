@@ -69,6 +69,18 @@ func envTokenForHost() string {
 	return os.Getenv("GITEA_TOKEN")
 }
 
+// NewForTest returns a Client wired against the given host, baseURL and
+// token, using the supplied http.Client. Intended for tests that point the
+// client at an httptest.Server; not used in production paths.
+func NewForTest(host, baseURL, token string, httpClient *http.Client) *Client {
+	return &Client{
+		baseURL: strings.TrimRight(baseURL, "/"),
+		host:    host,
+		token:   token,
+		http:    httpClient,
+	}
+}
+
 // Host returns the canonical hostname. Implements forge.Forge.Host.
 func (c *Client) Host() string { return c.host }
 
@@ -231,6 +243,51 @@ func (c *Client) fetch(ctx context.Context, path string) ([]byte, forge.RateLimi
 		req.Header.Set("Authorization", "token "+c.token)
 	}
 	return forgehttp.Get(ctx, c.http, req)
+}
+
+// BaseURL returns the Forgejo root URL (without a trailing slash).
+func (c *Client) BaseURL() string { return c.baseURL }
+
+// ---------------------------------------------------------------------------
+// Link-preview helpers
+// ---------------------------------------------------------------------------
+//
+// These mirror the GitHub client's GetPR / GetIssue / GetCommit: they fetch
+// raw metadata as a generic map so the preview endpoint can pass it through
+// to the frontend without committing to a fixed shape. Forgejo's API is
+// Gitea-compatible and returns GitHub-like JSON, so the frontend mapper can
+// read the same fields (title, state, user.login, html_url, updated_at, ...).
+
+// GetPR fetches pull-request metadata.
+func (c *Client) GetPR(ctx context.Context, owner, repo string, number int) (map[string]interface{}, error) {
+	return c.getMap(ctx, fmt.Sprintf("/api/v1/repos/%s/%s/pulls/%d", owner, repo, number))
+}
+
+// GetIssue fetches issue metadata.
+func (c *Client) GetIssue(ctx context.Context, owner, repo string, number int) (map[string]interface{}, error) {
+	return c.getMap(ctx, fmt.Sprintf("/api/v1/repos/%s/%s/issues/%d", owner, repo, number))
+}
+
+// GetCommit fetches commit metadata.
+func (c *Client) GetCommit(ctx context.Context, owner, repo, sha string) (map[string]interface{}, error) {
+	return c.getMap(ctx, fmt.Sprintf("/api/v1/repos/%s/%s/git/commits/%s", owner, repo, sha))
+}
+
+// getMap performs a GET and decodes the body into a generic map. Used by
+// the link-preview helpers, which pass the raw JSON through to the frontend.
+func (c *Client) getMap(ctx context.Context, path string) (map[string]interface{}, error) {
+	body, _, status, err := c.fetch(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("forgejo %s: status %d", path, status)
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("decoding %s: %w", path, err)
+	}
+	return out, nil
 }
 
 // --- JSON shapes ---

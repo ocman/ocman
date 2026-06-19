@@ -232,6 +232,78 @@ func TestRegistry_RoutesByHost(t *testing.T) {
 	}
 }
 
+func TestGetPR_ReturnsRawMap(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got, want := r.URL.Path, "/api/v1/repos/alice/myproj/pulls/7"; got != want {
+			t.Errorf("path: got %s want %s", got, want)
+		}
+		if got := r.Header.Get("Authorization"); got != "token tok" {
+			t.Errorf("auth header: %q", got)
+		}
+		_, _ = w.Write([]byte(`{"number":7,"title":"Patch","state":"open","html_url":"https://test.forgejo/alice/myproj/pulls/7"}`))
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv, "tok")
+	data, err := c.GetPR(context.Background(), "alice", "myproj", 7)
+	if err != nil {
+		t.Fatalf("GetPR: %v", err)
+	}
+	if data["title"] != "Patch" || data["state"] != "open" {
+		t.Errorf("unexpected payload: %+v", data)
+	}
+}
+
+func TestGetIssue_ReturnsRawMap(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got, want := r.URL.Path, "/api/v1/repos/alice/myproj/issues/3"; got != want {
+			t.Errorf("path: got %s want %s", got, want)
+		}
+		_, _ = w.Write([]byte(`{"number":3,"title":"Bug","state":"closed"}`))
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv, "tok")
+	data, err := c.GetIssue(context.Background(), "alice", "myproj", 3)
+	if err != nil {
+		t.Fatalf("GetIssue: %v", err)
+	}
+	if data["title"] != "Bug" || data["state"] != "closed" {
+		t.Errorf("unexpected payload: %+v", data)
+	}
+}
+
+func TestGetCommit_ReturnsRawMap(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got, want := r.URL.Path, "/api/v1/repos/alice/myproj/git/commits/abc1234"; got != want {
+			t.Errorf("path: got %s want %s", got, want)
+		}
+		_, _ = w.Write([]byte(`{"sha":"abc1234","commit":{"message":"do thing","author":{"name":"Alice"}}}`))
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv, "tok")
+	data, err := c.GetCommit(context.Background(), "alice", "myproj", "abc1234")
+	if err != nil {
+		t.Fatalf("GetCommit: %v", err)
+	}
+	if data["sha"] != "abc1234" {
+		t.Errorf("unexpected payload: %+v", data)
+	}
+}
+
+func TestGetPR_Non200ReturnsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv, "tok")
+	if _, err := c.GetPR(context.Background(), "alice", "myproj", 999); err == nil {
+		t.Fatalf("expected error on 404")
+	}
+}
+
 // --- helpers ---
 
 func prEqual(a, b forge.PR) bool {
