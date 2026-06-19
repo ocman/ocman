@@ -38,6 +38,13 @@ import {
 
 const SESSION_URL = `/session/${MOCK_SESSION.id}`;
 
+// PermissionPrompt suppresses affirmative actions (Allow once / Allow always /
+// confirm) for a short settle window after the prompt mounts, to absorb an
+// in-flight keystroke that would otherwise accidentally accept a permission.
+// Keep this in sync with SETTLE_MS in PermissionPrompt.tsx. e2e tests that
+// drive affirmative hotkeys must wait past this window before pressing.
+const PERMISSION_SETTLE_MS = 350;
+
 // ---------------------------------------------------------------------------
 // Shared helper
 // ---------------------------------------------------------------------------
@@ -173,6 +180,10 @@ test('hotkey "a" triggers allow-once', async ({ mockedPage: page }) => {
   await setupLivePage(page);
   await expect(page.locator('.oc-permission-wrap')).toBeVisible({ timeout: 5_000 });
 
+  // Wait out the mount-time settle window so the affirmative hotkey isn't
+  // swallowed as an in-flight keystroke.
+  await page.waitForTimeout(PERMISSION_SETTLE_MS + 50);
+
   const [req] = await Promise.all([
     page.waitForRequest((r) => r.url().includes('/permissions/perm-a') && r.method() === 'POST'),
     page.keyboard.press('a'),
@@ -188,6 +199,10 @@ test('hotkey "Shift+A" triggers allow-always', async ({ mockedPage: page }) => {
   );
   await setupLivePage(page);
   await expect(page.locator('.oc-permission-wrap')).toBeVisible({ timeout: 5_000 });
+
+  // Wait out the mount-time settle window so the affirmative hotkey isn't
+  // swallowed as an in-flight keystroke.
+  await page.waitForTimeout(PERMISSION_SETTLE_MS + 50);
 
   // Two-step: Shift+A opens the confirmation screen with Cancel focused by
   // default (CONFIRM_DEFAULT_IDX = 1), so Tab switches focus to Confirm,
