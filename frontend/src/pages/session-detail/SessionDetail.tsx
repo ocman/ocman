@@ -541,6 +541,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
 
   // Sidebar state, archive/pin handlers, archived toggle, collapsed groups.
   const collapsedProjects = useUiStore((state) => state.collapsedProjects);
+  const sidebarView = useUiStore((state) => state.sidebarView);
   const projectOrder = useUiStore((state) => state.projectOrder);
   const setProjectOrder = useUiStore((state) => state.setProjectOrder);
   const patchRecentSession = useApiStore((state) => state.patchRecentSession);
@@ -560,6 +561,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     id,
     sessionId: session?.id,
     collapsedProjects,
+    sidebarView,
     abortSignalRef: abortControllerRef,
     navigate,
   });
@@ -647,7 +649,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const listQuestions = useApiStore((state) => state.listQuestions);
 
   const sidebarWidth = useUiStore((state) => state.sidebarWidth);
-  const sidebarView = useUiStore((state) => state.sidebarView);
   const toggleSidebarView = useUiStore((state) => state.toggleSidebarView);
   const toggleCollapsedProject = useUiStore((state) => state.toggleCollapsedProject);
 

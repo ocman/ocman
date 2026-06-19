@@ -1,4 +1,5 @@
 import type { Session } from './api';
+import { projectRootForDirectory } from './worktrees';
 
 /**
  * Compute a cheap dedup hash for a sidebar session list. Used to skip
@@ -17,6 +18,43 @@ export function computeSidebarHash(sessions: readonly Session[]): string {
         `${s.id}|${s.status}|${s.timeUpdated}|${s.pendingPermission ? 'p' : ''}${s.pendingQuestion ? 'q' : ''}${s.notice ? `|n:${s.notice.kind}:${s.notice.retryAt}:${s.notice.attempt}` : ''}`,
     )
     .join(',');
+}
+
+/**
+ * Pick the session to navigate to after archiving the active session
+ * from the sidebar.
+ *
+ *   - In the flat 'recent' view we move to the row directly below the
+ *     archived session (`idx + 1`), falling back to the row directly
+ *     above (`idx - 1`) when the archived session was last in the list.
+ *   - In the grouped 'projects' view we stay within the same project:
+ *     the most recently updated remaining session whose project root
+ *     matches the archived session's. If the project has no other
+ *     sessions we return undefined (the caller navigates home).
+ *
+ * Returns `undefined` when there is no suitable next session, in which
+ * case the caller should navigate to the dashboard.
+ */
+export function pickNextSessionAfterArchive(
+  sessions: readonly Session[],
+  targetId: string,
+  view: 'recent' | 'projects',
+): Session | undefined {
+  if (view === 'projects') {
+    const target = sessions.find((s) => s.id === targetId);
+    if (!target) return undefined;
+    const targetRoot = projectRootForDirectory(target.directory || '');
+    return sessions
+      .filter(
+        (s) =>
+          s.id !== targetId &&
+          projectRootForDirectory(s.directory || '') === targetRoot,
+      )
+      .sort((a, b) => b.timeUpdated - a.timeUpdated)[0];
+  }
+  const idx = sessions.findIndex((s) => s.id === targetId);
+  if (idx < 0) return undefined;
+  return sessions[idx + 1] ?? sessions[idx - 1];
 }
 
 /**

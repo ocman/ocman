@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Session } from './api';
-import { computeSidebarHash, rollupGroupStatus } from './sidebarHelpers';
+import { computeSidebarHash, pickNextSessionAfterArchive, rollupGroupStatus } from './sidebarHelpers';
 
 function makeSession(overrides: Partial<Session> = {}): Session {
   return {
@@ -84,6 +84,78 @@ describe('computeSidebarHash', () => {
     const a = computeSidebarHash([makeSession({ id: 'a', status: 'error', timeUpdated: 1, notice })]);
     const b = computeSidebarHash([makeSession({ id: 'a', status: 'error', timeUpdated: 1, notice })]);
     expect(a).toBe(b);
+  });
+});
+
+describe('pickNextSessionAfterArchive', () => {
+  describe('recent (flat) view', () => {
+    it('picks the row directly below the archived session', () => {
+      const sessions = [
+        makeSession({ id: 'a' }),
+        makeSession({ id: 'b' }),
+        makeSession({ id: 'c' }),
+      ];
+      expect(pickNextSessionAfterArchive(sessions, 'b', 'recent')?.id).toBe('c');
+    });
+
+    it('falls back to the row above when the archived session is last', () => {
+      const sessions = [
+        makeSession({ id: 'a' }),
+        makeSession({ id: 'b' }),
+        makeSession({ id: 'c' }),
+      ];
+      expect(pickNextSessionAfterArchive(sessions, 'c', 'recent')?.id).toBe('b');
+    });
+
+    it('returns undefined when the archived session is the only one', () => {
+      const sessions = [makeSession({ id: 'a' })];
+      expect(pickNextSessionAfterArchive(sessions, 'a', 'recent')).toBeUndefined();
+    });
+
+    it('returns undefined when the target is not present', () => {
+      const sessions = [makeSession({ id: 'a' })];
+      expect(pickNextSessionAfterArchive(sessions, 'missing', 'recent')).toBeUndefined();
+    });
+  });
+
+  describe('projects (grouped) view', () => {
+    it('picks the most recent remaining session in the same project', () => {
+      const sessions = [
+        makeSession({ id: 'cur', directory: '/src/foo', timeUpdated: 500 }),
+        makeSession({ id: 'foo-old', directory: '/src/foo', timeUpdated: 100 }),
+        makeSession({ id: 'foo-new', directory: '/src/foo', timeUpdated: 300 }),
+        makeSession({ id: 'bar', directory: '/src/bar', timeUpdated: 999 }),
+      ];
+      // Even though 'bar' is the most recent overall, we stay in /src/foo
+      // and pick its newest remaining sibling.
+      expect(pickNextSessionAfterArchive(sessions, 'cur', 'projects')?.id).toBe('foo-new');
+    });
+
+    it('treats worktrees as part of the same project', () => {
+      const sessions = [
+        makeSession({ id: 'cur', directory: '/src/foo', timeUpdated: 500 }),
+        makeSession({
+          id: 'wt',
+          directory: '/src/.worktrees/foo/feature-a',
+          timeUpdated: 300,
+        }),
+        makeSession({ id: 'bar', directory: '/src/bar', timeUpdated: 999 }),
+      ];
+      expect(pickNextSessionAfterArchive(sessions, 'cur', 'projects')?.id).toBe('wt');
+    });
+
+    it('returns undefined when the project has no other sessions', () => {
+      const sessions = [
+        makeSession({ id: 'cur', directory: '/src/foo' }),
+        makeSession({ id: 'bar', directory: '/src/bar' }),
+      ];
+      expect(pickNextSessionAfterArchive(sessions, 'cur', 'projects')).toBeUndefined();
+    });
+
+    it('returns undefined when the target is not present', () => {
+      const sessions = [makeSession({ id: 'a', directory: '/src/foo' })];
+      expect(pickNextSessionAfterArchive(sessions, 'missing', 'projects')).toBeUndefined();
+    });
   });
 });
 

@@ -3,7 +3,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { Session } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
 import { filterVisibleSessions } from '../../lib/sessionVisibility';
-import { computeSidebarHash } from '../../lib/sidebarHelpers';
+import { computeSidebarHash, pickNextSessionAfterArchive } from '../../lib/sidebarHelpers';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { remoteLog } from '../../lib/remoteLog';
 
@@ -29,6 +29,10 @@ export interface UseSidebarSessionsOptions {
   sessionId: string | undefined;
   /** Persisted collapsed project keys. */
   collapsedProjects: Iterable<string>;
+  /** Current sidebar view. When 'projects', archiving the active
+   *  session navigates to the most recent sibling in the same project
+   *  rather than the adjacent row in the flat list. */
+  sidebarView: 'recent' | 'projects';
   /** Abort signal that fires on session change / unmount. */
   abortSignalRef: MutableRefObject<AbortController | null>;
   /** Navigate handler, used after archiving the current session.
@@ -78,6 +82,7 @@ export function useSidebarSessions({
   id,
   sessionId,
   collapsedProjects,
+  sidebarView,
   abortSignalRef,
   navigate,
 }: UseSidebarSessionsOptions): UseSidebarSessionsResult {
@@ -210,14 +215,14 @@ export function useSidebarSessions({
   const handleArchiveSession = useCallback((e: React.MouseEvent, target: Session) => {
     e.stopPropagation();
     if (archivingSessionIds.has(target.id)) return;
-    // Capture the current sibling list and the archived session's
-    // position synchronously at click time. Picks the session at
-    // `idx + 1` (directly below), or `idx - 1` (directly above) if
-    // there's nothing below.
+    // Capture the next session to navigate to synchronously at click
+    // time. In the flat 'recent' view we pick the adjacent row; in the
+    // grouped 'projects' view we stay within the same project (most
+    // recent remaining sibling) so closing a session keeps the user
+    // where they were working. See pickNextSessionAfterArchive.
     const isCurrent = target.id === id;
-    const idx = recentSessions.findIndex((s) => s.id === target.id);
     const nextSession = isCurrent
-      ? (recentSessions[idx + 1] ?? recentSessions[idx - 1])
+      ? pickNextSessionAfterArchive(recentSessions, target.id, sidebarView)
       : undefined;
     setArchivingSessionIds((prev) => new Set(prev).add(target.id));
     archiveTimeoutsRef.current[target.id] = window.setTimeout(() => {
@@ -255,7 +260,7 @@ export function useSidebarSessions({
           delete archiveTimeoutsRef.current[target.id];
         });
     }, ARCHIVE_ANIMATION_MS);
-  }, [archiveSession, archivingSessionIds, id, navigate, recentSessions]);
+  }, [archiveSession, archivingSessionIds, id, navigate, recentSessions, sidebarView]);
 
   const handlePinSession = useCallback((e: React.MouseEvent, target: Session) => {
     e.stopPropagation();
