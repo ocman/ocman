@@ -42,6 +42,8 @@ function ComposerImpl({
   onCommand,
   onShell,
   shellExec,
+  queuedShellCommand,
+  onCancelQueuedShell,
   onAbort,
   isRunning,
   disabled,
@@ -82,6 +84,15 @@ function ComposerImpl({
    * without a shell-tool primitive (Claude Code).
    */
   shellExec?: boolean;
+  /**
+   * A `!`-prefixed shell command that was submitted while the agent
+   * was streaming and is now waiting for the turn to finish before it
+   * runs. Surfaced in the footer so the user knows the command was
+   * accepted and what we're waiting for. Null when nothing is queued.
+   */
+  queuedShellCommand?: string | null;
+  /** Drop the queued shell command without running it. */
+  onCancelQueuedShell?: () => void;
   onAbort?: () => void;
   isRunning: boolean;
   disabled?: boolean;
@@ -1099,6 +1110,23 @@ function ComposerImpl({
               <span className="oc-stop-hint">Esc to interrupt</span>
             </>
           )}
+          {!disabled && queuedShellCommand && (
+            <span className="oc-shell-queued" data-testid="shell-queued">
+              <i className="bi bi-hourglass-split oc-shell-queued-icon" aria-hidden="true" />
+              <span className="oc-shell-queued-label">
+                Shell queued — waiting for the agent to finish:
+              </span>
+              <code className="oc-shell-queued-cmd" title={queuedShellCommand}>
+                {queuedShellCommand}
+              </code>
+              <button
+                type="button"
+                className="oc-shell-queued-cancel"
+                onClick={() => onCancelQueuedShell?.()}
+                title="Cancel queued shell command"
+              >Cancel</button>
+            </span>
+          )}
         </span>
         <span className="oc-composer-footer-right">
           {tokenStats && tokenStats.totalCost > 0 && (
@@ -1190,6 +1218,8 @@ function ComposerImpl({
 
 export const Composer = memo(ComposerImpl, (prev, next) =>
   prev.isRunning === next.isRunning &&
+  prev.queuedShellCommand === next.queuedShellCommand &&
+  prev.onCancelQueuedShell === next.onCancelQueuedShell &&
   prev.disabled === next.disabled &&
   prev.disabledHint === next.disabledHint &&
   prev.onLaunchRequest === next.onLaunchRequest &&

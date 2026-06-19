@@ -932,6 +932,12 @@ export function SessionDetail({ id }: SessionDetailProps) {
     }
   }, [activeAgent, activeModel, caps.compact, portAvailable, selectedAgent, selectedModel, session, setSelectedAgent]);
 
+  // Kept in sync with `isRunning` (computed below) so handleShell can
+  // decide whether to queue a `!`-prefixed shell command. The ref
+  // breaks the ordering cycle: useSessionActions runs before
+  // `isRunning` exists, but only reads the ref at call time.
+  const isRunningRef = useRef(false);
+
   const {
     awaitingAssistantResponse,
     setAwaitingAssistantResponse,
@@ -942,6 +948,9 @@ export function SessionDetail({ id }: SessionDetailProps) {
     handleAbort,
     handleVSCodeShortcut,
     handleCommand,
+    queuedShellCommand,
+    cancelQueuedShell,
+    flushQueuedShell,
   } = useSessionActions({
     session,
     portAvailable,
@@ -954,6 +963,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     activeModel,
     activeAgent,
     recentSessionsRef,
+    isRunningRef,
     tmuxAvailable: tmux.available,
     failedSends,
     setFailedSends,
@@ -1094,6 +1104,13 @@ export function SessionDetail({ id }: SessionDetailProps) {
 
   const hasPendingPrompt = pendingPermission !== null || pendingQuestion !== null;
   const isRunning = isSessionRunning(lastMsg, session?.status, awaitingAssistantResponse);
+
+  // Keep the ref handleShell reads in sync, and flush any queued
+  // shell command when the assistant turn finishes (true → false).
+  useEffect(() => {
+    isRunningRef.current = isRunning;
+    if (!isRunning) flushQueuedShell();
+  }, [isRunning, flushQueuedShell]);
 
   const { optimisticStatus, liveTokensPerSecond } = useSessionStatus({
     lastMsg,
@@ -1337,6 +1354,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
                           onCommand={handleCommand}
                           onShell={handleShell}
                           shellExec={caps.shellExec}
+                          queuedShellCommand={queuedShellCommand}
+                          onCancelQueuedShell={cancelQueuedShell}
                           onAbort={handleAbort}
                           isRunning={isRunning}
                           disabled={!portAvailable || hasPendingPrompt}

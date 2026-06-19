@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react';
 import { flushSync } from 'react-dom';
 import { api, type PlatformCapabilities } from '../../lib/api';
@@ -40,6 +40,14 @@ export interface UseSessionActionsOptions {
   activeAgent: string;
   /** Mutable ref to the recent sessions list — read inside handleCommand. */
   recentSessionsRef: MutableRefObject<Array<{ id: string }>>;
+  /**
+   * Mutable ref reflecting whether the session is currently streaming
+   * an assistant response. Read inside `handleShell` so a `!`-prefixed
+   * shell command issued mid-stream is queued instead of POSTed into a
+   * busy session (OpenCode rejects `/shell` while the session is
+   * generating). SessionDetail keeps this ref in sync with `isRunning`.
+   */
+  isRunningRef: MutableRefObject<boolean>;
   tmuxAvailable: boolean;
   failedSends: FailedSend[];
   setFailedSends: Dispatch<SetStateAction<FailedSend[]>>;
@@ -68,6 +76,22 @@ export interface UseSessionActionsResult {
   handleAbort: () => Promise<void>;
   handleVSCodeShortcut: () => void;
   handleCommand: (command: string, args: string) => Promise<void>;
+  /**
+   * The shell command waiting for the current assistant turn to
+   * finish, or null when nothing is queued. Surfaced in the composer
+   * so the user knows the command was accepted and what we're waiting
+   * for. Only one command is queued at a time — re-submitting while a
+   * command is already queued replaces it.
+   */
+  queuedShellCommand: string | null;
+  /** Drop the queued shell command without running it. */
+  cancelQueuedShell: () => void;
+  /**
+   * Run the queued shell command now (if any) provided the session is
+   * idle. Called by SessionDetail when `isRunning` transitions
+   * true → false.
+   */
+  flushQueuedShell: () => void;
 }
 
 /**
@@ -98,6 +122,7 @@ export function useSessionActions({
   activeModel,
   activeAgent,
   recentSessionsRef,
+  isRunningRef,
   tmuxAvailable,
   failedSends,
   setFailedSends,
@@ -113,6 +138,11 @@ export function useSessionActions({
   setShowDisconnectedToast,
 }: UseSessionActionsOptions): UseSessionActionsResult {
   const [awaitingAssistantResponse, setAwaitingAssistantResponse] = useState(false);
+  // Shell command waiting for the current turn to finish. Mirrored in
+  // a ref so the idle-transition flush (driven by an effect in
+  // SessionDetail) reads the latest value without re-binding.
+  const [queuedShellCommand, setQueuedShellCommand] = useState<string | null>(null);
+  const queuedShellRef = useRef<string | null>(null);
 
   const sendMessage = useApiStore((state) => state.sendMessage);
   const abortSession = useApiStore((state) => state.abortSession);
@@ -234,9 +264,11 @@ export function useSessionActions({
     pending.clear();
   }, [session, setFailedSends, pending]);
 
-  const handleShell = useCallback(async (command: string) => {
+  // Actually POST the shell command to the platform. Separated from
+  // handleShell so both the immediate path and the queued-flush path
+  // share one implementation.
+  const runShellNow = useCallback(async (command: string) => {
     if (!session || !portAvailable) return;
-    if (pendingPermission || pendingQuestion) return;
     const agent = selectedAgent || activeAgent || 'build';
     try {
       await api.runShell(session.id, command, agent);
@@ -246,7 +278,37 @@ export function useSessionActions({
       // rare enough that we just log and rely on the platform to
       // surface the error.
     }
-  }, [activeAgent, pendingPermission, pendingQuestion, portAvailable, selectedAgent, session]);
+  }, [activeAgent, portAvailable, selectedAgent, session]);
+
+  const handleShell = useCallback(async (command: string) => {
+    if (!session || !portAvailable) return;
+    if (pendingPermission || pendingQuestion) return;
+    // OpenCode rejects POST /session/{id}/shell while the session is
+    // streaming an assistant response. Rather than fire-and-fail
+    // silently, queue the command and run it once the turn completes
+    // (flushQueuedShell, driven by SessionDetail's isRunning
+    // transition). The composer shows what we're waiting for.
+    if (isRunningRef.current) {
+      queuedShellRef.current = command;
+      setQueuedShellCommand(command);
+      return;
+    }
+    await runShellNow(command);
+  }, [isRunningRef, pendingPermission, pendingQuestion, portAvailable, runShellNow, session]);
+
+  const cancelQueuedShell = useCallback(() => {
+    queuedShellRef.current = null;
+    setQueuedShellCommand(null);
+  }, []);
+
+  const flushQueuedShell = useCallback(() => {
+    const command = queuedShellRef.current;
+    if (!command) return;
+    if (isRunningRef.current) return; // still busy — wait for the next idle
+    queuedShellRef.current = null;
+    setQueuedShellCommand(null);
+    void runShellNow(command);
+  }, [isRunningRef, runShellNow]);
 
   const handleAbort = useCallback(async () => {
     if (!session || !portAvailable || !caps.abort) return;
@@ -400,5 +462,8 @@ export function useSessionActions({
     handleAbort,
     handleVSCodeShortcut,
     handleCommand,
+    queuedShellCommand,
+    cancelQueuedShell,
+    flushQueuedShell,
   };
 }
