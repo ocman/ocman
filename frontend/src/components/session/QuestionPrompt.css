@@ -64,6 +64,10 @@
   line-height: 1.5;
   margin-bottom: 12px;
 }
+.oc-question-multi-hint {
+  color: var(--overlay0);
+  font-size: 12px;
+}
 .oc-question-box-options {
   display: flex;
   flex-direction: column;
@@ -122,7 +126,8 @@
 .oc-question-opt-num {
   color: var(--overlay0);
   flex-shrink: 0;
-  width: 20px;
+  min-width: 20px;
+  white-space: nowrap;
   padding-top: 1px;
 }
 .oc-question-opt-content {

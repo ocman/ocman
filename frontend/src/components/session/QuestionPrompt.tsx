@@ -50,7 +50,11 @@ export function QuestionPrompt({
   disabled?: boolean;
   error?: string | null;
 }) {
+  // Single-select questions keep a single committed index (or null).
   const [selectedIndices, setSelectedIndices] = useState<Record<number, number | null>>({});
+  // Multi-select questions keep a set of committed indices. Kept separate so a
+  // question can switch nothing of single-select semantics.
+  const [multiSelected, setMultiSelected] = useState<Record<number, number[]>>({});
   const [customTexts, setCustomTexts] = useState<Record<number, string>>({});
   const [currentStep, setCurrentStep] = useState(0);
   // Keyboard-focused row (option index or CUSTOM_ROW). Distinct from the
@@ -65,29 +69,46 @@ export function QuestionPrompt({
   const totalSteps = question.questions.length;
   const isStepped = totalSteps > 1;
   const currentQ = question.questions[currentStep];
+  const isMulti = !!currentQ?.multiple;
 
   const isStepAnswered = useCallback((qi: number) => {
-    const sel = selectedIndices[qi];
-    const custom = customTexts[qi]?.trim();
     const q = question.questions[qi];
+    const custom = customTexts[qi]?.trim();
+    if (q?.multiple) {
+      const sel = multiSelected[qi];
+      return (Array.isArray(sel) && sel.length > 0) || !!custom;
+    }
+    const sel = selectedIndices[qi];
     return (sel != null && sel >= 0 && (!q || sel < q.options.length)) || !!custom;
-  }, [selectedIndices, customTexts, question.questions]);
+  }, [selectedIndices, multiSelected, customTexts, question.questions]);
 
-  // Compute the full answers array for a given override of the selectedIndices
-  // map. Used by the click handler to auto-advance/submit with the freshly
-  // chosen option without waiting for React state to flush.
-  const computeAnswers = useCallback((indicesOverride?: Record<number, number | null>): string[][] => {
+  // Compute the full answers array for given overrides of the selection maps.
+  // Used by the click handler to submit with a freshly chosen option without
+  // waiting for React state to flush.
+  const computeAnswers = useCallback((
+    indicesOverride?: Record<number, number | null>,
+    multiOverride?: Record<number, number[]>,
+  ): string[][] => {
     const indices = indicesOverride ?? selectedIndices;
+    const multi = multiOverride ?? multiSelected;
     return question.questions.map((q, qi) => {
-      const sel = indices[qi];
       const custom = customTexts[qi]?.trim();
+      if (q.multiple) {
+        const picks = (multi[qi] ?? [])
+          .filter(oi => oi >= 0 && oi < q.options.length)
+          .map(oi => q.options[oi].label);
+        if (picks.length > 0) return picks;
+        if (custom) return [custom];
+        return [];
+      }
+      const sel = indices[qi];
       if (sel != null && sel >= 0 && sel < q.options.length) {
         return [q.options[sel].label];
       }
       if (custom) return [custom];
       return [];
     });
-  }, [question.questions, selectedIndices, customTexts]);
+  }, [question.questions, selectedIndices, multiSelected, customTexts]);
 
   const getAnswers = useCallback(() => computeAnswers(), [computeAnswers]);
 
@@ -105,11 +126,30 @@ export function QuestionPrompt({
     if (answers.every(a => a.length > 0)) onReply(answers);
   }, [disabled, getAnswers, onReply]);
 
+  // Toggle an option in a multi-select question. Never auto-advances — the
+  // user picks any number of options, then presses Next/Submit explicitly.
+  const toggleOption = useCallback((qi: number, oi: number) => {
+    if (disabled) return;
+    setMultiSelected(prev => {
+      const cur = prev[qi] ?? [];
+      const next = cur.includes(oi) ? cur.filter(i => i !== oi) : [...cur, oi].sort((a, b) => a - b);
+      return { ...prev, [qi]: next };
+    });
+    // Picking an option supersedes any typed custom answer for this question.
+    setCustomTexts(prev => (prev[qi] ? { ...prev, [qi]: '' } : prev));
+  }, [disabled]);
+
   // Select an option, then auto-advance (or submit on the last step). Used by
-  // click and keyboard selection — lets the user answer an entire multi-step
-  // question flow in N clicks without pressing Enter each time.
+  // click and keyboard selection on single-select questions — lets the user
+  // answer an entire multi-step flow in N clicks without pressing Enter each
+  // time. For multi-select questions this delegates to toggleOption (which
+  // never auto-advances).
   const selectOption = useCallback((qi: number, oi: number) => {
     if (disabled) return;
+    if (question.questions[qi]?.multiple) {
+      toggleOption(qi, oi);
+      return;
+    }
     const nextIndices = { ...selectedIndices, [qi]: oi };
     setSelectedIndices(nextIndices);
     setCustomTexts(prev => ({ ...prev, [qi]: '' }));
@@ -125,14 +165,17 @@ export function QuestionPrompt({
     // Last step — submit if every question has an answer.
     const answers = computeAnswers(nextIndices);
     if (answers.every(a => a.length > 0)) onReply(answers);
-  }, [disabled, selectedIndices, currentStep, totalSteps, computeAnswers, onReply]);
+  }, [disabled, question.questions, toggleOption, selectedIndices, currentStep, totalSteps, computeAnswers, onReply]);
 
   // Reset row focus & move DOM focus onto the wrapper whenever the visible
   // step changes (or on mount). Sync focusedRow to whatever's currently
   // selected so keyboard nav continues from the user's last choice.
   useLayoutEffect(() => {
+    const q = question.questions[currentStep];
+    const multi = q?.multiple ? multiSelected[currentStep] : undefined;
     const sel = selectedIndices[currentStep];
-    if (sel != null && sel >= 0) setFocusedRow(sel);
+    if (multi && multi.length > 0) setFocusedRow(multi[0]);
+    else if (sel != null && sel >= 0) setFocusedRow(sel);
     else if (customTexts[currentStep]?.trim()) setFocusedRow(CUSTOM_ROW);
     else setFocusedRow(0);
     wrapRef.current?.focus();
@@ -180,17 +223,19 @@ export function QuestionPrompt({
         // advance/submit if the text is non-empty.
         if (customTexts[currentStep]?.trim()) {
           setSelectedIndices(prev => ({ ...prev, [currentStep]: null }));
+          setMultiSelected(prev => (prev[currentStep]?.length ? { ...prev, [currentStep]: [] } : prev));
           if (currentStep < totalSteps - 1) goNext();
           else submit();
         }
         return;
       }
-      if (focusedRow >= 0 && focusedRow < currentQ.options.length) {
-        // selectOption auto-advances or submits as appropriate.
+      if (!isMulti && focusedRow >= 0 && focusedRow < currentQ.options.length) {
+        // Single-select: selectOption auto-advances or submits as appropriate.
         selectOption(currentStep, focusedRow);
         return;
       }
-      // Nothing focused to commit — advance/submit based on existing state.
+      // Multi-select (or nothing focused to commit) — Enter means "done
+      // picking": advance/submit based on existing state.
       if (isStepped && currentStep < totalSteps - 1) {
         if (isStepAnswered(currentStep)) goNext();
       } else {
@@ -239,7 +284,7 @@ export function QuestionPrompt({
         goPrev();
       }
     }
-  }, [currentQ.options.length, currentStep, disabled, goNext, goPrev, isStepAnswered, isStepped, moveFocus, onReject, selectOption, submit, totalSteps, focusedRow, customTexts]);
+  }, [currentQ.options.length, currentStep, disabled, goNext, goPrev, isStepAnswered, isStepped, isMulti, moveFocus, onReject, selectOption, submit, totalSteps, focusedRow, customTexts]);
 
   // Keep a stable ref so the window listener always calls the latest version
   // of handleKeyDown, avoiding the "stale closure" problem when deps change
@@ -287,16 +332,23 @@ export function QuestionPrompt({
             <span className="oc-question-step-label">{currentStep + 1} / {totalSteps}</span>
           </div>
         )}
-        <div className="oc-question-box-text">{currentQ.question}</div>
-        <div className="oc-question-box-options" role="radiogroup">
+        <div className="oc-question-box-text">
+          {currentQ.question}
+          {isMulti && (
+            <span className="oc-question-multi-hint"> (select all that apply)</span>
+          )}
+        </div>
+        <div className="oc-question-box-options" role={isMulti ? 'group' : 'radiogroup'}>
           {currentQ.options.map((opt, oi) => {
-            const selected = selectedIndices[currentStep] === oi;
+            const selected = isMulti
+              ? (multiSelected[currentStep]?.includes(oi) ?? false)
+              : selectedIndices[currentStep] === oi;
             const focused = focusedRow === oi;
             return (
               <button
                 key={oi}
                 type="button"
-                role="radio"
+                role={isMulti ? 'checkbox' : 'radio'}
                 aria-checked={selected}
                 className={`oc-question-opt-btn${selected ? ' oc-question-opt-selected' : ''}${focused ? ' oc-question-opt-focused' : ''}`}
                 onClick={() => { selectOption(currentStep, oi); setFocusedRow(oi); }}
@@ -304,7 +356,9 @@ export function QuestionPrompt({
                 disabled={disabled}
                 tabIndex={-1}
               >
-                <span className="oc-question-opt-num">{oi + 1}.</span>
+                <span className="oc-question-opt-num" aria-hidden="true">
+                  {isMulti ? (selected ? '[x]' : '[ ]') : `${oi + 1}.`}
+                </span>
                 <span className="oc-question-opt-content">
                   <span className="oc-question-opt-label">{opt.label}</span>
                   {opt.description && (
@@ -315,9 +369,11 @@ export function QuestionPrompt({
             );
           })}
           <div
-            className={`oc-question-opt-custom${selectedIndices[currentStep] === null && customTexts[currentStep]?.trim() ? ' oc-question-opt-custom-active' : ''}${focusedRow === CUSTOM_ROW ? ' oc-question-opt-focused' : ''}`}
+            className={`oc-question-opt-custom${customTexts[currentStep]?.trim() ? ' oc-question-opt-custom-active' : ''}${focusedRow === CUSTOM_ROW ? ' oc-question-opt-focused' : ''}`}
           >
-            <span className="oc-question-opt-num">{currentQ.options.length + 1}.</span>
+            <span className="oc-question-opt-num" aria-hidden="true">
+              {isMulti ? '[ ]' : `${currentQ.options.length + 1}.`}
+            </span>
             <input
               ref={customInputRef}
               type="text"
@@ -328,6 +384,7 @@ export function QuestionPrompt({
               onFocus={() => {
                 setFocusedRow(CUSTOM_ROW);
                 setSelectedIndices(prev => ({ ...prev, [currentStep]: null }));
+                setMultiSelected(prev => (prev[currentStep]?.length ? { ...prev, [currentStep]: [] } : prev));
               }}
               disabled={disabled}
             />
@@ -368,7 +425,7 @@ export function QuestionPrompt({
             tabIndex={-1}
           >Dismiss</button>
           <span className="oc-question-keys">
-            <kbd>↑↓</kbd> move &middot; <kbd>1-9</kbd> pick &middot; <kbd>enter</kbd> {isStepped && !isLastStep ? 'next' : 'submit'} &middot; <kbd>esc</kbd> dismiss
+            <kbd>↑↓</kbd> move &middot; <kbd>{isMulti ? 'space' : '1-9'}</kbd> {isMulti ? 'toggle' : 'pick'} &middot; <kbd>enter</kbd> {isStepped && !isLastStep ? 'next' : 'submit'} &middot; <kbd>esc</kbd> dismiss
           </span>
         </div>
         {error && (
