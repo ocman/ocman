@@ -323,6 +323,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	mux.HandleFunc("/api/project/upstreams", s.get(s.handleProjectUpstreams))
 	mux.HandleFunc("/api/project/prs", s.get(s.handleProjectPRs))
 	mux.HandleFunc("/api/project/issues", s.get(s.handleProjectIssues))
+	mux.HandleFunc("/api/project/pr-checks", s.get(s.handleProjectPRChecks))
 	mux.HandleFunc("/api/project/forge-user", s.get(s.handleProjectForgeUser))
 	// Launch endpoint: spawns tmux/opencode, so localhost-only like
 	// the worktree create-and-launch endpoint.

@@ -35,7 +35,22 @@ export interface PR {
   url: string;
   host: string;
   repo: string;
+  headSha?: string;
   crossFork: boolean;
+}
+
+export type CIState = 'unknown' | 'pending' | 'success' | 'failure';
+
+export interface Check {
+  name: string;
+  state: CIState;
+  url?: string;
+}
+
+export interface PRChecks {
+  state: CIState;
+  checks: Check[];
+  rateLimit?: RateLimit;
 }
 
 export interface Issue {
@@ -170,6 +185,27 @@ export async function fetchIssues(opts: {
     throw new UpstreamApiError(env, resp.status);
   }
   return (await resp.json()) as ListIssuesResponse;
+}
+
+// fetchPRChecks returns the combined CI/build status for a PR's head
+// commit. Fetched lazily (on expand/hover) so the list stays cheap.
+export async function fetchPRChecks(opts: {
+  dir: string;
+  remote: string;
+  sha: string;
+  signal?: AbortSignal;
+}): Promise<PRChecks> {
+  const q = new URLSearchParams({
+    dir: opts.dir,
+    remote: opts.remote,
+    sha: opts.sha,
+  });
+  const resp = await fetch(`/api/project/pr-checks?${q.toString()}`, { signal: opts.signal });
+  if (!resp.ok) {
+    const env = await safeError(resp);
+    throw new UpstreamApiError(env, resp.status);
+  }
+  return (await resp.json()) as PRChecks;
 }
 
 export async function fetchForgeUser(opts: {

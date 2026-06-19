@@ -234,6 +234,7 @@ type ghLabel struct {
 
 type ghRef struct {
 	Ref  string `json:"ref"`
+	SHA  string `json:"sha"`
 	Repo struct {
 		FullName string `json:"full_name"`
 	} `json:"repo"`
@@ -261,6 +262,7 @@ func (r ghPR) toForge(repo string) forge.PR {
 		URL:       r.HTMLURL,
 		Host:      HostName,
 		Repo:      repo,
+		HeadSHA:   r.Head.SHA,
 		CrossFork: r.Head.Repo.FullName != "" && r.Head.Repo.FullName != r.Base.Repo.FullName,
 	}
 	for _, l := range r.Labels {

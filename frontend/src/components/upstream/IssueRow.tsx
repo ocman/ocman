@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Issue } from '../../lib/upstreamApi';
 import { LaunchSplitButton } from './LaunchSplitButton';
+import { OpenInBrowser } from './OpenInBrowser';
 import { RowMeta } from './RowMeta';
 
 interface IssueRowProps {
@@ -19,18 +20,21 @@ export function IssueRow({ issue, directory, remote }: IssueRowProps) {
       className={`oc-upstream-row oc-upstream-row-issue${expanded ? ' expanded' : ''}`}
       data-testid={`issue-row-${issue.number}`}
     >
-      <button
-        type="button"
-        className="oc-upstream-row-summary"
-        onClick={() => setExpanded((e) => !e)}
-        aria-expanded={expanded}
-      >
-        <span className="oc-upstream-row-number">#{issue.number}</span>
-        <span className="oc-upstream-row-title">{issue.title}</span>
-        <span className={`oc-upstream-status oc-upstream-status-${issue.status}`}>
-          {issue.status}
-        </span>
-      </button>
+      <div className="oc-upstream-row-head">
+        <button
+          type="button"
+          className="oc-upstream-row-summary"
+          onClick={() => setExpanded((e) => !e)}
+          aria-expanded={expanded}
+        >
+          <span className="oc-upstream-row-number">#{issue.number}</span>
+          <span className="oc-upstream-row-title">{issue.title}</span>
+          <span className={`oc-upstream-status oc-upstream-status-${issue.status}`}>
+            {issue.status}
+          </span>
+        </button>
+        <OpenInBrowser url={issue.url} host={issue.host} testId={`issue-row-${issue.number}-open`} />
+      </div>
       <RowMeta
         author={issue.author}
         updatedAt={issue.updatedAt}

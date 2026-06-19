@@ -337,6 +337,7 @@ type fjLabel struct {
 
 type fjRef struct {
 	Ref  string `json:"ref"`
+	SHA  string `json:"sha"`
 	Repo struct {
 		FullName string `json:"full_name"`
 	} `json:"repo"`
@@ -361,6 +362,7 @@ func (r fjPR) toForge(host, repo string) forge.PR {
 		URL:       r.HTMLURL,
 		Host:      host,
 		Repo:      repo,
+		HeadSHA:   r.Head.SHA,
 		CrossFork: r.Head.Repo.FullName != "" && r.Head.Repo.FullName != r.Base.Repo.FullName,
 	}
 	for _, l := range r.Labels {

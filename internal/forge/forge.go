@@ -66,10 +66,74 @@ type PR struct {
 	URL                string    `json:"url"`
 	Host               string    `json:"host"`
 	Repo               string    `json:"repo"`
+	// HeadSHA is the commit SHA of the PR's head ref. Used to fetch
+	// CI/build status via Checks(); empty when the forge did not
+	// report it.
+	HeadSHA string `json:"headSha,omitempty"`
 	// CrossFork is true when the PR's head repo differs from the
 	// base repo. Used by FR-9a to gate the worktree-launch
 	// confirmation prompt.
 	CrossFork bool `json:"crossFork"`
+}
+
+// CIState is the rolled-up build/CI status of a commit, normalised
+// across forges. It maps the green/yellow/red traffic light the
+// sidebar renders.
+type CIState string
+
+const (
+	// CIStateUnknown means no CI status is available (no checks
+	// configured, or the forge didn't report any). Rendered as a
+	// neutral/grey dot.
+	CIStateUnknown CIState = "unknown"
+	// CIStatePending means at least one check is still running and
+	// none have failed. Rendered yellow.
+	CIStatePending CIState = "pending"
+	// CIStateSuccess means every check completed successfully.
+	// Rendered green.
+	CIStateSuccess CIState = "success"
+	// CIStateFailure means at least one check failed, errored, or
+	// was cancelled. Rendered red.
+	CIStateFailure CIState = "failure"
+)
+
+// Check is a single CI check (a commit status context or a check
+// run) attached to a commit.
+type Check struct {
+	Name  string  `json:"name"`
+	State CIState `json:"state"`
+	// URL links to the check's detail page, when the forge provides
+	// one. May be empty.
+	URL string `json:"url,omitempty"`
+}
+
+// CIStatus is the combined build status of a PR's head commit: an
+// overall rolled-up state plus the per-check breakdown the sidebar
+// shows on hover/expand.
+type CIStatus struct {
+	State  CIState `json:"state"`
+	Checks []Check `json:"checks"`
+}
+
+// RollUp computes the overall CIState from a set of checks using the
+// usual precedence: any failure → failure; else any pending → pending;
+// else (at least one check, all success) → success; no checks →
+// unknown. Adapters call this so the rolled-up state is identical
+// across forges.
+func RollUp(checks []Check) CIState {
+	if len(checks) == 0 {
+		return CIStateUnknown
+	}
+	state := CIStateSuccess
+	for _, c := range checks {
+		switch c.State {
+		case CIStateFailure:
+			return CIStateFailure
+		case CIStatePending, CIStateUnknown:
+			state = CIStatePending
+		}
+	}
+	return state
 }
 
 // Issue is the normalised shape of an issue returned by any Forge
@@ -149,6 +213,14 @@ type Forge interface {
 	// CurrentUser returns the authenticated user's login. Returns
 	// ErrUnauthenticated when no credential is configured.
 	CurrentUser(ctx context.Context) (CurrentUser, error)
+
+	// Checks returns the combined CI/build status for a commit
+	// (typically a PR's head SHA). Implementations roll up the
+	// forge's commit statuses and/or check runs into a single
+	// CIState plus the per-check breakdown. A commit with no
+	// configured CI returns CIStateUnknown and no checks (not an
+	// error).
+	Checks(ctx context.Context, repo, sha string) (CIStatus, RateLimit, error)
 
 	// FetchPRHead fetches the PR head ref into a deterministic
 	// local branch ("ocman/pr-<n>") on the given repoRoot, using
