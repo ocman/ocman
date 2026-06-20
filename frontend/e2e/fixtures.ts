@@ -283,6 +283,31 @@ async function installDefaultRoutes(page: Page) {
   await page.route('/api/settings/prompt-templates', (route: Route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({}) }),
   );
+
+  // App-wide SSE stream (useGlobalEvents) — mounted at the app root on
+  // EVERY page. Without a stub it proxies to the (absent) Go backend on
+  // :8229; the EventSource then auto-reconnects on the connection error,
+  // producing a steady reconnect storm against the `vite preview` proxy
+  // for the whole suite. Under the slower CI runner that accumulated load
+  // eventually starves the preview server and later navigations fail with
+  // ERR_CONNECTION_REFUSED — the root cause of the flaky e2e job. Fulfil
+  // it with an empty, already-complete event stream so the EventSource
+  // opens cleanly and never reconnects.
+  await page.route('/api/events', (route: Route) =>
+    route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' }),
+  );
+
+  // Upstream forge remotes (PR/issue sidebar). Unmocked → proxied to the
+  // dead backend; stub as "no upstreams" so the pane stays hidden.
+  await page.route('/api/project/upstreams*', (route: Route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ upstreams: [] }) }),
+  );
+
+  // In-app terminal windows (TerminalPane). Unmocked GETs proxy to the
+  // dead backend; stub as "no windows".
+  await page.route('/api/term/windows*', (route: Route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ windows: [] }) }),
+  );
 }
 
 // ---------------------------------------------------------------------------
