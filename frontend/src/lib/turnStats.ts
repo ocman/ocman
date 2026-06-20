@@ -5,8 +5,20 @@ import type { Message, Part } from './api';
  * Aggregated stats for a single "turn" — one user prompt plus all the
  * assistant messages that replied to it.
  *
- * The map is keyed by the ID of the *last* assistant message in the
- * turn; only that message renders the summary bar.
+ * The same aggregate is mapped against *every* assistant message in the
+ * turn, but exactly one message — the current last assistant message —
+ * is marked as the `isSummaryAnchor`. Only the anchor renders the
+ * summary bar.
+ *
+ * Mapping the aggregate to all turn messages (not just the last one) is
+ * what keeps the turn line from flickering while the agent streams:
+ * during a multi-step turn (e.g. text → tool call → text) OpenCode keeps
+ * appending new assistant messages, so the "last" message — and thus the
+ * anchor — changes from one render to the next. Because the aggregate is
+ * recomputed in a single pass, the previously-anchored message still has
+ * a valid (non-anchor) entry while the new anchor already carries the
+ * full aggregate, so there is never a frame where no message owns the
+ * turn line.
  *
  * All counts are best-effort while the turn is in progress:
  * - Token/cost fields include any completed assistant messages in the turn.
@@ -30,9 +42,16 @@ export interface TurnAggregate {
   isLive: boolean;
   /** Unix ms when the user message was sent (turn start). */
   startedAt: number;
+  /**
+   * True only for the single assistant message that should render the
+   * turn summary bar (the current last assistant message of the turn).
+   * Non-anchor messages still carry the aggregate so the line never
+   * blanks out while ownership moves between messages mid-turn.
+   */
+  isSummaryAnchor: boolean;
 }
 
-/** Map from "last assistant message id" → TurnAggregate for that turn. */
+/** Map from "assistant message id" → TurnAggregate for its turn. */
 export type TurnStatsMap = Map<string, TurnAggregate>;
 
 /**
@@ -115,16 +134,23 @@ export function computeTurnStats(messages: Message[], parts: Part[]): TurnStatsM
 
     const isLive = !lastAsst.data.finish && !lastAsst.data.error;
 
-    map.set(lastAsst.id, {
-      wallClockMs,
-      tokensOut,
-      tokensIn,
-      cost,
-      toolCalls,
-      tps,
-      isLive,
-      startedAt: userMsg.timeCreated,
-    });
+    // Map the same aggregate to every assistant message in the turn so
+    // the turn line never blanks out while ownership moves between
+    // messages mid-turn (e.g. during tool calls). Only the last message
+    // is the anchor that actually renders the bar.
+    for (const a of assistantMsgs) {
+      map.set(a.id, {
+        wallClockMs,
+        tokensOut,
+        tokensIn,
+        cost,
+        toolCalls,
+        tps,
+        isLive,
+        startedAt: userMsg.timeCreated,
+        isSummaryAnchor: a.id === lastAsst.id,
+      });
+    }
   }
 
   return map;
