@@ -1078,6 +1078,15 @@ describe('convertMessages — model-change metadata', () => {
     return msg.metadata?.custom as Record<string, unknown> | undefined;
   }
 
+  it('attaches the raw model to assistant message metadata', () => {
+    const convert = createConvertMessages();
+    const out = convert(
+      [makeMessage('a', { role: 'assistant', providerID: 'anthropic', modelID: 'opus-4' }, 1)],
+      [],
+    );
+    expect(custom(out[0])?.model).toBe('anthropic/opus-4');
+  });
+
   it('does not flag the first assistant message that reports a model', () => {
     const convert = createConvertMessages();
     const out = convert(

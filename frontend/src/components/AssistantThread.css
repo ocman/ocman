@@ -217,6 +217,20 @@
   color: var(--overlay0);
   font-variant-numeric: tabular-nums;
 }
+.oc-meta-model {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--overlay0);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.oc-meta-model .bi {
+  font-size: 10px;
+  opacity: 0.7;
+}
 
 /* Turn summary bar — always visible, rendered after the last assistant
    message of each turn. */

@@ -770,12 +770,14 @@ export function createConvertMessages(): ConvertMessagesFn {
       : undefined;
 
     const failedEntry = role === 'user' ? failedById?.[m.id] : undefined;
+    const model = role === 'assistant' ? messageModelRef(m) : '';
     const customMeta = {
       ...(isQueued ? { queued: true } : {}),
       ...(m.data.tokens ? { tokens: m.data.tokens } : {}),
       ...(m.data.time ? { time: m.data.time } : {}),
       ...(m.data.error ? { errorName: m.data.error.name || 'Error' } : {}),
       ...(msgAgent ? { agent: msgAgent } : {}),
+      ...(model ? { model } : {}),
       ...(modelChangedTo ? { modelChangedTo } : {}),
       ...(failedEntry ? { failed: { error: failedEntry.error, imagesDropped: !!failedEntry.imagesDropped } } : {}),
     };

@@ -345,6 +345,8 @@ function AssistantMeta() {
   const content = useMessage((m) => m.content);
   const custom = useMessage((m) => m.metadata?.custom as Record<string, unknown> | undefined);
   const agent = typeof custom?.agent === 'string' ? (custom.agent as string) : undefined;
+  const model = typeof custom?.model === 'string' ? (custom.model as string) : '';
+  const modelLabel = useModelLabel(model);
   if (!createdAt || createdAt.getTime() === 0) return null;
   if (status?.type === 'running') return null;
   // Hide timestamp when message only contains file reads
@@ -401,6 +403,15 @@ function AssistantMeta() {
           <>
             <span className="oc-meta-sep">·</span>
             <span className="oc-meta-tps">{formatTokensPerSecond(tps)} tok/s</span>
+          </>
+        )}
+        {model && (
+          <>
+            <span className="oc-meta-sep">·</span>
+            <span className="oc-meta-model" title={model}>
+              <i className="bi bi-cpu" aria-hidden="true" />
+              {modelLabel}
+            </span>
           </>
         )}
       </div>
