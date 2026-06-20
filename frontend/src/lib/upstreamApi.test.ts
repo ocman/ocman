@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   fetchUpstreams,
   fetchPRs,
+  fetchIssues,
+  fetchPRChecks,
+  fetchForgeUser,
   postHandle,
   UpstreamApiError,
   type ListPRsResponse,
@@ -141,6 +144,84 @@ describe('upstreamApi', () => {
       }).then(() => null, (e) => e);
       expect(err).toBeInstanceOf(UpstreamApiError);
       expect((err as UpstreamApiError).envelope?.error.code).toBe('requires_fetch');
+    });
+  });
+
+  describe('fetchIssues', () => {
+    it('builds the query and parses the response', async () => {
+      fetchSpy.mockResolvedValue(
+        new Response(JSON.stringify({ issues: [{ number: 7, title: 'bug' }] }), { status: 200 }),
+      );
+      const got = await fetchIssues({
+        dir: '/x',
+        remote: 'origin',
+        state: 'open',
+        mine: 'alice',
+        page: 2,
+      });
+      expect(got.issues).toHaveLength(1);
+      const [url] = fetchSpy.mock.calls[0];
+      expect(String(url)).toContain('/api/project/issues?');
+      expect(String(url)).toContain('mine=alice');
+      expect(String(url)).toContain('page=2');
+    });
+
+    it('throws an UpstreamApiError on non-2xx', async () => {
+      fetchSpy.mockResolvedValue(
+        new Response(JSON.stringify({ error: { code: 'x', message: 'no' } }), { status: 500 }),
+      );
+      await expect(
+        fetchIssues({ dir: '/x', remote: 'origin', state: 'open', mine: undefined, page: 1 }),
+      ).rejects.toBeInstanceOf(UpstreamApiError);
+    });
+  });
+
+  describe('fetchPRChecks', () => {
+    it('builds the query and parses the CI status', async () => {
+      fetchSpy.mockResolvedValue(
+        new Response(
+          JSON.stringify({ state: 'success', checks: [{ name: 'build', state: 'success' }] }),
+          { status: 200 },
+        ),
+      );
+      const got = await fetchPRChecks({ dir: '/x', remote: 'origin', sha: 'abc123' });
+      expect(got.state).toBe('success');
+      expect(got.checks).toHaveLength(1);
+      const [url] = fetchSpy.mock.calls[0];
+      expect(String(url)).toContain('/api/project/pr-checks?');
+      expect(String(url)).toContain('sha=abc123');
+    });
+
+    it('throws an UpstreamApiError on failure', async () => {
+      fetchSpy.mockResolvedValue(
+        new Response(JSON.stringify({ error: { code: 'upstream_status', message: 'boom' } }), {
+          status: 502,
+        }),
+      );
+      await expect(
+        fetchPRChecks({ dir: '/x', remote: 'origin', sha: 'abc123' }),
+      ).rejects.toBeInstanceOf(UpstreamApiError);
+    });
+  });
+
+  describe('fetchForgeUser', () => {
+    it('returns the user on 200', async () => {
+      fetchSpy.mockResolvedValue(
+        new Response(JSON.stringify({ login: 'alice', host: 'github.com' }), { status: 200 }),
+      );
+      const got = await fetchForgeUser({ dir: '/x', remote: 'origin' });
+      expect(got).toEqual({ login: 'alice', host: 'github.com' });
+    });
+
+    it('returns null on 401 (unauthenticated)', async () => {
+      fetchSpy.mockResolvedValue(new Response('unauthorized', { status: 401 }));
+      const got = await fetchForgeUser({ dir: '/x', remote: 'origin' });
+      expect(got).toBeNull();
+    });
+
+    it('throws on other non-2xx', async () => {
+      fetchSpy.mockResolvedValue(new Response('boom', { status: 500 }));
+      await expect(fetchForgeUser({ dir: '/x', remote: 'origin' })).rejects.toThrow(/500/);
     });
   });
 });
