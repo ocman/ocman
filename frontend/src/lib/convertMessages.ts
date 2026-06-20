@@ -2,6 +2,7 @@ import type { ThreadMessageLike } from '@assistant-ui/react';
 import type { Message, Part, PartData, FilePart, TaskSessionData } from './api';
 import type { FailedSend } from './failedSends';
 import { extractTaskId } from './taskId';
+import { messageModelRef } from './turnStats';
 
 /**
  * Returns true when the MIME type denotes an image (`image/...`).
@@ -110,6 +111,13 @@ type ConvertedCacheEntry = {
   isQueued: boolean;
   /** Resolved agent for this message (depends on neighbors). */
   msgAgent: string | undefined;
+  /**
+   * The `provider/model` this message switched the conversation to, when
+   * it differs from the previously-active model. Empty when unchanged.
+   * Depends on neighbors (the prior assistant model), so it participates
+   * in the cache key like `msgAgent`.
+   */
+  modelChangedTo: string;
   result: ThreadMessageLike;
 };
 const convertedMessageCache = new WeakMap<Message, ConvertedCacheEntry>();
@@ -252,6 +260,24 @@ export function createConvertMessages(): ConvertMessagesFn {
     const filtered = messages.filter(
       (m) => m.data?.role === 'user' || m.data?.role === 'assistant' || m.data?.role === 'notice',
     );
+
+    // Detect mid-conversation model switches. Walk the assistant
+    // messages in order; the first message carrying a model seeds the
+    // baseline (no chip), and any later assistant message whose model
+    // differs from the previously-active one is flagged so the renderer
+    // can draw a "model changed" divider before it.
+    const modelChangedById: Record<string, string> = {};
+    let prevModel = '';
+    for (const m of filtered) {
+      if (m.data?.role !== 'assistant') continue;
+      const ref = messageModelRef(m);
+      if (!ref) continue;
+      if (prevModel && ref !== prevModel) {
+        modelChangedById[m.id] = ref;
+      }
+      prevModel = ref;
+    }
+
   const result = filtered.map((m, idx): ThreadMessageLike => {
     // Synthetic notice messages (auto-approve, etc.) are rendered as a
     // special assistant-role entry so they appear inline in the thread.
@@ -349,6 +375,7 @@ export function createConvertMessages(): ConvertMessagesFn {
     // are unchanged. Parts are compared element-wise (same length +
     // same Part references) because `partsByMsg` builds a fresh array
     // on every call even when the underlying Part objects are stable.
+    const modelChangedTo = modelChangedById[m.id] || '';
     const msgPartsRaw = partsByMsg[m.id] || EMPTY_PARTS;
     const cached = convertedMessageCache.get(m);
     if (
@@ -359,7 +386,8 @@ export function createConvertMessages(): ConvertMessagesFn {
       cached.projectDirectory === projectDirectory &&
       cached.failedById === failedById &&
       cached.isQueued === isQueued &&
-      cached.msgAgent === msgAgent
+      cached.msgAgent === msgAgent &&
+      cached.modelChangedTo === modelChangedTo
     ) {
       return cached.result;
     }
@@ -748,6 +776,7 @@ export function createConvertMessages(): ConvertMessagesFn {
       ...(m.data.time ? { time: m.data.time } : {}),
       ...(m.data.error ? { errorName: m.data.error.name || 'Error' } : {}),
       ...(msgAgent ? { agent: msgAgent } : {}),
+      ...(modelChangedTo ? { modelChangedTo } : {}),
       ...(failedEntry ? { failed: { error: failedEntry.error, imagesDropped: !!failedEntry.imagesDropped } } : {}),
     };
     const metadata = Object.keys(customMeta).length > 0 ? { custom: customMeta } : undefined;
@@ -797,6 +826,7 @@ export function createConvertMessages(): ConvertMessagesFn {
       failedById,
       isQueued,
       msgAgent,
+      modelChangedTo,
       result,
     });
 

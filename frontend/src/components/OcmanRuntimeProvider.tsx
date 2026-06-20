@@ -5,13 +5,14 @@ import {
   type AppendMessage,
   type ThreadMessageLike,
 } from '@assistant-ui/react';
-import type { AgentInfo, Message, Part, TaskSessionData } from '../lib/api';
+import type { AgentInfo, Message, Part, SessionModelEntry, TaskSessionData } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
 import { AgentsContext } from '../lib/agentColor';
 import { FailedSendsContext, type FailedSendsContextValue } from '../lib/failedSendsContext';
 import type { FailedSend } from '../lib/failedSends';
 import { computeIsRunning, createConvertMessages } from '../lib/convertMessages';
-import { computeTurnStats, TurnStatsContext } from '../lib/turnStats';
+import { computeTurnStats, ModelLabelsContext, TurnStatsContext } from '../lib/turnStats';
+import { formatModelRef } from '../lib/sessionStatus';
 
 interface Props {
   messages: Message[];
@@ -29,6 +30,8 @@ interface Props {
   pendingAgent?: string;
   // Agent metadata (including colors) loaded from the OpenCode /agent API.
   agents?: AgentInfo[];
+  // Model palette metadata used to render friendly model names in turns.
+  modelEntries?: SessionModelEntry[];
   // Sub-session data from task sessions for embedded thread rendering.
   taskLiveOutput?: Record<string, TaskSessionData>;
   // Absolute path of the session's working directory. Used to display
@@ -49,6 +52,7 @@ export function OcmanRuntimeProvider({
   canSend,
   pendingAgent,
   agents,
+  modelEntries,
   taskLiveOutput,
   projectDirectory,
   failedSends,
@@ -57,6 +61,14 @@ export function OcmanRuntimeProvider({
   children,
 }: Props) {
   const agentList = useMemo(() => agents ?? [], [agents]);
+  const modelLabels = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const entry of modelEntries ?? []) {
+      const raw = formatModelRef(entry.provider, entry.model);
+      if (raw && entry.modelName) out[raw] = entry.modelName;
+    }
+    return out;
+  }, [modelEntries]);
   const sendMessage = useApiStore((state) => state.sendMessage);
 
   // Index failed sends by their optimistic message id so convertMessages can
@@ -125,12 +137,14 @@ export function OcmanRuntimeProvider({
 
   return (
     <AgentsContext.Provider value={agentList}>
-      <FailedSendsContext.Provider value={failedCtx}>
-        <TurnStatsContext.Provider value={turnStatsMap}>
-          <AssistantRuntimeProvider runtime={runtime}>
-            {children}
-          </AssistantRuntimeProvider>
-        </TurnStatsContext.Provider>
+        <FailedSendsContext.Provider value={failedCtx}>
+        <ModelLabelsContext.Provider value={modelLabels}>
+          <TurnStatsContext.Provider value={turnStatsMap}>
+            <AssistantRuntimeProvider runtime={runtime}>
+              {children}
+            </AssistantRuntimeProvider>
+          </TurnStatsContext.Provider>
+        </ModelLabelsContext.Provider>
       </FailedSendsContext.Provider>
     </AgentsContext.Provider>
   );

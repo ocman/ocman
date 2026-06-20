@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react';
 import type { Message, Part } from './api';
+import { formatModelRef } from './sessionStatus';
 
 /**
  * Aggregated stats for a single "turn" — one user prompt plus all the
@@ -30,6 +31,29 @@ export interface TurnAggregate {
   isLive: boolean;
   /** Unix ms when the user message was sent (turn start). */
   startedAt: number;
+  /**
+   * Raw `provider/model` reference for the turn, taken from the last
+   * assistant message that carries model metadata. Empty string when no
+   * assistant message in the turn reported a model.
+   */
+  model: string;
+}
+
+/**
+ * Extract the raw `provider/model` reference from a message's data,
+ * preferring the top-level `providerID`/`modelID` fields and falling
+ * back to the nested `model` object some payloads use.
+ */
+export function messageModelRef(m: Message): string {
+  const data = m.data as {
+    providerID?: string;
+    modelID?: string;
+    model?: { providerID?: string; modelID?: string };
+  } | undefined;
+  if (!data) return '';
+  const direct = formatModelRef(data.providerID, data.modelID);
+  if (direct) return direct;
+  return formatModelRef(data.model?.providerID, data.model?.modelID);
 }
 
 /** Map from "last assistant message id" → TurnAggregate for that turn. */
@@ -83,12 +107,17 @@ export function computeTurnStats(messages: Message[], parts: Part[]): TurnStatsM
     let toolCalls = 0;
     let totalTpsNumerator = 0;
     let totalTpsDenominator = 0;
+    let model = '';
 
     for (const a of assistantMsgs) {
       tokensOut += a.data.tokens?.output ?? 0;
       tokensIn += a.data.tokens?.input ?? 0;
       cost += a.data.cost ?? 0;
       toolCalls += toolCountByMsg[a.id] ?? 0;
+      // Keep the most recent model seen in the turn so the summary bar
+      // reflects what actually produced the final reply.
+      const ref = messageModelRef(a);
+      if (ref) model = ref;
 
       const t = a.data.time;
       const out = a.data.tokens?.output;
@@ -124,6 +153,7 @@ export function computeTurnStats(messages: Message[], parts: Part[]): TurnStatsM
       tps,
       isLive,
       startedAt: userMsg.timeCreated,
+      model,
     });
   }
 
@@ -140,6 +170,41 @@ function tryParse(s: string): unknown {
 
 export const TurnStatsContext = createContext<TurnStatsMap>(new Map());
 
+export type ModelLabelMap = Record<string, string>;
+
+export const ModelLabelsContext = createContext<ModelLabelMap>({});
+
+function titleToken(token: string): string {
+  const lower = token.toLowerCase();
+  if (/^gpt\d*$/.test(lower) || /^o\d+$/.test(lower)) return lower.toUpperCase();
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
+
+export function humanizeModelRef(model: string): string {
+  const rawModel = model.includes('/') ? model.slice(model.indexOf('/') + 1) : model;
+  if (!rawModel) return model;
+
+  const tokens = rawModel.split(/[-_]+/).filter(Boolean);
+  const words: string[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    if (/^\d+$/.test(tokens[i])) {
+      const version = [tokens[i]];
+      while (i + 1 < tokens.length && /^\d+$/.test(tokens[i + 1])) {
+        version.push(tokens[i + 1]);
+        i++;
+      }
+      words.push(version.join('.'));
+    } else {
+      words.push(titleToken(tokens[i]));
+    }
+  }
+  return words.join(' ') || model;
+}
+
 export function useTurnStats(messageId: string): TurnAggregate | undefined {
   return useContext(TurnStatsContext).get(messageId);
+}
+
+export function useModelLabel(model: string): string {
+  return useContext(ModelLabelsContext)[model] || humanizeModelRef(model);
 }

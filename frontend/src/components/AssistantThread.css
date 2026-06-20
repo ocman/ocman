@@ -254,6 +254,48 @@
 .oc-turn-sep {
   color: var(--surface2);
 }
+.oc-turn-model {
+  color: var(--text-dim);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.oc-turn-model .bi {
+  opacity: 0.7;
+}
+
+/* Centered "model changed" divider, drawn before the first assistant
+   message that switches the active model mid-conversation. */
+.oc-model-change {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0;
+}
+.oc-model-change-line {
+  flex: 1;
+  height: 1px;
+  background: var(--surface1);
+}
+.oc-model-change-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 10px;
+  border: 1px solid var(--surface1);
+  border-radius: 999px;
+  background: var(--surface0);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.oc-model-change-chip .bi {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
 /* Square dot blinks while the turn is in progress */
 .oc-turn-dot--live {
   background: var(--accent3) !important;

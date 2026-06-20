@@ -9,7 +9,7 @@ import {
   type ToolCallMessagePartProps,
 } from '@assistant-ui/react';
 import { formatSeconds, formatTokensPerSecond, formatCompactNumber, formatCurrency } from '../lib/format';
-import { useTurnStats } from '../lib/turnStats';
+import { useModelLabel, useTurnStats } from '../lib/turnStats';
 import { useAgentColor } from '../lib/agentColor';
 import { useShortcut } from '../lib/shortcutRegistry';
 import { hardenMessageLinks } from '../lib/linkHardener';
@@ -276,6 +276,8 @@ const UserMessage: FC = () => {
 const AssistantMessage: FC = () => {
   const content = useMessage((m) => m.content);
   const messageId = useMessage((m) => m.id);
+  const custom = useMessage((m) => m.metadata?.custom as Record<string, unknown> | undefined);
+  const modelChangedTo = typeof custom?.modelChangedTo === 'string' ? (custom.modelChangedTo as string) : undefined;
   const hasContent = content.some(
     (p) => (p.type === 'text' && 'text' in p && (p as { text: string }).text.trim()) || p.type === 'tool-call' || p.type === 'image'
   );
@@ -292,23 +294,48 @@ const AssistantMessage: FC = () => {
 
   if (onlyMuted) {
     return (
-      <MessagePrimitive.Root className="oc-msg oc-msg-muted" data-message-id={messageId}>
-        <MessageBookmarkButton messageId={messageId} />
-        <MessagePrimitive.Content components={ASSISTANT_PART_COMPONENTS} />
-        <TurnSummaryBar messageId={messageId} />
-      </MessagePrimitive.Root>
+      <>
+        {modelChangedTo && <ModelChangeDivider model={modelChangedTo} />}
+        <MessagePrimitive.Root className="oc-msg oc-msg-muted" data-message-id={messageId}>
+          <MessageBookmarkButton messageId={messageId} />
+          <MessagePrimitive.Content components={ASSISTANT_PART_COMPONENTS} />
+          <TurnSummaryBar messageId={messageId} />
+        </MessagePrimitive.Root>
+      </>
     );
   }
 
   return (
-    <MessagePrimitive.Root className="oc-msg oc-msg-assistant" data-message-id={messageId}>
-      <MessageBookmarkButton messageId={messageId} />
-      <div className="oc-msg-body oc-md">
-        <MessagePrimitive.Content components={ASSISTANT_PART_COMPONENTS} />
-      </div>
-      <AssistantMeta />
-      <TurnSummaryBar messageId={messageId} />
-    </MessagePrimitive.Root>
+    <>
+      {modelChangedTo && <ModelChangeDivider model={modelChangedTo} />}
+      <MessagePrimitive.Root className="oc-msg oc-msg-assistant" data-message-id={messageId}>
+        <MessageBookmarkButton messageId={messageId} />
+        <div className="oc-msg-body oc-md">
+          <MessagePrimitive.Content components={ASSISTANT_PART_COMPONENTS} />
+        </div>
+        <AssistantMeta />
+        <TurnSummaryBar messageId={messageId} />
+      </MessagePrimitive.Root>
+    </>
+  );
+};
+
+/**
+ * Centered divider chip rendered before the first assistant message that
+ * switches the conversation to a new model. Mirrors the look of an
+ * in-thread date separator so model changes are easy to scan.
+ */
+const ModelChangeDivider: FC<{ model: string }> = ({ model }) => {
+  const label = useModelLabel(model);
+  return (
+    <div className="oc-model-change" role="separator" data-testid="model-change-divider">
+      <span className="oc-model-change-line" aria-hidden="true" />
+      <span className="oc-model-change-chip" title={model}>
+        <i className="bi bi-cpu" aria-hidden="true" />
+        Model changed to {label}
+      </span>
+      <span className="oc-model-change-line" aria-hidden="true" />
+    </div>
   );
 };
 
@@ -392,6 +419,7 @@ function TurnSummaryBar({ messageId }: { messageId: string }) {
   const custom = useMessage((m) => m.metadata?.custom as Record<string, unknown> | undefined);
   const agent = typeof custom?.agent === 'string' ? (custom.agent as string) : undefined;
   const agentColor = useAgentColor(agent);
+  const modelLabel = useModelLabel(stats?.model || '');
   const [now, setNow] = useState(Date.now);
 
   // Tick every second so the live wall-clock increments visibly.
@@ -403,7 +431,7 @@ function TurnSummaryBar({ messageId }: { messageId: string }) {
 
   if (!stats) return null;
 
-  const { wallClockMs, tokensOut, tokensIn, cost, toolCalls, tps, isLive, startedAt } = stats;
+  const { wallClockMs, tokensOut, tokensIn, cost, toolCalls, tps, isLive, startedAt, model } = stats;
 
   // For a live turn, compute elapsed wall-clock from startedAt → now.
   const displayMs = isLive ? now - startedAt : wallClockMs;
@@ -458,6 +486,14 @@ function TurnSummaryBar({ messageId }: { messageId: string }) {
     items.push(
       <span key="cost" className="oc-turn-stat">
         {formatCurrency(cost, cost < 0.001 ? 4 : 2)}
+      </span>
+    );
+  }
+  if (model) {
+    items.push(
+      <span key="model" className="oc-turn-stat oc-turn-model" title={model}>
+        <i className="bi bi-cpu" aria-hidden="true" />
+        {modelLabel}
       </span>
     );
   }

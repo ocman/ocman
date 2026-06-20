@@ -1072,3 +1072,78 @@ describe('createConvertMessages (per-instance cache)', () => {
     expect(afterTool!.result ?? '').toContain('hi');
   });
 });
+
+describe('convertMessages — model-change metadata', () => {
+  function custom(msg: ThreadMessageLike): Record<string, unknown> | undefined {
+    return msg.metadata?.custom as Record<string, unknown> | undefined;
+  }
+
+  it('does not flag the first assistant message that reports a model', () => {
+    const convert = createConvertMessages();
+    const out = convert(
+      [
+        makeMessage('u', { role: 'user' }, 1),
+        makeMessage('a', { role: 'assistant', providerID: 'anthropic', modelID: 'opus-4' }, 2),
+      ],
+      [],
+    );
+    const asst = out.find((m) => m.id === 'a')!;
+    expect(custom(asst)?.modelChangedTo).toBeUndefined();
+  });
+
+  it('flags the assistant message that switches to a new model', () => {
+    const convert = createConvertMessages();
+    const out = convert(
+      [
+        makeMessage('u1', { role: 'user' }, 1),
+        makeMessage('a1', { role: 'assistant', providerID: 'anthropic', modelID: 'opus-4' }, 2),
+        makeMessage('u2', { role: 'user' }, 3),
+        makeMessage('a2', { role: 'assistant', providerID: 'openai', modelID: 'gpt-5' }, 4),
+      ],
+      [],
+    );
+    expect(custom(out.find((m) => m.id === 'a1')!)?.modelChangedTo).toBeUndefined();
+    expect(custom(out.find((m) => m.id === 'a2')!)?.modelChangedTo).toBe('openai/gpt-5');
+  });
+
+  it('does not flag when the model stays the same across turns', () => {
+    const convert = createConvertMessages();
+    const out = convert(
+      [
+        makeMessage('a1', { role: 'assistant', providerID: 'anthropic', modelID: 'opus-4' }, 1),
+        makeMessage('a2', { role: 'assistant', providerID: 'anthropic', modelID: 'opus-4' }, 2),
+      ],
+      [],
+    );
+    expect(custom(out.find((m) => m.id === 'a2')!)?.modelChangedTo).toBeUndefined();
+  });
+
+  it('reads the model from the nested model object when top-level is absent', () => {
+    const convert = createConvertMessages();
+    const out = convert(
+      [
+        makeMessage('a1', { role: 'assistant', providerID: 'anthropic', modelID: 'opus-4' }, 1),
+        makeMessage('a2', {
+          role: 'assistant',
+          model: { providerID: 'google', modelID: 'gemini-pro' },
+        } as Partial<Message['data']> & { role: 'assistant' }, 2),
+      ],
+      [],
+    );
+    expect(custom(out.find((m) => m.id === 'a2')!)?.modelChangedTo).toBe('google/gemini-pro');
+  });
+
+  it('ignores assistant messages without a model when tracking the baseline', () => {
+    const convert = createConvertMessages();
+    const out = convert(
+      [
+        makeMessage('a1', { role: 'assistant', providerID: 'anthropic', modelID: 'opus-4' }, 1),
+        makeMessage('a2', { role: 'assistant' }, 2),
+        makeMessage('a3', { role: 'assistant', providerID: 'anthropic', modelID: 'opus-4' }, 3),
+      ],
+      [],
+    );
+    // a3 matches the last *known* model (opus-4), so no change is flagged.
+    expect(custom(out.find((m) => m.id === 'a3')!)?.modelChangedTo).toBeUndefined();
+  });
+});

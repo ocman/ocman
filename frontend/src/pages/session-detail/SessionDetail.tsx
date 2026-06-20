@@ -1286,6 +1286,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
               canSend={portAvailable && caps.composer}
               pendingAgent={selectedAgent || activeAgent || undefined}
               agents={agents}
+              modelEntries={modelEntries}
               taskLiveOutput={taskLiveOutput}
               projectDirectory={session.directory}
               failedSends={failedSends}
