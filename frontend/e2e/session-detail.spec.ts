@@ -1168,9 +1168,33 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
           if (!phase) return;
           const isFirstPhase = phaseIndex === 0;
 
+          // Advance the shared phaseIndex exactly once per EventSource
+          // instance. A dedicated flag (rather than incrementing inline at
+          // the delta-send site) prevents a double-advance if the browser
+          // dispatches one more queued interval tick after we clear the
+          // timer — the bug that intermittently left the second connection
+          // reading phases[2] (undefined), so phase 2 ("6 7") never
+          // streamed and the text stayed stuck at "1 2 3 4 5".
+          let advanced = false;
+          const finishPhase = () => {
+            if (this.timer !== null) {
+              window.clearInterval(this.timer);
+              this.timer = null;
+            }
+            if (!advanced) {
+              advanced = true;
+              phaseIndex += 1;
+            }
+          };
+
           let i = 0;
           this.timer = window.setInterval(() => {
             if (this.readyState === GapStreamingEventSource.CLOSED) return;
+
+            if (i >= phase.deltas.length) {
+              finishPhase();
+              return;
+            }
 
             // Emit message.created on the first delta of phase 0 only.
             // Phase 1 (after returning) builds on the reconciled message
@@ -1193,16 +1217,6 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
               this.onmessage?.(new MessageEvent('message', { data: created }));
             }
 
-            if (i >= phase.deltas.length) {
-              window.clearInterval(this.timer!);
-              this.timer = null;
-              // Advance to the next phase so the next EventSource
-              // construction (after the user returns) streams the
-              // continuation.
-              phaseIndex += 1;
-              return;
-            }
-
             const deltaText = phase.deltas[i];
             i += 1;
 
@@ -1217,10 +1231,12 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
               },
             });
             this.onmessage?.(new MessageEvent('message', { data: delta }));
+
+            // Last delta sent — advance the phase now so the next
+            // connection (after the user returns) streams the
+            // continuation, and stop this interval.
             if (i >= phase.deltas.length) {
-              phaseIndex += 1;
-              window.clearInterval(this.timer!);
-              this.timer = null;
+              finishPhase();
             }
           }, phase.intervalMs);
         }, 100);
