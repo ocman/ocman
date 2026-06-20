@@ -149,6 +149,7 @@ async function installDefaultRoutes(page: Page) {
           cacheWriteTokens: 10_000,
           totalCost: 1.23,
           totalCalcCost: 1.10,
+          totalEffectiveCost: 1.23,
         },
         series: [],
         stopReasons: [{ reason: 'end_turn', count: 40 }, { reason: 'error', count: 2 }],
