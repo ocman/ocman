@@ -387,30 +387,10 @@ const opencodeCommand = "exec opencode --port 0"
 // It returns the name of the tmux session that was used/created.
 //
 // This is the original (non-idempotent) launcher kept for callers that
-// explicitly want a fresh window every time. The /wt flow uses
-// launchOpencodeInTmuxIdempotent instead.
+// explicitly want a fresh window every time.
 func launchOpencodeInTmux(directory string) (string, error) {
 	name, _, err := launchOpencodeInTmuxWith(defaultTmuxRunner, directory, false)
 	return name, err
-}
-
-// launchOpencodeInTmuxIdempotent is the worktree-flow variant of
-// launchOpencodeInTmux. When the target tmux session already exists,
-// it does NOT open a new window and does NOT re-run `opencode --port 0`
-// — it simply returns the existing session name with launched=false.
-// This makes /wt safely re-runnable: the second invocation lands the
-// user back in their existing session instead of stacking duplicate
-// opencode instances (AD-4).
-//
-// Returns:
-//   - sessionName: the tmux session name (existing or newly created).
-//   - launched:    true iff we actually ran `opencode --port 0`.
-//                  False means the caller can rely on the session
-//                  already hosting opencode (or the user manually
-//                  re-launching it; see AD-4).
-//   - err:         any tmux failure.
-func launchOpencodeInTmuxIdempotent(directory string) (sessionName string, launched bool, err error) {
-	return launchOpencodeInTmuxWith(defaultTmuxRunner, directory, true)
 }
 
 // launchOpencodeInProjectTmuxWindow launches a worktree session inside

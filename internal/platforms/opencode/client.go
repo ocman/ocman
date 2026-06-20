@@ -311,14 +311,8 @@ func isSynthesizedTerminal(raw map[string]interface{}) bool {
 	return hasPart
 }
 
-// fetchSessionFromOpenCode tries to get session data from the running
-// OpenCode HTTP API. Backwards-compatible shim around fetchSessionFromOpenCodeCtx.
-func (a *Adapter) fetchSessionFromOpenCode(sessionID string, limit, offset int) (*platforms.SessionDetail, bool) {
-	return a.fetchSessionFromOpenCodeCtx(context.Background(), sessionID, limit, offset)
-}
-
-// fetchSessionFromOpenCodeCtx is fetchSessionFromOpenCode with
-// per-phase Server-Timing instrumentation.
+// fetchSessionFromOpenCodeCtx tries to get session data from the running
+// OpenCode HTTP API, with per-phase Server-Timing instrumentation.
 func (a *Adapter) fetchSessionFromOpenCodeCtx(ctx context.Context, sessionID string, limit, offset int) (*platforms.SessionDetail, bool) {
 	if a.db == nil {
 		return nil, false

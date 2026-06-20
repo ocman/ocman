@@ -10,6 +10,18 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// effectiveCost returns the cost figure the dashboard should headline
+// for a single request: the platform-reported cost when it's non-zero,
+// otherwise the token-derived estimate. Summing this per request keeps
+// subscription-plan sessions (reported $0) and API-priced sessions on a
+// single comparable scale.
+func effectiveCost(reported, estimated float64) float64 {
+	if reported > 0 {
+		return reported
+	}
+	return estimated
+}
+
 // directoryWhere builds a SQL fragment that scopes a query to a project
 // subtree. The returned fragment is intended to be AND'd into an existing
 // WHERE clause; the args go into the same parameter list.
@@ -276,6 +288,11 @@ func (d *DB) scanDashboardRows(opts MetricsDashboardOptions) (filtered []request
 		if opts.Pricing != nil {
 			entry.CalcCost = opts.Pricing.CalcCost(modelKey, entry.InputTokens, entry.OutputTokens, entry.CacheReadTokens, entry.CacheWriteTokens)
 		}
+		// Effective cost: prefer the platform-reported value; fall back
+		// to the token-derived estimate when the platform reports $0
+		// (subscription plans). This is the figure the dashboard
+		// headlines and table rows display.
+		entry.EffectiveCost = effectiveCost(entry.Cost, entry.CalcCost)
 
 		filtered = append(filtered, entry)
 	}
@@ -294,9 +311,10 @@ type bucketAcc struct {
 	outputTokens      int64
 	totalOutputTokSec float64
 	totalDurationMs   float64
-	totalCacheEff     float64
-	totalCost         float64
-	totalCalcCost     float64
+	totalCacheEff      float64
+	totalCost          float64
+	totalCalcCost      float64
+	totalEffectiveCost float64
 	// costByModel sums the platform-reported Cost in this bucket
 	// partitioned by model key ("provider/model" or "" when missing).
 	// Used by buildDashboardSeries to assemble the cost-by-model
@@ -339,6 +357,7 @@ func (d *DB) aggregateSummaryAndBuckets(dashboard *MetricsDashboard, filtered []
 		dashboard.Summary.CacheWriteTokens += entry.CacheWriteTokens
 		dashboard.Summary.TotalCost += entry.Cost
 		dashboard.Summary.TotalCalcCost += entry.CalcCost
+		dashboard.Summary.TotalEffectiveCost += entry.EffectiveCost
 		if entry.DurationMs > 0 {
 			dashboard.Summary.AvgDurationMs += float64(entry.DurationMs)
 			dashboard.Summary.AvgTokensPerSec += entry.TokensPerSecond
@@ -370,6 +389,7 @@ func (d *DB) aggregateSummaryAndBuckets(dashboard *MetricsDashboard, filtered []
 		b.totalCacheEff += cacheEff
 		b.totalCost += entry.Cost
 		b.totalCalcCost += entry.CalcCost
+		b.totalEffectiveCost += entry.EffectiveCost
 		b.costByModel[entry.Model] += entry.Cost
 		b.count++
 	}
@@ -415,7 +435,7 @@ func buildDashboardSeries(buckets map[string]*bucketAcc, bucketOrder []string, b
 	}
 
 	series := make([]MetricsPoint, 0, len(seriesLabels))
-	cumCost, cumCalcCost := 0.0, 0.0
+	cumCost, cumCalcCost, cumEffectiveCost := 0.0, 0.0, 0.0
 	for _, label := range seriesLabels {
 		b := buckets[label] // nil for empty buckets
 		var pt MetricsPoint
@@ -423,6 +443,7 @@ func buildDashboardSeries(buckets map[string]*bucketAcc, bucketOrder []string, b
 		if b != nil {
 			cumCost += b.totalCost
 			cumCalcCost += b.totalCalcCost
+			cumEffectiveCost += b.totalEffectiveCost
 			n := b.count
 			if n < 1 {
 				n = 1
@@ -433,10 +454,11 @@ func buildDashboardSeries(buckets map[string]*bucketAcc, bucketOrder []string, b
 			}
 			pt = MetricsPoint{
 				Label:              label,
-				AvgOutputTokensSec: b.totalOutputTokSec / float64(n),
-				CumulativeCost:     cumCost,
-				CumulativeCalcCost: cumCalcCost,
-				InputTokens:        b.inputTokens,
+				AvgOutputTokensSec:      b.totalOutputTokSec / float64(n),
+				CumulativeCost:          cumCost,
+				CumulativeCalcCost:      cumCalcCost,
+				CumulativeEffectiveCost: cumEffectiveCost,
+				InputTokens:             b.inputTokens,
 				CacheReadTokens:    b.cacheReadTokens,
 				OutputTokens:       b.outputTokens,
 				AvgDurationMs:      avgDur,
@@ -444,7 +466,7 @@ func buildDashboardSeries(buckets map[string]*bucketAcc, bucketOrder []string, b
 				Count:              b.count,
 			}
 		} else {
-			pt = MetricsPoint{Label: label, CumulativeCost: cumCost, CumulativeCalcCost: cumCalcCost}
+			pt = MetricsPoint{Label: label, CumulativeCost: cumCost, CumulativeCalcCost: cumCalcCost, CumulativeEffectiveCost: cumEffectiveCost}
 		}
 		series = append(series, pt)
 	}
@@ -623,6 +645,7 @@ func (d *DB) populateSessionLog(dashboard *MetricsDashboard, filtered []requestR
 		acc.entry.TotalDurationMs += entry.DurationMs
 		acc.entry.Cost += entry.Cost
 		acc.entry.CalcCost += entry.CalcCost
+		acc.entry.EffectiveCost += entry.EffectiveCost
 		if entry.DurationMs > 0 {
 			acc.tokPerSecTotal += entry.TokensPerSecond
 			acc.durationCount++
@@ -752,6 +775,7 @@ func (d *DB) populateProjectLog(dashboard *MetricsDashboard, filtered []requestR
 		acc.entry.TotalDurationMs += r.DurationMs
 		acc.entry.Cost += r.Cost
 		acc.entry.CalcCost += r.CalcCost
+		acc.entry.EffectiveCost += r.EffectiveCost
 		if r.DurationMs > 0 {
 			acc.tokPerSecTotal += r.TokensPerSecond
 			acc.durationCount++

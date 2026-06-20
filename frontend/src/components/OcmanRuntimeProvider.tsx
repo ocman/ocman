@@ -105,7 +105,10 @@ export function OcmanRuntimeProvider({
 
   const isRunning = useMemo(() => computeIsRunning(messages), [messages]);
 
-  const turnStatsMap = useMemo(() => computeTurnStats(messages, parts), [messages, parts]);
+  const turnStatsMap = useMemo(
+    () => computeTurnStats(messages, parts, isRunning),
+    [messages, parts, isRunning],
+  );
 
   // Stable onNew callback — only changes when canSend, sessionId, or
   // sendMessage change. This prevents the store adapter object from

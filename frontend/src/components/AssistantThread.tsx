@@ -10,6 +10,7 @@ import {
 } from '@assistant-ui/react';
 import { formatSeconds, formatTokensPerSecond, formatCompactNumber, formatCurrency } from '../lib/format';
 import { useModelLabel, useTurnStats } from '../lib/turnStats';
+import { shouldRenderAssistantMessage } from './assistantMessageVisibility';
 import { useAgentColor } from '../lib/agentColor';
 import { useShortcut } from '../lib/shortcutRegistry';
 import { hardenMessageLinks } from '../lib/linkHardener';
@@ -278,10 +279,12 @@ const AssistantMessage: FC = () => {
   const messageId = useMessage((m) => m.id);
   const custom = useMessage((m) => m.metadata?.custom as Record<string, unknown> | undefined);
   const modelChangedTo = typeof custom?.modelChangedTo === 'string' ? (custom.modelChangedTo as string) : undefined;
+  const turnStats = useTurnStats(messageId);
   const hasContent = content.some(
     (p) => (p.type === 'text' && 'text' in p && (p as { text: string }).text.trim()) || p.type === 'tool-call' || p.type === 'image'
   );
-  if (!hasContent) return null;
+  const isLiveSummaryAnchor = (turnStats?.isLive && turnStats?.isSummaryAnchor) ?? false;
+  if (!shouldRenderAssistantMessage(hasContent, isLiveSummaryAnchor)) return null;
 
   // Messages that only contain muted tool calls (reads/greps/webfetch) render as a compact list
   const onlyMuted = content.every(
@@ -440,7 +443,10 @@ function TurnSummaryBar({ messageId }: { messageId: string }) {
     return () => clearInterval(id);
   }, [stats?.isLive]);
 
-  if (!stats) return null;
+  // Only the turn's anchor message renders the bar. Non-anchor messages
+  // still carry the aggregate (so the line never blanks out while
+  // ownership moves between messages mid-turn) but must not draw it.
+  if (!stats || !stats.isSummaryAnchor) return null;
 
   const { wallClockMs, tokensOut, tokensIn, cost, toolCalls, tps, isLive, startedAt, model } = stats;
 

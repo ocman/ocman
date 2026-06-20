@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -214,10 +213,4 @@ func (l *SessionLauncher) waitForPort(ctx context.Context, directory string) err
 		case <-time.After(portPollInterval):
 		}
 	}
-}
-
-// generateID returns a new random UUID string for use as a child session ID
-// when the platform does not assign one (e.g. in tests).
-func generateID() string {
-	return uuid.New().String()
 }
