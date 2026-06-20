@@ -174,6 +174,11 @@ func fakeGitHubServer(t *testing.T) (*httptest.Server, *github.Client) {
 			}]`))
 		case r.URL.Path == "/user":
 			_, _ = w.Write([]byte(`{"login": "alice"}`))
+		case strings.HasSuffix(r.URL.Path, "/status"):
+			// Legacy combined commit status.
+			_, _ = w.Write([]byte(`{"statuses":[{"state":"success","context":"ci/lint","target_url":"https://ci/lint"}]}`))
+		case strings.HasSuffix(r.URL.Path, "/check-runs"):
+			_, _ = w.Write([]byte(`{"check_runs":[{"name":"build","status":"completed","conclusion":"success","html_url":"https://gh/build"}]}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -319,5 +324,123 @@ func TestHandleProjectPRs_RejectsInvalidState(t *testing.T) {
 	srv.handleProjectPRs(rr, req)
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestHandleProjectPRChecks_ReturnsRolledUpStatus(t *testing.T) {
+	srv := testServer(t)
+	dir := initGitHubRepo(t)
+	gh, ghc := fakeGitHubServer(t)
+	defer gh.Close()
+	srv.integrations.GitHub = ghc
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/project/pr-checks?dir="+dir+"&remote=origin&sha=abc123", nil)
+	rr := httptest.NewRecorder()
+	srv.handleProjectPRChecks(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		State  forge.CIState `json:"state"`
+		Checks []forge.Check `json:"checks"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v body=%s", err, rr.Body.String())
+	}
+	if resp.State != forge.CIStateSuccess {
+		t.Errorf("state: got %q want success", resp.State)
+	}
+	if len(resp.Checks) != 2 {
+		t.Errorf("expected 2 checks (status + check-run), got %d", len(resp.Checks))
+	}
+}
+
+func TestHandleProjectPRChecks_RequiresParams(t *testing.T) {
+	srv := testServer(t)
+	dir := initGitHubRepo(t)
+	// Missing sha.
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/project/pr-checks?dir="+dir+"&remote=origin", nil)
+	rr := httptest.NewRecorder()
+	srv.handleProjectPRChecks(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for missing sha, got %d", rr.Code)
+	}
+}
+
+func TestHandleProjectPRChecks_404ForUnknownRemote(t *testing.T) {
+	srv := testServer(t)
+	dir := initGitHubRepo(t)
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/project/pr-checks?dir="+dir+"&remote=nope&sha=abc123", nil)
+	rr := httptest.NewRecorder()
+	srv.handleProjectPRChecks(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestHandleProjectPRChecks_502WhenForgeErrors(t *testing.T) {
+	srv := testServer(t)
+	dir := initGitHubRepo(t)
+
+	// A forge whose checks endpoints return 500 so Checks() errors,
+	// which the handler must translate into a 502 upstream_status.
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer gh.Close()
+	srv.integrations.GitHub = github.NewForTest(gh.URL, "test-token", gh.Client())
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/project/pr-checks?dir="+dir+"&remote=origin&sha=abc123", nil)
+	rr := httptest.NewRecorder()
+	srv.handleProjectPRChecks(rr, req)
+
+	if rr.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestHandleProjectPRChecks_NormalisesNilChecksToEmptyArray(t *testing.T) {
+	srv := testServer(t)
+	dir := initGitHubRepo(t)
+
+	// A forge with no CI configured: both endpoints return 404, so the
+	// GitHub adapter rolls up to CIStateUnknown with a nil check slice.
+	// The handler must emit "checks":[] (never null) for the frontend.
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer gh.Close()
+	srv.integrations.GitHub = github.NewForTest(gh.URL, "test-token", gh.Client())
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/project/pr-checks?dir="+dir+"&remote=origin&sha=abc123", nil)
+	rr := httptest.NewRecorder()
+	srv.handleProjectPRChecks(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
+	}
+	// Assert the raw JSON contains an empty array, not null, so the
+	// frontend can map over it unconditionally.
+	if !strings.Contains(rr.Body.String(), `"checks":[]`) {
+		t.Errorf("expected checks:[] in body, got %s", rr.Body.String())
+	}
+	var resp struct {
+		State  forge.CIState `json:"state"`
+		Checks []forge.Check `json:"checks"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v body=%s", err, rr.Body.String())
+	}
+	if resp.State != forge.CIStateUnknown {
+		t.Errorf("state: got %q want unknown", resp.State)
+	}
+	if resp.Checks == nil {
+		t.Errorf("checks should be a non-nil empty slice")
 	}
 }
