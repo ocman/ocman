@@ -86,6 +86,52 @@ describe('computeTurnStats — summary anchor', () => {
   });
 });
 
+describe('computeTurnStats — live across tool steps (read/bash flicker)', () => {
+  it('keeps the last turn live while the session is running despite a tool-calls finish', () => {
+    // During a read/bash tool call, OpenCode marks the current LLM step
+    // with finish: "tool-calls" before the next step's message exists.
+    // Per-message finish alone would flip the turn to "done" and the bar
+    // would lose its live state mid-tool. With the session still running,
+    // the last turn must stay live.
+    const messages = [
+      makeMessage('u', { role: 'user' }, 1),
+      makeMessage('a', { role: 'assistant', finish: 'tool-calls' }, 2),
+    ];
+
+    const running = computeTurnStats(messages, [], true).get('a');
+    expect(running?.isLive).toBe(true);
+    // A live turn has no wall-clock end yet.
+    expect(running?.wallClockMs).toBeNull();
+
+    const stopped = computeTurnStats(messages, [], false).get('a');
+    expect(stopped?.isLive).toBe(false);
+  });
+
+  it('does not keep earlier turns live even while the session is running', () => {
+    const messages = [
+      makeMessage('u1', { role: 'user' }, 1),
+      makeMessage('a1', { role: 'assistant', finish: 'tool-calls' }, 2),
+      makeMessage('u2', { role: 'user' }, 3),
+      makeMessage('a2', { role: 'assistant' }, 4), // last turn, streaming
+    ];
+    const map = computeTurnStats(messages, [], true);
+
+    // Earlier completed turn is not live...
+    expect(map.get('a1')?.isLive).toBe(false);
+    // ...only the last turn is.
+    expect(map.get('a2')?.isLive).toBe(true);
+  });
+
+  it('ends the turn on an error even while the session is running', () => {
+    const messages = [
+      makeMessage('u', { role: 'user' }, 1),
+      makeMessage('a', { role: 'assistant', error: { name: 'BoomError' } } as Parameters<typeof makeMessage>[1], 2),
+    ];
+    const stats = computeTurnStats(messages, [], true).get('a');
+    expect(stats?.isLive).toBe(false);
+  });
+});
+
 describe('turn line lifecycle', () => {
   it('marks a trailing empty assistant message as the live anchor', () => {
     const messages = [

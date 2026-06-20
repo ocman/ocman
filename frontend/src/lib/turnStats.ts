@@ -62,8 +62,22 @@ export type TurnStatsMap = Map<string, TurnAggregate>;
  * consecutive user messages (or from the last user message to end of list)
  * belong to the same turn. The last assistant message in that group carries
  * the aggregated data.
+ *
+ * `isRunning` is the session-level "agent is working" signal (see
+ * `computeIsRunning`). It is required to keep the *last* turn marked live
+ * across tool-call steps: OpenCode finishes each intermediate LLM step
+ * with `finish: "tool-calls"`, which is indistinguishable from a turn
+ * that legitimately ends on `tool-calls`. Per-message `finish` therefore
+ * cannot tell "mid-turn tool call" from "turn done" — so while the
+ * session is running, the last turn stays live regardless of the trailing
+ * message's finish reason. This stops the turn line from flickering off
+ * during read/bash/edit tool execution.
  */
-export function computeTurnStats(messages: Message[], parts: Part[]): TurnStatsMap {
+export function computeTurnStats(
+  messages: Message[],
+  parts: Part[],
+  isRunning = false,
+): TurnStatsMap {
   const map: TurnStatsMap = new Map();
 
   // Build a quick index: messageId → count of tool parts
@@ -92,9 +106,13 @@ export function computeTurnStats(messages: Message[], parts: Part[]): TurnStatsM
     }
   }
 
-  for (const { userMsg, assistantMsgs } of turns) {
+  const lastTurn = turns[turns.length - 1];
+
+  for (const turn of turns) {
+    const { userMsg, assistantMsgs } = turn;
     if (assistantMsgs.length === 0) continue;
 
+    const isLastTurn = turn === lastTurn;
     const lastAsst = assistantMsgs[assistantMsgs.length - 1];
     let tokensOut = 0;
     let tokensIn = 0;
@@ -123,16 +141,23 @@ export function computeTurnStats(messages: Message[], parts: Part[]): TurnStatsM
     const tps =
       totalTpsDenominator > 0 ? totalTpsNumerator / totalTpsDenominator : null;
 
+    // The last turn stays live while the session is running, even if its
+    // trailing message reports `finish: "tool-calls"` (an intermediate
+    // tool step). Only an error or a non-running session ends it. Earlier
+    // turns are live only when their trailing message has no finish yet.
+    const isLive = lastAsst.data.error
+      ? false
+      : isLastTurn
+        ? isRunning || !lastAsst.data.finish
+        : !lastAsst.data.finish;
+
     // Wall-clock end: use the message row's timeCreated (when the DB row was
     // written) rather than data.time.completed (which only covers the final
     // LLM call, not tool-execution time between calls). Fall back to null
     // while the turn is still live.
-    const wallClockEnd =
-      lastAsst.data.finish || lastAsst.data.error ? lastAsst.timeCreated : null;
+    const wallClockEnd = isLive ? null : lastAsst.timeCreated;
     const wallClockMs =
       wallClockEnd !== null ? wallClockEnd - userMsg.timeCreated : null;
-
-    const isLive = !lastAsst.data.finish && !lastAsst.data.error;
 
     // Map the same aggregate to every assistant message in the turn so
     // the turn line never blanks out while ownership moves between
