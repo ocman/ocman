@@ -1,5 +1,21 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { parseGitHubUrl, parseForgejoUrl, extractForgejoUrls } from './githubPreview';
+
+// jsonResponse builds a minimal fetch Response-like object.
+function jsonResponse(body: unknown, ok = true, status = 200) {
+  return {
+    ok,
+    status,
+    json: async () => body,
+  } as Response;
+}
+
+// freshModule re-imports the module so its module-level caches
+// (preview cache + forgejo hosts cache) start empty for each test.
+async function freshModule() {
+  vi.resetModules();
+  return import('./githubPreview');
+}
 
 describe('parseGitHubUrl', () => {
   it('parses a PR URL', () => {
@@ -98,5 +114,243 @@ describe('extractForgejoUrls', () => {
 
   it('returns empty when no hosts configured', () => {
     expect(extractForgejoUrls('https://code.example.com/a/b/pulls/1', [])).toEqual([]);
+  });
+});
+
+describe('cachedGitHubPreview / refreshGitHubPreview', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('fetches and maps an open PR', async () => {
+    const mod = await freshModule();
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        title: 'My PR',
+        state: 'open',
+        user: { login: 'alice', avatar_url: 'a.png' },
+        html_url: 'https://github.com/o/r/pull/1',
+        updated_at: '2026-01-01T00:00:00Z',
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const data = await mod.cachedGitHubPreview('https://github.com/o/r/pull/1');
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/integrations/github/preview?url=https%3A%2F%2Fgithub.com%2Fo%2Fr%2Fpull%2F1',
+    );
+    expect(data).toMatchObject({
+      kind: 'pr',
+      title: 'My PR',
+      state: 'Open',
+      stateClass: 'open',
+      author: 'alice',
+      authorAvatar: 'a.png',
+      repo: 'o/r',
+    });
+  });
+
+  it('maps a merged PR', async () => {
+    const mod = await freshModule();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({ title: 'Merged', state: 'closed', merged: true }),
+      ),
+    );
+    const data = await mod.cachedGitHubPreview('https://github.com/o/r/pull/2');
+    expect(data).toMatchObject({ state: 'Merged', stateClass: 'merged', stateIcon: 'bi-git' });
+  });
+
+  it('maps a closed issue', async () => {
+    const mod = await freshModule();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse({ title: 'Bug', state: 'closed' })),
+    );
+    const data = await mod.cachedGitHubPreview('https://github.com/o/r/issues/3');
+    expect(data).toMatchObject({ kind: 'issue', state: 'Closed', stateClass: 'closed' });
+  });
+
+  it('maps a commit, deriving title from the first message line', async () => {
+    const mod = await freshModule();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          sha: 'abc1234def',
+          commit: { message: 'fix: thing\n\nbody', author: { name: 'Bob', date: '2026-02-02T00:00:00Z' } },
+        }),
+      ),
+    );
+    const data = await mod.cachedGitHubPreview('https://github.com/o/r/commit/abc1234def');
+    expect(data).toMatchObject({
+      kind: 'commit',
+      title: 'fix: thing',
+      stateClass: 'commit',
+      author: 'Bob',
+      shortSha: 'abc1234',
+    });
+  });
+
+  it('returns null and caches the error on a failed fetch', async () => {
+    const mod = await freshModule();
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}, false, 502));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const url = 'https://github.com/o/r/pull/9';
+    expect(await mod.cachedGitHubPreview(url)).toBeNull();
+    // Second call should hit the error cache, not refetch.
+    expect(await mod.cachedGitHubPreview(url)).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the cached value on a second call', async () => {
+    const mod = await freshModule();
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ title: 'Cached', state: 'open' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const url = 'https://github.com/o/r/pull/10';
+    await mod.cachedGitHubPreview(url);
+    await mod.cachedGitHubPreview(url);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns null for a non-GitHub URL without fetching', async () => {
+    const mod = await freshModule();
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await mod.cachedGitHubPreview('https://example.com/x')).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('refresh bypasses the cache and refetches', async () => {
+    const mod = await freshModule();
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ title: 'Fresh', state: 'open' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const url = 'https://github.com/o/r/pull/11';
+    await mod.cachedGitHubPreview(url);
+    await mod.refreshGitHubPreview(url);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('refresh returns null on error and leaves cache intact', async () => {
+    const mod = await freshModule();
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}, false, 500));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await mod.refreshGitHubPreview('https://github.com/o/r/pull/12')).toBeNull();
+  });
+
+  it('refresh returns null for non-GitHub URL', async () => {
+    const mod = await freshModule();
+    vi.stubGlobal('fetch', vi.fn());
+    expect(await mod.refreshGitHubPreview('https://example.com/x')).toBeNull();
+  });
+});
+
+describe('loadForgejoHosts', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('loads hosts from the status endpoint and caches them', async () => {
+    const mod = await freshModule();
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({ forgejo: { available: true, hosts: ['code.example.com'] } }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect(await mod.loadForgejoHosts()).toEqual(['code.example.com']);
+    // Cached — no second fetch.
+    expect(await mod.loadForgejoHosts()).toEqual(['code.example.com']);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns [] when the status request fails', async () => {
+    const mod = await freshModule();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({}, false, 500)));
+    expect(await mod.loadForgejoHosts()).toEqual([]);
+  });
+
+  it('returns [] when fetch throws', async () => {
+    const mod = await freshModule();
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network')));
+    expect(await mod.loadForgejoHosts()).toEqual([]);
+  });
+
+  it('returns [] when the payload has no forgejo hosts', async () => {
+    const mod = await freshModule();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ github: {} })));
+    expect(await mod.loadForgejoHosts()).toEqual([]);
+  });
+});
+
+describe('cachedForgejoPreview / refreshForgejoPreview', () => {
+  const hosts = ['code.example.com'];
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('fetches and maps a Forgejo PR via the forgejo endpoint', async () => {
+    const mod = await freshModule();
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({ title: 'FJ PR', state: 'open', user: { login: 'carol' } }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const url = 'https://code.example.com/o/r/pulls/1';
+    const data = await mod.cachedForgejoPreview(url, hosts);
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/integrations/forgejo/preview?url=' + encodeURIComponent(url),
+    );
+    expect(data).toMatchObject({ kind: 'pr', title: 'FJ PR', repo: 'o/r', author: 'carol' });
+  });
+
+  it('returns null for an unknown host without fetching', async () => {
+    const mod = await freshModule();
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await mod.cachedForgejoPreview('https://other.org/o/r/pulls/1', hosts)).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('caches the error on failure', async () => {
+    const mod = await freshModule();
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}, false, 502));
+    vi.stubGlobal('fetch', fetchMock);
+    const url = 'https://code.example.com/o/r/issues/5';
+    expect(await mod.cachedForgejoPreview(url, hosts)).toBeNull();
+    expect(await mod.cachedForgejoPreview(url, hosts)).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('refresh refetches and returns mapped data', async () => {
+    const mod = await freshModule();
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ title: 'C', state: 'open' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const url = 'https://code.example.com/o/r/pulls/7';
+    await mod.cachedForgejoPreview(url, hosts);
+    const data = await mod.refreshForgejoPreview(url, hosts);
+    expect(data).toMatchObject({ kind: 'pr', title: 'C' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('refresh returns null for an unknown host', async () => {
+    const mod = await freshModule();
+    vi.stubGlobal('fetch', vi.fn());
+    expect(await mod.refreshForgejoPreview('https://other.org/o/r/pulls/1', hosts)).toBeNull();
+  });
+
+  it('refresh returns null on fetch error', async () => {
+    const mod = await freshModule();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({}, false, 500)));
+    expect(
+      await mod.refreshForgejoPreview('https://code.example.com/o/r/pulls/8', hosts),
+    ).toBeNull();
   });
 });
