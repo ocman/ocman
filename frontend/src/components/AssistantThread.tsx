@@ -10,6 +10,7 @@ import {
 } from '@assistant-ui/react';
 import { formatSeconds, formatTokensPerSecond, formatCompactNumber, formatCurrency } from '../lib/format';
 import { useTurnStats } from '../lib/turnStats';
+import { shouldRenderAssistantMessage } from './assistantMessageVisibility';
 import { useAgentColor } from '../lib/agentColor';
 import { useShortcut } from '../lib/shortcutRegistry';
 import { hardenMessageLinks } from '../lib/linkHardener';
@@ -276,10 +277,11 @@ const UserMessage: FC = () => {
 const AssistantMessage: FC = () => {
   const content = useMessage((m) => m.content);
   const messageId = useMessage((m) => m.id);
+  const turnStats = useTurnStats(messageId);
   const hasContent = content.some(
     (p) => (p.type === 'text' && 'text' in p && (p as { text: string }).text.trim()) || p.type === 'tool-call' || p.type === 'image'
   );
-  if (!hasContent) return null;
+  if (!shouldRenderAssistantMessage(hasContent, turnStats?.isLive ?? false)) return null;
 
   // Messages that only contain muted tool calls (reads/greps/webfetch) render as a compact list
   const onlyMuted = content.every(
