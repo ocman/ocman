@@ -1,4 +1,4 @@
-import { defineConfig, type Plugin } from 'vite'
+import { defineConfig, type Plugin, type ProxyOptions } from 'vite'
 import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import babel from '@rolldown/plugin-babel'
 
@@ -35,6 +35,32 @@ const stripTestIds = process.env.STRIP_TESTIDS === '1'
 
 const TEST_ATTR_RE =
   /\s(?:data-testid|data-test-id|data-test)\s*=\s*(?:"[^"]*"|'[^']*'|\{[^}]*\})/g
+
+// Shared proxy `configure` for /api and /mcp. The `error` handler is the
+// important part: when the Go backend on :8229 is down (e.g. the e2e
+// `vite preview` server runs with no backend, and unmocked /api/events SSE
+// or /api/term/ws upgrade requests slip through Playwright's route mocks),
+// http-proxy emits an unhandled `error`. Without a listener that ECONNREFUSED
+// bubbles up as an uncaught exception and kills the whole Vite server mid-run,
+// which makes every subsequent e2e test fail with ERR_CONNECTION_REFUSED.
+// Swallowing it keeps the static server alive.
+// ponytail: minimal — just keep the server alive on upstream failure.
+const configureApiProxy: ProxyOptions['configure'] = (proxy) => {
+  proxy.on('error', (_err, _req, target) => {
+    // `target` is the client response (HTTP) or socket (WS upgrade).
+    // End it cleanly so the browser sees a failed request instead of a
+    // hung connection — and, crucially, so the unhandled `error` event
+    // doesn't crash the whole Vite server.
+    const res = target as { writableEnded?: boolean; end?: () => void; destroy?: () => void }
+    try {
+      if (res && typeof res.end === 'function' && !res.writableEnded) res.end()
+      else if (res && typeof res.destroy === 'function') res.destroy()
+    } catch { /* socket already closed */ }
+  })
+  proxy.on('proxyRes', (proxyRes) => {
+    proxyRes.on('data', () => {})
+  })
+}
 
 function stripTestIdsPlugin(): Plugin {
   return {
@@ -87,45 +113,29 @@ export default defineConfig({
        '/api': {
          target: 'http://localhost:8229',
          ws: true,
-         configure: (proxy) => {
-           proxy.on('proxyRes', (proxyRes) => {
-             proxyRes.on('data', () => {})
-           })
-         },
+         configure: configureApiProxy,
        },
-       // MCP server — Streamable HTTP transport (POST + GET/SSE).
-       '/mcp': {
-         target: 'http://localhost:8229',
-         configure: (proxy) => {
-           proxy.on('proxyRes', (proxyRes) => {
-             proxyRes.on('data', () => {})
-           })
-         },
-       },
+        // MCP server — Streamable HTTP transport (POST + GET/SSE).
+        '/mcp': {
+          target: 'http://localhost:8229',
+          configure: configureApiProxy,
+        },
      },
    },
    preview: {
      host: '0.0.0.0',
      port: 8228,
      allowedHosts: extraAllowedHosts,
-     proxy: {
-       '/api': {
-         target: 'http://localhost:8229',
-         ws: true,
-         configure: (proxy) => {
-           proxy.on('proxyRes', (proxyRes) => {
-             proxyRes.on('data', () => {})
-           })
-         },
-       },
-       '/mcp': {
-         target: 'http://localhost:8229',
-         configure: (proxy) => {
-           proxy.on('proxyRes', (proxyRes) => {
-             proxyRes.on('data', () => {})
-           })
-         },
-       },
-     },
-   },
+      proxy: {
+        '/api': {
+          target: 'http://localhost:8229',
+          ws: true,
+          configure: configureApiProxy,
+        },
+        '/mcp': {
+          target: 'http://localhost:8229',
+          configure: configureApiProxy,
+        },
+      },
+    },
 })
