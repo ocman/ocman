@@ -194,67 +194,6 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 	}
 }
 
-// NewRawServer builds the underlying mcp-go MCPServer without wrapping
-// it in an HTTP transport. Used by tests that want to call tools directly
-// in-process without spinning up an HTTP server.
-func NewRawServer(deps Deps) *mcpserver.MCPServer {
-	if deps.CreateWorktree == nil {
-		deps.CreateWorktree = worktree.Create
-	}
-
-	var adapter platformAdapter
-	if deps.Registry != nil {
-		for _, p := range deps.Registry.Platforms() {
-			if string(p.ID()) == deps.PlatformID {
-				adapter = p
-				break
-			}
-		}
-	}
-
-	var composer *PromptComposer
-	if deps.OcDB != nil {
-		composer = NewPromptComposer(deps.OcDB)
-	} else {
-		composer = NewPromptComposer(&nullSessionReader{})
-	}
-
-	launcher := NewSessionLauncher(
-		deps.StateDB,
-		adapter,
-		deps.CreateWorktree,
-		deps.LaunchTmux,
-		deps.DiscoverPort,
-	)
-
-	s := mcpserver.NewMCPServer("ocman", "1.0.0", mcpserver.WithToolCapabilities(false))
-
-	split := &splitTools{
-		composer: composer,
-		launcher: launcher,
-		platform: deps.PlatformID,
-	}
-	addSplitTools(s, split)
-
-	var ocDB statusSessionReader
-	if deps.OcDB != nil {
-		ocDB = deps.OcDB
-	}
-	status := &statusTools{
-		stateDB: deps.StateDB,
-		ocDB:    ocDB,
-	}
-	addStatusTools(s, status)
-
-	comm := &commTools{
-		stateDB:  deps.StateDB,
-		platform: adapter,
-	}
-	addCommTools(s, comm)
-
-	return s
-}
-
 // nullSessionReader is a no-op sessionReader used when the OpenCode DB
 // is unavailable. It returns empty results so the composer can still
 // produce a minimal prompt from the intent alone.

@@ -236,25 +236,21 @@ type JudgeResult struct {
 	Reasoning string
 }
 
-// Judge decides whether permission is safe to auto-approve for the
-// session running in the given directory. The returned JudgeResult
-// always has a Verdict; SessionID is non-empty when a judge session
-// was successfully created (regardless of verdict), giving the caller
-// a link for the user to inspect the reasoning.
+// JudgeWithCallback decides whether permission is safe to auto-approve
+// for the session running in the given directory. The returned
+// JudgeResult always has a Verdict; SessionID is non-empty when a judge
+// session was successfully created (regardless of verdict), giving the
+// caller a link for the user to inspect the reasoning.
 //
 // metadata is OpenCode's raw tool-input map (e.g. the actual command
 // for Bash). Passed verbatim into judgePrompt so the model can see
 // the exact action being requested — without it the judge cannot
 // distinguish "mkdir bla" from "rm bla".
-func (j *PermissionJudge) Judge(ctx context.Context, directory, permission string, patterns []string, metadata map[string]any, customSections []PromptSection) JudgeResult {
-	return j.JudgeWithCallback(ctx, directory, permission, patterns, metadata, customSections, nil)
-}
-
-// JudgeWithCallback is like Judge but calls onSessionCreated with the
-// judge session ID as soon as the OpenCode session is created — before
-// the prompt is sent and the model starts responding. This lets the
-// caller notify connected clients immediately so they can show a link.
-// onSessionCreated may be nil.
+//
+// onSessionCreated is called with the judge session ID as soon as the
+// OpenCode session is created — before the prompt is sent and the model
+// starts responding. This lets the caller notify connected clients
+// immediately so they can show a link. onSessionCreated may be nil.
 func (j *PermissionJudge) JudgeWithCallback(ctx context.Context, directory, permission string, patterns []string, metadata map[string]any, customSections []PromptSection, onSessionCreated func(judgeSessionID string)) JudgeResult {
 	if j == nil || j.openCodePort == nil {
 		return JudgeResult{Verdict: verdictUnsafe}
