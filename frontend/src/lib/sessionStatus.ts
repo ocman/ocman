@@ -1,4 +1,4 @@
-import type { Message, Session } from './api';
+import type { AgentInfo, Message, Session } from './api';
 
 /**
  * Aggregate token / cost counts derived from a single page of message
@@ -49,6 +49,19 @@ export type SessionWithDefaults = Session & {
 export function formatModelRef(providerId?: string, modelId?: string): string {
   if (!modelId) return '';
   return providerId ? `${providerId}/${modelId}` : modelId;
+}
+
+/**
+ * Extract a `provider/model` reference from an agent definition, if it
+ * declares one. Agents may carry `model` either as a bare
+ * `"provider/model"` string or as a `{ providerID, modelID }` object.
+ * Returns '' when the agent declares no model.
+ */
+export function agentModelRef(agent: AgentInfo | undefined): string {
+  const model = agent?.model;
+  if (!model) return '';
+  if (typeof model === 'string') return model.trim();
+  return formatModelRef(model.providerID, model.modelID);
 }
 
 /**

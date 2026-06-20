@@ -49,7 +49,6 @@ function makeOptions(
     selectedModel: '',
     selectedAgent: '',
     selectedReasoning: '',
-    activeModel: '',
     activeAgent: '',
     recentSessionsRef: createRef<Array<{ id: string }>>() as MutableRefObject<Array<{ id: string }>>,
     isRunningRef,

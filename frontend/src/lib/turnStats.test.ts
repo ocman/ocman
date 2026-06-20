@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Message } from './api';
-import { computeTurnStats, humanizeModelRef, messageModelRef } from './turnStats';
+import { computeTurnStats, humanizeModelRef, latestTurnModel, messageModelRef } from './turnStats';
 
 function makeMessage(
   id: string,
@@ -74,5 +74,30 @@ describe('computeTurnStats — model', () => {
     ];
     const map = computeTurnStats(messages, []);
     expect(map.get('a')?.model).toBe('');
+  });
+});
+
+describe('latestTurnModel', () => {
+  it('uses the completed latest turn, not the previous turn', () => {
+    const messages = [
+      makeMessage('u1', { role: 'user' }, 1),
+      makeMessage('a1', { role: 'assistant', providerID: 'anthropic', modelID: 'opus-4', finish: 'stop' }, 2),
+      makeMessage('u2', { role: 'user' }, 3),
+      makeMessage('a2', { role: 'assistant', providerID: 'openai', modelID: 'gpt-5', finish: 'stop' }, 4),
+    ];
+    const map = computeTurnStats(messages, []);
+
+    expect(latestTurnModel(messages, map)).toBe('openai/gpt-5');
+  });
+
+  it('falls back to the previous completed turn while a new user turn is pending', () => {
+    const messages = [
+      makeMessage('u1', { role: 'user' }, 1),
+      makeMessage('a1', { role: 'assistant', providerID: 'anthropic', modelID: 'opus-4', finish: 'stop' }, 2),
+      makeMessage('u2', { role: 'user' }, 3),
+    ];
+    const map = computeTurnStats(messages, []);
+
+    expect(latestTurnModel(messages, map)).toBe('anthropic/opus-4');
   });
 });

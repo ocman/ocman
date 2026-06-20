@@ -36,7 +36,6 @@ export interface UseSessionActionsOptions {
   selectedModel: string;
   selectedAgent: string;
   selectedReasoning: string;
-  activeModel: string;
   activeAgent: string;
   /** Mutable ref to the recent sessions list — read inside handleCommand. */
   recentSessionsRef: MutableRefObject<Array<{ id: string }>>;
@@ -119,7 +118,6 @@ export function useSessionActions({
   selectedModel,
   selectedAgent,
   selectedReasoning,
-  activeModel,
   activeAgent,
   recentSessionsRef,
   isRunningRef,
@@ -215,7 +213,7 @@ export function useSessionActions({
     // responsive for the next prompt as soon as performSend kicks
     // off.
     const entryId = pending.begin(text, images, {
-      model: selectedModel || activeModel || undefined,
+      model: selectedModel || undefined,
       agent: selectedAgent || activeAgent || undefined,
       reasoning: selectedReasoning || undefined,
     });
@@ -223,11 +221,11 @@ export function useSessionActions({
       entryId,
       text,
       images,
-      selectedModel || activeModel || undefined,
+      selectedModel || undefined,
       selectedAgent || activeAgent || undefined,
       selectedReasoning || undefined,
     );
-  }, [activeAgent, activeModel, pendingPermission, pendingQuestion, performSend, portAvailable, selectedAgent, selectedModel, selectedReasoning, session, pending]);
+  }, [activeAgent, pendingPermission, pendingQuestion, performSend, portAvailable, selectedAgent, selectedModel, selectedReasoning, session, pending]);
 
   // Replay a previously failed send. Reuses the entry's text /
   // images / id so the bubble stays in place — the failed banner
@@ -435,7 +433,7 @@ export function useSessionActions({
     // response via SSE.
     const displayText = args ? `/${command} ${args}` : `/${command}`;
     pending.begin(displayText, undefined, {
-      model: selectedModel || activeModel || undefined,
+      model: selectedModel || undefined,
       agent: selectedAgent || activeAgent || undefined,
     });
     try {
@@ -443,14 +441,14 @@ export function useSessionActions({
         session.id,
         command,
         args,
-        selectedModel || activeModel || undefined,
+        selectedModel || undefined,
         selectedAgent || activeAgent || undefined,
       );
     } catch (e) {
       remoteLog.error('Failed to execute command', e);
       pending.fail(e instanceof Error ? e.message : 'Unknown error');
     }
-  }, [activeAgent, activeModel, archiveSession, createSession, launchOpencodeInTmux, tmuxAvailable, seedNewSession, handleCompact, handleNewSession, handleTmuxShortcut, handleVSCodeShortcut, navigate, navigateToSession, openWorktreeForm, portAvailable, recentSessionsRef, selectedAgent, selectedModel, session, setShowRenameModal, setShowRenameToast, pending]);
+  }, [activeAgent, archiveSession, createSession, launchOpencodeInTmux, tmuxAvailable, seedNewSession, handleCompact, handleNewSession, handleTmuxShortcut, handleVSCodeShortcut, navigate, navigateToSession, openWorktreeForm, portAvailable, recentSessionsRef, selectedAgent, selectedModel, session, setShowRenameModal, setShowRenameToast, pending]);
 
   return {
     awaitingAssistantResponse,

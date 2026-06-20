@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { Message, Session } from './api';
 import {
   formatModelRef,
+  agentModelRef,
   deriveRawStatus,
   isSessionRunning,
   computeLiveTokens,
@@ -64,6 +65,23 @@ describe('formatModelRef', () => {
   it('returns empty string when no model is set', () => {
     expect(formatModelRef('anthropic', undefined)).toBe('');
     expect(formatModelRef(undefined, undefined)).toBe('');
+  });
+});
+
+describe('agentModelRef', () => {
+  it('returns empty string when the agent declares no model', () => {
+    expect(agentModelRef({ name: 'build' })).toBe('');
+    expect(agentModelRef(undefined)).toBe('');
+  });
+
+  it('returns a bare provider/model string verbatim (trimmed)', () => {
+    expect(agentModelRef({ name: 'plan', model: '  anthropic/opus-4 ' })).toBe('anthropic/opus-4');
+  });
+
+  it('formats an object model into a provider/model string', () => {
+    expect(
+      agentModelRef({ name: 'plan', model: { providerID: 'openai', modelID: 'gpt-5' } }),
+    ).toBe('openai/gpt-5');
   });
 });
 

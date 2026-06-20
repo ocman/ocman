@@ -45,7 +45,9 @@ import {
   computeLiveTokens,
   mergeTokenStats,
   deriveActiveModelAndAgent,
+  agentModelRef,
 } from '../../lib/sessionStatus';
+import { computeTurnStats, latestTurnModel } from '../../lib/turnStats';
 import { rollupGroupStatus } from '../../lib/sidebarHelpers';
 import {
   extractPendingPermission,
@@ -546,6 +548,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const setProjectOrder = useUiStore((state) => state.setProjectOrder);
   const patchRecentSession = useApiStore((state) => state.patchRecentSession);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const resetSessionIdRef = useRef<string | undefined>(undefined);
+  const modelSeededSessionRef = useRef<string | undefined>(undefined);
   const {
     recentSessions,
     recentSessionsRef,
@@ -671,10 +675,14 @@ export function SessionDetail({ id }: SessionDetailProps) {
     abortControllerRef.current = controller;
     const signal = controller.signal;
 
-    setSelectedModel('');
-    setSelectedAgent('');
-    setSelectedReasoning('');
-    setFailedSends(id ? listFailedSends(id) : []);
+    if (resetSessionIdRef.current !== id) {
+      resetSessionIdRef.current = id;
+      modelSeededSessionRef.current = undefined;
+      setSelectedModel('');
+      setSelectedAgent('');
+      setSelectedReasoning('');
+      setFailedSends(id ? listFailedSends(id) : []);
+    }
 
     getWhisperStatus().then((s) => setWhisperAvailable(s.available)).catch(() => setWhisperAvailable(false));
     if (id) refreshModels(signal);
@@ -886,10 +894,31 @@ export function SessionDetail({ id }: SessionDetailProps) {
     return () => setInfo({});
   }, [session, setInfo]);
 
-  const { activeModel, activeAgent } = useMemo(
+  // The model the session is currently on, used to pre-seed the
+  // composer when no explicit selection has been made yet. Prefer the
+  // model behind the most recent turn (what OpenCode will keep using),
+  // falling back to the session's default model.
+  const turnStatsMap = useMemo(() => computeTurnStats(messages, parts), [messages, parts]);
+  const { activeAgent } = useMemo(
     () => deriveActiveModelAndAgent(messages, session),
     [messages, session],
   );
+  const activeModel = useMemo(
+    () => latestTurnModel(messages, turnStatsMap) || session?.defaultModel || '',
+    [messages, turnStatsMap, session?.defaultModel],
+  );
+
+  // Pre-seed the composer's model with the session's current model on
+  // session open. The composer's `selectedModel` is the single source
+  // of truth for the next message; seed exactly once per session so
+  // later assistant responses cannot move the composer selection.
+  useEffect(() => {
+    if (!id) return;
+    if (modelSeededSessionRef.current === id) return;
+    if (!activeModel) return;
+    setSelectedModel(activeModel);
+    modelSeededSessionRef.current = id;
+  }, [activeModel, id, setSelectedModel]);
 
   const handleNewSessionInDirectory = useCallback(async (directory: string, title?: string) => {
     try {
@@ -960,7 +989,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
     selectedModel,
     selectedAgent,
     selectedReasoning,
-    activeModel,
     activeAgent,
     recentSessionsRef,
     isRunningRef,
@@ -1027,9 +1055,25 @@ export function SessionDetail({ id }: SessionDetailProps) {
   }, [handleThreadBoundaryRetry, id]);
 
   const handleModelChange = useCallback((model: string) => {
+    modelSeededSessionRef.current = id;
     setSelectedModel(model);
     setSelectedReasoning('');
-  }, [setSelectedModel, setSelectedReasoning]);
+  }, [id, setSelectedModel, setSelectedReasoning]);
+
+  // Switching to an agent that defines a model selects that model in
+  // the composer (and thus respects it on send). A later manual model
+  // change overrides it; switching agents again re-applies the new
+  // agent's model. Agents without a model leave the selection as-is.
+  const handleAgentChange = useCallback((agent: string) => {
+    modelSeededSessionRef.current = id;
+    setSelectedAgent(agent);
+    const info = agents.find((a) => a.name === agent);
+    const agentModel = agentModelRef(info);
+    if (agentModel) {
+      setSelectedModel(agentModel);
+      setSelectedReasoning('');
+    }
+  }, [agents, id, setSelectedAgent, setSelectedModel, setSelectedReasoning]);
 
   // Alt+J / Alt+K: navigate between recent sessions.
   const jumpToSession = useCallback((direction: 1 | -1) => {
@@ -1366,14 +1410,13 @@ export function SessionDetail({ id }: SessionDetailProps) {
                           whisperAvailable={whisperAvailable}
                           models={composerModels}
                           modelEntries={modelEntries}
-                          activeModel={activeModel}
                           selectedModel={selectedModel}
                           onModelChange={handleModelChange}
                           onToggleFavorite={handleToggleFavorite}
                           onRefreshModels={refreshModels}
                           activeAgent={activeAgent}
                           selectedAgent={selectedAgent}
-                          onAgentChange={setSelectedAgent}
+                          onAgentChange={handleAgentChange}
                           agents={agents}
                           agentsLoaded={agentsLoaded}
                           contextTokens={session?.contextTokenCount || undefined}

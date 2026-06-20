@@ -160,6 +160,14 @@ export function computeTurnStats(messages: Message[], parts: Part[]): TurnStatsM
   return map;
 }
 
+export function latestTurnModel(messages: Message[], turnStatsMap: TurnStatsMap): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const model = turnStatsMap.get(messages[i].id)?.model;
+    if (model) return model;
+  }
+  return '';
+}
+
 function tryParse(s: string): unknown {
   try {
     return JSON.parse(s);

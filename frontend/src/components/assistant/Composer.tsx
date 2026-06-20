@@ -50,7 +50,6 @@ function ComposerImpl({
   whisperAvailable,
   models,
   modelEntries,
-  activeModel,
   selectedModel,
   onModelChange,
   onToggleFavorite,
@@ -106,7 +105,6 @@ function ComposerImpl({
   whisperAvailable?: boolean;
   models?: string[];
   modelEntries?: SessionModelEntry[];
-  activeModel?: string;
   selectedModel?: string;
   onModelChange?: (model: string) => void;
   /**
@@ -767,17 +765,19 @@ function ComposerImpl({
     return () => document.removeEventListener('mousedown', handler);
   }, [showTokenPopover]);
 
+  const effectiveModel = selectedModel || '';
+
   // Fetch estimated cost from backend when the popover opens (or stats change
   // while it's already open). The backend uses the pricing table loaded at
-  // startup to compute the cost from the token counts and active model.
+  // startup to compute the cost from the token counts and selected model.
   useEffect(() => {
-    if (!showTokenPopover || !tokenStats || !activeModel) return;
+    if (!showTokenPopover || !tokenStats || !effectiveModel) return;
     let cancelled = false;
     // Schedule the loading flag in a microtask to avoid a synchronous setState
     // inside the effect body (react-hooks/set-state-in-effect).
     Promise.resolve().then(() => { if (!cancelled) setEstCostLoading(true); });
     api.calcCost({
-      modelID: activeModel,
+      modelID: effectiveModel,
       input: tokenStats.input,
       output: tokenStats.output,
       cacheRead: tokenStats.cacheRead,
@@ -794,13 +794,12 @@ function ComposerImpl({
       }
     });
     return () => { cancelled = true; };
-  }, [showTokenPopover, activeModel, tokenStats?.input, tokenStats?.output, tokenStats?.cacheRead, tokenStats?.cacheWrite, tokenStats]);
+  }, [showTokenPopover, effectiveModel, tokenStats?.input, tokenStats?.output, tokenStats?.cacheRead, tokenStats?.cacheWrite, tokenStats]);
 
   const agentOptions = Array.from(new Set([activeAgent, ...KNOWN_AGENTS].filter((a): a is string => !!a)));
   const effectiveAgent = selectedAgent || activeAgent || '';
   useEffect(() => { agentOptionsRef.current = agentOptions; }, [agentOptions]);
   useEffect(() => { effectiveAgentRef.current = effectiveAgent; }, [effectiveAgent]);
-  const effectiveModel = selectedModel || activeModel || '';
   // Label shown on the composer's model button. Prefer the human-readable
   // `modelName` from the rich entries (e.g. "Claude Opus 4.7"), falling back
   // to the bare model id from the "provider/model" string.
@@ -1138,7 +1137,7 @@ function ComposerImpl({
             </span>
           )}
           {contextTokens != null && contextTokens > 0 && (() => {
-            const contextWindow = getContextWindow(activeModel);
+            const contextWindow = getContextWindow(effectiveModel);
             const pct = contextWindow ? Math.min(100, (contextTokens / contextWindow) * 100) : null;
             return (
               <span className="oc-context-usage-wrap" ref={tokenPopoverRef}>
@@ -1224,7 +1223,6 @@ export const Composer = memo(ComposerImpl, (prev, next) =>
   prev.disabledHint === next.disabledHint &&
   prev.onLaunchRequest === next.onLaunchRequest &&
   prev.whisperAvailable === next.whisperAvailable &&
-  prev.activeModel === next.activeModel &&
   prev.selectedModel === next.selectedModel &&
   prev.activeAgent === next.activeAgent &&
   prev.selectedAgent === next.selectedAgent &&
