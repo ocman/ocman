@@ -699,6 +699,38 @@ func TestListChildSessionsByParent(t *testing.T) {
 	}
 }
 
+func TestChildSessionParents(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+
+	cs1 := makeChildSession("child-a", "parent-1")
+	cs2 := makeChildSession("child-b", "parent-1")
+	cs3 := makeChildSession("child-c", "parent-2")
+	for _, cs := range []ChildSession{cs1, cs2, cs3} {
+		if err := db.InsertChildSession(cs); err != nil {
+			t.Fatalf("InsertChildSession %s: %v", cs.ID, err)
+		}
+	}
+
+	got, err := db.ChildSessionParents()
+	if err != nil {
+		t.Fatalf("ChildSessionParents: %v", err)
+	}
+	want := map[Key]string{
+		{Platform: "opencode", SessionID: "child-a"}: "parent-1",
+		{Platform: "opencode", SessionID: "child-b"}: "parent-1",
+		{Platform: "opencode", SessionID: "child-c"}: "parent-2",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d entries, got %d: %v", len(want), len(got), got)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("parent for %v = %q, want %q", k, got[k], v)
+		}
+	}
+}
+
 func TestListNonTerminalChildSessions(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()

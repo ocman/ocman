@@ -38,6 +38,7 @@ func testServer(t *testing.T) *Server {
 		CREATE TABLE session (
 			id TEXT PRIMARY KEY,
 			project_id TEXT NOT NULL DEFAULT '',
+			parent_id TEXT,
 			title TEXT NOT NULL DEFAULT '',
 			directory TEXT NOT NULL DEFAULT '',
 			time_created INTEGER NOT NULL DEFAULT 0,
@@ -374,6 +375,47 @@ func TestApplySessionState_MarksSeen(t *testing.T) {
 	}
 	if sessions[1].Seen {
 		t.Error("s2 should not be marked as seen")
+	}
+}
+
+// TestApplySessionState_OverlaysMCPChildParent verifies that a session
+// spawned via the MCP split tools (tracked only in state.db's
+// child_sessions table) gets its ParentID populated, and that an
+// existing platform-supplied ParentID (an OpenCode subagent) is never
+// overwritten by the overlay.
+func TestApplySessionState_OverlaysMCPChildParent(t *testing.T) {
+	srv := testServer(t)
+	if err := srv.stateDB.InsertChildSession(state.ChildSession{
+		ID:              "child-mcp",
+		Platform:        "opencode",
+		ParentSessionID: "parent-mcp",
+		Intent:          "do a thing",
+		ComposedPrompt:  "prompt",
+		Status:          "running",
+		CreatedAt:       1000,
+	}); err != nil {
+		t.Fatalf("InsertChildSession: %v", err)
+	}
+
+	sessions := []db.Session{
+		{ID: "parent-mcp", Platform: "opencode", TimeUpdated: 2000},
+		{ID: "child-mcp", Platform: "opencode", TimeUpdated: 2000},
+		// A subagent whose parent_id already came from the platform;
+		// the overlay must leave it untouched even if a stale
+		// child_sessions row ever pointed elsewhere.
+		{ID: "subagent", Platform: "opencode", ParentID: "platform-parent", TimeUpdated: 2000},
+	}
+	if err := srv.applySessionState(sessions); err != nil {
+		t.Fatalf("applySessionState: %v", err)
+	}
+	if sessions[1].ParentID != "parent-mcp" {
+		t.Errorf("child-mcp ParentID = %q, want %q", sessions[1].ParentID, "parent-mcp")
+	}
+	if sessions[0].ParentID != "" {
+		t.Errorf("parent-mcp should stay top-level, got ParentID %q", sessions[0].ParentID)
+	}
+	if sessions[2].ParentID != "platform-parent" {
+		t.Errorf("platform-supplied ParentID overwritten: got %q", sessions[2].ParentID)
 	}
 }
 
@@ -734,6 +776,7 @@ func testServerWithRawDB(t *testing.T) (*Server, *sql.DB) {
 		CREATE TABLE session (
 			id TEXT PRIMARY KEY,
 			project_id TEXT NOT NULL DEFAULT '',
+			parent_id TEXT,
 			title TEXT NOT NULL DEFAULT '',
 			directory TEXT NOT NULL DEFAULT '',
 			time_created INTEGER NOT NULL DEFAULT 0,

@@ -7,6 +7,7 @@ import { cleanTitle, formatDuration, relativeTime, shortPath } from '../lib/form
 import { StatusBadge } from './StatusBadge';
 import { PlatformBadge } from './PlatformBadge';
 import { filterVisibleSessions } from '../lib/sessionVisibility';
+import { nestSessions } from '../lib/nestSessions';
 import { SessionTableSkeleton } from './Skeleton';
 import { projectRootForDirectory } from '../lib/worktrees';
 import { rollupGroupStatus } from '../lib/sidebarHelpers';
@@ -217,17 +218,20 @@ export function GroupedSessionTable({
                   </tr>
                 </thead>
                 <tbody>
-                  {group.sessions.map(s => {
+                  {nestSessions(group.sessions).map(({ session: s, depth }) => {
                     const seenLatest = (s.status === 'waiting' || s.status === 'error' || s.status === 'done') && s.seen;
                     const pending = s.pendingPermission || s.pendingQuestion;
                     return (
                       <tr
                         key={s.id}
-                        className={s.liveConnection ? '' : 'no-port'}
+                        className={`${s.liveConnection ? '' : 'no-port'}${depth > 0 ? ' session-row-child' : ''}`}
                         onClick={() => navigate(`/session/${s.id}`)}
                       >
                         <td>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            {depth > 0 && (
+                              <span className="session-child-branch" style={{ '--depth': depth } as React.CSSProperties} aria-hidden="true">&#9492;&#9472;</span>
+                            )}
                             <StatusBadge status={s.status} compact seen={seenLatest} pending={pending} />
                             <span className="session-title">{cleanTitle(s.title) || 'Untitled'}</span>
                             <UnreadBadge session={s} />
@@ -323,17 +327,20 @@ export function SessionTable({ sessions, showProject, loading, includeArchived }
         </tr>
       </thead>
       <tbody>
-        {visibleSessions.map(s => {
+        {nestSessions(visibleSessions).map(({ session: s, depth }) => {
           const seenLatest = (s.status === 'waiting' || s.status === 'error' || s.status === 'done') && s.seen;
           const pending = s.pendingPermission || s.pendingQuestion;
           return (
             <tr
               key={s.id}
-              className={s.liveConnection ? '' : 'no-port'}
+              className={`${s.liveConnection ? '' : 'no-port'}${depth > 0 ? ' session-row-child' : ''}`}
               onClick={() => navigate(`/session/${s.id}`)}
             >
               <td>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {depth > 0 && (
+                    <span className="session-child-branch" style={{ '--depth': depth } as React.CSSProperties} aria-hidden="true">&#9492;&#9472;</span>
+                  )}
                   <StatusBadge status={s.status} compact seen={seenLatest} pending={pending} />
                   <span className="session-title">{cleanTitle(s.title) || 'Untitled'}</span>
                   <UnreadBadge session={s} />

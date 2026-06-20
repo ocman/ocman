@@ -1,3 +1,4 @@
+import type React from 'react';
 import { useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   DndContext,
@@ -27,6 +28,7 @@ import { BackendStats } from '../../components/BackendStats';
 import { SidebarResizer } from '../../components/SidebarResizer';
 import { SessionSidebarListSkeleton } from '../../components/Skeleton';
 import { rollupGroupStatus } from '../../lib/sidebarHelpers';
+import { nestSessions } from '../../lib/nestSessions';
 import { remoteLog } from '../../lib/remoteLog';
 import { ArchiveIcon, ArchiveFilterIcon, ProjectsViewIcon, RecentViewIcon } from './SidebarIcons';
 import type { TmuxState } from '../../lib/useTmux';
@@ -136,7 +138,7 @@ export function SessionSidebar({
   // over the last poll (OpenCode's DB can lag SSE by several seconds;
   // using the poll value here would leave the sidebar pulse running
   // after the composer has already gone idle).
-  const renderRow = (sib: Session, inGroup: boolean) => {
+  const renderRow = (sib: Session, inGroup: boolean, depth = 0) => {
     const displayStatus = sib.id === activeId ? optimisticStatus : sib.status;
     // When a row sits inside a project group, surface the
     // worktree distinction (if any) next to the platform
@@ -160,7 +162,7 @@ export function SessionSidebar({
         role="button"
         tabIndex={0}
         aria-selected={sib.id === activeId}
-        className={`session-sidebar-item ${sib.id === activeId ? 'active' : ''}${archivingSessionIds.has(sib.id) ? ' archiving' : ''}${inGroup ? ' in-group' : ''}`}
+        className={`session-sidebar-item ${sib.id === activeId ? 'active' : ''}${archivingSessionIds.has(sib.id) ? ' archiving' : ''}${inGroup ? ' in-group' : ''}${depth > 0 ? ' session-sidebar-item-child' : ''}`}
         onClick={() => {
           if (debugMode) {
             remoteLog.info('[ocman:nav] sidebar click', {
@@ -185,6 +187,15 @@ export function SessionSidebar({
           }
         }}
       >
+        {depth > 0 && (
+          <span
+            className="session-child-branch"
+            style={{ '--depth': depth } as React.CSSProperties}
+            aria-hidden="true"
+          >
+            &#9492;&#9472;
+          </span>
+        )}
         <StatusBadge
           status={displayStatus}
           compact
@@ -193,7 +204,9 @@ export function SessionSidebar({
           titleOverride={sib.notice?.message}
         />
         <span className="session-sidebar-item-body">
-          <span className="session-sidebar-title">{cleanTitle(sib.title) || 'Untitled'}</span>
+          <span className="session-sidebar-title">
+            {cleanTitle(sib.title) || 'Untitled'}
+          </span>
           {!inGroup && (
             <span className="session-sidebar-project">
               <PlatformBadge platform={sib.platform} variant="plain" />
@@ -210,15 +223,6 @@ export function SessionSidebar({
           <GitStatusLine info={siblingGitInfos[sib.directory]} icon={isWorktree ? 'worktree' : 'branch'} />
         </span>
         <span className="session-sidebar-meta">
-          {sib.unreadCount > 0 && !sib.seen && sib.id !== activeId && (
-            <span
-              className="session-sidebar-unread"
-              data-testid="session-sidebar-unread"
-              title={`${sib.unreadCount} new message${sib.unreadCount === 1 ? '' : 's'} since you last viewed this session`}
-            >
-              {sib.unreadCount > 99 ? '99+' : sib.unreadCount}
-            </span>
-          )}
           <span className="session-sidebar-time" title={new Date(sib.timeUpdated).toLocaleString()}>{relativeTime(sib.timeUpdated)}</span>
           <span className="session-sidebar-actions">
             <button
@@ -296,7 +300,7 @@ export function SessionSidebar({
             <span className="session-sidebar-group-count">{group.sessions.length}</span>
           </div>
         </div>
-        {group.sessions.map(sib => renderRow(sib, false))}
+        {nestSessions(group.sessions).map(({ session: sib, depth }) => renderRow(sib, false, depth))}
       </div>
     );
   };
@@ -361,7 +365,7 @@ export function SessionSidebar({
             >+</button>
           )}
         </div>
-        {!collapsed && group.sessions.map(sib => renderRow(sib, true))}
+        {!collapsed && nestSessions(group.sessions).map(({ session: sib, depth }) => renderRow(sib, true, depth))}
       </>
     );
   };
@@ -401,11 +405,11 @@ export function SessionSidebar({
     const unpinnedFlat = recentSessions.filter(s => !s.pinned);
     return (
       <>
-        {pinnedFlat.map(sib => renderRow(sib, false))}
+        {nestSessions(pinnedFlat).map(({ session: sib, depth }) => renderRow(sib, false, depth))}
         {pinnedFlat.length > 0 && unpinnedFlat.length > 0 && (
           <div className="session-sidebar-divider" />
         )}
-        {unpinnedFlat.map(sib => renderRow(sib, false))}
+        {nestSessions(unpinnedFlat).map(({ session: sib, depth }) => renderRow(sib, false, depth))}
       </>
     );
   };

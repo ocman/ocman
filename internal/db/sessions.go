@@ -22,7 +22,7 @@ func derefStr(s *string) string {
 func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 	query := `
 		SELECT
-			s.id, s.project_id, s.title, s.directory,
+			s.id, s.project_id, s.parent_id, s.title, s.directory,
 			s.time_created, s.time_updated,
 			s.summary_additions, s.summary_deletions, s.summary_files,
 			s.share_url,
@@ -101,8 +101,11 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 	`
 	var conditions []string
 	var args []interface{}
-	// Hide subagent sessions (titles ending with "(<something> subagent)")
-	conditions = append(conditions, `s.title NOT LIKE '%(% subagent)'`)
+	// Subagent sessions (non-NULL parent_id, conventionally titled
+	// "... (<something> subagent)") are no longer hidden in SQL — we
+	// surface them nested under their parent in the UI. Completed
+	// subagents are filtered out below in Go, after status inference,
+	// to keep the list from filling up with finished Task-tool runs.
 	if directory != "" {
 		conditions = append(conditions, `s.directory = ?`)
 		args = append(args, directory)
@@ -125,12 +128,13 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 	var sessions []Session
 	for rows.Next() {
 		var s Session
+		var parentID *string
 		var lastRole, lastFinish, lastError *string
 		var lastErrorName, lastErrorMessage *string
 		var lastErrorAt *int64
 		var lastSynthTerminal int
 		err := rows.Scan(
-			&s.ID, &s.ProjectID, &s.Title, &s.Directory,
+			&s.ID, &s.ProjectID, &parentID, &s.Title, &s.Directory,
 			&s.TimeCreated, &s.TimeUpdated,
 			&s.SummaryAdditions, &s.SummaryDeletions, &s.SummaryFiles,
 			&s.ShareURL,
@@ -144,11 +148,21 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 			log.WithError(err).Warn("failed to scan session row")
 			continue
 		}
+		s.ParentID = derefStr(parentID)
 		s.DurationMs = s.TimeUpdated - s.TimeCreated
 
 		// Determine session status based on the last message.
 		role, finish, lastErr := derefStr(lastRole), derefStr(lastFinish), derefStr(lastError)
 		s.Status = InferSessionStatus(role, finish, lastErr, lastSynthTerminal == 1)
+
+		// Drop subagent sessions that have already finished. A
+		// subagent (non-empty parent_id) is only worth showing
+		// while it's still active — a finished Task-tool run would
+		// otherwise pile up under its parent. Parent (top-level)
+		// sessions are always kept regardless of status.
+		if s.ParentID != "" && s.Status == "done" {
+			continue
+		}
 
 		// Carry error metadata for the notice normalizer.
 		s.LastErrorName = derefStr(lastErrorName)

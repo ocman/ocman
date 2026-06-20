@@ -85,7 +85,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 16px;
+  padding: 6px 12px 6px 0;
   background: transparent;
   border: 0;
   color: var(--text-dim);
@@ -191,7 +191,10 @@
 /* Rows inside a group get a subtle left inset so the hierarchy reads at a
    glance without taking much horizontal space. */
 .session-sidebar-item.in-group {
-  padding-left: 24px;
+  /* Align a grouped row's status dot with the group header's status
+     dot. The header content is offset by the 16px drag-handle column,
+     so grouped rows match that offset. */
+  padding-left: 16px;
 }
 .session-sidebar-list {
   flex: 1;
@@ -207,7 +210,7 @@
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  padding: 10px 16px;
+  padding: 10px 12px 10px 0;
   cursor: pointer;
   border-bottom: 1px solid var(--border);
   overflow: hidden;
@@ -252,6 +255,22 @@
   color: var(--text);
 }
 .session-sidebar-item.active .session-sidebar-title { color: var(--accent); }
+/* Nested child rows (subagent / MCP-split sessions). The tree-branch
+   glyph sits in its own leading column, before the status dot, so the
+   status dots of parent and child stay vertically aligned and the
+   nesting reads as a gutter rather than shifted content. The glyph's
+   left margin scales with nesting depth via --depth. */
+.session-child-branch {
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 1px;
+  margin-left: calc((var(--depth, 1) - 1) * 14px);
+  color: var(--overlay0, var(--text-dim));
+  opacity: 0.6;
+  font-family: 'SF Mono', Consolas, monospace;
+  line-height: 1;
+  user-select: none;
+}
 .session-sidebar-project {
   min-width: 0;
   overflow: hidden;
@@ -296,26 +315,6 @@
   white-space: nowrap;
   flex-shrink: 0;
   padding-top: 2px;
-}
-/* Unread message count badge.
-   Uses the same "blue = new since last view" vocabulary as the
-   status dot (see StatusBadge.css). Hidden when:
-   - the session is fully seen (unreadCount=0 or seen=true)
-   - this row is the currently-open session (the SessionDetail
-     useEffect marks it seen on mount, so the badge would
-     immediately flicker off). */
-.session-sidebar-unread {
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1;
-  color: var(--base);
-  background: var(--blue);
-  border-radius: 8px;
-  padding: 2px 6px;
-  min-width: 16px;
-  text-align: center;
-  white-space: nowrap;
-  flex-shrink: 0;
 }
 /* Row container for pin + archive buttons */
 .session-sidebar-actions {

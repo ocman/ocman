@@ -456,6 +456,36 @@ func (d *DB) CancelChildSession(id string, cancelledAt int64) error {
 	return nil
 }
 
+// ChildSessionParents returns a map of every MCP-spawned child
+// session's Key (platform + child session ID) to its parent session
+// ID. Used by the server to overlay a parent link onto the listed
+// sessions so the UI can nest a split child under the session that
+// spawned it. Children whose parent session is not in the listing are
+// still returned; the frontend promotes such orphans to top level.
+func (d *DB) ChildSessionParents() (map[Key]string, error) {
+	rows, err := d.db.Query(`
+		SELECT platform, id, parent_session_id
+		FROM child_sessions
+		WHERE parent_session_id IS NOT NULL AND parent_session_id != ''
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("listing child session parents: %w", err)
+	}
+	defer rows.Close()
+	out := map[Key]string{}
+	for rows.Next() {
+		var platform, id, parentID string
+		if err := rows.Scan(&platform, &id, &parentID); err != nil {
+			return nil, fmt.Errorf("scanning child session parent: %w", err)
+		}
+		out[Key{Platform: platform, SessionID: id}] = parentID
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading child session parents: %w", err)
+	}
+	return out, nil
+}
+
 // scanChildSessions scans a *sql.Rows result into a []ChildSession.
 func scanChildSessions(rows *sql.Rows) ([]ChildSession, error) {
 	var out []ChildSession

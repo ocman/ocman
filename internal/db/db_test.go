@@ -240,23 +240,49 @@ func TestGetSessions_FilterBySince(t *testing.T) {
 	}
 }
 
-func TestGetSessions_ExcludesSubagents(t *testing.T) {
+// TestGetSessions_ExcludesCompletedSubagents verifies that a subagent
+// (a session with a non-NULL parent_id) is hidden once it finishes, but
+// surfaced — with its parent link populated — while it's still active.
+// Top-level sessions are always returned regardless of status.
+func TestGetSessions_ExcludesCompletedSubagents(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
 	now := time.Now().UnixMilli()
-	insertSession(t, db, "s1", "Normal Session", "/project", now, now)
-	insertSession(t, db, "s2", "Task (code subagent)", "/project", now, now)
+	insertSession(t, db, "parent", "Normal Session", "/project", now, now)
+
+	// A completed subagent: no messages → InferSessionStatus == "done".
+	insertSubagent(t, db, "child-done", "parent", "Task (code subagent)", "/project", now, now)
+
+	// An active subagent: last message is an assistant turn with no
+	// finish → status "busy", so it must be shown.
+	insertSubagent(t, db, "child-busy", "parent", "Task (build subagent)", "/project", now, now)
+	insertMessage(t, db, "m1", "child-busy", now, map[string]interface{}{"role": "assistant"})
 
 	sessions, err := db.GetSessions("", 0)
 	if err != nil {
 		t.Fatalf("GetSessions: %v", err)
 	}
-	if len(sessions) != 1 {
-		t.Fatalf("expected 1 session (subagent excluded), got %d", len(sessions))
+
+	got := map[string]Session{}
+	for _, s := range sessions {
+		got[s.ID] = s
 	}
-	if sessions[0].ID != "s1" {
-		t.Errorf("expected s1, got %s", sessions[0].ID)
+	if _, ok := got["parent"]; !ok {
+		t.Errorf("expected top-level session 'parent' to be returned")
+	}
+	if _, ok := got["child-done"]; ok {
+		t.Errorf("completed subagent 'child-done' should be excluded")
+	}
+	active, ok := got["child-busy"]
+	if !ok {
+		t.Fatalf("active subagent 'child-busy' should be returned")
+	}
+	if active.ParentID != "parent" {
+		t.Errorf("expected child-busy.ParentID == 'parent', got %q", active.ParentID)
+	}
+	if len(sessions) != 2 {
+		t.Fatalf("expected 2 sessions (parent + active subagent), got %d", len(sessions))
 	}
 }
 

@@ -46,6 +46,14 @@ export interface Session {
 	 */
   platform: string;
   projectId: string;
+  /**
+   * Session this one descends from, when any. Populated from either
+   * OpenCode's `session.parent_id` (subagent sessions) or ocman's
+   * `child_sessions.parent_session_id` (sessions spawned via the MCP
+   * split tools). Empty/undefined for top-level sessions. Drives the
+   * parent/child nesting in the session lists (see `nestSessions`).
+   */
+  parentId?: string;
   title: string;
   directory: string;
   timeCreated: number;

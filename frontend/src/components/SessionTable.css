@@ -106,6 +106,21 @@
   padding-right: 2px;
 }
 
+/* Child (nested) session rows. A subagent or MCP-split session is
+   prefixed with a tree-branch glyph placed before the status dot, so
+   the status dots of parent and child stay aligned and the nesting
+   reads as a gutter. The glyph's left margin scales with nesting depth
+   via the inline --depth custom property. */
+.session-child-branch {
+  flex-shrink: 0;
+  margin-left: calc((var(--depth, 1) - 1) * 16px);
+  color: var(--overlay0, var(--text-dim));
+  opacity: 0.6;
+  font-family: 'SF Mono', Consolas, monospace;
+  line-height: 1;
+  user-select: none;
+}
+
 /* Session title with ellipsis overflow */
 .session-title {
   color: var(--accent);

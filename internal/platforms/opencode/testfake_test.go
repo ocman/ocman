@@ -170,6 +170,7 @@ func newTestDBWithSession(t *testing.T, sessionID, directory string) *db.DB {
 		CREATE TABLE session (
 			id TEXT PRIMARY KEY,
 			project_id TEXT NOT NULL DEFAULT '',
+			parent_id TEXT,
 			title TEXT NOT NULL DEFAULT '',
 			directory TEXT NOT NULL DEFAULT '',
 			time_created INTEGER NOT NULL DEFAULT 0,

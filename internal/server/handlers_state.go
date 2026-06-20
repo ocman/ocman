@@ -148,6 +148,15 @@ func (s *Server) applySessionState(sessions []db.Session) error {
 	if err != nil {
 		return err
 	}
+	// Parent links for sessions spawned via the MCP split tools. A
+	// split child is a full top-level OpenCode session (no
+	// session.parent_id), so the only record of its parent lives in
+	// ocman's own child_sessions table. We overlay it here so the UI
+	// can nest the child under the session that spawned it.
+	childParents, err := s.stateDB.ChildSessionParents()
+	if err != nil {
+		return err
+	}
 
 	// Build the per-platform "I want unread counts for these sessions
 	// at this cutoff" maps. Skip sessions that are fully seen
@@ -169,6 +178,15 @@ func (s *Server) applySessionState(sessions []db.Session) error {
 		if pinnedAt, ok := pinned[key]; ok {
 			sessions[i].Pinned = true
 			sessions[i].PinnedAt = pinnedAt
+		}
+
+		// Overlay the MCP-split parent link, but never override a
+		// parent already set by the platform (OpenCode subagent
+		// sessions carry their own session.parent_id).
+		if sessions[i].ParentID == "" {
+			if parentID, ok := childParents[key]; ok {
+				sessions[i].ParentID = parentID
+			}
 		}
 
 		// Queue unread-count lookup for unseen sessions. The
