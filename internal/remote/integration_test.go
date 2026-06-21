@@ -120,3 +120,38 @@ func TestManager_RegistersRemotePlatform(t *testing.T) {
 		t.Fatal("remote host not registered in router")
 	}
 }
+
+func TestRemotePlatform_OfflineServesStale(t *testing.T) {
+	reg := platforms.NewRegistry()
+	reg.Register(&fakePlatform{id: "opencode", sessions: []db.Session{
+		{ID: "s1", Platform: "opencode", Title: "live"},
+	}})
+	addr := startRealRemote(t, "tok", "rid", reg)
+
+	conn := NewRemoteConn(addr, "tok")
+	if err := conn.Connect(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	rp := newRemotePlatform(conn, "opencode", func() string { return "Box" })
+
+	// First call populates the last-known cache from the live remote.
+	live, err := rp.Sessions(context.Background(), "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(live) != 1 || live[0].Stale {
+		t.Fatalf("live call should not be stale: %+v", live)
+	}
+
+	// Simulate the remote going offline.
+	conn.Close()
+	conn.markOffline()
+
+	stale, err := rp.Sessions(context.Background(), "", 0)
+	if err != nil {
+		t.Fatalf("offline Sessions should not error: %v", err)
+	}
+	if len(stale) != 1 || !stale[0].Stale {
+		t.Fatalf("offline call should yield stale rows: %+v", stale)
+	}
+}

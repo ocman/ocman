@@ -37,22 +37,12 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	limit := parseIntParam(r, "limit", 500)
 
 	ctx := r.Context()
-	var all []db.Session
-	for _, adapter := range s.registry.Platforms() {
-		if !adapter.Available(ctx) {
-			continue
-		}
-		platPhase := srvtiming.Begin(ctx, "sessions_"+string(adapter.ID()))
-		sessions, err := adapter.Sessions(ctx, dir, since)
-		platPhase.End()
-		if err != nil {
-			log.WithFields(log.Fields{"platform": adapter.ID(), "error": err}).
-				Warn("listing sessions from platform")
-			continue
-		}
-		s.registry.RememberSessions(adapter.ID(), sessions)
-		all = append(all, sessions...)
-	}
+	// Concurrent, non-blocking fan-out across local + remote adapters.
+	// Remote adapters are bounded by a short timeout so a slow/offline
+	// remote never delays the unified list (FR-15, NFR-1).
+	fanPhase := srvtiming.Begin(ctx, "sessions_fanout")
+	all := s.fanOutSessions(ctx, dir, since, s.registry.RememberSessions)
+	fanPhase.End()
 
 	// Force-include pinned sessions that fell outside the time window.
 	// The pinned set is typically <10 entries; each miss is a single
@@ -143,19 +133,7 @@ func (s *Server) handleSessionsNotify(w http.ResponseWriter, r *http.Request) {
 	limit := parseIntParam(r, "limit", 500)
 
 	ctx := r.Context()
-	var all []db.Session
-	for _, adapter := range s.registry.Platforms() {
-		if !adapter.Available(ctx) {
-			continue
-		}
-		sessions, err := adapter.Sessions(ctx, "", since)
-		if err != nil {
-			log.WithFields(log.Fields{"platform": adapter.ID(), "error": err}).
-				Warn("listing sessions for notify")
-			continue
-		}
-		all = append(all, sessions...)
-	}
+	all := s.fanOutSessions(ctx, "", since, nil)
 
 	all = sortAndLimitSessions(all, limit)
 
