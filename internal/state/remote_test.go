@@ -180,16 +180,3 @@ func TestRemote_DuplicateRemoteIDRejected(t *testing.T) {
 		t.Fatal("expected UNIQUE violation for duplicate remote_id")
 	}
 }
-
-func TestMaskToken(t *testing.T) {
-	cases := map[string]string{
-		"":            "",
-		"abcd":        "••••",
-		"abcdefghijk": "abcd…hijk",
-	}
-	for in, want := range cases {
-		if got := maskToken(in); got != want {
-			t.Errorf("maskToken(%q) = %q, want %q", in, got, want)
-		}
-	}
-}

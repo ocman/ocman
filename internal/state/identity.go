@@ -6,7 +6,6 @@ import (
 	"encoding/base32"
 	"encoding/base64"
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -96,14 +95,3 @@ func (d *DB) InstanceIdentity() (InstanceIdentity, error) {
 	return ident, nil
 }
 
-// maskToken returns a display-safe rendering of a secret: the first and
-// last few characters with the middle elided. Empty input yields "".
-func maskToken(s string) string {
-	if s == "" {
-		return ""
-	}
-	if len(s) <= 8 {
-		return strings.Repeat("•", len(s))
-	}
-	return s[:4] + "…" + s[len(s)-4:]
-}

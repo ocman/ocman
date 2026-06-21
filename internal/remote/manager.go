@@ -273,7 +273,6 @@ type RemoteStatus struct {
 	ProtocolVersion int    `json:"protocolVersion"`
 	LastSeen        int64  `json:"lastSeen"`
 	SessionCount    int    `json:"sessionCount"`
-	ProjectCount    int    `json:"projectCount"`
 }
 
 // List returns the status of every configured remote, merging persisted

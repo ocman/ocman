@@ -12,6 +12,7 @@ package local
 
 import (
 	"context"
+	"strings"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/gitinfo"
@@ -100,7 +101,7 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 		return nil, err
 	}
 	session := target
-	if i := indexByte(target, ':'); i >= 0 {
+	if i := strings.IndexByte(target, ':'); i >= 0 {
 		session = target[:i]
 	}
 	return &hostsvc.WorktreeSessionResult{
@@ -134,14 +135,4 @@ func (h *Host) Projects(ctx context.Context) ([]db.ProjectStats, error) {
 		return nil, nil
 	}
 	return h.deps.Projects(ctx)
-}
-
-// indexByte avoids importing strings for a one-byte search.
-func indexByte(s string, b byte) int {
-	for i := 0; i < len(s); i++ {
-		if s[i] == b {
-			return i
-		}
-	}
-	return -1
 }

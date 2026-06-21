@@ -740,7 +740,6 @@ export interface RemoteStatus {
   protocolVersion: number;
   lastSeen: number;
   sessionCount: number;
-  projectCount: number;
 }
 
 /**
