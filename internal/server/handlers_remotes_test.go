@@ -20,6 +20,110 @@ func withManager(t *testing.T, srv *Server) *remote.Manager {
 	return mgr
 }
 
+func TestHandleRemotes_NoManagerErrors(t *testing.T) {
+	srv := testServer(t) // no manager
+
+	// POST without a manager is a 503.
+	post := httptest.NewRequest(http.MethodPost, "/api/remotes", bytes.NewBufferString(`{}`))
+	pr := httptest.NewRecorder()
+	srv.handleRemotes(pr, post)
+	if pr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("POST no-manager = %d, want 503", pr.Code)
+	}
+
+	// Any /api/remotes/{id} call is a 503.
+	idreq := httptest.NewRequest(http.MethodDelete, "/api/remotes/1", nil)
+	ir := httptest.NewRecorder()
+	srv.handleRemoteByID(ir, idreq)
+	if ir.Code != http.StatusServiceUnavailable {
+		t.Fatalf("byID no-manager = %d, want 503", ir.Code)
+	}
+}
+
+func TestHandleRemotes_MethodAndValidationErrors(t *testing.T) {
+	srv := testServer(t)
+	withManager(t, srv)
+
+	// Unsupported method on the collection.
+	put := httptest.NewRequest(http.MethodPut, "/api/remotes", nil)
+	r1 := httptest.NewRecorder()
+	srv.handleRemotes(r1, put)
+	if r1.Code != http.StatusMethodNotAllowed {
+		t.Errorf("PUT /api/remotes = %d, want 405", r1.Code)
+	}
+
+	// Add with missing address/token -> 400.
+	bad := httptest.NewRequest(http.MethodPost, "/api/remotes", bytes.NewBufferString(`{"address":""}`))
+	bad.Header.Set("Content-Type", "application/json")
+	r2 := httptest.NewRecorder()
+	srv.handleRemotes(r2, bad)
+	if r2.Code != http.StatusBadRequest {
+		t.Errorf("add missing fields = %d, want 400", r2.Code)
+	}
+
+	// Invalid id.
+	badid := httptest.NewRequest(http.MethodDelete, "/api/remotes/notanint", nil)
+	r3 := httptest.NewRecorder()
+	srv.handleRemoteByID(r3, badid)
+	if r3.Code != http.StatusBadRequest {
+		t.Errorf("invalid id = %d, want 400", r3.Code)
+	}
+
+	// Unknown subaction.
+	unknown := httptest.NewRequest(http.MethodGet, "/api/remotes/1/bogus", nil)
+	r4 := httptest.NewRecorder()
+	srv.handleRemoteByID(r4, unknown)
+	if r4.Code != http.StatusNotFound {
+		t.Errorf("unknown action = %d, want 404", r4.Code)
+	}
+
+	// reconnect with the wrong method.
+	rc := httptest.NewRequest(http.MethodGet, "/api/remotes/1/reconnect", nil)
+	r5 := httptest.NewRecorder()
+	srv.handleRemoteByID(r5, rc)
+	if r5.Code != http.StatusMethodNotAllowed {
+		t.Errorf("GET reconnect = %d, want 405", r5.Code)
+	}
+
+	// Bare id with an unsupported method.
+	patch := httptest.NewRequest(http.MethodPatch, "/api/remotes/1", nil)
+	r6 := httptest.NewRecorder()
+	srv.handleRemoteByID(r6, patch)
+	if r6.Code != http.StatusMethodNotAllowed {
+		t.Errorf("PATCH /api/remotes/1 = %d, want 405", r6.Code)
+	}
+}
+
+func TestHandleRemoteUpdate_Validation(t *testing.T) {
+	srv := testServer(t)
+	withManager(t, srv)
+	id, _ := srv.stateDB.AddRemote("a:1", "t", "N")
+
+	// Missing address -> 400.
+	miss := httptest.NewRequest(http.MethodPut, "/api/remotes/"+strconv.FormatInt(id, 10),
+		bytes.NewBufferString(`{"displayName":"x","address":"","enabled":true}`))
+	miss.Header.Set("Content-Type", "application/json")
+	r1 := httptest.NewRecorder()
+	srv.handleRemoteByID(r1, miss)
+	if r1.Code != http.StatusBadRequest {
+		t.Fatalf("update missing address = %d, want 400", r1.Code)
+	}
+
+	// Replace token (exercises the token!=nil branch).
+	tok := `{"displayName":"x","address":"a:2","enabled":true,"token":"newtok"}`
+	rep := httptest.NewRequest(http.MethodPut, "/api/remotes/"+strconv.FormatInt(id, 10),
+		bytes.NewBufferString(tok))
+	rep.Header.Set("Content-Type", "application/json")
+	r2 := httptest.NewRecorder()
+	srv.handleRemoteByID(r2, rep)
+	if r2.Code != http.StatusOK {
+		t.Fatalf("update with token = %d body=%s", r2.Code, r2.Body.String())
+	}
+	if got, _ := srv.stateDB.RemoteToken(id); got != "newtok" {
+		t.Errorf("token not replaced: %q", got)
+	}
+}
+
 func TestHandleRemotes_EmptyListWhenNoManager(t *testing.T) {
 	srv := testServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/remotes", nil)

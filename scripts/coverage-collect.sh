@@ -13,7 +13,10 @@
 #
 # Go coverage is measured across ./internal/... (the meaningful code;
 # matches `make test-coverage`) with -covermode=atomic so it stays
-# consistent with `make test-race`.
+# consistent with `make test-race`. Generated files (protobuf/gRPC
+# *.pb.go) are excluded from the profile before computing the total —
+# they are thousands of untested auto-generated statements that would
+# otherwise distort the ratchet without measuring anything meaningful.
 #
 # Frontend coverage uses the @vitest/coverage-v8 provider configured in
 # frontend/vitest.config.ts (json-summary reporter -> total.lines.pct).
@@ -39,7 +42,11 @@ EOF
 
 collect_go() {
 	echo "==> Go coverage (./internal/...)"
-	go test ./internal/... -coverprofile=coverage/go.out -covermode=atomic
+	go test ./internal/... -coverprofile=coverage/go.raw.out -covermode=atomic
+	# Drop generated files (e.g. *.pb.go) from the profile; the mode
+	# header line (first line) is preserved.
+	grep -vE '\.pb\.go:' coverage/go.raw.out > coverage/go.out
+	rm -f coverage/go.raw.out
 	local pct
 	pct="$(go tool cover -func=coverage/go.out | awk '/^total:/ {gsub("%","",$3); print $3}')"
 	if [ -z "${pct:-}" ]; then
