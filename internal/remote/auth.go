@@ -71,3 +71,9 @@ func (c bearerCreds) GetRequestMetadata(_ context.Context, _ ...string) (map[str
 }
 
 func (c bearerCreds) RequireTransportSecurity() bool { return c.requireTLS }
+
+// codeIsUnauthenticated reports whether err is a gRPC Unauthenticated
+// status (used to classify a failed handshake as auth-failed).
+func codeIsUnauthenticated(err error) bool {
+	return status.Code(err) == codes.Unauthenticated
+}

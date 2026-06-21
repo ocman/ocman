@@ -111,6 +111,17 @@ type Session struct {
 	// by the server's applySessionNotice step; nil when no notice
 	// applies. Omitted from JSON when nil.
 	Notice *SessionNotice `json:"notice,omitempty"`
+	// RemoteID / RemoteName are display-only host attributes stamped by
+	// the owning adapter for multi-remote support (AD-7). RemoteID is
+	// "local" for the hub's own machine, else the remote's random ID;
+	// RemoteName is the host display label / hostname ("This machine"
+	// for local). The frontend renders RemoteName as a host badge; no
+	// behaviour keys off these values.
+	RemoteID   string `json:"remoteId,omitempty"`
+	RemoteName string `json:"remoteName,omitempty"`
+	// Stale marks last-known data served from an offline remote (AD-13).
+	// The frontend renders stale rows dimmed with an offline indicator.
+	Stale bool `json:"stale,omitempty"`
 	// Note: GitInfo used to live here, populated by /api/sessions on
 	// the request path via a synchronous fan-out of `git status` per
 	// directory. It now lives in the gitinfo package (gitinfo.Info)

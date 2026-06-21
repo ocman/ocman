@@ -8,7 +8,14 @@
 // See spec/multi-remote-support/architecture.md.
 package remote
 
-import "strings"
+import (
+	"errors"
+	"strings"
+)
+
+// ErrRemoteOffline is returned by hub-side adapters when the remote
+// connection is not currently established.
+var ErrRemoteOffline = errors.New("remote: not connected")
 
 // ProtocolVersion is the wire protocol version exchanged in Hello
 // (AD-12). It is bumped only on breaking wire changes; additive db-type

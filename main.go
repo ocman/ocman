@@ -204,6 +204,15 @@ func main() {
 		listening, listenAddr, tlsOn := startRemoteServer(ctx, srv, ident, *remoteListen, *remoteTLSCert, *remoteTLSKey)
 		srv.WithRemoteAccess(ident.InstanceID, listenAddr, listening, tlsOn)
 
+		// Start the hub-side remote manager: it loads any saved remotes
+		// from state.db and dials them in the background, registering
+		// remote platform/host adapters as they connect. With zero saved
+		// remotes this is a no-op (NFR-6).
+		mgr := remote.NewManager(srv.Registry(), srv.HostRouter(), stateDB, string(opencodeplatform.PlatformID))
+		mgr.Start(ctx)
+		srv.SetRemoteManager(mgr)
+		defer mgr.Stop()
+
 		if err := srv.Start(ctx); err != nil {
 			log.Fatalf("Server error: %v", err)
 		}

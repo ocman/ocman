@@ -22,6 +22,7 @@ import (
 	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
 	"github.com/NoUseFreak/ocman/internal/integrations"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
 )
@@ -135,6 +136,11 @@ type Server struct {
 	// delegate through it instead of calling host helpers directly, so
 	// remote support is automatic once remote hosts are registered.
 	hostRouter *hostsvc.Router
+
+	// remotes is the hub-side manager of attached remote connections
+	// (multi-remote support). Nil for single-host installs. The /api/
+	// remotes handlers and machine picker use it.
+	remotes *remote.Manager
 }
 
 // remoteAccessInfo holds this instance's own remote-access surface for
@@ -280,6 +286,10 @@ func (s *Server) Registry() *platforms.Registry { return s.registry }
 // HostRouter returns the host router so the remote Manager (Phase 4+)
 // can register remote hosts as connections come up.
 func (s *Server) HostRouter() *hostsvc.Router { return s.router() }
+
+// SetRemoteManager attaches the hub-side remote manager. Must be called
+// before Start. Nil for single-host installs.
+func (s *Server) SetRemoteManager(m *remote.Manager) { s.remotes = m }
 
 // Start starts the HTTP server. It blocks until the context is cancelled,
 // then gracefully shuts down the server.

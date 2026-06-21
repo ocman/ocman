@@ -165,6 +165,15 @@ func (s *Server) applySessionState(sessions []db.Session) error {
 	unreadCutoffs := map[string]map[string]int64{}
 
 	for i := range sessions {
+		// Stamp local host identity when an adapter didn't set it
+		// (remote adapters stamp their own RemoteID/RemoteName). This
+		// gives every local session a host badge of "This machine"
+		// while keeping its bare platform key (AD-3/AD-7).
+		if sessions[i].RemoteID == "" {
+			sessions[i].RemoteID = "local"
+			sessions[i].RemoteName = "This machine"
+		}
+
 		key := state.Key{Platform: sessions[i].Platform, SessionID: sessions[i].ID}
 
 		seenAtUpdate, ok := seen[key]
