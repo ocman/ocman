@@ -14,6 +14,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -391,6 +392,19 @@ type capabilityEntry struct {
 	DisplayName  string                 `json:"displayName"`
 	Available    bool                   `json:"available"`
 	Capabilities platforms.Capabilities `json:"capabilities"`
+	// RemoteID / RemoteName are present only for remote platforms so the
+	// frontend can show a host badge without parsing the compound ID.
+	RemoteID   string `json:"remoteId,omitempty"`
+	RemoteName string `json:"remoteName,omitempty"`
+}
+
+// hostCapabilityEntry surfaces a machine's directory-scoped host
+// capabilities (AD-16/AD-17). Additive alongside the existing
+// platform-scoped entries; the frontend gates host UI on these flags.
+type hostCapabilityEntry struct {
+	RemoteID     string           `json:"remoteId"`
+	RemoteName   string           `json:"remoteName"`
+	Capabilities hostsvc.HostCaps `json:"capabilities"`
 }
 
 func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
@@ -404,8 +418,25 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 			Capabilities: p.Capabilities(),
 		})
 	}
+
+	// Host capabilities, grouped per machine. v1 surfaces the local
+	// machine; remote hosts are appended once registered (Phase 6).
+	hosts := []hostCapabilityEntry{{
+		RemoteID:     "local",
+		RemoteName:   "This machine",
+		Capabilities: s.hostCaps(),
+	}}
+	for id, h := range s.router().Remotes() {
+		hosts = append(hosts, hostCapabilityEntry{
+			RemoteID:     id,
+			RemoteName:   id,
+			Capabilities: h.Capabilities(),
+		})
+	}
+
 	writeJSON(w, map[string]interface{}{
 		"platforms":        out,
+		"hosts":            hosts,
 		"worktreeSessions": worktreeSessionsAvailable(s.registry),
 		"mcpServer": map[string]interface{}{
 			"enabled": true,

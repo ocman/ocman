@@ -383,7 +383,7 @@ coverage-check: ## Compare coverage/*.json against $(BASELINE_DIR)
 	./scripts/coverage-ratchet.sh "$(BASELINE_DIR)" $(SUITE)
 
 # Run all linters and type checks
-lint: lint-backend lint-frontend lint-platform-branching
+lint: lint-backend lint-frontend lint-platform-branching lint-host-helpers
 
 lint-backend:
 	go vet ./...
@@ -397,6 +397,13 @@ lint-frontend:
 # pragma — expect to justify it in review.
 lint-platform-branching:
 	./scripts/check-platform-branching.sh
+
+# Guard against HTTP handlers calling host-local helpers (gitinfo/worktree/
+# tmux launch) directly instead of routing through the hostsvc.Host seam,
+# which would silently break for remote projects (architecture.md AD-16/R-A).
+# Suppress justified exceptions with a trailing `// ocman:allow-host-helper`.
+lint-host-helpers:
+	./scripts/check-host-helpers.sh
 
 # --- Local observability stack (Grafana LGTM) ----------------------------
 #

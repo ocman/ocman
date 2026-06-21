@@ -9,6 +9,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/gitinfo"
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
 )
 
 // handleGitInfo returns per-directory git status (branch, ahead,
@@ -63,7 +64,12 @@ func (s *Server) handleGitInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	infos := gitinfo.LookupMany(r.Context(), dirs)
+	infos, err := s.router().ForDir(dirs[0]).GitInfo(r.Context(), dirs)
+	if err != nil {
+		log.WithError(err).Warn("git info failed")
+		http.Error(w, "git info failed", http.StatusBadGateway)
+		return
+	}
 	writeJSON(w, infos)
 }
 
@@ -101,7 +107,7 @@ func (s *Server) handleGitDiff(w http.ResponseWriter, r *http.Request) {
 	}
 	fresh := r.URL.Query().Get("fresh") == "1"
 
-	d, err := gitinfo.GetDiff(r.Context(), dir, gitinfo.DiffOptions{Force: fresh})
+	d, err := s.router().ForDir(dir).GitDiff(r.Context(), dir, hostsvc.GitDiffOptions{Force: fresh})
 	if err != nil {
 		if errors.Is(err, gitinfo.ErrNotRepo) {
 			http.Error(w, "directory is not a git worktree", http.StatusNotFound)

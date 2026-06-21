@@ -72,13 +72,12 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 	if !s.requireDB(w) {
 		return
 	}
-	projects, loaded := s.projectsSnapshot()
-	if !loaded {
-		if err := s.refreshProjectsIndex(); err != nil {
-			serverError(w, "fetching projects", err)
-			return
-		}
-		projects, _ = s.projectsSnapshot()
+	// Local hub projects flow through the host seam (AD-16). Remote
+	// projects are surfaced via the inventory cache (Phase 8), not here.
+	projects, err := s.router().Local().Projects(r.Context())
+	if err != nil {
+		serverError(w, "fetching projects", err)
+		return
 	}
 	writeJSON(w, projects)
 }

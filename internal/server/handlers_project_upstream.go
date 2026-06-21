@@ -23,7 +23,10 @@ import (
 // Hoisted out of the handler so the launch path (POST /api/project/
 // handle) can reuse the exact same resolution.
 func (s *Server) detectUpstreams(ctx context.Context, projectDir string) (string, []forge.Remote, error) {
-	repoRoot, err := worktree.ResolveRepoRoot(ctx, projectDir)
+	// PR/Issue sidebar forge detection is local-only and out of v1
+	// remote scope (see requirements "Out of Scope"); this repo-root
+	// resolution feeds forge.Detect, not a routed host operation.
+	repoRoot, err := worktree.ResolveRepoRoot(ctx, projectDir) // ocman:allow-host-helper
 	if err != nil {
 		return "", nil, err
 	}

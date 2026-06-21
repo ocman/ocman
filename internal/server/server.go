@@ -18,6 +18,8 @@ import (
 	"go.opentelemetry.io/otel/metric"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
 	"github.com/NoUseFreak/ocman/internal/integrations"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -127,6 +129,12 @@ type Server struct {
 	// and whether TLS is on). Surfaced via GET /api/settings/remote-access
 	// for the multi-remote-support feature. Zero value = not listening.
 	remoteAccess remoteAccessInfo
+
+	// hostRouter resolves the owning hostsvc.Host for a directory or an
+	// explicit remote owner (AD-16). git/worktree/tmux/projects handlers
+	// delegate through it instead of calling host helpers directly, so
+	// remote support is automatic once remote hosts are registered.
+	hostRouter *hostsvc.Router
 }
 
 // remoteAccessInfo holds this instance's own remote-access surface for
@@ -197,7 +205,7 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 	if registry == nil {
 		registry = platforms.NewRegistry()
 	}
-	return &Server{
+	s := &Server{
 		db:                  database,
 		stateDB:             stateDB,
 		addr:                addr,
@@ -211,6 +219,22 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		autoApprove:      make(map[string]*autoApproveStatus),
 		safeCommandCache: make(map[string]map[string]string),
 	}
+	s.hostRouter = hostsvc.NewRouter(s.newLocalHost())
+	return s
+}
+
+// newLocalHost builds the in-process hostsvc.Host, wiring the tmux,
+// projects, and capability operations that live in this package into the
+// dependency-injected local Host (which owns the gitinfo/worktree call
+// sites directly). See internal/hostsvc/local.
+func (s *Server) newLocalHost() hostsvc.Host {
+	return hostlocal.New(hostlocal.Deps{
+		LaunchTmux:         launchOpencodeInTmux,
+		LaunchWorktreeTmux: launchOpencodeInProjectTmuxWindow,
+		TmuxSessions:       s.hostTmuxSessions,
+		Projects:           s.hostProjects,
+		Caps:               s.hostCaps,
+	})
 }
 
 // WithAutoApproveDefault sets the server-wide default for auto-approve.

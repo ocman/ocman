@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/worktree"
 )
@@ -67,19 +67,12 @@ func (s *Server) handleWorktreeList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repoRoot, err := worktree.ResolveRepoRoot(r.Context(), dir)
+	entries, err := s.router().ForDir(dir).ListWorktrees(r.Context(), dir)
 	if err != nil {
 		if errors.Is(err, worktree.ErrNotARepo) {
 			http.Error(w, "directory is not a git repository", http.StatusNotFound)
 			return
 		}
-		log.WithError(err).Warn("worktree: resolve repo root")
-		http.Error(w, "failed to resolve repo root", http.StatusBadGateway)
-		return
-	}
-
-	entries, err := worktree.List(r.Context(), repoRoot)
-	if err != nil {
 		log.WithError(err).Warn("worktree: list")
 		http.Error(w, "git worktree list failed", http.StatusBadGateway)
 		return
@@ -102,18 +95,16 @@ func (s *Server) handleWorktreeDefaultBaseRef(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	repoRoot, err := worktree.ResolveRepoRoot(r.Context(), dir)
+	baseRef, err := s.router().ForDir(dir).WorktreeDefaultBaseRef(r.Context(), dir)
 	if err != nil {
 		if errors.Is(err, worktree.ErrNotARepo) {
 			http.Error(w, "directory is not a git repository", http.StatusNotFound)
 			return
 		}
-		log.WithError(err).Warn("worktree: resolve repo root")
+		log.WithError(err).Warn("worktree: resolve base ref")
 		http.Error(w, "failed to resolve repo root", http.StatusBadGateway)
 		return
 	}
-
-	baseRef := worktree.ResolveBaseRef(r.Context(), repoRoot)
 	writeJSON(w, map[string]string{"baseRef": baseRef})
 }
 
@@ -161,59 +152,32 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Resolve the repo root so users can pass any directory inside
-	// the project (matches the gitinfo / git diff endpoints).
-	repoRoot, err := worktree.ResolveRepoRoot(r.Context(), req.ProjectDir)
-	if err != nil {
-		if errors.Is(err, worktree.ErrNotARepo) {
-			http.Error(w, "projectDir is not a git repository", http.StatusNotFound)
-			return
-		}
-		log.WithError(err).Warn("worktree: resolve repo root")
-		http.Error(w, "failed to resolve repo root", http.StatusBadGateway)
-		return
-	}
-
 	log.WithFields(log.Fields{
-		"repo":      repoRoot,
-		"branch":    req.Branch,
-		"newBranch": req.NewBranch,
-		"baseRef":   req.BaseRef,
+		"projectDir": req.ProjectDir,
+		"branch":     req.Branch,
+		"newBranch":  req.NewBranch,
+		"baseRef":    req.BaseRef,
 	}).Info("worktree: create and launch")
 
-	res, err := worktree.Create(r.Context(), worktree.CreateRequest{
-		RepoRoot:  repoRoot,
-		Branch:    req.Branch,
-		NewBranch: req.NewBranch,
-		BaseRef:   req.BaseRef,
+	res, err := s.router().ForDir(req.ProjectDir).CreateWorktreeSession(r.Context(), hostsvc.WorktreeSessionRequest{
+		ProjectDir: req.ProjectDir,
+		Branch:     req.Branch,
+		NewBranch:  req.NewBranch,
+		BaseRef:    req.BaseRef,
 	})
 	if err != nil {
 		switch {
+		case errors.Is(err, worktree.ErrNotARepo):
+			http.Error(w, "projectDir is not a git repository", http.StatusNotFound)
 		case errors.Is(err, worktree.ErrBranchCheckedOutElsewhere),
 			errors.Is(err, worktree.ErrPathConflict):
 			http.Error(w, err.Error(), http.StatusConflict)
 		default:
-			log.WithError(err).Warn("worktree: create")
-			http.Error(w, "git worktree add failed: "+err.Error(), http.StatusBadGateway)
+			log.WithError(err).Warn("worktree: create and launch")
+			http.Error(w, "worktree create/launch failed: "+err.Error(), http.StatusBadGateway)
 		}
 		return
 	}
 
-	tmuxTarget, launched, err := launchOpencodeInProjectTmuxWindow(repoRoot, res.Path)
-	if err != nil {
-		log.WithError(err).Error("worktree: tmux launch")
-		http.Error(w, "tmux launch failed: "+err.Error(), http.StatusBadGateway)
-		return
-	}
-	tmuxSession, _, _ := strings.Cut(tmuxTarget, ":")
-
-	writeJSON(w, map[string]interface{}{
-		"worktreePath":     res.Path,
-		"branch":           res.Branch,
-		"reused":           res.Reused,
-		"branchExisted":    res.BranchExisted,
-		"tmuxSession":      tmuxSession,
-		"tmuxTarget":       tmuxTarget,
-		"opencodeLaunched": launched,
-	})
+	writeJSON(w, res)
 }
