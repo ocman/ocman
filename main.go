@@ -147,6 +147,15 @@ func main() {
 	}
 	defer stateDB.Close()
 
+	// Ensure this instance has a stable random identity + remote-access
+	// token (multi-remote support). Generated and persisted on first
+	// startup; reused thereafter. No networking is started here — the
+	// gRPC remote-listen server is opt-in via -remote-listen.
+	ident, err := stateDB.InstanceIdentity()
+	if err != nil {
+		log.Fatalf("Failed to ensure instance identity: %v", err)
+	}
+
 	// Pre-warm the pricing table in the background so the first metrics request
 	// doesn't block on a remote fetch.
 	go pricing.Load()
@@ -175,14 +184,16 @@ func main() {
 		listenAddr := *guiAddr
 		srv := server.New(database, stateDB, listenAddr, registry, auth).
 			WithAutoApproveDefault(*autoApprove).
-			WithPublicBaseURL(resolvedBaseURL)
+			WithPublicBaseURL(resolvedBaseURL).
+			WithRemoteAccess(ident.InstanceID, "", false, false)
 		if err := gui.RunGUI(ctx, srv, listenAddr); err != nil {
 			log.Fatalf("GUI error: %v", err)
 		}
 	} else {
 		srv := server.New(database, stateDB, *addr, registry, auth).
 			WithAutoApproveDefault(*autoApprove).
-			WithPublicBaseURL(resolvedBaseURL)
+			WithPublicBaseURL(resolvedBaseURL).
+			WithRemoteAccess(ident.InstanceID, "", false, false)
 		if err := srv.Start(ctx); err != nil {
 			log.Fatalf("Server error: %v", err)
 		}

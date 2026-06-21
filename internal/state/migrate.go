@@ -60,11 +60,20 @@ import (
 //	    read-only access to a single session's conversation. Keyed by
 //	    the token; stores the owning (platform, session_id), creation
 //	    time, an optional expiry, and an optional revocation time.
+//	14 - multi-remote support. Adds two tables:
+//	      * `instance_identity` single-row (id=1) holding this ocman's
+//	        stable random instance ID and remote-access token, generated
+//	        on first startup. See spec/multi-remote-support AD-5.
+//	      * `remote` holding hub-side records of attached remote ocman
+//	        instances: a hub-local surrogate PK (local_id), a nullable
+//	        learned remote_id (populated after a successful Hello),
+//	        address, AES-GCM-encrypted token, enabled flag, health, and
+//	        reported hostname/protocol version. See AD-10 / AD-10b.
 //
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 13
+const latestSchemaVersion = 14
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -186,6 +195,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV12(tx)
 	case 13:
 		return migrateToV13(tx)
+	case 14:
+		return migrateToV14(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -451,6 +462,50 @@ func migrateToV13(tx *sql.Tx) error {
 		)`,
 		`CREATE INDEX share_link_session
 			ON share_link (platform, session_id)`,
+	}
+	for _, s := range stmts {
+		if _, err := tx.Exec(s); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// migrateToV14 creates the multi-remote-support tables.
+//
+// instance_identity is a single-row (id=1) table holding this ocman's
+// own stable random instance ID and remote-access token; both are
+// generated on first startup (see internal/state/identity.go) and
+// survive restarts (FR-2, FR-4).
+//
+// remote holds hub-side records of attached remote ocman instances.
+// local_id is the hub-local surrogate primary key (so a record can be
+// persisted before the remote's real instance ID is learned). remote_id
+// is the learned random instance ID, nullable until a successful Hello
+// and UNIQUE so the same remote can't be configured twice (AD-10b).
+// token_encrypted holds the remote's access token protected with AES-GCM
+// using an app-local key (AD-10 / NFR-4).
+func migrateToV14(tx *sql.Tx) error {
+	stmts := []string{
+		`CREATE TABLE instance_identity (
+			id           INTEGER PRIMARY KEY CHECK (id = 1),
+			instance_id  TEXT    NOT NULL,
+			remote_token TEXT    NOT NULL,
+			created_at   INTEGER NOT NULL
+		)`,
+		`CREATE TABLE remote (
+			local_id         INTEGER PRIMARY KEY AUTOINCREMENT,
+			remote_id        TEXT    UNIQUE,
+			display_name     TEXT    NOT NULL DEFAULT '',
+			address          TEXT    NOT NULL,
+			token_encrypted  BLOB    NOT NULL,
+			enabled          INTEGER NOT NULL DEFAULT 1,
+			created_at       INTEGER NOT NULL,
+			last_seen        INTEGER NOT NULL DEFAULT 0,
+			last_health      TEXT    NOT NULL DEFAULT '',
+			hostname         TEXT    NOT NULL DEFAULT '',
+			protocol_version INTEGER NOT NULL DEFAULT 0
+		)`,
 	}
 	for _, s := range stmts {
 		if _, err := tx.Exec(s); err != nil {

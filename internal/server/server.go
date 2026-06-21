@@ -121,6 +121,24 @@ type Server struct {
 	// "cached: <…>" audit row when a hit fires).
 	safeCommandCache   map[string]map[string]string
 	safeCommandCacheMu sync.Mutex
+
+	// remoteAccess describes this instance's own remote-access surface
+	// (instance ID, whether the gRPC server is listening, its address,
+	// and whether TLS is on). Surfaced via GET /api/settings/remote-access
+	// for the multi-remote-support feature. Zero value = not listening.
+	remoteAccess remoteAccessInfo
+}
+
+// remoteAccessInfo holds this instance's own remote-access surface for
+// display on its Settings page. It is populated from the instance
+// identity (state.db) plus the -remote-listen / TLS flags. The token
+// itself is never stored here; it is fetched on demand from state.db
+// for the explicit reveal action.
+type remoteAccessInfo struct {
+	instanceID string
+	listening  bool
+	listenAddr string
+	tls        bool
 }
 
 // sseSink wraps an SSE response writer with the synchronisation needed
@@ -209,6 +227,20 @@ func (s *Server) WithAutoApproveDefault(enabled bool) *Server {
 // concatenate paths directly. Must be called before Start.
 func (s *Server) WithPublicBaseURL(base string) *Server {
 	s.publicBaseURL = strings.TrimRight(strings.TrimSpace(base), "/")
+	return s
+}
+
+// WithRemoteAccess records this instance's own remote-access surface for
+// display on its Settings page (multi-remote-support). instanceID comes
+// from state.db; listening/listenAddr/tls reflect the -remote-listen and
+// TLS flags. Must be called before Start.
+func (s *Server) WithRemoteAccess(instanceID, listenAddr string, listening, tls bool) *Server {
+	s.remoteAccess = remoteAccessInfo{
+		instanceID: instanceID,
+		listening:  listening,
+		listenAddr: listenAddr,
+		tls:        tls,
+	}
 	return s
 }
 
@@ -358,6 +390,10 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// Prompt templates for the PR/Issue sidebar's "Handle this" launch
 	// action. Stored in state.db's generic `setting` table (schema v12).
 	mux.HandleFunc("/api/settings/prompt-templates", s.requireAuth(s.handlePromptTemplates))
+	// Remote-access surface for multi-remote support: this instance's
+	// own instance ID + gRPC-listen status, and an explicit token reveal.
+	mux.HandleFunc("/api/settings/remote-access", s.get(s.handleRemoteAccess))
+	mux.HandleFunc("/api/settings/remote-access/reveal-token", s.post(s.handleRevealRemoteToken))
 
 	// Best-effort remote-logging sink for the frontend. Localhost-only so
 	// it can't be used to flood logs from the network. See

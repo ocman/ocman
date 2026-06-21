@@ -7,6 +7,56 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
+// remoteAccessStatus is the GET /api/settings/remote-access response. It
+// describes this instance's own remote-access surface so the operator can
+// copy the connection details into a hub. The token itself is never
+// included; the masked indicator + explicit reveal action handle that.
+type remoteAccessStatus struct {
+	InstanceID string `json:"instanceId"`
+	Listening  bool   `json:"listening"`
+	ListenAddr string `json:"listenAddr"`
+	TLS        bool   `json:"tls"`
+	TokenSet   bool   `json:"tokenSet"`
+}
+
+// handleRemoteAccess handles GET /api/settings/remote-access — this
+// instance's identity and gRPC-listen status. Auth-gated; no plaintext
+// token (AD-5).
+func (s *Server) handleRemoteAccess(w http.ResponseWriter, _ *http.Request) {
+	status := remoteAccessStatus{
+		InstanceID: s.remoteAccess.instanceID,
+		Listening:  s.remoteAccess.listening,
+		ListenAddr: s.remoteAccess.listenAddr,
+		TLS:        s.remoteAccess.tls,
+	}
+	if s.stateDB != nil {
+		if ident, err := s.stateDB.InstanceIdentity(); err == nil {
+			if status.InstanceID == "" {
+				status.InstanceID = ident.InstanceID
+			}
+			status.TokenSet = ident.RemoteToken != ""
+		}
+	}
+	writeJSON(w, status)
+}
+
+// handleRevealRemoteToken handles POST /api/settings/remote-access/reveal-token
+// — the explicit, authenticated action that returns this instance's own
+// plaintext remote-access token for copy-to-clipboard. It never returns
+// tokens stored for attached remotes (AD-5, NFR-4).
+func (s *Server) handleRevealRemoteToken(w http.ResponseWriter, _ *http.Request) {
+	if s.stateDB == nil {
+		http.Error(w, "state database not available", http.StatusServiceUnavailable)
+		return
+	}
+	ident, err := s.stateDB.InstanceIdentity()
+	if err != nil {
+		serverError(w, "reading instance identity", err)
+		return
+	}
+	writeJSON(w, map[string]string{"token": ident.RemoteToken})
+}
+
 // handlePromptSections handles GET and POST /api/settings/prompt-sections.
 //
 // GET  → returns the currently stored judge prompt sections as JSON.

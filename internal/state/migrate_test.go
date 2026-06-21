@@ -318,3 +318,39 @@ func TestAuthSecret_RoundTrip(t *testing.T) {
 		t.Errorf("after rotate: got %x, want %x", got, key2)
 	}
 }
+
+func TestMigrate_V14_CreatesRemoteTables(t *testing.T) {
+	sqlDB, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer sqlDB.Close()
+
+	if err := migrate(sqlDB); err != nil {
+		t.Fatalf("migrate fresh: %v", err)
+	}
+
+	// instance_identity is single-row.
+	if _, err := sqlDB.Exec(
+		`INSERT INTO instance_identity (id, instance_id, remote_token, created_at) VALUES (1, 'x', 'y', 1)`,
+	); err != nil {
+		t.Fatalf("insert id=1: %v", err)
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO instance_identity (id, instance_id, remote_token, created_at) VALUES (2, 'x', 'y', 1)`,
+	); err == nil {
+		t.Error("expected CHECK to reject id != 1")
+	}
+
+	// remote auto-increments local_id and enforces UNIQUE remote_id.
+	if _, err := sqlDB.Exec(
+		`INSERT INTO remote (remote_id, address, token_encrypted, created_at) VALUES ('rid', 'a', x'00', 1)`,
+	); err != nil {
+		t.Fatalf("insert remote: %v", err)
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO remote (remote_id, address, token_encrypted, created_at) VALUES ('rid', 'b', x'00', 1)`,
+	); err == nil {
+		t.Error("expected UNIQUE remote_id to reject duplicate")
+	}
+}
