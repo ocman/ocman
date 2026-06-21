@@ -117,24 +117,34 @@ func (s *Server) handleWorktreeDefaultBaseRef(w http.ResponseWriter, r *http.Req
 // Localhost-only — same security posture as the existing tmux launch
 // endpoint, since this spawns processes on the host.
 func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Request) {
-	if !isTmuxAvailable() {
-		http.Error(w, "tmux is not available", http.StatusServiceUnavailable)
-		return
-	}
-	if _, err := exec.LookPath("git"); err != nil {
-		http.Error(w, "git is not available", http.StatusServiceUnavailable)
-		return
-	}
-
 	var req struct {
 		ProjectDir string `json:"projectDir"`
 		Branch     string `json:"branch"`
 		NewBranch  bool   `json:"newBranch"`
 		BaseRef    string `json:"baseRef"`
+		// RemoteID, when set, runs the worktree create on the owning
+		// remote host (FR-10/AD-16b). Empty / "local" = this machine.
+		RemoteID string `json:"remoteId"`
 	}
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
 		return
 	}
+
+	// tmux/git preconditions are host-local: only enforce them on the
+	// hub when the action targets the local machine. A remote target
+	// validates its own tooling on its side.
+	local := req.RemoteID == "" || req.RemoteID == "local"
+	if local {
+		if !isTmuxAvailable() {
+			http.Error(w, "tmux is not available", http.StatusServiceUnavailable)
+			return
+		}
+		if _, err := exec.LookPath("git"); err != nil {
+			http.Error(w, "git is not available", http.StatusServiceUnavailable)
+			return
+		}
+	}
+
 	if req.ProjectDir == "" {
 		http.Error(w, "projectDir is required", http.StatusBadRequest)
 		return
@@ -157,9 +167,17 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 		"branch":     req.Branch,
 		"newBranch":  req.NewBranch,
 		"baseRef":    req.BaseRef,
+		"remoteId":   req.RemoteID,
 	}).Info("worktree: create and launch")
 
-	res, err := s.router().ForDir(req.ProjectDir).CreateWorktreeSession(r.Context(), hostsvc.WorktreeSessionRequest{
+	// Resolve the owning host: ForRemote when the caller named the owner
+	// (preferred, AD-16b), else ForDir inference for backward-compatible
+	// local behaviour.
+	host := s.router().ForDir(req.ProjectDir)
+	if req.RemoteID != "" {
+		host = s.router().ForRemote(req.RemoteID)
+	}
+	res, err := host.CreateWorktreeSession(r.Context(), hostsvc.WorktreeSessionRequest{
 		ProjectDir: req.ProjectDir,
 		Branch:     req.Branch,
 		NewBranch:  req.NewBranch,

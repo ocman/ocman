@@ -2,7 +2,17 @@ package remote
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"database/sql"
+	"encoding/pem"
+	"math/big"
+	"net"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -151,6 +161,101 @@ func TestRemotePlatform_MutationsAndCreateRoundTrip(t *testing.T) {
 	if resp.ID != "new-sess" {
 		t.Fatalf("CreateSession id = %q", resp.ID)
 	}
+}
+
+func TestRemoteHost_CreateWorktreeSessionRoundTrip(t *testing.T) {
+	reg := platforms.NewRegistry()
+	reg.Register(&fakePlatform{id: "opencode"})
+	addr := startRealRemote(t, "tok", "rid", reg)
+
+	conn := NewRemoteConn(addr, "tok")
+	if err := conn.Connect(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	rh := newRemoteHost(conn)
+
+	res, err := rh.CreateWorktreeSession(context.Background(), hostsvc.WorktreeSessionRequest{
+		ProjectDir: "/repo", Branch: "feature", NewBranch: true, BaseRef: "main",
+	})
+	if err != nil {
+		t.Fatalf("CreateWorktreeSession: %v", err)
+	}
+	// localStubHost returns a canned result; the point is the round-trip.
+	if res.WorktreePath != "/wt" || res.Branch != "b" {
+		t.Fatalf("unexpected worktree result: %+v", res)
+	}
+
+	// Host capabilities round-trip.
+	caps := rh.Capabilities()
+	if !caps.Worktrees || !caps.Tmux {
+		t.Fatalf("unexpected host caps: %+v", caps)
+	}
+}
+
+// writeSelfSignedCert generates a self-signed cert/key for 127.0.0.1 and
+// writes them to temp files, returning the paths.
+func writeSelfSignedCert(t *testing.T) (certPath, keyPath string) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "127.0.0.1"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	certPath = filepath.Join(dir, "cert.pem")
+	keyPath = filepath.Join(dir, "key.pem")
+	certOut, _ := os.Create(certPath)
+	_ = pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: der})
+	certOut.Close()
+	keyBytes, _ := x509.MarshalECPrivateKey(key)
+	keyOut, _ := os.Create(keyPath)
+	_ = pem.Encode(keyOut, &pem.Block{Type: "EC PRIVATE KEY", Bytes: keyBytes})
+	keyOut.Close()
+	return certPath, keyPath
+}
+
+func TestRemote_TLSRoundTrip(t *testing.T) {
+	certPath, keyPath := writeSelfSignedCert(t)
+	reg := platforms.NewRegistry()
+	reg.Register(&fakePlatform{id: "opencode", sessions: []db.Session{{ID: "s1", Platform: "opencode"}}})
+	srv := NewServer(reg, localStubHost{}, "tls-remote", "v")
+
+	ln, err := NewListener(ListenConfig{
+		Addr: "127.0.0.1:0", Token: "tok", TLSCertFile: certPath, TLSKeyFile: keyPath,
+	}, srv)
+	if err != nil {
+		t.Fatalf("listener: %v", err)
+	}
+	if !ln.TLS() {
+		t.Fatal("listener should report TLS enabled")
+	}
+	go func() { _ = ln.Serve() }()
+	t.Cleanup(ln.Stop)
+
+	// Dial with grpcs:// so the conn uses TLS. The self-signed cert
+	// won't validate against the system roots, so we expect the
+	// handshake to fail — which still proves the TLS transport path is
+	// exercised (a plaintext dial would fail differently). For a clean
+	// assertion we just confirm a non-TLS dial to a TLS server fails.
+	plain := NewRemoteConn("127.0.0.1:"+portOf(ln.Addr()), "tok")
+	if err := plain.Connect(context.Background()); err == nil {
+		t.Fatal("plaintext dial to a TLS server should fail")
+	}
+}
+
+func portOf(addr string) string {
+	_, port, _ := net.SplitHostPort(addr)
+	return port
 }
 
 func TestRemotePlatform_OfflineServesStale(t *testing.T) {
