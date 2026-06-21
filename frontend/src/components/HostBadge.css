@@ -1,0 +1,40 @@
+/*
+ * HostBadge shows which machine owns a session in a multi-remote setup.
+ * Hidden on single-host installs. A muted neutral pill, distinct from
+ * the platform-accented PlatformBadge so the two badges read as
+ * different dimensions (which tool vs. which machine).
+ */
+
+.host-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 0;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  background: color-mix(in srgb, var(--muted) 12%, transparent);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.host-badge::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* Offline / stale: dim the whole badge and switch the dot to a warning. */
+.host-badge.stale {
+  opacity: 0.6;
+}
+
+.host-badge.stale::before {
+  background: var(--muted);
+}

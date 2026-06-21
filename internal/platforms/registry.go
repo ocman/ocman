@@ -43,6 +43,31 @@ func (r *Registry) Register(p Platform) {
 	r.byID[id] = p
 }
 
+// Unregister removes an adapter by ID and drops any reverse-lookup
+// cache entries pointing at it. Used by the remote manager when a remote
+// is removed or disconnected so its sessions stop appearing. Registering
+// the same ID again later (on reconnect) restores it. No-op for unknown
+// IDs.
+func (r *Registry) Unregister(id ID) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.byID[id]; !ok {
+		return
+	}
+	delete(r.byID, id)
+	for i, oid := range r.order {
+		if oid == id {
+			r.order = append(r.order[:i], r.order[i+1:]...)
+			break
+		}
+	}
+	for sid, owner := range r.bySID {
+		if owner == id {
+			delete(r.bySID, sid)
+		}
+	}
+}
+
 // Get returns the adapter for an ID.
 func (r *Registry) Get(id ID) (Platform, bool) {
 	r.mu.RLock()

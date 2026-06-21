@@ -1,0 +1,146 @@
+.remote-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.remote-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+}
+
+.remote-row-self {
+  border-style: dashed;
+}
+
+.remote-row-main {
+  min-width: 0;
+}
+
+.remote-row-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.remote-row-meta {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.remote-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.remote-health {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.remote-health-connected {
+  color: var(--ok, #3fb950);
+  border-color: color-mix(in srgb, var(--ok, #3fb950) 40%, transparent);
+}
+
+.remote-health-offline,
+.remote-health-auth-failed,
+.remote-health-incompatible-version {
+  color: var(--danger, #f85149);
+  border-color: color-mix(in srgb, var(--danger, #f85149) 40%, transparent);
+}
+
+.remote-health-disabled {
+  opacity: 0.7;
+}
+
+.remote-btn {
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.remote-btn:hover:not(:disabled) {
+  background: var(--surface-alt);
+}
+
+.remote-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.remote-btn-primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.remote-btn-danger {
+  border-color: color-mix(in srgb, var(--danger, #f85149) 40%, transparent);
+  color: var(--danger, #f85149);
+}
+
+.remote-add-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+}
+
+.remote-add-title {
+  width: 100%;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.remote-input {
+  flex: 1 1 180px;
+  min-width: 140px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 0.82rem;
+}
+
+.remote-token-reveal {
+  width: 280px;
+  max-width: 40vw;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 0.72rem;
+}
+
+.remote-enabled-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.82rem;
+}
+
+.remote-settings-error {
+  width: 100%;
+  color: var(--danger, #f85149);
+  font-size: 0.8rem;
+}

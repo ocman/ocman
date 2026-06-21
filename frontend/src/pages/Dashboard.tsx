@@ -14,6 +14,7 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 import { ProjectScopePicker } from '../components/ProjectScopePicker';
 import { matchesScope } from '../lib/projectTree';
 import { PromptTemplateSettings } from '../components/upstream/PromptTemplateSettings';
+import { RemoteSettings } from '../components/RemoteSettings';
 
 import { useUiStore } from '../lib/uiStore';
 import { useApiStore } from '../lib/apiStore';
@@ -444,6 +445,16 @@ export function SettingsTab() {
             <span className="settings-toggle-track" />
           </label>
         </div>
+      </div>
+
+      <div className="settings-section">
+        <h2 className="settings-section-title">Remotes</h2>
+        <div className="settings-row-desc" style={{ marginBottom: 8 }}>
+          Attach other ocman instances to manage their sessions from here.
+          Copy a remote&rsquo;s access token from its own Settings page (run it
+          with <code>-remote-listen</code>) and paste it below.
+        </div>
+        <RemoteSettings />
       </div>
 
       <div className="settings-section">

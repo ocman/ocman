@@ -113,6 +113,17 @@ export interface Session {
    * the platform field.
    */
   notice?: SessionNotice;
+  /**
+   * Display-only host attributes for multi-remote support. remoteId is
+   * 'local' for the hub's own machine, else the remote's random ID;
+   * remoteName is the host label ('This machine' for local). The UI
+   * renders remoteName as a host badge but must NOT branch behaviour on
+   * these values — host capabilities come from /api/capabilities.
+   */
+  remoteId?: string;
+  remoteName?: string;
+  /** True when the row is last-known data from an offline remote. */
+  stale?: boolean;
 }
 
 /**
@@ -675,10 +686,35 @@ export interface PlatformCapabilityEntry {
   displayName: string;
   available: boolean;
   capabilities: PlatformCapabilities;
+  /** Present only for remote platforms (multi-remote support). */
+  remoteId?: string;
+  remoteName?: string;
+}
+
+/** Directory-scoped host capabilities (multi-remote support, AD-16). */
+export interface HostCapabilities {
+  gitDiff: boolean;
+  worktrees: boolean;
+  tmux: boolean;
+  projects: boolean;
+  whisper: boolean;
+}
+
+/** One machine's host capabilities, grouped under its host identity. */
+export interface HostCapabilityEntry {
+  remoteId: string;
+  remoteName: string;
+  capabilities: HostCapabilities;
 }
 
 export interface CapabilitiesResponse {
   platforms: PlatformCapabilityEntry[];
+  /**
+   * Host-scoped capabilities per machine (additive; multi-remote
+   * support). The frontend gates host UI on these flags, never on
+   * remote identity.
+   */
+  hosts?: HostCapabilityEntry[];
   /**
    * Server-wide flag for the /wt (worktree-sessions) feature. True
    * when (a) at least one OpenCode adapter is registered AND (b) git,
@@ -687,6 +723,33 @@ export interface CapabilitiesResponse {
    * page link, and the per-project Worktrees view (AD-7).
    */
   worktreeSessions?: boolean;
+}
+
+/**
+ * Hub-side view of one configured remote ocman instance
+ * (GET /api/remotes). Tokens are never included.
+ */
+export interface RemoteStatus {
+  localId: number;
+  remoteId?: string;
+  displayName: string;
+  address: string;
+  enabled: boolean;
+  health: string;
+  hostname: string;
+  protocolVersion: number;
+  lastSeen: number;
+  sessionCount: number;
+  projectCount: number;
+}
+
+/** This instance's own remote-access surface (GET /api/settings/remote-access). */
+export interface RemoteAccessStatus {
+  instanceId: string;
+  listening: boolean;
+  listenAddr: string;
+  tls: boolean;
+  tokenSet: boolean;
 }
 
 /**

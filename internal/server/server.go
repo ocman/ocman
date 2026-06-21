@@ -441,6 +441,9 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// own instance ID + gRPC-listen status, and an explicit token reveal.
 	mux.HandleFunc("/api/settings/remote-access", s.get(s.handleRemoteAccess))
 	mux.HandleFunc("/api/settings/remote-access/reveal-token", s.post(s.handleRevealRemoteToken))
+	// Hub-side remote management (multi-remote support). CRUD + reconnect.
+	mux.HandleFunc("/api/remotes", s.requireAuth(s.handleRemotes))
+	mux.HandleFunc("/api/remotes/", s.requireAuth(s.handleRemoteByID))
 
 	// Best-effort remote-logging sink for the frontend. Localhost-only so
 	// it can't be used to flood logs from the network. See

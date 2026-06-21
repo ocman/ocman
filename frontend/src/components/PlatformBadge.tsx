@@ -11,6 +11,19 @@ const META: Record<string, { label: string; short: string }> = {
   opencode: { label: 'OpenCode', short: 'OC' },
 };
 
+/**
+ * Strips the remote-routing prefix from a possibly-compound platform id
+ * ("r-<remoteId>:<base>" -> "<base>"). A bare id is returned unchanged.
+ * Pure string handling for display — not platform-identity branching.
+ */
+function basePlatform(platform: string): string {
+  if (platform.startsWith('r-')) {
+    const sep = platform.indexOf(':');
+    if (sep >= 0) return platform.slice(sep + 1);
+  }
+  return platform;
+}
+
 interface PlatformBadgeProps {
   platform: string;
   /**
@@ -36,10 +49,15 @@ export function PlatformBadge({ platform, variant }: PlatformBadgeProps) {
   const multi = useMultiPlatform();
   if (!multi) return null;
 
-  const meta = META[platform];
-  const label = meta?.label ?? platform;
-  const short = meta?.short ?? platform.slice(0, 2).toUpperCase();
-  const classes = ['platform-badge', `platform-${platform}`];
+  // A remote session's platform is the compound "r-<remoteId>:<base>"
+  // key (multi-remote support). Strip the prefix for display so the
+  // badge shows the base platform ("OpenCode"), not the routing id.
+  // This is opaque string handling, not behaviour branching.
+  const base = basePlatform(platform);
+  const meta = META[base];
+  const label = meta?.label ?? base;
+  const short = meta?.short ?? base.slice(0, 2).toUpperCase();
+  const classes = ['platform-badge', `platform-${base}`];
   if (variant) classes.push(variant);
   return (
     <span className={classes.join(' ')} title={label} aria-label={label}>

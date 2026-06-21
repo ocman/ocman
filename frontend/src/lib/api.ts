@@ -92,6 +92,8 @@ import type {
   HourlyTokensByModel,
   ShareLink,
   SharedConversation,
+  RemoteStatus,
+  RemoteAccessStatus,
 } from './api.types';
 
 /**
@@ -199,7 +201,7 @@ export async function fetchJSON<T>(url: string, signal?: AbortSignal): Promise<T
 export async function postJSON<TResp, TReq = unknown>(
   url: string,
   body: TReq,
-  opts?: { signal?: AbortSignal; parseJSON?: boolean; method?: 'POST' | 'PATCH' | 'DELETE' },
+  opts?: { signal?: AbortSignal; parseJSON?: boolean; method?: 'POST' | 'PATCH' | 'PUT' | 'DELETE' },
 ): Promise<TResp> {
   const method = opts?.method ?? 'POST';
   const startedAt = performance.now();
@@ -364,6 +366,23 @@ export const api = {
     return fetchJSON<HourlyTokensByModel[]>(`/api/hourly-tokens${qs ? '?' + qs : ''}`, signal);
   },
   capabilities: (signal?: AbortSignal) => fetchJSON<CapabilitiesResponse>('/api/capabilities', signal),
+
+  // --- Multi-remote support ---
+  remoteAccess: (signal?: AbortSignal) =>
+    fetchJSON<RemoteAccessStatus>('/api/settings/remote-access', signal),
+  revealRemoteToken: () =>
+    postJSON<{ token: string }>('/api/settings/remote-access/reveal-token', undefined),
+  listRemotes: (signal?: AbortSignal) => fetchJSON<RemoteStatus[]>('/api/remotes', signal),
+  addRemote: (body: { address: string; token: string; displayName?: string }) =>
+    postJSON<RemoteStatus>('/api/remotes', body),
+  updateRemote: (
+    localId: number,
+    body: { address: string; displayName: string; enabled: boolean; token?: string | null },
+  ) => postJSON<{ ok: boolean }>(`/api/remotes/${localId}`, body, { method: 'PUT' }),
+  removeRemote: (localId: number) =>
+    postJSON<{ ok: boolean }>(`/api/remotes/${localId}`, undefined, { method: 'DELETE', parseJSON: false }),
+  reconnectRemote: (localId: number) =>
+    postJSON<{ ok: boolean }>(`/api/remotes/${localId}/reconnect`, undefined),
   createSession: async (directory: string, platform?: string, title?: string) => {
     const resp = await fetch('/api/sessions', {
       method: 'POST',

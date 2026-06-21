@@ -148,6 +148,9 @@ func (m *Manager) displayNameFor(localID int64) string {
 
 // unregisterLocked tears down a managed remote's adapters. Caller holds m.mu.
 func (m *Manager) unregisterLocked(mr *managedRemote) {
+	if mr.platform != nil {
+		m.registry.Unregister(mr.platform.ID())
+	}
 	if mr.conn != nil {
 		if rid := mr.conn.RemoteID(); rid != "" {
 			m.router.UnregisterRemote(rid)
@@ -175,6 +178,140 @@ func (m *Manager) Conn(localID int64) (*RemoteConn, bool) {
 		return nil, false
 	}
 	return mr.conn, true
+}
+
+// RemoteStatus is the hub-facing view of one configured remote, merging
+// the persisted config with the live connection state. Tokens are never
+// included.
+type RemoteStatus struct {
+	LocalID         int64  `json:"localId"`
+	RemoteID        string `json:"remoteId,omitempty"`
+	DisplayName     string `json:"displayName"`
+	Address         string `json:"address"`
+	Enabled         bool   `json:"enabled"`
+	Health          string `json:"health"`
+	Hostname        string `json:"hostname"`
+	ProtocolVersion int    `json:"protocolVersion"`
+	LastSeen        int64  `json:"lastSeen"`
+	SessionCount    int    `json:"sessionCount"`
+	ProjectCount    int    `json:"projectCount"`
+}
+
+// List returns the status of every configured remote, merging persisted
+// rows with live health from the active connections.
+func (m *Manager) List() ([]RemoteStatus, error) {
+	if m.store == nil {
+		return nil, nil
+	}
+	rows, err := m.store.ListRemotes()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]RemoteStatus, 0, len(rows))
+	for _, r := range rows {
+		st := RemoteStatus{
+			LocalID:         r.LocalID,
+			RemoteID:        r.RemoteID,
+			DisplayName:     r.DisplayName,
+			Address:         r.Address,
+			Enabled:         r.Enabled,
+			Health:          r.LastHealth,
+			Hostname:        r.Hostname,
+			ProtocolVersion: r.ProtocolVersion,
+			LastSeen:        r.LastSeen,
+		}
+		// Overlay live state when connected.
+		if conn, ok := m.Conn(r.LocalID); ok {
+			st.Health = string(conn.Health())
+			if conn.RemoteID() != "" {
+				st.RemoteID = conn.RemoteID()
+			}
+			if conn.Hostname() != "" {
+				st.Hostname = conn.Hostname()
+			}
+			st.SessionCount = m.sessionCount(r.LocalID)
+		}
+		out = append(out, st)
+	}
+	return out, nil
+}
+
+// sessionCount returns the number of sessions currently known for a
+// managed remote (from the platform adapter's ownership cache).
+func (m *Manager) sessionCount(localID int64) int {
+	m.mu.RLock()
+	mr, ok := m.remotes[localID]
+	m.mu.RUnlock()
+	if !ok || mr.platform == nil {
+		return 0
+	}
+	mr.platform.mu.RLock()
+	defer mr.platform.mu.RUnlock()
+	return len(mr.platform.owned)
+}
+
+// Add persists a new remote and dials it in the background. Returns the
+// new hub-local id.
+func (m *Manager) Add(ctx context.Context, address, token, displayName string) (int64, error) {
+	id, err := m.store.AddRemote(address, token, displayName)
+	if err != nil {
+		return 0, err
+	}
+	r, err := m.store.GetRemote(id)
+	if err != nil {
+		return id, err
+	}
+	m.dial(ctx, r)
+	return id, nil
+}
+
+// Update edits a remote's config and reconnects with the new settings.
+func (m *Manager) Update(ctx context.Context, localID int64, displayName, address string, enabled bool, token *string) error {
+	if err := m.store.UpdateRemoteConfig(localID, displayName, address, enabled, token); err != nil {
+		return err
+	}
+	m.updateName(localID, displayName)
+	return m.Reconnect(ctx, localID)
+}
+
+// updateName refreshes the live display name on a managed remote.
+func (m *Manager) updateName(localID int64, name string) {
+	m.mu.Lock()
+	if mr, ok := m.remotes[localID]; ok {
+		mr.name = name
+	}
+	m.mu.Unlock()
+}
+
+// Reconnect tears down and re-dials a remote (or disconnects it when
+// disabled).
+func (m *Manager) Reconnect(ctx context.Context, localID int64) error {
+	r, err := m.store.GetRemote(localID)
+	if err != nil {
+		return err
+	}
+	m.disconnect(localID)
+	if !r.Enabled {
+		return nil
+	}
+	m.dial(ctx, r)
+	return nil
+}
+
+// Remove disconnects and deletes a remote.
+func (m *Manager) Remove(localID int64) error {
+	m.disconnect(localID)
+	return m.store.DeleteRemote(localID)
+}
+
+// disconnect tears down a managed remote's connection and adapters.
+func (m *Manager) disconnect(localID int64) {
+	m.mu.Lock()
+	if mr, ok := m.remotes[localID]; ok {
+		m.unregisterLocked(mr)
+		delete(m.remotes, localID)
+	}
+	m.mu.Unlock()
 }
 
 // displayName picks the hub display name for a remote row: the explicit

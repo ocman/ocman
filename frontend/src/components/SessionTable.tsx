@@ -6,6 +6,7 @@ import { useApiStore } from '../lib/apiStore';
 import { cleanTitle, formatDuration, relativeTime, shortPath } from '../lib/format';
 import { StatusBadge } from './StatusBadge';
 import { PlatformBadge } from './PlatformBadge';
+import { HostBadge } from './HostBadge';
 import { filterVisibleSessions } from '../lib/sessionVisibility';
 import { nestSessions } from '../lib/nestSessions';
 import { SessionTableSkeleton } from './Skeleton';
@@ -239,6 +240,8 @@ export function GroupedSessionTable({
                           <div className="mono">
                             <PlatformBadge platform={s.platform} variant="plain" />
                             {' '}
+                            <HostBadge remoteName={s.remoteName} stale={s.stale} />
+                            {' '}
                             {s.id}
                           </div>
                         </td>
@@ -347,6 +350,8 @@ export function SessionTable({ sessions, showProject, loading, includeArchived }
                 </div>
                 <div className="mono">
                   <PlatformBadge platform={s.platform} variant="plain" />
+                  {' '}
+                  <HostBadge remoteName={s.remoteName} stale={s.stale} />
                   {' '}
                   {s.id}
                 </div>

@@ -131,3 +131,15 @@ export function useWorktreeSessions(): boolean {
   const all = useCapabilities();
   return all?.worktreeSessions === true;
 }
+
+/**
+ * Returns true when more than one host (machine) is present — i.e. at
+ * least one remote is connected in addition to the local machine. Host
+ * badges use this to hide themselves on a single-host install where the
+ * badge adds no information. Mirrors useMultiPlatform (multi-remote
+ * support).
+ */
+export function useMultiHost(): boolean {
+  const all = useCapabilities();
+  return (all?.hosts?.length ?? 0) > 1;
+}
