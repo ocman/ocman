@@ -199,30 +199,17 @@ diffs minimal and match the surrounding code.
 - **Auto-archive**: background goroutine archives sessions inactive
   for 3+ days (checked every 24 h). Runs against all registered
   platforms.
-- **OpenTelemetry (optional)**: pass `--otel=<endpoint>` (or set
-  `OTEL_EXPORTER_OTLP_ENDPOINT`) to ship traces and metrics to an OTLP
-  collector. Empty / unset = no-op (zero overhead — the SDK no-op
-  providers stay in place). The URL scheme picks the transport:
-  `http(s)://...` → OTLP/HTTP, `grpc(s)://...` or bare `host:port` →
-  OTLP/gRPC. Everything else is configured via standard `OTEL_*` env
-  vars (`OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`,
-  `OTEL_TRACES_SAMPLER`, `OTEL_EXPORTER_OTLP_HEADERS`, etc.).
-  Instrumentation: `otelhttp` on the inbound mux and outbound HTTP
-  clients, `otelsql` on both SQLite handles, custom spans/metrics
-  around the auto-archive loop, projects-index refresh, SSE event
-  streams, and the `srvtiming` phase boundaries (every existing
-  `srvtiming.Record` call also emits a span event). A logrus hook
-  decorates log lines with `trace_id`/`span_id` while a span is
-  active. For local dev: `make otel-up` starts the bundled
-  `grafana/otel-lgtm` stack (Grafana + Loki + Tempo + Mimir +
-  collector) on `:3000` / `:4317` / `:4318`; the `make dev*` targets
-  export `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` and
-  `OTEL_SERVICE_NAME=ocman-dev` automatically (override per
-  invocation, set to empty string to disable). The `ocman Overview`
-  Grafana dashboard is provisioned automatically from
-  `observability/grafana/dashboards/ocman.json` and lives in the
-  `ocman` folder once the stack starts. See `internal/telemetry` and
-  `observability/`.
+- **OpenTelemetry (optional)**: `--otel=<endpoint>` /
+  `OTEL_EXPORTER_OTLP_ENDPOINT` ships traces + metrics to an OTLP
+  collector; empty = no-op (zero overhead). Implementation in
+  `internal/telemetry`: `otelhttp` on the mux + outbound clients,
+  `otelsql` on both SQLite handles, custom spans/metrics around the
+  auto-archive loop, projects-index refresh, SSE streams, and
+  `srvtiming` boundaries; a logrus hook stamps `trace_id`/`span_id`.
+  `make otel-up` runs the bundled Grafana LGTM stack and the `make dev*`
+  targets auto-export the dev endpoint. User-facing config (URL scheme →
+  transport, `OTEL_*` vars, dashboard) is in `docs/configuration.md`;
+  dashboard provisioning in `observability/`.
 - **Tmux session name character limitations**: `tmuxSessionNameForPath`
   derives a session name from the worktree directory. tmux itself
   replaces dots with underscores when displaying session names, so a
@@ -243,77 +230,37 @@ diffs minimal and match the surrounding code.
   slug rules (AD-9) strip everything except `[a-z0-9._-]` before the
   path reaches tmux, so only atypical *project* directory names
   (e.g. those containing `:` or spaces) can trigger this error.
-- **Optional password auth**: by default ocman binds `127.0.0.1:8228`
-  and is unauthenticated. Set `OCMAN_AUTH_PASSWORD` (env, preferred),
-  `-auth-password-file`, or `-auth-password` (precedence in that
-  order) to require a password. When auth is configured it applies to
-  **every** client, including localhost — pass `-auth-trust-localhost`
-  (or set `OCMAN_AUTH_TRUST_LOCALHOST=1`) to restore the old "local
-  user is trusted" escape hatch for dev loops. The password is
-  bcrypt-hashed at startup; cookies are HMAC-signed (stateless) with
-  a key persisted in `state.db`'s `auth_secret` table so sessions
-  survive restarts. Login attempts are rate-limited (5/min per IP);
-  trusted-localhost clients skip the limiter. See
-  `internal/server/auth.go`.
+- **Optional password auth** (`internal/server/auth.go`): off by
+  default (binds `127.0.0.1:8228`, unauthenticated). When configured it
+  applies to every client including localhost; password is
+  bcrypt-hashed, cookies are HMAC-signed (stateless) with a key in
+  `state.db`'s `auth_secret` table, logins rate-limited 5/min/IP. The
+  precedence (`OCMAN_AUTH_PASSWORD` > `-auth-password-file` >
+  `-auth-password`), the `-auth-trust-localhost` escape hatch, and full
+  setup are documented in `docs/configuration.md`.
 
 ## MCP server
 
-Ocman embeds an MCP server at `http://localhost:8229/mcp` (Streamable HTTP
-transport). It exposes tools for splitting work from an active session and
-communicating between parent/child sessions:
+Ocman embeds a localhost-only MCP server (`internal/mcp/`, mounted at
+`/mcp` by the server package) exposing session-split + parent/child
+message tools (`split_to_session`, `split_to_worktree`,
+`get_current_session_id`, `get_session_status`, `list_child_sessions`,
+`cancel_session`, `send_message_to_child`, `send_message_to_parent`).
 
-| Tool | Description |
-|------|-------------|
-| `split_to_session` | Launch a new OpenCode session in the same directory with a context-enriched prompt |
-| `split_to_worktree` | Launch a new OpenCode session in a fresh git worktree |
-| `get_current_session_id` | Return the most recently updated OpenCode session ID known to ocman, optionally filtered by project directory |
-| `get_session_status` | Check the status of a previously spawned child session |
-| `list_child_sessions` | List all child sessions spawned from a parent session |
-| `cancel_session` | Cancel a running child session (kills its tmux window) |
-| `send_message_to_child` | Send a message from a parent session to one of its child sessions |
-| `send_message_to_parent` | Send a message from a child session back to its parent session |
+Implementation notes:
 
-### Setup
+- `PromptComposer` enriches caller intent with parent-session context
+  (last 10 messages, git branch, `git diff --stat`); `SessionLauncher`
+  creates the child via the `Platform` interface.
+- Child session records live in `state.db`'s `child_sessions` table
+  (migration v9); a background watcher polls every 5 s and injects a
+  result summary back into the parent on completion.
+- Agent splitting *policy* lives in
+  `.opencode/skills/ocman-session-splitting/SKILL.md` so MCP tool
+  descriptions stay short and action-focused.
 
-Add the following to your project's `opencode.json` (or global
-`~/.config/opencode/config.json`):
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "mcp": {
-    "ocman": {
-      "type": "remote",
-      "url": "http://localhost:8228/mcp",
-      "enabled": true
-    }
-  }
-}
-```
-
-Use port **8228** (Vite dev proxy) during development — the proxy
-forwards `/mcp` to the Go backend at :8229. Use port **8229** directly
-when running the production binary (no Vite). The MCP server URL is
-also exposed via `/api/capabilities` as `mcpServer.url`.
-
-### How it works
-
-1. The model (or user) calls `split_to_session` or `split_to_worktree`
-   with a brief `intent` and the current `session_id`.
-2. ocman fetches the last 10 messages, current git branch, and
-   `git diff --stat` from the parent session's directory.
-3. A structured Markdown prompt is assembled and sent to a new OpenCode
-   session via `POST /session/{id}/prompt_async`.
-4. A background watcher polls every 5 seconds; when the child session
-   completes, ocman injects a result summary back into the parent
-   session via `SendMessage`.
-
-Child session records are stored in `state.db`'s `child_sessions` table
-(migration v9). The MCP endpoint is localhost-only.
-
-Agent splitting policy lives in the repo-local
-`.opencode/skills/ocman-session-splitting/SKILL.md` skill so MCP tool
-descriptions can stay short and action-focused.
+User-facing setup, the full tool table, and the splitting workflow are
+documented in `docs/mcp.md`.
 
 ## Conventions
 
