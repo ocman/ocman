@@ -13,6 +13,7 @@ import { HeaderProvider } from './lib/HeaderProvider';
 import { useHeaderInfo } from './lib/headerContext';
 import { CommandPalette } from './components/CommandPalette';
 import { WorktreeFormModal } from './components/WorktreeFormModal';
+import { MachinePickerModal } from './components/MachinePickerModal';
 import { PlatformBadge } from './components/PlatformBadge';
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -242,6 +243,7 @@ function GlobalHotkeys() {
     <>
       <CommandPalette />
       <WorktreeFormModal />
+      <MachinePickerModal />
       <KeyboardShortcutsDialog open={shortcutsOpen} onClose={closeShortcuts} />
     </>
   );

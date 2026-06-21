@@ -3,8 +3,6 @@ package remote
 import (
 	"path/filepath"
 	"strings"
-
-	"github.com/NoUseFreak/ocman/internal/db"
 )
 
 // ProjectIdentity describes one project known to a host, used for the
@@ -70,18 +68,8 @@ func normalizeHostPath(s string) string {
 	return strings.ToLower(s)
 }
 
-// ProjectIdentitiesFromStats converts the host's project stats into
-// ProjectIdentity records. Origin enrichment (a git lookup per dir) is
-// done by the caller on the remote when available; here Origin is left
-// empty and the key falls back to the basename. Phase 8 enriches this.
-func ProjectIdentitiesFromStats(stats []db.ProjectStats) []ProjectIdentity {
-	out := make([]ProjectIdentity, 0, len(stats))
-	for _, p := range stats {
-		out = append(out, ProjectIdentity{
-			Key:      NormalizeProjectIdentity("", p.Directory),
-			Basename: filepath.Base(strings.TrimRight(p.Directory, "/")),
-			Dir:      p.Directory,
-		})
-	}
-	return out
+// basenameOf returns the final path element of an absolute directory,
+// trimming any trailing slash.
+func basenameOf(dir string) string {
+	return filepath.Base(strings.TrimRight(dir, "/"))
 }

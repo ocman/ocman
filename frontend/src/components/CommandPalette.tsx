@@ -9,6 +9,7 @@ import { cleanTitle, relativeTime, shortPath } from '../lib/format';
 import type { Session, Project } from '../lib/api';
 import { useTmux } from '../lib/useTmux';
 import { createSessionWithLaunch } from '../lib/createSessionWithLaunch';
+import { resolveTargetForDir } from '../lib/machinePicker';
 import { remoteLog } from '../lib/remoteLog';
 
 type CommandItem = { kind: 'command'; id: string; label: string; description: string };
@@ -286,23 +287,32 @@ export function CommandPalette() {
     } else if (item.kind === 'project') {
       closePalette();
       const projectDir = item.project.directory;
-      // Infer the platform from any existing session for this directory.
-      const inferredPlatform = sessions?.find((s) => s.directory === projectDir)?.platform ?? '';
-      createSessionWithLaunch(
-        {
-          createSession,
-          launchOpencodeInTmux,
-          tmuxAvailable: tmux.available,
-        },
-        { directory: projectDir },
-      )
-        .then((res) => {
-          if (res.id) {
-            seedNewSession(res.id, projectDir, inferredPlatform);
-            navigate(`/session/${res.id}`);
-          }
-        })
-        .catch((err) => remoteLog.error('Failed to create session', err));
+      // Machine-aware create (multi-remote support, AD-15): ask the hub
+      // which machine should run this project. Auto-resolves silently on
+      // single-host / single-match; prompts when the project lives on
+      // several machines or none.
+      void resolveTargetForDir(projectDir).then((platform) => {
+        if (platform === null) return; // operator cancelled the picker
+        // Fall back to inferring the platform from an existing session
+        // when the resolver returned the empty (local-default) sentinel.
+        const chosenPlatform =
+          platform || sessions?.find((s) => s.directory === projectDir)?.platform || '';
+        createSessionWithLaunch(
+          {
+            createSession,
+            launchOpencodeInTmux,
+            tmuxAvailable: tmux.available,
+          },
+          { directory: projectDir, platform: chosenPlatform || undefined },
+        )
+          .then((res) => {
+            if (res.id) {
+              seedNewSession(res.id, projectDir, chosenPlatform);
+              navigate(`/session/${res.id}`);
+            }
+          })
+          .catch((err) => remoteLog.error('Failed to create session', err));
+      });
     } else if (item.kind === 'nav') {
       closePalette();
       navigate(item.path);

@@ -24,13 +24,20 @@ type Server struct {
 	host       hostsvc.Host
 	instanceID string
 	version    string
+	origins    *originCache
 }
 
 // NewServer builds the remote-side gRPC service over the given local
 // registry and host. instanceID is this ocman's stable random ID;
 // version is the ocman build version reported in Hello.
 func NewServer(registry *platforms.Registry, host hostsvc.Host, instanceID, version string) *Server {
-	return &Server{registry: registry, host: host, instanceID: instanceID, version: version}
+	return &Server{
+		registry:   registry,
+		host:       host,
+		instanceID: instanceID,
+		version:    version,
+		origins:    newOriginCache(),
+	}
 }
 
 // platformFor resolves the local adapter for a base platform id.
@@ -388,5 +395,5 @@ func (s *Server) Projects(ctx context.Context, _ *pb.Empty) (*pb.JsonResp, error
 	if err != nil {
 		return nil, err
 	}
-	return jsonResp(ProjectIdentitiesFromStats(projects), nil)
+	return jsonResp(projectIdentities(ctx, s.origins, projects), nil)
 }

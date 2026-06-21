@@ -1,0 +1,74 @@
+.machine-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.machine-picker {
+  width: min(440px, 92vw);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.machine-picker-title {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.machine-picker-desc {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.machine-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.machine-picker-option {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--fg);
+  cursor: pointer;
+  text-align: left;
+}
+
+.machine-picker-option:hover {
+  border-color: var(--accent);
+}
+
+.machine-picker-name {
+  font-weight: 600;
+}
+
+.machine-picker-dir {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.machine-picker-cancel {
+  align-self: flex-end;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+}

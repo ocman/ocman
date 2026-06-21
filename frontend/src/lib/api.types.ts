@@ -743,6 +743,25 @@ export interface RemoteStatus {
   projectCount: number;
 }
 
+/**
+ * One machine that has a project checked out, returned by
+ * POST /api/sessions/resolve-targets for the new-session machine picker.
+ * `platform` is the compound 'r-<id>:opencode' key for remotes (pass it
+ * to createSession), or 'opencode' for the local machine.
+ */
+export interface TargetCandidate {
+  remoteId: string;
+  remoteName: string;
+  platform: string;
+  dir: string;
+}
+
+/** Response of POST /api/sessions/resolve-targets. */
+export interface ResolveTargetsResponse {
+  candidates: TargetCandidate[];
+  remotes: TargetCandidate[];
+}
+
 /** This instance's own remote-access surface (GET /api/settings/remote-access). */
 export interface RemoteAccessStatus {
   instanceId: string;

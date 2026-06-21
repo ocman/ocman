@@ -94,6 +94,7 @@ import type {
   SharedConversation,
   RemoteStatus,
   RemoteAccessStatus,
+  ResolveTargetsResponse,
 } from './api.types';
 
 /**
@@ -383,6 +384,8 @@ export const api = {
     postJSON<{ ok: boolean }>(`/api/remotes/${localId}`, undefined, { method: 'DELETE', parseJSON: false }),
   reconnectRemote: (localId: number) =>
     postJSON<{ ok: boolean }>(`/api/remotes/${localId}/reconnect`, undefined),
+  resolveTargets: (dir: string, remoteId?: string) =>
+    postJSON<ResolveTargetsResponse>('/api/sessions/resolve-targets', { dir, ...(remoteId ? { remoteId } : {}) }),
   createSession: async (directory: string, platform?: string, title?: string) => {
     const resp = await fetch('/api/sessions', {
       method: 'POST',

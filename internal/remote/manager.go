@@ -27,6 +27,12 @@ type Manager struct {
 
 	mu      sync.RWMutex
 	remotes map[int64]*managedRemote // keyed by hub-local id
+
+	// inventory caches each connected remote's project list, keyed by
+	// remote instance ID. Refreshed on connect and on a periodic timer
+	// (AD-8). Used by ResolveTargets and the router's dir resolver.
+	invMu     sync.RWMutex
+	inventory map[string][]ProjectIdentity
 }
 
 // managedRemote bundles a RemoteConn with its registered adapters and the
@@ -42,13 +48,19 @@ type managedRemote struct {
 // NewManager creates a Manager. base is the platform id remotes expose
 // (v1 OpenCode-only).
 func NewManager(registry *platforms.Registry, router *hostsvc.Router, store *state.DB, base string) *Manager {
-	return &Manager{
-		registry: registry,
-		router:   router,
-		store:    store,
-		base:     base,
-		remotes:  make(map[int64]*managedRemote),
+	m := &Manager{
+		registry:  registry,
+		router:    router,
+		store:     store,
+		base:      base,
+		remotes:   make(map[int64]*managedRemote),
+		inventory: make(map[string][]ProjectIdentity),
 	}
+	// Back the router's ForDir with the inventory cache so a dir that
+	// unambiguously matches a remote's known project resolves to that
+	// remote's Host (AD-16/AD-8).
+	router.SetDirResolver(m.resolveDir)
+	return m
 }
 
 // Start loads saved remotes and dials the enabled ones in the background.
@@ -68,6 +80,21 @@ func (m *Manager) Start(ctx context.Context) {
 			continue
 		}
 		m.dial(ctx, r)
+	}
+}
+
+// RunInventoryLoop periodically refreshes every connected remote's
+// project inventory until ctx is cancelled (AD-8). Call once after Start.
+func (m *Manager) RunInventoryLoop(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			m.RefreshInventories(ctx)
+		}
 	}
 }
 
@@ -109,12 +136,64 @@ func (m *Manager) connectAndRegister(ctx context.Context, mr *managedRemote, loc
 	m.registry.Register(mr.platform)
 	m.router.RegisterRemote(mr.conn.RemoteID(), mr.host)
 	m.persistHealth(localID, mr.conn)
+	m.refreshInventory(ctx, mr)
 
 	log.WithFields(log.Fields{
 		"remote":   localID,
 		"remoteId": mr.conn.RemoteID(),
 		"hostname": mr.conn.Hostname(),
 	}).Info("remote: connected")
+}
+
+// refreshInventory fetches a connected remote's project inventory and
+// stores it in the cache keyed by the remote's instance ID (AD-8).
+func (m *Manager) refreshInventory(ctx context.Context, mr *managedRemote) {
+	if mr.host == nil || mr.conn.RemoteID() == "" {
+		return
+	}
+	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	idents, err := mr.host.ProjectIdentities(cctx)
+	if err != nil {
+		return
+	}
+	m.invMu.Lock()
+	m.inventory[mr.conn.RemoteID()] = idents
+	m.invMu.Unlock()
+}
+
+// RefreshInventories re-fetches every connected remote's inventory. Call
+// periodically and on reconnect (AD-8). Safe to call concurrently.
+func (m *Manager) RefreshInventories(ctx context.Context) {
+	m.mu.RLock()
+	managed := make([]*managedRemote, 0, len(m.remotes))
+	for _, mr := range m.remotes {
+		managed = append(managed, mr)
+	}
+	m.mu.RUnlock()
+	for _, mr := range managed {
+		m.refreshInventory(ctx, mr)
+	}
+}
+
+// resolveDir maps an absolute directory to the owning remote ID, or ""
+// for local. A dir that exactly matches a remote's known project path
+// resolves to that remote (AD-16b prefers explicit owner refs; this is
+// the ForDir inference fallback).
+func (m *Manager) resolveDir(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	m.invMu.RLock()
+	defer m.invMu.RUnlock()
+	for remoteID, idents := range m.inventory {
+		for _, p := range idents {
+			if p.Dir == dir {
+				return remoteID
+			}
+		}
+	}
+	return ""
 }
 
 // persistHealth writes the connection outcome back to state.db.
@@ -312,6 +391,98 @@ func (m *Manager) disconnect(localID int64) {
 		delete(m.remotes, localID)
 	}
 	m.mu.Unlock()
+}
+
+// TargetCandidate is one machine that has a given project checked out,
+// returned by ResolveTargets for the new-session machine picker (AD-15).
+type TargetCandidate struct {
+	RemoteID   string `json:"remoteId"`
+	RemoteName string `json:"remoteName"`
+	Platform   string `json:"platform"`
+	Dir        string `json:"dir"`
+}
+
+// ResolveTargets computes the project identity for dir (using the given
+// origin) and returns the machines whose inventory contains a matching
+// project (AD-15). The local machine is included via localProjects, which
+// the caller supplies from its own host inventory. The result drives the
+// frontend chooser: 1 candidate -> auto-select, >1 -> prompt, 0 -> pick a
+// remote.
+func (m *Manager) ResolveTargets(dir, origin string, localProjects []ProjectIdentity) []TargetCandidate {
+	key := NormalizeProjectIdentity(origin, dir)
+	var out []TargetCandidate
+
+	// Local machine.
+	for _, p := range localProjects {
+		if p.Key == key {
+			out = append(out, TargetCandidate{
+				RemoteID:   "local",
+				RemoteName: "This machine",
+				Platform:   m.base,
+				Dir:        p.Dir,
+			})
+			break
+		}
+	}
+
+	// Remotes.
+	m.invMu.RLock()
+	inv := make(map[string][]ProjectIdentity, len(m.inventory))
+	for id, idents := range m.inventory {
+		inv[id] = idents
+	}
+	m.invMu.RUnlock()
+
+	for remoteID, idents := range inv {
+		for _, p := range idents {
+			if p.Key == key {
+				out = append(out, TargetCandidate{
+					RemoteID:   remoteID,
+					RemoteName: m.nameForRemoteID(remoteID),
+					Platform:   CompoundPlatformID(remoteID, m.base),
+					Dir:        p.Dir,
+				})
+				break
+			}
+		}
+	}
+	return out
+}
+
+// EnabledRemotes returns the connected remotes as picker candidates,
+// regardless of whether they have the project — used for the zero-match
+// "pick a machine" path (AD-15).
+func (m *Manager) EnabledRemotes() []TargetCandidate {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]TargetCandidate, 0, len(m.remotes))
+	for _, mr := range m.remotes {
+		if mr.conn == nil || mr.conn.RemoteID() == "" || mr.conn.Health() != HealthConnected {
+			continue
+		}
+		rid := mr.conn.RemoteID()
+		out = append(out, TargetCandidate{
+			RemoteID:   rid,
+			RemoteName: m.nameForRemoteID(rid),
+			Platform:   CompoundPlatformID(rid, m.base),
+		})
+	}
+	return out
+}
+
+// nameForRemoteID returns the display name for a connected remote.
+func (m *Manager) nameForRemoteID(remoteID string) string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, mr := range m.remotes {
+		if mr.conn != nil && mr.conn.RemoteID() == remoteID {
+			if mr.name != "" {
+				return mr.name
+			}
+			return mr.conn.Hostname()
+		}
+	}
+	return remoteID
 }
 
 // displayName picks the hub display name for a remote row: the explicit

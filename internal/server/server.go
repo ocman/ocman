@@ -444,6 +444,8 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// Hub-side remote management (multi-remote support). CRUD + reconnect.
 	mux.HandleFunc("/api/remotes", s.requireAuth(s.handleRemotes))
 	mux.HandleFunc("/api/remotes/", s.requireAuth(s.handleRemoteByID))
+	// New-session machine picker resolver (multi-remote support).
+	mux.HandleFunc("/api/sessions/resolve-targets", s.post(s.handleResolveTargets))
 
 	// Best-effort remote-logging sink for the frontend. Localhost-only so
 	// it can't be used to flood logs from the network. See
