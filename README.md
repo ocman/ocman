@@ -17,6 +17,7 @@ Supports [OpenCode](https://github.com/anomalyco/opencode) and [Claude Code](htt
 - **Command palette** — Unified ⌘K palette for jumping between sessions, settings, and actions, with in-app notifications.
 - **Slash commands** — `/new [title]` to create a session, `/clear` to archive the current one and start fresh, plus keyboard-driven session rename.
 - **Tmux integration** — Launch or auto-launch an OpenCode instance inside tmux directly from the UI.
+- **Multi-remote** — Attach other ocman instances over the network and manage every machine's sessions from one dashboard, with a host badge per session and machine-aware new-session creation. See [docs/multi-remote.md](docs/multi-remote.md).
 - **Diff & changes view** — Syntax-highlighted diffs inline in the thread, plus a *Changes* sidebar combining session edits with the working-tree `git` diff.
 - **Stats dashboard** — Per-project metrics, wall-clock totals, token/pricing graphs, and system stats.
 - **Model picker** — Per-platform favorites and a refreshable catalog so new models appear without restarting.
@@ -118,9 +119,30 @@ project, copy that folder into the target project's `.opencode/skills/`
 directory, or add this repository's `.opencode/skills` path to that project's
 OpenCode `skills.paths` config.
 
+## Managing sessions across machines
+
+Run ocman on several machines and manage them all from one **hub**. On
+each machine you want to manage remotely, start ocman with a gRPC listen
+address:
+
+```sh
+ocman -remote-listen 0.0.0.0:8230
+```
+
+Then on the hub, open **Settings → Remotes → Attach a remote**, paste the
+remote's address and its access token (revealed from the remote's own
+**Settings → Remotes** page), and its sessions join the unified list with
+a host badge. Opening, driving, and creating sessions all route to the
+owning machine automatically.
+
+This is off by default — a plain `./ocman` with no remotes is unchanged.
+See the step-by-step [multi-remote guide](docs/multi-remote.md) for TLS,
+security notes, and troubleshooting.
+
 ## Documentation
 
 - [Configuration](docs/configuration.md) — flags, env vars, authentication
+- [Multi-remote support](docs/multi-remote.md) — manage sessions across machines
 - [Contributing](docs/contributing.md) — architecture, project structure, development workflow
 
 ## License

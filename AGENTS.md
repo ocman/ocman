@@ -45,6 +45,29 @@ user-customizable template under Settings → "PR & Issue templates",
 persisted in the `setting` table of `state.db` (migration v12). See
 `spec/pr-issue-sidebar/` for the full spec.
 
+Ocman also supports **multi-remote**: one "hub" ocman attaches to other
+ocman instances over a long-lived gRPC channel and manages every
+machine's sessions from one unified, host-agnostic UI. A remote opts in
+by starting with `-remote-listen <addr>` (off by default → NFR-6); each
+instance has a stable random instance ID + remote-access token persisted
+in `state.db` (migration v14), revealed from its own Settings → Remotes
+page. The hub dials each saved remote (token auth, optional TLS via
+`-remote-tls-cert`/`-remote-tls-key` or a `grpcs://` address), registering
+one `remotePlatform` adapter (compound platform id `r-<remoteID>:opencode`,
+AD-2) and one `remoteHost` per connected remote. Two adapter seams keep
+this transparent: session-scoped work goes through `platforms.Platform` +
+`Registry`, directory-scoped work (git/worktree/tmux/projects) through the
+new `hostsvc.Host` + `hostsvc.Router` (`ForRemote`/`ForDir`) — handlers
+resolve an owner and delegate, so the HTTP layer is unchanged. Host-local
+actions (tmux, worktrees) execute on the owning host. The browser still
+talks REST/SSE to the hub only; the hub re-emits remote gRPC event streams
+as SSE. New-session creation is machine-aware via
+`POST /api/sessions/resolve-targets` + a frontend machine picker. The
+frontend stays host-agnostic (host badge + capability flags, no
+remote-identity branching; `scripts/check-host-helpers.sh` enforces that
+handlers don't bypass the `Host` seam). User-facing docs:
+`docs/multi-remote.md`. Full design: `spec/multi-remote-support/`.
+
 ## Repository layout
 
 - `main.go` — entrypoint; parses `-addr`, `-db`, and `-platforms`
