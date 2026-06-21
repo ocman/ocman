@@ -121,6 +121,38 @@ func TestManager_RegistersRemotePlatform(t *testing.T) {
 	}
 }
 
+func TestRemotePlatform_MutationsAndCreateRoundTrip(t *testing.T) {
+	reg := platforms.NewRegistry()
+	fp := &fakePlatform{id: "opencode"}
+	reg.Register(fp)
+	addr := startRealRemote(t, "tok", "rid", reg)
+
+	conn := NewRemoteConn(addr, "tok")
+	if err := conn.Connect(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	rp := newRemotePlatform(conn, "opencode", func() string { return "Box" })
+
+	// SendMessage routes over gRPC to the remote adapter.
+	if err := rp.SendMessage(context.Background(), platforms.SendMessageRequest{
+		SessionID: "s1", Message: "drive remotely",
+	}); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	if fp.sent == nil || fp.sent.Message != "drive remotely" {
+		t.Fatalf("remote did not receive message: %+v", fp.sent)
+	}
+
+	// CreateSession returns the remote-created id.
+	resp, err := rp.CreateSession(context.Background(), platforms.CreateSessionRequest{Directory: "/x"})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	if resp.ID != "new-sess" {
+		t.Fatalf("CreateSession id = %q", resp.ID)
+	}
+}
+
 func TestRemotePlatform_OfflineServesStale(t *testing.T) {
 	reg := platforms.NewRegistry()
 	reg.Register(&fakePlatform{id: "opencode", sessions: []db.Session{

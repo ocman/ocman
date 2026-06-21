@@ -201,7 +201,12 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	// arrive pre-sorted with the real messages. The frontend never
 	// needs a separate fetch or client-side injection; the notices
 	// land in chronological order alongside the real conversation.
-	if s.stateDB != nil {
+	//
+	// Skipped for remote sessions (AD-14b): their approval decisions and
+	// notice records live in the REMOTE's state.db, and the remote's
+	// Session RPC already returns detail enriched with its own notices.
+	// Injecting from the hub's DB here would read the wrong store.
+	if s.stateDB != nil && !isRemotePlatformID(string(adapter.ID())) {
 		injectApprovalNotices(string(adapter.ID()), sessionID, s.stateDB, &detail.Messages, &detail.Parts)
 	}
 
@@ -1145,7 +1150,17 @@ func (s *Server) serveSessionEvents(w http.ResponseWriter, r *http.Request, sess
 		},
 	}
 
-	err := adapter.ProxyEvents(ctx, sessionID, tee, flush)
+	// For remote sessions, auto-approve is the owner's responsibility
+	// (AD-14): the remote runs the judge with its own settings and emits
+	// ocman.permission.* events into the stream, which the gRPC tunnel
+	// forwards verbatim. The hub must NOT tee a remote stream into its
+	// own judge, so we write events straight through.
+	var dst io.Writer = tee
+	if isRemotePlatformID(string(adapter.ID())) {
+		dst = lw
+	}
+
+	err := adapter.ProxyEvents(ctx, sessionID, dst, flush)
 	if err == nil {
 		span.SetStatus(codes.Ok, "stream ended")
 		return

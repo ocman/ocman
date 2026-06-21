@@ -61,6 +61,17 @@ func (s *Server) resolvePlatformForSession(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "invalid session ID", http.StatusBadRequest)
 		return nil
 	}
+	// Honour an explicit ?platform= first (AD-2b): two hosts may have the
+	// same session_id, so a remote session must be addressed by its
+	// compound platform key to avoid mis-routing. Falls back to the
+	// session-id reverse lookup for local / legacy URLs that omit it.
+	if plat := strings.TrimSpace(r.URL.Query().Get("platform")); plat != "" {
+		if p, ok := s.registry.Get(platforms.ID(plat)); ok {
+			return p
+		}
+		http.Error(w, "session not found", http.StatusNotFound)
+		return nil
+	}
 	p, ok := s.registry.PlatformForSession(r.Context(), sessionID)
 	if !ok {
 		http.Error(w, "session not found", http.StatusNotFound)

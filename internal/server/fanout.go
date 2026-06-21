@@ -22,8 +22,15 @@ const remoteFanoutTimeout = 2 * time.Second
 // (a bare platform id with no "r-...:" prefix). Local adapters keep their
 // current latency; remote adapters get the fan-out timeout.
 func isLocalAdapter(p platforms.Platform) bool {
-	id := string(p.ID())
-	return len(id) < 2 || id[:2] != "r-"
+	return !isRemotePlatformID(string(p.ID()))
+}
+
+// isRemotePlatformID reports whether a platform id is a remote's compound
+// "r-<remoteID>:<base>" key. Used to apply remote-only behaviour (fan-out
+// timeout, skipping hub-side approval-notice injection per AD-14b)
+// without branching on a specific remote identity.
+func isRemotePlatformID(id string) bool {
+	return len(id) >= 2 && id[:2] == "r-"
 }
 
 // fanOutSessions lists sessions across every available adapter
