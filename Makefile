@@ -405,6 +405,17 @@ lint-platform-branching:
 lint-host-helpers:
 	./scripts/check-host-helpers.sh
 
+# Regenerate the gRPC stubs for the multi-remote contract. Requires
+# protoc plus the Go plugins:
+#   go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+#   go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+# The generated *.pb.go are committed so CI / make build don't need protoc.
+proto:
+	PATH="$$(go env GOPATH)/bin:$$PATH" protoc \
+		--go_out=. --go_opt=module=github.com/NoUseFreak/ocman \
+		--go-grpc_out=. --go-grpc_opt=module=github.com/NoUseFreak/ocman \
+		internal/remote/proto/remote.proto
+
 # --- Local observability stack (Grafana LGTM) ----------------------------
 #
 # Spins up grafana/otel-lgtm: Grafana on :3000, OTLP/gRPC on :4317,

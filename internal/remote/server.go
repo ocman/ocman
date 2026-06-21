@@ -1,0 +1,392 @@
+package remote
+
+import (
+	"context"
+	"os"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/platforms"
+	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
+)
+
+// Server is the remote-side gRPC service. It is a thin translation layer
+// over the local platforms.Registry and hostsvc.Host: each unary RPC
+// resolves the local adapter from the base platform id (or the local
+// Host) and calls the matching method, marshalling rich results as JSON
+// (AD-3, AD-11). It holds no business logic of its own.
+type Server struct {
+	pb.UnimplementedOcmanServer
+
+	registry   *platforms.Registry
+	host       hostsvc.Host
+	instanceID string
+	version    string
+}
+
+// NewServer builds the remote-side gRPC service over the given local
+// registry and host. instanceID is this ocman's stable random ID;
+// version is the ocman build version reported in Hello.
+func NewServer(registry *platforms.Registry, host hostsvc.Host, instanceID, version string) *Server {
+	return &Server{registry: registry, host: host, instanceID: instanceID, version: version}
+}
+
+// platformFor resolves the local adapter for a base platform id.
+func (s *Server) platformFor(id string) (platforms.Platform, error) {
+	p, ok := s.registry.Get(platforms.ID(id))
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, "unknown platform %q", id)
+	}
+	return p, nil
+}
+
+// jsonResp wraps a value into a *pb.JsonResp, or an error.
+func jsonResp(v any, err error) (*pb.JsonResp, error) {
+	if err != nil {
+		return nil, err
+	}
+	b, err := marshalJSON(v)
+	if err != nil {
+		return nil, err
+	}
+	return &pb.JsonResp{Payload: b}, nil
+}
+
+// --- Hello ---
+
+func (s *Server) Hello(_ context.Context, _ *pb.HelloReq) (*pb.HelloResp, error) {
+	hostname, _ := os.Hostname()
+	return &pb.HelloResp{
+		ProtocolVersion: ProtocolVersion,
+		InstanceId:      s.instanceID,
+		Hostname:        hostname,
+		OcmanVersion:    s.version,
+	}, nil
+}
+
+// --- Session reads ---
+
+func (s *Server) Sessions(ctx context.Context, req *pb.SessionsReq) (*pb.JsonResp, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	return jsonResp(p.Sessions(ctx, req.Dir, req.Since))
+}
+
+func (s *Server) Session(ctx context.Context, req *pb.SessionReq) (*pb.JsonResp, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	return jsonResp(p.Session(ctx, req.SessionId, int(req.Limit), int(req.Offset)))
+}
+
+func (s *Server) SessionsInactiveBefore(ctx context.Context, req *pb.CutoffReq) (*pb.JsonResp, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	return jsonResp(p.SessionsInactiveBefore(ctx, req.Cutoff))
+}
+
+func (s *Server) SessionChanges(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	return jsonResp(p.SessionChanges(ctx, req.SessionId))
+}
+
+func (s *Server) SessionInfo(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	return jsonResp(p.SessionInfo(ctx, req.SessionId))
+}
+
+func (s *Server) AgentCatalog(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	return jsonResp(p.AgentCatalog(ctx, req.SessionId))
+}
+
+func (s *Server) SlashCommands(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	return jsonResp(p.SlashCommands(ctx, req.SessionId))
+}
+
+func (s *Server) SessionModels(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	return jsonResp(p.SessionModels(ctx, req.SessionId))
+}
+
+func (s *Server) ListPermissions(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	return jsonResp(p.ListPermissions(ctx, req.SessionId))
+}
+
+func (s *Server) ListQuestions(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	return jsonResp(p.ListQuestions(ctx, req.SessionId))
+}
+
+func (s *Server) Capabilities(_ context.Context, req *pb.PlatformRef) (*pb.JsonResp, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	return jsonResp(p.Capabilities(), nil)
+}
+
+func (s *Server) Owns(ctx context.Context, req *pb.SessionRef) (*pb.OwnsResp, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	return &pb.OwnsResp{Owns: p.Owns(ctx, req.SessionId)}, nil
+}
+
+// --- Session mutations ---
+
+func (s *Server) SendMessage(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	var mr platforms.SendMessageRequest
+	if err := unmarshalJSON(req.Payload, &mr); err != nil {
+		return nil, err
+	}
+	return &pb.Empty{}, p.SendMessage(ctx, mr)
+}
+
+func (s *Server) ExecuteCommand(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	var cr platforms.ExecuteCommandRequest
+	if err := unmarshalJSON(req.Payload, &cr); err != nil {
+		return nil, err
+	}
+	return &pb.Empty{}, p.ExecuteCommand(ctx, cr)
+}
+
+func (s *Server) RunShell(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	var sr platforms.RunShellRequest
+	if err := unmarshalJSON(req.Payload, &sr); err != nil {
+		return nil, err
+	}
+	return &pb.Empty{}, p.RunShell(ctx, sr)
+}
+
+func (s *Server) RespondPermission(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	var rr platforms.RespondPermissionRequest
+	if err := unmarshalJSON(req.Payload, &rr); err != nil {
+		return nil, err
+	}
+	return &pb.Empty{}, p.RespondPermission(ctx, rr)
+}
+
+func (s *Server) RespondQuestion(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	var rr platforms.RespondQuestionRequest
+	if err := unmarshalJSON(req.Payload, &rr); err != nil {
+		return nil, err
+	}
+	return &pb.Empty{}, p.RespondQuestion(ctx, rr)
+}
+
+func (s *Server) RejectQuestion(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	var rr platforms.RejectQuestionRequest
+	if err := unmarshalJSON(req.Payload, &rr); err != nil {
+		return nil, err
+	}
+	return &pb.Empty{}, p.RejectQuestion(ctx, rr)
+}
+
+func (s *Server) Abort(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	var ar platforms.AbortRequest
+	if err := unmarshalJSON(req.Payload, &ar); err != nil {
+		return nil, err
+	}
+	return &pb.Empty{}, p.Abort(ctx, ar)
+}
+
+func (s *Server) RenameSession(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	var rr platforms.RenameSessionRequest
+	if err := unmarshalJSON(req.Payload, &rr); err != nil {
+		return nil, err
+	}
+	return &pb.Empty{}, p.RenameSession(ctx, rr)
+}
+
+func (s *Server) Compact(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	var cr platforms.CompactRequest
+	if err := unmarshalJSON(req.Payload, &cr); err != nil {
+		return nil, err
+	}
+	return &pb.Empty{}, p.Compact(ctx, cr)
+}
+
+func (s *Server) CreateSession(ctx context.Context, req *pb.PlatformJsonReq) (*pb.JsonResp, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	var cr platforms.CreateSessionRequest
+	if err := unmarshalJSON(req.Payload, &cr); err != nil {
+		return nil, err
+	}
+	return jsonResp(p.CreateSession(ctx, cr))
+}
+
+// --- Streaming events ---
+
+func (s *Server) StreamEvents(req *pb.SessionRef, stream pb.Ocman_StreamEventsServer) error {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return err
+	}
+	w := &eventStreamWriter{stream: stream}
+	return p.ProxyEvents(stream.Context(), req.SessionId, w, func() {})
+}
+
+// eventStreamWriter adapts a gRPC server-stream to the io.Writer+flush
+// shape ProxyEvents expects: each Write frames the bytes into an
+// EventChunk message tunneled to the hub (AD-14).
+type eventStreamWriter struct {
+	stream pb.Ocman_StreamEventsServer
+}
+
+func (w *eventStreamWriter) Write(p []byte) (int, error) {
+	// Copy because the underlying SSE buffer may be reused after Write
+	// returns; the gRPC send is asynchronous w.r.t. the caller's buffer.
+	chunk := make([]byte, len(p))
+	copy(chunk, p)
+	if err := w.stream.Send(&pb.EventChunk{Data: chunk}); err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
+// --- Host services ---
+
+func (s *Server) GitInfo(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
+	var dirs []string
+	if err := unmarshalJSON(req.Payload, &dirs); err != nil {
+		return nil, err
+	}
+	return jsonResp(s.host.GitInfo(ctx, dirs))
+}
+
+func (s *Server) GitDiff(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
+	var args struct {
+		Dir   string `json:"dir"`
+		Force bool   `json:"force"`
+	}
+	if err := unmarshalJSON(req.Payload, &args); err != nil {
+		return nil, err
+	}
+	return jsonResp(s.host.GitDiff(ctx, args.Dir, hostsvc.GitDiffOptions{Force: args.Force}))
+}
+
+func (s *Server) ListWorktrees(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
+	var args struct {
+		Dir string `json:"dir"`
+	}
+	if err := unmarshalJSON(req.Payload, &args); err != nil {
+		return nil, err
+	}
+	return jsonResp(s.host.ListWorktrees(ctx, args.Dir))
+}
+
+func (s *Server) WorktreeDefaultBaseRef(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
+	var args struct {
+		Dir string `json:"dir"`
+	}
+	if err := unmarshalJSON(req.Payload, &args); err != nil {
+		return nil, err
+	}
+	ref, err := s.host.WorktreeDefaultBaseRef(ctx, args.Dir)
+	return jsonResp(map[string]string{"baseRef": ref}, err)
+}
+
+func (s *Server) CreateWorktreeSession(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
+	var wr hostsvc.WorktreeSessionRequest
+	if err := unmarshalJSON(req.Payload, &wr); err != nil {
+		return nil, err
+	}
+	return jsonResp(s.host.CreateWorktreeSession(ctx, wr))
+}
+
+func (s *Server) LaunchTmux(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
+	var lr hostsvc.LaunchTmuxRequest
+	if err := unmarshalJSON(req.Payload, &lr); err != nil {
+		return nil, err
+	}
+	return jsonResp(s.host.LaunchTmux(ctx, lr))
+}
+
+func (s *Server) TmuxSessions(ctx context.Context, _ *pb.Empty) (*pb.JsonResp, error) {
+	return jsonResp(s.host.TmuxSessions(ctx))
+}
+
+func (s *Server) HostCapabilities(_ context.Context, _ *pb.Empty) (*pb.JsonResp, error) {
+	return jsonResp(s.host.Capabilities(), nil)
+}
+
+// --- Project inventory ---
+
+func (s *Server) Projects(ctx context.Context, _ *pb.Empty) (*pb.JsonResp, error) {
+	projects, err := s.host.Projects(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return jsonResp(ProjectIdentitiesFromStats(projects), nil)
+}

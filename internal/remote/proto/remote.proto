@@ -1,0 +1,130 @@
+syntax = "proto3";
+
+package ocman.remote.v1;
+
+option go_package = "github.com/NoUseFreak/ocman/internal/remote/proto;remotepb";
+
+// Ocman is the hub<->remote gRPC contract for multi-remote support.
+//
+// Per architecture AD-11, rich nested types (db.Session, SessionDetail,
+// LivePrompt, etc.) travel as JSON bytes inside JsonResp/JsonReq because
+// the two ends are the same codebase/version (guarded by the Hello
+// protocol-version handshake, AD-12). Scalar routing fields (platform,
+// session_id, dir, since, limit) are typed proto fields.
+//
+// PlatformRef / SessionRef carry the BASE platform id (the hub strips
+// the "r-<remoteID>:" prefix before calling). All RPCs require the
+// bearer token (AD-4).
+service Ocman {
+  // Handshake: exchanged once after dialing (AD-12).
+  rpc Hello(HelloReq) returns (HelloResp);
+
+  // --- Session reads ---
+  rpc Sessions(SessionsReq) returns (JsonResp);           // []db.Session
+  rpc Session(SessionReq) returns (JsonResp);             // *SessionDetail
+  rpc SessionsInactiveBefore(CutoffReq) returns (JsonResp);
+  rpc SessionChanges(SessionRef) returns (JsonResp);
+  rpc SessionInfo(SessionRef) returns (JsonResp);
+  rpc AgentCatalog(SessionRef) returns (JsonResp);
+  rpc SlashCommands(SessionRef) returns (JsonResp);
+  rpc SessionModels(SessionRef) returns (JsonResp);
+  rpc ListPermissions(SessionRef) returns (JsonResp);
+  rpc ListQuestions(SessionRef) returns (JsonResp);
+  rpc Capabilities(PlatformRef) returns (JsonResp);       // platforms.Capabilities
+  rpc Owns(SessionRef) returns (OwnsResp);
+
+  // --- Session mutations (JSON request payload) ---
+  rpc SendMessage(PlatformJsonReq) returns (Empty);
+  rpc ExecuteCommand(PlatformJsonReq) returns (Empty);
+  rpc RunShell(PlatformJsonReq) returns (Empty);
+  rpc RespondPermission(PlatformJsonReq) returns (Empty);
+  rpc RespondQuestion(PlatformJsonReq) returns (Empty);
+  rpc RejectQuestion(PlatformJsonReq) returns (Empty);
+  rpc Abort(PlatformJsonReq) returns (Empty);
+  rpc RenameSession(PlatformJsonReq) returns (Empty);
+  rpc Compact(PlatformJsonReq) returns (Empty);
+  rpc CreateSession(PlatformJsonReq) returns (JsonResp);  // *CreateSessionResponse
+
+  // --- Streaming events (tunneled to hub SSE) ---
+  rpc StreamEvents(SessionRef) returns (stream EventChunk);
+
+  // --- Host services (directory-scoped) ---
+  rpc GitInfo(JsonReq) returns (JsonResp);
+  rpc GitDiff(JsonReq) returns (JsonResp);
+  rpc ListWorktrees(JsonReq) returns (JsonResp);
+  rpc WorktreeDefaultBaseRef(JsonReq) returns (JsonResp);
+  rpc CreateWorktreeSession(JsonReq) returns (JsonResp);
+  rpc LaunchTmux(JsonReq) returns (JsonResp);
+  rpc TmuxSessions(Empty) returns (JsonResp);
+  rpc HostCapabilities(Empty) returns (JsonResp);         // hostsvc.HostCaps
+
+  // --- Project inventory ---
+  rpc Projects(Empty) returns (JsonResp);                 // []ProjectIdentity
+  rpc WatchProjects(Empty) returns (stream JsonResp);
+}
+
+message Empty {}
+
+message HelloReq {
+  int32 protocol_version = 1;
+}
+
+message HelloResp {
+  int32 protocol_version = 1;
+  string instance_id = 2;
+  string hostname = 3;
+  string ocman_version = 4;
+}
+
+// PlatformRef carries the base platform id.
+message PlatformRef {
+  string platform = 1;
+}
+
+// SessionRef carries the base platform id plus a session id.
+message SessionRef {
+  string platform = 1;
+  string session_id = 2;
+}
+
+message SessionsReq {
+  string platform = 1;
+  string dir = 2;
+  int64 since = 3;
+}
+
+message SessionReq {
+  string platform = 1;
+  string session_id = 2;
+  int32 limit = 3;
+  int32 offset = 4;
+}
+
+message CutoffReq {
+  string platform = 1;
+  int64 cutoff = 2;
+}
+
+// JsonResp / JsonReq wrap an opaque JSON payload (AD-11).
+message JsonResp {
+  bytes payload = 1;
+}
+
+message JsonReq {
+  bytes payload = 1;
+}
+
+// PlatformJsonReq carries a base platform id plus a JSON request body
+// (for the mutating Platform RPCs whose request structs are rich types).
+message PlatformJsonReq {
+  string platform = 1;
+  bytes payload = 2;
+}
+
+message OwnsResp {
+  bool owns = 1;
+}
+
+message EventChunk {
+  bytes data = 1;
+}

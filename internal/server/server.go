@@ -268,6 +268,19 @@ func (s *Server) WithRemoteAccess(instanceID, listenAddr string, listening, tls 
 	return s
 }
 
+// RemoteServerHost returns the in-process local hostsvc.Host. main.go
+// uses it to build the remote-access gRPC server over the same registry
+// and host the HTTP layer serves (AD-3 — one code path).
+func (s *Server) RemoteServerHost() hostsvc.Host { return s.router().Local() }
+
+// Registry returns the platform registry so main.go can wire the
+// remote-access gRPC server over the same adapters.
+func (s *Server) Registry() *platforms.Registry { return s.registry }
+
+// HostRouter returns the host router so the remote Manager (Phase 4+)
+// can register remote hosts as connections come up.
+func (s *Server) HostRouter() *hostsvc.Router { return s.router() }
+
 // Start starts the HTTP server. It blocks until the context is cancelled,
 // then gracefully shuts down the server.
 func (s *Server) Start(ctx context.Context) error {

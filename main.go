@@ -17,6 +17,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	opencodeplatform "github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/pricing"
+	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/server"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
@@ -70,6 +71,9 @@ func main() {
 	otelEndpoint := flag.String("otel", "", "OTLP endpoint URL (e.g. http://localhost:4318 or grpc://localhost:4317). Empty disables telemetry. Falls back to OTEL_EXPORTER_OTLP_ENDPOINT.")
 	autoApprove := flag.Bool("auto-approve", false, "default new sessions to auto-approve mode (uses OpenCode's running instance as the LLM judge)")
 	publicBaseURL := flag.String("public-base-url", "", "externally reachable base URL for share links (e.g. https://ocman.example.com); falls back to "+publicBaseURLEnv+" env, then the request Host")
+	remoteListen := flag.String("remote-listen", "", "bind address for the remote-access gRPC server (e.g. 0.0.0.0:8230); empty disables it (multi-remote support)")
+	remoteTLSCert := flag.String("remote-tls-cert", "", "TLS certificate file for the remote-access gRPC server (enables TLS together with -remote-tls-key)")
+	remoteTLSKey := flag.String("remote-tls-key", "", "TLS key file for the remote-access gRPC server")
 	flag.Parse()
 
 	// Resolve the public base URL: flag wins, then env. Empty leaves
@@ -192,8 +196,14 @@ func main() {
 	} else {
 		srv := server.New(database, stateDB, *addr, registry, auth).
 			WithAutoApproveDefault(*autoApprove).
-			WithPublicBaseURL(resolvedBaseURL).
-			WithRemoteAccess(ident.InstanceID, "", false, false)
+			WithPublicBaseURL(resolvedBaseURL)
+
+		// Start the remote-access gRPC server when -remote-listen is set
+		// (multi-remote support). Off by default so single-host installs
+		// are byte-for-byte unchanged (NFR-6).
+		listening, listenAddr, tlsOn := startRemoteServer(ctx, srv, ident, *remoteListen, *remoteTLSCert, *remoteTLSKey)
+		srv.WithRemoteAccess(ident.InstanceID, listenAddr, listening, tlsOn)
+
 		if err := srv.Start(ctx); err != nil {
 			log.Fatalf("Server error: %v", err)
 		}
@@ -280,6 +290,41 @@ func buildAuth(stateDB *state.DB, flagValue, fileValue string, ttl time.Duration
 		CookieTTL:      ttl,
 		TrustLocalhost: trustLocalhost,
 	})
+}
+
+// startRemoteServer starts the remote-access gRPC server when listenAddr
+// is non-empty. It returns (listening, boundAddr, tls). On failure it
+// logs and returns listening=false so the HTTP server still starts —
+// the remote surface is opt-in and must never block normal operation.
+func startRemoteServer(ctx context.Context, srv *server.Server, ident state.InstanceIdentity, listenAddr, tlsCert, tlsKey string) (bool, string, bool) {
+	if listenAddr == "" {
+		return false, "", false
+	}
+	rsrv := remote.NewServer(srv.Registry(), srv.RemoteServerHost(), ident.InstanceID, version)
+	ln, err := remote.NewListener(remote.ListenConfig{
+		Addr:        listenAddr,
+		Token:       ident.RemoteToken,
+		TLSCertFile: tlsCert,
+		TLSKeyFile:  tlsKey,
+	}, rsrv)
+	if err != nil {
+		log.WithError(err).Error("remote: failed to start gRPC server; continuing without it")
+		return false, "", false
+	}
+	if !ln.TLS() {
+		log.WithField("addr", ln.Addr()).Warn("remote: gRPC server running WITHOUT TLS (bearer token only); use a trusted overlay or -remote-tls-*")
+	}
+	go func() {
+		if err := ln.Serve(); err != nil {
+			log.WithError(err).Warn("remote: gRPC server stopped")
+		}
+	}()
+	go func() {
+		<-ctx.Done()
+		ln.Stop()
+	}()
+	log.WithFields(log.Fields{"addr": ln.Addr(), "tls": ln.TLS()}).Info("remote: gRPC server listening")
+	return true, ln.Addr(), ln.TLS()
 }
 
 // parseBoolEnv returns true for the common truthy spellings. Empty
