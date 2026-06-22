@@ -53,6 +53,12 @@ func Open(path string) (*DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("pinging state database: %w", err)
 	}
+	// Serialize all access on a single connection. The state DB is
+	// written concurrently (HTTP handlers + the background remote dial
+	// goroutine), and SQLite allows only one writer at a time — with a
+	// multi-connection pool that races into SQLITE_BUSY despite WAL +
+	// busy_timeout. One connection is plenty for a single-user dashboard.
+	db.SetMaxOpenConns(1)
 
 	stateDB := &DB{db: db}
 	if err := stateDB.init(); err != nil {
