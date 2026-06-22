@@ -125,7 +125,14 @@ test.describe('auth required', () => {
     );
 
     // Sign out button lives in the Settings tab, not the global header.
+    // It sits in the "Account" group, which the settings sidebar reveals
+    // only after the matching nav item is selected.
     await page.goto('/settings');
+    // authRequired loads async from /api/auth/me; wait for the Account
+    // sidebar item to appear (and settle) before selecting it.
+    const accountNav = page.getByRole('button', { name: 'Account' });
+    await expect(accountNav).toBeVisible();
+    await accountNav.click();
     await expect(page.locator('button', { hasText: 'Sign out' })).toBeVisible();
   });
 
@@ -145,6 +152,11 @@ test.describe('auth required', () => {
     await page.goto('/settings');
     await expect(page.locator('.nav-tab', { hasText: 'Settings' })).toHaveClass(/active/);
 
+    // Sign out lives in the "Account" settings group — select it first.
+    // Wait for the async-loaded Account nav item to settle before clicking.
+    const accountNav = page.getByRole('button', { name: 'Account' });
+    await expect(accountNav).toBeVisible();
+    await accountNav.click();
     await page.getByRole('button', { name: 'Sign out' }).click();
     await expect(page.locator('.oc-login-card')).toBeVisible({ timeout: 5_000 });
   });

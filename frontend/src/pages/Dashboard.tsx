@@ -403,9 +403,35 @@ export function SettingsTab() {
   // entirely, keeping the settings page tidy.
   const showAppSection = canInstall || installed;
 
+  // Sidebar groups. Conditional groups (App, Account) are filtered out so
+  // the nav only lists what's actually rendered.
+  const groups = [
+    { id: 'notifications', label: 'Notifications', show: true },
+    { id: 'remotes', label: 'Remotes', show: true },
+    { id: 'auto-approve', label: 'Auto-approve', show: true },
+    { id: 'templates', label: 'PR & Issue templates', show: true },
+    { id: 'app', label: 'App', show: showAppSection },
+    { id: 'account', label: 'Account', show: authRequired },
+  ].filter((g) => g.show);
+  const [active, setActive] = useState(groups[0].id);
+
   return (
     <div className="settings-page">
-      <div className="settings-section">
+      <nav className="settings-nav" aria-label="Settings groups">
+        {groups.map((g) => (
+          <button
+            key={g.id}
+            type="button"
+            className={`settings-nav-item${active === g.id ? ' active' : ''}`}
+            aria-current={active === g.id ? 'page' : undefined}
+            onClick={() => setActive(g.id)}
+          >
+            {g.label}
+          </button>
+        ))}
+      </nav>
+      <div className="settings-content">
+      <div className="settings-section" hidden={active !== 'notifications'}>
         <h2 className="settings-section-title">Notifications</h2>
         {notifSupported && (
           <div className="settings-row">
@@ -447,7 +473,7 @@ export function SettingsTab() {
         </div>
       </div>
 
-      <div className="settings-section">
+      <div className="settings-section" hidden={active !== 'remotes'}>
         <h2 className="settings-section-title">Remotes</h2>
         <div className="settings-row-desc" style={{ marginBottom: 8 }}>
           Attach other ocman instances to manage their sessions from here.
@@ -457,7 +483,7 @@ export function SettingsTab() {
         <RemoteSettings />
       </div>
 
-      <div className="settings-section">
+      <div className="settings-section" hidden={active !== 'auto-approve'}>
         <h2 className="settings-section-title">Auto-approve</h2>
         <div className="settings-row">
           <div className="settings-row-info">
@@ -544,7 +570,7 @@ export function SettingsTab() {
         </div>
       </div>
 
-      <div className="settings-section">
+      <div className="settings-section" hidden={active !== 'templates'}>
         <h2 className="settings-section-title">PR &amp; Issue templates</h2>
         <div className="settings-row settings-row--block">
           <div className="settings-row-info">
@@ -561,7 +587,7 @@ export function SettingsTab() {
       </div>
 
       {showAppSection && (
-        <div className="settings-section">
+        <div className="settings-section" hidden={active !== 'app'}>
           <h2 className="settings-section-title">App</h2>
           <div className="settings-row">
             <div className="settings-row-info">
@@ -585,7 +611,7 @@ export function SettingsTab() {
       )}
 
       {authRequired && (
-        <div className="settings-section">
+        <div className="settings-section" hidden={active !== 'account'}>
           <h2 className="settings-section-title">Account</h2>
           <div className="settings-row">
             <div className="settings-row-info">
@@ -602,6 +628,7 @@ export function SettingsTab() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

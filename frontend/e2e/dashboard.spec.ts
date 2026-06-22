@@ -48,6 +48,19 @@ test('settings tab shows bell sound toggle', async ({ mockedPage: page }) => {
   await expect(bellRow.locator('.settings-toggle input[type="checkbox"]')).toBeAttached();
 });
 
+test('settings sidebar switches the visible group', async ({ mockedPage: page }) => {
+  await page.goto('/settings');
+  // Notifications is the default group: its Bell sound row is visible,
+  // while the Auto-approve group's content is hidden.
+  await expect(page.locator('.settings-row-label', { hasText: 'Bell sound' })).toBeVisible();
+  await expect(page.locator('.settings-row-label', { hasText: 'Human review window' })).toBeHidden();
+
+  // Selecting the Auto-approve sidebar item reveals it and hides Notifications.
+  await page.getByRole('button', { name: 'Auto-approve' }).click();
+  await expect(page.locator('.settings-row-label', { hasText: 'Human review window' })).toBeVisible();
+  await expect(page.locator('.settings-row-label', { hasText: 'Bell sound' })).toBeHidden();
+});
+
 test('Sessions tab is active by default', async ({ mockedPage: page }) => {
   await page.goto('/');
   const sessionsTab = page.locator('.nav-tab', { hasText: 'Sessions' });

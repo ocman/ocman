@@ -183,7 +183,30 @@
 }
 
 /* Settings tab */
-.settings-page { padding: 0 24px 40px; max-width: 640px; }
+.settings-page { display: flex; gap: 32px; padding: 0 24px 40px; max-width: 880px; }
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+  width: 180px;
+  position: sticky;
+  top: 16px;
+  align-self: flex-start;
+}
+.settings-nav-item {
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.settings-nav-item:hover { background: var(--bg-hover, rgba(127, 127, 127, 0.1)); }
+.settings-nav-item.active { background: var(--bg-active, rgba(127, 127, 127, 0.15)); color: var(--text); font-weight: 500; }
+.settings-content { flex: 1; min-width: 0; max-width: 640px; }
 .settings-section { margin-bottom: 32px; }
 .settings-section-title {
   font-size: 12px;
