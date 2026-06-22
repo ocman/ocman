@@ -273,6 +273,7 @@ var sessionSubRoutes = []sessionSubRoute{
 	{http.MethodPost, "{id}/auto-approve", (*Server).handleSessionAutoApproveSet},
 	{http.MethodPost, "{id}/attachment", (*Server).handleSessionAttachment},
 	{http.MethodPost, "{id}/message", (*Server).handleSessionMessage},
+	{http.MethodPost, "{id}/restart-opencode", (*Server).handleSessionRestartOpencode},
 	{http.MethodPost, "{id}/command", (*Server).handleSessionCommand},
 	{http.MethodPost, "{id}/shell", (*Server).handleSessionShell},
 	{http.MethodPost, "{id}/abort", (*Server).handleSessionAbort},

@@ -756,6 +756,38 @@ func (s *Server) handleSessionCommand(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleSessionRestartOpencode(w http.ResponseWriter, r *http.Request) {
+	if !isLoopback(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	if !isTmuxAvailable() {
+		http.Error(w, "tmux is not available", http.StatusServiceUnavailable)
+		return
+	}
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+		detail, err := adapter.Session(r.Context(), sessionID, 0, 0)
+		if err != nil {
+			writePlatformError(w, "loading session", err)
+			return
+		}
+		if detail == nil || detail.Session == nil || detail.Session.Directory == "" {
+			http.Error(w, "session not found", http.StatusNotFound)
+			return
+		}
+		target, err := restartOpencodeInTmux(detail.Session.Directory)
+		if err != nil {
+			if errors.Is(err, errNoManagedOpencodePane) {
+				http.Error(w, "no tmux-managed OpenCode pane found for this session", http.StatusConflict)
+				return
+			}
+			serverError(w, "restarting opencode", err)
+			return
+		}
+		writeJSON(w, map[string]string{"target": target})
+	})
+}
+
 // handleSessionShell handles POST /api/session/{id}/shell — runs a
 // raw shell command in the session's working directory, bypassing the LLM.
 func (s *Server) handleSessionShell(w http.ResponseWriter, r *http.Request) {

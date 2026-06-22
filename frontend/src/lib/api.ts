@@ -574,6 +574,8 @@ export const api = {
       { command, arguments: args, model, agent },
       { parseJSON: false },
     ),
+  restartOpencode: (sessionId: string): Promise<{ target: string }> =>
+    postJSON<{ target: string }>(`/api/session/${encodeURIComponent(sessionId)}/restart-opencode`, undefined),
   /**
    * Run a raw shell command in the session's working directory,
    * bypassing the LLM. Backed by the platform's shell-tool primitive

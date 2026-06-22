@@ -4,6 +4,8 @@ import * as Toast from '@radix-ui/react-toast';
 export interface SessionToastsProps {
   showRenameToast: boolean;
   setShowRenameToast: (v: boolean) => void;
+  restartToastMessage: string | null;
+  setRestartToastMessage: (v: string | null) => void;
   showCreateSessionErrorToast: boolean;
   setShowCreateSessionErrorToast: (v: boolean) => void;
   showDisconnectedToast: boolean;
@@ -26,6 +28,8 @@ export interface SessionToastsProps {
 export const SessionToasts = memo(function SessionToasts({
   showRenameToast,
   setShowRenameToast,
+  restartToastMessage,
+  setRestartToastMessage,
   showCreateSessionErrorToast,
   setShowCreateSessionErrorToast,
   showDisconnectedToast,
@@ -41,6 +45,17 @@ export const SessionToasts = memo(function SessionToasts({
       <Toast.Root className="oc-toast-root" open={showRenameToast} onOpenChange={setShowRenameToast} duration={2000}>
         <Toast.Description className="oc-toast-description">
           Session renamed
+        </Toast.Description>
+      </Toast.Root>
+      <Toast.Root
+        key={restartToastMessage ?? 'restart-hidden'}
+        className="oc-toast-root"
+        open={restartToastMessage !== null}
+        onOpenChange={(open) => { if (!open) setRestartToastMessage(null); }}
+        duration={restartToastMessage === 'Restarted OpenCode' ? 3000 : 60000}
+      >
+        <Toast.Description className="oc-toast-description">
+          {restartToastMessage}
         </Toast.Description>
       </Toast.Root>
       <Toast.Root

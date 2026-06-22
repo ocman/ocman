@@ -18,6 +18,7 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: 'model', description: 'Change the active model (opens a picker)' },
   { name: 'new', description: 'Start a new session in the same project directory (optionally add a title)' },
   { name: 'rename', description: 'Rename this session' },
+  { name: 'restart-opencode', description: 'Restart the tmux-managed OpenCode process for this session' },
   { name: 'tmux', description: 'Switch to the tmux session for this project' },
   { name: 'wt', description: 'Create a worktree session for this project (optionally prefill the branch)' },
   { name: 'vscode', description: 'Open the project directory in VS Code' },

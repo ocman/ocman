@@ -12,6 +12,7 @@ describe('BUILTIN_COMMANDS', () => {
       'model',
       'new',
       'rename',
+      'restart-opencode',
       'tmux',
       'wt',
       'vscode',

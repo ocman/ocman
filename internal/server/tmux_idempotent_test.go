@@ -28,6 +28,12 @@ type fakeTmuxRunner struct {
 	newNamedWindowCalls    []string
 	newNamedWindowCommands []string
 	newNamedWindowErr      error
+
+	killSessionCalls []string
+	killSessionErr   error
+
+	killWindowCalls []string
+	killWindowErr   error
 }
 
 func (f *fakeTmuxRunner) toRunner() tmuxRunner {
@@ -58,6 +64,14 @@ func (f *fakeTmuxRunner) toRunner() tmuxRunner {
 			f.newNamedWindowCalls = append(f.newNamedWindowCalls, sessionName+":"+windowName)
 			f.newNamedWindowCommands = append(f.newNamedWindowCommands, command)
 			return f.newNamedWindowErr
+		},
+		killSession: func(name string) error {
+			f.killSessionCalls = append(f.killSessionCalls, name)
+			return f.killSessionErr
+		},
+		killWindow: func(target string) error {
+			f.killWindowCalls = append(f.killWindowCalls, target)
+			return f.killWindowErr
 		},
 	}
 }
@@ -299,5 +313,45 @@ func TestLaunchOpencodeInProjectTmuxWindowWith_RejectsInvalidDerivedWindowName(t
 	}
 	if len(f.newNamedWindowCalls) != 0 {
 		t.Error("newNamedWindow must not fire when the derived window name fails validation")
+	}
+}
+
+func TestRestartOpencodeInTmuxWith_RestartsMatchingOpencodeWindow(t *testing.T) {
+	dir := "/tmp/repo"
+	f := &fakeTmuxRunner{
+		existing: []tmuxSession{{Name: "repo", Windows: 2}},
+		windows: map[string][]tmuxWindow{"repo": {
+			{Name: "editor", Path: dir, Command: "zsh"},
+			{Name: "oc", Path: dir, Command: "opencode"},
+		}},
+	}
+
+	target, err := restartOpencodeInTmuxWith(f.toRunner(), dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if target != "repo:oc" {
+		t.Errorf("target = %q, want repo:oc", target)
+	}
+	if len(f.killWindowCalls) != 1 || f.killWindowCalls[0] != "repo:oc" {
+		t.Errorf("killWindowCalls = %v, want [repo:oc]", f.killWindowCalls)
+	}
+	if len(f.newNamedWindowCalls) != 1 || f.newNamedWindowCalls[0] != "repo:oc" {
+		t.Errorf("newNamedWindowCalls = %v, want [repo:oc]", f.newNamedWindowCalls)
+	}
+}
+
+func TestRestartOpencodeInTmuxWith_RejectsUnmanagedWindow(t *testing.T) {
+	f := &fakeTmuxRunner{
+		existing: []tmuxSession{{Name: "repo", Windows: 1}},
+		windows:  map[string][]tmuxWindow{"repo": {{Name: "shell", Path: "/tmp/repo", Command: "zsh"}}},
+	}
+
+	_, err := restartOpencodeInTmuxWith(f.toRunner(), "/tmp/repo")
+	if !errors.Is(err, errNoManagedOpencodePane) {
+		t.Fatalf("err = %v, want errNoManagedOpencodePane", err)
+	}
+	if len(f.killWindowCalls) != 0 || len(f.killSessionCalls) != 0 {
+		t.Fatalf("unexpected kill calls: window=%v session=%v", f.killWindowCalls, f.killSessionCalls)
 	}
 }

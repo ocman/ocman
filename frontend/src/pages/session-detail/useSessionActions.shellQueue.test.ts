@@ -70,6 +70,7 @@ function makeOptions(
     setShowRenameModal: vi.fn(),
     setShowRenameToast: vi.fn(),
     setShowDisconnectedToast: vi.fn(),
+    setRestartToastMessage: vi.fn(),
   };
 }
 

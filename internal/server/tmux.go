@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -29,9 +30,13 @@ type tmuxSession struct {
 
 // tmuxWindow represents one window inside a tmux session.
 type tmuxWindow struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
+	Name         string `json:"name"`
+	Path         string `json:"path"`
+	Command      string `json:"command,omitempty"`
+	StartCommand string `json:"startCommand,omitempty"`
 }
+
+var errNoManagedOpencodePane = errors.New("no tmux-managed opencode pane found for session directory")
 
 // resolveTmuxSessionPath expands a tmux session name (which may use ~ and
 // underscores in place of dots) into an absolute filesystem path for matching
@@ -181,7 +186,7 @@ func listTmuxSessions() ([]tmuxSession, error) {
 // for worktree-window matching because each worktree session runs a
 // single opencode process rooted at that directory.
 func listTmuxWindows(sessionName string) ([]tmuxWindow, error) {
-	out, err := exec.Command("tmux", "list-windows", "-t", sessionName, "-F", "#{window_name}\t#{pane_current_path}").Output()
+	out, err := exec.Command("tmux", "list-windows", "-t", sessionName, "-F", "#{window_name}\t#{pane_current_path}\t#{pane_current_command}\t#{pane_start_command}").Output()
 	if err != nil {
 		return nil, err
 	}
@@ -190,13 +195,26 @@ func listTmuxWindows(sessionName string) ([]tmuxWindow, error) {
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, "\t", 2)
+		parts := strings.SplitN(line, "\t", 4)
 		if len(parts) < 2 {
 			continue
 		}
-		windows = append(windows, tmuxWindow{Name: parts[0], Path: filepath.Clean(parts[1])})
+		command := ""
+		if len(parts) == 3 {
+			command = parts[2]
+		}
+		startCommand := ""
+		if len(parts) == 4 {
+			command = parts[2]
+			startCommand = parts[3]
+		}
+		windows = append(windows, tmuxWindow{Name: parts[0], Path: filepath.Clean(parts[1]), Command: command, StartCommand: startCommand})
 	}
 	return windows, nil
+}
+
+func tmuxWindowRunsOpencode(win tmuxWindow) bool {
+	return win.Command == "opencode" || strings.Contains(win.StartCommand, "opencode")
 }
 
 // tmuxWindowNameForDirectory derives the named tmux window used for a
@@ -347,6 +365,8 @@ type tmuxRunner struct {
 	newSession     func(name, directory, command string) error
 	newWindow      func(name, directory, command string) error
 	newNamedWindow func(sessionName, windowName, directory, command string) error
+	killSession    func(name string) error
+	killWindow     func(target string) error
 }
 
 var defaultTmuxRunner = tmuxRunner{
@@ -372,6 +392,12 @@ var defaultTmuxRunner = tmuxRunner{
 			args = append(args, command)
 		}
 		return exec.Command("tmux", args...).Run()
+	},
+	killSession: func(name string) error {
+		return exec.Command("tmux", "kill-session", "-t", name).Run()
+	},
+	killWindow: func(target string) error {
+		return exec.Command("tmux", "kill-window", "-t", target).Run()
 	},
 }
 
@@ -493,6 +519,45 @@ func launchOpencodeInProjectTmuxWindowWith(r tmuxRunner, projectDirectory, workt
 		return "", false, fmt.Errorf("tmux new-window: %w", err)
 	}
 	return target, true, nil
+}
+
+func restartOpencodeInTmux(directory string) (string, error) {
+	return restartOpencodeInTmuxWith(defaultTmuxRunner, directory)
+}
+
+func restartOpencodeInTmuxWith(r tmuxRunner, directory string) (string, error) {
+	existingSessions, err := r.listSessions()
+	if err != nil {
+		return "", fmt.Errorf("listing tmux sessions: %w", err)
+	}
+	want := filepath.Clean(directory)
+	for _, ts := range existingSessions {
+		windows, err := r.listWindows(ts.Name)
+		if err != nil {
+			return "", fmt.Errorf("listing tmux windows: %w", err)
+		}
+		for _, win := range windows {
+			if filepath.Clean(win.Path) != want || !tmuxWindowRunsOpencode(win) {
+				continue
+			}
+			target := ts.Name + ":" + win.Name
+			if ts.Windows <= 1 {
+				if err := r.killSession(ts.Name); err != nil {
+					return "", fmt.Errorf("tmux kill-session: %w", err)
+				}
+				name, _, err := launchOpencodeInTmuxWith(r, directory, false)
+				return name, err
+			}
+			if err := r.killWindow(target); err != nil {
+				return "", fmt.Errorf("tmux kill-window: %w", err)
+			}
+			if err := r.newNamedWindow(ts.Name, win.Name, directory, opencodeCommand); err != nil {
+				return "", fmt.Errorf("tmux new-window: %w", err)
+			}
+			return target, nil
+		}
+	}
+	return "", errNoManagedOpencodePane
 }
 
 func (s *Server) handleTmuxLaunchOpencode(w http.ResponseWriter, r *http.Request) {

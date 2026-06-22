@@ -207,7 +207,7 @@ function ComposerImpl({
   const effectiveAgentRef = useRef<string>('');
   const onAgentChangeRef = useRef(onAgentChange);
   useEffect(() => { onAgentChangeRef.current = onAgentChange; }, [onAgentChange]);
-  const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
+  const [slashCommands, setSlashCommands] = useState<SlashCommand[]>(BUILTIN_COMMANDS);
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [slashFilter, setSlashFilter] = useState('');
   const [slashIndex, setSlashIndex] = useState(0);

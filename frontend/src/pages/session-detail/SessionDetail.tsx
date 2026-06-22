@@ -638,6 +638,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // Toast / modal state.
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [showRenameToast, setShowRenameToast] = useState(false);
+  const [restartToastMessage, setRestartToastMessage] = useState<string | null>(null);
   const [showCreateSessionErrorToast, setShowCreateSessionErrorToast] = useState(false);
   const [showDisconnectedToast, setShowDisconnectedToast] = useState(false);
   const [threadBoundaryResetNonce, setThreadBoundaryResetNonce] = useState(0);
@@ -1005,6 +1006,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     setShowRenameModal,
     setShowRenameToast,
     setShowDisconnectedToast,
+    setRestartToastMessage,
   });
 
   void setSubagentTokens; // exposed for the legacy hook; not needed
@@ -1494,6 +1496,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
         <SessionToasts
           showRenameToast={showRenameToast}
           setShowRenameToast={setShowRenameToast}
+          restartToastMessage={restartToastMessage}
+          setRestartToastMessage={setRestartToastMessage}
           showCreateSessionErrorToast={showCreateSessionErrorToast}
           setShowCreateSessionErrorToast={setShowCreateSessionErrorToast}
           showDisconnectedToast={showDisconnectedToast}

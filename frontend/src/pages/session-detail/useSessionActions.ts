@@ -63,6 +63,7 @@ export interface UseSessionActionsOptions {
   setShowRenameModal: Dispatch<SetStateAction<boolean>>;
   setShowRenameToast: Dispatch<SetStateAction<boolean>>;
   setShowDisconnectedToast: Dispatch<SetStateAction<boolean>>;
+  setRestartToastMessage: Dispatch<SetStateAction<string | null>>;
 }
 
 export interface UseSessionActionsResult {
@@ -134,6 +135,7 @@ export function useSessionActions({
   setShowRenameModal,
   setShowRenameToast,
   setShowDisconnectedToast,
+  setRestartToastMessage,
 }: UseSessionActionsOptions): UseSessionActionsResult {
   const [awaitingAssistantResponse, setAwaitingAssistantResponse] = useState(false);
   // Shell command waiting for the current turn to finish. Mirrored in
@@ -360,6 +362,21 @@ export function useSessionActions({
       return;
     }
 
+    if (command === 'restart-opencode') {
+      pending.begin('/restart-opencode');
+      setRestartToastMessage('Restarting OpenCode...');
+      try {
+        await api.restartOpencode(session.id);
+        pending.clear();
+        setRestartToastMessage('Restarted OpenCode');
+      } catch (e) {
+        setRestartToastMessage(null);
+        remoteLog.error('Failed to restart OpenCode', e);
+        pending.fail(e instanceof Error ? e.message : 'Unknown error');
+      }
+      return;
+    }
+
     if (!portAvailable) return;
 
     if (command === 'compact') {
@@ -448,7 +465,7 @@ export function useSessionActions({
       remoteLog.error('Failed to execute command', e);
       pending.fail(e instanceof Error ? e.message : 'Unknown error');
     }
-  }, [activeAgent, archiveSession, createSession, launchOpencodeInTmux, tmuxAvailable, seedNewSession, handleCompact, handleNewSession, handleTmuxShortcut, handleVSCodeShortcut, navigate, navigateToSession, openWorktreeForm, portAvailable, recentSessionsRef, selectedAgent, selectedModel, session, setShowRenameModal, setShowRenameToast, pending]);
+  }, [activeAgent, archiveSession, createSession, launchOpencodeInTmux, tmuxAvailable, seedNewSession, handleCompact, handleNewSession, handleTmuxShortcut, handleVSCodeShortcut, navigate, navigateToSession, openWorktreeForm, portAvailable, recentSessionsRef, selectedAgent, selectedModel, session, setShowRenameModal, setShowRenameToast, setRestartToastMessage, pending]);
 
   return {
     awaitingAssistantResponse,
