@@ -256,7 +256,19 @@ func getSessionDefaultsCached(d dbSessionDefaults, excludeSessionID, directory s
 // HTTP state that's already cached at finer granularity
 // (pendingPromptCache, port discovery).
 
-const sessionsTTL = 3 * time.Second
+// sessionsTTL must exceed the frontend poll interval (5s for the
+// dashboard/project views, ~10s for notify) or every poll lands on
+// an expired entry and pays the full ~5s GetSessions query. A
+// background refresher (StartSessionsRefresher) re-runs the
+// unfiltered query every sessionsRefreshInterval, so this TTL only
+// needs to outlive the gap between refreshes plus slack.
+const sessionsTTL = 15 * time.Second
+
+// sessionsRefreshInterval is how often the background refresher warms
+// the unfiltered ("") sessions cache. Kept below sessionsTTL so the
+// entry never goes cold between refreshes; reads are then always a
+// cache hit and never block on the query.
+const sessionsRefreshInterval = 4 * time.Second
 
 type sessionsKey struct {
 	directory string
@@ -272,6 +284,33 @@ var (
 	sessionsCached = map[sessionsKey]sessionsEntry{}
 	sessionsFlight singleflight.Group
 )
+
+// StartSessionsRefresher keeps the unfiltered sessions cache warm by
+// re-running GetSessions("", 0) every sessionsRefreshInterval until
+// ctx is cancelled. With a warm cache, /api/sessions and notify polls
+// read from memory instead of blocking ~5s on the query. The refresh
+// goes through getSessionsCached so it shares the singleflight slot
+// and writes the same cache entry that request handlers read.
+func StartSessionsRefresher(ctx context.Context, d dbGetSessions) {
+	go func() {
+		// Warm immediately so the first request after startup hits cache.
+		_, _ = getSessionsCached(d, "", 0)
+		t := time.NewTicker(sessionsRefreshInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				// Force a fresh query by expiring the entry, then refetch.
+				sessionsMu.Lock()
+				delete(sessionsCached, sessionsKey{directory: ""})
+				sessionsMu.Unlock()
+				_, _ = getSessionsCached(d, "", 0)
+			}
+		}
+	}()
+}
 
 // ResetCachesForTests clears every package-level cache (recents,
 // session defaults, sessions list). Call this from integration tests

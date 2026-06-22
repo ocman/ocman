@@ -1,6 +1,7 @@
 package opencode
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -478,5 +479,63 @@ func TestGetSessionsCached_ExpiresAfterTTL(t *testing.T) {
 	}
 	if c := d.calls.Load(); c != 2 {
 		t.Errorf("expected 2 DB calls across the TTL boundary, got %d", c)
+	}
+}
+
+// waitFor polls cond until it returns true or the deadline passes,
+// failing the test on timeout. Avoids fixed sleeps tied to the
+// refresh interval.
+func waitFor(t *testing.T, d time.Duration, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("condition not met within timeout")
+}
+
+func TestStartSessionsRefresher_WarmsCacheOnStart(t *testing.T) {
+	resetSessionsCache()
+	t.Cleanup(resetSessionsCache)
+
+	d := &fakeGetSessionsDB{out: []db.Session{{ID: "s1"}}}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	StartSessionsRefresher(ctx, d)
+
+	// The refresher fires one query immediately so the first request
+	// after startup is already a cache hit.
+	waitFor(t, time.Second, func() bool { return d.calls.Load() >= 1 })
+
+	sessionsMu.RLock()
+	e, ok := sessionsCached[sessionsKey{directory: ""}]
+	sessionsMu.RUnlock()
+	if !ok || len(e.sessions) != 1 || e.sessions[0].ID != "s1" {
+		t.Fatalf("expected warm cache entry for the unfiltered key, got ok=%v entry=%#v", ok, e)
+	}
+}
+
+func TestStartSessionsRefresher_StopsOnContextCancel(t *testing.T) {
+	resetSessionsCache()
+	t.Cleanup(resetSessionsCache)
+
+	d := &fakeGetSessionsDB{out: []db.Session{{ID: "s1"}}}
+	ctx, cancel := context.WithCancel(context.Background())
+
+	StartSessionsRefresher(ctx, d)
+	waitFor(t, time.Second, func() bool { return d.calls.Load() >= 1 })
+
+	// Cancel and confirm the goroutine stops issuing queries.
+	cancel()
+	settled := d.calls.Load()
+	time.Sleep(50 * time.Millisecond)
+	after := d.calls.Load()
+	// Allow at most one in-flight refresh to land after cancel.
+	if after > settled+1 {
+		t.Errorf("refresher kept querying after cancel: %d -> %d", settled, after)
 	}
 }

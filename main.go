@@ -173,6 +173,12 @@ func main() {
 	registry := platforms.NewRegistry()
 	if enabledPlatforms[string(opencodeplatform.PlatformID)] {
 		registry.Register(opencodeplatform.NewWithPricing(database, stateDB, pricing.Load()))
+		// Keep the unfiltered sessions cache warm so /api/sessions and
+		// notify polls read from memory instead of blocking ~5s on the
+		// GetSessions query (which has heavy per-session subqueries).
+		if database != nil {
+			opencodeplatform.StartSessionsRefresher(ctx, database)
+		}
 	}
 	auth, err := buildAuth(stateDB, *authPassword, *authPasswordFile, *authSessionTTL, *addr, *authTrustLocalhost)
 	if err != nil {
