@@ -27,6 +27,7 @@ import { ShortPath, GitStatusLine } from '../../components/SessionTable';
 import { BackendStats } from '../../components/BackendStats';
 import { SidebarResizer } from '../../components/SidebarResizer';
 import { SessionSidebarListSkeleton } from '../../components/Skeleton';
+import { GettingStartedEmpty } from '../../components/GettingStartedEmpty';
 import { rollupGroupStatus } from '../../lib/sidebarHelpers';
 import { nestSessions } from '../../lib/nestSessions';
 import { remoteLog } from '../../lib/remoteLog';
@@ -463,8 +464,15 @@ export function SessionSidebar({
         </div>
       )}
       <div className="session-sidebar-list" ref={sidebarListRef}>
-        {loadingRecentSessions && <SessionSidebarListSkeleton rows={5} />}
-        {sidebarView === 'projects' ? renderProjectsView() : renderFlatView()}
+        {loadingRecentSessions ? (
+          <SessionSidebarListSkeleton rows={5} />
+        ) : recentSessions.length === 0 ? (
+          <GettingStartedEmpty compact />
+        ) : sidebarView === 'projects' ? (
+          renderProjectsView()
+        ) : (
+          renderFlatView()
+        )}
       </div>
       <BackendStats />
     </div>

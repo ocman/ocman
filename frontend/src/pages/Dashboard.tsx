@@ -15,6 +15,7 @@ import { ProjectScopePicker } from '../components/ProjectScopePicker';
 import { matchesScope } from '../lib/projectTree';
 import { PromptTemplateSettings } from '../components/upstream/PromptTemplateSettings';
 import { RemoteSettings } from '../components/RemoteSettings';
+import { GettingStartedEmpty } from '../components/GettingStartedEmpty';
 
 import { useUiStore } from '../lib/uiStore';
 import { useApiStore } from '../lib/apiStore';
@@ -246,8 +247,14 @@ export function ProjectsTab() {
       <tbody>
         {visibleProjects.length === 0 ? (
           <tr>
-            <td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: 24 }}>
-              No projects found
+            <td colSpan={5} style={{ padding: 24 }}>
+              {projects.length === 0 ? (
+                <GettingStartedEmpty />
+              ) : (
+                <div style={{ textAlign: 'center', color: 'var(--text-dim)' }}>
+                  No projects found
+                </div>
+              )}
             </td>
           </tr>
         ) : visibleProjects.map((p) => (
