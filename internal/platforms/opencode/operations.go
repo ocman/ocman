@@ -517,7 +517,7 @@ func (a *Adapter) Compact(ctx context.Context, req platforms.CompactRequest) err
 // CreateSession creates a new OpenCode session bound to the given
 // directory. Returns the new session ID.
 func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
-	port := discoverOpenCodePort(req.Directory)
+	port := discoverOpenCodePortFresh(req.Directory)
 	if port == "" {
 		return nil, fmt.Errorf("no running OpenCode instance for directory %s: %w", req.Directory, platforms.ErrPlatformUnreachable)
 	}

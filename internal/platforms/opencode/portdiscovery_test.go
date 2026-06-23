@@ -1,6 +1,7 @@
 package opencode
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -136,6 +137,100 @@ func TestDiscoverOpenCodePorts_CacheHitDoesNotRunLsof(t *testing.T) {
 
 	if got := atomic.LoadInt32(&calls); got != 1 {
 		t.Errorf("lsof invoked %d times within TTL, want 1", got)
+	}
+}
+
+func TestInvalidateOpenCodePortCache_ForcesFreshScan(t *testing.T) {
+	var calls int32
+	restore := setDiscoverPortsImplForTests(func() map[string]string {
+		call := atomic.AddInt32(&calls, 1)
+		if call == 1 {
+			return map[string]string{}
+		}
+		return map[string]string{"/repo/new": "7777"}
+	})
+	defer restore()
+	resetPortCacheForTests()
+
+	if got := discoverOpenCodePort("/repo/new"); got != "" {
+		t.Fatalf("first lookup got port %q, want empty", got)
+	}
+	if got := discoverOpenCodePort("/repo/new"); got != "" {
+		t.Fatalf("cached lookup got port %q, want empty", got)
+	}
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Fatalf("lsof invoked %d times before invalidation, want 1", got)
+	}
+
+	InvalidateOpenCodePortCache()
+
+	if got := discoverOpenCodePort("/repo/new"); got != "7777" {
+		t.Fatalf("post-invalidation lookup got port %q, want 7777", got)
+	}
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Fatalf("lsof invoked %d times after invalidation, want 2", got)
+	}
+}
+
+func TestDiscoverOpenCodePortFresh_DoesNotCacheMissButCachesHit(t *testing.T) {
+	var calls int32
+	restore := setDiscoverPortsImplForTests(func() map[string]string {
+		call := atomic.AddInt32(&calls, 1)
+		if call == 1 {
+			return map[string]string{}
+		}
+		return map[string]string{"/repo/new": "7777"}
+	})
+	defer restore()
+	resetPortCacheForTests()
+
+	if got := discoverOpenCodePortFresh("/repo/new"); got != "" {
+		t.Fatalf("first fresh lookup got port %q, want empty", got)
+	}
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Fatalf("lsof invoked %d times after first lookup, want 1", got)
+	}
+
+	if got := discoverOpenCodePortFresh("/repo/new"); got != "7777" {
+		t.Fatalf("second fresh lookup got port %q, want 7777", got)
+	}
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Fatalf("lsof invoked %d times after second lookup, want 2", got)
+	}
+
+	if got := discoverOpenCodePort("/repo/new"); got != "7777" {
+		t.Fatalf("cached lookup after fresh hit got port %q, want 7777", got)
+	}
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Fatalf("cached lookup invoked lsof; calls = %d, want 2", got)
+	}
+}
+
+func TestDiscoverOpenCodePortFresh_NormalizesSymlinkDirectory(t *testing.T) {
+	root := t.TempDir()
+	realDir := filepath.Join(root, "real")
+	linkDir := filepath.Join(root, "link")
+	if err := os.Mkdir(realDir, 0o755); err != nil {
+		t.Fatalf("mkdir real dir: %v", err)
+	}
+	if err := os.Symlink(realDir, linkDir); err != nil {
+		t.Fatalf("symlink dir: %v", err)
+	}
+
+	restore := setDiscoverPortsImplForTests(func() map[string]string {
+		return map[string]string{normalizePortDirectory(realDir): "7777"}
+	})
+	defer restore()
+	resetPortCacheForTests()
+
+	if got := discoverOpenCodePortFresh(linkDir); got != "7777" {
+		t.Fatalf("fresh lookup through symlink got port %q, want 7777", got)
+	}
+	if got := discoverOpenCodePort(linkDir); got != "7777" {
+		t.Fatalf("cached lookup through symlink got port %q, want 7777", got)
+	}
+	if got := discoverOpenCodePortCtx(context.Background(), linkDir); got != "7777" {
+		t.Fatalf("ctx lookup through symlink got port %q, want 7777", got)
 	}
 }
 

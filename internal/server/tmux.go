@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
+
 	log "github.com/sirupsen/logrus"
 )
 
@@ -453,6 +455,9 @@ const opencodeCommand = "exec opencode --port 0"
 // explicitly want a fresh window every time.
 func launchOpencodeInTmux(directory string) (string, error) {
 	name, _, err := launchOpencodeInTmuxWith(defaultTmuxRunner, directory, false)
+	if err == nil {
+		opencode.InvalidateOpenCodePortCache()
+	}
 	return name, err
 }
 
@@ -468,7 +473,11 @@ func launchOpencodeInTmux(directory string) (string, error) {
 // project session, it returns the `session:window` target with
 // launched=false and does not re-send `opencode --port 0`.
 func launchOpencodeInProjectTmuxWindow(projectDirectory, worktreeDirectory string) (target string, launched bool, err error) {
-	return launchOpencodeInProjectTmuxWindowWith(defaultTmuxRunner, projectDirectory, worktreeDirectory)
+	target, launched, err = launchOpencodeInProjectTmuxWindowWith(defaultTmuxRunner, projectDirectory, worktreeDirectory)
+	if err == nil && launched {
+		opencode.InvalidateOpenCodePortCache()
+	}
+	return target, launched, err
 }
 
 // launchOpencodeInTmuxWith is the shared core for both launcher
@@ -559,7 +568,11 @@ func launchOpencodeInProjectTmuxWindowWith(r tmuxRunner, projectDirectory, workt
 }
 
 func restartOpencodeInTmux(directory string) (string, error) {
-	return restartOpencodeInTmuxWith(defaultTmuxRunner, directory)
+	target, err := restartOpencodeInTmuxWith(defaultTmuxRunner, directory)
+	if err == nil {
+		opencode.InvalidateOpenCodePortCache()
+	}
+	return target, err
 }
 
 func restartOpencodeInTmuxWith(r tmuxRunner, directory string) (string, error) {

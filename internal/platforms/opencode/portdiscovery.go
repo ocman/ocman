@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -56,12 +57,25 @@ func setDiscoverPortsImplForTests(fn func() map[string]string) func() {
 	return func() { discoverPortsImpl.Store(prev) }
 }
 
-// resetPortCacheForTests clears the cache so each test starts with a cold path.
-func resetPortCacheForTests() {
+// resetPortCache clears the shared directory -> port cache.
+func resetPortCache() {
 	portCache.mu.Lock()
 	portCache.ports = nil
 	portCache.updated = time.Time{}
 	portCache.mu.Unlock()
+}
+
+// InvalidateOpenCodePortCache clears the cached directory -> port map.
+// Callers that have just launched or restarted an OpenCode process should
+// invalidate so the next lookup does a fresh lsof scan instead of reusing
+// a recently cached "not running yet" result.
+func InvalidateOpenCodePortCache() {
+	resetPortCache()
+}
+
+// resetPortCacheForTests clears the cache so each test starts with a cold path.
+func resetPortCacheForTests() {
+	resetPortCache()
 }
 
 // discoverOpenCodePorts returns a map of directory -> port for all running
@@ -104,6 +118,21 @@ func copyMap(m map[string]string) map[string]string {
 		cp[k] = v
 	}
 	return cp
+}
+
+func writeCachedPorts(ports map[string]string) {
+	portCache.mu.Lock()
+	portCache.ports = ports
+	portCache.updated = time.Now()
+	portCache.mu.Unlock()
+}
+
+func normalizePortDirectory(directory string) string {
+	clean := filepath.Clean(directory)
+	if resolved, err := filepath.EvalSymlinks(clean); err == nil {
+		return resolved
+	}
+	return clean
 }
 
 // pidPort is a (pid, port) pair extracted from `lsof -iTCP -sTCP:LISTEN`.
@@ -222,7 +251,7 @@ func discoverOpenCodePortsUncached() map[string]string {
 	close(results)
 
 	for r := range results {
-		result[r.dir] = r.port
+		result[normalizePortDirectory(r.dir)] = r.port
 	}
 
 	return result
@@ -231,7 +260,22 @@ func discoverOpenCodePortsUncached() map[string]string {
 // discoverOpenCodePort finds the HTTP port of a running OpenCode instance
 // whose working directory matches the given directory, or "" if not found.
 func discoverOpenCodePort(directory string) string {
-	return discoverOpenCodePorts()[directory]
+	return discoverOpenCodePorts()[normalizePortDirectory(directory)]
+}
+
+// discoverOpenCodePortFresh performs an uncached scan for a single
+// directory. Misses are deliberately not cached: callers use this
+// immediately after launching OpenCode, when a process may not have
+// bound its port yet and caching that transient miss would hide the
+// process for portCacheTTL. Hits refresh the shared cache so subsequent
+// read-heavy callers can reuse the fresh snapshot.
+func discoverOpenCodePortFresh(directory string) string {
+	ports := (*discoverPortsImpl.Load())()
+	port := ports[normalizePortDirectory(directory)]
+	if port != "" {
+		writeCachedPorts(ports)
+	}
+	return port
 }
 
 // DiscoverOpenCodePort is the exported equivalent of discoverOpenCodePort,
@@ -240,6 +284,13 @@ func discoverOpenCodePort(directory string) string {
 // through the Platform adapter interface.
 func DiscoverOpenCodePort(directory string) string {
 	return discoverOpenCodePort(directory)
+}
+
+// DiscoverOpenCodePortFresh is the exported equivalent of
+// discoverOpenCodePortFresh for launch/wait flows that must not cache a
+// transient miss while a just-started OpenCode process is still binding.
+func DiscoverOpenCodePortFresh(directory string) string {
+	return discoverOpenCodePortFresh(directory)
 }
 
 // DiscoverOpenCodePorts returns a fresh snapshot of every running
@@ -256,9 +307,10 @@ func DiscoverOpenCodePorts() map[string]string {
 
 // discoverOpenCodePortCtx is discoverOpenCodePort with Server-Timing instrumentation.
 func discoverOpenCodePortCtx(ctx context.Context, directory string) string {
+	key := normalizePortDirectory(directory)
 	if cached, ok := readCachedPorts(); ok {
 		hit := srvtiming.Begin(ctx, "lsof_hit")
-		port := cached[directory]
+		port := cached[key]
 		hit.End()
 		return port
 	}

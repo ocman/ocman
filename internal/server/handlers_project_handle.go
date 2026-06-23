@@ -408,7 +408,7 @@ func (s *Server) newSessionLauncher() *internalmcp.SessionLauncher {
 		adapter,
 		worktree.Create,
 		internalmcp.TmuxLauncher(launchOpencodeInProjectTmuxWindow),
-		internalmcp.PortDiscoverer(opencode.DiscoverOpenCodePort),
+		internalmcp.PortDiscoverer(opencode.DiscoverOpenCodePortFresh),
 	)
 }
 

@@ -20,7 +20,7 @@ func (s *Server) buildMCPHandler() http.Handler {
 		Registry:     s.registry,
 		PlatformID:   "opencode",
 		LaunchTmux:   internalmcp.TmuxLauncher(launchOpencodeInProjectTmuxWindow),
-		DiscoverPort: internalmcp.PortDiscoverer(opencode.DiscoverOpenCodePort),
+		DiscoverPort: internalmcp.PortDiscoverer(opencode.DiscoverOpenCodePortFresh),
 	}
 	return internalmcp.New(deps).Handler()
 }
