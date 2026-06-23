@@ -2,6 +2,10 @@ ocman
 node_modules/
 tmp/
 dist/
+# Build cache and artifacts
+.cache/
+ocman-desktop
+.env
 # Coverage output (CI ratchet, spec/ci-coverage-ratchet). Baselines
 # live on the gh-pages branch, never on main.
 coverage/
