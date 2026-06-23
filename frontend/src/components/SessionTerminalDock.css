@@ -5,6 +5,7 @@
   min-height: 0;
   border-top: 1px solid var(--border);
   background: var(--bg);
+  margin-bottom: 12px;
 }
 
 /* Drag handle sits above the tab strip; thin line with a wider hit area. */
