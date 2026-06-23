@@ -84,6 +84,29 @@ func isTmuxAvailable() bool {
 	return err == nil
 }
 
+// isTmuxServerNotRunningError reports whether err is the error tmux emits when no
+// server is running yet (e.g. on a fresh machine before the first session
+// is created). This is distinct from "tmux is not installed": the binary
+// exists and works, there's just no server to list from. Callers that
+// have already verified isTmuxAvailable() should treat this as "tmux is
+// available with an empty session/client list" rather than as a failure.
+func isTmuxServerNotRunningError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := ""
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
+		msg = string(exitErr.Stderr)
+	}
+	if msg == "" {
+		msg = err.Error()
+	}
+	msg = strings.ToLower(msg)
+	return strings.Contains(msg, "no server running") ||
+		strings.Contains(msg, "no such file or directory")
+}
+
 // isLoopback returns true if the request originates from localhost.
 func isLoopback(r *http.Request) bool {
 	host := r.RemoteAddr
@@ -279,6 +302,13 @@ func (s *Server) handleTmuxClients(w http.ResponseWriter, r *http.Request) {
 
 	clients, err := listTmuxClients()
 	if err != nil {
+		if isTmuxServerNotRunningError(err) {
+			writeJSON(w, map[string]interface{}{
+				"available": true,
+				"clients":   []tmuxClient{},
+			})
+			return
+		}
 		log.WithError(err).Error("listing tmux clients")
 		writeJSON(w, map[string]interface{}{
 			"available": false,
@@ -304,6 +334,13 @@ func (s *Server) handleTmuxSessions(w http.ResponseWriter, r *http.Request) {
 
 	sessions, err := listTmuxSessions()
 	if err != nil {
+		if isTmuxServerNotRunningError(err) {
+			writeJSON(w, map[string]interface{}{
+				"available": true,
+				"sessions":  []tmuxSession{},
+			})
+			return
+		}
 		log.WithError(err).Error("listing tmux sessions")
 		writeJSON(w, map[string]interface{}{
 			"available": false,

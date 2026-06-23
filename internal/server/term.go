@@ -420,6 +420,9 @@ func allTermWindowNames() ([]string, error) {
 	out, err := exec.Command("tmux", "list-windows", "-t", ocmanTermSession,
 		"-F", "#{window_name}").Output()
 	if err != nil {
+		if isTmuxServerNotRunningError(err) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	var names []string

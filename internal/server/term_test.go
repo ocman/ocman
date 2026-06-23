@@ -56,14 +56,14 @@ func TestTermWindowRe_MatchesAndRejects(t *testing.T) {
 	}{
 		{"ocman-a3a758e833-1", true},
 		{"ocman-0123456789-42", true},
-		{"ocman-a3a758e833-", false},     // no index
-		{"ocman-xyz-1", false},           // hash not hex
-		{"ocman-a3a758e833", false},      // missing index segment
-		{"_ocman_placeholder", false},    // the keep-alive window
-		{"ocman-term", false},            // the session name, not a window
-		{"wt-feature", false},            // unrelated window
-		{"ocman-a3a758e8331-1", false},   // 11-char hash (too long)
-		{"ocman-a3a758e83-1", false},     // 9-char hash (too short)
+		{"ocman-a3a758e833-", false},   // no index
+		{"ocman-xyz-1", false},         // hash not hex
+		{"ocman-a3a758e833", false},    // missing index segment
+		{"_ocman_placeholder", false},  // the keep-alive window
+		{"ocman-term", false},          // the session name, not a window
+		{"wt-feature", false},          // unrelated window
+		{"ocman-a3a758e8331-1", false}, // 11-char hash (too long)
+		{"ocman-a3a758e83-1", false},   // 9-char hash (too short)
 	}
 	for _, c := range cases {
 		if got := termWindowRe.MatchString(c.name); got != c.want {
@@ -147,6 +147,27 @@ func TestLooksLikeHostname(t *testing.T) {
 		if looksLikeHostname(s) {
 			t.Errorf("%q should not look like a hostname", s)
 		}
+	}
+}
+
+func TestAllTermWindowNames_NoTmuxServerReturnsEmpty(t *testing.T) {
+	installFakeTmux(t, "error connecting to /private/tmp/tmux-501/default (No such file or directory)")
+
+	names, err := allTermWindowNames()
+	if err != nil {
+		t.Fatalf("allTermWindowNames() error = %v", err)
+	}
+	if len(names) != 0 {
+		t.Fatalf("allTermWindowNames() = %v, want empty", names)
+	}
+}
+
+func TestAllTermWindowNames_TmuxPermissionErrorReturnsError(t *testing.T) {
+	installFakeTmux(t, "error connecting to /private/tmp/tmux-501/default (Permission denied)")
+
+	_, err := allTermWindowNames()
+	if err == nil {
+		t.Fatal("allTermWindowNames() error = nil, want error")
 	}
 }
 
