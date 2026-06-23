@@ -294,7 +294,7 @@ var (
 func StartSessionsRefresher(ctx context.Context, d dbGetSessions) {
 	go func() {
 		// Warm immediately so the first request after startup hits cache.
-		_, _ = getSessionsCached(d, "", 0)
+		refreshSessions(d, "")
 		t := time.NewTicker(sessionsRefreshInterval)
 		defer t.Stop()
 		for {
@@ -302,11 +302,18 @@ func StartSessionsRefresher(ctx context.Context, d dbGetSessions) {
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				// Force a fresh query by expiring the entry, then refetch.
-				sessionsMu.Lock()
-				delete(sessionsCached, sessionsKey{directory: ""})
-				sessionsMu.Unlock()
-				_, _ = getSessionsCached(d, "", 0)
+				// Refresh in place. We do NOT delete the entry first:
+				// against the live OpenCode DB (multi-GB file, many
+				// concurrent writers) the query can stall on the WAL
+				// busy_timeout for seconds. Deleting first would make
+				// every concurrent /api/sessions poll fall through to
+				// that cold blocking query. Instead we fetch a fresh
+				// copy and overwrite only on success, so reads always
+				// hit the last good value. refreshSessions also bounds
+				// itself via the singleflight slot, so a tick that
+				// arrives while the previous fetch is still running
+				// coalesces instead of piling up.
+				refreshSessions(d, "")
 			}
 		}
 	}()
@@ -365,18 +372,43 @@ func getSessionsCached(d dbGetSessions, directory string, since int64) ([]db.Ses
 	ctx := context.Background()
 	key := sessionsKey{directory: directory}
 
+	// Read whatever's cached, fresh or stale, in one lock.
 	sessionsMu.RLock()
-	if e, ok := sessionsCached[key]; ok && !time.Now().After(e.expiresAt) {
-		sessionsMu.RUnlock()
+	e, have := sessionsCached[key]
+	sessionsMu.RUnlock()
+
+	if have && !time.Now().After(e.expiresAt) {
 		sessionsListMetrics.RecordHit(ctx)
 		return filterSessionsBySince(e.sessions, since), nil
 	}
-	sessionsMu.RUnlock()
 	sessionsListMetrics.RecordMiss(ctx)
 
+	sessions, err := refreshSessions(d, directory)
+	if err != nil {
+		// Stale-on-busy: the live OpenCode DB can stall a read on the
+		// WAL busy_timeout (multi-GB file, many concurrent writers).
+		// Rather than fail the poll, serve the last good value if we
+		// have one. The background refresher keeps trying, so this
+		// only papers over transient contention.
+		if have {
+			return filterSessionsBySince(e.sessions, since), nil
+		}
+		return nil, err
+	}
+	return filterSessionsBySince(sessions, since), nil
+}
+
+// refreshSessions runs the unfiltered GetSessions query for directory
+// and overwrites the cache entry on success. Concurrent callers on the
+// same directory coalesce through the singleflight slot, so an
+// in-flight refresh is never duplicated. The cache entry is only
+// replaced on success, so a slow/failed fetch leaves the previous good
+// value in place for getSessionsCached's stale-on-busy fallback.
+func refreshSessions(d dbGetSessions, directory string) ([]db.Session, error) {
+	key := sessionsKey{directory: directory}
 	v, err, _ := sessionsFlight.Do(directory, func() (interface{}, error) {
-		// Re-check inside the flight slot. Not counted as a hit;
-		// see httpCache.getOrFetch for the rationale.
+		// Re-check inside the flight slot: a concurrent caller may
+		// have just refreshed it.
 		sessionsMu.RLock()
 		if e, ok := sessionsCached[key]; ok && !time.Now().After(e.expiresAt) {
 			sessionsMu.RUnlock()
@@ -400,7 +432,7 @@ func getSessionsCached(d dbGetSessions, directory string, since int64) ([]db.Ses
 		return nil, err
 	}
 	sessions, _ := v.([]db.Session)
-	return filterSessionsBySince(sessions, since), nil
+	return sessions, nil
 }
 
 // filterSessionsBySince returns the subset of `sessions` whose

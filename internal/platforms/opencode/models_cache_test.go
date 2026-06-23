@@ -457,6 +457,60 @@ func TestGetSessionsCached_DoesNotCacheErrors(t *testing.T) {
 	}
 }
 
+// failableGetSessionsDB serves out/err that the test can flip at
+// runtime, so we can warm the cache and then simulate the DB stalling
+// out (busy_timeout) on a later refresh.
+type failableGetSessionsDB struct {
+	mu  sync.Mutex
+	out []db.Session
+	err error
+}
+
+func (f *failableGetSessionsDB) GetSessions(_ string, _ int64) ([]db.Session, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.out, f.err
+}
+
+func (f *failableGetSessionsDB) setErr(err error) {
+	f.mu.Lock()
+	f.err = err
+	f.mu.Unlock()
+}
+
+// TestGetSessionsCached_ServesStaleOnError is the core of the slow-call
+// fix: when the underlying query fails (in production: stalls on the
+// WAL busy_timeout), a poll with a previously-cached value must return
+// that stale value instead of blocking/erroring.
+func TestGetSessionsCached_ServesStaleOnError(t *testing.T) {
+	resetSessionsCache()
+	t.Cleanup(resetSessionsCache)
+
+	d := &failableGetSessionsDB{out: []db.Session{{ID: "good"}}}
+
+	// Warm the cache with a good value.
+	if _, err := getSessionsCached(d, "/repo", 0); err != nil {
+		t.Fatalf("warm: %v", err)
+	}
+
+	// Expire the entry and make the DB start failing.
+	key := sessionsKey{directory: "/repo"}
+	sessionsMu.Lock()
+	e := sessionsCached[key]
+	e.expiresAt = time.Now().Add(-time.Second)
+	sessionsCached[key] = e
+	sessionsMu.Unlock()
+	d.setErr(errors.New("database is locked"))
+
+	got, err := getSessionsCached(d, "/repo", 0)
+	if err != nil {
+		t.Fatalf("expected stale value, got error: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "good" {
+		t.Fatalf("expected stale 'good' value, got %#v", got)
+	}
+}
+
 func TestGetSessionsCached_ExpiresAfterTTL(t *testing.T) {
 	resetSessionsCache()
 	t.Cleanup(resetSessionsCache)
