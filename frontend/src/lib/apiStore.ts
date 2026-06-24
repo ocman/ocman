@@ -309,9 +309,8 @@ export const useApiStore = create<ApiStore>((set, get) => ({
     });
   },
   refreshCachedSessions: (signal) => {
-    const since = Date.now() - 12 * 60 * 60 * 1000;
     return get().runRequest('sessions:get', async () => {
-      const result = await api.sessions({ since, limit: 100 }, signal);
+      const result = await api.sessions({ limit: 100 }, signal);
       set({ cachedSessions: result });
       return result;
     });
