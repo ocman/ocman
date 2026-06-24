@@ -746,6 +746,7 @@ export interface CapabilitiesResponse {
 /** Decoded trigger config for an agent loop. */
 export interface LoopTriggerConfig {
   interval_seconds?: number;
+  cron_expr?: string;
   pr_number?: number;
   poll_seconds?: number;
   target_session_id?: string;

@@ -9,6 +9,10 @@ export function loopTriggerLabel(loop: Loop): string {
       return loop.triggerConfig?.interval_seconds
         ? `every ${formatGoDuration(loop.triggerConfig.interval_seconds)}`
         : 'schedule';
+    case 'cron':
+      return loop.triggerConfig?.cron_expr
+        ? `cron ${loop.triggerConfig.cron_expr}`
+        : 'cron';
     case 'child_complete':
       return 'on child complete';
     case 'turn_complete':

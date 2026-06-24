@@ -20,6 +20,7 @@ import (
 const (
 	TriggerChildComplete = "child_complete"
 	TriggerSchedule      = "schedule"
+	TriggerCron          = "cron"
 	TriggerPREvent       = "pr_event"
 	TriggerTurnComplete  = "turn_complete"
 )
@@ -101,6 +102,7 @@ func (sc StopConditions) hasBudget() bool {
 // trigger-type specific; unused ones stay zero.
 type TriggerConfig struct {
 	IntervalSeconds int    `json:"interval_seconds,omitempty"`  // schedule
+	CronExpr        string `json:"cron_expr,omitempty"`         // cron (5-field, server-local time)
 	PRNumber        int    `json:"pr_number,omitempty"`         // pr_event
 	PollSeconds     int    `json:"poll_seconds,omitempty"`      // pr_event throttle
 	TargetSessionID string `json:"target_session_id,omitempty"` // prompt_child target

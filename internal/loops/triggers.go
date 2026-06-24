@@ -24,6 +24,8 @@ func triggerFor(triggerType string, status SessionStatusInferer, forge ForgePoll
 	switch triggerType {
 	case TriggerSchedule:
 		return scheduleTrigger{}, nil
+	case TriggerCron:
+		return cronTrigger{}, nil
 	case TriggerPREvent:
 		return prEventTrigger{forge: forge}, nil
 	case TriggerChildComplete:
@@ -59,6 +61,36 @@ func (scheduleTrigger) ShouldFire(_ context.Context, l state.Loop, tc TriggerCon
 	next := time.UnixMilli(l.LastFiredAt).Add(interval)
 	if !now.Before(next) {
 		return true, fmt.Sprintf("scheduled (every %s)", interval), nil, nil
+	}
+	return false, "", nil, nil
+}
+
+// cronTrigger fires when a cron-scheduled time has passed that is newer
+// than the loop's last fire. Evaluated in the server's local time zone.
+// Unlike scheduleTrigger it does NOT fire immediately on creation: it
+// waits for the next scheduled tick.
+type cronTrigger struct{}
+
+func (cronTrigger) ShouldFire(_ context.Context, l state.Loop, tc TriggerConfig, now time.Time) (bool, string, *TriggerConfig, error) {
+	sched, err := parseCron(tc.CronExpr)
+	if err != nil {
+		return false, "", nil, err
+	}
+	scheduled, ok := sched.prev(now)
+	if !ok {
+		return false, "", nil, nil
+	}
+	// Fire when the most recent scheduled time is at/after the last fire.
+	// On a never-fired loop, only fire if a scheduled minute occurs at
+	// "now" (don't backfire for an arbitrary past slot on creation).
+	if l.LastFiredAt == 0 {
+		if sched.matches(now.Truncate(time.Minute)) {
+			return true, fmt.Sprintf("cron %q", tc.CronExpr), nil, nil
+		}
+		return false, "", nil, nil
+	}
+	if scheduled.UnixMilli() > l.LastFiredAt {
+		return true, fmt.Sprintf("cron %q", tc.CronExpr), nil, nil
 	}
 	return false, "", nil, nil
 }

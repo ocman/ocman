@@ -74,6 +74,11 @@ func (s *Service) Create(ctx context.Context, spec LoopSpec) (LoopView, error) {
 	if _, err := triggerFor(spec.TriggerType, s.status, s.forge); err != nil {
 		return LoopView{}, err
 	}
+	if spec.TriggerType == TriggerCron {
+		if _, err := parseCron(spec.TriggerConfig.CronExpr); err != nil {
+			return LoopView{}, fmt.Errorf("invalid cron_expr: %w", err)
+		}
+	}
 	switch spec.ActionType {
 	case ActionPromptRoot, ActionPromptChild, ActionSpawnChild, ActionSpawnWorktree:
 	default:
@@ -362,8 +367,8 @@ func (s *Service) TriggerNow(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	if l.TriggerType != TriggerSchedule {
-		return fmt.Errorf("trigger-now is only supported for schedule loops (this loop is %q)", l.TriggerType)
+	if l.TriggerType != TriggerSchedule && l.TriggerType != TriggerCron {
+		return fmt.Errorf("trigger-now is only supported for schedule/cron loops (this loop is %q)", l.TriggerType)
 	}
 	if l.State != StateActive && l.State != StatePaused {
 		return fmt.Errorf("loop %s is not runnable (state=%s)", id, l.State)

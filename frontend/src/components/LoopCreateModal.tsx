@@ -14,7 +14,7 @@ interface LoopCreateModalProps {
   onClose: () => void;
 }
 
-type Trigger = 'schedule' | 'pr_event' | 'turn_complete' | 'child_complete';
+type Trigger = 'schedule' | 'cron' | 'pr_event' | 'turn_complete' | 'child_complete';
 type Action = 'prompt_root' | 'prompt_child' | 'spawn_child' | 'spawn_worktree';
 
 /**
@@ -33,6 +33,7 @@ export function LoopCreateModal({
   const [title, setTitle] = useState('');
   const [trigger, setTrigger] = useState<Trigger>('schedule');
   const [interval, setInterval] = useState('30m');
+  const [cronExpr, setCronExpr] = useState('0 23 * * *');
   const [prNumber, setPrNumber] = useState('');
   const [action, setAction] = useState<Action>('prompt_root');
   const [targetSession, setTargetSession] = useState('');
@@ -71,6 +72,13 @@ export function LoopCreateModal({
           return;
         }
         triggerConfig.interval_seconds = secs;
+      }
+      if (trigger === 'cron') {
+        if (cronExpr.trim().split(/\s+/).length !== 5) {
+          setError('Cron must have 5 fields, e.g. "0 23 * * *" (daily at 23:00).');
+          return;
+        }
+        triggerConfig.cron_expr = cronExpr.trim();
       }
       if (trigger === 'pr_event') {
         const n = Number(prNumber);
@@ -117,7 +125,7 @@ export function LoopCreateModal({
       }
     },
     [
-      title, trigger, interval, prNumber, action, targetSession, sessionMode, model,
+      title, trigger, interval, cronExpr, prNumber, action, targetSession, sessionMode, model,
       template, maxIters, maxCost, rootSessionId, parentLoopId, platform, directory,
       onCreate, onClose,
     ],
@@ -146,6 +154,7 @@ export function LoopCreateModal({
             Trigger
             <select value={trigger} onChange={(e) => setTrigger(e.target.value as Trigger)}>
               <option value="schedule">Schedule (interval)</option>
+              <option value="cron">Cron (time of day)</option>
               <option value="pr_event">PR event (head change / merge)</option>
               <option value="turn_complete">Turn complete (session goes idle)</option>
               <option value="child_complete">Child complete</option>
@@ -163,6 +172,22 @@ export function LoopCreateModal({
                 />
               </label>
               <span className="oc-loop-modal-hint">Go-style duration. Minimum 60s.</span>
+            </>
+          )}
+          {trigger === 'cron' && (
+            <>
+              <label>
+                Cron expression
+                <input
+                  type="text"
+                  value={cronExpr}
+                  onChange={(e) => setCronExpr(e.target.value)}
+                  placeholder="0 23 * * *"
+                />
+              </label>
+              <span className="oc-loop-modal-hint">
+                5-field cron (min hour dom month dow), server-local time. "0 23 * * *" = daily at 23:00.
+              </span>
             </>
           )}
           {trigger === 'pr_event' && (
