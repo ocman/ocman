@@ -24,8 +24,9 @@ interface LoopEditModalProps {
  */
 export function LoopEditModal({ loop, onSave, onClose, onPause, onResume, onTrigger, onDelete }: LoopEditModalProps) {
   const isSchedule = loop.triggerType === 'schedule';
+  const isCron = loop.triggerType === 'cron';
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const canTrigger = isSchedule && loop.state === 'active';
+  const canTrigger = (isSchedule || isCron) && loop.state === 'active';
   const [title, setTitle] = useState(loop.title);
   const [template, setTemplate] = useState(loop.actionTemplate ?? '');
   const [model, setModel] = useState(loop.model ?? '');
@@ -33,6 +34,7 @@ export function LoopEditModal({ loop, onSave, onClose, onPause, onResume, onTrig
   const [interval, setInterval] = useState(
     formatGoDuration(loop.triggerConfig?.interval_seconds ?? 60),
   );
+  const [cronExpr, setCronExpr] = useState(loop.triggerConfig?.cron_expr ?? '0 23 * * *');
   const [maxIters, setMaxIters] = useState(String(loop.stopConditions?.max_iterations ?? 25));
   const [maxCost, setMaxCost] = useState(
     loop.stopConditions?.max_cost_usd != null ? String(loop.stopConditions.max_cost_usd) : '',
@@ -70,6 +72,10 @@ export function LoopEditModal({ loop, onSave, onClose, onPause, onResume, onTrig
         }
         intervalSeconds = parsed;
       }
+      if (isCron && cronExpr.trim().split(/\s+/).length !== 5) {
+        setError('Cron must have 5 fields, e.g. "0 23 * * *" (daily at 23:00).');
+        return;
+      }
 
       const req: LoopUpdateRequest = {
         title,
@@ -87,6 +93,9 @@ export function LoopEditModal({ loop, onSave, onClose, onPause, onResume, onTrig
       if (isSchedule) {
         req.trigger_config = { interval_seconds: intervalSeconds };
       }
+      if (isCron) {
+        req.trigger_config = { cron_expr: cronExpr.trim() };
+      }
       setSaving(true);
       try {
         await onSave(req);
@@ -97,7 +106,7 @@ export function LoopEditModal({ loop, onSave, onClose, onPause, onResume, onTrig
         setSaving(false);
       }
     },
-    [title, template, model, sessionMode, interval, maxIters, maxCost, isSchedule, loop, onSave, onClose],
+    [title, template, model, sessionMode, interval, cronExpr, maxIters, maxCost, isSchedule, isCron, loop, onSave, onClose],
   );
 
   return (
@@ -152,6 +161,23 @@ export function LoopEditModal({ loop, onSave, onClose, onPause, onResume, onTrig
               </label>
               <span className="oc-loop-modal-hint">
                 Go-style duration. Minimum 60s; shorter values are raised to 60s.
+              </span>
+            </>
+          )}
+          {isCron && (
+            <>
+              <label>
+                Cron schedule
+                <input
+                  type="text"
+                  inputMode="text"
+                  placeholder="e.g. 0 23 * * * (daily at 23:00)"
+                  value={cronExpr}
+                  onChange={(e) => setCronExpr(e.target.value)}
+                />
+              </label>
+              <span className="oc-loop-modal-hint">
+                5-field cron (min hour dom mon dow), server-local time.
               </span>
             </>
           )}

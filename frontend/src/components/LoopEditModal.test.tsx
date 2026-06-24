@@ -92,6 +92,39 @@ describe('LoopEditModal', () => {
     expect(screen.queryByLabelText('Interval')).not.toBeInTheDocument();
   });
 
+  it('edits a cron schedule and saves cron_expr (no interval field shown)', async () => {
+    const loop = makeLoop({ triggerType: 'cron', triggerConfig: { cron_expr: '0 23 * * *' } });
+    render(<LoopEditModal loop={loop} onSave={onSave} onClose={onClose} />);
+    expect(screen.queryByLabelText('Interval')).not.toBeInTheDocument();
+    const cron = screen.getByLabelText('Cron schedule');
+    expect(cron).toHaveValue('0 23 * * *');
+    fireEvent.change(cron, { target: { value: '30 22 * * *' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][0].trigger_config.cron_expr).toBe('30 22 * * *');
+  });
+
+  it('rejects a cron expression that is not 5 fields', () => {
+    const loop = makeLoop({ triggerType: 'cron', triggerConfig: { cron_expr: '0 23 * * *' } });
+    render(<LoopEditModal loop={loop} onSave={onSave} onClose={onClose} />);
+    fireEvent.change(screen.getByLabelText('Cron schedule'), { target: { value: '0 23 *' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByText(/5 fields/i)).toBeInTheDocument();
+  });
+
+  it('offers Trigger now for an active cron loop', () => {
+    const onTrigger = vi.fn().mockResolvedValue(undefined);
+    render(
+      <LoopEditModal
+        loop={makeLoop({ state: 'active', triggerType: 'cron', triggerConfig: { cron_expr: '0 23 * * *' } })}
+        onSave={onSave} onClose={onClose} onTrigger={onTrigger}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Trigger now' }));
+    expect(onTrigger).toHaveBeenCalled();
+  });
+
   it('closes on backdrop click and Escape', () => {
     render(<LoopEditModal loop={makeLoop()} onSave={onSave} onClose={onClose} />);
     fireEvent.click(screen.getByTestId('loop-edit-backdrop'));
