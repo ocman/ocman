@@ -1212,8 +1212,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     patchRecentSession(id, { status: optimisticStatus });
   }, [id, optimisticStatus, patchRecentSession]);
 
-  // Stable handler + flag for the composer's "launch opencode" hint.
-  const handleLaunchHintClick = useCallback(() => setShowDisconnectedToast(true), []);
+  // Flag for the composer's "launch session" button.
   const launchHintActive = !portAvailable && !hasPendingPrompt && tmux.available && !!caps.liveConnectionHint;
 
   // Sidebar project groupings.
@@ -1471,7 +1470,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
                           tokenStats={tokenStats}
                           selectedReasoning={selectedReasoning}
                           onReasoningChange={setSelectedReasoning}
-                          onLaunchRequest={launchHintActive ? handleLaunchHintClick : undefined}
+                          onLaunchRequest={launchHintActive ? () => { void handleLaunchOpencode(); } : undefined}
+                          launching={launchingOpencode}
                         />
                       ) : null}
                     </ErrorBoundary>

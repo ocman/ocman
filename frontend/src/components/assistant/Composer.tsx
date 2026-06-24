@@ -67,6 +67,7 @@ function ComposerImpl({
   onReasoningChange,
   disabledHint,
   onLaunchRequest,
+  launching,
 }: {
   onSend?: (text: string, images?: AttachedImage[]) => void;
   onCommand?: (command: string, args: string) => void;
@@ -150,12 +151,14 @@ function ComposerImpl({
   selectedReasoning?: string;
   onReasoningChange?: (reasoning: string) => void;
   /**
-   * Called when the user clicks the disabled composer area. Used to surface
-   * a "no live connection" toast so the user can launch the agent process.
-   * Only wired when the composer is disabled due to a missing live connection
-   * (not while a pending prompt is active).
+   * Called when the user clicks the disabled composer area or its "Launch"
+   * button to start the agent process. Only wired when the composer is
+   * disabled due to a missing live connection (not while a pending prompt is
+   * active).
    */
   onLaunchRequest?: () => void;
+  /** Whether a launch triggered via onLaunchRequest is in flight. */
+  launching?: boolean;
 }) {
   const [showTokenPopover, setShowTokenPopover] = useState(false);
   const [estCost, setEstCost] = useState<{ cost: number; known: boolean } | null>(null);
@@ -1023,11 +1026,21 @@ function ComposerImpl({
                     {selectedReasoning || 'default'}
                   </button>
                 )}
-                {disabled && (
+                {disabled && onLaunchRequest ? (
+                  <button
+                    type="button"
+                    className="oc-bar-launch"
+                    onClick={(e) => { e.stopPropagation(); onLaunchRequest(); }}
+                    disabled={launching}
+                    title={disabledHint || 'Launch the agent process'}
+                  >
+                    {launching ? 'Launching…' : 'Launch session'}
+                  </button>
+                ) : disabled ? (
                   <span className="oc-bar-hint" title={disabledHint || undefined}>
                     No live connection
                   </span>
-                )}
+                ) : null}
               </>
             )}
           </div>

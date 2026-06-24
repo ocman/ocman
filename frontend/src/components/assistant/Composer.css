@@ -406,6 +406,18 @@
 .oc-keybind-hint { color: var(--overlay0); font-size: 11px; background: none; border: none; padding: 0; cursor: pointer; }
 .oc-keybind-hint:hover { color: var(--text); }
 .oc-bar-hint { color: var(--overlay0); }
+.oc-bar-launch {
+  color: var(--base);
+  background: var(--green);
+  border: none;
+  border-radius: 5px;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.oc-bar-launch:hover:not(:disabled) { filter: brightness(1.1); }
+.oc-bar-launch:disabled { opacity: 0.6; cursor: default; }
 .oc-bar-shell {
   color: #f38ba8;
   font-family: 'SF Mono', Consolas, monospace;
