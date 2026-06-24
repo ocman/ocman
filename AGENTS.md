@@ -282,6 +282,25 @@ documented in `docs/mcp.md`.
 - Tests live alongside code as `*_test.go` / `*.test.ts(x)`. Prefer
   table-driven tests in Go. The server package has a shared
   `fakePlatform` for integration tests.
+- **Test coverage must not drop.** CI runs a coverage ratchet
+  (`make coverage` / `make coverage-check`, see
+  `spec/ci-coverage-ratchet/`) that fails any PR lowering Go or
+  frontend total line coverage beyond a 0.1% slack. Treat this as a
+  hard requirement, not a suggestion:
+  - **New code ships with tests.** Every new function, branch, loop,
+    parser, or money/security path gets a test in the same PR. Bug
+    fixes get a regression test. Don't rely on existing tests to cover
+    new behaviour.
+  - **Prove bugs red/green.** When fixing a bug, first write a test
+    that reproduces it and *fails* on the unpatched code (red), then
+    apply the fix so it *passes* (green). State in the PR that you saw
+    it fail before the fix. A fix without a failing-first test is
+    incomplete.
+  - **Verify before committing.** Run `make coverage-check
+    BASELINE_DIR=<baseline>` (or at minimum `go test -cover ./...`
+    and `cd frontend && pnpm test -- --coverage`) and confirm the
+    delta is ≥ 0 for the side you touched. If coverage drops, add
+    tests until it doesn't — do not lower the baseline.
 - **E2e test locators.** Playwright e2e tests (`frontend/e2e/`) must
   prefer stable locators over CSS class selectors. Priority order:
   1. **ARIA roles / labels** — `getByRole`, `getByLabel`,
