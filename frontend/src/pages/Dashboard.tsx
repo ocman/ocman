@@ -167,6 +167,7 @@ export function SessionsTab() {
   const toggleDashboardGrouped = useUiStore((s) => s.toggleDashboardGrouped);
   const collapsedProjects = useUiStore((s) => s.collapsedProjects);
   const toggleCollapsedProject = useUiStore((s) => s.toggleCollapsedProject);
+  const openProjectPalette = useUiStore((s) => s.openProjectPalette);
 
   const collapsedProjectSet = useMemo(
     () => new Set(collapsedProjects),
@@ -198,6 +199,15 @@ export function SessionsTab() {
           onClick={toggleDashboardGrouped}
           title="Group sessions by project"
         >Group by project</button>
+        <button
+          type="button"
+          className="oc-time-range-btn oc-dashboard-create-btn"
+          onClick={openProjectPalette}
+          title="Create a new OpenCode session"
+        >
+          <i className="bi bi-plus-lg" aria-hidden="true" />
+          New session
+        </button>
       </div>
       {dashboardGrouped ? (
         <GroupedSessionTable
@@ -222,6 +232,7 @@ export function ProjectsTab() {
   usePageTitle('Projects');
   const { projects, projectsLoading, dirScope, setDirScope } = useDashboardCtx();
   const navigate = useNavigate();
+  const openProjectPalette = useUiStore((s) => s.openProjectPalette);
 
   // The picker is sourced from the full project list (so the user can
   // navigate up/down the tree); the table itself is filtered to the
@@ -238,8 +249,17 @@ export function ProjectsTab() {
     </div>
   ) : (
     <div className="metrics-page" style={{ padding: 0 }}>
-      <div className="metrics-filters">
+      <div className="metrics-filters oc-projects-toolbar">
         <ProjectScopePicker projects={projects} value={dirScope} onChange={setDirScope} />
+        <button
+          type="button"
+          className="vscode-btn oc-dashboard-primary-action"
+          onClick={openProjectPalette}
+          title="Start a session in a project directory"
+        >
+          <i className="bi bi-folder-plus" aria-hidden="true" />
+          New project
+        </button>
       </div>
     <table>
       <thead>

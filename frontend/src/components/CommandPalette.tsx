@@ -11,6 +11,10 @@ import { useTmux } from '../lib/useTmux';
 import { createSessionWithLaunch } from '../lib/createSessionWithLaunch';
 import { resolveTargetForDir } from '../lib/machinePicker';
 import { remoteLog } from '../lib/remoteLog';
+import {
+  buildProjectPaletteResults,
+  type ProjectPaletteResult,
+} from './commandPaletteProjectResults';
 
 type CommandItem = { kind: 'command'; id: string; label: string; description: string };
 type ScopedItem = { kind: 'scoped'; id: string; label: string; description: string };
@@ -19,7 +23,7 @@ type CommandNavItem = CommandItem | ScopedItem | NavItem;
 
 type ResultItem =
   | { kind: 'session'; session: Session }
-  | { kind: 'project'; project: Project }
+  | ProjectPaletteResult
   | CommandNavItem;
 
 const NAV_ITEMS: NavItem[] = [
@@ -120,10 +124,12 @@ export function CommandPalette() {
 
   // Load projects when opening project palette
   const [projectList, setProjectList] = useState<Project[]>([]);
+  const [projectListLoaded, setProjectListLoaded] = useState(false);
 
   // Wrap closePalette to also clear the project list
   const closePalette = useCallback(() => {
     setProjectList([]);
+    setProjectListLoaded(false);
     rawClosePalette();
   }, [rawClosePalette]);
 
@@ -184,12 +190,20 @@ export function CommandPalette() {
       refreshCachedSessions(controller.signal).catch(() => {});
       return () => controller.abort();
     }
-    if (mode === 'project' && projectList.length === 0) {
+    if (mode === 'project' && !projectListLoaded) {
+      let cancelled = false;
       projects().then((list) => {
-        setProjectList(list);
-      }).catch(() => {});
+        if (!cancelled) setProjectList(list);
+      }).catch(() => {
+        if (!cancelled) setProjectList([]);
+      }).finally(() => {
+        if (!cancelled) setProjectListLoaded(true);
+      });
+      return () => {
+        cancelled = true;
+      };
     }
-  }, [paletteOpen, mode, refreshCachedSessions, projects, projectList.length]);
+  }, [paletteOpen, mode, refreshCachedSessions, projects, projectListLoaded]);
 
   const sessionFuse = useMemo(
     () =>
@@ -228,20 +242,7 @@ export function CommandPalette() {
     }
 
     if (mode === 'project') {
-      if (projectList.length === 0) return [];
-      if (!query.trim()) {
-        return projectList
-          .slice()
-          .sort((a, b) => b.lastUsed - a.lastUsed)
-          .slice(0, 20)
-          .map((p) => ({ kind: 'project' as const, project: p }));
-      }
-      const q = query.toLowerCase();
-      return projectList
-        .filter((p) => p.directory.toLowerCase().includes(q))
-        .sort((a, b) => b.lastUsed - a.lastUsed)
-        .slice(0, 20)
-        .map((p) => ({ kind: 'project' as const, project: p }));
+      return buildProjectPaletteResults(projectList, query);
     }
 
     if (!query.trim()) {
@@ -291,39 +292,45 @@ export function CommandPalette() {
     item?.scrollIntoView({ block: 'nearest' });
   }, [selectedIndex]);
 
+  function startSessionInDirectory(projectDir: string) {
+    closePalette();
+    // Machine-aware create (multi-remote support, AD-15): ask the hub
+    // which machine should run this project. Auto-resolves silently on
+    // single-host / single-match; prompts when the project lives on
+    // several machines or none.
+    void resolveTargetForDir(projectDir).then((platform) => {
+      if (platform === null) return; // operator cancelled the picker
+      // Fall back to inferring the platform from an existing session
+      // when the resolver returned the empty (local-default) sentinel.
+      const chosenPlatform =
+        platform || sessions?.find((s) => s.directory === projectDir)?.platform || '';
+      createSessionWithLaunch(
+        {
+          createSession,
+          launchOpencodeInTmux,
+          tmuxAvailable: tmux.available,
+        },
+        { directory: projectDir, platform: chosenPlatform || undefined },
+      )
+        .then((res) => {
+          if (res.id) {
+            const sessionDir = res.directory ?? projectDir;
+            seedNewSession(res.id, sessionDir, chosenPlatform);
+            navigate(`/session/${res.id}`);
+          }
+        })
+        .catch((err) => remoteLog.error('Failed to create session', err));
+    });
+  }
+
   function handleSelect(item: ResultItem) {
     if (item.kind === 'session') {
       closePalette();
       navigate(`/session/${item.session.id}`);
     } else if (item.kind === 'project') {
-      closePalette();
-      const projectDir = item.project.directory;
-      // Machine-aware create (multi-remote support, AD-15): ask the hub
-      // which machine should run this project. Auto-resolves silently on
-      // single-host / single-match; prompts when the project lives on
-      // several machines or none.
-      void resolveTargetForDir(projectDir).then((platform) => {
-        if (platform === null) return; // operator cancelled the picker
-        // Fall back to inferring the platform from an existing session
-        // when the resolver returned the empty (local-default) sentinel.
-        const chosenPlatform =
-          platform || sessions?.find((s) => s.directory === projectDir)?.platform || '';
-        createSessionWithLaunch(
-          {
-            createSession,
-            launchOpencodeInTmux,
-            tmuxAvailable: tmux.available,
-          },
-          { directory: projectDir, platform: chosenPlatform || undefined },
-        )
-          .then((res) => {
-            if (res.id) {
-              seedNewSession(res.id, projectDir, chosenPlatform);
-              navigate(`/session/${res.id}`);
-            }
-          })
-          .catch((err) => remoteLog.error('Failed to create session', err));
-      });
+      startSessionInDirectory(item.project.directory);
+    } else if (item.kind === 'directory') {
+      startSessionInDirectory(item.directory);
     } else if (item.kind === 'nav') {
       closePalette();
       navigate(item.path);
@@ -332,6 +339,7 @@ export function CommandPalette() {
         setQuery('');
         setSelectedIndex(0);
         setProjectList([]);
+        setProjectListLoaded(false);
         openProjectPalette();
         return;
       }
@@ -391,7 +399,7 @@ export function CommandPalette() {
                 ? '> commands, :stats, sessions...'
                 : mode === 'search'
                 ? 'Search sessions...'
-                : 'Select a project to create session in...'
+                : 'Select a project or type an absolute directory...'
             }
             value={query}
             onChange={(e) => {
@@ -407,8 +415,10 @@ export function CommandPalette() {
             <div className="oc-cmd-empty">
               {sessions === null && mode === 'search'
                 ? 'Loading sessions...'
-                : projectList.length === 0 && mode === 'project'
+                : !projectListLoaded && mode === 'project'
                 ? 'Loading projects...'
+                : mode === 'project'
+                ? 'Type an absolute directory path'
                 : 'No results'}
             </div>
           )}
@@ -459,6 +469,23 @@ export function CommandPalette() {
                       {proj.sessionCount} session{proj.sessionCount !== 1 ? 's' : ''} &middot;{' '}
                       {relativeTime(proj.lastUsed)}
                     </span>
+                  </div>
+                </div>
+              );
+            }
+
+            if (item.kind === 'directory') {
+              return (
+                <div
+                  key={`directory:${item.directory}`}
+                  className={`oc-cmd-item oc-cmd-item--command${i === selectedIndex ? ' oc-cmd-item--selected' : ''}`}
+                  onClick={() => handleSelect(item)}
+                  onMouseMove={() => setSelectedIndex(i)}
+                >
+                  <i className="bi bi-folder-plus oc-cmd-item-icon" />
+                  <div className="oc-cmd-item-content">
+                    <span className="oc-cmd-title">Create session in this directory</span>
+                    <span className="oc-cmd-meta">{item.directory}</span>
                   </div>
                 </div>
               );
