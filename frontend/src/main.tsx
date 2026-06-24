@@ -19,6 +19,17 @@ if (typeof window !== 'undefined' && 'runtime' in window) {
   document.body.classList.add('wails-app')
 }
 
+// A stale tab can hold an old index.html that references a JS chunk whose
+// hash changed after a rebuild, so its dynamic import 404s. Vite fires
+// `vite:preloadError` for exactly this — force one reload to pull the new
+// build. The sessionStorage guard avoids a reload loop if the asset is
+// genuinely gone (e.g. server down).
+window.addEventListener('vite:preloadError', () => {
+  if (sessionStorage.getItem('ocman:preload-reloaded')) return
+  sessionStorage.setItem('ocman:preload-reloaded', '1')
+  window.location.reload()
+})
+
 // Install global error -> /api/debug/log handlers before the app boots, so
 // any render-time crash is captured on the server log too.
 installRemoteLogHandlers()
