@@ -612,6 +612,33 @@ export interface Project {
   lastUsed: number;
 }
 
+export interface DirectoryBrowseEntry {
+  name: string;
+  path: string;
+  hidden?: boolean;
+}
+
+export interface DirectoryBrowseResponse {
+  directory: string;
+  parent?: string;
+  home?: string;
+  entries: DirectoryBrowseEntry[];
+}
+
+export interface DirectorySearchEntry {
+  name: string;
+  path: string;
+  hidden?: boolean;
+  project?: boolean;
+  depth?: number;
+}
+
+export interface DirectorySearchResponse {
+  root: string;
+  query: string;
+  entries: DirectorySearchEntry[];
+}
+
 export interface ActivityDay {
   date: string;
   sessions: number;

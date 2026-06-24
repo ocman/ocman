@@ -36,6 +36,10 @@ export type {
   MetricsCostByModel,
   ModelCostPoint,
   Project,
+  DirectoryBrowseEntry,
+  DirectoryBrowseResponse,
+  DirectorySearchEntry,
+  DirectorySearchResponse,
   ActivityDay,
   ModelUsage,
   HourlyData,
@@ -74,6 +78,8 @@ import type {
   CapabilitiesResponse,
   FavoriteEntry,
   MetricsDashboard,
+  DirectoryBrowseResponse,
+  DirectorySearchResponse,
   ModelUsage,
   NotifyEntry,
   Project,
@@ -262,6 +268,18 @@ export const api = {
     return fetchJSON<MetricsDashboard>(`/api/metrics${qs ? '?' + qs : ''}`, signal);
   },
   projects: (signal?: AbortSignal) => fetchJSON<Project[]>('/api/projects', signal),
+  browseDirectories: (dir?: string, signal?: AbortSignal) => {
+    const q = new URLSearchParams();
+    if (dir) q.set('dir', dir);
+    const qs = q.toString();
+    return fetchJSON<DirectoryBrowseResponse>(`/api/filesystem/directories${qs ? '?' + qs : ''}`, signal);
+  },
+  searchDirectories: (root: string | undefined, query: string, limit?: number, signal?: AbortSignal) => {
+    const q = new URLSearchParams({ q: query });
+    if (root) q.set('root', root);
+    if (limit) q.set('limit', String(limit));
+    return fetchJSON<DirectorySearchResponse>(`/api/filesystem/directory-search?${q.toString()}`, signal);
+  },
   sessions: (params?: { dir?: string; since?: number; limit?: number }, signal?: AbortSignal) => {
     const q = new URLSearchParams();
     if (params?.dir) q.set('dir', params.dir);

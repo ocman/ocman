@@ -6,6 +6,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -190,6 +193,203 @@ func TestHandleProjects_UsesInMemoryIndexUntilRefresh(t *testing.T) {
 	}
 	if len(projects) != 2 {
 		t.Fatalf("expected refreshed index with two projects, got %+v", projects)
+	}
+}
+
+func TestHandleCreateSession_RefreshesProjectsIndex(t *testing.T) {
+	srv, rawDB := testServerWithRawDB(t)
+	defer rawDB.Close()
+
+	reg := platforms.NewRegistry()
+	reg.Register(&fakePlatform{
+		id: "fake",
+		createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+			_, err := rawDB.Exec(
+				`INSERT INTO session (id, title, directory, time_created, time_updated)
+				 VALUES ('new-session', 'new', ?, 3000, 3000)`,
+				req.Directory,
+			)
+			if err != nil {
+				return nil, err
+			}
+			return &platforms.CreateSessionResponse{ID: "new-session"}, nil
+		},
+	})
+	srv.registry = reg
+
+	if err := srv.refreshProjectsIndex(); err != nil {
+		t.Fatalf("initial projects refresh: %v", err)
+	}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/sessions",
+		strings.NewReader(`{"platform":"fake","directory":"/repo/new"}`),
+	)
+	rr := httptest.NewRecorder()
+	srv.handleCreateSession(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	projects, _ := srv.projectsSnapshot()
+	if len(projects) != 1 || projects[0].Directory != "/repo/new" {
+		t.Fatalf("expected projects index to include created project, got %+v", projects)
+	}
+}
+
+func TestHandleFilesystemDirectories_ReturnsDirectoriesOnly(t *testing.T) {
+	srv := testServer(t)
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "alpha"), 0o755); err != nil {
+		t.Fatalf("mkdir alpha: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(root, "beta"), 0o755); err != nil {
+		t.Fatalf("mkdir beta: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(root, ".hidden"), 0o755); err != nil {
+		t.Fatalf("mkdir hidden: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "notes.txt"), []byte("not a directory"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/filesystem/directories?dir="+url.QueryEscape(root), nil)
+	rr := httptest.NewRecorder()
+	srv.handleFilesystemDirectories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var resp directoryBrowseResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("invalid JSON response: %v", err)
+	}
+	if resp.Directory != filepath.Clean(root) {
+		t.Fatalf("directory = %q, want %q", resp.Directory, filepath.Clean(root))
+	}
+	if resp.Parent != filepath.Dir(root) {
+		t.Fatalf("parent = %q, want %q", resp.Parent, filepath.Dir(root))
+	}
+	names := make([]string, 0, len(resp.Entries))
+	for _, entry := range resp.Entries {
+		names = append(names, entry.Name)
+		if !filepath.IsAbs(entry.Path) {
+			t.Fatalf("entry path %q is not absolute", entry.Path)
+		}
+	}
+	if strings.Join(names, ",") != "alpha,beta,.hidden" {
+		t.Fatalf("entries = %v, want alpha,beta,.hidden", names)
+	}
+	if len(resp.Entries) != 3 || !resp.Entries[2].Hidden {
+		t.Fatalf("hidden entry flag not set: %+v", resp.Entries)
+	}
+}
+
+func TestHandleFilesystemDirectories_RejectsRelativePath(t *testing.T) {
+	srv := testServer(t)
+	req := httptest.NewRequest("GET", "/api/filesystem/directories?dir=relative", nil)
+	rr := httptest.NewRecorder()
+	srv.handleFilesystemDirectories(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestHandleFilesystemDirectorySearch_FindsNestedProjectDirectories(t *testing.T) {
+	srv := testServer(t)
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "workspace", "ocman")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatalf("mkdir project: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, "go.mod"), []byte("module example.com/ocman\n"), 0o644); err != nil {
+		t.Fatalf("write marker: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "node_modules", "ocman-copy"), 0o755); err != nil {
+		t.Fatalf("mkdir skipped dir: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/filesystem/directory-search?root="+url.QueryEscape(root)+"&q=work+oc&limit=10", nil)
+	rr := httptest.NewRecorder()
+	srv.handleFilesystemDirectorySearch(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var resp directorySearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("invalid JSON response: %v", err)
+	}
+	if resp.Root != filepath.Clean(root) {
+		t.Fatalf("root = %q, want %q", resp.Root, filepath.Clean(root))
+	}
+	if len(resp.Entries) != 1 {
+		t.Fatalf("entries = %+v, want one project match", resp.Entries)
+	}
+	if resp.Entries[0].Path != projectDir || !resp.Entries[0].Project {
+		t.Fatalf("entry = %+v, want project dir %q", resp.Entries[0], projectDir)
+	}
+}
+
+func TestHandleFilesystemDirectorySearch_DeduplicatesExactAbsoluteDirectory(t *testing.T) {
+	srv := testServer(t)
+	root := t.TempDir()
+	workspaceDir := filepath.Join(root, "workspace")
+	projectDir := filepath.Join(workspaceDir, "research")
+	nestedDir := filepath.Join(projectDir, "anam-research")
+	if err := os.MkdirAll(nestedDir, 0o755); err != nil {
+		t.Fatalf("mkdir nested project: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, "go.mod"), []byte("module example.com/research\n"), 0o644); err != nil {
+		t.Fatalf("write project marker: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(nestedDir, "package.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("write nested project marker: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/filesystem/directory-search?root="+url.QueryEscape(root)+"&q="+url.QueryEscape(projectDir)+"&limit=10", nil)
+	rr := httptest.NewRecorder()
+	srv.handleFilesystemDirectorySearch(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var resp directorySearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("invalid JSON response: %v", err)
+	}
+	if resp.Root != filepath.Clean(workspaceDir) {
+		t.Fatalf("root = %q, want %q", resp.Root, filepath.Clean(workspaceDir))
+	}
+
+	projectCount := 0
+	nestedFound := false
+	for _, entry := range resp.Entries {
+		switch entry.Path {
+		case projectDir:
+			projectCount++
+		case nestedDir:
+			nestedFound = true
+		}
+	}
+	if projectCount != 1 {
+		t.Fatalf("project path appears %d times in %+v, want once", projectCount, resp.Entries)
+	}
+	if !nestedFound {
+		t.Fatalf("nested project %q not found in %+v", nestedDir, resp.Entries)
+	}
+}
+
+func TestHandleFilesystemDirectorySearch_RejectsRelativeRoot(t *testing.T) {
+	srv := testServer(t)
+	req := httptest.NewRequest("GET", "/api/filesystem/directory-search?root=relative&q=oc", nil)
+	rr := httptest.NewRecorder()
+	srv.handleFilesystemDirectorySearch(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
 

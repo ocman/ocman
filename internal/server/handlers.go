@@ -395,6 +395,9 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		writePlatformError(w, "creating session", err)
 		return
 	}
+	if err := s.refreshProjectsIndex(); err != nil {
+		log.WithError(err).Warn("refreshing projects index after session creation")
+	}
 	writeJSON(w, resp)
 }
 

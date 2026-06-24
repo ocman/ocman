@@ -3,6 +3,8 @@ import { api } from './api';
 import { computeSidebarHash } from './sidebarHelpers';
 import type {
   CapabilitiesResponse,
+  DirectoryBrowseResponse,
+  DirectorySearchResponse,
   MetricsDashboard,
   ModelUsage,
   Project,
@@ -102,6 +104,8 @@ type ApiStore = {
   runRequest: <T>(key: string, task: () => Promise<T>) => Promise<T>;
   getMetrics: (params?: { agent?: string; model?: string; days?: number }, signal?: AbortSignal) => Promise<MetricsDashboard>;
   getProjects: (signal?: AbortSignal) => Promise<Project[]>;
+  browseDirectories: (directory?: string, signal?: AbortSignal) => Promise<DirectoryBrowseResponse>;
+  searchDirectories: (root: string | undefined, query: string, limit?: number, signal?: AbortSignal) => Promise<DirectorySearchResponse>;
   getSessions: (params?: { dir?: string; since?: number; limit?: number }, signal?: AbortSignal) => Promise<Session[]>;
   refreshCachedSessions: (signal?: AbortSignal) => Promise<Session[]>;
   getSession: (id: string, limit?: number, offset?: number, signal?: AbortSignal) => Promise<SessionDetail>;
@@ -296,6 +300,8 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   },
   getMetrics: (params, signal) => get().runRequest(`metrics:get:${params?.agent ?? ''}:${params?.model ?? ''}:${params?.days ?? ''}`, () => api.metrics(params, signal)),
   getProjects: (signal) => get().runRequest('projects:get', () => api.projects(signal)),
+  browseDirectories: (directory, signal) => get().runRequest(`filesystem:directories:${directory ?? '~'}`, () => api.browseDirectories(directory, signal)),
+  searchDirectories: (root, query, limit, signal) => get().runRequest(`filesystem:directory-search:${root ?? '~'}:${query}:${limit ?? ''}`, () => api.searchDirectories(root, query, limit, signal)),
   getSessions: (params, signal) => {
     // Stable key so useApiRequest('sessions:get') sees status transitions.
     // Per-params variance (since, limit) doesn't need its own loading row —

@@ -55,7 +55,7 @@ type Server struct {
 	// WithPublicBaseURL from the OCMAN_PUBLIC_BASE_URL env or
 	// -public-base-url flag. Trailing slash is trimmed.
 	publicBaseURL string
-	judge              *PermissionJudge
+	judge         *PermissionJudge
 	// judgeDelayMs is the cached value of the judge delay setting.
 	// Loaded at startup and updated whenever the setting is changed via
 	// the API. Accessed without a lock — reads/writes are int64 and
@@ -219,13 +219,13 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		registry = platforms.NewRegistry()
 	}
 	s := &Server{
-		db:                  database,
-		stateDB:             stateDB,
-		addr:                addr,
-		registry:            registry,
-		auth:                auth,
-		integrations:        integrations.New(),
-		startTime:           time.Now(),
+		db:               database,
+		stateDB:          stateDB,
+		addr:             addr,
+		registry:         registry,
+		auth:             auth,
+		integrations:     integrations.New(),
+		startTime:        time.Now(),
 		judge:            newPermissionJudge(),
 		sseSessions:      make(map[string]*sseSink),
 		broadcastHub:     newBroadcastHub(),
@@ -362,6 +362,8 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	mux.HandleFunc("/api/stats", s.get(s.handleStats))
 	mux.HandleFunc("/api/metrics", s.get(s.handleMetrics))
 	mux.HandleFunc("/api/projects", s.get(s.handleProjects))
+	mux.HandleFunc("/api/filesystem/directories", requireGET(requireLocalhost(s.handleFilesystemDirectories)))
+	mux.HandleFunc("/api/filesystem/directory-search", requireGET(requireLocalhost(s.handleFilesystemDirectorySearch)))
 	mux.HandleFunc("/api/system/stats", s.get(s.handleSystemStats))
 	mux.HandleFunc("/api/sessions", s.requireAuth(s.handleSessionsRoot)) // GET = list, POST = create
 	mux.HandleFunc("/api/sessions/notify", s.get(s.handleSessionsNotify))
