@@ -150,9 +150,11 @@ func withTestPort(t *testing.T, dir, port string) {
 		return map[string]string{dir: port}
 	})
 	resetPortCacheForTests()
+	resetSessionPortAffinityForTests()
 	t.Cleanup(func() {
 		restore()
 		resetPortCacheForTests()
+		resetSessionPortAffinityForTests()
 	})
 }
 

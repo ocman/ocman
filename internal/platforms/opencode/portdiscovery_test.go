@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -231,6 +232,119 @@ func TestDiscoverOpenCodePortFresh_NormalizesSymlinkDirectory(t *testing.T) {
 	}
 	if got := discoverOpenCodePortCtx(context.Background(), linkDir); got != "7777" {
 		t.Fatalf("ctx lookup through symlink got port %q, want 7777", got)
+	}
+}
+
+func TestDuplicateOpenCodeServerPortsForDirectory(t *testing.T) {
+	root := t.TempDir()
+	realDir := filepath.Join(root, "real")
+	linkDir := filepath.Join(root, "link")
+	otherDir := filepath.Join(root, "other")
+	if err := os.Mkdir(realDir, 0o755); err != nil {
+		t.Fatalf("mkdir real dir: %v", err)
+	}
+	if err := os.Mkdir(otherDir, 0o755); err != nil {
+		t.Fatalf("mkdir other dir: %v", err)
+	}
+	if err := os.Symlink(realDir, linkDir); err != nil {
+		t.Fatalf("symlink dir: %v", err)
+	}
+
+	servers := []openCodeServer{
+		{directory: normalizePortDirectory(realDir), port: "55001"},
+		{directory: normalizePortDirectory(linkDir), port: "55002"},
+		{directory: normalizePortDirectory(realDir), port: "55002"},
+		{directory: normalizePortDirectory(otherDir), port: "55003"},
+	}
+
+	got := duplicateOpenCodeServerPortsForDirectory(linkDir, servers)
+	want := []string{"55001", "55002"}
+	if len(got) != len(want) {
+		t.Fatalf("duplicate ports = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("duplicate ports = %v, want %v", got, want)
+		}
+	}
+
+	if got := duplicateOpenCodeServerPortsForDirectory(otherDir, servers); got != nil {
+		t.Fatalf("single server duplicate ports = %v, want nil", got)
+	}
+}
+
+func TestDiscoverDuplicateOpenCodeServerPorts_CachesServerDiscovery(t *testing.T) {
+	const dir = "/repo/a"
+
+	var calls int32
+	restore := setDiscoverServersImplForTests(func() []openCodeServer {
+		call := atomic.AddInt32(&calls, 1)
+		if call == 1 {
+			return []openCodeServer{
+				{directory: normalizePortDirectory(dir), port: "1111"},
+				{directory: normalizePortDirectory(dir), port: "2222"},
+			}
+		}
+		return []openCodeServer{
+			{directory: normalizePortDirectory(dir), port: "3333"},
+			{directory: normalizePortDirectory(dir), port: "4444"},
+		}
+	})
+	defer restore()
+	resetPortCacheForTests()
+	defer resetPortCacheForTests()
+
+	if got := discoverDuplicateOpenCodeServerPorts(dir); !slices.Equal(got, []string{"1111", "2222"}) {
+		t.Fatalf("first duplicate ports = %v, want [1111 2222]", got)
+	}
+	if got := discoverDuplicateOpenCodeServerPorts(dir); !slices.Equal(got, []string{"1111", "2222"}) {
+		t.Fatalf("cached duplicate ports = %v, want [1111 2222]", got)
+	}
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Fatalf("server discovery calls before invalidation = %d, want 1", got)
+	}
+
+	InvalidateOpenCodePortCache()
+
+	if got := discoverDuplicateOpenCodeServerPorts(dir); !slices.Equal(got, []string{"3333", "4444"}) {
+		t.Fatalf("post-invalidation duplicate ports = %v, want [3333 4444]", got)
+	}
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Fatalf("server discovery calls after invalidation = %d, want 2", got)
+	}
+}
+
+func TestResolveOpenCodePortForSessionCtx_PinsSessionPort(t *testing.T) {
+	var calls int32
+	restore := setDiscoverPortsImplForTests(func() map[string]string {
+		call := atomic.AddInt32(&calls, 1)
+		if call == 1 {
+			return map[string]string{"/repo/a": "1111"}
+		}
+		return map[string]string{"/repo/a": "2222"}
+	})
+	defer restore()
+	resetPortCacheForTests()
+	resetSessionPortAffinityForTests()
+	defer resetSessionPortAffinityForTests()
+
+	if got := resolveOpenCodePortForSessionCtx(context.Background(), "sess-1", "/repo/a"); got != "1111" {
+		t.Fatalf("first lookup got port %q, want 1111", got)
+	}
+
+	InvalidateOpenCodePortCache()
+	if got := resolveOpenCodePortForSessionCtx(context.Background(), "sess-1", "/repo/a"); got != "1111" {
+		t.Fatalf("same-session lookup after cache invalidation got port %q, want pinned 1111", got)
+	}
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Fatalf("same-session affinity invoked lsof %d times, want 1", got)
+	}
+
+	if got := resolveOpenCodePortForSessionCtx(context.Background(), "sess-2", "/repo/a"); got != "2222" {
+		t.Fatalf("different session lookup got port %q, want fresh 2222", got)
+	}
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Fatalf("fresh session invoked lsof %d times, want 2", got)
 	}
 }
 

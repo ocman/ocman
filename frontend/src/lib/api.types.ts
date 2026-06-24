@@ -141,6 +141,17 @@ export interface SessionNotice {
 }
 
 /**
+ * Non-blocking condition attached to a full session detail response.
+ * Warnings explain ambiguity that may affect live behavior while leaving
+ * normal session reads and composer actions available.
+ */
+export interface SessionWarning {
+  kind: 'duplicate_opencode_servers' | string;
+  message: string;
+  ports?: string[];
+}
+
+/**
  * Mirror of internal/db.GitInfo. Returned per directory by
  * /api/git/info; consumed by useGitInfo and rendered via
  * GitStatusLine. No longer attached to Session payloads — fetching
@@ -247,6 +258,7 @@ export interface SessionDetail {
   contextTokenCount?: number;
   defaultAgent?: string;
   defaultModel?: string;
+  warnings?: SessionWarning[];
 }
 
 /**

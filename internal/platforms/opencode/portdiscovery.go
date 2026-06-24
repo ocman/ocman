@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,9 +33,21 @@ var portCache struct {
 	updated time.Time
 }
 
+var serverCache struct {
+	mu      sync.Mutex
+	servers []openCodeServer
+	updated time.Time
+}
+
+var sessionPortAffinity sync.Map // sessionID -> port
+
 // portFlight coalesces concurrent cold-cache callers into a single
 // underlying lsof invocation.
 var portFlight singleflight.Group
+
+// serverFlight coalesces concurrent cold-cache callers that need the
+// full server list rather than the directory -> port map.
+var serverFlight singleflight.Group
 
 // portCacheTTL bounds how long a discovered port map is reused
 // before the next request triggers a fresh lsof scan.
@@ -44,8 +57,12 @@ const portCacheTTL = 10 * time.Second
 // lsof execution. Stored as an atomic pointer so reads and writes are
 // race-free without a mutex.
 var discoverPortsImpl atomic.Pointer[func() map[string]string]
+var discoverServersImpl atomic.Pointer[func() []openCodeServer]
 
 func init() {
+	serverFn := func() []openCodeServer { return discoverOpenCodeServersUncached() }
+	discoverServersImpl.Store(&serverFn)
+
 	fn := func() map[string]string { return discoverOpenCodePortsUncached() }
 	discoverPortsImpl.Store(&fn)
 }
@@ -57,15 +74,25 @@ func setDiscoverPortsImplForTests(fn func() map[string]string) func() {
 	return func() { discoverPortsImpl.Store(prev) }
 }
 
-// resetPortCache clears the shared directory -> port cache.
+func setDiscoverServersImplForTests(fn func() []openCodeServer) func() {
+	prev := discoverServersImpl.Swap(&fn)
+	return func() { discoverServersImpl.Store(prev) }
+}
+
+// resetPortCache clears the shared port-discovery caches.
 func resetPortCache() {
 	portCache.mu.Lock()
 	portCache.ports = nil
 	portCache.updated = time.Time{}
 	portCache.mu.Unlock()
+
+	serverCache.mu.Lock()
+	serverCache.servers = nil
+	serverCache.updated = time.Time{}
+	serverCache.mu.Unlock()
 }
 
-// InvalidateOpenCodePortCache clears the cached directory -> port map.
+// InvalidateOpenCodePortCache clears cached OpenCode port-discovery data.
 // Callers that have just launched or restarted an OpenCode process should
 // invalidate so the next lookup does a fresh lsof scan instead of reusing
 // a recently cached "not running yet" result.
@@ -76,6 +103,45 @@ func InvalidateOpenCodePortCache() {
 // resetPortCacheForTests clears the cache so each test starts with a cold path.
 func resetPortCacheForTests() {
 	resetPortCache()
+}
+
+func resetSessionPortAffinityForTests() {
+	sessionPortAffinity.Range(func(key, _ interface{}) bool {
+		sessionPortAffinity.Delete(key)
+		return true
+	})
+}
+
+func rememberSessionPort(sessionID, port string) {
+	if sessionID == "" || port == "" {
+		return
+	}
+	sessionPortAffinity.Store(sessionID, port)
+}
+
+func preferredSessionPort(sessionID string) string {
+	if sessionID == "" {
+		return ""
+	}
+	if port, ok := sessionPortAffinity.Load(sessionID); ok {
+		if s, ok := port.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+func forgetSessionPort(sessionID, port string) {
+	if sessionID == "" {
+		return
+	}
+	if port == "" {
+		sessionPortAffinity.Delete(sessionID)
+		return
+	}
+	if current, ok := sessionPortAffinity.Load(sessionID); ok && current == port {
+		sessionPortAffinity.Delete(sessionID)
+	}
 }
 
 // discoverOpenCodePorts returns a map of directory -> port for all running
@@ -120,6 +186,10 @@ func copyMap(m map[string]string) map[string]string {
 	return cp
 }
 
+func copyOpenCodeServers(servers []openCodeServer) []openCodeServer {
+	return append([]openCodeServer(nil), servers...)
+}
+
 func writeCachedPorts(ports map[string]string) {
 	portCache.mu.Lock()
 	portCache.ports = ports
@@ -139,6 +209,11 @@ func normalizePortDirectory(directory string) string {
 type pidPort struct {
 	pid  string
 	port string
+}
+
+type openCodeServer struct {
+	directory string
+	port      string
 }
 
 // parseOpenCodeListeners extracts (pid, port) pairs for OpenCode
@@ -202,19 +277,17 @@ func pidCwd(pid string) (string, bool) {
 	return "", false
 }
 
-// discoverOpenCodePortsUncached performs the actual lsof-based discovery.
+// discoverOpenCodeServersUncached performs the actual lsof-based discovery.
 // Two-phase: enumerate listening opencode PIDs, then fan-out to resolve cwds.
-func discoverOpenCodePortsUncached() map[string]string {
-	result := make(map[string]string)
-
+func discoverOpenCodeServersUncached() []openCodeServer {
 	out, err := exec.Command("lsof", "-iTCP", "-sTCP:LISTEN", "-P", "-n").Output()
 	if err != nil {
-		return result
+		return nil
 	}
 
 	candidates := parseOpenCodeListeners(string(out))
 	if len(candidates) == 0 {
-		return result
+		return nil
 	}
 
 	const maxWorkers = 16
@@ -250,11 +323,83 @@ func discoverOpenCodePortsUncached() map[string]string {
 	wg.Wait()
 	close(results)
 
+	servers := make([]openCodeServer, 0, len(candidates))
 	for r := range results {
-		result[normalizePortDirectory(r.dir)] = r.port
+		servers = append(servers, openCodeServer{
+			directory: normalizePortDirectory(r.dir),
+			port:      r.port,
+		})
 	}
 
+	return servers
+}
+
+func discoverOpenCodeServers() []openCodeServer {
+	if cached, ok := readCachedServers(); ok {
+		return cached
+	}
+
+	const flightKey = "discoverOpenCodeServers"
+	v, _, _ := serverFlight.Do(flightKey, func() (interface{}, error) {
+		if cached, ok := readCachedServers(); ok {
+			return cached, nil
+		}
+		result := (*discoverServersImpl.Load())()
+		serverCache.mu.Lock()
+		serverCache.servers = copyOpenCodeServers(result)
+		serverCache.updated = time.Now()
+		serverCache.mu.Unlock()
+		return copyOpenCodeServers(result), nil
+	})
+	if servers, ok := v.([]openCodeServer); ok {
+		return servers
+	}
+	return nil
+}
+
+func readCachedServers() ([]openCodeServer, bool) {
+	serverCache.mu.Lock()
+	defer serverCache.mu.Unlock()
+	if time.Since(serverCache.updated) < portCacheTTL && serverCache.servers != nil {
+		return copyOpenCodeServers(serverCache.servers), true
+	}
+	return nil, false
+}
+
+// discoverOpenCodePortsUncached returns one directory -> port entry per
+// running OpenCode directory. If multiple servers share a directory, the
+// selected port remains intentionally unspecified, matching the previous map
+// assignment behavior.
+func discoverOpenCodePortsUncached() map[string]string {
+	result := make(map[string]string)
+	for _, server := range discoverOpenCodeServersUncached() {
+		result[server.directory] = server.port
+	}
 	return result
+}
+
+func duplicateOpenCodeServerPortsForDirectory(directory string, servers []openCodeServer) []string {
+	key := normalizePortDirectory(directory)
+	seen := make(map[string]struct{})
+	for _, server := range servers {
+		if server.directory != key || server.port == "" {
+			continue
+		}
+		seen[server.port] = struct{}{}
+	}
+	if len(seen) < 2 {
+		return nil
+	}
+	ports := make([]string, 0, len(seen))
+	for port := range seen {
+		ports = append(ports, port)
+	}
+	sort.Strings(ports)
+	return ports
+}
+
+func discoverDuplicateOpenCodeServerPorts(directory string) []string {
+	return duplicateOpenCodeServerPortsForDirectory(directory, discoverOpenCodeServers())
 }
 
 // discoverOpenCodePort finds the HTTP port of a running OpenCode instance
@@ -317,5 +462,14 @@ func discoverOpenCodePortCtx(ctx context.Context, directory string) string {
 	miss := srvtiming.Begin(ctx, "lsof_miss")
 	port := discoverOpenCodePort(directory)
 	miss.EndWithDesc("ran fresh lsof scan")
+	return port
+}
+
+func resolveOpenCodePortForSessionCtx(ctx context.Context, sessionID, directory string) string {
+	if port := preferredSessionPort(sessionID); port != "" {
+		return port
+	}
+	port := discoverOpenCodePortCtx(ctx, directory)
+	rememberSessionPort(sessionID, port)
 	return port
 }

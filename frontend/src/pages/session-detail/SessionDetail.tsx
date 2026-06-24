@@ -17,7 +17,7 @@ import { useStickyNavigate } from '../../lib/useStickyNavigate';
 import * as Toast from '@radix-ui/react-toast';
 import './SessionDetail.css';
 import { api } from '../../lib/api';
-import type { Message, Part, PartData, Session } from '../../lib/api';
+import type { Message, Part, PartData, Session, SessionWarning } from '../../lib/api';
 import { cleanTitle, shortPath } from '../../lib/format';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { messageBookmarkKey, type MessageBookmark, type MessageBookmarkGroup } from '../../lib/messageBookmarks';
@@ -32,6 +32,7 @@ import { RightPanel } from '../../components/RightPanel';
 import { SessionTerminalDock } from '../../components/SessionTerminalDock';
 import { ErrorBoundary, type FallbackRender } from '../../components/ErrorBoundary';
 import { RateLimitBanner } from '../../components/RateLimitBanner';
+import { SessionWarningBanner } from '../../components/SessionWarningBanner';
 import { useUiStore } from '../../lib/uiStore';
 import { useTmux } from '../../lib/useTmux';
 import { useApiStore } from '../../lib/apiStore';
@@ -274,6 +275,10 @@ function groupMessageBookmarks(
   });
 }
 
+function sessionWarningKey(sessionId: string, warning: SessionWarning): string {
+  return `${sessionId}:${warning.kind}:${warning.message}:${(warning.ports ?? []).join(',')}`;
+}
+
 /**
  * Props for the inner SessionDetail component.
  *
@@ -404,6 +409,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     [messages, firstUnreadMessageId, unreadCutoff],
   );
   const loadedMessageBookmarks = useMemo(() => loadMessageBookmarks(id), [id]);
+  const [dismissedSessionWarnings, setDismissedSessionWarnings] = useState<Set<string>>(() => new Set());
   const [messageBookmarkState, setMessageBookmarkState] = useState<MessageBookmarkState>(() => ({
     sessionId: id,
     bookmarks: loadedMessageBookmarks,
@@ -438,6 +444,22 @@ export function SessionDetail({ id }: SessionDetailProps) {
     () => new Set(messageBookmarks.map((bookmark) => bookmark.id)),
     [messageBookmarks],
   );
+  const visibleSessionWarnings = useMemo(() => {
+    if (!session) return [];
+    return (session.warnings ?? []).filter((warning) => (
+      !dismissedSessionWarnings.has(sessionWarningKey(session.id, warning))
+    ));
+  }, [session, dismissedSessionWarnings]);
+  const dismissSessionWarning = useCallback((warning: SessionWarning) => {
+    if (!session) return;
+    const key = sessionWarningKey(session.id, warning);
+    setDismissedSessionWarnings((current) => {
+      if (current.has(key)) return current;
+      const next = new Set(current);
+      next.add(key);
+      return next;
+    });
+  }, [session]);
 
   const handleToggleMessageBookmark = useCallback((messageId: string) => {
     setMessageBookmarkState((current) => {
@@ -1386,6 +1408,13 @@ export function SessionDetail({ id }: SessionDetailProps) {
                           {unreadMessageCount} new message{unreadMessageCount === 1 ? '' : 's'}
                         </button>
                       )}
+                      {visibleSessionWarnings.map((warning) => (
+                        <SessionWarningBanner
+                          key={sessionWarningKey(session.id, warning)}
+                          warning={warning}
+                          onDismiss={() => dismissSessionWarning(warning)}
+                        />
+                      ))}
                       {session.notice && (
                         <RateLimitBanner notice={session.notice} />
                       )}

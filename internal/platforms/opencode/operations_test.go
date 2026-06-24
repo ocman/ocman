@@ -142,6 +142,202 @@ func TestProxyEvents_IdleTimeoutReturnsErrSSEIdleTimeout(t *testing.T) {
 	}
 }
 
+func TestProxyEventsPinsPortAffinityForSendMessage(t *testing.T) {
+	const sid = "sess-port-affinity"
+	const dir = "/tmp/proj-port-affinity"
+
+	var eventHits1 int32
+	var promptHits1 int32
+	srv1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/event":
+			atomic.AddInt32(&eventHits1, 1)
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte(": ready\n\n"))
+			return
+		case r.Method == http.MethodPost && r.URL.Path == "/session/"+sid+"/prompt_async":
+			atomic.AddInt32(&promptHits1, 1)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv1.Close()
+
+	var promptHits2 int32
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/session/"+sid+"/prompt_async" {
+			atomic.AddInt32(&promptHits2, 1)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv2.Close()
+
+	port1 := strings.TrimPrefix(srv1.URL, "http://127.0.0.1:")
+	port2 := strings.TrimPrefix(srv2.URL, "http://127.0.0.1:")
+	var useSecond int32
+	restore := setDiscoverPortsImplForTests(func() map[string]string {
+		if atomic.LoadInt32(&useSecond) == 1 {
+			return map[string]string{dir: port2}
+		}
+		return map[string]string{dir: port1}
+	})
+	defer restore()
+	resetPortCacheForTests()
+	resetSessionPortAffinityForTests()
+	defer resetSessionPortAffinityForTests()
+
+	database := newTestDBWithSession(t, sid, dir)
+	a := New(database, nil)
+
+	var buf bytes.Buffer
+	if err := a.ProxyEvents(context.Background(), sid, &buf, nil); err != nil {
+		t.Fatalf("ProxyEvents: %v", err)
+	}
+	if got := atomic.LoadInt32(&eventHits1); got != 1 {
+		t.Fatalf("event stream hit port1 %d times, want 1", got)
+	}
+
+	atomic.StoreInt32(&useSecond, 1)
+	InvalidateOpenCodePortCache()
+	if err := a.SendMessage(context.Background(), platforms.SendMessageRequest{
+		SessionID: sid,
+		Message:   "hello",
+	}); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	if got := atomic.LoadInt32(&promptHits1); got != 1 {
+		t.Fatalf("prompt hits on pinned port1 = %d, want 1", got)
+	}
+	if got := atomic.LoadInt32(&promptHits2); got != 0 {
+		t.Fatalf("prompt hits on newly discovered port2 = %d, want 0", got)
+	}
+}
+
+func TestProxyEventsRejectsNonSSEWithoutPinningPort(t *testing.T) {
+	const sid = "sess-events-non-sse"
+	const dir = "/tmp/proj-events-non-sse"
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/event" {
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+	restore := setDiscoverPortsImplForTests(func() map[string]string {
+		return map[string]string{dir: port}
+	})
+	defer restore()
+	resetPortCacheForTests()
+	resetSessionPortAffinityForTests()
+	defer resetSessionPortAffinityForTests()
+
+	database := newTestDBWithSession(t, sid, dir)
+	a := New(database, nil)
+
+	var buf bytes.Buffer
+	if err := a.ProxyEvents(context.Background(), sid, &buf, nil); err == nil {
+		t.Fatal("ProxyEvents returned nil for non-SSE upstream response")
+	}
+	if got := preferredSessionPort(sid); got != "" {
+		t.Fatalf("preferredSessionPort after rejected SSE = %q, want empty", got)
+	}
+}
+
+func TestSendMessageRetriesAfterPinnedPortTransportFailure(t *testing.T) {
+	const sid = "sess-send-retry"
+	const dir = "/tmp/proj-send-retry"
+
+	stale := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	stalePort := strings.TrimPrefix(stale.URL, "http://127.0.0.1:")
+	stale.Close()
+
+	var promptHits int32
+	live := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/session/"+sid+"/prompt_async" {
+			atomic.AddInt32(&promptHits, 1)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer live.Close()
+	livePort := strings.TrimPrefix(live.URL, "http://127.0.0.1:")
+
+	var calls int32
+	restore := setDiscoverPortsImplForTests(func() map[string]string {
+		if atomic.AddInt32(&calls, 1) == 1 {
+			return map[string]string{dir: stalePort}
+		}
+		return map[string]string{dir: livePort}
+	})
+	defer restore()
+	resetPortCacheForTests()
+	resetSessionPortAffinityForTests()
+	defer resetSessionPortAffinityForTests()
+
+	database := newTestDBWithSession(t, sid, dir)
+	a := New(database, nil)
+
+	if err := a.SendMessage(context.Background(), platforms.SendMessageRequest{
+		SessionID: sid,
+		Message:   "hello",
+	}); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	if got := atomic.LoadInt32(&promptHits); got != 1 {
+		t.Fatalf("prompt hits on rediscovered port = %d, want 1", got)
+	}
+	if got := preferredSessionPort(sid); got != livePort {
+		t.Fatalf("preferredSessionPort after retry = %q, want %q", got, livePort)
+	}
+}
+
+func TestCreateSessionPinsReturnedSessionPort(t *testing.T) {
+	const sid = "sess-created-port-affinity"
+	const dir = "/tmp/proj-created-port-affinity"
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/session" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"` + sid + `"}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+	restore := setDiscoverPortsImplForTests(func() map[string]string {
+		return map[string]string{dir: port}
+	})
+	defer restore()
+	resetPortCacheForTests()
+	resetSessionPortAffinityForTests()
+	defer resetSessionPortAffinityForTests()
+
+	a := New(nil, nil)
+	resp, err := a.CreateSession(context.Background(), platforms.CreateSessionRequest{Directory: dir})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	if resp.ID != sid {
+		t.Fatalf("CreateSession ID = %q, want %q", resp.ID, sid)
+	}
+	if got := preferredSessionPort(sid); got != port {
+		t.Fatalf("preferredSessionPort = %q, want %q", got, port)
+	}
+}
+
 func TestParseOpenCodeModelRef(t *testing.T) {
 	tests := []struct {
 		name         string

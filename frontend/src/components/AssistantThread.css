@@ -1061,6 +1061,53 @@
   font-style: italic;
 }
 
+.oc-session-warning-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 16px 8px;
+  padding: 8px 10px 8px 12px;
+  font-size: 12px;
+  color: var(--warning, #fab387);
+  background: color-mix(in srgb, var(--warning, #fab387) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning, #fab387) 30%, transparent);
+  border-radius: 4px;
+}
+
+.oc-session-warning-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.oc-session-warning-body strong {
+  font-weight: 600;
+}
+
+.oc-session-warning-detail {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.oc-session-warning-dismiss {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.oc-session-warning-dismiss:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+
 /* SSE status indicator */
 .oc-sse-indicator {
   text-align: center;

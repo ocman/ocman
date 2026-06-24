@@ -49,7 +49,7 @@ func (a *Adapter) resolvePortCtx(ctx context.Context, sessionID string) (port st
 	if err != nil {
 		return "", nil, platforms.ErrNotFound
 	}
-	port = discoverOpenCodePortCtx(ctx, s.Directory)
+	port = resolveOpenCodePortForSessionCtx(ctx, sessionID, s.Directory)
 	if port == "" {
 		return "", s, fmt.Errorf("no running OpenCode instance for session %s: %w", sessionID, platforms.ErrPlatformUnreachable)
 	}
@@ -187,7 +187,7 @@ func (a *Adapter) SessionModels(ctx context.Context, sessionID string) (*platfor
 
 	var providers OpenCodeProvidersResponse
 	hasProviders := false
-	if port := discoverOpenCodePortCtx(ctx, session.Directory); port != "" {
+	if port := resolveOpenCodePortForSessionCtx(ctx, sessionID, session.Directory); port != "" {
 		providersPhase := srvtiming.Begin(ctx, "http_provider")
 		providers, hasProviders = fetchOpenCodeProviders(port)
 		providersPhase.EndWithDesc("GET /provider")
@@ -353,7 +353,25 @@ func (a *Adapter) SendMessage(ctx context.Context, req platforms.SendMessageRequ
 	if err != nil {
 		return fmt.Errorf("marshal request: %w", err)
 	}
-	return postJSON(ctx, port, fmt.Sprintf("/session/%s/prompt_async", req.SessionID), payload)
+	path := fmt.Sprintf("/session/%s/prompt_async", req.SessionID)
+	if err := postJSON(ctx, port, path, payload); err != nil {
+		var upstream *platforms.UpstreamError
+		if errors.As(err, &upstream) {
+			return err
+		}
+		forgetSessionPort(req.SessionID, port)
+		InvalidateOpenCodePortCache()
+		retryPort, _, retryResolveErr := a.resolvePortCtx(ctx, req.SessionID)
+		if retryResolveErr == nil && retryPort != "" && retryPort != port {
+			if retryErr := postJSON(ctx, retryPort, path, payload); retryErr == nil {
+				rememberSessionPort(req.SessionID, retryPort)
+				return nil
+			}
+		}
+		return err
+	}
+	rememberSessionPort(req.SessionID, port)
+	return nil
 }
 
 // RunShell executes a raw shell command via POST /session/{id}/shell,
@@ -559,6 +577,7 @@ func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSession
 			// Don't fail the entire creation if title setting fails.
 		}
 	}
+	rememberSessionPort(parsed.ID, port)
 
 	return &platforms.CreateSessionResponse{ID: parsed.ID}, nil
 }
@@ -599,9 +618,19 @@ func (a *Adapter) ProxyEvents(ctx context.Context, sessionID string, w io.Writer
 	sseClient := &http.Client{Transport: http.DefaultTransport}
 	resp, err := sseClient.Do(httpReq)
 	if err != nil {
+		forgetSessionPort(sessionID, port)
 		return fmt.Errorf("opencode events connect: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		forgetSessionPort(sessionID, port)
+		return fmt.Errorf("opencode events connect: upstream HTTP %d", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/event-stream") {
+		forgetSessionPort(sessionID, port)
+		return fmt.Errorf("opencode events connect: unexpected content-type %q", ct)
+	}
+	rememberSessionPort(sessionID, port)
 
 	// OpenCode sends a server.heartbeat event every 10 seconds, so
 	// under normal operation the read below unblocks well within this

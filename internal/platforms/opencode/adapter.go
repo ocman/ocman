@@ -276,6 +276,7 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 		ContextTokenCount: contextTokens,
 		DefaultAgent:      defaults.Agent, // composer-agent (OpenCode role), unchanged name
 		DefaultModel:      defaults.Model,
+		Warnings:          sessionWarningsForDirectory(session.Directory),
 	}, nil
 }
 

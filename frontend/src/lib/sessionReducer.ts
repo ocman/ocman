@@ -34,6 +34,7 @@ import {
 export type SessionMetadata = SessionDetail['session'] & {
   defaultAgent?: string;
   defaultModel?: string;
+  warnings?: SessionDetail['warnings'];
 };
 
 /**

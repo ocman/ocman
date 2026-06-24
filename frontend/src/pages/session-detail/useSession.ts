@@ -170,6 +170,7 @@ function viewFromDetail(id: string, detail: SessionDetail): SessionView {
       contextTokenCount: detail.session.contextTokenCount ?? detail.contextTokenCount,
       defaultAgent: detail.defaultAgent,
       defaultModel: detail.defaultModel,
+      warnings: detail.warnings ?? [],
     },
     messages: detail.messages ?? [],
     parts: detail.parts ?? [],
@@ -206,6 +207,7 @@ export function useSession(
           contextTokenCount: cached.session.contextTokenCount ?? cached.contextTokenCount,
           defaultAgent: cached.defaultAgent,
           defaultModel: cached.defaultModel,
+          warnings: cached.warnings ?? [],
         },
         messages: cached.messages,
         parts: cached.parts,
@@ -467,6 +469,7 @@ export function useSession(
           contextTokenCount: detail.contextTokenCount,
           defaultAgent: detail.defaultAgent,
           defaultModel: detail.defaultModel,
+          warnings: detail.warnings,
         });
         // Once the load lands, drop out of `loading` if SSE hasn't
         // yet flipped to `live`.

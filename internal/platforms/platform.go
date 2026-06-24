@@ -38,13 +38,22 @@ type ID string
 // FR-14. Every adapter must return the same shape — handlers trust the
 // typed fields rather than extracting from a map.
 type SessionDetail struct {
-	Session           *db.Session  `json:"session"`
-	Messages          []db.Message `json:"messages"`
-	Parts             []db.Part    `json:"parts"`
-	TotalMessages     int          `json:"totalMessages"`
-	ContextTokenCount int64        `json:"contextTokenCount,omitempty"`
-	DefaultAgent      string       `json:"defaultAgent,omitempty"` // composer-agent (OpenCode "build"/"plan"/...) default
-	DefaultModel      string       `json:"defaultModel,omitempty"`
+	Session           *db.Session      `json:"session"`
+	Messages          []db.Message     `json:"messages"`
+	Parts             []db.Part        `json:"parts"`
+	TotalMessages     int              `json:"totalMessages"`
+	ContextTokenCount int64            `json:"contextTokenCount,omitempty"`
+	DefaultAgent      string           `json:"defaultAgent,omitempty"` // composer-agent (OpenCode "build"/"plan"/...) default
+	DefaultModel      string           `json:"defaultModel,omitempty"`
+	Warnings          []SessionWarning `json:"warnings,omitempty"`
+}
+
+// SessionWarning carries a non-blocking, platform-normalized condition that
+// may affect the active session but should not prevent normal use.
+type SessionWarning struct {
+	Kind    string   `json:"kind"`
+	Message string   `json:"message"`
+	Ports   []string `json:"ports,omitempty"`
 }
 
 // Capabilities describes what a platform supports. The frontend uses

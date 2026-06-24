@@ -57,6 +57,7 @@ export type {
   AuthMe,
   SystemStats,
   SessionNotice,
+  SessionWarning,
   ShareLink,
   SharedConversation,
   Loop,

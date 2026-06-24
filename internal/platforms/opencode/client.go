@@ -324,7 +324,7 @@ func (a *Adapter) fetchSessionFromOpenCodeCtx(ctx context.Context, sessionID str
 		return nil, false
 	}
 
-	port := discoverOpenCodePortCtx(ctx, dbSession.Directory)
+	port := resolveOpenCodePortForSessionCtx(ctx, sessionID, dbSession.Directory)
 	if port == "" {
 		return nil, false
 	}
@@ -351,6 +351,7 @@ func (a *Adapter) fetchSessionFromOpenCodeCtx(ctx context.Context, sessionID str
 	parallelPhase.EndWithDesc("wall-clock for both fetches")
 
 	if sessionErr != nil || messagesErr != nil || ocSession == nil {
+		forgetSessionPort(sessionID, port)
 		return nil, false
 	}
 
@@ -429,5 +430,6 @@ func (a *Adapter) fetchSessionFromOpenCodeCtx(ctx context.Context, sessionID str
 		ContextTokenCount: int64(stats.contextTokenCount),
 		DefaultAgent:      defaults.Agent,
 		DefaultModel:      defaults.Model,
+		Warnings:          sessionWarningsForDirectory(dbSession.Directory),
 	}, true
 }
