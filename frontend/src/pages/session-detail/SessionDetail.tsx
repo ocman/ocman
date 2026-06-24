@@ -112,6 +112,15 @@ const TRIMMED_RETAINED_MESSAGES = 150;
 const THREAD_BOUNDARY_AUTO_RECOVERY_COOLDOWN_MS = 5_000;
 const MESSAGE_BOOKMARKS_STORAGE_PREFIX = 'ocman:message-bookmarks:';
 
+function messageBookmarkStorage(): Storage | undefined {
+  if (typeof window === 'undefined') return undefined;
+  try {
+    return window.localStorage ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 interface MessageBookmarkState {
   sessionId: string | undefined;
   bookmarks: MessageBookmark[];
@@ -177,9 +186,10 @@ function buildMessageBookmarks(
 }
 
 function loadMessageBookmarks(sessionId: string | undefined): MessageBookmark[] {
-  if (!sessionId || typeof window === 'undefined') return [];
+  if (!sessionId) return [];
   try {
-    const storage = window.localStorage;
+    const storage = messageBookmarkStorage();
+    if (!storage) return [];
     if (typeof storage.getItem !== 'function') return [];
     const raw = storage.getItem(`${MESSAGE_BOOKMARKS_STORAGE_PREFIX}${sessionId}`);
     if (!raw) return [];
@@ -194,20 +204,25 @@ function loadMessageBookmarks(sessionId: string | undefined): MessageBookmark[] 
 }
 
 function saveMessageBookmarks(sessionId: string | undefined, bookmarks: MessageBookmark[]) {
-  if (!sessionId || typeof window === 'undefined') return;
-  const storage = window.localStorage;
-  const key = `${MESSAGE_BOOKMARKS_STORAGE_PREFIX}${sessionId}`;
-  if (bookmarks.length === 0) {
-    if (typeof storage.removeItem === 'function') storage.removeItem(key);
+  if (!sessionId) return;
+  try {
+    const storage = messageBookmarkStorage();
+    if (!storage) return;
+    const key = `${MESSAGE_BOOKMARKS_STORAGE_PREFIX}${sessionId}`;
+    if (bookmarks.length === 0) {
+      if (typeof storage.removeItem === 'function') storage.removeItem(key);
+      return;
+    }
+    if (typeof storage.setItem === 'function') storage.setItem(key, JSON.stringify(bookmarks));
+  } catch {
     return;
   }
-  if (typeof storage.setItem === 'function') storage.setItem(key, JSON.stringify(bookmarks));
 }
 
 function loadAllMessageBookmarks(activeSessionId: string | undefined, activeBookmarks: MessageBookmark[], storageTick: number) {
   void storageTick;
-  if (typeof window === 'undefined') return activeBookmarks;
-  const storage = window.localStorage;
+  const storage = messageBookmarkStorage();
+  if (!storage) return activeBookmarks;
   const bookmarks: MessageBookmark[] = [];
   try {
     if (typeof storage.length !== 'number' || typeof storage.key !== 'function') return activeBookmarks;
