@@ -122,8 +122,10 @@ type ApiStore = {
   rejectQuestion: (sessionId: string, requestId: string) => Promise<void>;
   getAutoApprove: (sessionId: string) => Promise<{ enabled: boolean; overridden: boolean }>;
   setAutoApprove: (sessionId: string, enabled: boolean) => Promise<void>;
-  getPromptSections: () => Promise<Array<{ title: string; content: string }>>;
-  setPromptSectionsApi: (sections: Array<{ title: string; content: string }>) => Promise<void>;
+  getPromptSections: () => Promise<Array<{ title: string; content: string; enabled?: boolean }>>;
+  setPromptSectionsApi: (
+    sections: Array<{ title: string; content: string; enabled?: boolean }>,
+  ) => Promise<void>;
   getJudgeDelay: () => Promise<number>;
   setJudgeDelayApi: (delayMs: number) => Promise<void>;
   abortSession: (sessionId: string) => Promise<void>;

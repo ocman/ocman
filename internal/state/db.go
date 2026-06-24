@@ -250,6 +250,9 @@ func (d *DB) ListApprovedPermissions(platform, sessionID string) ([]ApprovedPerm
 type PromptSection struct {
 	Title   string `json:"title"`
 	Content string `json:"content"`
+	// Enabled is a pointer so legacy rows (persisted before this field
+	// existed) unmarshal to nil and are treated as enabled.
+	Enabled *bool `json:"enabled,omitempty"`
 }
 
 // GetPromptSections returns the persisted judge prompt sections, or an
@@ -339,7 +342,7 @@ type ChildSession struct {
 	TmuxTarget      string `json:"tmuxTarget,omitempty"`   // tmux session or session:window
 	Status          string `json:"status"`                 // starting, running, completed, error, cancelled
 	CreatedAt       int64  `json:"createdAt"`
-	CompletedAt     int64  `json:"completedAt"` // 0 until terminal state
+	CompletedAt     int64  `json:"completedAt"`       // 0 until terminal state
 	Summary         string `json:"summary,omitempty"` // populated on completion
 	LoopID          string `json:"loopID,omitempty"`  // empty for one-shot children; set when spawned by a loop (v15)
 }

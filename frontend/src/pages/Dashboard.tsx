@@ -297,15 +297,26 @@ function PromptSectionEditor({
   onChange,
   onRemove,
 }: {
-  section: { title: string; content: string };
-  onChange: (s: { title: string; content: string }) => void;
+  section: { title: string; content: string; enabled?: boolean };
+  onChange: (s: { title: string; content: string; enabled?: boolean }) => void;
   onRemove: () => void;
 }) {
   // Track textarea height so it grows with content.
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Missing `enabled` (legacy rows) is treated as enabled.
+  const enabled = section.enabled !== false;
   return (
     <div className="settings-prompt-section">
       <div className="settings-prompt-section-header">
+        <label className="settings-prompt-section-toggle">
+          <input
+            type="checkbox"
+            checked={enabled}
+            aria-label="Enable rule"
+            onChange={(e) => onChange({ ...section, enabled: e.target.checked })}
+          />
+          <span aria-hidden="true" />
+        </label>
         <input
           type="text"
           className="settings-prompt-section-title"

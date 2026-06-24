@@ -313,6 +313,47 @@
   align-items: center;
   gap: 8px;
 }
+.settings-prompt-section-toggle {
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.settings-prompt-section-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.settings-prompt-section-toggle span {
+  display: block;
+  width: 30px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  position: relative;
+}
+.settings-prompt-section-toggle span::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: transform 120ms ease, background 120ms ease;
+}
+.settings-prompt-section-toggle input:checked + span {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  border-color: var(--accent);
+}
+.settings-prompt-section-toggle input:checked + span::after {
+  transform: translateX(14px);
+  background: var(--accent);
+}
+.settings-prompt-section-toggle input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .settings-prompt-section-title {
   flex: 1;
   background: transparent;

@@ -718,9 +718,13 @@ export const api = {
     ),
 
   getPromptSections: () =>
-    fetchJSON<Array<{ title: string; content: string }>>('/api/settings/prompt-sections'),
+    fetchJSON<Array<{ title: string; content: string; enabled?: boolean }>>(
+      '/api/settings/prompt-sections',
+    ),
 
-  setPromptSections: (sections: Array<{ title: string; content: string }>): Promise<void> =>
+  setPromptSections: (
+    sections: Array<{ title: string; content: string; enabled?: boolean }>,
+  ): Promise<void> =>
     postJSON<void>('/api/settings/prompt-sections', sections, { parseJSON: false }),
 
   getJudgeDelay: () =>

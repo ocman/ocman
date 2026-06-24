@@ -636,6 +636,12 @@ func TestJudgePromptCustomSections(t *testing.T) {
 	if !strings.Contains(noTitle, "## Additional rule") {
 		t.Errorf("blank title should fall back to 'Additional rule'")
 	}
+
+	disabled := false
+	disabledRule := judgePrompt("git push", nil, nil, []PromptSection{{Title: "Disabled rule", Content: "UNIQUE_DISABLED_RULE_PAYLOAD", Enabled: &disabled}})
+	if strings.Contains(disabledRule, "Disabled rule") || strings.Contains(disabledRule, "UNIQUE_DISABLED_RULE_PAYLOAD") {
+		t.Errorf("disabled custom section should not be included in prompt")
+	}
 }
 
 // TestJudgePromptDistinguishesCommands is the regression for the
@@ -1024,10 +1030,10 @@ func TestCommandHash(t *testing.T) {
 	cases := []map[string]any{
 		nil,
 		{},
-		{"filePath": "/etc/passwd"},          // Edit tool, no "command"
-		{"command": ""},                      // empty command string
-		{"command": 42},                      // non-string command
-		{"command": nil},                     // nil command
+		{"filePath": "/etc/passwd"}, // Edit tool, no "command"
+		{"command": ""},             // empty command string
+		{"command": 42},             // non-string command
+		{"command": nil},            // nil command
 	}
 	for i, m := range cases {
 		if got := commandHash(m); got != "" {

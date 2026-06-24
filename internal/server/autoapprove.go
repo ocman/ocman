@@ -93,9 +93,13 @@ or
 // PromptSection is a user-defined extra section appended to the judge prompt.
 // Sent from the frontend settings page; each section is rendered as
 // "## <Title>\n<Content>" below the built-in assessment criteria.
+//
+// Enabled is a pointer so a missing JSON field (legacy rows persisted
+// before this field existed) reads as nil and is treated as enabled.
 type PromptSection struct {
 	Title   string `json:"title"`
 	Content string `json:"content"`
+	Enabled *bool  `json:"enabled,omitempty"`
 }
 
 // judgePrompt formats the full prompt for the given permission request.
@@ -127,6 +131,11 @@ func judgePrompt(permission string, patterns []string, metadata map[string]any, 
 	var b strings.Builder
 	b.WriteString(base)
 	for _, s := range customSections {
+		// nil Enabled (legacy rows) counts as enabled; only an
+		// explicit false disables the rule.
+		if s.Enabled != nil && !*s.Enabled {
+			continue
+		}
 		title := strings.TrimSpace(s.Title)
 		content := strings.TrimSpace(s.Content)
 		if title == "" && content == "" {
@@ -554,7 +563,6 @@ func extractTextFromParts(msg map[string]interface{}) string {
 	}
 	return b.String()
 }
-
 
 // writeSSEEvent writes a single named SSE event to w and calls flush if
 // non-nil. This is used by backgroundAutoApprove to push synthetic
@@ -1624,6 +1632,7 @@ func (s *Server) backgroundAutoApprove(
 				customSections = append(customSections, PromptSection{
 					Title:   ps.Title,
 					Content: ps.Content,
+					Enabled: ps.Enabled,
 				})
 			}
 		}

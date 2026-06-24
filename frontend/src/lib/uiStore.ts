@@ -95,8 +95,10 @@ type UiStore = {
   // rendered as "## <title>\n<content>" and injected after the built-in
   // assessment criteria, allowing users to extend the default ruleset
   // (e.g. "allow commits to feature branches").
-  promptSections: Array<{ title: string; content: string }>;
-  setPromptSections: (sections: Array<{ title: string; content: string }>) => void;
+  promptSections: Array<{ title: string; content: string; enabled?: boolean }>;
+  setPromptSections: (
+    sections: Array<{ title: string; content: string; enabled?: boolean }>,
+  ) => void;
 
   // Ordered list of currently-open views in the right-hand panel.
   // Empty = panel is collapsed (strip-only). One entry = single
