@@ -1133,7 +1133,14 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
       { deltas: ['1 ', '2 ', '3 ', '4 ', '5 '], intervalMs: 60 },
       { deltas: ['6 7 '], intervalMs: 60 },
     ];
-    let phaseIndex = 0;
+    // Each EventSource that targets session A is assigned the next phase
+    // synchronously at construction. Selecting the phase from a per-
+    // connection counter (rather than advancing a shared index when the
+    // previous connection's interval drains) removes the wall-clock race
+    // that intermittently left the second connection reading the wrong
+    // phase on slower CI workers — phase 2 ("6 7") then never streamed and
+    // the text stayed stuck at "1 2 3 4 5".
+    let connectionCount = 0;
 
     class GapStreamingEventSource {
       static CONNECTING = 0;
@@ -1148,10 +1155,17 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
       listeners: Record<string, Array<(evt: Event) => void>> = {};
       private timer: number | null = null;
       private isATarget: boolean;
+      private phaseIndex: number;
 
       constructor(url: string) {
         this.url = url;
         this.isATarget = url.includes(`/api/session/${sessionAId}/events`);
+        // Claim a phase synchronously, before any timer fires, so the phase
+        // a connection streams can never depend on another connection's
+        // teardown timing. Clamp to the last phase for any extra reconnects.
+        this.phaseIndex = this.isATarget
+          ? Math.min(connectionCount++, phases.length - 1)
+          : 0;
 
         // Start emitting after the page has had a chance to settle the
         // mount/revisit REST fetch. The regression this test guards is the
@@ -1164,26 +1178,14 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
           this.onopen?.(new Event('open'));
           if (!this.isATarget) return;
 
-          const phase = phases[phaseIndex] ?? null;
+          const phase = phases[this.phaseIndex] ?? null;
           if (!phase) return;
-          const isFirstPhase = phaseIndex === 0;
+          const isFirstPhase = this.phaseIndex === 0;
 
-          // Advance the shared phaseIndex exactly once per EventSource
-          // instance. A dedicated flag (rather than incrementing inline at
-          // the delta-send site) prevents a double-advance if the browser
-          // dispatches one more queued interval tick after we clear the
-          // timer — the bug that intermittently left the second connection
-          // reading phases[2] (undefined), so phase 2 ("6 7") never
-          // streamed and the text stayed stuck at "1 2 3 4 5".
-          let advanced = false;
           const finishPhase = () => {
             if (this.timer !== null) {
               window.clearInterval(this.timer);
               this.timer = null;
-            }
-            if (!advanced) {
-              advanced = true;
-              phaseIndex += 1;
             }
           };
 
@@ -1232,9 +1234,9 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
             });
             this.onmessage?.(new MessageEvent('message', { data: delta }));
 
-            // Last delta sent — advance the phase now so the next
-            // connection (after the user returns) streams the
-            // continuation, and stop this interval.
+            // Last delta sent — stop this interval. The next connection
+            // (after the user returns) already claimed its phase at
+            // construction, so nothing to advance here.
             if (i >= phase.deltas.length) {
               finishPhase();
             }
