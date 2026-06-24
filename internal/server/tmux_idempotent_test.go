@@ -355,3 +355,53 @@ func TestRestartOpencodeInTmuxWith_RejectsUnmanagedWindow(t *testing.T) {
 		t.Fatalf("unexpected kill calls: window=%v session=%v", f.killWindowCalls, f.killSessionCalls)
 	}
 }
+
+// When the opencode pane is the session's only window, the whole
+// session is killed and a fresh one launched (kill-window would also
+// kill the session, so this avoids a transient empty session).
+func TestRestartOpencodeInTmuxWith_SingleWindowKillsSession(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, "src/repo")
+	name := tmuxSessionNameForPath(dir)
+
+	f := &fakeTmuxRunner{
+		existing: []tmuxSession{{Name: name, Windows: 1}},
+		windows:  map[string][]tmuxWindow{name: {{Name: "oc", Path: dir, Command: "opencode"}}},
+	}
+
+	if _, err := restartOpencodeInTmuxWith(f.toRunner(), dir); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(f.killSessionCalls) != 1 || f.killSessionCalls[0] != name {
+		t.Errorf("killSessionCalls = %v, want [%s]", f.killSessionCalls, name)
+	}
+	if len(f.killWindowCalls) != 0 {
+		t.Errorf("killWindowCalls = %v, want none (single-window path kills the session)", f.killWindowCalls)
+	}
+}
+
+// A pane whose foreground process isn't "opencode" but whose tmux
+// start command launched opencode (e.g. wrapped in a shell) still
+// counts as a managed pane.
+func TestRestartOpencodeInTmuxWith_MatchesViaStartCommand(t *testing.T) {
+	dir := "/tmp/repo"
+	f := &fakeTmuxRunner{
+		existing: []tmuxSession{{Name: "repo", Windows: 2}},
+		windows: map[string][]tmuxWindow{"repo": {
+			{Name: "editor", Path: dir, Command: "zsh"},
+			{Name: "oc", Path: dir, Command: "node", StartCommand: "opencode --port 0"},
+		}},
+	}
+
+	target, err := restartOpencodeInTmuxWith(f.toRunner(), dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if target != "repo:oc" {
+		t.Errorf("target = %q, want repo:oc", target)
+	}
+	if len(f.killWindowCalls) != 1 || f.killWindowCalls[0] != "repo:oc" {
+		t.Errorf("killWindowCalls = %v, want [repo:oc]", f.killWindowCalls)
+	}
+}

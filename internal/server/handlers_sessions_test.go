@@ -701,3 +701,19 @@ func TestHandleSessionAutoApproveSet_DisablingDoesNotResume(t *testing.T) {
 		t.Errorf("ListPermissions should not be called when disabling; got %d calls", listCalls)
 	}
 }
+
+// The restart-opencode endpoint is a localhost-only control surface
+// (it kills and relaunches tmux processes). Non-loopback callers must
+// be rejected before any platform/tmux work happens. httptest sets a
+// non-loopback RemoteAddr (192.0.2.1) by default.
+func TestHandleSessionRestartOpencode_RejectsNonLoopback(t *testing.T) {
+	srv, _ := newSessionsTestServer(t)
+
+	req := httptest.NewRequest("POST", "/api/session/s1/restart-opencode", nil)
+	rr := httptest.NewRecorder()
+	srv.handleSessionRestartOpencode(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rr.Code)
+	}
+}
