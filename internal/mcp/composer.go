@@ -35,6 +35,12 @@ type ContextOptions struct {
 	GitDiffStat    bool
 	ProjectMeta    bool
 	MaxChars       int
+
+	// DirOverride, when non-empty, replaces the session's directory for the
+	// project-metadata line and the git branch/diff commands. Used by
+	// split_to_worktree so the prompt references the new worktree directory
+	// rather than the parent session's checkout. Defaults to "" (no override).
+	DirOverride string
 }
 
 // DefaultContextOptions returns a ContextOptions with all sources enabled
@@ -109,21 +115,30 @@ func (c *PromptComposer) Compose(ctx context.Context, sessionID, intent string, 
 
 	// --- Collect context sources ---
 
+	// Directory to report and run git against; may be overridden so the
+	// prompt references a freshly-created worktree instead of the parent.
+	dir := session.Directory
+	if opts.DirOverride != "" {
+		dir = opts.DirOverride
+	}
+
 	var projectMeta string
 	if opts.ProjectMeta {
-		projectMeta = buildProjectMeta(session)
+		s := *session
+		s.Directory = dir
+		projectMeta = buildProjectMeta(&s)
 	}
 
 	var gitBranch string
-	if opts.GitBranch && session.Directory != "" {
-		if branch, err := c.runGit(ctx, session.Directory, "branch", "--show-current"); err == nil {
+	if opts.GitBranch && dir != "" {
+		if branch, err := c.runGit(ctx, dir, "branch", "--show-current"); err == nil {
 			gitBranch = branch
 		}
 	}
 
 	var gitDiffStat string
-	if opts.GitDiffStat && session.Directory != "" {
-		if diff, err := c.runGit(ctx, session.Directory, "diff", "--stat"); err == nil {
+	if opts.GitDiffStat && dir != "" {
+		if diff, err := c.runGit(ctx, dir, "diff", "--stat"); err == nil {
 			gitDiffStat = diff
 		}
 	}

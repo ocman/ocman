@@ -99,6 +99,39 @@ func TestCompose_GitBranchAndDiff(t *testing.T) {
 	}
 }
 
+func TestCompose_DirOverride(t *testing.T) {
+	reader := &fakeSessionReader{
+		session: &db.Session{ID: "s1", Directory: "/repo"},
+	}
+	override := "/repo/.worktrees/x"
+
+	var gitDirs []string
+	runner := func(_ context.Context, dir string, _ ...string) (string, error) {
+		gitDirs = append(gitDirs, dir)
+		return "", nil
+	}
+	c := NewPromptComposer(reader).withGitRunner(runner)
+
+	opts := DefaultContextOptions()
+	opts.DirOverride = override
+	prompt, err := c.Compose(context.Background(), "s1", "intent", opts)
+	if err != nil {
+		t.Fatalf("Compose: %v", err)
+	}
+	if !strings.Contains(prompt, override) {
+		t.Errorf("prompt missing override dir: %q", prompt)
+	}
+	// The Directory line must reference the override, not the parent /repo.
+	if strings.Contains(prompt, "**Directory**: `/repo`") {
+		t.Errorf("prompt still references parent dir: %q", prompt)
+	}
+	for _, d := range gitDirs {
+		if d != override {
+			t.Errorf("git ran against %q, want override %q", d, override)
+		}
+	}
+}
+
 func TestCompose_RecentMessages(t *testing.T) {
 	reader := &fakeSessionReader{
 		session: &db.Session{ID: "s1", Directory: "/repo"},

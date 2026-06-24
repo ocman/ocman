@@ -152,12 +152,6 @@ func (t *splitTools) handleSplitToWorktree(ctx context.Context, req mcplib.CallT
 
 	opts := parseContextOptions(req)
 
-	// Compose the enriched prompt.
-	prompt, err := t.composer.Compose(ctx, sessionID, intent, opts)
-	if err != nil {
-		return mcplib.NewToolResultError(fmt.Sprintf("composing prompt: %v", err)), nil
-	}
-
 	// Look up the parent session's directory to find the repo root.
 	session, err := t.composer.db.GetSession(sessionID)
 	if err != nil {
@@ -172,6 +166,16 @@ func (t *splitTools) handleSplitToWorktree(ctx context.Context, req mcplib.CallT
 	// If no base_ref provided, resolve the default.
 	if baseRef == "" {
 		baseRef = worktree.ResolveBaseRef(ctx, repoRoot)
+	}
+
+	// Point the prompt at the worktree dir that's about to be created, not
+	// the parent checkout.
+	opts.DirOverride = worktree.PathFor(repoRoot, branch)
+
+	// Compose the enriched prompt.
+	prompt, err := t.composer.Compose(ctx, sessionID, intent, opts)
+	if err != nil {
+		return mcplib.NewToolResultError(fmt.Sprintf("composing prompt: %v", err)), nil
 	}
 
 	childID, wtResult, err := t.launcher.LaunchWithWorktree(
