@@ -6,6 +6,7 @@ import { useHotkeys } from 'react-hotkeys-hook';
 import { DashboardLayout, SessionsTab, ProjectsTab, StatsTab, UsageTab, SettingsTab } from './pages/Dashboard';
 import { ProjectDetail } from './pages/ProjectDetail';
 import { WorktreesView } from './pages/WorktreesView';
+import { Loops } from './pages/Loops';
 import { SessionDetail } from './pages/session-detail';
 import { SharedConversationView } from './pages/SharedConversationView';
 import { Login } from './pages/Login';
@@ -407,9 +408,11 @@ function AuthenticatedApp() {
                   <Route path="/projects" element={<ProjectsTab />} />
                   <Route path="/stats" element={<StatsTab />} />
                   <Route path="/usage" element={<UsageTab />} />
+                  <Route path="/loops" element={<Loops />} />
                   <Route path="/settings" element={<SettingsTab />} />
                 </Route>
                 <Route path="/project/:dir/worktrees" element={<WorktreesView />} />
+                <Route path="/project/:dir/loops" element={<Loops />} />
                 <Route path="/project/:dir" element={<ProjectDetail />} />
                 <Route path="/session/:id" element={<SessionDetail />} />
               </Routes>

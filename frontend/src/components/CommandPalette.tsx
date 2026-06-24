@@ -4,7 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import Fuse from 'fuse.js';
 import { useApiStore } from '../lib/apiStore';
 import { useUiStore } from '../lib/uiStore';
-import { useWorktreeSessions } from '../lib/useCapabilities';
+import { useWorktreeSessions, useAgentLoops } from '../lib/useCapabilities';
 import { cleanTitle, relativeTime, shortPath } from '../lib/format';
 import type { Session, Project } from '../lib/api';
 import { useTmux } from '../lib/useTmux';
@@ -45,6 +45,14 @@ const WORKTREE_COMMAND: CommandItem = {
   id: 'cmd.worktree',
   label: 'wt',
   description: 'New worktree session',
+};
+
+// `cmd.loops` is the /loop palette entry. Capability-gated on agentLoops.
+const LOOPS_COMMAND: CommandItem = {
+  kind: 'command',
+  id: 'cmd.loops',
+  label: 'loops',
+  description: 'View agent loops',
 };
 
 const SCOPED_COMMANDS: ScopedItem[] = [
@@ -99,6 +107,7 @@ export function CommandPalette() {
   const refreshCachedSessions = useApiStore((s) => s.refreshCachedSessions);
   const tmux = useTmux();
   const worktreeSessionsAllowed = useWorktreeSessions();
+  const agentLoopsAllowed = useAgentLoops();
   const openWorktreeForm = useUiStore((s) => s.openWorktreeForm);
   const {
     paletteOpen,
@@ -120,10 +129,12 @@ export function CommandPalette() {
 
   // Effective static commands list. WORKTREE_COMMAND only appears when
   // the host supports the /wt feature (capability-gated; AD-7).
-  const staticCommands = useMemo(
-    () => (worktreeSessionsAllowed ? [...STATIC_COMMANDS, WORKTREE_COMMAND] : STATIC_COMMANDS),
-    [worktreeSessionsAllowed],
-  );
+  const staticCommands = useMemo(() => {
+    const cmds = [...STATIC_COMMANDS];
+    if (worktreeSessionsAllowed) cmds.push(WORKTREE_COMMAND);
+    if (agentLoopsAllowed) cmds.push(LOOPS_COMMAND);
+    return cmds;
+  }, [worktreeSessionsAllowed, agentLoopsAllowed]);
 
   // Best-effort project inference for `cmd.worktree` so invoking /wt
   // from a project page or session page pre-fills the project field.
@@ -340,6 +351,8 @@ export function CommandPalette() {
         navigate('/stats');
       } else if (item.id === 'cmd.usage') {
         navigate('/usage');
+      } else if (item.id === 'cmd.loops') {
+        navigate('/loops');
       }
     }
   }

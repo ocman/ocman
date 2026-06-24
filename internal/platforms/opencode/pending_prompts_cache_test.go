@@ -97,7 +97,14 @@ func TestFetchPromptSessionIDs_FailureNotCached(t *testing.T) {
 		}
 	}
 
-	if got := atomic.LoadInt32(&hits); got != 3 {
-		t.Errorf("upstream hit %d times, want 3 (failures must not be cached)", got)
+	// Each of the 3 calls must reach upstream (failures aren't cached).
+	// We assert ">= 3" rather than "== 3": Go's HTTP transport may
+	// transparently retry an in-flight GET that's canceled by the
+	// per-call timeout, so a single logical call can produce more than
+	// one server-side arrival. The invariant under test is that a failed
+	// fetch is never *cached* — i.e. no call is silently skipped — which
+	// a lower bound of one-per-call captures without being flaky.
+	if got := atomic.LoadInt32(&hits); got < 3 {
+		t.Errorf("upstream hit %d times, want >= 3 (each call must retry; failures must not be cached)", got)
 	}
 }

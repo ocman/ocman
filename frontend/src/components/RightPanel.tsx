@@ -7,6 +7,7 @@ import { ChangesRefreshButton, SessionChangesSidebar, type PaneSummary } from '.
 import { WorkingTreeChangesSidebar } from './WorkingTreeChangesSidebar';
 import { SessionInfoSidebar } from './SessionInfoSidebar';
 import { UpstreamPane } from './upstream/UpstreamPane';
+import { LoopsPane } from './LoopsPane';
 import { ErrorBoundary } from './ErrorBoundary';
 import { useUpstreams } from '../lib/useUpstreams';
 import type { Session } from '../lib/api';
@@ -58,6 +59,7 @@ const TAB_LABELS: Record<ChangesSidebarTab, string> = {
   'working-tree': 'Working tree',
   bookmarks: 'Bookmarks',
   upstream: 'PRs & Issues',
+  loops: 'Agent loops',
 };
 
 // Info = info-circle icon (context / MCP / LSP overview).
@@ -72,6 +74,7 @@ const TAB_ICONS: Record<ChangesSidebarTab, string> = {
   'working-tree': 'bi-git',
   bookmarks: 'bi-bookmarks',
   upstream: 'bi-inbox',
+  loops: 'bi-arrow-repeat',
 };
 
 // Default strip order, used as a fallback when the persisted order
@@ -83,6 +86,7 @@ const DEFAULT_TAB_ORDER: ChangesSidebarTab[] = [
   'working-tree',
   'bookmarks',
   'upstream',
+  'loops',
 ];
 
 // Minimum height fraction a single pane is allowed to occupy. Stops
@@ -543,6 +547,15 @@ function Pane({
               upstreams={upstreams}
               embedded
               onSummaryChange={handleSummary}
+              onRefresh={handleRefresh}
+              onLoadingChange={handleLoadingChange}
+            />
+          )}
+          {tab === 'loops' && (
+            <LoopsPane
+              directory={directory}
+              sessionId={sessionId}
+              platformId={platformId}
               onRefresh={handleRefresh}
               onLoadingChange={handleLoadingChange}
             />

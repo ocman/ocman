@@ -19,6 +19,7 @@ import { GettingStartedEmpty } from '../components/GettingStartedEmpty';
 
 import { useUiStore } from '../lib/uiStore';
 import { useApiStore } from '../lib/apiStore';
+import { useAgentLoops } from '../lib/useCapabilities';
 import { useAuthStore } from '../lib/authStore';
 import { usePwaInstall } from '../lib/usePwaInstall';
 import {
@@ -46,8 +47,9 @@ const EMPTY_PROJECTS: Project[] = [];
 export function DashboardLayout() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
+  const agentLoopsAllowed = useAgentLoops();
 
-  const isOnDashboard = location.pathname === '/' || location.pathname === '/projects' || location.pathname === '/stats' || location.pathname === '/usage' || location.pathname === '/settings';
+  const isOnDashboard = location.pathname === '/' || location.pathname === '/projects' || location.pathname === '/stats' || location.pathname === '/usage' || location.pathname === '/loops' || location.pathname === '/settings';
 
   const timeRange = parseInt(searchParams.get('t') || '12', 10);
   const showArchived = searchParams.get('a') === '1';
@@ -135,6 +137,9 @@ export function DashboardLayout() {
           <NavLink to="/projects" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Projects</NavLink>
           <NavLink to="/stats" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Stats</NavLink>
           <NavLink to="/usage" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Usage</NavLink>
+          {agentLoopsAllowed && (
+            <NavLink to="/loops" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Loops</NavLink>
+          )}
           <NavLink to="/settings" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Settings</NavLink>
         </div>
         {/* Per-tab boundary so a crash inside Stats / Usage / etc.

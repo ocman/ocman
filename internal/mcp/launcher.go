@@ -43,6 +43,10 @@ type LaunchRequest struct {
 	// TmuxTarget is the tmux session or session:window used to launch
 	// the child (empty for split_to_session when no tmux launch is needed).
 	TmuxTarget string
+	// LoopID links this child to an agent loop (empty for one-shot
+	// splits). Persisted on the child_sessions row so the loop engine
+	// can track and aggregate the child (AD-5).
+	LoopID string
 }
 
 // childSessionStore is the subset of state.DB used by SessionLauncher.
@@ -150,6 +154,7 @@ func (l *SessionLauncher) Launch(ctx context.Context, req LaunchRequest) (string
 		TmuxTarget:      req.TmuxTarget,
 		Status:          "starting",
 		CreatedAt:       time.Now().UnixMilli(),
+		LoopID:          req.LoopID,
 	}
 	if err := l.stateDB.InsertChildSession(cs); err != nil {
 		// Log but don't fail: the session is running; we just can't

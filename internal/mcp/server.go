@@ -40,6 +40,12 @@ type Deps struct {
 	// DiscoverPort is the port discovery function. Must be set by the
 	// caller (the server package injects the OpenCode port discoverer).
 	DiscoverPort PortDiscoverer
+
+	// LoopService drives the agent-loops MCP tools (create_loop, etc.).
+	// Optional: nil disables the loop tools (e.g. no state DB). The
+	// concrete type is *loops.Service; declared as loopService so this
+	// package stays decoupled from the concrete service.
+	LoopService loopService
 }
 
 // Server wraps the mcp-go MCPServer and exposes an http.Handler.
@@ -116,6 +122,9 @@ func New(deps Deps) *Server {
 	}
 	addCommTools(s, comm)
 
+	// Register agent-loops tools (no-op when LoopService is nil).
+	addLoopTools(s, &loopTools{svc: deps.LoopService, platform: deps.PlatformID})
+
 	// Wrap in a StreamableHTTPServer (implements http.Handler).
 	httpHandler := mcpserver.NewStreamableHTTPServer(s,
 		mcpserver.WithStateLess(true),
@@ -182,7 +191,7 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 		platform: adapter,
 	}
 
-	return []mcpserver.ServerTool{
+	tools := []mcpserver.ServerTool{
 		{Tool: splitToSessionTool(), Handler: split.handleSplitToSession},
 		{Tool: splitToWorktreeTool(), Handler: split.handleSplitToWorktree},
 		{Tool: getSessionStatusTool(), Handler: status.handleGetSessionStatus},
@@ -192,6 +201,8 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 		{Tool: sendMessageToChildTool(), Handler: comm.handleSendMessageToChild},
 		{Tool: sendMessageToParentTool(), Handler: comm.handleSendMessageToParent},
 	}
+	tools = append(tools, loopServerTools(&loopTools{svc: deps.LoopService, platform: deps.PlatformID})...)
+	return tools
 }
 
 // nullSessionReader is a no-op sessionReader used when the OpenCode DB

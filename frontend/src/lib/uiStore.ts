@@ -29,7 +29,7 @@ export type SidebarView = 'recent' | 'projects';
 // it stacks above the change-related panes. 'upstream' is the PR/Issue
 // sidebar (spec/pr-issue-sidebar/), only shown when the current project
 // has a supported GitHub/Forgejo remote.
-export type ChangesSidebarTab = 'info' | 'session' | 'working-tree' | 'bookmarks' | 'upstream';
+export type ChangesSidebarTab = 'info' | 'session' | 'working-tree' | 'bookmarks' | 'upstream' | 'loops';
 
 // Per-tab height fraction in split mode. Sums to 1 across openTabs.
 // Values are pinned to a minimum of 0.1 so a pane can't be dragged
@@ -226,7 +226,7 @@ export const useUiStore = create<UiStore>()(
       setPromptSections: (sections) => set({ promptSections: sections }),
 
       changesSidebarOpenTabs: ['session'],
-      changesSidebarTabOrder: ['info', 'session', 'working-tree', 'bookmarks', 'upstream'],
+      changesSidebarTabOrder: ['info', 'session', 'working-tree', 'bookmarks', 'upstream', 'loops'],
       setChangesSidebarTabOrder: (order) => set({ changesSidebarTabOrder: order }),
       changesSidebarTabSizes: {},
       toggleChangesSidebarTab: (tab) =>
@@ -302,7 +302,9 @@ export const useUiStore = create<UiStore>()(
       // v4: added changesSidebarTabOrder (user-controlled strip order
       //     via drag-and-drop). Default seeded from the legacy
       //     hardcoded BASE_TABS so existing users see no change.
-      version: 4,
+      // v5: added the 'loops' right-panel tab; append it to the
+      //     persisted strip order so existing users get the new icon.
+      version: 5,
       migrate: (persisted, version) => {
         if (!persisted || typeof persisted !== 'object') return persisted;
         const next = persisted as Record<string, unknown>;
@@ -323,6 +325,16 @@ export const useUiStore = create<UiStore>()(
           // Seed tab order from the legacy fixed order so the strip
           // looks identical on first load after the upgrade.
           next.changesSidebarTabOrder = ['info', 'session', 'working-tree', 'bookmarks', 'upstream'];
+        }
+        if (version < 5) {
+          // Append the new 'loops' tab to the persisted order if absent
+          // (RightPanel.reconcileTabOrder also backfills, but keeping
+          // the stored value complete avoids a first-render reshuffle).
+          const order = Array.isArray(next.changesSidebarTabOrder)
+            ? (next.changesSidebarTabOrder as string[])
+            : ['info', 'session', 'working-tree', 'bookmarks', 'upstream'];
+          if (!order.includes('loops')) order.push('loops');
+          next.changesSidebarTabOrder = order;
         }
         return next;
       },

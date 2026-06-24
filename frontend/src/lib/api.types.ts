@@ -723,6 +723,118 @@ export interface CapabilitiesResponse {
    * page link, and the per-project Worktrees view (AD-7).
    */
   worktreeSessions?: boolean;
+  /**
+   * Agent-loops feature flag. enabled is true when the state DB is
+   * present and the OpenCode adapter is available. The Loops view and
+   * /loop palette command are gated on this.
+   */
+  agentLoops?: { enabled: boolean };
+}
+
+/** Decoded trigger config for an agent loop. */
+export interface LoopTriggerConfig {
+  interval_seconds?: number;
+  pr_number?: number;
+  poll_seconds?: number;
+  target_session_id?: string;
+}
+
+/** Decoded stop conditions for an agent loop. */
+export interface LoopStopConditions {
+  max_iterations: number;
+  max_cost_usd?: number;
+  max_tokens?: number;
+  max_duration?: string;
+  error_streak?: number;
+  goal_predicate?: string;
+}
+
+/** A single agent loop (GET /api/loops, /api/loops/{id}). */
+export interface Loop {
+  id: string;
+  platform: string;
+  rootSessionID: string;
+  directory: string;
+  projectName: string;
+  title: string;
+  currentTask: string;
+  pattern: string;
+  triggerType: string;
+  actionType: string;
+  actionTemplate: string;
+  sessionMode: string; // 'fresh' | 'reuse'
+  loopSessionID?: string;
+  state: string;
+  iteration: number;
+  errorStreak: number;
+  tokensUsed: number;
+  costUSD: number;
+  lastFiredAt: number;
+  createdAt: number;
+  updatedAt: number;
+  completedAt: number;
+  lastSummary: string;
+  triggerConfig: LoopTriggerConfig;
+  stopConditions: LoopStopConditions;
+}
+
+/** One iteration in a loop's audit trail. */
+export interface LoopIteration {
+  id: number;
+  seq: number;
+  firedAt: number;
+  startedAt: number;
+  completedAt: number;
+  triggerDetail: string;
+  renderedPrompt: string;
+  targetSessionID: string;
+  childSessionID: string;
+  outcome: string;
+  summary: string;
+}
+
+/** A session spawned by a loop (subset of state.ChildSession). */
+export interface LoopChildSession {
+  id: string;
+  status: string; // starting, running, completed, error, cancelled
+  createdAt: number;
+  completedAt: number; // 0 until terminal
+}
+
+/** Loop detail = loop + iteration timeline + child sessions + sub-loops. */
+export interface LoopDetail extends Loop {
+  iterations: LoopIteration[];
+  children: LoopChildSession[];
+  subLoops: Loop[];
+}
+
+/** Create-loop request body (POST /api/loops). */
+export interface LoopCreateRequest {
+  root_session_id: string;
+  parent_loop_id?: string;
+  platform?: string;
+  title?: string;
+  directory?: string;
+  pattern?: string;
+  trigger_type: string;
+  trigger_config?: LoopTriggerConfig;
+  action_type: string;
+  action_template?: string;
+  stop_conditions: LoopStopConditions;
+  session_mode?: string; // 'fresh' | 'reuse'
+}
+
+/**
+ * Editable subset of a loop's settings (PATCH /api/loops/{id}). All
+ * fields optional; only provided fields are changed. Trigger/action TYPE
+ * are intentionally not editable.
+ */
+export interface LoopUpdateRequest {
+  title?: string;
+  action_template?: string;
+  session_mode?: string;
+  trigger_config?: LoopTriggerConfig;
+  stop_conditions?: LoopStopConditions;
 }
 
 /**

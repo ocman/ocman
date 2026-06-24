@@ -262,6 +262,43 @@ Implementation notes:
 User-facing setup, the full tool table, and the splitting workflow are
 documented in `docs/mcp.md`.
 
+## Agent loops
+
+Ocman runs **agent loops** — self-driving orchestrations that fire an
+action on a trigger until a stop condition is met. A loop generalizes the
+one-shot child-session watcher into a trigger→action engine
+(`spec/agent-loops/`).
+
+- **Domain** lives in `internal/loops/` (`Service`, triggers, action
+  dispatch, stop evaluation, template rendering, workflow derivation),
+  decoupled from `internal/server` via small interfaces (Store,
+  Messenger, Launcher, ForgePoller, SessionStatusInferer, UsageSource).
+- **Engine**: `internal/server/loop_engine.go` runs `runLoopEngine`
+  (started in `StartOnListener`) — a single tick goroutine (5 s) that
+  loads `active` loops and dispatches each to a bounded worker pool, with
+  a per-loop in-flight guard. Adapters in the same file bridge the loops
+  interfaces to the registry / SessionLauncher / forge clients.
+- **State** (migration v15): `loops` + `loop_iterations` tables, plus a
+  nullable `child_sessions.loop_id` linking spawned children to a loop.
+  `loop_iterations` doubles as an idempotency outbox (a `pending` row is
+  written before each side effect).
+- **Triggers**: `schedule` (interval, floor 60 s), `pr_event` (poll the
+  PR-sidebar forge for head-SHA change / merge, floor 30 s),
+  `child_complete`, `turn_complete`. **Actions**: `prompt_root`,
+  `prompt_child`, `spawn_child`, `spawn_worktree`.
+- **Safety (AD-6)**: stop conditions are evaluated *before every action*,
+  and a budget (`max_cost_usd` or `max_tokens`) is **mandatory** —
+  `create_loop` and `POST /api/loops` reject a loop without one. Defaults:
+  `max_iterations=25`, `max_duration=8h`, `error_streak=3`.
+- **Control surface**: REST `/api/loops` (localhost-only) and MCP tools
+  (`create_loop`, `list_loops`, `get_loop_status`, `delete_loop`,
+  `pause_loop`, `resume_loop`, `step_loop`) both delegate to the same
+  `loops.Service`. Loop *policy* lives in
+  `.opencode/skills/ocman-agent-loops/SKILL.md`.
+- **UI**: capability-gated on `agentLoops` (`/api/capabilities`). The
+  Loops view (`/loops`, `/project/<dir>/loops`) is SSE-driven via the
+  `loop.updated` broadcast and a Zustand store (`loopsStore.ts`).
+
 ## Conventions
 
 - All Go packages live under `internal/` — nothing is exported.

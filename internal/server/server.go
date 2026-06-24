@@ -21,6 +21,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
 	"github.com/NoUseFreak/ocman/internal/integrations"
+	"github.com/NoUseFreak/ocman/internal/loops"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -141,6 +142,12 @@ type Server struct {
 	// (multi-remote support). Nil for single-host installs. The /api/
 	// remotes handlers and machine picker use it.
 	remotes *remote.Manager
+
+	// loopSvcCached is the agent-loops domain service, built lazily on
+	// first use (it needs the registry to be fully wired). Guarded by
+	// loopSvcOnce. See loop_engine.go.
+	loopSvcCached *loops.Service
+	loopSvcOnce   sync.Once
 }
 
 // remoteAccessInfo holds this instance's own remote-access surface for
@@ -322,6 +329,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	go s.runProjectsIndexLoop(ctx)
 	go s.runLLMMetricsLoop(ctx)
 	go s.runChildSessionWatcher(ctx)
+	go s.runLoopEngine(ctx)
 	// Headless auto-approve: subscribe directly to each OpenCode
 	// instance's /event SSE stream so permission.asked events drive
 	// the judge even when no browser tab is open. Without this, the
@@ -407,6 +415,12 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// Launch endpoint: spawns tmux/opencode, so localhost-only like
 	// the worktree create-and-launch endpoint.
 	mux.HandleFunc("/api/project/handle", requirePOST(requireLocalhost(s.handleProjectHandle)))
+
+	// Agent loops — localhost-only (AD-8). The handler does its own
+	// GET/POST dispatch across /api/loops and /api/loops/{id}[/action].
+	loopsHandler := requireLocalhost(s.handleLoops)
+	mux.HandleFunc("/api/loops", loopsHandler)
+	mux.HandleFunc("/api/loops/", loopsHandler)
 
 	// MCP server — localhost-only, enabled by default. Exposes the
 	// session-split tools (split_to_session, split_to_worktree, etc.)

@@ -22,6 +22,9 @@ func (s *Server) buildMCPHandler() http.Handler {
 		LaunchTmux:   internalmcp.TmuxLauncher(launchOpencodeInProjectTmuxWindow),
 		DiscoverPort: internalmcp.PortDiscoverer(opencode.DiscoverOpenCodePortFresh),
 	}
+	if s.stateDB != nil {
+		deps.LoopService = s.loopSvc()
+	}
 	return internalmcp.New(deps).Handler()
 }
 

@@ -147,6 +147,22 @@ func (s *Server) broadcastSessionIdle(sessionID string) {
 	s.broadcastGlobalEvent("ocman.session.idle", payload)
 }
 
+// broadcastLoopUpdated broadcasts that an agent loop's state changed
+// (iteration advance, transition, budget crossing), so the Loops view
+// updates live without busy-polling (AD-10).
+func (s *Server) broadcastLoopUpdated(loopID string) {
+	if loopID == "" {
+		return
+	}
+	payload, err := json.Marshal(map[string]interface{}{
+		"loopId": loopID,
+	})
+	if err != nil {
+		return
+	}
+	s.broadcastGlobalEvent("loop.updated", payload)
+}
+
 // globalEventsKeepaliveInterval is how often we send an SSE comment to
 // keep the connection (and any intermediary proxy) alive while idle.
 const globalEventsKeepaliveInterval = 25 * time.Second

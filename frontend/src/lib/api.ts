@@ -59,6 +59,12 @@ export type {
   SessionNotice,
   ShareLink,
   SharedConversation,
+  Loop,
+  LoopDetail,
+  LoopCreateRequest,
+  LoopIteration,
+  LoopTriggerConfig,
+  LoopStopConditions,
 } from './api.types';
 
 // Type imports used by the api object below.
@@ -95,6 +101,10 @@ import type {
   RemoteStatus,
   RemoteAccessStatus,
   ResolveTargetsResponse,
+  Loop,
+  LoopDetail,
+  LoopCreateRequest,
+  LoopUpdateRequest,
 } from './api.types';
 
 /**
@@ -551,6 +561,38 @@ export const api = {
       ),
     createAndLaunch: (req: WorktreeCreateRequest): Promise<WorktreeCreateResponse> =>
       postJSON<WorktreeCreateResponse>('/api/worktree/create-and-launch', req),
+  },
+  /**
+   * Agent-loops API (localhost-only on the backend). Gated in the UI by
+   * useAgentLoops(); see spec/agent-loops.
+   */
+  loops: {
+    list: (params: { session?: string; dir?: string } = {}, signal?: AbortSignal) => {
+      const q = new URLSearchParams();
+      if (params.session) q.set('session', params.session);
+      if (params.dir) q.set('dir', params.dir);
+      const qs = q.toString();
+      return fetchJSON<Loop[]>(`/api/loops${qs ? '?' + qs : ''}`, signal);
+    },
+    get: (id: string, signal?: AbortSignal) =>
+      fetchJSON<LoopDetail>(`/api/loops/${encodeURIComponent(id)}`, signal),
+    create: (req: LoopCreateRequest) => postJSON<Loop, LoopCreateRequest>('/api/loops', req),
+    update: (id: string, req: LoopUpdateRequest) =>
+      postJSON<Loop, LoopUpdateRequest>(`/api/loops/${encodeURIComponent(id)}`, req, {
+        method: 'PATCH',
+      }),
+    delete: (id: string) =>
+      postJSON<{ ok: boolean }>(`/api/loops/${encodeURIComponent(id)}`, undefined, { method: 'DELETE' }),
+    pause: (id: string) =>
+      postJSON<{ ok: boolean }>(`/api/loops/${encodeURIComponent(id)}/pause`, {}),
+    resume: (id: string) =>
+      postJSON<{ ok: boolean }>(`/api/loops/${encodeURIComponent(id)}/resume`, {}),
+    step: (id: string) =>
+      postJSON<{ ok: boolean }>(`/api/loops/${encodeURIComponent(id)}/step`, {}),
+    // Force a schedule loop to fire its action now, bypassing the
+    // interval throttle (stop conditions still enforced server-side).
+    trigger: (id: string) =>
+      postJSON<{ ok: boolean }>(`/api/loops/${encodeURIComponent(id)}/trigger`, {}),
   },
   compactSession: (sessionId: string, providerID: string, modelID: string) =>
     postJSON<void>(

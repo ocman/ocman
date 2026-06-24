@@ -106,7 +106,37 @@ func (s *Server) processChildSession(ctx context.Context, cs state.ChildSession)
 
 	// Inject a result message into the parent session when terminal.
 	if isTerminalStatus(newStatus) {
+		// Loop-attached children route their completion to the loop
+		// engine, which evaluates stop conditions and performs the next
+		// action (AD-4). Non-loop children keep the one-shot injection.
+		if cs.LoopID != "" {
+			s.routeChildCompletionToLoop(ctx, cs)
+			return
+		}
 		s.injectResultIntoParent(ctx, cs, newStatus, summary)
+	}
+}
+
+// routeChildCompletionToLoop nudges the owning loop to evaluate now that
+// one of its children has reached a terminal state (AD-4). The engine's
+// next tick would catch it anyway; this just shortens the latency.
+func (s *Server) routeChildCompletionToLoop(ctx context.Context, cs state.ChildSession) {
+	svc := s.loopSvc()
+	if svc == nil {
+		return
+	}
+	l, err := s.stateDB.GetLoop(cs.LoopID)
+	if err != nil {
+		log.WithFields(log.Fields{"loopID": cs.LoopID, "childID": cs.ID, "error": err}).
+			Warn("mcp-watcher: loading loop for child completion")
+		return
+	}
+	if l.State != "active" {
+		return
+	}
+	if _, err := svc.EvaluateOne(ctx, *l); err != nil {
+		log.WithFields(log.Fields{"loopID": cs.LoopID, "error": err}).
+			Warn("mcp-watcher: routing child completion to loop")
 	}
 }
 

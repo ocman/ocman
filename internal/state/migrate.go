@@ -69,11 +69,25 @@ import (
 //	        learned remote_id (populated after a successful Hello),
 //	        address, AES-GCM-encrypted token, enabled flag, health, and
 //	        reported hostname/protocol version. See AD-10 / AD-10b.
+//	15 - agent loops. Adds two tables and one column:
+//	      * `loops` holding one row per self-driving loop (trigger,
+//	        action, stop conditions, state, budget counters). See
+//	        spec/agent-loops/architecture.md AD-9 / Data Model.
+//	      * `loop_iterations` holding the per-loop audit trail (one row
+//	        per fired action, idempotency outbox via outcome='pending').
+//	      * `child_sessions.loop_id` (nullable) linking a spawned child
+//	        to its owning loop; NULL preserves one-shot watcher behavior.
+//	16 - agent loops: dedicated session. Adds `loops.loop_session_id`
+//	      (nullable) holding the loop's own session (separate from the
+//	      creator/owner session), and `loops.session_mode` controlling
+//	      whether each iteration spawns a fresh session ('fresh',
+//	      default) or reuses the loop session ('reuse'). See
+//	      spec/agent-loops Open Question 5.
 //
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 14
+const latestSchemaVersion = 16
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -197,6 +211,10 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV13(tx)
 	case 14:
 		return migrateToV14(tx)
+	case 15:
+		return migrateToV15(tx)
+	case 16:
+		return migrateToV16(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -506,6 +524,96 @@ func migrateToV14(tx *sql.Tx) error {
 			hostname         TEXT    NOT NULL DEFAULT '',
 			protocol_version INTEGER NOT NULL DEFAULT 0
 		)`,
+	}
+	for _, s := range stmts {
+		if _, err := tx.Exec(s); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// migrateToV15 creates the agent-loops tables and links child sessions
+// to loops. See spec/agent-loops/architecture.md (Migration v15).
+//
+// `loops` holds one row per self-driving loop. trigger_config and
+// stop_conditions are JSON blobs (the engine owns their shape so the
+// schema stays stable as new trigger/stop kinds are added). tokens_used
+// / cost_usd are cached budget counters refreshed each engine tick.
+//
+// `loop_iterations` is the audit trail and idempotency outbox: a row is
+// created with outcome='pending' before the action's side effect, then
+// updated to ok/error afterwards (AD-5a).
+//
+// child_sessions.loop_id is nullable; NULL keeps the existing one-shot
+// report-once behavior for non-loop children (AD-4).
+func migrateToV15(tx *sql.Tx) error {
+	stmts := []string{
+		`CREATE TABLE loops (
+			id              TEXT    NOT NULL PRIMARY KEY,
+			platform        TEXT    NOT NULL,
+			root_session_id TEXT    NOT NULL,
+			parent_loop_id  TEXT,
+			directory       TEXT    NOT NULL DEFAULT '',
+			project_name    TEXT    NOT NULL DEFAULT '',
+			title           TEXT    NOT NULL DEFAULT '',
+			description     TEXT    NOT NULL DEFAULT '',
+			current_task    TEXT    NOT NULL DEFAULT '',
+			pattern         TEXT    NOT NULL DEFAULT '',
+			trigger_type    TEXT    NOT NULL,
+			trigger_config  TEXT    NOT NULL DEFAULT '{}',
+			action_type     TEXT    NOT NULL,
+			action_template TEXT    NOT NULL DEFAULT '',
+			stop_conditions TEXT    NOT NULL DEFAULT '{}',
+			state           TEXT    NOT NULL DEFAULT 'active',
+			iteration       INTEGER NOT NULL DEFAULT 0,
+			error_streak    INTEGER NOT NULL DEFAULT 0,
+			tokens_used     INTEGER NOT NULL DEFAULT 0,
+			cost_usd        REAL    NOT NULL DEFAULT 0,
+			last_fired_at   INTEGER NOT NULL DEFAULT 0,
+			created_at      INTEGER NOT NULL,
+			updated_at      INTEGER NOT NULL,
+			completed_at    INTEGER,
+			last_summary    TEXT    NOT NULL DEFAULT ''
+		)`,
+		`CREATE INDEX loops_state ON loops (state)`,
+		`CREATE INDEX loops_root_session ON loops (root_session_id)`,
+		`CREATE INDEX loops_directory ON loops (directory)`,
+		`CREATE TABLE loop_iterations (
+			id                INTEGER PRIMARY KEY AUTOINCREMENT,
+			loop_id           TEXT    NOT NULL,
+			seq               INTEGER NOT NULL,
+			fired_at          INTEGER NOT NULL,
+			started_at        INTEGER NOT NULL DEFAULT 0,
+			completed_at      INTEGER NOT NULL DEFAULT 0,
+			trigger_detail    TEXT    NOT NULL DEFAULT '',
+			rendered_prompt   TEXT    NOT NULL DEFAULT '',
+			target_session_id TEXT    NOT NULL DEFAULT '',
+			child_session_id  TEXT    NOT NULL DEFAULT '',
+			outcome           TEXT    NOT NULL DEFAULT 'pending',
+			summary           TEXT    NOT NULL DEFAULT ''
+		)`,
+		`CREATE INDEX loop_iterations_loop_seq ON loop_iterations (loop_id, seq)`,
+		`ALTER TABLE child_sessions ADD COLUMN loop_id TEXT`,
+	}
+	for _, s := range stmts {
+		if _, err := tx.Exec(s); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// migrateToV16 gives loops a dedicated session. loop_session_id holds the
+// loop's own session (separate from the creator/owner session in
+// root_session_id), populated lazily on first fire. session_mode controls
+// per-iteration behavior: 'fresh' (default) spawns a new session each
+// iteration; 'reuse' re-prompts the dedicated session. See
+// spec/agent-loops Open Question 5.
+func migrateToV16(tx *sql.Tx) error {
+	stmts := []string{
+		`ALTER TABLE loops ADD COLUMN loop_session_id TEXT`,
+		`ALTER TABLE loops ADD COLUMN session_mode TEXT NOT NULL DEFAULT 'fresh'`,
 	}
 	for _, s := range stmts {
 		if _, err := tx.Exec(s); err != nil {
