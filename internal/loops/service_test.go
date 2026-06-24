@@ -26,8 +26,18 @@ func newMemStore() *memStore {
 	return &memStore{loops: map[string]state.Loop{}}
 }
 
-func (m *memStore) InsertLoop(l state.Loop) error { m.mu.Lock(); defer m.mu.Unlock(); m.loops[l.ID] = l; return nil }
-func (m *memStore) UpdateLoop(l state.Loop) error { m.mu.Lock(); defer m.mu.Unlock(); m.loops[l.ID] = l; return nil }
+func (m *memStore) InsertLoop(l state.Loop) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.loops[l.ID] = l
+	return nil
+}
+func (m *memStore) UpdateLoop(l state.Loop) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.loops[l.ID] = l
+	return nil
+}
 func (m *memStore) SetLoopState(id, st, summary string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -130,16 +140,18 @@ func (m *memStore) ListLoopsByParent(parentID string) ([]state.Loop, error) {
 type fakeMessenger struct {
 	mu      sync.Mutex
 	prompts []string
+	models  []string
 	fail    bool
 }
 
-func (f *fakeMessenger) SendPrompt(_ context.Context, _ string, p string) error {
+func (f *fakeMessenger) SendPrompt(_ context.Context, _ string, p, model string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.fail {
 		return errBoom
 	}
 	f.prompts = append(f.prompts, p)
+	f.models = append(f.models, model)
 	return nil
 }
 
@@ -228,12 +240,14 @@ func TestUpdate_EditsSafeFields(t *testing.T) {
 		TriggerConfig:  TriggerConfig{IntervalSeconds: 60},
 		ActionType:     ActionPromptRoot,
 		ActionTemplate: "old",
+		Model:          "anthropic/claude-haiku-4-5",
 		SessionMode:    SessionModeFresh,
 		StopConditions: StopConditions{MaxIterations: 5, MaxCostUSD: 1},
 	})
 
 	out, err := svc.Update(context.Background(), v.ID, LoopUpdate{
 		ActionTemplate: strptr("new template"),
+		Model:          strptr("openai/gpt-5.5"),
 		SessionMode:    strptr(SessionModeReuse),
 		TriggerConfig:  &TriggerConfig{IntervalSeconds: 1800},
 		StopConditions: &StopConditions{MaxIterations: 20, MaxCostUSD: 3},
@@ -243,6 +257,9 @@ func TestUpdate_EditsSafeFields(t *testing.T) {
 	}
 	if out.ActionTemplate != "new template" {
 		t.Fatalf("template not updated: %q", out.ActionTemplate)
+	}
+	if out.Model != "openai/gpt-5.5" {
+		t.Fatalf("model not updated: %q", out.Model)
 	}
 	if out.SessionMode != SessionModeReuse {
 		t.Fatalf("session mode not updated: %q", out.SessionMode)

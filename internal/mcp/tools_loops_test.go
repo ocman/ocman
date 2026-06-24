@@ -35,7 +35,7 @@ func buildLoopMCPServer(t *testing.T, stateDB *state.DB) *mcptest.Server {
 
 type noopMessenger struct{}
 
-func (noopMessenger) SendPrompt(context.Context, string, string) error { return nil }
+func (noopMessenger) SendPrompt(context.Context, string, string, string) error { return nil }
 
 func TestCreateLoopTool(t *testing.T) {
 	stateDB := openTestStateDB(t)
@@ -48,7 +48,8 @@ func TestCreateLoopTool(t *testing.T) {
 		"trigger_config":  map[string]interface{}{"interval_seconds": 120},
 		"action_type":     "prompt_root",
 		"action_template": "ping",
-		"stop_conditions":  map[string]interface{}{"max_iterations": 10, "max_cost_usd": 2},
+		"model":           "anthropic/claude-haiku-4-5",
+		"stop_conditions": map[string]interface{}{"max_iterations": 10, "max_cost_usd": 2},
 	})
 	if result.IsError {
 		t.Fatalf("create_loop failed: %s", resultText(result))
@@ -63,6 +64,9 @@ func TestCreateLoopTool(t *testing.T) {
 	if err != nil || len(got) != 1 {
 		t.Fatalf("expected 1 persisted loop, got %d (err=%v)", len(got), err)
 	}
+	if got[0].Model != "anthropic/claude-haiku-4-5" {
+		t.Fatalf("expected model persisted, got %q", got[0].Model)
+	}
 }
 
 func TestCreateLoopTool_RejectsNoBudget(t *testing.T) {
@@ -73,7 +77,7 @@ func TestCreateLoopTool_RejectsNoBudget(t *testing.T) {
 		"root_session_id": "sess1",
 		"trigger_type":    "schedule",
 		"action_type":     "prompt_root",
-		"stop_conditions":  map[string]interface{}{"max_iterations": 10},
+		"stop_conditions": map[string]interface{}{"max_iterations": 10},
 	})
 	if !result.IsError {
 		t.Fatalf("expected create_loop to reject missing budget, got: %s", resultText(result))
@@ -89,7 +93,7 @@ func TestLoopLifecycleTools(t *testing.T) {
 		"trigger_type":    "schedule",
 		"trigger_config":  map[string]interface{}{"interval_seconds": 60},
 		"action_type":     "prompt_root",
-		"stop_conditions":  map[string]interface{}{"max_iterations": 5, "max_cost_usd": 1},
+		"stop_conditions": map[string]interface{}{"max_iterations": 5, "max_cost_usd": 1},
 	})
 	if create.IsError {
 		t.Fatalf("create_loop: %s", resultText(create))

@@ -125,6 +125,7 @@ func (s *Service) Create(ctx context.Context, spec LoopSpec) (LoopView, error) {
 		TriggerConfig:  tcJSON,
 		ActionType:     spec.ActionType,
 		ActionTemplate: spec.ActionTemplate,
+		Model:          spec.Model,
 		StopConditions: scJSON,
 		SessionMode:    sessionMode,
 		State:          StateActive,
@@ -159,6 +160,9 @@ func (s *Service) Update(ctx context.Context, id string, upd LoopUpdate) (LoopVi
 	}
 	if upd.ActionTemplate != nil {
 		l.ActionTemplate = *upd.ActionTemplate
+	}
+	if upd.Model != nil {
+		l.Model = *upd.Model
 	}
 	if upd.SessionMode != nil {
 		mode := *upd.SessionMode
@@ -472,7 +476,7 @@ func (s *Service) injectFinalSummary(ctx context.Context, l state.Loop, reason s
 	}
 	msg := fmt.Sprintf("Loop %q ended: %s (after %d iterations, $%.2f).",
 		loopLabel(l), reason, l.Iteration, l.CostUSD)
-	_ = s.messenger.SendPrompt(ctx, l.RootSessionID, msg)
+	_ = s.messenger.SendPrompt(ctx, l.RootSessionID, msg, l.Model)
 }
 
 func loopLabel(l state.Loop) string {

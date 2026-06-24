@@ -19,6 +19,7 @@ func sampleLoop(id string) Loop {
 		TriggerConfig:  `{"pr_number":42}`,
 		ActionType:     "prompt_root",
 		ActionTemplate: "address comments",
+		Model:          "anthropic/claude-sonnet-4",
 		StopConditions: `{"max_iterations":25,"max_cost_usd":5}`,
 		State:          "active",
 		CreatedAt:      now,
@@ -44,6 +45,9 @@ func TestInsertGetLoop_RoundTrip(t *testing.T) {
 	if got.TriggerConfig != `{"pr_number":42}` {
 		t.Fatalf("trigger_config not preserved: %q", got.TriggerConfig)
 	}
+	if got.Model != "anthropic/claude-sonnet-4" {
+		t.Fatalf("model not preserved: %q", got.Model)
+	}
 	if got.ParentLoopID != "" {
 		t.Fatalf("expected empty parent_loop_id, got %q", got.ParentLoopID)
 	}
@@ -63,11 +67,12 @@ func TestUpdateLoop_AndState(t *testing.T) {
 	l.Iteration = 3
 	l.CostUSD = 1.25
 	l.CurrentTask = "addressing review"
+	l.Model = "openai/gpt-5.5"
 	if err := db.UpdateLoop(l); err != nil {
 		t.Fatalf("UpdateLoop: %v", err)
 	}
 	got, _ := db.GetLoop("loop_2")
-	if got.Iteration != 3 || got.CostUSD != 1.25 || got.CurrentTask != "addressing review" {
+	if got.Iteration != 3 || got.CostUSD != 1.25 || got.CurrentTask != "addressing review" || got.Model != "openai/gpt-5.5" {
 		t.Fatalf("update not persisted: %+v", got)
 	}
 

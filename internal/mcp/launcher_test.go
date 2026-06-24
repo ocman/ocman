@@ -84,6 +84,7 @@ func TestLaunch_CreatesSessionAndSendsPrompt(t *testing.T) {
 		Directory:       "/repo",
 		Intent:          "fix lint",
 		ComposedPrompt:  "## Task\nfix lint\n",
+		Model:           "anthropic/claude-haiku-4-5",
 	})
 	if err != nil {
 		t.Fatalf("Launch: %v", err)
@@ -101,6 +102,9 @@ func TestLaunch_CreatesSessionAndSendsPrompt(t *testing.T) {
 	}
 	if platform.sentMessages[0].Message != "## Task\nfix lint\n" {
 		t.Errorf("unexpected message: %q", platform.sentMessages[0].Message)
+	}
+	if platform.sentMessages[0].Model != "anthropic/claude-haiku-4-5" {
+		t.Errorf("unexpected model: %q", platform.sentMessages[0].Model)
 	}
 
 	// Verify the child session was persisted.

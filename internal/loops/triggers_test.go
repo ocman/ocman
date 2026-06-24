@@ -242,7 +242,7 @@ func TestPerformAction_PromptChild(t *testing.T) {
 	store := newMemStore()
 	msg := &fakeMessenger{}
 	svc := newService(store, msg)
-	l := state.Loop{ID: "l1", ActionType: ActionPromptChild}
+	l := state.Loop{ID: "l1", ActionType: ActionPromptChild, Model: "anthropic/claude-haiku-4-5"}
 
 	t.Run("missing target errors", func(t *testing.T) {
 		if _, err := svc.performAction(context.Background(), l, TriggerConfig{}, "p"); err == nil {
@@ -261,6 +261,9 @@ func TestPerformAction_PromptChild(t *testing.T) {
 		if len(msg.prompts) != 1 || msg.prompts[0] != "do it" {
 			t.Fatalf("expected prompt sent, got %v", msg.prompts)
 		}
+		if msg.models[0] != "anthropic/claude-haiku-4-5" {
+			t.Fatalf("expected model forwarded, got %q", msg.models[0])
+		}
 	})
 }
 
@@ -270,7 +273,7 @@ func TestPerformAction_SpawnChildAndWorktree(t *testing.T) {
 			store := newMemStore()
 			launcher := &fakeLauncher{}
 			svc := newServiceFull(store, &fakeMessenger{}, launcher)
-			l := state.Loop{ID: "l1", ActionType: at, RootSessionID: "root"}
+			l := state.Loop{ID: "l1", ActionType: at, RootSessionID: "root", Model: "openai/gpt-5.5"}
 			res, err := svc.performAction(context.Background(), l, TriggerConfig{}, "spawn it")
 			if err != nil {
 				t.Fatalf("performAction: %v", err)
@@ -284,6 +287,9 @@ func TestPerformAction_SpawnChildAndWorktree(t *testing.T) {
 			wantWorktree := at == ActionSpawnWorktree
 			if launcher.spawns[0].Worktree != wantWorktree {
 				t.Fatalf("worktree=%v, want %v", launcher.spawns[0].Worktree, wantWorktree)
+			}
+			if launcher.spawns[0].Model != "openai/gpt-5.5" {
+				t.Fatalf("model=%q, want openai/gpt-5.5", launcher.spawns[0].Model)
 			}
 		})
 	}

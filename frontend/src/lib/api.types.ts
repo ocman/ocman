@@ -774,6 +774,7 @@ export interface Loop {
   triggerType: string;
   actionType: string;
   actionTemplate: string;
+  model?: string;
   sessionMode: string; // 'fresh' | 'reuse'
   loopSessionID?: string;
   state: string;
@@ -832,6 +833,7 @@ export interface LoopCreateRequest {
   trigger_config?: LoopTriggerConfig;
   action_type: string;
   action_template?: string;
+  model?: string;
   stop_conditions: LoopStopConditions;
   session_mode?: string; // 'fresh' | 'reuse'
 }
@@ -844,6 +846,7 @@ export interface LoopCreateRequest {
 export interface LoopUpdateRequest {
   title?: string;
   action_template?: string;
+  model?: string;
   session_mode?: string;
   trigger_config?: LoopTriggerConfig;
   stop_conditions?: LoopStopConditions;

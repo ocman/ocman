@@ -26,10 +26,10 @@ const (
 
 // Action types.
 const (
-	ActionPromptRoot     = "prompt_root"
-	ActionPromptChild    = "prompt_child"
-	ActionSpawnChild     = "spawn_child"
-	ActionSpawnWorktree  = "spawn_worktree"
+	ActionPromptRoot    = "prompt_root"
+	ActionPromptChild   = "prompt_child"
+	ActionSpawnChild    = "spawn_child"
+	ActionSpawnWorktree = "spawn_worktree"
 )
 
 // Loop states.
@@ -100,9 +100,9 @@ func (sc StopConditions) hasBudget() bool {
 // TriggerConfig is the decoded form of loops.trigger_config. Fields are
 // trigger-type specific; unused ones stay zero.
 type TriggerConfig struct {
-	IntervalSeconds int    `json:"interval_seconds,omitempty"` // schedule
-	PRNumber        int    `json:"pr_number,omitempty"`        // pr_event
-	PollSeconds     int    `json:"poll_seconds,omitempty"`     // pr_event throttle
+	IntervalSeconds int    `json:"interval_seconds,omitempty"`  // schedule
+	PRNumber        int    `json:"pr_number,omitempty"`         // pr_event
+	PollSeconds     int    `json:"poll_seconds,omitempty"`      // pr_event throttle
 	TargetSessionID string `json:"target_session_id,omitempty"` // prompt_child target
 	// Detection state for pr_event (AD-3): persisted so polling is stateless.
 	LastHeadSHA   string `json:"last_head_sha,omitempty"`
@@ -124,6 +124,7 @@ type LoopSpec struct {
 	TriggerConfig  TriggerConfig  `json:"trigger_config"`
 	ActionType     string         `json:"action_type"`
 	ActionTemplate string         `json:"action_template"`
+	Model          string         `json:"model,omitempty"`
 	StopConditions StopConditions `json:"stop_conditions"`
 	// SessionMode controls per-iteration session strategy for prompt_root:
 	// "fresh" (default) or "reuse". Ignored by other action types.
@@ -136,6 +137,7 @@ type LoopSpec struct {
 type LoopUpdate struct {
 	Title          *string         `json:"title,omitempty"`
 	ActionTemplate *string         `json:"action_template,omitempty"`
+	Model          *string         `json:"model,omitempty"`
 	SessionMode    *string         `json:"session_mode,omitempty"`
 	TriggerConfig  *TriggerConfig  `json:"trigger_config,omitempty"`
 	StopConditions *StopConditions `json:"stop_conditions,omitempty"`
@@ -145,7 +147,7 @@ type LoopUpdate struct {
 // the stored row with decoded config for display.
 type LoopView struct {
 	state.Loop
-	TriggerConfigDecoded TriggerConfig  `json:"triggerConfig"`
+	TriggerConfigDecoded  TriggerConfig  `json:"triggerConfig"`
 	StopConditionsDecoded StopConditions `json:"stopConditions"`
 }
 
@@ -212,7 +214,7 @@ type Store interface {
 // Messenger sends a prompt to an existing session (Platform.SendMessage,
 // AD-5). Narrowed so loops needn't import the full Platform interface.
 type Messenger interface {
-	SendPrompt(ctx context.Context, sessionID, prompt string) error
+	SendPrompt(ctx context.Context, sessionID, prompt, model string) error
 }
 
 // SpawnRequest describes a child/worktree spawn for a loop action.
@@ -223,6 +225,7 @@ type SpawnRequest struct {
 	Directory     string
 	Intent        string
 	Prompt        string
+	Model         string
 	Worktree      bool
 }
 

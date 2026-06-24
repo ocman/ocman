@@ -86,7 +86,7 @@ func (s *Service) performAction(ctx context.Context, l state.Loop, tc TriggerCon
 		if s.messenger == nil {
 			return dispatchResult{}, fmt.Errorf("no messenger configured")
 		}
-		if err := s.messenger.SendPrompt(ctx, target, prompt); err != nil {
+		if err := s.messenger.SendPrompt(ctx, target, prompt, l.Model); err != nil {
 			return dispatchResult{}, err
 		}
 		return dispatchResult{TargetSessionID: target, Summary: "prompted child session"}, nil
@@ -102,6 +102,7 @@ func (s *Service) performAction(ctx context.Context, l state.Loop, tc TriggerCon
 			Directory:     l.Directory,
 			Intent:        l.CurrentTask,
 			Prompt:        prompt,
+			Model:         l.Model,
 			Worktree:      l.ActionType == ActionSpawnWorktree,
 		})
 		if err != nil {
@@ -132,7 +133,7 @@ func (s *Service) promptLoopSession(ctx context.Context, l state.Loop, prompt st
 		if s.messenger == nil {
 			return dispatchResult{}, fmt.Errorf("no messenger configured")
 		}
-		if err := s.messenger.SendPrompt(ctx, l.LoopSessionID, prompt); err != nil {
+		if err := s.messenger.SendPrompt(ctx, l.LoopSessionID, prompt, l.Model); err != nil {
 			return dispatchResult{}, err
 		}
 		return dispatchResult{
@@ -153,6 +154,7 @@ func (s *Service) promptLoopSession(ctx context.Context, l state.Loop, prompt st
 		Directory:     l.Directory,
 		Intent:        loopLabel(l),
 		Prompt:        prompt,
+		Model:         l.Model,
 		Worktree:      false,
 	})
 	if err != nil {

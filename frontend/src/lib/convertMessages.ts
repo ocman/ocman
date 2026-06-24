@@ -283,19 +283,25 @@ export function createConvertMessages(): ConvertMessagesFn {
     // special assistant-role entry so they appear inline in the thread.
     if (m.data?.role === 'notice') {
       const noticeParts = (partsByMsg[m.id] || EMPTY_PARTS).map(parsePart);
-      const noticeContent: ThreadMessageLike['content'] = noticeParts
-        .filter((pd) => pd.type === 'auto-approved')
-        .map((pd) => ({
-          type: 'tool-call' as const,
-          toolCallId: m.id,
-          toolName: 'ocman:auto-approved',
-          argsText: JSON.stringify({
-            permission: pd.permission,
-            patterns: pd.patterns,
-            reasoning: pd.reasoning ?? '',
-          }),
-          result: undefined,
-        }));
+      const noticeContent: Exclude<ThreadMessageLike['content'], string>[number][] = [];
+      for (const pd of noticeParts) {
+        if (pd.type === 'auto-approved') {
+          noticeContent.push({
+            type: 'tool-call' as const,
+            toolCallId: m.id,
+            toolName: 'ocman:auto-approved',
+            argsText: JSON.stringify({
+              permission: pd.permission,
+              patterns: pd.patterns,
+              reasoning: pd.reasoning ?? '',
+            }),
+            result: undefined,
+          });
+        }
+        if (pd.type === 'text' && pd.text) {
+          noticeContent.push({ type: 'text' as const, text: pd.text });
+        }
+      }
       return {
         role: 'assistant' as const,
         id: m.id,

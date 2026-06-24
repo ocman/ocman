@@ -165,6 +165,26 @@ describe('useSession — initial load', () => {
       expect(result.current.status).toBe('error');
     });
   });
+
+  it('adds session notices to the message history', async () => {
+    const detail = makeDetail({
+      session: {
+        ...makeDetail().session,
+        notice: { kind: 'error', message: 'connection refused', retryAt: 0, attempt: 0 },
+      },
+    });
+    const fetchSession = vi.fn().mockResolvedValue(detail);
+
+    const { result } = renderHook(() => useSession(SID, { fetchSession }));
+
+    await waitFor(() => {
+      expect(result.current.messages.some((m) => m.id === `ocman-session-notice-${SID}`)).toBe(true);
+    });
+    expect(result.current.parts.find((p) => p.messageId === `ocman-session-notice-${SID}`)?.data).toEqual({
+      type: 'text',
+      text: 'connection refused',
+    });
+  });
 });
 
 describe('useSession — SSE event dispatch', () => {
@@ -783,4 +803,3 @@ describe('useSession — subagent event routing', () => {
     expect(result.current.parts.find((p) => p.id === 'p-sub')).toBeUndefined();
   });
 });
-

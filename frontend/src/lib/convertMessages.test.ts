@@ -98,6 +98,19 @@ describe('parsePart', () => {
   });
 });
 
+describe('notice messages', () => {
+  it('renders text notice parts inline', () => {
+    const messages: Message[] = [{ id: 'n1', sessionId: 's', timeCreated: 1, data: { role: 'notice' } }];
+    const parts = [makePart('n1', { type: 'text', text: 'connection refused' })];
+
+    const out = createConvertMessages()(messages, parts);
+
+    expect(out).toHaveLength(1);
+    expect(out[0].role).toBe('assistant');
+    expect(asContentArray(out[0].content)).toEqual([{ type: 'text', text: 'connection refused' }]);
+  });
+});
+
 describe('truncate', () => {
   it('returns the empty string for falsy inputs', () => {
     expect(truncate('', 10)).toBe('');

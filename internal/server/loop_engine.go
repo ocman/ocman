@@ -8,8 +8,8 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/loops"
+	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/worktree"
@@ -133,12 +133,12 @@ func (s *inflightSet) release(id string) {
 // loopMessenger implements loops.Messenger via the platform registry.
 type loopMessenger struct{ s *Server }
 
-func (m *loopMessenger) SendPrompt(ctx context.Context, sessionID, prompt string) error {
+func (m *loopMessenger) SendPrompt(ctx context.Context, sessionID, prompt, model string) error {
 	p, ok := m.s.registry.PlatformForSession(ctx, sessionID)
 	if !ok {
 		return fmt.Errorf("no platform owns session %s", sessionID)
 	}
-	return p.SendMessage(ctx, platforms.SendMessageRequest{SessionID: sessionID, Message: prompt})
+	return p.SendMessage(ctx, platforms.SendMessageRequest{SessionID: sessionID, Message: prompt, Model: model})
 }
 
 // loopStatusInferer implements loops.SessionStatusInferer by reusing the
@@ -198,12 +198,13 @@ func (l *loopLauncher) Spawn(ctx context.Context, req loops.SpawnRequest) (strin
 		Directory:       req.Directory,
 		Intent:          req.Intent,
 		ComposedPrompt:  req.Prompt,
+		Model:           req.Model,
 		LoopID:          req.LoopID,
 	}
 	if !req.Worktree {
 		return launcher.Launch(ctx, lr)
 	}
-	repoRoot, err := worktree.ResolveRepoRoot(ctx, req.Directory)
+	repoRoot, err := worktree.ResolveRepoRoot(ctx, req.Directory) // ocman:allow-host-helper
 	if err != nil {
 		return "", fmt.Errorf("resolving repo root: %w", err)
 	}
@@ -212,7 +213,7 @@ func (l *loopLauncher) Spawn(ctx context.Context, req loops.SpawnRequest) (strin
 		RepoRoot:  repoRoot,
 		Branch:    branch,
 		NewBranch: true,
-		BaseRef:   worktree.ResolveBaseRef(ctx, repoRoot),
+		BaseRef:   worktree.ResolveBaseRef(ctx, repoRoot), // ocman:allow-host-helper
 	})
 	return childID, err
 }

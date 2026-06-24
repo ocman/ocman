@@ -42,9 +42,9 @@ export function RateLimitBanner({ notice }: RateLimitBannerProps) {
     return () => window.clearInterval(id);
   }, [notice.retryAt]);
 
-  if (notice.kind !== 'rate_limit' && notice.kind !== 'provider_overloaded') return null;
-
-  const title = notice.kind === 'rate_limit' ? 'Rate limited' : 'Provider overloaded';
+  let title = 'Error';
+  if (notice.kind === 'rate_limit') title = 'Rate limited';
+  if (notice.kind === 'provider_overloaded') title = 'Provider overloaded';
 
   return (
     <div className="oc-rate-limit-banner" role="status" data-testid="rate-limit-banner">

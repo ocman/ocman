@@ -20,7 +20,7 @@
 // - the loadMore pagination shim against the same reducer.
 
 import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react';
-import { api, type SessionDetail } from '../../lib/api';
+import { api, type Message, type Part, type SessionDetail } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
 import {
   initialSessionView,
@@ -163,6 +163,28 @@ async function defaultFetchSession(
 
 /** Build a SessionView from a freshly-fetched SessionDetail. */
 function viewFromDetail(id: string, detail: SessionDetail): SessionView {
+  let messages = detail.messages ?? [];
+  let parts = detail.parts ?? [];
+  const notice = detail.session.notice;
+  if (notice) {
+    const noticeID = `ocman-session-notice-${id}`;
+    const timeCreated = detail.session.timeUpdated || Date.now();
+    const noticeMsg: Message = {
+      id: noticeID,
+      sessionId: id,
+      timeCreated,
+      data: { role: 'notice' },
+    };
+    const noticePart: Part = {
+      id: `${noticeID}-part`,
+      messageId: noticeID,
+      sessionId: id,
+      timeCreated,
+      data: { type: 'text', text: notice.message },
+    };
+    messages = [...messages.filter((m) => m.id !== noticeID), noticeMsg];
+    parts = [...parts.filter((p) => p.messageId !== noticeID), noticePart];
+  }
   return {
     ...initialSessionView(id),
     session: {
@@ -172,8 +194,8 @@ function viewFromDetail(id: string, detail: SessionDetail): SessionView {
       defaultModel: detail.defaultModel,
       warnings: detail.warnings ?? [],
     },
-    messages: detail.messages ?? [],
-    parts: detail.parts ?? [],
+    messages,
+    parts,
   };
 }
 

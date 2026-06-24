@@ -71,6 +71,24 @@ func TestParseRateLimitNotice_RetryWithHours(t *testing.T) {
 	}
 }
 
+func TestParseRateLimitNotice_RetryWithHashAttempt(t *testing.T) {
+	msg := "This request would exceed your account's rate limit. Please try again later. [retrying in 1h attempt #1]"
+	at := int64(1700000000000)
+	got, ok := parseRateLimitNotice(msg, at)
+	if !ok {
+		t.Fatal("expected match")
+	}
+	if got.Message != "This request would exceed your account's rate limit. Please try again later." {
+		t.Errorf("message = %q, want retry suffix stripped", got.Message)
+	}
+	if got.RetryAt != at+60*60*1000 {
+		t.Errorf("retryAt = %d, want %d", got.RetryAt, at+60*60*1000)
+	}
+	if got.Attempt != 1 {
+		t.Errorf("attempt = %d, want 1", got.Attempt)
+	}
+}
+
 func TestParseRateLimitNotice_RetryWithoutAttempt(t *testing.T) {
 	msg := "rate limit exceeded [retrying in 10m]"
 	at := int64(1700000000000)
@@ -250,13 +268,20 @@ func TestDeriveSessionNotice_NonErrorStatus(t *testing.T) {
 	}
 }
 
-func TestDeriveSessionNotice_ErroredWithoutRateLimit(t *testing.T) {
+func TestDeriveSessionNotice_ErroredWithGenericError(t *testing.T) {
 	s := db.Session{
 		Status:           "error",
 		LastErrorMessage: "connection refused",
 	}
-	if notice := deriveSessionNotice(s); notice != nil {
-		t.Errorf("non-rate-limit error should not produce a notice, got %+v", notice)
+	notice := deriveSessionNotice(s)
+	if notice == nil {
+		t.Fatal("expected generic notice")
+	}
+	if notice.Kind != "error" {
+		t.Errorf("kind = %q, want error", notice.Kind)
+	}
+	if notice.Message != "connection refused" {
+		t.Errorf("message = %q, want connection refused", notice.Message)
 	}
 }
 
@@ -291,7 +316,7 @@ func TestApplySessionNotice_EnrichesSlice(t *testing.T) {
 	if sessions[1].Notice != nil {
 		t.Error("s2 (done) should not have a notice")
 	}
-	if sessions[2].Notice != nil {
-		t.Error("s3 (non-rate-limit error) should not have a notice")
+	if sessions[2].Notice == nil || sessions[2].Notice.Kind != "error" {
+		t.Errorf("s3 should have generic error notice, got %+v", sessions[2].Notice)
 	}
 }

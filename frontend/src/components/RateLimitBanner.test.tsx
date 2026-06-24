@@ -19,11 +19,12 @@ afterEach(() => {
 });
 
 describe('RateLimitBanner', () => {
-  it('renders nothing for unknown notices', () => {
-    const { container } = render(
-      <RateLimitBanner notice={{ kind: 'other', message: 'x', retryAt: 0, attempt: 0 }} />,
+  it('renders generic error notices', () => {
+    render(
+      <RateLimitBanner notice={{ kind: 'error', message: 'x', retryAt: 0, attempt: 0 }} />,
     );
-    expect(container.innerHTML).toBe('');
+    expect(screen.getByText(/Error/)).toBeInTheDocument();
+    expect(screen.getByText(/x/)).toBeInTheDocument();
   });
 
   it('renders provider overload notices', () => {

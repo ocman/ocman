@@ -37,6 +37,7 @@ export function LoopCreateModal({
   const [action, setAction] = useState<Action>('prompt_root');
   const [targetSession, setTargetSession] = useState('');
   const [sessionMode, setSessionMode] = useState('fresh');
+  const [model, setModel] = useState('');
   const [template, setTemplate] = useState('');
   const [maxIters, setMaxIters] = useState('25');
   const [maxCost, setMaxCost] = useState('5');
@@ -97,6 +98,7 @@ export function LoopCreateModal({
         trigger_config: triggerConfig,
         action_type: action,
         action_template: template.trim() || undefined,
+        model: model.trim() || undefined,
         session_mode: action === 'prompt_root' ? sessionMode : undefined,
         stop_conditions: {
           max_iterations: Number(maxIters) || 25,
@@ -115,7 +117,7 @@ export function LoopCreateModal({
       }
     },
     [
-      title, trigger, interval, prNumber, action, targetSession, sessionMode,
+      title, trigger, interval, prNumber, action, targetSession, sessionMode, model,
       template, maxIters, maxCost, rootSessionId, parentLoopId, platform, directory,
       onCreate, onClose,
     ],
@@ -194,6 +196,11 @@ export function LoopCreateModal({
               </select>
             </label>
           )}
+
+          <label>
+            Model (optional)
+            <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="provider/model" />
+          </label>
 
           <label>
             Action prompt

@@ -28,6 +28,7 @@ export function LoopEditModal({ loop, onSave, onClose, onPause, onResume, onTrig
   const canTrigger = isSchedule && loop.state === 'active';
   const [title, setTitle] = useState(loop.title);
   const [template, setTemplate] = useState(loop.actionTemplate ?? '');
+  const [model, setModel] = useState(loop.model ?? '');
   const [sessionMode, setSessionMode] = useState(loop.sessionMode || 'fresh');
   const [interval, setInterval] = useState(
     formatGoDuration(loop.triggerConfig?.interval_seconds ?? 60),
@@ -73,6 +74,7 @@ export function LoopEditModal({ loop, onSave, onClose, onPause, onResume, onTrig
       const req: LoopUpdateRequest = {
         title,
         action_template: template,
+        model: model.trim(),
         session_mode: sessionMode,
         stop_conditions: {
           max_iterations: Number(maxIters) || 25,
@@ -95,7 +97,7 @@ export function LoopEditModal({ loop, onSave, onClose, onPause, onResume, onTrig
         setSaving(false);
       }
     },
-    [title, template, sessionMode, interval, maxIters, maxCost, isSchedule, loop, onSave, onClose],
+    [title, template, model, sessionMode, interval, maxIters, maxCost, isSchedule, loop, onSave, onClose],
   );
 
   return (
@@ -124,6 +126,10 @@ export function LoopEditModal({ loop, onSave, onClose, onPause, onResume, onTrig
               onChange={(e) => setTemplate(e.target.value)}
               placeholder="Prompt sent each iteration. Placeholders: {{iteration}} {{last_summary}}"
             />
+          </label>
+          <label>
+            Model (optional)
+            <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="provider/model" />
           </label>
           <label>
             Session per iteration

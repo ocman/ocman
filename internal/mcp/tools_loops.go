@@ -83,6 +83,7 @@ func createLoopTool() mcplib.Tool {
 		mcplib.WithObject("trigger_config", mcplib.Description("Trigger settings (interval_seconds, pr_number, target_session_id).")),
 		mcplib.WithString("action_type", mcplib.Required(), mcplib.Description("prompt_root | prompt_child | spawn_child | spawn_worktree")),
 		mcplib.WithString("action_template", mcplib.Description("Prompt template. Placeholders: {{iteration}} {{project}} {{last_summary}} {{trigger}} {{pr_number}}.")),
+		mcplib.WithString("model", mcplib.Description("Optional model reference to use for loop prompts, e.g. provider/model.")),
 		mcplib.WithString("session_mode", mcplib.Description("prompt_root session strategy: 'fresh' (new dedicated session each iteration, default) or 'reuse' (re-prompt the loop's session).")),
 		mcplib.WithObject("stop_conditions", mcplib.Required(), mcplib.Description("max_iterations (required), max_cost_usd or max_tokens (one required), max_duration, error_streak, goal_predicate.")),
 	)
@@ -124,6 +125,7 @@ func (t *loopTools) handleCreateLoop(ctx context.Context, req mcplib.CallToolReq
 		TriggerType:    req.GetString("trigger_type", ""),
 		ActionType:     req.GetString("action_type", ""),
 		ActionTemplate: req.GetString("action_template", ""),
+		Model:          req.GetString("model", ""),
 		SessionMode:    req.GetString("session_mode", ""),
 	}
 	if m := req.GetArguments(); m != nil {

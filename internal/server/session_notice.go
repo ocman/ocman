@@ -31,7 +31,7 @@ var providerOverloadPhrases = []string{
 // that OpenCode appends to rate-limit error messages. Both the delay
 // and the attempt are optional captures.
 var retrySuffixRe = regexp.MustCompile(
-	`\[retrying in (\d+[smh])(?: attempt (\d+))?\]`,
+	`\[retrying in (\d+[smh])(?: attempt #?(\d+))?\]`,
 )
 
 // parsedRateLimit holds the normalized fields extracted from a
@@ -168,6 +168,12 @@ func deriveSessionNotice(s db.Session) *db.SessionNotice {
 				RetryAt: parsed.RetryAt,
 				Attempt: parsed.Attempt,
 			}
+		}
+	}
+
+	for _, text := range []string{s.LastErrorMessage, s.LastErrorName} {
+		if text != "" {
+			return &db.SessionNotice{Kind: "error", Message: text}
 		}
 	}
 

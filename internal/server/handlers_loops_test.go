@@ -21,7 +21,7 @@ func newLoopsTestServer(t *testing.T) *Server {
 	loopServiceFn = func(s *Server) *loops.Service {
 		return loops.NewService(loops.Deps{
 			Store:     sdb,
-			Messenger: messengerFunc(func(context.Context, string, string) error { return nil }),
+			Messenger: messengerFunc(func(context.Context, string, string, string) error { return nil }),
 		})
 	}
 	t.Cleanup(func() { loopServiceFn = prev })
@@ -117,4 +117,3 @@ func TestHandleLoops_PauseResumeDelete(t *testing.T) {
 		t.Fatalf("expected deleted after delete, got %s", l.State)
 	}
 }
-

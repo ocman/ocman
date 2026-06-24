@@ -36,6 +36,8 @@ type LaunchRequest struct {
 	Intent string
 	// ComposedPrompt is the enriched prompt to send as the first message.
 	ComposedPrompt string
+	// Model is the optional platform model reference used for the first message.
+	Model string
 	// WorktreePath is the on-disk worktree path (empty for split_to_session).
 	WorktreePath string
 	// Branch is the git branch for the worktree (empty for split_to_session).
@@ -132,6 +134,7 @@ func (l *SessionLauncher) Launch(ctx context.Context, req LaunchRequest) (string
 		if err := l.platform.SendMessage(ctx, platforms.SendMessageRequest{
 			SessionID: childID,
 			Message:   req.ComposedPrompt,
+			Model:     req.Model,
 		}); err != nil {
 			// Log but don't fail: the session was created; the user can
 			// still interact with it manually.

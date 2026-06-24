@@ -17,17 +17,17 @@ type fakeLoopStore struct {
 	active []state.Loop
 }
 
-func (f *fakeLoopStore) InsertLoop(state.Loop) error                  { return nil }
-func (f *fakeLoopStore) UpdateLoop(state.Loop) error                  { return nil }
-func (f *fakeLoopStore) SetLoopState(string, string, string) error    { return nil }
-func (f *fakeLoopStore) GetLoop(id string) (*state.Loop, error)       { return nil, nil }
+func (f *fakeLoopStore) InsertLoop(state.Loop) error                    { return nil }
+func (f *fakeLoopStore) UpdateLoop(state.Loop) error                    { return nil }
+func (f *fakeLoopStore) SetLoopState(string, string, string) error      { return nil }
+func (f *fakeLoopStore) GetLoop(id string) (*state.Loop, error)         { return nil, nil }
 func (f *fakeLoopStore) ListLoops(string, string) ([]state.Loop, error) { return f.active, nil }
-func (f *fakeLoopStore) ListActiveLoops() ([]state.Loop, error)       { return f.active, nil }
+func (f *fakeLoopStore) ListActiveLoops() ([]state.Loop, error)         { return f.active, nil }
 func (f *fakeLoopStore) InsertLoopIteration(state.LoopIteration) (int64, error) {
 	return 1, nil
 }
-func (f *fakeLoopStore) UpdateLoopIteration(state.LoopIteration) error             { return nil }
-func (f *fakeLoopStore) ListLoopIterations(string) ([]state.LoopIteration, error)  { return nil, nil }
+func (f *fakeLoopStore) UpdateLoopIteration(state.LoopIteration) error            { return nil }
+func (f *fakeLoopStore) ListLoopIterations(string) ([]state.LoopIteration, error) { return nil, nil }
 func (f *fakeLoopStore) ListChildSessionsByLoop(string) ([]state.ChildSession, error) {
 	return nil, nil
 }
@@ -102,10 +102,10 @@ func TestInflightSet_GuardsReentry(t *testing.T) {
 }
 
 // messengerFunc adapts a func to loops.Messenger.
-type messengerFunc func(ctx context.Context, sessionID, prompt string) error
+type messengerFunc func(ctx context.Context, sessionID, prompt, model string) error
 
-func (f messengerFunc) SendPrompt(ctx context.Context, sessionID, prompt string) error {
-	return f(ctx, sessionID, prompt)
+func (f messengerFunc) SendPrompt(ctx context.Context, sessionID, prompt, model string) error {
+	return f(ctx, sessionID, prompt, model)
 }
 
 // launcherFunc adapts a func to loops.Launcher.

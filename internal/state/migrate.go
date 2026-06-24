@@ -83,11 +83,13 @@ import (
 //	      whether each iteration spawns a fresh session ('fresh',
 //	      default) or reuses the loop session ('reuse'). See
 //	      spec/agent-loops Open Question 5.
+//	17 - agent loops: model selection. Adds `loops.model`, an optional
+//	      platform model reference passed to loop prompts/spawned sessions.
 //
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 16
+const latestSchemaVersion = 17
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -215,6 +217,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV15(tx)
 	case 16:
 		return migrateToV16(tx)
+	case 17:
+		return migrateToV17(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -621,4 +625,10 @@ func migrateToV16(tx *sql.Tx) error {
 		}
 	}
 	return nil
+}
+
+// migrateToV17 lets loops pin the model used when prompting or spawning.
+func migrateToV17(tx *sql.Tx) error {
+	_, err := tx.Exec(`ALTER TABLE loops ADD COLUMN model TEXT NOT NULL DEFAULT ''`)
+	return err
 }

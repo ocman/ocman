@@ -17,6 +17,7 @@ function makeLoop(overrides: Partial<Loop> = {}): Loop {
     triggerType: 'schedule',
     actionType: 'prompt_root',
     actionTemplate: 'old prompt',
+    model: 'anthropic/claude-haiku-4-5',
     sessionMode: 'fresh',
     state: 'active',
     iteration: 0,
@@ -48,6 +49,7 @@ describe('LoopEditModal', () => {
     expect(screen.getByTestId('loop-edit-form')).toBeInTheDocument();
     expect(screen.getByLabelText('Title')).toHaveValue('Check PRs');
     expect(screen.getByLabelText('Max cost (USD)')).toHaveValue(5);
+    expect(screen.getByLabelText('Model (optional)')).toHaveValue('anthropic/claude-haiku-4-5');
     // 1800s is shown as a Go-style duration.
     expect(screen.getByLabelText('Interval')).toHaveValue('30m');
   });
@@ -55,6 +57,7 @@ describe('LoopEditModal', () => {
   it('saves edited fields (interval parsed from Go duration) then closes', async () => {
     render(<LoopEditModal loop={makeLoop()} onSave={onSave} onClose={onClose} />);
     fireEvent.change(screen.getByLabelText('Session per iteration'), { target: { value: 'reuse' } });
+    fireEvent.change(screen.getByLabelText('Model (optional)'), { target: { value: 'openai/gpt-5.5' } });
     fireEvent.change(screen.getByLabelText('Max iterations'), { target: { value: '10' } });
     fireEvent.change(screen.getByLabelText('Interval'), { target: { value: '1h30m' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
@@ -62,6 +65,7 @@ describe('LoopEditModal', () => {
     await waitFor(() => expect(onSave).toHaveBeenCalled());
     const req = onSave.mock.calls[0][0];
     expect(req.session_mode).toBe('reuse');
+    expect(req.model).toBe('openai/gpt-5.5');
     expect(req.stop_conditions.max_iterations).toBe(10);
     expect(req.trigger_config.interval_seconds).toBe(5400);
     await waitFor(() => expect(onClose).toHaveBeenCalled());

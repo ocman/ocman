@@ -27,8 +27,9 @@ type Loop struct {
 	TriggerConfig  string  `json:"-"`           // raw JSON; decoded form is surfaced by the loops domain
 	ActionType     string  `json:"actionType"`  // prompt_root, prompt_child, spawn_child, spawn_worktree
 	ActionTemplate string  `json:"actionTemplate"`
-	StopConditions string  `json:"-"` // raw JSON; decoded form is surfaced by the loops domain
-	State          string  `json:"state"`       // active, paused, completed, deleted, errored
+	Model          string  `json:"model,omitempty"`
+	StopConditions string  `json:"-"`                       // raw JSON; decoded form is surfaced by the loops domain
+	State          string  `json:"state"`                   // active, paused, completed, deleted, errored
 	LoopSessionID  string  `json:"loopSessionID,omitempty"` // the loop's dedicated session; empty until first fire
 	SessionMode    string  `json:"sessionMode"`             // fresh (new session per iteration) | reuse
 	Iteration      int     `json:"iteration"`
@@ -66,15 +67,15 @@ func (d *DB) InsertLoop(l Loop) error {
 		INSERT INTO loops
 			(id, platform, root_session_id, parent_loop_id, directory,
 			 project_name, title, description, current_task, pattern,
-			 trigger_type, trigger_config, action_type, action_template,
+			 trigger_type, trigger_config, action_type, action_template, model,
 			 stop_conditions, state, iteration, error_streak, tokens_used,
 			 cost_usd, last_fired_at, created_at, updated_at, completed_at,
 			 last_summary, loop_session_id, session_mode)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		l.ID, l.Platform, l.RootSessionID, nullableString(l.ParentLoopID), l.Directory,
 		l.ProjectName, l.Title, l.Description, l.CurrentTask, l.Pattern,
-		l.TriggerType, nonEmptyJSON(l.TriggerConfig), l.ActionType, l.ActionTemplate,
+		l.TriggerType, nonEmptyJSON(l.TriggerConfig), l.ActionType, l.ActionTemplate, l.Model,
 		nonEmptyJSON(l.StopConditions), defaultState(l.State), l.Iteration, l.ErrorStreak, l.TokensUsed,
 		l.CostUSD, l.LastFiredAt, l.CreatedAt, l.UpdatedAt, nullableInt(l.CompletedAt),
 		l.LastSummary, nullableString(l.LoopSessionID), defaultSessionMode(l.SessionMode),
@@ -101,6 +102,7 @@ func (d *DB) UpdateLoop(l Loop) error {
 			trigger_config  = ?,
 			action_type     = ?,
 			action_template = ?,
+			model           = ?,
 			stop_conditions = ?,
 			state           = ?,
 			iteration       = ?,
@@ -116,7 +118,7 @@ func (d *DB) UpdateLoop(l Loop) error {
 		WHERE id = ?
 	`,
 		l.Directory, l.ProjectName, l.Title, l.Description, l.CurrentTask, l.Pattern,
-		l.TriggerType, nonEmptyJSON(l.TriggerConfig), l.ActionType, l.ActionTemplate,
+		l.TriggerType, nonEmptyJSON(l.TriggerConfig), l.ActionType, l.ActionTemplate, l.Model,
 		nonEmptyJSON(l.StopConditions), defaultState(l.State), l.Iteration, l.ErrorStreak, l.TokensUsed,
 		l.CostUSD, l.LastFiredAt, time.Now().UnixMilli(), nullableInt(l.CompletedAt),
 		l.LastSummary, nullableString(l.LoopSessionID), defaultSessionMode(l.SessionMode), l.ID,
@@ -301,7 +303,7 @@ func (d *DB) ListChildSessionsByLoop(loopID string) ([]ChildSession, error) {
 const loopSelectSQL = `
 	SELECT id, platform, root_session_id, parent_loop_id, directory,
 	       project_name, title, description, current_task, pattern,
-	       trigger_type, trigger_config, action_type, action_template,
+	       trigger_type, trigger_config, action_type, action_template, model,
 	       stop_conditions, state, iteration, error_streak, tokens_used,
 	       cost_usd, last_fired_at, created_at, updated_at, completed_at,
 	       last_summary, loop_session_id, session_mode
@@ -318,7 +320,7 @@ func scanLoop(row rowScanner) (*Loop, error) {
 	if err := row.Scan(
 		&l.ID, &l.Platform, &l.RootSessionID, &parentLoopID, &l.Directory,
 		&l.ProjectName, &l.Title, &l.Description, &l.CurrentTask, &l.Pattern,
-		&l.TriggerType, &l.TriggerConfig, &l.ActionType, &l.ActionTemplate,
+		&l.TriggerType, &l.TriggerConfig, &l.ActionType, &l.ActionTemplate, &l.Model,
 		&l.StopConditions, &l.State, &l.Iteration, &l.ErrorStreak, &l.TokensUsed,
 		&l.CostUSD, &l.LastFiredAt, &l.CreatedAt, &l.UpdatedAt, &completedAt,
 		&l.LastSummary, &loopSessionID, &l.SessionMode,

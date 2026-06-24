@@ -457,7 +457,7 @@ func TestHandleSessions_NoticeAppearsForRateLimitedSession(t *testing.T) {
 	}
 }
 
-func TestHandleSessions_NoNoticeForNonRateLimitError(t *testing.T) {
+func TestHandleSessions_NoticeAppearsForGenericError(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	fp := &fakePlatform{
 		id: "opencode",
@@ -487,8 +487,14 @@ func TestHandleSessions_NoNoticeForNonRateLimitError(t *testing.T) {
 	if len(sessions) != 1 {
 		t.Fatalf("got %d sessions, want 1", len(sessions))
 	}
-	if sessions[0].Notice != nil {
-		t.Errorf("non-rate-limit error should not have a notice, got %+v", sessions[0].Notice)
+	if sessions[0].Notice == nil {
+		t.Fatal("expected generic error notice")
+	}
+	if sessions[0].Notice.Kind != "error" {
+		t.Errorf("notice.kind = %q, want error", sessions[0].Notice.Kind)
+	}
+	if sessions[0].Notice.Message != "connection refused" {
+		t.Errorf("notice.message = %q, want connection refused", sessions[0].Notice.Message)
 	}
 }
 

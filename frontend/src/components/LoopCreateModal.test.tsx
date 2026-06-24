@@ -27,6 +27,7 @@ describe('LoopCreateModal', () => {
   it('creates a schedule/prompt_root loop with parsed interval and budget', async () => {
     renderModal();
     fireEvent.change(screen.getByLabelText('Interval'), { target: { value: '15m' } });
+    fireEvent.change(screen.getByLabelText('Model (optional)'), { target: { value: 'anthropic/claude-haiku-4-5' } });
     fireEvent.change(screen.getByLabelText('Max cost (USD)'), { target: { value: '3' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create' }));
 
@@ -36,6 +37,7 @@ describe('LoopCreateModal', () => {
     expect(req.trigger_type).toBe('schedule');
     expect(req.trigger_config.interval_seconds).toBe(900);
     expect(req.action_type).toBe('prompt_root');
+    expect(req.model).toBe('anthropic/claude-haiku-4-5');
     expect(req.session_mode).toBe('fresh');
     expect(req.stop_conditions.max_cost_usd).toBe(3);
     expect(onClose).toHaveBeenCalled();
