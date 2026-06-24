@@ -164,6 +164,14 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 			continue
 		}
 
+		// Always hide transient auto-approve judge sessions. They are
+		// parentless (created directly on the OpenCode port) so the
+		// parent_id check above never catches them, yet they should
+		// never surface in the list.
+		if strings.HasSuffix(s.Title, "(auto-approve subagent)") {
+			continue
+		}
+
 		// Carry error metadata for the notice normalizer.
 		s.LastErrorName = derefStr(lastErrorName)
 		s.LastErrorMessage = derefStr(lastErrorMessage)

@@ -286,6 +286,34 @@ func TestGetSessions_ExcludesCompletedSubagents(t *testing.T) {
 	}
 }
 
+// TestGetSessions_ExcludesAutoApproveJudge verifies that a transient
+// auto-approve judge session is hidden even though it is parentless and
+// active — the parent_id-based subagent filter never catches it.
+func TestGetSessions_ExcludesAutoApproveJudge(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "parent", "Normal Session", "/project", now, now)
+	// Parentless judge session, made "busy" so it would survive the
+	// status filter if title-matching weren't applied.
+	insertSession(t, db, "judge", "(auto-approve subagent)", "/project", now, now)
+	insertMessage(t, db, "m1", "judge", now, map[string]interface{}{"role": "assistant"})
+
+	sessions, err := db.GetSessions("", 0)
+	if err != nil {
+		t.Fatalf("GetSessions: %v", err)
+	}
+	for _, s := range sessions {
+		if s.ID == "judge" {
+			t.Fatalf("auto-approve judge session should be excluded, got %+v", s)
+		}
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session (parent only), got %d", len(sessions))
+	}
+}
+
 func TestGetSessions_StatusBusy(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
