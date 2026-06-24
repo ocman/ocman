@@ -4,6 +4,8 @@ import {
   savePromptTemplates,
   type PromptTemplates,
 } from '../../lib/upstreamApi';
+import { SaveStatus } from '../SaveStatus';
+import { useSaveStatus } from '../../lib/useSaveStatus';
 
 // Defaults match the Go constants in internal/server/handlers_prompt_templates.go.
 // Kept in sync manually — these strings are *user-facing defaults*, so a
@@ -41,7 +43,6 @@ export function PromptTemplateSettings() {
     issue: DEFAULT_ISSUE_TEMPLATE,
   });
   const [loaded, setLoaded] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -62,16 +63,15 @@ export function PromptTemplateSettings() {
     };
   }, []);
 
+  // Returns the save promise so the calling editor can track its own status.
   const save = async (next: Partial<PromptTemplates>) => {
-    setSaving(true);
     setError(null);
     try {
       const updated = await savePromptTemplates(next);
       setTemplates(updated);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSaving(false);
+      throw err;
     }
   };
 
@@ -88,20 +88,19 @@ export function PromptTemplateSettings() {
       <TemplateEditor
         label="PR template"
         value={templates.pr}
-        onBlur={(v) => void save({ pr: v })}
-        onReset={() => void save({ pr: DEFAULT_PR_TEMPLATE })}
+        onSave={(v) => save({ pr: v })}
+        onReset={() => save({ pr: DEFAULT_PR_TEMPLATE })}
         placeholdersNote="Placeholders: {number} {title} {body} {url} {branch} {author} {host} {repo}"
         testId="pr-template"
       />
       <TemplateEditor
         label="Issue template"
         value={templates.issue}
-        onBlur={(v) => void save({ issue: v })}
-        onReset={() => void save({ issue: DEFAULT_ISSUE_TEMPLATE })}
+        onSave={(v) => save({ issue: v })}
+        onReset={() => save({ issue: DEFAULT_ISSUE_TEMPLATE })}
         placeholdersNote="Placeholders: {number} {title} {body} {url} {author} {host} {repo} (no {branch} for issues)"
         testId="issue-template"
       />
-      {saving && <div className="settings-prompt-templates-status">Saving…</div>}
       {error && <div className="settings-prompt-templates-error">{error}</div>}
     </div>
   );
@@ -110,14 +109,15 @@ export function PromptTemplateSettings() {
 interface TemplateEditorProps {
   label: string;
   value: string;
-  onBlur: (next: string) => void;
-  onReset: () => void;
+  onSave: (next: string) => Promise<void>;
+  onReset: () => Promise<void>;
   placeholdersNote: string;
   testId: string;
 }
 
-function TemplateEditor({ label, value, onBlur, onReset, placeholdersNote, testId }: TemplateEditorProps) {
+function TemplateEditor({ label, value, onSave, onReset, placeholdersNote, testId }: TemplateEditorProps) {
   const [draft, setDraft] = useState(value);
+  const { state, track } = useSaveStatus();
   // Sync when the parent's persisted value changes (e.g. after Reset).
   useEffect(() => {
     setDraft(value);
@@ -127,7 +127,8 @@ function TemplateEditor({ label, value, onBlur, onReset, placeholdersNote, testI
     <div className="settings-prompt-template" data-testid={`prompt-template-${testId}`}>
       <div className="settings-prompt-template-header">
         <label>{label}</label>
-        <button type="button" onClick={onReset} data-testid={`prompt-template-${testId}-reset`}>
+        <SaveStatus state={state} />
+        <button type="button" onClick={() => void track(() => onReset())} data-testid={`prompt-template-${testId}-reset`}>
           Reset to default
         </button>
       </div>
@@ -135,7 +136,7 @@ function TemplateEditor({ label, value, onBlur, onReset, placeholdersNote, testI
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={() => {
-          if (draft !== value) onBlur(draft);
+          if (draft !== value) void track(() => onSave(draft));
         }}
         rows={10}
         spellCheck={false}

@@ -16,6 +16,8 @@ import { matchesScope } from '../lib/projectTree';
 import { PromptTemplateSettings } from '../components/upstream/PromptTemplateSettings';
 import { RemoteSettings } from '../components/RemoteSettings';
 import { GettingStartedEmpty } from '../components/GettingStartedEmpty';
+import { SaveStatus } from '../components/SaveStatus';
+import { useSaveStatus } from '../lib/useSaveStatus';
 
 import { useUiStore } from '../lib/uiStore';
 import { useApiStore } from '../lib/apiStore';
@@ -389,6 +391,10 @@ export function SettingsTab() {
   const logout = useAuthStore((s) => s.logout);
   const { canInstall, installed, promptInstall } = usePwaInstall();
 
+  // Per-field save status (spinner while saving, checkmark for 5s after).
+  const delaySave = useSaveStatus();
+  const sectionsSave = useSaveStatus();
+
   // System notification state. Tracked locally so we can re-render
   // when permission changes (the browser API doesn't give us an event
   // for that, so we read it on each render and update after a request).
@@ -544,16 +550,20 @@ export function SettingsTab() {
                 const secs = Math.max(0, Math.min(60, Number(e.target.value) || 0));
                 const ms = secs * 1000;
                 setAutoApproveDelayMs(ms);
-                void setJudgeDelayApi(ms);
+                void delaySave.track(() => setJudgeDelayApi(ms));
               }}
             />
             <span className="settings-delay-unit">s</span>
+            <SaveStatus state={delaySave.state} />
           </div>
         </div>
 
         <div className="settings-row settings-row--block">
           <div className="settings-row-info">
-            <div className="settings-row-label">Reviewer prompt sections</div>
+            <div className="settings-row-label">
+              Reviewer prompt sections
+              <SaveStatus state={sectionsSave.state} />
+            </div>
             <div className="settings-row-desc">
               Extra rules appended to the AI reviewer&apos;s prompt. Each section
               appears as a named block the model reads before deciding. Use this
@@ -569,12 +579,12 @@ export function SettingsTab() {
                   const next = [...promptSections];
                   next[i] = updated;
                   setPromptSections(next);
-                  void setPromptSectionsApi(next);
+                  void sectionsSave.track(() => setPromptSectionsApi(next));
                 }}
                 onRemove={() => {
                   const next = promptSections.filter((_, j) => j !== i);
                   setPromptSections(next);
-                  void setPromptSectionsApi(next);
+                  void sectionsSave.track(() => setPromptSectionsApi(next));
                 }}
               />
             ))}
@@ -584,7 +594,7 @@ export function SettingsTab() {
               onClick={() => {
                 const next = [...promptSections, { title: '', content: '' }];
                 setPromptSections(next);
-                void setPromptSectionsApi(next);
+                void sectionsSave.track(() => setPromptSectionsApi(next));
               }}
             >
               + Add section

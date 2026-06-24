@@ -126,6 +126,18 @@ tr.no-port { opacity: 0.4; }
 }
 @keyframes oc-spin { to { transform: rotate(360deg); } }
 
+/* Inline save status (spinner while saving, checkmark for 5s after) */
+.oc-save-status {
+  display: inline-flex;
+  align-items: center;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 13px;
+  line-height: 1;
+}
+.oc-save-status-spinner { width: 14px; height: 14px; border-width: 2px; }
+.oc-save-status-check { color: var(--accent3); font-weight: 700; }
+.oc-save-status-error { color: var(--danger); font-weight: 700; }
+
 /* List loading indicator */
 .oc-list-loading {
   display: flex;
