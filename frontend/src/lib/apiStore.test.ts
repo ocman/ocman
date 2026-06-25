@@ -172,3 +172,36 @@ describe('runRequest AbortError handling', () => {
     expect(req.error).toBeNull();
   });
 });
+
+describe('seedNewSession', () => {
+  beforeEach(() => {
+    useApiStore.setState({
+      sessionCache: new Map(),
+      sessionCacheOrder: [],
+      cachedSessions: null,
+      recentSessions: [],
+      recentSessionsHash: '',
+    });
+  });
+
+  it('prepends the stub to recentSessions so the sidebar shows it instantly', () => {
+    const existing = makeSessionDetail('existing').session;
+    useApiStore.setState({ recentSessions: [existing] });
+
+    useApiStore.getState().seedNewSession('new-1', '/repo', 'opencode', 'pr #7');
+
+    const recent = useApiStore.getState().recentSessions;
+    expect(recent[0].id).toBe('new-1');
+    expect(recent[0].title).toBe('pr #7');
+    expect(recent.map((s) => s.id)).toEqual(['new-1', 'existing']);
+    // Hash is recomputed so the next poll's dedup check stays accurate.
+    expect(useApiStore.getState().recentSessionsHash).not.toBe('');
+  });
+
+  it('does not duplicate a session already in recentSessions', () => {
+    useApiStore.getState().seedNewSession('dup', '/repo', 'opencode');
+    useApiStore.getState().seedNewSession('dup', '/repo', 'opencode');
+    const recent = useApiStore.getState().recentSessions;
+    expect(recent.filter((s) => s.id === 'dup')).toHaveLength(1);
+  });
+});

@@ -257,12 +257,19 @@ export const useApiStore = create<ApiStore>((set, get) => ({
     };
     // Seed the detail cache so SessionDetail skips the loading spinner.
     get().setCachedSession(id, stub);
-    // Prepend the stub to cachedSessions so sidebar renders it immediately.
-    set((state) => ({
-      cachedSessions: state.cachedSessions
-        ? [stub.session, ...state.cachedSessions.filter((s) => s.id !== id)]
-        : [stub.session],
-    }));
+    // Prepend the stub to cachedSessions AND recentSessions so the sidebar
+    // renders it immediately instead of waiting up to one 3 s poll tick.
+    // The next poll reconciles the stub with the real server row.
+    set((state) => {
+      const recent = [stub.session, ...state.recentSessions.filter((s) => s.id !== id)];
+      return {
+        cachedSessions: state.cachedSessions
+          ? [stub.session, ...state.cachedSessions.filter((s) => s.id !== id)]
+          : [stub.session],
+        recentSessions: recent,
+        recentSessionsHash: computeSidebarHash(recent),
+      };
+    });
   },
   runRequest: async <T,>(key: string, task: () => Promise<T>) => {
     set((state) => ({
