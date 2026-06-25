@@ -167,7 +167,7 @@ export function SessionsTab() {
   const toggleDashboardGrouped = useUiStore((s) => s.toggleDashboardGrouped);
   const collapsedProjects = useUiStore((s) => s.collapsedProjects);
   const toggleCollapsedProject = useUiStore((s) => s.toggleCollapsedProject);
-  const openProjectPalette = useUiStore((s) => s.openProjectPalette);
+  const openProjectSessionPalette = useUiStore((s) => s.openProjectSessionPalette);
 
   const collapsedProjectSet = useMemo(
     () => new Set(collapsedProjects),
@@ -202,8 +202,8 @@ export function SessionsTab() {
         <button
           type="button"
           className="oc-time-range-btn oc-dashboard-create-btn"
-          onClick={openProjectPalette}
-          title="Create a new OpenCode session"
+          onClick={openProjectSessionPalette}
+          title="Create a new OpenCode session in a known project"
         >
           <i className="bi bi-plus-lg" aria-hidden="true" />
           New session

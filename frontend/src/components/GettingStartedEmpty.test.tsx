@@ -18,12 +18,12 @@ describe('GettingStartedEmpty', () => {
     render(<GettingStartedEmpty />);
     expect(screen.getByTestId('getting-started-empty')).toBeInTheDocument();
     expect(screen.getByText('No sessions yet')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '+ New session' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '+ New project' })).toBeInTheDocument();
   });
 
   it('opens the project palette when the button is clicked', () => {
     render(<GettingStartedEmpty />);
-    fireEvent.click(screen.getByRole('button', { name: '+ New session' }));
+    fireEvent.click(screen.getByRole('button', { name: '+ New project' }));
     expect(openProjectPalette).toHaveBeenCalledOnce();
   });
 

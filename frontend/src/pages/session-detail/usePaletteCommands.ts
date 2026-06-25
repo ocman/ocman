@@ -93,7 +93,7 @@ export function usePaletteCommands({
     } else if (cmd.id === 'scoped.rename') {
       setShowRenameModalRef.current(true);
     } else if (cmd.id === 'scoped.new-project') {
-      useUiStore.getState().openProjectPalette();
+      useUiStore.getState().openProjectSessionPalette();
     } else if (cmd.id === 'scoped.compact' && sessionRef.current && portAvailableRef.current && capsRef.current.compact) {
       const model = selectedModelRef.current || activeModelRef.current || '';
       const slashIdx = model.indexOf('/');

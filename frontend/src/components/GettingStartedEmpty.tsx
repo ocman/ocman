@@ -4,8 +4,7 @@ import { useUiStore } from '../lib/uiStore';
  * First-run / empty-state guidance. Shown wherever the session or
  * project list is genuinely empty (no OpenCode history yet). Explains
  * the data model — ocman surfaces sessions OpenCode produces — and
- * gives the one actionable next step: open the command palette to
- * launch a session in a project directory.
+ * gives the one actionable next step: add a project directory.
  *
  * `compact` trims the copy for the narrow sidebar; the full variant is
  * used in the projects table.
@@ -31,9 +30,9 @@ export function GettingStartedEmpty({ compact = false }: { compact?: boolean }) 
     >
       <strong style={{ color: 'var(--text)' }}>No sessions yet</strong>
       <p style={{ margin: 0 }}>
-        ocman shows the coding sessions OpenCode creates. Start one here, or
-        run <code>opencode</code> in any project directory and it will appear
-        in this list.
+        ocman shows the coding sessions OpenCode creates. Add a project
+        directory here, or run <code>opencode</code> in any project directory
+        and it will appear in this list.
       </p>
       <button
         type="button"
@@ -41,10 +40,10 @@ export function GettingStartedEmpty({ compact = false }: { compact?: boolean }) 
         onClick={openProjectPalette}
         style={{ alignSelf: compact ? 'flex-start' : 'center', padding: '6px 12px', fontSize: 13 }}
       >
-        + New session
+        + New project
       </button>
       <p style={{ margin: 0, fontSize: 12 }}>
-        Tip: press <kbd>Alt</kbd>+<kbd>N</kbd> any time to start a session.
+        Tip: press <kbd>Alt</kbd>+<kbd>N</kbd> any time to start a session in a known project.
       </p>
     </div>
   );

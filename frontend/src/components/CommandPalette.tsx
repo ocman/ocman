@@ -7,7 +7,7 @@ import { useApiStore } from '../lib/apiStore';
 import { useUiStore } from '../lib/uiStore';
 import { useWorktreeSessions, useAgentLoops } from '../lib/useCapabilities';
 import { cleanTitle, relativeTime, shortPath } from '../lib/format';
-import type { Session, DirectoryBrowseEntry, DirectorySearchEntry } from '../lib/api';
+import type { Session, Project, DirectoryBrowseEntry, DirectorySearchEntry } from '../lib/api';
 import { useTmux } from '../lib/useTmux';
 import { createSessionWithLaunch } from '../lib/createSessionWithLaunch';
 import { resolveTargetForDir } from '../lib/machinePicker';
@@ -20,6 +20,7 @@ type CommandNavItem = CommandItem | ScopedItem | NavItem;
 
 type ResultItem =
   | { kind: 'session'; session: Session }
+  | { kind: 'project'; project: Project }
   | { kind: 'browse-parent'; directory: string }
   | { kind: 'browse-directory'; entry: DirectoryBrowseEntry }
   | { kind: 'browse-search-directory'; entry: DirectorySearchEntry }
@@ -141,6 +142,7 @@ export function CommandPalette() {
   const location = useLocation();
   const queryClient = useQueryClient();
   const sessions = useApiStore((s) => s.cachedSessions);
+  const projects = useApiStore((s) => s.getProjects);
   const browseDirectories = useApiStore((s) => s.browseDirectories);
   const searchDirectories = useApiStore((s) => s.searchDirectories);
   const createSession = useApiStore((s) => s.createSession);
@@ -155,11 +157,15 @@ export function CommandPalette() {
     paletteOpen,
     paletteMode,
     closePalette: rawClosePalette,
-    openProjectPalette,
+    openProjectSessionPalette,
     openShortcuts,
   } = useUiStore();
   const mode = paletteMode;
 
+  const [projectList, setProjectList] = useState<Project[]>([]);
+  const [projectListLoading, setProjectListLoading] = useState(false);
+  const [projectListLoaded, setProjectListLoaded] = useState(false);
+  const [projectListError, setProjectListError] = useState<string | null>(null);
   const [projectBrowser, setProjectBrowser] = useState<ProjectBrowserState>(CLOSED_PROJECT_BROWSER);
   const projectBrowserAbortRef = useRef<AbortController | null>(null);
   const projectSearchAbortRef = useRef<AbortController | null>(null);
@@ -173,6 +179,10 @@ export function CommandPalette() {
   }, []);
 
   const closePalette = useCallback(() => {
+    setProjectList([]);
+    setProjectListLoading(false);
+    setProjectListLoaded(false);
+    setProjectListError(null);
     resetProjectBrowser();
     rawClosePalette();
   }, [rawClosePalette, resetProjectBrowser]);
@@ -285,6 +295,31 @@ export function CommandPalette() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     openProjectBrowser();
   }, [paletteOpen, mode, projectBrowser.open, projectBrowser.loading, openProjectBrowser]);
+
+  useEffect(() => {
+    if (!paletteOpen || mode !== 'project-session') return;
+    const controller = new AbortController();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setProjectListLoading(true);
+    setProjectListLoaded(false);
+    setProjectListError(null);
+    projects(controller.signal)
+      .then((list) => {
+        if (controller.signal.aborted) return;
+        setProjectList(list);
+        setProjectListLoading(false);
+        setProjectListLoaded(true);
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        const message = err instanceof Error ? err.message : 'Failed to load projects';
+        setProjectList([]);
+        setProjectListLoading(false);
+        setProjectListLoaded(true);
+        setProjectListError(message);
+      });
+    return () => controller.abort();
+  }, [paletteOpen, mode, projects]);
 
   useEffect(() => () => {
     projectBrowserAbortRef.current?.abort();
@@ -406,6 +441,23 @@ export function CommandPalette() {
       return browserResults;
     }
 
+    if (mode === 'project-session') {
+      if (!projectListLoaded || projectListLoading || projectListError) return [];
+      if (!query.trim()) {
+        return projectList
+          .slice()
+          .sort((a, b) => b.lastUsed - a.lastUsed)
+          .slice(0, 20)
+          .map((p) => ({ kind: 'project' as const, project: p }));
+      }
+      const q = query.toLowerCase();
+      return projectList
+        .filter((p) => p.directory.toLowerCase().includes(q))
+        .sort((a, b) => b.lastUsed - a.lastUsed)
+        .slice(0, 20)
+        .map((p) => ({ kind: 'project' as const, project: p }));
+    }
+
     if (!query.trim()) {
       return dedupeCommandNavItems([...SCOPED_COMMANDS, ...staticCommands, ...NAV_ITEMS]);
     }
@@ -445,7 +497,7 @@ export function CommandPalette() {
     }
 
     return uniqueResults;
-  }, [mode, query, sessions, sessionFuse, staticCommands, projectBrowser]);
+  }, [mode, query, sessions, sessionFuse, staticCommands, projectBrowser, projectList, projectListLoading, projectListLoaded, projectListError]);
 
   useEffect(() => {
     if (!listRef.current) return;
@@ -492,6 +544,8 @@ export function CommandPalette() {
     if (item.kind === 'session') {
       closePalette();
       navigate(`/session/${item.session.id}`);
+    } else if (item.kind === 'project') {
+      startSessionInDirectory(item.project.directory);
     } else if (item.kind === 'browse-parent') {
       openProjectBrowser(item.directory);
     } else if (item.kind === 'browse-directory') {
@@ -505,7 +559,7 @@ export function CommandPalette() {
       if (item.id === 'scoped.new-project') {
         setQuery('');
         setSelectedIndex(0);
-        openProjectPalette();
+        openProjectSessionPalette();
         return;
       }
       closePalette();
@@ -569,7 +623,7 @@ export function CommandPalette() {
                 ? 'Search sessions...'
                 : mode === 'project'
                 ? 'Browse project directories...'
-                : 'Select a project or type an absolute directory...'
+                : 'Select a project to start a session...'
             }
             value={query}
             onChange={(e) => {
@@ -609,22 +663,28 @@ export function CommandPalette() {
         <div className="oc-cmd-results" ref={listRef}>
           {results.length === 0 && (
             <div className="oc-cmd-empty">
-              {projectBrowser.open && projectBrowser.loading
+              {mode === 'project' && projectBrowser.open && projectBrowser.loading
                 ? 'Loading directories...'
-                : projectBrowser.open && projectBrowser.error
+                : mode === 'project' && projectBrowser.open && projectBrowser.error
                 ? projectBrowser.error
-                : projectBrowser.open && query.trim() && !projectQueryIsCurrentDirectory && projectBrowser.searchLoading
+                : mode === 'project' && projectBrowser.open && query.trim() && !projectQueryIsCurrentDirectory && projectBrowser.searchLoading
                 ? 'Searching directories...'
-                : projectBrowser.open && query.trim() && !projectQueryIsCurrentDirectory && projectBrowser.searchError
+                : mode === 'project' && projectBrowser.open && query.trim() && !projectQueryIsCurrentDirectory && projectBrowser.searchError
                 ? projectBrowser.searchError
-                : projectBrowser.open && query.trim() && !projectQueryIsCurrentDirectory
+                : mode === 'project' && projectBrowser.open && query.trim() && !projectQueryIsCurrentDirectory
                 ? 'No matching directories'
-                : projectBrowser.open
+                : mode === 'project' && projectBrowser.open
                 ? 'No child directories'
                 : sessions === null && mode === 'search'
                 ? 'Loading sessions...'
                 : mode === 'project'
                 ? 'Loading directories...'
+                : mode === 'project-session' && (!projectListLoaded || projectListLoading)
+                ? 'Loading projects...'
+                : mode === 'project-session' && projectListError
+                ? projectListError
+                : mode === 'project-session'
+                ? 'No projects found'
                 : 'No results'}
             </div>
           )}
@@ -653,6 +713,27 @@ export function CommandPalette() {
                     <span className="oc-cmd-meta">
                       {shortPath(session.directory)} &middot;{' '}
                       {relativeTime(session.timeUpdated)}
+                    </span>
+                  </div>
+                </div>
+              );
+            }
+
+            if (item.kind === 'project') {
+              const proj = item.project;
+              return (
+                <div
+                  key={`project:${proj.directory}`}
+                  className={`oc-cmd-item oc-cmd-item--command${i === selectedIndex ? ' oc-cmd-item--selected' : ''}`}
+                  onClick={() => handleSelect(item)}
+                  onMouseMove={() => setSelectedIndex(i)}
+                >
+                  <i className="bi bi-folder oc-cmd-item-icon" />
+                  <div className="oc-cmd-item-content">
+                    <span className="oc-cmd-title">{shortPath(proj.directory)}</span>
+                    <span className="oc-cmd-meta">
+                      {proj.sessionCount} session{proj.sessionCount !== 1 ? 's' : ''} &middot;{' '}
+                      {relativeTime(proj.lastUsed)}
                     </span>
                   </div>
                 </div>

@@ -210,7 +210,7 @@ function GlobalHotkeys() {
     keys: { code: 'KeyN', alt: true },
     label: 'Alt+N',
     description: 'Create new session in project',
-    handler: () => useUiStore.getState().openPalette('project'),
+    handler: () => useUiStore.getState().openPalette('project-session'),
     runInEditable: true,
   }), []);
 

@@ -3,20 +3,22 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Project } from '../lib/api';
 
 const mocks = vi.hoisted(() => {
   const uiState = {
     paletteOpen: true,
-    paletteMode: 'project' as const,
+    paletteMode: 'project' as 'command' | 'search' | 'project' | 'project-session',
     closePalette: vi.fn(),
     openProjectPalette: vi.fn(),
+    openProjectSessionPalette: vi.fn(),
     openShortcuts: vi.fn(),
     openWorktreeForm: vi.fn(),
     dispatchCommand: vi.fn(),
   };
   const apiState = {
     cachedSessions: [],
-    getProjects: vi.fn(async () => []),
+    getProjects: vi.fn(async (): Promise<Project[]> => []),
     browseDirectories: vi.fn(),
     searchDirectories: vi.fn(),
     createSession: vi.fn(),
@@ -77,7 +79,24 @@ describe('CommandPalette project mode', () => {
     mocks.uiState.paletteOpen = true;
     mocks.uiState.paletteMode = 'project';
     mocks.apiState.cachedSessions = [];
-    mocks.apiState.getProjects.mockResolvedValue([]);
+    mocks.apiState.getProjects.mockResolvedValue([
+      {
+        directory: '/Users/peter/workspace/ocman',
+        sessionCount: 3,
+        messageCount: 12,
+        totalTokensIn: 100,
+        totalTokensOut: 20,
+        lastUsed: 3000,
+      },
+      {
+        directory: '/Users/peter/workspace/research',
+        sessionCount: 1,
+        messageCount: 2,
+        totalTokensIn: 50,
+        totalTokensOut: 10,
+        lastUsed: 2000,
+      },
+    ]);
     mocks.apiState.browseDirectories.mockImplementation(async (dir?: string) => {
       if (dir === '/Users/peter/workspace/research') {
         return {
@@ -238,5 +257,42 @@ describe('CommandPalette project mode', () => {
 
     expect(await screen.findByText('/Users/peter/workspace/research/datastack')).toBeInTheDocument();
     expect(mocks.apiState.searchDirectories).toHaveBeenCalledWith('/Users/peter/workspace/research', '/Users/peter/workspace/research/data', 50, expect.any(AbortSignal));
+  });
+
+  it('opens session-project mode as a known-project picker', async () => {
+    mocks.uiState.paletteMode = 'project-session';
+
+    renderPalette();
+
+    expect(await screen.findByPlaceholderText('Select a project to start a session...')).toBeInTheDocument();
+    expect(await screen.findByText('workspace/ocman')).toBeInTheDocument();
+    expect(screen.getByText((text) => text.startsWith('3 sessions'))).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Use this directory' })).not.toBeInTheDocument();
+    expect(mocks.apiState.getProjects).toHaveBeenCalledWith(expect.any(AbortSignal));
+    expect(mocks.apiState.browseDirectories).not.toHaveBeenCalled();
+  });
+
+  it('creates a session from a known project in session-project mode', async () => {
+    mocks.uiState.paletteMode = 'project-session';
+
+    renderPalette();
+
+    fireEvent.click(await screen.findByText('workspace/ocman'));
+
+    await waitFor(() => {
+      expect(mocks.apiState.createSession).toHaveBeenCalledWith('/Users/peter/workspace/ocman', undefined, undefined);
+    });
+    expect(mocks.apiState.seedNewSession).toHaveBeenCalledWith('new-session', '/Users/peter/workspace/ocman', '');
+  });
+
+  it('opens the known-project picker for the scoped new-session command', async () => {
+    mocks.uiState.paletteMode = 'command';
+
+    renderPalette();
+
+    fireEvent.click(await screen.findByText('New session in project'));
+
+    expect(mocks.uiState.openProjectSessionPalette).toHaveBeenCalledOnce();
+    expect(mocks.uiState.openProjectPalette).not.toHaveBeenCalled();
   });
 });

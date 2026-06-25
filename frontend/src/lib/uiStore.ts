@@ -13,7 +13,7 @@ export const CHANGES_SIDEBAR_MIN_WIDTH = 320;
 export const CHANGES_SIDEBAR_MAX_WIDTH = 720;
 export const CHANGES_SIDEBAR_DEFAULT_WIDTH = 480;
 
-type PaletteMode = 'command' | 'search' | 'project';
+type PaletteMode = 'command' | 'search' | 'project' | 'project-session';
 
 export type PaletteCommand =
   | { kind: 'nav'; id: string; label: string; path: string }
@@ -144,6 +144,7 @@ type UiStore = {
   openCommandPalette: () => void;
   openSearchPalette: () => void;
   openProjectPalette: () => void;
+  openProjectSessionPalette: () => void;
   openPalette: (mode: PaletteMode) => void;
   closePalette: () => void;
 
@@ -271,6 +272,7 @@ export const useUiStore = create<UiStore>()(
       openCommandPalette: () => set({ paletteOpen: true, paletteMode: 'command' }),
       openSearchPalette: () => set({ paletteOpen: true, paletteMode: 'search' }),
       openProjectPalette: () => set({ paletteOpen: true, paletteMode: 'project' }),
+      openProjectSessionPalette: () => set({ paletteOpen: true, paletteMode: 'project-session' }),
       openPalette: (mode: PaletteMode) => set({ paletteOpen: true, paletteMode: mode }),
       closePalette: () => set({ paletteOpen: false, paletteCommand: null }),
 
