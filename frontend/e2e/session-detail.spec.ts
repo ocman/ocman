@@ -1043,11 +1043,13 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
   // that triggers the bug.
   const RECONCILE_TEXT = '1 2 3 ';
 
-  await page.route(new RegExp(`/api/session/${SESSION_A}(\\?|$)`), (route) => {
+  let reconcileServed = false;
+  await page.route(new RegExp(`/api/session/${SESSION_A}(\\?|$)`), async (route) => {
     // Before the user navigates away: empty thread — SSE will stream
     // everything. After returning: part exists, text reflects the
     // stale DB state that lags the live SSE stream.
     const isReconcile = hasLeftSessionA;
+    if (isReconcile) reconcileServed = true;
     const messages = isReconcile
       ? [
           {
@@ -1122,25 +1124,75 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
   );
 
   // Install a fake EventSource for session A that streams deltas in
-  // two phases:
+  // two phases, but is driven by the test step-by-step rather than by
+  // wall-clock timers:
   //   1st connection (visit A): "1 " "2 " "3 " "4 " "5 "
   //   2nd connection (return to A): "6 7 "
   // No replay of 4/5 on reconnect — that mirrors OpenCode's behaviour
   // (its /event stream is live-only, no buffering).
+  //
+  // The previous timer-based version fired phase 2 on a fixed setTimeout
+  // after the second connection opened, independent of when the reconcile
+  // REST fetch ("1 2 3 ") landed. On a slow/contended CI runner the
+  // reconcile response could arrive after phase 2 had already streamed,
+  // re-asserting the part and dropping "6 7" — a flaky failure that only
+  // ever reproduced under load. Driving the deltas from the test (each
+  // phase pumped only once the prior step is *observably* complete) makes
+  // the ordering deterministic regardless of machine speed.
   await page.addInitScript(({ sessionAId, msgId, partId }) => {
-    type Phase = { deltas: string[]; intervalMs: number };
-    const phases: Phase[] = [
-      { deltas: ['1 ', '2 ', '3 ', '4 ', '5 '], intervalMs: 60 },
-      { deltas: ['6 7 '], intervalMs: 60 },
-    ];
-    // Each EventSource that targets session A is assigned the next phase
-    // synchronously at construction. Selecting the phase from a per-
-    // connection counter (rather than advancing a shared index when the
-    // previous connection's interval drains) removes the wall-clock race
-    // that intermittently left the second connection reading the wrong
-    // phase on slower CI workers — phase 2 ("6 7") then never streamed and
-    // the text stayed stuck at "1 2 3 4 5".
-    let connectionCount = 0;
+    type Bridge = {
+      // Resolves once an A-targeting EventSource is open and ready to
+      // receive pumped deltas. Re-armed for each new connection.
+      ready: Promise<void>;
+      // Emit one message.created (first connection only) + the given
+      // deltas through the currently-open A EventSource.
+      pump: (deltas: string[], opts: { emitCreated: boolean }) => void;
+    };
+
+    let resolveReady: (() => void) | null = null;
+    const armReady = () => {
+      bridge.ready = new Promise<void>((res) => { resolveReady = res; });
+    };
+
+    let activeA: GapStreamingEventSource | null = null;
+    const setActiveA = (src: GapStreamingEventSource | null) => { activeA = src; };
+
+    const bridge: Bridge = {
+      ready: new Promise<void>((res) => { resolveReady = res; }),
+      pump: (deltas, { emitCreated }) => {
+        const src = activeA;
+        if (!src || src.readyState !== GapStreamingEventSource.OPEN) return;
+        if (emitCreated) {
+          const created = JSON.stringify({
+            type: 'message.created',
+            properties: {
+              sessionID: sessionAId,
+              info: {
+                id: msgId,
+                sessionID: sessionAId,
+                role: 'assistant',
+                time: { created: Date.now() },
+              },
+              parts: [{ id: partId, type: 'text', text: '' }],
+            },
+          });
+          src.onmessage?.(new MessageEvent('message', { data: created }));
+        }
+        for (const deltaText of deltas) {
+          const delta = JSON.stringify({
+            type: 'message.part.delta',
+            properties: {
+              sessionID: sessionAId,
+              messageID: msgId,
+              partID: partId,
+              field: 'text',
+              delta: deltaText,
+            },
+          });
+          src.onmessage?.(new MessageEvent('message', { data: delta }));
+        }
+      },
+    };
 
     class GapStreamingEventSource {
       static CONNECTING = 0;
@@ -1153,95 +1205,28 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
       onerror: ((evt: Event) => void) | null = null;
       onmessage: ((evt: MessageEvent) => void) | null = null;
       listeners: Record<string, Array<(evt: Event) => void>> = {};
-      private timer: number | null = null;
       private isATarget: boolean;
-      private phaseIndex: number;
 
       constructor(url: string) {
         this.url = url;
         this.isATarget = url.includes(`/api/session/${sessionAId}/events`);
-        // Claim a phase synchronously, before any timer fires, so the phase
-        // a connection streams can never depend on another connection's
-        // teardown timing. Clamp to the last phase for any extra reconnects.
-        this.phaseIndex = this.isATarget
-          ? Math.min(connectionCount++, phases.length - 1)
-          : 0;
+        // Register as the active A connection synchronously; the consumer
+        // only pumps after `bridge.ready` resolves (on open below).
+        if (this.isATarget) setActiveA(this);
 
-        // Start emitting after the page has had a chance to settle the
-        // mount/revisit REST fetch. The regression this test guards is the
-        // stale snapshot reconciliation itself, not a race between the first
-        // reconnect delta and the mocked fetch handler on slower CI workers.
-        this.timer = window.setTimeout(() => {
-          this.timer = null;
+        // Open on a microtask so the consumer can assign onopen/onmessage
+        // first, exactly like a real EventSource. No data is emitted here —
+        // the test pumps deltas explicitly once it has confirmed the prior
+        // step landed. Arrow keeps lexical `this` (no alias).
+        queueMicrotask(() => {
           if (this.readyState === GapStreamingEventSource.CLOSED) return;
           this.readyState = GapStreamingEventSource.OPEN;
           this.onopen?.(new Event('open'));
-          if (!this.isATarget) return;
-
-          const phase = phases[this.phaseIndex] ?? null;
-          if (!phase) return;
-          const isFirstPhase = this.phaseIndex === 0;
-
-          const finishPhase = () => {
-            if (this.timer !== null) {
-              window.clearInterval(this.timer);
-              this.timer = null;
-            }
-          };
-
-          let i = 0;
-          this.timer = window.setInterval(() => {
-            if (this.readyState === GapStreamingEventSource.CLOSED) return;
-
-            if (i >= phase.deltas.length) {
-              finishPhase();
-              return;
-            }
-
-            // Emit message.created on the first delta of phase 0 only.
-            // Phase 1 (after returning) builds on the reconciled message
-            // that the REST fetch returns; re-creating it would mask
-            // the bug by feeding a fresh empty text snapshot.
-            if (i === 0 && isFirstPhase) {
-              const created = JSON.stringify({
-                type: 'message.created',
-                properties: {
-                  sessionID: sessionAId,
-                  info: {
-                    id: msgId,
-                    sessionID: sessionAId,
-                    role: 'assistant',
-                    time: { created: Date.now() },
-                  },
-                  parts: [{ id: partId, type: 'text', text: '' }],
-                },
-              });
-              this.onmessage?.(new MessageEvent('message', { data: created }));
-            }
-
-            const deltaText = phase.deltas[i];
-            i += 1;
-
-            const delta = JSON.stringify({
-              type: 'message.part.delta',
-              properties: {
-                sessionID: sessionAId,
-                messageID: msgId,
-                partID: partId,
-                field: 'text',
-                delta: deltaText,
-              },
-            });
-            this.onmessage?.(new MessageEvent('message', { data: delta }));
-
-            // Last delta sent — stop this interval. The next connection
-            // (after the user returns) already claimed its phase at
-            // construction, so nothing to advance here.
-            if (i >= phase.deltas.length) {
-              finishPhase();
-            }
-          }, phase.intervalMs);
-        }, 100);
+          if (this.isATarget) {
+            resolveReady?.();
+            resolveReady = null;
+          }
+        });
       }
 
       addEventListener(name: string, cb: (evt: Event) => void) {
@@ -1250,7 +1235,10 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
 
       close() {
         this.readyState = GapStreamingEventSource.CLOSED;
-        if (this.timer !== null) window.clearInterval(this.timer);
+        if (activeA === this) {
+          setActiveA(null);
+          armReady();
+        }
       }
     }
 
@@ -1259,12 +1247,36 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
       writable: true,
       value: GapStreamingEventSource,
     });
+    Object.defineProperty(window, '__streamBridge', {
+      configurable: true,
+      writable: true,
+      value: bridge,
+    });
   }, { sessionAId: SESSION_A, msgId: MSG_ID, partId: PART_ID });
 
-  // 1. Visit session A and wait until all five numbers from phase 1
-  //    have streamed in. The cache mirror records "1 2 3 4 5 ".
+  type StreamBridge = {
+    ready: Promise<void>;
+    pump: (deltas: string[], opts: { emitCreated: boolean }) => void;
+  };
+
+  // Pump a phase: wait until an A EventSource is open, then emit the
+  // deltas in one synchronous burst. Returns after the deltas are
+  // dispatched so the caller can assert on the resulting DOM.
+  const pumpPhase = (deltas: string[], emitCreated: boolean) =>
+    page.evaluate(
+      async ({ deltas, emitCreated }) => {
+        const b = (window as unknown as { __streamBridge: StreamBridge }).__streamBridge;
+        await b.ready;
+        b.pump(deltas, { emitCreated });
+      },
+      { deltas, emitCreated },
+    );
+
+  // 1. Visit session A and stream phase 1. The cache mirror records
+  //    "1 2 3 4 5 ".
   await page.goto(`/session/${SESSION_A}`);
   await expect(page.getByTestId('session-layout')).toBeVisible();
+  await pumpPhase(['1 ', '2 ', '3 ', '4 ', '5 '], true);
   // Scope to the message *body* rather than the whole assistant bubble:
   // the bubble also renders a timestamp footer ("HH:MM") once streaming
   // completes, which would otherwise pollute these text assertions.
@@ -1276,12 +1288,25 @@ test('partial streamed text survives switching away and back', async ({ mockedPa
   await page.locator('.session-sidebar-item', { hasText: MOCK_SESSION_2.title }).click();
   await expect(page.getByRole('banner')).toContainText(MOCK_SESSION_2.title, { timeout: 5_000 });
 
-  // 3. Return to session A. The reconcile fetch returns the
-  //    DB-lagging "1 2 3 " snapshot. Phase 2 then streams "6 " "7 ".
+  // 3. Return to session A. The reconcile fetch returns the DB-lagging
+  //    "1 2 3 " snapshot. Wait for that reconcile to be *applied* (the
+  //    body reflects the cached "1 2 3 4 5 " merged with the snapshot)
+  //    before streaming phase 2 — this is the precondition the test
+  //    validates, and gating on it removes the reconcile-vs-delta race.
   await page.locator('.session-sidebar-item', { hasText: MOCK_SESSION.title }).click();
   await expect(page.getByRole('banner')).toContainText(MOCK_SESSION.title, { timeout: 5_000 });
+  await expect(bubble).toContainText('1 2 3 4 5', { timeout: 10_000 });
+  // Wait until the DB-lagging reconcile snapshot has been served AND the
+  // reducer has applied it (a microtask after the fetch resolves), before
+  // streaming phase 2. This is the real-world guarantee the test asserts:
+  // deltas arriving *after* a stale reconcile must survive. Gating on the
+  // applied reconcile (not a fixed timer) makes the ordering deterministic
+  // on any runner speed.
+  await expect.poll(() => reconcileServed, { timeout: 10_000 }).toBe(true);
+  await page.evaluate(() => new Promise<void>((r) => setTimeout(r, 0)));
 
-  // 4. Wait for phase 2 to finish ("6 7 " arrived).
+  // 4. Stream phase 2 ("6 7 ") on the reconnected EventSource.
+  await pumpPhase(['6 7 '], false);
   await expect(bubble).toContainText('6 7', { timeout: 10_000 });
 
   // 5. The full accumulated text must contain every number 1..7 in
