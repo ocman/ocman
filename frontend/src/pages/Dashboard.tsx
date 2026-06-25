@@ -53,7 +53,9 @@ export function DashboardLayout() {
 
   const isOnDashboard = location.pathname === '/' || location.pathname === '/projects' || location.pathname === '/stats' || location.pathname === '/usage' || location.pathname === '/loops' || location.pathname === '/settings';
 
-  const timeRange = parseInt(searchParams.get('t') || '12', 10);
+  const dashboardTimeRangeDefault = useUiStore((s) => s.dashboardTimeRangeDefault);
+  const tParam = searchParams.get('t');
+  const timeRange = tParam !== null ? parseInt(tParam, 10) : dashboardTimeRangeDefault;
   const showArchived = searchParams.get('a') === '1';
   const dirScope = searchParams.get('dir') ?? '';
 
@@ -388,6 +390,10 @@ export function SettingsTab() {
   const setAutoApproveDefault = useUiStore((s) => s.setAutoApproveDefault);
   const autoApproveDelayMs = useUiStore((s) => s.autoApproveDelayMs);
   const setAutoApproveDelayMs = useUiStore((s) => s.setAutoApproveDelayMs);
+  const dashboardTimeRangeDefault = useUiStore((s) => s.dashboardTimeRangeDefault);
+  const setDashboardTimeRangeDefault = useUiStore((s) => s.setDashboardTimeRangeDefault);
+  const sidebarRecentHours = useUiStore((s) => s.sidebarRecentHours);
+  const setSidebarRecentHours = useUiStore((s) => s.setSidebarRecentHours);
   const promptSections = useUiStore((s) => s.promptSections);
   const setPromptSections = useUiStore((s) => s.setPromptSections);
   const getPromptSections = useApiStore((s) => s.getPromptSections);
@@ -456,6 +462,7 @@ export function SettingsTab() {
   // the nav only lists what's actually rendered.
   const groups = [
     { id: 'notifications', label: 'Notifications', show: true },
+    { id: 'sessions', label: 'Sessions', show: true },
     { id: 'remotes', label: 'Remotes', show: true },
     { id: 'auto-approve', label: 'Auto-approve', show: true },
     { id: 'templates', label: 'PR & Issue templates', show: true },
@@ -519,6 +526,52 @@ export function SettingsTab() {
             />
             <span className="settings-toggle-track" />
           </label>
+        </div>
+      </div>
+
+      <div className="settings-section" hidden={active !== 'sessions'}>
+        <h2 className="settings-section-title">Sessions</h2>
+        <div className="settings-row">
+          <div className="settings-row-info">
+            <div className="settings-row-label">Start screen time range</div>
+            <div className="settings-row-desc">
+              Default lookback window for the Sessions list on the start screen.
+              The time-range buttons still override it for the current view.
+            </div>
+          </div>
+          <div className="settings-delay-input">
+            <input
+              type="number"
+              min={1}
+              max={365}
+              step={1}
+              aria-label="Start screen time range in days"
+              value={Math.round((dashboardTimeRangeDefault / 24) * 10) / 10}
+              onChange={(e) => setDashboardTimeRangeDefault((Number(e.target.value) || 0) * 24)}
+            />
+            <span className="settings-delay-unit">days</span>
+          </div>
+        </div>
+        <div className="settings-row">
+          <div className="settings-row-info">
+            <div className="settings-row-label">Recent sessions window</div>
+            <div className="settings-row-desc">
+              How far back the &ldquo;Recent sessions&rdquo; sidebar looks while
+              you&apos;re inside a session.
+            </div>
+          </div>
+          <div className="settings-delay-input">
+            <input
+              type="number"
+              min={1}
+              max={365}
+              step={1}
+              aria-label="Recent sessions window in days"
+              value={Math.round((sidebarRecentHours / 24) * 10) / 10}
+              onChange={(e) => setSidebarRecentHours((Number(e.target.value) || 0) * 24)}
+            />
+            <span className="settings-delay-unit">days</span>
+          </div>
         </div>
       </div>
 

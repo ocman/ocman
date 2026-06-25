@@ -13,6 +13,16 @@ export const CHANGES_SIDEBAR_MIN_WIDTH = 320;
 export const CHANGES_SIDEBAR_MAX_WIDTH = 720;
 export const CHANGES_SIDEBAR_DEFAULT_WIDTH = 480;
 
+// Session time windows (in hours), user-configurable in Settings.
+// Both default to 3 days so returning after a weekend still shows
+// recent work (issues #141 / #142).
+//   dashboardTimeRangeDefault — the start-screen Sessions tab's default
+//     lookback when no `?t=` URL param is set.
+//   sidebarRecentHours — the per-session "recent sessions" sidebar window.
+export const SESSION_HOURS_DEFAULT = 72;
+export const SESSION_HOURS_MIN = 1;
+export const SESSION_HOURS_MAX = 8760; // 1 year
+
 type PaletteMode = 'command' | 'search' | 'project' | 'project-session';
 
 export type PaletteCommand =
@@ -90,6 +100,12 @@ type UiStore = {
   setAutoApproveDefault: (enabled: boolean) => void;
   autoApproveDelayMs: number;
   setAutoApproveDelayMs: (ms: number) => void;
+
+  // Session time windows (hours). See SESSION_HOURS_* constants above.
+  dashboardTimeRangeDefault: number;
+  setDashboardTimeRangeDefault: (hours: number) => void;
+  sidebarRecentHours: number;
+  setSidebarRecentHours: (hours: number) => void;
 
   // Custom sections appended to the AI judge prompt. Each section is
   // rendered as "## <title>\n<content>" and injected after the built-in
@@ -169,6 +185,11 @@ function clampWidth(width: number): number {
   return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(width)));
 }
 
+function clampSessionHours(hours: number): number {
+  if (!Number.isFinite(hours)) return SESSION_HOURS_DEFAULT;
+  return Math.min(SESSION_HOURS_MAX, Math.max(SESSION_HOURS_MIN, Math.round(hours)));
+}
+
 function clampChangesWidth(width: number): number {
   if (!Number.isFinite(width)) return CHANGES_SIDEBAR_DEFAULT_WIDTH;
   return Math.min(
@@ -217,6 +238,13 @@ export const useUiStore = create<UiStore>()(
       setAutoApproveDefault: (enabled) => set({ autoApproveDefault: enabled }),
       autoApproveDelayMs: 5000,
       setAutoApproveDelayMs: (ms) => set({ autoApproveDelayMs: Math.max(0, Math.round(ms)) }),
+
+      dashboardTimeRangeDefault: SESSION_HOURS_DEFAULT,
+      setDashboardTimeRangeDefault: (hours) =>
+        set({ dashboardTimeRangeDefault: clampSessionHours(hours) }),
+      sidebarRecentHours: SESSION_HOURS_DEFAULT,
+      setSidebarRecentHours: (hours) =>
+        set({ sidebarRecentHours: clampSessionHours(hours) }),
 
       promptSections: [
         {
@@ -308,7 +336,9 @@ export const useUiStore = create<UiStore>()(
       //     hardcoded BASE_TABS so existing users see no change.
       // v5: added the 'loops' right-panel tab; append it to the
       //     persisted strip order so existing users get the new icon.
-      version: 5,
+      // v6: added dashboardTimeRangeDefault + sidebarRecentHours
+      //     (configurable session time windows, default 72h).
+      version: 6,
       migrate: (persisted, version) => {
         if (!persisted || typeof persisted !== 'object') return persisted;
         const next = persisted as Record<string, unknown>;
@@ -358,6 +388,8 @@ export const useUiStore = create<UiStore>()(
         autoApproveDefault: s.autoApproveDefault,
         autoApproveDelayMs: s.autoApproveDelayMs,
         promptSections: s.promptSections,
+        dashboardTimeRangeDefault: s.dashboardTimeRangeDefault,
+        sidebarRecentHours: s.sidebarRecentHours,
       }),
     },
   ),

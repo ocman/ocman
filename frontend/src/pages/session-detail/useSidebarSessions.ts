@@ -2,13 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { Session } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
+import { useUiStore } from '../../lib/uiStore';
 import { filterVisibleSessions } from '../../lib/sessionVisibility';
 import { computeSidebarHash, pickNextSessionAfterArchive } from '../../lib/sidebarHelpers';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { remoteLog } from '../../lib/remoteLog';
 
 const RECENT_SESSIONS_LIMIT = 15;
-const SIDEBAR_RECENT_HOURS = 72;
 /**
  * How often the Recent Sessions sidebar re-polls /api/sessions. Kept
  * low enough to feel live, but not so low that we hammer the OpenCode
@@ -92,6 +92,15 @@ export function useSidebarSessions({
   const recentSessions = useApiStore((s) => s.recentSessions);
   const storeSetRecentSessions = useApiStore((s) => s.setRecentSessions);
   const patchRecentSession = useApiStore((s) => s.patchRecentSession);
+  const sidebarRecentHours = useUiStore((s) => s.sidebarRecentHours);
+
+  // Mirror the configured window into a ref so the polling closure
+  // reads the latest value without re-creating loadRecentSessions
+  // (which would restart the 3 s poll interval on every settings edit).
+  const sidebarRecentHoursRef = useRef(sidebarRecentHours);
+  useEffect(() => {
+    sidebarRecentHoursRef.current = sidebarRecentHours;
+  }, [sidebarRecentHours]);
 
   const [loadingRecentSessions, setLoadingRecentSessions] = useState(true);
   const [archivingSessionIds, setArchivingSessionIds] = useState<Set<string>>(new Set());
@@ -107,7 +116,7 @@ export function useSidebarSessions({
 
   const loadRecentSessions = useCallback(async (signal?: AbortSignal) => {
     try {
-      const since = Date.now() - SIDEBAR_RECENT_HOURS * 60 * 60 * 1000;
+      const since = Date.now() - sidebarRecentHoursRef.current * 60 * 60 * 1000;
       // /api/sessions can serialize a Go nil slice as JSON `null`;
       // coerce here so .find() / filterVisibleSessions never see null.
       const result = (await getSessions({ since, limit: RECENT_SESSIONS_LIMIT + 5 }, signal)) ?? [];

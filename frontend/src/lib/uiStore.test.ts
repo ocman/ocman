@@ -3,6 +3,9 @@ import {
   CHANGES_SIDEBAR_DEFAULT_WIDTH,
   CHANGES_SIDEBAR_MAX_WIDTH,
   CHANGES_SIDEBAR_MIN_WIDTH,
+  SESSION_HOURS_DEFAULT,
+  SESSION_HOURS_MAX,
+  SESSION_HOURS_MIN,
   SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
@@ -159,6 +162,45 @@ describe('uiStore changesSidebar tab management', () => {
       'bookmarks',
       'upstream',
     ]);
+  });
+});
+
+describe('uiStore session time windows', () => {
+  beforeEach(() => {
+    useUiStore.setState({
+      dashboardTimeRangeDefault: SESSION_HOURS_DEFAULT,
+      sidebarRecentHours: SESSION_HOURS_DEFAULT,
+    });
+  });
+
+  it('both windows default to 3 days (72h)', () => {
+    expect(SESSION_HOURS_DEFAULT).toBe(72);
+    expect(useUiStore.getState().dashboardTimeRangeDefault).toBe(72);
+    expect(useUiStore.getState().sidebarRecentHours).toBe(72);
+  });
+
+  it('clamps below the minimum', () => {
+    initial.setDashboardTimeRangeDefault(0);
+    initial.setSidebarRecentHours(-5);
+    expect(useUiStore.getState().dashboardTimeRangeDefault).toBe(SESSION_HOURS_MIN);
+    expect(useUiStore.getState().sidebarRecentHours).toBe(SESSION_HOURS_MIN);
+  });
+
+  it('clamps above the maximum', () => {
+    initial.setDashboardTimeRangeDefault(999999);
+    initial.setSidebarRecentHours(999999);
+    expect(useUiStore.getState().dashboardTimeRangeDefault).toBe(SESSION_HOURS_MAX);
+    expect(useUiStore.getState().sidebarRecentHours).toBe(SESSION_HOURS_MAX);
+  });
+
+  it('rounds in-range values', () => {
+    initial.setDashboardTimeRangeDefault(36.6);
+    expect(useUiStore.getState().dashboardTimeRangeDefault).toBe(37);
+  });
+
+  it('falls back to the default for non-finite input', () => {
+    initial.setSidebarRecentHours(Number.NaN);
+    expect(useUiStore.getState().sidebarRecentHours).toBe(SESSION_HOURS_DEFAULT);
   });
 });
 

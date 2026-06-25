@@ -743,7 +743,7 @@ describe('SessionDetail — sidebar polling', () => {
     });
   });
 
-  it('passes the SIDEBAR_RECENT_HOURS window via the `since` filter', async () => {
+  it('passes the configured recent-sessions window via the `since` filter', async () => {
     const handle = renderSessionPage({ sessionId: 'sess_1' });
     await flushPromises();
     await waitFor(() => expect(handle.store.getSessions).toHaveBeenCalled());
