@@ -61,7 +61,10 @@ never sends "one more" prompt. Prefer small budgets; raise them if needed.
 - `create_loop` — author a loop (budget required).
 - `list_loops` — loops for a session.
 - `get_loop_status` — state, iteration, budget consumed, last summary.
-- `pause_loop` / `resume_loop` — suspend/continue.
+- `pause_loop` / `resume_loop` — suspend/continue a paused loop.
+- `restart_loop` — revive a completed/errored loop: clears iteration count
+  and consumed budget, sets it active to run again from zero against the
+  same settings. (Resume is paused-only; restart is for terminal loops.)
 - `step_loop` — run exactly one cycle, then pause (use to test a new loop).
 - `delete_loop` — stop permanently and remove from the list.
 

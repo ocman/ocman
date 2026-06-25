@@ -302,6 +302,48 @@ func (s *Service) Resume(ctx context.Context, id string) error {
 	return nil
 }
 
+// Restart revives a terminal loop (completed/errored) by clearing its
+// run-state counters — iteration, error streak, consumed budget,
+// completed_at, last fired — and setting it back to active. Settings
+// (trigger, action, stop conditions) are preserved; the loop simply runs
+// again from zero against the same limits.
+//
+// This is the editable/runnable escape hatch for terminal loops, which
+// Update and Resume both refuse. A deleted loop is not restartable.
+//
+// As with Resume, a restart that would immediately re-trip a stop
+// condition is rejected so the user doesn't get a loop that re-terminates
+// on the next tick (e.g. max_iterations already 0 makes no sense, but a
+// stale budget vs. a since-lowered cap could).
+func (s *Service) Restart(ctx context.Context, id string) (LoopView, error) {
+	l, err := s.store.GetLoop(id)
+	if err != nil {
+		return LoopView{}, err
+	}
+	if l.State != StateCompleted && l.State != StateErrored {
+		return LoopView{}, fmt.Errorf("loop %s cannot be restarted (state=%s); only completed or errored loops restart", id, l.State)
+	}
+
+	l.Iteration = 0
+	l.ErrorStreak = 0
+	l.TokensUsed = 0
+	l.CostUSD = 0
+	l.LastFiredAt = 0
+	l.CompletedAt = 0
+	l.LastSummary = ""
+	l.State = StateActive
+
+	if dec := evaluateStop(*l, decodeStopConditions(l.StopConditions), s.clock()); dec.Stop {
+		return LoopView{}, fmt.Errorf("cannot restart: %s — edit the loop's limits first", dec.Reason)
+	}
+
+	if err := s.store.UpdateLoop(*l); err != nil {
+		return LoopView{}, err
+	}
+	s.broadcast(l.ID)
+	return toView(*l), nil
+}
+
 // Step runs one cycle for a loop regardless of pause state, then leaves
 // it paused. Used by the manual "step" control.
 func (s *Service) Step(ctx context.Context, id string) error {

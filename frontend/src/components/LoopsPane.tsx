@@ -32,6 +32,7 @@ export function LoopsPane({ directory, sessionId, platformId, onRefresh, onLoadi
   const remove = useLoopsStore((s) => s.remove);
   const pause = useLoopsStore((s) => s.pause);
   const resume = useLoopsStore((s) => s.resume);
+  const restart = useLoopsStore((s) => s.restart);
   const trigger = useLoopsStore((s) => s.trigger);
   const update = useLoopsStore((s) => s.update);
 
@@ -74,6 +75,7 @@ export function LoopsPane({ directory, sessionId, platformId, onRefresh, onLoadi
           loop={loop}
           onPause={() => pause(loop.id)}
           onResume={() => resume(loop.id)}
+          onRestart={() => restart(loop.id)}
           onTrigger={() => trigger(loop.id)}
           onDelete={() => remove(loop.id)}
           onUpdate={(req) => update(loop.id, req)}
@@ -96,16 +98,18 @@ interface LoopRowProps {
   loop: Loop;
   onPause: () => Promise<void>;
   onResume: () => Promise<void>;
+  onRestart: () => Promise<void>;
   onTrigger: () => Promise<void>;
   onDelete: () => Promise<void>;
   onUpdate: (req: LoopUpdateRequest) => Promise<void>;
 }
 
-function LoopRow({ loop, onPause, onResume, onTrigger, onDelete, onUpdate }: LoopRowProps) {
+function LoopRow({ loop, onPause, onResume, onRestart, onTrigger, onDelete, onUpdate }: LoopRowProps) {
   const [editing, setEditing] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
 
   const terminal = ['completed', 'deleted', 'errored'].includes(loop.state);
+  const restartable = loop.state === 'completed' || loop.state === 'errored';
 
   return (
     <div className="oc-loops-row" data-testid="loop-row" data-loop-state={loop.state}>
@@ -127,6 +131,9 @@ function LoopRow({ loop, onPause, onResume, onTrigger, onDelete, onUpdate }: Loo
         </button>
         {!terminal && (
           <button type="button" className="vscode-btn" onClick={() => setEditing(true)}>Edit</button>
+        )}
+        {restartable && (
+          <button type="button" className="vscode-btn" onClick={() => void onRestart()}>Restart</button>
         )}
       </div>
 

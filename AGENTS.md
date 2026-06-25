@@ -292,7 +292,7 @@ one-shot child-session watcher into a trigger→action engine
   `max_iterations=25`, `max_duration=8h`, `error_streak=3`.
 - **Control surface**: REST `/api/loops` (localhost-only) and MCP tools
   (`create_loop`, `list_loops`, `get_loop_status`, `delete_loop`,
-  `pause_loop`, `resume_loop`, `step_loop`) both delegate to the same
+  `pause_loop`, `resume_loop`, `restart_loop`, `step_loop`) both delegate to the same
   `loops.Service`. Loop *policy* lives in
   `.opencode/skills/ocman-agent-loops/SKILL.md`.
 - **UI**: capability-gated on `agentLoops` (`/api/capabilities`). The

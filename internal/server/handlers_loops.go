@@ -65,6 +65,17 @@ func (s *Server) handleLoopByID(w http.ResponseWriter, r *http.Request, rest str
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
+	case "restart":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		view, err := svc.Restart(ctx, id)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, view)
 	case "pause", "resume", "step", "trigger":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

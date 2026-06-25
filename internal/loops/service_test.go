@@ -480,6 +480,59 @@ func TestResume_RejectsWhenWouldImmediatelyStop(t *testing.T) {
 	}
 }
 
+func TestRestart_RevivesCompletedLoopAndResetsCounters(t *testing.T) {
+	store := newMemStore()
+	svc := newService(store, &fakeMessenger{})
+	v, _ := svc.Create(context.Background(), LoopSpec{
+		RootSessionID:  "s1",
+		TriggerType:    TriggerSchedule,
+		ActionType:     ActionPromptRoot,
+		StopConditions: StopConditions{MaxIterations: 5, MaxCostUSD: 10},
+	})
+	// Drive it to a terminal state with consumed run-state.
+	l, _ := store.GetLoop(v.ID)
+	l.Iteration = 5
+	l.ErrorStreak = 2
+	l.CostUSD = 7.5
+	l.TokensUsed = 1234
+	l.LastFiredAt = 999
+	_ = store.UpdateLoop(*l)
+	_ = store.SetLoopState(v.ID, StateCompleted, "hit cap")
+
+	view, err := svc.Restart(context.Background(), v.ID)
+	if err != nil {
+		t.Fatalf("Restart: %v", err)
+	}
+	if view.State != StateActive {
+		t.Fatalf("expected active after restart, got %q", view.State)
+	}
+	got, _ := store.GetLoop(v.ID)
+	if got.Iteration != 0 || got.ErrorStreak != 0 || got.CostUSD != 0 || got.TokensUsed != 0 {
+		t.Fatalf("expected run-state reset, got iter=%d streak=%d cost=%v tokens=%d",
+			got.Iteration, got.ErrorStreak, got.CostUSD, got.TokensUsed)
+	}
+	if got.CompletedAt != 0 || got.LastFiredAt != 0 {
+		t.Fatalf("expected completedAt/lastFiredAt cleared, got %d/%d", got.CompletedAt, got.LastFiredAt)
+	}
+}
+
+func TestRestart_RejectsActiveAndPausedAndDeleted(t *testing.T) {
+	for _, st := range []string{StateActive, StatePaused, StateDeleted} {
+		store := newMemStore()
+		svc := newService(store, &fakeMessenger{})
+		v, _ := svc.Create(context.Background(), LoopSpec{
+			RootSessionID:  "s1",
+			TriggerType:    TriggerSchedule,
+			ActionType:     ActionPromptRoot,
+			StopConditions: StopConditions{MaxIterations: 5, MaxCostUSD: 1},
+		})
+		_ = store.SetLoopState(v.ID, st, "")
+		if _, err := svc.Restart(context.Background(), v.ID); err == nil {
+			t.Fatalf("expected restart to reject state=%s", st)
+		}
+	}
+}
+
 func TestCreate_RejectsNoBudget(t *testing.T) {
 	svc := newService(newMemStore(), &fakeMessenger{})
 	_, err := svc.Create(context.Background(), LoopSpec{

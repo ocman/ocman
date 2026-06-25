@@ -606,6 +606,10 @@ export const api = {
       postJSON<{ ok: boolean }>(`/api/loops/${encodeURIComponent(id)}/pause`, {}),
     resume: (id: string) =>
       postJSON<{ ok: boolean }>(`/api/loops/${encodeURIComponent(id)}/resume`, {}),
+    // Restart a completed/errored loop: resets run-state counters and
+    // reactivates it. Returns the refreshed loop view.
+    restart: (id: string) =>
+      postJSON<Loop>(`/api/loops/${encodeURIComponent(id)}/restart`, {}),
     step: (id: string) =>
       postJSON<{ ok: boolean }>(`/api/loops/${encodeURIComponent(id)}/step`, {}),
     // Force a schedule loop to fire its action now, bypassing the

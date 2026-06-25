@@ -21,6 +21,8 @@ type LoopsStore = {
   remove: (id: string) => Promise<void>;
   pause: (id: string) => Promise<void>;
   resume: (id: string) => Promise<void>;
+  /** Restart a completed/errored loop from zero (same settings). */
+  restart: (id: string) => Promise<void>;
   step: (id: string) => Promise<void>;
   /** Force a schedule loop to fire now (bypasses interval). */
   trigger: (id: string) => Promise<void>;
@@ -66,6 +68,10 @@ export const useLoopsStore = create<LoopsStore>((set, get) => ({
   },
   resume: async (id) => {
     await api.loops.resume(id);
+    await get().refresh();
+  },
+  restart: async (id) => {
+    await api.loops.restart(id);
     await get().refresh();
   },
   step: async (id) => {

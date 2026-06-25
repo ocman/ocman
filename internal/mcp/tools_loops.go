@@ -34,6 +34,7 @@ type loopService interface {
 	Delete(ctx context.Context, id string) error
 	Pause(ctx context.Context, id string) error
 	Resume(ctx context.Context, id string) error
+	Restart(ctx context.Context, id string) (loops.LoopView, error)
 	Step(ctx context.Context, id string) error
 }
 
@@ -67,6 +68,7 @@ func loopServerTools(t *loopTools) []server.ServerTool {
 		{Tool: loopControlTool("delete_loop", "Delete a loop (stops it permanently and removes it from the list)."), Handler: t.control("delete")},
 		{Tool: loopControlTool("pause_loop", "Pause a loop (resume later)."), Handler: t.control("pause")},
 		{Tool: loopControlTool("resume_loop", "Resume a paused loop."), Handler: t.control("resume")},
+		{Tool: loopControlTool("restart_loop", "Restart a completed or errored loop: clears its iteration count and consumed budget and sets it active to run again from zero against the same limits."), Handler: t.handleRestartLoop},
 		{Tool: loopControlTool("step_loop", "Run one loop cycle then pause."), Handler: t.control("step")},
 	}
 }
@@ -164,6 +166,18 @@ func (t *loopTools) handleGetLoopStatus(ctx context.Context, req mcplib.CallTool
 	summary := loopStatusSummary(detail.LoopView)
 	summary["child_count"] = len(detail.Children)
 	return toolResultJSON(summary), nil
+}
+
+func (t *loopTools) handleRestartLoop(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	id, err := req.RequireString("loop_id")
+	if err != nil {
+		return mcplib.NewToolResultError("loop_id is required"), nil
+	}
+	view, err := t.svc.Restart(ctx, id)
+	if err != nil {
+		return mcplib.NewToolResultError(err.Error()), nil
+	}
+	return toolResultJSON(loopStatusSummary(view)), nil
 }
 
 // control returns a handler for the stop/pause/resume/step tools.

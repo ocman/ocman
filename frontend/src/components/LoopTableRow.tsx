@@ -13,10 +13,13 @@ export function LoopTableRow({ loop }: { loop: Loop }) {
   const trigger = useLoopsStore((s) => s.trigger);
   const remove = useLoopsStore((s) => s.remove);
   const update = useLoopsStore((s) => s.update);
+  const restart = useLoopsStore((s) => s.restart);
   const [editing, setEditing] = useState(false);
   const [history, setHistory] = useState(false);
 
   const terminal = ['completed', 'deleted', 'errored'].includes(loop.state);
+  // completed/errored loops can be revived; deleted ones can't.
+  const restartable = loop.state === 'completed' || loop.state === 'errored';
   const next = nextRunLabel(loop);
 
   return (
@@ -42,6 +45,15 @@ export function LoopTableRow({ loop }: { loop: Loop }) {
         {!terminal && (
           <button className="vscode-btn" onClick={() => setEditing(true)} aria-label="Edit loop">
             Edit
+          </button>
+        )}
+        {restartable && (
+          <button
+            className="vscode-btn"
+            onClick={() => void restart(loop.id)}
+            aria-label="Restart loop"
+          >
+            Restart
           </button>
         )}
       </td>

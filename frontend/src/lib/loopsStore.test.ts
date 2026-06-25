@@ -4,6 +4,7 @@ import type { Loop } from './api.types';
 // Mock the api module before importing the store.
 const listMock = vi.fn();
 const deleteMock = vi.fn();
+const restartMock = vi.fn();
 vi.mock('./api', () => ({
   api: {
     loops: {
@@ -11,6 +12,7 @@ vi.mock('./api', () => ({
       delete: (...args: unknown[]) => deleteMock(...args),
       pause: vi.fn(),
       resume: vi.fn(),
+      restart: (...args: unknown[]) => restartMock(...args),
       step: vi.fn(),
       trigger: vi.fn(),
       update: vi.fn(),
@@ -57,6 +59,7 @@ function makeLoop(id: string, overrides: Partial<Loop> = {}): Loop {
 beforeEach(() => {
   listMock.mockReset();
   deleteMock.mockReset();
+  restartMock.mockReset();
   useLoopsStore.setState({ loops: [], loading: false, error: null, filter: {} });
 });
 
@@ -85,5 +88,15 @@ describe('loopsStore', () => {
     expect(deleteMock).toHaveBeenCalledWith('a');
     expect(listMock).toHaveBeenCalledWith({ session: 's1' });
     expect(useLoopsStore.getState().loops).toHaveLength(0);
+  });
+
+  it('restart calls the restart api then refreshes with the current filter', async () => {
+    useLoopsStore.setState({ filter: { dir: '/src/ocman' } });
+    restartMock.mockResolvedValueOnce(makeLoop('a', { state: 'active' }));
+    listMock.mockResolvedValueOnce([makeLoop('a', { state: 'active' })]);
+    await useLoopsStore.getState().restart('a');
+    expect(restartMock).toHaveBeenCalledWith('a');
+    expect(listMock).toHaveBeenCalledWith({ dir: '/src/ocman' });
+    expect(useLoopsStore.getState().loops[0].state).toBe('active');
   });
 });
