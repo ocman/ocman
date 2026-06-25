@@ -1511,6 +1511,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                   onClose={() => setShowRenameModal(false)}
                   onRenamed={(newTitle) => {
                     patchSession({ title: newTitle });
+                    patchRecentSession(session.id, { title: newTitle });
                     setShowRenameToast(true);
                   }}
                 />

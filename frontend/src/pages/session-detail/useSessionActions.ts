@@ -431,9 +431,13 @@ export function useSessionActions({
     }
 
     if (command === 'rename') {
-      if (args.trim()) {
+      const newTitle = args.trim();
+      if (newTitle) {
         try {
-          await api.renameSession(session.id, args.trim());
+          await api.renameSession(session.id, newTitle);
+          // Optimistically update the sidebar store so the renamed
+          // title shows immediately instead of waiting for the 3s poll.
+          useApiStore.getState().patchRecentSession(session.id, { title: newTitle });
           setShowRenameToast(true);
         } catch (e) {
           remoteLog.error('Failed to rename session', e);
