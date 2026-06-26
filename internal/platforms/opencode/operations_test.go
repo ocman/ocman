@@ -430,6 +430,11 @@ func TestExtractOpenCodeErrorMessage(t *testing.T) {
 			`{"foo":"bar"}`,
 			`{"foo":"bar"}`,
 		},
+		{
+			"effect-style _tag discriminator (PermissionNotFoundError)",
+			`{"_tag":"PermissionNotFoundError","requestID":"per_abc","message":"Permission request not found: per_abc"}`,
+			"PermissionNotFoundError",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

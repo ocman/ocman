@@ -125,7 +125,20 @@ export function usePromptHandlers({
       clearPrompt('permission', repliedId);
       notifyPromptDismissed(targetSessionId);
     } catch (e) {
-      setPermissionError(e instanceof Error ? e.message : 'Failed to respond to permission request');
+      const msg = e instanceof Error ? e.message : 'Failed to respond to permission request';
+      // The prompt outlived the actual permission request server-side
+      // (OpenCode timed it out / restarted, or it was answered in
+      // another client) and the SSE clearing event never arrived, so
+      // it sat on screen as a stale prompt. OpenCode answers the reply
+      // with PermissionNotFoundError. Treat that as "already resolved":
+      // clear the dead prompt instead of showing the raw error and
+      // leaving it stuck forever.
+      if (/PermissionNotFoundError|not found/i.test(msg)) {
+        clearPrompt('permission', repliedId);
+        notifyPromptDismissed(targetSessionId);
+      } else {
+        setPermissionError(msg);
+      }
     } finally {
       setAnsweringPermission(false);
     }

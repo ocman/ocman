@@ -824,9 +824,18 @@ func extractOpenCodeErrorMessage(body []byte) string {
 	}
 	var parsed struct {
 		Name string                 `json:"name"`
+		Tag  string                 `json:"_tag"`
 		Data map[string]interface{} `json:"data"`
 	}
-	if err := json.Unmarshal(body, &parsed); err != nil || parsed.Name == "" {
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return trimmed
+	}
+	// Some OpenCode errors (e.g. PermissionNotFoundError) use the
+	// effect-style `_tag` discriminator instead of Hono's `name`.
+	if parsed.Name == "" {
+		parsed.Name = parsed.Tag
+	}
+	if parsed.Name == "" {
 		return trimmed
 	}
 	if msg, ok := parsed.Data["message"].(string); ok && msg != "" {
