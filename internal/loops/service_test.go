@@ -229,6 +229,35 @@ func TestStop_Duration(t *testing.T) {
 	}
 }
 
+func TestStop_Duration_RecurringExempt(t *testing.T) {
+	// Cron/schedule/pr_event loops are exempt from the lifetime duration
+	// cap: a daily cron created hours ago and fired since must keep going.
+	sc := StopConditions{MaxIterations: 100, MaxCostUSD: 5, MaxDuration: "1h"}
+	now := time.Now()
+	for _, tt := range []string{TriggerCron, TriggerSchedule, TriggerPREvent} {
+		l := state.Loop{
+			TriggerType: tt,
+			CreatedAt:   now.Add(-5 * time.Hour).UnixMilli(),
+			LastFiredAt: now.Add(-2 * time.Hour).UnixMilli(),
+		}
+		if dec := evaluateStop(l, sc, now); dec.Stop {
+			t.Fatalf("recurring trigger %q should be exempt from lifetime duration, got %+v", tt, dec)
+		}
+	}
+}
+
+func TestStop_Duration_OneShotStillCapped(t *testing.T) {
+	// One-shot triggers (child_complete, turn_complete) keep the lifetime cap.
+	sc := StopConditions{MaxIterations: 100, MaxCostUSD: 5, MaxDuration: "1h"}
+	now := time.Now()
+	for _, tt := range []string{TriggerChildComplete, TriggerTurnComplete} {
+		l := state.Loop{TriggerType: tt, CreatedAt: now.Add(-2 * time.Hour).UnixMilli()}
+		if dec := evaluateStop(l, sc, now); !dec.Stop {
+			t.Fatalf("one-shot trigger %q should stop on lifetime duration", tt)
+		}
+	}
+}
+
 func strptr(s string) *string { return &s }
 
 func TestUpdate_EditsSafeFields(t *testing.T) {

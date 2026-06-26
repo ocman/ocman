@@ -210,6 +210,13 @@ graph TD
   failure mode.
 - **Consequences**: `evaluateStopConditions(loop)` runs at the top of every
   action dispatch. Cost/token accounting (AD-7) must be current at that point.
+- **`max_duration` scope**: the duration cap is a *lifetime* cutoff from loop
+  creation and applies only to one-shot triggers (`child_complete`,
+  `turn_complete`). Recurring triggers (`schedule`, `cron`, `pr_event`) are
+  exempt — they're meant to live indefinitely (a daily cron runs for weeks),
+  and the engine fires-and-forgets each run so it has no per-run end time to
+  bound on. Per-run wall-clock is the spawned agent session's concern. The
+  other caps (iterations, cost, tokens, error_streak) still apply to all loops.
 
 ---
 

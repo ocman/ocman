@@ -16,6 +16,19 @@ type stopDecision struct {
 	Reason        string
 }
 
+// recurringTrigger reports whether a trigger type fires repeatedly over
+// the loop's lifetime (vs. running once to completion). These are exempt
+// from the lifetime duration cap — a daily cron is meant to live for
+// weeks (see evaluateStop).
+func recurringTrigger(triggerType string) bool {
+	switch triggerType {
+	case TriggerSchedule, TriggerCron, TriggerPREvent:
+		return true
+	default:
+		return false
+	}
+}
+
 // evaluateStop checks every stop condition for a loop BEFORE its next
 // action (AD-6). Pre-action evaluation guarantees an over-budget loop
 // never sends "one more" prompt.
@@ -28,12 +41,19 @@ func evaluateStop(l state.Loop, sc StopConditions, now time.Time) stopDecision {
 			fmt.Sprintf("reached max iterations (%d)", sc.MaxIterations)}
 	}
 
-	// Duration cap.
-	maxDur := sc.maxDuration()
-	elapsed := now.Sub(time.UnixMilli(l.CreatedAt))
-	if elapsed >= maxDur {
-		return stopDecision{true, StateCompleted,
-			fmt.Sprintf("reached max duration (%s)", maxDur)}
+	// Duration cap — a lifetime wall-clock cutoff measured from loop
+	// creation, only for one-shot loops. Recurring loops (schedule/cron/
+	// pr_event) are exempt: they're meant to live indefinitely (a daily
+	// cron should run for weeks), and the engine fires-and-forgets each
+	// run, so it has no per-run end time to bound on. Per-run wall-clock
+	// is the spawned agent session's concern, not the loop's.
+	if !recurringTrigger(l.TriggerType) {
+		maxDur := sc.maxDuration()
+		elapsed := now.Sub(time.UnixMilli(l.CreatedAt))
+		if elapsed >= maxDur {
+			return stopDecision{true, StateCompleted,
+				fmt.Sprintf("reached max duration (%s)", maxDur)}
+		}
 	}
 
 	// Error-streak cutoff — directly addresses "wrong path for longer".
