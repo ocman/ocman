@@ -535,11 +535,14 @@ func (a *Adapter) Compact(ctx context.Context, req platforms.CompactRequest) err
 // CreateSession creates a new OpenCode session bound to the given
 // directory. Returns the new session ID.
 func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+	portPhase := srvtiming.Begin(ctx, "lsof_fresh")
 	port := discoverOpenCodePortFresh(req.Directory)
+	portPhase.EndWithDesc("fresh lsof port discovery")
 	if port == "" {
 		return nil, fmt.Errorf("no running OpenCode instance for directory %s: %w", req.Directory, platforms.ErrPlatformUnreachable)
 	}
 
+	createPhase := srvtiming.Begin(ctx, "http_create")
 	apiURL := fmt.Sprintf("http://127.0.0.1:%s/session", port)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, strings.NewReader("{}"))
 	if err != nil {
@@ -565,14 +568,18 @@ func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSession
 			return nil, errors.New("opencode create-session: empty response")
 		}
 	}
+	createPhase.EndWithDesc("opencode POST /session")
 
 	// If a custom title was provided, set it immediately after creation.
 	if req.Title != "" && parsed.ID != "" {
+		titlePhase := srvtiming.Begin(ctx, "http_title")
 		payload, err := json.Marshal(map[string]string{"title": req.Title})
 		if err != nil {
 			return nil, fmt.Errorf("marshal request: %w", err)
 		}
-		if err := patchJSON(ctx, port, fmt.Sprintf("/session/%s", parsed.ID), payload); err != nil {
+		err = patchJSON(ctx, port, fmt.Sprintf("/session/%s", parsed.ID), payload)
+		titlePhase.EndWithDesc("opencode PATCH /session/{id} (title)")
+		if err != nil {
 			log.WithError(err).Warn("failed to set custom title on new session")
 			// Don't fail the entire creation if title setting fails.
 		}

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	_ "modernc.org/sqlite"
 
@@ -232,9 +233,19 @@ func TestHandleCreateSession_RefreshesProjectsIndex(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
-	projects, _ := srv.projectsSnapshot()
-	if len(projects) != 1 || projects[0].Directory != "/repo/new" {
-		t.Fatalf("expected projects index to include created project, got %+v", projects)
+	// The post-create refresh runs in a goroutine (off the request
+	// path) so the heavy GetProjects aggregate doesn't block creation.
+	// Poll briefly for the snapshot to reflect the new project.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		projects, _ := srv.projectsSnapshot()
+		if len(projects) == 1 && projects[0].Directory == "/repo/new" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected projects index to include created project, got %+v", projects)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

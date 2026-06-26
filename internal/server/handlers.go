@@ -17,6 +17,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/srvtiming"
 )
 
 // maxRequestBody is the maximum allowed request body size (1 MB).
@@ -387,17 +388,26 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	createPhase := srvtiming.Begin(r.Context(), "create_session")
 	resp, err := adapter.CreateSession(r.Context(), platforms.CreateSessionRequest{
 		Directory: req.Directory,
 		Title:     req.Title,
 	})
+	createPhase.EndWithDesc("adapter.CreateSession")
 	if err != nil {
 		writePlatformError(w, "creating session", err)
 		return
 	}
-	if err := s.refreshProjectsIndex(); err != nil {
-		log.WithError(err).Warn("refreshing projects index after session creation")
-	}
+	// Refresh the projects index off the request path: the heavy
+	// GetProjects() aggregate (correlated per-directory message scans)
+	// can take seconds and would otherwise block the create response.
+	// The new session already exists; the index only feeds cached
+	// stats, which the background ticker also keeps fresh.
+	go func() {
+		if err := s.refreshProjectsIndex(); err != nil {
+			log.WithError(err).Warn("refreshing projects index after session creation")
+		}
+	}()
 	writeJSON(w, resp)
 }
 
