@@ -71,6 +71,15 @@ export function PromptToastNotify() {
             }}
             duration={Infinity}
           >
+            <Toast.Close asChild>
+              <button
+                type="button"
+                className="oc-prompt-toast-close"
+                aria-label="Dismiss"
+              >
+                ×
+              </button>
+            </Toast.Close>
             <Toast.Title className="oc-prompt-toast-heading">
               {heading}
             </Toast.Title>
@@ -87,15 +96,6 @@ export function PromptToastNotify() {
                   Open session
                 </button>
               </Toast.Action>
-              <Toast.Close asChild>
-                <button
-                  type="button"
-                  className="oc-prompt-toast-close"
-                  aria-label="Dismiss"
-                >
-                  ×
-                </button>
-              </Toast.Close>
             </div>
           </Toast.Root>
         );

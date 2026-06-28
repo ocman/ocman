@@ -34,6 +34,7 @@
   flex-direction: column;
   gap: 6px;
   border-radius: 0;
+  position: relative;
 }
 
 /* Permission requests are slightly more urgent than questions —
@@ -65,6 +66,7 @@
 
 .oc-prompt-toast-heading {
   margin: 0;
+  padding-right: 18px;
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
@@ -86,7 +88,6 @@
 
 .oc-prompt-toast-actions {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   gap: 8px;
   margin-top: 4px;
@@ -109,6 +110,9 @@
 }
 
 .oc-prompt-toast-close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
   background: transparent;
   color: var(--text-dim, #aab1bf);
   border: none;
