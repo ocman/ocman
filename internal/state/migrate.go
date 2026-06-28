@@ -89,7 +89,7 @@ import (
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 17
+const latestSchemaVersion = 18
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -219,6 +219,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV16(tx)
 	case 17:
 		return migrateToV17(tx)
+	case 18:
+		return migrateToV18(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -630,5 +632,16 @@ func migrateToV16(tx *sql.Tx) error {
 // migrateToV17 lets loops pin the model used when prompting or spawning.
 func migrateToV17(tx *sql.Tx) error {
 	_, err := tx.Exec(`ALTER TABLE loops ADD COLUMN model TEXT NOT NULL DEFAULT ''`)
+	return err
+}
+
+// migrateToV18 adds loops.usage_baseline_at: a Unix-ms cutoff for budget
+// accounting. Only child sessions created at or after this time count
+// toward the loop's cost/token budget. It's 0 for existing loops (count
+// everything, unchanged behavior) and set to "now" on Restart so a
+// restarted loop runs against a fresh budget instead of instantly
+// re-tripping on the previous run's spend.
+func migrateToV18(tx *sql.Tx) error {
+	_, err := tx.Exec(`ALTER TABLE loops ADD COLUMN usage_baseline_at INTEGER NOT NULL DEFAULT 0`)
 	return err
 }

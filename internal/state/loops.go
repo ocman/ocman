@@ -39,8 +39,12 @@ type Loop struct {
 	LastFiredAt    int64   `json:"lastFiredAt"` // Unix ms of the most recent action; 0 if never fired
 	CreatedAt      int64   `json:"createdAt"`
 	UpdatedAt      int64   `json:"updatedAt"`
-	CompletedAt    int64   `json:"completedAt"` // 0 until terminal
-	LastSummary    string  `json:"lastSummary"`
+	CompletedAt     int64  `json:"completedAt"` // 0 until terminal
+	LastSummary     string `json:"lastSummary"`
+	// UsageBaselineAt is a Unix-ms cutoff: only child sessions created at
+	// or after it count toward the budget. 0 = count all (default). Set
+	// to now on Restart so the loop runs against a fresh budget (v18).
+	UsageBaselineAt int64 `json:"usageBaselineAt,omitempty"`
 }
 
 // LoopIteration is one row in the `loop_iterations` audit trail. A row
@@ -70,15 +74,15 @@ func (d *DB) InsertLoop(l Loop) error {
 			 trigger_type, trigger_config, action_type, action_template, model,
 			 stop_conditions, state, iteration, error_streak, tokens_used,
 			 cost_usd, last_fired_at, created_at, updated_at, completed_at,
-			 last_summary, loop_session_id, session_mode)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 last_summary, loop_session_id, session_mode, usage_baseline_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		l.ID, l.Platform, l.RootSessionID, nullableString(l.ParentLoopID), l.Directory,
 		l.ProjectName, l.Title, l.Description, l.CurrentTask, l.Pattern,
 		l.TriggerType, nonEmptyJSON(l.TriggerConfig), l.ActionType, l.ActionTemplate, l.Model,
 		nonEmptyJSON(l.StopConditions), defaultState(l.State), l.Iteration, l.ErrorStreak, l.TokensUsed,
 		l.CostUSD, l.LastFiredAt, l.CreatedAt, l.UpdatedAt, nullableInt(l.CompletedAt),
-		l.LastSummary, nullableString(l.LoopSessionID), defaultSessionMode(l.SessionMode),
+		l.LastSummary, nullableString(l.LoopSessionID), defaultSessionMode(l.SessionMode), l.UsageBaselineAt,
 	)
 	if err != nil {
 		return fmt.Errorf("inserting loop: %w", err)
@@ -114,14 +118,15 @@ func (d *DB) UpdateLoop(l Loop) error {
 			completed_at    = ?,
 			last_summary    = ?,
 			loop_session_id = ?,
-			session_mode    = ?
+			session_mode    = ?,
+			usage_baseline_at = ?
 		WHERE id = ?
 	`,
 		l.Directory, l.ProjectName, l.Title, l.Description, l.CurrentTask, l.Pattern,
 		l.TriggerType, nonEmptyJSON(l.TriggerConfig), l.ActionType, l.ActionTemplate, l.Model,
 		nonEmptyJSON(l.StopConditions), defaultState(l.State), l.Iteration, l.ErrorStreak, l.TokensUsed,
 		l.CostUSD, l.LastFiredAt, time.Now().UnixMilli(), nullableInt(l.CompletedAt),
-		l.LastSummary, nullableString(l.LoopSessionID), defaultSessionMode(l.SessionMode), l.ID,
+		l.LastSummary, nullableString(l.LoopSessionID), defaultSessionMode(l.SessionMode), l.UsageBaselineAt, l.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("updating loop: %w", err)
@@ -306,7 +311,7 @@ const loopSelectSQL = `
 	       trigger_type, trigger_config, action_type, action_template, model,
 	       stop_conditions, state, iteration, error_streak, tokens_used,
 	       cost_usd, last_fired_at, created_at, updated_at, completed_at,
-	       last_summary, loop_session_id, session_mode
+	       last_summary, loop_session_id, session_mode, usage_baseline_at
 	FROM loops`
 
 type rowScanner interface {
@@ -323,7 +328,7 @@ func scanLoop(row rowScanner) (*Loop, error) {
 		&l.TriggerType, &l.TriggerConfig, &l.ActionType, &l.ActionTemplate, &l.Model,
 		&l.StopConditions, &l.State, &l.Iteration, &l.ErrorStreak, &l.TokensUsed,
 		&l.CostUSD, &l.LastFiredAt, &l.CreatedAt, &l.UpdatedAt, &completedAt,
-		&l.LastSummary, &loopSessionID, &l.SessionMode,
+		&l.LastSummary, &loopSessionID, &l.SessionMode, &l.UsageBaselineAt,
 	); err != nil {
 		return nil, err
 	}

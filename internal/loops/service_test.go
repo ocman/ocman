@@ -377,6 +377,70 @@ func TestRefreshUsage_AggregatesTreeIncludingSubLoops(t *testing.T) {
 	}
 }
 
+func TestRefreshUsage_ExcludesSessionsBeforeBaseline(t *testing.T) {
+	store := newMemStore()
+	usage := &fakeUsage{perSessionCost: 2, perSessionTokens: 50, ok: true}
+	svc := NewService(Deps{Store: store, Messenger: &fakeMessenger{}, Launcher: &fakeLauncher{}, Usage: usage})
+
+	loop := sampleLoopState("l1", "")
+	loop.UsageBaselineAt = 1000 // only sessions created at/after 1000 count
+	_ = store.InsertLoop(loop)
+	store.kids = []state.ChildSession{
+		{ID: "old", LoopID: "l1", CreatedAt: 500},  // before baseline → excluded
+		{ID: "new1", LoopID: "l1", CreatedAt: 1000}, // at baseline → counted
+		{ID: "new2", LoopID: "l1", CreatedAt: 1500}, // after baseline → counted
+	}
+
+	l, _ := store.GetLoop("l1")
+	svc.refreshUsage(context.Background(), l)
+
+	if len(usage.lastIDs) != 2 {
+		t.Fatalf("expected 2 post-baseline sessions, got %d: %v", len(usage.lastIDs), usage.lastIDs)
+	}
+	if l.CostUSD != 4 { // 2 sessions * $2
+		t.Fatalf("expected cost 4 (excluding pre-baseline), got %v", l.CostUSD)
+	}
+}
+
+func TestRestart_ResetsBudgetBaselineSoOldSpendDoesNotReTrip(t *testing.T) {
+	store := newMemStore()
+	// Each session costs $6 — one prior-run session already exceeds the $5 cap.
+	usage := &fakeUsage{perSessionCost: 6, perSessionTokens: 0, ok: true}
+	now := int64(10_000)
+	svc := NewService(Deps{
+		Store: store, Messenger: &fakeMessenger{}, Launcher: &fakeLauncher{}, Usage: usage,
+		Notify: nil,
+	})
+	svc.now = func() time.Time { return time.UnixMilli(now) }
+
+	loop := sampleLoopState("l1", "")
+	loop.StopConditions = `{"max_iterations":48,"max_cost_usd":5}`
+	_ = store.InsertLoop(loop)
+	// A completed run whose single session blew the budget.
+	store.kids = []state.ChildSession{{ID: "old", LoopID: "l1", CreatedAt: 1000}}
+	_ = store.SetLoopState("l1", StateCompleted, "reached cost budget ($5.00)")
+
+	// Restart must succeed (not instantly re-trip on the old $6 session).
+	if _, err := svc.Restart(context.Background(), "l1"); err != nil {
+		t.Fatalf("Restart should succeed by moving the budget baseline: %v", err)
+	}
+	got, _ := store.GetLoop("l1")
+	if got.State != StateActive {
+		t.Fatalf("expected active after restart, got %q", got.State)
+	}
+	if got.UsageBaselineAt != now {
+		t.Fatalf("expected usage baseline set to now (%d), got %d", now, got.UsageBaselineAt)
+	}
+
+	// On the next tick, the old session is excluded, so usage is $0 and a
+	// fresh evaluation does not immediately stop on budget.
+	l, _ := store.GetLoop("l1")
+	svc.refreshUsage(context.Background(), l)
+	if l.CostUSD != 0 {
+		t.Fatalf("expected $0 against the new baseline, got %v", l.CostUSD)
+	}
+}
+
 func TestRefreshUsage_UnavailableKeepsCachedValue(t *testing.T) {
 	store := newMemStore()
 	svc := NewService(Deps{Store: store, Usage: &fakeUsage{ok: false}})
@@ -682,6 +746,33 @@ func TestEvaluateOne_StopBeforeAction(t *testing.T) {
 	l2, _ := store.GetLoop(v.ID)
 	if l2.State != StateCompleted {
 		t.Fatalf("expected completed, got %s", l2.State)
+	}
+}
+
+func TestEvaluateOne_StopPersistsCostThatTriggeredIt(t *testing.T) {
+	store := newMemStore()
+	// One $6 session pushes the loop over its $5 cap on the next tick.
+	usage := &fakeUsage{perSessionCost: 6, ok: true}
+	svc := NewService(Deps{Store: store, Messenger: &fakeMessenger{}, Launcher: &fakeLauncher{}, Usage: usage})
+
+	loop := sampleLoopState("l1", "")
+	loop.StopConditions = `{"max_iterations":48,"max_cost_usd":5}`
+	_ = store.InsertLoop(loop)
+	store.kids = []state.ChildSession{{ID: "s1", LoopID: "l1", CreatedAt: 1}}
+
+	l, _ := store.GetLoop("l1")
+	if _, err := svc.EvaluateOne(context.Background(), *l); err != nil {
+		t.Fatalf("EvaluateOne: %v", err)
+	}
+
+	got, _ := store.GetLoop("l1")
+	if got.State != StateCompleted {
+		t.Fatalf("expected completed on cost budget, got %s", got.State)
+	}
+	// The cost that triggered the stop must be persisted, not left at 0 —
+	// otherwise the row contradicts the "$5 budget reached" summary.
+	if got.CostUSD != 6 {
+		t.Fatalf("expected persisted cost 6, got %v (row must match the stop summary)", got.CostUSD)
 	}
 }
 

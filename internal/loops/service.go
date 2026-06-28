@@ -332,7 +332,16 @@ func (s *Service) Restart(ctx context.Context, id string) (LoopView, error) {
 	l.CompletedAt = 0
 	l.LastSummary = ""
 	l.State = StateActive
+	// Move the budget baseline forward so the previous run's spend (its
+	// child sessions are still linked to this loop) doesn't count against
+	// the fresh budget. Without this, refreshUsage would re-sum the old
+	// sessions on the next tick and the loop would instantly re-terminate.
+	l.UsageBaselineAt = s.clock().UnixMilli()
 
+	// Re-tally usage against the new baseline (≈0, since no post-baseline
+	// sessions exist yet) so the guard reflects the fresh budget rather
+	// than the zeroed in-memory values.
+	s.refreshUsage(ctx, l)
 	if dec := evaluateStop(*l, decodeStopConditions(l.StopConditions), s.clock()); dec.Stop {
 		return LoopView{}, fmt.Errorf("cannot restart: %s — edit the loop's limits first", dec.Reason)
 	}
@@ -439,6 +448,12 @@ func (s *Service) fireAction(
 ) (bool, error) {
 	// Stop conditions BEFORE the action (AD-6).
 	if dec := evaluateStop(l, sc, now); dec.Stop {
+		// Persist the refreshed usage that triggered the stop before the
+		// terminal transition, so the stored row matches the final
+		// summary (otherwise the UI shows cost 0 next to a "$5 budget
+		// reached" message). UpdateLoop writes cost/tokens/iteration;
+		// SetLoopState then stamps the terminal state + completed_at.
+		_ = s.store.UpdateLoop(l)
 		_ = s.store.SetLoopState(l.ID, dec.TerminalState, dec.Reason)
 		s.injectFinalSummary(ctx, l, dec.Reason)
 		s.broadcast(l.ID)
@@ -479,7 +494,7 @@ func (s *Service) refreshUsage(ctx context.Context, l *state.Loop) {
 	if s.usage == nil {
 		return
 	}
-	ids := s.collectTreeSessionIDs(l.ID, map[string]bool{})
+	ids := s.collectTreeSessionIDs(l.ID, l.UsageBaselineAt, map[string]bool{})
 	if len(ids) == 0 {
 		return
 	}
@@ -496,7 +511,12 @@ func (s *Service) refreshUsage(ctx context.Context, l *state.Loop) {
 // against a cyclic parent_loop_id graph (bad data) so we can't loop
 // forever. Loops with prompt_root in reuse mode reuse one session; fresh
 // mode spawns one per iteration — both land in child_sessions.
-func (s *Service) collectTreeSessionIDs(loopID string, seen map[string]bool) []string {
+//
+// baselineAt (Unix ms) excludes sessions created before it from the
+// budget tally, so a Restart that bumps the baseline doesn't re-count the
+// previous run's spend. 0 counts everything. Sub-loops inherit the
+// parent's baseline.
+func (s *Service) collectTreeSessionIDs(loopID string, baselineAt int64, seen map[string]bool) []string {
 	if seen[loopID] {
 		return nil
 	}
@@ -505,12 +525,14 @@ func (s *Service) collectTreeSessionIDs(loopID string, seen map[string]bool) []s
 	var ids []string
 	if children, err := s.store.ListChildSessionsByLoop(loopID); err == nil {
 		for _, c := range children {
-			ids = append(ids, c.ID)
+			if c.CreatedAt >= baselineAt {
+				ids = append(ids, c.ID)
+			}
 		}
 	}
 	if subs, err := s.store.ListLoopsByParent(loopID); err == nil {
 		for _, sub := range subs {
-			ids = append(ids, s.collectTreeSessionIDs(sub.ID, seen)...)
+			ids = append(ids, s.collectTreeSessionIDs(sub.ID, baselineAt, seen)...)
 		}
 	}
 	return ids
