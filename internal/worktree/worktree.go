@@ -31,6 +31,15 @@ var (
 	// ErrIndexLocked indicates that a concurrent git process holds
 	// the index lock. The caller should retry after a short delay.
 	ErrIndexLocked = errors.New("git index is locked by another process")
+
+	// ErrWorktreeDirty indicates Remove refused because the worktree
+	// has uncommitted changes or untracked files. The caller can retry
+	// with force=true to discard them.
+	ErrWorktreeDirty = errors.New("worktree has uncommitted changes")
+
+	// ErrMainWorktree indicates Remove refused because the target is
+	// the main checkout, which git will not remove.
+	ErrMainWorktree = errors.New("cannot remove the main worktree")
 )
 
 // PathFor returns the deterministic on-disk path for a worktree:

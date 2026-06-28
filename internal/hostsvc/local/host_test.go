@@ -150,6 +150,24 @@ func TestLocalHost_CreateWorktreeSession(t *testing.T) {
 	}
 }
 
+func TestLocalHost_RemoveWorktree(t *testing.T) {
+	repo := initRepo(t)
+	h := New(Deps{
+		LaunchWorktreeTmux: func(string, string) (string, bool, error) { return "s:w", true, nil },
+	})
+	res, err := h.CreateWorktreeSession(context.Background(), hostsvc.WorktreeSessionRequest{
+		ProjectDir: repo, Branch: "feature", NewBranch: true, BaseRef: "main",
+	})
+	if err != nil {
+		t.Fatalf("CreateWorktreeSession: %v", err)
+	}
+	if err := h.RemoveWorktree(context.Background(), hostsvc.RemoveWorktreeRequest{
+		Dir: repo, Path: res.WorktreePath,
+	}); err != nil {
+		t.Fatalf("RemoveWorktree: %v", err)
+	}
+}
+
 // TestLocalHost_NilDepsAreSafe confirms the optional deps default safely.
 func TestLocalHost_NilDepsAreSafe(t *testing.T) {
 	h := New(Deps{})

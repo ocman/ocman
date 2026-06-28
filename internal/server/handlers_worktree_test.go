@@ -256,6 +256,121 @@ func TestHandleWorktreeCreateAndLaunch_NonRepo(t *testing.T) {
 	}
 }
 
+func TestHandleWorktreeRemove_BadInputs(t *testing.T) {
+	srv := &Server{}
+	tests := []struct {
+		name     string
+		body     string
+		wantCode int
+	}{
+		{"missing-projectDir", `{"path":"/abs/wt"}`, http.StatusBadRequest},
+		{"missing-path", `{"projectDir":"/abs"}`, http.StatusBadRequest},
+		{"relative-projectDir", `{"projectDir":"rel","path":"/abs/wt"}`, http.StatusBadRequest},
+		{"relative-path", `{"projectDir":"/abs","path":"rel"}`, http.StatusBadRequest},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/worktree/remove", strings.NewReader(tt.body))
+			rr := httptest.NewRecorder()
+			srv.handleWorktreeRemove(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Errorf("status = %d; want %d (body: %q)", rr.Code, tt.wantCode, rr.Body.String())
+			}
+		})
+	}
+}
+
+func TestHandleWorktreeRemove_NonRepo(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	srv := &Server{}
+	notRepo := t.TempDir()
+	body := `{"projectDir":"` + notRepo + `","path":"` + filepath.Join(notRepo, "wt") + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/worktree/remove", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	srv.handleWorktreeRemove(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("status = %d; want 404 (body: %q)", rr.Code, rr.Body.String())
+	}
+}
+
+// TestHandleWorktreeRemove_MainWorktree confirms removing the primary
+// checkout returns 409 (git refuses; we classify it).
+func TestHandleWorktreeRemove_MainWorktree(t *testing.T) {
+	repo := initWorktreeTestRepo(t)
+	srv := &Server{}
+	body := `{"projectDir":"` + repo + `","path":"` + repo + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/worktree/remove", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	srv.handleWorktreeRemove(rr, req)
+	if rr.Code != http.StatusConflict {
+		t.Errorf("status = %d; want 409 (body: %q)", rr.Code, rr.Body.String())
+	}
+}
+
+// TestHandleWorktreeRemove_HappyPath creates a worktree directly, then
+// removes it via the handler and confirms it's gone.
+func TestHandleWorktreeRemove_HappyPath(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	repo := initWorktreeTestRepo(t)
+	wtPath := filepath.Join(t.TempDir(), "wt")
+	add := exec.Command("git", "-C", repo, "worktree", "add", "-b", "feature/del", wtPath, "main")
+	add.Env = cleanGitEnvForTest()
+	if out, err := add.CombinedOutput(); err != nil {
+		t.Fatalf("seed worktree: %v\n%s", err, out)
+	}
+
+	srv := &Server{}
+	body := `{"projectDir":"` + repo + `","path":"` + wtPath + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/worktree/remove", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	srv.handleWorktreeRemove(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d; body = %q", rr.Code, rr.Body.String())
+	}
+	if _, statErr := os.Stat(wtPath); !os.IsNotExist(statErr) {
+		t.Errorf("worktree dir still present: %v", statErr)
+	}
+}
+
+// TestHandleWorktreeRemove_DirtyConflict confirms a dirty worktree
+// returns 409 without force.
+func TestHandleWorktreeRemove_DirtyConflict(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	repo := initWorktreeTestRepo(t)
+	wtPath := filepath.Join(t.TempDir(), "wt")
+	add := exec.Command("git", "-C", repo, "worktree", "add", "-b", "feature/dirty", wtPath, "main")
+	add.Env = cleanGitEnvForTest()
+	if out, err := add.CombinedOutput(); err != nil {
+		t.Fatalf("seed worktree: %v\n%s", err, out)
+	}
+	if err := os.WriteFile(filepath.Join(wtPath, "scratch.txt"), []byte("wip\n"), 0o644); err != nil {
+		t.Fatalf("write scratch: %v", err)
+	}
+
+	srv := &Server{}
+	body := `{"projectDir":"` + repo + `","path":"` + wtPath + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/worktree/remove", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	srv.handleWorktreeRemove(rr, req)
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status = %d; want 409 (body: %q)", rr.Code, rr.Body.String())
+	}
+
+	// Force must succeed.
+	bodyForce := `{"projectDir":"` + repo + `","path":"` + wtPath + `","force":true}`
+	rr2 := httptest.NewRecorder()
+	srv.handleWorktreeRemove(rr2, httptest.NewRequest(http.MethodPost, "/api/worktree/remove", strings.NewReader(bodyForce)))
+	if rr2.Code != http.StatusOK {
+		t.Fatalf("force remove status = %d; body = %q", rr2.Code, rr2.Body.String())
+	}
+}
+
 // TestHandleWorktreeCreateAndLaunch_HappyPath exercises the full flow
 // against a real git repo, using a stubbed tmux runner so we don't
 // touch the test host's tmux server.

@@ -950,6 +950,17 @@ export interface WorktreeCreateRequest {
 }
 
 /**
+ * Request body for POST /api/worktree/remove. `force` discards
+ * uncommitted changes; without it the backend returns 409 for a dirty
+ * worktree.
+ */
+export interface WorktreeRemoveRequest {
+  projectDir: string;
+  path: string;
+  force?: boolean;
+}
+
+/**
  * Response from POST /api/worktree/create-and-launch.
  *
  * - `reused` is true when the target worktree already existed for

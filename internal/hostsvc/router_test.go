@@ -25,6 +25,7 @@ func (h stubHost) WorktreeDefaultBaseRef(context.Context, string) (string, error
 func (h stubHost) CreateWorktreeSession(context.Context, WorktreeSessionRequest) (*WorktreeSessionResult, error) {
 	return nil, nil
 }
+func (h stubHost) RemoveWorktree(context.Context, RemoveWorktreeRequest) error { return nil }
 func (h stubHost) LaunchTmux(context.Context, LaunchTmuxRequest) (*LaunchTmuxResult, error) {
 	return nil, nil
 }

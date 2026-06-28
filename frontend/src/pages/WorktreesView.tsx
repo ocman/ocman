@@ -31,6 +31,12 @@ export function WorktreesView() {
   const [worktrees, setWorktrees] = useState<WorktreeEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Per-row removal UI state keyed by worktree path. `confirm` arms the
+  // two-step delete; `dirty` means the backend refused (409) because the
+  // tree has uncommitted changes — the button switches to "Force delete".
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [confirmPath, setConfirmPath] = useState<string | null>(null);
+  const [dirtyPath, setDirtyPath] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!projectDir) {
@@ -56,6 +62,32 @@ export function WorktreesView() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const remove = useCallback(
+    async (wt: WorktreeEntry, force: boolean) => {
+      setRemoving(wt.path);
+      setError(null);
+      try {
+        await api.worktree.remove({ projectDir: projectDir, path: wt.path, force });
+        setConfirmPath(null);
+        setDirtyPath(null);
+        await load();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        // A dirty worktree comes back as 409; offer a force retry inline
+        // rather than surfacing it as a generic error.
+        if (/uncommitted changes/i.test(msg)) {
+          setDirtyPath(wt.path);
+        } else {
+          setError(msg);
+          setConfirmPath(null);
+        }
+      } finally {
+        setRemoving(null);
+      }
+    },
+    [projectDir, load],
+  );
 
   const rows = useMemo(
     () =>
@@ -176,6 +208,39 @@ export function WorktreesView() {
                       >
                         Open session
                       </button>
+                      {!wt.main &&
+                        (dirtyPath === wt.path ? (
+                          <button
+                            type="button"
+                            className="oc-time-range-btn oc-worktree-delete-force"
+                            disabled={removing === wt.path}
+                            title="Worktree has uncommitted changes — discard them and delete"
+                            onClick={() => void remove(wt, true)}
+                          >
+                            Force delete
+                          </button>
+                        ) : confirmPath === wt.path ? (
+                          <button
+                            type="button"
+                            className="oc-time-range-btn oc-worktree-delete-confirm"
+                            disabled={removing === wt.path}
+                            onClick={() => void remove(wt, false)}
+                          >
+                            {removing === wt.path ? 'Deleting…' : 'Confirm delete'}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="oc-time-range-btn"
+                            onClick={() => {
+                              setError(null);
+                              setDirtyPath(null);
+                              setConfirmPath(wt.path);
+                            }}
+                          >
+                            Delete
+                          </button>
+                        ))}
                     </div>
                   </td>
                 </tr>

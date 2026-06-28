@@ -115,6 +115,14 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 	}, nil
 }
 
+func (h *Host) RemoveWorktree(ctx context.Context, req hostsvc.RemoveWorktreeRequest) error {
+	repoRoot, err := worktree.ResolveRepoRoot(ctx, req.Dir)
+	if err != nil {
+		return err
+	}
+	return worktree.Remove(ctx, repoRoot, req.Path, req.Force)
+}
+
 func (h *Host) LaunchTmux(ctx context.Context, req hostsvc.LaunchTmuxRequest) (*hostsvc.LaunchTmuxResult, error) {
 	name, err := h.deps.LaunchTmux(req.Directory)
 	if err != nil {

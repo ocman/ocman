@@ -372,6 +372,14 @@ func (s *Server) CreateWorktreeSession(ctx context.Context, req *pb.JsonReq) (*p
 	return jsonResp(s.host.CreateWorktreeSession(ctx, wr))
 }
 
+func (s *Server) RemoveWorktree(ctx context.Context, req *pb.JsonReq) (*pb.Empty, error) {
+	var wr hostsvc.RemoveWorktreeRequest
+	if err := unmarshalJSON(req.Payload, &wr); err != nil {
+		return nil, err
+	}
+	return &pb.Empty{}, s.host.RemoveWorktree(ctx, wr)
+}
+
 func (s *Server) LaunchTmux(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
 	var lr hostsvc.LaunchTmuxRequest
 	if err := unmarshalJSON(req.Payload, &lr); err != nil {

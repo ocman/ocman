@@ -306,6 +306,88 @@ func TestResolveBaseRef_FallsBackToMain(t *testing.T) {
 	}
 }
 
+func TestRemove_HappyPath(t *testing.T) {
+	repo := initTestRepo(t)
+
+	res, err := Create(context.Background(), CreateRequest{
+		RepoRoot:  repo,
+		Branch:    "feature/del",
+		NewBranch: true,
+		BaseRef:   "main",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	if err := Remove(context.Background(), repo, res.Path, false); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+
+	// Dir gone from disk and from `git worktree list`.
+	if _, statErr := os.Stat(res.Path); !os.IsNotExist(statErr) {
+		t.Errorf("worktree dir still present: %v", statErr)
+	}
+	list, err := List(context.Background(), repo)
+	if err != nil {
+		t.Fatalf("List after remove: %v", err)
+	}
+	if len(list) != 1 {
+		t.Errorf("after remove, got %d entries, want 1", len(list))
+	}
+}
+
+func TestRemove_MainWorktreeRefused(t *testing.T) {
+	repo := initTestRepo(t)
+	err := Remove(context.Background(), repo, repo, false)
+	if !errors.Is(err, ErrMainWorktree) {
+		t.Errorf("Remove(main) = %v, want ErrMainWorktree", err)
+	}
+}
+
+func TestRemove_DirtyRefusedThenForce(t *testing.T) {
+	repo := initTestRepo(t)
+	res, err := Create(context.Background(), CreateRequest{
+		RepoRoot:  repo,
+		Branch:    "feature/dirty",
+		NewBranch: true,
+		BaseRef:   "main",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Make the worktree dirty with an untracked file.
+	if err := os.WriteFile(filepath.Join(res.Path, "scratch.txt"), []byte("wip\n"), 0o644); err != nil {
+		t.Fatalf("write scratch: %v", err)
+	}
+
+	if err := Remove(context.Background(), repo, res.Path, false); !errors.Is(err, ErrWorktreeDirty) {
+		t.Fatalf("Remove(dirty, force=false) = %v, want ErrWorktreeDirty", err)
+	}
+
+	// Force must succeed and remove the dir.
+	if err := Remove(context.Background(), repo, res.Path, true); err != nil {
+		t.Fatalf("Remove(dirty, force=true): %v", err)
+	}
+	if _, statErr := os.Stat(res.Path); !os.IsNotExist(statErr) {
+		t.Errorf("worktree dir still present after force remove: %v", statErr)
+	}
+}
+
+func TestClassifyRemoveError(t *testing.T) {
+	if err := classifyRemoveError(errors.New("exit 128"),
+		"fatal: '/x' is a main working tree"); !errors.Is(err, ErrMainWorktree) {
+		t.Errorf("main pattern -> %v, want ErrMainWorktree", err)
+	}
+	if err := classifyRemoveError(errors.New("exit 128"),
+		"fatal: '/x' contains modified or untracked files, use --force to delete it"); !errors.Is(err, ErrWorktreeDirty) {
+		t.Errorf("dirty pattern -> %v, want ErrWorktreeDirty", err)
+	}
+	if err := classifyRemoveError(errors.New("exit 1"), "some other failure"); errors.Is(err, ErrMainWorktree) || errors.Is(err, ErrWorktreeDirty) {
+		t.Errorf("unknown pattern misclassified: %v", err)
+	}
+}
+
 func TestClassifyAddError_IndexLocked(t *testing.T) {
 	// Both lock message patterns must produce ErrIndexLocked.
 	cases := []string{

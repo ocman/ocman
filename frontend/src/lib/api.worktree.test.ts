@@ -86,4 +86,32 @@ describe('api.worktree', () => {
       }),
     ).rejects.toThrow(/already checked out/);
   });
+
+  it('remove POSTs projectDir/path/force and returns removed', async () => {
+    let capturedURL = '';
+    let capturedInit: RequestInit | undefined;
+    stubFetch((url, init) => {
+      capturedURL = url;
+      capturedInit = init;
+      return new Response(JSON.stringify({ removed: true }), { status: 200 });
+    });
+
+    const res = await api.worktree.remove({ projectDir: '/a/r', path: '/a/.worktrees/r/feature', force: true });
+
+    expect(capturedURL).toBe('/api/worktree/remove');
+    expect(capturedInit?.method).toBe('POST');
+    expect(JSON.parse(capturedInit?.body as string)).toEqual({
+      projectDir: '/a/r',
+      path: '/a/.worktrees/r/feature',
+      force: true,
+    });
+    expect(res.removed).toBe(true);
+  });
+
+  it('remove surfaces a dirty-worktree 409 as Error', async () => {
+    stubFetch(() => new Response('worktree has uncommitted changes', { status: 409 }));
+    await expect(
+      api.worktree.remove({ projectDir: '/a/r', path: '/a/wt' }),
+    ).rejects.toThrow(/uncommitted changes/);
+  });
 });

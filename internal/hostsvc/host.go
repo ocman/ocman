@@ -61,6 +61,15 @@ type WorktreeSessionResult struct {
 	OpencodeLaunched bool   `json:"opencodeLaunched"`
 }
 
+// RemoveWorktreeRequest captures a remove-worktree action. Dir is any
+// path inside the repo (used to resolve the repo root); Path is the
+// worktree to remove.
+type RemoveWorktreeRequest struct {
+	Dir   string
+	Path  string
+	Force bool
+}
+
 // LaunchTmuxRequest launches `opencode --port 0` in a tmux session
 // rooted at Directory.
 type LaunchTmuxRequest struct {
@@ -111,6 +120,11 @@ type Host interface {
 	// CreateWorktreeSession creates (or reuses) a worktree and launches
 	// opencode in tmux rooted at it. Runs on the owning host (R-C).
 	CreateWorktreeSession(ctx context.Context, req WorktreeSessionRequest) (*WorktreeSessionResult, error)
+
+	// RemoveWorktree removes the worktree at path from the repo
+	// containing dir. With force, discards uncommitted changes. Runs on
+	// the owning host (R-C).
+	RemoveWorktree(ctx context.Context, req RemoveWorktreeRequest) error
 
 	// LaunchTmux launches opencode in a tmux session for a directory.
 	LaunchTmux(ctx context.Context, req LaunchTmuxRequest) (*LaunchTmuxResult, error)

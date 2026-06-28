@@ -130,6 +130,7 @@ func (localStubHost) WorktreeDefaultBaseRef(context.Context, string) (string, er
 func (localStubHost) CreateWorktreeSession(context.Context, hostsvc.WorktreeSessionRequest) (*hostsvc.WorktreeSessionResult, error) {
 	return &hostsvc.WorktreeSessionResult{WorktreePath: "/wt", Branch: "b"}, nil
 }
+func (localStubHost) RemoveWorktree(context.Context, hostsvc.RemoveWorktreeRequest) error { return nil }
 func (localStubHost) LaunchTmux(context.Context, hostsvc.LaunchTmuxRequest) (*hostsvc.LaunchTmuxResult, error) {
 	return &hostsvc.LaunchTmuxResult{Session: "sess"}, nil
 }

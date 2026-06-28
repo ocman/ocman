@@ -248,6 +248,48 @@ func Create(ctx context.Context, req CreateRequest) (*CreateResult, error) {
 	return nil, addErr
 }
 
+// Remove runs `git worktree remove [--force] <path>` for a worktree in
+// repoRoot. git itself enforces the important guards — it refuses the
+// main checkout and refuses a dirty tree unless --force is given — so we
+// just classify those two failures into typed errors:
+//
+//   - ErrMainWorktree when path is the primary worktree.
+//   - ErrWorktreeDirty when path has uncommitted/untracked changes and
+//     force is false (the caller can retry with force=true).
+func Remove(ctx context.Context, repoRoot, path string, force bool) error {
+	if repoRoot == "" || path == "" {
+		return fmt.Errorf("worktree: repoRoot and path are required")
+	}
+	args := []string{"-C", repoRoot, "worktree", "remove"}
+	if force {
+		args = append(args, "--force")
+	}
+	args = append(args, path)
+
+	cctx, cancel := context.WithTimeout(ctx, gitCommandTimeout)
+	defer cancel()
+	out, err := gitexec.Command(cctx, args...).CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	return classifyRemoveError(err, string(out))
+}
+
+// classifyRemoveError maps a `git worktree remove` failure to a typed
+// error when the message matches a known pattern.
+func classifyRemoveError(err error, output string) error {
+	out := strings.ToLower(output)
+	switch {
+	case strings.Contains(out, "is a main working tree"):
+		return fmt.Errorf("%w: %s", ErrMainWorktree, strings.TrimSpace(output))
+	case strings.Contains(out, "use --force to delete"),
+		strings.Contains(out, "contains modified or untracked files"):
+		return fmt.Errorf("%w: %s", ErrWorktreeDirty, strings.TrimSpace(output))
+	default:
+		return fmt.Errorf("git worktree remove: %w: %s", err, strings.TrimSpace(output))
+	}
+}
+
 // branchExists reports whether a local branch named `branch` exists
 // in repoRoot. Errors (including the branch genuinely not existing)
 // are coerced to false — callers treat "unknown" the same as "no" and

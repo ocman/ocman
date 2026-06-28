@@ -406,6 +406,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	mux.HandleFunc("/api/worktree/list", s.get(s.handleWorktreeList))
 	mux.HandleFunc("/api/worktree/default-base-ref", s.get(s.handleWorktreeDefaultBaseRef))
 	mux.HandleFunc("/api/worktree/create-and-launch", requirePOST(requireLocalhost(s.handleWorktreeCreateAndLaunch)))
+	mux.HandleFunc("/api/worktree/remove", requirePOST(requireLocalhost(s.handleWorktreeRemove)))
 
 	// PR/Issue sidebar endpoints — see spec/pr-issue-sidebar/. Read-only
 	// proxies to GitHub / Forgejo, scoped to the project at ?dir=<abs>.

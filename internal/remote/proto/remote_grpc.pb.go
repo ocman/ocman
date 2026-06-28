@@ -48,6 +48,7 @@ const (
 	Ocman_ListWorktrees_FullMethodName          = "/ocman.remote.v1.Ocman/ListWorktrees"
 	Ocman_WorktreeDefaultBaseRef_FullMethodName = "/ocman.remote.v1.Ocman/WorktreeDefaultBaseRef"
 	Ocman_CreateWorktreeSession_FullMethodName  = "/ocman.remote.v1.Ocman/CreateWorktreeSession"
+	Ocman_RemoveWorktree_FullMethodName         = "/ocman.remote.v1.Ocman/RemoveWorktree"
 	Ocman_LaunchTmux_FullMethodName             = "/ocman.remote.v1.Ocman/LaunchTmux"
 	Ocman_TmuxSessions_FullMethodName           = "/ocman.remote.v1.Ocman/TmuxSessions"
 	Ocman_HostCapabilities_FullMethodName       = "/ocman.remote.v1.Ocman/HostCapabilities"
@@ -105,6 +106,7 @@ type OcmanClient interface {
 	ListWorktrees(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 	WorktreeDefaultBaseRef(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 	CreateWorktreeSession(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
+	RemoveWorktree(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*Empty, error)
 	LaunchTmux(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 	TmuxSessions(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*JsonResp, error)
 	HostCapabilities(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*JsonResp, error)
@@ -420,6 +422,16 @@ func (c *ocmanClient) CreateWorktreeSession(ctx context.Context, in *JsonReq, op
 	return out, nil
 }
 
+func (c *ocmanClient) RemoveWorktree(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Ocman_RemoveWorktree_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *ocmanClient) LaunchTmux(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(JsonResp)
@@ -529,6 +541,7 @@ type OcmanServer interface {
 	ListWorktrees(context.Context, *JsonReq) (*JsonResp, error)
 	WorktreeDefaultBaseRef(context.Context, *JsonReq) (*JsonResp, error)
 	CreateWorktreeSession(context.Context, *JsonReq) (*JsonResp, error)
+	RemoveWorktree(context.Context, *JsonReq) (*Empty, error)
 	LaunchTmux(context.Context, *JsonReq) (*JsonResp, error)
 	TmuxSessions(context.Context, *Empty) (*JsonResp, error)
 	HostCapabilities(context.Context, *Empty) (*JsonResp, error)
@@ -631,6 +644,9 @@ func (UnimplementedOcmanServer) WorktreeDefaultBaseRef(context.Context, *JsonReq
 }
 func (UnimplementedOcmanServer) CreateWorktreeSession(context.Context, *JsonReq) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateWorktreeSession not implemented")
+}
+func (UnimplementedOcmanServer) RemoveWorktree(context.Context, *JsonReq) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method RemoveWorktree not implemented")
 }
 func (UnimplementedOcmanServer) LaunchTmux(context.Context, *JsonReq) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method LaunchTmux not implemented")
@@ -1183,6 +1199,24 @@ func _Ocman_CreateWorktreeSession_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Ocman_RemoveWorktree_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JsonReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).RemoveWorktree(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_RemoveWorktree_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).RemoveWorktree(ctx, req.(*JsonReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Ocman_LaunchTmux_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(JsonReq)
 	if err := dec(in); err != nil {
@@ -1384,6 +1418,10 @@ var Ocman_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateWorktreeSession",
 			Handler:    _Ocman_CreateWorktreeSession_Handler,
+		},
+		{
+			MethodName: "RemoveWorktree",
+			Handler:    _Ocman_RemoveWorktree_Handler,
 		},
 		{
 			MethodName: "LaunchTmux",

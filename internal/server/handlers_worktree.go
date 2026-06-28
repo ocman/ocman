@@ -108,6 +108,73 @@ func (s *Server) handleWorktreeDefaultBaseRef(w http.ResponseWriter, r *http.Req
 	writeJSON(w, map[string]string{"baseRef": baseRef})
 }
 
+// handleWorktreeRemove removes a worktree via `git worktree remove`.
+// git enforces the guards: it refuses the main checkout and refuses a
+// dirty tree unless force is set.
+//
+// Localhost-only — same posture as create-and-launch, since this mutates
+// the host filesystem.
+//
+// Request body: { projectDir, path, force?, remoteId? }
+//
+// Status codes:
+//
+//	400 — projectDir or path missing / relative
+//	404 — projectDir is not a git repository
+//	409 — target is the main worktree, or dirty (retry with force)
+//	502 — git invocation failed
+func (s *Server) handleWorktreeRemove(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ProjectDir string `json:"projectDir"`
+		Path       string `json:"path"`
+		Force      bool   `json:"force"`
+		RemoteID   string `json:"remoteId"`
+	}
+	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+		return
+	}
+	if req.ProjectDir == "" || req.Path == "" {
+		http.Error(w, "projectDir and path are required", http.StatusBadRequest)
+		return
+	}
+	if !filepath.IsAbs(req.ProjectDir) || !filepath.IsAbs(req.Path) {
+		http.Error(w, "projectDir and path must be absolute paths", http.StatusBadRequest)
+		return
+	}
+
+	host := s.router().ForDir(req.ProjectDir)
+	if req.RemoteID != "" {
+		host = s.router().ForRemote(req.RemoteID)
+	}
+
+	log.WithFields(log.Fields{
+		"projectDir": req.ProjectDir,
+		"path":       req.Path,
+		"force":      req.Force,
+		"remoteId":   req.RemoteID,
+	}).Info("worktree: remove")
+
+	err := host.RemoveWorktree(r.Context(), hostsvc.RemoveWorktreeRequest{
+		Dir:   req.ProjectDir,
+		Path:  req.Path,
+		Force: req.Force,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, worktree.ErrNotARepo):
+			http.Error(w, "projectDir is not a git repository", http.StatusNotFound)
+		case errors.Is(err, worktree.ErrMainWorktree),
+			errors.Is(err, worktree.ErrWorktreeDirty):
+			http.Error(w, err.Error(), http.StatusConflict)
+		default:
+			log.WithError(err).Warn("worktree: remove")
+			http.Error(w, "worktree remove failed: "+err.Error(), http.StatusBadGateway)
+		}
+		return
+	}
+	writeJSON(w, map[string]bool{"removed": true})
+}
+
 // handleWorktreeCreateAndLaunch creates a worktree (or reuses an
 // existing one) and launches `opencode --port 0` inside a tmux session
 // rooted at the worktree path. Idempotent: re-running with the same

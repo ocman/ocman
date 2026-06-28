@@ -114,6 +114,19 @@ func (h *remoteHost) CreateWorktreeSession(ctx context.Context, req hostsvc.Work
 	return &out, unmarshalJSON(resp.Payload, &out)
 }
 
+func (h *remoteHost) RemoveWorktree(ctx context.Context, req hostsvc.RemoveWorktreeRequest) error {
+	client := h.conn.Client()
+	if client == nil {
+		return ErrRemoteOffline
+	}
+	b, err := marshalJSON(req)
+	if err != nil {
+		return err
+	}
+	_, err = client.RemoveWorktree(ctx, &pb.JsonReq{Payload: b})
+	return err
+}
+
 func (h *remoteHost) LaunchTmux(ctx context.Context, req hostsvc.LaunchTmuxRequest) (*hostsvc.LaunchTmuxResult, error) {
 	client := h.conn.Client()
 	if client == nil {

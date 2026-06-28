@@ -50,6 +50,7 @@ export type {
   WorktreeEntry,
   WorktreeCreateRequest,
   WorktreeCreateResponse,
+  WorktreeRemoveRequest,
   SlashCommand,
   SessionModelEntry,
   FavoriteEntry,
@@ -97,6 +98,7 @@ import type {
   TermWindow,
   WorktreeCreateRequest,
   WorktreeCreateResponse,
+  WorktreeRemoveRequest,
   WorktreeEntry,
   WorkingTreeDiff,
   AgentInfo,
@@ -580,6 +582,8 @@ export const api = {
       ),
     createAndLaunch: (req: WorktreeCreateRequest): Promise<WorktreeCreateResponse> =>
       postJSON<WorktreeCreateResponse>('/api/worktree/create-and-launch', req),
+    remove: (req: WorktreeRemoveRequest): Promise<{ removed: boolean }> =>
+      postJSON<{ removed: boolean }>('/api/worktree/remove', req),
   },
   /**
    * Agent-loops API (localhost-only on the backend). Gated in the UI by
