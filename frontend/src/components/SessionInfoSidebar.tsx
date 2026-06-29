@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import './SessionChangesSidebar.css';
 import './SessionInfoSidebar.css';
 import { usePlatformCapabilities } from '../lib/useCapabilities';
@@ -201,6 +202,16 @@ export function SessionInfoSidebar({
             >
               {gitInfo.branch}
               {gitInfo.dirty && <span className="oc-info-branch-dirty"> *</span>}
+            </span>
+          </div>
+        )}
+        {session.parentId && (
+          <div className="oc-info-row">
+            <span className="oc-info-row-label">Parent</span>
+            <span className="oc-info-row-value oc-info-row-truncate">
+              <Link to={`/session/${encodeURIComponent(session.parentId)}`}>
+                View parent session
+              </Link>
             </span>
           </div>
         )}
