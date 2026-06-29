@@ -164,11 +164,13 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 			continue
 		}
 
-		// Always hide transient auto-approve judge sessions. They are
-		// parentless (created directly on the OpenCode port) so the
-		// parent_id check above never catches them, yet they should
-		// never surface in the list.
-		if strings.HasSuffix(s.Title, "(auto-approve subagent)") {
+		// Hide parentless sessions whose title marks them as a
+		// subagent (e.g. "(auto-approve subagent)", "(@explore
+		// subagent)"). These are created directly on the OpenCode
+		// port so the parent_id check above never catches them, yet
+		// they should never surface as top-level rows. Subagents with
+		// a real parent_id are still nested under their parent above.
+		if s.ParentID == "" && strings.HasSuffix(s.Title, " subagent)") {
 			continue
 		}
 

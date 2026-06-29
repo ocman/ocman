@@ -314,6 +314,34 @@ func TestGetSessions_ExcludesAutoApproveJudge(t *testing.T) {
 	}
 }
 
+// TestGetSessions_ExcludesParentlessNamedSubagent verifies that a
+// parentless session whose title marks it as a subagent (e.g.
+// "(@explore subagent)") is hidden even while active — the parent_id
+// filter never catches it, so the title suffix must.
+func TestGetSessions_ExcludesParentlessNamedSubagent(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "parent", "Normal Session", "/project", now, now)
+	// Parentless, active named subagent that previously leaked to top-level.
+	insertSession(t, db, "explore", "Find thing (@explore subagent)", "/project", now, now)
+	insertMessage(t, db, "m1", "explore", now, map[string]interface{}{"role": "assistant"})
+
+	sessions, err := db.GetSessions("", 0)
+	if err != nil {
+		t.Fatalf("GetSessions: %v", err)
+	}
+	for _, s := range sessions {
+		if s.ID == "explore" {
+			t.Fatalf("parentless named subagent should be excluded, got %+v", s)
+		}
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session (parent only), got %d", len(sessions))
+	}
+}
+
 func TestGetSessions_StatusBusy(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
