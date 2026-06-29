@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import './LoopEditModal.css';
 import type { Loop, LoopUpdateRequest } from '../lib/api.types';
 import { formatGoDuration, parseGoDuration } from '../lib/loopFormat';
+import { ModelSelect } from './ModelSelect';
 
 interface LoopEditModalProps {
   loop: Loop;
@@ -138,7 +139,7 @@ export function LoopEditModal({ loop, onSave, onClose, onPause, onResume, onTrig
           </label>
           <label>
             Model (optional)
-            <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="provider/model" />
+            <ModelSelect value={model} onChange={setModel} directory={loop.directory} />
           </label>
           <label>
             Session per iteration

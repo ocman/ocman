@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import './LoopEditModal.css';
 import type { LoopCreateRequest } from '../lib/api.types';
 import { parseGoDuration } from '../lib/loopFormat';
+import { ModelSelect } from './ModelSelect';
 
 interface LoopCreateModalProps {
   // Session the loop is anchored to (its creator/owner session).
@@ -224,7 +225,7 @@ export function LoopCreateModal({
 
           <label>
             Model (optional)
-            <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="provider/model" />
+            <ModelSelect value={model} onChange={setModel} directory={directory} />
           </label>
 
           <label>

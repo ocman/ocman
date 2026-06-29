@@ -46,7 +46,7 @@ vi.mock('../lib/loopsStore', () => ({
 // --- mock the api for lazy history fetch ---
 const getMock = vi.fn();
 vi.mock('../lib/api', () => ({
-  api: { loops: { get: (...a: unknown[]) => getMock(...a) } },
+  api: { loops: { get: (...a: unknown[]) => getMock(...a) }, models: () => Promise.resolve([]) },
 }));
 
 function makeLoop(overrides: Partial<Loop> = {}): Loop {
