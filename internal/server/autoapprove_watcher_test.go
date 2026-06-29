@@ -423,3 +423,36 @@ func TestAutoApproveWatcher_RoutesToEnsureAutoApprove(t *testing.T) {
 		t.Fatal("default onPermission did not fire within 2s")
 	}
 }
+
+// TestHandleSessionChangedDedup verifies that session.updated handling
+// only acts on the first sighting of a session ID (so per-turn/token
+// updates don't repeatedly bust the cache and broadcast), and that an
+// empty ID is ignored. server is nil so broadcast is skipped; we assert
+// on the seen-set, which is the dedup gate.
+func TestHandleSessionChangedDedup(t *testing.T) {
+	w := newAutoApproveWatcher(nil)
+
+	seen := func() int {
+		w.seenMu.Lock()
+		defer w.seenMu.Unlock()
+		return len(w.seenSessions)
+	}
+
+	w.handleSessionChanged("")
+	if seen() != 0 {
+		t.Fatalf("empty session ID was recorded; seen=%d", seen())
+	}
+
+	w.handleSessionChanged("ses-1")
+	w.handleSessionChanged("ses-1") // duplicate: must be a no-op
+	w.handleSessionChanged("ses-2")
+	if got := seen(); got != 2 {
+		t.Fatalf("seen sessions = %d, want 2 (ses-1 deduped)", got)
+	}
+	if _, ok := w.seenSessions["ses-1"]; !ok {
+		t.Error("ses-1 not recorded")
+	}
+	if _, ok := w.seenSessions["ses-2"]; !ok {
+		t.Error("ses-2 not recorded")
+	}
+}

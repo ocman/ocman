@@ -155,6 +155,54 @@ func TestSsePermissionTeeQuestionAndIdle(t *testing.T) {
 	}
 }
 
+// TestSsePermissionTeeSessionChanged verifies the tee parses
+// session.updated events and fires onSessionChanged with the payload's
+// sessionID (both casings, enveloped and flat).
+func TestSsePermissionTeeSessionChanged(t *testing.T) {
+	tests := []struct {
+		name        string
+		sseData     string
+		wantSession string
+	}{
+		{
+			name:        "envelope sessionID",
+			sseData:     "data: " + `{"type":"session.updated","properties":{"sessionID":"ses-1","info":{"id":"ses-1"}}}` + "\n\n",
+			wantSession: "ses-1",
+		},
+		{
+			name:        "envelope sessionId lowercase",
+			sseData:     "event: session.updated\ndata: " + `{"type":"session.updated","properties":{"sessionId":"ses-2"}}` + "\n\n",
+			wantSession: "ses-2",
+		},
+		{
+			name:        "flat shape",
+			sseData:     "data: " + `{"type":"session.updated","sessionID":"ses-3"}` + "\n\n",
+			wantSession: "ses-3",
+		},
+		{
+			name:        "missing id fires nothing",
+			sseData:     "data: " + `{"type":"session.updated","properties":{"info":{}}}` + "\n\n",
+			wantSession: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var got string
+			tee := &ssePermissionTee{
+				w:                &bytes.Buffer{},
+				onSessionChanged: func(sessionID string) { got = sessionID },
+			}
+			if _, err := tee.Write([]byte(tc.sseData)); err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+			if got != tc.wantSession {
+				t.Errorf("session = %q, want %q", got, tc.wantSession)
+			}
+		})
+	}
+}
+
 func TestHandleGlobalEventsStreamsBroadcast(t *testing.T) {
 	srv := &Server{broadcastHub: newBroadcastHub()}
 

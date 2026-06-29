@@ -90,6 +90,25 @@ function handleLoopUpdated(raw: string): void {
   for (const cb of loopUpdatedListeners) cb(loopId);
 }
 
+// sessionChangedListeners: subscribers (e.g. the App-level query client)
+// react to a session.changed broadcast by refreshing the session list,
+// so a newly-created session appears immediately instead of on the next
+// poll tick.
+const sessionChangedListeners = new Set<(sessionId: string) => void>();
+
+/** Register a callback fired on every ocman.session.changed broadcast. */
+export function onSessionChanged(cb: (sessionId: string) => void): () => void {
+  sessionChangedListeners.add(cb);
+  return () => sessionChangedListeners.delete(cb);
+}
+
+function handleSessionChanged(raw: string): void {
+  const parsed = parsePayload(raw);
+  const sessionId = parsed?.sessionID;
+  if (!sessionId) return;
+  for (const cb of sessionChangedListeners) cb(sessionId);
+}
+
 function open(): void {
   if (source) return;
   source = new EventSource('/api/events');
@@ -104,6 +123,9 @@ function open(): void {
   });
   source.addEventListener('ocman.session.idle', (e) => {
     handleSurface((e as MessageEvent).data);
+  });
+  source.addEventListener('ocman.session.changed', (e) => {
+    handleSessionChanged((e as MessageEvent).data);
   });
   source.addEventListener('loop.updated', (e) => {
     handleLoopUpdated((e as MessageEvent).data);
@@ -148,4 +170,9 @@ export function __handleResolvedForTests(raw: string): void {
 /** Test-only: dispatch a raw surface (flagged/idle) payload. */
 export function __handleSurfaceForTests(raw: string): void {
   handleSurface(raw);
+}
+
+/** Test-only: dispatch a raw session.changed payload. */
+export function __handleSessionChangedForTests(raw: string): void {
+  handleSessionChanged(raw);
 }

@@ -324,6 +324,34 @@ func TestGetSessionsCached_CachesAcrossCalls(t *testing.T) {
 	}
 }
 
+func TestInvalidateSessionsCache_ForcesRefetch(t *testing.T) {
+	resetSessionsCache()
+	t.Cleanup(resetSessionsCache)
+
+	d := &fakeGetSessionsDB{out: []db.Session{{ID: "s1"}}}
+
+	if _, err := getSessionsCached(d, "", 0); err != nil {
+		t.Fatal(err)
+	}
+	// Second call within TTL would normally hit cache (no extra DB call).
+	if _, err := getSessionsCached(d, "", 0); err != nil {
+		t.Fatal(err)
+	}
+	if c := d.calls.Load(); c != 1 {
+		t.Fatalf("expected 1 DB call before invalidation, got %d", c)
+	}
+
+	InvalidateSessionsCache()
+
+	// After invalidation the next read must refetch.
+	if _, err := getSessionsCached(d, "", 0); err != nil {
+		t.Fatal(err)
+	}
+	if c := d.calls.Load(); c != 2 {
+		t.Errorf("expected 2 DB calls after invalidation, got %d", c)
+	}
+}
+
 func TestGetSessionsCached_KeyDistinguishesDirectoryOnly(t *testing.T) {
 	resetSessionsCache()
 	t.Cleanup(resetSessionsCache)

@@ -88,6 +88,17 @@ type autoApproveWatcher struct {
 	// and removed (cancel called) when the port disappears or the
 	// parent context is cancelled.
 	subs map[string]context.CancelFunc
+
+	// seenMu guards seenSessions.
+	seenMu sync.Mutex
+	// seenSessions records session IDs we've already surfaced via
+	// onSessionChanged. OpenCode emits session.updated per turn/token,
+	// so without this set we'd bust the cache + broadcast on every
+	// keystroke of every active session. We only care about the first
+	// sighting (= "a session appeared"); subsequent updates are noise
+	// for the list view. ponytail: unbounded set, fine for the session
+	// count on one machine; switch to an LRU if it ever isn't.
+	seenSessions map[string]struct{}
 }
 
 // newAutoApproveWatcher constructs a watcher wired against the real
@@ -102,6 +113,7 @@ func newAutoApproveWatcher(server *Server) *autoApproveWatcher {
 		rescanInterval: autoApproveRescanInterval,
 		reconnectDelay: autoApproveReconnectDelay,
 		subs:           make(map[string]context.CancelFunc),
+		seenSessions:   make(map[string]struct{}),
 	}
 
 	// Default onPermission routes through ensureAutoApprove, which
@@ -243,6 +255,31 @@ func (w *autoApproveWatcher) subscribe(ctx context.Context, port string) {
 	}
 }
 
+// handleSessionChanged reacts to an upstream session.updated event.
+// It dedupes on the session ID so per-turn/per-token updates of an
+// already-known session are ignored; only the first sighting of a
+// session ID busts the sessions cache and broadcasts session.changed,
+// which is exactly what makes a freshly-created session appear without
+// waiting out the list-poll / refresher latency.
+func (w *autoApproveWatcher) handleSessionChanged(sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	w.seenMu.Lock()
+	if _, ok := w.seenSessions[sessionID]; ok {
+		w.seenMu.Unlock()
+		return
+	}
+	w.seenSessions[sessionID] = struct{}{}
+	w.seenMu.Unlock()
+
+	// First time we've seen this session: surface it now.
+	opencode.InvalidateSessionsCache()
+	if w.server != nil {
+		w.server.broadcastSessionChanged(sessionID)
+	}
+}
+
 // streamOnce opens one /event SSE connection and feeds bytes into a
 // ssePermissionTee until the connection ends. Returns when the
 // upstream closes (nil on clean EOF, error otherwise) or when ctx is
@@ -297,6 +334,7 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 				w.server.broadcastSessionIdle(sessionID)
 			}
 		},
+		onSessionChanged: w.handleSessionChanged,
 	}
 
 	// Copy bytes through the tee until the stream ends. io.Copy
