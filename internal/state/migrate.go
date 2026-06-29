@@ -85,11 +85,17 @@ import (
 //	      spec/agent-loops Open Question 5.
 //	17 - agent loops: model selection. Adds `loops.model`, an optional
 //	      platform model reference passed to loop prompts/spawned sessions.
+//	18 - agent loops: budget baseline. Adds `loops.usage_baseline_at`.
+//	19 - project archive. Adds `archived_project` keyed by the folded
+//	      project-root directory. Independent of session archive state so
+//	      a project can stay hidden even with no current sessions;
+//	      auto-unarchives when a session's activity is newer than
+//	      archived_at.
 //
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 18
+const latestSchemaVersion = 19
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -221,6 +227,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV17(tx)
 	case 18:
 		return migrateToV18(tx)
+	case 19:
+		return migrateToV19(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -643,5 +651,18 @@ func migrateToV17(tx *sql.Tx) error {
 // re-tripping on the previous run's spend.
 func migrateToV18(tx *sql.Tx) error {
 	_, err := tx.Exec(`ALTER TABLE loops ADD COLUMN usage_baseline_at INTEGER NOT NULL DEFAULT 0`)
+	return err
+}
+
+// migrateToV19 adds project-level archive state. The key is the folded
+// project-root directory (see frontend projectRootForDirectory), so a
+// repo and its worktrees archive as one project. archived_at lets the
+// server auto-unarchive when newer session activity arrives, mirroring
+// the per-session archive semantics.
+func migrateToV19(tx *sql.Tx) error {
+	_, err := tx.Exec(`CREATE TABLE archived_project (
+		project_root TEXT    NOT NULL PRIMARY KEY,
+		archived_at  INTEGER NOT NULL
+	)`)
 	return err
 }

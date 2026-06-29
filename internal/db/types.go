@@ -381,6 +381,10 @@ type ProjectStats struct {
 	TotalTokensIn  int64   `json:"totalTokensIn"`
 	TotalTokensOut int64   `json:"totalTokensOut"`
 	TotalCost      float64 `json:"totalCost"`
+	// Archived is set by the server layer (not the DB query) from
+	// ocman's own state.db: true when the project's folded root is
+	// archived and no session is newer than the archive time.
+	Archived bool `json:"archived,omitempty"`
 }
 
 // DailyActivity holds activity counts per day.

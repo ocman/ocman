@@ -415,6 +415,9 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	mux.HandleFunc("/api/project/issues", s.get(s.handleProjectIssues))
 	mux.HandleFunc("/api/project/pr-checks", s.get(s.handleProjectPRChecks))
 	mux.HandleFunc("/api/project/forge-user", s.get(s.handleProjectForgeUser))
+	// Project archive state (own state.db; no launch), same auth posture
+	// as the per-session archive endpoint.
+	mux.HandleFunc("/api/project/archive", s.post(s.handleProjectArchive))
 	// Launch endpoint: spawns tmux/opencode, so localhost-only like
 	// the worktree create-and-launch endpoint.
 	mux.HandleFunc("/api/project/handle", requirePOST(requireLocalhost(s.handleProjectHandle)))

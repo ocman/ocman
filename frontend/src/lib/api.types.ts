@@ -610,6 +610,8 @@ export interface Project {
   totalTokensIn: number;
   totalTokensOut: number;
   lastUsed: number;
+  /** True when the project's folded root is archived (set server-side). */
+  archived?: boolean;
 }
 
 export interface DirectoryBrowseEntry {

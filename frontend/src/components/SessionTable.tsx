@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import './SessionTable.css';
 import { useNavigate } from 'react-router-dom';
-import type { Session, GitInfo } from '../lib/api';
+import type { Session, GitInfo, Project } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
 import { cleanTitle, formatDuration, relativeTime, shortPath } from '../lib/format';
 import { StatusBadge } from './StatusBadge';
@@ -98,6 +98,27 @@ interface GroupedProps {
   collapsedProjects: ReadonlySet<string>;
   /** Toggle the collapsed state of a project key. */
   toggleCollapsedProject: (directory: string) => void;
+  /**
+   * Known projects (from /api/projects). Drives two things: the
+   * server-side `archived` flag per project root, and "add session"
+   * placeholder rows for non-archived projects that currently have no
+   * visible sessions. Optional: callers that don't pass it (e.g. the
+   * session sidebar) just get session-derived groups with no
+   * placeholders.
+   */
+  projects?: Project[];
+  /** Called when a placeholder project's "Add session" is clicked. */
+  onAddSession?: (directory: string) => void;
+}
+
+function ProjectMenuIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="8" cy="3" r="1.4" fill="currentColor" />
+      <circle cx="8" cy="8" r="1.4" fill="currentColor" />
+      <circle cx="8" cy="13" r="1.4" fill="currentColor" />
+    </svg>
+  );
 }
 
 /**
@@ -112,11 +133,17 @@ export function GroupedSessionTable({
   includeArchived,
   collapsedProjects,
   toggleCollapsedProject,
+  projects,
+  onAddSession,
 }: GroupedProps) {
   const navigate = useNavigate();
   const archiveSession = useApiStore((state) => state.archiveSession);
+  const archiveProject = useApiStore((state) => state.archiveProject);
   const [archivingSessionIds, setArchivingSessionIds] = useState<Set<string>>(new Set());
   const [locallyArchivedSessionIds, setLocallyArchivedSessionIds] = useState<Set<string>>(new Set());
+  // Optimistic project archive overlay so the UI reacts before the next
+  // /api/projects refetch lands. Maps folded root -> archived?.
+  const [localProjectArchived, setLocalProjectArchived] = useState<Map<string, boolean>>(new Map());
 
   const handleArchiveSession = async (e: React.MouseEvent, session: Session) => {
     e.stopPropagation();
@@ -136,6 +163,32 @@ export function GroupedSessionTable({
     }
   };
 
+  const handleArchiveProject = async (directory: string, archived: boolean) => {
+    setLocalProjectArchived(prev => new Map(prev).set(directory, archived));
+    try {
+      await archiveProject(directory, archived);
+    } catch (err) {
+      remoteLog.error('Failed to archive project', err);
+      setLocalProjectArchived(prev => {
+        const next = new Map(prev);
+        next.delete(directory);
+        return next;
+      });
+    }
+  };
+
+  // Folded roots the server (or our optimistic overlay) marks archived.
+  const archivedRoots = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of projects ?? []) {
+      if (p.archived) set.add(projectRootForDirectory(p.directory));
+    }
+    for (const [root, archived] of localProjectArchived) {
+      if (archived) set.add(root); else set.delete(root);
+    }
+    return set;
+  }, [projects, localProjectArchived]);
+
   const groups = useMemo(() => {
     const visible = (includeArchived ? sessions : filterVisibleSessions(sessions))
       .filter(s => includeArchived || !locallyArchivedSessionIds.has(s.id));
@@ -148,7 +201,7 @@ export function GroupedSessionTable({
       else buckets.set(key, [s]);
     }
 
-    return Array.from(buckets.entries())
+    const sessionGroups = Array.from(buckets.entries())
       .map(([directory, groupSessions]) => {
         const sorted = [...groupSessions].sort((a, b) => b.timeUpdated - a.timeUpdated);
         return {
@@ -156,10 +209,34 @@ export function GroupedSessionTable({
           sessions: sorted,
           lastUpdated: sorted[0]?.timeUpdated ?? 0,
           aggregate: rollupGroupStatus(sorted),
+          placeholder: false,
         };
-      })
+      });
+
+    // Placeholder rows: known non-archived projects that currently have
+    // no session group. Sourced from /api/projects (folded to roots).
+    const haveSessions = new Set(sessionGroups.map(g => g.directory));
+    const placeholders: typeof sessionGroups = [];
+    const seenRoots = new Set<string>();
+    for (const p of projects ?? []) {
+      const root = projectRootForDirectory(p.directory);
+      if (haveSessions.has(root) || seenRoots.has(root)) continue;
+      if (archivedRoots.has(root)) continue;
+      seenRoots.add(root);
+      placeholders.push({
+        directory: root,
+        sessions: [],
+        lastUpdated: p.lastUsed,
+        aggregate: rollupGroupStatus([]),
+        placeholder: true,
+      });
+    }
+
+    return [...sessionGroups, ...placeholders]
+      // Hide archived projects' session groups unless showing archived.
+      .filter(g => includeArchived || !archivedRoots.has(g.directory))
       .sort((a, b) => b.lastUpdated - a.lastUpdated);
-  }, [sessions, includeArchived, locallyArchivedSessionIds]);
+  }, [sessions, includeArchived, locallyArchivedSessionIds, projects, archivedRoots]);
 
   if (loading) {
     return <SessionTableSkeleton rows={5} showProject={false} />;
@@ -190,6 +267,7 @@ export function GroupedSessionTable({
           agg.kind === 'pending' ? 'waiting' :
           agg.kind;
         const dotPending = agg.kind === 'pending';
+        const archived = archivedRoots.has(group.directory);
 
         return (
           <div key={group.directory || '__empty__'} className="oc-session-group">
@@ -207,8 +285,56 @@ export function GroupedSessionTable({
                 <span className="oc-session-group-label">{label}</span>
                 <span className="oc-session-group-count">{group.sessions.length}</span>
               </button>
+              {group.directory && (
+                <details className="oc-project-menu">
+                  <summary
+                    className="oc-project-menu-trigger"
+                    title="Project actions"
+                    aria-label="Project actions"
+                  >
+                    <ProjectMenuIcon />
+                  </summary>
+                  <div className="oc-project-menu-list" role="menu">
+                    {onAddSession && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="oc-project-menu-item"
+                        onClick={(e) => {
+                          (e.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open');
+                          onAddSession(group.directory);
+                        }}
+                      >Add session</button>
+                    )}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="oc-project-menu-item"
+                      onClick={(e) => {
+                        (e.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open');
+                        void handleArchiveProject(group.directory, !archived);
+                      }}
+                    >{archived ? 'Unarchive project' : 'Archive project'}</button>
+                  </div>
+                </details>
+              )}
             </div>
-            {!collapsed && (
+            {group.placeholder ? (
+              !collapsed && (
+                <div className="oc-session-group-placeholder">
+                  <span>No active sessions</span>
+                  {onAddSession && (
+                    <button
+                      type="button"
+                      className="oc-session-group-placeholder-add"
+                      onClick={() => onAddSession(group.directory)}
+                    >
+                      <i className="bi bi-plus-lg" aria-hidden="true" /> Add session
+                    </button>
+                  )}
+                </div>
+              )
+            ) : !collapsed && (
               <table>
                 <thead>
                   <tr>

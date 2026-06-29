@@ -350,6 +350,8 @@ export const api = {
   },
   archiveSession: (platform: string, sessionId: string, timeUpdated: number, archived = true) =>
     postJSON<{ ok: boolean }>('/api/session/archive', { platform, sessionId, timeUpdated, archived }),
+  archiveProject: (directory: string, archived = true) =>
+    postJSON<{ ok: boolean }>('/api/project/archive', { directory, archived }),
   markSessionSeen: (platform: string, sessionId: string, timeUpdated: number) =>
     postJSON<{ ok: boolean }>('/api/session/seen', { platform, sessionId, timeUpdated }),
   pinSession: (platform: string, sessionId: string, pinned: boolean) =>

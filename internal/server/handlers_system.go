@@ -80,7 +80,53 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 		serverError(w, "fetching projects", err)
 		return
 	}
+	if err := s.applyProjectArchiveState(projects); err != nil {
+		serverError(w, "applying project archive state", err)
+		return
+	}
 	writeJSON(w, projects)
+}
+
+// applyProjectArchiveState overlays the Archived flag from state.db onto
+// a project slice, folding directories to their project root. A project
+// auto-unarchives (and the marker is deleted) when any of its sessions'
+// activity (LastUsed) is newer than archived_at, mirroring the per-
+// session archive semantics in applySessionState.
+func (s *Server) applyProjectArchiveState(projects []db.ProjectStats) error {
+	archived, err := s.stateDB.ArchivedProjects()
+	if err != nil {
+		return err
+	}
+	if len(archived) == 0 {
+		return nil
+	}
+
+	// Newest activity per folded root across all matching directories.
+	newest := map[string]int64{}
+	for _, p := range projects {
+		root := projectRootForDirectory(p.Directory)
+		if p.LastUsed > newest[root] {
+			newest[root] = p.LastUsed
+		}
+	}
+
+	// Auto-unarchive any root with newer activity than its archive
+	// time, persisting the change so it stays unarchived.
+	for root, archivedAt := range archived {
+		if newest[root] > archivedAt {
+			if err := s.stateDB.UnarchiveProject(root); err != nil {
+				return err
+			}
+			delete(archived, root)
+		}
+	}
+
+	for i := range projects {
+		if _, ok := archived[projectRootForDirectory(projects[i].Directory)]; ok {
+			projects[i].Archived = true
+		}
+	}
+	return nil
 }
 
 type directoryBrowseEntry struct {

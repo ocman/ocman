@@ -94,6 +94,42 @@ func TestArchiveSession_Upsert(t *testing.T) {
 	}
 }
 
+func TestArchiveProject(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+
+	if err := db.ArchiveProject("/src/foo"); err != nil {
+		t.Fatalf("ArchiveProject: %v", err)
+	}
+	archived, err := db.ArchivedProjects()
+	if err != nil {
+		t.Fatalf("ArchivedProjects: %v", err)
+	}
+	if _, ok := archived["/src/foo"]; !ok {
+		t.Fatalf("expected /src/foo archived, got %v", archived)
+	}
+	if archived["/src/foo"] <= 0 {
+		t.Errorf("expected positive archived_at, got %d", archived["/src/foo"])
+	}
+
+	// Re-archive refreshes archived_at (upsert, no duplicate row).
+	if err := db.ArchiveProject("/src/foo"); err != nil {
+		t.Fatalf("ArchiveProject (upsert): %v", err)
+	}
+	archived, _ = db.ArchivedProjects()
+	if len(archived) != 1 {
+		t.Errorf("expected 1 archived project after upsert, got %d", len(archived))
+	}
+
+	if err := db.UnarchiveProject("/src/foo"); err != nil {
+		t.Fatalf("UnarchiveProject: %v", err)
+	}
+	archived, _ = db.ArchivedProjects()
+	if len(archived) != 0 {
+		t.Errorf("expected 0 archived projects after unarchive, got %d", len(archived))
+	}
+}
+
 func TestUnarchiveSession(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()

@@ -164,7 +164,7 @@ export function DashboardLayout() {
 
 export function SessionsTab() {
   usePageTitle('Sessions');
-  const { sessions, sessionsLoading, sessionsError, loadSessions, timeRange, setTimeRange, showArchived, setShowArchived } = useDashboardCtx();
+  const { sessions, sessionsLoading, sessionsError, loadSessions, timeRange, setTimeRange, showArchived, setShowArchived, projects } = useDashboardCtx();
   const dashboardGrouped = useUiStore((s) => s.dashboardGrouped);
   const toggleDashboardGrouped = useUiStore((s) => s.toggleDashboardGrouped);
   const collapsedProjects = useUiStore((s) => s.collapsedProjects);
@@ -218,6 +218,8 @@ export function SessionsTab() {
           includeArchived={!showArchived}
           collapsedProjects={collapsedProjectSet}
           toggleCollapsedProject={toggleCollapsedProject}
+          projects={projects}
+          onAddSession={openProjectSessionPalette}
         />
       ) : (
         <SessionTable sessions={sessions} showProject loading={sessionsLoading && sessions.length === 0} includeArchived={!showArchived} />

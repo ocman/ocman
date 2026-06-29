@@ -605,6 +605,59 @@ func (d *DB) UnarchiveSession(platform, sessionID string) error {
 	return nil
 }
 
+// ArchiveProject records a project (keyed by its folded project-root
+// directory) as archived at the current time. Re-archiving refreshes
+// archived_at so future session activity can auto-unarchive it.
+func (d *DB) ArchiveProject(projectRoot string) error {
+	_, err := d.db.Exec(`
+		INSERT INTO archived_project (project_root, archived_at)
+		VALUES (?, ?)
+		ON CONFLICT(project_root) DO UPDATE SET
+			archived_at = excluded.archived_at
+	`, projectRoot, time.Now().UnixMilli())
+	if err != nil {
+		return fmt.Errorf("archiving project: %w", err)
+	}
+	return nil
+}
+
+// UnarchiveProject removes a project's archived marker.
+func (d *DB) UnarchiveProject(projectRoot string) error {
+	_, err := d.db.Exec(
+		`DELETE FROM archived_project WHERE project_root = ?`,
+		projectRoot,
+	)
+	if err != nil {
+		return fmt.Errorf("unarchiving project: %w", err)
+	}
+	return nil
+}
+
+// ArchivedProjects returns every archived project's archived_at time,
+// keyed by the folded project-root directory.
+func (d *DB) ArchivedProjects() (map[string]int64, error) {
+	rows, err := d.db.Query(`SELECT project_root, archived_at FROM archived_project`)
+	if err != nil {
+		return nil, fmt.Errorf("listing archived projects: %w", err)
+	}
+	defer rows.Close()
+
+	archived := make(map[string]int64)
+	for rows.Next() {
+		var root string
+		var archivedAt int64
+		if err := rows.Scan(&root, &archivedAt); err != nil {
+			return nil, fmt.Errorf("scanning archived project: %w", err)
+		}
+		archived[root] = archivedAt
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading archived projects: %w", err)
+	}
+
+	return archived, nil
+}
+
 // AuthSecret returns the persisted HMAC key used to sign auth
 // cookies, or nil if none has been stored yet. The same key is
 // reused across restarts so logged-in clients stay logged in up
