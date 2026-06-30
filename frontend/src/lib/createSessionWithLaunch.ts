@@ -127,7 +127,13 @@ export async function createSessionWithLaunch(
       // Surface it in the overlay rather than failing silently — the
       // command-palette caller otherwise only logs the error.
       progress.begin(directory, { skipLaunch: true });
-      progress.fail('No running OpenCode instance here, and tmux is unavailable to start one.');
+      progress.fail(
+        'No running OpenCode instance in this directory, and ocman can\'t start one ' +
+          'because tmux is not on its PATH. After a reboot, ocman is often launched ' +
+          'with a minimal PATH that omits tmux/opencode (e.g. homebrew or mise). ' +
+          'Fix: start opencode manually here, or restart ocman from a login shell so ' +
+          'it inherits your full PATH.',
+      );
       throw err;
     }
 

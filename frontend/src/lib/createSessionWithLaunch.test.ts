@@ -89,7 +89,7 @@ describe('createSessionWithLaunch', () => {
     expect(launchOpencodeInTmux).not.toHaveBeenCalled();
     const state = useLaunchProgressStore.getState();
     expect(state.phase).toBe('error');
-    expect(state.error).toMatch(/tmux is unavailable/);
+    expect(state.error).toMatch(/tmux is not on its PATH/);
   });
 
   it('launches opencode and retries, reporting step-by-step progress', async () => {

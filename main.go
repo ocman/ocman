@@ -59,6 +59,12 @@ func main() {
 		os.Exit(0)
 	}
 
+	// When started by launchd / a login item after a reboot, ocman
+	// inherits a minimal PATH that omits homebrew and version-manager
+	// shims, so tmux/opencode/git look unavailable. Recover the login
+	// shell's PATH before any exec.LookPath runs.
+	ensureToolPath()
+
 	addr := flag.String("addr", "127.0.0.1:8228", "listen address")
 	guiMode := flag.Bool("gui", isAppBundle(), "open a native desktop window (Wails) instead of just serving HTTP")
 	guiAddr := flag.String("gui-addr", "127.0.0.1:0", "listen address for the backend when --gui is set (default picks an ephemeral port)")
