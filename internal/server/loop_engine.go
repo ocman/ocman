@@ -43,6 +43,7 @@ func (s *Server) loopSvc() *loops.Service {
 			Forge:     &loopForge{s: s},
 			Status:    &loopStatusInferer{s: s},
 			Usage:     &loopUsage{s: s},
+			Dirs:      &loopDirResolver{s: s},
 			Notify:    func(loopID string) { s.broadcastLoopUpdated(loopID) },
 		})
 	})
@@ -139,6 +140,23 @@ func (m *loopMessenger) SendPrompt(ctx context.Context, sessionID, prompt, model
 		return fmt.Errorf("no platform owns session %s", sessionID)
 	}
 	return p.SendMessage(ctx, platforms.SendMessageRequest{SessionID: sessionID, Message: prompt, Model: model})
+}
+
+// loopDirResolver implements loops.SessionDirResolver via the platform
+// registry, so a loop created without an explicit directory backfills it
+// from its root session's working directory.
+type loopDirResolver struct{ s *Server }
+
+func (r *loopDirResolver) SessionDir(ctx context.Context, sessionID string) (string, bool) {
+	p, found := r.s.registry.PlatformForSession(ctx, sessionID)
+	if !found {
+		return "", false
+	}
+	detail, err := p.Session(ctx, sessionID, 1, 0)
+	if err != nil || detail == nil || detail.Session == nil || detail.Session.Directory == "" {
+		return "", false
+	}
+	return detail.Session.Directory, true
 }
 
 // loopStatusInferer implements loops.SessionStatusInferer by reusing the

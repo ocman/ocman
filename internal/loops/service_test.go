@@ -610,6 +610,60 @@ func TestCreate_RejectsNoBudget(t *testing.T) {
 	}
 }
 
+// fakeDirResolver maps a session ID to a directory for backfill tests.
+type fakeDirResolver struct{ dirs map[string]string }
+
+func (f *fakeDirResolver) SessionDir(_ context.Context, sessionID string) (string, bool) {
+	d, ok := f.dirs[sessionID]
+	return d, ok
+}
+
+func TestCreate_BackfillsDirectoryFromRootSession(t *testing.T) {
+	store := newMemStore()
+	svc := NewService(Deps{
+		Store:    store,
+		Launcher: &fakeLauncher{},
+		Dirs:     &fakeDirResolver{dirs: map[string]string{"s1": "/repo/e2e-suite"}},
+	})
+	v, err := svc.Create(context.Background(), LoopSpec{
+		RootSessionID:  "s1",
+		TriggerType:    TriggerCron,
+		TriggerConfig:  TriggerConfig{CronExpr: "* * * * *"},
+		ActionType:     ActionPromptRoot,
+		StopConditions: StopConditions{MaxIterations: 5, MaxCostUSD: 1},
+		// Directory intentionally omitted (MCP create_loop allows this).
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if v.Directory != "/repo/e2e-suite" {
+		t.Fatalf("expected directory backfilled to /repo/e2e-suite, got %q", v.Directory)
+	}
+}
+
+func TestCreate_KeepsExplicitDirectory(t *testing.T) {
+	store := newMemStore()
+	svc := NewService(Deps{
+		Store:    store,
+		Launcher: &fakeLauncher{},
+		Dirs:     &fakeDirResolver{dirs: map[string]string{"s1": "/repo/other"}},
+	})
+	v, err := svc.Create(context.Background(), LoopSpec{
+		RootSessionID:  "s1",
+		Directory:      "/repo/explicit",
+		TriggerType:    TriggerSchedule,
+		TriggerConfig:  TriggerConfig{IntervalSeconds: 60},
+		ActionType:     ActionPromptRoot,
+		StopConditions: StopConditions{MaxIterations: 5, MaxCostUSD: 1},
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if v.Directory != "/repo/explicit" {
+		t.Fatalf("explicit directory must be preserved, got %q", v.Directory)
+	}
+}
+
 func TestEvaluateOne_ScheduleFiresAndAdvances(t *testing.T) {
 	store := newMemStore()
 	launcher := &fakeLauncher{}

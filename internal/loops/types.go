@@ -219,6 +219,15 @@ type Messenger interface {
 	SendPrompt(ctx context.Context, sessionID, prompt, model string) error
 }
 
+// SessionDirResolver returns the working directory of a session, so a
+// loop created without an explicit directory (e.g. via the MCP
+// create_loop tool, which doesn't require one) can backfill it from its
+// root session. ok=false means the session/directory couldn't be
+// resolved; Create then leaves the directory empty.
+type SessionDirResolver interface {
+	SessionDir(ctx context.Context, sessionID string) (dir string, ok bool)
+}
+
 // SpawnRequest describes a child/worktree spawn for a loop action.
 type SpawnRequest struct {
 	LoopID        string

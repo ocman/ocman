@@ -19,6 +19,7 @@ type Service struct {
 	forge     ForgePoller
 	status    SessionStatusInferer
 	usage     UsageSource
+	dirs      SessionDirResolver
 	notify    func(loopID string) // optional SSE broadcast hook (AD-10)
 	now       func() time.Time    // injectable clock for tests
 }
@@ -33,6 +34,7 @@ type Deps struct {
 	Forge     ForgePoller
 	Status    SessionStatusInferer
 	Usage     UsageSource
+	Dirs      SessionDirResolver
 	Notify    func(loopID string)
 }
 
@@ -45,6 +47,7 @@ func NewService(d Deps) *Service {
 		forge:     d.Forge,
 		status:    d.Status,
 		usage:     d.Usage,
+		dirs:      d.Dirs,
 		notify:    d.Notify,
 		now:       time.Now,
 	}
@@ -99,6 +102,17 @@ func (s *Service) Create(ctx context.Context, spec LoopSpec) (LoopView, error) {
 	platform := spec.Platform
 	if platform == "" {
 		platform = "opencode"
+	}
+
+	// Backfill the directory from the root session when the caller didn't
+	// supply one (the MCP create_loop tool makes it optional). Without
+	// this the loop is invisible to the project-scoped Loops sidebar
+	// (which filters by directory) and a prompt_root/spawn action fails
+	// because it can't find a running OpenCode instance for "".
+	if spec.Directory == "" && s.dirs != nil {
+		if dir, ok := s.dirs.SessionDir(ctx, spec.RootSessionID); ok {
+			spec.Directory = dir
+		}
 	}
 
 	tcJSON, err := encodeJSON(spec.TriggerConfig)
