@@ -17,6 +17,7 @@
 
 import { vi } from 'vitest';
 import { render, type RenderResult } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
 import type {
   Session,
@@ -154,6 +155,7 @@ const mockState: {
 export function makeApiStub() {
   return {
     capabilities: vi.fn().mockResolvedValue({ platforms: [] }),
+    projects: vi.fn().mockResolvedValue([]),
     // `session` is the raw module-level fetch used by the new
     // useSession hook. Tests override the resolved value per-test
     // via `apiOverrides.session = ...`; the default is set in
@@ -466,12 +468,17 @@ export function renderSessionPage(opts: RenderOptions = {}): RenderHandle {
   // read the :id from useParams and pass it to the inner component
   // as a prop. Tests target the inner component directly so they
   // exercise its behaviour without the param-propagation indirection.
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const result = render(
-    <MemoryRouter initialEntries={[`/session/${sessionId}`]}>
-      <Routes>
-        <Route path="/session/:id" element={<SessionDetailRouteAdapter />} />
-      </Routes>
-    </MemoryRouter>,
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[`/session/${sessionId}`]}>
+        <Routes>
+          <Route path="/session/:id" element={<SessionDetailRouteAdapter />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 
   return {

@@ -185,15 +185,6 @@
   direction: rtl;
   text-align: left;
 }
-.session-sidebar-group-count {
-  flex-shrink: 0;
-  font-size: 10px;
-  color: var(--overlay0);
-  padding: 1px 6px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--text-dim) 12%, transparent);
-  font-weight: 600;
-}
 /* Rows inside a group get a subtle left inset so the hierarchy reads at a
    glance without taking much horizontal space. */
 .session-sidebar-item.in-group {

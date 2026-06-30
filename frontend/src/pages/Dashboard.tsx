@@ -193,7 +193,7 @@ export function SessionsTab() {
         <button
           className={`oc-time-range-btn${showArchived ? ' active' : ''}`}
           onClick={() => setShowArchived(!showArchived)}
-        >Exclude archived</button>
+        >Include archived</button>
         <button
           type="button"
           className="oc-time-range-btn oc-dashboard-create-btn"
@@ -207,11 +207,12 @@ export function SessionsTab() {
       <GroupedSessionTable
         sessions={sessions}
         loading={sessionsLoading && sessions.length === 0}
-        includeArchived={!showArchived}
+        includeArchived={showArchived}
         collapsedProjects={collapsedProjectSet}
         toggleCollapsedProject={toggleCollapsedProject}
         projects={projects}
         onAddSession={openProjectSessionPalette}
+        showEmptyProjects={false}
       />
     </>
   );

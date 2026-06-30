@@ -65,6 +65,20 @@ describe('GroupedSessionTable project archive', () => {
     expect(onAddSession).toHaveBeenCalledWith('/src/empty');
   });
 
+  it('suppresses placeholders when showEmptyProjects is false (dashboard)', () => {
+    // Dashboard Sessions tab: only projects with a session in the
+    // selected time window show; known-but-empty projects don't.
+    const sessions = [makeSession({ id: 's1', directory: '/src/foo' })];
+    const projects: Project[] = [
+      { directory: '/src/foo', sessionCount: 1, messageCount: 1, totalTokensIn: 0, totalTokensOut: 0, lastUsed: 1000 },
+      { directory: '/src/empty', sessionCount: 0, messageCount: 0, totalTokensIn: 0, totalTokensOut: 0, lastUsed: 500 },
+    ];
+    renderGrouped({ sessions, projects, onAddSession: vi.fn(), showEmptyProjects: false });
+
+    expect(screen.getByText('Work')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Add session/i })).toBeNull();
+  });
+
   it('shows the empty state (no placeholders) when there are no sessions', () => {
     // Regression: an empty session list must fall through to the plain
     // "No sessions found" state even when projects exist, rather than

@@ -71,6 +71,7 @@ export interface SessionSidebarProps {
   onPinSession: (e: React.MouseEvent, session: Session) => void;
   onClientSelect: (tty: string) => void;
   onNewSessionInDirectory: (directory: string) => void;
+  onArchiveProject: (directory: string) => void;
 }
 
 /**
@@ -103,6 +104,7 @@ export function SessionSidebar({
   onPinSession,
   onClientSelect,
   onNewSessionInDirectory,
+  onArchiveProject,
 }: SessionSidebarProps) {
   const sidebarListRef = useRef<HTMLDivElement>(null);
 
@@ -298,7 +300,6 @@ export function SessionSidebar({
             </span>
             <i className="bi bi-pin-fill session-sidebar-pinned-icon" aria-hidden="true" />
             <span className="session-sidebar-group-label">Pinned</span>
-            <span className="session-sidebar-group-count">{group.sessions.length}</span>
           </div>
         </div>
         {nestSessions(group.sessions).map(({ session: sib, depth }) => renderRow(sib, false, depth))}
@@ -351,7 +352,6 @@ export function SessionSidebar({
               <StatusBadge status={dotStatus} compact pending={dotPending} seen={dotSeen} />
             </span>
             <span className="session-sidebar-group-label">{label}</span>
-            <span className="session-sidebar-group-count" title={aggTitle}>{group.sessions.length}</span>
           </button>
           {group.directory && (
             <button
@@ -364,6 +364,18 @@ export function SessionSidebar({
               title={`New session in ${label}`}
               aria-label={`New session in ${label}`}
             >+</button>
+          )}
+          {group.directory && (
+            <button
+              type="button"
+              className="session-sidebar-group-new"
+              onClick={(e) => {
+                e.stopPropagation();
+                onArchiveProject(group.directory);
+              }}
+              title={`Archive ${label}`}
+              aria-label={`Archive ${label}`}
+            ><ArchiveIcon /></button>
           )}
         </div>
         {!collapsed && nestSessions(group.sessions).map(({ session: sib, depth }) => renderRow(sib, true, depth))}

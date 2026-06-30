@@ -32,9 +32,10 @@ import (
 var staticFS embed.FS
 
 const (
-	autoArchiveAfter     = 72 * time.Hour
-	autoArchiveInterval  = 24 * time.Hour
-	projectsScanInterval = 5 * time.Minute
+	autoArchiveAfter        = 72 * time.Hour
+	autoArchiveProjectAfter = 7 * 24 * time.Hour
+	autoArchiveInterval     = 24 * time.Hour
+	projectsScanInterval    = 5 * time.Minute
 )
 
 // Server serves the web UI and API.
@@ -557,7 +558,10 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 // autoArchiveTickFn is the per-tick body of runAutoArchiveLoop, lifted
 // to a package-level variable so tests can inject a panicking
 // implementation (FR-11) and assert the loop survives.
-var autoArchiveTickFn = func(s *Server) { s.autoArchiveInactiveSessions() }
+var autoArchiveTickFn = func(s *Server) {
+	s.autoArchiveInactiveSessions()
+	s.autoArchiveInactiveProjects()
+}
 
 func (s *Server) runAutoArchiveLoop(ctx context.Context) {
 	runWithRecover("auto-archive", func() { autoArchiveTickFn(s) })
@@ -628,6 +632,69 @@ func (s *Server) autoArchiveInactiveSessions() {
 		"cutoff":   cutoff,
 		"archived": archivedCount,
 	}).Info("auto-archive pass completed")
+}
+
+// autoArchiveInactiveProjects archives local projects whose most recent
+// session activity is older than autoArchiveProjectAfter. Archive state
+// is keyed by folded project root; already-archived roots are skipped.
+// A project auto-unarchives later (in applyProjectArchiveState) once it
+// sees fresh activity, so this is safe to re-run.
+func (s *Server) autoArchiveInactiveProjects() {
+	if s.stateDB == nil || s.db == nil {
+		return
+	}
+	cutoff := time.Now().Add(-autoArchiveProjectAfter).UnixMilli()
+	ctx, span := telemetry.Tracer().Start(context.Background(), "ocman.auto_archive_projects.tick")
+	defer span.End()
+
+	projects, err := s.router().Local().Projects(ctx)
+	if err != nil {
+		span.RecordError(err)
+		log.WithError(err).Error("listing projects for auto-archive")
+		return
+	}
+
+	archived, err := s.stateDB.ArchivedProjects()
+	if err != nil {
+		span.RecordError(err)
+		log.WithError(err).Error("listing archived projects for auto-archive")
+		return
+	}
+
+	// Newest activity per folded root.
+	newest := map[string]int64{}
+	for _, p := range projects {
+		root := projectRootForDirectory(p.Directory)
+		if p.LastUsed > newest[root] {
+			newest[root] = p.LastUsed
+		}
+	}
+
+	archivedCount := 0
+	for root, last := range newest {
+		if last >= cutoff {
+			continue
+		}
+		if _, ok := archived[root]; ok {
+			continue
+		}
+		if err := s.stateDB.ArchiveProject(root); err != nil {
+			span.RecordError(err)
+			log.WithFields(log.Fields{"projectRoot": root, "error": err}).
+				Error("auto-archiving inactive project")
+			continue
+		}
+		archivedCount++
+	}
+
+	span.SetAttributes(
+		attribute.Int64("ocman.archived_count", int64(archivedCount)),
+		attribute.Int64("ocman.cutoff_ms", cutoff),
+	)
+	log.WithFields(log.Fields{
+		"cutoff":   cutoff,
+		"archived": archivedCount,
+	}).Info("project auto-archive pass completed")
 }
 
 // requireGET wraps a handler to only allow GET requests.

@@ -965,6 +965,38 @@ func TestAutoArchive_UsesRegistry(t *testing.T) {
 	}
 }
 
+// TestAutoArchiveProjects archives projects whose newest session is older
+// than the 7-day window and leaves recently-active projects untouched.
+func TestAutoArchiveProjects(t *testing.T) {
+	srv, rawDB := testServerWithRawDB(t)
+	defer rawDB.Close()
+
+	fresh := time.Now().UnixMilli()
+	_, err := rawDB.Exec(
+		`INSERT INTO session (id, title, directory, time_created, time_updated) VALUES
+		 ('old-session', 'ancient', '/tmp/stale', 1000, 1000),
+		 ('new-session', 'recent', '/tmp/active', ?, ?)`,
+		fresh, fresh,
+	)
+	if err != nil {
+		t.Fatalf("seeding sessions: %v", err)
+	}
+	opencodeplatform.ResetCachesForTests()
+
+	srv.autoArchiveInactiveProjects()
+
+	archived, err := srv.stateDB.ArchivedProjects()
+	if err != nil {
+		t.Fatalf("ArchivedProjects: %v", err)
+	}
+	if _, ok := archived[projectRootForDirectory("/tmp/stale")]; !ok {
+		t.Errorf("expected /tmp/stale to be auto-archived, got %+v", archived)
+	}
+	if _, ok := archived[projectRootForDirectory("/tmp/active")]; ok {
+		t.Errorf("expected /tmp/active to stay unarchived, got %+v", archived)
+	}
+}
+
 // testServerWithRawDB is like testServer but also returns a raw *sql.DB
 // handle to the same OpenCode database so tests can seed additional rows.
 func testServerWithRawDB(t *testing.T) (*Server, *sql.DB) {

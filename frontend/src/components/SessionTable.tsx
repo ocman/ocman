@@ -109,6 +109,12 @@ interface GroupedProps {
   projects?: Project[];
   /** Called when a placeholder project's "Add session" is clicked. */
   onAddSession?: (directory: string) => void;
+  /**
+   * Show placeholder rows for known projects with no visible sessions.
+   * The dashboard Sessions tab sets this false so it only lists projects
+   * that actually have a session. Defaults to true.
+   */
+  showEmptyProjects?: boolean;
 }
 
 function ProjectMenuIcon() {
@@ -135,6 +141,7 @@ export function GroupedSessionTable({
   toggleCollapsedProject,
   projects,
   onAddSession,
+  showEmptyProjects = true,
 }: GroupedProps) {
   const navigate = useNavigate();
   const archiveSession = useApiStore((state) => state.archiveSession);
@@ -221,7 +228,7 @@ export function GroupedSessionTable({
     const haveSessions = new Set(sessionGroups.map(g => g.directory));
     const placeholders: typeof sessionGroups = [];
     const seenRoots = new Set<string>();
-    if (sessionGroups.length > 0) {
+    if (showEmptyProjects && sessionGroups.length > 0) {
       for (const p of projects ?? []) {
         const root = projectRootForDirectory(p.directory);
         if (haveSessions.has(root) || seenRoots.has(root)) continue;
@@ -241,7 +248,7 @@ export function GroupedSessionTable({
       // Hide archived projects' session groups unless showing archived.
       .filter(g => includeArchived || !archivedRoots.has(g.directory))
       .sort((a, b) => b.lastUpdated - a.lastUpdated);
-  }, [sessions, includeArchived, locallyArchivedSessionIds, projects, archivedRoots]);
+  }, [sessions, includeArchived, locallyArchivedSessionIds, projects, archivedRoots, showEmptyProjects]);
 
   if (loading) {
     return <SessionTableSkeleton rows={5} showProject={false} />;

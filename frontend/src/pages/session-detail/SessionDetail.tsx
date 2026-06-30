@@ -58,6 +58,7 @@ import {
   hasPendingQuestionInParts,
 } from '../../lib/sseHelpers';
 import { isSessionRelevant } from '../../lib/promptRouting';
+import { useProjects } from '../../lib/queries';
 import { useSubagentTracking } from './useSubagentTracking';
 import { useTmuxActions } from './useTmuxActions';
 import { useSessionStatus } from './useSessionStatus';
@@ -584,6 +585,15 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const sidebarView = useUiStore((state) => state.sidebarView);
   const projectOrder = useUiStore((state) => state.projectOrder);
   const setProjectOrder = useUiStore((state) => state.setProjectOrder);
+  // All known projects — the sidebar "projects" view lists every
+  // unarchived project, even ones with no session in the recent window.
+  const projectsQuery = useProjects();
+  const allProjects = projectsQuery.data;
+  const archiveProject = useApiStore((state) => state.archiveProject);
+  // Optimistically-archived project roots: hides the group immediately
+  // while /api/projects refetches (project-archive state isn't carried
+  // on the session payloads driving the sidebar).
+  const [archivedProjectRoots, setArchivedProjectRoots] = useState<Set<string>>(() => new Set());
   const patchRecentSession = useApiStore((state) => state.patchRecentSession);
   const abortControllerRef = useRef<AbortController | null>(null);
   const resetSessionIdRef = useRef<string | undefined>(undefined);
@@ -1252,19 +1262,43 @@ export function SessionDetail({ id }: SessionDetailProps) {
         aggregate: rollup(sorted),
       };
     });
+
+    // Drop groups for projects the user just archived (optimistic, before
+    // the /api/projects refetch lands) — applies to session-bearing groups
+    // too, since session payloads don't carry project-archive state.
+    const visibleGroups = archivedProjectRoots.size === 0
+      ? groups
+      : groups.filter((g) => !archivedProjectRoots.has(g.directory));
+
+    // Add empty groups for known unarchived projects that have no
+    // session in the recent poll window, so the projects view lists
+    // every active project. Archived projects (incl. server-side
+    // auto-archived stale ones) stay hidden.
+    for (const p of allProjects ?? []) {
+      if (p.archived) continue;
+      const root = projectRootForDirectory(p.directory);
+      if (buckets.has(root) || archivedProjectRoots.has(root)) continue;
+      buckets.set(root, []);
+      visibleGroups.push({
+        directory: root,
+        sessions: [],
+        lastUpdated: p.lastUsed,
+        aggregate: rollup([]),
+      });
+    }
     // Sort project groups alphabetically by their short display path
     // (no longer by activity), then apply the user's saved manual
     // drag-and-drop order: directories present in projectOrder come
     // first (in that order); any project not yet ordered (new or never
     // dragged) keeps its alphabetical position at the end.
-    groups.sort((a, b) =>
+    visibleGroups.sort((a, b) =>
       shortPath(a.directory).localeCompare(shortPath(b.directory), undefined, {
         sensitivity: 'base',
       }),
     );
     if (projectOrder.length > 0) {
       const rank = new Map(projectOrder.map((dir, i) => [dir, i]));
-      groups.sort((a, b) => {
+      visibleGroups.sort((a, b) => {
         const ra = rank.get(a.directory);
         const rb = rank.get(b.directory);
         if (ra === undefined && rb === undefined) return 0; // keep alphabetical
@@ -1278,7 +1312,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
       .filter((s) => s.pinned)
       .sort((a, b) => b.pinnedAt - a.pinnedAt);
     if (pinnedSessions.length > 0) {
-      groups.unshift({
+      visibleGroups.unshift({
         directory: '__pinned__',
         sessions: pinnedSessions,
         lastUpdated: pinnedSessions[0]?.timeUpdated ?? 0,
@@ -1287,8 +1321,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
       });
     }
 
-    return groups;
-  }, [recentSessions, id, optimisticStatus, projectOrder]);
+    return visibleGroups;
+  }, [recentSessions, id, optimisticStatus, projectOrder, allProjects, archivedProjectRoots]);
 
   // Persist a new drag-and-drop order of the (non-pinned) project
   // groups. The synthetic "__pinned__" group is excluded — it always
@@ -1298,6 +1332,27 @@ export function SessionDetail({ id }: SessionDetailProps) {
       setProjectOrder(orderedDirectories.filter((d) => d && d !== '__pinned__'));
     },
     [setProjectOrder],
+  );
+
+  // Archive a project from the sidebar: hide its group immediately, then
+  // persist + refetch /api/projects. Revert the optimistic hide on error.
+  const handleArchiveProjectFromSidebar = useCallback(
+    (directory: string) => {
+      const root = projectRootForDirectory(directory);
+      if (!root) return;
+      setArchivedProjectRoots((prev) => new Set(prev).add(root));
+      archiveProject(root, true)
+        .then(() => projectsQuery.refetch())
+        .catch((err) => {
+          remoteLog.error('Failed to archive project', err);
+          setArchivedProjectRoots((prev) => {
+            const next = new Set(prev);
+            next.delete(root);
+            return next;
+          });
+        });
+    },
+    [archiveProject, projectsQuery],
   );
 
   return (
@@ -1329,6 +1384,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
           onPinSession={handlePinSession}
           onClientSelect={handleClientSelect}
           onNewSessionInDirectory={handleNewSessionInDirectory}
+          onArchiveProject={handleArchiveProjectFromSidebar}
         />
         <div className="session-main">
           {session && <HeaderActionsPortal>
