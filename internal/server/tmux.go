@@ -242,16 +242,28 @@ func tmuxWindowRunsOpencode(win tmuxWindow) bool {
 	return win.Command == "opencode" || strings.Contains(win.StartCommand, "opencode")
 }
 
+// worktreeTmuxSession is the single shared tmux session that collects
+// every worktree window across all projects, so worktree launches never
+// disturb a project's own session.
+const worktreeTmuxSession = "ocman-worktree"
+
 // tmuxWindowNameForDirectory derives the named tmux window used for a
-// worktree rooted at directory. We only use the final path segment
-// (which is already the slugified branch directory name) and prefix it
-// with `wt-` so it stands out from the project's ordinary windows.
+// worktree rooted at directory. We qualify it with the parent project so
+// worktrees from different projects can share the single
+// worktreeTmuxSession without window-name collisions: the worktree slug
+// alone (e.g. "feature-x") is only unique within a project. The layout
+// under <repo-parent>/.worktrees/<repo>/<slug>/ gives us both segments.
 func tmuxWindowNameForDirectory(directory string) string {
-	base := filepath.Base(filepath.Clean(directory))
-	if base == "." || base == "/" || base == "" {
+	clean := filepath.Clean(directory)
+	slug := filepath.Base(clean)
+	if slug == "." || slug == "/" || slug == "" {
 		return "wt"
 	}
-	return "wt-" + base
+	repo := filepath.Base(filepath.Dir(clean))
+	if repo == "." || repo == "/" || repo == "" || repo == "worktrees" {
+		return "wt-" + slug
+	}
+	return "wt-" + repo + "-" + slug
 }
 
 // findTmuxSessionByPathIn returns the tmux session whose resolved path
@@ -399,13 +411,14 @@ func tmuxSessionNameForPath(directory string) string {
 //
 // Pass an empty `command` to start an ordinary login shell.
 type tmuxRunner struct {
-	listSessions   func() ([]tmuxSession, error)
-	listWindows    func(sessionName string) ([]tmuxWindow, error)
-	newSession     func(name, directory, command string) error
-	newWindow      func(name, directory, command string) error
-	newNamedWindow func(sessionName, windowName, directory, command string) error
-	killSession    func(name string) error
-	killWindow     func(target string) error
+	listSessions    func() ([]tmuxSession, error)
+	listWindows     func(sessionName string) ([]tmuxWindow, error)
+	newSession      func(name, directory, command string) error
+	newNamedSession func(sessionName, windowName, directory, command string) error
+	newWindow       func(name, directory, command string) error
+	newNamedWindow  func(sessionName, windowName, directory, command string) error
+	killSession     func(name string) error
+	killWindow      func(target string) error
 }
 
 var defaultTmuxRunner = tmuxRunner{
@@ -418,15 +431,25 @@ var defaultTmuxRunner = tmuxRunner{
 		}
 		return exec.Command("tmux", args...).Run()
 	},
+	newNamedSession: func(sessionName, windowName, directory, command string) error {
+		args := []string{"new-session", "-d", "-s", sessionName, "-n", windowName, "-c", directory}
+		if command != "" {
+			args = append(args, command)
+		}
+		return exec.Command("tmux", args...).Run()
+	},
 	newWindow: func(name, directory, command string) error {
-		args := []string{"new-window", "-t", name, "-c", directory}
+		// -d: create the window without switching the session's active
+		// window, so a client already attached to this session keeps its
+		// current view instead of jumping to the freshly launched window.
+		args := []string{"new-window", "-d", "-t", name, "-c", directory}
 		if command != "" {
 			args = append(args, command)
 		}
 		return exec.Command("tmux", args...).Run()
 	},
 	newNamedWindow: func(sessionName, windowName, directory, command string) error {
-		args := []string{"new-window", "-t", sessionName, "-n", windowName, "-c", directory}
+		args := []string{"new-window", "-d", "-t", sessionName, "-n", windowName, "-c", directory}
 		if command != "" {
 			args = append(args, command)
 		}
@@ -462,15 +485,21 @@ func launchOpencodeInTmux(directory string) (string, error) {
 }
 
 // launchOpencodeInProjectTmuxWindow launches a worktree session inside
-// the *existing* tmux session for the project checkout, under a named
-// window rooted at the worktree directory.
+// the shared "ocman-worktree" tmux session, under a named window rooted
+// at the worktree directory.
 //
 // This matches the intended UX for /wt:
-//   - one tmux session per project checkout
-//   - one named window per worktree session
+//   - all worktree windows live in one dedicated session, so launches
+//     never disturb a project's own tmux session
+//   - one named window per worktree session, qualified by project so
+//     worktrees from different projects don't collide
+//
+// projectDirectory is retained in the signature for compatibility and to
+// disambiguate the window name; the worktree no longer attaches to the
+// project's session.
 //
 // The function is idempotent: if the named window already exists in the
-// project session, it returns the `session:window` target with
+// worktree session, it returns the `session:window` target with
 // launched=false and does not re-send `opencode --port 0`.
 func launchOpencodeInProjectTmuxWindow(projectDirectory, worktreeDirectory string) (target string, launched bool, err error) {
 	target, launched, err = launchOpencodeInProjectTmuxWindowWith(defaultTmuxRunner, projectDirectory, worktreeDirectory)
@@ -532,26 +561,39 @@ func launchOpencodeInTmuxWith(r tmuxRunner, directory string, idempotent bool) (
 // for projectDirectory and creates/reuses a named window for
 // worktreeDirectory.
 func launchOpencodeInProjectTmuxWindowWith(r tmuxRunner, projectDirectory, worktreeDirectory string) (string, bool, error) {
+	_ = projectDirectory // window name carries the project; no project session lookup needed.
 	existingSessions, err := r.listSessions()
 	if err != nil {
 		return "", false, fmt.Errorf("listing tmux sessions: %w", err)
 	}
-	projectSession := findTmuxSessionByPathIn(existingSessions, projectDirectory)
-	if projectSession == nil {
-		return "", false, fmt.Errorf("tmux project session not found for %s", projectDirectory)
-	}
-	// projectSession.Name is what tmux itself reported back, so we
-	// trust it. The derived window name, however, is built from
-	// worktreeDirectory and could in theory contain `:` or other
-	// characters tmux would mis-parse — validate before use against
-	// the stricter component allowlist.
+	// The derived window name is built from worktreeDirectory and could
+	// in theory contain `:` or other characters tmux would mis-parse —
+	// validate before use against the stricter component allowlist.
 	windowName := tmuxWindowNameForDirectory(worktreeDirectory)
 	if !validTmuxComponent.MatchString(windowName) {
 		return "", false, fmt.Errorf("derived tmux window name %q contains invalid characters", windowName)
 	}
-	target := projectSession.Name + ":" + windowName
+	target := worktreeTmuxSession + ":" + windowName
 
-	windows, err := r.listWindows(projectSession.Name)
+	sessionExists := false
+	for _, ts := range existingSessions {
+		if ts.Name == worktreeTmuxSession {
+			sessionExists = true
+			break
+		}
+	}
+
+	// First worktree: create the shared session with this window as its
+	// only (named) window. The session is created detached so it never
+	// steals focus from whatever the user is currently attached to.
+	if !sessionExists {
+		if err := r.newNamedSession(worktreeTmuxSession, windowName, worktreeDirectory, opencodeCommand); err != nil {
+			return "", false, fmt.Errorf("tmux new-session: %w", err)
+		}
+		return target, true, nil
+	}
+
+	windows, err := r.listWindows(worktreeTmuxSession)
 	if err != nil {
 		return "", false, fmt.Errorf("listing tmux windows: %w", err)
 	}
@@ -561,7 +603,7 @@ func launchOpencodeInProjectTmuxWindowWith(r tmuxRunner, projectDirectory, workt
 		}
 	}
 
-	if err := r.newNamedWindow(projectSession.Name, windowName, worktreeDirectory, opencodeCommand); err != nil {
+	if err := r.newNamedWindow(worktreeTmuxSession, windowName, worktreeDirectory, opencodeCommand); err != nil {
 		return "", false, fmt.Errorf("tmux new-window: %w", err)
 	}
 	return target, true, nil

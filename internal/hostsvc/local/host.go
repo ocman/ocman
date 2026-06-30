@@ -27,9 +27,9 @@ type Deps struct {
 	// LaunchTmux runs `opencode --port 0` in a tmux session for the
 	// directory, returning the session name.
 	LaunchTmux func(directory string) (string, error)
-	// LaunchWorktreeTmux launches opencode in the project's tmux session
-	// under a named window rooted at the worktree path. Returns
-	// (target, launched, err).
+	// LaunchWorktreeTmux launches opencode in the shared "ocman-worktree"
+	// tmux session under a named window rooted at the worktree path.
+	// Returns (target, launched, err).
 	LaunchWorktreeTmux func(projectDir, worktreeDir string) (string, bool, error)
 	// TmuxSessions lists the host's tmux sessions.
 	TmuxSessions func() ([]hostsvc.TmuxSession, error)

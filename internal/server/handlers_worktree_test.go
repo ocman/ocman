@@ -401,10 +401,11 @@ func TestHandleWorktreeCreateAndLaunch_HappyPath(t *testing.T) {
 		listSessions: func() ([]tmuxSession, error) {
 			return []tmuxSession{{Name: projectSessionName, ResolvedPath: repo}}, nil
 		},
-		listWindows:    func(string) ([]tmuxWindow, error) { return nil, nil },
-		newSession:     func(string, string, string) error { return nil },
-		newWindow:      func(string, string, string) error { return nil },
-		newNamedWindow: func(string, string, string, string) error { return nil },
+		listWindows:     func(string) ([]tmuxWindow, error) { return nil, nil },
+		newSession:      func(string, string, string) error { return nil },
+		newNamedSession: func(string, string, string, string) error { return nil },
+		newWindow:       func(string, string, string) error { return nil },
+		newNamedWindow:  func(string, string, string, string) error { return nil },
 	}
 	srv := &Server{}
 
@@ -441,21 +442,22 @@ func TestHandleWorktreeCreateAndLaunch_HappyPath(t *testing.T) {
 	if !strings.Contains(resp.WorktreePath, "feature-login") {
 		t.Errorf("worktreePath = %q; want it to contain the slug", resp.WorktreePath)
 	}
-	if resp.TmuxSession != projectSessionName {
-		t.Errorf("tmuxSession = %q; want %q", resp.TmuxSession, projectSessionName)
+	if resp.TmuxSession != worktreeTmuxSession {
+		t.Errorf("tmuxSession = %q; want %q", resp.TmuxSession, worktreeTmuxSession)
 	}
-	if !strings.Contains(resp.TmuxTarget, ":wt-feature-login") {
-		t.Errorf("tmuxTarget = %q; want :wt-feature-login suffix", resp.TmuxTarget)
+	if !strings.HasPrefix(resp.TmuxTarget, worktreeTmuxSession+":") || !strings.Contains(resp.TmuxTarget, "feature-login") {
+		t.Errorf("tmuxTarget = %q; want %q-prefixed window containing feature-login", resp.TmuxTarget, worktreeTmuxSession)
 	}
 
 	// Re-run: expect Reused=true, OpencodeLaunched=false (idempotent).
 	// Pre-populate the stub's window list with the named worktree window
 	// so the launcher takes the idempotent short-circuit.
+	existingWindow := tmuxWindowNameForDirectory(resp.WorktreePath)
 	defaultTmuxRunner.listSessions = func() ([]tmuxSession, error) {
-		return []tmuxSession{{Name: projectSessionName, ResolvedPath: repo}}, nil
+		return []tmuxSession{{Name: worktreeTmuxSession}}, nil
 	}
 	defaultTmuxRunner.listWindows = func(string) ([]tmuxWindow, error) {
-		return []tmuxWindow{{Name: "wt-feature-login", Path: resp.WorktreePath}}, nil
+		return []tmuxWindow{{Name: existingWindow, Path: resp.WorktreePath}}, nil
 	}
 
 	rr2 := httptest.NewRecorder()
