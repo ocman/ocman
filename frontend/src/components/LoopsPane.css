@@ -65,16 +65,21 @@
 }
 
 .oc-loops-row-budget,
-.oc-loops-row-summary,
 .oc-loops-row-next {
   font-size: 12px;
   color: var(--text-dim);
 }
 
-.oc-loops-row-summary {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.oc-loops-row-session {
+  font-size: 12px;
+}
+
+.oc-loops-row-session-link[data-status='active'] {
+  color: var(--success, #3fb950);
+}
+
+.oc-loops-row-session-link[data-status='errored'] {
+  color: var(--danger, #e5534b);
 }
 
 .oc-loops-row-actions {

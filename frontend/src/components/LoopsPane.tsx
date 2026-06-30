@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import './LoopsPane.css';
 import type { Loop, LoopUpdateRequest } from '../lib/api.types';
 import { useLoopsStore } from '../lib/loopsStore';
@@ -119,7 +120,19 @@ function LoopRow({ loop, onPause, onResume, onRestart, onTrigger, onDelete, onUp
           {loop.state}
         </span>
       </div>
-      {loop.lastSummary && <div className="oc-loops-row-summary">{loop.lastSummary}</div>}
+      {loop.loopSessionID && (
+        <div className="oc-loops-row-session">
+          <Link
+            to={`/session/${encodeURIComponent(loop.loopSessionID)}`}
+            className="oc-loops-row-session-link"
+            data-testid="loop-session-link"
+            data-status={loop.state}
+            title={`Session — ${loop.state}`}
+          >
+            Session ({loop.state})
+          </Link>
+        </div>
+      )}
       <div className="oc-loops-row-actions">
         <button
           type="button"
@@ -129,6 +142,16 @@ function LoopRow({ loop, onPause, onResume, onRestart, onTrigger, onDelete, onUp
         >
           {showHistory ? 'Hide history' : 'History'}
         </button>
+        {!terminal && (
+          <button
+            type="button"
+            className="vscode-btn"
+            data-testid="loop-trigger-btn"
+            onClick={() => void onTrigger()}
+          >
+            Trigger
+          </button>
+        )}
         {!terminal && (
           <button type="button" className="vscode-btn" onClick={() => setEditing(true)}>Edit</button>
         )}

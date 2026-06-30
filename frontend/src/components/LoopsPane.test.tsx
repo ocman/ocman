@@ -23,6 +23,7 @@ const state: {
   remove: ReturnType<typeof vi.fn>;
   pause: ReturnType<typeof vi.fn>;
   resume: ReturnType<typeof vi.fn>;
+  restart: ReturnType<typeof vi.fn>;
   trigger: ReturnType<typeof vi.fn>;
   update: ReturnType<typeof vi.fn>;
 } = {
@@ -33,6 +34,7 @@ const state: {
   remove: vi.fn(),
   pause: vi.fn(),
   resume: vi.fn(),
+  restart: vi.fn(),
   trigger: vi.fn(),
   update: vi.fn(),
 };
@@ -87,7 +89,8 @@ beforeEach(() => {
   state.remove = vi.fn();
   state.pause = vi.fn();
   state.resume = vi.fn();
-  state.trigger = vi.fn();
+  state.restart = vi.fn();
+  state.trigger = vi.fn().mockResolvedValue(undefined);
   state.update = vi.fn().mockResolvedValue(undefined);
   getMock.mockReset();
 });
@@ -103,7 +106,27 @@ describe('LoopsPane', () => {
     renderPane();
     expect(screen.getByText('Check PRs mergeable')).toBeInTheDocument();
     expect(screen.getByTestId('loop-state')).toHaveTextContent('active');
-    expect(screen.getByText('prompted root session')).toBeInTheDocument();
+  });
+
+  it('links to the loop session with its status when present', () => {
+    state.loops = [makeLoop({ loopSessionID: 'sess_42', state: 'active' })];
+    renderPane();
+    const link = screen.getByTestId('loop-session-link');
+    expect(link).toHaveAttribute('href', '/session/sess_42');
+    expect(link).toHaveTextContent('active');
+  });
+
+  it('omits the session link when the loop has no session yet', () => {
+    state.loops = [makeLoop({ loopSessionID: undefined })];
+    renderPane();
+    expect(screen.queryByTestId('loop-session-link')).not.toBeInTheDocument();
+  });
+
+  it('triggers the loop from the row Trigger button', () => {
+    state.loops = [makeLoop({ state: 'active' })];
+    renderPane();
+    fireEvent.click(screen.getByTestId('loop-trigger-btn'));
+    expect(state.trigger).toHaveBeenCalledWith('loop_1');
   });
 
   it('loads the directory-scoped list on mount', () => {
@@ -124,14 +147,14 @@ describe('LoopsPane', () => {
     expect(screen.queryByTestId('loop-history')).not.toBeInTheDocument();
   });
 
-  it('keeps the row compact: only History and Edit, no lifecycle controls', () => {
+  it('keeps the row compact: History, Trigger and Edit, no other lifecycle controls', () => {
     state.loops = [makeLoop({ state: 'active' })];
     renderPane();
     expect(screen.getByRole('button', { name: 'History' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument();
-    // Lifecycle controls live in the Edit modal now, not on the row.
+    expect(screen.getByRole('button', { name: 'Trigger' })).toBeInTheDocument();
+    // Other lifecycle controls live in the Edit modal now, not on the row.
     expect(screen.queryByRole('button', { name: 'Pause' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Trigger now' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument();
   });
 
