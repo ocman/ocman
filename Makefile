@@ -52,7 +52,7 @@ define kill-children
 endef
 
 # Run both backend (air) and frontend (vite) with live reload
-dev:
+dev: kill-dev
 	@mkdir -p tmp
 	@echo "Starting ocman dev environment..."
 	@echo "  Backend (air):    http://localhost:8229"
