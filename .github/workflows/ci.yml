@@ -23,6 +23,12 @@ jobs:
       # match the version pinned via packageManager / mise.toml.
       - name: Install pnpm
         run: npm install -g pnpm@10.11.1
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: pnpm-${{ runner.os }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
       - name: Install dependencies
         working-directory: frontend
         run: pnpm install --frozen-lockfile
@@ -65,6 +71,12 @@ jobs:
           node-version: 25
       - name: Install pnpm
         run: npm install -g pnpm@10.11.1
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: pnpm-${{ runner.os }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
       - name: Install dependencies
         working-directory: frontend
         run: pnpm install --frozen-lockfile
@@ -102,6 +114,12 @@ jobs:
           node-version: 25
       - name: Install pnpm
         run: npm install -g pnpm@10.11.1
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: pnpm-${{ runner.os }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
       - name: Install dependencies
         working-directory: frontend
         run: pnpm install --frozen-lockfile
@@ -133,6 +151,12 @@ jobs:
           node-version: 25
       - name: Install pnpm
         run: npm install -g pnpm@10.11.1
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: pnpm-${{ runner.os }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -153,7 +177,15 @@ jobs:
         with:
           node-version: 25
       - name: Install pnpm
-        run: npm install -g pnpm@10.11.1
+        run: |
+          npm install -g pnpm@10.11.1
+          pnpm config set store-dir ~/.local/share/pnpm/store
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: pnpm-${{ runner.os }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
