@@ -103,11 +103,13 @@ dev-prod-watch:
 
 dev-backend:
 	@mkdir -p tmp
-	@air 2>&1 | tee tmp/air.log
+	@trap '$(kill-children)' INT TERM EXIT; \
+		air 2>&1 | tee tmp/air.log
 
 dev-frontend:
 	@mkdir -p tmp
-	cd frontend && pnpm dev 2>&1 | tee ../tmp/vite-dev.log
+	@trap '$(kill-children)' INT TERM EXIT; \
+		cd frontend && pnpm dev 2>&1 | tee ../tmp/vite-dev.log
 
 # Emergency nuke: kill anything holding the dev ports. Use when a previous
 # `make dev*` died badly and left orphans squatting on 8228 / 8229. Safe to
@@ -117,6 +119,7 @@ kill-dev:
 	@echo "Reclaiming dev ports 8228 and 8229..."
 	@lsof -tiTCP:8228 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true
 	@lsof -tiTCP:8229 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@pkill -x air 2>/dev/null || true
 	@pkill -f 'air -c .air.toml' 2>/dev/null || true
 	@pkill -f 'vite preview' 2>/dev/null || true
 	@pkill -f 'vite dev' 2>/dev/null || true
