@@ -10,6 +10,7 @@ import { Loops } from './pages/Loops';
 import { SessionDetail } from './pages/session-detail';
 import { SharedConversationView } from './pages/SharedConversationView';
 import { Login } from './pages/Login';
+import { onSessionChanged } from './lib/useGlobalEvents';
 import { HeaderProvider } from './lib/HeaderProvider';
 import { useHeaderInfo } from './lib/headerContext';
 import { CommandPalette } from './components/CommandPalette';
@@ -366,6 +367,14 @@ const queryClient = new QueryClient({
       },
     },
   },
+});
+
+// Refresh the session list the moment a session is created/changed
+// upstream, instead of waiting for the next poll tick. Registered at
+// module scope so it's wired once for the app's lifetime; the
+// EventSource itself is opened by useGlobalEvents() mounted at the root.
+onSessionChanged(() => {
+  void queryClient.invalidateQueries({ queryKey: ['sessions'] });
 });
 
 export default function App() {

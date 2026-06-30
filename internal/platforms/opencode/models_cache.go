@@ -319,6 +319,21 @@ func StartSessionsRefresher(ctx context.Context, d dbGetSessions) {
 	}()
 }
 
+// InvalidateSessionsCache marks every cached sessions entry as expired
+// so the next getSessionsCached read fetches fresh data. It does NOT
+// delete the entries: the last good value is retained for the
+// stale-on-busy fallback if the fresh fetch stalls on the live DB.
+// Called when an upstream session.updated event arrives so a new
+// session surfaces without waiting out sessionsTTL / the refresher.
+func InvalidateSessionsCache() {
+	sessionsMu.Lock()
+	for k, e := range sessionsCached {
+		e.expiresAt = time.Time{} // zero time is always "expired"
+		sessionsCached[k] = e
+	}
+	sessionsMu.Unlock()
+}
+
 // ResetCachesForTests clears every package-level cache (recents,
 // session defaults, sessions list). Call this from integration tests
 // that seed a fresh DB so a previous test's cache doesn't leak in.

@@ -1184,6 +1184,13 @@ type ssePermissionTee struct {
 	// onSessionIdle fires when the upstream emits session.idle (the
 	// agent finished a turn). Optional — nil means idle isn't observed.
 	onSessionIdle func(sessionID string)
+	// onSessionChanged fires when the upstream emits session.updated
+	// (session created or mutated). Used to push new-session detection
+	// instead of waiting for the next list poll. Optional — nil means
+	// session changes aren't observed. NOTE: session.updated fires
+	// frequently (per turn / token); the consumer is expected to
+	// dedupe (e.g. only act on first-seen session IDs).
+	onSessionChanged func(sessionID string)
 }
 
 func (t *ssePermissionTee) Write(p []byte) (int, error) {
@@ -1312,6 +1319,8 @@ func (t *ssePermissionTee) dispatchEvent(eventType, dataJSON string) {
 		t.dispatchQuestionResolved(dataJSON, "rejected")
 	case "session.idle":
 		t.dispatchSessionIdle(dataJSON)
+	case "session.updated":
+		t.dispatchSessionChanged(dataJSON)
 	}
 }
 
@@ -1474,6 +1483,39 @@ func (t *ssePermissionTee) dispatchSessionIdle(dataJSON string) {
 		return
 	}
 	t.onSessionIdle(sessionID)
+}
+
+// dispatchSessionChanged extracts the session ID from a session.updated
+// event and fires onSessionChanged. OpenCode's session.updated payload
+// is {type, properties:{sessionID, info}}; we accept both casings and
+// the flat shape as a fallback.
+func (t *ssePermissionTee) dispatchSessionChanged(dataJSON string) {
+	if t.onSessionChanged == nil {
+		return
+	}
+	type changedProps struct {
+		SessionID  string `json:"sessionID"`
+		SessionID2 string `json:"sessionId"`
+	}
+	var envelope struct {
+		Properties *changedProps `json:"properties"`
+	}
+	if err := json.Unmarshal([]byte(dataJSON), &envelope); err != nil {
+		return
+	}
+	var props changedProps
+	if envelope.Properties != nil {
+		props = *envelope.Properties
+	} else {
+		if err := json.Unmarshal([]byte(dataJSON), &props); err != nil {
+			return
+		}
+	}
+	sessionID := firstNonEmpty(props.SessionID, props.SessionID2)
+	if sessionID == "" {
+		return
+	}
+	t.onSessionChanged(sessionID)
 }
 
 // firstNonEmpty returns the first non-empty string from the arguments,

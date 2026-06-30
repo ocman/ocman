@@ -147,6 +147,23 @@ func (s *Server) broadcastSessionIdle(sessionID string) {
 	s.broadcastGlobalEvent("ocman.session.idle", payload)
 }
 
+// broadcastSessionChanged broadcasts that a session was created or
+// changed upstream (OpenCode session.updated), so the session list
+// refreshes immediately instead of waiting for the next poll. This is
+// what makes a freshly-created session appear near-instantly.
+func (s *Server) broadcastSessionChanged(sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	payload, err := json.Marshal(map[string]interface{}{
+		"sessionID": sessionID,
+	})
+	if err != nil {
+		return
+	}
+	s.broadcastGlobalEvent("ocman.session.changed", payload)
+}
+
 // broadcastLoopUpdated broadcasts that an agent loop's state changed
 // (iteration advance, transition, budget crossing), so the Loops view
 // updates live without busy-polling (AD-10).

@@ -9,7 +9,7 @@ import {
   shortPath,
 } from '../lib/format';
 import { usePageTitle } from '../lib/headerContext';
-import { SessionTable, GroupedSessionTable } from '../components/SessionTable';
+import { GroupedSessionTable } from '../components/SessionTable';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { ProjectScopePicker } from '../components/ProjectScopePicker';
 import { matchesScope } from '../lib/projectTree';
@@ -165,8 +165,6 @@ export function DashboardLayout() {
 export function SessionsTab() {
   usePageTitle('Sessions');
   const { sessions, sessionsLoading, sessionsError, loadSessions, timeRange, setTimeRange, showArchived, setShowArchived, projects } = useDashboardCtx();
-  const dashboardGrouped = useUiStore((s) => s.dashboardGrouped);
-  const toggleDashboardGrouped = useUiStore((s) => s.toggleDashboardGrouped);
   const collapsedProjects = useUiStore((s) => s.collapsedProjects);
   const toggleCollapsedProject = useUiStore((s) => s.toggleCollapsedProject);
   const openProjectSessionPalette = useUiStore((s) => s.openProjectSessionPalette);
@@ -197,11 +195,6 @@ export function SessionsTab() {
           onClick={() => setShowArchived(!showArchived)}
         >Exclude archived</button>
         <button
-          className={`oc-time-range-btn${dashboardGrouped ? ' active' : ''}`}
-          onClick={toggleDashboardGrouped}
-          title="Group sessions by project"
-        >Group by project</button>
-        <button
           type="button"
           className="oc-time-range-btn oc-dashboard-create-btn"
           onClick={openProjectSessionPalette}
@@ -211,19 +204,15 @@ export function SessionsTab() {
           New session
         </button>
       </div>
-      {dashboardGrouped ? (
-        <GroupedSessionTable
-          sessions={sessions}
-          loading={sessionsLoading && sessions.length === 0}
-          includeArchived={!showArchived}
-          collapsedProjects={collapsedProjectSet}
-          toggleCollapsedProject={toggleCollapsedProject}
-          projects={projects}
-          onAddSession={openProjectSessionPalette}
-        />
-      ) : (
-        <SessionTable sessions={sessions} showProject loading={sessionsLoading && sessions.length === 0} includeArchived={!showArchived} />
-      )}
+      <GroupedSessionTable
+        sessions={sessions}
+        loading={sessionsLoading && sessions.length === 0}
+        includeArchived={!showArchived}
+        collapsedProjects={collapsedProjectSet}
+        toggleCollapsedProject={toggleCollapsedProject}
+        projects={projects}
+        onAddSession={openProjectSessionPalette}
+      />
     </>
   );
 }

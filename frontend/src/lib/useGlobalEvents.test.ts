@@ -12,7 +12,12 @@ vi.mock('./useNotifyData', () => ({
   recheckNotifyData: (...args: unknown[]) => recheckNotifyData(...args),
 }));
 
-import { __handleResolvedForTests, __handleSurfaceForTests } from './useGlobalEvents';
+import {
+  __handleResolvedForTests,
+  __handleSurfaceForTests,
+  __handleSessionChangedForTests,
+  onSessionChanged,
+} from './useGlobalEvents';
 
 describe('useGlobalEvents resolved handler', () => {
   beforeEach(() => {
@@ -65,5 +70,26 @@ describe('useGlobalEvents surface handler', () => {
     __handleSurfaceForTests('nope');
     __handleSurfaceForTests(JSON.stringify({ reason: 'flagged' }));
     expect(recheckNotifyData).not.toHaveBeenCalled();
+  });
+});
+
+describe('useGlobalEvents session.changed handler', () => {
+  it('notifies registered listeners with the session id', () => {
+    const cb = vi.fn();
+    const unsub = onSessionChanged(cb);
+    __handleSessionChangedForTests(JSON.stringify({ sessionID: 'sess-new' }));
+    expect(cb).toHaveBeenCalledWith('sess-new');
+    unsub();
+    __handleSessionChangedForTests(JSON.stringify({ sessionID: 'sess-2' }));
+    expect(cb).toHaveBeenCalledTimes(1); // not called after unsubscribe
+  });
+
+  it('ignores malformed or session-less payloads', () => {
+    const cb = vi.fn();
+    const unsub = onSessionChanged(cb);
+    __handleSessionChangedForTests('nope');
+    __handleSessionChangedForTests(JSON.stringify({ reason: 'x' }));
+    expect(cb).not.toHaveBeenCalled();
+    unsub();
   });
 });
