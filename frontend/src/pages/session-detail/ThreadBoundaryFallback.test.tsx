@@ -11,7 +11,7 @@ describe('ThreadBoundaryFallback', () => {
 
     const { rerender } = render(
       <ThreadBoundaryFallback
-        error={new Error('tapClientLookup: Index 1 out of bounds (length: 1)')}
+        error={new Error('useClientLookup: Index 1 out of bounds (length: 1)')}
         reset={vi.fn()}
         autoRecover
         onReload={onReload}
@@ -25,7 +25,7 @@ describe('ThreadBoundaryFallback', () => {
 
     rerender(
       <ThreadBoundaryFallback
-        error={new Error('tapClientLookup: Index 1 out of bounds (length: 1)')}
+        error={new Error('useClientLookup: Index 1 out of bounds (length: 1)')}
         reset={vi.fn()}
         autoRecover
         onReload={onReload}
