@@ -4,6 +4,7 @@ import { api, sharedExportMarkdownUrl, type SharedConversation } from '../lib/ap
 import { OcmanRuntimeProvider } from '../components/OcmanRuntimeProvider';
 import { AssistantThread } from '../components/AssistantThread';
 import { ErrorBoundary } from '../components/ErrorBoundary';
+import { PrintCollapseContext } from '../lib/printCollapseContext';
 import './SharedConversationView.css';
 
 type LoadState =
@@ -28,6 +29,9 @@ export function SharedConversationView() {
   const [state, setState] = useState<LoadState>(
     token ? { status: 'loading' } : { status: 'error', message: 'Missing share token.' },
   );
+  // Default to collapsed tool outputs so the printed PDF stays compact;
+  // the reader can expand everything via the toolbar checkbox.
+  const [collapseTools, setCollapseTools] = useState(true);
 
   useEffect(() => {
     if (!token) return;
@@ -80,13 +84,24 @@ export function SharedConversationView() {
   const title = session?.title?.trim() || 'Shared conversation';
 
   return (
-    <div className="oc-shared-view" data-testid="shared-conversation">
+    <div
+      className={`oc-shared-view${collapseTools ? ' oc-collapse-tools' : ''}`}
+      data-testid="shared-conversation"
+    >
       <header className="oc-shared-header">
         <div className="oc-shared-title-block">
           <h1 className="oc-shared-title">{title}</h1>
           <span className="oc-shared-badge">read-only</span>
         </div>
         <div className="oc-shared-toolbar">
+          <label className="oc-shared-toggle" data-testid="shared-collapse-tools">
+            <input
+              type="checkbox"
+              checked={collapseTools}
+              onChange={(e) => setCollapseTools(e.target.checked)}
+            />
+            Collapse tool outputs
+          </label>
           <a
             className="oc-shared-action"
             href={token ? sharedExportMarkdownUrl(token) : '#'}
@@ -108,16 +123,18 @@ export function SharedConversationView() {
 
       <main className="oc-shared-thread">
         <ErrorBoundary name="shared:thread" inline resetKey={session?.id ?? token ?? ''}>
-          <OcmanRuntimeProvider
-            key={session?.id ?? token}
-            messages={messages}
-            parts={parts}
-            sessionId={session?.id ?? ''}
-            canSend={false}
-            projectDirectory={session?.directory}
-          >
-            <AssistantThread />
-          </OcmanRuntimeProvider>
+          <PrintCollapseContext.Provider value={collapseTools}>
+            <OcmanRuntimeProvider
+              key={session?.id ?? token}
+              messages={messages}
+              parts={parts}
+              sessionId={session?.id ?? ''}
+              canSend={false}
+              projectDirectory={session?.directory}
+            >
+              <AssistantThread />
+            </OcmanRuntimeProvider>
+          </PrintCollapseContext.Provider>
         </ErrorBoundary>
       </main>
     </div>

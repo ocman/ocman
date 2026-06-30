@@ -425,11 +425,14 @@ header h1 span { color: inherit; font-weight: 400; }
      so between that and these rules the export is complete. The JS
      length cap in toolOutputPreview (5000 chars) is intentionally kept,
      so a single huge output can't balloon the PDF. */
-  .oc-tool-pre,
-  .oc-shell-block,
-  .oc-tool-compact-body,
-  .oc-embedded-thread,
-  .oc-tool-content {
+  /* Scoped :not(.oc-collapse-tools *) so the shared-conversation page's
+     "collapse tool outputs" toggle can keep previews capped in the PDF;
+     by default (no collapse opt-in) every block is uncapped as before. */
+  .oc-tool-pre:not(.oc-collapse-tools *),
+  .oc-shell-block:not(.oc-collapse-tools *),
+  .oc-tool-compact-body:not(.oc-collapse-tools *),
+  .oc-embedded-thread:not(.oc-collapse-tools *),
+  .oc-tool-content:not(.oc-collapse-tools *) {
     max-height: none !important;
     overflow: visible !important;
   }

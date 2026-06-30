@@ -107,6 +107,16 @@
   background: var(--oc-surface-hover, #2a2a2a);
 }
 
+.oc-shared-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--oc-text-muted, #888);
+  cursor: pointer;
+  user-select: none;
+}
+
 .oc-shared-loading,
 .oc-shared-error {
   padding: 48px 16px;
@@ -122,6 +132,7 @@
    "Save as PDF" produces a clean transcript. */
 @media print {
   .oc-shared-toolbar,
+  .oc-shared-toggle,
   .oc-shared-badge {
     display: none !important;
   }

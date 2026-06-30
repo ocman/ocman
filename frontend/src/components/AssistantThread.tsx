@@ -21,6 +21,7 @@ import { isMutedTool, isMutedLineTool } from '../lib/mutedTools';
 import { parseAnsi, hasAnsi, hasStyle, type AnsiSegment } from '../lib/ansi';
 import { useStickyBottom } from '../lib/useStickyBottom';
 import { useIsPrinting } from '../lib/useIsPrinting';
+import { usePrintCollapse } from '../lib/printCollapseContext';
 import { trackRender } from '../lib/renderRateMonitor';
 import {
   highlightDiffCode,
@@ -790,9 +791,15 @@ const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: raw
   // reveals the few bodies that are gated on React state and would
   // otherwise be absent from the DOM. Length caps (toolOutputPreview)
   // still apply, so a single huge log can't balloon the PDF.
+  //
+  // The shared-conversation page can opt out via PrintCollapseContext so
+  // the reader controls how verbose the PDF is: when collapse is
+  // requested, only individually-expanded blocks print expanded.
   const isPrinting = useIsPrinting();
-  const expanded = expandedState || isPrinting;
-  const taskExpanded = taskExpandedState || isPrinting;
+  const printCollapse = usePrintCollapse();
+  const forcePrintExpand = isPrinting && !printCollapse;
+  const expanded = expandedState || forcePrintExpand;
+  const taskExpanded = taskExpandedState || forcePrintExpand;
 
   // Auto-approved notice — rendered inline before any timing/tool logic.
   if (toolName === 'ocman:auto-approved') {
