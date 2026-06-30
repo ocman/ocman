@@ -51,14 +51,31 @@ describe('GroupedSessionTable project archive', () => {
 
   it('renders an "Add session" placeholder for a known project with no sessions', () => {
     const onAddSession = vi.fn();
+    // A real session in one project + a second known project with none:
+    // placeholders only render alongside at least one session group.
+    const sessions = [makeSession({ id: 's1', directory: '/src/foo' })];
     const projects: Project[] = [
+      { directory: '/src/foo', sessionCount: 1, messageCount: 1, totalTokensIn: 0, totalTokensOut: 0, lastUsed: 1000 },
       { directory: '/src/empty', sessionCount: 0, messageCount: 0, totalTokensIn: 0, totalTokensOut: 0, lastUsed: 500 },
     ];
-    renderGrouped({ sessions: [], projects, onAddSession });
+    renderGrouped({ sessions, projects, onAddSession });
 
     const add = screen.getByRole('button', { name: /Add session/i });
     fireEvent.click(add);
     expect(onAddSession).toHaveBeenCalledWith('/src/empty');
+  });
+
+  it('shows the empty state (no placeholders) when there are no sessions', () => {
+    // Regression: an empty session list must fall through to the plain
+    // "No sessions found" state even when projects exist, rather than
+    // rendering project placeholders. (Broke dashboard e2e empty-state.)
+    const projects: Project[] = [
+      { directory: '/src/empty', sessionCount: 0, messageCount: 0, totalTokensIn: 0, totalTokensOut: 0, lastUsed: 500 },
+    ];
+    renderGrouped({ sessions: [], projects, includeArchived: true, onAddSession: vi.fn() });
+
+    expect(screen.getByText(/No sessions found/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Add session/i })).toBeNull();
   });
 
   it('hides archived projects unless includeArchived', () => {

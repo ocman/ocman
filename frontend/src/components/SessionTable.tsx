@@ -215,21 +215,26 @@ export function GroupedSessionTable({
 
     // Placeholder rows: known non-archived projects that currently have
     // no session group. Sourced from /api/projects (folded to roots).
+    // Only shown alongside real session groups — when the whole list is
+    // empty we fall through to the plain "No sessions found" empty state
+    // rather than papering it over with project placeholders.
     const haveSessions = new Set(sessionGroups.map(g => g.directory));
     const placeholders: typeof sessionGroups = [];
     const seenRoots = new Set<string>();
-    for (const p of projects ?? []) {
-      const root = projectRootForDirectory(p.directory);
-      if (haveSessions.has(root) || seenRoots.has(root)) continue;
-      if (archivedRoots.has(root)) continue;
-      seenRoots.add(root);
-      placeholders.push({
-        directory: root,
-        sessions: [],
-        lastUpdated: p.lastUsed,
-        aggregate: rollupGroupStatus([]),
-        placeholder: true,
-      });
+    if (sessionGroups.length > 0) {
+      for (const p of projects ?? []) {
+        const root = projectRootForDirectory(p.directory);
+        if (haveSessions.has(root) || seenRoots.has(root)) continue;
+        if (archivedRoots.has(root)) continue;
+        seenRoots.add(root);
+        placeholders.push({
+          directory: root,
+          sessions: [],
+          lastUpdated: p.lastUsed,
+          aggregate: rollupGroupStatus([]),
+          placeholder: true,
+        });
+      }
     }
 
     return [...sessionGroups, ...placeholders]
