@@ -9,8 +9,8 @@
  *  - Error banner shown when session fetch fails + Retry button
  *  - Navigating directly to a session URL works (deep-link)
  *  - Back navigation via header logo returns to dashboard
- *  - "New session" (+) button is visible
- *  - "Open in VS Code" button is visible
+ *  - "New session" action is available in the actions menu
+ *  - "Open in VS Code" action is available in the actions menu
  *  - Archive button is present on sidebar session items
  *  - Sidebar item for the active session has aria-selected
  */
@@ -492,14 +492,16 @@ test('sidebar archive button is visible on session items', async ({ mockedPage: 
 // Session action buttons
 // ---------------------------------------------------------------------------
 
-test('"New session" button is visible in session detail', async ({ mockedPage: page }) => {
+test('"New session" action is available in the session actions menu', async ({ mockedPage: page }) => {
   await page.goto(SESSION_URL);
-  await expect(page.getByRole('button', { name: 'New session' })).toBeVisible({ timeout: 5_000 });
+  await page.getByLabel('Session actions').click();
+  await expect(page.getByRole('menuitem', { name: 'New session' })).toBeVisible({ timeout: 5_000 });
 });
 
-test('"Open in VS Code" button is visible', async ({ mockedPage: page }) => {
+test('"Open in VS Code" action is available in the session actions menu', async ({ mockedPage: page }) => {
   await page.goto(SESSION_URL);
-  await expect(page.getByRole('button', { name: /Open in VS Code/ })).toBeVisible({ timeout: 5_000 });
+  await page.getByLabel('Session actions').click();
+  await expect(page.getByRole('menuitem', { name: /Open in VS Code/ })).toBeVisible({ timeout: 5_000 });
 });
 
 // ---------------------------------------------------------------------------

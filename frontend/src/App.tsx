@@ -63,7 +63,6 @@ function Header() {
       <>
         {sessionInfo.sessionTitle && (
           <>
-            {' / '}
             {sessionInfo.sessionPlatform && (
               <>
                 <PlatformBadge platform={sessionInfo.sessionPlatform} />{' '}
@@ -77,7 +76,7 @@ function Header() {
   } else if (path.startsWith('/project/')) {
     const dir = decodeURIComponent(path.slice('/project/'.length).split('/')[0]);
     const name = dir.split('/').pop();
-    breadcrumb = <>/ {name}</>;
+    breadcrumb = <>{name}</>;
   }
 
   // Right-hand side of the header: the project path for the current
@@ -87,8 +86,13 @@ function Header() {
   // the header because it anchors the page at a glance.
   return (
     <header>
-      <h1>
-        <Link to="/" style={{ color: 'inherit', textDecoration: 'none' }}>ocman</Link>{' '}
+      <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.4em' }}>
+        <Link
+          to="/"
+          style={{ color: 'inherit', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+        >
+          <img src="/favicon.svg" alt="ocman" width={20} height={20} style={{ display: 'block' }} />
+        </Link>
         <span>{breadcrumb}</span>
       </h1>
       <div className="header-right">

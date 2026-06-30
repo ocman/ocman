@@ -1,53 +1,33 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, sessionExportMarkdownUrl, type ShareLink } from '../lib/api';
+import { useCallback, useEffect, useState } from 'react';
+import { api, type ShareLink } from '../lib/api';
 import './ShareExportMenu.css';
 
-interface ShareExportMenuProps {
+interface ShareLinkModalProps {
   sessionId: string;
+  onClose: () => void;
 }
 
 /**
- * ShareExportMenu renders the conversation "Export / Share" dropdown in
- * the session header. It offers three things:
- *
- *  - Download Markdown  → navigates to the auth-gated export.md endpoint
- *    (the browser handles the download via Content-Disposition).
- *  - Print / Save as PDF → window.print(); the print stylesheet hides
- *    the chrome so the browser's "Save as PDF" produces a clean export.
- *  - Share link → creates / lists / copies / revokes public read-only
- *    links. The link is unauthenticated: anyone with the URL can view.
- *
- * Share links are loaded lazily the first time the menu is opened so
- * the session header stays cheap for the common case.
+ * ShareLinkModal manages public read-only share links for a session:
+ * create / list / copy / revoke. The link is unauthenticated — anyone
+ * with the URL can view the conversation. Rendered as a modal dialog
+ * opened from the header actions menu.
  */
-export function ShareExportMenu({ sessionId }: ShareExportMenuProps) {
-  const [open, setOpen] = useState(false);
+export function ShareLinkModal({ sessionId, onClose }: ShareLinkModalProps) {
   const [links, setLinks] = useState<ShareLink[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
 
-  // Close on outside click / Escape so the menu behaves like a normal
-  // popover.
+  // Close on Escape.
   useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape') onClose();
     };
-    document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   const loadLinks = useCallback(async () => {
     setError(null);
@@ -60,13 +40,9 @@ export function ShareExportMenu({ sessionId }: ShareExportMenuProps) {
     }
   }, [sessionId]);
 
-  const toggle = useCallback(() => {
-    setOpen((o) => {
-      const next = !o;
-      if (next && !loaded) void loadLinks();
-      return next;
-    });
-  }, [loaded, loadLinks]);
+  useEffect(() => {
+    void loadLinks();
+  }, [loadLinks]);
 
   const handleCreate = useCallback(async () => {
     setBusy(true);
@@ -109,115 +85,75 @@ export function ShareExportMenu({ sessionId }: ShareExportMenuProps) {
     }
   }, [sessionId]);
 
-  const handlePrint = useCallback(() => {
-    setOpen(false);
-    // Defer so the menu unmounts before the print dialog snapshots the
-    // page.
-    window.setTimeout(() => window.print(), 50);
-  }, []);
-
   return (
-    <div className="oc-share-menu" ref={containerRef} data-testid="share-export-menu">
-      <button
-        type="button"
-        className="session-sidebar-new"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label="Export or share conversation"
-        title="Export / Share conversation"
-        onClick={toggle}
-        data-testid="share-export-toggle"
+    <div className="oc-share-modal-backdrop" data-testid="share-link-backdrop" onClick={onClose}>
+      <div
+        className="oc-share-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Public share link"
+        onClick={(e) => e.stopPropagation()}
+        data-testid="share-link-modal"
       >
-        ⤴
-      </button>
-      {open && (
-        <div role="menu" className="oc-share-menu-popover" data-testid="share-export-popover">
-          <div className="oc-share-menu-section">
-            <a
-              className="oc-share-menu-item"
-              role="menuitem"
-              href={sessionExportMarkdownUrl(sessionId)}
-              download={`conversation-${sessionId}.md`}
-              onClick={() => setOpen(false)}
-              data-testid="share-download-md"
-            >
-              Download Markdown
-            </a>
-            <button
-              type="button"
-              role="menuitem"
-              className="oc-share-menu-item"
-              onClick={handlePrint}
-              data-testid="share-print-pdf"
-            >
-              Print / Save as PDF
-            </button>
+        <div className="oc-share-menu-label">Public share link</div>
+        <p className="oc-share-menu-hint">
+          Anyone with the link can view this conversation read-only.
+        </p>
+        <button
+          type="button"
+          className="oc-share-menu-item oc-share-menu-create"
+          onClick={() => void handleCreate()}
+          disabled={busy}
+          data-testid="share-create-link"
+        >
+          {busy ? 'Working…' : 'Create share link'}
+        </button>
+
+        {error && (
+          <div className="oc-share-menu-error" role="alert">
+            {error}
           </div>
+        )}
 
-          <div className="oc-share-menu-divider" />
+        {loaded && links.length === 0 && (
+          <div className="oc-share-menu-empty">No active share links.</div>
+        )}
 
-          <div className="oc-share-menu-section">
-            <div className="oc-share-menu-label">Public share link</div>
-            <p className="oc-share-menu-hint">
-              Anyone with the link can view this conversation read-only.
-            </p>
-            <button
-              type="button"
-              className="oc-share-menu-item oc-share-menu-create"
-              onClick={() => void handleCreate()}
-              disabled={busy}
-              data-testid="share-create-link"
-            >
-              {busy ? 'Working…' : 'Create share link'}
-            </button>
-
-            {error && (
-              <div className="oc-share-menu-error" role="alert">
-                {error}
-              </div>
-            )}
-
-            {loaded && links.length === 0 && (
-              <div className="oc-share-menu-empty">No active share links.</div>
-            )}
-
-            {links.length > 0 && (
-              <ul className="oc-share-menu-links">
-                {links.map((link) => (
-                  <li key={link.token} className="oc-share-menu-link">
-                    <input
-                      type="text"
-                      readOnly
-                      value={link.url}
-                      className="oc-share-menu-url"
-                      aria-label="Share URL"
-                      onFocus={(e) => e.currentTarget.select()}
-                    />
-                    <div className="oc-share-menu-link-actions">
-                      <button
-                        type="button"
-                        onClick={() => void handleCopy(link)}
-                        data-testid="share-copy-link"
-                      >
-                        {copied === link.token ? 'Copied!' : 'Copy'}
-                      </button>
-                      <button
-                        type="button"
-                        className="oc-share-menu-revoke"
-                        onClick={() => void handleRevoke(link)}
-                        disabled={busy}
-                        data-testid="share-revoke-link"
-                      >
-                        Revoke
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-      )}
+        {links.length > 0 && (
+          <ul className="oc-share-menu-links">
+            {links.map((link) => (
+              <li key={link.token} className="oc-share-menu-link">
+                <input
+                  type="text"
+                  readOnly
+                  value={link.url}
+                  className="oc-share-menu-url"
+                  aria-label="Share URL"
+                  onFocus={(e) => e.currentTarget.select()}
+                />
+                <div className="oc-share-menu-link-actions">
+                  <button
+                    type="button"
+                    onClick={() => void handleCopy(link)}
+                    data-testid="share-copy-link"
+                  >
+                    {copied === link.token ? 'Copied!' : 'Copy'}
+                  </button>
+                  <button
+                    type="button"
+                    className="oc-share-menu-revoke"
+                    onClick={() => void handleRevoke(link)}
+                    disabled={busy}
+                    data-testid="share-revoke-link"
+                  >
+                    Revoke
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

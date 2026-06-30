@@ -217,8 +217,8 @@ tr.no-port { opacity: 0.4; }
 .oc-error-banner button:hover { background: rgba(243, 139, 168, 0.15); }
 
 /* Header */
-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border-bottom: 1px solid var(--border); flex-shrink: 0; gap: 16px; }
-header h1 { font-size: 24px; font-weight: 600; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+header { display: flex; align-items: center; justify-content: space-between; padding: 8px 24px; border-bottom: 1px solid var(--border); flex-shrink: 0; gap: 16px; }
+header h1 { font-size: 18px; font-weight: 600; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 header h1 > a { color: var(--text); font-weight: 600; }
 header h1 span { color: inherit; font-weight: 400; }
 
@@ -249,9 +249,9 @@ header h1 span { color: inherit; font-weight: 400; }
  * than floating over the conversation thread. */
 .header-right {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
   flex-shrink: 1;
   min-width: 0;
   max-width: 50%;
@@ -280,6 +280,65 @@ header h1 span { color: inherit; font-weight: 400; }
 }
 .header-actions:empty {
   display: none;
+}
+
+/* Session actions collapsed into an inline "⋯" dropdown so the header
+ * stays a single row. Self-contained (does not depend on SessionTable.css). */
+.header-actions-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+.header-actions-menu > summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  list-style: none;
+}
+.header-actions-menu > summary::-webkit-details-marker { display: none; }
+.header-actions-menu > summary:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.header-actions-menu .oc-project-menu-list {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 50;
+  min-width: 160px;
+  margin-top: 4px;
+  background: var(--mantle);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+}
+.header-actions-menu .oc-project-menu-item {
+  text-align: left;
+  padding: 8px 12px;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.header-actions-menu .oc-project-menu-item {
+  display: block;
+  width: 100%;
+  text-decoration: none;
+}
+.header-actions-menu .oc-project-menu-item:hover {
+  background: var(--bg-hover);
+}
+.header-actions-menu .oc-project-menu-separator {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border);
 }
 
 /* VS Code open button */
@@ -357,11 +416,6 @@ header h1 span { color: inherit; font-weight: 400; }
     min-height: 0 !important;
     overflow: visible !important;
     display: block !important;
-  }
-
-  /* Avoid breaking a single message across two pages where possible. */
-  .oc-msg {
-    break-inside: avoid;
   }
 
   /* Collapsed tool blocks: the on-screen UI caps body height and shows

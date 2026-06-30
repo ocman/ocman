@@ -17,8 +17,10 @@ import { test, expect } from './fixtures';
 
 test('bypasses auth gate when authRequired=false', async ({ mockedPage: page }) => {
   await page.goto('/');
-  // The app should render without showing the login form
-  await expect(page.locator('h1')).toContainText('ocman');
+  // The app should render without showing the login form. The header
+  // logo is an <img alt="ocman"> (text was replaced by the favicon mark
+  // in the actions-dropdown redesign), so assert on its accessible name.
+  await expect(page.getByRole('heading', { level: 1 }).getByRole('img', { name: 'ocman' })).toBeVisible();
   await expect(page.locator('.oc-login')).toHaveCount(0);
   // Nav tabs should be visible
   await expect(page.locator('.nav-tab', { hasText: 'Sessions' })).toBeVisible();

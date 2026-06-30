@@ -1,33 +1,25 @@
-.oc-share-menu {
-  position: relative;
-  display: inline-block;
+.oc-share-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
 }
 
-.oc-share-menu-popover {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 50;
-  width: 320px;
+.oc-share-modal {
+  width: 360px;
   max-width: 90vw;
-  padding: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   background: var(--oc-surface, #1e1e1e);
   border: 1px solid var(--oc-border, #333);
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   font-size: 13px;
-}
-
-.oc-share-menu-section {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.oc-share-menu-divider {
-  height: 1px;
-  margin: 8px 0;
-  background: var(--oc-border, #333);
 }
 
 .oc-share-menu-item {
