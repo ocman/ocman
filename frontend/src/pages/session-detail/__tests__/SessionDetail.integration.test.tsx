@@ -15,6 +15,7 @@ import {
   renderSessionPage,
 } from './harness';
 import { recordFailedSend, clearFailedSends } from '../../../lib/failedSends';
+import { useApiStore } from '../../../lib/apiStore';
 
 beforeEach(() => {
   // jsdom does not implement scrollIntoView or scrollTo; the
@@ -1176,6 +1177,23 @@ describe('SessionDetail — sidebar archive', () => {
       () => expect(handle.store.archiveSession).toHaveBeenCalled(),
       { timeout: 1000 },
     );
+  });
+
+  it('optimistically unarchives the active session on open', async () => {
+    // Opening an archived session unarchives it server-side; the sidebar
+    // row must reflect that immediately instead of waiting for the next poll.
+    const archived = makeSession({ id: 'sess_1', archived: true });
+    const handle = renderSessionPage({
+      sessionId: 'sess_1',
+      detail: makeSessionDetail(archived),
+      sessions: [archived],
+    });
+    await flushPromises(8);
+    await waitFor(() => expect(handle.store.markSessionSeen).toHaveBeenCalled());
+    await waitFor(() => {
+      const row = useApiStore.getState().recentSessions.find((s) => s.id === 'sess_1');
+      expect(row?.archived).toBe(false);
+    });
   });
 });
 

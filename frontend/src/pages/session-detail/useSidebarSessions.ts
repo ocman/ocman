@@ -137,14 +137,19 @@ export function useSidebarSessions({
       // Preserve those fields so a stale server response doesn't clobber them.
       const currentStore = useApiStore.getState().recentSessions;
       const merged = nextRecentSessions.map((s) => {
+        // The active session is always unarchived on open (handleSession
+        // unarchives it server-side). Force the flag off so a poll that
+        // raced the server-side unarchive can't show it as archived —
+        // this holds even on the very first poll (empty store, no `live`).
+        const unarchived = s.id === id ? { ...s, archived: false } : s;
         const live = currentStore.find((ls) => ls.id === s.id);
-        if (!live) return s;
+        if (!live) return unarchived;
         // Prefer the more-recent status: if the store has 'busy' and the
         // server still shows a stale status, keep 'busy'. In all other
         // cases the poll wins (it is the source of truth for terminal states).
         const status = live.status === 'busy' && s.status !== 'busy' ? 'busy' : s.status;
         return {
-          ...s,
+          ...unarchived,
           status,
           // Preserve seen/pending flags that the SSE may have set more recently.
           seen: live.seen || s.seen,

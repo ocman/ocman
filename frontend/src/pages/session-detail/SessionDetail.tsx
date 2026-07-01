@@ -899,16 +899,19 @@ export function SessionDetail({ id }: SessionDetailProps) {
     };
   }, [id, pendingQuestionRequestId, portAvailable, listQuestions, setPendingQuestion]);
 
-  // Mark session as seen on entry.
+  // Mark session as seen on entry. Opening a session also unarchives it
+  // server-side (handleSession), so optimistically clear the archived flag
+  // in the sidebar row too — otherwise the row stays hidden/greyed until
+  // the next /api/sessions poll catches up.
   const sessionSeenId = session?.id;
   const sessionSeenPlatform = session?.platform;
   const sessionSeenUpdated = session?.timeUpdated || 0;
   useEffect(() => {
     if (!sessionSeenId || !sessionSeenPlatform) return;
+    patchSession({ seen: true, archived: false });
+    patchRecentSession(sessionSeenId, { seen: true, archived: false });
     void markSessionSeen(sessionSeenPlatform, sessionSeenId, sessionSeenUpdated)
       .then(() => {
-        patchSession({ seen: true });
-        patchRecentSession(sessionSeenId, { seen: true });
         recheckFaviconNotify();
       })
       .catch((err) => remoteLog.error('Failed to mark session seen', err));
