@@ -669,6 +669,56 @@ func TestApplySessionState_AutoUnarchivesUpdatedSession(t *testing.T) {
 	}
 }
 
+// TestApplySessionState_MarksArchivedByProject verifies that a session
+// living in an archived project is flagged Archived even when it has no
+// per-session archive record. Regression: an archived project used to
+// leave its sessions "active", so the root "/" redirect could jump into
+// a session that never appears in the sidebar (which hides archived
+// projects).
+func TestApplySessionState_MarksArchivedByProject(t *testing.T) {
+	srv := testServer(t)
+	if err := srv.stateDB.ArchiveProject("/src/foo"); err != nil {
+		t.Fatal(err)
+	}
+
+	sessions := []db.Session{
+		{ID: "s1", Platform: "opencode", Directory: "/src/foo", TimeUpdated: 1000},
+		{ID: "s2", Platform: "opencode", Directory: "/src/bar", TimeUpdated: 1000},
+	}
+	if err := srv.applySessionState(sessions); err != nil {
+		t.Fatalf("applySessionState: %v", err)
+	}
+	if !sessions[0].Archived {
+		t.Error("s1 should be archived (its project is archived)")
+	}
+	if sessions[1].Archived {
+		t.Error("s2 should not be archived (its project is not archived)")
+	}
+}
+
+// TestApplySessionState_ProjectArchiveRespectsNewerActivity verifies that
+// a session updated after its project was archived is NOT flagged
+// archived — matching the project auto-unarchive rule (handleProjects
+// will drop the project marker once it sees the newer activity).
+func TestApplySessionState_ProjectArchiveRespectsNewerActivity(t *testing.T) {
+	srv := testServer(t)
+	if err := srv.stateDB.ArchiveProject("/src/foo"); err != nil {
+		t.Fatal(err)
+	}
+	archivedProjects, _ := srv.stateDB.ArchivedProjects()
+	archivedAt := archivedProjects["/src/foo"]
+
+	sessions := []db.Session{
+		{ID: "s1", Platform: "opencode", Directory: "/src/foo", TimeUpdated: archivedAt + 1000},
+	}
+	if err := srv.applySessionState(sessions); err != nil {
+		t.Fatalf("applySessionState: %v", err)
+	}
+	if sessions[0].Archived {
+		t.Error("s1 should not be archived (updated after project archive)")
+	}
+}
+
 // TestApplySessionState_SeenTimeUpdated verifies that the user's
 // last-seen cutoff for a session is surfaced on the Session struct
 // even when the session has since received new updates (so .Seen is

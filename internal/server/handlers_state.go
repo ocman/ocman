@@ -140,6 +140,18 @@ func (s *Server) applySessionState(sessions []db.Session) error {
 	if err != nil {
 		return err
 	}
+	// Archived projects: a session inside an archived project is treated as
+	// archived too (keyed by the folded project root), unless the session has
+	// activity newer than the project's archived_at — mirroring the project
+	// auto-unarchive rule in applyProjectArchiveState. This keeps the redirect
+	// target and the sidebar consistent: an archived project's sessions never
+	// surface as "active". We only set the display flag here; the project
+	// marker is left for handleProjects to auto-unarchive against the full
+	// project view.
+	archivedProjects, err := s.stateDB.ArchivedProjects()
+	if err != nil {
+		return err
+	}
 	seen, err := s.stateDB.SeenSessions()
 	if err != nil {
 		return err
@@ -211,16 +223,27 @@ func (s *Server) applySessionState(sessions []db.Session) error {
 		}
 
 		archivedAtUpdate, ok := archived[key]
-		if !ok {
-			continue
-		}
-		if sessions[i].TimeUpdated > archivedAtUpdate {
-			if err := s.stateDB.UnarchiveSession(key.Platform, key.SessionID); err != nil {
-				return err
+		if ok {
+			if sessions[i].TimeUpdated > archivedAtUpdate {
+				if err := s.stateDB.UnarchiveSession(key.Platform, key.SessionID); err != nil {
+					return err
+				}
+			} else {
+				sessions[i].Archived = true
+				continue
 			}
-			continue
 		}
-		sessions[i].Archived = true
+
+		// Fall back to the session's project archive state. A session in an
+		// archived project is archived unless it's been touched since the
+		// project was archived (in which case handleProjects will
+		// auto-unarchive the whole project on the next projects fetch).
+		if len(archivedProjects) > 0 {
+			root := projectRootForDirectory(sessions[i].Directory)
+			if projectArchivedAt, ok := archivedProjects[root]; ok && sessions[i].TimeUpdated <= projectArchivedAt {
+				sessions[i].Archived = true
+			}
+		}
 	}
 
 	// Resolve unread counts per platform via the optional
