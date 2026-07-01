@@ -240,11 +240,11 @@ func TestGetSessions_FilterBySince(t *testing.T) {
 	}
 }
 
-// TestGetSessions_ExcludesCompletedSubagents verifies that a subagent
-// (a session with a non-NULL parent_id) is hidden once it finishes, but
-// surfaced — with its parent link populated — while it's still active.
-// Top-level sessions are always returned regardless of status.
-func TestGetSessions_ExcludesCompletedSubagents(t *testing.T) {
+// TestGetSessions_ExcludesSubagents verifies that a subagent (a session
+// with a non-NULL parent_id) is hidden from the listing whether it is
+// finished or still active — it belongs to its parent's thread, not the
+// top-level list. Top-level sessions are always returned.
+func TestGetSessions_ExcludesSubagents(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
@@ -255,7 +255,7 @@ func TestGetSessions_ExcludesCompletedSubagents(t *testing.T) {
 	insertSubagent(t, db, "child-done", "parent", "Task (code subagent)", "/project", now, now)
 
 	// An active subagent: last message is an assistant turn with no
-	// finish → status "busy", so it must be shown.
+	// finish → status "busy". It must still be hidden.
 	insertSubagent(t, db, "child-busy", "parent", "Task (build subagent)", "/project", now, now)
 	insertMessage(t, db, "m1", "child-busy", now, map[string]interface{}{"role": "assistant"})
 
@@ -274,15 +274,11 @@ func TestGetSessions_ExcludesCompletedSubagents(t *testing.T) {
 	if _, ok := got["child-done"]; ok {
 		t.Errorf("completed subagent 'child-done' should be excluded")
 	}
-	active, ok := got["child-busy"]
-	if !ok {
-		t.Fatalf("active subagent 'child-busy' should be returned")
+	if _, ok := got["child-busy"]; ok {
+		t.Errorf("active subagent 'child-busy' should be excluded")
 	}
-	if active.ParentID != "parent" {
-		t.Errorf("expected child-busy.ParentID == 'parent', got %q", active.ParentID)
-	}
-	if len(sessions) != 2 {
-		t.Fatalf("expected 2 sessions (parent + active subagent), got %d", len(sessions))
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session (parent only), got %d", len(sessions))
 	}
 }
 

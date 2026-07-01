@@ -155,12 +155,12 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 		role, finish, lastErr := derefStr(lastRole), derefStr(lastFinish), derefStr(lastError)
 		s.Status = InferSessionStatus(role, finish, lastErr, lastSynthTerminal == 1)
 
-		// Drop subagent sessions that have already finished. A
-		// subagent (non-empty parent_id) is only worth showing
-		// while it's still active — a finished Task-tool run would
-		// otherwise pile up under its parent. Parent (top-level)
-		// sessions are always kept regardless of status.
-		if s.ParentID != "" && s.Status == "done" {
+		// Drop subagent sessions entirely. A subagent (non-empty
+		// parent_id) is a Task-tool / split child that should never
+		// surface in the session list — it belongs to its parent's
+		// thread, not the top-level listing. Parent (top-level)
+		// sessions are always kept.
+		if s.ParentID != "" {
 			continue
 		}
 

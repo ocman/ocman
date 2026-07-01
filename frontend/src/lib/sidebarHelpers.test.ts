@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Session } from './api';
-import { computeSidebarHash, pickNextSessionAfterArchive, rollupGroupStatus } from './sidebarHelpers';
+import { computeSidebarHash, filterOrphanChildren, pickNextSessionAfterArchive, rollupGroupStatus } from './sidebarHelpers';
 
 function makeSession(overrides: Partial<Session> = {}): Session {
   return {
@@ -34,6 +34,37 @@ function makeSession(overrides: Partial<Session> = {}): Session {
     ...overrides,
   };
 }
+
+describe('filterOrphanChildren', () => {
+  it('drops a child whose parent is not in the list', () => {
+    const sessions = [
+      makeSession({ id: 'top' }),
+      makeSession({ id: 'orphan', parentId: 'missing-parent' }),
+    ];
+    expect(filterOrphanChildren(sessions).map((s) => s.id)).toEqual(['top']);
+  });
+
+  it('keeps a child whose parent is present (so it can nest)', () => {
+    const sessions = [
+      makeSession({ id: 'parent' }),
+      makeSession({ id: 'child', parentId: 'parent' }),
+    ];
+    expect(filterOrphanChildren(sessions).map((s) => s.id)).toEqual(['parent', 'child']);
+  });
+
+  it('keeps the currently-open session even if it is an orphan child', () => {
+    const sessions = [
+      makeSession({ id: 'top' }),
+      makeSession({ id: 'open', parentId: 'missing-parent' }),
+    ];
+    expect(filterOrphanChildren(sessions, 'open').map((s) => s.id)).toEqual(['top', 'open']);
+  });
+
+  it('keeps plain top-level sessions', () => {
+    const sessions = [makeSession({ id: 'a' }), makeSession({ id: 'b' })];
+    expect(filterOrphanChildren(sessions).map((s) => s.id)).toEqual(['a', 'b']);
+  });
+});
 
 describe('computeSidebarHash', () => {
   it('returns the empty string for an empty array', () => {

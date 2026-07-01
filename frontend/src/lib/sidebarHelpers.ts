@@ -21,6 +21,25 @@ export function computeSidebarHash(sessions: readonly Session[]): string {
 }
 
 /**
+ * Drop orphan subagent/child sessions from a flat sidebar list.
+ *
+ * A child (one with a `parentId`) only belongs nested under its parent.
+ * When the parent is outside the fetched window, `nestSessions` would
+ * promote the orphan to a standalone top-level row (e.g.
+ * "... (@explore subagent)"). We keep a child only when its parent is
+ * present in the same list, or when it is the currently-open session.
+ */
+export function filterOrphanChildren(
+  sessions: readonly Session[],
+  currentId?: string,
+): Session[] {
+  const presentIds = new Set(sessions.map((s) => s.id));
+  return sessions.filter(
+    (s) => !s.parentId || s.id === currentId || presentIds.has(s.parentId),
+  );
+}
+
+/**
  * Pick the session to navigate to after archiving the active session
  * from the sidebar.
  *
