@@ -96,7 +96,7 @@ func TestLaunchOpencodeInTmuxWith_Idempotent_ReusesExisting(t *testing.T) {
 	wantName := tmuxSessionNameForPath(dir)
 
 	f := &fakeTmuxRunner{
-		existing: []tmuxSession{{Name: wantName}},
+		existing: []tmuxSession{{Name: wantName, ResolvedPath: dir}},
 	}
 
 	name, launched, err := launchOpencodeInTmuxWith(f.toRunner(), dir, true)
@@ -162,7 +162,7 @@ func TestLaunchOpencodeInTmuxWith_NonIdempotent_OpensNewWindow(t *testing.T) {
 	wantName := tmuxSessionNameForPath(dir)
 
 	f := &fakeTmuxRunner{
-		existing: []tmuxSession{{Name: wantName}},
+		existing: []tmuxSession{{Name: wantName, ResolvedPath: dir}},
 	}
 
 	name, launched, err := launchOpencodeInTmuxWith(f.toRunner(), dir, false)
@@ -180,6 +180,47 @@ func TestLaunchOpencodeInTmuxWith_NonIdempotent_OpensNewWindow(t *testing.T) {
 	}
 	if len(f.newWindowCommands) != 1 || f.newWindowCommands[0] != opencodeCommand {
 		t.Errorf("newWindowCommands = %v; want [%q]", f.newWindowCommands, opencodeCommand)
+	}
+}
+
+// TestLaunchOpencodeInTmuxWith_MatchesDottedPathAgainstUnderscoreName
+// is a regression test for the "duplicate session" bug: tmux stores
+// session names with dots replaced by underscores, so an existing
+// session for /…/github.com/… is listed as "…/github_com/…". Matching
+// by name against our dotted derivation missed it and tried
+// `new-session`, which tmux rejected as a duplicate (exit 1). We must
+// match on resolvedPath and reuse the existing (underscore) name.
+func TestLaunchOpencodeInTmuxWith_MatchesDottedPathAgainstUnderscoreName(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	dir := filepath.Join(home, "src/github.com/acme/infra")
+	underscoreName := "~/src/github_com/acme/infra" // as tmux would report it
+
+	f := &fakeTmuxRunner{
+		existing: []tmuxSession{{Name: underscoreName, ResolvedPath: dir}},
+	}
+
+	name, launched, err := launchOpencodeInTmuxWith(f.toRunner(), dir, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !launched {
+		t.Errorf("launched = false; want true")
+	}
+	if name != underscoreName {
+		t.Errorf("name = %q; want existing tmux name %q", name, underscoreName)
+	}
+	if len(f.newSessionCalls) != 0 {
+		t.Errorf("newSession called %d times; want 0 (must reuse existing session)", len(f.newSessionCalls))
+	}
+	if len(f.newWindowCalls) != 1 {
+		t.Errorf("newWindow calls = %d; want 1", len(f.newWindowCalls))
+	}
+	// The window must target the existing (underscore) name, not our
+	// dotted derivation, or tmux would mis-target / re-collide.
+	if len(f.newWindowCalls) == 1 && f.newWindowCalls[0] != underscoreName {
+		t.Errorf("newWindow target = %q; want %q", f.newWindowCalls[0], underscoreName)
 	}
 }
 

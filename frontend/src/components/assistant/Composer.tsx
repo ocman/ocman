@@ -1235,6 +1235,7 @@ export const Composer = memo(ComposerImpl, (prev, next) =>
   prev.disabled === next.disabled &&
   prev.disabledHint === next.disabledHint &&
   prev.onLaunchRequest === next.onLaunchRequest &&
+  prev.launching === next.launching &&
   prev.whisperAvailable === next.whisperAvailable &&
   prev.selectedModel === next.selectedModel &&
   prev.activeAgent === next.activeAgent &&

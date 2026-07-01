@@ -529,11 +529,20 @@ func launchOpencodeInTmuxWith(r tmuxRunner, directory string, idempotent bool) (
 		return "", false, fmt.Errorf("derived tmux session name %q contains invalid characters", sessionName)
 	}
 
+	// Match by resolved directory, not by name: tmux replaces dots with
+	// underscores in session names (e.g. "github.com" -> "github_com"),
+	// so a name-equality check against the dotted name we derive here
+	// never matches an existing session and we'd hit `new-session` ->
+	// "duplicate session" (exit 1). Comparing resolvedPath sidesteps the
+	// dot/underscore skew, and we reuse the *existing* tmux name as the
+	// window target so send/new-window can't mis-target.
 	sessionExists := false
+	wantPath := filepath.Clean(directory)
 	if existing, err := r.listSessions(); err == nil {
 		for _, ts := range existing {
-			if ts.Name == sessionName {
+			if filepath.Clean(ts.ResolvedPath) == wantPath {
 				sessionExists = true
+				sessionName = ts.Name
 				break
 			}
 		}

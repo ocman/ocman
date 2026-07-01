@@ -3,6 +3,7 @@ import type { MutableRefObject } from 'react';
 import type { TmuxState } from '../../lib/useTmux';
 import type { TmuxSession } from '../../lib/api';
 import { remoteLog } from '../../lib/remoteLog';
+import { launchAndWait } from '../../lib/launchAndWait';
 
 /**
  * Coordinates of the floating tmux-client picker, in viewport pixels.
@@ -76,6 +77,13 @@ export interface UseTmuxActionsResult {
 export function useTmuxActions(
   tmux: TmuxState,
   directory: string | undefined,
+  onLaunchError?: (message: string) => void,
+  waitDeps?: {
+    /** Re-fetch session state so liveConnection reflects the new instance. */
+    reload: () => Promise<void>;
+    /** Read the current live-connection status (latest value). */
+    isLive: () => boolean;
+  },
 ): UseTmuxActionsResult {
   const [pendingTmuxSession, setPendingTmuxSession] = useState<string | null>(null);
   const [pickerPos, setPickerPos] = useState<PickerPosition | null>(null);
@@ -118,16 +126,35 @@ export function useTmuxActions(
 
   const [launchingOpencode, setLaunchingOpencode] = useState(false);
   const handleLaunchOpencode = useCallback(async () => {
-    if (!directory || !tmux.available || launchingOpencode) return;
+    if (!directory) {
+      onLaunchError?.('This session has no project directory, so OpenCode can\u2019t be launched for it.');
+      return;
+    }
+    if (!tmux.available || launchingOpencode) return;
     setLaunchingOpencode(true);
     try {
-      await tmux.launchOpencode(directory);
+      if (waitDeps) {
+        // Launch, then poll until the new instance is reachable so the
+        // composer re-enables on its own. Progress shows in the overlay.
+        await launchAndWait(directory, {
+          launch: tmux.launchOpencode,
+          reload: waitDeps.reload,
+          isLive: waitDeps.isLive,
+        });
+      } else {
+        await tmux.launchOpencode(directory);
+      }
     } catch (e) {
       remoteLog.error('Failed to launch opencode in tmux', e);
+      // launchAndWait already reports into the progress overlay; only
+      // surface via the toast fallback when we didn't drive the overlay.
+      if (!waitDeps) {
+        onLaunchError?.(e instanceof Error ? e.message : 'Failed to launch OpenCode in tmux.');
+      }
     } finally {
       setLaunchingOpencode(false);
     }
-  }, [launchingOpencode, directory, tmux]);
+  }, [launchingOpencode, directory, tmux, onLaunchError, waitDeps]);
 
   const handleTmuxShortcut = useCallback(() => {
     if (!matchingTmuxSession) return;

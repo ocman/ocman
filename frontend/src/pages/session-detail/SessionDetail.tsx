@@ -20,6 +20,7 @@ import { api, sessionExportMarkdownUrl } from '../../lib/api';
 import type { Message, Part, PartData, Session, SessionWarning } from '../../lib/api';
 import { cleanTitle, shortPath } from '../../lib/format';
 import { projectRootForDirectory } from '../../lib/worktrees';
+import { canLaunchSession } from './launchGate';
 import { messageBookmarkKey, type MessageBookmark, type MessageBookmarkGroup } from '../../lib/messageBookmarks';
 import { useHeaderInfo, usePageTitle } from '../../lib/headerContext';
 import { OcmanRuntimeProvider } from '../../components/OcmanRuntimeProvider';
@@ -625,7 +626,14 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // Tmux state.
   const tmux = useTmux();
   const openWorktreeForm = useUiStore((s) => s.openWorktreeForm);
-  const tmuxActions = useTmuxActions(tmux, session?.directory);
+  // Surface a failed OpenCode launch (previously logged only) via the
+  // restart toast, so the user isn't left with a button that appears to
+  // do nothing. Declared here so useTmuxActions can report into it.
+  const [restartToastMessage, setRestartToastMessage] = useState<string | null>(null);
+  const tmuxActions = useTmuxActions(tmux, session?.directory, setRestartToastMessage, {
+    reload,
+    isLive: () => portAvailableRef.current,
+  });
   const {
     matchingTmuxSession,
     pendingTmuxSession,
@@ -676,7 +684,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const [showShareModal, setShowShareModal] = useState(false);
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [showRenameToast, setShowRenameToast] = useState(false);
-  const [restartToastMessage, setRestartToastMessage] = useState<string | null>(null);
   const [showCreateSessionErrorToast, setShowCreateSessionErrorToast] = useState(false);
   const [showDisconnectedToast, setShowDisconnectedToast] = useState(false);
   const [threadBoundaryResetNonce, setThreadBoundaryResetNonce] = useState(0);
@@ -1214,7 +1221,13 @@ export function SessionDetail({ id }: SessionDetailProps) {
   }, [id, optimisticStatus, patchRecentSession]);
 
   // Flag for the composer's "launch session" button.
-  const launchHintActive = !portAvailable && !hasPendingPrompt && tmux.available && !!caps.liveConnectionHint;
+  const launchHintActive = canLaunchSession({
+    portAvailable,
+    hasPendingPrompt,
+    tmuxAvailable: tmux.available,
+    liveConnectionHint: !!caps.liveConnectionHint,
+    directory: session?.directory,
+  });
 
   // Sidebar project groupings.
   const sidebarProjectGroups = useMemo<SidebarProjectGroup[]>(() => {
