@@ -197,6 +197,20 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		detail.Session.Notice = deriveSessionNotice(*detail.Session)
 	}
 
+	// Opening a session unarchives it (and its project) so the sidebar
+	// shows the project + session tile again and navigation stays
+	// consistent. The user can re-archive from the sidebar. Skipped for
+	// remote sessions (AD-14b): their archive state lives in the remote's
+	// state.db, not the hub's.
+	if s.stateDB != nil && detail.Session != nil && !isRemotePlatformID(string(adapter.ID())) {
+		if err := s.stateDB.UnarchiveSession(string(adapter.ID()), sessionID); err != nil {
+			log.Printf("unarchiving session on open: %v", err)
+		}
+		if err := s.stateDB.UnarchiveProject(projectRootForDirectory(detail.Session.Directory)); err != nil {
+			log.Printf("unarchiving project on open: %v", err)
+		}
+	}
+
 	// Inject persisted auto-approve notice messages/parts so they
 	// arrive pre-sorted with the real messages. The frontend never
 	// needs a separate fetch or client-side injection; the notices

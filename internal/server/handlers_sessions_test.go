@@ -582,6 +582,54 @@ func TestHandleSession_NoticeAppearsForProviderOverload(t *testing.T) {
 	}
 }
 
+// TestHandleSession_UnarchivesOnOpen verifies that opening a session
+// clears both its own archive marker and its project's archive marker,
+// so the sidebar shows the project + session tile again.
+func TestHandleSession_UnarchivesOnOpen(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+
+	sess := &db.Session{
+		ID:          "s1",
+		Platform:    "opencode",
+		Directory:   "/src/foo",
+		Title:       "Old session",
+		TimeUpdated: 1000,
+		TimeCreated: 500,
+	}
+	fp := &fakePlatform{
+		id:       "opencode",
+		sessions: []db.Session{*sess},
+		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+			return &platforms.SessionDetail{Session: sess}, nil
+		},
+	}
+	reg.Register(fp)
+
+	root := projectRootForDirectory(sess.Directory)
+	if err := srv.stateDB.ArchiveSession("opencode", "s1", 1000); err != nil {
+		t.Fatalf("ArchiveSession: %v", err)
+	}
+	if err := srv.stateDB.ArchiveProject(root); err != nil {
+		t.Fatalf("ArchiveProject: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/session/s1", nil)
+	rr := httptest.NewRecorder()
+	srv.handleSession(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+
+	archived, _ := srv.stateDB.ArchivedSessions()
+	if _, ok := archived[state.Key{Platform: "opencode", SessionID: "s1"}]; ok {
+		t.Error("session should be unarchived after open")
+	}
+	archivedProjects, _ := srv.stateDB.ArchivedProjects()
+	if _, ok := archivedProjects[root]; ok {
+		t.Error("project should be unarchived after open")
+	}
+}
+
 // --- POST /api/session/{id}/auto-approve ---
 
 // TestHandleSessionAutoApproveSet_EnablingTriggersJudgeForPending is the
