@@ -197,7 +197,7 @@ test('archive button in session table calls POST /api/session/archive', async ({
   expect(body).toMatchObject({ archived: true });
 });
 
-test('archived session disappears when "Exclude archived" filter is active', async ({ mockedPage: page }) => {
+test('archived session disappears from the dashboard after archiving', async ({ mockedPage: page }) => {
   await page.route('/api/session/archive', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }),
   );
@@ -205,9 +205,8 @@ test('archived session disappears when "Exclude archived" filter is active', asy
   await page.goto('/');
   await expect(page.locator('.session-title', { hasText: MOCK_SESSION.title })).toBeVisible({ timeout: 5_000 });
 
-  // Enable "Exclude archived" filter so locally-archived sessions are hidden
-  await page.locator('.oc-time-range-btn', { hasText: 'Exclude archived' }).click();
-
+  // Archived sessions are hidden by default on the dashboard ("Include
+  // archived" is off), so archiving a row optimistically removes it.
   await page.locator('button[aria-label="Archive session"]').first().click();
 
   // The row should disappear from the table (hidden by locallyArchivedSessionIds filter)
