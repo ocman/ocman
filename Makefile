@@ -35,18 +35,19 @@ export OTEL_SERVICE_NAME ?= ocman-dev
 # a final safety net). This makes Ctrl+C reliably reap every child.
 
 # Macro: `kill-children` is the shell snippet each dev target installs as a
-# trap. It first signals every direct child of this shell, then recursively
-# walks their descendants, then reclaims the dev ports as a last resort.
-# The redirect swallows "no such process" noise when a child has already
-# exited normally by the time the trap runs.
-# Portable reclaim: BSD xargs (macOS) has no -r flag, but it's already a
-# no-op on empty stdin, so we don't need one. GNU xargs accepts -r but
-# also no-ops silently on empty input here. `|| true` keeps the trap
-# from masking the real exit status when there's nothing to kill.
+# trap. `pkill -P` only reaps DIRECT children, but our real leaf processes
+# are grandchildren (air -> compiled binary; pnpm dev -> node -> esbuild/vite
+# workers) and with nested makes they're great-grandchildren. So we walk the
+# whole descendant tree of this shell and TERM then KILL every PID, then
+# reclaim the dev ports as a last-resort net.
+# `pgrep -P` (recursed) is on both macOS (BSD) and Linux. `|| true` keeps the
+# trap from masking the real exit status when there's nothing to kill.
 define kill-children
-	pkill -TERM -P $$$$ 2>/dev/null || true; \
+	kids() { for p in $$(pgrep -P $$1 2>/dev/null); do echo $$p; kids $$p; done; }; \
+	tree=$$(kids $$$$); \
+	[ -n "$$tree" ] && kill -TERM $$tree 2>/dev/null || true; \
 	sleep 0.3; \
-	pkill -KILL -P $$$$ 2>/dev/null || true; \
+	[ -n "$$tree" ] && kill -KILL $$tree 2>/dev/null || true; \
 	lsof -tiTCP:8228 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true; \
 	lsof -tiTCP:8229 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true
 endef
@@ -62,8 +63,8 @@ dev: kill-dev
 	@echo "  Combined log:     tmp/debug.log"
 	@echo ""
 	@trap '$(kill-children)' INT TERM EXIT; \
-		{ $(MAKE) dev-backend & \
-		  $(MAKE) dev-frontend & \
+		{ air 2>&1 | tee tmp/air.log & \
+		  cd frontend && pnpm dev 2>&1 | tee ../tmp/vite-dev.log & \
 		  wait; } 2>&1 | tee tmp/debug.log
 
 # Run with production frontend build + backend live reload (manual frontend rebuild)
