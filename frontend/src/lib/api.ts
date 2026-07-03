@@ -64,6 +64,7 @@ export type {
   SessionNotice,
   SessionWarning,
   ShareLink,
+  GlobalShareLink,
   SharedConversation,
   Loop,
   LoopDetail,
@@ -106,6 +107,7 @@ import type {
   HourlyData,
   HourlyTokensByModel,
   ShareLink,
+  GlobalShareLink,
   SharedConversation,
   RemoteStatus,
   RemoteAccessStatus,
@@ -312,6 +314,15 @@ export const api = {
       undefined,
       { method: 'DELETE', parseJSON: false },
     ),
+  // --- Global sharing settings + list (Settings page) ---
+  // Whether public sharing is allowed (master toggle, on by default).
+  getSharingEnabled: (signal?: AbortSignal) =>
+    fetchJSON<{ enabled: boolean }>(`/api/settings/sharing`, signal),
+  setSharingEnabled: (enabled: boolean) =>
+    postJSON<{ enabled: boolean }>(`/api/settings/sharing`, { enabled }),
+  // Every active share link across all sessions.
+  listAllShares: (signal?: AbortSignal) =>
+    fetchJSON<GlobalShareLink[]>(`/api/shares`, signal),
   // Fetch a shared conversation by token. UNAUTHENTICATED endpoint:
   // the token is the only credential. Used by the public /share/:token
   // page.

@@ -1,4 +1,4 @@
-.PHONY: dev dev-backend dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-platform-branching otel-up otel-down otel-logs otel-reset caddy-up caddy-down caddy-cert install-hooks help
+.PHONY: dev dev-backend dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-platform-branching lint-settings-rows otel-up otel-down otel-logs otel-reset caddy-up caddy-down caddy-cert install-hooks help
 
 # --- OTel dev defaults ----------------------------------------------------
 #
@@ -387,7 +387,7 @@ coverage-check: ## Compare coverage/*.json against $(BASELINE_DIR)
 	./scripts/coverage-ratchet.sh "$(BASELINE_DIR)" $(SUITE)
 
 # Run all linters and type checks
-lint: lint-backend lint-frontend lint-platform-branching lint-host-helpers
+lint: lint-backend lint-frontend lint-platform-branching lint-host-helpers lint-settings-rows
 
 lint-backend:
 	go vet ./...
@@ -408,6 +408,13 @@ lint-platform-branching:
 # Suppress justified exceptions with a trailing `// ocman:allow-host-helper`.
 lint-host-helpers:
 	./scripts/check-host-helpers.sh
+
+# Guard against hand-rolled `settings-row` markup that skips the
+# <SettingRow>/<SettingToggle>/<SettingNumber> components, which would
+# drop the save-status indicator (spinner/checkmark) for a setting.
+# Suppress justified exceptions with `{/* ocman:allow-raw-setting */}`.
+lint-settings-rows:
+	./scripts/check-settings-rows.sh
 
 # Regenerate the gRPC stubs for the multi-remote contract. Requires
 # protoc plus the Go plugins:

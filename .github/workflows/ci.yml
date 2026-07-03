@@ -43,6 +43,8 @@ jobs:
         run: pnpm test
       - name: Platform-branching guard
         run: ./scripts/check-platform-branching.sh
+      - name: Settings-row guard
+        run: ./scripts/check-settings-rows.sh
 
   backend:
     name: Backend

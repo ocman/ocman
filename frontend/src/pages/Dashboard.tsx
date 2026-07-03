@@ -15,9 +15,11 @@ import { ProjectScopePicker } from '../components/ProjectScopePicker';
 import { matchesScope } from '../lib/projectTree';
 import { PromptTemplateSettings } from '../components/upstream/PromptTemplateSettings';
 import { RemoteSettings } from '../components/RemoteSettings';
+import { SharingSettings } from '../components/SharingSettings';
 import { GettingStartedEmpty } from '../components/GettingStartedEmpty';
 import { SaveStatus } from '../components/SaveStatus';
-import { useSaveStatus } from '../lib/useSaveStatus';
+import { SettingRow, SettingToggle, SettingNumber } from '../components/SettingRow';
+import { useSaveStatus, useSettingSave } from '../lib/useSaveStatus';
 
 import { useUiStore } from '../lib/uiStore';
 import { useApiStore } from '../lib/apiStore';
@@ -401,6 +403,11 @@ export function SettingsTab() {
   // Per-field save status (spinner while saving, checkmark for 5s after).
   const delaySave = useSaveStatus();
   const sectionsSave = useSaveStatus();
+  const notifSave = useSettingSave();
+  const bellSave = useSettingSave();
+  const timeRangeSave = useSettingSave();
+  const recentSave = useSettingSave();
+  const autoApproveSave = useSettingSave();
 
   // System notification state. Tracked locally so we can re-render
   // when permission changes (the browser API doesn't give us an event
@@ -446,6 +453,7 @@ export function SettingsTab() {
     { id: 'sessions', label: 'Sessions', show: true },
     { id: 'remotes', label: 'Remotes', show: true },
     { id: 'auto-approve', label: 'Auto-approve', show: true },
+    { id: 'sharing', label: 'Sharing', show: true },
     { id: 'templates', label: 'PR & Issue templates', show: true },
     { id: 'app', label: 'App', show: showAppSection },
     { id: 'account', label: 'Account', show: authRequired },
@@ -471,89 +479,66 @@ export function SettingsTab() {
       <div className="settings-section" hidden={active !== 'notifications'}>
         <h2 className="settings-section-title">Notifications</h2>
         {notifSupported && (
-          <div className="settings-row">
-            <div className="settings-row-info">
-              <div className="settings-row-label">System notifications</div>
-              <div className="settings-row-desc">
-                {notifBlocked
-                  ? 'Notifications are blocked by your browser. Allow them in your browser\u2019s site settings to enable this option.'
-                  : 'Show a desktop notification when a session finishes or needs your input. Works best after installing ocman as an app.'}
-              </div>
-            </div>
-            <label className="settings-toggle">
-              <input
-                type="checkbox"
-                checked={notificationsEnabled && notifPermission === 'granted'}
-                disabled={notifBlocked}
-                onChange={(e) => { void handleNotificationsToggle(e.target.checked); }}
-              />
-              <span className="settings-toggle-track" />
-            </label>
-          </div>
-        )}
-        <div className="settings-row">
-          <div className="settings-row-info">
-            <div className="settings-row-label">Bell sound</div>
-            <div className="settings-row-desc">
-              Play a bell sound when the app is not in focus and a session
-              finishes or asks a question.
-            </div>
-          </div>
-          <label className="settings-toggle">
-            <input
-              type="checkbox"
-              checked={bellEnabled}
-              onChange={(e) => setBellEnabled(e.target.checked)}
+          <SettingRow
+            label="System notifications"
+            desc={notifBlocked
+              ? 'Notifications are blocked by your browser. Allow them in your browser\u2019s site settings to enable this option.'
+              : 'Show a desktop notification when a session finishes or needs your input. Works best after installing ocman as an app.'}
+          >
+            <SettingToggle
+              ariaLabel="System notifications"
+              checked={notificationsEnabled && notifPermission === 'granted'}
+              disabled={notifBlocked}
+              save={notifSave}
+              onSave={(next) => handleNotificationsToggle(next)}
             />
-            <span className="settings-toggle-track" />
-          </label>
-        </div>
+          </SettingRow>
+        )}
+        <SettingRow
+          label="Bell sound"
+          desc="Play a bell sound when the app is not in focus and a session finishes or asks a question."
+        >
+          <SettingToggle
+            ariaLabel="Bell sound"
+            checked={bellEnabled}
+            save={bellSave}
+            onSave={(next) => setBellEnabled(next)}
+          />
+        </SettingRow>
       </div>
 
       <div className="settings-section" hidden={active !== 'sessions'}>
         <h2 className="settings-section-title">Sessions</h2>
-        <div className="settings-row">
-          <div className="settings-row-info">
-            <div className="settings-row-label">Start screen time range</div>
-            <div className="settings-row-desc">
-              Default lookback window for the Sessions list on the start screen.
-              The time-range buttons still override it for the current view.
-            </div>
-          </div>
-          <div className="settings-delay-input">
-            <input
-              type="number"
-              min={1}
-              max={365}
-              step={1}
-              aria-label="Start screen time range in days"
-              value={Math.round((dashboardTimeRangeDefault / 24) * 10) / 10}
-              onChange={(e) => setDashboardTimeRangeDefault((Number(e.target.value) || 0) * 24)}
-            />
-            <span className="settings-delay-unit">days</span>
-          </div>
-        </div>
-        <div className="settings-row">
-          <div className="settings-row-info">
-            <div className="settings-row-label">Recent sessions window</div>
-            <div className="settings-row-desc">
-              How far back the &ldquo;Recent sessions&rdquo; sidebar looks while
-              you&apos;re inside a session.
-            </div>
-          </div>
-          <div className="settings-delay-input">
-            <input
-              type="number"
-              min={1}
-              max={365}
-              step={1}
-              aria-label="Recent sessions window in days"
-              value={Math.round((sidebarRecentHours / 24) * 10) / 10}
-              onChange={(e) => setSidebarRecentHours((Number(e.target.value) || 0) * 24)}
-            />
-            <span className="settings-delay-unit">days</span>
-          </div>
-        </div>
+        <SettingRow
+          label="Start screen time range"
+          desc="Default lookback window for the Sessions list on the start screen. The time-range buttons still override it for the current view."
+        >
+          <SettingNumber
+            ariaLabel="Start screen time range in days"
+            unit="days"
+            min={1}
+            max={365}
+            value={Math.round((dashboardTimeRangeDefault / 24) * 10) / 10}
+            parse={(raw) => raw * 24}
+            save={timeRangeSave}
+            onSave={(next) => setDashboardTimeRangeDefault(next)}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Recent sessions window"
+          desc={<>How far back the &ldquo;Recent sessions&rdquo; sidebar looks while you&apos;re inside a session.</>}
+        >
+          <SettingNumber
+            ariaLabel="Recent sessions window in days"
+            unit="days"
+            min={1}
+            max={365}
+            value={Math.round((sidebarRecentHours / 24) * 10) / 10}
+            parse={(raw) => raw * 24}
+            save={recentSave}
+            onSave={(next) => setSidebarRecentHours(next)}
+          />
+        </SettingRow>
       </div>
 
       <div className="settings-section" hidden={active !== 'remotes'}>
@@ -568,49 +553,35 @@ export function SettingsTab() {
 
       <div className="settings-section" hidden={active !== 'auto-approve'}>
         <h2 className="settings-section-title">Auto-approve</h2>
-        <div className="settings-row">
-          <div className="settings-row-info">
-            <div className="settings-row-label">Enable by default</div>
-            <div className="settings-row-desc">
-              Automatically start the AI permission reviewer for every new session.
-              You can also enable or disable it per session from the permission prompt.
-            </div>
-          </div>
-          <label className="settings-toggle">
-            <input
-              type="checkbox"
-              checked={autoApproveDefault}
-              onChange={(e) => setAutoApproveDefault(e.target.checked)}
-            />
-            <span className="settings-toggle-track" />
-          </label>
-        </div>
-        <div className="settings-row">
-          <div className="settings-row-info">
-            <div className="settings-row-label">Human review window</div>
-            <div className="settings-row-desc">
-              How long to wait after a permission prompt appears before the AI
-              reviewer starts. Gives you time to approve or reject manually.
-            </div>
-          </div>
-          <div className="settings-delay-input">
-            <input
-              type="number"
-              min={0}
-              max={60}
-              step={1}
-              value={Math.round(autoApproveDelayMs / 1000)}
-              onChange={(e) => {
-                const secs = Math.max(0, Math.min(60, Number(e.target.value) || 0));
-                const ms = secs * 1000;
-                setAutoApproveDelayMs(ms);
-                void delaySave.track(() => setJudgeDelayApi(ms));
-              }}
-            />
-            <span className="settings-delay-unit">s</span>
-            <SaveStatus state={delaySave.state} />
-          </div>
-        </div>
+        <SettingRow
+          label="Enable by default"
+          desc="Automatically start the AI permission reviewer for every new session. You can also enable or disable it per session from the permission prompt."
+        >
+          <SettingToggle
+            ariaLabel="Enable auto-approve by default"
+            checked={autoApproveDefault}
+            save={autoApproveSave}
+            onSave={(next) => setAutoApproveDefault(next)}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Human review window"
+          desc="How long to wait after a permission prompt appears before the AI reviewer starts. Gives you time to approve or reject manually."
+        >
+          <SettingNumber
+            ariaLabel="Human review window in seconds"
+            unit="s"
+            min={0}
+            max={60}
+            value={Math.round(autoApproveDelayMs / 1000)}
+            parse={(raw) => Math.max(0, Math.min(60, raw)) * 1000}
+            save={delaySave}
+            onSave={(ms) => {
+              setAutoApproveDelayMs(ms);
+              return setJudgeDelayApi(ms);
+            }}
+          />
+        </SettingRow>
 
         <div className="settings-row settings-row--block">
           <div className="settings-row-info">
@@ -657,6 +628,11 @@ export function SettingsTab() {
         </div>
       </div>
 
+      <div className="settings-section" hidden={active !== 'sharing'}>
+        <h2 className="settings-section-title">Sharing</h2>
+        <SharingSettings />
+      </div>
+
       <div className="settings-section" hidden={active !== 'templates'}>
         <h2 className="settings-section-title">PR &amp; Issue templates</h2>
         <div className="settings-row settings-row--block">
@@ -676,7 +652,7 @@ export function SettingsTab() {
       {showAppSection && (
         <div className="settings-section" hidden={active !== 'app'}>
           <h2 className="settings-section-title">App</h2>
-          <div className="settings-row">
+          <div className="settings-row"> {/* ocman:allow-raw-setting — action button, no saved value */}
             <div className="settings-row-info">
               <div className="settings-row-label">Install ocman</div>
               <div className="settings-row-desc">
@@ -700,7 +676,7 @@ export function SettingsTab() {
       {authRequired && (
         <div className="settings-section" hidden={active !== 'account'}>
           <h2 className="settings-section-title">Account</h2>
-          <div className="settings-row">
+          <div className="settings-row"> {/* ocman:allow-raw-setting — action button, no saved value */}
             <div className="settings-row-info">
               <div className="settings-row-label">Session</div>
               <div className="settings-row-desc">Sign out of the current session.</div>

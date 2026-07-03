@@ -274,6 +274,15 @@ export interface ShareLink {
 }
 
 /**
+ * A share link augmented with its owning platform + session, returned
+ * by the global GET /api/shares list used in Settings.
+ */
+export interface GlobalShareLink extends ShareLink {
+  platform: string;
+  sessionId: string;
+}
+
+/**
  * Public conversation payload returned by GET /api/share/{token}.
  * Deliberately a subset of SessionDetail — no live/actionable fields,
  * just enough to render the conversation read-only.

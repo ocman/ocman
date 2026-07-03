@@ -16,6 +16,24 @@ import (
 // conversation while still bounding pathological cases.
 const exportFetchLimit = 100000
 
+// settingSharingEnabled gates whether new share links can be minted.
+// Stored in state.db's `setting` table; absent means enabled (on by
+// default). Value "false" disables creation.
+const settingSharingEnabled = "sharing_enabled"
+
+// sharingEnabled reports whether share-link creation is allowed. Absent
+// setting (or any value other than "false") means enabled.
+func (s *Server) sharingEnabled() bool {
+	if s.stateDB == nil {
+		return true
+	}
+	v, ok, err := s.stateDB.GetSetting(settingSharingEnabled)
+	if err != nil || !ok {
+		return true
+	}
+	return v != "false"
+}
+
 // shareTokenPattern reuses the same safe-character constraint as
 // validateID plus the base64url alphabet characters. base64.RawURLEncoding
 // emits [A-Za-z0-9_-], all of which validateID already permits, so we
@@ -74,6 +92,10 @@ func (s *Server) handleCreateSessionShare(w http.ResponseWriter, r *http.Request
 			http.Error(w, "state database not available", http.StatusServiceUnavailable)
 			return
 		}
+		if !s.sharingEnabled() {
+			http.Error(w, "sharing is disabled", http.StatusForbidden)
+			return
+		}
 		// expiresAt 0 = no expiry (the only mode the current UI uses).
 		link, err := s.stateDB.CreateShareLink(string(adapter.ID()), sessionID, 0)
 		if err != nil {
@@ -110,6 +132,65 @@ func (s *Server) handleRevokeSessionShare(w http.ResponseWriter, r *http.Request
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
+}
+
+// --- Sharing settings + global share list ---
+
+// handleSharingSetting dispatches GET/POST on /api/settings/sharing.
+//
+//	GET  → {"enabled": bool}. Defaults to enabled when unset.
+//	POST → accepts {"enabled": bool}, persists, returns the new state.
+func (s *Server) handleSharingSetting(w http.ResponseWriter, r *http.Request) {
+	if s.stateDB == nil {
+		http.Error(w, "state database not available", http.StatusServiceUnavailable)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, map[string]bool{"enabled": s.sharingEnabled()})
+	case http.MethodPost:
+		var body struct {
+			Enabled bool `json:"enabled"`
+		}
+		if !readAndUnmarshal(w, r, maxRequestBody, &body) {
+			return
+		}
+		val := "true"
+		if !body.Enabled {
+			val = "false"
+		}
+		if err := s.stateDB.SetSetting(settingSharingEnabled, val); err != nil {
+			serverError(w, "saving sharing setting", err)
+			return
+		}
+		writeJSON(w, map[string]bool{"enabled": body.Enabled})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleAllShares serves GET /api/shares: every active share link across
+// all sessions, so the Settings page can inspect and revoke them in one
+// place.
+func (s *Server) handleAllShares(w http.ResponseWriter, r *http.Request) {
+	if s.stateDB == nil {
+		writeJSON(w, []globalShareLinkView{})
+		return
+	}
+	links, err := s.stateDB.ListAllActiveShareLinks()
+	if err != nil {
+		serverError(w, "listing share links", err)
+		return
+	}
+	out := make([]globalShareLinkView, 0, len(links))
+	for _, l := range links {
+		out = append(out, globalShareLinkView{
+			shareLinkView: s.shareLinkView(r, l),
+			Platform:      l.Platform,
+			SessionID:     l.SessionID,
+		})
+	}
+	writeJSON(w, out)
 }
 
 // --- Public (unauthenticated) share viewing ---
@@ -222,6 +303,15 @@ type shareLinkView struct {
 	URL       string `json:"url"`
 	CreatedAt int64  `json:"createdAt"`
 	ExpiresAt int64  `json:"expiresAt,omitempty"`
+}
+
+// globalShareLinkView augments a share link with its owning
+// platform/session so the global Settings list can link back to the
+// session and revoke via the existing per-session endpoint.
+type globalShareLinkView struct {
+	shareLinkView
+	Platform  string `json:"platform"`
+	SessionID string `json:"sessionId"`
 }
 
 func (s *Server) shareLinkView(r *http.Request, link state.ShareLink) shareLinkView {

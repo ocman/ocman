@@ -31,3 +31,8 @@ export function useSaveStatus(savedMs = 5000) {
 
   return { state, track };
 }
+
+/** useSettingSave is the save-status hook every <SettingRow> control uses. */
+export function useSettingSave() {
+  return useSaveStatus();
+}

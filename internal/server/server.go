@@ -458,6 +458,10 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// Prompt templates for the PR/Issue sidebar's "Handle this" launch
 	// action. Stored in state.db's generic `setting` table (schema v12).
 	mux.HandleFunc("/api/settings/prompt-templates", s.requireAuth(s.handlePromptTemplates))
+	// Master toggle for public session sharing (on by default).
+	mux.HandleFunc("/api/settings/sharing", s.requireAuth(s.handleSharingSetting))
+	// Global list of active share links, for inspect/revoke in Settings.
+	mux.HandleFunc("/api/shares", s.requireAuth(s.get(s.handleAllShares)))
 	// Remote-access surface for multi-remote support: this instance's
 	// own instance ID + gRPC-listen status, and an explicit token reveal.
 	mux.HandleFunc("/api/settings/remote-access", s.get(s.handleRemoteAccess))

@@ -115,6 +115,82 @@ func TestCreateListRevokeShareLink(t *testing.T) {
 	}
 }
 
+func TestSharingSettingToggleAndGuard(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	registerShareFake(reg, "ses_guard")
+
+	// Default: enabled.
+	getRR := httptest.NewRecorder()
+	srv.handleSharingSetting(getRR, httptest.NewRequest("GET", "/api/settings/sharing", nil))
+	if getRR.Code != http.StatusOK {
+		t.Fatalf("get status = %d, want 200", getRR.Code)
+	}
+	var got struct {
+		Enabled bool `json:"enabled"`
+	}
+	_ = json.Unmarshal(getRR.Body.Bytes(), &got)
+	if !got.Enabled {
+		t.Fatal("sharing should be enabled by default")
+	}
+
+	// Disable it.
+	postRR := httptest.NewRecorder()
+	srv.handleSharingSetting(postRR, httptest.NewRequest("POST", "/api/settings/sharing", strings.NewReader(`{"enabled":false}`)))
+	if postRR.Code != http.StatusOK {
+		t.Fatalf("post status = %d, want 200; body=%s", postRR.Code, postRR.Body)
+	}
+	if srv.sharingEnabled() {
+		t.Fatal("sharing should be disabled after POST")
+	}
+
+	// Create is now rejected with 403.
+	createRR := httptest.NewRecorder()
+	srv.dispatchSessionSubpath(createRR, httptest.NewRequest("POST", "/api/session/ses_guard/share", nil))
+	if createRR.Code != http.StatusForbidden {
+		t.Fatalf("create status = %d, want 403 when disabled; body=%s", createRR.Code, createRR.Body)
+	}
+
+	// Re-enable and create succeeds.
+	reEnable := httptest.NewRecorder()
+	srv.handleSharingSetting(reEnable, httptest.NewRequest("POST", "/api/settings/sharing", strings.NewReader(`{"enabled":true}`)))
+	create2 := httptest.NewRecorder()
+	srv.dispatchSessionSubpath(create2, httptest.NewRequest("POST", "/api/session/ses_guard/share", nil))
+	if create2.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201 after re-enable; body=%s", create2.Code, create2.Body)
+	}
+}
+
+func TestAllSharesGlobalList(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	registerShareFake(reg, "ses_a")
+
+	if _, err := srv.stateDB.CreateShareLink("fake", "ses_a", 0); err != nil {
+		t.Fatalf("CreateShareLink: %v", err)
+	}
+	if _, err := srv.stateDB.CreateShareLink("fake", "ses_b", 0); err != nil {
+		t.Fatalf("CreateShareLink: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	srv.handleAllShares(rr, httptest.NewRequest("GET", "/api/shares", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body)
+	}
+	var list []globalShareLinkView
+	if err := json.Unmarshal(rr.Body.Bytes(), &list); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("expected 2 links across sessions, got %d", len(list))
+	}
+	// Each carries the owning session + a usable URL.
+	for _, v := range list {
+		if v.SessionID == "" || v.Platform != "fake" || !strings.Contains(v.URL, "/share/") {
+			t.Errorf("incomplete global view: %+v", v)
+		}
+	}
+}
+
 func TestPublicShareView(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	registerShareFake(reg, "ses_pub")

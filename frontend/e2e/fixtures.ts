@@ -307,6 +307,30 @@ async function installDefaultRoutes(page: Page) {
   await page.route('/api/settings/prompt-templates', (route: Route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({}) }),
   );
+  // Sharing settings + global share list (SharingSettings mounts on the
+  // Settings tab and fetches both on mount). Unmocked → proxied to the
+  // dead backend → 401 flips auth to unauthenticated and unmounts the
+  // page, which breaks the Account/Sign-out settings tests.
+  await page.route('/api/settings/sharing', (route: Route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ enabled: true }) }),
+  );
+  await page.route('/api/shares', (route: Route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }),
+  );
+  // Remote-access + remotes list (RemoteSettings mounts in the Settings
+  // "Remotes" group and fetches both on mount). Same failure mode as
+  // above: unmocked → 401 → auth flips → settings page unmounts,
+  // detaching the Account/Sign-out controls mid-test.
+  await page.route('/api/settings/remote-access', (route: Route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ instanceId: '', listening: false, listenAddr: '', tls: false }),
+    }),
+  );
+  await page.route('/api/remotes', (route: Route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }),
+  );
 
   // App-wide SSE stream (useGlobalEvents) — mounted at the app root on
   // EVERY page. Without a stub it proxies to the (absent) Go backend on

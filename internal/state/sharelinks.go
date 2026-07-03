@@ -138,6 +138,44 @@ func (d *DB) ListActiveShareLinks(platform, sessionID string) ([]ShareLink, erro
 	return out, nil
 }
 
+// ListAllActiveShareLinks returns every non-revoked, non-expired share
+// link across all sessions, newest first. Used by the global "shared
+// sessions" list in Settings.
+func (d *DB) ListAllActiveShareLinks() ([]ShareLink, error) {
+	now := time.Now().UnixMilli()
+	rows, err := d.db.Query(`
+		SELECT token, platform, session_id, created_at, expires_at, revoked_at
+		FROM share_link
+		WHERE revoked_at IS NULL
+		  AND (expires_at IS NULL OR expires_at > ?)
+		ORDER BY created_at DESC
+	`, now)
+	if err != nil {
+		return nil, fmt.Errorf("listing share links: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ShareLink
+	for rows.Next() {
+		var (
+			link      ShareLink
+			expiresAt sql.NullInt64
+			revokedAt sql.NullInt64
+		)
+		if err := rows.Scan(&link.Token, &link.Platform, &link.SessionID, &link.CreatedAt, &expiresAt, &revokedAt); err != nil {
+			return nil, fmt.Errorf("scanning share link: %w", err)
+		}
+		if expiresAt.Valid {
+			link.ExpiresAt = expiresAt.Int64
+		}
+		out = append(out, link)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading share links: %w", err)
+	}
+	return out, nil
+}
+
 // RevokeShareLink marks a link revoked. Scoped to (platform, sessionID)
 // as well as the token so a caller can only revoke a link belonging to
 // the session it is acting on. Returns true when a row was revoked,
