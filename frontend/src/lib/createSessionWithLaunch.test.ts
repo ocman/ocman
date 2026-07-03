@@ -141,6 +141,42 @@ describe('createSessionWithLaunch', () => {
     expect(launchOpencodeInTmux).toHaveBeenCalledWith('/remote/repo', 'abc');
   });
 
+  it('launches locally when remoteId is "local" even for a remote-looking platform', async () => {
+    const createSession = vi
+      .fn()
+      .mockRejectedValueOnce(unreachable())
+      .mockResolvedValueOnce({ id: 'local-id' });
+    const launchOpencodeInTmux = vi.fn().mockResolvedValue({ session: 'local' });
+
+    const promise = createSessionWithLaunch(
+      { createSession, launchOpencodeInTmux, tmuxAvailable: true },
+      { directory: '/local/repo', platform: 'r-abc:opencode', remoteId: 'local' },
+    );
+
+    await vi.runAllTimersAsync();
+    await expect(promise).resolves.toEqual({ id: 'local-id' });
+    // remoteId 'local' short-circuits the remote branch: no remote id arg.
+    expect(launchOpencodeInTmux).toHaveBeenCalledWith('/local/repo');
+  });
+
+  it('treats a malformed remote platform id as local', async () => {
+    const createSession = vi
+      .fn()
+      .mockRejectedValueOnce(unreachable())
+      .mockResolvedValueOnce({ id: 'mangled-id' });
+    const launchOpencodeInTmux = vi.fn().mockResolvedValue({ session: 'foo' });
+
+    const promise = createSessionWithLaunch(
+      { createSession, launchOpencodeInTmux, tmuxAvailable: true },
+      // ':' at index 2 -> end > 2 is false -> no remote id extracted.
+      { directory: '/tmp/foo', platform: 'r-:opencode' },
+    );
+
+    await vi.runAllTimersAsync();
+    await expect(promise).resolves.toEqual({ id: 'mangled-id' });
+    expect(launchOpencodeInTmux).toHaveBeenCalledWith('/tmp/foo');
+  });
+
   it('rethrows the original error when launch itself fails', async () => {
     const originalErr = unreachable();
     const createSession = vi.fn().mockRejectedValue(originalErr);

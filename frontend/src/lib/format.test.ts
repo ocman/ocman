@@ -1,5 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { cleanTitle, formatTokensPerSecond, fuzzyMatch, renderModel, shortSessionID } from './format';
+import {
+  cleanTitle,
+  escapeHtml,
+  formatCompactNumber,
+  formatDuration,
+  formatNumber,
+  formatSeconds,
+  formatTokensPerSecond,
+  fuzzyMatch,
+  relativeTime,
+  renderModel,
+  shortPath,
+  shortSessionID,
+} from './format';
 
 describe('fuzzyMatch', () => {
   it('matches contiguous substrings', () => {
@@ -119,6 +132,68 @@ describe('formatTokensPerSecond', () => {
   it('returns "0" for non-finite inputs', () => {
     expect(formatTokensPerSecond(Number.NaN)).toBe('0');
     expect(formatTokensPerSecond(Number.POSITIVE_INFINITY)).toBe('0');
+  });
+});
+
+describe('formatNumber / formatCompactNumber', () => {
+  it('formatNumber abbreviates thousands and millions', () => {
+    expect(formatNumber(999)).toBe('999');
+    expect(formatNumber(1500)).toBe('1.5K');
+    expect(formatNumber(2_000_000)).toBe('2.0M');
+  });
+  it('formatCompactNumber adds a billions tier', () => {
+    expect(formatCompactNumber(3_000_000_000)).toBe('3.0B');
+    expect(formatCompactNumber(4_000_000)).toBe('4.0M');
+    expect(formatCompactNumber(5000)).toBe('5.0K');
+    expect(formatCompactNumber(12)).toBe('12');
+  });
+});
+
+describe('formatDuration', () => {
+  it('covers sub-second, seconds, minutes, and hours tiers', () => {
+    expect(formatDuration(500)).toBe('< 1s');
+    expect(formatDuration(5000)).toBe('5s');
+    expect(formatDuration(90_000)).toBe('1m 30s');
+    expect(formatDuration(3_690_000)).toBe('1h 1m');
+  });
+});
+
+describe('formatSeconds', () => {
+  it('returns 0s for non-positive or non-finite inputs', () => {
+    expect(formatSeconds(0)).toBe('0s');
+    expect(formatSeconds(-5)).toBe('0s');
+    expect(formatSeconds(Number.NaN)).toBe('0s');
+  });
+  it('walks the sub-10s, seconds, minutes, hours, and days tiers', () => {
+    expect(formatSeconds(3.2)).toBe('3.2s');
+    expect(formatSeconds(45)).toBe('45s');
+    expect(formatSeconds(90)).toBe('1m 30s');
+    expect(formatSeconds(3720)).toBe('1h 2m');
+    expect(formatSeconds(90_000)).toBe('1d 1h');
+  });
+});
+
+describe('shortPath', () => {
+  it('returns the last two path segments', () => {
+    expect(shortPath('/src/github.com/foo')).toBe('github.com/foo');
+    expect(shortPath('')).toBe('');
+  });
+});
+
+describe('escapeHtml', () => {
+  it('escapes HTML-significant characters', () => {
+    expect(escapeHtml('<a href="x">&y</a>')).toBe('&lt;a href=&quot;x&quot;&gt;&amp;y&lt;/a&gt;');
+    expect(escapeHtml('')).toBe('');
+  });
+});
+
+describe('relativeTime', () => {
+  it('renders the recency tiers relative to now', () => {
+    const now = Date.now();
+    expect(relativeTime(now)).toBe('just now');
+    expect(relativeTime(now - 5 * 60_000)).toBe('5m ago');
+    expect(relativeTime(now - 3 * 3_600_000)).toBe('3h ago');
+    expect(relativeTime(now - 2 * 86_400_000)).toBe('2d ago');
   });
 });
 
