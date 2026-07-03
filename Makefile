@@ -1,4 +1,4 @@
-.PHONY: dev dev-backend dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-platform-branching lint-settings-rows otel-up otel-down otel-logs otel-reset caddy-up caddy-down caddy-cert install-hooks help
+.PHONY: dev dev-backend dev-remote dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-platform-branching lint-settings-rows otel-up otel-down otel-logs otel-reset caddy-up caddy-down caddy-cert install-hooks help
 
 # --- OTel dev defaults ----------------------------------------------------
 #
@@ -23,6 +23,19 @@ export OTEL_SERVICE_NAME ?= ocman-dev
 # air/vite orphaned on Ctrl+C (worst inside tmux). `exec`ing the script makes
 # IT the foreground process, so Ctrl+C reaches it and its trap reaps cleanly.
 
+# `dev-remote` still hosts air directly so it can pass the remote-specific
+# config. This trap reaps descendants and dev ports when it exits.
+define kill-children
+	kids() { for p in $$(pgrep -P $$1 2>/dev/null); do echo $$p; kids $$p; done; }; \
+	tree=$$(kids $$$$); \
+	[ -n "$$tree" ] && kill -TERM $$tree 2>/dev/null || true; \
+	sleep 0.3; \
+	[ -n "$$tree" ] && kill -KILL $$tree 2>/dev/null || true; \
+	lsof -tiTCP:8228 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true; \
+	lsof -tiTCP:8229 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true; \
+	lsof -tiTCP:8230 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true
+endef
+
 # Run both backend (air) and frontend (vite) with live reload
 dev: kill-dev
 	@echo "Starting ocman dev environment (backend :8229, frontend :8228)..."
@@ -43,6 +56,20 @@ dev-backend:
 	@mkdir -p tmp
 	@air 2>&1 | tee tmp/air.log
 
+# Run backend only with the remote-access gRPC server enabled
+# (multi-remote support). Uses air with .air.remote.toml which adds
+# -remote-listen 0.0.0.0:8230 to the backend flags.
+dev-remote: kill-dev
+	@mkdir -p tmp
+	@echo "Starting ocman dev environment WITH REMOTE ACCESS..."
+	@echo "  Backend (air):    http://localhost:8229"
+	@echo "  Remote  (gRPC):   localhost:8230"
+	@echo "  Backend log:      tmp/air.log"
+	@echo "  Remote config:    .air.remote.toml"
+	@echo ""
+	@trap '$(kill-children)' INT TERM EXIT; \
+		OTEL_EXPORTER_OTLP_ENDPOINT= air -c .air.remote.toml 2>&1 | tee tmp/air.log
+
 dev-frontend:
 	@mkdir -p tmp
 	@cd frontend && pnpm dev 2>&1 | tee ../tmp/vite-dev.log
@@ -52,15 +79,12 @@ dev-frontend:
 # run even when nothing is listening — xargs is a no-op on empty stdin on
 # both BSD and GNU.
 kill-dev:
-	@echo "Reclaiming dev ports 8228 and 8229..."
+	@echo "Reclaiming dev ports 8228, 8229, and 8230..."
 	@lsof -tiTCP:8228 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true
 	@lsof -tiTCP:8229 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@lsof -tiTCP:8230 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true
 	@pkill -x air 2>/dev/null || true
-	@pkill -f 'air -c .air.toml' 2>/dev/null || true
-	@pkill -f 'vite preview' 2>/dev/null || true
-	@pkill -f 'vite dev' 2>/dev/null || true
-	@pkill -f 'watch-frontend-prod.sh' 2>/dev/null || true
-	@echo "Done. Run 'make dev' / 'make dev-prod-watch' to restart."
+	@echo "Done. Run 'make dev' / 'make dev-remote' / 'make dev-prod-watch' to restart."
 
 # Production build
 build: build-frontend build-backend

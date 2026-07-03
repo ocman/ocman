@@ -1,0 +1,18 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/ocman ."
+  bin = "./tmp/ocman"
+  full_bin = "./tmp/ocman -addr 0.0.0.0:8229 -remote-listen 0.0.0.0:8230"
+  include_ext = ["go"]
+  exclude_dir = ["tmp", "frontend", "internal/server/static"]
+  delay = 1000
+  send_interrupt = true
+  kill_delay = "2s"
+
+[log]
+  time = false
+
+[misc]
+  clean_on_exit = true
