@@ -23,7 +23,12 @@ export function LoopTableRow({ loop }: { loop: Loop }) {
   const next = nextRunLabel(loop);
 
   return (
-    <tr className="oc-loops-tr" data-testid="loop-row" data-loop-state={loop.state}>
+    <tr
+      className="oc-loops-tr"
+      data-testid="loop-row"
+      data-loop-state={loop.state}
+      onClick={() => setHistory(true)}
+    >
       <td className="oc-loops-td-title" title={loop.lastSummary || undefined}>
         <div className="oc-loops-title-main">{loop.title || loop.id}</div>
         <div className="mono oc-loops-title-sub">
@@ -45,7 +50,9 @@ export function LoopTableRow({ loop }: { loop: Loop }) {
         <div>{loop.lastFiredAt ? relativeTime(loop.lastFiredAt) : 'never'}</div>
         <div className="oc-loops-title-sub" data-testid="loop-next-run">{next ? `next: ${next}` : ''}</div>
       </td>
-      <td className="oc-loops-td-actions">
+      {/* stopPropagation so the action buttons don't also open history
+          via the row's onClick. */}
+      <td className="oc-loops-td-actions" onClick={(e) => e.stopPropagation()}>
         <button className="vscode-btn" onClick={() => setHistory(true)} aria-label="Loop history">
           History
         </button>

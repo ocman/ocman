@@ -94,4 +94,16 @@ describe('LoopTableRow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Loop history' }));
     expect(screen.getByTestId('loop-history-backdrop')).toBeInTheDocument();
   });
+
+  it('opens the history modal when the row is clicked', () => {
+    renderRow(makeLoop());
+    fireEvent.click(screen.getByTestId('loop-row'));
+    expect(screen.getByTestId('loop-history-backdrop')).toBeInTheDocument();
+  });
+
+  it('does not open history when an action button is clicked', () => {
+    renderRow(makeLoop());
+    fireEvent.click(screen.getByRole('button', { name: 'Edit loop' }));
+    expect(screen.queryByTestId('loop-history-backdrop')).not.toBeInTheDocument();
+  });
 });

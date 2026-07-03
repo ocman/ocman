@@ -52,6 +52,10 @@
   vertical-align: top;
 }
 
+.oc-loops-tr {
+  cursor: pointer;
+}
+
 .oc-loops-tr:hover {
   background: var(--bg-elevated, rgba(255, 255, 255, 0.02));
 }
