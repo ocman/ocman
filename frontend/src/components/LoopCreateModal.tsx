@@ -5,10 +5,16 @@ import { parseGoDuration } from '../lib/loopFormat';
 import { ModelSelect } from './ModelSelect';
 
 interface LoopCreateModalProps {
-  // Session the loop is anchored to (its creator/owner session).
-  rootSessionId: string;
+  // Session the loop is anchored to (its creator/owner session). Omitted
+  // when the loop is created from the Loops page and anchored to a
+  // project directory instead — then `projectOptions` supplies the
+  // selectable directories.
+  rootSessionId?: string;
   platform?: string;
   directory?: string;
+  // Selectable project directories, used only when there's no
+  // rootSessionId (project-anchored create from the Loops page).
+  projectOptions?: string[];
   // Optional parent loop id to create a sub-loop.
   parentLoopId?: string;
   onCreate: (req: LoopCreateRequest) => Promise<void>;
@@ -27,11 +33,15 @@ export function LoopCreateModal({
   rootSessionId,
   platform,
   directory,
+  projectOptions,
   parentLoopId,
   onCreate,
   onClose,
 }: LoopCreateModalProps) {
   const [title, setTitle] = useState('');
+  // Project-anchored create: no root session, pick a directory instead.
+  const projectAnchored = !rootSessionId;
+  const [selectedDir, setSelectedDir] = useState(directory ?? projectOptions?.[0] ?? '');
   const [trigger, setTrigger] = useState<Trigger>('schedule');
   const [interval, setInterval] = useState('30m');
   const [cronExpr, setCronExpr] = useState('0 23 * * *');
@@ -62,6 +72,11 @@ export function LoopCreateModal({
       const cost = maxCost.trim() === '' ? undefined : Number(maxCost);
       if (cost == null || cost <= 0) {
         setError('A budget is required: set a max cost.');
+        return;
+      }
+
+      if (projectAnchored && selectedDir.trim() === '') {
+        setError('Select a project for the loop to run in.');
         return;
       }
 
@@ -98,10 +113,10 @@ export function LoopCreateModal({
       }
 
       const req: LoopCreateRequest = {
-        root_session_id: rootSessionId,
+        root_session_id: rootSessionId || undefined,
         parent_loop_id: parentLoopId,
         platform,
-        directory,
+        directory: projectAnchored ? selectedDir.trim() : directory,
         title: title.trim() || undefined,
         trigger_type: trigger,
         trigger_config: triggerConfig,
@@ -128,7 +143,7 @@ export function LoopCreateModal({
     [
       title, trigger, interval, cronExpr, prNumber, action, targetSession, sessionMode, model,
       template, maxIters, maxCost, rootSessionId, parentLoopId, platform, directory,
-      onCreate, onClose,
+      projectAnchored, selectedDir, onCreate, onClose,
     ],
   );
 
@@ -151,13 +166,32 @@ export function LoopCreateModal({
             <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Watch PR #42" />
           </label>
 
+          {projectAnchored && (
+            <label>
+              Project
+              <select
+                value={selectedDir}
+                onChange={(e) => setSelectedDir(e.target.value)}
+                data-testid="loop-create-project"
+              >
+                {(projectOptions ?? []).map((dir) => (
+                  <option key={dir} value={dir}>{dir}</option>
+                ))}
+              </select>
+            </label>
+          )}
+
           <label>
             Trigger
             <select value={trigger} onChange={(e) => setTrigger(e.target.value as Trigger)}>
               <option value="schedule">Schedule (interval)</option>
               <option value="cron">Cron (time of day)</option>
               <option value="pr_event">PR event (head change / merge)</option>
-              <option value="turn_complete">Turn complete (session goes idle)</option>
+              {/* turn_complete watches a root session's turn edge; not
+                  available for project-anchored loops (backend rejects). */}
+              {!projectAnchored && (
+                <option value="turn_complete">Turn complete (session goes idle)</option>
+              )}
               <option value="child_complete">Child complete</option>
             </select>
           </label>
@@ -225,7 +259,7 @@ export function LoopCreateModal({
 
           <label>
             Model (optional)
-            <ModelSelect value={model} onChange={setModel} directory={directory} />
+            <ModelSelect value={model} onChange={setModel} directory={projectAnchored ? selectedDir : directory} />
           </label>
 
           <label>

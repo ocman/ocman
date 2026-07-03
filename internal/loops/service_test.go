@@ -664,6 +664,52 @@ func TestCreate_KeepsExplicitDirectory(t *testing.T) {
 	}
 }
 
+func TestCreate_AnchorsToDirectoryWithoutRootSession(t *testing.T) {
+	store := newMemStore()
+	svc := NewService(Deps{Store: store, Launcher: &fakeLauncher{}})
+	v, err := svc.Create(context.Background(), LoopSpec{
+		Directory:      "/repo/project-anchored",
+		TriggerType:    TriggerSchedule,
+		TriggerConfig:  TriggerConfig{IntervalSeconds: 60},
+		ActionType:     ActionPromptRoot,
+		StopConditions: StopConditions{MaxIterations: 5, MaxCostUSD: 1},
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if v.RootSessionID != "" {
+		t.Fatalf("expected no root session, got %q", v.RootSessionID)
+	}
+	if v.Directory != "/repo/project-anchored" {
+		t.Fatalf("expected directory anchor, got %q", v.Directory)
+	}
+}
+
+func TestCreate_RejectsNoAnchor(t *testing.T) {
+	svc := newService(newMemStore(), &fakeMessenger{})
+	_, err := svc.Create(context.Background(), LoopSpec{
+		TriggerType:    TriggerSchedule,
+		ActionType:     ActionPromptRoot,
+		StopConditions: StopConditions{MaxIterations: 5, MaxCostUSD: 1},
+	})
+	if err == nil {
+		t.Fatal("expected create to reject a loop with neither root session nor directory")
+	}
+}
+
+func TestCreate_RejectsTurnCompleteWithoutRootSession(t *testing.T) {
+	svc := newService(newMemStore(), &fakeMessenger{})
+	_, err := svc.Create(context.Background(), LoopSpec{
+		Directory:      "/repo/x",
+		TriggerType:    TriggerTurnComplete,
+		ActionType:     ActionPromptRoot,
+		StopConditions: StopConditions{MaxIterations: 5, MaxCostUSD: 1},
+	})
+	if err == nil {
+		t.Fatal("expected turn_complete without a root session to be rejected")
+	}
+}
+
 func TestEvaluateOne_ScheduleFiresAndAdvances(t *testing.T) {
 	store := newMemStore()
 	launcher := &fakeLauncher{}

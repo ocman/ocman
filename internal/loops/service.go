@@ -68,11 +68,20 @@ func (s *Service) broadcast(loopID string) {
 
 // Create validates and persists a new loop (AD-6: budget is mandatory).
 func (s *Service) Create(ctx context.Context, spec LoopSpec) (LoopView, error) {
-	if spec.RootSessionID == "" {
-		return LoopView{}, fmt.Errorf("root_session_id is required")
+	// A loop anchors to either a root session (created from inside a
+	// session) or a project directory (created from the Loops page). One
+	// of the two must be present so the loop has somewhere to run and be
+	// filtered under.
+	if spec.RootSessionID == "" && spec.Directory == "" {
+		return LoopView{}, fmt.Errorf("root_session_id or directory is required")
 	}
 	if spec.TriggerType == "" || spec.ActionType == "" {
 		return LoopView{}, fmt.Errorf("trigger_type and action_type are required")
+	}
+	// turn_complete watches the root session's turn edge; without a root
+	// session there's nothing to watch.
+	if spec.RootSessionID == "" && spec.TriggerType == TriggerTurnComplete {
+		return LoopView{}, fmt.Errorf("turn_complete trigger requires a root session")
 	}
 	if _, err := triggerFor(spec.TriggerType, s.status, s.forge); err != nil {
 		return LoopView{}, err
@@ -554,7 +563,8 @@ func (s *Service) collectTreeSessionIDs(loopID string, baselineAt int64, seen ma
 
 // injectFinalSummary notifies the root session that the loop ended.
 func (s *Service) injectFinalSummary(ctx context.Context, l state.Loop, reason string) {
-	if s.messenger == nil {
+	if s.messenger == nil || l.RootSessionID == "" {
+		// No root session to report back to (project-anchored loop).
 		return
 	}
 	msg := fmt.Sprintf("Loop %q ended: %s (after %d iterations, $%.2f).",

@@ -1,3 +1,16 @@
+// fuzzyMatch: case-insensitive subsequence test. Every char of `query`
+// must appear in `text` in order (not necessarily contiguous).
+// ponytail: subsequence match, swap in a scoring lib if ranking matters.
+export function fuzzyMatch(query: string, text: string): boolean {
+  const q = query.toLowerCase();
+  const t = text.toLowerCase();
+  let i = 0;
+  for (let j = 0; j < t.length && i < q.length; j++) {
+    if (t[j] === q[i]) i++;
+  }
+  return i === q.length;
+}
+
 export function formatNumber(n: number): string {
   if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
   if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';

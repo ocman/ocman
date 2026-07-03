@@ -4,7 +4,9 @@ import { useNavigate, NavLink, Outlet, useSearchParams, useLocation } from 'reac
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend, PointElement, LineElement } from 'chart.js';
 import type { Project, Session } from '../lib/api';
 import {
+  cleanTitle,
   formatNumber,
+  fuzzyMatch,
   relativeTime,
   shortPath,
 } from '../lib/format';
@@ -161,13 +163,71 @@ export function DashboardLayout() {
 }
 
 // ---------------------------------------------------------------------------
+// Shared dashboard toolbar: project scope picker + fuzzy search + a
+// primary "create" action. Used by both the Sessions and Projects tabs.
+// ---------------------------------------------------------------------------
+
+export function DashboardToolbar({
+  projects,
+  dirScope,
+  setDirScope,
+  search,
+  setSearch,
+  searchLabel,
+  actionIcon,
+  actionLabel,
+  actionTitle,
+  onAction,
+}: {
+  projects: Project[];
+  dirScope: string;
+  setDirScope: (v: string) => void;
+  search: string;
+  setSearch: (v: string) => void;
+  searchLabel: string;
+  actionIcon: string;
+  actionLabel: string;
+  actionTitle: string;
+  onAction: () => void;
+}) {
+  return (
+    <div className="metrics-filters oc-projects-toolbar">
+      <ProjectScopePicker projects={projects} value={dirScope} onChange={setDirScope} />
+      <input
+        type="search"
+        className="oc-project-search"
+        placeholder={`${searchLabel}\u2026`}
+        aria-label={searchLabel}
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
+      <button
+        type="button"
+        className="vscode-btn oc-dashboard-primary-action"
+        onClick={onAction}
+        title={actionTitle}
+      >
+        <i className={`bi ${actionIcon}`} aria-hidden="true" />
+        {actionLabel}
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Sessions tab
 // ---------------------------------------------------------------------------
 
 export function SessionsTab() {
   usePageTitle('Sessions');
-  const { sessions, sessionsLoading, sessionsError, loadSessions, timeRange, setTimeRange, showArchived, setShowArchived } = useDashboardCtx();
+  const { sessions, projects, sessionsLoading, sessionsError, loadSessions, timeRange, setTimeRange, showArchived, setShowArchived, dirScope, setDirScope } = useDashboardCtx();
   const openProjectSessionPalette = useUiStore((s) => s.openProjectSessionPalette);
+  const [search, setSearch] = useState('');
+
+  const q = search.trim();
+  const filteredSessions = sessions
+    .filter((s) => matchesScope(s.directory, dirScope))
+    .filter((s) => !q || fuzzyMatch(q, `${cleanTitle(s.title)} ${s.directory}`));
 
   return (
     <>
@@ -177,6 +237,18 @@ export function SessionsTab() {
           <button onClick={() => loadSessions()}>Retry</button>
         </div>
       )}
+      <DashboardToolbar
+        projects={projects}
+        dirScope={dirScope}
+        setDirScope={setDirScope}
+        search={search}
+        setSearch={setSearch}
+        searchLabel="Search sessions"
+        actionIcon="bi-plus-lg"
+        actionLabel="New session"
+        actionTitle="Create a new OpenCode session in a known project"
+        onAction={openProjectSessionPalette}
+      />
       <div className="oc-time-range">
         {[{label: '12h', value: 12}, {label: '24h', value: 24}, {label: '7d', value: 168}, {label: '30d', value: 720}, {label: 'All', value: 0}].map((opt) => (
           <button
@@ -189,18 +261,9 @@ export function SessionsTab() {
           className={`oc-time-range-btn${showArchived ? ' active' : ''}`}
           onClick={() => setShowArchived(!showArchived)}
         >Include archived</button>
-        <button
-          type="button"
-          className="oc-time-range-btn oc-dashboard-create-btn"
-          onClick={openProjectSessionPalette}
-          title="Create a new OpenCode session in a known project"
-        >
-          <i className="bi bi-plus-lg" aria-hidden="true" />
-          New session
-        </button>
       </div>
       <SessionTable
-        sessions={sessions}
+        sessions={filteredSessions}
         showProject
         loading={sessionsLoading && sessions.length === 0}
         includeArchived={showArchived}
@@ -218,14 +281,17 @@ export function ProjectsTab() {
   const { projects, projectsLoading, dirScope, setDirScope } = useDashboardCtx();
   const navigate = useNavigate();
   const openProjectPalette = useUiStore((s) => s.openProjectPalette);
+  const [search, setSearch] = useState('');
 
   // The picker is sourced from the full project list (so the user can
   // navigate up/down the tree); the table itself is filtered to the
   // active scope. matchesScope mirrors the SQL predicate used by the
   // backend (see spec/stats-project-filter/architecture.md, AD-7).
+  const q = search.trim();
   const visibleProjects = projects
     .filter((p) => p.sessionCount > 0)
-    .filter((p) => matchesScope(p.directory, dirScope));
+    .filter((p) => matchesScope(p.directory, dirScope))
+    .filter((p) => !q || fuzzyMatch(q, p.directory));
 
   return projectsLoading && projects.length === 0 ? (
     <div className="oc-list-loading">
@@ -234,18 +300,18 @@ export function ProjectsTab() {
     </div>
   ) : (
     <div className="metrics-page" style={{ padding: 0 }}>
-      <div className="metrics-filters oc-projects-toolbar">
-        <ProjectScopePicker projects={projects} value={dirScope} onChange={setDirScope} />
-        <button
-          type="button"
-          className="vscode-btn oc-dashboard-primary-action"
-          onClick={openProjectPalette}
-          title="Start a session in a project directory"
-        >
-          <i className="bi bi-folder-plus" aria-hidden="true" />
-          New project
-        </button>
-      </div>
+      <DashboardToolbar
+        projects={projects}
+        dirScope={dirScope}
+        setDirScope={setDirScope}
+        search={search}
+        setSearch={setSearch}
+        searchLabel="Search projects"
+        actionIcon="bi-folder-plus"
+        actionLabel="New project"
+        actionTitle="Start a session in a project directory"
+        onAction={openProjectPalette}
+      />
     <table>
       <thead>
         <tr>
@@ -274,12 +340,6 @@ export function ProjectsTab() {
             <td>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{shortPath(p.directory)}</span>
-                <a
-                  href={`vscode://file${p.directory}`}
-                  className="vscode-btn"
-                  title="Open in VS Code"
-                  onClick={(e) => e.stopPropagation()}
-                >VS Code</a>
               </div>
               <div className="mono">{p.directory}</div>
             </td>

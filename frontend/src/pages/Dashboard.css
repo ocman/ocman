@@ -12,13 +12,34 @@
 .chart-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 16px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
 .chart-card canvas { width: 100% !important; }
 
-.metrics-page { padding: 0 24px; }
+.metrics-page { padding: 0 12px; }
 .metrics-filters { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
-.oc-projects-toolbar { align-items: flex-end; justify-content: space-between; }
+.oc-projects-toolbar { align-items: flex-end; justify-content: space-between; padding: 0 12px; }
+/* Toolbar controls (scope picker, search, action button) share one
+   box shape so they line up on the same baseline and height. */
+.oc-projects-toolbar .oc-project-search,
+.oc-projects-toolbar .metrics-filter select,
+.oc-projects-toolbar .oc-dashboard-primary-action {
+  height: 38px;
+  box-sizing: border-box;
+  border-radius: 0;
+  font-size: 13px;
+}
+.oc-project-search {
+  flex: 1;
+  min-width: 160px;
+  align-self: flex-end;
+  padding: 0 10px;
+  background: var(--bg-card);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.oc-project-search::placeholder { color: var(--text-dim); }
+.oc-projects-toolbar .metrics-filter select { padding: 0 12px; }
 .oc-dashboard-primary-action {
   align-self: flex-end;
   gap: 6px;
-  padding: 7px 12px;
+  padding: 0 12px;
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
 }
@@ -205,7 +226,7 @@
 }
 
 /* Settings tab */
-.settings-page { display: flex; gap: 32px; padding: 0 24px 40px; max-width: 880px; }
+.settings-page { display: flex; gap: 32px; padding: 0 12px 40px; max-width: 880px; }
 .settings-nav {
   display: flex;
   flex-direction: column;

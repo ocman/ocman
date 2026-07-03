@@ -25,19 +25,26 @@ export function LoopTableRow({ loop }: { loop: Loop }) {
   return (
     <tr className="oc-loops-tr" data-testid="loop-row" data-loop-state={loop.state}>
       <td className="oc-loops-td-title" title={loop.lastSummary || undefined}>
-        {loop.title || loop.id}
+        <div className="oc-loops-title-main">{loop.title || loop.id}</div>
+        <div className="mono oc-loops-title-sub">
+          {loopTriggerLabel(loop)} &middot; {loop.actionType} &middot; <span data-testid="loop-budget">{loopBudgetLabel(loop)}</span>
+        </div>
       </td>
       <td>
         <span className="oc-loop-state" data-testid="loop-state">{loop.state}</span>
       </td>
-      <td>{loopTriggerLabel(loop)}</td>
-      <td>{loop.actionType}</td>
-      <td>{loop.directory ? shortPath(loop.directory) : '—'}</td>
-      <td data-testid="loop-budget">{loopBudgetLabel(loop)}</td>
-      <td className="oc-loops-td-when">
-        {loop.lastFiredAt ? relativeTime(loop.lastFiredAt) : 'never'}
+      <td>
+        {loop.directory ? (
+          <>
+            <div>{shortPath(loop.directory)}</div>
+            <div className="mono oc-loops-title-sub">{loop.directory}</div>
+          </>
+        ) : '—'}
       </td>
-      <td className="oc-loops-td-when" data-testid="loop-next-run">{next || '—'}</td>
+      <td className="oc-loops-td-when">
+        <div>{loop.lastFiredAt ? relativeTime(loop.lastFiredAt) : 'never'}</div>
+        <div className="oc-loops-title-sub" data-testid="loop-next-run">{next ? `next: ${next}` : ''}</div>
+      </td>
       <td className="oc-loops-td-actions">
         <button className="vscode-btn" onClick={() => setHistory(true)} aria-label="Loop history">
           History

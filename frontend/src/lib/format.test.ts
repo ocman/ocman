@@ -1,5 +1,25 @@
 import { describe, it, expect } from 'vitest';
-import { cleanTitle, formatTokensPerSecond, renderModel, shortSessionID } from './format';
+import { cleanTitle, formatTokensPerSecond, fuzzyMatch, renderModel, shortSessionID } from './format';
+
+describe('fuzzyMatch', () => {
+  it('matches contiguous substrings', () => {
+    expect(fuzzyMatch('ocman', '/src/ocman')).toBe(true);
+  });
+  it('matches non-contiguous subsequences in order', () => {
+    expect(fuzzyMatch('ocm', '/o/c/m/an')).toBe(true);
+    expect(fuzzyMatch('gho', 'github.com/foo')).toBe(true);
+  });
+  it('is case-insensitive', () => {
+    expect(fuzzyMatch('OCMAN', '/src/ocman')).toBe(true);
+  });
+  it('rejects out-of-order or missing chars', () => {
+    expect(fuzzyMatch('nacmo', '/src/ocman')).toBe(false);
+    expect(fuzzyMatch('xyz', '/src/ocman')).toBe(false);
+  });
+  it('empty query matches anything', () => {
+    expect(fuzzyMatch('', 'anything')).toBe(true);
+  });
+});
 
 describe('cleanTitle', () => {
   it('returns empty string for nullish input', () => {

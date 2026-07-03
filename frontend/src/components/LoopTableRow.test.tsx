@@ -68,7 +68,9 @@ describe('LoopTableRow', () => {
   it('renders a row with state, formatted trigger, and budget', () => {
     renderRow(makeLoop());
     expect(screen.getByTestId('loop-state')).toHaveTextContent('active');
-    expect(screen.getByText('every 2h46m40s')).toBeInTheDocument();
+    // Trigger label lives in the grouped detail sub-line alongside the
+    // action type and budget, so match the containing cell.
+    expect(screen.getByRole('cell', { name: /every 2h46m40s/ })).toBeInTheDocument();
     expect(screen.getByTestId('loop-budget')).toHaveTextContent('2/48');
     expect(screen.getByTestId('loop-budget')).toHaveTextContent('$0.50/$5.00');
   });

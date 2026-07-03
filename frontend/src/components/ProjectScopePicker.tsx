@@ -55,10 +55,10 @@ export function ProjectScopePicker({ projects, value, onChange, label = 'Project
 
   return (
     <label className="metrics-filter">
-      <span>{label}</span>
       <select
         value={value}
         disabled={disabled}
+        aria-label={label}
         onChange={(e) => onChange(e.target.value)}
       >
         <option value="">All projects</option>

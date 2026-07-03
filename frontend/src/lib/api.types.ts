@@ -862,7 +862,9 @@ export interface LoopDetail extends Loop {
 
 /** Create-loop request body (POST /api/loops). */
 export interface LoopCreateRequest {
-  root_session_id: string;
+  // A loop anchors to either a root session (created from within a
+  // session) or a project directory (created from the Loops page).
+  root_session_id?: string;
   parent_loop_id?: string;
   platform?: string;
   title?: string;

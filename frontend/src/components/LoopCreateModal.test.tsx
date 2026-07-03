@@ -84,6 +84,28 @@ describe('LoopCreateModal', () => {
     expect(onCreate.mock.calls[0][0].parent_loop_id).toBe('loop_parent');
   });
 
+  it('anchors to a selected project when no root session is given', async () => {
+    render(
+      <LoopCreateModal
+        projectOptions={['/src/ocman', '/src/other']}
+        onCreate={onCreate}
+        onClose={onClose}
+      />,
+    );
+    // Project selector is shown; turn_complete trigger is hidden.
+    const projectSelect = screen.getByTestId('loop-create-project');
+    expect(projectSelect).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /Turn complete/i })).not.toBeInTheDocument();
+
+    fireEvent.change(projectSelect, { target: { value: '/src/other' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(onCreate).toHaveBeenCalled());
+    const req = onCreate.mock.calls[0][0];
+    expect(req.root_session_id).toBeUndefined();
+    expect(req.directory).toBe('/src/other');
+  });
+
   it('closes on backdrop click and Escape', () => {
     renderModal();
     fireEvent.click(screen.getByTestId('loop-create-backdrop'));
