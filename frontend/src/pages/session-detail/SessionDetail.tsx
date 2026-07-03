@@ -1662,6 +1662,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
             <SessionTerminalDock
               tmuxAvailable={tmux.available}
               directory={session.directory}
+              remoteId={session.remoteId}
             />
           )}
         </div>

@@ -38,6 +38,16 @@ type Deps struct {
 	// Caps reports which host operations are available right now
 	// (tmux/git/opencode on PATH, whisper installed, etc.).
 	Caps func() hostsvc.HostCaps
+	// TermWindows lists the in-app terminal windows for a directory.
+	TermWindows func(dir string) ([]hostsvc.TermWindow, error)
+	// TermCreateWindow creates a new terminal window for a directory and
+	// returns its name.
+	TermCreateWindow func(dir string) (string, error)
+	// TermKillWindow kills the named terminal window for a directory.
+	TermKillWindow func(dir, window string) error
+	// TermAttach attaches a local PTY to the selected window and bridges
+	// it to conn until either side closes.
+	TermAttach func(ctx context.Context, req hostsvc.TermAttachRequest, conn hostsvc.TermConn) error
 }
 
 // Host is the local hostsvc.Host implementation.
@@ -151,4 +161,32 @@ func (h *Host) Projects(ctx context.Context) ([]db.ProjectStats, error) {
 		return nil, nil
 	}
 	return h.deps.Projects(ctx)
+}
+
+func (h *Host) TermWindows(_ context.Context, dir string) ([]hostsvc.TermWindow, error) {
+	if h.deps.TermWindows == nil {
+		return nil, nil
+	}
+	return h.deps.TermWindows(dir)
+}
+
+func (h *Host) TermCreateWindow(_ context.Context, dir string) (string, error) {
+	if h.deps.TermCreateWindow == nil {
+		return "", nil
+	}
+	return h.deps.TermCreateWindow(dir)
+}
+
+func (h *Host) TermKillWindow(_ context.Context, dir, window string) error {
+	if h.deps.TermKillWindow == nil {
+		return nil
+	}
+	return h.deps.TermKillWindow(dir, window)
+}
+
+func (h *Host) TermAttach(ctx context.Context, req hostsvc.TermAttachRequest, conn hostsvc.TermConn) error {
+	if h.deps.TermAttach == nil {
+		return nil
+	}
+	return h.deps.TermAttach(ctx, req, conn)
 }

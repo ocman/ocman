@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/hostsvc/local"
 )
 
@@ -36,5 +37,61 @@ func TestHandleTmuxLaunchOpencodeRoutesToRemoteHost(t *testing.T) {
 	}
 	if got["session"] != "remote-session" {
 		t.Fatalf("session = %q, want remote-session", got["session"])
+	}
+}
+
+func TestHandleTermWindowsRoutesToRemoteHost(t *testing.T) {
+	srv := testServer(t)
+	var listedDir, createdDir, killedDir, killedWin string
+	srv.HostRouter().RegisterRemote("abc", local.New(local.Deps{
+		TermWindows: func(dir string) ([]hostsvc.TermWindow, error) {
+			listedDir = dir
+			return []hostsvc.TermWindow{{Name: "ocman-abc-1", Title: "vim"}}, nil
+		},
+		TermCreateWindow: func(dir string) (string, error) {
+			createdDir = dir
+			return "ocman-abc-2", nil
+		},
+		TermKillWindow: func(dir, window string) error {
+			killedDir, killedWin = dir, window
+			return nil
+		},
+	}))
+
+	// GET (list) routes to the remote via ?remoteId.
+	listReq := httptest.NewRequest(http.MethodGet, "/api/term/windows?dir=/remote/repo&remoteId=abc", nil)
+	listRec := httptest.NewRecorder()
+	srv.handleTermWindows(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list status = %d: %s", listRec.Code, listRec.Body.String())
+	}
+	if listedDir != "/remote/repo" {
+		t.Fatalf("listed dir = %q", listedDir)
+	}
+
+	// POST (create) routes to the remote via body remoteId.
+	createReq := httptest.NewRequest(http.MethodPost, "/api/term/windows",
+		bytes.NewBufferString(`{"dir":"/remote/repo","remoteId":"abc"}`))
+	createRec := httptest.NewRecorder()
+	srv.handleTermWindows(createRec, createReq)
+	if createRec.Code != http.StatusOK {
+		t.Fatalf("create status = %d: %s", createRec.Code, createRec.Body.String())
+	}
+	if createdDir != "/remote/repo" {
+		t.Fatalf("created dir = %q", createdDir)
+	}
+
+	// DELETE (kill) routes to the remote; the window must be well-formed
+	// for the dir (validated on the hub before delegating).
+	win := termWindowPrefix("/remote/repo") + "1"
+	killReq := httptest.NewRequest(http.MethodDelete, "/api/term/windows",
+		bytes.NewBufferString(`{"dir":"/remote/repo","window":"`+win+`","remoteId":"abc"}`))
+	killRec := httptest.NewRecorder()
+	srv.handleTermWindows(killRec, killReq)
+	if killRec.Code != http.StatusNoContent {
+		t.Fatalf("kill status = %d: %s", killRec.Code, killRec.Body.String())
+	}
+	if killedDir != "/remote/repo" || killedWin != win {
+		t.Fatalf("killed dir/window = %q/%q", killedDir, killedWin)
 	}
 }

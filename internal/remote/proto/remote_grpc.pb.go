@@ -54,6 +54,10 @@ const (
 	Ocman_LaunchTmux_FullMethodName             = "/ocman.remote.v1.Ocman/LaunchTmux"
 	Ocman_TmuxSessions_FullMethodName           = "/ocman.remote.v1.Ocman/TmuxSessions"
 	Ocman_HostCapabilities_FullMethodName       = "/ocman.remote.v1.Ocman/HostCapabilities"
+	Ocman_TermWindows_FullMethodName            = "/ocman.remote.v1.Ocman/TermWindows"
+	Ocman_TermCreateWindow_FullMethodName       = "/ocman.remote.v1.Ocman/TermCreateWindow"
+	Ocman_TermKillWindow_FullMethodName         = "/ocman.remote.v1.Ocman/TermKillWindow"
+	Ocman_TerminalStream_FullMethodName         = "/ocman.remote.v1.Ocman/TerminalStream"
 	Ocman_Projects_FullMethodName               = "/ocman.remote.v1.Ocman/Projects"
 	Ocman_WatchProjects_FullMethodName          = "/ocman.remote.v1.Ocman/WatchProjects"
 )
@@ -114,6 +118,14 @@ type OcmanClient interface {
 	LaunchTmux(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 	TmuxSessions(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*JsonResp, error)
 	HostCapabilities(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*JsonResp, error)
+	// In-app terminal windows (directory-scoped, executed on the owner).
+	TermWindows(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
+	TermCreateWindow(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
+	TermKillWindow(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*Empty, error)
+	// TerminalStream bridges a browser xterm.js WebSocket to a PTY
+	// attached to the owner's tmux. Client->server frames carry keystrokes
+	// and resize control; server->client frames carry PTY output.
+	TerminalStream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[TermClientMsg, TermServerMsg], error)
 	// --- Project inventory ---
 	Projects(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*JsonResp, error)
 	WatchProjects(ctx context.Context, in *Empty, opts ...grpc.CallOption) (grpc.ServerStreamingClient[JsonResp], error)
@@ -486,6 +498,49 @@ func (c *ocmanClient) HostCapabilities(ctx context.Context, in *Empty, opts ...g
 	return out, nil
 }
 
+func (c *ocmanClient) TermWindows(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(JsonResp)
+	err := c.cc.Invoke(ctx, Ocman_TermWindows_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *ocmanClient) TermCreateWindow(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(JsonResp)
+	err := c.cc.Invoke(ctx, Ocman_TermCreateWindow_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *ocmanClient) TermKillWindow(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Ocman_TermKillWindow_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *ocmanClient) TerminalStream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[TermClientMsg, TermServerMsg], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Ocman_ServiceDesc.Streams[1], Ocman_TerminalStream_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[TermClientMsg, TermServerMsg]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Ocman_TerminalStreamClient = grpc.BidiStreamingClient[TermClientMsg, TermServerMsg]
+
 func (c *ocmanClient) Projects(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*JsonResp, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(JsonResp)
@@ -498,7 +553,7 @@ func (c *ocmanClient) Projects(ctx context.Context, in *Empty, opts ...grpc.Call
 
 func (c *ocmanClient) WatchProjects(ctx context.Context, in *Empty, opts ...grpc.CallOption) (grpc.ServerStreamingClient[JsonResp], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Ocman_ServiceDesc.Streams[1], Ocman_WatchProjects_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Ocman_ServiceDesc.Streams[2], Ocman_WatchProjects_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -571,6 +626,14 @@ type OcmanServer interface {
 	LaunchTmux(context.Context, *JsonReq) (*JsonResp, error)
 	TmuxSessions(context.Context, *Empty) (*JsonResp, error)
 	HostCapabilities(context.Context, *Empty) (*JsonResp, error)
+	// In-app terminal windows (directory-scoped, executed on the owner).
+	TermWindows(context.Context, *JsonReq) (*JsonResp, error)
+	TermCreateWindow(context.Context, *JsonReq) (*JsonResp, error)
+	TermKillWindow(context.Context, *JsonReq) (*Empty, error)
+	// TerminalStream bridges a browser xterm.js WebSocket to a PTY
+	// attached to the owner's tmux. Client->server frames carry keystrokes
+	// and resize control; server->client frames carry PTY output.
+	TerminalStream(grpc.BidiStreamingServer[TermClientMsg, TermServerMsg]) error
 	// --- Project inventory ---
 	Projects(context.Context, *Empty) (*JsonResp, error)
 	WatchProjects(*Empty, grpc.ServerStreamingServer[JsonResp]) error
@@ -688,6 +751,18 @@ func (UnimplementedOcmanServer) TmuxSessions(context.Context, *Empty) (*JsonResp
 }
 func (UnimplementedOcmanServer) HostCapabilities(context.Context, *Empty) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method HostCapabilities not implemented")
+}
+func (UnimplementedOcmanServer) TermWindows(context.Context, *JsonReq) (*JsonResp, error) {
+	return nil, status.Error(codes.Unimplemented, "method TermWindows not implemented")
+}
+func (UnimplementedOcmanServer) TermCreateWindow(context.Context, *JsonReq) (*JsonResp, error) {
+	return nil, status.Error(codes.Unimplemented, "method TermCreateWindow not implemented")
+}
+func (UnimplementedOcmanServer) TermKillWindow(context.Context, *JsonReq) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method TermKillWindow not implemented")
+}
+func (UnimplementedOcmanServer) TerminalStream(grpc.BidiStreamingServer[TermClientMsg, TermServerMsg]) error {
+	return status.Error(codes.Unimplemented, "method TerminalStream not implemented")
 }
 func (UnimplementedOcmanServer) Projects(context.Context, *Empty) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method Projects not implemented")
@@ -1339,6 +1414,67 @@ func _Ocman_HostCapabilities_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Ocman_TermWindows_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JsonReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).TermWindows(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_TermWindows_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).TermWindows(ctx, req.(*JsonReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Ocman_TermCreateWindow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JsonReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).TermCreateWindow(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_TermCreateWindow_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).TermCreateWindow(ctx, req.(*JsonReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Ocman_TermKillWindow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JsonReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).TermKillWindow(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_TermKillWindow_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).TermKillWindow(ctx, req.(*JsonReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Ocman_TerminalStream_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(OcmanServer).TerminalStream(&grpc.GenericServerStream[TermClientMsg, TermServerMsg]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Ocman_TerminalStreamServer = grpc.BidiStreamingServer[TermClientMsg, TermServerMsg]
+
 func _Ocman_Projects_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(Empty)
 	if err := dec(in); err != nil {
@@ -1512,6 +1648,18 @@ var Ocman_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Ocman_HostCapabilities_Handler,
 		},
 		{
+			MethodName: "TermWindows",
+			Handler:    _Ocman_TermWindows_Handler,
+		},
+		{
+			MethodName: "TermCreateWindow",
+			Handler:    _Ocman_TermCreateWindow_Handler,
+		},
+		{
+			MethodName: "TermKillWindow",
+			Handler:    _Ocman_TermKillWindow_Handler,
+		},
+		{
 			MethodName: "Projects",
 			Handler:    _Ocman_Projects_Handler,
 		},
@@ -1521,6 +1669,12 @@ var Ocman_ServiceDesc = grpc.ServiceDesc{
 			StreamName:    "StreamEvents",
 			Handler:       _Ocman_StreamEvents_Handler,
 			ServerStreams: true,
+		},
+		{
+			StreamName:    "TerminalStream",
+			Handler:       _Ocman_TerminalStream_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
 		},
 		{
 			StreamName:    "WatchProjects",

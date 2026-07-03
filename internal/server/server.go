@@ -248,6 +248,10 @@ func (s *Server) newLocalHost() hostsvc.Host {
 		TmuxSessions:       s.hostTmuxSessions,
 		Projects:           s.hostProjects,
 		Caps:               s.hostCaps,
+		TermWindows:        localTermWindows,
+		TermCreateWindow:   createTermWindow,
+		TermKillWindow:     localTermKillWindow,
+		TermAttach:         attachLocalPTY,
 	})
 }
 

@@ -678,6 +678,226 @@ func (x *EventChunk) GetData() []byte {
 	return nil
 }
 
+// TermClientMsg is a hub->remote terminal frame. The first message on a
+// TerminalStream MUST carry `open` to select the target window; later
+// messages carry `data` (raw keystrokes) or `resize`.
+type TermClientMsg struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Open          *TermOpen              `protobuf:"bytes,1,opt,name=open,proto3" json:"open,omitempty"`
+	Data          []byte                 `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
+	Resize        *TermResize            `protobuf:"bytes,3,opt,name=resize,proto3" json:"resize,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TermClientMsg) Reset() {
+	*x = TermClientMsg{}
+	mi := &file_internal_remote_proto_remote_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TermClientMsg) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TermClientMsg) ProtoMessage() {}
+
+func (x *TermClientMsg) ProtoReflect() protoreflect.Message {
+	mi := &file_internal_remote_proto_remote_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TermClientMsg.ProtoReflect.Descriptor instead.
+func (*TermClientMsg) Descriptor() ([]byte, []int) {
+	return file_internal_remote_proto_remote_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *TermClientMsg) GetOpen() *TermOpen {
+	if x != nil {
+		return x.Open
+	}
+	return nil
+}
+
+func (x *TermClientMsg) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+func (x *TermClientMsg) GetResize() *TermResize {
+	if x != nil {
+		return x.Resize
+	}
+	return nil
+}
+
+type TermOpen struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Dir           string                 `protobuf:"bytes,1,opt,name=dir,proto3" json:"dir,omitempty"`
+	Window        string                 `protobuf:"bytes,2,opt,name=window,proto3" json:"window,omitempty"`
+	Readonly      bool                   `protobuf:"varint,3,opt,name=readonly,proto3" json:"readonly,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TermOpen) Reset() {
+	*x = TermOpen{}
+	mi := &file_internal_remote_proto_remote_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TermOpen) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TermOpen) ProtoMessage() {}
+
+func (x *TermOpen) ProtoReflect() protoreflect.Message {
+	mi := &file_internal_remote_proto_remote_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TermOpen.ProtoReflect.Descriptor instead.
+func (*TermOpen) Descriptor() ([]byte, []int) {
+	return file_internal_remote_proto_remote_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *TermOpen) GetDir() string {
+	if x != nil {
+		return x.Dir
+	}
+	return ""
+}
+
+func (x *TermOpen) GetWindow() string {
+	if x != nil {
+		return x.Window
+	}
+	return ""
+}
+
+func (x *TermOpen) GetReadonly() bool {
+	if x != nil {
+		return x.Readonly
+	}
+	return false
+}
+
+type TermResize struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Cols          uint32                 `protobuf:"varint,1,opt,name=cols,proto3" json:"cols,omitempty"`
+	Rows          uint32                 `protobuf:"varint,2,opt,name=rows,proto3" json:"rows,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TermResize) Reset() {
+	*x = TermResize{}
+	mi := &file_internal_remote_proto_remote_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TermResize) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TermResize) ProtoMessage() {}
+
+func (x *TermResize) ProtoReflect() protoreflect.Message {
+	mi := &file_internal_remote_proto_remote_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TermResize.ProtoReflect.Descriptor instead.
+func (*TermResize) Descriptor() ([]byte, []int) {
+	return file_internal_remote_proto_remote_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *TermResize) GetCols() uint32 {
+	if x != nil {
+		return x.Cols
+	}
+	return 0
+}
+
+func (x *TermResize) GetRows() uint32 {
+	if x != nil {
+		return x.Rows
+	}
+	return 0
+}
+
+// TermServerMsg is a remote->hub terminal frame carrying PTY output.
+type TermServerMsg struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Data          []byte                 `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TermServerMsg) Reset() {
+	*x = TermServerMsg{}
+	mi := &file_internal_remote_proto_remote_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TermServerMsg) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TermServerMsg) ProtoMessage() {}
+
+func (x *TermServerMsg) ProtoReflect() protoreflect.Message {
+	mi := &file_internal_remote_proto_remote_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TermServerMsg.ProtoReflect.Descriptor instead.
+func (*TermServerMsg) Descriptor() ([]byte, []int) {
+	return file_internal_remote_proto_remote_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *TermServerMsg) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
 var File_internal_remote_proto_remote_proto protoreflect.FileDescriptor
 
 const file_internal_remote_proto_remote_proto_rawDesc = "" +
@@ -724,7 +944,21 @@ const file_internal_remote_proto_remote_proto_rawDesc = "" +
 	"\x04owns\x18\x01 \x01(\bR\x04owns\" \n" +
 	"\n" +
 	"EventChunk\x12\x12\n" +
-	"\x04data\x18\x01 \x01(\fR\x04data2\xd6\x14\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data\"\x87\x01\n" +
+	"\rTermClientMsg\x12-\n" +
+	"\x04open\x18\x01 \x01(\v2\x19.ocman.remote.v1.TermOpenR\x04open\x12\x12\n" +
+	"\x04data\x18\x02 \x01(\fR\x04data\x123\n" +
+	"\x06resize\x18\x03 \x01(\v2\x1b.ocman.remote.v1.TermResizeR\x06resize\"P\n" +
+	"\bTermOpen\x12\x10\n" +
+	"\x03dir\x18\x01 \x01(\tR\x03dir\x12\x16\n" +
+	"\x06window\x18\x02 \x01(\tR\x06window\x12\x1a\n" +
+	"\breadonly\x18\x03 \x01(\bR\breadonly\"4\n" +
+	"\n" +
+	"TermResize\x12\x12\n" +
+	"\x04cols\x18\x01 \x01(\rR\x04cols\x12\x12\n" +
+	"\x04rows\x18\x02 \x01(\rR\x04rows\"#\n" +
+	"\rTermServerMsg\x12\x12\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data2\xfd\x16\n" +
 	"\x05Ocman\x12>\n" +
 	"\x05Hello\x12\x19.ocman.remote.v1.HelloReq\x1a\x1a.ocman.remote.v1.HelloResp\x12C\n" +
 	"\bSessions\x12\x1c.ocman.remote.v1.SessionsReq\x1a\x19.ocman.remote.v1.JsonResp\x12A\n" +
@@ -761,7 +995,11 @@ const file_internal_remote_proto_remote_proto_rawDesc = "" +
 	"\n" +
 	"LaunchTmux\x12\x18.ocman.remote.v1.JsonReq\x1a\x19.ocman.remote.v1.JsonResp\x12A\n" +
 	"\fTmuxSessions\x12\x16.ocman.remote.v1.Empty\x1a\x19.ocman.remote.v1.JsonResp\x12E\n" +
-	"\x10HostCapabilities\x12\x16.ocman.remote.v1.Empty\x1a\x19.ocman.remote.v1.JsonResp\x12=\n" +
+	"\x10HostCapabilities\x12\x16.ocman.remote.v1.Empty\x1a\x19.ocman.remote.v1.JsonResp\x12B\n" +
+	"\vTermWindows\x12\x18.ocman.remote.v1.JsonReq\x1a\x19.ocman.remote.v1.JsonResp\x12G\n" +
+	"\x10TermCreateWindow\x12\x18.ocman.remote.v1.JsonReq\x1a\x19.ocman.remote.v1.JsonResp\x12B\n" +
+	"\x0eTermKillWindow\x12\x18.ocman.remote.v1.JsonReq\x1a\x16.ocman.remote.v1.Empty\x12T\n" +
+	"\x0eTerminalStream\x12\x1e.ocman.remote.v1.TermClientMsg\x1a\x1e.ocman.remote.v1.TermServerMsg(\x010\x01\x12=\n" +
 	"\bProjects\x12\x16.ocman.remote.v1.Empty\x1a\x19.ocman.remote.v1.JsonResp\x12D\n" +
 	"\rWatchProjects\x12\x16.ocman.remote.v1.Empty\x1a\x19.ocman.remote.v1.JsonResp0\x01B<Z:github.com/NoUseFreak/ocman/internal/remote/proto;remotepbb\x06proto3"
 
@@ -777,7 +1015,7 @@ func file_internal_remote_proto_remote_proto_rawDescGZIP() []byte {
 	return file_internal_remote_proto_remote_proto_rawDescData
 }
 
-var file_internal_remote_proto_remote_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_internal_remote_proto_remote_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_internal_remote_proto_remote_proto_goTypes = []any{
 	(*Empty)(nil),           // 0: ocman.remote.v1.Empty
 	(*HelloReq)(nil),        // 1: ocman.remote.v1.HelloReq
@@ -792,87 +1030,101 @@ var file_internal_remote_proto_remote_proto_goTypes = []any{
 	(*PlatformJsonReq)(nil), // 10: ocman.remote.v1.PlatformJsonReq
 	(*OwnsResp)(nil),        // 11: ocman.remote.v1.OwnsResp
 	(*EventChunk)(nil),      // 12: ocman.remote.v1.EventChunk
+	(*TermClientMsg)(nil),   // 13: ocman.remote.v1.TermClientMsg
+	(*TermOpen)(nil),        // 14: ocman.remote.v1.TermOpen
+	(*TermResize)(nil),      // 15: ocman.remote.v1.TermResize
+	(*TermServerMsg)(nil),   // 16: ocman.remote.v1.TermServerMsg
 }
 var file_internal_remote_proto_remote_proto_depIdxs = []int32{
-	1,  // 0: ocman.remote.v1.Ocman.Hello:input_type -> ocman.remote.v1.HelloReq
-	5,  // 1: ocman.remote.v1.Ocman.Sessions:input_type -> ocman.remote.v1.SessionsReq
-	6,  // 2: ocman.remote.v1.Ocman.Session:input_type -> ocman.remote.v1.SessionReq
-	7,  // 3: ocman.remote.v1.Ocman.SessionsInactiveBefore:input_type -> ocman.remote.v1.CutoffReq
-	4,  // 4: ocman.remote.v1.Ocman.SessionChanges:input_type -> ocman.remote.v1.SessionRef
-	4,  // 5: ocman.remote.v1.Ocman.SessionInfo:input_type -> ocman.remote.v1.SessionRef
-	4,  // 6: ocman.remote.v1.Ocman.AgentCatalog:input_type -> ocman.remote.v1.SessionRef
-	4,  // 7: ocman.remote.v1.Ocman.SlashCommands:input_type -> ocman.remote.v1.SessionRef
-	4,  // 8: ocman.remote.v1.Ocman.SessionModels:input_type -> ocman.remote.v1.SessionRef
-	4,  // 9: ocman.remote.v1.Ocman.ListPermissions:input_type -> ocman.remote.v1.SessionRef
-	4,  // 10: ocman.remote.v1.Ocman.ListQuestions:input_type -> ocman.remote.v1.SessionRef
-	3,  // 11: ocman.remote.v1.Ocman.Capabilities:input_type -> ocman.remote.v1.PlatformRef
-	4,  // 12: ocman.remote.v1.Ocman.Owns:input_type -> ocman.remote.v1.SessionRef
-	10, // 13: ocman.remote.v1.Ocman.SendMessage:input_type -> ocman.remote.v1.PlatformJsonReq
-	10, // 14: ocman.remote.v1.Ocman.ExecuteCommand:input_type -> ocman.remote.v1.PlatformJsonReq
-	10, // 15: ocman.remote.v1.Ocman.RunShell:input_type -> ocman.remote.v1.PlatformJsonReq
-	10, // 16: ocman.remote.v1.Ocman.RespondPermission:input_type -> ocman.remote.v1.PlatformJsonReq
-	10, // 17: ocman.remote.v1.Ocman.RespondQuestion:input_type -> ocman.remote.v1.PlatformJsonReq
-	10, // 18: ocman.remote.v1.Ocman.RejectQuestion:input_type -> ocman.remote.v1.PlatformJsonReq
-	10, // 19: ocman.remote.v1.Ocman.Abort:input_type -> ocman.remote.v1.PlatformJsonReq
-	10, // 20: ocman.remote.v1.Ocman.RenameSession:input_type -> ocman.remote.v1.PlatformJsonReq
-	10, // 21: ocman.remote.v1.Ocman.Compact:input_type -> ocman.remote.v1.PlatformJsonReq
-	10, // 22: ocman.remote.v1.Ocman.CreateSession:input_type -> ocman.remote.v1.PlatformJsonReq
-	4,  // 23: ocman.remote.v1.Ocman.StreamEvents:input_type -> ocman.remote.v1.SessionRef
-	9,  // 24: ocman.remote.v1.Ocman.GitInfo:input_type -> ocman.remote.v1.JsonReq
-	9,  // 25: ocman.remote.v1.Ocman.GitDiff:input_type -> ocman.remote.v1.JsonReq
-	9,  // 26: ocman.remote.v1.Ocman.GitBranches:input_type -> ocman.remote.v1.JsonReq
-	9,  // 27: ocman.remote.v1.Ocman.GitCheckout:input_type -> ocman.remote.v1.JsonReq
-	9,  // 28: ocman.remote.v1.Ocman.ListWorktrees:input_type -> ocman.remote.v1.JsonReq
-	9,  // 29: ocman.remote.v1.Ocman.WorktreeDefaultBaseRef:input_type -> ocman.remote.v1.JsonReq
-	9,  // 30: ocman.remote.v1.Ocman.CreateWorktreeSession:input_type -> ocman.remote.v1.JsonReq
-	9,  // 31: ocman.remote.v1.Ocman.RemoveWorktree:input_type -> ocman.remote.v1.JsonReq
-	9,  // 32: ocman.remote.v1.Ocman.LaunchTmux:input_type -> ocman.remote.v1.JsonReq
-	0,  // 33: ocman.remote.v1.Ocman.TmuxSessions:input_type -> ocman.remote.v1.Empty
-	0,  // 34: ocman.remote.v1.Ocman.HostCapabilities:input_type -> ocman.remote.v1.Empty
-	0,  // 35: ocman.remote.v1.Ocman.Projects:input_type -> ocman.remote.v1.Empty
-	0,  // 36: ocman.remote.v1.Ocman.WatchProjects:input_type -> ocman.remote.v1.Empty
-	2,  // 37: ocman.remote.v1.Ocman.Hello:output_type -> ocman.remote.v1.HelloResp
-	8,  // 38: ocman.remote.v1.Ocman.Sessions:output_type -> ocman.remote.v1.JsonResp
-	8,  // 39: ocman.remote.v1.Ocman.Session:output_type -> ocman.remote.v1.JsonResp
-	8,  // 40: ocman.remote.v1.Ocman.SessionsInactiveBefore:output_type -> ocman.remote.v1.JsonResp
-	8,  // 41: ocman.remote.v1.Ocman.SessionChanges:output_type -> ocman.remote.v1.JsonResp
-	8,  // 42: ocman.remote.v1.Ocman.SessionInfo:output_type -> ocman.remote.v1.JsonResp
-	8,  // 43: ocman.remote.v1.Ocman.AgentCatalog:output_type -> ocman.remote.v1.JsonResp
-	8,  // 44: ocman.remote.v1.Ocman.SlashCommands:output_type -> ocman.remote.v1.JsonResp
-	8,  // 45: ocman.remote.v1.Ocman.SessionModels:output_type -> ocman.remote.v1.JsonResp
-	8,  // 46: ocman.remote.v1.Ocman.ListPermissions:output_type -> ocman.remote.v1.JsonResp
-	8,  // 47: ocman.remote.v1.Ocman.ListQuestions:output_type -> ocman.remote.v1.JsonResp
-	8,  // 48: ocman.remote.v1.Ocman.Capabilities:output_type -> ocman.remote.v1.JsonResp
-	11, // 49: ocman.remote.v1.Ocman.Owns:output_type -> ocman.remote.v1.OwnsResp
-	0,  // 50: ocman.remote.v1.Ocman.SendMessage:output_type -> ocman.remote.v1.Empty
-	0,  // 51: ocman.remote.v1.Ocman.ExecuteCommand:output_type -> ocman.remote.v1.Empty
-	0,  // 52: ocman.remote.v1.Ocman.RunShell:output_type -> ocman.remote.v1.Empty
-	0,  // 53: ocman.remote.v1.Ocman.RespondPermission:output_type -> ocman.remote.v1.Empty
-	0,  // 54: ocman.remote.v1.Ocman.RespondQuestion:output_type -> ocman.remote.v1.Empty
-	0,  // 55: ocman.remote.v1.Ocman.RejectQuestion:output_type -> ocman.remote.v1.Empty
-	0,  // 56: ocman.remote.v1.Ocman.Abort:output_type -> ocman.remote.v1.Empty
-	0,  // 57: ocman.remote.v1.Ocman.RenameSession:output_type -> ocman.remote.v1.Empty
-	0,  // 58: ocman.remote.v1.Ocman.Compact:output_type -> ocman.remote.v1.Empty
-	8,  // 59: ocman.remote.v1.Ocman.CreateSession:output_type -> ocman.remote.v1.JsonResp
-	12, // 60: ocman.remote.v1.Ocman.StreamEvents:output_type -> ocman.remote.v1.EventChunk
-	8,  // 61: ocman.remote.v1.Ocman.GitInfo:output_type -> ocman.remote.v1.JsonResp
-	8,  // 62: ocman.remote.v1.Ocman.GitDiff:output_type -> ocman.remote.v1.JsonResp
-	8,  // 63: ocman.remote.v1.Ocman.GitBranches:output_type -> ocman.remote.v1.JsonResp
-	0,  // 64: ocman.remote.v1.Ocman.GitCheckout:output_type -> ocman.remote.v1.Empty
-	8,  // 65: ocman.remote.v1.Ocman.ListWorktrees:output_type -> ocman.remote.v1.JsonResp
-	8,  // 66: ocman.remote.v1.Ocman.WorktreeDefaultBaseRef:output_type -> ocman.remote.v1.JsonResp
-	8,  // 67: ocman.remote.v1.Ocman.CreateWorktreeSession:output_type -> ocman.remote.v1.JsonResp
-	0,  // 68: ocman.remote.v1.Ocman.RemoveWorktree:output_type -> ocman.remote.v1.Empty
-	8,  // 69: ocman.remote.v1.Ocman.LaunchTmux:output_type -> ocman.remote.v1.JsonResp
-	8,  // 70: ocman.remote.v1.Ocman.TmuxSessions:output_type -> ocman.remote.v1.JsonResp
-	8,  // 71: ocman.remote.v1.Ocman.HostCapabilities:output_type -> ocman.remote.v1.JsonResp
-	8,  // 72: ocman.remote.v1.Ocman.Projects:output_type -> ocman.remote.v1.JsonResp
-	8,  // 73: ocman.remote.v1.Ocman.WatchProjects:output_type -> ocman.remote.v1.JsonResp
-	37, // [37:74] is the sub-list for method output_type
-	0,  // [0:37] is the sub-list for method input_type
-	0,  // [0:0] is the sub-list for extension type_name
-	0,  // [0:0] is the sub-list for extension extendee
-	0,  // [0:0] is the sub-list for field type_name
+	14, // 0: ocman.remote.v1.TermClientMsg.open:type_name -> ocman.remote.v1.TermOpen
+	15, // 1: ocman.remote.v1.TermClientMsg.resize:type_name -> ocman.remote.v1.TermResize
+	1,  // 2: ocman.remote.v1.Ocman.Hello:input_type -> ocman.remote.v1.HelloReq
+	5,  // 3: ocman.remote.v1.Ocman.Sessions:input_type -> ocman.remote.v1.SessionsReq
+	6,  // 4: ocman.remote.v1.Ocman.Session:input_type -> ocman.remote.v1.SessionReq
+	7,  // 5: ocman.remote.v1.Ocman.SessionsInactiveBefore:input_type -> ocman.remote.v1.CutoffReq
+	4,  // 6: ocman.remote.v1.Ocman.SessionChanges:input_type -> ocman.remote.v1.SessionRef
+	4,  // 7: ocman.remote.v1.Ocman.SessionInfo:input_type -> ocman.remote.v1.SessionRef
+	4,  // 8: ocman.remote.v1.Ocman.AgentCatalog:input_type -> ocman.remote.v1.SessionRef
+	4,  // 9: ocman.remote.v1.Ocman.SlashCommands:input_type -> ocman.remote.v1.SessionRef
+	4,  // 10: ocman.remote.v1.Ocman.SessionModels:input_type -> ocman.remote.v1.SessionRef
+	4,  // 11: ocman.remote.v1.Ocman.ListPermissions:input_type -> ocman.remote.v1.SessionRef
+	4,  // 12: ocman.remote.v1.Ocman.ListQuestions:input_type -> ocman.remote.v1.SessionRef
+	3,  // 13: ocman.remote.v1.Ocman.Capabilities:input_type -> ocman.remote.v1.PlatformRef
+	4,  // 14: ocman.remote.v1.Ocman.Owns:input_type -> ocman.remote.v1.SessionRef
+	10, // 15: ocman.remote.v1.Ocman.SendMessage:input_type -> ocman.remote.v1.PlatformJsonReq
+	10, // 16: ocman.remote.v1.Ocman.ExecuteCommand:input_type -> ocman.remote.v1.PlatformJsonReq
+	10, // 17: ocman.remote.v1.Ocman.RunShell:input_type -> ocman.remote.v1.PlatformJsonReq
+	10, // 18: ocman.remote.v1.Ocman.RespondPermission:input_type -> ocman.remote.v1.PlatformJsonReq
+	10, // 19: ocman.remote.v1.Ocman.RespondQuestion:input_type -> ocman.remote.v1.PlatformJsonReq
+	10, // 20: ocman.remote.v1.Ocman.RejectQuestion:input_type -> ocman.remote.v1.PlatformJsonReq
+	10, // 21: ocman.remote.v1.Ocman.Abort:input_type -> ocman.remote.v1.PlatformJsonReq
+	10, // 22: ocman.remote.v1.Ocman.RenameSession:input_type -> ocman.remote.v1.PlatformJsonReq
+	10, // 23: ocman.remote.v1.Ocman.Compact:input_type -> ocman.remote.v1.PlatformJsonReq
+	10, // 24: ocman.remote.v1.Ocman.CreateSession:input_type -> ocman.remote.v1.PlatformJsonReq
+	4,  // 25: ocman.remote.v1.Ocman.StreamEvents:input_type -> ocman.remote.v1.SessionRef
+	9,  // 26: ocman.remote.v1.Ocman.GitInfo:input_type -> ocman.remote.v1.JsonReq
+	9,  // 27: ocman.remote.v1.Ocman.GitDiff:input_type -> ocman.remote.v1.JsonReq
+	9,  // 28: ocman.remote.v1.Ocman.GitBranches:input_type -> ocman.remote.v1.JsonReq
+	9,  // 29: ocman.remote.v1.Ocman.GitCheckout:input_type -> ocman.remote.v1.JsonReq
+	9,  // 30: ocman.remote.v1.Ocman.ListWorktrees:input_type -> ocman.remote.v1.JsonReq
+	9,  // 31: ocman.remote.v1.Ocman.WorktreeDefaultBaseRef:input_type -> ocman.remote.v1.JsonReq
+	9,  // 32: ocman.remote.v1.Ocman.CreateWorktreeSession:input_type -> ocman.remote.v1.JsonReq
+	9,  // 33: ocman.remote.v1.Ocman.RemoveWorktree:input_type -> ocman.remote.v1.JsonReq
+	9,  // 34: ocman.remote.v1.Ocman.LaunchTmux:input_type -> ocman.remote.v1.JsonReq
+	0,  // 35: ocman.remote.v1.Ocman.TmuxSessions:input_type -> ocman.remote.v1.Empty
+	0,  // 36: ocman.remote.v1.Ocman.HostCapabilities:input_type -> ocman.remote.v1.Empty
+	9,  // 37: ocman.remote.v1.Ocman.TermWindows:input_type -> ocman.remote.v1.JsonReq
+	9,  // 38: ocman.remote.v1.Ocman.TermCreateWindow:input_type -> ocman.remote.v1.JsonReq
+	9,  // 39: ocman.remote.v1.Ocman.TermKillWindow:input_type -> ocman.remote.v1.JsonReq
+	13, // 40: ocman.remote.v1.Ocman.TerminalStream:input_type -> ocman.remote.v1.TermClientMsg
+	0,  // 41: ocman.remote.v1.Ocman.Projects:input_type -> ocman.remote.v1.Empty
+	0,  // 42: ocman.remote.v1.Ocman.WatchProjects:input_type -> ocman.remote.v1.Empty
+	2,  // 43: ocman.remote.v1.Ocman.Hello:output_type -> ocman.remote.v1.HelloResp
+	8,  // 44: ocman.remote.v1.Ocman.Sessions:output_type -> ocman.remote.v1.JsonResp
+	8,  // 45: ocman.remote.v1.Ocman.Session:output_type -> ocman.remote.v1.JsonResp
+	8,  // 46: ocman.remote.v1.Ocman.SessionsInactiveBefore:output_type -> ocman.remote.v1.JsonResp
+	8,  // 47: ocman.remote.v1.Ocman.SessionChanges:output_type -> ocman.remote.v1.JsonResp
+	8,  // 48: ocman.remote.v1.Ocman.SessionInfo:output_type -> ocman.remote.v1.JsonResp
+	8,  // 49: ocman.remote.v1.Ocman.AgentCatalog:output_type -> ocman.remote.v1.JsonResp
+	8,  // 50: ocman.remote.v1.Ocman.SlashCommands:output_type -> ocman.remote.v1.JsonResp
+	8,  // 51: ocman.remote.v1.Ocman.SessionModels:output_type -> ocman.remote.v1.JsonResp
+	8,  // 52: ocman.remote.v1.Ocman.ListPermissions:output_type -> ocman.remote.v1.JsonResp
+	8,  // 53: ocman.remote.v1.Ocman.ListQuestions:output_type -> ocman.remote.v1.JsonResp
+	8,  // 54: ocman.remote.v1.Ocman.Capabilities:output_type -> ocman.remote.v1.JsonResp
+	11, // 55: ocman.remote.v1.Ocman.Owns:output_type -> ocman.remote.v1.OwnsResp
+	0,  // 56: ocman.remote.v1.Ocman.SendMessage:output_type -> ocman.remote.v1.Empty
+	0,  // 57: ocman.remote.v1.Ocman.ExecuteCommand:output_type -> ocman.remote.v1.Empty
+	0,  // 58: ocman.remote.v1.Ocman.RunShell:output_type -> ocman.remote.v1.Empty
+	0,  // 59: ocman.remote.v1.Ocman.RespondPermission:output_type -> ocman.remote.v1.Empty
+	0,  // 60: ocman.remote.v1.Ocman.RespondQuestion:output_type -> ocman.remote.v1.Empty
+	0,  // 61: ocman.remote.v1.Ocman.RejectQuestion:output_type -> ocman.remote.v1.Empty
+	0,  // 62: ocman.remote.v1.Ocman.Abort:output_type -> ocman.remote.v1.Empty
+	0,  // 63: ocman.remote.v1.Ocman.RenameSession:output_type -> ocman.remote.v1.Empty
+	0,  // 64: ocman.remote.v1.Ocman.Compact:output_type -> ocman.remote.v1.Empty
+	8,  // 65: ocman.remote.v1.Ocman.CreateSession:output_type -> ocman.remote.v1.JsonResp
+	12, // 66: ocman.remote.v1.Ocman.StreamEvents:output_type -> ocman.remote.v1.EventChunk
+	8,  // 67: ocman.remote.v1.Ocman.GitInfo:output_type -> ocman.remote.v1.JsonResp
+	8,  // 68: ocman.remote.v1.Ocman.GitDiff:output_type -> ocman.remote.v1.JsonResp
+	8,  // 69: ocman.remote.v1.Ocman.GitBranches:output_type -> ocman.remote.v1.JsonResp
+	0,  // 70: ocman.remote.v1.Ocman.GitCheckout:output_type -> ocman.remote.v1.Empty
+	8,  // 71: ocman.remote.v1.Ocman.ListWorktrees:output_type -> ocman.remote.v1.JsonResp
+	8,  // 72: ocman.remote.v1.Ocman.WorktreeDefaultBaseRef:output_type -> ocman.remote.v1.JsonResp
+	8,  // 73: ocman.remote.v1.Ocman.CreateWorktreeSession:output_type -> ocman.remote.v1.JsonResp
+	0,  // 74: ocman.remote.v1.Ocman.RemoveWorktree:output_type -> ocman.remote.v1.Empty
+	8,  // 75: ocman.remote.v1.Ocman.LaunchTmux:output_type -> ocman.remote.v1.JsonResp
+	8,  // 76: ocman.remote.v1.Ocman.TmuxSessions:output_type -> ocman.remote.v1.JsonResp
+	8,  // 77: ocman.remote.v1.Ocman.HostCapabilities:output_type -> ocman.remote.v1.JsonResp
+	8,  // 78: ocman.remote.v1.Ocman.TermWindows:output_type -> ocman.remote.v1.JsonResp
+	8,  // 79: ocman.remote.v1.Ocman.TermCreateWindow:output_type -> ocman.remote.v1.JsonResp
+	0,  // 80: ocman.remote.v1.Ocman.TermKillWindow:output_type -> ocman.remote.v1.Empty
+	16, // 81: ocman.remote.v1.Ocman.TerminalStream:output_type -> ocman.remote.v1.TermServerMsg
+	8,  // 82: ocman.remote.v1.Ocman.Projects:output_type -> ocman.remote.v1.JsonResp
+	8,  // 83: ocman.remote.v1.Ocman.WatchProjects:output_type -> ocman.remote.v1.JsonResp
+	43, // [43:84] is the sub-list for method output_type
+	2,  // [2:43] is the sub-list for method input_type
+	2,  // [2:2] is the sub-list for extension type_name
+	2,  // [2:2] is the sub-list for extension extendee
+	0,  // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_internal_remote_proto_remote_proto_init() }
@@ -886,7 +1138,7 @@ func file_internal_remote_proto_remote_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_internal_remote_proto_remote_proto_rawDesc), len(file_internal_remote_proto_remote_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   13,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

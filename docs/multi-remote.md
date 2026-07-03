@@ -21,9 +21,13 @@ in to being managed by starting its gRPC server with `-remote-listen`.
 The hub dials each remote, authenticating with that remote's token, and
 registers its sessions under a host badge. The browser only ever talks
 to the hub over the normal REST/SSE API; the hub fans out to remotes
-over gRPC. Host-local work (tmux, git worktrees, the agent process)
-always runs **on the machine that owns it** — the hub never reaches into
-a remote's filesystem directly.
+over gRPC. Host-local work (tmux, git worktrees, the in-app terminal,
+the agent process) always runs **on the machine that owns it** — the hub
+never reaches into a remote's filesystem directly. Opening the terminal
+on a remote project's session opens a shell **on the remote machine**:
+the browser WebSocket is tunnelled by the hub to the owner over a bidi
+gRPC stream, so keystrokes and PTY output cross the wire but the shell,
+cwd, and tmux windows all live on the remote.
 
 ## Prerequisites
 

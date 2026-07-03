@@ -424,6 +424,100 @@ func (s *Server) HostCapabilities(_ context.Context, _ *pb.Empty) (*pb.JsonResp,
 	return jsonResp(s.host.Capabilities(), nil)
 }
 
+// --- Terminal ---
+
+func (s *Server) TermWindows(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
+	var args struct {
+		Dir string `json:"dir"`
+	}
+	if err := unmarshalJSON(req.Payload, &args); err != nil {
+		return nil, err
+	}
+	wins, err := s.host.TermWindows(ctx, args.Dir)
+	if err != nil {
+		return nil, err
+	}
+	if wins == nil {
+		wins = []hostsvc.TermWindow{}
+	}
+	return jsonResp(wins, nil)
+}
+
+func (s *Server) TermCreateWindow(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
+	var args struct {
+		Dir string `json:"dir"`
+	}
+	if err := unmarshalJSON(req.Payload, &args); err != nil {
+		return nil, err
+	}
+	name, err := s.host.TermCreateWindow(ctx, args.Dir)
+	return jsonResp(map[string]string{"window": name}, err)
+}
+
+func (s *Server) TermKillWindow(ctx context.Context, req *pb.JsonReq) (*pb.Empty, error) {
+	var args struct {
+		Dir    string `json:"dir"`
+		Window string `json:"window"`
+	}
+	if err := unmarshalJSON(req.Payload, &args); err != nil {
+		return nil, err
+	}
+	return &pb.Empty{}, s.host.TermKillWindow(ctx, args.Dir, args.Window)
+}
+
+// TerminalStream bridges the hub's TerminalStream to the remote's local
+// PTY: the first client message selects the window, then the local
+// Host's TermAttach runs the PTY loop against a streamTermConn that
+// tunnels frames over this gRPC stream. The shell runs on this machine.
+func (s *Server) TerminalStream(stream pb.Ocman_TerminalStreamServer) error {
+	first, err := stream.Recv()
+	if err != nil {
+		return err
+	}
+	if first.Open == nil {
+		return status.Error(codes.InvalidArgument, "first terminal message must carry open")
+	}
+	conn := &streamTermConn{stream: stream}
+	return s.host.TermAttach(stream.Context(), hostsvc.TermAttachRequest{
+		Dir:      first.Open.Dir,
+		Window:   first.Open.Window,
+		Readonly: first.Open.Readonly,
+	}, conn)
+}
+
+// streamTermConn adapts the remote-side gRPC stream to hostsvc.TermConn
+// so the remote's local Host drives its PTY as if the browser were
+// attached directly.
+type streamTermConn struct {
+	stream pb.Ocman_TerminalStreamServer
+}
+
+func (c *streamTermConn) Recv() (hostsvc.TermFrame, error) {
+	for {
+		msg, err := c.stream.Recv()
+		if err != nil {
+			return hostsvc.TermFrame{}, err
+		}
+		if msg.Resize != nil {
+			return hostsvc.TermFrame{Resize: &hostsvc.TermSize{
+				Cols: uint16(msg.Resize.Cols), Rows: uint16(msg.Resize.Rows),
+			}}, nil
+		}
+		if len(msg.Data) > 0 {
+			return hostsvc.TermFrame{Data: msg.Data}, nil
+		}
+		// Ignore empty/open-only frames after the first.
+	}
+}
+
+func (c *streamTermConn) Write(p []byte) error {
+	chunk := make([]byte, len(p))
+	copy(chunk, p)
+	return c.stream.Send(&pb.TermServerMsg{Data: chunk})
+}
+
+func (c *streamTermConn) Close() error { return nil }
+
 // --- Project inventory ---
 
 func (s *Server) Projects(ctx context.Context, _ *pb.Empty) (*pb.JsonResp, error) {

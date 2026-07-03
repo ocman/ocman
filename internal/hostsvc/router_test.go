@@ -33,6 +33,10 @@ func (h stubHost) LaunchTmux(context.Context, LaunchTmuxRequest) (*LaunchTmuxRes
 }
 func (h stubHost) TmuxSessions(context.Context) ([]TmuxSession, error)  { return nil, nil }
 func (h stubHost) Projects(context.Context) ([]db.ProjectStats, error)  { return nil, nil }
+func (h stubHost) TermWindows(context.Context, string) ([]TermWindow, error) { return nil, nil }
+func (h stubHost) TermCreateWindow(context.Context, string) (string, error)  { return "", nil }
+func (h stubHost) TermKillWindow(context.Context, string, string) error      { return nil }
+func (h stubHost) TermAttach(context.Context, TermAttachRequest, TermConn) error { return nil }
 
 func TestRouter_ForRemote(t *testing.T) {
 	local := stubHost{id: "local"}

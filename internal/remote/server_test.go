@@ -149,6 +149,30 @@ func (localStubHost) TmuxSessions(context.Context) ([]hostsvc.TmuxSession, error
 func (localStubHost) Projects(context.Context) ([]db.ProjectStats, error) {
 	return []db.ProjectStats{{Directory: "/home/u/app"}}, nil
 }
+func (localStubHost) TermWindows(context.Context, string) ([]hostsvc.TermWindow, error) {
+	return []hostsvc.TermWindow{{Name: "ocman-abc-1", Title: "vim"}}, nil
+}
+func (localStubHost) TermCreateWindow(context.Context, string) (string, error) {
+	return "ocman-abc-2", nil
+}
+func (localStubHost) TermKillWindow(context.Context, string, string) error { return nil }
+
+// TermAttach echoes each viewer frame's data back and stops on a resize,
+// so the bidi roundtrip test can observe both directions deterministically.
+func (localStubHost) TermAttach(_ context.Context, _ hostsvc.TermAttachRequest, conn hostsvc.TermConn) error {
+	for {
+		frame, err := conn.Recv()
+		if err != nil {
+			return nil
+		}
+		if frame.Resize != nil {
+			return nil
+		}
+		if err := conn.Write(frame.Data); err != nil {
+			return nil
+		}
+	}
+}
 
 func startTestServer(t *testing.T, token string, srv *Server) *grpc.ClientConn {
 	t.Helper()
@@ -267,6 +291,97 @@ func TestServer_StreamEventsRoundTrip(t *testing.T) {
 	}
 	if len(chunks) != 2 || chunks[0] != "event: a\n\n" || chunks[1] != "event: b\n\n" {
 		t.Fatalf("event stream mismatch: %v", chunks)
+	}
+}
+
+func TestServer_TermWindowsRoundTrip(t *testing.T) {
+	reg := platforms.NewRegistry()
+	srv := NewServer(reg, localStubHost{}, "i", "v")
+	conn := startTestServer(t, "tok", srv)
+	client := pb.NewOcmanClient(conn)
+
+	b, _ := marshalJSON(map[string]any{"dir": "/home/u/app"})
+	resp, err := client.TermWindows(context.Background(), &pb.JsonReq{Payload: b})
+	if err != nil {
+		t.Fatalf("TermWindows: %v", err)
+	}
+	var wins []hostsvc.TermWindow
+	if err := unmarshalJSON(resp.Payload, &wins); err != nil {
+		t.Fatalf("unmarshal windows: %v", err)
+	}
+	if len(wins) != 1 || wins[0].Name != "ocman-abc-1" || wins[0].Title != "vim" {
+		t.Fatalf("windows mismatch: %+v", wins)
+	}
+
+	cresp, err := client.TermCreateWindow(context.Background(), &pb.JsonReq{Payload: b})
+	if err != nil {
+		t.Fatalf("TermCreateWindow: %v", err)
+	}
+	var created struct {
+		Window string `json:"window"`
+	}
+	_ = unmarshalJSON(cresp.Payload, &created)
+	if created.Window != "ocman-abc-2" {
+		t.Fatalf("created window = %q", created.Window)
+	}
+
+	killReq, _ := marshalJSON(map[string]any{"dir": "/home/u/app", "window": "ocman-abc-1"})
+	if _, err := client.TermKillWindow(context.Background(), &pb.JsonReq{Payload: killReq}); err != nil {
+		t.Fatalf("TermKillWindow: %v", err)
+	}
+}
+
+func TestServer_TerminalStreamRoundTrip(t *testing.T) {
+	reg := platforms.NewRegistry()
+	srv := NewServer(reg, localStubHost{}, "i", "v")
+	conn := startTestServer(t, "tok", srv)
+	client := pb.NewOcmanClient(conn)
+
+	stream, err := client.TerminalStream(context.Background())
+	if err != nil {
+		t.Fatalf("TerminalStream: %v", err)
+	}
+	// First frame must select the window.
+	if err := stream.Send(&pb.TermClientMsg{Open: &pb.TermOpen{Dir: "/home/u/app", Window: "ocman-abc-1"}}); err != nil {
+		t.Fatalf("send open: %v", err)
+	}
+	// Keystrokes are echoed back by the stub's TermAttach.
+	if err := stream.Send(&pb.TermClientMsg{Data: []byte("ls\n")}); err != nil {
+		t.Fatalf("send data: %v", err)
+	}
+	out, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv echo: %v", err)
+	}
+	if string(out.Data) != "ls\n" {
+		t.Fatalf("echo mismatch: %q", out.Data)
+	}
+	// A resize ends the stub attach, closing the stream (EOF).
+	if err := stream.Send(&pb.TermClientMsg{Resize: &pb.TermResize{Cols: 80, Rows: 24}}); err != nil {
+		t.Fatalf("send resize: %v", err)
+	}
+	if _, err := stream.Recv(); err != io.EOF {
+		t.Fatalf("expected EOF after resize, got %v", err)
+	}
+}
+
+func TestServer_TerminalStreamRequiresOpenFirst(t *testing.T) {
+	reg := platforms.NewRegistry()
+	srv := NewServer(reg, localStubHost{}, "i", "v")
+	conn := startTestServer(t, "tok", srv)
+	client := pb.NewOcmanClient(conn)
+
+	stream, err := client.TerminalStream(context.Background())
+	if err != nil {
+		t.Fatalf("TerminalStream: %v", err)
+	}
+	// First frame carries data, not open -> InvalidArgument.
+	if err := stream.Send(&pb.TermClientMsg{Data: []byte("x")}); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	_, err = stream.Recv()
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("expected InvalidArgument, got %v", err)
 	}
 }
 

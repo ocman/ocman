@@ -21,6 +21,11 @@ interface SessionTerminalDockProps {
    * by this directory; the backend owns session/window management.
    */
   directory: string | undefined;
+  /**
+   * Owning machine id of the session. When set (and not 'local'),
+   * terminal windows are created/listed/attached on that remote host.
+   */
+  remoteId?: string;
 }
 
 /** The numeric tab index from a window name (`ocman-<hash>-<n>` -> `n`). */
@@ -60,7 +65,7 @@ function readStoredHeight(): number {
  * Windows are rediscovered from tmux on open, so reloading restores the
  * terminals that are still running.
  */
-export function SessionTerminalDock({ tmuxAvailable, directory }: SessionTerminalDockProps) {
+export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: SessionTerminalDockProps) {
   const [open, setOpen] = useState(false);
   const [height, setHeight] = useState(readStoredHeight);
   const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
@@ -90,7 +95,7 @@ export function SessionTerminalDock({ tmuxAvailable, directory }: SessionTermina
     let cancelled = false;
     const refresh = async () => {
       try {
-        const { windows: live } = await api.term.listWindows(directory);
+        const { windows: live } = await api.term.listWindows(directory, remoteId);
         if (cancelled) return;
         setWindows(live);
         setActive((prev) =>
@@ -108,7 +113,7 @@ export function SessionTerminalDock({ tmuxAvailable, directory }: SessionTermina
       cancelled = true;
       if (id !== undefined) window.clearInterval(id);
     };
-  }, [directory, open]);
+  }, [directory, open, remoteId]);
 
   // Opening the panel with no terminals yet creates the first one.
   useEffect(() => {
@@ -117,7 +122,7 @@ export function SessionTerminalDock({ tmuxAvailable, directory }: SessionTermina
     (async () => {
       setBusy(true);
       try {
-        const { window } = await api.term.createWindow(directory);
+        const { window } = await api.term.createWindow(directory, remoteId);
         if (cancelled) return;
         setWindows([{ name: window, title: '' }]);
         setActive(window);
@@ -128,13 +133,13 @@ export function SessionTerminalDock({ tmuxAvailable, directory }: SessionTermina
       }
     })();
     return () => { cancelled = true; };
-  }, [open, directory, windows.length, busy]);
+  }, [open, directory, windows.length, busy, remoteId]);
 
   const handleAdd = useCallback(async () => {
     if (!directory || busy) return;
     setBusy(true);
     try {
-      const { window } = await api.term.createWindow(directory);
+      const { window } = await api.term.createWindow(directory, remoteId);
       setWindows((prev) =>
         prev.some((w) => w.name === window) ? prev : [...prev, { name: window, title: '' }],
       );
@@ -145,7 +150,7 @@ export function SessionTerminalDock({ tmuxAvailable, directory }: SessionTermina
     } finally {
       setBusy(false);
     }
-  }, [directory, busy]);
+  }, [directory, busy, remoteId]);
 
   // Clicking a tab selects it and ensures the panel is open.
   const handleSelect = useCallback((window: string) => {
@@ -162,19 +167,19 @@ export function SessionTerminalDock({ tmuxAvailable, directory }: SessionTermina
       return next;
     });
     try {
-      await api.term.killWindow(directory, window);
+      await api.term.killWindow(directory, window, remoteId);
     } catch (e) {
       remoteLog.error('terminal: kill window failed', e);
       // Re-fetch to resync with reality.
       try {
-        const { windows: live } = await api.term.listWindows(directory);
+        const { windows: live } = await api.term.listWindows(directory, remoteId);
         setWindows(live);
         setActive((cur) =>
           cur && live.some((w) => w.name === cur) ? cur : live[0]?.name ?? null,
         );
       } catch { /* leave optimistic state */ }
     }
-  }, [directory]);
+  }, [directory, remoteId]);
 
   const onResizeStart = useCallback(
     (e: React.PointerEvent) => {
@@ -285,6 +290,7 @@ export function SessionTerminalDock({ tmuxAvailable, directory }: SessionTermina
                 key={`${directory}:${active}`}
                 dir={directory}
                 window={active}
+                remoteId={remoteId}
               />
             </ErrorBoundary>
           ) : (

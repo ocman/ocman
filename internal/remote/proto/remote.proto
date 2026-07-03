@@ -61,6 +61,15 @@ service Ocman {
   rpc TmuxSessions(Empty) returns (JsonResp);
   rpc HostCapabilities(Empty) returns (JsonResp);         // hostsvc.HostCaps
 
+  // In-app terminal windows (directory-scoped, executed on the owner).
+  rpc TermWindows(JsonReq) returns (JsonResp);            // {dir} -> {windows:[...]}
+  rpc TermCreateWindow(JsonReq) returns (JsonResp);       // {dir} -> {window}
+  rpc TermKillWindow(JsonReq) returns (Empty);            // {dir,window}
+  // TerminalStream bridges a browser xterm.js WebSocket to a PTY
+  // attached to the owner's tmux. Client->server frames carry keystrokes
+  // and resize control; server->client frames carry PTY output.
+  rpc TerminalStream(stream TermClientMsg) returns (stream TermServerMsg);
+
   // --- Project inventory ---
   rpc Projects(Empty) returns (JsonResp);                 // []ProjectIdentity
   rpc WatchProjects(Empty) returns (stream JsonResp);
@@ -129,5 +138,30 @@ message OwnsResp {
 }
 
 message EventChunk {
+  bytes data = 1;
+}
+
+// TermClientMsg is a hub->remote terminal frame. The first message on a
+// TerminalStream MUST carry `open` to select the target window; later
+// messages carry `data` (raw keystrokes) or `resize`.
+message TermClientMsg {
+  TermOpen open = 1;
+  bytes data = 2;
+  TermResize resize = 3;
+}
+
+message TermOpen {
+  string dir = 1;
+  string window = 2;
+  bool readonly = 3;
+}
+
+message TermResize {
+  uint32 cols = 1;
+  uint32 rows = 2;
+}
+
+// TermServerMsg is a remote->hub terminal frame carrying PTY output.
+message TermServerMsg {
   bytes data = 1;
 }

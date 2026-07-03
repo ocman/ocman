@@ -204,6 +204,109 @@ func (h *remoteHost) Projects(ctx context.Context) ([]db.ProjectStats, error) {
 	return out, nil
 }
 
+func (h *remoteHost) TermWindows(ctx context.Context, dir string) ([]hostsvc.TermWindow, error) {
+	client := h.conn.Client()
+	if client == nil {
+		return nil, ErrRemoteOffline
+	}
+	b, _ := marshalJSON(map[string]any{"dir": dir})
+	resp, err := client.TermWindows(ctx, &pb.JsonReq{Payload: b})
+	if err != nil {
+		return nil, err
+	}
+	var out []hostsvc.TermWindow
+	return out, unmarshalJSON(resp.Payload, &out)
+}
+
+func (h *remoteHost) TermCreateWindow(ctx context.Context, dir string) (string, error) {
+	client := h.conn.Client()
+	if client == nil {
+		return "", ErrRemoteOffline
+	}
+	b, _ := marshalJSON(map[string]any{"dir": dir})
+	resp, err := client.TermCreateWindow(ctx, &pb.JsonReq{Payload: b})
+	if err != nil {
+		return "", err
+	}
+	var out struct {
+		Window string `json:"window"`
+	}
+	return out.Window, unmarshalJSON(resp.Payload, &out)
+}
+
+func (h *remoteHost) TermKillWindow(ctx context.Context, dir, window string) error {
+	client := h.conn.Client()
+	if client == nil {
+		return ErrRemoteOffline
+	}
+	b, _ := marshalJSON(map[string]any{"dir": dir, "window": window})
+	_, err := client.TermKillWindow(ctx, &pb.JsonReq{Payload: b})
+	return err
+}
+
+// TermAttach tunnels a browser terminal to the remote's PTY over the
+// bidi TerminalStream RPC: the first frame carries the window selection
+// (open), then viewer keystrokes/resizes are forwarded and PTY output is
+// written back to conn. Runs the shell on the remote machine (R-C).
+func (h *remoteHost) TermAttach(ctx context.Context, req hostsvc.TermAttachRequest, conn hostsvc.TermConn) error {
+	client := h.conn.Client()
+	if client == nil {
+		return ErrRemoteOffline
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	stream, err := client.TerminalStream(ctx)
+	if err != nil {
+		return err
+	}
+	// First frame selects the target window on the remote.
+	if err := stream.Send(&pb.TermClientMsg{Open: &pb.TermOpen{
+		Dir:      req.Dir,
+		Window:   req.Window,
+		Readonly: req.Readonly,
+	}}); err != nil {
+		return err
+	}
+
+	// gRPC -> conn: remote PTY output back to the viewer.
+	go func() {
+		defer cancel()
+		for {
+			msg, recvErr := stream.Recv()
+			if recvErr != nil {
+				return
+			}
+			if len(msg.Data) > 0 {
+				if werr := conn.Write(msg.Data); werr != nil {
+					return
+				}
+			}
+		}
+	}()
+
+	// conn -> gRPC: viewer keystrokes/resizes to the remote PTY.
+	for {
+		frame, recvErr := conn.Recv()
+		if recvErr != nil {
+			_ = stream.CloseSend()
+			return nil
+		}
+		var out pb.TermClientMsg
+		switch {
+		case frame.Resize != nil:
+			out.Resize = &pb.TermResize{Cols: uint32(frame.Resize.Cols), Rows: uint32(frame.Resize.Rows)}
+		case len(frame.Data) > 0:
+			out.Data = frame.Data
+		default:
+			continue
+		}
+		if err := stream.Send(&out); err != nil {
+			return nil
+		}
+	}
+}
+
 // ProjectIdentities fetches the remote's project inventory directly (used
 // by the Manager's inventory cache, Phase 8).
 func (h *remoteHost) ProjectIdentities(ctx context.Context) ([]ProjectIdentity, error) {

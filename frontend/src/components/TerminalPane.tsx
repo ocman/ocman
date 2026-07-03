@@ -20,6 +20,11 @@ interface TerminalPaneProps {
   window?: string;
   /** Read-only attach (watch without sending input). */
   readonly?: boolean;
+  /**
+   * Owning machine id. When set (and not 'local'), the terminal attaches
+   * to a PTY on that remote host instead of the hub.
+   */
+  remoteId?: string;
 }
 
 /**
@@ -28,7 +33,7 @@ interface TerminalPaneProps {
  * WebSocket bridge (/api/term/ws). The window is sized independently per
  * viewer so multiple browser tabs don't fight over one client size.
  */
-export function TerminalPane({ dir, window: win, readonly = false }: TerminalPaneProps) {
+export function TerminalPane({ dir, window: win, readonly = false, remoteId }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<ConnState>('connecting');
 
@@ -56,6 +61,9 @@ export function TerminalPane({ dir, window: win, readonly = false }: TerminalPan
     const params = new URLSearchParams({ dir });
     if (win) params.set('window', win);
     if (readonly) params.set('readonly', '1');
+    // A remote project's terminal is tunnelled by the hub to the owning
+    // machine; the hub still serves the WebSocket on this origin.
+    if (remoteId && remoteId !== 'local') params.set('remoteId', remoteId);
     const ws = new WebSocket(
       `${proto}//${window.location.host}/api/term/ws?${params.toString()}`,
     );
@@ -135,7 +143,7 @@ export function TerminalPane({ dir, window: win, readonly = false }: TerminalPan
       ws.close();
       term.dispose();
     };
-  }, [dir, win, readonly]);
+  }, [dir, win, readonly, remoteId]);
 
   return (
     <div className="oc-term" data-testid="terminal-pane">

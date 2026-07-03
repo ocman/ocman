@@ -36,6 +36,11 @@ PATTERNS=(
 	"worktree\\.ResolveBaseRef\\("
 	"launchOpencodeInTmux\\("
 	"launchOpencodeInProjectTmuxWindow\\("
+	"attachLocalPTY\\("
+	"localTermWindows\\("
+	"localTermKillWindow\\("
+	"createTermWindow\\("
+	"ensureTermWindow\\("
 )
 
 # Files allowed to reference these directly:
@@ -46,6 +51,7 @@ PATTERNS=(
 EXCLUDES=(
 	"--glob" "!internal/server/*_test.go"
 	"--glob" "!internal/server/tmux.go"
+	"--glob" "!internal/server/term.go"
 	"--glob" "!internal/server/host.go"
 	"--glob" "!internal/server/handlers_mcp.go"
 	"--glob" "!internal/server/handlers_project_handle.go"

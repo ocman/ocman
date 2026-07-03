@@ -573,25 +573,28 @@ export const api = {
    * (`ocman-term-<slug>-<n>`) backing a terminal tab in the UI.
    */
   term: {
-    listWindows: (dir: string, signal?: AbortSignal) =>
-      fetchJSON<{ windows: TermWindow[] }>(
-        `/api/term/windows?dir=${encodeURIComponent(dir)}`,
+    listWindows: (dir: string, remoteId?: string, signal?: AbortSignal) => {
+      const params = new URLSearchParams({ dir });
+      if (remoteId && remoteId !== 'local') params.set('remoteId', remoteId);
+      return fetchJSON<{ windows: TermWindow[] }>(
+        `/api/term/windows?${params.toString()}`,
         signal,
-      ),
-    createWindow: async (dir: string): Promise<{ window: string }> => {
+      );
+    },
+    createWindow: async (dir: string, remoteId?: string): Promise<{ window: string }> => {
       const resp = await fetch('/api/term/windows', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dir }),
+        body: JSON.stringify({ dir, ...(remoteId && remoteId !== 'local' ? { remoteId } : {}) }),
       });
       if (!resp.ok) throw new Error(await resp.text());
       return resp.json();
     },
-    killWindow: async (dir: string, window: string): Promise<void> => {
+    killWindow: async (dir: string, window: string, remoteId?: string): Promise<void> => {
       const resp = await fetch('/api/term/windows', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dir, window }),
+        body: JSON.stringify({ dir, window, ...(remoteId && remoteId !== 'local' ? { remoteId } : {}) }),
       });
       if (!resp.ok) throw new Error(await resp.text());
     },

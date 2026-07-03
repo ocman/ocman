@@ -36,6 +36,47 @@ type HostCaps struct {
 	Whisper   bool `json:"whisper"`
 }
 
+// TermWindow is one in-app terminal window with a display title. Mirrors
+// the JSON shape the /api/term/windows handler returns.
+type TermWindow struct {
+	Name  string `json:"name"`
+	Title string `json:"title"`
+}
+
+// TermAttachRequest selects the terminal window to attach a PTY to.
+type TermAttachRequest struct {
+	Dir      string
+	Window   string
+	Readonly bool
+}
+
+// TermSize is a terminal resize request in character cells.
+type TermSize struct {
+	Cols uint16
+	Rows uint16
+}
+
+// TermFrame is a single viewer->PTY frame. Exactly one of Data / Resize
+// is set: Data carries raw keystrokes, Resize a window resize.
+type TermFrame struct {
+	Data   []byte
+	Resize *TermSize
+}
+
+// TermConn is the browser side of a terminal attach: the Host reads the
+// viewer's frames (keystrokes + resizes) from it and writes PTY output
+// back. It is the transport-agnostic seam so the local Host (direct PTY)
+// and the remote Host (gRPC-tunnelled PTY) share one Attach signature.
+//
+// Recv returns the next viewer frame, blocking until one is available or
+// the connection closes (io.EOF). Write delivers PTY output to the
+// viewer. Close tears the connection down from either side.
+type TermConn interface {
+	Recv() (TermFrame, error)
+	Write(p []byte) error
+	Close() error
+}
+
 // GitDiffOptions controls a GitDiff call.
 type GitDiffOptions struct {
 	Force bool
@@ -142,4 +183,20 @@ type Host interface {
 
 	// Projects returns the host's known projects (its projects index).
 	Projects(ctx context.Context) ([]db.ProjectStats, error)
+
+	// TermWindows lists the in-app terminal windows for dir.
+	TermWindows(ctx context.Context, dir string) ([]TermWindow, error)
+
+	// TermCreateWindow creates a new terminal window for dir and returns
+	// its name.
+	TermCreateWindow(ctx context.Context, dir string) (string, error)
+
+	// TermKillWindow kills the terminal window belonging to dir.
+	TermKillWindow(ctx context.Context, dir, window string) error
+
+	// TermAttach attaches an interactive PTY (on the owning host) to the
+	// window selected by req and bridges it to conn until either side
+	// closes. Runs on the owner (R-C): a remote terminal opens a shell on
+	// the remote machine, not the hub.
+	TermAttach(ctx context.Context, req TermAttachRequest, conn TermConn) error
 }
