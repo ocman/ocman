@@ -31,7 +31,7 @@ import { GettingStartedEmpty } from '../../components/GettingStartedEmpty';
 import { rollupGroupStatus } from '../../lib/sidebarHelpers';
 import { nestSessions } from '../../lib/nestSessions';
 import { remoteLog } from '../../lib/remoteLog';
-import { ArchiveIcon, ArchiveFilterIcon, ProjectsViewIcon, RecentViewIcon } from './SidebarIcons';
+import { ArchiveIcon, ArchiveFilterIcon } from './SidebarIcons';
 import type { TmuxState } from '../../lib/useTmux';
 import type { GitInfo } from '../../lib/api';
 
@@ -47,8 +47,6 @@ export interface SessionSidebarProps {
   /** Currently active session id from the URL. */
   activeId: string | undefined;
   sidebarWidth: number;
-  sidebarView: 'recent' | 'projects';
-  toggleSidebarView: () => void;
   showArchivedRecent: boolean;
   setShowArchivedRecent: (updater: (current: boolean) => boolean) => void;
   loadingRecentSessions: boolean;
@@ -81,8 +79,6 @@ export interface SessionSidebarProps {
 export function SessionSidebar({
   activeId,
   sidebarWidth,
-  sidebarView,
-  toggleSidebarView,
   showArchivedRecent,
   setShowArchivedRecent,
   loadingRecentSessions,
@@ -133,7 +129,7 @@ export function SessionSidebar({
       }
     });
     return () => cancelAnimationFrame(raf);
-  }, [activeId, sidebarView, recentSessions]);
+  }, [activeId, recentSessions]);
 
   // Shared row renderer — used by both the flat and grouped views so
   // all live-status / archive / navigation behaviour stays identical.
@@ -408,40 +404,14 @@ export function SessionSidebar({
     </>
   );
 
-  const renderFlatView = () => {
-    // Flat view: pinned sessions at the top, then the rest.
-    // Pinned sessions are deduplicated (shown only in the
-    // pinned section, not repeated in the chronological list).
-    const pinnedFlat = recentSessions
-      .filter(s => s.pinned)
-      .sort((a, b) => b.pinnedAt - a.pinnedAt);
-    const unpinnedFlat = recentSessions.filter(s => !s.pinned);
-    return (
-      <>
-        {nestSessions(pinnedFlat).map(({ session: sib, depth }) => renderRow(sib, false, depth))}
-        {pinnedFlat.length > 0 && unpinnedFlat.length > 0 && (
-          <div className="session-sidebar-divider" />
-        )}
-        {nestSessions(unpinnedFlat).map(({ session: sib, depth }) => renderRow(sib, false, depth))}
-      </>
-    );
-  };
-
   return (
     <div className="session-sidebar" data-testid="session-sidebar" style={{ width: sidebarWidth }}>
       <SidebarResizer />
       <div className="session-sidebar-header">
         <span className="session-sidebar-heading" data-testid="sidebar-heading">
-          <span>{sidebarView === 'projects' ? 'Projects' : 'Recent sessions'}</span>
+          <span>Sessions</span>
         </span>
         <div className="session-sidebar-header-actions">
-          <button
-            type="button"
-            className={`session-sidebar-new${sidebarView === 'projects' ? ' active' : ''}`}
-            onClick={toggleSidebarView}
-            title={sidebarView === 'projects' ? 'Show recent sessions' : 'Group by project'}
-            aria-label={sidebarView === 'projects' ? 'Show recent sessions' : 'Group by project'}
-          >{sidebarView === 'projects' ? <RecentViewIcon /> : <ProjectsViewIcon />}</button>
           <button
             type="button"
             className={`session-sidebar-new${showArchivedRecent ? ' active' : ''}`}
@@ -490,7 +460,7 @@ export function SessionSidebar({
         ) : recentSessions.length === 0 ? (
           <GettingStartedEmpty compact />
         ) : (
-          renderFlatView()
+          renderProjectsView()
         )}
       </div>
       <BackendStats />

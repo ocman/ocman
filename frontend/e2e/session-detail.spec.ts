@@ -459,9 +459,9 @@ test('header logo links back to dashboard', async ({ mockedPage: page }) => {
 // Sidebar
 // ---------------------------------------------------------------------------
 
-test('sidebar shows "Recent sessions" heading', async ({ mockedPage: page }) => {
+test('sidebar shows "Sessions" heading', async ({ mockedPage: page }) => {
   await page.goto(SESSION_URL);
-  await expect(page.getByTestId('sidebar-heading')).toContainText('Recent sessions');
+  await expect(page.getByTestId('sidebar-heading')).toContainText('Sessions');
 });
 
 test('sidebar shows both mock sessions', async ({ mockedPage: page }) => {

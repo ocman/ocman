@@ -15,31 +15,3 @@ export function ArchiveFilterIcon() {
     </svg>
   );
 }
-
-/**
- * Icon used for the "projects" sidebar-view toggle. Stack of horizontal bars
- * evokes a grouped-list.
- */
-export function ProjectsViewIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
-      <rect x="2" y="3" width="12" height="2.2" rx="0.6" fill="currentColor" />
-      <rect x="4" y="7" width="10" height="2.2" rx="0.6" fill="currentColor" opacity="0.75" />
-      <rect x="4" y="11" width="10" height="2.2" rx="0.6" fill="currentColor" opacity="0.75" />
-    </svg>
-  );
-}
-
-/**
- * Icon used when the sidebar is *in* projects view — shows a flat list,
- * hinting that clicking will return to the flat "recent" view.
- */
-export function RecentViewIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
-      <rect x="2" y="3" width="12" height="2.2" rx="0.6" fill="currentColor" />
-      <rect x="2" y="7" width="12" height="2.2" rx="0.6" fill="currentColor" />
-      <rect x="2" y="11" width="12" height="2.2" rx="0.6" fill="currentColor" />
-    </svg>
-  );
-}

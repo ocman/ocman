@@ -582,7 +582,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
 
   // Sidebar state, archive/pin handlers, archived toggle, collapsed groups.
   const collapsedProjects = useUiStore((state) => state.collapsedProjects);
-  const sidebarView = useUiStore((state) => state.sidebarView);
   const projectOrder = useUiStore((state) => state.projectOrder);
   const setProjectOrder = useUiStore((state) => state.setProjectOrder);
   // All known projects — the sidebar "projects" view lists every
@@ -616,7 +615,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     // last one) — session?.id would be undefined and skip the load.
     sessionId: session?.id ?? id,
     collapsedProjects,
-    sidebarView,
+    sidebarView: 'projects',
     abortSignalRef: abortControllerRef,
     navigate,
   });
@@ -712,7 +711,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const listQuestions = useApiStore((state) => state.listQuestions);
 
   const sidebarWidth = useUiStore((state) => state.sidebarWidth);
-  const toggleSidebarView = useUiStore((state) => state.toggleSidebarView);
   const toggleCollapsedProject = useUiStore((state) => state.toggleCollapsedProject);
 
   const threadBoundaryRecoveryRef = useRef<{ sessionId: string | undefined; message: string; at: number } | null>(null);
@@ -1367,8 +1365,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
         <SessionSidebar
           activeId={id}
           sidebarWidth={sidebarWidth}
-          sidebarView={sidebarView}
-          toggleSidebarView={toggleSidebarView}
           showArchivedRecent={showArchivedRecent}
           setShowArchivedRecent={setShowArchivedRecent}
           loadingRecentSessions={loadingRecentSessions}

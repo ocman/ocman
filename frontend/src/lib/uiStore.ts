@@ -29,8 +29,6 @@ export type PaletteCommand =
   | { kind: 'nav'; id: string; label: string; path: string }
   | { kind: 'scoped'; id: string; label: string; description: string };
 
-export type SidebarView = 'recent' | 'projects';
-
 // One of the views available in the right-hand panel. Adding a new
 // view is just an extra entry here plus a render branch in
 // RightPanel — the strip / open-tabs logic handles n tabs uniformly.
@@ -54,10 +52,6 @@ type UiStore = {
 
   sidebarWidth: number;
   setSidebarWidth: (width: number) => void;
-
-  sidebarView: SidebarView;
-  setSidebarView: (view: SidebarView) => void;
-  toggleSidebarView: () => void;
 
   // Collapsed project directories in the "projects" sidebar view. Stored as
   // a plain string[] (not Set) so Zustand's persist middleware can serialise
@@ -202,11 +196,6 @@ export const useUiStore = create<UiStore>()(
 
       sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
       setSidebarWidth: (width) => set({ sidebarWidth: clampWidth(width) }),
-
-      sidebarView: 'recent',
-      setSidebarView: (view) => set({ sidebarView: view }),
-      toggleSidebarView: () =>
-        set((s) => ({ sidebarView: s.sidebarView === 'recent' ? 'projects' : 'recent' })),
 
       collapsedProjects: [],
       toggleCollapsedProject: (directory) =>
@@ -368,7 +357,6 @@ export const useUiStore = create<UiStore>()(
         sidebarWidth: s.sidebarWidth,
         bellEnabled: s.bellEnabled,
         notificationsEnabled: s.notificationsEnabled,
-        sidebarView: s.sidebarView,
         collapsedProjects: s.collapsedProjects,
         projectOrder: s.projectOrder,
         changesSidebarWidth: s.changesSidebarWidth,
