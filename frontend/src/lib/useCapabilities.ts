@@ -28,6 +28,22 @@ let cached: CapabilitiesResponse | null = null;
 let inflight: Promise<CapabilitiesResponse> | null = null;
 const subscribers = new Set<(c: CapabilitiesResponse) => void>();
 
+// Platform ids we've already tried to (re)resolve via a cache-miss
+// refetch, so an unknown id (e.g. a genuinely absent platform) can't
+// loop the network. Reset whenever a fresh response arrives.
+const refetchedFor = new Set<string>();
+
+/**
+ * Drop the module cache and refetch /api/capabilities. Used when a
+ * platform id isn't present in the cached response — a remote that
+ * connected after the initial fetch (or whose capabilities weren't
+ * resolvable yet) would otherwise stay hidden until a full reload.
+ */
+function invalidateAndReload() {
+  cached = null;
+  loadCapabilities().catch(() => {});
+}
+
 /**
  * Loads /api/capabilities once per page load, caching the response in
  * module scope. Subsequent callers get the cached value immediately;
@@ -41,6 +57,10 @@ function loadCapabilities(): Promise<CapabilitiesResponse> {
     .then((resp) => {
       cached = resp;
       inflight = null;
+      // Un-suppress any ids that are now present, so a later
+      // disconnect/reconnect can retry them. Ids still absent stay
+      // suppressed to avoid a refetch loop on a genuinely-unknown id.
+      for (const p of resp.platforms) refetchedFor.delete(p.id);
       for (const fn of subscribers) fn(resp);
       return resp;
     })
@@ -103,6 +123,13 @@ export function usePlatformCapabilities(platformID: string | undefined): Platfor
   const all = useCapabilities();
   if (!platformID || !all) return EMPTY_CAPS;
   const entry = all.platforms.find((p): p is PlatformCapabilityEntry => p.id === platformID);
+  // Cache miss: the id may belong to a remote that connected after the
+  // initial fetch. Refetch once (per id, per response) so its composer
+  // and other capability-gated UI appear without a page reload.
+  if (!entry && !refetchedFor.has(platformID)) {
+    refetchedFor.add(platformID);
+    invalidateAndReload();
+  }
   return entry?.capabilities ?? EMPTY_CAPS;
 }
 

@@ -175,6 +175,45 @@ describe('usePlatformCapabilities lookup', () => {
     expect(caps.liveConnectionHint).toBe('');
   });
 
+  it('refetches once on a cache miss (e.g. a remote that connected late)', async () => {
+    // First response lacks the remote platform; second (after the
+    // remote connects) includes it. A cache miss must trigger a
+    // single refetch so the composer appears without a page reload.
+    const withRemote = makeResponse({
+      platforms: [
+        ...makeResponse().platforms,
+        {
+          id: 'r-abc:opencode',
+          displayName: 'OpenCode',
+          available: true,
+          capabilities: { ...makeResponse().platforms[0].capabilities },
+        },
+      ],
+    });
+    const { mod, capabilities, flush, tickHook } = await loadFreshModule(makeResponse());
+    capabilities.mockResolvedValueOnce(makeResponse()).mockResolvedValue(withRemote);
+
+    tickHook(() => mod.useCapabilities());
+    await flush();
+    expect(capabilities).toHaveBeenCalledTimes(1);
+
+    // Ask for the not-yet-known remote id → triggers a refetch.
+    tickHook(() => mod.usePlatformCapabilities('r-abc:opencode'));
+    await flush();
+    expect(capabilities).toHaveBeenCalledTimes(2);
+
+    // Now the remote's caps resolve.
+    const caps = tickHook(() => mod.usePlatformCapabilities('r-abc:opencode')) as { composer: boolean };
+    expect(caps.composer).toBe(true);
+
+    // A second miss for the same id does NOT loop the network.
+    tickHook(() => mod.usePlatformCapabilities('still-unknown'));
+    await flush();
+    tickHook(() => mod.usePlatformCapabilities('still-unknown'));
+    await flush();
+    expect(capabilities).toHaveBeenCalledTimes(3);
+  });
+
   it('returns the registered platform capabilities when matched', async () => {
     const { mod, flush, tickHook } = await loadFreshModule(makeResponse());
     tickHook(() => mod.useCapabilities());
