@@ -15,6 +15,10 @@ vi.mock('../lib/apiStore', () => ({
   useApiStore: (selector: (state: typeof mocks.apiState) => unknown) => selector(mocks.apiState),
 }));
 
+vi.mock('../lib/useCapabilities', () => ({
+  useMultiHost: () => true,
+}));
+
 import { GroupedSessionTable } from './SessionTable';
 
 function makeSession(over: Partial<Session>): Session {
@@ -133,5 +137,13 @@ describe('GroupedSessionTable project archive', () => {
     renderGrouped({ sessions });
     // Both sessions land under one project group -> count badge "2".
     expect(screen.getByText('2')).toBeTruthy();
+  });
+
+  it('prefixes remote project groups with the remote name', () => {
+    const sessions = [
+      makeSession({ id: 's1', remoteId: 'r1', remoteName: 'Laptop', directory: '/src/foo' }),
+    ];
+    renderGrouped({ sessions });
+    expect(screen.getByText('Laptop')).toBeTruthy();
   });
 });

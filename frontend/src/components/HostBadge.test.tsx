@@ -22,6 +22,12 @@ describe('HostBadge', () => {
     expect(container.innerHTML).toBe('');
   });
 
+  it('renders nothing for the local machine', () => {
+    multiHost.mockReturnValue(true);
+    const { container } = render(<HostBadge remoteName="This machine" remoteId="local" />);
+    expect(container.innerHTML).toBe('');
+  });
+
   it('shows the host name when multiple hosts are present', () => {
     multiHost.mockReturnValue(true);
     render(<HostBadge remoteName="Workstation" />);

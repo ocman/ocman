@@ -220,6 +220,26 @@ describe('useMultiPlatform / useWorktreeSessions', () => {
     expect(tickHook(() => mod.useMultiPlatform())).toBe(true);
   });
 
+  it('useMultiPlatform is false when remotes share one base platform', async () => {
+    // Multi-remote registers a compound "r-<id>:opencode" per remote;
+    // they're all OpenCode, so the badge must stay hidden.
+    const resp = makeResponse({
+      platforms: [
+        ...makeResponse().platforms,
+        {
+          id: 'r-abc123:opencode',
+          displayName: 'OpenCode',
+          available: true,
+          capabilities: { ...makeResponse().platforms[0].capabilities },
+        },
+      ],
+    });
+    const { mod, flush, tickHook } = await loadFreshModule(resp);
+    tickHook(() => mod.useCapabilities());
+    await flush();
+    expect(tickHook(() => mod.useMultiPlatform())).toBe(false);
+  });
+
   it('useWorktreeSessions reflects the response flag exactly', async () => {
     const off = await loadFreshModule(makeResponse({ worktreeSessions: false }));
     off.tickHook(() => off.mod.useCapabilities());

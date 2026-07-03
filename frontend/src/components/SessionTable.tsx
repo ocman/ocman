@@ -5,7 +5,6 @@ import type { Session, GitInfo, Project } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
 import { cleanTitle, formatDuration, relativeTime, shortPath } from '../lib/format';
 import { StatusBadge } from './StatusBadge';
-import { PlatformBadge } from './PlatformBadge';
 import { HostBadge } from './HostBadge';
 import { filterVisibleSessions } from '../lib/sessionVisibility';
 import { nestSessions } from '../lib/nestSessions';
@@ -274,6 +273,7 @@ export function GroupedSessionTable({
         const collapsed = collapsedProjects.has(group.directory);
         const label = group.directory ? shortPath(group.directory) : '(unknown)';
         const agg = group.aggregate;
+        const remoteSession = group.sessions.find(s => s.remoteId && s.remoteId !== 'local');
         const dotStatus: Session['status'] =
           agg.kind === 'none' ? 'done' :
           agg.kind === 'pending' ? 'waiting' :
@@ -294,7 +294,10 @@ export function GroupedSessionTable({
                 <span className="oc-session-group-status">
                   <StatusBadge status={dotStatus} compact pending={dotPending} />
                 </span>
-                <span className="oc-session-group-label">{label}</span>
+                <span className="oc-session-group-label">
+                  <HostBadge remoteName={remoteSession?.remoteName} remoteId={remoteSession?.remoteId} stale={remoteSession?.stale} />
+                  {label}
+                </span>
                 <span className="oc-session-group-count">{group.sessions.length}</span>
               </button>
               {group.directory && (
@@ -376,10 +379,6 @@ export function GroupedSessionTable({
                             <UnreadBadge session={s} />
                           </div>
                           <div className="mono">
-                            <PlatformBadge platform={s.platform} variant="plain" />
-                            {' '}
-                            <HostBadge remoteName={s.remoteName} stale={s.stale} />
-                            {' '}
                             {s.id}
                           </div>
                         </td>
@@ -487,10 +486,6 @@ export function SessionTable({ sessions, showProject, loading, includeArchived }
                   <UnreadBadge session={s} />
                 </div>
                 <div className="mono">
-                  <PlatformBadge platform={s.platform} variant="plain" />
-                  {' '}
-                  <HostBadge remoteName={s.remoteName} stale={s.stale} />
-                  {' '}
                   {s.id}
                 </div>
               </td>
@@ -509,7 +504,7 @@ export function SessionTable({ sessions, showProject, loading, includeArchived }
                      both fetch it via /api/git/info on demand.
                    */}
                    <ShortPath path={s.directory} />
-                 </td>
+                  </td>
               )}
               <td className="mono">{s.messageCount} msgs &middot; {formatDuration(s.durationMs)}</td>
               <td><span title={new Date(s.timeCreated).toLocaleString()}>{relativeTime(s.timeCreated)}</span></td>

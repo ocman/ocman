@@ -114,7 +114,22 @@ export function usePlatformCapabilities(platformID: string | undefined): Platfor
  */
 export function useMultiPlatform(): boolean {
   const all = useCapabilities();
-  return (all?.platforms.length ?? 0) > 1;
+  // Count distinct *base* platforms, not registry entries: multi-remote
+  // registers a compound "r-<remoteId>:<base>" id per remote, so several
+  // entries can share one base (all OpenCode). Strip the remote prefix
+  // before de-duping so the platform badge stays hidden when every
+  // session is really the same platform.
+  const bases = new Set(
+    (all?.platforms ?? []).map((p) => {
+      const id = p.id;
+      if (id.startsWith('r-')) {
+        const sep = id.indexOf(':');
+        if (sep >= 0) return id.slice(sep + 1);
+      }
+      return id;
+    }),
+  );
+  return bases.size > 1;
 }
 
 /**

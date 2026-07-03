@@ -22,7 +22,7 @@ import type { Session } from '../../lib/api';
 import { cleanTitle, shortPath, relativeTime } from '../../lib/format';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { StatusBadge } from '../../components/StatusBadge';
-import { PlatformBadge } from '../../components/PlatformBadge';
+import { HostBadge } from '../../components/HostBadge';
 import { ShortPath, GitStatusLine } from '../../components/SessionTable';
 import { BackendStats } from '../../components/BackendStats';
 import { SidebarResizer } from '../../components/SidebarResizer';
@@ -208,15 +208,9 @@ export function SessionSidebar({
           </span>
           {!inGroup && (
             <span className="session-sidebar-project">
-              <PlatformBadge platform={sib.platform} variant="plain" />
               <span className="session-sidebar-project-path">
                 <ShortPath path={isWorktree ? projectRoot : sib.directory} />
               </span>
-            </span>
-          )}
-          {inGroup && (
-            <span className="session-sidebar-project">
-              <PlatformBadge platform={sib.platform} variant="plain" />
             </span>
           )}
           <GitStatusLine info={siblingGitInfos[sib.directory]} icon={isWorktree ? 'worktree' : 'branch'} />
@@ -310,6 +304,7 @@ export function SessionSidebar({
   const renderGroupBody = (group: SidebarProjectGroup, dragHandle: React.ReactNode) => {
     const collapsed = collapsedProjectSet.has(group.directory);
     const label = group.directory ? shortPath(group.directory) : '(unknown)';
+    const remoteSession = group.sessions.find((s) => s.remoteId && s.remoteId !== 'local');
     // The status dot surfaces the rolled-up aggregate: the same visual
     // vocabulary as per-session rows (pending "!", error "!", busy
     // pulse, idle neutral), so a collapsed header tells you at a glance
@@ -349,6 +344,7 @@ export function SessionSidebar({
             </span>
             <span className="session-sidebar-group-label">{label}</span>
           </button>
+          <HostBadge remoteName={remoteSession?.remoteName} remoteId={remoteSession?.remoteId} stale={remoteSession?.stale} />
           {group.directory && (
             <button
               type="button"

@@ -177,6 +177,10 @@
   vertical-align: -1px;
   color: inherit;
 }
+.oc-session-group-label .host-badge {
+  margin-right: 6px;
+  vertical-align: middle;
+}
 .git-status-branch,
 .git-status-ahead,
 .git-status-behind,
