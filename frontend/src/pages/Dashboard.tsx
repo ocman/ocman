@@ -9,7 +9,7 @@ import {
   shortPath,
 } from '../lib/format';
 import { usePageTitle } from '../lib/headerContext';
-import { GroupedSessionTable } from '../components/SessionTable';
+import { SessionTable } from '../components/SessionTable';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { ProjectScopePicker } from '../components/ProjectScopePicker';
 import { matchesScope } from '../lib/projectTree';
@@ -164,15 +164,8 @@ export function DashboardLayout() {
 
 export function SessionsTab() {
   usePageTitle('Sessions');
-  const { sessions, sessionsLoading, sessionsError, loadSessions, timeRange, setTimeRange, showArchived, setShowArchived, projects } = useDashboardCtx();
-  const collapsedProjects = useUiStore((s) => s.collapsedProjects);
-  const toggleCollapsedProject = useUiStore((s) => s.toggleCollapsedProject);
+  const { sessions, sessionsLoading, sessionsError, loadSessions, timeRange, setTimeRange, showArchived, setShowArchived } = useDashboardCtx();
   const openProjectSessionPalette = useUiStore((s) => s.openProjectSessionPalette);
-
-  const collapsedProjectSet = useMemo(
-    () => new Set(collapsedProjects),
-    [collapsedProjects],
-  );
 
   return (
     <>
@@ -204,15 +197,11 @@ export function SessionsTab() {
           New session
         </button>
       </div>
-      <GroupedSessionTable
+      <SessionTable
         sessions={sessions}
+        showProject
         loading={sessionsLoading && sessions.length === 0}
         includeArchived={showArchived}
-        collapsedProjects={collapsedProjectSet}
-        toggleCollapsedProject={toggleCollapsedProject}
-        projects={projects}
-        onAddSession={openProjectSessionPalette}
-        showEmptyProjects={false}
       />
     </>
   );
