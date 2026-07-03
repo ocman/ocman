@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
-import { AuthError, fetchJSON, postJSON, registerAuthErrorHandler } from './api';
+import { api, AuthError, fetchJSON, postJSON, registerAuthErrorHandler } from './api';
 
 // Each test installs its own fetch stub. We restore between tests so
 // state doesn't leak.
@@ -102,6 +102,20 @@ describe('postJSON', () => {
       expect(err).not.toBeInstanceOf(AuthError);
       expect((err as Error).message).toBe('bad request');
     }
+  });
+});
+
+describe('api.sendMessage', () => {
+  it('passes platform as a query parameter to avoid remote session misrouting', async () => {
+    const captured: string[] = [];
+    stubFetch((url) => {
+      captured.push(url);
+      return new Response('', { status: 200 });
+    });
+
+    await api.sendMessage('s1', 'hello', undefined, undefined, undefined, undefined, 'r-box:opencode');
+
+    expect(captured).toEqual(['/api/session/s1/message?platform=r-box%3Aopencode']);
   });
 });
 

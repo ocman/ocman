@@ -474,8 +474,10 @@ export const api = {
     model?: string,
     agent?: string,
     reasoning?: string,
+    platform?: string,
   ) => {
-    const resp = await fetch(`/api/session/${encodeURIComponent(sessionId)}/message`, {
+    const query = platform ? `?platform=${encodeURIComponent(platform)}` : '';
+    const resp = await fetch(`/api/session/${encodeURIComponent(sessionId)}/message${query}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message, images, model, agent, reasoning }),

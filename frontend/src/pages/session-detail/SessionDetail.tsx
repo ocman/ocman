@@ -1501,6 +1501,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
               messages={messages}
               parts={parts}
               sessionId={session.id}
+              platformId={session.platform}
               canSend={portAvailable && caps.composer}
               pendingAgent={selectedAgent || activeAgent || undefined}
               agents={agents}

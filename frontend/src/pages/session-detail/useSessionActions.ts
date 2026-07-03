@@ -168,7 +168,7 @@ export function useSessionActions({
     setAwaitingAssistantResponse(true);
 
     try {
-      await sendMessage(session.id, text, images, model, agent, reasoning);
+      await sendMessage(session.id, text, images, model, agent, reasoning, session.platform);
       // Success — drop any prior failed entry for this id.
       // The pending slot auto-clears when SSE delivers the real
       // user message via `observeMessages`.

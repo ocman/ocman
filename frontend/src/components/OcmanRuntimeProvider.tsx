@@ -18,6 +18,7 @@ interface Props {
   messages: Message[];
   parts: Part[];
   sessionId: string;
+  platformId?: string;
   /**
    * Whether the composer may currently send messages. Typically this
    * is `platformCapabilities.composer && portAvailable` — that is, the
@@ -49,6 +50,7 @@ export function OcmanRuntimeProvider({
   messages,
   parts,
   sessionId,
+  platformId,
   canSend,
   pendingAgent,
   agents,
@@ -121,8 +123,8 @@ export function OcmanRuntimeProvider({
       .filter((c): c is { type: 'image'; image: string } => c.type === 'image' && 'image' in c)
       .map((c) => ({ url: c.image, mime: 'image/png' }));
     if (!text && imageParts.length === 0) return;
-    await sendMessage(sessionId, text, imageParts.length > 0 ? imageParts : undefined);
-  }, [canSend, sendMessage, sessionId]);
+    await sendMessage(sessionId, text, imageParts.length > 0 ? imageParts : undefined, undefined, undefined, undefined, platformId);
+  }, [canSend, sendMessage, sessionId, platformId]);
 
   // Memoize the store adapter so useExternalStoreRuntime's
   // unconditional useEffect (`runtime.setAdapter(store)`) receives
