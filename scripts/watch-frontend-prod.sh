@@ -1,8 +1,11 @@
 #!/bin/bash
 # Watch frontend source files and rebuild on changes
 # Used by dev-prod-watch to enable hot reload with production builds
-
-set -e
+#
+# NOTE: deliberately NOT `set -e`. A failing `pnpm build` (TS/lint error
+# mid-edit) is expected and must NOT kill the watcher — otherwise the whole
+# `make dev-prod-watch` stack tears down on the first typo. Build failures
+# are logged and the watcher keeps waiting for the next change.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR/../frontend"

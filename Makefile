@@ -16,101 +16,36 @@
 export OTEL_EXPORTER_OTLP_ENDPOINT ?= http://localhost:4318
 export OTEL_SERVICE_NAME ?= ocman-dev
 
-# --- dev-loop plumbing ----------------------------------------------------
+# --- dev targets ----------------------------------------------------------
 #
-# The dev targets run multiple long-lived processes (air, vite, watchers) in
-# parallel and must shut them ALL down cleanly when the user hits Ctrl+C or
-# the make process otherwise dies. Getting this right is fiddly:
-#
-#   - `trap 'kill 0' EXIT` alone is not enough: Ctrl+C sends SIGINT to the
-#     whole process group, which kills the shell running the trap *before*
-#     the EXIT trap gets to fire. Orphaned children then get reparented to
-#     init and keep holding their ports.
-#   - `tee` in a pipeline eats signals that would otherwise propagate.
-#   - Sub-shells spawned by make are not always in the same process group as
-#     make itself, so `kill 0` can miss grand-children spawned by npm/vite.
-#
-# Workaround: trap INT, TERM, *and* EXIT; walk the descendant tree with
-# `pkill -P $$` (+ a wider ocman/vite sweep via :8228/:8229 port holders as
-# a final safety net). This makes Ctrl+C reliably reap every child.
-
-# Macro: `kill-children` is the shell snippet each dev target installs as a
-# trap. `pkill -P` only reaps DIRECT children, but our real leaf processes
-# are grandchildren (air -> compiled binary; pnpm dev -> node -> esbuild/vite
-# workers) and with nested makes they're great-grandchildren. So we walk the
-# whole descendant tree of this shell and TERM then KILL every PID, then
-# reclaim the dev ports as a last-resort net.
-# `pgrep -P` (recursed) is on both macOS (BSD) and Linux. `|| true` keeps the
-# trap from masking the real exit status when there's nothing to kill.
-define kill-children
-	kids() { for p in $$(pgrep -P $$1 2>/dev/null); do echo $$p; kids $$p; done; }; \
-	tree=$$(kids $$$$); \
-	[ -n "$$tree" ] && kill -TERM $$tree 2>/dev/null || true; \
-	sleep 0.3; \
-	[ -n "$$tree" ] && kill -KILL $$tree 2>/dev/null || true; \
-	lsof -tiTCP:8228 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true; \
-	lsof -tiTCP:8229 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true
-endef
+# The dev loop lives in scripts/dev.sh, not here. `make` catches Ctrl+C and
+# does not forward it to a recipe shell, so a Makefile-hosted dev loop leaves
+# air/vite orphaned on Ctrl+C (worst inside tmux). `exec`ing the script makes
+# IT the foreground process, so Ctrl+C reaches it and its trap reaps cleanly.
 
 # Run both backend (air) and frontend (vite) with live reload
 dev: kill-dev
-	@mkdir -p tmp
-	@echo "Starting ocman dev environment..."
-	@echo "  Backend (air):    http://localhost:8229"
-	@echo "  Frontend (vite):  http://localhost:8228"
-	@echo "  Backend log:      tmp/air.log"
-	@echo "  Frontend log:     tmp/vite-dev.log"
-	@echo "  Combined log:     tmp/debug.log"
-	@echo ""
-	@trap '$(kill-children)' INT TERM EXIT; \
-		{ air 2>&1 | tee tmp/air.log & \
-		  cd frontend && pnpm dev 2>&1 | tee ../tmp/vite-dev.log & \
-		  wait; } 2>&1 | tee tmp/debug.log
+	@echo "Starting ocman dev environment (backend :8229, frontend :8228)..."
+	@exec ./scripts/dev.sh dev
 
 # Run with production frontend build + backend live reload (manual frontend rebuild)
 dev-prod:
-	@mkdir -p tmp
-	@echo "Starting ocman PRODUCTION MODE with live reload..."
-	@echo "  Backend (air):    http://localhost:8229"
-	@echo "  Frontend (vite):  http://localhost:8228 (serves production build)"
-	@echo "  Backend log:      tmp/air.log"
-	@echo "  Frontend log:     tmp/vite-preview.log"
-	@echo "  Combined log:     tmp/debug.log"
-	@echo ""
-	@echo "Note: Frontend changes require manual 'cd frontend && pnpm build'"
-	@echo ""
+	@echo "Starting ocman PRODUCTION MODE (manual frontend rebuild)..."
 	@cd frontend && pnpm build
-	@trap '$(kill-children)' INT TERM EXIT; \
-		{ air 2>&1 | tee tmp/air.log & \
-		  cd frontend && pnpm preview 2>&1 | tee ../tmp/vite-preview.log & \
-		  wait; } 2>&1 | tee tmp/debug.log
+	@exec ./scripts/dev.sh prod
 
 # Run with production frontend build + auto-rebuild on changes + backend live reload
 dev-prod-watch:
-	@mkdir -p tmp
-	@echo "Starting ocman PRODUCTION MODE with AUTO-RELOAD..."
-	@echo "  Backend (air):    http://localhost:8229"
-	@echo "  Frontend (vite):  http://localhost:8228 (serves production build, auto-rebuilds)"
-	@echo "  Backend log:      tmp/air.log"
-	@echo "  Frontend log:     tmp/vite-preview.log"
-	@echo "  Watch log:        tmp/frontend-watch.log"
-	@echo "  Combined log:     tmp/debug.log"
-	@echo ""
-	@trap '$(kill-children)' INT TERM EXIT; \
-		{ air 2>&1 | tee tmp/air.log & \
-		  cd frontend && pnpm preview 2>&1 | tee ../tmp/vite-preview.log & \
-		  ./scripts/watch-frontend-prod.sh 2>&1 | tee tmp/frontend-watch.log & \
-		  wait; } 2>&1 | tee tmp/debug.log
+	@echo "Starting ocman PRODUCTION MODE with auto-rebuild..."
+	@exec ./scripts/dev.sh prod-watch
 
 dev-backend:
 	@mkdir -p tmp
-	@trap '$(kill-children)' INT TERM EXIT; \
-		air 2>&1 | tee tmp/air.log
+	@air 2>&1 | tee tmp/air.log
 
 dev-frontend:
 	@mkdir -p tmp
-	@trap '$(kill-children)' INT TERM EXIT; \
-		cd frontend && pnpm dev 2>&1 | tee ../tmp/vite-dev.log
+	@cd frontend && pnpm dev 2>&1 | tee ../tmp/vite-dev.log
 
 # Emergency nuke: kill anything holding the dev ports. Use when a previous
 # `make dev*` died badly and left orphans squatting on 8228 / 8229. Safe to
