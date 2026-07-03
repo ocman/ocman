@@ -144,7 +144,7 @@ describe('cachedGitHubPreview / refreshGitHubPreview', () => {
     );
     expect(data).toMatchObject({
       kind: 'pr',
-      title: 'My PR',
+      title: '#1 My PR',
       state: 'Open',
       stateClass: 'open',
       author: 'alice',
@@ -308,7 +308,7 @@ describe('cachedForgejoPreview / refreshForgejoPreview', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/integrations/forgejo/preview?url=' + encodeURIComponent(url),
     );
-    expect(data).toMatchObject({ kind: 'pr', title: 'FJ PR', repo: 'o/r', author: 'carol' });
+    expect(data).toMatchObject({ kind: 'pr', title: '#1 FJ PR', repo: 'o/r', author: 'carol' });
   });
 
   it('returns null for an unknown host without fetching', async () => {
@@ -336,7 +336,7 @@ describe('cachedForgejoPreview / refreshForgejoPreview', () => {
     const url = 'https://code.example.com/o/r/pulls/7';
     await mod.cachedForgejoPreview(url, hosts);
     const data = await mod.refreshForgejoPreview(url, hosts);
-    expect(data).toMatchObject({ kind: 'pr', title: 'C' });
+    expect(data).toMatchObject({ kind: 'pr', title: '#7 C' });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 

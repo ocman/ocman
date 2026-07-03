@@ -113,7 +113,7 @@ function mapRawToPreviewData(url: string, raw: any, ref?: GitHubPreviewRef): Git
     const stateIcon = merged ? 'bi-git' : raw.state === 'closed' ? 'bi-x-circle' : 'bi-circle';
     return {
       kind: 'pr',
-      title: raw.title ?? `${repoFull} #${ref.number}`,
+      title: raw.title ? `#${ref.number} ${raw.title}` : `${repoFull} #${ref.number}`,
       state: stateLabel,
       stateIcon,
       stateClass,
