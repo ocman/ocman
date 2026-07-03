@@ -771,4 +771,10 @@ export const api = {
 
   setJudgeDelay: (delayMs: number): Promise<void> =>
     postJSON<void>('/api/settings/judge-delay', { delayMs }, { parseJSON: false }),
+
+  getJudgeModel: () =>
+    fetchJSON<{ model: string }>('/api/settings/judge-model').then((r) => r.model),
+
+  setJudgeModel: (model: string): Promise<void> =>
+    postJSON<void>('/api/settings/judge-model', { model }, { parseJSON: false }),
 };

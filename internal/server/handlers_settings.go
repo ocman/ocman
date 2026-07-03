@@ -155,3 +155,63 @@ func (s *Server) handleSetJudgeDelay(w http.ResponseWriter, r *http.Request) {
 	s.judgeDelayMs = body.DelayMs
 	writeJSON(w, map[string]int64{"delayMs": body.DelayMs})
 }
+
+// handleJudgeModel handles GET and POST /api/settings/judge-model.
+//
+// GET  → returns {"model": "provider/modelID"} — empty string when
+//
+//	unset (the backend then uses its built-in default).
+//
+// POST → accepts {"model": "provider/modelID"}, persists it, and
+//
+//	responds with the stored value. An empty string clears the
+//	setting, reverting to the default.
+func (s *Server) handleJudgeModel(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleGetJudgeModel(w, r)
+	case http.MethodPost:
+		s.handleSetJudgeModel(w, r)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleGetJudgeModel(w http.ResponseWriter, _ *http.Request) {
+	var model string
+	if s.stateDB != nil {
+		if v, ok, err := s.stateDB.GetSetting(judgeModelSettingKey); err == nil && ok {
+			model = v
+		}
+	}
+	writeJSON(w, map[string]string{"model": model})
+}
+
+func (s *Server) handleSetJudgeModel(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Model string `json:"model"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if s.stateDB == nil {
+		http.Error(w, "state database not available", http.StatusServiceUnavailable)
+		return
+	}
+	if err := s.stateDB.SetSetting(judgeModelSettingKey, body.Model); err != nil {
+		serverError(w, "saving judge model", err)
+		return
+	}
+	// Apply immediately so the next judge run uses the new model.
+	if s.judge != nil {
+		if provider, modelID, ok := loadJudgeModel(s.stateDB); ok {
+			s.judge.modelProvider = provider
+			s.judge.modelID = modelID
+		} else {
+			s.judge.modelProvider = judgeModelProvider
+			s.judge.modelID = judgeModelID
+		}
+	}
+	writeJSON(w, map[string]string{"model": body.Model})
+}

@@ -40,6 +40,34 @@ const judgeTimeout = 30 * time.Second
 const judgeModelProvider = "anthropic"
 const judgeModelID = "claude-haiku-4-5"
 
+// judgeModelSettingKey is the generic-setting key under which the
+// user-selected judge model is stored, as a "provider/modelID" string.
+const judgeModelSettingKey = "judge_model"
+
+// loadJudgeModel reads the persisted judge model setting and splits it
+// into provider + modelID on the first "/". ok is false when the
+// setting is unset or malformed (no "/"), so callers keep the default.
+func loadJudgeModel(db judgeModelStore) (provider, modelID string, ok bool) {
+	if db == nil {
+		return "", "", false
+	}
+	val, found, err := db.GetSetting(judgeModelSettingKey)
+	if err != nil || !found {
+		return "", "", false
+	}
+	i := strings.IndexByte(val, '/')
+	if i <= 0 || i == len(val)-1 {
+		return "", "", false
+	}
+	return val[:i], val[i+1:], true
+}
+
+// judgeModelStore is the slice of *state.DB that loadJudgeModel needs,
+// kept small so tests can fake it.
+type judgeModelStore interface {
+	GetSetting(key string) (string, bool, error)
+}
+
 // judgeAgent is the OpenCode agent used for the judge session.
 // "build" is the standard default agent; it has all tools available
 // but the prompt explicitly instructs the model not to use them.
@@ -208,6 +236,12 @@ type PermissionJudge struct {
 	// httpClient is used for all calls to the OpenCode HTTP API.
 	// Defaults to a client with judgeTimeout.
 	httpClient *http.Client
+
+	// modelProvider and modelID identify the model used for judgment.
+	// Default to the judgeModel* constants; overridden from the
+	// persisted "judge_model" setting by backgroundAutoApprove.
+	modelProvider string
+	modelID       string
 }
 
 // newPermissionJudge returns a PermissionJudge wired against the
@@ -218,6 +252,8 @@ func newPermissionJudge() *PermissionJudge {
 		httpClient: &http.Client{
 			Timeout: judgeTimeout,
 		},
+		modelProvider: judgeModelProvider,
+		modelID:       judgeModelID,
 	}
 }
 
@@ -404,8 +440,8 @@ func (j *PermissionJudge) sendPrompt(ctx context.Context, port, sessionID, permi
 		},
 		// model must be a structured object; a raw string is ignored by OpenCode.
 		"model": map[string]string{
-			"providerID": judgeModelProvider,
-			"modelID":    judgeModelID,
+			"providerID": j.modelProvider,
+			"modelID":    j.modelID,
 		},
 		// agent is required for OpenCode to dispatch to the model.
 		"agent": judgeAgent,
@@ -1644,6 +1680,16 @@ func (s *Server) backgroundAutoApprove(
 	if s.stateDB != nil {
 		if d, err := s.stateDB.GetJudgeDelayMs(); err == nil {
 			delayMs = d
+		}
+	}
+
+	// Apply the configured judge model (if any) so the persisted
+	// setting takes effect without a restart. Empty/unset falls back
+	// to the judgeModel* constants seeded in newPermissionJudge.
+	if s.judge != nil && s.stateDB != nil {
+		if provider, modelID, ok := loadJudgeModel(s.stateDB); ok {
+			s.judge.modelProvider = provider
+			s.judge.modelID = modelID
 		}
 	}
 

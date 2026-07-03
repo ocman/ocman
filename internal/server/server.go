@@ -455,6 +455,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// backend (e.g. judge prompt sections used by headless auto-approve).
 	mux.HandleFunc("/api/settings/prompt-sections", s.requireAuth(s.handlePromptSections))
 	mux.HandleFunc("/api/settings/judge-delay", s.requireAuth(s.handleJudgeDelay))
+	mux.HandleFunc("/api/settings/judge-model", s.requireAuth(s.handleJudgeModel))
 	// Prompt templates for the PR/Issue sidebar's "Handle this" launch
 	// action. Stored in state.db's generic `setting` table (schema v12).
 	mux.HandleFunc("/api/settings/prompt-templates", s.requireAuth(s.handlePromptTemplates))
