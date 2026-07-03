@@ -56,7 +56,7 @@ func TestManager_AddUpdateReconnectRemoveLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	// Add dials in the background and registers the adapter on connect.
-	id, err := mgr.Add(ctx, addr, "tok", "Workstation")
+	id, err := mgr.Add(addr, "tok", "Workstation")
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -85,13 +85,13 @@ func TestManager_AddUpdateReconnectRemoveLifecycle(t *testing.T) {
 	}
 
 	// Update reconnects with the new config.
-	if err := mgr.Update(ctx, id, "Renamed", addr, true, nil); err != nil {
+	if err := mgr.Update(id, "Renamed", addr, true, nil); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
 	waitForRegister(t, hubReg, "r-abc123:opencode")
 
 	// Reconnect is idempotent while enabled.
-	if err := mgr.Reconnect(ctx, id); err != nil {
+	if err := mgr.Reconnect(id); err != nil {
 		t.Fatalf("Reconnect: %v", err)
 	}
 	waitForRegister(t, hubReg, "r-abc123:opencode")
@@ -136,7 +136,7 @@ func TestManager_EnabledRemotesAndInventoryLoop(t *testing.T) {
 	mgr := NewManager(platforms.NewRegistry(), hostsvc.NewRouter(localStubHost{}), store, "opencode")
 	t.Cleanup(mgr.Stop)
 	ctx := context.Background()
-	if _, err := mgr.Add(ctx, addr, "tok", "Box"); err != nil {
+	if _, err := mgr.Add(addr, "tok", "Box"); err != nil {
 		t.Fatal(err)
 	}
 	waitForRegister(t, mgr.registry, "r-abc123:opencode")
@@ -183,7 +183,7 @@ func TestManager_RefreshInventories(t *testing.T) {
 	mgr := NewManager(platforms.NewRegistry(), hostsvc.NewRouter(localStubHost{}), store, "opencode")
 	t.Cleanup(mgr.Stop)
 	ctx := context.Background()
-	if _, err := mgr.Add(ctx, addr, "tok", "W"); err != nil {
+	if _, err := mgr.Add(addr, "tok", "W"); err != nil {
 		t.Fatal(err)
 	}
 	waitForRegister(t, mgr.registry, "r-abc123:opencode")

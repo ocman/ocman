@@ -25,6 +25,12 @@ type Manager struct {
 	store    *state.DB
 	base     string // base platform id remotes expose (v1: "opencode")
 
+	// baseCtx is the manager's own lifetime context, captured in Start.
+	// Background connect goroutines derive from it (not a request ctx)
+	// so a reconnect triggered by an HTTP handler isn't cancelled the
+	// instant the handler returns.
+	baseCtx context.Context
+
 	mu      sync.RWMutex
 	remotes map[int64]*managedRemote // keyed by hub-local id
 
@@ -67,6 +73,7 @@ func NewManager(registry *platforms.Registry, router *hostsvc.Router, store *sta
 // Returns immediately; connections progress asynchronously so a slow or
 // offline remote never blocks startup (NFR-1).
 func (m *Manager) Start(ctx context.Context) {
+	m.baseCtx = ctx
 	if m.store == nil {
 		return
 	}
@@ -79,7 +86,7 @@ func (m *Manager) Start(ctx context.Context) {
 		if !r.Enabled {
 			continue
 		}
-		m.dial(ctx, r)
+		m.dial(r)
 	}
 }
 
@@ -100,7 +107,7 @@ func (m *Manager) RunInventoryLoop(ctx context.Context, interval time.Duration) 
 
 // dial connects a single remote in the background and registers its
 // adapters on success.
-func (m *Manager) dial(ctx context.Context, r state.Remote) {
+func (m *Manager) dial(r state.Remote) {
 	token, err := m.store.RemoteToken(r.LocalID)
 	if err != nil {
 		log.WithError(err).WithField("remote", r.LocalID).Warn("remote: reading token")
@@ -117,7 +124,13 @@ func (m *Manager) dial(ctx context.Context, r state.Remote) {
 	m.remotes[r.LocalID] = mr
 	m.mu.Unlock()
 
-	go m.connectAndRegister(ctx, mr, r.LocalID)
+	// Detach from any request ctx: the connect goroutine outlives the
+	// caller. Fall back to Background if Start hasn't run (tests).
+	bg := m.baseCtx
+	if bg == nil {
+		bg = context.Background()
+	}
+	go m.connectAndRegister(bg, mr, r.LocalID)
 }
 
 func (m *Manager) connectAndRegister(ctx context.Context, mr *managedRemote, localID int64) {
@@ -330,7 +343,7 @@ func (m *Manager) sessionCount(localID int64) int {
 
 // Add persists a new remote and dials it in the background. Returns the
 // new hub-local id.
-func (m *Manager) Add(ctx context.Context, address, token, displayName string) (int64, error) {
+func (m *Manager) Add(address, token, displayName string) (int64, error) {
 	id, err := m.store.AddRemote(address, token, displayName)
 	if err != nil {
 		return 0, err
@@ -339,17 +352,17 @@ func (m *Manager) Add(ctx context.Context, address, token, displayName string) (
 	if err != nil {
 		return id, err
 	}
-	m.dial(ctx, r)
+	m.dial(r)
 	return id, nil
 }
 
 // Update edits a remote's config and reconnects with the new settings.
-func (m *Manager) Update(ctx context.Context, localID int64, displayName, address string, enabled bool, token *string) error {
+func (m *Manager) Update(localID int64, displayName, address string, enabled bool, token *string) error {
 	if err := m.store.UpdateRemoteConfig(localID, displayName, address, enabled, token); err != nil {
 		return err
 	}
 	m.updateName(localID, displayName)
-	return m.Reconnect(ctx, localID)
+	return m.Reconnect(localID)
 }
 
 // updateName refreshes the live display name on a managed remote.
@@ -363,7 +376,7 @@ func (m *Manager) updateName(localID int64, name string) {
 
 // Reconnect tears down and re-dials a remote (or disconnects it when
 // disabled).
-func (m *Manager) Reconnect(ctx context.Context, localID int64) error {
+func (m *Manager) Reconnect(localID int64) error {
 	r, err := m.store.GetRemote(localID)
 	if err != nil {
 		return err
@@ -372,7 +385,7 @@ func (m *Manager) Reconnect(ctx context.Context, localID int64) error {
 	if !r.Enabled {
 		return nil
 	}
-	m.dial(ctx, r)
+	m.dial(r)
 	return nil
 }
 
