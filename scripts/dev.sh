@@ -1,8 +1,9 @@
 #!/bin/bash
-# Dev loop for ocman: run air (backend) + vite (frontend) in parallel with a
-# clean Ctrl+C. Invoked via `make dev` / `dev-prod` / `dev-prod-watch`.
+# Dev loop for ocman: run air (backend) plus optional frontend/watchers with a
+# clean Ctrl+C. Invoked via `make dev` / `dev-prod` / `dev-prod-watch` /
+# `dev-remote`.
 #
-# Mode (arg 1): dev | prod | prod-watch
+# Mode (arg 1): dev | prod | prod-watch | remote
 #
 # The non-obvious bit that makes Ctrl+C work: each job runs in its OWN session
 # (`new_session`, i.e. setsid). Without it, vite/node call tcsetpgrp() to grab
@@ -62,6 +63,7 @@ stop() {
 	kill -KILL $all 2>/dev/null
 	lsof -tiTCP:8228 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null
 	lsof -tiTCP:8229 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null
+	lsof -tiTCP:8230 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null
 	exit 0
 }
 trap stop INT TERM EXIT
@@ -69,19 +71,27 @@ trap stop INT TERM EXIT
 case "$MODE" in
 	dev)             fe="pnpm dev";     felog="tmp/vite-dev.log" ;;
 	prod|prod-watch) fe="pnpm preview"; felog="tmp/vite-preview.log" ;;
-	*) echo "usage: dev.sh [dev|prod|prod-watch]" >&2; exit 2 ;;
+	remote)          fe="";             felog="" ;;
+	*) echo "usage: dev.sh [dev|prod|prod-watch|remote]" >&2; exit 2 ;;
 esac
 
 : > tmp/air.log
-: > "$felog"
 
-new_session air < /dev/null >> tmp/air.log 2>&1 &
+if [ "$MODE" = "remote" ]; then
+	new_session env OTEL_EXPORTER_OTLP_ENDPOINT= air -c .air.remote.toml < /dev/null >> tmp/air.log 2>&1 &
+else
+	new_session air < /dev/null >> tmp/air.log 2>&1 &
+fi
 pids="$pids $!"
 
-new_session sh -c "cd frontend && exec $fe" < /dev/null >> "$felog" 2>&1 &
-pids="$pids $!"
+logs="tmp/air.log"
 
-logs="tmp/air.log $felog"
+if [ -n "$fe" ]; then
+	: > "$felog"
+	new_session sh -c "cd frontend && exec $fe" < /dev/null >> "$felog" 2>&1 &
+	pids="$pids $!"
+	logs="$logs $felog"
+fi
 
 if [ "$MODE" = "prod-watch" ]; then
 	: > tmp/frontend-watch.log

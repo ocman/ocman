@@ -23,19 +23,6 @@ export OTEL_SERVICE_NAME ?= ocman-dev
 # air/vite orphaned on Ctrl+C (worst inside tmux). `exec`ing the script makes
 # IT the foreground process, so Ctrl+C reaches it and its trap reaps cleanly.
 
-# `dev-remote` still hosts air directly so it can pass the remote-specific
-# config. This trap reaps descendants and dev ports when it exits.
-define kill-children
-	kids() { for p in $$(pgrep -P $$1 2>/dev/null); do echo $$p; kids $$p; done; }; \
-	tree=$$(kids $$$$); \
-	[ -n "$$tree" ] && kill -TERM $$tree 2>/dev/null || true; \
-	sleep 0.3; \
-	[ -n "$$tree" ] && kill -KILL $$tree 2>/dev/null || true; \
-	lsof -tiTCP:8228 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true; \
-	lsof -tiTCP:8229 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true; \
-	lsof -tiTCP:8230 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true
-endef
-
 # Run both backend (air) and frontend (vite) with live reload
 dev: kill-dev
 	@echo "Starting ocman dev environment (backend :8229, frontend :8228)..."
@@ -67,8 +54,7 @@ dev-remote: kill-dev
 	@echo "  Backend log:      tmp/air.log"
 	@echo "  Remote config:    .air.remote.toml"
 	@echo ""
-	@trap '$(kill-children)' INT TERM EXIT; \
-		OTEL_EXPORTER_OTLP_ENDPOINT= air -c .air.remote.toml 2>&1 | tee tmp/air.log
+	@exec ./scripts/dev.sh remote
 
 dev-frontend:
 	@mkdir -p tmp
