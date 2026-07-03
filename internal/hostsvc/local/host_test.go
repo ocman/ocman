@@ -95,6 +95,17 @@ func TestLocalHost_InjectedDeps(t *testing.T) {
 		Projects: func(context.Context) ([]db.ProjectStats, error) {
 			return []db.ProjectStats{{Directory: "/p"}}, nil
 		},
+		TermWindows: func(dir string) ([]hostsvc.TermWindow, error) {
+			return []hostsvc.TermWindow{{Name: "w", Title: dir}}, nil
+		},
+		TermCreateWindow: func(dir string) (string, error) { return "win-" + dir, nil },
+		TermKillWindow:   func(string, string) error { return nil },
+		TermAttach: func(_ context.Context, req hostsvc.TermAttachRequest, _ hostsvc.TermConn) error {
+			if req.Dir != "/d" {
+				t.Errorf("TermAttach dir = %q", req.Dir)
+			}
+			return nil
+		},
 	})
 	ctx := context.Background()
 
@@ -111,6 +122,21 @@ func TestLocalHost_InjectedDeps(t *testing.T) {
 	projects, err := h.Projects(ctx)
 	if err != nil || len(projects) != 1 || projects[0].Directory != "/p" {
 		t.Fatalf("Projects: %+v %v", projects, err)
+	}
+
+	wins, err := h.TermWindows(ctx, "/d")
+	if err != nil || len(wins) != 1 || wins[0].Title != "/d" {
+		t.Fatalf("TermWindows: %+v %v", wins, err)
+	}
+	name, err := h.TermCreateWindow(ctx, "/d")
+	if err != nil || name != "win-/d" {
+		t.Fatalf("TermCreateWindow: %q %v", name, err)
+	}
+	if err := h.TermKillWindow(ctx, "/d", "w"); err != nil {
+		t.Fatalf("TermKillWindow: %v", err)
+	}
+	if err := h.TermAttach(ctx, hostsvc.TermAttachRequest{Dir: "/d"}, nil); err != nil {
+		t.Fatalf("TermAttach: %v", err)
 	}
 
 	_ = wtProject
@@ -177,5 +203,17 @@ func TestLocalHost_NilDepsAreSafe(t *testing.T) {
 	}
 	if p, err := h.Projects(ctx); err != nil || p != nil {
 		t.Errorf("Projects nil dep: %+v %v", p, err)
+	}
+	if w, err := h.TermWindows(ctx, "/d"); err != nil || w != nil {
+		t.Errorf("TermWindows nil dep: %+v %v", w, err)
+	}
+	if n, err := h.TermCreateWindow(ctx, "/d"); err != nil || n != "" {
+		t.Errorf("TermCreateWindow nil dep: %q %v", n, err)
+	}
+	if err := h.TermKillWindow(ctx, "/d", "w"); err != nil {
+		t.Errorf("TermKillWindow nil dep: %v", err)
+	}
+	if err := h.TermAttach(ctx, hostsvc.TermAttachRequest{}, nil); err != nil {
+		t.Errorf("TermAttach nil dep: %v", err)
 	}
 }

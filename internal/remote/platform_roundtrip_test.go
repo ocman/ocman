@@ -3,6 +3,8 @@ package remote
 import (
 	"bytes"
 	"context"
+	"io"
+	"sync"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
@@ -188,7 +190,60 @@ func TestRemoteHost_AllMethods(t *testing.T) {
 	if _, err := rh.ProjectIdentities(ctx); err != nil {
 		t.Errorf("ProjectIdentities: %v", err)
 	}
+	if wins, err := rh.TermWindows(ctx, "/x"); err != nil || len(wins) != 1 {
+		t.Errorf("TermWindows = %+v, %v", wins, err)
+	}
+	if name, err := rh.TermCreateWindow(ctx, "/x"); err != nil || name != "ocman-abc-2" {
+		t.Errorf("TermCreateWindow = %q, %v", name, err)
+	}
+	if err := rh.TermKillWindow(ctx, "/x", "ocman-abc-1"); err != nil {
+		t.Errorf("TermKillWindow: %v", err)
+	}
+
+	// TermAttach: drive one keystroke then a resize. The stub host echoes
+	// data and stops on the resize, closing the stream; the forward loop
+	// (conn.Recv -> stream.Send) exits cleanly with no error. The echo
+	// direction itself is asserted deterministically off the raw stream
+	// in TestServer_TerminalStreamRoundTrip.
+	fc := &fakeTermConn{in: []hostsvc.TermFrame{
+		{Data: []byte("echo hi\n")},
+		{Resize: &hostsvc.TermSize{Cols: 80, Rows: 24}},
+	}}
+	if err := rh.TermAttach(ctx, hostsvc.TermAttachRequest{Dir: "/x", Window: "ocman-abc-1"}, fc); err != nil {
+		t.Errorf("TermAttach: %v", err)
+	}
 }
+
+// fakeTermConn is an in-memory hostsvc.TermConn: Recv drains a fixed
+// frame list then returns io.EOF, Write records PTY output. The list
+// ends with a resize, which makes the stub host's TermAttach exit and
+// close the stream, so the remoteHost's forward loop stops before Recv
+// is called again.
+type fakeTermConn struct {
+	mu     sync.Mutex
+	in     []hostsvc.TermFrame
+	outBuf []byte
+}
+
+func (c *fakeTermConn) Recv() (hostsvc.TermFrame, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.in) == 0 {
+		return hostsvc.TermFrame{}, io.EOF
+	}
+	f := c.in[0]
+	c.in = c.in[1:]
+	return f, nil
+}
+
+func (c *fakeTermConn) Write(p []byte) error {
+	c.mu.Lock()
+	c.outBuf = append(c.outBuf, p...)
+	c.mu.Unlock()
+	return nil
+}
+
+func (c *fakeTermConn) Close() error { return nil }
 
 // TestRemotePlatform_OfflineMethodsErr confirms adapter methods return
 // ErrRemoteOffline (not a panic) once the conn is closed.

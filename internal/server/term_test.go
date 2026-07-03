@@ -1,12 +1,21 @@
 package server
 
 import (
+	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/gorilla/websocket"
+
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
 )
 
 // ── pure naming / hashing helpers ────────────────────────────────────
@@ -431,4 +440,198 @@ func TestTermWindowLifecycle_Integration(t *testing.T) {
 // (handler) isn't entangled with test teardown.
 func killWindowForTest(name string) error {
 	return exec.Command("tmux", "kill-window", "-t", ocmanTermSession+":"+name).Run()
+}
+
+// fakeTermConn is an in-memory hostsvc.TermConn for driving attachLocalPTY
+// without a WebSocket: Recv replays queued frames then blocks until Close
+// (returning io.EOF), Write records PTY output.
+type fakeTermConn struct {
+	frames chan hostsvc.TermFrame
+	closed chan struct{}
+	mu     sync.Mutex
+	out    []byte
+	once   sync.Once
+}
+
+func newFakeTermConn(frames ...hostsvc.TermFrame) *fakeTermConn {
+	c := &fakeTermConn{frames: make(chan hostsvc.TermFrame, len(frames)+1), closed: make(chan struct{})}
+	for _, f := range frames {
+		c.frames <- f
+	}
+	return c
+}
+
+func (c *fakeTermConn) Recv() (hostsvc.TermFrame, error) {
+	select {
+	case f := <-c.frames:
+		return f, nil
+	case <-c.closed:
+		return hostsvc.TermFrame{}, io.EOF
+	}
+}
+
+func (c *fakeTermConn) Write(p []byte) error {
+	c.mu.Lock()
+	c.out = append(c.out, p...)
+	c.mu.Unlock()
+	return nil
+}
+
+func (c *fakeTermConn) Close() error {
+	c.once.Do(func() { close(c.closed) })
+	return nil
+}
+
+func (c *fakeTermConn) output() []byte {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	b := make([]byte, len(c.out))
+	copy(b, c.out)
+	return b
+}
+
+// TestAttachLocalPTY_Integration drives the PTY bridge against a real
+// tmux window: it creates a window, attaches, sends a resize + a command
+// that prints a marker, and asserts the marker comes back through the
+// TermConn. Covers the local TermAttach path end-to-end.
+func TestAttachLocalPTY_Integration(t *testing.T) {
+	if !isTmuxAvailable() {
+		t.Skip("tmux not available")
+	}
+	dir := t.TempDir()
+	win, err := createTermWindow(dir)
+	if err != nil {
+		t.Fatalf("createTermWindow: %v", err)
+	}
+	t.Cleanup(func() { _ = killWindowForTest(win) })
+
+	conn := newFakeTermConn(
+		hostsvc.TermFrame{Resize: &hostsvc.TermSize{Cols: 100, Rows: 40}},
+		hostsvc.TermFrame{Data: []byte("printf OCMAN_MARKER\r")},
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	attachDone := make(chan error, 1)
+	go func() {
+		attachDone <- attachLocalPTY(ctx, hostsvc.TermAttachRequest{Dir: dir, Window: win}, conn)
+	}()
+
+	// Poll for the marker to appear in the PTY output, then close.
+	deadline := time.Now().Add(4 * time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Contains(string(conn.output()), "OCMAN_MARKER") {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !strings.Contains(string(conn.output()), "OCMAN_MARKER") {
+		t.Fatalf("marker not seen in PTY output: %q", conn.output())
+	}
+	conn.Close()
+	select {
+	case <-attachDone:
+	case <-ctx.Done():
+		t.Fatal("attachLocalPTY did not return after conn close")
+	}
+}
+
+// ── local Host terminal deps ─────────────────────────────────────────
+
+// localTermKillWindow must refuse a window that doesn't belong to dir
+// (wrong hash namespace) before any tmux call, so a remote can't be
+// asked to kill an arbitrary window. Runs without a tmux binary.
+func TestLocalTermKillWindow_RejectsCrossDir(t *testing.T) {
+	dir := t.TempDir()
+	err := localTermKillWindow(dir, "ocman-deadbeef00-1") // valid shape, wrong hash
+	if err == nil {
+		t.Fatal("expected error killing a cross-dir window, got nil")
+	}
+}
+
+// localTermWindows returns an empty (non-nil) slice when the ocman
+// session doesn't exist yet, so the UI shows a clean "+" state rather
+// than erroring. With no tmux server running there is no session.
+func TestLocalTermWindows_EmptyWithoutSession(t *testing.T) {
+	if ocmanSessionExists() {
+		t.Skip("ocman-term session already running in this environment")
+	}
+	wins, err := localTermWindows(t.TempDir())
+	if err != nil {
+		t.Fatalf("localTermWindows: %v", err)
+	}
+	if wins == nil || len(wins) != 0 {
+		t.Fatalf("expected empty non-nil slice, got %#v", wins)
+	}
+}
+
+// ── wsTermConn frame classification ──────────────────────────────────
+
+// TestWSTermConn_FrameClassification drives a real WebSocket through
+// wsTermConn: a resize JSON text frame becomes a Resize frame, other
+// text is a keystroke, binary is a keystroke, and PTY output written
+// back arrives as a binary frame. This is the parsing logic the terminal
+// bridge depends on.
+func TestWSTermConn_FrameClassification(t *testing.T) {
+	// Server upgrades and echoes each Recv result as a labelled string so
+	// the client can assert the classification, then writes a byte back.
+	done := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer close(done)
+		c, err := termUpgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade: %v", err)
+			return
+		}
+		tc := newWSTermConn(c)
+		defer tc.Close()
+
+		// Three inbound frames.
+		want := []string{"resize:80x24", "data:ls\n", "data:\x01\x02"}
+		for _, exp := range want {
+			f, err := tc.Recv()
+			if err != nil {
+				t.Errorf("Recv: %v", err)
+				return
+			}
+			var got string
+			if f.Resize != nil {
+				got = "resize:" + strconv.Itoa(int(f.Resize.Cols)) + "x" + strconv.Itoa(int(f.Resize.Rows))
+			} else {
+				got = "data:" + string(f.Data)
+			}
+			if got != exp {
+				t.Errorf("frame = %q, want %q", got, exp)
+			}
+		}
+		// PTY output back to the viewer.
+		if err := tc.Write([]byte("OUT")); err != nil {
+			t.Errorf("Write: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	// CheckOrigin is loopback-only; httptest binds 127.0.0.1 so a bare
+	// dial with no Origin header passes.
+	url := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ws, _, err := websocket.DefaultDialer.Dial(url, nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer ws.Close()
+
+	// resize (text JSON), keystroke (text), keystroke (binary).
+	_ = ws.WriteMessage(websocket.TextMessage, []byte(`{"type":"resize","cols":80,"rows":24}`))
+	_ = ws.WriteMessage(websocket.TextMessage, []byte("ls\n"))
+	_ = ws.WriteMessage(websocket.BinaryMessage, []byte{0x01, 0x02})
+
+	// PTY output comes back as a binary frame.
+	mt, data, err := ws.ReadMessage()
+	if err != nil {
+		t.Fatalf("read echo: %v", err)
+	}
+	if mt != websocket.BinaryMessage || string(data) != "OUT" {
+		t.Fatalf("echo = type %d %q, want binary \"OUT\"", mt, data)
+	}
+	<-done
 }
