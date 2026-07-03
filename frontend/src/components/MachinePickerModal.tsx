@@ -11,8 +11,7 @@ import type { TargetCandidate } from '../lib/api.types';
  * MachinePickerModal renders the new-session machine picker (AD-15).
  * Mounted once at the app root; it shows when resolveTargetForDir needs
  * the operator to choose a machine (project exists on several hosts, or
- * on none). Choosing a row resolves the pending promise with that
- * machine's platform key.
+ * on none). Choosing a row resolves the pending promise with that machine.
  */
 export function MachinePickerModal() {
   const [state, setState] = useState<MachinePickerState>({
@@ -65,7 +64,7 @@ export function MachinePickerModal() {
               <button
                 type="button"
                 className="machine-picker-option"
-                onClick={() => resolveMachineChoice(c.platform)}
+                onClick={() => resolveMachineChoice({ platform: c.platform, remoteId: c.remoteId })}
               >
                 <span className="machine-picker-name">{c.remoteName}</span>
                 {c.dir && <span className="machine-picker-dir mono">{c.dir}</span>}

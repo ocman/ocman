@@ -2,6 +2,7 @@ package remote
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"testing"
@@ -23,15 +24,16 @@ import (
 // --- fakes ---
 
 type fakePlatform struct {
-	id       string
-	sessions []db.Session
-	sent     *platforms.SendMessageRequest
-	events   []string
+	id        string
+	sessions  []db.Session
+	sent      *platforms.SendMessageRequest
+	events    []string
+	createErr error
 }
 
-func (f *fakePlatform) ID() platforms.ID                 { return platforms.ID(f.id) }
-func (f *fakePlatform) DisplayName() string              { return "Fake" }
-func (f *fakePlatform) Available(context.Context) bool   { return true }
+func (f *fakePlatform) ID() platforms.ID               { return platforms.ID(f.id) }
+func (f *fakePlatform) DisplayName() string            { return "Fake" }
+func (f *fakePlatform) Available(context.Context) bool { return true }
 func (f *fakePlatform) Capabilities() platforms.Capabilities {
 	return platforms.Capabilities{Composer: true, Events: true}
 }
@@ -91,12 +93,15 @@ func (f *fakePlatform) RespondQuestion(context.Context, platforms.RespondQuestio
 func (f *fakePlatform) RejectQuestion(context.Context, platforms.RejectQuestionRequest) error {
 	return nil
 }
-func (f *fakePlatform) Abort(context.Context, platforms.AbortRequest) error           { return nil }
+func (f *fakePlatform) Abort(context.Context, platforms.AbortRequest) error { return nil }
 func (f *fakePlatform) RenameSession(context.Context, platforms.RenameSessionRequest) error {
 	return nil
 }
 func (f *fakePlatform) Compact(context.Context, platforms.CompactRequest) error { return nil }
 func (f *fakePlatform) CreateSession(_ context.Context, _ platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+	if f.createErr != nil {
+		return nil, f.createErr
+	}
 	return &platforms.CreateSessionResponse{ID: "new-sess"}, nil
 }
 func (f *fakePlatform) ProxyEvents(_ context.Context, _ string, w io.Writer, flush func()) error {
@@ -130,7 +135,9 @@ func (localStubHost) GitCheckout(context.Context, string, string) error { return
 func (localStubHost) ListWorktrees(context.Context, string) ([]worktree.Entry, error) {
 	return nil, nil
 }
-func (localStubHost) WorktreeDefaultBaseRef(context.Context, string) (string, error) { return "main", nil }
+func (localStubHost) WorktreeDefaultBaseRef(context.Context, string) (string, error) {
+	return "main", nil
+}
 func (localStubHost) CreateWorktreeSession(context.Context, hostsvc.WorktreeSessionRequest) (*hostsvc.WorktreeSessionResult, error) {
 	return &hostsvc.WorktreeSessionResult{WorktreePath: "/wt", Branch: "b"}, nil
 }
@@ -193,6 +200,28 @@ func TestServer_HelloAndSessionsRoundTrip(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].ID != "s1" || got[0].Title != "Hi" {
 		t.Fatalf("session round-trip mismatch: %+v", got)
+	}
+}
+
+func TestServer_CreateSessionMapsUnreachableToUnavailable(t *testing.T) {
+	reg := platforms.NewRegistry()
+	reg.Register(&fakePlatform{id: "opencode", createErr: platforms.ErrPlatformUnreachable})
+	srv := NewServer(reg, localStubHost{}, "iid", "test")
+	b, err := marshalJSON(platforms.CreateSessionRequest{Directory: "/repo"})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	_, err = srv.CreateSession(context.Background(), &pb.PlatformJsonReq{Platform: "opencode", Payload: b})
+	if status.Code(err) != codes.Unavailable {
+		t.Fatalf("CreateSession error code = %v, want Unavailable (err=%v)", status.Code(err), err)
+	}
+}
+
+func TestRemotePlatformErrorRestoresUnreachableSentinel(t *testing.T) {
+	err := remotePlatformError(status.Error(codes.Unavailable, "no running platform instance"))
+	if !errors.Is(err, platforms.ErrPlatformUnreachable) {
+		t.Fatalf("errors.Is(unreachable) = false for %v", err)
 	}
 }
 

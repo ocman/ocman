@@ -21,11 +21,16 @@ export interface MachinePickerState {
   remotes: TargetCandidate[];
 }
 
+export interface MachineTarget {
+  platform: string;
+  remoteId?: string;
+}
+
 type Listener = (s: MachinePickerState) => void;
 
 let state: MachinePickerState = { open: false, dir: '', candidates: [], remotes: [] };
 const listeners = new Set<Listener>();
-let resolver: ((platform: string | null) => void) | null = null;
+let resolver: ((target: MachineTarget | null) => void) | null = null;
 
 function emit() {
   for (const fn of listeners) fn(state);
@@ -38,35 +43,35 @@ export function subscribeMachinePicker(fn: Listener): () => void {
 }
 
 /** Operator chose a machine (or cancelled with null). Closes the modal. */
-export function resolveMachineChoice(platform: string | null) {
+export function resolveMachineChoice(target: MachineTarget | null) {
   state = { open: false, dir: '', candidates: [], remotes: [] };
   emit();
   const r = resolver;
   resolver = null;
-  r?.(platform);
+  r?.(target);
 }
 
 /**
- * Resolves the target platform for creating a session in `dir`. Returns
- * the platform string to pass to createSession, or null if the operator
- * cancelled. Auto-resolves without a prompt when there is exactly one
- * candidate machine; otherwise opens the picker modal.
+ * Resolves the target machine for creating a session in `dir`. Returns
+ * null if the operator cancelled. Auto-resolves without a prompt when
+ * there is exactly one candidate machine; otherwise opens the picker modal.
  */
-export async function resolveTargetForDir(dir: string): Promise<string | null> {
+export async function resolveTargetForDir(dir: string): Promise<MachineTarget | null> {
   let resp;
   try {
     resp = await api.resolveTargets(dir);
   } catch {
     // Resolver unavailable (e.g. single-host without the endpoint):
     // fall back to the local default platform.
-    return '';
+    return { platform: '' };
   }
   const { candidates, remotes } = resp;
   if (candidates.length === 1) {
-    return candidates[0].platform;
+    const c = candidates[0];
+    return { platform: c.platform, remoteId: c.remoteId };
   }
   // 0 or >1: prompt the operator.
-  return new Promise<string | null>((resolve) => {
+  return new Promise<MachineTarget | null>((resolve) => {
     resolver = resolve;
     state = { open: true, dir, candidates, remotes };
     emit();

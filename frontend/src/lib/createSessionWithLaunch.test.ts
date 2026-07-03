@@ -124,6 +124,23 @@ describe('createSessionWithLaunch', () => {
     expect(useLaunchProgressStore.getState().directory).toBe('/tmp/foo');
   });
 
+  it('launches opencode on the remote host when platform is remote', async () => {
+    const createSession = vi
+      .fn()
+      .mockRejectedValueOnce(unreachable())
+      .mockResolvedValueOnce({ id: 'remote-id' });
+    const launchOpencodeInTmux = vi.fn().mockResolvedValue({ session: 'remote' });
+
+    const promise = createSessionWithLaunch(
+      { createSession, launchOpencodeInTmux, tmuxAvailable: true },
+      { directory: '/remote/repo', platform: 'r-abc:opencode' },
+    );
+
+    await vi.runAllTimersAsync();
+    await expect(promise).resolves.toEqual({ id: 'remote-id' });
+    expect(launchOpencodeInTmux).toHaveBeenCalledWith('/remote/repo', 'abc');
+  });
+
   it('rethrows the original error when launch itself fails', async () => {
     const originalErr = unreachable();
     const createSession = vi.fn().mockRejectedValue(originalErr);

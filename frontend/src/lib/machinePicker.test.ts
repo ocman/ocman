@@ -25,14 +25,14 @@ describe('resolveTargetForDir', () => {
       candidates: [{ remoteId: 'local', remoteName: 'This machine', platform: 'opencode', dir: '/p' }],
       remotes: [],
     });
-    const platform = await resolveTargetForDir('/p');
-    expect(platform).toBe('opencode');
+    const target = await resolveTargetForDir('/p');
+    expect(target).toEqual({ platform: 'opencode', remoteId: 'local' });
   });
 
   it('returns the empty sentinel (local default) when the resolver errors', async () => {
     mockResolve.mockRejectedValue(new Error('no endpoint'));
-    const platform = await resolveTargetForDir('/p');
-    expect(platform).toBe('');
+    const target = await resolveTargetForDir('/p');
+    expect(target).toEqual({ platform: '' });
   });
 
   it('opens the modal when several candidates match, resolving on choice', async () => {
@@ -53,8 +53,8 @@ describe('resolveTargetForDir', () => {
     expect(seen.state?.candidates).toHaveLength(2);
 
     // Operator picks the remote.
-    resolveMachineChoice('r-abc:opencode');
-    expect(await pending).toBe('r-abc:opencode');
+    resolveMachineChoice({ platform: 'r-abc:opencode', remoteId: 'abc' });
+    expect(await pending).toEqual({ platform: 'r-abc:opencode', remoteId: 'abc' });
     expect(seen.state?.open).toBe(false);
     unsub();
   });

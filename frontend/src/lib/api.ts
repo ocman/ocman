@@ -566,8 +566,8 @@ export const api = {
     if (client) body.client = client;
     return postJSON<void>('/api/tmux/switch', body, { parseJSON: false });
   },
-  tmuxLaunchOpencode: (directory: string): Promise<{ session: string }> =>
-    postJSON<{ session: string }>('/api/tmux/launch-opencode', { directory }),
+  tmuxLaunchOpencode: (directory: string, remoteId?: string): Promise<{ session: string }> =>
+    postJSON<{ session: string }>('/api/tmux/launch-opencode', { directory, ...(remoteId ? { remoteId } : {}) }),
   /**
    * In-app terminal windows. Each entry is a dedicated tmux window
    * (`ocman-term-<slug>-<n>`) backing a terminal tab in the UI.

@@ -34,7 +34,7 @@ import {
 
 export interface CreateSessionWithLaunchDeps {
   createSession: (directory: string, platform?: string, title?: string) => Promise<{ id: string }>;
-  launchOpencodeInTmux: (directory: string) => Promise<{ session: string }>;
+  launchOpencodeInTmux: (directory: string, remoteId?: string) => Promise<{ session: string }>;
   tmuxAvailable: boolean;
 }
 
@@ -42,6 +42,7 @@ export interface CreateSessionWithLaunchOptions {
   directory: string;
   fallbackDirectory?: string;
   platform?: string;
+  remoteId?: string;
   title?: string;
   /**
    * When true, the caller has already launched opencode in the target
@@ -76,14 +77,27 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function remoteIDForPlatform(platform?: string): string | undefined {
+  if (!platform?.startsWith('r-')) return undefined;
+  const end = platform.indexOf(':');
+  return end > 2 ? platform.slice(2, end) : undefined;
+}
+
 export async function createSessionWithLaunch(
   deps: CreateSessionWithLaunchDeps,
   opts: CreateSessionWithLaunchOptions,
 ): Promise<{ id: string; directory?: string }> {
   const { createSession, launchOpencodeInTmux, tmuxAvailable } = deps;
   const { directory, fallbackDirectory, platform, title, alreadyLaunched } = opts;
+  const remoteId = opts.remoteId || remoteIDForPlatform(platform);
   const progress: LaunchProgressReporter =
     opts.reportProgress === false ? noopLaunchProgressReporter : launchProgressReporter;
+
+  function launchInTmux(targetDirectory: string): Promise<{ session: string }> {
+    return remoteId && remoteId !== 'local'
+      ? launchOpencodeInTmux(targetDirectory, remoteId)
+      : launchOpencodeInTmux(targetDirectory);
+  }
 
   async function retryCreate(targetDirectory: string, err: unknown): Promise<{ id: string }> {
     let lastErr: unknown = err;
@@ -142,7 +156,7 @@ export async function createSessionWithLaunch(
     if (!alreadyLaunched) {
       progress.step('launch');
       try {
-        await launchOpencodeInTmux(directory);
+        await launchInTmux(directory);
       } catch (launchErr) {
         if (fallbackDirectory && fallbackDirectory !== directory) {
           remoteLog.error('Failed to launch opencode in tmux', launchErr);
@@ -161,7 +175,7 @@ export async function createSessionWithLaunch(
 
           progress.step('launch');
           try {
-            await launchOpencodeInTmux(fallbackDirectory);
+            await launchInTmux(fallbackDirectory);
           } catch (fallbackLaunchErr) {
             progress.fail('Failed to launch opencode in tmux.');
             remoteLog.error('Failed to launch opencode in fallback tmux directory', fallbackLaunchErr);

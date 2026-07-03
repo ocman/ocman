@@ -2,8 +2,12 @@ package remote
 
 import (
 	"context"
+	"errors"
 	"io"
 	"sync"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -339,7 +343,7 @@ func (p *remotePlatform) CreateSession(ctx context.Context, req platforms.Create
 	}
 	resp, err := client.CreateSession(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: b})
 	if err != nil {
-		return nil, err
+		return nil, remotePlatformError(err)
 	}
 	var out platforms.CreateSessionResponse
 	return &out, unmarshalJSON(resp.Payload, &out)
@@ -379,7 +383,7 @@ func (p *remotePlatform) mutate(_ context.Context, req any, fn func(pb.OcmanClie
 	if err != nil {
 		return err
 	}
-	return fn(client, b)
+	return remotePlatformError(fn(client, b))
 }
 
 // jsonCall runs a unary JsonResp RPC and decodes into dst.
@@ -390,10 +394,20 @@ func jsonCall[T any](_ context.Context, p *remotePlatform, fn func(pb.OcmanClien
 	}
 	resp, err := fn(client)
 	if err != nil {
-		return nil, err
+		return nil, remotePlatformError(err)
 	}
 	if err := unmarshalJSON(resp.Payload, dst); err != nil {
 		return nil, err
 	}
 	return dst, nil
+}
+
+func remotePlatformError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if status.Code(err) == codes.Unavailable {
+		return errors.Join(platforms.ErrPlatformUnreachable, err)
+	}
+	return err
 }

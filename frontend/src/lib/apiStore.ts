@@ -139,7 +139,7 @@ type ApiStore = {
   getTmuxClients: (signal?: AbortSignal) => Promise<{ available: boolean; clients: TmuxClient[] }>;
   getTmuxSessions: (signal?: AbortSignal) => Promise<{ available: boolean; sessions: TmuxSession[] }>;
   switchTmuxSession: (session: string, client?: string) => Promise<void>;
-  launchOpencodeInTmux: (directory: string) => Promise<{ session: string }>;
+  launchOpencodeInTmux: (directory: string, remoteId?: string) => Promise<{ session: string }>;
   getWhisperStatus: (signal?: AbortSignal) => Promise<{ available: boolean }>;
   transcribe: (audio: Blob) => Promise<string>;
   getSystemStats: (signal?: AbortSignal) => Promise<SystemStats>;
@@ -362,7 +362,7 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   getTmuxClients: (signal) => get().runRequest('tmux-clients:get', () => api.tmuxClients(signal)),
   getTmuxSessions: (signal) => get().runRequest('tmux-sessions:get', () => api.tmuxSessions(signal)),
   switchTmuxSession: (session, client) => get().runRequest(`tmux:switch:${session}`, () => api.tmuxSwitch(session, client)),
-  launchOpencodeInTmux: (directory) => get().runRequest(`tmux:launch-opencode:${directory}`, () => api.tmuxLaunchOpencode(directory)),
+  launchOpencodeInTmux: (directory, remoteId) => get().runRequest(`tmux:launch-opencode:${remoteId || 'local'}:${directory}`, () => api.tmuxLaunchOpencode(directory, remoteId)),
   getWhisperStatus: (signal) => get().runRequest('whisper-status:get', () => api.whisperStatus(signal)),
   transcribe: (audio) => get().runRequest('transcribe:post', () => api.transcribe(audio)),
   getSystemStats: (signal) => get().runRequest('system-stats:get', () => api.systemStats(signal)),

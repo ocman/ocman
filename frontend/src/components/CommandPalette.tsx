@@ -512,20 +512,20 @@ export function CommandPalette() {
     // single-host / single-match; prompts when the project lives on
     // several machines or none. Paths picked from the local filesystem
     // browser bypass the resolver because they can only live here.
-    const target = opts?.local ? Promise.resolve('opencode') : resolveTargetForDir(projectDir);
-    void target.then((platform) => {
-      if (platform === null) return; // operator cancelled the picker
+    const target = opts?.local ? Promise.resolve({ platform: 'opencode', remoteId: 'local' }) : resolveTargetForDir(projectDir);
+    void target.then((selectedTarget) => {
+      if (selectedTarget === null) return; // operator cancelled the picker
       // Fall back to inferring the platform from an existing session
       // when the resolver returned the empty (local-default) sentinel.
       const chosenPlatform =
-        platform || sessions?.find((s) => s.directory === projectDir)?.platform || '';
+        selectedTarget.platform || sessions?.find((s) => s.directory === projectDir)?.platform || '';
       createSessionWithLaunch(
         {
           createSession,
           launchOpencodeInTmux,
           tmuxAvailable: tmux.available,
         },
-        { directory: projectDir, platform: chosenPlatform || undefined },
+        { directory: projectDir, platform: chosenPlatform || undefined, remoteId: selectedTarget.remoteId },
       )
         .then((res) => {
           if (res.id) {

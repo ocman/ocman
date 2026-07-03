@@ -399,6 +399,7 @@ export function useSessionActions({
           {
             directory: session.directory,
             fallbackDirectory: projectRootForDirectory(session.directory),
+            platform: session.platform,
             title: clearTitle,
           },
         );

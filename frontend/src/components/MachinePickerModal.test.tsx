@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import { MachinePickerModal } from './MachinePickerModal';
-import { resolveTargetForDir, resolveMachineChoice } from '../lib/machinePicker';
+import { resolveTargetForDir, resolveMachineChoice, type MachineTarget } from '../lib/machinePicker';
 
 vi.mock('../lib/api', () => ({
   api: { resolveTargets: vi.fn() },
@@ -31,14 +31,14 @@ describe('MachinePickerModal', () => {
     });
     render(<MachinePickerModal />);
 
-    let pending!: Promise<string | null>;
+    let pending!: Promise<MachineTarget | null>;
     act(() => { pending = resolveTargetForDir('/p'); });
 
     expect(await screen.findByText('Choose a machine')).toBeInTheDocument();
     const box = await screen.findByText('Box');
     act(() => { box.click(); });
 
-    expect(await pending).toBe('r-abc:opencode');
+    expect(await pending).toEqual({ platform: 'r-abc:opencode', remoteId: 'abc' });
     // Modal closes after the choice.
     expect(screen.queryByText('Choose a machine')).not.toBeInTheDocument();
   });
@@ -67,7 +67,7 @@ describe('MachinePickerModal', () => {
     });
     render(<MachinePickerModal />);
 
-    let pending!: Promise<string | null>;
+    let pending!: Promise<MachineTarget | null>;
     act(() => { pending = resolveTargetForDir('/p'); });
 
     const backdrop = await screen.findByTestId('machine-picker-backdrop');

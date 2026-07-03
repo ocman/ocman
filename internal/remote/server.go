@@ -2,6 +2,7 @@ package remote
 
 import (
 	"context"
+	"errors"
 	"os"
 
 	"google.golang.org/grpc/codes"
@@ -52,6 +53,9 @@ func (s *Server) platformFor(id string) (platforms.Platform, error) {
 // jsonResp wraps a value into a *pb.JsonResp, or an error.
 func jsonResp(v any, err error) (*pb.JsonResp, error) {
 	if err != nil {
+		if errors.Is(err, platforms.ErrPlatformUnreachable) {
+			return nil, status.Error(codes.Unavailable, err.Error())
+		}
 		return nil, err
 	}
 	b, err := marshalJSON(v)

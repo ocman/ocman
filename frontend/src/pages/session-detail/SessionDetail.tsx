@@ -989,7 +989,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
           launchOpencodeInTmux,
           tmuxAvailable: tmux.available,
         },
-        { directory, fallbackDirectory: projectRootForDirectory(directory), title },
+        { directory, fallbackDirectory: projectRootForDirectory(directory), platform: session?.platform, title },
       );
       if (res.id) {
         const sessionDirectory = res.directory ?? directory;

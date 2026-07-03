@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 
 	log "github.com/sirupsen/logrus"
@@ -662,15 +663,15 @@ func restartOpencodeInTmuxWith(r tmuxRunner, directory string) (string, error) {
 }
 
 func (s *Server) handleTmuxLaunchOpencode(w http.ResponseWriter, r *http.Request) {
-	if !isTmuxAvailable() {
-		http.Error(w, "tmux is not available", http.StatusServiceUnavailable)
-		return
-	}
-
 	var req struct {
 		Directory string `json:"directory"`
+		RemoteID  string `json:"remoteId"`
 	}
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+		return
+	}
+	if (req.RemoteID == "" || req.RemoteID == "local") && !isTmuxAvailable() {
+		http.Error(w, "tmux is not available", http.StatusServiceUnavailable)
 		return
 	}
 	if req.Directory == "" {
@@ -685,14 +686,18 @@ func (s *Server) handleTmuxLaunchOpencode(w http.ResponseWriter, r *http.Request
 
 	log.WithField("directory", req.Directory).Info("launching opencode in tmux")
 
-	sessionName, err := launchOpencodeInTmux(req.Directory)
+	host := s.router().ForDir(req.Directory)
+	if req.RemoteID != "" {
+		host = s.router().ForRemote(req.RemoteID)
+	}
+	res, err := host.LaunchTmux(r.Context(), hostsvc.LaunchTmuxRequest{Directory: req.Directory})
 	if err != nil {
 		log.WithError(err).Error("failed to launch opencode in tmux")
 		serverError(w, "launching opencode in tmux", err)
 		return
 	}
 
-	writeJSON(w, map[string]string{"session": sessionName})
+	writeJSON(w, map[string]string{"session": res.Session})
 }
 
 func (s *Server) handleTmuxSwitch(w http.ResponseWriter, r *http.Request) {
