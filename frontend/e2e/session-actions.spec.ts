@@ -235,8 +235,10 @@ test('archive button in session detail sidebar navigates away from archived sess
   await expect(page.locator('.session-sidebar-archive-btn').first()).toBeVisible({ timeout: 5_000 });
   await page.locator('.session-sidebar-archive-btn').first().click();
 
-  // After archiving the only session with no adjacent session, the app navigates to /
-  await expect(page).toHaveURL('/', { timeout: 5_000 });
+  // After archiving the only session with no adjacent session, the app
+  // navigates to the /session/new sentinel (keeps the sidebar open with an
+  // empty-state hint) instead of bouncing back to the dashboard.
+  await expect(page).toHaveURL('/session/new', { timeout: 5_000 });
 });
 
 // ===========================================================================

@@ -262,7 +262,10 @@ export function useSidebarSessions({
           // but we don't need it here — the store handles dedup internally.
           void recentSessionsHash;
           if (isCurrent) {
-            navigate(nextSession ? `/session/${nextSession.id}` : '/');
+            // No session left: stay on the detail page with the `new`
+            // sentinel so the sidebar + empty-detail hint show instead
+            // of bouncing to the dashboard.
+            navigate(nextSession ? `/session/${nextSession.id}` : '/session/new');
           }
         })
         .catch((err) => {

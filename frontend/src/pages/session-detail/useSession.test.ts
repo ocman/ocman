@@ -158,6 +158,16 @@ describe('useSession — initial load', () => {
     expect(result.current.status).toBe('loading');
   });
 
+  it('does not fetch for the `new` sentinel id and reports an empty live view', async () => {
+    const fetchSession = vi.fn();
+    const { result } = renderHook(() => useSession('new', { fetchSession }));
+    expect(fetchSession).not.toHaveBeenCalled();
+    expect(result.current.status).toBe('live');
+    expect(result.current.loading).toBe(false);
+    expect(result.current.loadError).toBeNull();
+    expect(result.current.session).toBeNull();
+  });
+
   it('exposes error status when fetch fails', async () => {
     const fetchSession = vi.fn().mockRejectedValue(new Error('boom'));
     const { result } = renderHook(() => useSession(SID, { fetchSession }));

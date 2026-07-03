@@ -390,6 +390,19 @@ export function useSession(
       return;
     }
 
+    // The sentinel `new` id means "no session open" — the last one was
+    // archived and none remained. Render the empty-detail hint instead
+    // of fetching /api/session/new (which 404s). The sidebar still
+    // polls and populates on its own.
+    if (sessionId === 'new') {
+      dispatch({ type: 'load', view: initialSessionView(sessionId) });
+      setStatus('live');
+      setLoading(false);
+      setLoadError(null);
+      setTotalMessages(0);
+      return;
+    }
+
     // Immediately reset reducer state to the target session so the
     // header and thread update synchronously with the URL change —
     // before the REST fetch resolves. Without this, the previous

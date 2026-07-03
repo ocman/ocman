@@ -49,7 +49,8 @@ export function filterOrphanChildren(
  *   - In the grouped 'projects' view we stay within the same project:
  *     the most recently updated remaining session whose project root
  *     matches the archived session's. If the project has no other
- *     sessions we return undefined (the caller navigates home).
+ *     sessions we fall back to the most recent remaining session
+ *     anywhere (mirroring how `/` opens the latest session).
  *
  * Returns `undefined` when there is no suitable next session, in which
  * case the caller should navigate to the dashboard.
@@ -63,12 +64,18 @@ export function pickNextSessionAfterArchive(
     const target = sessions.find((s) => s.id === targetId);
     if (!target) return undefined;
     const targetRoot = projectRootForDirectory(target.directory || '');
-    return sessions
+    const sameProject = sessions
       .filter(
         (s) =>
           s.id !== targetId &&
           projectRootForDirectory(s.directory || '') === targetRoot,
       )
+      .sort((a, b) => b.timeUpdated - a.timeUpdated)[0];
+    if (sameProject) return sameProject;
+    // Last session in the project: fall back to the newest remaining
+    // session anywhere so we open a session instead of the dashboard.
+    return sessions
+      .filter((s) => s.id !== targetId)
       .sort((a, b) => b.timeUpdated - a.timeUpdated)[0];
   }
   const idx = sessions.findIndex((s) => s.id === targetId);

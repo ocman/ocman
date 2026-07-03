@@ -275,6 +275,29 @@ async function installDefaultRoutes(page: Page) {
   // backend returns 401 — which flips the auth store to unauthenticated
   // and unmounts whatever page the test is on. Stubbing these here
   // keeps tests deterministic regardless of host environment.
+  //
+  // Catch-all first (lowest priority): any settings endpoint not
+  // explicitly stubbed below returns an empty object so it can never
+  // escape to the proxy and 401 the auth store. Specific stubs
+  // registered afterwards take priority (later page.route wins).
+  await page.route('/api/settings/**', (route: Route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({}) }),
+  );
+  // Remotes settings group mounts RemoteSettings, which fetches
+  // /api/settings/remote-access and /api/remotes on mount. Both must be
+  // stubbed: an unmocked 401 (from a real auth-enabled backend behind the
+  // vite proxy) trips the global AuthError handler and boots the test to
+  // the lockscreen before the component's own .catch() can swallow it.
+  await page.route('/api/settings/remote-access', (route: Route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ enabled: false, instanceId: '', listenAddr: '' }),
+    }),
+  );
+  await page.route('/api/remotes', (route: Route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }),
+  );
   await page.route('/api/settings/prompt-sections', (route: Route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }),
   );

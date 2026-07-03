@@ -611,7 +611,10 @@ export function SessionDetail({ id }: SessionDetailProps) {
     collapsedProjectSet,
   } = useSidebarSessions({
     id,
-    sessionId: session?.id,
+    // Fall back to the URL id so the sidebar's initial load fires even
+    // when no session resolves (the `new` sentinel after archiving the
+    // last one) — session?.id would be undefined and skip the load.
+    sessionId: session?.id ?? id,
     collapsedProjects,
     sidebarView,
     abortSignalRef: abortControllerRef,
@@ -1489,6 +1492,11 @@ export function SessionDetail({ id }: SessionDetailProps) {
             <div className="oc-error-banner" data-testid="error-banner" style={{ margin: 24 }}>
               {loadError}
               <button onClick={() => { void reload(); }}>Retry</button>
+            </div>
+          ) : id === 'new' && !session ? (
+            <div className="oc-empty-detail" data-testid="empty-detail" style={{ margin: 24, opacity: 0.7 }}>
+              <p>No session open.</p>
+              <p>Pick a session from the sidebar, or press <kbd>⌘K</kbd> and run <code>/new</code> to start one.</p>
             </div>
           ) : session && (
             <OcmanRuntimeProvider

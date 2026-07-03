@@ -175,12 +175,13 @@ describe('pickNextSessionAfterArchive', () => {
       expect(pickNextSessionAfterArchive(sessions, 'cur', 'projects')?.id).toBe('wt');
     });
 
-    it('returns undefined when the project has no other sessions', () => {
+    it('falls back to the newest remaining session when the project has no other sessions', () => {
       const sessions = [
-        makeSession({ id: 'cur', directory: '/src/foo' }),
-        makeSession({ id: 'bar', directory: '/src/bar' }),
+        makeSession({ id: 'cur', directory: '/src/foo', timeUpdated: 500 }),
+        makeSession({ id: 'bar-old', directory: '/src/bar', timeUpdated: 100 }),
+        makeSession({ id: 'bar-new', directory: '/src/bar', timeUpdated: 300 }),
       ];
-      expect(pickNextSessionAfterArchive(sessions, 'cur', 'projects')).toBeUndefined();
+      expect(pickNextSessionAfterArchive(sessions, 'cur', 'projects')?.id).toBe('bar-new');
     });
 
     it('returns undefined when the target is not present', () => {
