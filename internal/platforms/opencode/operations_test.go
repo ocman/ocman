@@ -98,6 +98,38 @@ func TestProxyEvents_SessionCacheInvalidatedOnDisconnect(t *testing.T) {
 	}
 }
 
+func TestResolvePortCtxFallsBackToSessionProbe(t *testing.T) {
+	const sid = "sess-probe-port"
+	const dir = "/tmp/proj-probe-port"
+
+	fake := newOpencodeFake(t)
+	fake.SetSession(sid, []byte(`{"id":"`+sid+`"}`))
+
+	restorePorts := setDiscoverPortsImplForTests(func() map[string]string { return map[string]string{} })
+	restoreServers := setDiscoverServersImplForTests(func() []openCodeServer {
+		return []openCodeServer{{directory: "/tmp/other-cwd", port: fake.Port()}}
+	})
+	resetPortCacheForTests()
+	resetSessionPortAffinityForTests()
+	t.Cleanup(func() {
+		restorePorts()
+		restoreServers()
+		resetPortCacheForTests()
+		resetSessionPortAffinityForTests()
+	})
+
+	database := newTestDBWithSession(t, sid, dir)
+	a := New(database, nil)
+
+	port, _, err := a.resolvePortCtx(context.Background(), sid)
+	if err != nil {
+		t.Fatalf("resolvePortCtx: %v", err)
+	}
+	if port != fake.Port() {
+		t.Fatalf("resolvePortCtx port = %q, want %q", port, fake.Port())
+	}
+}
+
 // TestProxyEvents_IdleTimeoutReturnsErrSSEIdleTimeout verifies that when the
 // upstream stops sending bytes, ProxyEvents returns platforms.ErrSSEIdleTimeout
 // rather than blocking forever. We patch sseIdleTimeout to a tiny value via

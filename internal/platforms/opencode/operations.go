@@ -51,9 +51,36 @@ func (a *Adapter) resolvePortCtx(ctx context.Context, sessionID string) (port st
 	}
 	port = resolveOpenCodePortForSessionCtx(ctx, sessionID, s.Directory)
 	if port == "" {
+		port = resolveOpenCodePortBySession(ctx, sessionID)
+	}
+	if port == "" {
 		return "", s, fmt.Errorf("no running OpenCode instance for session %s: %w", sessionID, platforms.ErrPlatformUnreachable)
 	}
+	rememberSessionPort(sessionID, port)
 	return port, s, nil
+}
+
+func resolveOpenCodePortBySession(ctx context.Context, sessionID string) string {
+	client := http.Client{Timeout: 500 * time.Millisecond}
+	for _, server := range discoverOpenCodeServers() {
+		if server.port == "" {
+			continue
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%s/session/%s", server.port, sessionID), nil)
+		if err != nil {
+			continue
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			continue
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return server.port
+		}
+	}
+	return ""
 }
 
 // --- Catalogs ---
