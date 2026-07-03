@@ -66,6 +66,14 @@ func (h *Host) GitDiff(ctx context.Context, dir string, opts hostsvc.GitDiffOpti
 	return gitinfo.GetDiff(ctx, dir, gitinfo.DiffOptions{Force: opts.Force})
 }
 
+func (h *Host) GitBranches(ctx context.Context, dir string) ([]string, error) {
+	return gitinfo.ListBranches(ctx, dir)
+}
+
+func (h *Host) GitCheckout(ctx context.Context, dir, branch string) error {
+	return gitinfo.Checkout(ctx, dir, branch)
+}
+
 func (h *Host) ListWorktrees(ctx context.Context, dir string) ([]worktree.Entry, error) {
 	repoRoot, err := worktree.ResolveRepoRoot(ctx, dir)
 	if err != nil {

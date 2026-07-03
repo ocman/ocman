@@ -20,7 +20,7 @@ var ErrRemoteOffline = errors.New("remote: not connected")
 // ProtocolVersion is the wire protocol version exchanged in Hello
 // (AD-12). It is bumped only on breaking wire changes; additive db-type
 // changes ride the JSON envelopes (AD-11) and do not bump it.
-const ProtocolVersion int32 = 1
+const ProtocolVersion int32 = 2
 
 // PlatformIDSeparator joins a remote ID and a base platform id into the
 // compound platform key, e.g. "r-abc123:opencode" (AD-2).

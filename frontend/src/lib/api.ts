@@ -359,6 +359,18 @@ export const api = {
     if (opts?.fresh) q.set('fresh', '1');
     return fetchJSON<WorkingTreeDiff>(`/api/git/diff?${q.toString()}`, signal);
   },
+  // List local branches for the repo containing dir, current branch
+  // first. Empty for a non-repo directory.
+  gitBranches: (dir: string, signal?: AbortSignal) =>
+    fetchJSON<{ branches: string[] }>(
+      `/api/git/branches?dir=${encodeURIComponent(dir)}`,
+      signal,
+    ),
+  // Switch the working tree in dir to branch. Rejects (409 → thrown
+  // Error whose message names the dirty tree) when uncommitted changes
+  // would be overwritten.
+  gitCheckout: (dir: string, branch: string) =>
+    postJSON<{ branch: string }>('/api/git/checkout', { dir, branch }),
   archiveSession: (platform: string, sessionId: string, timeUpdated: number, archived = true) =>
     postJSON<{ ok: boolean }>('/api/session/archive', { platform, sessionId, timeUpdated, archived }),
   archiveProject: (directory: string, archived = true) =>

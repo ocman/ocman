@@ -123,6 +123,10 @@ func (localStubHost) GitInfo(context.Context, []string) (map[string]gitinfo.Info
 func (localStubHost) GitDiff(context.Context, string, hostsvc.GitDiffOptions) (*gitinfo.Diff, error) {
 	return &gitinfo.Diff{}, nil
 }
+func (localStubHost) GitBranches(context.Context, string) ([]string, error) {
+	return []string{"main"}, nil
+}
+func (localStubHost) GitCheckout(context.Context, string, string) error { return nil }
 func (localStubHost) ListWorktrees(context.Context, string) ([]worktree.Entry, error) {
 	return nil, nil
 }

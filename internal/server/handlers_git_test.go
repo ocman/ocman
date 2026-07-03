@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/gitinfo"
@@ -189,5 +190,130 @@ func TestHandleGitInfo_NonRepoDirs(t *testing.T) {
 	}
 	if info, ok := got[dir]; ok && info.IsRepo() {
 		t.Errorf("non-repo dir reported as repo: %+v", info)
+	}
+}
+
+// --- /api/git/branches ---
+
+func gitRunForServerTest(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	cmd.Env = append(cleanGitEnvForTest(),
+		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test",
+		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test",
+		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+func TestHandleGitBranches_MissingDir(t *testing.T) {
+	srv := testServer(t)
+	req := httptest.NewRequest("GET", "/api/git/branches", nil)
+	rr := httptest.NewRecorder()
+	srv.handleGitBranches(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rr.Code)
+	}
+}
+
+func TestHandleGitBranches_RelativeRejected(t *testing.T) {
+	srv := testServer(t)
+	req := httptest.NewRequest("GET", "/api/git/branches?dir=rel/path", nil)
+	rr := httptest.NewRecorder()
+	srv.handleGitBranches(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rr.Code)
+	}
+}
+
+func TestHandleGitBranches_HappyPath(t *testing.T) {
+	srv := testServer(t)
+	dir := t.TempDir()
+	gitInitForServerTest(t, dir)
+	gitRunForServerTest(t, dir, "branch", "feature/x")
+
+	req := httptest.NewRequest("GET", "/api/git/branches?dir="+dir, nil)
+	rr := httptest.NewRecorder()
+	srv.handleGitBranches(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var got struct {
+		Branches []string `json:"branches"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(got.Branches) != 2 {
+		t.Fatalf("branches = %v, want 2", got.Branches)
+	}
+	if got.Branches[0] != "main" {
+		t.Errorf("current branch not first: %v", got.Branches)
+	}
+}
+
+// --- /api/git/checkout ---
+
+func TestHandleGitCheckout_BadBody(t *testing.T) {
+	srv := testServer(t)
+	req := httptest.NewRequest("POST", "/api/git/checkout", strings.NewReader("{"))
+	rr := httptest.NewRecorder()
+	srv.handleGitCheckout(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rr.Code)
+	}
+}
+
+func TestHandleGitCheckout_MissingFields(t *testing.T) {
+	srv := testServer(t)
+	req := httptest.NewRequest("POST", "/api/git/checkout", strings.NewReader(`{"dir":"/x"}`))
+	rr := httptest.NewRecorder()
+	srv.handleGitCheckout(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing branch, got %d", rr.Code)
+	}
+}
+
+func TestHandleGitCheckout_HappyPath(t *testing.T) {
+	srv := testServer(t)
+	dir := t.TempDir()
+	gitInitForServerTest(t, dir)
+	gitRunForServerTest(t, dir, "branch", "other")
+
+	body := `{"dir":"` + dir + `","branch":"other"}`
+	req := httptest.NewRequest("POST", "/api/git/checkout", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	srv.handleGitCheckout(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if b := gitinfo.Lookup(req.Context(), dir).Branch; b != "other" {
+		t.Errorf("branch after checkout = %q, want other", b)
+	}
+}
+
+func TestHandleGitCheckout_DirtyConflict(t *testing.T) {
+	srv := testServer(t)
+	dir := t.TempDir()
+	gitInitForServerTest(t, dir)
+	gitRunForServerTest(t, dir, "checkout", "-b", "other")
+	if err := os.WriteFile(filepath.Join(dir, "foo.txt"), []byte("other\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRunForServerTest(t, dir, "commit", "-am", "other")
+	gitRunForServerTest(t, dir, "checkout", "main")
+	// Dirty main so the switch is refused.
+	if err := os.WriteFile(filepath.Join(dir, "foo.txt"), []byte("dirty\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"dir":"` + dir + `","branch":"other"}`
+	req := httptest.NewRequest("POST", "/api/git/checkout", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	srv.handleGitCheckout(rr, req)
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", rr.Code, rr.Body.String())
 	}
 }

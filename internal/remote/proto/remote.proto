@@ -51,6 +51,8 @@ service Ocman {
   // --- Host services (directory-scoped) ---
   rpc GitInfo(JsonReq) returns (JsonResp);
   rpc GitDiff(JsonReq) returns (JsonResp);
+  rpc GitBranches(JsonReq) returns (JsonResp);
+  rpc GitCheckout(JsonReq) returns (Empty);
   rpc ListWorktrees(JsonReq) returns (JsonResp);
   rpc WorktreeDefaultBaseRef(JsonReq) returns (JsonResp);
   rpc CreateWorktreeSession(JsonReq) returns (JsonResp);

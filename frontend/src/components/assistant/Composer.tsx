@@ -9,6 +9,7 @@ import { agentColor } from '../../lib/agentColor';
 import { ModelPicker } from './ModelPicker';
 import { AgentPicker } from './AgentPicker';
 import { ReasoningPicker } from './ReasoningPicker';
+import { BranchSelector, TargetSelector } from './ComposerSelectorRow';
 import { SlashCommandMenu } from './SlashCommandMenu';
 import { useComposerAudio } from './useComposerAudio';
 import { routeComposerSubmit } from './composerSubmit';
@@ -68,6 +69,9 @@ function ComposerImpl({
   disabledHint,
   onLaunchRequest,
   launching,
+  directory,
+  newConversation,
+  worktreesSupported,
 }: {
   onSend?: (text: string, images?: AttachedImage[]) => void;
   onCommand?: (command: string, args: string) => void;
@@ -159,6 +163,21 @@ function ComposerImpl({
   onLaunchRequest?: () => void;
   /** Whether a launch triggered via onLaunchRequest is in flight. */
   launching?: boolean;
+  /**
+   * Absolute session/project directory, used by the selector row below
+   * the composer (branch switcher + worktree target). Omitted → the row
+   * is hidden.
+   */
+  directory?: string;
+  /**
+   * True when this composer belongs to a conversation with no messages
+   * yet. Enables the left "Current checkout / New worktree" target
+   * select; disabled otherwise (the target is fixed once a session has
+   * started).
+   */
+  newConversation?: boolean;
+  /** Host capability: worktree creation available here (gates the option). */
+  worktreesSupported?: boolean;
 }) {
   const [showTokenPopover, setShowTokenPopover] = useState(false);
   const [estCost, setEstCost] = useState<{ cost: number; known: boolean } | null>(null);
@@ -1084,11 +1103,46 @@ function ComposerImpl({
                 >×</button>
               </span>
             )}
+            {isRunning ? (
+              <button
+                type="button"
+                className="oc-bar-send oc-bar-send-stop"
+                onClick={() => onAbort?.()}
+                title="Stop generation (Esc)"
+                aria-label="Stop generation"
+              >
+                <svg width="12" height="12" viewBox="0 0 10 10" aria-hidden="true">
+                  <rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor" />
+                </svg>
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="oc-bar-send"
+                disabled={disabled}
+                title="Send (Enter)"
+                aria-label="Send message"
+                onClick={() => {
+                  // Reuse the textarea's existing Enter submit path so
+                  // button and keyboard stay behaviourally identical.
+                  inputRef.current?.dispatchEvent(
+                    new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+                  );
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M8 13V3M8 3L4 7M8 3l4 4" stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
       </div>
       <div className="oc-composer-footer">
         <span className="oc-composer-footer-left">
+          {directory && newConversation && (
+            <TargetSelector directory={directory} worktreesSupported={!!worktreesSupported} />
+          )}
           {!disabled && isRunning && (
             <>
               <span
@@ -1141,6 +1195,7 @@ function ComposerImpl({
           )}
         </span>
         <span className="oc-composer-footer-right">
+          {directory && <BranchSelector directory={directory} />}
           {tokenStats && tokenStats.totalCost > 0 && (
             <span
               className="oc-session-cost"
@@ -1249,6 +1304,9 @@ export const Composer = memo(ComposerImpl, (prev, next) =>
   prev.tokenStats?.output === next.tokenStats?.output &&
   prev.tokenStats?.totalCost === next.tokenStats?.totalCost &&
   prev.selectedReasoning === next.selectedReasoning &&
+  prev.directory === next.directory &&
+  prev.newConversation === next.newConversation &&
+  prev.worktreesSupported === next.worktreesSupported &&
   (prev.models?.length || 0) === (next.models?.length || 0) &&
   (prev.models || []).every((model, i) => model === (next.models || [])[i])
 );

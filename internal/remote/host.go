@@ -67,6 +67,30 @@ func (h *remoteHost) GitDiff(ctx context.Context, dir string, opts hostsvc.GitDi
 	return &out, unmarshalJSON(resp.Payload, &out)
 }
 
+func (h *remoteHost) GitBranches(ctx context.Context, dir string) ([]string, error) {
+	client := h.conn.Client()
+	if client == nil {
+		return nil, ErrRemoteOffline
+	}
+	b, _ := marshalJSON(map[string]any{"dir": dir})
+	resp, err := client.GitBranches(ctx, &pb.JsonReq{Payload: b})
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	return out, unmarshalJSON(resp.Payload, &out)
+}
+
+func (h *remoteHost) GitCheckout(ctx context.Context, dir, branch string) error {
+	client := h.conn.Client()
+	if client == nil {
+		return ErrRemoteOffline
+	}
+	b, _ := marshalJSON(map[string]any{"dir": dir, "branch": branch})
+	_, err := client.GitCheckout(ctx, &pb.JsonReq{Payload: b})
+	return err
+}
+
 func (h *remoteHost) ListWorktrees(ctx context.Context, dir string) ([]worktree.Entry, error) {
 	client := h.conn.Client()
 	if client == nil {

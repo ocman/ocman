@@ -385,6 +385,8 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	mux.HandleFunc("/api/cost/calc", s.post(s.handleCalcCost))
 	mux.HandleFunc("/api/git/diff", s.get(s.handleGitDiff))
 	mux.HandleFunc("/api/git/info", s.get(s.handleGitInfo))
+	mux.HandleFunc("/api/git/branches", s.get(s.handleGitBranches))
+	mux.HandleFunc("/api/git/checkout", requirePOST(requireLocalhost(s.handleGitCheckout)))
 	mux.HandleFunc("/api/tmux/clients", requireGET(requireLocalhost(s.handleTmuxClients)))
 	mux.HandleFunc("/api/tmux/sessions", requireGET(requireLocalhost(s.handleTmuxSessions)))
 	mux.HandleFunc("/api/tmux/switch", requirePOST(requireLocalhost(s.handleTmuxSwitch)))

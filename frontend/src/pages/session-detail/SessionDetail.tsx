@@ -38,7 +38,7 @@ import { useUiStore } from '../../lib/uiStore';
 import { useTmux } from '../../lib/useTmux';
 import { useApiStore } from '../../lib/apiStore';
 import { useGitInfo } from '../../lib/useGitInfo';
-import { usePlatformCapabilities } from '../../lib/useCapabilities';
+import { usePlatformCapabilities, useWorktreeSessions } from '../../lib/useCapabilities';
 import { listFailedSends, type FailedSend } from '../../lib/failedSends';
 import { recheckFaviconNotify } from '../../lib/useFaviconNotify';
 import { createSessionWithLaunch } from '../../lib/createSessionWithLaunch';
@@ -532,6 +532,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
 
   // Capability flags for the owning platform.
   const caps = usePlatformCapabilities(session?.platform);
+  const worktreesSupported = useWorktreeSessions();
 
   const [whisperAvailable, setWhisperAvailable] = useState(false);
 
@@ -1607,6 +1608,9 @@ export function SessionDetail({ id }: SessionDetailProps) {
                           onReasoningChange={setSelectedReasoning}
                           onLaunchRequest={launchHintActive ? () => { void handleLaunchOpencode(); } : undefined}
                           launching={launchingOpencode}
+                          directory={session?.directory}
+                          newConversation={totalMessages === 0}
+                          worktreesSupported={worktreesSupported}
                         />
                       ) : null}
                     </ErrorBoundary>

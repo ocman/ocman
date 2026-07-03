@@ -108,6 +108,15 @@ func (c *cache) lookup(ctx context.Context, dir string) Info {
 	return info
 }
 
+// invalidate drops the cached entry for dir so the next lookup refetches
+// from git. Used after a mutating operation (checkout) changes the
+// branch out from under a warm cache entry.
+func (c *cache) invalidate(dir string) {
+	c.mu.Lock()
+	delete(c.entries, dir)
+	c.mu.Unlock()
+}
+
 // --- git invocation ---
 
 // gitCommandTimeout bounds each `git status` call. Most finish in a

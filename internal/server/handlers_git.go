@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"path/filepath"
@@ -71,6 +72,87 @@ func (s *Server) handleGitInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, infos)
+}
+
+// handleGitBranches returns the local branch names for the repository
+// containing the `dir` query parameter, current branch first. Used by
+// the composer's branch switcher.
+//
+// Query parameters:
+//   - `dir` (required): absolute path inside a git worktree.
+//
+// Status codes:
+//
+//	200 OK         — {"branches": ["main", "feature", ...]}
+//	400 Bad Req    — `dir` missing or relative
+//	502 Bad Gateway — git invocation failed
+func (s *Server) handleGitBranches(w http.ResponseWriter, r *http.Request) {
+	dir := r.URL.Query().Get("dir")
+	if dir == "" {
+		http.Error(w, "dir query parameter is required", http.StatusBadRequest)
+		return
+	}
+	if !filepath.IsAbs(dir) {
+		http.Error(w, "dir must be an absolute path", http.StatusBadRequest)
+		return
+	}
+	branches, err := s.router().ForDir(dir).GitBranches(r.Context(), dir)
+	if err != nil {
+		log.WithError(err).Warn("git branches failed")
+		http.Error(w, "git branches failed", http.StatusBadGateway)
+		return
+	}
+	if branches == nil {
+		branches = []string{}
+	}
+	writeJSON(w, map[string][]string{"branches": branches})
+}
+
+// handleGitCheckout switches the working tree in `dir` to `branch`. It
+// is a mutation, so it is POST + localhost-only (the browser talks to
+// the hub over localhost; the hub delegates to a remote over the Host
+// seam transparently).
+//
+// Request body: {"dir": "/abs/path", "branch": "feature"}
+//
+// Status codes:
+//
+//	200 OK         — {"branch": "feature"}
+//	400 Bad Req    — dir/branch missing or dir relative
+//	409 Conflict   — checkout would overwrite local changes
+//	502 Bad Gateway — git invocation failed
+func (s *Server) handleGitCheckout(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Dir    string `json:"dir"`
+		Branch string `json:"branch"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if body.Dir == "" || body.Branch == "" {
+		http.Error(w, "dir and branch are required", http.StatusBadRequest)
+		return
+	}
+	if !filepath.IsAbs(body.Dir) {
+		http.Error(w, "dir must be an absolute path", http.StatusBadRequest)
+		return
+	}
+	err := s.router().ForDir(body.Dir).GitCheckout(r.Context(), body.Dir, body.Branch)
+	if err != nil {
+		// ErrDirtyCheckout doesn't survive gRPC as a typed sentinel, so
+		// also match on the message a remote host relays back.
+		if errors.Is(err, gitinfo.ErrDirtyCheckout) ||
+			strings.Contains(err.Error(), "would overwrite") ||
+			strings.Contains(err.Error(), "commit your changes or stash") {
+			http.Error(w, "checkout would overwrite local changes; commit or stash first", http.StatusConflict)
+			return
+		}
+		log.WithError(err).Warn("git checkout failed")
+		http.Error(w, "git checkout failed", http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, map[string]string{"branch": body.Branch})
 }
 
 // handleGitDiff returns the working-tree diff for a directory. The

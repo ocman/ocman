@@ -45,6 +45,8 @@ const (
 	Ocman_StreamEvents_FullMethodName           = "/ocman.remote.v1.Ocman/StreamEvents"
 	Ocman_GitInfo_FullMethodName                = "/ocman.remote.v1.Ocman/GitInfo"
 	Ocman_GitDiff_FullMethodName                = "/ocman.remote.v1.Ocman/GitDiff"
+	Ocman_GitBranches_FullMethodName            = "/ocman.remote.v1.Ocman/GitBranches"
+	Ocman_GitCheckout_FullMethodName            = "/ocman.remote.v1.Ocman/GitCheckout"
 	Ocman_ListWorktrees_FullMethodName          = "/ocman.remote.v1.Ocman/ListWorktrees"
 	Ocman_WorktreeDefaultBaseRef_FullMethodName = "/ocman.remote.v1.Ocman/WorktreeDefaultBaseRef"
 	Ocman_CreateWorktreeSession_FullMethodName  = "/ocman.remote.v1.Ocman/CreateWorktreeSession"
@@ -103,6 +105,8 @@ type OcmanClient interface {
 	// --- Host services (directory-scoped) ---
 	GitInfo(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 	GitDiff(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
+	GitBranches(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
+	GitCheckout(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*Empty, error)
 	ListWorktrees(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 	WorktreeDefaultBaseRef(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 	CreateWorktreeSession(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
@@ -392,6 +396,26 @@ func (c *ocmanClient) GitDiff(ctx context.Context, in *JsonReq, opts ...grpc.Cal
 	return out, nil
 }
 
+func (c *ocmanClient) GitBranches(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(JsonResp)
+	err := c.cc.Invoke(ctx, Ocman_GitBranches_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *ocmanClient) GitCheckout(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Ocman_GitCheckout_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *ocmanClient) ListWorktrees(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(JsonResp)
@@ -538,6 +562,8 @@ type OcmanServer interface {
 	// --- Host services (directory-scoped) ---
 	GitInfo(context.Context, *JsonReq) (*JsonResp, error)
 	GitDiff(context.Context, *JsonReq) (*JsonResp, error)
+	GitBranches(context.Context, *JsonReq) (*JsonResp, error)
+	GitCheckout(context.Context, *JsonReq) (*Empty, error)
 	ListWorktrees(context.Context, *JsonReq) (*JsonResp, error)
 	WorktreeDefaultBaseRef(context.Context, *JsonReq) (*JsonResp, error)
 	CreateWorktreeSession(context.Context, *JsonReq) (*JsonResp, error)
@@ -635,6 +661,12 @@ func (UnimplementedOcmanServer) GitInfo(context.Context, *JsonReq) (*JsonResp, e
 }
 func (UnimplementedOcmanServer) GitDiff(context.Context, *JsonReq) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method GitDiff not implemented")
+}
+func (UnimplementedOcmanServer) GitBranches(context.Context, *JsonReq) (*JsonResp, error) {
+	return nil, status.Error(codes.Unimplemented, "method GitBranches not implemented")
+}
+func (UnimplementedOcmanServer) GitCheckout(context.Context, *JsonReq) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method GitCheckout not implemented")
 }
 func (UnimplementedOcmanServer) ListWorktrees(context.Context, *JsonReq) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListWorktrees not implemented")
@@ -1145,6 +1177,42 @@ func _Ocman_GitDiff_Handler(srv interface{}, ctx context.Context, dec func(inter
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Ocman_GitBranches_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JsonReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).GitBranches(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_GitBranches_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).GitBranches(ctx, req.(*JsonReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Ocman_GitCheckout_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JsonReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).GitCheckout(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_GitCheckout_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).GitCheckout(ctx, req.(*JsonReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Ocman_ListWorktrees_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(JsonReq)
 	if err := dec(in); err != nil {
@@ -1406,6 +1474,14 @@ var Ocman_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GitDiff",
 			Handler:    _Ocman_GitDiff_Handler,
+		},
+		{
+			MethodName: "GitBranches",
+			Handler:    _Ocman_GitBranches_Handler,
+		},
+		{
+			MethodName: "GitCheckout",
+			Handler:    _Ocman_GitCheckout_Handler,
 		},
 		{
 			MethodName: "ListWorktrees",

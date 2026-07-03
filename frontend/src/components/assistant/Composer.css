@@ -403,6 +403,50 @@
   align-items: center;
   gap: 10px;
 }
+
+/* Session target selector; now rendered inline in the footer-left group
+   next to the working indicator. */
+.oc-composer-selectors {
+  display: flex;
+  align-items: center;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.oc-composer-selectors-left,
+.oc-composer-selectors-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.oc-branch-selector {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.oc-selector-icon { color: var(--overlay0); font-size: 11px; display: inline-flex; }
+.oc-selector-error { color: var(--red, #f38ba8); max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Send button (turns into a stop button while generating) */
+.oc-bar-send {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent, #4c7fff);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: filter 0.15s, background 0.15s;
+}
+.oc-bar-send:hover:not(:disabled) { filter: brightness(1.1); }
+.oc-bar-send:disabled { opacity: 0.4; cursor: not-allowed; }
+.oc-bar-send.oc-bar-send-stop { background: var(--red, #f38ba8); }
 .oc-keybind-hint { color: var(--overlay0); font-size: 11px; background: none; border: none; padding: 0; cursor: pointer; }
 .oc-keybind-hint:hover { color: var(--text); }
 .oc-bar-hint { color: var(--overlay0); }

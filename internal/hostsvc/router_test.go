@@ -20,6 +20,8 @@ func (h stubHost) GitInfo(context.Context, []string) (map[string]gitinfo.Info, e
 func (h stubHost) GitDiff(context.Context, string, GitDiffOptions) (*gitinfo.Diff, error) {
 	return nil, nil
 }
+func (h stubHost) GitBranches(context.Context, string) ([]string, error) { return nil, nil }
+func (h stubHost) GitCheckout(context.Context, string, string) error     { return nil }
 func (h stubHost) ListWorktrees(context.Context, string) ([]worktree.Entry, error) { return nil, nil }
 func (h stubHost) WorktreeDefaultBaseRef(context.Context, string) (string, error)  { return "", nil }
 func (h stubHost) CreateWorktreeSession(context.Context, WorktreeSessionRequest) (*WorktreeSessionResult, error) {

@@ -109,6 +109,14 @@ type Host interface {
 	// GitDiff returns the working-tree diff for dir.
 	GitDiff(ctx context.Context, dir string, opts GitDiffOptions) (*gitinfo.Diff, error)
 
+	// GitBranches returns the local branch names for the repo
+	// containing dir, current branch first.
+	GitBranches(ctx context.Context, dir string) ([]string, error)
+
+	// GitCheckout switches the working tree in dir to branch. Returns
+	// gitinfo.ErrDirtyCheckout when git refuses due to local changes.
+	GitCheckout(ctx context.Context, dir, branch string) error
+
 	// ListWorktrees returns parsed `git worktree list` for the repo
 	// containing dir.
 	ListWorktrees(ctx context.Context, dir string) ([]worktree.Entry, error)

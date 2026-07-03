@@ -343,6 +343,30 @@ func (s *Server) GitDiff(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, er
 	return jsonResp(s.host.GitDiff(ctx, args.Dir, hostsvc.GitDiffOptions{Force: args.Force}))
 }
 
+func (s *Server) GitBranches(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
+	var args struct {
+		Dir string `json:"dir"`
+	}
+	if err := unmarshalJSON(req.Payload, &args); err != nil {
+		return nil, err
+	}
+	return jsonResp(s.host.GitBranches(ctx, args.Dir))
+}
+
+func (s *Server) GitCheckout(ctx context.Context, req *pb.JsonReq) (*pb.Empty, error) {
+	var args struct {
+		Dir    string `json:"dir"`
+		Branch string `json:"branch"`
+	}
+	if err := unmarshalJSON(req.Payload, &args); err != nil {
+		return nil, err
+	}
+	// ponytail: gitinfo.ErrDirtyCheckout does not survive gRPC as a typed
+	// sentinel; the message string is preserved and the HTTP handler
+	// re-matches it. Upgrade to a status code detail if callers need it.
+	return &pb.Empty{}, s.host.GitCheckout(ctx, args.Dir, args.Branch)
+}
+
 func (s *Server) ListWorktrees(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
 	var args struct {
 		Dir string `json:"dir"`
