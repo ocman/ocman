@@ -11,6 +11,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import type { SessionDetail } from '../../lib/api';
 import { useSession } from './useSession';
+import { useApiStore } from '../../lib/apiStore';
 
 // ---------- Fake EventSource ----------
 
@@ -128,6 +129,7 @@ function makeDetail(overrides: Partial<SessionDetail> = {}): SessionDetail {
 
 beforeEach(() => {
   FakeEventSource.reset();
+  useApiStore.setState({ sessionCache: new Map(), sessionCacheOrder: [] });
 });
 
 afterEach(() => {
@@ -147,7 +149,7 @@ describe('useSession — initial load', () => {
     await waitFor(() => {
       expect(result.current.session?.id).toBe(SID);
     });
-    expect(fetchSession).toHaveBeenCalledWith(SID, expect.any(Number), 0, expect.anything());
+    expect(fetchSession).toHaveBeenCalledWith(SID, expect.any(Number), 0, expect.anything(), undefined);
     expect(result.current.status).toBe('live');
   });
 
@@ -347,6 +349,25 @@ describe('useSession — SSE event dispatch', () => {
       expect(FakeEventSource.latest()).toBeDefined();
     });
     expect(FakeEventSource.latest()!.url).toContain(`/api/session/${SID}/events`);
+  });
+
+  it('routes remote EventSource and fetches through the cached platform', async () => {
+    const detail = makeDetail({
+      session: {
+        ...makeDetail().session,
+        platform: 'r-box:opencode',
+      },
+    });
+    useApiStore.getState().setCachedSession(SID, detail);
+    const fetchSession = vi.fn().mockResolvedValue(detail);
+
+    renderHook(() => useSession(SID, { fetchSession }));
+
+    await waitFor(() => {
+      expect(FakeEventSource.latest()).toBeDefined();
+    });
+    expect(FakeEventSource.latest()!.url).toContain(`/api/session/${SID}/events?platform=r-box%3Aopencode`);
+    expect(fetchSession).toHaveBeenCalledWith(SID, expect.any(Number), 0, expect.any(AbortSignal), 'r-box:opencode');
   });
 });
 

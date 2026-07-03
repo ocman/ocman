@@ -299,7 +299,11 @@ export const api = {
     const qs = q.toString();
     return fetchJSON<NotifyEntry[]>(`/api/sessions/notify${qs ? '?' + qs : ''}`, signal);
   },
-  session: (id: string, limit = 50, offset = 0, signal?: AbortSignal) => fetchJSON<SessionDetail>(`/api/session/${id}?limit=${limit}&offset=${offset}`, signal),
+  session: (id: string, limit = 50, offset = 0, signal?: AbortSignal, platform?: string) => {
+    const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (platform) query.set('platform', platform);
+    return fetchJSON<SessionDetail>(`/api/session/${id}?${query.toString()}`, signal);
+  },
   // --- Conversation export / share ---
   // List the active public share links for a session.
   listShareLinks: (id: string, signal?: AbortSignal) =>

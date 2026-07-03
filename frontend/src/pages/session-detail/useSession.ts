@@ -49,7 +49,7 @@ export interface UseSessionOptions {
    * inject fixtures without touching the network. Production code
    * leaves it undefined.
    */
-  fetchSession?: (id: string, limit: number, offset: number, signal?: AbortSignal) => Promise<SessionDetail>;
+  fetchSession?: (id: string, limit: number, offset: number, signal?: AbortSignal, platform?: string) => Promise<SessionDetail>;
   /**
    * Replaces the default exponential-backoff schedule. Tests use
    * this to drive reconnects without sleeping for 500 ms.
@@ -157,8 +157,9 @@ async function defaultFetchSession(
   limit: number,
   offset: number,
   signal?: AbortSignal,
+  platform?: string,
 ): Promise<SessionDetail> {
-  return api.session(id, limit, offset, signal);
+  return api.session(id, limit, offset, signal, platform);
 }
 
 /** Build a SessionView from a freshly-fetched SessionDetail. */
@@ -221,6 +222,8 @@ export function useSession(
   // not a reactive subscription. Subscribing here would cause every
   // cache write (mirror effect) to re-run this hook's setup.
   const cached = sessionId ? useApiStore.getState().getCachedSession(sessionId) : null;
+  const cachedPlatform = cached?.session.platform;
+  const routedPlatform = cachedPlatform?.startsWith('r-') ? cachedPlatform : undefined;
   const initialView: SessionView = cached
     ? {
         ...initialSessionView(sessionId!),
@@ -487,7 +490,7 @@ export function useSession(
       const controller = new AbortController();
       abortRef.current = controller;
       try {
-        const detail = await fetchSession(sessionId, pageSize, 0, controller.signal);
+        const detail = await fetchSession(sessionId, pageSize, 0, controller.signal, routedPlatform);
         if (cancelled || controller.signal.aborted) return;
         dispatch({ type: 'load', view: viewFromDetail(sessionId, detail), mode });
         setTotalMessages(detail.totalMessages || detail.session.messageCount || 0);
@@ -527,7 +530,8 @@ export function useSession(
 
     const connect = () => {
       if (cancelled) return;
-      evtSource = new EventSource(`/api/session/${encodeURIComponent(sessionId)}/events`);
+      const query = routedPlatform ? `?platform=${encodeURIComponent(routedPlatform)}` : '';
+      evtSource = new EventSource(`/api/session/${encodeURIComponent(sessionId)}/events${query}`);
       evtSource.onopen = () => {
         if (cancelled) return;
         attempt = 0;
@@ -749,13 +753,13 @@ export function useSession(
       setRecentWorkEventAt(null);
       workBumpAtRef.current = 0;
     };
-  // We deliberately depend on sessionId only. Options are captured
+  // We deliberately depend on sessionId/routedPlatform only. Options are captured
   // via closure on mount; tests don't change them at runtime and
   // production code never overrides them. Stable function/value
   // refs (fetchSession / reconnectDelay / store setters) are
   // module-level identity.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [sessionId, routedPlatform]);
 
   // loadMore prepends an older page. Mirrors the legacy
   // useSessionMessages.loadMore but writes through the reducer via
@@ -767,7 +771,7 @@ export function useSession(
     const offset = current.messages.length;
     const controller = new AbortController();
     try {
-      const detail = await fetchSession(sessionId, pageSize, offset, controller.signal);
+      const detail = await fetchSession(sessionId, pageSize, offset, controller.signal, routedPlatform);
       if (controller.signal.aborted) return;
       const newMsgs = detail.messages || [];
       const newParts = detail.parts || [];
@@ -793,7 +797,7 @@ export function useSession(
     } finally {
       setLoadingMore(false);
     }
-  }, [sessionId, loadingMore, fetchSession, pageSize]);
+  }, [sessionId, loadingMore, fetchSession, pageSize, routedPlatform]);
 
   return {
     ...view,
