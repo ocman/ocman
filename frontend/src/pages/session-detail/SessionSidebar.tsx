@@ -448,16 +448,11 @@ export function SessionSidebar({
       <div className="session-sidebar-list" ref={sidebarListRef}>
         {loadingRecentSessions ? (
           <SessionSidebarListSkeleton rows={5} />
-        ) : sidebarView === 'projects' ? (
-          // In projects view we list every unarchived project even with
-          // no sessions (e.g. after archiving the last one), so only
-          // fall back to the empty state when there are no groups either.
-          sidebarProjectGroups.length === 0 ? (
-            <GettingStartedEmpty compact />
-          ) : (
-            renderProjectsView()
-          )
-        ) : recentSessions.length === 0 ? (
+        ) : // The sidebar always groups by project: list every unarchived
+        // project even with no sessions (e.g. after archiving the last
+        // one), so only fall back to the empty state when there are no
+        // groups either.
+        sidebarProjectGroups.length === 0 ? (
           <GettingStartedEmpty compact />
         ) : (
           renderProjectsView()
