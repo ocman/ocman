@@ -158,6 +158,7 @@ func (p *remotePlatform) Session(ctx context.Context, id string, limit, offset i
 		detail.Session.Platform = string(p.ID())
 		detail.Session.RemoteID = p.remoteID()
 		detail.Session.RemoteName = p.nameFn()
+		detail.Session.LiveConnection = true
 	}
 	return &detail, nil
 }

@@ -76,8 +76,11 @@ func TestRemotePlatform_AllReadMethods(t *testing.T) {
 	if _, err := rp.ListQuestions(ctx, "s1"); err != nil {
 		t.Errorf("ListQuestions: %v", err)
 	}
-	if _, err := rp.Session(ctx, "s1", 10, 0); err != nil {
+	detail, err := rp.Session(ctx, "s1", 10, 0)
+	if err != nil {
 		t.Errorf("Session: %v", err)
+	} else if detail.Session == nil || !detail.Session.LiveConnection {
+		t.Errorf("Session LiveConnection = false, want true for connected remote")
 	}
 	if rp.LiveStatus("s1") != nil {
 		t.Error("LiveStatus should be nil for a remote adapter")
