@@ -607,6 +607,32 @@ func paginateRequests(filtered []requestRow, limit, offset int) []RequestLogEntr
 	return out
 }
 
+// paginateSlice clamps offset into range and applies limit (0 = no
+// limit). Shared by the session and project log pagination.
+func paginateSlice[T any](entries []T, offset, limit int) []T {
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(entries) {
+		offset = len(entries)
+	}
+	paged := entries[offset:]
+	if limit > 0 && len(paged) > limit {
+		paged = paged[:limit]
+	}
+	return paged
+}
+
+// costDescLess orders by cost descending, breaking ties (including
+// zero-cost subscription-plan entries) by most-recent activity so the
+// order is deterministic. Shared by the session and project log sorts.
+func costDescLess(costI, costJ float64, timeI, timeJ int64) bool {
+	if costI != costJ {
+		return costI > costJ
+	}
+	return timeI > timeJ
+}
+
 // populateSessionLog aggregates the already-filtered request rows by session id
 // and applies pagination. Session metadata (title, directory) is fetched from
 // the session table in a single query.
@@ -692,32 +718,14 @@ func (d *DB) populateSessionLog(dashboard *MetricsDashboard, filtered []requestR
 
 	// Sort by total cost descending so the dashboard surfaces the
 	// most expensive sessions first — that's what users actually
-	// want to scan when they open the metrics view. Ties (including
-	// zero-cost subscription-plan sessions) break by most-recent
-	// activity so the order is deterministic and intuitive.
+	// want to scan when they open the metrics view.
 	sort.Slice(entries, func(i, j int) bool {
-		ci, cj := entries[i].Cost, entries[j].Cost
-		if ci != cj {
-			return ci > cj
-		}
-		return entries[i].LastRequestTime > entries[j].LastRequestTime
+		return costDescLess(entries[i].Cost, entries[j].Cost,
+			entries[i].LastRequestTime, entries[j].LastRequestTime)
 	})
 
 	dashboard.TotalSessions = len(entries)
-
-	// Apply offset + limit.
-	offset := sessionOffset
-	if offset < 0 {
-		offset = 0
-	}
-	if offset > len(entries) {
-		offset = len(entries)
-	}
-	paged := entries[offset:]
-	if sessionLimit > 0 && len(paged) > sessionLimit {
-		paged = paged[:sessionLimit]
-	}
-	dashboard.Sessions = paged
+	dashboard.Sessions = paginateSlice(entries, sessionOffset, sessionLimit)
 	return nil
 }
 
@@ -803,30 +811,14 @@ func (d *DB) populateProjectLog(dashboard *MetricsDashboard, filtered []requestR
 	}
 
 	// Sort by total cost descending so the most expensive projects
-	// surface first. Ties break by most-recent activity for
-	// determinism. Mirrors the per-session sort above.
+	// surface first. Mirrors the per-session sort above.
 	sort.Slice(entries, func(i, j int) bool {
-		ci, cj := entries[i].Cost, entries[j].Cost
-		if ci != cj {
-			return ci > cj
-		}
-		return entries[i].LastRequestTime > entries[j].LastRequestTime
+		return costDescLess(entries[i].Cost, entries[j].Cost,
+			entries[i].LastRequestTime, entries[j].LastRequestTime)
 	})
 
 	dashboard.TotalProjects = len(entries)
-
-	offset := projectOffset
-	if offset < 0 {
-		offset = 0
-	}
-	if offset > len(entries) {
-		offset = len(entries)
-	}
-	paged := entries[offset:]
-	if projectLimit > 0 && len(paged) > projectLimit {
-		paged = paged[:projectLimit]
-	}
-	dashboard.Projects = paged
+	dashboard.Projects = paginateSlice(entries, projectOffset, projectLimit)
 	return nil
 }
 
