@@ -73,8 +73,7 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 	if !s.requireDB(w) {
 		return
 	}
-	// Local hub projects flow through the host seam (AD-16). Remote
-	// projects are surfaced via the inventory cache (Phase 8), not here.
+	// Local hub projects flow through the host seam (AD-16).
 	projects, err := s.router().Local().Projects(r.Context())
 	if err != nil {
 		serverError(w, "fetching projects", err)
@@ -84,7 +83,55 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 		serverError(w, "applying project archive state", err)
 		return
 	}
+	// Append remote projects from the inventory cache, tagged with their
+	// owning remote so the frontend can label them and target the right
+	// machine when creating a session.
+	if s.remotes != nil {
+		projects = append(projects, s.remotes.RemoteProjects()...)
+	}
+	// Fold worktree directories into their repo root and merge duplicate
+	// rows so each project appears once, then sort by last activity.
+	projects = foldWorktreeProjects(projects)
+	sort.SliceStable(projects, func(i, j int) bool {
+		return projects[i].LastUsed > projects[j].LastUsed
+	})
 	writeJSON(w, projects)
+}
+
+// foldWorktreeProjects collapses <repo>/.worktrees/<repo>/<slug> directories
+// back to the repo root and merges rows that fold to the same project,
+// summing aggregate stats and keeping the newest activity. Rows are keyed
+// per owning host (RemoteID) so identical paths on different machines stay
+// separate. The folded root replaces the directory of the merged entry.
+func foldWorktreeProjects(projects []db.ProjectStats) []db.ProjectStats {
+	type key struct{ remoteID, root string }
+	merged := make(map[key]*db.ProjectStats)
+	order := make([]key, 0, len(projects))
+	for _, p := range projects {
+		k := key{p.RemoteID, projectRootForDirectory(p.Directory)}
+		agg, ok := merged[k]
+		if !ok {
+			cp := p
+			cp.Directory = k.root
+			merged[k] = &cp
+			order = append(order, k)
+			continue
+		}
+		agg.SessionCount += p.SessionCount
+		agg.MessageCount += p.MessageCount
+		agg.TotalTokensIn += p.TotalTokensIn
+		agg.TotalTokensOut += p.TotalTokensOut
+		agg.TotalCost += p.TotalCost
+		if p.LastUsed > agg.LastUsed {
+			agg.LastUsed = p.LastUsed
+		}
+		agg.Archived = agg.Archived && p.Archived
+	}
+	out := make([]db.ProjectStats, 0, len(order))
+	for _, k := range order {
+		out = append(out, *merged[k])
+	}
+	return out
 }
 
 // applyProjectArchiveState overlays the Archived flag from state.db onto
