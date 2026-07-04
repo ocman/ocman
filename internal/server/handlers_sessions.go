@@ -412,32 +412,30 @@ func (s *Server) handleSessionTasks(w http.ResponseWriter, r *http.Request) {
 
 // --- Session-scoped read endpoints ---
 
-func (s *Server) handleSessionAgents(w http.ResponseWriter, r *http.Request) {
+// listViaAdapter collapses the shared shape of the session-scoped list
+// endpoints (agents, commands, questions): resolve the adapter, call
+// one list method, nil-guard to an empty JSON array, write the result.
+// A free function because Go methods can't have type parameters.
+func listViaAdapter[T any](s *Server, w http.ResponseWriter, r *http.Request, errContext string, fetch func(platforms.Platform, context.Context, string) ([]T, error)) {
 	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
-		entries, err := adapter.AgentCatalog(r.Context(), sessionID)
+		entries, err := fetch(adapter, r.Context(), sessionID)
 		if err != nil {
-			writePlatformError(w, "fetching agent catalog", err)
+			writePlatformError(w, errContext, err)
 			return
 		}
 		if entries == nil {
-			entries = []platforms.AgentCatalogEntry{}
+			entries = []T{}
 		}
 		writeJSON(w, entries)
 	})
 }
 
+func (s *Server) handleSessionAgents(w http.ResponseWriter, r *http.Request) {
+	listViaAdapter(s, w, r, "fetching agent catalog", platforms.Platform.AgentCatalog)
+}
+
 func (s *Server) handleSessionCommands(w http.ResponseWriter, r *http.Request) {
-	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
-		entries, err := adapter.SlashCommands(r.Context(), sessionID)
-		if err != nil {
-			writePlatformError(w, "fetching slash commands", err)
-			return
-		}
-		if entries == nil {
-			entries = []platforms.SlashCommandEntry{}
-		}
-		writeJSON(w, entries)
-	})
+	listViaAdapter(s, w, r, "fetching slash commands", platforms.Platform.SlashCommands)
 }
 
 func (s *Server) handleSessionModels(w http.ResponseWriter, r *http.Request) {
@@ -524,17 +522,7 @@ func extractPermissionMetadata(entry platforms.LivePrompt) map[string]any {
 }
 
 func (s *Server) handleSessionQuestions(w http.ResponseWriter, r *http.Request) {
-	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
-		entries, err := adapter.ListQuestions(r.Context(), sessionID)
-		if err != nil {
-			writePlatformError(w, "listing questions", err)
-			return
-		}
-		if entries == nil {
-			entries = []platforms.LivePrompt{}
-		}
-		writeJSON(w, entries)
-	})
+	listViaAdapter(s, w, r, "listing questions", platforms.Platform.ListQuestions)
 }
 
 // handleSessionChanges aggregates every file-touching tool call in a
