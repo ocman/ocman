@@ -235,3 +235,65 @@ func TestWhisper_Transcribe_NotAvailable(t *testing.T) {
 		t.Fatalf("Transcribe with no binary: want error, got nil")
 	}
 }
+
+// TestPackageWrappers exercises the process-wide Available /
+// TranscribeFile wrappers over the default instance. On a machine
+// without whisper installed, Available() is false and TranscribeFile()
+// errors — but both must run without panicking regardless of the host.
+func TestPackageWrappers(t *testing.T) {
+	// Just calling these drives the default-instance singleton path.
+	// The result is environment-dependent; we only assert consistency:
+	// if whisper isn't available, transcription must fail.
+	if !Available() {
+		if _, err := TranscribeFile("/nonexistent/audio.wav"); err == nil {
+			t.Fatal("TranscribeFile should error when whisper is unavailable")
+		}
+	}
+}
+
+// TestOSExecutorLookPath covers the production executor's LookPath:
+// resolving a binary that is virtually always present, and one that
+// never is.
+func TestOSExecutorLookPath(t *testing.T) {
+	e := osExecutor{}
+	// "sh" exists on any POSIX CI runner.
+	if _, err := e.LookPath("sh"); err != nil {
+		t.Errorf("LookPath(sh) unexpected error: %v", err)
+	}
+	if _, err := e.LookPath("definitely-not-a-real-binary-xyz"); err == nil {
+		t.Error("LookPath of a bogus binary should error")
+	}
+}
+
+// TestOSExecutorRun covers the production Run: a command that succeeds
+// and one that fails, asserting stdout/stderr/err plumbing.
+func TestOSExecutorRun(t *testing.T) {
+	e := osExecutor{}
+	stdout, _, err := e.Run(context.Background(), "sh", "-c", "printf hello")
+	if err != nil {
+		t.Fatalf("Run(printf) error: %v", err)
+	}
+	if string(stdout) != "hello" {
+		t.Errorf("stdout = %q, want %q", stdout, "hello")
+	}
+	if _, _, err := e.Run(context.Background(), "sh", "-c", "exit 3"); err == nil {
+		t.Error("Run of a failing command should return an error")
+	}
+}
+
+// TestOSFileStat covers the production filesystem stub against a real
+// temp file and a missing path.
+func TestOSFileStat(t *testing.T) {
+	fs := osFileStat{}
+	f, err := os.CreateTemp(t.TempDir(), "stat-*")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	f.Close()
+	if _, err := fs.Stat(f.Name()); err != nil {
+		t.Errorf("Stat(existing) error: %v", err)
+	}
+	if _, err := fs.Stat("/no/such/path/xyz"); err == nil {
+		t.Error("Stat of a missing path should error")
+	}
+}
