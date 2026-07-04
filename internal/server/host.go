@@ -6,6 +6,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/whisper"
 )
 
 // host.go wires the server-package host operations (tmux, projects,
@@ -60,7 +61,7 @@ func (s *Server) hostCaps() hostsvc.HostCaps {
 		Worktrees: tmuxOK && gitOK && opencodeOK,
 		Tmux:      tmuxOK,
 		Projects:  s.db != nil,
-		Whisper:   whisperAvailable(),
+		Whisper:   whisper.Available(),
 	}
 }
 

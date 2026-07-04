@@ -1,4 +1,7 @@
-package server
+// Package whisper provides self-contained voice transcription via a
+// locally installed whisper-cpp binary (plus ffmpeg for format
+// conversion). It has no dependency on the rest of ocman.
+package whisper
 
 import (
 	"bytes"
@@ -233,10 +236,10 @@ func (w *Whisper) Transcribe(ctx context.Context, audioPath string) (string, err
 // filesystem so behaviour is identical to the pre-refactor code.
 var defaultWhisper = newWhisper(osExecutor{}, osFileStat{})
 
-// whisperAvailable returns true if the whisper binary and model are found.
-func whisperAvailable() bool { return defaultWhisper.Available() }
+// Available returns true if the whisper binary and model are found.
+func Available() bool { return defaultWhisper.Available() }
 
-// transcribeAudio runs whisper on the given audio file and returns the text.
-func transcribeAudio(audioPath string) (string, error) {
+// TranscribeFile runs whisper on the given audio file and returns the text.
+func TranscribeFile(audioPath string) (string, error) {
 	return defaultWhisper.Transcribe(context.Background(), audioPath)
 }

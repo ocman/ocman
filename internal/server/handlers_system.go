@@ -15,6 +15,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/pricing"
+	"github.com/NoUseFreak/ocman/internal/whisper"
 )
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
@@ -698,12 +699,12 @@ func (s *Server) handleHourly(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleWhisperStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]interface{}{
-		"available": whisperAvailable(),
+		"available": whisper.Available(),
 	})
 }
 
 func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
-	if !whisperAvailable() {
+	if !whisper.Available() {
 		http.Error(w, "whisper is not available", http.StatusServiceUnavailable)
 		return
 	}
@@ -736,7 +737,7 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 	}
 	tmp.Close()
 
-	text, err := transcribeAudio(tmp.Name())
+	text, err := whisper.TranscribeFile(tmp.Name())
 	if err != nil {
 		log.WithError(err).Error("transcription failed")
 		http.Error(w, "transcription failed", http.StatusInternalServerError)
