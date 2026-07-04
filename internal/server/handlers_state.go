@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 
@@ -92,7 +93,19 @@ func (s *Server) handleArchiveSession(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	if req.Archived {
-		err = s.stateDB.ArchiveSession(platform, req.SessionID, req.SessionTimeUpdated)
+		// The client's timeUpdated comes from its cached sidebar row,
+		// which can lag the session's real time_updated (the adapter's
+		// sessions cache has a multi-second TTL, and a busy session
+		// keeps advancing). Storing the stale value verbatim made the
+		// next applySessionState pass see TimeUpdated > archivedAtUpdate
+		// and immediately auto-unarchive — archived sessions bounced
+		// back into the sidebar. Clamp to "now" so only activity
+		// strictly after the archive click resurfaces the session.
+		ts := req.SessionTimeUpdated
+		if now := time.Now().UnixMilli(); now > ts {
+			ts = now
+		}
+		err = s.stateDB.ArchiveSession(platform, req.SessionID, ts)
 	} else {
 		err = s.stateDB.UnarchiveSession(platform, req.SessionID)
 	}

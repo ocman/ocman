@@ -535,6 +535,44 @@ func TestHandleArchiveSession_Unarchive(t *testing.T) {
 	}
 }
 
+// TestHandleArchiveSession_StaleClientTimestamp reproduces the
+// "archived session reappears in the sidebar" bug: the client sends
+// the timeUpdated from its cached sidebar row, which can lag the
+// session's real time_updated (the server-side sessions cache has a
+// 15 s TTL, and a busy session keeps advancing). Storing that stale
+// value verbatim made the very next applySessionState pass see
+// TimeUpdated > archivedAtUpdate and silently delete the archive
+// record. The handler must clamp the stored timestamp to "now" so
+// only activity strictly after the archive click resurfaces the
+// session.
+func TestHandleArchiveSession_StaleClientTimestamp(t *testing.T) {
+	srv := testServer(t)
+
+	// Client archives with a stale cached timestamp (1000) while the
+	// session's real time_updated is already 2000.
+	body := strings.NewReader(`{"platform":"opencode","sessionId":"s1","timeUpdated":1000,"archived":true}`)
+	req := httptest.NewRequest("POST", "/api/session/archive", body)
+	rr := httptest.NewRecorder()
+	srv.handleArchiveSession(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	sessions := []db.Session{
+		{ID: "s1", Platform: "opencode", TimeUpdated: 2000},
+	}
+	if err := srv.applySessionState(sessions); err != nil {
+		t.Fatalf("applySessionState: %v", err)
+	}
+	if !sessions[0].Archived {
+		t.Error("s1 must stay archived despite a stale client timeUpdated")
+	}
+	archived, _ := srv.stateDB.ArchivedSessions()
+	if _, ok := archived[state.Key{Platform: "opencode", SessionID: "s1"}]; !ok {
+		t.Error("archive record must not be deleted by the next sessions poll")
+	}
+}
+
 func TestHandleArchiveSession_MissingTimeUpdated(t *testing.T) {
 	srv := testServer(t)
 	body := strings.NewReader(`{"sessionId":"abc123","archived":true}`)
