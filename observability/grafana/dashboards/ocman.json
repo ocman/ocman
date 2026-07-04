@@ -35,6 +35,19 @@
         "multi": true,
         "refresh": 2,
         "sort": 1
+      },
+      {
+        "name": "session",
+        "label": "Session",
+        "description": "Filter LLM/token/cost panels to a single coding session.",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": { "qryType": 1, "query": "label_values(ocman_llm_requests_total{service_name=\"$service\"}, session_id)", "refId": "session" },
+        "current": { "text": "All", "value": "$__all" },
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2,
+        "sort": 1
       }
     ]
   },
@@ -197,7 +210,7 @@
       "type": "stat", "title": "LLM Requests", "description": "Total LLM assistant turns.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 4, "w": 3, "x": 6, "y": 7 },
-      "targets": [{ "refId": "A", "expr": "sum(ocman_llm_requests_total{service_name=\"$service\"})" }],
+      "targets": [{ "refId": "A", "expr": "sum(ocman_llm_requests_total{service_name=\"$service\",session_id=~\"$session\"})" }],
       "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 } },
       "options": { "colorMode": "value", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } }
     },
@@ -229,7 +242,7 @@
       "type": "stat", "title": "Est. API Cost", "description": "Estimated cost from token counts and public pricing.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 4, "w": 3, "x": 18, "y": 7 },
-      "targets": [{ "refId": "A", "expr": "sum(ocman_llm_calc_cost_total{service_name=\"$service\"})" }],
+      "targets": [{ "refId": "A", "expr": "sum(ocman_llm_calc_cost_total{service_name=\"$service\",session_id=~\"$session\"})" }],
       "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 2 } },
       "options": { "colorMode": "value", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } }
     },
@@ -237,7 +250,7 @@
       "type": "stat", "title": "Cache Hit Rate", "description": "Cache-read tokens as % of total cache tokens.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 4, "w": 3, "x": 21, "y": 7 },
-      "targets": [{ "refId": "A", "expr": "sum(ocman_llm_tokens_cache_read_total{service_name=\"$service\"}) / clamp_min(sum(ocman_llm_tokens_cache_read_total{service_name=\"$service\"}) + sum(ocman_llm_tokens_cache_write_total{service_name=\"$service\"}), 1) * 100" }],
+      "targets": [{ "refId": "A", "expr": "sum(ocman_llm_tokens_cache_read_total{service_name=\"$service\",session_id=~\"$session\"}) / clamp_min(sum(ocman_llm_tokens_cache_read_total{service_name=\"$service\",session_id=~\"$session\"}) + sum(ocman_llm_tokens_cache_write_total{service_name=\"$service\",session_id=~\"$session\"}), 1) * 100" }],
       "fieldConfig": { "defaults": { "unit": "percent", "decimals": 1, "min": 0, "max": 100 } },
       "options": { "colorMode": "value", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } }
     },
@@ -245,7 +258,7 @@
       "type": "stat", "title": "Avg Tok/s", "description": "Average output tokens per second across LLM turns.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 4, "w": 3, "x": 0, "y": 11 },
-      "targets": [{ "refId": "A", "expr": "sum(rate(ocman_llm_tokens_output_total{service_name=\"$service\"}[5m])) / clamp_min(sum(rate(ocman_llm_request_duration_seconds_sum{service_name=\"$service\"}[5m])), 0.001)" }],
+      "targets": [{ "refId": "A", "expr": "sum(rate(ocman_llm_tokens_output_total{service_name=\"$service\",session_id=~\"$session\"}[5m])) / clamp_min(sum(rate(ocman_llm_request_duration_seconds_sum{service_name=\"$service\",session_id=~\"$session\"}[5m])), 0.001)" }],
       "fieldConfig": { "defaults": { "unit": "short", "decimals": 1 } },
       "options": { "colorMode": "value", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } }
     },
@@ -253,7 +266,7 @@
       "type": "stat", "title": "Avg Duration", "description": "Average LLM turn duration.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 4, "w": 3, "x": 3, "y": 11 },
-      "targets": [{ "refId": "A", "expr": "sum(rate(ocman_llm_request_duration_seconds_sum{service_name=\"$service\"}[5m])) / clamp_min(sum(rate(ocman_llm_request_duration_seconds_count{service_name=\"$service\"}[5m])), 0.001)" }],
+      "targets": [{ "refId": "A", "expr": "sum(rate(ocman_llm_request_duration_seconds_sum{service_name=\"$service\",session_id=~\"$session\"}[5m])) / clamp_min(sum(rate(ocman_llm_request_duration_seconds_count{service_name=\"$service\",session_id=~\"$session\"}[5m])), 0.001)" }],
       "fieldConfig": { "defaults": { "unit": "s", "decimals": 2 } },
       "options": { "colorMode": "value", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } }
     },
@@ -261,7 +274,7 @@
       "type": "stat", "title": "Total Wall Clock", "description": "Sum of all LLM turn durations.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 4, "w": 3, "x": 6, "y": 11 },
-      "targets": [{ "refId": "A", "expr": "sum(ocman_llm_request_duration_seconds_sum{service_name=\"$service\"})" }],
+      "targets": [{ "refId": "A", "expr": "sum(ocman_llm_request_duration_seconds_sum{service_name=\"$service\",session_id=~\"$session\"})" }],
       "fieldConfig": { "defaults": { "unit": "s", "decimals": 0 } },
       "options": { "colorMode": "value", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } }
     },
@@ -289,7 +302,7 @@
       "gridPos": { "h": 7, "w": 12, "x": 0, "y": 15 },
       "targets": [
         { "refId": "A", "expr": "increase(ocman_stats_messages{service_name=\"$service\"}[5m])", "legendFormat": "User Prompts" },
-        { "refId": "B", "expr": "sum(rate(ocman_llm_requests_total{service_name=\"$service\"}[5m]))", "legendFormat": "Assistant Turns" }
+        { "refId": "B", "expr": "sum(rate(ocman_llm_requests_total{service_name=\"$service\",session_id=~\"$session\"}[5m]))", "legendFormat": "Assistant Turns" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "short", "decimals": 1, "custom": { "drawStyle": "bars", "fillOpacity": 60 } },
@@ -307,7 +320,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 7, "w": 12, "x": 12, "y": 15 },
       "targets": [
-        { "refId": "A", "expr": "sum(rate(ocman_llm_tokens_output_total{service_name=\"$service\"}[5m])) / clamp_min(sum(rate(ocman_llm_request_duration_seconds_sum{service_name=\"$service\"}[5m])), 0.001)", "legendFormat": "tok/s" }
+        { "refId": "A", "expr": "sum(rate(ocman_llm_tokens_output_total{service_name=\"$service\",session_id=~\"$session\"}[5m])) / clamp_min(sum(rate(ocman_llm_request_duration_seconds_sum{service_name=\"$service\",session_id=~\"$session\"}[5m])), 0.001)", "legendFormat": "tok/s" }
       ],
       "fieldConfig": { "defaults": { "unit": "short", "decimals": 1, "custom": { "drawStyle": "line", "fillOpacity": 15 } } },
       "options": { "legend": { "showLegend": false } }
@@ -320,9 +333,9 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 7, "w": 12, "x": 0, "y": 22 },
       "targets": [
-        { "refId": "A", "expr": "sum(rate(ocman_llm_tokens_input_total{service_name=\"$service\"}[5m]))", "legendFormat": "Input" },
-        { "refId": "B", "expr": "sum(rate(ocman_llm_tokens_cache_read_total{service_name=\"$service\"}[5m]))", "legendFormat": "Cache Read" },
-        { "refId": "C", "expr": "sum(rate(ocman_llm_tokens_output_total{service_name=\"$service\"}[5m]))", "legendFormat": "Output" }
+        { "refId": "A", "expr": "sum(rate(ocman_llm_tokens_input_total{service_name=\"$service\",session_id=~\"$session\"}[5m]))", "legendFormat": "Input" },
+        { "refId": "B", "expr": "sum(rate(ocman_llm_tokens_cache_read_total{service_name=\"$service\",session_id=~\"$session\"}[5m]))", "legendFormat": "Cache Read" },
+        { "refId": "C", "expr": "sum(rate(ocman_llm_tokens_output_total{service_name=\"$service\",session_id=~\"$session\"}[5m]))", "legendFormat": "Output" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "short", "custom": { "drawStyle": "bars", "fillOpacity": 60, "stacking": { "mode": "normal" } } },
@@ -341,8 +354,8 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 7, "w": 12, "x": 12, "y": 22 },
       "targets": [
-        { "refId": "A", "expr": "sum(ocman_llm_cost_total{service_name=\"$service\"})", "legendFormat": "Reported Cost" },
-        { "refId": "B", "expr": "sum(ocman_llm_calc_cost_total{service_name=\"$service\"})", "legendFormat": "Est. Cost" }
+        { "refId": "A", "expr": "sum(ocman_llm_cost_total{service_name=\"$service\",session_id=~\"$session\"})", "legendFormat": "Reported Cost" },
+        { "refId": "B", "expr": "sum(ocman_llm_calc_cost_total{service_name=\"$service\",session_id=~\"$session\"})", "legendFormat": "Est. Cost" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "currencyUSD", "decimals": 2, "custom": { "drawStyle": "line", "fillOpacity": 15, "pointSize": 0 } },
@@ -360,8 +373,8 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 7, "w": 12, "x": 0, "y": 29 },
       "targets": [
-        { "refId": "A", "expr": "histogram_quantile(0.5, sum by (le) (rate(ocman_llm_request_duration_seconds_bucket{service_name=\"$service\"}[5m])))", "legendFormat": "p50" },
-        { "refId": "B", "expr": "histogram_quantile(0.95, sum by (le) (rate(ocman_llm_request_duration_seconds_bucket{service_name=\"$service\"}[5m])))", "legendFormat": "p95" }
+        { "refId": "A", "expr": "histogram_quantile(0.5, sum by (le) (rate(ocman_llm_request_duration_seconds_bucket{service_name=\"$service\",session_id=~\"$session\"}[5m])))", "legendFormat": "p50" },
+        { "refId": "B", "expr": "histogram_quantile(0.95, sum by (le) (rate(ocman_llm_request_duration_seconds_bucket{service_name=\"$service\",session_id=~\"$session\"}[5m])))", "legendFormat": "p95" }
       ],
       "fieldConfig": { "defaults": { "unit": "s", "decimals": 2, "custom": { "drawStyle": "line", "fillOpacity": 10 } } },
       "options": { "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" } }
@@ -373,7 +386,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 7, "w": 12, "x": 12, "y": 29 },
       "targets": [
-        { "refId": "A", "expr": "sum by (model) (rate(ocman_llm_requests_total{service_name=\"$service\"}[5m]))", "legendFormat": "{{model}}" }
+        { "refId": "A", "expr": "sum by (model) (rate(ocman_llm_requests_total{service_name=\"$service\",session_id=~\"$session\"}[5m]))", "legendFormat": "{{model}}" }
       ],
       "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "bars", "fillOpacity": 60, "stacking": { "mode": "normal" } } } },
       "options": { "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" } }
@@ -387,7 +400,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(ocman_llm_tokens_cache_read_total{service_name=\"$service\"}[5m])) / clamp_min(sum(rate(ocman_llm_tokens_cache_read_total{service_name=\"$service\"}[5m])) + sum(rate(ocman_llm_tokens_cache_write_total{service_name=\"$service\"}[5m])), 1) * 100",
+          "expr": "sum(rate(ocman_llm_tokens_cache_read_total{service_name=\"$service\",session_id=~\"$session\"}[5m])) / clamp_min(sum(rate(ocman_llm_tokens_cache_read_total{service_name=\"$service\",session_id=~\"$session\"}[5m])) + sum(rate(ocman_llm_tokens_cache_write_total{service_name=\"$service\",session_id=~\"$session\"}[5m])), 1) * 100",
           "legendFormat": "cache hit %"
         }
       ],
@@ -401,7 +414,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 7, "w": 12, "x": 12, "y": 36 },
       "targets": [
-        { "refId": "A", "expr": "sum by (stop_reason) (increase(ocman_llm_requests_total{service_name=\"$service\"}[$__range]))", "legendFormat": "{{stop_reason}}" }
+        { "refId": "A", "expr": "sum by (stop_reason) (increase(ocman_llm_requests_total{service_name=\"$service\",session_id=~\"$session\"}[$__range]))", "legendFormat": "{{stop_reason}}" }
       ],
       "fieldConfig": { "defaults": { "unit": "short" } },
       "options": { "legend": { "showLegend": true, "displayMode": "list", "placement": "right" }, "pieType": "donut", "reduceOptions": { "calcs": ["lastNotNull"] } }
@@ -414,8 +427,8 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 7, "w": 24, "x": 0, "y": 43 },
       "targets": [
-        { "refId": "A", "expr": "sum by (model) (ocman_llm_tokens_input_total{service_name=\"$service\"})", "legendFormat": "{{model}} input", "format": "table", "instant": true },
-        { "refId": "B", "expr": "sum by (model) (ocman_llm_tokens_output_total{service_name=\"$service\"})", "legendFormat": "{{model}} output", "format": "table", "instant": true }
+        { "refId": "A", "expr": "sum by (model) (ocman_llm_tokens_input_total{service_name=\"$service\",session_id=~\"$session\"})", "legendFormat": "{{model}} input", "format": "table", "instant": true },
+        { "refId": "B", "expr": "sum by (model) (ocman_llm_tokens_output_total{service_name=\"$service\",session_id=~\"$session\"})", "legendFormat": "{{model}} output", "format": "table", "instant": true }
       ],
       "fieldConfig": { "defaults": { "unit": "short" } },
       "options": { "orientation": "horizontal", "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" } }

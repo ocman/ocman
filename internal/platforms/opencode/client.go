@@ -385,8 +385,11 @@ func (a *Adapter) fetchSessionFromOpenCodeCtx(ctx context.Context, sessionID str
 				lastErr = "true"
 				if errorMap, ok := rawError.(map[string]interface{}); ok {
 					lastErrorName, _ = errorMap["name"].(string)
+					lastErrorMessage, _ = errorMap["message"].(string)
 					if dataMap, ok := errorMap["data"].(map[string]interface{}); ok {
-						lastErrorMessage, _ = dataMap["message"].(string)
+						if dataMessage, _ := dataMap["message"].(string); dataMessage != "" {
+							lastErrorMessage = dataMessage
+						}
 					}
 				}
 			}

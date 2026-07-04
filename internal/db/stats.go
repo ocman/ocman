@@ -1401,7 +1401,7 @@ func (d *DB) GetHourlyActivity(since int64, dir string) ([]HourlyActivity, error
 // and advances the high-water mark so the next call only sees new data.
 func (d *DB) GetNewAssistantMessages(since int64) ([]LLMMessageRow, int64, error) {
 	rows, err := d.db.Query(`
-		SELECT m.time_created, m.data
+		SELECT m.time_created, m.session_id, m.data
 		FROM message m
 		WHERE json_extract(m.data, '$.role') = 'assistant'
 		  AND m.time_created > ?
@@ -1416,8 +1416,8 @@ func (d *DB) GetNewAssistantMessages(since int64) ([]LLMMessageRow, int64, error
 	hwm := since
 	for rows.Next() {
 		var tc int64
-		var raw string
-		if err := rows.Scan(&tc, &raw); err != nil {
+		var sessionID, raw string
+		if err := rows.Scan(&tc, &sessionID, &raw); err != nil {
 			log.WithError(err).Warn("failed to scan LLM message row")
 			continue
 		}
@@ -1435,6 +1435,7 @@ func (d *DB) GetNewAssistantMessages(since int64) ([]LLMMessageRow, int64, error
 
 		r := LLMMessageRow{
 			TimeCreated: tc,
+			SessionID:   sessionID,
 			Model:       modelKey,
 			Cost:        md.Cost,
 		}

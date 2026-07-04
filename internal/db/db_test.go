@@ -378,6 +378,30 @@ func TestGetSessions_StatusError(t *testing.T) {
 	}
 }
 
+func TestGetSessions_CarriesTopLevelErrorMessage(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Rate Limited", "/project", now, now)
+	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{
+		"role":   "assistant",
+		"finish": "error",
+		"error": map[string]interface{}{
+			"name":    "RateLimitError",
+			"message": "This request would exceed your account's rate limit. Please try again later. [retrying in 58m attempt #1]",
+		},
+	})
+
+	sessions, err := db.GetSessions("", 0)
+	if err != nil {
+		t.Fatalf("GetSessions: %v", err)
+	}
+	if sessions[0].LastErrorMessage != "This request would exceed your account's rate limit. Please try again later. [retrying in 58m attempt #1]" {
+		t.Errorf("LastErrorMessage = %q", sessions[0].LastErrorMessage)
+	}
+}
+
 func TestGetSessions_StatusDone(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
@@ -413,8 +437,8 @@ func TestGetSessions_StatusShellOnlySynthTerminal(t *testing.T) {
 	// just one completed bash tool.
 	insertMessage(t, db, "m_shell", "s1", now, map[string]interface{}{"role": "assistant"})
 	insertPart(t, db, "p1", "m_shell", "s1", now, map[string]interface{}{
-		"type": "tool",
-		"tool": "bash",
+		"type":  "tool",
+		"tool":  "bash",
 		"state": map[string]interface{}{"status": "completed"},
 	})
 
@@ -463,8 +487,8 @@ func TestGetSessions_StatusLLMRunningTool(t *testing.T) {
 	// even if no step-start is present (defensive: the SQL doesn't
 	// require both signals — either is enough to refuse the synth flag).
 	insertPart(t, db, "p1", "m1", "s1", now, map[string]interface{}{
-		"type": "tool",
-		"tool": "bash",
+		"type":  "tool",
+		"tool":  "bash",
 		"state": map[string]interface{}{"status": "running"},
 	})
 
@@ -1300,6 +1324,9 @@ func TestGetNewAssistantMessages(t *testing.T) {
 
 	// First row should be a1 (oldest first).
 	r := rows[0]
+	if r.SessionID != "s1" {
+		t.Errorf("row[0].SessionID = %q, want %q", r.SessionID, "s1")
+	}
 	if r.Model != "anthropic/claude-3" {
 		t.Errorf("row[0].Model = %q, want %q", r.Model, "anthropic/claude-3")
 	}

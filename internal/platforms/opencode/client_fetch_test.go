@@ -75,6 +75,37 @@ func TestFetchSessionFromOpenCodeCtx_CarriesLastErrorMetadata(t *testing.T) {
 	}
 }
 
+func TestFetchSessionFromOpenCodeCtx_CarriesTopLevelErrorMessage(t *testing.T) {
+	const sid = "sess-1"
+	const dir = "/tmp/proj"
+
+	fake := newOpencodeFake(t)
+	fake.SetSession(sid, []byte(`{"id":"sess-1","title":"hello","directory":"/tmp/proj","time":{"created":1000,"updated":1500}}`))
+	fake.AddMessage(sid, []byte(`{
+		"info": {
+			"id":"m1",
+			"sessionID":"sess-1",
+			"role":"assistant",
+			"finish":"error",
+			"time":{"created":1100},
+			"error":{"name":"RateLimitError","message":"This request would exceed your account's rate limit. Please try again later. [retrying in 58m attempt #1]"}
+		},
+		"parts": []
+	}`))
+
+	withTestPort(t, dir, fake.Port())
+	database := newTestDBWithSession(t, sid, dir)
+
+	a := New(database, nil)
+	detail, ok := a.fetchSessionFromOpenCodeCtx(context.Background(), sid, 30, 0)
+	if !ok {
+		t.Fatalf("fetchSessionFromOpenCodeCtx: ok=false; hits=%v", fake.hits)
+	}
+	if detail.Session.LastErrorMessage != "This request would exceed your account's rate limit. Please try again later. [retrying in 58m attempt #1]" {
+		t.Errorf("LastErrorMessage = %q", detail.Session.LastErrorMessage)
+	}
+}
+
 func TestFetchSessionFromOpenCodeCtx_Upstream500(t *testing.T) {
 	const sid = "sess-1"
 	const dir = "/tmp/proj"

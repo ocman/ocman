@@ -63,6 +63,48 @@ describe('LaunchSplitButton', () => {
     expect(useApiStore.getState().recentSessions).toHaveLength(0);
   });
 
+  it('offers review options for a PR and sends action:review', async () => {
+    const spy = vi.spyOn(api, 'postHandle').mockResolvedValue({
+      childSessionId: 'child-3',
+      mode: 'worktree',
+    });
+
+    render(
+      <LaunchSplitButton
+        directory="/repo"
+        remote="origin"
+        type="pr"
+        number={11}
+        crossFork={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('launch-menu-toggle'));
+    fireEvent.click(screen.getByTestId('launch-review-worktree'));
+
+    await waitFor(() => {
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'pr', number: 11, mode: 'worktree', action: 'review' }),
+      );
+    });
+  });
+
+  it('does not offer review options for an issue', () => {
+    render(
+      <LaunchSplitButton
+        directory="/repo"
+        remote="origin"
+        type="issue"
+        number={5}
+        crossFork={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('launch-menu-toggle'));
+    expect(screen.queryByTestId('launch-review-worktree')).toBeNull();
+    expect(screen.queryByTestId('launch-review-session')).toBeNull();
+  });
+
   it('surfaces an error when the handle fails', async () => {
     vi.spyOn(api, 'postHandle').mockRejectedValue(new Error('boom'));
 

@@ -305,6 +305,10 @@ export function SessionSidebar({
     const collapsed = collapsedProjectSet.has(group.directory);
     const label = group.directory ? shortPath(group.directory) : '(unknown)';
     const remoteSession = group.sessions.find((s) => s.remoteId && s.remoteId !== 'local');
+    const gitSession = group.sessions.find((s) => siblingGitInfos[s.directory]);
+    const gitDirectory = gitSession?.directory || group.directory;
+    const gitInfo = siblingGitInfos[gitDirectory];
+    const gitIsWorktree = !!gitSession && gitSession.directory !== group.directory;
     // The status dot surfaces the rolled-up aggregate: the same visual
     // vocabulary as per-session rows (pending "!", error "!", busy
     // pulse, idle neutral), so a collapsed header tells you at a glance
@@ -343,6 +347,7 @@ export function SessionSidebar({
               <StatusBadge status={dotStatus} compact pending={dotPending} seen={dotSeen} />
             </span>
             <span className="session-sidebar-group-label">{label}</span>
+            <GitStatusLine info={gitInfo} icon={gitIsWorktree ? 'worktree' : 'branch'} />
           </button>
           <HostBadge remoteName={remoteSession?.remoteName} remoteId={remoteSession?.remoteId} stale={remoteSession?.stale} />
           {group.directory && (

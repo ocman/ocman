@@ -84,6 +84,8 @@ func TestHandleProjectHandle_RejectsInvalidBody(t *testing.T) {
 		"bad-type":       `{"dir":"/x","remote":"o","type":"weird","number":1,"mode":"session"}`,
 		"bad-number":     `{"dir":"/x","remote":"o","type":"pr","number":0,"mode":"session"}`,
 		"bad-mode":       `{"dir":"/x","remote":"o","type":"pr","number":1,"mode":"weird"}`,
+		"bad-action":     `{"dir":"/x","remote":"o","type":"pr","number":1,"mode":"session","action":"weird"}`,
+		"review-issue":   `{"dir":"/x","remote":"o","type":"issue","number":1,"mode":"session","action":"review"}`,
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {

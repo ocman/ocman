@@ -22,9 +22,10 @@ import (
 type handleProjectRequest struct {
 	Dir       string `json:"dir"`
 	Remote    string `json:"remote"`
-	Type      string `json:"type"`   // "pr" | "issue"
-	Number    int    `json:"number"` // PR or Issue number
-	Mode      string `json:"mode"`   // "session" | "worktree"
+	Type      string `json:"type"`             // "pr" | "issue"
+	Number    int    `json:"number"`           // PR or Issue number
+	Mode      string `json:"mode"`             // "session" | "worktree"
+	Action    string `json:"action,omitempty"` // "handle" (default) | "review" (pr only)
 	FetchHead bool   `json:"fetchHead,omitempty"`
 	Intent    string `json:"intent,omitempty"`
 }
@@ -40,11 +41,11 @@ type handleProjectRequest struct {
 // Branching:
 //   - mode=session: render template, call Launch in projectDir.
 //   - mode=worktree: depends on item type:
-//       - issue: NewBranch=true, branch="issue/<n>", BaseRef=default.
-//       - PR (same-repo head): NewBranch=false, branch=<head ref>.
-//       - PR (cross-fork, fetchHead=false): 409 requires_fetch.
-//       - PR (cross-fork, fetchHead=true): FetchPRHead first, then
-//         NewBranch=false with branch="ocman/pr-<n>".
+//   - issue: NewBranch=true, branch="issue/<n>", BaseRef=default.
+//   - PR (same-repo head): NewBranch=false, branch=<head ref>.
+//   - PR (cross-fork, fetchHead=false): 409 requires_fetch.
+//   - PR (cross-fork, fetchHead=true): FetchPRHead first, then
+//     NewBranch=false with branch="ocman/pr-<n>".
 func (s *Server) handleProjectHandle(w http.ResponseWriter, r *http.Request) {
 	var req handleProjectRequest
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
@@ -254,7 +255,7 @@ var errPRNotFound = errors.New("pr not found")
 func (s *Server) renderHandlePrompt(
 	ctx context.Context, f forge.Forge, rem forge.Remote, req handleProjectRequest,
 ) (string, map[string]string, error) {
-	tmpl, err := s.promptTemplateFor(req.Type)
+	tmpl, err := s.promptTemplateFor(req.Type, req.Action)
 	if err != nil {
 		return "", nil, err
 	}
@@ -308,12 +309,18 @@ func (s *Server) renderHandlePrompt(
 	return forge.RenderPrompt(tmpl, vars), vars, nil
 }
 
-// promptTemplateFor returns the PR or Issue template, falling back to
-// the built-in defaults when state.db is unavailable or empty.
-func (s *Server) promptTemplateFor(itemType string) (string, error) {
+// promptTemplateFor returns the template for the given item type and
+// action, falling back to the built-in defaults when state.db is
+// unavailable or empty. action=="review" (PR only) selects the review
+// template; anything else uses the type's handle template.
+func (s *Server) promptTemplateFor(itemType, action string) (string, error) {
 	def := DefaultPRPromptTemplate
 	key := settingPRPromptTemplate
-	if itemType == "issue" {
+	switch {
+	case itemType == "pr" && action == "review":
+		def = DefaultReviewPromptTemplate
+		key = settingReviewPromptTemplate
+	case itemType == "issue":
 		def = DefaultIssuePromptTemplate
 		key = settingIssuePromptTemplate
 	}
@@ -434,6 +441,15 @@ func (r handleProjectRequest) validate() error {
 	default:
 		return errors.New("mode must be 'session' or 'worktree'")
 	}
+	switch r.Action {
+	case "", "handle":
+	case "review":
+		if r.Type != "pr" {
+			return errors.New("action 'review' is only valid for type 'pr'")
+		}
+	default:
+		return errors.New("action must be 'handle' or 'review'")
+	}
 	return nil
 }
 
@@ -441,5 +457,9 @@ func (r handleProjectRequest) intentOrDefault() string {
 	if r.Intent != "" {
 		return r.Intent
 	}
-	return fmt.Sprintf("handle %s #%d", r.Type, r.Number)
+	verb := "handle"
+	if r.Action == "review" {
+		verb = "review"
+	}
+	return fmt.Sprintf("%s %s #%d", verb, r.Type, r.Number)
 }

@@ -11,6 +11,7 @@ interface LaunchSplitButtonProps {
 }
 
 type Mode = 'session' | 'worktree';
+type Action = 'handle' | 'review';
 
 /**
  * LaunchSplitButton renders the "Handle this PR/Issue" control:
@@ -37,11 +38,15 @@ export function LaunchSplitButton({
   const [confirmFetch, setConfirmFetch] = useState<null | { fetchTarget: string }>(null);
   const seedNewSession = useApiStore((s) => s.seedNewSession);
 
-  const run = async (mode: Mode, fetchHead = false) => {
+  // Track the mode/action to retry with after a cross-fork fetch confirm.
+  const [pendingAction, setPendingAction] = useState<Action>('handle');
+
+  const run = async (mode: Mode, action: Action = 'handle', fetchHead = false) => {
     setBusy(true);
     setError(null);
     setLaunched(false);
     setMenuOpen(false);
+    setPendingAction(action);
     try {
       const res = await postHandle({
         dir: directory,
@@ -49,6 +54,7 @@ export function LaunchSplitButton({
         type,
         number,
         mode,
+        action,
         fetchHead,
       });
       // For session mode the user stays put; seed the new session into the
@@ -87,7 +93,7 @@ export function LaunchSplitButton({
             disabled={busy}
             onClick={() => {
               setConfirmFetch(null);
-              void run('worktree', true);
+              void run('worktree', pendingAction, true);
             }}
             data-testid="launch-confirm-fetch"
           >
@@ -107,7 +113,7 @@ export function LaunchSplitButton({
         type="button"
         className="oc-upstream-launch-main"
         disabled={busy}
-        onClick={() => void run('session')}
+        onClick={() => void run('session', 'handle')}
         data-testid="launch-default"
       >
         {busy ? 'Launching…' : launched ? 'Launched ✓' : 'Handle in new session'}
@@ -128,13 +134,36 @@ export function LaunchSplitButton({
           <li>
             <button
               type="button"
-              onClick={() => void run('worktree')}
+              onClick={() => void run('worktree', 'handle')}
               data-testid="launch-worktree"
             >
               Handle in new worktree
               {crossFork && <span className="oc-upstream-launch-hint"> (fetches PR ref)</span>}
             </button>
           </li>
+          {type === 'pr' && (
+            <>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => void run('worktree', 'review')}
+                  data-testid="launch-review-worktree"
+                >
+                  Review in new worktree
+                  {crossFork && <span className="oc-upstream-launch-hint"> (fetches PR ref)</span>}
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => void run('session', 'review')}
+                  data-testid="launch-review-session"
+                >
+                  Review in new session
+                </button>
+              </li>
+            </>
+          )}
         </ul>
       )}
       {error && (

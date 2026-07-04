@@ -129,6 +129,24 @@ func TestApplySessionDetailMetadataFromMessages_CarriesErrorNoticeFields(t *test
 	}
 }
 
+func TestApplySessionDetailMetadataFromMessages_CarriesTopLevelErrorMessage(t *testing.T) {
+	session := &db.Session{ID: "sess-1"}
+	messages := []db.Message{
+		{
+			ID:          "m1",
+			SessionID:   "sess-1",
+			TimeCreated: 1100,
+			Data:        []byte(`{"role":"assistant","finish":"error","error":{"name":"RateLimitError","message":"This request would exceed your account's rate limit. Please try again later. [retrying in 58m attempt #1]"}}`),
+		},
+	}
+
+	applySessionDetailMetadataFromMessages(session, messages)
+
+	if session.LastErrorMessage != "This request would exceed your account's rate limit. Please try again later. [retrying in 58m attempt #1]" {
+		t.Errorf("LastErrorMessage = %q", session.LastErrorMessage)
+	}
+}
+
 func TestAdapter_Session_NotFound(t *testing.T) {
 	database := newTestDBWithSession(t, "exists", "/tmp/proj")
 	restore := setDiscoverPortsImplForTests(func() map[string]string { return nil })
