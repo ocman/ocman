@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/autoapprove"
 )
 
 // --- Global broadcast hub ---
@@ -233,7 +235,7 @@ func (s *Server) handleGlobalEvents(w http.ResponseWriter, r *http.Request) {
 			if !open {
 				return
 			}
-			writeSSEEvent(w, flusher.Flush, ev.event, ev.data)
+			autoapprove.WriteSSEEvent(w, flusher.Flush, ev.event, ev.data)
 		}
 	}
 }

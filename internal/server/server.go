@@ -5,7 +5,6 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/fs"
 	"net"
 	"net/http"
@@ -17,6 +16,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
+	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
@@ -58,21 +58,12 @@ type Server struct {
 	// WithPublicBaseURL from the OCMAN_PUBLIC_BASE_URL env or
 	// -public-base-url flag. Trailing slash is trimmed.
 	publicBaseURL string
-	judge         *PermissionJudge
-	// judgeDelayMs is the cached value of the judge delay setting.
-	// Loaded at startup and updated whenever the setting is changed via
-	// the API. Accessed without a lock — reads/writes are int64 and
-	// the worst case is a stale value for one permission event.
-	judgeDelayMs int64
 
-	// sseSessions maps sessionID -> the live SSE writer for any
-	// currently-connected client. Used to deliver synthetic
-	// ocman.permission.* events from non-SSE code paths (REST
-	// resurrection of pending permissions, REST permission listing).
-	// Values are pointers so callers that capture the sink survive a
-	// registry mutation and see the same close() flag.
-	sseSessions   map[string]*sseSink
-	sseSessionsMu sync.Mutex
+	// aaSvcCached is the auto-approve domain service
+	// (internal/autoapprove), built lazily on first use via aaSvc() so
+	// the dependency fields are wired by then. See autoapprove_engine.go.
+	aaSvcCached *autoapprove.Service
+	aaOnce      sync.Once
 
 	// broadcastHub fans out events to every connected /api/events
 	// client regardless of which session (if any) they're viewing.
@@ -80,54 +71,6 @@ type Server struct {
 	// in-app prompt toasts can clear instantly rather than waiting for
 	// the next /api/sessions/notify poll.
 	broadcastHub *broadcastHub
-
-	// autoApprove tracks the per-permission state of the auto-approve
-	// pipeline for the lifetime of the ocman process. Keyed by
-	// "sessionID|permissionID".
-	//
-	// Combines what used to be two parallel maps:
-	//   - in-flight: a non-nil status.cancel means a judge goroutine
-	//     is still running, so a second ensureAutoApprove call must
-	//     not start another one. cancel is invoked when the user
-	//     replies to the prompt (via ocman API or the OpenCode TUI's
-	//     permission.replied event) so the judge aborts before its
-	//     verdict can race the user's manual answer.
-	//   - judged: status.verdict (and status.reasoning for unsafe
-	//     verdicts) record the result so re-firing ensureAutoApprove
-	//     for the same permissionID (e.g. when the user re-opens the
-	//     session and handleSessionPermissions resurrects the prompt
-	//     via REST) short-circuits instead of re-running the LLM.
-	//
-	// The combined map also stores status.judgeStartsAt and
-	// status.checking so a freshly-connected SSE sink (the bug case:
-	// the headless watcher claimed the permission before any frontend
-	// tab was open) can be brought up to date with a synthetic replay
-	// of the most recent applicable ocman.permission.* event when the
-	// frontend's REST resurrection path calls ensureAutoApprove.
-	// Without that replay the prompt UI would stay frozen waiting for
-	// an event that already fired.
-	//
-	// Process-lifetime only: safe verdicts persist via the
-	// ApprovedPermission DB row, so they survive restarts naturally.
-	// Unsafe verdicts are forgotten on restart, costing at most one
-	// re-judge per pending prompt.
-	autoApprove   map[string]*autoApproveStatus
-	autoApproveMu sync.Mutex
-
-	// safeCommandCache remembers safe Bash-command verdicts per
-	// session keyed by md5(metadata["command"]). When the same raw
-	// command shows up again in the same session (with a fresh
-	// permissionID), backgroundAutoApprove skips the LLM judge and
-	// auto-approves immediately using the cached reasoning. Only
-	// safe verdicts are cached — unsafe always re-judges so the
-	// user gets fresh reasoning and a one-off flag can't permanently
-	// block a benign command. In-memory, process-lifetime only.
-	//
-	// Outer key: sessionID. Inner key: md5 hex of the command.
-	// Inner value: the original judge reasoning (rendered into the
-	// "cached: <…>" audit row when a hit fires).
-	safeCommandCache   map[string]map[string]string
-	safeCommandCacheMu sync.Mutex
 
 	// remoteAccess describes this instance's own remote-access surface
 	// (instance ID, whether the gRPC server is listening, its address,
@@ -165,53 +108,6 @@ type remoteAccessInfo struct {
 	tls        bool
 }
 
-// sseSink wraps an SSE response writer with the synchronisation needed
-// to safely emit events from background goroutines.
-//
-// The server-side auto-approve pipeline emits events long after the
-// triggering permission.asked has been processed (after the configured
-// delay + judge execution). The originating SSE connection may have
-// closed in the meantime; without coordination, writes to the
-// underlying http.ResponseWriter would panic the moment Go's
-// connection bookkeeping recycles the bufio.Writer.
-//
-// close() sets closed=true under mu so any concurrent write either
-// completes against the live writer or sees closed=true and skips. All
-// writes go through write(), which takes the same mutex.
-type sseSink struct {
-	w      io.Writer
-	flush  func()
-	mu     sync.Mutex
-	closed bool
-}
-
-// write emits a single named SSE event. It is a no-op if the sink has
-// been closed (the originating connection went away). Safe to call
-// concurrently with close() and with other write() calls — they
-// serialise on the sink's mutex.
-func (s *sseSink) write(eventType string, data []byte) {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed {
-		return
-	}
-	writeSSEEvent(s.w, s.flush, eventType, data)
-}
-
-// close marks the sink as closed so future write() calls become no-ops.
-// Idempotent.
-func (s *sseSink) close() {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	s.closed = true
-	s.mu.Unlock()
-}
-
 // New creates a new server. The registry may be nil, in which case a
 // new empty registry is created. Callers that want to pre-register
 // platform adapters should pass one built with platforms.NewRegistry().
@@ -222,18 +118,14 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		registry = platforms.NewRegistry()
 	}
 	s := &Server{
-		db:               database,
-		stateDB:          stateDB,
-		addr:             addr,
-		registry:         registry,
-		auth:             auth,
-		integrations:     integrations.New(),
-		startTime:        time.Now(),
-		judge:            newPermissionJudge(),
-		sseSessions:      make(map[string]*sseSink),
-		broadcastHub:     newBroadcastHub(),
-		autoApprove:      make(map[string]*autoApproveStatus),
-		safeCommandCache: make(map[string]map[string]string),
+		db:           database,
+		stateDB:      stateDB,
+		addr:         addr,
+		registry:     registry,
+		auth:         auth,
+		integrations: integrations.New(),
+		startTime:    time.Now(),
+		broadcastHub: newBroadcastHub(),
 	}
 	s.hostRouter = hostsvc.NewRouter(s.newLocalHost())
 	return s
@@ -324,12 +216,12 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// available without a DB round-trip.
 	if s.stateDB != nil {
 		if d, err := s.stateDB.GetJudgeDelayMs(); err == nil {
-			s.judgeDelayMs = d
+			s.aaSvc().SetJudgeDelayMs(d)
 		} else {
-			s.judgeDelayMs = state.DefaultJudgeDelayMs
+			s.aaSvc().SetJudgeDelayMs(state.DefaultJudgeDelayMs)
 		}
 	} else {
-		s.judgeDelayMs = state.DefaultJudgeDelayMs
+		s.aaSvc().SetJudgeDelayMs(state.DefaultJudgeDelayMs)
 	}
 
 	go s.runAutoArchiveLoop(ctx)
@@ -343,7 +235,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// auto-approve pipeline only fires when a frontend SSE connection
 	// happens to be active for some session in the same OpenCode
 	// process.
-	go s.runAutoApproveWatcher(ctx)
+	go s.aaSvc().RunWatcher(ctx)
 
 	// Register observable gauges for the top-line stats (session /
 	// message / project counts, lifetime tokens and cost). The

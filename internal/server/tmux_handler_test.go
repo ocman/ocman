@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/term"
 	"github.com/NoUseFreak/ocman/internal/hostsvc/local"
+	"github.com/NoUseFreak/ocman/internal/term"
 )
 
 func TestHandleTmuxLaunchOpencodeRoutesToRemoteHost(t *testing.T) {

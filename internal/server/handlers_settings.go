@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -152,7 +153,7 @@ func (s *Server) handleSetJudgeDelay(w http.ResponseWriter, r *http.Request) {
 	}
 	// Keep the in-memory cache in sync so the next permission event uses
 	// the updated delay without a DB round-trip.
-	s.judgeDelayMs = body.DelayMs
+	s.aaSvc().SetJudgeDelayMs(body.DelayMs)
 	writeJSON(w, map[string]int64{"delayMs": body.DelayMs})
 }
 
@@ -180,7 +181,7 @@ func (s *Server) handleJudgeModel(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetJudgeModel(w http.ResponseWriter, _ *http.Request) {
 	var model string
 	if s.stateDB != nil {
-		if v, ok, err := s.stateDB.GetSetting(judgeModelSettingKey); err == nil && ok {
+		if v, ok, err := s.stateDB.GetSetting(autoapprove.JudgeModelSettingKey); err == nil && ok {
 			model = v
 		}
 	}
@@ -199,19 +200,11 @@ func (s *Server) handleSetJudgeModel(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "state database not available", http.StatusServiceUnavailable)
 		return
 	}
-	if err := s.stateDB.SetSetting(judgeModelSettingKey, body.Model); err != nil {
+	if err := s.stateDB.SetSetting(autoapprove.JudgeModelSettingKey, body.Model); err != nil {
 		serverError(w, "saving judge model", err)
 		return
 	}
 	// Apply immediately so the next judge run uses the new model.
-	if s.judge != nil {
-		if provider, modelID, ok := loadJudgeModel(s.stateDB); ok {
-			s.judge.modelProvider = provider
-			s.judge.modelID = modelID
-		} else {
-			s.judge.modelProvider = judgeModelProvider
-			s.judge.modelID = judgeModelID
-		}
-	}
+	s.aaSvc().ReloadJudgeModel()
 	writeJSON(w, map[string]string{"model": body.Model})
 }

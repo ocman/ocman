@@ -1,4 +1,4 @@
-package server
+package autoapprove
 
 import (
 	"bytes"
@@ -17,7 +17,7 @@ import (
 // first claim for a (session, permission) pair succeeds; subsequent
 // claims return ok=false until releaseAutoApprove runs.
 func TestClaimAutoApprove(t *testing.T) {
-	s := &Server{autoApprove: make(map[string]*autoApproveStatus)}
+	s := &Service{autoApprove: make(map[string]*autoApproveStatus)}
 
 	ctx1, ok := s.claimAutoApprove(context.Background(), "ses-1", "perm-1")
 	if !ok {
@@ -52,7 +52,7 @@ func TestClaimAutoApprove(t *testing.T) {
 // TestClaimAutoApproveConcurrent stresses the dedup under heavy parallel
 // load to catch any locking bug.
 func TestClaimAutoApproveConcurrent(t *testing.T) {
-	s := &Server{autoApprove: make(map[string]*autoApproveStatus)}
+	s := &Service{autoApprove: make(map[string]*autoApproveStatus)}
 	const goroutines = 100
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
@@ -74,14 +74,14 @@ func TestClaimAutoApproveConcurrent(t *testing.T) {
 	}
 }
 
-// TestCancelAutoApprove verifies cancelAutoApprove cancels the
+// TestCancelAutoApprove verifies Cancel cancels the
 // claimed context, returns true when something was cancelled and
 // false otherwise, and that the entry survives until release (so
 // double-cancel doesn't allow a new claimant to slip in).
 func TestCancelAutoApprove(t *testing.T) {
-	s := &Server{autoApprove: make(map[string]*autoApproveStatus)}
+	s := &Service{autoApprove: make(map[string]*autoApproveStatus)}
 
-	if s.cancelAutoApprove("ses-1", "perm-1") {
+	if s.Cancel("ses-1", "perm-1") {
 		t.Errorf("cancel with no claim should return false")
 	}
 
@@ -89,7 +89,7 @@ func TestCancelAutoApprove(t *testing.T) {
 	if !ok {
 		t.Fatalf("claim failed")
 	}
-	if !s.cancelAutoApprove("ses-1", "perm-1") {
+	if !s.Cancel("ses-1", "perm-1") {
 		t.Errorf("cancel of live claim should return true")
 	}
 	if ctx.Err() == nil {
@@ -105,7 +105,7 @@ func TestCancelAutoApprove(t *testing.T) {
 
 	// Double-cancel is a no-op (returns true because the entry is
 	// still there; idempotent in effect — the ctx is already cancelled).
-	s.cancelAutoApprove("ses-1", "perm-1")
+	s.Cancel("ses-1", "perm-1")
 
 	// Release frees the slot.
 	s.releaseAutoApprove("ses-1", "perm-1")
@@ -117,7 +117,7 @@ func TestCancelAutoApprove(t *testing.T) {
 // TestJudgedPermissionsCache verifies that recordJudged / lookupJudged
 // roundtrip correctly and that the key is (sessionID, permissionID).
 func TestJudgedPermissionsCache(t *testing.T) {
-	s := &Server{autoApprove: make(map[string]*autoApproveStatus)}
+	s := &Service{autoApprove: make(map[string]*autoApproveStatus)}
 
 	if _, ok := s.lookupJudged("ses-1", "perm-1"); ok {
 		t.Errorf("lookup before record should miss")
@@ -153,7 +153,7 @@ func TestJudgedPermissionsCache(t *testing.T) {
 	}
 
 	// nil-receiver short-circuit (defensive).
-	var nilS *Server
+	var nilS *Service
 	nilS.recordJudged("ses-1", "perm-1", verdictSafe)
 	if _, ok := nilS.lookupJudged("ses-1", "perm-1"); ok {
 		t.Errorf("nil-receiver lookup should miss")
@@ -162,7 +162,7 @@ func TestJudgedPermissionsCache(t *testing.T) {
 
 // TestEnsureAutoApproveSkipsAlreadyJudged is the regression for the
 // reported bug: after the judge has already evaluated a permissionID,
-// a subsequent ensureAutoApprove call for the SAME (sessionID,
+// a subsequent Ensure call for the SAME (sessionID,
 // permissionID) must short-circuit before claimAutoApprove — no second
 // claim, no second goroutine, no second LLM call.
 //
@@ -170,20 +170,20 @@ func TestJudgedPermissionsCache(t *testing.T) {
 // verifying claimAutoApprove never grabs the slot when the cache
 // already contains a verdict.
 func TestEnsureAutoApproveSkipsAlreadyJudged(t *testing.T) {
-	s := &Server{
-		autoApprove:        make(map[string]*autoApproveStatus),
-		autoApproveDefault: true,
+	s := &Service{
+		autoApprove: make(map[string]*autoApproveStatus),
+		deps:        Deps{DefaultEnabled: true},
 	}
 
 	// Pre-seed the cache with an unsafe verdict (the canonical
 	// reproduction case: judge said "unsafe", permission still pending,
 	// user re-opens the session and REST polling re-fires
-	// ensureAutoApprove).
+	// Ensure).
 	s.recordJudged("ses-1", "perm-1", verdictUnsafe)
 
-	// Call ensureAutoApprove. It should short-circuit before claiming,
+	// Call Ensure. It should short-circuit before claiming,
 	// so no goroutine starts (cancel stays nil for the cached entry).
-	s.ensureAutoApprove("opencode", nil, "ses-1", "perm-1", "Bash command", nil, nil)
+	s.Ensure("opencode", nil, "ses-1", "perm-1", "Bash command", nil, nil)
 
 	if n := countInFlight(s); n != 0 {
 		t.Errorf("cached permission should not claim a slot; got %d in-flight entries", n)
@@ -191,12 +191,12 @@ func TestEnsureAutoApproveSkipsAlreadyJudged(t *testing.T) {
 
 	// A different permissionID for the same session must still run
 	// (the cache is keyed on the exact OpenCode-generated ID).
-	// We expect claimAutoApprove to succeed inside ensureAutoApprove
+	// We expect claimAutoApprove to succeed inside Ensure
 	// and a goroutine to start; since we passed a nil adapter,
-	// backgroundAutoApprove will warn-and-return immediately when
-	// dereferencing s.db (also nil in this test), but the claim
+	// backgroundAutoApprove will warn-and-return immediately because
+	// deps.SessionDir is nil in this test, but the claim
 	// itself proves the short-circuit didn't fire.
-	s.ensureAutoApprove("opencode", nil, "ses-1", "perm-DIFFERENT", "Bash command", nil, nil)
+	s.Ensure("opencode", nil, "ses-1", "perm-DIFFERENT", "Bash command", nil, nil)
 
 	// Wait briefly for the goroutine to finish releasing its slot.
 	deadline := time.Now().Add(500 * time.Millisecond)
@@ -210,7 +210,7 @@ func TestEnsureAutoApproveSkipsAlreadyJudged(t *testing.T) {
 	// Now record the new permission as judged too, and verify the
 	// short-circuit kicks in for it as well.
 	s.recordJudged("ses-1", "perm-DIFFERENT", verdictSafe)
-	s.ensureAutoApprove("opencode", nil, "ses-1", "perm-DIFFERENT", "Bash command", nil, nil)
+	s.Ensure("opencode", nil, "ses-1", "perm-DIFFERENT", "Bash command", nil, nil)
 	if n := countInFlight(s); n != 0 {
 		t.Errorf("cached safe verdict should also short-circuit; got %d in-flight entries", n)
 	}
@@ -220,7 +220,7 @@ func TestEnsureAutoApproveSkipsAlreadyJudged(t *testing.T) {
 // representing a running judge goroutine (non-nil cancel). Replaces
 // the pre-refactor `len(autoApproveInFlight)` reads scattered across
 // these tests.
-func countInFlight(s *Server) int {
+func countInFlight(s *Service) int {
 	s.autoApproveMu.Lock()
 	defer s.autoApproveMu.Unlock()
 	n := 0
@@ -236,24 +236,24 @@ func countInFlight(s *Server) int {
 // the "frontend opens after the watcher already processed the
 // permission" bug. The headless autoApproveWatcher claims permissions
 // before any frontend tab is open. When the user later opens the
-// session, the REST permission resurrection calls ensureAutoApprove
+// session, the REST permission resurrection calls Ensure
 // again, which previously just returned silently — leaving the
 // frontend without ocman.permission.pending / .checking / .flagged /
 // .auto-approved and therefore with no countdown and a stuck prompt.
 //
-// The fix: ensureAutoApprove must replay the most recent applicable
+// The fix: Ensure must replay the most recent applicable
 // state event to the (potentially newly-registered) sink whenever it
 // short-circuits.
 func TestEnsureAutoApproveReplaysStateOnShortCircuit(t *testing.T) {
 	tests := []struct {
 		name          string
-		setup         func(*Server, string, string) // pre-seed cache state
-		wantEvent     string                        // SSE event type expected on the sink
-		wantPayloadIn string                        // substring expected in the SSE payload
+		setup         func(*Service, string, string) // pre-seed cache state
+		wantEvent     string                         // SSE event type expected on the sink
+		wantPayloadIn string                         // substring expected in the SSE payload
 	}{
 		{
 			name: "in-flight: pending state replays as ocman.permission.pending",
-			setup: func(s *Server, sid, pid string) {
+			setup: func(s *Service, sid, pid string) {
 				// Simulate the watcher having claimed but not yet finished.
 				// judgeStartsAt in the near future so the reducer would
 				// resume a live countdown.
@@ -264,7 +264,7 @@ func TestEnsureAutoApproveReplaysStateOnShortCircuit(t *testing.T) {
 		},
 		{
 			name: "in-flight + checking: replays as ocman.permission.checking",
-			setup: func(s *Server, sid, pid string) {
+			setup: func(s *Service, sid, pid string) {
 				s.claimAutoApproveWithStart(context.Background(), sid, pid, time.Now().UnixMilli())
 				s.markAutoApproveChecking(sid, pid)
 			},
@@ -273,7 +273,7 @@ func TestEnsureAutoApproveReplaysStateOnShortCircuit(t *testing.T) {
 		},
 		{
 			name: "judged unsafe with reasoning: replays as ocman.permission.flagged",
-			setup: func(s *Server, sid, pid string) {
+			setup: func(s *Service, sid, pid string) {
 				s.recordJudgedWithReasoning(sid, pid, verdictUnsafe, "Writes to .env file.")
 			},
 			wantEvent:     "ocman.permission.flagged",
@@ -281,7 +281,7 @@ func TestEnsureAutoApproveReplaysStateOnShortCircuit(t *testing.T) {
 		},
 		{
 			name: "judged safe: no replay (OpenCode cleared the prompt; DB has the notice)",
-			setup: func(s *Server, sid, pid string) {
+			setup: func(s *Service, sid, pid string) {
 				s.recordJudgedWithReasoning(sid, pid, verdictSafe, "Read-only.")
 			},
 			wantEvent: "", // no event expected
@@ -291,21 +291,21 @@ func TestEnsureAutoApproveReplaysStateOnShortCircuit(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			buf := &bytes.Buffer{}
-			s := &Server{
-				sseSessions:        make(map[string]*sseSink),
-				autoApprove:        make(map[string]*autoApproveStatus),
-				autoApproveDefault: true,
-				judgeDelayMs:       0,
+			s := &Service{
+				sseSessions:  make(map[string]*Sink),
+				autoApprove:  make(map[string]*autoApproveStatus),
+				deps:         Deps{DefaultEnabled: true},
+				judgeDelayMs: 0,
 			}
-			s.registerSseSink("ses-1", buf, nil)
+			s.RegisterSink("ses-1", buf, nil)
 
 			tc.setup(s, "ses-1", "perm-replay")
 
-			// Call ensureAutoApprove. It should short-circuit (cache
+			// Call Ensure. It should short-circuit (cache
 			// hit) and replay the current state to the sink instead of
 			// starting a new judge goroutine.
 			before := buf.Len()
-			s.ensureAutoApprove("opencode", nil, "ses-1", "perm-replay", "Bash command", nil, nil)
+			s.Ensure("opencode", nil, "ses-1", "perm-replay", "Bash command", nil, nil)
 			got := buf.String()[before:]
 
 			if tc.wantEvent == "" {
@@ -332,7 +332,7 @@ func TestEnsureAutoApproveReplaysStateOnShortCircuit(t *testing.T) {
 //     the slot before any frontend tab is open.
 //  2. User then opens the session page. Frontend's REST /permissions
 //     call lists the still-pending permission and fires
-//     ensureAutoApprove for it.
+//     Ensure for it.
 //  3. The frontend's SSE connection is open and its sink is registered.
 //
 // Before the fix, step 2 short-circuited silently and no
@@ -340,11 +340,11 @@ func TestEnsureAutoApproveReplaysStateOnShortCircuit(t *testing.T) {
 // never started and the prompt UI stayed frozen. After the fix, step 2
 // replays the cached pending state to the now-connected sink.
 func TestEnsureAutoApprove_BugRepro_FrontendConnectsAfterWatcherClaimed(t *testing.T) {
-	s := &Server{
-		sseSessions:        make(map[string]*sseSink),
-		autoApprove:        make(map[string]*autoApproveStatus),
-		autoApproveDefault: true,
-		judgeDelayMs:       3000,
+	s := &Service{
+		sseSessions:  make(map[string]*Sink),
+		autoApprove:  make(map[string]*autoApproveStatus),
+		deps:         Deps{DefaultEnabled: true},
+		judgeDelayMs: 3000,
 	}
 
 	// 1. Simulate the watcher claiming first — frontend not yet open,
@@ -356,11 +356,11 @@ func TestEnsureAutoApprove_BugRepro_FrontendConnectsAfterWatcherClaimed(t *testi
 	}
 
 	// 2. Frontend opens session — sink registers, then REST resurrection
-	//    fires ensureAutoApprove for the still-pending permission.
+	//    fires Ensure for the still-pending permission.
 	buf := &bytes.Buffer{}
-	s.registerSseSink("ses-1", buf, nil)
+	s.RegisterSink("ses-1", buf, nil)
 
-	s.ensureAutoApprove("opencode", nil, "ses-1", "perm-1", "Bash command", nil, nil)
+	s.Ensure("opencode", nil, "ses-1", "perm-1", "Bash command", nil, nil)
 
 	got := buf.String()
 	if !strings.Contains(got, "event: ocman.permission.pending") {
@@ -385,15 +385,15 @@ func TestEnsureAutoApprove_BugRepro_FrontendConnectsAfterWatcherClaimed(t *testi
 // for an already-judged permission must not race with the original
 // judge or burn extra tokens.
 func TestEnsureAutoApproveDoesNotStartSecondJudgeOnReplay(t *testing.T) {
-	s := &Server{
-		sseSessions:        make(map[string]*sseSink),
-		autoApprove:        make(map[string]*autoApproveStatus),
-		autoApproveDefault: true,
+	s := &Service{
+		sseSessions: make(map[string]*Sink),
+		autoApprove: make(map[string]*autoApproveStatus),
+		deps:        Deps{DefaultEnabled: true},
 	}
 	s.recordJudgedWithReasoning("ses-1", "perm-1", verdictUnsafe, "Bad.")
 
 	// In-flight slot must stay empty: replay path must not claim.
-	s.ensureAutoApprove("opencode", nil, "ses-1", "perm-1", "Bash command", nil, nil)
+	s.Ensure("opencode", nil, "ses-1", "perm-1", "Bash command", nil, nil)
 
 	s.autoApproveMu.Lock()
 	defer s.autoApproveMu.Unlock()
@@ -414,23 +414,23 @@ func TestEnsureAutoApproveDoesNotStartSecondJudgeOnReplay(t *testing.T) {
 // connection's registration must survive an older tear-down) and that
 // writes against a closed sink are dropped instead of panicking.
 func TestSseSinkRegistry(t *testing.T) {
-	s := &Server{sseSessions: make(map[string]*sseSink)}
+	s := &Service{sseSessions: make(map[string]*Sink)}
 
 	w1 := &bytes.Buffer{}
 	w2 := &bytes.Buffer{}
 
-	if got := s.lookupSseSink("ses-1"); got != nil {
+	if got := s.lookupSink("ses-1"); got != nil {
 		t.Fatalf("lookup before register should return nil")
 	}
 
-	sink1 := s.registerSseSink("ses-1", w1, nil)
-	if got := s.lookupSseSink("ses-1"); got != sink1 {
+	sink1 := s.RegisterSink("ses-1", w1, nil)
+	if got := s.lookupSink("ses-1"); got != sink1 {
 		t.Errorf("after register, lookup should return sink1")
 	}
 
 	// Re-register: newer sink wins, previous one is closed.
-	sink2 := s.registerSseSink("ses-1", w2, nil)
-	if got := s.lookupSseSink("ses-1"); got != sink2 {
+	sink2 := s.RegisterSink("ses-1", w2, nil)
+	if got := s.lookupSink("ses-1"); got != sink2 {
 		t.Errorf("re-register should overwrite previous sink")
 	}
 	// Writes against the displaced sink should be no-ops.
@@ -441,14 +441,14 @@ func TestSseSinkRegistry(t *testing.T) {
 	}
 
 	// Older sink1 unregistering must not clear the entry for sink2.
-	s.unregisterSseSink("ses-1", sink1)
-	if got := s.lookupSseSink("ses-1"); got != sink2 {
+	s.UnregisterSink("ses-1", sink1)
+	if got := s.lookupSink("ses-1"); got != sink2 {
 		t.Errorf("unregister with stale sink should NOT clear newer registration")
 	}
 
 	// Correct unregister clears and closes.
-	s.unregisterSseSink("ses-1", sink2)
-	if got := s.lookupSseSink("ses-1"); got != nil {
+	s.UnregisterSink("ses-1", sink2)
+	if got := s.lookupSink("ses-1"); got != nil {
 		t.Errorf("unregister with matching sink should clear entry")
 	}
 	// Subsequent writes against the closed sink must be no-ops.
@@ -465,7 +465,7 @@ func TestSseSinkRegistry(t *testing.T) {
 // the SSE connection closed and emits ocman.permission.checking.
 func TestSseSinkWriteAfterClose(t *testing.T) {
 	buf := &bytes.Buffer{}
-	sink := &sseSink{w: buf, flush: func() {}}
+	sink := &Sink{w: buf, flush: func() {}}
 
 	sink.write("ocman.permission.pending", []byte(`{"a":1}`))
 	if !strings.Contains(buf.String(), "event: ocman.permission.pending") {
@@ -482,8 +482,8 @@ func TestSseSinkWriteAfterClose(t *testing.T) {
 	// close() is idempotent.
 	sink.close()
 
-	// write() on nil sink is a no-op (matches lookupSseSink miss path).
-	var nilSink *sseSink
+	// write() on nil sink is a no-op (matches lookupSink miss path).
+	var nilSink *Sink
 	nilSink.write("ocman.permission.checking", []byte(`{"c":3}`))
 }
 
@@ -491,10 +491,10 @@ func TestSseSinkWriteAfterClose(t *testing.T) {
 // the resulting SSE bytes to verify the event shape.
 func TestEmitPermissionPending(t *testing.T) {
 	buf := &bytes.Buffer{}
-	s := &Server{
-		sseSessions: make(map[string]*sseSink),
+	s := &Service{
+		sseSessions: make(map[string]*Sink),
 	}
-	s.registerSseSink("ses-1", buf, nil)
+	s.RegisterSink("ses-1", buf, nil)
 
 	const wantJudgeStartsAt int64 = 1700000000123
 	s.emitPermissionPending("ses-1", "perm-1", wantJudgeStartsAt)
@@ -524,7 +524,7 @@ func TestEmitPermissionPending(t *testing.T) {
 	}
 
 	// No sink registered → no-op (must not panic).
-	s2 := &Server{sseSessions: make(map[string]*sseSink)}
+	s2 := &Service{sseSessions: make(map[string]*Sink)}
 	s2.emitPermissionPending("missing", "perm-1", wantJudgeStartsAt)
 }
 
@@ -802,10 +802,10 @@ func TestSsePermissionTeeDispatch(t *testing.T) {
 			var gotMetadata map[string]any
 			fired := make(chan struct{}, 1)
 
-			tee := &ssePermissionTee{
-				w:     &bytes.Buffer{},
-				flush: nil,
-				onPermission: func(sessionID, permissionID, _ string, _ []string, metadata map[string]any) {
+			tee := &Tee{
+				W:     &bytes.Buffer{},
+				Flush: nil,
+				OnPermission: func(sessionID, permissionID, _ string, _ []string, metadata map[string]any) {
 					gotSessionID = sessionID
 					gotID = permissionID
 					gotMetadata = metadata
@@ -920,10 +920,10 @@ func TestSsePermissionTeeRepliedDispatch(t *testing.T) {
 			var gotID, gotSessionID string
 			fired := make(chan struct{}, 1)
 
-			tee := &ssePermissionTee{
-				w:     &bytes.Buffer{},
-				flush: nil,
-				onPermissionReplied: func(sessionID, permissionID string) {
+			tee := &Tee{
+				W:     &bytes.Buffer{},
+				Flush: nil,
+				OnPermissionReplied: func(sessionID, permissionID string) {
 					gotSessionID = sessionID
 					gotID = permissionID
 					select {
@@ -958,12 +958,12 @@ func TestSsePermissionTeeRepliedDispatch(t *testing.T) {
 	}
 }
 
-// TestEnsureAutoApproveCancellation verifies that cancelAutoApprove
+// TestEnsureAutoApproveCancellation verifies that Cancel
 // interrupts the cancellable context observed by the goroutine. This
 // is the contract that lets backgroundAutoApprove's ctx.Err() check
 // short-circuit before RespondPermission is called.
 func TestEnsureAutoApproveCancellation(t *testing.T) {
-	s := &Server{autoApprove: make(map[string]*autoApproveStatus)}
+	s := &Service{autoApprove: make(map[string]*autoApproveStatus)}
 	ctx, ok := s.claimAutoApprove(context.Background(), "ses-1", "perm-1")
 	if !ok {
 		t.Fatalf("claim failed")
@@ -981,7 +981,7 @@ func TestEnsureAutoApproveCancellation(t *testing.T) {
 		close(done)
 	}()
 
-	if !s.cancelAutoApprove("ses-1", "perm-1") {
+	if !s.Cancel("ses-1", "perm-1") {
 		t.Fatalf("cancel returned false")
 	}
 	select {
@@ -1065,7 +1065,7 @@ func TestCommandHash(t *testing.T) {
 //   - nil receiver is a no-op (defensive — matches the pattern used
 //     by recordJudged / lookupJudged).
 func TestSafeCommandCache(t *testing.T) {
-	s := &Server{}
+	s := &Service{}
 
 	hash := commandHash(map[string]any{"command": "git status"})
 	if hash == "" {
@@ -1113,7 +1113,7 @@ func TestSafeCommandCache(t *testing.T) {
 	}
 
 	// nil-receiver short-circuit (defensive).
-	var nilS *Server
+	var nilS *Service
 	nilS.recordSafeCommandVerdict("ses-1", hash, "x")
 	if _, ok := nilS.lookupSafeCommandVerdict("ses-1", hash); ok {
 		t.Errorf("nil-receiver lookup should miss")
@@ -1153,11 +1153,11 @@ func TestBackgroundAutoApprove_SafeCommandCacheHit(t *testing.T) {
 	}
 
 	buf := &bytes.Buffer{}
-	s := &Server{
-		sseSessions:        make(map[string]*sseSink),
-		autoApprove:        make(map[string]*autoApproveStatus),
-		autoApproveDefault: true,
-		safeCommandCache:   make(map[string]map[string]string),
+	s := &Service{
+		sseSessions:      make(map[string]*Sink),
+		autoApprove:      make(map[string]*autoApproveStatus),
+		deps:             Deps{DefaultEnabled: true},
+		safeCommandCache: make(map[string]map[string]string),
 		// judgeDelayMs deliberately large: a cache hit must bypass the
 		// delay. If the implementation incorrectly waits, the test
 		// will time out below.
@@ -1165,7 +1165,7 @@ func TestBackgroundAutoApprove_SafeCommandCacheHit(t *testing.T) {
 		// judge=nil: any attempt to consult the LLM panics, proving
 		// the cache short-circuit fired.
 	}
-	s.registerSseSink(sessionID, buf, nil)
+	s.RegisterSink(sessionID, buf, nil)
 
 	// Seed the safe-command cache as if the judge had previously
 	// approved this exact command in this session.
@@ -1236,9 +1236,9 @@ func TestBackgroundAutoApprove_SafeCommandCacheHit(t *testing.T) {
 //
 // We exercise this by seeding session A's cache with a "safe" entry,
 // then calling backgroundAutoApprove for session B. With s.judge=nil
-// and no OpenCode DB, the function should fall through past the cache
-// check (no hit) and attempt the normal judge path; the
-// dbSession lookup returns nil because s.db is nil, so the function
+// and no session-directory resolver, the function should fall through
+// past the cache check (no hit) and attempt the normal judge path; the
+// directory lookup fails because deps.SessionDir is nil, so the function
 // warn-returns BEFORE ever touching the nil judge. Observable: no
 // RespondPermission call.
 func TestBackgroundAutoApprove_SafeCommandCacheMiss_DifferentSession(t *testing.T) {
@@ -1253,12 +1253,12 @@ func TestBackgroundAutoApprove_SafeCommandCacheMiss_DifferentSession(t *testing.
 		},
 	}
 
-	s := &Server{
-		sseSessions:        make(map[string]*sseSink),
-		autoApprove:        make(map[string]*autoApproveStatus),
-		autoApproveDefault: true,
-		safeCommandCache:   make(map[string]map[string]string),
-		judgeDelayMs:       0,
+	s := &Service{
+		sseSessions:      make(map[string]*Sink),
+		autoApprove:      make(map[string]*autoApproveStatus),
+		deps:             Deps{DefaultEnabled: true},
+		safeCommandCache: make(map[string]map[string]string),
+		judgeDelayMs:     0,
 	}
 
 	// Cache hit exists for session A only.
@@ -1293,7 +1293,7 @@ func TestBackgroundAutoApprove_SafeCommandCacheMiss_DifferentSession(t *testing.
 // load to catch any locking bug. All goroutines write/read the same key;
 // the final state must be consistent and no goroutine may panic.
 func TestSafeCommandCacheConcurrent(t *testing.T) {
-	s := &Server{}
+	s := &Service{}
 	hash := commandHash(map[string]any{"command": "pnpm test"})
 	if hash == "" {
 		t.Fatalf("commandHash returned empty for valid command")

@@ -1,4 +1,4 @@
-package server
+package autoapprove
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 // pre-canned sequence of SSE events to every connecting client.
 //
 // Each Write to the connection is followed by a flush so the
-// downstream ssePermissionTee sees the bytes immediately. The server
+// downstream Tee sees the bytes immediately. The server
 // keeps the connection open until the client disconnects OR the test
 // calls Close().
 type fakeOpenCodeEventServer struct {
@@ -95,7 +95,7 @@ func (f *fakeOpenCodeEventServer) setEvents(evts []string, hold bool) {
 
 // permissionAskedEvent returns a serialised SSE event matching the
 // OpenCode /event default-channel envelope shape with the embedded
-// "type" field. This is what ssePermissionTee.dispatchEvent expects
+// "type" field. This is what Tee.dispatchEvent expects
 // when the named-channel header is absent.
 func permissionAskedEvent(sessionID, permissionID, permission, command string) string {
 	return "data: " + fmt.Sprintf(
@@ -106,7 +106,7 @@ func permissionAskedEvent(sessionID, permissionID, permission, command string) s
 
 // TestAutoApproveWatcher_FiresOnPermissionWithoutFrontend is the
 // primary regression: with no SSE client connected (no browser tab),
-// the watcher must still drive ensureAutoApprove when OpenCode emits
+// the watcher must still drive Ensure when OpenCode emits
 // permission.asked. This was the bug — the legacy path only fired
 // when a frontend session opened /api/session/{id}/events.
 func TestAutoApproveWatcher_FiresOnPermissionWithoutFrontend(t *testing.T) {
@@ -118,10 +118,10 @@ func TestAutoApproveWatcher_FiresOnPermissionWithoutFrontend(t *testing.T) {
 	}, true) // hold open so the watcher doesn't reconnect-flap during the test
 	defer fake.close()
 
-	// Capture ensureAutoApprove calls by intercepting at the seam: we
+	// Capture Ensure calls by intercepting at the seam: we
 	// install a fake onPermission that mirrors what the real wiring
 	// does. The watcher pushes events through a tee whose onPermission
-	// is exactly server.ensureAutoApprove — so the test instead asks
+	// is exactly svc.Ensure — so the test instead asks
 	// the watcher to use a custom onPermission callback.
 	type ask struct {
 		sessionID    string
@@ -322,19 +322,18 @@ func TestAutoApproveWatcher_DedupesSamePort(t *testing.T) {
 }
 
 // TestServer_RunAutoApproveWatcher_RespectsContext verifies the
-// Server-level entry point exits cleanly when the parent context is
+// Service-level entry point exits cleanly when the parent context is
 // cancelled. This is the function StartOnListener spawns; if it
 // blocked on shutdown, ocman would never terminate cleanly.
 func TestServer_RunAutoApproveWatcher_RespectsContext(t *testing.T) {
-	srv := &Server{
+	srv := &Service{
 		autoApprove: make(map[string]*autoApproveStatus),
-		registry:    platforms.NewRegistry(),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
-		srv.runAutoApproveWatcher(ctx)
+		srv.RunWatcher(ctx)
 		close(done)
 	}()
 
@@ -346,14 +345,14 @@ func TestServer_RunAutoApproveWatcher_RespectsContext(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
-		t.Fatal("runAutoApproveWatcher did not exit within 2s of context cancel")
+		t.Fatal("RunWatcher did not exit within 2s of context cancel")
 	}
 }
 
 // TestAutoApproveWatcher_RoutesToEnsureAutoApprove is an integration-
-// style sanity check: when constructed with a real Server, the
-// watcher's default onPermission resolves the OpenCode adapter from
-// the registry and calls server.ensureAutoApprove (which short-circuits
+// style sanity check: when constructed with a real Service, the
+// watcher's default onPermission resolves the OpenCode adapter via
+// deps.OpencodePlatform and calls svc.Ensure (which short-circuits
 // in this test because we pre-seed the autoApprove cache, proving the
 // call went through the expected path).
 func TestAutoApproveWatcher_RoutesToEnsureAutoApprove(t *testing.T) {
@@ -363,30 +362,32 @@ func TestAutoApproveWatcher_RoutesToEnsureAutoApprove(t *testing.T) {
 	}, true)
 	defer fake.close()
 
-	srv := &Server{
-		autoApprove: make(map[string]*autoApproveStatus),
-		registry:    platforms.NewRegistry(),
-	}
-	// Register a fake adapter with the OpenCode platform ID so the
+	// Provide a fake adapter with the OpenCode platform ID so the
 	// watcher's default onPermission can resolve it.
-	srv.registry.Register(&fakePlatform{id: "opencode"})
+	fp := &fakePlatform{id: "opencode"}
+	srv := &Service{
+		autoApprove: make(map[string]*autoApproveStatus),
+		deps: Deps{
+			OpencodePlatform: func() platforms.Platform { return fp },
+		},
+	}
 
-	// Pre-seed the cache so ensureAutoApprove short-circuits and we
+	// Pre-seed the cache so Ensure short-circuits and we
 	// don't accidentally spawn a real judge goroutine. We then watch
 	// for the short-circuit to happen by polling lookupJudged — once
-	// the watcher has driven its way through ensureAutoApprove for
+	// the watcher has driven its way through Ensure for
 	// our permissionID, we're done.
 	//
 	// Tactic: install a sentinel verdict for a DIFFERENT permission
 	// first, leaving perm-route un-cached. The watcher's call should
-	// land on perm-route, ensureAutoApprove will try to claim, and
+	// land on perm-route, Ensure will try to claim, and
 	// (since the adapter is a fake that does nothing) the goroutine
-	// returns quickly. We assert that ensureAutoApprove was reached
+	// returns quickly. We assert that Ensure was reached
 	// by observing the in-flight slot transition from empty -> claimed
 	// -> released.
 	//
 	// To avoid timing flakiness, we instead intercept via the seam:
-	// override w.onPermission to call srv.ensureAutoApprove and then
+	// override w.onPermission to call svc.Ensure and then
 	// signal a channel. Same as the first test, but we want to assert
 	// it ran against the real wiring (newAutoApproveWatcher(srv) with
 	// no override) — so check that w.onPermission is non-nil by
@@ -427,7 +428,7 @@ func TestAutoApproveWatcher_RoutesToEnsureAutoApprove(t *testing.T) {
 // TestHandleSessionChangedDedup verifies that session.updated handling
 // only acts on the first sighting of a session ID (so per-turn/token
 // updates don't repeatedly bust the cache and broadcast), and that an
-// empty ID is ignored. server is nil so broadcast is skipped; we assert
+// empty ID is ignored. svc is nil so broadcast is skipped; we assert
 // on the seen-set, which is the dedup gate.
 func TestHandleSessionChangedDedup(t *testing.T) {
 	w := newAutoApproveWatcher(nil)

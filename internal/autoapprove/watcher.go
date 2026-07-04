@@ -1,4 +1,4 @@
-package server
+package autoapprove
 
 import (
 	"context"
@@ -42,15 +42,15 @@ const (
 // process for the lifetime of the ocman server, so headless
 // background sessions stay covered.
 //
-// Dedup: every event is routed through Server.ensureAutoApprove which
+// Dedup: every event is routed through Server.Ensure which
 // already deduplicates against in-flight goroutines and already-judged
 // permissions — so if a frontend tab is also open (and the existing
 // per-session SSE tee fires for the same permission), only one judge
 // runs.
 type autoApproveWatcher struct {
-	// server is the parent Server. May be nil in tests that drive
+	// svc is the parent Service. May be nil in tests that drive
 	// onPermission manually.
-	server *Server
+	svc *Service
 
 	// discoverPorts returns the directory -> port map for all
 	// running OpenCode instances. Seam for tests; defaults to
@@ -59,7 +59,7 @@ type autoApproveWatcher struct {
 
 	// onPermission is called for every permission.asked event seen on
 	// any subscribed upstream. The default routes through
-	// Server.ensureAutoApprove with the OpenCode platform adapter
+	// Server.Ensure with the OpenCode platform adapter
 	// resolved from the registry. Tests can override to observe calls.
 	onPermission func(platformID platforms.ID, adapter platforms.Platform,
 		sessionID, permissionID, permission string, patterns []string,
@@ -102,12 +102,12 @@ type autoApproveWatcher struct {
 }
 
 // newAutoApproveWatcher constructs a watcher wired against the real
-// OpenCode port discovery and the given Server. server may be nil in
+// OpenCode port discovery and the given Service. svc may be nil in
 // tests; in that case the default onPermission is a no-op so callers
 // must inject their own.
-func newAutoApproveWatcher(server *Server) *autoApproveWatcher {
+func newAutoApproveWatcher(svc *Service) *autoApproveWatcher {
 	w := &autoApproveWatcher{
-		server:         server,
+		svc:            svc,
 		discoverPorts:  opencode.DiscoverOpenCodePorts,
 		httpClient:     &http.Client{}, // no timeout — SSE is long-lived
 		rescanInterval: autoApproveRescanInterval,
@@ -116,24 +116,24 @@ func newAutoApproveWatcher(server *Server) *autoApproveWatcher {
 		seenSessions:   make(map[string]struct{}),
 	}
 
-	// Default onPermission routes through ensureAutoApprove, which
+	// Default onPermission routes through Ensure, which
 	// owns dedup, the configured delay, the judge call, and the
 	// post-verdict persistence + SSE emit. The adapter and platform
 	// ID are passed verbatim so the persistence layer scopes the
 	// approval to the right platform.
-	if server != nil {
+	if svc != nil {
 		w.onPermission = func(platformID platforms.ID, adapter platforms.Platform,
 			sessionID, permissionID, permission string, patterns []string,
 			metadata map[string]any) {
-			server.ensureAutoApprove(platformID, adapter, sessionID, permissionID, permission, patterns, metadata)
+			svc.Ensure(platformID, adapter, sessionID, permissionID, permission, patterns, metadata)
 		}
 		w.onPermissionReplied = func(sessionID, permissionID string) {
-			server.cancelAutoApprove(sessionID, permissionID)
+			svc.Cancel(sessionID, permissionID)
 			// Broadcast the resolution so cross-page prompt toasts clear
 			// instantly even when the user answered from the OpenCode TUI
 			// or another browser tab. The watcher is always connected, so
 			// this fires regardless of which (if any) tab is open.
-			server.broadcastPermissionResolved(sessionID, permissionID, "replied")
+			svc.broadcastPermissionResolved(sessionID, permissionID, "replied")
 		}
 	}
 	return w
@@ -222,7 +222,7 @@ func (w *autoApproveWatcher) shutdown() {
 }
 
 // subscribe holds a single long-lived /event SSE connection to the
-// OpenCode instance on the given port. It reuses ssePermissionTee to
+// OpenCode instance on the given port. It reuses Tee to
 // parse permission.asked / permission.replied events out of the byte
 // stream and routes them to onPermission / onPermissionReplied.
 //
@@ -275,13 +275,13 @@ func (w *autoApproveWatcher) handleSessionChanged(sessionID string) {
 
 	// First time we've seen this session: surface it now.
 	opencode.InvalidateSessionsCache()
-	if w.server != nil {
-		w.server.broadcastSessionChanged(sessionID)
+	if w.svc != nil && w.svc.deps.BroadcastSessionChanged != nil {
+		w.svc.deps.BroadcastSessionChanged(sessionID)
 	}
 }
 
 // streamOnce opens one /event SSE connection and feeds bytes into a
-// ssePermissionTee until the connection ends. Returns when the
+// Tee until the connection ends. Returns when the
 // upstream closes (nil on clean EOF, error otherwise) or when ctx is
 // cancelled.
 func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error {
@@ -302,39 +302,37 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 	// Resolve the OpenCode adapter once per stream; if the registry
 	// doesn't have it (e.g. ocman was started with -platforms="" or a
 	// non-opencode platform set), callbacks will see a nil adapter and
-	// ensureAutoApprove will fail safe by short-circuiting. The
+	// Ensure will fail safe by short-circuiting. The
 	// platform ID is still propagated so logs are useful.
 	var adapter platforms.Platform
-	if w.server != nil && w.server.registry != nil {
-		if p, ok := w.server.registry.Get(opencode.PlatformID); ok {
-			adapter = p
-		}
+	if w.svc != nil && w.svc.deps.OpencodePlatform != nil {
+		adapter = w.svc.deps.OpencodePlatform()
 	}
 
-	tee := &ssePermissionTee{
-		w:     io.Discard, // we only need the parsing side; nothing else consumes this stream
-		flush: nil,
-		onPermission: func(sessionID, permissionID, permission string, patterns []string, metadata map[string]any) {
+	tee := &Tee{
+		W:     io.Discard, // we only need the parsing side; nothing else consumes this stream
+		Flush: nil,
+		OnPermission: func(sessionID, permissionID, permission string, patterns []string, metadata map[string]any) {
 			if w.onPermission != nil {
 				w.onPermission(opencode.PlatformID, adapter, sessionID, permissionID, permission, patterns, metadata)
 			}
 		},
-		onPermissionReplied: func(sessionID, permissionID string) {
+		OnPermissionReplied: func(sessionID, permissionID string) {
 			if w.onPermissionReplied != nil {
 				w.onPermissionReplied(sessionID, permissionID)
 			}
 		},
-		onQuestionResolved: func(sessionID, requestID, reason string) {
-			if w.server != nil {
-				w.server.broadcastQuestionResolved(sessionID, requestID, reason)
+		OnQuestionResolved: func(sessionID, requestID, reason string) {
+			if w.svc != nil && w.svc.deps.BroadcastQuestionResolved != nil {
+				w.svc.deps.BroadcastQuestionResolved(sessionID, requestID, reason)
 			}
 		},
-		onSessionIdle: func(sessionID string) {
-			if w.server != nil {
-				w.server.broadcastSessionIdle(sessionID)
+		OnSessionIdle: func(sessionID string) {
+			if w.svc != nil && w.svc.deps.BroadcastSessionIdle != nil {
+				w.svc.deps.BroadcastSessionIdle(sessionID)
 			}
 		},
-		onSessionChanged: w.handleSessionChanged,
+		OnSessionChanged: w.handleSessionChanged,
 	}
 
 	// Copy bytes through the tee until the stream ends. io.Copy
@@ -347,11 +345,9 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 	return nil
 }
 
-// runAutoApproveWatcher is the top-level entry point invoked by
-// Server.StartOnListener. Owning it on the Server keeps the lifecycle
-// consistent with the other background loops (runAutoArchiveLoop,
-// runChildSessionWatcher, etc.).
-func (s *Server) runAutoApproveWatcher(ctx context.Context) {
+// RunWatcher is the top-level entry point invoked by the server's
+// StartOnListener. It blocks until ctx is cancelled.
+func (s *Service) RunWatcher(ctx context.Context) {
 	w := newAutoApproveWatcher(s)
 	w.run(ctx)
 }

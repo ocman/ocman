@@ -18,6 +18,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/srvtiming"
@@ -478,7 +479,7 @@ func (s *Server) handleSessionPermissions(w http.ResponseWriter, r *http.Request
 			}
 			patterns := extractPermissionPatterns(entry)
 			metadata := extractPermissionMetadata(entry)
-			s.ensureAutoApprove(adapter.ID(), adapter, sessionID, permissionID, permission, patterns, metadata)
+			s.aaSvc().Ensure(adapter.ID(), adapter, sessionID, permissionID, permission, patterns, metadata)
 		}
 		writeJSON(w, entries)
 	})
@@ -960,7 +961,7 @@ func (s *Server) handleSessionPermission(w http.ResponseWriter, r *http.Request)
 		// with the AI's verdict, and we must not pay for a judge whose
 		// result will be discarded anyway. cancelAutoApprove is safe to
 		// call when no judge is running (returns false; we don't care).
-		s.cancelAutoApprove(sessionID, permissionID)
+		s.aaSvc().Cancel(sessionID, permissionID)
 		if err := adapter.RespondPermission(r.Context(), platforms.RespondPermissionRequest{
 			SessionID:    sessionID,
 			PermissionID: permissionID,
@@ -1108,7 +1109,7 @@ func (s *Server) resumeAutoApproveForPending(ctx context.Context, adapter platfo
 		}
 		patterns := extractPermissionPatterns(entry)
 		metadata := extractPermissionMetadata(entry)
-		s.ensureAutoApprove(adapter.ID(), adapter, sessionID, permissionID, permission, patterns, metadata)
+		s.aaSvc().Ensure(adapter.ID(), adapter, sessionID, permissionID, permission, patterns, metadata)
 	}
 }
 
@@ -1208,8 +1209,8 @@ func (s *Server) serveSessionEvents(w http.ResponseWriter, r *http.Request, sess
 	// The deferred unregister both removes the registry entry and marks
 	// the sink closed, so any in-flight backgroundAutoApprove emit
 	// turns into a no-op rather than panicking on a recycled writer.
-	sink := s.registerSseSink(sessionID, lw, flush)
-	defer s.unregisterSseSink(sessionID, sink)
+	sink := s.aaSvc().RegisterSink(sessionID, lw, flush)
+	defer s.aaSvc().UnregisterSink(sessionID, sink)
 
 	// Tee the SSE stream so permission.asked events trigger server-side
 	// auto-approve. This is one of two entry points into the
@@ -1228,19 +1229,19 @@ func (s *Server) serveSessionEvents(w http.ResponseWriter, r *http.Request, sess
 	// Using the connection's `sessionID` for routing was a bug — it
 	// attributed every other session's auto-approved notice to
 	// whichever session the user was currently viewing.
-	tee := &ssePermissionTee{
-		w:     lw,
-		flush: flush,
-		onPermission: func(evtSessionID, permissionID, permission string, patterns []string, metadata map[string]any) {
-			s.ensureAutoApprove(adapter.ID(), adapter, evtSessionID, permissionID, permission, patterns, metadata)
+	tee := &autoapprove.Tee{
+		W:     lw,
+		Flush: flush,
+		OnPermission: func(evtSessionID, permissionID, permission string, patterns []string, metadata map[string]any) {
+			s.aaSvc().Ensure(adapter.ID(), adapter, evtSessionID, permissionID, permission, patterns, metadata)
 		},
 		// permission.replied fires when the user (or any non-ocman
 		// client, e.g. the OpenCode TUI) answers the prompt. Cancel
 		// any in-flight judge so we stop polling immediately and the
 		// verdict — if it arrives later — is discarded before it can
 		// race the user's answer.
-		onPermissionReplied: func(evtSessionID, permissionID string) {
-			s.cancelAutoApprove(evtSessionID, permissionID)
+		OnPermissionReplied: func(evtSessionID, permissionID string) {
+			s.aaSvc().Cancel(evtSessionID, permissionID)
 		},
 	}
 

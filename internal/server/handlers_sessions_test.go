@@ -714,12 +714,12 @@ func TestHandleSessionAutoApproveSet_EnablingTriggersJudgeForPending(t *testing.
 	//    where someone moves the resume into a path that never reaches
 	//    ensureAutoApprove (e.g. wraps it in a condition that never
 	//    fires for this fake-adapter setup).
-	srv.autoApproveMu.Lock()
-	defer srv.autoApproveMu.Unlock()
-	// Map may be empty (goroutine already released its slot) — both
-	// outcomes are acceptable. The test asserts on ListPermissions
-	// being invoked, which is the proxy for "resume path executed".
-	_ = srv.autoApprove
+	// The per-permission state now lives inside the autoapprove
+	// service; the map may be empty (goroutine already released its
+	// slot) — both outcomes are acceptable. The test asserts on
+	// ListPermissions being invoked, which is the proxy for "resume
+	// path executed".
+	_ = srv.aaSvc()
 }
 
 // TestHandleSessionAutoApproveSet_DisablingDoesNotResume is the

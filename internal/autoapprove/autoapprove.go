@@ -1,4 +1,4 @@
-package server
+package autoapprove
 
 import (
 	"bytes"
@@ -40,9 +40,9 @@ const judgeTimeout = 30 * time.Second
 const judgeModelProvider = "anthropic"
 const judgeModelID = "claude-haiku-4-5"
 
-// judgeModelSettingKey is the generic-setting key under which the
+// JudgeModelSettingKey is the generic-setting key under which the
 // user-selected judge model is stored, as a "provider/modelID" string.
-const judgeModelSettingKey = "judge_model"
+const JudgeModelSettingKey = "judge_model"
 
 // loadJudgeModel reads the persisted judge model setting and splits it
 // into provider + modelID on the first "/". ok is false when the
@@ -51,7 +51,7 @@ func loadJudgeModel(db judgeModelStore) (provider, modelID string, ok bool) {
 	if db == nil {
 		return "", "", false
 	}
-	val, found, err := db.GetSetting(judgeModelSettingKey)
+	val, found, err := db.GetSetting(JudgeModelSettingKey)
 	if err != nil || !found {
 		return "", "", false
 	}
@@ -600,11 +600,11 @@ func extractTextFromParts(msg map[string]interface{}) string {
 	return b.String()
 }
 
-// writeSSEEvent writes a single named SSE event to w and calls flush if
+// WriteSSEEvent writes a single named SSE event to w and calls flush if
 // non-nil. This is used by backgroundAutoApprove to push synthetic
 // ocman-originated events (e.g. permission.checking, permission.auto-approved)
 // back to connected browser clients through the proxied event stream.
-func writeSSEEvent(w io.Writer, flush func(), eventType string, data []byte) {
+func WriteSSEEvent(w io.Writer, flush func(), eventType string, data []byte) {
 	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", eventType, string(data))
 	if flush != nil {
 		flush()
@@ -617,8 +617,8 @@ func writeSSEEvent(w io.Writer, flush func(), eventType string, data []byte) {
 // (REST permission listing, prompt resurrection) can push synthetic
 // ocman.permission.* events into the same connection.
 
-// registerSseSink creates and records an sseSink for sessionID. The
-// returned pointer must be passed to unregisterSseSink when the
+// RegisterSink creates and records an Sink for sessionID. The
+// returned pointer must be passed to UnregisterSink when the
 // connection terminates so the sink is closed (any in-flight or
 // future writes turn into no-ops, preventing panics on a recycled
 // http.ResponseWriter).
@@ -627,14 +627,14 @@ func writeSSEEvent(w io.Writer, flush func(), eventType string, data []byte) {
 // second tab on the same session) the previous one is closed; the
 // older client will simply stop receiving ocman.* events but its
 // proxied OpenCode events continue unaffected.
-func (s *Server) registerSseSink(sessionID string, w io.Writer, flush func()) *sseSink {
+func (s *Service) RegisterSink(sessionID string, w io.Writer, flush func()) *Sink {
 	if s == nil {
 		return nil
 	}
-	sink := &sseSink{w: w, flush: flush}
+	sink := &Sink{w: w, flush: flush}
 	s.sseSessionsMu.Lock()
 	if s.sseSessions == nil {
-		s.sseSessions = make(map[string]*sseSink)
+		s.sseSessions = make(map[string]*Sink)
 	}
 	prev := s.sseSessions[sessionID]
 	s.sseSessions[sessionID] = sink
@@ -645,11 +645,11 @@ func (s *Server) registerSseSink(sessionID string, w io.Writer, flush func()) *s
 	return sink
 }
 
-// unregisterSseSink closes the sink (so any in-flight or future writes
+// UnregisterSink closes the sink (so any in-flight or future writes
 // become no-ops) and removes it from the registry, but only if it
 // still matches the one being closed. This avoids clobbering a newer
 // tab's registration when an old SSE connection finally tears down.
-func (s *Server) unregisterSseSink(sessionID string, sink *sseSink) {
+func (s *Service) UnregisterSink(sessionID string, sink *Sink) {
 	if s == nil || sink == nil {
 		return
 	}
@@ -661,10 +661,10 @@ func (s *Server) unregisterSseSink(sessionID string, sink *sseSink) {
 	sink.close()
 }
 
-// lookupSseSink returns the registered sink for sessionID, or nil if
+// lookupSink returns the registered sink for sessionID, or nil if
 // none. The returned pointer is stable — closing it is safe even after
 // the registry entry has been removed or replaced.
-func (s *Server) lookupSseSink(sessionID string) *sseSink {
+func (s *Service) lookupSink(sessionID string) *Sink {
 	if s == nil {
 		return nil
 	}
@@ -685,7 +685,7 @@ func (s *Server) lookupSseSink(sessionID string) *sseSink {
 // judgeStartsAt and checking exist so a freshly-connected SSE sink
 // (the headless-watcher case where the watcher claimed the permission
 // before the frontend was open) can replay the most recent applicable
-// ocman.permission.* event when ensureAutoApprove short-circuits.
+// ocman.permission.* event when Ensure short-circuits.
 type autoApproveStatus struct {
 	// cancel cancels the judge goroutine's context. Non-nil while the
 	// goroutine is running; cleared by releaseAutoApprove.
@@ -725,10 +725,10 @@ func autoApproveKey(sessionID, permissionID string) string {
 // permission, OR a verdict for it has already been recorded.
 //
 // Callers that already know the judgeStartsAt anchor (the standard
-// ensureAutoApprove path) should use claimAutoApproveWithStart so the
+// Ensure path) should use claimAutoApproveWithStart so the
 // anchor is stored for later replay. This helper exists for symmetry
 // with the pre-watcher API and defaults judgeStartsAt to 0.
-func (s *Server) claimAutoApprove(parent context.Context, sessionID, permissionID string) (context.Context, bool) {
+func (s *Service) claimAutoApprove(parent context.Context, sessionID, permissionID string) (context.Context, bool) {
 	return s.claimAutoApproveWithStart(parent, sessionID, permissionID, 0)
 }
 
@@ -737,7 +737,7 @@ func (s *Server) claimAutoApprove(parent context.Context, sessionID, permissionI
 // short-circuit replay can re-emit ocman.permission.pending with the
 // same value, letting the frontend resume the countdown without a
 // fresh clock.
-func (s *Server) claimAutoApproveWithStart(parent context.Context, sessionID, permissionID string, judgeStartsAt int64) (context.Context, bool) {
+func (s *Service) claimAutoApproveWithStart(parent context.Context, sessionID, permissionID string, judgeStartsAt int64) (context.Context, bool) {
 	if s == nil {
 		// Nil-Server only happens in test setups that don't exercise
 		// cancellation; return the parent unchanged.
@@ -752,7 +752,7 @@ func (s *Server) claimAutoApproveWithStart(parent context.Context, sessionID, pe
 	if existing := s.autoApprove[key]; existing != nil {
 		// Either still in flight or already judged — either way the
 		// caller must not start a second goroutine. Replay logic in
-		// ensureAutoApprove handles the bring-up of any newly-connected
+		// Ensure handles the bring-up of any newly-connected
 		// sink.
 		return nil, false
 	}
@@ -769,7 +769,7 @@ func (s *Server) claimAutoApproveWithStart(parent context.Context, sessionID, pe
 // Used by the replay path to choose between emitting
 // ocman.permission.pending (still waiting) and .checking (judge
 // active). No-op if no status exists for the permission.
-func (s *Server) markAutoApproveChecking(sessionID, permissionID string) {
+func (s *Service) markAutoApproveChecking(sessionID, permissionID string) {
 	if s == nil {
 		return
 	}
@@ -783,15 +783,15 @@ func (s *Server) markAutoApproveChecking(sessionID, permissionID string) {
 
 // releaseAutoApprove invokes the registered cancel func and clears it
 // on the status record. The status itself is retained so a later
-// ensureAutoApprove call for the same permissionID can still replay
+// Ensure call for the same permissionID can still replay
 // the recorded verdict (or, for an in-flight goroutine that exits
 // before a verdict is recorded, recognise that the slot is free for
 // a fresh claim).
 //
-// Idempotent — safe to call after cancelAutoApprove. Must be called by
+// Idempotent — safe to call after Cancel. Must be called by
 // the goroutine that successfully claimed the entry, typically in a
 // deferred block.
-func (s *Server) releaseAutoApprove(sessionID, permissionID string) {
+func (s *Service) releaseAutoApprove(sessionID, permissionID string) {
 	if s == nil {
 		return
 	}
@@ -817,7 +817,7 @@ func (s *Server) releaseAutoApprove(sessionID, permissionID string) {
 	}
 }
 
-// cancelAutoApprove signals the in-flight judge for (sessionID,
+// Cancel signals the in-flight judge for (sessionID,
 // permissionID) to abort. No-op if there is no judge running. The
 // goroutine sees ctx.Done() at its next select point and drops the
 // result. The status record is left in place — releaseAutoApprove
@@ -827,7 +827,7 @@ func (s *Server) releaseAutoApprove(sessionID, permissionID string) {
 //
 // Returns true if a cancel was sent (something was running), false
 // if there was nothing to cancel.
-func (s *Server) cancelAutoApprove(sessionID, permissionID string) bool {
+func (s *Service) Cancel(sessionID, permissionID string) bool {
 	if s == nil {
 		return false
 	}
@@ -847,13 +847,13 @@ func (s *Server) cancelAutoApprove(sessionID, permissionID string) bool {
 }
 
 // recordJudged persists the verdict for (sessionID, permissionID) so a
-// later ensureAutoApprove call for the same OpenCode permission ID
+// later Ensure call for the same OpenCode permission ID
 // short-circuits instead of running the judge again. Called by
 // backgroundAutoApprove on every terminal path (safe or unsafe).
 //
 // Equivalent to recordJudgedWithReasoning with reasoning="". Retained
 // so call-sites that don't have reasoning handy stay readable.
-func (s *Server) recordJudged(sessionID, permissionID string, verdict judgeVerdict) {
+func (s *Service) recordJudged(sessionID, permissionID string, verdict judgeVerdict) {
 	s.recordJudgedWithReasoning(sessionID, permissionID, verdict, "")
 }
 
@@ -861,7 +861,7 @@ func (s *Server) recordJudged(sessionID, permissionID string, verdict judgeVerdi
 // extracted from the judge's response. Surfaced to the UI on the
 // ocman.permission.flagged event during replay so users see *why* the
 // judge said unsafe.
-func (s *Server) recordJudgedWithReasoning(sessionID, permissionID string, verdict judgeVerdict, reasoning string) {
+func (s *Service) recordJudgedWithReasoning(sessionID, permissionID string, verdict judgeVerdict, reasoning string) {
 	if s == nil || permissionID == "" {
 		return
 	}
@@ -884,7 +884,7 @@ func (s *Server) recordJudgedWithReasoning(sessionID, permissionID string, verdi
 // and ok=true if the judge already produced a verdict in this process.
 // Pure read of the verdict field; the status may still be in flight if
 // verdict is empty (in which case ok is false).
-func (s *Server) lookupJudged(sessionID, permissionID string) (judgeVerdict, bool) {
+func (s *Service) lookupJudged(sessionID, permissionID string) (judgeVerdict, bool) {
 	if s == nil {
 		return "", false
 	}
@@ -903,7 +903,7 @@ func (s *Server) lookupJudged(sessionID, permissionID string) (judgeVerdict, boo
 // (in-flight OR judged). The returned struct is a value copy so callers
 // can read fields without holding the mutex. Returns the zero status
 // and ok=false when no record exists.
-func (s *Server) lookupAutoApproveStatus(sessionID, permissionID string) (autoApproveStatus, bool) {
+func (s *Service) lookupAutoApproveStatus(sessionID, permissionID string) (autoApproveStatus, bool) {
 	if s == nil {
 		return autoApproveStatus{}, false
 	}
@@ -972,7 +972,7 @@ func commandHash(metadata map[string]any) string {
 // lookupSafeCommandVerdict returns the cached safe-verdict reasoning
 // for (sessionID, hash) and ok=true if an entry exists. Returns
 // ("", false) on miss, nil receiver, or empty hash.
-func (s *Server) lookupSafeCommandVerdict(sessionID, hash string) (string, bool) {
+func (s *Service) lookupSafeCommandVerdict(sessionID, hash string) (string, bool) {
 	if s == nil || hash == "" {
 		return "", false
 	}
@@ -989,7 +989,7 @@ func (s *Server) lookupSafeCommandVerdict(sessionID, hash string) (string, bool)
 // recordSafeCommandVerdict stores reasoning for (sessionID, hash) in
 // the cache. No-op on nil receiver or empty hash. Overwrites any
 // existing entry — the latest verdict wins.
-func (s *Server) recordSafeCommandVerdict(sessionID, hash, reasoning string) {
+func (s *Service) recordSafeCommandVerdict(sessionID, hash, reasoning string) {
 	if s == nil || hash == "" {
 		return
 	}
@@ -1013,9 +1013,9 @@ func (s *Server) recordSafeCommandVerdict(sessionID, hash, reasoning string) {
 // so a long-running judge whose client has disconnected mid-flight
 // silently drops follow-up events. The sink itself has a closed flag
 // guarded by its own mutex, so even a write that races with
-// unregisterSseSink cannot dereference a recycled http.ResponseWriter.
-func (s *Server) emitSessionSseEvent(sessionID, eventType string, payload []byte) {
-	s.lookupSseSink(sessionID).write(eventType, payload)
+// UnregisterSink cannot dereference a recycled http.ResponseWriter.
+func (s *Service) emitSessionSseEvent(sessionID, eventType string, payload []byte) {
+	s.lookupSink(sessionID).write(eventType, payload)
 }
 
 // emitPermissionPending writes the ocman.permission.pending SSE event
@@ -1030,7 +1030,7 @@ func (s *Server) emitSessionSseEvent(sessionID, eventType string, payload []byte
 // restarting from zero.
 //
 // No-op when no client is listening; the judge runs anyway.
-func (s *Server) emitPermissionPending(sessionID, permissionID string, judgeStartsAt int64) {
+func (s *Service) emitPermissionPending(sessionID, permissionID string, judgeStartsAt int64) {
 	// sessionID matches OpenCode's wire-format casing so the frontend
 	// reducer's eventSessionId() correctly routes this event to the
 	// reducer for `sessionID`. Without this, ocman events would be
@@ -1059,7 +1059,7 @@ func (s *Server) emitPermissionPending(sessionID, permissionID string, judgeStar
 // OpenCode's /event stream from server startup, so it routinely
 // observes (and claims, judges, or completes) permission.asked events
 // before any frontend tab is open. When the user later opens the
-// session, the REST resurrection path calls ensureAutoApprove again —
+// session, the REST resurrection path calls Ensure again —
 // which short-circuits because the work is already done. Without this
 // replay, the just-registered SSE sink would never receive the
 // pending / checking / flagged / auto-approved events that drive the
@@ -1068,7 +1068,7 @@ func (s *Server) emitPermissionPending(sessionID, permissionID string, judgeStar
 // The frontend reducer is idempotent against repeat events (it dedups
 // on permissionId / judgeStartsAt), so a replay during the same tab's
 // lifetime is harmless.
-func (s *Server) replayAutoApproveState(sessionID, permissionID, permission string, patterns []string) {
+func (s *Service) replayAutoApproveState(sessionID, permissionID, permission string, patterns []string) {
 	st, ok := s.lookupAutoApproveStatus(sessionID, permissionID)
 	if !ok {
 		return
@@ -1117,7 +1117,7 @@ func (s *Server) replayAutoApproveState(sessionID, permissionID, permission stri
 	}
 }
 
-// ensureAutoApprove is the single entry point for kicking off the
+// Ensure is the single entry point for kicking off the
 // auto-approve pipeline for a given permission. It:
 //
 //  1. If this permission already has state (in-flight goroutine or a
@@ -1134,7 +1134,7 @@ func (s *Server) replayAutoApproveState(sessionID, permissionID, permission stri
 // Safe to call from any handler; safe to call multiple times for the
 // same permission. backgroundAutoApprove looks up the SSE sink on each
 // emit so client disconnects mid-judge are non-fatal.
-func (s *Server) ensureAutoApprove(
+func (s *Service) Ensure(
 	platformID platforms.ID,
 	adapter platforms.Platform,
 	sessionID, permissionID, permission string,
@@ -1179,19 +1179,19 @@ func (s *Server) ensureAutoApprove(
 
 // --- Background (server-side) auto-approve ---
 
-// ssePermissionTee wraps an io.Writer and tees the SSE byte stream to a
+// Tee wraps an io.Writer and tees the SSE byte stream to a
 // side-channel that parses permission.asked events. When one is seen,
 // onPermission is called so the server-side auto-approve pipeline can
-// start (it routes through Server.ensureAutoApprove which is
+// start (it routes through Server.Ensure which is
 // deduplicated against the REST-resurrection path).
 //
 // Parsing is line-based: SSE lines are terminated by '\n'. We buffer
 // across Read boundaries so events split across multiple Write calls
 // are still detected. The tee is intentionally lossy on parse errors —
 // it always forwards every byte to the underlying writer unchanged.
-type ssePermissionTee struct {
-	w     io.Writer
-	flush func()
+type Tee struct {
+	W     io.Writer
+	Flush func()
 	buf   []byte
 	mu    sync.Mutex
 	// onPermission fires when the upstream emits permission.asked.
@@ -1203,7 +1203,7 @@ type ssePermissionTee struct {
 	// session B's prompts too. Routing must use the event's sessionID
 	// — if we used the connection's sessionID, the approval notice
 	// would land in the wrong session's thread.
-	onPermission func(sessionID, permissionID, permission string, patterns []string, metadata map[string]any)
+	OnPermission func(sessionID, permissionID, permission string, patterns []string, metadata map[string]any)
 	// onPermissionReplied fires when the upstream emits
 	// permission.replied — typically because the user answered the
 	// prompt directly in the OpenCode TUI (or via any non-ocman
@@ -1211,27 +1211,27 @@ type ssePermissionTee struct {
 	// judge for that permission so we don't pay for it and don't
 	// race the user's manual answer. sessionID is the event payload's
 	// sessionID for the same reason as onPermission.
-	onPermissionReplied func(sessionID, permissionID string)
+	OnPermissionReplied func(sessionID, permissionID string)
 	// onQuestionResolved fires when the upstream emits question.replied
 	// or question.rejected, so cross-page prompt toasts for the
 	// session's question can clear. reason is "replied" or "rejected".
 	// Optional — nil means questions aren't observed on this tee.
-	onQuestionResolved func(sessionID, requestID, reason string)
+	OnQuestionResolved func(sessionID, requestID, reason string)
 	// onSessionIdle fires when the upstream emits session.idle (the
 	// agent finished a turn). Optional — nil means idle isn't observed.
-	onSessionIdle func(sessionID string)
+	OnSessionIdle func(sessionID string)
 	// onSessionChanged fires when the upstream emits session.updated
 	// (session created or mutated). Used to push new-session detection
 	// instead of waiting for the next list poll. Optional — nil means
 	// session changes aren't observed. NOTE: session.updated fires
 	// frequently (per turn / token); the consumer is expected to
 	// dedupe (e.g. only act on first-seen session IDs).
-	onSessionChanged func(sessionID string)
+	OnSessionChanged func(sessionID string)
 }
 
-func (t *ssePermissionTee) Write(p []byte) (int, error) {
+func (t *Tee) Write(p []byte) (int, error) {
 	// Always forward bytes to the real writer first.
-	n, err := t.w.Write(p)
+	n, err := t.W.Write(p)
 
 	t.mu.Lock()
 	t.buf = append(t.buf, p[:n]...)
@@ -1244,7 +1244,7 @@ func (t *ssePermissionTee) Write(p []byte) (int, error) {
 
 // drain processes all complete SSE events currently in the buffer.
 // Runs inline in the caller's Write goroutine.
-func (t *ssePermissionTee) drain() {
+func (t *Tee) drain() {
 	t.mu.Lock()
 	data := t.buf
 	t.mu.Unlock()
@@ -1323,14 +1323,14 @@ func splitSSELines(b []byte) [][]byte {
 // dispatchEvent is called when a complete SSE event has been parsed.
 // It fires onPermission for permission.asked and onPermissionReplied
 // for permission.replied. Handlers must be non-blocking — typically
-// they route through Server.ensureAutoApprove / cancelAutoApprove
+// they route through Server.Ensure / Cancel
 // which do not block.
 //
 // eventType may be empty when OpenCode emits on the SSE default channel
 // (no "event:" line); in that case we read the type from the JSON
 // envelope's "type" field. Field names match the OpenCode OpenAPI
 // schema (PermissionRequest / EventPermissionReplied).
-func (t *ssePermissionTee) dispatchEvent(eventType, dataJSON string) {
+func (t *Tee) dispatchEvent(eventType, dataJSON string) {
 	// Resolve the effective event type: named-channel header wins if
 	// present, otherwise fall back to the JSON envelope's "type" field
 	// (the default-channel shape that OpenCode uses).
@@ -1370,7 +1370,7 @@ func (t *ssePermissionTee) dispatchEvent(eventType, dataJSON string) {
 // connection sees events for every session in that process. Using the
 // connection's session ID for routing would attribute every other
 // session's auto-approved notice to the connection's session.
-func (t *ssePermissionTee) dispatchPermissionAsked(dataJSON string) {
+func (t *Tee) dispatchPermissionAsked(dataJSON string) {
 	type permProps struct {
 		ID         string         `json:"id"`
 		SessionID  string         `json:"sessionID"`
@@ -1401,9 +1401,9 @@ func (t *ssePermissionTee) dispatchPermissionAsked(dataJSON string) {
 		"permissionID": props.ID,
 		"permission":   props.Permission,
 		"metadataKeys": metadataKeys(props.Metadata),
-	}).Debug("ssePermissionTee: dispatching permission.asked")
-	if t.onPermission != nil {
-		t.onPermission(props.SessionID, props.ID, props.Permission, props.Patterns, props.Metadata)
+	}).Debug("Tee: dispatching permission.asked")
+	if t.OnPermission != nil {
+		t.OnPermission(props.SessionID, props.ID, props.Permission, props.Patterns, props.Metadata)
 	}
 }
 
@@ -1415,7 +1415,7 @@ func (t *ssePermissionTee) dispatchPermissionAsked(dataJSON string) {
 //
 // sessionID is extracted from the payload for the same reason as in
 // dispatchPermissionAsked: a single tee sees events for every session.
-func (t *ssePermissionTee) dispatchPermissionReplied(dataJSON string) {
+func (t *Tee) dispatchPermissionReplied(dataJSON string) {
 	type repliedProps struct {
 		SessionID string `json:"sessionID"`
 		RequestID string `json:"requestID"`
@@ -1445,9 +1445,9 @@ func (t *ssePermissionTee) dispatchPermissionReplied(dataJSON string) {
 	log.WithFields(log.Fields{
 		"sessionID":    props.SessionID,
 		"permissionID": permissionID,
-	}).Debug("ssePermissionTee: dispatching permission.replied")
-	if t.onPermissionReplied != nil {
-		t.onPermissionReplied(props.SessionID, permissionID)
+	}).Debug("Tee: dispatching permission.replied")
+	if t.OnPermissionReplied != nil {
+		t.OnPermissionReplied(props.SessionID, permissionID)
 	}
 }
 
@@ -1456,8 +1456,8 @@ func (t *ssePermissionTee) dispatchPermissionReplied(dataJSON string) {
 // onQuestionResolved. OpenCode uses `requestID`; both casings and the
 // `id` fallback are accepted for robustness across shapes. sessionID is
 // taken from the payload (the tee sees every session's events).
-func (t *ssePermissionTee) dispatchQuestionResolved(dataJSON, reason string) {
-	if t.onQuestionResolved == nil {
+func (t *Tee) dispatchQuestionResolved(dataJSON, reason string) {
+	if t.OnQuestionResolved == nil {
 		return
 	}
 	type qProps struct {
@@ -1486,14 +1486,14 @@ func (t *ssePermissionTee) dispatchQuestionResolved(dataJSON, reason string) {
 	if sessionID == "" {
 		return
 	}
-	t.onQuestionResolved(sessionID, requestID, reason)
+	t.OnQuestionResolved(sessionID, requestID, reason)
 }
 
 // dispatchSessionIdle extracts the session ID from a session.idle event
 // and fires onSessionIdle. Accepts both casings and both the enveloped
 // and flat payload shapes.
-func (t *ssePermissionTee) dispatchSessionIdle(dataJSON string) {
-	if t.onSessionIdle == nil {
+func (t *Tee) dispatchSessionIdle(dataJSON string) {
+	if t.OnSessionIdle == nil {
 		return
 	}
 	type idleProps struct {
@@ -1518,15 +1518,15 @@ func (t *ssePermissionTee) dispatchSessionIdle(dataJSON string) {
 	if sessionID == "" {
 		return
 	}
-	t.onSessionIdle(sessionID)
+	t.OnSessionIdle(sessionID)
 }
 
 // dispatchSessionChanged extracts the session ID from a session.updated
 // event and fires onSessionChanged. OpenCode's session.updated payload
 // is {type, properties:{sessionID, info}}; we accept both casings and
 // the flat shape as a fallback.
-func (t *ssePermissionTee) dispatchSessionChanged(dataJSON string) {
-	if t.onSessionChanged == nil {
+func (t *Tee) dispatchSessionChanged(dataJSON string) {
+	if t.OnSessionChanged == nil {
 		return
 	}
 	type changedProps struct {
@@ -1551,7 +1551,7 @@ func (t *ssePermissionTee) dispatchSessionChanged(dataJSON string) {
 	if sessionID == "" {
 		return
 	}
-	t.onSessionChanged(sessionID)
+	t.OnSessionChanged(sessionID)
 }
 
 // firstNonEmpty returns the first non-empty string from the arguments,
@@ -1585,7 +1585,7 @@ func metadataKeys(m map[string]any) []string {
 // OpenCode /event stream — either via the frontend-driven tee in
 // serveSessionEvents (active while a browser tab is open) or via the
 // headless runAutoApproveWatcher (active for the lifetime of the
-// ocman process). Both entry points funnel through ensureAutoApprove,
+// ocman process). Both entry points funnel through Ensure,
 // which deduplicates so the judge runs at most once per permission.
 //
 // When auto-approve is enabled for the session it:
@@ -1604,7 +1604,7 @@ func metadataKeys(m map[string]any) []string {
 //
 // This function blocks (it calls judge.Judge which polls OpenCode) and
 // must always be called in a goroutine.
-func (s *Server) backgroundAutoApprove(
+func (s *Service) backgroundAutoApprove(
 	ctx context.Context,
 	platformID platforms.ID,
 	adapter platforms.Platform,
@@ -1619,15 +1619,15 @@ func (s *Server) backgroundAutoApprove(
 		"permissionID": permissionID,
 	})
 	// Check auto-approve state: per-session override, then server default.
-	enabled := s.autoApproveDefault
-	if s.stateDB != nil {
-		if perSession, exists, err := s.stateDB.GetAutoApprove(string(platformID), sessionID); err == nil && exists {
+	enabled := s.deps.DefaultEnabled
+	if s.deps.Store != nil {
+		if perSession, exists, err := s.deps.Store.GetAutoApprove(string(platformID), sessionID); err == nil && exists {
 			enabled = perSession
 		}
 	}
 	logger.WithFields(log.Fields{
 		"enabled":            enabled,
-		"autoApproveDefault": s.autoApproveDefault,
+		"autoApproveDefault": s.deps.DefaultEnabled,
 	}).Info("background auto-approve: checking enabled state")
 	if !enabled {
 		logger.Info("background auto-approve: disabled, skipping")
@@ -1661,12 +1661,12 @@ func (s *Server) backgroundAutoApprove(
 	}
 
 	// Resolve directory for port discovery.
-	if s.db == nil {
-		logger.Warn("background auto-approve: no OpenCode DB, cannot resolve session directory")
+	if s.deps.SessionDir == nil {
+		logger.Warn("background auto-approve: no session directory resolver, cannot resolve session directory")
 		return
 	}
-	dbSession, err := s.db.GetSession(sessionID)
-	if err != nil || dbSession == nil {
+	directory, err := s.deps.SessionDir(sessionID)
+	if err != nil {
 		logger.WithError(err).Warn("background auto-approve: session not found in DB")
 		return
 	}
@@ -1677,8 +1677,8 @@ func (s *Server) backgroundAutoApprove(
 	// onPermission callback using the cached delay; we re-read here to
 	// ensure the actual sleep matches the persisted value.
 	delayMs := s.judgeDelayMs
-	if s.stateDB != nil {
-		if d, err := s.stateDB.GetJudgeDelayMs(); err == nil {
+	if s.deps.Store != nil {
+		if d, err := s.deps.Store.GetJudgeDelayMs(); err == nil {
 			delayMs = d
 		}
 	}
@@ -1686,8 +1686,8 @@ func (s *Server) backgroundAutoApprove(
 	// Apply the configured judge model (if any) so the persisted
 	// setting takes effect without a restart. Empty/unset falls back
 	// to the judgeModel* constants seeded in newPermissionJudge.
-	if s.judge != nil && s.stateDB != nil {
-		if provider, modelID, ok := loadJudgeModel(s.stateDB); ok {
+	if s.judge != nil && s.deps.Store != nil {
+		if provider, modelID, ok := loadJudgeModel(s.deps.Store); ok {
 			s.judge.modelProvider = provider
 			s.judge.modelID = modelID
 		}
@@ -1714,8 +1714,8 @@ func (s *Server) backgroundAutoApprove(
 	// Load user-defined prompt sections from stateDB so headless runs
 	// use the same custom rules as the settings page.
 	var customSections []PromptSection
-	if s.stateDB != nil {
-		if stored, err := s.stateDB.GetPromptSections(); err == nil {
+	if s.deps.Store != nil {
+		if stored, err := s.deps.Store.GetPromptSections(); err == nil {
 			for _, ps := range stored {
 				customSections = append(customSections, PromptSection{
 					Title:   ps.Title,
@@ -1729,7 +1729,7 @@ func (s *Server) backgroundAutoApprove(
 	// Build a user-intent section from recent messages in this session
 	// so the judge can factor in what the user explicitly asked for.
 	if s.judge != nil && s.judge.openCodePort != nil {
-		port := s.judge.openCodePort(dbSession.Directory)
+		port := s.judge.openCodePort(directory)
 		if port != "" {
 			msgs := s.judge.recentUserMessages(ctx, port, sessionID)
 			if len(msgs) > 0 {
@@ -1778,7 +1778,7 @@ func (s *Server) backgroundAutoApprove(
 		}
 		s.emitSessionSseEvent(sessionID, "ocman.permission.checking", checkingPayload)
 	}
-	result := s.judge.JudgeWithCallback(ctx, dbSession.Directory, permission, patterns, metadata, customSections, emitChecking)
+	result := s.judge.JudgeWithCallback(ctx, directory, permission, patterns, metadata, customSections, emitChecking)
 
 	// If the user replied to the permission (via ocman API or directly
 	// in the OpenCode TUI) while the judge was running, the cancel
@@ -1796,7 +1796,7 @@ func (s *Server) backgroundAutoApprove(
 		return
 	}
 
-	// Record the verdict (and reasoning) so a later ensureAutoApprove
+	// Record the verdict (and reasoning) so a later Ensure
 	// call for the same permissionID (e.g. the user re-opens the
 	// session and handleSessionPermissions resurrects it via REST)
 	// short-circuits instead of paying for another judge run, and so
@@ -1872,7 +1872,7 @@ func (s *Server) backgroundAutoApprove(
 // OpenCode without our response. Errors from the adapter are logged
 // and swallowed — at worst the permission stays pending and the user
 // answers it manually.
-func (s *Server) respondAndPersistSafeApproval(
+func (s *Service) respondAndPersistSafeApproval(
 	platformID platforms.ID,
 	adapter platforms.Platform,
 	sessionID, permissionID, permission string,
@@ -1900,8 +1900,8 @@ func (s *Server) respondAndPersistSafeApproval(
 	// for backwards-compat with rows written before the cleanup
 	// change so existing notices keep rendering, but new rows leave
 	// it empty.
-	if s.stateDB != nil {
-		if err := s.stateDB.RecordApprovedPermission(
+	if s.deps.Store != nil {
+		if err := s.deps.Store.RecordApprovedPermission(
 			string(platformID),
 			sessionID,
 			state.ApprovedPermission{

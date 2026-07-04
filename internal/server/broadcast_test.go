@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/autoapprove"
 )
 
 func TestBroadcastHubFanOut(t *testing.T) {
@@ -125,12 +127,12 @@ func TestSsePermissionTeeQuestionAndIdle(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var gotKind, gotSession, gotRequest, gotReason string
-			tee := &ssePermissionTee{
-				w: &bytes.Buffer{},
-				onQuestionResolved: func(sessionID, requestID, reason string) {
+			tee := &autoapprove.Tee{
+				W: &bytes.Buffer{},
+				OnQuestionResolved: func(sessionID, requestID, reason string) {
 					gotKind, gotSession, gotRequest, gotReason = "question", sessionID, requestID, reason
 				},
-				onSessionIdle: func(sessionID string) {
+				OnSessionIdle: func(sessionID string) {
 					gotKind, gotSession = "idle", sessionID
 				},
 			}
@@ -189,9 +191,9 @@ func TestSsePermissionTeeSessionChanged(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var got string
-			tee := &ssePermissionTee{
-				w:                &bytes.Buffer{},
-				onSessionChanged: func(sessionID string) { got = sessionID },
+			tee := &autoapprove.Tee{
+				W:                &bytes.Buffer{},
+				OnSessionChanged: func(sessionID string) { got = sessionID },
 			}
 			if _, err := tee.Write([]byte(tc.sseData)); err != nil {
 				t.Fatalf("Write: %v", err)
