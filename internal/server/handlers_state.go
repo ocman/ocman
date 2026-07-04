@@ -33,6 +33,18 @@ func (s *Server) resolvePlatformIDForState(w http.ResponseWriter, r *http.Reques
 	return string(p.ID()), true
 }
 
+// validateStateRequest is the shared preamble of the session state
+// mutation handlers (seen / archive / pin): validate the session ID and
+// resolve the owning platform, writing the HTTP error itself on
+// failure. Returns the platform ID and whether to proceed.
+func (s *Server) validateStateRequest(w http.ResponseWriter, r *http.Request, sessionID, platform string) (string, bool) {
+	if !validateID(sessionID) {
+		http.Error(w, "invalid session ID", http.StatusBadRequest)
+		return "", false
+	}
+	return s.resolvePlatformIDForState(w, r, sessionID, platform)
+}
+
 func (s *Server) handleSeenSession(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Platform           string `json:"platform"`
@@ -42,15 +54,11 @@ func (s *Server) handleSeenSession(w http.ResponseWriter, r *http.Request) {
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
 		return
 	}
-	if !validateID(req.SessionID) {
-		http.Error(w, "invalid session ID", http.StatusBadRequest)
-		return
-	}
 	if req.SessionTimeUpdated <= 0 {
 		http.Error(w, "timeUpdated is required", http.StatusBadRequest)
 		return
 	}
-	platform, ok := s.resolvePlatformIDForState(w, r, req.SessionID, req.Platform)
+	platform, ok := s.validateStateRequest(w, r, req.SessionID, req.Platform)
 	if !ok {
 		return
 	}
@@ -73,15 +81,11 @@ func (s *Server) handleArchiveSession(w http.ResponseWriter, r *http.Request) {
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
 		return
 	}
-	if !validateID(req.SessionID) {
-		http.Error(w, "invalid session ID", http.StatusBadRequest)
-		return
-	}
 	if req.Archived && req.SessionTimeUpdated <= 0 {
 		http.Error(w, "timeUpdated is required", http.StatusBadRequest)
 		return
 	}
-	platform, ok := s.resolvePlatformIDForState(w, r, req.SessionID, req.Platform)
+	platform, ok := s.validateStateRequest(w, r, req.SessionID, req.Platform)
 	if !ok {
 		return
 	}
@@ -109,11 +113,7 @@ func (s *Server) handlePinSession(w http.ResponseWriter, r *http.Request) {
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
 		return
 	}
-	if !validateID(req.SessionID) {
-		http.Error(w, "invalid session ID", http.StatusBadRequest)
-		return
-	}
-	platform, ok := s.resolvePlatformIDForState(w, r, req.SessionID, req.Platform)
+	platform, ok := s.validateStateRequest(w, r, req.SessionID, req.Platform)
 	if !ok {
 		return
 	}
