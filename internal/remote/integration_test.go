@@ -38,6 +38,229 @@ func startRealRemote(t *testing.T, token, instanceID string, reg *platforms.Regi
 	return ln.Addr()
 }
 
+// startRealRemoteAt serves on a fixed address (used to restart a remote on
+// the same port so a hub can reconnect to it). Returns a stop func.
+func startRealRemoteAt(t *testing.T, addr, token, instanceID string, reg *platforms.Registry) func() {
+	t.Helper()
+	srv := NewServer(reg, localStubHost{}, instanceID, "v-test")
+	ln, err := NewListener(ListenConfig{Addr: addr, Token: token}, srv)
+	if err != nil {
+		t.Fatalf("listener %s: %v", addr, err)
+	}
+	go func() { _ = ln.Serve() }()
+	return ln.Stop
+}
+
+// TestManager_ReconnectsAfterRemoteRestart reproduces the bug where a hub
+// never reconnects after a remote restarts. The remote goes down and comes
+// back on the same address with a fresh instance ID; the hub must drop the
+// stale adapter and register one for the new instance ID.
+func TestManager_ReconnectsAfterRemoteRestart(t *testing.T) {
+	// Grab a free port, then serve on it explicitly so we can rebind
+	// after stopping (a restart on the same address).
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := l.Addr().String()
+	l.Close()
+
+	// Probe fast so the restart is detected quickly.
+	prev := healthPingInterval
+	healthPingInterval = 100 * time.Millisecond
+	t.Cleanup(func() { healthPingInterval = prev })
+
+	remoteReg := platforms.NewRegistry()
+	remoteReg.Register(&fakePlatform{id: "opencode"})
+	stop1 := startRealRemoteAt(t, addr, "tok", "inst-1", remoteReg)
+
+	raw, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { raw.Close() })
+	store, err := state.OpenFromSQL(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AddRemote(addr, "tok", "Box"); err != nil {
+		t.Fatal(err)
+	}
+
+	hubReg := platforms.NewRegistry()
+	router := hostsvc.NewRouter(localStubHost{})
+	mgr := NewManager(hubReg, router, store, "opencode")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	mgr.Start(ctx)
+
+	waitForPlatform := func(instanceID string) {
+		id := platforms.ID(CompoundPlatformID(instanceID, "opencode"))
+		deadline := time.Now().Add(10 * time.Second)
+		for time.Now().Before(deadline) {
+			if _, ok := hubReg.Get(id); ok {
+				return
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		t.Fatalf("platform for %s never registered", instanceID)
+	}
+
+	waitForPlatform("inst-1")
+
+	// Remote restarts on the same address with a new instance ID.
+	stop1()
+	stop2 := startRealRemoteAt(t, addr, "tok", "inst-2", remoteReg)
+	t.Cleanup(stop2)
+
+	// The hub must reconnect and register the new instance's platform.
+	waitForPlatform("inst-2")
+
+	// The stale adapter for the old instance ID must be gone.
+	if _, ok := hubReg.Get(platforms.ID(CompoundPlatformID("inst-1", "opencode"))); ok {
+		t.Fatal("stale platform for inst-1 still registered after restart")
+	}
+}
+
+// TestManager_RetriesWhenOfflineAtStartup covers the backoff path: the
+// remote is down when the hub starts, so the first Connect fails; once the
+// remote comes up the supervisor's retry loop must connect and register.
+func TestManager_RetriesWhenOfflineAtStartup(t *testing.T) {
+	// Reserve an address but don't serve on it yet — the remote is down.
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := l.Addr().String()
+	l.Close()
+
+	// Retry fast.
+	prev := reconnectBaseDelay
+	reconnectBaseDelay = 50 * time.Millisecond
+	t.Cleanup(func() { reconnectBaseDelay = prev })
+
+	raw, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { raw.Close() })
+	store, err := state.OpenFromSQL(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AddRemote(addr, "tok", "Box"); err != nil {
+		t.Fatal(err)
+	}
+
+	hubReg := platforms.NewRegistry()
+	router := hostsvc.NewRouter(localStubHost{})
+	mgr := NewManager(hubReg, router, store, "opencode")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	mgr.Start(ctx)
+
+	// Give the supervisor a few failed attempts before bringing it up.
+	time.Sleep(120 * time.Millisecond)
+
+	remoteReg := platforms.NewRegistry()
+	remoteReg.Register(&fakePlatform{id: "opencode"})
+	stop := startRealRemoteAt(t, addr, "tok", "late", remoteReg)
+	t.Cleanup(stop)
+
+	id := platforms.ID(CompoundPlatformID("late", "opencode"))
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, ok := hubReg.Get(id); ok {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("platform never registered after remote came up")
+}
+
+// TestManager_AuthFailedDoesNotRetry ensures a bad token stops the
+// supervisor instead of hammering the remote forever.
+func TestManager_AuthFailedDoesNotRetry(t *testing.T) {
+	remoteReg := platforms.NewRegistry()
+	remoteReg.Register(&fakePlatform{id: "opencode"})
+	addr := startRealRemote(t, "correct-token", "auth-remote", remoteReg)
+
+	raw, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { raw.Close() })
+	store, err := state.OpenFromSQL(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Wrong token.
+	localID, err := store.AddRemote(addr, "wrong-token", "Box")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hubReg := platforms.NewRegistry()
+	router := hostsvc.NewRouter(localStubHost{})
+	mgr := NewManager(hubReg, router, store, "opencode")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	mgr.Start(ctx)
+
+	// Health should settle on auth-failed and no platform registers.
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if conn, ok := mgr.Conn(localID); ok && conn.Health() == HealthAuthFailed {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	conn, ok := mgr.Conn(localID)
+	if !ok || conn.Health() != HealthAuthFailed {
+		t.Fatalf("expected auth-failed health, got ok=%v health=%v", ok, func() Health {
+			if conn != nil {
+				return conn.Health()
+			}
+			return ""
+		}())
+	}
+	if _, ok := hubReg.Get(platforms.ID(CompoundPlatformID("auth-remote", "opencode"))); ok {
+		t.Fatal("platform should not register on auth failure")
+	}
+}
+
+func TestNextDelay(t *testing.T) {
+	prevBase, prevMax := reconnectBaseDelay, reconnectMaxDelay
+	reconnectBaseDelay = 2 * time.Second
+	reconnectMaxDelay = 60 * time.Second
+	t.Cleanup(func() { reconnectBaseDelay, reconnectMaxDelay = prevBase, prevMax })
+
+	cases := []struct{ in, want time.Duration }{
+		{2 * time.Second, 4 * time.Second},
+		{4 * time.Second, 8 * time.Second},
+		{40 * time.Second, 60 * time.Second}, // capped
+		{60 * time.Second, 60 * time.Second}, // stays capped
+	}
+	for _, c := range cases {
+		if got := nextDelay(c.in); got != c.want {
+			t.Errorf("nextDelay(%v) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
+
+func TestSleepCtx(t *testing.T) {
+	// Completes normally.
+	if !sleepCtx(context.Background(), time.Millisecond) {
+		t.Fatal("sleepCtx should return true when it sleeps fully")
+	}
+	// Cancelled early returns false.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if sleepCtx(ctx, time.Hour) {
+		t.Fatal("sleepCtx should return false when ctx is cancelled")
+	}
+}
+
 func TestRemoteConn_ConnectAndHello(t *testing.T) {
 	reg := platforms.NewRegistry()
 	reg.Register(&fakePlatform{id: "opencode"})

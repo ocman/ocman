@@ -75,6 +75,17 @@ func dialTarget(address string) string {
 func (c *RemoteConn) Connect(ctx context.Context) error {
 	c.setHealth(HealthConnecting)
 
+	// Drop any previous transport before redialing (reconnect path) so
+	// we don't leak the old grpc.ClientConn.
+	c.mu.Lock()
+	old := c.conn
+	c.conn = nil
+	c.client = nil
+	c.mu.Unlock()
+	if old != nil {
+		old.Close()
+	}
+
 	var transport credentials.TransportCredentials = insecure.NewCredentials()
 	if c.useTLS() {
 		transport = credentials.NewTLS(nil)
@@ -112,6 +123,53 @@ func (c *RemoteConn) Connect(ctx context.Context) error {
 	c.lastSeen = time.Now()
 	c.mu.Unlock()
 	return nil
+}
+
+// healthPingInterval is how often WaitForDrop probes a connected remote
+// with a Hello to detect a restart. A restarted remote returns a new
+// instance ID (or an error), both of which mean "reconnect".
+var healthPingInterval = 5 * time.Second
+
+// WaitForDrop blocks until the remote is no longer reachable at the same
+// identity — either the transport leaves Ready or a periodic Hello probe
+// fails or reports a different instance ID (a restart) — or ctx is
+// cancelled. A lazily-idle grpc channel can look "not Ready" without being
+// down, so the active probe is the authoritative signal; the transport
+// watch just makes an outright disconnect react faster.
+//
+// After this returns the caller must re-run Connect to re-learn the
+// (possibly changed) instance ID rather than trusting the channel.
+func (c *RemoteConn) WaitForDrop(ctx context.Context) {
+	c.mu.RLock()
+	conn := c.conn
+	client := c.client
+	wantID := c.remoteID
+	c.mu.RUnlock()
+	if conn == nil || client == nil {
+		return
+	}
+
+	ticker := time.NewTicker(healthPingInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			pctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			hello, err := client.Hello(pctx, &pb.HelloReq{ProtocolVersion: ProtocolVersion})
+			cancel()
+			if err != nil {
+				c.markOffline()
+				return
+			}
+			if hello.InstanceId != wantID {
+				// Remote restarted with a new identity.
+				return
+			}
+			c.markSeen()
+		}
+	}
 }
 
 // Close tears down the connection.

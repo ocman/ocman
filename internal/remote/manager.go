@@ -134,29 +134,122 @@ func (m *Manager) dial(r state.Remote) {
 	go m.connectAndRegister(bg, mr, r.LocalID)
 }
 
+// reconnect backoff bounds. Auth/version failures are not retried (a
+// restart won't fix a bad token or protocol mismatch); everything else
+// (offline/dial errors) is retried with capped exponential backoff.
+// reconnectBaseDelay is a var so tests can shrink it.
+var (
+	reconnectBaseDelay = 2 * time.Second
+	reconnectMaxDelay  = 60 * time.Second
+)
+
+// connectAndRegister supervises a single remote for the manager's
+// lifetime: it (re)connects with backoff, registers adapters on success,
+// waits for the transport to drop, then reconnects. This handles a remote
+// that is offline at startup and one that restarts later (which gets a
+// fresh instance ID, so adapters are torn down and re-registered).
 func (m *Manager) connectAndRegister(ctx context.Context, mr *managedRemote, localID int64) {
-	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	if err := mr.conn.Connect(cctx); err != nil {
-		log.WithError(err).WithField("remote", localID).Warn("remote: connect failed")
+	delay := reconnectBaseDelay
+	for {
+		if ctx.Err() != nil || !m.stillManaged(localID, mr) {
+			return
+		}
+
+		cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		err := mr.conn.Connect(cctx)
+		cancel()
+		if err != nil {
+			m.persistHealth(localID, mr.conn)
+			// A bad token or incompatible version won't be fixed by
+			// retrying; stop and leave the health reason visible.
+			if h := mr.conn.Health(); h == HealthAuthFailed || h == HealthIncompatible {
+				log.WithError(err).WithField("remote", localID).Warn("remote: connect failed, not retrying")
+				return
+			}
+			log.WithError(err).WithFields(log.Fields{
+				"remote": localID,
+				"retry":  delay,
+			}).Warn("remote: connect failed, retrying")
+			if !sleepCtx(ctx, delay) {
+				return
+			}
+			delay = nextDelay(delay)
+			continue
+		}
+		delay = reconnectBaseDelay
+
+		mr.platform = newRemotePlatform(mr.conn, m.base, func() string {
+			return m.displayNameFor(localID)
+		})
+		mr.host = newRemoteHost(mr.conn)
+		m.registry.Register(mr.platform)
+		m.router.RegisterRemote(mr.conn.RemoteID(), mr.host)
 		m.persistHealth(localID, mr.conn)
-		return
+		m.refreshInventory(ctx, mr)
+
+		log.WithFields(log.Fields{
+			"remote":   localID,
+			"remoteId": mr.conn.RemoteID(),
+			"hostname": mr.conn.Hostname(),
+		}).Info("remote: connected")
+
+		// Block until the transport drops (remote restart / network
+		// loss), then tear down the now-stale adapters and reconnect.
+		mr.conn.WaitForDrop(ctx)
+		if ctx.Err() != nil || !m.stillManaged(localID, mr) {
+			return
+		}
+		m.unregisterAdapters(mr)
+		mr.conn.markOffline()
+		m.persistHealth(localID, mr.conn)
+		log.WithField("remote", localID).Info("remote: disconnected, reconnecting")
 	}
-	mr.platform = newRemotePlatform(mr.conn, m.base, func() string {
-		return m.displayNameFor(localID)
-	})
-	mr.host = newRemoteHost(mr.conn)
+}
 
-	m.registry.Register(mr.platform)
-	m.router.RegisterRemote(mr.conn.RemoteID(), mr.host)
-	m.persistHealth(localID, mr.conn)
-	m.refreshInventory(ctx, mr)
+// stillManaged reports whether mr is the current managed remote for
+// localID. A superseding dial (Reconnect/Update) or a disconnect replaces
+// or removes it, which must stop this supervisor.
+func (m *Manager) stillManaged(localID int64, mr *managedRemote) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.remotes[localID] == mr
+}
 
-	log.WithFields(log.Fields{
-		"remote":   localID,
-		"remoteId": mr.conn.RemoteID(),
-		"hostname": mr.conn.Hostname(),
-	}).Info("remote: connected")
+// unregisterAdapters removes a managed remote's registry/router entries
+// (without closing the conn, which the supervisor keeps to reconnect).
+func (m *Manager) unregisterAdapters(mr *managedRemote) {
+	if mr.platform != nil {
+		m.registry.Unregister(mr.platform.ID())
+		mr.platform = nil
+	}
+	if mr.host != nil && mr.conn != nil {
+		if rid := mr.conn.RemoteID(); rid != "" {
+			m.router.UnregisterRemote(rid)
+		}
+		mr.host = nil
+	}
+}
+
+// sleepCtx sleeps for d unless ctx is cancelled first. Returns false if
+// cancelled.
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
+}
+
+// nextDelay doubles d up to reconnectMaxDelay.
+func nextDelay(d time.Duration) time.Duration {
+	d *= 2
+	if d > reconnectMaxDelay {
+		return reconnectMaxDelay
+	}
+	return d
 }
 
 // refreshInventory fetches a connected remote's project inventory and
