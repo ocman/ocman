@@ -88,8 +88,20 @@ handlers don't bypass the `Host` seam). User-facing docs:
   creates child sessions via the Platform interface; tool handlers
   implement the MCP tools. Mounted at `/mcp` by the server package.
 - `internal/server/` — HTTP server, API handlers, static file serving
-  with SPA fallback, OpenCode port discovery via `lsof`, tmux
-  integration, whisper transcription.
+  with SPA fallback, OpenCode port discovery via `lsof`.
+- `internal/tmux/` — tmux process control: session/window listing,
+  name derivation/validation, opencode launchers (runner seams for
+  tests). HTTP handlers stay in `internal/server`.
+- `internal/term/` — in-app browser terminals: window naming/hashing,
+  window management in the dedicated `ocman-term` tmux session, and
+  the PTY bridge. WebSocket/REST layer stays in `internal/server`.
+- `internal/whisper/` — self-contained voice transcription via a local
+  whisper-cpp binary (+ ffmpeg conversion).
+- `internal/autoapprove/` — the LLM-judged permission auto-approve
+  pipeline (judge, per-permission state machine, safe-command cache,
+  SSE tee/sinks, headless watcher). Wired into the server through an
+  `autoapprove.Deps` seam by `internal/server/autoapprove_engine.go`,
+  mirroring `internal/loops`.
 - `frontend/` — React + TypeScript + Vite SPA (port 8228 in dev).
 - `internal/server/static/` — Vite build output; embedded into the Go
   binary via `//go:embed`. Gitignored except for `robots.txt`, which
@@ -210,22 +222,22 @@ diffs minimal and match the surrounding code.
   targets auto-export the dev endpoint. User-facing config (URL scheme →
   transport, `OTEL_*` vars, dashboard) is in `docs/configuration.md`;
   dashboard provisioning in `observability/`.
-- **Tmux session name character limitations**: `tmuxSessionNameForPath`
+- **Tmux session name character limitations**: `tmux.SessionNameForPath`
   derives a session name from the worktree directory. tmux itself
   replaces dots with underscores when displaying session names, so a
   path like `/home/u/src/github.com/foo` becomes the session name
   `~/src/github_com/foo` in `tmux list-sessions` output. Two
-  character sets are enforced in `internal/server/tmux.go`:
-  - `validTmuxName` (`[a-zA-Z0-9._/~:-]+`) — used for user-supplied
+  character sets are enforced in `internal/tmux/sessions.go`:
+  - `tmux.ValidName` (`[a-zA-Z0-9._/~:-]+`) — used for user-supplied
     target identifiers such as `session:window` pairs.
-  - `validTmuxComponent` (`[a-zA-Z0-9._/~-]+`) — used for names
+  - `tmux.ValidComponent` (`[a-zA-Z0-9._/~-]+`) — used for names
     *derived from filesystem paths* (session names, window names).
     The colon is **excluded** because tmux uses `:` as the
     session/window separator in target identifiers; an embedded `:`
     would silently mis-target the wrong pane.
   If a derived session or window name contains any character outside
-  `validTmuxComponent`, `launchOpencodeInTmuxWith` /
-  `launchOpencodeInProjectTmuxWindowWith` return an error (HTTP 422
+  `tmux.ValidComponent`, `tmux.LaunchOpencodeWith` /
+  `tmux.LaunchWorktreeWindowWith` return an error (HTTP 422
   from the worktree handler). In practice this is rare: the worktree
   slug rules (AD-9) strip everything except `[a-z0-9._-]` before the
   path reaches tmux, so only atypical *project* directory names

@@ -51,8 +51,12 @@ internal/db/                               SQLite queries against OpenCode's DB
 internal/state/                            ocman's own writable state DB (archived/seen,
                                             auth secret, favorites, cached projects)
 internal/server/                           HTTP server, API handlers, static file serving,
-                                            OpenCode port discovery, tmux launcher, auth
+                                            OpenCode port discovery, auth
 internal/server/static/                    Vite build output (embedded into Go binary)
+internal/tmux/                             tmux process control + opencode launchers
+internal/term/                             in-app browser terminals (tmux windows + PTY bridge)
+internal/whisper/                          voice transcription via local whisper-cpp
+internal/autoapprove/                      LLM-judged permission auto-approve pipeline
 spec/                                      Requirements + architecture notes per feature
 ```
 
