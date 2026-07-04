@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -174,6 +175,22 @@ func parseInt64Param(r *http.Request, name string, fallback int64) int64 {
 		return fallback
 	}
 	return n
+}
+
+// parseAbsDir reads the required ?dir= query parameter and validates
+// that it is an absolute path, writing the HTTP error itself on
+// failure. Returns the directory and whether to proceed.
+func parseAbsDir(w http.ResponseWriter, r *http.Request) (string, bool) {
+	dir := normaliseDirParam(r.URL.Query().Get("dir"))
+	if dir == "" {
+		http.Error(w, "dir query parameter is required", http.StatusBadRequest)
+		return "", false
+	}
+	if !filepath.IsAbs(dir) {
+		http.Error(w, "dir must be an absolute path", http.StatusBadRequest)
+		return "", false
+	}
+	return dir, true
 }
 
 // parseSinceParam reads the ?days= query param and returns a Unix

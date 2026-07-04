@@ -87,13 +87,8 @@ func (s *Server) handleGitInfo(w http.ResponseWriter, r *http.Request) {
 //	400 Bad Req    — `dir` missing or relative
 //	502 Bad Gateway — git invocation failed
 func (s *Server) handleGitBranches(w http.ResponseWriter, r *http.Request) {
-	dir := r.URL.Query().Get("dir")
-	if dir == "" {
-		http.Error(w, "dir query parameter is required", http.StatusBadRequest)
-		return
-	}
-	if !filepath.IsAbs(dir) {
-		http.Error(w, "dir must be an absolute path", http.StatusBadRequest)
+	dir, ok := parseAbsDir(w, r)
+	if !ok {
 		return
 	}
 	branches, err := s.router().ForDir(dir).GitBranches(r.Context(), dir)
@@ -178,13 +173,8 @@ func (s *Server) handleGitCheckout(w http.ResponseWriter, r *http.Request) {
 //	404 Not Found  — `dir` is not a git worktree
 //	502 Bad Gateway — git invocation failed (timeout, fork error)
 func (s *Server) handleGitDiff(w http.ResponseWriter, r *http.Request) {
-	dir := r.URL.Query().Get("dir")
-	if dir == "" {
-		http.Error(w, "dir query parameter is required", http.StatusBadRequest)
-		return
-	}
-	if !filepath.IsAbs(dir) {
-		http.Error(w, "dir must be an absolute path", http.StatusBadRequest)
+	dir, ok := parseAbsDir(w, r)
+	if !ok {
 		return
 	}
 	fresh := r.URL.Query().Get("fresh") == "1"

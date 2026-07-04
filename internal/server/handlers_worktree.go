@@ -57,13 +57,8 @@ func worktreeSessionsAvailable(reg *platforms.Registry) bool {
 //	404 — `dir` is not inside a git repo
 //	502 — git invocation failed
 func (s *Server) handleWorktreeList(w http.ResponseWriter, r *http.Request) {
-	dir := r.URL.Query().Get("dir")
-	if dir == "" {
-		http.Error(w, "dir query parameter is required", http.StatusBadRequest)
-		return
-	}
-	if !filepath.IsAbs(dir) {
-		http.Error(w, "dir must be an absolute path", http.StatusBadRequest)
+	dir, ok := parseAbsDir(w, r)
+	if !ok {
 		return
 	}
 
@@ -85,13 +80,8 @@ func (s *Server) handleWorktreeList(w http.ResponseWriter, r *http.Request) {
 // the default base ref (AD-5). Used by the frontend to pre-fill the
 // "base ref" field in the worktree-creation form.
 func (s *Server) handleWorktreeDefaultBaseRef(w http.ResponseWriter, r *http.Request) {
-	dir := r.URL.Query().Get("dir")
-	if dir == "" {
-		http.Error(w, "dir query parameter is required", http.StatusBadRequest)
-		return
-	}
-	if !filepath.IsAbs(dir) {
-		http.Error(w, "dir must be an absolute path", http.StatusBadRequest)
+	dir, ok := parseAbsDir(w, r)
+	if !ok {
 		return
 	}
 

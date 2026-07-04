@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -88,13 +87,8 @@ func findRemote(remotes []forge.Remote, name string) (forge.Remote, bool) {
 // Response 404: dir is not in a git repo.
 // Response 400: dir param missing / not absolute.
 func (s *Server) handleProjectUpstreams(w http.ResponseWriter, r *http.Request) {
-	dir := normaliseDirParam(r.URL.Query().Get("dir"))
-	if dir == "" {
-		http.Error(w, "dir query parameter is required", http.StatusBadRequest)
-		return
-	}
-	if !filepath.IsAbs(dir) {
-		http.Error(w, "dir must be an absolute path", http.StatusBadRequest)
+	dir, ok := parseAbsDir(w, r)
+	if !ok {
 		return
 	}
 
@@ -415,5 +409,3 @@ func writeProjectListError(w http.ResponseWriter, status int, code, message stri
 		},
 	})
 }
-
-
