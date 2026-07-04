@@ -59,6 +59,10 @@ type fakePlatform struct {
 	// pending prompt through the resume-on-enable path without
 	// needing a real OpenCode instance.
 	listPermissionsFn func(sessionID string) ([]platforms.LivePrompt, error)
+	// permissionRulesFn / setPermissionRulesFn, when non-nil,
+	// intercept the per-session permission-ruleset read/write.
+	permissionRulesFn    func(sessionID string) ([]platforms.PermissionRule, error)
+	setPermissionRulesFn func(req platforms.SetPermissionRulesRequest) error
 }
 
 func (f *fakePlatform) ID() platforms.ID {
@@ -188,6 +192,20 @@ func (f *fakePlatform) Abort(context.Context, platforms.AbortRequest) error {
 }
 
 func (f *fakePlatform) RenameSession(context.Context, platforms.RenameSessionRequest) error {
+	return platforms.ErrUnsupported
+}
+
+func (f *fakePlatform) PermissionRules(_ context.Context, sessionID string) ([]platforms.PermissionRule, error) {
+	if f.permissionRulesFn != nil {
+		return f.permissionRulesFn(sessionID)
+	}
+	return nil, platforms.ErrUnsupported
+}
+
+func (f *fakePlatform) SetPermissionRules(_ context.Context, req platforms.SetPermissionRulesRequest) error {
+	if f.setPermissionRulesFn != nil {
+		return f.setPermissionRulesFn(req)
+	}
 	return platforms.ErrUnsupported
 }
 

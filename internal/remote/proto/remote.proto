@@ -30,6 +30,7 @@ service Ocman {
   rpc SessionModels(SessionRef) returns (JsonResp);
   rpc ListPermissions(SessionRef) returns (JsonResp);
   rpc ListQuestions(SessionRef) returns (JsonResp);
+  rpc PermissionRules(SessionRef) returns (JsonResp);     // []platforms.PermissionRule
   rpc Capabilities(PlatformRef) returns (JsonResp);       // platforms.Capabilities
   rpc Owns(SessionRef) returns (OwnsResp);
 
@@ -42,6 +43,7 @@ service Ocman {
   rpc RejectQuestion(PlatformJsonReq) returns (Empty);
   rpc Abort(PlatformJsonReq) returns (Empty);
   rpc RenameSession(PlatformJsonReq) returns (Empty);
+  rpc SetPermissionRules(PlatformJsonReq) returns (Empty);
   rpc Compact(PlatformJsonReq) returns (Empty);
   rpc CreateSession(PlatformJsonReq) returns (JsonResp);  // *CreateSessionResponse
 

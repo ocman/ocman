@@ -267,6 +267,19 @@ func (p *remotePlatform) ListQuestions(ctx context.Context, sessionID string) ([
 	return out, unmarshalJSON(resp.Payload, &out)
 }
 
+func (p *remotePlatform) PermissionRules(ctx context.Context, sessionID string) ([]platforms.PermissionRule, error) {
+	client := p.conn.Client()
+	if client == nil {
+		return nil, ErrRemoteOffline
+	}
+	resp, err := client.PermissionRules(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})
+	if err != nil {
+		return nil, err
+	}
+	var out []platforms.PermissionRule
+	return out, unmarshalJSON(resp.Payload, &out)
+}
+
 // --- mutations ---
 
 func (p *remotePlatform) SendMessage(ctx context.Context, req platforms.SendMessageRequest) error {
@@ -321,6 +334,13 @@ func (p *remotePlatform) Abort(ctx context.Context, req platforms.AbortRequest) 
 func (p *remotePlatform) RenameSession(ctx context.Context, req platforms.RenameSessionRequest) error {
 	return p.mutate(ctx, req, func(c pb.OcmanClient, b []byte) error {
 		_, err := c.RenameSession(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: b})
+		return err
+	})
+}
+
+func (p *remotePlatform) SetPermissionRules(ctx context.Context, req platforms.SetPermissionRulesRequest) error {
+	return p.mutate(ctx, req, func(c pb.OcmanClient, b []byte) error {
+		_, err := c.SetPermissionRules(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: b})
 		return err
 	})
 }

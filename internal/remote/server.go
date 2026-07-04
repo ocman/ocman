@@ -273,6 +273,26 @@ func (s *Server) RenameSession(ctx context.Context, req *pb.PlatformJsonReq) (*p
 	return &pb.Empty{}, p.RenameSession(ctx, rr)
 }
 
+func (s *Server) PermissionRules(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	return jsonResp(p.PermissionRules(ctx, req.SessionId))
+}
+
+func (s *Server) SetPermissionRules(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	var sr platforms.SetPermissionRulesRequest
+	if err := unmarshalJSON(req.Payload, &sr); err != nil {
+		return nil, err
+	}
+	return &pb.Empty{}, p.SetPermissionRules(ctx, sr)
+}
+
 func (s *Server) Compact(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
 	p, err := s.platformFor(req.Platform)
 	if err != nil {

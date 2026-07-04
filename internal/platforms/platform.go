@@ -103,6 +103,12 @@ type Capabilities struct {
 	// When true the frontend shows the auto-approve toggle and "Checking..."
 	// indicator on the permission prompt.
 	AutoApprove bool `json:"autoApprove"`
+
+	// PermissionRules reports whether the adapter can read and write a
+	// per-session permission ruleset (Platform.PermissionRules /
+	// SetPermissionRules). Frontend gates the session permission-mode
+	// lock on this flag.
+	PermissionRules bool `json:"permissionRules"`
 }
 
 // LiveState captures in-memory live status for a session, updated by
@@ -263,6 +269,16 @@ type Platform interface {
 
 	// RenameSession sets a new title for a session.
 	RenameSession(ctx context.Context, req RenameSessionRequest) error
+
+	// PermissionRules returns the session's permission ruleset. A nil
+	// or empty slice means the session inherits the platform's
+	// configured defaults. Gated by Capabilities.PermissionRules.
+	PermissionRules(ctx context.Context, sessionID string) ([]PermissionRule, error)
+
+	// SetPermissionRules replaces the session's permission ruleset.
+	// An empty ruleset restores the configured defaults. Gated by
+	// Capabilities.PermissionRules.
+	SetPermissionRules(ctx context.Context, req SetPermissionRulesRequest) error
 
 	// Compact compacts the session's history.
 	Compact(ctx context.Context, req CompactRequest) error

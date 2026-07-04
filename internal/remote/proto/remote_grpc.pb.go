@@ -30,6 +30,7 @@ const (
 	Ocman_SessionModels_FullMethodName          = "/ocman.remote.v1.Ocman/SessionModels"
 	Ocman_ListPermissions_FullMethodName        = "/ocman.remote.v1.Ocman/ListPermissions"
 	Ocman_ListQuestions_FullMethodName          = "/ocman.remote.v1.Ocman/ListQuestions"
+	Ocman_PermissionRules_FullMethodName        = "/ocman.remote.v1.Ocman/PermissionRules"
 	Ocman_Capabilities_FullMethodName           = "/ocman.remote.v1.Ocman/Capabilities"
 	Ocman_Owns_FullMethodName                   = "/ocman.remote.v1.Ocman/Owns"
 	Ocman_SendMessage_FullMethodName            = "/ocman.remote.v1.Ocman/SendMessage"
@@ -40,6 +41,7 @@ const (
 	Ocman_RejectQuestion_FullMethodName         = "/ocman.remote.v1.Ocman/RejectQuestion"
 	Ocman_Abort_FullMethodName                  = "/ocman.remote.v1.Ocman/Abort"
 	Ocman_RenameSession_FullMethodName          = "/ocman.remote.v1.Ocman/RenameSession"
+	Ocman_SetPermissionRules_FullMethodName     = "/ocman.remote.v1.Ocman/SetPermissionRules"
 	Ocman_Compact_FullMethodName                = "/ocman.remote.v1.Ocman/Compact"
 	Ocman_CreateSession_FullMethodName          = "/ocman.remote.v1.Ocman/CreateSession"
 	Ocman_StreamEvents_FullMethodName           = "/ocman.remote.v1.Ocman/StreamEvents"
@@ -91,6 +93,7 @@ type OcmanClient interface {
 	SessionModels(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*JsonResp, error)
 	ListPermissions(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*JsonResp, error)
 	ListQuestions(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*JsonResp, error)
+	PermissionRules(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*JsonResp, error)
 	Capabilities(ctx context.Context, in *PlatformRef, opts ...grpc.CallOption) (*JsonResp, error)
 	Owns(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*OwnsResp, error)
 	// --- Session mutations (JSON request payload) ---
@@ -102,6 +105,7 @@ type OcmanClient interface {
 	RejectQuestion(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*Empty, error)
 	Abort(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*Empty, error)
 	RenameSession(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*Empty, error)
+	SetPermissionRules(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*Empty, error)
 	Compact(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*Empty, error)
 	CreateSession(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 	// --- Streaming events (tunneled to hub SSE) ---
@@ -249,6 +253,16 @@ func (c *ocmanClient) ListQuestions(ctx context.Context, in *SessionRef, opts ..
 	return out, nil
 }
 
+func (c *ocmanClient) PermissionRules(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*JsonResp, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(JsonResp)
+	err := c.cc.Invoke(ctx, Ocman_PermissionRules_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *ocmanClient) Capabilities(ctx context.Context, in *PlatformRef, opts ...grpc.CallOption) (*JsonResp, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(JsonResp)
@@ -343,6 +357,16 @@ func (c *ocmanClient) RenameSession(ctx context.Context, in *PlatformJsonReq, op
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Empty)
 	err := c.cc.Invoke(ctx, Ocman_RenameSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *ocmanClient) SetPermissionRules(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Ocman_SetPermissionRules_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -599,6 +623,7 @@ type OcmanServer interface {
 	SessionModels(context.Context, *SessionRef) (*JsonResp, error)
 	ListPermissions(context.Context, *SessionRef) (*JsonResp, error)
 	ListQuestions(context.Context, *SessionRef) (*JsonResp, error)
+	PermissionRules(context.Context, *SessionRef) (*JsonResp, error)
 	Capabilities(context.Context, *PlatformRef) (*JsonResp, error)
 	Owns(context.Context, *SessionRef) (*OwnsResp, error)
 	// --- Session mutations (JSON request payload) ---
@@ -610,6 +635,7 @@ type OcmanServer interface {
 	RejectQuestion(context.Context, *PlatformJsonReq) (*Empty, error)
 	Abort(context.Context, *PlatformJsonReq) (*Empty, error)
 	RenameSession(context.Context, *PlatformJsonReq) (*Empty, error)
+	SetPermissionRules(context.Context, *PlatformJsonReq) (*Empty, error)
 	Compact(context.Context, *PlatformJsonReq) (*Empty, error)
 	CreateSession(context.Context, *PlatformJsonReq) (*JsonResp, error)
 	// --- Streaming events (tunneled to hub SSE) ---
@@ -680,6 +706,9 @@ func (UnimplementedOcmanServer) ListPermissions(context.Context, *SessionRef) (*
 func (UnimplementedOcmanServer) ListQuestions(context.Context, *SessionRef) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListQuestions not implemented")
 }
+func (UnimplementedOcmanServer) PermissionRules(context.Context, *SessionRef) (*JsonResp, error) {
+	return nil, status.Error(codes.Unimplemented, "method PermissionRules not implemented")
+}
 func (UnimplementedOcmanServer) Capabilities(context.Context, *PlatformRef) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method Capabilities not implemented")
 }
@@ -709,6 +738,9 @@ func (UnimplementedOcmanServer) Abort(context.Context, *PlatformJsonReq) (*Empty
 }
 func (UnimplementedOcmanServer) RenameSession(context.Context, *PlatformJsonReq) (*Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method RenameSession not implemented")
+}
+func (UnimplementedOcmanServer) SetPermissionRules(context.Context, *PlatformJsonReq) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetPermissionRules not implemented")
 }
 func (UnimplementedOcmanServer) Compact(context.Context, *PlatformJsonReq) (*Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method Compact not implemented")
@@ -989,6 +1021,24 @@ func _Ocman_ListQuestions_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Ocman_PermissionRules_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SessionRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).PermissionRules(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_PermissionRules_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).PermissionRules(ctx, req.(*SessionRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Ocman_Capabilities_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PlatformRef)
 	if err := dec(in); err != nil {
@@ -1165,6 +1215,24 @@ func _Ocman_RenameSession_Handler(srv interface{}, ctx context.Context, dec func
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(OcmanServer).RenameSession(ctx, req.(*PlatformJsonReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Ocman_SetPermissionRules_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PlatformJsonReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).SetPermissionRules(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_SetPermissionRules_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).SetPermissionRules(ctx, req.(*PlatformJsonReq))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1556,6 +1624,10 @@ var Ocman_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Ocman_ListQuestions_Handler,
 		},
 		{
+			MethodName: "PermissionRules",
+			Handler:    _Ocman_PermissionRules_Handler,
+		},
+		{
 			MethodName: "Capabilities",
 			Handler:    _Ocman_Capabilities_Handler,
 		},
@@ -1594,6 +1666,10 @@ var Ocman_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RenameSession",
 			Handler:    _Ocman_RenameSession_Handler,
+		},
+		{
+			MethodName: "SetPermissionRules",
+			Handler:    _Ocman_SetPermissionRules_Handler,
 		},
 		{
 			MethodName: "Compact",

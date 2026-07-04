@@ -260,6 +260,8 @@ var sessionSubRoutes = []sessionSubRoute{
 	{http.MethodGet, "{id}/changes", (*Server).handleSessionChanges},
 	{http.MethodGet, "{id}/info", (*Server).handleSessionInfo},
 	{http.MethodGet, "{id}/permissions", (*Server).handleSessionPermissions},
+	{http.MethodGet, "{id}/permission-rules", (*Server).handleSessionPermissionRulesGet},
+	{http.MethodPut, "{id}/permission-rules", (*Server).handleSessionPermissionRulesSet},
 	{http.MethodGet, "{id}/questions", (*Server).handleSessionQuestions},
 	{http.MethodGet, "{id}/events", (*Server).handleSessionEvents},
 	{http.MethodGet, "{id}/tasks", (*Server).handleSessionTasks},

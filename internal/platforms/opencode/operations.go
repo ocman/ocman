@@ -538,6 +538,63 @@ func (a *Adapter) RenameSession(ctx context.Context, req platforms.RenameSession
 	return patchJSON(ctx, port, fmt.Sprintf("/session/%s", req.SessionID), payload)
 }
 
+// PermissionRules reads the session's permission ruleset from
+// OpenCode's GET /session/{id}. A missing/null `permission` field
+// means the session inherits the configured defaults; that's
+// returned as an empty slice.
+func (a *Adapter) PermissionRules(_ context.Context, sessionID string) ([]platforms.PermissionRule, error) {
+	port, _, err := a.resolvePort(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return permissionRulesOnPort(port, sessionID)
+}
+
+func permissionRulesOnPort(port, sessionID string) ([]platforms.PermissionRule, error) {
+	// Bypass sessionCache: the toggle UI needs read-after-write freshness.
+	body, ok := rawGet(port, "/session/"+sessionID)
+	if !ok {
+		return nil, fmt.Errorf("opencode session fetch failed: %w", platforms.ErrPlatformUnreachable)
+	}
+	var parsed struct {
+		Permission []platforms.PermissionRule `json:"permission"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("decoding session permission: %w", err)
+	}
+	if parsed.Permission == nil {
+		return []platforms.PermissionRule{}, nil
+	}
+	return parsed.Permission, nil
+}
+
+// SetPermissionRules replaces the session's permission ruleset via
+// PATCH /session/{id}. An empty ruleset matches nothing, so the
+// session falls back to the configured defaults.
+func (a *Adapter) SetPermissionRules(ctx context.Context, req platforms.SetPermissionRulesRequest) error {
+	port, _, err := a.resolvePort(req.SessionID)
+	if err != nil {
+		return err
+	}
+	return setPermissionRulesOnPort(ctx, port, req)
+}
+
+func setPermissionRulesOnPort(ctx context.Context, port string, req platforms.SetPermissionRulesRequest) error {
+	rules := req.Rules
+	if rules == nil {
+		rules = []platforms.PermissionRule{}
+	}
+	payload, err := json.Marshal(map[string]any{"permission": rules})
+	if err != nil {
+		return fmt.Errorf("marshal request: %w", err)
+	}
+	if err := patchJSON(ctx, port, fmt.Sprintf("/session/%s", req.SessionID), payload); err != nil {
+		return err
+	}
+	sessionCache.invalidate(port, "/session/"+req.SessionID)
+	return nil
+}
+
 // Compact summarizes the session's history, preferring OpenCode's
 // configured `small_model` when set.
 func (a *Adapter) Compact(ctx context.Context, req platforms.CompactRequest) error {

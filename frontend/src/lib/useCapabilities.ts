@@ -22,6 +22,7 @@ const EMPTY_CAPS: PlatformCapabilities = {
   sessionInfo: false,
   liveConnectionHint: '',
   autoApprove: false,
+  permissionRules: false,
 };
 
 let cached: CapabilitiesResponse | null = null;

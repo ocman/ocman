@@ -958,7 +958,7 @@ const file_internal_remote_proto_remote_proto_rawDesc = "" +
 	"\x04cols\x18\x01 \x01(\rR\x04cols\x12\x12\n" +
 	"\x04rows\x18\x02 \x01(\rR\x04rows\"#\n" +
 	"\rTermServerMsg\x12\x12\n" +
-	"\x04data\x18\x01 \x01(\fR\x04data2\xfd\x16\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data2\x98\x18\n" +
 	"\x05Ocman\x12>\n" +
 	"\x05Hello\x12\x19.ocman.remote.v1.HelloReq\x1a\x1a.ocman.remote.v1.HelloResp\x12C\n" +
 	"\bSessions\x12\x1c.ocman.remote.v1.SessionsReq\x1a\x19.ocman.remote.v1.JsonResp\x12A\n" +
@@ -970,7 +970,8 @@ const file_internal_remote_proto_remote_proto_rawDesc = "" +
 	"\rSlashCommands\x12\x1b.ocman.remote.v1.SessionRef\x1a\x19.ocman.remote.v1.JsonResp\x12G\n" +
 	"\rSessionModels\x12\x1b.ocman.remote.v1.SessionRef\x1a\x19.ocman.remote.v1.JsonResp\x12I\n" +
 	"\x0fListPermissions\x12\x1b.ocman.remote.v1.SessionRef\x1a\x19.ocman.remote.v1.JsonResp\x12G\n" +
-	"\rListQuestions\x12\x1b.ocman.remote.v1.SessionRef\x1a\x19.ocman.remote.v1.JsonResp\x12G\n" +
+	"\rListQuestions\x12\x1b.ocman.remote.v1.SessionRef\x1a\x19.ocman.remote.v1.JsonResp\x12I\n" +
+	"\x0fPermissionRules\x12\x1b.ocman.remote.v1.SessionRef\x1a\x19.ocman.remote.v1.JsonResp\x12G\n" +
 	"\fCapabilities\x12\x1c.ocman.remote.v1.PlatformRef\x1a\x19.ocman.remote.v1.JsonResp\x12>\n" +
 	"\x04Owns\x12\x1b.ocman.remote.v1.SessionRef\x1a\x19.ocman.remote.v1.OwnsResp\x12G\n" +
 	"\vSendMessage\x12 .ocman.remote.v1.PlatformJsonReq\x1a\x16.ocman.remote.v1.Empty\x12J\n" +
@@ -980,7 +981,8 @@ const file_internal_remote_proto_remote_proto_rawDesc = "" +
 	"\x0fRespondQuestion\x12 .ocman.remote.v1.PlatformJsonReq\x1a\x16.ocman.remote.v1.Empty\x12J\n" +
 	"\x0eRejectQuestion\x12 .ocman.remote.v1.PlatformJsonReq\x1a\x16.ocman.remote.v1.Empty\x12A\n" +
 	"\x05Abort\x12 .ocman.remote.v1.PlatformJsonReq\x1a\x16.ocman.remote.v1.Empty\x12I\n" +
-	"\rRenameSession\x12 .ocman.remote.v1.PlatformJsonReq\x1a\x16.ocman.remote.v1.Empty\x12C\n" +
+	"\rRenameSession\x12 .ocman.remote.v1.PlatformJsonReq\x1a\x16.ocman.remote.v1.Empty\x12N\n" +
+	"\x12SetPermissionRules\x12 .ocman.remote.v1.PlatformJsonReq\x1a\x16.ocman.remote.v1.Empty\x12C\n" +
 	"\aCompact\x12 .ocman.remote.v1.PlatformJsonReq\x1a\x16.ocman.remote.v1.Empty\x12L\n" +
 	"\rCreateSession\x12 .ocman.remote.v1.PlatformJsonReq\x1a\x19.ocman.remote.v1.JsonResp\x12J\n" +
 	"\fStreamEvents\x12\x1b.ocman.remote.v1.SessionRef\x1a\x1b.ocman.remote.v1.EventChunk0\x01\x12>\n" +
@@ -1049,79 +1051,83 @@ var file_internal_remote_proto_remote_proto_depIdxs = []int32{
 	4,  // 10: ocman.remote.v1.Ocman.SessionModels:input_type -> ocman.remote.v1.SessionRef
 	4,  // 11: ocman.remote.v1.Ocman.ListPermissions:input_type -> ocman.remote.v1.SessionRef
 	4,  // 12: ocman.remote.v1.Ocman.ListQuestions:input_type -> ocman.remote.v1.SessionRef
-	3,  // 13: ocman.remote.v1.Ocman.Capabilities:input_type -> ocman.remote.v1.PlatformRef
-	4,  // 14: ocman.remote.v1.Ocman.Owns:input_type -> ocman.remote.v1.SessionRef
-	10, // 15: ocman.remote.v1.Ocman.SendMessage:input_type -> ocman.remote.v1.PlatformJsonReq
-	10, // 16: ocman.remote.v1.Ocman.ExecuteCommand:input_type -> ocman.remote.v1.PlatformJsonReq
-	10, // 17: ocman.remote.v1.Ocman.RunShell:input_type -> ocman.remote.v1.PlatformJsonReq
-	10, // 18: ocman.remote.v1.Ocman.RespondPermission:input_type -> ocman.remote.v1.PlatformJsonReq
-	10, // 19: ocman.remote.v1.Ocman.RespondQuestion:input_type -> ocman.remote.v1.PlatformJsonReq
-	10, // 20: ocman.remote.v1.Ocman.RejectQuestion:input_type -> ocman.remote.v1.PlatformJsonReq
-	10, // 21: ocman.remote.v1.Ocman.Abort:input_type -> ocman.remote.v1.PlatformJsonReq
-	10, // 22: ocman.remote.v1.Ocman.RenameSession:input_type -> ocman.remote.v1.PlatformJsonReq
-	10, // 23: ocman.remote.v1.Ocman.Compact:input_type -> ocman.remote.v1.PlatformJsonReq
-	10, // 24: ocman.remote.v1.Ocman.CreateSession:input_type -> ocman.remote.v1.PlatformJsonReq
-	4,  // 25: ocman.remote.v1.Ocman.StreamEvents:input_type -> ocman.remote.v1.SessionRef
-	9,  // 26: ocman.remote.v1.Ocman.GitInfo:input_type -> ocman.remote.v1.JsonReq
-	9,  // 27: ocman.remote.v1.Ocman.GitDiff:input_type -> ocman.remote.v1.JsonReq
-	9,  // 28: ocman.remote.v1.Ocman.GitBranches:input_type -> ocman.remote.v1.JsonReq
-	9,  // 29: ocman.remote.v1.Ocman.GitCheckout:input_type -> ocman.remote.v1.JsonReq
-	9,  // 30: ocman.remote.v1.Ocman.ListWorktrees:input_type -> ocman.remote.v1.JsonReq
-	9,  // 31: ocman.remote.v1.Ocman.WorktreeDefaultBaseRef:input_type -> ocman.remote.v1.JsonReq
-	9,  // 32: ocman.remote.v1.Ocman.CreateWorktreeSession:input_type -> ocman.remote.v1.JsonReq
-	9,  // 33: ocman.remote.v1.Ocman.RemoveWorktree:input_type -> ocman.remote.v1.JsonReq
-	9,  // 34: ocman.remote.v1.Ocman.LaunchTmux:input_type -> ocman.remote.v1.JsonReq
-	0,  // 35: ocman.remote.v1.Ocman.TmuxSessions:input_type -> ocman.remote.v1.Empty
-	0,  // 36: ocman.remote.v1.Ocman.HostCapabilities:input_type -> ocman.remote.v1.Empty
-	9,  // 37: ocman.remote.v1.Ocman.TermWindows:input_type -> ocman.remote.v1.JsonReq
-	9,  // 38: ocman.remote.v1.Ocman.TermCreateWindow:input_type -> ocman.remote.v1.JsonReq
-	9,  // 39: ocman.remote.v1.Ocman.TermKillWindow:input_type -> ocman.remote.v1.JsonReq
-	13, // 40: ocman.remote.v1.Ocman.TerminalStream:input_type -> ocman.remote.v1.TermClientMsg
-	0,  // 41: ocman.remote.v1.Ocman.Projects:input_type -> ocman.remote.v1.Empty
-	0,  // 42: ocman.remote.v1.Ocman.WatchProjects:input_type -> ocman.remote.v1.Empty
-	2,  // 43: ocman.remote.v1.Ocman.Hello:output_type -> ocman.remote.v1.HelloResp
-	8,  // 44: ocman.remote.v1.Ocman.Sessions:output_type -> ocman.remote.v1.JsonResp
-	8,  // 45: ocman.remote.v1.Ocman.Session:output_type -> ocman.remote.v1.JsonResp
-	8,  // 46: ocman.remote.v1.Ocman.SessionsInactiveBefore:output_type -> ocman.remote.v1.JsonResp
-	8,  // 47: ocman.remote.v1.Ocman.SessionChanges:output_type -> ocman.remote.v1.JsonResp
-	8,  // 48: ocman.remote.v1.Ocman.SessionInfo:output_type -> ocman.remote.v1.JsonResp
-	8,  // 49: ocman.remote.v1.Ocman.AgentCatalog:output_type -> ocman.remote.v1.JsonResp
-	8,  // 50: ocman.remote.v1.Ocman.SlashCommands:output_type -> ocman.remote.v1.JsonResp
-	8,  // 51: ocman.remote.v1.Ocman.SessionModels:output_type -> ocman.remote.v1.JsonResp
-	8,  // 52: ocman.remote.v1.Ocman.ListPermissions:output_type -> ocman.remote.v1.JsonResp
-	8,  // 53: ocman.remote.v1.Ocman.ListQuestions:output_type -> ocman.remote.v1.JsonResp
-	8,  // 54: ocman.remote.v1.Ocman.Capabilities:output_type -> ocman.remote.v1.JsonResp
-	11, // 55: ocman.remote.v1.Ocman.Owns:output_type -> ocman.remote.v1.OwnsResp
-	0,  // 56: ocman.remote.v1.Ocman.SendMessage:output_type -> ocman.remote.v1.Empty
-	0,  // 57: ocman.remote.v1.Ocman.ExecuteCommand:output_type -> ocman.remote.v1.Empty
-	0,  // 58: ocman.remote.v1.Ocman.RunShell:output_type -> ocman.remote.v1.Empty
-	0,  // 59: ocman.remote.v1.Ocman.RespondPermission:output_type -> ocman.remote.v1.Empty
-	0,  // 60: ocman.remote.v1.Ocman.RespondQuestion:output_type -> ocman.remote.v1.Empty
-	0,  // 61: ocman.remote.v1.Ocman.RejectQuestion:output_type -> ocman.remote.v1.Empty
-	0,  // 62: ocman.remote.v1.Ocman.Abort:output_type -> ocman.remote.v1.Empty
-	0,  // 63: ocman.remote.v1.Ocman.RenameSession:output_type -> ocman.remote.v1.Empty
-	0,  // 64: ocman.remote.v1.Ocman.Compact:output_type -> ocman.remote.v1.Empty
-	8,  // 65: ocman.remote.v1.Ocman.CreateSession:output_type -> ocman.remote.v1.JsonResp
-	12, // 66: ocman.remote.v1.Ocman.StreamEvents:output_type -> ocman.remote.v1.EventChunk
-	8,  // 67: ocman.remote.v1.Ocman.GitInfo:output_type -> ocman.remote.v1.JsonResp
-	8,  // 68: ocman.remote.v1.Ocman.GitDiff:output_type -> ocman.remote.v1.JsonResp
-	8,  // 69: ocman.remote.v1.Ocman.GitBranches:output_type -> ocman.remote.v1.JsonResp
-	0,  // 70: ocman.remote.v1.Ocman.GitCheckout:output_type -> ocman.remote.v1.Empty
-	8,  // 71: ocman.remote.v1.Ocman.ListWorktrees:output_type -> ocman.remote.v1.JsonResp
-	8,  // 72: ocman.remote.v1.Ocman.WorktreeDefaultBaseRef:output_type -> ocman.remote.v1.JsonResp
-	8,  // 73: ocman.remote.v1.Ocman.CreateWorktreeSession:output_type -> ocman.remote.v1.JsonResp
-	0,  // 74: ocman.remote.v1.Ocman.RemoveWorktree:output_type -> ocman.remote.v1.Empty
-	8,  // 75: ocman.remote.v1.Ocman.LaunchTmux:output_type -> ocman.remote.v1.JsonResp
-	8,  // 76: ocman.remote.v1.Ocman.TmuxSessions:output_type -> ocman.remote.v1.JsonResp
-	8,  // 77: ocman.remote.v1.Ocman.HostCapabilities:output_type -> ocman.remote.v1.JsonResp
-	8,  // 78: ocman.remote.v1.Ocman.TermWindows:output_type -> ocman.remote.v1.JsonResp
-	8,  // 79: ocman.remote.v1.Ocman.TermCreateWindow:output_type -> ocman.remote.v1.JsonResp
-	0,  // 80: ocman.remote.v1.Ocman.TermKillWindow:output_type -> ocman.remote.v1.Empty
-	16, // 81: ocman.remote.v1.Ocman.TerminalStream:output_type -> ocman.remote.v1.TermServerMsg
-	8,  // 82: ocman.remote.v1.Ocman.Projects:output_type -> ocman.remote.v1.JsonResp
-	8,  // 83: ocman.remote.v1.Ocman.WatchProjects:output_type -> ocman.remote.v1.JsonResp
-	43, // [43:84] is the sub-list for method output_type
-	2,  // [2:43] is the sub-list for method input_type
+	4,  // 13: ocman.remote.v1.Ocman.PermissionRules:input_type -> ocman.remote.v1.SessionRef
+	3,  // 14: ocman.remote.v1.Ocman.Capabilities:input_type -> ocman.remote.v1.PlatformRef
+	4,  // 15: ocman.remote.v1.Ocman.Owns:input_type -> ocman.remote.v1.SessionRef
+	10, // 16: ocman.remote.v1.Ocman.SendMessage:input_type -> ocman.remote.v1.PlatformJsonReq
+	10, // 17: ocman.remote.v1.Ocman.ExecuteCommand:input_type -> ocman.remote.v1.PlatformJsonReq
+	10, // 18: ocman.remote.v1.Ocman.RunShell:input_type -> ocman.remote.v1.PlatformJsonReq
+	10, // 19: ocman.remote.v1.Ocman.RespondPermission:input_type -> ocman.remote.v1.PlatformJsonReq
+	10, // 20: ocman.remote.v1.Ocman.RespondQuestion:input_type -> ocman.remote.v1.PlatformJsonReq
+	10, // 21: ocman.remote.v1.Ocman.RejectQuestion:input_type -> ocman.remote.v1.PlatformJsonReq
+	10, // 22: ocman.remote.v1.Ocman.Abort:input_type -> ocman.remote.v1.PlatformJsonReq
+	10, // 23: ocman.remote.v1.Ocman.RenameSession:input_type -> ocman.remote.v1.PlatformJsonReq
+	10, // 24: ocman.remote.v1.Ocman.SetPermissionRules:input_type -> ocman.remote.v1.PlatformJsonReq
+	10, // 25: ocman.remote.v1.Ocman.Compact:input_type -> ocman.remote.v1.PlatformJsonReq
+	10, // 26: ocman.remote.v1.Ocman.CreateSession:input_type -> ocman.remote.v1.PlatformJsonReq
+	4,  // 27: ocman.remote.v1.Ocman.StreamEvents:input_type -> ocman.remote.v1.SessionRef
+	9,  // 28: ocman.remote.v1.Ocman.GitInfo:input_type -> ocman.remote.v1.JsonReq
+	9,  // 29: ocman.remote.v1.Ocman.GitDiff:input_type -> ocman.remote.v1.JsonReq
+	9,  // 30: ocman.remote.v1.Ocman.GitBranches:input_type -> ocman.remote.v1.JsonReq
+	9,  // 31: ocman.remote.v1.Ocman.GitCheckout:input_type -> ocman.remote.v1.JsonReq
+	9,  // 32: ocman.remote.v1.Ocman.ListWorktrees:input_type -> ocman.remote.v1.JsonReq
+	9,  // 33: ocman.remote.v1.Ocman.WorktreeDefaultBaseRef:input_type -> ocman.remote.v1.JsonReq
+	9,  // 34: ocman.remote.v1.Ocman.CreateWorktreeSession:input_type -> ocman.remote.v1.JsonReq
+	9,  // 35: ocman.remote.v1.Ocman.RemoveWorktree:input_type -> ocman.remote.v1.JsonReq
+	9,  // 36: ocman.remote.v1.Ocman.LaunchTmux:input_type -> ocman.remote.v1.JsonReq
+	0,  // 37: ocman.remote.v1.Ocman.TmuxSessions:input_type -> ocman.remote.v1.Empty
+	0,  // 38: ocman.remote.v1.Ocman.HostCapabilities:input_type -> ocman.remote.v1.Empty
+	9,  // 39: ocman.remote.v1.Ocman.TermWindows:input_type -> ocman.remote.v1.JsonReq
+	9,  // 40: ocman.remote.v1.Ocman.TermCreateWindow:input_type -> ocman.remote.v1.JsonReq
+	9,  // 41: ocman.remote.v1.Ocman.TermKillWindow:input_type -> ocman.remote.v1.JsonReq
+	13, // 42: ocman.remote.v1.Ocman.TerminalStream:input_type -> ocman.remote.v1.TermClientMsg
+	0,  // 43: ocman.remote.v1.Ocman.Projects:input_type -> ocman.remote.v1.Empty
+	0,  // 44: ocman.remote.v1.Ocman.WatchProjects:input_type -> ocman.remote.v1.Empty
+	2,  // 45: ocman.remote.v1.Ocman.Hello:output_type -> ocman.remote.v1.HelloResp
+	8,  // 46: ocman.remote.v1.Ocman.Sessions:output_type -> ocman.remote.v1.JsonResp
+	8,  // 47: ocman.remote.v1.Ocman.Session:output_type -> ocman.remote.v1.JsonResp
+	8,  // 48: ocman.remote.v1.Ocman.SessionsInactiveBefore:output_type -> ocman.remote.v1.JsonResp
+	8,  // 49: ocman.remote.v1.Ocman.SessionChanges:output_type -> ocman.remote.v1.JsonResp
+	8,  // 50: ocman.remote.v1.Ocman.SessionInfo:output_type -> ocman.remote.v1.JsonResp
+	8,  // 51: ocman.remote.v1.Ocman.AgentCatalog:output_type -> ocman.remote.v1.JsonResp
+	8,  // 52: ocman.remote.v1.Ocman.SlashCommands:output_type -> ocman.remote.v1.JsonResp
+	8,  // 53: ocman.remote.v1.Ocman.SessionModels:output_type -> ocman.remote.v1.JsonResp
+	8,  // 54: ocman.remote.v1.Ocman.ListPermissions:output_type -> ocman.remote.v1.JsonResp
+	8,  // 55: ocman.remote.v1.Ocman.ListQuestions:output_type -> ocman.remote.v1.JsonResp
+	8,  // 56: ocman.remote.v1.Ocman.PermissionRules:output_type -> ocman.remote.v1.JsonResp
+	8,  // 57: ocman.remote.v1.Ocman.Capabilities:output_type -> ocman.remote.v1.JsonResp
+	11, // 58: ocman.remote.v1.Ocman.Owns:output_type -> ocman.remote.v1.OwnsResp
+	0,  // 59: ocman.remote.v1.Ocman.SendMessage:output_type -> ocman.remote.v1.Empty
+	0,  // 60: ocman.remote.v1.Ocman.ExecuteCommand:output_type -> ocman.remote.v1.Empty
+	0,  // 61: ocman.remote.v1.Ocman.RunShell:output_type -> ocman.remote.v1.Empty
+	0,  // 62: ocman.remote.v1.Ocman.RespondPermission:output_type -> ocman.remote.v1.Empty
+	0,  // 63: ocman.remote.v1.Ocman.RespondQuestion:output_type -> ocman.remote.v1.Empty
+	0,  // 64: ocman.remote.v1.Ocman.RejectQuestion:output_type -> ocman.remote.v1.Empty
+	0,  // 65: ocman.remote.v1.Ocman.Abort:output_type -> ocman.remote.v1.Empty
+	0,  // 66: ocman.remote.v1.Ocman.RenameSession:output_type -> ocman.remote.v1.Empty
+	0,  // 67: ocman.remote.v1.Ocman.SetPermissionRules:output_type -> ocman.remote.v1.Empty
+	0,  // 68: ocman.remote.v1.Ocman.Compact:output_type -> ocman.remote.v1.Empty
+	8,  // 69: ocman.remote.v1.Ocman.CreateSession:output_type -> ocman.remote.v1.JsonResp
+	12, // 70: ocman.remote.v1.Ocman.StreamEvents:output_type -> ocman.remote.v1.EventChunk
+	8,  // 71: ocman.remote.v1.Ocman.GitInfo:output_type -> ocman.remote.v1.JsonResp
+	8,  // 72: ocman.remote.v1.Ocman.GitDiff:output_type -> ocman.remote.v1.JsonResp
+	8,  // 73: ocman.remote.v1.Ocman.GitBranches:output_type -> ocman.remote.v1.JsonResp
+	0,  // 74: ocman.remote.v1.Ocman.GitCheckout:output_type -> ocman.remote.v1.Empty
+	8,  // 75: ocman.remote.v1.Ocman.ListWorktrees:output_type -> ocman.remote.v1.JsonResp
+	8,  // 76: ocman.remote.v1.Ocman.WorktreeDefaultBaseRef:output_type -> ocman.remote.v1.JsonResp
+	8,  // 77: ocman.remote.v1.Ocman.CreateWorktreeSession:output_type -> ocman.remote.v1.JsonResp
+	0,  // 78: ocman.remote.v1.Ocman.RemoveWorktree:output_type -> ocman.remote.v1.Empty
+	8,  // 79: ocman.remote.v1.Ocman.LaunchTmux:output_type -> ocman.remote.v1.JsonResp
+	8,  // 80: ocman.remote.v1.Ocman.TmuxSessions:output_type -> ocman.remote.v1.JsonResp
+	8,  // 81: ocman.remote.v1.Ocman.HostCapabilities:output_type -> ocman.remote.v1.JsonResp
+	8,  // 82: ocman.remote.v1.Ocman.TermWindows:output_type -> ocman.remote.v1.JsonResp
+	8,  // 83: ocman.remote.v1.Ocman.TermCreateWindow:output_type -> ocman.remote.v1.JsonResp
+	0,  // 84: ocman.remote.v1.Ocman.TermKillWindow:output_type -> ocman.remote.v1.Empty
+	16, // 85: ocman.remote.v1.Ocman.TerminalStream:output_type -> ocman.remote.v1.TermServerMsg
+	8,  // 86: ocman.remote.v1.Ocman.Projects:output_type -> ocman.remote.v1.JsonResp
+	8,  // 87: ocman.remote.v1.Ocman.WatchProjects:output_type -> ocman.remote.v1.JsonResp
+	45, // [45:88] is the sub-list for method output_type
+	2,  // [2:45] is the sub-list for method input_type
 	2,  // [2:2] is the sub-list for extension type_name
 	2,  // [2:2] is the sub-list for extension extendee
 	0,  // [0:2] is the sub-list for field type_name

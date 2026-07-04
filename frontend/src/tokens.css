@@ -336,6 +336,23 @@ header h1 span { color: inherit; font-weight: 400; }
   font-size: 12px;
   cursor: pointer;
 }
+
+/* Permission-mode lock: like the "⋯" trigger, but wide enough for a
+ * lock glyph + the current mode label. */
+.header-actions-menu > summary.oc-permission-lock {
+  width: auto;
+  gap: 4px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+.header-actions-menu > summary.oc-permission-lock.dangerous {
+  color: var(--red, #e64553);
+  border-color: color-mix(in srgb, var(--red, #e64553) 50%, transparent);
+}
+.oc-permission-lock-error {
+  color: var(--red, #e64553);
+  cursor: default;
+}
 .header-actions-menu .oc-project-menu-item {
   display: block;
   width: 100%;

@@ -734,6 +734,22 @@ export interface PlatformCapabilities {
    * a "Checking..." indicator while the server-side judge runs.
    */
   autoApprove: boolean;
+  /**
+   * Whether the platform supports reading/writing a per-session
+   * permission ruleset (GET/PUT /api/session/{id}/permission-rules).
+   * Gates the permission-mode lock in the session header.
+   */
+  permissionRules: boolean;
+}
+
+/**
+ * One entry in a session's permission ruleset. Mirrors
+ * internal/platforms.PermissionRule.
+ */
+export interface PermissionRule {
+  permission: string;
+  pattern: string;
+  action: 'allow' | 'deny' | 'ask';
 }
 
 export interface PlatformCapabilityEntry {

@@ -29,6 +29,9 @@ type fakePlatform struct {
 	sent      *platforms.SendMessageRequest
 	events    []string
 	createErr error
+
+	permRules  []platforms.PermissionRule
+	setPermReq *platforms.SetPermissionRulesRequest
 }
 
 func (f *fakePlatform) ID() platforms.ID               { return platforms.ID(f.id) }
@@ -95,6 +98,13 @@ func (f *fakePlatform) RejectQuestion(context.Context, platforms.RejectQuestionR
 }
 func (f *fakePlatform) Abort(context.Context, platforms.AbortRequest) error { return nil }
 func (f *fakePlatform) RenameSession(context.Context, platforms.RenameSessionRequest) error {
+	return nil
+}
+func (f *fakePlatform) PermissionRules(context.Context, string) ([]platforms.PermissionRule, error) {
+	return f.permRules, nil
+}
+func (f *fakePlatform) SetPermissionRules(_ context.Context, req platforms.SetPermissionRulesRequest) error {
+	f.setPermReq = &req
 	return nil
 }
 func (f *fakePlatform) Compact(context.Context, platforms.CompactRequest) error { return nil }

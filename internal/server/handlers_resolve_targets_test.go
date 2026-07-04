@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/gitexec"
 	"github.com/NoUseFreak/ocman/internal/remote"
 )
 
@@ -59,7 +60,7 @@ func initOriginRepo(t *testing.T) string {
 	run := func(args ...string) {
 		cmd := exec.Command("git", args...)
 		cmd.Dir = dir
-		cmd.Env = append(os.Environ(),
+		cmd.Env = append(gitexec.CleanEnv(),
 			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@e",
 			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@e")
 		if out, err := cmd.CombinedOutput(); err != nil {

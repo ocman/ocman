@@ -78,6 +78,9 @@ func TestRemotePlatform_AllReadMethods(t *testing.T) {
 	if _, err := rp.ListQuestions(ctx, "s1"); err != nil {
 		t.Errorf("ListQuestions: %v", err)
 	}
+	if _, err := rp.PermissionRules(ctx, "s1"); err != nil {
+		t.Errorf("PermissionRules: %v", err)
+	}
 	detail, err := rp.Session(ctx, "s1", 10, 0)
 	if err != nil {
 		t.Errorf("Session: %v", err)
@@ -130,6 +133,12 @@ func TestRemotePlatform_AllMutations(t *testing.T) {
 		{"Abort", func() error { return rp.Abort(ctx, platforms.AbortRequest{SessionID: "s"}) }},
 		{"RenameSession", func() error { return rp.RenameSession(ctx, platforms.RenameSessionRequest{SessionID: "s", Title: "t"}) }},
 		{"Compact", func() error { return rp.Compact(ctx, platforms.CompactRequest{SessionID: "s"}) }},
+		{"SetPermissionRules", func() error {
+			return rp.SetPermissionRules(ctx, platforms.SetPermissionRulesRequest{
+				SessionID: "s",
+				Rules:     []platforms.PermissionRule{{Permission: "edit", Pattern: "*", Action: "deny"}},
+			})
+		}},
 	}
 	for _, c := range checks {
 		if err := c.fn(); err != nil {

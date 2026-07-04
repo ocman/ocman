@@ -190,6 +190,12 @@ func (fakePlatformBase) Abort(_ context.Context, _ platforms.AbortRequest) error
 func (fakePlatformBase) RenameSession(_ context.Context, _ platforms.RenameSessionRequest) error {
 	return platforms.ErrUnsupported
 }
+func (fakePlatformBase) PermissionRules(_ context.Context, _ string) ([]platforms.PermissionRule, error) {
+	return nil, platforms.ErrUnsupported
+}
+func (fakePlatformBase) SetPermissionRules(_ context.Context, _ platforms.SetPermissionRulesRequest) error {
+	return platforms.ErrUnsupported
+}
 func (fakePlatformBase) Compact(_ context.Context, _ platforms.CompactRequest) error {
 	return platforms.ErrUnsupported
 }

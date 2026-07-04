@@ -33,6 +33,7 @@ import { RightPanel } from '../../components/RightPanel';
 import { SessionTerminalDock } from '../../components/SessionTerminalDock';
 import { ErrorBoundary, type FallbackRender } from '../../components/ErrorBoundary';
 import { RateLimitBanner } from '../../components/RateLimitBanner';
+import { PermissionModeLock } from '../../components/PermissionModeLock';
 import { SessionWarningBanner } from '../../components/SessionWarningBanner';
 import { useUiStore } from '../../lib/uiStore';
 import { useTmux } from '../../lib/useTmux';
@@ -1391,6 +1392,9 @@ export function SessionDetail({ id }: SessionDetailProps) {
         />
         <div className="session-main">
           {session && <HeaderActionsPortal>
+            {caps.permissionRules && portAvailable && (
+              <PermissionModeLock sessionId={session.id} />
+            )}
             <details className="oc-project-menu header-actions-menu">
               <summary
                 className="oc-project-menu-trigger"

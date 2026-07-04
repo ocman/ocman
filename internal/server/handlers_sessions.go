@@ -887,6 +887,65 @@ func (s *Server) handleSessionCompact(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleSessionPermissionRulesGet handles GET /api/session/{id}/permission-rules.
+// Returns {"rules":[...]}; an empty list means the session inherits the
+// platform's configured defaults.
+func (s *Server) handleSessionPermissionRulesGet(w http.ResponseWriter, r *http.Request) {
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+		rules, err := adapter.PermissionRules(r.Context(), sessionID)
+		if err != nil {
+			writePlatformError(w, "reading permission rules", err)
+			return
+		}
+		if rules == nil {
+			rules = []platforms.PermissionRule{}
+		}
+		writeJSON(w, map[string]interface{}{"rules": rules})
+	})
+}
+
+// handleSessionPermissionRulesSet handles PUT /api/session/{id}/permission-rules.
+// Body: {"rules":[{"permission","pattern","action"}...]}. An empty list
+// restores the platform's configured defaults.
+func (s *Server) handleSessionPermissionRulesSet(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Rules []platforms.PermissionRule `json:"rules"`
+	}
+	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+		return
+	}
+	if len(req.Rules) > 100 {
+		http.Error(w, "too many rules", http.StatusBadRequest)
+		return
+	}
+	for i := range req.Rules {
+		rule := &req.Rules[i]
+		if rule.Permission == "" {
+			http.Error(w, "rule permission is required", http.StatusBadRequest)
+			return
+		}
+		if rule.Pattern == "" {
+			rule.Pattern = "*"
+		}
+		switch rule.Action {
+		case "allow", "deny", "ask":
+		default:
+			http.Error(w, "invalid rule action: expected allow, deny, or ask", http.StatusBadRequest)
+			return
+		}
+	}
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+		if err := adapter.SetPermissionRules(r.Context(), platforms.SetPermissionRulesRequest{
+			SessionID: sessionID,
+			Rules:     req.Rules,
+		}); err != nil {
+			writePlatformError(w, "setting permission rules", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
 // handleSessionPermission handles POST /api/session/{id}/permissions/{pid}
 func (s *Server) handleSessionPermission(w http.ResponseWriter, r *http.Request) {
 	var req struct {

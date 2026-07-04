@@ -31,6 +31,7 @@ function makeResponse(overrides: Partial<CapabilitiesResponse> = {}): Capabiliti
           sessionInfo: true,
           liveConnectionHint: 'opencode --port 0',
           autoApprove: true,
+          permissionRules: true,
         },
       },
     ],

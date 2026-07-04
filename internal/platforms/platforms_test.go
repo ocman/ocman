@@ -91,6 +91,12 @@ func (f *fakePlatform) Abort(context.Context, AbortRequest) error { return ErrUn
 func (f *fakePlatform) RenameSession(context.Context, RenameSessionRequest) error {
 	return ErrUnsupported
 }
+func (f *fakePlatform) PermissionRules(context.Context, string) ([]PermissionRule, error) {
+	return nil, ErrUnsupported
+}
+func (f *fakePlatform) SetPermissionRules(context.Context, SetPermissionRulesRequest) error {
+	return ErrUnsupported
+}
 func (f *fakePlatform) Compact(context.Context, CompactRequest) error { return ErrUnsupported }
 func (f *fakePlatform) CreateSession(context.Context, CreateSessionRequest) (*CreateSessionResponse, error) {
 	return nil, ErrUnsupported

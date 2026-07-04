@@ -98,6 +98,23 @@ type RenameSessionRequest struct {
 	Title     string
 }
 
+// PermissionRule is one entry in a session's permission ruleset:
+// which permission (tool) it applies to, a glob pattern for the
+// argument, and what happens on match. Mirrors OpenCode's
+// PermissionRule shape.
+type PermissionRule struct {
+	Permission string `json:"permission"`
+	Pattern    string `json:"pattern"`
+	Action     string `json:"action"` // "allow" | "deny" | "ask"
+}
+
+// SetPermissionRulesRequest replaces a session's permission ruleset.
+// An empty Rules slice restores the platform's configured defaults.
+type SetPermissionRulesRequest struct {
+	SessionID string
+	Rules     []PermissionRule
+}
+
 // CreateSessionRequest creates a new session on the owning platform.
 // Unlike the other request types, this one doesn't reference an
 // existing session — the handler picks the platform from the

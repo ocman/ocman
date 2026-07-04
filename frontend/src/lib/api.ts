@@ -46,6 +46,7 @@ export type {
   HourlyTokensByModel,
   PlatformCapabilities,
   PlatformCapabilityEntry,
+  PermissionRule,
   CapabilitiesResponse,
   WorktreeEntry,
   WorktreeCreateRequest,
@@ -109,6 +110,7 @@ import type {
   ShareLink,
   GlobalShareLink,
   SharedConversation,
+  PermissionRule,
   RemoteStatus,
   RemoteAccessStatus,
   ResolveTargetsResponse,
@@ -534,6 +536,16 @@ export const api = {
       `/api/session/${encodeURIComponent(sessionId)}/permissions/${encodeURIComponent(permissionId)}`,
       { reply },
       { parseJSON: false },
+    ),
+  getPermissionRules: (sessionId: string) =>
+    fetchJSON<{ rules: PermissionRule[] }>(
+      `/api/session/${encodeURIComponent(sessionId)}/permission-rules`,
+    ),
+  setPermissionRules: (sessionId: string, rules: PermissionRule[]) =>
+    postJSON<void>(
+      `/api/session/${encodeURIComponent(sessionId)}/permission-rules`,
+      { rules },
+      { method: 'PUT', parseJSON: false },
     ),
   listQuestions: (sessionId: string) =>
     fetchJSON<unknown[]>(`/api/session/${encodeURIComponent(sessionId)}/questions`),
