@@ -47,7 +47,7 @@ export function GitStatusLine({ info, icon }: { info?: GitInfo | null; icon?: 'b
   const dirtyCls = info.dirty ? ' git-status-dirty' : '';
   const iconCls = icon === 'worktree' ? 'bi bi-diagram-2' : 'bi bi-git';
   return (
-    <div className={`git-status${dirtyCls}`}>
+    <span className={`git-status${dirtyCls}`}>
       <i className={`${iconCls} git-status-icon`} aria-hidden="true" />
       <span className="git-status-branch" title={`Current branch: ${info.branch}`}>
         {info.branch}
@@ -70,7 +70,7 @@ export function GitStatusLine({ info, icon }: { info?: GitInfo | null; icon?: 'b
           title="Working tree has uncommitted changes"
         >*</span>
       )}
-    </div>
+    </span>
   );
 }
 

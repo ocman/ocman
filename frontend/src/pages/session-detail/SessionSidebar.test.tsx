@@ -1,0 +1,82 @@
+// @vitest-environment jsdom
+import { describe, expect, it, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { SessionSidebar, type SidebarProjectGroup } from './SessionSidebar';
+import type { GitInfo, Session } from '../../lib/api';
+
+vi.mock('../../components/BackendStats', () => ({
+  BackendStats: () => null,
+}));
+vi.mock('../../components/SidebarResizer', () => ({
+  SidebarResizer: () => null,
+}));
+
+function session(overrides: Partial<Session> = {}): Session {
+  return {
+    id: 's', platform: 'opencode', projectId: 'p', title: 'Fix thing', directory: '/repo',
+    timeCreated: 0, timeUpdated: 1, summaryAdditions: null, summaryDeletions: null,
+    summaryFiles: null, shareUrl: null, messageCount: 0, durationMs: 0,
+    activeDurationMs: 0, totalInputTokens: 0, totalOutputTokens: 0, totalCost: 0,
+    status: 'done', liveConnection: false, pendingPermission: false,
+    pendingQuestion: false, archived: false, seen: true, pinned: false,
+    pinnedAt: 0, seenTimeUpdated: 0, unreadCount: 0, ...overrides,
+  };
+}
+
+function gitInfo(branch: string): GitInfo {
+  return { branch, ahead: 0, behind: 0, dirty: false };
+}
+
+function renderSidebar(group: SidebarProjectGroup, infos: Record<string, GitInfo>) {
+  return render(
+    <SessionSidebar
+      activeId="s"
+      sidebarWidth={300}
+      showArchivedRecent={false}
+      setShowArchivedRecent={vi.fn()}
+      loadingRecentSessions={false}
+      recentSessions={group.sessions}
+      sidebarProjectGroups={[group]}
+      onReorderProjects={vi.fn()}
+      archivingSessionIds={new Set()}
+      collapsedProjectSet={new Set([group.directory])}
+      toggleCollapsedProject={vi.fn()}
+      siblingGitInfos={infos}
+      optimisticStatus="done"
+      debugMode={false}
+      pendingTmuxSession={null}
+      pickerPos={null}
+      pickerRef={{ current: null }}
+      tmux={{
+        available: false,
+        isLocal: true,
+        sessions: [],
+        clients: [],
+        switchSession: vi.fn(),
+        findSession: vi.fn(),
+        launchOpencode: vi.fn(),
+      }}
+      onNavigateToSession={vi.fn()}
+      onArchiveSession={vi.fn()}
+      onPinSession={vi.fn()}
+      onClientSelect={vi.fn()}
+      onNewSessionInDirectory={vi.fn()}
+      onArchiveProject={vi.fn()}
+    />,
+  );
+}
+
+describe('SessionSidebar', () => {
+  it('shows the git branch in a collapsed project header', () => {
+    const group: SidebarProjectGroup = {
+      directory: '/repo',
+      sessions: [session()],
+      lastUpdated: 1,
+      aggregate: { kind: 'none' },
+    };
+
+    renderSidebar(group, { '/repo': gitInfo('main') });
+
+    expect(screen.getByTitle('Current branch: main')).toHaveTextContent('main');
+  });
+});
