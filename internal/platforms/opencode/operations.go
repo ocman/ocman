@@ -353,6 +353,16 @@ func filterPromptsForSession(raw []map[string]interface{}, sessionID string, sub
 
 // --- Mutating operations ---
 
+// marshalRequest wraps json.Marshal with the shared error context used
+// by every mutating operation in this file.
+func marshalRequest(v any) ([]byte, error) {
+	payload, err := json.Marshal(v)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+	return payload, nil
+}
+
 // SendMessage submits a composer message via /session/{id}/prompt_async.
 func (a *Adapter) SendMessage(ctx context.Context, req platforms.SendMessageRequest) error {
 	port, _, err := a.resolvePort(req.SessionID)
@@ -376,9 +386,9 @@ func (a *Adapter) SendMessage(ctx context.Context, req platforms.SendMessageRequ
 	if req.Agent != "" {
 		body["agent"] = req.Agent
 	}
-	payload, err := json.Marshal(body)
+	payload, err := marshalRequest(body)
 	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
+		return err
 	}
 	path := fmt.Sprintf("/session/%s/prompt_async", req.SessionID)
 	if err := postJSON(ctx, port, path, payload); err != nil {
@@ -430,12 +440,12 @@ func runShellOnPort(ctx context.Context, port string, req platforms.RunShellRequ
 	if agent == "" {
 		agent = "build"
 	}
-	payload, err := json.Marshal(map[string]string{
+	payload, err := marshalRequest(map[string]string{
 		"command": command,
 		"agent":   agent,
 	})
 	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
+		return err
 	}
 	return postJSON(ctx, port, fmt.Sprintf("/session/%s/shell", req.SessionID), payload)
 }
@@ -453,9 +463,9 @@ func (a *Adapter) ExecuteCommand(ctx context.Context, req platforms.ExecuteComma
 	if req.Agent != "" {
 		body["agent"] = req.Agent
 	}
-	payload, err := json.Marshal(body)
+	payload, err := marshalRequest(body)
 	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
+		return err
 	}
 	return postJSON(ctx, port, fmt.Sprintf("/session/%s/command", req.SessionID), payload)
 }
@@ -466,9 +476,9 @@ func (a *Adapter) RespondPermission(ctx context.Context, req platforms.RespondPe
 	if err != nil {
 		return err
 	}
-	payload, err := json.Marshal(map[string]interface{}{"response": req.Reply})
+	payload, err := marshalRequest(map[string]interface{}{"response": req.Reply})
 	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
+		return err
 	}
 	if err := postJSON(ctx, port, fmt.Sprintf("/session/%s/permissions/%s", req.SessionID, req.PermissionID), payload); err != nil {
 		return err
@@ -490,9 +500,9 @@ func (a *Adapter) RespondQuestion(ctx context.Context, req platforms.RespondQues
 	if err != nil {
 		return err
 	}
-	payload, err := json.Marshal(map[string]interface{}{"answers": req.Answers})
+	payload, err := marshalRequest(map[string]interface{}{"answers": req.Answers})
 	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
+		return err
 	}
 	if err := postJSON(ctx, port, fmt.Sprintf("/question/%s/reply", req.RequestID), payload); err != nil {
 		return err
@@ -531,9 +541,9 @@ func (a *Adapter) RenameSession(ctx context.Context, req platforms.RenameSession
 	if err != nil {
 		return err
 	}
-	payload, err := json.Marshal(map[string]string{"title": req.Title})
+	payload, err := marshalRequest(map[string]string{"title": req.Title})
 	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
+		return err
 	}
 	return patchJSON(ctx, port, fmt.Sprintf("/session/%s", req.SessionID), payload)
 }
@@ -606,12 +616,12 @@ func (a *Adapter) Compact(ctx context.Context, req platforms.CompactRequest) err
 	if p, m, ok := fetchOpenCodeSmallModel(port); ok {
 		providerID, modelID = p, m
 	}
-	payload, err := json.Marshal(map[string]string{
+	payload, err := marshalRequest(map[string]string{
 		"providerID": providerID,
 		"modelID":    modelID,
 	})
 	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
+		return err
 	}
 	return postJSON(ctx, port, fmt.Sprintf("/session/%s/summarize", req.SessionID), payload)
 }
@@ -657,9 +667,9 @@ func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSession
 	// If a custom title was provided, set it immediately after creation.
 	if req.Title != "" && parsed.ID != "" {
 		titlePhase := srvtiming.Begin(ctx, "http_title")
-		payload, err := json.Marshal(map[string]string{"title": req.Title})
+		payload, err := marshalRequest(map[string]string{"title": req.Title})
 		if err != nil {
-			return nil, fmt.Errorf("marshal request: %w", err)
+			return nil, err
 		}
 		err = patchJSON(ctx, port, fmt.Sprintf("/session/%s", parsed.ID), payload)
 		titlePhase.EndWithDesc("opencode PATCH /session/{id} (title)")
