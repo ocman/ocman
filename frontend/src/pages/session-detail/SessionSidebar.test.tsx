@@ -39,7 +39,7 @@ function renderSidebar(group: SidebarProjectGroup, infos: Record<string, GitInfo
       sidebarProjectGroups={[group]}
       onReorderProjects={vi.fn()}
       archivingSessionIds={new Set()}
-      collapsedProjectSet={new Set([group.directory])}
+      collapsedProjectSet={new Set()}
       toggleCollapsedProject={vi.fn()}
       siblingGitInfos={infos}
       optimisticStatus="done"
@@ -67,7 +67,7 @@ function renderSidebar(group: SidebarProjectGroup, infos: Record<string, GitInfo
 }
 
 describe('SessionSidebar', () => {
-  it('shows the git branch in a collapsed project header', () => {
+  it('shows the git branch on the session row, not the group header', () => {
     const group: SidebarProjectGroup = {
       directory: '/repo',
       sessions: [session()],
