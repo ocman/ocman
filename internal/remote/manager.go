@@ -7,6 +7,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -478,6 +479,40 @@ func (m *Manager) EnabledRemotes() []TargetCandidate {
 			RemoteName: m.nameForRemoteID(rid),
 			Platform:   CompoundPlatformID(rid, m.base),
 		})
+	}
+	return out
+}
+
+// RemoteProjects returns every connected remote's cached project
+// inventory as ProjectStats, tagged with the owning remote's ID, name
+// and compound platform id. Aggregate stats (session/token counts) are
+// carried over from the remote's inventory records.
+func (m *Manager) RemoteProjects() []db.ProjectStats {
+	m.invMu.RLock()
+	inv := make(map[string][]ProjectIdentity, len(m.inventory))
+	for id, idents := range m.inventory {
+		inv[id] = idents
+	}
+	m.invMu.RUnlock()
+
+	var out []db.ProjectStats
+	for remoteID, idents := range inv {
+		name := m.nameForRemoteID(remoteID)
+		platform := CompoundPlatformID(remoteID, m.base)
+		for _, p := range idents {
+			out = append(out, db.ProjectStats{
+				Directory:      p.Dir,
+				SessionCount:   p.SessionCount,
+				MessageCount:   p.MessageCount,
+				LastUsed:       p.LastUsed,
+				TotalTokensIn:  p.TotalTokensIn,
+				TotalTokensOut: p.TotalTokensOut,
+				TotalCost:      p.TotalCost,
+				RemoteID:       remoteID,
+				RemoteName:     name,
+				Platform:       platform,
+			})
+		}
 	}
 	return out
 }

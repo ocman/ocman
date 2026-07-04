@@ -250,6 +250,49 @@ func TestManager_ResolveTargets(t *testing.T) {
 	}
 }
 
+func TestManager_RemoteProjects(t *testing.T) {
+	m := newInvManager(t)
+	m.invMu.Lock()
+	m.inventory["abc"] = []ProjectIdentity{
+		{Key: "k1", Dir: "/remote/repo", SessionCount: 3, MessageCount: 12, LastUsed: 99, TotalTokensIn: 100, TotalTokensOut: 200},
+		{Key: "k2", Dir: "/remote/other"},
+	}
+	m.invMu.Unlock()
+
+	got := m.RemoteProjects()
+	if len(got) != 2 {
+		t.Fatalf("expected 2 remote projects, got %d: %+v", len(got), got)
+	}
+	byDir := map[string]db.ProjectStats{}
+	for _, p := range got {
+		byDir[p.Directory] = p
+		if p.RemoteID != "abc" {
+			t.Errorf("RemoteID = %q, want abc", p.RemoteID)
+		}
+		if p.Platform != "r-abc:opencode" {
+			t.Errorf("Platform = %q, want r-abc:opencode", p.Platform)
+		}
+		// nameForRemoteID falls back to the id when not connected.
+		if p.RemoteName != "abc" {
+			t.Errorf("RemoteName = %q, want abc", p.RemoteName)
+		}
+	}
+	repo, ok := byDir["/remote/repo"]
+	if !ok || byDir["/remote/other"].Directory == "" {
+		t.Fatalf("missing project dirs: %+v", byDir)
+	}
+	// Aggregate stats must survive the identity -> stats mapping.
+	if repo.SessionCount != 3 || repo.MessageCount != 12 || repo.LastUsed != 99 ||
+		repo.TotalTokensIn != 100 || repo.TotalTokensOut != 200 {
+		t.Errorf("stats not carried over: %+v", repo)
+	}
+
+	// Empty inventory -> nil/empty slice.
+	if got := newInvManager(t).RemoteProjects(); len(got) != 0 {
+		t.Errorf("expected no remote projects, got %+v", got)
+	}
+}
+
 func TestManager_ResolveDir(t *testing.T) {
 	m := newInvManager(t)
 	m.invMu.Lock()

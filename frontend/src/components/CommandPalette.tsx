@@ -505,14 +505,23 @@ export function CommandPalette() {
     item?.scrollIntoView({ block: 'nearest' });
   }, [selectedIndex]);
 
-  function startSessionInDirectory(projectDir: string, opts?: { local?: boolean }) {
+  function startSessionInDirectory(
+    projectDir: string,
+    opts?: { local?: boolean; remoteId?: string; platform?: string },
+  ) {
     closePalette();
     // Machine-aware create (multi-remote support, AD-15): ask the hub
     // which machine should run this project. Auto-resolves silently on
     // single-host / single-match; prompts when the project lives on
     // several machines or none. Paths picked from the local filesystem
     // browser bypass the resolver because they can only live here.
-    const target = opts?.local ? Promise.resolve({ platform: 'opencode', remoteId: 'local' }) : resolveTargetForDir(projectDir);
+    // A project row that already carries its owning remote (from the
+    // project list inventory) targets that machine directly.
+    const target = opts?.remoteId
+      ? Promise.resolve({ platform: opts.platform ?? '', remoteId: opts.remoteId })
+      : opts?.local
+        ? Promise.resolve({ platform: 'opencode', remoteId: 'local' })
+        : resolveTargetForDir(projectDir);
     void target.then((selectedTarget) => {
       if (selectedTarget === null) return; // operator cancelled the picker
       // Fall back to inferring the platform from an existing session
@@ -545,7 +554,10 @@ export function CommandPalette() {
       closePalette();
       navigate(`/session/${item.session.id}`);
     } else if (item.kind === 'project') {
-      startSessionInDirectory(item.project.directory);
+      startSessionInDirectory(item.project.directory, {
+        remoteId: item.project.remoteId,
+        platform: item.project.platform,
+      });
     } else if (item.kind === 'browse-parent') {
       openProjectBrowser(item.directory);
     } else if (item.kind === 'browse-directory') {
@@ -723,17 +735,21 @@ export function CommandPalette() {
               const proj = item.project;
               return (
                 <div
-                  key={`project:${proj.directory}`}
+                  key={`project:${proj.remoteId ?? 'local'}:${proj.directory}`}
                   className={`oc-cmd-item oc-cmd-item--command${i === selectedIndex ? ' oc-cmd-item--selected' : ''}`}
                   onClick={() => handleSelect(item)}
                   onMouseMove={() => setSelectedIndex(i)}
                 >
                   <i className="bi bi-folder oc-cmd-item-icon" />
                   <div className="oc-cmd-item-content">
-                    <span className="oc-cmd-title">{shortPath(proj.directory)}</span>
+                    <span className="oc-cmd-title">
+                      {shortPath(proj.directory)}
+                      {proj.remoteName ? <span className="oc-cmd-badge">{proj.remoteName}</span> : null}
+                    </span>
                     <span className="oc-cmd-meta">
-                      {proj.sessionCount} session{proj.sessionCount !== 1 ? 's' : ''} &middot;{' '}
-                      {relativeTime(proj.lastUsed)}
+                      {proj.remoteId
+                        ? proj.remoteName
+                        : `${proj.sessionCount} session${proj.sessionCount !== 1 ? 's' : ''} \u00b7 ${relativeTime(proj.lastUsed)}`}
                     </span>
                   </div>
                 </div>

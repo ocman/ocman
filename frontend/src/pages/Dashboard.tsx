@@ -289,7 +289,9 @@ export function ProjectsTab() {
   // backend (see spec/stats-project-filter/architecture.md, AD-7).
   const q = search.trim();
   const visibleProjects = projects
-    .filter((p) => p.sessionCount > 0)
+    // Remote projects carry no session aggregates (inventory-only), so
+    // don't drop them on the sessionCount>0 gate that hides empty locals.
+    .filter((p) => p.remoteId || p.sessionCount > 0)
     .filter((p) => matchesScope(p.directory, dirScope))
     .filter((p) => !q || fuzzyMatch(q, p.directory));
 
@@ -336,10 +338,19 @@ export function ProjectsTab() {
             </td>
           </tr>
         ) : visibleProjects.map((p) => (
-          <tr key={p.directory} onClick={() => navigate(`/project/${encodeURIComponent(p.directory)}`)}>
+          <tr
+            key={`${p.remoteId ?? 'local'}:${p.directory}`}
+            onClick={() =>
+              p.remoteId ? undefined : navigate(`/project/${encodeURIComponent(p.directory)}`)
+            }
+            style={p.remoteId ? { cursor: 'default' } : undefined}
+          >
             <td>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{shortPath(p.directory)}</span>
+                {p.remoteName ? (
+                  <span className="oc-cmd-badge" title={`On remote ${p.remoteName}`}>{p.remoteName}</span>
+                ) : null}
               </div>
               <div className="mono">{p.directory}</div>
             </td>

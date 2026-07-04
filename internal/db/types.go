@@ -385,6 +385,13 @@ type ProjectStats struct {
 	// ocman's own state.db: true when the project's folded root is
 	// archived and no session is newer than the archive time.
 	Archived bool `json:"archived,omitempty"`
+	// RemoteID / RemoteName / Platform are set by the server layer for
+	// projects that live on a connected remote (empty for local ones).
+	// RemoteID is the remote instance ID; Platform is the compound
+	// platform id (r-<remoteID>:<base>) used when creating a session.
+	RemoteID   string `json:"remoteId,omitempty"`
+	RemoteName string `json:"remoteName,omitempty"`
+	Platform   string `json:"platform,omitempty"`
 }
 
 // DailyActivity holds activity counts per day.

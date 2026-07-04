@@ -182,9 +182,8 @@ func (h *remoteHost) TmuxSessions(ctx context.Context) ([]hostsvc.TmuxSession, e
 }
 
 func (h *remoteHost) Projects(ctx context.Context) ([]db.ProjectStats, error) {
-	// The remote returns ProjectIdentity records; the Host interface
-	// expects ProjectStats. Map the directory across so callers that
-	// only need the directory list work. Rich stats are local-only.
+	// The remote returns ProjectIdentity records (identity + aggregate
+	// stats); the Host interface expects ProjectStats. Map both across.
 	client := h.conn.Client()
 	if client == nil {
 		return nil, ErrRemoteOffline
@@ -199,7 +198,15 @@ func (h *remoteHost) Projects(ctx context.Context) ([]db.ProjectStats, error) {
 	}
 	out := make([]db.ProjectStats, 0, len(idents))
 	for _, id := range idents {
-		out = append(out, db.ProjectStats{Directory: id.Dir})
+		out = append(out, db.ProjectStats{
+			Directory:      id.Dir,
+			SessionCount:   id.SessionCount,
+			MessageCount:   id.MessageCount,
+			LastUsed:       id.LastUsed,
+			TotalTokensIn:  id.TotalTokensIn,
+			TotalTokensOut: id.TotalTokensOut,
+			TotalCost:      id.TotalCost,
+		})
 	}
 	return out, nil
 }

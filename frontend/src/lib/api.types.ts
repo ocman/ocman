@@ -621,6 +621,11 @@ export interface Project {
   lastUsed: number;
   /** True when the project's folded root is archived (set server-side). */
   archived?: boolean;
+  /** Set for projects that live on a connected remote (empty for local). */
+  remoteId?: string;
+  remoteName?: string;
+  /** Compound platform id (r-<remoteId>:<base>) for remote projects. */
+  platform?: string;
 }
 
 export interface DirectoryBrowseEntry {

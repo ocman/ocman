@@ -51,10 +51,16 @@ func projectIdentities(ctx context.Context, cache *originCache, stats []db.Proje
 	for _, p := range stats {
 		origin := cache.origin(ctx, p.Directory)
 		out = append(out, ProjectIdentity{
-			Key:      NormalizeProjectIdentity(origin, p.Directory),
-			Origin:   origin,
-			Basename: basenameOf(p.Directory),
-			Dir:      p.Directory,
+			Key:            NormalizeProjectIdentity(origin, p.Directory),
+			Origin:         origin,
+			Basename:       basenameOf(p.Directory),
+			Dir:            p.Directory,
+			SessionCount:   p.SessionCount,
+			MessageCount:   p.MessageCount,
+			LastUsed:       p.LastUsed,
+			TotalTokensIn:  p.TotalTokensIn,
+			TotalTokensOut: p.TotalTokensOut,
+			TotalCost:      p.TotalCost,
 		})
 	}
 	return out

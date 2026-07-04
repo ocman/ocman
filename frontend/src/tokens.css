@@ -73,6 +73,15 @@ a:hover { text-decoration: underline; }
 .content:has(.session-layout) { padding: 0; }
 
 .mono { font-family: 'SF Mono', Consolas, monospace; font-size: 12px; color: var(--text-dim); }
+.oc-cmd-badge {
+  margin-left: 6px;
+  padding: 0 5px;
+  font-size: 10px;
+  border-radius: 4px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.18));
+  color: var(--text-dim);
+  vertical-align: middle;
+}
 .short-path-prefix { color: var(--text-dim); }
 .short-path-last { color: var(--subtext0); }
 .cell-dim { color: var(--overlay0); font-size: 11px; }

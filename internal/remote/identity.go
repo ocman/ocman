@@ -15,6 +15,15 @@ type ProjectIdentity struct {
 	Origin   string `json:"origin"`
 	Basename string `json:"basename"`
 	Dir      string `json:"dir"`
+
+	// Aggregate stats carried across the wire so the hub's project list
+	// can show real counts for remote projects (not just identities).
+	SessionCount   int     `json:"sessionCount,omitempty"`
+	MessageCount   int     `json:"messageCount,omitempty"`
+	LastUsed       int64   `json:"lastUsed,omitempty"`
+	TotalTokensIn  int64   `json:"totalTokensIn,omitempty"`
+	TotalTokensOut int64   `json:"totalTokensOut,omitempty"`
+	TotalCost      float64 `json:"totalCost,omitempty"`
 }
 
 // NormalizeProjectIdentity computes the matching key for a project from
