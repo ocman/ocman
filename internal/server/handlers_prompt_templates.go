@@ -8,8 +8,9 @@ import (
 // state.db `setting` table (schema v12). Kept in package scope so
 // tests can assert against the exact keys.
 const (
-	settingPRPromptTemplate    = "pr_prompt_template"
-	settingIssuePromptTemplate = "issue_prompt_template"
+	settingPRPromptTemplate     = "pr_prompt_template"
+	settingIssuePromptTemplate  = "issue_prompt_template"
+	settingReviewPromptTemplate = "review_prompt_template"
 )
 
 // DefaultPRPromptTemplate is shipped with ocman and used when the
@@ -35,12 +36,29 @@ Link: {url}
 Description:
 {body}`
 
+// DefaultReviewPromptTemplate is used for the "Review this PR" action.
+// The worktree is already checked out to the PR branch, so the agent
+// reviews the working tree rather than implementing changes.
+const DefaultReviewPromptTemplate = `Please review PR #{number}: {title}
+
+Author: {author}
+Link: {url}
+Branch: {branch}
+
+Description:
+{body}
+
+Review the changes on this branch: read the diff against the base branch,
+assess correctness, tests, and style, and summarise your findings as a
+list of actionable review comments. Do not modify any files.`
+
 // promptTemplatesResponse is the JSON shape returned by both the
 // GET and POST handlers. Keys match forge.SupportedPlaceholders'
 // convention (lowercase, descriptive).
 type promptTemplatesResponse struct {
-	PR    string `json:"pr"`
-	Issue string `json:"issue"`
+	PR     string `json:"pr"`
+	Issue  string `json:"issue"`
+	Review string `json:"review"`
 }
 
 // handlePromptTemplates dispatches GET and POST on
@@ -68,8 +86,9 @@ func (s *Server) handlePromptTemplates(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetPromptTemplates(w http.ResponseWriter, _ *http.Request) {
 	out := promptTemplatesResponse{
-		PR:    DefaultPRPromptTemplate,
-		Issue: DefaultIssuePromptTemplate,
+		PR:     DefaultPRPromptTemplate,
+		Issue:  DefaultIssuePromptTemplate,
+		Review: DefaultReviewPromptTemplate,
 	}
 	if s.stateDB != nil {
 		if v, ok, err := s.stateDB.GetSetting(settingPRPromptTemplate); err == nil && ok {
@@ -77,6 +96,9 @@ func (s *Server) handleGetPromptTemplates(w http.ResponseWriter, _ *http.Request
 		}
 		if v, ok, err := s.stateDB.GetSetting(settingIssuePromptTemplate); err == nil && ok {
 			out.Issue = v
+		}
+		if v, ok, err := s.stateDB.GetSetting(settingReviewPromptTemplate); err == nil && ok {
+			out.Review = v
 		}
 	}
 	writeJSON(w, out)
@@ -87,8 +109,9 @@ func (s *Server) handleSetPromptTemplates(w http.ResponseWriter, r *http.Request
 	// "field explicitly set to empty string" — only present fields
 	// overwrite the stored value.
 	var body struct {
-		PR    *string `json:"pr"`
-		Issue *string `json:"issue"`
+		PR     *string `json:"pr"`
+		Issue  *string `json:"issue"`
+		Review *string `json:"review"`
 	}
 	if !readAndUnmarshal(w, r, maxRequestBody, &body) {
 		return
@@ -106,6 +129,12 @@ func (s *Server) handleSetPromptTemplates(w http.ResponseWriter, r *http.Request
 	if body.Issue != nil {
 		if err := s.stateDB.SetSetting(settingIssuePromptTemplate, *body.Issue); err != nil {
 			serverError(w, "saving issue template", err)
+			return
+		}
+	}
+	if body.Review != nil {
+		if err := s.stateDB.SetSetting(settingReviewPromptTemplate, *body.Review); err != nil {
+			serverError(w, "saving review template", err)
 			return
 		}
 	}

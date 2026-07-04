@@ -29,6 +29,19 @@ Link: {url}
 Description:
 {body}`;
 
+const DEFAULT_REVIEW_TEMPLATE = `Please review PR #{number}: {title}
+
+Author: {author}
+Link: {url}
+Branch: {branch}
+
+Description:
+{body}
+
+Review the changes on this branch: read the diff against the base branch,
+assess correctness, tests, and style, and summarise your findings as a
+list of actionable review comments. Do not modify any files.`;
+
 /**
  * PromptTemplateSettings is the settings-page editor for the two
  * prompt templates used by the PR/Issue sidebar's launch action.
@@ -41,6 +54,7 @@ export function PromptTemplateSettings() {
   const [templates, setTemplates] = useState<PromptTemplates>({
     pr: DEFAULT_PR_TEMPLATE,
     issue: DEFAULT_ISSUE_TEMPLATE,
+    review: DEFAULT_REVIEW_TEMPLATE,
   });
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -100,6 +114,14 @@ export function PromptTemplateSettings() {
         onReset={() => save({ issue: DEFAULT_ISSUE_TEMPLATE })}
         placeholdersNote="Placeholders: {number} {title} {body} {url} {author} {host} {repo} (no {branch} for issues)"
         testId="issue-template"
+      />
+      <TemplateEditor
+        label="PR review template"
+        value={templates.review}
+        onSave={(v) => save({ review: v })}
+        onReset={() => save({ review: DEFAULT_REVIEW_TEMPLATE })}
+        placeholdersNote="Placeholders: {number} {title} {body} {url} {branch} {author} {host} {repo}"
+        testId="review-template"
       />
       {error && <div className="settings-prompt-templates-error">{error}</div>}
     </div>

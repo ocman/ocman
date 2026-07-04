@@ -108,6 +108,7 @@ export interface HandleRequest {
   type: 'pr' | 'issue';
   number: number;
   mode: 'session' | 'worktree';
+  action?: 'handle' | 'review';
   fetchHead?: boolean;
   intent?: string;
 }
@@ -124,6 +125,7 @@ export interface HandleResponse {
 export interface PromptTemplates {
   pr: string;
   issue: string;
+  review: string;
 }
 
 // fetchUpstreams returns the supported forge remotes for the project

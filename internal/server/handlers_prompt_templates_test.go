@@ -27,6 +27,39 @@ func TestHandleGetPromptTemplates_DefaultsWhenUnset(t *testing.T) {
 	if got.Issue != DefaultIssuePromptTemplate {
 		t.Errorf("Issue default mismatch")
 	}
+	if got.Review != DefaultReviewPromptTemplate {
+		t.Errorf("Review default mismatch")
+	}
+}
+
+func TestHandleSetPromptTemplates_ReviewPersistsAndRenders(t *testing.T) {
+	srv := testServer(t)
+
+	body := `{"review": "REVIEW #{number}"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/settings/prompt-templates", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.handlePromptTemplates(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	// promptTemplateFor with action=review must return the persisted value.
+	got, err := srv.promptTemplateFor("pr", "review")
+	if err != nil {
+		t.Fatalf("promptTemplateFor: %v", err)
+	}
+	if got != "REVIEW #{number}" {
+		t.Errorf("review template not persisted, got %q", got)
+	}
+	// action=handle still returns the PR (handle) template default.
+	if got, _ := srv.promptTemplateFor("pr", "handle"); got != DefaultPRPromptTemplate {
+		t.Errorf("handle action should use PR template, got %q", got)
+	}
+	// review action for an issue falls back to the issue template.
+	if got, _ := srv.promptTemplateFor("issue", "review"); got != DefaultIssuePromptTemplate {
+		t.Errorf("issue+review should use issue template, got %q", got)
+	}
 }
 
 func TestHandleSetPromptTemplates_PersistsAndReturns(t *testing.T) {
