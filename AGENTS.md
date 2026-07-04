@@ -299,6 +299,17 @@ one-shot child-session watcher into a trigger→action engine
   Loops view (`/loops`, `/project/<dir>/loops`) is SSE-driven via the
   `loop.updated` broadcast and a Zustand store (`loopsStore.ts`).
 
+## Architecture doc
+
+`docs/architecture.md` holds the Mermaid architecture diagrams (system
+context, backend composition, session/event data flow, frontend
+composition). When a change alters what those diagrams show — a new or
+merged `internal/` package, a new external dependency (database, forge,
+protocol), a new seam like `platforms.Platform`/`hostsvc.Host`, or a
+change to the browser↔backend data flow — update the affected diagram
+and its bullet list in the same PR. Keep diagrams at ~10 blocks; push
+detail into the prose below each one.
+
 ## Conventions
 
 - All Go packages live under `internal/` — nothing is exported.
