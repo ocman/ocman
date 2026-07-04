@@ -9,7 +9,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/gitinfo"
+	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 )
 
@@ -34,7 +34,7 @@ import (
 //	  "/abs/path/b": {"branch": "feature", "ahead": 2, "behind": 0, "dirty": true}
 //	}
 //
-// Non-repo directories are returned with the zero gitinfo.Info — the
+// Non-repo directories are returned with the zero git.Info — the
 // frontend treats Info{Branch: ""} as "not a repo".
 //
 // Status codes:
@@ -79,7 +79,7 @@ func (s *Server) handleGitInfo(w http.ResponseWriter, r *http.Request) {
 // the composer's branch switcher.
 //
 // Query parameters:
-//   - `dir` (required): absolute path inside a git worktree.
+//   - `dir` (required): absolute path inside a git git.
 //
 // Status codes:
 //
@@ -137,7 +137,7 @@ func (s *Server) handleGitCheckout(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// ErrDirtyCheckout doesn't survive gRPC as a typed sentinel, so
 		// also match on the message a remote host relays back.
-		if errors.Is(err, gitinfo.ErrDirtyCheckout) ||
+		if errors.Is(err, git.ErrDirtyCheckout) ||
 			strings.Contains(err.Error(), "would overwrite") ||
 			strings.Contains(err.Error(), "commit your changes or stash") {
 			http.Error(w, "checkout would overwrite local changes; commit or stash first", http.StatusConflict)
@@ -158,7 +158,7 @@ func (s *Server) handleGitCheckout(w http.ResponseWriter, r *http.Request) {
 //
 // Query parameters:
 //   - `dir` (required): absolute path to a directory inside a git
-//     worktree. Relative paths are rejected to avoid relying on the
+//     git. Relative paths are rejected to avoid relying on the
 //     server's CWD.
 //   - `fresh=1` (optional): bypass the in-process cache. The cache
 //     TTL is short (1s) and exists mainly to coalesce concurrent
@@ -168,7 +168,7 @@ func (s *Server) handleGitCheckout(w http.ResponseWriter, r *http.Request) {
 //
 // Status codes:
 //
-//	200 OK         — diff payload (gitinfo.Diff JSON)
+//	200 OK         — diff payload (git.Diff JSON)
 //	400 Bad Req    — `dir` missing or relative
 //	404 Not Found  — `dir` is not a git worktree
 //	502 Bad Gateway — git invocation failed (timeout, fork error)
@@ -181,7 +181,7 @@ func (s *Server) handleGitDiff(w http.ResponseWriter, r *http.Request) {
 
 	d, err := s.router().ForDir(dir).GitDiff(r.Context(), dir, hostsvc.GitDiffOptions{Force: fresh})
 	if err != nil {
-		if errors.Is(err, gitinfo.ErrNotRepo) {
+		if errors.Is(err, git.ErrNotRepo) {
 			http.Error(w, "directory is not a git worktree", http.StatusNotFound)
 			return
 		}

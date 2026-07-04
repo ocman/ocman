@@ -124,7 +124,7 @@ type Session struct {
 	Stale bool `json:"stale,omitempty"`
 	// Note: GitInfo used to live here, populated by /api/sessions on
 	// the request path via a synchronous fan-out of `git status` per
-	// directory. It now lives in the gitinfo package (gitinfo.Info)
+	// directory. It now lives in the git package (git.Info)
 	// and is served by /api/git/info, fetched on demand by the
 	// frontend components that need it. See docs/profiling.md.
 

@@ -6,8 +6,8 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/worktree"
 )
 
 // Deps holds the dependencies injected into the MCP server by the
@@ -30,7 +30,7 @@ type Deps struct {
 	PlatformID string
 
 	// CreateWorktree is the worktree creation function. Defaults to
-	// worktree.Create when nil.
+	// git.CreateWorktree when nil.
 	CreateWorktree WorktreeCreator
 
 	// LaunchTmux is the tmux launcher function. Must be set by the
@@ -58,7 +58,7 @@ type Server struct {
 func New(deps Deps) *Server {
 	// Apply defaults for injectable functions.
 	if deps.CreateWorktree == nil {
-		deps.CreateWorktree = worktree.Create
+		deps.CreateWorktree = git.CreateWorktree
 	}
 
 	adapter := deps.Platform
@@ -135,7 +135,7 @@ func (s *Server) Handler() http.Handler {
 // server without going through the full HTTP transport.
 func ServerTools(deps Deps) []mcpserver.ServerTool {
 	if deps.CreateWorktree == nil {
-		deps.CreateWorktree = worktree.Create
+		deps.CreateWorktree = git.CreateWorktree
 	}
 
 	adapter := deps.Platform

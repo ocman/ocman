@@ -15,10 +15,10 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/git"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/worktree"
 )
 
 // openTestStateDB creates an in-memory state.DB for tool tests.
@@ -214,8 +214,8 @@ func buildTestMCPServer(t *testing.T, stateDB *state.DB, platform *fakePlatformF
 func buildTestMCPServerWithOpenCodeDB(t *testing.T, stateDB *state.DB, platform *fakePlatformForTools, ocDB *db.DB) *mcptest.Server {
 	t.Helper()
 
-	fakeWT := internalmcp.WorktreeCreator(func(_ context.Context, req worktree.CreateRequest) (*worktree.CreateResult, error) {
-		return &worktree.CreateResult{
+	fakeWT := internalmcp.WorktreeCreator(func(_ context.Context, req git.CreateWorktreeRequest) (*git.CreateWorktreeResult, error) {
+		return &git.CreateWorktreeResult{
 			Path:   "/tmp/worktrees/repo/" + req.Branch,
 			Branch: req.Branch,
 		}, nil

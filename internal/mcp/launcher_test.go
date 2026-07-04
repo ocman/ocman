@@ -9,9 +9,9 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/worktree"
 )
 
 // openTestStateDB creates an in-memory state.DB for launcher tests.
@@ -54,8 +54,8 @@ func (f *fakePlatformAdapter) SendMessage(_ context.Context, req platforms.SendM
 }
 
 // noopWorktreeCreator is a worktreeCreator that always succeeds.
-func noopWorktreeCreator(_ context.Context, req worktree.CreateRequest) (*worktree.CreateResult, error) {
-	return &worktree.CreateResult{
+func noopWorktreeCreator(_ context.Context, req git.CreateWorktreeRequest) (*git.CreateWorktreeResult, error) {
+	return &git.CreateWorktreeResult{
 		Path:   "/tmp/worktrees/repo/" + req.Branch,
 		Branch: req.Branch,
 		Reused: false,
@@ -182,7 +182,7 @@ func TestLaunchWithWorktree_Success(t *testing.T) {
 			Intent:          "fix lint in worktree",
 			ComposedPrompt:  "## Task\nfix lint\n",
 		},
-		worktree.CreateRequest{
+		git.CreateWorktreeRequest{
 			RepoRoot:  "/repo",
 			Branch:    "fix-lint",
 			NewBranch: true,
@@ -219,7 +219,7 @@ func TestLaunchWithWorktree_WorktreeCreateError(t *testing.T) {
 	db := openTestStateDB(t)
 	platform := &fakePlatformAdapter{}
 
-	failingCreator := func(_ context.Context, _ worktree.CreateRequest) (*worktree.CreateResult, error) {
+	failingCreator := func(_ context.Context, _ git.CreateWorktreeRequest) (*git.CreateWorktreeResult, error) {
 		return nil, errors.New("branch already checked out")
 	}
 
@@ -228,7 +228,7 @@ func TestLaunchWithWorktree_WorktreeCreateError(t *testing.T) {
 	_, _, err := launcher.LaunchWithWorktree(
 		context.Background(),
 		LaunchRequest{ParentSessionID: "parent-1", Platform: "opencode"},
-		worktree.CreateRequest{RepoRoot: "/repo", Branch: "fix-lint"},
+		git.CreateWorktreeRequest{RepoRoot: "/repo", Branch: "fix-lint"},
 	)
 	if err == nil {
 		t.Fatal("expected error when worktree creation fails")

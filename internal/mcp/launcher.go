@@ -7,14 +7,14 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/worktree"
 )
 
 const (
 	// portPollInterval is how often we check for the child OpenCode
-	// instance's port after launching it in a worktree.
+	// instance's port after launching it in a git.
 	portPollInterval = 500 * time.Millisecond
 
 	// portPollTimeout is the maximum time we wait for the child
@@ -69,9 +69,9 @@ type SessionClient interface {
 // platformAdapter is the internal alias used within the package.
 type platformAdapter = SessionClient
 
-// WorktreeCreator abstracts worktree.Create for testing.
+// WorktreeCreator abstracts git.CreateWorktree for testing.
 // Exported so the server package and tests can reference the type.
-type WorktreeCreator func(ctx context.Context, req worktree.CreateRequest) (*worktree.CreateResult, error)
+type WorktreeCreator func(ctx context.Context, req git.CreateWorktreeRequest) (*git.CreateWorktreeResult, error)
 
 // TmuxLauncher abstracts the tmux launch helpers for testing.
 // Exported so the server package and tests can reference the type.
@@ -184,9 +184,9 @@ func (l *SessionLauncher) Launch(ctx context.Context, req LaunchRequest) (string
 func (l *SessionLauncher) LaunchWithWorktree(
 	ctx context.Context,
 	req LaunchRequest,
-	wtReq worktree.CreateRequest,
-) (childID string, wtResult *worktree.CreateResult, err error) {
-	// Create (or reuse) the worktree.
+	wtReq git.CreateWorktreeRequest,
+) (childID string, wtResult *git.CreateWorktreeResult, err error) {
+	// Create (or reuse) the git.
 	wtResult, err = l.createWorktree(ctx, wtReq)
 	if err != nil {
 		return "", nil, fmt.Errorf("creating worktree: %w", err)

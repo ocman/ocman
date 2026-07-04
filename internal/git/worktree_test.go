@@ -1,4 +1,4 @@
-package worktree
+package git
 
 import (
 	"context"
@@ -54,9 +54,9 @@ func TestPathFor(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := PathFor(tt.repoRoot, tt.branch)
+			got := WorktreePathFor(tt.repoRoot, tt.branch)
 			if got != tt.want {
-				t.Errorf("PathFor(%q, %q) = %q, want %q",
+				t.Errorf("WorktreePathFor(%q, %q) = %q, want %q",
 					tt.repoRoot, tt.branch, got, tt.want)
 			}
 		})
@@ -68,7 +68,7 @@ func TestPathFor(t *testing.T) {
 // cleaned up by t.TempDir.
 //
 // The repo is nested one level inside the temp dir (as "repo/") so
-// that the `.worktrees` directory produced by PathFor lands inside the
+// that the `.worktrees` directory produced by WorktreePathFor lands inside the
 // test's own isolated temp root rather than the shared OS temp
 // directory. Without this nesting, concurrent test packages that all
 // use branch names like "feature/login" can collide on the same

@@ -1,4 +1,4 @@
-package worktree
+package git
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/gitexec"
 )
 
-// Errors surfaced by Create. Handlers translate these into specific
+// Errors surfaced by CreateWorktree. Handlers translate these into specific
 // HTTP status codes; the UI uses the message text as a fallback.
 var (
 	// ErrBranchCheckedOutElsewhere indicates that the branch is
@@ -32,23 +32,23 @@ var (
 	// the index lock. The caller should retry after a short delay.
 	ErrIndexLocked = errors.New("git index is locked by another process")
 
-	// ErrWorktreeDirty indicates Remove refused because the worktree
+	// ErrWorktreeDirty indicates RemoveWorktree refused because the worktree
 	// has uncommitted changes or untracked files. The caller can retry
 	// with force=true to discard them.
 	ErrWorktreeDirty = errors.New("worktree has uncommitted changes")
 
-	// ErrMainWorktree indicates Remove refused because the target is
+	// ErrMainWorktree indicates RemoveWorktree refused because the target is
 	// the main checkout, which git will not remove.
 	ErrMainWorktree = errors.New("cannot remove the main worktree")
 )
 
-// PathFor returns the deterministic on-disk path for a worktree:
+// WorktreePathFor returns the deterministic on-disk path for a worktree:
 //
 //	<repo-parent>/.worktrees/<repo-name>/<slug>
 //
 // The slug is computed via SlugForBranch — the branch name itself is
 // kept intact for git invocations.
-func PathFor(repoRoot, branch string) string {
+func WorktreePathFor(repoRoot, branch string) string {
 	clean := filepath.Clean(repoRoot)
 	parent := filepath.Dir(clean)
 	repoName := filepath.Base(clean)

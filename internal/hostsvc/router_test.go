@@ -5,25 +5,24 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/gitinfo"
-	"github.com/NoUseFreak/ocman/internal/worktree"
+	"github.com/NoUseFreak/ocman/internal/git"
 )
 
 // stubHost is a minimal Host that records its identity for routing tests.
 type stubHost struct{ id string }
 
-func (h stubHost) RemoteID() string          { return h.id }
-func (h stubHost) Capabilities() HostCaps     { return HostCaps{} }
-func (h stubHost) GitInfo(context.Context, []string) (map[string]gitinfo.Info, error) {
+func (h stubHost) RemoteID() string       { return h.id }
+func (h stubHost) Capabilities() HostCaps { return HostCaps{} }
+func (h stubHost) GitInfo(context.Context, []string) (map[string]git.Info, error) {
 	return nil, nil
 }
-func (h stubHost) GitDiff(context.Context, string, GitDiffOptions) (*gitinfo.Diff, error) {
+func (h stubHost) GitDiff(context.Context, string, GitDiffOptions) (*git.Diff, error) {
 	return nil, nil
 }
-func (h stubHost) GitBranches(context.Context, string) ([]string, error) { return nil, nil }
-func (h stubHost) GitCheckout(context.Context, string, string) error     { return nil }
-func (h stubHost) ListWorktrees(context.Context, string) ([]worktree.Entry, error) { return nil, nil }
-func (h stubHost) WorktreeDefaultBaseRef(context.Context, string) (string, error)  { return "", nil }
+func (h stubHost) GitBranches(context.Context, string) ([]string, error)          { return nil, nil }
+func (h stubHost) GitCheckout(context.Context, string, string) error              { return nil }
+func (h stubHost) ListWorktrees(context.Context, string) ([]git.Worktree, error)  { return nil, nil }
+func (h stubHost) WorktreeDefaultBaseRef(context.Context, string) (string, error) { return "", nil }
 func (h stubHost) CreateWorktreeSession(context.Context, WorktreeSessionRequest) (*WorktreeSessionResult, error) {
 	return nil, nil
 }
@@ -31,11 +30,11 @@ func (h stubHost) RemoveWorktree(context.Context, RemoveWorktreeRequest) error {
 func (h stubHost) LaunchTmux(context.Context, LaunchTmuxRequest) (*LaunchTmuxResult, error) {
 	return nil, nil
 }
-func (h stubHost) TmuxSessions(context.Context) ([]TmuxSession, error)  { return nil, nil }
-func (h stubHost) Projects(context.Context) ([]db.ProjectStats, error)  { return nil, nil }
-func (h stubHost) TermWindows(context.Context, string) ([]TermWindow, error) { return nil, nil }
-func (h stubHost) TermCreateWindow(context.Context, string) (string, error)  { return "", nil }
-func (h stubHost) TermKillWindow(context.Context, string, string) error      { return nil }
+func (h stubHost) TmuxSessions(context.Context) ([]TmuxSession, error)           { return nil, nil }
+func (h stubHost) Projects(context.Context) ([]db.ProjectStats, error)           { return nil, nil }
+func (h stubHost) TermWindows(context.Context, string) ([]TermWindow, error)     { return nil, nil }
+func (h stubHost) TermCreateWindow(context.Context, string) (string, error)      { return "", nil }
+func (h stubHost) TermKillWindow(context.Context, string, string) error          { return nil }
 func (h stubHost) TermAttach(context.Context, TermAttachRequest, TermConn) error { return nil }
 
 func TestRouter_ForRemote(t *testing.T) {

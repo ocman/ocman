@@ -1,13 +1,13 @@
-// Package worktree wraps the bits of `git worktree` that ocman needs
-// to launch isolated agent sessions. It computes deterministic on-disk
-// paths for new worktrees, runs `git worktree add/list`, and surfaces
-// typed errors for the situations the UI needs to react to (branch
-// already checked out elsewhere, path conflict, etc.).
-//
-// The package shells out to git — there is no go-git dependency. This
-// matches the existing internal/gitinfo package, keeps the binary
-// small, and ensures we behave identically to the user's own git.
-package worktree
+// The worktree half of this package wraps the bits of `git worktree`
+// that ocman needs to launch isolated agent sessions. It computes
+// deterministic on-disk paths for new worktrees, runs `git worktree
+// add/list`, and surfaces typed errors for the situations the UI needs
+// to react to (branch already checked out elsewhere, path conflict,
+// etc.). It shells out to git — there is no go-git dependency — which
+// keeps the binary small and ensures we behave identically to the
+// user's own git.
+
+package git
 
 import (
 	"crypto/sha256"

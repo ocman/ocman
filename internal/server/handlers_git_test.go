@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/gitinfo"
+	"github.com/NoUseFreak/ocman/internal/git"
 )
 
-// gitInitForServerTest is a copy of the helper in the gitinfo package's
+// gitInitForServerTest is a copy of the helper in the git package's
 // test, scoped to this package so we don't depend on internal test
 // helpers across packages. Skips the test when git isn't available.
 func gitInitForServerTest(t *testing.T, dir string) {
@@ -92,7 +92,7 @@ func TestHandleGitDiff_HappyPath(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
-	var got gitinfo.Diff
+	var got git.Diff
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
 		t.Fatalf("invalid JSON: %v\nbody: %s", err, rr.Body.String())
 	}
@@ -140,7 +140,7 @@ func TestHandleGitInfo_RelativeDirsRejected(t *testing.T) {
 // TestHandleGitInfo_HappyPath spins up two real git worktrees in
 // temp dirs and confirms the handler returns Info for each, keyed by
 // directory. We don't assert exact branch/dirty contents — those
-// belong to the gitinfo package's own tests — only that the wiring
+// belong to the git package's own tests — only that the wiring
 // works end-to-end.
 func TestHandleGitInfo_HappyPath(t *testing.T) {
 	srv := testServer(t)
@@ -155,7 +155,7 @@ func TestHandleGitInfo_HappyPath(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
-	var got map[string]gitinfo.Info
+	var got map[string]git.Info
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
 		t.Fatalf("invalid JSON: %v\nbody: %s", err, rr.Body.String())
 	}
@@ -173,7 +173,7 @@ func TestHandleGitInfo_HappyPath(t *testing.T) {
 // TestHandleGitInfo_NonRepoDirs returns the dir as a key with a zero
 // Info. The frontend treats Info{Branch: ""} as "not a repo" and
 // renders nothing — a missing key would also work but this is more
-// explicit and matches the gitinfo.LookupMany contract.
+// explicit and matches the git.LookupMany contract.
 func TestHandleGitInfo_NonRepoDirs(t *testing.T) {
 	srv := testServer(t)
 	dir := t.TempDir() // no git init
@@ -184,7 +184,7 @@ func TestHandleGitInfo_NonRepoDirs(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
-	var got map[string]gitinfo.Info
+	var got map[string]git.Info
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
@@ -289,7 +289,7 @@ func TestHandleGitCheckout_HappyPath(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
-	if b := gitinfo.Lookup(req.Context(), dir).Branch; b != "other" {
+	if b := git.Lookup(req.Context(), dir).Branch; b != "other" {
 		t.Errorf("branch after checkout = %q, want other", b)
 	}
 }

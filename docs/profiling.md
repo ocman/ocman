@@ -114,7 +114,7 @@ keep flogging the backend.
 
 - `apiStore` request-status tracking is well-structured (single
   source of truth).
-- `gitinfo` has a per-dir 30 s cache, an 8-worker bound, a 2 s
+- `internal/git` (status lookup) has a per-dir 30 s cache, an 8-worker bound, a 2 s
   timeout, and dedups by dir within a request.
 - `SessionDetail`'s sidebar refresh pauses on `document.hidden`.
 - SSE path exists; the 10 s fallback only fires when SSE is broken.
@@ -502,7 +502,7 @@ backend wins are larger and unblock more user pain.
   `Session`). Where B4 lands.
 - `internal/platforms/opencode/info.go` — `SessionInfo` parallel
   fan-out. Where B2 lands.
-- `internal/gitinfo/gitinfo.go` — git status cache (30 s TTL).
+- `internal/git/info.go` — git status cache (30 s TTL).
 
 ### Frontend
 - `frontend/src/App.tsx` — top-level pollers and dev handles.

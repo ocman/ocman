@@ -1,4 +1,4 @@
-package worktree
+package git
 
 import (
 	"context"
@@ -72,9 +72,9 @@ locked
 
 func TestList(t *testing.T) {
 	repo := initTestRepo(t)
-	got, err := List(context.Background(), repo)
+	got, err := ListWorktrees(context.Background(), repo)
 	if err != nil {
-		t.Fatalf("List: %v", err)
+		t.Fatalf("ListWorktrees: %v", err)
 	}
 	if len(got) != 1 {
 		t.Fatalf("got %d entries, want 1 (just the main checkout)", len(got))
@@ -94,17 +94,17 @@ func TestCreate_NewBranch(t *testing.T) {
 	repo := initTestRepo(t)
 	parent := filepath.Dir(repo)
 
-	res, err := Create(context.Background(), CreateRequest{
+	res, err := CreateWorktree(context.Background(), CreateWorktreeRequest{
 		RepoRoot:  repo,
 		Branch:    "feature/login",
 		NewBranch: true,
 		BaseRef:   "main",
 	})
 	if err != nil {
-		t.Fatalf("Create: %v", err)
+		t.Fatalf("CreateWorktree: %v", err)
 	}
 	if res.Reused {
-		t.Errorf("Create reported Reused=true on first run")
+		t.Errorf("CreateWorktree reported Reused=true on first run")
 	}
 	if res.Branch != "feature/login" {
 		t.Errorf("res.Branch = %q, want feature/login", res.Branch)
@@ -120,9 +120,9 @@ func TestCreate_NewBranch(t *testing.T) {
 	}
 
 	// And `git worktree list` must report two entries now.
-	list, err := List(context.Background(), repo)
+	list, err := ListWorktrees(context.Background(), repo)
 	if err != nil {
-		t.Fatalf("List after create: %v", err)
+		t.Fatalf("ListWorktrees after create: %v", err)
 	}
 	if len(list) != 2 {
 		t.Errorf("after create, got %d entries, want 2", len(list))
@@ -133,41 +133,41 @@ func TestCreate_Idempotent(t *testing.T) {
 	repo := initTestRepo(t)
 
 	// First create.
-	if _, err := Create(context.Background(), CreateRequest{
+	if _, err := CreateWorktree(context.Background(), CreateWorktreeRequest{
 		RepoRoot:  repo,
 		Branch:    "feature/x",
 		NewBranch: true,
 		BaseRef:   "main",
 	}); err != nil {
-		t.Fatalf("first Create: %v", err)
+		t.Fatalf("first CreateWorktree: %v", err)
 	}
 
 	// Same call again — must reuse, not error.
-	res, err := Create(context.Background(), CreateRequest{
+	res, err := CreateWorktree(context.Background(), CreateWorktreeRequest{
 		RepoRoot:  repo,
 		Branch:    "feature/x",
 		NewBranch: true,
 		BaseRef:   "main",
 	})
 	if err != nil {
-		t.Fatalf("second Create: %v", err)
+		t.Fatalf("second CreateWorktree: %v", err)
 	}
 	if !res.Reused {
-		t.Errorf("second Create reported Reused=false; want true")
+		t.Errorf("second CreateWorktree reported Reused=false; want true")
 	}
 }
 
 func TestCreate_BranchAlreadyCheckedOutElsewhere(t *testing.T) {
 	repo := initTestRepo(t)
 
-	// Create a worktree for branch "shared" at one path.
-	if _, err := Create(context.Background(), CreateRequest{
+	// CreateWorktree a worktree for branch "shared" at one path.
+	if _, err := CreateWorktree(context.Background(), CreateWorktreeRequest{
 		RepoRoot:  repo,
 		Branch:    "shared",
 		NewBranch: true,
 		BaseRef:   "main",
 	}); err != nil {
-		t.Fatalf("first Create: %v", err)
+		t.Fatalf("first CreateWorktree: %v", err)
 	}
 
 	// Now manually create a *different* directory to host another
@@ -179,7 +179,7 @@ func TestCreate_BranchAlreadyCheckedOutElsewhere(t *testing.T) {
 	//
 	// Easiest reproduction: try to add the branch "shared" at a
 	// hand-picked, different path. Run `git worktree add` directly
-	// to bypass our PathFor.
+	// to bypass our WorktreePathFor.
 	parent := filepath.Dir(repo)
 	otherPath := filepath.Join(parent, "manual-shared")
 	addCmd := exec.Command("git", "-C", repo, "worktree", "add", otherPath, "shared")
@@ -191,15 +191,15 @@ func TestCreate_BranchAlreadyCheckedOutElsewhere(t *testing.T) {
 		t.Skipf("git allowed two worktrees on the same branch; skipping. Output: %s", out)
 	}
 
-	// Now call our Create — but PathFor("shared") matches the
+	// Now call our CreateWorktree — but WorktreePathFor("shared") matches the
 	// existing path so it'll still reuse. We need a different branch
 	// name that slugs to a fresh path but conflicts on the branch
 	// in git's eyes. Use a different branch name that points at the
-	// same checked-out branch via Create with NewBranch=false on a
+	// same checked-out branch via CreateWorktree with NewBranch=false on a
 	// branch already in another worktree.
 	//
 	// Simulate by manually creating *another* worktree on a new
-	// branch and then pointing Create at it.
+	// branch and then pointing CreateWorktree at it.
 	branchCmd := exec.Command("git", "-C", repo, "branch", "another", "main")
 	branchCmd.Env = cleanGitEnv()
 	_ = branchCmd.Run()
@@ -212,16 +212,16 @@ func TestCreate_BranchAlreadyCheckedOutElsewhere(t *testing.T) {
 
 	// Try to attach branch "another" at our deterministic path —
 	// must fail with ErrBranchCheckedOutElsewhere.
-	_, err = Create(context.Background(), CreateRequest{
+	_, err = CreateWorktree(context.Background(), CreateWorktreeRequest{
 		RepoRoot:  repo,
 		Branch:    "another",
 		NewBranch: false,
 	})
 	if err == nil {
-		t.Fatalf("Create returned nil error; want ErrBranchCheckedOutElsewhere")
+		t.Fatalf("CreateWorktree returned nil error; want ErrBranchCheckedOutElsewhere")
 	}
 	if !errors.Is(err, ErrBranchCheckedOutElsewhere) {
-		t.Errorf("Create error = %v, want ErrBranchCheckedOutElsewhere", err)
+		t.Errorf("CreateWorktree error = %v, want ErrBranchCheckedOutElsewhere", err)
 	}
 }
 
@@ -231,21 +231,21 @@ func TestCreate_NewBranchButBranchAlreadyExists(t *testing.T) {
 	// Pre-create a local branch with no associated worktree. This
 	// is the case where `git worktree add -b <name>` would refuse
 	// ("fatal: a branch named 'X' already exists"). We expect
-	// Create to detect this and fall back to a plain checkout.
+	// CreateWorktree to detect this and fall back to a plain checkout.
 	seedBranch := exec.Command("git", "-C", repo, "branch", "preexisting", "main")
 	seedBranch.Env = cleanGitEnv()
 	if err := seedBranch.Run(); err != nil {
 		t.Fatalf("seed branch: %v", err)
 	}
 
-	res, err := Create(context.Background(), CreateRequest{
+	res, err := CreateWorktree(context.Background(), CreateWorktreeRequest{
 		RepoRoot:  repo,
 		Branch:    "preexisting",
 		NewBranch: true,
 		BaseRef:   "main",
 	})
 	if err != nil {
-		t.Fatalf("Create: %v", err)
+		t.Fatalf("CreateWorktree: %v", err)
 	}
 	if !res.BranchExisted {
 		t.Errorf("res.BranchExisted = false, want true")
@@ -263,9 +263,9 @@ func TestCreate_NewBranchButBranchAlreadyExists(t *testing.T) {
 	}
 
 	// And `git worktree list` must report two entries.
-	list, err := List(context.Background(), repo)
+	list, err := ListWorktrees(context.Background(), repo)
 	if err != nil {
-		t.Fatalf("List after create: %v", err)
+		t.Fatalf("ListWorktrees after create: %v", err)
 	}
 	if len(list) != 2 {
 		t.Errorf("after create, got %d entries, want 2", len(list))
@@ -309,27 +309,27 @@ func TestResolveBaseRef_FallsBackToMain(t *testing.T) {
 func TestRemove_HappyPath(t *testing.T) {
 	repo := initTestRepo(t)
 
-	res, err := Create(context.Background(), CreateRequest{
+	res, err := CreateWorktree(context.Background(), CreateWorktreeRequest{
 		RepoRoot:  repo,
 		Branch:    "feature/del",
 		NewBranch: true,
 		BaseRef:   "main",
 	})
 	if err != nil {
-		t.Fatalf("Create: %v", err)
+		t.Fatalf("CreateWorktree: %v", err)
 	}
 
-	if err := Remove(context.Background(), repo, res.Path, false); err != nil {
-		t.Fatalf("Remove: %v", err)
+	if err := RemoveWorktree(context.Background(), repo, res.Path, false); err != nil {
+		t.Fatalf("RemoveWorktree: %v", err)
 	}
 
 	// Dir gone from disk and from `git worktree list`.
 	if _, statErr := os.Stat(res.Path); !os.IsNotExist(statErr) {
 		t.Errorf("worktree dir still present: %v", statErr)
 	}
-	list, err := List(context.Background(), repo)
+	list, err := ListWorktrees(context.Background(), repo)
 	if err != nil {
-		t.Fatalf("List after remove: %v", err)
+		t.Fatalf("ListWorktrees after remove: %v", err)
 	}
 	if len(list) != 1 {
 		t.Errorf("after remove, got %d entries, want 1", len(list))
@@ -338,22 +338,22 @@ func TestRemove_HappyPath(t *testing.T) {
 
 func TestRemove_MainWorktreeRefused(t *testing.T) {
 	repo := initTestRepo(t)
-	err := Remove(context.Background(), repo, repo, false)
+	err := RemoveWorktree(context.Background(), repo, repo, false)
 	if !errors.Is(err, ErrMainWorktree) {
-		t.Errorf("Remove(main) = %v, want ErrMainWorktree", err)
+		t.Errorf("RemoveWorktree(main) = %v, want ErrMainWorktree", err)
 	}
 }
 
 func TestRemove_DirtyRefusedThenForce(t *testing.T) {
 	repo := initTestRepo(t)
-	res, err := Create(context.Background(), CreateRequest{
+	res, err := CreateWorktree(context.Background(), CreateWorktreeRequest{
 		RepoRoot:  repo,
 		Branch:    "feature/dirty",
 		NewBranch: true,
 		BaseRef:   "main",
 	})
 	if err != nil {
-		t.Fatalf("Create: %v", err)
+		t.Fatalf("CreateWorktree: %v", err)
 	}
 
 	// Make the worktree dirty with an untracked file.
@@ -361,13 +361,13 @@ func TestRemove_DirtyRefusedThenForce(t *testing.T) {
 		t.Fatalf("write scratch: %v", err)
 	}
 
-	if err := Remove(context.Background(), repo, res.Path, false); !errors.Is(err, ErrWorktreeDirty) {
-		t.Fatalf("Remove(dirty, force=false) = %v, want ErrWorktreeDirty", err)
+	if err := RemoveWorktree(context.Background(), repo, res.Path, false); !errors.Is(err, ErrWorktreeDirty) {
+		t.Fatalf("RemoveWorktree(dirty, force=false) = %v, want ErrWorktreeDirty", err)
 	}
 
 	// Force must succeed and remove the dir.
-	if err := Remove(context.Background(), repo, res.Path, true); err != nil {
-		t.Fatalf("Remove(dirty, force=true): %v", err)
+	if err := RemoveWorktree(context.Background(), repo, res.Path, true); err != nil {
+		t.Fatalf("RemoveWorktree(dirty, force=true): %v", err)
 	}
 	if _, statErr := os.Stat(res.Path); !os.IsNotExist(statErr) {
 		t.Errorf("worktree dir still present after force remove: %v", statErr)
@@ -402,7 +402,7 @@ func TestClassifyAddError_IndexLocked(t *testing.T) {
 	}
 }
 
-// TestCreate_ConcurrentSameBranch fires two Create calls for the same
+// TestCreate_ConcurrentSameBranch fires two CreateWorktree calls for the same
 // branch against the same repo in parallel. One must succeed; the
 // other must either succeed (Reused=true) or fail with a typed error —
 // it must not leave the test binary crashing with an unrecognised git
@@ -410,7 +410,7 @@ func TestClassifyAddError_IndexLocked(t *testing.T) {
 func TestCreate_ConcurrentSameBranch(t *testing.T) {
 	repo := initTestRepo(t)
 
-	req := CreateRequest{
+	req := CreateWorktreeRequest{
 		RepoRoot:  repo,
 		Branch:    "feature/concurrent",
 		NewBranch: true,
@@ -418,7 +418,7 @@ func TestCreate_ConcurrentSameBranch(t *testing.T) {
 	}
 
 	type result struct {
-		res *CreateResult
+		res *CreateWorktreeResult
 		err error
 	}
 	results := make([]result, 2)
@@ -428,7 +428,7 @@ func TestCreate_ConcurrentSameBranch(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			res, err := Create(context.Background(), req)
+			res, err := CreateWorktree(context.Background(), req)
 			results[i] = result{res, err}
 		}()
 	}
@@ -442,7 +442,7 @@ func TestCreate_ConcurrentSameBranch(t *testing.T) {
 		}
 	}
 	if successes == 0 {
-		t.Fatalf("both concurrent Create calls failed: %v / %v", results[0].err, results[1].err)
+		t.Fatalf("both concurrent CreateWorktree calls failed: %v / %v", results[0].err, results[1].err)
 	}
 
 	// Any failure must be a typed error, not a raw git output dump.
@@ -453,7 +453,7 @@ func TestCreate_ConcurrentSameBranch(t *testing.T) {
 		if !errors.Is(r.err, ErrIndexLocked) &&
 			!errors.Is(r.err, ErrBranchCheckedOutElsewhere) &&
 			!errors.Is(r.err, ErrPathConflict) {
-			t.Errorf("unexpected error from concurrent Create: %v", r.err)
+			t.Errorf("unexpected error from concurrent CreateWorktree: %v", r.err)
 		}
 	}
 }

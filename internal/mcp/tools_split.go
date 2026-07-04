@@ -9,7 +9,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/worktree"
+	"github.com/NoUseFreak/ocman/internal/git"
 )
 
 // splitSessionReader is the subset of db.DB needed by the split tools.
@@ -54,7 +54,7 @@ func splitToSessionTool() mcplib.Tool {
 // splitToWorktreeTool returns the mcp-go tool definition for split_to_worktree.
 func splitToWorktreeTool() mcplib.Tool {
 	return mcplib.NewTool("split_to_worktree",
-		mcplib.WithDescription("Launch a child OpenCode session in a fresh git worktree."),
+		mcplib.WithDescription("Launch a child OpenCode session in a fresh git git."),
 		mcplib.WithString("session_id",
 			mcplib.Required(),
 			mcplib.Description("Parent session ID."),
@@ -65,7 +65,7 @@ func splitToWorktreeTool() mcplib.Tool {
 		),
 		mcplib.WithString("branch",
 			mcplib.Required(),
-			mcplib.Description("Branch name for the worktree."),
+			mcplib.Description("Branch name for the git."),
 		),
 		mcplib.WithString("base_ref",
 			mcplib.Description("Base ref. Defaults to repo default branch."),
@@ -158,19 +158,19 @@ func (t *splitTools) handleSplitToWorktree(ctx context.Context, req mcplib.CallT
 		return mcplib.NewToolResultError(fmt.Sprintf("session not found: %v", err)), nil
 	}
 
-	repoRoot, err := worktree.ResolveRepoRoot(ctx, session.Directory)
+	repoRoot, err := git.ResolveRepoRoot(ctx, session.Directory)
 	if err != nil {
 		return mcplib.NewToolResultError(fmt.Sprintf("resolving repo root: %v", err)), nil
 	}
 
 	// If no base_ref provided, resolve the default.
 	if baseRef == "" {
-		baseRef = worktree.ResolveBaseRef(ctx, repoRoot)
+		baseRef = git.ResolveBaseRef(ctx, repoRoot)
 	}
 
 	// Point the prompt at the worktree dir that's about to be created, not
 	// the parent checkout.
-	opts.DirOverride = worktree.PathFor(repoRoot, branch)
+	opts.DirOverride = git.WorktreePathFor(repoRoot, branch)
 
 	// Compose the enriched prompt.
 	prompt, err := t.composer.Compose(ctx, sessionID, intent, opts)
@@ -186,7 +186,7 @@ func (t *splitTools) handleSplitToWorktree(ctx context.Context, req mcplib.CallT
 			Intent:          intent,
 			ComposedPrompt:  prompt,
 		},
-		worktree.CreateRequest{
+		git.CreateWorktreeRequest{
 			RepoRoot:  repoRoot,
 			Branch:    branch,
 			NewBranch: true,

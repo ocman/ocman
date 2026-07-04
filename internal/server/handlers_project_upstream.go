@@ -11,12 +11,12 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/forge"
-	"github.com/NoUseFreak/ocman/internal/worktree"
+	"github.com/NoUseFreak/ocman/internal/git"
 )
 
 // detectUpstreams classifies the git remotes of the project at
 // projectDir, returning a list of supported forges. Composes
-// worktree.ResolveRepoRoot (so callers can pass any directory inside
+// git.ResolveRepoRoot (so callers can pass any directory inside
 // the repo) with forge.Detect (which expects the repo root).
 //
 // Hoisted out of the handler so the launch path (POST /api/project/
@@ -25,7 +25,7 @@ func (s *Server) detectUpstreams(ctx context.Context, projectDir string) (string
 	// PR/Issue sidebar forge detection is local-only and out of v1
 	// remote scope (see requirements "Out of Scope"); this repo-root
 	// resolution feeds forge.Detect, not a routed host operation.
-	repoRoot, err := worktree.ResolveRepoRoot(ctx, projectDir) // ocman:allow-host-helper
+	repoRoot, err := git.ResolveRepoRoot(ctx, projectDir) // ocman:allow-host-helper
 	if err != nil {
 		return "", nil, err
 	}
@@ -94,7 +94,7 @@ func (s *Server) handleProjectUpstreams(w http.ResponseWriter, r *http.Request) 
 
 	_, remotes, err := s.detectUpstreams(r.Context(), dir)
 	if err != nil {
-		if errors.Is(err, worktree.ErrNotARepo) {
+		if errors.Is(err, git.ErrNotARepo) {
 			http.Error(w, "directory is not a git repository", http.StatusNotFound)
 			return
 		}
@@ -254,7 +254,7 @@ func (s *Server) handleProjectPRChecks(w http.ResponseWriter, r *http.Request) {
 
 	_, remotes, err := s.detectUpstreams(r.Context(), dir)
 	if err != nil {
-		if errors.Is(err, worktree.ErrNotARepo) {
+		if errors.Is(err, git.ErrNotARepo) {
 			http.Error(w, "directory is not a git repository", http.StatusNotFound)
 			return
 		}
@@ -313,7 +313,7 @@ func (s *Server) parseProjectListParams(w http.ResponseWriter, r *http.Request) 
 
 	_, remotes, err := s.detectUpstreams(r.Context(), dir)
 	if err != nil {
-		if errors.Is(err, worktree.ErrNotARepo) {
+		if errors.Is(err, git.ErrNotARepo) {
 			http.Error(w, "directory is not a git repository", http.StatusNotFound)
 		} else {
 			http.Error(w, "failed to detect upstreams", http.StatusBadGateway)

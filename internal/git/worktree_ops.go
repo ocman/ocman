@@ -1,4 +1,4 @@
-package worktree
+package git
 
 import (
 	"context"
@@ -12,12 +12,12 @@ import (
 	"github.com/NoUseFreak/ocman/internal/gitexec"
 )
 
-// gitCommandTimeout bounds each git invocation. Worktree operations
+// worktreeCommandTimeout bounds each git invocation. Worktree operations
 // touch the filesystem and may be slower than a plain rev-parse, so
-// give them more headroom than gitinfo's 2s ceiling.
-const gitCommandTimeout = 15 * time.Second
+// give them more headroom than the 2s status ceiling in info.go.
+const worktreeCommandTimeout = 15 * time.Second
 
-// addRetryMax is the number of times Create will retry a `git worktree
+// addRetryMax is the number of times CreateWorktree will retry a `git worktree
 // add` that fails due to a git index lock held by a concurrent git
 // process. The back-off starts at addRetryDelay and doubles each
 // attempt (capped at addRetryDelayMax).
@@ -27,8 +27,8 @@ const (
 	addRetryDelayMax = 500 * time.Millisecond
 )
 
-// Entry is one row from `git worktree list --porcelain`.
-type Entry struct {
+// Worktree is one row from `git worktree list --porcelain`.
+type Worktree struct {
 	Path   string `json:"path"`
 	Branch string `json:"branch"` // short name; empty for detached
 	Head   string `json:"head"`
@@ -37,8 +37,8 @@ type Entry struct {
 	Main   bool   `json:"main"` // true for the primary worktree
 }
 
-// CreateRequest captures the user's choice from the form.
-type CreateRequest struct {
+// CreateWorktreeRequest captures the user's choice from the form.
+type CreateWorktreeRequest struct {
 	// RepoRoot is the absolute path of the main checkout.
 	RepoRoot string
 	// Branch is the (un-slugified) branch name. Required.
@@ -50,8 +50,8 @@ type CreateRequest struct {
 	BaseRef string
 }
 
-// CreateResult tells the caller what happened.
-type CreateResult struct {
+// CreateWorktreeResult tells the caller what happened.
+type CreateWorktreeResult struct {
 	Path   string `json:"path"`
 	Branch string `json:"branch"`
 	Reused bool   `json:"reused"` // true when the worktree already existed for the same branch
@@ -64,10 +64,10 @@ type CreateResult struct {
 	BranchExisted bool `json:"branchExisted"`
 }
 
-// List runs `git worktree list --porcelain` and returns the parsed
+// ListWorktrees runs `git worktree list --porcelain` and returns the parsed
 // entries. The first entry is always the main checkout (Main=true).
-func List(ctx context.Context, repoRoot string) ([]Entry, error) {
-	cctx, cancel := context.WithTimeout(ctx, gitCommandTimeout)
+func ListWorktrees(ctx context.Context, repoRoot string) ([]Worktree, error) {
+	cctx, cancel := context.WithTimeout(ctx, worktreeCommandTimeout)
 	defer cancel()
 	cmd := gitexec.Command(cctx, "-C", repoRoot, "worktree", "list", "--porcelain")
 	out, err := cmd.Output()
@@ -86,15 +86,15 @@ func List(ctx context.Context, repoRoot string) ([]Entry, error) {
 //	locked                              (optional)
 //
 // We translate `refs/heads/foo` to the short form `foo`.
-func parseWorktreeList(in string) ([]Entry, error) {
-	var entries []Entry
-	var cur Entry
+func parseWorktreeList(in string) ([]Worktree, error) {
+	var entries []Worktree
+	var cur Worktree
 	var open bool
 	flush := func() {
 		if open {
 			entries = append(entries, cur)
 		}
-		cur = Entry{}
+		cur = Worktree{}
 		open = false
 	}
 
@@ -128,8 +128,8 @@ func parseWorktreeList(in string) ([]Entry, error) {
 	return entries, nil
 }
 
-// Create runs `git worktree add` with the right flags and handles
-// idempotent reuse. The target path is computed via PathFor.
+// CreateWorktree runs `git worktree add` with the right flags and handles
+// idempotent reuse. The target path is computed via WorktreePathFor.
 //
 // Behaviour:
 //   - If the target path already exists and `git worktree list`
@@ -139,23 +139,23 @@ func parseWorktreeList(in string) ([]Entry, error) {
 //     ErrPathConflict.
 //   - If the branch is already attached to another worktree, return
 //     ErrBranchCheckedOutElsewhere.
-func Create(ctx context.Context, req CreateRequest) (*CreateResult, error) {
+func CreateWorktree(ctx context.Context, req CreateWorktreeRequest) (*CreateWorktreeResult, error) {
 	if req.RepoRoot == "" || req.Branch == "" {
 		return nil, fmt.Errorf("worktree: RepoRoot and Branch are required")
 	}
 
-	target := PathFor(req.RepoRoot, req.Branch)
+	target := WorktreePathFor(req.RepoRoot, req.Branch)
 
 	// Idempotency check: is there already a worktree at `target` for
 	// the requested branch?
-	existing, err := List(ctx, req.RepoRoot)
+	existing, err := ListWorktrees(ctx, req.RepoRoot)
 	if err != nil {
 		return nil, err
 	}
 	for _, e := range existing {
 		if filepath.Clean(e.Path) == filepath.Clean(target) {
 			if e.Branch == req.Branch {
-				return &CreateResult{
+				return &CreateWorktreeResult{
 					Path:   target,
 					Branch: req.Branch,
 					Reused: true,
@@ -195,7 +195,7 @@ func Create(ctx context.Context, req CreateRequest) (*CreateResult, error) {
 	// pre-existing branch instead of a fresh one. The branch may
 	// still be checked out elsewhere; the loop above already caught
 	// that, and `git worktree add` will reject it below if some
-	// other worktree picked it up between our List() and the add.
+	// other worktree picked it up between our ListWorktrees() and the add.
 	newBranch := req.NewBranch
 	branchExisted := false
 	if newBranch && branchExists(ctx, req.RepoRoot, req.Branch) {
@@ -229,11 +229,11 @@ func Create(ctx context.Context, req CreateRequest) (*CreateResult, error) {
 			}
 		}
 
-		cctx, cancel := context.WithTimeout(ctx, gitCommandTimeout)
+		cctx, cancel := context.WithTimeout(ctx, worktreeCommandTimeout)
 		out, err := gitexec.Command(cctx, args...).CombinedOutput()
 		cancel()
 		if err == nil {
-			return &CreateResult{
+			return &CreateWorktreeResult{
 				Path:          target,
 				Branch:        req.Branch,
 				Reused:        false,
@@ -248,7 +248,7 @@ func Create(ctx context.Context, req CreateRequest) (*CreateResult, error) {
 	return nil, addErr
 }
 
-// Remove runs `git worktree remove [--force] <path>` for a worktree in
+// RemoveWorktree runs `git worktree remove [--force] <path>` for a worktree in
 // repoRoot. git itself enforces the important guards — it refuses the
 // main checkout and refuses a dirty tree unless --force is given — so we
 // just classify those two failures into typed errors:
@@ -256,7 +256,7 @@ func Create(ctx context.Context, req CreateRequest) (*CreateResult, error) {
 //   - ErrMainWorktree when path is the primary worktree.
 //   - ErrWorktreeDirty when path has uncommitted/untracked changes and
 //     force is false (the caller can retry with force=true).
-func Remove(ctx context.Context, repoRoot, path string, force bool) error {
+func RemoveWorktree(ctx context.Context, repoRoot, path string, force bool) error {
 	if repoRoot == "" || path == "" {
 		return fmt.Errorf("worktree: repoRoot and path are required")
 	}
@@ -266,7 +266,7 @@ func Remove(ctx context.Context, repoRoot, path string, force bool) error {
 	}
 	args = append(args, path)
 
-	cctx, cancel := context.WithTimeout(ctx, gitCommandTimeout)
+	cctx, cancel := context.WithTimeout(ctx, worktreeCommandTimeout)
 	defer cancel()
 	out, err := gitexec.Command(cctx, args...).CombinedOutput()
 	if err == nil {
@@ -295,7 +295,7 @@ func classifyRemoveError(err error, output string) error {
 // are coerced to false — callers treat "unknown" the same as "no" and
 // let `git worktree add` produce the authoritative error if any.
 func branchExists(ctx context.Context, repoRoot, branch string) bool {
-	cctx, cancel := context.WithTimeout(ctx, gitCommandTimeout)
+	cctx, cancel := context.WithTimeout(ctx, worktreeCommandTimeout)
 	defer cancel()
 	return gitexec.Command(cctx, "-C", repoRoot,
 		"show-ref", "--verify", "--quiet", "refs/heads/"+branch).Run() == nil
@@ -350,7 +350,7 @@ func ResolveBaseRef(ctx context.Context, repoRoot string) string {
 // runGitOutput is a small helper around exec.CommandContext that
 // returns trimmed stdout on success and an empty string on any error.
 func runGitOutput(ctx context.Context, repoRoot string, args ...string) string {
-	cctx, cancel := context.WithTimeout(ctx, gitCommandTimeout)
+	cctx, cancel := context.WithTimeout(ctx, worktreeCommandTimeout)
 	defer cancel()
 	out, err := gitexec.Output(cctx, repoRoot, args...)
 	if err != nil {

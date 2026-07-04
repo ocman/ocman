@@ -175,7 +175,7 @@ func (s *Server) SessionService() *sessionsvc.Service { return s.sessions }
 
 // newLocalHost builds the in-process hostsvc.Host, wiring the tmux,
 // projects, and capability operations that live in this package into the
-// dependency-injected local Host (which owns the gitinfo/worktree call
+// dependency-injected local Host (which owns the the git package call
 // sites directly). See internal/hostsvc/local.
 func (s *Server) newLocalHost() hostsvc.Host {
 	return hostlocal.New(hostlocal.Deps{

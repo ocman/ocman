@@ -1,7 +1,8 @@
-// Package gitinfo provides a cached, read-only view of the current
-// git status for a working directory. It is used by the session list
-// to surface the branch + a tiny change summary next to each session's
-// project path.
+// Package git provides ocman's git integration: a cached, read-only
+// view of the current git status for a working directory (used by the
+// session list to surface the branch + a tiny change summary next to
+// each session's project path), diffs, branch operations, and the
+// `git worktree` management needed to launch isolated agent sessions.
 //
 // Implementation: shells out to `git status --porcelain=v2 --branch`
 // once per directory, caches the parsed result in-memory with a short
@@ -12,7 +13,7 @@
 // The cache is keyed per absolute directory path. Negative results
 // (not a git repo, or git unavailable) are cached too so repeated
 // lookups don't keep spawning `git`.
-package gitinfo
+package git
 
 import (
 	"context"

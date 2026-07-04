@@ -8,7 +8,7 @@ import (
 // projectRootForDirectory folds a session's directory back to the repo
 // root that represents its "project" for grouping/archive purposes. It
 // mirrors the frontend helper of the same name (frontend/src/lib/
-// worktrees.ts) and internal/worktree.PathFor:
+// worktrees.ts) and internal/git.WorktreePathFor:
 //
 //	<prefix>/.worktrees/<repo>/<slug>...  ->  <prefix>/<repo>
 //

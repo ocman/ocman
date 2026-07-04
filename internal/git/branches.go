@@ -1,4 +1,4 @@
-package gitinfo
+package git
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 // branches because the working tree has changes that would be
 // overwritten. Handlers map this to HTTP 409 so the UI can surface a
 // "commit or stash first" hint rather than a generic failure.
-var ErrDirtyCheckout = errors.New("gitinfo: checkout would overwrite local changes")
+var ErrDirtyCheckout = errors.New("git: checkout would overwrite local changes")
 
 // branchCommandTimeout bounds the branch-list / checkout invocations.
 // Checkout can touch many files, so it gets more headroom than a
@@ -61,7 +61,7 @@ func ListBranches(ctx context.Context, dir string) ([]string, error) {
 // Checkout switches the working tree in dir to branch. It refuses to
 // operate on a dirty tree (git's own guard), surfacing ErrDirtyCheckout
 // so the caller can distinguish that recoverable case from a real
-// failure. The gitinfo cache entry for dir is invalidated so the next
+// failure. The Lookup cache entry for dir is invalidated so the next
 // Lookup reflects the new branch immediately.
 func Checkout(ctx context.Context, dir, branch string) error {
 	cctx, cancel := context.WithTimeout(ctx, branchCommandTimeout)

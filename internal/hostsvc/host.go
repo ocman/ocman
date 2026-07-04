@@ -9,7 +9,7 @@
 // processes, git working tree, or agent runtime is expressed as a method
 // on an owner-resolved Host, never as a direct call to a package-level
 // local helper from an HTTP handler. The local Host (internal/hostsvc/
-// local) is the only place that imports gitinfo/worktree/tmux/whisper;
+// local) is the only place that imports the git package/tmux/whisper;
 // a gRPC-backed Host (internal/remote) proxies the same methods to the
 // owning remote, which executes its own local Host.
 //
@@ -20,8 +20,7 @@ import (
 	"context"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/gitinfo"
-	"github.com/NoUseFreak/ocman/internal/worktree"
+	"github.com/NoUseFreak/ocman/internal/git"
 )
 
 // HostCaps reports which directory-scoped capabilities a host supports.
@@ -134,8 +133,8 @@ type TmuxSession struct {
 // the owner via Router and delegate.
 //
 // All methods take an absolute directory on the owning host. Errors are
-// returned verbatim; handlers translate sentinel errors (gitinfo.ErrNotRepo,
-// worktree.ErrNotARepo, ...) into HTTP status codes as before.
+// returned verbatim; handlers translate sentinel errors (git.ErrNotRepo,
+// git.ErrNotARepo, ...) into HTTP status codes as before.
 type Host interface {
 	// RemoteID returns "local" for the in-process host, else the
 	// remote's instance ID. Display/routing only.
@@ -145,22 +144,22 @@ type Host interface {
 	Capabilities() HostCaps
 
 	// GitInfo returns per-directory git status for each dir.
-	GitInfo(ctx context.Context, dirs []string) (map[string]gitinfo.Info, error)
+	GitInfo(ctx context.Context, dirs []string) (map[string]git.Info, error)
 
 	// GitDiff returns the working-tree diff for dir.
-	GitDiff(ctx context.Context, dir string, opts GitDiffOptions) (*gitinfo.Diff, error)
+	GitDiff(ctx context.Context, dir string, opts GitDiffOptions) (*git.Diff, error)
 
 	// GitBranches returns the local branch names for the repo
 	// containing dir, current branch first.
 	GitBranches(ctx context.Context, dir string) ([]string, error)
 
 	// GitCheckout switches the working tree in dir to branch. Returns
-	// gitinfo.ErrDirtyCheckout when git refuses due to local changes.
+	// git.ErrDirtyCheckout when git refuses due to local changes.
 	GitCheckout(ctx context.Context, dir, branch string) error
 
 	// ListWorktrees returns parsed `git worktree list` for the repo
 	// containing dir.
-	ListWorktrees(ctx context.Context, dir string) ([]worktree.Entry, error)
+	ListWorktrees(ctx context.Context, dir string) ([]git.Worktree, error)
 
 	// WorktreeDefaultBaseRef returns the resolver's best-guess base ref
 	// for new worktrees in the repo containing dir.

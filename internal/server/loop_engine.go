@@ -8,11 +8,11 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/loops"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/worktree"
 )
 
 const (
@@ -218,16 +218,16 @@ func (l *loopLauncher) Spawn(ctx context.Context, req loops.SpawnRequest) (strin
 	if !req.Worktree {
 		return launcher.Launch(ctx, lr)
 	}
-	repoRoot, err := worktree.ResolveRepoRoot(ctx, req.Directory) // ocman:allow-host-helper
+	repoRoot, err := git.ResolveRepoRoot(ctx, req.Directory) // ocman:allow-host-helper
 	if err != nil {
 		return "", fmt.Errorf("resolving repo root: %w", err)
 	}
 	branch := fmt.Sprintf("ocman/loop-%s-%d", shortID(req.LoopID), time.Now().Unix())
-	childID, _, err := launcher.LaunchWithWorktree(ctx, lr, worktree.CreateRequest{
+	childID, _, err := launcher.LaunchWithWorktree(ctx, lr, git.CreateWorktreeRequest{
 		RepoRoot:  repoRoot,
 		Branch:    branch,
 		NewBranch: true,
-		BaseRef:   worktree.ResolveBaseRef(ctx, repoRoot), // ocman:allow-host-helper
+		BaseRef:   git.ResolveBaseRef(ctx, repoRoot), // ocman:allow-host-helper
 	})
 	return childID, err
 }

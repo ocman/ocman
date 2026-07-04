@@ -14,12 +14,11 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/gitinfo"
+	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
-	"github.com/NoUseFreak/ocman/internal/worktree"
 )
 
 // --- fakes ---
@@ -133,17 +132,17 @@ func (localStubHost) RemoteID() string { return "local" }
 func (localStubHost) Capabilities() hostsvc.HostCaps {
 	return hostsvc.HostCaps{GitDiff: true, Worktrees: true, Tmux: true, Projects: true, Whisper: true}
 }
-func (localStubHost) GitInfo(context.Context, []string) (map[string]gitinfo.Info, error) {
-	return map[string]gitinfo.Info{}, nil
+func (localStubHost) GitInfo(context.Context, []string) (map[string]git.Info, error) {
+	return map[string]git.Info{}, nil
 }
-func (localStubHost) GitDiff(context.Context, string, hostsvc.GitDiffOptions) (*gitinfo.Diff, error) {
-	return &gitinfo.Diff{}, nil
+func (localStubHost) GitDiff(context.Context, string, hostsvc.GitDiffOptions) (*git.Diff, error) {
+	return &git.Diff{}, nil
 }
 func (localStubHost) GitBranches(context.Context, string) ([]string, error) {
 	return []string{"main"}, nil
 }
 func (localStubHost) GitCheckout(context.Context, string, string) error { return nil }
-func (localStubHost) ListWorktrees(context.Context, string) ([]worktree.Entry, error) {
+func (localStubHost) ListWorktrees(context.Context, string) ([]git.Worktree, error) {
 	return nil, nil
 }
 func (localStubHost) WorktreeDefaultBaseRef(context.Context, string) (string, error) {

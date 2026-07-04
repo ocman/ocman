@@ -4,10 +4,9 @@ import (
 	"context"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/gitinfo"
+	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
-	"github.com/NoUseFreak/ocman/internal/worktree"
 )
 
 // remoteHost implements hostsvc.Host by proxying each directory-scoped
@@ -36,7 +35,7 @@ func (h *remoteHost) Capabilities() hostsvc.HostCaps {
 	return caps
 }
 
-func (h *remoteHost) GitInfo(ctx context.Context, dirs []string) (map[string]gitinfo.Info, error) {
+func (h *remoteHost) GitInfo(ctx context.Context, dirs []string) (map[string]git.Info, error) {
 	client := h.conn.Client()
 	if client == nil {
 		return nil, ErrRemoteOffline
@@ -49,11 +48,11 @@ func (h *remoteHost) GitInfo(ctx context.Context, dirs []string) (map[string]git
 	if err != nil {
 		return nil, err
 	}
-	var out map[string]gitinfo.Info
+	var out map[string]git.Info
 	return out, unmarshalJSON(resp.Payload, &out)
 }
 
-func (h *remoteHost) GitDiff(ctx context.Context, dir string, opts hostsvc.GitDiffOptions) (*gitinfo.Diff, error) {
+func (h *remoteHost) GitDiff(ctx context.Context, dir string, opts hostsvc.GitDiffOptions) (*git.Diff, error) {
 	client := h.conn.Client()
 	if client == nil {
 		return nil, ErrRemoteOffline
@@ -63,7 +62,7 @@ func (h *remoteHost) GitDiff(ctx context.Context, dir string, opts hostsvc.GitDi
 	if err != nil {
 		return nil, err
 	}
-	var out gitinfo.Diff
+	var out git.Diff
 	return &out, unmarshalJSON(resp.Payload, &out)
 }
 
@@ -91,7 +90,7 @@ func (h *remoteHost) GitCheckout(ctx context.Context, dir, branch string) error 
 	return err
 }
 
-func (h *remoteHost) ListWorktrees(ctx context.Context, dir string) ([]worktree.Entry, error) {
+func (h *remoteHost) ListWorktrees(ctx context.Context, dir string) ([]git.Worktree, error) {
 	client := h.conn.Client()
 	if client == nil {
 		return nil, ErrRemoteOffline
@@ -101,7 +100,7 @@ func (h *remoteHost) ListWorktrees(ctx context.Context, dir string) ([]worktree.
 	if err != nil {
 		return nil, err
 	}
-	var out []worktree.Entry
+	var out []git.Worktree
 	return out, unmarshalJSON(resp.Payload, &out)
 }
 

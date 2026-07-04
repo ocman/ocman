@@ -8,10 +8,10 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/tmux"
-	"github.com/NoUseFreak/ocman/internal/worktree"
 )
 
 // worktreeSessionsAvailable reports whether all preconditions for the
@@ -46,7 +46,7 @@ func worktreeSessionsAvailable(reg *platforms.Registry) bool {
 // --porcelain` output for the repo containing dir.
 //
 // Query parameters:
-//   - `dir` (required): absolute path inside a git worktree.
+//   - `dir` (required): absolute path inside a git git.
 //
 // Response 200:
 //
@@ -65,7 +65,7 @@ func (s *Server) handleWorktreeList(w http.ResponseWriter, r *http.Request) {
 
 	entries, err := s.router().ForDir(dir).ListWorktrees(r.Context(), dir)
 	if err != nil {
-		if errors.Is(err, worktree.ErrNotARepo) {
+		if errors.Is(err, git.ErrNotARepo) {
 			http.Error(w, "directory is not a git repository", http.StatusNotFound)
 			return
 		}
@@ -88,7 +88,7 @@ func (s *Server) handleWorktreeDefaultBaseRef(w http.ResponseWriter, r *http.Req
 
 	baseRef, err := s.router().ForDir(dir).WorktreeDefaultBaseRef(r.Context(), dir)
 	if err != nil {
-		if errors.Is(err, worktree.ErrNotARepo) {
+		if errors.Is(err, git.ErrNotARepo) {
 			http.Error(w, "directory is not a git repository", http.StatusNotFound)
 			return
 		}
@@ -152,10 +152,10 @@ func (s *Server) handleWorktreeRemove(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		switch {
-		case errors.Is(err, worktree.ErrNotARepo):
+		case errors.Is(err, git.ErrNotARepo):
 			http.Error(w, "projectDir is not a git repository", http.StatusNotFound)
-		case errors.Is(err, worktree.ErrMainWorktree),
-			errors.Is(err, worktree.ErrWorktreeDirty):
+		case errors.Is(err, git.ErrMainWorktree),
+			errors.Is(err, git.ErrWorktreeDirty):
 			http.Error(w, err.Error(), http.StatusConflict)
 		default:
 			log.WithError(err).Warn("worktree: remove")
@@ -243,10 +243,10 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 	})
 	if err != nil {
 		switch {
-		case errors.Is(err, worktree.ErrNotARepo):
+		case errors.Is(err, git.ErrNotARepo):
 			http.Error(w, "projectDir is not a git repository", http.StatusNotFound)
-		case errors.Is(err, worktree.ErrBranchCheckedOutElsewhere),
-			errors.Is(err, worktree.ErrPathConflict):
+		case errors.Is(err, git.ErrBranchCheckedOutElsewhere),
+			errors.Is(err, git.ErrPathConflict):
 			http.Error(w, err.Error(), http.StatusConflict)
 		default:
 			log.WithError(err).Warn("worktree: create and launch")

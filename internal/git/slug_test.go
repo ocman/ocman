@@ -1,4 +1,4 @@
-package worktree
+package git
 
 import (
 	"strings"

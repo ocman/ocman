@@ -372,7 +372,7 @@ func (s *Server) GitCheckout(ctx context.Context, req *pb.JsonReq) (*pb.Empty, e
 	if err := unmarshalJSON(req.Payload, &args); err != nil {
 		return nil, err
 	}
-	// ponytail: gitinfo.ErrDirtyCheckout does not survive gRPC as a typed
+	// ponytail: git.ErrDirtyCheckout does not survive gRPC as a typed
 	// sentinel; the message string is preserved and the HTTP handler
 	// re-matches it. Upgrade to a status code detail if callers need it.
 	return &pb.Empty{}, s.host.GitCheckout(ctx, args.Dir, args.Branch)

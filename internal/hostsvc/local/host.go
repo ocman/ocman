@@ -1,11 +1,11 @@
 // Package local implements hostsvc.Host for the in-process machine. It
 // is the ONLY package outside internal/server's own helpers that imports
-// gitinfo and worktree; tmux launch, tmux listing, projects and whisper
+// the git package; tmux launch, tmux listing, projects and whisper
 // live in the server package and are injected as function dependencies
 // to avoid an import cycle (server imports hostsvc/local, which would
 // otherwise import server).
 //
-// No logic moves out of gitinfo/worktree/server here — the local Host is
+// No logic moves out of the git/server packages here — the local Host is
 // a thin wrapper that owns the call site so handlers stop calling those
 // helpers directly (AD-16, R-A).
 package local
@@ -15,9 +15,8 @@ import (
 	"strings"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/gitinfo"
+	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/worktree"
 )
 
 // Deps carries the host operations that live in the server package
@@ -68,44 +67,44 @@ func (h *Host) Capabilities() hostsvc.HostCaps {
 	return hostsvc.HostCaps{}
 }
 
-func (h *Host) GitInfo(ctx context.Context, dirs []string) (map[string]gitinfo.Info, error) {
-	return gitinfo.LookupMany(ctx, dirs), nil
+func (h *Host) GitInfo(ctx context.Context, dirs []string) (map[string]git.Info, error) {
+	return git.LookupMany(ctx, dirs), nil
 }
 
-func (h *Host) GitDiff(ctx context.Context, dir string, opts hostsvc.GitDiffOptions) (*gitinfo.Diff, error) {
-	return gitinfo.GetDiff(ctx, dir, gitinfo.DiffOptions{Force: opts.Force})
+func (h *Host) GitDiff(ctx context.Context, dir string, opts hostsvc.GitDiffOptions) (*git.Diff, error) {
+	return git.GetDiff(ctx, dir, git.DiffOptions{Force: opts.Force})
 }
 
 func (h *Host) GitBranches(ctx context.Context, dir string) ([]string, error) {
-	return gitinfo.ListBranches(ctx, dir)
+	return git.ListBranches(ctx, dir)
 }
 
 func (h *Host) GitCheckout(ctx context.Context, dir, branch string) error {
-	return gitinfo.Checkout(ctx, dir, branch)
+	return git.Checkout(ctx, dir, branch)
 }
 
-func (h *Host) ListWorktrees(ctx context.Context, dir string) ([]worktree.Entry, error) {
-	repoRoot, err := worktree.ResolveRepoRoot(ctx, dir)
+func (h *Host) ListWorktrees(ctx context.Context, dir string) ([]git.Worktree, error) {
+	repoRoot, err := git.ResolveRepoRoot(ctx, dir)
 	if err != nil {
 		return nil, err
 	}
-	return worktree.List(ctx, repoRoot)
+	return git.ListWorktrees(ctx, repoRoot)
 }
 
 func (h *Host) WorktreeDefaultBaseRef(ctx context.Context, dir string) (string, error) {
-	repoRoot, err := worktree.ResolveRepoRoot(ctx, dir)
+	repoRoot, err := git.ResolveRepoRoot(ctx, dir)
 	if err != nil {
 		return "", err
 	}
-	return worktree.ResolveBaseRef(ctx, repoRoot), nil
+	return git.ResolveBaseRef(ctx, repoRoot), nil
 }
 
 func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSessionRequest) (*hostsvc.WorktreeSessionResult, error) {
-	repoRoot, err := worktree.ResolveRepoRoot(ctx, req.ProjectDir)
+	repoRoot, err := git.ResolveRepoRoot(ctx, req.ProjectDir)
 	if err != nil {
 		return nil, err
 	}
-	res, err := worktree.Create(ctx, worktree.CreateRequest{
+	res, err := git.CreateWorktree(ctx, git.CreateWorktreeRequest{
 		RepoRoot:  repoRoot,
 		Branch:    req.Branch,
 		NewBranch: req.NewBranch,
@@ -134,11 +133,11 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 }
 
 func (h *Host) RemoveWorktree(ctx context.Context, req hostsvc.RemoveWorktreeRequest) error {
-	repoRoot, err := worktree.ResolveRepoRoot(ctx, req.Dir)
+	repoRoot, err := git.ResolveRepoRoot(ctx, req.Dir)
 	if err != nil {
 		return err
 	}
-	return worktree.Remove(ctx, repoRoot, req.Path, req.Force)
+	return git.RemoveWorktree(ctx, repoRoot, req.Path, req.Force)
 }
 
 func (h *Host) LaunchTmux(ctx context.Context, req hostsvc.LaunchTmuxRequest) (*hostsvc.LaunchTmuxResult, error) {

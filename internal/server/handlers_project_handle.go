@@ -12,11 +12,11 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/forge"
+	"github.com/NoUseFreak/ocman/internal/git"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/tmux"
-	"github.com/NoUseFreak/ocman/internal/worktree"
 )
 
 // handleProjectRequest is the JSON request body for POST /api/project/handle.
@@ -60,7 +60,7 @@ func (s *Server) handleProjectHandle(w http.ResponseWriter, r *http.Request) {
 	// Resolve project remotes once so we can look up the target.
 	repoRoot, remotes, err := s.detectUpstreams(r.Context(), req.Dir)
 	if err != nil {
-		if errors.Is(err, worktree.ErrNotARepo) {
+		if errors.Is(err, git.ErrNotARepo) {
 			http.Error(w, "dir is not a git repository", http.StatusNotFound)
 			return
 		}
@@ -152,7 +152,7 @@ func (s *Server) handleProjectHandleWorktree(
 		// "issue/<n>-<slug-of-title>" if we have a title.
 		branch = issueBranchName(req.Number, vars["title"])
 		newBranch = true
-		baseRef = worktree.ResolveBaseRef(r.Context(), repoRoot)
+		baseRef = git.ResolveBaseRef(r.Context(), repoRoot)
 
 	case "pr":
 		// Decide same-repo vs cross-fork. The PR row carries the
@@ -205,7 +205,7 @@ func (s *Server) handleProjectHandleWorktree(
 			Intent:         req.intentOrDefault(),
 			ComposedPrompt: prompt,
 		},
-		worktree.CreateRequest{
+		git.CreateWorktreeRequest{
 			RepoRoot:  repoRoot,
 			Branch:    branch,
 			NewBranch: newBranch,
@@ -408,7 +408,7 @@ func (s *Server) newSessionLauncher() *internalmcp.SessionLauncher {
 	return internalmcp.NewSessionLauncher(
 		s.stateDB,
 		s.sessions.Client("opencode"),
-		worktree.Create,
+		git.CreateWorktree,
 		internalmcp.TmuxLauncher(tmux.LaunchWorktreeWindow),
 		internalmcp.PortDiscoverer(opencode.DiscoverOpenCodePortFresh),
 	)

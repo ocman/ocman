@@ -1,4 +1,4 @@
-package gitinfo
+package git
 
 import (
 	"context"
@@ -29,7 +29,7 @@ type Diff struct {
 	// branch (shouldn't happen post-init).
 	Branch string `json:"branch"`
 	// Ahead/Behind track the configured upstream, like
-	// gitinfo.Info. Zero when no upstream is set.
+	// Info. Zero when no upstream is set.
 	Ahead  int `json:"ahead"`
 	Behind int `json:"behind"`
 	// Files lists every changed file (modified / added / deleted /
@@ -49,8 +49,8 @@ type Diff struct {
 // always empty and IsBinary=true.
 type DiffFile struct {
 	Path      string `json:"path"`
-	Status    string `json:"status"`               // modified|added|deleted|renamed|untracked
-	OldPath   string `json:"oldPath,omitempty"`    // present for renames
+	Status    string `json:"status"`            // modified|added|deleted|renamed|untracked
+	OldPath   string `json:"oldPath,omitempty"` // present for renames
 	Additions int    `json:"additions"`
 	Deletions int    `json:"deletions"`
 	Diff      string `json:"diff"`
@@ -75,7 +75,7 @@ const (
 )
 
 // gitDiffTimeout bounds each `git diff` call. Larger than the
-// `git status` budget in gitinfo.go because diffs are heavier.
+// `git status` budget in info.go because diffs are heavier.
 const gitDiffTimeout = 4 * time.Second
 
 // truncationMarker is appended to per-file diffs that exceeded
@@ -89,7 +89,7 @@ const truncationMarker = "\n... (file diff truncated)\n"
 // tabs, race between an SSE event and a manual refresh).
 const diffCacheTTL = 1 * time.Second
 
-// diffCache is a separate cache from the gitinfo Lookup cache: it
+// diffCache is a separate cache from the Lookup cache: it
 // stores Diff values, has a much shorter TTL, and accepts a Force
 // override. Reusing the existing cache type would mean cross-
 // pollinating two unrelated lifetimes.
@@ -101,7 +101,7 @@ func (d *diffCache) get(ctx context.Context, dir string, force bool) (*Diff, err
 	if force {
 		return runDiff(ctx, dir)
 	}
-	// Re-use the gitinfo cache shape: stash the *Diff in a
+	// Re-use the Lookup cache shape: stash the *Diff in a
 	// type-asserted holder via a per-call closure. Cheap.
 	cached := d.lookupCached(dir)
 	if cached != nil {
@@ -157,10 +157,10 @@ var defaultDiffCache = &diffCache{}
 // DiffOptions{Force: true} to bypass the cache.
 func GetDiff(ctx context.Context, dir string, opts DiffOptions) (*Diff, error) {
 	if !filepath.IsAbs(dir) {
-		return nil, fmt.Errorf("gitinfo: dir must be absolute: %q", dir)
+		return nil, fmt.Errorf("git: dir must be absolute: %q", dir)
 	}
 	if _, err := os.Stat(dir); err != nil {
-		return nil, fmt.Errorf("gitinfo: dir not accessible: %w", err)
+		return nil, fmt.Errorf("git: dir not accessible: %w", err)
 	}
 	return defaultDiffCache.get(ctx, dir, opts.Force)
 }
@@ -169,7 +169,7 @@ func GetDiff(ctx context.Context, dir string, opts DiffOptions) (*Diff, error) {
 // that isn't inside a git worktree. Handlers translate this into
 // HTTP 404. Distinct from a generic error so the handler can decide
 // the right status code.
-var ErrNotRepo = fmt.Errorf("gitinfo: not a git worktree")
+var ErrNotRepo = fmt.Errorf("git: not a git worktree")
 
 // runDiff is the unmemoised core. Exposed for tests (test passes a
 // fixture directory).

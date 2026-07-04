@@ -12,7 +12,7 @@ import (
 
 // host.go wires the server-package host operations (tmux, projects,
 // capabilities) into the local hostsvc.Host. These are the dependency
-// shims the local Host calls; the gitinfo/worktree call sites live in
+// shims the local Host calls; the the git package call sites live in
 // internal/hostsvc/local directly. See AD-16.
 
 // router returns the host router, lazily building a local-only one when

@@ -1,4 +1,4 @@
-package gitinfo
+package git
 
 import (
 	"context"

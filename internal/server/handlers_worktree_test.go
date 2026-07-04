@@ -54,8 +54,8 @@ func TestCapabilities_WorktreeSessions_FalseWithoutOpenCode(t *testing.T) {
 }
 
 // initWorktreeTestRepo seeds a fresh git repo in a temp dir with one
-// commit on `main`. Mirrors the helper in internal/worktree/ but lives
-// here so handler tests don't depend on internal/worktree's package
+// commit on `main`. Mirrors the helper in internal/git/ but lives
+// here so handler tests don't depend on internal/git's package
 // internals.
 //
 // The repo is nested one level inside the temp dir (as "repo/") so
