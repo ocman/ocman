@@ -61,7 +61,7 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 				WHERE session_id = s.id ORDER BY time_created DESC LIMIT 1
 			) AS last_error_name,
 			(
-				SELECT json_extract(data, '$.error.data.message') FROM message
+				SELECT COALESCE(json_extract(data, '$.error.data.message'), json_extract(data, '$.error.message')) FROM message
 				WHERE session_id = s.id ORDER BY time_created DESC LIMIT 1
 			) AS last_error_message,
 			(

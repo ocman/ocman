@@ -293,8 +293,9 @@ func applySessionDetailMetadataFromMessages(session *db.Session, messages []db.M
 		Role   string `json:"role"`
 		Finish string `json:"finish"`
 		Error  *struct {
-			Name string `json:"name"`
-			Data *struct {
+			Name    string `json:"name"`
+			Message string `json:"message"`
+			Data    *struct {
 				Message string `json:"message"`
 			} `json:"data"`
 		} `json:"error"`
@@ -308,6 +309,8 @@ func applySessionDetailMetadataFromMessages(session *db.Session, messages []db.M
 		session.LastErrorName = data.Error.Name
 		if data.Error.Data != nil {
 			session.LastErrorMessage = data.Error.Data.Message
+		} else {
+			session.LastErrorMessage = data.Error.Message
 		}
 		session.LastErrorAt = last.TimeCreated
 	}
