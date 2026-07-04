@@ -7,6 +7,7 @@ import { useApiStore } from '../lib/apiStore';
 import { useUiStore } from '../lib/uiStore';
 import { useWorktreeSessions } from '../lib/useCapabilities';
 import { createSessionWithLaunch } from '../lib/createSessionWithLaunch';
+import { resolveTargetForDir } from '../lib/machinePicker';
 
 // Submit progress states surfaced to the user. The modal stays open
 // across all of them so submit feels like a single waiting step rather
@@ -221,6 +222,12 @@ function WorktreeForm({ initialProject, initialBranch, close }: WorktreeFormProp
     // instance binds its port and the lsof scan picks it up.
     setStage('awaiting-opencode');
     try {
+      // Resolve which host/platform owns this worktree so createSession
+      // is unambiguous when multiple platforms are registered (e.g. a
+      // hub with connected remotes). The worktree lives on the same
+      // host as its project, so resolve on the project dir. Falls back
+      // to the default ('') on single-host installs.
+      const target = await resolveTargetForDir(projectDir);
       const created = await createSessionWithLaunch(
         {
           createSession,
@@ -229,7 +236,14 @@ function WorktreeForm({ initialProject, initialBranch, close }: WorktreeFormProp
         },
         // reportProgress=false: this modal renders its own stage
         // label, so suppress the global launch-progress overlay.
-        { directory: resp.worktreePath, title: branch.trim(), alreadyLaunched: true, reportProgress: false },
+        {
+          directory: resp.worktreePath,
+          title: branch.trim(),
+          alreadyLaunched: true,
+          reportProgress: false,
+          platform: target?.platform || undefined,
+          remoteId: target?.remoteId,
+        },
       );
       setStage('idle');
       close();
