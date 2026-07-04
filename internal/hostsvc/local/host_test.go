@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/gitexec"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 )
 
@@ -17,7 +18,10 @@ func initRepo(t *testing.T) string {
 	run := func(args ...string) {
 		cmd := exec.Command("git", args...)
 		cmd.Dir = dir
-		cmd.Env = append(os.Environ(),
+		// gitexec.CleanEnv strips GIT_DIR / GIT_INDEX_FILE etc. so this
+		// helper can't touch the real repo when tests run under a git
+		// hook inside a linked worktree.
+		cmd.Env = append(gitexec.CleanEnv(),
 			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@e",
 			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@e")
 		if out, err := cmd.CombinedOutput(); err != nil {
