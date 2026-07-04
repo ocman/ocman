@@ -26,6 +26,8 @@ import (
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
+	"github.com/NoUseFreak/ocman/internal/term"
+	"github.com/NoUseFreak/ocman/internal/tmux"
 )
 
 //go:embed static/*
@@ -243,15 +245,15 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 // sites directly). See internal/hostsvc/local.
 func (s *Server) newLocalHost() hostsvc.Host {
 	return hostlocal.New(hostlocal.Deps{
-		LaunchTmux:         launchOpencodeInTmux,
-		LaunchWorktreeTmux: launchOpencodeInProjectTmuxWindow,
+		LaunchTmux:         tmux.LaunchOpencode,
+		LaunchWorktreeTmux: tmux.LaunchWorktreeWindow,
 		TmuxSessions:       s.hostTmuxSessions,
 		Projects:           s.hostProjects,
 		Caps:               s.hostCaps,
-		TermWindows:        localTermWindows,
-		TermCreateWindow:   createTermWindow,
-		TermKillWindow:     localTermKillWindow,
-		TermAttach:         attachLocalPTY,
+		TermWindows:        term.Windows,
+		TermCreateWindow:   term.CreateWindow,
+		TermKillWindow:     term.KillWindow,
+		TermAttach:         term.AttachLocalPTY,
 	})
 }
 
@@ -529,7 +531,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// earlier process (e.g. after an air rebuild / crash). They can
 	// never belong to a live connection at boot, so this self-heals the
 	// old per-viewer session leak. Cheap and safe when tmux is absent.
-	sweepLegacyTermSessions()
+	term.SweepLegacySessions()
 
 	// Start the server in a goroutine so we can wait for the context.
 	errCh := make(chan error, 1)

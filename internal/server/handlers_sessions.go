@@ -23,6 +23,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/srvtiming"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
+	"github.com/NoUseFreak/ocman/internal/tmux"
 )
 
 const maxComposerAttachmentBytes = 100 << 20
@@ -763,7 +764,7 @@ func (s *Server) handleSessionRestartOpencode(w http.ResponseWriter, r *http.Req
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	if !isTmuxAvailable() {
+	if !tmux.IsAvailable() {
 		http.Error(w, "tmux is not available", http.StatusServiceUnavailable)
 		return
 	}
@@ -777,9 +778,9 @@ func (s *Server) handleSessionRestartOpencode(w http.ResponseWriter, r *http.Req
 			http.Error(w, "session not found", http.StatusNotFound)
 			return
 		}
-		target, err := restartOpencodeInTmux(detail.Session.Directory)
+		target, err := tmux.RestartOpencode(detail.Session.Directory)
 		if err != nil {
-			if errors.Is(err, errNoManagedOpencodePane) {
+			if errors.Is(err, tmux.ErrNoManagedOpencodePane) {
 				http.Error(w, "no tmux-managed OpenCode pane found for this session", http.StatusConflict)
 				return
 			}

@@ -28,12 +28,12 @@ func TestRouteTemplate(t *testing.T) {
 
 func TestOtelSpanFilter(t *testing.T) {
 	cases := map[string]bool{
-		"/api/stats":                  true,
-		"/api/session/abc/info":       true,
-		"/api/session/abc/events":     false, // SSE skipped
-		"/":                           false, // static skipped
-		"/index.html":                 false,
-		"/assets/x.js":                false,
+		"/api/stats":              true,
+		"/api/session/abc/info":   true,
+		"/api/session/abc/events": false, // SSE skipped
+		"/":                       false, // static skipped
+		"/index.html":             false,
+		"/assets/x.js":            false,
 	}
 	for path, want := range cases {
 		req := httptest.NewRequest(http.MethodGet, path, nil)

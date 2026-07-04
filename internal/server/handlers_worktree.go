@@ -10,6 +10,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/tmux"
 	"github.com/NoUseFreak/ocman/internal/worktree"
 )
 
@@ -24,7 +25,7 @@ import (
 // Surfaced via /api/capabilities as a top-level boolean. The frontend
 // uses it to gate UI affordances without branching on platform identity.
 func worktreeSessionsAvailable(reg *platforms.Registry) bool {
-	if !isTmuxAvailable() {
+	if !tmux.IsAvailable() {
 		return false
 	}
 	if _, err := exec.LookPath("git"); err != nil {
@@ -192,7 +193,7 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 	// validates its own tooling on its side.
 	local := req.RemoteID == "" || req.RemoteID == "local"
 	if local {
-		if !isTmuxAvailable() {
+		if !tmux.IsAvailable() {
 			http.Error(w, "tmux is not available", http.StatusServiceUnavailable)
 			return
 		}

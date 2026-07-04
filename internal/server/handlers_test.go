@@ -439,5 +439,3 @@ func TestSystemStats_IncludesDBPoolWhenDBPresent(t *testing.T) {
 		t.Errorf("max_open_conns = %v, want 4 (matches db.maxOpenReadConns)", dbBlock["max_open_conns"])
 	}
 }
-
-

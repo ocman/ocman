@@ -17,14 +17,14 @@ import (
 // These are synchronous counters and histograms incremented by the
 // scanner loop each time new assistant messages appear in the DB.
 type llmMetrics struct {
-	requests       metric.Int64Counter
-	tokensInput    metric.Int64Counter
-	tokensOutput   metric.Int64Counter
-	cacheRead      metric.Int64Counter
-	cacheWrite     metric.Int64Counter
-	cost           metric.Float64Counter
-	calcCost       metric.Float64Counter
-	duration       metric.Float64Histogram
+	requests     metric.Int64Counter
+	tokensInput  metric.Int64Counter
+	tokensOutput metric.Int64Counter
+	cacheRead    metric.Int64Counter
+	cacheWrite   metric.Int64Counter
+	cost         metric.Float64Counter
+	calcCost     metric.Float64Counter
+	duration     metric.Float64Histogram
 }
 
 // newLLMMetrics creates the OTel instruments. Returns nil error when

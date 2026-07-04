@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/term"
 	"github.com/NoUseFreak/ocman/internal/hostsvc/local"
 )
 
@@ -83,7 +84,7 @@ func TestHandleTermWindowsRoutesToRemoteHost(t *testing.T) {
 
 	// DELETE (kill) routes to the remote; the window must be well-formed
 	// for the dir (validated on the hub before delegating).
-	win := termWindowPrefix("/remote/repo") + "1"
+	win := term.WindowPrefix("/remote/repo") + "1"
 	killReq := httptest.NewRequest(http.MethodDelete, "/api/term/windows",
 		bytes.NewBufferString(`{"dir":"/remote/repo","window":"`+win+`","remoteId":"abc"}`))
 	killRec := httptest.NewRecorder()

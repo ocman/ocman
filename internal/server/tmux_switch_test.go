@@ -6,14 +6,16 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/NoUseFreak/ocman/internal/tmux"
 )
 
-// fakeSwitchRunner builds a tmuxSwitchRunner suitable for unit-testing
+// fakeSwitchRunner builds a tmux.SwitchRunner suitable for unit-testing
 // handleTmuxSwitchWith without requiring a real tmux binary.
 type fakeSwitchRunner struct {
-	sessions     []tmuxSession
-	windows      map[string][]tmuxWindow
-	clients      []tmuxClient
+	sessions     []tmux.Session
+	windows      map[string][]tmux.Window
+	clients      []tmux.Client
 	listSessErr  error
 	listCliErr   error
 	listWinErr   error
@@ -22,21 +24,21 @@ type fakeSwitchRunner struct {
 	switchErr    error
 }
 
-func (f *fakeSwitchRunner) toRunner() tmuxSwitchRunner {
-	return tmuxSwitchRunner{
-		listSessions: func() ([]tmuxSession, error) {
+func (f *fakeSwitchRunner) toRunner() tmux.SwitchRunner {
+	return tmux.SwitchRunner{
+		ListSessions: func() ([]tmux.Session, error) {
 			return f.sessions, f.listSessErr
 		},
-		listWindows: func(sessionName string) ([]tmuxWindow, error) {
+		ListWindows: func(sessionName string) ([]tmux.Window, error) {
 			if f.listWinErr != nil {
 				return nil, f.listWinErr
 			}
 			return f.windows[sessionName], nil
 		},
-		listClients: func() ([]tmuxClient, error) {
+		ListClients: func() ([]tmux.Client, error) {
 			return f.clients, f.listCliErr
 		},
-		switchClient: func(tty, sess string) error {
+		SwitchClient: func(tty, sess string) error {
 			f.switchedTTY = tty
 			f.switchedSess = sess
 			return f.switchErr
@@ -67,8 +69,8 @@ func TestHandleTmuxSwitch_MissingSession(t *testing.T) {
 func TestHandleTmuxSwitch_SessionNotFound(t *testing.T) {
 	srv := newSwitchTestServer()
 	fake := &fakeSwitchRunner{
-		sessions: []tmuxSession{{Name: "other", ResolvedPath: "/other"}},
-		clients:  []tmuxClient{{TTY: "/dev/pts/0", Session: "other"}},
+		sessions: []tmux.Session{{Name: "other", ResolvedPath: "/other"}},
+		clients:  []tmux.Client{{TTY: "/dev/pts/0", Session: "other"}},
 	}
 	body := strings.NewReader(`{"session":"myproject","client":"/dev/pts/0"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/tmux/switch", body)
@@ -87,8 +89,8 @@ func TestHandleTmuxSwitch_SessionNotFound(t *testing.T) {
 func TestHandleTmuxSwitch_SingleClient_NoTTYInRequest(t *testing.T) {
 	srv := newSwitchTestServer()
 	fake := &fakeSwitchRunner{
-		sessions: []tmuxSession{{Name: "myproject", ResolvedPath: "/src/myproject"}},
-		clients:  []tmuxClient{{TTY: "/dev/pts/3", Session: "myproject"}},
+		sessions: []tmux.Session{{Name: "myproject", ResolvedPath: "/src/myproject"}},
+		clients:  []tmux.Client{{TTY: "/dev/pts/3", Session: "myproject"}},
 	}
 	body := strings.NewReader(`{"session":"myproject"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/tmux/switch", body)
@@ -111,8 +113,8 @@ func TestHandleTmuxSwitch_SingleClient_NoTTYInRequest(t *testing.T) {
 func TestHandleTmuxSwitch_LinuxPTY(t *testing.T) {
 	srv := newSwitchTestServer()
 	fake := &fakeSwitchRunner{
-		sessions: []tmuxSession{{Name: "proj", ResolvedPath: "/home/user/proj"}},
-		clients:  []tmuxClient{{TTY: "/dev/pts/7", Session: "proj"}},
+		sessions: []tmux.Session{{Name: "proj", ResolvedPath: "/home/user/proj"}},
+		clients:  []tmux.Client{{TTY: "/dev/pts/7", Session: "proj"}},
 	}
 	body := strings.NewReader(`{"session":"proj","client":"/dev/pts/7"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/tmux/switch", body)
@@ -132,8 +134,8 @@ func TestHandleTmuxSwitch_LinuxPTY(t *testing.T) {
 func TestHandleTmuxSwitch_NoClientsConnected(t *testing.T) {
 	srv := newSwitchTestServer()
 	fake := &fakeSwitchRunner{
-		sessions: []tmuxSession{{Name: "myproject", ResolvedPath: "/src/myproject"}},
-		clients:  []tmuxClient{},
+		sessions: []tmux.Session{{Name: "myproject", ResolvedPath: "/src/myproject"}},
+		clients:  []tmux.Client{},
 	}
 	body := strings.NewReader(`{"session":"myproject"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/tmux/switch", body)
@@ -152,8 +154,8 @@ func TestHandleTmuxSwitch_NoClientsConnected(t *testing.T) {
 func TestHandleTmuxSwitch_MultipleClientsNoTTY(t *testing.T) {
 	srv := newSwitchTestServer()
 	fake := &fakeSwitchRunner{
-		sessions: []tmuxSession{{Name: "myproject", ResolvedPath: "/src/myproject"}},
-		clients: []tmuxClient{
+		sessions: []tmux.Session{{Name: "myproject", ResolvedPath: "/src/myproject"}},
+		clients: []tmux.Client{
 			{TTY: "/dev/ttys001", Session: "myproject"},
 			{TTY: "/dev/ttys002", Session: "other"},
 		},
@@ -173,8 +175,8 @@ func TestHandleTmuxSwitch_MultipleClientsNoTTY(t *testing.T) {
 func TestHandleTmuxSwitch_MultipleClients_ExplicitTTY(t *testing.T) {
 	srv := newSwitchTestServer()
 	fake := &fakeSwitchRunner{
-		sessions: []tmuxSession{{Name: "myproject", ResolvedPath: "/src/myproject"}},
-		clients: []tmuxClient{
+		sessions: []tmux.Session{{Name: "myproject", ResolvedPath: "/src/myproject"}},
+		clients: []tmux.Client{
 			{TTY: "/dev/ttys001", Session: "myproject"},
 			{TTY: "/dev/ttys002", Session: "other"},
 		},
@@ -194,8 +196,8 @@ func TestHandleTmuxSwitch_MultipleClients_ExplicitTTY(t *testing.T) {
 func TestHandleTmuxSwitch_ClientNotFound(t *testing.T) {
 	srv := newSwitchTestServer()
 	fake := &fakeSwitchRunner{
-		sessions: []tmuxSession{{Name: "myproject", ResolvedPath: "/src/myproject"}},
-		clients:  []tmuxClient{{TTY: "/dev/pts/0", Session: "myproject"}},
+		sessions: []tmux.Session{{Name: "myproject", ResolvedPath: "/src/myproject"}},
+		clients:  []tmux.Client{{TTY: "/dev/pts/0", Session: "myproject"}},
 	}
 	body := strings.NewReader(`{"session":"myproject","client":"/dev/pts/9"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/tmux/switch", body)
@@ -209,8 +211,8 @@ func TestHandleTmuxSwitch_ClientNotFound(t *testing.T) {
 func TestHandleTmuxSwitch_InvalidTTY(t *testing.T) {
 	srv := newSwitchTestServer()
 	fake := &fakeSwitchRunner{
-		sessions: []tmuxSession{{Name: "myproject", ResolvedPath: "/src/myproject"}},
-		clients:  []tmuxClient{{TTY: "/dev/pts/0", Session: "myproject"}},
+		sessions: []tmux.Session{{Name: "myproject", ResolvedPath: "/src/myproject"}},
+		clients:  []tmux.Client{{TTY: "/dev/pts/0", Session: "myproject"}},
 	}
 	// /dev/ttys000 is invalid on Linux; test that we reject non-matching TTY paths
 	body := strings.NewReader(`{"session":"myproject","client":"/tmp/evil"}`)
@@ -225,11 +227,11 @@ func TestHandleTmuxSwitch_InvalidTTY(t *testing.T) {
 func TestHandleTmuxSwitch_WindowTarget(t *testing.T) {
 	srv := newSwitchTestServer()
 	fake := &fakeSwitchRunner{
-		sessions: []tmuxSession{{Name: "proj", ResolvedPath: "/src/proj"}},
-		windows: map[string][]tmuxWindow{
+		sessions: []tmux.Session{{Name: "proj", ResolvedPath: "/src/proj"}},
+		windows: map[string][]tmux.Window{
 			"proj": {{Name: "wt-feature", Path: "/src/proj/.worktrees/feature"}},
 		},
-		clients: []tmuxClient{{TTY: "/dev/pts/1", Session: "proj"}},
+		clients: []tmux.Client{{TTY: "/dev/pts/1", Session: "proj"}},
 	}
 	body := strings.NewReader(`{"session":"proj:wt-feature","client":"/dev/pts/1"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/tmux/switch", body)
@@ -246,8 +248,8 @@ func TestHandleTmuxSwitch_WindowTarget(t *testing.T) {
 func TestHandleTmuxSwitch_SwitchError(t *testing.T) {
 	srv := newSwitchTestServer()
 	fake := &fakeSwitchRunner{
-		sessions:  []tmuxSession{{Name: "myproject", ResolvedPath: "/src/myproject"}},
-		clients:   []tmuxClient{{TTY: "/dev/pts/0", Session: "myproject"}},
+		sessions:  []tmux.Session{{Name: "myproject", ResolvedPath: "/src/myproject"}},
+		clients:   []tmux.Client{{TTY: "/dev/pts/0", Session: "myproject"}},
 		switchErr: errors.New("tmux: no server running"),
 	}
 	body := strings.NewReader(`{"session":"myproject","client":"/dev/pts/0"}`)
@@ -278,13 +280,13 @@ func TestValidTTYPath(t *testing.T) {
 		"/dev/pts/abc",
 	}
 	for _, v := range valid {
-		if !validTTYPath.MatchString(v) {
-			t.Errorf("validTTYPath should match %q", v)
+		if !tmux.ValidTTYPath.MatchString(v) {
+			t.Errorf("tmux.ValidTTYPath should match %q", v)
 		}
 	}
 	for _, v := range invalid {
-		if validTTYPath.MatchString(v) {
-			t.Errorf("validTTYPath should not match %q", v)
+		if tmux.ValidTTYPath.MatchString(v) {
+			t.Errorf("tmux.ValidTTYPath should not match %q", v)
 		}
 	}
 }

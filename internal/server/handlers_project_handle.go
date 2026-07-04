@@ -15,6 +15,7 @@ import (
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
+	"github.com/NoUseFreak/ocman/internal/tmux"
 	"github.com/NoUseFreak/ocman/internal/worktree"
 )
 
@@ -414,7 +415,7 @@ func (s *Server) newSessionLauncher() *internalmcp.SessionLauncher {
 		s.stateDB,
 		adapter,
 		worktree.Create,
-		internalmcp.TmuxLauncher(launchOpencodeInProjectTmuxWindow),
+		internalmcp.TmuxLauncher(tmux.LaunchWorktreeWindow),
 		internalmcp.PortDiscoverer(opencode.DiscoverOpenCodePortFresh),
 	)
 }

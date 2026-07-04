@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
+
+	"github.com/NoUseFreak/ocman/internal/tmux"
 )
 
 // newEmptyRegistryForTest returns a registry with no adapters
@@ -189,7 +191,7 @@ func TestHandleWorktreeDefaultBaseRef(t *testing.T) {
 }
 
 func TestHandleWorktreeCreateAndLaunch_BadInputs(t *testing.T) {
-	if !isTmuxAvailable() {
+	if !tmux.IsAvailable() {
 		t.Skip("tmux not available")
 	}
 	srv := &Server{}
@@ -235,7 +237,7 @@ func TestHandleWorktreeCreateAndLaunch_BadInputs(t *testing.T) {
 }
 
 func TestHandleWorktreeCreateAndLaunch_NonRepo(t *testing.T) {
-	if !isTmuxAvailable() {
+	if !tmux.IsAvailable() {
 		t.Skip("tmux not available")
 	}
 	if _, err := exec.LookPath("git"); err != nil {
@@ -381,31 +383,31 @@ func TestHandleWorktreeCreateAndLaunch_HappyPath(t *testing.T) {
 
 	// Replace the default tmux runner with a no-op stub for the
 	// duration of the test. The launch helper already separates I/O
-	// behind defaultTmuxRunner; we just need the calls to succeed
+	// behind tmux.DefaultRunner; we just need the calls to succeed
 	// without spawning actual tmux processes.
-	prev := defaultTmuxRunner
-	t.Cleanup(func() { defaultTmuxRunner = prev })
+	prev := tmux.DefaultRunner
+	t.Cleanup(func() { tmux.DefaultRunner = prev })
 
-	// We also need isTmuxAvailable to short-circuit true. The
+	// We also need tmux.IsAvailable to short-circuit true. The
 	// handler checks via exec.LookPath("tmux"), so skip if missing
 	// rather than try to fake that out (would require refactoring
-	// isTmuxAvailable's lookup).
-	if !isTmuxAvailable() {
+	// tmux.IsAvailable's lookup).
+	if !tmux.IsAvailable() {
 		t.Skip("tmux not available")
 	}
 
 	repo := initWorktreeTestRepo(t)
-	projectSessionName := tmuxSessionNameForPath(repo)
+	projectSessionName := tmux.SessionNameForPath(repo)
 
-	defaultTmuxRunner = tmuxRunner{
-		listSessions: func() ([]tmuxSession, error) {
-			return []tmuxSession{{Name: projectSessionName, ResolvedPath: repo}}, nil
+	tmux.DefaultRunner = tmux.Runner{
+		ListSessions: func() ([]tmux.Session, error) {
+			return []tmux.Session{{Name: projectSessionName, ResolvedPath: repo}}, nil
 		},
-		listWindows:     func(string) ([]tmuxWindow, error) { return nil, nil },
-		newSession:      func(string, string, string) error { return nil },
-		newNamedSession: func(string, string, string, string) error { return nil },
-		newWindow:       func(string, string, string) error { return nil },
-		newNamedWindow:  func(string, string, string, string) error { return nil },
+		ListWindows:     func(string) ([]tmux.Window, error) { return nil, nil },
+		NewSession:      func(string, string, string) error { return nil },
+		NewNamedSession: func(string, string, string, string) error { return nil },
+		NewWindow:       func(string, string, string) error { return nil },
+		NewNamedWindow:  func(string, string, string, string) error { return nil },
 	}
 	srv := &Server{}
 
@@ -442,22 +444,22 @@ func TestHandleWorktreeCreateAndLaunch_HappyPath(t *testing.T) {
 	if !strings.Contains(resp.WorktreePath, "feature-login") {
 		t.Errorf("worktreePath = %q; want it to contain the slug", resp.WorktreePath)
 	}
-	if resp.TmuxSession != worktreeTmuxSession {
-		t.Errorf("tmuxSession = %q; want %q", resp.TmuxSession, worktreeTmuxSession)
+	if resp.TmuxSession != tmux.WorktreeSession {
+		t.Errorf("tmuxSession = %q; want %q", resp.TmuxSession, tmux.WorktreeSession)
 	}
-	if !strings.HasPrefix(resp.TmuxTarget, worktreeTmuxSession+":") || !strings.Contains(resp.TmuxTarget, "feature-login") {
-		t.Errorf("tmuxTarget = %q; want %q-prefixed window containing feature-login", resp.TmuxTarget, worktreeTmuxSession)
+	if !strings.HasPrefix(resp.TmuxTarget, tmux.WorktreeSession+":") || !strings.Contains(resp.TmuxTarget, "feature-login") {
+		t.Errorf("tmuxTarget = %q; want %q-prefixed window containing feature-login", resp.TmuxTarget, tmux.WorktreeSession)
 	}
 
 	// Re-run: expect Reused=true, OpencodeLaunched=false (idempotent).
 	// Pre-populate the stub's window list with the named worktree window
 	// so the launcher takes the idempotent short-circuit.
-	existingWindow := tmuxWindowNameForDirectory(resp.WorktreePath)
-	defaultTmuxRunner.listSessions = func() ([]tmuxSession, error) {
-		return []tmuxSession{{Name: worktreeTmuxSession}}, nil
+	existingWindow := tmux.WindowNameForDirectory(resp.WorktreePath)
+	tmux.DefaultRunner.ListSessions = func() ([]tmux.Session, error) {
+		return []tmux.Session{{Name: tmux.WorktreeSession}}, nil
 	}
-	defaultTmuxRunner.listWindows = func(string) ([]tmuxWindow, error) {
-		return []tmuxWindow{{Name: existingWindow, Path: resp.WorktreePath}}, nil
+	tmux.DefaultRunner.ListWindows = func(string) ([]tmux.Window, error) {
+		return []tmux.Window{{Name: existingWindow, Path: resp.WorktreePath}}, nil
 	}
 
 	rr2 := httptest.NewRecorder()

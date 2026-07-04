@@ -92,6 +92,29 @@ func (r *statusRecorder) flushTiming() {
 	}
 }
 
+// isLoopback returns true if the request originates from localhost.
+func isLoopback(r *http.Request) bool {
+	host := r.RemoteAddr
+	if idx := strings.LastIndex(host, ":"); idx >= 0 {
+		host = host[:idx]
+	}
+	// Strip brackets from IPv6 addresses (e.g. "[::1]" -> "::1")
+	host = strings.TrimPrefix(host, "[")
+	host = strings.TrimSuffix(host, "]")
+	return host == "127.0.0.1" || host == "::1"
+}
+
+// requireLocalhost wraps a handler to reject non-loopback requests.
+func requireLocalhost(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopback(r) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		h(w, r)
+	}
+}
+
 // noiseSkip returns true for paths that we deliberately do not log:
 //   - SSE streams (`/api/session/{id}/events`) are long-lived and
 //     would either log a single 0ms entry on connect (useless) or

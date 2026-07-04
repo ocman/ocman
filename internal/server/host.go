@@ -6,6 +6,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/tmux"
 	"github.com/NoUseFreak/ocman/internal/whisper"
 )
 
@@ -26,7 +27,7 @@ func (s *Server) router() *hostsvc.Router {
 
 // hostTmuxSessions adapts listTmuxSessions to the hostsvc shape.
 func (s *Server) hostTmuxSessions() ([]hostsvc.TmuxSession, error) {
-	sessions, err := listTmuxSessions()
+	sessions, err := tmux.ListSessions()
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +54,7 @@ func (s *Server) hostProjects(_ context.Context) ([]db.ProjectStats, error) {
 // hostCaps reports which host operations are available on this machine.
 // git/tmux/opencode-on-PATH gate worktrees + tmux; whisper gates voice.
 func (s *Server) hostCaps() hostsvc.HostCaps {
-	tmuxOK := isTmuxAvailable()
+	tmuxOK := tmux.IsAvailable()
 	gitOK := lookPathOK("git")
 	opencodeOK := lookPathOK("opencode")
 	return hostsvc.HostCaps{

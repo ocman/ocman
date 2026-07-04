@@ -1,22 +1,45 @@
-package server
+package term
 
 import (
 	"context"
+	"fmt"
 	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
-	"strconv"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
-
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/tmux"
 )
+
+// installFakeTmux prepends a fake tmux binary to PATH whose list-*
+// subcommands fail with the given stderr, so tests can simulate
+// no-server / permission-denied conditions without a real tmux.
+func installFakeTmux(t *testing.T, stderr string) {
+	t.Helper()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tmux")
+	script := fmt.Sprintf(`#!/bin/sh
+case "$1" in
+  list-sessions|list-clients|list-windows)
+    printf '%%s\n' %q >&2
+    exit 1
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`, stderr)
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
 
 // ── pure naming / hashing helpers ────────────────────────────────────
 
@@ -46,14 +69,14 @@ func TestDirHash_StableAndPathNormalised(t *testing.T) {
 
 func TestTermWindowName_ShapeAndValidity(t *testing.T) {
 	dir := "/home/u/My Project!"
-	prefix := termWindowPrefix(dir)
+	prefix := WindowPrefix(dir)
 	name := prefix + "1"
 	if !termWindowRe.MatchString(name) {
 		t.Fatalf("generated window name %q does not match termWindowRe", name)
 	}
 	// Even an awkward directory must yield a tmux-safe component name
 	// (no ':', spaces, etc.) — the hash absorbs all the path nastiness.
-	if !validTmuxComponent.MatchString(name) {
+	if !tmux.ValidComponent.MatchString(name) {
 		t.Fatalf("window name %q is not a valid tmux component", name)
 	}
 }
@@ -98,19 +121,19 @@ func TestTermWindowIndex(t *testing.T) {
 func TestIsTermWindowForDir(t *testing.T) {
 	dir := "/home/u/proj"
 	other := "/home/u/other"
-	win := termWindowPrefix(dir) + "3"
+	win := WindowPrefix(dir) + "3"
 
-	if !isTermWindowForDir(win, dir) {
+	if !IsWindowForDir(win, dir) {
 		t.Errorf("expected %q to belong to %q", win, dir)
 	}
 	// A window for one dir must not be attributed to another — this is
 	// what prevents cross-project kills via the wrong dir.
-	if isTermWindowForDir(win, other) {
+	if IsWindowForDir(win, other) {
 		t.Errorf("window %q wrongly attributed to %q", win, other)
 	}
 	// Non-terminal windows never belong to any dir.
 	for _, bad := range []string{"_ocman_placeholder", "ocman-term", "wt-x", "ocman-zzzzzzzzzz-1"} {
-		if isTermWindowForDir(bad, dir) {
+		if IsWindowForDir(bad, dir) {
 			t.Errorf("non-terminal window %q wrongly attributed to a dir", bad)
 		}
 	}
@@ -180,136 +203,26 @@ func TestAllTermWindowNames_TmuxPermissionErrorReturnsError(t *testing.T) {
 	}
 }
 
-// ── handler validation (no tmux required) ────────────────────────────
-//
-// These exercise the request-validation and method-dispatch paths that
-// run before any tmux interaction. They are skipped when a real tmux
-// binary is present, because then the handler proceeds past the
-// availability guard into tmux calls we don't want in a unit test; the
-// guard ordering itself is covered by TestHandleTermWindows_Dispatch.
-
-func TestValidDir(t *testing.T) {
-	cases := []struct {
-		name string
-		dir  string
-		ok   bool
-	}{
-		{"absolute ok", "/home/u/proj", true},
-		{"empty rejected", "", false},
-		{"relative rejected", "proj/sub", false},
-		{"dot rejected", ".", false},
-	}
-	for _, c := range cases {
-		rr := httptest.NewRecorder()
-		if got := validDir(rr, c.dir); got != c.ok {
-			t.Errorf("%s: validDir(%q) = %v, want %v (body=%q)",
-				c.name, c.dir, got, c.ok, rr.Body.String())
-		}
-		if !c.ok && rr.Code != http.StatusBadRequest {
-			t.Errorf("%s: expected 400 on invalid dir, got %d", c.name, rr.Code)
-		}
-	}
-}
-
-// The sub-handlers run their request validation before any tmux call,
-// so we can assert the validation paths directly regardless of whether
-// a tmux binary is present (the availability guard lives in the parent
-// dispatcher handleTermWindows).
-
-func TestHandleTermWindowsList_BadDir(t *testing.T) {
-	srv := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/term/windows?dir=relative", nil)
-	rr := httptest.NewRecorder()
-	srv.handleTermWindowsList(rr, req)
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for relative dir, got %d: %s", rr.Code, rr.Body.String())
-	}
-}
-
-func TestHandleTermWindowsList_MissingDir(t *testing.T) {
-	srv := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/term/windows", nil)
-	rr := httptest.NewRecorder()
-	srv.handleTermWindowsList(rr, req)
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for missing dir, got %d", rr.Code)
-	}
-}
-
-func TestHandleTermWindowsCreate_BadDir(t *testing.T) {
-	srv := &Server{}
-	req := httptest.NewRequest(http.MethodPost, "/api/term/windows",
-		strings.NewReader(`{"dir":"relative"}`))
-	rr := httptest.NewRecorder()
-	srv.handleTermWindowsCreate(rr, req)
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for relative dir, got %d: %s", rr.Code, rr.Body.String())
-	}
-}
-
-func TestHandleTermWindowsDelete_BadDir(t *testing.T) {
-	srv := &Server{}
-	req := httptest.NewRequest(http.MethodDelete, "/api/term/windows",
-		strings.NewReader(`{"dir":"relative","window":"ocman-a3a758e833-1"}`))
-	rr := httptest.NewRecorder()
-	srv.handleTermWindowsDelete(rr, req)
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for relative dir, got %d: %s", rr.Code, rr.Body.String())
-	}
-}
-
-func TestHandleTermWindows_MethodNotAllowed(t *testing.T) {
-	if !isTmuxAvailable() {
-		t.Skip("tmux not available; dispatcher returns 503 before method check")
-	}
-	srv := &Server{}
-	req := httptest.NewRequest(http.MethodPut, "/api/term/windows", nil)
-	rr := httptest.NewRecorder()
-	srv.handleTermWindows(rr, req)
-	if rr.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("expected 405 for PUT, got %d", rr.Code)
-	}
-}
-
-func TestHandleTermWindowsDelete_RejectsCrossDirWindow(t *testing.T) {
-	srv := &Server{}
-	// A window name whose hash doesn't match the supplied (valid,
-	// absolute) dir must be rejected as not-found, never killed — this
-	// is the guard that stops cross-project / arbitrary kills. The
-	// mismatch short-circuits before any tmux call, so this runs
-	// without a tmux binary.
-	dir := t.TempDir()
-	foreign := "ocman-deadbeef00-1" // valid shape, wrong hash for dir
-	body := `{"dir":"` + dir + `","window":"` + foreign + `"}`
-	req := httptest.NewRequest(http.MethodDelete, "/api/term/windows",
-		strings.NewReader(body))
-	rr := httptest.NewRecorder()
-	srv.handleTermWindowsDelete(rr, req)
-	if rr.Code != http.StatusNotFound {
-		t.Fatalf("expected 404 for cross-dir window, got %d: %s", rr.Code, rr.Body.String())
-	}
-}
-
 // TestSweepLegacyTermSessions_NoPanic ensures the boot-time sweep is
 // safe to call regardless of tmux state (it must be a no-op rather than
 // erroring when tmux is missing or no legacy sessions exist).
 func TestSweepLegacyTermSessions_NoPanic(t *testing.T) {
 	// Should never panic or block; result is environment-dependent.
-	sweepLegacyTermSessions()
+	SweepLegacySessions()
 }
 
 // guard against accidental session-name drift: the session name must
 // stay a valid tmux component and must not itself match the window
 // regex (which would make the placeholder/session confusable).
 func TestOcmanTermSessionName(t *testing.T) {
-	if !validTmuxComponent.MatchString(ocmanTermSession) {
-		t.Fatalf("session name %q is not a valid tmux component", ocmanTermSession)
+	if !tmux.ValidComponent.MatchString(SessionName) {
+		t.Fatalf("session name %q is not a valid tmux component", SessionName)
 	}
-	if termWindowRe.MatchString(ocmanTermSession) {
-		t.Fatalf("session name %q must not match the terminal window regex", ocmanTermSession)
+	if termWindowRe.MatchString(SessionName) {
+		t.Fatalf("session name %q must not match the terminal window regex", SessionName)
 	}
-	if !strings.HasPrefix(ocmanTermSession, "ocman") {
-		t.Fatalf("session name %q lost its ocman prefix", ocmanTermSession)
+	if !strings.HasPrefix(SessionName, "ocman") {
+		t.Fatalf("session name %q lost its ocman prefix", SessionName)
 	}
 }
 
@@ -321,7 +234,7 @@ func TestOcmanTermSessionName(t *testing.T) {
 // terminals in the shared ocman-term session. All windows it creates
 // are torn down on cleanup.
 func TestTermWindowLifecycle_Integration(t *testing.T) {
-	if !isTmuxAvailable() {
+	if !tmux.IsAvailable() {
 		t.Skip("tmux not available")
 	}
 
@@ -351,13 +264,13 @@ func TestTermWindowLifecycle_Integration(t *testing.T) {
 	}
 
 	// Create two windows for dirA; indices allocate 1, 2.
-	w1, err := createTermWindow(dirA)
+	w1, err := CreateWindow(dirA)
 	if err != nil {
-		t.Fatalf("createTermWindow(dirA) #1: %v", err)
+		t.Fatalf("CreateWindow(dirA) #1: %v", err)
 	}
-	w2, err := createTermWindow(dirA)
+	w2, err := CreateWindow(dirA)
 	if err != nil {
-		t.Fatalf("createTermWindow(dirA) #2: %v", err)
+		t.Fatalf("CreateWindow(dirA) #2: %v", err)
 	}
 	if termWindowIndex(w1) != 1 || termWindowIndex(w2) != 2 {
 		t.Fatalf("expected indices 1,2; got %q(%d) %q(%d)",
@@ -366,9 +279,9 @@ func TestTermWindowLifecycle_Integration(t *testing.T) {
 
 	// A window for a *different* dir gets its own hash namespace and a
 	// fresh index 1 (independent counters per dir).
-	wb, err := createTermWindow(dirB)
+	wb, err := CreateWindow(dirB)
 	if err != nil {
-		t.Fatalf("createTermWindow(dirB): %v", err)
+		t.Fatalf("CreateWindow(dirB): %v", err)
 	}
 	if termWindowIndex(wb) != 1 {
 		t.Fatalf("dirB first window index = %d; want 1", termWindowIndex(wb))
@@ -385,7 +298,7 @@ func TestTermWindowLifecycle_Integration(t *testing.T) {
 	}
 	// dirA's windows must not appear under dirB and vice-versa.
 	for _, n := range listA {
-		if isTermWindowForDir(n, dirB) {
+		if IsWindowForDir(n, dirB) {
 			t.Fatalf("dirA window %q wrongly attributed to dirB", n)
 		}
 	}
@@ -402,9 +315,9 @@ func TestTermWindowLifecycle_Integration(t *testing.T) {
 	if termWindowExists(w1) {
 		t.Fatalf("expected %q to be gone after kill", w1)
 	}
-	w1b, err := createTermWindow(dirA)
+	w1b, err := CreateWindow(dirA)
 	if err != nil {
-		t.Fatalf("createTermWindow(dirA) after kill: %v", err)
+		t.Fatalf("CreateWindow(dirA) after kill: %v", err)
 	}
 	if termWindowIndex(w1b) != 1 {
 		t.Fatalf("expected freed index 1 to be reused, got %d (%q)", termWindowIndex(w1b), w1b)
@@ -439,10 +352,10 @@ func TestTermWindowLifecycle_Integration(t *testing.T) {
 // session. Test helper kept separate so the production delete path
 // (handler) isn't entangled with test teardown.
 func killWindowForTest(name string) error {
-	return exec.Command("tmux", "kill-window", "-t", ocmanTermSession+":"+name).Run()
+	return exec.Command("tmux", "kill-window", "-t", SessionName+":"+name).Run()
 }
 
-// fakeTermConn is an in-memory hostsvc.TermConn for driving attachLocalPTY
+// fakeTermConn is an in-memory hostsvc.TermConn for driving AttachLocalPTY
 // without a WebSocket: Recv replays queued frames then blocks until Close
 // (returning io.EOF), Write records PTY output.
 type fakeTermConn struct {
@@ -495,13 +408,13 @@ func (c *fakeTermConn) output() []byte {
 // that prints a marker, and asserts the marker comes back through the
 // TermConn. Covers the local TermAttach path end-to-end.
 func TestAttachLocalPTY_Integration(t *testing.T) {
-	if !isTmuxAvailable() {
+	if !tmux.IsAvailable() {
 		t.Skip("tmux not available")
 	}
 	dir := t.TempDir()
-	win, err := createTermWindow(dir)
+	win, err := CreateWindow(dir)
 	if err != nil {
-		t.Fatalf("createTermWindow: %v", err)
+		t.Fatalf("CreateWindow: %v", err)
 	}
 	t.Cleanup(func() { _ = killWindowForTest(win) })
 
@@ -514,7 +427,7 @@ func TestAttachLocalPTY_Integration(t *testing.T) {
 	defer cancel()
 	attachDone := make(chan error, 1)
 	go func() {
-		attachDone <- attachLocalPTY(ctx, hostsvc.TermAttachRequest{Dir: dir, Window: win}, conn)
+		attachDone <- AttachLocalPTY(ctx, hostsvc.TermAttachRequest{Dir: dir, Window: win}, conn)
 	}()
 
 	// Poll for the marker to appear in the PTY output, then close.
@@ -532,106 +445,35 @@ func TestAttachLocalPTY_Integration(t *testing.T) {
 	select {
 	case <-attachDone:
 	case <-ctx.Done():
-		t.Fatal("attachLocalPTY did not return after conn close")
+		t.Fatal("AttachLocalPTY did not return after conn close")
 	}
 }
 
 // ── local Host terminal deps ─────────────────────────────────────────
 
-// localTermKillWindow must refuse a window that doesn't belong to dir
+// KillWindow must refuse a window that doesn't belong to dir
 // (wrong hash namespace) before any tmux call, so a remote can't be
 // asked to kill an arbitrary window. Runs without a tmux binary.
 func TestLocalTermKillWindow_RejectsCrossDir(t *testing.T) {
 	dir := t.TempDir()
-	err := localTermKillWindow(dir, "ocman-deadbeef00-1") // valid shape, wrong hash
+	err := KillWindow(dir, "ocman-deadbeef00-1") // valid shape, wrong hash
 	if err == nil {
 		t.Fatal("expected error killing a cross-dir window, got nil")
 	}
 }
 
-// localTermWindows returns an empty (non-nil) slice when the ocman
+// Windows returns an empty (non-nil) slice when the ocman
 // session doesn't exist yet, so the UI shows a clean "+" state rather
 // than erroring. With no tmux server running there is no session.
 func TestLocalTermWindows_EmptyWithoutSession(t *testing.T) {
 	if ocmanSessionExists() {
 		t.Skip("ocman-term session already running in this environment")
 	}
-	wins, err := localTermWindows(t.TempDir())
+	wins, err := Windows(t.TempDir())
 	if err != nil {
-		t.Fatalf("localTermWindows: %v", err)
+		t.Fatalf("Windows: %v", err)
 	}
 	if wins == nil || len(wins) != 0 {
 		t.Fatalf("expected empty non-nil slice, got %#v", wins)
 	}
-}
-
-// ── wsTermConn frame classification ──────────────────────────────────
-
-// TestWSTermConn_FrameClassification drives a real WebSocket through
-// wsTermConn: a resize JSON text frame becomes a Resize frame, other
-// text is a keystroke, binary is a keystroke, and PTY output written
-// back arrives as a binary frame. This is the parsing logic the terminal
-// bridge depends on.
-func TestWSTermConn_FrameClassification(t *testing.T) {
-	// Server upgrades and echoes each Recv result as a labelled string so
-	// the client can assert the classification, then writes a byte back.
-	done := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer close(done)
-		c, err := termUpgrader.Upgrade(w, r, nil)
-		if err != nil {
-			t.Errorf("upgrade: %v", err)
-			return
-		}
-		tc := newWSTermConn(c)
-		defer tc.Close()
-
-		// Three inbound frames.
-		want := []string{"resize:80x24", "data:ls\n", "data:\x01\x02"}
-		for _, exp := range want {
-			f, err := tc.Recv()
-			if err != nil {
-				t.Errorf("Recv: %v", err)
-				return
-			}
-			var got string
-			if f.Resize != nil {
-				got = "resize:" + strconv.Itoa(int(f.Resize.Cols)) + "x" + strconv.Itoa(int(f.Resize.Rows))
-			} else {
-				got = "data:" + string(f.Data)
-			}
-			if got != exp {
-				t.Errorf("frame = %q, want %q", got, exp)
-			}
-		}
-		// PTY output back to the viewer.
-		if err := tc.Write([]byte("OUT")); err != nil {
-			t.Errorf("Write: %v", err)
-		}
-	}))
-	defer srv.Close()
-
-	// CheckOrigin is loopback-only; httptest binds 127.0.0.1 so a bare
-	// dial with no Origin header passes.
-	url := "ws" + strings.TrimPrefix(srv.URL, "http")
-	ws, _, err := websocket.DefaultDialer.Dial(url, nil)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	defer ws.Close()
-
-	// resize (text JSON), keystroke (text), keystroke (binary).
-	_ = ws.WriteMessage(websocket.TextMessage, []byte(`{"type":"resize","cols":80,"rows":24}`))
-	_ = ws.WriteMessage(websocket.TextMessage, []byte("ls\n"))
-	_ = ws.WriteMessage(websocket.BinaryMessage, []byte{0x01, 0x02})
-
-	// PTY output comes back as a binary frame.
-	mt, data, err := ws.ReadMessage()
-	if err != nil {
-		t.Fatalf("read echo: %v", err)
-	}
-	if mt != websocket.BinaryMessage || string(data) != "OUT" {
-		t.Fatalf("echo = type %d %q, want binary \"OUT\"", mt, data)
-	}
-	<-done
 }
