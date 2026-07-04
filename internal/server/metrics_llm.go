@@ -88,12 +88,18 @@ func newLLMMetrics(meter metric.Meter) (*llmMetrics, error) {
 // The pricing table is used to compute the estimated cost from token
 // counts; pass nil to skip the calc_cost counter.
 func (m *llmMetrics) record(ctx context.Context, row db.LLMMessageRow, pt *pricing.Table) {
+	// ponytail: session_id is a high-cardinality label (one series per
+	// session). Fine for ocman's single-user, self-hosted Prometheus; if a
+	// deployment ever has huge session counts, drop it via a metric_relabel
+	// rule rather than removing the per-session filter.
 	attrs := metric.WithAttributes(
 		attribute.String("model", row.Model),
+		attribute.String("session_id", row.SessionID),
 	)
 	reqAttrs := metric.WithAttributes(
 		attribute.String("model", row.Model),
 		attribute.String("stop_reason", row.StopReason),
+		attribute.String("session_id", row.SessionID),
 	)
 
 	m.requests.Add(ctx, 1, reqAttrs)

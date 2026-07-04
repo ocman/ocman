@@ -430,6 +430,7 @@ type HourlyActivity struct {
 // counters and histograms — no raw JSON, no session metadata.
 type LLMMessageRow struct {
 	TimeCreated      int64
+	SessionID        string  // owning session, for per-session metric scoping
 	Model            string  // "provider/model"
 	InputTokens      int64
 	OutputTokens     int64

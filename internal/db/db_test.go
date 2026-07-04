@@ -1300,6 +1300,9 @@ func TestGetNewAssistantMessages(t *testing.T) {
 
 	// First row should be a1 (oldest first).
 	r := rows[0]
+	if r.SessionID != "s1" {
+		t.Errorf("row[0].SessionID = %q, want %q", r.SessionID, "s1")
+	}
 	if r.Model != "anthropic/claude-3" {
 		t.Errorf("row[0].Model = %q, want %q", r.Model, "anthropic/claude-3")
 	}
