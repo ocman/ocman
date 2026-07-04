@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/forge"
-	"github.com/NoUseFreak/ocman/internal/integrations/github"
+	"github.com/NoUseFreak/ocman/internal/forge/github"
 )
 
 // initGitHubRepo creates a local git repo whose origin remote points

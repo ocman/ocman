@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/integrations/forgejo"
+	"github.com/NoUseFreak/ocman/internal/forge/forgejo"
 )
 
 // fakeForgejoServer mounts the minimal API endpoints needed to test the

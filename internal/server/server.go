@@ -20,7 +20,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
-	"github.com/NoUseFreak/ocman/internal/integrations"
 	"github.com/NoUseFreak/ocman/internal/loops"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/remote"
@@ -49,7 +48,7 @@ type Server struct {
 	registry           *platforms.Registry
 	sessions           *sessionsvc.Service
 	auth               *Auth
-	integrations       *integrations.Registry
+	integrations       *forgeClients
 	startTime          time.Time
 	projects           projectsIndexState
 	autoApproveDefault bool
@@ -125,7 +124,7 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		addr:         addr,
 		registry:     registry,
 		auth:         auth,
-		integrations: integrations.New(),
+		integrations: newForgeClients(),
 		startTime:    time.Now(),
 		broadcastHub: newBroadcastHub(),
 	}

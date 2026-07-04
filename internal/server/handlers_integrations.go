@@ -6,7 +6,25 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/NoUseFreak/ocman/internal/forge/forgejo"
+	"github.com/NoUseFreak/ocman/internal/forge/github"
 )
+
+// forgeClients holds the configured forge clients. Initialised once at
+// server construction; the server exposes them under
+// /api/integrations/<id>/ and the PR/Issue sidebar endpoints.
+type forgeClients struct {
+	GitHub  *github.Client
+	Forgejo *forgejo.Registry
+}
+
+func newForgeClients() *forgeClients {
+	return &forgeClients{
+		GitHub:  github.New(),
+		Forgejo: forgejo.NewRegistry(),
+	}
+}
 
 // ---------------------------------------------------------------------------
 // Integration status endpoint

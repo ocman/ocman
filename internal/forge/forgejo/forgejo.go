@@ -24,7 +24,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/forge"
 	"github.com/NoUseFreak/ocman/internal/gitexec"
-	"github.com/NoUseFreak/ocman/internal/integrations/forgehttp"
+	"github.com/NoUseFreak/ocman/internal/forge/forgehttp"
 )
 
 // defaultPerPage matches the GitHub adapter — small enough to keep

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/forge"
-	"github.com/NoUseFreak/ocman/internal/integrations/forgehttp"
+	"github.com/NoUseFreak/ocman/internal/forge/forgehttp"
 )
 
 // HostName is the canonical GitHub host string. Used both by the forge

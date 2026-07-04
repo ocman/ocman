@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/integrations/github"
+	"github.com/NoUseFreak/ocman/internal/forge/github"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 

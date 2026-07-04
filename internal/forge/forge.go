@@ -1,6 +1,6 @@
 // Package forge provides forge-agnostic types and the Forge interface
 // that the PR/Issue sidebar handlers code against. Per-forge clients
-// (GitHub, Forgejo) live in internal/integrations/<name> and expose
+// (GitHub, Forgejo) live in internal/forge/<name> and expose
 // adapters that satisfy this interface.
 //
 // The package intentionally has no HTTP code: it owns types and a
@@ -188,8 +188,8 @@ type RateLimit struct {
 }
 
 // Forge is the abstraction handlers code against. Two implementations
-// exist in v1: a GitHub adapter wrapping internal/integrations/github,
-// and a Forgejo adapter wrapping internal/integrations/forgejo.
+// exist in v1: a GitHub adapter wrapping internal/forge/github,
+// and a Forgejo adapter wrapping internal/forge/forgejo.
 //
 // All methods accept a context for cancellation/deadline propagation.
 // Implementations are expected to be safe for concurrent use.
