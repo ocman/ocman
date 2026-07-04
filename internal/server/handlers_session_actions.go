@@ -1,0 +1,415 @@
+package server
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	log "github.com/sirupsen/logrus"
+
+	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/tmux"
+)
+
+const maxComposerAttachmentBytes = 100 << 20
+
+// --- Session-scoped mutating endpoints ---
+
+func (s *Server) handleSessionMessage(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Message string `json:"message"`
+		Images  []struct {
+			URL  string `json:"url"`
+			Mime string `json:"mime"`
+		} `json:"images"`
+		Model     string `json:"model"`
+		Agent     string `json:"agent"`
+		Reasoning string `json:"reasoning"`
+	}
+	if !readAndUnmarshal(w, r, maxSendMessageBody, &req) {
+		return
+	}
+	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
+		images := make([]platforms.ImageAttachment, 0, len(req.Images))
+		for _, img := range req.Images {
+			images = append(images, platforms.ImageAttachment{URL: img.URL, Mime: img.Mime})
+		}
+		if err := s.sessions.SendMessage(r.Context(), platformHint(r), platforms.SendMessageRequest{
+			SessionID: sessionID,
+			Message:   req.Message,
+			Images:    images,
+			Model:     req.Model,
+			Agent:     req.Agent,
+			Reasoning: req.Reasoning,
+		}); err != nil {
+			writeSessionSvcError(w, "sending message", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+func (s *Server) handleSessionAttachment(w http.ResponseWriter, r *http.Request) {
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+		r.Body = http.MaxBytesReader(w, r.Body, maxComposerAttachmentBytes)
+		if err := r.ParseMultipartForm(8 << 20); err != nil {
+			http.Error(w, "failed to read attachment", http.StatusBadRequest)
+			return
+		}
+		if r.MultipartForm != nil {
+			defer r.MultipartForm.RemoveAll()
+		}
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			http.Error(w, "file is required", http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+
+		detail, err := adapter.Session(r.Context(), sessionID, 0, 0)
+		if err != nil {
+			writePlatformError(w, "loading session for attachment", err)
+			return
+		}
+		if detail == nil || detail.Session == nil {
+			http.Error(w, "session not found", http.StatusNotFound)
+			return
+		}
+
+		root, err := composerAttachmentDir(detail.Session.Directory, sessionID)
+		if err != nil {
+			log.WithError(err).Error("resolving composer attachment directory")
+			http.Error(w, "failed to prepare attachment directory", http.StatusInternalServerError)
+			return
+		}
+		if err := os.MkdirAll(root, 0o700); err != nil {
+			log.WithError(err).Error("creating composer attachment directory")
+			http.Error(w, "failed to prepare attachment directory", http.StatusInternalServerError)
+			return
+		}
+
+		name := safeAttachmentName(header.Filename)
+		path := filepath.Join(root, fmt.Sprintf("%d-%s", time.Now().UnixNano(), name))
+		out, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err != nil {
+			log.WithError(err).Error("creating composer attachment file")
+			http.Error(w, "failed to save attachment", http.StatusInternalServerError)
+			return
+		}
+		size, copyErr := io.Copy(out, file)
+		closeErr := out.Close()
+		if copyErr != nil || closeErr != nil {
+			_ = os.Remove(path)
+			if copyErr != nil {
+				log.WithError(copyErr).Error("saving composer attachment")
+			} else {
+				log.WithError(closeErr).Error("closing composer attachment")
+			}
+			http.Error(w, "failed to save attachment", http.StatusInternalServerError)
+			return
+		}
+
+		mime := header.Header.Get("Content-Type")
+		if mime == "" {
+			mime = "application/octet-stream"
+		}
+		writeJSON(w, map[string]interface{}{
+			"path": path,
+			"name": name,
+			"mime": mime,
+			"size": size,
+		})
+	})
+}
+
+func composerAttachmentDir(projectDir, sessionID string) (string, error) {
+	base, err := os.UserCacheDir()
+	if err != nil || base == "" {
+		base = os.TempDir()
+	}
+	projectKey := strconv.FormatUint(fnv64(projectDir), 36)
+	return filepath.Join(base, "ocman", "composer-attachments", projectKey, safeAttachmentName(sessionID)), nil
+}
+
+func safeAttachmentName(name string) string {
+	name = filepath.Base(strings.TrimSpace(name))
+	if name == "." || name == string(filepath.Separator) || name == "" {
+		name = "attachment"
+	}
+	var b strings.Builder
+	for _, r := range name {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '-' || r == '_' {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	if b.Len() == 0 {
+		return "attachment"
+	}
+	return b.String()
+}
+
+func fnv64(s string) uint64 {
+	const prime uint64 = 1099511628211
+	var h uint64 = 14695981039346656037
+	for i := 0; i < len(s); i++ {
+		h ^= uint64(s[i])
+		h *= prime
+	}
+	return h
+}
+
+func (s *Server) handleSessionCommand(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Command   string `json:"command"`
+		Arguments string `json:"arguments"`
+		Model     string `json:"model"`
+		Agent     string `json:"agent"`
+		Reasoning string `json:"reasoning"`
+	}
+	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+		return
+	}
+	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
+		if err := s.sessions.ExecuteCommand(r.Context(), platformHint(r), platforms.ExecuteCommandRequest{
+			SessionID: sessionID,
+			Command:   req.Command,
+			Arguments: req.Arguments,
+			Model:     req.Model,
+			Agent:     req.Agent,
+			Reasoning: req.Reasoning,
+		}); err != nil {
+			writeSessionSvcError(w, "executing command", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+func (s *Server) handleSessionRestartOpencode(w http.ResponseWriter, r *http.Request) {
+	if !isLoopback(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	if !tmux.IsAvailable() {
+		http.Error(w, "tmux is not available", http.StatusServiceUnavailable)
+		return
+	}
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+		detail, err := adapter.Session(r.Context(), sessionID, 0, 0)
+		if err != nil {
+			writePlatformError(w, "loading session", err)
+			return
+		}
+		if detail == nil || detail.Session == nil || detail.Session.Directory == "" {
+			http.Error(w, "session not found", http.StatusNotFound)
+			return
+		}
+		target, err := tmux.RestartOpencode(detail.Session.Directory)
+		if err != nil {
+			if errors.Is(err, tmux.ErrNoManagedOpencodePane) {
+				http.Error(w, "no tmux-managed OpenCode pane found for this session", http.StatusConflict)
+				return
+			}
+			serverError(w, "restarting opencode", err)
+			return
+		}
+		writeJSON(w, map[string]string{"target": target})
+	})
+}
+
+// handleSessionShell handles POST /api/session/{id}/shell — runs a
+// raw shell command in the session's working directory, bypassing the LLM.
+func (s *Server) handleSessionShell(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Command string `json:"command"`
+		Agent   string `json:"agent"`
+	}
+	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+		return
+	}
+	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
+		if err := s.sessions.RunShell(r.Context(), platformHint(r), platforms.RunShellRequest{
+			SessionID: sessionID,
+			Command:   req.Command,
+			Agent:     req.Agent,
+		}); err != nil {
+			writeSessionSvcError(w, "running shell command", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+func (s *Server) handleSessionRename(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Title string `json:"title"`
+	}
+	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+		return
+	}
+	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
+		if err := s.sessions.Rename(r.Context(), platformHint(r), platforms.RenameSessionRequest{
+			SessionID: sessionID,
+			Title:     req.Title,
+		}); err != nil {
+			writeSessionSvcError(w, "renaming session", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+func (s *Server) handleSessionAbort(w http.ResponseWriter, r *http.Request) {
+	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
+		if err := s.sessions.Abort(r.Context(), platformHint(r), platforms.AbortRequest{SessionID: sessionID}); err != nil {
+			writeSessionSvcError(w, "aborting session", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+func (s *Server) handleSessionCompact(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ProviderID string `json:"providerID"`
+		ModelID    string `json:"modelID"`
+	}
+	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+		return
+	}
+	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
+		if err := s.sessions.Compact(r.Context(), platformHint(r), platforms.CompactRequest{
+			SessionID:  sessionID,
+			ProviderID: req.ProviderID,
+			ModelID:    req.ModelID,
+		}); err != nil {
+			writeSessionSvcError(w, "compacting session", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+// handleSessionPermissionRulesGet handles GET /api/session/{id}/permission-rules.
+// Returns {"rules":[...]}; an empty list means the session inherits the
+// platform's configured defaults.
+func (s *Server) handleSessionPermissionRulesGet(w http.ResponseWriter, r *http.Request) {
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+		rules, err := adapter.PermissionRules(r.Context(), sessionID)
+		if err != nil {
+			writePlatformError(w, "reading permission rules", err)
+			return
+		}
+		if rules == nil {
+			rules = []platforms.PermissionRule{}
+		}
+		writeJSON(w, map[string]interface{}{"rules": rules})
+	})
+}
+
+// handleSessionPermissionRulesSet handles PUT /api/session/{id}/permission-rules.
+// Body: {"rules":[{"permission","pattern","action"}...]}. An empty list
+// restores the platform's configured defaults.
+func (s *Server) handleSessionPermissionRulesSet(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Rules []platforms.PermissionRule `json:"rules"`
+	}
+	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+		return
+	}
+	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
+		if err := s.sessions.SetPermissionRules(r.Context(), platformHint(r), platforms.SetPermissionRulesRequest{
+			SessionID: sessionID,
+			Rules:     req.Rules,
+		}); err != nil {
+			writeSessionSvcError(w, "setting permission rules", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+// handleSessionPermission handles POST /api/session/{id}/permissions/{pid}
+func (s *Server) handleSessionPermission(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Reply string `json:"reply"`
+	}
+	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+		return
+	}
+	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, rest string) {
+		permissionID := strings.TrimPrefix(rest, "permissions/")
+		if !validateID(permissionID) {
+			http.Error(w, "invalid permission ID", http.StatusBadRequest)
+			return
+		}
+		// The session service cancels any in-flight auto-approve judge
+		// (via the PermissionReplied hook) before forwarding the reply.
+		if err := s.sessions.RespondPermission(r.Context(), platformHint(r), platforms.RespondPermissionRequest{
+			SessionID:    sessionID,
+			PermissionID: permissionID,
+			Reply:        req.Reply,
+		}); err != nil {
+			writeSessionSvcError(w, "responding to permission", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+// handleSessionQuestion dispatches POST /api/session/{id}/questions/{qid}
+// and POST /api/session/{id}/questions/{qid}/reject.
+func (s *Server) handleSessionQuestion(w http.ResponseWriter, r *http.Request) {
+	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, rest string) {
+		rest = strings.TrimPrefix(rest, "questions/")
+		questionID := rest
+		reject := false
+		if slash := strings.IndexByte(rest, '/'); slash >= 0 {
+			questionID = rest[:slash]
+			if rest[slash+1:] == "reject" {
+				reject = true
+			} else {
+				http.Error(w, "unknown question subpath", http.StatusNotFound)
+				return
+			}
+		}
+		if !validateID(questionID) {
+			http.Error(w, "invalid question ID", http.StatusBadRequest)
+			return
+		}
+		if reject {
+			if err := s.sessions.RejectQuestion(r.Context(), platformHint(r), platforms.RejectQuestionRequest{
+				SessionID: sessionID,
+				RequestID: questionID,
+			}); err != nil {
+				writeSessionSvcError(w, "rejecting question", err)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		var req struct {
+			Answers [][]string `json:"answers"`
+		}
+		if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+			return
+		}
+		if err := s.sessions.RespondQuestion(r.Context(), platformHint(r), platforms.RespondQuestionRequest{
+			SessionID: sessionID,
+			RequestID: questionID,
+			Answers:   req.Answers,
+		}); err != nil {
+			writeSessionSvcError(w, "responding to question", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
