@@ -77,6 +77,10 @@ handlers don't bypass the `Host` seam). User-facing docs:
   types/errors.
 - `internal/platforms/opencode/` — OpenCode adapter wrapping the DB
   + HTTP proxy client.
+- `internal/sessionsvc/` — session mutation service (validation,
+  adapter selection, side-effect hooks). REST handlers, MCP tools,
+  and the remote gRPC server all delegate session mutations to it
+  (one code path, like `loops.Service` for agent loops).
 - `internal/db/` — read-only SQLite queries against OpenCode's
   `session`, `message`, `part` tables; uses `json_extract` heavily.
 - `internal/state/` — writable SQLite database

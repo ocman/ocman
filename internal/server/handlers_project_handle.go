@@ -399,21 +399,15 @@ func slugifyIssueTitle(title string) string {
 // server's existing dependencies. Returns nil when the OpenCode
 // platform isn't registered.
 func (s *Server) newSessionLauncher() *internalmcp.SessionLauncher {
-	var adapter platforms.Platform
-	if s.registry != nil {
-		for _, p := range s.registry.Platforms() {
-			if string(p.ID()) == "opencode" {
-				adapter = p
-				break
-			}
-		}
+	if s.registry == nil {
+		return nil
 	}
-	if adapter == nil {
+	if _, ok := s.registry.Get(platforms.ID("opencode")); !ok {
 		return nil
 	}
 	return internalmcp.NewSessionLauncher(
 		s.stateDB,
-		adapter,
+		s.sessions.Client("opencode"),
 		worktree.Create,
 		internalmcp.TmuxLauncher(tmux.LaunchWorktreeWindow),
 		internalmcp.PortDiscoverer(opencode.DiscoverOpenCodePortFresh),

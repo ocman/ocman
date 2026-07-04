@@ -135,11 +135,7 @@ func (s *inflightSet) release(id string) {
 type loopMessenger struct{ s *Server }
 
 func (m *loopMessenger) SendPrompt(ctx context.Context, sessionID, prompt, model string) error {
-	p, ok := m.s.registry.PlatformForSession(ctx, sessionID)
-	if !ok {
-		return fmt.Errorf("no platform owns session %s", sessionID)
-	}
-	return p.SendMessage(ctx, platforms.SendMessageRequest{SessionID: sessionID, Message: prompt, Model: model})
+	return m.s.sessions.SendMessage(ctx, "", platforms.SendMessageRequest{SessionID: sessionID, Message: prompt, Model: model})
 }
 
 // loopDirResolver implements loops.SessionDirResolver via the platform

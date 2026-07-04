@@ -18,7 +18,7 @@ func (s *Server) buildMCPHandler() http.Handler {
 	deps := internalmcp.Deps{
 		OcDB:         s.db,
 		StateDB:      s.stateDB,
-		Registry:     s.registry,
+		Platform:     s.sessions.Client("opencode"),
 		PlatformID:   "opencode",
 		LaunchTmux:   internalmcp.TmuxLauncher(tmux.LaunchWorktreeWindow),
 		DiscoverPort: internalmcp.PortDiscoverer(opencode.DiscoverOpenCodePortFresh),

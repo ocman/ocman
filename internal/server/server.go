@@ -24,6 +24,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/loops"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/remote"
+	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
 	"github.com/NoUseFreak/ocman/internal/term"
@@ -46,6 +47,7 @@ type Server struct {
 	stateDB            *state.DB
 	addr               string
 	registry           *platforms.Registry
+	sessions           *sessionsvc.Service
 	auth               *Auth
 	integrations       *integrations.Registry
 	startTime          time.Time
@@ -128,8 +130,49 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		broadcastHub: newBroadcastHub(),
 	}
 	s.hostRouter = hostsvc.NewRouter(s.newLocalHost())
+	// registryRef (not the registry itself) so the service follows a
+	// swapped s.registry — tests replace it after construction.
+	s.sessions = sessionsvc.New(registryRef{s}, sessionsvc.Hooks{
+		// Cancel any in-flight auto-approve judge before a permission
+		// reply is forwarded: the user has decided, so we must not race
+		// their answer with the AI's verdict, and we must not pay for a
+		// judge whose result will be discarded anyway. aaSvc().Cancel
+		// is safe to call when no judge is running.
+		PermissionReplied: func(sessionID, permissionID string) {
+			s.aaSvc().Cancel(sessionID, permissionID)
+		},
+		SessionCreated: s.refreshProjectsIndexAsync,
+	})
 	return s
 }
+
+// registryRef adapts the server's current registry to
+// sessionsvc.Registry, resolving s.registry at call time.
+type registryRef struct{ s *Server }
+
+func (r registryRef) Get(id platforms.ID) (platforms.Platform, bool) { return r.s.registry.Get(id) }
+func (r registryRef) Platforms() []platforms.Platform                { return r.s.registry.Platforms() }
+func (r registryRef) PlatformForSession(ctx context.Context, sessionID string) (platforms.Platform, bool) {
+	return r.s.registry.PlatformForSession(ctx, sessionID)
+}
+
+// refreshProjectsIndexAsync refreshes the projects index off the request
+// path: the heavy GetProjects() aggregate (correlated per-directory
+// message scans) can take seconds and would otherwise block the create
+// response. The new session already exists; the index only feeds cached
+// stats, which the background ticker also keeps fresh.
+func (s *Server) refreshProjectsIndexAsync() {
+	go func() {
+		if err := s.refreshProjectsIndex(); err != nil {
+			log.WithError(err).Warn("refreshing projects index after session creation")
+		}
+	}()
+}
+
+// SessionService returns the session mutation service so main.go can
+// wire the remote-access gRPC server over the same code path (and the
+// same hooks) the HTTP layer uses.
+func (s *Server) SessionService() *sessionsvc.Service { return s.sessions }
 
 // newLocalHost builds the in-process hostsvc.Host, wiring the tmux,
 // projects, and capability operations that live in this package into the

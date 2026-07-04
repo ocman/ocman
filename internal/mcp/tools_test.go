@@ -214,9 +214,6 @@ func buildTestMCPServer(t *testing.T, stateDB *state.DB, platform *fakePlatformF
 func buildTestMCPServerWithOpenCodeDB(t *testing.T, stateDB *state.DB, platform *fakePlatformForTools, ocDB *db.DB) *mcptest.Server {
 	t.Helper()
 
-	reg := platforms.NewRegistry()
-	reg.Register(platform)
-
 	fakeWT := internalmcp.WorktreeCreator(func(_ context.Context, req worktree.CreateRequest) (*worktree.CreateResult, error) {
 		return &worktree.CreateResult{
 			Path:   "/tmp/worktrees/repo/" + req.Branch,
@@ -231,7 +228,7 @@ func buildTestMCPServerWithOpenCodeDB(t *testing.T, stateDB *state.DB, platform 
 	deps := internalmcp.Deps{
 		OcDB:           ocDB,
 		StateDB:        stateDB,
-		Registry:       reg,
+		Platform:       platform,
 		PlatformID:     "opencode",
 		CreateWorktree: fakeWT,
 		LaunchTmux:     fakeTmux,

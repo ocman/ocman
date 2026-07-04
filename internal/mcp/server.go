@@ -6,7 +6,6 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/worktree"
 )
@@ -21,9 +20,10 @@ type Deps struct {
 	// StateDB is the writable ocman state database.
 	StateDB *state.DB
 
-	// Registry is the platform adapter registry. Used to resolve the
-	// OpenCode adapter for CreateSession / SendMessage calls.
-	Registry *platforms.Registry
+	// Platform is the session client used for CreateSession /
+	// SendMessage calls. The server package injects the shared session
+	// service bound to the OpenCode platform id.
+	Platform SessionClient
 
 	// PlatformID is the platform identifier to use for child sessions
 	// (e.g. "opencode").
@@ -61,16 +61,7 @@ func New(deps Deps) *Server {
 		deps.CreateWorktree = worktree.Create
 	}
 
-	// Resolve the platform adapter.
-	var adapter platformAdapter
-	if deps.Registry != nil {
-		for _, p := range deps.Registry.Platforms() {
-			if string(p.ID()) == deps.PlatformID {
-				adapter = p
-				break
-			}
-		}
-	}
+	adapter := deps.Platform
 
 	// Build the prompt composer.
 	var composer *PromptComposer
@@ -147,15 +138,7 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 		deps.CreateWorktree = worktree.Create
 	}
 
-	var adapter platformAdapter
-	if deps.Registry != nil {
-		for _, p := range deps.Registry.Platforms() {
-			if string(p.ID()) == deps.PlatformID {
-				adapter = p
-				break
-			}
-		}
-	}
+	adapter := deps.Platform
 
 	var composer *PromptComposer
 	if deps.OcDB != nil {

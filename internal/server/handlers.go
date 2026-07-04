@@ -18,7 +18,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/srvtiming"
+	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 )
 
 // maxRequestBody is the maximum allowed request body size (1 MB).
@@ -103,6 +103,42 @@ func (s *Server) withSessionAdapter(w http.ResponseWriter, r *http.Request, fn s
 		return
 	}
 	fn(w, r, sessionID, rest, adapter)
+}
+
+// withSessionPath extracts and validates the session ID from the URL
+// without resolving the adapter. Mutation handlers use it and delegate
+// adapter resolution to the session service.
+func (s *Server) withSessionPath(w http.ResponseWriter, r *http.Request, fn func(w http.ResponseWriter, r *http.Request, sessionID, rest string)) {
+	sessionID, rest, ok := sessionSubPath(r.URL.Path, "/api/session/")
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if !validateID(sessionID) {
+		http.Error(w, "invalid session ID", http.StatusBadRequest)
+		return
+	}
+	fn(w, r, sessionID, rest)
+}
+
+// platformHint returns the explicit ?platform= query value, if any
+// (AD-2b: remote sessions are addressed by their compound platform key).
+func platformHint(r *http.Request) string {
+	return strings.TrimSpace(r.URL.Query().Get("platform"))
+}
+
+// writeSessionSvcError maps a sessionsvc error to an HTTP response.
+func writeSessionSvcError(w http.ResponseWriter, msg string, err error) {
+	var ve *sessionsvc.ValidationError
+	if errors.As(err, &ve) {
+		http.Error(w, ve.Error(), http.StatusBadRequest)
+		return
+	}
+	if errors.Is(err, sessionsvc.ErrNoPlatformAvailable) {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	writePlatformError(w, msg, err)
 }
 
 // writePlatformError maps a Platform error to an appropriate HTTP response.
@@ -377,56 +413,14 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
 		return
 	}
-	if req.Directory == "" {
-		http.Error(w, "directory is required", http.StatusBadRequest)
-		return
-	}
-
-	var adapter platforms.Platform
-	if req.Platform != "" {
-		p, ok := s.registry.Get(platforms.ID(req.Platform))
-		if !ok {
-			http.Error(w, "unknown platform", http.StatusBadRequest)
-			return
-		}
-		adapter = p
-	} else {
-		for _, p := range s.registry.Platforms() {
-			if !p.Available(r.Context()) {
-				continue
-			}
-			if adapter != nil {
-				http.Error(w, "multiple platforms available — specify ?platform=<id>", http.StatusBadRequest)
-				return
-			}
-			adapter = p
-		}
-	}
-	if adapter == nil {
-		http.Error(w, "no platform available to create a session", http.StatusServiceUnavailable)
-		return
-	}
-
-	createPhase := srvtiming.Begin(r.Context(), "create_session")
-	resp, err := adapter.CreateSession(r.Context(), platforms.CreateSessionRequest{
+	resp, err := s.sessions.Create(r.Context(), req.Platform, platforms.CreateSessionRequest{
 		Directory: req.Directory,
 		Title:     req.Title,
 	})
-	createPhase.EndWithDesc("adapter.CreateSession")
 	if err != nil {
-		writePlatformError(w, "creating session", err)
+		writeSessionSvcError(w, "creating session", err)
 		return
 	}
-	// Refresh the projects index off the request path: the heavy
-	// GetProjects() aggregate (correlated per-directory message scans)
-	// can take seconds and would otherwise block the create response.
-	// The new session already exists; the index only feeds cached
-	// stats, which the background ticker also keeps fresh.
-	go func() {
-		if err := s.refreshProjectsIndex(); err != nil {
-			log.WithError(err).Warn("refreshing projects index after session creation")
-		}
-	}()
 	writeJSON(w, resp)
 }
 

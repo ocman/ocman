@@ -594,16 +594,12 @@ func (s *Server) handleSessionMessage(w http.ResponseWriter, r *http.Request) {
 	if !readAndUnmarshal(w, r, maxSendMessageBody, &req) {
 		return
 	}
-	if req.Message == "" && len(req.Images) == 0 {
-		http.Error(w, "message or images required", http.StatusBadRequest)
-		return
-	}
-	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
 		images := make([]platforms.ImageAttachment, 0, len(req.Images))
 		for _, img := range req.Images {
 			images = append(images, platforms.ImageAttachment{URL: img.URL, Mime: img.Mime})
 		}
-		if err := adapter.SendMessage(r.Context(), platforms.SendMessageRequest{
+		if err := s.sessions.SendMessage(r.Context(), platformHint(r), platforms.SendMessageRequest{
 			SessionID: sessionID,
 			Message:   req.Message,
 			Images:    images,
@@ -611,7 +607,7 @@ func (s *Server) handleSessionMessage(w http.ResponseWriter, r *http.Request) {
 			Agent:     req.Agent,
 			Reasoning: req.Reasoning,
 		}); err != nil {
-			writePlatformError(w, "sending message", err)
+			writeSessionSvcError(w, "sending message", err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -740,12 +736,8 @@ func (s *Server) handleSessionCommand(w http.ResponseWriter, r *http.Request) {
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
 		return
 	}
-	if req.Command == "" {
-		http.Error(w, "command is required", http.StatusBadRequest)
-		return
-	}
-	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
-		if err := adapter.ExecuteCommand(r.Context(), platforms.ExecuteCommandRequest{
+	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
+		if err := s.sessions.ExecuteCommand(r.Context(), platformHint(r), platforms.ExecuteCommandRequest{
 			SessionID: sessionID,
 			Command:   req.Command,
 			Arguments: req.Arguments,
@@ -753,7 +745,7 @@ func (s *Server) handleSessionCommand(w http.ResponseWriter, r *http.Request) {
 			Agent:     req.Agent,
 			Reasoning: req.Reasoning,
 		}); err != nil {
-			writePlatformError(w, "executing command", err)
+			writeSessionSvcError(w, "executing command", err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -802,17 +794,13 @@ func (s *Server) handleSessionShell(w http.ResponseWriter, r *http.Request) {
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
 		return
 	}
-	if strings.TrimSpace(req.Command) == "" {
-		http.Error(w, "command is required", http.StatusBadRequest)
-		return
-	}
-	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
-		if err := adapter.RunShell(r.Context(), platforms.RunShellRequest{
+	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
+		if err := s.sessions.RunShell(r.Context(), platformHint(r), platforms.RunShellRequest{
 			SessionID: sessionID,
 			Command:   req.Command,
 			Agent:     req.Agent,
 		}); err != nil {
-			writePlatformError(w, "running shell command", err)
+			writeSessionSvcError(w, "running shell command", err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -826,16 +814,12 @@ func (s *Server) handleSessionRename(w http.ResponseWriter, r *http.Request) {
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
 		return
 	}
-	if req.Title == "" {
-		http.Error(w, "title is required", http.StatusBadRequest)
-		return
-	}
-	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
-		if err := adapter.RenameSession(r.Context(), platforms.RenameSessionRequest{
+	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
+		if err := s.sessions.Rename(r.Context(), platformHint(r), platforms.RenameSessionRequest{
 			SessionID: sessionID,
 			Title:     req.Title,
 		}); err != nil {
-			writePlatformError(w, "renaming session", err)
+			writeSessionSvcError(w, "renaming session", err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -843,9 +827,9 @@ func (s *Server) handleSessionRename(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSessionAbort(w http.ResponseWriter, r *http.Request) {
-	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
-		if err := adapter.Abort(r.Context(), platforms.AbortRequest{SessionID: sessionID}); err != nil {
-			writePlatformError(w, "aborting session", err)
+	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
+		if err := s.sessions.Abort(r.Context(), platformHint(r), platforms.AbortRequest{SessionID: sessionID}); err != nil {
+			writeSessionSvcError(w, "aborting session", err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -860,17 +844,13 @@ func (s *Server) handleSessionCompact(w http.ResponseWriter, r *http.Request) {
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
 		return
 	}
-	if req.ProviderID == "" || req.ModelID == "" {
-		http.Error(w, "providerID and modelID are required", http.StatusBadRequest)
-		return
-	}
-	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
-		if err := adapter.Compact(r.Context(), platforms.CompactRequest{
+	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
+		if err := s.sessions.Compact(r.Context(), platformHint(r), platforms.CompactRequest{
 			SessionID:  sessionID,
 			ProviderID: req.ProviderID,
 			ModelID:    req.ModelID,
 		}); err != nil {
-			writePlatformError(w, "compacting session", err)
+			writeSessionSvcError(w, "compacting session", err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -904,32 +884,12 @@ func (s *Server) handleSessionPermissionRulesSet(w http.ResponseWriter, r *http.
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
 		return
 	}
-	if len(req.Rules) > 100 {
-		http.Error(w, "too many rules", http.StatusBadRequest)
-		return
-	}
-	for i := range req.Rules {
-		rule := &req.Rules[i]
-		if rule.Permission == "" {
-			http.Error(w, "rule permission is required", http.StatusBadRequest)
-			return
-		}
-		if rule.Pattern == "" {
-			rule.Pattern = "*"
-		}
-		switch rule.Action {
-		case "allow", "deny", "ask":
-		default:
-			http.Error(w, "invalid rule action: expected allow, deny, or ask", http.StatusBadRequest)
-			return
-		}
-	}
-	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
-		if err := adapter.SetPermissionRules(r.Context(), platforms.SetPermissionRulesRequest{
+	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
+		if err := s.sessions.SetPermissionRules(r.Context(), platformHint(r), platforms.SetPermissionRulesRequest{
 			SessionID: sessionID,
 			Rules:     req.Rules,
 		}); err != nil {
-			writePlatformError(w, "setting permission rules", err)
+			writeSessionSvcError(w, "setting permission rules", err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -944,30 +904,20 @@ func (s *Server) handleSessionPermission(w http.ResponseWriter, r *http.Request)
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
 		return
 	}
-	switch req.Reply {
-	case "once", "always", "reject":
-	default:
-		http.Error(w, "invalid reply value: expected once, always, or reject", http.StatusBadRequest)
-		return
-	}
-	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, rest string, adapter platforms.Platform) {
+	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, rest string) {
 		permissionID := strings.TrimPrefix(rest, "permissions/")
 		if !validateID(permissionID) {
 			http.Error(w, "invalid permission ID", http.StatusBadRequest)
 			return
 		}
-		// Cancel any in-flight auto-approve judge before we forward the
-		// reply: the user has decided, so we must not race their answer
-		// with the AI's verdict, and we must not pay for a judge whose
-		// result will be discarded anyway. cancelAutoApprove is safe to
-		// call when no judge is running (returns false; we don't care).
-		s.aaSvc().Cancel(sessionID, permissionID)
-		if err := adapter.RespondPermission(r.Context(), platforms.RespondPermissionRequest{
+		// The session service cancels any in-flight auto-approve judge
+		// (via the PermissionReplied hook) before forwarding the reply.
+		if err := s.sessions.RespondPermission(r.Context(), platformHint(r), platforms.RespondPermissionRequest{
 			SessionID:    sessionID,
 			PermissionID: permissionID,
 			Reply:        req.Reply,
 		}); err != nil {
-			writePlatformError(w, "responding to permission", err)
+			writeSessionSvcError(w, "responding to permission", err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -977,7 +927,7 @@ func (s *Server) handleSessionPermission(w http.ResponseWriter, r *http.Request)
 // handleSessionQuestion dispatches POST /api/session/{id}/questions/{qid}
 // and POST /api/session/{id}/questions/{qid}/reject.
 func (s *Server) handleSessionQuestion(w http.ResponseWriter, r *http.Request) {
-	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, rest string, adapter platforms.Platform) {
+	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, rest string) {
 		rest = strings.TrimPrefix(rest, "questions/")
 		questionID := rest
 		reject := false
@@ -995,11 +945,11 @@ func (s *Server) handleSessionQuestion(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if reject {
-			if err := adapter.RejectQuestion(r.Context(), platforms.RejectQuestionRequest{
+			if err := s.sessions.RejectQuestion(r.Context(), platformHint(r), platforms.RejectQuestionRequest{
 				SessionID: sessionID,
 				RequestID: questionID,
 			}); err != nil {
-				writePlatformError(w, "rejecting question", err)
+				writeSessionSvcError(w, "rejecting question", err)
 				return
 			}
 			w.WriteHeader(http.StatusNoContent)
@@ -1011,12 +961,12 @@ func (s *Server) handleSessionQuestion(w http.ResponseWriter, r *http.Request) {
 		if !readAndUnmarshal(w, r, maxRequestBody, &req) {
 			return
 		}
-		if err := adapter.RespondQuestion(r.Context(), platforms.RespondQuestionRequest{
+		if err := s.sessions.RespondQuestion(r.Context(), platformHint(r), platforms.RespondQuestionRequest{
 			SessionID: sessionID,
 			RequestID: questionID,
 			Answers:   req.Answers,
 		}); err != nil {
-			writePlatformError(w, "responding to question", err)
+			writeSessionSvcError(w, "responding to question", err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)

@@ -18,6 +18,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
+	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 	"github.com/NoUseFreak/ocman/internal/worktree"
 )
 
@@ -249,6 +250,58 @@ func TestServer_CreateSessionMapsUnreachableToUnavailable(t *testing.T) {
 	_, err = srv.CreateSession(context.Background(), &pb.PlatformJsonReq{Platform: "opencode", Payload: b})
 	if status.Code(err) != codes.Unavailable {
 		t.Fatalf("CreateSession error code = %v, want Unavailable (err=%v)", status.Code(err), err)
+	}
+}
+
+// TestServer_MutationsUseSharedSessionService proves gRPC-executed
+// mutations run through the shared sessionsvc: hooks fire on the
+// remote-executed path and validation errors map to InvalidArgument.
+func TestServer_MutationsUseSharedSessionService(t *testing.T) {
+	reg := platforms.NewRegistry()
+	reg.Register(&fakePlatform{id: "opencode"})
+	var replied []string
+	created := 0
+	svc := sessionsvc.New(reg, sessionsvc.Hooks{
+		PermissionReplied: func(sessionID, permissionID string) {
+			replied = append(replied, sessionID+"|"+permissionID)
+		},
+		SessionCreated: func() { created++ },
+	})
+	srv := NewServer(reg, localStubHost{}, "i", "v").UseSessions(svc)
+	ctx := context.Background()
+
+	b, err := marshalJSON(platforms.RespondPermissionRequest{SessionID: "s1", PermissionID: "p1", Reply: "once"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if _, err := srv.RespondPermission(ctx, &pb.PlatformJsonReq{Platform: "opencode", Payload: b}); err != nil {
+		t.Fatalf("RespondPermission: %v", err)
+	}
+	if len(replied) != 1 || replied[0] != "s1|p1" {
+		t.Fatalf("expected PermissionReplied hook s1|p1, got %v", replied)
+	}
+
+	b, err = marshalJSON(platforms.RespondPermissionRequest{SessionID: "s1", PermissionID: "p1", Reply: "maybe"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	_, err = srv.RespondPermission(ctx, &pb.PlatformJsonReq{Platform: "opencode", Payload: b})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("invalid reply error code = %v, want InvalidArgument (err=%v)", status.Code(err), err)
+	}
+	if len(replied) != 1 {
+		t.Fatal("hook fired for an invalid reply")
+	}
+
+	b, err = marshalJSON(platforms.CreateSessionRequest{Directory: "/repo"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if _, err := srv.CreateSession(ctx, &pb.PlatformJsonReq{Platform: "opencode", Payload: b}); err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	if created != 1 {
+		t.Fatalf("expected SessionCreated hook once, got %d", created)
 	}
 }
 

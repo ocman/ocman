@@ -56,11 +56,18 @@ type childSessionStore interface {
 	InsertChildSession(cs state.ChildSession) error
 }
 
-// platformAdapter is the subset of platforms.Platform used by SessionLauncher.
-type platformAdapter interface {
+// SessionClient is the narrow session-mutation surface used by
+// SessionLauncher and the comm tools. In production this is a
+// sessionsvc.Client bound to a platform id, so MCP-initiated creates
+// and messages share the same validated code path (and hooks) as the
+// REST handlers and the remote gRPC server.
+type SessionClient interface {
 	CreateSession(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error)
 	SendMessage(ctx context.Context, req platforms.SendMessageRequest) error
 }
+
+// platformAdapter is the internal alias used within the package.
+type platformAdapter = SessionClient
 
 // WorktreeCreator abstracts worktree.Create for testing.
 // Exported so the server package and tests can reference the type.

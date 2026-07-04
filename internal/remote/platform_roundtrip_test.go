@@ -125,14 +125,24 @@ func TestRemotePlatform_AllMutations(t *testing.T) {
 		name string
 		fn   func() error
 	}{
-		{"ExecuteCommand", func() error { return rp.ExecuteCommand(ctx, platforms.ExecuteCommandRequest{SessionID: "s"}) }},
-		{"RunShell", func() error { return rp.RunShell(ctx, platforms.RunShellRequest{SessionID: "s"}) }},
-		{"RespondPermission", func() error { return rp.RespondPermission(ctx, platforms.RespondPermissionRequest{SessionID: "s"}) }},
-		{"RespondQuestion", func() error { return rp.RespondQuestion(ctx, platforms.RespondQuestionRequest{SessionID: "s"}) }},
-		{"RejectQuestion", func() error { return rp.RejectQuestion(ctx, platforms.RejectQuestionRequest{SessionID: "s"}) }},
+		{"ExecuteCommand", func() error {
+			return rp.ExecuteCommand(ctx, platforms.ExecuteCommandRequest{SessionID: "s", Command: "/init"})
+		}},
+		{"RunShell", func() error { return rp.RunShell(ctx, platforms.RunShellRequest{SessionID: "s", Command: "ls"}) }},
+		{"RespondPermission", func() error {
+			return rp.RespondPermission(ctx, platforms.RespondPermissionRequest{SessionID: "s", PermissionID: "p1", Reply: "once"})
+		}},
+		{"RespondQuestion", func() error {
+			return rp.RespondQuestion(ctx, platforms.RespondQuestionRequest{SessionID: "s", RequestID: "q1"})
+		}},
+		{"RejectQuestion", func() error {
+			return rp.RejectQuestion(ctx, platforms.RejectQuestionRequest{SessionID: "s", RequestID: "q1"})
+		}},
 		{"Abort", func() error { return rp.Abort(ctx, platforms.AbortRequest{SessionID: "s"}) }},
 		{"RenameSession", func() error { return rp.RenameSession(ctx, platforms.RenameSessionRequest{SessionID: "s", Title: "t"}) }},
-		{"Compact", func() error { return rp.Compact(ctx, platforms.CompactRequest{SessionID: "s"}) }},
+		{"Compact", func() error {
+			return rp.Compact(ctx, platforms.CompactRequest{SessionID: "s", ProviderID: "anthropic", ModelID: "m"})
+		}},
 		{"SetPermissionRules", func() error {
 			return rp.SetPermissionRules(ctx, platforms.SetPermissionRulesRequest{
 				SessionID: "s",

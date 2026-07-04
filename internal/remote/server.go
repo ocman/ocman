@@ -11,17 +11,20 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
+	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 )
 
 // Server is the remote-side gRPC service. It is a thin translation layer
-// over the local platforms.Registry and hostsvc.Host: each unary RPC
-// resolves the local adapter from the base platform id (or the local
-// Host) and calls the matching method, marshalling rich results as JSON
-// (AD-3, AD-11). It holds no business logic of its own.
+// over the local platforms.Registry and hostsvc.Host: reads resolve the
+// local adapter from the base platform id (or the local Host) and call
+// the matching method, marshalling rich results as JSON (AD-3, AD-11).
+// Session mutations delegate to the shared sessionsvc.Service so they
+// take the same validated code path as the REST handlers and MCP tools.
 type Server struct {
 	pb.UnimplementedOcmanServer
 
 	registry   *platforms.Registry
+	sessions   *sessionsvc.Service
 	host       hostsvc.Host
 	instanceID string
 	version    string
@@ -34,11 +37,38 @@ type Server struct {
 func NewServer(registry *platforms.Registry, host hostsvc.Host, instanceID, version string) *Server {
 	return &Server{
 		registry:   registry,
+		sessions:   sessionsvc.New(registry, sessionsvc.Hooks{}),
 		host:       host,
 		instanceID: instanceID,
 		version:    version,
 		origins:    newOriginCache(),
 	}
+}
+
+// UseSessions swaps in a shared session service. main.go passes the
+// HTTP server's, so host-local hooks (auto-approve judge cancellation,
+// projects-index refresh) also fire for gRPC-executed mutations.
+func (s *Server) UseSessions(svc *sessionsvc.Service) *Server {
+	s.sessions = svc
+	return s
+}
+
+// svcErr maps sessionsvc errors to gRPC status codes.
+func svcErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	var ve *sessionsvc.ValidationError
+	if errors.As(err, &ve) {
+		return status.Error(codes.InvalidArgument, ve.Error())
+	}
+	if errors.Is(err, platforms.ErrNotFound) {
+		return status.Error(codes.NotFound, err.Error())
+	}
+	if errors.Is(err, platforms.ErrPlatformUnreachable) {
+		return status.Error(codes.Unavailable, err.Error())
+	}
+	return err
 }
 
 // platformFor resolves the local adapter for a base platform id.
@@ -178,99 +208,67 @@ func (s *Server) Owns(ctx context.Context, req *pb.SessionRef) (*pb.OwnsResp, er
 // --- Session mutations ---
 
 func (s *Server) SendMessage(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
 	var mr platforms.SendMessageRequest
 	if err := unmarshalJSON(req.Payload, &mr); err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, p.SendMessage(ctx, mr)
+	return &pb.Empty{}, svcErr(s.sessions.SendMessage(ctx, req.Platform, mr))
 }
 
 func (s *Server) ExecuteCommand(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
 	var cr platforms.ExecuteCommandRequest
 	if err := unmarshalJSON(req.Payload, &cr); err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, p.ExecuteCommand(ctx, cr)
+	return &pb.Empty{}, svcErr(s.sessions.ExecuteCommand(ctx, req.Platform, cr))
 }
 
 func (s *Server) RunShell(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
 	var sr platforms.RunShellRequest
 	if err := unmarshalJSON(req.Payload, &sr); err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, p.RunShell(ctx, sr)
+	return &pb.Empty{}, svcErr(s.sessions.RunShell(ctx, req.Platform, sr))
 }
 
 func (s *Server) RespondPermission(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
 	var rr platforms.RespondPermissionRequest
 	if err := unmarshalJSON(req.Payload, &rr); err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, p.RespondPermission(ctx, rr)
+	return &pb.Empty{}, svcErr(s.sessions.RespondPermission(ctx, req.Platform, rr))
 }
 
 func (s *Server) RespondQuestion(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
 	var rr platforms.RespondQuestionRequest
 	if err := unmarshalJSON(req.Payload, &rr); err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, p.RespondQuestion(ctx, rr)
+	return &pb.Empty{}, svcErr(s.sessions.RespondQuestion(ctx, req.Platform, rr))
 }
 
 func (s *Server) RejectQuestion(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
 	var rr platforms.RejectQuestionRequest
 	if err := unmarshalJSON(req.Payload, &rr); err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, p.RejectQuestion(ctx, rr)
+	return &pb.Empty{}, svcErr(s.sessions.RejectQuestion(ctx, req.Platform, rr))
 }
 
 func (s *Server) Abort(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
 	var ar platforms.AbortRequest
 	if err := unmarshalJSON(req.Payload, &ar); err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, p.Abort(ctx, ar)
+	return &pb.Empty{}, svcErr(s.sessions.Abort(ctx, req.Platform, ar))
 }
 
 func (s *Server) RenameSession(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
 	var rr platforms.RenameSessionRequest
 	if err := unmarshalJSON(req.Payload, &rr); err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, p.RenameSession(ctx, rr)
+	return &pb.Empty{}, svcErr(s.sessions.Rename(ctx, req.Platform, rr))
 }
 
 func (s *Server) PermissionRules(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
@@ -282,39 +280,28 @@ func (s *Server) PermissionRules(ctx context.Context, req *pb.SessionRef) (*pb.J
 }
 
 func (s *Server) SetPermissionRules(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
 	var sr platforms.SetPermissionRulesRequest
 	if err := unmarshalJSON(req.Payload, &sr); err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, p.SetPermissionRules(ctx, sr)
+	return &pb.Empty{}, svcErr(s.sessions.SetPermissionRules(ctx, req.Platform, sr))
 }
 
 func (s *Server) Compact(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
 	var cr platforms.CompactRequest
 	if err := unmarshalJSON(req.Payload, &cr); err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, p.Compact(ctx, cr)
+	return &pb.Empty{}, svcErr(s.sessions.Compact(ctx, req.Platform, cr))
 }
 
 func (s *Server) CreateSession(ctx context.Context, req *pb.PlatformJsonReq) (*pb.JsonResp, error) {
-	p, err := s.platformFor(req.Platform)
-	if err != nil {
-		return nil, err
-	}
 	var cr platforms.CreateSessionRequest
 	if err := unmarshalJSON(req.Payload, &cr); err != nil {
 		return nil, err
 	}
-	return jsonResp(p.CreateSession(ctx, cr))
+	resp, err := s.sessions.Create(ctx, req.Platform, cr)
+	return jsonResp(resp, svcErr(err))
 }
 
 // --- Streaming events ---
