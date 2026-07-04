@@ -304,10 +304,7 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 	// non-opencode platform set), callbacks will see a nil adapter and
 	// Ensure will fail safe by short-circuiting. The
 	// platform ID is still propagated so logs are useful.
-	var adapter platforms.Platform
-	if w.svc != nil && w.svc.deps.OpencodePlatform != nil {
-		adapter = w.svc.deps.OpencodePlatform()
-	}
+	adapter := w.svc.OpencodeAdapter()
 
 	tee := &Tee{
 		W:     io.Discard, // we only need the parsing side; nothing else consumes this stream

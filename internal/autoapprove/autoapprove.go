@@ -1661,13 +1661,9 @@ func (s *Service) backgroundAutoApprove(
 	}
 
 	// Resolve directory for port discovery.
-	if s.deps.SessionDir == nil {
-		logger.Warn("background auto-approve: no session directory resolver, cannot resolve session directory")
-		return
-	}
-	directory, err := s.deps.SessionDir(sessionID)
+	directory, err := s.ResolveSessionDir(sessionID)
 	if err != nil {
-		logger.WithError(err).Warn("background auto-approve: session not found in DB")
+		logger.WithError(err).Warn("background auto-approve: could not resolve session directory")
 		return
 	}
 

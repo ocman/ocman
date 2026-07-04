@@ -11,6 +11,7 @@
 package autoapprove
 
 import (
+	"errors"
 	"io"
 	"runtime/debug"
 	"sync"
@@ -20,6 +21,11 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
+
+// errNoSessionDirResolver is returned by ResolveSessionDir when no
+// SessionDir dependency is wired, so the judge falls through to human
+// review rather than proceeding without a directory.
+var errNoSessionDirResolver = errors.New("no session directory resolver")
 
 // SettingsStore is the slice of *state.DB the pipeline needs. Nil is
 // allowed everywhere it is consulted (settings fall back to defaults
@@ -102,6 +108,26 @@ func NewService(deps Deps) *Service {
 		autoApprove:      make(map[string]*autoApproveStatus),
 		safeCommandCache: make(map[string]map[string]string),
 	}
+}
+
+// ResolveSessionDir resolves a session ID to its working directory via
+// the injected SessionDir dependency. Returns an error when no
+// resolver is wired (so the judge falls through to human review). Kept
+// exported so the server-side adapter wiring can be tested end-to-end.
+func (s *Service) ResolveSessionDir(sessionID string) (string, error) {
+	if s == nil || s.deps.SessionDir == nil {
+		return "", errNoSessionDirResolver
+	}
+	return s.deps.SessionDir(sessionID)
+}
+
+// OpencodeAdapter returns the OpenCode platform adapter via the
+// injected OpencodePlatform dependency, or nil when none is wired.
+func (s *Service) OpencodeAdapter() platforms.Platform {
+	if s == nil || s.deps.OpencodePlatform == nil {
+		return nil
+	}
+	return s.deps.OpencodePlatform()
 }
 
 // JudgeDelayMs returns the cached judge delay.
