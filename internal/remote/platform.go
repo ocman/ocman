@@ -210,29 +210,15 @@ func (p *remotePlatform) SessionInfo(ctx context.Context, sessionID string) (*pl
 func (p *remotePlatform) LiveStatus(string) *platforms.LiveState { return nil }
 
 func (p *remotePlatform) AgentCatalog(ctx context.Context, sessionID string) ([]platforms.AgentCatalogEntry, error) {
-	client := p.conn.Client()
-	if client == nil {
-		return nil, ErrRemoteOffline
-	}
-	resp, err := client.AgentCatalog(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})
-	if err != nil {
-		return nil, err
-	}
-	var out []platforms.AgentCatalogEntry
-	return out, unmarshalJSON(resp.Payload, &out)
+	return sliceCall[platforms.AgentCatalogEntry](p, func(c pb.OcmanClient) (*pb.JsonResp, error) {
+		return c.AgentCatalog(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})
+	})
 }
 
 func (p *remotePlatform) SlashCommands(ctx context.Context, sessionID string) ([]platforms.SlashCommandEntry, error) {
-	client := p.conn.Client()
-	if client == nil {
-		return nil, ErrRemoteOffline
-	}
-	resp, err := client.SlashCommands(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})
-	if err != nil {
-		return nil, err
-	}
-	var out []platforms.SlashCommandEntry
-	return out, unmarshalJSON(resp.Payload, &out)
+	return sliceCall[platforms.SlashCommandEntry](p, func(c pb.OcmanClient) (*pb.JsonResp, error) {
+		return c.SlashCommands(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})
+	})
 }
 
 func (p *remotePlatform) SessionModels(ctx context.Context, sessionID string) (*platforms.SessionModelsResponse, error) {
@@ -242,42 +228,21 @@ func (p *remotePlatform) SessionModels(ctx context.Context, sessionID string) (*
 }
 
 func (p *remotePlatform) ListPermissions(ctx context.Context, sessionID string) ([]platforms.LivePrompt, error) {
-	client := p.conn.Client()
-	if client == nil {
-		return nil, ErrRemoteOffline
-	}
-	resp, err := client.ListPermissions(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})
-	if err != nil {
-		return nil, err
-	}
-	var out []platforms.LivePrompt
-	return out, unmarshalJSON(resp.Payload, &out)
+	return sliceCall[platforms.LivePrompt](p, func(c pb.OcmanClient) (*pb.JsonResp, error) {
+		return c.ListPermissions(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})
+	})
 }
 
 func (p *remotePlatform) ListQuestions(ctx context.Context, sessionID string) ([]platforms.LivePrompt, error) {
-	client := p.conn.Client()
-	if client == nil {
-		return nil, ErrRemoteOffline
-	}
-	resp, err := client.ListQuestions(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})
-	if err != nil {
-		return nil, err
-	}
-	var out []platforms.LivePrompt
-	return out, unmarshalJSON(resp.Payload, &out)
+	return sliceCall[platforms.LivePrompt](p, func(c pb.OcmanClient) (*pb.JsonResp, error) {
+		return c.ListQuestions(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})
+	})
 }
 
 func (p *remotePlatform) PermissionRules(ctx context.Context, sessionID string) ([]platforms.PermissionRule, error) {
-	client := p.conn.Client()
-	if client == nil {
-		return nil, ErrRemoteOffline
-	}
-	resp, err := client.PermissionRules(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})
-	if err != nil {
-		return nil, err
-	}
-	var out []platforms.PermissionRule
-	return out, unmarshalJSON(resp.Payload, &out)
+	return sliceCall[platforms.PermissionRule](p, func(c pb.OcmanClient) (*pb.JsonResp, error) {
+		return c.PermissionRules(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})
+	})
 }
 
 // --- mutations ---
@@ -404,6 +369,25 @@ func (p *remotePlatform) mutate(_ context.Context, req any, fn func(pb.OcmanClie
 		return err
 	}
 	return remotePlatformError(fn(client, b))
+}
+
+// sliceCall runs a unary JsonResp RPC and decodes the payload into a
+// []T. Like jsonCall, RPC errors are mapped through
+// remotePlatformError so Unavailable surfaces as ErrPlatformUnreachable.
+func sliceCall[T any](p *remotePlatform, fn func(pb.OcmanClient) (*pb.JsonResp, error)) ([]T, error) {
+	client := p.conn.Client()
+	if client == nil {
+		return nil, ErrRemoteOffline
+	}
+	resp, err := fn(client)
+	if err != nil {
+		return nil, remotePlatformError(err)
+	}
+	var out []T
+	if err := unmarshalJSON(resp.Payload, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // jsonCall runs a unary JsonResp RPC and decodes into dst.
