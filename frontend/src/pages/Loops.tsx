@@ -8,7 +8,7 @@ import { matchesScope } from '../lib/projectTree';
 import { useProjects } from '../lib/queries';
 import { LoopTableRow } from '../components/LoopTableRow';
 import { LoopCreateModal } from '../components/LoopCreateModal';
-import { DashboardToolbar } from './Dashboard';
+import { DashboardToolbar } from './dashboard/DashboardToolbar';
 import './Dashboard.css';
 import './Loops.css';
 
