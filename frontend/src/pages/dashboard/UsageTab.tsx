@@ -51,7 +51,7 @@ export function UsageTab() {
   return (
     <div className="metrics-page">
       <div className="metrics-filters">
-        <ProjectScopePicker projects={projects} value={dirScope} onChange={setDirScope} />
+        <ProjectScopePicker projects={projects} value={dirScope} onChange={setDirScope} showLabel />
         <label className="metrics-filter">
           <span>Model</span>
           <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}>

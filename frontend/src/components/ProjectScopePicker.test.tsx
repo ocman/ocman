@@ -66,6 +66,18 @@ describe('ProjectScopePicker', () => {
     expect(html).toContain('value="/repo/b"');
   });
 
+  it('hides the visible caption by default and shows it with showLabel', () => {
+    const bare = renderToStaticMarkup(
+      <ProjectScopePicker projects={[]} value="" onChange={() => {}} />,
+    );
+    expect(bare).not.toContain('<span>Project scope</span>');
+
+    const labelled = renderToStaticMarkup(
+      <ProjectScopePicker projects={[]} value="" onChange={() => {}} showLabel />,
+    );
+    expect(labelled).toContain('<span>Project scope</span>');
+  });
+
   it('marks the active scope as selected', () => {
     const projects = [{ directory: '/repo/a' }, { directory: '/repo/b' }];
     const html = renderToStaticMarkup(

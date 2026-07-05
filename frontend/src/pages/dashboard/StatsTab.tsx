@@ -150,7 +150,7 @@ export function StatsTab() {
   return (
     <div className="metrics-page">
       <div className="metrics-filters">
-        <ProjectScopePicker projects={projects} value={dirScope} onChange={setDirScope} />
+        <ProjectScopePicker projects={projects} value={dirScope} onChange={setDirScope} showLabel />
         <label className="metrics-filter">
           <span>Agent</span>
           <select value={selectedAgent} onChange={(e) => setSelectedAgent(e.target.value)}>
