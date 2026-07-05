@@ -3,8 +3,6 @@ package opencode
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"net/http"
 	"sort"
 	"strings"
 	"sync"
@@ -569,17 +567,8 @@ func contextLimitFor(modelRef string, prov *OpenCodeProvidersResponse) int64 {
 // at panel level — when the port is unreachable we already return
 // ErrUnsupported earlier.
 func fetchOpenCodeMCP(port string) map[string]rawMCPEntry {
-	url := fmt.Sprintf("http://127.0.0.1:%s/mcp", port)
-	resp, err := openCodeClient.Get(url)
-	if err != nil {
-		return map[string]rawMCPEntry{}
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return map[string]rawMCPEntry{}
-	}
 	out := map[string]rawMCPEntry{}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if !getInto(port, "/mcp", &out) {
 		return map[string]rawMCPEntry{}
 	}
 	return out
@@ -589,17 +578,8 @@ func fetchOpenCodeMCP(port string) map[string]rawMCPEntry {
 // and returns the configured language servers. Returns an empty slice
 // on failure for the same reason as fetchOpenCodeMCP.
 func fetchOpenCodeLSP(port string) []rawLSPEntry {
-	url := fmt.Sprintf("http://127.0.0.1:%s/lsp", port)
-	resp, err := openCodeClient.Get(url)
-	if err != nil {
-		return []rawLSPEntry{}
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return []rawLSPEntry{}
-	}
 	out := []rawLSPEntry{}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if !getInto(port, "/lsp", &out) {
 		return []rawLSPEntry{}
 	}
 	return out

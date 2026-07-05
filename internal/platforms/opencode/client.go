@@ -181,6 +181,17 @@ func rawGet(port, path string) ([]byte, bool) {
 	return body, true
 }
 
+// getInto performs a plain GET against the OpenCode instance and
+// unmarshals a 200 JSON response into v. Returns false on any
+// transport, status, or decode failure.
+func getInto(port, path string, v interface{}) bool {
+	body, ok := rawGet(port, path)
+	if !ok {
+		return false
+	}
+	return json.Unmarshal(body, v) == nil
+}
+
 // fetchOpenCodeSession fetches session metadata from the OpenCode HTTP API.
 func fetchOpenCodeSession(port, sessionID string) (map[string]interface{}, error) {
 	path := "/session/" + sessionID
@@ -199,19 +210,10 @@ func fetchOpenCodeSession(port, sessionID string) (map[string]interface{}, error
 
 // fetchOpenCodeSmallModel fetches the resolved OpenCode config and extracts small_model.
 func fetchOpenCodeSmallModel(port string) (providerID, modelID string, ok bool) {
-	url := fmt.Sprintf("http://127.0.0.1:%s/config", port)
-	resp, err := openCodeClient.Get(url)
-	if err != nil {
-		return "", "", false
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", "", false
-	}
 	var cfg struct {
 		SmallModel string `json:"small_model"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&cfg); err != nil {
+	if !getInto(port, "/config", &cfg) {
 		return "", "", false
 	}
 	slash := strings.IndexByte(cfg.SmallModel, '/')
