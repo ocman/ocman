@@ -372,7 +372,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	mux.HandleFunc("/api/loops/", loopsHandler)
 
 	// MCP server — localhost-only, enabled by default. Exposes the
-	// session-split tools (split_to_session, split_to_worktree, etc.)
+	// session-split tools (new_session, etc.)
 	// to AI coding agents via the Model Context Protocol.
 	mcpHandler := requireLocalhost(s.buildMCPHandler().ServeHTTP)
 	mux.HandleFunc("/mcp", mcpHandler)

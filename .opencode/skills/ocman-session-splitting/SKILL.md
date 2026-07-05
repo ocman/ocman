@@ -20,9 +20,11 @@ Do not split for tiny edits, single-file reads, or tasks needing constant parent
 
 ## Tool Choice
 
-Use `split_to_session` when child can share the current working tree and only needs to research, review, or run read-only checks.
+Use `new_session` (default, shares the parent's working tree) when child only needs to research, review, or run read-only checks.
 
-Use `split_to_worktree` when child may edit files, run formatters, stage changes, or otherwise interfere with parent work.
+Use `new_session` with `worktree=true` and a `branch` when child may edit files, run formatters, stage changes, or otherwise interfere with parent work.
+
+Pass `model` (a `"provider/model"` string) when the child should run on a different model than the parent default — e.g. a cheaper/faster model for review or a stronger model for hard implementation.
 
 Use `get_session_status` for one child. Use `list_child_sessions` for all children from the current parent. Use `cancel_session` for stale or wrong child work.
 

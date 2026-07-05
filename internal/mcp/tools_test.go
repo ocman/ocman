@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -534,6 +535,98 @@ func TestSendMessageToChild_RejectsUnlinkedChild(t *testing.T) {
 	}
 	if len(platform.sentMessages) != 0 {
 		t.Fatalf("expected no sent messages, got %d", len(platform.sentMessages))
+	}
+}
+
+func TestNewSession_PassesModelAndUsesParentDir(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	ocDB := openTestOpenCodeDB(t, []db.Session{
+		{ID: "parent-ns", Title: "parent", Directory: "/repo", TimeCreated: 1000, TimeUpdated: 2000},
+	})
+	platform := &fakePlatformForTools{createSessionID: "child-ns"}
+	srv := buildTestMCPServerWithOpenCodeDB(t, stateDB, platform, ocDB)
+
+	result := callTool(t, srv, "new_session", map[string]interface{}{
+		"session_id": "parent-ns",
+		"intent":     "review the diff",
+		"model":      "anthropic/claude-haiku-4-5",
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", resultText(result))
+	}
+	if len(platform.sentMessages) != 1 {
+		t.Fatalf("expected one sent message, got %d", len(platform.sentMessages))
+	}
+	if platform.sentMessages[0].Model != "anthropic/claude-haiku-4-5" {
+		t.Fatalf("model not forwarded to child, got %q", platform.sentMessages[0].Model)
+	}
+
+	cs, err := stateDB.GetChildSession("child-ns")
+	if err != nil {
+		t.Fatalf("GetChildSession: %v", err)
+	}
+	if cs.WorktreePath != "" {
+		t.Fatalf("expected no worktree for default new_session, got %q", cs.WorktreePath)
+	}
+}
+
+func TestNewSession_WorktreeRequiresBranch(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	ocDB := openTestOpenCodeDB(t, []db.Session{
+		{ID: "parent-wt", Title: "parent", Directory: "/repo", TimeCreated: 1000, TimeUpdated: 2000},
+	})
+	platform := &fakePlatformForTools{}
+	srv := buildTestMCPServerWithOpenCodeDB(t, stateDB, platform, ocDB)
+
+	result := callTool(t, srv, "new_session", map[string]interface{}{
+		"session_id": "parent-wt",
+		"intent":     "build a feature",
+		"worktree":   true,
+	})
+	if !result.IsError {
+		t.Fatalf("expected error when worktree=true without branch")
+	}
+}
+
+func TestNewSession_WorktreeCreatesWithModel(t *testing.T) {
+	repoDir := t.TempDir()
+	for _, args := range [][]string{
+		{"init"},
+		{"-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+
+	stateDB := openTestStateDB(t)
+	ocDB := openTestOpenCodeDB(t, []db.Session{
+		{ID: "parent-wt2", Title: "parent", Directory: repoDir, TimeCreated: 1000, TimeUpdated: 2000},
+	})
+	platform := &fakePlatformForTools{createSessionID: "child-wt-ns"}
+	srv := buildTestMCPServerWithOpenCodeDB(t, stateDB, platform, ocDB)
+
+	result := callTool(t, srv, "new_session", map[string]interface{}{
+		"session_id": "parent-wt2",
+		"intent":     "build a feature",
+		"worktree":   true,
+		"branch":     "feat-x",
+		"model":      "openai/gpt-5",
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", resultText(result))
+	}
+	if len(platform.sentMessages) != 1 || platform.sentMessages[0].Model != "openai/gpt-5" {
+		t.Fatalf("model not forwarded to worktree child: %+v", platform.sentMessages)
+	}
+	cs, err := stateDB.GetChildSession("child-wt-ns")
+	if err != nil {
+		t.Fatalf("GetChildSession: %v", err)
+	}
+	if cs.Branch != "feat-x" || cs.WorktreePath == "" {
+		t.Fatalf("expected worktree child with branch, got %+v", cs)
 	}
 }
 

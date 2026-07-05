@@ -259,7 +259,7 @@ diffs minimal and match the surrounding code.
 
 Ocman embeds a localhost-only MCP server (`internal/mcp/`, mounted at
 `/mcp` by the server package) exposing session-split + parent/child
-message tools (`split_to_session`, `split_to_worktree`,
+message tools (`new_session`,
 `get_current_session_id`, `get_session_status`, `list_child_sessions`,
 `cancel_session`, `send_message_to_child`, `send_message_to_parent`).
 

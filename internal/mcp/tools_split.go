@@ -18,18 +18,17 @@ type splitSessionReader interface {
 	GetSessionMessages(sessionID string) ([]db.Message, error)
 }
 
-// splitTools holds the dependencies for the split_to_session and
-// split_to_worktree tool handlers.
+// splitTools holds the dependencies for the new_session tool handler.
 type splitTools struct {
 	composer *PromptComposer
 	launcher *SessionLauncher
 	platform string // platform ID, e.g. "opencode"
 }
 
-// splitToSessionTool returns the mcp-go tool definition for split_to_session.
-func splitToSessionTool() mcplib.Tool {
-	return mcplib.NewTool("split_to_session",
-		mcplib.WithDescription("Launch a child OpenCode session in the same working directory."),
+// newSessionTool returns the mcp-go tool definition for new_session.
+func newSessionTool() mcplib.Tool {
+	return mcplib.NewTool("new_session",
+		mcplib.WithDescription("Launch a child OpenCode session. By default it shares the parent's working directory; set worktree=true to run it in a fresh git worktree instead."),
 		mcplib.WithString("session_id",
 			mcplib.Required(),
 			mcplib.Description("Parent session ID."),
@@ -38,37 +37,17 @@ func splitToSessionTool() mcplib.Tool {
 			mcplib.Required(),
 			mcplib.Description("Sub-task for the child session."),
 		),
-		mcplib.WithObject("context_options",
-			mcplib.Description("Prompt context toggles. Defaults true."),
-			mcplib.Properties(map[string]interface{}{
-				"recent_messages":  map[string]interface{}{"type": "boolean"},
-				"relevant_files":   map[string]interface{}{"type": "boolean"},
-				"git_branch":       map[string]interface{}{"type": "boolean"},
-				"git_diff_stat":    map[string]interface{}{"type": "boolean"},
-				"project_metadata": map[string]interface{}{"type": "boolean"},
-			}),
+		mcplib.WithString("model",
+			mcplib.Description(`Optional "provider/model" reference for the child's first message. Defaults to the platform default.`),
 		),
-	)
-}
-
-// splitToWorktreeTool returns the mcp-go tool definition for split_to_worktree.
-func splitToWorktreeTool() mcplib.Tool {
-	return mcplib.NewTool("split_to_worktree",
-		mcplib.WithDescription("Launch a child OpenCode session in a fresh git git."),
-		mcplib.WithString("session_id",
-			mcplib.Required(),
-			mcplib.Description("Parent session ID."),
-		),
-		mcplib.WithString("intent",
-			mcplib.Required(),
-			mcplib.Description("Sub-task for the child session."),
+		mcplib.WithBoolean("worktree",
+			mcplib.Description("Run the child in a fresh git worktree instead of the parent's working directory. Defaults to false. Requires branch."),
 		),
 		mcplib.WithString("branch",
-			mcplib.Required(),
-			mcplib.Description("Branch name for the git."),
+			mcplib.Description("Branch name for the worktree. Required when worktree=true."),
 		),
 		mcplib.WithString("base_ref",
-			mcplib.Description("Base ref. Defaults to repo default branch."),
+			mcplib.Description("Base ref for the worktree. Defaults to the repo default branch. Only used when worktree=true."),
 		),
 		mcplib.WithObject("context_options",
 			mcplib.Description("Prompt context toggles. Defaults true."),
@@ -83,14 +62,15 @@ func splitToWorktreeTool() mcplib.Tool {
 	)
 }
 
-// addSplitTools registers the split tools on the MCP server.
+// addSplitTools registers the new_session tool on the MCP server.
 func addSplitTools(s *server.MCPServer, t *splitTools) {
-	s.AddTool(splitToSessionTool(), t.handleSplitToSession)
-	s.AddTool(splitToWorktreeTool(), t.handleSplitToWorktree)
+	s.AddTool(newSessionTool(), t.handleNewSession)
 }
 
-// handleSplitToSession handles the split_to_session tool call.
-func (t *splitTools) handleSplitToSession(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+// handleNewSession handles the new_session tool call. It dispatches to the
+// worktree path when worktree=true, otherwise creates the child in the
+// parent's working directory.
+func (t *splitTools) handleNewSession(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	sessionID, err := req.RequireString("session_id")
 	if err != nil {
 		return mcplib.NewToolResultError("session_id is required"), nil
@@ -98,6 +78,11 @@ func (t *splitTools) handleSplitToSession(ctx context.Context, req mcplib.CallTo
 	intent, err := req.RequireString("intent")
 	if err != nil {
 		return mcplib.NewToolResultError("intent is required"), nil
+	}
+	model := req.GetString("model", "")
+
+	if req.GetBool("worktree", false) {
+		return t.launchWorktree(ctx, req, sessionID, intent, model)
 	}
 
 	opts := parseContextOptions(req)
@@ -121,6 +106,7 @@ func (t *splitTools) handleSplitToSession(ctx context.Context, req mcplib.CallTo
 		Directory:       session.Directory,
 		Intent:          intent,
 		ComposedPrompt:  prompt,
+		Model:           model,
 	})
 	if err != nil {
 		return mcplib.NewToolResultError(fmt.Sprintf("launching child session: %v", err)), nil
@@ -134,19 +120,11 @@ func (t *splitTools) handleSplitToSession(ctx context.Context, req mcplib.CallTo
 	return toolResultJSON(result), nil
 }
 
-// handleSplitToWorktree handles the split_to_worktree tool call.
-func (t *splitTools) handleSplitToWorktree(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-	sessionID, err := req.RequireString("session_id")
-	if err != nil {
-		return mcplib.NewToolResultError("session_id is required"), nil
-	}
-	intent, err := req.RequireString("intent")
-	if err != nil {
-		return mcplib.NewToolResultError("intent is required"), nil
-	}
+// launchWorktree handles the worktree=true branch of new_session.
+func (t *splitTools) launchWorktree(ctx context.Context, req mcplib.CallToolRequest, sessionID, intent, model string) (*mcplib.CallToolResult, error) {
 	branch, err := req.RequireString("branch")
 	if err != nil {
-		return mcplib.NewToolResultError("branch is required"), nil
+		return mcplib.NewToolResultError("branch is required when worktree=true"), nil
 	}
 	baseRef := req.GetString("base_ref", "")
 
@@ -185,6 +163,7 @@ func (t *splitTools) handleSplitToWorktree(ctx context.Context, req mcplib.CallT
 			Platform:        t.platform,
 			Intent:          intent,
 			ComposedPrompt:  prompt,
+			Model:           model,
 		},
 		git.CreateWorktreeRequest{
 			RepoRoot:  repoRoot,

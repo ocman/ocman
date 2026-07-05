@@ -18,7 +18,7 @@ Use a loop when work is repetitive and self-driven:
   (`child_complete` + `spawn_worktree`).
 - Keep iterating on a session after each turn (`turn_complete`).
 
-Do NOT loop for one-off tasks — use `split_to_session` / `split_to_worktree`.
+Do NOT loop for one-off tasks — use `new_session`.
 
 ## Mandatory Safety
 

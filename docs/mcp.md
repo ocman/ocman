@@ -44,8 +44,7 @@ directly (no Vite dev proxy).
 
 | Tool | Description |
 |------|-------------|
-| `split_to_session` | Launch a new OpenCode session in the same directory with a context-enriched prompt. |
-| `split_to_worktree` | Launch a new OpenCode session in a fresh git worktree. |
+| `new_session` | Launch a new OpenCode child session with a context-enriched prompt. Shares the parent's directory by default; set `worktree=true` (with a `branch`) to run it in a fresh git worktree. Accepts an optional `model` (`"provider/model"`) for the child. |
 | `get_current_session_id` | Return the most recently updated OpenCode session ID known to ocman, optionally filtered by project directory. |
 | `get_session_status` | Check the status of a previously spawned child session. |
 | `list_child_sessions` | List all child sessions spawned from a parent session. |
@@ -55,9 +54,9 @@ directly (no Vite dev proxy).
 
 ## How splitting works
 
-1. The model (or you, via the agent) calls `split_to_session` or
-   `split_to_worktree` with a brief `intent` and the current
-   `session_id`.
+1. The model (or you, via the agent) calls `new_session` with a brief
+   `intent` and the current `session_id` (optionally `worktree=true` +
+   `branch`, and/or a `model`).
 2. Ocman gathers context from the parent session's directory — the last
    10 messages, the current git branch, and `git diff --stat`.
 3. A structured Markdown prompt is assembled and sent to a new OpenCode

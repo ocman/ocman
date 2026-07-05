@@ -38,8 +38,8 @@ type ContextOptions struct {
 
 	// DirOverride, when non-empty, replaces the session's directory for the
 	// project-metadata line and the git branch/diff commands. Used by
-	// split_to_worktree so the prompt references the new worktree directory
-	// rather than the parent session's checkout. Defaults to "" (no override).
+	// the worktree new_session path so the prompt references the new worktree
+	// directory rather than the parent session's checkout. Defaults to "" (no override).
 	DirOverride string
 }
 

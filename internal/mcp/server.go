@@ -175,8 +175,7 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 	}
 
 	tools := []mcpserver.ServerTool{
-		{Tool: splitToSessionTool(), Handler: split.handleSplitToSession},
-		{Tool: splitToWorktreeTool(), Handler: split.handleSplitToWorktree},
+		{Tool: newSessionTool(), Handler: split.handleNewSession},
 		{Tool: getSessionStatusTool(), Handler: status.handleGetSessionStatus},
 		{Tool: getCurrentSessionIDTool(), Handler: status.handleGetCurrentSessionID},
 		{Tool: listChildSessionsTool(), Handler: status.handleListChildSessions},

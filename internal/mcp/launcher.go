@@ -29,8 +29,8 @@ type LaunchRequest struct {
 	// Platform is the platform ID (e.g. "opencode").
 	Platform string
 	// Directory is the working directory for the new session.
-	// For split_to_session this is the parent's cwd.
-	// For split_to_worktree this is the worktree path.
+	// For a same-directory new_session this is the parent's cwd.
+	// For a worktree new_session this is the worktree path.
 	Directory string
 	// Intent is the caller-provided sub-task description.
 	Intent string
@@ -38,12 +38,12 @@ type LaunchRequest struct {
 	ComposedPrompt string
 	// Model is the optional platform model reference used for the first message.
 	Model string
-	// WorktreePath is the on-disk worktree path (empty for split_to_session).
+	// WorktreePath is the on-disk worktree path (empty for same-directory sessions).
 	WorktreePath string
-	// Branch is the git branch for the worktree (empty for split_to_session).
+	// Branch is the git branch for the worktree (empty for same-directory sessions).
 	Branch string
 	// TmuxTarget is the tmux session or session:window used to launch
-	// the child (empty for split_to_session when no tmux launch is needed).
+	// the child (empty for same-directory sessions when no tmux launch is needed).
 	TmuxTarget string
 	// LoopID links this child to an agent loop (empty for one-shot
 	// splits). Persisted on the child_sessions row so the loop engine
