@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
-import { api, AuthError, fetchJSON, postJSON, registerAuthErrorHandler } from './api';
+import { api, AuthError, BackendUnavailableError, fetchJSON, postJSON, registerAuthErrorHandler } from './api';
 
 // Each test installs its own fetch stub. We restore between tests so
 // state doesn't leak.
@@ -116,6 +116,56 @@ describe('api.sendMessage', () => {
     await api.sendMessage('s1', 'hello', undefined, undefined, undefined, undefined, 'r-box:opencode');
 
     expect(captured).toEqual(['/api/session/s1/message?platform=r-box%3Aopencode']);
+  });
+});
+
+describe('backend-down error classification', () => {
+  it('fetchJSON maps a network failure (TypeError) to BackendUnavailableError', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new TypeError('Load failed'))));
+    const err = await fetchJSON('/api/thing').catch((e) => e);
+    expect(err).toBeInstanceOf(BackendUnavailableError);
+    expect((err as Error).message).toMatch(/backend is not responding/i);
+  });
+
+  it('fetchJSON maps a non-JSON 200 body (SyntaxError) to BackendUnavailableError', async () => {
+    // Safari words this SyntaxError as "The string did not match the
+    // expected pattern." — the bug this classification exists for.
+    stubFetch(() => new Response('<!doctype html><html></html>', { status: 200 }));
+    await expect(fetchJSON('/api/thing')).rejects.toBeInstanceOf(BackendUnavailableError);
+  });
+
+  it('postJSON maps a network failure to BackendUnavailableError', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new TypeError('Failed to fetch'))));
+    await expect(postJSON('/api/thing', {})).rejects.toBeInstanceOf(BackendUnavailableError);
+  });
+
+  it('postJSON maps a non-JSON 200 body to BackendUnavailableError', async () => {
+    stubFetch(() => new Response('not json', { status: 200 }));
+    await expect(postJSON('/api/thing', {})).rejects.toBeInstanceOf(BackendUnavailableError);
+  });
+
+  it('does not remap aborts', async () => {
+    const abortErr = new DOMException('aborted', 'AbortError');
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(abortErr)));
+    const err = await fetchJSON('/api/thing').catch((e) => e);
+    expect(err).toBe(abortErr);
+  });
+
+  it('keeps server error bodies intact on non-2xx', async () => {
+    stubFetch(() => new Response('boom', { status: 500 }));
+    const err = await fetchJSON('/api/thing').catch((e) => e);
+    expect(err).not.toBeInstanceOf(BackendUnavailableError);
+    expect((err as Error).message).toBe('boom');
+  });
+
+  it('api.createSession maps a network failure to BackendUnavailableError', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new TypeError('Load failed'))));
+    await expect(api.createSession('/some/dir')).rejects.toBeInstanceOf(BackendUnavailableError);
+  });
+
+  it('api.sendMessage maps a network failure to BackendUnavailableError', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new TypeError('Load failed'))));
+    await expect(api.sendMessage('s1', 'hi')).rejects.toBeInstanceOf(BackendUnavailableError);
   });
 });
 

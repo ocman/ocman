@@ -173,6 +173,44 @@ export function registerAuthErrorHandler(handler: AuthErrorHandler): AuthErrorHa
   return previous;
 }
 
+/**
+ * BackendUnavailableError replaces the cryptic browser errors that a
+ * dead/unreachable backend produces — Safari's "Load failed" /
+ * "The string did not match the expected pattern.", Chrome's
+ * "Failed to fetch" — with one clear, user-facing message. Error
+ * banners render `err.message` verbatim, so the friendly copy lives
+ * in the message itself.
+ */
+export class BackendUnavailableError extends Error {
+  constructor() {
+    super('Backend is not responding. Check that ocman is running, then reload the page.');
+    this.name = 'BackendUnavailableError';
+  }
+}
+
+// Internal: classify a fetch/parse failure. A network-level failure
+// (fetch rejects with TypeError) or a non-JSON body on an OK response
+// (resp.json() rejects with SyntaxError, e.g. a proxy serving an HTML
+// error page) both mean the backend is down or unhealthy. Aborts and
+// everything else pass through untouched.
+function toBackendError(err: unknown): unknown {
+  if (err instanceof DOMException) return err; // AbortError etc.
+  if (err instanceof TypeError || err instanceof SyntaxError) {
+    return new BackendUnavailableError();
+  }
+  return err;
+}
+
+// Internal: fetch that reports network-level failure as
+// BackendUnavailableError. All api.ts call sites go through this.
+async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch (err) {
+    throw toBackendError(err);
+  }
+}
+
 // Internal: surface a 401 as an AuthError and notify the registered
 // handler. Callers that catch this will receive an AuthError; anyone
 // who doesn't catch still lets the handler update global auth state.
@@ -189,10 +227,12 @@ export async function fetchJSON<T>(url: string, signal?: AbortSignal): Promise<T
   const startedAt = performance.now();
   let status = 0;
   try {
-    const resp = await fetch(url, signal ? { signal } : undefined);
+    const resp = await apiFetch(url, signal ? { signal } : undefined);
     status = resp.status;
     if (!resp.ok) await throwForStatus(resp);
-    return await resp.json();
+    return await resp.json().catch((err) => {
+      throw toBackendError(err);
+    });
   } finally {
     // Record after the JSON parse so durationMs reflects the user-
     // visible cost, not just the HTTP round-trip. Errors and aborts
@@ -232,7 +272,7 @@ export async function postJSON<TResp, TReq = unknown>(
   let status = 0;
   try {
     const hasBody = body !== undefined;
-    const resp = await fetch(url, {
+    const resp = await apiFetch(url, {
       method,
       headers: hasBody ? { 'Content-Type': 'application/json' } : undefined,
       body: hasBody ? JSON.stringify(body) : undefined,
@@ -243,7 +283,9 @@ export async function postJSON<TResp, TReq = unknown>(
     if (opts?.parseJSON === false || resp.status === 204) {
       return undefined as unknown as TResp;
     }
-    return await resp.json();
+    return await resp.json().catch((err) => {
+      throw toBackendError(err);
+    });
   } finally {
     recordPerf({
       pathTemplate: templatePath(url),
@@ -449,7 +491,7 @@ export const api = {
   resolveTargets: (dir: string, remoteId?: string) =>
     postJSON<ResolveTargetsResponse>('/api/sessions/resolve-targets', { dir, ...(remoteId ? { remoteId } : {}) }),
   createSession: async (directory: string, platform?: string, title?: string) => {
-    const resp = await fetch('/api/sessions', {
+    const resp = await apiFetch('/api/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -483,7 +525,7 @@ export const api = {
     platform?: string,
   ) => {
     const query = platform ? `?platform=${encodeURIComponent(platform)}` : '';
-    const resp = await fetch(`/api/session/${encodeURIComponent(sessionId)}/message${query}`, {
+    const resp = await apiFetch(`/api/session/${encodeURIComponent(sessionId)}/message${query}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message, images, model, agent, reasoning }),
@@ -515,7 +557,7 @@ export const api = {
   uploadComposerAttachment: async (sessionId: string, file: File) => {
     const form = new FormData();
     form.append('file', file);
-    const resp = await fetch(`/api/session/${encodeURIComponent(sessionId)}/attachment`, {
+    const resp = await apiFetch(`/api/session/${encodeURIComponent(sessionId)}/attachment`, {
       method: 'POST',
       body: form,
     });
@@ -594,7 +636,7 @@ export const api = {
       );
     },
     createWindow: async (dir: string, remoteId?: string): Promise<{ window: string }> => {
-      const resp = await fetch('/api/term/windows', {
+      const resp = await apiFetch('/api/term/windows', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dir, ...(remoteId && remoteId !== 'local' ? { remoteId } : {}) }),
@@ -603,7 +645,7 @@ export const api = {
       return resp.json();
     },
     killWindow: async (dir: string, window: string, remoteId?: string): Promise<void> => {
-      const resp = await fetch('/api/term/windows', {
+      const resp = await apiFetch('/api/term/windows', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dir, window, ...(remoteId && remoteId !== 'local' ? { remoteId } : {}) }),
@@ -743,7 +785,7 @@ export const api = {
     const ext = extMap[audio.type] || '.webm';
     const form = new FormData();
     form.append('audio', audio, `recording${ext}`);
-    const resp = await fetch('/api/transcribe', { method: 'POST', body: form });
+    const resp = await apiFetch('/api/transcribe', { method: 'POST', body: form });
     if (!resp.ok) throw new Error(await resp.text());
     const data = await resp.json() as { text: string };
     return data.text;
