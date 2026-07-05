@@ -5,7 +5,6 @@ import type {
   CapabilitiesResponse,
   DirectoryBrowseResponse,
   DirectorySearchResponse,
-  MetricsDashboard,
   ModelUsage,
   Project,
   Session,
@@ -102,7 +101,6 @@ type ApiStore = {
    */
   seedNewSession: (id: string, directory: string, platform: string, title?: string) => void;
   runRequest: <T>(key: string, task: () => Promise<T>) => Promise<T>;
-  getMetrics: (params?: { agent?: string; model?: string; days?: number }, signal?: AbortSignal) => Promise<MetricsDashboard>;
   getProjects: (signal?: AbortSignal) => Promise<Project[]>;
   browseDirectories: (directory?: string, signal?: AbortSignal) => Promise<DirectoryBrowseResponse>;
   searchDirectories: (root: string | undefined, query: string, limit?: number, signal?: AbortSignal) => Promise<DirectorySearchResponse>;
@@ -308,7 +306,6 @@ export const useApiStore = create<ApiStore>((set, get) => ({
       throw error;
     }
   },
-  getMetrics: (params, signal) => get().runRequest(`metrics:get:${params?.agent ?? ''}:${params?.model ?? ''}:${params?.days ?? ''}`, () => api.metrics(params, signal)),
   getProjects: (signal) => get().runRequest('projects:get', () => api.projects(signal)),
   browseDirectories: (directory, signal) => get().runRequest(`filesystem:directories:${directory ?? '~'}`, () => api.browseDirectories(directory, signal)),
   searchDirectories: (root, query, limit, signal) => get().runRequest(`filesystem:directory-search:${root ?? '~'}:${query}:${limit ?? ''}`, () => api.searchDirectories(root, query, limit, signal)),
