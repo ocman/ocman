@@ -1,8 +1,8 @@
-// Package tmux holds tmux process-control primitives shared across
-// packages that can't import internal/server (which would be an import
-// cycle). It is intentionally minimal: the bulk of ocman's tmux
-// integration still lives in internal/server/tmux.go; only primitives
-// needed by more than one package live here.
+// Package tmux holds ocman's tmux process-control layer: session,
+// window, and client listing; name derivation/validation; and the
+// opencode/worktree launchers (with Runner seams for tests). The HTTP
+// handlers that call into it stay in internal/server. This file holds
+// the smallest cross-cutting primitives; the bulk lives in sessions.go.
 package tmux
 
 import (
