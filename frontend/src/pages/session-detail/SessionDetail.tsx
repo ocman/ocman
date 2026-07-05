@@ -17,11 +17,12 @@ import { useStickyNavigate } from '../../lib/useStickyNavigate';
 import * as Toast from '@radix-ui/react-toast';
 import './SessionDetail.css';
 import { api, sessionExportMarkdownUrl } from '../../lib/api';
-import type { Message, Part, PartData, Session, SessionWarning } from '../../lib/api';
+import type { SessionWarning } from '../../lib/api';
 import { cleanTitle, shortPath } from '../../lib/format';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { canLaunchSession } from './launchGate';
-import { messageBookmarkKey, type MessageBookmark, type MessageBookmarkGroup } from '../../lib/messageBookmarks';
+import type { MessageBookmark } from '../../lib/messageBookmarks';
+import { useMessageBookmarks } from './useMessageBookmarks';
 import { useHeaderInfo, usePageTitle } from '../../lib/headerContext';
 import { OcmanRuntimeProvider } from '../../components/OcmanRuntimeProvider';
 import { AssistantThread } from '../../components/AssistantThread';
@@ -114,169 +115,6 @@ function HeaderActionsPortal({ children }: { children: React.ReactNode }) {
 const MAX_RETAINED_MESSAGES = 200;
 const TRIMMED_RETAINED_MESSAGES = 150;
 const THREAD_BOUNDARY_AUTO_RECOVERY_COOLDOWN_MS = 5_000;
-const MESSAGE_BOOKMARKS_STORAGE_PREFIX = 'ocman:message-bookmarks:';
-
-function messageBookmarkStorage(): Storage | undefined {
-  if (typeof window === 'undefined') return undefined;
-  try {
-    return window.localStorage ?? undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-interface MessageBookmarkState {
-  sessionId: string | undefined;
-  bookmarks: MessageBookmark[];
-  selectedKey: string | null;
-}
-
-function normalizeBookmarkRole(role: string | undefined) {
-  if (!role) return 'Message';
-  return role.charAt(0).toUpperCase() + role.slice(1);
-}
-
-function partData(part: Part): PartData | null {
-  if (typeof part.data === 'string') {
-    try {
-      return JSON.parse(part.data) as PartData;
-    } catch {
-      return null;
-    }
-  }
-  return part.data;
-}
-
-function summarizePart(part: Part) {
-  const data = partData(part);
-  if (!data) return '';
-  if (typeof data.text === 'string' && data.text.trim()) return data.text.trim();
-  if (data.type === 'tool' && data.tool) return `[tool: ${data.tool}]`;
-  if (data.type === 'file' && data.filename) return `[file: ${data.filename}]`;
-  return '';
-}
-
-function buildMessageBookmarks(
-  messages: Message[],
-  parts: Part[],
-  opts: { sessionId: string | undefined; directory: string | undefined; sessionTitle: string | undefined },
-) {
-  const partsByMessage = new Map<string, Part[]>();
-  for (const part of parts) {
-    const grouped = partsByMessage.get(part.messageId);
-    if (grouped) grouped.push(part);
-    else partsByMessage.set(part.messageId, [part]);
-  }
-
-  return new Map(messages.map((message) => {
-    const preview = (partsByMessage.get(message.id) ?? [])
-      .map(summarizePart)
-      .filter(Boolean)
-      .join(' ')
-      .replace(/\s+/g, ' ')
-      .slice(0, 220);
-    const projectDirectory = projectRootForDirectory(opts.directory || '');
-    return [message.id, {
-      id: message.id,
-      sessionId: opts.sessionId || message.sessionId,
-      role: normalizeBookmarkRole(message.data.role),
-      preview,
-      timeCreated: message.timeCreated,
-      directory: opts.directory,
-      projectDirectory,
-      sessionTitle: cleanTitle(opts.sessionTitle) || 'Untitled',
-    } satisfies MessageBookmark];
-  }));
-}
-
-function loadMessageBookmarks(sessionId: string | undefined): MessageBookmark[] {
-  if (!sessionId) return [];
-  try {
-    const storage = messageBookmarkStorage();
-    if (!storage) return [];
-    if (typeof storage.getItem !== 'function') return [];
-    const raw = storage.getItem(`${MESSAGE_BOOKMARKS_STORAGE_PREFIX}${sessionId}`);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as MessageBookmark[];
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((bookmark) => bookmark && typeof bookmark.id === 'string')
-      .map((bookmark) => ({ ...bookmark, sessionId: bookmark.sessionId || sessionId }));
-  } catch {
-    return [];
-  }
-}
-
-function saveMessageBookmarks(sessionId: string | undefined, bookmarks: MessageBookmark[]) {
-  if (!sessionId) return;
-  try {
-    const storage = messageBookmarkStorage();
-    if (!storage) return;
-    const key = `${MESSAGE_BOOKMARKS_STORAGE_PREFIX}${sessionId}`;
-    if (bookmarks.length === 0) {
-      if (typeof storage.removeItem === 'function') storage.removeItem(key);
-      return;
-    }
-    if (typeof storage.setItem === 'function') storage.setItem(key, JSON.stringify(bookmarks));
-  } catch {
-    return;
-  }
-}
-
-function loadAllMessageBookmarks(activeSessionId: string | undefined, activeBookmarks: MessageBookmark[], storageTick: number) {
-  void storageTick;
-  const storage = messageBookmarkStorage();
-  if (!storage) return activeBookmarks;
-  const bookmarks: MessageBookmark[] = [];
-  try {
-    if (typeof storage.length !== 'number' || typeof storage.key !== 'function') return activeBookmarks;
-    for (let i = 0; i < storage.length; i++) {
-      const key = storage.key(i);
-      if (!key?.startsWith(MESSAGE_BOOKMARKS_STORAGE_PREFIX)) continue;
-      const sessionId = key.slice(MESSAGE_BOOKMARKS_STORAGE_PREFIX.length);
-      if (sessionId === activeSessionId) continue;
-      bookmarks.push(...loadMessageBookmarks(sessionId));
-    }
-  } catch {
-    return activeBookmarks;
-  }
-  return [...activeBookmarks, ...bookmarks];
-}
-
-function groupMessageBookmarks(
-  bookmarks: MessageBookmark[],
-  currentDirectory: string | undefined,
-  sessions: Session[],
-): MessageBookmarkGroup[] {
-  const sessionsById = new Map(sessions.map((session) => [session.id, session]));
-  const currentProject = projectRootForDirectory(currentDirectory || '');
-  const groups = new Map<string, MessageBookmarkGroup>();
-
-  for (const bookmark of bookmarks) {
-    const bookmarkSession = sessionsById.get(bookmark.sessionId);
-    const directory = bookmark.directory || bookmarkSession?.directory;
-    const projectDirectory = bookmark.projectDirectory || projectRootForDirectory(directory || '') || '(unknown)';
-    const label = projectDirectory === '(unknown)' ? 'Unknown project' : shortPath(projectDirectory);
-    const group = groups.get(projectDirectory) ?? {
-      projectDirectory,
-      label,
-      current: projectDirectory === currentProject,
-      bookmarks: [],
-    };
-    group.bookmarks.push({
-      ...bookmark,
-      directory,
-      projectDirectory,
-      sessionTitle: bookmark.sessionTitle || cleanTitle(bookmarkSession?.title) || 'Untitled',
-    });
-    groups.set(projectDirectory, group);
-  }
-
-  return Array.from(groups.values()).sort((a, b) => {
-    if (a.current !== b.current) return a.current ? -1 : 1;
-    return a.label.localeCompare(b.label);
-  });
-}
 
 function sessionWarningKey(sessionId: string, warning: SessionWarning): string {
   return `${sessionId}:${warning.kind}:${warning.message}:${(warning.ports ?? []).join(',')}`;
@@ -375,12 +213,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
     return materializePending(session.id, pending.pending, rawMessages, rawParts);
   }, [session, rawMessages, rawParts, pending.pending]);
 
-  const currentMessageBookmarks = useMemo(() => buildMessageBookmarks(messages, parts, {
-    sessionId: session?.id ?? id,
-    directory: session?.directory,
-    sessionTitle: session?.title,
-  }), [messages, parts, session?.id, session?.directory, session?.title, id]);
-
   // Snapshot of the user's last-seen cutoff for the current session.
   // Used to compute the "first unread" marker and the "N new
   // messages" jump pill. Captured once per session id; subsequent
@@ -411,42 +243,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     () => firstUnreadMessageId ? countUnreadMessages(messages, unreadCutoff) : 0,
     [messages, firstUnreadMessageId, unreadCutoff],
   );
-  const loadedMessageBookmarks = useMemo(() => loadMessageBookmarks(id), [id]);
   const [dismissedSessionWarnings, setDismissedSessionWarnings] = useState<Set<string>>(() => new Set());
-  const [messageBookmarkState, setMessageBookmarkState] = useState<MessageBookmarkState>(() => ({
-    sessionId: id,
-    bookmarks: loadedMessageBookmarks,
-    selectedKey: loadedMessageBookmarks[0] ? messageBookmarkKey(loadedMessageBookmarks[0]) : null,
-  }));
-  const [messageBookmarkStorageTick, setMessageBookmarkStorageTick] = useState(0);
-
-  const activeMessageBookmarkState = messageBookmarkState.sessionId === id
-    ? messageBookmarkState
-    : {
-      sessionId: id,
-      bookmarks: loadedMessageBookmarks,
-      selectedKey: loadedMessageBookmarks[0] ? messageBookmarkKey(loadedMessageBookmarks[0]) : null,
-    };
-  const messageBookmarks = activeMessageBookmarkState.bookmarks;
-  const selectedMessageBookmarkKey = activeMessageBookmarkState.selectedKey;
-
-  const stateForActiveSession = useCallback((state: MessageBookmarkState): MessageBookmarkState => {
-    if (state.sessionId === id) return state;
-    return {
-      sessionId: id,
-      bookmarks: loadedMessageBookmarks,
-      selectedKey: loadedMessageBookmarks[0] ? messageBookmarkKey(loadedMessageBookmarks[0]) : null,
-    };
-  }, [id, loadedMessageBookmarks]);
-
-  useEffect(() => {
-    saveMessageBookmarks(id, messageBookmarks);
-  }, [id, messageBookmarks]);
-
-  const bookmarkedMessageIds = useMemo(
-    () => new Set(messageBookmarks.map((bookmark) => bookmark.id)),
-    [messageBookmarks],
-  );
   const visibleSessionWarnings = useMemo(() => {
     if (!session) return [];
     return (session.warnings ?? []).filter((warning) => (
@@ -463,53 +260,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
       return next;
     });
   }, [session]);
-
-  const handleToggleMessageBookmark = useCallback((messageId: string) => {
-    setMessageBookmarkState((current) => {
-      const state = stateForActiveSession(current);
-      if (state.bookmarks.some((bookmark) => bookmark.id === messageId)) {
-        const bookmarks = state.bookmarks.filter((bookmark) => bookmark.id !== messageId);
-        return {
-          ...state,
-          bookmarks,
-          selectedKey: state.selectedKey === messageBookmarkKey({ sessionId: state.sessionId || '', id: messageId })
-            ? (bookmarks[0] ? messageBookmarkKey(bookmarks[0]) : null)
-            : state.selectedKey,
-        };
-      }
-      const bookmark = currentMessageBookmarks.get(messageId);
-      if (!bookmark) return state;
-      return {
-        ...state,
-        bookmarks: [...state.bookmarks, bookmark],
-        selectedKey: messageBookmarkKey(bookmark),
-      };
-    });
-  }, [currentMessageBookmarks, stateForActiveSession]);
-
-  const handleRemoveMessageBookmark = useCallback((bookmark: MessageBookmark) => {
-    if (bookmark.sessionId !== id) {
-      const key = messageBookmarkKey(bookmark);
-      const bookmarks = loadMessageBookmarks(bookmark.sessionId)
-        .filter((item) => messageBookmarkKey(item) !== key);
-      saveMessageBookmarks(bookmark.sessionId, bookmarks);
-      setMessageBookmarkStorageTick((current) => current + 1);
-      setMessageBookmarkState((current) => (
-        current.selectedKey === key ? { ...current, selectedKey: null } : current
-      ));
-      return;
-    }
-    setMessageBookmarkState((current) => {
-      const state = stateForActiveSession(current);
-      const key = messageBookmarkKey(bookmark);
-      const bookmarks = state.bookmarks.filter((item) => messageBookmarkKey(item) !== key);
-      return {
-        ...state,
-        bookmarks,
-        selectedKey: state.selectedKey === key ? (bookmarks[0] ? messageBookmarkKey(bookmarks[0]) : null) : state.selectedKey,
-      };
-    });
-  }, [id, stateForActiveSession]);
 
   const handleScrollToMessageBookmark = useCallback((bookmark: MessageBookmark) => {
     const updateScrollRequest = () => {
@@ -624,18 +374,13 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const { infos: siblingGitInfos } = useGitInfo(
     recentSessions.map((s) => s.directory).filter(Boolean),
   );
-  const allMessageBookmarks = useMemo(
-    () => loadAllMessageBookmarks(id, messageBookmarks, messageBookmarkStorageTick),
-    [id, messageBookmarks, messageBookmarkStorageTick],
-  );
-  const messageBookmarkGroups = useMemo(
-    () => groupMessageBookmarks(
-      allMessageBookmarks,
-      session?.directory,
-      [session, ...recentSessions].filter((s): s is Session => !!s),
-    ),
-    [allMessageBookmarks, session, recentSessions],
-  );
+  const {
+    bookmarkedMessageIds,
+    selectedMessageBookmarkKey,
+    messageBookmarkGroups,
+    handleToggleMessageBookmark,
+    handleRemoveMessageBookmark,
+  } = useMessageBookmarks({ id, session, messages, parts, recentSessions });
 
   // Tmux state.
   const tmux = useTmux();
