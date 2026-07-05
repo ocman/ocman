@@ -1,6 +1,6 @@
 import type { Label, ForgeUser } from '../../lib/upstreamApi';
 import { styleForLabel } from './labelStyle';
-import { formatRelative } from './relativeTime';
+import { relativeTimeISO } from '../../lib/format';
 
 interface RowMetaProps {
   author: string;
@@ -19,7 +19,7 @@ export function RowMeta({ author, updatedAt, labels, assignees }: RowMetaProps) 
   return (
     <div className="oc-upstream-row-meta">
       <span className="oc-upstream-row-author">by {author}</span>
-      <span className="oc-upstream-row-time">{formatRelative(updatedAt)}</span>
+      <span className="oc-upstream-row-time">{relativeTimeISO(updatedAt)}</span>
       {labels && labels.length > 0 ? (
         <span className="oc-upstream-row-labels">
           {labels.map((l) => (
