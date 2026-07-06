@@ -303,6 +303,8 @@ function AutoApprovedNotice({
 export const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArgsText, result }) => {
   const [expandedState, setExpanded] = useState(false);
   const [taskExpandedState, setTaskExpanded] = useState(false);
+  // Collapse hides the entire tool body, leaving only the header/title.
+  const [collapsedState, setCollapsed] = useState(false);
   // While printing / saving to PDF, force every block open so the
   // exported transcript is complete. CSS lifts the max-height caps
   // (see the @media print block in tokens.css); this additionally
@@ -594,35 +596,41 @@ export const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsTe
     const command = outputDisplay ? (detail || title) : title;
     const bashOutput = outputDisplay || detail;
     const bashIsLong = shellOutputIsLong(bashOutput);
+    // Two independent axes:
+    //   collapsed  -> hide the whole body, show only the header (title).
+    //   expanded   -> when open, show full output vs the truncated preview.
+    const collapsed = collapsedState && !forcePrintExpand;
     const bashExpanded = expanded || !bashIsLong;
     const toggleLabel = expanded ? 'Collapse output' : 'Show full output';
     return (
-      <div className={`oc-tool oc-tool-shell ${userExecutedTool ? 'oc-tool-shell-user' : ''} ${statusClass} ${bashExpanded ? 'oc-tool-expanded' : ''}`}>
-        <div className="oc-tool-header" onClick={bashIsLong ? () => setExpanded(!expanded) : undefined} style={bashIsLong ? { cursor: 'pointer' } : undefined}>
+      <div className={`oc-tool oc-tool-shell ${userExecutedTool ? 'oc-tool-shell-user' : ''} ${statusClass} ${!collapsed && bashExpanded ? 'oc-tool-expanded' : ''} ${collapsed ? 'oc-tool-collapsed' : ''}`}>
+        <div className="oc-tool-header" onClick={() => setCollapsed(!collapsedState)} style={{ cursor: 'pointer' }}>
           <i className={`bi bi-terminal-fill oc-tool-icon ${statusClass}`} title={statusTitle} aria-hidden="true" />
           <span className="oc-tool-label">{title && title !== command ? title : toolName}</span>
           {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} />}
         </div>
-        <div className="oc-tool-content" onClick={() => !bashExpanded && setExpanded(true)} style={!bashExpanded ? { cursor: 'pointer' } : undefined}>
-          <pre className="oc-shell-block" data-testid="shell-output-block">
+        {!collapsed && (
+          <div className="oc-tool-content" onClick={() => !bashExpanded && setExpanded(true)} style={!bashExpanded ? { cursor: 'pointer' } : undefined}>
+            <pre className="oc-shell-block" data-testid="shell-output-block">
 {command && <><span className="oc-shell-prompt">$</span> <span className="oc-shell-cmd">{command}</span>{bashOutput ? '\n' : ''}</>}{bashOutput && <AnsiText text={bashOutput} />}
-          </pre>
-          {userExecutedTool && (
-            <div className="oc-shell-attribution">The following tool was executed by the user</div>
-          )}
-          {bashIsLong && (
-            <button
-              type="button"
-              className="oc-tool-expand"
-              onClick={(event) => {
-                event.stopPropagation();
-                setExpanded(!expanded);
-              }}
-            >
-              {toggleLabel}
-            </button>
-          )}
-        </div>
+            </pre>
+            {userExecutedTool && (
+              <div className="oc-shell-attribution">The following tool was executed by the user</div>
+            )}
+            {bashIsLong && (
+              <button
+                type="button"
+                className="oc-tool-expand"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setExpanded(!expanded);
+                }}
+              >
+                {toggleLabel}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     );
   }

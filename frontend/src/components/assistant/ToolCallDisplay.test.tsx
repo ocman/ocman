@@ -9,31 +9,21 @@ const renderTool = (p: Partial<Props>) =>
   // ToolCallDisplay only reads toolName/argsText/result off the props.
   render(<ToolCallDisplay {...({ toolName: 'bash', ...p } as Props)} />);
 
-const longOutput = Array.from({ length: 40 }, (_, i) => `line ${i}`).join('\n');
-
 describe('ToolCallDisplay bash collapse', () => {
-  it('toggles the expanded class for long output', () => {
-    const { container } = renderTool({
-      argsText: JSON.stringify({ command: 'ls' }),
-      result: longOutput,
-    });
-    const tool = container.querySelector('.oc-tool-shell')!;
-    // Long output starts collapsed (no oc-tool-expanded).
-    expect(tool.classList.contains('oc-tool-expanded')).toBe(false);
-    fireEvent.click(tool.querySelector('.oc-tool-header')!);
-    expect(tool.classList.contains('oc-tool-expanded')).toBe(true);
-    // Header click collapses again — this is the regression: it must flip back.
-    fireEvent.click(tool.querySelector('.oc-tool-header')!);
-    expect(tool.classList.contains('oc-tool-expanded')).toBe(false);
-  });
-
-  it('does not attach a dead toggle for short output', () => {
+  it('collapses the whole body to just the header on click', () => {
     const { container } = renderTool({
       argsText: JSON.stringify({ command: 'echo hi' }),
       result: 'hi',
     });
-    const header = container.querySelector('.oc-tool-header') as HTMLElement;
-    // Short output is fully shown; the header must not look clickable.
-    expect(header.style.cursor).toBe('');
+    const tool = container.querySelector('.oc-tool-shell')!;
+    // Open by default: the output block is present.
+    expect(tool.querySelector('[data-testid="shell-output-block"]')).not.toBeNull();
+    // Clicking the header collapses: no output at all, header remains.
+    fireEvent.click(tool.querySelector('.oc-tool-header')!);
+    expect(tool.querySelector('[data-testid="shell-output-block"]')).toBeNull();
+    expect(tool.querySelector('.oc-tool-label')).not.toBeNull();
+    // Clicking again re-expands.
+    fireEvent.click(tool.querySelector('.oc-tool-header')!);
+    expect(tool.querySelector('[data-testid="shell-output-block"]')).not.toBeNull();
   });
 });
