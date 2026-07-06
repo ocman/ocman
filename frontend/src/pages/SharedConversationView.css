@@ -140,6 +140,10 @@
   .oc-shared-view {
     max-width: none;
     padding: 0;
+    /* Undo the on-screen fixed-height scroll container so the
+       transcript paginates instead of clipping to one page. */
+    height: auto;
+    overflow: visible;
   }
 
   /* Use the full page width on paper instead of the on-screen 80%. */
