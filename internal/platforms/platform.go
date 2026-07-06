@@ -298,13 +298,6 @@ type Platform interface {
 	ProxyEvents(ctx context.Context, sessionID string, w io.Writer, flush func()) error
 }
 
-// Lifecycle is optional: adapters that need to run background work at
-// server boot (install hooks, spawn watchers) implement Start/Stop.
-type Lifecycle interface {
-	Start(ctx context.Context) error
-	Stop(ctx context.Context) error
-}
-
 // UnreadCounter is optional: adapters that can cheaply count messages
 // created after a per-session "seen" timestamp implement it. Used by
 // applySessionState to populate Session.UnreadCount in the session

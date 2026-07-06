@@ -27,7 +27,7 @@ const extraAllowedHosts = (process.env.OCMAN_ALLOWED_HOSTS ?? '')
 // Intentional limitations:
 //   - Only literal JSX attributes (data-testid="x" or data-testid={"x"}) are
 //     matched. Attributes added via spread props or computed keys are NOT
-//     stripped here; scripts/check-no-testids.sh catches any residue.
+//     stripped here.
 //   - Template strings / comments containing "data-testid=" would be rewritten
 //     too, which is acceptable for this codebase (no such strings exist) and
 //     easy to audit.

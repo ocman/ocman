@@ -2,6 +2,8 @@ package db
 
 import (
 	"encoding/json"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -778,10 +780,5 @@ func (d *DB) lookupSessionMetadata(ids []string) (titles, dirs map[string]string
 }
 
 func sortedKeys(values map[string]struct{}) []string {
-	result := make([]string, 0, len(values))
-	for value := range values {
-		result = append(result, value)
-	}
-	sort.Strings(result)
-	return result
+	return slices.Sorted(maps.Keys(values))
 }
