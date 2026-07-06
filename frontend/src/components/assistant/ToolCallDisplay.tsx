@@ -598,7 +598,7 @@ export const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsTe
     const toggleLabel = expanded ? 'Collapse output' : 'Show full output';
     return (
       <div className={`oc-tool oc-tool-shell ${userExecutedTool ? 'oc-tool-shell-user' : ''} ${statusClass} ${bashExpanded ? 'oc-tool-expanded' : ''}`}>
-        <div className="oc-tool-header" onClick={() => setExpanded(!expanded)}>
+        <div className="oc-tool-header" onClick={bashIsLong ? () => setExpanded(!expanded) : undefined} style={bashIsLong ? { cursor: 'pointer' } : undefined}>
           <i className={`bi bi-terminal-fill oc-tool-icon ${statusClass}`} title={statusTitle} aria-hidden="true" />
           <span className="oc-tool-label">{title && title !== command ? title : toolName}</span>
           {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} />}
