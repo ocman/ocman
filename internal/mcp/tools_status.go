@@ -2,8 +2,6 @@ package mcp
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	"time"
 
@@ -93,12 +91,9 @@ func (t *statusTools) handleGetSessionStatus(ctx context.Context, req mcplib.Cal
 		return mcplib.NewToolResultError("child_session_id is required"), nil
 	}
 
-	cs, err := t.stateDB.GetChildSession(childID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return mcplib.NewToolResultError(fmt.Sprintf("child session not found: %s", childID)), nil
-		}
-		return mcplib.NewToolResultError(fmt.Sprintf("looking up child session: %v", err)), nil
+	cs, toolErr := lookupChildSession(t.stateDB, childID)
+	if toolErr != nil {
+		return toolErr, nil
 	}
 
 	result := map[string]interface{}{
@@ -190,12 +185,9 @@ func (t *statusTools) handleCancelSession(_ context.Context, req mcplib.CallTool
 		return mcplib.NewToolResultError("child_session_id is required"), nil
 	}
 
-	cs, err := t.stateDB.GetChildSession(childID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return mcplib.NewToolResultError(fmt.Sprintf("child session not found: %s", childID)), nil
-		}
-		return mcplib.NewToolResultError(fmt.Sprintf("looking up child session: %v", err)), nil
+	cs, toolErr := lookupChildSession(t.stateDB, childID)
+	if toolErr != nil {
+		return toolErr, nil
 	}
 
 	// If already in a terminal state, treat as idempotent success.
@@ -239,5 +231,3 @@ func isTerminalStatus(status string) bool {
 	}
 	return false
 }
-
-

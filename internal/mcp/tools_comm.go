@@ -80,7 +80,7 @@ func (t *commTools) handleSendMessageToChild(ctx context.Context, req mcplib.Cal
 		return mcplib.NewToolResultError("message is required"), nil
 	}
 
-	cs, toolErr := t.getChildSession(childID)
+	cs, toolErr := lookupChildSession(t.stateDB, childID)
 	if toolErr != nil {
 		return toolErr, nil
 	}
@@ -113,7 +113,7 @@ func (t *commTools) handleSendMessageToParent(ctx context.Context, req mcplib.Ca
 		return mcplib.NewToolResultError("message is required"), nil
 	}
 
-	cs, toolErr := t.getChildSession(childID)
+	cs, toolErr := lookupChildSession(t.stateDB, childID)
 	if toolErr != nil {
 		return toolErr, nil
 	}
@@ -135,8 +135,12 @@ func (t *commTools) handleSendMessageToParent(ctx context.Context, req mcplib.Ca
 	}), nil
 }
 
-func (t *commTools) getChildSession(childID string) (*state.ChildSession, *mcplib.CallToolResult) {
-	cs, err := t.stateDB.GetChildSession(childID)
+// lookupChildSession fetches a child session by ID, mapping not-found
+// and generic lookup failures to MCP tool errors. The second return
+// value is non-nil on failure. Shared by the comm and status tools so
+// the error wording can't drift between handlers.
+func lookupChildSession(db commChildSessionDB, childID string) (*state.ChildSession, *mcplib.CallToolResult) {
+	cs, err := db.GetChildSession(childID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, mcplib.NewToolResultError(fmt.Sprintf("child session not found: %s", childID))
