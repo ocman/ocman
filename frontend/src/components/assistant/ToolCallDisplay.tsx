@@ -599,7 +599,10 @@ export const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsTe
     // Two independent axes:
     //   collapsed  -> hide the whole body, show only the header (title).
     //   expanded   -> when open, show full output vs the truncated preview.
-    const collapsed = collapsedState && !forcePrintExpand;
+    // The shared-page "Collapse tool outputs" toggle (printCollapse while
+    // printing) collapses everything to header-only too.
+    const forcePrintCollapse = isPrinting && printCollapse;
+    const collapsed = forcePrintCollapse || (collapsedState && !forcePrintExpand);
     const bashExpanded = expanded || !bashIsLong;
     const toggleLabel = expanded ? 'Collapse output' : 'Show full output';
     return (
