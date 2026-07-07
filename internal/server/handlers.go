@@ -413,11 +413,19 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
 		return
 	}
+	log.WithFields(log.Fields{
+		"platform":  req.Platform,
+		"directory": req.Directory,
+	}).Info("hub: create session request")
 	resp, err := s.sessions.Create(r.Context(), req.Platform, platforms.CreateSessionRequest{
 		Directory: req.Directory,
 		Title:     req.Title,
 	})
 	if err != nil {
+		log.WithError(err).WithFields(log.Fields{
+			"platform":  req.Platform,
+			"directory": req.Directory,
+		}).Warn("hub: create session failed")
 		writeSessionSvcError(w, "creating session", err)
 		return
 	}

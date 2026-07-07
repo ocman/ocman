@@ -519,6 +519,14 @@ func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSession
 	port := discoverOpenCodePortFresh(req.Directory)
 	portPhase.EndWithDesc("fresh lsof port discovery")
 	if port == "" {
+		// Log the requested dir (raw + normalized) against every
+		// discovered opencode cwd so a path mismatch (symlinks, remote
+		// vs hub path strings) is visible instead of a silent retry spin.
+		log.WithFields(log.Fields{
+			"requested":       req.Directory,
+			"normalized":      normalizePortDirectory(req.Directory),
+			"discovered_dirs": discoveredOpenCodeDirs(),
+		}).Warn("no running OpenCode instance for directory")
 		return nil, fmt.Errorf("no running OpenCode instance for directory %s: %w", req.Directory, platforms.ErrPlatformUnreachable)
 	}
 

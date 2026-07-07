@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 
+	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -300,7 +301,14 @@ func (s *Server) CreateSession(ctx context.Context, req *pb.PlatformJsonReq) (*p
 	if err := unmarshalJSON(req.Payload, &cr); err != nil {
 		return nil, err
 	}
+	log.WithFields(log.Fields{
+		"platform":  req.Platform,
+		"directory": cr.Directory,
+	}).Info("remote: create session request from hub")
 	resp, err := s.sessions.Create(ctx, req.Platform, cr)
+	if err != nil {
+		log.WithError(err).WithField("directory", cr.Directory).Warn("remote: create session failed")
+	}
 	return jsonResp(resp, svcErr(err))
 }
 
@@ -420,6 +428,7 @@ func (s *Server) LaunchTmux(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp,
 	if err := unmarshalJSON(req.Payload, &lr); err != nil {
 		return nil, err
 	}
+	log.WithField("directory", lr.Directory).Info("remote: launch-tmux request from hub")
 	return jsonResp(s.host.LaunchTmux(ctx, lr))
 }
 

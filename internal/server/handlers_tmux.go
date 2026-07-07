@@ -97,7 +97,15 @@ func (s *Server) handleTmuxLaunchOpencode(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	log.WithField("directory", req.Directory).Info("launching opencode in tmux")
+	target := "local"
+	if req.RemoteID != "" && req.RemoteID != "local" {
+		target = "remote"
+	}
+	log.WithFields(log.Fields{
+		"directory": req.Directory,
+		"target":    target,
+		"remoteId":  req.RemoteID,
+	}).Info("launching opencode in tmux")
 
 	host := s.router().ForDir(req.Directory)
 	if req.RemoteID != "" {

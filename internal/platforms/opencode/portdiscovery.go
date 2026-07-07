@@ -423,6 +423,19 @@ func discoverOpenCodePortFresh(directory string) string {
 	return port
 }
 
+// discoveredOpenCodeDirs returns "dir=port" for every currently running
+// opencode instance, for diagnostic logging when a directory lookup
+// misses. Uses the same seam as the fresh scan so the snapshot matches.
+func discoveredOpenCodeDirs() []string {
+	ports := (*discoverPortsImpl.Load())()
+	out := make([]string, 0, len(ports))
+	for dir, port := range ports {
+		out = append(out, dir+"="+port)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // DiscoverOpenCodePort is the exported equivalent of discoverOpenCodePort,
 // provided so packages outside the opencode package (e.g. server) can
 // resolve the port for a directory without creating an import cycle

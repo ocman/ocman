@@ -14,6 +14,8 @@ import (
 	"context"
 	"strings"
 
+	log "github.com/sirupsen/logrus"
+
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
@@ -141,10 +143,17 @@ func (h *Host) RemoveWorktree(ctx context.Context, req hostsvc.RemoveWorktreeReq
 }
 
 func (h *Host) LaunchTmux(ctx context.Context, req hostsvc.LaunchTmuxRequest) (*hostsvc.LaunchTmuxResult, error) {
+	// This runs on whichever host owns the directory: the hub for local
+	// launches, the remote's own in-process Host for remote launches
+	// (hub -> gRPC -> remote Server.LaunchTmux -> here). Log so the
+	// launch is traceable on both sides.
+	log.WithField("directory", req.Directory).Info("host: launching opencode in tmux")
 	name, err := h.deps.LaunchTmux(req.Directory)
 	if err != nil {
+		log.WithError(err).WithField("directory", req.Directory).Error("host: failed to launch opencode in tmux")
 		return nil, err
 	}
+	log.WithFields(log.Fields{"directory": req.Directory, "tmuxSession": name}).Info("host: launched opencode in tmux")
 	return &hostsvc.LaunchTmuxResult{Session: name}, nil
 }
 
