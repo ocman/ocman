@@ -61,12 +61,15 @@ func TestWithRequestTiming_LogsAtDebugForFastRequests(t *testing.T) {
 	}
 }
 
-// TestWithRequestTiming_LogsAtInfoForSlowRequests is the operator-
-// facing signal: anything over slowRequestThreshold elevates to INFO so
-// it shows up in normal production logs without DEBUG noise.
-func TestWithRequestTiming_LogsAtInfoForSlowRequests(t *testing.T) {
+// TestWithRequestTiming_LogsAtDebugForSlowRequests verifies slow
+// requests still log at DEBUG (all "http request" lines are debug) but
+// carry the extra timings field so they can be diagnosed when DEBUG is on.
+func TestWithRequestTiming_LogsAtDebugForSlowRequests(t *testing.T) {
 	hook := logtest.NewGlobal()
 	defer hook.Reset()
+	prev := log.GetLevel()
+	log.SetLevel(log.DebugLevel)
+	defer log.SetLevel(prev)
 
 	// Wrap handler that sleeps just over the threshold. We use
 	// slowRequestThreshold + a small margin so the test is robust
@@ -81,8 +84,8 @@ func TestWithRequestTiming_LogsAtInfoForSlowRequests(t *testing.T) {
 	if entry == nil {
 		t.Fatalf("expected a log entry for /api/sessions")
 	}
-	if entry.Level != log.InfoLevel {
-		t.Errorf("level: got %v, want %v", entry.Level, log.InfoLevel)
+	if entry.Level != log.DebugLevel {
+		t.Errorf("level: got %v, want %v", entry.Level, log.DebugLevel)
 	}
 	dur, ok := entry.Data["duration_ms"].(int64)
 	if !ok {

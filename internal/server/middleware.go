@@ -3,6 +3,7 @@ package server
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -174,13 +175,13 @@ func withRequestTiming(next http.Handler) http.Handler {
 			"status":      rec.status,
 			"duration_ms": dur.Milliseconds(),
 		}
+		msg := "request served"
 		if dur >= slowRequestThreshold {
 			if t := collector.Header(); t != "" {
 				fields["timings"] = t
 			}
-			log.WithFields(fields).Info("http request")
-		} else {
-			log.WithFields(fields).Debug("http request")
+			msg = fmt.Sprintf("slow endpoint: %s", r.URL.Path)
 		}
+		log.WithFields(fields).Debug(msg)
 	})
 }

@@ -294,9 +294,9 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	}
 
 	// Wrap the mux with the request-timing middleware so every API
-	// request emits a structured "http request" log line. SSE and the
-	// debug-log sink are skipped inside the middleware (see noiseSkip)
-	// to keep the log readable.
+	// request emits a "METHOD path -> status (Nms)" debug log line. SSE
+	// and the debug-log sink are skipped inside the middleware (see
+	// noiseSkip) to keep the log readable.
 	//
 	// Layering (outer -> inner): withRequestTiming -> withOTel -> mux.
 	// otelhttp sits closest to the mux so its server span wraps just
