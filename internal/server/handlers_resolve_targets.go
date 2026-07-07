@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strings"
 
+	log "github.com/sirupsen/logrus"
+
 	"github.com/NoUseFreak/ocman/internal/gitexec"
 	"github.com/NoUseFreak/ocman/internal/remote"
 )
@@ -50,6 +52,16 @@ func (s *Server) handleResolveTargets(w http.ResponseWriter, r *http.Request) {
 	origin := localGitOrigin(r, req.Dir)
 	localIdents := s.localProjectIdentities(r)
 	candidates := s.remotes.ResolveTargets(req.Dir, origin, localIdents)
+	// Log the resolution so a mis-targeted launch (e.g. a remote path the
+	// hub can't stat, yielding a basename-only identity that matches
+	// nothing) is diagnosable. A remote dir with origin="" here means the
+	// path doesn't exist on the hub — the caller should pass remoteId
+	// directly instead of round-tripping through the resolver.
+	log.WithFields(log.Fields{
+		"dir":        req.Dir,
+		"origin":     origin,
+		"candidates": len(candidates),
+	}).Info("resolve-targets")
 	writeJSON(w, map[string]any{
 		"candidates": candidates,
 		"remotes":    s.remotes.EnabledRemotes(),
