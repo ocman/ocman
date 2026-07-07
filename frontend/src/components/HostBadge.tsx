@@ -19,13 +19,15 @@ interface HostBadgeProps {
 export function HostBadge({ remoteName, remoteId, stale }: HostBadgeProps) {
   const multi = useMultiHost();
   // Only prefix remote-owned sessions; the local machine needs no label.
-  if (!multi || !remoteName || remoteId === 'local') return null;
+  // An offline remote may arrive without a name — still flag it as remote.
+  if (!multi || !remoteId || remoteId === 'local') return null;
+  const label = remoteName || 'Remote';
   const classes = ['host-badge'];
   if (stale) classes.push('stale');
-  const title = stale ? `${remoteName} (offline — last known)` : remoteName;
+  const title = stale ? `${label} (offline — last known)` : label;
   return (
     <span className={classes.join(' ')} title={title} aria-label={title}>
-      {remoteName}
+      {label}
       {stale ? ' (offline)' : ''}
     </span>
   );
