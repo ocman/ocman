@@ -10,6 +10,11 @@ vi.mock('../../components/BackendStats', () => ({
 vi.mock('../../components/SidebarResizer', () => ({
   SidebarResizer: () => null,
 }));
+const multiHost = vi.fn(() => false);
+vi.mock('../../lib/useCapabilities', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/useCapabilities')>()),
+  useMultiHost: () => multiHost(),
+}));
 
 function session(overrides: Partial<Session> = {}): Session {
   return {
@@ -78,5 +83,22 @@ describe('SessionSidebar', () => {
     renderSidebar(group, { '/repo': gitInfo('main') });
 
     expect(screen.getByTitle('Current branch: main')).toHaveTextContent('main');
+  });
+
+  it('shows the host badge for a session-less remote project group', () => {
+    multiHost.mockReturnValue(true);
+    const group: SidebarProjectGroup = {
+      directory: '/repo',
+      sessions: [],
+      lastUpdated: 1,
+      aggregate: { kind: 'none' },
+      remoteId: 'abc',
+      remoteName: 'Box',
+    };
+
+    renderSidebar(group, {});
+
+    expect(screen.getByText('Box')).toBeInTheDocument();
+    multiHost.mockReturnValue(false);
   });
 });

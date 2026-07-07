@@ -41,6 +41,13 @@ export interface SidebarProjectGroup {
   lastUpdated: number;
   aggregate: ReturnType<typeof rollupGroupStatus>;
   isPinned?: boolean;
+  /**
+   * Owning host, carried at group level so a remote project still shows
+   * its host badge when it has no sessions in the poll window (e.g. the
+   * remote is offline). Empty/'local' for the local machine.
+   */
+  remoteId?: string;
+  remoteName?: string;
 }
 
 export interface SessionSidebarProps {
@@ -305,6 +312,10 @@ export function SessionSidebar({
     const collapsed = collapsedProjectSet.has(group.directory);
     const label = group.directory ? shortPath(group.directory) : '(unknown)';
     const remoteSession = group.sessions.find((s) => s.remoteId && s.remoteId !== 'local');
+    // Prefer per-session host identity; fall back to the group's own
+    // (set for session-less remote projects, e.g. an offline remote).
+    const hostRemoteId = remoteSession?.remoteId ?? group.remoteId;
+    const hostRemoteName = remoteSession?.remoteName ?? group.remoteName;
     // The status dot surfaces the rolled-up aggregate: the same visual
     // vocabulary as per-session rows (pending "!", error "!", busy
     // pulse, idle neutral), so a collapsed header tells you at a glance
@@ -344,7 +355,7 @@ export function SessionSidebar({
             </span>
             <span className="session-sidebar-group-label">{label}</span>
           </button>
-          <HostBadge remoteName={remoteSession?.remoteName} remoteId={remoteSession?.remoteId} stale={remoteSession?.stale} />
+          <HostBadge remoteName={hostRemoteName} remoteId={hostRemoteId} stale={remoteSession?.stale} />
           {group.directory && (
             <button
               type="button"

@@ -1006,11 +1006,14 @@ export function SessionDetail({ id }: SessionDetailProps) {
 
     const groups: SidebarProjectGroup[] = Array.from(buckets.entries()).map(([directory, sessions]) => {
       const sorted = [...sessions].sort((a, b) => b.timeUpdated - a.timeUpdated);
+      const remote = sorted.find((s) => s.remoteId && s.remoteId !== 'local');
       return {
         directory,
         sessions: sorted,
         lastUpdated: sorted[0]?.timeUpdated ?? 0,
         aggregate: rollup(sorted),
+        remoteId: remote?.remoteId,
+        remoteName: remote?.remoteName,
       };
     });
 
@@ -1035,6 +1038,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
         sessions: [],
         lastUpdated: p.lastUsed,
         aggregate: rollup([]),
+        remoteId: p.remoteId,
+        remoteName: p.remoteName,
       });
     }
     // Sort project groups alphabetically by their short display path
