@@ -32,7 +32,11 @@ function gitInfo(branch: string): GitInfo {
   return { branch, ahead: 0, behind: 0, dirty: false };
 }
 
-function renderSidebar(group: SidebarProjectGroup, infos: Record<string, GitInfo>) {
+function renderSidebar(
+  group: SidebarProjectGroup,
+  infos: Record<string, GitInfo>,
+  onNewSessionInDirectory: (directory: string, remoteId?: string, platform?: string) => void = vi.fn(),
+) {
   return render(
     <SessionSidebar
       activeId="s"
@@ -65,7 +69,7 @@ function renderSidebar(group: SidebarProjectGroup, infos: Record<string, GitInfo
       onArchiveSession={vi.fn()}
       onPinSession={vi.fn()}
       onClientSelect={vi.fn()}
-      onNewSessionInDirectory={vi.fn()}
+      onNewSessionInDirectory={onNewSessionInDirectory}
       onArchiveProject={vi.fn()}
     />,
   );
@@ -100,5 +104,26 @@ describe('SessionSidebar', () => {
 
     expect(screen.getByText('Box')).toBeInTheDocument();
     multiHost.mockReturnValue(false);
+  });
+
+  it('forwards the group host + platform when adding a session to a remote project', () => {
+    // Regression: the "+" used to pass only the directory, so a remote
+    // project group launched on the local hub instead of the remote.
+    const onAdd = vi.fn();
+    const group: SidebarProjectGroup = {
+      directory: '/home/dries/repo',
+      sessions: [],
+      lastUpdated: 1,
+      aggregate: { kind: 'none' },
+      remoteId: 'abc',
+      remoteName: 'Box',
+      platform: 'r-abc:opencode',
+    };
+
+    renderSidebar(group, {}, onAdd);
+
+    screen.getByRole('button', { name: 'New session in dries/repo' }).click();
+
+    expect(onAdd).toHaveBeenCalledWith('/home/dries/repo', 'abc', 'r-abc:opencode');
   });
 });

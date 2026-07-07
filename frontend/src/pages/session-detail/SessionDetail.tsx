@@ -727,7 +727,12 @@ export function SessionDetail({ id }: SessionDetailProps) {
     modelSeededSessionRef.current = id;
   }, [activeModel, id, setSelectedModel]);
 
-  const handleNewSessionInDirectory = useCallback(async (directory: string, title?: string) => {
+  const handleNewSessionInDirectory = useCallback(async (directory: string, remoteId?: string, platform?: string, title?: string) => {
+    // Prefer the target project's own platform/host (e.g. a remote
+    // project group) over the currently-open session's, so a "+" on a
+    // remote project actually targets that remote instead of falling
+    // back to the local adapter.
+    const targetPlatform = platform ?? session?.platform;
     try {
       const res = await createSessionWithLaunch(
         {
@@ -735,11 +740,11 @@ export function SessionDetail({ id }: SessionDetailProps) {
           launchOpencodeInTmux,
           tmuxAvailable: tmux.available,
         },
-        { directory, fallbackDirectory: projectRootForDirectory(directory), platform: session?.platform, title },
+        { directory, fallbackDirectory: projectRootForDirectory(directory), platform: targetPlatform, remoteId, title },
       );
       if (res.id) {
         const sessionDirectory = res.directory ?? directory;
-        seedNewSession(res.id, sessionDirectory, session?.platform ?? '', title);
+        seedNewSession(res.id, sessionDirectory, targetPlatform ?? '', title);
         navigateToSession(res.id);
       }
     } catch (e) {
@@ -750,7 +755,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
 
   const handleNewSession = useCallback(async (title?: string) => {
     if (!session) return;
-    await handleNewSessionInDirectory(session.directory, title);
+    await handleNewSessionInDirectory(session.directory, session.remoteId, session.platform, title);
   }, [session, handleNewSessionInDirectory]);
 
   const handleCompact = useCallback(async () => {
@@ -1014,6 +1019,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
         aggregate: rollup(sorted),
         remoteId: remote?.remoteId,
         remoteName: remote?.remoteName,
+        platform: remote?.platform,
       };
     });
 
@@ -1040,6 +1046,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
         aggregate: rollup([]),
         remoteId: p.remoteId,
         remoteName: p.remoteName,
+        platform: p.platform,
       });
     }
     // Sort project groups alphabetically by their short display path

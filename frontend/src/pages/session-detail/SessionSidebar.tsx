@@ -48,6 +48,8 @@ export interface SidebarProjectGroup {
    */
   remoteId?: string;
   remoteName?: string;
+  /** Compound platform id (r-<remoteId>:<base>) for remote projects. */
+  platform?: string;
 }
 
 export interface SessionSidebarProps {
@@ -75,7 +77,7 @@ export interface SessionSidebarProps {
   onArchiveSession: (e: React.MouseEvent, session: Session) => void;
   onPinSession: (e: React.MouseEvent, session: Session) => void;
   onClientSelect: (tty: string) => void;
-  onNewSessionInDirectory: (directory: string) => void;
+  onNewSessionInDirectory: (directory: string, remoteId?: string, platform?: string) => void;
   onArchiveProject: (directory: string) => void;
 }
 
@@ -316,6 +318,7 @@ export function SessionSidebar({
     // (set for session-less remote projects, e.g. an offline remote).
     const hostRemoteId = remoteSession?.remoteId ?? group.remoteId;
     const hostRemoteName = remoteSession?.remoteName ?? group.remoteName;
+    const hostPlatform = remoteSession?.platform ?? group.platform;
     // The status dot surfaces the rolled-up aggregate: the same visual
     // vocabulary as per-session rows (pending "!", error "!", busy
     // pulse, idle neutral), so a collapsed header tells you at a glance
@@ -362,7 +365,7 @@ export function SessionSidebar({
               className="session-sidebar-group-new"
               onClick={(e) => {
                 e.stopPropagation();
-                void onNewSessionInDirectory(group.directory);
+                void onNewSessionInDirectory(group.directory, hostRemoteId, hostPlatform);
               }}
               title={`New session in ${label}`}
               aria-label={`New session in ${label}`}
