@@ -332,4 +332,25 @@ describe('createSessionWithLaunch', () => {
     expect(state.attempt).toBe(5);
     expect(state.maxAttempts).toBe(5);
   });
+
+  it('uses a longer retry budget for remote launches', async () => {
+    // Remote opencode cold-boots + gRPC round-trips blow past the local
+    // ~9.5 s budget; the remote path must retry more times before giving up.
+    const createSession = vi.fn().mockRejectedValue(unreachable());
+    const launchOpencodeInTmux = vi.fn().mockResolvedValue({ session: 'foo' });
+
+    const promise = createSessionWithLaunch(
+      { createSession, launchOpencodeInTmux, tmuxAvailable: true },
+      { directory: '/tmp/foo', platform: 'r-abc123:opencode' },
+    );
+    const assertion = expect(promise).rejects.toMatchObject({ code: 'unreachable' });
+    await vi.runAllTimersAsync();
+    await assertion;
+
+    // Remote schedule has 8 attempts vs the local 5.
+    expect(launchOpencodeInTmux).toHaveBeenCalledWith('/tmp/foo', 'abc123');
+    const state = useLaunchProgressStore.getState();
+    expect(state.attempt).toBe(8);
+    expect(state.maxAttempts).toBe(8);
+  });
 });

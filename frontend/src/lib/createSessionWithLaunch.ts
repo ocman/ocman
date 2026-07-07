@@ -65,6 +65,13 @@ export interface CreateSessionWithLaunchOptions {
 // itself needs a moment to bind a port, so we give it up to ~9.5 s.
 const RETRY_DELAYS_MS = [1500, 2000, 2000, 2000, 2000];
 
+// Remote launches add gRPC round-trips plus a cold opencode boot on the
+// remote machine, which routinely blows past the local ~9.5 s budget, so
+// the hub times out even though opencode did come up remotely. Give the
+// remote path a longer budget (~30 s).
+// ponytail: doubled/extended schedule, tune if remote boots are slower.
+const REMOTE_RETRY_DELAYS_MS = [2000, 3000, 3000, 4000, 4000, 4000, 4000, 4000];
+
 function isUnreachable(err: unknown): boolean {
   return !!err && typeof err === 'object' && (err as { code?: string }).code === 'unreachable';
 }
@@ -90,8 +97,17 @@ export async function createSessionWithLaunch(
   const { createSession, launchOpencodeInTmux, tmuxAvailable } = deps;
   const { directory, fallbackDirectory, platform, title, alreadyLaunched } = opts;
   const remoteId = opts.remoteId || remoteIDForPlatform(platform);
+  const isRemote = !!remoteId && remoteId !== 'local';
+  const retryDelays = isRemote ? REMOTE_RETRY_DELAYS_MS : RETRY_DELAYS_MS;
   const progress: LaunchProgressReporter =
     opts.reportProgress === false ? noopLaunchProgressReporter : launchProgressReporter;
+
+  remoteLog.info('setting up new project session', {
+    directory,
+    target: isRemote ? 'remote' : 'local',
+    remoteId: isRemote ? remoteId : undefined,
+    platform,
+  });
 
   function launchInTmux(targetDirectory: string): Promise<{ session: string }> {
     return remoteId && remoteId !== 'local'
@@ -101,11 +117,11 @@ export async function createSessionWithLaunch(
 
   async function retryCreate(targetDirectory: string, err: unknown): Promise<{ id: string }> {
     let lastErr: unknown = err;
-    const maxAttempts = RETRY_DELAYS_MS.length;
+    const maxAttempts = retryDelays.length;
     for (let i = 0; i < maxAttempts; i++) {
       progress.step('wait');
       progress.attempt(i + 1, maxAttempts);
-      await sleep(RETRY_DELAYS_MS[i]);
+      await sleep(retryDelays[i]);
       progress.step('create');
       try {
         const res = await createSession(targetDirectory, platform, title);
