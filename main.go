@@ -59,6 +59,11 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Colored text logs. logrus already defaults to text, but disables
+	// color when stdout isn't a TTY — which it isn't under `make dev`/air
+	// (piped). ForceColors keeps the color; FullTimestamp adds the date.
+	log.SetFormatter(&log.TextFormatter{ForceColors: true, FullTimestamp: true})
+
 	// When started by launchd / a login item after a reboot, ocman
 	// inherits a minimal PATH that omits homebrew and version-manager
 	// shims, so tmux/opencode/git look unavailable. Recover the login
