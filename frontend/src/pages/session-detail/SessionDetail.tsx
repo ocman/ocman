@@ -697,6 +697,9 @@ export function SessionDetail({ id }: SessionDetailProps) {
       sessionPlatform: s.platform,
       sessionProject: shortPath(s.directory),
       sessionProjectFull: s.directory,
+      sessionRemoteId: s.remoteId,
+      sessionRemoteName: s.remoteName,
+      sessionRemoteStale: s.stale,
     });
     return () => setInfo({});
   }, [session, setInfo]);

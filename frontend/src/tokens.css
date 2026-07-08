@@ -271,6 +271,9 @@ header h1 span { color: inherit; font-weight: 400; }
  * full per-session stats strip. The richer metadata moved to the
  * SessionInfoSidebar; project stays here because it anchors the page. */
 .header-project {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;

@@ -21,6 +21,10 @@ export interface HeaderInfo {
    */
   sessionProject?: string;
   sessionProjectFull?: string;
+  /** Host badge metadata for remote sessions. */
+  sessionRemoteId?: string;
+  sessionRemoteName?: string;
+  sessionRemoteStale?: boolean;
 }
 
 export const HeaderContext = createContext<{

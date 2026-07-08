@@ -17,6 +17,7 @@ import { CommandPalette } from './components/CommandPalette';
 import { WorktreeFormModal } from './components/WorktreeFormModal';
 import { MachinePickerModal } from './components/MachinePickerModal';
 import { PlatformBadge } from './components/PlatformBadge';
+import { HostBadge } from './components/HostBadge';
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useFaviconNotify } from './lib/useFaviconNotify';
@@ -101,6 +102,11 @@ function Header() {
             className="header-project"
             title={sessionInfo.sessionProjectFull || sessionInfo.sessionProject}
           >
+            <HostBadge
+              remoteName={sessionInfo.sessionRemoteName}
+              remoteId={sessionInfo.sessionRemoteId}
+              stale={sessionInfo.sessionRemoteStale}
+            />
             {sessionInfo.sessionProject}
           </span>
         )}
