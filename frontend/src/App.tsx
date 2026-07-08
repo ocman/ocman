@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -18,6 +18,7 @@ import { WorktreeFormModal } from './components/WorktreeFormModal';
 import { MachinePickerModal } from './components/MachinePickerModal';
 import { PlatformBadge } from './components/PlatformBadge';
 import { HostBadge } from './components/HostBadge';
+import { useAgentLoops } from './lib/useCapabilities';
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useFaviconNotify } from './lib/useFaviconNotify';
@@ -50,9 +51,41 @@ function RoutesBoundary({ children }: { children: ReactNode }) {
   );
 }
 
+// LogoNav: the header logo with a hover/focus quick-nav menu to the
+// dashboard tabs. Pure CSS drives open-on-hover; a tiny `closed` state
+// force-hides the menu after clicking an item (CSS :hover alone can't
+// close while the cursor is still over the menu). Moving the mouse away
+// resets it so hover works again next time.
+function LogoNav({ agentLoopsAllowed }: { agentLoopsAllowed: boolean }) {
+  const [closed, setClosed] = useState(false);
+  return (
+    <span
+      className={`logo-nav${closed ? ' closed' : ''}`}
+      onMouseLeave={() => setClosed(false)}
+    >
+      <Link
+        to="/"
+        aria-label="ocman home"
+        style={{ color: 'inherit', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+      >
+        <img src="/favicon.svg" alt="ocman" width={20} height={20} style={{ display: 'block' }} />
+      </Link>
+      <div className="logo-nav-popover" role="menu" onClick={() => setClosed(true)}>
+        <Link to="/sessions" role="menuitem">Sessions</Link>
+        <Link to="/projects" role="menuitem">Projects</Link>
+        {agentLoopsAllowed && <Link to="/loops" role="menuitem">Loops</Link>}
+        <Link to="/stats" role="menuitem">Stats</Link>
+        <Link to="/usage" role="menuitem">Usage</Link>
+        <Link to="/settings" role="menuitem">Settings</Link>
+      </div>
+    </span>
+  );
+}
+
 function Header() {
   const location = useLocation();
   const path = location.pathname;
+  const agentLoopsAllowed = useAgentLoops();
   const { info } = useHeaderInfo();
   const routeSessionId = path.startsWith('/session/')
     ? decodeURIComponent(path.slice('/session/'.length).split('/')[0])
@@ -89,12 +122,7 @@ function Header() {
   return (
     <header>
       <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.4em' }}>
-        <Link
-          to="/"
-          style={{ color: 'inherit', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
-        >
-          <img src="/favicon.svg" alt="ocman" width={20} height={20} style={{ display: 'block' }} />
-        </Link>
+        <LogoNav agentLoopsAllowed={agentLoopsAllowed} />
         <span>{breadcrumb}</span>
       </h1>
       <div className="header-right">

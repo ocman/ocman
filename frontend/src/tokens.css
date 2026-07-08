@@ -227,9 +227,35 @@ tr.no-port { opacity: 0.4; }
 
 /* Header */
 header { display: flex; align-items: center; justify-content: space-between; padding: 8px 24px; border-bottom: 1px solid var(--border); flex-shrink: 0; gap: 16px; }
-header h1 { font-size: 18px; font-weight: 600; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+header h1 { font-size: 18px; font-weight: 600; color: var(--text-dim); white-space: nowrap; min-width: 0; }
 header h1 > a { color: var(--text); font-weight: 600; }
 header h1 span { color: inherit; font-weight: 400; }
+/* Ellipsis lives on the breadcrumb span (last child), not the whole h1,
+ * so the logo-nav popover can overflow below the header without being
+ * clipped. */
+header h1 > span:last-child { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+/* Logo hover menu: quick nav to the dashboard tabs. Opens on
+ * :hover/:focus-within; the .closed class (set on item click) force-hides
+ * it. The popover sits flush against the logo (top: 100%, no margin) so
+ * the cursor can travel from logo to links without the menu closing. */
+.logo-nav { position: relative; display: inline-flex; align-items: center; }
+.logo-nav-popover {
+  position: absolute; top: 100%; left: 0; z-index: 50;
+  display: none; flex-direction: column; min-width: 160px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 0; box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+  background-clip: padding-box; overflow: hidden;
+}
+.logo-nav:hover .logo-nav-popover,
+.logo-nav:focus-within .logo-nav-popover { display: flex; }
+.logo-nav.closed .logo-nav-popover { display: none; }
+.logo-nav-popover a {
+  padding: 8px 16px; border-radius: 0; font-size: 13px; font-weight: 400;
+  color: var(--text); text-decoration: none; white-space: nowrap;
+  transition: background 0.1s;
+}
+.logo-nav-popover a:hover { background: var(--bg-hover); text-decoration: none; }
 
 /* Wails desktop: compact native-feeling titlebar.
  * - Reduced padding so the bar sits closer to system titlebar height (~38px).
