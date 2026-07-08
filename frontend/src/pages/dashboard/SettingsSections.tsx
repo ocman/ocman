@@ -1,0 +1,289 @@
+/**
+ * Section bodies for the Settings tab, extracted from SettingsTab so
+ * that component stays within the size budget. Each section reads its
+ * own store slices rather than taking them as props, keeping SettingsTab
+ * a thin nav + layout shell.
+ */
+import { useState, useRef } from 'react';
+import { SaveStatus } from '../../components/SaveStatus';
+import { SettingRow, SettingToggle, SettingNumber } from '../../components/SettingRow';
+import { useSaveStatus, useSettingSave } from '../../lib/useSaveStatus';
+import { useUiStore } from '../../lib/uiStore';
+import { useApiStore } from '../../lib/apiStore';
+import {
+  notificationsSupported,
+  requestNotificationPermission,
+} from '../../lib/useNotificationNotify';
+
+type PromptSection = { title: string; content: string; enabled?: boolean };
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+export function NotificationsSection() {
+  const notificationsEnabled = useUiStore((s) => s.notificationsEnabled);
+  const setNotificationsEnabled = useUiStore((s) => s.setNotificationsEnabled);
+  const bellEnabled = useUiStore((s) => s.bellEnabled);
+  const setBellEnabled = useUiStore((s) => s.setBellEnabled);
+  const notifSave = useSettingSave();
+  const bellSave = useSettingSave();
+
+  // System notification state. Tracked locally so we can re-render when
+  // permission changes (the browser API has no event for that, so we
+  // read it on mount and update after a request).
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unsupported'>(
+    () => (notificationsSupported() ? Notification.permission : 'unsupported'),
+  );
+  const notifSupported = notifPermission !== 'unsupported';
+  const notifBlocked = notifPermission === 'denied';
+
+  async function handleNotificationsToggle(want: boolean) {
+    if (!want) {
+      setNotificationsEnabled(false);
+      return;
+    }
+    // Turning on: ensure permission is granted first. If the user
+    // previously denied it, the browser won't re-prompt — surface that
+    // explicitly so the toggle doesn't silently fail.
+    if (notifPermission === 'granted') {
+      setNotificationsEnabled(true);
+      return;
+    }
+    const result = await requestNotificationPermission();
+    setNotifPermission(result);
+    setNotificationsEnabled(result === 'granted');
+  }
+
+  return (
+    <>
+      {notifSupported && (
+        <SettingRow
+          label="System notifications"
+          desc={notifBlocked
+            ? 'Notifications are blocked by your browser. Allow them in your browser\u2019s site settings to enable this option.'
+            : 'Show a desktop notification when a session finishes or needs your input. Works best after installing ocman as an app.'}
+        >
+          <SettingToggle
+            ariaLabel="System notifications"
+            checked={notificationsEnabled && notifPermission === 'granted'}
+            disabled={notifBlocked}
+            save={notifSave}
+            onSave={(next) => handleNotificationsToggle(next)}
+          />
+        </SettingRow>
+      )}
+      <SettingRow
+        label="Bell sound"
+        desc="Play a bell sound when the app is not in focus and a session finishes or asks a question."
+      >
+        <SettingToggle
+          ariaLabel="Bell sound"
+          checked={bellEnabled}
+          save={bellSave}
+          onSave={(next) => setBellEnabled(next)}
+        />
+      </SettingRow>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sessions
+// ---------------------------------------------------------------------------
+
+export function SessionsSection() {
+  const dashboardTimeRangeDefault = useUiStore((s) => s.dashboardTimeRangeDefault);
+  const setDashboardTimeRangeDefault = useUiStore((s) => s.setDashboardTimeRangeDefault);
+  const sidebarRecentHours = useUiStore((s) => s.sidebarRecentHours);
+  const setSidebarRecentHours = useUiStore((s) => s.setSidebarRecentHours);
+  const timeRangeSave = useSettingSave();
+  const recentSave = useSettingSave();
+
+  return (
+    <>
+      <SettingRow
+        label="Start screen time range"
+        desc="Default lookback window for the Sessions list on the start screen. The time-range buttons still override it for the current view."
+      >
+        <SettingNumber
+          ariaLabel="Start screen time range in days"
+          unit="days"
+          min={1}
+          max={365}
+          value={Math.round((dashboardTimeRangeDefault / 24) * 10) / 10}
+          parse={(raw) => raw * 24}
+          save={timeRangeSave}
+          onSave={(next) => setDashboardTimeRangeDefault(next)}
+        />
+      </SettingRow>
+      <SettingRow
+        label="Recent sessions window"
+        desc={<>How far back the &ldquo;Recent sessions&rdquo; sidebar looks while you&apos;re inside a session.</>}
+      >
+        <SettingNumber
+          ariaLabel="Recent sessions window in days"
+          unit="days"
+          min={1}
+          max={365}
+          value={Math.round((sidebarRecentHours / 24) * 10) / 10}
+          parse={(raw) => raw * 24}
+          save={recentSave}
+          onSave={(next) => setSidebarRecentHours(next)}
+        />
+      </SettingRow>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Auto-approve (+ its prompt-section editor)
+// ---------------------------------------------------------------------------
+
+function PromptSectionEditor({
+  section,
+  onChange,
+  onRemove,
+}: {
+  section: PromptSection;
+  onChange: (s: PromptSection) => void;
+  onRemove: () => void;
+}) {
+  // Track textarea height so it grows with content.
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Missing `enabled` (legacy rows) is treated as enabled.
+  const enabled = section.enabled !== false;
+  return (
+    <div className="settings-prompt-section">
+      <div className="settings-prompt-section-header">
+        <label className="settings-prompt-section-toggle">
+          <input
+            type="checkbox"
+            checked={enabled}
+            aria-label="Enable rule"
+            onChange={(e) => onChange({ ...section, enabled: e.target.checked })}
+          />
+          <span aria-hidden="true" />
+        </label>
+        <input
+          type="text"
+          className="settings-prompt-section-title"
+          placeholder="Section title"
+          value={section.title}
+          onChange={(e) => onChange({ ...section, title: e.target.value })}
+        />
+        <button
+          type="button"
+          className="settings-prompt-section-remove"
+          aria-label="Remove section"
+          onClick={onRemove}
+        >
+          &#x2715;
+        </button>
+      </div>
+      <textarea
+        ref={textareaRef}
+        className="settings-prompt-section-content"
+        placeholder="Describe the rule in plain language. The AI reviewer will follow this as an additional instruction."
+        value={section.content}
+        rows={3}
+        onChange={(e) => {
+          onChange({ ...section, content: e.target.value });
+          // Auto-grow: reset height first so shrinking works too.
+          if (textareaRef.current) {
+            textareaRef.current.style.height = 'auto';
+            textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+          }
+        }}
+      />
+    </div>
+  );
+}
+
+export function AutoApproveSection() {
+  const autoApproveDefault = useUiStore((s) => s.autoApproveDefault);
+  const setAutoApproveDefault = useUiStore((s) => s.setAutoApproveDefault);
+  const autoApproveDelayMs = useUiStore((s) => s.autoApproveDelayMs);
+  const setAutoApproveDelayMs = useUiStore((s) => s.setAutoApproveDelayMs);
+  const promptSections = useUiStore((s) => s.promptSections);
+  const setPromptSections = useUiStore((s) => s.setPromptSections);
+  const setPromptSectionsApi = useApiStore((s) => s.setPromptSectionsApi);
+  const setJudgeDelayApi = useApiStore((s) => s.setJudgeDelayApi);
+  const delaySave = useSaveStatus();
+  const sectionsSave = useSaveStatus();
+  const autoApproveSave = useSettingSave();
+
+  const saveSections = (next: PromptSection[]) => {
+    setPromptSections(next);
+    void sectionsSave.track(() => setPromptSectionsApi(next));
+  };
+
+  return (
+    <>
+      <SettingRow
+        label="Enable by default"
+        desc="Automatically start the AI permission reviewer for every new session. You can also enable or disable it per session from the permission prompt."
+      >
+        <SettingToggle
+          ariaLabel="Enable auto-approve by default"
+          checked={autoApproveDefault}
+          save={autoApproveSave}
+          onSave={(next) => setAutoApproveDefault(next)}
+        />
+      </SettingRow>
+      <SettingRow
+        label="Human review window"
+        desc="How long to wait after a permission prompt appears before the AI reviewer starts. Gives you time to approve or reject manually."
+      >
+        <SettingNumber
+          ariaLabel="Human review window in seconds"
+          unit="s"
+          min={0}
+          max={60}
+          value={Math.round(autoApproveDelayMs / 1000)}
+          parse={(raw) => Math.max(0, Math.min(60, raw)) * 1000}
+          save={delaySave}
+          onSave={(ms) => {
+            setAutoApproveDelayMs(ms);
+            return setJudgeDelayApi(ms);
+          }}
+        />
+      </SettingRow>
+
+      <div className="settings-row settings-row--block">
+        <div className="settings-row-info">
+          <div className="settings-row-label">
+            Reviewer prompt sections
+            <SaveStatus state={sectionsSave.state} />
+          </div>
+          <div className="settings-row-desc">
+            Extra rules appended to the AI reviewer&apos;s prompt. Each section
+            appears as a named block the model reads before deciding. Use this
+            to allow or deny specific patterns your team knows are safe.
+          </div>
+        </div>
+        <div className="settings-prompt-sections">
+          {promptSections.map((section, i) => (
+            <PromptSectionEditor
+              key={i}
+              section={section}
+              onChange={(updated) => {
+                const next = [...promptSections];
+                next[i] = updated;
+                saveSections(next);
+              }}
+              onRemove={() => saveSections(promptSections.filter((_, j) => j !== i))}
+            />
+          ))}
+          <button
+            type="button"
+            className="settings-prompt-add"
+            onClick={() => saveSections([...promptSections, { title: '', content: '' }])}
+          >
+            + Add section
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
