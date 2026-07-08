@@ -169,6 +169,17 @@ export function isSessionStatusIdle(parsed: Record<string, unknown>): boolean {
   return false;
 }
 
+// First key in `keys` whose value on `obj` is a non-empty string,
+// else ''. Centralizes the defensive `typeof x === 'string' && x`
+// checks used when parsing untrusted SSE payloads.
+function pickString(obj: Record<string, unknown>, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = obj[k];
+    if (typeof v === 'string' && v) return v;
+  }
+  return '';
+}
+
 /**
  * Extract a `PendingPermission` from a `permission.asked` SSE event.
  * Returns `null` when the event isn't a permission ask or lacks a
@@ -184,14 +195,10 @@ export function extractPendingPermission(node: unknown): PendingPermission | nul
     ? obj.properties as Record<string, unknown>
     : {};
 
-  const id =
-    (typeof properties.id === 'string' && properties.id) ||
-    (typeof properties.requestID === 'string' && properties.requestID) ||
-    '';
+  const id = pickString(properties, 'id', 'requestID');
   if (!id) return null;
 
-  const permission =
-    (typeof properties.permission === 'string' && properties.permission) || 'Permission required';
+  const permission = pickString(properties, 'permission') || 'Permission required';
 
   const rawPatterns = properties.patterns;
   const patterns = Array.isArray(rawPatterns)
@@ -203,10 +210,7 @@ export function extractPendingPermission(node: unknown): PendingPermission | nul
     : undefined;
 
   // sessionID is the (sub)agent that issued the prompt.
-  const sessionId =
-    (typeof properties.sessionID === 'string' && properties.sessionID) ||
-    (typeof properties.sessionId === 'string' && properties.sessionId) ||
-    '';
+  const sessionId = pickString(properties, 'sessionID', 'sessionId');
 
   return {
     permissionId: id,
@@ -233,17 +237,10 @@ export function extractPendingQuestion(node: unknown): PendingQuestion | null {
     ? obj.properties as Record<string, unknown>
     : {};
 
-  const id =
-    (typeof properties.id === 'string' && properties.id) ||
-    (typeof properties.requestID === 'string' && properties.requestID) ||
-    (typeof properties.requestId === 'string' && properties.requestId) ||
-    '';
+  const id = pickString(properties, 'id', 'requestID', 'requestId');
   if (!id) return null;
 
-  const sessionID =
-    (typeof properties.sessionID === 'string' && properties.sessionID) ||
-    (typeof properties.sessionId === 'string' && properties.sessionId) ||
-    '';
+  const sessionID = pickString(properties, 'sessionID', 'sessionId');
 
   const rawQuestions = properties.questions;
   const questions = normalizeQuestionItems(rawQuestions);

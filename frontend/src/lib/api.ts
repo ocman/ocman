@@ -298,51 +298,36 @@ export async function postJSON<TResp, TReq = unknown>(
 }
 
 
+// Build a `?a=1&b=2` query suffix from a params object. Skips
+// undefined/null values and empty strings (so absent filters don't
+// appear in the URL), and returns '' when nothing is set.
+function queryString(params?: Record<string, string | number | undefined | null>): string {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params ?? {})) {
+    if (v == null || v === '') continue;
+    q.set(k, String(v));
+  }
+  const qs = q.toString();
+  return qs ? '?' + qs : '';
+}
+
 export const api = {
   stats: (signal?: AbortSignal) => fetchJSON<Stats>('/api/stats', signal),
-  metrics: (params?: { agent?: string; model?: string; days?: number; limit?: number; offset?: number; sessionLimit?: number; sessionOffset?: number; projectLimit?: number; projectOffset?: number; dir?: string }, signal?: AbortSignal) => {
-    const q = new URLSearchParams();
-    if (params?.agent) q.set('agent', params.agent);
-    if (params?.model) q.set('model', params.model);
-    if (params?.days != null) q.set('days', String(params.days));
-    if (params?.limit != null) q.set('limit', String(params.limit));
-    if (params?.offset != null) q.set('offset', String(params.offset));
-    if (params?.sessionLimit != null) q.set('sessionLimit', String(params.sessionLimit));
-    if (params?.sessionOffset != null) q.set('sessionOffset', String(params.sessionOffset));
-    if (params?.projectLimit != null) q.set('projectLimit', String(params.projectLimit));
-    if (params?.projectOffset != null) q.set('projectOffset', String(params.projectOffset));
-    if (params?.dir) q.set('dir', params.dir);
-    const qs = q.toString();
-    return fetchJSON<MetricsDashboard>(`/api/metrics${qs ? '?' + qs : ''}`, signal);
-  },
+  metrics: (params?: { agent?: string; model?: string; days?: number; limit?: number; offset?: number; sessionLimit?: number; sessionOffset?: number; projectLimit?: number; projectOffset?: number; dir?: string }, signal?: AbortSignal) =>
+    fetchJSON<MetricsDashboard>(`/api/metrics${queryString(params)}`, signal),
   projects: (signal?: AbortSignal) => fetchJSON<Project[]>('/api/projects', signal),
-  browseDirectories: (dir?: string, signal?: AbortSignal) => {
-    const q = new URLSearchParams();
-    if (dir) q.set('dir', dir);
-    const qs = q.toString();
-    return fetchJSON<DirectoryBrowseResponse>(`/api/filesystem/directories${qs ? '?' + qs : ''}`, signal);
-  },
+  browseDirectories: (dir?: string, signal?: AbortSignal) =>
+    fetchJSON<DirectoryBrowseResponse>(`/api/filesystem/directories${queryString({ dir })}`, signal),
   searchDirectories: (root: string | undefined, query: string, limit?: number, signal?: AbortSignal) => {
     const q = new URLSearchParams({ q: query });
     if (root) q.set('root', root);
     if (limit) q.set('limit', String(limit));
     return fetchJSON<DirectorySearchResponse>(`/api/filesystem/directory-search?${q.toString()}`, signal);
   },
-  sessions: (params?: { dir?: string; since?: number; limit?: number }, signal?: AbortSignal) => {
-    const q = new URLSearchParams();
-    if (params?.dir) q.set('dir', params.dir);
-    if (params?.since) q.set('since', String(params.since));
-    if (params?.limit) q.set('limit', String(params.limit));
-    const qs = q.toString();
-    return fetchJSON<Session[]>(`/api/sessions${qs ? '?' + qs : ''}`, signal);
-  },
-  sessionsNotify: (params?: { since?: number; limit?: number }, signal?: AbortSignal) => {
-    const q = new URLSearchParams();
-    if (params?.since) q.set('since', String(params.since));
-    if (params?.limit) q.set('limit', String(params.limit));
-    const qs = q.toString();
-    return fetchJSON<NotifyEntry[]>(`/api/sessions/notify${qs ? '?' + qs : ''}`, signal);
-  },
+  sessions: (params?: { dir?: string; since?: number; limit?: number }, signal?: AbortSignal) =>
+    fetchJSON<Session[]>(`/api/sessions${queryString(params)}`, signal),
+  sessionsNotify: (params?: { since?: number; limit?: number }, signal?: AbortSignal) =>
+    fetchJSON<NotifyEntry[]>(`/api/sessions/notify${queryString(params)}`, signal),
   session: (id: string, limit = 50, offset = 0, signal?: AbortSignal, platform?: string) => {
     const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     if (platform) query.set('platform', platform);
