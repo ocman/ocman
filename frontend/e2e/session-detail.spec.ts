@@ -8,7 +8,7 @@
  *  - Loading spinner shown while session data loads
  *  - Error banner shown when session fetch fails + Retry button
  *  - Navigating directly to a session URL works (deep-link)
- *  - Back navigation via header logo returns to dashboard
+ *  - Header logo links to / (redirects to the latest session)
  *  - "New session" action is available in the actions menu
  *  - "Open in VS Code" action is available in the actions menu
  *  - Archive button is present on sidebar session items
@@ -449,10 +449,11 @@ test('session title appears in header breadcrumb', async ({ mockedPage: page }) 
   await expect(page.getByRole('banner')).toContainText(MOCK_SESSION.title, { timeout: 5_000 });
 });
 
-test('header logo links back to dashboard', async ({ mockedPage: page }) => {
+test('header logo links to / and redirects to the latest session', async ({ mockedPage: page }) => {
   await page.goto(SESSION_URL);
   await page.getByRole('heading', { level: 1 }).getByRole('link', { name: 'ocman' }).click();
-  await expect(page).toHaveURL('/');
+  // The logo links to `/`, which redirects to the most recent session.
+  await expect(page).toHaveURL(`/session/${MOCK_SESSION.id}`);
 });
 
 // ---------------------------------------------------------------------------
@@ -554,14 +555,26 @@ test('navigating to another session during an active tool phase shows the target
   await expect(page.getByText('Synthetic active tool call')).toHaveCount(0, { timeout: 2_000 });
 });
 
-test('navigating back to dashboard while the current session is streaming is immediate', async ({ mockedPage: page }) => {
+test('clicking the header logo while the current session is streaming redirects immediately', async ({ mockedPage: page }) => {
   await setupStreamingSessionPage(page);
+
+  // The header logo links to `/`, which redirects to the most recent
+  // session. Make the newest session a different, no-latency one so the
+  // redirect target is not the streaming session we're leaving.
+  await page.route('/api/sessions*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([MOCK_SESSION_2, MOCK_SESSION]),
+    }),
+  );
 
   await page.getByRole('heading', { level: 1 }).getByRole('link', { name: 'ocman' }).click();
 
-  // Same regression as above, but through the dashboard link. This
-  // should switch immediately even while SSE deltas keep flowing.
-  await expect(page).toHaveURL('/', { timeout: 500 });
+  // Same regression as above, but through the header logo. The `/`
+  // redirect should resolve immediately even while SSE deltas keep
+  // flowing on the session we're leaving.
+  await expect(page).toHaveURL(`/session/${MOCK_SESSION_2.id}`, { timeout: 2_000 });
 });
 
 // ---------------------------------------------------------------------------

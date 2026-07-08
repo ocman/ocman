@@ -31,12 +31,12 @@ import { test, expect, MOCK_SESSION } from './fixtures';
 // ---------------------------------------------------------------------------
 
 test('command palette is hidden on page load', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await expect(page.locator('.oc-cmd-backdrop')).toHaveCount(0);
 });
 
 test('palette opens when Zustand openCommandPalette is called', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   // Programmatically open via the store — bypasses OS hotkey interception
   await page.evaluate(() => {
     // The store is accessible via window in dev builds because Zustand exposes
@@ -52,7 +52,7 @@ test('palette opens when Zustand openCommandPalette is called', async ({ mockedP
 });
 
 test('Alt+Space opens the command palette', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   // Ensure the body has focus so the global hotkey can fire
   await page.locator('body').click();
   await page.keyboard.press('Alt+Space');
@@ -60,7 +60,7 @@ test('Alt+Space opens the command palette', async ({ mockedPage: page }) => {
 });
 
 test('ESC closes the command palette', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await page.locator('body').click();
   await page.keyboard.press('Alt+Space');
   await expect(page.locator('.oc-cmd-palette')).toBeVisible({ timeout: 3_000 });
@@ -69,7 +69,7 @@ test('ESC closes the command palette', async ({ mockedPage: page }) => {
 });
 
 test('clicking backdrop closes the palette', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await page.locator('body').click();
   await page.keyboard.press('Alt+Space');
   await expect(page.locator('.oc-cmd-palette')).toBeVisible({ timeout: 3_000 });
@@ -97,31 +97,31 @@ async function openPaletteStore(page: import('@playwright/test').Page, mode: 'co
 // ---------------------------------------------------------------------------
 
 test('default palette shows Sessions nav item', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await openPaletteStore(page);
   await expect(page.locator('.oc-cmd-item', { hasText: 'Sessions' })).toBeVisible();
 });
 
 test('default palette shows Projects nav item', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await openPaletteStore(page);
   await expect(page.locator('.oc-cmd-item', { hasText: 'Projects' })).toBeVisible();
 });
 
 test('default palette shows Stats nav item', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await openPaletteStore(page);
   await expect(page.locator('.oc-cmd-item', { hasText: 'Stats' })).toBeVisible();
 });
 
 test('default palette shows Usage nav item', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await openPaletteStore(page);
   await expect(page.locator('.oc-cmd-item', { hasText: 'Usage' })).toBeVisible();
 });
 
 test('default palette shows wt command when worktree sessions are available', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await openPaletteStore(page);
   await expect(page.locator('.oc-cmd-item', { hasText: 'wt' })).toBeVisible();
 });
@@ -131,7 +131,7 @@ test('default palette shows wt command when worktree sessions are available', as
 // ---------------------------------------------------------------------------
 
 test('typing "stat" filters results to Stats-related items', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await openPaletteStore(page);
   await page.fill('.oc-cmd-input', 'stat');
   // Results should include "Stats"
@@ -139,7 +139,7 @@ test('typing "stat" filters results to Stats-related items', async ({ mockedPage
 });
 
 test('selecting wt opens the worktree form modal', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await openPaletteStore(page);
   await page.fill('.oc-cmd-input', '>wt');
   await page.keyboard.press('Enter');
@@ -150,7 +150,7 @@ test('selecting wt opens the worktree form modal', async ({ mockedPage: page }) 
 test('"> " prefix shows only command items (no session status indicators)', async ({
   mockedPage: page,
 }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await openPaletteStore(page);
   await page.fill('.oc-cmd-input', '>');
   // Session items have `.oc-cmd-status` spans; command items don't
@@ -161,7 +161,7 @@ test('"> " prefix shows only command items (no session status indicators)', asyn
 test('typing a session title in search mode shows matching sessions', async ({
   mockedPage: page,
 }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await openPaletteStore(page, 'search');
   await page.fill('.oc-cmd-input', 'Fix the login');
   await expect(page.locator('.oc-cmd-title', { hasText: 'Fix the login bug' })).toBeVisible({
@@ -170,7 +170,7 @@ test('typing a session title in search mode shows matching sessions', async ({
 });
 
 test('no results message shown when no match', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await openPaletteStore(page);
   // Type something that will never match any session, command, or nav item
   await page.fill('.oc-cmd-input', 'zzzznotexistingxyz999');
@@ -182,7 +182,7 @@ test('no results message shown when no match', async ({ mockedPage: page }) => {
 // ---------------------------------------------------------------------------
 
 test('ArrowDown moves selection to next item', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await openPaletteStore(page);
   // First item is selected by default
   const firstItem = page.locator('.oc-cmd-item').first();
@@ -197,7 +197,7 @@ test('ArrowDown moves selection to next item', async ({ mockedPage: page }) => {
 });
 
 test('ArrowUp stays at first item when already at top', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await openPaletteStore(page);
   // Selection is at index 0; pressing Up should stay at 0 (clamped)
   await page.keyboard.press('ArrowUp');
@@ -210,7 +210,7 @@ test('ArrowUp stays at first item when already at top', async ({ mockedPage: pag
 // ---------------------------------------------------------------------------
 
 test('pressing Enter on a nav item navigates to that route', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await openPaletteStore(page);
   // Type "usage" to filter to the Usage nav item
   await page.fill('.oc-cmd-input', 'usage');
@@ -224,7 +224,7 @@ test('pressing Enter on a nav item navigates to that route', async ({ mockedPage
 });
 
 test('clicking a nav item navigates and closes palette', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await openPaletteStore(page);
   await page.locator('.oc-cmd-item', { hasText: 'Projects' }).click();
   await expect(page).toHaveURL('/projects');
@@ -238,7 +238,7 @@ test('clicking a nav item navigates and closes palette', async ({ mockedPage: pa
 test('clicking a session item in search palette navigates to session', async ({
   mockedPage: page,
 }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   // Open search palette
   await openPaletteStore(page, 'search');
 

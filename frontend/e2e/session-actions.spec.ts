@@ -184,7 +184,7 @@ test('archive button in session table calls POST /api/session/archive', async ({
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }),
   );
 
-  await page.goto('/');
+  await page.goto('/sessions');
   await expect(page.locator('.session-title', { hasText: MOCK_SESSION.title })).toBeVisible({ timeout: 5_000 });
 
   const [req] = await Promise.all([
@@ -202,7 +202,7 @@ test('archived session disappears from the dashboard after archiving', async ({ 
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }),
   );
 
-  await page.goto('/');
+  await page.goto('/sessions');
   await expect(page.locator('.session-title', { hasText: MOCK_SESSION.title })).toBeVisible({ timeout: 5_000 });
 
   // Archived sessions are hidden by default on the dashboard ("Include
@@ -334,28 +334,28 @@ test('project detail "Exclude archived" toggle hides locally-archived sessions',
 // ===========================================================================
 
 test('keyboard shortcuts dialog opens with Alt+Shift+?', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await page.locator('body').click();
   await page.keyboard.press('Alt+Shift+Slash');
   await expect(page.locator('[role="dialog"][aria-label="Keyboard shortcuts"]')).toBeVisible({ timeout: 3_000 });
 });
 
 test('keyboard shortcuts dialog has "Keyboard shortcuts" heading', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await page.locator('body').click();
   await page.keyboard.press('Alt+Shift+Slash');
   await expect(page.locator('.oc-shortcuts-dialog h2')).toContainText('Keyboard shortcuts', { timeout: 3_000 });
 });
 
 test('keyboard shortcuts dialog shows site-wide shortcuts section', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await page.locator('body').click();
   await page.keyboard.press('Alt+Shift+Slash');
   await expect(page.locator('.oc-shortcuts-section-title', { hasText: 'Site-wide shortcuts' })).toBeVisible({ timeout: 3_000 });
 });
 
 test('close button closes the shortcuts dialog', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await page.locator('body').click();
   await page.keyboard.press('Alt+Shift+Slash');
   await expect(page.locator('.oc-shortcuts-dialog')).toBeVisible({ timeout: 3_000 });
@@ -364,7 +364,7 @@ test('close button closes the shortcuts dialog', async ({ mockedPage: page }) =>
 });
 
 test('Escape closes the shortcuts dialog', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await page.locator('body').click();
   await page.keyboard.press('Alt+Shift+Slash');
   await expect(page.locator('.oc-shortcuts-dialog')).toBeVisible({ timeout: 3_000 });
@@ -373,7 +373,7 @@ test('Escape closes the shortcuts dialog', async ({ mockedPage: page }) => {
 });
 
 test('clicking the backdrop closes the shortcuts dialog', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await page.locator('body').click();
   await page.keyboard.press('Alt+Shift+Slash');
   await expect(page.locator('.oc-shortcuts-dialog')).toBeVisible({ timeout: 3_000 });

@@ -22,14 +22,14 @@ import { test, expect, MOCK_SESSION, MOCK_PROJECT } from './fixtures';
 // ---------------------------------------------------------------------------
 
 test('all five dashboard tabs are visible', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   for (const label of ['Sessions', 'Projects', 'Stats', 'Usage', 'Settings']) {
     await expect(page.locator('.nav-tab', { hasText: label })).toBeVisible();
   }
 });
 
 test('clicking Settings tab navigates to /settings', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await page.locator('.nav-tab', { hasText: 'Settings' }).click();
   await expect(page).toHaveURL('/settings');
   await expect(page.locator('.nav-tab', { hasText: 'Settings' })).toHaveClass(/active/);
@@ -62,13 +62,13 @@ test('settings sidebar switches the visible group', async ({ mockedPage: page })
 });
 
 test('Sessions tab is active by default', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   const sessionsTab = page.locator('.nav-tab', { hasText: 'Sessions' });
   await expect(sessionsTab).toHaveClass(/active/);
 });
 
 test('clicking Projects tab navigates to /projects', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await page.locator('.nav-tab', { hasText: 'Projects' }).click();
   await expect(page).toHaveURL('/projects');
   const projectsTab = page.locator('.nav-tab', { hasText: 'Projects' });
@@ -76,22 +76,40 @@ test('clicking Projects tab navigates to /projects', async ({ mockedPage: page }
 });
 
 test('clicking Stats tab navigates to /stats', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await page.locator('.nav-tab', { hasText: 'Stats' }).click();
   await expect(page).toHaveURL('/stats');
 });
 
 test('clicking Usage tab navigates to /usage', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await page.locator('.nav-tab', { hasText: 'Usage' }).click();
   await expect(page).toHaveURL('/usage');
 });
 
-test('header logo link returns to Sessions tab from any route', async ({ mockedPage: page }) => {
+test('header logo link goes to / and redirects to the latest session', async ({ mockedPage: page }) => {
   await page.goto('/stats');
   await page.click('h1 a');
-  await expect(page).toHaveURL('/');
-  await expect(page.locator('.nav-tab', { hasText: 'Sessions' })).toHaveClass(/active/);
+  // `/` redirects to the most recent session (MOCK_SESSION is newest).
+  await expect(page).toHaveURL(`/session/${MOCK_SESSION.id}`);
+});
+
+// ---------------------------------------------------------------------------
+// Root redirect (/)
+// ---------------------------------------------------------------------------
+
+test('/ redirects to the latest session when sessions exist', async ({ mockedPage: page }) => {
+  await page.goto('/');
+  // The first session returned by /api/sessions is the redirect target.
+  await expect(page).toHaveURL(`/session/${MOCK_SESSION.id}`);
+});
+
+test('/ redirects to /session/new when no sessions exist', async ({ mockedPage: page }) => {
+  await page.route('/api/sessions*', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }),
+  );
+  await page.goto('/');
+  await expect(page).toHaveURL('/session/new');
 });
 
 // ---------------------------------------------------------------------------
@@ -99,20 +117,20 @@ test('header logo link returns to Sessions tab from any route', async ({ mockedP
 // ---------------------------------------------------------------------------
 
 test('sessions tab shows session titles from mock data', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await expect(page.locator('.session-title', { hasText: 'Fix the login bug' })).toBeVisible();
   await expect(page.locator('.session-title', { hasText: 'Refactor auth module' })).toBeVisible();
 });
 
 test('sessions tab shows time-range filter buttons', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   for (const label of ['12h', '24h', '7d', '30d', 'All']) {
     await expect(page.locator('.oc-time-range-btn', { hasText: label })).toBeVisible();
   }
 });
 
 test('time-range filter button becomes active when clicked', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   const btn7d = page.locator('.oc-time-range-btn', { hasText: '7d' });
   await btn7d.click();
   await expect(btn7d).toHaveClass(/active/);
@@ -120,13 +138,13 @@ test('time-range filter button becomes active when clicked', async ({ mockedPage
 });
 
 test('archive button present on each session row', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   const archiveBtns = page.locator('button[aria-label="Archive session"]');
   await expect(archiveBtns).toHaveCount(2);
 });
 
 test('clicking a session row navigates to session detail', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   await page.locator('.session-title', { hasText: 'Fix the login bug' }).click();
   await expect(page).toHaveURL(`/session/${MOCK_SESSION.id}`);
 });
@@ -139,7 +157,7 @@ test('sessions tab shows empty state when no sessions', async ({ mockedPage: pag
       body: JSON.stringify([]),
     }),
   );
-  await page.goto('/');
+  await page.goto('/sessions');
   // SessionTable shows 'No sessions found' when includeArchived=true (default), or
   // 'No active sessions found' when includeArchived=false. Either way, the empty
   // cell should be visible.
@@ -159,7 +177,7 @@ test('sessions tab shows loading skeleton before data arrives', async ({ mockedP
     });
   });
 
-  const gotoPromise = page.goto('/');
+  const gotoPromise = page.goto('/sessions');
   await expect(page.locator('.oc-skeleton-tbody').first()).toBeVisible({ timeout: 3_000 });
   resolveSessions(null);
   await gotoPromise;

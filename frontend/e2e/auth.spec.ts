@@ -16,7 +16,7 @@ import { test, expect } from './fixtures';
 // ---------------------------------------------------------------------------
 
 test('bypasses auth gate when authRequired=false', async ({ mockedPage: page }) => {
-  await page.goto('/');
+  await page.goto('/sessions');
   // The app should render without showing the login form. The header
   // logo is an <img alt="ocman"> (text was replaced by the favicon mark
   // in the actions-dropdown redesign), so assert on its accessible name.
@@ -86,7 +86,7 @@ test.describe('auth required', () => {
       }),
     );
 
-    await page.goto('/');
+    await page.goto('/sessions');
     await page.fill('input[type="password"]', 'correctpassword');
     loginDone = true;
     await page.click('button.oc-login-submit');
