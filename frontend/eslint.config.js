@@ -43,4 +43,14 @@ export default defineConfig([
       ],
     },
   },
+  {
+    // Test files legitimately have long describe/it bodies and dense
+    // assertion logic; the size/complexity budget is about production
+    // components, not test scaffolding. Correctness rules still apply.
+    files: ['**/*.{test,spec}.{ts,tsx}', 'e2e/**/*.{ts,tsx}'],
+    rules: {
+      complexity: 'off',
+      'max-lines-per-function': 'off',
+    },
+  },
 ])

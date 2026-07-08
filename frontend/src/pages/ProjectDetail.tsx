@@ -9,6 +9,7 @@ import { openVSCode } from '../lib/shortcuts';
 import { useShortcut } from '../lib/shortcutRegistry';
 import { useSessions } from '../lib/queries';
 import { remoteLog } from '../lib/remoteLog';
+import type { TmuxClient } from '../lib/api';
 // ProjectDetail is mounted outside DashboardLayout, so we need to pull in
 // Dashboard.css explicitly to get the .oc-time-range / .oc-time-range-btn
 // styles used by the filter bar below.
@@ -23,6 +24,44 @@ const TIME_RANGE_OPTIONS = [
 ];
 
 const DEFAULT_TIME_RANGE = 168; // 7d
+
+// Popover shown when a non-local tmux has multiple attached clients and
+// the user must pick which one to switch. Extracted from ProjectDetail
+// to keep that component within the size budget.
+function TmuxClientPicker({
+  pickerRef,
+  pos,
+  clients,
+  onSelect,
+}: {
+  pickerRef: React.RefObject<HTMLDivElement | null>;
+  pos: { top: number; left: number };
+  clients: TmuxClient[];
+  onSelect: (tty: string) => void;
+}) {
+  return (
+    <div
+      ref={pickerRef}
+      className="tmux-client-popover"
+      style={{ top: pos.top, left: pos.left }}
+    >
+      <div className="tmux-client-picker-header">
+        <span>Select tmux client</span>
+      </div>
+      {clients.map((c) => (
+        <div
+          key={c.tty}
+          className="tmux-client-picker-item"
+          onClick={() => onSelect(c.tty)}
+        >
+          <span className="tmux-client-tty">{c.tty}</span>
+          <span className="tmux-client-session">{shortPath(c.session)}</span>
+          <span className="tmux-client-size">{c.width}&times;{c.height}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export function ProjectDetail() {
   const { dir } = useParams();
@@ -141,26 +180,12 @@ export function ProjectDetail() {
   return (
     <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
       {pendingTmuxSession && pickerPos && (
-        <div
-          ref={pickerRef}
-          className="tmux-client-popover"
-          style={{ top: pickerPos.top, left: pickerPos.left }}
-        >
-          <div className="tmux-client-picker-header">
-            <span>Select tmux client</span>
-          </div>
-          {tmux.clients.map(c => (
-            <div
-              key={c.tty}
-              className="tmux-client-picker-item"
-              onClick={() => handleClientSelect(c.tty)}
-            >
-              <span className="tmux-client-tty">{c.tty}</span>
-              <span className="tmux-client-session">{shortPath(c.session)}</span>
-              <span className="tmux-client-size">{c.width}&times;{c.height}</span>
-            </div>
-          ))}
-        </div>
+        <TmuxClientPicker
+          pickerRef={pickerRef}
+          pos={pickerPos}
+          clients={tmux.clients}
+          onSelect={handleClientSelect}
+        />
       )}
       <h2 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{directory}</span>
