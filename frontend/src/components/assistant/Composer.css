@@ -186,8 +186,8 @@
 }
 .oc-bar-select:hover { color: var(--accent); }
 .oc-bar-select:disabled { opacity: 0.6; cursor: not-allowed; }
-.oc-bar-select--warn { color: var(--yellow, #f9e2af); gap: 4px; }
-.oc-bar-select--warn:hover { color: var(--yellow, #f9e2af); }
+.oc-bar-select--warn { color: var(--yellow); gap: 4px; }
+.oc-bar-select--warn:hover { color: var(--yellow); }
 .oc-bar-select option { background: var(--bg-card); color: var(--text); }
 
 /* Reasoning level button — dimmer than model/agent to read as a suffix */
