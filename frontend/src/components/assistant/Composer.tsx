@@ -587,10 +587,8 @@ function ComposerImpl({
             el.value = '';
             el.style.height = 'auto';
             const sid = sessionIdRef.current;
-            if (sid) {
-              if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-              clearDraft(sid);
-            }
+            if (sid && draftTimerRef.current) clearTimeout(draftTimerRef.current);
+            if (sid) clearDraft(sid);
             const evt = route.command === 'model' ? 'oc-model-picker-open' : 'oc-agent-picker-open';
             el.dispatchEvent(new CustomEvent(evt, { detail: route.args }));
             return;

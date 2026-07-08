@@ -27,28 +27,32 @@ export interface TodoItem {
 // back the same payload as its output. Returns null when no
 // recognisable todo list is found, so callers can choose between
 // rendering a list or hiding the section entirely.
+// Returns the value as a TodoItem[] if it looks like a non-empty todo
+// list (first entry has content + status), otherwise null.
+function asValidTodos(value: unknown): TodoItem[] | null {
+  const todos = (value as { todos?: unknown })?.todos ?? value;
+  if (Array.isArray(todos) && todos.length > 0 && todos[0]?.content && todos[0]?.status) {
+    return todos as TodoItem[];
+  }
+  return null;
+}
+
 export function parseTodos(argsText: string, result: unknown): TodoItem[] | null {
   const sources = [argsText, typeof result === 'string' ? result : JSON.stringify(result)];
   for (const src of sources) {
     if (!src) continue;
     try {
-      const parsed = JSON.parse(src);
-      const todos = parsed?.todos || parsed;
-      if (Array.isArray(todos) && todos.length > 0 && todos[0]?.content && todos[0]?.status) {
-        return todos as TodoItem[];
-      }
+      const todos = asValidTodos(JSON.parse(src));
+      if (todos) return todos;
     } catch {
-      // Try to find JSON within the string (may have prefix lines)
+      // Try to find JSON within the string (may have prefix lines).
       const jsonStart = src.indexOf('[');
       const jsonEnd = src.lastIndexOf(']');
-      if (jsonStart >= 0 && jsonEnd > jsonStart) {
-        try {
-          const todos = JSON.parse(src.slice(jsonStart, jsonEnd + 1));
-          if (Array.isArray(todos) && todos.length > 0 && todos[0]?.content && todos[0]?.status) {
-            return todos as TodoItem[];
-          }
-        } catch { /* not JSON */ }
-      }
+      if (jsonStart < 0 || jsonEnd <= jsonStart) continue;
+      try {
+        const todos = asValidTodos(JSON.parse(src.slice(jsonStart, jsonEnd + 1)));
+        if (todos) return todos;
+      } catch { /* not JSON */ }
     }
   }
   return null;

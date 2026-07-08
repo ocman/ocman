@@ -143,6 +143,41 @@ export async function createSessionWithLaunch(
     throw lastErr;
   }
 
+  // Fallback path: the primary directory couldn't be launched, so try
+  // the caller-provided fallbackDirectory instead. Extracted to keep the
+  // main catch block's nesting shallow.
+  async function launchFallback(
+    target: string,
+    launchErr: unknown,
+    unreachableErr: unknown,
+  ): Promise<{ id: string; directory: string }> {
+    remoteLog.error('Failed to launch opencode in tmux', launchErr);
+
+    progress.begin(target);
+    try {
+      const res = await createSession(target, platform, title);
+      progress.succeed();
+      return { ...res, directory: target };
+    } catch (fallbackErr) {
+      if (!isUnreachable(fallbackErr)) {
+        progress.fail(errorMessage(fallbackErr));
+        throw fallbackErr;
+      }
+    }
+
+    progress.step('launch');
+    try {
+      await launchInTmux(target);
+    } catch (fallbackLaunchErr) {
+      progress.fail('Failed to launch opencode in tmux.');
+      remoteLog.error('Failed to launch opencode in fallback tmux directory', fallbackLaunchErr);
+      throw unreachableErr;
+    }
+
+    const res = await retryCreate(target, unreachableErr);
+    return { ...res, directory: target };
+  }
+
   try {
     return await createSession(directory, platform, title);
   } catch (err) {
@@ -175,31 +210,7 @@ export async function createSessionWithLaunch(
         await launchInTmux(directory);
       } catch (launchErr) {
         if (fallbackDirectory && fallbackDirectory !== directory) {
-          remoteLog.error('Failed to launch opencode in tmux', launchErr);
-
-          progress.begin(fallbackDirectory);
-          try {
-            const res = await createSession(fallbackDirectory, platform, title);
-            progress.succeed();
-            return { ...res, directory: fallbackDirectory };
-          } catch (fallbackErr) {
-            if (!isUnreachable(fallbackErr)) {
-              progress.fail(errorMessage(fallbackErr));
-              throw fallbackErr;
-            }
-          }
-
-          progress.step('launch');
-          try {
-            await launchInTmux(fallbackDirectory);
-          } catch (fallbackLaunchErr) {
-            progress.fail('Failed to launch opencode in tmux.');
-            remoteLog.error('Failed to launch opencode in fallback tmux directory', fallbackLaunchErr);
-            throw err;
-          }
-
-          const res = await retryCreate(fallbackDirectory, err);
-          return { ...res, directory: fallbackDirectory };
+          return launchFallback(fallbackDirectory, launchErr, err);
         }
 
         progress.fail('Failed to launch opencode in tmux.');

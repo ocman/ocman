@@ -32,6 +32,15 @@ export default defineConfig([
     rules: {
       'react/no-unstable-nested-components': 'warn',
       'react/jsx-no-constructed-context-values': 'warn',
+      // Complexity guardrails: warn-only so existing large components
+      // surface as pressure without breaking CI. Thresholds sit above
+      // the p90 of the codebase so only genuine outliers flag.
+      complexity: ['warn', 20],
+      'max-depth': ['warn', 4],
+      'max-lines-per-function': [
+        'warn',
+        { max: 150, skipBlankLines: true, skipComments: true },
+      ],
     },
   },
 ])
