@@ -42,6 +42,7 @@ import { useApiStore } from '../../lib/apiStore';
 import { useGitInfo } from '../../lib/useGitInfo';
 import { usePlatformCapabilities, useWorktreeSessions } from '../../lib/useCapabilities';
 import { listFailedSends, type FailedSend } from '../../lib/failedSends';
+import { getProjectModel, saveProjectModel } from '../../lib/projectModel';
 import { recheckFaviconNotify } from '../../lib/useFaviconNotify';
 import { createSessionWithLaunch } from '../../lib/createSessionWithLaunch';
 import {
@@ -714,8 +715,12 @@ export function SessionDetail({ id }: SessionDetailProps) {
     [messages, session],
   );
   const activeModel = useMemo(
-    () => latestTurnModel(messages, turnStatsMap) || session?.defaultModel || '',
-    [messages, turnStatsMap, session?.defaultModel],
+    () =>
+      latestTurnModel(messages, turnStatsMap) ||
+      getProjectModel(session?.directory || '') ||
+      session?.defaultModel ||
+      '',
+    [messages, turnStatsMap, session?.directory, session?.defaultModel],
   );
 
   // Pre-seed the composer's model with the session's current model on
@@ -880,7 +885,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
     modelSeededSessionRef.current = id;
     setSelectedModel(model);
     setSelectedReasoning('');
-  }, [id, setSelectedModel, setSelectedReasoning]);
+    if (session?.directory) saveProjectModel(session.directory, model);
+  }, [id, session?.directory, setSelectedModel, setSelectedReasoning]);
 
   // Switching to an agent that defines a model selects that model in
   // the composer (and thus respects it on send). A later manual model
