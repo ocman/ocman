@@ -1152,9 +1152,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
         />
         <div className="session-main">
           {session && <HeaderActionsPortal>
-            {caps.permissionRules && portAvailable && (
-              <PermissionModeLock sessionId={session.id} />
-            )}
             <details className="oc-project-menu header-actions-menu">
               <summary
                 className="oc-project-menu-trigger"
@@ -1317,6 +1314,9 @@ export function SessionDetail({ id }: SessionDetailProps) {
                       ))}
                       {session.notice && (
                         <RateLimitBanner notice={session.notice} />
+                      )}
+                      {caps.permissionRules && portAvailable && (
+                        <PermissionModeLock sessionId={session.id} />
                       )}
                       {pendingPermission && portAvailable && caps.respondPermission ? (
                         <PermissionPrompt

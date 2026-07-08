@@ -3,7 +3,7 @@ import { api, type PermissionRule } from '../lib/api';
 import { classifyPermissionMode, PERMISSION_MODES } from '../lib/permissionModes';
 
 /**
- * Session-header lock: shows the session's current permission posture
+ * Session permission-mode lock: shows the current permission posture
  * and lets the user switch between presets (default / plan-only /
  * auto-edit / yolo). Renders only when the caller has already gated
  * on caps.permissionRules and a live connection.
