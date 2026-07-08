@@ -32,7 +32,7 @@ export function DashboardLayout() {
   const [searchParams, setSearchParams] = useSearchParams();
   const agentLoopsAllowed = useAgentLoops();
 
-  const isOnDashboard = location.pathname === '/' || location.pathname === '/projects' || location.pathname === '/stats' || location.pathname === '/usage' || location.pathname === '/loops' || location.pathname === '/settings';
+  const isOnDashboard = location.pathname === '/sessions' || location.pathname === '/projects' || location.pathname === '/stats' || location.pathname === '/usage' || location.pathname === '/loops' || location.pathname === '/settings';
 
   const dashboardTimeRangeDefault = useUiStore((s) => s.dashboardTimeRangeDefault);
   const tParam = searchParams.get('t');
@@ -118,7 +118,7 @@ export function DashboardLayout() {
     <DashboardContext.Provider value={ctx}>
       <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
         <div className="nav-tabs">
-          <NavLink to="/" end className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Sessions</NavLink>
+          <NavLink to="/sessions" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Sessions</NavLink>
           <NavLink to="/projects" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Projects</NavLink>
           {agentLoopsAllowed && (
             <NavLink to="/loops" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Loops</NavLink>
@@ -138,4 +138,3 @@ export function DashboardLayout() {
     </DashboardContext.Provider>
   );
 }
-

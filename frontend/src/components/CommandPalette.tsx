@@ -586,7 +586,7 @@ export function CommandPalette() {
       } else if (item.id === 'cmd.worktree') {
         openWorktreeForm({ projectDir: inferredProjectDir });
       } else if (item.id === 'cmd.sessions') {
-        navigate('/');
+        navigate('/sessions');
       } else if (item.id === 'cmd.projects') {
         navigate('/projects');
       } else if (item.id === 'cmd.stats') {

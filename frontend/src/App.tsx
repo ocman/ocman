@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
-import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { DashboardLayout, SessionsTab, ProjectsTab, StatsTab, UsageTab, SettingsTab } from './pages/Dashboard';
@@ -29,6 +29,7 @@ import { useAuthStore } from './lib/authStore';
 import { useUiStore } from './lib/uiStore';
 import { useShortcut, useShortcutDispatcher } from './lib/shortcutRegistry';
 import { useApiStore } from './lib/apiStore';
+import { useSessions } from './lib/queries';
 import { remoteLog } from './lib/remoteLog';
 import { usePerformanceCleanup } from './lib/usePerformanceCleanup';
 import { useMemoryMonitor } from './lib/useMemoryMonitor';
@@ -423,7 +424,8 @@ function AuthenticatedApp() {
             <RoutesBoundary>
               <Routes>
                 <Route element={<DashboardLayout />}>
-                  <Route path="/" element={<SessionsTab />} />
+                  <Route path="/" element={<RootRedirect />} />
+                  <Route path="/sessions" element={<SessionsTab />} />
                   <Route path="/projects" element={<ProjectsTab />} />
                   <Route path="/stats" element={<StatsTab />} />
                   <Route path="/usage" element={<UsageTab />} />
@@ -441,4 +443,11 @@ function AuthenticatedApp() {
       </HeaderProvider>
     </AuthGate>
   );
+}
+
+export function RootRedirect() {
+  const sessionsQ = useSessions({ limit: 1 });
+  if (sessionsQ.isLoading) return null;
+  const latest = sessionsQ.data?.[0];
+  return <Navigate to={latest ? `/session/${latest.id}` : '/session/new'} replace />;
 }
