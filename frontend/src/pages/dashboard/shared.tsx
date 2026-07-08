@@ -30,4 +30,44 @@ export function ChartCard({ title, children }: { title: string; children: ReactN
   );
 }
 
+// ---------------------------------------------------------------------------
+// MetricsPagination
+// ---------------------------------------------------------------------------
+
+/**
+ * Prev / "Page N / M" / Next footer for the Stats log tables. Renders
+ * nothing when everything fits on one page. `page` is 0-based.
+ */
+export function MetricsPagination({
+  page,
+  pageSize,
+  total,
+  onChange,
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  onChange: (page: number) => void;
+}) {
+  if (total <= pageSize) return null;
+  const lastPage = Math.ceil(total / pageSize);
+  return (
+    <div className="metrics-pagination">
+      <button
+        className="oc-time-range-btn"
+        disabled={page === 0}
+        onClick={() => onChange(page - 1)}
+      >Prev</button>
+      <span className="metrics-pagination-info">
+        Page {page + 1} / {lastPage}
+      </span>
+      <button
+        className="oc-time-range-btn"
+        disabled={(page + 1) * pageSize >= total}
+        onClick={() => onChange(page + 1)}
+      >Next</button>
+    </div>
+  );
+}
+
 
