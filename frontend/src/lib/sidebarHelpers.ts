@@ -49,6 +49,42 @@ export function filterOrphanChildren(
 }
 
 /**
+ * Resolve the currently-open session so it is ALWAYS available to the
+ * sidebar, even when it falls outside the recent-window fetch or is
+ * ranked past the backend's row limit.
+ *
+ * Lookup order:
+ *   1. the windowed poll result (`fetched`);
+ *   2. a previously cached fallback (`cached`), so we hit the network
+ *      at most once per open session;
+ *   3. a one-shot fetch by id (`fetchById`).
+ *
+ * Returns the resolved session (or undefined) plus the value to store
+ * back into the fallback cache. A failed `fetchById` is non-fatal: it
+ * returns `session: undefined` and leaves the cache untouched.
+ */
+export async function resolveOpenSession(opts: {
+  id: string | undefined;
+  fetched: readonly Session[];
+  cached: Session | null;
+  fetchById: (id: string) => Promise<Session>;
+  onError?: (err: unknown) => void;
+}): Promise<{ session: Session | undefined; cache: Session | null }> {
+  const { id, fetched, cached, fetchById, onError } = opts;
+  const inList = id ? fetched.find((s) => s.id === id) : undefined;
+  if (inList) return { session: inList, cache: cached };
+  if (!id) return { session: undefined, cache: cached };
+  if (cached) return { session: cached, cache: cached };
+  try {
+    const session = await fetchById(id);
+    return { session, cache: session };
+  } catch (err) {
+    onError?.(err);
+    return { session: undefined, cache: cached };
+  }
+}
+
+/**
  * Pick the session to navigate to after archiving the active session
  * from the sidebar.
  *

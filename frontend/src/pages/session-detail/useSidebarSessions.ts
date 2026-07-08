@@ -4,7 +4,7 @@ import type { Session } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
 import { useUiStore } from '../../lib/uiStore';
 import { filterVisibleSessions } from '../../lib/sessionVisibility';
-import { computeSidebarHash, filterOrphanChildren, pickNextSessionAfterArchive } from '../../lib/sidebarHelpers';
+import { computeSidebarHash, filterOrphanChildren, pickNextSessionAfterArchive, resolveOpenSession } from '../../lib/sidebarHelpers';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { remoteLog } from '../../lib/remoteLog';
 
@@ -87,6 +87,7 @@ export function useSidebarSessions({
   navigate,
 }: UseSidebarSessionsOptions): UseSidebarSessionsResult {
   const getSessions = useApiStore((s) => s.getSessions);
+  const getSession = useApiStore((s) => s.getSession);
   const archiveSession = useApiStore((s) => s.archiveSession);
   const pinSession = useApiStore((s) => s.pinSession);
   const recentSessions = useApiStore((s) => s.recentSessions);
@@ -114,6 +115,15 @@ export function useSidebarSessions({
     recentSessionsRef.current = recentSessions;
   }, [recentSessions]);
 
+  // Fallback for the open session when it falls outside the recent
+  // window / the backend's fetch limit: fetched once by id and cached
+  // here so we don't hit /api/session on every 3 s poll. Reset when the
+  // active session changes.
+  const openSessionFallbackRef = useRef<Session | null>(null);
+  useEffect(() => {
+    openSessionFallbackRef.current = null;
+  }, [id]);
+
   const loadRecentSessions = useCallback(async (signal?: AbortSignal) => {
     try {
       const since = Date.now() - sidebarRecentHoursRef.current * 60 * 60 * 1000;
@@ -126,7 +136,20 @@ export function useSidebarSessions({
       const rooted = filterOrphanChildren(result, id);
       const visible = (showArchivedRecentRef.current ? rooted : filterVisibleSessions(rooted))
         .slice(0, RECENT_SESSIONS_LIMIT);
-      const current = result.find((s) => s.id === id);
+      // The re-inject below only works if the open session is in the
+      // windowed fetch. When it isn't (older than the recent window, or
+      // ranked past the backend's limit) fetch it once by id so the
+      // active session is ALWAYS present in the sidebar.
+      const resolved = await resolveOpenSession({
+        id,
+        fetched: result,
+        cached: openSessionFallbackRef.current,
+        fetchById: async (sid) => (await getSession(sid, 1, 0, signal)).session,
+        onError: (err) => remoteLog.warn('sidebar open-session fallback fetch failed', err),
+      });
+      if (signal?.aborted) return;
+      openSessionFallbackRef.current = resolved.cache;
+      const current = resolved.session;
       const nextRecentSessions = current && !visible.some((s) => s.id === current.id)
         ? [current, ...visible].slice(0, RECENT_SESSIONS_LIMIT)
         : visible;
@@ -165,7 +188,7 @@ export function useSidebarSessions({
       if (e instanceof DOMException && e.name === 'AbortError') return;
       throw e;
     }
-  }, [getSessions, id, storeSetRecentSessions]);
+  }, [getSessions, getSession, id, storeSetRecentSessions]);
 
   // Initial load when the active session changes (or is set the
   // first time).

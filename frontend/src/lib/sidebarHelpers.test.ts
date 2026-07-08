@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { Session } from './api';
-import { computeSidebarHash, filterOrphanChildren, pickNextSessionAfterArchive, rollupGroupStatus } from './sidebarHelpers';
+import { computeSidebarHash, filterOrphanChildren, pickNextSessionAfterArchive, resolveOpenSession, rollupGroupStatus } from './sidebarHelpers';
+import { vi } from 'vitest';
 
 function makeSession(overrides: Partial<Session> = {}): Session {
   return {
@@ -268,5 +269,91 @@ describe('rollupGroupStatus', () => {
     // Even when effectiveStatusOf forces 'busy', the pending flag still wins.
     const session = makeSession({ status: 'done', pendingQuestion: true });
     expect(rollupGroupStatus([session], () => 'busy')).toEqual({ kind: 'pending', count: 1 });
+  });
+});
+
+describe('resolveOpenSession', () => {
+  it('returns the session from the fetched list without fetching', async () => {
+    const open = makeSession({ id: 'open' });
+    const fetchById = vi.fn();
+    const res = await resolveOpenSession({
+      id: 'open',
+      fetched: [makeSession({ id: 'other' }), open],
+      cached: null,
+      fetchById,
+    });
+    expect(res.session).toBe(open);
+    expect(res.cache).toBeNull();
+    expect(fetchById).not.toHaveBeenCalled();
+  });
+
+  it('fetches by id when the open session is missing from the list (the bug)', async () => {
+    // Regression: an open session older than the recent window / past the
+    // backend limit is absent from `fetched`, so it must be fetched by id.
+    const recovered = makeSession({ id: 'old' });
+    const fetchById = vi.fn().mockResolvedValue(recovered);
+    const res = await resolveOpenSession({
+      id: 'old',
+      fetched: [makeSession({ id: 'recent' })],
+      cached: null,
+      fetchById,
+    });
+    expect(fetchById).toHaveBeenCalledOnce();
+    expect(fetchById).toHaveBeenCalledWith('old');
+    expect(res.session).toBe(recovered);
+    expect(res.cache).toBe(recovered); // cached for next poll
+  });
+
+  it('reuses the cache instead of re-fetching on subsequent polls', async () => {
+    const cached = makeSession({ id: 'old' });
+    const fetchById = vi.fn();
+    const res = await resolveOpenSession({
+      id: 'old',
+      fetched: [makeSession({ id: 'recent' })],
+      cached,
+      fetchById,
+    });
+    expect(fetchById).not.toHaveBeenCalled();
+    expect(res.session).toBe(cached);
+    expect(res.cache).toBe(cached);
+  });
+
+  it('prefers the fresh list entry over a stale cache', async () => {
+    const cached = makeSession({ id: 'open', status: 'done' });
+    const fresh = makeSession({ id: 'open', status: 'busy' });
+    const res = await resolveOpenSession({
+      id: 'open',
+      fetched: [fresh],
+      cached,
+      fetchById: vi.fn(),
+    });
+    expect(res.session).toBe(fresh);
+  });
+
+  it('is a no-op with no active id', async () => {
+    const fetchById = vi.fn();
+    const res = await resolveOpenSession({
+      id: undefined,
+      fetched: [makeSession({ id: 'x' })],
+      cached: null,
+      fetchById,
+    });
+    expect(res.session).toBeUndefined();
+    expect(fetchById).not.toHaveBeenCalled();
+  });
+
+  it('is non-fatal when the fetch fails: no session, cache untouched, onError called', async () => {
+    const err = new Error('network');
+    const onError = vi.fn();
+    const res = await resolveOpenSession({
+      id: 'old',
+      fetched: [],
+      cached: null,
+      fetchById: vi.fn().mockRejectedValue(err),
+      onError,
+    });
+    expect(res.session).toBeUndefined();
+    expect(res.cache).toBeNull();
+    expect(onError).toHaveBeenCalledWith(err);
   });
 });
