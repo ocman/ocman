@@ -9,6 +9,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -101,9 +102,19 @@ func (s *Server) handleArchiveSession(w http.ResponseWriter, r *http.Request) {
 		// and immediately auto-unarchive — archived sessions bounced
 		// back into the sidebar. Clamp to "now" so only activity
 		// strictly after the archive click resurfaces the session.
+		//
+		// Only clamp for LOCAL sessions: TimeUpdated then shares the
+		// hub's clock. For a remote session TimeUpdated originates on the
+		// remote's clock; clamping to the hub's now and comparing against
+		// a remote-clock TimeUpdated (which can run ahead) auto-unarchives
+		// on the next poll/reconnect — the archive never sticks. The
+		// client-reported value is the same remote clock the later
+		// applySessionState comparison uses, so store it verbatim.
 		ts := req.SessionTimeUpdated
-		if now := time.Now().UnixMilli(); now > ts {
-			ts = now
+		if remoteID, _ := remote.SplitPlatformID(platform); remoteID == "" {
+			if now := time.Now().UnixMilli(); now > ts {
+				ts = now
+			}
 		}
 		err = s.stateDB.ArchiveSession(platform, req.SessionID, ts)
 	} else {

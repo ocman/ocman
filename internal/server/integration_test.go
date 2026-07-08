@@ -573,6 +573,80 @@ func TestHandleArchiveSession_StaleClientTimestamp(t *testing.T) {
 	}
 }
 
+// TestHandleArchiveSession_RemoteClockSkew reproduces the "archiving
+// remote sessions doesn't stick" bug. A remote session's TimeUpdated
+// originates on the remote's clock, which can run ahead of the hub's.
+// The old handler clamped the stored archived_at to the hub's now();
+// on the next sessions poll / reconnect applySessionState then saw the
+// remote-clock TimeUpdated > hub-clock archived_at and auto-unarchived
+// the session. For remote (compound r-...:) platforms the client value
+// must be stored verbatim so the comparison stays on one clock.
+func TestHandleArchiveSession_RemoteClockSkew(t *testing.T) {
+	srv := testServer(t)
+	const remotePlatform = "r-abc:opencode"
+	srv.registry.Register(&fakePlatform{id: remotePlatform})
+
+	// The remote's clock runs far ahead of the hub: its session's
+	// time_updated is 5,000,000,000,000 (year ~2128) while the hub's
+	// now() is ~2025. The client archives with that remote-clock value.
+	//
+	// The old handler clamped the stored baseline: archived_at =
+	// max(remoteTime, hubNow) = remoteTime here, which was fine — but if
+	// the remote clock were *behind* the hub, the clamp bumped the
+	// baseline up to hubNow, and the next poll (remote-clock TimeUpdated
+	// < hubNow) is a different-clock comparison. The general rule: a
+	// remote session's baseline must be stored on the *remote* clock
+	// (the client value), never clamped to the hub clock.
+	const remoteTime = int64(5_000_000_000_000)
+	body := strings.NewReader(`{"platform":"r-abc:opencode","sessionId":"s1","timeUpdated":5000000000000,"archived":true}`)
+	req := httptest.NewRequest("POST", "/api/session/archive", body)
+	rr := httptest.NewRecorder()
+	srv.handleArchiveSession(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// Baseline must be the remote-clock value, verbatim.
+	archived, _ := srv.stateDB.ArchivedSessions()
+	got := archived[state.Key{Platform: remotePlatform, SessionID: "s1"}]
+	if got != remoteTime {
+		t.Fatalf("stored archived_at = %d, want remote clock %d", got, remoteTime)
+	}
+
+	// Next poll re-stamps s1 at the same remote time (no new activity):
+	// it must stay archived.
+	sessions := []db.Session{
+		{ID: "s1", Platform: remotePlatform, TimeUpdated: remoteTime},
+	}
+	if err := srv.applySessionState(sessions); err != nil {
+		t.Fatalf("applySessionState: %v", err)
+	}
+	if !sessions[0].Archived {
+		t.Error("remote s1 must stay archived across reconnects (clock skew)")
+	}
+
+	// Now the remote clock is *behind* the hub: archive a session whose
+	// remote time_updated (2000) is far below the hub's now(). The old
+	// clamp stored hubNow (~1.7e12); the next poll, seeing the
+	// remote-clock TimeUpdated (2000) < hubNow, would treat it as
+	// "archived and untouched" only by luck — but any later remote
+	// activity below hubNow could never resurface it, and a remote
+	// slightly ahead of hub resurfaces immediately. Verbatim storage
+	// keeps the comparison on one clock.
+	srv.registry.Register(&fakePlatform{id: "r-def:opencode"})
+	body2 := strings.NewReader(`{"platform":"r-def:opencode","sessionId":"s2","timeUpdated":2000,"archived":true}`)
+	req2 := httptest.NewRequest("POST", "/api/session/archive", body2)
+	rr2 := httptest.NewRecorder()
+	srv.handleArchiveSession(rr2, req2)
+	if rr2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr2.Code, rr2.Body.String())
+	}
+	archived2, _ := srv.stateDB.ArchivedSessions()
+	if got := archived2[state.Key{Platform: "r-def:opencode", SessionID: "s2"}]; got != 2000 {
+		t.Fatalf("stored archived_at = %d, want remote clock 2000 (not hub-clamped)", got)
+	}
+}
+
 func TestHandleArchiveSession_MissingTimeUpdated(t *testing.T) {
 	srv := testServer(t)
 	body := strings.NewReader(`{"sessionId":"abc123","archived":true}`)
