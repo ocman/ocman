@@ -55,6 +55,10 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go vet ./...
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v2.11.4
       - run: go test ./...
 
   coverage:

@@ -8,15 +8,8 @@ import (
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
-	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/git"
 )
-
-// splitSessionReader is the subset of db.DB needed by the split tools.
-type splitSessionReader interface {
-	GetSession(sessionID string) (*db.Session, error)
-	GetSessionMessages(sessionID string) ([]db.Message, error)
-}
 
 // splitTools holds the dependencies for the new_session tool handler.
 type splitTools struct {

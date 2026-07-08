@@ -88,7 +88,7 @@ func TestDispatchSessionSubpath_MoreSpecificWinsForOverlap(t *testing.T) {
 // quickly" guarantee.
 func TestDispatchSessionSubpath_UnknownPathReturns404(t *testing.T) {
 	srv, _ := newSessionsTestServer(t)
-	req := httptest.NewRequest("GET", "/api/session/abc/totally-fake-subpath", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/session/abc/totally-fake-subpath", nil)
 	rr := httptest.NewRecorder()
 	srv.dispatchSessionSubpath(rr, req)
 
@@ -105,7 +105,7 @@ func TestDispatchSessionSubpath_UnknownPathReturns404(t *testing.T) {
 // e.g. PATCH /api/session/{id}/agents (only GET is allowed).
 func TestDispatchSessionSubpath_WrongMethodReturns405(t *testing.T) {
 	srv, _ := newSessionsTestServer(t)
-	req := httptest.NewRequest("DELETE", "/api/session/abc/agents", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/session/abc/agents", nil)
 	rr := httptest.NewRecorder()
 	srv.dispatchSessionSubpath(rr, req)
 

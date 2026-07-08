@@ -1,0 +1,29 @@
+version: "2"
+
+linters:
+  default: standard
+  # standard = errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose      # HTTP response bodies must be closed
+    - copyloopvar    # loop-var copy bugs (Go 1.22+)
+    - errorlint      # correct error wrapping / comparison
+    - misspell       # typos in comments & strings
+    - unconvert      # redundant type conversions
+    - usestdlibvars  # use net/http constants etc.
+    - wastedassign   # assignments never read
+    - whitespace     # stray leading/trailing blank lines
+  exclusions:
+    rules:
+      # Best-effort resource cleanup — deliberately unchecked so we
+      # don't litter `_ =` on every defer / t.Cleanup.
+      - linters: [errcheck]
+        source: '\.(Close|Shutdown|Unregister|RemoveAll)\('
+      - linters: [errcheck]
+        source: 'os\.(Remove|Unsetenv)\('
+      # Writes to an http.ResponseWriter after the status is committed.
+      - linters: [errcheck]
+        source: '(w\.Write|fmt\.Fprint)'
+      # Fire-and-forget background cache warm; retried on the next tick.
+      - path: internal/platforms/opencode/models_cache\.go
+        linters: [errcheck]
+        source: refreshSessions

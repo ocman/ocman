@@ -2,6 +2,7 @@ package state
 
 import (
 	"database/sql"
+	"errors"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -163,7 +164,7 @@ func TestRemote_CRUD(t *testing.T) {
 	if err := d.DeleteRemote(id); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.GetRemote(id); err != sql.ErrNoRows {
+	if _, err := d.GetRemote(id); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("expected ErrNoRows after delete, got %v", err)
 	}
 }

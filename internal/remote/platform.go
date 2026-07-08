@@ -345,7 +345,7 @@ func (p *remotePlatform) ProxyEvents(ctx context.Context, sessionID string, w io
 	}
 	for {
 		chunk, err := stream.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return nil
 		}
 		if err != nil {

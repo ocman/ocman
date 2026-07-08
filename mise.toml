@@ -2,5 +2,6 @@
 air = "latest"
 caddy = "latest"
 git-cliff = "latest"
+golangci-lint = "2.11.4"
 node = "25"
 pnpm = "10.11.1"

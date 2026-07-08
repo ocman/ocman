@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -20,39 +18,11 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
-// --- test helpers ---
-
-func execLookPath(name string) (string, error) { return exec.LookPath(name) }
-
 // cleanGitEnvForTest returns os.Environ() with git context variables
 // stripped. Pre-commit hooks inject GIT_DIR, GIT_INDEX_FILE, etc. which
 // would redirect git subprocesses into the wrong repository.
 func cleanGitEnvForTest() []string {
 	return gitexec.CleanEnv()
-}
-
-func runGit(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	// Suppress "hint:" output from modern git. Strip git context variables
-	// so pre-commit (or other tooling that sets GIT_DIR etc.) doesn't
-	// redirect these commands into the wrong repository.
-	cmd.Env = append(cleanGitEnvForTest(),
-		"GIT_TERMINAL_PROMPT=0",
-		"GIT_CONFIG_GLOBAL=/dev/null",
-		"GIT_CONFIG_SYSTEM=/dev/null",
-	)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, out)
-	}
-}
-
-func writeFile(t *testing.T, dir, name, content string) {
-	t.Helper()
-	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
-		t.Fatalf("write %s: %v", name, err)
-	}
 }
 
 // --- validateID tests ---
@@ -96,7 +66,7 @@ func TestRequireGET(t *testing.T) {
 	})
 
 	// GET should pass through
-	req := httptest.NewRequest("GET", "/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	rr := httptest.NewRecorder()
 	handler(rr, req)
 	if rr.Code != http.StatusOK {
@@ -104,7 +74,7 @@ func TestRequireGET(t *testing.T) {
 	}
 
 	// POST should be rejected
-	req = httptest.NewRequest("POST", "/test", nil)
+	req = httptest.NewRequest(http.MethodPost, "/test", nil)
 	rr = httptest.NewRecorder()
 	handler(rr, req)
 	if rr.Code != http.StatusMethodNotAllowed {
@@ -118,7 +88,7 @@ func TestRequirePOST(t *testing.T) {
 	})
 
 	// POST should pass through
-	req := httptest.NewRequest("POST", "/test", nil)
+	req := httptest.NewRequest(http.MethodPost, "/test", nil)
 	rr := httptest.NewRecorder()
 	handler(rr, req)
 	if rr.Code != http.StatusOK {
@@ -126,7 +96,7 @@ func TestRequirePOST(t *testing.T) {
 	}
 
 	// GET should be rejected
-	req = httptest.NewRequest("GET", "/test", nil)
+	req = httptest.NewRequest(http.MethodGet, "/test", nil)
 	rr = httptest.NewRecorder()
 	handler(rr, req)
 	if rr.Code != http.StatusMethodNotAllowed {
@@ -152,7 +122,7 @@ func TestRequireLocalhost(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/test", nil)
+			req := httptest.NewRequest(http.MethodGet, "/test", nil)
 			req.RemoteAddr = tt.remoteAddr
 			rr := httptest.NewRecorder()
 			handler(rr, req)
@@ -189,7 +159,7 @@ func TestIsLoopback(t *testing.T) {
 
 func TestReadAndUnmarshal_ValidJSON(t *testing.T) {
 	body := strings.NewReader(`{"name":"test","value":42}`)
-	req := httptest.NewRequest("POST", "/test", body)
+	req := httptest.NewRequest(http.MethodPost, "/test", body)
 	rr := httptest.NewRecorder()
 
 	var dst struct {
@@ -207,7 +177,7 @@ func TestReadAndUnmarshal_ValidJSON(t *testing.T) {
 
 func TestReadAndUnmarshal_InvalidJSON(t *testing.T) {
 	body := strings.NewReader(`{invalid}`)
-	req := httptest.NewRequest("POST", "/test", body)
+	req := httptest.NewRequest(http.MethodPost, "/test", body)
 	rr := httptest.NewRecorder()
 
 	var dst struct{}
@@ -329,7 +299,7 @@ func TestWritePlatformError_MapsErrPlatformUnreachableTo503(t *testing.T) {
 
 func TestSystemStats(t *testing.T) {
 	srv := New(nil, nil, "127.0.0.1:8229", nil, nil)
-	req := httptest.NewRequest("GET", "/api/system/stats", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/system/stats", nil)
 	rr := httptest.NewRecorder()
 
 	srv.handleSystemStats(rr, req)
@@ -411,7 +381,7 @@ func TestSystemStats_IncludesDBPoolWhenDBPresent(t *testing.T) {
 	defer d.Close()
 
 	srv := New(d, nil, "127.0.0.1:8229", nil, nil)
-	req := httptest.NewRequest("GET", "/api/system/stats", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/system/stats", nil)
 	rr := httptest.NewRecorder()
 	srv.handleSystemStats(rr, req)
 

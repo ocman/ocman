@@ -72,7 +72,7 @@ func TestFoldWorktreeProjects(t *testing.T) {
 func postProjectArchive(t *testing.T, srv *Server, dir string, archived bool) {
 	t.Helper()
 	body, _ := json.Marshal(map[string]any{"directory": dir, "archived": archived})
-	req := httptest.NewRequest("POST", "/api/project/archive", strings.NewReader(string(body)))
+	req := httptest.NewRequest(http.MethodPost, "/api/project/archive", strings.NewReader(string(body)))
 	rr := httptest.NewRecorder()
 	srv.handleProjectArchive(rr, req)
 	if rr.Code != http.StatusOK {
@@ -82,7 +82,7 @@ func postProjectArchive(t *testing.T, srv *Server, dir string, archived bool) {
 
 func getProjects(t *testing.T, srv *Server) []db.ProjectStats {
 	t.Helper()
-	req := httptest.NewRequest("GET", "/api/projects", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/projects", nil)
 	rr := httptest.NewRecorder()
 	srv.handleProjects(rr, req)
 	if rr.Code != http.StatusOK {
@@ -169,7 +169,7 @@ func TestProjectArchive_FoldsWorktreeToRoot(t *testing.T) {
 func TestProjectArchive_MissingDirectory(t *testing.T) {
 	srv := testServer(t)
 	body, _ := json.Marshal(map[string]any{"directory": "", "archived": true})
-	req := httptest.NewRequest("POST", "/api/project/archive", strings.NewReader(string(body)))
+	req := httptest.NewRequest(http.MethodPost, "/api/project/archive", strings.NewReader(string(body)))
 	rr := httptest.NewRecorder()
 	srv.handleProjectArchive(rr, req)
 	if rr.Code != http.StatusBadRequest {

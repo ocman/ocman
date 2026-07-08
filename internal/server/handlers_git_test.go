@@ -48,7 +48,7 @@ func gitInitForServerTest(t *testing.T, dir string) {
 
 func TestHandleGitDiff_MissingDir(t *testing.T) {
 	srv := testServer(t)
-	req := httptest.NewRequest("GET", "/api/git/diff", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/git/diff", nil)
 	rr := httptest.NewRecorder()
 	srv.handleGitDiff(rr, req)
 	if rr.Code != http.StatusBadRequest {
@@ -58,7 +58,7 @@ func TestHandleGitDiff_MissingDir(t *testing.T) {
 
 func TestHandleGitDiff_RelativeDirRejected(t *testing.T) {
 	srv := testServer(t)
-	req := httptest.NewRequest("GET", "/api/git/diff?dir=relative/path", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/git/diff?dir=relative/path", nil)
 	rr := httptest.NewRecorder()
 	srv.handleGitDiff(rr, req)
 	if rr.Code != http.StatusBadRequest {
@@ -69,7 +69,7 @@ func TestHandleGitDiff_RelativeDirRejected(t *testing.T) {
 func TestHandleGitDiff_NotARepo(t *testing.T) {
 	srv := testServer(t)
 	dir := t.TempDir()
-	req := httptest.NewRequest("GET", "/api/git/diff?dir="+dir, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/git/diff?dir="+dir, nil)
 	rr := httptest.NewRecorder()
 	srv.handleGitDiff(rr, req)
 	if rr.Code != http.StatusNotFound {
@@ -86,7 +86,7 @@ func TestHandleGitDiff_HappyPath(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	req := httptest.NewRequest("GET", "/api/git/diff?dir="+dir+"&fresh=1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/git/diff?dir="+dir+"&fresh=1", nil)
 	rr := httptest.NewRecorder()
 	srv.handleGitDiff(rr, req)
 	if rr.Code != http.StatusOK {
@@ -115,7 +115,7 @@ func TestHandleGitDiff_HappyPath(t *testing.T) {
 // receiving an empty map and pretending all is well.
 func TestHandleGitInfo_MissingDirs(t *testing.T) {
 	srv := testServer(t)
-	req := httptest.NewRequest("GET", "/api/git/info", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/git/info", nil)
 	rr := httptest.NewRecorder()
 	srv.handleGitInfo(rr, req)
 	if rr.Code != http.StatusBadRequest {
@@ -129,7 +129,7 @@ func TestHandleGitInfo_MissingDirs(t *testing.T) {
 // whole request — partial trust would be confusing.
 func TestHandleGitInfo_RelativeDirsRejected(t *testing.T) {
 	srv := testServer(t)
-	req := httptest.NewRequest("GET", "/api/git/info?dirs=/abs/ok,relative/bad", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/git/info?dirs=/abs/ok,relative/bad", nil)
 	rr := httptest.NewRecorder()
 	srv.handleGitInfo(rr, req)
 	if rr.Code != http.StatusBadRequest {
@@ -149,7 +149,7 @@ func TestHandleGitInfo_HappyPath(t *testing.T) {
 	gitInitForServerTest(t, a)
 	gitInitForServerTest(t, b)
 
-	req := httptest.NewRequest("GET", "/api/git/info?dirs="+a+","+b, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/git/info?dirs="+a+","+b, nil)
 	rr := httptest.NewRecorder()
 	srv.handleGitInfo(rr, req)
 	if rr.Code != http.StatusOK {
@@ -178,7 +178,7 @@ func TestHandleGitInfo_NonRepoDirs(t *testing.T) {
 	srv := testServer(t)
 	dir := t.TempDir() // no git init
 
-	req := httptest.NewRequest("GET", "/api/git/info?dirs="+dir, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/git/info?dirs="+dir, nil)
 	rr := httptest.NewRecorder()
 	srv.handleGitInfo(rr, req)
 	if rr.Code != http.StatusOK {
@@ -210,7 +210,7 @@ func gitRunForServerTest(t *testing.T, dir string, args ...string) {
 
 func TestHandleGitBranches_MissingDir(t *testing.T) {
 	srv := testServer(t)
-	req := httptest.NewRequest("GET", "/api/git/branches", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/git/branches", nil)
 	rr := httptest.NewRecorder()
 	srv.handleGitBranches(rr, req)
 	if rr.Code != http.StatusBadRequest {
@@ -220,7 +220,7 @@ func TestHandleGitBranches_MissingDir(t *testing.T) {
 
 func TestHandleGitBranches_RelativeRejected(t *testing.T) {
 	srv := testServer(t)
-	req := httptest.NewRequest("GET", "/api/git/branches?dir=rel/path", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/git/branches?dir=rel/path", nil)
 	rr := httptest.NewRecorder()
 	srv.handleGitBranches(rr, req)
 	if rr.Code != http.StatusBadRequest {
@@ -234,7 +234,7 @@ func TestHandleGitBranches_HappyPath(t *testing.T) {
 	gitInitForServerTest(t, dir)
 	gitRunForServerTest(t, dir, "branch", "feature/x")
 
-	req := httptest.NewRequest("GET", "/api/git/branches?dir="+dir, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/git/branches?dir="+dir, nil)
 	rr := httptest.NewRecorder()
 	srv.handleGitBranches(rr, req)
 	if rr.Code != http.StatusOK {
@@ -258,7 +258,7 @@ func TestHandleGitBranches_HappyPath(t *testing.T) {
 
 func TestHandleGitCheckout_BadBody(t *testing.T) {
 	srv := testServer(t)
-	req := httptest.NewRequest("POST", "/api/git/checkout", strings.NewReader("{"))
+	req := httptest.NewRequest(http.MethodPost, "/api/git/checkout", strings.NewReader("{"))
 	rr := httptest.NewRecorder()
 	srv.handleGitCheckout(rr, req)
 	if rr.Code != http.StatusBadRequest {
@@ -268,7 +268,7 @@ func TestHandleGitCheckout_BadBody(t *testing.T) {
 
 func TestHandleGitCheckout_MissingFields(t *testing.T) {
 	srv := testServer(t)
-	req := httptest.NewRequest("POST", "/api/git/checkout", strings.NewReader(`{"dir":"/x"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/git/checkout", strings.NewReader(`{"dir":"/x"}`))
 	rr := httptest.NewRecorder()
 	srv.handleGitCheckout(rr, req)
 	if rr.Code != http.StatusBadRequest {
@@ -283,7 +283,7 @@ func TestHandleGitCheckout_HappyPath(t *testing.T) {
 	gitRunForServerTest(t, dir, "branch", "other")
 
 	body := `{"dir":"` + dir + `","branch":"other"}`
-	req := httptest.NewRequest("POST", "/api/git/checkout", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/git/checkout", strings.NewReader(body))
 	rr := httptest.NewRecorder()
 	srv.handleGitCheckout(rr, req)
 	if rr.Code != http.StatusOK {
@@ -310,7 +310,7 @@ func TestHandleGitCheckout_DirtyConflict(t *testing.T) {
 	}
 
 	body := `{"dir":"` + dir + `","branch":"other"}`
-	req := httptest.NewRequest("POST", "/api/git/checkout", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/git/checkout", strings.NewReader(body))
 	rr := httptest.NewRecorder()
 	srv.handleGitCheckout(rr, req)
 	if rr.Code != http.StatusConflict {

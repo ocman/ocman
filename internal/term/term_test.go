@@ -61,7 +61,7 @@ func TestDirHash_StableAndPathNormalised(t *testing.T) {
 		t.Fatalf("expected 10-char hash, got %d (%q)", len(a), a)
 	}
 	for _, r := range a {
-		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f')) {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
 			t.Fatalf("hash %q contains non-hex char %q", a, r)
 		}
 	}

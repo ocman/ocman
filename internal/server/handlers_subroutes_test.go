@@ -49,7 +49,7 @@ func TestDispatchSessionSubpath_GETSubroutes_ReachHandlers(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.path, func(t *testing.T) {
-			req := httptest.NewRequest("GET", c.path, nil)
+			req := httptest.NewRequest(http.MethodGet, c.path, nil)
 			rr := httptest.NewRecorder()
 			srv.dispatchSessionSubpath(rr, req)
 

@@ -424,7 +424,6 @@ func TestCreate_ConcurrentSameBranch(t *testing.T) {
 	results := make([]result, 2)
 	var wg sync.WaitGroup
 	for i := range results {
-		i := i
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

@@ -86,7 +86,7 @@ func (c *RemoteConn) Connect(ctx context.Context) error {
 		old.Close()
 	}
 
-	var transport credentials.TransportCredentials = insecure.NewCredentials()
+	transport := insecure.NewCredentials()
 	if c.useTLS() {
 		transport = credentials.NewTLS(nil)
 	}

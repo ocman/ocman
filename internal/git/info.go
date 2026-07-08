@@ -154,12 +154,9 @@ func parsePorcelainV2(out string) Info {
 		}
 		switch {
 		case strings.HasPrefix(line, "# branch.head "):
+			// A "(detached)" value is kept verbatim — the UI decides
+			// how to render it, and it's still valid for IsRepo.
 			info.Branch = strings.TrimPrefix(line, "# branch.head ")
-			if info.Branch == "(detached)" {
-				// Keep the parenthesised form — the UI can decide
-				// how to render it. It's still a valid Branch for
-				// IsRepo purposes.
-			}
 		case strings.HasPrefix(line, "# branch.ab "):
 			// Format: "# branch.ab +<ahead> -<behind>"
 			parts := strings.Fields(strings.TrimPrefix(line, "# branch.ab "))

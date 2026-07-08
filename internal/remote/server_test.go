@@ -343,7 +343,7 @@ func TestServer_StreamEventsRoundTrip(t *testing.T) {
 	var chunks []string
 	for {
 		chunk, err := stream.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -422,7 +422,7 @@ func TestServer_TerminalStreamRoundTrip(t *testing.T) {
 	if err := stream.Send(&pb.TermClientMsg{Resize: &pb.TermResize{Cols: 80, Rows: 24}}); err != nil {
 		t.Fatalf("send resize: %v", err)
 	}
-	if _, err := stream.Recv(); err != io.EOF {
+	if _, err := stream.Recv(); !errors.Is(err, io.EOF) {
 		t.Fatalf("expected EOF after resize, got %v", err)
 	}
 }

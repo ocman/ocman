@@ -114,7 +114,7 @@ func TestCookie_RoundTrip(t *testing.T) {
 	// Issue a cookie into a recorder, then replay it on a fresh
 	// request and check verification.
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	a.issueCookie(w, r)
 
 	cookies := w.Result().Cookies()
@@ -122,7 +122,7 @@ func TestCookie_RoundTrip(t *testing.T) {
 		t.Fatalf("expected one %s cookie, got %+v", authCookieName, cookies)
 	}
 
-	r2 := httptest.NewRequest("GET", "/", nil)
+	r2 := httptest.NewRequest(http.MethodGet, "/", nil)
 	r2.AddCookie(cookies[0])
 	if !a.hasValidCookie(r2) {
 		t.Error("freshly-issued cookie should verify")
@@ -132,12 +132,12 @@ func TestCookie_RoundTrip(t *testing.T) {
 func TestCookie_RejectsTampering(t *testing.T) {
 	a := newTestAuth(t, "hunter2")
 	w := httptest.NewRecorder()
-	a.issueCookie(w, httptest.NewRequest("GET", "/", nil))
+	a.issueCookie(w, httptest.NewRequest(http.MethodGet, "/", nil))
 	c := w.Result().Cookies()[0]
 
 	// Flip the final byte of the signature.
 	tampered := &http.Cookie{Name: c.Name, Value: c.Value[:len(c.Value)-1] + "X"}
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.AddCookie(tampered)
 	if a.hasValidCookie(r) {
 		t.Error("tampered cookie should not verify")
@@ -192,7 +192,7 @@ func TestRequireAuth_PassthroughWhenDisabled(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	req := httptest.NewRequest("GET", "/api/stats", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
 	req.RemoteAddr = "10.0.0.5:1234"
 	rr := httptest.NewRecorder()
 	handler(rr, req)
@@ -215,7 +215,7 @@ func TestRequireAuth_LoopbackBypasses_WhenTrusted(t *testing.T) {
 	})
 
 	for _, addr := range []string{"127.0.0.1:12345", "[::1]:12345"} {
-		req := httptest.NewRequest("GET", "/api/stats", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
 		req.RemoteAddr = addr
 		rr := httptest.NewRecorder()
 		handler(rr, req)
@@ -235,7 +235,7 @@ func TestRequireAuth_LoopbackRequiresAuth_ByDefault(t *testing.T) {
 	})
 
 	for _, addr := range []string{"127.0.0.1:12345", "[::1]:12345"} {
-		req := httptest.NewRequest("GET", "/api/stats", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
 		req.RemoteAddr = addr
 		rr := httptest.NewRecorder()
 		handler(rr, req)
@@ -256,10 +256,10 @@ func TestRequireAuth_LoopbackWithCookie_ByDefault(t *testing.T) {
 	})
 
 	w := httptest.NewRecorder()
-	a.issueCookie(w, httptest.NewRequest("GET", "/", nil))
+	a.issueCookie(w, httptest.NewRequest(http.MethodGet, "/", nil))
 	cookie := w.Result().Cookies()[0]
 
-	req := httptest.NewRequest("GET", "/api/stats", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
 	req.AddCookie(cookie)
 	rr := httptest.NewRecorder()
@@ -275,7 +275,7 @@ func TestRequireAuth_RejectsUnauthenticatedRemote(t *testing.T) {
 		t.Error("handler should not be called")
 	})
 
-	req := httptest.NewRequest("GET", "/api/stats", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
 	req.RemoteAddr = "10.0.0.5:1234"
 	rr := httptest.NewRecorder()
 	handler(rr, req)
@@ -296,10 +296,10 @@ func TestRequireAuth_AcceptsValidCookieFromRemote(t *testing.T) {
 
 	// Mint a valid cookie.
 	w := httptest.NewRecorder()
-	a.issueCookie(w, httptest.NewRequest("GET", "/", nil))
+	a.issueCookie(w, httptest.NewRequest(http.MethodGet, "/", nil))
 	cookie := w.Result().Cookies()[0]
 
-	req := httptest.NewRequest("GET", "/api/stats", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
 	req.RemoteAddr = "10.0.0.5:1234"
 	req.AddCookie(cookie)
 	rr := httptest.NewRecorder()
@@ -317,7 +317,7 @@ func TestRequireAuth_AcceptsValidCookieFromRemote(t *testing.T) {
 
 func TestHandleAuthMe_Disabled(t *testing.T) {
 	srv := &Server{}
-	req := httptest.NewRequest("GET", "/api/auth/me", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
 	req.RemoteAddr = "10.0.0.5:1234"
 	rr := httptest.NewRecorder()
 	srv.handleAuthMe(rr, req)
@@ -337,7 +337,7 @@ func TestHandleAuthMe_Disabled(t *testing.T) {
 // frontend skips the lockscreen.
 func TestHandleAuthMe_TrustedLoopback(t *testing.T) {
 	srv := &Server{auth: newTestAuth(t, "hunter2", withTrustLocalhost())}
-	req := httptest.NewRequest("GET", "/api/auth/me", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
 	rr := httptest.NewRecorder()
 	srv.handleAuthMe(rr, req)
@@ -357,7 +357,7 @@ func TestHandleAuthMe_TrustedLoopback(t *testing.T) {
 // rendered just like for any remote client.
 func TestHandleAuthMe_UntrustedLoopback(t *testing.T) {
 	srv := &Server{auth: newTestAuth(t, "hunter2")}
-	req := httptest.NewRequest("GET", "/api/auth/me", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
 	rr := httptest.NewRecorder()
 	srv.handleAuthMe(rr, req)
@@ -374,7 +374,7 @@ func TestHandleAuthMe_UntrustedLoopback(t *testing.T) {
 
 func TestHandleAuthMe_EnabledRemoteAnonymous(t *testing.T) {
 	srv := &Server{auth: newTestAuth(t, "hunter2")}
-	req := httptest.NewRequest("GET", "/api/auth/me", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
 	req.RemoteAddr = "10.0.0.5:1234"
 	rr := httptest.NewRecorder()
 	srv.handleAuthMe(rr, req)
@@ -393,7 +393,7 @@ func TestHandleAuthMe_EnabledRemoteAnonymous(t *testing.T) {
 
 func TestHandleAuthLogin_Disabled204(t *testing.T) {
 	srv := &Server{}
-	req := httptest.NewRequest("POST", "/api/auth/login",
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login",
 		strings.NewReader(`{"password":"whatever"}`))
 	req.RemoteAddr = "10.0.0.5:1234"
 	rr := httptest.NewRecorder()
@@ -405,7 +405,7 @@ func TestHandleAuthLogin_Disabled204(t *testing.T) {
 
 func TestHandleAuthLogin_Success_IssuesCookie(t *testing.T) {
 	srv := &Server{auth: newTestAuth(t, "hunter2")}
-	req := httptest.NewRequest("POST", "/api/auth/login",
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login",
 		strings.NewReader(`{"password":"hunter2"}`))
 	req.RemoteAddr = "10.0.0.5:1234"
 	rr := httptest.NewRecorder()
@@ -428,7 +428,7 @@ func TestHandleAuthLogin_Success_IssuesCookie(t *testing.T) {
 
 func TestHandleAuthLogin_WrongPassword401(t *testing.T) {
 	srv := &Server{auth: newTestAuth(t, "hunter2")}
-	req := httptest.NewRequest("POST", "/api/auth/login",
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login",
 		strings.NewReader(`{"password":"wrong"}`))
 	req.RemoteAddr = "10.0.0.5:1234"
 	rr := httptest.NewRecorder()
@@ -443,7 +443,7 @@ func TestHandleAuthLogin_WrongPassword401(t *testing.T) {
 
 func TestHandleAuthLogin_EmptyPassword400(t *testing.T) {
 	srv := &Server{auth: newTestAuth(t, "hunter2")}
-	req := httptest.NewRequest("POST", "/api/auth/login",
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login",
 		strings.NewReader(`{"password":""}`))
 	req.RemoteAddr = "10.0.0.5:1234"
 	rr := httptest.NewRecorder()
@@ -457,7 +457,7 @@ func TestHandleAuthLogin_RateLimited(t *testing.T) {
 	srv := &Server{auth: newTestAuth(t, "hunter2")}
 	// Fire loginMaxAttempts failures from a non-localhost IP.
 	for i := 0; i < loginMaxAttempts; i++ {
-		req := httptest.NewRequest("POST", "/api/auth/login",
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/login",
 			strings.NewReader(`{"password":"wrong"}`))
 		req.RemoteAddr = "10.0.0.5:1234"
 		rr := httptest.NewRecorder()
@@ -467,7 +467,7 @@ func TestHandleAuthLogin_RateLimited(t *testing.T) {
 		}
 	}
 	// Next attempt should be rate-limited regardless of password.
-	req := httptest.NewRequest("POST", "/api/auth/login",
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login",
 		strings.NewReader(`{"password":"hunter2"}`))
 	req.RemoteAddr = "10.0.0.5:1234"
 	rr := httptest.NewRecorder()
@@ -483,7 +483,7 @@ func TestHandleAuthLogin_RateLimited(t *testing.T) {
 func TestHandleAuthLogin_LoopbackSkipsRateLimit_WhenTrusted(t *testing.T) {
 	srv := &Server{auth: newTestAuth(t, "hunter2", withTrustLocalhost())}
 	for i := 0; i < loginMaxAttempts+5; i++ {
-		req := httptest.NewRequest("POST", "/api/auth/login",
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/login",
 			strings.NewReader(`{"password":"wrong"}`))
 		req.RemoteAddr = "127.0.0.1:12345"
 		rr := httptest.NewRecorder()
@@ -500,7 +500,7 @@ func TestHandleAuthLogin_LoopbackSkipsRateLimit_WhenTrusted(t *testing.T) {
 func TestHandleAuthLogin_LoopbackRateLimited_ByDefault(t *testing.T) {
 	srv := &Server{auth: newTestAuth(t, "hunter2")}
 	for i := 0; i < loginMaxAttempts; i++ {
-		req := httptest.NewRequest("POST", "/api/auth/login",
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/login",
 			strings.NewReader(`{"password":"wrong"}`))
 		req.RemoteAddr = "127.0.0.1:12345"
 		rr := httptest.NewRecorder()
@@ -510,7 +510,7 @@ func TestHandleAuthLogin_LoopbackRateLimited_ByDefault(t *testing.T) {
 		}
 	}
 	// Next attempt must be 429 even though we're on loopback.
-	req := httptest.NewRequest("POST", "/api/auth/login",
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login",
 		strings.NewReader(`{"password":"wrong"}`))
 	req.RemoteAddr = "127.0.0.1:12345"
 	rr := httptest.NewRecorder()
@@ -525,13 +525,13 @@ func TestHandleAuthLogin_SuccessResetsLimiter(t *testing.T) {
 	// A few failures, then a success, then another failure — counter
 	// must have been reset.
 	for i := 0; i < loginMaxAttempts-1; i++ {
-		req := httptest.NewRequest("POST", "/api/auth/login",
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/login",
 			strings.NewReader(`{"password":"wrong"}`))
 		req.RemoteAddr = "10.0.0.5:1234"
 		srv.handleAuthLogin(httptest.NewRecorder(), req)
 	}
 	// Correct password.
-	okReq := httptest.NewRequest("POST", "/api/auth/login",
+	okReq := httptest.NewRequest(http.MethodPost, "/api/auth/login",
 		strings.NewReader(`{"password":"hunter2"}`))
 	okReq.RemoteAddr = "10.0.0.5:1234"
 	rr := httptest.NewRecorder()
@@ -540,7 +540,7 @@ func TestHandleAuthLogin_SuccessResetsLimiter(t *testing.T) {
 		t.Fatalf("success: got %d", rr.Code)
 	}
 	// Fresh failure after reset should be a plain 401, not 429.
-	failReq := httptest.NewRequest("POST", "/api/auth/login",
+	failReq := httptest.NewRequest(http.MethodPost, "/api/auth/login",
 		strings.NewReader(`{"password":"wrong"}`))
 	failReq.RemoteAddr = "10.0.0.5:1234"
 	rr = httptest.NewRecorder()
@@ -554,7 +554,7 @@ func TestHandleAuthLogin_SuccessResetsLimiter(t *testing.T) {
 
 func TestHandleAuthLogout_ClearsCookie(t *testing.T) {
 	srv := &Server{auth: newTestAuth(t, "hunter2")}
-	req := httptest.NewRequest("POST", "/api/auth/logout", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
 	req.RemoteAddr = "10.0.0.5:1234"
 	rr := httptest.NewRecorder()
 	srv.handleAuthLogout(rr, req)
@@ -576,7 +576,7 @@ func TestHandleAuthLogout_ClearsCookie(t *testing.T) {
 
 func TestHandleAuthLogout_Disabled204(t *testing.T) {
 	srv := &Server{}
-	req := httptest.NewRequest("POST", "/api/auth/logout", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
 	rr := httptest.NewRecorder()
 	srv.handleAuthLogout(rr, req)
 	if rr.Code != http.StatusNoContent {

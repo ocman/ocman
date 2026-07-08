@@ -3,6 +3,7 @@ package forgejo
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -202,7 +203,7 @@ func TestCurrentUser_Authenticated(t *testing.T) {
 func TestCurrentUser_UnauthenticatedReturnsErr(t *testing.T) {
 	c := &Client{token: "", baseURL: "http://unused", host: "test.forgejo"}
 	_, err := c.CurrentUser(context.Background())
-	if err != forge.ErrUnauthenticated {
+	if !errors.Is(err, forge.ErrUnauthenticated) {
 		t.Errorf("expected ErrUnauthenticated, got %v", err)
 	}
 }

@@ -74,7 +74,7 @@ func dirFilterFixture(t *testing.T) *Server {
 func scopedRequest(path, dir string) *http.Request {
 	q := url.Values{}
 	q.Set("dir", dir)
-	return httptest.NewRequest("GET", path+"?"+q.Encode(), nil)
+	return httptest.NewRequest(http.MethodGet, path+"?"+q.Encode(), nil)
 }
 
 func TestHandleMetrics_DirFilter(t *testing.T) {
@@ -82,7 +82,7 @@ func TestHandleMetrics_DirFilter(t *testing.T) {
 
 	// Unfiltered: 4 requests, 1500 input tokens.
 	rr := httptest.NewRecorder()
-	srv.handleMetrics(rr, httptest.NewRequest("GET", "/api/metrics", nil))
+	srv.handleMetrics(rr, httptest.NewRequest(http.MethodGet, "/api/metrics", nil))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("unfiltered metrics: HTTP %d: %s", rr.Code, rr.Body.String())
 	}

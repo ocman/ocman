@@ -150,6 +150,9 @@ var (
 // fresh instance ID, so adapters are torn down and re-registered).
 func (m *Manager) connectAndRegister(ctx context.Context, mr *managedRemote, localID int64) {
 	delay := reconnectBaseDelay
+	// loggedFailure suppresses per-retry log spam: we log the first failure
+	// of a streak and stay quiet until the next successful connect resets it.
+	loggedFailure := false
 	for {
 		if ctx.Err() != nil || !m.stillManaged(localID, mr) {
 			return
@@ -166,10 +169,16 @@ func (m *Manager) connectAndRegister(ctx context.Context, mr *managedRemote, loc
 				log.WithError(err).WithField("remote", localID).Warn("remote: connect failed, not retrying")
 				return
 			}
-			log.WithError(err).WithFields(log.Fields{
+			entry := log.WithError(err).WithFields(log.Fields{
 				"remote": localID,
 				"retry":  delay,
-			}).Warn("remote: connect failed, retrying")
+			})
+			if loggedFailure {
+				entry.Debug("remote: connect failed, retrying")
+			} else {
+				entry.Warn("remote: connect failed, retrying")
+				loggedFailure = true
+			}
 			if !sleepCtx(ctx, delay) {
 				return
 			}
@@ -177,6 +186,7 @@ func (m *Manager) connectAndRegister(ctx context.Context, mr *managedRemote, loc
 			continue
 		}
 		delay = reconnectBaseDelay
+		loggedFailure = false
 
 		mr.platform = newRemotePlatform(mr.conn, m.base, func() string {
 			return m.displayNameFor(localID)

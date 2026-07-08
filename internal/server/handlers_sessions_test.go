@@ -86,7 +86,7 @@ func mkSession(platform, id, title string, updated int64) db.Session {
 
 func TestHandleSessions_EmptyRegistry(t *testing.T) {
 	srv, _ := newSessionsTestServer(t)
-	req := httptest.NewRequest("GET", "/api/sessions", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
 	rr := httptest.NewRecorder()
 	srv.handleSessions(rr, req)
 
@@ -115,7 +115,7 @@ func TestHandleSessions_SinglePlatform_SortedByBucketDesc(t *testing.T) {
 			mkSession("fake", "c", "gamma", 100000), // bucket 0
 		},
 	})
-	req := httptest.NewRequest("GET", "/api/sessions", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
 	rr := httptest.NewRecorder()
 	srv.handleSessions(rr, req)
 
@@ -144,7 +144,7 @@ func TestHandleSessions_TwoPlatforms_Merged(t *testing.T) {
 		id:       "p2",
 		sessions: []db.Session{mkSession("p2", "y", "alpha", 1_000_500)},
 	})
-	req := httptest.NewRequest("GET", "/api/sessions", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
 	rr := httptest.NewRecorder()
 	srv.handleSessions(rr, req)
 
@@ -175,7 +175,7 @@ func TestHandleSessions_StateOverlay_AppliesArchivedSeenPinned(t *testing.T) {
 		pinned:   []stateRow{{"fake", "pin", 0}},
 	})
 
-	req := httptest.NewRequest("GET", "/api/sessions", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
 	rr := httptest.NewRecorder()
 	srv.handleSessions(rr, req)
 	if rr.Code != 200 {
@@ -206,7 +206,7 @@ func TestHandleSessions_LimitParameterRespected(t *testing.T) {
 	}
 	reg.Register(&fakePlatform{id: "fake", sessions: sessions})
 
-	req := httptest.NewRequest("GET", "/api/sessions?limit=3", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions?limit=3", nil)
 	rr := httptest.NewRecorder()
 	srv.handleSessions(rr, req)
 
@@ -228,7 +228,7 @@ func TestHandleSessions_SinceParameterIsForwardedToAdapter(t *testing.T) {
 		},
 	})
 
-	req := httptest.NewRequest("GET", "/api/sessions?since=12345", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions?since=12345", nil)
 	rr := httptest.NewRecorder()
 	srv.handleSessions(rr, req)
 
@@ -253,7 +253,7 @@ func TestHandleSessions_PinnedOutsideWindow_IsForceIncluded(t *testing.T) {
 		pinned: []stateRow{{"fake", "pinme", 0}},
 	})
 
-	req := httptest.NewRequest("GET", "/api/sessions?since=10000", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions?since=10000", nil)
 	rr := httptest.NewRecorder()
 	srv.handleSessions(rr, req)
 
@@ -278,7 +278,7 @@ func TestHandleSessions_PlatformErrorDoesNotAbortRequest(t *testing.T) {
 		sessions: []db.Session{mkSession("ok", "z", "z", 1000)},
 	})
 
-	req := httptest.NewRequest("GET", "/api/sessions", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
 	rr := httptest.NewRecorder()
 	srv.handleSessions(rr, req)
 
@@ -318,7 +318,7 @@ func TestHandleSessionAttachment_SavesFileToCache(t *testing.T) {
 		t.Fatalf("close multipart: %v", err)
 	}
 
-	req := httptest.NewRequest("POST", "/api/session/s1/attachment", &body)
+	req := httptest.NewRequest(http.MethodPost, "/api/session/s1/attachment", &body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	rr := httptest.NewRecorder()
 	srv.dispatchSessionSubpath(rr, req)
@@ -411,7 +411,7 @@ func TestHandleSessions_NoticeAppearsForRateLimitedSession(t *testing.T) {
 	}
 	reg.Register(fp)
 
-	req := httptest.NewRequest("GET", "/api/sessions", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
 	rr := httptest.NewRecorder()
 	srv.handleSessions(rr, req)
 
@@ -476,7 +476,7 @@ func TestHandleSessions_NoticeAppearsForGenericError(t *testing.T) {
 	}
 	reg.Register(fp)
 
-	req := httptest.NewRequest("GET", "/api/sessions", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
 	rr := httptest.NewRecorder()
 	srv.handleSessions(rr, req)
 
@@ -517,7 +517,7 @@ func TestHandleSessions_NoticeAppearsForProviderOverload(t *testing.T) {
 	}
 	reg.Register(fp)
 
-	req := httptest.NewRequest("GET", "/api/sessions", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
 	rr := httptest.NewRecorder()
 	srv.handleSessions(rr, req)
 
@@ -566,7 +566,7 @@ func TestHandleSession_NoticeAppearsForProviderOverload(t *testing.T) {
 	}
 	reg.Register(fp)
 
-	req := httptest.NewRequest("GET", "/api/session/s1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/session/s1", nil)
 	rr := httptest.NewRecorder()
 	srv.handleSession(rr, req)
 
@@ -613,7 +613,7 @@ func TestHandleSession_UnarchivesOnOpen(t *testing.T) {
 		t.Fatalf("ArchiveProject: %v", err)
 	}
 
-	req := httptest.NewRequest("GET", "/api/session/s1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/session/s1", nil)
 	rr := httptest.NewRecorder()
 	srv.handleSession(rr, req)
 	if rr.Code != http.StatusOK {
@@ -680,7 +680,7 @@ func TestHandleSessionAutoApproveSet_EnablingTriggersJudgeForPending(t *testing.
 
 	// Toggle ON.
 	body := strings.NewReader(`{"enabled":true}`)
-	req := httptest.NewRequest("POST", "/api/session/"+sessionID+"/auto-approve", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/session/"+sessionID+"/auto-approve", body)
 	rr := httptest.NewRecorder()
 	srv.handleSessionAutoApproveSet(rr, req)
 
@@ -744,7 +744,7 @@ func TestHandleSessionAutoApproveSet_DisablingDoesNotResume(t *testing.T) {
 	reg.RememberSessions("opencode", fp.sessions)
 
 	body := strings.NewReader(`{"enabled":false}`)
-	req := httptest.NewRequest("POST", "/api/session/"+sessionID+"/auto-approve", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/session/"+sessionID+"/auto-approve", body)
 	rr := httptest.NewRecorder()
 	srv.handleSessionAutoApproveSet(rr, req)
 
@@ -763,7 +763,7 @@ func TestHandleSessionAutoApproveSet_DisablingDoesNotResume(t *testing.T) {
 func TestHandleSessionRestartOpencode_RejectsNonLoopback(t *testing.T) {
 	srv, _ := newSessionsTestServer(t)
 
-	req := httptest.NewRequest("POST", "/api/session/s1/restart-opencode", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/session/s1/restart-opencode", nil)
 	rr := httptest.NewRecorder()
 	srv.handleSessionRestartOpencode(rr, req)
 

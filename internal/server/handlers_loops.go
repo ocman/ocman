@@ -22,8 +22,8 @@ func (s *Server) handleLoops(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/api/loops")
 	rest = strings.TrimPrefix(rest, "/")
 
-	switch {
-	case rest == "":
+	switch rest {
+	case "":
 		switch r.Method {
 		case http.MethodGet:
 			s.handleLoopsList(w, r)
@@ -32,7 +32,6 @@ func (s *Server) handleLoops(w http.ResponseWriter, r *http.Request) {
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
-		return
 	default:
 		s.handleLoopByID(w, r, rest)
 	}

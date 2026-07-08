@@ -31,7 +31,7 @@ func TestSessionPermissionRules_Get(t *testing.T) {
 	}
 	srv := newPermissionRulesTestServer(t, fake)
 
-	req := httptest.NewRequest("GET", "/api/session/sess-1/permission-rules", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/session/sess-1/permission-rules", nil)
 	rr := httptest.NewRecorder()
 	srv.dispatchSessionSubpath(rr, req)
 
@@ -58,7 +58,7 @@ func TestSessionPermissionRules_GetNilRulesReturnsEmptyArray(t *testing.T) {
 	}
 	srv := newPermissionRulesTestServer(t, fake)
 
-	req := httptest.NewRequest("GET", "/api/session/sess-1/permission-rules", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/session/sess-1/permission-rules", nil)
 	rr := httptest.NewRecorder()
 	srv.dispatchSessionSubpath(rr, req)
 
@@ -73,7 +73,7 @@ func TestSessionPermissionRules_GetNilRulesReturnsEmptyArray(t *testing.T) {
 func TestSessionPermissionRules_GetUnsupported(t *testing.T) {
 	srv := newPermissionRulesTestServer(t, &fakePlatform{id: "fake"})
 
-	req := httptest.NewRequest("GET", "/api/session/sess-1/permission-rules", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/session/sess-1/permission-rules", nil)
 	rr := httptest.NewRecorder()
 	srv.dispatchSessionSubpath(rr, req)
 
@@ -94,7 +94,7 @@ func TestSessionPermissionRules_Put(t *testing.T) {
 	srv := newPermissionRulesTestServer(t, fake)
 
 	body := `{"rules":[{"permission":"edit","pattern":"*","action":"allow"},{"permission":"bash","action":"ask"}]}`
-	req := httptest.NewRequest("PUT", "/api/session/sess-1/permission-rules", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPut, "/api/session/sess-1/permission-rules", strings.NewReader(body))
 	rr := httptest.NewRecorder()
 	srv.dispatchSessionSubpath(rr, req)
 
@@ -121,7 +121,7 @@ func TestSessionPermissionRules_PutEmptyRestoresDefaults(t *testing.T) {
 	}
 	srv := newPermissionRulesTestServer(t, fake)
 
-	req := httptest.NewRequest("PUT", "/api/session/sess-1/permission-rules", strings.NewReader(`{"rules":[]}`))
+	req := httptest.NewRequest(http.MethodPut, "/api/session/sess-1/permission-rules", strings.NewReader(`{"rules":[]}`))
 	rr := httptest.NewRecorder()
 	srv.dispatchSessionSubpath(rr, req)
 
@@ -154,7 +154,7 @@ func TestSessionPermissionRules_PutValidation(t *testing.T) {
 			}
 			srv := newPermissionRulesTestServer(t, fake)
 
-			req := httptest.NewRequest("PUT", "/api/session/sess-1/permission-rules", strings.NewReader(c.body))
+			req := httptest.NewRequest(http.MethodPut, "/api/session/sess-1/permission-rules", strings.NewReader(c.body))
 			rr := httptest.NewRecorder()
 			srv.dispatchSessionSubpath(rr, req)
 

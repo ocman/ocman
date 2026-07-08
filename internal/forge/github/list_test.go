@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -241,7 +242,7 @@ func TestCurrentUser_Authenticated(t *testing.T) {
 func TestCurrentUser_UnauthenticatedReturnsErr(t *testing.T) {
 	c := &Client{token: "", apiBase: "http://unused"}
 	_, err := c.CurrentUser(context.Background())
-	if err == nil || err != forge.ErrUnauthenticated {
+	if err == nil || !errors.Is(err, forge.ErrUnauthenticated) {
 		t.Errorf("expected ErrUnauthenticated, got %v", err)
 	}
 }

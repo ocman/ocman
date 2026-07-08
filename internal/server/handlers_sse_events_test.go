@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -37,7 +38,7 @@ func TestSessionEvents_PlatformUnreachableReturns503(t *testing.T) {
 	}
 	reg.Register(fp)
 
-	req := httptest.NewRequest("GET", "/api/session/s1/events", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/session/s1/events", nil)
 	rr := httptest.NewRecorder()
 	srv.handleSessionEvents(rr, req)
 
@@ -70,7 +71,7 @@ func TestSessionEvents_StreamBytesFlowProducesOk(t *testing.T) {
 	}
 	reg.Register(fp)
 
-	req := httptest.NewRequest("GET", "/api/session/s1/events", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/session/s1/events", nil)
 	rr := httptest.NewRecorder()
 	srv.handleSessionEvents(rr, req)
 
@@ -106,7 +107,7 @@ func TestSessionEvents_UnreachableAfterFirstByteStaysOk(t *testing.T) {
 	}
 	reg.Register(fp)
 
-	req := httptest.NewRequest("GET", "/api/session/s1/events", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/session/s1/events", nil)
 	rr := httptest.NewRecorder()
 	srv.handleSessionEvents(rr, req)
 

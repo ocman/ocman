@@ -16,14 +16,14 @@ func checksServer(t *testing.T, statusBody, checkRunsBody string) *httptest.Serv
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.URL.Path == "/repos/o/r/commits/abc123/status":
+		switch r.URL.Path {
+		case "/repos/o/r/commits/abc123/status":
 			if statusBody == "" {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
 			_, _ = w.Write([]byte(statusBody))
-		case r.URL.Path == "/repos/o/r/commits/abc123/check-runs":
+		case "/repos/o/r/commits/abc123/check-runs":
 			if checkRunsBody == "" {
 				w.WriteHeader(http.StatusNotFound)
 				return

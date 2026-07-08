@@ -143,7 +143,7 @@ internal	git@code.example.com:infra/myproj.git (push)
 
 func TestParseGitRemoteV_HandlesEmptyAndBlank(t *testing.T) {
 	got := parseGitRemoteV("")
-	if got != nil && len(got) != 0 {
+	if len(got) != 0 {
 		t.Errorf("expected empty, got %+v", got)
 	}
 	got = parseGitRemoteV("\n\n  \n")

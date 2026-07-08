@@ -96,7 +96,7 @@ func testServer(t *testing.T) *Server {
 
 func TestHandleStats_Empty(t *testing.T) {
 	srv := testServer(t)
-	req := httptest.NewRequest("GET", "/api/stats", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
 	rr := httptest.NewRecorder()
 	srv.handleStats(rr, req)
 
@@ -114,7 +114,7 @@ func TestHandleStats_Empty(t *testing.T) {
 
 func TestHandleMetrics_Empty(t *testing.T) {
 	srv := testServer(t)
-	req := httptest.NewRequest("GET", "/api/metrics?days=30", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/metrics?days=30", nil)
 	rr := httptest.NewRecorder()
 	srv.handleMetrics(rr, req)
 
@@ -132,7 +132,7 @@ func TestHandleMetrics_Empty(t *testing.T) {
 
 func TestHandleProjects_Empty(t *testing.T) {
 	srv := testServer(t)
-	req := httptest.NewRequest("GET", "/api/projects", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/projects", nil)
 	rr := httptest.NewRecorder()
 	srv.handleProjects(rr, req)
 
@@ -165,7 +165,7 @@ func TestHandleProjects_UsesInMemoryIndexUntilRefresh(t *testing.T) {
 		t.Fatalf("seeding second project session: %v", err)
 	}
 
-	req := httptest.NewRequest("GET", "/api/projects", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/projects", nil)
 	rr := httptest.NewRecorder()
 	srv.handleProjects(rr, req)
 
@@ -265,7 +265,7 @@ func TestHandleFilesystemDirectories_ReturnsDirectoriesOnly(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 
-	req := httptest.NewRequest("GET", "/api/filesystem/directories?dir="+url.QueryEscape(root), nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/filesystem/directories?dir="+url.QueryEscape(root), nil)
 	rr := httptest.NewRecorder()
 	srv.handleFilesystemDirectories(rr, req)
 
@@ -299,7 +299,7 @@ func TestHandleFilesystemDirectories_ReturnsDirectoriesOnly(t *testing.T) {
 
 func TestHandleFilesystemDirectories_RejectsRelativePath(t *testing.T) {
 	srv := testServer(t)
-	req := httptest.NewRequest("GET", "/api/filesystem/directories?dir=relative", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/filesystem/directories?dir=relative", nil)
 	rr := httptest.NewRecorder()
 	srv.handleFilesystemDirectories(rr, req)
 
@@ -322,7 +322,7 @@ func TestHandleFilesystemDirectorySearch_FindsNestedProjectDirectories(t *testin
 		t.Fatalf("mkdir skipped dir: %v", err)
 	}
 
-	req := httptest.NewRequest("GET", "/api/filesystem/directory-search?root="+url.QueryEscape(root)+"&q=work+oc&limit=10", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/filesystem/directory-search?root="+url.QueryEscape(root)+"&q=work+oc&limit=10", nil)
 	rr := httptest.NewRecorder()
 	srv.handleFilesystemDirectorySearch(rr, req)
 
@@ -360,7 +360,7 @@ func TestHandleFilesystemDirectorySearch_DeduplicatesExactAbsoluteDirectory(t *t
 		t.Fatalf("write nested project marker: %v", err)
 	}
 
-	req := httptest.NewRequest("GET", "/api/filesystem/directory-search?root="+url.QueryEscape(root)+"&q="+url.QueryEscape(projectDir)+"&limit=10", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/filesystem/directory-search?root="+url.QueryEscape(root)+"&q="+url.QueryEscape(projectDir)+"&limit=10", nil)
 	rr := httptest.NewRecorder()
 	srv.handleFilesystemDirectorySearch(rr, req)
 
@@ -395,7 +395,7 @@ func TestHandleFilesystemDirectorySearch_DeduplicatesExactAbsoluteDirectory(t *t
 
 func TestHandleFilesystemDirectorySearch_RejectsRelativeRoot(t *testing.T) {
 	srv := testServer(t)
-	req := httptest.NewRequest("GET", "/api/filesystem/directory-search?root=relative&q=oc", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/filesystem/directory-search?root=relative&q=oc", nil)
 	rr := httptest.NewRecorder()
 	srv.handleFilesystemDirectorySearch(rr, req)
 
@@ -406,7 +406,7 @@ func TestHandleFilesystemDirectorySearch_RejectsRelativeRoot(t *testing.T) {
 
 func TestHandleSessions_Empty(t *testing.T) {
 	srv := testServer(t)
-	req := httptest.NewRequest("GET", "/api/sessions", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
 	rr := httptest.NewRecorder()
 	srv.handleSessions(rr, req)
 
@@ -417,7 +417,7 @@ func TestHandleSessions_Empty(t *testing.T) {
 
 func TestHandleSession_NotFound(t *testing.T) {
 	srv := testServer(t)
-	req := httptest.NewRequest("GET", "/api/session/nonexistent", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/session/nonexistent", nil)
 	req.URL.Path = "/api/session/nonexistent"
 	rr := httptest.NewRecorder()
 	srv.handleSession(rr, req)
@@ -429,7 +429,7 @@ func TestHandleSession_NotFound(t *testing.T) {
 
 func TestHandleSession_InvalidID(t *testing.T) {
 	srv := testServer(t)
-	req := httptest.NewRequest("GET", "/api/session/invalid!id", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/session/invalid!id", nil)
 	req.URL.Path = "/api/session/invalid!id"
 	rr := httptest.NewRecorder()
 	srv.handleSession(rr, req)
@@ -441,7 +441,7 @@ func TestHandleSession_InvalidID(t *testing.T) {
 
 func TestHandleActivity_ReturnsData(t *testing.T) {
 	srv := testServer(t)
-	req := httptest.NewRequest("GET", "/api/activity", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/activity", nil)
 	rr := httptest.NewRecorder()
 	srv.handleActivity(rr, req)
 
@@ -460,7 +460,7 @@ func TestHandleActivity_ReturnsData(t *testing.T) {
 
 func TestHandleHourly_Returns24Hours(t *testing.T) {
 	srv := testServer(t)
-	req := httptest.NewRequest("GET", "/api/hourly", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/hourly", nil)
 	rr := httptest.NewRecorder()
 	srv.handleHourly(rr, req)
 
@@ -478,7 +478,7 @@ func TestHandleHourly_Returns24Hours(t *testing.T) {
 
 func TestHandleModels_Empty(t *testing.T) {
 	srv := testServer(t)
-	req := httptest.NewRequest("GET", "/api/models", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/models", nil)
 	rr := httptest.NewRecorder()
 	srv.handleModels(rr, req)
 
@@ -490,7 +490,7 @@ func TestHandleModels_Empty(t *testing.T) {
 func TestHandleSeenSession_InvalidID(t *testing.T) {
 	srv := testServer(t)
 	body := strings.NewReader(`{"sessionId":"invalid!","timeUpdated":1000}`)
-	req := httptest.NewRequest("POST", "/api/session/seen", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/session/seen", body)
 	rr := httptest.NewRecorder()
 	srv.handleSeenSession(rr, req)
 
@@ -502,7 +502,7 @@ func TestHandleSeenSession_InvalidID(t *testing.T) {
 func TestHandleSeenSession_Valid(t *testing.T) {
 	srv := testServer(t)
 	body := strings.NewReader(`{"platform":"opencode","sessionId":"abc123","timeUpdated":1000}`)
-	req := httptest.NewRequest("POST", "/api/session/seen", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/session/seen", body)
 	rr := httptest.NewRecorder()
 	srv.handleSeenSession(rr, req)
 
@@ -514,7 +514,7 @@ func TestHandleSeenSession_Valid(t *testing.T) {
 func TestHandleArchiveSession_Valid(t *testing.T) {
 	srv := testServer(t)
 	body := strings.NewReader(`{"platform":"opencode","sessionId":"abc123","timeUpdated":1000,"archived":true}`)
-	req := httptest.NewRequest("POST", "/api/session/archive", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/session/archive", body)
 	rr := httptest.NewRecorder()
 	srv.handleArchiveSession(rr, req)
 
@@ -526,7 +526,7 @@ func TestHandleArchiveSession_Valid(t *testing.T) {
 func TestHandleArchiveSession_Unarchive(t *testing.T) {
 	srv := testServer(t)
 	body := strings.NewReader(`{"platform":"opencode","sessionId":"abc123","archived":false}`)
-	req := httptest.NewRequest("POST", "/api/session/archive", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/session/archive", body)
 	rr := httptest.NewRecorder()
 	srv.handleArchiveSession(rr, req)
 
@@ -551,7 +551,7 @@ func TestHandleArchiveSession_StaleClientTimestamp(t *testing.T) {
 	// Client archives with a stale cached timestamp (1000) while the
 	// session's real time_updated is already 2000.
 	body := strings.NewReader(`{"platform":"opencode","sessionId":"s1","timeUpdated":1000,"archived":true}`)
-	req := httptest.NewRequest("POST", "/api/session/archive", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/session/archive", body)
 	rr := httptest.NewRecorder()
 	srv.handleArchiveSession(rr, req)
 	if rr.Code != http.StatusOK {
@@ -599,7 +599,7 @@ func TestHandleArchiveSession_RemoteClockSkew(t *testing.T) {
 	// (the client value), never clamped to the hub clock.
 	const remoteTime = int64(5_000_000_000_000)
 	body := strings.NewReader(`{"platform":"r-abc:opencode","sessionId":"s1","timeUpdated":5000000000000,"archived":true}`)
-	req := httptest.NewRequest("POST", "/api/session/archive", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/session/archive", body)
 	rr := httptest.NewRecorder()
 	srv.handleArchiveSession(rr, req)
 	if rr.Code != http.StatusOK {
@@ -635,7 +635,7 @@ func TestHandleArchiveSession_RemoteClockSkew(t *testing.T) {
 	// keeps the comparison on one clock.
 	srv.registry.Register(&fakePlatform{id: "r-def:opencode"})
 	body2 := strings.NewReader(`{"platform":"r-def:opencode","sessionId":"s2","timeUpdated":2000,"archived":true}`)
-	req2 := httptest.NewRequest("POST", "/api/session/archive", body2)
+	req2 := httptest.NewRequest(http.MethodPost, "/api/session/archive", body2)
 	rr2 := httptest.NewRecorder()
 	srv.handleArchiveSession(rr2, req2)
 	if rr2.Code != http.StatusOK {
@@ -650,7 +650,7 @@ func TestHandleArchiveSession_RemoteClockSkew(t *testing.T) {
 func TestHandleArchiveSession_MissingTimeUpdated(t *testing.T) {
 	srv := testServer(t)
 	body := strings.NewReader(`{"sessionId":"abc123","archived":true}`)
-	req := httptest.NewRequest("POST", "/api/session/archive", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/session/archive", body)
 	rr := httptest.NewRecorder()
 	srv.handleArchiveSession(rr, req)
 
@@ -662,7 +662,7 @@ func TestHandleArchiveSession_MissingTimeUpdated(t *testing.T) {
 func TestHandleArchiveSession_InvalidJSON(t *testing.T) {
 	srv := testServer(t)
 	body := strings.NewReader(`{invalid}`)
-	req := httptest.NewRequest("POST", "/api/session/archive", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/session/archive", body)
 	rr := httptest.NewRecorder()
 	srv.handleArchiveSession(rr, req)
 
@@ -972,7 +972,7 @@ func TestApplySessionState_ScopesByPlatform(t *testing.T) {
 func TestHandlePinSession_Pin(t *testing.T) {
 	srv := testServer(t)
 	body := strings.NewReader(`{"platform":"opencode","sessionId":"abc123","pinned":true}`)
-	req := httptest.NewRequest("POST", "/api/session/pin", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/session/pin", body)
 	rr := httptest.NewRecorder()
 	srv.handlePinSession(rr, req)
 
@@ -991,7 +991,7 @@ func TestHandlePinSession_Unpin(t *testing.T) {
 	_ = srv.stateDB.PinSession("opencode", "abc123")
 
 	body := strings.NewReader(`{"platform":"opencode","sessionId":"abc123","pinned":false}`)
-	req := httptest.NewRequest("POST", "/api/session/pin", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/session/pin", body)
 	rr := httptest.NewRecorder()
 	srv.handlePinSession(rr, req)
 
@@ -1008,7 +1008,7 @@ func TestHandlePinSession_Unpin(t *testing.T) {
 func TestHandlePinSession_InvalidID(t *testing.T) {
 	srv := testServer(t)
 	body := strings.NewReader(`{"platform":"opencode","sessionId":"invalid!","pinned":true}`)
-	req := httptest.NewRequest("POST", "/api/session/pin", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/session/pin", body)
 	rr := httptest.NewRecorder()
 	srv.handlePinSession(rr, req)
 
@@ -1020,7 +1020,7 @@ func TestHandlePinSession_InvalidID(t *testing.T) {
 func TestHandlePinSession_InvalidJSON(t *testing.T) {
 	srv := testServer(t)
 	body := strings.NewReader(`{invalid}`)
-	req := httptest.NewRequest("POST", "/api/session/pin", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/session/pin", body)
 	rr := httptest.NewRecorder()
 	srv.handlePinSession(rr, req)
 
@@ -1272,7 +1272,7 @@ func TestHandleSessions_MergesByTimeUpdatedDesc(t *testing.T) {
 		t.Fatalf("seeding opencode sessions: %v", err)
 	}
 
-	req := httptest.NewRequest("GET", "/api/sessions", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
 	rr := httptest.NewRecorder()
 	srv.handleSessions(rr, req)
 
@@ -1359,7 +1359,7 @@ func TestHandleSessionChanges_OpenCodeAggregates(t *testing.T) {
 		t.Fatalf("seeding parts: %v", err)
 	}
 
-	req := httptest.NewRequest("GET", "/api/session/s1/changes", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/session/s1/changes", nil)
 	req.URL.Path = "/api/session/s1/changes"
 	rr := httptest.NewRecorder()
 	srv.handleSessionChanges(rr, req)
@@ -1409,7 +1409,7 @@ func TestHandleSessionChanges_UnsupportedReturns200(t *testing.T) {
 	// returns ErrNotFound there).
 	srv.registry.RememberSessions("fake", fakeSessions)
 
-	req := httptest.NewRequest("GET", "/api/session/fk-1/changes", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/session/fk-1/changes", nil)
 	req.URL.Path = "/api/session/fk-1/changes"
 	rr := httptest.NewRecorder()
 	srv.handleSessionChanges(rr, req)
@@ -1463,7 +1463,7 @@ func TestHandleSessionInfo_PlatformPayload(t *testing.T) {
 	srv.registry.Register(&fakePlatform{id: "fake", sessions: fakeSessions, info: want})
 	srv.registry.RememberSessions("fake", fakeSessions)
 
-	req := httptest.NewRequest("GET", "/api/session/fk-1/info", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/session/fk-1/info", nil)
 	req.URL.Path = "/api/session/fk-1/info"
 	rr := httptest.NewRecorder()
 	srv.handleSessionInfo(rr, req)
@@ -1510,7 +1510,7 @@ func TestHandleSessionInfo_UnsupportedReturns200(t *testing.T) {
 	srv.registry.Register(&fakePlatform{id: "fake", sessions: fakeSessions})
 	srv.registry.RememberSessions("fake", fakeSessions)
 
-	req := httptest.NewRequest("GET", "/api/session/fk-1/info", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/session/fk-1/info", nil)
 	req.URL.Path = "/api/session/fk-1/info"
 	rr := httptest.NewRecorder()
 	srv.handleSessionInfo(rr, req)
@@ -1572,7 +1572,7 @@ func TestHandleSessionsNotify_IncludesTitleAndDirectory(t *testing.T) {
 		},
 	})
 
-	req := httptest.NewRequest("GET", "/api/sessions/notify", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/notify", nil)
 	rr := httptest.NewRecorder()
 	srv.handleSessionsNotify(rr, req)
 

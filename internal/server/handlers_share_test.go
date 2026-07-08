@@ -38,7 +38,7 @@ func TestExportMarkdownEndpoint(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	registerShareFake(reg, "ses_export")
 
-	req := httptest.NewRequest("GET", "/api/session/ses_export/export.md", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/session/ses_export/export.md", nil)
 	rr := httptest.NewRecorder()
 	srv.dispatchSessionSubpath(rr, req)
 
@@ -61,7 +61,7 @@ func TestCreateListRevokeShareLink(t *testing.T) {
 	registerShareFake(reg, "ses_share")
 
 	// Create.
-	createReq := httptest.NewRequest("POST", "/api/session/ses_share/share", nil)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/session/ses_share/share", nil)
 	createReq.Host = "example.test:9999"
 	createRR := httptest.NewRecorder()
 	srv.dispatchSessionSubpath(createRR, createReq)
@@ -83,7 +83,7 @@ func TestCreateListRevokeShareLink(t *testing.T) {
 	}
 
 	// List shows it.
-	listReq := httptest.NewRequest("GET", "/api/session/ses_share/shares", nil)
+	listReq := httptest.NewRequest(http.MethodGet, "/api/session/ses_share/shares", nil)
 	listRR := httptest.NewRecorder()
 	srv.dispatchSessionSubpath(listRR, listReq)
 	if listRR.Code != http.StatusOK {
@@ -98,7 +98,7 @@ func TestCreateListRevokeShareLink(t *testing.T) {
 	}
 
 	// Revoke.
-	revReq := httptest.NewRequest("DELETE", "/api/session/ses_share/share/"+created.Token, nil)
+	revReq := httptest.NewRequest(http.MethodDelete, "/api/session/ses_share/share/"+created.Token, nil)
 	revRR := httptest.NewRecorder()
 	srv.dispatchSessionSubpath(revRR, revReq)
 	if revRR.Code != http.StatusNoContent {
@@ -107,7 +107,7 @@ func TestCreateListRevokeShareLink(t *testing.T) {
 
 	// List is now empty.
 	listRR2 := httptest.NewRecorder()
-	srv.dispatchSessionSubpath(listRR2, httptest.NewRequest("GET", "/api/session/ses_share/shares", nil))
+	srv.dispatchSessionSubpath(listRR2, httptest.NewRequest(http.MethodGet, "/api/session/ses_share/shares", nil))
 	var list2 []shareLinkView
 	_ = json.Unmarshal(listRR2.Body.Bytes(), &list2)
 	if len(list2) != 0 {
@@ -121,7 +121,7 @@ func TestSharingSettingToggleAndGuard(t *testing.T) {
 
 	// Default: enabled.
 	getRR := httptest.NewRecorder()
-	srv.handleSharingSetting(getRR, httptest.NewRequest("GET", "/api/settings/sharing", nil))
+	srv.handleSharingSetting(getRR, httptest.NewRequest(http.MethodGet, "/api/settings/sharing", nil))
 	if getRR.Code != http.StatusOK {
 		t.Fatalf("get status = %d, want 200", getRR.Code)
 	}
@@ -135,7 +135,7 @@ func TestSharingSettingToggleAndGuard(t *testing.T) {
 
 	// Disable it.
 	postRR := httptest.NewRecorder()
-	srv.handleSharingSetting(postRR, httptest.NewRequest("POST", "/api/settings/sharing", strings.NewReader(`{"enabled":false}`)))
+	srv.handleSharingSetting(postRR, httptest.NewRequest(http.MethodPost, "/api/settings/sharing", strings.NewReader(`{"enabled":false}`)))
 	if postRR.Code != http.StatusOK {
 		t.Fatalf("post status = %d, want 200; body=%s", postRR.Code, postRR.Body)
 	}
@@ -145,16 +145,16 @@ func TestSharingSettingToggleAndGuard(t *testing.T) {
 
 	// Create is now rejected with 403.
 	createRR := httptest.NewRecorder()
-	srv.dispatchSessionSubpath(createRR, httptest.NewRequest("POST", "/api/session/ses_guard/share", nil))
+	srv.dispatchSessionSubpath(createRR, httptest.NewRequest(http.MethodPost, "/api/session/ses_guard/share", nil))
 	if createRR.Code != http.StatusForbidden {
 		t.Fatalf("create status = %d, want 403 when disabled; body=%s", createRR.Code, createRR.Body)
 	}
 
 	// Re-enable and create succeeds.
 	reEnable := httptest.NewRecorder()
-	srv.handleSharingSetting(reEnable, httptest.NewRequest("POST", "/api/settings/sharing", strings.NewReader(`{"enabled":true}`)))
+	srv.handleSharingSetting(reEnable, httptest.NewRequest(http.MethodPost, "/api/settings/sharing", strings.NewReader(`{"enabled":true}`)))
 	create2 := httptest.NewRecorder()
-	srv.dispatchSessionSubpath(create2, httptest.NewRequest("POST", "/api/session/ses_guard/share", nil))
+	srv.dispatchSessionSubpath(create2, httptest.NewRequest(http.MethodPost, "/api/session/ses_guard/share", nil))
 	if create2.Code != http.StatusCreated {
 		t.Fatalf("create status = %d, want 201 after re-enable; body=%s", create2.Code, create2.Body)
 	}
@@ -172,7 +172,7 @@ func TestAllSharesGlobalList(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	srv.handleAllShares(rr, httptest.NewRequest("GET", "/api/shares", nil))
+	srv.handleAllShares(rr, httptest.NewRequest(http.MethodGet, "/api/shares", nil))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body)
 	}
@@ -202,7 +202,7 @@ func TestPublicShareView(t *testing.T) {
 
 	// JSON view.
 	jsonRR := httptest.NewRecorder()
-	srv.handleSharePublic(jsonRR, httptest.NewRequest("GET", "/api/share/"+link.Token, nil))
+	srv.handleSharePublic(jsonRR, httptest.NewRequest(http.MethodGet, "/api/share/"+link.Token, nil))
 	if jsonRR.Code != http.StatusOK {
 		t.Fatalf("public json status = %d, want 200; body=%s", jsonRR.Code, jsonRR.Body)
 	}
@@ -227,7 +227,7 @@ func TestPublicShareView(t *testing.T) {
 
 	// Markdown view.
 	mdRR := httptest.NewRecorder()
-	srv.handleSharePublic(mdRR, httptest.NewRequest("GET", "/api/share/"+link.Token+"/export.md", nil))
+	srv.handleSharePublic(mdRR, httptest.NewRequest(http.MethodGet, "/api/share/"+link.Token+"/export.md", nil))
 	if mdRR.Code != http.StatusOK {
 		t.Fatalf("public md status = %d, want 200", mdRR.Code)
 	}
@@ -246,7 +246,7 @@ func TestPublicShareViewRevokedReturns404(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	srv.handleSharePublic(rr, httptest.NewRequest("GET", "/api/share/"+link.Token, nil))
+	srv.handleSharePublic(rr, httptest.NewRequest(http.MethodGet, "/api/share/"+link.Token, nil))
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404 for revoked token", rr.Code)
 	}
@@ -257,7 +257,7 @@ func TestPublicShareViewUnknownTokenReturns404(t *testing.T) {
 	registerShareFake(reg, "ses_x")
 
 	rr := httptest.NewRecorder()
-	srv.handleSharePublic(rr, httptest.NewRequest("GET", "/api/share/totallybogustoken", nil))
+	srv.handleSharePublic(rr, httptest.NewRequest(http.MethodGet, "/api/share/totallybogustoken", nil))
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404 for unknown token", rr.Code)
 	}
@@ -268,7 +268,7 @@ func TestPublicShareConfiguredBaseURL(t *testing.T) {
 	registerShareFake(reg, "ses_base")
 	srv.WithPublicBaseURL("https://ocman.example.com/")
 
-	req := httptest.NewRequest("POST", "/api/session/ses_base/share", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/session/ses_base/share", nil)
 	req.Host = "ignored.local"
 	rr := httptest.NewRecorder()
 	srv.dispatchSessionSubpath(rr, req)

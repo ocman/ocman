@@ -3,6 +3,7 @@ package remote
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"sync"
 	"testing"
@@ -275,7 +276,7 @@ func TestRemotePlatform_OfflineMethodsErr(t *testing.T) {
 	if _, err := rp.Session(context.Background(), "s1", 0, 0); err == nil {
 		t.Error("Session on closed conn should error")
 	}
-	if err := rp.SendMessage(context.Background(), platforms.SendMessageRequest{SessionID: "s"}); err != ErrRemoteOffline {
+	if err := rp.SendMessage(context.Background(), platforms.SendMessageRequest{SessionID: "s"}); !errors.Is(err, ErrRemoteOffline) {
 		t.Errorf("SendMessage on closed conn = %v, want ErrRemoteOffline", err)
 	}
 	// Owns is cache-only and must never error or dial.

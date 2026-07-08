@@ -16,11 +16,6 @@ const (
 	// childSessionWatchInterval is how often the watcher polls for
 	// child session completion.
 	childSessionWatchInterval = 5 * time.Second
-
-	// summaryMaxChars is the maximum number of characters to include
-	// in the auto-generated summary extracted from the last assistant
-	// message.
-	summaryMaxChars = 500
 )
 
 // childSessionWatchTickFn is the per-tick body of runChildSessionWatcher,

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/base32"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -65,7 +66,7 @@ func (d *DB) InstanceIdentity() (InstanceIdentity, error) {
 	if err == nil {
 		return ident, nil
 	}
-	if err != sql.ErrNoRows {
+	if !errors.Is(err, sql.ErrNoRows) {
 		return InstanceIdentity{}, fmt.Errorf("reading instance identity: %w", err)
 	}
 
@@ -94,4 +95,3 @@ func (d *DB) InstanceIdentity() (InstanceIdentity, error) {
 	}
 	return ident, nil
 }
-

@@ -164,7 +164,7 @@ func (d *DB) ListRemotes() ([]Remote, error) {
 func (d *DB) GetRemote(localID int64) (Remote, error) {
 	row := d.db.QueryRow(`SELECT `+remoteSelectColumns+` FROM remote WHERE local_id = ?`, localID)
 	r, err := scanRemote(row)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return Remote{}, sql.ErrNoRows
 	}
 	if err != nil {

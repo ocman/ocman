@@ -336,6 +336,7 @@ lint: lint-backend lint-frontend lint-platform-branching lint-host-helpers lint-
 
 lint-backend:
 	go vet ./...
+	golangci-lint run ./...
 
 lint-frontend:
 	cd frontend && pnpm exec tsc -b && pnpm lint

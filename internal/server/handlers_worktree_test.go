@@ -28,11 +28,10 @@ func newEmptyRegistryForTest() *platforms.Registry {
 // in this test) it must be false — the feature is OpenCode-only in v1
 // (AD-7).
 func TestCapabilities_WorktreeSessions_FalseWithoutOpenCode(t *testing.T) {
-	srv := &Server{registry: nil}
 	// Use an empty registry rather than nil to avoid handler panics.
 	// (The real Server constructor does this; we mimic it here so the
 	// test can exercise handleCapabilities directly.)
-	srv = &Server{}
+	srv := &Server{}
 	srv.registry = newEmptyRegistryForTest()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/capabilities", nil)

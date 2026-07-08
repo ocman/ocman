@@ -168,9 +168,12 @@ func TestWSTermConn_FrameClassification(t *testing.T) {
 	// CheckOrigin is loopback-only; httptest binds 127.0.0.1 so a bare
 	// dial with no Origin header passes.
 	url := "ws" + strings.TrimPrefix(srv.URL, "http")
-	ws, _, err := websocket.DefaultDialer.Dial(url, nil)
+	ws, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
+	}
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
 	}
 	defer ws.Close()
 

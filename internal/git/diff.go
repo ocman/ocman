@@ -93,9 +93,7 @@ const diffCacheTTL = 1 * time.Second
 // stores Diff values, has a much shorter TTL, and accepts a Force
 // override. Reusing the existing cache type would mean cross-
 // pollinating two unrelated lifetimes.
-type diffCache struct {
-	c *cache
-}
+type diffCache struct{}
 
 func (d *diffCache) get(ctx context.Context, dir string, force bool) (*Diff, error) {
 	if force {
