@@ -89,6 +89,11 @@ type Server struct {
 	// remotes handlers and machine picker use it.
 	remotes *remote.Manager
 
+	// remoteProjectsFn sources remote projects for handleProjects. Nil
+	// means "use s.remotes"; tests override it to inject remote-tagged
+	// rows without a full remote.Manager.
+	remoteProjectsFn func() []db.ProjectStats
+
 	// loopSvcCached is the agent-loops domain service, built lazily on
 	// first use (it needs the registry to be fully wired). Guarded by
 	// loopSvcOnce. See loop_engine.go.

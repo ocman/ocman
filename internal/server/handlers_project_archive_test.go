@@ -166,6 +166,43 @@ func TestProjectArchive_FoldsWorktreeToRoot(t *testing.T) {
 	}
 }
 
+// TestProjectArchive_AppliesToRemoteProjects verifies remote projects
+// honour archive markers. Regression: remote projects used to bypass the
+// archive pipeline entirely and re-appeared on every refresh. Archiving a
+// remote-tagged project must set Archived; newer activity auto-unarchives.
+func TestProjectArchive_AppliesToRemoteProjects(t *testing.T) {
+	srv, rawDB := testServerWithRawDB(t)
+	defer rawDB.Close()
+
+	// Inject a remote project the way handleProjects appends them.
+	remoteLastUsed := int64(100)
+	srv.remoteProjectsFn = func() []db.ProjectStats {
+		return []db.ProjectStats{
+			{Directory: "/remote/repo", RemoteID: "r1", RemoteName: "box", LastUsed: remoteLastUsed},
+		}
+	}
+
+	postProjectArchive(t, srv, "/remote/repo", true)
+
+	// Through the full handler: the remote project must be flagged
+	// archived (pre-fix it bypassed applyProjectArchiveState and stayed
+	// visible, re-appearing on every refresh).
+	projects := getProjects(t, srv)
+	if len(projects) != 1 || !projects[0].Archived {
+		t.Fatalf("expected remote project archived, got %+v", projects)
+	}
+
+	// Newer activity than archived_at auto-unarchives — most recent wins.
+	remoteLastUsed = 9999999999999
+	projects = getProjects(t, srv)
+	if len(projects) != 1 || projects[0].Archived {
+		t.Fatalf("expected remote project auto-unarchived after newer activity, got %+v", projects)
+	}
+	if archived, _ := srv.stateDB.ArchivedProjects(); len(archived) != 0 {
+		t.Errorf("expected archive marker deleted, got %v", archived)
+	}
+}
+
 func TestProjectArchive_MissingDirectory(t *testing.T) {
 	srv := testServer(t)
 	body, _ := json.Marshal(map[string]any{"directory": "", "archived": true})

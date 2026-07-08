@@ -80,15 +80,21 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 		serverError(w, "fetching projects", err)
 		return
 	}
-	if err := s.applyProjectArchiveState(projects); err != nil {
-		serverError(w, "applying project archive state", err)
-		return
-	}
 	// Append remote projects from the inventory cache, tagged with their
 	// owning remote so the frontend can label them and target the right
 	// machine when creating a session.
-	if s.remotes != nil {
+	if s.remoteProjectsFn != nil {
+		projects = append(projects, s.remoteProjectsFn()...)
+	} else if s.remotes != nil {
 		projects = append(projects, s.remotes.RemoteProjects()...)
+	}
+	// Apply archive state after remotes are appended so remote projects
+	// honour the archived_project markers too (they otherwise re-appear on
+	// every refresh). Newer activity still auto-unarchives — most recent
+	// timestamp wins.
+	if err := s.applyProjectArchiveState(projects); err != nil {
+		serverError(w, "applying project archive state", err)
+		return
 	}
 	// Fold worktree directories into their repo root and merge duplicate
 	// rows so each project appears once, then sort by last activity.
