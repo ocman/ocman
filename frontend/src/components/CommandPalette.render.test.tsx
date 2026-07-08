@@ -10,7 +10,9 @@ const mocks = vi.hoisted(() => {
     paletteOpen: true,
     paletteMode: 'project' as 'command' | 'search' | 'project' | 'project-session',
     closePalette: vi.fn(),
-    openProjectPalette: vi.fn(),
+    openProjectPalette: vi.fn(() => {
+      uiState.paletteMode = 'project';
+    }),
     openProjectSessionPalette: vi.fn(),
     openShortcuts: vi.fn(),
     openWorktreeForm: vi.fn(),
@@ -283,6 +285,33 @@ describe('CommandPalette project mode', () => {
       expect(mocks.apiState.createSession).toHaveBeenCalledWith('/Users/peter/workspace/ocman', undefined, undefined);
     });
     expect(mocks.apiState.seedNewSession).toHaveBeenCalledWith('new-session', '/Users/peter/workspace/ocman', '');
+  });
+
+  it('shows "Create new project" at the end of the known-project picker, even when search matches nothing', async () => {
+    mocks.uiState.paletteMode = 'project-session';
+
+    renderPalette();
+
+    // Present with the full list.
+    expect(await screen.findByText('Create new project')).toBeInTheDocument();
+
+    // Still present when the search filters every project out.
+    fireEvent.change(screen.getByPlaceholderText('Select a project to start a session...'), {
+      target: { value: 'zzz-no-match' },
+    });
+    expect(screen.queryByText('workspace/ocman')).not.toBeInTheDocument();
+    expect(screen.getByText('Create new project')).toBeInTheDocument();
+  });
+
+  it('switches to the filesystem browser when "Create new project" is selected', async () => {
+    mocks.uiState.paletteMode = 'project-session';
+
+    renderPalette();
+
+    fireEvent.click(await screen.findByText('Create new project'));
+
+    expect(await screen.findByPlaceholderText('Browse project directories...')).toBeInTheDocument();
+    expect(mocks.apiState.browseDirectories).toHaveBeenCalledWith(undefined, expect.any(AbortSignal));
   });
 
   it('opens the known-project picker for the scoped new-session command', async () => {

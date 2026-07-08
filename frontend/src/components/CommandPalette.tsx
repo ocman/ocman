@@ -24,6 +24,7 @@ type ResultItem =
   | { kind: 'browse-parent'; directory: string }
   | { kind: 'browse-directory'; entry: DirectoryBrowseEntry }
   | { kind: 'browse-search-directory'; entry: DirectorySearchEntry }
+  | { kind: 'new-project' }
   | CommandNavItem;
 
 type ProjectBrowserState = {
@@ -158,6 +159,7 @@ export function CommandPalette() {
     paletteMode,
     closePalette: rawClosePalette,
     openProjectSessionPalette,
+    openProjectPalette,
     openShortcuts,
   } = useUiStore();
   const mode = paletteMode;
@@ -443,19 +445,14 @@ export function CommandPalette() {
 
     if (mode === 'project-session') {
       if (!projectListLoaded || projectListLoading || projectListError) return [];
-      if (!query.trim()) {
-        return projectList
-          .slice()
-          .sort((a, b) => b.lastUsed - a.lastUsed)
-          .slice(0, 20)
-          .map((p) => ({ kind: 'project' as const, project: p }));
-      }
-      const q = query.toLowerCase();
-      return projectList
-        .filter((p) => p.directory.toLowerCase().includes(q))
+      const q = query.trim().toLowerCase();
+      const projects = projectList
+        .filter((p) => !q || p.directory.toLowerCase().includes(q))
         .sort((a, b) => b.lastUsed - a.lastUsed)
         .slice(0, 20)
         .map((p) => ({ kind: 'project' as const, project: p }));
+      // "Create new project" always stays at the end, unaffected by search.
+      return [...projects, { kind: 'new-project' as const }];
     }
 
     if (!query.trim()) {
@@ -564,6 +561,9 @@ export function CommandPalette() {
       openProjectBrowser(item.entry.path);
     } else if (item.kind === 'browse-search-directory') {
       openProjectBrowser(item.entry.path, { query: directoryQueryPrefix(item.entry.path) });
+    } else if (item.kind === 'new-project') {
+      openProjectPalette();
+      openProjectBrowser();
     } else if (item.kind === 'nav') {
       closePalette();
       navigate(item.path);
@@ -804,6 +804,23 @@ export function CommandPalette() {
                     <span className="oc-cmd-meta">
                       {item.entry.project ? 'Likely project · ' : ''}{item.entry.path}
                     </span>
+                  </div>
+                </div>
+              );
+            }
+
+            if (item.kind === 'new-project') {
+              return (
+                <div
+                  key="new-project"
+                  className={`oc-cmd-item oc-cmd-item--command${i === selectedIndex ? ' oc-cmd-item--selected' : ''}`}
+                  onClick={() => handleSelect(item)}
+                  onMouseMove={() => setSelectedIndex(i)}
+                >
+                  <i className="bi bi-plus-circle oc-cmd-item-icon" />
+                  <div className="oc-cmd-item-content">
+                    <span className="oc-cmd-title">Create new project</span>
+                    <span className="oc-cmd-meta">Browse the filesystem to pick a directory</span>
                   </div>
                 </div>
               );
