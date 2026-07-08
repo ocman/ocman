@@ -329,8 +329,8 @@ describe('createSessionWithLaunch', () => {
     const state = useLaunchProgressStore.getState();
     expect(state.phase).toBe('error');
     expect(state.error).toMatch(/did not start in time/);
-    expect(state.attempt).toBe(5);
-    expect(state.maxAttempts).toBe(5);
+    expect(state.attempt).toBe(7);
+    expect(state.maxAttempts).toBe(7);
   });
 
   it('uses a longer retry budget for remote launches', async () => {

@@ -61,9 +61,10 @@ export interface CreateSessionWithLaunchOptions {
 }
 
 // Retry loop parameters. After launching opencode we poll the create
-// endpoint — the lsof cache has a TTL on the backend and opencode
-// itself needs a moment to bind a port, so we give it up to ~9.5 s.
-const RETRY_DELAYS_MS = [1500, 2000, 2000, 2000, 2000];
+// endpoint — opencode needs a moment to bind a port. Local boots bind
+// well under a second, so poll fast up front and back off; total budget
+// stays ~9.5 s for slower machines.
+const RETRY_DELAYS_MS = [400, 600, 800, 1200, 1500, 2000, 3000];
 
 // Remote launches add gRPC round-trips plus a cold opencode boot on the
 // remote machine, which routinely blows past the local ~9.5 s budget, so

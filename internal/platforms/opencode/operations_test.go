@@ -370,6 +370,49 @@ func TestCreateSessionPinsReturnedSessionPort(t *testing.T) {
 	}
 }
 
+// TestCreateSession_CachedPortSkipsFreshScan proves the happy-path
+// optimization: when a running opencode is already in the port cache,
+// CreateSession must not trigger another (expensive) lsof scan.
+func TestCreateSession_CachedPortSkipsFreshScan(t *testing.T) {
+	const sid = "sess-cached"
+	const dir = "/tmp/proj-cached"
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/session" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"` + sid + `"}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+	var scans int
+	restore := setDiscoverPortsImplForTests(func() map[string]string {
+		scans++
+		return map[string]string{dir: port}
+	})
+	defer restore()
+	resetPortCacheForTests()
+	resetSessionPortAffinityForTests()
+	defer resetSessionPortAffinityForTests()
+
+	// Warm the cache so the cached lookup hits.
+	discoverOpenCodePorts()
+	if scans != 1 {
+		t.Fatalf("warm-up scans = %d, want 1", scans)
+	}
+
+	a := New(nil, nil)
+	if _, err := a.CreateSession(context.Background(), platforms.CreateSessionRequest{Directory: dir}); err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	if scans != 1 {
+		t.Fatalf("scans after CreateSession = %d, want 1 (cache hit must skip fresh scan)", scans)
+	}
+}
+
 func TestParseOpenCodeModelRef(t *testing.T) {
 	tests := []struct {
 		name         string
