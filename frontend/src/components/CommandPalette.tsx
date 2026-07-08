@@ -291,7 +291,9 @@ export function CommandPalette() {
       setSelectedIndex(0);
       inputRef.current?.focus();
     }
-  }, [paletteOpen]);
+    // Depend on `mode` too: reopening into a different mode while the palette
+    // is already open must clear any leftover query.
+  }, [paletteOpen, mode]);
 
   useEffect(() => {
     if (!paletteOpen || mode !== 'project' || projectBrowser.open || projectBrowser.loading) return;
