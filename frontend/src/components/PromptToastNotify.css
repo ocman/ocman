@@ -24,9 +24,9 @@
 }
 
 .oc-prompt-toast {
-  background: var(--surface1, #1f2329);
-  color: var(--text, #e6e9ef);
-  border-left: 4px solid var(--accent, #5b8cff);
+  background: var(--surface1);
+  color: var(--text);
+  border-left: 4px solid var(--accent);
   padding: 10px 14px;
   font-size: 13px;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
@@ -40,7 +40,7 @@
 /* Permission requests are slightly more urgent than questions —
    reflect that with a warmer accent. */
 .oc-prompt-toast[data-kind='permission'] {
-  border-left-color: var(--warning, #f5a524);
+  border-left-color: var(--warning);
 }
 
 .oc-prompt-toast[data-state='open'] {
@@ -71,7 +71,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--text-dim, #aab1bf);
+  color: var(--text-dim);
 }
 
 .oc-prompt-toast-body {
@@ -94,8 +94,8 @@
 }
 
 .oc-prompt-toast-open {
-  background: var(--accent, #5b8cff);
-  color: #fff;
+  background: var(--accent);
+  color: var(--white);
   border: none;
   font-family: inherit;
   font-size: 12px;
@@ -114,7 +114,7 @@
   top: 6px;
   right: 8px;
   background: transparent;
-  color: var(--text-dim, #aab1bf);
+  color: var(--text-dim);
   border: none;
   font-size: 18px;
   line-height: 1;
@@ -124,7 +124,7 @@
 }
 
 .oc-prompt-toast-close:hover {
-  color: var(--text, #e6e9ef);
+  color: var(--text);
 }
 
 @keyframes oc-prompt-toast-slide-in {

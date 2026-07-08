@@ -56,7 +56,7 @@
   gap: 12px;
   padding-bottom: 16px;
   margin-bottom: 16px;
-  border-bottom: 1px solid var(--oc-border, #333);
+  border-bottom: 1px solid var(--oc-border);
 }
 
 .oc-shared-title-block {
@@ -70,7 +70,7 @@
   margin: 0;
   font-size: 20px;
   font-weight: 600;
-  color: var(--oc-text, #e0e0e0);
+  color: var(--oc-text);
   overflow-wrap: anywhere;
 }
 
@@ -81,9 +81,9 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--oc-text-muted, #888);
-  background: var(--oc-surface, #1e1e1e);
-  border: 1px solid var(--oc-border, #333);
+  color: var(--oc-text-muted);
+  background: var(--oc-surface);
+  border: 1px solid var(--oc-border);
   border-radius: 999px;
 }
 
@@ -95,16 +95,16 @@
 .oc-shared-action {
   padding: 6px 12px;
   font-size: 13px;
-  color: var(--oc-text, #e0e0e0);
+  color: var(--oc-text);
   text-decoration: none;
-  background: var(--oc-surface, #1e1e1e);
-  border: 1px solid var(--oc-border, #333);
+  background: var(--oc-surface);
+  border: 1px solid var(--oc-border);
   border-radius: 6px;
   cursor: pointer;
 }
 
 .oc-shared-action:hover {
-  background: var(--oc-surface-hover, #2a2a2a);
+  background: var(--oc-surface-hover);
 }
 
 .oc-shared-toggle {
@@ -112,7 +112,7 @@
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: var(--oc-text-muted, #888);
+  color: var(--oc-text-muted);
   cursor: pointer;
   user-select: none;
 }
@@ -121,11 +121,11 @@
 .oc-shared-error {
   padding: 48px 16px;
   text-align: center;
-  color: var(--oc-text-muted, #888);
+  color: var(--oc-text-muted);
 }
 
 .oc-shared-error {
-  color: var(--oc-danger, #e06c75);
+  color: var(--oc-danger);
 }
 
 /* Print stylesheet: drop interactive chrome so the browser's
@@ -153,6 +153,7 @@
   }
 
   .oc-shared-header {
-    border-bottom: 1px solid #ccc;
+    /* stylelint-disable-next-line color-no-hex -- print-only light border */
+border-bottom: 1px solid #ccc;
   }
 }

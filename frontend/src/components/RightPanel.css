@@ -39,7 +39,7 @@
 }
 
 .oc-right-panel-tab.active {
-  background: var(--bg-active, var(--bg-hover));
+  background: var(--bg-active);
   color: var(--accent);
 }
 
@@ -137,7 +137,7 @@
   width: 28px;
   height: 28px;
   border-radius: 4px;
-  background: var(--bg-active, var(--bg-hover));
+  background: var(--bg-active);
   color: var(--accent);
   font-size: 14px;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);

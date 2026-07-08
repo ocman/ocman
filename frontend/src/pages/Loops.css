@@ -28,7 +28,7 @@
 }
 
 .oc-loops-error {
-  color: var(--danger, #e5534b);
+  color: var(--danger);
 }
 
 .oc-loops-table {
@@ -96,9 +96,9 @@
 }
 
 .oc-loops-tr[data-loop-state='active'] .oc-loop-state {
-  color: var(--success, #3fb950);
+  color: var(--success);
 }
 
 .oc-loops-tr[data-loop-state='errored'] .oc-loop-state {
-  color: var(--danger, #e5534b);
+  color: var(--danger);
 }

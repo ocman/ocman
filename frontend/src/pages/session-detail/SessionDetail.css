@@ -48,7 +48,7 @@
 }
 .session-sidebar-new:hover {
   background: var(--accent);
-  color: #fff;
+  color: var(--white);
   border-color: var(--accent);
 }
 .session-sidebar-header-actions {
@@ -267,7 +267,7 @@
   align-self: flex-start;
   margin-top: 1px;
   margin-left: calc((var(--depth, 1) - 1) * 14px);
-  color: var(--overlay0, var(--text-dim));
+  color: var(--overlay0);
   opacity: 0.6;
   font-family: 'SF Mono', Consolas, monospace;
   line-height: 1;
@@ -347,11 +347,11 @@
 }
 .session-sidebar-pin-btn:hover {
   background: var(--accent);
-  color: #fff;
+  color: var(--white);
   border-color: var(--accent);
 }
 .session-sidebar-pin-btn.pinned { opacity: 1; color: var(--accent4); }
-.session-sidebar-pin-btn.pinned:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+.session-sidebar-pin-btn.pinned:hover { background: var(--accent); color: var(--white); border-color: var(--accent); }
 .session-sidebar-item:hover .session-sidebar-pin-btn,
 .session-sidebar-item:focus-visible .session-sidebar-pin-btn,
 .session-sidebar-item.active .session-sidebar-pin-btn {
@@ -496,7 +496,7 @@
 
 .oc-toast-root {
   background: var(--accent);
-  color: #fff;
+  color: var(--white);
   padding: 10px 20px;
   font-size: 14px;
   font-weight: 500;
@@ -505,7 +505,7 @@
 }
 
 .oc-toast-root.error {
-  background: #b42318;
+  background: var(--danger-solid);
 }
 
 .oc-toast-root[data-state='open'] {
@@ -543,7 +543,7 @@
   align-self: flex-start;
   background: rgba(255, 255, 255, 0.2);
   border: 1px solid rgba(255, 255, 255, 0.4);
-  color: #fff;
+  color: var(--white);
   font-size: 12px;
   font-family: inherit;
   font-weight: 600;

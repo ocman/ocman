@@ -88,7 +88,7 @@ body.oc-sidebar-resizing .oc-changes-sidebar {
 
 .oc-changes-strip-icon.active {
   color: var(--accent);
-  background: var(--bg-active, var(--bg-hover));
+  background: var(--bg-active);
 }
 
 .oc-changes-sidebar-toggle {
@@ -186,7 +186,7 @@ body.oc-sidebar-resizing .oc-changes-sidebar {
   border-radius: 8px;
   margin-bottom: 8px;
   overflow: hidden;
-  background: var(--bg-elevated, var(--bg));
+  background: var(--bg-elevated);
 }
 
 .oc-change-group-header {
@@ -201,7 +201,7 @@ body.oc-sidebar-resizing .oc-changes-sidebar {
 }
 
 .oc-change-group-header:hover {
-  background: var(--bg-active, var(--bg-hover));
+  background: var(--bg-active);
 }
 
 .oc-change-group-name {
@@ -431,7 +431,7 @@ body.oc-sidebar-resizing .oc-changes-sidebar {
 }
 
 .oc-changes-list-section-untracked .oc-changes-list-section-label {
-  color: var(--warning, #f9a03f);
+  color: var(--warning);
 }
 
 .oc-changes-list {
@@ -460,7 +460,7 @@ body.oc-sidebar-resizing .oc-changes-sidebar {
 }
 
 .oc-changes-list-row[aria-expanded='true'] {
-  background: var(--bg-active, var(--bg-hover));
+  background: var(--bg-active);
 }
 
 .oc-changes-list-row .oc-change-group-status {

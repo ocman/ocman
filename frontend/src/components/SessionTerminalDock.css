@@ -36,7 +36,7 @@
   height: 32px;
   padding: 0;
   border-top: 1px solid var(--border);
-  background: var(--bg-elevated, var(--bg-hover));
+  background: var(--bg-elevated);
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -53,7 +53,7 @@
   border: none;
   border-right: 1px solid var(--border);
   background: transparent;
-  color: var(--text-dim, var(--overlay0, var(--text)));
+  color: var(--text-dim, var(--overlay0));
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
@@ -82,7 +82,7 @@
   height: 100%;
   border-right: 1px solid var(--border);
   background: transparent;
-  color: var(--text-dim, var(--overlay0, var(--text)));
+  color: var(--text-dim, var(--overlay0));
 }
 .oc-term-dock-tabitem:hover {
   background: var(--bg-hover);
@@ -156,8 +156,8 @@
 }
 .oc-term-dock-tabclose:hover {
   opacity: 1 !important;
-  background: var(--bg-active, var(--bg-hover));
-  color: var(--red, var(--text));
+  background: var(--bg-active);
+  color: var(--red);
 }
 .oc-term-dock-tabclose i {
   font-size: 13px;
@@ -173,7 +173,7 @@
   border: none;
   border-right: 1px solid var(--border);
   background: transparent;
-  color: var(--text-dim, var(--overlay0, var(--text)));
+  color: var(--text-dim, var(--overlay0));
   cursor: pointer;
 }
 .oc-term-dock-tabadd:hover:not(:disabled) {
@@ -200,6 +200,6 @@
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: var(--overlay0, var(--text));
+  color: var(--overlay0);
   font-size: 12px;
 }
