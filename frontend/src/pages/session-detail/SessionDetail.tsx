@@ -943,6 +943,10 @@ export function SessionDetail({ id }: SessionDetailProps) {
     () => Array.from(new Set([activeModel, session?.defaultModel, ...modelOptions].filter((model): model is string => !!model))),
     [activeModel, session?.defaultModel, modelOptions],
   );
+  const permissionControl = useMemo(
+    () => (caps.permissionRules && portAvailable && session?.id ? <PermissionModeLock sessionId={session.id} /> : null),
+    [caps.permissionRules, portAvailable, session?.id],
+  );
   const showSseNotice = portAvailable && !sseActive;
   const showSseDebug = debugMode && sseDebugEvents.length > 0;
 
@@ -1315,9 +1319,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
                       {session.notice && (
                         <RateLimitBanner notice={session.notice} />
                       )}
-                      {caps.permissionRules && portAvailable && (
-                        <PermissionModeLock sessionId={session.id} />
-                      )}
                       {pendingPermission && portAvailable && caps.respondPermission ? (
                         <PermissionPrompt
                           permission={pendingPermission}
@@ -1376,6 +1377,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                           directory={session?.directory}
                           newConversation={totalMessages === 0}
                           worktreesSupported={worktreesSupported}
+                          permissionControl={permissionControl}
                         />
                       ) : null}
                     </ErrorBoundary>

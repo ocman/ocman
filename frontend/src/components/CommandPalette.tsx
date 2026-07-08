@@ -90,6 +90,7 @@ const SCOPED_COMMANDS: ScopedItem[] = [
   { kind: 'scoped', id: 'scoped.model', label: 'model', description: 'Change model (session-scoped)' },
   { kind: 'scoped', id: 'scoped.agent', label: 'agent', description: 'Switch agent (session-scoped)' },
   { kind: 'scoped', id: 'scoped.variant', label: 'variant', description: 'Change reasoning effort' },
+  { kind: 'scoped', id: 'scoped.permissions', label: 'permissions', description: 'Change permission mode' },
   { kind: 'scoped', id: 'scoped.tmux', label: 'tmux', description: 'Switch tmux session' },
   { kind: 'scoped', id: 'scoped.vscode', label: 'vscode', description: 'Open in VS Code' },
   { kind: 'scoped', id: 'scoped.archive', label: 'archive', description: 'Archive current session' },

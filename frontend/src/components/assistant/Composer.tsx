@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, memo, type ReactNode } from 'react';
 import './Composer.css';
 import { getDraft, saveDraft, clearDraft } from '../../lib/composerDraft';
 import { isMacPlatform } from '../../lib/shortcuts';
@@ -72,6 +72,7 @@ function ComposerImpl({
   directory,
   newConversation,
   worktreesSupported,
+  permissionControl,
 }: {
   onSend?: (text: string, images?: AttachedImage[]) => void;
   onCommand?: (command: string, args: string) => void;
@@ -178,6 +179,7 @@ function ComposerImpl({
   newConversation?: boolean;
   /** Host capability: worktree creation available here (gates the option). */
   worktreesSupported?: boolean;
+  permissionControl?: ReactNode;
 }) {
   const [showTokenPopover, setShowTokenPopover] = useState(false);
   const [estCost, setEstCost] = useState<{ cost: number; known: boolean } | null>(null);
@@ -1045,6 +1047,7 @@ function ComposerImpl({
                     {selectedReasoning || 'default'}
                   </button>
                 )}
+                {permissionControl}
                 {disabled && onLaunchRequest ? (
                   <button
                     type="button"
@@ -1307,6 +1310,7 @@ export const Composer = memo(ComposerImpl, (prev, next) =>
   prev.directory === next.directory &&
   prev.newConversation === next.newConversation &&
   prev.worktreesSupported === next.worktreesSupported &&
+  prev.permissionControl === next.permissionControl &&
   (prev.models?.length || 0) === (next.models?.length || 0) &&
   (prev.models || []).every((model, i) => model === (next.models || [])[i])
 );

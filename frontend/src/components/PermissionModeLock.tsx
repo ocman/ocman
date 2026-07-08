@@ -1,17 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, type PermissionRule } from '../lib/api';
-import { classifyPermissionMode, PERMISSION_MODES } from '../lib/permissionModes';
+import { classifyPermissionMode, PERMISSION_MODES, type PermissionMode } from '../lib/permissionModes';
+import { CommandListPicker } from './assistant/CommandListPicker';
+
+const MENU_PERMISSION_MODES = PERMISSION_MODES;
 
 /**
  * Session permission-mode lock: shows the current permission posture
- * and lets the user switch between presets (default / plan-only /
- * auto-edit / yolo). Renders only when the caller has already gated
+ * and lets the user switch between presets. Renders only when the caller has already gated
  * on caps.permissionRules and a live connection.
  */
 export function PermissionModeLock({ sessionId }: { sessionId: string }) {
   const [rules, setRules] = useState<PermissionRule[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [confirmMode, setConfirmMode] = useState<PermissionMode | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,22 +36,25 @@ export function PermissionModeLock({ sessionId }: { sessionId: string }) {
     };
   }, [sessionId]);
 
-  if (rules === null) return null;
+  useEffect(() => {
+    const open = () => setPickerOpen(true);
+    window.addEventListener('oc-permission-mode-open', open);
+    return () => window.removeEventListener('oc-permission-mode-open', open);
+  }, []);
 
-  const modeId = classifyPermissionMode(rules);
+  const modeId = rules === null ? '' : classifyPermissionMode(rules);
   const mode = PERMISSION_MODES.find((m) => m.id === modeId);
   const label = mode ? mode.label : 'Custom';
 
-  const apply = async (id: string) => {
+  const apply = useCallback(async (id: string) => {
     const target = PERMISSION_MODES.find((m) => m.id === id);
     if (!target || saving) return;
-    if (
-      target.dangerous &&
-      !window.confirm(`Switch to ${target.label}? The agent will run edits and commands without asking.`)
-    ) {
+    if (target.dangerous && confirmMode?.id !== target.id) {
+      setConfirmMode(target);
       return;
     }
     setSaving(true);
+    setConfirmMode(null);
     setError('');
     try {
       await api.setPermissionRules(sessionId, target.rules);
@@ -57,41 +64,72 @@ export function PermissionModeLock({ sessionId }: { sessionId: string }) {
     } finally {
       setSaving(false);
     }
-  };
+  }, [confirmMode, saving, sessionId]);
+
+  const entries = useMemo(
+    () => MENU_PERMISSION_MODES.map((m) => ({ ...m, value: m.id, iconClass: permissionModeIconClass(m.id) })),
+    [],
+  );
+
+  if (rules === null) return null;
 
   return (
-    <details className="oc-project-menu header-actions-menu" data-testid="permission-mode-lock">
-      <summary
-        className={`oc-project-menu-trigger oc-permission-lock${modeId === 'yolo' ? ' dangerous' : ''}`}
+    <>
+      <button
+        type="button"
+        className={`oc-permission-lock oc-permission-mode-${modeId || 'default'}`}
         title={error || `Permission mode: ${label}`}
         aria-label={`Permission mode: ${label}`}
+        onClick={() => setPickerOpen(true)}
+        disabled={saving}
+        data-testid="permission-mode-lock"
       >
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-          <path d="M4 7V5a4 4 0 1 1 8 0v2h.5A1.5 1.5 0 0 1 14 8.5v5A1.5 1.5 0 0 1 12.5 15h-9A1.5 1.5 0 0 1 2 13.5v-5A1.5 1.5 0 0 1 3.5 7H4zm1.5-2v2h5V5a2.5 2.5 0 0 0-5 0z" />
-        </svg>
-        <span className="oc-permission-lock-label">{label}</span>
-      </summary>
-      <div className="oc-project-menu-list" role="menu">
-        {PERMISSION_MODES.map((m) => (
-          <button
-            key={m.id}
-            type="button"
-            role="menuitemradio"
-            aria-checked={m.id === modeId}
-            className="oc-project-menu-item"
-            disabled={saving}
-            onClick={(e) => {
-              (e.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open');
-              void apply(m.id);
-            }}
-            title={m.description}
-          >
-            {m.id === modeId ? '● ' : ''}
-            {m.label}
-          </button>
-        ))}
-        {error && <div className="oc-project-menu-item oc-permission-lock-error">{error}</div>}
-      </div>
-    </details>
+        <i className={`bi ${permissionModeIconClass(modeId)}`} aria-hidden="true" />
+      </button>
+      <CommandListPicker
+        open={pickerOpen}
+        entries={entries}
+        fuseKeys={[{ name: 'label', weight: 1 }, { name: 'description', weight: 0.5 }]}
+        renderRow={(m) => (
+          <>
+            <span className={`oc-permission-mode-icon oc-permission-mode-${m.id}`} aria-hidden="true"><i className={`bi ${m.iconClass}`} /></span>
+            <span className="oc-permission-mode-copy">
+              <span className="oc-cmd-title">{m.label}</span>
+              <span className="oc-cmd-meta">{m.description}</span>
+            </span>
+          </>
+        )}
+        placeholder={() => 'Permission mode...'}
+        emptyMessage="No permission modes"
+        isCurrent={(m) => m.id === modeId}
+        onSelect={(id) => { void apply(id); }}
+        onClose={() => setPickerOpen(false)}
+      />
+      {error && <div className="oc-permission-lock-error">{error}</div>}
+      {confirmMode && (
+        <div className="oc-cmd-backdrop" onClick={() => setConfirmMode(null)}>
+          <div className="oc-cmd-palette oc-permission-confirm" role="dialog" aria-label="Confirm permission mode" onClick={(e) => e.stopPropagation()}>
+            <div className="oc-permission-confirm-body">
+              <span className="oc-permission-mode-icon oc-permission-mode-yolo" aria-hidden="true"><i className="bi bi-exclamation-triangle" /></span>
+              <div>
+                <div className="oc-cmd-title">Switch to {confirmMode.label}?</div>
+                <div className="oc-cmd-meta">The agent will run edits and commands without asking.</div>
+              </div>
+            </div>
+            <div className="oc-permission-confirm-actions">
+              <button type="button" className="oc-permission-confirm-cancel" onClick={() => setConfirmMode(null)}>Cancel</button>
+              <button type="button" className="oc-permission-confirm-ok" onClick={() => { void apply(confirmMode.id); }}>Confirm</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
+}
+
+function permissionModeIconClass(id: string) {
+  if (id === 'plan') return 'bi-book';
+  if (id === 'auto-edit') return 'bi-pencil-square';
+  if (id === 'yolo') return 'bi-exclamation-triangle';
+  return 'bi-lock';
 }

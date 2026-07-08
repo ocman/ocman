@@ -28,7 +28,7 @@ export interface PaletteCommandsOptions {
   /** Stable ref to portAvailable. */
   portAvailableRef: React.MutableRefObject<boolean>;
   /** Stable ref to caps. */
-  capsRef: React.MutableRefObject<{ compact?: boolean }>;
+  capsRef: React.MutableRefObject<{ compact?: boolean; permissionRules?: boolean }>;
   /** Stable ref to selectedModel. */
   selectedModelRef: React.MutableRefObject<string>;
   /** Stable ref to activeModel. */
@@ -81,6 +81,8 @@ export function usePaletteCommands({
       el.focus();
     } else if (cmd.id === 'scoped.variant') {
       setSelectedReasoningRef.current('');
+    } else if (cmd.id === 'scoped.permissions' && sessionRef.current && portAvailableRef.current && capsRef.current.permissionRules) {
+      window.dispatchEvent(new Event('oc-permission-mode-open'));
     } else if (cmd.id === 'scoped.tmux' && t.available && t.sessions.length > 0) {
       t.switchSession(t.sessions[0].name).catch((err) => remoteLog.error('tmux switch failed', err));
     } else if (cmd.id === 'scoped.vscode' && sessionRef.current) {
