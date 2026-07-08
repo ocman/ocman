@@ -783,6 +783,14 @@ function ComposerImpl({
     const slash = effectiveModel.indexOf('/');
     return slash > 0 ? effectiveModel.slice(slash + 1) : effectiveModel;
   })();
+  // Warn when the selected model isn't available on this session's host
+  // (e.g. provider not connected on a remote). Only trust the rich entries;
+  // the string fallback has no availability data so we stay silent there.
+  const modelUnavailable = (() => {
+    if (!effectiveModel || !modelEntries || modelEntries.length === 0) return false;
+    const match = modelEntries.find((e) => e.provider && `${e.provider}/${e.model}` === effectiveModel);
+    return !!match && !match.isAvailable;
+  })();
   // Reasoning options for the effective model, derived from the model entries.
   const reasoningOptions: string[] = (() => {
     if (!effectiveModel || !modelEntries) return [];
@@ -969,7 +977,7 @@ function ComposerImpl({
                 {hasModels && (
                   <button
                     type="button"
-                    className="oc-bar-select"
+                    className={`oc-bar-select${modelUnavailable ? ' oc-bar-select--warn' : ''}`}
                     disabled={disabled}
                     onClick={() => {
                       if (disabled) return;
@@ -977,8 +985,11 @@ function ComposerImpl({
                       setModelPickerQuery('');
                       setModelPickerOpen(true);
                     }}
-                    title="Model (click to change)"
+                    title={modelUnavailable ? 'Model not available on this host — pick another' : 'Model (click to change)'}
                   >
+                    {modelUnavailable && (
+                      <i className="bi bi-exclamation-triangle-fill" aria-hidden="true" />
+                    )}
                     {modelButtonLabel || 'Model'}
                   </button>
                 )}
@@ -1261,5 +1272,12 @@ export const Composer = memo(ComposerImpl, (prev, next) =>
   prev.worktreesSupported === next.worktreesSupported &&
   prev.permissionControl === next.permissionControl &&
   (prev.models?.length || 0) === (next.models?.length || 0) &&
-  (prev.models || []).every((model, i) => model === (next.models || [])[i])
+  (prev.models || []).every((model, i) => model === (next.models || [])[i]) &&
+  // Re-render when model availability data changes so the "not available"
+  // warning on the model button appears/clears once entries load.
+  (prev.modelEntries?.length || 0) === (next.modelEntries?.length || 0) &&
+  (prev.modelEntries || []).every((e, i) => {
+    const n = (next.modelEntries || [])[i];
+    return n && e.provider === n.provider && e.model === n.model && e.isAvailable === n.isAvailable;
+  })
 );
