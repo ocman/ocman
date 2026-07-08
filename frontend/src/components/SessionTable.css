@@ -153,7 +153,7 @@
 }
 .oc-session-group-placeholder-add:hover {
   background: var(--accent);
-  color: #fff;
+  color: var(--white);
   border-color: var(--accent);
 }
 
@@ -167,7 +167,7 @@
   margin-top: 2px;
   font-family: 'SF Mono', Consolas, monospace;
   font-size: 10px;
-  color: var(--overlay0, var(--text-dim));
+  color: var(--overlay0);
   line-height: 1.4;
   opacity: 0.6;
 }
@@ -198,7 +198,7 @@
 .session-child-branch {
   flex-shrink: 0;
   margin-left: calc((var(--depth, 1) - 1) * 16px);
-  color: var(--overlay0, var(--text-dim));
+  color: var(--overlay0);
   opacity: 0.6;
   font-family: 'SF Mono', Consolas, monospace;
   line-height: 1;
@@ -246,7 +246,7 @@ div.session-row-actions {
 }
 .tmux-switch-btn:hover {
   background: var(--accent);
-  color: #fff;
+  color: var(--white);
   border-color: var(--accent);
   text-decoration: none;
 }
@@ -271,7 +271,7 @@ div.session-row-actions {
 
 .session-archive-btn:hover {
   background: var(--accent);
-  color: #fff;
+  color: var(--white);
   border-color: var(--accent);
 }
 

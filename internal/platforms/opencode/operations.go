@@ -515,9 +515,16 @@ func (a *Adapter) Compact(ctx context.Context, req platforms.CompactRequest) err
 // CreateSession creates a new OpenCode session bound to the given
 // directory. Returns the new session ID.
 func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+	// Fast path: reuse the cached port map when opencode is already
+	// running (the common case). Only fall back to a fresh uncached
+	// lsof scan on a miss — that scan is multi-hundred-ms on macOS and
+	// exists to catch a just-launched process the cache hasn't seen yet.
 	portPhase := srvtiming.Begin(ctx, "lsof_fresh")
-	port := discoverOpenCodePortFresh(req.Directory)
-	portPhase.EndWithDesc("fresh lsof port discovery")
+	port := discoverOpenCodePort(req.Directory)
+	if port == "" {
+		port = discoverOpenCodePortFresh(req.Directory)
+	}
+	portPhase.EndWithDesc("port discovery (cached, fresh on miss)")
 	if port == "" {
 		// Log the requested dir (raw + normalized) against every
 		// discovered opencode cwd so a path mismatch (symlinks, remote

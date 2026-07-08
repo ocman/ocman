@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, memo, type ReactNode } from 'react';
 import './Composer.css';
-import { getDraft, saveDraft, clearDraft } from '../../lib/composerDraft';
+import { useComposerDrafts } from './useComposerDrafts';
 import { isMacPlatform } from '../../lib/shortcuts';
 import { useShortcut } from '../../lib/shortcutRegistry';
 import { useUiStore } from '../../lib/uiStore';
@@ -198,8 +198,12 @@ function ComposerImpl({
   const imagesRef = useRef<AttachedImage[]>([]);
   const filesRef = useRef<AttachedFileRef[]>([]);
   const sessionIdRef = useRef(sessionId);
-  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onAbortRef = useRef(onAbort);
+  const { clearDraftNow, scheduleDraftSave } = useComposerDrafts(inputRef, sessionId, sessionIdRef);
+  // Stable across the component's life (useComposerDrafts memoizes them), but
+  // held in refs so the long-lived keydown/input effect (deps: []) always
+  // calls the current instance without re-binding listeners.
+
 
   useEffect(() => { imagesRef.current = images; }, [images]);
   useEffect(() => { filesRef.current = files; }, [files]);
@@ -366,11 +370,8 @@ function ComposerImpl({
     setSlashFilter('');
     setSlashIndex(0);
     const sid = sessionIdRef.current;
-    if (sid) {
-      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-      clearDraft(sid);
-    }
-  }, []);
+    if (sid) clearDraftNow(sid);
+  }, [clearDraftNow]);
 
   const selectSlashCommand = useCallback((cmd: SlashCommand) => {
     const el = inputRef.current;
@@ -395,37 +396,6 @@ function ComposerImpl({
     setSlashFilter('');
     setSlashIndex(0);
   }, [clearComposerInput, openModelPicker, openAgentPicker]);
-
-  useEffect(() => {
-    const el = inputRef.current;
-    if (!el || !sessionId) return;
-    const draft = getDraft(sessionId);
-    el.value = draft;
-    el.style.height = 'auto';
-    if (draft) {
-      el.style.height = Math.min(el.scrollHeight, 200) + 'px';
-    }
-    el.focus();
-  }, [sessionId]);
-
-  useEffect(() => {
-    const el = inputRef.current;
-    return () => {
-      if (draftTimerRef.current) {
-        clearTimeout(draftTimerRef.current);
-        draftTimerRef.current = null;
-      }
-      const sid = sessionIdRef.current;
-      if (el && sid) {
-        const text = el.value.trim();
-        if (text) {
-          saveDraft(sid, text);
-        } else {
-          clearDraft(sid);
-        }
-      }
-    };
-  }, []);
 
   const addImageFiles = useCallback(async (files: File[]) => {
     const imageFiles = files.filter(f => f.type.startsWith('image/'));
@@ -559,10 +529,7 @@ function ComposerImpl({
         el.dispatchEvent(new CustomEvent('oc-clear-images'));
         el.dispatchEvent(new CustomEvent('oc-clear-files'));
         const sid = sessionIdRef.current;
-        if (sid) {
-          if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-          clearDraft(sid);
-        }
+        if (sid) clearDraftNow(sid);
         return;
       }
 
@@ -587,8 +554,7 @@ function ComposerImpl({
             el.value = '';
             el.style.height = 'auto';
             const sid = sessionIdRef.current;
-            if (sid && draftTimerRef.current) clearTimeout(draftTimerRef.current);
-            if (sid) clearDraft(sid);
+            if (sid) clearDraftNow(sid);
             const evt = route.command === 'model' ? 'oc-model-picker-open' : 'oc-agent-picker-open';
             el.dispatchEvent(new CustomEvent(evt, { detail: route.args }));
             return;
@@ -613,10 +579,7 @@ function ComposerImpl({
         el.style.height = 'auto';
         el.dispatchEvent(new CustomEvent('oc-slash-update', { detail: { show: false, filter: '' } }));
         const sid = sessionIdRef.current;
-        if (sid) {
-          if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-          clearDraft(sid);
-        }
+        if (sid) clearDraftNow(sid);
         el.dispatchEvent(new CustomEvent('oc-clear-images'));
         el.dispatchEvent(new CustomEvent('oc-clear-files'));
       }
@@ -643,17 +606,7 @@ function ComposerImpl({
         el.dispatchEvent(new CustomEvent('oc-slash-update', { detail: { show: false, filter: '' } }));
       }
       const sid = sessionIdRef.current;
-      if (sid) {
-        if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-        draftTimerRef.current = setTimeout(() => {
-          const text = el.value.trim();
-          if (text) {
-            saveDraft(sid, text);
-          } else {
-            clearDraft(sid);
-          }
-        }, 300);
-      }
+      if (sid) scheduleDraftSave(sid, () => el.value);
     };
 
     const handlePaste = (e: ClipboardEvent) => {
@@ -678,15 +631,13 @@ function ComposerImpl({
     el.addEventListener('paste', handlePaste);
 
     return () => {
-      if (draftTimerRef.current) {
-        clearTimeout(draftTimerRef.current);
-        draftTimerRef.current = null;
-      }
       el.removeEventListener('keydown', handleInputKeyDown);
       el.removeEventListener('input', handleInput);
       el.removeEventListener('paste', handlePaste);
     };
-  }, []);
+    // clearDraftNow / scheduleDraftSave are stable (memoized in
+    // useComposerDrafts), so listing them here does not re-bind listeners.
+  }, [clearDraftNow, scheduleDraftSave]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

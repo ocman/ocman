@@ -54,7 +54,7 @@
 }
 .oc-model-picker .oc-model-picker-badge--star {
   background: transparent;
-  color: var(--yellow, #f5c63a);
+  color: var(--yellow);
   padding: 0;
 }
 .oc-model-picker .oc-model-picker-badge--used {
@@ -63,12 +63,12 @@
   padding: 0;
 }
 .oc-model-picker .oc-model-picker-badge--default {
-  background: var(--accent-soft, var(--surface1));
+  background: var(--accent-soft);
   color: var(--accent);
 }
 .oc-model-picker .oc-model-picker-badge--archived {
   background: var(--surface1);
-  color: var(--overlay0, var(--text-dim));
+  color: var(--overlay0);
   opacity: 0.75;
 }
 
@@ -97,10 +97,10 @@
   opacity: 0.9;
 }
 .oc-model-picker .oc-model-picker-fav:hover {
-  color: var(--yellow, #f5c63a);
+  color: var(--yellow);
   opacity: 1;
 }
 .oc-model-picker .oc-model-picker-fav--on {
-  color: var(--yellow, #f5c63a);
+  color: var(--yellow);
   opacity: 1;
 }

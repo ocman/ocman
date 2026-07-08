@@ -39,7 +39,7 @@
   padding: 6px 12px;
   border-radius: 6px;
   background: var(--bg-hover);
-  color: var(--overlay0, var(--text));
+  color: var(--overlay0);
   font-size: 12px;
   pointer-events: none;
 }

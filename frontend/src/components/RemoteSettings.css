@@ -54,15 +54,15 @@
 }
 
 .remote-health-connected {
-  color: var(--ok, #3fb950);
-  border-color: color-mix(in srgb, var(--ok, #3fb950) 40%, transparent);
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 40%, transparent);
 }
 
 .remote-health-offline,
 .remote-health-auth-failed,
 .remote-health-incompatible-version {
-  color: var(--danger, #f85149);
-  border-color: color-mix(in srgb, var(--danger, #f85149) 40%, transparent);
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
 }
 
 .remote-health-disabled {
@@ -93,8 +93,8 @@
 }
 
 .remote-btn-danger {
-  border-color: color-mix(in srgb, var(--danger, #f85149) 40%, transparent);
-  color: var(--danger, #f85149);
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+  color: var(--danger);
 }
 
 .remote-add-form {
@@ -141,6 +141,6 @@
 
 .remote-settings-error {
   width: 100%;
-  color: var(--danger, #f85149);
+  color: var(--danger);
   font-size: 0.8rem;
 }

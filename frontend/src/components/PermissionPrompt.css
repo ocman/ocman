@@ -216,7 +216,7 @@
 
 /* Inline one-line conclusion shown next to the magnifying-glass icon. */
 .oc-permission-judge-reasoning {
-  color: var(--overlay1, var(--overlay0));
+  color: var(--overlay1);
   font-style: italic;
   font-size: 11px;
   /* Reasonings can be a sentence long; allow wrap and take the

@@ -33,6 +33,49 @@
   --crust: #11111b;
   --mantle: #181825;
   --base: #1e1e2e;
+
+  /* Semantic color aliases (Catppuccin named colors).
+   * These back the `var(--red, #hex)` idiom scattered across component
+   * CSS: previously the token was undefined so the hardcoded fallback
+   * rendered. Defining them here centralizes the palette so a theme
+   * change happens in one place. */
+  --red: #f38ba8;
+  --green: #a6e3a1;
+  --blue: #89b4fa;
+  --mauve: #cba6f7;
+  --peach: #fab387;
+  --maroon: #eba0ac;
+  --warning: #f9e2af; /* alias of --yellow for status/warning intent */
+
+  /* GitHub-flavored diff/status colors used by DiffView, UpstreamPane,
+   * and GitHub link previews. Kept distinct from the Catppuccin accents
+   * because they intentionally match GitHub's own palette. */
+  --gh-green: #3fb950;
+  --gh-red: #f85149;
+  --gh-red-dim: #e5534b;
+  --gh-blue: #58a6ff;
+
+  /* Neutral scale for non-themed chrome (borders, muted text on
+   * fixed-dark surfaces like terminals). */
+  --neutral-fg: #e0e0e0;
+  --neutral-dim: #888;
+  --neutral-border: #333;
+  --white: #fff;
+  --text-bright: #e8edfb; /* emphasis text, brighter than --text */
+  --danger-solid: #b42318; /* saturated error-toast bg (vs pink --danger) */
+
+  /* Brand: OpenCode signature orange (PlatformBadge). */
+  --brand-opencode: #d97757;
+
+  /* Export/share menu local theme (ShareExportMenu). Fixed dark palette,
+   * previously only expressed as var() fallbacks. */
+  --oc-bg: #141414;
+  --oc-surface: #1e1e1e;
+  --oc-surface-hover: #2a2a2a;
+  --oc-border: #333;
+  --oc-text: #e0e0e0;
+  --oc-text-muted: #888;
+  --oc-danger: #e06c75;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }

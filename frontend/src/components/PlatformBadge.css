@@ -66,9 +66,9 @@
 .platform-badge.platform-claude-code {
   /* Claude's wordmark colour -- warm amber that reads well against
      both light and dark surfaces. */
-  background: color-mix(in srgb, #d97757 15%, transparent);
-  color: #d97757;
-  border-color: color-mix(in srgb, #d97757 30%, transparent);
+  background: color-mix(in srgb, var(--brand-opencode) 15%, transparent);
+  color: var(--brand-opencode);
+  border-color: color-mix(in srgb, var(--brand-opencode) 30%, transparent);
 }
 
 /*

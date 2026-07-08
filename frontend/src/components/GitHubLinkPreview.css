@@ -38,10 +38,10 @@
 }
 
 /* State colours for left border */
-.gh-preview--open   { border-left-color: #3fb950; }
-.gh-preview--merged { border-left-color: #a371f7; }
-.gh-preview--closed { border-left-color: #f85149; }
-.gh-preview--commit { border-left-color: var(--accent2, #58a6ff); }
+.gh-preview--open   { border-left-color: var(--gh-green); }
+.gh-preview--merged { border-left-color: var(--mauve); }
+.gh-preview--closed { border-left-color: var(--gh-red); }
+.gh-preview--commit { border-left-color: var(--gh-blue); }
 
 /* State icon column */
 .gh-preview__icon {
@@ -50,10 +50,10 @@
   line-height: 1;
   margin-top: 1px;
 }
-.gh-preview--open   .gh-preview__icon { color: #3fb950; }
-.gh-preview--merged .gh-preview__icon { color: #a371f7; }
-.gh-preview--closed .gh-preview__icon { color: #f85149; }
-.gh-preview--commit .gh-preview__icon { color: var(--accent2, #58a6ff); }
+.gh-preview--open   .gh-preview__icon { color: var(--gh-green); }
+.gh-preview--merged .gh-preview__icon { color: var(--mauve); }
+.gh-preview--closed .gh-preview__icon { color: var(--gh-red); }
+.gh-preview--commit .gh-preview__icon { color: var(--gh-blue); }
 
 /* Body */
 .gh-preview__body {
@@ -88,10 +88,10 @@
   text-transform: uppercase;
   letter-spacing: 0.4px;
 }
-.gh-preview__state--open   { color: #3fb950; }
-.gh-preview__state--merged { color: #a371f7; }
-.gh-preview__state--closed { color: #f85149; }
-.gh-preview__state--commit { color: var(--accent2, #58a6ff); }
+.gh-preview__state--open   { color: var(--gh-green); }
+.gh-preview__state--merged { color: var(--mauve); }
+.gh-preview__state--closed { color: var(--gh-red); }
+.gh-preview__state--commit { color: var(--gh-blue); }
 
 .gh-preview__sep {
   color: var(--surface2);

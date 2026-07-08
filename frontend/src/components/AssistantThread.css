@@ -329,7 +329,7 @@
 .oc-md h3 { font-size: 14px; }
 .oc-md ul, .oc-md ol { margin: 6px 0; padding-left: 2em; }
 .oc-md li { margin-bottom: 3px; }
-.oc-md strong { color: #e8edfb; font-weight: 600; }
+.oc-md strong { color: var(--text-bright); font-weight: 600; }
 .oc-md code { background: rgba(110, 118, 129, 0.25); padding: 1px 5px; border-radius: 0; font-family: var(--font-conversation-mono); font-size: 12px; color: var(--accent4); }
 .oc-md .oc-code-block { position: relative; margin: 8px 0; }
 .oc-md .oc-code-block pre { margin: 0; }
@@ -756,7 +756,7 @@
   background: rgba(243, 139, 168, 0.1);
   border-radius: 0;
   font-size: 12px;
-  color: var(--red, #f38ba8);
+  color: var(--red);
   font-family: 'SF Mono', Consolas, monospace;
 }
 
@@ -822,10 +822,10 @@
 .oc-tool-compact-error,
 .oc-tool-compact-error .oc-tool-compact-name,
 .oc-tool-compact-error .oc-tool-compact-summary {
-  color: var(--danger, var(--red, #f38ba8));
+  color: var(--danger);
 }
 .oc-tool-compact-error .oc-read-arrow {
-  color: var(--danger, var(--red, #f38ba8));
+  color: var(--danger);
   opacity: 0.75;
 }
 .oc-tool-compact-body {
@@ -979,7 +979,7 @@
   width: 6px;
   height: 6px;
   border-radius: 0;
-  background: var(--oc-dot-color, var(--accent4));
+  background: var(--oc-dot-color);
   opacity: 0.3;
   transform: scale(0.8);
   animation: oc-bounce 1.4s ease-in-out infinite;
@@ -1042,9 +1042,9 @@
   margin: 0 16px 8px;
   padding: 8px 12px;
   font-size: 12px;
-  color: var(--warning, #fab387);
-  background: color-mix(in srgb, var(--warning, #fab387) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--warning, #fab387) 30%, transparent);
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent);
   border-radius: 4px;
 }
 .oc-rate-limit-body {
@@ -1068,9 +1068,9 @@
   margin: 0 16px 8px;
   padding: 8px 10px 8px 12px;
   font-size: 12px;
-  color: var(--warning, #fab387);
-  background: color-mix(in srgb, var(--warning, #fab387) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--warning, #fab387) 30%, transparent);
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent);
   border-radius: 4px;
 }
 
@@ -1125,7 +1125,7 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  color: var(--warning, #fab387);
+  color: var(--warning);
 }
 
 .oc-sse-indicator-dot {
@@ -1309,13 +1309,13 @@
 }
 
 .oc-auto-approved-icon {
-  color: var(--green, #a6e3a1);
+  color: var(--green);
   font-size: 11px;
   flex-shrink: 0;
 }
 
 .oc-auto-approved-label {
-  color: var(--green, #a6e3a1);
+  color: var(--green);
   font-weight: 600;
   flex-shrink: 0;
 }
@@ -1362,7 +1362,7 @@
 /* Judge's one-line conclusion shown inline. Italicized so it reads
  * as commentary, dimmed so it sits behind the action text. */
 .oc-auto-approved-reasoning {
-  color: var(--overlay1, var(--overlay0));
+  color: var(--overlay1);
   font-style: italic;
   font-size: 11px;
   /* Allow long reasonings to wrap rather than blow out the row. */

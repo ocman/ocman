@@ -14,7 +14,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #f38ba8;
+  background: var(--red);
   flex-shrink: 0;
   animation: oc-recording-pulse 1.2s ease-in-out infinite;
 }
@@ -24,7 +24,7 @@
 }
 .oc-recording-label {
   font-weight: 600;
-  color: #f38ba8;
+  color: var(--red);
 }
 .oc-recording-hint {
   color: var(--overlay0);
@@ -36,7 +36,7 @@
   border: 1px solid rgba(243, 139, 168, 0.4);
   border-radius: 4px;
   background: transparent;
-  color: #f38ba8;
+  color: var(--red);
   font-size: 11px;
   cursor: pointer;
 }
@@ -360,7 +360,7 @@
   transition: all 0.15s;
 }
 .oc-stop-btn:hover {
-  color: var(--red, #f38ba8);
+  color: var(--red);
   background: rgba(243, 139, 168, 0.1);
 }
 .oc-stop-hint { color: var(--overlay0); font-size: 11px; }
@@ -375,7 +375,7 @@
   color: var(--overlay1);
   min-width: 0;
 }
-.oc-shell-queued-icon { color: var(--yellow, #f9e2af); font-size: 12px; }
+.oc-shell-queued-icon { color: var(--yellow); font-size: 12px; }
 .oc-shell-queued-label { white-space: nowrap; }
 .oc-shell-queued-cmd {
   font-family: var(--font-mono, monospace);
@@ -397,7 +397,7 @@
   cursor: pointer;
   text-decoration: underline;
 }
-.oc-shell-queued-cancel:hover { color: var(--red, #f38ba8); }
+.oc-shell-queued-cancel:hover { color: var(--red); }
 .oc-composer-footer-right {
   display: flex;
   align-items: center;
@@ -427,7 +427,7 @@
   min-width: 0;
 }
 .oc-selector-icon { color: var(--overlay0); font-size: 11px; display: inline-flex; }
-.oc-selector-error { color: var(--red, #f38ba8); max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oc-selector-error { color: var(--red); max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Send button (turns into a stop button while generating) */
 .oc-bar-send {
@@ -435,8 +435,8 @@
   height: 32px;
   border-radius: 50%;
   border: none;
-  background: var(--accent, #4c7fff);
-  color: #fff;
+  background: var(--accent);
+  color: var(--white);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -446,7 +446,7 @@
 }
 .oc-bar-send:hover:not(:disabled) { filter: brightness(1.1); }
 .oc-bar-send:disabled { opacity: 0.4; cursor: not-allowed; }
-.oc-bar-send.oc-bar-send-stop { background: var(--red, #f38ba8); }
+.oc-bar-send.oc-bar-send-stop { background: var(--red); }
 .oc-keybind-hint { color: var(--overlay0); font-size: 11px; background: none; border: none; padding: 0; cursor: pointer; }
 .oc-keybind-hint:hover { color: var(--text); }
 .oc-bar-hint { color: var(--overlay0); }
@@ -463,7 +463,7 @@
 .oc-bar-launch:hover:not(:disabled) { filter: brightness(1.1); }
 .oc-bar-launch:disabled { opacity: 0.6; cursor: default; }
 .oc-bar-shell {
-  color: #f38ba8;
+  color: var(--red);
   font-family: 'SF Mono', Consolas, monospace;
   font-size: 11px;
   font-weight: 500;
@@ -549,9 +549,9 @@
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: var(--red, #f38ba8);
-  background: color-mix(in srgb, var(--red, #f38ba8) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--red, #f38ba8) 30%, transparent);
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--red) 30%, transparent);
   border-radius: 4px;
   padding: 2px 6px;
   max-width: 300px;
@@ -570,7 +570,7 @@
 
 /* Mic icon in bar action */
 .oc-bar-action .oc-mic-icon { font-size: 12px; }
-.oc-bar-action.oc-mic-recording { color: #f38ba8; border-color: #f38ba8; animation: oc-mic-pulse 1s ease-in-out infinite; }
+.oc-bar-action.oc-mic-recording { color: var(--red); border-color: var(--red); animation: oc-mic-pulse 1s ease-in-out infinite; }
 .oc-bar-action.oc-mic-transcribing { color: var(--accent); border-color: var(--accent); animation: oc-mic-pulse 0.6s ease-in-out infinite; }
 
 /* Responsive */

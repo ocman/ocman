@@ -333,7 +333,7 @@
 }
 
 .oc-upstream-ci-dot-pending {
-  background: var(--warning, #f9e2af);
+  background: var(--warning);
 }
 
 .oc-upstream-ci-dot-unknown {
@@ -776,7 +776,7 @@ a.oc-upstream-ci-check-name:hover {
 }
 
 .oc-upstream-launch-confirm-buttons button:first-child:hover {
-  background: var(--peach, #fab387);
+  background: var(--peach);
 }
 
 .oc-upstream-launch-confirm-buttons button:last-child:hover {

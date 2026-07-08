@@ -75,7 +75,7 @@
 
 .oc-wt-field input:focus,
 .oc-wt-field select:focus {
-  border-color: var(--accent, var(--text));
+  border-color: var(--accent);
 }
 
 .oc-wt-field input[readonly] {
@@ -144,7 +144,7 @@
 }
 
 .oc-wt-btn--primary {
-  background: var(--surface2, var(--surface1));
+  background: var(--surface2);
   border-color: var(--text-dim);
 }
 

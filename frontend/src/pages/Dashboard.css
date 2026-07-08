@@ -160,6 +160,7 @@
 
 /* Heatmap color tokens */
 :root {
+  /* stylelint-disable-next-line color-no-hex -- token definition (heatmap base) */
   --heatmap-0-bg: #2a2b3d;
   --heatmap-1: rgba(203, 166, 247, 0.25);
   --heatmap-2: rgba(203, 166, 247, 0.50);
@@ -300,7 +301,7 @@
 .settings-toggle input:checked + .settings-toggle-track { background: var(--accent); }
 .settings-toggle input:checked + .settings-toggle-track::after {
   transform: translateX(16px);
-  background: #fff;
+  background: var(--white);
 }
 
 /* Delay input for auto-approve human review window */
