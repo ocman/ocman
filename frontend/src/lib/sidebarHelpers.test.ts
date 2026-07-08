@@ -64,6 +64,16 @@ describe('filterOrphanChildren', () => {
     const sessions = [makeSession({ id: 'a' }), makeSession({ id: 'b' })];
     expect(filterOrphanChildren(sessions).map((s) => s.id)).toEqual(['a', 'b']);
   });
+
+  it('keeps an orphan child while it is active, drops it once done', () => {
+    const active = [
+      makeSession({ id: 'top' }),
+      makeSession({ id: 'busy', parentId: 'missing', status: 'busy' }),
+      makeSession({ id: 'prompt', parentId: 'missing', status: 'done', pendingPermission: true }),
+      makeSession({ id: 'gone', parentId: 'missing', status: 'done' }),
+    ];
+    expect(filterOrphanChildren(active).map((s) => s.id)).toEqual(['top', 'busy', 'prompt']);
+  });
 });
 
 describe('computeSidebarHash', () => {
