@@ -316,9 +316,14 @@ export function SessionSidebar({
     const remoteSession = group.sessions.find((s) => s.remoteId && s.remoteId !== 'local');
     // Prefer per-session host identity; fall back to the group's own
     // (set for session-less remote projects, e.g. an offline remote).
+    // For a local group `remoteSession` is undefined, so anchor the
+    // platform on the group's own first session — otherwise "+" passes
+    // an undefined platform and handleNewSessionInDirectory leaks the
+    // currently-open session's (possibly remote) platform onto this
+    // local project.
     const hostRemoteId = remoteSession?.remoteId ?? group.remoteId;
     const hostRemoteName = remoteSession?.remoteName ?? group.remoteName;
-    const hostPlatform = remoteSession?.platform ?? group.platform;
+    const hostPlatform = remoteSession?.platform ?? group.platform ?? group.sessions[0]?.platform;
     // The status dot surfaces the rolled-up aggregate: the same visual
     // vocabulary as per-session rows (pending "!", error "!", busy
     // pulse, idle neutral), so a collapsed header tells you at a glance

@@ -126,4 +126,25 @@ describe('SessionSidebar', () => {
 
     expect(onAdd).toHaveBeenCalledWith('/home/dries/repo', 'abc', 'r-abc:opencode');
   });
+
+  it('forwards the local platform from the group session when adding to a local project', () => {
+    // Regression: a local session-derived group has no `platform` field
+    // (that is only set from a remote session), so the "+" forwarded an
+    // undefined platform. handleNewSessionInDirectory then fell back to
+    // the currently-open session's (possibly remote) platform, launching
+    // the new local session on the wrong host.
+    const onAdd = vi.fn();
+    const group: SidebarProjectGroup = {
+      directory: '/home/dries/other',
+      sessions: [session({ directory: '/home/dries/other', platform: 'opencode' })],
+      lastUpdated: 1,
+      aggregate: { kind: 'none' },
+    };
+
+    renderSidebar(group, {}, onAdd);
+
+    screen.getByRole('button', { name: 'New session in dries/other' }).click();
+
+    expect(onAdd).toHaveBeenCalledWith('/home/dries/other', undefined, 'opencode');
+  });
 });

@@ -735,7 +735,13 @@ export function SessionDetail({ id }: SessionDetailProps) {
     // project group) over the currently-open session's, so a "+" on a
     // remote project actually targets that remote instead of falling
     // back to the local adapter.
-    const targetPlatform = platform ?? session?.platform;
+    //
+    // Only inherit the open session's platform when the target is the
+    // same project — otherwise a "+" on a *different* project (whose
+    // group didn't carry a platform) leaks the current session's
+    // (possibly remote) platform onto it, mis-targeting the host.
+    const sameProject = !!session && projectRootForDirectory(directory) === projectRootForDirectory(session.directory);
+    const targetPlatform = platform ?? (sameProject ? session?.platform : undefined);
     try {
       const res = await createSessionWithLaunch(
         {
@@ -754,7 +760,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
       remoteLog.error('Failed to create session', e);
       setShowCreateSessionErrorToast(true);
     }
-  }, [createSession, launchOpencodeInTmux, tmux.available, navigateToSession, seedNewSession, session?.platform]);
+  }, [createSession, launchOpencodeInTmux, tmux.available, navigateToSession, seedNewSession, session]);
 
   const handleNewSession = useCallback(async (title?: string) => {
     if (!session) return;
