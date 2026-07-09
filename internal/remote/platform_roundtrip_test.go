@@ -201,6 +201,9 @@ func TestRemoteHost_AllMethods(t *testing.T) {
 	if _, err := rh.LaunchTmux(ctx, hostsvc.LaunchTmuxRequest{Directory: "/x"}); err != nil {
 		t.Errorf("LaunchTmux: %v", err)
 	}
+	if res, err := rh.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: "/x"}); err != nil || res.Port != "1234" {
+		t.Errorf("EnsureProjectOpencode = %+v, %v", res, err)
+	}
 	if _, err := rh.TmuxSessions(ctx); err != nil {
 		t.Errorf("TmuxSessions: %v", err)
 	}

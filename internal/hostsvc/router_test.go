@@ -30,6 +30,9 @@ func (h stubHost) RemoveWorktree(context.Context, RemoveWorktreeRequest) error {
 func (h stubHost) LaunchTmux(context.Context, LaunchTmuxRequest) (*LaunchTmuxResult, error) {
 	return nil, nil
 }
+func (h stubHost) EnsureProjectOpencode(context.Context, EnsureProjectOpencodeRequest) (*EnsureProjectOpencodeResult, error) {
+	return nil, nil
+}
 func (h stubHost) TmuxSessions(context.Context) ([]TmuxSession, error)           { return nil, nil }
 func (h stubHost) Projects(context.Context) ([]db.ProjectStats, error)           { return nil, nil }
 func (h stubHost) TermWindows(context.Context, string) ([]TermWindow, error)     { return nil, nil }

@@ -155,6 +155,9 @@ func (localStubHost) RemoveWorktree(context.Context, hostsvc.RemoveWorktreeReque
 func (localStubHost) LaunchTmux(context.Context, hostsvc.LaunchTmuxRequest) (*hostsvc.LaunchTmuxResult, error) {
 	return &hostsvc.LaunchTmuxResult{Session: "sess"}, nil
 }
+func (localStubHost) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+	return &hostsvc.EnsureProjectOpencodeResult{Port: "1234", RepoRoot: "/repo", TmuxSession: "sess"}, nil
+}
 func (localStubHost) TmuxSessions(context.Context) ([]hostsvc.TmuxSession, error) { return nil, nil }
 func (localStubHost) Projects(context.Context) ([]db.ProjectStats, error) {
 	return []db.ProjectStats{{Directory: "/home/u/app"}}, nil

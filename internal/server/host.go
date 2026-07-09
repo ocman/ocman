@@ -70,3 +70,16 @@ func lookPathOK(bin string) bool {
 	_, err := exec.LookPath(bin)
 	return err == nil
 }
+
+// launchProjectOpencode launches (idempotently) a single opencode in a
+// tmux session rooted at dir, seeding the pane with the given
+// OPENCODE_PERMISSION JSON. It is the LaunchProjectOpencode dep for the
+// local Host's EnsureProjectOpencode primitive.
+func launchProjectOpencode(dir, permissionJSON string) (string, error) {
+	env := map[string]string{}
+	if permissionJSON != "" {
+		env["OPENCODE_PERMISSION"] = permissionJSON
+	}
+	session, _, err := tmux.LaunchOpencodeEnv(dir, env)
+	return session, err
+}

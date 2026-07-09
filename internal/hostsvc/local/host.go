@@ -12,7 +12,10 @@ package local
 
 import (
 	"context"
+	"fmt"
+	"path/filepath"
 	"strings"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 
@@ -32,6 +35,15 @@ type Deps struct {
 	// tmux session under a named window rooted at the worktree path.
 	// Returns (target, launched, err).
 	LaunchWorktreeTmux func(projectDir, worktreeDir string) (string, bool, error)
+	// LaunchProjectOpencode launches (idempotently) a single
+	// `opencode --port 0` in a tmux session rooted at the project's main
+	// checkout, seeding the pane with the given OPENCODE_PERMISSION JSON.
+	// Returns the tmux session name. Used by EnsureProjectOpencode.
+	LaunchProjectOpencode func(dir, permissionJSON string) (session string, err error)
+	// DiscoverPort returns the HTTP port of a running opencode instance
+	// whose working directory matches dir, or "" if none. Injected so the
+	// local Host does not import the opencode adapter directly.
+	DiscoverPort func(dir string) string
 	// TmuxSessions lists the host's tmux sessions.
 	TmuxSessions func() ([]hostsvc.TmuxSession, error)
 	// Projects returns the host's known projects.
@@ -54,10 +66,21 @@ type Deps struct {
 // Host is the local hostsvc.Host implementation.
 type Host struct {
 	deps Deps
+
+	// Port-discovery wait budget for EnsureProjectOpencode after a launch.
+	// Exposed as fields (not consts) so tests can shrink them.
+	portWaitTimeout  time.Duration
+	portWaitInterval time.Duration
 }
 
 // New returns a local Host wired with the given server-package deps.
-func New(deps Deps) *Host { return &Host{deps: deps} }
+func New(deps Deps) *Host {
+	return &Host{
+		deps:             deps,
+		portWaitTimeout:  15 * time.Second,
+		portWaitInterval: 200 * time.Millisecond,
+	}
+}
 
 // RemoteID is the routing/display sentinel for the local machine.
 func (h *Host) RemoteID() string { return "local" }
@@ -155,6 +178,82 @@ func (h *Host) LaunchTmux(ctx context.Context, req hostsvc.LaunchTmuxRequest) (*
 	}
 	log.WithFields(log.Fields{"directory": req.Directory, "tmuxSession": name}).Info("host: launched opencode in tmux")
 	return &hostsvc.LaunchTmuxResult{Session: name}, nil
+}
+
+// EnsureProjectOpencode guarantees exactly one opencode instance for the
+// project containing req.ProjectDir, rooted at the project's main
+// checkout. It is the only code path that launches opencode for a project
+// (spec/one-opencode-per-project D-1/D-4).
+func (h *Host) EnsureProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+	repoRoot, err := git.ResolveRepoRoot(ctx, req.ProjectDir)
+	if err != nil {
+		return nil, err
+	}
+
+	discover := h.deps.DiscoverPort
+	if discover == nil {
+		discover = func(string) string { return "" }
+	}
+
+	// Already running: return it, launch nothing (idempotent).
+	if port := discover(repoRoot); port != "" {
+		return &hostsvc.EnsureProjectOpencodeResult{Port: port, RepoRoot: repoRoot}, nil
+	}
+
+	// Launch exactly one, seeded with a scoped external_directory rule for
+	// this project's .worktrees/<repo> root.
+	permJSON, err := buildExternalDirectoryPermission(worktreesRoot(repoRoot))
+	if err != nil {
+		return nil, fmt.Errorf("building OPENCODE_PERMISSION: %w", err)
+	}
+	session := ""
+	if h.deps.LaunchProjectOpencode != nil {
+		log.WithField("repoRoot", repoRoot).Info("host: launching project opencode")
+		session, err = h.deps.LaunchProjectOpencode(repoRoot, permJSON)
+		if err != nil {
+			log.WithError(err).WithField("repoRoot", repoRoot).Error("host: failed to launch project opencode")
+			return nil, err
+		}
+	}
+
+	// Wait for the launched instance to bind its port.
+	port, err := h.waitForPort(ctx, discover, repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	return &hostsvc.EnsureProjectOpencodeResult{
+		Port:        port,
+		RepoRoot:    repoRoot,
+		TmuxSession: session,
+		Launched:    true,
+	}, nil
+}
+
+// waitForPort polls discover until it returns a non-empty port, the
+// context is cancelled, or the wait budget is exhausted.
+func (h *Host) waitForPort(ctx context.Context, discover func(string) string, repoRoot string) (string, error) {
+	deadline := time.Now().Add(h.portWaitTimeout)
+	for {
+		if port := discover(repoRoot); port != "" {
+			return port, nil
+		}
+		if time.Now().After(deadline) {
+			return "", fmt.Errorf("opencode launched for %q but no port became discoverable within %s", repoRoot, h.portWaitTimeout)
+		}
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(h.portWaitInterval):
+		}
+	}
+}
+
+// worktreesRoot returns the <repo-parent>/.worktrees/<repo-name> directory
+// that in-app worktrees for this repo live under, mirroring
+// git.WorktreePathFor's layout.
+func worktreesRoot(repoRoot string) string {
+	clean := filepath.Clean(repoRoot)
+	return filepath.Join(filepath.Dir(clean), ".worktrees", filepath.Base(clean))
 }
 
 func (h *Host) TmuxSessions(ctx context.Context) ([]hostsvc.TmuxSession, error) {

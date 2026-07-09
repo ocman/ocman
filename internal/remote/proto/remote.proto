@@ -60,6 +60,7 @@ service Ocman {
   rpc CreateWorktreeSession(JsonReq) returns (JsonResp);
   rpc RemoveWorktree(JsonReq) returns (Empty);
   rpc LaunchTmux(JsonReq) returns (JsonResp);
+  rpc EnsureProjectOpencode(JsonReq) returns (JsonResp);
   rpc TmuxSessions(Empty) returns (JsonResp);
   rpc HostCapabilities(Empty) returns (JsonResp);         // hostsvc.HostCaps
 

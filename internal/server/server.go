@@ -21,6 +21,7 @@ import (
 	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
 	"github.com/NoUseFreak/ocman/internal/loops"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -183,15 +184,17 @@ func (s *Server) SessionService() *sessionsvc.Service { return s.sessions }
 // sites directly). See internal/hostsvc/local.
 func (s *Server) newLocalHost() hostsvc.Host {
 	return hostlocal.New(hostlocal.Deps{
-		LaunchTmux:         tmux.LaunchOpencode,
-		LaunchWorktreeTmux: tmux.LaunchWorktreeWindow,
-		TmuxSessions:       s.hostTmuxSessions,
-		Projects:           s.hostProjects,
-		Caps:               s.hostCaps,
-		TermWindows:        term.Windows,
-		TermCreateWindow:   term.CreateWindow,
-		TermKillWindow:     term.KillWindow,
-		TermAttach:         term.AttachLocalPTY,
+		LaunchTmux:            tmux.LaunchOpencode,
+		LaunchWorktreeTmux:    tmux.LaunchWorktreeWindow,
+		LaunchProjectOpencode: launchProjectOpencode,
+		DiscoverPort:          opencode.DiscoverOpenCodePortFresh,
+		TmuxSessions:          s.hostTmuxSessions,
+		Projects:              s.hostProjects,
+		Caps:                  s.hostCaps,
+		TermWindows:           term.Windows,
+		TermCreateWindow:      term.CreateWindow,
+		TermKillWindow:        term.KillWindow,
+		TermAttach:            term.AttachLocalPTY,
 	})
 }
 

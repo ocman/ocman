@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
@@ -312,6 +313,13 @@ type Runner struct {
 	NewNamedWindow  func(sessionName, windowName, directory, command string) error
 	KillSession     func(name string) error
 	KillWindow      func(target string) error
+
+	// NewSessionEnv / NewWindowEnv mirror NewSession / NewWindow but seed
+	// the pane with the given environment (tmux `-e KEY=VAL`). Used by the
+	// one-opencode-per-project launcher to pass OPENCODE_PERMISSION at
+	// launch. Optional: only the env-aware launcher path uses them.
+	NewSessionEnv func(name, directory, command string, env map[string]string) error
+	NewWindowEnv  func(name, directory, command string, env map[string]string) error
 }
 
 var DefaultRunner = Runner{
@@ -354,6 +362,40 @@ var DefaultRunner = Runner{
 	KillWindow: func(target string) error {
 		return exec.Command("tmux", "kill-window", "-t", target).Run()
 	},
+	NewSessionEnv: func(name, directory, command string, env map[string]string) error {
+		args := []string{"new-session", "-d", "-s", name, "-c", directory}
+		args = append(args, envArgs(env)...)
+		if command != "" {
+			args = append(args, command)
+		}
+		return exec.Command("tmux", args...).Run()
+	},
+	NewWindowEnv: func(name, directory, command string, env map[string]string) error {
+		args := []string{"new-window", "-d", "-t", name, "-c", directory}
+		args = append(args, envArgs(env)...)
+		if command != "" {
+			args = append(args, command)
+		}
+		return exec.Command("tmux", args...).Run()
+	},
+}
+
+// envArgs renders an env map into tmux `-e KEY=VAL` argument pairs,
+// sorted for deterministic command construction.
+func envArgs(env map[string]string) []string {
+	if len(env) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	args := make([]string, 0, len(env)*2)
+	for _, k := range keys {
+		args = append(args, "-e", k+"="+env[k])
+	}
+	return args
 }
 
 // OpencodeCommand is the shell command tmux runs in the worktree
@@ -455,6 +497,59 @@ func LaunchOpencodeWith(r Runner, directory string, idempotent bool) (string, bo
 		}
 	}
 
+	return sessionName, true, nil
+}
+
+// LaunchOpencodeEnv finds or creates a tmux session named after directory
+// and runs `opencode --port 0` there, seeding the pane with env (e.g.
+// OPENCODE_PERMISSION). It is the env-aware, idempotent launcher used by
+// the one-opencode-per-project host primitive: when a session for the
+// directory already exists it returns launched=false and touches nothing.
+func LaunchOpencodeEnv(directory string, env map[string]string) (string, bool, error) {
+	name, launched, err := LaunchOpencodeEnvWith(DefaultRunner, directory, true, env)
+	if err == nil && launched {
+		opencode.InvalidateOpenCodePortCache()
+	}
+	return name, launched, err
+}
+
+// LaunchOpencodeEnvWith is the env-aware analogue of LaunchOpencodeWith.
+// It matches a session by resolved directory (dot/underscore skew aware),
+// short-circuits when idempotent=true and the session exists, and
+// otherwise creates the session (or opens a window in an existing one)
+// with opencode as the pane's foreground command and env seeded via
+// tmux `-e`.
+func LaunchOpencodeEnvWith(r Runner, directory string, idempotent bool, env map[string]string) (string, bool, error) {
+	sessionName := SessionNameForPath(directory)
+	if !ValidComponent.MatchString(sessionName) {
+		return "", false, fmt.Errorf("derived tmux session name %q contains invalid characters", sessionName)
+	}
+
+	sessionExists := false
+	wantPath := filepath.Clean(directory)
+	if existing, err := r.ListSessions(); err == nil {
+		for _, ts := range existing {
+			if filepath.Clean(ts.ResolvedPath) == wantPath {
+				sessionExists = true
+				sessionName = ts.Name
+				break
+			}
+		}
+	}
+
+	if idempotent && sessionExists {
+		return sessionName, false, nil
+	}
+
+	if !sessionExists {
+		if err := r.NewSessionEnv(sessionName, directory, OpencodeCommand, env); err != nil {
+			return "", false, fmt.Errorf("tmux new-session: %w", err)
+		}
+	} else {
+		if err := r.NewWindowEnv(sessionName, directory, OpencodeCommand, env); err != nil {
+			return "", false, fmt.Errorf("tmux new-window: %w", err)
+		}
+	}
 	return sessionName, true, nil
 }
 

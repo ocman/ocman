@@ -121,6 +121,23 @@ type LaunchTmuxResult struct {
 	Session string `json:"session"`
 }
 
+// EnsureProjectOpencodeRequest asks the owning host to guarantee exactly
+// one running opencode instance for the project containing ProjectDir
+// (any path inside the repo). See spec/one-opencode-per-project D-1/D-4.
+type EnsureProjectOpencodeRequest struct {
+	ProjectDir string `json:"projectDir"`
+}
+
+// EnsureProjectOpencodeResult reports the discovered/launched opencode
+// port, plus the resolved repo root and tmux session name for
+// observability.
+type EnsureProjectOpencodeResult struct {
+	Port        string `json:"port"`
+	RepoRoot    string `json:"repoRoot"`
+	TmuxSession string `json:"tmuxSession"`
+	Launched    bool   `json:"launched"`
+}
+
 // TmuxSession is one tmux session reported by TmuxSessions.
 type TmuxSession struct {
 	Name     string `json:"name"`
@@ -176,6 +193,16 @@ type Host interface {
 
 	// LaunchTmux launches opencode in a tmux session for a directory.
 	LaunchTmux(ctx context.Context, req LaunchTmuxRequest) (*LaunchTmuxResult, error)
+
+	// EnsureProjectOpencode guarantees exactly one running opencode
+	// instance for the project containing req.ProjectDir, rooted at the
+	// project's main checkout. It discovers a running instance and, if
+	// none exists, launches exactly one (seeding a scoped
+	// external_directory permission) and waits for its port. Idempotent:
+	// a second call returns the running instance and launches nothing.
+	// Returns git.ErrNotARepo when the directory is not inside a repo.
+	// Runs on the owning host (R-C).
+	EnsureProjectOpencode(ctx context.Context, req EnsureProjectOpencodeRequest) (*EnsureProjectOpencodeResult, error)
 
 	// TmuxSessions lists the host's tmux sessions.
 	TmuxSessions(ctx context.Context) ([]TmuxSession, error)
