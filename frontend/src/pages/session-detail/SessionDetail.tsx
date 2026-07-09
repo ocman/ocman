@@ -60,7 +60,7 @@ import {
   extractPendingQuestionFromParts,
   hasPendingQuestionInParts,
 } from '../../lib/sseHelpers';
-import { isSessionRelevant } from '../../lib/promptRouting';
+import { isSessionRelevant, mcpChildIdsOf } from '../../lib/promptRouting';
 import { useProjects } from '../../lib/queries';
 import { useSubagentTracking } from './useSubagentTracking';
 import { useTmuxActions } from './useTmuxActions';
@@ -568,6 +568,14 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const restHasQuestion = session?.pendingQuestion ?? false;
   useEffect(() => {
     if (!id) return;
+    // Relevance set = Task-tool subagents (from parts) ∪ ocman
+    // MCP/worktree children (from the session list's parentID overlay).
+    // The latter covers children that carry no OpenCode parent_id and
+    // are never referenced by the parent's parts (#268 regression).
+    const relevantIds = new Set(subagentSessionIdsRef.current);
+    for (const childId of mcpChildIdsOf(id, recentSessionsRef.current)) {
+      relevantIds.add(childId);
+    }
     if ((restHasPerm || sidebarHasPerm) && pendingPermission === null) {
       listPermissions(id)
         .then((perms) => {
@@ -576,7 +584,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
             const perm = extractPendingPermission({ type: 'permission.asked', properties: p });
             if (!perm) continue;
             const promptSid = typeof p.sessionID === 'string' ? p.sessionID : '';
-            if (!isSessionRelevant(promptSid, id, subagentSessionIdsRef.current)) continue;
+            if (!isSessionRelevant(promptSid, id, relevantIds)) continue;
             setPendingPermission(perm);
             setPermissionError(null);
             break;
@@ -592,7 +600,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
             const question = extractPendingQuestion({ type: 'question.asked', properties: q });
             if (!question) continue;
             const questionSid = typeof q.sessionID === 'string' ? q.sessionID : '';
-            if (!isSessionRelevant(questionSid, id, subagentSessionIdsRef.current)) continue;
+            if (!isSessionRelevant(questionSid, id, relevantIds)) continue;
             storePendingQuestion(id, question);
             setPendingQuestion(question);
             break;
@@ -603,7 +611,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   }, [id, restHasPerm, restHasQuestion, sidebarHasPerm, sidebarHasQuestion,
     pendingPermission, pendingQuestion,
     listPermissions, listQuestions, setPermissionError, setPendingPermission,
-    setPendingQuestion, subagentSessionIdsRef]);
+    setPendingQuestion, subagentSessionIdsRef, recentSessionsRef]);
 
   // Poll-driven dismissal fallback. When a question is answered
   // outside ocman (e.g. directly in the OpenCode CLI), OpenCode does

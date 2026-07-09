@@ -49,6 +49,11 @@ type Adapter struct {
 	db        *db.DB
 	favorites FavoritesReader
 	pricing   CostCalculator
+	// childLinks reads ocman's own MCP/worktree child->parent links
+	// from state.db so pending prompts from those children bubble to
+	// their parent (OpenCode never records a parent_id for them). Nil
+	// when the favorites reader isn't a full state.db (tests).
+	childLinks mcpParentLookup
 }
 
 // New returns a new OpenCode adapter backed by the given read-only DB.
@@ -60,7 +65,7 @@ type Adapter struct {
 // the legacy two-arg shape for tests and call sites that don't need
 // calculated cost.
 func New(database *db.DB, favorites FavoritesReader) *Adapter {
-	return &Adapter{db: database, favorites: favorites}
+	return &Adapter{db: database, favorites: favorites, childLinks: childLinksFrom(favorites)}
 }
 
 // NewWithPricing is like New but also wires in a pricing table used to
@@ -68,7 +73,18 @@ func New(database *db.DB, favorites FavoritesReader) *Adapter {
 // zero (typical of subscription-plan sessions: the API was hit but the
 // message metadata records cost=0).
 func NewWithPricing(database *db.DB, favorites FavoritesReader, pricing CostCalculator) *Adapter {
-	return &Adapter{db: database, favorites: favorites, pricing: pricing}
+	return &Adapter{db: database, favorites: favorites, pricing: pricing, childLinks: childLinksFrom(favorites)}
+}
+
+// childLinksFrom returns favorites as an mcpParentLookup when it also
+// exposes ocman's child_sessions links (the production *state.DB does).
+// Returns nil for a bare favorites stub so the bubble helper skips the
+// MCP fallback cleanly.
+func childLinksFrom(favorites FavoritesReader) mcpParentLookup {
+	if l, ok := favorites.(mcpParentLookup); ok {
+		return l
+	}
+	return nil
 }
 
 // ID returns the OpenCode platform identifier.
@@ -146,8 +162,8 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 	// subagent to its parent and apply the flag there. Parent prompts
 	// pass through unchanged (their id maps to themselves).
 	bubblePhase := srvtiming.Begin(ctx, "bubble_parents")
-	pendingPerms = bubbleUpPromptsToParent(pendingPerms, a.db)
-	pendingQuestions = bubbleUpPromptsToParent(pendingQuestions, a.db)
+	pendingPerms = bubbleUpPromptsToParent(pendingPerms, a.db, a.childLinks)
+	pendingQuestions = bubbleUpPromptsToParent(pendingQuestions, a.db, a.childLinks)
 	bubblePhase.End()
 
 	for i := range sessions {
@@ -166,27 +182,53 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 }
 
 // bubbleUpPromptsToParent rewrites every key in `prompted` that is the
-// ID of a subagent session to its parent session ID. Keys that already
+// ID of a child session to its parent session ID. Keys that already
 // refer to a top-level session pass through unchanged. A nil/empty
 // input returns an empty map.
 //
-// This is what makes a subagent's permission/question prompt visible
-// on the parent session row in the listing — without it, the prompt
-// would target a session ID that the listing never includes (subagent
-// sessions are filtered out).
-func bubbleUpPromptsToParent(prompted map[string]bool, dbConn parentLookup) map[string]bool {
+// Two kinds of child are resolved:
+//   - OpenCode Task subagents, via OpenCode's own session.parent_id
+//     (read from the read-only OpenCode DB through `dbConn`).
+//   - ocman MCP/worktree children, via ocman's own child_sessions
+//     links (read from state.db through `mcpConn`). These have NO
+//     OpenCode parent_id — since #268 they run on the shared project
+//     instance in a worktree directory — so without this fallback their
+//     pending-prompt flag maps to a session ID the directory-scoped
+//     listing never contains and is silently dropped.
+//
+// This is what makes a child's permission/question prompt visible on
+// the parent session row in the listing. OpenCode's parent_id wins when
+// both lookups know a child (they point at the same parent in practice).
+func bubbleUpPromptsToParent(prompted map[string]bool, dbConn parentLookup, mcpConn mcpParentLookup) map[string]bool {
 	if len(prompted) == 0 {
-		return prompted
-	}
-	if dbConn == nil {
 		return prompted
 	}
 	ids := make([]string, 0, len(prompted))
 	for id := range prompted {
 		ids = append(ids, id)
 	}
-	parents, err := dbConn.GetSessionParentIDs(ids)
-	if err != nil || len(parents) == 0 {
+
+	parents := map[string]string{}
+	if dbConn != nil {
+		if p, err := dbConn.GetSessionParentIDs(ids); err == nil {
+			parents = p
+		}
+	}
+	// Fill any gaps with ocman's own MCP/worktree child links.
+	if mcpConn != nil {
+		if mcpParents, err := mcpConn.ChildSessionParents(); err == nil {
+			for _, id := range ids {
+				if _, ok := parents[id]; ok {
+					continue // OpenCode parent_id wins
+				}
+				if parent, ok := mcpParents[state.Key{Platform: string(PlatformID), SessionID: id}]; ok && parent != "" {
+					parents[id] = parent
+				}
+			}
+		}
+	}
+
+	if len(parents) == 0 {
 		return prompted
 	}
 	out := make(map[string]bool, len(prompted))
@@ -205,6 +247,14 @@ func bubbleUpPromptsToParent(prompted map[string]bool, dbConn parentLookup) map[
 // without spinning up a SQLite database.
 type parentLookup interface {
 	GetSessionParentIDs(childIDs []string) (map[string]string, error)
+}
+
+// mcpParentLookup is the subset of *state.DB that resolves ocman's own
+// MCP/worktree child->parent links. Defined as an interface so the
+// bubble helper stays unit-testable and so a nil state.db (tests, or an
+// adapter constructed without one) degrades gracefully.
+type mcpParentLookup interface {
+	ChildSessionParents() (map[state.Key]string, error)
 }
 
 // Owns reports whether this OpenCode session ID exists in the local

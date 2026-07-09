@@ -3,6 +3,8 @@ package opencode
 import (
 	"context"
 	"testing"
+
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 func TestAdapter_ID(t *testing.T) {
@@ -76,16 +78,37 @@ func (s stubParentLookup) GetSessionParentIDs(ids []string) (map[string]string, 
 	return out, nil
 }
 
+// stubMCPParentLookup is an mcpParentLookup backed by a static
+// childID->parentID map. It exercises the MCP-child fallback path in
+// bubbleUpPromptsToParent (children ocman spawned via MCP/worktree that
+// OpenCode's own session.parent_id never records).
+type stubMCPParentLookup struct {
+	parents map[string]string // childID -> parentID
+	err     error
+}
+
+func (s stubMCPParentLookup) ChildSessionParents() (map[state.Key]string, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	out := make(map[state.Key]string, len(s.parents))
+	for child, parent := range s.parents {
+		out[state.Key{Platform: string(PlatformID), SessionID: child}] = parent
+	}
+	return out, nil
+}
+
 // TestBubbleUpPromptsToParent verifies the per-session bubble-up: a
 // subagent's prompted ID gets remapped to the parent's ID so the
 // listing UI can flag the parent session as having a pending prompt
 // (subagent sessions are filtered out of the listing entirely).
 func TestBubbleUpPromptsToParent(t *testing.T) {
 	tests := []struct {
-		name     string
-		prompted map[string]bool
-		parents  map[string]string
-		want     map[string]bool
+		name       string
+		prompted   map[string]bool
+		parents    map[string]string // OpenCode session.parent_id
+		mcpParents map[string]string // ocman state.db child_sessions links
+		want       map[string]bool
 	}{
 		{
 			name:     "empty input passes through",
@@ -110,11 +133,32 @@ func TestBubbleUpPromptsToParent(t *testing.T) {
 			parents:  map[string]string{"child": "parent"},
 			want:     map[string]bool{"parent": true},
 		},
+		{
+			// Regression (#268): an MCP/worktree child has NO
+			// OpenCode parent_id, only an ocman child_sessions link.
+			// Its pending-prompt flag must still bubble to the parent.
+			name:       "MCP child with no OpenCode parent maps via state.db link",
+			prompted:   map[string]bool{"mcpchild": true},
+			parents:    map[string]string{},
+			mcpParents: map[string]string{"mcpchild": "parent"},
+			want:       map[string]bool{"parent": true},
+		},
+		{
+			// OpenCode's own parent_id wins when both are present, so
+			// a Task subagent that also happens to have a state.db row
+			// resolves consistently (they point at the same parent).
+			name:       "OpenCode parent_id takes precedence over MCP link",
+			prompted:   map[string]bool{"child": true},
+			parents:    map[string]string{"child": "parent"},
+			mcpParents: map[string]string{"child": "parent"},
+			want:       map[string]bool{"parent": true},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			lookup := stubParentLookup{parents: tt.parents}
-			got := bubbleUpPromptsToParent(tt.prompted, lookup)
+			mcpLookup := stubMCPParentLookup{parents: tt.mcpParents}
+			got := bubbleUpPromptsToParent(tt.prompted, lookup, mcpLookup)
 			if len(got) != len(tt.want) {
 				t.Fatalf("got %v, want %v", got, tt.want)
 			}
@@ -132,8 +176,82 @@ func TestBubbleUpPromptsToParent(t *testing.T) {
 // map untouched.
 func TestBubbleUpPromptsToParent_NilLookup(t *testing.T) {
 	prompted := map[string]bool{"s1": true}
-	got := bubbleUpPromptsToParent(prompted, nil)
+	got := bubbleUpPromptsToParent(prompted, nil, nil)
 	if len(got) != 1 || !got["s1"] {
 		t.Errorf("nil lookup should pass through unchanged, got %v", got)
+	}
+}
+
+// TestBubbleUpPromptsToParent_MCPOnly verifies the MCP fallback works
+// even when the OpenCode parent lookup is nil (e.g. an adapter with no
+// read-only OpenCode DB but a live state.db): the child_sessions link
+// alone must bubble the flag.
+func TestBubbleUpPromptsToParent_MCPOnly(t *testing.T) {
+	prompted := map[string]bool{"mcpchild": true}
+	mcpLookup := stubMCPParentLookup{parents: map[string]string{"mcpchild": "parent"}}
+	got := bubbleUpPromptsToParent(prompted, nil, mcpLookup)
+	if len(got) != 1 || !got["parent"] {
+		t.Errorf("MCP-only lookup should bubble to parent, got %v", got)
+	}
+}
+
+// TestMCPChildSessionIDs verifies the reverse lookup: given a parent
+// session ID, return the IDs of every ocman MCP/worktree child linked
+// to it in state.db. This feeds listPrompts's subagentIDs so a child's
+// permission/question prompt is recognised as relevant on the parent
+// page (the child has no OpenCode parent_id, so /children and
+// GetSubagentSessionIDs both miss it — see #268 regression).
+func TestMCPChildSessionIDs(t *testing.T) {
+	mcp := stubMCPParentLookup{parents: map[string]string{
+		"childA": "parent1",
+		"childB": "parent1",
+		"childC": "parent2",
+	}}
+	got := mcpChildSessionIDs(mcp, "parent1")
+	want := map[string]bool{"childA": true, "childB": true}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want children of parent1 only", got)
+	}
+	for _, id := range got {
+		if !want[id] {
+			t.Errorf("unexpected child %q for parent1", id)
+		}
+	}
+}
+
+// TestMCPChildSessionIDs_NilAndEmpty degrades cleanly: a nil reader or
+// an empty parent ID yields no children rather than panicking.
+func TestMCPChildSessionIDs_NilAndEmpty(t *testing.T) {
+	if got := mcpChildSessionIDs(nil, "parent1"); got != nil {
+		t.Errorf("nil reader should yield nil, got %v", got)
+	}
+	mcp := stubMCPParentLookup{parents: map[string]string{"childA": "parent1"}}
+	if got := mcpChildSessionIDs(mcp, ""); got != nil {
+		t.Errorf("empty parent should yield nil, got %v", got)
+	}
+}
+
+// favReaderOnly implements FavoritesReader but NOT mcpParentLookup, so
+// childLinksFrom must return nil for it (bare stub, e.g. tests) and the
+// stub state.DB otherwise.
+type favReaderOnly struct{}
+
+func (favReaderOnly) ModelFavorites(string) ([]state.ModelFavorite, error) { return nil, nil }
+
+// favWithLinks implements both FavoritesReader and mcpParentLookup, like
+// the production *state.DB.
+type favWithLinks struct{ favReaderOnly }
+
+func (favWithLinks) ChildSessionParents() (map[state.Key]string, error) { return nil, nil }
+
+func TestChildLinksFrom(t *testing.T) {
+	if got := childLinksFrom(nil); got != nil {
+		t.Errorf("nil favorites should yield nil childLinks, got %v", got)
+	}
+	if got := childLinksFrom(favReaderOnly{}); got != nil {
+		t.Errorf("favorites without ChildSessionParents should yield nil, got %v", got)
+	}
+	if got := childLinksFrom(favWithLinks{}); got == nil {
+		t.Errorf("favorites implementing mcpParentLookup should be returned")
 	}
 }

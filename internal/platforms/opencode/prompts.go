@@ -52,7 +52,34 @@ func (a *Adapter) listPrompts(ctx context.Context, sessionID, path string) ([]pl
 	if subagentIDs == nil && a.db != nil {
 		subagentIDs, _ = a.db.GetSubagentSessionIDs(sessionID)
 	}
+	// ocman MCP/worktree children have no OpenCode parent_id (since
+	// #268 they run on the shared project instance), so neither the
+	// /children endpoint nor GetSubagentSessionIDs finds them. Add
+	// ocman's own child_sessions links so their prompts bubble to the
+	// parent page. Additive: never drops OpenCode-known subagents.
+	subagentIDs = append(subagentIDs, mcpChildSessionIDs(a.childLinks, sessionID)...)
 	return filterPromptsForSession(raw, sessionID, subagentIDs), nil
+}
+
+// mcpChildSessionIDs returns the IDs of every ocman MCP/worktree child
+// session linked to parentID in state.db. Returns nil for a nil reader,
+// an empty parentID, or a read error — the result is best-effort UI
+// plumbing, never a hard dependency.
+func mcpChildSessionIDs(mcpConn mcpParentLookup, parentID string) []string {
+	if mcpConn == nil || parentID == "" {
+		return nil
+	}
+	links, err := mcpConn.ChildSessionParents()
+	if err != nil || len(links) == 0 {
+		return nil
+	}
+	var out []string
+	for key, parent := range links {
+		if parent == parentID {
+			out = append(out, key.SessionID)
+		}
+	}
+	return out
 }
 
 // fetchSubagentSessionIDs calls GET /session/:id/children on the
