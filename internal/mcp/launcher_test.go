@@ -174,6 +174,34 @@ func TestLaunch_ThreadsAgentReasoningAndPermissions(t *testing.T) {
 	}
 }
 
+// TestLaunch_PermissionError_DoesNotFail confirms a SetPermissionRules
+// failure doesn't strand the created session — Launch still succeeds and
+// the prompt is still sent.
+func TestLaunch_PermissionError_DoesNotFail(t *testing.T) {
+	db := openTestStateDB(t)
+	platform := &fakePlatformAdapter{
+		createSessionID: "child-permfail",
+		permErr:         errors.New("upstream rejected rules"),
+	}
+	launcher := NewSessionLauncher(db, platform, noopWorktreeCreator, noopEnsurer)
+
+	id, err := launcher.Launch(context.Background(), LaunchRequest{
+		Platform:        "opencode",
+		Directory:       "/repo",
+		ComposedPrompt:  "go",
+		PermissionRules: []platforms.PermissionRule{{Permission: "edit", Pattern: "**", Action: "deny"}},
+	})
+	if err != nil {
+		t.Fatalf("Launch should succeed despite permission failure: %v", err)
+	}
+	if id != "child-permfail" {
+		t.Fatalf("session id = %q; want child-permfail", id)
+	}
+	if len(platform.sentMessages) != 1 {
+		t.Errorf("expected prompt still sent, got %d messages", len(platform.sentMessages))
+	}
+}
+
 // TestLaunch_NoPermissionRules_SkipsSetPermission confirms the post-create
 // permission call is only made when rules are provided.
 func TestLaunch_NoPermissionRules_SkipsSetPermission(t *testing.T) {

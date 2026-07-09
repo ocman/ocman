@@ -767,6 +767,26 @@ func TestEvaluateOne_ScheduleFiresAndAdvances(t *testing.T) {
 	}
 }
 
+func TestLoopPermissionRules(t *testing.T) {
+	cases := []struct {
+		name  string
+		raw   string
+		count int
+	}{
+		{"empty", "", 0},
+		{"valid", `[{"permission":"edit","pattern":"**","action":"deny"}]`, 1},
+		{"invalid", `{not json`, 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := loopPermissionRules(state.Loop{PermissionRules: c.raw})
+			if len(got) != c.count {
+				t.Fatalf("got %d rules, want %d", len(got), c.count)
+			}
+		})
+	}
+}
+
 func TestEvaluateOne_ThreadsAgentReasoningAndPermissions(t *testing.T) {
 	store := newMemStore()
 	launcher := &fakeLauncher{}

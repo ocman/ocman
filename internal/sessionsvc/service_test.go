@@ -377,8 +377,17 @@ func TestClientBindsPlatform(t *testing.T) {
 	if err := client.SendMessage(ctx, platforms.SendMessageRequest{SessionID: "new-session", Message: "go"}); err != nil {
 		t.Fatalf("SendMessage: %v", err)
 	}
-	if len(p.creates) != 1 || len(p.sent) != 1 {
+	if err := client.SetPermissionRules(ctx, platforms.SetPermissionRulesRequest{
+		SessionID: "new-session",
+		Rules:     []platforms.PermissionRule{{Permission: "edit", Pattern: "**", Action: "deny"}},
+	}); err != nil {
+		t.Fatalf("SetPermissionRules: %v", err)
+	}
+	if len(p.creates) != 1 || len(p.sent) != 1 || len(p.rules) != 1 {
 		t.Fatal("expected client calls to reach the bound adapter")
+	}
+	if p.rules[0].SessionID != "new-session" || len(p.rules[0].Rules) != 1 {
+		t.Fatalf("permission rules not forwarded through client: %+v", p.rules)
 	}
 
 	// Unknown bound platform surfaces as an error, not a panic.
@@ -388,5 +397,8 @@ func TestClientBindsPlatform(t *testing.T) {
 	}
 	if err := ghost.SendMessage(ctx, platforms.SendMessageRequest{SessionID: "x", Message: "hi"}); !errors.Is(err, platforms.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+	if err := ghost.SetPermissionRules(ctx, platforms.SetPermissionRulesRequest{SessionID: "x"}); !errors.Is(err, platforms.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound from SetPermissionRules, got %v", err)
 	}
 }
