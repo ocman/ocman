@@ -122,6 +122,11 @@ type SetPermissionRulesRequest struct {
 type CreateSessionRequest struct {
 	Directory string
 	Title     string // Optional custom title for the new session
+	// Port is an optional already-known OpenCode port. When set, the
+	// adapter skips port discovery (no lsof scan) and creates the
+	// session on this instance — used for worktree sessions rooted at
+	// a directory other than the process launch cwd.
+	Port string `json:"port,omitempty"`
 }
 
 // CreateSessionResponse is the minimal payload returned after creating

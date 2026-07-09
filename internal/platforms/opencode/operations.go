@@ -515,16 +515,22 @@ func (a *Adapter) Compact(ctx context.Context, req platforms.CompactRequest) err
 // CreateSession creates a new OpenCode session bound to the given
 // directory. Returns the new session ID.
 func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
-	// Fast path: reuse the cached port map when opencode is already
-	// running (the common case). Only fall back to a fresh uncached
-	// lsof scan on a miss — that scan is multi-hundred-ms on macOS and
-	// exists to catch a just-launched process the cache hasn't seen yet.
-	portPhase := srvtiming.Begin(ctx, "lsof_fresh")
-	port := discoverOpenCodePort(req.Directory)
+	// When the caller already knows the instance's port (e.g. a
+	// worktree session created on the project's single instance),
+	// skip discovery entirely — no lsof scan.
+	port := req.Port
 	if port == "" {
-		port = discoverOpenCodePortFresh(req.Directory)
+		// Fast path: reuse the cached port map when opencode is already
+		// running (the common case). Only fall back to a fresh uncached
+		// lsof scan on a miss — that scan is multi-hundred-ms on macOS and
+		// exists to catch a just-launched process the cache hasn't seen yet.
+		portPhase := srvtiming.Begin(ctx, "lsof_fresh")
+		port = discoverOpenCodePort(req.Directory)
+		if port == "" {
+			port = discoverOpenCodePortFresh(req.Directory)
+		}
+		portPhase.EndWithDesc("port discovery (cached, fresh on miss)")
 	}
-	portPhase.EndWithDesc("port discovery (cached, fresh on miss)")
 	if port == "" {
 		// Log the requested dir (raw + normalized) against every
 		// discovered opencode cwd so a path mismatch (symlinks, remote
@@ -544,6 +550,13 @@ func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSession
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	// Root the new session at the requested directory. OpenCode honors
+	// a per-session directory via the x-opencode-directory header, so a
+	// single instance can create a session rooted at an external dir
+	// (a worktree) different from the process launch cwd.
+	if req.Directory != "" {
+		httpReq.Header.Set("x-opencode-directory", req.Directory)
+	}
 	resp, err := openCodeClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("opencode create-session: %w", err)

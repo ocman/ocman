@@ -413,6 +413,100 @@ func TestCreateSession_CachedPortSkipsFreshScan(t *testing.T) {
 	}
 }
 
+// TestCreateSession_SendsDirectory proves the directory-sending branch:
+// CreateSession must forward req.Directory to OpenCode on POST /session
+// (via the x-opencode-directory header) so a session can be rooted at a
+// directory other than the process launch cwd.
+func TestCreateSession_SendsDirectory(t *testing.T) {
+	const sid = "sess-with-dir"
+	const dir = "/private/tmp/external-worktree"
+
+	var gotDir string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/session" {
+			gotDir = r.Header.Get("x-opencode-directory")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"` + sid + `"}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+	restore := setDiscoverPortsImplForTests(func() map[string]string {
+		return map[string]string{dir: port}
+	})
+	defer restore()
+	resetPortCacheForTests()
+	resetSessionPortAffinityForTests()
+	defer resetSessionPortAffinityForTests()
+
+	a := New(nil, nil)
+	resp, err := a.CreateSession(context.Background(), platforms.CreateSessionRequest{Directory: dir})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	if resp.ID != sid {
+		t.Fatalf("CreateSession ID = %q, want %q", resp.ID, sid)
+	}
+	if gotDir != dir {
+		t.Fatalf("x-opencode-directory = %q, want %q", gotDir, dir)
+	}
+}
+
+// TestCreateSession_ProvidedPortSkipsScan proves the provided-port
+// branch: when req.Port is set, CreateSession creates the session on
+// that instance without triggering any lsof scan.
+func TestCreateSession_ProvidedPortSkipsScan(t *testing.T) {
+	const sid = "sess-provided-port"
+	const dir = "/private/tmp/provided-port-worktree"
+
+	var gotDir string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/session" {
+			gotDir = r.Header.Get("x-opencode-directory")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"` + sid + `"}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+	var scans int
+	restore := setDiscoverPortsImplForTests(func() map[string]string {
+		scans++
+		return map[string]string{}
+	})
+	defer restore()
+	resetPortCacheForTests()
+	resetSessionPortAffinityForTests()
+	defer resetSessionPortAffinityForTests()
+
+	a := New(nil, nil)
+	resp, err := a.CreateSession(context.Background(), platforms.CreateSessionRequest{
+		Directory: dir,
+		Port:      port,
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	if resp.ID != sid {
+		t.Fatalf("CreateSession ID = %q, want %q", resp.ID, sid)
+	}
+	if scans != 0 {
+		t.Fatalf("scans = %d, want 0 (provided port must skip discovery)", scans)
+	}
+	if gotDir != dir {
+		t.Fatalf("x-opencode-directory = %q, want %q", gotDir, dir)
+	}
+	if got := preferredSessionPort(sid); got != port {
+		t.Fatalf("preferredSessionPort = %q, want %q", got, port)
+	}
+}
+
 func TestParseOpenCodeModelRef(t *testing.T) {
 	tests := []struct {
 		name         string
