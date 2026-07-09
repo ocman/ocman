@@ -125,6 +125,9 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/settings/prompt-templates", s.requireAuth(s.handlePromptTemplates))
 	// Master toggle for public session sharing (on by default).
 	mux.HandleFunc("/api/settings/sharing", s.requireAuth(s.handleSharingSetting))
+	// Toggle for worktree sessions inheriting the parent's always-allow
+	// permissions at split time (issue #101; on by default).
+	mux.HandleFunc("/api/settings/worktree-inherit-permissions", s.requireAuth(s.handleWorktreeInheritPermissions))
 	// Global list of active share links, for inspect/revoke in Settings.
 	mux.HandleFunc("/api/shares", s.requireAuth(s.get(s.handleAllShares)))
 	// Remote-access surface for multi-remote support: this instance's

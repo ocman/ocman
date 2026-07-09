@@ -930,3 +930,43 @@ func TestSetting_KeysAreIndependent(t *testing.T) {
 		t.Errorf("expected (alpha, beta), got (%q, %q)", a, b)
 	}
 }
+
+func TestWorktreeInheritPermissions_DefaultsOn(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+
+	on, err := db.GetWorktreeInheritPermissions()
+	if err != nil {
+		t.Fatalf("GetWorktreeInheritPermissions: %v", err)
+	}
+	if !on {
+		t.Error("expected default true when setting is absent")
+	}
+}
+
+func TestWorktreeInheritPermissions_SetThenGet(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+
+	if err := db.SetWorktreeInheritPermissions(false); err != nil {
+		t.Fatalf("SetWorktreeInheritPermissions(false): %v", err)
+	}
+	on, err := db.GetWorktreeInheritPermissions()
+	if err != nil {
+		t.Fatalf("GetWorktreeInheritPermissions: %v", err)
+	}
+	if on {
+		t.Error("expected false after disabling")
+	}
+
+	if err := db.SetWorktreeInheritPermissions(true); err != nil {
+		t.Fatalf("SetWorktreeInheritPermissions(true): %v", err)
+	}
+	on, err = db.GetWorktreeInheritPermissions()
+	if err != nil {
+		t.Fatalf("GetWorktreeInheritPermissions: %v", err)
+	}
+	if !on {
+		t.Error("expected true after re-enabling")
+	}
+}

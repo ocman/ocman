@@ -21,6 +21,35 @@ func (d *DB) GetSetting(key string) (value string, ok bool, err error) {
 	return value, true, nil
 }
 
+// settingWorktreeInheritPermissions is the KV key controlling whether a
+// worktree/child session inherits the parent's accumulated always-allow
+// permissions at split time (issue #101). Values "1" / "0"; default on.
+const settingWorktreeInheritPermissions = "worktree.inherit_permissions"
+
+// GetWorktreeInheritPermissions reports whether worktree sessions
+// inherit the parent's approved permissions. Defaults to true when the
+// setting has never been written.
+func (d *DB) GetWorktreeInheritPermissions() (bool, error) {
+	val, ok, err := d.GetSetting(settingWorktreeInheritPermissions)
+	if err != nil {
+		return true, err
+	}
+	if !ok {
+		return true, nil
+	}
+	return val != "0", nil
+}
+
+// SetWorktreeInheritPermissions persists the worktree-inherit-permissions
+// toggle as "1" / "0".
+func (d *DB) SetWorktreeInheritPermissions(enabled bool) error {
+	val := "0"
+	if enabled {
+		val = "1"
+	}
+	return d.SetSetting(settingWorktreeInheritPermissions, val)
+}
+
 // SetSetting inserts or updates the value for the given key. Empty
 // string values are valid and persist (they are distinguishable from
 // "not set" via GetSetting's ok return).

@@ -208,3 +208,38 @@ func (s *Server) handleSetJudgeModel(w http.ResponseWriter, r *http.Request) {
 	s.aaSvc().ReloadJudgeModel()
 	writeJSON(w, map[string]string{"model": body.Model})
 }
+
+// handleWorktreeInheritPermissions handles GET and POST
+// /api/settings/worktree-inherit-permissions (issue #101).
+//
+// GET  → {"enabled": bool}. Defaults to enabled when unset.
+// POST → accepts {"enabled": bool}, persists, returns the new state.
+func (s *Server) handleWorktreeInheritPermissions(w http.ResponseWriter, r *http.Request) {
+	if s.stateDB == nil {
+		http.Error(w, "state database not available", http.StatusServiceUnavailable)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		on, err := s.stateDB.GetWorktreeInheritPermissions()
+		if err != nil {
+			serverError(w, "reading worktree inherit-permissions setting", err)
+			return
+		}
+		writeJSON(w, map[string]bool{"enabled": on})
+	case http.MethodPost:
+		var body struct {
+			Enabled bool `json:"enabled"`
+		}
+		if !readAndUnmarshal(w, r, maxRequestBody, &body) {
+			return
+		}
+		if err := s.stateDB.SetWorktreeInheritPermissions(body.Enabled); err != nil {
+			serverError(w, "saving worktree inherit-permissions setting", err)
+			return
+		}
+		writeJSON(w, map[string]bool{"enabled": body.Enabled})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
