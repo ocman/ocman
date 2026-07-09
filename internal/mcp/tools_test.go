@@ -17,6 +17,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/git"
+	"github.com/NoUseFreak/ocman/internal/gitexec"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -596,6 +597,9 @@ func TestNewSession_WorktreeCreatesWithModel(t *testing.T) {
 	} {
 		cmd := exec.Command("git", args...)
 		cmd.Dir = repoDir
+		// Strip GIT_DIR / GIT_INDEX_FILE etc. so this git init operates
+		// on repoDir, not the ambient repo when run inside a git hook.
+		cmd.Env = gitexec.CleanEnv()
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
