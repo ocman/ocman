@@ -28,6 +28,19 @@ type LaunchRequest struct {
 	ComposedPrompt string
 	// Model is the optional platform model reference used for the first message.
 	Model string
+	// Agent is the composer-level role for the first message (OpenCode:
+	// "build", "plan", subagent name). Empty = platform default.
+	Agent string
+	// Reasoning is the model variant / thinking-budget for the first
+	// message (e.g. "high", "max", "low"). Empty = platform default.
+	Reasoning string
+	// PermissionRules, when non-empty, replaces the child session's
+	// permission ruleset immediately after creation.
+	//
+	// ponytail: no child<=parent subset check — the localhost caller
+	// already controls the parent; correct glob/order-aware subset logic
+	// lives in OpenCode, not here. Rules replace the ruleset outright.
+	PermissionRules []platforms.PermissionRule
 	// WorktreePath is the on-disk worktree path (empty for same-directory sessions).
 	WorktreePath string
 	// Branch is the git branch for the worktree (empty for same-directory sessions).
@@ -54,6 +67,7 @@ type childSessionStore interface {
 type SessionClient interface {
 	CreateSession(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error)
 	SendMessage(ctx context.Context, req platforms.SendMessageRequest) error
+	SetPermissionRules(ctx context.Context, req platforms.SetPermissionRulesRequest) error
 }
 
 // platformAdapter is the internal alias used within the package.
@@ -153,12 +167,29 @@ func (l *SessionLauncher) launchWithPort(ctx context.Context, req LaunchRequest,
 	}
 	childID := resp.ID
 
+	// Apply the requested permission ruleset before the first message so
+	// it runs under those rules. Best-effort: the session exists; a
+	// permission-set failure shouldn't strand it.
+	if len(req.PermissionRules) > 0 {
+		if err := l.platform.SetPermissionRules(ctx, platforms.SetPermissionRulesRequest{
+			SessionID: childID,
+			Rules:     req.PermissionRules,
+		}); err != nil {
+			log.WithFields(log.Fields{
+				"childSessionID": childID,
+				"error":          err,
+			}).Warn("mcp: failed to set permission rules on child session")
+		}
+	}
+
 	// Send the composed prompt as the first message.
 	if req.ComposedPrompt != "" {
 		if err := l.platform.SendMessage(ctx, platforms.SendMessageRequest{
 			SessionID: childID,
 			Message:   req.ComposedPrompt,
 			Model:     req.Model,
+			Agent:     req.Agent,
+			Reasoning: req.Reasoning,
 		}); err != nil {
 			// Log but don't fail: the session was created; the user can
 			// still interact with it manually.

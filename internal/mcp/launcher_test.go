@@ -35,6 +35,13 @@ type fakePlatformAdapter struct {
 	sendMessageErr   error
 	sentMessages     []platforms.SendMessageRequest
 	createReq        platforms.CreateSessionRequest
+	permReqs         []platforms.SetPermissionRulesRequest
+	permErr          error
+}
+
+func (f *fakePlatformAdapter) SetPermissionRules(_ context.Context, req platforms.SetPermissionRulesRequest) error {
+	f.permReqs = append(f.permReqs, req)
+	return f.permErr
 }
 
 func (f *fakePlatformAdapter) CreateSession(_ context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
@@ -117,6 +124,71 @@ func TestLaunch_CreatesSessionAndSendsPrompt(t *testing.T) {
 	}
 	if cs.Intent != "fix lint" {
 		t.Errorf("Intent: got %q, want fix lint", cs.Intent)
+	}
+}
+
+func TestLaunch_ThreadsAgentReasoningAndPermissions(t *testing.T) {
+	db := openTestStateDB(t)
+	platform := &fakePlatformAdapter{createSessionID: "child-set"}
+
+	launcher := NewSessionLauncher(db, platform, noopWorktreeCreator, noopEnsurer)
+
+	rules := []platforms.PermissionRule{
+		{Permission: "edit", Pattern: "**", Action: "deny"},
+	}
+	_, err := launcher.Launch(context.Background(), LaunchRequest{
+		ParentSessionID: "parent-1",
+		Platform:        "opencode",
+		Directory:       "/repo",
+		Intent:          "plan work",
+		ComposedPrompt:  "## Task\nplan\n",
+		Model:           "anthropic/claude-opus-4-8",
+		Agent:           "plan",
+		Reasoning:       "high",
+		PermissionRules: rules,
+	})
+	if err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+
+	if len(platform.sentMessages) != 1 {
+		t.Fatalf("expected 1 sent message, got %d", len(platform.sentMessages))
+	}
+	msg := platform.sentMessages[0]
+	if msg.Agent != "plan" {
+		t.Errorf("Agent: got %q, want plan", msg.Agent)
+	}
+	if msg.Reasoning != "high" {
+		t.Errorf("Reasoning: got %q, want high", msg.Reasoning)
+	}
+
+	if len(platform.permReqs) != 1 {
+		t.Fatalf("expected 1 SetPermissionRules call, got %d", len(platform.permReqs))
+	}
+	pr := platform.permReqs[0]
+	if pr.SessionID != "child-set" {
+		t.Errorf("permission set on wrong session: %q", pr.SessionID)
+	}
+	if len(pr.Rules) != 1 || pr.Rules[0].Permission != "edit" || pr.Rules[0].Action != "deny" {
+		t.Errorf("unexpected permission rules: %+v", pr.Rules)
+	}
+}
+
+// TestLaunch_NoPermissionRules_SkipsSetPermission confirms the post-create
+// permission call is only made when rules are provided.
+func TestLaunch_NoPermissionRules_SkipsSetPermission(t *testing.T) {
+	db := openTestStateDB(t)
+	platform := &fakePlatformAdapter{createSessionID: "child-noperm"}
+	launcher := NewSessionLauncher(db, platform, noopWorktreeCreator, noopEnsurer)
+
+	if _, err := launcher.Launch(context.Background(), LaunchRequest{
+		Platform:  "opencode",
+		Directory: "/repo",
+	}); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	if len(platform.permReqs) != 0 {
+		t.Errorf("expected no SetPermissionRules calls, got %d", len(platform.permReqs))
 	}
 }
 

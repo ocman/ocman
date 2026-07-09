@@ -80,10 +80,10 @@ func TestInflightSet_GuardsReentry(t *testing.T) {
 }
 
 // messengerFunc adapts a func to loops.Messenger.
-type messengerFunc func(ctx context.Context, sessionID, prompt, model string) error
+type messengerFunc func(ctx context.Context, sessionID, prompt, model, agent, reasoning string) error
 
-func (f messengerFunc) SendPrompt(ctx context.Context, sessionID, prompt, model string) error {
-	return f(ctx, sessionID, prompt, model)
+func (f messengerFunc) SendPrompt(ctx context.Context, sessionID, prompt, model, agent, reasoning string) error {
+	return f(ctx, sessionID, prompt, model, agent, reasoning)
 }
 
 // launcherFunc adapts a func to loops.Launcher.

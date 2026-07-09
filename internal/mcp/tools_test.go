@@ -109,9 +109,15 @@ type fakePlatformForTools struct {
 	createSessionErr error
 	sendMessageErr   error
 	sentMessages     []platforms.SendMessageRequest
+	permReqs         []platforms.SetPermissionRulesRequest
 }
 
 func (f *fakePlatformForTools) ID() platforms.ID { return "opencode" }
+
+func (f *fakePlatformForTools) SetPermissionRules(_ context.Context, req platforms.SetPermissionRulesRequest) error {
+	f.permReqs = append(f.permReqs, req)
+	return nil
+}
 
 func (f *fakePlatformForTools) CreateSession(_ context.Context, _ platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 	if f.createSessionErr != nil {
@@ -566,6 +572,45 @@ func TestNewSession_PassesModelAndUsesParentDir(t *testing.T) {
 	}
 	if cs.WorktreePath != "" {
 		t.Fatalf("expected no worktree for default new_session, got %q", cs.WorktreePath)
+	}
+}
+
+func TestNewSession_PassesAgentReasoningAndPermissions(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	ocDB := openTestOpenCodeDB(t, []db.Session{
+		{ID: "parent-set", Title: "parent", Directory: "/repo", TimeCreated: 1000, TimeUpdated: 2000},
+	})
+	platform := &fakePlatformForTools{createSessionID: "child-set"}
+	srv := buildTestMCPServerWithOpenCodeDB(t, stateDB, platform, ocDB)
+
+	result := callTool(t, srv, "new_session", map[string]interface{}{
+		"session_id": "parent-set",
+		"intent":     "plan work",
+		"agent":      "plan",
+		"reasoning":  "high",
+		"permission": []interface{}{
+			map[string]interface{}{"permission": "edit", "pattern": "**", "action": "deny"},
+		},
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", resultText(result))
+	}
+	if len(platform.sentMessages) != 1 {
+		t.Fatalf("expected one sent message, got %d", len(platform.sentMessages))
+	}
+	msg := platform.sentMessages[0]
+	if msg.Agent != "plan" {
+		t.Errorf("agent not forwarded, got %q", msg.Agent)
+	}
+	if msg.Reasoning != "high" {
+		t.Errorf("reasoning not forwarded, got %q", msg.Reasoning)
+	}
+	if len(platform.permReqs) != 1 {
+		t.Fatalf("expected one SetPermissionRules call, got %d", len(platform.permReqs))
+	}
+	rules := platform.permReqs[0].Rules
+	if len(rules) != 1 || rules[0].Permission != "edit" || rules[0].Action != "deny" || rules[0].Pattern != "**" {
+		t.Errorf("unexpected permission rules: %+v", rules)
 	}
 }
 

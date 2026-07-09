@@ -35,7 +35,9 @@ func buildLoopMCPServer(t *testing.T, stateDB *state.DB) *mcptest.Server {
 
 type noopMessenger struct{}
 
-func (noopMessenger) SendPrompt(context.Context, string, string, string) error { return nil }
+func (noopMessenger) SendPrompt(context.Context, string, string, string, string, string) error {
+	return nil
+}
 
 func TestCreateLoopTool(t *testing.T) {
 	stateDB := openTestStateDB(t)

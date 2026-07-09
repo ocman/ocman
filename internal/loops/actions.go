@@ -2,11 +2,26 @@ package loops
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
+
+// loopPermissionRules decodes a loop's stored permission-rules JSON.
+// Empty/invalid yields nil (no rules).
+func loopPermissionRules(l state.Loop) []platforms.PermissionRule {
+	if l.PermissionRules == "" {
+		return nil
+	}
+	var rules []platforms.PermissionRule
+	if err := json.Unmarshal([]byte(l.PermissionRules), &rules); err != nil {
+		return nil
+	}
+	return rules
+}
 
 // dispatchResult reports what an action produced for the iteration record
 // and the loop's counters.
@@ -86,7 +101,7 @@ func (s *Service) performAction(ctx context.Context, l state.Loop, tc TriggerCon
 		if s.messenger == nil {
 			return dispatchResult{}, fmt.Errorf("no messenger configured")
 		}
-		if err := s.messenger.SendPrompt(ctx, target, prompt, l.Model); err != nil {
+		if err := s.messenger.SendPrompt(ctx, target, prompt, l.Model, l.Agent, l.Reasoning); err != nil {
 			return dispatchResult{}, err
 		}
 		return dispatchResult{TargetSessionID: target, Summary: "prompted child session"}, nil
@@ -96,14 +111,17 @@ func (s *Service) performAction(ctx context.Context, l state.Loop, tc TriggerCon
 			return dispatchResult{}, fmt.Errorf("no launcher configured")
 		}
 		childID, err := s.launcher.Spawn(ctx, SpawnRequest{
-			LoopID:        l.ID,
-			Platform:      l.Platform,
-			ParentSession: l.RootSessionID,
-			Directory:     l.Directory,
-			Intent:        l.CurrentTask,
-			Prompt:        prompt,
-			Model:         l.Model,
-			Worktree:      l.ActionType == ActionSpawnWorktree,
+			LoopID:          l.ID,
+			Platform:        l.Platform,
+			ParentSession:   l.RootSessionID,
+			Directory:       l.Directory,
+			Intent:          l.CurrentTask,
+			Prompt:          prompt,
+			Model:           l.Model,
+			Agent:           l.Agent,
+			Reasoning:       l.Reasoning,
+			PermissionRules: loopPermissionRules(l),
+			Worktree:        l.ActionType == ActionSpawnWorktree,
 		})
 		if err != nil {
 			return dispatchResult{}, err
@@ -133,7 +151,7 @@ func (s *Service) promptLoopSession(ctx context.Context, l state.Loop, prompt st
 		if s.messenger == nil {
 			return dispatchResult{}, fmt.Errorf("no messenger configured")
 		}
-		if err := s.messenger.SendPrompt(ctx, l.LoopSessionID, prompt, l.Model); err != nil {
+		if err := s.messenger.SendPrompt(ctx, l.LoopSessionID, prompt, l.Model, l.Agent, l.Reasoning); err != nil {
 			return dispatchResult{}, err
 		}
 		return dispatchResult{
@@ -148,14 +166,17 @@ func (s *Service) promptLoopSession(ctx context.Context, l state.Loop, prompt st
 		return dispatchResult{}, fmt.Errorf("no launcher configured")
 	}
 	sessionID, err := s.launcher.Spawn(ctx, SpawnRequest{
-		LoopID:        l.ID,
-		Platform:      l.Platform,
-		ParentSession: l.RootSessionID,
-		Directory:     l.Directory,
-		Intent:        loopLabel(l),
-		Prompt:        prompt,
-		Model:         l.Model,
-		Worktree:      false,
+		LoopID:          l.ID,
+		Platform:        l.Platform,
+		ParentSession:   l.RootSessionID,
+		Directory:       l.Directory,
+		Intent:          loopLabel(l),
+		Prompt:          prompt,
+		Model:           l.Model,
+		Agent:           l.Agent,
+		Reasoning:       l.Reasoning,
+		PermissionRules: loopPermissionRules(l),
+		Worktree:        false,
 	})
 	if err != nil {
 		return dispatchResult{}, err

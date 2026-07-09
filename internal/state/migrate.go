@@ -95,7 +95,7 @@ import (
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 19
+const latestSchemaVersion = 20
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -229,6 +229,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV18(tx)
 	case 19:
 		return migrateToV19(tx)
+	case 20:
+		return migrateToV20(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -665,4 +667,22 @@ func migrateToV19(tx *sql.Tx) error {
 		archived_at  INTEGER NOT NULL
 	)`)
 	return err
+}
+
+// migrateToV20 lets loops set create-time session settings for the
+// sessions they spawn/prompt: the composer agent, the model reasoning
+// variant, and a permission ruleset (raw JSON array). All default to
+// empty for existing loops (platform defaults, no rules — unchanged
+// behavior).
+func migrateToV20(tx *sql.Tx) error {
+	for _, stmt := range []string{
+		`ALTER TABLE loops ADD COLUMN agent TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE loops ADD COLUMN reasoning TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE loops ADD COLUMN permission_rules TEXT NOT NULL DEFAULT ''`,
+	} {
+		if _, err := tx.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return nil
 }

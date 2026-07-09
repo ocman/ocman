@@ -9,6 +9,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 
 	"github.com/NoUseFreak/ocman/internal/git"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
 // splitTools holds the dependencies for the new_session tool handler.
@@ -32,6 +33,23 @@ func newSessionTool() mcplib.Tool {
 		),
 		mcplib.WithString("model",
 			mcplib.Description(`Optional "provider/model" reference for the child's first message. Defaults to the platform default.`),
+		),
+		mcplib.WithString("agent",
+			mcplib.Description(`Optional composer agent/role for the child's first message ("build", "plan", or a subagent name). Defaults to the platform default.`),
+		),
+		mcplib.WithString("reasoning",
+			mcplib.Description(`Optional model reasoning/thinking-budget for the first message ("high", "max", "low"). Only meaningful when the model exposes variants.`),
+		),
+		mcplib.WithArray("permission",
+			mcplib.Description("Optional permission ruleset applied to the child session at creation. Each entry is {permission, pattern, action} where action is allow|deny|ask. Replaces the child's ruleset outright."),
+			mcplib.Items(map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"permission": map[string]interface{}{"type": "string"},
+					"pattern":    map[string]interface{}{"type": "string"},
+					"action":     map[string]interface{}{"type": "string"},
+				},
+			}),
 		),
 		mcplib.WithBoolean("worktree",
 			mcplib.Description("Run the child in a fresh git worktree instead of the parent's working directory. Defaults to false. Requires branch."),
@@ -72,10 +90,10 @@ func (t *splitTools) handleNewSession(ctx context.Context, req mcplib.CallToolRe
 	if err != nil {
 		return mcplib.NewToolResultError("intent is required"), nil
 	}
-	model := req.GetString("model", "")
+	settings := parseSessionSettings(req)
 
 	if req.GetBool("worktree", false) {
-		return t.launchWorktree(ctx, req, sessionID, intent, model)
+		return t.launchWorktree(ctx, req, sessionID, intent, settings)
 	}
 
 	opts := parseContextOptions(req)
@@ -99,7 +117,10 @@ func (t *splitTools) handleNewSession(ctx context.Context, req mcplib.CallToolRe
 		Directory:       session.Directory,
 		Intent:          intent,
 		ComposedPrompt:  prompt,
-		Model:           model,
+		Model:           settings.Model,
+		Agent:           settings.Agent,
+		Reasoning:       settings.Reasoning,
+		PermissionRules: settings.PermissionRules,
 	})
 	if err != nil {
 		return mcplib.NewToolResultError(fmt.Sprintf("launching child session: %v", err)), nil
@@ -114,7 +135,7 @@ func (t *splitTools) handleNewSession(ctx context.Context, req mcplib.CallToolRe
 }
 
 // launchWorktree handles the worktree=true branch of new_session.
-func (t *splitTools) launchWorktree(ctx context.Context, req mcplib.CallToolRequest, sessionID, intent, model string) (*mcplib.CallToolResult, error) {
+func (t *splitTools) launchWorktree(ctx context.Context, req mcplib.CallToolRequest, sessionID, intent string, settings sessionSettings) (*mcplib.CallToolResult, error) {
 	branch, err := req.RequireString("branch")
 	if err != nil {
 		return mcplib.NewToolResultError("branch is required when worktree=true"), nil
@@ -156,7 +177,10 @@ func (t *splitTools) launchWorktree(ctx context.Context, req mcplib.CallToolRequ
 			Platform:        t.platform,
 			Intent:          intent,
 			ComposedPrompt:  prompt,
-			Model:           model,
+			Model:           settings.Model,
+			Agent:           settings.Agent,
+			Reasoning:       settings.Reasoning,
+			PermissionRules: settings.PermissionRules,
 		},
 		git.CreateWorktreeRequest{
 			RepoRoot:  repoRoot,
@@ -177,6 +201,45 @@ func (t *splitTools) launchWorktree(ctx context.Context, req mcplib.CallToolRequ
 		"intent":           intent,
 	}
 	return toolResultJSON(result), nil
+}
+
+// sessionSettings holds the create-time knobs shared by both new_session
+// branches: model/agent/reasoning for the first message and an optional
+// permission ruleset applied to the child at creation.
+type sessionSettings struct {
+	Model           string
+	Agent           string
+	Reasoning       string
+	PermissionRules []platforms.PermissionRule
+}
+
+// parseSessionSettings extracts model/agent/reasoning/permission from the
+// tool request. Missing fields default to empty (platform defaults).
+func parseSessionSettings(req mcplib.CallToolRequest) sessionSettings {
+	return sessionSettings{
+		Model:           req.GetString("model", ""),
+		Agent:           req.GetString("agent", ""),
+		Reasoning:       req.GetString("reasoning", ""),
+		PermissionRules: parsePermissionRules(req),
+	}
+}
+
+// parsePermissionRules decodes the "permission" array param into typed
+// rules. Missing or malformed input yields nil (no rules applied).
+func parsePermissionRules(req mcplib.CallToolRequest) []platforms.PermissionRule {
+	raw, ok := req.GetArguments()["permission"]
+	if !ok || raw == nil {
+		return nil
+	}
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return nil
+	}
+	var rules []platforms.PermissionRule
+	if err := json.Unmarshal(b, &rules); err != nil {
+		return nil
+	}
+	return rules
 }
 
 // parseContextOptions extracts context_options from the tool request.

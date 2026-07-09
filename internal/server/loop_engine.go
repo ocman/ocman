@@ -134,8 +134,14 @@ func (s *inflightSet) release(id string) {
 // loopMessenger implements loops.Messenger via the platform registry.
 type loopMessenger struct{ s *Server }
 
-func (m *loopMessenger) SendPrompt(ctx context.Context, sessionID, prompt, model string) error {
-	return m.s.sessions.SendMessage(ctx, "", platforms.SendMessageRequest{SessionID: sessionID, Message: prompt, Model: model})
+func (m *loopMessenger) SendPrompt(ctx context.Context, sessionID, prompt, model, agent, reasoning string) error {
+	return m.s.sessions.SendMessage(ctx, "", platforms.SendMessageRequest{
+		SessionID: sessionID,
+		Message:   prompt,
+		Model:     model,
+		Agent:     agent,
+		Reasoning: reasoning,
+	})
 }
 
 // loopDirResolver implements loops.SessionDirResolver via the platform
@@ -213,6 +219,9 @@ func (l *loopLauncher) Spawn(ctx context.Context, req loops.SpawnRequest) (strin
 		Intent:          req.Intent,
 		ComposedPrompt:  req.Prompt,
 		Model:           req.Model,
+		Agent:           req.Agent,
+		Reasoning:       req.Reasoning,
+		PermissionRules: req.PermissionRules,
 		LoopID:          req.LoopID,
 	}
 	if !req.Worktree {

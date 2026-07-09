@@ -8,22 +8,25 @@ import (
 func sampleLoop(id string) Loop {
 	now := time.Now().UnixMilli()
 	return Loop{
-		ID:             id,
-		Platform:       "opencode",
-		RootSessionID:  "sess_root",
-		Directory:      "/src/ocman",
-		ProjectName:    "ocman",
-		Title:          "Watch PR #42",
-		Pattern:        "pr_address",
-		TriggerType:    "pr_event",
-		TriggerConfig:  `{"pr_number":42}`,
-		ActionType:     "prompt_root",
-		ActionTemplate: "address comments",
-		Model:          "anthropic/claude-sonnet-4",
-		StopConditions: `{"max_iterations":25,"max_cost_usd":5}`,
-		State:          "active",
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:              id,
+		Platform:        "opencode",
+		RootSessionID:   "sess_root",
+		Directory:       "/src/ocman",
+		ProjectName:     "ocman",
+		Title:           "Watch PR #42",
+		Pattern:         "pr_address",
+		TriggerType:     "pr_event",
+		TriggerConfig:   `{"pr_number":42}`,
+		ActionType:      "prompt_root",
+		ActionTemplate:  "address comments",
+		Model:           "anthropic/claude-sonnet-4",
+		Agent:           "plan",
+		Reasoning:       "high",
+		PermissionRules: `[{"permission":"edit","pattern":"**","action":"deny"}]`,
+		StopConditions:  `{"max_iterations":25,"max_cost_usd":5}`,
+		State:           "active",
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 }
 
@@ -47,6 +50,12 @@ func TestInsertGetLoop_RoundTrip(t *testing.T) {
 	}
 	if got.Model != "anthropic/claude-sonnet-4" {
 		t.Fatalf("model not preserved: %q", got.Model)
+	}
+	if got.Agent != "plan" || got.Reasoning != "high" {
+		t.Fatalf("agent/reasoning not preserved: agent=%q reasoning=%q", got.Agent, got.Reasoning)
+	}
+	if got.PermissionRules != `[{"permission":"edit","pattern":"**","action":"deny"}]` {
+		t.Fatalf("permission_rules not preserved: %q", got.PermissionRules)
 	}
 	if got.ParentLoopID != "" {
 		t.Fatalf("expected empty parent_loop_id, got %q", got.ParentLoopID)

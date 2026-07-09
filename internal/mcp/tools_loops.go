@@ -86,6 +86,9 @@ func createLoopTool() mcplib.Tool {
 		mcplib.WithString("action_type", mcplib.Required(), mcplib.Description("prompt_root | prompt_child | spawn_child | spawn_worktree")),
 		mcplib.WithString("action_template", mcplib.Description("Prompt template. Placeholders: {{iteration}} {{project}} {{last_summary}} {{trigger}} {{pr_number}}.")),
 		mcplib.WithString("model", mcplib.Description("Optional model reference to use for loop prompts, e.g. provider/model.")),
+		mcplib.WithString("agent", mcplib.Description(`Optional composer agent/role for sessions the loop spawns/prompts ("build", "plan", or a subagent name).`)),
+		mcplib.WithString("reasoning", mcplib.Description(`Optional model reasoning/thinking-budget ("high", "max", "low") for sessions the loop spawns/prompts.`)),
+		mcplib.WithArray("permission", mcplib.Description("Optional permission ruleset applied to sessions the loop spawns. Each entry is {permission, pattern, action} where action is allow|deny|ask.")),
 		mcplib.WithString("session_mode", mcplib.Description("prompt_root session strategy: 'fresh' (new dedicated session each iteration, default) or 'reuse' (re-prompt the loop's session).")),
 		mcplib.WithObject("stop_conditions", mcplib.Required(), mcplib.Description("max_iterations (required), max_cost_usd or max_tokens (one required), max_duration, error_streak, goal_predicate.")),
 	)
@@ -128,11 +131,14 @@ func (t *loopTools) handleCreateLoop(ctx context.Context, req mcplib.CallToolReq
 		ActionType:     req.GetString("action_type", ""),
 		ActionTemplate: req.GetString("action_template", ""),
 		Model:          req.GetString("model", ""),
+		Agent:          req.GetString("agent", ""),
+		Reasoning:      req.GetString("reasoning", ""),
 		SessionMode:    req.GetString("session_mode", ""),
 	}
 	if m := req.GetArguments(); m != nil {
 		decodeInto(m["trigger_config"], &spec.TriggerConfig)
 		decodeInto(m["stop_conditions"], &spec.StopConditions)
+		decodeInto(m["permission"], &spec.PermissionRules)
 	}
 
 	view, err := t.svc.Create(ctx, spec)

@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -114,20 +115,26 @@ type TriggerConfig struct {
 
 // LoopSpec is the create-time input shared by REST and MCP.
 type LoopSpec struct {
-	Platform       string         `json:"platform"`
-	RootSessionID  string         `json:"root_session_id"`
-	ParentLoopID   string         `json:"parent_loop_id,omitempty"`
-	Directory      string         `json:"directory,omitempty"`
-	ProjectName    string         `json:"project_name,omitempty"`
-	Title          string         `json:"title,omitempty"`
-	Description    string         `json:"description,omitempty"`
-	Pattern        string         `json:"pattern,omitempty"`
-	TriggerType    string         `json:"trigger_type"`
-	TriggerConfig  TriggerConfig  `json:"trigger_config"`
-	ActionType     string         `json:"action_type"`
-	ActionTemplate string         `json:"action_template"`
-	Model          string         `json:"model,omitempty"`
-	StopConditions StopConditions `json:"stop_conditions"`
+	Platform       string        `json:"platform"`
+	RootSessionID  string        `json:"root_session_id"`
+	ParentLoopID   string        `json:"parent_loop_id,omitempty"`
+	Directory      string        `json:"directory,omitempty"`
+	ProjectName    string        `json:"project_name,omitempty"`
+	Title          string        `json:"title,omitempty"`
+	Description    string        `json:"description,omitempty"`
+	Pattern        string        `json:"pattern,omitempty"`
+	TriggerType    string        `json:"trigger_type"`
+	TriggerConfig  TriggerConfig `json:"trigger_config"`
+	ActionType     string        `json:"action_type"`
+	ActionTemplate string        `json:"action_template"`
+	Model          string        `json:"model,omitempty"`
+	Agent          string        `json:"agent,omitempty"`
+	Reasoning      string        `json:"reasoning,omitempty"`
+	// PermissionRules, when non-empty, is applied to each session the
+	// loop spawns/prompts at creation. Ignored for prompt actions
+	// targeting an existing session.
+	PermissionRules []platforms.PermissionRule `json:"permission,omitempty"`
+	StopConditions  StopConditions             `json:"stop_conditions"`
 	// SessionMode controls per-iteration session strategy for prompt_root:
 	// "fresh" (default) or "reuse". Ignored by other action types.
 	SessionMode string `json:"session_mode,omitempty"`
@@ -140,6 +147,8 @@ type LoopUpdate struct {
 	Title          *string         `json:"title,omitempty"`
 	ActionTemplate *string         `json:"action_template,omitempty"`
 	Model          *string         `json:"model,omitempty"`
+	Agent          *string         `json:"agent,omitempty"`
+	Reasoning      *string         `json:"reasoning,omitempty"`
 	SessionMode    *string         `json:"session_mode,omitempty"`
 	TriggerConfig  *TriggerConfig  `json:"trigger_config,omitempty"`
 	StopConditions *StopConditions `json:"stop_conditions,omitempty"`
@@ -215,8 +224,10 @@ type Store interface {
 
 // Messenger sends a prompt to an existing session (Platform.SendMessage,
 // AD-5). Narrowed so loops needn't import the full Platform interface.
+// agent and reasoning are the composer role and thinking-budget for the
+// prompt; empty = platform default.
 type Messenger interface {
-	SendPrompt(ctx context.Context, sessionID, prompt, model string) error
+	SendPrompt(ctx context.Context, sessionID, prompt, model, agent, reasoning string) error
 }
 
 // SessionDirResolver returns the working directory of a session, so a
@@ -230,14 +241,17 @@ type SessionDirResolver interface {
 
 // SpawnRequest describes a child/worktree spawn for a loop action.
 type SpawnRequest struct {
-	LoopID        string
-	Platform      string
-	ParentSession string
-	Directory     string
-	Intent        string
-	Prompt        string
-	Model         string
-	Worktree      bool
+	LoopID          string
+	Platform        string
+	ParentSession   string
+	Directory       string
+	Intent          string
+	Prompt          string
+	Model           string
+	Agent           string
+	Reasoning       string
+	PermissionRules []platforms.PermissionRule
+	Worktree        bool
 }
 
 // Launcher spawns child sessions for spawn_* actions (AD-5). Returns the

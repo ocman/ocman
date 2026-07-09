@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -138,13 +139,15 @@ func (m *memStore) ListLoopsByParent(parentID string) ([]state.Loop, error) {
 
 // fakeMessenger records prompts sent.
 type fakeMessenger struct {
-	mu      sync.Mutex
-	prompts []string
-	models  []string
-	fail    bool
+	mu         sync.Mutex
+	prompts    []string
+	models     []string
+	agents     []string
+	reasonings []string
+	fail       bool
 }
 
-func (f *fakeMessenger) SendPrompt(_ context.Context, _ string, p, model string) error {
+func (f *fakeMessenger) SendPrompt(_ context.Context, _ string, p, model, agent, reasoning string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.fail {
@@ -152,6 +155,8 @@ func (f *fakeMessenger) SendPrompt(_ context.Context, _ string, p, model string)
 	}
 	f.prompts = append(f.prompts, p)
 	f.models = append(f.models, model)
+	f.agents = append(f.agents, agent)
+	f.reasonings = append(f.reasonings, reasoning)
 	return nil
 }
 
@@ -386,7 +391,7 @@ func TestRefreshUsage_ExcludesSessionsBeforeBaseline(t *testing.T) {
 	loop.UsageBaselineAt = 1000 // only sessions created at/after 1000 count
 	_ = store.InsertLoop(loop)
 	store.kids = []state.ChildSession{
-		{ID: "old", LoopID: "l1", CreatedAt: 500},  // before baseline → excluded
+		{ID: "old", LoopID: "l1", CreatedAt: 500},   // before baseline → excluded
 		{ID: "new1", LoopID: "l1", CreatedAt: 1000}, // at baseline → counted
 		{ID: "new2", LoopID: "l1", CreatedAt: 1500}, // after baseline → counted
 	}
@@ -759,6 +764,45 @@ func TestEvaluateOne_ScheduleFiresAndAdvances(t *testing.T) {
 	advanced, _ = svc.EvaluateOne(context.Background(), *l2)
 	if advanced {
 		t.Fatal("expected schedule to throttle within interval")
+	}
+}
+
+func TestEvaluateOne_ThreadsAgentReasoningAndPermissions(t *testing.T) {
+	store := newMemStore()
+	launcher := &fakeLauncher{}
+	svc := newServiceFull(store, &fakeMessenger{}, launcher)
+	rules := []platforms.PermissionRule{{Permission: "edit", Pattern: "**", Action: "deny"}}
+	v, err := svc.Create(context.Background(), LoopSpec{
+		RootSessionID:   "s1",
+		TriggerType:     TriggerSchedule,
+		TriggerConfig:   TriggerConfig{IntervalSeconds: 60},
+		ActionType:      ActionSpawnChild,
+		ActionTemplate:  "do work",
+		Model:           "anthropic/claude-opus-4-8",
+		Agent:           "plan",
+		Reasoning:       "high",
+		PermissionRules: rules,
+		StopConditions:  StopConditions{MaxIterations: 5, MaxCostUSD: 1},
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	l, _ := store.GetLoop(v.ID)
+	if _, err := svc.EvaluateOne(context.Background(), *l); err != nil {
+		t.Fatalf("EvaluateOne: %v", err)
+	}
+	if len(launcher.spawns) != 1 {
+		t.Fatalf("expected 1 spawn, got %d", len(launcher.spawns))
+	}
+	sp := launcher.spawns[0]
+	if sp.Agent != "plan" {
+		t.Errorf("Agent: got %q, want plan", sp.Agent)
+	}
+	if sp.Reasoning != "high" {
+		t.Errorf("Reasoning: got %q, want high", sp.Reasoning)
+	}
+	if len(sp.PermissionRules) != 1 || sp.PermissionRules[0].Permission != "edit" || sp.PermissionRules[0].Action != "deny" {
+		t.Errorf("PermissionRules not threaded: %+v", sp.PermissionRules)
 	}
 }
 

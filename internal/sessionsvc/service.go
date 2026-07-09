@@ -280,3 +280,9 @@ func (c *Client) CreateSession(ctx context.Context, req platforms.CreateSessionR
 func (c *Client) SendMessage(ctx context.Context, req platforms.SendMessageRequest) error {
 	return c.svc.SendMessage(ctx, c.platformID, req)
 }
+
+// SetPermissionRules replaces a session's permission ruleset via the
+// bound platform.
+func (c *Client) SetPermissionRules(ctx context.Context, req platforms.SetPermissionRulesRequest) error {
+	return c.svc.SetPermissionRules(ctx, c.platformID, req)
+}

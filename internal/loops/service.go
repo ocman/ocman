@@ -132,6 +132,12 @@ func (s *Service) Create(ctx context.Context, spec LoopSpec) (LoopView, error) {
 	if err != nil {
 		return LoopView{}, fmt.Errorf("encoding stop conditions: %w", err)
 	}
+	permJSON := ""
+	if len(spec.PermissionRules) > 0 {
+		if permJSON, err = encodeJSON(spec.PermissionRules); err != nil {
+			return LoopView{}, fmt.Errorf("encoding permission rules: %w", err)
+		}
+	}
 
 	sessionMode := spec.SessionMode
 	if sessionMode != SessionModeReuse {
@@ -140,25 +146,28 @@ func (s *Service) Create(ctx context.Context, spec LoopSpec) (LoopView, error) {
 
 	now := s.clock().UnixMilli()
 	l := state.Loop{
-		ID:             newLoopID(),
-		Platform:       platform,
-		RootSessionID:  spec.RootSessionID,
-		ParentLoopID:   spec.ParentLoopID,
-		Directory:      spec.Directory,
-		ProjectName:    spec.ProjectName,
-		Title:          spec.Title,
-		Description:    spec.Description,
-		Pattern:        spec.Pattern,
-		TriggerType:    spec.TriggerType,
-		TriggerConfig:  tcJSON,
-		ActionType:     spec.ActionType,
-		ActionTemplate: spec.ActionTemplate,
-		Model:          spec.Model,
-		StopConditions: scJSON,
-		SessionMode:    sessionMode,
-		State:          StateActive,
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:              newLoopID(),
+		Platform:        platform,
+		RootSessionID:   spec.RootSessionID,
+		ParentLoopID:    spec.ParentLoopID,
+		Directory:       spec.Directory,
+		ProjectName:     spec.ProjectName,
+		Title:           spec.Title,
+		Description:     spec.Description,
+		Pattern:         spec.Pattern,
+		TriggerType:     spec.TriggerType,
+		TriggerConfig:   tcJSON,
+		ActionType:      spec.ActionType,
+		ActionTemplate:  spec.ActionTemplate,
+		Model:           spec.Model,
+		Agent:           spec.Agent,
+		Reasoning:       spec.Reasoning,
+		PermissionRules: permJSON,
+		StopConditions:  scJSON,
+		SessionMode:     sessionMode,
+		State:           StateActive,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 	if err := s.store.InsertLoop(l); err != nil {
 		return LoopView{}, err
@@ -191,6 +200,12 @@ func (s *Service) Update(ctx context.Context, id string, upd LoopUpdate) (LoopVi
 	}
 	if upd.Model != nil {
 		l.Model = *upd.Model
+	}
+	if upd.Agent != nil {
+		l.Agent = *upd.Agent
+	}
+	if upd.Reasoning != nil {
+		l.Reasoning = *upd.Reasoning
 	}
 	if upd.SessionMode != nil {
 		mode := *upd.SessionMode
@@ -569,7 +584,9 @@ func (s *Service) injectFinalSummary(ctx context.Context, l state.Loop, reason s
 	}
 	msg := fmt.Sprintf("Loop %q ended: %s (after %d iterations, $%.2f).",
 		loopLabel(l), reason, l.Iteration, l.CostUSD)
-	_ = s.messenger.SendPrompt(ctx, l.RootSessionID, msg, l.Model)
+	// Summary report to the creator session runs on defaults (not the
+	// loop's agent/reasoning) — it's a notification, not loop work.
+	_ = s.messenger.SendPrompt(ctx, l.RootSessionID, msg, l.Model, "", "")
 }
 
 func loopLabel(l state.Loop) string {

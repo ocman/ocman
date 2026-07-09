@@ -13,34 +13,40 @@ import (
 // internal/loops domain package owns their shape so the schema stays
 // stable as new trigger/stop kinds are added (AD-9).
 type Loop struct {
-	ID             string  `json:"id"`
-	Platform       string  `json:"platform"`
-	RootSessionID  string  `json:"rootSessionID"`
-	ParentLoopID   string  `json:"parentLoopID,omitempty"` // empty for top-level loops
-	Directory      string  `json:"directory"`
-	ProjectName    string  `json:"projectName"`
-	Title          string  `json:"title"`
-	Description    string  `json:"description"`
-	CurrentTask    string  `json:"currentTask"`
-	Pattern        string  `json:"pattern"`     // pr_address, orchestrator, heartbeat, linear
-	TriggerType    string  `json:"triggerType"` // child_complete, schedule, pr_event, turn_complete
-	TriggerConfig  string  `json:"-"`           // raw JSON; decoded form is surfaced by the loops domain
-	ActionType     string  `json:"actionType"`  // prompt_root, prompt_child, spawn_child, spawn_worktree
-	ActionTemplate string  `json:"actionTemplate"`
-	Model          string  `json:"model,omitempty"`
-	StopConditions string  `json:"-"`                       // raw JSON; decoded form is surfaced by the loops domain
-	State          string  `json:"state"`                   // active, paused, completed, deleted, errored
-	LoopSessionID  string  `json:"loopSessionID,omitempty"` // the loop's dedicated session; empty until first fire
-	SessionMode    string  `json:"sessionMode"`             // fresh (new session per iteration) | reuse
-	Iteration      int     `json:"iteration"`
-	ErrorStreak    int     `json:"errorStreak"`
-	TokensUsed     int64   `json:"tokensUsed"`
-	CostUSD        float64 `json:"costUSD"`
-	LastFiredAt    int64   `json:"lastFiredAt"` // Unix ms of the most recent action; 0 if never fired
-	CreatedAt      int64   `json:"createdAt"`
-	UpdatedAt      int64   `json:"updatedAt"`
-	CompletedAt     int64  `json:"completedAt"` // 0 until terminal
-	LastSummary     string `json:"lastSummary"`
+	ID             string `json:"id"`
+	Platform       string `json:"platform"`
+	RootSessionID  string `json:"rootSessionID"`
+	ParentLoopID   string `json:"parentLoopID,omitempty"` // empty for top-level loops
+	Directory      string `json:"directory"`
+	ProjectName    string `json:"projectName"`
+	Title          string `json:"title"`
+	Description    string `json:"description"`
+	CurrentTask    string `json:"currentTask"`
+	Pattern        string `json:"pattern"`     // pr_address, orchestrator, heartbeat, linear
+	TriggerType    string `json:"triggerType"` // child_complete, schedule, pr_event, turn_complete
+	TriggerConfig  string `json:"-"`           // raw JSON; decoded form is surfaced by the loops domain
+	ActionType     string `json:"actionType"`  // prompt_root, prompt_child, spawn_child, spawn_worktree
+	ActionTemplate string `json:"actionTemplate"`
+	Model          string `json:"model,omitempty"`
+	Agent          string `json:"agent,omitempty"`     // composer role for spawned/prompted sessions
+	Reasoning      string `json:"reasoning,omitempty"` // model thinking-budget variant
+	// PermissionRules is a raw JSON array of platforms.PermissionRule
+	// applied to sessions the loop spawns/prompts. Empty = none. Opaque
+	// here; the loops domain owns the decoded shape.
+	PermissionRules string  `json:"-"`
+	StopConditions  string  `json:"-"`                       // raw JSON; decoded form is surfaced by the loops domain
+	State           string  `json:"state"`                   // active, paused, completed, deleted, errored
+	LoopSessionID   string  `json:"loopSessionID,omitempty"` // the loop's dedicated session; empty until first fire
+	SessionMode     string  `json:"sessionMode"`             // fresh (new session per iteration) | reuse
+	Iteration       int     `json:"iteration"`
+	ErrorStreak     int     `json:"errorStreak"`
+	TokensUsed      int64   `json:"tokensUsed"`
+	CostUSD         float64 `json:"costUSD"`
+	LastFiredAt     int64   `json:"lastFiredAt"` // Unix ms of the most recent action; 0 if never fired
+	CreatedAt       int64   `json:"createdAt"`
+	UpdatedAt       int64   `json:"updatedAt"`
+	CompletedAt     int64   `json:"completedAt"` // 0 until terminal
+	LastSummary     string  `json:"lastSummary"`
 	// UsageBaselineAt is a Unix-ms cutoff: only child sessions created at
 	// or after it count toward the budget. 0 = count all (default). Set
 	// to now on Restart so the loop runs against a fresh budget (v18).
@@ -74,8 +80,9 @@ func (d *DB) InsertLoop(l Loop) error {
 			 trigger_type, trigger_config, action_type, action_template, model,
 			 stop_conditions, state, iteration, error_streak, tokens_used,
 			 cost_usd, last_fired_at, created_at, updated_at, completed_at,
-			 last_summary, loop_session_id, session_mode, usage_baseline_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 last_summary, loop_session_id, session_mode, usage_baseline_at,
+			 agent, reasoning, permission_rules)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		l.ID, l.Platform, l.RootSessionID, nullableString(l.ParentLoopID), l.Directory,
 		l.ProjectName, l.Title, l.Description, l.CurrentTask, l.Pattern,
@@ -83,6 +90,7 @@ func (d *DB) InsertLoop(l Loop) error {
 		nonEmptyJSON(l.StopConditions), defaultState(l.State), l.Iteration, l.ErrorStreak, l.TokensUsed,
 		l.CostUSD, l.LastFiredAt, l.CreatedAt, l.UpdatedAt, nullableInt(l.CompletedAt),
 		l.LastSummary, nullableString(l.LoopSessionID), defaultSessionMode(l.SessionMode), l.UsageBaselineAt,
+		l.Agent, l.Reasoning, l.PermissionRules,
 	)
 	if err != nil {
 		return fmt.Errorf("inserting loop: %w", err)
@@ -119,14 +127,18 @@ func (d *DB) UpdateLoop(l Loop) error {
 			last_summary    = ?,
 			loop_session_id = ?,
 			session_mode    = ?,
-			usage_baseline_at = ?
+			usage_baseline_at = ?,
+			agent           = ?,
+			reasoning       = ?,
+			permission_rules = ?
 		WHERE id = ?
 	`,
 		l.Directory, l.ProjectName, l.Title, l.Description, l.CurrentTask, l.Pattern,
 		l.TriggerType, nonEmptyJSON(l.TriggerConfig), l.ActionType, l.ActionTemplate, l.Model,
 		nonEmptyJSON(l.StopConditions), defaultState(l.State), l.Iteration, l.ErrorStreak, l.TokensUsed,
 		l.CostUSD, l.LastFiredAt, time.Now().UnixMilli(), nullableInt(l.CompletedAt),
-		l.LastSummary, nullableString(l.LoopSessionID), defaultSessionMode(l.SessionMode), l.UsageBaselineAt, l.ID,
+		l.LastSummary, nullableString(l.LoopSessionID), defaultSessionMode(l.SessionMode), l.UsageBaselineAt,
+		l.Agent, l.Reasoning, l.PermissionRules, l.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("updating loop: %w", err)
@@ -311,7 +323,8 @@ const loopSelectSQL = `
 	       trigger_type, trigger_config, action_type, action_template, model,
 	       stop_conditions, state, iteration, error_streak, tokens_used,
 	       cost_usd, last_fired_at, created_at, updated_at, completed_at,
-	       last_summary, loop_session_id, session_mode, usage_baseline_at
+	       last_summary, loop_session_id, session_mode, usage_baseline_at,
+	       agent, reasoning, permission_rules
 	FROM loops`
 
 type rowScanner interface {
@@ -320,7 +333,7 @@ type rowScanner interface {
 
 func scanLoop(row rowScanner) (*Loop, error) {
 	var l Loop
-	var parentLoopID, loopSessionID sql.NullString
+	var parentLoopID, loopSessionID, permissionRules sql.NullString
 	var completedAt sql.NullInt64
 	if err := row.Scan(
 		&l.ID, &l.Platform, &l.RootSessionID, &parentLoopID, &l.Directory,
@@ -329,11 +342,13 @@ func scanLoop(row rowScanner) (*Loop, error) {
 		&l.StopConditions, &l.State, &l.Iteration, &l.ErrorStreak, &l.TokensUsed,
 		&l.CostUSD, &l.LastFiredAt, &l.CreatedAt, &l.UpdatedAt, &completedAt,
 		&l.LastSummary, &loopSessionID, &l.SessionMode, &l.UsageBaselineAt,
+		&l.Agent, &l.Reasoning, &permissionRules,
 	); err != nil {
 		return nil, err
 	}
 	l.ParentLoopID = parentLoopID.String
 	l.LoopSessionID = loopSessionID.String
+	l.PermissionRules = permissionRules.String
 	if completedAt.Valid {
 		l.CompletedAt = completedAt.Int64
 	}
