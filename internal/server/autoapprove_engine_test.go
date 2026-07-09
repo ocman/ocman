@@ -35,3 +35,25 @@ func TestAaSvcOpencodeAdapter(t *testing.T) {
 		t.Fatal("expected the registered opencode adapter, got nil")
 	}
 }
+
+// TestAaSvcParentSessionIDResolver covers the ParentSessionID closure
+// wired in aaSvc(): a tracked child resolves to its parent; an unknown
+// session and a server with no state DB both miss (so the child simply
+// doesn't inherit rather than erroring).
+func TestAaSvcParentSessionIDResolver(t *testing.T) {
+	// No state DB → always miss.
+	if _, ok := (&Server{}).aaSvc().ResolveParentSessionID("child"); ok {
+		t.Fatal("expected miss with no state DB")
+	}
+
+	sdb := openWatcherTestStateDB(t)
+	insertWatcherChildSession(t, sdb, "child-1", "parent-1", "running")
+	srv := &Server{stateDB: sdb}
+
+	if parent, ok := srv.aaSvc().ResolveParentSessionID("child-1"); !ok || parent != "parent-1" {
+		t.Fatalf("ResolveParentSessionID(child-1) = (%q,%v); want (parent-1,true)", parent, ok)
+	}
+	if _, ok := srv.aaSvc().ResolveParentSessionID("unknown"); ok {
+		t.Fatal("expected miss for an untracked session")
+	}
+}

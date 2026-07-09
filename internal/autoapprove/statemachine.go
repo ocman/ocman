@@ -346,12 +346,9 @@ func (s *Service) lookupInheritedSafeCommandVerdict(sessionID, hash string) (str
 	if reasoning, ok := s.lookupSafeCommandVerdict(sessionID, hash); ok {
 		return reasoning, true
 	}
-	if s.deps.ParentSessionID == nil {
-		return "", false
-	}
 	cur := sessionID
 	for i := 0; i < maxParentWalk; i++ {
-		parent, ok := s.deps.ParentSessionID(cur)
+		parent, ok := s.ResolveParentSessionID(cur)
 		if !ok || parent == "" || parent == cur {
 			return "", false
 		}

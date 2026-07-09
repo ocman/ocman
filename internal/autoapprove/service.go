@@ -129,6 +129,18 @@ func (s *Service) ResolveSessionDir(sessionID string) (string, error) {
 	return s.deps.SessionDir(sessionID)
 }
 
+// ResolveParentSessionID resolves a (possibly child) session ID to its
+// parent via the injected ParentSessionID dependency, returning
+// ok=false when the session is not a tracked child or no resolver is
+// wired. Kept exported so the server-side closure wiring can be tested
+// end-to-end (mirrors ResolveSessionDir).
+func (s *Service) ResolveParentSessionID(childID string) (string, bool) {
+	if s == nil || s.deps.ParentSessionID == nil {
+		return "", false
+	}
+	return s.deps.ParentSessionID(childID)
+}
+
 // OpencodeAdapter returns the OpenCode platform adapter via the
 // injected OpencodePlatform dependency, or nil when none is wired.
 func (s *Service) OpencodeAdapter() platforms.Platform {
