@@ -322,6 +322,47 @@ func (s *Service) lookupSafeCommandVerdict(sessionID, hash string) (string, bool
 	return reasoning, ok
 }
 
+// maxParentWalk caps how far up the parent chain
+// lookupInheritedSafeCommandVerdict walks. A child spawns a grandchild
+// rarely; the cap keeps a malformed/cyclic parent link from looping
+// forever without needing a visited-set.
+const maxParentWalk = 8
+
+// lookupInheritedSafeCommandVerdict is lookupSafeCommandVerdict plus
+// parent inheritance: on a miss for sessionID it walks up the
+// child->parent chain (via the ParentSessionID dep) and returns the
+// first ancestor's cached safe-verdict for the same command hash. This
+// lets a child session auto-approve a command the parent already had
+// approved — no fresh judge run, no user prompt.
+//
+// The returned reasoning is prefixed with "inherited from parent: " so
+// the origin is visible in the UI and DB audit row. Falls back to the
+// plain single-session behaviour when no resolver is wired.
+func (s *Service) lookupInheritedSafeCommandVerdict(sessionID, hash string) (string, bool) {
+	if s == nil || hash == "" {
+		return "", false
+	}
+	// Own session first — no prefix, it's a direct hit.
+	if reasoning, ok := s.lookupSafeCommandVerdict(sessionID, hash); ok {
+		return reasoning, true
+	}
+	if s.deps.ParentSessionID == nil {
+		return "", false
+	}
+	cur := sessionID
+	for i := 0; i < maxParentWalk; i++ {
+		parent, ok := s.deps.ParentSessionID(cur)
+		if !ok || parent == "" || parent == cur {
+			return "", false
+		}
+		if reasoning, ok := s.lookupSafeCommandVerdict(parent, hash); ok {
+			return "inherited from parent: " + reasoning, true
+		}
+		cur = parent
+	}
+	return "", false
+}
+
 // recordSafeCommandVerdict stores reasoning for (sessionID, hash) in
 // the cache. No-op on nil receiver or empty hash. Overwrites any
 // existing entry — the latest verdict wins.

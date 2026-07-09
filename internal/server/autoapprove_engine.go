@@ -33,6 +33,16 @@ func (s *Server) aaSvc() *autoapprove.Service {
 				}
 				return sess.Directory, nil
 			},
+			ParentSessionID: func(childID string) (string, bool) {
+				if s.stateDB == nil {
+					return "", false
+				}
+				cs, err := s.stateDB.GetChildSession(childID)
+				if err != nil || cs == nil || cs.ParentSessionID == "" {
+					return "", false
+				}
+				return cs.ParentSessionID, true
+			},
 			OpencodePlatform: func() platforms.Platform {
 				if s.registry == nil {
 					return nil

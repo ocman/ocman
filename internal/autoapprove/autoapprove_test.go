@@ -1120,6 +1120,68 @@ func TestSafeCommandCache(t *testing.T) {
 	}
 }
 
+// TestInheritedSafeCommandVerdict covers a child session inheriting a
+// parent's approved command via the ParentSessionID dep: an own-session
+// hit returns unprefixed, an ancestor hit is prefixed with "inherited
+// from parent: ", and unrelated / cyclic / resolver-less cases miss.
+func TestInheritedSafeCommandVerdict(t *testing.T) {
+	hash := commandHash(map[string]any{"command": "pnpm test"})
+
+	// parent chain: grandchild -> child -> parent
+	parents := map[string]string{
+		"grandchild": "child",
+		"child":      "parent",
+	}
+	s := &Service{deps: Deps{
+		ParentSessionID: func(id string) (string, bool) {
+			p, ok := parents[id]
+			return p, ok
+		},
+	}}
+
+	// Parent approved the command; child + grandchild have nothing.
+	s.recordSafeCommandVerdict("parent", hash, "Read-only test run.")
+
+	// Own-session hit → unprefixed.
+	if r, ok := s.lookupInheritedSafeCommandVerdict("parent", hash); !ok || r != "Read-only test run." {
+		t.Errorf("own-session hit: got (%q,%v), want (%q,true)", r, ok, "Read-only test run.")
+	}
+
+	// Child inherits parent → prefixed.
+	want := "inherited from parent: Read-only test run."
+	if r, ok := s.lookupInheritedSafeCommandVerdict("child", hash); !ok || r != want {
+		t.Errorf("child inherit: got (%q,%v), want (%q,true)", r, ok, want)
+	}
+
+	// Grandchild walks two hops → prefixed.
+	if r, ok := s.lookupInheritedSafeCommandVerdict("grandchild", hash); !ok || r != want {
+		t.Errorf("grandchild inherit: got (%q,%v), want (%q,true)", r, ok, want)
+	}
+
+	// Unrelated session with no parent link → miss.
+	if _, ok := s.lookupInheritedSafeCommandVerdict("orphan", hash); ok {
+		t.Errorf("orphan session should miss")
+	}
+
+	// No resolver wired → falls back to own-session only.
+	noResolver := &Service{}
+	noResolver.recordSafeCommandVerdict("solo", hash, "x")
+	if _, ok := noResolver.lookupInheritedSafeCommandVerdict("child", hash); ok {
+		t.Errorf("no resolver: child must not inherit")
+	}
+	if _, ok := noResolver.lookupInheritedSafeCommandVerdict("solo", hash); !ok {
+		t.Errorf("no resolver: own-session hit must still work")
+	}
+
+	// Cyclic parent link must not loop forever (maxParentWalk guard).
+	cyclic := &Service{deps: Deps{
+		ParentSessionID: func(id string) (string, bool) { return "a", true }, // a -> a is self; b -> a -> a...
+	}}
+	if _, ok := cyclic.lookupInheritedSafeCommandVerdict("b", hash); ok {
+		t.Errorf("cyclic chain should miss, not loop")
+	}
+}
+
 // TestBackgroundAutoApprove_SafeCommandCacheHit verifies the wire-in:
 // when the per-session safe-command cache already has an entry for
 // md5(metadata["command"]), backgroundAutoApprove must:

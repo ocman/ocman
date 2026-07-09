@@ -128,19 +128,20 @@ func (s *Service) backgroundAutoApprove(
 		return
 	}
 
-	// Per-session safe-command cache short-circuit. When the user has
-	// previously approved the *exact same* Bash command in this
-	// session, skip the LLM judge and the configured delay entirely:
-	// respond "once", persist the audit row, and emit the SSE
-	// notice. The "cached: " prefix on the stored reasoning makes the
-	// origin visible in the UI and DB.
+	// Safe-command cache short-circuit. When the *exact same* Bash
+	// command was previously approved in this session — or in any
+	// ancestor session, so a child inherits the parent's approvals —
+	// skip the LLM judge and the configured delay entirely: respond
+	// "once", persist the audit row, and emit the SSE notice. The
+	// "cached: " prefix (plus "inherited from parent: " for an
+	// ancestor hit) makes the origin visible in the UI and DB.
 	//
 	// commandHash returns "" for non-Bash tools (Edit/Write/Webfetch/…)
 	// and for malformed metadata, so the cache is opt-in by data
 	// shape — no Edit permission can ever auto-approve from this
 	// cache, regardless of metadata content.
 	if hash := commandHash(metadata); hash != "" {
-		if cachedReason, ok := s.lookupSafeCommandVerdict(sessionID, hash); ok {
+		if cachedReason, ok := s.lookupInheritedSafeCommandVerdict(sessionID, hash); ok {
 			logger.WithField("hash", hash).Info("background auto-approve: safe-command cache hit, skipping judge")
 			finalReason := "cached: " + cachedReason
 			s.recordJudgedWithReasoning(sessionID, permissionID, verdictSafe, finalReason)

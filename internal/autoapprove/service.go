@@ -50,6 +50,14 @@ type Deps struct {
 	// available; the judge then falls through to human review.
 	SessionDir func(sessionID string) (string, error)
 
+	// ParentSessionID resolves a (possibly child) session ID to its
+	// parent session ID, returning ok=false when the session is not a
+	// tracked child (or no resolver is wired). Used so a child session
+	// inherits the parent's safe-command cache: a command the parent
+	// already had auto-approved is approved for the child without a
+	// fresh judge run or a user prompt. May be nil.
+	ParentSessionID func(childID string) (parentID string, ok bool)
+
 	// OpencodePlatform resolves the OpenCode platform adapter for the
 	// headless watcher. May be nil / return nil; Ensure fails safe.
 	OpencodePlatform func() platforms.Platform
