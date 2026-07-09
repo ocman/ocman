@@ -33,17 +33,8 @@ describe('BUILTIN_COMMANDS', () => {
 });
 
 describe('KNOWN_AGENTS', () => {
-  it('contains the canonical default agents in the expected order', () => {
-    expect(KNOWN_AGENTS).toEqual([
-      'build',
-      'developer',
-      'plan',
-      'architect',
-      'ba',
-      'brainstormer',
-      'reviewer',
-      'security',
-    ]);
+  it('contains only OpenCode built-in primary agents (custom agents come from the live catalog)', () => {
+    expect(KNOWN_AGENTS).toEqual(['build', 'plan']);
   });
 
   it('agent names are unique', () => {

@@ -144,6 +144,14 @@ type AgentCatalogEntry struct {
 	Model       string `json:"model,omitempty"`
 	Color       string `json:"color,omitempty"`
 	Kind        string `json:"kind,omitempty"` // "primary" / "subagent" / ...
+	// Mode mirrors OpenCode's `mode` field ("primary" / "subagent" /
+	// "all"). The frontend picker sections on this.
+	Mode string `json:"mode,omitempty"`
+	// Hidden marks agents OpenCode surfaces only in search (native
+	// helpers like "title" / "summary" / "compaction").
+	Hidden bool `json:"hidden,omitempty"`
+	// BuiltIn marks OpenCode's native agents (vs. user/project agents).
+	BuiltIn bool `json:"builtIn,omitempty"`
 }
 
 // SlashCommandEntry describes one slash command available to a session.

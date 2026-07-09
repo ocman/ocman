@@ -119,12 +119,16 @@ func (a *Adapter) AgentCatalog(ctx context.Context, sessionID string) ([]platfor
 	}
 	entries := make([]platforms.AgentCatalogEntry, 0, len(raw))
 	for _, r := range raw {
+		mode := stringField(r, "mode")
 		entries = append(entries, platforms.AgentCatalogEntry{
 			Name:        stringField(r, "name"),
 			Description: stringField(r, "description"),
 			Model:       stringField(r, "model"),
 			Color:       stringField(r, "color"),
-			Kind:        stringField(r, "kind"),
+			Kind:        mode,
+			Mode:        mode,
+			Hidden:      boolField(r, "hidden"),
+			BuiltIn:     boolField(r, "native"),
 		})
 	}
 	return entries, nil
@@ -630,6 +634,13 @@ func stringField(m map[string]interface{}, key string) string {
 		return v
 	}
 	return ""
+}
+
+func boolField(m map[string]interface{}, key string) bool {
+	if v, ok := m[key].(bool); ok {
+		return v
+	}
+	return false
 }
 
 // Lightly-annotated alias so the public Platform interface doesn't leak

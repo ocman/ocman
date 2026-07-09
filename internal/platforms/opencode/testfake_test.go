@@ -33,6 +33,8 @@ type opencodeFake struct {
 	messagesStatus int
 	// failJSON, when set, causes the next response to be malformed.
 	failJSON bool
+	// agentBody, when set, is served verbatim for GET /agent.
+	agentBody json.RawMessage
 	// hits records every path the fake observed, in order. Tests use
 	// it to assert the function under test issued the expected
 	// requests.
@@ -115,6 +117,19 @@ func (f *opencodeFake) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		_, _ = w.Write(raw)
 		return
+	}
+	// /agent — composer-agent catalog. Only served when a body is
+	// configured; otherwise fall through to 404 so failure-path tests
+	// still see an empty catalog.
+	if r.URL.Path == "/agent" {
+		f.mu.Lock()
+		body := f.agentBody
+		f.mu.Unlock()
+		if body != nil {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(body)
+			return
+		}
 	}
 	// /config — empty config so getSessionDefaultsCached doesn't blow up.
 	if r.URL.Path == "/config" {

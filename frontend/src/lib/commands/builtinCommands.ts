@@ -25,18 +25,10 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
 ];
 
 /**
- * Default agents that the composer offers in the `/agent` picker
- * even when the platform's agent catalog hasn't loaded yet (or
- * returns nothing). Order matters — first entry is the default
- * highlight.
+ * OpenCode's built-in primary agents, offered in the `/agent` picker
+ * even when the live catalog hasn't loaded yet (or returns nothing).
+ * Everything else — custom user/project agents — comes from the live
+ * `/agent` catalog, which is the source of truth. Order matters: first
+ * entry is the default highlight.
  */
-export const KNOWN_AGENTS: readonly string[] = [
-  'build',
-  'developer',
-  'plan',
-  'architect',
-  'ba',
-  'brainstormer',
-  'reviewer',
-  'security',
-];
+export const KNOWN_AGENTS: readonly string[] = ['build', 'plan'];

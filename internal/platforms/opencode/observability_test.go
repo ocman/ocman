@@ -42,6 +42,60 @@ func TestAgentCatalog_LogsWarnOnFetchFailure(t *testing.T) {
 	}
 }
 
+// TestAgentCatalog_MapsOpenCodeFields verifies ocman maps OpenCode's
+// /agent schema (mode/hidden/native) onto AgentCatalogEntry so the
+// frontend picker can section project agents correctly. Regression for
+// the bug where custom/project agents rendered without mode/builtIn
+// because ocman read a nonexistent "kind" field.
+func TestAgentCatalog_MapsOpenCodeFields(t *testing.T) {
+	const sid = "sess-1"
+	const dir = "/tmp/proj"
+
+	fake := newOpencodeFake(t)
+	fake.agentBody = []byte(`[
+		{"name":"build","description":"builder","mode":"primary","native":true},
+		{"name":"architect","description":"custom project agent","mode":"primary","native":false},
+		{"name":"explore","mode":"subagent","native":true},
+		{"name":"title","mode":"primary","hidden":true,"native":true}
+	]`)
+	withTestPort(t, dir, fake.Port())
+	database := newTestDBWithSession(t, sid, dir)
+
+	a := New(database, nil)
+	entries, err := a.AgentCatalog(context.Background(), sid)
+	if err != nil {
+		t.Fatalf("AgentCatalog: unexpected error: %v", err)
+	}
+	if len(entries) != 4 {
+		t.Fatalf("want 4 entries, got %d", len(entries))
+	}
+
+	byName := map[string]int{}
+	for i, e := range entries {
+		byName[e.Name] = i
+	}
+
+	build := entries[byName["build"]]
+	if build.Mode != "primary" || build.Kind != "primary" || !build.BuiltIn || build.Hidden {
+		t.Errorf("build: got mode=%q kind=%q builtIn=%v hidden=%v", build.Mode, build.Kind, build.BuiltIn, build.Hidden)
+	}
+
+	arch := entries[byName["architect"]]
+	if arch.Mode != "primary" || arch.BuiltIn {
+		t.Errorf("architect (project agent): got mode=%q builtIn=%v; want mode=primary builtIn=false", arch.Mode, arch.BuiltIn)
+	}
+
+	explore := entries[byName["explore"]]
+	if explore.Mode != "subagent" {
+		t.Errorf("explore: got mode=%q; want subagent", explore.Mode)
+	}
+
+	title := entries[byName["title"]]
+	if !title.Hidden {
+		t.Errorf("title: want hidden=true, got false")
+	}
+}
+
 // TestSlashCommands_LogsWarnOnFetchFailure mirrors the AgentCatalog
 // test for the /command endpoint.
 func TestSlashCommands_LogsWarnOnFetchFailure(t *testing.T) {
