@@ -1006,9 +1006,9 @@ export interface WorktreeRemoveRequest {
  *   branch but one with that name already existed locally, so the
  *   backend fell back to checking it out instead. The UI should warn
  *   the user that they're working on a pre-existing branch.
- * - `tmuxSession` / `tmuxTarget` / `opencodeLaunched` are legacy remnants
- *   of the per-worktree tmux launcher; the /wt path no longer populates
- *   them (#268) and #269 removes them.
+ *
+ * Worktree sessions run in-app on the project's single opencode instance
+ * (#265); there is no per-worktree tmux process to report.
  */
 export interface WorktreeCreateResponse {
   sessionId: string;
@@ -1016,9 +1016,6 @@ export interface WorktreeCreateResponse {
   branch: string;
   reused: boolean;
   branchExisted: boolean;
-  tmuxSession?: string;
-  tmuxTarget?: string;
-  opencodeLaunched?: boolean;
 }
 
 export interface SlashCommand {

@@ -21,10 +21,6 @@ type fakeTmuxRunner struct {
 	newSessionCommands []string
 	newSessionErr      error
 
-	newNamedSessionCalls    []string
-	newNamedSessionCommands []string
-	newNamedSessionErr      error
-
 	newWindowCalls    []string
 	newWindowCommands []string
 	newWindowErr      error
@@ -58,11 +54,6 @@ func (f *fakeTmuxRunner) toRunner() Runner {
 			f.newSessionCalls = append(f.newSessionCalls, name)
 			f.newSessionCommands = append(f.newSessionCommands, command)
 			return f.newSessionErr
-		},
-		NewNamedSession: func(sessionName, windowName, _, command string) error {
-			f.newNamedSessionCalls = append(f.newNamedSessionCalls, sessionName+":"+windowName)
-			f.newNamedSessionCommands = append(f.newNamedSessionCommands, command)
-			return f.newNamedSessionErr
 		},
 		NewWindow: func(name, _, command string) error {
 			f.newWindowCalls = append(f.newWindowCalls, name)
@@ -247,105 +238,6 @@ func TestLaunchOpencodeInTmuxWith_PropagatesNewSessionError(t *testing.T) {
 	}
 }
 
-func TestLaunchOpencodeInProjectTmuxWindowWith_CreatesNamedWindow(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	projectDir := filepath.Join(home, "src/github.com/NoUseFreak/ocman")
-	worktreeDir := filepath.Join(projectDir, ".worktrees", "ocman", "feature-login")
-	windowName := WindowNameForDirectory(worktreeDir)
-
-	// No ocman-worktree session yet: the first worktree must create the
-	// shared session with the worktree as its named window.
-	f := &fakeTmuxRunner{}
-
-	target, launched, err := LaunchWorktreeWindowWith(f.toRunner(), projectDir, worktreeDir)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if target != WorktreeSession+":"+windowName {
-		t.Errorf("target = %q, want %q", target, WorktreeSession+":"+windowName)
-	}
-	if !launched {
-		t.Errorf("launched = false; want true")
-	}
-	if len(f.newNamedSessionCalls) != 1 {
-		t.Fatalf("NewNamedSession calls = %d; want 1", len(f.newNamedSessionCalls))
-	}
-	if f.newNamedSessionCalls[0] != WorktreeSession+":"+windowName {
-		t.Errorf("NewNamedSession target = %q, want %q", f.newNamedSessionCalls[0], WorktreeSession+":"+windowName)
-	}
-	if len(f.newNamedWindowCalls) != 0 {
-		t.Errorf("NewNamedWindow calls = %d; want 0 on first worktree", len(f.newNamedWindowCalls))
-	}
-	// Opencode must be the window's foreground command, not a
-	// post-create send-keys payload.
-	if len(f.newNamedSessionCommands) != 1 || f.newNamedSessionCommands[0] != OpencodeCommand {
-		t.Errorf("newNamedSessionCommands = %v, want [%q]", f.newNamedSessionCommands, OpencodeCommand)
-	}
-}
-
-func TestLaunchOpencodeInProjectTmuxWindowWith_AddsWindowToExistingSession(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	projectDir := filepath.Join(home, "src/github.com/NoUseFreak/ocman")
-	worktreeDir := filepath.Join(projectDir, ".worktrees", "ocman", "feature-login")
-	windowName := WindowNameForDirectory(worktreeDir)
-
-	// Shared session already exists with an unrelated window: a new
-	// worktree adds a window, it does not create a session.
-	f := &fakeTmuxRunner{
-		existing: []Session{{Name: WorktreeSession}},
-		windows:  map[string][]Window{WorktreeSession: {{Name: "wt-other-thing"}}},
-	}
-
-	target, launched, err := LaunchWorktreeWindowWith(f.toRunner(), projectDir, worktreeDir)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if target != WorktreeSession+":"+windowName {
-		t.Errorf("target = %q, want %q", target, WorktreeSession+":"+windowName)
-	}
-	if !launched {
-		t.Errorf("launched = false; want true")
-	}
-	if len(f.newNamedSessionCalls) != 0 {
-		t.Errorf("NewNamedSession calls = %d; want 0 when session exists", len(f.newNamedSessionCalls))
-	}
-	if len(f.newNamedWindowCalls) != 1 || f.newNamedWindowCalls[0] != WorktreeSession+":"+windowName {
-		t.Errorf("newNamedWindowCalls = %v, want [%q]", f.newNamedWindowCalls, WorktreeSession+":"+windowName)
-	}
-}
-
-func TestLaunchOpencodeInProjectTmuxWindowWith_ReusesExistingWindow(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	projectDir := filepath.Join(home, "src/github.com/NoUseFreak/ocman")
-	worktreeDir := filepath.Join(projectDir, ".worktrees", "ocman", "feature-login")
-	windowName := WindowNameForDirectory(worktreeDir)
-
-	f := &fakeTmuxRunner{
-		existing: []Session{{Name: WorktreeSession}},
-		windows:  map[string][]Window{WorktreeSession: {{Name: windowName, Path: worktreeDir}}},
-	}
-
-	target, launched, err := LaunchWorktreeWindowWith(f.toRunner(), projectDir, worktreeDir)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if target != WorktreeSession+":"+windowName {
-		t.Errorf("target = %q, want %q", target, WorktreeSession+":"+windowName)
-	}
-	if launched {
-		t.Errorf("launched = true; want false")
-	}
-	if len(f.newNamedWindowCalls) != 0 {
-		t.Errorf("newNamedWindowCalls = %v; want none", f.newNamedWindowCalls)
-	}
-}
-
 // TestLaunchOpencodeInTmuxWith_RejectsInvalidDerivedName verifies that a
 // directory whose derived session name would confuse tmux's target
 // parser (e.g. contains a `:`) is rejected before any tmux command is
@@ -367,35 +259,6 @@ func TestLaunchOpencodeInTmuxWith_RejectsInvalidDerivedName(t *testing.T) {
 	}
 	if len(f.newSessionCalls) != 0 || len(f.newWindowCalls) != 0 {
 		t.Error("no tmux command should fire when the derived name fails validation")
-	}
-}
-
-// TestLaunchOpencodeInProjectTmuxWindowWith_RejectsInvalidDerivedWindowName
-// verifies the same protection for the per-worktree window-naming path.
-func TestLaunchOpencodeInProjectTmuxWindowWith_RejectsInvalidDerivedWindowName(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	projectDir := filepath.Join(home, "src/proj")
-	projectSessionName := SessionNameForPath(projectDir)
-	// filepath.Base("/a/wt:bad") = "wt:bad", which the windowName
-	// derivation prefixes with "wt-" -> "wt-wt:bad". The `:` then
-	// trips the validator.
-	worktreeDir := "/tmp/wt:bad"
-
-	f := &fakeTmuxRunner{
-		existing: []Session{{Name: projectSessionName, ResolvedPath: projectDir}},
-	}
-
-	_, _, err := LaunchWorktreeWindowWith(f.toRunner(), projectDir, worktreeDir)
-	if err == nil {
-		t.Fatal("expected error for derived window name with invalid characters")
-	}
-	if !strings.Contains(err.Error(), "invalid characters") {
-		t.Errorf("error = %v; want invalid-characters error", err)
-	}
-	if len(f.newNamedWindowCalls) != 0 || len(f.newNamedSessionCalls) != 0 {
-		t.Error("no tmux command must fire when the derived window name fails validation")
 	}
 }
 

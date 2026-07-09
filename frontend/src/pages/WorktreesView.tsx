@@ -6,12 +6,10 @@ import { useApiStore } from '../lib/apiStore';
 import { usePageTitle } from '../lib/headerContext';
 import { openVSCode } from '../lib/shortcuts';
 import { relativeTime, shortPath } from '../lib/format';
-import { useTmux } from '../lib/useTmux';
 import { useUiStore } from '../lib/uiStore';
 import { useWorktreeSessions } from '../lib/useCapabilities';
-import { sessionsForWorktree, tmuxTargetForWorktree } from '../lib/worktrees';
+import { sessionsForWorktree } from '../lib/worktrees';
 import { WorktreesTableSkeleton } from '../components/Skeleton';
-import { remoteLog } from '../lib/remoteLog';
 import './Dashboard.css';
 import './WorktreesView.css';
 
@@ -21,8 +19,6 @@ export function WorktreesView() {
   usePageTitle(projectDir ? `${shortPath(projectDir)} · Worktrees` : 'Worktrees');
 
   const navigate = useNavigate();
-  const tmux = useTmux();
-  const projectTmuxSession = tmux.findSession(projectDir);
   const allowed = useWorktreeSessions();
   const openWorktreeForm = useUiStore((s) => s.openWorktreeForm);
   const cachedSessions = useApiStore((s) => s.cachedSessions);
@@ -174,20 +170,6 @@ export function WorktreesView() {
                   <td>{stats.lastActivity ? relativeTime(stats.lastActivity) : '—'}</td>
                   <td>
                     <div className="oc-worktrees-row-actions">
-                      <button
-                        type="button"
-                        className="tmux-switch-btn"
-                        disabled={!projectTmuxSession}
-                        title={projectTmuxSession ? `Switch tmux to ${tmuxTargetForWorktree(projectTmuxSession.name, wt)}` : 'No tmux session for this project'}
-                        onClick={() => {
-                          if (!projectTmuxSession) return;
-                          const client = !tmux.isLocal && tmux.clients.length === 1 ? tmux.clients[0].tty : undefined;
-                          const target = tmuxTargetForWorktree(projectTmuxSession.name, wt);
-                          tmux.switchSession(target, client).catch((err) => remoteLog.error('tmux switch failed', err));
-                        }}
-                      >
-                        tmux
-                      </button>
                       <button
                         type="button"
                         className="vscode-btn"

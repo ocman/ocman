@@ -84,15 +84,11 @@ func TestLocalHost_GitMethods(t *testing.T) {
 }
 
 func TestLocalHost_InjectedDeps(t *testing.T) {
-	var launchedDir, wtProject, wtPath string
+	var launchedDir string
 	h := New(Deps{
 		LaunchTmux: func(dir string) (string, error) {
 			launchedDir = dir
 			return "sess-name", nil
-		},
-		LaunchWorktreeTmux: func(projectDir, worktreeDir string) (string, bool, error) {
-			wtProject, wtPath = projectDir, worktreeDir
-			return "sess:win", true, nil
 		},
 		TmuxSessions: func() ([]hostsvc.TmuxSession, error) {
 			return []hostsvc.TmuxSession{{Name: "s"}}, nil
@@ -143,9 +139,6 @@ func TestLocalHost_InjectedDeps(t *testing.T) {
 	if err := h.TermAttach(ctx, hostsvc.TermAttachRequest{Dir: "/d"}, nil); err != nil {
 		t.Fatalf("TermAttach: %v", err)
 	}
-
-	_ = wtProject
-	_ = wtPath
 }
 
 // TestLocalHost_CreateWorktreeSession proves the #268 wiring: /wt creates
@@ -155,17 +148,11 @@ func TestLocalHost_InjectedDeps(t *testing.T) {
 // port. The result carries the created session ID.
 func TestLocalHost_CreateWorktreeSession(t *testing.T) {
 	repo := initRepo(t)
-	var worktreeLaunches int
 	var gotDirectory, gotPort string
 	h := New(Deps{
 		// Instance already running: EnsureProjectOpencode returns its
 		// port and launches nothing.
 		DiscoverPort: func(string) string { return "4242" },
-		// Must NOT be called from the /wt path any more.
-		LaunchWorktreeTmux: func(string, string) (string, bool, error) {
-			worktreeLaunches++
-			return "should-not-happen", true, nil
-		},
 		CreateSession: func(_ context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 			gotDirectory, gotPort = req.Directory, req.Port
 			return &platforms.CreateSessionResponse{ID: "ses_worktree"}, nil
@@ -193,14 +180,6 @@ func TestLocalHost_CreateWorktreeSession(t *testing.T) {
 	}
 	if gotPort != "4242" {
 		t.Errorf("CreateSession port = %q; want ensured port 4242", gotPort)
-	}
-	// The old per-worktree tmux launcher must not fire.
-	if worktreeLaunches != 0 {
-		t.Errorf("LaunchWorktreeTmux called %d times; want 0 (in-app path)", worktreeLaunches)
-	}
-	// Legacy tmux fields are no longer populated by /wt.
-	if res.TmuxSession != "" || res.TmuxTarget != "" || res.OpencodeLaunched {
-		t.Errorf("legacy tmux fields should be empty: %+v", res)
 	}
 }
 

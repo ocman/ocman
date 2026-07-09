@@ -23,24 +23,6 @@ export function sessionsForWorktree(
   return { sessions: matches, lastActivity };
 }
 
-// tmuxWindowNameForWorktreePath mirrors the backend's
-// internal/server/tmux.go:tmuxWindowNameForDirectory rule so the
-// frontend can target the right worktree window in the existing project
-// tmux session.
-export function tmuxWindowNameForWorktreePath(path: string): string {
-  const clean = path.replace(/\/+$|\/$/, '');
-  const base = clean.split('/').filter(Boolean).pop() || 'wt';
-  return `wt-${base}`;
-}
-
-// tmuxTargetForWorktree returns the tmux switch target for a worktree
-// row. Main checkout rows target the project session itself; worktree
-// rows target the deterministic `session:wt-<slug>` window name.
-export function tmuxTargetForWorktree(projectSessionName: string, worktree: WorktreeEntry): string {
-  if (worktree.main) return projectSessionName;
-  return `${projectSessionName}:${tmuxWindowNameForWorktreePath(worktree.path)}`;
-}
-
 // projectRootForDirectory returns the repo-root path that should
 // represent a session's "project" for grouping purposes. It folds
 // every worktree of the same repo back to the main checkout so the

@@ -188,15 +188,17 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// tmux/git preconditions are host-local: only enforce them on the
-	// hub when the action targets the local machine. A remote target
-	// validates its own tooling on its side.
+	// git is a host-local precondition: creating a worktree always needs
+	// it. Only enforce on the hub when the action targets this machine; a
+	// remote target validates its own tooling on its side.
+	//
+	// tmux is NOT gated up-front: worktree sessions now run in-app on the
+	// project's single opencode instance (#268). When that instance is
+	// already running, /wt needs no tmux at all. tmux is only required to
+	// *launch* an instance — EnsureProjectOpencode surfaces a clear error
+	// (HTTP 502) in that case if tmux is missing.
 	local := req.RemoteID == "" || req.RemoteID == "local"
 	if local {
-		if !tmux.IsAvailable() {
-			http.Error(w, "tmux is not available", http.StatusServiceUnavailable)
-			return
-		}
 		if _, err := exec.LookPath("git"); err != nil {
 			http.Error(w, "git is not available", http.StatusServiceUnavailable)
 			return

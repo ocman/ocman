@@ -59,7 +59,10 @@ flowchart TD
   can't tell local from remote.
 - **hostsvc.Router** — directory-scoped seam (git, worktrees, tmux,
   projects); resolves the owning host and delegates. Same transparency
-  trick as the registry.
+  trick as the registry. Worktree sessions run **in-app on the
+  project's single opencode instance** (one per project, ensured via
+  `EnsureProjectOpencode`) with a per-session working directory — there
+  is no per-worktree opencode/tmux process.
 - **platforms/opencode** — wraps the read-only DB queries
   (`internal/db`) plus an HTTP client to live instances, with
   `lsof`-based port discovery.

@@ -91,20 +91,17 @@ type WorktreeSessionRequest struct {
 
 // WorktreeSessionResult is the outcome of CreateWorktreeSession: the
 // created in-app session (SessionID, the primary output) plus the
-// worktree it is rooted at. The Tmux* / OpencodeLaunched fields are
-// legacy remnants of the per-worktree tmux launcher; the /wt path no
-// longer populates them (#268) and #269 removes them.
+// worktree it is rooted at. Worktree sessions run in-app on the
+// project's single opencode instance (#265); there is no per-worktree
+// tmux process to report.
 type WorktreeSessionResult struct {
 	// SessionID is the OpenCode session created in-app on the project's
 	// single opencode instance, rooted at WorktreePath.
-	SessionID        string `json:"sessionId"`
-	WorktreePath     string `json:"worktreePath"`
-	Branch           string `json:"branch"`
-	Reused           bool   `json:"reused"`
-	BranchExisted    bool   `json:"branchExisted"`
-	TmuxSession      string `json:"tmuxSession"`
-	TmuxTarget       string `json:"tmuxTarget"`
-	OpencodeLaunched bool   `json:"opencodeLaunched"`
+	SessionID     string `json:"sessionId"`
+	WorktreePath  string `json:"worktreePath"`
+	Branch        string `json:"branch"`
+	Reused        bool   `json:"reused"`
+	BranchExisted bool   `json:"branchExisted"`
 }
 
 // RemoveWorktreeRequest captures a remove-worktree action. Dir is any

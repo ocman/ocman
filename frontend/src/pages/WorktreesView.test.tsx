@@ -12,14 +12,6 @@ import type { WorktreeEntry } from '../lib/api';
 vi.mock('../lib/headerContext', () => ({ usePageTitle: () => {} }));
 vi.mock('../lib/useCapabilities', () => ({ useWorktreeSessions: () => true }));
 vi.mock('../lib/shortcuts', () => ({ openVSCode: () => {} }));
-vi.mock('../lib/useTmux', () => ({
-  useTmux: () => ({
-    isLocal: true,
-    clients: [],
-    findSession: () => undefined,
-    switchSession: vi.fn(),
-  }),
-}));
 vi.mock('../lib/uiStore', () => ({
   useUiStore: (selector: (s: { openWorktreeForm: () => void }) => unknown) =>
     selector({ openWorktreeForm: vi.fn() }),

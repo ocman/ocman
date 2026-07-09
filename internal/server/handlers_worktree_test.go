@@ -14,8 +14,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-
-	"github.com/NoUseFreak/ocman/internal/tmux"
 )
 
 // newEmptyRegistryForTest returns a registry with no adapters
@@ -193,9 +191,9 @@ func TestHandleWorktreeDefaultBaseRef(t *testing.T) {
 }
 
 func TestHandleWorktreeCreateAndLaunch_BadInputs(t *testing.T) {
-	if !tmux.IsAvailable() {
-		t.Skip("tmux not available")
-	}
+	// No tmux gate: input validation happens before any launch, and the
+	// handler no longer requires tmux up-front (#268 runs sessions
+	// in-app; tmux is only needed to launch a fresh project instance).
 	srv := &Server{}
 
 	tests := []struct {
@@ -239,9 +237,6 @@ func TestHandleWorktreeCreateAndLaunch_BadInputs(t *testing.T) {
 }
 
 func TestHandleWorktreeCreateAndLaunch_NonRepo(t *testing.T) {
-	if !tmux.IsAvailable() {
-		t.Skip("tmux not available")
-	}
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")
 	}

@@ -185,7 +185,6 @@ func (s *Server) SessionService() *sessionsvc.Service { return s.sessions }
 func (s *Server) newLocalHost() hostsvc.Host {
 	return hostlocal.New(hostlocal.Deps{
 		LaunchTmux:            tmux.LaunchOpencode,
-		LaunchWorktreeTmux:    tmux.LaunchWorktreeWindow,
 		LaunchProjectOpencode: launchProjectOpencode,
 		DiscoverPort:          opencode.DiscoverOpenCodePortFresh,
 		// CreateSession routes worktree-session creation through the shared

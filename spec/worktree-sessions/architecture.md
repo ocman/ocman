@@ -1,5 +1,17 @@
 # Worktree Sessions - Architecture
 
+> **Superseded (launch model):** this spec describes the original flow
+> that launched a dedicated `opencode --port 0` in tmux *per worktree*.
+> As of the **one-opencode-per-project** work, worktree (and same-dir)
+> sessions run **in-app on the project's single opencode instance**
+> (ensured via `EnsureProjectOpencode`) with a per-session working
+> directory; there is no per-worktree opencode/tmux process. The
+> per-worktree tmux launcher (`tmux.LaunchWorktreeWindow*`, the
+> `ocman-worktree` session) has been removed. See AGENTS.md and
+> `docs/architecture.md` for the current model. The rest of this
+> document (git worktree creation, `/api/worktree/...`, slug rules,
+> frontend) is still accurate.
+
 ## Overview
 
 `/wt` adds an on-demand "session in a git worktree" flow to ocman: the

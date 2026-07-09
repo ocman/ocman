@@ -31,14 +31,6 @@ type Deps struct {
 	// LaunchTmux runs `opencode --port 0` in a tmux session for the
 	// directory, returning the session name.
 	LaunchTmux func(directory string) (string, error)
-	// LaunchWorktreeTmux launches opencode in the shared "ocman-worktree"
-	// tmux session under a named window rooted at the worktree path.
-	// Returns (target, launched, err).
-	//
-	// Deprecated: no longer called from the /wt path (#268 runs worktree
-	// sessions in-app on the project instance). Kept until #269 removes
-	// the per-worktree tmux launcher machinery.
-	LaunchWorktreeTmux func(projectDir, worktreeDir string) (string, bool, error)
 	// CreateSession creates a session on the OpenCode platform. Injected
 	// (rather than importing the adapter) so CreateWorktreeSession can
 	// create the in-app worktree session on the project's single

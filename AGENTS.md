@@ -16,10 +16,20 @@ new adapter + registry entry; see
 Ocman also supports **on-demand OpenCode worktree sessions** via the
 `/wt` command in the command palette and the per-project Worktrees
 view (`/project/<dir>/worktrees`). The feature shells out to
-`git worktree add` under `<repo-parent>/.worktrees/<repo>/<slug>/`,
-then launches `opencode --port 0` in tmux rooted at that worktree so
-parallel sessions stop interfering with each other's files, rebuilds,
-and staging area.
+`git worktree add` under `<repo-parent>/.worktrees/<repo>/<slug>/`, then
+runs the session in-app: ocman keeps **one** `opencode` instance per
+project (rooted at the main checkout, launched idempotently via
+`EnsureProjectOpencode`) and creates the worktree (and same-directory)
+sessions on that instance with a per-session working directory. There is
+no per-worktree tmux window; a single project instance serves every
+worktree, so parallel sessions still get isolated files, rebuilds, and
+staging area without spawning an opencode/tmux process each. When
+`EnsureProjectOpencode` launches the instance it seeds the pane with a
+scoped `external_directory` `OPENCODE_PERMISSION` rule for the project's
+`.worktrees/<repo>` root so worktree paths are pre-approved.
+**Limitation:** an opencode instance that was *already running* before
+the /wt launch was not seeded with that rule; the runtime autoapprove
+pipeline covers the gap for those pre-existing instances.
 
 Ocman also embeds an **MCP (Model Context Protocol) server** at
 `http://localhost:8229/mcp` (Go backend) / `http://localhost:8228/mcp`
@@ -239,13 +249,11 @@ diffs minimal and match the surrounding code.
     The colon is **excluded** because tmux uses `:` as the
     session/window separator in target identifiers; an embedded `:`
     would silently mis-target the wrong pane.
-  If a derived session or window name contains any character outside
+  If a derived session name contains any character outside
   `tmux.ValidComponent`, `tmux.LaunchOpencodeWith` /
-  `tmux.LaunchWorktreeWindowWith` return an error (HTTP 422
-  from the worktree handler). In practice this is rare: the worktree
-  slug rules (AD-9) strip everything except `[a-z0-9._-]` before the
-  path reaches tmux, so only atypical *project* directory names
-  (e.g. those containing `:` or spaces) can trigger this error.
+  `tmux.LaunchOpencodeEnvWith` return an error. In practice this is
+  rare: only atypical *project* directory names (e.g. those containing
+  `:` or spaces) can trigger it.
 - **Optional password auth** (`internal/server/auth.go`): off by
   default (binds `127.0.0.1:8228`, unauthenticated). When configured it
   applies to every client including localhost; password is

@@ -2,8 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   projectRootForDirectory,
   sessionsForWorktree,
-  tmuxTargetForWorktree,
-  tmuxWindowNameForWorktreePath,
 } from './worktrees';
 import type { Session, WorktreeEntry } from './api';
 
@@ -40,19 +38,6 @@ describe('sessionsForWorktree', () => {
     ]);
     expect(stats.sessions).toEqual([]);
     expect(stats.lastActivity).toBeNull();
-  });
-
-  it('derives the deterministic worktree window name from the path basename', () => {
-    expect(tmuxWindowNameForWorktreePath('/repo/.worktrees/ocman/feature-login')).toBe('wt-feature-login');
-  });
-
-  it('uses plain session target for the main checkout row', () => {
-    const main = { ...wt, main: true };
-    expect(tmuxTargetForWorktree('~/src/github_com/NoUseFreak/ocman', main)).toBe('~/src/github_com/NoUseFreak/ocman');
-  });
-
-  it('uses session:window target for non-main worktree rows', () => {
-    expect(tmuxTargetForWorktree('~/src/github_com/NoUseFreak/ocman', wt)).toBe('~/src/github_com/NoUseFreak/ocman:wt-feature');
   });
 });
 
