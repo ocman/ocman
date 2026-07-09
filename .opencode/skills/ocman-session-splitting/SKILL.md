@@ -26,6 +26,8 @@ Use `new_session` with `worktree=true` and a `branch` when child may edit files,
 
 Pass `model` (a `"provider/model"` string) when the child should run on a different model than the parent default — e.g. a cheaper/faster model for review or a stronger model for hard implementation.
 
+A worktree/child inherits the parent's "Allow always" permissions at split time when the `worktree.inherit_permissions` setting is on. When it does, `new_session` returns `permissionsInherited` (bool) and `permissionsInheritedCount` (int) — mention them in your summary so the user knows the child started with N inherited approvals (or none).
+
 Use `get_session_status` for one child. Use `list_child_sessions` for all children from the current parent. Use `cancel_session` for stale or wrong child work.
 
 Use `send_message_to_child` only for meaningful follow-up instructions. Use `send_message_to_parent` from a child when reporting findings or asking for direction.

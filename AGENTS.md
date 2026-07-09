@@ -31,6 +31,17 @@ scoped `external_directory` `OPENCODE_PERMISSION` rule for the project's
 the /wt launch was not seeded with that rule; the runtime autoapprove
 pipeline covers the gap for those pre-existing instances.
 
+A worktree/child session launched from a parent also **inherits the
+parent's accumulated "Allow always" permissions** at split time (#101):
+ocman records every user-clicked "Allow always" reply (plus judge-safe
+approvals) in `auto_approved_permission`, and
+`permissions.BuildInheritedRules` replays them into the child's
+per-session ruleset via `LaunchRequest.PermissionRules` /
+`SetPermissionRules`. Controlled by the default-on
+`worktree.inherit_permissions` setting (GET/POST
+`/api/settings/worktree-inherit-permissions`); snapshot at split time,
+soft-fail (never blocks a launch).
+
 Ocman also embeds an **MCP (Model Context Protocol) server** at
 `http://localhost:8229/mcp` (Go backend) / `http://localhost:8228/mcp`
 (via Vite dev proxy). This lets AI coding agents (and users via
@@ -279,6 +290,10 @@ Implementation notes:
 - Child session records live in `state.db`'s `child_sessions` table
   (migration v9); a background watcher polls every 5 s and injects a
   result summary back into the parent on completion.
+- `new_session` seeds the child with the parent's accumulated
+  "Allow always" permissions when `worktree.inherit_permissions` is on
+  (#101), and reports `permissionsInherited` / `permissionsInheritedCount`
+  (and `permissionsInheritError` on a soft failure) in its result.
 - Agent splitting *policy* lives in
   `.opencode/skills/ocman-session-splitting/SKILL.md` so MCP tool
   descriptions stay short and action-focused.
