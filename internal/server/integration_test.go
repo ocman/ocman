@@ -89,7 +89,11 @@ func testServer(t *testing.T) *Server {
 
 	reg := platforms.NewRegistry()
 	reg.Register(opencodeplatform.New(database, stateDB))
-	return New(database, stateDB, "127.0.0.1:0", reg, nil)
+	srv := New(database, stateDB, "127.0.0.1:0", reg, nil)
+	// Never spawn real tmux/opencode from tests — that leaks a tmux
+	// session per run (the temp dir is cleaned up, the session isn't).
+	srv.launchProjectOpencodeFn = func(string, string) (string, error) { return "", nil }
+	return srv
 }
 
 // --- Handler integration tests ---
@@ -1227,6 +1231,7 @@ func testServerWithRawDB(t *testing.T) (*Server, *sql.DB) {
 	reg := platforms.NewRegistry()
 	reg.Register(opencodeplatform.New(database, stateDB))
 	srv := New(database, stateDB, "127.0.0.1:0", reg, nil)
+	srv.launchProjectOpencodeFn = func(string, string) (string, error) { return "", nil }
 	return srv, setupDB
 }
 

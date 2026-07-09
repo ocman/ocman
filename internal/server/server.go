@@ -100,6 +100,12 @@ type Server struct {
 	// loopSvcOnce. See loop_engine.go.
 	loopSvcCached *loops.Service
 	loopSvcOnce   sync.Once
+
+	// launchProjectOpencodeFn is the local Host's LaunchProjectOpencode
+	// dep. Defaults to the real tmux launcher; tests override it with a
+	// no-op so session-mode handlers don't spawn (and leak) real tmux
+	// sessions in temp dirs.
+	launchProjectOpencodeFn func(dir, permissionJSON string) (string, error)
 }
 
 // remoteAccessInfo holds this instance's own remote-access surface for
@@ -132,6 +138,8 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		integrations: newForgeClients(),
 		startTime:    time.Now(),
 		broadcastHub: newBroadcastHub(),
+
+		launchProjectOpencodeFn: launchProjectOpencode,
 	}
 	s.hostRouter = hostsvc.NewRouter(s.newLocalHost())
 	// registryRef (not the registry itself) so the service follows a
@@ -185,7 +193,9 @@ func (s *Server) SessionService() *sessionsvc.Service { return s.sessions }
 func (s *Server) newLocalHost() hostsvc.Host {
 	return hostlocal.New(hostlocal.Deps{
 		LaunchTmux:            tmux.LaunchOpencode,
-		LaunchProjectOpencode: launchProjectOpencode,
+		LaunchProjectOpencode: func(dir, permissionJSON string) (string, error) {
+			return s.launchProjectOpencodeFn(dir, permissionJSON)
+		},
 		DiscoverPort:          opencode.DiscoverOpenCodePortFresh,
 		// CreateSession routes worktree-session creation through the shared
 		// session-mutation service (same validated path + hooks as REST/MCP).
