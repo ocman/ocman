@@ -769,7 +769,12 @@ function ComposerImpl({
     return () => { cancelled = true; };
   }, [showTokenPopover, effectiveModel, tokenStats?.input, tokenStats?.output, tokenStats?.cacheRead, tokenStats?.cacheWrite, tokenStats]);
 
-  const agentOptions = Array.from(new Set([activeAgent, ...KNOWN_AGENTS].filter((a): a is string => !!a)));
+  // TAB cycles primary agents. Prefer the live /agent catalog (primary,
+  // non-hidden); fall back to KNOWN_AGENTS before it loads.
+  const cyclableAgents = hasAgents
+    ? (agents || []).filter((a) => a.mode !== 'subagent' && !a.hidden).map((a) => a.name)
+    : KNOWN_AGENTS;
+  const agentOptions = Array.from(new Set([activeAgent, ...cyclableAgents].filter((a): a is string => !!a)));
   const effectiveAgent = selectedAgent || activeAgent || '';
   useEffect(() => { agentOptionsRef.current = agentOptions; }, [agentOptions]);
   useEffect(() => { effectiveAgentRef.current = effectiveAgent; }, [effectiveAgent]);
