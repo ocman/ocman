@@ -96,6 +96,34 @@ func TestAgentCatalog_MapsOpenCodeFields(t *testing.T) {
 	}
 }
 
+// TestAgentCatalog_LogsWarnOnDecodeFailure covers the branch where the
+// /agent endpoint responds but the body isn't valid JSON: ocman logs a
+// WARN and returns an empty catalog rather than surfacing the error.
+func TestAgentCatalog_LogsWarnOnDecodeFailure(t *testing.T) {
+	const sid = "sess-1"
+	const dir = "/tmp/proj"
+
+	fake := newOpencodeFake(t)
+	fake.agentBody = []byte(`{not json`)
+	withTestPort(t, dir, fake.Port())
+	database := newTestDBWithSession(t, sid, dir)
+
+	hook := logtest.NewLocal(logrus.StandardLogger())
+	defer logrus.StandardLogger().ReplaceHooks(make(logrus.LevelHooks))
+
+	a := New(database, nil)
+	entries, err := a.AgentCatalog(context.Background(), sid)
+	if err != nil {
+		t.Fatalf("AgentCatalog: unexpected error: %v", err)
+	}
+	if entries != nil {
+		t.Fatalf("AgentCatalog: want nil entries on decode failure, got %d", len(entries))
+	}
+	if !findLog(hook, logrus.WarnLevel, "agent catalog decode failed") {
+		t.Fatalf("expected WARN log about agent catalog decode failed; got %d entries", len(hook.AllEntries()))
+	}
+}
+
 // TestSlashCommands_LogsWarnOnFetchFailure mirrors the AgentCatalog
 // test for the /command endpoint.
 func TestSlashCommands_LogsWarnOnFetchFailure(t *testing.T) {
