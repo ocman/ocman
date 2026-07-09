@@ -81,11 +81,11 @@ export const LINE_OPTIONS_COST = {
 } as const;
 
 /**
- * Stacked-area cumulative cost chart split by model. Tooltip shows the
- * per-model contribution as currency and the legend names each model
- * stack.
+ * Overlapping-area cumulative cost chart split by model. Each model's
+ * area is drawn independently (not stacked) so its cumulative total
+ * reads directly off the y-axis. Tooltip shows per-model currency.
  */
-export const LINE_OPTIONS_COST_STACKED = {
+export const LINE_OPTIONS_COST_BY_MODEL = {
   responsive: true,
   maintainAspectRatio: false,
   animation: false as const,
@@ -102,7 +102,6 @@ export const LINE_OPTIONS_COST_STACKED = {
   scales: {
     x: { grid: { display: false }, ticks: CHART_X_TICKS },
     y: {
-      stacked: true,
       beginAtZero: true,
       ticks: { callback: (v: string | number) => formatCurrency(Number(v), 2) },
     },

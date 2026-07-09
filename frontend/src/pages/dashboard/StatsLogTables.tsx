@@ -25,7 +25,7 @@ import {
   BAR_OPTIONS_TOKS,
   BAR_OPTIONS_DURATION,
   BAR_OPTIONS_STACKED,
-  LINE_OPTIONS_COST_STACKED,
+  LINE_OPTIONS_COST_BY_MODEL,
   LINE_OPTIONS_CACHE,
   DOUGHNUT_OPTIONS,
   CHART_COLORS,
@@ -80,9 +80,8 @@ function buildCostByModelDatasets(metrics: MetricsDashboard) {
       label: renderModel(model),
       data: cbmSeries.map((pt) => pt.costs?.[idx] ?? 0),
       borderColor: colour,
-      backgroundColor: hexToRgba(colour, 0.35),
+      backgroundColor: hexToRgba(colour, 0.15),
       fill: true,
-      stack: 'cost',
       tension: 0.2,
       pointRadius: 0,
       borderWidth: 1,
@@ -121,7 +120,7 @@ export function StatsSummaryCharts({ metrics }: { metrics: MetricsDashboard }) {
           <Line data={{
             labels: metricLabels,
             datasets: buildCostByModelDatasets(metrics),
-          }} options={LINE_OPTIONS_COST_STACKED} />
+          }} options={LINE_OPTIONS_COST_BY_MODEL} />
         </ChartCard>
 
         <ChartCard title="Token Usage per Bucket">
