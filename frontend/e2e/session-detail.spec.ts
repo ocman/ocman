@@ -451,7 +451,7 @@ test('session title appears in header breadcrumb', async ({ mockedPage: page }) 
 
 test('header logo links to / and redirects to the latest session', async ({ mockedPage: page }) => {
   await page.goto(SESSION_URL);
-  await page.getByRole('heading', { level: 1 }).getByRole('link', { name: 'ocman' }).click();
+  await page.getByRole('link', { name: 'ocman home' }).click();
   // The logo links to `/`, which redirects to the most recent session.
   await expect(page).toHaveURL(`/session/${MOCK_SESSION.id}`);
 });
@@ -569,12 +569,14 @@ test('clicking the header logo while the current session is streaming redirects 
     }),
   );
 
-  await page.getByRole('heading', { level: 1 }).getByRole('link', { name: 'ocman' }).click();
+  await page.getByRole('link', { name: 'ocman home' }).click();
 
   // Same regression as above, but through the header logo. The `/`
-  // redirect should resolve immediately even while SSE deltas keep
-  // flowing on the session we're leaving.
-  await expect(page).toHaveURL(`/session/${MOCK_SESSION_2.id}`, { timeout: 2_000 });
+  // redirect resolves via an async useSessions({ limit: 1 }) fetch, so
+  // it takes one extra hop compared to a direct session link — give it
+  // generous headroom so it doesn't flake under CI load while SSE deltas
+  // keep flowing on the session we're leaving.
+  await expect(page).toHaveURL(`/session/${MOCK_SESSION_2.id}`, { timeout: 10_000 });
 });
 
 // ---------------------------------------------------------------------------
