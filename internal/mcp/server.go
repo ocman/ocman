@@ -92,6 +92,7 @@ func New(deps Deps) *Server {
 		composer: composer,
 		launcher: launcher,
 		platform: deps.PlatformID,
+		inherit:  inheritProvider(deps.StateDB),
 	}
 	addSplitTools(s, split)
 
@@ -157,6 +158,7 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 		composer: composer,
 		launcher: launcher,
 		platform: deps.PlatformID,
+		inherit:  inheritProvider(deps.StateDB),
 	}
 
 	var ocDB statusSessionReader
@@ -183,6 +185,17 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 	}
 	tools = append(tools, loopServerTools(&loopTools{svc: deps.LoopService, platform: deps.PlatformID})...)
 	return tools
+}
+
+// inheritProvider returns the permission-inheritance dependency for the
+// split tools, or a nil interface when no state DB is available (so the
+// split tools skip inheritance instead of calling methods on a nil
+// *state.DB and panicking).
+func inheritProvider(db *state.DB) permissionInheriter {
+	if db == nil {
+		return nil
+	}
+	return db
 }
 
 // nullSessionReader is a no-op sessionReader used when the OpenCode DB

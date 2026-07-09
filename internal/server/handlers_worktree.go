@@ -10,6 +10,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/permissions"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/tmux"
 )
@@ -183,6 +184,10 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 		// RemoteID, when set, runs the worktree create on the owning
 		// remote host (FR-10/AD-16b). Empty / "local" = this machine.
 		RemoteID string `json:"remoteId"`
+		// ParentSessionID, when set + the worktree.inherit_permissions
+		// setting is on, seeds the new session with the parent's
+		// accumulated always-allow permissions (issue #101).
+		ParentSessionID string `json:"parentSessionId"`
 	}
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
 		return
@@ -257,5 +262,62 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	writeJSON(w, res)
+	// Seed the new worktree session with the parent's accumulated
+	// always-allow permissions (issue #101). Soft-fail: never turn a
+	// successful worktree launch into an error; surface any problem via
+	// the response fields instead.
+	inheritedCount, inheritErr := s.applyInheritedPermissions(r, req.ParentSessionID, res.SessionID)
+
+	writeJSON(w, map[string]interface{}{
+		"sessionId":                 res.SessionID,
+		"worktreePath":              res.WorktreePath,
+		"branch":                    res.Branch,
+		"reused":                    res.Reused,
+		"branchExisted":             res.BranchExisted,
+		"permissionsInherited":      inheritedCount > 0,
+		"permissionsInheritedCount": inheritedCount,
+		"permissionsInheritError":   inheritErr,
+	})
+}
+
+// applyInheritedPermissions builds the parent's always-allow ruleset
+// and applies it to the freshly-created worktree session when the
+// worktree.inherit_permissions setting is on and a parent was named.
+// Returns the number of rules applied and a soft-fail note (empty on
+// success or when inheritance was skipped). Never blocks the launch.
+func (s *Server) applyInheritedPermissions(r *http.Request, parentSessionID, childSessionID string) (int, string) {
+	if s.stateDB == nil || parentSessionID == "" || childSessionID == "" {
+		return 0, ""
+	}
+	on, err := s.stateDB.GetWorktreeInheritPermissions()
+	if err != nil {
+		log.WithError(err).Warn("worktree: reading inherit-permissions setting")
+		return 0, "reading setting: " + err.Error()
+	}
+	if !on {
+		return 0, ""
+	}
+	// The /wt flow is OpenCode-only (AD-7) and doesn't pass ?platform=;
+	// approvals are recorded under the platform id, so default to
+	// "opencode" when no explicit hint is present.
+	platform := platformHint(r)
+	if platform == "" {
+		platform = "opencode"
+	}
+	rules, count, err := permissions.BuildInheritedRules(s.stateDB, platform, parentSessionID)
+	if err != nil {
+		log.WithError(err).Warn("worktree: building inherited permission rules")
+		return 0, "building rules: " + err.Error()
+	}
+	if count == 0 {
+		return 0, ""
+	}
+	if err := s.sessions.SetPermissionRules(r.Context(), platform, platforms.SetPermissionRulesRequest{
+		SessionID: childSessionID,
+		Rules:     rules,
+	}); err != nil {
+		log.WithError(err).Warn("worktree: applying inherited permission rules")
+		return 0, "applying rules: " + err.Error()
+	}
+	return count, ""
 }

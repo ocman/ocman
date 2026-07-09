@@ -8,15 +8,68 @@ import (
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	log "github.com/sirupsen/logrus"
+
 	"github.com/NoUseFreak/ocman/internal/git"
+	"github.com/NoUseFreak/ocman/internal/permissions"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/state"
 )
+
+// permissionInheriter is the slice of *state.DB the split tools need to
+// inherit the parent's always-allow permissions into a child (issue
+// #101). Nil disables inheritance (no state DB).
+type permissionInheriter interface {
+	GetWorktreeInheritPermissions() (bool, error)
+	ListApprovedPermissions(platform, sessionID string) ([]state.ApprovedPermission, error)
+}
 
 // splitTools holds the dependencies for the new_session tool handler.
 type splitTools struct {
 	composer *PromptComposer
 	launcher *SessionLauncher
 	platform string // platform ID, e.g. "opencode"
+	// inherit provides the parent's approved permissions and the
+	// inherit-on/off setting. Nil = inheritance disabled.
+	inherit permissionInheriter
+}
+
+// inheritedRules builds the parent's always-allow ruleset for a child
+// launch when the setting is on. Soft-fail: returns (nil, 0, note) on
+// any error so the caller can proceed with the launch and surface the
+// note. When inheritance is off or yields nothing, returns
+// (nil, 0, "").
+func (t *splitTools) inheritedRules(parentSessionID string) (rules []platforms.PermissionRule, count int, errNote string) {
+	if t.inherit == nil || parentSessionID == "" {
+		return nil, 0, ""
+	}
+	on, err := t.inherit.GetWorktreeInheritPermissions()
+	if err != nil {
+		log.WithError(err).Warn("mcp: reading worktree inherit-permissions setting")
+		return nil, 0, "reading setting: " + err.Error()
+	}
+	if !on {
+		return nil, 0, ""
+	}
+	rules, count, err = permissions.BuildInheritedRules(t.inherit, t.platform, parentSessionID)
+	if err != nil {
+		log.WithError(err).Warn("mcp: building inherited permission rules")
+		return nil, 0, "building rules: " + err.Error()
+	}
+	return rules, count, ""
+}
+
+// mergeInheritedRules orders inherited rules first and caller-supplied
+// rules last so a caller-supplied rule wins on conflict — OpenCode
+// evaluates the last matching rule, so trailing rules take precedence.
+func mergeInheritedRules(caller, inherited []platforms.PermissionRule) []platforms.PermissionRule {
+	if len(inherited) == 0 {
+		return caller
+	}
+	merged := make([]platforms.PermissionRule, 0, len(inherited)+len(caller))
+	merged = append(merged, inherited...)
+	merged = append(merged, caller...)
+	return merged
 }
 
 // newSessionTool returns the mcp-go tool definition for new_session.
@@ -110,6 +163,9 @@ func (t *splitTools) handleNewSession(ctx context.Context, req mcplib.CallToolRe
 		return mcplib.NewToolResultError(fmt.Sprintf("session not found: %v", err)), nil
 	}
 
+	// Inherit the parent's always-allow permissions (issue #101).
+	inherited, inheritedCount, inheritErr := t.inheritedRules(sessionID)
+
 	// Launch the child session.
 	childID, err := t.launcher.Launch(ctx, LaunchRequest{
 		ParentSessionID: sessionID,
@@ -120,7 +176,7 @@ func (t *splitTools) handleNewSession(ctx context.Context, req mcplib.CallToolRe
 		Model:           settings.Model,
 		Agent:           settings.Agent,
 		Reasoning:       settings.Reasoning,
-		PermissionRules: settings.PermissionRules,
+		PermissionRules: mergeInheritedRules(settings.PermissionRules, inherited),
 	})
 	if err != nil {
 		return mcplib.NewToolResultError(fmt.Sprintf("launching child session: %v", err)), nil
@@ -131,7 +187,19 @@ func (t *splitTools) handleNewSession(ctx context.Context, req mcplib.CallToolRe
 		"status":           "starting",
 		"intent":           intent,
 	}
+	addInheritanceResult(result, inheritedCount, inheritErr)
 	return toolResultJSON(result), nil
+}
+
+// addInheritanceResult adds the issue-#101 result fields to a tool
+// result map: permissionsInherited (bool), permissionsInheritedCount
+// (int), and permissionsInheritError (only when non-empty).
+func addInheritanceResult(result map[string]interface{}, count int, errNote string) {
+	result["permissionsInherited"] = count > 0
+	result["permissionsInheritedCount"] = count
+	if errNote != "" {
+		result["permissionsInheritError"] = errNote
+	}
 }
 
 // launchWorktree handles the worktree=true branch of new_session.
@@ -170,6 +238,9 @@ func (t *splitTools) launchWorktree(ctx context.Context, req mcplib.CallToolRequ
 		return mcplib.NewToolResultError(fmt.Sprintf("composing prompt: %v", err)), nil
 	}
 
+	// Inherit the parent's always-allow permissions (issue #101).
+	inherited, inheritedCount, inheritErr := t.inheritedRules(sessionID)
+
 	childID, wtResult, err := t.launcher.LaunchWithWorktree(
 		ctx,
 		LaunchRequest{
@@ -180,7 +251,7 @@ func (t *splitTools) launchWorktree(ctx context.Context, req mcplib.CallToolRequ
 			Model:           settings.Model,
 			Agent:           settings.Agent,
 			Reasoning:       settings.Reasoning,
-			PermissionRules: settings.PermissionRules,
+			PermissionRules: mergeInheritedRules(settings.PermissionRules, inherited),
 		},
 		git.CreateWorktreeRequest{
 			RepoRoot:  repoRoot,
@@ -200,6 +271,7 @@ func (t *splitTools) launchWorktree(ctx context.Context, req mcplib.CallToolRequ
 		"status":           "starting",
 		"intent":           intent,
 	}
+	addInheritanceResult(result, inheritedCount, inheritErr)
 	return toolResultJSON(result), nil
 }
 

@@ -677,6 +677,90 @@ func TestNewSession_WorktreeCreatesWithModel(t *testing.T) {
 	}
 }
 
+// decodeInheritResult pulls the issue-#101 result fields out of the
+// tool's JSON result text.
+func decodeInheritResult(t *testing.T, result *mcplib.CallToolResult) (inherited bool, count int) {
+	t.Helper()
+	var m struct {
+		PermissionsInherited      bool `json:"permissionsInherited"`
+		PermissionsInheritedCount int  `json:"permissionsInheritedCount"`
+	}
+	if err := json.Unmarshal([]byte(resultText(result)), &m); err != nil {
+		t.Fatalf("decoding result %q: %v", resultText(result), err)
+	}
+	return m.PermissionsInherited, m.PermissionsInheritedCount
+}
+
+func TestNewSession_InheritsParentPermissions(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	// Parent has an always-allow approval recorded (issue #101 step 1).
+	if err := stateDB.RecordApprovedPermission("opencode", "parent-inh", state.ApprovedPermission{
+		PermissionID:   "perm-1",
+		PermissionText: "bash",
+		Patterns:       []string{"git *"},
+		Reasoning:      "user clicked Allow always",
+		ApprovedAt:     1000,
+	}); err != nil {
+		t.Fatalf("RecordApprovedPermission: %v", err)
+	}
+	ocDB := openTestOpenCodeDB(t, []db.Session{
+		{ID: "parent-inh", Title: "parent", Directory: "/repo", TimeCreated: 1000, TimeUpdated: 2000},
+	})
+	platform := &fakePlatformForTools{createSessionID: "child-inh"}
+	srv := buildTestMCPServerWithOpenCodeDB(t, stateDB, platform, ocDB)
+
+	result := callTool(t, srv, "new_session", map[string]interface{}{
+		"session_id": "parent-inh",
+		"intent":     "do work",
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", resultText(result))
+	}
+	inherited, count := decodeInheritResult(t, result)
+	if !inherited || count != 1 {
+		t.Fatalf("result inherited=%v count=%d, want true/1", inherited, count)
+	}
+	if len(platform.permReqs) != 1 {
+		t.Fatalf("expected one SetPermissionRules call, got %d", len(platform.permReqs))
+	}
+	rules := platform.permReqs[0].Rules
+	if len(rules) != 1 || rules[0].Permission != "bash" || rules[0].Pattern != "git *" || rules[0].Action != "allow" {
+		t.Fatalf("unexpected inherited rules: %+v", rules)
+	}
+}
+
+func TestNewSession_InheritDisabledSetting(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	if err := stateDB.SetWorktreeInheritPermissions(false); err != nil {
+		t.Fatalf("SetWorktreeInheritPermissions: %v", err)
+	}
+	if err := stateDB.RecordApprovedPermission("opencode", "parent-off", state.ApprovedPermission{
+		PermissionID: "perm-1", PermissionText: "bash", Patterns: []string{"git *"}, ApprovedAt: 1000,
+	}); err != nil {
+		t.Fatalf("RecordApprovedPermission: %v", err)
+	}
+	ocDB := openTestOpenCodeDB(t, []db.Session{
+		{ID: "parent-off", Title: "parent", Directory: "/repo", TimeCreated: 1000, TimeUpdated: 2000},
+	})
+	platform := &fakePlatformForTools{createSessionID: "child-off"}
+	srv := buildTestMCPServerWithOpenCodeDB(t, stateDB, platform, ocDB)
+
+	result := callTool(t, srv, "new_session", map[string]interface{}{
+		"session_id": "parent-off",
+		"intent":     "do work",
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", resultText(result))
+	}
+	inherited, count := decodeInheritResult(t, result)
+	if inherited || count != 0 {
+		t.Fatalf("result inherited=%v count=%d, want false/0 when setting off", inherited, count)
+	}
+	if len(platform.permReqs) != 0 {
+		t.Fatalf("expected no SetPermissionRules call when inheritance off, got %d", len(platform.permReqs))
+	}
+}
+
 func TestSendMessageToParent_DeliversToParent(t *testing.T) {
 	stateDB := openTestStateDB(t)
 	if err := stateDB.InsertChildSession(state.ChildSession{
