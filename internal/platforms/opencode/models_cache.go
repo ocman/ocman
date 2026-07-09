@@ -23,6 +23,16 @@ var (
 	sessionsListMetrics    = telemetry.CacheMetrics{Name: "opencode.sessions_list"}
 )
 
+// afterTopLevelMiss is a test-only hook invoked after a cache read
+// misses at the top level but before the caller enters the singleflight
+// Do slot. It is nil in production (zero cost) and lets tests pin a
+// caller in exactly that window so the "re-check inside the flight slot"
+// branch runs deterministically instead of via a scheduling race (the
+// source of the coverage jitter this closes). Set/cleared under test
+// only; the caches' tests run serially per function so a single shared
+// hook suffices.
+var afterTopLevelMiss func()
+
 func init() {
 	// Size gauges for the bare-map caches. Each closure takes its
 	// matching mutex under the read lock so a concurrent write to
@@ -107,6 +117,9 @@ func getRecentModelsCached(d dbRecentModels) ([]db.RecentModel, error) {
 	}
 	recentModelsMu.RUnlock()
 	recentModelsMetrics.RecordMiss(ctx)
+	if afterTopLevelMiss != nil {
+		afterTopLevelMiss()
+	}
 
 	v, err, _ := recentModelsFlight.Do("recents", func() (interface{}, error) {
 		// Re-check inside the flight slot; another caller may have
@@ -198,6 +211,9 @@ func getSessionDefaultsCached(d dbSessionDefaults, excludeSessionID, directory s
 	}
 	sessionDefaultsMu.RUnlock()
 	sessionDefaultsMetrics.RecordMiss(ctx)
+	if afterTopLevelMiss != nil {
+		afterTopLevelMiss()
+	}
 
 	flightKey := excludeSessionID + "|" + directory
 	v, err, _ := sessionDefaultsFlight.Do(flightKey, func() (interface{}, error) {
@@ -421,6 +437,9 @@ func getSessionsCached(d dbGetSessions, directory string, since int64) ([]db.Ses
 // value in place for getSessionsCached's stale-on-busy fallback.
 func refreshSessions(d dbGetSessions, directory string) ([]db.Session, error) {
 	key := sessionsKey{directory: directory}
+	if afterTopLevelMiss != nil {
+		afterTopLevelMiss()
+	}
 	v, err, _ := sessionsFlight.Do(directory, func() (interface{}, error) {
 		// Re-check inside the flight slot: a concurrent caller may
 		// have just refreshed it.

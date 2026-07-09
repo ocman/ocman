@@ -81,6 +81,142 @@ func TestGetRecentModelsCached_ConcurrentRequestsCoalesce(t *testing.T) {
 	}
 }
 
+// installRecheckGate wires the afterTopLevelMiss hook to deterministically
+// drive a cache function's "re-check inside the flight slot" branch.
+//
+// The branch runs only when a caller's top-level read misses (cache
+// stale) but, by the time it enters the singleflight Do slot, another
+// caller has already refilled the cache. That's a three-way ordering
+// that's otherwise a scheduling race — which is exactly why the branch's
+// coverage flips run-to-run.
+//
+// The gate pins caller C in the window between its top-level miss and its
+// Do entry. The test:
+//
+//	1. starts caller A, which misses top-level, passes the hook (fillCache
+//	   not yet done, so A proceeds), enters Do, and runs the real DB read;
+//	2. starts caller C, which misses top-level, then blocks IN the hook;
+//	3. lets A finish so it fills the cache and retires the flight key;
+//	4. releases C, which now enters a fresh Do whose re-check finds the
+//	   cache warm and returns without a second DB read.
+//
+// installRecheckGate deterministically drives a cache function's
+// re-check-inside-flight branch. Usage per test:
+//
+//	arm, cParked, releaseC, reset := installRecheckGate(t)
+//	defer reset()
+//	// start caller A (blocks in its DB read via a blocking* stub)
+//	<-dGated.entered   // A is in the DB read; cache still empty
+//	arm()              // block the NEXT caller in the hook
+//	// start caller C
+//	<-cParked          // C is now parked in the hook (top-level already missed)
+//	close(blockA); <-aDone   // A fills cache + retires the flight key
+//	releaseC(); <-cDone      // C enters a fresh Do; re-check finds cache warm
+//
+// The cParked handshake removes the last race: C is guaranteed to have
+// passed its (missing) top-level read and be waiting in the hook before A
+// fills the cache, so C's subsequent Do always takes the re-check branch.
+func installRecheckGate(t *testing.T) (arm func(), cParked <-chan struct{}, releaseC func(), reset func()) {
+	t.Helper()
+	var (
+		once   sync.Once
+		mu     sync.Mutex
+		armed  bool
+		parked = make(chan struct{})
+	)
+	cGate := make(chan struct{})
+	armFn := func() {
+		mu.Lock()
+		armed = true
+		mu.Unlock()
+	}
+	afterTopLevelMiss = func() {
+		mu.Lock()
+		block := armed
+		mu.Unlock()
+		if block {
+			close(parked) // announce C is parked (only the first armed caller)
+			<-cGate       // wait until released
+		}
+	}
+	return armFn, parked,
+		func() { once.Do(func() { close(cGate) }) },
+		func() { afterTopLevelMiss = nil }
+}
+
+func TestGetRecentModelsCached_RechecksInsideFlight(t *testing.T) {
+	resetRecentModelsCache()
+	t.Cleanup(resetRecentModelsCache)
+	armGateForC, cParked, releaseC, reset := installRecheckGate(t)
+	defer reset()
+
+	// A: top-level miss, passes the (unarmed) hook, enters Do, does the
+	// real DB read, fills the cache. blockA holds A inside the DB read
+	// until we've armed the gate, so the cache is still empty when C
+	// reads the top level.
+	blockA := make(chan struct{})
+	d := &fakeRecentModelsDB{out: []db.RecentModel{{Model: "m"}}}
+	dGated := &blockingRecentModelsDB{
+		fakeRecentModelsDB: d,
+		block:              blockA,
+		entered:            make(chan struct{}),
+	}
+
+	aDone := make(chan struct{})
+	go func() {
+		defer close(aDone)
+		if _, err := getRecentModelsCached(dGated); err != nil {
+			t.Errorf("caller A: %v", err)
+		}
+	}()
+	// Wait for A to reach the DB read (it has passed the hook), then arm
+	// the gate so the next caller (C) blocks in the hook.
+	<-dGated.entered
+	armGateForC()
+
+	// C: top-level miss (cache still empty), then parks in the hook.
+	cDone := make(chan struct{})
+	go func() {
+		defer close(cDone)
+		got, err := getRecentModelsCached(dGated)
+		if err != nil {
+			t.Errorf("caller C: %v", err)
+		}
+		if len(got) != 1 || got[0].Model != "m" {
+			t.Errorf("caller C: unexpected result %#v", got)
+		}
+	}()
+	<-cParked // C has missed the top level and is parked in the hook.
+
+	// Let A finish: fills cache, retires flight key.
+	close(blockA)
+	<-aDone
+	// Now release C into a fresh Do; its re-check finds the cache warm.
+	releaseC()
+	<-cDone
+
+	if c := d.calls.Load(); c != 1 {
+		t.Fatalf("expected exactly 1 DB call (C hits in-flight re-check), got %d", c)
+	}
+}
+
+// blockingRecentModelsDB wraps fakeRecentModelsDB, signalling `entered`
+// when the DB read starts and blocking on `block` until the test lets it
+// finish — so the test can guarantee the cache is empty while caller C
+// reads the top level.
+type blockingRecentModelsDB struct {
+	*fakeRecentModelsDB
+	entered chan struct{}
+	block   chan struct{}
+	once    sync.Once
+}
+
+func (f *blockingRecentModelsDB) GetRecentModels(sessionLimit, maxResults int) ([]db.RecentModel, error) {
+	f.once.Do(func() { close(f.entered) })
+	<-f.block
+	return f.fakeRecentModelsDB.GetRecentModels(sessionLimit, maxResults)
+}
+
 func TestGetRecentModelsCached_DoesNotCacheErrors(t *testing.T) {
 	resetRecentModelsCache()
 	t.Cleanup(resetRecentModelsCache)
@@ -250,6 +386,71 @@ func TestGetSessionDefaultsCached_DoesNotCacheErrors(t *testing.T) {
 	}
 	if c := d.calls.Load(); c != 2 {
 		t.Errorf("expected 2 DB calls when errors are not cached, got %d", c)
+	}
+}
+
+// blockingSessionDefaultsDB is the session-defaults analogue of
+// blockingRecentModelsDB: it signals `entered` when the DB read starts
+// and blocks on `block` until released. See installRecheckGate for the
+// full ordering that makes the re-check-inside-flight branch
+// deterministic.
+type blockingSessionDefaultsDB struct {
+	*fakeSessionDefaultsDB
+	entered chan struct{}
+	block   chan struct{}
+	once    sync.Once
+}
+
+func (f *blockingSessionDefaultsDB) GetSessionDefaults(sessionID, directory string) (db.SessionDefaults, error) {
+	f.once.Do(func() { close(f.entered) })
+	<-f.block
+	return f.fakeSessionDefaultsDB.GetSessionDefaults(sessionID, directory)
+}
+
+func TestGetSessionDefaultsCached_RechecksInsideFlight(t *testing.T) {
+	resetSessionDefaultsCache()
+	t.Cleanup(resetSessionDefaultsCache)
+	armGateForC, cParked, releaseC, reset := installRecheckGate(t)
+	defer reset()
+
+	blockA := make(chan struct{})
+	d := &fakeSessionDefaultsDB{out: db.SessionDefaults{Model: "m"}}
+	dGated := &blockingSessionDefaultsDB{
+		fakeSessionDefaultsDB: d,
+		block:                 blockA,
+		entered:               make(chan struct{}),
+	}
+
+	aDone := make(chan struct{})
+	go func() {
+		defer close(aDone)
+		if _, err := getSessionDefaultsCached(dGated, "s1", "/repo"); err != nil {
+			t.Errorf("caller A: %v", err)
+		}
+	}()
+	<-dGated.entered
+	armGateForC()
+
+	cDone := make(chan struct{})
+	go func() {
+		defer close(cDone)
+		got, err := getSessionDefaultsCached(dGated, "s1", "/repo")
+		if err != nil {
+			t.Errorf("caller C: %v", err)
+		}
+		if got.Model != "m" {
+			t.Errorf("caller C: unexpected result %#v", got)
+		}
+	}()
+	<-cParked
+
+	close(blockA)
+	<-aDone
+	releaseC()
+	<-cDone
+
+	if c := d.calls.Load(); c != 1 {
+		t.Fatalf("expected exactly 1 DB call (C hits in-flight re-check), got %d", c)
 	}
 }
 
@@ -482,6 +683,69 @@ func TestGetSessionsCached_DoesNotCacheErrors(t *testing.T) {
 	}
 	if c := d.calls.Load(); c != 2 {
 		t.Errorf("expected 2 DB calls when errors are not cached, got %d", c)
+	}
+}
+
+// blockingGetSessionsDB is the sessions analogue of
+// blockingRecentModelsDB, used to drive refreshSessions'
+// re-check-inside-flight branch deterministically via installRecheckGate.
+type blockingGetSessionsDB struct {
+	*fakeGetSessionsDB
+	entered chan struct{}
+	block   chan struct{}
+	once    sync.Once
+}
+
+func (f *blockingGetSessionsDB) GetSessions(directory string, since int64) ([]db.Session, error) {
+	f.once.Do(func() { close(f.entered) })
+	<-f.block
+	return f.fakeGetSessionsDB.GetSessions(directory, since)
+}
+
+func TestRefreshSessions_RechecksInsideFlight(t *testing.T) {
+	resetSessionsCache()
+	t.Cleanup(resetSessionsCache)
+	armGateForC, cParked, releaseC, reset := installRecheckGate(t)
+	defer reset()
+
+	blockA := make(chan struct{})
+	d := &fakeGetSessionsDB{out: []db.Session{{ID: "s"}}}
+	dGated := &blockingGetSessionsDB{
+		fakeGetSessionsDB: d,
+		block:             blockA,
+		entered:           make(chan struct{}),
+	}
+
+	aDone := make(chan struct{})
+	go func() {
+		defer close(aDone)
+		if _, err := getSessionsCached(dGated, "/repo", 0); err != nil {
+			t.Errorf("caller A: %v", err)
+		}
+	}()
+	<-dGated.entered
+	armGateForC()
+
+	cDone := make(chan struct{})
+	go func() {
+		defer close(cDone)
+		got, err := getSessionsCached(dGated, "/repo", 0)
+		if err != nil {
+			t.Errorf("caller C: %v", err)
+		}
+		if len(got) != 1 || got[0].ID != "s" {
+			t.Errorf("caller C: unexpected result %#v", got)
+		}
+	}()
+	<-cParked
+
+	close(blockA)
+	<-aDone
+	releaseC()
+	<-cDone
+
+	if c := d.calls.Load(); c != 1 {
+		t.Fatalf("expected exactly 1 DB call (C hits in-flight re-check), got %d", c)
 	}
 }
 

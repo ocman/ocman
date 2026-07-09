@@ -478,3 +478,77 @@ func TestServer_RejectsBadToken(t *testing.T) {
 		t.Fatalf("expected Unauthenticated, got %v", err)
 	}
 }
+
+// scriptedTermStream is a fake TerminalStreamServer that hands out a
+// fixed sequence of client messages, then a terminal error. It embeds
+// grpc.ServerStream (nil) only to satisfy the fat interface; the test
+// exercises streamTermConn.Recv directly, which touches only Recv/Send,
+// so the embedded methods are never called.
+type scriptedTermStream struct {
+	grpc.ServerStream
+	msgs []*pb.TermClientMsg
+	i    int
+	end  error
+}
+
+func (s *scriptedTermStream) Recv() (*pb.TermClientMsg, error) {
+	if s.i >= len(s.msgs) {
+		return nil, s.end
+	}
+	m := s.msgs[s.i]
+	s.i++
+	return m, nil
+}
+
+func (s *scriptedTermStream) Send(*pb.TermServerMsg) error { return nil }
+
+// TestStreamTermConn_RecvBranches drives streamTermConn.Recv over a
+// scripted, deterministic frame sequence so every branch of its loop
+// (resize, data, skip-empty, error) is exercised on every run — closing
+// the coverage-jitter gap left by the network-timing-dependent
+// TerminalStreamRoundTrip test.
+func TestStreamTermConn_RecvBranches(t *testing.T) {
+	sentinel := errors.New("stream closed")
+	conn := &streamTermConn{stream: &scriptedTermStream{
+		msgs: []*pb.TermClientMsg{
+			{Resize: &pb.TermResize{Cols: 80, Rows: 24}},
+			{Data: []byte("ls\n")},
+			{}, // empty/open-only frame: must be skipped, not returned
+			{Data: []byte("q")},
+		},
+		end: sentinel,
+	}}
+
+	// 1) resize frame -> resize TermFrame
+	f, err := conn.Recv()
+	if err != nil {
+		t.Fatalf("resize recv: %v", err)
+	}
+	if f.Resize == nil || f.Resize.Cols != 80 || f.Resize.Rows != 24 {
+		t.Fatalf("resize mismatch: %#v", f)
+	}
+
+	// 2) data frame -> data TermFrame
+	f, err = conn.Recv()
+	if err != nil {
+		t.Fatalf("data recv: %v", err)
+	}
+	if string(f.Data) != "ls\n" {
+		t.Fatalf("data mismatch: %q", f.Data)
+	}
+
+	// 3) empty frame is skipped; the loop continues to the next data
+	// frame in the same Recv call.
+	f, err = conn.Recv()
+	if err != nil {
+		t.Fatalf("skip-empty recv: %v", err)
+	}
+	if string(f.Data) != "q" {
+		t.Fatalf("expected empty frame skipped then 'q', got %q", f.Data)
+	}
+
+	// 4) terminal error propagates.
+	if _, err := conn.Recv(); !errors.Is(err, sentinel) {
+		t.Fatalf("expected sentinel error, got %v", err)
+	}
+}
