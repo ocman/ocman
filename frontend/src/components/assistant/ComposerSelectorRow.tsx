@@ -112,9 +112,12 @@ export function BranchSelector({ directory }: { directory?: string }) {
 export function TargetSelector({
   directory,
   worktreesSupported,
+  parentSessionId,
 }: {
   directory?: string;
   worktreesSupported: boolean;
+  /** Current session, if any; the new worktree inherits its permissions (#101). */
+  parentSessionId?: string;
 }) {
   const openWorktreeForm = useUiStore((s) => s.openWorktreeForm);
   const { branches, current } = useBranches(directory);
@@ -134,7 +137,7 @@ export function TargetSelector({
           value="current"
           onChange={(e) => {
             if (e.target.value === 'worktree') {
-              openWorktreeForm({ projectDir: directory, branch: current });
+              openWorktreeForm({ projectDir: directory, branch: current, parentSessionId });
               e.target.value = 'current';
             }
           }}

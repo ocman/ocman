@@ -4,12 +4,13 @@
  * own store slices rather than taking them as props, keeping SettingsTab
  * a thin nav + layout shell.
  */
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { SaveStatus } from '../../components/SaveStatus';
 import { SettingRow, SettingToggle, SettingNumber } from '../../components/SettingRow';
 import { useSaveStatus, useSettingSave } from '../../lib/useSaveStatus';
 import { useUiStore } from '../../lib/uiStore';
 import { useApiStore } from '../../lib/apiStore';
+import { api } from '../../lib/api';
 import {
   notificationsSupported,
   requestNotificationPermission,
@@ -100,6 +101,29 @@ export function SessionsSection() {
   const timeRangeSave = useSettingSave();
   const recentSave = useSettingSave();
 
+  // Worktree inherit-permissions is a server-side setting (#101), so it
+  // is loaded/saved directly via the API rather than through uiStore.
+  const [inheritPerms, setInheritPerms] = useState(true);
+  const inheritPermsSave = useSettingSave();
+  useEffect(() => {
+    const ctrl = new AbortController();
+    api
+      .getWorktreeInheritPermissions(ctrl.signal)
+      .then(({ enabled }) => setInheritPerms(enabled))
+      .catch(() => { /* best-effort; keep default on */ });
+    return () => ctrl.abort();
+  }, []);
+
+  const handleInheritToggle = async (want: boolean) => {
+    setInheritPerms(want); // optimistic
+    try {
+      await api.setWorktreeInheritPermissions(want);
+    } catch (err) {
+      setInheritPerms(!want); // revert
+      throw err; // let SettingToggle surface the failure indicator
+    }
+  };
+
   return (
     <>
       <SettingRow
@@ -130,6 +154,18 @@ export function SessionsSection() {
           parse={(raw) => raw * 24}
           save={recentSave}
           onSave={(next) => setSidebarRecentHours(next)}
+        />
+      </SettingRow>
+      <SettingRow
+        label="Worktree sessions inherit parent permissions"
+        desc="When you split a session into a worktree, seed the new session with the permissions you already approved with &ldquo;Allow always&rdquo; in the parent, so it doesn't re-prompt for them."
+      >
+        <SettingToggle
+          testId="worktree-inherit-toggle"
+          ariaLabel="Worktree sessions inherit parent permissions"
+          checked={inheritPerms}
+          save={inheritPermsSave}
+          onSave={(next) => handleInheritToggle(next)}
         />
       </SettingRow>
     </>

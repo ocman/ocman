@@ -67,7 +67,14 @@ describe('TargetSelector', () => {
     render(<TargetSelector directory="/a" worktreesSupported />);
     const target = await screen.findByLabelText('Session target');
     fireEvent.change(target, { target: { value: 'worktree' } });
-    expect(openWorktreeForm).toHaveBeenCalledWith({ projectDir: '/a', branch: 'main' });
+    expect(openWorktreeForm).toHaveBeenCalledWith({ projectDir: '/a', branch: 'main', parentSessionId: undefined });
+  });
+
+  it('forwards the current session as parentSessionId (#101)', async () => {
+    render(<TargetSelector directory="/a" worktreesSupported parentSessionId="ses_1" />);
+    const target = await screen.findByLabelText('Session target');
+    fireEvent.change(target, { target: { value: 'worktree' } });
+    expect(openWorktreeForm).toHaveBeenCalledWith({ projectDir: '/a', branch: 'main', parentSessionId: 'ses_1' });
   });
 
   it('hides the worktree option when worktrees are unsupported', async () => {

@@ -114,4 +114,60 @@ describe('api.worktree', () => {
       api.worktree.remove({ projectDir: '/a/r', path: '/a/wt' }),
     ).rejects.toThrow(/uncommitted changes/);
   });
+
+  it('createAndLaunch forwards parentSessionId and parses inherit fields (#101)', async () => {
+    let capturedInit: RequestInit | undefined;
+    stubFetch((_url, init) => {
+      capturedInit = init;
+      return new Response(JSON.stringify({
+        sessionId: 'ses_child',
+        worktreePath: '/a/.worktrees/r/feature',
+        branch: 'feature',
+        reused: false,
+        branchExisted: false,
+        permissionsInherited: true,
+        permissionsInheritedCount: 3,
+      }), { status: 200 });
+    });
+
+    const res = await api.worktree.createAndLaunch({
+      projectDir: '/a/r',
+      branch: 'feature',
+      newBranch: true,
+      baseRef: 'main',
+      parentSessionId: 'ses_parent',
+    });
+
+    expect(JSON.parse(capturedInit?.body as string)).toEqual({
+      projectDir: '/a/r',
+      branch: 'feature',
+      newBranch: true,
+      baseRef: 'main',
+      parentSessionId: 'ses_parent',
+    });
+    expect(res.permissionsInherited).toBe(true);
+    expect(res.permissionsInheritedCount).toBe(3);
+  });
+});
+
+describe('api worktree-inherit-permissions setting (#101)', () => {
+  it('getWorktreeInheritPermissions returns the enabled flag', async () => {
+    stubFetch(() => new Response(JSON.stringify({ enabled: false }), { status: 200 }));
+    const res = await api.getWorktreeInheritPermissions();
+    expect(res.enabled).toBe(false);
+  });
+
+  it('setWorktreeInheritPermissions POSTs the enabled flag', async () => {
+    let capturedURL = '';
+    let capturedInit: RequestInit | undefined;
+    stubFetch((url, init) => {
+      capturedURL = url;
+      capturedInit = init;
+      return new Response(JSON.stringify({ enabled: true }), { status: 200 });
+    });
+    await api.setWorktreeInheritPermissions(true);
+    expect(capturedURL).toBe('/api/settings/worktree-inherit-permissions');
+    expect(capturedInit?.method).toBe('POST');
+    expect(JSON.parse(capturedInit?.body as string)).toEqual({ enabled: true });
+  });
 });

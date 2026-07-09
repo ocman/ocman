@@ -42,6 +42,7 @@ export function WorktreeFormModal() {
   const gen = useUiStore((s) => s.worktreeFormGen);
   const initialProject = useUiStore((s) => s.worktreeFormProject);
   const initialBranch = useUiStore((s) => s.worktreeFormBranch);
+  const parentSessionId = useUiStore((s) => s.worktreeFormParentSessionId);
   const close = useUiStore((s) => s.closeWorktreeForm);
   const allowed = useWorktreeSessions();
 
@@ -76,6 +77,7 @@ export function WorktreeFormModal() {
       key={gen}
       initialProject={initialProject}
       initialBranch={initialBranch}
+      parentSessionId={parentSessionId}
       close={close}
     />
   );
@@ -88,10 +90,11 @@ export function WorktreeFormModal() {
 interface WorktreeFormProps {
   initialProject: string | undefined;
   initialBranch: string | undefined;
+  parentSessionId: string | undefined;
   close: () => void;
 }
 
-function WorktreeForm({ initialProject, initialBranch, close }: WorktreeFormProps) {
+function WorktreeForm({ initialProject, initialBranch, parentSessionId, close }: WorktreeFormProps) {
   const projectsLoader = useApiStore((s) => s.getProjects);
   const seedNewSession = useApiStore((s) => s.seedNewSession);
   const navigate = useNavigate();
@@ -106,6 +109,9 @@ function WorktreeForm({ initialProject, initialBranch, close }: WorktreeFormProp
   const [stage, setStage] = useState<SubmitStage>('idle');
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
+  // Number of always-allow permissions the child would inherit from the
+  // parent session (#101). null = unknown/not applicable (hint hidden).
+  const [inheritCount, setInheritCount] = useState<number | null>(null);
   const branchInputRef = useRef<HTMLInputElement>(null);
 
   const submitting = stage !== 'idle';
@@ -132,6 +138,29 @@ function WorktreeForm({ initialProject, initialBranch, close }: WorktreeFormProp
       });
     return () => ctrl.abort();
   }, [projectDir]);
+
+  // When launched from a session, look up how many always-allow
+  // permissions would be inherited (#101) so the form can show a hint.
+  // Hidden when the inherit setting is off or the count is 0.
+  useEffect(() => {
+    if (!parentSessionId) return;
+    const ctrl = new AbortController();
+    (async () => {
+      try {
+        const { enabled } = await api.getWorktreeInheritPermissions(ctrl.signal);
+        if (!enabled) {
+          setInheritCount(null);
+          return;
+        }
+        const perms = await api.approvedPermissions(parentSessionId);
+        setInheritCount(perms.length);
+      } catch {
+        // Non-fatal: the hint just won't show.
+        setInheritCount(null);
+      }
+    })();
+    return () => ctrl.abort();
+  }, [parentSessionId]);
 
   const handleClose = useCallback(() => {
     if (submitting) return; // refuse to close mid-submit
@@ -174,6 +203,7 @@ function WorktreeForm({ initialProject, initialBranch, close }: WorktreeFormProp
         branch: branch.trim(),
         newBranch,
         baseRef: newBranch ? baseRef.trim() : undefined,
+        parentSessionId,
       });
     } catch (err) {
       setStage('idle');
@@ -284,6 +314,13 @@ function WorktreeForm({ initialProject, initialBranch, close }: WorktreeFormProp
                 spellCheck={false}
               />
             </label>
+          )}
+
+          {inheritCount !== null && inheritCount > 0 && (
+            <div className="oc-wt-hint" data-testid="worktree-inherit-hint">
+              Will inherit {inheritCount} approved{' '}
+              {inheritCount === 1 ? 'permission' : 'permissions'} from the current session.
+            </div>
           )}
 
           {error && <div className="oc-wt-error" role="alert">{error}</div>}

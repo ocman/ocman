@@ -56,7 +56,7 @@ export interface UseSessionActionsOptions {
   pending: UsePendingSendResult;
   navigate: (to: string) => void;
   navigateToSession: (id: string) => void;
-  openWorktreeForm: (opts: { projectDir: string; branch?: string }) => void;
+  openWorktreeForm: (opts: { projectDir: string; branch?: string; parentSessionId?: string }) => void;
   handleCompact: () => Promise<void>;
   handleNewSession: (title?: string) => Promise<void>;
   handleTmuxShortcut: () => void;
@@ -358,6 +358,8 @@ export function useSessionActions({
       openWorktreeForm({
         projectDir: session.directory,
         branch: args.trim() || undefined,
+        // Inherit this session's always-allow permissions (#101).
+        parentSessionId: session.id,
       });
       return;
     }

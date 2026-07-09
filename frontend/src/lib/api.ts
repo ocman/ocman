@@ -353,6 +353,12 @@ export const api = {
     fetchJSON<{ enabled: boolean }>(`/api/settings/sharing`, signal),
   setSharingEnabled: (enabled: boolean) =>
     postJSON<{ enabled: boolean }>(`/api/settings/sharing`, { enabled }),
+  // Whether worktree sessions inherit the parent's always-allow
+  // permissions at split time (#101; on by default).
+  getWorktreeInheritPermissions: (signal?: AbortSignal) =>
+    fetchJSON<{ enabled: boolean }>(`/api/settings/worktree-inherit-permissions`, signal),
+  setWorktreeInheritPermissions: (enabled: boolean) =>
+    postJSON<{ enabled: boolean }>(`/api/settings/worktree-inherit-permissions`, { enabled }),
   // Every active share link across all sessions.
   listAllShares: (signal?: AbortSignal) =>
     fetchJSON<GlobalShareLink[]>(`/api/shares`, signal),

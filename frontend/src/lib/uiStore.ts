@@ -164,7 +164,12 @@ type UiStore = {
   worktreeFormGen: number;
   worktreeFormProject: string | undefined;
   worktreeFormBranch: string | undefined;
-  openWorktreeForm: (opts?: { projectDir?: string; branch?: string }) => void;
+  // Session the /wt flow was launched from, if any. When set, the new
+  // worktree session inherits this session's always-allow permissions
+  // (#101). Undefined for project-scoped launches (command palette,
+  // Worktrees view) that have no "current session".
+  worktreeFormParentSessionId: string | undefined;
+  openWorktreeForm: (opts?: { projectDir?: string; branch?: string; parentSessionId?: string }) => void;
   closeWorktreeForm: () => void;
 };
 
@@ -291,11 +296,13 @@ export const useUiStore = create<UiStore>()(
       worktreeFormGen: 0,
       worktreeFormProject: undefined,
       worktreeFormBranch: undefined,
+      worktreeFormParentSessionId: undefined,
       openWorktreeForm: (opts) => set((s) => ({
         worktreeFormOpen: true,
         worktreeFormGen: s.worktreeFormGen + 1,
         worktreeFormProject: opts?.projectDir,
         worktreeFormBranch: opts?.branch,
+        worktreeFormParentSessionId: opts?.parentSessionId,
         // Close the palette if it happened to be open — the modal
         // takes over the focus.
         paletteOpen: false,
@@ -304,6 +311,7 @@ export const useUiStore = create<UiStore>()(
         worktreeFormOpen: false,
         worktreeFormProject: undefined,
         worktreeFormBranch: undefined,
+        worktreeFormParentSessionId: undefined,
       }),
     }),
     {

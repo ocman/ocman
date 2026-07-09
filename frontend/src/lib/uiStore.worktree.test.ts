@@ -37,6 +37,17 @@ describe('uiStore worktree-form slice', () => {
     expect(useUiStore.getState().worktreeFormBranch).toBe('feature/login');
   });
 
+  it('openWorktreeForm passes the parent session id through (#101)', () => {
+    useUiStore.getState().openWorktreeForm({ projectDir: '/abs/path', parentSessionId: 'ses_1' });
+    expect(useUiStore.getState().worktreeFormParentSessionId).toBe('ses_1');
+  });
+
+  it('closeWorktreeForm clears the parent session id (#101)', () => {
+    useUiStore.getState().openWorktreeForm({ projectDir: '/abs', parentSessionId: 'ses_1' });
+    useUiStore.getState().closeWorktreeForm();
+    expect(useUiStore.getState().worktreeFormParentSessionId).toBeUndefined();
+  });
+
   it('opening the worktree form closes the palette', () => {
     useUiStore.setState({ paletteOpen: true });
     useUiStore.getState().openWorktreeForm({ projectDir: '/abs' });

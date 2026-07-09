@@ -1109,7 +1109,7 @@ function ComposerImpl({
       <div className="oc-composer-footer">
         <span className="oc-composer-footer-left">
           {directory && newConversation && (
-            <TargetSelector directory={directory} worktreesSupported={!!worktreesSupported} />
+            <TargetSelector directory={directory} worktreesSupported={!!worktreesSupported} parentSessionId={sessionId} />
           )}
           {!disabled && isRunning && (
             <>

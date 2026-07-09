@@ -981,6 +981,12 @@ export interface WorktreeCreateRequest {
   branch: string;
   newBranch: boolean;
   baseRef?: string;
+  /**
+   * When set (and the worktree.inherit_permissions setting is on), the
+   * new session inherits this session's accumulated always-allow
+   * permissions at split time (#101).
+   */
+  parentSessionId?: string;
 }
 
 /**
@@ -1016,6 +1022,18 @@ export interface WorktreeCreateResponse {
   branch: string;
   reused: boolean;
   branchExisted: boolean;
+  /**
+   * True when the new session inherited one or more always-allow
+   * permissions from the parent session (#101).
+   */
+  permissionsInherited?: boolean;
+  /** Number of permission rules inherited from the parent (#101). */
+  permissionsInheritedCount?: number;
+  /**
+   * Non-empty only when inheritance was attempted but failed; the
+   * launch still succeeded (soft-fail).
+   */
+  permissionsInheritError?: string;
 }
 
 export interface SlashCommand {

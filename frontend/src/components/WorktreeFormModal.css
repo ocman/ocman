@@ -120,6 +120,11 @@
   font-style: italic;
 }
 
+.oc-wt-hint {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
 .oc-wt-modal footer {
   display: flex;
   justify-content: flex-end;
