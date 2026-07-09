@@ -104,6 +104,14 @@ type Service struct {
 	// session keyed by md5(metadata["command"]). See commandHash.
 	safeCommandCache   map[string]map[string]string
 	safeCommandCacheMu sync.Mutex
+
+	// askedCache remembers the permission text + patterns from a
+	// permission.asked event, keyed by "sessionID|permissionID", so a
+	// later permission.replied("always") can be persisted with the
+	// original patterns (the replied event carries neither). Bounded
+	// (see askedCacheMax) and evicted on reply. See HandlePermissionReplied.
+	askedCache   map[string]askedPermission
+	askedCacheMu sync.Mutex
 }
 
 // NewService returns a Service wired against the real OpenCode port
@@ -115,6 +123,7 @@ func NewService(deps Deps) *Service {
 		sseSessions:      make(map[string]*Sink),
 		autoApprove:      make(map[string]*autoApproveStatus),
 		safeCommandCache: make(map[string]map[string]string),
+		askedCache:       make(map[string]askedPermission),
 	}
 }
 

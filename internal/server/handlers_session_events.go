@@ -106,9 +106,10 @@ func (s *Server) serveSessionEvents(w http.ResponseWriter, r *http.Request, sess
 		// client, e.g. the OpenCode TUI) answers the prompt. Cancel
 		// any in-flight judge so we stop polling immediately and the
 		// verdict — if it arrives later — is discarded before it can
-		// race the user's answer.
-		OnPermissionReplied: func(evtSessionID, permissionID string) {
-			s.aaSvc().Cancel(evtSessionID, permissionID)
+		// race the user's answer. A "Allow always" reply is also
+		// captured into the parent's shadow allowlist (issue #101).
+		OnPermissionReplied: func(evtSessionID, permissionID, reply string) {
+			s.aaSvc().HandlePermissionReplied(evtSessionID, permissionID, reply)
 		},
 	}
 

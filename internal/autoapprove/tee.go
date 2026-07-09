@@ -43,8 +43,11 @@ type Tee struct {
 	// client). The handler should cancel any in-flight auto-approve
 	// judge for that permission so we don't pay for it and don't
 	// race the user's manual answer. sessionID is the event payload's
-	// sessionID for the same reason as onPermission.
-	OnPermissionReplied func(sessionID, permissionID string)
+	// sessionID for the same reason as onPermission. reply is the
+	// user's choice ("always" | "once" | "reject") so the handler can
+	// capture "Allow always" approvals into the parent's shadow
+	// allowlist (issue #101).
+	OnPermissionReplied func(sessionID, permissionID, reply string)
 	// onQuestionResolved fires when the upstream emits question.replied
 	// or question.rejected, so cross-page prompt toasts for the
 	// session's question can clear. reason is "replied" or "rejected".
@@ -253,6 +256,7 @@ func (t *Tee) dispatchPermissionReplied(dataJSON string) {
 		SessionID string `json:"sessionID"`
 		RequestID string `json:"requestID"`
 		ID        string `json:"id"`
+		Reply     string `json:"reply"`
 	}
 	var envelope struct {
 		Properties *repliedProps `json:"properties"`
@@ -278,9 +282,10 @@ func (t *Tee) dispatchPermissionReplied(dataJSON string) {
 	log.WithFields(log.Fields{
 		"sessionID":    props.SessionID,
 		"permissionID": permissionID,
+		"reply":        props.Reply,
 	}).Debug("Tee: dispatching permission.replied")
 	if t.OnPermissionReplied != nil {
-		t.OnPermissionReplied(props.SessionID, permissionID)
+		t.OnPermissionReplied(props.SessionID, permissionID, props.Reply)
 	}
 }
 

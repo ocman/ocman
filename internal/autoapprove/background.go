@@ -38,6 +38,11 @@ func (s *Service) Ensure(
 	patterns []string,
 	metadata map[string]any,
 ) {
+	// Remember the asked-side permission text + patterns so a later
+	// user-clicked "Allow always" reply can be persisted with them
+	// (the permission.replied event carries neither). Issue #101.
+	s.rememberAsked(string(platformID), sessionID, permissionID, permission, patterns)
+
 	// Read the configured delay once so both the cache anchor and the
 	// goroutine's sleep use the same value. The goroutine re-reads it
 	// inside backgroundAutoApprove for cases where the setting was

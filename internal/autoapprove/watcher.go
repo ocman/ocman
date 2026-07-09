@@ -68,8 +68,10 @@ type autoApproveWatcher struct {
 	// onPermissionReplied is called for every permission.replied event
 	// so any in-flight judge for that permission is cancelled — the
 	// user has already answered the prompt (e.g. via the OpenCode
-	// TUI) and we must drop our verdict to avoid double-answering.
-	onPermissionReplied func(sessionID, permissionID string)
+	// TUI) and we must drop our verdict to avoid double-answering. reply
+	// is the user's choice so a "Allow always" reply can be captured
+	// into the parent's shadow allowlist (issue #101).
+	onPermissionReplied func(sessionID, permissionID, reply string)
 
 	// httpClient is used for the long-lived /event SSE GET. Defaults
 	// to an http.Client with no timeout (SSE streams are long-lived).
@@ -127,8 +129,10 @@ func newAutoApproveWatcher(svc *Service) *autoApproveWatcher {
 			metadata map[string]any) {
 			svc.Ensure(platformID, adapter, sessionID, permissionID, permission, patterns, metadata)
 		}
-		w.onPermissionReplied = func(sessionID, permissionID string) {
-			svc.Cancel(sessionID, permissionID)
+		w.onPermissionReplied = func(sessionID, permissionID, reply string) {
+			// Cancels any in-flight judge and captures "Allow always"
+			// replies into the parent's shadow allowlist (issue #101).
+			svc.HandlePermissionReplied(sessionID, permissionID, reply)
 			// Broadcast the resolution so cross-page prompt toasts clear
 			// instantly even when the user answered from the OpenCode TUI
 			// or another browser tab. The watcher is always connected, so
@@ -314,9 +318,9 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 				w.onPermission(opencode.PlatformID, adapter, sessionID, permissionID, permission, patterns, metadata)
 			}
 		},
-		OnPermissionReplied: func(sessionID, permissionID string) {
+		OnPermissionReplied: func(sessionID, permissionID, reply string) {
 			if w.onPermissionReplied != nil {
-				w.onPermissionReplied(sessionID, permissionID)
+				w.onPermissionReplied(sessionID, permissionID, reply)
 			}
 		},
 		OnQuestionResolved: func(sessionID, requestID, reason string) {

@@ -923,7 +923,7 @@ func TestSsePermissionTeeRepliedDispatch(t *testing.T) {
 			tee := &Tee{
 				W:     &bytes.Buffer{},
 				Flush: nil,
-				OnPermissionReplied: func(sessionID, permissionID string) {
+				OnPermissionReplied: func(sessionID, permissionID, _ string) {
 					gotSessionID = sessionID
 					gotID = permissionID
 					select {
