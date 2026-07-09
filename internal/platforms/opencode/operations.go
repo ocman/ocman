@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -555,7 +556,10 @@ func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSession
 	// single instance can create a session rooted at an external dir
 	// (a worktree) different from the process launch cwd.
 	if req.Directory != "" {
-		httpReq.Header.Set("x-opencode-directory", req.Directory)
+		// URL-encode so a path with spaces (or other bytes unsafe in a
+		// raw header value) survives transit. OpenCode decodes with
+		// decodeURIComponent; url.PathEscape is the matching encoder.
+		httpReq.Header.Set("x-opencode-directory", url.PathEscape(req.Directory))
 	}
 	resp, err := openCodeClient.Do(httpReq)
 	if err != nil {

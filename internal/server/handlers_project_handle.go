@@ -15,8 +15,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/git"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
-	"github.com/NoUseFreak/ocman/internal/tmux"
 )
 
 // handleProjectRequest is the JSON request body for POST /api/project/handle.
@@ -409,8 +407,7 @@ func (s *Server) newSessionLauncher() *internalmcp.SessionLauncher {
 		s.stateDB,
 		s.sessions.Client("opencode"),
 		git.CreateWorktree,
-		internalmcp.TmuxLauncher(tmux.LaunchWorktreeWindow),
-		internalmcp.PortDiscoverer(opencode.DiscoverOpenCodePortFresh),
+		internalmcp.ProjectOpencodeEnsurer(s.ensureProjectOpencodePort),
 	)
 }
 

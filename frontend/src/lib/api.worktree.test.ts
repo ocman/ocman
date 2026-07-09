@@ -48,12 +48,11 @@ describe('api.worktree', () => {
       capturedURL = url;
       capturedInit = init;
       return new Response(JSON.stringify({
+        sessionId: 'ses_wt_feature',
         worktreePath: '/a/.worktrees/r/feature',
         branch: 'feature',
         reused: false,
         branchExisted: false,
-        tmuxSession: '~/r-feature',
-        opencodeLaunched: true,
       }), { status: 200 });
     });
 
@@ -72,7 +71,8 @@ describe('api.worktree', () => {
       newBranch: true,
       baseRef: 'main',
     });
-    expect(res.opencodeLaunched).toBe(true);
+    // #268: the response carries the in-app session ID the UI navigates to.
+    expect(res.sessionId).toBe('ses_wt_feature');
     expect(res.reused).toBe(false);
   });
 

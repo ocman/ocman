@@ -71,6 +71,19 @@ func lookPathOK(bin string) bool {
 	return err == nil
 }
 
+// ensureProjectOpencodePort guarantees the project's single opencode
+// instance is running for dir and returns its port, routed through the
+// owning host (ForDir) so a remote's project never launches on the hub
+// (#268 multi-remote requirement, same as CreateWorktreeSession). It is
+// the mcp.ProjectOpencodeEnsurer the SessionLauncher uses.
+func (s *Server) ensureProjectOpencodePort(ctx context.Context, dir string) (string, error) {
+	res, err := s.router().ForDir(dir).EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: dir})
+	if err != nil {
+		return "", err
+	}
+	return res.Port, nil
+}
+
 // launchProjectOpencode launches (idempotently) a single opencode in a
 // tmux session rooted at dir, seeding the pane with the given
 // OPENCODE_PERMISSION JSON. It is the LaunchProjectOpencode dep for the

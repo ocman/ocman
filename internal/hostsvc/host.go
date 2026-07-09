@@ -90,8 +90,14 @@ type WorktreeSessionRequest struct {
 }
 
 // WorktreeSessionResult is the outcome of CreateWorktreeSession: the
-// resulting worktree plus the tmux target it was launched into.
+// created in-app session (SessionID, the primary output) plus the
+// worktree it is rooted at. The Tmux* / OpencodeLaunched fields are
+// legacy remnants of the per-worktree tmux launcher; the /wt path no
+// longer populates them (#268) and #269 removes them.
 type WorktreeSessionResult struct {
+	// SessionID is the OpenCode session created in-app on the project's
+	// single opencode instance, rooted at WorktreePath.
+	SessionID        string `json:"sessionId"`
 	WorktreePath     string `json:"worktreePath"`
 	Branch           string `json:"branch"`
 	Reused           bool   `json:"reused"`
@@ -182,8 +188,10 @@ type Host interface {
 	// for new worktrees in the repo containing dir.
 	WorktreeDefaultBaseRef(ctx context.Context, dir string) (string, error)
 
-	// CreateWorktreeSession creates (or reuses) a worktree and launches
-	// opencode in tmux rooted at it. Runs on the owning host (R-C).
+	// CreateWorktreeSession creates (or reuses) a worktree, ensures the
+	// project's single opencode instance is running, and creates an
+	// in-app session rooted at the worktree on that instance. Returns
+	// the created session ID (#268). Runs on the owning host (R-C).
 	CreateWorktreeSession(ctx context.Context, req WorktreeSessionRequest) (*WorktreeSessionResult, error)
 
 	// RemoveWorktree removes the worktree at path from the repo

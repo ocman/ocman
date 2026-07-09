@@ -222,19 +222,17 @@ func buildTestMCPServerWithOpenCodeDB(t *testing.T, stateDB *state.DB, platform 
 			Branch: req.Branch,
 		}, nil
 	})
-	fakeTmux := internalmcp.TmuxLauncher(func(_, _ string) (string, bool, error) {
-		return "~/src/repo:wt-branch", true, nil
+	fakeEnsure := internalmcp.ProjectOpencodeEnsurer(func(_ context.Context, _ string) (string, error) {
+		return "12345", nil
 	})
-	fakePort := internalmcp.PortDiscoverer(func(_ string) string { return "12345" })
 
 	deps := internalmcp.Deps{
-		OcDB:           ocDB,
-		StateDB:        stateDB,
-		Platform:       platform,
-		PlatformID:     "opencode",
-		CreateWorktree: fakeWT,
-		LaunchTmux:     fakeTmux,
-		DiscoverPort:   fakePort,
+		OcDB:                  ocDB,
+		StateDB:               stateDB,
+		Platform:              platform,
+		PlatformID:            "opencode",
+		CreateWorktree:        fakeWT,
+		EnsureProjectOpencode: fakeEnsure,
 	}
 
 	tools := internalmcp.ServerTools(deps)

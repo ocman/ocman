@@ -6,20 +6,15 @@ import type { Project } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
 import { useUiStore } from '../lib/uiStore';
 import { useWorktreeSessions } from '../lib/useCapabilities';
-import { createSessionWithLaunch } from '../lib/createSessionWithLaunch';
-import { resolveTargetForDir } from '../lib/machinePicker';
 
 // Submit progress states surfaced to the user. The modal stays open
 // across all of them so submit feels like a single waiting step rather
 // than a series of redirects.
 type SubmitStage =
   | 'idle'
-  | 'creating-worktree'  // POST /api/worktree/create-and-launch in flight
-  | 'switching-tmux'     // tmux switch-client to the new window in flight
-  | 'awaiting-opencode'  // opencode is starting up in tmux; we'll keep
-                         // retrying createSession until its HTTP API
-                         // accepts the call (mirrors the /new flow).
-  | 'creating-session';  // POST /api/sessions in flight
+  | 'creating-worktree'; // POST /api/worktree/create-and-launch in flight
+                         // (the backend creates the worktree, ensures the
+                         // project instance, and creates the in-app session)
 
 /**
  * WorktreeFormModal collects the inputs needed to create a worktree
@@ -98,8 +93,6 @@ interface WorktreeFormProps {
 
 function WorktreeForm({ initialProject, initialBranch, close }: WorktreeFormProps) {
   const projectsLoader = useApiStore((s) => s.getProjects);
-  const createSession = useApiStore((s) => s.createSession);
-  const launchOpencodeInTmux = useApiStore((s) => s.launchOpencodeInTmux);
   const seedNewSession = useApiStore((s) => s.seedNewSession);
   const navigate = useNavigate();
 
@@ -200,80 +193,23 @@ function WorktreeForm({ initialProject, initialBranch, close }: WorktreeFormProp
       await new Promise((r) => setTimeout(r, 1500));
     }
 
-    // tmux switch is best-effort: it can fail when the user ran ocman
-    // remotely (no local /dev/ttys000) or hasn't attached to the
-    // project session yet. The worktree itself is up either way, so
-    // we never block the redirect on this.
-    setStage('switching-tmux');
-    try {
-      await api.tmuxSwitch(resp.tmuxTarget || resp.tmuxSession);
-    } catch {
-      // Non-fatal — see comment above.
-    }
-
-    // Create the OpenCode session inside the new worktree. This is
-    // the same primitive /new uses: it POSTs /session to the running
-    // OpenCode HTTP API for the worktree's cwd, which immediately
-    // returns a session ID we can route to.
-    //
-    // alreadyLaunched=true tells createSessionWithLaunch that the
-    // worktree backend has already started opencode in a tmux window
-    // — it just needs to retry on `unreachable` while the new
-    // instance binds its port and the lsof scan picks it up.
-    setStage('awaiting-opencode');
-    try {
-      // Resolve which host/platform owns this worktree so createSession
-      // is unambiguous when multiple platforms are registered (e.g. a
-      // hub with connected remotes). The worktree lives on the same
-      // host as its project, so resolve on the project dir. Falls back
-      // to the default ('') on single-host installs.
-      const target = await resolveTargetForDir(projectDir);
-      const created = await createSessionWithLaunch(
-        {
-          createSession,
-          launchOpencodeInTmux,
-          tmuxAvailable: false,
-        },
-        // reportProgress=false: this modal renders its own stage
-        // label, so suppress the global launch-progress overlay.
-        {
-          directory: resp.worktreePath,
-          title: branch.trim(),
-          alreadyLaunched: true,
-          reportProgress: false,
-          platform: target?.platform || undefined,
-          remoteId: target?.remoteId,
-        },
-      );
-      setStage('idle');
-      close();
-      if (created.id) {
-        seedNewSession(created.id, resp.worktreePath, '', branch.trim());
-        navigate(`/session/${created.id}`);
-      } else {
-        navigate(`/project/${encodeURIComponent(resp.worktreePath)}`);
-      }
-    } catch (err) {
-      setStage('idle');
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(`Worktree launched, but creating the OpenCode session failed: ${msg}`);
+    // #268: the backend already created the in-app session on the
+    // project's single opencode instance, rooted at the worktree, and
+    // returned its ID. Seed it into the store and navigate straight to
+    // it — no tmux switch, no separate createSession round-trip.
+    setStage('idle');
+    close();
+    if (resp.sessionId) {
+      seedNewSession(resp.sessionId, resp.worktreePath, '', branch.trim());
+      navigate(`/session/${resp.sessionId}`);
+    } else {
+      navigate(`/project/${encodeURIComponent(resp.worktreePath)}`);
     }
   };
 
-  const stageLabel = (() => {
-    switch (stage) {
-      case 'creating-worktree':
-        return 'Creating worktree…';
-      case 'switching-tmux':
-        return 'Switching tmux to the new window…';
-      case 'awaiting-opencode':
-        return 'Waiting for OpenCode to come up…';
-      case 'creating-session':
-        return 'Creating OpenCode session…';
-      default:
-        return null;
-    }
-  })();
+  const stageLabel = stage === 'creating-worktree'
+    ? 'Creating worktree session…'
+    : null;
 
   return (
     <div className="oc-wt-backdrop" onClick={handleClose}>

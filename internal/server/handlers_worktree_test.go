@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 
 	"github.com/NoUseFreak/ocman/internal/tmux"
@@ -380,35 +383,23 @@ func TestHandleWorktreeCreateAndLaunch_HappyPath(t *testing.T) {
 		t.Skip("git not available")
 	}
 
-	// Replace the default tmux runner with a no-op stub for the
-	// duration of the test. The launch helper already separates I/O
-	// behind tmux.DefaultRunner; we just need the calls to succeed
-	// without spawning actual tmux processes.
-	prev := tmux.DefaultRunner
-	t.Cleanup(func() { tmux.DefaultRunner = prev })
-
-	// We also need tmux.IsAvailable to short-circuit true. The
-	// handler checks via exec.LookPath("tmux"), so skip if missing
-	// rather than try to fake that out (would require refactoring
-	// tmux.IsAvailable's lookup).
-	if !tmux.IsAvailable() {
-		t.Skip("tmux not available")
-	}
-
 	repo := initWorktreeTestRepo(t)
-	projectSessionName := tmux.SessionNameForPath(repo)
 
-	tmux.DefaultRunner = tmux.Runner{
-		ListSessions: func() ([]tmux.Session, error) {
-			return []tmux.Session{{Name: projectSessionName, ResolvedPath: repo}}, nil
-		},
-		ListWindows:     func(string) ([]tmux.Window, error) { return nil, nil },
-		NewSession:      func(string, string, string) error { return nil },
-		NewNamedSession: func(string, string, string, string) error { return nil },
-		NewWindow:       func(string, string, string) error { return nil },
-		NewNamedWindow:  func(string, string, string, string) error { return nil },
-	}
+	// #268: /wt now runs the session in-app. Inject a local host whose
+	// DiscoverPort finds the (fake) already-running project instance and
+	// whose CreateSession returns a canned session ID. Real git creates
+	// the worktree, so the returned slug/path are genuine.
+	var createDir, createPort string
+	var createCalls int
 	srv := &Server{}
+	srv.hostRouter = hostsvc.NewRouter(hostlocal.New(hostlocal.Deps{
+		DiscoverPort: func(string) string { return "5599" },
+		CreateSession: func(_ context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+			createCalls++
+			createDir, createPort = req.Directory, req.Port
+			return &platforms.CreateSessionResponse{ID: "ses_wt_login"}, nil
+		},
+	}))
 
 	body := `{"projectDir":"` + repo + `","branch":"feature/login","newBranch":true,"baseRef":"main"}`
 	req := httptest.NewRequest(http.MethodPost,
@@ -421,15 +412,16 @@ func TestHandleWorktreeCreateAndLaunch_HappyPath(t *testing.T) {
 		t.Fatalf("status = %d; body = %q", rr.Code, rr.Body.String())
 	}
 	var resp struct {
-		WorktreePath     string `json:"worktreePath"`
-		Branch           string `json:"branch"`
-		Reused           bool   `json:"reused"`
-		TmuxSession      string `json:"tmuxSession"`
-		TmuxTarget       string `json:"tmuxTarget"`
-		OpencodeLaunched bool   `json:"opencodeLaunched"`
+		SessionID    string `json:"sessionId"`
+		WorktreePath string `json:"worktreePath"`
+		Branch       string `json:"branch"`
+		Reused       bool   `json:"reused"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode: %v", err)
+	}
+	if resp.SessionID != "ses_wt_login" {
+		t.Errorf("sessionId = %q; want ses_wt_login", resp.SessionID)
 	}
 	if resp.Branch != "feature/login" {
 		t.Errorf("branch = %q; want feature/login", resp.Branch)
@@ -437,30 +429,20 @@ func TestHandleWorktreeCreateAndLaunch_HappyPath(t *testing.T) {
 	if resp.Reused {
 		t.Errorf("reused = true on first call; want false")
 	}
-	if !resp.OpencodeLaunched {
-		t.Errorf("opencodeLaunched = false; want true")
-	}
 	if !strings.Contains(resp.WorktreePath, "feature-login") {
 		t.Errorf("worktreePath = %q; want it to contain the slug", resp.WorktreePath)
 	}
-	if resp.TmuxSession != tmux.WorktreeSession {
-		t.Errorf("tmuxSession = %q; want %q", resp.TmuxSession, tmux.WorktreeSession)
+	// The in-app session must be created rooted at the worktree on the
+	// ensured project port.
+	if createDir != resp.WorktreePath {
+		t.Errorf("CreateSession dir = %q; want worktree %q", createDir, resp.WorktreePath)
 	}
-	if !strings.HasPrefix(resp.TmuxTarget, tmux.WorktreeSession+":") || !strings.Contains(resp.TmuxTarget, "feature-login") {
-		t.Errorf("tmuxTarget = %q; want %q-prefixed window containing feature-login", resp.TmuxTarget, tmux.WorktreeSession)
-	}
-
-	// Re-run: expect Reused=true, OpencodeLaunched=false (idempotent).
-	// Pre-populate the stub's window list with the named worktree window
-	// so the launcher takes the idempotent short-circuit.
-	existingWindow := tmux.WindowNameForDirectory(resp.WorktreePath)
-	tmux.DefaultRunner.ListSessions = func() ([]tmux.Session, error) {
-		return []tmux.Session{{Name: tmux.WorktreeSession}}, nil
-	}
-	tmux.DefaultRunner.ListWindows = func(string) ([]tmux.Window, error) {
-		return []tmux.Window{{Name: existingWindow, Path: resp.WorktreePath}}, nil
+	if createPort != "5599" {
+		t.Errorf("CreateSession port = %q; want ensured 5599", createPort)
 	}
 
+	// Re-run: expect Reused=true (idempotent worktree), a second in-app
+	// session created on the same instance.
 	rr2 := httptest.NewRecorder()
 	srv.handleWorktreeCreateAndLaunch(rr2, httptest.NewRequest(http.MethodPost,
 		"/api/worktree/create-and-launch",
@@ -469,8 +451,7 @@ func TestHandleWorktreeCreateAndLaunch_HappyPath(t *testing.T) {
 		t.Fatalf("re-run status = %d; body = %q", rr2.Code, rr2.Body.String())
 	}
 	var resp2 struct {
-		Reused           bool `json:"reused"`
-		OpencodeLaunched bool `json:"opencodeLaunched"`
+		Reused bool `json:"reused"`
 	}
 	if err := json.Unmarshal(rr2.Body.Bytes(), &resp2); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -478,7 +459,7 @@ func TestHandleWorktreeCreateAndLaunch_HappyPath(t *testing.T) {
 	if !resp2.Reused {
 		t.Errorf("reused = false on second call; want true")
 	}
-	if resp2.OpencodeLaunched {
-		t.Errorf("opencodeLaunched = true on idempotent re-run; want false")
+	if createCalls != 2 {
+		t.Errorf("CreateSession calls = %d; want 2 (one per /wt)", createCalls)
 	}
 }

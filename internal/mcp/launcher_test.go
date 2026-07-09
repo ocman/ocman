@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"testing"
-	"time"
 
 	_ "modernc.org/sqlite"
 
@@ -35,9 +34,11 @@ type fakePlatformAdapter struct {
 	createSessionErr error
 	sendMessageErr   error
 	sentMessages     []platforms.SendMessageRequest
+	createReq        platforms.CreateSessionRequest
 }
 
 func (f *fakePlatformAdapter) CreateSession(_ context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+	f.createReq = req
 	if f.createSessionErr != nil {
 		return nil, f.createSessionErr
 	}
@@ -62,21 +63,17 @@ func noopWorktreeCreator(_ context.Context, req git.CreateWorktreeRequest) (*git
 	}, nil
 }
 
-// noopTmuxLauncher is a tmuxLauncher that always succeeds.
-func noopTmuxLauncher(_, _ string) (string, bool, error) {
-	return "~/src/repo:wt-branch", true, nil
-}
-
-// immediatePortDiscoverer returns a port immediately (simulates a fast startup).
-func immediatePortDiscoverer(_ string) string {
-	return "12345"
+// noopEnsurer is a ProjectOpencodeEnsurer that always returns a port
+// (simulates the project instance already running / launched).
+func noopEnsurer(_ context.Context, _ string) (string, error) {
+	return "12345", nil
 }
 
 func TestLaunch_CreatesSessionAndSendsPrompt(t *testing.T) {
 	db := openTestStateDB(t)
 	platform := &fakePlatformAdapter{createSessionID: "child-abc"}
 
-	launcher := NewSessionLauncher(db, platform, noopWorktreeCreator, noopTmuxLauncher, immediatePortDiscoverer)
+	launcher := NewSessionLauncher(db, platform, noopWorktreeCreator, noopEnsurer)
 
 	childID, err := launcher.Launch(context.Background(), LaunchRequest{
 		ParentSessionID: "parent-1",
@@ -129,7 +126,7 @@ func TestLaunch_CreateSessionError(t *testing.T) {
 		createSessionErr: errors.New("no running opencode instance"),
 	}
 
-	launcher := NewSessionLauncher(db, platform, noopWorktreeCreator, noopTmuxLauncher, immediatePortDiscoverer)
+	launcher := NewSessionLauncher(db, platform, noopWorktreeCreator, noopEnsurer)
 
 	_, err := launcher.Launch(context.Background(), LaunchRequest{
 		ParentSessionID: "parent-1",
@@ -151,7 +148,7 @@ func TestLaunch_SendMessageError_DoesNotFail(t *testing.T) {
 		sendMessageErr:  errors.New("platform unreachable"),
 	}
 
-	launcher := NewSessionLauncher(db, platform, noopWorktreeCreator, noopTmuxLauncher, immediatePortDiscoverer)
+	launcher := NewSessionLauncher(db, platform, noopWorktreeCreator, noopEnsurer)
 
 	childID, err := launcher.Launch(context.Background(), LaunchRequest{
 		ParentSessionID: "parent-1",
@@ -172,7 +169,7 @@ func TestLaunchWithWorktree_Success(t *testing.T) {
 	db := openTestStateDB(t)
 	platform := &fakePlatformAdapter{createSessionID: "child-wt-1"}
 
-	launcher := NewSessionLauncher(db, platform, noopWorktreeCreator, noopTmuxLauncher, immediatePortDiscoverer)
+	launcher := NewSessionLauncher(db, platform, noopWorktreeCreator, noopEnsurer)
 
 	childID, wtResult, err := launcher.LaunchWithWorktree(
 		context.Background(),
@@ -210,8 +207,117 @@ func TestLaunchWithWorktree_Success(t *testing.T) {
 	if cs.Branch != "fix-lint" {
 		t.Errorf("Branch: got %q, want fix-lint", cs.Branch)
 	}
-	if cs.TmuxTarget == "" {
-		t.Error("expected TmuxTarget to be set")
+	// #268: no per-worktree tmux window — TmuxTarget stays empty.
+	if cs.TmuxTarget != "" {
+		t.Errorf("TmuxTarget should be empty (in-app path): %q", cs.TmuxTarget)
+	}
+}
+
+// TestLaunchWithWorktree_EnsuresProjectInstance proves LaunchWithWorktree
+// ensures the project's single opencode instance against the repo root
+// (not the worktree path) and threads that port into CreateSession.
+func TestLaunchWithWorktree_EnsuresProjectInstance(t *testing.T) {
+	db := openTestStateDB(t)
+	platform := &fakePlatformAdapter{createSessionID: "child-wt-2"}
+
+	var ensuredDir string
+	ensurer := func(_ context.Context, dir string) (string, error) {
+		ensuredDir = dir
+		return "9090", nil
+	}
+	launcher := NewSessionLauncher(db, platform, noopWorktreeCreator, ensurer)
+
+	_, wtResult, err := launcher.LaunchWithWorktree(
+		context.Background(),
+		LaunchRequest{Platform: "opencode", ComposedPrompt: "go"},
+		git.CreateWorktreeRequest{RepoRoot: "/repo", Branch: "fix", NewBranch: true, BaseRef: "main"},
+	)
+	if err != nil {
+		t.Fatalf("LaunchWithWorktree: %v", err)
+	}
+	// Ensured against the repo root, not the worktree path.
+	if ensuredDir != "/repo" {
+		t.Errorf("ensured dir = %q; want /repo (repo root)", ensuredDir)
+	}
+	// The session is created rooted at the worktree path on the ensured port.
+	if platform.createReq.Directory != wtResult.Path {
+		t.Errorf("CreateSession dir = %q; want worktree %q", platform.createReq.Directory, wtResult.Path)
+	}
+	if platform.createReq.Port != "9090" {
+		t.Errorf("CreateSession port = %q; want ensured 9090", platform.createReq.Port)
+	}
+}
+
+// TestLaunch_EnsuresBeforeCreate proves a same-directory Launch ensures
+// the project instance first (self-heal) and threads the port.
+func TestLaunch_EnsuresBeforeCreate(t *testing.T) {
+	db := openTestStateDB(t)
+	platform := &fakePlatformAdapter{createSessionID: "child-same"}
+	var ensuredDir string
+	ensurer := func(_ context.Context, dir string) (string, error) {
+		ensuredDir = dir
+		return "7788", nil
+	}
+	launcher := NewSessionLauncher(db, platform, noopWorktreeCreator, ensurer)
+
+	if _, err := launcher.Launch(context.Background(), LaunchRequest{
+		Platform:  "opencode",
+		Directory: "/proj",
+	}); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	if ensuredDir != "/proj" {
+		t.Errorf("ensured dir = %q; want /proj", ensuredDir)
+	}
+	if platform.createReq.Port != "7788" {
+		t.Errorf("CreateSession port = %q; want 7788", platform.createReq.Port)
+	}
+}
+
+// TestLaunch_EnsureError_Fails proves an ensure failure fails the launch
+// (the instance couldn't be brought up).
+// TestLaunch_EnsureError_FallsBackToDiscovery proves the same-directory
+// self-heal contract (spec D-2 / US-10): a failed ensure (e.g. tmux
+// absent on the host) must NOT fail the launch. Launch falls through
+// with an empty port so CreateSession's own discovery can still find an
+// already-running instance. The session is created with port="".
+func TestLaunch_EnsureError_FallsBackToDiscovery(t *testing.T) {
+	db := openTestStateDB(t)
+	platform := &fakePlatformAdapter{createSessionID: "child-fallback"}
+	ensurer := func(_ context.Context, _ string) (string, error) {
+		return "", errors.New("tmux not available")
+	}
+	launcher := NewSessionLauncher(db, platform, noopWorktreeCreator, ensurer)
+	id, err := launcher.Launch(context.Background(), LaunchRequest{
+		Platform:  "opencode",
+		Directory: "/proj",
+	})
+	if err != nil {
+		t.Fatalf("Launch must self-heal past ensure failure, got: %v", err)
+	}
+	if id != "child-fallback" {
+		t.Fatalf("session id = %q; want child-fallback", id)
+	}
+	if platform.createReq.Port != "" {
+		t.Errorf("CreateSession port = %q; want empty (fallback to discovery)", platform.createReq.Port)
+	}
+}
+
+// TestLaunch_EnsureFails_CreateFails_Fails confirms Launch still fails
+// when the fallback CreateSession itself fails (genuinely no running
+// instance) — i.e. it doesn't swallow the real error.
+func TestLaunch_EnsureFails_CreateFails_Fails(t *testing.T) {
+	db := openTestStateDB(t)
+	platform := &fakePlatformAdapter{createSessionErr: errors.New("platform unreachable")}
+	ensurer := func(_ context.Context, _ string) (string, error) {
+		return "", errors.New("tmux not available")
+	}
+	launcher := NewSessionLauncher(db, platform, noopWorktreeCreator, ensurer)
+	if _, err := launcher.Launch(context.Background(), LaunchRequest{
+		Platform:  "opencode",
+		Directory: "/proj",
+	}); err == nil {
+		t.Fatal("expected error when both ensure and create fail")
 	}
 }
 
@@ -223,7 +329,7 @@ func TestLaunchWithWorktree_WorktreeCreateError(t *testing.T) {
 		return nil, errors.New("branch already checked out")
 	}
 
-	launcher := NewSessionLauncher(db, platform, failingCreator, noopTmuxLauncher, immediatePortDiscoverer)
+	launcher := NewSessionLauncher(db, platform, failingCreator, noopEnsurer)
 
 	_, _, err := launcher.LaunchWithWorktree(
 		context.Background(),
@@ -232,21 +338,5 @@ func TestLaunchWithWorktree_WorktreeCreateError(t *testing.T) {
 	)
 	if err == nil {
 		t.Fatal("expected error when worktree creation fails")
-	}
-}
-
-func TestWaitForPort_Timeout(t *testing.T) {
-	// portDiscoverer that never finds a port.
-	neverDiscovers := func(_ string) string { return "" }
-
-	launcher := &SessionLauncher{discoverPort: neverDiscovers}
-
-	// Use a very short timeout via context cancellation.
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-
-	err := launcher.waitForPort(ctx, "/repo")
-	if err == nil {
-		t.Fatal("expected error when port never becomes available")
 	}
 }

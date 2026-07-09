@@ -14,7 +14,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -22,6 +21,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
 // Deps carries the host operations that live in the server package
@@ -34,7 +34,16 @@ type Deps struct {
 	// LaunchWorktreeTmux launches opencode in the shared "ocman-worktree"
 	// tmux session under a named window rooted at the worktree path.
 	// Returns (target, launched, err).
+	//
+	// Deprecated: no longer called from the /wt path (#268 runs worktree
+	// sessions in-app on the project instance). Kept until #269 removes
+	// the per-worktree tmux launcher machinery.
 	LaunchWorktreeTmux func(projectDir, worktreeDir string) (string, bool, error)
+	// CreateSession creates a session on the OpenCode platform. Injected
+	// (rather than importing the adapter) so CreateWorktreeSession can
+	// create the in-app worktree session on the project's single
+	// opencode instance via the shared session-mutation code path.
+	CreateSession func(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error)
 	// LaunchProjectOpencode launches (idempotently) a single
 	// `opencode --port 0` in a tmux session rooted at the project's main
 	// checkout, seeding the pane with the given OPENCODE_PERMISSION JSON.
@@ -124,6 +133,10 @@ func (h *Host) WorktreeDefaultBaseRef(ctx context.Context, dir string) (string, 
 	return git.ResolveBaseRef(ctx, repoRoot), nil
 }
 
+// CreateWorktreeSession creates (or reuses) a git worktree, ensures the
+// project's single opencode instance is running (#267), then creates an
+// in-app session rooted at the worktree on that instance (#266/#268).
+// No per-worktree tmux window is launched. Returns the created session ID.
 func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSessionRequest) (*hostsvc.WorktreeSessionResult, error) {
 	repoRoot, err := git.ResolveRepoRoot(ctx, req.ProjectDir)
 	if err != nil {
@@ -138,22 +151,33 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 	if err != nil {
 		return nil, err
 	}
-	target, launched, err := h.deps.LaunchWorktreeTmux(repoRoot, res.Path)
+
+	// Ensure the project's single opencode instance is running and get
+	// its port. This is the only launch path; no per-worktree process.
+	ensured, err := h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: repoRoot})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ensuring project opencode: %w", err)
 	}
-	session := target
-	if i := strings.IndexByte(target, ':'); i >= 0 {
-		session = target[:i]
+
+	// Create the session in-app on that instance, rooted at the worktree.
+	if h.deps.CreateSession == nil {
+		return nil, fmt.Errorf("CreateWorktreeSession: CreateSession dep not wired")
 	}
+	created, err := h.deps.CreateSession(ctx, platforms.CreateSessionRequest{
+		Directory: res.Path,
+		Port:      ensured.Port,
+		Title:     req.Branch,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("creating worktree session: %w", err)
+	}
+
 	return &hostsvc.WorktreeSessionResult{
-		WorktreePath:     res.Path,
-		Branch:           res.Branch,
-		Reused:           res.Reused,
-		BranchExisted:    res.BranchExisted,
-		TmuxSession:      session,
-		TmuxTarget:       target,
-		OpencodeLaunched: launched,
+		SessionID:     created.ID,
+		WorktreePath:  res.Path,
+		Branch:        res.Branch,
+		Reused:        res.Reused,
+		BranchExisted: res.BranchExisted,
 	}, nil
 }
 

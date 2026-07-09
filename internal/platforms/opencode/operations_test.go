@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -450,8 +451,51 @@ func TestCreateSession_SendsDirectory(t *testing.T) {
 	if resp.ID != sid {
 		t.Fatalf("CreateSession ID = %q, want %q", resp.ID, sid)
 	}
-	if gotDir != dir {
-		t.Fatalf("x-opencode-directory = %q, want %q", gotDir, dir)
+	if gotDir != url.PathEscape(dir) {
+		t.Fatalf("x-opencode-directory = %q, want %q", gotDir, url.PathEscape(dir))
+	}
+}
+
+// TestCreateSession_EncodesDirectoryHeader proves the x-opencode-directory
+// header value is URL-encoded so a worktree path containing a space (or
+// other characters unsafe in a raw header value) round-trips intact.
+// OpenCode decodes the header with decodeURIComponent, so we encode with
+// url.PathEscape to match.
+func TestCreateSession_EncodesDirectoryHeader(t *testing.T) {
+	const sid = "sess-spacey"
+	const dir = "/private/tmp/work tree with space"
+
+	var gotHeader string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/session" {
+			gotHeader = r.Header.Get("x-opencode-directory")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"` + sid + `"}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+	resetPortCacheForTests()
+	resetSessionPortAffinityForTests()
+	defer resetSessionPortAffinityForTests()
+
+	a := New(nil, nil)
+	if _, err := a.CreateSession(context.Background(), platforms.CreateSessionRequest{
+		Directory: dir,
+		Port:      port,
+	}); err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	want := url.PathEscape(dir)
+	if gotHeader != want {
+		t.Fatalf("x-opencode-directory = %q, want %q", gotHeader, want)
+	}
+	// Sanity: the encoded value must not contain a raw space.
+	if strings.Contains(gotHeader, " ") {
+		t.Fatalf("x-opencode-directory contains a raw space: %q", gotHeader)
 	}
 }
 
@@ -499,8 +543,8 @@ func TestCreateSession_ProvidedPortSkipsScan(t *testing.T) {
 	if scans != 0 {
 		t.Fatalf("scans = %d, want 0 (provided port must skip discovery)", scans)
 	}
-	if gotDir != dir {
-		t.Fatalf("x-opencode-directory = %q, want %q", gotDir, dir)
+	if gotDir != url.PathEscape(dir) {
+		t.Fatalf("x-opencode-directory = %q, want %q", gotDir, url.PathEscape(dir))
 	}
 	if got := preferredSessionPort(sid); got != port {
 		t.Fatalf("preferredSessionPort = %q, want %q", got, port)

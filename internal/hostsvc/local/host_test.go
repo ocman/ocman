@@ -10,6 +10,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/gitexec"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
 func initRepo(t *testing.T) string {
@@ -147,13 +148,27 @@ func TestLocalHost_InjectedDeps(t *testing.T) {
 	_ = wtPath
 }
 
+// TestLocalHost_CreateWorktreeSession proves the #268 wiring: /wt creates
+// the worktree, ensures the project's single opencode instance (reusing
+// the already-running one — no launch, no per-worktree tmux window), and
+// creates an in-app session rooted at the worktree on that instance's
+// port. The result carries the created session ID.
 func TestLocalHost_CreateWorktreeSession(t *testing.T) {
 	repo := initRepo(t)
-	var gotProject, gotWorktree string
+	var worktreeLaunches int
+	var gotDirectory, gotPort string
 	h := New(Deps{
-		LaunchWorktreeTmux: func(projectDir, worktreeDir string) (string, bool, error) {
-			gotProject, gotWorktree = projectDir, worktreeDir
-			return "proj-sess:feature", true, nil
+		// Instance already running: EnsureProjectOpencode returns its
+		// port and launches nothing.
+		DiscoverPort: func(string) string { return "4242" },
+		// Must NOT be called from the /wt path any more.
+		LaunchWorktreeTmux: func(string, string) (string, bool, error) {
+			worktreeLaunches++
+			return "should-not-happen", true, nil
+		},
+		CreateSession: func(_ context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+			gotDirectory, gotPort = req.Directory, req.Port
+			return &platforms.CreateSessionResponse{ID: "ses_worktree"}, nil
 		},
 	})
 	res, err := h.CreateWorktreeSession(context.Background(), hostsvc.WorktreeSessionRequest{
@@ -165,25 +180,37 @@ func TestLocalHost_CreateWorktreeSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateWorktreeSession: %v", err)
 	}
+	if res.SessionID != "ses_worktree" {
+		t.Errorf("SessionID = %q; want ses_worktree", res.SessionID)
+	}
 	if res.Branch != "feature" || res.WorktreePath == "" {
 		t.Fatalf("unexpected result: %+v", res)
 	}
-	// Session name is split off the "session:window" target.
-	if res.TmuxSession != "proj-sess" || res.TmuxTarget != "proj-sess:feature" {
-		t.Errorf("tmux target split wrong: %+v", res)
+	// The in-app session must be created against the worktree path on the
+	// ensured instance's port.
+	if gotDirectory != res.WorktreePath {
+		t.Errorf("CreateSession directory = %q; want worktree path %q", gotDirectory, res.WorktreePath)
 	}
-	if !res.OpencodeLaunched {
-		t.Error("expected OpencodeLaunched true")
+	if gotPort != "4242" {
+		t.Errorf("CreateSession port = %q; want ensured port 4242", gotPort)
 	}
-	if gotProject == "" || gotWorktree == "" {
-		t.Errorf("launcher not called with dirs: %q %q", gotProject, gotWorktree)
+	// The old per-worktree tmux launcher must not fire.
+	if worktreeLaunches != 0 {
+		t.Errorf("LaunchWorktreeTmux called %d times; want 0 (in-app path)", worktreeLaunches)
+	}
+	// Legacy tmux fields are no longer populated by /wt.
+	if res.TmuxSession != "" || res.TmuxTarget != "" || res.OpencodeLaunched {
+		t.Errorf("legacy tmux fields should be empty: %+v", res)
 	}
 }
 
 func TestLocalHost_RemoveWorktree(t *testing.T) {
 	repo := initRepo(t)
 	h := New(Deps{
-		LaunchWorktreeTmux: func(string, string) (string, bool, error) { return "s:w", true, nil },
+		DiscoverPort: func(string) string { return "4242" },
+		CreateSession: func(_ context.Context, _ platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+			return &platforms.CreateSessionResponse{ID: "ses_x"}, nil
+		},
 	})
 	res, err := h.CreateWorktreeSession(context.Background(), hostsvc.WorktreeSessionRequest{
 		ProjectDir: repo, Branch: "feature", NewBranch: true, BaseRef: "main",

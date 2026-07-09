@@ -188,13 +188,19 @@ func (s *Server) newLocalHost() hostsvc.Host {
 		LaunchWorktreeTmux:    tmux.LaunchWorktreeWindow,
 		LaunchProjectOpencode: launchProjectOpencode,
 		DiscoverPort:          opencode.DiscoverOpenCodePortFresh,
-		TmuxSessions:          s.hostTmuxSessions,
-		Projects:              s.hostProjects,
-		Caps:                  s.hostCaps,
-		TermWindows:           term.Windows,
-		TermCreateWindow:      term.CreateWindow,
-		TermKillWindow:        term.KillWindow,
-		TermAttach:            term.AttachLocalPTY,
+		// CreateSession routes worktree-session creation through the shared
+		// session-mutation service (same validated path + hooks as REST/MCP).
+		// Resolved lazily: s.sessions is assigned after newLocalHost runs.
+		CreateSession: func(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+			return s.sessions.Client("opencode").CreateSession(ctx, req)
+		},
+		TmuxSessions:     s.hostTmuxSessions,
+		Projects:         s.hostProjects,
+		Caps:             s.hostCaps,
+		TermWindows:      term.Windows,
+		TermCreateWindow: term.CreateWindow,
+		TermKillWindow:   term.KillWindow,
+		TermAttach:       term.AttachLocalPTY,
 	})
 }
 

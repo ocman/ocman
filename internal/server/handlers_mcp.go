@@ -5,8 +5,6 @@ import (
 	"net/http"
 
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
-	"github.com/NoUseFreak/ocman/internal/tmux"
 )
 
 // buildMCPHandler constructs the MCP server handler from the Server's
@@ -16,12 +14,11 @@ import (
 // It is only registered when the OpenCode platform adapter is present.
 func (s *Server) buildMCPHandler() http.Handler {
 	deps := internalmcp.Deps{
-		OcDB:         s.db,
-		StateDB:      s.stateDB,
-		Platform:     s.sessions.Client("opencode"),
-		PlatformID:   "opencode",
-		LaunchTmux:   internalmcp.TmuxLauncher(tmux.LaunchWorktreeWindow),
-		DiscoverPort: internalmcp.PortDiscoverer(opencode.DiscoverOpenCodePortFresh),
+		OcDB:                  s.db,
+		StateDB:               s.stateDB,
+		Platform:              s.sessions.Client("opencode"),
+		PlatformID:            "opencode",
+		EnsureProjectOpencode: internalmcp.ProjectOpencodeEnsurer(s.ensureProjectOpencodePort),
 	}
 	if s.stateDB != nil {
 		deps.LoopService = s.loopSvc()

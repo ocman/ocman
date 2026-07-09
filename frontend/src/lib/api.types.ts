@@ -997,24 +997,28 @@ export interface WorktreeRemoveRequest {
 /**
  * Response from POST /api/worktree/create-and-launch.
  *
+ * - `sessionId` is the in-app OpenCode session created on the project's
+ *   single opencode instance, rooted at the worktree (#268). The UI
+ *   navigates straight to it.
  * - `reused` is true when the target worktree already existed for
  *   the same branch (idempotent re-run).
  * - `branchExisted` is true when the caller asked to create a new
  *   branch but one with that name already existed locally, so the
  *   backend fell back to checking it out instead. The UI should warn
  *   the user that they're working on a pre-existing branch.
- * - `opencodeLaunched` is false when the tmux session pre-existed
- *   and we skipped the relaunch (AD-4). The user can still attach
- *   to the existing session via tmuxSession.
+ * - `tmuxSession` / `tmuxTarget` / `opencodeLaunched` are legacy remnants
+ *   of the per-worktree tmux launcher; the /wt path no longer populates
+ *   them (#268) and #269 removes them.
  */
 export interface WorktreeCreateResponse {
+  sessionId: string;
   worktreePath: string;
   branch: string;
   reused: boolean;
   branchExisted: boolean;
-  tmuxSession: string;
+  tmuxSession?: string;
   tmuxTarget?: string;
-  opencodeLaunched: boolean;
+  opencodeLaunched?: boolean;
 }
 
 export interface SlashCommand {

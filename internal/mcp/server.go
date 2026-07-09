@@ -33,13 +33,13 @@ type Deps struct {
 	// git.CreateWorktree when nil.
 	CreateWorktree WorktreeCreator
 
-	// LaunchTmux is the tmux launcher function. Must be set by the
-	// caller (the server package injects launchOpencodeInProjectTmuxWindow).
-	LaunchTmux TmuxLauncher
-
-	// DiscoverPort is the port discovery function. Must be set by the
-	// caller (the server package injects the OpenCode port discoverer).
-	DiscoverPort PortDiscoverer
+	// EnsureProjectOpencode guarantees the project's single opencode
+	// instance is running for a directory and returns its port. The
+	// server package injects an adapter over the owning host's
+	// EnsureProjectOpencode (#267/#268). Same-directory and worktree
+	// splits use it so they self-heal instead of returning
+	// ErrPlatformUnreachable.
+	EnsureProjectOpencode ProjectOpencodeEnsurer
 
 	// LoopService drives the agent-loops MCP tools (create_loop, etc.).
 	// Optional: nil disables the loop tools (e.g. no state DB). The
@@ -77,8 +77,7 @@ func New(deps Deps) *Server {
 		deps.StateDB,
 		adapter,
 		deps.CreateWorktree,
-		deps.LaunchTmux,
-		deps.DiscoverPort,
+		deps.EnsureProjectOpencode,
 	)
 
 	// Build the mcp-go server.
@@ -151,8 +150,7 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 		deps.StateDB,
 		adapter,
 		deps.CreateWorktree,
-		deps.LaunchTmux,
-		deps.DiscoverPort,
+		deps.EnsureProjectOpencode,
 	)
 
 	split := &splitTools{

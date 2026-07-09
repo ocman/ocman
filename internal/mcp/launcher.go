@@ -12,16 +12,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
-const (
-	// portPollInterval is how often we check for the child OpenCode
-	// instance's port after launching it in a git.
-	portPollInterval = 500 * time.Millisecond
-
-	// portPollTimeout is the maximum time we wait for the child
-	// OpenCode instance to bind its port after tmux launch.
-	portPollTimeout = 10 * time.Second
-)
-
 // LaunchRequest describes a child session to create.
 type LaunchRequest struct {
 	// ParentSessionID is the ID of the session that triggered the split.
@@ -73,63 +63,90 @@ type platformAdapter = SessionClient
 // Exported so the server package and tests can reference the type.
 type WorktreeCreator func(ctx context.Context, req git.CreateWorktreeRequest) (*git.CreateWorktreeResult, error)
 
-// TmuxLauncher abstracts the tmux launch helpers for testing.
+// ProjectOpencodeEnsurer guarantees the project's single opencode
+// instance is running for the given directory and returns its HTTP port.
+// It mirrors hostsvc.Host.EnsureProjectOpencode, narrowed to (dir)->port
+// so the mcp package stays decoupled from hostsvc. The server package
+// injects an adapter over the owning host's EnsureProjectOpencode.
 // Exported so the server package and tests can reference the type.
-type TmuxLauncher func(projectDir, worktreeDir string) (target string, launched bool, err error)
-
-// PortDiscoverer returns the HTTP port for a running OpenCode instance
-// in the given directory, or "" if none is found.
-// Exported so the server package and tests can reference the type.
-type PortDiscoverer func(directory string) string
+type ProjectOpencodeEnsurer func(ctx context.Context, dir string) (port string, err error)
 
 // worktreeCreator is the internal alias used within the package.
 type worktreeCreator = WorktreeCreator
 
-// tmuxLauncher is the internal alias used within the package.
-type tmuxLauncher = TmuxLauncher
-
-// portDiscoverer is the internal alias used within the package.
-type portDiscoverer = PortDiscoverer
+// projectOpencodeEnsurer is the internal alias used within the package.
+type projectOpencodeEnsurer = ProjectOpencodeEnsurer
 
 // SessionLauncher orchestrates the creation of child sessions.
 type SessionLauncher struct {
 	stateDB        childSessionStore
 	platform       platformAdapter
 	createWorktree worktreeCreator
-	launchTmux     tmuxLauncher
-	discoverPort   portDiscoverer
+	ensureOpencode projectOpencodeEnsurer
 }
 
 // NewSessionLauncher creates a SessionLauncher with production dependencies.
-// The worktreeCreator, tmuxLauncher, and portDiscoverer are injected so
-// tests can substitute fakes without requiring real git/tmux/opencode.
+// createWorktree and ensureOpencode are injected so tests can substitute
+// fakes without requiring real git/opencode. ensureOpencode makes both
+// same-directory and worktree splits self-heal: it launches the project's
+// single opencode instance when none is running, then Launch creates the
+// session in-app against the returned port (#268).
 func NewSessionLauncher(
 	stateDB childSessionStore,
 	platform platformAdapter,
 	createWorktree worktreeCreator,
-	launchTmux tmuxLauncher,
-	discoverPort portDiscoverer,
+	ensureOpencode projectOpencodeEnsurer,
 ) *SessionLauncher {
 	return &SessionLauncher{
 		stateDB:        stateDB,
 		platform:       platform,
 		createWorktree: createWorktree,
-		launchTmux:     launchTmux,
-		discoverPort:   discoverPort,
+		ensureOpencode: ensureOpencode,
 	}
 }
 
 // Launch creates a child session and persists it to state.db.
-// It calls Platform.CreateSession to create the session, then
-// Platform.SendMessage to deliver the composed prompt.
-//
-// For worktree splits, the worktree and tmux session must already be
-// set up before calling Launch (the caller is responsible for that).
-// Launch only handles the OpenCode session creation and prompt delivery.
+// It ensures the project's single opencode instance is running for
+// req.Directory (launching it if none — so same-directory splits
+// self-heal instead of returning ErrPlatformUnreachable), then calls
+// Platform.CreateSession against the ensured port and Platform.SendMessage
+// to deliver the composed prompt.
 func (l *SessionLauncher) Launch(ctx context.Context, req LaunchRequest) (string, error) {
+	// Ensure the project's opencode instance is running and thread its
+	// port into CreateSession (skips lsof discovery).
+	//
+	// Best-effort by design (spec D-2 / US-10): a same-directory split
+	// should *self-heal* — launch the instance when none is running — but
+	// must never fail *harder* than before this feature. If ensuring
+	// fails (e.g. tmux absent on the host), fall through with an empty
+	// port so CreateSession's own discovery still finds an
+	// already-running instance; it surfaces ErrPlatformUnreachable itself
+	// if there genuinely is none.
+	port := ""
+	if l.ensureOpencode != nil && req.Directory != "" {
+		if p, err := l.ensureOpencode(ctx, req.Directory); err != nil {
+			log.WithFields(log.Fields{
+				"directory": req.Directory,
+				"error":     err,
+			}).Warn("mcp: ensure project opencode failed; falling back to discovery")
+		} else {
+			port = p
+		}
+	}
+	return l.launchWithPort(ctx, req, port)
+}
+
+// launchWithPort creates the session on the given port (empty = let the
+// adapter discover), sends the prompt, and persists the child record.
+// It is the shared body of Launch and LaunchWithWorktree; the latter has
+// already ensured the project instance against the repo root, so it
+// passes that port instead of re-ensuring on the worktree path (which
+// resolves to a different repo top-level).
+func (l *SessionLauncher) launchWithPort(ctx context.Context, req LaunchRequest, port string) (string, error) {
 	// Create the OpenCode session.
 	resp, err := l.platform.CreateSession(ctx, platforms.CreateSessionRequest{
 		Directory: req.Directory,
+		Port:      port,
 	})
 	if err != nil {
 		return "", fmt.Errorf("creating child session: %w", err)
@@ -178,54 +195,38 @@ func (l *SessionLauncher) Launch(ctx context.Context, req LaunchRequest) (string
 	return childID, nil
 }
 
-// LaunchWithWorktree creates a git worktree, launches OpenCode in it via
-// tmux, waits for the port to become discoverable, then calls Launch.
-// It returns the child session ID and the worktree creation result.
+// LaunchWithWorktree creates a git worktree, ensures the project's single
+// opencode instance is running (rooted at the repo's main checkout), then
+// creates an in-app session rooted at the worktree on that instance's
+// port (#268 — no per-worktree tmux window). It returns the child session
+// ID and the worktree creation result.
 func (l *SessionLauncher) LaunchWithWorktree(
 	ctx context.Context,
 	req LaunchRequest,
 	wtReq git.CreateWorktreeRequest,
 ) (childID string, wtResult *git.CreateWorktreeResult, err error) {
-	// Create (or reuse) the git.
+	// Create (or reuse) the worktree.
 	wtResult, err = l.createWorktree(ctx, wtReq)
 	if err != nil {
 		return "", nil, fmt.Errorf("creating worktree: %w", err)
 	}
 
-	// Launch OpenCode in the worktree via tmux.
-	tmuxTarget, _, err := l.launchTmux(wtReq.RepoRoot, wtResult.Path)
-	if err != nil {
-		return "", wtResult, fmt.Errorf("launching opencode in tmux: %w", err)
-	}
-	req.TmuxTarget = tmuxTarget
 	req.WorktreePath = wtResult.Path
 	req.Branch = wtResult.Branch
 	req.Directory = wtResult.Path
 
-	// Poll for the OpenCode port to become available.
-	if err := l.waitForPort(ctx, wtResult.Path); err != nil {
-		return "", wtResult, fmt.Errorf("waiting for opencode port: %w", err)
+	// Ensure the project's single opencode instance against the repo's
+	// main checkout (NOT the worktree path, whose git top-level differs),
+	// then create the session in-app on that port.
+	port := ""
+	if l.ensureOpencode != nil {
+		p, ensErr := l.ensureOpencode(ctx, wtReq.RepoRoot)
+		if ensErr != nil {
+			return "", wtResult, fmt.Errorf("ensuring project opencode: %w", ensErr)
+		}
+		port = p
 	}
 
-	childID, err = l.Launch(ctx, req)
+	childID, err = l.launchWithPort(ctx, req, port)
 	return childID, wtResult, err
-}
-
-// waitForPort polls discoverPort until a port is found for the given
-// directory or the timeout is reached.
-func (l *SessionLauncher) waitForPort(ctx context.Context, directory string) error {
-	deadline := time.Now().Add(portPollTimeout)
-	for {
-		if port := l.discoverPort(directory); port != "" {
-			return nil
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("timed out waiting for opencode to start in %s", directory)
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(portPollInterval):
-		}
-	}
 }
