@@ -52,3 +52,34 @@ describe('ToolCallDisplay bash collapse', () => {
     }
   });
 });
+
+describe('ToolCallDisplay auto-approved notice', () => {
+  it('renders permission, patterns and reasoning each on their own line', () => {
+    const { container, getByTestId } = renderTool({
+      toolName: 'ocman:auto-approved',
+      argsText: JSON.stringify({
+        permission: 'external_directory',
+        patterns: ['/tmp/foo', '/tmp/bar'],
+        reasoning: 'Reads a temp file, no write access.',
+      }),
+    });
+    expect(container.querySelector('.oc-auto-approved-action')!.textContent).toBe(
+      'external_directory',
+    );
+    expect(container.querySelector('.oc-auto-approved-patterns')!.textContent).toBe(
+      '/tmp/foo, /tmp/bar',
+    );
+    expect(getByTestId('auto-approved-reasoning').textContent).toBe(
+      'Reads a temp file, no write access.',
+    );
+  });
+
+  it('omits absent fields', () => {
+    const { container, queryByTestId } = renderTool({
+      toolName: 'ocman:auto-approved',
+      argsText: JSON.stringify({ permission: 'external_directory' }),
+    });
+    expect(container.querySelector('.oc-auto-approved-patterns')).toBeNull();
+    expect(queryByTestId('auto-approved-reasoning')).toBeNull();
+  });
+});

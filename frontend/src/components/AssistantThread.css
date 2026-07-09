@@ -1271,7 +1271,11 @@
  * Collapsed to a single summary line by default; click to expand
  * the command patterns + judge reasoning. */
 .oc-auto-approved-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   margin: 2px 0;
+  padding: 3px 0;
   font-family: 'SF Mono', Consolas, monospace;
   font-size: 12px;
   color: var(--text-dim);
@@ -1281,31 +1285,6 @@
   display: flex;
   align-items: baseline;
   gap: 6px;
-  width: 100%;
-  padding: 3px 0;
-  background: transparent;
-  border: none;
-  font: inherit;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.oc-auto-approved-summary:disabled {
-  cursor: default;
-}
-
-.oc-auto-approved-caret {
-  color: var(--overlay0);
-  font-size: 10px;
-  flex-shrink: 0;
-}
-
-.oc-auto-approved-details {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 4px 0 4px 18px;
 }
 
 .oc-auto-approved-icon {
@@ -1329,43 +1308,10 @@
   font-size: 11px;
 }
 
-.oc-auto-approved-link {
-  background: transparent;
-  border: none;
-  color: var(--overlay0);
-  font-family: inherit;
-  font-size: 11px;
-  cursor: pointer;
-  padding: 0;
-  margin-left: auto;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  transition: color 0.1s;
-}
-
-.oc-auto-approved-link:hover {
-  color: var(--subtext0);
-}
-
-/* Icon-only variant — drops the underline and adds a small hit area
- * around the magnifying glass so it's still clickable at 11px. */
-.oc-auto-approved-link--icon {
-  text-decoration: none;
-  padding: 2px 4px;
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  font-size: 13px;
-  line-height: 1;
-}
-
-/* Judge's one-line conclusion shown inline. Italicized so it reads
- * as commentary, dimmed so it sits behind the action text. */
+/* Judge's conclusion, on its own line. Italicized so it reads as
+ * commentary, dimmed so it sits behind the action text. Wraps freely. */
 .oc-auto-approved-reasoning {
   color: var(--overlay1);
   font-style: italic;
   font-size: 11px;
-  /* Allow long reasonings to wrap rather than blow out the row. */
-  flex: 1 1 auto;
-  min-width: 0;
 }

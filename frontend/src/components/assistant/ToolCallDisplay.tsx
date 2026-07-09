@@ -253,47 +253,23 @@ function AutoApprovedNotice({
 }: {
   permission: string;
   patterns: string[];
-  /** Judge's one-line conclusion shown inline on the notice. Empty for
-   *  legacy approvals or when the model omitted the field. */
+  /** Judge's one-line conclusion shown on the notice. Empty for legacy
+   *  approvals or when the model omitted the field. */
   reasoning?: string;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const hasDetails = patterns.length > 0 || !!reasoning;
-
   return (
-    <div className="oc-auto-approved-notice" data-expanded={expanded || undefined}>
-      <button
-        type="button"
-        className="oc-auto-approved-summary"
-        onClick={() => setExpanded((v) => !v)}
-        aria-expanded={expanded}
-        disabled={!hasDetails}
-      >
-        {hasDetails && (
-          <span className="oc-auto-approved-caret" aria-hidden="true">
-            {expanded ? '\u25be' : '\u25b8'}
-          </span>
-        )}
+    <div className="oc-auto-approved-notice">
+      <div className="oc-auto-approved-summary">
         <span className="oc-auto-approved-icon" aria-hidden="true">&#10003;</span>
         <span className="oc-auto-approved-label">Auto-approved by AI</span>
-        <span className="oc-auto-approved-action">{permission}</span>
-      </button>
-      {expanded && hasDetails && (
-        <div className="oc-auto-approved-details">
-          {patterns.length > 0 && (
-            <span className="oc-auto-approved-patterns">
-              {patterns.join(', ')}
-            </span>
-          )}
-          {reasoning && (
-            <span
-              className="oc-auto-approved-reasoning"
-              data-testid="auto-approved-reasoning"
-              title={reasoning}
-            >
-              {reasoning}
-            </span>
-          )}
+      </div>
+      {permission && <div className="oc-auto-approved-action">{permission}</div>}
+      {patterns.length > 0 && (
+        <div className="oc-auto-approved-patterns">{patterns.join(', ')}</div>
+      )}
+      {reasoning && (
+        <div className="oc-auto-approved-reasoning" data-testid="auto-approved-reasoning">
+          {reasoning}
         </div>
       )}
     </div>
