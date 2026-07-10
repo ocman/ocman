@@ -1,6 +1,6 @@
 ---
 name: ocman-session-splitting
-description: Use when splitting ocman/OpenCode work into child sessions, parallel sessions, or git worktrees via MCP.
+description: Use when splitting ocman/OpenCode work into child sessions, parallel sessions, or git worktrees via MCP, or when a task needs to change files in a different project than the current working directory.
 ---
 
 # Ocman Session Splitting
@@ -17,6 +17,26 @@ Split when work has independent parts that can finish without blocking the paren
 - Review or verification of current changes by a second session.
 
 Do not split for tiny edits, single-file reads, or tasks needing constant parent decisions.
+
+## Cross-Project Changes
+
+Always split when a task requires editing, creating, or deleting files that
+live **outside the current working directory / project root** — a sibling
+repo, a dependency checked out elsewhere, any path under a different project.
+Do not edit those files inline. Delegate to a child rooted in that project:
+
+1. `get_current_session_id` for the parent id.
+2. `new_session(session_id, intent, worktree=false)` — the child's working
+   directory becomes the other project's root, so its edits/builds/staging
+   stay isolated from parent work. Use `worktree=true` + a `branch` if the
+   change should not touch that project's working tree.
+
+One child per target project; reuse it for related edits there. Give a
+complete, self-contained intent (task, files, verification command) since the
+child does not share parent context. Report which project you delegated to.
+
+This does not apply to reading files elsewhere (read directly), files inside
+the current project, or when the user explicitly asks for an inline edit.
 
 ## Tool Choice
 
