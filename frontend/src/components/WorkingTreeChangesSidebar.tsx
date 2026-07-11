@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { WorkingTreeFile } from '../lib/api';
 import { useWorkingTreeDiff } from '../lib/useWorkingTreeDiff';
 import { useInfiniteRows } from '../lib/useInfiniteRows';
+import { useSidebarCallbacks } from '../lib/useSidebarCallbacks';
 import { RawDiffView } from './RawDiffView';
 import { ChangesRefreshButton, type PaneSummary } from './SessionChangesSidebar';
 import { groupWorkingTreeFiles } from './groupWorkingTreeFiles';
@@ -90,19 +91,10 @@ export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = fal
     });
   }, [totals.files, totals.add, totals.del, onSummaryChange]);
 
-  // Forward refresh upward so RightPanel can render its own button
-  // in the embedded pane header. Mirrors SessionChangesSidebar.
-  useEffect(() => {
-    if (!onRefresh) return;
-    onRefresh(refresh);
-  }, [refresh, onRefresh]);
-
-  // Forward loading state so RightPanel can spin its refresh button
-  // while a working-tree fetch is in flight.
-  useEffect(() => {
-    if (!onLoadingChange) return;
-    onLoadingChange(loading);
-  }, [loading, onLoadingChange]);
+  // Forward refresh upward + loading state so RightPanel can render
+  // its own button in the embedded pane header and spin it while a
+  // working-tree fetch is in flight. Mirrors SessionChangesSidebar.
+  useSidebarCallbacks({ refresh, loading, onRefresh, onLoadingChange });
 
   // Lazy-mount budget over the flat file list. We then group the
   // *visible* slice so the section headers and counts adjust as

@@ -3,6 +3,7 @@ import './SessionChangesSidebar.css';
 import { usePlatformCapabilities } from '../lib/useCapabilities';
 import { useSessionChanges } from '../lib/useSessionChanges';
 import { useInfiniteRows } from '../lib/useInfiniteRows';
+import { useSidebarCallbacks } from '../lib/useSidebarCallbacks';
 import { FileChangeGroup } from './FileChangeGroup';
 import { SidebarFileListSkeleton } from './Skeleton';
 
@@ -89,21 +90,10 @@ export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedd
     });
   }, [filesChanged, totalAdditions, totalDeletions, onSummaryChange]);
 
-  // Forward the refresh callback up to RightPanel so it can wire the
-  // embedded pane's "Refresh" button. Only fires when the callback
-  // identity changes (which it doesn't, since it's stable from
-  // useSessionChanges).
-  useEffect(() => {
-    if (!onRefresh) return;
-    onRefresh(refresh);
-  }, [refresh, onRefresh]);
-
-  // Forward loading state so embedded parents can spin their own
-  // refresh button while a request is in flight.
-  useEffect(() => {
-    if (!onLoadingChange) return;
-    onLoadingChange(loading);
-  }, [loading, onLoadingChange]);
+  // Forward the refresh callback + loading state up to RightPanel so
+  // it can wire the embedded pane's "Refresh" button and spin it while
+  // a request is in flight.
+  useSidebarCallbacks({ refresh, loading, onRefresh, onLoadingChange });
 
   const Body = (
     <div className="oc-changes-sidebar-body oc-changes-list-body">

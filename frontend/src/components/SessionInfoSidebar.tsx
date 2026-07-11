@@ -4,6 +4,7 @@ import './SessionInfoSidebar.css';
 import { usePlatformCapabilities } from '../lib/useCapabilities';
 import { useSessionInfo } from '../lib/useSessionInfo';
 import { useGitInfo } from '../lib/useGitInfo';
+import { useSidebarCallbacks } from '../lib/useSidebarCallbacks';
 import { ChangesRefreshButton, type PaneSummary } from './SessionChangesSidebar';
 import { TodoList } from './TodoList';
 import { SessionSection, TokensSection, LiveSection } from './SessionInfoSections';
@@ -120,15 +121,7 @@ export function SessionInfoSidebar({
     onSummaryChange({ files: 0, additions: 0, deletions: 0 });
   }, [onSummaryChange]);
 
-  useEffect(() => {
-    if (!onRefresh) return;
-    onRefresh(refresh);
-  }, [refresh, onRefresh]);
-
-  useEffect(() => {
-    if (!onLoadingChange) return;
-    onLoadingChange(loading);
-  }, [loading, onLoadingChange]);
+  useSidebarCallbacks({ refresh, loading, onRefresh, onLoadingChange });
 
   // Session section: cross-platform metadata. Renders whenever a
   // session is available, regardless of caps.sessionInfo. Branch is
