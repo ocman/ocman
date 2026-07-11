@@ -88,21 +88,18 @@ const UserMessage: FC = () => {
   const content = useMessage((m) => m.content);
   const id = useMessage((m) => m.id);
   const custom = useMessage((m) => m.metadata?.custom as Record<string, unknown> | undefined);
-  const isQueued = custom?.queued === true;
   const agent = typeof custom?.agent === 'string' ? (custom.agent as string) : undefined;
   const failed = (custom?.failed && typeof custom.failed === 'object')
     ? (custom.failed as { error?: string; imagesDropped?: boolean })
     : undefined;
   const failedSendsCtx = useFailedSends();
-  // Queued messages use their own peach accent — don't override it with the
-  // agent color until the message actually starts being processed. Failed
-  // sends override both with a danger-tinted border so the banner reads as
-  // attached to the right bubble.
+  // Failed sends get a danger-tinted border so the banner reads as
+  // attached to the right bubble; otherwise use the agent color.
   const agentBorder = useAgentColor(agent);
   let borderStyle: React.CSSProperties | undefined;
   if (failed) {
     borderStyle = { borderLeftColor: 'var(--danger)' };
-  } else if (!isQueued && agent) {
+  } else if (agent) {
     borderStyle = { borderLeftColor: agentBorder };
   }
   const hasContent = content.some(
@@ -114,7 +111,7 @@ const UserMessage: FC = () => {
 
   return (
     <MessagePrimitive.Root
-      className={`oc-msg oc-msg-user${isQueued ? ' oc-msg-queued' : ''}${failed ? ' oc-msg-failed' : ''}`}
+      className={`oc-msg oc-msg-user${failed ? ' oc-msg-failed' : ''}`}
       data-message-id={id}
       style={borderStyle}
     >
@@ -122,12 +119,6 @@ const UserMessage: FC = () => {
       <div className="oc-msg-body">
         <MessagePrimitive.Content components={USER_PART_COMPONENTS} />
       </div>
-      {isQueued && !failed && (
-        <div className="oc-msg-queued-badge">
-          <span className="oc-queued-dot" title="Queued" />
-          Queued
-        </div>
-      )}
       {failed && id && (
         <div className="oc-msg-failed-banner" role="alert">
           <i className="bi bi-exclamation-triangle-fill" aria-hidden="true" />

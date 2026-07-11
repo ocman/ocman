@@ -126,6 +126,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   padding: 6px 4px 0;
   font-family: 'SF Mono', Consolas, monospace;
   font-size: 11px;
@@ -136,6 +137,77 @@
   min-height: 18px;
   box-sizing: content-box;
 }
+
+/* Follow-up message queue (#58): a stacked list shown above the composer
+   input, so pending follow-ups read top-to-bottom into the box below. */
+.oc-queued-messages {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  /* Cap the list height so a long backlog scrolls internally instead of
+     growing up and taking over the view. ~35vh keeps the composer and
+     thread usable; individual items are also clamped to 3 lines. */
+  max-height: 35vh;
+  overflow-y: auto;
+}
+.oc-queued-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 3px 6px;
+  background: var(--surface0);
+  border-radius: 4px;
+}
+.oc-queued-icon { color: var(--text-dim); font-size: 11px; margin-top: 2px; flex-shrink: 0; }
+.oc-queued-image { margin-right: 4px; }
+.oc-queued-text {
+  flex: 1;
+  /* min-width:0 lets this flex child shrink below its content width so
+     long text wraps inside the row instead of pushing it under the
+     sidebar. overflow-wrap breaks unbreakable strings (URLs, paths). */
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  /* Button reset — the text is clickable to expand/collapse. */
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  /* Clamp to 3 lines so a long prompt can't take over the view. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+.oc-queued-text-expanded {
+  display: block;
+  -webkit-line-clamp: none;
+  line-clamp: none;
+  overflow: visible;
+}
+.oc-queued-actions { display: flex; gap: 2px; flex-shrink: 0; }
+.oc-queued-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+.oc-queued-btn:hover:not(:disabled) { color: var(--text); background: var(--border); }
+.oc-queued-btn:disabled { opacity: 0.3; cursor: default; }
+.oc-queued-remove:hover:not(:disabled) { color: var(--red); }
 .oc-composer-footer-left {
   display: flex;
   align-items: center;

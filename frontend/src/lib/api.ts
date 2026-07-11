@@ -57,6 +57,7 @@ export type {
   FavoriteEntry,
   SessionModelsResponse,
   AgentInfo,
+  QueuedMessage,
   TmuxClient,
   TmuxSession,
   TermWindow,
@@ -104,6 +105,7 @@ import type {
   WorktreeEntry,
   WorkingTreeDiff,
   AgentInfo,
+  QueuedMessage,
   ActivityDay,
   HourlyData,
   HourlyTokensByModel,
@@ -492,12 +494,16 @@ export const api = {
     agent?: string,
     reasoning?: string,
     platform?: string,
+    // queue=true tells the server this send was made while the agent was
+    // mid-turn: hold it in the follow-up queue, don't drain it into the
+    // running turn (#58). The client knows this from the live SSE stream.
+    queue?: boolean,
   ) => {
     const query = platform ? `?platform=${encodeURIComponent(platform)}` : '';
     const resp = await apiFetch(`/api/session/${encodeURIComponent(sessionId)}/message${query}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, images, model, agent, reasoning }),
+      body: JSON.stringify({ message, images, model, agent, reasoning, queue }),
     });
     if (!resp.ok) {
       const body = (await resp.text()).trim();
@@ -522,6 +528,41 @@ export const api = {
       }
       throw new Error(body || `HTTP ${resp.status}`);
     }
+  },
+  // --- Follow-up message queue (#58) ---
+  // Prompts submitted while a session is mid-turn are queued server-side
+  // and drain one per turn on idle. These endpoints let the composer show
+  // and manage that shared queue.
+  queuedMessages: async (sessionId: string, platform?: string): Promise<QueuedMessage[]> => {
+    const query = platform ? `?platform=${encodeURIComponent(platform)}` : '';
+    const resp = await apiFetch(`/api/session/${encodeURIComponent(sessionId)}/queue${query}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return resp.json() as Promise<QueuedMessage[]>;
+  },
+  deleteQueuedMessage: async (sessionId: string, queuedId: string, platform?: string) => {
+    const query = platform ? `?platform=${encodeURIComponent(platform)}` : '';
+    const resp = await apiFetch(
+      `/api/session/${encodeURIComponent(sessionId)}/queue/${encodeURIComponent(queuedId)}${query}`,
+      { method: 'DELETE' },
+    );
+    if (!resp.ok && resp.status !== 404) throw new Error(`HTTP ${resp.status}`);
+  },
+  moveQueuedMessage: async (
+    sessionId: string,
+    queuedId: string,
+    direction: -1 | 1,
+    platform?: string,
+  ) => {
+    const query = platform ? `?platform=${encodeURIComponent(platform)}` : '';
+    const resp = await apiFetch(
+      `/api/session/${encodeURIComponent(sessionId)}/queue/${encodeURIComponent(queuedId)}/move${query}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ direction }),
+      },
+    );
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   },
   uploadComposerAttachment: async (sessionId: string, file: File) => {
     const form = new FormData();

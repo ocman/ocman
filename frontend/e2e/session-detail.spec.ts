@@ -1536,58 +1536,9 @@ test('multiple user messages after shell commands do NOT cascade as queued', asy
   await expect(queuedMessages).toHaveCount(0);
 });
 
-test('genuinely queued user message still shows the Queued badge', async ({ mockedPage: page }) => {
-  // Sanity check: a user message that follows a genuinely unfinished
-  // assistant turn (still streaming, no completed parts) SHOULD show
-  // the "Queued" badge.
-  const sessionId = MOCK_SESSION.id;
-  const now = Date.now();
-
-  const messages = [
-    {
-      id: 'u1', sessionId, timeCreated: now - 3000,
-      data: { role: 'user', time: { created: now - 3000 } },
-    },
-    {
-      // Genuinely unfinished assistant: no finish, tool still running
-      id: 'a1-running', sessionId, timeCreated: now - 2000,
-      data: { role: 'assistant', time: { created: now - 2000 } },
-    },
-    {
-      id: 'u2-queued', sessionId, timeCreated: now - 1000,
-      data: { role: 'user', time: { created: now - 1000 } },
-    },
-  ];
-
-  const parts = [
-    { id: 'p-u1', sessionId, messageId: 'u1', timeCreated: now - 3000, data: { type: 'text', text: 'First prompt' } },
-    {
-      // Tool still running — NOT a synthesized terminal
-      id: 'p-running', sessionId, messageId: 'a1-running', timeCreated: now - 2000,
-      data: { type: 'tool', tool: 'bash', state: { status: 'running', input: { command: 'sleep 60' } } },
-    },
-    { id: 'p-u2', sessionId, messageId: 'u2-queued', timeCreated: now - 1000, data: { type: 'text', text: 'Queued prompt' } },
-  ];
-
-  await page.route(new RegExp(`/api/session/${sessionId}(\\?|$)`), (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        session: { ...MOCK_SESSION, status: 'busy' },
-        messages,
-        parts,
-        totalMessages: messages.length,
-      }),
-    }),
-  );
-
-  await page.goto(SESSION_URL);
-  await expect(page.getByTestId('session-layout')).toBeVisible();
-
-  // The second user message should be visible and SHOULD have a "Queued" badge.
-  const queuedMsg = page.locator('.oc-msg-user', { hasText: 'Queued prompt' });
-  await expect(queuedMsg).toBeVisible({ timeout: 3_000 });
-  await expect(queuedMsg).toHaveClass(/oc-msg-queued/);
-  await expect(queuedMsg.locator('.oc-msg-queued-badge')).toBeVisible();
-});
+// NOTE: the in-thread "Queued" badge was removed on this branch (a
+// mid-turn follow-up now surfaces in the compact queue list under the
+// composer, not as a thread bubble — see the queue feature). The former
+// "genuinely queued user message still shows the Queued badge" test was
+// deleted because it asserted removed behaviour; the sibling tests above
+// still assert the badge is ABSENT.

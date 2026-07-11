@@ -389,3 +389,57 @@ test('failed-send Retry replays the original prompt', async ({ mockedPage: page 
   await expect(failedBanner).toHaveCount(0, { timeout: 3_000 });
   expect(attempt).toBeGreaterThanOrEqual(2);
 });
+
+// ---------------------------------------------------------------------------
+// Queued follow-up messages (#58): layout of the list above the composer
+// ---------------------------------------------------------------------------
+
+test('a long queued message wraps and keeps its controls visible within the composer', async ({ mockedPage: page }) => {
+  const longText =
+    'This is a very long queued follow-up prompt that must wrap onto ' +
+    'multiple lines instead of running off to the right under the sidebar. ' +
+    'It also contains an unbreakable token ' +
+    'https://example.com/some/really/long/path/that/cannot/be/broken/normally/xxxxxxxxxxxxxxxxxxxxxxxxxxxx ' +
+    'to prove overflow-wrap handles it too.';
+
+  // Seed the queue with one long item (GET /api/session/:id/queue).
+  await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}/queue(\\?|$)`), (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        { id: 'q_long', text: longText, hasImages: false, createdAt: 1 },
+      ]),
+    }),
+  );
+
+  await goToLiveSession(page);
+
+  // The queue list and its row render.
+  const queue = page.getByTestId('queued-messages');
+  await expect(queue).toBeVisible({ timeout: 5_000 });
+  await expect(queue.getByText(/very long queued follow-up/)).toBeVisible();
+
+  // The remove control must be visible and reachable (not clipped off-screen).
+  const removeBtn = queue.getByRole('button', { name: 'Remove from queue' });
+  await expect(removeBtn).toBeVisible();
+
+  // Layout assertion: the remove button's right edge must stay within the
+  // composer wrap — if the text failed to wrap, the row would overflow and
+  // push the controls past (under) the surrounding column.
+  const wrap = page.locator('.oc-composer-wrap');
+  const wrapBox = await wrap.boundingBox();
+  const btnBox = await removeBtn.boundingBox();
+  expect(wrapBox).not.toBeNull();
+  expect(btnBox).not.toBeNull();
+  if (wrapBox && btnBox) {
+    // Right edge of the button is inside the composer wrap (+1px tolerance).
+    expect(btnBox.x + btnBox.width).toBeLessThanOrEqual(wrapBox.x + wrapBox.width + 1);
+    // And the row is tall enough to have wrapped to more than one line
+    // (a single 11px line would be ~16px with padding; wrapped is taller).
+    const row = queue.locator('.oc-queued-message').first();
+    const rowBox = await row.boundingBox();
+    expect(rowBox).not.toBeNull();
+    if (rowBox) expect(rowBox.height).toBeGreaterThan(30);
+  }
+});

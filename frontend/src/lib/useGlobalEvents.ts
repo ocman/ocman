@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { notifyPromptDismissed } from './useToastNotify';
 import { recheckNotifyData } from './useNotifyData';
+import type { QueuedMessage } from './api';
 
 /**
  * App-wide SSE subscriber for `/api/events`.
@@ -35,6 +36,7 @@ type SessionEventPayload = {
   permissionId?: string;
   requestId?: string;
   reason?: string;
+  messages?: QueuedMessage[];
 };
 
 function parsePayload(raw: string): SessionEventPayload | null {
@@ -109,9 +111,48 @@ function handleSessionChanged(raw: string): void {
   for (const cb of sessionChangedListeners) cb(sessionId);
 }
 
+// queueUpdatedListeners: the composer's queue view registers here so a
+// follow-up-queue change broadcast (ocman.queue.updated) updates the list
+// live — from any client, not just the one that mutated it (#58). The
+// event carries the session's full queue, so listeners apply it directly
+// without a refetch; messages is undefined only when the payload omitted
+// it (older server / marshal miss), in which case listeners refetch.
+const queueUpdatedListeners = new Set<(sessionId: string, messages?: QueuedMessage[]) => void>();
+
+/** Register a callback fired on every ocman.queue.updated broadcast. */
+export function onQueueUpdated(cb: (sessionId: string, messages?: QueuedMessage[]) => void): () => void {
+  queueUpdatedListeners.add(cb);
+  return () => queueUpdatedListeners.delete(cb);
+}
+
+function handleQueueUpdated(raw: string): void {
+  const parsed = parsePayload(raw);
+  const sessionId = parsed?.sessionID;
+  if (!sessionId) return;
+  for (const cb of queueUpdatedListeners) cb(sessionId, parsed?.messages);
+}
+
+// connectListeners fire every time the shared /api/events stream (re)opens
+// — the initial connect and every reconnect after a drop. Subscribers that
+// mirror server state over this stream (e.g. the follow-up queue) reload
+// from their endpoint on this signal to reconcile anything missed during
+// the gap — the same "refetch on (re)connect, then live-update" pattern the
+// conversation SSE uses.
+const connectListeners = new Set<() => void>();
+
+/** Register a callback fired whenever /api/events (re)connects. */
+export function onSseConnect(cb: () => void): () => void {
+  connectListeners.add(cb);
+  return () => connectListeners.delete(cb);
+}
+
 function open(): void {
   if (source) return;
   source = new EventSource('/api/events');
+  source.onopen = () => {
+    // Fires on the first open and after every browser auto-reconnect.
+    for (const cb of connectListeners) cb();
+  };
   source.addEventListener('ocman.permission.resolved', (e) => {
     handleResolved((e as MessageEvent).data);
   });
@@ -129,6 +170,9 @@ function open(): void {
   });
   source.addEventListener('loop.updated', (e) => {
     handleLoopUpdated((e as MessageEvent).data);
+  });
+  source.addEventListener('ocman.queue.updated', (e) => {
+    handleQueueUpdated((e as MessageEvent).data);
   });
   // EventSource auto-reconnects on transient errors; nothing to do here
   // beyond letting it retry. A hard failure (non-200) stops it, in which
@@ -175,4 +219,9 @@ export function __handleSurfaceForTests(raw: string): void {
 /** Test-only: dispatch a raw session.changed payload. */
 export function __handleSessionChangedForTests(raw: string): void {
   handleSessionChanged(raw);
+}
+
+/** Test-only: dispatch a raw queue.updated payload. */
+export function __handleQueueUpdatedForTests(raw: string): void {
+  handleQueueUpdated(raw);
 }

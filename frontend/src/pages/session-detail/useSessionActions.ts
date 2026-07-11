@@ -210,7 +210,28 @@ export function useSessionActions({
   const handleSend = useCallback(async (text: string, images?: AttachedImage[]) => {
     if (!session || !portAvailable) return;
     if (pendingPermission || pendingQuestion) return;
-    // Begin a pending send — generates a stable id, sets the bubble
+    // Mid-turn: the POST will be queued server-side (#58), not sent. Do
+    // NOT show an optimistic thread bubble — a user message that follows
+    // an unfinished assistant turn renders as a big "QUEUED" bubble in
+    // the thread, which duplicates the compact queue list under the
+    // composer. Just POST (→ enqueue); the queue list surfaces it via the
+    // queue.updated broadcast.
+    if (isRunningRef.current) {
+      // POST → enqueue server-side. The queue.updated broadcast (reliable,
+      // full-state) surfaces it in the compact list; no optimistic add.
+      await sendMessage(
+        session.id,
+        text,
+        images,
+        selectedModel || undefined,
+        selectedAgent || activeAgent || undefined,
+        selectedReasoning || undefined,
+        session.platform,
+        true, // queue: agent is mid-turn — hold, don't drain into the turn
+      ).catch((e) => remoteLog.error('Failed to queue message', e));
+      return;
+    }
+    // Idle: begin a pending send — generates a stable id, sets the bubble
     // visible immediately. The composer's send button stays
     // responsive for the next prompt as soon as performSend kicks
     // off.
@@ -227,7 +248,7 @@ export function useSessionActions({
       selectedAgent || activeAgent || undefined,
       selectedReasoning || undefined,
     );
-  }, [activeAgent, pendingPermission, pendingQuestion, performSend, portAvailable, selectedAgent, selectedModel, selectedReasoning, session, pending]);
+  }, [activeAgent, isRunningRef, pendingPermission, pendingQuestion, performSend, portAvailable, selectedAgent, selectedModel, selectedReasoning, sendMessage, session, pending]);
 
   // Replay a previously failed send. Reuses the entry's text /
   // images / id so the bubble stays in place — the failed banner

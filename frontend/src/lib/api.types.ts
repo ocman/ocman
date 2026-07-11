@@ -1090,6 +1090,19 @@ export interface AgentInfo {
   builtIn?: boolean;
 }
 
+// QueuedMessage mirrors internal/server/handlers_session_queue.go:
+// queuedMessageView — a follow-up prompt waiting for the session's next
+// idle edge (#58).
+export interface QueuedMessage {
+  id: string;
+  text: string;
+  hasImages: boolean;
+  model?: string;
+  agent?: string;
+  reasoning?: string;
+  createdAt: number;
+}
+
 export interface TmuxClient {
   tty: string;
   session: string;

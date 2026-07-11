@@ -107,8 +107,6 @@ type ConvertedCacheEntry = {
   taskLiveOutput: Record<string, TaskSessionData> | undefined;
   projectDirectory: string | undefined;
   failedById: Record<string, FailedSend> | undefined;
-  /** Whether this message was queued (depends on neighbors). */
-  isQueued: boolean;
   /** Resolved agent for this message (depends on neighbors). */
   msgAgent: string | undefined;
   /**
@@ -313,49 +311,6 @@ export function createConvertMessages(): ConvertMessagesFn {
 
     const role = m.data.role as 'user' | 'assistant';
 
-    // A user message is "queued" when it follows an unfinished
-    // assistant turn and the session already had a prior user turn.
-    // New UI-created sessions can start with an assistant bootstrap
-    // message, which should not make the first user message look
-    // queued.
-    //
-    // Shell commands (`!cmd`) produce an assistant message with no
-    // `finish` field but completed tool parts and no LLM step-start.
-    // These "synthesized terminal" messages are NOT genuinely
-    // unfinished — the queue badge must not appear after them.
-    //
-    // Additionally, a user message is only queued when it hasn't been
-    // processed yet. If the model has already replied (there's an
-    // assistant message after this user message), the turn was
-    // processed and the message is not queued.
-    let isQueued = false;
-    if (role === 'user' && idx > 0) {
-      const prev = filtered[idx - 1];
-      const hasPriorUserTurn = filtered.slice(0, idx - 1).some((entry) => entry.data?.role === 'user');
-      if (
-        hasPriorUserTurn &&
-        prev.data?.role === 'assistant' &&
-        !prev.data.finish &&
-        !prev.data.error
-      ) {
-        // If the model already replied to this user message, it was
-        // processed — not queued. Check if there's an assistant
-        // message after this user message.
-        const hasReply = idx + 1 < filtered.length && filtered[idx + 1]?.data?.role === 'assistant';
-        if (hasReply) {
-          // Already processed — not queued.
-        } else {
-          // Check whether the previous assistant message is a
-          // synthesized terminal (e.g. shell command). If so, it's
-          // already done and the next user message is not queued.
-          const prevParts = partsByMsg[prev.id] || EMPTY_PARTS;
-          if (!isSynthesizedTerminal(prevParts)) {
-            isQueued = true;
-          }
-        }
-      }
-    }
-
     // Resolve the agent associated with this message so the UI can
     // colour it. For assistant messages the agent is on the message
     // itself. For user messages we attribute the colour to the agent
@@ -391,7 +346,6 @@ export function createConvertMessages(): ConvertMessagesFn {
       cached.taskLiveOutput === taskLiveOutput &&
       cached.projectDirectory === projectDirectory &&
       cached.failedById === failedById &&
-      cached.isQueued === isQueued &&
       cached.msgAgent === msgAgent &&
       cached.modelChangedTo === modelChangedTo
     ) {
@@ -778,7 +732,6 @@ export function createConvertMessages(): ConvertMessagesFn {
     const failedEntry = role === 'user' ? failedById?.[m.id] : undefined;
     const model = role === 'assistant' ? messageModelRef(m) : '';
     const customMeta = {
-      ...(isQueued ? { queued: true } : {}),
       ...(m.data.tokens ? { tokens: m.data.tokens } : {}),
       ...(m.data.time ? { time: m.data.time } : {}),
       ...(m.data.error ? { errorName: m.data.error.name || 'Error' } : {}),
@@ -832,7 +785,6 @@ export function createConvertMessages(): ConvertMessagesFn {
       taskLiveOutput,
       projectDirectory,
       failedById,
-      isQueued,
       msgAgent,
       modelChangedTo,
       result,

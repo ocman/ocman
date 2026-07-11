@@ -84,6 +84,7 @@ import { SessionToasts } from './SessionToasts';
 import { SessionSidebar, type SidebarProjectGroup } from './SessionSidebar';
 import { RenameModal } from './RenameModal';
 import { useSessionActions } from './useSessionActions';
+import { useMessageQueue } from '../../lib/useMessageQueue';
 import { useSession } from './useSession';
 import { usePendingSend, materializePending } from './usePendingSend';
 import { useAutoApprove } from '../../lib/useAutoApprove';
@@ -801,6 +802,12 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // `isRunning` exists, but only reads the ref at call time.
   const isRunningRef = useRef(false);
 
+  // Follow-up message queue (#58): prompts submitted while the agent is
+  // mid-turn queue server-side and drain one per turn. Shared across
+  // clients via the ocman.queue.updated broadcast (reliable full-state).
+  const { queue: queuedMessages, remove: removeQueuedMessage, move: moveQueuedMessage } =
+    useMessageQueue(session?.id, session?.platform);
+
   const {
     awaitingAssistantResponse,
     setAwaitingAssistantResponse,
@@ -1368,6 +1375,9 @@ export function SessionDetail({ id }: SessionDetailProps) {
                           shellExec={caps.shellExec}
                           queuedShellCommand={queuedShellCommand}
                           onCancelQueuedShell={cancelQueuedShell}
+                          queuedMessages={queuedMessages}
+                          onRemoveQueuedMessage={removeQueuedMessage}
+                          onMoveQueuedMessage={moveQueuedMessage}
                           onAbort={handleAbort}
                           isRunning={isRunning}
                           disabled={!portAvailable || hasPendingPrompt}

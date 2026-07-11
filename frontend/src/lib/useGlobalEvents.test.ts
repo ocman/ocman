@@ -16,7 +16,9 @@ import {
   __handleResolvedForTests,
   __handleSurfaceForTests,
   __handleSessionChangedForTests,
+  __handleQueueUpdatedForTests,
   onSessionChanged,
+  onQueueUpdated,
 } from './useGlobalEvents';
 
 describe('useGlobalEvents resolved handler', () => {
@@ -89,6 +91,32 @@ describe('useGlobalEvents session.changed handler', () => {
     const unsub = onSessionChanged(cb);
     __handleSessionChangedForTests('nope');
     __handleSessionChangedForTests(JSON.stringify({ reason: 'x' }));
+    expect(cb).not.toHaveBeenCalled();
+    unsub();
+  });
+});
+
+describe('useGlobalEvents queue.updated handler', () => {
+  it('notifies registered listeners with the session id and messages', () => {
+    const cb = vi.fn();
+    const unsub = onQueueUpdated(cb);
+    // No messages key → undefined (listener falls back to a refetch).
+    __handleQueueUpdatedForTests(JSON.stringify({ sessionID: 'sess-q' }));
+    expect(cb).toHaveBeenCalledWith('sess-q', undefined);
+    // With messages → forwarded so the listener applies them directly.
+    const msgs = [{ id: 'a', text: 'hi', hasImages: false, createdAt: 1 }];
+    __handleQueueUpdatedForTests(JSON.stringify({ sessionID: 'sess-q', messages: msgs }));
+    expect(cb).toHaveBeenCalledWith('sess-q', msgs);
+    unsub();
+    __handleQueueUpdatedForTests(JSON.stringify({ sessionID: 'sess-q2' }));
+    expect(cb).toHaveBeenCalledTimes(2); // not called after unsubscribe
+  });
+
+  it('ignores malformed or session-less payloads', () => {
+    const cb = vi.fn();
+    const unsub = onQueueUpdated(cb);
+    __handleQueueUpdatedForTests('nope');
+    __handleQueueUpdatedForTests(JSON.stringify({ reason: 'x' }));
     expect(cb).not.toHaveBeenCalled();
     unsub();
   });

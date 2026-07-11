@@ -57,6 +57,12 @@ const configureApiProxy: ProxyOptions['configure'] = (proxy) => {
       else if (res && typeof res.destroy === 'function') res.destroy()
     } catch { /* socket already closed */ }
   })
+  // During Playwright e2e the preview server proxies to a backend that
+  // isn't there (or to mocked routes); draining proxied response bodies
+  // keeps sockets from hanging and the vite server stable across the
+  // suite. This does NOT break real SSE — the proxy still pipes chunks to
+  // the client; this listener only also reads them. The live-update fix
+  // was server-side (statusRecorder implementing http.Flusher).
   proxy.on('proxyRes', (proxyRes) => {
     proxyRes.on('data', () => {})
   })

@@ -11,6 +11,8 @@ import { AgentPicker } from './AgentPicker';
 import { ReasoningPicker } from './ReasoningPicker';
 import { BranchSelector, TargetSelector } from './ComposerSelectorRow';
 import { SlashCommandMenu } from './SlashCommandMenu';
+import { QueuedMessages } from './QueuedMessages';
+import { composerPropsEqual } from './composerMemo';
 import { useComposerAudio } from './useComposerAudio';
 import { routeComposerSubmit } from './composerSubmit';
 import { getContextWindow, formatTokenCount } from '../../lib/models/contextWindows';
@@ -45,6 +47,9 @@ function ComposerImpl({
   shellExec,
   queuedShellCommand,
   onCancelQueuedShell,
+  queuedMessages,
+  onRemoveQueuedMessage,
+  onMoveQueuedMessage,
   onAbort,
   isRunning,
   disabled,
@@ -74,7 +79,7 @@ function ComposerImpl({
   worktreesSupported,
   permissionControl,
 }: {
-  onSend?: (text: string, images?: AttachedImage[]) => void;
+  onSend?: (text: string, images?: AttachedImage[]) => void | Promise<void>;
   onCommand?: (command: string, args: string) => void;
   /**
    * Called when the user submits a `!`-prefixed shell command on a
@@ -98,6 +103,17 @@ function ComposerImpl({
   queuedShellCommand?: string | null;
   /** Drop the queued shell command without running it. */
   onCancelQueuedShell?: () => void;
+  /**
+   * Follow-up prompts queued while the agent is mid-turn (#58). They
+   * send one per turn as the session goes idle. Shown as a list under
+   * the composer with remove / reorder controls. Empty / undefined →
+   * nothing rendered.
+   */
+  queuedMessages?: { id: string; text: string; hasImages: boolean }[];
+  /** Remove a queued follow-up without sending it. */
+  onRemoveQueuedMessage?: (id: string) => void;
+  /** Reorder a queued follow-up up (-1) or down (+1). */
+  onMoveQueuedMessage?: (id: string, direction: -1 | 1) => void;
   onAbort?: () => void;
   isRunning: boolean;
   disabled?: boolean;
@@ -195,6 +211,14 @@ function ComposerImpl({
   const disabledRef = useRef(disabled);
   const [images, setImages] = useState<AttachedImage[]>([]);
   const [files, setFiles] = useState<AttachedFileRef[]>([]);
+  // sending: a send POST is in flight. While true the composer is disabled
+  // so the user can't fire a second send before the first completes — by
+  // the time it clears, the server's queue.updated broadcast has already
+  // reflected the new item (or the message started a turn). This makes the
+  // send a simple blocking round-trip and removes any need for optimistic
+  // queue state.
+  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
   const imagesRef = useRef<AttachedImage[]>([]);
   const filesRef = useRef<AttachedFileRef[]>([]);
   const sessionIdRef = useRef(sessionId);
@@ -212,6 +236,7 @@ function ComposerImpl({
   useEffect(() => { onAbortRef.current = onAbort; }, [onAbort]);
   useEffect(() => { isRunningRef.current = isRunning; }, [isRunning]);
   useEffect(() => { disabledRef.current = disabled; }, [disabled]);
+  useEffect(() => { sendingRef.current = sending; }, [sending]);
 
   // Auto-focus the composer input when the component becomes visible.
   useEffect(() => {
@@ -461,8 +486,20 @@ function ComposerImpl({
     const el = inputRef.current;
     if (!el) return;
 
+    // runSend blocks the composer for the duration of the send POST. The
+    // input is already cleared by the caller; disabling until the promise
+    // resolves means that by the time the user can type again, the server
+    // has processed the message (and, for a mid-turn send, emitted the
+    // queue.updated broadcast). onSend may return void (sync) — Promise
+    // .resolve normalises both.
+    const runSend = (text: string, imgs?: AttachedImage[]) => {
+      const ret = onSendRef.current?.(text, imgs);
+      setSending(true);
+      Promise.resolve(ret).finally(() => setSending(false));
+    };
+
     const handleInputKeyDown = (e: KeyboardEvent) => {
-      if (disabledRef.current) return;
+      if (disabledRef.current || sendingRef.current) return;
 
       if (showSlashMenuRef.current) {
         // Once the user has typed a space after the command (e.g.
@@ -566,12 +603,12 @@ function ComposerImpl({
           // `noop` only reaches here when attachments are present; send
           // with empty text in that case.
           const text = route.kind === 'send' ? route.text : '';
-          onSendRef.current?.(withFileReferences(text), imgs.length > 0 ? imgs : undefined);
+          runSend(withFileReferences(text), imgs.length > 0 ? imgs : undefined);
         } else {
           // route.kind === 'shell' but no onShell handler (capability
           // mis-wiring). Fall back to a plain prompt rather than
           // silently dropping the user's input.
-          onSendRef.current?.(withFileReferences(raw.trim()), imgs.length > 0 ? imgs : undefined);
+          runSend(withFileReferences(raw.trim()), imgs.length > 0 ? imgs : undefined);
         }
 
         setIsBashModeRef.current(false);
@@ -841,10 +878,17 @@ function ComposerImpl({
   useShortcut(dictationShortcut);
   useShortcut(reasoningCycleShortcut);
 
+  // While a send is in flight, disable the interactive send controls
+  // (input, selectors, send button) so a second send can't fire before the
+  // first round-trip completes. The launch-overlay / hint logic below stays
+  // keyed on the real `disabled` prop (a live-connection state, not this
+  // transient send block).
+  const uiDisabled = disabled || sending;
+
   return (
     <>
     <div
-      className={`oc-composer-wrap${disabled ? ' oc-composer-disabled' : ''}`}
+      className={`oc-composer-wrap${uiDisabled ? ' oc-composer-disabled' : ''}`}
       ref={wrapRef}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
@@ -907,6 +951,13 @@ function ComposerImpl({
           >Stop</button>
         </div>
       )}
+      {!disabled && queuedMessages && (
+        <QueuedMessages
+          messages={queuedMessages}
+          onRemove={onRemoveQueuedMessage}
+          onMove={onMoveQueuedMessage}
+        />
+      )}
       <div
         className="oc-composer"
         // Only colorize once the /agent catalog has resolved — otherwise the
@@ -942,7 +993,7 @@ function ComposerImpl({
           ref={inputRef}
           className="oc-composer-input"
           rows={1}
-          disabled={disabled}
+          disabled={uiDisabled}
           placeholder={disabled ? (disabledHint || 'No live connection to the agent') : undefined}
           autoComplete="off"
           autoCorrect="off"
@@ -962,9 +1013,9 @@ function ComposerImpl({
                 <button
                   type="button"
                   className="oc-bar-select"
-                  disabled={disabled}
+                  disabled={uiDisabled}
                   onClick={() => {
-                    if (disabled) return;
+                    if (uiDisabled) return;
                     setAgentPickerQuery('');
                     setAgentPickerOpen(true);
                   }}
@@ -983,9 +1034,9 @@ function ComposerImpl({
                   <button
                     type="button"
                     className={`oc-bar-select${modelUnavailable ? ' oc-bar-select--warn' : ''}`}
-                    disabled={disabled}
+                    disabled={uiDisabled}
                     onClick={() => {
-                      if (disabled) return;
+                      if (uiDisabled) return;
                       onRefreshModelsRef.current?.();
                       setModelPickerQuery('');
                       setModelPickerOpen(true);
@@ -1002,9 +1053,9 @@ function ComposerImpl({
                   <button
                     type="button"
                     className="oc-bar-select oc-bar-reasoning"
-                    disabled={disabled}
+                    disabled={uiDisabled}
                     onClick={() => {
-                      if (disabled) return;
+                      if (uiDisabled) return;
                       setReasoningPickerOpen(true);
                     }}
                     title={`Reasoning level (${isMacPlatform() ? '⌥' : 'Alt'}+R to cycle)`}
@@ -1035,7 +1086,7 @@ function ComposerImpl({
             <button
               className="oc-bar-action"
               onClick={() => fileInputRef.current?.click()}
-              disabled={disabled}
+              disabled={uiDisabled}
               title="Attach file"
             >+</button>
             <input
@@ -1087,7 +1138,7 @@ function ComposerImpl({
               <button
                 type="button"
                 className="oc-bar-send"
-                disabled={disabled}
+                disabled={uiDisabled}
                 title="Send (Enter)"
                 aria-label="Send message"
                 onClick={() => {
@@ -1251,38 +1302,4 @@ function ComposerImpl({
   );
 }
 
-export const Composer = memo(ComposerImpl, (prev, next) =>
-  prev.isRunning === next.isRunning &&
-  prev.queuedShellCommand === next.queuedShellCommand &&
-  prev.onCancelQueuedShell === next.onCancelQueuedShell &&
-  prev.disabled === next.disabled &&
-  prev.disabledHint === next.disabledHint &&
-  prev.onLaunchRequest === next.onLaunchRequest &&
-  prev.launching === next.launching &&
-  prev.whisperAvailable === next.whisperAvailable &&
-  prev.selectedModel === next.selectedModel &&
-  prev.activeAgent === next.activeAgent &&
-  prev.selectedAgent === next.selectedAgent &&
-  prev.agents === next.agents &&
-  prev.agentsLoaded === next.agentsLoaded &&
-  prev.contextTokens === next.contextTokens &&
-  prev.sessionId === next.sessionId &&
-  prev.tokensPerSecond === next.tokensPerSecond &&
-  prev.tokenStats?.input === next.tokenStats?.input &&
-  prev.tokenStats?.output === next.tokenStats?.output &&
-  prev.tokenStats?.totalCost === next.tokenStats?.totalCost &&
-  prev.selectedReasoning === next.selectedReasoning &&
-  prev.directory === next.directory &&
-  prev.newConversation === next.newConversation &&
-  prev.worktreesSupported === next.worktreesSupported &&
-  prev.permissionControl === next.permissionControl &&
-  (prev.models?.length || 0) === (next.models?.length || 0) &&
-  (prev.models || []).every((model, i) => model === (next.models || [])[i]) &&
-  // Re-render when model availability data changes so the "not available"
-  // warning on the model button appears/clears once entries load.
-  (prev.modelEntries?.length || 0) === (next.modelEntries?.length || 0) &&
-  (prev.modelEntries || []).every((e, i) => {
-    const n = (next.modelEntries || [])[i];
-    return n && e.provider === n.provider && e.model === n.model && e.isAvailable === n.isAvailable;
-  })
-);
+export const Composer = memo(ComposerImpl, composerPropsEqual);

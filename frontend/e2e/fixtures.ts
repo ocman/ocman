@@ -205,6 +205,10 @@ async function installDefaultRoutes(page: Page) {
     if (url.includes('/auto-approve')) {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ enabled: false, overridden: false }) });
     }
+    if (url.includes('/queue')) {
+      // Follow-up message queue (#58) — empty by default.
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+    }
     // Full session detail — must match the SessionDetail interface:
     // { session: Session, messages: Message[], parts: Part[], totalMessages?, defaultAgent?, defaultModel? }
     // Determine which mock session to return based on the session ID in the URL.

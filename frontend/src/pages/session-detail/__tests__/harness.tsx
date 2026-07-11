@@ -177,6 +177,9 @@ export function makeApiStub() {
     runShell: vi.fn().mockResolvedValue(undefined),
     listPermissions: vi.fn().mockResolvedValue([]),
     listQuestions: vi.fn().mockResolvedValue([]),
+    queuedMessages: vi.fn().mockResolvedValue([]),
+    deleteQueuedMessage: vi.fn().mockResolvedValue(undefined),
+    moveQueuedMessage: vi.fn().mockResolvedValue(undefined),
   };
 }
 
