@@ -130,22 +130,33 @@ func (s *Server) handleSessionQuestions(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleSessionChanges(w http.ResponseWriter, r *http.Request) {
 	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
 		changes, err := adapter.SessionChanges(r.Context(), sessionID)
-		if err != nil {
-			if errors.Is(err, platforms.ErrUnsupported) {
-				writeJSON(w, &platforms.SessionChanges{SessionID: sessionID, Files: []platforms.FileChange{}})
-				return
-			}
-			writePlatformError(w, "fetching session changes", err)
-			return
-		}
-		if changes == nil {
-			changes = &platforms.SessionChanges{SessionID: sessionID, Files: []platforms.FileChange{}}
-		}
-		if changes.Files == nil {
+		zero := &platforms.SessionChanges{SessionID: sessionID, Files: []platforms.FileChange{}}
+		if changes != nil && changes.Files == nil {
 			changes.Files = []platforms.FileChange{}
 		}
-		writeJSON(w, changes)
+		writeWithUnsupportedFallback(w, "fetching session changes", changes, err, zero)
 	})
+}
+
+// writeWithUnsupportedFallback writes the adapter result as JSON. On
+// ErrUnsupported (or a nil result) it substitutes `zero` instead, so
+// platforms that don't implement the operation return a stable empty
+// shape rather than an HTTP error. Any other error goes through
+// writePlatformError.
+func writeWithUnsupportedFallback[T any](w http.ResponseWriter, desc string, result *T, err error, zero *T) {
+	if err != nil {
+		if errors.Is(err, platforms.ErrUnsupported) {
+			writeJSON(w, zero)
+			return
+		}
+		writePlatformError(w, desc, err)
+		return
+	}
+	if result == nil {
+		writeJSON(w, zero)
+		return
+	}
+	writeJSON(w, result)
 }
 
 // handleSessionInfo returns the per-session info snapshot consumed by
@@ -153,23 +164,15 @@ func (s *Server) handleSessionChanges(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSessionInfo(w http.ResponseWriter, r *http.Request) {
 	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
 		info, err := adapter.SessionInfo(r.Context(), sessionID)
-		if err != nil {
-			if errors.Is(err, platforms.ErrUnsupported) {
-				writeJSON(w, &platforms.SessionInfo{SessionID: sessionID, MCPServers: []platforms.MCPServer{}, LSPServers: []platforms.LSPServer{}})
-				return
+		zero := &platforms.SessionInfo{SessionID: sessionID, MCPServers: []platforms.MCPServer{}, LSPServers: []platforms.LSPServer{}}
+		if info != nil {
+			if info.MCPServers == nil {
+				info.MCPServers = []platforms.MCPServer{}
 			}
-			writePlatformError(w, "fetching session info", err)
-			return
+			if info.LSPServers == nil {
+				info.LSPServers = []platforms.LSPServer{}
+			}
 		}
-		if info == nil {
-			info = &platforms.SessionInfo{SessionID: sessionID, MCPServers: []platforms.MCPServer{}, LSPServers: []platforms.LSPServer{}}
-		}
-		if info.MCPServers == nil {
-			info.MCPServers = []platforms.MCPServer{}
-		}
-		if info.LSPServers == nil {
-			info.LSPServers = []platforms.LSPServer{}
-		}
-		writeJSON(w, info)
+		writeWithUnsupportedFallback(w, "fetching session info", info, err, zero)
 	})
 }
