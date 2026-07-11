@@ -48,7 +48,7 @@ func (d *DB) GetModelUsage(since int64, dir string) ([]ModelUsage, error) {
 		if model == "" {
 			continue
 		}
-		key := provider + "/" + model
+		key := modelKey(provider, model)
 		mu, ok := modelMap[key]
 		if !ok {
 			mu = &ModelUsage{Provider: provider, Model: model}

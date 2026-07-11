@@ -56,6 +56,18 @@ func extractModelProvider(md MessageData) (provider, model string) {
 	return provider, model
 }
 
+// modelKey builds the canonical "provider/model" key, falling back to
+// the bare model when provider is empty (and to "" when model is empty).
+func modelKey(provider, model string) string {
+	if model == "" {
+		return ""
+	}
+	if provider == "" {
+		return model
+	}
+	return provider + "/" + model
+}
+
 // GetStats returns aggregate statistics using SQL aggregation.
 func (d *DB) GetStats() (*Stats, error) {
 	s := &Stats{}
@@ -201,15 +213,12 @@ func (d *DB) GetNewAssistantMessages(since int64) ([]LLMMessageRow, int64, error
 		}
 
 		provider, model := extractModelProvider(md)
-		modelKey := model
-		if provider != "" && model != "" {
-			modelKey = provider + "/" + model
-		}
+		mkey := modelKey(provider, model)
 
 		r := LLMMessageRow{
 			TimeCreated: tc,
 			SessionID:   sessionID,
-			Model:       modelKey,
+			Model:       mkey,
 			Cost:        md.Cost,
 		}
 		if md.Tokens != nil {

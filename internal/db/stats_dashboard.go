@@ -160,22 +160,20 @@ func (d *DB) scanDashboardRows(opts MetricsDashboardOptions) (filtered []request
 
 		agent := strings.TrimSpace(md.Agent)
 		provider, model := extractModelProvider(md)
-		modelKey := strings.TrimSpace(model)
-		if provider != "" && modelKey != "" {
-			modelKey = provider + "/" + modelKey
-		}
+		trimmed := strings.TrimSpace(model)
+		mkey := modelKey(provider, trimmed)
 
 		if agent != "" {
 			agentSet[agent] = struct{}{}
 		}
-		if modelKey != "" {
-			modelSet[modelKey] = struct{}{}
+		if mkey != "" {
+			modelSet[mkey] = struct{}{}
 		}
 
 		if opts.AgentFilter != "" && agent != opts.AgentFilter {
 			continue
 		}
-		if opts.ModelFilter != "" && modelKey != opts.ModelFilter {
+		if opts.ModelFilter != "" && mkey != opts.ModelFilter {
 			continue
 		}
 
@@ -184,7 +182,7 @@ func (d *DB) scanDashboardRows(opts MetricsDashboardOptions) (filtered []request
 			SessionID:   sessionID,
 			TimeCreated: timeCreated,
 			Agent:       agent,
-			Model:       modelKey,
+			Model:       mkey,
 			Cost:        md.Cost,
 		}}
 		if md.Tokens != nil {
@@ -206,7 +204,7 @@ func (d *DB) scanDashboardRows(opts MetricsDashboardOptions) (filtered []request
 			entry.StopReason = "none"
 		}
 		if opts.Pricing != nil {
-			entry.CalcCost = opts.Pricing.CalcCost(modelKey, entry.InputTokens, entry.OutputTokens, entry.CacheReadTokens, entry.CacheWriteTokens)
+			entry.CalcCost = opts.Pricing.CalcCost(mkey, entry.InputTokens, entry.OutputTokens, entry.CacheReadTokens, entry.CacheWriteTokens)
 		}
 		// Effective cost: prefer the platform-reported value; fall back
 		// to the token-derived estimate when the platform reports $0

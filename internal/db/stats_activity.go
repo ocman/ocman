@@ -97,7 +97,7 @@ func (d *DB) GetDailyActivity(since int64, modelFilter, dir string) ([]DailyActi
 				continue
 			}
 			provider, model := extractModelProvider(md)
-			key := provider + "/" + model
+			key := modelKey(provider, model)
 			if key != modelFilter && model != modelFilter {
 				continue
 			}
