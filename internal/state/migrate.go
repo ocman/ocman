@@ -95,7 +95,7 @@ import (
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 20
+const latestSchemaVersion = 21
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -231,6 +231,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV19(tx)
 	case 20:
 		return migrateToV20(tx)
+	case 21:
+		return migrateToV21(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -685,4 +687,29 @@ func migrateToV20(tx *sql.Tx) error {
 		}
 	}
 	return nil
+}
+
+// migrateToV21 creates the queued_message table: follow-up prompts the
+// user submitted while a session was mid-turn. They persist server-side
+// (shared across every client / after a client moves machines) and drain
+// one at a time on each session.idle edge. Ordered by position within a
+// (platform, session_id).
+func migrateToV21(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS queued_message (
+			id           TEXT PRIMARY KEY,
+			platform     TEXT NOT NULL,
+			session_id   TEXT NOT NULL,
+			position     INTEGER NOT NULL,
+			text         TEXT NOT NULL DEFAULT '',
+			images_json  TEXT NOT NULL DEFAULT '',
+			model        TEXT NOT NULL DEFAULT '',
+			agent        TEXT NOT NULL DEFAULT '',
+			reasoning    TEXT NOT NULL DEFAULT '',
+			created_at   INTEGER NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS idx_queued_message_session
+			ON queued_message (platform, session_id, position);
+	`)
+	return err
 }

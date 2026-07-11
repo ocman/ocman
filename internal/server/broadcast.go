@@ -30,52 +30,134 @@ type broadcastEvent struct {
 	data  []byte
 }
 
+// coalescingEvents are last-write-wins full-state snapshots: a newer
+// payload fully supersedes an older one for the same key, so they must
+// never be dropped on a full buffer (unlike edge/notification events,
+// where the notify poll is an acceptable backstop). When the buffer is
+// full, the hub stores the latest payload per key on the subscriber and
+// the SSE writer flushes it — guaranteeing the freshest state reaches the
+// client without ever blocking a producer. The key is derived by
+// coalesceKey (event + session id).
+var coalescingEvents = map[string]bool{
+	"ocman.queue.updated": true,
+}
+
+// broadcastSub is one connected /api/events client. Non-coalescing events
+// go through the bounded, lossy channel (ch). Coalescing events that don't
+// fit are parked in pending (latest-wins per key) and the writer is woken
+// via wake.
+type broadcastSub struct {
+	ch   chan broadcastEvent
+	wake chan struct{} // buffered(1) signal: pending has entries to flush
+
+	mu      sync.Mutex
+	pending map[string]broadcastEvent // key -> latest coalesced event
+	closed  bool
+}
+
 // broadcastHub fans out events to all connected /api/events clients.
 type broadcastHub struct {
 	mu   sync.Mutex
-	subs map[chan broadcastEvent]struct{}
+	subs map[*broadcastSub]struct{}
 }
 
 func newBroadcastHub() *broadcastHub {
-	return &broadcastHub{subs: make(map[chan broadcastEvent]struct{})}
+	return &broadcastHub{subs: make(map[*broadcastSub]struct{})}
 }
 
-// subscribe registers a new subscriber and returns its channel plus an
-// unsubscribe func. The channel is buffered so a brief consumer stall
-// doesn't immediately drop events.
-func (h *broadcastHub) subscribe() (<-chan broadcastEvent, func()) {
-	ch := make(chan broadcastEvent, 16)
+// coalesceKey identifies a last-write-wins stream for an event: same event
+// + same session collapses to one pending entry. Falls back to the event
+// name when no session id is present.
+func coalesceKey(event string, data []byte) string {
+	var p struct {
+		SessionID string `json:"sessionID"`
+	}
+	if err := json.Unmarshal(data, &p); err == nil && p.SessionID != "" {
+		return event + "\x00" + p.SessionID
+	}
+	return event
+}
+
+// subscribe registers a new subscriber and returns it plus an unsubscribe
+// func. The channel is buffered so a brief consumer stall doesn't
+// immediately drop events.
+func (h *broadcastHub) subscribe() (*broadcastSub, func()) {
+	sub := &broadcastSub{
+		ch:      make(chan broadcastEvent, 16),
+		wake:    make(chan struct{}, 1),
+		pending: make(map[string]broadcastEvent),
+	}
 	h.mu.Lock()
-	h.subs[ch] = struct{}{}
+	h.subs[sub] = struct{}{}
 	h.mu.Unlock()
 
 	var once sync.Once
 	unsub := func() {
 		once.Do(func() {
 			h.mu.Lock()
-			delete(h.subs, ch)
+			delete(h.subs, sub)
 			h.mu.Unlock()
-			close(ch)
+			sub.mu.Lock()
+			sub.closed = true
+			sub.mu.Unlock()
+			close(sub.ch)
 		})
 	}
-	return ch, unsub
+	return sub, unsub
 }
 
-// broadcast delivers event to every current subscriber. The send is
-// non-blocking: if a subscriber's buffer is full it is skipped rather
-// than blocking the caller (the client will fall back to the notify
-// poll). Safe to call from any goroutine.
+// broadcast delivers event to every current subscriber. Never blocks a
+// producer. Non-coalescing events are dropped on a full buffer (the
+// notify poll is the backstop); coalescing events are instead parked as
+// the latest-wins pending state for the subscriber and the writer is
+// woken to flush them, so the freshest full-state snapshot is never lost.
 func (h *broadcastHub) broadcast(event string, data []byte) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	for ch := range h.subs {
+	for sub := range h.subs {
+		ev := broadcastEvent{event: event, data: data}
 		select {
-		case ch <- broadcastEvent{event: event, data: data}:
+		case sub.ch <- ev:
 		default:
-			// Subscriber buffer full — drop. The 10s notify poll is
-			// the safety net for any missed broadcast.
+			if coalescingEvents[event] {
+				sub.park(coalesceKey(event, data), ev)
+			}
+			// else: non-coalescing edge event — drop (notify poll backstop).
 		}
 	}
+}
+
+// park stores the latest coalesced event for a key and signals the
+// writer. A newer payload overwrites an older pending one (last-write-
+// wins), so a burst collapses to a single freshest snapshot.
+func (s *broadcastSub) park(key string, ev broadcastEvent) {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
+	s.pending[key] = ev
+	s.mu.Unlock()
+	select {
+	case s.wake <- struct{}{}:
+	default:
+	}
+}
+
+// drainPending returns and clears the subscriber's pending coalesced
+// events. Called by the SSE writer when woken.
+func (s *broadcastSub) drainPending() []broadcastEvent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.pending) == 0 {
+		return nil
+	}
+	out := make([]broadcastEvent, 0, len(s.pending))
+	for k, ev := range s.pending {
+		out = append(out, ev)
+		delete(s.pending, k)
+	}
+	return out
 }
 
 // subscriberCount reports how many clients are currently connected.
@@ -208,7 +290,7 @@ func (s *Server) handleGlobalEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ch, unsub := s.broadcastHub.subscribe()
+	sub, unsub := s.broadcastHub.subscribe()
 	defer unsub()
 
 	// Initial flush so the client's EventSource transitions to the
@@ -231,7 +313,14 @@ func (s *Server) handleGlobalEvents(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			flusher.Flush()
-		case ev, open := <-ch:
+		case <-sub.wake:
+			// Coalesced last-write-wins events that didn't fit the buffer —
+			// flush the freshest snapshot per key so state (e.g. the queue
+			// list) is never lost under load.
+			for _, ev := range sub.drainPending() {
+				autoapprove.WriteSSEEvent(w, flusher.Flush, ev.event, ev.data)
+			}
+		case ev, open := <-sub.ch:
 			if !open {
 				return
 			}

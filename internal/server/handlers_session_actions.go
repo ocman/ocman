@@ -21,6 +21,13 @@ func (s *Server) handleSessionMessage(w http.ResponseWriter, r *http.Request) {
 		Model     string `json:"model"`
 		Agent     string `json:"agent"`
 		Reasoning string `json:"reasoning"`
+		// Queue, when true, tells the server this send was made while the
+		// agent was mid-turn and must be QUEUED — never drained into the
+		// running turn. The client knows this authoritatively from the
+		// live SSE stream (isRunning); the server's own status inference
+		// reads the lagging DB and can wrongly report idle, which would
+		// send the message immediately (#58). This flag is the fix.
+		Queue bool `json:"queue"`
 	}
 	if !readAndUnmarshal(w, r, maxSendMessageBody, &req) {
 		return
@@ -30,7 +37,12 @@ func (s *Server) handleSessionMessage(w http.ResponseWriter, r *http.Request) {
 		for _, img := range req.Images {
 			images = append(images, platforms.ImageAttachment{URL: img.URL, Mime: img.Mime})
 		}
-		if err := s.sessions.SendMessage(r.Context(), platformHint(r), platforms.SendMessageRequest{
+		// Composer sends always enqueue (#58). When the client marks the
+		// send as queued (agent mid-turn), the server holds it for the
+		// next session.idle edge. Otherwise the enqueue fast-path drains
+		// it immediately if the session is idle. Enqueue validates
+		// message-or-images.
+		if err := s.queueSvc().Enqueue(r.Context(), platformHint(r), req.Queue, platforms.SendMessageRequest{
 			SessionID: sessionID,
 			Message:   req.Message,
 			Images:    images,

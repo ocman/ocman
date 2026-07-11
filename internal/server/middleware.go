@@ -81,6 +81,18 @@ func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return nil, nil, errors.New("underlying ResponseWriter does not support hijacking")
 }
 
+// Flush delegates to the embedded writer so SSE handlers that flow through
+// this middleware (notably the global /api/events stream, which — unlike
+// /api/session/{id}/events — is NOT bypassed by noiseSkip) can stream.
+// Without this, statusRecorder masks the embedded http.Flusher and the SSE
+// handler's `w.(http.Flusher)` check fails with "streaming unsupported",
+// so no client ever subscribes and no broadcast is delivered.
+func (r *statusRecorder) Flush() {
+	if fl, ok := r.ResponseWriter.(http.Flusher); ok {
+		fl.Flush()
+	}
+}
+
 // flushTiming writes the Server-Timing header from the collector, if
 // any entries were recorded. Safe to call multiple times — the
 // underlying header map deduplicates by key.

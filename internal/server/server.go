@@ -22,6 +22,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/loops"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
+	"github.com/NoUseFreak/ocman/internal/queuesvc"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -100,6 +101,12 @@ type Server struct {
 	// loopSvcOnce. See loop_engine.go.
 	loopSvcCached *loops.Service
 	loopSvcOnce   sync.Once
+
+	// queueSvcCached is the follow-up message queue service (#58), built
+	// lazily on first use (mirrors loopSvcCached). Guarded by
+	// queueSvcOnce. See queue.go.
+	queueSvcCached *queuesvc.Service
+	queueSvcOnce   sync.Once
 
 	// launchProjectOpencodeFn is the local Host's LaunchProjectOpencode
 	// dep. Defaults to the real tmux launcher; tests override it with a
@@ -192,11 +199,11 @@ func (s *Server) SessionService() *sessionsvc.Service { return s.sessions }
 // sites directly). See internal/hostsvc/local.
 func (s *Server) newLocalHost() hostsvc.Host {
 	return hostlocal.New(hostlocal.Deps{
-		LaunchTmux:            tmux.LaunchOpencode,
+		LaunchTmux: tmux.LaunchOpencode,
 		LaunchProjectOpencode: func(dir, permissionJSON string) (string, error) {
 			return s.launchProjectOpencodeFn(dir, permissionJSON)
 		},
-		DiscoverPort:          opencode.DiscoverOpenCodePortFresh,
+		DiscoverPort: opencode.DiscoverOpenCodePortFresh,
 		// CreateSession routes worktree-session creation through the shared
 		// session-mutation service (same validated path + hooks as REST/MCP).
 		// Resolved lazily: s.sessions is assigned after newLocalHost runs.
@@ -293,6 +300,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	go s.runLLMMetricsLoop(ctx)
 	go s.runChildSessionWatcher(ctx)
 	go s.runLoopEngine(ctx)
+	go s.runQueueSweep(ctx)
 	// Headless auto-approve: subscribe directly to each OpenCode
 	// instance's /event SSE stream so permission.asked events drive
 	// the judge even when no browser tab is open. Without this, the

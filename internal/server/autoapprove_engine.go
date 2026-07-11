@@ -54,7 +54,7 @@ func (s *Server) aaSvc() *autoapprove.Service {
 			},
 			BroadcastPermissionResolved: s.broadcastPermissionResolved,
 			BroadcastQuestionResolved:   s.broadcastQuestionResolved,
-			BroadcastSessionIdle:        s.broadcastSessionIdle,
+			BroadcastSessionIdle:        s.onSessionIdle,
 			BroadcastSessionChanged:     s.broadcastSessionChanged,
 			BroadcastGlobalEvent:        s.broadcastGlobalEvent,
 			DefaultEnabled:              s.autoApproveDefault,

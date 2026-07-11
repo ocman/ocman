@@ -116,6 +116,17 @@ handlers don't bypass the `Host` seam). User-facing docs:
   adapter selection, side-effect hooks). REST handlers, MCP tools,
   and the remote gRPC server all delegate session mutations to it
   (one code path, like `loops.Service` for agent loops).
+- `internal/queuesvc/` — follow-up message queue (#58). Composer
+  sends made while a session is mid-turn are enqueued in `state.db`
+  (shared across every client, survives a client moving machines) and
+  drained one-per-turn on the `session.idle` edge. Enqueue is
+  unconditional; flush is the sole send gate (serialized per session)
+  so there's no check-then-act race. The idle-edge flush trusts the edge
+  and does **not** re-check the (lagging) inferred status, so a genuine
+  turn-end never leaves the head stranded. A periodic `Sweep`
+  (`runQueueSweep`, 15 s) is the backstop: it drains one message from each
+  idle session with a standing backlog, self-healing rows that never got
+  an idle edge. Wired in `internal/server/queue.go`.
 - `internal/db/` — read-only SQLite queries against OpenCode's
   `session`, `message`, `part` tables; uses `json_extract` heavily.
 - `internal/state/` — writable SQLite database

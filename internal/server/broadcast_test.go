@@ -12,8 +12,8 @@ import (
 func TestBroadcastHubFanOut(t *testing.T) {
 	h := newBroadcastHub()
 
-	ch1, unsub1 := h.subscribe()
-	ch2, unsub2 := h.subscribe()
+	sub1, unsub1 := h.subscribe()
+	sub2, unsub2 := h.subscribe()
 	defer unsub1()
 	defer unsub2()
 
@@ -23,7 +23,7 @@ func TestBroadcastHubFanOut(t *testing.T) {
 
 	h.broadcast("ocman.permission.resolved", []byte(`{"sessionID":"s1"}`))
 
-	for i, ch := range []<-chan broadcastEvent{ch1, ch2} {
+	for i, ch := range []<-chan broadcastEvent{sub1.ch, sub2.ch} {
 		select {
 		case ev := <-ch:
 			if ev.event != "ocman.permission.resolved" {
@@ -40,7 +40,7 @@ func TestBroadcastHubFanOut(t *testing.T) {
 
 func TestBroadcastHubUnsubscribeStopsDelivery(t *testing.T) {
 	h := newBroadcastHub()
-	ch, unsub := h.subscribe()
+	sub, unsub := h.subscribe()
 	unsub()
 
 	if got := h.subscriberCount(); got != 0 {
@@ -50,7 +50,7 @@ func TestBroadcastHubUnsubscribeStopsDelivery(t *testing.T) {
 	// Channel is closed; broadcast must not panic and the channel must
 	// be drained/closed.
 	h.broadcast("x", []byte("y"))
-	if _, open := <-ch; open {
+	if _, open := <-sub.ch; open {
 		t.Fatal("expected closed channel after unsubscribe")
 	}
 
@@ -75,6 +75,38 @@ func TestBroadcastHubNonBlockingOnFullBuffer(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("broadcast blocked on a full subscriber buffer")
+	}
+}
+
+// A coalescing event (queue.updated) must NOT be dropped when the buffer
+// is full — the latest full-state snapshot is parked as pending and the
+// subscriber is woken to flush it.
+func TestBroadcastHubCoalescesQueueUpdatedOnFullBuffer(t *testing.T) {
+	h := newBroadcastHub()
+	sub, unsub := h.subscribe()
+	defer unsub()
+
+	// Fill the 16-slot buffer with non-coalescing events so it's full.
+	for i := 0; i < 16; i++ {
+		h.broadcast("ocman.session.idle", []byte(`{"sessionID":"s1"}`))
+	}
+
+	// Now several queue.updated for the same session can't fit — they must
+	// coalesce to the latest, not drop.
+	h.broadcast("ocman.queue.updated", []byte(`{"sessionID":"s1","messages":[{"id":"a"}]}`))
+	h.broadcast("ocman.queue.updated", []byte(`{"sessionID":"s1","messages":[]}`))
+
+	select {
+	case <-sub.wake:
+	case <-time.After(time.Second):
+		t.Fatal("subscriber was never woken for a coalesced event")
+	}
+	pending := sub.drainPending()
+	if len(pending) != 1 {
+		t.Fatalf("pending = %d, want 1 (coalesced latest-wins)", len(pending))
+	}
+	if got := string(pending[0].data); got != `{"sessionID":"s1","messages":[]}` {
+		t.Fatalf("pending payload = %q, want the latest (empty) snapshot", got)
 	}
 }
 

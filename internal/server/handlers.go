@@ -18,6 +18,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/queuesvc"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 )
 
@@ -132,6 +133,10 @@ func writeSessionSvcError(w http.ResponseWriter, msg string, err error) {
 	var ve *sessionsvc.ValidationError
 	if errors.As(err, &ve) {
 		http.Error(w, ve.Error(), http.StatusBadRequest)
+		return
+	}
+	if errors.Is(err, queuesvc.ErrEmptyMessage) {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if errors.Is(err, sessionsvc.ErrNoPlatformAvailable) {
@@ -322,8 +327,11 @@ var sessionSubRoutes = []sessionSubRoute{
 	{http.MethodGet, "{id}/approved-permissions", (*Server).handleSessionApprovedPermissions},
 	{http.MethodGet, "{id}/export.md", (*Server).handleSessionExportMarkdown},
 	{http.MethodGet, "{id}/shares", (*Server).handleSessionShares},
+	{http.MethodGet, "{id}/queue", (*Server).handleSessionQueueList},
 
 	// Session-scoped POSTs (specific patterns first).
+	{http.MethodPost, "{id}/queue/{qmid}/move", (*Server).handleSessionQueueMove},
+	{http.MethodDelete, "{id}/queue/{qmid}", (*Server).handleSessionQueueDelete},
 	{http.MethodPost, "{id}/questions/{qid}/reject", (*Server).handleSessionQuestion},
 	{http.MethodPost, "{id}/questions/{qid}", (*Server).handleSessionQuestion},
 	{http.MethodPost, "{id}/permissions/{pid}", (*Server).handleSessionPermission},

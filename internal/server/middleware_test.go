@@ -196,6 +196,43 @@ func TestStatusRecorder_DelegatesHijack(t *testing.T) {
 	}
 }
 
+// ── statusRecorder Flusher support ───────────────────────────────────
+//
+// statusRecorder must expose http.Flusher so SSE handlers that flow
+// through the middleware (the global /api/events stream — NOT bypassed
+// like /api/session/{id}/events) can stream. Without it the handler's
+// `w.(http.Flusher)` check fails, no client subscribes, and no broadcast
+// (e.g. ocman.queue.updated) is ever delivered — the live queue never
+// updates.
+
+type flushableWriter struct {
+	http.ResponseWriter
+	flushed bool
+}
+
+func (f *flushableWriter) Flush() { f.flushed = true }
+
+func TestStatusRecorder_DelegatesFlush(t *testing.T) {
+	inner := &flushableWriter{ResponseWriter: httptest.NewRecorder()}
+	rec := &statusRecorder{ResponseWriter: inner}
+
+	fl, ok := any(rec).(http.Flusher)
+	if !ok {
+		t.Fatal("statusRecorder does not implement http.Flusher")
+	}
+	fl.Flush()
+	if !inner.flushed {
+		t.Fatal("Flush was not delegated to the embedded ResponseWriter")
+	}
+}
+
+func TestStatusRecorder_FlushUnsupported(t *testing.T) {
+	// A writer without Flush must not panic — Flush is a no-op.
+	type plainWriter struct{ http.ResponseWriter }
+	rec := &statusRecorder{ResponseWriter: plainWriter{httptest.NewRecorder()}}
+	rec.Flush() // must not panic
+}
+
 func TestStatusRecorder_HijackUnsupported(t *testing.T) {
 	// httptest.ResponseRecorder does NOT implement http.Hijacker, so the
 	// recorder must return a clear error rather than panicking.
