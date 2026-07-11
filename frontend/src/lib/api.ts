@@ -420,21 +420,10 @@ export const api = {
     postJSON<{ ok: boolean }>('/api/session/pin', { platform, sessionId, pinned }),
   calcCost: (req: { modelID: string; input: number; output: number; cacheRead: number; cacheWrite: number }) =>
     postJSON<{ cost: number; known: boolean }>('/api/cost/calc', req),
-  activity: (params?: { days?: number; model?: string; dir?: string }, signal?: AbortSignal) => {
-    const q = new URLSearchParams();
-    if (params?.days) q.set('days', String(params.days));
-    if (params?.model) q.set('model', params.model);
-    if (params?.dir) q.set('dir', params.dir);
-    const qs = q.toString();
-    return fetchJSON<ActivityDay[]>(`/api/activity${qs ? '?' + qs : ''}`, signal);
-  },
-  models: (params?: { days?: number; dir?: string }, signal?: AbortSignal) => {
-    const q = new URLSearchParams();
-    if (params?.days) q.set('days', String(params.days));
-    if (params?.dir) q.set('dir', params.dir);
-    const qs = q.toString();
-    return fetchJSON<ModelUsage[]>(`/api/models${qs ? '?' + qs : ''}`, signal);
-  },
+  activity: (params?: { days?: number; model?: string; dir?: string }, signal?: AbortSignal) =>
+    fetchJSON<ActivityDay[]>(`/api/activity${queryString(params)}`, signal),
+  models: (params?: { days?: number; dir?: string }, signal?: AbortSignal) =>
+    fetchJSON<ModelUsage[]>(`/api/models${queryString(params)}`, signal),
   sessionModels: (sessionId: string) =>
     fetchJSON<SessionModelsResponse>(`/api/session/${encodeURIComponent(sessionId)}/models`),
   // Favorites CRUD. Scoped per-platform because the same (provider,
@@ -446,21 +435,10 @@ export const api = {
     postJSON<void>('/api/favorites', { platform, provider, model }, { parseJSON: false }),
   removeFavorite: (platform: string, provider: string, model: string) =>
     postJSON<void>('/api/favorites', { platform, provider, model }, { method: 'DELETE', parseJSON: false }),
-  hourly: (params?: { days?: number; dir?: string }, signal?: AbortSignal) => {
-    const q = new URLSearchParams();
-    if (params?.days) q.set('days', String(params.days));
-    if (params?.dir) q.set('dir', params.dir);
-    const qs = q.toString();
-    return fetchJSON<HourlyData[]>(`/api/hourly${qs ? '?' + qs : ''}`, signal);
-  },
-  hourlyTokens: (params?: { days?: number; model?: string; dir?: string }, signal?: AbortSignal) => {
-    const q = new URLSearchParams();
-    if (params?.days) q.set('days', String(params.days));
-    if (params?.model) q.set('model', params.model);
-    if (params?.dir) q.set('dir', params.dir);
-    const qs = q.toString();
-    return fetchJSON<HourlyTokensByModel[]>(`/api/hourly-tokens${qs ? '?' + qs : ''}`, signal);
-  },
+  hourly: (params?: { days?: number; dir?: string }, signal?: AbortSignal) =>
+    fetchJSON<HourlyData[]>(`/api/hourly${queryString(params)}`, signal),
+  hourlyTokens: (params?: { days?: number; model?: string; dir?: string }, signal?: AbortSignal) =>
+    fetchJSON<HourlyTokensByModel[]>(`/api/hourly-tokens${queryString(params)}`, signal),
   capabilities: (signal?: AbortSignal) => fetchJSON<CapabilitiesResponse>('/api/capabilities', signal),
 
   // --- Multi-remote support ---
