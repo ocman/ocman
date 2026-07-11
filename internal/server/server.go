@@ -515,27 +515,24 @@ func (s *Server) autoArchiveInactiveProjects() {
 	}).Info("project auto-archive pass completed")
 }
 
-// requireGET wraps a handler to only allow GET requests.
-func requireGET(h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
+// requireMethod wraps a handler to only allow the given HTTP method.
+func requireMethod(method string) func(http.HandlerFunc) http.HandlerFunc {
+	return func(h http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != method {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			h(w, r)
 		}
-		h(w, r)
 	}
 }
 
+// requireGET wraps a handler to only allow GET requests.
+func requireGET(h http.HandlerFunc) http.HandlerFunc { return requireMethod(http.MethodGet)(h) }
+
 // requirePOST wraps a handler to only allow POST requests.
-func requirePOST(h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		h(w, r)
-	}
-}
+func requirePOST(h http.HandlerFunc) http.HandlerFunc { return requireMethod(http.MethodPost)(h) }
 
 // get and post compose the method guard with requireAuth. They're
 // method-valued so handlers referring to s.auth can see it. When auth
