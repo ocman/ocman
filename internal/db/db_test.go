@@ -1576,6 +1576,32 @@ func TestGetSessionParentIDs_ReturnsMap(t *testing.T) {
 	}
 }
 
+// TestGetSessionParentIDs_ResolvesTopLevelAncestor verifies that a
+// nested subagent (grandchild) maps all the way up to the top-level
+// session, not just its immediate parent — so a prompt on a deeply
+// nested, externally-launched subagent still bubbles to the visible
+// row in the listing.
+func TestGetSessionParentIDs_ResolvesTopLevelAncestor(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "top", "Top", "/project", now, now)
+	insertSubagent(t, db, "mid", "top", "Task (build subagent)", "/project", now, now)
+	insertSubagent(t, db, "leaf", "mid", "Task (explore subagent)", "/project", now, now)
+
+	got, err := db.GetSessionParentIDs([]string{"leaf", "mid"})
+	if err != nil {
+		t.Fatalf("GetSessionParentIDs: %v", err)
+	}
+	if got["leaf"] != "top" {
+		t.Errorf("leaf ancestor = %q, want top", got["leaf"])
+	}
+	if got["mid"] != "top" {
+		t.Errorf("mid ancestor = %q, want top", got["mid"])
+	}
+}
+
 // stubPricing is a CostCalculator that returns a fixed per-token cost.
 type stubPricing struct {
 	inputRate  float64

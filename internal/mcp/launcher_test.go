@@ -37,11 +37,17 @@ type fakePlatformAdapter struct {
 	createReq        platforms.CreateSessionRequest
 	permReqs         []platforms.SetPermissionRulesRequest
 	permErr          error
+	liveRules        []platforms.PermissionRule
+	liveRulesErr     error
 }
 
 func (f *fakePlatformAdapter) SetPermissionRules(_ context.Context, req platforms.SetPermissionRulesRequest) error {
 	f.permReqs = append(f.permReqs, req)
 	return f.permErr
+}
+
+func (f *fakePlatformAdapter) PermissionRules(_ context.Context, _ string) ([]platforms.PermissionRule, error) {
+	return f.liveRules, f.liveRulesErr
 }
 
 func (f *fakePlatformAdapter) CreateSession(_ context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {

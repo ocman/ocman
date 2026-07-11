@@ -32,15 +32,29 @@ the /wt launch was not seeded with that rule; the runtime autoapprove
 pipeline covers the gap for those pre-existing instances.
 
 A worktree/child session launched from a parent also **inherits the
-parent's accumulated "Allow always" permissions** at split time (#101):
-ocman records every user-clicked "Allow always" reply (plus judge-safe
-approvals) in `auto_approved_permission`, and
-`permissions.BuildInheritedRules` replays them into the child's
-per-session ruleset via `LaunchRequest.PermissionRules` /
-`SetPermissionRules`. Controlled by the default-on
-`worktree.inherit_permissions` setting (GET/POST
-`/api/settings/worktree-inherit-permissions`); snapshot at split time,
-soft-fail (never blocks a launch).
+parent's accumulated "Allow always" permissions AND its live permission
+posture** at split time (#101): ocman records every user-clicked "Allow
+always" reply (plus judge-safe approvals) in `auto_approved_permission`,
+and `permissions.BuildInheritedRulesWithLive` replays them into the
+child's per-session ruleset via `LaunchRequest.PermissionRules` /
+`SetPermissionRules`. Crucially it *also* reads the parent's current
+ruleset (`Platform.PermissionRules`) and merges it last (so a live rule
+wins on conflict) — this is what propagates a **YOLO / custom
+permission mode**, which is written straight to the session ruleset and
+never recorded as an approval. Without this a YOLO parent's children
+would launch under default permissions and get stuck on prompts.
+Controlled by the default-on `worktree.inherit_permissions` setting
+(GET/POST `/api/settings/worktree-inherit-permissions`); snapshot at
+split time, soft-fail (never blocks a launch).
+
+Pending permission/question prompts from **subagent sessions** — even
+deeply nested ones, and ones launched *outside* ocman's control (native
+OpenCode Task subagents) — bubble up to the nearest visible top-level
+session row so the user can see and answer them.
+`db.GetSessionParentIDs` resolves each prompted session to its
+**top-level ancestor** (recursive walk over `session.parent_id`), not
+just its immediate parent, so a prompt on a grandchild subagent still
+surfaces on the row the user is watching.
 
 Ocman also embeds an **MCP (Model Context Protocol) server** at
 `http://localhost:8229/mcp` (Go backend) / `http://localhost:8228/mcp`

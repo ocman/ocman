@@ -110,6 +110,7 @@ type fakePlatformForTools struct {
 	sendMessageErr   error
 	sentMessages     []platforms.SendMessageRequest
 	permReqs         []platforms.SetPermissionRulesRequest
+	liveRules        []platforms.PermissionRule
 }
 
 func (f *fakePlatformForTools) ID() platforms.ID { return "opencode" }
@@ -117,6 +118,10 @@ func (f *fakePlatformForTools) ID() platforms.ID { return "opencode" }
 func (f *fakePlatformForTools) SetPermissionRules(_ context.Context, req platforms.SetPermissionRulesRequest) error {
 	f.permReqs = append(f.permReqs, req)
 	return nil
+}
+
+func (f *fakePlatformForTools) PermissionRules(_ context.Context, _ string) ([]platforms.PermissionRule, error) {
+	return f.liveRules, nil
 }
 
 func (f *fakePlatformForTools) CreateSession(_ context.Context, _ platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
@@ -726,6 +731,45 @@ func TestNewSession_InheritsParentPermissions(t *testing.T) {
 	rules := platform.permReqs[0].Rules
 	if len(rules) != 1 || rules[0].Permission != "bash" || rules[0].Pattern != "git *" || rules[0].Action != "allow" {
 		t.Fatalf("unexpected inherited rules: %+v", rules)
+	}
+}
+
+// A YOLO parent has a live ruleset but no recorded "Allow always"
+// approvals. The child must still inherit the YOLO posture so it
+// doesn't get stuck on a permission prompt the parent never sees.
+func TestNewSession_InheritsParentLiveYoloRuleset(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	// No RecordApprovedPermission — the parent never clicked "Allow always".
+	ocDB := openTestOpenCodeDB(t, []db.Session{
+		{ID: "parent-yolo", Title: "parent", Directory: "/repo", TimeCreated: 1000, TimeUpdated: 2000},
+	})
+	platform := &fakePlatformForTools{
+		createSessionID: "child-yolo",
+		liveRules: []platforms.PermissionRule{
+			{Permission: "edit", Pattern: "*", Action: "allow"},
+			{Permission: "bash", Pattern: "*", Action: "allow"},
+			{Permission: "webfetch", Pattern: "*", Action: "allow"},
+		},
+	}
+	srv := buildTestMCPServerWithOpenCodeDB(t, stateDB, platform, ocDB)
+
+	result := callTool(t, srv, "new_session", map[string]interface{}{
+		"session_id": "parent-yolo",
+		"intent":     "do work",
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", resultText(result))
+	}
+	inherited, count := decodeInheritResult(t, result)
+	if !inherited || count != 3 {
+		t.Fatalf("result inherited=%v count=%d, want true/3", inherited, count)
+	}
+	if len(platform.permReqs) != 1 {
+		t.Fatalf("expected one SetPermissionRules call, got %d", len(platform.permReqs))
+	}
+	rules := platform.permReqs[0].Rules
+	if len(rules) != 3 || rules[0].Permission != "edit" || rules[0].Action != "allow" {
+		t.Fatalf("unexpected inherited YOLO rules: %+v", rules)
 	}
 }
 

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"os/exec"
@@ -304,7 +305,11 @@ func (s *Server) applyInheritedPermissions(r *http.Request, parentSessionID, chi
 	if platform == "" {
 		platform = "opencode"
 	}
-	rules, count, err := permissions.BuildInheritedRules(s.stateDB, platform, parentSessionID)
+	var reader permissions.LiveRuleReader
+	if adapter, ok := s.registry.Get(platforms.ID(platform)); ok {
+		reader = worktreeLiveRuleReader{adapter: adapter, ctx: r.Context()}
+	}
+	rules, count, err := permissions.BuildInheritedRulesWithLive(s.stateDB, reader, platform, parentSessionID)
 	if err != nil {
 		log.WithError(err).Warn("worktree: building inherited permission rules")
 		return 0, "building rules: " + err.Error()
@@ -320,4 +325,16 @@ func (s *Server) applyInheritedPermissions(r *http.Request, parentSessionID, chi
 		return 0, "applying rules: " + err.Error()
 	}
 	return count, ""
+}
+
+// worktreeLiveRuleReader adapts a platforms.Platform to the
+// permissions.LiveRuleReader shape so a worktree child inherits the
+// parent's live YOLO/custom posture, not just its recorded approvals.
+type worktreeLiveRuleReader struct {
+	adapter platforms.Platform
+	ctx     context.Context
+}
+
+func (w worktreeLiveRuleReader) PermissionRules(_ string, sessionID string) ([]platforms.PermissionRule, error) {
+	return w.adapter.PermissionRules(w.ctx, sessionID)
 }

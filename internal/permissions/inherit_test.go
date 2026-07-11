@@ -139,6 +139,90 @@ func TestBuildInheritedRules_ListerError(t *testing.T) {
 	}
 }
 
+type fakeLiveReader struct {
+	rules []platforms.PermissionRule
+	err   error
+}
+
+func (f fakeLiveReader) PermissionRules(string, string) ([]platforms.PermissionRule, error) {
+	return f.rules, f.err
+}
+
+// A YOLO parent has a live ruleset (edit/bash/webfetch = allow) but no
+// recorded "Allow always" clicks. Approval-only inheritance yields
+// nothing; merging the live ruleset must propagate the YOLO posture.
+func TestBuildInheritedRulesWithLive_YoloParentWithNoApprovals(t *testing.T) {
+	live := []platforms.PermissionRule{
+		{Permission: "edit", Pattern: "*", Action: "allow"},
+		{Permission: "bash", Pattern: "*", Action: "allow"},
+		{Permission: "webfetch", Pattern: "*", Action: "allow"},
+	}
+	rules, count, err := BuildInheritedRulesWithLive(
+		fakeLister{}, // no approvals
+		fakeLiveReader{rules: live},
+		"opencode", "ses-parent",
+	)
+	if err != nil {
+		t.Fatalf("BuildInheritedRulesWithLive: %v", err)
+	}
+	if count != 3 || !equalRules(rules, live) {
+		t.Fatalf("got (%d, %+v), want (3, %+v)", count, rules, live)
+	}
+}
+
+// Live rules follow the approval-derived rules so a live rule wins on
+// conflict (OpenCode evaluates the last matching rule).
+func TestBuildInheritedRulesWithLive_MergeOrder(t *testing.T) {
+	rules, _, err := BuildInheritedRulesWithLive(
+		fakeLister{rows: []state.ApprovedPermission{ap("bash", "git *")}},
+		fakeLiveReader{rules: []platforms.PermissionRule{
+			{Permission: "bash", Pattern: "*", Action: "allow"},
+		}},
+		"opencode", "ses-parent",
+	)
+	if err != nil {
+		t.Fatalf("BuildInheritedRulesWithLive: %v", err)
+	}
+	want := []platforms.PermissionRule{
+		{Permission: "bash", Pattern: "git *", Action: "allow"}, // from approvals, first
+		{Permission: "bash", Pattern: "*", Action: "allow"},     // from live, last (wins)
+	}
+	if !equalRules(rules, want) {
+		t.Fatalf("rules = %+v, want %+v", rules, want)
+	}
+}
+
+// A live-reader error is soft: fall back to approval-only rules.
+func TestBuildInheritedRulesWithLive_LiveErrorFallsBack(t *testing.T) {
+	rules, count, err := BuildInheritedRulesWithLive(
+		fakeLister{rows: []state.ApprovedPermission{ap("edit", "*.go")}},
+		fakeLiveReader{err: errors.New("boom")},
+		"opencode", "ses-parent",
+	)
+	if err != nil {
+		t.Fatalf("BuildInheritedRulesWithLive: %v", err)
+	}
+	want := []platforms.PermissionRule{{Permission: "edit", Pattern: "*.go", Action: "allow"}}
+	if count != 1 || !equalRules(rules, want) {
+		t.Fatalf("got (%d, %+v), want (1, %+v)", count, rules, want)
+	}
+}
+
+// A nil live reader degrades to plain approval-only inheritance.
+func TestBuildInheritedRulesWithLive_NilReader(t *testing.T) {
+	rules, count, err := BuildInheritedRulesWithLive(
+		fakeLister{rows: []state.ApprovedPermission{ap("edit", "*.go")}},
+		nil,
+		"opencode", "ses-parent",
+	)
+	if err != nil {
+		t.Fatalf("BuildInheritedRulesWithLive: %v", err)
+	}
+	if count != 1 || !equalRules(rules, []platforms.PermissionRule{{Permission: "edit", Pattern: "*.go", Action: "allow"}}) {
+		t.Fatalf("got (%d, %+v)", count, rules)
+	}
+}
+
 func equalRules(a, b []platforms.PermissionRule) bool {
 	if len(a) != len(b) {
 		return false

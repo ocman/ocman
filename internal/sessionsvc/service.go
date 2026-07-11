@@ -286,3 +286,14 @@ func (c *Client) SendMessage(ctx context.Context, req platforms.SendMessageReque
 func (c *Client) SetPermissionRules(ctx context.Context, req platforms.SetPermissionRulesRequest) error {
 	return c.svc.SetPermissionRules(ctx, c.platformID, req)
 }
+
+// PermissionRules reads a session's current permission ruleset via the
+// bound platform. Used to inherit a parent's live YOLO/custom posture
+// into a child at split time.
+func (c *Client) PermissionRules(ctx context.Context, sessionID string) ([]platforms.PermissionRule, error) {
+	p, err := c.svc.resolve(ctx, sessionID, c.platformID)
+	if err != nil {
+		return nil, err
+	}
+	return p.PermissionRules(ctx, sessionID)
+}

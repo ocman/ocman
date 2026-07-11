@@ -51,12 +51,26 @@ func (t *splitTools) inheritedRules(parentSessionID string) (rules []platforms.P
 	if !on {
 		return nil, 0, ""
 	}
-	rules, count, err = permissions.BuildInheritedRules(t.inherit, t.platform, parentSessionID)
+	var reader permissions.LiveRuleReader
+	if t.launcher != nil && t.launcher.platform != nil {
+		reader = liveRuleReaderFunc(t.launcher.platform.PermissionRules)
+	}
+	rules, count, err = permissions.BuildInheritedRulesWithLive(t.inherit, reader, t.platform, parentSessionID)
 	if err != nil {
 		log.WithError(err).Warn("mcp: building inherited permission rules")
 		return nil, 0, "building rules: " + err.Error()
 	}
 	return rules, count, ""
+}
+
+// liveRuleReaderFunc adapts a Platform.PermissionRules method (ctx,
+// sessionID) to the permissions.LiveRuleReader shape (platform,
+// sessionID), discarding the unused platform arg and supplying a
+// background context.
+type liveRuleReaderFunc func(ctx context.Context, sessionID string) ([]platforms.PermissionRule, error)
+
+func (f liveRuleReaderFunc) PermissionRules(_ string, sessionID string) ([]platforms.PermissionRule, error) {
+	return f(context.Background(), sessionID)
 }
 
 // mergeInheritedRules orders inherited rules first and caller-supplied

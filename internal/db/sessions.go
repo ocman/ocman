@@ -243,11 +243,14 @@ func (d *DB) GetSubagentSessionIDs(parentID string) ([]string, error) {
 	return ids, rows.Err()
 }
 
-// GetSessionParentIDs returns a map of child→parent for every id in
-// childIDs that has a non-NULL parent_id. IDs with no parent (top-level
-// sessions) and IDs that don't exist are simply absent from the map,
-// not present with an empty value. Used to bubble subagent-level
-// pending-prompt flags up to the parent session in the listing.
+// GetSessionParentIDs returns a map of child→top-level-ancestor for
+// every id in childIDs that has a non-NULL parent_id. The value is the
+// *outermost* ancestor (the top-level session with no parent_id), not
+// just the immediate parent, so a prompt on a deeply nested subagent —
+// e.g. a Task subagent launched by another subagent, outside ocman's
+// control — still bubbles up to the visible row in the listing. IDs
+// with no parent (top-level sessions) and IDs that don't exist are
+// simply absent from the map, not present with an empty value.
 //
 // Returns an empty map (and nil error) when childIDs is empty so callers
 // can hand it the result of a fan-out without first checking len().
@@ -263,8 +266,22 @@ func (d *DB) GetSessionParentIDs(childIDs []string) (map[string]string, error) {
 	for i, id := range childIDs {
 		args[i] = id
 	}
+	// Recursive CTE: seed with each requested child, then walk parent_id
+	// up until the ancestor has none. The final SELECT keeps only the
+	// row where the ancestor is top-level (parent_id IS NULL), giving one
+	// (start, top-level ancestor) pair per requested id that has a parent.
+	//
+	// ponytail: bounded by real session nesting depth (a handful);
+	// SQLite's default recursion limit (1000) is the safety ceiling.
 	rows, err := d.db.Query(
-		`SELECT id, parent_id FROM session WHERE parent_id IS NOT NULL AND id IN (`+placeholders+`)`,
+		`WITH RECURSIVE anc(start, id, parent_id) AS (
+			SELECT id, id, parent_id FROM session
+			WHERE parent_id IS NOT NULL AND id IN (`+placeholders+`)
+			UNION ALL
+			SELECT anc.start, s.id, s.parent_id
+			FROM session s JOIN anc ON s.id = anc.parent_id
+		)
+		SELECT start, id FROM anc WHERE parent_id IS NULL`,
 		args...,
 	)
 	if err != nil {
@@ -273,12 +290,12 @@ func (d *DB) GetSessionParentIDs(childIDs []string) (map[string]string, error) {
 	defer rows.Close()
 
 	for rows.Next() {
-		var id, parentID string
-		if err := rows.Scan(&id, &parentID); err != nil {
+		var startID, ancestorID string
+		if err := rows.Scan(&startID, &ancestorID); err != nil {
 			log.WithError(err).Warn("failed to scan session parent id")
 			continue
 		}
-		out[id] = parentID
+		out[startID] = ancestorID
 	}
 	return out, rows.Err()
 }

@@ -68,6 +68,9 @@ type SessionClient interface {
 	CreateSession(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error)
 	SendMessage(ctx context.Context, req platforms.SendMessageRequest) error
 	SetPermissionRules(ctx context.Context, req platforms.SetPermissionRulesRequest) error
+	// PermissionRules reads a session's current ruleset, used to inherit
+	// a parent's live YOLO/custom posture into a child at split time.
+	PermissionRules(ctx context.Context, sessionID string) ([]platforms.PermissionRule, error)
 }
 
 // platformAdapter is the internal alias used within the package.

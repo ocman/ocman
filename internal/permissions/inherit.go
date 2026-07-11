@@ -56,6 +56,55 @@ type ApprovalLister interface {
 	ListApprovedPermissions(platform, sessionID string) ([]state.ApprovedPermission, error)
 }
 
+// LiveRuleReader reads a session's current permission ruleset from the
+// platform (e.g. Platform.PermissionRules). It is the slice needed to
+// inherit a parent's *live* posture — notably a YOLO/custom mode set via
+// the header lock — which is written straight to the session's ruleset
+// and never recorded as an "Allow always" approval. Issue: yolo parent
+// inherited nothing because BuildInheritedRules only read approvals.
+type LiveRuleReader interface {
+	PermissionRules(platform, sessionID string) ([]platforms.PermissionRule, error)
+}
+
+// BuildInheritedRulesWithLive builds the child's inherited ruleset from
+// two sources, in evaluation order:
+//
+//  1. the parent's accumulated "Allow always" approvals (BuildInheritedRules), then
+//  2. the parent's *live* ruleset read via reader (YOLO/custom posture).
+//
+// Live rules are appended last so they win on conflict — OpenCode
+// evaluates the last matching rule. A nil reader or a read error is soft:
+// the function falls back to approval-only rules (never fails the launch).
+// The returned count is len(merged).
+func BuildInheritedRulesWithLive(lister ApprovalLister, reader LiveRuleReader, platform, parentSessionID string) ([]platforms.PermissionRule, int, error) {
+	approved, _, err := BuildInheritedRules(lister, platform, parentSessionID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if reader == nil || parentSessionID == "" {
+		return approved, len(approved), nil
+	}
+	live, err := reader.PermissionRules(platform, parentSessionID)
+	if err != nil {
+		log.WithError(err).Warn("permissions: reading parent live ruleset; inheriting approvals only")
+		return approved, len(approved), nil
+	}
+	if len(live) == 0 {
+		return approved, len(approved), nil
+	}
+	merged := make([]platforms.PermissionRule, 0, len(approved)+len(live))
+	merged = append(merged, approved...)
+	merged = append(merged, live...)
+	if len(merged) > maxInheritedPatterns {
+		log.WithFields(log.Fields{
+			"count": len(merged),
+			"cap":   maxInheritedPatterns,
+		}).Warn("permissions: merged inherited ruleset exceeds cap, truncating")
+		merged = merged[:maxInheritedPatterns]
+	}
+	return merged, len(merged), nil
+}
+
 // BuildInheritedRules reads the parent session's accumulated approvals
 // and maps them to a PermissionRule set the child can be launched with.
 //
