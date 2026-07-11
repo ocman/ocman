@@ -108,7 +108,10 @@ describe('useWorkingTreeDiff', () => {
     const { mod, reactMock, getGitDiff } = await loadHookHarness();
     const result = mod.useWorkingTreeDiff('/repo', { enabled: false });
     expect(result.loading).toBe(false);
-    expect(reactMock.states[0]).toMatchObject({ repo: '', branch: '', files: [] });
+    expect(result.notRepo).toBe(false);
+    // states[0] is the wrapper's notRepo; states[1] is the base hook's
+    // data, which the disabled branch sets to the empty diff.
+    expect(reactMock.states[1]).toMatchObject({ repo: '', branch: '', files: [] });
     expect(getGitDiff).not.toHaveBeenCalled();
   });
 
@@ -145,5 +148,29 @@ describe('useWorkingTreeDiff', () => {
     const { mod, getGitDiff } = await loadHookHarness();
     mod.useWorkingTreeDiff(undefined);
     expect(getGitDiff).not.toHaveBeenCalled();
+  });
+
+  it('sets notRepo on a 404 error and reports no error', async () => {
+    const { mod, reactMock } = await loadHookHarness({
+      getGitDiffImpl: () => Promise.reject(new Error('404 not found')),
+    });
+    mod.useWorkingTreeDiff('/repo');
+    // The fetch worker catches the 404, flips notRepo, and resolves
+    // with the empty diff so the base hook reports error: null.
+    await new Promise((r) => setTimeout(r, 0));
+    // states[0] is the wrapper's notRepo; the base hook's error state
+    // (states[3]) stays null because the fetch resolved cleanly.
+    expect(reactMock.states[0]).toBe(true);
+    expect(reactMock.states[3]).toBeNull();
+  });
+
+  it('surfaces a non-404 fetch error without setting notRepo', async () => {
+    const { mod, reactMock } = await loadHookHarness({
+      getGitDiffImpl: () => Promise.reject(new Error('boom')),
+    });
+    mod.useWorkingTreeDiff('/repo');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(reactMock.states[0]).toBe(false);
+    expect(reactMock.states[3]).toBe('boom');
   });
 });
