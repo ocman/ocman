@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, type ShareLink } from '../lib/api';
+import { copyToClipboard } from '../lib/clipboard';
 import './ShareExportMenu.css';
 
 interface ShareLinkModalProps {
@@ -156,33 +157,4 @@ export function ShareLinkModal({ sessionId, onClose }: ShareLinkModalProps) {
       </div>
     </div>
   );
-}
-
-// copyToClipboard writes text to the clipboard, falling back to a
-// hidden textarea + execCommand when the async Clipboard API is
-// unavailable (non-secure contexts, older browsers). Returns whether
-// the copy succeeded.
-async function copyToClipboard(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    // fall through to the legacy path
-  }
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
-    const ok = document.execCommand('copy');
-    document.body.removeChild(ta);
-    return ok;
-  } catch {
-    return false;
-  }
 }

@@ -1,16 +1,16 @@
 // @vitest-environment jsdom
 //
-// Tests for the `/restart-opencode` command path in useSessionActions.
-// On success it walks the toast through "Restarting..." -> "Restarted"
-// and clears the pending indicator; on failure it hides the toast and
-// reports the error via pending.fail.
+// Tests for the `/share` command path in useSessionActions (issue #294).
+// It copies THIS ocman instance's session URL to the clipboard and
+// surfaces a toast with the reachability caveat — no OpenCode cloud
+// share involved.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { createRef } from 'react';
 import type { MutableRefObject } from 'react';
 import { useSessionActions, type UseSessionActionsOptions } from './useSessionActions';
-import { api } from '../../lib/api';
+import { copyToClipboard } from '../../lib/clipboard';
 
 vi.mock('../../lib/apiStore', () => ({
   useApiStore: Object.assign(
@@ -28,17 +28,19 @@ vi.mock('../../lib/apiStore', () => ({
 }));
 
 vi.mock('../../lib/api', () => ({
-  api: { restartOpencode: vi.fn(), debugLog: vi.fn().mockResolvedValue(undefined) },
+  api: { debugLog: vi.fn().mockResolvedValue(undefined) },
 }));
 
-const restartOpencode = vi.mocked(api.restartOpencode);
+vi.mock('../../lib/clipboard', () => ({ copyToClipboard: vi.fn() }));
+
+const copyMock = vi.mocked(copyToClipboard);
 
 function makeOptions(over: Partial<UseSessionActionsOptions> = {}): UseSessionActionsOptions {
   const pending = { pending: null, begin: vi.fn(), fail: vi.fn(), clear: vi.fn() };
   return {
-    session: { id: 'sess-1', platform: 'opencode', directory: '/p', timeUpdated: 0 },
-    portAvailable: true,
-    caps: { shellExec: true } as UseSessionActionsOptions['caps'],
+    session: { id: 'sess 1', platform: 'opencode', directory: '/p', timeUpdated: 0 },
+    portAvailable: false, // share must work even when the platform is offline
+    caps: {} as UseSessionActionsOptions['caps'],
     pendingPermission: null,
     pendingQuestion: null,
     selectedModel: '',
@@ -69,52 +71,37 @@ function makeOptions(over: Partial<UseSessionActionsOptions> = {}): UseSessionAc
 }
 
 beforeEach(() => {
-  restartOpencode.mockReset();
+  copyMock.mockReset();
 });
 
-describe('useSessionActions — /restart-opencode', () => {
-  it('shows progress then success toast on a successful restart', async () => {
-    restartOpencode.mockResolvedValue({ target: 'repo:oc' });
+describe('useSessionActions — /share', () => {
+  it('copies the origin-based session URL and toasts success', async () => {
+    copyMock.mockResolvedValue(true);
     const setRestartToastMessage = vi.fn();
-    const pending = { pending: null, begin: vi.fn(), fail: vi.fn(), clear: vi.fn() };
-    const opts = makeOptions({
-      setRestartToastMessage,
-      pending: pending as unknown as UseSessionActionsOptions['pending'],
-    });
+    const opts = makeOptions({ setRestartToastMessage });
     const { result } = renderHook(() => useSessionActions(opts));
 
     await act(async () => {
-      await result.current.handleCommand('restart-opencode', '');
+      await result.current.handleCommand('share', '');
     });
 
-    expect(restartOpencode).toHaveBeenCalledWith('sess-1');
-    expect(setRestartToastMessage.mock.calls).toEqual([
-      ['Restarting OpenCode...'],
-      ['Restarted OpenCode'],
-    ]);
-    expect(pending.clear).toHaveBeenCalled();
-    expect(pending.fail).not.toHaveBeenCalled();
+    // origin comes from jsdom (http://localhost); id is URL-encoded.
+    expect(copyMock).toHaveBeenCalledWith(`${window.location.origin}/session/sess%201`);
+    expect(setRestartToastMessage).toHaveBeenCalledWith(
+      'Session link copied (reachable only where this ocman instance is)',
+    );
   });
 
-  it('hides the toast and reports the error when the restart fails', async () => {
-    restartOpencode.mockRejectedValue(new Error('no pane'));
+  it('toasts a failure message when the clipboard write fails', async () => {
+    copyMock.mockResolvedValue(false);
     const setRestartToastMessage = vi.fn();
-    const pending = { pending: null, begin: vi.fn(), fail: vi.fn(), clear: vi.fn() };
-    const opts = makeOptions({
-      setRestartToastMessage,
-      pending: pending as unknown as UseSessionActionsOptions['pending'],
-    });
+    const opts = makeOptions({ setRestartToastMessage });
     const { result } = renderHook(() => useSessionActions(opts));
 
     await act(async () => {
-      await result.current.handleCommand('restart-opencode', '');
+      await result.current.handleCommand('share', '');
     });
 
-    expect(setRestartToastMessage.mock.calls).toEqual([
-      ['Restarting OpenCode...'],
-      [null],
-    ]);
-    expect(pending.fail).toHaveBeenCalledWith('no pane');
-    expect(pending.clear).not.toHaveBeenCalled();
+    expect(setRestartToastMessage).toHaveBeenCalledWith('Could not copy link to clipboard');
   });
 });

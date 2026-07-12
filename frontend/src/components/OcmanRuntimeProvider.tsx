@@ -7,6 +7,7 @@ import {
 } from '@assistant-ui/react';
 import type { AgentInfo, Message, Part, SessionModelEntry, TaskSessionData } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
+import { useUiStore } from '../lib/uiStore';
 import { AgentsContext } from '../lib/agentColor';
 import { FailedSendsContext, type FailedSendsContextValue } from '../lib/failedSendsContext';
 import type { FailedSend } from '../lib/failedSends';
@@ -72,6 +73,8 @@ export function OcmanRuntimeProvider({
     return out;
   }, [modelEntries]);
   const sendMessage = useApiStore((state) => state.sendMessage);
+  // Display-only reasoning visibility (the `/thinking` toggle, #290).
+  const showReasoning = useUiStore((state) => state.showReasoning);
 
   // Index failed sends by their optimistic message id so convertMessages can
   // attach the failure metadata (and the AssistantThread renderer can pull
@@ -101,8 +104,8 @@ export function OcmanRuntimeProvider({
   const convert = useMemo(() => createConvertMessages(), [sessionId]);
 
   const converted = useMemo(
-    () => convert(messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById),
-    [convert, messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById],
+    () => convert(messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById, showReasoning),
+    [convert, messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById, showReasoning],
   );
 
   const isRunning = useMemo(() => computeIsRunning(messages), [messages]);

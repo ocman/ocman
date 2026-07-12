@@ -1041,6 +1041,9 @@ export interface SlashCommand {
   description?: string;
   agent?: string;
   model?: string;
+  // OpenCode command origin: "command", "mcp", or "skill". The /skills
+  // picker lists entries where source === "skill".
+  source?: string;
 }
 
 // SessionModelEntry mirrors internal/server/handlers.go:sessionModelEntry —

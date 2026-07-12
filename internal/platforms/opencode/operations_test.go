@@ -1094,3 +1094,52 @@ func TestRespondPermission_InvalidatesPendingPromptCache(t *testing.T) {
 		t.Errorf("after respond: session %q must no longer be in pending list, got %v", sid, after)
 	}
 }
+
+// TestSlashCommands_ParsesSource confirms the OpenCode /command
+// `source` field (command | mcp | skill) is carried through to
+// SlashCommandEntry.Source. The /skills picker keys off source ==
+// "skill" to identify which commands are skills.
+func TestSlashCommands_ParsesSource(t *testing.T) {
+	const sid = "sess-skills"
+	const dir = "/tmp/proj-skills"
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/command" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{"name":"init","description":"setup","source":"command"},
+			{"name":"pr-review","description":"review a PR","source":"skill"},
+			{"name":"gitnexus:map","description":"mcp tool","source":"mcp"}
+		]`))
+	}))
+	defer srv.Close()
+
+	// Cold cache so the HTTP call actually fires.
+	catalogCache = newHTTPCache(catalogCache.ttl)
+
+	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+	withTestPort(t, dir, port)
+	database := newTestDBWithSession(t, sid, dir)
+	a := New(database, nil)
+
+	entries, err := a.SlashCommands(context.Background(), sid)
+	if err != nil {
+		t.Fatalf("SlashCommands: %v", err)
+	}
+	bySource := map[string]string{}
+	for _, e := range entries {
+		bySource[e.Name] = e.Source
+	}
+	if bySource["init"] != "command" {
+		t.Errorf("init source = %q, want command", bySource["init"])
+	}
+	if bySource["pr-review"] != "skill" {
+		t.Errorf("pr-review source = %q, want skill", bySource["pr-review"])
+	}
+	if bySource["gitnexus:map"] != "mcp" {
+		t.Errorf("gitnexus:map source = %q, want mcp", bySource["gitnexus:map"])
+	}
+}

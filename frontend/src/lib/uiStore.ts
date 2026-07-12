@@ -72,6 +72,20 @@ type UiStore = {
   bellEnabled: boolean;
   setBellEnabled: (enabled: boolean) => void;
 
+  // Tool-execution detail visibility in the conversation thread. When
+  // false, the per-message tool call blocks are hidden (mirrors
+  // OpenCode's TUI /details toggle). Persisted so it survives reload.
+  showToolDetails: boolean;
+  toggleToolDetails: () => void;
+
+  // Display-only toggle for assistant reasoning/thinking blocks in the
+  // thread view (the `/thinking` command, #290). Does NOT enable or
+  // disable model reasoning — it only shows/hides reasoning parts that
+  // are already present in the stream, matching OpenCode's semantics.
+  showReasoning: boolean;
+  setShowReasoning: (enabled: boolean) => void;
+  toggleShowReasoning: () => void;
+
   // OS-level Web Notifications. Off by default — enabling requires the
   // user to grant browser permission, so we never preemptively claim
   // they're enabled. Persisted alongside other preferences.
@@ -215,6 +229,13 @@ export const useUiStore = create<UiStore>()(
 
       bellEnabled: true,
       setBellEnabled: (enabled) => set({ bellEnabled: enabled }),
+
+      showToolDetails: true,
+      toggleToolDetails: () => set((s) => ({ showToolDetails: !s.showToolDetails })),
+
+      showReasoning: true,
+      setShowReasoning: (enabled) => set({ showReasoning: enabled }),
+      toggleShowReasoning: () => set((s) => ({ showReasoning: !s.showReasoning })),
 
       notificationsEnabled: false,
       setNotificationsEnabled: (enabled) => set({ notificationsEnabled: enabled }),
@@ -364,6 +385,8 @@ export const useUiStore = create<UiStore>()(
       partialize: (s) => ({
         sidebarWidth: s.sidebarWidth,
         bellEnabled: s.bellEnabled,
+        showToolDetails: s.showToolDetails,
+        showReasoning: s.showReasoning,
         notificationsEnabled: s.notificationsEnabled,
         collapsedProjects: s.collapsedProjects,
         projectOrder: s.projectOrder,

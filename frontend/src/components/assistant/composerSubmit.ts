@@ -42,8 +42,10 @@ export function routeComposerSubmit(
   // the command name; everything after is verbatim arguments.
   if (trimmed.startsWith('/')) {
     const spaceIdx = trimmed.indexOf(' ');
-    const command = spaceIdx > 0 ? trimmed.slice(1, spaceIdx) : trimmed.slice(1);
+    const raw = spaceIdx > 0 ? trimmed.slice(1, spaceIdx) : trimmed.slice(1);
     const args = spaceIdx > 0 ? trimmed.slice(spaceIdx + 1).trim() : '';
+    // `/agents` is an OpenCode-parity alias for the `/agent` picker (#295).
+    const command = raw === 'agents' ? 'agent' : raw;
     return { kind: 'command', command, args };
   }
 

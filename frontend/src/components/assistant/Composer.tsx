@@ -8,7 +8,9 @@ import { api, type SlashCommand, type AgentInfo, type SessionModelEntry } from '
 import { agentColor } from '../../lib/agentColor';
 import { ModelPicker } from './ModelPicker';
 import { AgentPicker } from './AgentPicker';
+import { SkillPicker } from './SkillPicker';
 import { ReasoningPicker } from './ReasoningPicker';
+import { HelpDialog } from './HelpDialog';
 import { BranchSelector, TargetSelector } from './ComposerSelectorRow';
 import { SlashCommandMenu } from './SlashCommandMenu';
 import { QueuedMessages } from './QueuedMessages';
@@ -17,7 +19,7 @@ import { useComposerAudio } from './useComposerAudio';
 import { routeComposerSubmit } from './composerSubmit';
 import { getContextWindow, formatTokenCount } from '../../lib/models/contextWindows';
 import { formatCurrency, formatTokensPerSecond } from '../../lib/format';
-import { BUILTIN_COMMANDS, KNOWN_AGENTS } from '../../lib/commands/builtinCommands';
+import { BUILTIN_COMMANDS, KNOWN_AGENTS, modelHasVariants } from '../../lib/commands/builtinCommands';
 import { remoteLog } from '../../lib/remoteLog';
 
 export interface AttachedImage {
@@ -271,7 +273,10 @@ function ComposerImpl({
   const [modelPickerQuery, setModelPickerQuery] = useState('');
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [agentPickerQuery, setAgentPickerQuery] = useState('');
+  const [skillPickerOpen, setSkillPickerOpen] = useState(false);
+  const [skillPickerQuery, setSkillPickerQuery] = useState('');
   const [reasoningPickerOpen, setReasoningPickerOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   // Refs let the non-React keydown/submit handlers (which capture their
   // initial closure) always see the latest lists + callbacks without having
   // to re-bind every render.
@@ -311,9 +316,16 @@ function ComposerImpl({
   // either from OpenCode's /agent catalog or the always-present KNOWN_AGENTS
   // fallback in agentOptionsRef.
   const hasAgents = !!(agents && agents.length > 0);
+  const hasSkills = slashCommands.some(c => c.source === 'skill');
+  // Variants == the reasoning options the effective model exposes, so the
+  // /variants command is hidden when the model has none (OpenCode parity).
+  const hasVariants = modelHasVariants(selectedModel, modelEntries);
   const filteredCommands = slashCommands.filter(cmd => {
     if (cmd.name === 'model' && !hasModels) return false;
-    if (cmd.name === 'agent' && !hasAgents && (!activeAgent)) return false;
+    if ((cmd.name === 'agent' || cmd.name === 'agents') && !hasAgents && (!activeAgent)) return false;
+    if (cmd.name === 'skills' && !hasSkills) return false;
+    // Mirror OpenCode: /variants is hidden when the model exposes no variants.
+    if (cmd.name === 'variants' && !hasVariants) return false;
     return cmd.name.toLowerCase().startsWith(slashFilter.toLowerCase());
   });
 
@@ -386,6 +398,26 @@ function ComposerImpl({
     setAgentPickerOpen(true);
   }, [resolveAgentArg]);
 
+  const openSkillPicker = useCallback((arg: string) => {
+    setSkillPickerQuery(arg);
+    setSkillPickerOpen(true);
+  }, []);
+
+  // On skill select: prefill `/<skill> ` into the composer — do not send.
+  // Matches OpenCode's DialogSkill, which inserts the command for the user
+  // to complete/submit themselves.
+  const insertSkill = useCallback((skill: string) => {
+    setSkillPickerOpen(false);
+    const el = inputRef.current;
+    if (!el) return;
+    el.value = '/' + skill + ' ';
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+    el.focus();
+    const sid = sessionIdRef.current;
+    if (sid) scheduleDraftSave(sid, () => el.value);
+  }, [scheduleDraftSave]);
+
   const clearComposerInput = useCallback(() => {
     const el = inputRef.current;
     if (!el) return;
@@ -408,9 +440,27 @@ function ComposerImpl({
       openModelPicker('');
       return;
     }
-    if (cmd.name === 'agent') {
+    // `/agents` is an OpenCode-parity alias for `/agent` (#295).
+    if (cmd.name === 'agent' || cmd.name === 'agents') {
       clearComposerInput();
       openAgentPicker('');
+      return;
+    }
+    if (cmd.name === 'help') {
+      clearComposerInput();
+      setHelpOpen(true);
+      return;
+    }
+    if (cmd.name === 'skills') {
+      clearComposerInput();
+      openSkillPicker('');
+      return;
+    }
+    // /variants reuses the reasoning picker: it tunes the current model's
+    // reasoning variant. Hidden from the menu when the model has none.
+    if (cmd.name === 'variants') {
+      clearComposerInput();
+      setReasoningPickerOpen(true);
       return;
     }
     el.value = '/' + cmd.name + ' ';
@@ -420,7 +470,7 @@ function ComposerImpl({
     setShowSlashMenu(false);
     setSlashFilter('');
     setSlashIndex(0);
-  }, [clearComposerInput, openModelPicker, openAgentPicker]);
+  }, [clearComposerInput, openModelPicker, openAgentPicker, openSkillPicker]);
 
   const addImageFiles = useCallback(async (files: File[]) => {
     const imageFiles = files.filter(f => f.type.startsWith('image/'));
@@ -586,13 +636,19 @@ function ComposerImpl({
         const withFileReferences = (text: string) => [text, fileReferenceText].filter(Boolean).join('\n\n');
 
         if (route.kind === 'command' && onCommandRef.current) {
-          // /model and /agent are client-only: don't dispatch to the backend.
-          if (route.command === 'model' || route.command === 'agent') {
+          // Picker/dialog commands are client-only: don't dispatch them.
+          if (['model', 'agent', 'agents', 'help', 'skills'].includes(route.command)) {
             el.value = '';
             el.style.height = 'auto';
             const sid = sessionIdRef.current;
             if (sid) clearDraftNow(sid);
-            const evt = route.command === 'model' ? 'oc-model-picker-open' : 'oc-agent-picker-open';
+            const evt = route.command === 'model'
+              ? 'oc-model-picker-open'
+              : route.command === 'agent' || route.command === 'agents'
+                ? 'oc-agent-picker-open'
+                : route.command === 'help'
+                  ? 'oc-help-open'
+                  : 'oc-skill-picker-open';
             el.dispatchEvent(new CustomEvent(evt, { detail: route.args }));
             return;
           }
@@ -724,6 +780,16 @@ function ComposerImpl({
       el.style.height = 'auto';
       openAgentPicker(((e as CustomEvent).detail as string) || '');
     };
+    const handleHelpOpen = () => {
+      el.value = '';
+      el.style.height = 'auto';
+      setHelpOpen(true);
+    };
+    const handleSkillPickerOpen = (e: Event) => {
+      el.value = '';
+      el.style.height = 'auto';
+      openSkillPicker(((e as CustomEvent).detail as string) || '');
+    };
     const handleBashMode = (e: Event) => {
       setIsBashMode((e as CustomEvent).detail as boolean);
     };
@@ -736,6 +802,8 @@ function ComposerImpl({
     el.addEventListener('oc-slash-select', handleSlashSelect);
     el.addEventListener('oc-model-picker-open', handleModelPickerOpen);
     el.addEventListener('oc-agent-picker-open', handleAgentPickerOpen);
+    el.addEventListener('oc-help-open', handleHelpOpen);
+    el.addEventListener('oc-skill-picker-open', handleSkillPickerOpen);
     el.addEventListener('oc-bash-mode', handleBashMode);
     return () => {
       el.removeEventListener('oc-clear-images', handleClearImages);
@@ -747,9 +815,11 @@ function ComposerImpl({
       el.removeEventListener('oc-slash-select', handleSlashSelect);
       el.removeEventListener('oc-model-picker-open', handleModelPickerOpen);
       el.removeEventListener('oc-agent-picker-open', handleAgentPickerOpen);
+      el.removeEventListener('oc-help-open', handleHelpOpen);
+      el.removeEventListener('oc-skill-picker-open', handleSkillPickerOpen);
       el.removeEventListener('oc-bash-mode', handleBashMode);
     };
-  }, [addImageFiles, selectSlashCommand, openModelPicker, openAgentPicker]);
+  }, [addImageFiles, selectSlashCommand, openModelPicker, openAgentPicker, openSkillPicker]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -920,6 +990,15 @@ function ComposerImpl({
           onClose={() => { setAgentPickerOpen(false); inputRef.current?.focus(); }}
         />
       )}
+      {skillPickerOpen && (
+        <SkillPicker
+          open={skillPickerOpen}
+          commands={slashCommands}
+          initialQuery={skillPickerQuery}
+          onSelect={insertSkill}
+          onClose={() => { setSkillPickerOpen(false); inputRef.current?.focus(); }}
+        />
+      )}
       {reasoningPickerOpen && (
         <ReasoningPicker
           open={reasoningPickerOpen}
@@ -927,6 +1006,13 @@ function ComposerImpl({
           current={selectedReasoning}
           onSelect={(v) => onReasoningChange?.(v)}
           onClose={() => { setReasoningPickerOpen(false); inputRef.current?.focus(); }}
+        />
+      )}
+      {helpOpen && (
+        <HelpDialog
+          open={helpOpen}
+          commands={slashCommands}
+          onClose={() => { setHelpOpen(false); inputRef.current?.focus(); }}
         />
       )}
       {showSlashMenu && (

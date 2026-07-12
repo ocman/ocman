@@ -159,6 +159,9 @@ type SlashCommandEntry struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	Template    string `json:"template,omitempty"`
+	// Source is the OpenCode command origin: "command", "mcp", or
+	// "skill". Skills (source == "skill") back the /skills picker.
+	Source string `json:"source,omitempty"`
 }
 
 // SessionModel represents one selectable model for a session.

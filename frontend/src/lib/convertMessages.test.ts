@@ -262,6 +262,31 @@ describe('convertMessages', () => {
     expect(out[0].content).toBe('> *Reasoning:* thinking…');
   });
 
+  it('drops reasoning parts when showReasoning is false (#290)', () => {
+    const m = makeMessage('m', { role: 'assistant' });
+    const parts = [
+      makePart('m', { type: 'text', text: 'hello' }),
+      makePart('m', { type: 'reasoning', text: 'thinking…' }),
+    ];
+    const convert = createConvertMessages();
+    const out = convert([m], parts, undefined, undefined, undefined, undefined, false);
+    // Reasoning blockquote is gone; the plain text survives.
+    expect(out[0].content).toBe('hello');
+  });
+
+  it('re-renders reasoning when showReasoning flips for the same message (#290)', () => {
+    const m = makeMessage('m', { role: 'assistant' });
+    const parts = [makePart('m', { type: 'reasoning', text: 'thinking…' })];
+    const convert = createConvertMessages();
+    // Same message identity, opposite toggle values: the cache key must
+    // include showReasoning or the second call would return the stale
+    // (shown) result.
+    const shown = convert([m], parts, undefined, undefined, undefined, undefined, true);
+    const hidden = convert([m], parts, undefined, undefined, undefined, undefined, false);
+    expect(shown[0].content).toBe('> *Reasoning:* thinking…');
+    expect(hidden[0].content).toBe('');
+  });
+
   it('renders patch parts as a fenced diff block', () => {
     const m = makeMessage('m', { role: 'assistant' });
     const out = convertMessages([m], [

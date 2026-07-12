@@ -1,17 +1,23 @@
 // @vitest-environment jsdom
 //
-// Tests for the `/rename` command in useSessionActions. Renaming must
-// optimistically patch the sidebar store (patchRecentSession) so the new
-// title shows immediately instead of waiting for the 3s recent-sessions poll.
+// Tests for the /sessions command (aliases /resume, /continue) in
+// useSessionActions. It's a thin shim that opens the existing command
+// palette (whose default mode is the session switcher) — no backend,
+// no new picker (#292).
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { createRef } from 'react';
 import type { MutableRefObject } from 'react';
 import { useSessionActions, type UseSessionActionsOptions } from './useSessionActions';
-import { api } from '../../lib/api';
 
-const patchRecentSession = vi.fn();
+const openCommandPalette = vi.fn();
+
+vi.mock('../../lib/uiStore', () => ({
+  useUiStore: Object.assign((selector: (s: Record<string, unknown>) => unknown) => selector({}), {
+    getState: () => ({ openCommandPalette }),
+  }),
+}));
 
 vi.mock('../../lib/apiStore', () => ({
   useApiStore: Object.assign(
@@ -24,17 +30,11 @@ vi.mock('../../lib/apiStore', () => ({
         launchOpencodeInTmux: vi.fn().mockResolvedValue(undefined),
         seedNewSession: vi.fn(),
       }),
-    { getState: () => ({ pushClosedSession: vi.fn(), patchRecentSession }) },
+    { getState: () => ({ pushClosedSession: vi.fn(), patchRecentSession: vi.fn() }) },
   ),
 }));
 
-vi.mock('../../lib/api', () => ({
-  api: { renameSession: vi.fn().mockResolvedValue(undefined) },
-}));
-
-const renameSession = vi.mocked(api.renameSession);
-
-function makeOptions(): UseSessionActionsOptions {
+function makeOptions(overrides: Partial<UseSessionActionsOptions> = {}): UseSessionActionsOptions {
   return {
     session: { id: 'sess-1', platform: 'opencode', directory: '/p', timeUpdated: 0 },
     portAvailable: true,
@@ -69,34 +69,37 @@ function makeOptions(): UseSessionActionsOptions {
     setShowDisconnectedToast: vi.fn(),
     setRestartToastMessage: vi.fn(),
     setCopyToastMessage: vi.fn(),
+    ...overrides,
   };
 }
 
 beforeEach(() => {
-  renameSession.mockClear();
-  patchRecentSession.mockClear();
+  openCommandPalette.mockClear();
 });
 
-describe('useSessionActions — /rename command', () => {
-  it('renames the session and optimistically patches the sidebar store', async () => {
-    const { result } = renderHook(() => useSessionActions(makeOptions()));
+describe('useSessionActions — /sessions switcher shim (#292)', () => {
+  it.each(['sessions', 'resume', 'continue'])(
+    '/%s opens the command palette (session switcher)',
+    async (command) => {
+      const { result } = renderHook(() => useSessionActions(makeOptions()));
+
+      await act(async () => {
+        await result.current.handleCommand(command, '');
+      });
+
+      expect(openCommandPalette).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('opens the switcher even when the OpenCode port is unavailable', async () => {
+    const { result } = renderHook(() =>
+      useSessionActions(makeOptions({ portAvailable: false })),
+    );
 
     await act(async () => {
-      await result.current.handleCommand('rename', '  New Title  ');
+      await result.current.handleCommand('sessions', '');
     });
 
-    expect(renameSession).toHaveBeenCalledWith('sess-1', 'New Title');
-    expect(patchRecentSession).toHaveBeenCalledWith('sess-1', { title: 'New Title' });
-  });
-
-  it('is a no-op when the title is blank', async () => {
-    const { result } = renderHook(() => useSessionActions(makeOptions()));
-
-    await act(async () => {
-      await result.current.handleCommand('rename', '   ');
-    });
-
-    expect(renameSession).not.toHaveBeenCalled();
-    expect(patchRecentSession).not.toHaveBeenCalled();
+    expect(openCommandPalette).toHaveBeenCalledTimes(1);
   });
 });

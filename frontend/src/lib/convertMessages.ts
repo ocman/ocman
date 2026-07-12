@@ -116,6 +116,8 @@ type ConvertedCacheEntry = {
    * in the cache key like `msgAgent`.
    */
   modelChangedTo: string;
+  /** Whether reasoning parts were rendered into this result (#290). */
+  showReasoning: boolean;
   result: ThreadMessageLike;
 };
 const convertedMessageCache = new WeakMap<Message, ConvertedCacheEntry>();
@@ -204,6 +206,7 @@ export type ConvertMessagesFn = (
   taskLiveOutput?: Record<string, TaskSessionData>,
   projectDirectory?: string,
   failedById?: Record<string, FailedSend>,
+  showReasoning?: boolean,
 ) => ThreadMessageLike[];
 
 /**
@@ -242,6 +245,10 @@ export function createConvertMessages(): ConvertMessagesFn {
     taskLiveOutput?: Record<string, TaskSessionData>,
     projectDirectory?: string,
     failedById?: Record<string, FailedSend>,
+    // Display-only: when false, assistant reasoning parts are dropped
+    // from the rendered content (the `/thinking` toggle, #290). Defaults
+    // to true so non-React callers and the default instance are unchanged.
+    showReasoning: boolean = true,
   ): ThreadMessageLike[] {
     // Reuse the bucketed `partsByMsg` index when the input parts
     // array is the same reference we saw last time. Saves an O(N)
@@ -347,7 +354,8 @@ export function createConvertMessages(): ConvertMessagesFn {
       cached.projectDirectory === projectDirectory &&
       cached.failedById === failedById &&
       cached.msgAgent === msgAgent &&
-      cached.modelChangedTo === modelChangedTo
+      cached.modelChangedTo === modelChangedTo &&
+      cached.showReasoning === showReasoning
     ) {
       return cached.result;
     }
@@ -650,7 +658,9 @@ export function createConvertMessages(): ConvertMessagesFn {
           break;
         }
         case 'reasoning':
-          if (pd.text?.trim()) {
+          // Display-only toggle (#290): drop reasoning blocks entirely
+          // when the user has hidden them via `/thinking`.
+          if (showReasoning && pd.text?.trim()) {
             textPieces.push(`> *Reasoning:* ${pd.text}`);
           }
           break;
@@ -787,6 +797,7 @@ export function createConvertMessages(): ConvertMessagesFn {
       failedById,
       msgAgent,
       modelChangedTo,
+      showReasoning,
       result,
     });
 

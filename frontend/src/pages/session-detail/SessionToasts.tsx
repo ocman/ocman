@@ -10,6 +10,8 @@ export interface SessionToastsProps {
   setShowCreateSessionErrorToast: (v: boolean) => void;
   showDisconnectedToast: boolean;
   setShowDisconnectedToast: (v: boolean) => void;
+  copyToastMessage: string | null;
+  setCopyToastMessage: (v: string | null) => void;
   tmuxAvailable: boolean;
   liveConnectionHint: boolean;
   hasDirectory: boolean;
@@ -34,6 +36,8 @@ export const SessionToasts = memo(function SessionToasts({
   setShowCreateSessionErrorToast,
   showDisconnectedToast,
   setShowDisconnectedToast,
+  copyToastMessage,
+  setCopyToastMessage,
   tmuxAvailable,
   liveConnectionHint,
   hasDirectory,
@@ -56,6 +60,17 @@ export const SessionToasts = memo(function SessionToasts({
       >
         <Toast.Description className="oc-toast-description">
           {restartToastMessage}
+        </Toast.Description>
+      </Toast.Root>
+      <Toast.Root
+        key={copyToastMessage ?? 'copy-hidden'}
+        className="oc-toast-root"
+        open={copyToastMessage !== null}
+        onOpenChange={(open) => { if (!open) setCopyToastMessage(null); }}
+        duration={2500}
+      >
+        <Toast.Description className="oc-toast-description">
+          {copyToastMessage}
         </Toast.Description>
       </Toast.Root>
       <Toast.Root

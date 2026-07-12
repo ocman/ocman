@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type GlobalShareLink } from '../lib/api';
+import { copyToClipboard } from '../lib/clipboard';
 import { relativeTime } from '../lib/format';
 import { SettingRow, SettingToggle } from './SettingRow';
 import { useSettingSave } from '../lib/useSaveStatus';
@@ -144,31 +145,4 @@ export function SharingSettings() {
       </div>
     </div>
   );
-}
-
-// copyToClipboard writes text to the clipboard, falling back to a hidden
-// textarea + execCommand in non-secure contexts / older browsers.
-async function copyToClipboard(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    // fall through
-  }
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
-    const ok = document.execCommand('copy');
-    document.body.removeChild(ta);
-    return ok;
-  } catch {
-    return false;
-  }
 }

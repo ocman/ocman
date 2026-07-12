@@ -47,6 +47,8 @@ function makeOptions(isRunningRef: MutableRefObject<boolean>): UseSessionActions
     selectedReasoning: '',
     activeAgent: 'build',
     recentSessionsRef: createRef<Array<{ id: string }>>() as MutableRefObject<Array<{ id: string }>>,
+    messagesRef: { current: [] },
+    partsRef: { current: [] },
     isRunningRef,
     tmuxAvailable: false,
     failedSends: [],
@@ -67,6 +69,7 @@ function makeOptions(isRunningRef: MutableRefObject<boolean>): UseSessionActions
     setShowRenameToast: vi.fn(),
     setShowDisconnectedToast: vi.fn(),
     setRestartToastMessage: vi.fn(),
+    setCopyToastMessage: vi.fn(),
   };
 }
 

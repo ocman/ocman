@@ -15,6 +15,7 @@ import { useFailedSends } from '../lib/failedSendsContext';
 import { isMutedTool } from '../lib/mutedTools';
 import { useStickyBottom } from '../lib/useStickyBottom';
 import { trackRender } from '../lib/renderRateMonitor';
+import { useUiStore } from '../lib/uiStore';
 import type { FC } from 'react';
 import { LinkPreviewStrip } from './GitHubLinkPreview';
 import { MarkdownText } from './assistant/MarkdownText';
@@ -443,6 +444,7 @@ export function AssistantThread({
   scrollToMessageTick?: number;
 }) {
   trackRender('AssistantThread');
+  const showToolDetails = useUiStore((s) => s.showToolDetails);
   const threadRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const hasMoreRef = useRef(hasMore);
@@ -676,7 +678,7 @@ export function AssistantThread({
   return (
     <div ref={threadRef} style={{ display: 'flex', flex: 1, minHeight: 0 }}>
       <MessageBookmarkContext.Provider value={bookmarkContextValue}>
-      <ThreadPrimitive.Root className="oc-thread">
+      <ThreadPrimitive.Root className={`oc-thread${showToolDetails ? '' : ' oc-hide-tool-details'}`}>
         {/* No `autoScroll` prop: the library's built-in auto-scroll uses a
             1px at-bottom tolerance that races with streaming DOM growth and
             snaps the viewport down even when the user has scrolled up to

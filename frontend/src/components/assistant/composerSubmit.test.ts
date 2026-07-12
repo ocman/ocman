@@ -25,6 +25,19 @@ describe('routeComposerSubmit', () => {
     });
   });
 
+  it('aliases /agents to the /agent command (#295)', () => {
+    expect(routeComposerSubmit('/agents', { shellExec: true })).toEqual<ComposerSubmitRoute>({
+      kind: 'command',
+      command: 'agent',
+      args: '',
+    });
+    expect(routeComposerSubmit('/agents plan', { shellExec: true })).toEqual<ComposerSubmitRoute>({
+      kind: 'command',
+      command: 'agent',
+      args: 'plan',
+    });
+  });
+
   it('routes !-prefixed text to shell when shellExec is true', () => {
     const got = routeComposerSubmit('!ls -la', { shellExec: true });
     expect(got).toEqual<ComposerSubmitRoute>({

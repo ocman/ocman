@@ -353,6 +353,12 @@
   overflow: hidden;
 }
 
+/* /details toggle: hide per-message tool-execution blocks. */
+.oc-hide-tool-details .oc-tool,
+.oc-hide-tool-details .oc-tool-compact {
+  display: none;
+}
+
 .oc-tool-header {
   display: flex;
   align-items: center;

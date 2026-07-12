@@ -12,10 +12,14 @@ import {
 } from '../../lib/failedSends';
 import { createSessionWithLaunch } from '../../lib/createSessionWithLaunch';
 import { useApiStore } from '../../lib/apiStore';
+import { useUiStore } from '../../lib/uiStore';
 import { openVSCode } from '../../lib/shortcuts';
+import { copyTextToClipboard, copyToClipboard } from '../../lib/clipboard';
 import type { UsePendingSendResult } from './usePendingSend';
 import { remoteLog } from '../../lib/remoteLog';
 import { projectRootForDirectory } from '../../lib/worktrees';
+import { downloadSessionMarkdown, serializeSessionMarkdown } from '../../lib/exportMarkdown';
+import type { Message, Part } from '../../lib/api';
 
 // Narrowed session shape — only the fields needed by these handlers.
 interface ActionSession {
@@ -39,6 +43,10 @@ export interface UseSessionActionsOptions {
   activeAgent: string;
   /** Mutable ref to the recent sessions list — read inside handleCommand. */
   recentSessionsRef: MutableRefObject<Array<{ id: string }>>;
+  /** Mutable refs to the current transcript — read by `/export`. Refs
+   *  (not values) so handleCommand doesn't re-bind on every message. */
+  messagesRef: MutableRefObject<Message[]>;
+  partsRef: MutableRefObject<Part[]>;
   /**
    * Mutable ref reflecting whether the session is currently streaming
    * an assistant response. Read inside `handleShell` so a `!`-prefixed
@@ -64,6 +72,8 @@ export interface UseSessionActionsOptions {
   setShowRenameToast: Dispatch<SetStateAction<boolean>>;
   setShowDisconnectedToast: Dispatch<SetStateAction<boolean>>;
   setRestartToastMessage: Dispatch<SetStateAction<string | null>>;
+  /** Transient feedback toast for the `/copy` command. */
+  setCopyToastMessage: Dispatch<SetStateAction<string | null>>;
 }
 
 export interface UseSessionActionsResult {
@@ -121,6 +131,8 @@ export function useSessionActions({
   selectedReasoning,
   activeAgent,
   recentSessionsRef,
+  messagesRef,
+  partsRef,
   isRunningRef,
   tmuxAvailable,
   failedSends,
@@ -136,6 +148,7 @@ export function useSessionActions({
   setShowRenameToast,
   setShowDisconnectedToast,
   setRestartToastMessage,
+  setCopyToastMessage,
 }: UseSessionActionsOptions): UseSessionActionsResult {
   const [awaitingAssistantResponse, setAwaitingAssistantResponse] = useState(false);
   // Shell command waiting for the current turn to finish. Mirrored in
@@ -400,6 +413,59 @@ export function useSessionActions({
       return;
     }
 
+    if (command === 'details') {
+      // Pure client-side UI toggle — works regardless of live port.
+      useUiStore.getState().toggleToolDetails();
+      return;
+    }
+
+    // Display-only toggle for reasoning/thinking blocks (#290). Runs
+    // regardless of `portAvailable` — it never touches the agent, it
+    // just flips ocman's own render preference. Accepts optional
+    // `on`/`off` args; a bare `/thinking` flips the current value.
+    if (command === 'thinking') {
+      const arg = args.trim().toLowerCase();
+      const ui = useUiStore.getState();
+      if (arg === 'on' || arg === 'show') ui.setShowReasoning(true);
+      else if (arg === 'off' || arg === 'hide') ui.setShowReasoning(false);
+      else ui.toggleShowReasoning();
+      return;
+    }
+
+    if (command === 'export') {
+      downloadSessionMarkdown(session.title, messagesRef.current, partsRef.current);
+      return;
+    }
+
+    // /sessions (aliases /resume, /continue): thin shim onto the existing
+    // command palette, whose default mode is the session switcher (#292).
+    if (command === 'sessions' || command === 'resume' || command === 'continue') {
+      useUiStore.getState().openCommandPalette();
+      return;
+    }
+
+    if (command === 'share') {
+      // Share ocman's OWN session URL (issue #294) — not OpenCode's
+      // cloud share. The browser is already talking to this ocman
+      // instance, so window.location.origin is the reachable address
+      // (honours the actual bind address / any reverse proxy).
+      const url = `${window.location.origin}/session/${encodeURIComponent(session.id)}`;
+      const ok = await copyToClipboard(url);
+      setRestartToastMessage(
+        ok
+          ? 'Session link copied (reachable only where this ocman instance is)'
+          : 'Could not copy link to clipboard',
+      );
+      return;
+    }
+
+    if (command === 'copy') {
+      const transcript = serializeSessionMarkdown(session.title, messagesRef.current, partsRef.current);
+      const ok = await copyTextToClipboard(transcript);
+      setCopyToastMessage(ok ? 'Transcript copied' : 'Copy failed — clipboard unavailable');
+      return;
+    }
+
     if (!portAvailable) return;
 
     if (command === 'compact') {
@@ -493,7 +559,7 @@ export function useSessionActions({
       remoteLog.error('Failed to execute command', e);
       pending.fail(e instanceof Error ? e.message : 'Unknown error');
     }
-  }, [activeAgent, archiveSession, createSession, launchOpencodeInTmux, tmuxAvailable, seedNewSession, handleCompact, handleNewSession, handleTmuxShortcut, handleVSCodeShortcut, navigate, navigateToSession, openWorktreeForm, portAvailable, recentSessionsRef, selectedAgent, selectedModel, session, setShowRenameModal, setShowRenameToast, setRestartToastMessage, pending]);
+  }, [activeAgent, archiveSession, createSession, launchOpencodeInTmux, tmuxAvailable, seedNewSession, handleCompact, handleNewSession, handleTmuxShortcut, handleVSCodeShortcut, navigate, navigateToSession, openWorktreeForm, portAvailable, recentSessionsRef, messagesRef, partsRef, selectedAgent, selectedModel, session, setShowRenameModal, setShowRenameToast, setRestartToastMessage, setCopyToastMessage, pending]);
 
   return {
     awaitingAssistantResponse,

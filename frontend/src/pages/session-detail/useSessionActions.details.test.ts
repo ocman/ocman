@@ -1,16 +1,34 @@
 // @vitest-environment jsdom
 //
-// Tests for the `/restart-opencode` command path in useSessionActions.
-// On success it walks the toast through "Restarting..." -> "Restarted"
-// and clears the pending indicator; on failure it hides the toast and
-// reports the error via pending.fail.
+// Tests for the `/details` command path in useSessionActions. It is a
+// pure client-side UI toggle over the persisted uiStore flag
+// (showToolDetails), so it must flip the store and must work even when
+// the live OpenCode port is unavailable.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+// jsdom's localStorage is only partially implemented in this setup; the
+// zustand persist middleware calls setItem on every write. Install a
+// minimal in-memory stub before any module (uiStore) is imported —
+// vi.hoisted runs ahead of the hoisted import statements.
+vi.hoisted(() => {
+  const mem = new Map<string, string>();
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (k: string) => mem.get(k) ?? null,
+      setItem: (k: string, v: string) => void mem.set(k, v),
+      removeItem: (k: string) => void mem.delete(k),
+      clear: () => mem.clear(),
+    },
+  });
+});
+
 import { renderHook, act } from '@testing-library/react';
 import { createRef } from 'react';
 import type { MutableRefObject } from 'react';
 import { useSessionActions, type UseSessionActionsOptions } from './useSessionActions';
-import { api } from '../../lib/api';
+import { useUiStore } from '../../lib/uiStore';
 
 vi.mock('../../lib/apiStore', () => ({
   useApiStore: Object.assign(
@@ -28,10 +46,8 @@ vi.mock('../../lib/apiStore', () => ({
 }));
 
 vi.mock('../../lib/api', () => ({
-  api: { restartOpencode: vi.fn(), debugLog: vi.fn().mockResolvedValue(undefined) },
+  api: { executeCommand: vi.fn(), debugLog: vi.fn().mockResolvedValue(undefined) },
 }));
-
-const restartOpencode = vi.mocked(api.restartOpencode);
 
 function makeOptions(over: Partial<UseSessionActionsOptions> = {}): UseSessionActionsOptions {
   const pending = { pending: null, begin: vi.fn(), fail: vi.fn(), clear: vi.fn() };
@@ -69,52 +85,32 @@ function makeOptions(over: Partial<UseSessionActionsOptions> = {}): UseSessionAc
 }
 
 beforeEach(() => {
-  restartOpencode.mockReset();
+  useUiStore.setState({ showToolDetails: true });
 });
 
-describe('useSessionActions — /restart-opencode', () => {
-  it('shows progress then success toast on a successful restart', async () => {
-    restartOpencode.mockResolvedValue({ target: 'repo:oc' });
-    const setRestartToastMessage = vi.fn();
-    const pending = { pending: null, begin: vi.fn(), fail: vi.fn(), clear: vi.fn() };
-    const opts = makeOptions({
-      setRestartToastMessage,
-      pending: pending as unknown as UseSessionActionsOptions['pending'],
-    });
+describe('useSessionActions — /details', () => {
+  it('toggles the persisted tool-detail visibility flag', async () => {
+    const opts = makeOptions();
     const { result } = renderHook(() => useSessionActions(opts));
 
     await act(async () => {
-      await result.current.handleCommand('restart-opencode', '');
+      await result.current.handleCommand('details', '');
     });
+    expect(useUiStore.getState().showToolDetails).toBe(false);
 
-    expect(restartOpencode).toHaveBeenCalledWith('sess-1');
-    expect(setRestartToastMessage.mock.calls).toEqual([
-      ['Restarting OpenCode...'],
-      ['Restarted OpenCode'],
-    ]);
-    expect(pending.clear).toHaveBeenCalled();
-    expect(pending.fail).not.toHaveBeenCalled();
+    await act(async () => {
+      await result.current.handleCommand('details', '');
+    });
+    expect(useUiStore.getState().showToolDetails).toBe(true);
   });
 
-  it('hides the toast and reports the error when the restart fails', async () => {
-    restartOpencode.mockRejectedValue(new Error('no pane'));
-    const setRestartToastMessage = vi.fn();
-    const pending = { pending: null, begin: vi.fn(), fail: vi.fn(), clear: vi.fn() };
-    const opts = makeOptions({
-      setRestartToastMessage,
-      pending: pending as unknown as UseSessionActionsOptions['pending'],
-    });
+  it('works even when the live port is unavailable', async () => {
+    const opts = makeOptions({ portAvailable: false });
     const { result } = renderHook(() => useSessionActions(opts));
 
     await act(async () => {
-      await result.current.handleCommand('restart-opencode', '');
+      await result.current.handleCommand('details', '');
     });
-
-    expect(setRestartToastMessage.mock.calls).toEqual([
-      ['Restarting OpenCode...'],
-      [null],
-    ]);
-    expect(pending.fail).toHaveBeenCalledWith('no pane');
-    expect(pending.clear).not.toHaveBeenCalled();
+    expect(useUiStore.getState().showToolDetails).toBe(false);
   });
 });

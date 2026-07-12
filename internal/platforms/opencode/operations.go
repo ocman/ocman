@@ -165,6 +165,7 @@ func (a *Adapter) SlashCommands(ctx context.Context, sessionID string) ([]platfo
 			Name:        stringField(r, "name"),
 			Description: stringField(r, "description"),
 			Template:    stringField(r, "template"),
+			Source:      stringField(r, "source"),
 		})
 	}
 	return entries, nil

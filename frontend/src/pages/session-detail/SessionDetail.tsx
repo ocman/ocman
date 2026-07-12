@@ -447,6 +447,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const [showRenameToast, setShowRenameToast] = useState(false);
   const [showCreateSessionErrorToast, setShowCreateSessionErrorToast] = useState(false);
   const [showDisconnectedToast, setShowDisconnectedToast] = useState(false);
+  const [copyToastMessage, setCopyToastMessage] = useState<string | null>(null);
   const [threadBoundaryResetNonce, setThreadBoundaryResetNonce] = useState(0);
   const [failedSends, setFailedSends] = useState<FailedSend[]>([]);
 
@@ -802,6 +803,15 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // `isRunning` exists, but only reads the ref at call time.
   const isRunningRef = useRef(false);
 
+  // Latest transcript, mirrored into refs so `/export` can read it
+  // without re-binding handleCommand on every message/part update.
+  const messagesRef = useRef(messages);
+  const partsRef = useRef(parts);
+  useEffect(() => {
+    messagesRef.current = messages;
+    partsRef.current = parts;
+  }, [messages, parts]);
+
   // Follow-up message queue (#58): prompts submitted while the agent is
   // mid-turn queue server-side and drain one per turn. Shared across
   // clients via the ocman.queue.updated broadcast (reliable full-state).
@@ -832,6 +842,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
     selectedReasoning,
     activeAgent,
     recentSessionsRef,
+    messagesRef,
+    partsRef,
     isRunningRef,
     tmuxAvailable: tmux.available,
     failedSends,
@@ -847,6 +859,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     setShowRenameToast,
     setShowDisconnectedToast,
     setRestartToastMessage,
+    setCopyToastMessage,
   });
 
   void setSubagentTokens; // exposed for the legacy hook; not needed
@@ -1484,6 +1497,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
           setShowCreateSessionErrorToast={setShowCreateSessionErrorToast}
           showDisconnectedToast={showDisconnectedToast}
           setShowDisconnectedToast={setShowDisconnectedToast}
+          copyToastMessage={copyToastMessage}
+          setCopyToastMessage={setCopyToastMessage}
           tmuxAvailable={tmux.available}
           liveConnectionHint={!!caps.liveConnectionHint}
           hasDirectory={!!session?.directory}

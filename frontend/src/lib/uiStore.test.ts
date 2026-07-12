@@ -248,3 +248,20 @@ describe('uiStore notificationsEnabled', () => {
     expect(useUiStore.getState().notificationsEnabled).toBe(false);
   });
 });
+
+describe('uiStore tool-detail visibility (/details)', () => {
+  beforeEach(() => {
+    useUiStore.setState({ showToolDetails: true });
+  });
+
+  it('defaults to visible', () => {
+    expect(useUiStore.getState().showToolDetails).toBe(true);
+  });
+
+  it('toggleToolDetails flips the flag', () => {
+    initial.toggleToolDetails();
+    expect(useUiStore.getState().showToolDetails).toBe(false);
+    initial.toggleToolDetails();
+    expect(useUiStore.getState().showToolDetails).toBe(true);
+  });
+});
