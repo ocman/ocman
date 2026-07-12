@@ -99,9 +99,8 @@ func (s stubMCPParentLookup) ChildSessionParents() (map[state.Key]string, error)
 }
 
 // TestBubbleUpPromptsToParent verifies the per-session bubble-up: a
-// subagent's prompted ID gets remapped to the parent's ID so the
-// listing UI can flag the parent session as having a pending prompt
-// (subagent sessions are filtered out of the listing entirely).
+// subagent's prompted ID is retained while the parent's ID is added so
+// both visible session rows can show the pending prompt.
 func TestBubbleUpPromptsToParent(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -125,13 +124,13 @@ func TestBubbleUpPromptsToParent(t *testing.T) {
 			name:     "subagent maps to parent",
 			prompted: map[string]bool{"child": true},
 			parents:  map[string]string{"child": "parent"},
-			want:     map[string]bool{"parent": true},
+			want:     map[string]bool{"child": true, "parent": true},
 		},
 		{
-			name:     "mixed: parent + subagent collapse onto same key",
+			name:     "mixed parent and subagent retain both keys",
 			prompted: map[string]bool{"parent": true, "child": true},
 			parents:  map[string]string{"child": "parent"},
-			want:     map[string]bool{"parent": true},
+			want:     map[string]bool{"parent": true, "child": true},
 		},
 		{
 			// Regression (#268): an MCP/worktree child has NO
@@ -141,7 +140,7 @@ func TestBubbleUpPromptsToParent(t *testing.T) {
 			prompted:   map[string]bool{"mcpchild": true},
 			parents:    map[string]string{},
 			mcpParents: map[string]string{"mcpchild": "parent"},
-			want:       map[string]bool{"parent": true},
+			want:       map[string]bool{"mcpchild": true, "parent": true},
 		},
 		{
 			// OpenCode's own parent_id wins when both are present, so
@@ -151,7 +150,7 @@ func TestBubbleUpPromptsToParent(t *testing.T) {
 			prompted:   map[string]bool{"child": true},
 			parents:    map[string]string{"child": "parent"},
 			mcpParents: map[string]string{"child": "parent"},
-			want:       map[string]bool{"parent": true},
+			want:       map[string]bool{"child": true, "parent": true},
 		},
 	}
 	for _, tt := range tests {
@@ -190,7 +189,7 @@ func TestBubbleUpPromptsToParent_MCPOnly(t *testing.T) {
 	prompted := map[string]bool{"mcpchild": true}
 	mcpLookup := stubMCPParentLookup{parents: map[string]string{"mcpchild": "parent"}}
 	got := bubbleUpPromptsToParent(prompted, nil, mcpLookup)
-	if len(got) != 1 || !got["parent"] {
+	if len(got) != 2 || !got["mcpchild"] || !got["parent"] {
 		t.Errorf("MCP-only lookup should bubble to parent, got %v", got)
 	}
 }

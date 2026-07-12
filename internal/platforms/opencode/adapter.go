@@ -181,10 +181,8 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 	return sessions, nil
 }
 
-// bubbleUpPromptsToParent rewrites every key in `prompted` that is the
-// ID of a child session to its parent session ID. Keys that already
-// refer to a top-level session pass through unchanged. A nil/empty
-// input returns an empty map.
+// bubbleUpPromptsToParent adds the parent session ID for every prompted
+// child while retaining the child ID. A nil/empty input passes through.
 //
 // Two kinds of child are resolved:
 //   - OpenCode Task subagents, via OpenCode's own session.parent_id
@@ -231,12 +229,11 @@ func bubbleUpPromptsToParent(prompted map[string]bool, dbConn parentLookup, mcpC
 	if len(parents) == 0 {
 		return prompted
 	}
-	out := make(map[string]bool, len(prompted))
+	out := make(map[string]bool, len(prompted)+len(parents))
 	for id := range prompted {
+		out[id] = true
 		if parent, ok := parents[id]; ok {
 			out[parent] = true
-		} else {
-			out[id] = true
 		}
 	}
 	return out
