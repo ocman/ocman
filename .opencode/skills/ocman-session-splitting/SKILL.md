@@ -50,7 +50,7 @@ A worktree/child inherits the parent's "Allow always" permissions at split time 
 
 Use `get_session_status` for one child. Use `list_child_sessions` for all children from the current parent. Use `cancel_session` for stale or wrong child work.
 
-Use `send_message_to_child` only for meaningful follow-up instructions. Use `send_message_to_parent` from a child when reporting findings or asking for direction.
+Use `send_message_to_child` only for meaningful follow-up instructions. Parents can ask children to ping them with `send_message_to_parent` when done instead of polling for status. Children should also use it to report findings or ask for direction.
 
 ## Prompt Shape
 
@@ -61,6 +61,7 @@ Child prompt should be short and complete:
 - List expected output.
 - Name verification command if known.
 - Ask child to return concise findings, changed files, and test results.
+- Ask child to ping the parent with `send_message_to_parent` when done.
 
 Example:
 
