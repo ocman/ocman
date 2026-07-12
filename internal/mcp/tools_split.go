@@ -99,7 +99,7 @@ func newSessionTool() mcplib.Tool {
 			mcplib.Description("Sub-task for the child session."),
 		),
 		mcplib.WithString("model",
-			mcplib.Description(`Optional "provider/model" reference for the child's first message. Defaults to the platform default.`),
+			mcplib.Description(`Optional "provider/model" reference for the child's first message. Defaults to the parent session's current model.`),
 		),
 		mcplib.WithString("agent",
 			mcplib.Description(`Optional composer agent/role for the child's first message ("build", "plan", or a subagent name). Defaults to the platform default.`),
@@ -158,6 +158,12 @@ func (t *splitTools) handleNewSession(ctx context.Context, req mcplib.CallToolRe
 		return mcplib.NewToolResultError("intent is required"), nil
 	}
 	settings := parseSessionSettings(req)
+	// Inherit the parent's latest/effective model when the caller omits
+	// one, so a child split keeps running on the same model instead of
+	// dropping to the platform default. An explicit model still wins.
+	if settings.Model == "" {
+		settings.Model = t.parentModel(sessionID)
+	}
 
 	if req.GetBool("worktree", false) {
 		return t.launchWorktree(ctx, req, sessionID, intent, settings)
@@ -308,6 +314,48 @@ func parseSessionSettings(req mcplib.CallToolRequest) sessionSettings {
 		Reasoning:       req.GetString("reasoning", ""),
 		PermissionRules: parsePermissionRules(req),
 	}
+}
+
+// parentModel returns the parent session's latest/effective model as a
+// "provider/model" reference, scanning its messages newest-first for the
+// first one that carries a model. Returns "" when the parent has no
+// model-bearing message or the lookup fails (soft: never blocks a
+// launch — the child just falls back to the platform default).
+func (t *splitTools) parentModel(sessionID string) string {
+	if t.composer == nil || t.composer.db == nil || sessionID == "" {
+		return ""
+	}
+	msgs, err := t.composer.db.GetSessionMessages(sessionID)
+	if err != nil {
+		return ""
+	}
+	// GetSessionMessages returns ascending by time; walk backwards for the
+	// latest model-bearing message.
+	for i := len(msgs) - 1; i >= 0; i-- {
+		var md struct {
+			ProviderID string `json:"providerID"`
+			ModelID    string `json:"modelID"`
+			Model      *struct {
+				ProviderID string `json:"providerID"`
+				ModelID    string `json:"modelID"`
+			} `json:"model"`
+		}
+		if err := json.Unmarshal(msgs[i].Data, &md); err != nil {
+			continue
+		}
+		provider, model := md.ProviderID, md.ModelID
+		if model == "" && md.Model != nil {
+			provider, model = md.Model.ProviderID, md.Model.ModelID
+		}
+		if model == "" {
+			continue
+		}
+		if provider == "" {
+			return model
+		}
+		return provider + "/" + model
+	}
+	return ""
 }
 
 // parsePermissionRules decodes the "permission" array param into typed

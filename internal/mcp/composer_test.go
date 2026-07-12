@@ -280,3 +280,51 @@ func TestDefaultContextOptions(t *testing.T) {
 		t.Errorf("expected MaxChars=%d, got %d", defaultMaxPromptChars, opts.MaxChars)
 	}
 }
+
+// TestParentModel covers parentModel's branches directly: nil composer,
+// nil db, empty sessionID, DB error, unmarshalable/model-less rows, the
+// nested "model" object, a bare model with no provider, and no-model tail.
+func TestParentModel(t *testing.T) {
+	msg := func(data string) db.Message { return db.Message{Data: json.RawMessage(data)} }
+	tests := []struct {
+		name string
+		st   *splitTools
+		sid  string
+		want string
+	}{
+		{name: "nil composer", st: &splitTools{}, sid: "s1", want: ""},
+		{name: "nil db", st: &splitTools{composer: &PromptComposer{}}, sid: "s1", want: ""},
+		{name: "empty sessionID", st: &splitTools{composer: &PromptComposer{db: &fakeSessionReader{}}}, sid: "", want: ""},
+		{name: "db error", st: &splitTools{composer: &PromptComposer{db: &fakeSessionReader{msgsErr: errors.New("boom")}}}, sid: "s1", want: ""},
+		{
+			name: "latest wins, skips unmarshalable and model-less rows",
+			st: &splitTools{composer: &PromptComposer{db: &fakeSessionReader{messages: []db.Message{
+				msg(`{"providerID":"openai","modelID":"gpt-5"}`),
+				msg(`{"role":"user"}`),  // no model -> skip
+				msg(`not json`),         // unmarshal error -> skip
+				msg(`{"model":{"providerID":"anthropic","modelID":"claude"}}`), // nested wins (latest)
+			}}}},
+			sid:  "s1",
+			want: "anthropic/claude",
+		},
+		{
+			name: "bare model without provider",
+			st:   &splitTools{composer: &PromptComposer{db: &fakeSessionReader{messages: []db.Message{msg(`{"modelID":"local-model"}`)}}}},
+			sid:  "s1",
+			want: "local-model",
+		},
+		{
+			name: "no model-bearing message",
+			st:   &splitTools{composer: &PromptComposer{db: &fakeSessionReader{messages: []db.Message{msg(`{"role":"user","text":"hi"}`)}}}},
+			sid:  "s1",
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.st.parentModel(tt.sid); got != tt.want {
+				t.Fatalf("parentModel = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

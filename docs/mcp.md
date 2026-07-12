@@ -44,7 +44,7 @@ directly (no Vite dev proxy).
 
 | Tool | Description |
 |------|-------------|
-| `new_session` | Launch a new OpenCode child session with a context-enriched prompt. Shares the parent's directory by default; set `worktree=true` (with a `branch`) to run it in a fresh git worktree. Accepts an optional `model` (`"provider/model"`) for the child. |
+| `new_session` | Launch a new OpenCode child session with a context-enriched prompt. Shares the parent's directory by default; set `worktree=true` (with a `branch`) to run it in a fresh git worktree. Accepts an optional `model` (`"provider/model"`) for the child; when omitted the child inherits the parent session's current model. |
 | `get_current_session_id` | Return the most recently updated OpenCode session ID known to ocman, optionally filtered by project directory. |
 | `get_session_status` | Check the status of a previously spawned child session. |
 | `list_child_sessions` | List all child sessions spawned from a parent session. |

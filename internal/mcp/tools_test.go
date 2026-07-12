@@ -41,6 +41,20 @@ func openTestStateDB(t *testing.T) *state.DB {
 // openTestOpenCodeDB creates a file-backed OpenCode DB fixture. The MCP
 // server opens this read-only, so tests seed it before handing it to ocman.
 func openTestOpenCodeDB(t *testing.T, sessions []db.Session) *db.DB {
+	return openTestOpenCodeDBWithMessages(t, sessions, nil)
+}
+
+// seedMessage is a message row to insert into the test OpenCode DB,
+// keyed by session with raw JSON data (e.g. `{"role":"assistant","modelID":"x"}`).
+type seedMessage struct {
+	sessionID   string
+	timeCreated int64
+	data        string
+}
+
+// openTestOpenCodeDBWithMessages is openTestOpenCodeDB plus message rows,
+// so tests can exercise per-session model inheritance.
+func openTestOpenCodeDBWithMessages(t *testing.T, sessions []db.Session, messages []seedMessage) *db.DB {
 	t.Helper()
 
 	path := filepath.Join(t.TempDir(), "opencode.db")
@@ -88,6 +102,16 @@ func openTestOpenCodeDB(t *testing.T, sessions []db.Session) *db.DB {
 		if err != nil {
 			sqlDB.Close()
 			t.Fatalf("inserting opencode session %s: %v", s.ID, err)
+		}
+	}
+	for i, m := range messages {
+		_, err = sqlDB.Exec(
+			`INSERT INTO message (id, session_id, time_created, data) VALUES (?, ?, ?, ?)`,
+			fmt.Sprintf("msg-%d", i), m.sessionID, m.timeCreated, m.data,
+		)
+		if err != nil {
+			sqlDB.Close()
+			t.Fatalf("inserting opencode message %d: %v", i, err)
 		}
 	}
 	if err := sqlDB.Close(); err != nil {
@@ -577,6 +601,98 @@ func TestNewSession_PassesModelAndUsesParentDir(t *testing.T) {
 	}
 	if cs.WorktreePath != "" {
 		t.Fatalf("expected no worktree for default new_session, got %q", cs.WorktreePath)
+	}
+}
+
+func TestNewSession_InheritsParentModelWhenOmitted(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	ocDB := openTestOpenCodeDBWithMessages(t,
+		[]db.Session{{ID: "parent-im", Title: "parent", Directory: "/repo", TimeCreated: 1000, TimeUpdated: 2000}},
+		[]seedMessage{
+			// Older message on a different model; latest must win.
+			{sessionID: "parent-im", timeCreated: 1000, data: `{"role":"assistant","providerID":"openai","modelID":"gpt-5"}`},
+			{sessionID: "parent-im", timeCreated: 2000, data: `{"role":"assistant","providerID":"anthropic","modelID":"claude-opus-4-8"}`},
+		},
+	)
+	platform := &fakePlatformForTools{createSessionID: "child-im"}
+	srv := buildTestMCPServerWithOpenCodeDB(t, stateDB, platform, ocDB)
+
+	result := callTool(t, srv, "new_session", map[string]interface{}{
+		"session_id": "parent-im",
+		"intent":     "review the diff",
+		// model omitted on purpose
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", resultText(result))
+	}
+	if len(platform.sentMessages) != 1 {
+		t.Fatalf("expected one sent message, got %d", len(platform.sentMessages))
+	}
+	if got := platform.sentMessages[0].Model; got != "anthropic/claude-opus-4-8" {
+		t.Fatalf("expected child to inherit parent's latest model, got %q", got)
+	}
+}
+
+func TestNewSession_ExplicitModelOverridesParent(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	ocDB := openTestOpenCodeDBWithMessages(t,
+		[]db.Session{{ID: "parent-om", Title: "parent", Directory: "/repo", TimeCreated: 1000, TimeUpdated: 2000}},
+		[]seedMessage{
+			{sessionID: "parent-om", timeCreated: 2000, data: `{"role":"assistant","providerID":"anthropic","modelID":"claude-opus-4-8"}`},
+		},
+	)
+	platform := &fakePlatformForTools{createSessionID: "child-om"}
+	srv := buildTestMCPServerWithOpenCodeDB(t, stateDB, platform, ocDB)
+
+	result := callTool(t, srv, "new_session", map[string]interface{}{
+		"session_id": "parent-om",
+		"intent":     "review the diff",
+		"model":      "openai/gpt-5-mini",
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", resultText(result))
+	}
+	if got := platform.sentMessages[0].Model; got != "openai/gpt-5-mini" {
+		t.Fatalf("explicit model should win over parent, got %q", got)
+	}
+}
+
+func TestNewSession_WorktreeInheritsParentModel(t *testing.T) {
+	repoDir := t.TempDir()
+	for _, args := range [][]string{
+		{"init"},
+		{"-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoDir
+		cmd.Env = gitexec.CleanEnv()
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+
+	stateDB := openTestStateDB(t)
+	ocDB := openTestOpenCodeDBWithMessages(t,
+		[]db.Session{{ID: "parent-wtim", Title: "parent", Directory: repoDir, TimeCreated: 1000, TimeUpdated: 2000}},
+		[]seedMessage{
+			{sessionID: "parent-wtim", timeCreated: 2000, data: `{"role":"assistant","providerID":"anthropic","modelID":"claude-opus-4-8"}`},
+		},
+	)
+	platform := &fakePlatformForTools{createSessionID: "child-wtim"}
+	srv := buildTestMCPServerWithOpenCodeDB(t, stateDB, platform, ocDB)
+
+	result := callTool(t, srv, "new_session", map[string]interface{}{
+		"session_id": "parent-wtim",
+		"intent":     "build a feature",
+		"worktree":   true,
+		"branch":     "feat-im",
+		// model omitted on purpose
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", resultText(result))
+	}
+	if len(platform.sentMessages) != 1 || platform.sentMessages[0].Model != "anthropic/claude-opus-4-8" {
+		t.Fatalf("worktree child did not inherit parent model: %+v", platform.sentMessages)
 	}
 }
 
