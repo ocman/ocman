@@ -6,6 +6,7 @@
   background: rgba(0, 0, 0, 0.55);
   display: flex;
   justify-content: center;
+  align-items: flex-start;
   padding-top: min(20vh, 160px);
 }
 
