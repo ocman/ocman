@@ -11,7 +11,7 @@ import { AgentPicker } from './AgentPicker';
 import { SkillPicker } from './SkillPicker';
 import { ReasoningPicker } from './ReasoningPicker';
 import { HelpDialog } from './HelpDialog';
-import { BranchSelector, TargetSelector } from './ComposerSelectorRow';
+import { TargetSelector } from './ComposerSelectorRow';
 import { SlashCommandMenu } from './SlashCommandMenu';
 import { QueuedMessages } from './QueuedMessages';
 import { composerPropsEqual } from './composerMemo';
@@ -1300,7 +1300,6 @@ function ComposerImpl({
           )}
         </span>
         <span className="oc-composer-footer-right">
-          {directory && <BranchSelector directory={directory} />}
           {tokenStats && tokenStats.totalCost > 0 && (
             <span
               className="oc-session-cost"

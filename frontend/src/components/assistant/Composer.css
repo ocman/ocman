@@ -494,14 +494,7 @@
   gap: 4px;
   min-width: 0;
 }
-.oc-branch-selector {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-}
 .oc-selector-icon { color: var(--overlay0); font-size: 11px; display: inline-flex; }
-.oc-selector-error { color: var(--red); max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Send button (turns into a stop button while generating) */
 .oc-bar-send {
