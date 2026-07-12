@@ -217,7 +217,6 @@ jobs:
 
   tag:
     name: Semantic Tag
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [frontend, backend, e2e, build, build-desktop-macos]
     runs-on: ubuntu-latest
     steps:
@@ -227,6 +226,7 @@ jobs:
           token: ${{ secrets.RELEASE_PAT || github.token }}
       - name: Decide next tag
         id: decide
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_PAT || github.token }}
           FORGEJO_API_URL: ${{ github.api_url }}
