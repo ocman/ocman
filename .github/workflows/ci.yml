@@ -85,15 +85,21 @@ jobs:
       - name: Install dependencies
         working-directory: frontend
         run: pnpm install --frozen-lockfile
+      - name: Determine changed suites
+        id: suites
+        run: ./scripts/coverage-changed-suites.sh
       - name: Collect coverage
-        run: make coverage
+        if: steps.suites.outputs.suites != ''
+        run: make coverage SUITE="${{ steps.suites.outputs.suites }}"
       - name: Fetch baseline from gh-pages
+        if: steps.suites.outputs.suites != ''
         run: ./scripts/coverage-fetch-baseline.sh baseline
       - name: Check coverage ratchet
         id: ratchet
-        run: make coverage-check BASELINE_DIR=baseline
+        if: steps.suites.outputs.suites != ''
+        run: make coverage-check BASELINE_DIR=baseline SUITE="${{ steps.suites.outputs.check }}"
       - name: Comment coverage delta on PR
-        if: always() && github.event_name == 'pull_request'
+        if: always() && github.event_name == 'pull_request' && steps.suites.outputs.suites != ''
         env:
           FORGEJO_API_URL: ${{ github.api_url }}
           REPOSITORY: ${{ github.repository }}

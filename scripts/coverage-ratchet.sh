@@ -67,11 +67,14 @@ for suite in "${SUITES[@]}"; do
 		continue
 	fi
 
-	# delta = new - old ; fail when new < old - tolerance
+	# delta = new - old ; fail when new < old - tolerance.
+	# The 1e-9 epsilon absorbs float representation error so a delta
+	# exactly on the tolerance boundary (e.g. -0.10 vs 0.1) passes
+	# instead of failing on 72.40 - 0.1 == 72.2999999... (#301).
 	read -r delta status <<EOF
 $(awk -v n="$new_pct" -v o="$old_pct" -v t="$TOLERANCE" 'BEGIN{
 	d = n - o;
-	if (n < o - t) print d" fail"; else print d" pass";
+	if (n < o - t - 1e-9) print d" fail"; else print d" pass";
 }')
 EOF
 
