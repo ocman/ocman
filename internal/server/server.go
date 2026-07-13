@@ -160,7 +160,10 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		PermissionReplied: func(sessionID, permissionID string) {
 			s.aaSvc().Cancel(sessionID, permissionID)
 		},
-		SessionCreated: s.refreshProjectsIndexAsync,
+		SessionCreated: func(info sessionsvc.CreatedSession) {
+			s.broadcastSessionCreated(info)
+			s.refreshProjectsIndexAsync()
+		},
 	})
 	return s
 }

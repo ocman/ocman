@@ -219,8 +219,8 @@ func TestValidationErrors(t *testing.T) {
 // which project row a session belongs to).
 func TestForkAndMoveDelegate(t *testing.T) {
 	p := &fakePlatform{id: "opencode", available: true}
-	var created int
-	svc, _ := newService(p, Hooks{SessionCreated: func() { created++ }})
+	var created []CreatedSession
+	svc, _ := newService(p, Hooks{SessionCreated: func(info CreatedSession) { created = append(created, info) }})
 	ctx := context.Background()
 
 	resp, err := svc.Fork(ctx, "", platforms.ForkSessionRequest{SessionID: "s1", MessageID: "m1"})
@@ -236,8 +236,11 @@ func TestForkAndMoveDelegate(t *testing.T) {
 	if len(p.forks) != 1 || len(p.moves) != 1 {
 		t.Fatalf("expected fork+move to reach adapter once each, got forks=%d moves=%d", len(p.forks), len(p.moves))
 	}
-	if created != 2 {
-		t.Errorf("SessionCreated hook fired %d times, want 2", created)
+	if len(created) != 2 || created[0].ID != "forked-session" || created[1].ID != "s1" {
+		t.Errorf("SessionCreated hook calls = %v, want [forked-session s1]", created)
+	}
+	if created[1].Directory != "/tmp/dst" {
+		t.Errorf("move hook directory = %q, want /tmp/dst", created[1].Directory)
 	}
 }
 
@@ -398,14 +401,17 @@ func TestCreateSelectionPolicy(t *testing.T) {
 
 func TestCreateFiresSessionCreatedHook(t *testing.T) {
 	p := &fakePlatform{id: "opencode", available: true}
-	created := 0
-	svc, _ := newService(p, Hooks{SessionCreated: func() { created++ }})
+	var created []CreatedSession
+	svc, _ := newService(p, Hooks{SessionCreated: func(info CreatedSession) { created = append(created, info) }})
 
-	if _, err := svc.Create(context.Background(), "opencode", platforms.CreateSessionRequest{Directory: "/tmp"}); err != nil {
+	if _, err := svc.Create(context.Background(), "opencode", platforms.CreateSessionRequest{Directory: "/tmp", Title: "hi"}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if created != 1 {
-		t.Fatalf("expected SessionCreated hook once, got %d", created)
+	if len(created) != 1 || created[0].ID != "new-session" {
+		t.Fatalf("expected SessionCreated hook for new-session, got %v", created)
+	}
+	if created[0].Directory != "/tmp" || created[0].Title != "hi" || created[0].Platform != "opencode" {
+		t.Fatalf("expected provisional fields on hook, got %+v", created[0])
 	}
 }
 

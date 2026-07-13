@@ -80,10 +80,19 @@ describe('useGlobalEvents session.changed handler', () => {
     const cb = vi.fn();
     const unsub = onSessionChanged(cb);
     __handleSessionChangedForTests(JSON.stringify({ sessionID: 'sess-new' }));
-    expect(cb).toHaveBeenCalledWith('sess-new');
+    expect(cb).toHaveBeenCalledWith('sess-new', undefined);
     unsub();
     __handleSessionChangedForTests(JSON.stringify({ sessionID: 'sess-2' }));
     expect(cb).toHaveBeenCalledTimes(1); // not called after unsubscribe
+  });
+
+  it('forwards a provisional session row when present', () => {
+    const cb = vi.fn();
+    const unsub = onSessionChanged(cb);
+    const session = { id: 'sess-new', directory: '/repo/a' };
+    __handleSessionChangedForTests(JSON.stringify({ sessionID: 'sess-new', session }));
+    expect(cb).toHaveBeenCalledWith('sess-new', session);
+    unsub();
   });
 
   it('ignores malformed or session-less payloads', () => {

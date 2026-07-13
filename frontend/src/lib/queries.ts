@@ -11,7 +11,7 @@
  *
  * See spec/ui-responsiveness Wave 3 (P4, P5).
  */
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, type QueryClient } from '@tanstack/react-query';
 import { api } from './api';
 import type {
   Session,
@@ -77,6 +77,27 @@ export function useSessions(
     refetchInterval: options?.refetchInterval,
     enabled: options?.enabled,
   });
+}
+
+/**
+ * Insert (or replace) a provisional session row into every cached
+ * `['sessions', ...]` list so a freshly-created session shows up
+ * instantly, before the authoritative refetch that
+ * `invalidateQueries(['sessions'])` triggers overwrites it. No-op for
+ * lists that don't have data yet (they'll fetch fresh anyway) or that
+ * are directory-scoped to a different directory.
+ */
+export function insertProvisionalSession(qc: QueryClient, session: Session): void {
+  for (const [key, existing] of qc.getQueriesData<Session[]>({ queryKey: ['sessions'] })) {
+    if (!existing) continue; // no data yet → it'll fetch fresh anyway
+    // Respect a directory filter: don't inject a /repo/a session into a
+    // list scoped to /repo/b. The dir (when present) lives in the
+    // second key segment (see useSessions' queryKey).
+    const scopedDir = (key[1] as { dir?: string } | undefined)?.dir;
+    if (scopedDir && scopedDir !== session.directory) continue;
+    if (existing.some((s) => s.id === session.id)) continue;
+    qc.setQueryData<Session[]>(key, [session, ...existing]);
+  }
 }
 
 // ---------------------------------------------------------------------------

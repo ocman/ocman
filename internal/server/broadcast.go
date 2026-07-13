@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
+	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 )
 
 // --- Global broadcast hub ---
@@ -241,6 +243,36 @@ func (s *Server) broadcastSessionChanged(sessionID string) {
 	}
 	payload, err := json.Marshal(map[string]interface{}{
 		"sessionID": sessionID,
+	})
+	if err != nil {
+		return
+	}
+	s.broadcastGlobalEvent("ocman.session.changed", payload)
+}
+
+// broadcastSessionCreated broadcasts a freshly-created (or moved)
+// session with a provisional list row the frontend can insert
+// immediately, ahead of the authoritative refetch the same event
+// triggers. The row is built from what the service knew without extra
+// I/O (id, platform, directory, title); missing fields default to a
+// harmless "waiting" row that the refetch overwrites.
+func (s *Server) broadcastSessionCreated(info sessionsvc.CreatedSession) {
+	if info.ID == "" {
+		return
+	}
+	now := time.Now().UnixMilli()
+	session := db.Session{
+		ID:          info.ID,
+		Platform:    info.Platform,
+		Directory:   info.Directory,
+		Title:       info.Title,
+		TimeCreated: now,
+		TimeUpdated: now,
+		Status:      "waiting",
+	}
+	payload, err := json.Marshal(map[string]interface{}{
+		"sessionID": info.ID,
+		"session":   session,
 	})
 	if err != nil {
 		return

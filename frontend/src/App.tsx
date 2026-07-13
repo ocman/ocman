@@ -7,6 +7,7 @@ import { DashboardLayout, SessionsTab, ProjectsTab, StatsTab, UsageTab, Settings
 import { ProjectDetail } from './pages/ProjectDetail';
 import { WorktreesView } from './pages/WorktreesView';
 import { Loops } from './pages/Loops';
+import { WorkflowPrototype } from './pages/WorkflowPrototype';
 import { SessionDetail } from './pages/session-detail';
 import { SharedConversationView } from './pages/SharedConversationView';
 import { Login } from './pages/Login';
@@ -30,7 +31,7 @@ import { useAuthStore } from './lib/authStore';
 import { useUiStore } from './lib/uiStore';
 import { useShortcut, useShortcutDispatcher } from './lib/shortcutRegistry';
 import { useApiStore } from './lib/apiStore';
-import { useSessions } from './lib/queries';
+import { useSessions, insertProvisionalSession } from './lib/queries';
 import { remoteLog } from './lib/remoteLog';
 import { usePerformanceCleanup } from './lib/usePerformanceCleanup';
 import { useMemoryMonitor } from './lib/useMemoryMonitor';
@@ -74,6 +75,7 @@ function LogoNav({ agentLoopsAllowed }: { agentLoopsAllowed: boolean }) {
         <Link to="/sessions" role="menuitem">Sessions</Link>
         <Link to="/projects" role="menuitem">Projects</Link>
         {agentLoopsAllowed && <Link to="/loops" role="menuitem">Loops</Link>}
+        <Link to="/prototype/workflows" role="menuitem">Workflow lab</Link>
         <Link to="/stats" role="menuitem">Stats</Link>
         <Link to="/usage" role="menuitem">Usage</Link>
         <Link to="/settings" role="menuitem">Settings</Link>
@@ -412,7 +414,11 @@ const queryClient = new QueryClient({
 // upstream, instead of waiting for the next poll tick. Registered at
 // module scope so it's wired once for the app's lifetime; the
 // EventSource itself is opened by useGlobalEvents() mounted at the root.
-onSessionChanged(() => {
+onSessionChanged((_sessionId, session) => {
+  // Insert the provisional row first so a freshly-created session shows
+  // up instantly, then invalidate so the authoritative list overwrites
+  // it on the next fetch.
+  if (session) insertProvisionalSession(queryClient, session);
   void queryClient.invalidateQueries({ queryKey: ['sessions'] });
 });
 
@@ -463,6 +469,7 @@ function AuthenticatedApp() {
                 <Route path="/project/:dir/worktrees" element={<WorktreesView />} />
                 <Route path="/project/:dir/loops" element={<Loops />} />
                 <Route path="/project/:dir" element={<ProjectDetail />} />
+                <Route path="/prototype/workflows" element={<WorkflowPrototype />} />
                 <Route path="/session/:id" element={<SessionDetail />} />
               </Routes>
             </RoutesBoundary>

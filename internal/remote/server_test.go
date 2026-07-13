@@ -266,12 +266,12 @@ func TestServer_MutationsUseSharedSessionService(t *testing.T) {
 	reg := platforms.NewRegistry()
 	reg.Register(&fakePlatform{id: "opencode"})
 	var replied []string
-	created := 0
+	var created []string
 	svc := sessionsvc.New(reg, sessionsvc.Hooks{
 		PermissionReplied: func(sessionID, permissionID string) {
 			replied = append(replied, sessionID+"|"+permissionID)
 		},
-		SessionCreated: func() { created++ },
+		SessionCreated: func(info sessionsvc.CreatedSession) { created = append(created, info.ID) },
 	})
 	srv := NewServer(reg, localStubHost{}, "i", "v").UseSessions(svc)
 	ctx := context.Background()
@@ -306,8 +306,8 @@ func TestServer_MutationsUseSharedSessionService(t *testing.T) {
 	if _, err := srv.CreateSession(ctx, &pb.PlatformJsonReq{Platform: "opencode", Payload: b}); err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
-	if created != 1 {
-		t.Fatalf("expected SessionCreated hook once, got %d", created)
+	if len(created) != 1 || created[0] != "new-sess" {
+		t.Fatalf("expected SessionCreated hook for new-sess, got %v", created)
 	}
 }
 

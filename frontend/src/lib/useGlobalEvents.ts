@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { notifyPromptDismissed } from './useToastNotify';
 import { recheckNotifyData } from './useNotifyData';
-import type { QueuedMessage } from './api';
+import type { QueuedMessage, Session } from './api';
 
 /**
  * App-wide SSE subscriber for `/api/events`.
@@ -37,6 +37,13 @@ type SessionEventPayload = {
   requestId?: string;
   reason?: string;
   messages?: QueuedMessage[];
+  /**
+   * Provisional session row carried by an ocman.session.changed
+   * broadcast for a freshly-created session. Lets listeners insert the
+   * row optimistically before the authoritative refetch lands. Absent
+   * for change events that only know the id.
+   */
+  session?: Session;
 };
 
 function parsePayload(raw: string): SessionEventPayload | null {
@@ -96,10 +103,15 @@ function handleLoopUpdated(raw: string): void {
 // react to a session.changed broadcast by refreshing the session list,
 // so a newly-created session appears immediately instead of on the next
 // poll tick.
-const sessionChangedListeners = new Set<(sessionId: string) => void>();
+const sessionChangedListeners = new Set<(sessionId: string, session?: Session) => void>();
 
-/** Register a callback fired on every ocman.session.changed broadcast. */
-export function onSessionChanged(cb: (sessionId: string) => void): () => void {
+/**
+ * Register a callback fired on every ocman.session.changed broadcast.
+ * The second arg is a provisional session row when the event carries
+ * one (freshly-created sessions), so listeners can insert it before the
+ * authoritative refetch.
+ */
+export function onSessionChanged(cb: (sessionId: string, session?: Session) => void): () => void {
   sessionChangedListeners.add(cb);
   return () => sessionChangedListeners.delete(cb);
 }
@@ -108,7 +120,7 @@ function handleSessionChanged(raw: string): void {
   const parsed = parsePayload(raw);
   const sessionId = parsed?.sessionID;
   if (!sessionId) return;
-  for (const cb of sessionChangedListeners) cb(sessionId);
+  for (const cb of sessionChangedListeners) cb(sessionId, parsed?.session);
 }
 
 // queueUpdatedListeners: the composer's queue view registers here so a

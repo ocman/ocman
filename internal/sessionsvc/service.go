@@ -32,9 +32,21 @@ type Hooks struct {
 	// this to cancelAutoApprove: the user has decided, so the AI
 	// judge's verdict must not race their answer.
 	PermissionReplied func(sessionID, permissionID string)
-	// SessionCreated fires after a session is successfully created.
-	// The server wires this to an async projects-index refresh.
-	SessionCreated func()
+	// SessionCreated fires after a session is successfully created or
+	// moved. Info carries what the service knows without extra I/O so
+	// the server can broadcast a provisional list row the frontend can
+	// show before the authoritative refetch lands.
+	SessionCreated func(info CreatedSession)
+}
+
+// CreatedSession is the minimal, I/O-free projection of a just-created
+// (or moved) session passed to the SessionCreated hook. Directory/Title
+// are empty for a move (only the ID is known cheaply).
+type CreatedSession struct {
+	ID        string
+	Platform  string
+	Directory string
+	Title     string
 }
 
 // Service validates and dispatches session mutations to the owning
@@ -164,7 +176,7 @@ func (s *Service) Fork(ctx context.Context, platformID string, req platforms.For
 		return nil, err
 	}
 	if s.hooks.SessionCreated != nil {
-		s.hooks.SessionCreated()
+		s.hooks.SessionCreated(CreatedSession{ID: resp.ID, Platform: string(p.ID())})
 	}
 	return resp, nil
 }
@@ -185,7 +197,7 @@ func (s *Service) Move(ctx context.Context, platformID string, req platforms.Mov
 	// A move changes which project row the session belongs to; refresh
 	// the projects index just like session creation does.
 	if s.hooks.SessionCreated != nil {
-		s.hooks.SessionCreated()
+		s.hooks.SessionCreated(CreatedSession{ID: req.SessionID, Platform: string(p.ID()), Directory: req.Directory})
 	}
 	return nil
 }
@@ -295,7 +307,12 @@ func (s *Service) Create(ctx context.Context, platformID string, req platforms.C
 		return nil, err
 	}
 	if s.hooks.SessionCreated != nil {
-		s.hooks.SessionCreated()
+		s.hooks.SessionCreated(CreatedSession{
+			ID:        resp.ID,
+			Platform:  string(adapter.ID()),
+			Directory: req.Directory,
+			Title:     req.Title,
+		})
 	}
 	return resp, nil
 }

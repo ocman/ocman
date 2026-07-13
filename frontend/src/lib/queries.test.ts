@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
+import { insertProvisionalSession } from './queries';
+import type { Session } from './api';
 
 // Mock the api module.
 vi.mock('./api', () => ({
@@ -137,5 +139,45 @@ describe('TanStack Query functions', () => {
     expect(a).toEqual(b);
     // TanStack deduplicates — only one actual call.
     expect(api.sessions).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('insertProvisionalSession', () => {
+  const row = (id: string, directory = '/repo/a'): Session =>
+    ({ id, directory, platform: 'opencode', title: '', status: 'waiting' }) as Session;
+
+  let client: QueryClient;
+  beforeEach(() => {
+    client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  });
+
+  it('prepends the row into a populated unscoped list', () => {
+    client.setQueryData<Session[]>(['sessions', {}], [row('old')]);
+    insertProvisionalSession(client, row('new'));
+    const list = client.getQueryData<Session[]>(['sessions', {}])!;
+    expect(list.map((s) => s.id)).toEqual(['new', 'old']);
+  });
+
+  it('does not duplicate a session already present', () => {
+    client.setQueryData<Session[]>(['sessions', {}], [row('dup')]);
+    insertProvisionalSession(client, row('dup'));
+    expect(client.getQueryData<Session[]>(['sessions', {}])).toHaveLength(1);
+  });
+
+  it('skips lists scoped to a different directory', () => {
+    client.setQueryData<Session[]>(['sessions', { dir: '/repo/b' }], [row('b1', '/repo/b')]);
+    insertProvisionalSession(client, row('new', '/repo/a'));
+    expect(client.getQueryData<Session[]>(['sessions', { dir: '/repo/b' }])).toHaveLength(1);
+  });
+
+  it('inserts into a matching directory-scoped list', () => {
+    client.setQueryData<Session[]>(['sessions', { dir: '/repo/a' }], [row('a1', '/repo/a')]);
+    insertProvisionalSession(client, row('new', '/repo/a'));
+    expect(client.getQueryData<Session[]>(['sessions', { dir: '/repo/a' }])).toHaveLength(2);
+  });
+
+  it('leaves an empty (never-fetched) cache untouched', () => {
+    insertProvisionalSession(client, row('new'));
+    expect(client.getQueryData<Session[]>(['sessions', {}])).toBeUndefined();
   });
 });

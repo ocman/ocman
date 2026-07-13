@@ -204,6 +204,8 @@ func TestHandleProjects_UsesInMemoryIndexUntilRefresh(t *testing.T) {
 func TestHandleCreateSession_RefreshesProjectsIndex(t *testing.T) {
 	srv, rawDB := testServerWithRawDB(t)
 	defer rawDB.Close()
+	sub, unsubscribe := srv.broadcastHub.subscribe()
+	defer unsubscribe()
 
 	reg := platforms.NewRegistry()
 	reg.Register(&fakePlatform{
@@ -236,6 +238,31 @@ func TestHandleCreateSession_RefreshesProjectsIndex(t *testing.T) {
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	select {
+	case event := <-sub.ch:
+		if event.event != "ocman.session.changed" {
+			t.Fatalf("unexpected session creation event: %s", event.event)
+		}
+		var payload struct {
+			SessionID string `json:"sessionID"`
+			Session   struct {
+				ID        string `json:"id"`
+				Directory string `json:"directory"`
+				Status    string `json:"status"`
+			} `json:"session"`
+		}
+		if err := json.Unmarshal(event.data, &payload); err != nil {
+			t.Fatalf("unmarshal event payload: %v (%s)", err, event.data)
+		}
+		if payload.SessionID != "new-session" {
+			t.Fatalf("event sessionID = %q, want new-session", payload.SessionID)
+		}
+		if payload.Session.ID != "new-session" || payload.Session.Directory != "/repo/new" {
+			t.Fatalf("event carried no usable provisional session row: %s", event.data)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("session creation did not notify frontend")
 	}
 	// The post-create refresh runs in a goroutine (off the request
 	// path) so the heavy GetProjects aggregate doesn't block creation.
