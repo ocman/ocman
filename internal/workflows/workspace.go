@@ -19,12 +19,12 @@ const (
 // service as mutating nodes acquire leases. Host is an optional owning-host
 // identity; the first scheduler always uses the local host.
 type WorkspaceConfig struct {
-	Repo   string `json:"repo,omitempty"`
-	Shards int    `json:"shards"`
-	Host   string `json:"host,omitempty"`
+	Repo   string `json:"repo,omitempty" yaml:"repo,omitempty"`
+	Shards int    `json:"shards" yaml:"shards"`
+	Host   string `json:"host,omitempty" yaml:"host,omitempty"`
 	// RestrictedGit overrides the default set of repository-wide git
 	// mutations denied to path-leased mutators. Empty uses the defaults.
-	RestrictedGit []string `json:"restrictedGit,omitempty"`
+	RestrictedGit []string `json:"restrictedGit,omitempty" yaml:"restrictedGit,omitempty"`
 }
 
 // LeaseConfig declares how a node acquires workspace ownership. Mode is
@@ -34,9 +34,9 @@ type WorkspaceConfig struct {
 // mutation (staging/commit/push) via exclusive or serialized per-shard
 // capacity.
 type LeaseConfig struct {
-	Mode   string   `json:"mode,omitempty"`
-	Paths  []string `json:"paths,omitempty"`
-	Commit bool     `json:"commit,omitempty"`
+	Mode   string   `json:"mode,omitempty" yaml:"mode,omitempty"`
+	Paths  []string `json:"paths,omitempty" yaml:"paths,omitempty"`
+	Commit bool     `json:"commit,omitempty" yaml:"commit,omitempty"`
 }
 
 // normalizeLeasePath cleans a declared path scope to a canonical form for

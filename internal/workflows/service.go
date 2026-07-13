@@ -1,7 +1,6 @@
 package workflows
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"database/sql"
@@ -9,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -63,64 +61,64 @@ const (
 )
 
 type Definition struct {
-	ID            string           `json:"id"`
-	Name          string           `json:"name"`
-	Version       string           `json:"version"`
-	Concurrency   int              `json:"concurrency"`
-	RetentionDays int              `json:"retentionDays,omitempty"`
-	Directory     string           `json:"directory,omitempty"`
-	Secrets       []SecretRef      `json:"secrets,omitempty"`
-	Pools         []Pool           `json:"pools,omitempty"`
-	Workspace     *WorkspaceConfig `json:"workspace,omitempty"`
-	Limits        *Limits          `json:"limits,omitempty"`
+	ID            string           `json:"id" yaml:"id"`
+	Name          string           `json:"name" yaml:"name"`
+	Version       string           `json:"version" yaml:"version"`
+	Concurrency   int              `json:"concurrency" yaml:"concurrency"`
+	RetentionDays int              `json:"retentionDays,omitempty" yaml:"retentionDays,omitempty"`
+	Directory     string           `json:"directory,omitempty" yaml:"directory,omitempty"`
+	Secrets       []SecretRef      `json:"secrets,omitempty" yaml:"secrets,omitempty"`
+	Pools         []Pool           `json:"pools,omitempty" yaml:"pools,omitempty"`
+	Workspace     *WorkspaceConfig `json:"workspace,omitempty" yaml:"workspace,omitempty"`
+	Limits        *Limits          `json:"limits,omitempty" yaml:"limits,omitempty"`
 	// LoopCompat marks a one-node workflow copied from the legacy loop
 	// system. The legacy engine remains its execution owner until #331.
-	LoopCompat   json.RawMessage `json:"loopCompat,omitempty"`
-	Triggers     []Trigger       `json:"triggers"`
-	Nodes        []Node          `json:"nodes"`
-	Dependencies []Dependency    `json:"dependencies"`
-	FailFast     bool            `json:"failFast,omitempty"`
+	LoopCompat   json.RawMessage `json:"loopCompat,omitempty" yaml:"loopCompat,omitempty"`
+	Triggers     []Trigger       `json:"triggers" yaml:"triggers"`
+	Nodes        []Node          `json:"nodes" yaml:"nodes"`
+	Dependencies []Dependency    `json:"dependencies" yaml:"dependencies"`
+	FailFast     bool            `json:"failFast,omitempty" yaml:"failFast,omitempty"`
 
 	// SubworkflowRefs records the workflow ids this version references
 	// through subworkflow and map nodes at publish time. Inlining removes
 	// subworkflow nodes, so this preserves the reference graph needed for
 	// indirect recursive-cycle detection across later publishes.
-	SubworkflowRefs []string `json:"subworkflowRefs,omitempty"`
+	SubworkflowRefs []string `json:"subworkflowRefs,omitempty" yaml:"subworkflowRefs,omitempty"`
 }
 
 // Pool is a named resource capacity a workflow declares. Nodes acquire
 // units from a pool before going active; the scheduler never lets held
 // units exceed the pool's capacity.
 type Pool struct {
-	Name     string `json:"name"`
-	Capacity int    `json:"capacity"`
+	Name     string `json:"name" yaml:"name"`
+	Capacity int    `json:"capacity" yaml:"capacity"`
 }
 
 // ResourceRequest is a node's demand for units from a named pool.
 type ResourceRequest struct {
-	Pool  string `json:"pool"`
-	Units int    `json:"units"`
+	Pool  string `json:"pool" yaml:"pool"`
+	Units int    `json:"units" yaml:"units"`
 }
 
 // Limits optionally bound a run's aggregate descendant work. A zero /
 // omitted field means unlimited.
 type Limits struct {
-	MaxCostUSD      float64 `json:"maxCostUsd,omitempty"`
-	MaxTokens       int64   `json:"maxTokens,omitempty"`
-	MaxDurationSecs int64   `json:"maxDurationSeconds,omitempty"`
+	MaxCostUSD      float64 `json:"maxCostUsd,omitempty" yaml:"maxCostUsd,omitempty"`
+	MaxTokens       int64   `json:"maxTokens,omitempty" yaml:"maxTokens,omitempty"`
+	MaxDurationSecs int64   `json:"maxDurationSeconds,omitempty" yaml:"maxDurationSeconds,omitempty"`
 }
 
 type Trigger struct {
-	ID              string `json:"id"`
-	Type            string `json:"type"`
-	Overlap         string `json:"overlap,omitempty"`
-	IntervalSeconds int    `json:"intervalSeconds,omitempty"`
-	Cron            string `json:"cron,omitempty"`
-	PRNumber        int    `json:"prNumber,omitempty"`
-	PollSeconds     int    `json:"pollSeconds,omitempty"`
-	Directory       string `json:"directory,omitempty"`
-	Platform        string `json:"platform,omitempty"`
-	SessionID       string `json:"sessionId,omitempty"`
+	ID              string `json:"id" yaml:"id"`
+	Type            string `json:"type" yaml:"type"`
+	Overlap         string `json:"overlap,omitempty" yaml:"overlap,omitempty"`
+	IntervalSeconds int    `json:"intervalSeconds,omitempty" yaml:"intervalSeconds,omitempty"`
+	Cron            string `json:"cron,omitempty" yaml:"cron,omitempty"`
+	PRNumber        int    `json:"prNumber,omitempty" yaml:"prNumber,omitempty"`
+	PollSeconds     int    `json:"pollSeconds,omitempty" yaml:"pollSeconds,omitempty"`
+	Directory       string `json:"directory,omitempty" yaml:"directory,omitempty"`
+	Platform        string `json:"platform,omitempty" yaml:"platform,omitempty"`
+	SessionID       string `json:"sessionId,omitempty" yaml:"sessionId,omitempty"`
 }
 
 type TriggerSnapshot struct {
@@ -142,27 +140,27 @@ type TriggerStatus struct {
 }
 
 type Node struct {
-	ID          string            `json:"id"`
-	Name        string            `json:"name"`
-	Type        string            `json:"type"`
-	Command     []string          `json:"command,omitempty"`
-	Environment map[string]string `json:"environment,omitempty"`
-	Permission  []PermissionRule  `json:"permission,omitempty"`
-	Outputs     []Collector       `json:"outputs,omitempty"`
-	Agent       *AgentConfig      `json:"agent,omitempty"`
-	Resources   []ResourceRequest `json:"resources,omitempty"`
-	Lease       *LeaseConfig      `json:"lease,omitempty"`
-	Subworkflow *SubworkflowRef   `json:"subworkflow,omitempty"`
-	Map         *MapConfig        `json:"map,omitempty"`
-	Join        *JoinConfig       `json:"join,omitempty"`
-	Repeat      *RepeatConfig     `json:"repeat,omitempty"`
+	ID          string            `json:"id" yaml:"id"`
+	Name        string            `json:"name" yaml:"name"`
+	Type        string            `json:"type" yaml:"type"`
+	Command     []string          `json:"command,omitempty" yaml:"command,omitempty"`
+	Environment map[string]string `json:"environment,omitempty" yaml:"environment,omitempty"`
+	Permission  []PermissionRule  `json:"permission,omitempty" yaml:"permission,omitempty"`
+	Outputs     []Collector       `json:"outputs,omitempty" yaml:"outputs,omitempty"`
+	Agent       *AgentConfig      `json:"agent,omitempty" yaml:"agent,omitempty"`
+	Resources   []ResourceRequest `json:"resources,omitempty" yaml:"resources,omitempty"`
+	Lease       *LeaseConfig      `json:"lease,omitempty" yaml:"lease,omitempty"`
+	Subworkflow *SubworkflowRef   `json:"subworkflow,omitempty" yaml:"subworkflow,omitempty"`
+	Map         *MapConfig        `json:"map,omitempty" yaml:"map,omitempty"`
+	Join        *JoinConfig       `json:"join,omitempty" yaml:"join,omitempty"`
+	Repeat      *RepeatConfig     `json:"repeat,omitempty" yaml:"repeat,omitempty"`
 }
 
 // RepeatConfig retries a successful node until Until evaluates true. The
 // attempt limit is mandatory: workflow graphs stay acyclic and bounded.
 type RepeatConfig struct {
-	Until       string `json:"until"`
-	MaxAttempts int    `json:"maxAttempts"`
+	Until       string `json:"until" yaml:"until"`
+	MaxAttempts int    `json:"maxAttempts" yaml:"maxAttempts"`
 }
 
 // SubworkflowRef references a reusable workflow to inline. At publish
@@ -170,7 +168,7 @@ type RepeatConfig struct {
 // (already-inlined) nodes are pinned into the parent definition, so a
 // later edit to the subworkflow cannot alter an existing parent version.
 type SubworkflowRef struct {
-	WorkflowID string `json:"workflowId"`
+	WorkflowID string `json:"workflowId" yaml:"workflowId"`
 }
 
 // MapConfig fans a declared JSON array artifact out across per-item
@@ -180,15 +178,15 @@ type SubworkflowRef struct {
 // item. Subworkflow is the pinned per-item pipeline. Join is the id of
 // the join node that aggregates this map's items.
 type MapConfig struct {
-	Source      string         `json:"source"`
-	Key         string         `json:"key"`
-	Subworkflow SubworkflowRef `json:"subworkflow"`
-	Join        string         `json:"join"`
-	FailFast    bool           `json:"failFast,omitempty"`
+	Source      string         `json:"source" yaml:"source"`
+	Key         string         `json:"key" yaml:"key"`
+	Subworkflow SubworkflowRef `json:"subworkflow" yaml:"subworkflow"`
+	Join        string         `json:"join" yaml:"join"`
+	FailFast    bool           `json:"failFast,omitempty" yaml:"failFast,omitempty"`
 	// VersionID pins the per-item subworkflow to a concrete active
 	// version at parent publish time so downstream edits cannot alter an
 	// existing parent version's mapped execution.
-	VersionID string `json:"versionId,omitempty"`
+	VersionID string `json:"versionId,omitempty" yaml:"versionId,omitempty"`
 }
 
 // JoinConfig aggregates a map node's per-item outcomes into an
@@ -198,8 +196,8 @@ type MapConfig struct {
 //	always        – join always succeeds, carrying per-item statuses.
 //	minimum-success – join succeeds if at least MinSuccess items did.
 type JoinConfig struct {
-	Policy     string `json:"policy"`
-	MinSuccess int    `json:"minSuccess,omitempty"`
+	Policy     string `json:"policy" yaml:"policy"`
+	MinSuccess int    `json:"minSuccess,omitempty" yaml:"minSuccess,omitempty"`
 }
 
 const (
@@ -209,26 +207,26 @@ const (
 )
 
 type PermissionRule struct {
-	Permission string `json:"permission"`
-	Pattern    string `json:"pattern"`
-	Action     string `json:"action"`
+	Permission string `json:"permission" yaml:"permission"`
+	Pattern    string `json:"pattern" yaml:"pattern"`
+	Action     string `json:"action" yaml:"action"`
 }
 
 type Collector struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
-	Path string `json:"path,omitempty"`
+	Name string `json:"name" yaml:"name"`
+	Type string `json:"type" yaml:"type"`
+	Path string `json:"path,omitempty" yaml:"path,omitempty"`
 }
 
 type AgentConfig struct {
-	Platform        string      `json:"platform,omitempty"`
-	Directory       string      `json:"directory"`
-	Prompt          string      `json:"prompt"`
-	Model           string      `json:"model,omitempty"`
-	Agent           string      `json:"agent,omitempty"`
-	Reasoning       string      `json:"reasoning,omitempty"`
-	SessionAffinity string      `json:"sessionAffinity,omitempty"`
-	Collectors      []Collector `json:"collectors,omitempty"`
+	Platform        string      `json:"platform,omitempty" yaml:"platform,omitempty"`
+	Directory       string      `json:"directory" yaml:"directory"`
+	Prompt          string      `json:"prompt" yaml:"prompt"`
+	Model           string      `json:"model,omitempty" yaml:"model,omitempty"`
+	Agent           string      `json:"agent,omitempty" yaml:"agent,omitempty"`
+	Reasoning       string      `json:"reasoning,omitempty" yaml:"reasoning,omitempty"`
+	SessionAffinity string      `json:"sessionAffinity,omitempty" yaml:"sessionAffinity,omitempty"`
+	Collectors      []Collector `json:"collectors,omitempty" yaml:"collectors,omitempty"`
 }
 
 type AgentRequest struct {
@@ -262,9 +260,15 @@ type AgentExecutor interface {
 }
 
 type Dependency struct {
-	From      string `json:"from"`
-	To        string `json:"to"`
-	Condition string `json:"condition,omitempty"`
+	From      string `json:"from" yaml:"from"`
+	To        string `json:"to" yaml:"to"`
+	Condition string `json:"condition,omitempty" yaml:"condition,omitempty"`
+}
+
+type Validation struct {
+	Definition    Definition      `json:"definition"`
+	CanonicalJSON json.RawMessage `json:"canonicalJson"`
+	YAML          string          `json:"yaml"`
 }
 
 type Version struct {
@@ -275,6 +279,7 @@ type Version struct {
 	CreatedAt     int64           `json:"createdAt"`
 	Definition    Definition      `json:"definition"`
 	TriggerStates []TriggerStatus `json:"triggerStates"`
+	Active        bool            `json:"active"`
 }
 
 type Run struct {
@@ -337,13 +342,14 @@ type ResourcePool struct {
 }
 
 type NodeRun struct {
-	NodeID      string    `json:"nodeId"`
-	Name        string    `json:"name"`
-	Type        string    `json:"type"`
-	State       string    `json:"state"`
-	ReadyAt     int64     `json:"readyAt,omitempty"`
-	CompletedAt int64     `json:"completedAt,omitempty"`
-	Attempts    []Attempt `json:"attempts"`
+	NodeID          string    `json:"nodeId"`
+	Name            string    `json:"name"`
+	Type            string    `json:"type"`
+	State           string    `json:"state"`
+	ReadyAt         int64     `json:"readyAt,omitempty"`
+	CompletedAt     int64     `json:"completedAt,omitempty"`
+	Attempts        []Attempt `json:"attempts"`
+	PinnedVersionID string    `json:"pinnedVersionId,omitempty"`
 }
 
 type Attempt struct {
@@ -371,6 +377,8 @@ type Store interface {
 	GetWorkflowVersion(string) (*state.WorkflowVersion, error)
 	GetActiveWorkflowVersion(string) (*state.WorkflowVersion, error)
 	ListWorkflowVersions() ([]state.WorkflowVersion, error)
+	ActivateWorkflowVersion(string, int64) (*state.WorkflowVersion, error)
+	InsertWorkflowRun(state.WorkflowRun) error
 	GetWorkflowRun(string) (*state.WorkflowRun, error)
 	ListWorkflowRuns() ([]state.WorkflowRun, error)
 	ListCurrentWorkflowVersions() ([]state.WorkflowVersion, error)
@@ -506,7 +514,7 @@ func (s *Service) ValidateJSON(_ context.Context, source []byte) (Definition, er
 // resulting graph. The returned definition is the canonical, fully
 // inlined form persisted for a new version.
 func (s *Service) prepareDefinition(source []byte) (Definition, []byte, error) {
-	authored, _, err := decodeDefinition(source)
+	authored, _, _, err := decodeDefinition(source)
 	if err != nil {
 		return Definition{}, nil, err
 	}
@@ -551,6 +559,38 @@ func (s *Service) PublishJSON(_ context.Context, source []byte) (Version, error)
 	return versionFromState(row, definition), nil
 }
 
+func (s *Service) Publish(ctx context.Context, source []byte) (Version, error) {
+	return s.PublishJSON(ctx, source)
+}
+
+func (s *Service) Validate(_ context.Context, source []byte) (Validation, error) {
+	definition, canonical, err := s.prepareDefinition(source)
+	if err != nil {
+		return Validation{}, err
+	}
+	stableYAML, err := encodeDefinitionYAML(definition)
+	if err != nil {
+		return Validation{}, err
+	}
+	return Validation{Definition: definition, CanonicalJSON: canonical, YAML: stableYAML}, nil
+}
+
+func (s *Service) Activate(_ context.Context, id string) (Version, error) {
+	row, err := s.store.ActivateWorkflowVersion(id, s.now().UnixMilli())
+	if err != nil {
+		return Version{}, err
+	}
+	return versionFromRow(*row)
+}
+
+func (s *Service) StartActive(ctx context.Context, workflowID string) (RunDetail, error) {
+	version, err := s.store.GetActiveWorkflowVersion(workflowID)
+	if err != nil {
+		return RunDetail{}, err
+	}
+	return s.Start(ctx, version.ID)
+}
+
 func (s *Service) GetVersion(_ context.Context, id string) (Version, error) {
 	row, err := s.store.GetWorkflowVersion(id)
 	if err != nil {
@@ -562,6 +602,22 @@ func (s *Service) GetVersion(_ context.Context, id string) (Version, error) {
 	}
 	version.TriggerStates, err = s.triggerStatuses(id, version.Definition.Triggers)
 	return version, err
+}
+
+func (s *Service) ExportYAML(ctx context.Context, id string) (string, error) {
+	version, err := s.GetVersion(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	canonical, err := json.Marshal(version.Definition)
+	if err != nil {
+		return "", fmt.Errorf("encoding workflow definition: %w", err)
+	}
+	validated, err := s.Validate(ctx, canonical)
+	if err != nil {
+		return "", err
+	}
+	return validated.YAML, nil
 }
 
 func (s *Service) ListVersions(_ context.Context) ([]Version, error) {
@@ -976,7 +1032,7 @@ func (s *Service) GetRun(ctx context.Context, id string) (RunDetail, error) {
 	}
 	detail := RunDetail{Run: runFromState(*run), Version: version, Nodes: make([]NodeRun, 0, len(run.Nodes))}
 	for _, row := range run.Nodes {
-		node := NodeRun{NodeID: row.NodeID, Name: row.Name, Type: row.Type, State: row.State, ReadyAt: row.ReadyAt, CompletedAt: row.CompletedAt, Attempts: make([]Attempt, 0, len(row.Attempts))}
+		node := NodeRun{NodeID: row.NodeID, Name: row.Name, Type: row.Type, State: row.State, ReadyAt: row.ReadyAt, CompletedAt: row.CompletedAt, Attempts: make([]Attempt, 0, len(row.Attempts)), PinnedVersionID: row.PinnedVersionID}
 		for _, attempt := range row.Attempts {
 			out := Attempt{ID: attempt.ID, Seq: attempt.Seq, State: attempt.State, StartedAt: attempt.StartedAt, CompletedAt: attempt.CompletedAt, ExitCode: attempt.ExitCode, Stdout: attempt.Stdout, Stderr: attempt.Stderr, Error: attempt.Error, StdoutTruncated: attempt.StdoutTruncated, StderrTruncated: attempt.StderrTruncated, Platform: attempt.Platform, SessionID: attempt.SessionID, SessionState: attempt.SessionState, Affinity: attempt.Affinity, Directory: attempt.Directory}
 			if attempt.OutputsJSON != "" && attempt.OutputsJSON != "{}" {
@@ -1814,26 +1870,6 @@ func (s *Service) triggerChanged() {
 	}
 }
 
-func decodeDefinition(source []byte) (Definition, []byte, error) {
-	decoder := json.NewDecoder(bytes.NewReader(source))
-	decoder.DisallowUnknownFields()
-	var definition Definition
-	if err := decoder.Decode(&definition); err != nil {
-		return Definition{}, nil, fmt.Errorf("invalid workflow JSON: %w", err)
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return Definition{}, nil, fmt.Errorf("invalid workflow JSON: trailing content")
-	}
-	if err := normalizeLeases(&definition); err != nil {
-		return Definition{}, nil, err
-	}
-	canonical, err := json.Marshal(definition)
-	if err != nil {
-		return Definition{}, nil, fmt.Errorf("encoding workflow definition: %w", err)
-	}
-	return definition, canonical, nil
-}
-
 func validateDefinition(definition Definition) error {
 	if definition.ID == "" || definition.Name == "" || definition.Version == "" {
 		return fmt.Errorf("id, name, and version are required")
@@ -2183,7 +2219,7 @@ func versionFromRow(row state.WorkflowVersion) (Version, error) {
 }
 
 func versionFromState(row state.WorkflowVersion, definition Definition) Version {
-	return Version{ID: row.ID, WorkflowID: row.WorkflowID, Name: row.Name, Revision: row.Revision, CreatedAt: row.CreatedAt, Definition: definition}
+	return Version{ID: row.ID, WorkflowID: row.WorkflowID, Name: row.Name, Revision: row.Revision, CreatedAt: row.CreatedAt, Active: row.Active, Definition: definition}
 }
 
 func runFromState(row state.WorkflowRun) Run {

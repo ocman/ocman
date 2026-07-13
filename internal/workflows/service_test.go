@@ -91,6 +91,25 @@ func (f *fakeAgentExecutor) Cancel(_ context.Context, session AgentSession) erro
 	return nil
 }
 
+const sequentialApprovalsYAML = `id: release
+name: Release
+version: "2026.07"
+concurrency: 1
+triggers:
+  - id: manual
+    type: manual
+nodes:
+  - id: review
+    name: Review
+    type: approval
+  - id: ship
+    name: Ship
+    type: approval
+dependencies:
+  - from: review
+    to: ship
+`
+
 type harness struct {
 	t              *testing.T
 	path           string
@@ -346,6 +365,180 @@ func TestPublishCreatesImmutableVersions(t *testing.T) {
 	}
 }
 
+func TestYAMLAndJSONNormalizeToSameDefinition(t *testing.T) {
+	h := newHarness(t)
+	jsonResult, err := h.svc.Validate(context.Background(), []byte(sequentialApprovals))
+	if err != nil {
+		t.Fatalf("validate JSON: %v", err)
+	}
+	yamlResult, err := h.svc.Validate(context.Background(), []byte(sequentialApprovalsYAML))
+	if err != nil {
+		t.Fatalf("validate YAML: %v", err)
+	}
+	if string(jsonResult.CanonicalJSON) != string(yamlResult.CanonicalJSON) {
+		t.Fatalf("canonical definitions differ:\nJSON %s\nYAML %s", jsonResult.CanonicalJSON, yamlResult.CanonicalJSON)
+	}
+	if yamlResult.YAML != sequentialApprovalsYAML {
+		t.Fatalf("unstable YAML export:\n%s", yamlResult.YAML)
+	}
+}
+
+func TestParserRejectsUnsafeYAMLWithLocations(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+		want   string
+	}{
+		{"duplicate key", strings.Replace(sequentialApprovalsYAML, "name: Release", "name: Release\nname: Again", 1), "line 3, column 1: duplicate key"},
+		{"ambiguous coercion", strings.Replace(sequentialApprovalsYAML, `version: "2026.07"`, "version: 2026.07", 1), "invalid workflow source"},
+		{"ambiguous integer", strings.Replace(sequentialApprovalsYAML, "concurrency: 1", "concurrency: 01", 1), "integers must use decimal JSON integer syntax"},
+		{"unsupported boolean", strings.Replace(sequentialApprovalsYAML, "name: Release", "name: true", 1), "invalid workflow source"},
+		{"duplicate JSON key", strings.Replace(sequentialApprovals, `"name":"Release"`, `"name":"Release","name":"Again"`, 1), "duplicate key"},
+		{"unsupported alias", strings.Replace(sequentialApprovalsYAML, "name: Release", "name: &release Release", 1) + "copy: *release\n", "anchors are not supported"},
+		{"unknown field", strings.Replace(sequentialApprovalsYAML, "concurrency: 1", "concurrancy: 1", 1), `unknown field "concurrancy"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t)
+			_, err := h.svc.Validate(context.Background(), []byte(tt.source))
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
+func TestActivationAndRunsRemainPinned(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	v1, err := h.svc.Publish(ctx, []byte(sequentialApprovalsYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2, err := h.svc.Publish(ctx, []byte(strings.Replace(sequentialApprovalsYAML, `version: "2026.07"`, `version: "2026.08"`, 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.Activate(ctx, v1.ID); err != nil {
+		t.Fatal(err)
+	}
+	run1, err := h.svc.StartActive(ctx, "release")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.Activate(ctx, v2.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.Approve(ctx, run1.ID, "review"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.Approve(ctx, run1.ID, "ship"); err != nil {
+		t.Fatal(err)
+	}
+	run2, err := h.svc.Start(ctx, v2.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run1.VersionID != v1.ID || run1.Version.Definition.Version != "2026.07" || run2.VersionID != v2.ID {
+		t.Fatalf("runs not pinned across activation: run1=%+v run2=%+v", run1.Run, run2.Run)
+	}
+	versions, err := h.svc.ListVersions(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if versions[0].ID != v2.ID || !versions[0].Active || versions[1].Active {
+		t.Fatalf("active history incorrect: %+v", versions)
+	}
+}
+
+func TestSubworkflowVersionIsPinnedAtRunStart(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	child := strings.ReplaceAll(sequentialApprovalsYAML, "release", "child")
+	childV1, err := h.svc.Publish(ctx, []byte(child))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.Activate(ctx, childV1.ID); err != nil {
+		t.Fatal(err)
+	}
+	parent := `id: parent
+name: Parent
+version: "1"
+concurrency: 1
+nodes:
+  - id: child
+    name: Child
+    type: subworkflow
+    subworkflow:
+      workflowId: child
+dependencies: []
+`
+	parentVersion, err := h.svc.Publish(ctx, []byte(parent))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.svc.Start(ctx, parentVersion.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childV2, err := h.svc.Publish(ctx, []byte(strings.Replace(child, `version: "2026.07"`, `version: "2026.08"`, 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.Activate(ctx, childV2.ID); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := h.svc.GetRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.Version.ID != parentVersion.ID {
+		t.Fatalf("parent version changed: want %s, got %s", parentVersion.ID, restored.Version.ID)
+	}
+}
+
+func TestActivationAndStartAreRaceSafe(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	v1, err := h.svc.Publish(ctx, []byte(sequentialApprovalsYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2, err := h.svc.Publish(ctx, []byte(strings.Replace(sequentialApprovalsYAML, `version: "2026.07"`, `version: "2026.08"`, 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.Activate(ctx, v1.ID); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	errCh := make(chan error, 40)
+	for i := 0; i < 20; i++ {
+		wg.Add(2)
+		go func(versionID string) {
+			defer wg.Done()
+			_, err := h.svc.Activate(ctx, versionID)
+			errCh <- err
+		}([]string{v1.ID, v2.ID}[i%2])
+		go func() {
+			defer wg.Done()
+			run, err := h.svc.StartActive(ctx, "release")
+			if err == nil && run.VersionID != v1.ID && run.VersionID != v2.ID {
+				err = fmt.Errorf("run pinned unknown version %s", run.VersionID)
+			}
+			errCh <- err
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestPublishValidation(t *testing.T) {
 	tests := []struct {
 		name string
@@ -361,7 +554,6 @@ func TestPublishValidation(t *testing.T) {
 		{"cycle", strings.Replace(sequentialApprovals, `{"from":"review","to":"ship"}`, `{"from":"review","to":"ship"},{"from":"ship","to":"review"}`, 1), "cycle"},
 		{"malformed dependency", strings.Replace(sequentialApprovals, `"from":"review"`, `"from":""`, 1), "dependency endpoints are required"},
 		{"unsafe collector path", strings.Replace(singleAgent, `"prompt":"implement it"`, `"prompt":"implement it","collectors":[{"name":"result","type":"file","path":"../result.json"}]`, 1), "safe relative path"},
-		{"missing triggers", strings.Replace(sequentialApprovals, `"triggers":[{"id":"manual","type":"manual"}],`, "", 1), "at least one trigger"},
 		{"duplicate trigger", strings.Replace(sequentialApprovals, `{"id":"manual","type":"manual"}`, `{"id":"manual","type":"manual"},{"id":"manual","type":"manual"}`, 1), `duplicate trigger "manual"`},
 		{"multiple manual triggers", strings.Replace(sequentialApprovals, `{"id":"manual","type":"manual"}`, `{"id":"manual","type":"manual"},{"id":"other","type":"manual"}`, 1), "only one manual trigger"},
 		{"invalid overlap", strings.Replace(sequentialApprovals, `"type":"manual"`, `"type":"manual","overlap":"later"`, 1), "invalid overlap"},

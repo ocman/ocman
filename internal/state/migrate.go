@@ -125,11 +125,13 @@ import (
 //	      in the same transaction as resource-pool capacity and released
 //	      when the attempt settles, so shard/path ownership survives
 //	      restart reconciliation and is visible in the run UI.
+//	31 - workflow version activation. Adds an explicit active version to each
+//	      definition and preserves pinned-version storage for existing runs.
 //
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 30
+const latestSchemaVersion = 31
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -285,6 +287,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV29(tx)
 	case 30:
 		return migrateToV30(tx)
+	case 31:
+		return migrateToV31(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -834,7 +838,6 @@ func migrateToV22(tx *sql.Tx) error {
 	`)
 	return err
 }
-
 func migrateToV23(tx *sql.Tx) error {
 	for _, stmt := range []string{
 		`ALTER TABLE workflow_node_attempt ADD COLUMN exit_code INTEGER`,
@@ -1136,6 +1139,28 @@ func migrateToV30(tx *sql.Tx) error {
 			ON workflow_map_item (run_id, map_node, item_index);
 		CREATE INDEX IF NOT EXISTS idx_workflow_run_parent
 			ON workflow_run (parent_run_id);
+	`)
+	return err
+}
+
+func migrateToV31(tx *sql.Tx) error {
+	if err := addColumnIfMissing(tx, "workflow_definition", "active_version_id", "TEXT REFERENCES workflow_version(id)"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(tx, "workflow_version_node", "subworkflow_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(tx, "workflow_node_run", "pinned_version_id", "TEXT REFERENCES workflow_version(id)"); err != nil {
+		return err
+	}
+	_, err := tx.Exec(`
+		UPDATE workflow_definition
+		SET active_version_id = (
+			SELECT id FROM workflow_version
+			WHERE workflow_id = workflow_definition.id
+			ORDER BY revision DESC LIMIT 1
+		)
+		WHERE active_version_id IS NULL
 	`)
 	return err
 }

@@ -75,6 +75,8 @@ export type {
   LoopTriggerConfig,
   LoopStopConditions,
 	WorkflowVersion,
+	WorkflowDefinition,
+	WorkflowValidation,
 	WorkflowRun,
 	WorkflowRunDetail,
 	WorkflowArtifact,
@@ -126,6 +128,7 @@ import type {
   LoopCreateRequest,
   LoopUpdateRequest,
 	WorkflowVersion,
+	WorkflowValidation,
 	WorkflowRun,
 	WorkflowRunDetail,
 	WorkflowArtifact,
@@ -730,15 +733,13 @@ export const api = {
   },
 	workflows: {
 		versions: (signal?: AbortSignal) => fetchJSON<WorkflowVersion[]>('/api/workflows', signal),
+		validate: (source: string) => postWorkflowSource<WorkflowValidation>('/api/workflows/validate', source),
 		publish: async (source: string): Promise<WorkflowVersion> => {
-			const response = await apiFetch('/api/workflows', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: source,
-			});
-			if (!response.ok) throw new Error(await response.text());
-			return response.json();
+			return postWorkflowSource<WorkflowVersion>('/api/workflows', source);
 		},
+		activate: (versionId: string) => postJSON<WorkflowVersion>(`/api/workflows/${encodeURIComponent(versionId)}/activate`, {}),
+		startActive: (workflowId: string) => postJSON<WorkflowRunDetail>(`/api/workflows/${encodeURIComponent(workflowId)}/start`, {}),
+		exportUrl: (versionId: string) => `/api/workflows/${encodeURIComponent(versionId)}/export`,
 		start: (versionId: string) => postJSON<WorkflowRunDetail>(`/api/workflows/${encodeURIComponent(versionId)}/runs`, {}),
 		runs: (signal?: AbortSignal) => fetchJSON<WorkflowRun[]>('/api/workflow-runs', signal),
 		run: (runId: string, signal?: AbortSignal) => fetchJSON<WorkflowRunDetail>(`/api/workflow-runs/${encodeURIComponent(runId)}`, signal),
@@ -906,3 +907,9 @@ export const api = {
   setJudgeModel: (model: string): Promise<void> =>
     postJSON<void>('/api/settings/judge-model', { model }, { parseJSON: false }),
 };
+
+async function postWorkflowSource<T>(url: string, source: string): Promise<T> {
+	const response = await apiFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/yaml' }, body: source });
+	if (!response.ok) throw new Error(await response.text());
+	return response.json();
+}

@@ -995,8 +995,15 @@ export interface WorkflowVersion {
 	name: string;
 	revision: number;
 	createdAt: number;
+	active: boolean;
 	definition: WorkflowDefinition;
 	triggerStates: WorkflowTriggerState[];
+}
+
+export interface WorkflowValidation {
+	definition: WorkflowDefinition;
+	canonicalJson: WorkflowDefinition;
+	yaml: string;
 }
 
 export interface WorkflowRun {
@@ -1042,6 +1049,7 @@ export interface WorkflowNodeRun {
 	readyAt?: number;
 	completedAt?: number;
 	attempts: WorkflowAttempt[];
+	pinnedVersionId?: string;
 }
 
 /** A held worktree-shard lease owned by one node attempt. */

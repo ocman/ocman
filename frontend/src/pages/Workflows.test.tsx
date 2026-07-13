@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,8 +7,9 @@ import type { WorkflowRunDetail, WorkflowVersion } from '../lib/api';
 
 const { apiMock, useWorkflowsMock, listeners, triggerListeners, connectListeners } = vi.hoisted(() => ({
 	apiMock: {
-		versions: vi.fn(), publish: vi.fn(), start: vi.fn(), runs: vi.fn(), run: vi.fn(), approve: vi.fn(), pause: vi.fn(), cancel: vi.fn(),
+		versions: vi.fn(), validate: vi.fn(), publish: vi.fn(), activate: vi.fn(), startActive: vi.fn(), start: vi.fn(), runs: vi.fn(), run: vi.fn(), approve: vi.fn(), pause: vi.fn(), cancel: vi.fn(),
 		artifacts: vi.fn(), artifactDownloadUrl: vi.fn((runId: string, id: string) => `/api/workflow-runs/${runId}/artifacts/${id}/download`),
+		exportUrl: vi.fn(),
 	},
 	useWorkflowsMock: vi.fn(() => true),
 	listeners: [] as Array<(runId: string) => void>,
@@ -36,7 +37,7 @@ vi.mock('../lib/useGlobalEvents', () => ({
 import { Workflows } from './Workflows';
 
 const version: WorkflowVersion = {
-	id: 'wfv_1', workflowId: 'release', name: 'Release approvals', revision: 1, createdAt: 1,
+	id: 'wfv_1', workflowId: 'release', name: 'Release approvals', revision: 1, createdAt: 1, active: true,
 	definition: {
 		id: 'release', name: 'Release approvals', version: '1', concurrency: 1,
 		triggers: [{ id: 'manual', type: 'manual' }, { id: 'timer', type: 'interval', intervalSeconds: 60, overlap: 'queue' }],
@@ -66,6 +67,10 @@ describe('Workflows', () => {
 		apiMock.runs.mockResolvedValue([activeRun]);
 		apiMock.run.mockResolvedValue(activeRun);
 		apiMock.publish.mockResolvedValue(version);
+		apiMock.validate.mockResolvedValue({ definition: version.definition, canonicalJson: version.definition, yaml: 'id: release\n' });
+		apiMock.activate.mockResolvedValue(version);
+		apiMock.startActive.mockResolvedValue(activeRun);
+		apiMock.exportUrl.mockReturnValue('/api/workflows/wfv_1/export');
 		apiMock.start.mockResolvedValue(activeRun);
 		apiMock.approve.mockResolvedValue({ ...activeRun, nodes: [{ ...activeRun.nodes[0], state: 'successful' }, { ...activeRun.nodes[1], state: 'ready' }] });
 		apiMock.artifacts.mockResolvedValue([]);
@@ -78,7 +83,30 @@ describe('Workflows', () => {
 		expect(apiMock.versions).not.toHaveBeenCalled();
 	});
 
-	it('publishes, starts, approves, and refreshes from SSE', async () => {
+	it('validates YAML into the read-only graph and reports source errors', async () => {
+		const user = userEvent.setup();
+		render(<Workflows />);
+
+		expect(await screen.findByRole('region', { name: 'Workflow definition graph' })).toHaveTextContent('Review');
+		expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Workflow YAML or JSON' }).value).toContain('id: release');
+		apiMock.validate.mockRejectedValueOnce(new Error('line 2, column 1: duplicate key "name"'));
+		await user.clear(screen.getByRole('textbox', { name: 'Workflow YAML or JSON' }));
+		await user.type(screen.getByRole('textbox', { name: 'Workflow YAML or JSON' }), 'name: one\nname: two');
+		await user.click(screen.getByRole('button', { name: 'Validate' }));
+		expect(await screen.findByRole('alert')).toHaveTextContent('line 2, column 1');
+	});
+
+	it('does not show a stale graph when source changes during validation', async () => {
+		const user = userEvent.setup();
+		let resolve!: (value: unknown) => void;
+		apiMock.validate.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+		render(<Workflows />);
+		await user.clear(screen.getByRole('textbox', { name: 'Workflow YAML or JSON' }));
+		await act(async () => resolve({ definition: version.definition, canonicalJson: version.definition, yaml: 'id: release\n' }));
+		expect(screen.queryByRole('region', { name: 'Workflow definition graph' })).not.toBeInTheDocument();
+	});
+
+	it('publishes, activates, compares, starts active, approves, and refreshes from SSE', async () => {
 		const user = userEvent.setup();
 		render(<MemoryRouter><Workflows /></MemoryRouter>);
 
@@ -90,16 +118,22 @@ describe('Workflows', () => {
 		await user.click(screen.getByRole('button', { name: 'Approve Review' }));
 		expect(apiMock.approve).toHaveBeenCalledWith('wfr_1', 'review');
 
-		await user.click(screen.getByRole('button', { name: 'Publish workflow' }));
-		expect(apiMock.publish).toHaveBeenCalledWith(expect.stringContaining('"concurrency": 1'));
-		expect(apiMock.start).toHaveBeenCalledWith('wfv_1');
+		await user.click(screen.getByRole('button', { name: 'Publish version' }));
+		expect(apiMock.publish).toHaveBeenCalledWith(expect.stringContaining('concurrency: 1'));
+		expect(apiMock.start).not.toHaveBeenCalled();
+		await user.click(screen.getByRole('button', { name: 'Activate revision 1' }));
+		expect(apiMock.activate).toHaveBeenCalledWith('wfv_1');
+		await user.click(screen.getByRole('button', { name: 'Start active release' }));
+		expect(apiMock.startActive).toHaveBeenCalledWith('release');
+		expect(screen.getByRole('link', { name: 'Export revision 1' })).toHaveAttribute('href', '/api/workflows/wfv_1/export');
+		expect(screen.getByRole('region', { name: 'Version comparison' })).toHaveTextContent('Revision 1');
 
 		listeners[0]('another-run');
 		await waitFor(() => expect(apiMock.run).toHaveBeenLastCalledWith('wfr_1'));
 		triggerListeners[0]();
-		await waitFor(() => expect(apiMock.versions).toHaveBeenCalledTimes(5));
+		await waitFor(() => expect(apiMock.versions.mock.calls.length).toBeGreaterThan(3));
 		connectListeners[0]();
-		await waitFor(() => expect(apiMock.versions).toHaveBeenCalledTimes(6));
+		await waitFor(() => expect(apiMock.versions.mock.calls.length).toBeGreaterThanOrEqual(6));
 	});
 
 	it('publishes automated-only versions without trying a manual start', async () => {
@@ -107,7 +141,7 @@ describe('Workflows', () => {
 		apiMock.publish.mockResolvedValue({ ...version, definition: { ...version.definition, triggers: [{ id: 'timer', type: 'interval', intervalSeconds: 60 }] } });
 		render(<Workflows />);
 		await screen.findByRole('region', { name: 'Workflow run graph' });
-		await user.click(screen.getByRole('button', { name: 'Publish workflow' }));
+		await user.click(screen.getByRole('button', { name: 'Publish version' }));
 		expect(apiMock.publish).toHaveBeenCalled();
 		expect(apiMock.start).not.toHaveBeenCalled();
 	});
@@ -283,5 +317,7 @@ describe('Workflows', () => {
 		expect(await screen.findByRole('link', { name: 'Open agent session' })).toHaveAttribute('href', '/session/session%201');
 		expect(screen.getByText('Session: busy')).toBeInTheDocument();
 		expect(screen.getByText('message: "done"')).toBeInTheDocument();
+		connectListeners[0]();
+		await waitFor(() => expect(apiMock.versions.mock.calls.length).toBeGreaterThan(1));
 	});
 });

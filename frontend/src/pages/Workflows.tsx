@@ -1,23 +1,29 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, type WorkflowArtifact, type WorkflowMapItemRun, type WorkflowRun, type WorkflowRunDetail, type WorkflowVersion } from '../lib/api';
+import { api, type WorkflowArtifact, type WorkflowDefinition, type WorkflowMapItemRun, type WorkflowRun, type WorkflowRunDetail, type WorkflowValidation, type WorkflowVersion } from '../lib/api';
 import { useWorkflows } from '../lib/useCapabilities';
 import { onSseConnect, onWorkflowRunUpdated, onWorkflowTriggerUpdated } from '../lib/useGlobalEvents';
 import { usePageTitle } from '../lib/headerContext';
 import './Workflows.css';
 
-const EXAMPLE = `{
-  "id": "release",
-  "name": "Release approvals",
-  "version": "1",
-  "concurrency": 1,
-  "triggers": [{"id": "manual", "type": "manual"}],
-  "nodes": [
-    {"id": "review", "name": "Review", "type": "approval"},
-    {"id": "ship", "name": "Ship", "type": "approval"}
-  ],
-  "dependencies": [{"from": "review", "to": "ship"}]
-}`;
+const EXAMPLE = `id: release
+name: Release approvals
+version: "1"
+concurrency: 1
+triggers:
+  - id: manual
+    type: manual
+nodes:
+  - id: review
+    name: Review
+    type: approval
+  - id: ship
+    name: Ship
+    type: approval
+dependencies:
+  - from: review
+    to: ship
+`;
 
 export function Workflows() {
 	usePageTitle('Workflows');
@@ -27,7 +33,11 @@ export function Workflows() {
 	const [runs, setRuns] = useState<WorkflowRun[]>([]);
 	const [selected, setSelected] = useState<WorkflowRunDetail>();
 	const selectedID = useRef<string | undefined>(undefined);
+	const validationID = useRef(0);
 	const [error, setError] = useState('');
+	const [validated, setValidated] = useState<WorkflowValidation>();
+	const [compareFrom, setCompareFrom] = useState('');
+	const [compareTo, setCompareTo] = useState('');
 
 	function select(run: WorkflowRunDetail) {
 		selectedID.current = run.id;
@@ -38,6 +48,8 @@ export function Workflows() {
 		const [nextVersions, nextRuns] = await Promise.all([api.workflows.versions(), api.workflows.runs()]);
 		setVersions(nextVersions);
 		setRuns(nextRuns);
+		setCompareFrom((current) => current || nextVersions[1]?.id || nextVersions[0]?.id || '');
+		setCompareTo((current) => current || nextVersions[0]?.id || '');
 		const id = selectedID.current ?? nextRuns[0]?.id;
 		if (id) select(await api.workflows.run(id));
 	}
@@ -45,6 +57,7 @@ export function Workflows() {
 	useEffect(() => {
 		if (!enabled) return;
 		void refresh().catch((reason) => setError(String(reason)));
+		void validate();
 		const unsubscribeRun = onWorkflowRunUpdated(() => {
 			void refresh().catch((reason) => setError(String(reason)));
 		});
@@ -59,6 +72,46 @@ export function Workflows() {
 	// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [enabled]);
 
+	async function validate() {
+		const requestID = ++validationID.current;
+		setError('');
+		try {
+			const result = await api.workflows.validate(source);
+			if (requestID === validationID.current) setValidated(result);
+		} catch (reason) {
+			if (requestID !== validationID.current) return;
+			setValidated(undefined);
+			setError(reason instanceof Error ? reason.message : String(reason));
+		}
+	}
+
+	function editSource(value: string) {
+		validationID.current++;
+		setSource(value);
+		setValidated(undefined);
+		setError('');
+	}
+
+	async function publish() {
+		setError('');
+		try {
+			await api.workflows.publish(source);
+			await refresh();
+		} catch (reason) {
+			setError(reason instanceof Error ? reason.message : String(reason));
+		}
+	}
+
+	async function activate(id: string) {
+		setError('');
+		try {
+			await api.workflows.activate(id);
+			await refresh();
+		} catch (reason) {
+			setError(reason instanceof Error ? reason.message : String(reason));
+		}
+	}
+
 	async function mutate(action: () => Promise<WorkflowRunDetail>) {
 		setError('');
 		try {
@@ -70,32 +123,23 @@ export function Workflows() {
 		}
 	}
 
-	async function publish() {
-		setError('');
-		try {
-			const version = await api.workflows.publish(source);
-			if (version.definition.triggers.some((trigger) => trigger.type === 'manual')) select(await api.workflows.start(version.id));
-			await refresh();
-		} catch (reason) {
-			setError(reason instanceof Error ? reason.message : String(reason));
-		}
-	}
-
 	if (!enabled) return <main className="workflow-page"><p>Workflows are unavailable on this host.</p></main>;
 
 	return (
 		<main className="workflow-page" data-testid="workflows-page">
 			<section className="workflow-author" aria-label="Workflow authoring">
-				<div><span className="workflow-kicker">Immutable JSON definitions</span><h1>Workflows</h1><p>Publish a version, then start it manually or let its durable triggers create pinned runs, and inspect each durable approval, command, or agent attempt.</p></div>
-				<label>Workflow JSON<textarea aria-label="Workflow JSON" value={source} onChange={(event) => setSource(event.target.value)} spellCheck={false} /></label>
-				<button type="button" onClick={() => void publish()}>Publish workflow</button>
+				<div><span className="workflow-kicker">Immutable YAML or JSON definitions</span><h1>Workflow versions</h1><p>Validate a definition, inspect its graph, then publish and activate an immutable version.</p></div>
+				<label>Workflow YAML or JSON<textarea aria-label="Workflow YAML or JSON" value={source} onChange={(event) => editSource(event.target.value)} spellCheck={false} /></label>
+				<div className="workflow-controls"><button type="button" onClick={() => void validate()}>Validate</button><button type="button" onClick={() => void publish()}>Publish version</button></div>
 				{error && <p role="alert">{error}</p>}
+				{validated && <DefinitionGraph definition={validated.definition} />}
 			</section>
 
 			<section className="workflow-history" aria-label="Workflow history">
-				<div><h2>Published versions</h2>{versions.map((version) => <div className="workflow-version" key={version.id}>{version.definition.triggers.some((trigger) => trigger.type === 'manual') ? <button type="button" onClick={() => void mutate(() => api.workflows.start(version.id))}>{version.name} <small>rev {version.revision} · {version.definition.version}</small></button> : <div className="workflow-version-title">{version.name} <small>rev {version.revision} · {version.definition.version}</small></div>}{version.triggerStates.map((trigger) => <div className="workflow-trigger" key={trigger.id}><strong>{trigger.id} · {trigger.type} · {trigger.overlap ?? 'skip'}</strong><small>Next {formatTime(trigger.nextCheckAt)} · Last {formatTime(trigger.lastFiredAt)} ({trigger.lastDecision ?? 'never'}) · {trigger.queued} queued{trigger.lastRunId ? ` · run ${trigger.lastRunId}` : ''}</small></div>)}</div>)}</div>
+				<div><h2>Published versions</h2>{versions.map((version) => <article key={version.id}><strong>{version.name}</strong> <small>rev {version.revision} · {version.definition.version}{version.active ? ' · active' : ''}</small><div className="workflow-controls"><button type="button" onClick={() => void activate(version.id)}>Activate revision {version.revision}</button><a href={api.workflows.exportUrl(version.id)} download={`${version.workflowId}-v${version.revision}.yaml`}>Export revision {version.revision}</a>{version.active && <button type="button" onClick={() => void mutate(() => api.workflows.startActive(version.workflowId))}>Start active {version.workflowId}</button>}</div>{version.triggerStates.map((trigger) => <div className="workflow-trigger" key={trigger.id}><strong>{trigger.id} · {trigger.type} · {trigger.overlap ?? 'skip'}</strong><small>Next {formatTime(trigger.nextCheckAt)} · Last {formatTime(trigger.lastFiredAt)} ({trigger.lastDecision ?? 'never'}) · {trigger.queued} queued{trigger.lastRunId ? ` · run ${trigger.lastRunId}` : ''}</small></div>)}</article>)}</div>
 				<div><h2>Runs</h2>{runs.map((run) => <button type="button" aria-pressed={selected?.id === run.id} key={run.id} onClick={() => void api.workflows.run(run.id).then(select)}>{run.workflowId} <small>{run.state}</small></button>)}</div>
 			</section>
+			<VersionComparison versions={versions} from={compareFrom} to={compareTo} onFrom={setCompareFrom} onTo={setCompareTo} />
 
 			{selected && <RunView run={selected} mutate={mutate} onSelectRun={(id) => void api.workflows.run(id).then(select).catch((reason) => setError(String(reason)))} />}
 		</main>
@@ -127,6 +171,17 @@ function RunView({ run, mutate, onSelectRun }: { run: WorkflowRunDetail; mutate:
 			<ArtifactList runId={run.id} artifacts={artifacts} />
 		</section>
 	);
+}
+
+function DefinitionGraph({ definition }: { definition: WorkflowDefinition }) {
+	return <div className="workflow-graph" role="region" aria-label="Workflow definition graph">{definition.nodes.map((node) => <article key={node.id}><small>{node.type} · {node.id}</small><h3>{node.name}</h3>{node.subworkflow && <p>Uses {node.subworkflow.workflowId}</p>}<p>{definition.dependencies.filter((dependency) => dependency.to === node.id).map((dependency) => dependency.from).join(', ') || 'Entry node'}</p></article>)}</div>;
+}
+
+function VersionComparison({ versions, from, to, onFrom, onTo }: { versions: WorkflowVersion[]; from: string; to: string; onFrom: (id: string) => void; onTo: (id: string) => void }) {
+	if (!versions.length) return null;
+	const left = versions.find((version) => version.id === from) ?? versions[0];
+	const right = versions.find((version) => version.id === to) ?? versions[0];
+	return <section className="workflow-run" role="region" aria-label="Version comparison"><h2>Compare versions</h2><div className="workflow-controls"><label>Compare from<select aria-label="Compare from" value={left.id} onChange={(event) => onFrom(event.target.value)}>{versions.map((version) => <option key={version.id} value={version.id}>Revision {version.revision}</option>)}</select></label><label>Compare to<select aria-label="Compare to" value={right.id} onChange={(event) => onTo(event.target.value)}>{versions.map((version) => <option key={version.id} value={version.id}>Revision {version.revision}</option>)}</select></label></div><div className="workflow-history"><pre>Revision {left.revision}{'\n'}{JSON.stringify(left.definition, null, 2)}</pre><pre>Revision {right.revision}{'\n'}{JSON.stringify(right.definition, null, 2)}</pre></div></section>;
 }
 
 function RunNode({ run, node, mutate, onSelectRun }: { run: WorkflowRunDetail; node: WorkflowRunDetail['nodes'][number]; mutate: (action: () => Promise<WorkflowRunDetail>) => Promise<void>; onSelectRun: (id: string) => void }) {

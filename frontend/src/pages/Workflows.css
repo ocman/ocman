@@ -6,6 +6,8 @@
 .workflow-author textarea { min-height: 230px; resize: vertical; font: 13px/1.5 var(--font-mono); color: var(--text); background: var(--bg); border: 1px solid var(--border); padding: 12px; }
 .workflow-author > button { justify-self: start; padding: 8px 14px; }
 .workflow-author [role="alert"] { color: var(--danger); }
+.workflow-author .workflow-graph { grid-column: 1 / -1; gap: 12px; }
+.workflow-author .workflow-graph article { min-width: 210px; border: 1px solid var(--border); background: var(--bg); padding: 12px; }
 .workflow-kicker { font: 11px var(--font-mono); text-transform: uppercase; letter-spacing: .12em; color: var(--text-muted); }
 .workflow-history { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 .workflow-history > div { display: grid; align-content: start; gap: 7px; }
@@ -16,6 +18,8 @@
 .workflow-trigger { display: grid; gap: 3px; border-left: 2px solid var(--border); padding: 4px 8px; font: 12px var(--font-mono); }
 .workflow-trigger small { color: var(--text-muted); }
 .workflow-run-trigger { padding: 9px; background: var(--bg); border: 1px solid var(--border); font: 12px var(--font-mono); }
+.workflow-history article { border: 1px solid var(--border); padding: 10px; }
+.workflow-history pre { min-width: 0; overflow: auto; background: var(--bg); padding: 10px; }
 .workflow-run header { display: flex; justify-content: space-between; gap: 18px; }
 .workflow-controls { display: flex; gap: 8px; align-items: start; }
 .workflow-graph { display: flex; min-height: 190px; overflow-x: auto; align-items: center; padding: 18px 2px; }

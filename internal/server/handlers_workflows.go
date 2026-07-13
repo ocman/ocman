@@ -43,6 +43,23 @@ func (s *Server) handleWorkflows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/workflows"), "/")
+	if rest == "validate" {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		source, ok := readWorkflowSource(w, r)
+		if !ok {
+			return
+		}
+		validated, err := s.workflowSvc().Validate(r.Context(), source)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, validated)
+		return
+	}
 	if rest == "" {
 		switch r.Method {
 		case http.MethodGet:
@@ -53,13 +70,11 @@ func (s *Server) handleWorkflows(w http.ResponseWriter, r *http.Request) {
 			}
 			writeJSON(w, versions)
 		case http.MethodPost:
-			r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
-			source, err := io.ReadAll(r.Body)
-			if err != nil {
-				http.Error(w, "reading body: "+err.Error(), http.StatusBadRequest)
+			source, ok := readWorkflowSource(w, r)
+			if !ok {
 				return
 			}
-			version, err := s.workflowSvc().PublishJSON(r.Context(), source)
+			version, err := s.workflowSvc().Publish(r.Context(), source)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
@@ -72,32 +87,55 @@ func (s *Server) handleWorkflows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	versionID, action, extra := cutWorkflowPath(rest)
-	if r.Method == http.MethodPost && versionID == "validate" && action == "" {
-		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
-		source, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, "reading body: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		definition, err := s.workflowSvc().ValidateJSON(r.Context(), source)
+	if extra != "" {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	switch {
+	case r.Method == http.MethodPost && action == "activate":
+		version, err := s.workflowSvc().Activate(r.Context(), versionID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, definition)
-		return
-	}
-	if r.Method != http.MethodPost || action != "runs" || extra != "" {
+		writeJSON(w, version)
+	case r.Method == http.MethodGet && action == "export":
+		source, err := s.workflowSvc().ExportYAML(r.Context(), versionID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/yaml")
+		_, _ = io.WriteString(w, source)
+	case r.Method == http.MethodPost && (action == "runs" || action == "start"):
+		var (
+			run workflows.RunDetail
+			err error
+		)
+		if action == "runs" {
+			run, err = s.workflowSvc().Start(r.Context(), versionID)
+		} else {
+			run, err = s.workflowSvc().StartActive(r.Context(), versionID)
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		writeJSON(w, run)
+	default:
 		http.Error(w, "not found", http.StatusNotFound)
-		return
 	}
-	run, err := s.workflowSvc().Start(r.Context(), versionID)
+}
+
+func readWorkflowSource(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+	source, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+		http.Error(w, "reading body: "+err.Error(), http.StatusBadRequest)
+		return nil, false
 	}
-	w.WriteHeader(http.StatusCreated)
-	writeJSON(w, run)
+	return source, true
 }
 
 func (s *Server) handleWorkflowRuns(w http.ResponseWriter, r *http.Request) {

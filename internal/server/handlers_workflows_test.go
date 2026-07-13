@@ -186,6 +186,61 @@ func TestWorkflowPublishLimitsBody(t *testing.T) {
 	}
 }
 
+func TestWorkflowValidateActivateExportAndStartActive(t *testing.T) {
+	srv := newWorkflowTestServer(t)
+	yamlSource := `id: release
+name: Release
+version: "1"
+concurrency: 1
+nodes:
+  - id: review
+    name: Review
+    type: approval
+dependencies: []
+`
+
+	rec := httptest.NewRecorder()
+	srv.handleWorkflows(rec, httptest.NewRequest(http.MethodPost, "/api/workflows/validate", strings.NewReader(yamlSource)))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"canonicalJson"`) {
+		t.Fatalf("validate: %d %s", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	srv.handleWorkflows(rec, httptest.NewRequest(http.MethodPost, "/api/workflows", strings.NewReader(yamlSource)))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("publish: %d %s", rec.Code, rec.Body.String())
+	}
+	var version workflows.Version
+	if err := json.Unmarshal(rec.Body.Bytes(), &version); err != nil {
+		t.Fatal(err)
+	}
+
+	rec = httptest.NewRecorder()
+	srv.handleWorkflows(rec, httptest.NewRequest(http.MethodPost, "/api/workflows/"+version.ID+"/activate", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"active":true`) {
+		t.Fatalf("activate: %d %s", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	srv.handleWorkflows(rec, httptest.NewRequest(http.MethodGet, "/api/workflows/"+version.ID+"/export", nil))
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "application/yaml" || !strings.Contains(rec.Body.String(), "triggers:\n  - id: manual") {
+		t.Fatalf("export: %d %q", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	srv.handleWorkflows(rec, httptest.NewRequest(http.MethodPost, "/api/workflows/release/start", nil))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("start active: %d %s", rec.Code, rec.Body.String())
+	}
+	var run workflows.RunDetail
+	if err := json.Unmarshal(rec.Body.Bytes(), &run); err != nil {
+		t.Fatal(err)
+	}
+	if run.VersionID != version.ID {
+		t.Fatalf("active run not pinned: %+v", run.Run)
+	}
+}
+
 func TestWorkflowRESTPauseAndCancel(t *testing.T) {
 	srv := newWorkflowTestServer(t)
 	version, err := srv.workflowSvc().PublishJSON(t.Context(), []byte(workflowRequest))

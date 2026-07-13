@@ -32,8 +32,8 @@ const DefaultRetentionDays = 30
 // resolved value. Resolution happens on the owning host during attempt
 // startup and resolved values are redacted from logs/artifacts.
 type SecretRef struct {
-	Name string `json:"name"`
-	Env  string `json:"env"`
+	Name string `json:"name" yaml:"name"`
+	Env  string `json:"env" yaml:"env"`
 }
 
 // Artifact is the API view of one immutable artifact metadata record.

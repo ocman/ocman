@@ -16,15 +16,17 @@ type WorkflowVersion struct {
 	Concurrency     int
 	RetentionDays   int
 	CreatedAt       int64
+	Active          bool
 	Nodes           []WorkflowNode
 	Dependencies    []WorkflowDependency
 }
 
 type WorkflowNode struct {
-	ID       string
-	Name     string
-	Type     string
-	Position int
+	ID            string
+	Name          string
+	Type          string
+	Position      int
+	SubworkflowID string
 }
 
 type WorkflowDependency struct {
@@ -49,14 +51,15 @@ type WorkflowRun struct {
 }
 
 type WorkflowNodeRun struct {
-	NodeID      string
-	Name        string
-	Type        string
-	State       string
-	Position    int
-	ReadyAt     int64
-	CompletedAt int64
-	Attempts    []WorkflowAttempt
+	NodeID          string
+	Name            string
+	Type            string
+	State           string
+	Position        int
+	ReadyAt         int64
+	CompletedAt     int64
+	PinnedVersionID string
+	Attempts        []WorkflowAttempt
 }
 
 type WorkflowAttempt struct {
@@ -210,7 +213,7 @@ func (d *DB) InsertWorkflowVersion(v WorkflowVersion) (WorkflowVersion, error) {
 		return WorkflowVersion{}, fmt.Errorf("inserting workflow version: %w", err)
 	}
 	for _, node := range v.Nodes {
-		if _, err = tx.Exec(`INSERT INTO workflow_version_node (version_id, node_id, name, type, position) VALUES (?, ?, ?, ?, ?)`, v.ID, node.ID, node.Name, node.Type, node.Position); err != nil {
+		if _, err = tx.Exec(`INSERT INTO workflow_version_node (version_id, node_id, name, type, position, subworkflow_id) VALUES (?, ?, ?, ?, ?, ?)`, v.ID, node.ID, node.Name, node.Type, node.Position, node.SubworkflowID); err != nil {
 			return WorkflowVersion{}, fmt.Errorf("inserting workflow node: %w", err)
 		}
 	}
@@ -218,6 +221,12 @@ func (d *DB) InsertWorkflowVersion(v WorkflowVersion) (WorkflowVersion, error) {
 		if _, err = tx.Exec(`INSERT INTO workflow_version_dependency (version_id, from_node, to_node) VALUES (?, ?, ?)`, v.ID, dep.From, dep.To); err != nil {
 			return WorkflowVersion{}, fmt.Errorf("inserting workflow dependency: %w", err)
 		}
+	}
+	if v.Revision == 1 {
+		if _, err = tx.Exec(`UPDATE workflow_definition SET active_version_id = ? WHERE id = ?`, v.ID, v.WorkflowID); err != nil {
+			return WorkflowVersion{}, fmt.Errorf("activating initial workflow version: %w", err)
+		}
+		v.Active = true
 	}
 	if err = tx.Commit(); err != nil {
 		return WorkflowVersion{}, fmt.Errorf("committing workflow publish: %w", err)
@@ -229,9 +238,11 @@ func (d *DB) GetWorkflowVersion(id string) (*WorkflowVersion, error) {
 	var v WorkflowVersion
 	err := d.db.QueryRow(`
 		SELECT v.id, v.workflow_id, v.name, v.revision, v.metadata_version,
-		       v.definition_json, v.concurrency, v.retention_days, v.created_at
+		       v.definition_json, v.concurrency, v.retention_days, v.created_at,
+		       COALESCE(d.active_version_id = v.id, 0)
 		FROM workflow_version v
-		WHERE v.id = ?`, id).Scan(&v.ID, &v.WorkflowID, &v.Name, &v.Revision, &v.MetadataVersion, &v.DefinitionJSON, &v.Concurrency, &v.RetentionDays, &v.CreatedAt)
+		JOIN workflow_definition d ON d.id = v.workflow_id
+		WHERE v.id = ?`, id).Scan(&v.ID, &v.WorkflowID, &v.Name, &v.Revision, &v.MetadataVersion, &v.DefinitionJSON, &v.Concurrency, &v.RetentionDays, &v.CreatedAt, &v.Active)
 	if err != nil {
 		return nil, fmt.Errorf("getting workflow version: %w", err)
 	}
@@ -246,23 +257,13 @@ func (d *DB) GetWorkflowVersion(id string) (*WorkflowVersion, error) {
 	return &v, nil
 }
 
-func (d *DB) GetActiveWorkflowVersion(workflowID string) (*WorkflowVersion, error) {
-	var id string
-	err := d.db.QueryRow(`
-		SELECT v.id FROM workflow_version v
-		JOIN workflow_definition d ON d.id = v.workflow_id AND d.current_revision = v.revision
-		WHERE d.id = ?`, workflowID).Scan(&id)
-	if err != nil {
-		return nil, fmt.Errorf("getting active workflow version: %w", err)
-	}
-	return d.GetWorkflowVersion(id)
-}
-
 func (d *DB) ListWorkflowVersions() ([]WorkflowVersion, error) {
 	rows, err := d.db.Query(`
 		SELECT v.id, v.workflow_id, v.name, v.revision, v.metadata_version,
-		       v.definition_json, v.concurrency, v.retention_days, v.created_at
+		       v.definition_json, v.concurrency, v.retention_days, v.created_at,
+		       COALESCE(d.active_version_id = v.id, 0)
 		FROM workflow_version v
+		JOIN workflow_definition d ON d.id = v.workflow_id
 		ORDER BY v.created_at DESC, v.revision DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("listing workflow versions: %w", err)
@@ -271,7 +272,7 @@ func (d *DB) ListWorkflowVersions() ([]WorkflowVersion, error) {
 	var out []WorkflowVersion
 	for rows.Next() {
 		var v WorkflowVersion
-		if err := rows.Scan(&v.ID, &v.WorkflowID, &v.Name, &v.Revision, &v.MetadataVersion, &v.DefinitionJSON, &v.Concurrency, &v.RetentionDays, &v.CreatedAt); err != nil {
+		if err := rows.Scan(&v.ID, &v.WorkflowID, &v.Name, &v.Revision, &v.MetadataVersion, &v.DefinitionJSON, &v.Concurrency, &v.RetentionDays, &v.CreatedAt, &v.Active); err != nil {
 			return nil, fmt.Errorf("scanning workflow version: %w", err)
 		}
 		out = append(out, v)
@@ -280,7 +281,7 @@ func (d *DB) ListWorkflowVersions() ([]WorkflowVersion, error) {
 }
 
 func (d *DB) workflowVersionNodes(id string) ([]WorkflowNode, error) {
-	rows, err := d.db.Query(`SELECT node_id, name, type, position FROM workflow_version_node WHERE version_id = ? ORDER BY position`, id)
+	rows, err := d.db.Query(`SELECT node_id, name, type, position, subworkflow_id FROM workflow_version_node WHERE version_id = ? ORDER BY position`, id)
 	if err != nil {
 		return nil, fmt.Errorf("listing workflow nodes: %w", err)
 	}
@@ -288,12 +289,32 @@ func (d *DB) workflowVersionNodes(id string) ([]WorkflowNode, error) {
 	var out []WorkflowNode
 	for rows.Next() {
 		var node WorkflowNode
-		if err := rows.Scan(&node.ID, &node.Name, &node.Type, &node.Position); err != nil {
+		if err := rows.Scan(&node.ID, &node.Name, &node.Type, &node.Position, &node.SubworkflowID); err != nil {
 			return nil, fmt.Errorf("scanning workflow node: %w", err)
 		}
 		out = append(out, node)
 	}
 	return out, rows.Err()
+}
+
+func (d *DB) ActivateWorkflowVersion(id string, now int64) (*WorkflowVersion, error) {
+	res, err := d.db.Exec(`UPDATE workflow_definition SET active_version_id = ?, updated_at = ? WHERE id = (SELECT workflow_id FROM workflow_version WHERE id = ?)`, id, now, id)
+	if err != nil {
+		return nil, fmt.Errorf("activating workflow version: %w", err)
+	}
+	changed, err := res.RowsAffected()
+	if err != nil || changed != 1 {
+		return nil, fmt.Errorf("workflow version %q not found", id)
+	}
+	return d.GetWorkflowVersion(id)
+}
+
+func (d *DB) GetActiveWorkflowVersion(workflowID string) (*WorkflowVersion, error) {
+	var id string
+	if err := d.db.QueryRow(`SELECT active_version_id FROM workflow_definition WHERE id = ? AND active_version_id IS NOT NULL`, workflowID).Scan(&id); err != nil {
+		return nil, fmt.Errorf("getting active workflow version: %w", err)
+	}
+	return d.GetWorkflowVersion(id)
 }
 
 func (d *DB) workflowVersionDependencies(id string) ([]WorkflowDependency, error) {
@@ -337,7 +358,7 @@ func insertWorkflowRun(exec workflowRunExecer, run WorkflowRun) error {
 		return fmt.Errorf("inserting workflow run: %w", err)
 	}
 	for _, node := range run.Nodes {
-		if _, err := exec.Exec(`INSERT INTO workflow_node_run (run_id, node_id, state, position, ready_at) VALUES (?, ?, ?, ?, ?)`, run.ID, node.NodeID, node.State, node.Position, nullableInt(node.ReadyAt)); err != nil {
+		if _, err := exec.Exec(`INSERT INTO workflow_node_run (run_id, node_id, state, position, ready_at, pinned_version_id) VALUES (?, ?, ?, ?, ?, ?)`, run.ID, node.NodeID, node.State, node.Position, nullableInt(node.ReadyAt), nullableString(node.PinnedVersionID)); err != nil {
 			return fmt.Errorf("inserting workflow node run: %w", err)
 		}
 		if node.State == "ready" {
@@ -393,7 +414,7 @@ func (d *DB) GetWorkflowRun(id string) (*WorkflowRun, error) {
 	}
 	rows, err := d.db.Query(`
 		SELECT nr.node_id, n.name, n.type, nr.state, nr.position,
-		       COALESCE(nr.ready_at, 0), COALESCE(nr.completed_at, 0)
+		       COALESCE(nr.ready_at, 0), COALESCE(nr.completed_at, 0), COALESCE(nr.pinned_version_id, '')
 		FROM workflow_node_run nr
 		JOIN workflow_version_node n ON n.version_id = ? AND n.node_id = nr.node_id
 		WHERE nr.run_id = ? ORDER BY nr.position`, run.VersionID, id)
@@ -402,7 +423,7 @@ func (d *DB) GetWorkflowRun(id string) (*WorkflowRun, error) {
 	}
 	for rows.Next() {
 		var node WorkflowNodeRun
-		if err := rows.Scan(&node.NodeID, &node.Name, &node.Type, &node.State, &node.Position, &node.ReadyAt, &node.CompletedAt); err != nil {
+		if err := rows.Scan(&node.NodeID, &node.Name, &node.Type, &node.State, &node.Position, &node.ReadyAt, &node.CompletedAt, &node.PinnedVersionID); err != nil {
 			return nil, fmt.Errorf("scanning workflow node run: %w", err)
 		}
 		run.Nodes = append(run.Nodes, node)
