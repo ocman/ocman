@@ -787,6 +787,34 @@ describe('SessionDetail — permission prompt', () => {
     }, { timeout: 4000 });
   });
 
+  it('renders a child prompt even when its worktree is not marked live', async () => {
+    const child = makeSession({
+      id: 'sess_child',
+      parentId: 'sess_parent',
+      liveConnection: false,
+      pendingPermission: true,
+    });
+    const permission = { ...permPayload, sessionID: child.id };
+    const handle = renderSessionPage({
+      sessionId: child.id,
+      detail: makeSessionDetail(child),
+      sessions: [child],
+      storeOverrides: {
+        listPermissions: vi.fn().mockResolvedValue([permission]),
+      },
+    });
+
+    await flushPromises(8);
+    await waitFor(() => {
+      expect(handle.result.container.textContent).toContain('Run shell command');
+    }, { timeout: 4000 });
+
+    fireEvent.click(screen.getByRole('button', { name: /allow once/i }));
+    await waitFor(() => {
+      expect(handle.store.respondPermission).toHaveBeenCalledWith(child.id, permission.id, 'once');
+    });
+  });
+
   it('posts the reply when Allow once is clicked', async () => {
     const handle = renderSessionPage({
       sessionId: 'sess_1',

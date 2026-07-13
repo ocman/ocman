@@ -109,7 +109,7 @@ export function usePromptHandlers({
   const [questionError, setQuestionError] = useState<string | null>(null);
 
   const handlePermissionReply = useCallback(async (reply: 'once' | 'always' | 'reject') => {
-    if (!pendingPermission || answeringPermission || !portAvailable || !caps.respondPermission || !session) return;
+    if (!pendingPermission || answeringPermission || !caps.respondPermission || !session) return;
     setPermissionError(null);
     setAnsweringPermission(true);
     const repliedId = pendingPermission.permissionId;
@@ -142,7 +142,7 @@ export function usePromptHandlers({
     } finally {
       setAnsweringPermission(false);
     }
-  }, [answeringPermission, caps.respondPermission, pendingPermission, portAvailable, respondPermission, session, clearPrompt]);
+  }, [answeringPermission, caps.respondPermission, pendingPermission, respondPermission, session, clearPrompt]);
 
   const handleQuestionReply = useCallback(async (answers: string[][]) => {
     if (!pendingQuestion || answeringQuestion || !portAvailable || !caps.respondQuestion || !session) return;

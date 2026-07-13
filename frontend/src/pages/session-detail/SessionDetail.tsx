@@ -1381,7 +1381,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                       {session.notice && (
                         <RateLimitBanner notice={session.notice} />
                       )}
-                      {pendingPermission && portAvailable && caps.respondPermission ? (
+                      {pendingPermission && caps.respondPermission ? (
                         <PermissionPrompt
                           permission={pendingPermission}
                           onReply={handlePermissionReply}
