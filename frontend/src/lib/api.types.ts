@@ -804,6 +804,73 @@ export interface CapabilitiesResponse {
    * /loop palette command are gated on this.
    */
   agentLoops?: { enabled: boolean };
+	/** Durable host-local workflow engine backed by state.db. */
+	workflows?: { enabled: boolean };
+}
+
+export type WorkflowNodeState = 'pending' | 'ready' | 'successful' | 'canceled';
+export type WorkflowRunState = 'active' | 'paused' | 'successful' | 'canceled';
+
+export interface WorkflowNodeDefinition {
+	id: string;
+	name: string;
+	type: 'approval';
+}
+
+export interface WorkflowDependency {
+	from: string;
+	to: string;
+}
+
+export interface WorkflowDefinition {
+	id: string;
+	name: string;
+	version: string;
+	concurrency: number;
+	nodes: WorkflowNodeDefinition[];
+	dependencies: WorkflowDependency[];
+}
+
+export interface WorkflowVersion {
+	id: string;
+	workflowId: string;
+	name: string;
+	revision: number;
+	createdAt: number;
+	definition: WorkflowDefinition;
+}
+
+export interface WorkflowRun {
+	id: string;
+	workflowId: string;
+	versionId: string;
+	state: WorkflowRunState;
+	createdAt: number;
+	updatedAt: number;
+	completedAt?: number;
+}
+
+export interface WorkflowAttempt {
+	id: number;
+	seq: number;
+	state: 'waiting' | 'successful' | 'canceled';
+	startedAt: number;
+	completedAt?: number;
+}
+
+export interface WorkflowNodeRun {
+	nodeId: string;
+	name: string;
+	type: 'approval';
+	state: WorkflowNodeState;
+	readyAt?: number;
+	completedAt?: number;
+	attempts: WorkflowAttempt[];
+}
+
+export interface WorkflowRunDetail extends WorkflowRun {
+	version: WorkflowVersion;
+	nodes: WorkflowNodeRun[];
 }
 
 /** Decoded trigger config for an agent loop. */

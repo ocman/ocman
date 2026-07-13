@@ -1,0 +1,22 @@
+.workflow-page { flex: 1; overflow: auto; padding: 24px; background: var(--bg); color: var(--text); }
+.workflow-page button { cursor: pointer; }
+.workflow-author, .workflow-history, .workflow-run { max-width: 1100px; margin: 0 auto 18px; border: 1px solid var(--border); background: var(--bg-secondary); padding: 18px; }
+.workflow-author { display: grid; grid-template-columns: 1fr 1.2fr; gap: 16px; }
+.workflow-author label { display: grid; gap: 6px; font-weight: 600; }
+.workflow-author textarea { min-height: 230px; resize: vertical; font: 13px/1.5 var(--font-mono); color: var(--text); background: var(--bg); border: 1px solid var(--border); padding: 12px; }
+.workflow-author > button { justify-self: start; padding: 8px 14px; }
+.workflow-author [role="alert"] { color: var(--danger); }
+.workflow-kicker { font: 11px var(--font-mono); text-transform: uppercase; letter-spacing: .12em; color: var(--text-muted); }
+.workflow-history { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.workflow-history > div { display: grid; align-content: start; gap: 7px; }
+.workflow-history button { display: flex; justify-content: space-between; padding: 9px; background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+.workflow-run header { display: flex; justify-content: space-between; gap: 18px; }
+.workflow-controls { display: flex; gap: 8px; align-items: start; }
+.workflow-graph { display: flex; min-height: 190px; overflow-x: auto; align-items: center; padding: 18px 2px; }
+.workflow-step { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
+.workflow-step article { width: 230px; min-height: 150px; border: 2px solid var(--border); background: var(--bg); padding: 14px; }
+.workflow-step article[data-state="ready"] { border-style: dashed; }
+.workflow-step article[data-state="successful"] { border-color: var(--success); }
+.workflow-step article[data-state="canceled"] { opacity: .65; }
+.workflow-step h3 { margin: 8px 0; font-size: 18px; }
+@media (max-width: 720px) { .workflow-page { padding: 12px; } .workflow-author, .workflow-history { grid-template-columns: 1fr; } .workflow-run header { display: block; } }

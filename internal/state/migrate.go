@@ -91,11 +91,13 @@ import (
 //	      a project can stay hidden even with no current sessions;
 //	      auto-unarchives when a session's activity is newer than
 //	      archived_at.
+//	22 - approval workflows. Adds immutable workflow definitions/versions
+//	      plus durable workflow runs, node runs, dependencies, and attempts.
 //
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 21
+const latestSchemaVersion = 22
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -233,6 +235,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV20(tx)
 	case 21:
 		return migrateToV21(tx)
+	case 22:
+		return migrateToV22(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -710,6 +714,75 @@ func migrateToV21(tx *sql.Tx) error {
 		);
 		CREATE INDEX IF NOT EXISTS idx_queued_message_session
 			ON queued_message (platform, session_id, position);
+	`)
+	return err
+}
+
+// migrateToV22 adds immutable workflow definitions and the durable run,
+// node-run, and attempt history needed by the first approval-only DAG slice.
+func migrateToV22(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE workflow_definition (
+			id               TEXT PRIMARY KEY,
+			name             TEXT NOT NULL,
+			current_revision INTEGER NOT NULL,
+			created_at       INTEGER NOT NULL,
+			updated_at       INTEGER NOT NULL
+		);
+		CREATE TABLE workflow_version (
+			id               TEXT PRIMARY KEY,
+			workflow_id      TEXT NOT NULL REFERENCES workflow_definition(id),
+			name             TEXT NOT NULL,
+			revision         INTEGER NOT NULL,
+			metadata_version TEXT NOT NULL,
+			definition_json  TEXT NOT NULL,
+			concurrency      INTEGER NOT NULL CHECK (concurrency > 0),
+			created_at       INTEGER NOT NULL,
+			UNIQUE (workflow_id, revision)
+		);
+		CREATE TABLE workflow_version_node (
+			version_id TEXT NOT NULL REFERENCES workflow_version(id),
+			node_id    TEXT NOT NULL,
+			name       TEXT NOT NULL,
+			type       TEXT NOT NULL,
+			position   INTEGER NOT NULL,
+			PRIMARY KEY (version_id, node_id)
+		);
+		CREATE TABLE workflow_version_dependency (
+			version_id TEXT NOT NULL REFERENCES workflow_version(id),
+			from_node  TEXT NOT NULL,
+			to_node    TEXT NOT NULL,
+			PRIMARY KEY (version_id, from_node, to_node)
+		);
+		CREATE TABLE workflow_run (
+			id           TEXT PRIMARY KEY,
+			workflow_id  TEXT NOT NULL,
+			version_id   TEXT NOT NULL REFERENCES workflow_version(id),
+			state        TEXT NOT NULL,
+			created_at   INTEGER NOT NULL,
+			updated_at   INTEGER NOT NULL,
+			completed_at INTEGER
+		);
+		CREATE TABLE workflow_node_run (
+			run_id       TEXT NOT NULL REFERENCES workflow_run(id),
+			node_id      TEXT NOT NULL,
+			state        TEXT NOT NULL,
+			position     INTEGER NOT NULL,
+			ready_at     INTEGER,
+			completed_at INTEGER,
+			PRIMARY KEY (run_id, node_id)
+		);
+		CREATE TABLE workflow_node_attempt (
+			id           INTEGER PRIMARY KEY AUTOINCREMENT,
+			run_id       TEXT NOT NULL,
+			node_id      TEXT NOT NULL,
+			seq          INTEGER NOT NULL,
+			state        TEXT NOT NULL,
+			started_at   INTEGER NOT NULL,
+			completed_at INTEGER,
+			UNIQUE (run_id, node_id, seq)
+		);
+		CREATE INDEX idx_workflow_run_created ON workflow_run (created_at DESC);
 	`)
 	return err
 }

@@ -41,7 +41,8 @@ type broadcastEvent struct {
 // client without ever blocking a producer. The key is derived by
 // coalesceKey (event + session id).
 var coalescingEvents = map[string]bool{
-	"ocman.queue.updated": true,
+	"ocman.queue.updated":  true,
+	"workflow.run.updated": true,
 }
 
 // broadcastSub is one connected /api/events client. Non-coalescing events
@@ -73,9 +74,13 @@ func newBroadcastHub() *broadcastHub {
 func coalesceKey(event string, data []byte) string {
 	var p struct {
 		SessionID string `json:"sessionID"`
+		RunID     string `json:"runId"`
 	}
 	if err := json.Unmarshal(data, &p); err == nil && p.SessionID != "" {
 		return event + "\x00" + p.SessionID
+	}
+	if p.RunID != "" {
+		return event + "\x00" + p.RunID
 	}
 	return event
 }
@@ -294,6 +299,16 @@ func (s *Server) broadcastLoopUpdated(loopID string) {
 		return
 	}
 	s.broadcastGlobalEvent("loop.updated", payload)
+}
+
+func (s *Server) broadcastWorkflowRunUpdated(runID string) {
+	if runID == "" {
+		return
+	}
+	payload, err := json.Marshal(map[string]string{"runId": runID})
+	if err == nil {
+		s.broadcastGlobalEvent("workflow.run.updated", payload)
+	}
 }
 
 // globalEventsKeepaliveInterval is how often we send an SSE comment to

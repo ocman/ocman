@@ -92,6 +92,12 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	loopsHandler := requireLocalhost(s.handleLoops)
 	mux.HandleFunc("/api/loops", loopsHandler)
 	mux.HandleFunc("/api/loops/", loopsHandler)
+	workflowHandler := requireLocalhost(s.handleWorkflows)
+	mux.HandleFunc("/api/workflows", workflowHandler)
+	mux.HandleFunc("/api/workflows/", workflowHandler)
+	workflowRunHandler := requireLocalhost(s.handleWorkflowRuns)
+	mux.HandleFunc("/api/workflow-runs", workflowRunHandler)
+	mux.HandleFunc("/api/workflow-runs/", workflowRunHandler)
 
 	// MCP server — localhost-only, enabled by default. Exposes the
 	// session-split tools (new_session, etc.)

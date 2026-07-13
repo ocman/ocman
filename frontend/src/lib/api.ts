@@ -74,6 +74,9 @@ export type {
   LoopIteration,
   LoopTriggerConfig,
   LoopStopConditions,
+	WorkflowVersion,
+	WorkflowRun,
+	WorkflowRunDetail,
 } from './api.types';
 
 // Type imports used by the api object below.
@@ -120,6 +123,9 @@ import type {
   LoopDetail,
   LoopCreateRequest,
   LoopUpdateRequest,
+	WorkflowVersion,
+	WorkflowRun,
+	WorkflowRunDetail,
 } from './api.types';
 
 /**
@@ -719,6 +725,24 @@ export const api = {
     trigger: (id: string) =>
       postJSON<{ ok: boolean }>(`/api/loops/${encodeURIComponent(id)}/trigger`, {}),
   },
+	workflows: {
+		versions: (signal?: AbortSignal) => fetchJSON<WorkflowVersion[]>('/api/workflows', signal),
+		publish: async (source: string): Promise<WorkflowVersion> => {
+			const response = await apiFetch('/api/workflows', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: source,
+			});
+			if (!response.ok) throw new Error(await response.text());
+			return response.json();
+		},
+		start: (versionId: string) => postJSON<WorkflowRunDetail>(`/api/workflows/${encodeURIComponent(versionId)}/runs`, {}),
+		runs: (signal?: AbortSignal) => fetchJSON<WorkflowRun[]>('/api/workflow-runs', signal),
+		run: (runId: string, signal?: AbortSignal) => fetchJSON<WorkflowRunDetail>(`/api/workflow-runs/${encodeURIComponent(runId)}`, signal),
+		approve: (runId: string, nodeId: string) => postJSON<WorkflowRunDetail>(`/api/workflow-runs/${encodeURIComponent(runId)}/approve/${encodeURIComponent(nodeId)}`, {}),
+		pause: (runId: string) => postJSON<WorkflowRunDetail>(`/api/workflow-runs/${encodeURIComponent(runId)}/pause`, {}),
+		cancel: (runId: string) => postJSON<WorkflowRunDetail>(`/api/workflow-runs/${encodeURIComponent(runId)}/cancel`, {}),
+	},
   compactSession: (sessionId: string, providerID: string, modelID: string) =>
     postJSON<void>(
       `/api/session/${encodeURIComponent(sessionId)}/compact`,

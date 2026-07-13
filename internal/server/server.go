@@ -29,6 +29,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/telemetry"
 	"github.com/NoUseFreak/ocman/internal/term"
 	"github.com/NoUseFreak/ocman/internal/tmux"
+	"github.com/NoUseFreak/ocman/internal/workflows"
 )
 
 //go:embed static/*
@@ -99,8 +100,10 @@ type Server struct {
 	// loopSvcCached is the agent-loops domain service, built lazily on
 	// first use (it needs the registry to be fully wired). Guarded by
 	// loopSvcOnce. See loop_engine.go.
-	loopSvcCached *loops.Service
-	loopSvcOnce   sync.Once
+	loopSvcCached     *loops.Service
+	loopSvcOnce       sync.Once
+	workflowSvcCached *workflows.Service
+	workflowSvcOnce   sync.Once
 
 	// queueSvcCached is the follow-up message queue service (#58), built
 	// lazily on first use (mirrors loopSvcCached). Guarded by

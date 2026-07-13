@@ -502,6 +502,7 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 		"agentLoops": map[string]interface{}{
 			"enabled": s.agentLoopsEnabled(ctx),
 		},
+		"workflows": map[string]bool{"enabled": s.stateDB != nil},
 	})
 }
 

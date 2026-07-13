@@ -30,7 +30,7 @@ flowchart LR
 - **opencode.db** — foreign data, opened read-only; ocman never writes
   to it.
 - **state.db** — ocman's own state: archive flags, child sessions,
-  loops, settings, remote tokens (14+ migrations).
+  loops, immutable workflow versions/runs, settings, and remote tokens.
 - **Remote ocman instances** — the hub dials remotes over gRPC and
   re-exposes their sessions/hosts transparently.
 
@@ -43,6 +43,7 @@ flowchart TD
     Server[internal/server<br/>HTTP, SSE, handlers] --> Registry[platforms.Registry<br/>session seam]
     Server --> Router[hostsvc.Router<br/>host/dir seam]
     Server --> Loops[loops.Service<br/>trigger→action engine]
+    Server --> Workflows[workflows.Service<br/>durable DAG lifecycle]
     Server --> MCP[internal/mcp<br/>MCP tools]
     Registry --> OC[platforms/opencode<br/>adapter]
     Registry --> RP[remote.Platform<br/>gRPC-backed]
@@ -69,6 +70,10 @@ flowchart TD
 - **loops.Service** — pure domain logic behind small interfaces;
   driven by a 5 s tick goroutine in the server; shared by REST and
   MCP.
+- **workflows.Service** — shared validation and run-lifecycle seam for
+  immutable workflow versions. The first production slice schedules
+  approval nodes directly from persisted dependency state; REST and SSE
+  never implement independent transitions.
 - **internal/mcp** — prompt composer + session launcher + tool
   handlers; all side effects go through the same `Platform` interface
   the HTTP layer uses.
@@ -96,19 +101,24 @@ sequenceDiagram
     A->>D: SQL json_extract / HTTP proxy
     D-->>B: JSON (status inferred at query time)
     Note over S,E: background: loop engine tick,<br/>child-session watcher, remote gRPC streams
-    E-->>B: SSE (session.updated, loop.updated)
+    E-->>B: SSE (session.updated, loop.updated, workflow.run.updated)
 ```
 
 Key property: status is *inferred*, not stored — ocman derives session
 state from the last message row on every query, so there is no sync
 problem with OpenCode's DB.
 
+Workflow state takes the opposite path because it is ocman-owned: publish,
+start, approval, pause, and cancel delegate to `workflows.Service`, which
+commits version/run/node/attempt state to `state.db` before broadcasting a
+run ID. The browser then refetches the authoritative read-only run graph.
+
 ## 4. Frontend Composition
 
 ```mermaid
 flowchart TD
     Pages[pages/<br/>routes] --> Comp[components/<br/>~80 components]
-    Pages --> Stores[Zustand stores<br/>sessions, loops, remotes]
+    Pages --> Stores[Client state<br/>sessions, loops, workflows]
     Comp --> Stores
     Stores --> API[lib/ API client]
     Stores --> SSE[SSE subscription]
@@ -119,5 +129,6 @@ flowchart TD
 
 - **Capability gating** — the UI never branches on platform identity;
   features toggle via `/api/capabilities` (enforced by a lint script).
-- **Stores** — Zustand keeps SSE-driven state (sessions, loops) out of
-  component trees.
+- **Client state** — shared Zustand stores hold broad session/loop state;
+  the bounded workflow page keeps its selected run locally and reconciles
+  it from REST whenever the shared SSE stream reports a run change.

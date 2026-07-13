@@ -198,3 +198,8 @@ export function useAgentLoops(): boolean {
   const all = useCapabilities();
   return all?.agentLoops?.enabled === true;
 }
+
+export function useWorkflows(): boolean {
+  const all = useCapabilities();
+  return all?.workflows?.enabled === true;
+}

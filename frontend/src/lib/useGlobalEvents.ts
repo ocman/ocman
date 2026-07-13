@@ -82,6 +82,7 @@ function handleSurface(raw: string): void {
 // state change broadcast (loop.updated) triggers a live refresh without
 // opening a second EventSource (AD-10).
 const loopUpdatedListeners = new Set<(loopId: string) => void>();
+const workflowRunUpdatedListeners = new Set<(runId: string) => void>();
 
 /** Register a callback fired on every loop.updated broadcast. */
 export function onLoopUpdated(cb: (loopId: string) => void): () => void {
@@ -97,6 +98,20 @@ function handleLoopUpdated(raw: string): void {
     return;
   }
   for (const cb of loopUpdatedListeners) cb(loopId);
+}
+
+export function onWorkflowRunUpdated(cb: (runId: string) => void): () => void {
+	workflowRunUpdatedListeners.add(cb);
+	return () => workflowRunUpdatedListeners.delete(cb);
+}
+
+function handleWorkflowRunUpdated(raw: string): void {
+	try {
+		const runId = (JSON.parse(raw) as { runId?: string }).runId;
+		if (runId) for (const cb of workflowRunUpdatedListeners) cb(runId);
+	} catch {
+		// Ignore malformed events; the next mutation or reconnect refetches.
+	}
 }
 
 // sessionChangedListeners: subscribers (e.g. the App-level query client)
@@ -183,6 +198,9 @@ function open(): void {
   source.addEventListener('loop.updated', (e) => {
     handleLoopUpdated((e as MessageEvent).data);
   });
+	source.addEventListener('workflow.run.updated', (e) => {
+		handleWorkflowRunUpdated((e as MessageEvent).data);
+	});
   source.addEventListener('ocman.queue.updated', (e) => {
     handleQueueUpdated((e as MessageEvent).data);
   });
