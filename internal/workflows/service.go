@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -15,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/loops"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -42,6 +45,21 @@ const (
 	AttemptErrored    = "errored"
 	AttemptDenied     = "denied"
 	AttemptUnknown    = "unknown"
+
+	TriggerManual          = "manual"
+	TriggerInterval        = "interval"
+	TriggerCron            = "cron"
+	TriggerPR              = "pr"
+	TriggerChildCompletion = "child_completion"
+	TriggerTurnCompletion  = "turn_completion"
+
+	OverlapSkip     = "skip"
+	OverlapQueue    = "queue"
+	OverlapParallel = "parallel"
+
+	DecisionStarted = "started"
+	DecisionSkipped = "skipped"
+	DecisionQueued  = "queued"
 )
 
 type Definition struct {
@@ -50,8 +68,40 @@ type Definition struct {
 	Version      string       `json:"version"`
 	Concurrency  int          `json:"concurrency"`
 	Directory    string       `json:"directory,omitempty"`
+	Triggers     []Trigger    `json:"triggers"`
 	Nodes        []Node       `json:"nodes"`
 	Dependencies []Dependency `json:"dependencies"`
+}
+
+type Trigger struct {
+	ID              string `json:"id"`
+	Type            string `json:"type"`
+	Overlap         string `json:"overlap,omitempty"`
+	IntervalSeconds int    `json:"intervalSeconds,omitempty"`
+	Cron            string `json:"cron,omitempty"`
+	PRNumber        int    `json:"prNumber,omitempty"`
+	PollSeconds     int    `json:"pollSeconds,omitempty"`
+	Directory       string `json:"directory,omitempty"`
+	Platform        string `json:"platform,omitempty"`
+	SessionID       string `json:"sessionId,omitempty"`
+}
+
+type TriggerSnapshot struct {
+	Trigger
+	VersionID string `json:"versionId"`
+	FiredAt   int64  `json:"firedAt"`
+	Detail    string `json:"detail"`
+}
+
+type TriggerStatus struct {
+	Trigger
+	VersionID     string `json:"versionId"`
+	LastCheckedAt int64  `json:"lastCheckedAt,omitempty"`
+	NextCheckAt   int64  `json:"nextCheckAt,omitempty"`
+	LastFiredAt   int64  `json:"lastFiredAt,omitempty"`
+	LastDecision  string `json:"lastDecision,omitempty"`
+	LastRunID     string `json:"lastRunId,omitempty"`
+	Queued        int    `json:"queued"`
 }
 
 type Node struct {
@@ -124,22 +174,24 @@ type Dependency struct {
 }
 
 type Version struct {
-	ID         string     `json:"id"`
-	WorkflowID string     `json:"workflowId"`
-	Name       string     `json:"name"`
-	Revision   int        `json:"revision"`
-	CreatedAt  int64      `json:"createdAt"`
-	Definition Definition `json:"definition"`
+	ID            string          `json:"id"`
+	WorkflowID    string          `json:"workflowId"`
+	Name          string          `json:"name"`
+	Revision      int             `json:"revision"`
+	CreatedAt     int64           `json:"createdAt"`
+	Definition    Definition      `json:"definition"`
+	TriggerStates []TriggerStatus `json:"triggerStates"`
 }
 
 type Run struct {
-	ID          string `json:"id"`
-	WorkflowID  string `json:"workflowId"`
-	VersionID   string `json:"versionId"`
-	State       string `json:"state"`
-	CreatedAt   int64  `json:"createdAt"`
-	UpdatedAt   int64  `json:"updatedAt"`
-	CompletedAt int64  `json:"completedAt,omitempty"`
+	ID          string           `json:"id"`
+	WorkflowID  string           `json:"workflowId"`
+	VersionID   string           `json:"versionId"`
+	State       string           `json:"state"`
+	CreatedAt   int64            `json:"createdAt"`
+	UpdatedAt   int64            `json:"updatedAt"`
+	CompletedAt int64            `json:"completedAt,omitempty"`
+	Trigger     *TriggerSnapshot `json:"trigger,omitempty"`
 }
 
 type RunDetail struct {
@@ -183,9 +235,18 @@ type Store interface {
 	GetWorkflowVersion(string) (*state.WorkflowVersion, error)
 	GetActiveWorkflowVersion(string) (*state.WorkflowVersion, error)
 	ListWorkflowVersions() ([]state.WorkflowVersion, error)
-	InsertWorkflowRun(state.WorkflowRun) error
 	GetWorkflowRun(string) (*state.WorkflowRun, error)
 	ListWorkflowRuns() ([]state.WorkflowRun, error)
+	ListCurrentWorkflowVersions() ([]state.WorkflowVersion, error)
+	ListQueuedWorkflowVersions() ([]state.WorkflowVersion, error)
+	GetWorkflowTriggerState(string, string) (state.WorkflowTriggerState, error)
+	UpsertWorkflowTriggerState(state.WorkflowTriggerState) error
+	CommitWorkflowTriggerFiring(*state.WorkflowRun, state.WorkflowTriggerFiring, state.WorkflowTriggerState) error
+	CountActiveWorkflowTriggerRuns(string, string) (int, error)
+	ActiveWorkflowTriggerRunID(string, string) (string, error)
+	CountQueuedWorkflowTriggerFirings(string, string) (int, error)
+	NextQueuedWorkflowTriggerFiring(string, string) (*state.WorkflowTriggerFiring, error)
+	InsertWorkflowRunFromQueued(state.WorkflowRun, int64, int64, state.WorkflowTriggerState) error
 	ApproveWorkflowNode(string, string, int64) error
 	StartWorkflowCommand(string, string, int64) (bool, error)
 	CompleteWorkflowCommand(string, string, state.WorkflowCommandResult, int64) error
@@ -201,20 +262,27 @@ type Deps struct {
 	Store           Store
 	Now             func() time.Time
 	Notify          func(runID string)
+	NotifyTrigger   func()
+	Forge           loops.ForgePoller
+	Status          loops.SessionStatusInferer
 	CommandExecutor CommandExecutor
 	Agent           AgentExecutor
 }
 
 type Service struct {
-	store      Store
-	now        func() time.Time
-	notify     func(string)
-	executor   CommandExecutor
-	agent      AgentExecutor
-	dispatchMu sync.Mutex
-	mu         sync.Mutex
-	running    map[string]map[string]*activeCommand
-	stopping   map[string]bool
+	store         Store
+	now           func() time.Time
+	notify        func(string)
+	notifyTrigger func()
+	forge         loops.ForgePoller
+	status        loops.SessionStatusInferer
+	executor      CommandExecutor
+	agent         AgentExecutor
+	dispatchMu    sync.Mutex
+	triggerMu     sync.Mutex
+	mu            sync.Mutex
+	running       map[string]map[string]*activeCommand
+	stopping      map[string]bool
 }
 
 type activeCommand struct {
@@ -231,7 +299,18 @@ func NewService(deps Deps) *Service {
 	if executor == nil {
 		executor = localCommandExecutor{}
 	}
-	return &Service{store: deps.Store, now: now, notify: deps.Notify, executor: executor, agent: deps.Agent, running: make(map[string]map[string]*activeCommand), stopping: make(map[string]bool)}
+	return &Service{
+		store:         deps.Store,
+		now:           now,
+		notify:        deps.Notify,
+		notifyTrigger: deps.NotifyTrigger,
+		forge:         deps.Forge,
+		status:        deps.Status,
+		executor:      executor,
+		agent:         deps.Agent,
+		running:       make(map[string]map[string]*activeCommand),
+		stopping:      make(map[string]bool),
+	}
 }
 
 func (s *Service) ValidateJSON(_ context.Context, source []byte) (Definition, error) {
@@ -281,7 +360,12 @@ func (s *Service) GetVersion(_ context.Context, id string) (Version, error) {
 	if err != nil {
 		return Version{}, err
 	}
-	return versionFromRow(*row)
+	version, err := versionFromRow(*row)
+	if err != nil {
+		return Version{}, err
+	}
+	version.TriggerStates, err = s.triggerStatuses(id, version.Definition.Triggers)
+	return version, err
 }
 
 func (s *Service) ListVersions(_ context.Context) ([]Version, error) {
@@ -295,7 +379,27 @@ func (s *Service) ListVersions(_ context.Context) ([]Version, error) {
 		if err != nil {
 			return nil, err
 		}
+		version.TriggerStates, err = s.triggerStatuses(row.ID, version.Definition.Triggers)
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, version)
+	}
+	return out, nil
+}
+
+func (s *Service) triggerStatuses(versionID string, triggers []Trigger) ([]TriggerStatus, error) {
+	out := make([]TriggerStatus, 0, len(triggers))
+	for _, trigger := range triggers {
+		row, err := s.triggerState(versionID, trigger.ID)
+		if err != nil {
+			return nil, err
+		}
+		queued, err := s.store.CountQueuedWorkflowTriggerFirings(versionID, trigger.ID)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, TriggerStatus{Trigger: normalizedTrigger(trigger), VersionID: versionID, LastCheckedAt: row.LastCheckedAt, NextCheckAt: row.NextCheckAt, LastFiredAt: row.LastFiredAt, LastDecision: row.LastDecision, LastRunID: row.LastRunID, Queued: queued})
 	}
 	return out, nil
 }
@@ -308,6 +412,27 @@ func (s *Service) Start(ctx context.Context, versionID string) (RunDetail, error
 			return RunDetail{}, fmt.Errorf("workflow version or definition %q not found: %w", versionID, err)
 		}
 	}
+	parsed, err := versionFromRow(*version)
+	if err != nil {
+		return RunDetail{}, err
+	}
+	for _, trigger := range parsed.Definition.Triggers {
+		if trigger.Type == TriggerManual {
+			run, err := s.fire(ctx, *version, trigger, "manual", s.now().UnixMilli())
+			if err != nil || run.ID != "" {
+				return run, err
+			}
+			status, err := s.GetTrigger(ctx, version.ID, trigger.ID)
+			if err != nil || status.LastRunID == "" {
+				return RunDetail{}, err
+			}
+			return s.GetRun(ctx, status.LastRunID)
+		}
+	}
+	return RunDetail{}, fmt.Errorf("workflow version has no manual trigger")
+}
+
+func (s *Service) newRun(version state.WorkflowVersion, snapshot TriggerSnapshot) state.WorkflowRun {
 	dependencies := make(map[string]bool, len(version.Dependencies))
 	for _, dep := range version.Dependencies {
 		dependencies[dep.To] = true
@@ -321,6 +446,11 @@ func (s *Service) Start(ctx context.Context, versionID string) (RunDetail, error
 		CreatedAt:  now,
 		UpdatedAt:  now,
 	}
+	snapshotJSON, err := json.Marshal(snapshot)
+	if err != nil {
+		panic(err)
+	}
+	run.TriggerSnapshotJSON = string(snapshotJSON)
 	for _, node := range version.Nodes {
 		nodeState := NodePending
 		readyAt := int64(0)
@@ -330,9 +460,59 @@ func (s *Service) Start(ctx context.Context, versionID string) (RunDetail, error
 		}
 		run.Nodes = append(run.Nodes, state.WorkflowNodeRun{NodeID: node.ID, Type: node.Type, Position: node.Position, State: nodeState, ReadyAt: readyAt})
 	}
-	if err := s.store.InsertWorkflowRun(run); err != nil {
+	return run
+}
+
+func (s *Service) fire(ctx context.Context, version state.WorkflowVersion, trigger Trigger, detail string, firedAt int64) (RunDetail, error) {
+	s.triggerMu.Lock()
+	defer s.triggerMu.Unlock()
+	return s.fireLocked(ctx, version, trigger, detail, firedAt, nil)
+}
+
+func (s *Service) fireLocked(ctx context.Context, version state.WorkflowVersion, trigger Trigger, detail string, firedAt int64, pendingState *state.WorkflowTriggerState) (RunDetail, error) {
+	trigger = normalizedTrigger(trigger)
+	snapshot := TriggerSnapshot{Trigger: trigger, VersionID: version.ID, FiredAt: firedAt, Detail: detail}
+	snapshotJSON, err := json.Marshal(snapshot)
+	if err != nil {
 		return RunDetail{}, err
 	}
+	activeRunID, err := s.store.ActiveWorkflowTriggerRunID(version.ID, trigger.ID)
+	if err != nil {
+		return RunDetail{}, err
+	}
+	decision := DecisionStarted
+	if activeRunID != "" && trigger.Overlap != OverlapParallel {
+		decision = DecisionSkipped
+		if trigger.Overlap == OverlapQueue {
+			decision = DecisionQueued
+		}
+	}
+	var stateRow state.WorkflowTriggerState
+	if pendingState != nil {
+		stateRow = *pendingState
+	} else if stateRow, err = s.triggerState(version.ID, trigger.ID); err != nil {
+		return RunDetail{}, err
+	}
+	stateRow.LastFiredAt, stateRow.LastDecision = firedAt, decision
+	if activeRunID != "" {
+		stateRow.LastRunID = activeRunID
+	}
+	firing := state.WorkflowTriggerFiring{VersionID: version.ID, TriggerID: trigger.ID, FiredAt: firedAt, Detail: detail, SnapshotJSON: string(snapshotJSON), Decision: decision}
+	if decision != DecisionStarted {
+		if err := s.store.CommitWorkflowTriggerFiring(nil, firing, stateRow); err != nil {
+			return RunDetail{}, err
+		}
+		s.triggerChanged()
+		s.changed(stateRow.LastRunID)
+		return RunDetail{}, nil
+	}
+	run := s.newRun(version, snapshot)
+	firing.RunID, firing.StartedAt = run.ID, s.now().UnixMilli()
+	stateRow.LastRunID = run.ID
+	if err := s.store.CommitWorkflowTriggerFiring(&run, firing, stateRow); err != nil {
+		return RunDetail{}, err
+	}
+	s.triggerChanged()
 	s.changed(run.ID)
 	if err := s.dispatch(ctx, run.ID); err != nil {
 		return RunDetail{}, err
@@ -350,6 +530,230 @@ func (s *Service) ListRuns(_ context.Context) ([]Run, error) {
 		out = append(out, runFromState(row))
 	}
 	return out, nil
+}
+
+func (s *Service) GetTrigger(_ context.Context, versionID, triggerID string) (TriggerStatus, error) {
+	version, err := s.store.GetWorkflowVersion(versionID)
+	if err != nil {
+		return TriggerStatus{}, err
+	}
+	parsed, err := versionFromRow(*version)
+	if err != nil {
+		return TriggerStatus{}, err
+	}
+	var trigger Trigger
+	found := false
+	for _, candidate := range parsed.Definition.Triggers {
+		if candidate.ID == triggerID {
+			trigger, found = normalizedTrigger(candidate), true
+			break
+		}
+	}
+	if !found {
+		return TriggerStatus{}, fmt.Errorf("workflow trigger %q not found", triggerID)
+	}
+	row, err := s.triggerState(versionID, triggerID)
+	if err != nil {
+		return TriggerStatus{}, err
+	}
+	queued, err := s.store.CountQueuedWorkflowTriggerFirings(versionID, triggerID)
+	if err != nil {
+		return TriggerStatus{}, err
+	}
+	return TriggerStatus{Trigger: trigger, VersionID: versionID, LastCheckedAt: row.LastCheckedAt, NextCheckAt: row.NextCheckAt, LastFiredAt: row.LastFiredAt, LastDecision: row.LastDecision, LastRunID: row.LastRunID, Queued: queued}, nil
+}
+
+func (s *Service) EvaluateTriggers(ctx context.Context) error {
+	s.triggerMu.Lock()
+	defer s.triggerMu.Unlock()
+	var errs []error
+	queuedVersions, err := s.store.ListQueuedWorkflowVersions()
+	if err != nil {
+		return err
+	}
+	for _, listed := range queuedVersions {
+		version, err := s.store.GetWorkflowVersion(listed.ID)
+		if err != nil {
+			return err
+		}
+		parsed, err := versionFromRow(*version)
+		if err != nil {
+			return err
+		}
+		for _, trigger := range parsed.Definition.Triggers {
+			if _, err := s.drainQueued(ctx, *version, normalizedTrigger(trigger)); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+	versions, err := s.store.ListCurrentWorkflowVersions()
+	if err != nil {
+		return err
+	}
+	for _, listed := range versions {
+		version, err := s.store.GetWorkflowVersion(listed.ID)
+		if err != nil {
+			return err
+		}
+		parsed, err := versionFromRow(*version)
+		if err != nil {
+			return err
+		}
+		for _, trigger := range parsed.Definition.Triggers {
+			if trigger.Type == TriggerManual {
+				continue
+			}
+			if err := s.evaluateTrigger(ctx, *version, normalizedTrigger(trigger)); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (s *Service) evaluateTrigger(ctx context.Context, version state.WorkflowVersion, trigger Trigger) error {
+	row, err := s.triggerState(version.ID, trigger.ID)
+	if err != nil {
+		return err
+	}
+	if drained, err := s.drainQueued(ctx, version, trigger); err != nil || drained {
+		return err
+	}
+	now := s.now()
+	if row.NextCheckAt > now.UnixMilli() {
+		return nil
+	}
+	fire, detail, detection, running, err := s.shouldFire(ctx, trigger, row, now)
+	if err != nil {
+		return err
+	}
+	row.LastCheckedAt = now.UnixMilli()
+	lastFired := row.LastFiredAt
+	if fire {
+		lastFired = now.UnixMilli()
+	}
+	row.NextCheckAt = nextCheck(trigger, lastFired, now)
+	if detection != nil {
+		encoded, _ := json.Marshal(detection)
+		row.DetectionJSON = string(encoded)
+	}
+	if running != nil {
+		row.LastRunning = running
+	}
+	if !fire {
+		if err := s.store.UpsertWorkflowTriggerState(row); err != nil {
+			return err
+		}
+		s.triggerChanged()
+		return nil
+	}
+	_, err = s.fireLocked(ctx, version, trigger, detail, now.UnixMilli(), &row)
+	return err
+}
+
+func (s *Service) drainQueued(ctx context.Context, version state.WorkflowVersion, trigger Trigger) (bool, error) {
+	active, err := s.store.CountActiveWorkflowTriggerRuns(version.ID, trigger.ID)
+	if err != nil || active > 0 {
+		return false, err
+	}
+	queued, err := s.store.NextQueuedWorkflowTriggerFiring(version.ID, trigger.ID)
+	if err != nil || queued == nil {
+		return false, err
+	}
+	var snapshot TriggerSnapshot
+	if err := json.Unmarshal([]byte(queued.SnapshotJSON), &snapshot); err != nil {
+		return false, err
+	}
+	row, err := s.triggerState(version.ID, trigger.ID)
+	if err != nil {
+		return false, err
+	}
+	run := s.newRun(version, snapshot)
+	row.LastDecision, row.LastRunID = DecisionStarted, run.ID
+	if err := s.store.InsertWorkflowRunFromQueued(run, queued.ID, s.now().UnixMilli(), row); err != nil {
+		return false, err
+	}
+	s.triggerChanged()
+	s.changed(run.ID)
+	if err := s.dispatch(ctx, run.ID); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
+func (s *Service) shouldFire(ctx context.Context, trigger Trigger, row state.WorkflowTriggerState, now time.Time) (bool, string, *loops.TriggerConfig, *bool, error) {
+	switch trigger.Type {
+	case TriggerChildCompletion, TriggerTurnCompletion:
+		if s.status == nil {
+			return false, "", nil, nil, fmt.Errorf("%s trigger requires session status", trigger.Type)
+		}
+		running, ok := s.status.TurnRunning(ctx, trigger.Platform, trigger.SessionID)
+		if !ok {
+			return false, "", nil, nil, nil
+		}
+		fire := row.LastRunning != nil && *row.LastRunning && !running
+		detail := "turn complete"
+		if trigger.Type == TriggerChildCompletion {
+			detail = "child complete"
+		}
+		return fire, detail, nil, &running, nil
+	}
+	config := loops.TriggerConfig{IntervalSeconds: trigger.IntervalSeconds, CronExpr: trigger.Cron, PRNumber: trigger.PRNumber, PollSeconds: trigger.PollSeconds}
+	if row.DetectionJSON != "" {
+		_ = json.Unmarshal([]byte(row.DetectionJSON), &config)
+	}
+	loopType := loops.TriggerSchedule
+	last := row.LastFiredAt
+	switch trigger.Type {
+	case TriggerCron:
+		loopType = loops.TriggerCron
+		if last == 0 {
+			last = row.LastCheckedAt
+		}
+	case TriggerPR:
+		loopType, last = loops.TriggerPREvent, 0
+	}
+	fire, detail, updated, err := loops.EvaluateTrigger(ctx, loopType, state.Loop{LastFiredAt: last, Directory: trigger.Directory, Platform: trigger.Platform, RootSessionID: trigger.SessionID}, config, now, s.status, s.forge)
+	return fire, detail, updated, nil, err
+}
+
+func nextCheck(trigger Trigger, lastFired int64, now time.Time) int64 {
+	switch trigger.Type {
+	case TriggerInterval:
+		interval := time.Duration(trigger.IntervalSeconds) * time.Second
+		if interval < loops.MinScheduleInterval {
+			interval = loops.MinScheduleInterval
+		}
+		if lastFired == 0 {
+			return now.Add(interval).UnixMilli()
+		}
+		return time.UnixMilli(lastFired).Add(interval).UnixMilli()
+	case TriggerCron:
+		next, ok, _ := loops.NextCron(trigger.Cron, now)
+		if ok {
+			return next.UnixMilli()
+		}
+	case TriggerPR:
+		poll := time.Duration(trigger.PollSeconds) * time.Second
+		if poll < loops.MinPRPollInterval {
+			poll = loops.MinPRPollInterval
+		}
+		return now.Add(poll).UnixMilli()
+	case TriggerChildCompletion, TriggerTurnCompletion:
+		return now.Add(5 * time.Second).UnixMilli()
+	}
+	return 0
+}
+
+func (s *Service) triggerState(versionID, triggerID string) (state.WorkflowTriggerState, error) {
+	row, err := s.store.GetWorkflowTriggerState(versionID, triggerID)
+	if err == nil {
+		return row, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return row, err
+	}
+	return state.WorkflowTriggerState{VersionID: versionID, TriggerID: triggerID, DetectionJSON: "{}"}, nil
 }
 
 func (s *Service) GetRun(ctx context.Context, id string) (RunDetail, error) {
@@ -729,6 +1133,12 @@ func (s *Service) changed(runID string) {
 	}
 }
 
+func (s *Service) triggerChanged() {
+	if s.notifyTrigger != nil {
+		s.notifyTrigger()
+	}
+}
+
 func decodeDefinition(source []byte) (Definition, []byte, error) {
 	decoder := json.NewDecoder(bytes.NewReader(source))
 	decoder.DisallowUnknownFields()
@@ -755,6 +1165,26 @@ func validateDefinition(definition Definition) error {
 	}
 	if len(definition.Nodes) == 0 {
 		return fmt.Errorf("at least one node is required")
+	}
+	if len(definition.Triggers) == 0 {
+		return fmt.Errorf("at least one trigger is required")
+	}
+	triggerIDs := map[string]bool{}
+	manualTriggers := 0
+	for _, trigger := range definition.Triggers {
+		if err := validateTrigger(trigger); err != nil {
+			return err
+		}
+		if triggerIDs[trigger.ID] {
+			return fmt.Errorf("duplicate trigger %q", trigger.ID)
+		}
+		triggerIDs[trigger.ID] = true
+		if trigger.Type == TriggerManual {
+			manualTriggers++
+		}
+	}
+	if manualTriggers > 1 {
+		return fmt.Errorf("only one manual trigger is supported")
 	}
 	nodes := make(map[string]bool, len(definition.Nodes))
 	for _, node := range definition.Nodes {
@@ -904,6 +1334,44 @@ func validateCommandNode(directory string, node Node) error {
 	return nil
 }
 
+func validateTrigger(trigger Trigger) error {
+	if trigger.ID == "" {
+		return fmt.Errorf("trigger id is required")
+	}
+	if trigger.Overlap != "" && trigger.Overlap != OverlapSkip && trigger.Overlap != OverlapQueue && trigger.Overlap != OverlapParallel {
+		return fmt.Errorf("trigger %q has invalid overlap %q", trigger.ID, trigger.Overlap)
+	}
+	switch trigger.Type {
+	case TriggerManual:
+	case TriggerInterval:
+		if trigger.IntervalSeconds <= 0 {
+			return fmt.Errorf("trigger %q intervalSeconds must be positive", trigger.ID)
+		}
+	case TriggerCron:
+		if err := loops.ValidateCron(trigger.Cron); err != nil {
+			return fmt.Errorf("trigger %q has invalid cron: %w", trigger.ID, err)
+		}
+	case TriggerPR:
+		if trigger.PRNumber <= 0 || trigger.Directory == "" {
+			return fmt.Errorf("trigger %q requires prNumber and directory", trigger.ID)
+		}
+	case TriggerChildCompletion, TriggerTurnCompletion:
+		if trigger.SessionID == "" {
+			return fmt.Errorf("trigger %q requires sessionId", trigger.ID)
+		}
+	default:
+		return fmt.Errorf("trigger %q has unsupported type %q", trigger.ID, trigger.Type)
+	}
+	return nil
+}
+
+func normalizedTrigger(trigger Trigger) Trigger {
+	if trigger.Overlap == "" {
+		trigger.Overlap = OverlapSkip
+	}
+	return trigger
+}
+
 func versionFromRow(row state.WorkflowVersion) (Version, error) {
 	var definition Definition
 	if err := json.Unmarshal([]byte(row.DefinitionJSON), &definition); err != nil {
@@ -917,7 +1385,14 @@ func versionFromState(row state.WorkflowVersion, definition Definition) Version 
 }
 
 func runFromState(row state.WorkflowRun) Run {
-	return Run{ID: row.ID, WorkflowID: row.WorkflowID, VersionID: row.VersionID, State: row.State, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, CompletedAt: row.CompletedAt}
+	run := Run{ID: row.ID, WorkflowID: row.WorkflowID, VersionID: row.VersionID, State: row.State, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, CompletedAt: row.CompletedAt}
+	if row.TriggerSnapshotJSON != "" {
+		var snapshot TriggerSnapshot
+		if json.Unmarshal([]byte(row.TriggerSnapshotJSON), &snapshot) == nil {
+			run.Trigger = &snapshot
+		}
+	}
+	return run
 }
 
 func newID(prefix string) string {

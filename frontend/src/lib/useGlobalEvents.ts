@@ -83,6 +83,7 @@ function handleSurface(raw: string): void {
 // opening a second EventSource (AD-10).
 const loopUpdatedListeners = new Set<(loopId: string) => void>();
 const workflowRunUpdatedListeners = new Set<(runId: string) => void>();
+const workflowTriggerUpdatedListeners = new Set<() => void>();
 
 /** Register a callback fired on every loop.updated broadcast. */
 export function onLoopUpdated(cb: (loopId: string) => void): () => void {
@@ -103,6 +104,11 @@ function handleLoopUpdated(raw: string): void {
 export function onWorkflowRunUpdated(cb: (runId: string) => void): () => void {
 	workflowRunUpdatedListeners.add(cb);
 	return () => workflowRunUpdatedListeners.delete(cb);
+}
+
+export function onWorkflowTriggerUpdated(cb: () => void): () => void {
+	workflowTriggerUpdatedListeners.add(cb);
+	return () => workflowTriggerUpdatedListeners.delete(cb);
 }
 
 function handleWorkflowRunUpdated(raw: string): void {
@@ -200,6 +206,9 @@ function open(): void {
   });
 	source.addEventListener('workflow.run.updated', (e) => {
 		handleWorkflowRunUpdated((e as MessageEvent).data);
+	});
+	source.addEventListener('workflow.trigger.updated', () => {
+		for (const cb of workflowTriggerUpdatedListeners) cb();
 	});
   source.addEventListener('ocman.queue.updated', (e) => {
     handleQueueUpdated((e as MessageEvent).data);

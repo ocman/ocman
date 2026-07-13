@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type WorkflowRun, type WorkflowRunDetail, type WorkflowVersion } from '../lib/api';
 import { useWorkflows } from '../lib/useCapabilities';
-import { onSseConnect, onWorkflowRunUpdated } from '../lib/useGlobalEvents';
+import { onSseConnect, onWorkflowRunUpdated, onWorkflowTriggerUpdated } from '../lib/useGlobalEvents';
 import { usePageTitle } from '../lib/headerContext';
 import './Workflows.css';
 
@@ -11,6 +11,7 @@ const EXAMPLE = `{
   "name": "Release approvals",
   "version": "1",
   "concurrency": 1,
+  "triggers": [{"id": "manual", "type": "manual"}],
   "nodes": [
     {"id": "review", "name": "Review", "type": "approval"},
     {"id": "ship", "name": "Ship", "type": "approval"}
@@ -47,10 +48,13 @@ export function Workflows() {
 		const unsubscribeRun = onWorkflowRunUpdated(() => {
 			void refresh().catch((reason) => setError(String(reason)));
 		});
+		const unsubscribeTrigger = onWorkflowTriggerUpdated(() => {
+			void refresh().catch((reason) => setError(String(reason)));
+		});
 		const unsubscribeConnect = onSseConnect(() => {
 			void refresh().catch((reason) => setError(String(reason)));
 		});
-		return () => { unsubscribeRun(); unsubscribeConnect(); };
+		return () => { unsubscribeRun(); unsubscribeTrigger(); unsubscribeConnect(); };
 	// Selection lives in a ref so reconnects refresh it without resubscribing.
 	// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [enabled]);
@@ -66,19 +70,30 @@ export function Workflows() {
 		}
 	}
 
+	async function publish() {
+		setError('');
+		try {
+			const version = await api.workflows.publish(source);
+			if (version.definition.triggers.some((trigger) => trigger.type === 'manual')) select(await api.workflows.start(version.id));
+			await refresh();
+		} catch (reason) {
+			setError(reason instanceof Error ? reason.message : String(reason));
+		}
+	}
+
 	if (!enabled) return <main className="workflow-page"><p>Workflows are unavailable on this host.</p></main>;
 
 	return (
 		<main className="workflow-page" data-testid="workflows-page">
 			<section className="workflow-author" aria-label="Workflow authoring">
-				<div><span className="workflow-kicker">Immutable JSON definitions</span><h1>Workflows</h1><p>Publish a version and inspect each durable approval, command, or agent attempt.</p></div>
+				<div><span className="workflow-kicker">Immutable JSON definitions</span><h1>Workflows</h1><p>Publish a version, then start it manually or let its durable triggers create pinned runs, and inspect each durable approval, command, or agent attempt.</p></div>
 				<label>Workflow JSON<textarea aria-label="Workflow JSON" value={source} onChange={(event) => setSource(event.target.value)} spellCheck={false} /></label>
-				<button type="button" onClick={() => void mutate(async () => { const version = await api.workflows.publish(source); return api.workflows.start(version.id); })}>Publish and start</button>
+				<button type="button" onClick={() => void publish()}>Publish workflow</button>
 				{error && <p role="alert">{error}</p>}
 			</section>
 
 			<section className="workflow-history" aria-label="Workflow history">
-				<div><h2>Published versions</h2>{versions.map((version) => <button type="button" key={version.id} onClick={() => void mutate(() => api.workflows.start(version.id))}>{version.name} <small>rev {version.revision} · {version.definition.version}</small></button>)}</div>
+				<div><h2>Published versions</h2>{versions.map((version) => <div className="workflow-version" key={version.id}>{version.definition.triggers.some((trigger) => trigger.type === 'manual') ? <button type="button" onClick={() => void mutate(() => api.workflows.start(version.id))}>{version.name} <small>rev {version.revision} · {version.definition.version}</small></button> : <div className="workflow-version-title">{version.name} <small>rev {version.revision} · {version.definition.version}</small></div>}{version.triggerStates.map((trigger) => <div className="workflow-trigger" key={trigger.id}><strong>{trigger.id} · {trigger.type} · {trigger.overlap ?? 'skip'}</strong><small>Next {formatTime(trigger.nextCheckAt)} · Last {formatTime(trigger.lastFiredAt)} ({trigger.lastDecision ?? 'never'}) · {trigger.queued} queued{trigger.lastRunId ? ` · run ${trigger.lastRunId}` : ''}</small></div>)}</div>)}</div>
 				<div><h2>Runs</h2>{runs.map((run) => <button type="button" aria-pressed={selected?.id === run.id} key={run.id} onClick={() => void api.workflows.run(run.id).then(select)}>{run.workflowId} <small>{run.state}</small></button>)}</div>
 			</section>
 
@@ -91,6 +106,7 @@ function RunView({ run, mutate }: { run: WorkflowRunDetail; mutate: (action: () 
 	return (
 		<section className="workflow-run" aria-label="Workflow run">
 			<header><div><span className="workflow-kicker">{run.id}</span><h2>{run.version.name}</h2><p>Revision {run.version.revision} · definition {run.version.definition.version} · {run.state}</p></div><div className="workflow-controls">{run.state === 'active' && <button type="button" onClick={() => void mutate(() => api.workflows.pause(run.id))}>Pause run</button>}{(run.state === 'active' || run.state === 'paused') && <button type="button" onClick={() => void mutate(() => api.workflows.cancel(run.id))}>Cancel run</button>}</div></header>
+			{run.trigger && <p className="workflow-run-trigger"><strong>{run.trigger.id} · {run.trigger.type} · {run.trigger.overlap ?? 'skip'}</strong> · {run.trigger.detail} · fired {formatTime(run.trigger.firedAt)}</p>}
 			<div className="workflow-graph" role="region" aria-label="Workflow run graph">
 				{run.nodes.map((node, index) => {
 					const attempt = node.attempts[0];
@@ -108,4 +124,8 @@ function CommandAttempt({ attempt }: { attempt: WorkflowRunDetail['nodes'][numbe
 		{attempt.stderr && <pre aria-label="stderr">{attempt.stderr}{attempt.stderrTruncated && '\n[truncated]'}</pre>}
 		{Object.entries(attempt.outputs ?? {}).map(([name, value]) => <div key={name}><b>{name}</b><pre>{String(value)}</pre></div>)}
 	</div>;
+}
+
+function formatTime(value?: number) {
+	return value ? new Date(value).toLocaleString() : 'not scheduled';
 }

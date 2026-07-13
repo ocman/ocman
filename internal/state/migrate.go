@@ -97,11 +97,13 @@ import (
 //	      truncation flags, and basic collected output values.
 //	24 - agent workflow attempts. Adds linked session state and reconciles
 //	      databases already migrated to either branch's competing v23.
+//	25 - workflow triggers. Adds durable detection/queue state and immutable
+//	      trigger snapshots on workflow runs.
 //
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 24
+const latestSchemaVersion = 25
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -245,6 +247,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV23(tx)
 	case 24:
 		return migrateToV24(tx)
+	case 25:
+		return migrateToV25(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -853,4 +857,45 @@ func migrateToV24(tx *sql.Tx) error {
 		}
 	}
 	return nil
+}
+
+func migrateToV25(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		ALTER TABLE workflow_run ADD COLUMN trigger_snapshot_json TEXT;
+		CREATE TABLE workflow_trigger_state (
+			version_id       TEXT NOT NULL REFERENCES workflow_version(id),
+			trigger_id       TEXT NOT NULL,
+			detection_json   TEXT NOT NULL DEFAULT '{}',
+			last_checked_at  INTEGER,
+			next_check_at    INTEGER,
+			last_fired_at    INTEGER,
+			last_decision    TEXT NOT NULL DEFAULT '',
+			last_run_id      TEXT,
+			last_running     INTEGER,
+			PRIMARY KEY (version_id, trigger_id)
+		);
+		CREATE TABLE workflow_trigger_firing (
+			id             INTEGER PRIMARY KEY AUTOINCREMENT,
+			version_id     TEXT NOT NULL REFERENCES workflow_version(id),
+			trigger_id     TEXT NOT NULL,
+			fired_at       INTEGER NOT NULL,
+			detail         TEXT NOT NULL,
+			snapshot_json  TEXT NOT NULL,
+			decision       TEXT NOT NULL,
+			run_id         TEXT,
+			started_at     INTEGER
+		);
+		CREATE INDEX idx_workflow_trigger_queue
+			ON workflow_trigger_firing (version_id, trigger_id, decision, id);
+		UPDATE workflow_version
+		SET definition_json = json_set(definition_json, '$.triggers', json('[{"id":"manual","type":"manual"}]'))
+		WHERE json_type(definition_json, '$.triggers') IS NULL;
+		UPDATE workflow_run
+		SET trigger_snapshot_json = json_object(
+			'id', 'manual', 'type', 'manual', 'overlap', 'skip',
+			'versionId', version_id, 'firedAt', created_at, 'detail', 'migrated manual run'
+		)
+		WHERE trigger_snapshot_json IS NULL;
+	`)
+	return err
 }

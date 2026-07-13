@@ -20,6 +20,7 @@ import (
 
 const workflowRequest = `{
 	"id":"release","name":"Release","version":"1","concurrency":1,
+	"triggers":[{"id":"manual","type":"manual"}],
 	"nodes":[{"id":"review","name":"Review","type":"approval"},{"id":"ship","name":"Ship","type":"approval"}],
 	"dependencies":[{"from":"review","to":"ship"}]
 }`
@@ -57,7 +58,7 @@ func TestWorkflowRESTApprovalToAgentSession(t *testing.T) {
 	registry := platforms.NewRegistry()
 	registry.Register(p)
 	srv := New(nil, openWatcherTestStateDB(t), "", registry, nil)
-	definition := `{"id":"agent-transport","name":"Agent transport","version":"1","concurrency":1,"nodes":[{"id":"approve","name":"Approve","type":"approval"},{"id":"agent","name":"Agent","type":"agent","agent":{"platform":"fake","directory":` + fmt.Sprintf("%q", dir) + `,"prompt":"do work","collectors":[{"name":"message","type":"final-message"}]}}],"dependencies":[{"from":"approve","to":"agent"}]}`
+	definition := `{"id":"agent-transport","name":"Agent transport","version":"1","concurrency":1,"triggers":[{"id":"manual","type":"manual"}],"nodes":[{"id":"approve","name":"Approve","type":"approval"},{"id":"agent","name":"Agent","type":"agent","agent":{"platform":"fake","directory":` + fmt.Sprintf("%q", dir) + `,"prompt":"do work","collectors":[{"name":"message","type":"final-message"}]}}],"dependencies":[{"from":"approve","to":"agent"}]}`
 	version, err := srv.workflowSvc().PublishJSON(t.Context(), []byte(definition))
 	if err != nil {
 		t.Fatal(err)
@@ -125,14 +126,17 @@ func TestWorkflowRESTLifecycleAndSSE(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &run); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case event := <-sub.ch:
-		if event.event != "workflow.run.updated" || !strings.Contains(string(event.data), run.ID) {
-			t.Fatalf("unexpected SSE event: %+v", event)
+	seenTrigger, seenRun := false, false
+	for range 2 {
+		select {
+		case event := <-sub.ch:
+			seenTrigger = seenTrigger || event.event == "workflow.trigger.updated"
+			seenRun = seenRun || event.event == "workflow.run.updated" && strings.Contains(string(event.data), run.ID)
+		default:
+			t.Fatal("start did not broadcast workflow updates")
 		}
-	default:
-		t.Fatal("start did not broadcast workflow.run.updated")
 	}
+	if !seenTrigger || !seenRun { t.Fatalf("missing workflow SSE events: trigger=%v run=%v", seenTrigger, seenRun) }
 
 	for _, request := range []struct {
 		path string

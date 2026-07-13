@@ -11,11 +11,13 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/gitexec"
+	"github.com/NoUseFreak/ocman/internal/loops"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -24,6 +26,7 @@ const sequentialApprovals = `{
 	"name":"Release",
 	"version":"2026.07",
 	"concurrency":1,
+	"triggers":[{"id":"manual","type":"manual"}],
 	"nodes":[
 		{"id":"review","name":"Review","type":"approval"},
 		{"id":"ship","name":"Ship","type":"approval"}
@@ -36,6 +39,7 @@ const approvalThenAgents = `{
 	"name":"Implement",
 	"version":"1",
 	"concurrency":1,
+	"triggers":[{"id":"manual","type":"manual"}],
 	"nodes":[
 		{"id":"approve","name":"Approve","type":"approval"},
 		{"id":"implement","name":"Implement","type":"agent","agent":{"platform":"test","directory":"/repo","prompt":"implement it","sessionAffinity":"work","collectors":[
@@ -51,6 +55,7 @@ const approvalThenAgents = `{
 
 const singleAgent = `{
 	"id":"implement","name":"Implement","version":"1","concurrency":1,
+	"triggers":[{"id":"manual","type":"manual"}],
 	"nodes":[{"id":"implement","name":"Implement","type":"agent","agent":{"platform":"test","directory":"/repo","prompt":"implement it"}}],
 	"dependencies":[]
 }`
@@ -87,21 +92,50 @@ func (f *fakeAgentExecutor) Cancel(_ context.Context, session AgentSession) erro
 }
 
 type harness struct {
-	t     *testing.T
-	path  string
-	db    *state.DB
-	now   time.Time
-	svc   *Service
-	agent *fakeAgentExecutor
+	t              *testing.T
+	path           string
+	db             *state.DB
+	now            time.Time
+	forge          *workflowFakeForge
+	status         *workflowFakeStatus
+	triggerChanges int
+	svc            *Service
+	agent          *fakeAgentExecutor
+}
+
+type workflowFakeForge struct {
+	mu    sync.Mutex
+	state loops.PRState
+	err   error
+}
+
+func (f *workflowFakeForge) PollPR(context.Context, string, int) (loops.PRState, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.state, f.err
+}
+
+type workflowFakeStatus struct {
+	mu      sync.Mutex
+	running map[string]bool
+}
+
+func (f *workflowFakeStatus) TurnRunning(_ context.Context, _, sessionID string) (bool, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	running, ok := f.running[sessionID]
+	return running, ok
 }
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 	h := &harness{
-		t:     t,
-		path:  filepath.Join(t.TempDir(), "state.db"),
-		now:   time.Date(2026, 7, 13, 20, 0, 0, 0, time.UTC),
-		agent: &fakeAgentExecutor{results: map[string]AgentResult{}},
+		t:      t,
+		path:   filepath.Join(t.TempDir(), "state.db"),
+		now:    time.Date(2026, 7, 13, 20, 0, 0, 0, time.UTC),
+		forge:  &workflowFakeForge{},
+		status: &workflowFakeStatus{running: map[string]bool{}},
+		agent:  &fakeAgentExecutor{results: map[string]AgentResult{}},
 	}
 	h.open()
 	t.Cleanup(func() {
@@ -119,7 +153,7 @@ func (h *harness) open() {
 		h.t.Fatalf("open state DB: %v", err)
 	}
 	h.db = db
-	h.svc = NewService(Deps{Store: db, Agent: h.agent, Now: func() time.Time { return h.now }})
+	h.svc = NewService(Deps{Store: db, Agent: h.agent, Now: func() time.Time { return h.now }, Forge: h.forge, Status: h.status, NotifyTrigger: func() { h.triggerChanges++ }})
 }
 
 func (h *harness) restart() {
@@ -236,6 +270,15 @@ func TestPublishValidation(t *testing.T) {
 		{"cycle", strings.Replace(sequentialApprovals, `{"from":"review","to":"ship"}`, `{"from":"review","to":"ship"},{"from":"ship","to":"review"}`, 1), "cycle"},
 		{"malformed dependency", strings.Replace(sequentialApprovals, `"from":"review"`, `"from":""`, 1), "dependency endpoints are required"},
 		{"unsafe collector path", strings.Replace(singleAgent, `"prompt":"implement it"`, `"prompt":"implement it","collectors":[{"name":"result","type":"file","path":"../result.json"}]`, 1), "safe relative path"},
+		{"missing triggers", strings.Replace(sequentialApprovals, `"triggers":[{"id":"manual","type":"manual"}],`, "", 1), "at least one trigger"},
+		{"duplicate trigger", strings.Replace(sequentialApprovals, `{"id":"manual","type":"manual"}`, `{"id":"manual","type":"manual"},{"id":"manual","type":"manual"}`, 1), `duplicate trigger "manual"`},
+		{"multiple manual triggers", strings.Replace(sequentialApprovals, `{"id":"manual","type":"manual"}`, `{"id":"manual","type":"manual"},{"id":"other","type":"manual"}`, 1), "only one manual trigger"},
+		{"invalid overlap", strings.Replace(sequentialApprovals, `"type":"manual"`, `"type":"manual","overlap":"later"`, 1), "invalid overlap"},
+		{"invalid interval", strings.Replace(sequentialApprovals, `"type":"manual"`, `"type":"interval"`, 1), "intervalSeconds must be positive"},
+		{"invalid cron", strings.Replace(sequentialApprovals, `"type":"manual"`, `"type":"cron","cron":"nope"`, 1), "invalid cron"},
+		{"invalid PR", strings.Replace(sequentialApprovals, `"type":"manual"`, `"type":"pr"`, 1), "requires prNumber and directory"},
+		{"invalid completion", strings.Replace(sequentialApprovals, `"type":"manual"`, `"type":"turn_completion"`, 1), "requires sessionId"},
+		{"unsupported trigger", strings.Replace(sequentialApprovals, `"type":"manual"`, `"type":"webhook"`, 1), "unsupported type"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -664,7 +707,7 @@ func TestCommandConcurrencyCapAndFailureCancelSiblings(t *testing.T) {
 			{ID: "fail", Name: "Fail", Type: "command", Command: []string{"/bin/sh", "-c", "sleep .2; exit 9"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}},
 			{ID: "sibling", Name: "Sibling", Type: "command", Command: []string{"/bin/sh", "-c", fmt.Sprintf("sleep 30 & echo $! > %s; wait", pidPath)}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}},
 		}
-		definition := Definition{ID: "parallel", Name: "Parallel", Version: "1", Concurrency: 2, Directory: dir, Nodes: nodes}
+		definition := Definition{ID: "parallel", Name: "Parallel", Version: "1", Concurrency: 2, Directory: dir, Triggers: []Trigger{{ID: "manual", Type: TriggerManual}}, Nodes: nodes}
 		raw, _ := json.Marshal(definition)
 		version, err := h.svc.PublishJSON(context.Background(), raw)
 		if err != nil {
@@ -703,7 +746,7 @@ func TestCommandConcurrencyCapAndFailureCancelSiblings(t *testing.T) {
 			{ID: "two", Name: "Two", Type: "command", Command: []string{"two"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}},
 			{ID: "queued", Name: "Queued", Type: "command", Command: []string{"queued"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}},
 		}
-		raw, _ := json.Marshal(Definition{ID: "failures", Name: "Failures", Version: "1", Concurrency: 2, Directory: t.TempDir(), Nodes: nodes})
+		raw, _ := json.Marshal(Definition{ID: "failures", Name: "Failures", Version: "1", Concurrency: 2, Directory: t.TempDir(), Triggers: []Trigger{{ID: "manual", Type: TriggerManual}}, Nodes: nodes})
 		version, err := h.svc.PublishJSON(context.Background(), raw)
 		if err != nil {
 			t.Fatal(err)
@@ -767,7 +810,7 @@ func (e *blockingExecutor) Execute(context.Context, CommandRequest) CommandResul
 
 func commandDefinition(t *testing.T, dir string, nodes []Node, dependencies []Dependency) []byte {
 	t.Helper()
-	raw, err := json.Marshal(Definition{ID: "commands", Name: "Commands", Version: "1", Concurrency: 1, Directory: dir, Nodes: nodes, Dependencies: dependencies})
+	raw, err := json.Marshal(Definition{ID: "commands", Name: "Commands", Version: "1", Concurrency: 1, Directory: dir, Triggers: []Trigger{{ID: "manual", Type: TriggerManual}}, Nodes: nodes, Dependencies: dependencies})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -940,6 +983,257 @@ func TestValidateDoesNotPublishAndResume(t *testing.T) {
 	resumed, err := h.svc.Resume(ctx, run.ID)
 	if err != nil || resumed.State != StateActive {
 		t.Fatalf("resume: %+v, %v", resumed, err)
+	}
+}
+
+func TestTriggerSnapshotIsImmutableAndPinned(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	v1, err := h.svc.PublishJSON(ctx, []byte(sequentialApprovals))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.svc.Start(ctx, v1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Trigger == nil || run.Trigger.Type != TriggerManual || run.Trigger.Overlap != OverlapSkip || run.Trigger.VersionID != v1.ID {
+		t.Fatalf("run did not pin defaulted manual trigger: %+v", run.Trigger)
+	}
+	repeated, err := h.svc.Start(ctx, v1.ID)
+	if err != nil || repeated.ID != run.ID {
+		t.Fatalf("manual skip did not return active run: %+v, %v", repeated, err)
+	}
+	runs, _ := h.svc.ListRuns(ctx)
+	status, _ := h.svc.GetTrigger(ctx, v1.ID, "manual")
+	if len(runs) != 1 || status.LastDecision != DecisionSkipped {
+		t.Fatalf("manual overlap was not skipped: runs=%d status=%+v", len(runs), status)
+	}
+	edited := strings.Replace(sequentialApprovals, `"type":"manual"`, `"type":"manual","overlap":"parallel"`, 1)
+	if _, err := h.svc.PublishJSON(ctx, []byte(edited)); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := h.svc.GetRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.Trigger.Overlap != OverlapSkip || restored.VersionID != v1.ID {
+		t.Fatalf("stored trigger snapshot changed: %+v", restored)
+	}
+}
+
+func TestManualOverlapAcrossVersionsReturnsBlockingRun(t *testing.T) {
+	h := newHarness(t)
+	v1, err := h.svc.PublishJSON(context.Background(), []byte(sequentialApprovals))
+	if err != nil {
+		t.Fatal(err)
+	}
+	active, err := h.svc.Start(context.Background(), v1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2, err := h.svc.PublishJSON(context.Background(), []byte(strings.Replace(sequentialApprovals, `"version":"2026.07"`, `"version":"2026.08"`, 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := h.svc.Start(context.Background(), v2.ID)
+	if err != nil || blocked.ID != active.ID {
+		t.Fatalf("new version did not return blocking run: %+v, %v", blocked, err)
+	}
+	status, _ := h.svc.GetTrigger(context.Background(), v2.ID, "manual")
+	if status.LastDecision != DecisionSkipped || status.LastRunID != active.ID {
+		t.Fatalf("cross-version skip not recorded: %+v", status)
+	}
+}
+
+func TestTriggerOverlapPoliciesAndQueuedRestart(t *testing.T) {
+	for _, policy := range []string{OverlapSkip, OverlapQueue, OverlapParallel} {
+		t.Run(policy, func(t *testing.T) {
+			h := newHarness(t)
+			definition := strings.Replace(sequentialApprovals,
+				`{"id":"manual","type":"manual"}`,
+				`{"id":"timer","type":"interval","intervalSeconds":60,"overlap":"`+policy+`"}`, 1)
+			version, err := h.svc.PublishJSON(context.Background(), []byte(definition))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := h.svc.EvaluateTriggers(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			h.now = h.now.Add(time.Minute)
+			if err := h.svc.EvaluateTriggers(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			status, err := h.svc.GetTrigger(context.Background(), version.ID, "timer")
+			if err != nil {
+				t.Fatal(err)
+			}
+			runs, err := h.svc.ListRuns(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch policy {
+			case OverlapSkip:
+				if len(runs) != 1 || status.LastDecision != DecisionSkipped {
+					t.Fatalf("skip: runs=%d status=%+v", len(runs), status)
+				}
+			case OverlapParallel:
+				if len(runs) != 2 || status.LastDecision != DecisionStarted {
+					t.Fatalf("parallel: runs=%d status=%+v", len(runs), status)
+				}
+			case OverlapQueue:
+				if len(runs) != 1 || status.Queued != 1 || status.LastDecision != DecisionQueued {
+					t.Fatalf("queue: runs=%d status=%+v", len(runs), status)
+				}
+				manualOnly := strings.Replace(sequentialApprovals, `"version":"2026.07"`, `"version":"2026.08"`, 1)
+				if _, err := h.svc.PublishJSON(context.Background(), []byte(manualOnly)); err != nil {
+					t.Fatal(err)
+				}
+				h.restart()
+				if _, err := h.svc.Cancel(context.Background(), runs[0].ID); err != nil {
+					t.Fatal(err)
+				}
+				if err := h.svc.EvaluateTriggers(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+				runs, _ = h.svc.ListRuns(context.Background())
+				status, _ = h.svc.GetTrigger(context.Background(), version.ID, "timer")
+				if len(runs) != 2 || status.Queued != 0 || runs[0].VersionID != version.ID || runs[0].Trigger == nil || runs[0].Trigger.FiredAt != h.now.UnixMilli() {
+					t.Fatalf("queued firing did not survive restart: runs=%+v status=%+v", runs, status)
+				}
+			}
+		})
+	}
+}
+
+func TestCronDoesNotBackfireHistoricalSlots(t *testing.T) {
+	h := newHarness(t)
+	definition := strings.Replace(sequentialApprovals,
+		`{"id":"manual","type":"manual"}`,
+		`{"id":"cron","type":"cron","cron":"0 1 * * *"}`, 1)
+	version, err := h.svc.PublishJSON(context.Background(), []byte(definition))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.svc.EvaluateTriggers(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	runs, _ := h.svc.ListRuns(context.Background())
+	if len(runs) != 0 {
+		t.Fatalf("cron backfired: %+v", runs)
+	}
+	status, _ := h.svc.GetTrigger(context.Background(), version.ID, "cron")
+	if status.NextCheckAt <= h.now.UnixMilli() {
+		t.Fatalf("missing future cron check: %+v", status)
+	}
+	if h.triggerChanges == 0 {
+		t.Fatal("cron baseline did not notify trigger observers")
+	}
+	h.restart()
+	h.now = time.Date(2026, 7, 14, 1, 5, 0, 0, time.UTC)
+	if err := h.svc.EvaluateTriggers(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.svc.EvaluateTriggers(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	runs, _ = h.svc.ListRuns(context.Background())
+	if len(runs) != 1 {
+		t.Fatalf("cron slot after persisted baseline was lost or duplicated: %+v", runs)
+	}
+}
+
+func TestPRTriggerPersistsDetectionState(t *testing.T) {
+	h := newHarness(t)
+	definition := strings.Replace(sequentialApprovals,
+		`{"id":"manual","type":"manual"}`,
+		`{"id":"pr","type":"pr","prNumber":322,"directory":"/repo","overlap":"parallel"}`, 1)
+	version, err := h.svc.PublishJSON(context.Background(), []byte(definition))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.forge.state.HeadSHA = "a"
+	if err := h.svc.EvaluateTriggers(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	h.restart()
+	h.now = h.now.Add(30 * time.Second)
+	h.forge.state.HeadSHA = "b"
+	if err := h.svc.EvaluateTriggers(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.svc.EvaluateTriggers(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	runs, _ := h.svc.ListRuns(context.Background())
+	status, _ := h.svc.GetTrigger(context.Background(), version.ID, "pr")
+	if len(runs) != 1 || status.LastFiredAt != h.now.UnixMilli() || status.LastDecision != DecisionStarted {
+		t.Fatalf("PR event was lost or duplicated: runs=%+v status=%+v", runs, status)
+	}
+}
+
+func TestTriggerErrorDoesNotStarveOtherWorkflows(t *testing.T) {
+	h := newHarness(t)
+	h.forge.err = errors.New("forge unavailable")
+	definition := strings.Replace(sequentialApprovals,
+		`{"id":"manual","type":"manual"}`,
+		`{"id":"pr","type":"pr","prNumber":322,"directory":"/repo"},{"id":"timer","type":"interval","intervalSeconds":60}`, 1)
+	if _, err := h.svc.PublishJSON(context.Background(), []byte(definition)); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.svc.EvaluateTriggers(context.Background()); err == nil {
+		t.Fatal("expected forge error")
+	}
+	runs, err := h.svc.ListRuns(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 || runs[0].Trigger == nil || runs[0].Trigger.ID != "timer" {
+		t.Fatalf("forge error starved interval trigger: %+v", runs)
+	}
+}
+
+func TestCompletionTriggersFireOncePerIdleEdge(t *testing.T) {
+	for _, triggerType := range []string{TriggerChildCompletion, TriggerTurnCompletion} {
+		t.Run(triggerType, func(t *testing.T) {
+			h := newHarness(t)
+			h.status.running["session-1"] = true
+			definition := strings.Replace(sequentialApprovals,
+				`{"id":"manual","type":"manual"}`,
+				`{"id":"done","type":"`+triggerType+`","sessionId":"session-1","overlap":"parallel"}`, 1)
+			if _, err := h.svc.PublishJSON(context.Background(), []byte(definition)); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.svc.EvaluateTriggers(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			h.status.running["session-1"] = false
+			h.now = h.now.Add(5 * time.Second)
+			if err := h.svc.EvaluateTriggers(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.svc.EvaluateTriggers(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			runs, _ := h.svc.ListRuns(context.Background())
+			if len(runs) != 1 {
+				t.Fatalf("idle state double-fired: %+v", runs)
+			}
+			h.status.running["session-1"] = true
+			h.now = h.now.Add(5 * time.Second)
+			if err := h.svc.EvaluateTriggers(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			h.status.running["session-1"] = false
+			h.now = h.now.Add(5 * time.Second)
+			if err := h.svc.EvaluateTriggers(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			runs, _ = h.svc.ListRuns(context.Background())
+			if len(runs) != 2 {
+				t.Fatalf("second idle edge did not fire: %+v", runs)
+			}
+		})
 	}
 }
 

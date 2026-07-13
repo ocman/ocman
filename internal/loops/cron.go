@@ -147,3 +147,25 @@ func (c *cronSchedule) prev(now time.Time) (time.Time, bool) {
 	}
 	return time.Time{}, false
 }
+
+// ValidateCron validates the same five-field syntax used by loop triggers.
+func ValidateCron(expr string) error {
+	_, err := parseCron(expr)
+	return err
+}
+
+// NextCron returns the next scheduled minute after now.
+func NextCron(expr string, now time.Time) (time.Time, bool, error) {
+	schedule, err := parseCron(expr)
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	t := now.Truncate(time.Minute).Add(time.Minute)
+	for i := 0; i < 366*24*60; i++ {
+		if schedule.matches(t) {
+			return t, true, nil
+		}
+		t = t.Add(time.Minute)
+	}
+	return time.Time{}, false, nil
+}

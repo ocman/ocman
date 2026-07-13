@@ -311,6 +311,10 @@ func (s *Server) broadcastWorkflowRunUpdated(runID string) {
 	}
 }
 
+func (s *Server) broadcastWorkflowTriggerUpdated() {
+	s.broadcastGlobalEvent("workflow.trigger.updated", []byte(`{}`))
+}
+
 // globalEventsKeepaliveInterval is how often we send an SSE comment to
 // keep the connection (and any intermediary proxy) alive while idle.
 const globalEventsKeepaliveInterval = 25 * time.Second

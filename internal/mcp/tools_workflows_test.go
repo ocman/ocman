@@ -14,6 +14,7 @@ import (
 
 const workflowDefinition = `{
 	"id":"release","name":"Release","version":"1","concurrency":1,
+	"triggers":[{"id":"manual","type":"manual"}],
 	"nodes":[{"id":"review","name":"Review","type":"approval"},{"id":"ship","name":"Ship","type":"approval"}],
 	"dependencies":[{"from":"review","to":"ship"}]
 }`

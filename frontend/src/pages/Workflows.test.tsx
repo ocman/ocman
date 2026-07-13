@@ -5,12 +5,13 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkflowRunDetail, WorkflowVersion } from '../lib/api';
 
-const { apiMock, useWorkflowsMock, listeners, connectListeners } = vi.hoisted(() => ({
+const { apiMock, useWorkflowsMock, listeners, triggerListeners, connectListeners } = vi.hoisted(() => ({
 	apiMock: {
 		versions: vi.fn(), publish: vi.fn(), start: vi.fn(), runs: vi.fn(), run: vi.fn(), approve: vi.fn(), pause: vi.fn(), cancel: vi.fn(),
 	},
 	useWorkflowsMock: vi.fn(() => true),
 	listeners: [] as Array<(runId: string) => void>,
+	triggerListeners: [] as Array<() => void>,
 	connectListeners: [] as Array<() => void>,
 }));
 
@@ -19,6 +20,10 @@ vi.mock('../lib/useCapabilities', () => ({ useWorkflows: useWorkflowsMock }));
 vi.mock('../lib/useGlobalEvents', () => ({
 	onWorkflowRunUpdated: (listener: (runId: string) => void) => {
 		listeners.push(listener);
+		return () => {};
+	},
+	onWorkflowTriggerUpdated: (listener: () => void) => {
+		triggerListeners.push(listener);
 		return () => {};
 	},
 	onSseConnect: (listener: () => void) => {
@@ -33,13 +38,16 @@ const version: WorkflowVersion = {
 	id: 'wfv_1', workflowId: 'release', name: 'Release approvals', revision: 1, createdAt: 1,
 	definition: {
 		id: 'release', name: 'Release approvals', version: '1', concurrency: 1,
+		triggers: [{ id: 'manual', type: 'manual' }, { id: 'timer', type: 'interval', intervalSeconds: 60, overlap: 'queue' }],
 		nodes: [{ id: 'review', name: 'Review', type: 'approval' }, { id: 'ship', name: 'Ship', type: 'approval' }],
 		dependencies: [{ from: 'review', to: 'ship' }],
 	},
+	triggerStates: [{ id: 'manual', type: 'manual', overlap: 'skip', versionId: 'wfv_1', queued: 0 }, { id: 'timer', type: 'interval', intervalSeconds: 60, overlap: 'queue', versionId: 'wfv_1', nextCheckAt: 120000, lastFiredAt: 60000, lastDecision: 'queued', lastRunId: 'wfr_1', queued: 1 }],
 };
 
 const activeRun: WorkflowRunDetail = {
 	id: 'wfr_1', workflowId: 'release', versionId: version.id, state: 'active', createdAt: 1, updatedAt: 1, version,
+	trigger: { id: 'timer', type: 'interval', intervalSeconds: 60, overlap: 'queue', versionId: 'wfv_1', firedAt: 60000, detail: 'scheduled (every 1m0s)' },
 	nodes: [
 		{ nodeId: 'review', name: 'Review', type: 'approval', state: 'ready', attempts: [{ id: 1, seq: 1, state: 'waiting', startedAt: 1 }] },
 		{ nodeId: 'ship', name: 'Ship', type: 'approval', state: 'pending', attempts: [] },
@@ -50,6 +58,7 @@ describe('Workflows', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		listeners.length = 0;
+		triggerListeners.length = 0;
 		connectListeners.length = 0;
 		useWorkflowsMock.mockReturnValue(true);
 		apiMock.versions.mockResolvedValue([version]);
@@ -73,17 +82,32 @@ describe('Workflows', () => {
 
 		await screen.findByRole('region', { name: 'Workflow run graph' });
 		expect(screen.getByText('Attempt 1: waiting')).toBeInTheDocument();
+		expect(screen.getAllByText(/timer · interval · queue/)).toHaveLength(2);
+		expect(screen.getByText(/Last .* \(queued\) · 1 queued/)).toBeInTheDocument();
+		expect(screen.getByText(/scheduled \(every 1m0s\)/)).toBeInTheDocument();
 		await user.click(screen.getByRole('button', { name: 'Approve Review' }));
 		expect(apiMock.approve).toHaveBeenCalledWith('wfr_1', 'review');
 
-		await user.click(screen.getByRole('button', { name: 'Publish and start' }));
+		await user.click(screen.getByRole('button', { name: 'Publish workflow' }));
 		expect(apiMock.publish).toHaveBeenCalledWith(expect.stringContaining('"concurrency": 1'));
 		expect(apiMock.start).toHaveBeenCalledWith('wfv_1');
 
 		listeners[0]('another-run');
 		await waitFor(() => expect(apiMock.run).toHaveBeenLastCalledWith('wfr_1'));
-		connectListeners[0]();
+		triggerListeners[0]();
 		await waitFor(() => expect(apiMock.versions).toHaveBeenCalledTimes(5));
+		connectListeners[0]();
+		await waitFor(() => expect(apiMock.versions).toHaveBeenCalledTimes(6));
+	});
+
+	it('publishes automated-only versions without trying a manual start', async () => {
+		const user = userEvent.setup();
+		apiMock.publish.mockResolvedValue({ ...version, definition: { ...version.definition, triggers: [{ id: 'timer', type: 'interval', intervalSeconds: 60 }] } });
+		render(<Workflows />);
+		await screen.findByRole('region', { name: 'Workflow run graph' });
+		await user.click(screen.getByRole('button', { name: 'Publish workflow' }));
+		expect(apiMock.publish).toHaveBeenCalled();
+		expect(apiMock.start).not.toHaveBeenCalled();
 	});
 	it('shows command outcomes, logs, and collected outputs', async () => {
 		const commandRun: WorkflowRunDetail = {

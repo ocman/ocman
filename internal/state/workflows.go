@@ -32,14 +32,15 @@ type WorkflowDependency struct {
 }
 
 type WorkflowRun struct {
-	ID          string
-	WorkflowID  string
-	VersionID   string
-	State       string
-	CreatedAt   int64
-	UpdatedAt   int64
-	CompletedAt int64
-	Nodes       []WorkflowNodeRun
+	ID                  string
+	WorkflowID          string
+	VersionID           string
+	State               string
+	CreatedAt           int64
+	UpdatedAt           int64
+	CompletedAt         int64
+	TriggerSnapshotJSON string
+	Nodes               []WorkflowNodeRun
 }
 
 type WorkflowNodeRun struct {
@@ -221,18 +222,8 @@ func (d *DB) InsertWorkflowRun(run WorkflowRun) error {
 		return fmt.Errorf("beginning workflow run: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err = tx.Exec(`INSERT INTO workflow_run (id, workflow_id, version_id, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, run.ID, run.WorkflowID, run.VersionID, run.State, run.CreatedAt, run.UpdatedAt); err != nil {
-		return fmt.Errorf("inserting workflow run: %w", err)
-	}
-	for _, node := range run.Nodes {
-		if _, err = tx.Exec(`INSERT INTO workflow_node_run (run_id, node_id, state, position, ready_at) VALUES (?, ?, ?, ?, ?)`, run.ID, node.NodeID, node.State, node.Position, nullableInt(node.ReadyAt)); err != nil {
-			return fmt.Errorf("inserting workflow node run: %w", err)
-		}
-		if node.State == "ready" {
-			if _, err = tx.Exec(`INSERT INTO workflow_node_attempt (run_id, node_id, seq, state, started_at) VALUES (?, ?, 1, 'waiting', ?)`, run.ID, node.NodeID, run.CreatedAt); err != nil {
-				return fmt.Errorf("inserting workflow attempt: %w", err)
-			}
-		}
+	if err = insertWorkflowRun(tx, run); err != nil {
+		return err
 	}
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("committing workflow run: %w", err)
@@ -240,8 +231,29 @@ func (d *DB) InsertWorkflowRun(run WorkflowRun) error {
 	return nil
 }
 
+type workflowRunExecer interface {
+	Exec(string, ...interface{}) (sql.Result, error)
+}
+
+func insertWorkflowRun(exec workflowRunExecer, run WorkflowRun) error {
+	if _, err := exec.Exec(`INSERT INTO workflow_run (id, workflow_id, version_id, state, created_at, updated_at, trigger_snapshot_json) VALUES (?, ?, ?, ?, ?, ?, ?)`, run.ID, run.WorkflowID, run.VersionID, run.State, run.CreatedAt, run.UpdatedAt, nullableString(run.TriggerSnapshotJSON)); err != nil {
+		return fmt.Errorf("inserting workflow run: %w", err)
+	}
+	for _, node := range run.Nodes {
+		if _, err := exec.Exec(`INSERT INTO workflow_node_run (run_id, node_id, state, position, ready_at) VALUES (?, ?, ?, ?, ?)`, run.ID, node.NodeID, node.State, node.Position, nullableInt(node.ReadyAt)); err != nil {
+			return fmt.Errorf("inserting workflow node run: %w", err)
+		}
+		if node.State == "ready" {
+			if _, err := exec.Exec(`INSERT INTO workflow_node_attempt (run_id, node_id, seq, state, started_at) VALUES (?, ?, 1, 'waiting', ?)`, run.ID, node.NodeID, run.CreatedAt); err != nil {
+				return fmt.Errorf("inserting approval attempt: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
 func (d *DB) ListWorkflowRuns() ([]WorkflowRun, error) {
-	rows, err := d.db.Query(`SELECT id, workflow_id, version_id, state, created_at, updated_at, COALESCE(completed_at, 0) FROM workflow_run ORDER BY created_at DESC`)
+	rows, err := d.db.Query(`SELECT id, workflow_id, version_id, state, created_at, updated_at, COALESCE(completed_at, 0), COALESCE(trigger_snapshot_json, '') FROM workflow_run ORDER BY created_at DESC, id DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("listing workflow runs: %w", err)
 	}
@@ -249,7 +261,7 @@ func (d *DB) ListWorkflowRuns() ([]WorkflowRun, error) {
 	var out []WorkflowRun
 	for rows.Next() {
 		var run WorkflowRun
-		if err := rows.Scan(&run.ID, &run.WorkflowID, &run.VersionID, &run.State, &run.CreatedAt, &run.UpdatedAt, &run.CompletedAt); err != nil {
+		if err := rows.Scan(&run.ID, &run.WorkflowID, &run.VersionID, &run.State, &run.CreatedAt, &run.UpdatedAt, &run.CompletedAt, &run.TriggerSnapshotJSON); err != nil {
 			return nil, fmt.Errorf("scanning workflow run: %w", err)
 		}
 		out = append(out, run)
@@ -259,7 +271,7 @@ func (d *DB) ListWorkflowRuns() ([]WorkflowRun, error) {
 
 func (d *DB) GetWorkflowRun(id string) (*WorkflowRun, error) {
 	var run WorkflowRun
-	err := d.db.QueryRow(`SELECT id, workflow_id, version_id, state, created_at, updated_at, COALESCE(completed_at, 0) FROM workflow_run WHERE id = ?`, id).Scan(&run.ID, &run.WorkflowID, &run.VersionID, &run.State, &run.CreatedAt, &run.UpdatedAt, &run.CompletedAt)
+	err := d.db.QueryRow(`SELECT id, workflow_id, version_id, state, created_at, updated_at, COALESCE(completed_at, 0), COALESCE(trigger_snapshot_json, '') FROM workflow_run WHERE id = ?`, id).Scan(&run.ID, &run.WorkflowID, &run.VersionID, &run.State, &run.CreatedAt, &run.UpdatedAt, &run.CompletedAt, &run.TriggerSnapshotJSON)
 	if err != nil {
 		return nil, fmt.Errorf("getting workflow run: %w", err)
 	}

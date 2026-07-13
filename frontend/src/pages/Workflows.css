@@ -10,6 +10,12 @@
 .workflow-history { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 .workflow-history > div { display: grid; align-content: start; gap: 7px; }
 .workflow-history button { display: flex; justify-content: space-between; padding: 9px; background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+.workflow-version { display: grid; gap: 5px; }
+.workflow-version > button { width: 100%; }
+.workflow-version-title { display: flex; justify-content: space-between; padding: 9px; border: 1px solid var(--border); }
+.workflow-trigger { display: grid; gap: 3px; border-left: 2px solid var(--border); padding: 4px 8px; font: 12px var(--font-mono); }
+.workflow-trigger small { color: var(--text-muted); }
+.workflow-run-trigger { padding: 9px; background: var(--bg); border: 1px solid var(--border); font: 12px var(--font-mono); }
 .workflow-run header { display: flex; justify-content: space-between; gap: 18px; }
 .workflow-controls { display: flex; gap: 8px; align-items: start; }
 .workflow-graph { display: flex; min-height: 190px; overflow-x: auto; align-items: center; padding: 18px 2px; }

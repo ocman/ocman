@@ -2,10 +2,61 @@ package state
 
 import (
 	"database/sql"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
 )
+
+func TestMigrateV25BackfillsManualWorkflowTrigger(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateToV22(tx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(`INSERT INTO workflow_definition (id, name, current_revision, created_at, updated_at) VALUES ('release', 'Release', 1, 1, 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(`INSERT INTO workflow_version (id, workflow_id, name, revision, metadata_version, definition_json, concurrency, created_at) VALUES ('v1', 'release', 'Release', 1, '1', '{"id":"release","name":"Release","version":"1","concurrency":1,"nodes":[{"id":"review","name":"Review","type":"approval"}],"dependencies":[]}', 1, 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(`INSERT INTO workflow_run (id, workflow_id, version_id, state, created_at, updated_at) VALUES ('run1', 'release', 'v1', 'active', 2, 2)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateToV23(tx); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateToV24(tx); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateToV25(tx); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var definition string
+	if err := db.QueryRow(`SELECT definition_json FROM workflow_version WHERE id = 'v1'`).Scan(&definition); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(definition, `"triggers":[{"id":"manual","type":"manual"}]`) {
+		t.Fatalf("manual trigger was not backfilled: %s", definition)
+	}
+	var snapshot string
+	if err := db.QueryRow(`SELECT trigger_snapshot_json FROM workflow_run WHERE id = 'run1'`).Scan(&snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(snapshot, `"id":"manual"`) || !strings.Contains(snapshot, `"versionId":"v1"`) {
+		t.Fatalf("run trigger snapshot was not backfilled: %s", snapshot)
+	}
+}
 
 // openLegacyDB creates a database that looks like a pre-migration
 // state.db: old single-column PK, two pre-existing rows in each table.

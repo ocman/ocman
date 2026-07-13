@@ -37,6 +37,16 @@ func triggerFor(triggerType string, status SessionStatusInferer, forge ForgePoll
 	}
 }
 
+// EvaluateTrigger exposes the existing trigger implementations to other
+// orchestration domains without coupling them to the loop service.
+func EvaluateTrigger(ctx context.Context, triggerType string, l state.Loop, tc TriggerConfig, now time.Time, status SessionStatusInferer, forge ForgePoller) (bool, string, *TriggerConfig, error) {
+	trigger, err := triggerFor(triggerType, status, forge)
+	if err != nil {
+		return false, "", nil, err
+	}
+	return trigger.ShouldFire(ctx, l, tc, now)
+}
+
 // SessionStatusInferer reports whether a session's latest turn is still
 // running. Used by child_complete / turn_complete triggers; reuses the
 // adapter's status inference (same code path as the existing watcher).

@@ -850,12 +850,45 @@ export interface WorkflowDependency {
 	to: string;
 }
 
+export type WorkflowTriggerType = 'manual' | 'interval' | 'cron' | 'pr' | 'child_completion' | 'turn_completion';
+export type WorkflowOverlap = 'skip' | 'queue' | 'parallel';
+
+export interface WorkflowTrigger {
+	id: string;
+	type: WorkflowTriggerType;
+	overlap?: WorkflowOverlap;
+	intervalSeconds?: number;
+	cron?: string;
+	prNumber?: number;
+	pollSeconds?: number;
+	directory?: string;
+	platform?: string;
+	sessionId?: string;
+}
+
+export interface WorkflowTriggerState extends WorkflowTrigger {
+	versionId: string;
+	lastCheckedAt?: number;
+	nextCheckAt?: number;
+	lastFiredAt?: number;
+	lastDecision?: 'started' | 'skipped' | 'queued';
+	lastRunId?: string;
+	queued: number;
+}
+
+export interface WorkflowTriggerSnapshot extends WorkflowTrigger {
+	versionId: string;
+	firedAt: number;
+	detail: string;
+}
+
 export interface WorkflowDefinition {
 	id: string;
 	name: string;
 	version: string;
 	concurrency: number;
 	directory?: string;
+	triggers: WorkflowTrigger[];
 	nodes: WorkflowNodeDefinition[];
 	dependencies: WorkflowDependency[];
 }
@@ -867,6 +900,7 @@ export interface WorkflowVersion {
 	revision: number;
 	createdAt: number;
 	definition: WorkflowDefinition;
+	triggerStates: WorkflowTriggerState[];
 }
 
 export interface WorkflowRun {
@@ -877,6 +911,7 @@ export interface WorkflowRun {
 	createdAt: number;
 	updatedAt: number;
 	completedAt?: number;
+	trigger?: WorkflowTriggerSnapshot;
 }
 
 export interface WorkflowAttempt {

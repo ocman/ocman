@@ -72,14 +72,18 @@ flowchart TD
 - **loops.Service** — pure domain logic behind small interfaces;
   driven by a 5 s tick goroutine in the server; shared by REST and
   MCP.
-- **workflows.Service** — shared validation and run-lifecycle seam for
-  immutable workflow versions. It schedules approval, permission-scoped
-  command, and agent nodes from persisted dependency state. The command
-  executor owns directory/environment policy, bounded logs, collectors, and
-  process-tree cancellation; agent attempts create/send/abort through the
-  session service, poll platform-neutral session status, and collect declared
-  messages, diffs, or files through platform/host seams. REST and SSE never
-  implement independent transitions.
+- **workflows.Service** — shared validation, durable trigger, and
+  run-lifecycle seam for immutable workflow versions. Durable
+  manual/interval/cron/PR/completion triggers create version-pinned runs
+  (overlap skip/queue/parallel); a 5 s server tick reuses loop timing,
+  forge, and session-status adapters. It schedules approval,
+  permission-scoped command, and agent nodes from persisted dependency
+  state. The command executor owns directory/environment policy, bounded
+  logs, collectors, and process-tree cancellation; agent attempts
+  create/send/abort through the session service, poll platform-neutral
+  session status, and collect declared messages, diffs, or files through
+  platform/host seams. REST, MCP, and SSE never implement independent
+  transitions.
 - **internal/mcp** — prompt composer + session launcher + tool
   handlers; all side effects go through the same `Platform` interface
   the HTTP layer uses.
@@ -106,7 +110,7 @@ sequenceDiagram
     R->>A: ListSessions()
     A->>D: SQL json_extract / HTTP proxy
     D-->>B: JSON (status inferred at query time)
-    Note over S,E: background: loop/workflow engine ticks,<br/>child-session watcher, remote gRPC streams
+    Note over S,E: background: loop/workflow engine + trigger ticks,<br/>child-session watcher, remote gRPC streams
     E-->>B: SSE (session.updated, loop.updated, workflow.run.updated)
 ```
 
@@ -115,11 +119,12 @@ state from the last message row on every query, so there is no sync
 problem with OpenCode's DB.
 
 Workflow state takes the opposite path because it is ocman-owned: publish,
-start, approval, command completion, agent supervision, pause, and cancel
-delegate to `workflows.Service`, which commits version/run/node/attempt state
-and bounded command/collector output to `state.db` before broadcasting a run
-ID. The browser then refetches the authoritative run graph, including linked
-agent sessions and collector output.
+trigger/manual start, approval, command completion, agent supervision,
+pause, and cancel delegate to `workflows.Service`, which commits
+trigger/version/run/node/attempt state and bounded command/collector output
+to `state.db` before broadcasting a run ID. The browser then refetches the
+authoritative trigger state and run graph, including linked agent sessions
+and collector output.
 
 ## 4. Frontend Composition
 
