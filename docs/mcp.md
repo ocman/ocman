@@ -60,9 +60,12 @@ directly (no Vite dev proxy).
 2. Ocman gathers context from the parent session's directory — the last
    10 messages, the current git branch, and `git diff --stat`.
 3. A structured Markdown prompt is assembled and sent to a new OpenCode
-   session.
+   session. The prompt tells the child to call `send_message_to_parent`
+   with its findings before ending its turn.
 4. A background watcher polls the child session; when it completes,
-   ocman injects a result summary back into the parent session.
+   ocman injects a completion notification back into the parent. The
+   notification contains status and session metadata; the child's actual
+   result comes from its `send_message_to_parent` call in step 3.
 
 ## Splitting skill (optional)
 

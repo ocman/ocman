@@ -165,6 +165,7 @@ func (c *PromptComposer) Compose(ctx context.Context, sessionID, intent string, 
 
 	// Intent is always first and always preserved.
 	fmt.Fprintf(&buf, "## Task\n\n%s\n\n", strings.TrimSpace(intent))
+	fmt.Fprintf(&buf, "## Reporting Back\n\nWhen you finish this task, call the `send_message_to_parent` MCP tool with a concise summary of what you did, the outcome, and anything the parent needs to know (files changed, decisions, follow-ups). Do this as your final step before ending your turn.\n\n")
 
 	// Project metadata (always preserved, small).
 	if projectMeta != "" {

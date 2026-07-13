@@ -67,6 +67,9 @@ func TestCompose_ContainsIntent(t *testing.T) {
 	if !strings.Contains(prompt, "## Task") {
 		t.Errorf("prompt missing ## Task section: %q", prompt)
 	}
+	if !strings.Contains(prompt, "send_message_to_parent") {
+		t.Errorf("prompt missing report-back instruction: %q", prompt)
+	}
 }
 
 func TestCompose_ProjectMeta(t *testing.T) {
