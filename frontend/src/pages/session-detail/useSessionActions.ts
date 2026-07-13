@@ -69,6 +69,7 @@ export interface UseSessionActionsOptions {
   handleNewSession: (title?: string) => Promise<void>;
   handleTmuxShortcut: () => void;
   setShowRenameModal: Dispatch<SetStateAction<boolean>>;
+  setShowForkPicker: Dispatch<SetStateAction<boolean>>;
   setShowRenameToast: Dispatch<SetStateAction<boolean>>;
   setShowDisconnectedToast: Dispatch<SetStateAction<boolean>>;
   setRestartToastMessage: Dispatch<SetStateAction<string | null>>;
@@ -145,6 +146,7 @@ export function useSessionActions({
   handleNewSession,
   handleTmuxShortcut,
   setShowRenameModal,
+  setShowForkPicker,
   setShowRenameToast,
   setShowDisconnectedToast,
   setRestartToastMessage,
@@ -475,15 +477,7 @@ export function useSessionActions({
 
     if (command === 'fork') {
       if (!caps.fork) return;
-      pending.begin('/fork');
-      try {
-        const { id } = await api.forkSession(session.id);
-        pending.clear();
-        navigateToSession(id);
-      } catch (e) {
-        remoteLog.error('Failed to fork session', e);
-        pending.fail(e instanceof Error ? e.message : 'Unknown error');
-      }
+      setShowForkPicker(true);
       return;
     }
 
@@ -596,7 +590,7 @@ export function useSessionActions({
       remoteLog.error('Failed to execute command', e);
       pending.fail(e instanceof Error ? e.message : 'Unknown error');
     }
-  }, [activeAgent, archiveSession, caps.fork, caps.move, createSession, launchOpencodeInTmux, tmuxAvailable, seedNewSession, handleCompact, handleNewSession, handleTmuxShortcut, handleVSCodeShortcut, navigate, navigateToSession, openWorktreeForm, portAvailable, recentSessionsRef, messagesRef, partsRef, selectedAgent, selectedModel, session, setShowRenameModal, setShowRenameToast, setRestartToastMessage, setCopyToastMessage, pending]);
+  }, [activeAgent, archiveSession, caps.fork, caps.move, createSession, launchOpencodeInTmux, tmuxAvailable, seedNewSession, handleCompact, handleNewSession, handleTmuxShortcut, handleVSCodeShortcut, navigate, navigateToSession, openWorktreeForm, portAvailable, recentSessionsRef, messagesRef, partsRef, selectedAgent, selectedModel, session, setShowForkPicker, setShowRenameModal, setShowRenameToast, setRestartToastMessage, setCopyToastMessage, pending]);
 
   return {
     awaitingAssistantResponse,

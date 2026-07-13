@@ -39,6 +39,7 @@ const forkSession = vi.mocked(api.forkSession);
 const moveSession = vi.mocked(api.moveSession);
 const navigateToSession = vi.fn();
 const failFn = vi.fn();
+const setShowForkPicker = vi.fn();
 
 function makeOptions(caps: Partial<UseSessionActionsOptions['caps']> = {}): UseSessionActionsOptions {
   return {
@@ -71,6 +72,7 @@ function makeOptions(caps: Partial<UseSessionActionsOptions['caps']> = {}): UseS
     handleNewSession: vi.fn().mockResolvedValue(undefined),
     handleTmuxShortcut: vi.fn(),
     setShowRenameModal: vi.fn(),
+    setShowForkPicker,
     setShowRenameToast: vi.fn(),
     setShowDisconnectedToast: vi.fn(),
     setRestartToastMessage: vi.fn(),
@@ -84,18 +86,19 @@ beforeEach(() => {
   navigateToSession.mockClear();
   patchRecentSession.mockClear();
   failFn.mockClear();
+  setShowForkPicker.mockClear();
 });
 
 describe('useSessionActions — /fork command', () => {
-  it('forks the session and navigates to the new one', async () => {
+  it('opens the fork-point picker', async () => {
     const { result } = renderHook(() => useSessionActions(makeOptions()));
 
     await act(async () => {
       await result.current.handleCommand('fork', '');
     });
 
-    expect(forkSession).toHaveBeenCalledWith('sess-1');
-    expect(navigateToSession).toHaveBeenCalledWith('sess-forked');
+    expect(setShowForkPicker).toHaveBeenCalledWith(true);
+    expect(forkSession).not.toHaveBeenCalled();
   });
 
   it('is a no-op when the platform lacks the fork capability', async () => {

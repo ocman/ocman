@@ -1,0 +1,10 @@
+.oc-fork-picker-content {
+  flex: 1;
+}
+
+.oc-fork-picker-time {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 11px;
+}

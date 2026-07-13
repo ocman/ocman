@@ -65,6 +65,7 @@ function makeOptions(overrides: Partial<UseSessionActionsOptions> = {}): UseSess
     handleNewSession: vi.fn().mockResolvedValue(undefined),
     handleTmuxShortcut: vi.fn(),
     setShowRenameModal: vi.fn(),
+    setShowForkPicker: vi.fn(),
     setShowRenameToast: vi.fn(),
     setShowDisconnectedToast: vi.fn(),
     setRestartToastMessage: vi.fn(),

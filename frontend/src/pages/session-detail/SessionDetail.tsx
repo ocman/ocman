@@ -83,6 +83,7 @@ import { ThreadBoundaryFallback } from './ThreadBoundaryFallback';
 import { SessionToasts } from './SessionToasts';
 import { SessionSidebar, type SidebarProjectGroup } from './SessionSidebar';
 import { RenameModal } from './RenameModal';
+import { ForkPicker } from './ForkPicker';
 import { useSessionActions } from './useSessionActions';
 import { useMessageQueue } from '../../lib/useMessageQueue';
 import { useSession } from './useSession';
@@ -444,6 +445,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // Toast / modal state.
   const [showShareModal, setShowShareModal] = useState(false);
   const [showRenameModal, setShowRenameModal] = useState(false);
+  const [showForkPicker, setShowForkPicker] = useState(false);
   const [showRenameToast, setShowRenameToast] = useState(false);
   const [showCreateSessionErrorToast, setShowCreateSessionErrorToast] = useState(false);
   const [showDisconnectedToast, setShowDisconnectedToast] = useState(false);
@@ -856,6 +858,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     handleNewSession,
     handleTmuxShortcut,
     setShowRenameModal,
+    setShowForkPicker,
     setShowRenameToast,
     setShowDisconnectedToast,
     setRestartToastMessage,
@@ -1462,6 +1465,27 @@ export function SessionDetail({ id }: SessionDetailProps) {
                     patchSession({ title: newTitle });
                     patchRecentSession(session.id, { title: newTitle });
                     setShowRenameToast(true);
+                  }}
+                />
+              )}
+              {showForkPicker && session && (
+                <ForkPicker
+                  open
+                  messages={messages}
+                  parts={parts}
+                  onClose={() => setShowForkPicker(false)}
+                  onSelect={(messageID) => {
+                    setShowForkPicker(false);
+                    pending.begin('/fork');
+                    api.forkSession(session.id, messageID)
+                      .then(({ id: forkedID }) => {
+                        pending.clear();
+                        navigateToSession(forkedID);
+                      })
+                      .catch((error) => {
+                        remoteLog.error('Failed to fork session', error);
+                        pending.fail(error instanceof Error ? error.message : 'Unknown error');
+                      });
                   }}
                 />
               )}
