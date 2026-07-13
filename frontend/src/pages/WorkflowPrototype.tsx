@@ -16,6 +16,8 @@ type FixtureNode = {
   artifacts: string[];
   resources: string[];
   workspace: string[];
+  stableKey: string;
+  pinnedWorkflow: string;
 };
 
 const STATE_META: Record<NodeState, { label: string; symbol: string }> = {
@@ -90,15 +92,38 @@ const JSON_SOURCE = `{
     "git-writer": { "capacity": 1 }
   },
   "nodes": {
-    "discover": { "type": "command", "outputs": ["migration-units"] },
-    "migrate": { "type": "map", "needs": ["discover"], "workflow": "migrate-unit@4", "max_parallel": 12 },
-    "integration_tests": { "type": "command", "needs": ["migrate"] },
-    "serialized_commit": { "type": "command", "needs": ["integration_tests"] }
+    "discover": {
+      "type": "command",
+      "run": "scripts/discover-migration-units",
+      "outputs": ["migration-units"]
+    },
+    "migrate": {
+      "type": "map",
+      "needs": ["discover"],
+      "items": "artifact://discover/migration-units",
+      "key": "item.path",
+      "workflow": "migrate-unit@4",
+      "max_parallel": 12
+    },
+    "integration_tests": {
+      "type": "command",
+      "needs": ["migrate"],
+      "resources": { "compilers": 1 }
+    },
+    "serialized_commit": {
+      "type": "command",
+      "needs": ["integration_tests"],
+      "resources": { "git-writer": 1 }
+    }
   }
 }`;
 
 function fixtureNode(id: string, title: string, kind: string, state: NodeState, item?: string): FixtureNode {
-  const failed = state === 'failed';
+  const resource = title.includes('Integration') || kind === 'mapped command'
+    ? { name: 'compilers', used: 3, capacity: 3 }
+    : title.includes('commit')
+      ? { name: 'git-writer', used: 1, capacity: 1 }
+      : { name: 'agents', used: 12, capacity: 12 };
   const attempts: Record<NodeState, string[]> = {
     pending: ['Not attempted · 2 dependencies incomplete'],
     ready: ['Ready · dependencies satisfied · awaiting scheduler'],
@@ -112,6 +137,19 @@ function fixtureNode(id: string, title: string, kind: string, state: NodeState, 
     paused: ['Not attempted · run scheduling paused'],
     canceled: ['#1 canceled · termination acknowledged · 00:31'],
   };
+  const logs: Partial<Record<NodeState, string[]>> = {
+    running: [`Translating ${item ?? 'discovered units'}`, 'Running focused validation'],
+    successful: ['Command completed with exit 0', `Published outputs for ${item ?? id}`],
+    failed: ['cargo test parser', 'error[E0308]: mismatched types at src/parser.rs:418'],
+    unknown: ['Executor disconnected after reporting a workspace side effect'],
+    canceled: ['Cancellation requested', 'Process exited after SIGTERM'],
+  };
+  const artifacts: Partial<Record<NodeState, string[]>> = {
+    running: [`partial diff · ${item ?? 'repository'}.patch · 8.2 KB`],
+    successful: [`diff · ${item ?? 'repository'}.patch · 18.4 KB`, 'result · summary.json · 2.1 KB'],
+    failed: ['diagnostics · cargo-check.txt · 7.8 KB'],
+    unknown: ['recovery marker · side-effects.json · 0.8 KB'],
+  };
   return {
     id,
     title,
@@ -119,14 +157,22 @@ function fixtureNode(id: string, title: string, kind: string, state: NodeState, 
     state,
     duration: state === 'running' ? '08:42 elapsed' : state === 'waiting' ? 'waiting 03:14' : ['successful', 'failed', 'canceled'].includes(state) ? '02:18' : 'not started',
     attempts: attempts[state],
-    logs: failed ? ['cargo test parser', 'error[E0308]: mismatched types at src/parser.rs:418'] : ['Applied translation guidance', 'Running focused tests: parser::comments parser::precedence'],
-    artifacts: [`diff · ${item ?? 'repository'}.patch · 18.4 KB`, 'result · summary.json · 2.1 KB', 'diagnostics · cargo-check.txt · 7.8 KB'],
-    resources: state === 'waiting' ? ['agents 12/12 · queued #3', 'compilers 3/3 · queued #1'] : ['agents 1/12 · lease active', 'compilers 0/3'],
+    logs: logs[state] ?? [],
+    artifacts: artifacts[state] ?? [],
+    resources: state === 'waiting'
+      ? [`${resource.name} ${resource.used}/${resource.capacity} · queued #1`, 'request · 1 slot · priority normal']
+      : state === 'running'
+        ? [`${resource.name} 1/${resource.capacity} · lease active`]
+        : [`${resource.name} · no active lease`],
     workspace: [`shard · wt-migrate-0${(id.length % 4) + 1}`, `lease · ${item ? `src/${item.replace('.ts', '.rs')}` : 'exclusive repository'}`, 'host · local'],
+    stableKey: item ?? id,
+    pinnedWorkflow: item ? 'migrate-unit@4' : 'bun-zig-to-rust@7',
   };
 }
 
-function pipelineState(itemState: NodeState, stepIndex: number): NodeState {
+// Exported for direct branch-coverage tests of the fixture derivation.
+// eslint-disable-next-line react-refresh/only-export-components
+export function pipelineState(itemState: NodeState, stepIndex: number): NodeState {
   if (itemState === 'successful' || itemState === 'pending' || itemState === 'skipped') return itemState;
   if (itemState === 'failed') return stepIndex < 2 ? 'successful' : stepIndex === 2 ? 'failed' : 'blocked';
   if (itemState === 'running') return stepIndex < 2 ? 'successful' : stepIndex === 2 ? 'running' : 'pending';
@@ -167,14 +213,15 @@ function NodeCard({ node, selected, onSelect }: { node: FixtureNode; selected: b
 
 function NodeInspector({ node, containerRef }: { node: FixtureNode; containerRef: RefObject<HTMLElement | null> }) {
   return (
-    <aside className="wf-inspector" aria-label="Node details" ref={containerRef} tabIndex={-1}>
+    <aside className="wf-inspector" aria-label="Node details" data-testid="workflow-node-inspector" ref={containerRef} tabIndex={-1}>
       <div className="wf-inspector-head">
         <div><span className="wf-eyebrow">{node.kind} · {node.id}</span><h2>{node.title}</h2></div>
         <StatusBadge state={node.state} />
       </div>
+      <section><h3>Identity</h3><dl className="wf-identity"><dt>Stable map key</dt><dd>{node.stableKey}</dd><dt>Pinned subworkflow</dt><dd>{node.pinnedWorkflow}</dd></dl></section>
       <section><h3>Attempts</h3>{node.attempts.map((value) => <p key={value} className="wf-detail-row">{value}</p>)}</section>
-      <section><h3>Logs</h3><pre>{node.logs.join('\n')}</pre></section>
-      <section><h3>Artifacts</h3>{node.artifacts.map((value) => <p key={value} className="wf-detail-row wf-linkish">{value}</p>)}</section>
+      <section><h3>Logs</h3>{node.logs.length ? <pre>{node.logs.join('\n')}</pre> : <p className="wf-detail-row">No logs recorded</p>}</section>
+      <section><h3>Artifacts</h3>{node.artifacts.length ? node.artifacts.map((value) => <p key={value} className="wf-detail-row wf-linkish">{value}</p>) : <p className="wf-detail-row">No artifacts produced</p>}</section>
       <section><h3>Resources</h3>{node.resources.map((value) => <p key={value} className="wf-detail-row">{value}</p>)}</section>
       <section><h3>Workspace ownership</h3>{node.workspace.map((value) => <p key={value} className="wf-detail-row">{value}</p>)}</section>
     </aside>
@@ -195,15 +242,15 @@ function SourceEditor({
   onSourceChange: (source: string) => void;
 }) {
   return (
-    <section className="wf-source" aria-label="Workflow definition editor">
+    <section className="wf-source" id="workflow-source-panel" role="tabpanel" aria-label="Workflow definition editor">
       <div className="wf-source-toolbar">
-        <div className="wf-segmented" aria-label="Source format">
-          <button type="button" aria-pressed={language === 'yaml'} onClick={() => onLanguageChange('yaml')}>YAML</button>
-          <button type="button" aria-pressed={language === 'json'} onClick={() => onLanguageChange('json')}>JSON</button>
+        <div className="wf-segmented" role="tablist" aria-label="Source format">
+          <button type="button" role="tab" aria-selected={language === 'yaml'} aria-controls="workflow-source-editor" onClick={() => onLanguageChange('yaml')}>YAML</button>
+          <button type="button" role="tab" aria-selected={language === 'json'} aria-controls="workflow-source-editor" onClick={() => onLanguageChange('json')}>JSON</button>
         </div>
-        <span>{changed ? 'Edited local draft · validation not wired' : 'Fixture source · not persisted'}</span>
+        <span>{language.toUpperCase()} {changed ? 'draft edited · validation not wired' : 'fixture source · not persisted'}</span>
       </div>
-      <div className="wf-source-grid">
+      <div className="wf-source-grid" id="workflow-source-editor" role="tabpanel">
         <label className="wf-editor">
           <span>Workflow source</span>
           <textarea aria-label="Workflow source" spellCheck={false} value={source} onChange={(event) => onSourceChange(event.target.value)} />
@@ -225,7 +272,7 @@ export function WorkflowPrototype() {
   const [view, setView] = useState<'source' | 'graph'>('source');
   const [language, setLanguage] = useState<'yaml' | 'json'>('yaml');
   const [sources, setSources] = useState({ yaml: YAML_SOURCE, json: JSON_SOURCE });
-  const [sourceChanged, setSourceChanged] = useState(false);
+  const [sourceChanged, setSourceChanged] = useState({ yaml: false, json: false });
   const [mapExpanded, setMapExpanded] = useState(false);
   const [expandedItem, setExpandedItem] = useState<string>();
   const [selected, setSelected] = useState<FixtureNode>(DISCOVER);
@@ -262,24 +309,24 @@ export function WorkflowPrototype() {
         </div>
       </header>
 
-      <div className="wf-view-tabs" aria-label="Workflow prototype view">
-        <button type="button" aria-pressed={view === 'source'} onClick={() => setView('source')}>Definition source</button>
-        <button type="button" aria-pressed={view === 'graph'} onClick={() => setView('graph')}>Run graph</button>
+      <div className="wf-view-tabs" role="tablist" aria-label="Workflow prototype view">
+        <button type="button" role="tab" aria-selected={view === 'source'} aria-controls="workflow-source-panel" onClick={() => setView('source')}>Definition source</button>
+        <button type="button" role="tab" aria-selected={view === 'graph'} aria-controls="workflow-run-panel" onClick={() => setView('graph')}>Run graph</button>
       </div>
 
       {view === 'source' ? (
         <SourceEditor
           language={language}
           source={sources[language]}
-          changed={sourceChanged}
+          changed={sourceChanged[language]}
           onLanguageChange={setLanguage}
           onSourceChange={(source) => {
             setSources({ ...sources, [language]: source });
-            setSourceChanged(true);
+            setSourceChanged({ ...sourceChanged, [language]: true });
           }}
         />
       ) : (
-        <section className="wf-run-view">
+        <section className="wf-run-view" id="workflow-run-panel" role="tabpanel">
           <div className="wf-graph-toolbar">
             <ul className="wf-legend" aria-label="Node state legend">
               {(Object.keys(STATE_META) as NodeState[]).map((state) => <li key={state}><StatusBadge state={state} /></li>)}
@@ -287,7 +334,7 @@ export function WorkflowPrototype() {
             <button type="button" className="wf-jump" onClick={jumpToFailure}>Jump to failed</button>
           </div>
           <div className="wf-run-layout">
-            <div className="wf-graph-scroll" role="region" aria-label="Workflow run graph" tabIndex={0}>
+            <div className="wf-graph-scroll" role="region" aria-label="Workflow run graph" data-testid="workflow-graph-viewport" tabIndex={0}>
               <div className="wf-canvas">
                 <div className="wf-stage">
                   <span className="wf-stage-label">01 · Discover</span>
@@ -370,3 +417,6 @@ export function WorkflowPrototype() {
     </main>
   );
 }
+
+// Default export so App.tsx can lazy-load this disposable route.
+export default WorkflowPrototype;

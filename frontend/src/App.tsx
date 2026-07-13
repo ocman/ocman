@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -7,7 +7,6 @@ import { DashboardLayout, SessionsTab, ProjectsTab, StatsTab, UsageTab, Settings
 import { ProjectDetail } from './pages/ProjectDetail';
 import { WorktreesView } from './pages/WorktreesView';
 import { Loops } from './pages/Loops';
-import { WorkflowPrototype } from './pages/WorkflowPrototype';
 import { SessionDetail } from './pages/session-detail';
 import { SharedConversationView } from './pages/SharedConversationView';
 import { Login } from './pages/Login';
@@ -38,6 +37,11 @@ import { useMemoryMonitor } from './lib/useMemoryMonitor';
 import { useLongTaskMonitor } from './lib/useLongTaskMonitor';
 import { installDevHandle as installPerfDevHandle } from './lib/perfRing';
 
+// Disposable #312 workflow prototype — lazy so its fixtures and CSS stay
+// out of the initial bundle. Delete this import and the route when the
+// production workflow UI lands.
+const WorkflowPrototype = lazy(() => import('./pages/WorkflowPrototype'));
+
 // Top-level boundary keyed on the current pathname so navigating away from
 // a crashed route auto-recovers without forcing the user to reload. Inner
 // boundaries (RightPanel panes, AssistantThread, Composer, Dashboard tabs)
@@ -57,7 +61,7 @@ function RoutesBoundary({ children }: { children: ReactNode }) {
 // force-hides the menu after clicking an item (CSS :hover alone can't
 // close while the cursor is still over the menu). Moving the mouse away
 // resets it so hover works again next time.
-function LogoNav({ agentLoopsAllowed }: { agentLoopsAllowed: boolean }) {
+export function LogoNav({ agentLoopsAllowed }: { agentLoopsAllowed: boolean }) {
   const [closed, setClosed] = useState(false);
   return (
     <span
@@ -456,27 +460,40 @@ function AuthenticatedApp() {
           <Header />
           <div className="content">
             <RoutesBoundary>
-              <Routes>
-                <Route element={<DashboardLayout />}>
-                  <Route path="/" element={<RootRedirect />} />
-                  <Route path="/sessions" element={<SessionsTab />} />
-                  <Route path="/projects" element={<ProjectsTab />} />
-                  <Route path="/stats" element={<StatsTab />} />
-                  <Route path="/usage" element={<UsageTab />} />
-                  <Route path="/loops" element={<Loops />} />
-                  <Route path="/settings" element={<SettingsTab />} />
-                </Route>
-                <Route path="/project/:dir/worktrees" element={<WorktreesView />} />
-                <Route path="/project/:dir/loops" element={<Loops />} />
-                <Route path="/project/:dir" element={<ProjectDetail />} />
-                <Route path="/prototype/workflows" element={<WorkflowPrototype />} />
-                <Route path="/session/:id" element={<SessionDetail />} />
-              </Routes>
+              <AppRoutes />
             </RoutesBoundary>
           </div>
         </div>
       </HeaderProvider>
     </AuthGate>
+  );
+}
+
+export function AppRoutes() {
+  return (
+    <Routes>
+      <Route element={<DashboardLayout />}>
+        <Route path="/" element={<RootRedirect />} />
+        <Route path="/sessions" element={<SessionsTab />} />
+        <Route path="/projects" element={<ProjectsTab />} />
+        <Route path="/stats" element={<StatsTab />} />
+        <Route path="/usage" element={<UsageTab />} />
+        <Route path="/loops" element={<Loops />} />
+        <Route path="/settings" element={<SettingsTab />} />
+      </Route>
+      <Route path="/project/:dir/worktrees" element={<WorktreesView />} />
+      <Route path="/project/:dir/loops" element={<Loops />} />
+      <Route path="/project/:dir" element={<ProjectDetail />} />
+      <Route
+        path="/prototype/workflows"
+        element={
+          <Suspense fallback={<div className="oc-login-bootstrap">Loading workflow lab…</div>}>
+            <WorkflowPrototype />
+          </Suspense>
+        }
+      />
+      <Route path="/session/:id" element={<SessionDetail />} />
+    </Routes>
   );
 }
 
