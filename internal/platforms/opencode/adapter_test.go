@@ -256,3 +256,53 @@ func TestChildLinksFrom(t *testing.T) {
 		t.Errorf("favorites implementing mcpParentLookup should be returned")
 	}
 }
+
+func TestFoldWorktreeToProjectRoot(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		// Real worktree layout (as seen in the live OpenCode DB).
+		{"/Users/dries/src/github.com/NoUseFreak/.worktrees/ocman/feat-x", "/Users/dries/src/github.com/NoUseFreak/ocman"},
+		{"/Users/dries/src/github.com/NoUseFreak/.worktrees/ocman/feat-x/sub", "/Users/dries/src/github.com/NoUseFreak/ocman"},
+		{"/src/.worktrees/repo/slug", "/src/repo"},
+		// Not a worktree path -> unchanged.
+		{"/Users/dries/src/github.com/NoUseFreak/ocman", "/Users/dries/src/github.com/NoUseFreak/ocman"},
+		// Too few components after .worktrees -> unchanged.
+		{"/src/.worktrees/repo", "/src/.worktrees/repo"},
+		// No distinguishable prefix -> unchanged.
+		{".worktrees/repo/slug", ".worktrees/repo/slug"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := foldWorktreeToProjectRoot(c.in); got != c.want {
+			t.Errorf("foldWorktreeToProjectRoot(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestDirectoryHasLivePort is the regression guard for worktree
+// liveness (#268 fallout): a worktree session's own directory is never
+// a port-map key because its OpenCode instance runs at the main
+// checkout. Before the fold fallback this returned false, disabling the
+// composer + question prompts for worktree sessions. Ports are keyed by
+// normalized (symlink-resolved) directory, so we key on a real path
+// that exists on this machine to keep the lookup deterministic.
+func TestDirectoryHasLivePort(t *testing.T) {
+	root := t.TempDir() // e.g. <tmp>/repo's parent — normalized on disk
+	repo := root + "/ocman"
+	worktree := root + "/.worktrees/ocman/feat-x"
+	ports := map[string]string{normalizePortDirectory(repo): "4096"}
+
+	if !directoryHasLivePort(ports, repo) {
+		t.Error("exact project-root match should be live")
+	}
+	if !directoryHasLivePort(ports, worktree) {
+		t.Error("worktree dir should fold to project root and be live")
+	}
+	if directoryHasLivePort(ports, root+"/other") {
+		t.Error("unrelated directory must not be live")
+	}
+	if directoryHasLivePort(map[string]string{}, worktree) {
+		t.Error("no running instances -> not live")
+	}
+}

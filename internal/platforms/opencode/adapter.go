@@ -170,7 +170,7 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 
 	for i := range sessions {
 		sessions[i].Platform = string(PlatformID)
-		if _, ok := ports[sessions[i].Directory]; ok {
+		if directoryHasLivePort(ports, sessions[i].Directory) {
 			sessions[i].LiveConnection = true
 		}
 		if pendingPerms[sessions[i].ID] {
@@ -181,6 +181,25 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 		}
 	}
 	return sessions, nil
+}
+
+// directoryHasLivePort reports whether a running OpenCode instance
+// serves the given session directory. It first tries an exact match,
+// then folds a worktree directory back to its project root — worktree
+// sessions run on the project's shared instance (rooted at the main
+// checkout), so their own directory is never a key in the port map.
+// Without the fold, worktree sessions report LiveConnection=false,
+// which disables the composer and the question-prompt UI for them.
+func directoryHasLivePort(ports map[string]string, directory string) bool {
+	if _, ok := ports[normalizePortDirectory(directory)]; ok {
+		return true
+	}
+	root := foldWorktreeToProjectRoot(directory)
+	if root == directory {
+		return false
+	}
+	_, ok := ports[normalizePortDirectory(root)]
+	return ok
 }
 
 // bubbleUpPromptsToParent adds the parent session ID for every prompted

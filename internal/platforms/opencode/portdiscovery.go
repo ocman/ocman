@@ -205,6 +205,43 @@ func normalizePortDirectory(directory string) string {
 	return clean
 }
 
+// foldWorktreeToProjectRoot folds a worktree session directory back to
+// the main checkout that hosts its (single) OpenCode instance:
+//
+//	<prefix>/.worktrees/<repo>/<slug>...  ->  <prefix>/<repo>
+//
+// Worktree sessions run on the project's shared instance (rooted at the
+// main checkout, see EnsureProjectOpencode), so their own directory is
+// never a key in the port map. Folding to the project root lets the
+// directory-keyed liveness/port lookup find the hosting instance.
+//
+// Any path that doesn't match the worktree layout is returned unchanged.
+// Mirrors server.projectRootForDirectory / git.WorktreePathFor / the
+// frontend's worktrees.ts helper (kept local to avoid an import cycle).
+func foldWorktreeToProjectRoot(directory string) string {
+	if directory == "" {
+		return directory
+	}
+	parts := strings.Split(filepath.Clean(directory), "/")
+	idx := -1
+	for i, p := range parts {
+		if p == ".worktrees" {
+			idx = i
+			break
+		}
+	}
+	// Need <prefix>/.worktrees/<repo>/<slug>, and a non-empty prefix
+	// (idx==0 means a relative/root path with no distinguishable prefix).
+	if idx <= 0 || len(parts) < idx+3 {
+		return directory
+	}
+	prefix := strings.Join(parts[:idx], "/")
+	if prefix == "" {
+		return directory
+	}
+	return prefix + "/" + parts[idx+1]
+}
+
 // pidPort is a (pid, port) pair extracted from `lsof -iTCP -sTCP:LISTEN`.
 type pidPort struct {
 	pid  string
