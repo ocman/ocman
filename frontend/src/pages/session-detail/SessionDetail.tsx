@@ -84,6 +84,7 @@ import { SessionToasts } from './SessionToasts';
 import { SessionSidebar, type SidebarProjectGroup } from './SessionSidebar';
 import { RenameModal } from './RenameModal';
 import { ForkPicker } from './ForkPicker';
+import { MovePathDialog, MovePicker } from './MovePicker';
 import { useSessionActions } from './useSessionActions';
 import { useMessageQueue } from '../../lib/useMessageQueue';
 import { useSession } from './useSession';
@@ -446,6 +447,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const [showShareModal, setShowShareModal] = useState(false);
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [showForkPicker, setShowForkPicker] = useState(false);
+  const [showMovePicker, setShowMovePicker] = useState(false);
+  const [showMovePathDialog, setShowMovePathDialog] = useState(false);
   const [showRenameToast, setShowRenameToast] = useState(false);
   const [showCreateSessionErrorToast, setShowCreateSessionErrorToast] = useState(false);
   const [showDisconnectedToast, setShowDisconnectedToast] = useState(false);
@@ -859,11 +862,27 @@ export function SessionDetail({ id }: SessionDetailProps) {
     handleTmuxShortcut,
     setShowRenameModal,
     setShowForkPicker,
+    setShowMovePicker,
     setShowRenameToast,
     setShowDisconnectedToast,
     setRestartToastMessage,
     setCopyToastMessage,
   });
+
+  const handleMoveDestination = useCallback((directory: string) => {
+    if (!session) return;
+    pending.begin(`/move ${directory}`);
+    api.moveSession(session.id, directory)
+      .then(() => {
+        pending.clear();
+        patchSession({ directory });
+        patchRecentSession(session.id, { directory });
+      })
+      .catch((error) => {
+        remoteLog.error('Failed to move session', error);
+        pending.fail(error instanceof Error ? error.message : 'Unknown error');
+      });
+  }, [patchRecentSession, patchSession, pending, session]);
 
   void setSubagentTokens; // exposed for the legacy hook; not needed
                           // by the new pipeline since SSE handles
@@ -1486,6 +1505,35 @@ export function SessionDetail({ id }: SessionDetailProps) {
                         remoteLog.error('Failed to fork session', error);
                         pending.fail(error instanceof Error ? error.message : 'Unknown error');
                       });
+                  }}
+                />
+              )}
+              {showMovePicker && session && (
+                <MovePicker
+                  open
+                  currentDirectory={session.directory}
+                  directories={[
+                    ...(allProjects ?? [])
+                      .filter((project) => (project.remoteId || 'local') === (session.remoteId || 'local'))
+                      .map((project) => project.directory),
+                    ...recentSessions
+                      .filter((recent) => (recent.remoteId || 'local') === (session.remoteId || 'local'))
+                      .map((recent) => recent.directory),
+                  ]}
+                  onClose={() => setShowMovePicker(false)}
+                  onCustom={() => setShowMovePathDialog(true)}
+                  onSelect={(directory) => {
+                    setShowMovePicker(false);
+                    handleMoveDestination(directory);
+                  }}
+                />
+              )}
+              {showMovePathDialog && session && (
+                <MovePathDialog
+                  onClose={() => setShowMovePathDialog(false)}
+                  onSelect={(directory) => {
+                    setShowMovePathDialog(false);
+                    handleMoveDestination(directory);
                   }}
                 />
               )}

@@ -66,6 +66,7 @@ function makeOptions(): UseSessionActionsOptions {
     handleTmuxShortcut: vi.fn(),
     setShowRenameModal: vi.fn(),
     setShowForkPicker: vi.fn(),
+    setShowMovePicker: vi.fn(),
     setShowRenameToast: vi.fn(),
     setShowDisconnectedToast: vi.fn(),
     setRestartToastMessage: vi.fn(),

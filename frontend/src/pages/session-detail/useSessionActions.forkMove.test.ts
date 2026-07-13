@@ -40,6 +40,7 @@ const moveSession = vi.mocked(api.moveSession);
 const navigateToSession = vi.fn();
 const failFn = vi.fn();
 const setShowForkPicker = vi.fn();
+const setShowMovePicker = vi.fn();
 
 function makeOptions(caps: Partial<UseSessionActionsOptions['caps']> = {}): UseSessionActionsOptions {
   return {
@@ -73,6 +74,7 @@ function makeOptions(caps: Partial<UseSessionActionsOptions['caps']> = {}): UseS
     handleTmuxShortcut: vi.fn(),
     setShowRenameModal: vi.fn(),
     setShowForkPicker,
+    setShowMovePicker,
     setShowRenameToast: vi.fn(),
     setShowDisconnectedToast: vi.fn(),
     setRestartToastMessage: vi.fn(),
@@ -87,6 +89,7 @@ beforeEach(() => {
   patchRecentSession.mockClear();
   failFn.mockClear();
   setShowForkPicker.mockClear();
+  setShowMovePicker.mockClear();
 });
 
 describe('useSessionActions — /fork command', () => {
@@ -113,25 +116,25 @@ describe('useSessionActions — /fork command', () => {
 });
 
 describe('useSessionActions — /move command', () => {
-  it('moves the session to the given directory and patches the sidebar', async () => {
+  it('opens the move-destination picker', async () => {
     const { result } = renderHook(() => useSessionActions(makeOptions()));
 
     await act(async () => {
-      await result.current.handleCommand('move', '  /tmp/dst  ');
+      await result.current.handleCommand('move', '');
     });
 
-    expect(moveSession).toHaveBeenCalledWith('sess-1', '/tmp/dst');
-    expect(patchRecentSession).toHaveBeenCalledWith('sess-1', { directory: '/tmp/dst' });
+    expect(setShowMovePicker).toHaveBeenCalledWith(true);
+    expect(moveSession).not.toHaveBeenCalled();
   });
 
-  it('reports usage and does not call the API when no directory is given', async () => {
-    const { result } = renderHook(() => useSessionActions(makeOptions()));
+  it('is a no-op when the platform lacks the move capability', async () => {
+    const { result } = renderHook(() => useSessionActions(makeOptions({ move: false })));
 
     await act(async () => {
-      await result.current.handleCommand('move', '   ');
+      await result.current.handleCommand('move', '');
     });
 
     expect(moveSession).not.toHaveBeenCalled();
-    expect(failFn).toHaveBeenCalled();
+    expect(setShowMovePicker).not.toHaveBeenCalled();
   });
 });
