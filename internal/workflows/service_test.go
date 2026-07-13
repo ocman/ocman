@@ -914,6 +914,35 @@ func TestAgentTerminalErrorAndCancellation(t *testing.T) {
 	})
 }
 
+func TestValidateDoesNotPublishAndResume(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	definition, err := h.svc.ValidateJSON(ctx, []byte(sequentialApprovals))
+	if err != nil || definition.ID != "release" {
+		t.Fatalf("validate: %+v, %v", definition, err)
+	}
+	versions, err := h.svc.ListVersions(ctx)
+	if err != nil || len(versions) != 0 {
+		t.Fatalf("validation persisted a version: %+v, %v", versions, err)
+	}
+	version, err := h.svc.PublishJSON(ctx, []byte(sequentialApprovals))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Start accepts either an immutable version ID or the workflow's active version.
+	run, err := h.svc.Start(ctx, version.WorkflowID)
+	if err != nil || run.VersionID != version.ID {
+		t.Fatalf("start active version: %+v, %v", run, err)
+	}
+	if _, err := h.svc.Pause(ctx, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	resumed, err := h.svc.Resume(ctx, run.ID)
+	if err != nil || resumed.State != StateActive {
+		t.Fatalf("resume: %+v, %v", resumed, err)
+	}
+}
+
 func assertRun(t *testing.T, run RunDetail, state string, nodes map[string]string) {
 	t.Helper()
 	if run.State != state {

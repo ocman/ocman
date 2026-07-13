@@ -41,6 +41,7 @@ const (
 	AttemptCanceled   = "canceled"
 	AttemptErrored    = "errored"
 	AttemptDenied     = "denied"
+	AttemptUnknown    = "unknown"
 )
 
 type Definition struct {
@@ -180,6 +181,7 @@ type Attempt struct {
 type Store interface {
 	InsertWorkflowVersion(state.WorkflowVersion) (state.WorkflowVersion, error)
 	GetWorkflowVersion(string) (*state.WorkflowVersion, error)
+	GetActiveWorkflowVersion(string) (*state.WorkflowVersion, error)
 	ListWorkflowVersions() ([]state.WorkflowVersion, error)
 	InsertWorkflowRun(state.WorkflowRun) error
 	GetWorkflowRun(string) (*state.WorkflowRun, error)
@@ -192,6 +194,7 @@ type Store interface {
 	AttachWorkflowAgentSession(string, string, int64, string, string, string, int64) error
 	SetWorkflowAgentSessionState(string, string, int64, string, string, int64) error
 	CompleteWorkflowAgentNode(string, string, int64, bool, string, string, string, int64) error
+	ResolveWorkflowAttempt(string, int64, string, int64) error
 }
 
 type Deps struct {
@@ -229,6 +232,17 @@ func NewService(deps Deps) *Service {
 		executor = localCommandExecutor{}
 	}
 	return &Service{store: deps.Store, now: now, notify: deps.Notify, executor: executor, agent: deps.Agent, running: make(map[string]map[string]*activeCommand), stopping: make(map[string]bool)}
+}
+
+func (s *Service) ValidateJSON(_ context.Context, source []byte) (Definition, error) {
+	definition, _, err := decodeDefinition(source)
+	if err != nil {
+		return Definition{}, err
+	}
+	if err := validateDefinition(definition); err != nil {
+		return Definition{}, err
+	}
+	return definition, nil
 }
 
 func (s *Service) PublishJSON(_ context.Context, source []byte) (Version, error) {
@@ -289,7 +303,10 @@ func (s *Service) ListVersions(_ context.Context) ([]Version, error) {
 func (s *Service) Start(ctx context.Context, versionID string) (RunDetail, error) {
 	version, err := s.store.GetWorkflowVersion(versionID)
 	if err != nil {
-		return RunDetail{}, err
+		version, err = s.store.GetActiveWorkflowVersion(versionID)
+		if err != nil {
+			return RunDetail{}, fmt.Errorf("workflow version or definition %q not found: %w", versionID, err)
+		}
 	}
 	dependencies := make(map[string]bool, len(version.Dependencies))
 	for _, dep := range version.Dependencies {
@@ -377,6 +394,25 @@ func (s *Service) Pause(ctx context.Context, runID string) (RunDetail, error) {
 	defer s.dispatchMu.Unlock()
 	if err := s.store.SetWorkflowRunState(runID, StateActive, StatePaused, s.now().UnixMilli()); err != nil {
 		return RunDetail{}, err
+	}
+	s.changed(runID)
+	return s.GetRun(ctx, runID)
+}
+
+func (s *Service) Resume(ctx context.Context, runID string) (RunDetail, error) {
+	if err := s.store.SetWorkflowRunState(runID, StatePaused, StateActive, s.now().UnixMilli()); err != nil {
+		return RunDetail{}, err
+	}
+	s.changed(runID)
+	return s.GetRun(ctx, runID)
+}
+
+func (s *Service) ResolveUnknown(ctx context.Context, runID string, attemptID int64, resolution string) (RunDetail, error) {
+	if resolution != AttemptSuccessful && resolution != AttemptFailed {
+		return RunDetail{}, fmt.Errorf("resolution must be %q or %q", AttemptSuccessful, AttemptFailed)
+	}
+	if err := s.store.ResolveWorkflowAttempt(runID, attemptID, resolution, s.now().UnixMilli()); err != nil {
+		return RunDetail{}, fmt.Errorf("resolving unknown attempt: %w", err)
 	}
 	s.changed(runID)
 	return s.GetRun(ctx, runID)

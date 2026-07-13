@@ -148,6 +148,18 @@ func (d *DB) GetWorkflowVersion(id string) (*WorkflowVersion, error) {
 	return &v, nil
 }
 
+func (d *DB) GetActiveWorkflowVersion(workflowID string) (*WorkflowVersion, error) {
+	var id string
+	err := d.db.QueryRow(`
+		SELECT v.id FROM workflow_version v
+		JOIN workflow_definition d ON d.id = v.workflow_id AND d.current_revision = v.revision
+		WHERE d.id = ?`, workflowID).Scan(&id)
+	if err != nil {
+		return nil, fmt.Errorf("getting active workflow version: %w", err)
+	}
+	return d.GetWorkflowVersion(id)
+}
+
 func (d *DB) ListWorkflowVersions() ([]WorkflowVersion, error) {
 	rows, err := d.db.Query(`
 		SELECT v.id, v.workflow_id, v.name, v.revision, v.metadata_version,
@@ -648,6 +660,54 @@ func (d *DB) SetWorkflowRunState(id, from, to string, now int64) error {
 	}
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("committing workflow state change: %w", err)
+	}
+	return nil
+}
+
+func (d *DB) ResolveWorkflowAttempt(runID string, attemptID int64, resolution string, now int64) error {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return fmt.Errorf("beginning unknown attempt resolution: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var nodeID, attemptState, runState string
+	err = tx.QueryRow(`
+		SELECT a.node_id, a.state, r.state
+		FROM workflow_node_attempt a
+		JOIN workflow_run r ON r.id = a.run_id
+		WHERE a.run_id = ? AND a.id = ?`, runID, attemptID).Scan(&nodeID, &attemptState, &runState)
+	if err != nil || attemptState != "unknown" {
+		return fmt.Errorf("unknown attempt %d not found for workflow run %q", attemptID, runID)
+	}
+	if runState != "paused" {
+		return fmt.Errorf("workflow run must be paused to resolve an unknown attempt")
+	}
+	if _, err = tx.Exec(`UPDATE workflow_node_attempt SET state = ?, completed_at = ? WHERE id = ?`, resolution, now, attemptID); err != nil {
+		return fmt.Errorf("updating workflow attempt: %w", err)
+	}
+	if _, err = tx.Exec(`UPDATE workflow_node_run SET state = ?, completed_at = ? WHERE run_id = ? AND node_id = ?`, resolution, now, runID, nodeID); err != nil {
+		return fmt.Errorf("updating workflow node: %w", err)
+	}
+	if resolution == "failed" {
+		if _, err = tx.Exec(`UPDATE workflow_run SET state = 'failed', updated_at = ?, completed_at = ? WHERE id = ?`, now, now, runID); err != nil {
+			return fmt.Errorf("failing workflow run: %w", err)
+		}
+	} else {
+		var remaining int
+		if err = tx.QueryRow(`SELECT count(*) FROM workflow_node_run WHERE run_id = ? AND state != 'successful'`, runID).Scan(&remaining); err != nil {
+			return fmt.Errorf("counting workflow nodes: %w", err)
+		}
+		if remaining == 0 {
+			if _, err = tx.Exec(`UPDATE workflow_run SET state = 'successful', updated_at = ?, completed_at = ? WHERE id = ?`, now, now, runID); err != nil {
+				return fmt.Errorf("completing workflow run: %w", err)
+			}
+		} else if _, err = tx.Exec(`UPDATE workflow_run SET updated_at = ? WHERE id = ?`, now, runID); err != nil {
+			return fmt.Errorf("updating workflow run: %w", err)
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("committing unknown attempt resolution: %w", err)
 	}
 	return nil
 }

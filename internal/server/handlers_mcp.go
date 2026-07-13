@@ -22,6 +22,7 @@ func (s *Server) buildMCPHandler() http.Handler {
 	}
 	if s.stateDB != nil {
 		deps.LoopService = s.loopSvc()
+		deps.WorkflowService = s.workflowSvc()
 	}
 	return internalmcp.New(deps).Handler()
 }

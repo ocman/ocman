@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -8,7 +9,11 @@ import (
 	"strings"
 	"testing"
 
+	mcplib "github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/mcptest"
+
 	"github.com/NoUseFreak/ocman/internal/db"
+	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/workflows"
 )
@@ -187,6 +192,73 @@ func TestWorkflowRESTPauseAndCancel(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("%s: %d %s", action, rec.Code, rec.Body.String())
 		}
+	}
+}
+
+func TestWorkflowMCPAndRESTShareServiceContract(t *testing.T) {
+	srv := newWorkflowTestServer(t)
+	tools := internalmcp.ServerTools(internalmcp.Deps{StateDB: srv.stateDB, WorkflowService: srv.workflowSvc()})
+	mcpServer, err := mcptest.NewServer(t, tools...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mcpServer.Close()
+	call := func(name string, args map[string]interface{}) map[string]interface{} {
+		t.Helper()
+		req := mcplib.CallToolRequest{}
+		req.Params.Name = name
+		req.Params.Arguments = args
+		result, err := mcpServer.Client().CallTool(context.Background(), req)
+		if err != nil || result.IsError {
+			t.Fatalf("%s: %+v, %v", name, result, err)
+		}
+		text := result.Content[0].(mcplib.TextContent).Text
+		var out map[string]interface{}
+		if err := json.Unmarshal([]byte(text), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+
+	published := call("publish_workflow", map[string]interface{}{"definition": workflowRequest})
+	versionID := published["version_id"].(string)
+	rec := httptest.NewRecorder()
+	srv.handleWorkflows(rec, httptest.NewRequest(http.MethodPost, "/api/workflows/"+versionID+"/runs", nil))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("REST start: %d %s", rec.Code, rec.Body.String())
+	}
+	var run workflows.RunDetail
+	if err := json.Unmarshal(rec.Body.Bytes(), &run); err != nil {
+		t.Fatal(err)
+	}
+	if got := call("inspect_workflow_run", map[string]interface{}{"run_id": run.ID}); got["version_id"] != versionID {
+		t.Fatalf("MCP did not observe REST run: %#v", got)
+	}
+	if got := call("pause_workflow_run", map[string]interface{}{"run_id": run.ID}); got["state"] != workflows.StatePaused {
+		t.Fatalf("MCP pause: %#v", got)
+	}
+	rec = httptest.NewRecorder()
+	srv.handleWorkflowRuns(rec, httptest.NewRequest(http.MethodPost, "/api/workflow-runs/"+run.ID+"/resume", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("REST resume: %d %s", rec.Code, rec.Body.String())
+	}
+	if got := call("inspect_workflow_run", map[string]interface{}{"run_id": run.ID}); got["state"] != workflows.StateActive {
+		t.Fatalf("MCP did not observe REST resume: %#v", got)
+	}
+}
+
+func TestWorkflowMCPRouteIsLocalhostOnly(t *testing.T) {
+	srv := newWorkflowTestServer(t)
+	mux, err := srv.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{}`))
+	req.RemoteAddr = "192.0.2.1:1234"
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("remote MCP request: want 403, got %d", rec.Code)
 	}
 }
 

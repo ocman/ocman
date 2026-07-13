@@ -46,6 +46,10 @@ type Deps struct {
 	// concrete type is *loops.Service; declared as loopService so this
 	// package stays decoupled from the concrete service.
 	LoopService loopService
+
+	// WorkflowService drives workflow authoring and run-control tools.
+	// Optional: nil disables workflow tools.
+	WorkflowService workflowService
 }
 
 // Server wraps the mcp-go MCPServer and exposes an http.Handler.
@@ -115,6 +119,7 @@ func New(deps Deps) *Server {
 
 	// Register agent-loops tools (no-op when LoopService is nil).
 	addLoopTools(s, &loopTools{svc: deps.LoopService, platform: deps.PlatformID})
+	addWorkflowTools(s, &workflowTools{svc: deps.WorkflowService})
 
 	// Wrap in a StreamableHTTPServer (implements http.Handler).
 	httpHandler := mcpserver.NewStreamableHTTPServer(s,
@@ -184,6 +189,7 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 		{Tool: sendMessageToParentTool(), Handler: comm.handleSendMessageToParent},
 	}
 	tools = append(tools, loopServerTools(&loopTools{svc: deps.LoopService, platform: deps.PlatformID})...)
+	tools = append(tools, workflowServerTools(&workflowTools{svc: deps.WorkflowService})...)
 	return tools
 }
 

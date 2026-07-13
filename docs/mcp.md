@@ -51,6 +51,10 @@ directly (no Vite dev proxy).
 | `cancel_session` | Cancel a running child session (kills its tmux window). |
 | `send_message_to_child` | Send a message from a parent session to one of its child sessions. |
 | `send_message_to_parent` | Send a message from a child session back to its parent session. |
+| `validate_workflow` / `publish_workflow` / `list_workflows` | Validate, publish immutable versions, and list workflows. |
+| `start_workflow` / `list_workflow_runs` / `inspect_workflow_run` | Start a pinned or active version and inspect compact run state. |
+| `pause_workflow_run` / `resume_workflow_run` / `cancel_workflow_run` | Control workflow run scheduling and cancellation. |
+| `approve_workflow_node` / `resolve_unknown_attempt` | Approve waiting nodes or resolve externally verified unknown attempts. |
 
 ## How splitting works
 
@@ -75,6 +79,12 @@ short and action-focused:
 
 ```text
 .opencode/skills/ocman-session-splitting/SKILL.md
+```
+
+Workflow authoring and control guidance lives in:
+
+```text
+.opencode/skills/ocman-workflows/SKILL.md
 ```
 
 When working inside this repository, OpenCode loads the skill from the

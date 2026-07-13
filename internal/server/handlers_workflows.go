@@ -1,8 +1,10 @@
 package server
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/NoUseFreak/ocman/internal/workflows"
@@ -54,6 +56,21 @@ func (s *Server) handleWorkflows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	versionID, action, extra := cutWorkflowPath(rest)
+	if r.Method == http.MethodPost && versionID == "validate" && action == "" {
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+		source, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "reading body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		definition, err := s.workflowSvc().ValidateJSON(r.Context(), source)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, definition)
+		return
+	}
 	if r.Method != http.MethodPost || action != "runs" || extra != "" {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
@@ -113,8 +130,26 @@ func (s *Server) handleWorkflowRuns(w http.ResponseWriter, r *http.Request) {
 		run, err = s.workflowSvc().Approve(r.Context(), runID, extra)
 	case "pause":
 		run, err = s.workflowSvc().Pause(r.Context(), runID)
+	case "resume":
+		run, err = s.workflowSvc().Resume(r.Context(), runID)
 	case "cancel":
 		run, err = s.workflowSvc().Cancel(r.Context(), runID)
+	case "resolve-unknown":
+		attemptID, parseErr := strconv.ParseInt(extra, 10, 64)
+		if parseErr != nil || attemptID <= 0 {
+			http.Error(w, "positive attempt id is required", http.StatusBadRequest)
+			return
+		}
+		var body struct {
+			Resolution string `json:"resolution"`
+		}
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBody))
+		decoder.DisallowUnknownFields()
+		if decodeErr := decoder.Decode(&body); decodeErr != nil {
+			http.Error(w, "invalid resolution: "+decodeErr.Error(), http.StatusBadRequest)
+			return
+		}
+		run, err = s.workflowSvc().ResolveUnknown(r.Context(), runID, attemptID, body.Resolution)
 	default:
 		http.Error(w, "not found", http.StatusNotFound)
 		return
