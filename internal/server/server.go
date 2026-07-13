@@ -306,6 +306,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	go s.runLLMMetricsLoop(ctx)
 	go s.runChildSessionWatcher(ctx)
 	go s.runLoopEngine(ctx)
+	go s.runWorkflowEngine(ctx)
 	go s.runQueueSweep(ctx)
 	// Headless auto-approve: subscribe directly to each OpenCode
 	// instance's /event SSE stream so permission.asked events drive

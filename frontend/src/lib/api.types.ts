@@ -808,7 +808,7 @@ export interface CapabilitiesResponse {
 	workflows?: { enabled: boolean };
 }
 
-export type WorkflowNodeState = 'pending' | 'ready' | 'successful' | 'failed' | 'canceled' | 'skipped';
+export type WorkflowNodeState = 'pending' | 'ready' | 'running' | 'successful' | 'failed' | 'canceled' | 'skipped';
 export type WorkflowRunState = 'active' | 'paused' | 'successful' | 'failed' | 'canceled';
 
 export interface WorkflowPermissionRule {
@@ -819,18 +819,30 @@ export interface WorkflowPermissionRule {
 
 export interface WorkflowCollector {
 	name: string;
-	type: 'text' | 'json_file' | 'file' | 'git_diff';
+	type: 'text' | 'json_file' | 'file' | 'git_diff' | 'final-message' | 'diff' | 'json-file';
 	path?: string;
+}
+
+export interface WorkflowAgentConfig {
+	platform?: string;
+	directory: string;
+	prompt: string;
+	model?: string;
+	agent?: string;
+	reasoning?: string;
+	sessionAffinity?: string;
+	collectors?: WorkflowCollector[];
 }
 
 export interface WorkflowNodeDefinition {
 	id: string;
 	name: string;
-	type: 'approval' | 'command';
+	type: 'approval' | 'command' | 'agent';
 	command?: string[];
 	environment?: Record<string, string>;
 	permission?: WorkflowPermissionRule[];
 	outputs?: WorkflowCollector[];
+	agent?: WorkflowAgentConfig;
 }
 
 export interface WorkflowDependency {
@@ -870,22 +882,25 @@ export interface WorkflowRun {
 export interface WorkflowAttempt {
 	id: number;
 	seq: number;
-	state: 'waiting' | 'running' | 'successful' | 'failed' | 'errored' | 'denied' | 'canceled';
+	state: 'waiting' | 'starting' | 'running' | 'successful' | 'failed' | 'errored' | 'denied' | 'canceled';
 	startedAt: number;
 	completedAt?: number;
 	exitCode?: number;
 	stdout?: string;
 	stderr?: string;
 	error?: string;
-	outputs?: Record<string, string>;
+	outputs?: Record<string, unknown>;
 	stdoutTruncated?: boolean;
 	stderrTruncated?: boolean;
+	platform?: string;
+	sessionId?: string;
+	sessionState?: string;
 }
 
 export interface WorkflowNodeRun {
 	nodeId: string;
 	name: string;
-	type: 'approval' | 'command';
+	type: 'approval' | 'command' | 'agent';
 	state: WorkflowNodeState;
 	readyAt?: number;
 	completedAt?: number;

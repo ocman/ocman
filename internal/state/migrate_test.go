@@ -117,6 +117,112 @@ func TestMigrate_RecordsSchemaVersion(t *testing.T) {
 	}
 }
 
+func TestWorkflowAttemptExecutorMigrationsPreserveRows(t *testing.T) {
+	raw, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	if _, err := raw.Exec(`CREATE TABLE workflow_node_attempt (id INTEGER PRIMARY KEY, run_id TEXT, node_id TEXT, seq INTEGER, state TEXT, started_at INTEGER, completed_at INTEGER); INSERT INTO workflow_node_attempt VALUES (1, 'run', 'node', 1, 'waiting', 10, NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := raw.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateToV23(tx); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateToV24(tx); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var state, platform, outputs string
+	if err := raw.QueryRow(`SELECT state, platform, outputs_json FROM workflow_node_attempt WHERE id = 1`).Scan(&state, &platform, &outputs); err != nil {
+		t.Fatal(err)
+	}
+	if state != "waiting" || platform != "" || outputs != "{}" {
+		t.Fatalf("unexpected migrated attempt: state=%q platform=%q outputs=%q", state, platform, outputs)
+	}
+}
+
+func TestMigrateToV24ReconcilesAgentV23(t *testing.T) {
+	raw, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	if _, err := raw.Exec(`CREATE TABLE workflow_node_attempt (
+		id INTEGER PRIMARY KEY, run_id TEXT, node_id TEXT, seq INTEGER, state TEXT,
+		started_at INTEGER, completed_at INTEGER, platform TEXT NOT NULL DEFAULT '',
+		session_id TEXT NOT NULL DEFAULT '', session_state TEXT NOT NULL DEFAULT '',
+		affinity TEXT NOT NULL DEFAULT '', directory TEXT NOT NULL DEFAULT '',
+		outputs_json TEXT NOT NULL DEFAULT '{}', error TEXT NOT NULL DEFAULT ''
+	)`); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := raw.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateToV24(tx); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`INSERT INTO workflow_node_attempt (id, run_id, node_id, seq, state, started_at) VALUES (1, 'run', 'node', 1, 'waiting', 10)`); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, platform string
+	var truncated int
+	if err := raw.QueryRow(`SELECT stdout, platform, stdout_truncated FROM workflow_node_attempt WHERE id = 1`).Scan(&stdout, &platform, &truncated); err != nil {
+		t.Fatal(err)
+	}
+	if stdout != "" || platform != "" || truncated != 0 {
+		t.Fatalf("unexpected reconciled defaults: stdout=%q platform=%q truncated=%d", stdout, platform, truncated)
+	}
+}
+
+func TestMigrateToV24ReconcilesAgentBranchV23(t *testing.T) {
+	raw, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	if _, err := raw.Exec(`
+		CREATE TABLE workflow_node_attempt (
+			id INTEGER PRIMARY KEY, run_id TEXT, node_id TEXT, seq INTEGER, state TEXT,
+			started_at INTEGER, completed_at INTEGER, platform TEXT NOT NULL DEFAULT '',
+			session_id TEXT NOT NULL DEFAULT '', session_state TEXT NOT NULL DEFAULT '',
+			affinity TEXT NOT NULL DEFAULT '', directory TEXT NOT NULL DEFAULT '',
+			outputs_json TEXT NOT NULL DEFAULT '{}', error TEXT NOT NULL DEFAULT ''
+		);
+		INSERT INTO workflow_node_attempt (id, run_id, node_id, seq, state, started_at, session_id)
+		VALUES (1, 'run', 'agent', 1, 'running', 10, 'session-1')`); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := raw.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateToV24(tx); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var sessionID, stdout string
+	if err := raw.QueryRow(`SELECT session_id, stdout FROM workflow_node_attempt WHERE id = 1`).Scan(&sessionID, &stdout); err != nil {
+		t.Fatal(err)
+	}
+	if sessionID != "session-1" || stdout != "" {
+		t.Fatalf("unexpected reconciled attempt: session=%q stdout=%q", sessionID, stdout)
+	}
+}
+
 func TestMigrate_CompositePrimaryKey(t *testing.T) {
 	raw := openLegacyDB(t)
 	if err := migrate(raw); err != nil {

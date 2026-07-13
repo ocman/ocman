@@ -95,11 +95,13 @@ import (
 //	      plus durable workflow runs, node runs, dependencies, and attempts.
 //	23 - command workflow attempts. Adds bounded logs, exit/error details,
 //	      truncation flags, and basic collected output values.
+//	24 - agent workflow attempts. Adds linked session state and reconciles
+//	      databases already migrated to either branch's competing v23.
 //
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 23
+const latestSchemaVersion = 24
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -241,6 +243,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV22(tx)
 	case 23:
 		return migrateToV23(tx)
+	case 24:
+		return migrateToV24(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -790,7 +794,6 @@ func migrateToV22(tx *sql.Tx) error {
 	`)
 	return err
 }
-
 func migrateToV23(tx *sql.Tx) error {
 	for _, stmt := range []string{
 		`ALTER TABLE workflow_node_attempt ADD COLUMN exit_code INTEGER`,
@@ -802,6 +805,49 @@ func migrateToV23(tx *sql.Tx) error {
 		`ALTER TABLE workflow_node_attempt ADD COLUMN stderr_truncated INTEGER NOT NULL DEFAULT 0`,
 	} {
 		if _, err := tx.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func migrateToV24(tx *sql.Tx) error {
+	rows, err := tx.Query(`PRAGMA table_info(workflow_node_attempt)`)
+	if err != nil {
+		return err
+	}
+	columns := map[string]bool{}
+	for rows.Next() {
+		var cid, notnull, primaryKey int
+		var name, columnType string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &columnType, &notnull, &defaultValue, &primaryKey); err != nil {
+			rows.Close()
+			return err
+		}
+		columns[name] = true
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for name, definition := range map[string]string{
+		"exit_code":        "INTEGER",
+		"stdout":           "TEXT NOT NULL DEFAULT ''",
+		"stderr":           "TEXT NOT NULL DEFAULT ''",
+		"error":            "TEXT NOT NULL DEFAULT ''",
+		"outputs_json":     "TEXT NOT NULL DEFAULT '{}'",
+		"stdout_truncated": "INTEGER NOT NULL DEFAULT 0",
+		"stderr_truncated": "INTEGER NOT NULL DEFAULT 0",
+		"platform":         "TEXT NOT NULL DEFAULT ''",
+		"session_id":       "TEXT NOT NULL DEFAULT ''",
+		"session_state":    "TEXT NOT NULL DEFAULT ''",
+		"affinity":         "TEXT NOT NULL DEFAULT ''",
+		"directory":        "TEXT NOT NULL DEFAULT ''",
+	} {
+		if columns[name] {
+			continue
+		}
+		if _, err := tx.Exec(`ALTER TABLE workflow_node_attempt ADD COLUMN ` + name + ` ` + definition); err != nil {
 			return err
 		}
 	}

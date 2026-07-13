@@ -27,18 +27,20 @@ const (
 
 	NodePending    = "pending"
 	NodeReady      = "ready"
+	NodeRunning    = "running"
 	NodeSuccessful = "successful"
-	NodeCanceled   = "canceled"
 	NodeFailed     = "failed"
+	NodeCanceled   = "canceled"
 	NodeSkipped    = "skipped"
 
 	AttemptWaiting    = "waiting"
+	AttemptStarting   = "starting"
+	AttemptRunning    = "running"
 	AttemptSuccessful = "successful"
-	AttemptCanceled   = "canceled"
 	AttemptFailed     = "failed"
+	AttemptCanceled   = "canceled"
 	AttemptErrored    = "errored"
 	AttemptDenied     = "denied"
-	AttemptRunning    = "running"
 )
 
 type Definition struct {
@@ -59,6 +61,7 @@ type Node struct {
 	Environment map[string]string `json:"environment,omitempty"`
 	Permission  []PermissionRule  `json:"permission,omitempty"`
 	Outputs     []Collector       `json:"outputs,omitempty"`
+	Agent       *AgentConfig      `json:"agent,omitempty"`
 }
 
 type PermissionRule struct {
@@ -71,6 +74,47 @@ type Collector struct {
 	Name string `json:"name"`
 	Type string `json:"type"`
 	Path string `json:"path,omitempty"`
+}
+
+type AgentConfig struct {
+	Platform        string      `json:"platform,omitempty"`
+	Directory       string      `json:"directory"`
+	Prompt          string      `json:"prompt"`
+	Model           string      `json:"model,omitempty"`
+	Agent           string      `json:"agent,omitempty"`
+	Reasoning       string      `json:"reasoning,omitempty"`
+	SessionAffinity string      `json:"sessionAffinity,omitempty"`
+	Collectors      []Collector `json:"collectors,omitempty"`
+}
+
+type AgentRequest struct {
+	Platform  string
+	Directory string
+	Prompt    string
+	Model     string
+	Agent     string
+	Reasoning string
+	SessionID string
+}
+
+type AgentSession struct {
+	ID        string
+	Platform  string
+	State     string
+	Directory string
+	Error     string
+}
+
+type AgentResult struct {
+	State   string
+	Outputs map[string]json.RawMessage
+	Error   string
+}
+
+type AgentExecutor interface {
+	Start(context.Context, AgentRequest) (AgentSession, error)
+	Inspect(context.Context, AgentSession, []Collector) (AgentResult, error)
+	Cancel(context.Context, AgentSession) error
 }
 
 type Dependency struct {
@@ -114,18 +158,23 @@ type NodeRun struct {
 }
 
 type Attempt struct {
-	ID              int64             `json:"id"`
-	Seq             int               `json:"seq"`
-	State           string            `json:"state"`
-	StartedAt       int64             `json:"startedAt"`
-	CompletedAt     int64             `json:"completedAt,omitempty"`
-	ExitCode        *int              `json:"exitCode,omitempty"`
-	Stdout          string            `json:"stdout,omitempty"`
-	Stderr          string            `json:"stderr,omitempty"`
-	Error           string            `json:"error,omitempty"`
-	Outputs         map[string]string `json:"outputs,omitempty"`
-	StdoutTruncated bool              `json:"stdoutTruncated,omitempty"`
-	StderrTruncated bool              `json:"stderrTruncated,omitempty"`
+	ID              int64                      `json:"id"`
+	Seq             int                        `json:"seq"`
+	State           string                     `json:"state"`
+	StartedAt       int64                      `json:"startedAt"`
+	CompletedAt     int64                      `json:"completedAt,omitempty"`
+	ExitCode        *int                       `json:"exitCode,omitempty"`
+	Stdout          string                     `json:"stdout,omitempty"`
+	Stderr          string                     `json:"stderr,omitempty"`
+	Error           string                     `json:"error,omitempty"`
+	Outputs         map[string]json.RawMessage `json:"outputs,omitempty"`
+	StdoutTruncated bool                       `json:"stdoutTruncated,omitempty"`
+	StderrTruncated bool                       `json:"stderrTruncated,omitempty"`
+	Platform        string                     `json:"platform,omitempty"`
+	SessionID       string                     `json:"sessionId,omitempty"`
+	SessionState    string                     `json:"sessionState,omitempty"`
+	Affinity        string                     `json:"-"`
+	Directory       string                     `json:"-"`
 }
 
 type Store interface {
@@ -139,6 +188,10 @@ type Store interface {
 	StartWorkflowCommand(string, string, int64) (bool, error)
 	CompleteWorkflowCommand(string, string, state.WorkflowCommandResult, int64) error
 	SetWorkflowRunState(string, string, string, int64) error
+	ClaimWorkflowAgentAttempt(string, string, int64, string, string, int64) (bool, error)
+	AttachWorkflowAgentSession(string, string, int64, string, string, string, int64) error
+	SetWorkflowAgentSessionState(string, string, int64, string, string, int64) error
+	CompleteWorkflowAgentNode(string, string, int64, bool, string, string, string, int64) error
 }
 
 type Deps struct {
@@ -146,16 +199,19 @@ type Deps struct {
 	Now             func() time.Time
 	Notify          func(runID string)
 	CommandExecutor CommandExecutor
+	Agent           AgentExecutor
 }
 
 type Service struct {
-	store    Store
-	now      func() time.Time
-	notify   func(string)
-	executor CommandExecutor
-	mu       sync.Mutex
-	running  map[string]map[string]*activeCommand
-	stopping map[string]bool
+	store      Store
+	now        func() time.Time
+	notify     func(string)
+	executor   CommandExecutor
+	agent      AgentExecutor
+	dispatchMu sync.Mutex
+	mu         sync.Mutex
+	running    map[string]map[string]*activeCommand
+	stopping   map[string]bool
 }
 
 type activeCommand struct {
@@ -172,7 +228,7 @@ func NewService(deps Deps) *Service {
 	if executor == nil {
 		executor = localCommandExecutor{}
 	}
-	return &Service{store: deps.Store, now: now, notify: deps.Notify, executor: executor, running: make(map[string]map[string]*activeCommand), stopping: make(map[string]bool)}
+	return &Service{store: deps.Store, now: now, notify: deps.Notify, executor: executor, agent: deps.Agent, running: make(map[string]map[string]*activeCommand), stopping: make(map[string]bool)}
 }
 
 func (s *Service) PublishJSON(_ context.Context, source []byte) (Version, error) {
@@ -230,7 +286,7 @@ func (s *Service) ListVersions(_ context.Context) ([]Version, error) {
 	return out, nil
 }
 
-func (s *Service) Start(_ context.Context, versionID string) (RunDetail, error) {
+func (s *Service) Start(ctx context.Context, versionID string) (RunDetail, error) {
 	version, err := s.store.GetWorkflowVersion(versionID)
 	if err != nil {
 		return RunDetail{}, err
@@ -260,12 +316,11 @@ func (s *Service) Start(_ context.Context, versionID string) (RunDetail, error) 
 	if err := s.store.InsertWorkflowRun(run); err != nil {
 		return RunDetail{}, err
 	}
-	detail, err := s.GetRun(context.Background(), run.ID)
-	if err == nil {
-		s.dispatchReady(detail)
-	}
 	s.changed(run.ID)
-	return detail, err
+	if err := s.dispatch(ctx, run.ID); err != nil {
+		return RunDetail{}, err
+	}
+	return s.GetRun(ctx, run.ID)
 }
 
 func (s *Service) ListRuns(_ context.Context) ([]Run, error) {
@@ -293,11 +348,13 @@ func (s *Service) GetRun(ctx context.Context, id string) (RunDetail, error) {
 	for _, row := range run.Nodes {
 		node := NodeRun{NodeID: row.NodeID, Name: row.Name, Type: row.Type, State: row.State, ReadyAt: row.ReadyAt, CompletedAt: row.CompletedAt, Attempts: make([]Attempt, 0, len(row.Attempts))}
 		for _, attempt := range row.Attempts {
-			outputs := map[string]string{}
-			if err := json.Unmarshal([]byte(attempt.OutputsJSON), &outputs); err != nil {
-				return RunDetail{}, fmt.Errorf("decoding command outputs: %w", err)
+			out := Attempt{ID: attempt.ID, Seq: attempt.Seq, State: attempt.State, StartedAt: attempt.StartedAt, CompletedAt: attempt.CompletedAt, ExitCode: attempt.ExitCode, Stdout: attempt.Stdout, Stderr: attempt.Stderr, Error: attempt.Error, StdoutTruncated: attempt.StdoutTruncated, StderrTruncated: attempt.StderrTruncated, Platform: attempt.Platform, SessionID: attempt.SessionID, SessionState: attempt.SessionState, Affinity: attempt.Affinity, Directory: attempt.Directory}
+			if attempt.OutputsJSON != "" && attempt.OutputsJSON != "{}" {
+				if err := json.Unmarshal([]byte(attempt.OutputsJSON), &out.Outputs); err != nil {
+					return RunDetail{}, fmt.Errorf("decoding workflow outputs: %w", err)
+				}
 			}
-			node.Attempts = append(node.Attempts, Attempt{ID: attempt.ID, Seq: attempt.Seq, State: attempt.State, StartedAt: attempt.StartedAt, CompletedAt: attempt.CompletedAt, ExitCode: attempt.ExitCode, Stdout: attempt.Stdout, Stderr: attempt.Stderr, Error: attempt.Error, Outputs: outputs, StdoutTruncated: attempt.StdoutTruncated, StderrTruncated: attempt.StderrTruncated})
+			node.Attempts = append(node.Attempts, out)
 		}
 		detail.Nodes = append(detail.Nodes, node)
 	}
@@ -308,15 +365,16 @@ func (s *Service) Approve(ctx context.Context, runID, nodeID string) (RunDetail,
 	if err := s.store.ApproveWorkflowNode(runID, nodeID, s.now().UnixMilli()); err != nil {
 		return RunDetail{}, err
 	}
-	run, err := s.GetRun(ctx, runID)
-	if err == nil {
-		s.dispatchReady(run)
-	}
 	s.changed(runID)
-	return run, err
+	if err := s.dispatch(ctx, runID); err != nil {
+		return RunDetail{}, err
+	}
+	return s.GetRun(ctx, runID)
 }
 
 func (s *Service) Pause(ctx context.Context, runID string) (RunDetail, error) {
+	s.dispatchMu.Lock()
+	defer s.dispatchMu.Unlock()
 	if err := s.store.SetWorkflowRunState(runID, StateActive, StatePaused, s.now().UnixMilli()); err != nil {
 		return RunDetail{}, err
 	}
@@ -325,6 +383,8 @@ func (s *Service) Pause(ctx context.Context, runID string) (RunDetail, error) {
 }
 
 func (s *Service) Cancel(ctx context.Context, runID string) (RunDetail, error) {
+	s.dispatchMu.Lock()
+	defer s.dispatchMu.Unlock()
 	run, err := s.store.GetWorkflowRun(runID)
 	if err != nil {
 		return RunDetail{}, err
@@ -342,6 +402,23 @@ func (s *Service) Cancel(ctx context.Context, runID string) (RunDetail, error) {
 	s.mu.Unlock()
 	for _, command := range active {
 		<-command.done
+	}
+	if s.agent != nil {
+		for _, node := range run.Nodes {
+			for _, attempt := range node.Attempts {
+				if attempt.State != AttemptRunning || attempt.SessionID == "" {
+					continue
+				}
+				err := s.agent.Cancel(ctx, AgentSession{ID: attempt.SessionID, Platform: attempt.Platform, State: attempt.SessionState, Directory: attempt.Directory})
+				message := ""
+				if err != nil {
+					message = err.Error()
+				}
+				if stateErr := s.store.SetWorkflowAgentSessionState(runID, node.NodeID, attempt.ID, StateCanceled, message, s.now().UnixMilli()); stateErr != nil {
+					return RunDetail{}, stateErr
+				}
+			}
+		}
 	}
 	if err := s.store.SetWorkflowRunState(runID, run.State, StateCanceled, s.now().UnixMilli()); err != nil {
 		return RunDetail{}, err
@@ -420,9 +497,7 @@ func (s *Service) executeCommand(ctx context.Context, active *activeCommand, run
 	}
 	close(active.done)
 	s.mu.Unlock()
-	if run, err := s.GetRun(context.Background(), runID); err == nil {
-		s.dispatchReady(run)
-	}
+	_ = s.dispatch(context.Background(), runID)
 	s.changed(runID)
 }
 
@@ -445,6 +520,142 @@ func (s *Service) stopSiblingCommands(runID, nodeID string) bool {
 		<-command.done
 	}
 	return true
+}
+
+func (s *Service) Tick(ctx context.Context) error {
+	runs, err := s.store.ListWorkflowRuns()
+	if err != nil {
+		return err
+	}
+	for _, run := range runs {
+		if run.State == StateActive {
+			if err := s.dispatch(ctx, run.ID); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Service) dispatch(ctx context.Context, runID string) error {
+	s.dispatchMu.Lock()
+	defer s.dispatchMu.Unlock()
+	return s.dispatchLocked(ctx, runID)
+}
+
+func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
+	run, err := s.GetRun(ctx, runID)
+	if err != nil || run.State != StateActive {
+		return err
+	}
+	s.dispatchReady(run)
+	if s.agent == nil {
+		return nil
+	}
+	for {
+		run, err := s.GetRun(ctx, runID)
+		if err != nil || run.State != StateActive {
+			return err
+		}
+		progressed := false
+		for _, node := range run.Nodes {
+			if node.Type != "agent" || (node.State != NodeReady && node.State != NodeRunning) || len(node.Attempts) == 0 {
+				continue
+			}
+			config := agentConfig(run.Version.Definition.Nodes, node.NodeID)
+			attempt := node.Attempts[len(node.Attempts)-1]
+			if attempt.SessionID == "" {
+				existing := affinitySession(run, node.NodeID, config)
+				claimed, err := s.store.ClaimWorkflowAgentAttempt(runID, node.NodeID, attempt.ID, config.SessionAffinity, config.Directory, s.now().UnixMilli())
+				if err != nil {
+					return err
+				}
+				if !claimed {
+					return nil
+				}
+				session, startErr := s.agent.Start(ctx, AgentRequest{Platform: config.Platform, Directory: config.Directory, Prompt: config.Prompt, Model: config.Model, Agent: config.Agent, Reasoning: config.Reasoning, SessionID: existing})
+				if startErr != nil {
+					if err := s.store.CompleteWorkflowAgentNode(runID, node.NodeID, attempt.ID, false, "error", "{}", startErr.Error(), s.now().UnixMilli()); err != nil {
+						return err
+					}
+					s.changed(runID)
+					progressed = true
+					continue
+				}
+				if err := s.store.AttachWorkflowAgentSession(runID, node.NodeID, attempt.ID, session.Platform, session.ID, session.State, s.now().UnixMilli()); err != nil {
+					return err
+				}
+				if session.Error != "" {
+					if err := s.store.CompleteWorkflowAgentNode(runID, node.NodeID, attempt.ID, false, session.State, "{}", session.Error, s.now().UnixMilli()); err != nil {
+						return err
+					}
+				}
+				s.changed(runID)
+				progressed = true
+				continue
+			}
+			result, inspectErr := s.agent.Inspect(ctx, AgentSession{ID: attempt.SessionID, Platform: attempt.Platform, State: attempt.SessionState, Directory: attempt.Directory}, config.Collectors)
+			if inspectErr != nil {
+				return inspectErr
+			}
+			if result.State == "busy" || result.State == "running" {
+				if err := s.store.SetWorkflowAgentSessionState(runID, node.NodeID, attempt.ID, result.State, "", s.now().UnixMilli()); err != nil {
+					return err
+				}
+				continue
+			}
+			successful := result.State != "error" && result.State != "failed" && result.State != "canceled"
+			if successful {
+				for _, collector := range config.Collectors {
+					if _, ok := result.Outputs[collector.Name]; !ok {
+						successful = false
+						result.Error = fmt.Sprintf("collector %q produced no output", collector.Name)
+						break
+					}
+				}
+			}
+			outputs, err := json.Marshal(result.Outputs)
+			if err != nil {
+				return err
+			}
+			if err := s.store.CompleteWorkflowAgentNode(runID, node.NodeID, attempt.ID, successful, result.State, string(outputs), result.Error, s.now().UnixMilli()); err != nil {
+				return err
+			}
+			s.changed(runID)
+			progressed = true
+		}
+		if !progressed {
+			return nil
+		}
+	}
+}
+
+func agentConfig(nodes []Node, id string) *AgentConfig {
+	for _, node := range nodes {
+		if node.ID == id {
+			return node.Agent
+		}
+	}
+	return nil
+}
+
+func affinitySession(run RunDetail, currentNode string, config *AgentConfig) string {
+	if config == nil || config.SessionAffinity == "" {
+		return ""
+	}
+	for _, node := range run.Nodes {
+		if node.NodeID == currentNode {
+			continue
+		}
+		for _, attempt := range node.Attempts {
+			if attempt.SessionID != "" && (config.Platform == "" || attempt.Platform == config.Platform) {
+				if attempt.Affinity == config.SessionAffinity && attempt.Directory == config.Directory {
+					return attempt.SessionID
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func (s *Service) changed(runID string) {
@@ -485,12 +696,37 @@ func validateDefinition(definition Definition) error {
 		if node.ID == "" || node.Name == "" || node.Type == "" {
 			return fmt.Errorf("node id, name, and type are required")
 		}
-		if node.Type != "approval" && node.Type != "command" {
+		if node.Type != "approval" && node.Type != "command" && node.Type != "agent" {
 			return fmt.Errorf("unsupported node type %q", node.Type)
 		}
 		if node.Type == "command" {
 			if err := validateCommandNode(definition.Directory, node); err != nil {
 				return fmt.Errorf("node %q: %w", node.ID, err)
+			}
+		}
+		if node.Type == "agent" {
+			if node.Agent == nil || node.Agent.Directory == "" || node.Agent.Prompt == "" {
+				return fmt.Errorf("agent node %q requires directory and prompt", node.ID)
+			}
+			collectorNames := map[string]bool{}
+			for _, collector := range node.Agent.Collectors {
+				if collector.Name == "" || collectorNames[collector.Name] {
+					return fmt.Errorf("agent node %q has invalid collector name", node.ID)
+				}
+				collectorNames[collector.Name] = true
+				switch collector.Type {
+				case "final-message", "diff":
+					if collector.Path != "" {
+						return fmt.Errorf("collector %q does not accept a path", collector.Name)
+					}
+				case "file", "json-file":
+					clean := filepath.Clean(collector.Path)
+					if collector.Path == "" || filepath.IsAbs(collector.Path) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+						return fmt.Errorf("collector %q requires a safe relative path", collector.Name)
+					}
+				default:
+					return fmt.Errorf("unsupported collector type %q", collector.Type)
+				}
 			}
 		}
 		if nodes[node.ID] {

@@ -44,6 +44,8 @@ flowchart TD
     Server --> Router[hostsvc.Router<br/>host/dir seam]
     Server --> Loops[loops.Service<br/>trigger→action engine]
     Server --> Workflows[workflows.Service<br/>durable DAG lifecycle]
+    Workflows --> Registry
+    Workflows --> Router
     Server --> MCP[internal/mcp<br/>MCP tools]
     Registry --> OC[platforms/opencode<br/>adapter]
     Registry --> RP[remote.Platform<br/>gRPC-backed]
@@ -54,7 +56,7 @@ flowchart TD
 ```
 
 - **internal/server** — HTTP mux, SSE broadcast/fanout, ~60 handler
-  files, plus tmux, terminal, whisper, auto-approve, loop engine tick.
+  files, plus tmux, terminal, whisper, auto-approve, and loop/workflow ticks.
 - **platforms.Registry** — session-scoped seam. One adapter per
   platform; remotes register as compound-ID platforms so handlers
   can't tell local from remote.
@@ -71,11 +73,13 @@ flowchart TD
   driven by a 5 s tick goroutine in the server; shared by REST and
   MCP.
 - **workflows.Service** — shared validation and run-lifecycle seam for
-  immutable workflow versions. Approval and permission-scoped command
-  nodes schedule from persisted dependency state; the command-executor
-  boundary owns directory/environment policy, bounded logs, collectors,
-  and process-tree cancellation. REST and SSE never implement independent
-  transitions.
+  immutable workflow versions. It schedules approval, permission-scoped
+  command, and agent nodes from persisted dependency state. The command
+  executor owns directory/environment policy, bounded logs, collectors, and
+  process-tree cancellation; agent attempts create/send/abort through the
+  session service, poll platform-neutral session status, and collect declared
+  messages, diffs, or files through platform/host seams. REST and SSE never
+  implement independent transitions.
 - **internal/mcp** — prompt composer + session launcher + tool
   handlers; all side effects go through the same `Platform` interface
   the HTTP layer uses.
@@ -102,7 +106,7 @@ sequenceDiagram
     R->>A: ListSessions()
     A->>D: SQL json_extract / HTTP proxy
     D-->>B: JSON (status inferred at query time)
-    Note over S,E: background: loop engine tick,<br/>child-session watcher, remote gRPC streams
+    Note over S,E: background: loop/workflow engine ticks,<br/>child-session watcher, remote gRPC streams
     E-->>B: SSE (session.updated, loop.updated, workflow.run.updated)
 ```
 
@@ -111,10 +115,11 @@ state from the last message row on every query, so there is no sync
 problem with OpenCode's DB.
 
 Workflow state takes the opposite path because it is ocman-owned: publish,
-start, approval, command completion, pause, and cancel delegate to
-`workflows.Service`, which commits version/run/node/attempt state and bounded
-command output to `state.db` before broadcasting a run ID. The browser then
-refetches the authoritative read-only run graph.
+start, approval, command completion, agent supervision, pause, and cancel
+delegate to `workflows.Service`, which commits version/run/node/attempt state
+and bounded command/collector output to `state.db` before broadcasting a run
+ID. The browser then refetches the authoritative run graph, including linked
+agent sessions and collector output.
 
 ## 4. Frontend Composition
 

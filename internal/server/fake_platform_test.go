@@ -67,6 +67,7 @@ type fakePlatform struct {
 	// /fork and /move session actions.
 	forkSessionFn func(req platforms.ForkSessionRequest) (*platforms.CreateSessionResponse, error)
 	moveSessionFn func(req platforms.MoveSessionRequest) error
+	abortFn       func(req platforms.AbortRequest) error
 }
 
 func (f *fakePlatform) ID() platforms.ID {
@@ -191,7 +192,10 @@ func (f *fakePlatform) RejectQuestion(context.Context, platforms.RejectQuestionR
 	return platforms.ErrUnsupported
 }
 
-func (f *fakePlatform) Abort(context.Context, platforms.AbortRequest) error {
+func (f *fakePlatform) Abort(_ context.Context, req platforms.AbortRequest) error {
+	if f.abortFn != nil {
+		return f.abortFn(req)
+	}
 	return platforms.ErrUnsupported
 }
 

@@ -12,6 +12,7 @@ func (s *Server) workflowSvc() *workflows.Service {
 	s.workflowSvcOnce.Do(func() {
 		s.workflowSvcCached = workflows.NewService(workflows.Deps{
 			Store:  s.stateDB,
+			Agent:  &workflowAgentExecutor{s: s},
 			Notify: s.broadcastWorkflowRunUpdated,
 		})
 	})

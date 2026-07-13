@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkflowRunDetail, WorkflowVersion } from '../lib/api';
 
@@ -61,14 +62,14 @@ describe('Workflows', () => {
 
 	it('is capability gated', () => {
 		useWorkflowsMock.mockReturnValue(false);
-		render(<Workflows />);
+		render(<MemoryRouter><Workflows /></MemoryRouter>);
 		expect(screen.getByText('Workflows are unavailable on this host.')).toBeInTheDocument();
 		expect(apiMock.versions).not.toHaveBeenCalled();
 	});
 
 	it('publishes, starts, approves, and refreshes from SSE', async () => {
 		const user = userEvent.setup();
-		render(<Workflows />);
+		render(<MemoryRouter><Workflows /></MemoryRouter>);
 
 		await screen.findByRole('region', { name: 'Workflow run graph' });
 		expect(screen.getByText('Attempt 1: waiting')).toBeInTheDocument();
@@ -84,7 +85,6 @@ describe('Workflows', () => {
 		connectListeners[0]();
 		await waitFor(() => expect(apiMock.versions).toHaveBeenCalledTimes(5));
 	});
-
 	it('shows command outcomes, logs, and collected outputs', async () => {
 		const commandRun: WorkflowRunDetail = {
 			...activeRun,
@@ -99,11 +99,31 @@ describe('Workflows', () => {
 		};
 		apiMock.runs.mockResolvedValue([commandRun]);
 		apiMock.run.mockResolvedValue(commandRun);
-		render(<Workflows />);
+		render(<MemoryRouter><Workflows /></MemoryRouter>);
 
 		expect(await screen.findByText(/failed \(exit 7\)/)).toBeInTheDocument();
 		expect(screen.getByText('test output')).toBeInTheDocument();
 		expect(screen.getByText('test failure')).toBeInTheDocument();
 		expect(screen.getByText('{"failed":1}')).toBeInTheDocument();
+	});
+
+	it('links agent attempts and shows live and collected state', async () => {
+		const agentVersion: WorkflowVersion = {
+			...version,
+			definition: { ...version.definition, nodes: [{ id: 'agent', name: 'Implement', type: 'agent', agent: { directory: '/repo', prompt: 'work' } }], dependencies: [] },
+		};
+		const agentRun: WorkflowRunDetail = {
+			...activeRun,
+			version: agentVersion,
+			nodes: [{ nodeId: 'agent', name: 'Implement', type: 'agent', state: 'running', attempts: [{ id: 2, seq: 1, state: 'running', startedAt: 1, platform: 'any-platform', sessionId: 'session 1', sessionState: 'busy', outputs: { message: 'done' } }] }],
+		};
+		apiMock.versions.mockResolvedValue([agentVersion]);
+		apiMock.runs.mockResolvedValue([agentRun]);
+		apiMock.run.mockResolvedValue(agentRun);
+		render(<MemoryRouter><Workflows /></MemoryRouter>);
+
+		expect(await screen.findByRole('link', { name: 'Open agent session' })).toHaveAttribute('href', '/session/session%201');
+		expect(screen.getByText('Session: busy')).toBeInTheDocument();
+		expect(screen.getByText('message: "done"')).toBeInTheDocument();
 	});
 });

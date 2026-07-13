@@ -52,6 +52,28 @@ func TestLocalHost_Identity(t *testing.T) {
 	}
 }
 
+func TestLocalHost_ReadFileStaysInsideDirectory(t *testing.T) {
+	dir := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(filepath.Join(dir, "result.json"), []byte(`{"ok":true}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(outside, []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := New(Deps{})
+	content, err := h.ReadFile(t.Context(), dir, "result.json")
+	if err != nil || string(content) != `{"ok":true}` {
+		t.Fatalf("ReadFile = %q, %v", content, err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, "escape")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.ReadFile(t.Context(), dir, "escape"); err == nil {
+		t.Fatal("ReadFile followed a symlink outside the workflow directory")
+	}
+}
+
 func TestLocalHost_GitMethods(t *testing.T) {
 	repo := initRepo(t)
 	h := New(Deps{})

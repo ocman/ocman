@@ -3,6 +3,7 @@ package workflows
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -30,20 +31,77 @@ const sequentialApprovals = `{
 	"dependencies":[{"from":"review","to":"ship"}]
 }`
 
+const approvalThenAgents = `{
+	"id":"implement",
+	"name":"Implement",
+	"version":"1",
+	"concurrency":1,
+	"nodes":[
+		{"id":"approve","name":"Approve","type":"approval"},
+		{"id":"implement","name":"Implement","type":"agent","agent":{"platform":"test","directory":"/repo","prompt":"implement it","sessionAffinity":"work","collectors":[
+			{"name":"message","type":"final-message"},
+			{"name":"patch","type":"diff"},
+			{"name":"notes","type":"file","path":"notes.txt"},
+			{"name":"result","type":"json-file","path":"result.json"}
+		]}},
+		{"id":"review","name":"Review","type":"agent","agent":{"platform":"test","directory":"/repo","prompt":"review it","sessionAffinity":"work"}}
+	],
+	"dependencies":[{"from":"approve","to":"implement"},{"from":"implement","to":"review"}]
+}`
+
+const singleAgent = `{
+	"id":"implement","name":"Implement","version":"1","concurrency":1,
+	"nodes":[{"id":"implement","name":"Implement","type":"agent","agent":{"platform":"test","directory":"/repo","prompt":"implement it"}}],
+	"dependencies":[]
+}`
+
+type fakeAgentExecutor struct {
+	starts   []AgentRequest
+	results  map[string]AgentResult
+	canceled []AgentSession
+	startErr error
+}
+
+func (f *fakeAgentExecutor) Start(_ context.Context, req AgentRequest) (AgentSession, error) {
+	f.starts = append(f.starts, req)
+	if f.startErr != nil {
+		return AgentSession{}, f.startErr
+	}
+	id := req.SessionID
+	if id == "" {
+		id = "session-1"
+	}
+	return AgentSession{ID: id, Platform: req.Platform, State: "busy"}, nil
+}
+
+func (f *fakeAgentExecutor) Inspect(_ context.Context, session AgentSession, _ []Collector) (AgentResult, error) {
+	if result, ok := f.results[session.ID]; ok {
+		return result, nil
+	}
+	return AgentResult{State: "busy"}, nil
+}
+
+func (f *fakeAgentExecutor) Cancel(_ context.Context, session AgentSession) error {
+	f.canceled = append(f.canceled, session)
+	return nil
+}
+
 type harness struct {
-	t    *testing.T
-	path string
-	db   *state.DB
-	now  time.Time
-	svc  *Service
+	t     *testing.T
+	path  string
+	db    *state.DB
+	now   time.Time
+	svc   *Service
+	agent *fakeAgentExecutor
 }
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 	h := &harness{
-		t:    t,
-		path: filepath.Join(t.TempDir(), "state.db"),
-		now:  time.Date(2026, 7, 13, 20, 0, 0, 0, time.UTC),
+		t:     t,
+		path:  filepath.Join(t.TempDir(), "state.db"),
+		now:   time.Date(2026, 7, 13, 20, 0, 0, 0, time.UTC),
+		agent: &fakeAgentExecutor{results: map[string]AgentResult{}},
 	}
 	h.open()
 	t.Cleanup(func() {
@@ -61,7 +119,7 @@ func (h *harness) open() {
 		h.t.Fatalf("open state DB: %v", err)
 	}
 	h.db = db
-	h.svc = NewService(Deps{Store: db, Now: func() time.Time { return h.now }})
+	h.svc = NewService(Deps{Store: db, Agent: h.agent, Now: func() time.Time { return h.now }})
 }
 
 func (h *harness) restart() {
@@ -177,6 +235,7 @@ func TestPublishValidation(t *testing.T) {
 		{"self dependency", strings.Replace(sequentialApprovals, `"to":"ship"`, `"to":"review"`, 1), "self dependency"},
 		{"cycle", strings.Replace(sequentialApprovals, `{"from":"review","to":"ship"}`, `{"from":"review","to":"ship"},{"from":"ship","to":"review"}`, 1), "cycle"},
 		{"malformed dependency", strings.Replace(sequentialApprovals, `"from":"review"`, `"from":""`, 1), "dependency endpoints are required"},
+		{"unsafe collector path", strings.Replace(singleAgent, `"prompt":"implement it"`, `"prompt":"implement it","collectors":[{"name":"result","type":"file","path":"../result.json"}]`, 1), "safe relative path"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -274,21 +333,21 @@ func TestSequentialCommandsCollectDeclaredOutputs(t *testing.T) {
 	if first.State != AttemptSuccessful || first.ExitCode == nil || *first.ExitCode != 0 || first.Stdout != "hello" || first.CompletedAt == 0 {
 		t.Fatalf("unexpected first attempt: %+v", first)
 	}
-	if got := first.Outputs["json"]; got != `{"ok":true}` {
-		t.Fatalf("json output: %q", got)
+	if got := string(first.Outputs["json"]); got != `"{\"ok\":true}"` {
+		t.Fatalf("json output: %s", got)
 	}
-	if got := first.Outputs["file"]; got != "collected file\nchanged" {
-		t.Fatalf("file output: %q", got)
+	if got := string(first.Outputs["file"]); got != `"collected file\nchanged"` {
+		t.Fatalf("file output: %s", got)
 	}
-	if got := first.Outputs["diff"]; !strings.Contains(got, "+changed") {
-		t.Fatalf("git diff output: %q", got)
+	if got := string(first.Outputs["diff"]); !strings.Contains(got, "+changed") {
+		t.Fatalf("git diff output: %s", got)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "textconv-ran")); !os.IsNotExist(err) {
 		t.Fatalf("git diff collector executed repository textconv: %v", err)
 	}
 	h.restart()
 	restored, err := h.svc.GetRun(context.Background(), run.ID)
-	if err != nil || restored.Nodes[0].Attempts[0].Outputs["json"] != `{"ok":true}` {
+	if err != nil || string(restored.Nodes[0].Attempts[0].Outputs["json"]) != `"{\"ok\":true}"` {
 		t.Fatalf("command attempt did not survive restart: %+v, %v", restored, err)
 	}
 }
@@ -667,6 +726,125 @@ func waitForRun(t *testing.T, svc *Service, id string, states ...string) RunDeta
 	}
 	t.Fatalf("run %s did not reach %v", id, states)
 	return RunDetail{}
+}
+
+func TestAgentRunFreshAffinityCollectorsAndIdleCompletion(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	version, err := h.svc.PublishJSON(ctx, []byte(approvalThenAgents))
+	if err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	run, err := h.svc.Start(ctx, version.ID)
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if _, err := h.svc.Approve(ctx, run.ID, "approve"); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if len(h.agent.starts) != 1 || h.agent.starts[0].SessionID != "" {
+		t.Fatalf("first attempt did not launch fresh: %+v", h.agent.starts)
+	}
+	launched, err := h.svc.GetRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt := launched.Nodes[1].Attempts[0]
+	if attempt.SessionID != "session-1" || attempt.Platform != "test" || attempt.SessionState != "busy" {
+		t.Fatalf("missing attempt/session link: %+v", attempt)
+	}
+
+	h.agent.results["session-1"] = AgentResult{State: "waiting", Outputs: map[string]json.RawMessage{
+		"message": json.RawMessage(`"finished"`),
+		"patch":   json.RawMessage(`{"files":[{"path":"main.go"}]}`),
+		"notes":   json.RawMessage(`"review notes"`),
+		"result":  json.RawMessage(`{"ok":true}`),
+	}}
+	h.advance()
+	if err := h.svc.Tick(ctx); err != nil {
+		t.Fatalf("tick: %v", err)
+	}
+	if len(h.agent.starts) != 2 || h.agent.starts[1].SessionID != "session-1" {
+		t.Fatalf("explicit affinity did not reuse session: %+v", h.agent.starts)
+	}
+
+	h.agent.results["session-1"] = AgentResult{State: "done"}
+	h.advance()
+	if err := h.svc.Tick(ctx); err != nil {
+		t.Fatalf("final tick: %v", err)
+	}
+	completed, err := h.svc.GetRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertRun(t, completed, StateSuccessful, map[string]string{"approve": NodeSuccessful, "implement": NodeSuccessful, "review": NodeSuccessful})
+	outputs := completed.Nodes[1].Attempts[0].Outputs
+	if string(outputs["message"]) != `"finished"` || string(outputs["result"]) != `{"ok":true}` {
+		t.Fatalf("collectors not persisted: %s", outputs)
+	}
+}
+
+func TestAgentTerminalErrorAndCancellation(t *testing.T) {
+	t.Run("launch error", func(t *testing.T) {
+		h := newHarness(t)
+		h.agent.startErr = errors.New("create failed")
+		version, err := h.svc.PublishJSON(t.Context(), []byte(singleAgent))
+		if err != nil {
+			t.Fatal(err)
+		}
+		run, err := h.svc.Start(t.Context(), version.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if run.State != StateFailed || run.Nodes[0].Attempts[0].Error != "create failed" {
+			t.Fatalf("launch failure not persisted: %+v", run)
+		}
+	})
+
+	t.Run("terminal error", func(t *testing.T) {
+		h := newHarness(t)
+		version, err := h.svc.PublishJSON(t.Context(), []byte(singleAgent))
+		if err != nil {
+			t.Fatal(err)
+		}
+		run, err := h.svc.Start(t.Context(), version.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.agent.results["session-1"] = AgentResult{State: "error", Error: "agent failed"}
+		if err := h.svc.Tick(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		failed, err := h.svc.GetRun(t.Context(), run.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if failed.State != StateFailed || failed.Nodes[0].Attempts[0].Error != "agent failed" {
+			t.Fatalf("terminal error not recorded: %+v", failed)
+		}
+	})
+
+	t.Run("cancel", func(t *testing.T) {
+		h := newHarness(t)
+		version, err := h.svc.PublishJSON(t.Context(), []byte(singleAgent))
+		if err != nil {
+			t.Fatal(err)
+		}
+		run, err := h.svc.Start(t.Context(), version.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		canceled, err := h.svc.Cancel(t.Context(), run.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(h.agent.canceled) != 1 || h.agent.canceled[0].ID != "session-1" {
+			t.Fatalf("session cancellation not delegated: %+v", h.agent.canceled)
+		}
+		if canceled.Nodes[0].Attempts[0].State != AttemptCanceled {
+			t.Fatalf("attempt cancellation not recorded: %+v", canceled.Nodes[0].Attempts[0])
+		}
+	})
 }
 
 func assertRun(t *testing.T, run RunDetail, state string, nodes map[string]string) {
