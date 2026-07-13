@@ -84,4 +84,26 @@ describe('Workflows', () => {
 		connectListeners[0]();
 		await waitFor(() => expect(apiMock.versions).toHaveBeenCalledTimes(5));
 	});
+
+	it('shows command outcomes, logs, and collected outputs', async () => {
+		const commandRun: WorkflowRunDetail = {
+			...activeRun,
+			state: 'failed',
+			nodes: [{
+				nodeId: 'test', name: 'Run tests', type: 'command', state: 'failed',
+				attempts: [{
+					id: 2, seq: 1, state: 'failed', startedAt: 1, completedAt: 2, exitCode: 7,
+					stdout: 'test output', stderr: 'test failure', error: 'exit status 7', outputs: { report: '{"failed":1}' },
+				}],
+			}],
+		};
+		apiMock.runs.mockResolvedValue([commandRun]);
+		apiMock.run.mockResolvedValue(commandRun);
+		render(<Workflows />);
+
+		expect(await screen.findByText(/failed \(exit 7\)/)).toBeInTheDocument();
+		expect(screen.getByText('test output')).toBeInTheDocument();
+		expect(screen.getByText('test failure')).toBeInTheDocument();
+		expect(screen.getByText('{"failed":1}')).toBeInTheDocument();
+	});
 });

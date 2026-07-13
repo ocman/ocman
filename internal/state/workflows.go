@@ -54,11 +54,29 @@ type WorkflowNodeRun struct {
 }
 
 type WorkflowAttempt struct {
-	ID          int64
-	Seq         int
-	State       string
-	StartedAt   int64
-	CompletedAt int64
+	ID              int64
+	Seq             int
+	State           string
+	StartedAt       int64
+	CompletedAt     int64
+	ExitCode        *int
+	Stdout          string
+	Stderr          string
+	Error           string
+	OutputsJSON     string
+	StdoutTruncated bool
+	StderrTruncated bool
+}
+
+type WorkflowCommandResult struct {
+	State           string
+	ExitCode        int
+	Stdout          string
+	Stderr          string
+	Error           string
+	OutputsJSON     string
+	StdoutTruncated bool
+	StderrTruncated bool
 }
 
 func (d *DB) InsertWorkflowVersion(v WorkflowVersion) (WorkflowVersion, error) {
@@ -195,7 +213,7 @@ func (d *DB) InsertWorkflowRun(run WorkflowRun) error {
 		}
 		if node.State == "ready" {
 			if _, err = tx.Exec(`INSERT INTO workflow_node_attempt (run_id, node_id, seq, state, started_at) VALUES (?, ?, 1, 'waiting', ?)`, run.ID, node.NodeID, run.CreatedAt); err != nil {
-				return fmt.Errorf("inserting approval attempt: %w", err)
+				return fmt.Errorf("inserting workflow attempt: %w", err)
 			}
 		}
 	}
@@ -260,7 +278,10 @@ func (d *DB) GetWorkflowRun(id string) (*WorkflowRun, error) {
 }
 
 func (d *DB) workflowAttempts(runID, nodeID string) ([]WorkflowAttempt, error) {
-	rows, err := d.db.Query(`SELECT id, seq, state, started_at, COALESCE(completed_at, 0) FROM workflow_node_attempt WHERE run_id = ? AND node_id = ? ORDER BY seq`, runID, nodeID)
+	rows, err := d.db.Query(`
+		SELECT id, seq, state, started_at, COALESCE(completed_at, 0), exit_code,
+		       stdout, stderr, error, outputs_json, stdout_truncated, stderr_truncated
+		FROM workflow_node_attempt WHERE run_id = ? AND node_id = ? ORDER BY seq`, runID, nodeID)
 	if err != nil {
 		return nil, fmt.Errorf("listing workflow attempts: %w", err)
 	}
@@ -268,12 +289,123 @@ func (d *DB) workflowAttempts(runID, nodeID string) ([]WorkflowAttempt, error) {
 	var out []WorkflowAttempt
 	for rows.Next() {
 		var attempt WorkflowAttempt
-		if err := rows.Scan(&attempt.ID, &attempt.Seq, &attempt.State, &attempt.StartedAt, &attempt.CompletedAt); err != nil {
+		if err := rows.Scan(&attempt.ID, &attempt.Seq, &attempt.State, &attempt.StartedAt, &attempt.CompletedAt, &attempt.ExitCode, &attempt.Stdout, &attempt.Stderr, &attempt.Error, &attempt.OutputsJSON, &attempt.StdoutTruncated, &attempt.StderrTruncated); err != nil {
 			return nil, fmt.Errorf("scanning workflow attempt: %w", err)
 		}
 		out = append(out, attempt)
 	}
 	return out, rows.Err()
+}
+
+func (d *DB) StartWorkflowCommand(runID, nodeID string, now int64) (bool, error) {
+	result, err := d.db.Exec(`
+		UPDATE workflow_node_attempt SET state = 'running', started_at = ?
+		WHERE run_id = ? AND node_id = ? AND state = 'waiting'
+		AND EXISTS (SELECT 1 FROM workflow_run WHERE id = ? AND state = 'active')`, now, runID, nodeID, runID)
+	if err != nil {
+		return false, fmt.Errorf("starting workflow command: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	return changed == 1, err
+}
+
+func (d *DB) CompleteWorkflowCommand(runID, nodeID string, result WorkflowCommandResult, now int64) error {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return fmt.Errorf("beginning command completion: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var runState, versionID, attemptState string
+	if err = tx.QueryRow(`SELECT state, version_id FROM workflow_run WHERE id = ?`, runID).Scan(&runState, &versionID); err != nil {
+		return fmt.Errorf("getting workflow run for command completion: %w", err)
+	}
+	if runState != "active" && runState != "paused" {
+		return fmt.Errorf("workflow run is not active or paused")
+	}
+	if err = tx.QueryRow(`SELECT state FROM workflow_node_attempt WHERE run_id = ? AND node_id = ? AND state = 'running'`, runID, nodeID).Scan(&attemptState); err != nil {
+		return fmt.Errorf("getting running workflow attempt: %w", err)
+	}
+	if _, err = tx.Exec(`
+		UPDATE workflow_node_attempt SET state = ?, completed_at = ?, exit_code = ?, stdout = ?, stderr = ?, error = ?,
+		       outputs_json = ?, stdout_truncated = ?, stderr_truncated = ?
+		WHERE run_id = ? AND node_id = ? AND state = 'running'`,
+		result.State, now, result.ExitCode, result.Stdout, result.Stderr, result.Error, result.OutputsJSON,
+		result.StdoutTruncated, result.StderrTruncated, runID, nodeID); err != nil {
+		return fmt.Errorf("completing workflow command attempt: %w", err)
+	}
+	nodeState := result.State
+	if result.State == "denied" || result.State == "errored" {
+		nodeState = "failed"
+	}
+	if _, err = tx.Exec(`UPDATE workflow_node_run SET state = ?, completed_at = ? WHERE run_id = ? AND node_id = ? AND state = 'ready'`, nodeState, now, runID, nodeID); err != nil {
+		return fmt.Errorf("completing workflow command node: %w", err)
+	}
+	if result.State == "canceled" {
+		return tx.Commit()
+	}
+	if result.State != "successful" {
+		if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'skipped', completed_at = ? WHERE run_id = ? AND state = 'pending'`, now, runID); err != nil {
+			return fmt.Errorf("skipping command descendants: %w", err)
+		}
+		if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'canceled', completed_at = ? WHERE run_id = ? AND node_id != ? AND state = 'ready'`, now, runID, nodeID); err != nil {
+			return fmt.Errorf("canceling active command nodes: %w", err)
+		}
+		if _, err = tx.Exec(`UPDATE workflow_node_attempt SET state = 'canceled', completed_at = ? WHERE run_id = ? AND node_id != ? AND state IN ('waiting', 'running')`, now, runID, nodeID); err != nil {
+			return fmt.Errorf("canceling other attempts: %w", err)
+		}
+		if _, err = tx.Exec(`UPDATE workflow_run SET state = 'failed', updated_at = ?, completed_at = ? WHERE id = ?`, now, now, runID); err != nil {
+			return fmt.Errorf("failing workflow run: %w", err)
+		}
+		return tx.Commit()
+	}
+
+	var remaining int
+	if err = tx.QueryRow(`SELECT count(*) FROM workflow_node_run WHERE run_id = ? AND state != 'successful'`, runID).Scan(&remaining); err != nil {
+		return fmt.Errorf("counting workflow nodes: %w", err)
+	}
+	if remaining == 0 {
+		if _, err = tx.Exec(`UPDATE workflow_run SET state = 'successful', updated_at = ?, completed_at = ? WHERE id = ?`, now, now, runID); err != nil {
+			return fmt.Errorf("completing workflow run: %w", err)
+		}
+		return tx.Commit()
+	}
+	rows, err := tx.Query(`
+		SELECT nr.node_id, n.type FROM workflow_node_run nr
+		JOIN workflow_version_node n ON n.version_id = ? AND n.node_id = nr.node_id
+		WHERE nr.run_id = ? AND nr.state = 'pending'
+		AND NOT EXISTS (
+			SELECT 1 FROM workflow_version_dependency d
+			JOIN workflow_node_run upstream ON upstream.run_id = nr.run_id AND upstream.node_id = d.from_node
+			WHERE d.version_id = ? AND d.to_node = nr.node_id AND upstream.state != 'successful'
+		)`, versionID, runID, versionID)
+	if err != nil {
+		return fmt.Errorf("finding ready workflow nodes: %w", err)
+	}
+	type readyNode struct{ id, nodeType string }
+	var ready []readyNode
+	for rows.Next() {
+		var node readyNode
+		if err = rows.Scan(&node.id, &node.nodeType); err != nil {
+			rows.Close()
+			return err
+		}
+		ready = append(ready, node)
+	}
+	if err = rows.Close(); err != nil {
+		return err
+	}
+	for _, node := range ready {
+		if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'ready', ready_at = ? WHERE run_id = ? AND node_id = ?`, now, runID, node.id); err != nil {
+			return fmt.Errorf("readying workflow node: %w", err)
+		}
+		if _, err = tx.Exec(`INSERT INTO workflow_node_attempt (run_id, node_id, seq, state, started_at) VALUES (?, ?, 1, 'waiting', ?)`, runID, node.id, now); err != nil {
+			return fmt.Errorf("inserting workflow attempt: %w", err)
+		}
+	}
+	if _, err = tx.Exec(`UPDATE workflow_run SET updated_at = ? WHERE id = ?`, now, runID); err != nil {
+		return fmt.Errorf("updating workflow run: %w", err)
+	}
+	return tx.Commit()
 }
 
 func (d *DB) ApproveWorkflowNode(runID, nodeID string, now int64) error {
@@ -289,9 +421,15 @@ func (d *DB) ApproveWorkflowNode(runID, nodeID string, now int64) error {
 	if state != "active" {
 		return fmt.Errorf("workflow run is not active")
 	}
-	var nodeState string
-	if err = tx.QueryRow(`SELECT state FROM workflow_node_run WHERE run_id = ? AND node_id = ?`, runID, nodeID).Scan(&nodeState); err != nil {
+	var nodeState, nodeType string
+	if err = tx.QueryRow(`
+		SELECT nr.state, n.type FROM workflow_node_run nr
+		JOIN workflow_version_node n ON n.version_id = ? AND n.node_id = nr.node_id
+		WHERE nr.run_id = ? AND nr.node_id = ?`, versionID, runID, nodeID).Scan(&nodeState, &nodeType); err != nil {
 		return fmt.Errorf("getting workflow node for approval: %w", err)
+	}
+	if nodeType != "approval" {
+		return fmt.Errorf("workflow node %q is not an approval", nodeID)
 	}
 	if nodeState != "ready" {
 		return fmt.Errorf("workflow node %q is not ready", nodeID)
@@ -312,34 +450,36 @@ func (d *DB) ApproveWorkflowNode(runID, nodeID string, now int64) error {
 		}
 	} else {
 		rows, queryErr := tx.Query(`
-			SELECT nr.node_id FROM workflow_node_run nr
+			SELECT nr.node_id, n.type FROM workflow_node_run nr
+			JOIN workflow_version_node n ON n.version_id = ? AND n.node_id = nr.node_id
 			WHERE nr.run_id = ? AND nr.state = 'pending'
 			AND NOT EXISTS (
 				SELECT 1 FROM workflow_version_dependency d
 				JOIN workflow_node_run upstream ON upstream.run_id = nr.run_id AND upstream.node_id = d.from_node
 				WHERE d.version_id = ? AND d.to_node = nr.node_id AND upstream.state != 'successful'
-			)`, runID, versionID)
+			)`, versionID, runID, versionID)
 		if queryErr != nil {
 			return fmt.Errorf("finding ready workflow nodes: %w", queryErr)
 		}
-		var ready []string
+		type readyNode struct{ id, nodeType string }
+		var ready []readyNode
 		for rows.Next() {
-			var id string
-			if err = rows.Scan(&id); err != nil {
+			var node readyNode
+			if err = rows.Scan(&node.id, &node.nodeType); err != nil {
 				rows.Close()
 				return fmt.Errorf("scanning ready workflow node: %w", err)
 			}
-			ready = append(ready, id)
+			ready = append(ready, node)
 		}
 		if err = rows.Close(); err != nil {
 			return err
 		}
-		for _, id := range ready {
-			if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'ready', ready_at = ? WHERE run_id = ? AND node_id = ?`, now, runID, id); err != nil {
+		for _, node := range ready {
+			if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'ready', ready_at = ? WHERE run_id = ? AND node_id = ?`, now, runID, node.id); err != nil {
 				return fmt.Errorf("readying workflow node: %w", err)
 			}
-			if _, err = tx.Exec(`INSERT INTO workflow_node_attempt (run_id, node_id, seq, state, started_at) VALUES (?, ?, 1, 'waiting', ?)`, runID, id, now); err != nil {
-				return fmt.Errorf("inserting approval attempt: %w", err)
+			if _, err = tx.Exec(`INSERT INTO workflow_node_attempt (run_id, node_id, seq, state, started_at) VALUES (?, ?, 1, 'waiting', ?)`, runID, node.id, now); err != nil {
+				return fmt.Errorf("inserting workflow attempt: %w", err)
 			}
 		}
 		if _, err = tx.Exec(`UPDATE workflow_run SET updated_at = ? WHERE id = ?`, now, runID); err != nil {
@@ -364,7 +504,7 @@ func (d *DB) SetWorkflowRunState(id, from, to string, now int64) error {
 		if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'canceled', completed_at = ? WHERE run_id = ? AND state IN ('pending', 'ready')`, now, id); err != nil {
 			return fmt.Errorf("canceling workflow nodes: %w", err)
 		}
-		if _, err = tx.Exec(`UPDATE workflow_node_attempt SET state = 'canceled', completed_at = ? WHERE run_id = ? AND state = 'waiting'`, now, id); err != nil {
+		if _, err = tx.Exec(`UPDATE workflow_node_attempt SET state = 'canceled', completed_at = ? WHERE run_id = ? AND state IN ('waiting', 'running')`, now, id); err != nil {
 			return fmt.Errorf("canceling workflow attempts: %w", err)
 		}
 	}

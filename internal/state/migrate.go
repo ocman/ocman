@@ -93,11 +93,13 @@ import (
 //	      archived_at.
 //	22 - approval workflows. Adds immutable workflow definitions/versions
 //	      plus durable workflow runs, node runs, dependencies, and attempts.
+//	23 - command workflow attempts. Adds bounded logs, exit/error details,
+//	      truncation flags, and basic collected output values.
 //
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 22
+const latestSchemaVersion = 23
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -237,6 +239,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV21(tx)
 	case 22:
 		return migrateToV22(tx)
+	case 23:
+		return migrateToV23(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -785,4 +789,21 @@ func migrateToV22(tx *sql.Tx) error {
 		CREATE INDEX idx_workflow_run_created ON workflow_run (created_at DESC);
 	`)
 	return err
+}
+
+func migrateToV23(tx *sql.Tx) error {
+	for _, stmt := range []string{
+		`ALTER TABLE workflow_node_attempt ADD COLUMN exit_code INTEGER`,
+		`ALTER TABLE workflow_node_attempt ADD COLUMN stdout TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE workflow_node_attempt ADD COLUMN stderr TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE workflow_node_attempt ADD COLUMN error TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE workflow_node_attempt ADD COLUMN outputs_json TEXT NOT NULL DEFAULT '{}'`,
+		`ALTER TABLE workflow_node_attempt ADD COLUMN stdout_truncated INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE workflow_node_attempt ADD COLUMN stderr_truncated INTEGER NOT NULL DEFAULT 0`,
+	} {
+		if _, err := tx.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return nil
 }

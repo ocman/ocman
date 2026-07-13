@@ -70,7 +70,7 @@ export function Workflows() {
 	return (
 		<main className="workflow-page" data-testid="workflows-page">
 			<section className="workflow-author" aria-label="Workflow authoring">
-				<div><span className="workflow-kicker">Immutable JSON definitions</span><h1>Approval workflows</h1><p>Publish a version, start a run, then approve each ready gate in dependency order.</p></div>
+				<div><span className="workflow-kicker">Immutable JSON definitions</span><h1>Workflows</h1><p>Publish a version and inspect each durable approval or command attempt.</p></div>
 				<label>Workflow JSON<textarea aria-label="Workflow JSON" value={source} onChange={(event) => setSource(event.target.value)} spellCheck={false} /></label>
 				<button type="button" onClick={() => void mutate(async () => { const version = await api.workflows.publish(source); return api.workflows.start(version.id); })}>Publish and start</button>
 				{error && <p role="alert">{error}</p>}
@@ -91,8 +91,20 @@ function RunView({ run, mutate }: { run: WorkflowRunDetail; mutate: (action: () 
 		<section className="workflow-run" aria-label="Workflow run">
 			<header><div><span className="workflow-kicker">{run.id}</span><h2>{run.version.name}</h2><p>Revision {run.version.revision} · definition {run.version.definition.version} · {run.state}</p></div><div className="workflow-controls">{run.state === 'active' && <button type="button" onClick={() => void mutate(() => api.workflows.pause(run.id))}>Pause run</button>}{(run.state === 'active' || run.state === 'paused') && <button type="button" onClick={() => void mutate(() => api.workflows.cancel(run.id))}>Cancel run</button>}</div></header>
 			<div className="workflow-graph" role="region" aria-label="Workflow run graph">
-				{run.nodes.map((node, index) => <div className="workflow-step" key={node.nodeId}>{index > 0 && <span aria-hidden="true">-&gt;</span>}<article data-state={node.state}><small>approval · {node.nodeId}</small><h3>{node.name}</h3><strong>{node.state}</strong><p>{node.attempts.length ? `Attempt ${node.attempts[0].seq}: ${node.attempts[0].state}` : 'Not attempted'}</p>{node.state === 'ready' && run.state === 'active' && <button type="button" onClick={() => void mutate(() => api.workflows.approve(run.id, node.nodeId))}>Approve {node.name}</button>}</article></div>)}
+				{run.nodes.map((node, index) => {
+					const attempt = node.attempts[0];
+					return <div className="workflow-step" key={node.nodeId}>{index > 0 && <span aria-hidden="true">-&gt;</span>}<article data-state={node.state}><small>{node.type} · {node.nodeId}</small><h3>{node.name}</h3><strong>{node.state}</strong><p>{attempt ? `Attempt ${attempt.seq}: ${attempt.state}${attempt.exitCode !== undefined && attempt.exitCode >= 0 ? ` (exit ${attempt.exitCode})` : ''}` : 'Not attempted'}</p>{node.type === 'approval' && node.state === 'ready' && run.state === 'active' && <button type="button" onClick={() => void mutate(() => api.workflows.approve(run.id, node.nodeId))}>Approve {node.name}</button>}{attempt && node.type === 'command' && <CommandAttempt attempt={attempt} />}</article></div>;
+				})}
 			</div>
 		</section>
 	);
+}
+
+function CommandAttempt({ attempt }: { attempt: WorkflowRunDetail['nodes'][number]['attempts'][number] }) {
+	return <div className="workflow-command-log">
+		{attempt.error && <p><b>Error</b>: {attempt.error}</p>}
+		{attempt.stdout && <pre aria-label="stdout">{attempt.stdout}{attempt.stdoutTruncated && '\n[truncated]'}</pre>}
+		{attempt.stderr && <pre aria-label="stderr">{attempt.stderr}{attempt.stderrTruncated && '\n[truncated]'}</pre>}
+		{Object.entries(attempt.outputs ?? {}).map(([name, value]) => <div key={name}><b>{name}</b><pre>{value}</pre></div>)}
+	</div>;
 }

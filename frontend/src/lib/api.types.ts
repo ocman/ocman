@@ -808,13 +808,29 @@ export interface CapabilitiesResponse {
 	workflows?: { enabled: boolean };
 }
 
-export type WorkflowNodeState = 'pending' | 'ready' | 'successful' | 'canceled';
-export type WorkflowRunState = 'active' | 'paused' | 'successful' | 'canceled';
+export type WorkflowNodeState = 'pending' | 'ready' | 'successful' | 'failed' | 'canceled' | 'skipped';
+export type WorkflowRunState = 'active' | 'paused' | 'successful' | 'failed' | 'canceled';
+
+export interface WorkflowPermissionRule {
+	permission: 'bash';
+	pattern: string;
+	action: 'allow' | 'deny' | 'ask';
+}
+
+export interface WorkflowCollector {
+	name: string;
+	type: 'text' | 'json_file' | 'file' | 'git_diff';
+	path?: string;
+}
 
 export interface WorkflowNodeDefinition {
 	id: string;
 	name: string;
-	type: 'approval';
+	type: 'approval' | 'command';
+	command?: string[];
+	environment?: Record<string, string>;
+	permission?: WorkflowPermissionRule[];
+	outputs?: WorkflowCollector[];
 }
 
 export interface WorkflowDependency {
@@ -827,6 +843,7 @@ export interface WorkflowDefinition {
 	name: string;
 	version: string;
 	concurrency: number;
+	directory?: string;
 	nodes: WorkflowNodeDefinition[];
 	dependencies: WorkflowDependency[];
 }
@@ -853,15 +870,22 @@ export interface WorkflowRun {
 export interface WorkflowAttempt {
 	id: number;
 	seq: number;
-	state: 'waiting' | 'successful' | 'canceled';
+	state: 'waiting' | 'running' | 'successful' | 'failed' | 'errored' | 'denied' | 'canceled';
 	startedAt: number;
 	completedAt?: number;
+	exitCode?: number;
+	stdout?: string;
+	stderr?: string;
+	error?: string;
+	outputs?: Record<string, string>;
+	stdoutTruncated?: boolean;
+	stderrTruncated?: boolean;
 }
 
 export interface WorkflowNodeRun {
 	nodeId: string;
 	name: string;
-	type: 'approval';
+	type: 'approval' | 'command';
 	state: WorkflowNodeState;
 	readyAt?: number;
 	completedAt?: number;

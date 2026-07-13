@@ -71,9 +71,11 @@ flowchart TD
   driven by a 5 s tick goroutine in the server; shared by REST and
   MCP.
 - **workflows.Service** — shared validation and run-lifecycle seam for
-  immutable workflow versions. The first production slice schedules
-  approval nodes directly from persisted dependency state; REST and SSE
-  never implement independent transitions.
+  immutable workflow versions. Approval and permission-scoped command
+  nodes schedule from persisted dependency state; the command-executor
+  boundary owns directory/environment policy, bounded logs, collectors,
+  and process-tree cancellation. REST and SSE never implement independent
+  transitions.
 - **internal/mcp** — prompt composer + session launcher + tool
   handlers; all side effects go through the same `Platform` interface
   the HTTP layer uses.
@@ -109,9 +111,10 @@ state from the last message row on every query, so there is no sync
 problem with OpenCode's DB.
 
 Workflow state takes the opposite path because it is ocman-owned: publish,
-start, approval, pause, and cancel delegate to `workflows.Service`, which
-commits version/run/node/attempt state to `state.db` before broadcasting a
-run ID. The browser then refetches the authoritative read-only run graph.
+start, approval, command completion, pause, and cancel delegate to
+`workflows.Service`, which commits version/run/node/attempt state and bounded
+command output to `state.db` before broadcasting a run ID. The browser then
+refetches the authoritative read-only run graph.
 
 ## 4. Frontend Composition
 
