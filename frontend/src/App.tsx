@@ -62,7 +62,7 @@ function RoutesBoundary({ children }: { children: ReactNode }) {
 // force-hides the menu after clicking an item (CSS :hover alone can't
 // close while the cursor is still over the menu). Moving the mouse away
 // resets it so hover works again next time.
-export function LogoNav({ agentLoopsAllowed, workflowsAllowed }: { agentLoopsAllowed: boolean; workflowsAllowed: boolean }) {
+export function LogoNav({ agentLoopsAllowed, workflowsAllowed = false }: { agentLoopsAllowed: boolean; workflowsAllowed?: boolean }) {
   const [closed, setClosed] = useState(false);
   return (
     <span
@@ -81,6 +81,7 @@ export function LogoNav({ agentLoopsAllowed, workflowsAllowed }: { agentLoopsAll
         <Link to="/projects" role="menuitem">Projects</Link>
         {agentLoopsAllowed && <Link to="/loops" role="menuitem">Loops</Link>}
         {workflowsAllowed && <Link to="/workflows" role="menuitem">Workflows</Link>}
+        <Link to="/prototype/workflows" role="menuitem">Workflow lab</Link>
         <Link to="/stats" role="menuitem">Stats</Link>
         <Link to="/usage" role="menuitem">Usage</Link>
         <Link to="/settings" role="menuitem">Settings</Link>
