@@ -794,6 +794,7 @@ func migrateToV22(tx *sql.Tx) error {
 	`)
 	return err
 }
+
 func migrateToV23(tx *sql.Tx) error {
 	for _, stmt := range []string{
 		`ALTER TABLE workflow_node_attempt ADD COLUMN exit_code INTEGER`,

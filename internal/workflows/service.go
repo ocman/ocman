@@ -529,12 +529,41 @@ func (s *Service) Tick(ctx context.Context) error {
 	}
 	for _, run := range runs {
 		if run.State == StateActive {
+			if err := s.recoverInterrupted(ctx, run.ID); err != nil {
+				return err
+			}
 			if err := s.dispatch(ctx, run.ID); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+func (s *Service) recoverInterrupted(ctx context.Context, runID string) error {
+	run, err := s.GetRun(ctx, runID)
+	if err != nil {
+		return err
+	}
+	for _, node := range run.Nodes {
+		if len(node.Attempts) == 0 {
+			continue
+		}
+		attempt := node.Attempts[len(node.Attempts)-1]
+		switch {
+		case node.Type == "command" && attempt.State == AttemptRunning && !s.commandActive(runID, node.NodeID):
+			return s.store.CompleteWorkflowCommand(runID, node.NodeID, state.WorkflowCommandResult{State: AttemptErrored, Error: "command interrupted by server restart", OutputsJSON: "{}"}, s.now().UnixMilli())
+		case node.Type == "agent" && attempt.State == AttemptStarting && attempt.SessionID == "":
+			return s.store.CompleteWorkflowAgentNode(runID, node.NodeID, attempt.ID, false, "error", "{}", "agent launch interrupted by server restart", s.now().UnixMilli())
+		}
+	}
+	return nil
+}
+
+func (s *Service) commandActive(runID, nodeID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.running[runID] != nil && s.running[runID][nodeID] != nil
 }
 
 func (s *Service) dispatch(ctx context.Context, runID string) error {

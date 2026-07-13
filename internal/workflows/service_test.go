@@ -566,6 +566,69 @@ func TestPauseLetsRunningCommandSettleAndCommandCannotBeApproved(t *testing.T) {
 	}
 }
 
+func TestTickFailsCommandInterruptedByRestart(t *testing.T) {
+	h := newHarness(t)
+	executor := &blockingExecutor{started: make(chan struct{}), release: make(chan struct{}), done: make(chan struct{})}
+	h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, CommandExecutor: executor, Agent: h.agent})
+	node := Node{ID: "command", Name: "Command", Type: "command", Command: []string{"/usr/bin/true"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}}
+	version, err := h.svc.PublishJSON(context.Background(), commandDefinition(t, t.TempDir(), []Node{node}, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.svc.Start(context.Background(), version.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-executor.started
+	h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, Agent: h.agent})
+	if err := h.svc.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	failed, err := h.svc.GetRun(context.Background(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failed.State != StateFailed || failed.Nodes[0].Attempts[0].State != AttemptErrored || !strings.Contains(failed.Nodes[0].Attempts[0].Error, "server restart") {
+		t.Fatalf("interrupted command not failed: %+v", failed)
+	}
+	close(executor.release)
+	<-executor.done
+}
+
+func TestTickFailsAgentLaunchInterruptedByRestart(t *testing.T) {
+	h := newHarness(t)
+	version, err := h.svc.PublishJSON(context.Background(), []byte(singleAgent))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := state.WorkflowRun{
+		ID: "interrupted-agent", WorkflowID: version.WorkflowID, VersionID: version.ID,
+		State: StateActive, CreatedAt: h.now.UnixMilli(), UpdatedAt: h.now.UnixMilli(),
+		Nodes: []state.WorkflowNodeRun{{NodeID: "implement", Type: "agent", State: NodeReady}},
+	}
+	if err := h.db.InsertWorkflowRun(run); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := h.db.GetWorkflowRun(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attemptID := stored.Nodes[0].Attempts[0].ID
+	if claimed, err := h.db.ClaimWorkflowAgentAttempt(run.ID, "implement", attemptID, "", "/repo", h.now.UnixMilli()); err != nil || !claimed {
+		t.Fatalf("claim interrupted agent: claimed=%v err=%v", claimed, err)
+	}
+	if err := h.svc.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	failed, err := h.svc.GetRun(context.Background(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failed.State != StateFailed || failed.Nodes[0].Attempts[0].State != AttemptFailed || !strings.Contains(failed.Nodes[0].Attempts[0].Error, "server restart") {
+		t.Fatalf("interrupted agent launch not failed: %+v", failed)
+	}
+}
+
 func TestCommandConcurrencyCapAndFailureCancelSiblings(t *testing.T) {
 	t.Run("cap", func(t *testing.T) {
 		h := newHarness(t)
@@ -667,6 +730,7 @@ func TestCommandConcurrencyCapAndFailureCancelSiblings(t *testing.T) {
 type blockingExecutor struct {
 	started chan struct{}
 	release chan struct{}
+	done    chan struct{}
 }
 
 type gatedExecutor struct {
@@ -695,6 +759,9 @@ func (e *gatedExecutor) Execute(_ context.Context, request CommandRequest) Comma
 func (e *blockingExecutor) Execute(context.Context, CommandRequest) CommandResult {
 	close(e.started)
 	<-e.release
+	if e.done != nil {
+		close(e.done)
+	}
 	return CommandResult{State: AttemptSuccessful, ExitCode: 0, Outputs: map[string]string{}}
 }
 
