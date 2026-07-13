@@ -296,6 +296,23 @@ func (s *Server) Compact(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empt
 	return &pb.Empty{}, svcErr(s.sessions.Compact(ctx, req.Platform, cr))
 }
 
+func (s *Server) ForkSession(ctx context.Context, req *pb.PlatformJsonReq) (*pb.JsonResp, error) {
+	var fr platforms.ForkSessionRequest
+	if err := unmarshalJSON(req.Payload, &fr); err != nil {
+		return nil, err
+	}
+	resp, err := s.sessions.Fork(ctx, req.Platform, fr)
+	return jsonResp(resp, svcErr(err))
+}
+
+func (s *Server) MoveSession(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
+	var mr platforms.MoveSessionRequest
+	if err := unmarshalJSON(req.Payload, &mr); err != nil {
+		return nil, err
+	}
+	return &pb.Empty{}, svcErr(s.sessions.Move(ctx, req.Platform, mr))
+}
+
 func (s *Server) CreateSession(ctx context.Context, req *pb.PlatformJsonReq) (*pb.JsonResp, error) {
 	var cr platforms.CreateSessionRequest
 	if err := unmarshalJSON(req.Payload, &cr); err != nil {

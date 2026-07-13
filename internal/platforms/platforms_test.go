@@ -98,6 +98,10 @@ func (f *fakePlatform) SetPermissionRules(context.Context, SetPermissionRulesReq
 	return ErrUnsupported
 }
 func (f *fakePlatform) Compact(context.Context, CompactRequest) error { return ErrUnsupported }
+func (f *fakePlatform) ForkSession(context.Context, ForkSessionRequest) (*CreateSessionResponse, error) {
+	return nil, ErrUnsupported
+}
+func (f *fakePlatform) MoveSession(context.Context, MoveSessionRequest) error { return ErrUnsupported }
 func (f *fakePlatform) CreateSession(context.Context, CreateSessionRequest) (*CreateSessionResponse, error) {
 	return nil, ErrUnsupported
 }

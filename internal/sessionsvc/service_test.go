@@ -29,6 +29,8 @@ type fakePlatform struct {
 	answers     []platforms.RespondQuestionRequest
 	rejects     []platforms.RejectQuestionRequest
 	creates     []platforms.CreateSessionRequest
+	forks       []platforms.ForkSessionRequest
+	moves       []platforms.MoveSessionRequest
 }
 
 func (f *fakePlatform) ID() platforms.ID                 { return f.id }
@@ -76,6 +78,14 @@ func (f *fakePlatform) RejectQuestion(_ context.Context, req platforms.RejectQue
 func (f *fakePlatform) CreateSession(_ context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 	f.creates = append(f.creates, req)
 	return &platforms.CreateSessionResponse{ID: "new-session"}, nil
+}
+func (f *fakePlatform) ForkSession(_ context.Context, req platforms.ForkSessionRequest) (*platforms.CreateSessionResponse, error) {
+	f.forks = append(f.forks, req)
+	return &platforms.CreateSessionResponse{ID: "forked-session"}, nil
+}
+func (f *fakePlatform) MoveSession(_ context.Context, req platforms.MoveSessionRequest) error {
+	f.moves = append(f.moves, req)
+	return nil
 }
 
 // fakeRegistry serves Get from byID and PlatformForSession from owner.
@@ -172,6 +182,13 @@ func TestValidationErrors(t *testing.T) {
 		{"reject missing id", func() error {
 			return svc.RejectQuestion(ctx, "", platforms.RejectQuestionRequest{SessionID: "s1"})
 		}},
+		{"fork missing session id", func() error {
+			_, err := svc.Fork(ctx, "", platforms.ForkSessionRequest{})
+			return err
+		}},
+		{"move missing directory", func() error {
+			return svc.Move(ctx, "", platforms.MoveSessionRequest{SessionID: "s1", Directory: "   "})
+		}},
 		{"create missing directory", func() error {
 			_, err := svc.Create(ctx, "", platforms.CreateSessionRequest{})
 			return err
@@ -191,8 +208,36 @@ func TestValidationErrors(t *testing.T) {
 	}
 	// None of the invalid calls may have reached the adapter.
 	if len(p.sent)+len(p.commands)+len(p.shells)+len(p.renames)+len(p.compacts)+
-		len(p.rules)+len(p.permissions)+len(p.answers)+len(p.rejects)+len(p.creates) != 0 {
+		len(p.rules)+len(p.permissions)+len(p.answers)+len(p.rejects)+len(p.creates)+
+		len(p.forks)+len(p.moves) != 0 {
 		t.Fatal("validation failure leaked a platform call")
+	}
+}
+
+// TestForkAndMoveDelegate covers the happy path for the two new
+// mutations, including the SessionCreated hook firing (both change
+// which project row a session belongs to).
+func TestForkAndMoveDelegate(t *testing.T) {
+	p := &fakePlatform{id: "opencode", available: true}
+	var created int
+	svc, _ := newService(p, Hooks{SessionCreated: func() { created++ }})
+	ctx := context.Background()
+
+	resp, err := svc.Fork(ctx, "", platforms.ForkSessionRequest{SessionID: "s1", MessageID: "m1"})
+	if err != nil {
+		t.Fatalf("Fork: %v", err)
+	}
+	if resp.ID != "forked-session" {
+		t.Errorf("Fork ID = %q, want forked-session", resp.ID)
+	}
+	if err := svc.Move(ctx, "", platforms.MoveSessionRequest{SessionID: "s1", Directory: "/tmp/dst"}); err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	if len(p.forks) != 1 || len(p.moves) != 1 {
+		t.Fatalf("expected fork+move to reach adapter once each, got forks=%d moves=%d", len(p.forks), len(p.moves))
+	}
+	if created != 2 {
+		t.Errorf("SessionCreated hook fired %d times, want 2", created)
 	}
 }
 

@@ -150,11 +150,22 @@ func TestRemotePlatform_AllMutations(t *testing.T) {
 				Rules:     []platforms.PermissionRule{{Permission: "edit", Pattern: "*", Action: "deny"}},
 			})
 		}},
+		{"MoveSession", func() error {
+			return rp.MoveSession(ctx, platforms.MoveSessionRequest{SessionID: "s", Directory: "/tmp/dst"})
+		}},
 	}
 	for _, c := range checks {
 		if err := c.fn(); err != nil {
 			t.Errorf("%s: %v", c.name, err)
 		}
+	}
+
+	// ForkSession returns a value; assert the roundtripped ID.
+	resp, err := rp.ForkSession(ctx, platforms.ForkSessionRequest{SessionID: "s"})
+	if err != nil {
+		t.Errorf("ForkSession: %v", err)
+	} else if resp.ID != "forked-sess" {
+		t.Errorf("ForkSession ID = %q, want forked-sess", resp.ID)
 	}
 }
 

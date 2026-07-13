@@ -45,6 +45,8 @@ service Ocman {
   rpc RenameSession(PlatformJsonReq) returns (Empty);
   rpc SetPermissionRules(PlatformJsonReq) returns (Empty);
   rpc Compact(PlatformJsonReq) returns (Empty);
+  rpc ForkSession(PlatformJsonReq) returns (JsonResp);    // *CreateSessionResponse
+  rpc MoveSession(PlatformJsonReq) returns (Empty);
   rpc CreateSession(PlatformJsonReq) returns (JsonResp);  // *CreateSessionResponse
 
   // --- Streaming events (tunneled to hub SSE) ---

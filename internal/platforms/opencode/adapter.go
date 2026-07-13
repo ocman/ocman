@@ -108,6 +108,8 @@ func (a *Adapter) Capabilities() platforms.Capabilities {
 		RespondQuestion:   true,
 		Abort:             true,
 		Compact:           true,
+		Fork:              true,
+		Move:              true,
 		Events:            true,
 		AgentCatalog:      true,
 		ModelCatalog:      true,

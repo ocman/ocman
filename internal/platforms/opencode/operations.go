@@ -518,6 +518,57 @@ func (a *Adapter) Compact(ctx context.Context, req platforms.CompactRequest) err
 	return postJSON(ctx, port, fmt.Sprintf("/session/%s/summarize", req.SessionID), payload)
 }
 
+// ForkSession branches a session into a new child session via
+// OpenCode's POST /session/{id}/fork, optionally from a specific
+// message. Returns the new session's ID.
+func (a *Adapter) ForkSession(ctx context.Context, req platforms.ForkSessionRequest) (*platforms.CreateSessionResponse, error) {
+	port, _, err := a.resolvePort(req.SessionID)
+	if err != nil {
+		return nil, err
+	}
+	payloadMap := map[string]string{}
+	if req.MessageID != "" {
+		payloadMap["messageID"] = req.MessageID
+	}
+	payload, err := marshalRequest(payloadMap)
+	if err != nil {
+		return nil, err
+	}
+	body, err := postJSONReturning(ctx, port, fmt.Sprintf("/session/%s/fork", req.SessionID), payload)
+	if err != nil {
+		return nil, err
+	}
+	var parsed struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil || parsed.ID == "" {
+		return nil, fmt.Errorf("opencode fork: unexpected response %q", string(body))
+	}
+	rememberSessionPort(parsed.ID, port)
+	return &platforms.CreateSessionResponse{ID: parsed.ID}, nil
+}
+
+// MoveSession relocates a session to another project directory via
+// OpenCode's POST /experimental/control-plane/move-session.
+func (a *Adapter) MoveSession(ctx context.Context, req platforms.MoveSessionRequest) error {
+	port, _, err := a.resolvePort(req.SessionID)
+	if err != nil {
+		return err
+	}
+	payload, err := json.Marshal(map[string]any{
+		"sessionID":   req.SessionID,
+		"destination": map[string]string{"directory": req.Directory},
+	})
+	if err != nil {
+		return err
+	}
+	if err := postJSON(ctx, port, "/experimental/control-plane/move-session", payload); err != nil {
+		return err
+	}
+	sessionCache.invalidate(port, "/session/"+req.SessionID)
+	return nil
+}
+
 // CreateSession creates a new OpenCode session bound to the given
 // directory. Returns the new session ID.
 func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {

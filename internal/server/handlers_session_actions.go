@@ -189,6 +189,50 @@ func (s *Server) handleSessionCompact(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleSessionFork handles POST /api/session/{id}/fork: branches the
+// session into a new child session, optionally from a specific message.
+// Returns {"id": "<new session id>"}.
+func (s *Server) handleSessionFork(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		MessageID string `json:"messageID"`
+	}
+	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+		return
+	}
+	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
+		resp, err := s.sessions.Fork(r.Context(), platformHint(r), platforms.ForkSessionRequest{
+			SessionID: sessionID,
+			MessageID: req.MessageID,
+		})
+		if err != nil {
+			writeSessionSvcError(w, "forking session", err)
+			return
+		}
+		writeJSON(w, map[string]string{"id": resp.ID})
+	})
+}
+
+// handleSessionMove handles POST /api/session/{id}/move: relocates the
+// session to another project directory on the same host.
+func (s *Server) handleSessionMove(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Directory string `json:"directory"`
+	}
+	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+		return
+	}
+	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
+		if err := s.sessions.Move(r.Context(), platformHint(r), platforms.MoveSessionRequest{
+			SessionID: sessionID,
+			Directory: req.Directory,
+		}); err != nil {
+			writeSessionSvcError(w, "moving session", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
 // handleSessionPermissionRulesGet handles GET /api/session/{id}/permission-rules.
 // Returns {"rules":[...]}; an empty list means the session inherits the
 // platform's configured defaults.

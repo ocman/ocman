@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v6.33.4
-// source: internal/remote/proto/remote.proto
+// source: remote.proto
 
 package remotepb
 
@@ -43,6 +43,8 @@ const (
 	Ocman_RenameSession_FullMethodName          = "/ocman.remote.v1.Ocman/RenameSession"
 	Ocman_SetPermissionRules_FullMethodName     = "/ocman.remote.v1.Ocman/SetPermissionRules"
 	Ocman_Compact_FullMethodName                = "/ocman.remote.v1.Ocman/Compact"
+	Ocman_ForkSession_FullMethodName            = "/ocman.remote.v1.Ocman/ForkSession"
+	Ocman_MoveSession_FullMethodName            = "/ocman.remote.v1.Ocman/MoveSession"
 	Ocman_CreateSession_FullMethodName          = "/ocman.remote.v1.Ocman/CreateSession"
 	Ocman_StreamEvents_FullMethodName           = "/ocman.remote.v1.Ocman/StreamEvents"
 	Ocman_GitInfo_FullMethodName                = "/ocman.remote.v1.Ocman/GitInfo"
@@ -108,6 +110,8 @@ type OcmanClient interface {
 	RenameSession(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*Empty, error)
 	SetPermissionRules(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*Empty, error)
 	Compact(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*Empty, error)
+	ForkSession(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*JsonResp, error)
+	MoveSession(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*Empty, error)
 	CreateSession(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 	// --- Streaming events (tunneled to hub SSE) ---
 	StreamEvents(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (grpc.ServerStreamingClient[EventChunk], error)
@@ -385,6 +389,26 @@ func (c *ocmanClient) Compact(ctx context.Context, in *PlatformJsonReq, opts ...
 	return out, nil
 }
 
+func (c *ocmanClient) ForkSession(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*JsonResp, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(JsonResp)
+	err := c.cc.Invoke(ctx, Ocman_ForkSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *ocmanClient) MoveSession(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Ocman_MoveSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *ocmanClient) CreateSession(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*JsonResp, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(JsonResp)
@@ -649,6 +673,8 @@ type OcmanServer interface {
 	RenameSession(context.Context, *PlatformJsonReq) (*Empty, error)
 	SetPermissionRules(context.Context, *PlatformJsonReq) (*Empty, error)
 	Compact(context.Context, *PlatformJsonReq) (*Empty, error)
+	ForkSession(context.Context, *PlatformJsonReq) (*JsonResp, error)
+	MoveSession(context.Context, *PlatformJsonReq) (*Empty, error)
 	CreateSession(context.Context, *PlatformJsonReq) (*JsonResp, error)
 	// --- Streaming events (tunneled to hub SSE) ---
 	StreamEvents(*SessionRef, grpc.ServerStreamingServer[EventChunk]) error
@@ -757,6 +783,12 @@ func (UnimplementedOcmanServer) SetPermissionRules(context.Context, *PlatformJso
 }
 func (UnimplementedOcmanServer) Compact(context.Context, *PlatformJsonReq) (*Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method Compact not implemented")
+}
+func (UnimplementedOcmanServer) ForkSession(context.Context, *PlatformJsonReq) (*JsonResp, error) {
+	return nil, status.Error(codes.Unimplemented, "method ForkSession not implemented")
+}
+func (UnimplementedOcmanServer) MoveSession(context.Context, *PlatformJsonReq) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method MoveSession not implemented")
 }
 func (UnimplementedOcmanServer) CreateSession(context.Context, *PlatformJsonReq) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateSession not implemented")
@@ -1271,6 +1303,42 @@ func _Ocman_Compact_Handler(srv interface{}, ctx context.Context, dec func(inter
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Ocman_ForkSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PlatformJsonReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).ForkSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_ForkSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).ForkSession(ctx, req.(*PlatformJsonReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Ocman_MoveSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PlatformJsonReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).MoveSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_MoveSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).MoveSession(ctx, req.(*PlatformJsonReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Ocman_CreateSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PlatformJsonReq)
 	if err := dec(in); err != nil {
@@ -1710,6 +1778,14 @@ var Ocman_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Ocman_Compact_Handler,
 		},
 		{
+			MethodName: "ForkSession",
+			Handler:    _Ocman_ForkSession_Handler,
+		},
+		{
+			MethodName: "MoveSession",
+			Handler:    _Ocman_MoveSession_Handler,
+		},
+		{
 			MethodName: "CreateSession",
 			Handler:    _Ocman_CreateSession_Handler,
 		},
@@ -1796,5 +1872,5 @@ var Ocman_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "internal/remote/proto/remote.proto",
+	Metadata: "remote.proto",
 }

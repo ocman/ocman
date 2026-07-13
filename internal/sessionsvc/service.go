@@ -149,6 +149,47 @@ func (s *Service) Compact(ctx context.Context, platformID string, req platforms.
 	return p.Compact(ctx, req)
 }
 
+// Fork branches a session into a new child session, optionally from a
+// specific message. Returns the new session's ID.
+func (s *Service) Fork(ctx context.Context, platformID string, req platforms.ForkSessionRequest) (*platforms.CreateSessionResponse, error) {
+	if req.SessionID == "" {
+		return nil, validation("session ID is required")
+	}
+	p, err := s.resolve(ctx, req.SessionID, platformID)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := p.ForkSession(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if s.hooks.SessionCreated != nil {
+		s.hooks.SessionCreated()
+	}
+	return resp, nil
+}
+
+// Move relocates a session to another project directory on the same
+// host.
+func (s *Service) Move(ctx context.Context, platformID string, req platforms.MoveSessionRequest) error {
+	if strings.TrimSpace(req.Directory) == "" {
+		return validation("directory is required")
+	}
+	p, err := s.resolve(ctx, req.SessionID, platformID)
+	if err != nil {
+		return err
+	}
+	if err := p.MoveSession(ctx, req); err != nil {
+		return err
+	}
+	// A move changes which project row the session belongs to; refresh
+	// the projects index just like session creation does.
+	if s.hooks.SessionCreated != nil {
+		s.hooks.SessionCreated()
+	}
+	return nil
+}
+
 // SetPermissionRules replaces a session's permission rules. Rules are
 // normalized in place: an empty pattern defaults to "*".
 func (s *Service) SetPermissionRules(ctx context.Context, platformID string, req platforms.SetPermissionRulesRequest) error {

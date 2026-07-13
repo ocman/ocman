@@ -69,6 +69,13 @@ type Capabilities struct {
 	RespondQuestion   bool `json:"respondQuestion"`
 	Abort             bool `json:"abort"`
 	Compact           bool `json:"compact"`
+	// Fork reports whether the adapter can branch a session into a new
+	// child session (Platform.ForkSession). Surfaced as caps.fork.
+	Fork bool `json:"fork"`
+	// Move reports whether the adapter can relocate a session to
+	// another project directory (Platform.MoveSession). Surfaced as
+	// caps.move.
+	Move bool `json:"move"`
 	Events            bool `json:"events"`       // SSE stream of live session events
 	AgentCatalog      bool `json:"agentCatalog"` // adapter exposes a composer-agent catalog
 	ModelCatalog      bool `json:"modelCatalog"` // adapter exposes a per-session model catalog
@@ -282,6 +289,14 @@ type Platform interface {
 
 	// Compact compacts the session's history.
 	Compact(ctx context.Context, req CompactRequest) error
+
+	// ForkSession branches a session into a new child session and
+	// returns the new session's ID. Gated by Capabilities.Fork.
+	ForkSession(ctx context.Context, req ForkSessionRequest) (*CreateSessionResponse, error)
+
+	// MoveSession relocates a session to another project directory on
+	// the same host. Gated by Capabilities.Move.
+	MoveSession(ctx context.Context, req MoveSessionRequest) error
 
 	// CreateSession creates a new session and returns its ID. The
 	// directory comes from the request; the adapter is free to apply

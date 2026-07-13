@@ -388,7 +388,7 @@ export function useSessionActions({
       return;
     }
 
-    if (command === 'wt') {
+    if (command === 'worktree' || command === 'wt') {
       openWorktreeForm({
         projectDir: session.directory,
         branch: args.trim() || undefined,
@@ -470,6 +470,43 @@ export function useSessionActions({
 
     if (command === 'compact') {
       await handleCompact();
+      return;
+    }
+
+    if (command === 'fork') {
+      if (!caps.fork) return;
+      pending.begin('/fork');
+      try {
+        const { id } = await api.forkSession(session.id);
+        pending.clear();
+        navigateToSession(id);
+      } catch (e) {
+        remoteLog.error('Failed to fork session', e);
+        pending.fail(e instanceof Error ? e.message : 'Unknown error');
+      }
+      return;
+    }
+
+    if (command === 'move') {
+      if (!caps.move) return;
+      // First cut: the target directory is passed as the argument
+      // (`/move <dir>`). A directory picker mirroring OpenCode's
+      // DialogMoveSession is a follow-up (#298).
+      const dir = args.trim();
+      if (!dir) {
+        pending.begin('/move');
+        pending.fail('Usage: /move <project directory>');
+        return;
+      }
+      pending.begin(`/move ${dir}`);
+      try {
+        await api.moveSession(session.id, dir);
+        pending.clear();
+        useApiStore.getState().patchRecentSession(session.id, { directory: dir });
+      } catch (e) {
+        remoteLog.error('Failed to move session', e);
+        pending.fail(e instanceof Error ? e.message : 'Unknown error');
+      }
       return;
     }
 
@@ -559,7 +596,7 @@ export function useSessionActions({
       remoteLog.error('Failed to execute command', e);
       pending.fail(e instanceof Error ? e.message : 'Unknown error');
     }
-  }, [activeAgent, archiveSession, createSession, launchOpencodeInTmux, tmuxAvailable, seedNewSession, handleCompact, handleNewSession, handleTmuxShortcut, handleVSCodeShortcut, navigate, navigateToSession, openWorktreeForm, portAvailable, recentSessionsRef, messagesRef, partsRef, selectedAgent, selectedModel, session, setShowRenameModal, setShowRenameToast, setRestartToastMessage, setCopyToastMessage, pending]);
+  }, [activeAgent, archiveSession, caps.fork, caps.move, createSession, launchOpencodeInTmux, tmuxAvailable, seedNewSession, handleCompact, handleNewSession, handleTmuxShortcut, handleVSCodeShortcut, navigate, navigateToSession, openWorktreeForm, portAvailable, recentSessionsRef, messagesRef, partsRef, selectedAgent, selectedModel, session, setShowRenameModal, setShowRenameToast, setRestartToastMessage, setCopyToastMessage, pending]);
 
   return {
     awaitingAssistantResponse,

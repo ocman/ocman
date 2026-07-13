@@ -317,6 +317,30 @@ func (p *remotePlatform) Compact(ctx context.Context, req platforms.CompactReque
 	})
 }
 
+func (p *remotePlatform) MoveSession(ctx context.Context, req platforms.MoveSessionRequest) error {
+	return p.mutate(ctx, req, func(c pb.OcmanClient, b []byte) error {
+		_, err := c.MoveSession(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: b})
+		return err
+	})
+}
+
+func (p *remotePlatform) ForkSession(ctx context.Context, req platforms.ForkSessionRequest) (*platforms.CreateSessionResponse, error) {
+	client := p.conn.Client()
+	if client == nil {
+		return nil, ErrRemoteOffline
+	}
+	b, err := marshalJSON(req)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.ForkSession(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: b})
+	if err != nil {
+		return nil, remotePlatformError(err)
+	}
+	var out platforms.CreateSessionResponse
+	return &out, unmarshalJSON(resp.Payload, &out)
+}
+
 func (p *remotePlatform) CreateSession(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 	client := p.conn.Client()
 	if client == nil {

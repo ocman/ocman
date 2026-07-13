@@ -696,6 +696,10 @@ export interface PlatformCapabilities {
   respondQuestion: boolean;
   abort: boolean;
   compact: boolean;
+  /** Whether the platform can fork a session into a new child session. */
+  fork: boolean;
+  /** Whether the platform can move a session to another project directory. */
+  move: boolean;
   events: boolean;
   agentCatalog: boolean;
   modelCatalog: boolean;

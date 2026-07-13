@@ -343,6 +343,8 @@ var sessionSubRoutes = []sessionSubRoute{
 	{http.MethodPost, "{id}/shell", (*Server).handleSessionShell},
 	{http.MethodPost, "{id}/abort", (*Server).handleSessionAbort},
 	{http.MethodPost, "{id}/compact", (*Server).handleSessionCompact},
+	{http.MethodPost, "{id}/fork", (*Server).handleSessionFork},
+	{http.MethodPost, "{id}/move", (*Server).handleSessionMove},
 	{http.MethodPost, "{id}/share", (*Server).handleCreateSessionShare},
 	{http.MethodDelete, "{id}/share/{token}", (*Server).handleRevokeSessionShare},
 

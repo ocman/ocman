@@ -63,6 +63,10 @@ type fakePlatform struct {
 	// intercept the per-session permission-ruleset read/write.
 	permissionRulesFn    func(sessionID string) ([]platforms.PermissionRule, error)
 	setPermissionRulesFn func(req platforms.SetPermissionRulesRequest) error
+	// forkSessionFn / moveSessionFn, when non-nil, intercept the
+	// /fork and /move session actions.
+	forkSessionFn func(req platforms.ForkSessionRequest) (*platforms.CreateSessionResponse, error)
+	moveSessionFn func(req platforms.MoveSessionRequest) error
 }
 
 func (f *fakePlatform) ID() platforms.ID {
@@ -210,6 +214,20 @@ func (f *fakePlatform) SetPermissionRules(_ context.Context, req platforms.SetPe
 }
 
 func (f *fakePlatform) Compact(context.Context, platforms.CompactRequest) error {
+	return platforms.ErrUnsupported
+}
+
+func (f *fakePlatform) ForkSession(_ context.Context, req platforms.ForkSessionRequest) (*platforms.CreateSessionResponse, error) {
+	if f.forkSessionFn != nil {
+		return f.forkSessionFn(req)
+	}
+	return nil, platforms.ErrUnsupported
+}
+
+func (f *fakePlatform) MoveSession(_ context.Context, req platforms.MoveSessionRequest) error {
+	if f.moveSessionFn != nil {
+		return f.moveSessionFn(req)
+	}
 	return platforms.ErrUnsupported
 }
 

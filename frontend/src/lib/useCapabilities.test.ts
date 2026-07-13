@@ -22,6 +22,8 @@ function makeResponse(overrides: Partial<CapabilitiesResponse> = {}): Capabiliti
           respondQuestion: true,
           abort: true,
           compact: true,
+          fork: true,
+          move: true,
           events: true,
           agentCatalog: true,
           modelCatalog: true,

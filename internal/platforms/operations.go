@@ -98,6 +98,21 @@ type RenameSessionRequest struct {
 	Title     string
 }
 
+// ForkSessionRequest branches a session into a new child session,
+// optionally from a specific message in the timeline. An empty
+// MessageID forks from the current HEAD.
+type ForkSessionRequest struct {
+	SessionID string
+	MessageID string // optional; empty = fork from HEAD
+}
+
+// MoveSessionRequest relocates a session to a different project
+// directory on the same host.
+type MoveSessionRequest struct {
+	SessionID string
+	Directory string
+}
+
 // PermissionRule is one entry in a session's permission ruleset:
 // which permission (tool) it applies to, a glob pattern for the
 // argument, and what happens on match. Mirrors OpenCode's

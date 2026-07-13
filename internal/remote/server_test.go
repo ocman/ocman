@@ -108,6 +108,10 @@ func (f *fakePlatform) SetPermissionRules(_ context.Context, req platforms.SetPe
 	return nil
 }
 func (f *fakePlatform) Compact(context.Context, platforms.CompactRequest) error { return nil }
+func (f *fakePlatform) ForkSession(_ context.Context, _ platforms.ForkSessionRequest) (*platforms.CreateSessionResponse, error) {
+	return &platforms.CreateSessionResponse{ID: "forked-sess"}, nil
+}
+func (f *fakePlatform) MoveSession(context.Context, platforms.MoveSessionRequest) error { return nil }
 func (f *fakePlatform) CreateSession(_ context.Context, _ platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 	if f.createErr != nil {
 		return nil, f.createErr

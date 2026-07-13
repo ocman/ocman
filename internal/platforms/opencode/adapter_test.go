@@ -30,6 +30,8 @@ func TestAdapter_Capabilities_AllTrue(t *testing.T) {
 		"RespondQuestion":   c.RespondQuestion,
 		"Abort":             c.Abort,
 		"Compact":           c.Compact,
+		"Fork":              c.Fork,
+		"Move":              c.Move,
 		"Events":            c.Events,
 		"AgentCatalog":      c.AgentCatalog,
 		"ModelCatalog":      c.ModelCatalog,

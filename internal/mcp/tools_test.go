@@ -236,6 +236,12 @@ func (fakePlatformBase) SetPermissionRules(_ context.Context, _ platforms.SetPer
 func (fakePlatformBase) Compact(_ context.Context, _ platforms.CompactRequest) error {
 	return platforms.ErrUnsupported
 }
+func (fakePlatformBase) ForkSession(_ context.Context, _ platforms.ForkSessionRequest) (*platforms.CreateSessionResponse, error) {
+	return nil, platforms.ErrUnsupported
+}
+func (fakePlatformBase) MoveSession(_ context.Context, _ platforms.MoveSessionRequest) error {
+	return platforms.ErrUnsupported
+}
 func (fakePlatformBase) CreateSession(_ context.Context, _ platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 	return nil, platforms.ErrUnsupported
 }

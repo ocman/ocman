@@ -13,6 +13,8 @@ const EMPTY_CAPS: PlatformCapabilities = {
   respondQuestion: false,
   abort: false,
   compact: false,
+  fork: false,
+  move: false,
   events: false,
   agentCatalog: false,
   modelCatalog: false,

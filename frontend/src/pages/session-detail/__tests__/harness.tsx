@@ -117,6 +117,8 @@ export function fullCaps(): PlatformCapabilities {
     respondQuestion: true,
     abort: true,
     compact: true,
+    fork: true,
+    move: true,
     events: true,
     agentCatalog: true,
     modelCatalog: true,

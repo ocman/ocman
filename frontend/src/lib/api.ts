@@ -725,6 +725,20 @@ export const api = {
       { providerID, modelID },
       { parseJSON: false },
     ),
+  // Fork a session into a new child session, optionally from a specific
+  // message. Returns the new session's ID.
+  forkSession: (sessionId: string, messageID?: string) =>
+    postJSON<{ id: string }>(
+      `/api/session/${encodeURIComponent(sessionId)}/fork`,
+      { messageID: messageID ?? '' },
+    ),
+  // Move a session to another project directory on the same host.
+  moveSession: (sessionId: string, directory: string) =>
+    postJSON<void>(
+      `/api/session/${encodeURIComponent(sessionId)}/move`,
+      { directory },
+      { parseJSON: false },
+    ),
   commands: (sessionId: string, signal?: AbortSignal) =>
     fetchJSON<SlashCommand[]>(`/api/session/${encodeURIComponent(sessionId)}/commands`, signal),
   agents: (sessionId: string, signal?: AbortSignal) =>

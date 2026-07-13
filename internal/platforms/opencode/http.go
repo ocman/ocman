@@ -107,6 +107,38 @@ func patchJSON(ctx context.Context, port, path string, payload []byte) error {
 	return sendJSON(ctx, http.MethodPatch, port, path, payload)
 }
 
+// postJSONReturning performs a POST with a JSON body and returns the
+// response body on 2xx. Error handling mirrors sendJSON (4xx wraps a
+// *platforms.UpstreamError).
+func postJSONReturning(ctx context.Context, port, path string, payload []byte) ([]byte, error) {
+	apiURL := fmt.Sprintf("http://127.0.0.1:%s%s", port, path)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := openCodeClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("opencode %s: %w", path, err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		if resp.StatusCode < 500 {
+			ue := &platforms.UpstreamError{
+				Status:  resp.StatusCode,
+				Message: extractOpenCodeErrorMessage(body),
+			}
+			return nil, fmt.Errorf("opencode %s: %w", path, ue)
+		}
+		if len(body) == 0 {
+			return nil, fmt.Errorf("opencode %s: upstream HTTP %d", path, resp.StatusCode)
+		}
+		return nil, fmt.Errorf("opencode %s: upstream HTTP %d: %s", path, resp.StatusCode, string(body))
+	}
+	return body, nil
+}
+
 // sendJSON performs an HTTP request with a JSON body. Returns nil on 2xx,
 // an error describing the upstream status otherwise.
 //
