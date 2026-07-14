@@ -1319,18 +1319,6 @@ func waitForPidFile(t *testing.T, pidPath string) int {
 	return 0
 }
 
-func waitForProcessExit(t *testing.T, pid int) {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if err := syscall.Kill(pid, 0); err != nil {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("sibling child %d survived failure", pid)
-}
-
 func TestAgentRunFreshAffinityCollectorsAndIdleCompletion(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()

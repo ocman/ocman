@@ -125,6 +125,8 @@ import (
 //	      in the same transaction as resource-pool capacity and released
 //	      when the attempt settles, so shard/path ownership survives
 //	      restart reconciliation and is visible in the run UI.
+//	30 - map/join composition (#317). Adds durable mapped-item and child-run
+//	    linkage, while re-ensuring workspace leases for the competing v29 path.
 //	31 - workflow version activation. Adds an explicit active version to each
 //	      definition and preserves pinned-version storage for existing runs.
 //	32 - workflow recovery audit (#321). Adds `resolved_at` and
