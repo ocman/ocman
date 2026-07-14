@@ -756,6 +756,41 @@ func TestHandleSessionAutoApproveSet_DisablingDoesNotResume(t *testing.T) {
 	}
 }
 
+func TestInjectApprovalNotices_SkipsUserAllowAlways(t *testing.T) {
+	srv, _ := newSessionsTestServer(t)
+	for _, approval := range []state.ApprovedPermission{
+		{
+			PermissionID:   "user-approved",
+			PermissionText: "external_directory",
+			Patterns:       []string{"/worktrees/*"},
+			Reasoning:      "user clicked Allow always",
+			ApprovedAt:     100,
+		},
+		{
+			PermissionID:   "ai-approved",
+			PermissionText: "bash",
+			Patterns:       []string{"git status"},
+			Reasoning:      "Read-only command.",
+			ApprovedAt:     200,
+		},
+	} {
+		if err := srv.stateDB.RecordApprovedPermission("opencode", "ses-1", approval); err != nil {
+			t.Fatalf("RecordApprovedPermission: %v", err)
+		}
+	}
+
+	var messages []db.Message
+	var parts []db.Part
+	injectApprovalNotices("opencode", "ses-1", srv.stateDB, &messages, &parts)
+
+	if len(messages) != 1 || messages[0].ID != "ocman-notice-ai-approved" {
+		t.Fatalf("injected messages = %#v, want only AI approval", messages)
+	}
+	if len(parts) != 1 || parts[0].MessageID != "ocman-notice-ai-approved" {
+		t.Fatalf("injected parts = %#v, want only AI approval", parts)
+	}
+}
+
 // The restart-opencode endpoint is a localhost-only control surface
 // (it kills and relaunches tmux processes). Non-loopback callers must
 // be rejected before any platform/tmux work happens. httptest sets a

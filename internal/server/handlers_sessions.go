@@ -241,6 +241,11 @@ func injectApprovalNotices(platform, sessionID string, stateDB interface {
 	}
 
 	for _, p := range approved {
+		// "Allow always" records are retained for child-session inheritance,
+		// not conversation notices; a person, not the AI, made that approval.
+		if p.Reasoning == "user clicked Allow always" {
+			continue
+		}
 		// Stable key uses the OpenCode permission ID, which is guaranteed
 		// to be unique per approval. Legacy rows (written before the
 		// judge session was deleted post-verdict) populated this with the
