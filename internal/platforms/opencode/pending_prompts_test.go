@@ -1,12 +1,15 @@
 package opencode
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // TestFetchPromptSessionIDs_TimesOutFastOnHungUpstream is the
@@ -66,6 +69,30 @@ func TestFetchPromptSessionIDs_FastResponseStillWorks(t *testing.T) {
 	}
 	if !got["s1"] || !got["s2"] {
 		t.Errorf("missing expected IDs: %v", got)
+	}
+}
+
+func TestFetchPromptSessionIDs_LogsPendingPermissions(t *testing.T) {
+	var logs bytes.Buffer
+	logger := log.StandardLogger()
+	previousOutput := logger.Out
+	logger.SetOutput(&logs)
+	t.Cleanup(func() { logger.SetOutput(previousOutput) })
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"id":"perm-1","sessionID":"ses-child","permission":"bash"}]`))
+	}))
+	defer srv.Close()
+
+	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+	fetchPromptSessionIDs(port, "/permission")
+
+	got := logs.String()
+	for _, want := range []string{"opencode: pending permission request", "permissionID=perm-1", "sessionID=ses-child", "permission=bash"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("log %q missing %q", got, want)
+		}
 	}
 }
 

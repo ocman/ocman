@@ -82,23 +82,40 @@ func mcpChildSessionIDs(mcpConn mcpParentLookup, parentID string) []string {
 	return out
 }
 
-// fetchSubagentSessionIDs calls GET /session/:id/children on the
-// running OpenCode instance and returns the IDs of every direct child
-// (subagent) session. Returns nil on any upstream failure so callers
-// can fall back to the DB lookup — the result is best-effort UI
-// plumbing, never a hard dependency.
+// fetchSubagentSessionIDs walks GET /session/:id/children on the
+// running OpenCode instance and returns every descendant session ID.
+// Returns nil when the root request fails so callers can fall back to
+// the DB lookup; a failed descendant request retains the IDs already
+// discovered — the result is best-effort UI plumbing, never a hard
+// dependency.
 //
-// Routed through catalogCache: a parent session's children list
-// changes only when a new subagent spawns, which is rare enough on
-// the timescale of a single dashboard poll that the 30s TTL is
-// fine. This also keeps the SSE-driven listPrompts polling cheap
-// when multiple sessions on the same instance are in flight.
+// Each direct-child lookup is routed through catalogCache. A session's
+// children change only when a subagent spawns, so the 30s TTL keeps
+// polling cheap while still exposing nested Task subagents.
 func fetchSubagentSessionIDs(ctx context.Context, port, sessionID string) []string {
-	body, ok := getJSONCached(ctx, port, fmt.Sprintf("/session/%s/children", sessionID))
-	if !ok {
-		return nil
+	queue := []string{sessionID}
+	seen := map[string]bool{sessionID: true}
+	var out []string
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		body, ok := getJSONCached(ctx, port, fmt.Sprintf("/session/%s/children", id))
+		if !ok {
+			if id == sessionID {
+				return nil
+			}
+			continue
+		}
+		for _, childID := range parseSubagentChildIDs(body) {
+			if seen[childID] {
+				continue
+			}
+			seen[childID] = true
+			out = append(out, childID)
+			queue = append(queue, childID)
+		}
 	}
-	return parseSubagentChildIDs(body)
+	return out
 }
 
 // parseSubagentChildIDs extracts the `id` field of every entry in

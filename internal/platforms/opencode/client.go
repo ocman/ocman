@@ -79,7 +79,33 @@ func fetchPromptSessionIDs(port, path string) map[string]bool {
 	if !ok {
 		return map[string]bool{}
 	}
+	if path == "/permission" {
+		logPendingPermissions(body)
+	}
 	return parsePromptSessionIDs(body)
+}
+
+// logPendingPermissions records the identifiers needed to correlate a
+// permission request with its owning session without logging patterns or
+// metadata, which can contain command arguments or filesystem paths.
+func logPendingPermissions(body []byte) {
+	var items []map[string]interface{}
+	if err := json.Unmarshal(body, &items); err != nil {
+		return
+	}
+	for _, item := range items {
+		permissionID, _ := item["id"].(string)
+		if permissionID == "" {
+			permissionID, _ = item["requestID"].(string)
+		}
+		sessionID, _ := item["sessionID"].(string)
+		permission, _ := item["permission"].(string)
+		log.WithFields(log.Fields{
+			"permissionID": permissionID,
+			"sessionID":    sessionID,
+			"permission":   permission,
+		}).Info("opencode: pending permission request")
+	}
 }
 
 func getPromptBytes(port, path string) ([]byte, bool) {

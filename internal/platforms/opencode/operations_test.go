@@ -819,11 +819,15 @@ func TestParseSubagentChildIDs(t *testing.T) {
 func TestFetchSubagentSessionIDs(t *testing.T) {
 	t.Run("returns child ids on 200", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/session/ses_parent/children" {
+			w.Header().Set("Content-Type", "application/json")
+			switch r.URL.Path {
+			case "/session/ses_parent/children":
+				_, _ = w.Write([]byte(`[{"id":"ses_a"},{"id":"ses_b"}]`))
+			case "/session/ses_a/children", "/session/ses_b/children":
+				_, _ = w.Write([]byte(`[]`))
+			default:
 				t.Errorf("unexpected path %q", r.URL.Path)
 			}
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`[{"id":"ses_a"},{"id":"ses_b"}]`))
 		}))
 		defer srv.Close()
 
@@ -835,6 +839,37 @@ func TestFetchSubagentSessionIDs(t *testing.T) {
 		got := fetchSubagentSessionIDs(context.Background(), port, "ses_parent")
 		if len(got) != 2 || got[0] != "ses_a" || got[1] != "ses_b" {
 			t.Errorf("got %v, want [ses_a ses_b]", got)
+		}
+	})
+
+	t.Run("returns nested child ids", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			switch r.URL.Path {
+			case "/session/ses_parent/children":
+				_, _ = w.Write([]byte(`[{"id":"ses_child"}]`))
+			case "/session/ses_child/children":
+				_, _ = w.Write([]byte(`[{"id":"ses_grandchild"}]`))
+			case "/session/ses_grandchild/children":
+				_, _ = w.Write([]byte(`[]`))
+			default:
+				t.Errorf("unexpected path %q", r.URL.Path)
+			}
+		}))
+		defer srv.Close()
+
+		catalogCache = newHTTPCache(catalogCache.ttl)
+
+		port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+		got := fetchSubagentSessionIDs(context.Background(), port, "ses_parent")
+		want := []string{"ses_child", "ses_grandchild"}
+		if len(got) != len(want) {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+		for i, id := range want {
+			if got[i] != id {
+				t.Errorf("[%d] = %q, want %q", i, got[i], id)
+			}
 		}
 	})
 
