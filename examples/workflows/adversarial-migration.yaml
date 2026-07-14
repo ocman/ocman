@@ -1,0 +1,49 @@
+id: adversarial-migration
+name: Adversarial Bun-style migration
+version: "1"
+concurrency: 2
+directory: /workspace/repository
+workspace:
+  repo: /workspace/repository
+  shards: 2
+pools:
+  - name: discovery
+    capacity: 1
+triggers:
+  - id: manual
+    type: manual
+nodes:
+  - id: discover
+    name: Discover stable migration units once
+    type: command
+    resources:
+      - pool: discovery
+        units: 1
+    command: ["bun", "scripts/discover-migration-items.ts"]
+    permission:
+      - permission: bash
+        pattern: "bun scripts/discover-migration-items.ts"
+        action: allow
+    outputs:
+      - name: items
+        type: json_file
+        path: migration-items.json
+  - id: migrate-items
+    name: Map pinned adversarial migration item workflow
+    type: map
+    map:
+      source: items
+      key: id
+      join: migration-summary
+      subworkflow:
+        workflowId: adversarial-migration-item
+  - id: migration-summary
+    name: Join migration item outcomes
+    type: join
+    join:
+      policy: all-success
+dependencies:
+  - from: discover
+    to: migrate-items
+  - from: migrate-items
+    to: migration-summary

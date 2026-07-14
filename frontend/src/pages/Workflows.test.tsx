@@ -172,7 +172,7 @@ describe('Workflows', () => {
 		const leasedRun: WorkflowRunDetail = {
 			...activeRun,
 			workspace: [
-				{ nodeId: 'edit-a', attemptId: 1, shard: 0, mode: 'path', paths: ['src/a'], host: 'local-host', acquiredAt: 1 },
+				{ nodeId: 'edit-a', attemptId: 1, shard: 0, mode: 'path', paths: ['src/a'], host: 'local-host', shardPath: '/worktrees/a', acquiredAt: 1 },
 				{ nodeId: 'commit', attemptId: 2, shard: 0, mode: 'exclusive', commit: true, acquiredAt: 2 },
 			],
 		};
@@ -184,6 +184,7 @@ describe('Workflows', () => {
 		expect(screen.getByText(/shard 0 · path/)).toBeInTheDocument();
 		expect(screen.getByText(/src\/a/)).toBeInTheDocument();
 		expect(screen.getByText(/host local-host/)).toBeInTheDocument();
+		expect(screen.getByText(/\/worktrees\/a/)).toBeInTheDocument();
 		expect(screen.getByText(/shard 0 · exclusive \(commit\)/)).toBeInTheDocument();
 	});
 
@@ -197,6 +198,7 @@ describe('Workflows', () => {
 		await screen.findByRole('region', { name: 'Workflow artifacts' });
 		expect(screen.getByText('report')).toBeInTheDocument();
 		expect(screen.getByText(/json · 2\.0 KB/)).toBeInTheDocument();
+		expect(screen.getAllByText(/review attempt 1/)).toHaveLength(2);
 		// Retained payload has a download link.
 		expect(screen.getByRole('link', { name: 'Download' })).toHaveAttribute('href', '/api/workflow-runs/wfr_1/artifacts/wfa_1/download');
 		// Cleaned-up payload is shown as gone, no download.
@@ -258,6 +260,8 @@ describe('Workflows', () => {
 
 		// Collapsed by default: item rows hidden, summary shown.
 		const toggle = await screen.findByRole('button', { name: /Expand 2 mapped items/ });
+		expect(screen.getByLabelText('Node state legend')).toHaveTextContent('successful');
+		expect(screen.getByText('Phase 1 · map · fan')).toBeInTheDocument();
 		expect(screen.queryByTestId('workflow-map-items')).not.toBeInTheDocument();
 
 		// Expand reveals each item with its stable key, state, and child link.

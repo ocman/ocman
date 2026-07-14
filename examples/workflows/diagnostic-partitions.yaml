@@ -1,0 +1,54 @@
+id: captured-diagnostic-partitions
+name: Captured diagnostic partitions
+version: "1"
+concurrency: 2
+directory: /workspace/repository
+triggers:
+  - id: manual
+    type: manual
+nodes:
+  - id: capture-diagnostics
+    name: Capture compiler and test diagnostics once
+    type: command
+    command: ["bun", "test", "--reporter=json"]
+    permission:
+      - permission: bash
+        pattern: "bun test --reporter=json"
+        action: allow
+    outputs:
+      - name: diagnostics
+        type: json_file
+        path: diagnostics.json
+  - id: partition-diagnostics
+    name: Partition captured diagnostics into stable work items
+    type: command
+    command: ["bun", "scripts/partition-diagnostics.ts"]
+    permission:
+      - permission: bash
+        pattern: "bun scripts/partition-diagnostics.ts"
+        action: allow
+    outputs:
+      - name: items
+        type: json_file
+        path: diagnostic-items.json
+  - id: map-diagnostic-items
+    name: Map captured diagnostic partitions
+    type: map
+    map:
+      source: items
+      key: id
+      join: diagnostic-summary
+      subworkflow:
+        workflowId: adversarial-migration-item
+  - id: diagnostic-summary
+    name: Join diagnostic partition outcomes
+    type: join
+    join:
+      policy: all-success
+dependencies:
+  - from: capture-diagnostics
+    to: partition-diagnostics
+  - from: partition-diagnostics
+    to: map-diagnostic-items
+  - from: map-diagnostic-items
+    to: diagnostic-summary

@@ -87,6 +87,10 @@ Workflow authoring and control guidance lives in:
 .opencode/skills/ocman-workflows/SKILL.md
 ```
 
+For source-controlled examples, immutable-version semantics, migration safety,
+and troubleshooting, see [Workflows](workflows.md). Publish a workflow before
+starting it; pass a returned `version_id` to start exactly that revision.
+
 When working inside this repository, OpenCode loads the skill from the
 project config automatically (after a restart). To use the same guidance
 in another project, copy that folder into the target project's

@@ -113,6 +113,7 @@ security notes, and troubleshooting.
 - [Configuration](docs/configuration.md) — flags, env vars, authentication
 - [Multi-remote support](docs/multi-remote.md) — manage sessions across machines
 - [MCP integration](docs/mcp.md) — agent-driven session splitting
+- [Workflows](docs/workflows.md) — authoring and safely running migration campaigns
 - [Contributing](docs/contributing.md) — architecture, project structure, development workflow
 
 ## License

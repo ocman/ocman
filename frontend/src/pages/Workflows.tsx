@@ -155,11 +155,12 @@ function RunView({ run, mutate, onSelectRun }: { run: WorkflowRunDetail; mutate:
 	}, [run.id, run.state, run.updatedAt]);
 	return (
 		<section className="workflow-run" aria-label="Workflow run">
-			<header><div><span className="workflow-kicker">{run.id}</span><h2>{run.version.name}</h2><p>Revision {run.version.revision} · definition {run.version.definition.version} · {run.state}</p></div><div className="workflow-controls">{run.state === 'active' && <button type="button" onClick={() => void mutate(() => api.workflows.pause(run.id))}>Pause run</button>}{(run.state === 'active' || run.state === 'paused') && <button type="button" onClick={() => void mutate(() => api.workflows.cancel(run.id))}>Cancel run</button>}</div></header>
+			<header><div><span className="workflow-kicker">{run.id}</span><h2>{run.version.name}</h2><p>Revision {run.version.revision} · definition {run.version.definition.version} · <State state={run.state} /></p></div><div className="workflow-controls">{run.state === 'active' && <button type="button" onClick={() => void mutate(() => api.workflows.pause(run.id))}>Pause run</button>}{(run.state === 'active' || run.state === 'paused') && <button type="button" onClick={() => void mutate(() => api.workflows.cancel(run.id))}>Cancel run</button>}</div></header>
 			{run.parentRunId && <p className="workflow-run-parent">Mapped item <strong>{run.itemKey}</strong> of <button type="button" onClick={() => onSelectRun(run.parentRunId!)}>parent run {run.parentNodeId}</button></p>}
 			{run.trigger && <p className="workflow-run-trigger"><strong>{run.trigger.id} · {run.trigger.type} · {run.trigger.overlap ?? 'skip'}</strong> · {run.trigger.detail} · fired {formatTime(run.trigger.firedAt)}</p>}
 			{run.resources && run.resources.length > 0 && <ul className="workflow-resources" aria-label="Resource pools">{run.resources.map((pool) => <li key={pool.pool || 'run'}><strong>{pool.pool || 'run concurrency'}</strong>: {pool.held}/{pool.capacity} held{pool.waiting && pool.waiting.length > 0 && <span> · waiting: {pool.waiting.join(', ')}</span>}</li>)}</ul>}
-			{run.workspace && run.workspace.length > 0 && <ul className="workflow-leases" aria-label="Workspace leases">{run.workspace.map((lease) => <li key={lease.nodeId}><strong>{lease.nodeId}</strong>: shard {lease.shard} · {lease.mode}{lease.commit && ' (commit)'}{lease.paths && lease.paths.length > 0 && <span> · {lease.paths.join(', ')}</span>}{lease.host && <span> · host {lease.host}</span>}</li>)}</ul>}
+			{run.workspace && run.workspace.length > 0 && <ul className="workflow-leases" aria-label="Workspace leases">{run.workspace.map((lease) => <li key={lease.nodeId}><strong>{lease.nodeId}</strong>: shard {lease.shard} · {lease.mode}{lease.commit && ' (commit)'}{lease.paths && lease.paths.length > 0 && <span> · {lease.paths.join(', ')}</span>}{lease.host && <span> · host {lease.host}</span>}{lease.shardPath && <span> · {lease.shardPath}</span>}</li>)}</ul>}
+			<p className="workflow-kicker" aria-label="Node state legend">States: pending, ready, running, successful, failed, skipped, canceled, unknown</p>
 			<div className="workflow-graph" role="region" aria-label="Workflow run graph">
 				{run.nodes.map((node, index) => (
 					<div className="workflow-step" key={node.nodeId}>
@@ -186,15 +187,21 @@ function VersionComparison({ versions, from, to, onFrom, onTo }: { versions: Wor
 
 function RunNode({ run, node, mutate, onSelectRun }: { run: WorkflowRunDetail; node: WorkflowRunDetail['nodes'][number]; mutate: (action: () => Promise<WorkflowRunDetail>) => Promise<void>; onSelectRun: (id: string) => void }) {
 	const attempt = node.attempts.at(-1);
+	const phase = run.nodes.findIndex((candidate) => candidate.nodeId === node.nodeId) + 1;
+	const definition = run.version.definition.nodes.find((candidate) => candidate.id === node.nodeId);
+	const lease = run.workspace?.find((candidate) => candidate.nodeId === node.nodeId);
 	const conditions = run.version.definition.dependencies.filter((edge) => edge.to === node.nodeId && edge.condition).map((edge) => edge.condition!);
 	const attemptLine = attempt
 		? `Attempt ${attempt.seq}: ${attempt.state}${attempt.exitCode !== undefined && attempt.exitCode >= 0 ? ` (exit ${attempt.exitCode})` : ''}`
 		: 'Not attempted';
 	return (
 		<article data-state={node.state}>
-			<small>{node.type} · {node.nodeId}</small>
+			<small>Phase {phase} · {node.type} · {node.nodeId}</small>
 			<h3>{node.name}</h3>
-			<strong>{node.state}</strong>
+			<State state={node.state} />
+			{node.pinnedVersionId && <p>Pinned subworkflow: {node.pinnedVersionId}</p>}
+			{definition?.resources?.length ? <p>Resources: {definition.resources.map((resource) => `${resource.pool} x${resource.units}`).join(', ')}</p> : null}
+			{definition?.lease && <p>Workspace request: {definition.lease.mode ?? 'exclusive'}{definition.lease.paths?.length ? ` · ${definition.lease.paths.join(', ')}` : ''}{definition.lease.commit ? ' · commit coordinator' : ''}{lease?.shardPath ? ` · active shard ${lease.shardPath}` : ''}</p>}
 			<p>{attemptLine}</p>
 			{conditions.map((condition) => <p key={condition} className="workflow-condition">Condition {node.state === 'skipped' ? 'skipped' : 'evaluated'}: <code>{condition}</code></p>)}
 			{node.attempts.length > 1 && <p className="workflow-repeat-history">Repeat history: {node.attempts.map((item) => `#${item.seq} ${item.state}`).join(', ')}</p>}
@@ -234,7 +241,7 @@ function MapNode({ items, error, onSelectRun }: { items: WorkflowMapItemRun[]; e
 				<ul className="workflow-map-items" data-testid="workflow-map-items">
 					{items.map((item) => (
 						<li key={item.key} data-state={item.state} data-testid="workflow-map-item">
-							<strong>{item.key}</strong> <small>#{item.index} · {item.state}</small>
+							<strong>{item.key}</strong> <small>#{item.index} · <State state={item.state} /></small>
 							{item.childRunId && <button type="button" onClick={() => onSelectRun(item.childRunId!)}>Open item run</button>}
 						</li>
 					))}
@@ -252,7 +259,7 @@ function JoinNode({ attempt }: { attempt?: WorkflowRunDetail['nodes'][number]['a
 		<div className="workflow-join" data-testid="workflow-join">
 			<p><strong>{result.policy}</strong> · {result.success ?? 0}/{result.total ?? 0} succeeded</p>
 			<ol className="workflow-join-items">
-				{(result.items ?? []).map((item) => <li key={item.key} data-state={item.state}>{item.key}: {item.state}</li>)}
+				{(result.items ?? []).map((item) => <li key={item.key} data-state={item.state}>{item.key}: <State state={item.state} /></li>)}
 			</ol>
 		</div>
 	);
@@ -266,7 +273,7 @@ function ArtifactList({ runId, artifacts }: { runId: string; artifacts: Workflow
 			<ul>
 				{artifacts.map((artifact) => (
 					<li key={artifact.id} data-testid="workflow-artifact">
-						<strong>{artifact.name}</strong> <small>{artifact.kind} · {formatSize(artifact.size)}{artifact.expiresAt ? ` · expires ${formatTime(artifact.expiresAt)}` : ' · retained'}</small>
+						<strong>{artifact.name}</strong> <small>{artifact.kind} · {formatSize(artifact.size)} · {artifact.nodeId} attempt {artifact.attemptId}{artifact.expiresAt ? ` · expires ${formatTime(artifact.expiresAt)}` : ' · retained'}</small>
 						{artifact.payloadAvailable
 							? <a href={api.workflows.artifactDownloadUrl(runId, artifact.id)} download>Download</a>
 							: <span className="workflow-artifact-gone">Payload cleaned up</span>}
@@ -275,6 +282,10 @@ function ArtifactList({ runId, artifacts }: { runId: string; artifacts: Workflow
 			</ul>
 		</section>
 	);
+}
+
+function State({ state }: { state: string }) {
+	return <strong data-state={state}>{state}</strong>;
 }
 
 function formatSize(bytes: number) {

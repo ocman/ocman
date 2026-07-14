@@ -18,6 +18,7 @@ flowchart LR
     Agent[AI agents<br/>MCP clients] -->|/mcp| Ocman
     Ocman -->|read-only SQLite| OCDB[(opencode.db)]
     Ocman -->|read/write SQLite| StateDB[(state.db)]
+    Ocman -->|artifact payloads| Blobs[(workflow-artifacts)]
     Ocman -->|HTTP proxy| OCInst[Running OpenCode<br/>instances]
     Ocman -->|exec| Shell[git / tmux / lsof<br/>worktrees]
     Ocman -->|REST| Forges[GitHub / Forgejo]
@@ -129,7 +130,11 @@ flowchart TD
 
 ## 3. Session & Event Data Flow
 
-How a session read and a live update travel through the system.
+How a session read and a live update travel through the system. Workflow runs
+use the same SSE channel: discovery writes an immutable item artifact, map
+creates pinned child runs, item phases fan out to independent reviews, then
+fix, validation, and the serialized commit coordinator settle before the run
+view refetches phases, artifacts, pools, and leases.
 
 ```mermaid
 sequenceDiagram
@@ -179,4 +184,6 @@ flowchart TD
   features toggle via `/api/capabilities` (enforced by a lint script).
 - **Client state** — shared Zustand stores hold broad session/loop state;
   the bounded workflow page keeps its selected run locally and reconciles
-  it from REST whenever the shared SSE stream reports a run change.
+  it from REST whenever the shared SSE stream reports a run change. Its run
+  graph labels ordered phases, stable map items, attempts, artifact producers,
+  resource pools, and workspace ownership without inferring platform identity.
