@@ -130,7 +130,8 @@ function RunView({ run, mutate, onSelectRun }: { run: WorkflowRunDetail; mutate:
 }
 
 function RunNode({ run, node, mutate, onSelectRun }: { run: WorkflowRunDetail; node: WorkflowRunDetail['nodes'][number]; mutate: (action: () => Promise<WorkflowRunDetail>) => Promise<void>; onSelectRun: (id: string) => void }) {
-	const attempt = node.attempts[0];
+	const attempt = node.attempts.at(-1);
+	const conditions = run.version.definition.dependencies.filter((edge) => edge.to === node.nodeId && edge.condition).map((edge) => edge.condition!);
 	const attemptLine = attempt
 		? `Attempt ${attempt.seq}: ${attempt.state}${attempt.exitCode !== undefined && attempt.exitCode >= 0 ? ` (exit ${attempt.exitCode})` : ''}`
 		: 'Not attempted';
@@ -140,6 +141,8 @@ function RunNode({ run, node, mutate, onSelectRun }: { run: WorkflowRunDetail; n
 			<h3>{node.name}</h3>
 			<strong>{node.state}</strong>
 			<p>{attemptLine}</p>
+			{conditions.map((condition) => <p key={condition} className="workflow-condition">Condition {node.state === 'skipped' ? 'skipped' : 'evaluated'}: <code>{condition}</code></p>)}
+			{node.attempts.length > 1 && <p className="workflow-repeat-history">Repeat history: {node.attempts.map((item) => `#${item.seq} ${item.state}`).join(', ')}</p>}
 			{node.type === 'agent' && <AgentNode attempt={attempt} />}
 			{node.type === 'approval' && node.state === 'ready' && run.state === 'active' && <button type="button" onClick={() => void mutate(() => api.workflows.approve(run.id, node.nodeId))}>Approve {node.name}</button>}
 			{attempt && node.type === 'command' && <CommandAttempt attempt={attempt} />}

@@ -79,6 +79,8 @@ type Definition struct {
 	Triggers     []Trigger       `json:"triggers"`
 	Nodes        []Node          `json:"nodes"`
 	Dependencies []Dependency    `json:"dependencies"`
+	FailFast     bool            `json:"failFast,omitempty"`
+
 	// SubworkflowRefs records the workflow ids this version references
 	// through subworkflow and map nodes at publish time. Inlining removes
 	// subworkflow nodes, so this preserves the reference graph needed for
@@ -153,6 +155,14 @@ type Node struct {
 	Subworkflow *SubworkflowRef   `json:"subworkflow,omitempty"`
 	Map         *MapConfig        `json:"map,omitempty"`
 	Join        *JoinConfig       `json:"join,omitempty"`
+	Repeat      *RepeatConfig     `json:"repeat,omitempty"`
+}
+
+// RepeatConfig retries a successful node until Until evaluates true. The
+// attempt limit is mandatory: workflow graphs stay acyclic and bounded.
+type RepeatConfig struct {
+	Until       string `json:"until"`
+	MaxAttempts int    `json:"maxAttempts"`
 }
 
 // SubworkflowRef references a reusable workflow to inline. At publish
@@ -252,8 +262,9 @@ type AgentExecutor interface {
 }
 
 type Dependency struct {
-	From string `json:"from"`
-	To   string `json:"to"`
+	From      string `json:"from"`
+	To        string `json:"to"`
+	Condition string `json:"condition,omitempty"`
 }
 
 type Version struct {
@@ -396,6 +407,9 @@ type Store interface {
 	ListWorkflowChildRuns(string) ([]state.WorkflowRun, error)
 	StartWorkflowNode(string, string, []state.WorkflowResourceRequest, int64) (bool, error)
 	SettleWorkflowNode(string, string, int64, bool, string, string, int64) error
+	SkipWorkflowNode(string, string, string, int64) error
+	RepeatWorkflowNode(string, string, int64, string, int64) error
+	ExhaustWorkflowRepeat(string, string, string, int64) error
 }
 
 // WorkspaceProvider creates (or reuses) the on-disk worktree shard for a
@@ -1062,6 +1076,11 @@ func (s *Service) Approve(ctx context.Context, runID, nodeID string) (RunDetail,
 		return RunDetail{}, err
 	}
 	s.changed(runID)
+	if run, err := s.GetRun(ctx, runID); err == nil {
+		if _, err := s.applyPolicies(ctx, run); err != nil {
+			return RunDetail{}, err
+		}
+	}
 	if err := s.dispatch(ctx, runID); err != nil {
 		return RunDetail{}, err
 	}
@@ -1156,7 +1175,7 @@ func (s *Service) dispatchReady(run RunDetail) {
 		definitions[node.ID] = node
 	}
 	for _, nodeRun := range run.Nodes {
-		if nodeRun.Type != "command" || nodeRun.State != NodeReady || len(nodeRun.Attempts) == 0 || nodeRun.Attempts[0].State != AttemptWaiting {
+		if nodeRun.Type != "command" || nodeRun.State != NodeReady || len(nodeRun.Attempts) == 0 || nodeRun.Attempts[len(nodeRun.Attempts)-1].State != AttemptWaiting {
 			continue
 		}
 		s.mu.Lock()
@@ -1185,7 +1204,7 @@ func (s *Service) dispatchReady(run RunDetail) {
 		s.running[run.ID][nodeRun.NodeID] = active
 		s.mu.Unlock()
 		definition := definitions[nodeRun.NodeID]
-		attemptID := nodeRun.Attempts[0].ID
+		attemptID := nodeRun.Attempts[len(nodeRun.Attempts)-1].ID
 		go s.executeCommand(ctx, active, run.Version, run.ID, run.Version.Definition.Directory, definition, attemptID)
 	}
 }
@@ -1207,7 +1226,7 @@ func (s *Service) executeCommand(ctx context.Context, active *activeCommand, ver
 	result.Error = redactor.redact(result.Error)
 	result.Outputs = redactor.redactOutputs(result.Outputs)
 	stopOwner := false
-	if result.State != AttemptSuccessful && result.State != AttemptCanceled {
+	if version.Definition.FailFast && result.State != AttemptSuccessful && result.State != AttemptCanceled {
 		stopOwner = s.stopSiblingCommands(runID, node.ID)
 		if !stopOwner {
 			result.State = AttemptCanceled
@@ -1226,6 +1245,9 @@ func (s *Service) executeCommand(ctx context.Context, active *activeCommand, ver
 		State: result.State, ExitCode: result.ExitCode, Stdout: result.Stdout, Stderr: result.Stderr, Error: result.Error,
 		OutputsJSON: string(outputs), StdoutTruncated: result.StdoutTruncated, StderrTruncated: result.StderrTruncated,
 	}, s.now().UnixMilli())
+	if completed, err := s.GetRun(context.Background(), runID); err == nil {
+		_, _ = s.applyPolicies(context.Background(), completed)
+	}
 	s.mu.Lock()
 	delete(s.running[runID], node.ID)
 	if len(s.running[runID]) == 0 {
@@ -1381,6 +1403,14 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 		s.changed(runID)
 		return nil
 	}
+	if moved, err := s.applyPolicies(ctx, run); err != nil {
+		return err
+	} else if moved {
+		run, err = s.GetRun(ctx, runID)
+		if err != nil || run.State != StateActive {
+			return err
+		}
+	}
 	if exceeded, reason := s.budgetExceeded(ctx, run); exceeded {
 		if err := s.store.FailWorkflowRun(runID, reason, s.now().UnixMilli()); err != nil {
 			return err
@@ -1492,6 +1522,11 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 			if err := s.store.CompleteWorkflowAgentNode(runID, node.NodeID, attempt.ID, successful, result.State, string(outputs), result.Error, s.now().UnixMilli()); err != nil {
 				return err
 			}
+			if completed, err := s.GetRun(ctx, runID); err == nil {
+				if _, err := s.applyPolicies(ctx, completed); err != nil {
+					return err
+				}
+			}
 			s.changed(runID)
 			progressed = true
 		}
@@ -1499,6 +1534,126 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 			return nil
 		}
 	}
+}
+
+// applyPolicies evaluates conditions before a ready node is dispatched and
+// repeat predicates after a node body has completed. Evaluation errors are a
+// deterministic skipped branch, never an implicit allow.
+func (s *Service) applyPolicies(ctx context.Context, run RunDetail) (bool, error) {
+	if run.Version.Definition.FailFast {
+		for _, node := range run.Nodes {
+			if node.State != NodeFailed {
+				continue
+			}
+			s.stopSiblingCommands(run.ID, node.NodeID)
+			s.cancelChildRuns(ctx, run.ID)
+			if err := s.store.FailWorkflowRun(run.ID, "workflow stopped by fail-fast after "+node.NodeID+" failed", s.now().UnixMilli()); err != nil {
+				return false, err
+			}
+			s.changed(run.ID)
+			return true, nil
+		}
+	}
+	outcomes := make(map[string]any, len(run.Nodes))
+	for _, node := range run.Nodes {
+		outcomes[node.NodeID] = map[string]any{"state": node.State}
+	}
+	artifacts, err := s.celArtifacts(ctx, run.ID)
+	if err != nil {
+		return false, err
+	}
+	moved := false
+	for _, node := range run.Nodes {
+		if node.State == NodeReady {
+			for _, edge := range run.Version.Definition.Dependencies {
+				if edge.To != node.NodeID || edge.Condition == "" {
+					continue
+				}
+				ok, evalErr := evaluateCEL(edge.Condition, outcomes, artifacts)
+				if evalErr != nil || !ok {
+					reason := "condition evaluated false"
+					if evalErr != nil {
+						reason = "condition error: " + evalErr.Error()
+					}
+					if err := s.store.SkipWorkflowNode(run.ID, node.NodeID, reason, s.now().UnixMilli()); err != nil {
+						return moved, err
+					}
+					moved = true
+					break
+				}
+			}
+		}
+		if node.State != NodeSuccessful {
+			continue
+		}
+		config := repeatConfig(run.Version.Definition.Nodes, node.NodeID)
+		if config == nil {
+			continue
+		}
+		ok, evalErr := evaluateCEL(config.Until, outcomes, artifacts)
+		if evalErr != nil {
+			if err := s.store.ExhaustWorkflowRepeat(run.ID, node.NodeID, "repeat condition error: "+evalErr.Error(), s.now().UnixMilli()); err != nil {
+				return moved, err
+			}
+			moved = true
+			continue
+		}
+		if ok {
+			continue
+		}
+		if len(node.Attempts) >= config.MaxAttempts {
+			if err := s.store.ExhaustWorkflowRepeat(run.ID, node.NodeID, fmt.Sprintf("repeat exhausted after %d attempts", config.MaxAttempts), s.now().UnixMilli()); err != nil {
+				return moved, err
+			}
+			moved = true
+			continue
+		}
+		if err := s.store.RepeatWorkflowNode(run.ID, node.NodeID, node.Attempts[len(node.Attempts)-1].ID, "repeat condition evaluated false", s.now().UnixMilli()); err != nil {
+			return moved, err
+		}
+		moved = true
+	}
+	if moved {
+		s.changed(run.ID)
+	}
+	return moved, nil
+}
+
+func repeatConfig(nodes []Node, id string) *RepeatConfig {
+	for _, node := range nodes {
+		if node.ID == id {
+			return node.Repeat
+		}
+	}
+	return nil
+}
+
+func (s *Service) celArtifacts(ctx context.Context, runID string) (map[string]any, error) {
+	rows, err := s.ListArtifacts(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]any{}
+	latest := map[string]int64{}
+	for _, row := range rows {
+		if row.Kind != KindJSON || !row.PayloadAvailable {
+			continue
+		}
+		key := row.NodeID + "." + row.Name
+		if row.AttemptID < latest[key] {
+			continue
+		}
+		_, payload, err := s.DownloadArtifact(ctx, row.ID)
+		if err != nil {
+			return nil, err
+		}
+		var value any
+		if json.Unmarshal(payload, &value) == nil {
+			latest[key] = row.AttemptID
+			out[key] = value
+		}
+	}
+	return out, nil
 }
 
 // budgetExceeded reports whether a run has crossed a configured optional
@@ -1773,6 +1928,14 @@ func validateDefinition(definition Definition) error {
 				}
 			}
 		}
+		if node.Repeat != nil {
+			if node.Repeat.MaxAttempts <= 0 {
+				return fmt.Errorf("node %q repeat maxAttempts must be positive", node.ID)
+			}
+			if err := validateCEL(node.Repeat.Until); err != nil {
+				return fmt.Errorf("node %q repeat: %w", node.ID, err)
+			}
+		}
 		requested := map[string]bool{}
 		for _, request := range node.Resources {
 			capacity, ok := pools[request.Pool]
@@ -1816,6 +1979,11 @@ func validateDefinition(definition Definition) error {
 		}
 		if seenDependencies[dep] {
 			return fmt.Errorf("duplicate dependency %q -> %q", dep.From, dep.To)
+		}
+		if dep.Condition != "" {
+			if err := validateCEL(dep.Condition); err != nil {
+				return fmt.Errorf("dependency %q -> %q: %w", dep.From, dep.To, err)
+			}
 		}
 		seenDependencies[dep] = true
 		edges[dep.From] = append(edges[dep.From], dep.To)

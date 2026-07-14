@@ -90,9 +90,8 @@ func (d *DB) StartWorkflowNode(runID, nodeID string, requests []WorkflowResource
 
 // SettleWorkflowNode records a terminal outcome for a running/ready map or
 // join node: it completes the node + its latest non-terminal attempt with
-// the collected outputs, releases held resources, and either cascades
-// readiness to dependents (success) or fails the run (failure), mirroring
-// the command/agent completion cascade.
+// the collected outputs, releases held resources, and cascades readiness or
+// unreachable-branch skips, mirroring the command/agent completion cascade.
 func (d *DB) SettleWorkflowNode(runID, nodeID string, attemptID int64, successful bool, outputsJSON, attemptError string, now int64) error {
 	tx, err := d.db.Begin()
 	if err != nil {
@@ -126,22 +125,75 @@ func (d *DB) SettleWorkflowNode(runID, nodeID string, attemptID int64, successfu
 		return err
 	}
 	if !successful {
-		if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'skipped', completed_at = ? WHERE run_id = ? AND state = 'pending'`, now, runID); err != nil {
-			return fmt.Errorf("skipping settle descendants: %w", err)
-		}
-		if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'canceled', completed_at = ? WHERE run_id = ? AND node_id != ? AND state IN ('ready', 'running')`, now, runID, nodeID); err != nil {
-			return fmt.Errorf("canceling sibling nodes on settle: %w", err)
-		}
-		if _, err = tx.Exec(`UPDATE workflow_node_attempt SET state = 'canceled', completed_at = ? WHERE run_id = ? AND node_id != ? AND state IN ('waiting', 'running', 'starting')`, now, runID, nodeID); err != nil {
-			return fmt.Errorf("canceling sibling attempts on settle: %w", err)
-		}
-		if _, err = tx.Exec(`DELETE FROM workflow_resource_lease WHERE run_id = ?`, runID); err != nil {
-			return fmt.Errorf("releasing resources on settle failure: %w", err)
-		}
-		if _, err = tx.Exec(`UPDATE workflow_run SET state = 'failed', updated_at = ?, completed_at = ? WHERE id = ?`, now, now, runID); err != nil {
-			return fmt.Errorf("failing workflow run on settle: %w", err)
-		}
-		return tx.Commit()
+		return completeWorkflowNodeTx(tx, runID, now)
+	}
+	return completeWorkflowNodeTx(tx, runID, now)
+}
+
+// SkipWorkflowNode records a condition that evaluated false or errored before
+// the node starts. It is deliberately terminal and creates no executor work.
+func (d *DB) SkipWorkflowNode(runID, nodeID, reason string, now int64) error {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return fmt.Errorf("beginning node skip: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'skipped', completed_at = ? WHERE run_id = ? AND node_id = ? AND state = 'ready'`, now, runID, nodeID); err != nil {
+		return fmt.Errorf("skipping workflow node: %w", err)
+	}
+	if _, err = tx.Exec(`UPDATE workflow_node_attempt SET state = 'skipped', error = ?, completed_at = ? WHERE run_id = ? AND node_id = ? AND state = 'waiting'`, reason, now, runID, nodeID); err != nil {
+		return fmt.Errorf("skipping workflow attempt: %w", err)
+	}
+	return completeWorkflowNodeTx(tx, runID, now)
+}
+
+// RepeatWorkflowNode turns a successful node back into ready with a distinct
+// attempt. Direct dependents are returned to pending before they can start.
+func (d *DB) RepeatWorkflowNode(runID, nodeID string, attemptID int64, reason string, now int64) error {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return fmt.Errorf("beginning workflow repeat: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var versionID string
+	var seq int
+	if err = tx.QueryRow(`SELECT version_id FROM workflow_run WHERE id = ? AND state IN ('active', 'successful')`, runID).Scan(&versionID); err != nil {
+		return fmt.Errorf("getting repeatable workflow run: %w", err)
+	}
+	if _, err = tx.Exec(`UPDATE workflow_run SET state = 'active', completed_at = NULL, updated_at = ? WHERE id = ?`, now, runID); err != nil {
+		return fmt.Errorf("reactivating workflow repeat: %w", err)
+	}
+	if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'ready', completed_at = NULL, ready_at = ? WHERE run_id = ? AND node_id = ? AND state = 'successful'`, now, runID, nodeID); err != nil {
+		return fmt.Errorf("resetting repeated node: %w", err)
+	}
+	if err = tx.QueryRow(`SELECT COALESCE(MAX(seq), 0) + 1 FROM workflow_node_attempt WHERE run_id = ? AND node_id = ?`, runID, nodeID).Scan(&seq); err != nil {
+		return fmt.Errorf("numbering repeat attempt: %w", err)
+	}
+	if _, err = tx.Exec(`INSERT INTO workflow_node_attempt (run_id, node_id, seq, state, started_at, error) VALUES (?, ?, ?, 'waiting', ?, ?)`, runID, nodeID, seq, now, reason); err != nil {
+		return fmt.Errorf("inserting repeat attempt: %w", err)
+	}
+	if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'pending', ready_at = NULL WHERE run_id = ? AND state = 'ready' AND node_id IN (SELECT to_node FROM workflow_version_dependency WHERE version_id = ? AND from_node = ?)`, runID, versionID, nodeID); err != nil {
+		return fmt.Errorf("blocking repeat dependents: %w", err)
+	}
+	if _, err = tx.Exec(`UPDATE workflow_node_attempt SET state = 'canceled', completed_at = ? WHERE run_id = ? AND state = 'waiting' AND node_id IN (SELECT to_node FROM workflow_version_dependency WHERE version_id = ? AND from_node = ?)`, now, runID, versionID, nodeID); err != nil {
+		return fmt.Errorf("canceling premature repeat dependents: %w", err)
+	}
+	return tx.Commit()
+}
+
+// ExhaustWorkflowRepeat makes an unmet bounded repeat policy visible as a
+// failed terminal node instead of silently succeeding its final body attempt.
+func (d *DB) ExhaustWorkflowRepeat(runID, nodeID, reason string, now int64) error {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return fmt.Errorf("beginning repeat exhaustion: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'failed', completed_at = ? WHERE run_id = ? AND node_id = ? AND state = 'successful'`, now, runID, nodeID); err != nil {
+		return fmt.Errorf("failing exhausted repeat node: %w", err)
+	}
+	if _, err = tx.Exec(`UPDATE workflow_node_attempt SET error = ? WHERE id = (SELECT MAX(id) FROM workflow_node_attempt WHERE run_id = ? AND node_id = ?)`, reason, runID, nodeID); err != nil {
+		return fmt.Errorf("recording repeat exhaustion: %w", err)
 	}
 	return completeWorkflowNodeTx(tx, runID, now)
 }

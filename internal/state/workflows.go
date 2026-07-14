@@ -490,8 +490,8 @@ func (d *DB) CompleteWorkflowCommand(runID, nodeID string, result WorkflowComman
 		return fmt.Errorf("beginning command completion: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	var runState, versionID, attemptState string
-	if err = tx.QueryRow(`SELECT state, version_id FROM workflow_run WHERE id = ?`, runID).Scan(&runState, &versionID); err != nil {
+	var runState, attemptState string
+	if err = tx.QueryRow(`SELECT state FROM workflow_run WHERE id = ?`, runID).Scan(&runState); err != nil {
 		return fmt.Errorf("getting workflow run for command completion: %w", err)
 	}
 	if runState != "active" && runState != "paused" {
@@ -524,71 +524,10 @@ func (d *DB) CompleteWorkflowCommand(runID, nodeID string, result WorkflowComman
 		return tx.Commit()
 	}
 	if result.State != "successful" {
-		if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'skipped', completed_at = ? WHERE run_id = ? AND state = 'pending'`, now, runID); err != nil {
-			return fmt.Errorf("skipping command descendants: %w", err)
-		}
-		if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'canceled', completed_at = ? WHERE run_id = ? AND node_id != ? AND state = 'ready'`, now, runID, nodeID); err != nil {
-			return fmt.Errorf("canceling active command nodes: %w", err)
-		}
-		if _, err = tx.Exec(`UPDATE workflow_node_attempt SET state = 'canceled', completed_at = ? WHERE run_id = ? AND node_id != ? AND state IN ('waiting', 'running')`, now, runID, nodeID); err != nil {
-			return fmt.Errorf("canceling other attempts: %w", err)
-		}
-		if err = deleteAllWorkflowLeases(tx, runID); err != nil {
-			return err
-		}
-		if _, err = tx.Exec(`UPDATE workflow_run SET state = 'failed', updated_at = ?, completed_at = ? WHERE id = ?`, now, now, runID); err != nil {
-			return fmt.Errorf("failing workflow run: %w", err)
-		}
-		return tx.Commit()
+		return completeWorkflowNodeTx(tx, runID, now)
 	}
 
-	var remaining int
-	if err = tx.QueryRow(`SELECT count(*) FROM workflow_node_run WHERE run_id = ? AND state != 'successful'`, runID).Scan(&remaining); err != nil {
-		return fmt.Errorf("counting workflow nodes: %w", err)
-	}
-	if remaining == 0 {
-		if _, err = tx.Exec(`UPDATE workflow_run SET state = 'successful', updated_at = ?, completed_at = ? WHERE id = ?`, now, now, runID); err != nil {
-			return fmt.Errorf("completing workflow run: %w", err)
-		}
-		return tx.Commit()
-	}
-	rows, err := tx.Query(`
-		SELECT nr.node_id, n.type FROM workflow_node_run nr
-		JOIN workflow_version_node n ON n.version_id = ? AND n.node_id = nr.node_id
-		WHERE nr.run_id = ? AND nr.state = 'pending'
-		AND NOT EXISTS (
-			SELECT 1 FROM workflow_version_dependency d
-			JOIN workflow_node_run upstream ON upstream.run_id = nr.run_id AND upstream.node_id = d.from_node
-			WHERE d.version_id = ? AND d.to_node = nr.node_id AND upstream.state != 'successful'
-		)`, versionID, runID, versionID)
-	if err != nil {
-		return fmt.Errorf("finding ready workflow nodes: %w", err)
-	}
-	type readyNode struct{ id, nodeType string }
-	var ready []readyNode
-	for rows.Next() {
-		var node readyNode
-		if err = rows.Scan(&node.id, &node.nodeType); err != nil {
-			rows.Close()
-			return err
-		}
-		ready = append(ready, node)
-	}
-	if err = rows.Close(); err != nil {
-		return err
-	}
-	for _, node := range ready {
-		if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'ready', ready_at = ? WHERE run_id = ? AND node_id = ?`, now, runID, node.id); err != nil {
-			return fmt.Errorf("readying workflow node: %w", err)
-		}
-		if _, err = tx.Exec(`INSERT INTO workflow_node_attempt (run_id, node_id, seq, state, started_at) VALUES (?, ?, 1, 'waiting', ?)`, runID, node.id, now); err != nil {
-			return fmt.Errorf("inserting workflow attempt: %w", err)
-		}
-	}
-	if _, err = tx.Exec(`UPDATE workflow_run SET updated_at = ? WHERE id = ?`, now, runID); err != nil {
-		return fmt.Errorf("updating workflow run: %w", err)
-	}
-	return tx.Commit()
+	return completeWorkflowNodeTx(tx, runID, now)
 }
 
 func (d *DB) ClaimWorkflowAgentAttempt(runID, nodeID string, attemptID int64, affinity, directory string, requests []WorkflowResourceRequest, workspace *WorkflowWorkspaceRequest, now int64) (bool, error) {
@@ -666,9 +605,9 @@ func (d *DB) CompleteWorkflowAgentNode(runID, nodeID string, attemptID int64, su
 		return fmt.Errorf("beginning workflow agent completion: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	nodeState, attemptState, runState := "failed", "failed", "failed"
+	nodeState, attemptState := "failed", "failed"
 	if successful {
-		nodeState, attemptState, runState = "successful", "successful", "successful"
+		nodeState, attemptState = "successful", "successful"
 	}
 	if _, err = tx.Exec(`UPDATE workflow_node_run SET state = ?, completed_at = ? WHERE run_id = ? AND node_id = ? AND state = 'running'`, nodeState, now, runID, nodeID); err != nil {
 		return fmt.Errorf("completing workflow agent node: %w", err)
@@ -680,25 +619,42 @@ func (d *DB) CompleteWorkflowAgentNode(runID, nodeID string, attemptID int64, su
 		return err
 	}
 	if !successful {
-		if err = deleteAllWorkflowLeases(tx, runID); err != nil {
-			return err
-		}
-		if _, err = tx.Exec(`UPDATE workflow_run SET state = ?, updated_at = ?, completed_at = ? WHERE id = ?`, runState, now, now, runID); err != nil {
-			return fmt.Errorf("failing workflow run: %w", err)
-		}
-		return tx.Commit()
+		return completeWorkflowNodeTx(tx, runID, now)
 	}
 	return completeWorkflowNodeTx(tx, runID, now)
 }
 
 func completeWorkflowNodeTx(tx *sql.Tx, runID string, now int64) error {
+	// A failed branch only makes its descendants unreachable. Independent
+	// branches keep running; failFast is enforced by the workflow service.
+	for {
+		res, err := tx.Exec(`UPDATE workflow_node_run SET state = 'skipped', completed_at = ? WHERE run_id = ? AND state = 'pending' AND EXISTS (
+			SELECT 1 FROM workflow_version_dependency d JOIN workflow_run r ON r.id = workflow_node_run.run_id JOIN workflow_node_run upstream ON upstream.run_id = r.id AND upstream.node_id = d.from_node
+			WHERE d.version_id = r.version_id AND d.to_node = workflow_node_run.node_id AND upstream.state IN ('failed', 'skipped', 'canceled')
+		)`, now, runID)
+		if err != nil {
+			return fmt.Errorf("skipping unreachable workflow nodes: %w", err)
+		}
+		changed, err := res.RowsAffected()
+		if err != nil || changed == 0 {
+			break
+		}
+	}
 	var remaining int
-	if err := tx.QueryRow(`SELECT count(*) FROM workflow_node_run WHERE run_id = ? AND state != 'successful'`, runID).Scan(&remaining); err != nil {
+	if err := tx.QueryRow(`SELECT count(*) FROM workflow_node_run WHERE run_id = ? AND state IN ('pending', 'ready', 'running')`, runID).Scan(&remaining); err != nil {
 		return fmt.Errorf("counting workflow nodes: %w", err)
 	}
 	if remaining == 0 {
-		if _, err := tx.Exec(`UPDATE workflow_run SET state = 'successful', updated_at = ?, completed_at = ? WHERE id = ?`, now, now, runID); err != nil {
-			return fmt.Errorf("completing workflow run: %w", err)
+		var failed int
+		if err := tx.QueryRow(`SELECT count(*) FROM workflow_node_run WHERE run_id = ? AND state = 'failed'`, runID).Scan(&failed); err != nil {
+			return err
+		}
+		state := "successful"
+		if failed > 0 {
+			state = "failed"
+		}
+		if _, err := tx.Exec(`UPDATE workflow_run SET state = ?, updated_at = ?, completed_at = ? WHERE id = ?`, state, now, now, runID); err != nil {
+			return fmt.Errorf("settling workflow run: %w", err)
 		}
 		return tx.Commit()
 	}

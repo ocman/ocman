@@ -70,7 +70,7 @@ func TestWorkspaceLeaseReleasedOnCompletion(t *testing.T) {
 	}
 }
 
-func TestWorkspaceLeaseReleasedOnFailure(t *testing.T) {
+func TestWorkspaceFailureKeepsIndependentLease(t *testing.T) {
 	db := seedResourceRun(t)
 	if !startWithWorkspace(t, db, "one", WorkflowWorkspaceRequest{Shards: 2, Mode: workspaceExclusive}) {
 		t.Fatal("acquire one")
@@ -78,13 +78,13 @@ func TestWorkspaceLeaseReleasedOnFailure(t *testing.T) {
 	if !startWithWorkspace(t, db, "two", WorkflowWorkspaceRequest{Shards: 2, Mode: workspaceExclusive}) {
 		t.Fatal("acquire two")
 	}
-	// A failing command cancels siblings and clears all leases run-wide.
+	// A failed branch leaves independent work running, so its lease remains.
 	if err := db.CompleteWorkflowCommand("run-1", "one", WorkflowCommandResult{State: "failed", OutputsJSON: "{}"}, 20); err != nil {
 		t.Fatal(err)
 	}
 	leases, err := db.ListWorkflowWorkspaceLeases("run-1")
-	if err != nil || len(leases) != 0 {
-		t.Fatalf("failure leaked workspace leases: %+v (%v)", leases, err)
+	if err != nil || len(leases) != 1 || leases[0].NodeID != "two" {
+		t.Fatalf("independent lease was not retained after failure: %+v (%v)", leases, err)
 	}
 }
 

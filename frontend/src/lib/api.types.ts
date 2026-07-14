@@ -854,6 +854,11 @@ export interface WorkflowJoinConfig {
 	minSuccess?: number;
 }
 
+export interface WorkflowRepeatConfig {
+	until: string;
+	maxAttempts: number;
+}
+
 export interface WorkflowNodeDefinition {
 	id: string;
 	name: string;
@@ -868,11 +873,13 @@ export interface WorkflowNodeDefinition {
 	subworkflow?: WorkflowSubworkflowRef;
 	map?: WorkflowMapConfig;
 	join?: WorkflowJoinConfig;
+	repeat?: WorkflowRepeatConfig;
 }
 
 export interface WorkflowDependency {
 	from: string;
 	to: string;
+	condition?: string;
 }
 
 export type WorkflowTriggerType = 'manual' | 'interval' | 'cron' | 'pr' | 'child_completion' | 'turn_completion';
@@ -952,6 +959,7 @@ export interface WorkflowDefinition {
 	pools?: WorkflowPool[];
 	workspace?: WorkflowWorkspaceConfig;
 	limits?: WorkflowLimits;
+	failFast?: boolean;
 	triggers: WorkflowTrigger[];
 	nodes: WorkflowNodeDefinition[];
 	dependencies: WorkflowDependency[];

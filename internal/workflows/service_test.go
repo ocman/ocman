@@ -229,6 +229,90 @@ func TestSequentialApprovalRunPersistsAcrossRestart(t *testing.T) {
 	}
 }
 
+func TestConditionalEdgeSkipsFalseBranch(t *testing.T) {
+	h := newHarness(t)
+	definition := Definition{
+		ID: "conditional", Name: "Conditional", Version: "1", Concurrency: 1,
+		Triggers:     []Trigger{{ID: "manual", Type: TriggerManual}},
+		Nodes:        []Node{{ID: "gate", Name: "Gate", Type: "approval"}, {ID: "branch", Name: "Branch", Type: "approval"}},
+		Dependencies: []Dependency{{From: "gate", To: "branch", Condition: `outcomes["gate"].state == "failed"`}},
+	}
+	raw, _ := json.Marshal(definition)
+	version, err := h.svc.PublishJSON(context.Background(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.svc.Start(context.Background(), version.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done, err := h.svc.Approve(context.Background(), run.ID, "gate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertRun(t, done, StateSuccessful, map[string]string{"gate": NodeSuccessful, "branch": NodeSkipped})
+	if got := done.Nodes[1].Attempts[0].Error; got != "condition evaluated false" {
+		t.Fatalf("skip reason = %q", got)
+	}
+}
+
+func TestRepeatUntilSuccessAndExhaustion(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		h := newHarness(t)
+		executor := &repeatExecutor{outputs: []string{`{"done":false}`, `{"done":true}`}}
+		h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, CommandExecutor: executor, Blobs: h.blobs})
+		node := Node{ID: "again", Name: "Again", Type: "command", Command: []string{"again"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}, Outputs: []Collector{{Name: "result", Type: "json_file", Path: "result.json"}}, Repeat: &RepeatConfig{Until: `artifacts["again.result"].done == true`, MaxAttempts: 2}}
+		version, err := h.svc.PublishJSON(context.Background(), commandDefinition(t, t.TempDir(), []Node{node}, nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		run, err := h.svc.Start(context.Background(), version.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		done := waitForRepeatRun(t, h.svc, run.ID, StateSuccessful, 2)
+		if len(done.Nodes[0].Attempts) != 2 {
+			t.Fatalf("attempts = %+v", done.Nodes[0].Attempts)
+		}
+	})
+	t.Run("exhaustion", func(t *testing.T) {
+		h := newHarness(t)
+		executor := &repeatExecutor{outputs: []string{`{"done":false}`, `{"done":false}`}}
+		h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, CommandExecutor: executor, Blobs: h.blobs})
+		node := Node{ID: "again", Name: "Again", Type: "command", Command: []string{"again"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}, Outputs: []Collector{{Name: "result", Type: "json_file", Path: "result.json"}}, Repeat: &RepeatConfig{Until: `artifacts["again.result"].done == true`, MaxAttempts: 2}}
+		version, err := h.svc.PublishJSON(context.Background(), commandDefinition(t, t.TempDir(), []Node{node}, nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		run, err := h.svc.Start(context.Background(), version.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		done := waitForRepeatRun(t, h.svc, run.ID, StateFailed, 2)
+		if got := done.Nodes[0].Attempts[1].Error; !strings.Contains(got, "repeat exhausted") {
+			t.Fatalf("exhaustion reason = %q", got)
+		}
+	})
+}
+
+func waitForRepeatRun(t *testing.T, svc *Service, runID, state string, attempts int) RunDetail {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	var last RunDetail
+	for time.Now().Before(deadline) {
+		run, err := svc.GetRun(context.Background(), runID)
+		if err == nil {
+			last = run
+		}
+		if err == nil && run.State == state && len(run.Nodes) == 1 && len(run.Nodes[0].Attempts) == attempts {
+			return run
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("repeat run %s did not reach %s after %d attempts: %+v", runID, state, attempts, last)
+	return RunDetail{}
+}
+
 func TestPublishCreatesImmutableVersions(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
@@ -685,7 +769,7 @@ func TestTickFailsAgentLaunchInterruptedByRestart(t *testing.T) {
 	}
 }
 
-func TestCommandConcurrencyCapAndFailureCancelSiblings(t *testing.T) {
+func TestCommandConcurrencyCapAndFailurePolicy(t *testing.T) {
 	t.Run("cap", func(t *testing.T) {
 		h := newHarness(t)
 		executor := &gatedExecutor{started: make(chan string, 2), release: make(chan struct{})}
@@ -712,13 +796,12 @@ func TestCommandConcurrencyCapAndFailureCancelSiblings(t *testing.T) {
 		waitForRun(t, h.svc, run.ID, StateSuccessful)
 	})
 
-	t.Run("failure cancels sibling", func(t *testing.T) {
+	t.Run("failure leaves independent sibling running", func(t *testing.T) {
 		h := newHarness(t)
 		dir := t.TempDir()
-		pidPath := filepath.Join(dir, "sibling.pid")
 		nodes := []Node{
 			{ID: "fail", Name: "Fail", Type: "command", Command: []string{"/bin/sh", "-c", "sleep .2; exit 9"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}},
-			{ID: "sibling", Name: "Sibling", Type: "command", Command: []string{"/bin/sh", "-c", fmt.Sprintf("sleep 30 & echo $! > %s; wait", pidPath)}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}},
+			{ID: "sibling", Name: "Sibling", Type: "command", Command: []string{"/bin/sh", "-c", "sleep .3"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}},
 		}
 		definition := Definition{ID: "parallel", Name: "Parallel", Version: "1", Concurrency: 2, Directory: dir, Triggers: []Trigger{{ID: "manual", Type: TriggerManual}}, Nodes: nodes}
 		raw, _ := json.Marshal(definition)
@@ -730,27 +813,35 @@ func TestCommandConcurrencyCapAndFailureCancelSiblings(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		var pid int
-		for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
-			if value, readErr := os.ReadFile(pidPath); readErr == nil {
-				pid, _ = strconv.Atoi(strings.TrimSpace(string(value)))
-				break
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
 		failed := waitForRun(t, h.svc, run.ID, StateFailed)
-		if failed.Nodes[1].Attempts[0].State != AttemptCanceled {
-			t.Fatalf("sibling attempt was not canceled: %+v", failed.Nodes[1])
-		}
-		if pid == 0 {
-			t.Fatal("sibling child did not start")
-		}
-		if err := syscall.Kill(pid, 0); err == nil {
-			t.Fatalf("sibling child %d survived failure", pid)
+		if failed.Nodes[1].Attempts[0].State != AttemptSuccessful {
+			t.Fatalf("independent sibling did not finish: %+v", failed.Nodes[1])
 		}
 	})
 
-	t.Run("simultaneous failures do not dispatch queued command", func(t *testing.T) {
+	t.Run("fail-fast cancels independent sibling", func(t *testing.T) {
+		h := newHarness(t)
+		dir := t.TempDir()
+		nodes := []Node{
+			{ID: "fail", Name: "Fail", Type: "command", Command: []string{"/bin/sh", "-c", "sleep .1; exit 9"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}},
+			{ID: "sibling", Name: "Sibling", Type: "command", Command: []string{"/bin/sh", "-c", "sleep 5"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}},
+		}
+		raw, _ := json.Marshal(Definition{ID: "fail-fast", Name: "Fail fast", Version: "1", Concurrency: 2, Directory: dir, FailFast: true, Triggers: []Trigger{{ID: "manual", Type: TriggerManual}}, Nodes: nodes})
+		version, err := h.svc.PublishJSON(context.Background(), raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		run, err := h.svc.Start(context.Background(), version.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		failed := waitForRun(t, h.svc, run.ID, StateFailed)
+		if failed.Nodes[1].State != NodeCanceled {
+			t.Fatalf("fail-fast sibling state = %s", failed.Nodes[1].State)
+		}
+	})
+
+	t.Run("independent queued command can dispatch after failures", func(t *testing.T) {
 		h := newHarness(t)
 		executor := &failingGateExecutor{started: make(chan string, 3), release: make(chan struct{})}
 		h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, CommandExecutor: executor})
@@ -772,13 +863,16 @@ func TestCommandConcurrencyCapAndFailureCancelSiblings(t *testing.T) {
 		<-executor.started
 		close(executor.release)
 		failed := waitForRun(t, h.svc, run.ID, StateFailed)
-		if failed.Nodes[2].Attempts[0].State != AttemptCanceled {
-			t.Fatalf("queued attempt was not canceled: %+v", failed.Nodes[2])
+		if failed.Nodes[2].Attempts[0].State != AttemptFailed {
+			t.Fatalf("queued independent attempt was not run: %+v", failed.Nodes[2])
 		}
 		select {
 		case command := <-executor.started:
-			t.Fatalf("queued command %q was dispatched", command)
-		default:
+			if command != "queued" {
+				t.Fatalf("unexpected queued command %q", command)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("queued command was not dispatched")
 		}
 	})
 }
@@ -797,6 +891,17 @@ type gatedExecutor struct {
 type failingGateExecutor struct {
 	started chan string
 	release chan struct{}
+}
+
+type repeatExecutor struct {
+	outputs []string
+	index   int
+}
+
+func (e *repeatExecutor) Execute(_ context.Context, _ CommandRequest) CommandResult {
+	value := e.outputs[e.index]
+	e.index++
+	return CommandResult{State: AttemptSuccessful, ExitCode: 0, Outputs: map[string]string{"result": value}}
 }
 
 func (e *failingGateExecutor) Execute(_ context.Context, request CommandRequest) CommandResult {
