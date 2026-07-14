@@ -461,6 +461,68 @@ func TestMigrate_FreshDB_CreatesSchemaAtLatestVersion(t *testing.T) {
 	}
 }
 
+func TestMigrate_RecoveryV30ComponentDBUpgrades(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := ensureSchemaVersionTable(db); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for v := 1; v <= 29; v++ {
+		if err := applyMigration(tx, v); err != nil {
+			t.Fatalf("migrate v%d: %v", v, err)
+		}
+		if _, err := tx.Exec(`INSERT INTO schema_version (version, applied_at) VALUES (?, 0)`, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := addColumnIfMissing(tx, "workflow_node_attempt", "resolved_at", "INTEGER"); err != nil {
+		t.Fatal(err)
+	}
+	if err := addColumnIfMissing(tx, "workflow_node_attempt", "resolved_by", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(`INSERT INTO schema_version (version, applied_at) VALUES (30, 0)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := migrate(db); err != nil {
+		t.Fatalf("upgrade recovery v30 component DB: %v", err)
+	}
+	var version int
+	if err := db.QueryRow(`SELECT max(version) FROM schema_version`).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != latestSchemaVersion {
+		t.Fatalf("schema version = %d, want %d", version, latestSchemaVersion)
+	}
+	for _, column := range []string{"resolved_at", "resolved_by"} {
+		var count int
+		if err := db.QueryRow(`SELECT count(*) FROM pragma_table_info('workflow_node_attempt') WHERE name = ?`, column).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Fatalf("workflow_node_attempt.%s missing", column)
+		}
+	}
+	var mapTable int
+	if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'workflow_map_item'`).Scan(&mapTable); err != nil {
+		t.Fatal(err)
+	}
+	if mapTable != 1 {
+		t.Fatal("workflow_map_item missing after recovery v30 upgrade")
+	}
+}
+
 func TestMigrate_V3_CreatesAuthSecretTable(t *testing.T) {
 	sqlDB, err := sql.Open("sqlite", ":memory:")
 	if err != nil {

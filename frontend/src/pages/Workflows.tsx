@@ -198,7 +198,9 @@ function RunNode({ run, node, mutate, onSelectRun }: { run: WorkflowRunDetail; n
 			<p>{attemptLine}</p>
 			{conditions.map((condition) => <p key={condition} className="workflow-condition">Condition {node.state === 'skipped' ? 'skipped' : 'evaluated'}: <code>{condition}</code></p>)}
 			{node.attempts.length > 1 && <p className="workflow-repeat-history">Repeat history: {node.attempts.map((item) => `#${item.seq} ${item.state}`).join(', ')}</p>}
+			{attempt?.resolvedAt && <p>Resolved by {attempt.resolvedBy || 'user'} · {formatTime(attempt.resolvedAt)}</p>}
 			{node.type === 'agent' && <AgentNode attempt={attempt} />}
+			{attempt?.state === 'unknown' && run.state === 'paused' && <div className="workflow-controls"><button type="button" onClick={() => void mutate(() => api.workflows.resolveUnknown(run.id, attempt.id, 'successful'))}>Mark succeeded</button><button type="button" onClick={() => void mutate(() => api.workflows.resolveUnknown(run.id, attempt.id, 'failed'))}>Mark failed</button><button type="button" onClick={() => void mutate(() => api.workflows.resolveUnknown(run.id, attempt.id, 'retry'))}>Retry safely</button></div>}
 			{node.type === 'approval' && node.state === 'ready' && run.state === 'active' && <button type="button" onClick={() => void mutate(() => api.workflows.approve(run.id, node.nodeId))}>Approve {node.name}</button>}
 			{attempt && node.type === 'command' && <CommandAttempt attempt={attempt} />}
 			{node.type === 'map' && <MapNode items={(run.children ?? []).filter((item) => item.mapNode === node.nodeId)} error={node.attempts.map((a) => a.error).find(Boolean)} onSelectRun={onSelectRun} />}

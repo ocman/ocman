@@ -127,11 +127,15 @@ import (
 //	      restart reconciliation and is visible in the run UI.
 //	31 - workflow version activation. Adds an explicit active version to each
 //	      definition and preserves pinned-version storage for existing runs.
+//	32 - workflow recovery audit (#321). Adds `resolved_at` and
+//	      `resolved_by` columns to `workflow_node_attempt` so every manual
+//	      or automatic resolution of an unknown attempt carries an audit
+//	      trail (who resolved it and when).
 //
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 31
+const latestSchemaVersion = 32
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -289,6 +293,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV30(tx)
 	case 31:
 		return migrateToV31(tx)
+	case 32:
+		return migrateToV32(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -1163,4 +1169,21 @@ func migrateToV31(tx *sql.Tx) error {
 		WHERE active_version_id IS NULL
 	`)
 	return err
+}
+
+// migrateToV32 adds audit columns to workflow_node_attempt for tracking
+// manual and automatic resolutions of unknown attempts (#321). resolved_at
+// records when the resolution happened; resolved_by records who or what
+// performed it ("user" for manual REST/UI resolutions, "recovery" for
+// automatic retry-safe resolutions during startup reconciliation).
+func migrateToV32(tx *sql.Tx) error {
+	// A recovery-only v30 briefly existed. Reapply the idempotent merged v30
+	// shape so those component databases gain map/join support too.
+	if err := migrateToV30(tx); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(tx, "workflow_node_attempt", "resolved_at", "INTEGER"); err != nil {
+		return err
+	}
+	return addColumnIfMissing(tx, "workflow_node_attempt", "resolved_by", "TEXT NOT NULL DEFAULT ''")
 }

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/workflows"
 )
 
@@ -257,6 +259,43 @@ func TestWorkflowRESTPauseAndCancel(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("%s: %d %s", action, rec.Code, rec.Body.String())
 		}
+	}
+}
+
+func TestWorkflowRESTResolvesUnknownAttempt(t *testing.T) {
+	srv := newWorkflowTestServer(t)
+	version, err := srv.workflowSvc().PublishJSON(t.Context(), []byte(workflowRequest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UnixMilli()
+	run := state.WorkflowRun{ID: "unknown-rest", WorkflowID: version.WorkflowID, VersionID: version.ID, State: workflows.StateActive, CreatedAt: now, UpdatedAt: now, Nodes: []state.WorkflowNodeRun{{NodeID: "review", Type: "approval", State: workflows.NodeReady}, {NodeID: "ship", Type: "approval", State: workflows.NodePending}}}
+	if err := srv.stateDB.InsertWorkflowRun(run); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := srv.stateDB.GetWorkflowRun(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attemptID := stored.Nodes[0].Attempts[0].ID
+	if claimed, err := srv.stateDB.ClaimWorkflowAgentAttempt(run.ID, "review", attemptID, "", "", []state.WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 1}}, nil, now); err != nil || !claimed {
+		t.Fatalf("claim: claimed=%v err=%v", claimed, err)
+	}
+	if err := srv.stateDB.MarkWorkflowAttemptUnknown(run.ID, "review", attemptID, "interrupted", now); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	srv.handleWorkflowRuns(rec, httptest.NewRequest(http.MethodPost, "/api/workflow-runs/"+run.ID+"/resolve-unknown/"+strconv.FormatInt(attemptID, 10), strings.NewReader(`{"resolution":"retry"}`)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("resolve retry: %d %s", rec.Code, rec.Body.String())
+	}
+	var resolved workflows.RunDetail
+	if err := json.Unmarshal(rec.Body.Bytes(), &resolved); err != nil {
+		t.Fatal(err)
+	}
+	if resolved.State != workflows.StateActive || len(resolved.Nodes[0].Attempts) != 2 || resolved.Nodes[0].Attempts[0].ResolvedBy != "user" || resolved.Nodes[0].Attempts[1].State != workflows.AttemptWaiting {
+		t.Fatalf("unknown retry response: %+v", resolved)
 	}
 }
 

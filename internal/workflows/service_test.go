@@ -600,7 +600,7 @@ func TestRunPauseCancelAndInvalidApproval(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
-	assertRun(t, canceled, StateCanceled, map[string]string{"review": NodeCanceled, "ship": NodeCanceled})
+	assertRun(t, canceled, StateCanceled, map[string]string{"review": NodeCanceled, "ship": NodeSkipped})
 }
 
 func TestSequentialCommandsCollectDeclaredOutputs(t *testing.T) {
@@ -892,7 +892,7 @@ func TestPauseLetsRunningCommandSettleAndCommandCannotBeApproved(t *testing.T) {
 	}
 }
 
-func TestTickFailsCommandInterruptedByRestart(t *testing.T) {
+func TestTickMarksInterruptedCommandUnknown(t *testing.T) {
 	h := newHarness(t)
 	executor := &blockingExecutor{started: make(chan struct{}), release: make(chan struct{}), done: make(chan struct{})}
 	h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, CommandExecutor: executor, Agent: h.agent})
@@ -914,14 +914,14 @@ func TestTickFailsCommandInterruptedByRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if failed.State != StateFailed || failed.Nodes[0].Attempts[0].State != AttemptErrored || !strings.Contains(failed.Nodes[0].Attempts[0].Error, "server restart") {
-		t.Fatalf("interrupted command not failed: %+v", failed)
+	if failed.State != StatePaused || failed.Nodes[0].State != NodeUnknown || failed.Nodes[0].Attempts[0].State != AttemptUnknown || !strings.Contains(failed.Nodes[0].Attempts[0].Error, "server restart") {
+		t.Fatalf("interrupted command was replayed instead of paused as unknown: %+v", failed)
 	}
 	close(executor.release)
 	<-executor.done
 }
 
-func TestTickFailsAgentLaunchInterruptedByRestart(t *testing.T) {
+func TestTickRetriesInterruptedAgentLaunch(t *testing.T) {
 	h := newHarness(t)
 	version, err := h.svc.PublishJSON(context.Background(), []byte(singleAgent))
 	if err != nil {
@@ -950,14 +950,155 @@ func TestTickFailsAgentLaunchInterruptedByRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if failed.State != StateFailed || failed.Nodes[0].Attempts[0].State != AttemptFailed || !strings.Contains(failed.Nodes[0].Attempts[0].Error, "server restart") {
-		t.Fatalf("interrupted agent launch not failed: %+v", failed)
+	if failed.State != StateActive || len(failed.Nodes[0].Attempts) != 2 || failed.Nodes[0].Attempts[0].State != AttemptFailed || failed.Nodes[0].Attempts[0].ResolvedBy != "recovery" || failed.Nodes[0].Attempts[1].State != AttemptRunning {
+		t.Fatalf("retry-safe agent launch did not create exactly one new attempt: %+v", failed)
 	}
-	// Restart reconciliation must release the capacity the interrupted
-	// attempt held so the run does not leak run-concurrency.
+	// Restart reconciliation must release the interrupted attempt's lease;
+	// only the replacement attempt may hold run-concurrency.
 	leases, err := h.db.ListWorkflowResourceLeases(run.ID)
-	if err != nil || len(leases) != 0 {
+	if err != nil || len(leases) != 1 || leases[0].AttemptID != failed.Nodes[0].Attempts[1].ID {
 		t.Fatalf("interrupted attempt leaked resource leases: %+v (%v)", leases, err)
+	}
+}
+
+func TestTickReattachesLiveAgentWithoutDuplicateDispatch(t *testing.T) {
+	h := newHarness(t)
+	version, err := h.svc.PublishJSON(t.Context(), []byte(singleAgent))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.svc.Start(t.Context(), version.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(h.agent.starts) != 1 {
+		t.Fatalf("agent starts before restart: %d", len(h.agent.starts))
+	}
+	h.restart()
+	if err := h.svc.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := h.svc.GetRun(t.Context(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.State != StateActive || restored.Nodes[0].Attempts[0].State != AttemptRunning || len(h.agent.starts) != 1 {
+		t.Fatalf("live agent was not reattached exactly once: run=%+v starts=%+v", restored, h.agent.starts)
+	}
+	h.agent.results["session-1"] = AgentResult{State: "done"}
+	if err := h.svc.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	completed, err := h.svc.GetRun(t.Context(), run.ID)
+	if err != nil || completed.State != StateSuccessful {
+		t.Fatalf("reattached agent did not keep reporting state: %+v (%v)", completed, err)
+	}
+}
+
+func TestResolveUnknownRecordsAuditAndAllowsRetry(t *testing.T) {
+	h := newHarness(t)
+	interrupted := &blockingExecutor{started: make(chan struct{}), release: make(chan struct{}), done: make(chan struct{})}
+	h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, CommandExecutor: interrupted})
+	node := Node{ID: "command", Name: "Command", Type: "command", Command: []string{"/usr/bin/true"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}}
+	version, err := h.svc.PublishJSON(t.Context(), commandDefinition(t, t.TempDir(), []Node{node}, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.svc.Start(t.Context(), version.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-interrupted.started
+	replacement := &blockingExecutor{started: make(chan struct{}), release: make(chan struct{}), done: make(chan struct{})}
+	h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, CommandExecutor: replacement})
+	if err := h.svc.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	unknown, err := h.svc.GetRun(t.Context(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retried, err := h.svc.ResolveUnknown(t.Context(), run.ID, unknown.Nodes[0].Attempts[0].ID, ResolutionRetry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retried.State != StateActive || len(retried.Nodes[0].Attempts) != 2 || retried.Nodes[0].Attempts[0].ResolvedBy != "user" || retried.Nodes[0].Attempts[1].State != AttemptRunning {
+		t.Fatalf("unknown retry did not audit and dispatch one replacement: %+v", retried)
+	}
+	<-replacement.started
+	close(replacement.release)
+	<-replacement.done
+	close(interrupted.release)
+	<-interrupted.done
+}
+
+func TestResolveUnknownCanSettleSucceededOrFailed(t *testing.T) {
+	for _, resolution := range []string{ResolutionSucceeded, ResolutionFailed} {
+		t.Run(resolution, func(t *testing.T) {
+			h := newHarness(t)
+			node := Node{ID: "command", Name: "Command", Type: "command", Command: []string{"/usr/bin/true"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}}
+			version, err := h.svc.PublishJSON(t.Context(), commandDefinition(t, t.TempDir(), []Node{node}, nil))
+			if err != nil {
+				t.Fatal(err)
+			}
+			run := state.WorkflowRun{ID: "unknown-" + resolution, WorkflowID: version.WorkflowID, VersionID: version.ID, State: StateActive, CreatedAt: h.now.UnixMilli(), UpdatedAt: h.now.UnixMilli(), Nodes: []state.WorkflowNodeRun{{NodeID: "command", Type: "command", State: NodeReady}}}
+			if err := h.db.InsertWorkflowRun(run); err != nil {
+				t.Fatal(err)
+			}
+			stored, err := h.db.GetWorkflowRun(run.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			attemptID := stored.Nodes[0].Attempts[0].ID
+			if claimed, err := h.db.ClaimWorkflowAgentAttempt(run.ID, "command", attemptID, "", "", []state.WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 1}}, nil, h.now.UnixMilli()); err != nil || !claimed {
+				t.Fatalf("claim attempt: claimed=%v err=%v", claimed, err)
+			}
+			if err := h.db.MarkWorkflowAttemptUnknown(run.ID, "command", attemptID, "interrupted", h.now.UnixMilli()); err != nil {
+				t.Fatal(err)
+			}
+			resolved, err := h.svc.ResolveUnknown(t.Context(), run.ID, attemptID, resolution)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := StateSuccessful
+			if resolution == ResolutionFailed {
+				want = StateFailed
+			}
+			if resolved.State != want || resolved.Nodes[0].Attempts[0].ResolvedBy != "user" {
+				t.Fatalf("unknown %s resolution: %+v", resolution, resolved)
+			}
+		})
+	}
+}
+
+func TestResolveUnknownSuccessReadiesDependents(t *testing.T) {
+	h := newHarness(t)
+	version, err := h.svc.PublishJSON(t.Context(), []byte(sequentialApprovals))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := state.WorkflowRun{ID: "unknown-upstream", WorkflowID: version.WorkflowID, VersionID: version.ID, State: StateActive, CreatedAt: h.now.UnixMilli(), UpdatedAt: h.now.UnixMilli(), Nodes: []state.WorkflowNodeRun{{NodeID: "review", Type: "approval", State: NodeReady}, {NodeID: "ship", Type: "approval", State: NodePending}}}
+	if err := h.db.InsertWorkflowRun(run); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := h.db.GetWorkflowRun(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attemptID := stored.Nodes[0].Attempts[0].ID
+	if claimed, err := h.db.ClaimWorkflowAgentAttempt(run.ID, "review", attemptID, "", "", []state.WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 1}}, nil, h.now.UnixMilli()); err != nil || !claimed {
+		t.Fatalf("claim attempt: claimed=%v err=%v", claimed, err)
+	}
+	if err := h.db.MarkWorkflowAttemptUnknown(run.ID, "review", attemptID, "interrupted", h.now.UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := h.svc.ResolveUnknown(t.Context(), run.ID, attemptID, ResolutionSucceeded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertRun(t, resolved, StateActive, map[string]string{"review": NodeSuccessful, "ship": NodeReady})
+	if len(resolved.Nodes[1].Attempts) != 1 || resolved.Nodes[1].Attempts[0].State != AttemptWaiting {
+		t.Fatalf("successful unknown resolution did not create dependent attempt: %+v", resolved.Nodes[1])
 	}
 }
 

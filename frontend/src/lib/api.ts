@@ -746,6 +746,7 @@ export const api = {
 		approve: (runId: string, nodeId: string) => postJSON<WorkflowRunDetail>(`/api/workflow-runs/${encodeURIComponent(runId)}/approve/${encodeURIComponent(nodeId)}`, {}),
 		pause: (runId: string) => postJSON<WorkflowRunDetail>(`/api/workflow-runs/${encodeURIComponent(runId)}/pause`, {}),
 		cancel: (runId: string) => postJSON<WorkflowRunDetail>(`/api/workflow-runs/${encodeURIComponent(runId)}/cancel`, {}),
+		resolveUnknown: (runId: string, attemptId: number, resolution: 'successful' | 'failed' | 'retry') => postJSON<WorkflowRunDetail>(`/api/workflow-runs/${encodeURIComponent(runId)}/resolve-unknown/${attemptId}`, { resolution }),
 		artifacts: (runId: string, signal?: AbortSignal) => fetchJSON<WorkflowArtifact[]>(`/api/workflow-runs/${encodeURIComponent(runId)}/artifacts`, signal),
 		artifactDownloadUrl: (runId: string, artifactId: string) => `/api/workflow-runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(artifactId)}/download`,
 	},

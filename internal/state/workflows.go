@@ -80,6 +80,8 @@ type WorkflowAttempt struct {
 	SessionState    string
 	Affinity        string
 	Directory       string
+	ResolvedAt      int64
+	ResolvedBy      string
 }
 
 type WorkflowCommandResult struct {
@@ -447,7 +449,8 @@ func (d *DB) workflowAttempts(runID, nodeID string) ([]WorkflowAttempt, error) {
 	rows, err := d.db.Query(`
 		SELECT id, seq, state, started_at, COALESCE(completed_at, 0), exit_code,
 		       stdout, stderr, error, outputs_json, stdout_truncated, stderr_truncated,
-		       platform, session_id, session_state, affinity, directory
+		       platform, session_id, session_state, affinity, directory,
+		       COALESCE(resolved_at, 0), resolved_by
 		FROM workflow_node_attempt WHERE run_id = ? AND node_id = ? ORDER BY seq`, runID, nodeID)
 	if err != nil {
 		return nil, fmt.Errorf("listing workflow attempts: %w", err)
@@ -456,7 +459,7 @@ func (d *DB) workflowAttempts(runID, nodeID string) ([]WorkflowAttempt, error) {
 	var out []WorkflowAttempt
 	for rows.Next() {
 		var attempt WorkflowAttempt
-		if err := rows.Scan(&attempt.ID, &attempt.Seq, &attempt.State, &attempt.StartedAt, &attempt.CompletedAt, &attempt.ExitCode, &attempt.Stdout, &attempt.Stderr, &attempt.Error, &attempt.OutputsJSON, &attempt.StdoutTruncated, &attempt.StderrTruncated, &attempt.Platform, &attempt.SessionID, &attempt.SessionState, &attempt.Affinity, &attempt.Directory); err != nil {
+		if err := rows.Scan(&attempt.ID, &attempt.Seq, &attempt.State, &attempt.StartedAt, &attempt.CompletedAt, &attempt.ExitCode, &attempt.Stdout, &attempt.Stderr, &attempt.Error, &attempt.OutputsJSON, &attempt.StdoutTruncated, &attempt.StderrTruncated, &attempt.Platform, &attempt.SessionID, &attempt.SessionState, &attempt.Affinity, &attempt.Directory, &attempt.ResolvedAt, &attempt.ResolvedBy); err != nil {
 			return nil, fmt.Errorf("scanning workflow attempt: %w", err)
 		}
 		out = append(out, attempt)
@@ -824,7 +827,10 @@ func (d *DB) FailWorkflowRun(id, reason string, now int64) error {
 	if _, err = tx.Exec(`UPDATE workflow_node_attempt SET state = 'canceled', error = CASE WHEN error = '' THEN ? ELSE error END, session_state = CASE WHEN session_id != '' THEN 'canceled' ELSE session_state END, completed_at = ? WHERE run_id = ? AND state IN ('waiting', 'starting', 'running')`, reason, now, id); err != nil {
 		return fmt.Errorf("canceling attempts on budget fail: %w", err)
 	}
-	if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'canceled', completed_at = ? WHERE run_id = ? AND state IN ('pending', 'ready', 'running')`, now, id); err != nil {
+	if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'skipped', completed_at = ? WHERE run_id = ? AND state = 'pending'`, now, id); err != nil {
+		return fmt.Errorf("skipping unreachable nodes on budget fail: %w", err)
+	}
+	if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'canceled', completed_at = ? WHERE run_id = ? AND state IN ('ready', 'running')`, now, id); err != nil {
 		return fmt.Errorf("canceling nodes on budget fail: %w", err)
 	}
 	if err = deleteAllWorkflowLeases(tx, id); err != nil {
@@ -845,7 +851,10 @@ func (d *DB) SetWorkflowRunState(id, from, to string, now int64) error {
 	completed := interface{}(nil)
 	if to == "canceled" {
 		completed = now
-		if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'canceled', completed_at = ? WHERE run_id = ? AND state IN ('pending', 'ready', 'running')`, now, id); err != nil {
+		if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'skipped', completed_at = ? WHERE run_id = ? AND state = 'pending'`, now, id); err != nil {
+			return fmt.Errorf("skipping unreachable workflow nodes: %w", err)
+		}
+		if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'canceled', completed_at = ? WHERE run_id = ? AND state IN ('ready', 'running')`, now, id); err != nil {
 			return fmt.Errorf("canceling workflow nodes: %w", err)
 		}
 		if _, err = tx.Exec(`UPDATE workflow_node_attempt SET state = 'canceled', session_state = CASE WHEN session_id != '' THEN 'canceled' ELSE session_state END, completed_at = ? WHERE run_id = ? AND state IN ('waiting', 'starting', 'running')`, now, id); err != nil {
@@ -870,6 +879,15 @@ func (d *DB) SetWorkflowRunState(id, from, to string, now int64) error {
 }
 
 func (d *DB) ResolveWorkflowAttempt(runID string, attemptID int64, resolution string, now int64) error {
+	return d.ResolveWorkflowAttemptBy(runID, attemptID, resolution, "user", now)
+}
+
+// ResolveWorkflowAttemptBy resolves an unknown attempt with an audit record
+// (resolvedBy + timestamp). "successful" and "failed" settle the attempt and
+// run; "retry" marks the unknown attempt as failed, creates a new waiting
+// attempt, sets the node back to ready, and resumes the run so the scheduler
+// can dispatch the retry under existing limits.
+func (d *DB) ResolveWorkflowAttemptBy(runID string, attemptID int64, resolution, resolvedBy string, now int64) error {
 	tx, err := d.db.Begin()
 	if err != nil {
 		return fmt.Errorf("beginning unknown attempt resolution: %w", err)
@@ -888,7 +906,32 @@ func (d *DB) ResolveWorkflowAttempt(runID string, attemptID int64, resolution st
 	if runState != "paused" {
 		return fmt.Errorf("workflow run must be paused to resolve an unknown attempt")
 	}
-	if _, err = tx.Exec(`UPDATE workflow_node_attempt SET state = ?, completed_at = ? WHERE id = ?`, resolution, now, attemptID); err != nil {
+	if resolution == "retry" {
+		if _, err = tx.Exec(`UPDATE workflow_node_attempt SET state = 'failed', completed_at = ?, resolved_at = ?, resolved_by = ? WHERE id = ?`, now, now, resolvedBy, attemptID); err != nil {
+			return fmt.Errorf("marking unknown attempt as failed for retry: %w", err)
+		}
+		if err = releaseWorkflowResources(tx, runID, nodeID); err != nil {
+			return err
+		}
+		var nextSeq int
+		if err = tx.QueryRow(`SELECT COALESCE(max(seq), 0) + 1 FROM workflow_node_attempt WHERE run_id = ? AND node_id = ?`, runID, nodeID).Scan(&nextSeq); err != nil {
+			return fmt.Errorf("computing retry attempt seq: %w", err)
+		}
+		if _, err = tx.Exec(`INSERT INTO workflow_node_attempt (run_id, node_id, seq, state, started_at) VALUES (?, ?, ?, 'waiting', ?)`, runID, nodeID, nextSeq, now); err != nil {
+			return fmt.Errorf("creating retry attempt: %w", err)
+		}
+		if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'ready', ready_at = ?, completed_at = NULL WHERE run_id = ? AND node_id = ?`, now, runID, nodeID); err != nil {
+			return fmt.Errorf("readying node for retry: %w", err)
+		}
+		if _, err = tx.Exec(`UPDATE workflow_run SET state = 'active', updated_at = ? WHERE id = ?`, now, runID); err != nil {
+			return fmt.Errorf("resuming workflow run for retry: %w", err)
+		}
+		return tx.Commit()
+	}
+	if resolution != "successful" && resolution != "failed" {
+		return fmt.Errorf("resolution must be %q, %q, or %q", "successful", "failed", "retry")
+	}
+	if _, err = tx.Exec(`UPDATE workflow_node_attempt SET state = ?, completed_at = ?, resolved_at = ?, resolved_by = ? WHERE id = ?`, resolution, now, now, resolvedBy, attemptID); err != nil {
 		return fmt.Errorf("updating workflow attempt: %w", err)
 	}
 	if _, err = tx.Exec(`UPDATE workflow_node_run SET state = ?, completed_at = ? WHERE run_id = ? AND node_id = ?`, resolution, now, runID, nodeID); err != nil {
@@ -910,12 +953,108 @@ func (d *DB) ResolveWorkflowAttempt(runID string, attemptID int64, resolution st
 			if _, err = tx.Exec(`UPDATE workflow_run SET state = 'successful', updated_at = ?, completed_at = ? WHERE id = ?`, now, now, runID); err != nil {
 				return fmt.Errorf("completing workflow run: %w", err)
 			}
-		} else if _, err = tx.Exec(`UPDATE workflow_run SET updated_at = ? WHERE id = ?`, now, runID); err != nil {
-			return fmt.Errorf("updating workflow run: %w", err)
+		} else {
+			var versionID string
+			if err = tx.QueryRow(`SELECT version_id FROM workflow_run WHERE id = ?`, runID).Scan(&versionID); err != nil {
+				return fmt.Errorf("getting workflow version for resolution: %w", err)
+			}
+			rows, queryErr := tx.Query(`
+				SELECT nr.node_id FROM workflow_node_run nr
+				WHERE nr.run_id = ? AND nr.state = 'pending'
+				AND NOT EXISTS (
+					SELECT 1 FROM workflow_version_dependency d
+					JOIN workflow_node_run upstream ON upstream.run_id = nr.run_id AND upstream.node_id = d.from_node
+					WHERE d.version_id = ? AND d.to_node = nr.node_id AND upstream.state != 'successful'
+				)`, runID, versionID)
+			if queryErr != nil {
+				return fmt.Errorf("finding nodes unblocked by resolution: %w", queryErr)
+			}
+			var ready []string
+			for rows.Next() {
+				var id string
+				if err = rows.Scan(&id); err != nil {
+					rows.Close()
+					return err
+				}
+				ready = append(ready, id)
+			}
+			if err = rows.Close(); err != nil {
+				return err
+			}
+			for _, id := range ready {
+				if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'ready', ready_at = ? WHERE run_id = ? AND node_id = ?`, now, runID, id); err != nil {
+					return fmt.Errorf("readying node after resolution: %w", err)
+				}
+				if _, err = tx.Exec(`INSERT INTO workflow_node_attempt (run_id, node_id, seq, state, started_at) VALUES (?, ?, 1, 'waiting', ?)`, runID, id, now); err != nil {
+					return fmt.Errorf("creating attempt after resolution: %w", err)
+				}
+			}
+			if _, err = tx.Exec(`UPDATE workflow_run SET state = 'active', updated_at = ? WHERE id = ?`, now, runID); err != nil {
+				return fmt.Errorf("resuming workflow run: %w", err)
+			}
 		}
 	}
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("committing unknown attempt resolution: %w", err)
 	}
 	return nil
+}
+
+// MarkWorkflowAttemptUnknown transitions a running/starting attempt to
+// unknown (uncertain side effects after a restart), sets the node to
+// unknown, releases the attempt's held resource and workspace leases so
+// they can be re-acquired if the user resolves for retry, and pauses the
+// run so dependent scheduling stops until a human decision.
+func (d *DB) MarkWorkflowAttemptUnknown(runID, nodeID string, attemptID int64, reason string, now int64) error {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return fmt.Errorf("beginning unknown attempt transition: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err = tx.Exec(`UPDATE workflow_node_attempt SET state = 'unknown', error = ?, completed_at = ? WHERE id = ? AND state IN ('starting', 'running')`, reason, now, attemptID); err != nil {
+		return fmt.Errorf("marking attempt unknown: %w", err)
+	}
+	if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'unknown' WHERE run_id = ? AND node_id = ?`, runID, nodeID); err != nil {
+		return fmt.Errorf("marking node unknown: %w", err)
+	}
+	if err = releaseWorkflowResources(tx, runID, nodeID); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`UPDATE workflow_run SET state = 'paused', updated_at = ? WHERE id = ? AND state = 'active'`, now, runID); err != nil {
+		return fmt.Errorf("pausing workflow run: %w", err)
+	}
+	return tx.Commit()
+}
+
+// RetryWorkflowAttempt marks an interrupted attempt as failed with an audit
+// record, releases its held leases, creates a new waiting attempt for the
+// same node, and sets the node back to ready. Used for retry-safe recovery
+// (e.g. agent launch interrupted before any side effect). The run stays
+// active so the scheduler dispatches the new attempt on the next tick.
+func (d *DB) RetryWorkflowAttempt(runID, nodeID string, attemptID int64, reason, resolvedBy string, now int64) error {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return fmt.Errorf("beginning retry-safe recovery: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err = tx.Exec(`UPDATE workflow_node_attempt SET state = 'failed', error = ?, completed_at = ?, resolved_at = ?, resolved_by = ? WHERE id = ? AND state IN ('starting', 'running')`, reason, now, now, resolvedBy, attemptID); err != nil {
+		return fmt.Errorf("marking interrupted attempt failed: %w", err)
+	}
+	if err = releaseWorkflowResources(tx, runID, nodeID); err != nil {
+		return err
+	}
+	var nextSeq int
+	if err = tx.QueryRow(`SELECT COALESCE(max(seq), 0) + 1 FROM workflow_node_attempt WHERE run_id = ? AND node_id = ?`, runID, nodeID).Scan(&nextSeq); err != nil {
+		return fmt.Errorf("computing retry attempt seq: %w", err)
+	}
+	if _, err = tx.Exec(`INSERT INTO workflow_node_attempt (run_id, node_id, seq, state, started_at) VALUES (?, ?, ?, 'waiting', ?)`, runID, nodeID, nextSeq, now); err != nil {
+		return fmt.Errorf("creating retry attempt: %w", err)
+	}
+	if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'ready', ready_at = ?, completed_at = NULL WHERE run_id = ? AND node_id = ?`, now, runID, nodeID); err != nil {
+		return fmt.Errorf("readying node for retry: %w", err)
+	}
+	if _, err = tx.Exec(`UPDATE workflow_run SET updated_at = ? WHERE id = ?`, now, runID); err != nil {
+		return fmt.Errorf("updating workflow run: %w", err)
+	}
+	return tx.Commit()
 }

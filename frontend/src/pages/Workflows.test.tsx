@@ -7,7 +7,7 @@ import type { WorkflowRunDetail, WorkflowVersion } from '../lib/api';
 
 const { apiMock, useWorkflowsMock, listeners, triggerListeners, connectListeners } = vi.hoisted(() => ({
 	apiMock: {
-		versions: vi.fn(), validate: vi.fn(), publish: vi.fn(), activate: vi.fn(), startActive: vi.fn(), start: vi.fn(), runs: vi.fn(), run: vi.fn(), approve: vi.fn(), pause: vi.fn(), cancel: vi.fn(),
+		versions: vi.fn(), validate: vi.fn(), publish: vi.fn(), activate: vi.fn(), startActive: vi.fn(), start: vi.fn(), runs: vi.fn(), run: vi.fn(), approve: vi.fn(), pause: vi.fn(), cancel: vi.fn(), resolveUnknown: vi.fn(),
 		artifacts: vi.fn(), artifactDownloadUrl: vi.fn((runId: string, id: string) => `/api/workflow-runs/${runId}/artifacts/${id}/download`),
 		exportUrl: vi.fn(),
 	},
@@ -73,6 +73,7 @@ describe('Workflows', () => {
 		apiMock.exportUrl.mockReturnValue('/api/workflows/wfv_1/export');
 		apiMock.start.mockResolvedValue(activeRun);
 		apiMock.approve.mockResolvedValue({ ...activeRun, nodes: [{ ...activeRun.nodes[0], state: 'successful' }, { ...activeRun.nodes[1], state: 'ready' }] });
+		apiMock.resolveUnknown.mockResolvedValue(activeRun);
 		apiMock.artifacts.mockResolvedValue([]);
 	});
 
@@ -319,5 +320,21 @@ describe('Workflows', () => {
 		expect(screen.getByText('message: "done"')).toBeInTheDocument();
 		connectListeners[0]();
 		await waitFor(() => expect(apiMock.versions.mock.calls.length).toBeGreaterThan(1));
+	});
+
+	it('shows recovery state and lets users resolve an unknown attempt', async () => {
+		const unknownRun: WorkflowRunDetail = {
+			...activeRun,
+			state: 'paused',
+			nodes: [{ nodeId: 'command', name: 'Commit', type: 'command', state: 'unknown', attempts: [{ id: 9, seq: 1, state: 'unknown', startedAt: 1, error: 'command interrupted by server restart' }] }],
+		};
+		apiMock.runs.mockResolvedValue([unknownRun]);
+		apiMock.run.mockResolvedValue(unknownRun);
+		render(<MemoryRouter><Workflows /></MemoryRouter>);
+
+		await screen.findByText('unknown');
+		expect(screen.getByText(/command interrupted by server restart/)).toBeInTheDocument();
+		await userEvent.setup().click(screen.getByRole('button', { name: 'Retry safely' }));
+		expect(apiMock.resolveUnknown).toHaveBeenCalledWith('wfr_1', 9, 'retry');
 	});
 });

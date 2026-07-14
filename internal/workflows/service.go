@@ -33,6 +33,7 @@ const (
 	NodeFailed     = "failed"
 	NodeCanceled   = "canceled"
 	NodeSkipped    = "skipped"
+	NodeUnknown    = "unknown"
 
 	AttemptWaiting    = "waiting"
 	AttemptStarting   = "starting"
@@ -43,6 +44,10 @@ const (
 	AttemptErrored    = "errored"
 	AttemptDenied     = "denied"
 	AttemptUnknown    = "unknown"
+
+	ResolutionSucceeded = "successful"
+	ResolutionFailed    = "failed"
+	ResolutionRetry     = "retry"
 
 	TriggerManual          = "manual"
 	TriggerInterval        = "interval"
@@ -370,6 +375,8 @@ type Attempt struct {
 	SessionState    string                     `json:"sessionState,omitempty"`
 	Affinity        string                     `json:"-"`
 	Directory       string                     `json:"-"`
+	ResolvedAt      int64                      `json:"resolvedAt,omitempty"`
+	ResolvedBy      string                     `json:"resolvedBy,omitempty"`
 }
 
 type Store interface {
@@ -404,6 +411,9 @@ type Store interface {
 	SetWorkflowAgentSessionState(string, string, int64, string, string, int64) error
 	CompleteWorkflowAgentNode(string, string, int64, bool, string, string, string, int64) error
 	ResolveWorkflowAttempt(string, int64, string, int64) error
+	ResolveWorkflowAttemptBy(string, int64, string, string, int64) error
+	MarkWorkflowAttemptUnknown(string, string, int64, string, int64) error
+	RetryWorkflowAttempt(string, string, int64, string, string, int64) error
 	InsertWorkflowArtifact(state.WorkflowArtifact) error
 	ListWorkflowArtifacts(string) ([]state.WorkflowArtifact, error)
 	GetWorkflowArtifact(string) (*state.WorkflowArtifact, error)
@@ -449,23 +459,25 @@ type Deps struct {
 }
 
 type Service struct {
-	store         Store
-	now           func() time.Time
-	notify        func(string)
-	notifyTrigger func()
-	forge         loops.ForgePoller
-	status        loops.SessionStatusInferer
-	executor      CommandExecutor
-	agent         AgentExecutor
-	usage         loops.UsageSource
-	workspace     WorkspaceProvider
-	blobs         *BlobStore
-	resolveSecret func(string) string
-	dispatchMu    sync.Mutex
-	triggerMu     sync.Mutex
-	mu            sync.Mutex
-	running       map[string]map[string]*activeCommand
-	stopping      map[string]bool
+	store          Store
+	now            func() time.Time
+	notify         func(string)
+	notifyTrigger  func()
+	forge          loops.ForgePoller
+	status         loops.SessionStatusInferer
+	executor       CommandExecutor
+	agent          AgentExecutor
+	usage          loops.UsageSource
+	workspace      WorkspaceProvider
+	blobs          *BlobStore
+	resolveSecret  func(string) string
+	dispatchMu     sync.Mutex
+	triggerMu      sync.Mutex
+	mu             sync.Mutex
+	running        map[string]map[string]*activeCommand
+	stopping       map[string]bool
+	ownedRuns      map[string]bool
+	reconciledRuns map[string]bool
 }
 
 type activeCommand struct {
@@ -487,20 +499,22 @@ func NewService(deps Deps) *Service {
 		resolveSecret = os.Getenv
 	}
 	return &Service{
-		store:         deps.Store,
-		now:           now,
-		notify:        deps.Notify,
-		notifyTrigger: deps.NotifyTrigger,
-		forge:         deps.Forge,
-		status:        deps.Status,
-		executor:      executor,
-		agent:         deps.Agent,
-		usage:         deps.Usage,
-		workspace:     deps.Workspace,
-		blobs:         deps.Blobs,
-		resolveSecret: resolveSecret,
-		running:       make(map[string]map[string]*activeCommand),
-		stopping:      make(map[string]bool),
+		store:          deps.Store,
+		now:            now,
+		notify:         deps.Notify,
+		notifyTrigger:  deps.NotifyTrigger,
+		forge:          deps.Forge,
+		status:         deps.Status,
+		executor:       executor,
+		agent:          deps.Agent,
+		usage:          deps.Usage,
+		workspace:      deps.Workspace,
+		blobs:          deps.Blobs,
+		resolveSecret:  resolveSecret,
+		running:        make(map[string]map[string]*activeCommand),
+		stopping:       make(map[string]bool),
+		ownedRuns:      make(map[string]bool),
+		reconciledRuns: make(map[string]bool),
 	}
 }
 
@@ -764,6 +778,7 @@ func (s *Service) fireLocked(ctx context.Context, version state.WorkflowVersion,
 	if err := s.store.CommitWorkflowTriggerFiring(&run, firing, stateRow); err != nil {
 		return RunDetail{}, err
 	}
+	s.markOwned(run.ID)
 	s.triggerChanged()
 	s.changed(run.ID)
 	if err := s.dispatch(ctx, run.ID); err != nil {
@@ -938,6 +953,7 @@ func (s *Service) drainQueued(ctx context.Context, version state.WorkflowVersion
 	if err := s.store.InsertWorkflowRunFromQueued(run, queued.ID, s.now().UnixMilli(), row); err != nil {
 		return false, err
 	}
+	s.markOwned(run.ID)
 	s.triggerChanged()
 	s.changed(run.ID)
 	if err := s.dispatch(ctx, run.ID); err != nil {
@@ -1034,7 +1050,7 @@ func (s *Service) GetRun(ctx context.Context, id string) (RunDetail, error) {
 	for _, row := range run.Nodes {
 		node := NodeRun{NodeID: row.NodeID, Name: row.Name, Type: row.Type, State: row.State, ReadyAt: row.ReadyAt, CompletedAt: row.CompletedAt, Attempts: make([]Attempt, 0, len(row.Attempts)), PinnedVersionID: row.PinnedVersionID}
 		for _, attempt := range row.Attempts {
-			out := Attempt{ID: attempt.ID, Seq: attempt.Seq, State: attempt.State, StartedAt: attempt.StartedAt, CompletedAt: attempt.CompletedAt, ExitCode: attempt.ExitCode, Stdout: attempt.Stdout, Stderr: attempt.Stderr, Error: attempt.Error, StdoutTruncated: attempt.StdoutTruncated, StderrTruncated: attempt.StderrTruncated, Platform: attempt.Platform, SessionID: attempt.SessionID, SessionState: attempt.SessionState, Affinity: attempt.Affinity, Directory: attempt.Directory}
+			out := Attempt{ID: attempt.ID, Seq: attempt.Seq, State: attempt.State, StartedAt: attempt.StartedAt, CompletedAt: attempt.CompletedAt, ExitCode: attempt.ExitCode, Stdout: attempt.Stdout, Stderr: attempt.Stderr, Error: attempt.Error, StdoutTruncated: attempt.StdoutTruncated, StderrTruncated: attempt.StderrTruncated, Platform: attempt.Platform, SessionID: attempt.SessionID, SessionState: attempt.SessionState, Affinity: attempt.Affinity, Directory: attempt.Directory, ResolvedAt: attempt.ResolvedAt, ResolvedBy: attempt.ResolvedBy}
 			if attempt.OutputsJSON != "" && attempt.OutputsJSON != "{}" {
 				if err := json.Unmarshal([]byte(attempt.OutputsJSON), &out.Outputs); err != nil {
 					return RunDetail{}, fmt.Errorf("decoding workflow outputs: %w", err)
@@ -1162,13 +1178,18 @@ func (s *Service) Resume(ctx context.Context, runID string) (RunDetail, error) {
 }
 
 func (s *Service) ResolveUnknown(ctx context.Context, runID string, attemptID int64, resolution string) (RunDetail, error) {
-	if resolution != AttemptSuccessful && resolution != AttemptFailed {
-		return RunDetail{}, fmt.Errorf("resolution must be %q or %q", AttemptSuccessful, AttemptFailed)
+	if resolution != ResolutionSucceeded && resolution != ResolutionFailed && resolution != ResolutionRetry {
+		return RunDetail{}, fmt.Errorf("resolution must be %q, %q, or %q", ResolutionSucceeded, ResolutionFailed, ResolutionRetry)
 	}
-	if err := s.store.ResolveWorkflowAttempt(runID, attemptID, resolution, s.now().UnixMilli()); err != nil {
+	if err := s.store.ResolveWorkflowAttemptBy(runID, attemptID, resolution, "user", s.now().UnixMilli()); err != nil {
 		return RunDetail{}, fmt.Errorf("resolving unknown attempt: %w", err)
 	}
 	s.changed(runID)
+	if resolution != ResolutionFailed {
+		if err := s.dispatch(ctx, runID); err != nil {
+			return RunDetail{}, err
+		}
+	}
 	return s.GetRun(ctx, runID)
 }
 
@@ -1400,8 +1421,11 @@ func (s *Service) Tick(ctx context.Context) error {
 	}
 	for _, run := range runs {
 		if run.State == StateActive {
-			if err := s.recoverInterrupted(ctx, run.ID); err != nil {
-				return err
+			if !s.ownsRun(run.ID) && !s.wasReconciled(run.ID) {
+				if err := s.recoverInterrupted(ctx, run.ID); err != nil {
+					return err
+				}
+				s.markReconciled(run.ID)
 			}
 			if err := s.dispatch(ctx, run.ID); err != nil {
 				return err
@@ -1423,12 +1447,73 @@ func (s *Service) recoverInterrupted(ctx context.Context, runID string) error {
 		attempt := node.Attempts[len(node.Attempts)-1]
 		switch {
 		case node.Type == "command" && attempt.State == AttemptRunning && !s.commandActive(runID, node.NodeID):
-			return s.store.CompleteWorkflowCommand(runID, node.NodeID, state.WorkflowCommandResult{State: AttemptErrored, Error: "command interrupted by server restart", OutputsJSON: "{}"}, s.now().UnixMilli())
+			if err := s.store.MarkWorkflowAttemptUnknown(runID, node.NodeID, attempt.ID, "command interrupted by server restart", s.now().UnixMilli()); err != nil {
+				return err
+			}
+			s.changed(runID)
 		case node.Type == "agent" && attempt.State == AttemptStarting && attempt.SessionID == "":
-			return s.store.CompleteWorkflowAgentNode(runID, node.NodeID, attempt.ID, false, "error", "{}", "agent launch interrupted by server restart", s.now().UnixMilli())
+			if err := s.store.RetryWorkflowAttempt(runID, node.NodeID, attempt.ID, "agent launch interrupted by server restart", "recovery", s.now().UnixMilli()); err != nil {
+				return err
+			}
+			s.changed(runID)
+		case node.Type == "agent" && attempt.State == AttemptRunning && attempt.SessionID != "":
+			reachable, err := s.agentSessionReachable(ctx, run, node, attempt)
+			if err != nil || !reachable {
+				reason := "agent session interrupted by server restart"
+				if err != nil {
+					reason = fmt.Sprintf("agent session unreachable after restart: %s", err)
+				}
+				if err := s.store.MarkWorkflowAttemptUnknown(runID, node.NodeID, attempt.ID, reason, s.now().UnixMilli()); err != nil {
+					return err
+				}
+				s.changed(runID)
+			}
 		}
 	}
 	return nil
+}
+
+// agentSessionReachable reports whether an agent attempt's OpenCode session
+// can still be inspected. A reachable terminal session is reattached too:
+// normal dispatch records its outcome on the same tick. Only an unavailable
+// session has uncertain side effects and becomes unknown.
+func (s *Service) agentSessionReachable(ctx context.Context, run RunDetail, node NodeRun, attempt Attempt) (bool, error) {
+	if s.agent == nil {
+		return false, nil
+	}
+	config := agentConfig(run.Version.Definition.Nodes, node.NodeID)
+	if config == nil {
+		return false, nil
+	}
+	_, err := s.agent.Inspect(ctx, AgentSession{ID: attempt.SessionID, Platform: attempt.Platform, State: attempt.SessionState, Directory: attempt.Directory}, config.Collectors)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *Service) markOwned(runID string) {
+	s.mu.Lock()
+	s.ownedRuns[runID] = true
+	s.mu.Unlock()
+}
+
+func (s *Service) ownsRun(runID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.ownedRuns[runID]
+}
+
+func (s *Service) markReconciled(runID string) {
+	s.mu.Lock()
+	s.reconciledRuns[runID] = true
+	s.mu.Unlock()
+}
+
+func (s *Service) wasReconciled(runID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.reconciledRuns[runID]
 }
 
 func (s *Service) commandActive(runID, nodeID string) bool {

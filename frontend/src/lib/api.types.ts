@@ -808,7 +808,7 @@ export interface CapabilitiesResponse {
 	workflows?: { enabled: boolean };
 }
 
-export type WorkflowNodeState = 'pending' | 'ready' | 'running' | 'successful' | 'failed' | 'canceled' | 'skipped';
+export type WorkflowNodeState = 'pending' | 'ready' | 'running' | 'successful' | 'failed' | 'canceled' | 'skipped' | 'unknown';
 export type WorkflowRunState = 'active' | 'paused' | 'successful' | 'failed' | 'canceled';
 
 export interface WorkflowPermissionRule {
@@ -1026,7 +1026,7 @@ export interface WorkflowRun {
 export interface WorkflowAttempt {
 	id: number;
 	seq: number;
-	state: 'waiting' | 'starting' | 'running' | 'successful' | 'failed' | 'errored' | 'denied' | 'canceled';
+	state: 'waiting' | 'starting' | 'running' | 'successful' | 'failed' | 'errored' | 'denied' | 'canceled' | 'unknown';
 	startedAt: number;
 	completedAt?: number;
 	exitCode?: number;
@@ -1039,6 +1039,8 @@ export interface WorkflowAttempt {
 	platform?: string;
 	sessionId?: string;
 	sessionState?: string;
+	resolvedAt?: number;
+	resolvedBy?: string;
 }
 
 export interface WorkflowNodeRun {

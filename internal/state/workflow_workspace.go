@@ -3,6 +3,7 @@ package state
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 )
 
@@ -65,7 +66,7 @@ func acquireWorkflowWorkspaceLease(tx *sql.Tx, runID, nodeID string, attemptID i
 	if err == nil {
 		return existing, true, nil
 	}
-	if err != sql.ErrNoRows {
+	if !errors.Is(err, sql.ErrNoRows) {
 		return 0, false, fmt.Errorf("reading existing workspace lease: %w", err)
 	}
 
