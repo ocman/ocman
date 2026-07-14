@@ -22,6 +22,8 @@ vi.mock('./api', () => ({
 // useGlobalEvents registers a module-level listener; stub it.
 vi.mock('./useGlobalEvents', () => ({
   onLoopUpdated: () => () => {},
+  onWorkflowRunUpdated: () => () => {},
+  onWorkflowTriggerUpdated: () => () => {},
 }));
 
 import { useLoopsStore } from './loopsStore';

@@ -1,12 +1,12 @@
 import { create } from 'zustand';
 import { api } from './api';
 import type { Loop, LoopCreateRequest, LoopUpdateRequest } from './api.types';
-import { onLoopUpdated } from './useGlobalEvents';
+import { onLoopUpdated, onWorkflowRunUpdated, onWorkflowTriggerUpdated } from './useGlobalEvents';
 
 /**
  * Global store for agent loops. Holds the current list (optionally
- * scoped to a session/directory) and refreshes it on `loop.updated`
- * broadcasts (AD-10) so the Loops view updates live without polling.
+ * scoped to a session/directory) and refreshes it on loop and workflow
+ * broadcasts so the compatibility view updates without polling.
  */
 type LoopsStore = {
   loops: Loop[];
@@ -94,5 +94,11 @@ export const useLoopsStore = create<LoopsStore>((set, get) => ({
 
 // Refresh the store whenever any loop changes server-side.
 onLoopUpdated(() => {
+  void useLoopsStore.getState().refresh();
+});
+onWorkflowRunUpdated(() => {
+  void useLoopsStore.getState().refresh();
+});
+onWorkflowTriggerUpdated(() => {
   void useLoopsStore.getState().refresh();
 });

@@ -76,8 +76,9 @@ type Definition struct {
 	Pools         []Pool           `json:"pools,omitempty" yaml:"pools,omitempty"`
 	Workspace     *WorkspaceConfig `json:"workspace,omitempty" yaml:"workspace,omitempty"`
 	Limits        *Limits          `json:"limits,omitempty" yaml:"limits,omitempty"`
-	// LoopCompat marks a one-node workflow copied from the legacy loop
-	// system. The legacy engine remains its execution owner until #331.
+	// LoopCompat marks a one-node workflow projected from the legacy loop
+	// system. The workflow engine executes it while the loop remains the
+	// compatibility read model and control surface.
 	LoopCompat   json.RawMessage `json:"loopCompat,omitempty" yaml:"loopCompat,omitempty"`
 	Triggers     []Trigger       `json:"triggers" yaml:"triggers"`
 	Nodes        []Node          `json:"nodes" yaml:"nodes"`
@@ -224,14 +225,17 @@ type Collector struct {
 }
 
 type AgentConfig struct {
-	Platform        string      `json:"platform,omitempty" yaml:"platform,omitempty"`
-	Directory       string      `json:"directory" yaml:"directory"`
-	Prompt          string      `json:"prompt" yaml:"prompt"`
-	Model           string      `json:"model,omitempty" yaml:"model,omitempty"`
-	Agent           string      `json:"agent,omitempty" yaml:"agent,omitempty"`
-	Reasoning       string      `json:"reasoning,omitempty" yaml:"reasoning,omitempty"`
-	SessionAffinity string      `json:"sessionAffinity,omitempty" yaml:"sessionAffinity,omitempty"`
-	Collectors      []Collector `json:"collectors,omitempty" yaml:"collectors,omitempty"`
+	Platform        string `json:"platform,omitempty" yaml:"platform,omitempty"`
+	Directory       string `json:"directory" yaml:"directory"`
+	Prompt          string `json:"prompt" yaml:"prompt"`
+	Model           string `json:"model,omitempty" yaml:"model,omitempty"`
+	Agent           string `json:"agent,omitempty" yaml:"agent,omitempty"`
+	Reasoning       string `json:"reasoning,omitempty" yaml:"reasoning,omitempty"`
+	SessionAffinity string `json:"sessionAffinity,omitempty" yaml:"sessionAffinity,omitempty"`
+	// SessionID targets an existing session for loop compatibility prompt
+	// actions. Empty creates a fresh agent session through the normal path.
+	SessionID  string      `json:"sessionId,omitempty" yaml:"sessionId,omitempty"`
+	Collectors []Collector `json:"collectors,omitempty" yaml:"collectors,omitempty"`
 }
 
 type AgentRequest struct {
@@ -382,6 +386,8 @@ type Attempt struct {
 type Store interface {
 	InsertWorkflowVersion(state.WorkflowVersion) (state.WorkflowVersion, error)
 	GetWorkflowVersion(string) (*state.WorkflowVersion, error)
+	GetLoop(string) (*state.Loop, error)
+	GetLoopWorkflow(string) (state.LoopWorkflow, error)
 	GetActiveWorkflowVersion(string) (*state.WorkflowVersion, error)
 	ListWorkflowVersions() ([]state.WorkflowVersion, error)
 	ActivateWorkflowVersion(string, int64) (*state.WorkflowVersion, error)
@@ -852,9 +858,11 @@ func (s *Service) EvaluateTriggers(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		// The migration preserves loop data as workflow history, but legacy
-		// loops still execute through their existing engine for one release.
-		if len(parsed.Definition.LoopCompat) != 0 {
+		enabled, err := s.compatibilitySchedulingEnabled(parsed.Definition)
+		if err != nil {
+			return err
+		}
+		if !enabled {
 			continue
 		}
 		for _, trigger := range parsed.Definition.Triggers {
@@ -876,7 +884,11 @@ func (s *Service) EvaluateTriggers(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if len(parsed.Definition.LoopCompat) != 0 {
+		enabled, err := s.compatibilitySchedulingEnabled(parsed.Definition)
+		if err != nil {
+			return err
+		}
+		if !enabled {
 			continue
 		}
 		for _, trigger := range parsed.Definition.Triggers {
@@ -889,6 +901,68 @@ func (s *Service) EvaluateTriggers(ctx context.Context) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// TriggerCompatibility forces a mapped legacy loop through its workflow
+// trigger. It is used by the legacy trigger/step controls; normal scheduling
+// remains in EvaluateTriggers.
+func (s *Service) TriggerCompatibility(ctx context.Context, loopID string) error {
+	mapping, err := s.store.GetLoopWorkflow(loopID)
+	if err != nil {
+		return err
+	}
+	loop, err := s.store.GetLoop(loopID)
+	if err != nil {
+		return err
+	}
+	if loop.State != loops.StateActive && loop.State != loops.StatePaused {
+		return fmt.Errorf("loop %s is not runnable (state=%s)", loopID, loop.State)
+	}
+	version, err := s.store.GetWorkflowVersion(mapping.VersionID)
+	if err != nil {
+		return err
+	}
+	parsed, err := versionFromRow(*version)
+	if err != nil {
+		return err
+	}
+	if compatibilityLoopID(parsed.Definition) != loopID {
+		return fmt.Errorf("workflow mapping for loop %s is invalid", loopID)
+	}
+	for _, trigger := range parsed.Definition.Triggers {
+		if trigger.ID == mapping.TriggerID {
+			_, err := s.fire(ctx, *version, trigger, "manual trigger", s.now().UnixMilli())
+			return err
+		}
+	}
+	return fmt.Errorf("workflow trigger for loop %s is missing", loopID)
+}
+
+func compatibilityLoopID(definition Definition) string {
+	if len(definition.LoopCompat) == 0 {
+		return ""
+	}
+	var compat struct {
+		LoopID string `json:"loopId"`
+	}
+	if json.Unmarshal(definition.LoopCompat, &compat) != nil {
+		return ""
+	}
+	return compat.LoopID
+}
+
+// compatibilitySchedulingEnabled makes the loop state controls authoritative
+// for both fresh and queued workflow trigger firings.
+func (s *Service) compatibilitySchedulingEnabled(definition Definition) (bool, error) {
+	loopID := compatibilityLoopID(definition)
+	if loopID == "" {
+		return true, nil
+	}
+	loop, err := s.store.GetLoop(loopID)
+	if err != nil {
+		return false, err
+	}
+	return loop.State == loops.StateActive, nil
 }
 
 func (s *Service) evaluateTrigger(ctx context.Context, version state.WorkflowVersion, trigger Trigger) error {
@@ -1533,17 +1607,6 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 	if err != nil || run.State != StateActive {
 		return err
 	}
-	// A compatibility workflow is a historical loop copy. Its legacy loop
-	// remains the execution owner until #331 retires that engine. Cancel any
-	// active run created before the trigger guard was deployed rather than
-	// dispatching an incomplete compatibility agent configuration.
-	if len(run.Version.Definition.LoopCompat) != 0 {
-		if err := s.store.SetWorkflowRunState(runID, StateActive, StateCanceled, s.now().UnixMilli()); err != nil {
-			return err
-		}
-		s.changed(runID)
-		return nil
-	}
 	if moved, err := s.applyPolicies(ctx, run); err != nil {
 		return err
 	} else if moved {
@@ -1581,9 +1644,18 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 				continue
 			}
 			config := agentConfig(run.Version.Definition.Nodes, node.NodeID)
+			if config == nil {
+				config = compatibilityAgentConfig(run.Version.Definition)
+			}
+			if config == nil {
+				return fmt.Errorf("agent node %q has no configuration", node.NodeID)
+			}
 			attempt := node.Attempts[len(node.Attempts)-1]
 			if attempt.SessionID == "" {
-				existing := affinitySession(run, node.NodeID, config)
+				existing := config.SessionID
+				if existing == "" {
+					existing = affinitySession(run, node.NodeID, config)
+				}
 				// Claim atomically holds run-concurrency + named-pool
 				// capacity. A failed claim (lost race or full pool) skips
 				// this node; other ready agents still get their turn and
@@ -1922,6 +1994,34 @@ func agentConfig(nodes []Node, id string) *AgentConfig {
 		}
 	}
 	return nil
+}
+
+// compatibilityAgentConfig keeps definitions written by the original #325
+// migration runnable. New projections persist the same fields on the agent
+// node, but existing installations only have loopCompat metadata.
+func compatibilityAgentConfig(definition Definition) *AgentConfig {
+	if len(definition.LoopCompat) == 0 {
+		return nil
+	}
+	var compat struct {
+		ActionType     string `json:"actionType"`
+		ActionTemplate string `json:"actionTemplate"`
+		RootSessionID  string `json:"rootSessionId"`
+		TriggerConfig  struct {
+			TargetSessionID string `json:"target_session_id"`
+		} `json:"triggerConfig"`
+	}
+	if json.Unmarshal(definition.LoopCompat, &compat) != nil {
+		return nil
+	}
+	config := &AgentConfig{Directory: definition.Directory, Prompt: compat.ActionTemplate}
+	switch compat.ActionType {
+	case loops.ActionPromptRoot:
+		config.SessionID = compat.RootSessionID
+	case loops.ActionPromptChild:
+		config.SessionID = compat.TriggerConfig.TargetSessionID
+	}
+	return config
 }
 
 func affinitySession(run RunDetail, currentNode string, config *AgentConfig) string {

@@ -101,9 +101,8 @@ func (s *Server) processChildSession(ctx context.Context, cs state.ChildSession)
 
 	// Inject a result message into the parent session when terminal.
 	if isTerminalStatus(newStatus) {
-		// Loop-attached children route their completion to the loop
-		// engine, which evaluates stop conditions and performs the next
-		// action (AD-4). Non-loop children keep the one-shot injection.
+		// Loop-attached children route their completion to the compatibility
+		// workflow. Non-loop children keep the one-shot injection.
 		if cs.LoopID != "" {
 			s.routeChildCompletionToLoop(ctx, cs)
 			return
@@ -112,14 +111,10 @@ func (s *Server) processChildSession(ctx context.Context, cs state.ChildSession)
 	}
 }
 
-// routeChildCompletionToLoop nudges the owning loop to evaluate now that
-// one of its children has reached a terminal state (AD-4). The engine's
-// next tick would catch it anyway; this just shortens the latency.
+// routeChildCompletionToLoop nudges the owning compatibility workflow now
+// that one of its children has reached a terminal state. The workflow trigger
+// engine would catch it on its next tick; this just shortens the latency.
 func (s *Server) routeChildCompletionToLoop(ctx context.Context, cs state.ChildSession) {
-	svc := s.loopSvc()
-	if svc == nil {
-		return
-	}
 	l, err := s.stateDB.GetLoop(cs.LoopID)
 	if err != nil {
 		log.WithFields(log.Fields{"loopID": cs.LoopID, "childID": cs.ID, "error": err}).
@@ -129,7 +124,12 @@ func (s *Server) routeChildCompletionToLoop(ctx context.Context, cs state.ChildS
 	if l.State != "active" {
 		return
 	}
-	if _, err := svc.EvaluateOne(ctx, *l); err != nil {
+	if _, err := s.stateDB.GetLoopWorkflow(cs.LoopID); err != nil {
+		log.WithFields(log.Fields{"loopID": cs.LoopID, "childID": cs.ID, "error": err}).
+			Warn("mcp-watcher: loading loop workflow map")
+		return
+	}
+	if err := s.workflowSvc().TriggerCompatibility(ctx, l.ID); err != nil {
 		log.WithFields(log.Fields{"loopID": cs.LoopID, "error": err}).
 			Warn("mcp-watcher: routing child completion to loop")
 	}

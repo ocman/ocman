@@ -11,6 +11,12 @@ import (
 	"github.com/NoUseFreak/ocman/internal/loops"
 )
 
+type messengerFunc func(context.Context, string, string, string, string, string) error
+
+func (f messengerFunc) SendPrompt(ctx context.Context, sessionID, prompt, model, agent, reasoning string) error {
+	return f(ctx, sessionID, prompt, model, agent, reasoning)
+}
+
 // newLoopsTestServer builds a Server with an in-memory state DB and a
 // loop service whose messenger is a no-op (no platform registry needed).
 func newLoopsTestServer(t *testing.T) *Server {

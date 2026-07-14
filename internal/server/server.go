@@ -309,7 +309,6 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	go s.runProjectsIndexLoop(ctx)
 	go s.runLLMMetricsLoop(ctx)
 	go s.runChildSessionWatcher(ctx)
-	go s.runLoopEngine(ctx)
 	go s.runWorkflowEngine(ctx)
 	go s.runWorkflowTriggerEngine(ctx)
 	go s.runQueueSweep(ctx)

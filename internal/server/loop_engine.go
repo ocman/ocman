@@ -3,26 +3,12 @@ package server
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
-
-	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/loops"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/state"
-)
-
-const (
-	// loopEngineTickInterval matches the existing watcher cadence; each
-	// trigger self-throttles (AD-2) so a short tick is fine.
-	loopEngineTickInterval = 5 * time.Second
-
-	// loopEngineWorkers bounds concurrent loop evaluation so one slow
-	// loop (forge call, spawn) cannot starve others (AD-1 / NFR-2).
-	loopEngineWorkers = 4
 )
 
 // loopServiceFn builds the loop Service lazily, so tests can override it.
@@ -37,96 +23,21 @@ func (s *Server) loopSvc() *loops.Service {
 			return
 		}
 		s.loopSvcCached = loops.NewService(loops.Deps{
-			Store:     s.stateDB,
-			Messenger: &loopMessenger{s: s},
-			Launcher:  &loopLauncher{s: s},
-			Forge:     &loopForge{s: s},
-			Status:    &loopStatusInferer{s: s},
-			Usage:     &loopUsage{s: s},
-			Dirs:      &loopDirResolver{s: s},
-			Notify:    func(loopID string) { s.broadcastLoopUpdated(loopID) },
+			Store:       s.stateDB,
+			Messenger:   &loopMessenger{s: s},
+			Launcher:    &loopLauncher{s: s},
+			Forge:       &loopForge{s: s},
+			Status:      &loopStatusInferer{s: s},
+			Usage:       &loopUsage{s: s},
+			Dirs:        &loopDirResolver{s: s},
+			Notify:      func(loopID string) { s.broadcastLoopUpdated(loopID) },
+			MapWorkflow: s.stateDB.EnsureLoopWorkflow,
+			TriggerWorkflow: func(ctx context.Context, loopID string) error {
+				return s.workflowSvc().TriggerCompatibility(ctx, loopID)
+			},
 		})
 	})
 	return s.loopSvcCached
-}
-
-// runLoopEngine is the agent-loops engine goroutine (AD-1). It ticks on a
-// fixed interval, loads active loops, and dispatches each to a bounded
-// worker pool. A per-loop in-flight guard prevents a long action from
-// double-firing on the next tick; durable idempotency comes from the
-// pending loop_iterations row (AD-5a).
-func (s *Server) runLoopEngine(ctx context.Context) {
-	if s.stateDB == nil {
-		return
-	}
-	ticker := time.NewTicker(loopEngineTickInterval)
-	defer ticker.Stop()
-
-	inflight := &inflightSet{m: map[string]bool{}}
-	sem := make(chan struct{}, loopEngineWorkers)
-
-	tick := func() { s.loopEngineTick(ctx, inflight, sem) }
-	runWithRecover("loop-engine", tick)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			runWithRecover("loop-engine", tick)
-		}
-	}
-}
-
-// loopEngineTick evaluates every active loop once.
-func (s *Server) loopEngineTick(ctx context.Context, inflight *inflightSet, sem chan struct{}) {
-	active, err := s.stateDB.ListActiveLoops()
-	if err != nil {
-		log.WithError(err).Warn("loop-engine: listing active loops")
-		return
-	}
-	svc := s.loopSvc()
-	var wg sync.WaitGroup
-	for _, l := range active {
-		if !inflight.acquire(l.ID) {
-			continue // already being evaluated
-		}
-		wg.Add(1)
-		sem <- struct{}{}
-		go func(loop state.Loop) {
-			defer wg.Done()
-			defer func() { <-sem }()
-			defer inflight.release(loop.ID)
-			runWithRecover("loop-engine-eval", func() {
-				if _, err := svc.EvaluateOne(ctx, loop); err != nil {
-					log.WithFields(log.Fields{"loopID": loop.ID, "error": err}).
-						Warn("loop-engine: evaluate")
-				}
-			})
-		}(l)
-	}
-	wg.Wait()
-}
-
-// inflightSet tracks loops currently being evaluated (AD-1 in-flight guard).
-type inflightSet struct {
-	mu sync.Mutex
-	m  map[string]bool
-}
-
-func (s *inflightSet) acquire(id string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.m[id] {
-		return false
-	}
-	s.m[id] = true
-	return true
-}
-
-func (s *inflightSet) release(id string) {
-	s.mu.Lock()
-	delete(s.m, id)
-	s.mu.Unlock()
 }
 
 // --- adapters: bridge loops.* interfaces to server dependencies ---

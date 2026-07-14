@@ -328,20 +328,20 @@ documented in `docs/mcp.md`.
 
 ## Agent loops
 
-Ocman runs **agent loops** — self-driving orchestrations that fire an
-action on a trigger until a stop condition is met. A loop generalizes the
-one-shot child-session watcher into a trigger→action engine
-(`spec/agent-loops/`).
+Ocman keeps **agent loops** as one-release compatibility wrappers over
+one-node workflows. The workflow scheduler owns their trigger and action
+execution; loop identifiers and controls remain available during the
+transition.
 
 - **Domain** lives in `internal/loops/` (`Service`, triggers, action
   dispatch, stop evaluation, template rendering, workflow derivation),
   decoupled from `internal/server` via small interfaces (Store,
   Messenger, Launcher, ForgePoller, SessionStatusInferer, UsageSource).
-- **Engine**: `internal/server/loop_engine.go` runs `runLoopEngine`
-  (started in `StartOnListener`) — a single tick goroutine (5 s) that
-  loads `active` loops and dispatches each to a bounded worker pool, with
-  a per-loop in-flight guard. Adapters in the same file bridge the loops
-  interfaces to the registry / SessionLauncher / forge clients.
+- **Engine**: `internal/server/workflow_engine.go` evaluates loop-compatible
+  workflow triggers alongside native workflows. `loop_workflow_map` resolves
+  legacy loop IDs, and the loop service forwards manual controls to the mapped
+  workflow trigger. The compatibility surfaces are removed one release after
+  this workflow-backed release.
 - **State** (migration v15): `loops` + `loop_iterations` tables, plus a
   nullable `child_sessions.loop_id` linking spawned children to a loop.
   `loop_iterations` doubles as an idempotency outbox (a `pending` row is

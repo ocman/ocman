@@ -13,43 +13,51 @@ import (
 // Service is the loop domain API used by REST, MCP, and the engine
 // (AD-8). Single service, two transports — no behavior drift.
 type Service struct {
-	store     Store
-	messenger Messenger
-	launcher  Launcher
-	forge     ForgePoller
-	status    SessionStatusInferer
-	usage     UsageSource
-	dirs      SessionDirResolver
-	notify    func(loopID string) // optional SSE broadcast hook (AD-10)
-	now       func() time.Time    // injectable clock for tests
+	store           Store
+	messenger       Messenger
+	launcher        Launcher
+	forge           ForgePoller
+	status          SessionStatusInferer
+	usage           UsageSource
+	dirs            SessionDirResolver
+	notify          func(loopID string) // optional SSE broadcast hook (AD-10)
+	mapWorkflow     func(string) error
+	triggerWorkflow func(context.Context, string) error
+	now             func() time.Time // injectable clock for tests
 }
 
 // Deps bundles the injected dependencies for NewService. All but Store
 // may be nil in reduced configurations (e.g. tests, or a build without
 // a forge); the relevant trigger/action then errors at evaluation time.
 type Deps struct {
-	Store     Store
-	Messenger Messenger
-	Launcher  Launcher
-	Forge     ForgePoller
-	Status    SessionStatusInferer
-	Usage     UsageSource
-	Dirs      SessionDirResolver
-	Notify    func(loopID string)
+	Store       Store
+	Messenger   Messenger
+	Launcher    Launcher
+	Forge       ForgePoller
+	Status      SessionStatusInferer
+	Usage       UsageSource
+	Dirs        SessionDirResolver
+	Notify      func(loopID string)
+	MapWorkflow func(loopID string) error
+	// TriggerWorkflow runs a mapped workflow for legacy manual controls.
+	// Scheduled execution belongs to the workflow engine.
+	TriggerWorkflow func(context.Context, string) error
 }
 
 // NewService constructs a Service.
 func NewService(d Deps) *Service {
 	return &Service{
-		store:     d.Store,
-		messenger: d.Messenger,
-		launcher:  d.Launcher,
-		forge:     d.Forge,
-		status:    d.Status,
-		usage:     d.Usage,
-		dirs:      d.Dirs,
-		notify:    d.Notify,
-		now:       time.Now,
+		store:           d.Store,
+		messenger:       d.Messenger,
+		launcher:        d.Launcher,
+		forge:           d.Forge,
+		status:          d.Status,
+		usage:           d.Usage,
+		dirs:            d.Dirs,
+		notify:          d.Notify,
+		mapWorkflow:     d.MapWorkflow,
+		triggerWorkflow: d.TriggerWorkflow,
+		now:             time.Now,
 	}
 }
 
@@ -171,6 +179,11 @@ func (s *Service) Create(ctx context.Context, spec LoopSpec) (LoopView, error) {
 	}
 	if err := s.store.InsertLoop(l); err != nil {
 		return LoopView{}, err
+	}
+	if s.mapWorkflow != nil {
+		if err := s.mapWorkflow(l.ID); err != nil {
+			return LoopView{}, fmt.Errorf("creating workflow compatibility view: %w", err)
+		}
 	}
 	s.broadcast(l.ID)
 	return toView(l), nil
@@ -394,6 +407,12 @@ func (s *Service) Restart(ctx context.Context, id string) (LoopView, error) {
 // Step runs one cycle for a loop regardless of pause state, then leaves
 // it paused. Used by the manual "step" control.
 func (s *Service) Step(ctx context.Context, id string) error {
+	if s.triggerWorkflow != nil {
+		if err := s.triggerWorkflow(ctx, id); err != nil {
+			return err
+		}
+		return s.Pause(ctx, id)
+	}
 	l, err := s.store.GetLoop(id)
 	if err != nil {
 		return err
@@ -461,6 +480,9 @@ func (s *Service) TriggerNow(ctx context.Context, id string) error {
 	}
 	if l.State != StateActive && l.State != StatePaused {
 		return fmt.Errorf("loop %s is not runnable (state=%s)", id, l.State)
+	}
+	if s.triggerWorkflow != nil {
+		return s.triggerWorkflow(ctx, id)
 	}
 
 	now := s.clock()

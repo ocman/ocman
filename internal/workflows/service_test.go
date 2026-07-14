@@ -1587,8 +1587,11 @@ func TestTriggerOverlapPoliciesAndQueuedRestart(t *testing.T) {
 	}
 }
 
-func TestEvaluateTriggers_SkipsLoopCompatibilityWorkflows(t *testing.T) {
+func TestEvaluateTriggers_RunsActiveLoopCompatibilityWorkflow(t *testing.T) {
 	h := newHarness(t)
+	if err := h.db.InsertLoop(state.Loop{ID: "loop_legacy", Platform: "opencode", RootSessionID: "session", TriggerType: loops.TriggerSchedule, ActionType: loops.ActionPromptRoot, StopConditions: `{"max_cost_usd":1}`, State: loops.StateActive, CreatedAt: h.now.UnixMilli(), UpdatedAt: h.now.UnixMilli()}); err != nil {
+		t.Fatal(err)
+	}
 	definition := strings.Replace(sequentialApprovals,
 		`"version":"2026.07",`,
 		`"version":"2026.07","loopCompat":{"loopId":"loop_legacy"},`, 1)
@@ -1606,12 +1609,38 @@ func TestEvaluateTriggers_SkipsLoopCompatibilityWorkflows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(runs) != 0 {
-		t.Fatalf("loop compatibility workflow was dispatched: %+v", runs)
+	if len(runs) != 1 {
+		t.Fatalf("loop compatibility workflow was not dispatched: %+v", runs)
 	}
 }
 
-func TestTick_CancelsActiveLoopCompatibilityWorkflowRun(t *testing.T) {
+func TestEvaluateTriggers_SkipsPausedLoopCompatibilityWorkflow(t *testing.T) {
+	h := newHarness(t)
+	if err := h.db.InsertLoop(state.Loop{ID: "loop_paused", Platform: "opencode", RootSessionID: "session", TriggerType: loops.TriggerSchedule, ActionType: loops.ActionPromptRoot, StopConditions: `{"max_cost_usd":1}`, State: loops.StatePaused, CreatedAt: h.now.UnixMilli(), UpdatedAt: h.now.UnixMilli()}); err != nil {
+		t.Fatal(err)
+	}
+	definition := strings.Replace(sequentialApprovals,
+		`"version":"2026.07",`,
+		`"version":"2026.07","loopCompat":{"loopId":"loop_paused"},`, 1)
+	definition = strings.Replace(definition,
+		`{"id":"manual","type":"manual"}`,
+		`{"id":"timer","type":"interval","intervalSeconds":60}`, 1)
+	if _, err := h.svc.PublishJSON(context.Background(), []byte(definition)); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.svc.EvaluateTriggers(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	runs, err := h.svc.ListRuns(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 0 {
+		t.Fatalf("paused loop compatibility workflow was dispatched: %+v", runs)
+	}
+}
+
+func TestTick_KeepsActiveLoopCompatibilityWorkflowRun(t *testing.T) {
 	h := newHarness(t)
 	definition := strings.Replace(sequentialApprovals,
 		`"version":"2026.07",`,
@@ -1639,8 +1668,8 @@ func TestTick_CancelsActiveLoopCompatibilityWorkflowRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.State != StateCanceled {
-		t.Fatalf("active compatibility run state = %q, want %q", got.State, StateCanceled)
+	if got.State != StateActive {
+		t.Fatalf("active compatibility run state = %q, want %q", got.State, StateActive)
 	}
 }
 

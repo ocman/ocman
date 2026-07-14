@@ -57,8 +57,8 @@ func migrateToV28(tx *sql.Tx) error {
 
 	rows, err := tx.Query(`
 		SELECT id, CASE WHEN title != '' THEN title ELSE id END,
-		       directory, trigger_type, trigger_config, action_type,
-		       action_template, stop_conditions, state, created_at, updated_at
+		       platform, root_session_id, directory, trigger_type, trigger_config, action_type,
+		       action_template, stop_conditions, state, created_at, updated_at, model, agent, reasoning
 		FROM loops
 		WHERE state != 'deleted'
 		  AND id NOT IN (SELECT loop_id FROM loop_workflow_map)
@@ -67,17 +67,18 @@ func migrateToV28(tx *sql.Tx) error {
 		return fmt.Errorf("listing loops to migrate: %w", err)
 	}
 	type loopRow struct {
-		id, name, directory                    string
-		triggerType, triggerConfig, actionType string
-		actionTemplate, stopConditions, state  string
-		createdAt, updatedAt                   int64
+		id, name, platform, rootSessionID, directory string
+		triggerType, triggerConfig, actionType       string
+		actionTemplate, stopConditions, state        string
+		createdAt, updatedAt                         int64
+		model, agent, reasoning                      string
 	}
 	var loopsToMigrate []loopRow
 	for rows.Next() {
 		var l loopRow
-		if err := rows.Scan(&l.id, &l.name, &l.directory, &l.triggerType, &l.triggerConfig,
+		if err := rows.Scan(&l.id, &l.name, &l.platform, &l.rootSessionID, &l.directory, &l.triggerType, &l.triggerConfig,
 			&l.actionType, &l.actionTemplate, &l.stopConditions, &l.state,
-			&l.createdAt, &l.updatedAt); err != nil {
+			&l.createdAt, &l.updatedAt, &l.model, &l.agent, &l.reasoning); err != nil {
 			rows.Close()
 			return fmt.Errorf("scanning loop: %w", err)
 		}
@@ -91,17 +92,17 @@ func migrateToV28(tx *sql.Tx) error {
 	}
 
 	for _, l := range loopsToMigrate {
-		if err := migrateLoopToWorkflow(tx, l.id, l.name, l.directory, l.triggerType,
+		if err := migrateLoopToWorkflow(tx, l.id, l.name, l.platform, l.rootSessionID, l.directory, l.triggerType,
 			l.triggerConfig, l.actionType, l.actionTemplate, l.stopConditions,
-			l.state, l.createdAt, l.updatedAt); err != nil {
+			l.state, l.createdAt, l.updatedAt, l.model, l.agent, l.reasoning); err != nil {
 			return fmt.Errorf("migrating loop %s: %w", l.id, err)
 		}
 	}
 	return nil
 }
 
-func migrateLoopToWorkflow(tx *sql.Tx, loopID, name, directory, triggerType, triggerConfig,
-	actionType, actionTemplate, stopConditions, loopState string, createdAt, updatedAt int64) error {
+func migrateLoopToWorkflow(tx *sql.Tx, loopID, name, platform, rootSessionID, directory, triggerType, triggerConfig,
+	actionType, actionTemplate, stopConditions, loopState string, createdAt, updatedAt int64, model, agent, reasoning string) error {
 	workflowID := "wf_loop_" + loopID
 	versionID := "wfv_loop_" + loopID
 	nodeID := "action"
@@ -109,6 +110,9 @@ func migrateLoopToWorkflow(tx *sql.Tx, loopID, name, directory, triggerType, tri
 
 	trigger := loopTriggerToWorkflow(triggerType, triggerConfig)
 	trigger["id"] = triggerID
+	trigger["directory"] = directory
+	trigger["platform"] = platform
+	trigger["sessionId"] = rootSessionID
 
 	// Preserve the loop's original settings verbatim so nothing is lost in
 	// the copy (faithful as data permits). CEL/repeat/etc. are absent for a
@@ -119,12 +123,25 @@ func migrateLoopToWorkflow(tx *sql.Tx, loopID, name, directory, triggerType, tri
 		"actionTemplate": actionTemplate,
 		"triggerType":    triggerType,
 		"state":          loopState,
+		"rootSessionId":  rootSessionID,
 	}
 	if triggerConfig != "" && triggerConfig != "{}" {
 		loopCompat["triggerConfig"] = json.RawMessage(triggerConfig)
 	}
 	if stopConditions != "" && stopConditions != "{}" {
 		loopCompat["stopConditions"] = json.RawMessage(stopConditions)
+	}
+
+	agentConfig := map[string]any{"platform": platform, "directory": directory, "prompt": actionTemplate, "model": model, "agent": agent, "reasoning": reasoning}
+	if actionType == "prompt_root" {
+		agentConfig["sessionId"] = rootSessionID
+	}
+	var cfg struct {
+		TargetSessionID string `json:"target_session_id"`
+	}
+	_ = json.Unmarshal([]byte(triggerConfig), &cfg)
+	if actionType == "prompt_child" {
+		agentConfig["sessionId"] = cfg.TargetSessionID
 	}
 
 	definition := map[string]any{
@@ -135,9 +152,10 @@ func migrateLoopToWorkflow(tx *sql.Tx, loopID, name, directory, triggerType, tri
 		"directory":   directory,
 		"triggers":    []any{trigger},
 		"nodes": []any{map[string]any{
-			"id":   nodeID,
-			"name": name,
-			"type": "agent",
+			"id":    nodeID,
+			"name":  name,
+			"type":  "agent",
+			"agent": agentConfig,
 		}},
 		"dependencies": []any{},
 		"loopCompat":   loopCompat,

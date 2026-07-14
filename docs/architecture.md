@@ -63,7 +63,7 @@ flowchart TD
 ```
 
 - **internal/server** — HTTP mux, SSE broadcast/fanout, ~60 handler
-  files, plus tmux, terminal, whisper, auto-approve, and loop/workflow ticks.
+   files, plus tmux, terminal, whisper, auto-approve, and workflow ticks.
 - **platforms.Registry** — session-scoped seam. One adapter per
   platform; remotes register as compound-ID platforms so handlers
   can't tell local from remote.
@@ -114,12 +114,13 @@ flowchart TD
   their new workflow ids. The copy is idempotent (already-mapped loops are
   skipped) and interrupted-safe (it runs inside the migration transaction).
   The original `loops` / `loop_iterations` tables and the loop
-  REST/MCP/UI surfaces are **left intact as compatibility wrappers for one
-  release**: they keep executing via `loops.Service` while the workflow copy
-  provides the consolidated view. **Planned removal:** the loop engine,
-  `/api/loops`, the loop MCP tools, and the standalone Loops UI are slated
-  for deletion **one release after** the workflow scheduler owns loop-style
-  execution end to end; until then loop and workflow surfaces coexist.
+   REST/MCP/UI surfaces are **left intact as compatibility wrappers for one
+   release**. They retain loop identifiers and payloads, while mapped loops
+   execute only through the workflow scheduler; `loops.Service` translates
+   compatibility controls to the mapped workflow trigger. **Planned removal:**
+   `/api/loops`, the loop MCP tools, and the standalone Loops UI are slated
+   for deletion one release after this workflow-backed compatibility release;
+   until then loop and workflow surfaces coexist.
 - **internal/mcp** — prompt composer + session launcher + tool
   handlers; all side effects go through the same `Platform` interface
   the HTTP layer uses.
@@ -150,7 +151,7 @@ sequenceDiagram
     R->>A: ListSessions()
     A->>D: SQL json_extract / HTTP proxy
     D-->>B: JSON (status inferred at query time)
-    Note over S,E: background: loop/workflow engine + trigger ticks,<br/>child-session watcher, remote gRPC streams
+     Note over S,E: background: workflow engine + trigger ticks,<br/>child-session watcher, remote gRPC streams
     E-->>B: SSE (session.updated, loop.updated, workflow.run.updated)
 ```
 
