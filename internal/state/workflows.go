@@ -86,6 +86,81 @@ type WorkflowCommandResult struct {
 	StderrTruncated bool
 }
 
+// WorkflowResourceRequest is one pool acquisition an attempt needs. Pool
+// "" is the implicit run-concurrency cap. Capacity is the pool's total.
+type WorkflowResourceRequest struct {
+	Pool     string
+	Units    int
+	Capacity int
+}
+
+// WorkflowResourceLease is a durable record of held capacity, used for
+// restart reconciliation and UI visibility.
+type WorkflowResourceLease struct {
+	RunID      string
+	NodeID     string
+	AttemptID  int64
+	Pool       string
+	Units      int
+	AcquiredAt int64
+}
+
+// acquireWorkflowResources atomically holds every requested unit within
+// tx, failing (rolling back to the caller) if any pool lacks capacity.
+// Idempotent per (run, node, pool): a re-acquire keeps the existing lease
+// row rather than double-counting. Returns false without error when the
+// run is out of capacity for at least one requested pool.
+func acquireWorkflowResources(tx *sql.Tx, runID, nodeID string, attemptID int64, requests []WorkflowResourceRequest, now int64) (bool, error) {
+	for _, req := range requests {
+		if req.Units <= 0 {
+			continue
+		}
+		var held int
+		if err := tx.QueryRow(`SELECT COALESCE(SUM(units), 0) FROM workflow_resource_lease WHERE run_id = ? AND pool = ? AND node_id != ?`, runID, req.Pool, nodeID).Scan(&held); err != nil {
+			return false, fmt.Errorf("summing held resources: %w", err)
+		}
+		if held+req.Units > req.Capacity {
+			return false, nil
+		}
+	}
+	for _, req := range requests {
+		if req.Units <= 0 {
+			continue
+		}
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO workflow_resource_lease (run_id, node_id, attempt_id, pool, units, acquired_at) VALUES (?, ?, ?, ?, ?, ?)`, runID, nodeID, attemptID, req.Pool, req.Units, now); err != nil {
+			return false, fmt.Errorf("holding resource: %w", err)
+		}
+	}
+	return true, nil
+}
+
+// releaseWorkflowResources drops every held lease for a node within tx.
+func releaseWorkflowResources(exec workflowRunExecer, runID, nodeID string) error {
+	if _, err := exec.Exec(`DELETE FROM workflow_resource_lease WHERE run_id = ? AND node_id = ?`, runID, nodeID); err != nil {
+		return fmt.Errorf("releasing resources: %w", err)
+	}
+	return nil
+}
+
+// ListWorkflowResourceLeases returns held capacity for a run, for UI and
+// restart reconciliation.
+func (d *DB) ListWorkflowResourceLeases(runID string) ([]WorkflowResourceLease, error) {
+	rows, err := d.db.Query(`SELECT run_id, node_id, attempt_id, pool, units, acquired_at FROM workflow_resource_lease WHERE run_id = ? ORDER BY pool, node_id`, runID)
+	if err != nil {
+		return nil, fmt.Errorf("listing resource leases: %w", err)
+	}
+	defer rows.Close()
+	var out []WorkflowResourceLease
+	for rows.Next() {
+		var lease WorkflowResourceLease
+		if err := rows.Scan(&lease.RunID, &lease.NodeID, &lease.AttemptID, &lease.Pool, &lease.Units, &lease.AcquiredAt); err != nil {
+			return nil, fmt.Errorf("scanning resource lease: %w", err)
+		}
+		out = append(out, lease)
+	}
+	return out, rows.Err()
+}
+
 func (d *DB) InsertWorkflowVersion(v WorkflowVersion) (WorkflowVersion, error) {
 	tx, err := d.db.Begin()
 	if err != nil {
@@ -328,16 +403,38 @@ func (d *DB) workflowAttempts(runID, nodeID string) ([]WorkflowAttempt, error) {
 	return out, rows.Err()
 }
 
-func (d *DB) StartWorkflowCommand(runID, nodeID string, now int64) (bool, error) {
-	result, err := d.db.Exec(`
-		UPDATE workflow_node_attempt SET state = 'running', started_at = ?
-		WHERE run_id = ? AND node_id = ? AND state = 'waiting'
-		AND EXISTS (SELECT 1 FROM workflow_run WHERE id = ? AND state = 'active')`, now, runID, nodeID, runID)
+func (d *DB) StartWorkflowCommand(runID, nodeID string, requests []WorkflowResourceRequest, now int64) (bool, error) {
+	tx, err := d.db.Begin()
 	if err != nil {
+		return false, fmt.Errorf("beginning workflow command start: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var attemptID int64
+	err = tx.QueryRow(`
+		SELECT a.id FROM workflow_node_attempt a
+		WHERE a.run_id = ? AND a.node_id = ? AND a.state = 'waiting'
+		AND EXISTS (SELECT 1 FROM workflow_run WHERE id = ? AND state = 'active')`, runID, nodeID, runID).Scan(&attemptID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("finding waiting workflow command: %w", err)
+	}
+	acquired, err := acquireWorkflowResources(tx, runID, nodeID, attemptID, requests, now)
+	if err != nil {
+		return false, err
+	}
+	if !acquired {
+		return false, nil
+	}
+	if _, err = tx.Exec(`UPDATE workflow_node_attempt SET state = 'running', started_at = ? WHERE id = ?`, now, attemptID); err != nil {
 		return false, fmt.Errorf("starting workflow command: %w", err)
 	}
-	changed, err := result.RowsAffected()
-	return changed == 1, err
+	if err = tx.Commit(); err != nil {
+		return false, fmt.Errorf("committing workflow command start: %w", err)
+	}
+	return true, nil
 }
 
 func (d *DB) CompleteWorkflowCommand(runID, nodeID string, result WorkflowCommandResult, now int64) error {
@@ -371,6 +468,11 @@ func (d *DB) CompleteWorkflowCommand(runID, nodeID string, result WorkflowComman
 	if _, err = tx.Exec(`UPDATE workflow_node_run SET state = ?, completed_at = ? WHERE run_id = ? AND node_id = ? AND state = 'ready'`, nodeState, now, runID, nodeID); err != nil {
 		return fmt.Errorf("completing workflow command node: %w", err)
 	}
+	// The settled attempt releases its held capacity so waiting siblings
+	// can acquire it.
+	if err = releaseWorkflowResources(tx, runID, nodeID); err != nil {
+		return err
+	}
 	if result.State == "canceled" {
 		return tx.Commit()
 	}
@@ -383,6 +485,9 @@ func (d *DB) CompleteWorkflowCommand(runID, nodeID string, result WorkflowComman
 		}
 		if _, err = tx.Exec(`UPDATE workflow_node_attempt SET state = 'canceled', completed_at = ? WHERE run_id = ? AND node_id != ? AND state IN ('waiting', 'running')`, now, runID, nodeID); err != nil {
 			return fmt.Errorf("canceling other attempts: %w", err)
+		}
+		if _, err = tx.Exec(`DELETE FROM workflow_resource_lease WHERE run_id = ?`, runID); err != nil {
+			return fmt.Errorf("releasing resources on failure: %w", err)
 		}
 		if _, err = tx.Exec(`UPDATE workflow_run SET state = 'failed', updated_at = ?, completed_at = ? WHERE id = ?`, now, now, runID); err != nil {
 			return fmt.Errorf("failing workflow run: %w", err)
@@ -439,12 +544,27 @@ func (d *DB) CompleteWorkflowCommand(runID, nodeID string, result WorkflowComman
 	return tx.Commit()
 }
 
-func (d *DB) ClaimWorkflowAgentAttempt(runID, nodeID string, attemptID int64, affinity, directory string, now int64) (bool, error) {
+func (d *DB) ClaimWorkflowAgentAttempt(runID, nodeID string, attemptID int64, affinity, directory string, requests []WorkflowResourceRequest, now int64) (bool, error) {
 	tx, err := d.db.Begin()
 	if err != nil {
 		return false, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	var attemptState string
+	err = tx.QueryRow(`SELECT state FROM workflow_node_attempt WHERE id = ? AND run_id = ? AND node_id = ?`, attemptID, runID, nodeID).Scan(&attemptState)
+	if errors.Is(err, sql.ErrNoRows) || attemptState != "waiting" {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("reading workflow agent attempt: %w", err)
+	}
+	acquired, err := acquireWorkflowResources(tx, runID, nodeID, attemptID, requests, now)
+	if err != nil {
+		return false, err
+	}
+	if !acquired {
+		return false, nil
+	}
 	res, err := tx.Exec(`UPDATE workflow_node_attempt SET state = 'starting', affinity = ?, directory = ? WHERE id = ? AND run_id = ? AND node_id = ? AND state = 'waiting'`, affinity, directory, attemptID, runID, nodeID)
 	if err != nil {
 		return false, fmt.Errorf("claiming workflow agent attempt: %w", err)
@@ -502,7 +622,13 @@ func (d *DB) CompleteWorkflowAgentNode(runID, nodeID string, attemptID int64, su
 	if _, err = tx.Exec(`UPDATE workflow_node_attempt SET state = ?, session_state = ?, outputs_json = ?, error = ?, completed_at = ? WHERE id = ? AND state IN ('starting', 'running')`, attemptState, sessionState, outputsJSON, attemptError, now, attemptID); err != nil {
 		return fmt.Errorf("completing workflow agent attempt: %w", err)
 	}
+	if err = releaseWorkflowResources(tx, runID, nodeID); err != nil {
+		return err
+	}
 	if !successful {
+		if _, err = tx.Exec(`DELETE FROM workflow_resource_lease WHERE run_id = ?`, runID); err != nil {
+			return fmt.Errorf("releasing resources on failure: %w", err)
+		}
 		if _, err = tx.Exec(`UPDATE workflow_run SET state = ?, updated_at = ?, completed_at = ? WHERE id = ?`, runState, now, now, runID); err != nil {
 			return fmt.Errorf("failing workflow run: %w", err)
 		}
@@ -647,6 +773,38 @@ func (d *DB) ApproveWorkflowNode(runID, nodeID string, now int64) error {
 	return nil
 }
 
+// FailWorkflowRun terminates an active/paused run: it cancels every
+// non-terminal node and attempt, records reason on their unfinished
+// attempts, releases all held resources, and marks the run failed. Used
+// for configured budget stops. No-op (nil) if the run already settled.
+func (d *DB) FailWorkflowRun(id, reason string, now int64) error {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return fmt.Errorf("beginning workflow budget fail: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var runState string
+	if err = tx.QueryRow(`SELECT state FROM workflow_run WHERE id = ?`, id).Scan(&runState); err != nil {
+		return fmt.Errorf("getting workflow run: %w", err)
+	}
+	if runState != "active" && runState != "paused" {
+		return nil
+	}
+	if _, err = tx.Exec(`UPDATE workflow_node_attempt SET state = 'canceled', error = CASE WHEN error = '' THEN ? ELSE error END, session_state = CASE WHEN session_id != '' THEN 'canceled' ELSE session_state END, completed_at = ? WHERE run_id = ? AND state IN ('waiting', 'starting', 'running')`, reason, now, id); err != nil {
+		return fmt.Errorf("canceling attempts on budget fail: %w", err)
+	}
+	if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'canceled', completed_at = ? WHERE run_id = ? AND state IN ('pending', 'ready', 'running')`, now, id); err != nil {
+		return fmt.Errorf("canceling nodes on budget fail: %w", err)
+	}
+	if _, err = tx.Exec(`DELETE FROM workflow_resource_lease WHERE run_id = ?`, id); err != nil {
+		return fmt.Errorf("releasing resources on budget fail: %w", err)
+	}
+	if _, err = tx.Exec(`UPDATE workflow_run SET state = 'failed', updated_at = ?, completed_at = ? WHERE id = ?`, now, now, id); err != nil {
+		return fmt.Errorf("failing workflow run: %w", err)
+	}
+	return tx.Commit()
+}
+
 func (d *DB) SetWorkflowRunState(id, from, to string, now int64) error {
 	tx, err := d.db.Begin()
 	if err != nil {
@@ -661,6 +819,9 @@ func (d *DB) SetWorkflowRunState(id, from, to string, now int64) error {
 		}
 		if _, err = tx.Exec(`UPDATE workflow_node_attempt SET state = 'canceled', session_state = CASE WHEN session_id != '' THEN 'canceled' ELSE session_state END, completed_at = ? WHERE run_id = ? AND state IN ('waiting', 'starting', 'running')`, now, id); err != nil {
 			return fmt.Errorf("canceling workflow attempts: %w", err)
+		}
+		if _, err = tx.Exec(`DELETE FROM workflow_resource_lease WHERE run_id = ?`, id); err != nil {
+			return fmt.Errorf("releasing resources on cancel: %w", err)
 		}
 	}
 	res, err := tx.Exec(`UPDATE workflow_run SET state = ?, updated_at = ?, completed_at = ? WHERE id = ? AND state = ?`, to, now, completed, id, from)
@@ -701,6 +862,9 @@ func (d *DB) ResolveWorkflowAttempt(runID string, attemptID int64, resolution st
 	}
 	if _, err = tx.Exec(`UPDATE workflow_node_run SET state = ?, completed_at = ? WHERE run_id = ? AND node_id = ?`, resolution, now, runID, nodeID); err != nil {
 		return fmt.Errorf("updating workflow node: %w", err)
+	}
+	if err = releaseWorkflowResources(tx, runID, nodeID); err != nil {
+		return err
 	}
 	if resolution == "failed" {
 		if _, err = tx.Exec(`UPDATE workflow_run SET state = 'failed', updated_at = ?, completed_at = ? WHERE id = ?`, now, now, runID); err != nil {

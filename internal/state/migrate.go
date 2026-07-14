@@ -106,11 +106,14 @@ import (
 //	      flag so cleanup can drop bytes while preserving audit metadata),
 //	      and `workflow_version.retention_days` (per-workflow retention
 //	      override; 0 = default 30 days).
+//	27 - workflow resource pools. Adds a durable workflow_resource_lease
+//	      table recording held pool/run-concurrency capacity per attempt,
+//	      so acquisition is atomic and survives restart reconciliation.
 //
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 26
+const latestSchemaVersion = 27
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -258,6 +261,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV25(tx)
 	case 26:
 		return migrateToV26(tx)
+	case 27:
+		return migrateToV27(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -942,6 +947,31 @@ func migrateToV26(tx *sql.Tx) error {
 		CREATE INDEX idx_workflow_artifact_run ON workflow_artifact (run_id, node_id);
 		CREATE INDEX idx_workflow_artifact_hash ON workflow_artifact (content_hash);
 		CREATE INDEX idx_workflow_artifact_expiry ON workflow_artifact (expires_at, payload_deleted);
+	`)
+	return err
+}
+
+// migrateToV27 adds the durable resource-lease table backing named
+// resource pools and the required run-concurrency cap. A held row (units
+// > 0) represents capacity currently held by an active attempt; the
+// scheduler acquires all required rows in one transaction before an
+// attempt goes active and deletes them when the attempt settles. The
+// pool name "" is the implicit run-concurrency pool. Surviving held rows
+// after a restart let reconciliation release capacity for interrupted
+// attempts and let the UI show what is held vs waiting.
+func migrateToV27(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE workflow_resource_lease (
+			run_id      TEXT NOT NULL REFERENCES workflow_run(id),
+			node_id     TEXT NOT NULL,
+			attempt_id  INTEGER NOT NULL,
+			pool        TEXT NOT NULL,
+			units       INTEGER NOT NULL CHECK (units > 0),
+			acquired_at INTEGER NOT NULL,
+			PRIMARY KEY (run_id, node_id, pool)
+		);
+		CREATE INDEX idx_workflow_resource_lease_pool
+			ON workflow_resource_lease (run_id, pool);
 	`)
 	return err
 }

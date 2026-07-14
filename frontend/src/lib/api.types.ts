@@ -843,6 +843,7 @@ export interface WorkflowNodeDefinition {
 	permission?: WorkflowPermissionRule[];
 	outputs?: WorkflowCollector[];
 	agent?: WorkflowAgentConfig;
+	resources?: WorkflowResourceRequest[];
 }
 
 export interface WorkflowDependency {
@@ -887,6 +888,22 @@ export interface WorkflowSecretRef {
 	env: string;
 }
 
+export interface WorkflowPool {
+	name: string;
+	capacity: number;
+}
+
+export interface WorkflowResourceRequest {
+	pool: string;
+	units: number;
+}
+
+export interface WorkflowLimits {
+	maxCostUsd?: number;
+	maxTokens?: number;
+	maxDurationSeconds?: number;
+}
+
 export interface WorkflowDefinition {
 	id: string;
 	name: string;
@@ -895,6 +912,8 @@ export interface WorkflowDefinition {
 	retentionDays?: number;
 	directory?: string;
 	secrets?: WorkflowSecretRef[];
+	pools?: WorkflowPool[];
+	limits?: WorkflowLimits;
 	triggers: WorkflowTrigger[];
 	nodes: WorkflowNodeDefinition[];
 	dependencies: WorkflowDependency[];
@@ -914,6 +933,14 @@ export interface WorkflowArtifact {
 	createdAt: number;
 	expiresAt?: number;
 	payloadAvailable: boolean;
+}
+
+/** Live per-pool capacity state for a run. Pool "" is run concurrency. */
+export interface WorkflowResourcePool {
+	pool: string;
+	capacity: number;
+	held: number;
+	waiting?: string[];
 }
 
 export interface WorkflowVersion {
@@ -968,6 +995,7 @@ export interface WorkflowNodeRun {
 export interface WorkflowRunDetail extends WorkflowRun {
 	version: WorkflowVersion;
 	nodes: WorkflowNodeRun[];
+	resources?: WorkflowResourcePool[];
 }
 
 /** Decoded trigger config for an agent loop. */

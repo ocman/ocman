@@ -149,6 +149,26 @@ describe('Workflows', () => {
 		expect(screen.getByText('Payload cleaned up')).toBeInTheDocument();
 	});
 
+	it('shows resource pool held and waiting capacity', async () => {
+		const poolRun: WorkflowRunDetail = {
+			...activeRun,
+			resources: [
+				{ pool: '', capacity: 2, held: 1 },
+				{ pool: 'compiler', capacity: 1, held: 1, waiting: ['ship'] },
+			],
+		};
+		apiMock.runs.mockResolvedValue([poolRun]);
+		apiMock.run.mockResolvedValue(poolRun);
+		render(<MemoryRouter><Workflows /></MemoryRouter>);
+
+		expect(await screen.findByRole('region', { name: 'Workflow run graph' })).toBeInTheDocument();
+		const pools = screen.getByRole('list', { name: 'Resource pools' });
+		expect(pools).toHaveTextContent('run concurrency');
+		expect(pools).toHaveTextContent('1/2 held');
+		expect(pools).toHaveTextContent('compiler');
+		expect(pools).toHaveTextContent('waiting: ship');
+	});
+
 	it('links agent attempts and shows live and collected state', async () => {
 		const agentVersion: WorkflowVersion = {
 			...version,

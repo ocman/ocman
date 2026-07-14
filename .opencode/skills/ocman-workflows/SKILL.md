@@ -30,6 +30,21 @@ Use stable, meaningful workflow and node IDs. `concurrency` must be positive.
 Definitions must be acyclic. Secret values do not belong in definitions;
 future secret-aware nodes will reference secret names only.
 
+Optionally declare named resource pools with positive capacities and let
+nodes request units from them, so expensive agents/compilers/commits are
+bounded independently of the run concurrency cap:
+
+```json
+"pools": [{"name": "compiler", "capacity": 1}],
+"nodes": [{"id": "build", "name": "Build", "type": "command",
+           "resources": [{"pool": "compiler", "units": 1}], "command": ["make"]}]
+```
+
+The scheduler atomically acquires every requested pool (plus one run-
+concurrency slot) before an attempt goes active and releases them when it
+settles. Optional `limits` (`maxCostUsd`, `maxTokens`, `maxDurationSeconds`)
+bound aggregate descendant work; omission means unlimited.
+
 ## Safe Workflow
 
 1. Call `validate_workflow` and fix every returned error.

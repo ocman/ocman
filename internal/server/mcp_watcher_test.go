@@ -21,6 +21,12 @@ func openWatcherTestStateDB(t *testing.T) *state.DB {
 	if err != nil {
 		t.Fatalf("opening test state db: %v", err)
 	}
+	// A modernc.org/sqlite ":memory:" database is per-connection, so a
+	// pooled multi-connection handle would run migrations on one connection
+	// and later queries on another (empty) one — surfacing as "no such
+	// table" under concurrent access. Pin to a single connection, matching
+	// state.Open's production behavior.
+	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { sqlDB.Close() })
 	sdb, err := state.OpenFromSQL(sqlDB)
 	if err != nil {

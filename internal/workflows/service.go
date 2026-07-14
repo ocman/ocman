@@ -70,9 +70,33 @@ type Definition struct {
 	RetentionDays int          `json:"retentionDays,omitempty"`
 	Directory     string       `json:"directory,omitempty"`
 	Secrets       []SecretRef  `json:"secrets,omitempty"`
+	Pools         []Pool       `json:"pools,omitempty"`
+	Limits        *Limits      `json:"limits,omitempty"`
 	Triggers      []Trigger    `json:"triggers"`
 	Nodes         []Node       `json:"nodes"`
 	Dependencies  []Dependency `json:"dependencies"`
+}
+
+// Pool is a named resource capacity a workflow declares. Nodes acquire
+// units from a pool before going active; the scheduler never lets held
+// units exceed the pool's capacity.
+type Pool struct {
+	Name     string `json:"name"`
+	Capacity int    `json:"capacity"`
+}
+
+// ResourceRequest is a node's demand for units from a named pool.
+type ResourceRequest struct {
+	Pool  string `json:"pool"`
+	Units int    `json:"units"`
+}
+
+// Limits optionally bound a run's aggregate descendant work. A zero /
+// omitted field means unlimited.
+type Limits struct {
+	MaxCostUSD      float64 `json:"maxCostUsd,omitempty"`
+	MaxTokens       int64   `json:"maxTokens,omitempty"`
+	MaxDurationSecs int64   `json:"maxDurationSeconds,omitempty"`
 }
 
 type Trigger struct {
@@ -115,6 +139,7 @@ type Node struct {
 	Permission  []PermissionRule  `json:"permission,omitempty"`
 	Outputs     []Collector       `json:"outputs,omitempty"`
 	Agent       *AgentConfig      `json:"agent,omitempty"`
+	Resources   []ResourceRequest `json:"resources,omitempty"`
 }
 
 type PermissionRule struct {
@@ -198,8 +223,18 @@ type Run struct {
 
 type RunDetail struct {
 	Run
-	Version Version   `json:"version"`
-	Nodes   []NodeRun `json:"nodes"`
+	Version   Version        `json:"version"`
+	Nodes     []NodeRun      `json:"nodes"`
+	Resources []ResourcePool `json:"resources,omitempty"`
+}
+
+// ResourcePool is the live view of one pool for a run: its capacity, how
+// many units are currently held, and which ready nodes are waiting on it.
+type ResourcePool struct {
+	Pool     string   `json:"pool"`
+	Capacity int      `json:"capacity"`
+	Held     int      `json:"held"`
+	Waiting  []string `json:"waiting,omitempty"`
 }
 
 type NodeRun struct {
@@ -250,10 +285,12 @@ type Store interface {
 	NextQueuedWorkflowTriggerFiring(string, string) (*state.WorkflowTriggerFiring, error)
 	InsertWorkflowRunFromQueued(state.WorkflowRun, int64, int64, state.WorkflowTriggerState) error
 	ApproveWorkflowNode(string, string, int64) error
-	StartWorkflowCommand(string, string, int64) (bool, error)
+	StartWorkflowCommand(string, string, []state.WorkflowResourceRequest, int64) (bool, error)
 	CompleteWorkflowCommand(string, string, state.WorkflowCommandResult, int64) error
 	SetWorkflowRunState(string, string, string, int64) error
-	ClaimWorkflowAgentAttempt(string, string, int64, string, string, int64) (bool, error)
+	FailWorkflowRun(string, string, int64) error
+	ClaimWorkflowAgentAttempt(string, string, int64, string, string, []state.WorkflowResourceRequest, int64) (bool, error)
+	ListWorkflowResourceLeases(string) ([]state.WorkflowResourceLease, error)
 	AttachWorkflowAgentSession(string, string, int64, string, string, string, int64) error
 	SetWorkflowAgentSessionState(string, string, int64, string, string, int64) error
 	CompleteWorkflowAgentNode(string, string, int64, bool, string, string, string, int64) error
@@ -274,6 +311,7 @@ type Deps struct {
 	Status          loops.SessionStatusInferer
 	CommandExecutor CommandExecutor
 	Agent           AgentExecutor
+	Usage           loops.UsageSource
 	// Blobs is the content-addressed payload store for artifacts. When
 	// nil, artifact payloads are not persisted (metadata-only fallback).
 	Blobs *BlobStore
@@ -291,6 +329,7 @@ type Service struct {
 	status        loops.SessionStatusInferer
 	executor      CommandExecutor
 	agent         AgentExecutor
+	usage         loops.UsageSource
 	blobs         *BlobStore
 	resolveSecret func(string) string
 	dispatchMu    sync.Mutex
@@ -327,6 +366,7 @@ func NewService(deps Deps) *Service {
 		status:        deps.Status,
 		executor:      executor,
 		agent:         deps.Agent,
+		usage:         deps.Usage,
 		blobs:         deps.Blobs,
 		resolveSecret: resolveSecret,
 		running:       make(map[string]map[string]*activeCommand),
@@ -801,7 +841,52 @@ func (s *Service) GetRun(ctx context.Context, id string) (RunDetail, error) {
 		}
 		detail.Nodes = append(detail.Nodes, node)
 	}
+	leases, err := s.store.ListWorkflowResourceLeases(id)
+	if err != nil {
+		return RunDetail{}, err
+	}
+	detail.Resources = resourceView(detail, leases)
 	return detail, nil
+}
+
+// resourceView derives the live per-pool state (capacity, held units, and
+// ready nodes still waiting on capacity) for the run UI and restart
+// reconciliation. The implicit run-concurrency pool is reported as "run".
+func resourceView(detail RunDetail, leases []state.WorkflowResourceLease) []ResourcePool {
+	def := detail.Version.Definition
+	order := []string{""}
+	capacity := map[string]int{"": def.Concurrency}
+	for _, pool := range def.Pools {
+		order = append(order, pool.Name)
+		capacity[pool.Name] = pool.Capacity
+	}
+	held := map[string]int{}
+	holder := map[string]bool{} // "pool\x00node" holds capacity
+	for _, lease := range leases {
+		held[lease.Pool] += lease.Units
+		holder[lease.Pool+"\x00"+lease.NodeID] = true
+	}
+	waiting := map[string][]string{}
+	for _, node := range detail.Nodes {
+		if node.State != NodeReady && node.State != NodeRunning {
+			continue
+		}
+		active := len(node.Attempts) > 0 && node.Attempts[len(node.Attempts)-1].State == AttemptWaiting
+		if !active {
+			continue
+		}
+		for _, req := range resourceRequests(def, node.NodeID) {
+			if holder[req.Pool+"\x00"+node.NodeID] {
+				continue
+			}
+			waiting[req.Pool] = append(waiting[req.Pool], node.NodeID)
+		}
+	}
+	out := make([]ResourcePool, 0, len(order))
+	for _, pool := range order {
+		out = append(out, ResourcePool{Pool: pool, Capacity: capacity[pool], Held: held[pool], Waiting: waiting[pool]})
+	}
+	return out
 }
 
 func (s *Service) Approve(ctx context.Context, runID, nodeID string) (RunDetail, error) {
@@ -905,7 +990,7 @@ func (s *Service) dispatchReady(run RunDetail) {
 			continue
 		}
 		s.mu.Lock()
-		if s.stopping[run.ID] || len(s.running[run.ID]) >= run.Version.Definition.Concurrency {
+		if s.stopping[run.ID] {
 			s.mu.Unlock()
 			return
 		}
@@ -916,7 +1001,11 @@ func (s *Service) dispatchReady(run RunDetail) {
 			s.mu.Unlock()
 			continue
 		}
-		started, err := s.store.StartWorkflowCommand(run.ID, nodeRun.NodeID, s.now().UnixMilli())
+		// The store atomically holds run-concurrency and named-pool
+		// capacity before flipping the attempt to running; a full pool
+		// simply skips this node so a differently-provisioned ready
+		// sibling still gets a fair chance.
+		started, err := s.store.StartWorkflowCommand(run.ID, nodeRun.NodeID, resourceRequests(run.Version.Definition, nodeRun.NodeID), s.now().UnixMilli())
 		if err != nil || !started {
 			s.mu.Unlock()
 			continue
@@ -1051,6 +1140,13 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 	if err != nil || run.State != StateActive {
 		return err
 	}
+	if exceeded, reason := s.budgetExceeded(ctx, run); exceeded {
+		if err := s.store.FailWorkflowRun(runID, reason, s.now().UnixMilli()); err != nil {
+			return err
+		}
+		s.changed(runID)
+		return nil
+	}
 	s.dispatchReady(run)
 	if s.agent == nil {
 		return nil
@@ -1069,12 +1165,16 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 			attempt := node.Attempts[len(node.Attempts)-1]
 			if attempt.SessionID == "" {
 				existing := affinitySession(run, node.NodeID, config)
-				claimed, err := s.store.ClaimWorkflowAgentAttempt(runID, node.NodeID, attempt.ID, config.SessionAffinity, config.Directory, s.now().UnixMilli())
+				// Claim atomically holds run-concurrency + named-pool
+				// capacity. A failed claim (lost race or full pool) skips
+				// this node; other ready agents still get their turn and
+				// capacity is retried on the next dispatch/tick.
+				claimed, err := s.store.ClaimWorkflowAgentAttempt(runID, node.NodeID, attempt.ID, config.SessionAffinity, config.Directory, resourceRequests(run.Version.Definition, node.NodeID), s.now().UnixMilli())
 				if err != nil {
 					return err
 				}
 				if !claimed {
-					return nil
+					continue
 				}
 				session, startErr := s.agent.Start(ctx, AgentRequest{Platform: config.Platform, Directory: config.Directory, Prompt: config.Prompt, Model: config.Model, Agent: config.Agent, Reasoning: config.Reasoning, SessionID: existing})
 				if startErr != nil {
@@ -1139,6 +1239,69 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 			return nil
 		}
 	}
+}
+
+// budgetExceeded reports whether a run has crossed a configured optional
+// limit. Omitted limits mean unlimited. Cost/token usage aggregates every
+// descendant agent session; duration is wall-clock since the run started.
+func (s *Service) budgetExceeded(ctx context.Context, run RunDetail) (bool, string) {
+	limits := run.Version.Definition.Limits
+	if limits == nil {
+		return false, ""
+	}
+	if limits.MaxDurationSecs > 0 {
+		elapsed := s.now().UnixMilli() - run.CreatedAt
+		if elapsed >= limits.MaxDurationSecs*1000 {
+			return true, fmt.Sprintf("workflow exceeded duration limit of %ds", limits.MaxDurationSecs)
+		}
+	}
+	if (limits.MaxCostUSD <= 0 && limits.MaxTokens <= 0) || s.usage == nil {
+		return false, ""
+	}
+	var sessions []string
+	for _, node := range run.Nodes {
+		for _, attempt := range node.Attempts {
+			if attempt.SessionID != "" {
+				sessions = append(sessions, attempt.SessionID)
+			}
+		}
+	}
+	if len(sessions) == 0 {
+		return false, ""
+	}
+	tokens, cost, ok := s.usage.SessionUsage(ctx, sessions)
+	if !ok {
+		return false, ""
+	}
+	if limits.MaxCostUSD > 0 && cost >= limits.MaxCostUSD {
+		return true, fmt.Sprintf("workflow exceeded cost limit of $%.2f", limits.MaxCostUSD)
+	}
+	if limits.MaxTokens > 0 && tokens >= limits.MaxTokens {
+		return true, fmt.Sprintf("workflow exceeded token limit of %d", limits.MaxTokens)
+	}
+	return false, ""
+}
+
+// resourceRequests builds the atomic acquisition set for a node: the
+// implicit run-concurrency pool ("") plus every declared named pool. The
+// run pool always demands one unit so competing ready nodes cannot
+// oversubscribe the required concurrency cap.
+func resourceRequests(definition Definition, nodeID string) []state.WorkflowResourceRequest {
+	capacities := make(map[string]int, len(definition.Pools))
+	for _, pool := range definition.Pools {
+		capacities[pool.Name] = pool.Capacity
+	}
+	requests := []state.WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: definition.Concurrency}}
+	for _, node := range definition.Nodes {
+		if node.ID != nodeID {
+			continue
+		}
+		for _, request := range node.Resources {
+			requests = append(requests, state.WorkflowResourceRequest{Pool: request.Pool, Units: request.Units, Capacity: capacities[request.Pool]})
+		}
+		break
+	}
+	return requests
 }
 
 func agentConfig(nodes []Node, id string) *AgentConfig {
@@ -1214,6 +1377,24 @@ func validateDefinition(definition Definition) error {
 	if err := validateSecrets(definition.Secrets); err != nil {
 		return err
 	}
+	pools := map[string]int{}
+	for _, pool := range definition.Pools {
+		if pool.Name == "" {
+			return fmt.Errorf("resource pool name is required")
+		}
+		if pool.Capacity <= 0 {
+			return fmt.Errorf("resource pool %q capacity must be positive", pool.Name)
+		}
+		if _, ok := pools[pool.Name]; ok {
+			return fmt.Errorf("duplicate resource pool %q", pool.Name)
+		}
+		pools[pool.Name] = pool.Capacity
+	}
+	if definition.Limits != nil {
+		if definition.Limits.MaxCostUSD < 0 || definition.Limits.MaxTokens < 0 || definition.Limits.MaxDurationSecs < 0 {
+			return fmt.Errorf("limits must not be negative")
+		}
+	}
 	triggerIDs := map[string]bool{}
 	manualTriggers := 0
 	for _, trigger := range definition.Triggers {
@@ -1268,6 +1449,23 @@ func validateDefinition(definition Definition) error {
 					return fmt.Errorf("unsupported collector type %q", collector.Type)
 				}
 			}
+		}
+		requested := map[string]bool{}
+		for _, request := range node.Resources {
+			capacity, ok := pools[request.Pool]
+			if !ok {
+				return fmt.Errorf("node %q requests undeclared resource pool %q", node.ID, request.Pool)
+			}
+			if request.Units <= 0 {
+				return fmt.Errorf("node %q resource units for pool %q must be positive", node.ID, request.Pool)
+			}
+			if request.Units > capacity {
+				return fmt.Errorf("node %q requests %d units of pool %q exceeding capacity %d", node.ID, request.Units, request.Pool, capacity)
+			}
+			if requested[request.Pool] {
+				return fmt.Errorf("node %q requests pool %q more than once", node.ID, request.Pool)
+			}
+			requested[request.Pool] = true
 		}
 		if nodes[node.ID] {
 			return fmt.Errorf("duplicate node %q", node.ID)

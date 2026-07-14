@@ -27,6 +27,7 @@ func (s *Server) workflowSvc() *workflows.Service {
 			NotifyTrigger: s.broadcastWorkflowTriggerUpdated,
 			Forge:         &loopForge{s: s},
 			Status:        &loopStatusInferer{s: s},
+			Usage:         &loopUsage{s: s},
 		})
 	})
 	return s.workflowSvcCached

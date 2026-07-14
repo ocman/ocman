@@ -664,7 +664,7 @@ func TestTickFailsAgentLaunchInterruptedByRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	attemptID := stored.Nodes[0].Attempts[0].ID
-	if claimed, err := h.db.ClaimWorkflowAgentAttempt(run.ID, "implement", attemptID, "", "/repo", h.now.UnixMilli()); err != nil || !claimed {
+	if claimed, err := h.db.ClaimWorkflowAgentAttempt(run.ID, "implement", attemptID, "", "/repo", []state.WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 1}}, h.now.UnixMilli()); err != nil || !claimed {
 		t.Fatalf("claim interrupted agent: claimed=%v err=%v", claimed, err)
 	}
 	if err := h.svc.Tick(context.Background()); err != nil {
@@ -676,6 +676,12 @@ func TestTickFailsAgentLaunchInterruptedByRestart(t *testing.T) {
 	}
 	if failed.State != StateFailed || failed.Nodes[0].Attempts[0].State != AttemptFailed || !strings.Contains(failed.Nodes[0].Attempts[0].Error, "server restart") {
 		t.Fatalf("interrupted agent launch not failed: %+v", failed)
+	}
+	// Restart reconciliation must release the capacity the interrupted
+	// attempt held so the run does not leak run-concurrency.
+	leases, err := h.db.ListWorkflowResourceLeases(run.ID)
+	if err != nil || len(leases) != 0 {
+		t.Fatalf("interrupted attempt leaked resource leases: %+v (%v)", leases, err)
 	}
 }
 
