@@ -63,18 +63,19 @@ const (
 )
 
 type Definition struct {
-	ID            string       `json:"id"`
-	Name          string       `json:"name"`
-	Version       string       `json:"version"`
-	Concurrency   int          `json:"concurrency"`
-	RetentionDays int          `json:"retentionDays,omitempty"`
-	Directory     string       `json:"directory,omitempty"`
-	Secrets       []SecretRef  `json:"secrets,omitempty"`
-	Pools         []Pool       `json:"pools,omitempty"`
-	Limits        *Limits      `json:"limits,omitempty"`
-	Triggers      []Trigger    `json:"triggers"`
-	Nodes         []Node       `json:"nodes"`
-	Dependencies  []Dependency `json:"dependencies"`
+	ID            string           `json:"id"`
+	Name          string           `json:"name"`
+	Version       string           `json:"version"`
+	Concurrency   int              `json:"concurrency"`
+	RetentionDays int              `json:"retentionDays,omitempty"`
+	Directory     string           `json:"directory,omitempty"`
+	Secrets       []SecretRef      `json:"secrets,omitempty"`
+	Pools         []Pool           `json:"pools,omitempty"`
+	Workspace     *WorkspaceConfig `json:"workspace,omitempty"`
+	Limits        *Limits          `json:"limits,omitempty"`
+	Triggers      []Trigger        `json:"triggers"`
+	Nodes         []Node           `json:"nodes"`
+	Dependencies  []Dependency     `json:"dependencies"`
 }
 
 // Pool is a named resource capacity a workflow declares. Nodes acquire
@@ -140,6 +141,7 @@ type Node struct {
 	Outputs     []Collector       `json:"outputs,omitempty"`
 	Agent       *AgentConfig      `json:"agent,omitempty"`
 	Resources   []ResourceRequest `json:"resources,omitempty"`
+	Lease       *LeaseConfig      `json:"lease,omitempty"`
 }
 
 type PermissionRule struct {
@@ -223,9 +225,25 @@ type Run struct {
 
 type RunDetail struct {
 	Run
-	Version   Version        `json:"version"`
-	Nodes     []NodeRun      `json:"nodes"`
-	Resources []ResourcePool `json:"resources,omitempty"`
+	Version   Version          `json:"version"`
+	Nodes     []NodeRun        `json:"nodes"`
+	Resources []ResourcePool   `json:"resources,omitempty"`
+	Workspace []WorkspaceLease `json:"workspace,omitempty"`
+}
+
+// WorkspaceLease is the run-UI view of a held shard lease: which node/
+// attempt owns which shard, in what mode, over which paths, and on which
+// (optional) host.
+type WorkspaceLease struct {
+	NodeID     string   `json:"nodeId"`
+	AttemptID  int64    `json:"attemptId"`
+	Shard      int      `json:"shard"`
+	Mode       string   `json:"mode"`
+	Paths      []string `json:"paths,omitempty"`
+	Commit     bool     `json:"commit,omitempty"`
+	Host       string   `json:"host,omitempty"`
+	ShardPath  string   `json:"shardPath,omitempty"`
+	AcquiredAt int64    `json:"acquiredAt"`
 }
 
 // ResourcePool is the live view of one pool for a run: its capacity, how
@@ -285,12 +303,14 @@ type Store interface {
 	NextQueuedWorkflowTriggerFiring(string, string) (*state.WorkflowTriggerFiring, error)
 	InsertWorkflowRunFromQueued(state.WorkflowRun, int64, int64, state.WorkflowTriggerState) error
 	ApproveWorkflowNode(string, string, int64) error
-	StartWorkflowCommand(string, string, []state.WorkflowResourceRequest, int64) (bool, error)
+	StartWorkflowCommand(string, string, []state.WorkflowResourceRequest, *state.WorkflowWorkspaceRequest, int64) (bool, error)
 	CompleteWorkflowCommand(string, string, state.WorkflowCommandResult, int64) error
 	SetWorkflowRunState(string, string, string, int64) error
 	FailWorkflowRun(string, string, int64) error
-	ClaimWorkflowAgentAttempt(string, string, int64, string, string, []state.WorkflowResourceRequest, int64) (bool, error)
+	ClaimWorkflowAgentAttempt(string, string, int64, string, string, []state.WorkflowResourceRequest, *state.WorkflowWorkspaceRequest, int64) (bool, error)
 	ListWorkflowResourceLeases(string) ([]state.WorkflowResourceLease, error)
+	ListWorkflowWorkspaceLeases(string) ([]state.WorkflowWorkspaceLease, error)
+	SetWorkflowWorkspaceShardPath(string, string, string) error
 	AttachWorkflowAgentSession(string, string, int64, string, string, string, int64) error
 	SetWorkflowAgentSessionState(string, string, int64, string, string, int64) error
 	CompleteWorkflowAgentNode(string, string, int64, bool, string, string, string, int64) error
@@ -302,8 +322,18 @@ type Store interface {
 	MarkWorkflowArtifactPayloadDeleted(string) error
 }
 
+// WorkspaceProvider creates (or reuses) the on-disk worktree shard for a
+// run through the existing host/worktree services. Shard is the index in
+// the run's bounded pool. Repo is the workflow's declared repository root.
+// Returns the shard's working directory. When nil, mutating nodes run in
+// the workflow directory itself (single-worktree fallback).
+type WorkspaceProvider interface {
+	EnsureShard(ctx context.Context, runID, repo string, shard int) (string, error)
+}
+
 type Deps struct {
 	Store           Store
+	Workspace       WorkspaceProvider
 	Now             func() time.Time
 	Notify          func(runID string)
 	NotifyTrigger   func()
@@ -330,6 +360,7 @@ type Service struct {
 	executor      CommandExecutor
 	agent         AgentExecutor
 	usage         loops.UsageSource
+	workspace     WorkspaceProvider
 	blobs         *BlobStore
 	resolveSecret func(string) string
 	dispatchMu    sync.Mutex
@@ -367,6 +398,7 @@ func NewService(deps Deps) *Service {
 		executor:      executor,
 		agent:         deps.Agent,
 		usage:         deps.Usage,
+		workspace:     deps.Workspace,
 		blobs:         deps.Blobs,
 		resolveSecret: resolveSecret,
 		running:       make(map[string]map[string]*activeCommand),
@@ -846,6 +878,16 @@ func (s *Service) GetRun(ctx context.Context, id string) (RunDetail, error) {
 		return RunDetail{}, err
 	}
 	detail.Resources = resourceView(detail, leases)
+	workspace, err := s.store.ListWorkflowWorkspaceLeases(id)
+	if err != nil {
+		return RunDetail{}, err
+	}
+	for _, lease := range workspace {
+		detail.Workspace = append(detail.Workspace, WorkspaceLease{
+			NodeID: lease.NodeID, AttemptID: lease.AttemptID, Shard: lease.Shard, Mode: lease.Mode,
+			Paths: lease.Paths, Commit: lease.CommitLease, Host: lease.Host, ShardPath: lease.ShardPath, AcquiredAt: lease.AcquiredAt,
+		})
+	}
 	return detail, nil
 }
 
@@ -1005,7 +1047,7 @@ func (s *Service) dispatchReady(run RunDetail) {
 		// capacity before flipping the attempt to running; a full pool
 		// simply skips this node so a differently-provisioned ready
 		// sibling still gets a fair chance.
-		started, err := s.store.StartWorkflowCommand(run.ID, nodeRun.NodeID, resourceRequests(run.Version.Definition, nodeRun.NodeID), s.now().UnixMilli())
+		started, err := s.store.StartWorkflowCommand(run.ID, nodeRun.NodeID, resourceRequests(run.Version.Definition, nodeRun.NodeID), workspaceRequest(run.Version.Definition, nodeRun.NodeID), s.now().UnixMilli())
 		if err != nil || !started {
 			s.mu.Unlock()
 			continue
@@ -1023,7 +1065,13 @@ func (s *Service) dispatchReady(run RunDetail) {
 func (s *Service) executeCommand(ctx context.Context, active *activeCommand, version Version, runID, directory string, node Node, attemptID int64) {
 	redactor := s.runRedactor(version)
 	env := s.secretEnv(version, node.Environment)
-	result := s.executor.Execute(ctx, CommandRequest{Directory: directory, Command: node.Command, Environment: env, Permission: node.Permission, Outputs: node.Outputs})
+	if shardDir, err := s.shardDirectory(ctx, version, runID, node.ID); err != nil {
+		s.finishCommandError(active, runID, node.ID, redactor, "provisioning workspace shard: "+err.Error())
+		return
+	} else if shardDir != "" {
+		directory = shardDir
+	}
+	result := s.executor.Execute(ctx, CommandRequest{Directory: directory, Command: node.Command, Environment: env, Permission: node.Permission, Outputs: node.Outputs, RestrictGit: restrictGitFor(version.Definition, node.ID)})
 	// Redact known secret values from logs and collected outputs before
 	// anything is persisted (audit) or published (artifacts).
 	result.Stdout = redactor.redact(result.Stdout)
@@ -1057,6 +1105,60 @@ func (s *Service) executeCommand(ctx context.Context, active *activeCommand, ver
 	}
 	if stopOwner {
 		delete(s.stopping, runID)
+	}
+	close(active.done)
+	s.mu.Unlock()
+	_ = s.dispatch(context.Background(), runID)
+	s.changed(runID)
+}
+
+// shardDirectory resolves the on-disk worktree directory for a node's
+// workspace lease, creating the shard through the WorkspaceProvider on
+// first use and recording its path. Returns "" when the node holds no
+// lease or no provider is configured (the command then runs in the
+// workflow directory as before).
+func (s *Service) shardDirectory(ctx context.Context, version Version, runID, nodeID string) (string, error) {
+	if s.workspace == nil || version.Definition.Workspace == nil {
+		return "", nil
+	}
+	leases, err := s.store.ListWorkflowWorkspaceLeases(runID)
+	if err != nil {
+		return "", err
+	}
+	for _, lease := range leases {
+		if lease.NodeID != nodeID {
+			continue
+		}
+		if lease.ShardPath != "" {
+			return lease.ShardPath, nil
+		}
+		repo := version.Definition.Workspace.Repo
+		if repo == "" {
+			repo = version.Definition.Directory
+		}
+		path, err := s.workspace.EnsureShard(ctx, runID, repo, lease.Shard)
+		if err != nil {
+			return "", err
+		}
+		if err := s.store.SetWorkflowWorkspaceShardPath(runID, nodeID, path); err != nil {
+			return "", err
+		}
+		return path, nil
+	}
+	return "", nil
+}
+
+// finishCommandError settles a command attempt as errored (e.g. shard
+// provisioning failed) and releases its held capacity, mirroring the
+// bookkeeping executeCommand does on a normal completion.
+func (s *Service) finishCommandError(active *activeCommand, runID, nodeID string, red *redactor, message string) {
+	_ = s.store.CompleteWorkflowCommand(runID, nodeID, state.WorkflowCommandResult{
+		State: AttemptErrored, ExitCode: -1, Error: red.redact(message), OutputsJSON: "{}",
+	}, s.now().UnixMilli())
+	s.mu.Lock()
+	delete(s.running[runID], nodeID)
+	if len(s.running[runID]) == 0 {
+		delete(s.running, runID)
 	}
 	close(active.done)
 	s.mu.Unlock()
@@ -1169,14 +1271,25 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 				// capacity. A failed claim (lost race or full pool) skips
 				// this node; other ready agents still get their turn and
 				// capacity is retried on the next dispatch/tick.
-				claimed, err := s.store.ClaimWorkflowAgentAttempt(runID, node.NodeID, attempt.ID, config.SessionAffinity, config.Directory, resourceRequests(run.Version.Definition, node.NodeID), s.now().UnixMilli())
+				claimed, err := s.store.ClaimWorkflowAgentAttempt(runID, node.NodeID, attempt.ID, config.SessionAffinity, config.Directory, resourceRequests(run.Version.Definition, node.NodeID), workspaceRequest(run.Version.Definition, node.NodeID), s.now().UnixMilli())
 				if err != nil {
 					return err
 				}
 				if !claimed {
 					continue
 				}
-				session, startErr := s.agent.Start(ctx, AgentRequest{Platform: config.Platform, Directory: config.Directory, Prompt: config.Prompt, Model: config.Model, Agent: config.Agent, Reasoning: config.Reasoning, SessionID: existing})
+				agentDir := config.Directory
+				if shardDir, shardErr := s.shardDirectory(ctx, run.Version, runID, node.NodeID); shardErr != nil {
+					if err := s.store.CompleteWorkflowAgentNode(runID, node.NodeID, attempt.ID, false, "error", "{}", "provisioning workspace shard: "+shardErr.Error(), s.now().UnixMilli()); err != nil {
+						return err
+					}
+					s.changed(runID)
+					progressed = true
+					continue
+				} else if shardDir != "" {
+					agentDir = shardDir
+				}
+				session, startErr := s.agent.Start(ctx, AgentRequest{Platform: config.Platform, Directory: agentDir, Prompt: config.Prompt, Model: config.Model, Agent: config.Agent, Reasoning: config.Reasoning, SessionID: existing})
 				if startErr != nil {
 					if err := s.store.CompleteWorkflowAgentNode(runID, node.NodeID, attempt.ID, false, "error", "{}", startErr.Error(), s.now().UnixMilli()); err != nil {
 						return err
@@ -1304,6 +1417,61 @@ func resourceRequests(definition Definition, nodeID string) []state.WorkflowReso
 	return requests
 }
 
+// workspaceRequest builds the shard-lease demand for a node, or nil when
+// the workflow declares no shard pool or the node declares no lease. A node
+// with a lease but no explicit mode defaults to exclusive. Path scopes are
+// assumed already normalized by validation.
+func workspaceRequest(definition Definition, nodeID string) *state.WorkflowWorkspaceRequest {
+	if definition.Workspace == nil || definition.Workspace.Shards <= 0 {
+		return nil
+	}
+	lease := nodeLease(definition.Nodes, nodeID)
+	if lease == nil {
+		return nil
+	}
+	mode := lease.Mode
+	if mode == "" {
+		mode = LeaseExclusive
+	}
+	return &state.WorkflowWorkspaceRequest{
+		Shards:      definition.Workspace.Shards,
+		Mode:        mode,
+		Paths:       lease.Paths,
+		CommitLease: lease.Commit,
+		Host:        definition.Workspace.Host,
+	}
+}
+
+// restrictGitFor returns the git subcommands a node may not run because it
+// holds a path-scoped lease. Exclusive and commit-coordinator leases own
+// repository-wide mutation, so they are unrestricted. Returns nil when no
+// restriction applies.
+func restrictGitFor(definition Definition, nodeID string) []string {
+	if definition.Workspace == nil || definition.Workspace.Shards <= 0 {
+		return nil
+	}
+	lease := nodeLease(definition.Nodes, nodeID)
+	if lease == nil || lease.Commit {
+		return nil
+	}
+	if lease.Mode != LeasePath {
+		return nil
+	}
+	if len(definition.Workspace.RestrictedGit) > 0 {
+		return definition.Workspace.RestrictedGit
+	}
+	return defaultRestrictedGitSubcommands
+}
+
+func nodeLease(nodes []Node, id string) *LeaseConfig {
+	for _, node := range nodes {
+		if node.ID == id {
+			return node.Lease
+		}
+	}
+	return nil
+}
+
 func agentConfig(nodes []Node, id string) *AgentConfig {
 	for _, node := range nodes {
 		if node.ID == id {
@@ -1354,6 +1522,9 @@ func decodeDefinition(source []byte) (Definition, []byte, error) {
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		return Definition{}, nil, fmt.Errorf("invalid workflow JSON: trailing content")
 	}
+	if err := normalizeLeases(&definition); err != nil {
+		return Definition{}, nil, err
+	}
 	canonical, err := json.Marshal(definition)
 	if err != nil {
 		return Definition{}, nil, fmt.Errorf("encoding workflow definition: %w", err)
@@ -1394,6 +1565,9 @@ func validateDefinition(definition Definition) error {
 		if definition.Limits.MaxCostUSD < 0 || definition.Limits.MaxTokens < 0 || definition.Limits.MaxDurationSecs < 0 {
 			return fmt.Errorf("limits must not be negative")
 		}
+	}
+	if definition.Workspace != nil && definition.Workspace.Shards <= 0 {
+		return fmt.Errorf("workspace shard pool capacity must be positive")
 	}
 	triggerIDs := map[string]bool{}
 	manualTriggers := 0
@@ -1466,6 +1640,9 @@ func validateDefinition(definition Definition) error {
 				return fmt.Errorf("node %q requests pool %q more than once", node.ID, request.Pool)
 			}
 			requested[request.Pool] = true
+		}
+		if err := validateLease(definition.Workspace, node); err != nil {
+			return fmt.Errorf("node %q: %w", node.ID, err)
 		}
 		if nodes[node.ID] {
 			return fmt.Errorf("duplicate node %q", node.ID)
@@ -1604,6 +1781,54 @@ func validateTrigger(trigger Trigger) error {
 		}
 	default:
 		return fmt.Errorf("trigger %q has unsupported type %q", trigger.ID, trigger.Type)
+	}
+	return nil
+}
+
+// normalizeLeases canonicalizes every path-lease scope in place so the
+// stored definition and all overlap comparisons use one normalized form.
+// It also de-duplicates and rejects scopes that overlap within one node.
+func normalizeLeases(definition *Definition) error {
+	for i := range definition.Nodes {
+		lease := definition.Nodes[i].Lease
+		if lease == nil {
+			continue
+		}
+		if lease.Mode == LeasePath || len(lease.Paths) > 0 {
+			normalized, err := normalizedLeasePaths(lease.Paths)
+			if err != nil {
+				return fmt.Errorf("node %q: %w", definition.Nodes[i].ID, err)
+			}
+			lease.Paths = normalized
+		}
+	}
+	return nil
+}
+
+// validateLease checks a node's workspace lease against the workflow's
+// shard pool declaration.
+func validateLease(workspace *WorkspaceConfig, node Node) error {
+	if node.Lease == nil {
+		return nil
+	}
+	if workspace == nil || workspace.Shards <= 0 {
+		return fmt.Errorf("declares a workspace lease but no workspace shard pool is configured")
+	}
+	mode := node.Lease.Mode
+	switch mode {
+	case "", LeaseExclusive:
+		if len(node.Lease.Paths) > 0 {
+			return fmt.Errorf("exclusive lease does not accept path scopes")
+		}
+	case LeasePath:
+		if node.Lease.Commit {
+			return fmt.Errorf("commit coordinator must use an exclusive lease")
+		}
+		if len(node.Lease.Paths) == 0 {
+			return fmt.Errorf("path lease requires at least one declared path scope")
+		}
+	default:
+		return fmt.Errorf("unsupported lease mode %q", mode)
 	}
 	return nil
 }

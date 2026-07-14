@@ -1,14 +1,17 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/workflows"
 )
@@ -22,6 +25,7 @@ func (s *Server) workflowSvc() *workflows.Service {
 		s.workflowSvcCached = workflows.NewService(workflows.Deps{
 			Store:         s.stateDB,
 			Agent:         &workflowAgentExecutor{s: s},
+			Workspace:     &workflowWorkspaceProvider{},
 			Blobs:         workflows.NewBlobStore(blobDir),
 			Notify:        s.broadcastWorkflowRunUpdated,
 			NotifyTrigger: s.broadcastWorkflowTriggerUpdated,
@@ -244,4 +248,31 @@ func cutWorkflowPath(path string) (first, second, rest string) {
 	first, path, _ = strings.Cut(path, "/")
 	second, rest, _ = strings.Cut(path, "/")
 	return first, second, rest
+}
+
+// workflowWorkspaceProvider creates worktree shards for a run through the
+// existing host-local git worktree service. Each shard gets a deterministic
+// branch so re-provisioning after a restart reuses the same worktree. The
+// first scheduler runs on the local host only (#320 AD-27).
+type workflowWorkspaceProvider struct{}
+
+func (workflowWorkspaceProvider) EnsureShard(ctx context.Context, runID, repo string, shard int) (string, error) {
+	if repo == "" {
+		return "", fmt.Errorf("workspace shard requires a repository directory")
+	}
+	root, err := git.ResolveRepoRoot(ctx, repo)
+	if err != nil {
+		return "", err
+	}
+	branch := fmt.Sprintf("ocman/wf-%s-shard-%d", runID, shard)
+	res, err := git.CreateWorktree(ctx, git.CreateWorktreeRequest{
+		RepoRoot:  root,
+		Branch:    branch,
+		NewBranch: true,
+		BaseRef:   git.ResolveBaseRef(ctx, root),
+	})
+	if err != nil {
+		return "", err
+	}
+	return res.Path, nil
 }

@@ -844,6 +844,7 @@ export interface WorkflowNodeDefinition {
 	outputs?: WorkflowCollector[];
 	agent?: WorkflowAgentConfig;
 	resources?: WorkflowResourceRequest[];
+	lease?: WorkflowLeaseConfig;
 }
 
 export interface WorkflowDependency {
@@ -893,6 +894,19 @@ export interface WorkflowPool {
 	capacity: number;
 }
 
+export interface WorkflowWorkspaceConfig {
+	repo?: string;
+	shards: number;
+	host?: string;
+	restrictedGit?: string[];
+}
+
+export interface WorkflowLeaseConfig {
+	mode?: 'exclusive' | 'path';
+	paths?: string[];
+	commit?: boolean;
+}
+
 export interface WorkflowResourceRequest {
 	pool: string;
 	units: number;
@@ -913,6 +927,7 @@ export interface WorkflowDefinition {
 	directory?: string;
 	secrets?: WorkflowSecretRef[];
 	pools?: WorkflowPool[];
+	workspace?: WorkflowWorkspaceConfig;
 	limits?: WorkflowLimits;
 	triggers: WorkflowTrigger[];
 	nodes: WorkflowNodeDefinition[];
@@ -992,10 +1007,24 @@ export interface WorkflowNodeRun {
 	attempts: WorkflowAttempt[];
 }
 
+/** A held worktree-shard lease owned by one node attempt. */
+export interface WorkflowWorkspaceLease {
+	nodeId: string;
+	attemptId: number;
+	shard: number;
+	mode: 'exclusive' | 'path';
+	paths?: string[];
+	commit?: boolean;
+	host?: string;
+	shardPath?: string;
+	acquiredAt: number;
+}
+
 export interface WorkflowRunDetail extends WorkflowRun {
 	version: WorkflowVersion;
 	nodes: WorkflowNodeRun[];
 	resources?: WorkflowResourcePool[];
+	workspace?: WorkflowWorkspaceLease[];
 }
 
 /** Decoded trigger config for an agent loop. */

@@ -27,6 +27,10 @@ type CommandRequest struct {
 	Environment map[string]string
 	Permission  []PermissionRule
 	Outputs     []Collector
+	// RestrictGit, when non-empty, names git subcommands the caller may
+	// not run because it holds a path-scoped (non-exclusive) workspace
+	// lease. A centralized coordinator owns repository-wide git mutation.
+	RestrictGit []string
 }
 
 type CommandResult struct {
@@ -52,6 +56,11 @@ func (localCommandExecutor) Execute(ctx context.Context, req CommandRequest) Com
 	if !commandAllowed(commandText, req.Permission) {
 		result.State = AttemptDenied
 		result.Error = "permission denied for command: " + commandText
+		return result
+	}
+	if len(req.RestrictGit) > 0 && gitMutationDenied(req.Command, req.RestrictGit) {
+		result.State = AttemptDenied
+		result.Error = "path-leased node may not run repository-wide git mutation: " + commandText
 		return result
 	}
 	cmd := exec.CommandContext(ctx, req.Command[0], req.Command[1:]...)

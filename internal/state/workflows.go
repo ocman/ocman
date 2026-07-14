@@ -134,10 +134,27 @@ func acquireWorkflowResources(tx *sql.Tx, runID, nodeID string, attemptID int64,
 	return true, nil
 }
 
-// releaseWorkflowResources drops every held lease for a node within tx.
+// releaseWorkflowResources drops every held resource and workspace lease
+// for a settled node within tx, so waiting siblings can acquire the freed
+// pool capacity and shard.
 func releaseWorkflowResources(exec workflowRunExecer, runID, nodeID string) error {
 	if _, err := exec.Exec(`DELETE FROM workflow_resource_lease WHERE run_id = ? AND node_id = ?`, runID, nodeID); err != nil {
 		return fmt.Errorf("releasing resources: %w", err)
+	}
+	if err := releaseWorkflowWorkspaceLease(exec, runID, nodeID); err != nil {
+		return err
+	}
+	return nil
+}
+
+// deleteAllWorkflowLeases drops every resource and workspace lease held by
+// a run within tx, used when a run terminates (failure, cancel, budget).
+func deleteAllWorkflowLeases(exec workflowRunExecer, runID string) error {
+	if _, err := exec.Exec(`DELETE FROM workflow_resource_lease WHERE run_id = ?`, runID); err != nil {
+		return fmt.Errorf("releasing resources: %w", err)
+	}
+	if _, err := exec.Exec(`DELETE FROM workflow_workspace_lease WHERE run_id = ?`, runID); err != nil {
+		return fmt.Errorf("releasing workspace leases: %w", err)
 	}
 	return nil
 }
@@ -403,7 +420,7 @@ func (d *DB) workflowAttempts(runID, nodeID string) ([]WorkflowAttempt, error) {
 	return out, rows.Err()
 }
 
-func (d *DB) StartWorkflowCommand(runID, nodeID string, requests []WorkflowResourceRequest, now int64) (bool, error) {
+func (d *DB) StartWorkflowCommand(runID, nodeID string, requests []WorkflowResourceRequest, workspace *WorkflowWorkspaceRequest, now int64) (bool, error) {
 	tx, err := d.db.Begin()
 	if err != nil {
 		return false, fmt.Errorf("beginning workflow command start: %w", err)
@@ -427,6 +444,13 @@ func (d *DB) StartWorkflowCommand(runID, nodeID string, requests []WorkflowResou
 	}
 	if !acquired {
 		return false, nil
+	}
+	if workspace != nil {
+		if _, ok, err := acquireWorkflowWorkspaceLease(tx, runID, nodeID, attemptID, *workspace, now); err != nil {
+			return false, err
+		} else if !ok {
+			return false, nil
+		}
 	}
 	if _, err = tx.Exec(`UPDATE workflow_node_attempt SET state = 'running', started_at = ? WHERE id = ?`, now, attemptID); err != nil {
 		return false, fmt.Errorf("starting workflow command: %w", err)
@@ -486,8 +510,8 @@ func (d *DB) CompleteWorkflowCommand(runID, nodeID string, result WorkflowComman
 		if _, err = tx.Exec(`UPDATE workflow_node_attempt SET state = 'canceled', completed_at = ? WHERE run_id = ? AND node_id != ? AND state IN ('waiting', 'running')`, now, runID, nodeID); err != nil {
 			return fmt.Errorf("canceling other attempts: %w", err)
 		}
-		if _, err = tx.Exec(`DELETE FROM workflow_resource_lease WHERE run_id = ?`, runID); err != nil {
-			return fmt.Errorf("releasing resources on failure: %w", err)
+		if err = deleteAllWorkflowLeases(tx, runID); err != nil {
+			return err
 		}
 		if _, err = tx.Exec(`UPDATE workflow_run SET state = 'failed', updated_at = ?, completed_at = ? WHERE id = ?`, now, now, runID); err != nil {
 			return fmt.Errorf("failing workflow run: %w", err)
@@ -544,7 +568,7 @@ func (d *DB) CompleteWorkflowCommand(runID, nodeID string, result WorkflowComman
 	return tx.Commit()
 }
 
-func (d *DB) ClaimWorkflowAgentAttempt(runID, nodeID string, attemptID int64, affinity, directory string, requests []WorkflowResourceRequest, now int64) (bool, error) {
+func (d *DB) ClaimWorkflowAgentAttempt(runID, nodeID string, attemptID int64, affinity, directory string, requests []WorkflowResourceRequest, workspace *WorkflowWorkspaceRequest, now int64) (bool, error) {
 	tx, err := d.db.Begin()
 	if err != nil {
 		return false, err
@@ -564,6 +588,13 @@ func (d *DB) ClaimWorkflowAgentAttempt(runID, nodeID string, attemptID int64, af
 	}
 	if !acquired {
 		return false, nil
+	}
+	if workspace != nil {
+		if _, ok, err := acquireWorkflowWorkspaceLease(tx, runID, nodeID, attemptID, *workspace, now); err != nil {
+			return false, err
+		} else if !ok {
+			return false, nil
+		}
 	}
 	res, err := tx.Exec(`UPDATE workflow_node_attempt SET state = 'starting', affinity = ?, directory = ? WHERE id = ? AND run_id = ? AND node_id = ? AND state = 'waiting'`, affinity, directory, attemptID, runID, nodeID)
 	if err != nil {
@@ -626,8 +657,8 @@ func (d *DB) CompleteWorkflowAgentNode(runID, nodeID string, attemptID int64, su
 		return err
 	}
 	if !successful {
-		if _, err = tx.Exec(`DELETE FROM workflow_resource_lease WHERE run_id = ?`, runID); err != nil {
-			return fmt.Errorf("releasing resources on failure: %w", err)
+		if err = deleteAllWorkflowLeases(tx, runID); err != nil {
+			return err
 		}
 		if _, err = tx.Exec(`UPDATE workflow_run SET state = ?, updated_at = ?, completed_at = ? WHERE id = ?`, runState, now, now, runID); err != nil {
 			return fmt.Errorf("failing workflow run: %w", err)
@@ -796,8 +827,8 @@ func (d *DB) FailWorkflowRun(id, reason string, now int64) error {
 	if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'canceled', completed_at = ? WHERE run_id = ? AND state IN ('pending', 'ready', 'running')`, now, id); err != nil {
 		return fmt.Errorf("canceling nodes on budget fail: %w", err)
 	}
-	if _, err = tx.Exec(`DELETE FROM workflow_resource_lease WHERE run_id = ?`, id); err != nil {
-		return fmt.Errorf("releasing resources on budget fail: %w", err)
+	if err = deleteAllWorkflowLeases(tx, id); err != nil {
+		return err
 	}
 	if _, err = tx.Exec(`UPDATE workflow_run SET state = 'failed', updated_at = ?, completed_at = ? WHERE id = ?`, now, now, id); err != nil {
 		return fmt.Errorf("failing workflow run: %w", err)
@@ -820,8 +851,8 @@ func (d *DB) SetWorkflowRunState(id, from, to string, now int64) error {
 		if _, err = tx.Exec(`UPDATE workflow_node_attempt SET state = 'canceled', session_state = CASE WHEN session_id != '' THEN 'canceled' ELSE session_state END, completed_at = ? WHERE run_id = ? AND state IN ('waiting', 'starting', 'running')`, now, id); err != nil {
 			return fmt.Errorf("canceling workflow attempts: %w", err)
 		}
-		if _, err = tx.Exec(`DELETE FROM workflow_resource_lease WHERE run_id = ?`, id); err != nil {
-			return fmt.Errorf("releasing resources on cancel: %w", err)
+		if err = deleteAllWorkflowLeases(tx, id); err != nil {
+			return err
 		}
 	}
 	res, err := tx.Exec(`UPDATE workflow_run SET state = ?, updated_at = ?, completed_at = ? WHERE id = ? AND state = ?`, to, now, completed, id, from)

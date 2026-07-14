@@ -118,11 +118,18 @@ import (
 //	      interrupted-safe (runs inside the migration transaction). The
 //	      original loop tables are left intact so the existing loop
 //	      REST/MCP/UI compatibility surfaces keep working for one release.
+//	29 - workspace shards + leases (#320). Adds the durable
+//	      `workflow_workspace_lease` table recording which attempt owns a
+//	      worktree shard, in exclusive or path mode, with normalized path
+//	      scopes and an optional owning-host identity. Leases are acquired
+//	      in the same transaction as resource-pool capacity and released
+//	      when the attempt settles, so shard/path ownership survives
+//	      restart reconciliation and is visible in the run UI.
 //
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 28
+const latestSchemaVersion = 29
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -274,6 +281,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV27(tx)
 	case 28:
 		return migrateToV28(tx)
+	case 29:
+		return migrateToV29(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -1031,6 +1040,39 @@ func migrateToV27(tx *sql.Tx) error {
 		return err
 	}
 	return ensureWorkflowResourceLeaseSchema(tx)
+}
+
+// migrateToV29 adds the durable workspace-lease table backing worktree
+// shards and exclusive/path workspace leases. A row records which attempt
+// owns a shard (by index within the run's bounded pool), the lease mode,
+// its normalized path scopes (JSON, empty for exclusive), whether it is a
+// serialized-commit coordinator, and an optional owning host. Leases are
+// acquired alongside resource-pool capacity and deleted when the attempt
+// settles; surviving rows after a restart let reconciliation release
+// shard ownership for interrupted attempts and let the UI show ownership.
+func migrateToV29(tx *sql.Tx) error {
+	return ensureWorkflowWorkspaceLeaseSchema(tx)
+}
+
+func ensureWorkflowWorkspaceLeaseSchema(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS workflow_workspace_lease (
+			run_id      TEXT NOT NULL REFERENCES workflow_run(id),
+			node_id     TEXT NOT NULL,
+			attempt_id  INTEGER NOT NULL,
+			shard       INTEGER NOT NULL,
+			mode        TEXT NOT NULL,
+			paths_json  TEXT NOT NULL DEFAULT '[]',
+			commit_lease INTEGER NOT NULL DEFAULT 0,
+			host        TEXT NOT NULL DEFAULT '',
+			shard_path  TEXT NOT NULL DEFAULT '',
+			acquired_at INTEGER NOT NULL,
+			PRIMARY KEY (run_id, node_id)
+		);
+		CREATE INDEX IF NOT EXISTS idx_workflow_workspace_lease_run
+			ON workflow_workspace_lease (run_id, shard);
+	`)
+	return err
 }
 
 // ensureWorkflowResourceLeaseSchema idempotently creates the resource-lease

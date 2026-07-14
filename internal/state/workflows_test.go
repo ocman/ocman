@@ -69,14 +69,14 @@ func TestStartWorkflowCommandAtomicAcquireAllOrNothing(t *testing.T) {
 	db := seedResourceRun(t)
 	// Node "one" acquires the whole "compiler" pool (cap 1).
 	req := []WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 2}, {Pool: "compiler", Units: 1, Capacity: 1}}
-	started, err := db.StartWorkflowCommand("run-1", "one", req, 10)
+	started, err := db.StartWorkflowCommand("run-1", "one", req, nil, 10)
 	if err != nil || !started {
 		t.Fatalf("first acquire: started=%v err=%v", started, err)
 	}
 	// Node "two" also wants the "gpu" pool (has room) AND "compiler" (full).
 	// It must acquire NOTHING and not start.
 	req2 := []WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 2}, {Pool: "gpu", Units: 1, Capacity: 4}, {Pool: "compiler", Units: 1, Capacity: 1}}
-	started, err = db.StartWorkflowCommand("run-1", "two", req2, 11)
+	started, err = db.StartWorkflowCommand("run-1", "two", req2, nil, 11)
 	if err != nil {
 		t.Fatalf("second acquire err: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestResourceLeasesSurviveReopen(t *testing.T) {
 	if err := db.InsertWorkflowRun(WorkflowRun{ID: "r", WorkflowID: version.WorkflowID, VersionID: version.ID, State: "active", CreatedAt: 1, UpdatedAt: 1, Nodes: []WorkflowNodeRun{{NodeID: "one", State: "ready"}}}); err != nil {
 		t.Fatal(err)
 	}
-	if started, err := db.StartWorkflowCommand("r", "one", []WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 1}, {Pool: "compiler", Units: 1, Capacity: 1}}, 5); err != nil || !started {
+	if started, err := db.StartWorkflowCommand("r", "one", []WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 1}, {Pool: "compiler", Units: 1, Capacity: 1}}, nil, 5); err != nil || !started {
 		t.Fatalf("acquire: %v", err)
 	}
 	if err := db.Close(); err != nil {

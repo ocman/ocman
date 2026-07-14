@@ -29,9 +29,9 @@ flowchart LR
   remotes directly.
 - **opencode.db** — foreign data, opened read-only; ocman never writes
   to it.
-- **state.db** — ocman's own state: archive flags, child sessions,
-  loops, immutable workflow versions/runs, workflow artifact metadata,
-  settings, and remote tokens.
+ - **state.db** — ocman's own state: archive flags, child sessions,
+   loops, immutable workflow versions/runs, workflow artifact metadata,
+   workflow resource/workspace leases, settings, and remote tokens.
 - **workflow-artifacts/** — content-addressed store (under the ocman
   data dir, next to state.db) holding large, deduplicated, immutable
   artifact payloads out of SQLite; metadata rows in state.db reference
@@ -92,10 +92,19 @@ flowchart TD
   transitions. Successful node outputs become immutable, typed artifacts
   (JSON/text/file/diff/diagnostics): payloads go to a content-addressed
   `BlobStore` (deduplicated) while metadata lands in state.db. Referenced
-  secrets are resolved from host env at execution time and redacted from
-  logs and artifact payloads; a background sweep drops payloads past
-  their retention window (30-day default, per-workflow override) but
-  keeps the metadata.
+   secrets are resolved from host env at execution time and redacted from
+   logs and artifact payloads; a background sweep drops payloads past
+   their retention window (30-day default, per-workflow override) but
+   keeps the metadata. A run may own a bounded pool of worktree shards
+   (created host-locally through the git worktree service); mutating nodes
+   acquire a durable workspace lease in the same transaction as pool
+   capacity — exclusive by default, or path-scoped so disjoint declared
+   scopes share a shard while overlapping (ancestor/exact) scopes cannot.
+   Path-leased nodes are denied repository-wide git mutation
+   (stash/reset/checkout/commit/push …) so a commit coordinator owns
+   serialized per-shard git state. Leases carry an optional owning-host
+   identity, release only after the attempt settles, and are visible in
+   the run UI.
 - **Loop → workflow migration (#325)** — on upgrade, migration v28 makes a
   one-time copy of every persisted loop into a one-node workflow definition
   (matching trigger + preserved loop policies under `definition_json`

@@ -664,7 +664,7 @@ func TestTickFailsAgentLaunchInterruptedByRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	attemptID := stored.Nodes[0].Attempts[0].ID
-	if claimed, err := h.db.ClaimWorkflowAgentAttempt(run.ID, "implement", attemptID, "", "/repo", []state.WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 1}}, h.now.UnixMilli()); err != nil || !claimed {
+	if claimed, err := h.db.ClaimWorkflowAgentAttempt(run.ID, "implement", attemptID, "", "/repo", []state.WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 1}}, nil, h.now.UnixMilli()); err != nil || !claimed {
 		t.Fatalf("claim interrupted agent: claimed=%v err=%v", claimed, err)
 	}
 	if err := h.svc.Tick(context.Background()); err != nil {

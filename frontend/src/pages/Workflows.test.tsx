@@ -133,6 +133,25 @@ describe('Workflows', () => {
 		expect(screen.getByText('{"failed":1}')).toBeInTheDocument();
 	});
 
+	it('shows workspace shard leases and ownership', async () => {
+		const leasedRun: WorkflowRunDetail = {
+			...activeRun,
+			workspace: [
+				{ nodeId: 'edit-a', attemptId: 1, shard: 0, mode: 'path', paths: ['src/a'], host: 'local-host', acquiredAt: 1 },
+				{ nodeId: 'commit', attemptId: 2, shard: 0, mode: 'exclusive', commit: true, acquiredAt: 2 },
+			],
+		};
+		apiMock.runs.mockResolvedValue([leasedRun]);
+		apiMock.run.mockResolvedValue(leasedRun);
+		render(<MemoryRouter><Workflows /></MemoryRouter>);
+
+		await screen.findByRole('list', { name: 'Workspace leases' });
+		expect(screen.getByText(/shard 0 · path/)).toBeInTheDocument();
+		expect(screen.getByText(/src\/a/)).toBeInTheDocument();
+		expect(screen.getByText(/host local-host/)).toBeInTheDocument();
+		expect(screen.getByText(/shard 0 · exclusive \(commit\)/)).toBeInTheDocument();
+	});
+
 	it('inspects artifact metadata and offers retained-payload download', async () => {
 		apiMock.artifacts.mockResolvedValue([
 			{ id: 'wfa_1', runId: 'wfr_1', nodeId: 'review', attemptId: 1, name: 'report', kind: 'json', contentHash: 'abc', size: 2048, createdAt: 1, expiresAt: 99999, payloadAvailable: true },

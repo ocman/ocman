@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -138,7 +140,9 @@ func TestWorkflowRESTLifecycleAndSSE(t *testing.T) {
 			t.Fatal("start did not broadcast workflow updates")
 		}
 	}
-	if !seenTrigger || !seenRun { t.Fatalf("missing workflow SSE events: trigger=%v run=%v", seenTrigger, seenRun) }
+	if !seenTrigger || !seenRun {
+		t.Fatalf("missing workflow SSE events: trigger=%v run=%v", seenTrigger, seenRun)
+	}
 
 	for _, request := range []struct {
 		path string
@@ -347,5 +351,37 @@ func TestCapabilitiesExposeWorkflowsWithoutPlatform(t *testing.T) {
 	}
 	if !response.Workflows.Enabled {
 		t.Fatal("workflows should depend on state DB, not a platform")
+	}
+}
+
+// TestWorkspaceProviderCreatesAndReusesShard drives the real host-local
+// worktree shard provider end to end against a temporary git repo, proving
+// it creates a shard worktree and reuses it idempotently.
+func TestWorkspaceProviderCreatesAndReusesShard(t *testing.T) {
+	repo := t.TempDir()
+	for _, args := range [][]string{
+		{"init"}, {"config", "user.email", "t@t"}, {"config", "user.name", "t"},
+		{"commit", "--allow-empty", "-m", "root"},
+	} {
+		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		cmd.Env = append([]string{"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null"}, "PATH="+os.Getenv("PATH"))
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	var provider workflowWorkspaceProvider
+	path, err := provider.EnsureShard(context.Background(), "run-1", repo, 0)
+	if err != nil {
+		t.Fatalf("EnsureShard: %v", err)
+	}
+	if path == "" {
+		t.Fatal("empty shard path")
+	}
+	reused, err := provider.EnsureShard(context.Background(), "run-1", repo, 0)
+	if err != nil || reused != path {
+		t.Fatalf("EnsureShard not idempotent: %q vs %q (%v)", reused, path, err)
+	}
+	if _, err := provider.EnsureShard(context.Background(), "run-1", "", 0); err == nil {
+		t.Fatal("expected error for empty repo directory")
 	}
 }
