@@ -294,6 +294,155 @@ func TestMigrate_CompositePrimaryKey(t *testing.T) {
 	}
 }
 
+// TestMigrate_SingleFeatureV26ForwardMigrates proves the merged monotonic
+// v26/v27/v28 sequence still migrates cleanly forward from a database that
+// was stamped at one of the original competing v26 migrations (artifacts,
+// resource pools, or loop migration each independently shipped as "v26").
+// Such a DB carries that one feature's objects while marked at v26, so the
+// merged sequence must run v27+v28 (or v26 conditionally) without colliding
+// on already-present tables/columns.
+func TestMigrate_SingleFeatureV26ForwardMigrates(t *testing.T) {
+	// seedThroughV25 drives migrations v1..25 and stamps schema_version so a
+	// later migrate() call resumes at v26.
+	seedThroughV25 := func(t *testing.T) *sql.DB {
+		t.Helper()
+		db, err := sql.Open("sqlite", ":memory:")
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		t.Cleanup(func() { db.Close() })
+		if err := ensureSchemaVersionTable(db); err != nil {
+			t.Fatalf("schema_version: %v", err)
+		}
+		tx, err := db.Begin()
+		if err != nil {
+			t.Fatalf("begin: %v", err)
+		}
+		for v := 1; v <= 25; v++ {
+			if err := applyMigration(tx, v); err != nil {
+				t.Fatalf("migrate v%d: %v", v, err)
+			}
+			if _, err := tx.Exec(`INSERT INTO schema_version (version, applied_at) VALUES (?, 0)`, v); err != nil {
+				t.Fatalf("record v%d: %v", v, err)
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatalf("commit seed: %v", err)
+		}
+		return db
+	}
+
+	cases := []struct {
+		name string
+		// install applies the single-feature objects that a pre-merge v26
+		// branch would have created, then stamps schema_version at 26.
+		install func(t *testing.T, db *sql.DB)
+	}{
+		{
+			name: "artifacts branch v26",
+			install: func(t *testing.T, db *sql.DB) {
+				tx, err := db.Begin()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := migrateToV26(tx); err != nil {
+					t.Fatalf("install artifacts v26: %v", err)
+				}
+				if _, err := tx.Exec(`INSERT INTO schema_version (version, applied_at) VALUES (26, 0)`); err != nil {
+					t.Fatal(err)
+				}
+				if err := tx.Commit(); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "resource pools branch v26",
+			install: func(t *testing.T, db *sql.DB) {
+				tx, err := db.Begin()
+				if err != nil {
+					t.Fatal(err)
+				}
+				// The pools feature's original v26 created the lease table.
+				if err := migrateToV27(tx); err != nil {
+					t.Fatalf("install pools v26: %v", err)
+				}
+				if _, err := tx.Exec(`INSERT INTO schema_version (version, applied_at) VALUES (26, 0)`); err != nil {
+					t.Fatal(err)
+				}
+				if err := tx.Commit(); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "loop migration branch v26",
+			install: func(t *testing.T, db *sql.DB) {
+				tx, err := db.Begin()
+				if err != nil {
+					t.Fatal(err)
+				}
+				// The loop feature's original v26 created loop_workflow_map.
+				if err := migrateToV28(tx); err != nil {
+					t.Fatalf("install loop v26: %v", err)
+				}
+				if _, err := tx.Exec(`INSERT INTO schema_version (version, applied_at) VALUES (26, 0)`); err != nil {
+					t.Fatal(err)
+				}
+				if err := tx.Commit(); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := seedThroughV25(t)
+			tc.install(t, db)
+
+			if err := migrate(db); err != nil {
+				t.Fatalf("forward migrate: %v", err)
+			}
+
+			var version int
+			if err := db.QueryRow(`SELECT max(version) FROM schema_version`).Scan(&version); err != nil {
+				t.Fatal(err)
+			}
+			if version != latestSchemaVersion {
+				t.Fatalf("after forward migrate at v%d, want v%d", version, latestSchemaVersion)
+			}
+			// All three features' objects must coexist regardless of which
+			// single-feature v26 the DB started from.
+			for _, table := range []string{"workflow_artifact", "workflow_resource_lease", "loop_workflow_map"} {
+				var n int
+				if err := db.QueryRow(
+					`SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?`, table,
+				).Scan(&n); err != nil {
+					t.Fatal(err)
+				}
+				if n != 1 {
+					t.Fatalf("expected table %q to exist, found %d", table, n)
+				}
+			}
+			// The artifact retention column must exist too.
+			var retentionCols int
+			if err := db.QueryRow(
+				`SELECT count(*) FROM pragma_table_info('workflow_version') WHERE name='retention_days'`,
+			).Scan(&retentionCols); err != nil {
+				t.Fatal(err)
+			}
+			if retentionCols != 1 {
+				t.Fatalf("expected workflow_version.retention_days column, found %d", retentionCols)
+			}
+			// migrate() again is a no-op.
+			if err := migrate(db); err != nil {
+				t.Fatalf("second migrate: %v", err)
+			}
+		})
+	}
+}
+
 func TestMigrate_FreshDB_CreatesSchemaAtLatestVersion(t *testing.T) {
 	sqlDB, err := sql.Open("sqlite", ":memory:")
 	if err != nil {

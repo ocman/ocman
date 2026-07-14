@@ -96,6 +96,20 @@ flowchart TD
   logs and artifact payloads; a background sweep drops payloads past
   their retention window (30-day default, per-workflow override) but
   keeps the metadata.
+- **Loop → workflow migration (#325)** — on upgrade, migration v28 makes a
+  one-time copy of every persisted loop into a one-node workflow definition
+  (matching trigger + preserved loop policies under `definition_json`
+  `.loopCompat`) and turns each loop iteration into a historical workflow run
+  + node attempt. `loop_workflow_map` keeps loop identifiers resolvable to
+  their new workflow ids. The copy is idempotent (already-mapped loops are
+  skipped) and interrupted-safe (it runs inside the migration transaction).
+  The original `loops` / `loop_iterations` tables and the loop
+  REST/MCP/UI surfaces are **left intact as compatibility wrappers for one
+  release**: they keep executing via `loops.Service` while the workflow copy
+  provides the consolidated view. **Planned removal:** the loop engine,
+  `/api/loops`, the loop MCP tools, and the standalone Loops UI are slated
+  for deletion **one release after** the workflow scheduler owns loop-style
+  execution end to end; until then loop and workflow surfaces coexist.
 - **internal/mcp** — prompt composer + session launcher + tool
   handlers; all side effects go through the same `Platform` interface
   the HTTP layer uses.

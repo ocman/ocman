@@ -109,11 +109,20 @@ import (
 //	27 - workflow resource pools. Adds a durable workflow_resource_lease
 //	      table recording held pool/run-concurrency capacity per attempt,
 //	      so acquisition is atomic and survives restart reconciliation.
+//	28 - loops → one-node workflows (#325). One-time copy: every persisted
+//	      loop becomes a one-node workflow definition/version with the
+//	      corresponding trigger + preserved loop policies, and each loop
+//	      iteration becomes a historical workflow run + node attempt.
+//	      `loop_workflow_map` keeps loop identifiers resolvable to the new
+//	      workflow ids. Idempotent (skips already-mapped loops) and
+//	      interrupted-safe (runs inside the migration transaction). The
+//	      original loop tables are left intact so the existing loop
+//	      REST/MCP/UI compatibility surfaces keep working for one release.
 //
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 27
+const latestSchemaVersion = 28
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -263,6 +272,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV26(tx)
 	case 27:
 		return migrateToV27(tx)
+	case 28:
+		return migrateToV28(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -928,10 +939,33 @@ func migrateToV25(tx *sql.Tx) error {
 //
 // workflow_version.retention_days overrides the 30-day default payload
 // retention; 0 means "use the default".
+// The workflow artifact (#316), resource-pool lease (#319), and
+// loop→workflow (#325) features each independently shipped as a competing
+// migration v26 on their own branch. The integrated sequence assigns them
+// distinct monotonic versions — v26 artifacts, v27 resource leases, v28
+// loop copy — with a single latestSchemaVersion.
+//
+// A database that ran one of the pre-merge branches is stamped at v26 while
+// carrying only that one feature's objects. Because migrate() resumes at the
+// stamped version + 1, such a DB would otherwise skip the sibling features it
+// never applied. To keep "a DB stamped at any single-feature version migrates
+// cleanly forward" true, every workflow migration is fully idempotent (via
+// ensure* helpers) and each higher version re-ensures the lower workflow
+// features' objects. No feature is skipped regardless of which competing v26
+// a dev database recorded.
 func migrateToV26(tx *sql.Tx) error {
+	return ensureWorkflowArtifactSchema(tx)
+}
+
+// ensureWorkflowArtifactSchema idempotently creates the artifact metadata
+// table, its indexes, and the workflow_version.retention_days column.
+func ensureWorkflowArtifactSchema(tx *sql.Tx) error {
+	if err := addColumnIfMissing(tx, "workflow_version", "retention_days",
+		"INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 	_, err := tx.Exec(`
-		ALTER TABLE workflow_version ADD COLUMN retention_days INTEGER NOT NULL DEFAULT 0;
-		CREATE TABLE workflow_artifact (
+		CREATE TABLE IF NOT EXISTS workflow_artifact (
 			id              TEXT PRIMARY KEY,
 			run_id          TEXT NOT NULL REFERENCES workflow_run(id),
 			node_id         TEXT NOT NULL,
@@ -944,10 +978,41 @@ func migrateToV26(tx *sql.Tx) error {
 			expires_at      INTEGER,
 			payload_deleted INTEGER NOT NULL DEFAULT 0
 		);
-		CREATE INDEX idx_workflow_artifact_run ON workflow_artifact (run_id, node_id);
-		CREATE INDEX idx_workflow_artifact_hash ON workflow_artifact (content_hash);
-		CREATE INDEX idx_workflow_artifact_expiry ON workflow_artifact (expires_at, payload_deleted);
+		CREATE INDEX IF NOT EXISTS idx_workflow_artifact_run ON workflow_artifact (run_id, node_id);
+		CREATE INDEX IF NOT EXISTS idx_workflow_artifact_hash ON workflow_artifact (content_hash);
+		CREATE INDEX IF NOT EXISTS idx_workflow_artifact_expiry ON workflow_artifact (expires_at, payload_deleted);
 	`)
+	return err
+}
+
+// addColumnIfMissing adds a column to a table only when it is not already
+// present, so a migration stays idempotent against databases that reached
+// this shape via a different (pre-merge) migration ordering.
+func addColumnIfMissing(tx *sql.Tx, table, column, definition string) error {
+	rows, err := tx.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return err
+	}
+	present := false
+	for rows.Next() {
+		var cid, notnull, primaryKey int
+		var name, columnType string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &columnType, &notnull, &defaultValue, &primaryKey); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == column {
+			present = true
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if present {
+		return nil
+	}
+	_, err = tx.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + column + ` ` + definition)
 	return err
 }
 
@@ -960,8 +1025,19 @@ func migrateToV26(tx *sql.Tx) error {
 // after a restart let reconciliation release capacity for interrupted
 // attempts and let the UI show what is held vs waiting.
 func migrateToV27(tx *sql.Tx) error {
+	// A DB stamped at the pool feature's pre-merge v26 resumes here at v27
+	// without ever having run the artifact v26, so re-ensure artifacts too.
+	if err := ensureWorkflowArtifactSchema(tx); err != nil {
+		return err
+	}
+	return ensureWorkflowResourceLeaseSchema(tx)
+}
+
+// ensureWorkflowResourceLeaseSchema idempotently creates the resource-lease
+// table and its index.
+func ensureWorkflowResourceLeaseSchema(tx *sql.Tx) error {
 	_, err := tx.Exec(`
-		CREATE TABLE workflow_resource_lease (
+		CREATE TABLE IF NOT EXISTS workflow_resource_lease (
 			run_id      TEXT NOT NULL REFERENCES workflow_run(id),
 			node_id     TEXT NOT NULL,
 			attempt_id  INTEGER NOT NULL,
@@ -970,7 +1046,7 @@ func migrateToV27(tx *sql.Tx) error {
 			acquired_at INTEGER NOT NULL,
 			PRIMARY KEY (run_id, node_id, pool)
 		);
-		CREATE INDEX idx_workflow_resource_lease_pool
+		CREATE INDEX IF NOT EXISTS idx_workflow_resource_lease_pool
 			ON workflow_resource_lease (run_id, pool);
 	`)
 	return err
