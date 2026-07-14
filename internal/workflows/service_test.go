@@ -1120,21 +1120,35 @@ func TestCommandConcurrencyCapAndFailurePolicy(t *testing.T) {
 			t.Fatal(err)
 		}
 		<-executor.started
-		select {
-		case second := <-executor.started:
-			t.Fatalf("second command %q exceeded concurrency cap", second)
-		case <-time.After(100 * time.Millisecond):
+		// The cap is observable in the run's resource state, not a wall-clock
+		// guess: "one" holds the single run-concurrency unit and "two" is
+		// queued waiting on it. StartWorkflowCommand commits the lease before
+		// the executor signals, so this already holds here.
+		capped, err := h.svc.GetRun(context.Background(), run.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if poolHeld(capped, "") != 1 || !poolWaiting(capped, "", "two") {
+			t.Fatalf("concurrency cap not enforced: %+v", capped.Resources)
 		}
 		close(executor.release)
+		// "two" may only start once "one" releases the capacity, proving
+		// serialized dispatch under the cap.
+		if second := <-executor.started; second != "two" {
+			t.Fatalf("expected two to start after one released, got %q", second)
+		}
 		waitForRun(t, h.svc, run.ID, StateSuccessful)
 	})
 
 	t.Run("failure leaves independent sibling running", func(t *testing.T) {
 		h := newHarness(t)
 		dir := t.TempDir()
+		pidPath := filepath.Join(dir, "sibling.pid")
+		// "fail" waits for the sibling's pid file before failing, so the
+		// sibling is guaranteed to have started regardless of scheduler timing.
 		nodes := []Node{
-			{ID: "fail", Name: "Fail", Type: "command", Command: []string{"/bin/sh", "-c", "sleep .2; exit 9"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}},
-			{ID: "sibling", Name: "Sibling", Type: "command", Command: []string{"/bin/sh", "-c", "sleep .3"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}},
+			{ID: "fail", Name: "Fail", Type: "command", Command: []string{"/bin/sh", "-c", fmt.Sprintf("while [ ! -f %s ]; do sleep 0.01; done; exit 9", pidPath)}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}},
+			{ID: "sibling", Name: "Sibling", Type: "command", Command: []string{"/bin/sh", "-c", fmt.Sprintf("sleep .3 & echo $! > %s; wait", pidPath)}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}},
 		}
 		definition := Definition{ID: "parallel", Name: "Parallel", Version: "1", Concurrency: 2, Directory: dir, Triggers: []Trigger{{ID: "manual", Type: TriggerManual}}, Nodes: nodes}
 		raw, _ := json.Marshal(definition)
@@ -1146,6 +1160,7 @@ func TestCommandConcurrencyCapAndFailurePolicy(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		waitForPidFile(t, pidPath)
 		failed := waitForRun(t, h.svc, run.ID, StateFailed)
 		if failed.Nodes[1].Attempts[0].State != AttemptSuccessful {
 			t.Fatalf("independent sibling did not finish: %+v", failed.Nodes[1])
@@ -1287,6 +1302,33 @@ func waitForRun(t *testing.T, svc *Service, id string, states ...string) RunDeta
 	}
 	t.Fatalf("run %s did not reach %v", id, states)
 	return RunDetail{}
+}
+
+func waitForPidFile(t *testing.T, pidPath string) int {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if value, err := os.ReadFile(pidPath); err == nil {
+			if pid, perr := strconv.Atoi(strings.TrimSpace(string(value))); perr == nil && pid > 0 {
+				return pid
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("sibling child did not write pid file %s", pidPath)
+	return 0
+}
+
+func waitForProcessExit(t *testing.T, pid int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if err := syscall.Kill(pid, 0); err != nil {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("sibling child %d survived failure", pid)
 }
 
 func TestAgentRunFreshAffinityCollectorsAndIdleCompletion(t *testing.T) {
