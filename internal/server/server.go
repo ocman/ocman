@@ -104,6 +104,10 @@ type Server struct {
 	loopSvcOnce       sync.Once
 	workflowSvcCached *workflows.Service
 	workflowSvcOnce   sync.Once
+	// workflowBlobDir overrides the content-addressed artifact payload
+	// directory. Empty = <ocman data dir>/workflow-artifacts. Tests set
+	// it to a temp dir.
+	workflowBlobDir string
 
 	// queueSvcCached is the follow-up message queue service (#58), built
 	// lazily on first use (mirrors loopSvcCached). Guarded by

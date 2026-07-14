@@ -99,11 +99,18 @@ import (
 //	      databases already migrated to either branch's competing v23.
 //	25 - workflow triggers. Adds durable detection/queue state and immutable
 //	      trigger snapshots on workflow runs.
+//	26 - workflow artifacts. Adds the `workflow_artifact` metadata table
+//	      (immutable typed artifacts keyed to a producing attempt, with a
+//	      content hash referencing the on-disk content-addressed payload
+//	      store, an expires_at retention cutoff, and a payload_deleted
+//	      flag so cleanup can drop bytes while preserving audit metadata),
+//	      and `workflow_version.retention_days` (per-workflow retention
+//	      override; 0 = default 30 days).
 //
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 25
+const latestSchemaVersion = 26
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -249,6 +256,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV24(tx)
 	case 25:
 		return migrateToV25(tx)
+	case 26:
+		return migrateToV26(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -896,6 +905,43 @@ func migrateToV25(tx *sql.Tx) error {
 			'versionId', version_id, 'firedAt', created_at, 'detail', 'migrated manual run'
 		)
 		WHERE trigger_snapshot_json IS NULL;
+	`)
+	return err
+}
+
+// migrateToV26 adds immutable workflow artifact metadata and a
+// per-workflow retention override.
+//
+// workflow_artifact stores one row per produced artifact: its declaring
+// name, typed kind, the producing run/node/attempt, a content hash
+// pointing at the on-disk content-addressed payload store, the payload
+// size, a created_at, and a nullable expires_at retention cutoff. The
+// payload_deleted flag lets cleanup drop the bytes (once every
+// referencing row is past its expiry) while the metadata row survives
+// for audit. content_hash is intentionally not unique: identical
+// payloads dedup on disk but keep independent metadata/retention rows.
+//
+// workflow_version.retention_days overrides the 30-day default payload
+// retention; 0 means "use the default".
+func migrateToV26(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		ALTER TABLE workflow_version ADD COLUMN retention_days INTEGER NOT NULL DEFAULT 0;
+		CREATE TABLE workflow_artifact (
+			id              TEXT PRIMARY KEY,
+			run_id          TEXT NOT NULL REFERENCES workflow_run(id),
+			node_id         TEXT NOT NULL,
+			attempt_id      INTEGER NOT NULL,
+			name            TEXT NOT NULL,
+			kind            TEXT NOT NULL,
+			content_hash    TEXT NOT NULL,
+			size_bytes      INTEGER NOT NULL,
+			created_at      INTEGER NOT NULL,
+			expires_at      INTEGER,
+			payload_deleted INTEGER NOT NULL DEFAULT 0
+		);
+		CREATE INDEX idx_workflow_artifact_run ON workflow_artifact (run_id, node_id);
+		CREATE INDEX idx_workflow_artifact_hash ON workflow_artifact (content_hash);
+		CREATE INDEX idx_workflow_artifact_expiry ON workflow_artifact (expires_at, payload_deleted);
 	`)
 	return err
 }

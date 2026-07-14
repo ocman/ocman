@@ -8,6 +8,7 @@ import type { WorkflowRunDetail, WorkflowVersion } from '../lib/api';
 const { apiMock, useWorkflowsMock, listeners, triggerListeners, connectListeners } = vi.hoisted(() => ({
 	apiMock: {
 		versions: vi.fn(), publish: vi.fn(), start: vi.fn(), runs: vi.fn(), run: vi.fn(), approve: vi.fn(), pause: vi.fn(), cancel: vi.fn(),
+		artifacts: vi.fn(), artifactDownloadUrl: vi.fn((runId: string, id: string) => `/api/workflow-runs/${runId}/artifacts/${id}/download`),
 	},
 	useWorkflowsMock: vi.fn(() => true),
 	listeners: [] as Array<(runId: string) => void>,
@@ -67,6 +68,7 @@ describe('Workflows', () => {
 		apiMock.publish.mockResolvedValue(version);
 		apiMock.start.mockResolvedValue(activeRun);
 		apiMock.approve.mockResolvedValue({ ...activeRun, nodes: [{ ...activeRun.nodes[0], state: 'successful' }, { ...activeRun.nodes[1], state: 'ready' }] });
+		apiMock.artifacts.mockResolvedValue([]);
 	});
 
 	it('is capability gated', () => {
@@ -129,6 +131,22 @@ describe('Workflows', () => {
 		expect(screen.getByText('test output')).toBeInTheDocument();
 		expect(screen.getByText('test failure')).toBeInTheDocument();
 		expect(screen.getByText('{"failed":1}')).toBeInTheDocument();
+	});
+
+	it('inspects artifact metadata and offers retained-payload download', async () => {
+		apiMock.artifacts.mockResolvedValue([
+			{ id: 'wfa_1', runId: 'wfr_1', nodeId: 'review', attemptId: 1, name: 'report', kind: 'json', contentHash: 'abc', size: 2048, createdAt: 1, expiresAt: 99999, payloadAvailable: true },
+			{ id: 'wfa_2', runId: 'wfr_1', nodeId: 'review', attemptId: 1, name: 'log', kind: 'text', contentHash: 'def', size: 10, createdAt: 1, payloadAvailable: false },
+		]);
+		render(<MemoryRouter><Workflows /></MemoryRouter>);
+
+		await screen.findByRole('region', { name: 'Workflow artifacts' });
+		expect(screen.getByText('report')).toBeInTheDocument();
+		expect(screen.getByText(/json · 2\.0 KB/)).toBeInTheDocument();
+		// Retained payload has a download link.
+		expect(screen.getByRole('link', { name: 'Download' })).toHaveAttribute('href', '/api/workflow-runs/wfr_1/artifacts/wfa_1/download');
+		// Cleaned-up payload is shown as gone, no download.
+		expect(screen.getByText('Payload cleaned up')).toBeInTheDocument();
 	});
 
 	it('links agent attempts and shows live and collected state', async () => {

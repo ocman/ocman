@@ -28,4 +28,9 @@
 .workflow-step h3 { margin: 8px 0; font-size: 18px; }
 .workflow-command-log { margin-top: 12px; font-size: 12px; }
 .workflow-command-log pre { max-height: 180px; overflow: auto; margin: 5px 0; padding: 8px; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg-secondary); border: 1px solid var(--border); font: 11px/1.4 var(--font-mono); }
+.workflow-artifacts { margin-top: 18px; }
+.workflow-artifacts ul { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.workflow-artifacts li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; padding: 8px; background: var(--bg); border: 1px solid var(--border); font-size: 12px; }
+.workflow-artifacts li small { color: var(--text-dim); }
+.workflow-artifact-gone { color: var(--text-dim); font-style: italic; }
 @media (max-width: 720px) { .workflow-page { padding: 12px; } .workflow-author, .workflow-history { grid-template-columns: 1fr; } .workflow-run header { display: block; } }

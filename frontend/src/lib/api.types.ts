@@ -882,15 +882,38 @@ export interface WorkflowTriggerSnapshot extends WorkflowTrigger {
 	detail: string;
 }
 
+export interface WorkflowSecretRef {
+	name: string;
+	env: string;
+}
+
 export interface WorkflowDefinition {
 	id: string;
 	name: string;
 	version: string;
 	concurrency: number;
+	retentionDays?: number;
 	directory?: string;
+	secrets?: WorkflowSecretRef[];
 	triggers: WorkflowTrigger[];
 	nodes: WorkflowNodeDefinition[];
 	dependencies: WorkflowDependency[];
+}
+
+export type WorkflowArtifactKind = 'json' | 'text' | 'file' | 'diff' | 'diagnostics';
+
+export interface WorkflowArtifact {
+	id: string;
+	runId: string;
+	nodeId: string;
+	attemptId: number;
+	name: string;
+	kind: WorkflowArtifactKind;
+	contentHash: string;
+	size: number;
+	createdAt: number;
+	expiresAt?: number;
+	payloadAvailable: boolean;
 }
 
 export interface WorkflowVersion {

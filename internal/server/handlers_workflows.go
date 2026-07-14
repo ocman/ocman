@@ -2,19 +2,27 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 
+	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/workflows"
 )
 
 func (s *Server) workflowSvc() *workflows.Service {
 	s.workflowSvcOnce.Do(func() {
+		blobDir := s.workflowBlobDir
+		if blobDir == "" {
+			blobDir = filepath.Join(state.DefaultDataDir(), "workflow-artifacts")
+		}
 		s.workflowSvcCached = workflows.NewService(workflows.Deps{
 			Store:         s.stateDB,
 			Agent:         &workflowAgentExecutor{s: s},
+			Blobs:         workflows.NewBlobStore(blobDir),
 			Notify:        s.broadcastWorkflowRunUpdated,
 			NotifyTrigger: s.broadcastWorkflowTriggerUpdated,
 			Forge:         &loopForge{s: s},
@@ -116,6 +124,10 @@ func (s *Server) handleWorkflowRuns(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, run)
 		return
 	}
+	if action == "artifacts" && r.Method == http.MethodGet {
+		s.handleWorkflowArtifacts(w, r, runID, extra)
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -162,6 +174,69 @@ func (s *Server) handleWorkflowRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, run)
+}
+
+// handleWorkflowArtifacts serves artifact metadata for a run and the
+// content-addressed payload for a single artifact.
+//
+//	GET /api/workflow-runs/{run}/artifacts            → metadata list
+//	GET /api/workflow-runs/{run}/artifacts/{id}/download → payload bytes
+func (s *Server) handleWorkflowArtifacts(w http.ResponseWriter, r *http.Request, runID, extra string) {
+	if extra == "" {
+		artifacts, err := s.workflowSvc().ListArtifacts(r.Context(), runID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, artifacts)
+		return
+	}
+	artifactID, sub, _ := strings.Cut(extra, "/")
+	if sub != "download" {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	artifact, payload, err := s.workflowSvc().DownloadArtifact(r.Context(), artifactID)
+	if errors.Is(err, workflows.ErrPayloadMissing) {
+		http.Error(w, "artifact payload has been cleaned up", http.StatusGone)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("X-Artifact-Kind", artifact.Kind)
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+artifactDownloadName(artifact)+"\"")
+	_, _ = w.Write(payload)
+}
+
+// artifactDownloadName derives a stable, safe download filename from the
+// artifact's name and kind.
+func artifactDownloadName(a workflows.Artifact) string {
+	name := a.Name
+	if name == "" {
+		name = a.ID
+	}
+	name = strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_', r == '.':
+			return r
+		default:
+			return '_'
+		}
+	}, name)
+	switch a.Kind {
+	case workflows.KindJSON:
+		if !strings.HasSuffix(name, ".json") {
+			name += ".json"
+		}
+	case workflows.KindDiff:
+		if !strings.HasSuffix(name, ".diff") && !strings.HasSuffix(name, ".patch") {
+			name += ".diff"
+		}
+	}
+	return name
 }
 
 func cutWorkflowPath(path string) (first, second, rest string) {

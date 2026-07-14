@@ -30,7 +30,13 @@ flowchart LR
 - **opencode.db** — foreign data, opened read-only; ocman never writes
   to it.
 - **state.db** — ocman's own state: archive flags, child sessions,
-  loops, immutable workflow versions/runs, settings, and remote tokens.
+  loops, immutable workflow versions/runs, workflow artifact metadata,
+  settings, and remote tokens.
+- **workflow-artifacts/** — content-addressed store (under the ocman
+  data dir, next to state.db) holding large, deduplicated, immutable
+  artifact payloads out of SQLite; metadata rows in state.db reference
+  payloads by content hash and expire them on a retention policy while
+  keeping the audit metadata.
 - **Remote ocman instances** — the hub dials remotes over gRPC and
   re-exposes their sessions/hosts transparently.
 
@@ -83,7 +89,13 @@ flowchart TD
   create/send/abort through the session service, poll platform-neutral
   session status, and collect declared messages, diffs, or files through
   platform/host seams. REST, MCP, and SSE never implement independent
-  transitions.
+  transitions. Successful node outputs become immutable, typed artifacts
+  (JSON/text/file/diff/diagnostics): payloads go to a content-addressed
+  `BlobStore` (deduplicated) while metadata lands in state.db. Referenced
+  secrets are resolved from host env at execution time and redacted from
+  logs and artifact payloads; a background sweep drops payloads past
+  their retention window (30-day default, per-workflow override) but
+  keeps the metadata.
 - **internal/mcp** — prompt composer + session launcher + tool
   handlers; all side effects go through the same `Platform` interface
   the HTTP layer uses.

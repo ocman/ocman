@@ -94,6 +94,7 @@ func (f *fakeAgentExecutor) Cancel(_ context.Context, session AgentSession) erro
 type harness struct {
 	t              *testing.T
 	path           string
+	blobDir        string
 	db             *state.DB
 	now            time.Time
 	forge          *workflowFakeForge
@@ -101,6 +102,8 @@ type harness struct {
 	triggerChanges int
 	svc            *Service
 	agent          *fakeAgentExecutor
+	blobs          *BlobStore
+	secrets        map[string]string
 }
 
 type workflowFakeForge struct {
@@ -129,13 +132,16 @@ func (f *workflowFakeStatus) TurnRunning(_ context.Context, _, sessionID string)
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
+	dir := t.TempDir()
 	h := &harness{
-		t:      t,
-		path:   filepath.Join(t.TempDir(), "state.db"),
-		now:    time.Date(2026, 7, 13, 20, 0, 0, 0, time.UTC),
-		forge:  &workflowFakeForge{},
-		status: &workflowFakeStatus{running: map[string]bool{}},
-		agent:  &fakeAgentExecutor{results: map[string]AgentResult{}},
+		t:       t,
+		path:    filepath.Join(dir, "state.db"),
+		blobDir: filepath.Join(dir, "artifacts"),
+		now:     time.Date(2026, 7, 13, 20, 0, 0, 0, time.UTC),
+		forge:   &workflowFakeForge{},
+		status:  &workflowFakeStatus{running: map[string]bool{}},
+		agent:   &fakeAgentExecutor{results: map[string]AgentResult{}},
+		secrets: map[string]string{},
 	}
 	h.open()
 	t.Cleanup(func() {
@@ -153,7 +159,8 @@ func (h *harness) open() {
 		h.t.Fatalf("open state DB: %v", err)
 	}
 	h.db = db
-	h.svc = NewService(Deps{Store: db, Agent: h.agent, Now: func() time.Time { return h.now }, Forge: h.forge, Status: h.status, NotifyTrigger: func() { h.triggerChanges++ }})
+	h.blobs = NewBlobStore(h.blobDir)
+	h.svc = NewService(Deps{Store: db, Agent: h.agent, Blobs: h.blobs, ResolveSecret: func(env string) string { return h.secrets[env] }, Now: func() time.Time { return h.now }, Forge: h.forge, Status: h.status, NotifyTrigger: func() { h.triggerChanges++ }})
 }
 
 func (h *harness) restart() {

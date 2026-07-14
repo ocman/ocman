@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/mcptest"
@@ -248,6 +250,68 @@ func TestWorkflowMCPAndRESTShareServiceContract(t *testing.T) {
 	}
 	if got := call("inspect_workflow_run", map[string]interface{}{"run_id": run.ID}); got["state"] != workflows.StateActive {
 		t.Fatalf("MCP did not observe REST resume: %#v", got)
+	}
+}
+
+func TestWorkflowArtifactRESTListAndDownload(t *testing.T) {
+	srv := newWorkflowTestServer(t)
+	srv.workflowBlobDir = filepath.Join(t.TempDir(), "artifacts")
+	dir := t.TempDir()
+	definition := `{"id":"art","name":"Art","version":"1","concurrency":1,"directory":` + fmt.Sprintf("%q", dir) +
+		`,"triggers":[{"id":"manual","type":"manual"}],"nodes":[{"id":"emit","name":"Emit","type":"command",` +
+		`"command":["/bin/sh","-c","printf produced"],"permission":[{"permission":"bash","pattern":"/bin/sh -c *","action":"allow"}],` +
+		`"outputs":[{"name":"log","type":"text"}]}],"dependencies":[]}`
+	version, err := srv.workflowSvc().PublishJSON(t.Context(), []byte(definition))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := srv.workflowSvc().Start(t.Context(), version.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Command runs asynchronously; wait for success.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		got, err := srv.workflowSvc().GetRun(t.Context(), run.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.State == workflows.StateSuccessful {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	rec := httptest.NewRecorder()
+	srv.handleWorkflowRuns(rec, httptest.NewRequest(http.MethodGet, "/api/workflow-runs/"+run.ID+"/artifacts", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list artifacts: %d %s", rec.Code, rec.Body.String())
+	}
+	var artifacts []workflows.Artifact
+	if err := json.Unmarshal(rec.Body.Bytes(), &artifacts); err != nil {
+		t.Fatal(err)
+	}
+	if len(artifacts) != 1 || artifacts[0].Name != "log" || !artifacts[0].PayloadAvailable {
+		t.Fatalf("unexpected artifacts: %+v", artifacts)
+	}
+
+	rec = httptest.NewRecorder()
+	srv.handleWorkflowRuns(rec, httptest.NewRequest(http.MethodGet, "/api/workflow-runs/"+run.ID+"/artifacts/"+artifacts[0].ID+"/download", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("download: %d %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "produced") {
+		t.Fatalf("download body missing payload: %q", rec.Body.String())
+	}
+	if rec.Header().Get("Content-Disposition") == "" {
+		t.Fatal("download missing Content-Disposition")
+	}
+
+	// Missing artifact → 404.
+	rec = httptest.NewRecorder()
+	srv.handleWorkflowRuns(rec, httptest.NewRequest(http.MethodGet, "/api/workflow-runs/"+run.ID+"/artifacts/nope/download", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("missing artifact: want 404, got %d", rec.Code)
 	}
 }
 

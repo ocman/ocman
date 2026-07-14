@@ -77,6 +77,7 @@ export type {
 	WorkflowVersion,
 	WorkflowRun,
 	WorkflowRunDetail,
+	WorkflowArtifact,
 } from './api.types';
 
 // Type imports used by the api object below.
@@ -126,6 +127,7 @@ import type {
 	WorkflowVersion,
 	WorkflowRun,
 	WorkflowRunDetail,
+	WorkflowArtifact,
 } from './api.types';
 
 /**
@@ -742,6 +744,8 @@ export const api = {
 		approve: (runId: string, nodeId: string) => postJSON<WorkflowRunDetail>(`/api/workflow-runs/${encodeURIComponent(runId)}/approve/${encodeURIComponent(nodeId)}`, {}),
 		pause: (runId: string) => postJSON<WorkflowRunDetail>(`/api/workflow-runs/${encodeURIComponent(runId)}/pause`, {}),
 		cancel: (runId: string) => postJSON<WorkflowRunDetail>(`/api/workflow-runs/${encodeURIComponent(runId)}/cancel`, {}),
+		artifacts: (runId: string, signal?: AbortSignal) => fetchJSON<WorkflowArtifact[]>(`/api/workflow-runs/${encodeURIComponent(runId)}/artifacts`, signal),
+		artifactDownloadUrl: (runId: string, artifactId: string) => `/api/workflow-runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(artifactId)}/download`,
 	},
   compactSession: (sessionId: string, providerID: string, modelID: string) =>
     postJSON<void>(

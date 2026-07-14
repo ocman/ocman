@@ -14,6 +14,7 @@ type WorkflowVersion struct {
 	MetadataVersion string
 	DefinitionJSON  string
 	Concurrency     int
+	RetentionDays   int
 	CreatedAt       int64
 	Nodes           []WorkflowNode
 	Dependencies    []WorkflowDependency
@@ -109,7 +110,7 @@ func (d *DB) InsertWorkflowVersion(v WorkflowVersion) (WorkflowVersion, error) {
 		return WorkflowVersion{}, fmt.Errorf("reading workflow revision: %w", err)
 	}
 	v.Revision = revision
-	if _, err = tx.Exec(`INSERT INTO workflow_version (id, workflow_id, name, revision, metadata_version, definition_json, concurrency, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, v.ID, v.WorkflowID, v.Name, v.Revision, v.MetadataVersion, v.DefinitionJSON, v.Concurrency, v.CreatedAt); err != nil {
+	if _, err = tx.Exec(`INSERT INTO workflow_version (id, workflow_id, name, revision, metadata_version, definition_json, concurrency, retention_days, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, v.ID, v.WorkflowID, v.Name, v.Revision, v.MetadataVersion, v.DefinitionJSON, v.Concurrency, v.RetentionDays, v.CreatedAt); err != nil {
 		return WorkflowVersion{}, fmt.Errorf("inserting workflow version: %w", err)
 	}
 	for _, node := range v.Nodes {
@@ -132,9 +133,9 @@ func (d *DB) GetWorkflowVersion(id string) (*WorkflowVersion, error) {
 	var v WorkflowVersion
 	err := d.db.QueryRow(`
 		SELECT v.id, v.workflow_id, v.name, v.revision, v.metadata_version,
-		       v.definition_json, v.concurrency, v.created_at
+		       v.definition_json, v.concurrency, v.retention_days, v.created_at
 		FROM workflow_version v
-		WHERE v.id = ?`, id).Scan(&v.ID, &v.WorkflowID, &v.Name, &v.Revision, &v.MetadataVersion, &v.DefinitionJSON, &v.Concurrency, &v.CreatedAt)
+		WHERE v.id = ?`, id).Scan(&v.ID, &v.WorkflowID, &v.Name, &v.Revision, &v.MetadataVersion, &v.DefinitionJSON, &v.Concurrency, &v.RetentionDays, &v.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("getting workflow version: %w", err)
 	}
@@ -164,7 +165,7 @@ func (d *DB) GetActiveWorkflowVersion(workflowID string) (*WorkflowVersion, erro
 func (d *DB) ListWorkflowVersions() ([]WorkflowVersion, error) {
 	rows, err := d.db.Query(`
 		SELECT v.id, v.workflow_id, v.name, v.revision, v.metadata_version,
-		       v.definition_json, v.concurrency, v.created_at
+		       v.definition_json, v.concurrency, v.retention_days, v.created_at
 		FROM workflow_version v
 		ORDER BY v.created_at DESC, v.revision DESC`)
 	if err != nil {
@@ -174,7 +175,7 @@ func (d *DB) ListWorkflowVersions() ([]WorkflowVersion, error) {
 	var out []WorkflowVersion
 	for rows.Next() {
 		var v WorkflowVersion
-		if err := rows.Scan(&v.ID, &v.WorkflowID, &v.Name, &v.Revision, &v.MetadataVersion, &v.DefinitionJSON, &v.Concurrency, &v.CreatedAt); err != nil {
+		if err := rows.Scan(&v.ID, &v.WorkflowID, &v.Name, &v.Revision, &v.MetadataVersion, &v.DefinitionJSON, &v.Concurrency, &v.RetentionDays, &v.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning workflow version: %w", err)
 		}
 		out = append(out, v)

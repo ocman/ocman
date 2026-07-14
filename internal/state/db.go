@@ -31,6 +31,12 @@ func DefaultDBPath() string {
 	return filepath.Join(home, ".local", "share", "ocman", "state.db")
 }
 
+// DefaultDataDir returns the ocman data directory (where state.db and
+// content-addressed artifact payloads live). Mirrors DefaultDBPath.
+func DefaultDataDir() string {
+	return filepath.Dir(DefaultDBPath())
+}
+
 // Open opens the ocman state database and ensures the schema exists.
 // Runs any pending migrations exactly once; safe to call on every boot.
 func Open(path string) (*DB, error) {

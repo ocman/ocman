@@ -63,14 +63,16 @@ const (
 )
 
 type Definition struct {
-	ID           string       `json:"id"`
-	Name         string       `json:"name"`
-	Version      string       `json:"version"`
-	Concurrency  int          `json:"concurrency"`
-	Directory    string       `json:"directory,omitempty"`
-	Triggers     []Trigger    `json:"triggers"`
-	Nodes        []Node       `json:"nodes"`
-	Dependencies []Dependency `json:"dependencies"`
+	ID            string       `json:"id"`
+	Name          string       `json:"name"`
+	Version       string       `json:"version"`
+	Concurrency   int          `json:"concurrency"`
+	RetentionDays int          `json:"retentionDays,omitempty"`
+	Directory     string       `json:"directory,omitempty"`
+	Secrets       []SecretRef  `json:"secrets,omitempty"`
+	Triggers      []Trigger    `json:"triggers"`
+	Nodes         []Node       `json:"nodes"`
+	Dependencies  []Dependency `json:"dependencies"`
 }
 
 type Trigger struct {
@@ -256,6 +258,11 @@ type Store interface {
 	SetWorkflowAgentSessionState(string, string, int64, string, string, int64) error
 	CompleteWorkflowAgentNode(string, string, int64, bool, string, string, string, int64) error
 	ResolveWorkflowAttempt(string, int64, string, int64) error
+	InsertWorkflowArtifact(state.WorkflowArtifact) error
+	ListWorkflowArtifacts(string) ([]state.WorkflowArtifact, error)
+	GetWorkflowArtifact(string) (*state.WorkflowArtifact, error)
+	ExpiredWorkflowArtifactHashes(int64) ([]string, error)
+	MarkWorkflowArtifactPayloadDeleted(string) error
 }
 
 type Deps struct {
@@ -267,6 +274,12 @@ type Deps struct {
 	Status          loops.SessionStatusInferer
 	CommandExecutor CommandExecutor
 	Agent           AgentExecutor
+	// Blobs is the content-addressed payload store for artifacts. When
+	// nil, artifact payloads are not persisted (metadata-only fallback).
+	Blobs *BlobStore
+	// ResolveSecret maps a host env var name to its value at execution
+	// time. Defaults to os.Getenv. Returns "" for unset vars.
+	ResolveSecret func(env string) string
 }
 
 type Service struct {
@@ -278,6 +291,8 @@ type Service struct {
 	status        loops.SessionStatusInferer
 	executor      CommandExecutor
 	agent         AgentExecutor
+	blobs         *BlobStore
+	resolveSecret func(string) string
 	dispatchMu    sync.Mutex
 	triggerMu     sync.Mutex
 	mu            sync.Mutex
@@ -299,6 +314,10 @@ func NewService(deps Deps) *Service {
 	if executor == nil {
 		executor = localCommandExecutor{}
 	}
+	resolveSecret := deps.ResolveSecret
+	if resolveSecret == nil {
+		resolveSecret = os.Getenv
+	}
 	return &Service{
 		store:         deps.Store,
 		now:           now,
@@ -308,6 +327,8 @@ func NewService(deps Deps) *Service {
 		status:        deps.Status,
 		executor:      executor,
 		agent:         deps.Agent,
+		blobs:         deps.Blobs,
+		resolveSecret: resolveSecret,
 		running:       make(map[string]map[string]*activeCommand),
 		stopping:      make(map[string]bool),
 	}
@@ -340,6 +361,7 @@ func (s *Service) PublishJSON(_ context.Context, source []byte) (Version, error)
 		MetadataVersion: definition.Version,
 		DefinitionJSON:  string(canonical),
 		Concurrency:     definition.Concurrency,
+		RetentionDays:   definition.RetentionDays,
 		CreatedAt:       now,
 	}
 	for position, node := range definition.Nodes {
@@ -904,12 +926,21 @@ func (s *Service) dispatchReady(run RunDetail) {
 		s.running[run.ID][nodeRun.NodeID] = active
 		s.mu.Unlock()
 		definition := definitions[nodeRun.NodeID]
-		go s.executeCommand(ctx, active, run.ID, run.Version.Definition.Directory, definition)
+		attemptID := nodeRun.Attempts[0].ID
+		go s.executeCommand(ctx, active, run.Version, run.ID, run.Version.Definition.Directory, definition, attemptID)
 	}
 }
 
-func (s *Service) executeCommand(ctx context.Context, active *activeCommand, runID, directory string, node Node) {
-	result := s.executor.Execute(ctx, CommandRequest{Directory: directory, Command: node.Command, Environment: node.Environment, Permission: node.Permission, Outputs: node.Outputs})
+func (s *Service) executeCommand(ctx context.Context, active *activeCommand, version Version, runID, directory string, node Node, attemptID int64) {
+	redactor := s.runRedactor(version)
+	env := s.secretEnv(version, node.Environment)
+	result := s.executor.Execute(ctx, CommandRequest{Directory: directory, Command: node.Command, Environment: env, Permission: node.Permission, Outputs: node.Outputs})
+	// Redact known secret values from logs and collected outputs before
+	// anything is persisted (audit) or published (artifacts).
+	result.Stdout = redactor.redact(result.Stdout)
+	result.Stderr = redactor.redact(result.Stderr)
+	result.Error = redactor.redact(result.Error)
+	result.Outputs = redactor.redactOutputs(result.Outputs)
 	stopOwner := false
 	if result.State != AttemptSuccessful && result.State != AttemptCanceled {
 		stopOwner = s.stopSiblingCommands(runID, node.ID)
@@ -922,6 +953,9 @@ func (s *Service) executeCommand(ctx context.Context, active *activeCommand, run
 	if err != nil {
 		result.State, result.Error = AttemptErrored, err.Error()
 		outputs = []byte("{}")
+	}
+	if result.State == AttemptSuccessful {
+		s.publishCommandArtifacts(version, runID, node, attemptID, result.Outputs)
 	}
 	_ = s.store.CompleteWorkflowCommand(runID, node.ID, state.WorkflowCommandResult{
 		State: result.State, ExitCode: result.ExitCode, Stdout: result.Stdout, Stderr: result.Stderr, Error: result.Error,
@@ -1083,6 +1117,14 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 					}
 				}
 			}
+			// Redact known secret values from agent outputs and error
+			// before persistence and artifact publication.
+			redactor := s.runRedactor(run.Version)
+			result.Outputs = redactor.redactRawOutputs(result.Outputs)
+			result.Error = redactor.redact(result.Error)
+			if successful {
+				s.publishAgentArtifacts(run.Version, runID, node.NodeID, attempt.ID, config, result.Outputs)
+			}
 			outputs, err := json.Marshal(result.Outputs)
 			if err != nil {
 				return err
@@ -1168,6 +1210,9 @@ func validateDefinition(definition Definition) error {
 	}
 	if len(definition.Triggers) == 0 {
 		return fmt.Errorf("at least one trigger is required")
+	}
+	if err := validateSecrets(definition.Secrets); err != nil {
+		return err
 	}
 	triggerIDs := map[string]bool{}
 	manualTriggers := 0
@@ -1361,6 +1406,23 @@ func validateTrigger(trigger Trigger) error {
 		}
 	default:
 		return fmt.Errorf("trigger %q has unsupported type %q", trigger.ID, trigger.Type)
+	}
+	return nil
+}
+
+func validateSecrets(secrets []SecretRef) error {
+	names := make(map[string]bool, len(secrets))
+	for _, secret := range secrets {
+		if secret.Name == "" || secret.Env == "" {
+			return fmt.Errorf("secret name and env are required")
+		}
+		if !environmentName.MatchString(secret.Env) {
+			return fmt.Errorf("secret %q references invalid env var %q", secret.Name, secret.Env)
+		}
+		if names[secret.Name] {
+			return fmt.Errorf("duplicate secret %q", secret.Name)
+		}
+		names[secret.Name] = true
 	}
 	return nil
 }

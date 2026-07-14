@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, type WorkflowRun, type WorkflowRunDetail, type WorkflowVersion } from '../lib/api';
+import { api, type WorkflowArtifact, type WorkflowRun, type WorkflowRunDetail, type WorkflowVersion } from '../lib/api';
 import { useWorkflows } from '../lib/useCapabilities';
 import { onSseConnect, onWorkflowRunUpdated, onWorkflowTriggerUpdated } from '../lib/useGlobalEvents';
 import { usePageTitle } from '../lib/headerContext';
@@ -103,6 +103,12 @@ export function Workflows() {
 }
 
 function RunView({ run, mutate }: { run: WorkflowRunDetail; mutate: (action: () => Promise<WorkflowRunDetail>) => Promise<void> }) {
+	const [artifacts, setArtifacts] = useState<WorkflowArtifact[]>([]);
+	useEffect(() => {
+		let active = true;
+		void api.workflows.artifacts(run.id).then((next) => { if (active) setArtifacts(next); }).catch(() => { if (active) setArtifacts([]); });
+		return () => { active = false; };
+	}, [run.id, run.state, run.updatedAt]);
 	return (
 		<section className="workflow-run" aria-label="Workflow run">
 			<header><div><span className="workflow-kicker">{run.id}</span><h2>{run.version.name}</h2><p>Revision {run.version.revision} · definition {run.version.definition.version} · {run.state}</p></div><div className="workflow-controls">{run.state === 'active' && <button type="button" onClick={() => void mutate(() => api.workflows.pause(run.id))}>Pause run</button>}{(run.state === 'active' || run.state === 'paused') && <button type="button" onClick={() => void mutate(() => api.workflows.cancel(run.id))}>Cancel run</button>}</div></header>
@@ -113,8 +119,34 @@ function RunView({ run, mutate }: { run: WorkflowRunDetail; mutate: (action: () 
 					return <div className="workflow-step" key={node.nodeId}>{index > 0 && <span aria-hidden="true">-&gt;</span>}<article data-state={node.state}><small>{node.type} · {node.nodeId}</small><h3>{node.name}</h3><strong>{node.state}</strong><p>{attempt ? `Attempt ${attempt.seq}: ${attempt.state}${attempt.exitCode !== undefined && attempt.exitCode >= 0 ? ` (exit ${attempt.exitCode})` : ''}` : 'Not attempted'}</p>{node.type === 'agent' && attempt?.sessionId && <><Link to={`/session/${encodeURIComponent(attempt.sessionId)}`}>Open agent session</Link><p>Session: {attempt.sessionState}</p></>}{node.type === 'agent' && attempt?.outputs && Object.entries(attempt.outputs).map(([name, value]) => <p key={name}>{name}: {JSON.stringify(value)}</p>)}{node.type === 'agent' && attempt?.error && <p role="alert">{attempt.error}</p>}{node.type === 'approval' && node.state === 'ready' && run.state === 'active' && <button type="button" onClick={() => void mutate(() => api.workflows.approve(run.id, node.nodeId))}>Approve {node.name}</button>}{attempt && node.type === 'command' && <CommandAttempt attempt={attempt} />}</article></div>;
 				})}
 			</div>
+			<ArtifactList runId={run.id} artifacts={artifacts} />
 		</section>
 	);
+}
+
+function ArtifactList({ runId, artifacts }: { runId: string; artifacts: WorkflowArtifact[] }) {
+	if (artifacts.length === 0) return null;
+	return (
+		<section className="workflow-artifacts" aria-label="Workflow artifacts">
+			<h3>Artifacts</h3>
+			<ul>
+				{artifacts.map((artifact) => (
+					<li key={artifact.id} data-testid="workflow-artifact">
+						<strong>{artifact.name}</strong> <small>{artifact.kind} · {formatSize(artifact.size)}{artifact.expiresAt ? ` · expires ${formatTime(artifact.expiresAt)}` : ' · retained'}</small>
+						{artifact.payloadAvailable
+							? <a href={api.workflows.artifactDownloadUrl(runId, artifact.id)} download>Download</a>
+							: <span className="workflow-artifact-gone">Payload cleaned up</span>}
+					</li>
+				))}
+			</ul>
+		</section>
+	);
+}
+
+function formatSize(bytes: number) {
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function CommandAttempt({ attempt }: { attempt: WorkflowRunDetail['nodes'][number]['attempts'][number] }) {
