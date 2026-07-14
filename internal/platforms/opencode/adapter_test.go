@@ -306,3 +306,28 @@ func TestDirectoryHasLivePort(t *testing.T) {
 		t.Error("no running instances -> not live")
 	}
 }
+
+// TestLookupPortWithWorktreeFold guards the same worktree-fold gap for
+// the port-resolution path (used by the live per-session SSE stream and
+// the permission-prompt fetch). Before the fold, a worktree directory
+// resolved to "" and permission/question prompts for worktree sessions
+// could be dropped when the by-session HTTP probe fallback missed.
+func TestLookupPortWithWorktreeFold(t *testing.T) {
+	root := t.TempDir()
+	repo := root + "/ocman"
+	worktree := root + "/.worktrees/ocman/feat-x"
+	ports := map[string]string{normalizePortDirectory(repo): "4096"}
+
+	if got := lookupPortWithWorktreeFold(ports, repo); got != "4096" {
+		t.Errorf("exact project-root match = %q, want 4096", got)
+	}
+	if got := lookupPortWithWorktreeFold(ports, worktree); got != "4096" {
+		t.Errorf("worktree dir should fold to project root, got %q, want 4096", got)
+	}
+	if got := lookupPortWithWorktreeFold(ports, root+"/other"); got != "" {
+		t.Errorf("unrelated directory = %q, want empty", got)
+	}
+	if got := lookupPortWithWorktreeFold(map[string]string{}, worktree); got != "" {
+		t.Errorf("no running instances = %q, want empty", got)
+	}
+}

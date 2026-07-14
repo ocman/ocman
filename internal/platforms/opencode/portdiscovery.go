@@ -441,8 +441,28 @@ func discoverDuplicateOpenCodeServerPorts(directory string) []string {
 
 // discoverOpenCodePort finds the HTTP port of a running OpenCode instance
 // whose working directory matches the given directory, or "" if not found.
+// On an exact-match miss it folds a worktree directory back to its project
+// root — worktree sessions run on the project's shared instance (rooted at
+// the main checkout), so their own directory is never a key in the port map.
+// Without the fold, the live per-session SSE stream and the permission-prompt
+// fetch resolve to "" and fall back to a fragile by-session HTTP probe,
+// dropping permission/question prompts for worktree sessions.
 func discoverOpenCodePort(directory string) string {
-	return discoverOpenCodePorts()[normalizePortDirectory(directory)]
+	return lookupPortWithWorktreeFold(discoverOpenCodePorts(), directory)
+}
+
+// lookupPortWithWorktreeFold looks up a directory in the port map, folding a
+// worktree directory to its project root on an exact-match miss. Mirrors
+// directoryHasLivePort's fold so port resolution and liveness agree.
+func lookupPortWithWorktreeFold(ports map[string]string, directory string) string {
+	if port := ports[normalizePortDirectory(directory)]; port != "" {
+		return port
+	}
+	root := foldWorktreeToProjectRoot(directory)
+	if root == directory {
+		return ""
+	}
+	return ports[normalizePortDirectory(root)]
 }
 
 // discoverOpenCodePortFresh performs an uncached scan for a single
@@ -453,7 +473,7 @@ func discoverOpenCodePort(directory string) string {
 // read-heavy callers can reuse the fresh snapshot.
 func discoverOpenCodePortFresh(directory string) string {
 	ports := (*discoverPortsImpl.Load())()
-	port := ports[normalizePortDirectory(directory)]
+	port := lookupPortWithWorktreeFold(ports, directory)
 	if port != "" {
 		writeCachedPorts(ports)
 	}
@@ -502,10 +522,9 @@ func DiscoverOpenCodePorts() map[string]string {
 
 // discoverOpenCodePortCtx is discoverOpenCodePort with Server-Timing instrumentation.
 func discoverOpenCodePortCtx(ctx context.Context, directory string) string {
-	key := normalizePortDirectory(directory)
 	if cached, ok := readCachedPorts(); ok {
 		hit := srvtiming.Begin(ctx, "lsof_hit")
-		port := cached[key]
+		port := lookupPortWithWorktreeFold(cached, directory)
 		hit.End()
 		return port
 	}
