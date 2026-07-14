@@ -232,6 +232,27 @@ func TestMigrateV28_MapsIterationsToRunsAndAttempts(t *testing.T) {
 	}
 }
 
+func TestMigrateV28_AvoidsExistingWorkflowRunID(t *testing.T) {
+	db := seedV27(t)
+	insertLoopRow(t, db, "loop_collision", "schedule", `{"interval_seconds":300}`, "prompt_root", "completed", 1)
+	insertLoopIterationRow(t, db, "loop_collision", 1, "ok", "")
+	if _, err := db.Exec(`INSERT INTO workflow_run (id, workflow_id, version_id, state, created_at, updated_at) VALUES ('wfr_loop_loop_collision_1', 'existing', 'existing', 'successful', 1, 1)`); err != nil {
+		t.Fatalf("insert colliding run: %v", err)
+	}
+
+	if err := migrate(db); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	var runID string
+	if err := db.QueryRow(`SELECT id FROM workflow_run WHERE version_id = 'wfv_loop_loop_collision'`).Scan(&runID); err != nil {
+		t.Fatalf("find migrated run: %v", err)
+	}
+	if runID == "wfr_loop_loop_collision_1" {
+		t.Fatal("migration reused an existing workflow run ID")
+	}
+}
+
 func TestMigrateV28_Idempotent(t *testing.T) {
 	db := seedV27(t)
 	insertLoopRow(t, db, "loop_x", "schedule", `{"interval_seconds":300}`, "prompt_root", "active", 1)

@@ -1119,6 +1119,63 @@ func TestTriggerOverlapPoliciesAndQueuedRestart(t *testing.T) {
 	}
 }
 
+func TestEvaluateTriggers_SkipsLoopCompatibilityWorkflows(t *testing.T) {
+	h := newHarness(t)
+	definition := strings.Replace(sequentialApprovals,
+		`"version":"2026.07",`,
+		`"version":"2026.07","loopCompat":{"loopId":"loop_legacy"},`, 1)
+	definition = strings.Replace(definition,
+		`{"id":"manual","type":"manual"}`,
+		`{"id":"timer","type":"interval","intervalSeconds":60}`, 1)
+	if _, err := h.svc.PublishJSON(context.Background(), []byte(definition)); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := h.svc.EvaluateTriggers(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	runs, err := h.svc.ListRuns(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 0 {
+		t.Fatalf("loop compatibility workflow was dispatched: %+v", runs)
+	}
+}
+
+func TestTick_CancelsActiveLoopCompatibilityWorkflowRun(t *testing.T) {
+	h := newHarness(t)
+	definition := strings.Replace(sequentialApprovals,
+		`"version":"2026.07",`,
+		`"version":"2026.07","loopCompat":{"loopId":"loop_legacy"},`, 1)
+	definition = strings.Replace(definition,
+		`{"id":"manual","type":"manual"}`,
+		`{"id":"timer","type":"interval","intervalSeconds":60}`, 1)
+	version, err := h.svc.PublishJSON(context.Background(), []byte(definition))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := h.db.GetWorkflowVersion(version.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := h.svc.newRun(*stored, TriggerSnapshot{Trigger: Trigger{ID: "timer", Type: TriggerInterval}, VersionID: version.ID, FiredAt: h.now.UnixMilli()})
+	if err := h.db.InsertWorkflowRun(run); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := h.svc.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, err := h.svc.GetRun(context.Background(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != StateCanceled {
+		t.Fatalf("active compatibility run state = %q, want %q", got.State, StateCanceled)
+	}
+}
+
 func TestCronDoesNotBackfireHistoricalSlots(t *testing.T) {
 	h := newHarness(t)
 	definition := strings.Replace(sequentialApprovals,

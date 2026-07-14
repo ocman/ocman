@@ -203,7 +203,10 @@ func migrateLoopIterations(tx *sql.Tx, loopID, workflowID, versionID, nodeID, tr
 
 	for _, it := range iters {
 		runState, nodeState, attemptState := iterationStates(it.outcome)
-		runID := fmt.Sprintf("wfr_loop_%s_%d", loopID, it.seq)
+		runID, err := loopMigrationRunID(tx, loopID, it.seq)
+		if err != nil {
+			return err
+		}
 		session := it.child
 		if session == "" {
 			session = it.target
@@ -237,6 +240,25 @@ func migrateLoopIterations(tx *sql.Tx, loopID, workflowID, versionID, nodeID, tr
 		}
 	}
 	return nil
+}
+
+// loopMigrationRunID keeps the readable historical ID when available while
+// avoiding collisions with workflow runs created before the loop copy.
+func loopMigrationRunID(tx *sql.Tx, loopID string, seq int) (string, error) {
+	base := fmt.Sprintf("wfr_loop_%s_%d", loopID, seq)
+	for suffix := 0; ; suffix++ {
+		id := base
+		if suffix > 0 {
+			id = fmt.Sprintf("%s_loopcopy_%d", base, suffix)
+		}
+		var exists int
+		if err := tx.QueryRow(`SELECT count(*) FROM workflow_run WHERE id = ?`, id).Scan(&exists); err != nil {
+			return "", fmt.Errorf("checking workflow run ID: %w", err)
+		}
+		if exists == 0 {
+			return id, nil
+		}
+	}
 }
 
 // iterationStates maps a loop iteration outcome to (runState, nodeState,

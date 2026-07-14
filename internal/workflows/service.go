@@ -73,9 +73,12 @@ type Definition struct {
 	Pools         []Pool           `json:"pools,omitempty"`
 	Workspace     *WorkspaceConfig `json:"workspace,omitempty"`
 	Limits        *Limits          `json:"limits,omitempty"`
-	Triggers      []Trigger        `json:"triggers"`
-	Nodes         []Node           `json:"nodes"`
-	Dependencies  []Dependency     `json:"dependencies"`
+	// LoopCompat marks a one-node workflow copied from the legacy loop
+	// system. The legacy engine remains its execution owner until #331.
+	LoopCompat   json.RawMessage `json:"loopCompat,omitempty"`
+	Triggers     []Trigger       `json:"triggers"`
+	Nodes        []Node          `json:"nodes"`
+	Dependencies []Dependency    `json:"dependencies"`
 }
 
 // Pool is a named resource capacity a workflow declares. Nodes acquire
@@ -674,6 +677,11 @@ func (s *Service) EvaluateTriggers(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		// The migration preserves loop data as workflow history, but legacy
+		// loops still execute through their existing engine for one release.
+		if len(parsed.Definition.LoopCompat) != 0 {
+			continue
+		}
 		for _, trigger := range parsed.Definition.Triggers {
 			if _, err := s.drainQueued(ctx, *version, normalizedTrigger(trigger)); err != nil {
 				errs = append(errs, err)
@@ -692,6 +700,9 @@ func (s *Service) EvaluateTriggers(ctx context.Context) error {
 		parsed, err := versionFromRow(*version)
 		if err != nil {
 			return err
+		}
+		if len(parsed.Definition.LoopCompat) != 0 {
+			continue
 		}
 		for _, trigger := range parsed.Definition.Triggers {
 			if trigger.Type == TriggerManual {
@@ -1241,6 +1252,17 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 	run, err := s.GetRun(ctx, runID)
 	if err != nil || run.State != StateActive {
 		return err
+	}
+	// A compatibility workflow is a historical loop copy. Its legacy loop
+	// remains the execution owner until #331 retires that engine. Cancel any
+	// active run created before the trigger guard was deployed rather than
+	// dispatching an incomplete compatibility agent configuration.
+	if len(run.Version.Definition.LoopCompat) != 0 {
+		if err := s.store.SetWorkflowRunState(runID, StateActive, StateCanceled, s.now().UnixMilli()); err != nil {
+			return err
+		}
+		s.changed(runID)
+		return nil
 	}
 	if exceeded, reason := s.budgetExceeded(ctx, run); exceeded {
 		if err := s.store.FailWorkflowRun(runID, reason, s.now().UnixMilli()); err != nil {
