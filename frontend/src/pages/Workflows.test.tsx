@@ -188,6 +188,83 @@ describe('Workflows', () => {
 		expect(pools).toHaveTextContent('waiting: ship');
 	});
 
+	it('collapses and expands mapped items and links child and joined results', async () => {
+		const user = userEvent.setup();
+		const mapVersion: WorkflowVersion = {
+			...version,
+			definition: {
+				...version.definition,
+				nodes: [
+					{ id: 'fan', name: 'Fan', type: 'map', map: { source: 'items', key: 'id', join: 'join', subworkflow: { workflowId: 'item' } } },
+					{ id: 'join', name: 'Join', type: 'join', join: { policy: 'always' } },
+				],
+				dependencies: [{ from: 'fan', to: 'join' }],
+			},
+		};
+		const mapRun: WorkflowRunDetail = {
+			...activeRun,
+			version: mapVersion,
+			children: [
+				{ mapNode: 'fan', key: 'a', index: 0, childRunId: 'wfr_child_a', state: 'successful' },
+				{ mapNode: 'fan', key: 'b', index: 1, childRunId: 'wfr_child_b', state: 'failed' },
+			],
+			nodes: [
+				{ nodeId: 'fan', name: 'Fan', type: 'map', state: 'successful', attempts: [{ id: 1, seq: 1, state: 'successful', startedAt: 1 }] },
+				{
+					nodeId: 'join', name: 'Join', type: 'join', state: 'successful',
+					attempts: [{ id: 2, seq: 1, state: 'successful', startedAt: 1, outputs: { result: { policy: 'always', success: 1, failed: 1, total: 2, items: [{ key: 'a', index: 0, state: 'successful' }, { key: 'b', index: 1, state: 'failed' }] } } }],
+				},
+			],
+		};
+		apiMock.versions.mockResolvedValue([mapVersion]);
+		apiMock.runs.mockResolvedValue([mapRun]);
+		apiMock.run.mockResolvedValue(mapRun);
+		render(<MemoryRouter><Workflows /></MemoryRouter>);
+
+		// Collapsed by default: item rows hidden, summary shown.
+		const toggle = await screen.findByRole('button', { name: /Expand 2 mapped items/ });
+		expect(screen.queryByTestId('workflow-map-items')).not.toBeInTheDocument();
+
+		// Expand reveals each item with its stable key, state, and child link.
+		await user.click(toggle);
+		const items = screen.getByTestId('workflow-map-items');
+		expect(items).toHaveTextContent('a');
+		expect(items).toHaveTextContent('b');
+		expect(screen.getAllByRole('button', { name: 'Open item run' })).toHaveLength(2);
+
+		// Opening an item run selects the child run.
+		await user.click(screen.getAllByRole('button', { name: 'Open item run' })[0]);
+		await waitFor(() => expect(apiMock.run).toHaveBeenCalledWith('wfr_child_a'));
+
+		// Join renders the input-ordered per-item statuses.
+		const join = screen.getByTestId('workflow-join');
+		expect(join).toHaveTextContent('always');
+		expect(join).toHaveTextContent('1/2 succeeded');
+		expect(join).toHaveTextContent('a: successful');
+		expect(join).toHaveTextContent('b: failed');
+
+		// Collapse hides the items again.
+		await user.click(screen.getByRole('button', { name: /Collapse 2 mapped items/ }));
+		expect(screen.queryByTestId('workflow-map-items')).not.toBeInTheDocument();
+	});
+
+	it('links a mapped child run back to its parent map node', async () => {
+		const user = userEvent.setup();
+		const childRun: WorkflowRunDetail = {
+			...activeRun,
+			id: 'wfr_child_a', parentRunId: 'wfr_1', parentNodeId: 'fan', itemKey: 'a', itemIndex: 0,
+			nodes: [{ nodeId: 'work', name: 'Work', type: 'agent', state: 'successful', attempts: [{ id: 3, seq: 1, state: 'successful', startedAt: 1 }] }],
+		};
+		apiMock.runs.mockResolvedValue([childRun]);
+		apiMock.run.mockResolvedValue(childRun);
+		render(<MemoryRouter><Workflows /></MemoryRouter>);
+
+		await screen.findByRole('region', { name: 'Workflow run graph' });
+		expect(screen.getByText(/Mapped item/)).toHaveTextContent('a');
+		await user.click(screen.getByRole('button', { name: /parent run fan/ }));
+		await waitFor(() => expect(apiMock.run).toHaveBeenCalledWith('wfr_1'));
+	});
+
 	it('links agent attempts and shows live and collected state', async () => {
 		const agentVersion: WorkflowVersion = {
 			...version,

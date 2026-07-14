@@ -79,6 +79,11 @@ type Definition struct {
 	Triggers     []Trigger       `json:"triggers"`
 	Nodes        []Node          `json:"nodes"`
 	Dependencies []Dependency    `json:"dependencies"`
+	// SubworkflowRefs records the workflow ids this version references
+	// through subworkflow and map nodes at publish time. Inlining removes
+	// subworkflow nodes, so this preserves the reference graph needed for
+	// indirect recursive-cycle detection across later publishes.
+	SubworkflowRefs []string `json:"subworkflowRefs,omitempty"`
 }
 
 // Pool is a named resource capacity a workflow declares. Nodes acquire
@@ -145,7 +150,53 @@ type Node struct {
 	Agent       *AgentConfig      `json:"agent,omitempty"`
 	Resources   []ResourceRequest `json:"resources,omitempty"`
 	Lease       *LeaseConfig      `json:"lease,omitempty"`
+	Subworkflow *SubworkflowRef   `json:"subworkflow,omitempty"`
+	Map         *MapConfig        `json:"map,omitempty"`
+	Join        *JoinConfig       `json:"join,omitempty"`
 }
+
+// SubworkflowRef references a reusable workflow to inline. At publish
+// time the referenced workflow's active version is resolved and its
+// (already-inlined) nodes are pinned into the parent definition, so a
+// later edit to the subworkflow cannot alter an existing parent version.
+type SubworkflowRef struct {
+	WorkflowID string `json:"workflowId"`
+}
+
+// MapConfig fans a declared JSON array artifact out across per-item
+// pinned subworkflow runs. Source names the upstream artifact (a JSON
+// array); Key is a field on each item object used as the stable,
+// duplicate-free key so restart/retry never reprocesses a completed
+// item. Subworkflow is the pinned per-item pipeline. Join is the id of
+// the join node that aggregates this map's items.
+type MapConfig struct {
+	Source      string         `json:"source"`
+	Key         string         `json:"key"`
+	Subworkflow SubworkflowRef `json:"subworkflow"`
+	Join        string         `json:"join"`
+	FailFast    bool           `json:"failFast,omitempty"`
+	// VersionID pins the per-item subworkflow to a concrete active
+	// version at parent publish time so downstream edits cannot alter an
+	// existing parent version's mapped execution.
+	VersionID string `json:"versionId,omitempty"`
+}
+
+// JoinConfig aggregates a map node's per-item outcomes into an
+// input-ordered result with an explicit success policy.
+//
+//	all-success   – join succeeds only if every item succeeded.
+//	always        – join always succeeds, carrying per-item statuses.
+//	minimum-success – join succeeds if at least MinSuccess items did.
+type JoinConfig struct {
+	Policy     string `json:"policy"`
+	MinSuccess int    `json:"minSuccess,omitempty"`
+}
+
+const (
+	JoinAllSuccess     = "all-success"
+	JoinAlways         = "always"
+	JoinMinimumSuccess = "minimum-success"
+)
 
 type PermissionRule struct {
 	Permission string `json:"permission"`
@@ -216,14 +267,18 @@ type Version struct {
 }
 
 type Run struct {
-	ID          string           `json:"id"`
-	WorkflowID  string           `json:"workflowId"`
-	VersionID   string           `json:"versionId"`
-	State       string           `json:"state"`
-	CreatedAt   int64            `json:"createdAt"`
-	UpdatedAt   int64            `json:"updatedAt"`
-	CompletedAt int64            `json:"completedAt,omitempty"`
-	Trigger     *TriggerSnapshot `json:"trigger,omitempty"`
+	ID           string           `json:"id"`
+	WorkflowID   string           `json:"workflowId"`
+	VersionID    string           `json:"versionId"`
+	State        string           `json:"state"`
+	CreatedAt    int64            `json:"createdAt"`
+	UpdatedAt    int64            `json:"updatedAt"`
+	CompletedAt  int64            `json:"completedAt,omitempty"`
+	Trigger      *TriggerSnapshot `json:"trigger,omitempty"`
+	ParentRunID  string           `json:"parentRunId,omitempty"`
+	ParentNodeID string           `json:"parentNodeId,omitempty"`
+	ItemKey      string           `json:"itemKey,omitempty"`
+	ItemIndex    int              `json:"itemIndex,omitempty"`
 }
 
 type RunDetail struct {
@@ -232,6 +287,8 @@ type RunDetail struct {
 	Nodes     []NodeRun        `json:"nodes"`
 	Resources []ResourcePool   `json:"resources,omitempty"`
 	Workspace []WorkspaceLease `json:"workspace,omitempty"`
+	// Children summarizes mapped-item child runs for the run UI.
+	Children []MapItemRun `json:"children,omitempty"`
 }
 
 // WorkspaceLease is the run-UI view of a held shard lease: which node/
@@ -247,6 +304,16 @@ type WorkspaceLease struct {
 	Host       string   `json:"host,omitempty"`
 	ShardPath  string   `json:"shardPath,omitempty"`
 	AcquiredAt int64    `json:"acquiredAt"`
+}
+
+// MapItemRun is one mapped item's summary for the run UI: its owning map
+// node, stable key, input order, executing child run, and terminal state.
+type MapItemRun struct {
+	MapNode    string `json:"mapNode"`
+	Key        string `json:"key"`
+	Index      int    `json:"index"`
+	ChildRunID string `json:"childRunId,omitempty"`
+	State      string `json:"state"`
 }
 
 // ResourcePool is the live view of one pool for a run: its capacity, how
@@ -323,6 +390,12 @@ type Store interface {
 	GetWorkflowArtifact(string) (*state.WorkflowArtifact, error)
 	ExpiredWorkflowArtifactHashes(int64) ([]string, error)
 	MarkWorkflowArtifactPayloadDeleted(string) error
+	CreateWorkflowMapItem(state.WorkflowMapItem, state.WorkflowRun) (bool, error)
+	ListWorkflowMapItems(string, string) ([]state.WorkflowMapItem, error)
+	SetWorkflowMapItemState(string, string, string, string) error
+	ListWorkflowChildRuns(string) ([]state.WorkflowRun, error)
+	StartWorkflowNode(string, string, []state.WorkflowResourceRequest, int64) (bool, error)
+	SettleWorkflowNode(string, string, int64, bool, string, string, int64) error
 }
 
 // WorkspaceProvider creates (or reuses) the on-disk worktree shard for a
@@ -410,22 +483,39 @@ func NewService(deps Deps) *Service {
 }
 
 func (s *Service) ValidateJSON(_ context.Context, source []byte) (Definition, error) {
-	definition, _, err := decodeDefinition(source)
+	definition, _, err := s.prepareDefinition(source)
+	return definition, err
+}
+
+// prepareDefinition decodes, validates the authored definition, then
+// resolves + pins + inlines its subworkflow references and validates the
+// resulting graph. The returned definition is the canonical, fully
+// inlined form persisted for a new version.
+func (s *Service) prepareDefinition(source []byte) (Definition, []byte, error) {
+	authored, _, err := decodeDefinition(source)
 	if err != nil {
-		return Definition{}, err
+		return Definition{}, nil, err
 	}
-	if err := validateDefinition(definition); err != nil {
-		return Definition{}, err
+	if err := validateAuthoredDefinition(authored); err != nil {
+		return Definition{}, nil, err
 	}
-	return definition, nil
+	inlined, err := s.inlineSubworkflows(authored)
+	if err != nil {
+		return Definition{}, nil, err
+	}
+	if err := validateDefinition(inlined); err != nil {
+		return Definition{}, nil, err
+	}
+	canonical, err := json.Marshal(inlined)
+	if err != nil {
+		return Definition{}, nil, fmt.Errorf("encoding workflow definition: %w", err)
+	}
+	return inlined, canonical, nil
 }
 
 func (s *Service) PublishJSON(_ context.Context, source []byte) (Version, error) {
-	definition, canonical, err := decodeDefinition(source)
+	definition, canonical, err := s.prepareDefinition(source)
 	if err != nil {
-		return Version{}, err
-	}
-	if err := validateDefinition(definition); err != nil {
 		return Version{}, err
 	}
 	now := s.now().UnixMilli()
@@ -439,12 +529,7 @@ func (s *Service) PublishJSON(_ context.Context, source []byte) (Version, error)
 		RetentionDays:   definition.RetentionDays,
 		CreatedAt:       now,
 	}
-	for position, node := range definition.Nodes {
-		row.Nodes = append(row.Nodes, state.WorkflowNode{ID: node.ID, Name: node.Name, Type: node.Type, Position: position})
-	}
-	for _, dep := range definition.Dependencies {
-		row.Dependencies = append(row.Dependencies, state.WorkflowDependency{From: dep.From, To: dep.To})
-	}
+	row.Nodes, row.Dependencies = versionNodeRows(definition)
 	row, err = s.store.InsertWorkflowVersion(row)
 	if err != nil {
 		return Version{}, err
@@ -624,6 +709,11 @@ func (s *Service) ListRuns(_ context.Context) ([]Run, error) {
 	}
 	out := make([]Run, 0, len(rows))
 	for _, row := range rows {
+		// Mapped-item child runs are nested under their parent in the run
+		// detail view; keep the top-level list to real workflow runs.
+		if row.ParentRunID != "" {
+			continue
+		}
 		out = append(out, runFromState(row))
 	}
 	return out, nil
@@ -899,7 +989,32 @@ func (s *Service) GetRun(ctx context.Context, id string) (RunDetail, error) {
 			Paths: lease.Paths, Commit: lease.CommitLease, Host: lease.Host, ShardPath: lease.ShardPath, AcquiredAt: lease.AcquiredAt,
 		})
 	}
+	children, err := s.mapItemRuns(detail)
+	if err != nil {
+		return RunDetail{}, err
+	}
+	detail.Children = children
 	return detail, nil
+}
+
+// mapItemRuns collects every mapped item across the run's map nodes, in
+// input order, so the run UI can nest and link child runs under their
+// parent map node.
+func (s *Service) mapItemRuns(detail RunDetail) ([]MapItemRun, error) {
+	var out []MapItemRun
+	for _, node := range detail.Nodes {
+		if node.Type != "map" {
+			continue
+		}
+		items, err := s.store.ListWorkflowMapItems(detail.ID, node.NodeID)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			out = append(out, MapItemRun{MapNode: item.MapNode, Key: item.ItemKey, Index: item.ItemIndex, ChildRunID: item.ChildRunID, State: item.State})
+		}
+	}
+	return out, nil
 }
 
 // resourceView derives the live per-pool state (capacity, held units, and
@@ -1026,6 +1141,8 @@ func (s *Service) Cancel(ctx context.Context, runID string) (RunDetail, error) {
 	s.mu.Lock()
 	delete(s.stopping, runID)
 	s.mu.Unlock()
+	// Cancel any mapped-item child runs so orphaned per-item work stops too.
+	s.cancelChildRuns(ctx, runID)
 	s.changed(runID)
 	return s.GetRun(ctx, runID)
 }
@@ -1272,15 +1389,22 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 		return nil
 	}
 	s.dispatchReady(run)
-	if s.agent == nil {
-		return nil
-	}
 	for {
+		mapMoved, err := s.driveMapNodes(ctx, runID)
+		if err != nil {
+			return err
+		}
+		if s.agent == nil {
+			if mapMoved {
+				continue
+			}
+			return nil
+		}
 		run, err := s.GetRun(ctx, runID)
 		if err != nil || run.State != StateActive {
 			return err
 		}
-		progressed := false
+		progressed := mapMoved
 		for _, node := range run.Nodes {
 			if node.Type != "agent" || (node.State != NodeReady && node.State != NodeRunning) || len(node.Attempts) == 0 {
 				continue
@@ -1311,7 +1435,8 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 				} else if shardDir != "" {
 					agentDir = shardDir
 				}
-				session, startErr := s.agent.Start(ctx, AgentRequest{Platform: config.Platform, Directory: agentDir, Prompt: config.Prompt, Model: config.Model, Agent: config.Agent, Reasoning: config.Reasoning, SessionID: existing})
+				prompt := s.itemPrompt(ctx, run, config.Prompt)
+				session, startErr := s.agent.Start(ctx, AgentRequest{Platform: config.Platform, Directory: agentDir, Prompt: prompt, Model: config.Model, Agent: config.Agent, Reasoning: config.Reasoning, SessionID: existing})
 				if startErr != nil {
 					if err := s.store.CompleteWorkflowAgentNode(runID, node.NodeID, attempt.ID, false, "error", "{}", startErr.Error(), s.now().UnixMilli()); err != nil {
 						return err
@@ -1613,7 +1738,9 @@ func validateDefinition(definition Definition) error {
 		if node.ID == "" || node.Name == "" || node.Type == "" {
 			return fmt.Errorf("node id, name, and type are required")
 		}
-		if node.Type != "approval" && node.Type != "command" && node.Type != "agent" {
+		switch node.Type {
+		case "approval", "command", "agent", "map", "join":
+		default:
 			return fmt.Errorf("unsupported node type %q", node.Type)
 		}
 		if node.Type == "command" {
@@ -1892,7 +2019,7 @@ func versionFromState(row state.WorkflowVersion, definition Definition) Version 
 }
 
 func runFromState(row state.WorkflowRun) Run {
-	run := Run{ID: row.ID, WorkflowID: row.WorkflowID, VersionID: row.VersionID, State: row.State, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, CompletedAt: row.CompletedAt}
+	run := Run{ID: row.ID, WorkflowID: row.WorkflowID, VersionID: row.VersionID, State: row.State, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, CompletedAt: row.CompletedAt, ParentRunID: row.ParentRunID, ParentNodeID: row.ParentNodeID, ItemKey: row.ItemKey, ItemIndex: row.ItemIndex}
 	if row.TriggerSnapshotJSON != "" {
 		var snapshot TriggerSnapshot
 		if json.Unmarshal([]byte(row.TriggerSnapshotJSON), &snapshot) == nil {

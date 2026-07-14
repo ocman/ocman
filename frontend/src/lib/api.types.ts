@@ -834,10 +834,30 @@ export interface WorkflowAgentConfig {
 	collectors?: WorkflowCollector[];
 }
 
+export type WorkflowJoinPolicy = 'all-success' | 'always' | 'minimum-success';
+
+export interface WorkflowSubworkflowRef {
+	workflowId: string;
+}
+
+export interface WorkflowMapConfig {
+	source: string;
+	key: string;
+	subworkflow: WorkflowSubworkflowRef;
+	join: string;
+	failFast?: boolean;
+	versionId?: string;
+}
+
+export interface WorkflowJoinConfig {
+	policy: WorkflowJoinPolicy;
+	minSuccess?: number;
+}
+
 export interface WorkflowNodeDefinition {
 	id: string;
 	name: string;
-	type: 'approval' | 'command' | 'agent';
+	type: 'approval' | 'command' | 'agent' | 'subworkflow' | 'map' | 'join';
 	command?: string[];
 	environment?: Record<string, string>;
 	permission?: WorkflowPermissionRule[];
@@ -845,6 +865,9 @@ export interface WorkflowNodeDefinition {
 	agent?: WorkflowAgentConfig;
 	resources?: WorkflowResourceRequest[];
 	lease?: WorkflowLeaseConfig;
+	subworkflow?: WorkflowSubworkflowRef;
+	map?: WorkflowMapConfig;
+	join?: WorkflowJoinConfig;
 }
 
 export interface WorkflowDependency {
@@ -977,6 +1000,12 @@ export interface WorkflowRun {
 	updatedAt: number;
 	completedAt?: number;
 	trigger?: WorkflowTriggerSnapshot;
+	/** Set on mapped-item child runs: the parent run + map node and this
+	 * item's stable key and input order. */
+	parentRunId?: string;
+	parentNodeId?: string;
+	itemKey?: string;
+	itemIndex?: number;
 }
 
 export interface WorkflowAttempt {
@@ -1000,7 +1029,7 @@ export interface WorkflowAttempt {
 export interface WorkflowNodeRun {
 	nodeId: string;
 	name: string;
-	type: 'approval' | 'command' | 'agent';
+	type: 'approval' | 'command' | 'agent' | 'map' | 'join';
 	state: WorkflowNodeState;
 	readyAt?: number;
 	completedAt?: number;
@@ -1020,11 +1049,22 @@ export interface WorkflowWorkspaceLease {
 	acquiredAt: number;
 }
 
+/** One mapped item's summary: its owning map node, stable key, input
+ * order, executing child run, and terminal state. */
+export interface WorkflowMapItemRun {
+	mapNode: string;
+	key: string;
+	index: number;
+	childRunId?: string;
+	state: string;
+}
+
 export interface WorkflowRunDetail extends WorkflowRun {
 	version: WorkflowVersion;
 	nodes: WorkflowNodeRun[];
 	resources?: WorkflowResourcePool[];
 	workspace?: WorkflowWorkspaceLease[];
+	children?: WorkflowMapItemRun[];
 }
 
 /** Decoded trigger config for an agent loop. */

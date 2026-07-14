@@ -41,6 +41,10 @@ type WorkflowRun struct {
 	UpdatedAt           int64
 	CompletedAt         int64
 	TriggerSnapshotJSON string
+	ParentRunID         string
+	ParentNodeID        string
+	ItemKey             string
+	ItemIndex           int
 	Nodes               []WorkflowNodeRun
 }
 
@@ -329,7 +333,7 @@ type workflowRunExecer interface {
 }
 
 func insertWorkflowRun(exec workflowRunExecer, run WorkflowRun) error {
-	if _, err := exec.Exec(`INSERT INTO workflow_run (id, workflow_id, version_id, state, created_at, updated_at, trigger_snapshot_json) VALUES (?, ?, ?, ?, ?, ?, ?)`, run.ID, run.WorkflowID, run.VersionID, run.State, run.CreatedAt, run.UpdatedAt, nullableString(run.TriggerSnapshotJSON)); err != nil {
+	if _, err := exec.Exec(`INSERT INTO workflow_run (id, workflow_id, version_id, state, created_at, updated_at, trigger_snapshot_json, parent_run_id, parent_node_id, item_key, item_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, run.ID, run.WorkflowID, run.VersionID, run.State, run.CreatedAt, run.UpdatedAt, nullableString(run.TriggerSnapshotJSON), nullableString(run.ParentRunID), nullableString(run.ParentNodeID), nullableString(run.ItemKey), nullableInt(int64(run.ItemIndex))); err != nil {
 		return fmt.Errorf("inserting workflow run: %w", err)
 	}
 	for _, node := range run.Nodes {
@@ -346,7 +350,7 @@ func insertWorkflowRun(exec workflowRunExecer, run WorkflowRun) error {
 }
 
 func (d *DB) ListWorkflowRuns() ([]WorkflowRun, error) {
-	rows, err := d.db.Query(`SELECT id, workflow_id, version_id, state, created_at, updated_at, COALESCE(completed_at, 0), COALESCE(trigger_snapshot_json, '') FROM workflow_run ORDER BY created_at DESC, id DESC`)
+	rows, err := d.db.Query(`SELECT id, workflow_id, version_id, state, created_at, updated_at, COALESCE(completed_at, 0), COALESCE(trigger_snapshot_json, ''), COALESCE(parent_run_id, ''), COALESCE(parent_node_id, ''), COALESCE(item_key, ''), COALESCE(item_index, 0) FROM workflow_run ORDER BY created_at DESC, id DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("listing workflow runs: %w", err)
 	}
@@ -354,8 +358,27 @@ func (d *DB) ListWorkflowRuns() ([]WorkflowRun, error) {
 	var out []WorkflowRun
 	for rows.Next() {
 		var run WorkflowRun
-		if err := rows.Scan(&run.ID, &run.WorkflowID, &run.VersionID, &run.State, &run.CreatedAt, &run.UpdatedAt, &run.CompletedAt, &run.TriggerSnapshotJSON); err != nil {
+		if err := rows.Scan(&run.ID, &run.WorkflowID, &run.VersionID, &run.State, &run.CreatedAt, &run.UpdatedAt, &run.CompletedAt, &run.TriggerSnapshotJSON, &run.ParentRunID, &run.ParentNodeID, &run.ItemKey, &run.ItemIndex); err != nil {
 			return nil, fmt.Errorf("scanning workflow run: %w", err)
+		}
+		out = append(out, run)
+	}
+	return out, rows.Err()
+}
+
+// ListWorkflowChildRuns returns the child (mapped-item) runs of a parent
+// run, ordered by their input item index.
+func (d *DB) ListWorkflowChildRuns(parentRunID string) ([]WorkflowRun, error) {
+	rows, err := d.db.Query(`SELECT id, workflow_id, version_id, state, created_at, updated_at, COALESCE(completed_at, 0), COALESCE(trigger_snapshot_json, ''), COALESCE(parent_run_id, ''), COALESCE(parent_node_id, ''), COALESCE(item_key, ''), COALESCE(item_index, 0) FROM workflow_run WHERE parent_run_id = ? ORDER BY parent_node_id, item_index`, parentRunID)
+	if err != nil {
+		return nil, fmt.Errorf("listing workflow child runs: %w", err)
+	}
+	defer rows.Close()
+	var out []WorkflowRun
+	for rows.Next() {
+		var run WorkflowRun
+		if err := rows.Scan(&run.ID, &run.WorkflowID, &run.VersionID, &run.State, &run.CreatedAt, &run.UpdatedAt, &run.CompletedAt, &run.TriggerSnapshotJSON, &run.ParentRunID, &run.ParentNodeID, &run.ItemKey, &run.ItemIndex); err != nil {
+			return nil, fmt.Errorf("scanning workflow child run: %w", err)
 		}
 		out = append(out, run)
 	}
@@ -364,7 +387,7 @@ func (d *DB) ListWorkflowRuns() ([]WorkflowRun, error) {
 
 func (d *DB) GetWorkflowRun(id string) (*WorkflowRun, error) {
 	var run WorkflowRun
-	err := d.db.QueryRow(`SELECT id, workflow_id, version_id, state, created_at, updated_at, COALESCE(completed_at, 0), COALESCE(trigger_snapshot_json, '') FROM workflow_run WHERE id = ?`, id).Scan(&run.ID, &run.WorkflowID, &run.VersionID, &run.State, &run.CreatedAt, &run.UpdatedAt, &run.CompletedAt, &run.TriggerSnapshotJSON)
+	err := d.db.QueryRow(`SELECT id, workflow_id, version_id, state, created_at, updated_at, COALESCE(completed_at, 0), COALESCE(trigger_snapshot_json, ''), COALESCE(parent_run_id, ''), COALESCE(parent_node_id, ''), COALESCE(item_key, ''), COALESCE(item_index, 0) FROM workflow_run WHERE id = ?`, id).Scan(&run.ID, &run.WorkflowID, &run.VersionID, &run.State, &run.CreatedAt, &run.UpdatedAt, &run.CompletedAt, &run.TriggerSnapshotJSON, &run.ParentRunID, &run.ParentNodeID, &run.ItemKey, &run.ItemIndex)
 	if err != nil {
 		return nil, fmt.Errorf("getting workflow run: %w", err)
 	}

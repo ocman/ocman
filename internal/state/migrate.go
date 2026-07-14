@@ -129,7 +129,7 @@ import (
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 29
+const latestSchemaVersion = 30
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -283,6 +283,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV28(tx)
 	case 29:
 		return migrateToV29(tx)
+	case 30:
+		return migrateToV30(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -1090,6 +1092,50 @@ func ensureWorkflowResourceLeaseSchema(tx *sql.Tx) error {
 		);
 		CREATE INDEX IF NOT EXISTS idx_workflow_resource_lease_pool
 			ON workflow_resource_lease (run_id, pool);
+	`)
+	return err
+}
+
+// migrateToV30 adds dynamic map/join composition (#317). A map node fans a
+// declared JSON array artifact out into per-item pinned subworkflow runs;
+// workflow_map_item records one durable row per mapped item (its stable
+// key, input order, executing child run, and terminal state) so restart or
+// retry never reprocesses a completed stable key. Child runs are ordinary
+// workflow_run rows linked back to their parent map node so the run UI can
+// nest and the top-level run list can hide them.
+func migrateToV30(tx *sql.Tx) error {
+	// v29 was independently used by #317 and #320. Re-ensure workspace
+	// leases so a database stamped by the former reaches the complete shape.
+	if err := ensureWorkflowWorkspaceLeaseSchema(tx); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(tx, "workflow_run", "parent_run_id", "TEXT"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(tx, "workflow_run", "parent_node_id", "TEXT"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(tx, "workflow_run", "item_key", "TEXT"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(tx, "workflow_run", "item_index", "INTEGER"); err != nil {
+		return err
+	}
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS workflow_map_item (
+			run_id       TEXT NOT NULL REFERENCES workflow_run(id),
+			map_node     TEXT NOT NULL,
+			item_key     TEXT NOT NULL,
+			item_index   INTEGER NOT NULL,
+			child_run_id TEXT,
+			state        TEXT NOT NULL,
+			created_at   INTEGER NOT NULL,
+			PRIMARY KEY (run_id, map_node, item_key)
+		);
+		CREATE INDEX IF NOT EXISTS idx_workflow_map_item_order
+			ON workflow_map_item (run_id, map_node, item_index);
+		CREATE INDEX IF NOT EXISTS idx_workflow_run_parent
+			ON workflow_run (parent_run_id);
 	`)
 	return err
 }

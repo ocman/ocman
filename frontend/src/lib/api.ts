@@ -78,6 +78,7 @@ export type {
 	WorkflowRun,
 	WorkflowRunDetail,
 	WorkflowArtifact,
+	WorkflowMapItemRun,
 } from './api.types';
 
 // Type imports used by the api object below.

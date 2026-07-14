@@ -33,4 +33,17 @@
 .workflow-artifacts li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; padding: 8px; background: var(--bg); border: 1px solid var(--border); font-size: 12px; }
 .workflow-artifacts li small { color: var(--text-dim); }
 .workflow-artifact-gone { color: var(--text-dim); font-style: italic; }
+.workflow-run-parent { padding: 8px; background: var(--bg); border: 1px solid var(--border); font-size: 12px; }
+.workflow-run-parent button, .workflow-map-item button { background: none; border: none; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; font: inherit; }
+.workflow-map { margin-top: 10px; font-size: 12px; }
+.workflow-map-toggle { display: block; width: 100%; text-align: left; padding: 6px 8px; background: var(--bg-secondary); border: 1px solid var(--border); cursor: pointer; font: 12px var(--font-mono); }
+.workflow-map-toggle small { color: var(--text-dim); }
+.workflow-map-items { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow: auto; }
+.workflow-map-items li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: 5px 7px; background: var(--bg); border: 1px solid var(--border); }
+.workflow-map-items li[data-state="failed"], .workflow-map-items li[data-state="canceled"] { border-color: var(--danger); }
+.workflow-map-items li[data-state="successful"] { border-color: var(--success); }
+.workflow-map-items li small { color: var(--text-dim); }
+.workflow-join { margin-top: 10px; font-size: 12px; }
+.workflow-join-items { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; max-height: 200px; overflow: auto; }
+.workflow-join-items li[data-state="failed"], .workflow-join-items li[data-state="canceled"] { color: var(--danger); }
 @media (max-width: 720px) { .workflow-page { padding: 12px; } .workflow-author, .workflow-history { grid-template-columns: 1fr; } .workflow-run header { display: block; } }

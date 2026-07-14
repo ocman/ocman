@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, type WorkflowArtifact, type WorkflowRun, type WorkflowRunDetail, type WorkflowVersion } from '../lib/api';
+import { api, type WorkflowArtifact, type WorkflowMapItemRun, type WorkflowRun, type WorkflowRunDetail, type WorkflowVersion } from '../lib/api';
 import { useWorkflows } from '../lib/useCapabilities';
 import { onSseConnect, onWorkflowRunUpdated, onWorkflowTriggerUpdated } from '../lib/useGlobalEvents';
 import { usePageTitle } from '../lib/headerContext';
@@ -97,12 +97,12 @@ export function Workflows() {
 				<div><h2>Runs</h2>{runs.map((run) => <button type="button" aria-pressed={selected?.id === run.id} key={run.id} onClick={() => void api.workflows.run(run.id).then(select)}>{run.workflowId} <small>{run.state}</small></button>)}</div>
 			</section>
 
-			{selected && <RunView run={selected} mutate={mutate} />}
+			{selected && <RunView run={selected} mutate={mutate} onSelectRun={(id) => void api.workflows.run(id).then(select).catch((reason) => setError(String(reason)))} />}
 		</main>
 	);
 }
 
-function RunView({ run, mutate }: { run: WorkflowRunDetail; mutate: (action: () => Promise<WorkflowRunDetail>) => Promise<void> }) {
+function RunView({ run, mutate, onSelectRun }: { run: WorkflowRunDetail; mutate: (action: () => Promise<WorkflowRunDetail>) => Promise<void>; onSelectRun: (id: string) => void }) {
 	const [artifacts, setArtifacts] = useState<WorkflowArtifact[]>([]);
 	useEffect(() => {
 		let active = true;
@@ -112,17 +112,89 @@ function RunView({ run, mutate }: { run: WorkflowRunDetail; mutate: (action: () 
 	return (
 		<section className="workflow-run" aria-label="Workflow run">
 			<header><div><span className="workflow-kicker">{run.id}</span><h2>{run.version.name}</h2><p>Revision {run.version.revision} · definition {run.version.definition.version} · {run.state}</p></div><div className="workflow-controls">{run.state === 'active' && <button type="button" onClick={() => void mutate(() => api.workflows.pause(run.id))}>Pause run</button>}{(run.state === 'active' || run.state === 'paused') && <button type="button" onClick={() => void mutate(() => api.workflows.cancel(run.id))}>Cancel run</button>}</div></header>
+			{run.parentRunId && <p className="workflow-run-parent">Mapped item <strong>{run.itemKey}</strong> of <button type="button" onClick={() => onSelectRun(run.parentRunId!)}>parent run {run.parentNodeId}</button></p>}
 			{run.trigger && <p className="workflow-run-trigger"><strong>{run.trigger.id} · {run.trigger.type} · {run.trigger.overlap ?? 'skip'}</strong> · {run.trigger.detail} · fired {formatTime(run.trigger.firedAt)}</p>}
 			{run.resources && run.resources.length > 0 && <ul className="workflow-resources" aria-label="Resource pools">{run.resources.map((pool) => <li key={pool.pool || 'run'}><strong>{pool.pool || 'run concurrency'}</strong>: {pool.held}/{pool.capacity} held{pool.waiting && pool.waiting.length > 0 && <span> · waiting: {pool.waiting.join(', ')}</span>}</li>)}</ul>}
 			{run.workspace && run.workspace.length > 0 && <ul className="workflow-leases" aria-label="Workspace leases">{run.workspace.map((lease) => <li key={lease.nodeId}><strong>{lease.nodeId}</strong>: shard {lease.shard} · {lease.mode}{lease.commit && ' (commit)'}{lease.paths && lease.paths.length > 0 && <span> · {lease.paths.join(', ')}</span>}{lease.host && <span> · host {lease.host}</span>}</li>)}</ul>}
 			<div className="workflow-graph" role="region" aria-label="Workflow run graph">
-				{run.nodes.map((node, index) => {
-					const attempt = node.attempts[0];
-					return <div className="workflow-step" key={node.nodeId}>{index > 0 && <span aria-hidden="true">-&gt;</span>}<article data-state={node.state}><small>{node.type} · {node.nodeId}</small><h3>{node.name}</h3><strong>{node.state}</strong><p>{attempt ? `Attempt ${attempt.seq}: ${attempt.state}${attempt.exitCode !== undefined && attempt.exitCode >= 0 ? ` (exit ${attempt.exitCode})` : ''}` : 'Not attempted'}</p>{node.type === 'agent' && attempt?.sessionId && <><Link to={`/session/${encodeURIComponent(attempt.sessionId)}`}>Open agent session</Link><p>Session: {attempt.sessionState}</p></>}{node.type === 'agent' && attempt?.outputs && Object.entries(attempt.outputs).map(([name, value]) => <p key={name}>{name}: {JSON.stringify(value)}</p>)}{node.type === 'agent' && attempt?.error && <p role="alert">{attempt.error}</p>}{node.type === 'approval' && node.state === 'ready' && run.state === 'active' && <button type="button" onClick={() => void mutate(() => api.workflows.approve(run.id, node.nodeId))}>Approve {node.name}</button>}{attempt && node.type === 'command' && <CommandAttempt attempt={attempt} />}</article></div>;
-				})}
+				{run.nodes.map((node, index) => (
+					<div className="workflow-step" key={node.nodeId}>
+						{index > 0 && <span aria-hidden="true">-&gt;</span>}
+						<RunNode run={run} node={node} mutate={mutate} onSelectRun={onSelectRun} />
+					</div>
+				))}
 			</div>
 			<ArtifactList runId={run.id} artifacts={artifacts} />
 		</section>
+	);
+}
+
+function RunNode({ run, node, mutate, onSelectRun }: { run: WorkflowRunDetail; node: WorkflowRunDetail['nodes'][number]; mutate: (action: () => Promise<WorkflowRunDetail>) => Promise<void>; onSelectRun: (id: string) => void }) {
+	const attempt = node.attempts[0];
+	const attemptLine = attempt
+		? `Attempt ${attempt.seq}: ${attempt.state}${attempt.exitCode !== undefined && attempt.exitCode >= 0 ? ` (exit ${attempt.exitCode})` : ''}`
+		: 'Not attempted';
+	return (
+		<article data-state={node.state}>
+			<small>{node.type} · {node.nodeId}</small>
+			<h3>{node.name}</h3>
+			<strong>{node.state}</strong>
+			<p>{attemptLine}</p>
+			{node.type === 'agent' && <AgentNode attempt={attempt} />}
+			{node.type === 'approval' && node.state === 'ready' && run.state === 'active' && <button type="button" onClick={() => void mutate(() => api.workflows.approve(run.id, node.nodeId))}>Approve {node.name}</button>}
+			{attempt && node.type === 'command' && <CommandAttempt attempt={attempt} />}
+			{node.type === 'map' && <MapNode items={(run.children ?? []).filter((item) => item.mapNode === node.nodeId)} error={node.attempts.map((a) => a.error).find(Boolean)} onSelectRun={onSelectRun} />}
+			{node.type === 'join' && <JoinNode attempt={attempt} />}
+		</article>
+	);
+}
+
+function AgentNode({ attempt }: { attempt?: WorkflowRunDetail['nodes'][number]['attempts'][number] }) {
+	if (!attempt) return null;
+	return (
+		<>
+			{attempt.sessionId && <><Link to={`/session/${encodeURIComponent(attempt.sessionId)}`}>Open agent session</Link><p>Session: {attempt.sessionState}</p></>}
+			{attempt.outputs && Object.entries(attempt.outputs).map(([name, value]) => <p key={name}>{name}: {JSON.stringify(value)}</p>)}
+			{attempt.error && <p role="alert">{attempt.error}</p>}
+		</>
+	);
+}
+
+function MapNode({ items, error, onSelectRun }: { items: WorkflowMapItemRun[]; error?: string; onSelectRun: (id: string) => void }) {
+	const [expanded, setExpanded] = useState(false);
+	const counts = items.reduce<Record<string, number>>((acc, item) => { acc[item.state] = (acc[item.state] ?? 0) + 1; return acc; }, {});
+	const summary = Object.entries(counts).map(([state, count]) => `${count} ${state}`).join(', ') || 'no items';
+	return (
+		<div className="workflow-map">
+			{error && <p role="alert">{error}</p>}
+			<button type="button" className="workflow-map-toggle" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>
+				{expanded ? 'Collapse' : 'Expand'} {items.length} mapped item{items.length === 1 ? '' : 's'} <small>({summary})</small>
+			</button>
+			{expanded && (
+				<ul className="workflow-map-items" data-testid="workflow-map-items">
+					{items.map((item) => (
+						<li key={item.key} data-state={item.state} data-testid="workflow-map-item">
+							<strong>{item.key}</strong> <small>#{item.index} · {item.state}</small>
+							{item.childRunId && <button type="button" onClick={() => onSelectRun(item.childRunId!)}>Open item run</button>}
+						</li>
+					))}
+				</ul>
+			)}
+		</div>
+	);
+}
+
+function JoinNode({ attempt }: { attempt?: WorkflowRunDetail['nodes'][number]['attempts'][number] }) {
+	const raw = attempt?.outputs?.result;
+	if (!raw || typeof raw !== 'object') return null;
+	const result = raw as { policy?: string; success?: number; failed?: number; total?: number; items?: { key: string; state: string; index: number }[] };
+	return (
+		<div className="workflow-join" data-testid="workflow-join">
+			<p><strong>{result.policy}</strong> · {result.success ?? 0}/{result.total ?? 0} succeeded</p>
+			<ol className="workflow-join-items">
+				{(result.items ?? []).map((item) => <li key={item.key} data-state={item.state}>{item.key}: {item.state}</li>)}
+			</ol>
+		</div>
 	);
 }
 
