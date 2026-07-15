@@ -440,38 +440,6 @@
 .oc-stop-hint { color: var(--overlay0); font-size: 11px; }
 .oc-tps-hint { color: var(--overlay1); font-size: 11px; font-variant-numeric: tabular-nums; }
 
-/* Queued `!`-shell command indicator (shown while the agent is busy). */
-.oc-shell-queued {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--overlay1);
-  min-width: 0;
-}
-.oc-shell-queued-icon { color: var(--yellow); font-size: 12px; }
-.oc-shell-queued-label { white-space: nowrap; }
-.oc-shell-queued-cmd {
-  font-family: var(--font-mono, monospace);
-  color: var(--text);
-  background: var(--surface0, rgba(127, 132, 156, 0.15));
-  padding: 1px 5px;
-  border-radius: 4px;
-  max-width: 240px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.oc-shell-queued-cancel {
-  color: var(--overlay0);
-  font-size: 11px;
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  text-decoration: underline;
-}
-.oc-shell-queued-cancel:hover { color: var(--red); }
 .oc-composer-footer-right {
   display: flex;
   align-items: center;

@@ -99,8 +99,7 @@ function ComposerImpl({
   /**
    * A `!`-prefixed shell command that was submitted while the agent
    * was streaming and is now waiting for the turn to finish before it
-   * runs. Surfaced in the footer so the user knows the command was
-   * accepted and what we're waiting for. Null when nothing is queued.
+   * runs. Shown in the follow-up queue. Null when nothing is queued.
    */
   queuedShellCommand?: string | null;
   /** Drop the queued shell command without running it. */
@@ -954,6 +953,17 @@ function ComposerImpl({
   // keyed on the real `disabled` prop (a live-connection state, not this
   // transient send block).
   const uiDisabled = disabled || sending;
+  const shellQueueID = '__shell__';
+  const queueItems = [
+    ...(queuedMessages || []),
+    ...(queuedShellCommand ? [{
+      id: shellQueueID,
+      text: `!${queuedShellCommand}`,
+      hasImages: false,
+      canMove: false,
+      removeLabel: 'Cancel queued shell command',
+    }] : []),
+  ];
 
   return (
     <>
@@ -1037,10 +1047,10 @@ function ComposerImpl({
           >Stop</button>
         </div>
       )}
-      {!disabled && queuedMessages && (
+      {!disabled && (
         <QueuedMessages
-          messages={queuedMessages}
-          onRemove={onRemoveQueuedMessage}
+          messages={queueItems}
+          onRemove={(id) => id === shellQueueID ? onCancelQueuedShell?.() : onRemoveQueuedMessage?.(id)}
           onMove={onMoveQueuedMessage}
         />
       )}
@@ -1280,23 +1290,6 @@ function ComposerImpl({
               </button>
               <span className="oc-stop-hint">Esc to interrupt</span>
             </>
-          )}
-          {!disabled && queuedShellCommand && (
-            <span className="oc-shell-queued" data-testid="shell-queued">
-              <i className="bi bi-hourglass-split oc-shell-queued-icon" aria-hidden="true" />
-              <span className="oc-shell-queued-label">
-                Shell queued — waiting for the agent to finish:
-              </span>
-              <code className="oc-shell-queued-cmd" title={queuedShellCommand}>
-                {queuedShellCommand}
-              </code>
-              <button
-                type="button"
-                className="oc-shell-queued-cancel"
-                onClick={() => onCancelQueuedShell?.()}
-                title="Cancel queued shell command"
-              >Cancel</button>
-            </span>
           )}
         </span>
         <span className="oc-composer-footer-right">

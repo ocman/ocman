@@ -56,4 +56,28 @@ describe('QueuedMessages', () => {
     fireEvent.click(screen.getAllByLabelText('Move up')[1]);
     expect(onMove).toHaveBeenCalledWith('b', -1);
   });
+
+  it('renders an immovable item with its own remove label', () => {
+    const onRemove = vi.fn();
+    render(<QueuedMessages messages={[{ id: 'shell', text: '!git status', hasImages: false, canMove: false, removeLabel: 'Cancel queued shell command' }]} onRemove={onRemove} />);
+
+    expect(screen.getByLabelText('Move up')).toBeDisabled();
+    expect(screen.getByLabelText('Move down')).toBeDisabled();
+    fireEvent.click(screen.getByLabelText('Cancel queued shell command'));
+    expect(onRemove).toHaveBeenCalledWith('shell');
+  });
+
+  it('does not move regular messages across an immovable item', () => {
+    const onMove = vi.fn();
+    render(<QueuedMessages messages={[
+      { id: 'a', text: 'first', hasImages: false },
+      { id: 'shell', text: '!git status', hasImages: false, canMove: false },
+      { id: 'b', text: 'second', hasImages: false },
+    ]} onMove={onMove} />);
+
+    expect(screen.getAllByLabelText('Move down')[0]).toBeDisabled();
+    expect(screen.getAllByLabelText('Move up')[2]).toBeDisabled();
+    fireEvent.click(screen.getAllByLabelText('Move down')[0]);
+    expect(onMove).not.toHaveBeenCalled();
+  });
 });

@@ -4,6 +4,8 @@ export interface QueuedMessageItem {
   id: string;
   text: string;
   hasImages: boolean;
+  canMove?: boolean;
+  removeLabel?: string;
 }
 
 /**
@@ -52,7 +54,7 @@ function QueuedMessagesImpl({
             <button
               type="button"
               className="oc-queued-btn"
-              disabled={i === 0}
+              disabled={m.canMove === false || i === 0 || messages[i - 1]?.canMove === false}
               onClick={() => onMove?.(m.id, -1)}
               title="Move up"
               aria-label="Move up"
@@ -60,7 +62,7 @@ function QueuedMessagesImpl({
             <button
               type="button"
               className="oc-queued-btn"
-              disabled={i === messages.length - 1}
+              disabled={m.canMove === false || i === messages.length - 1 || messages[i + 1]?.canMove === false}
               onClick={() => onMove?.(m.id, 1)}
               title="Move down"
               aria-label="Move down"
@@ -69,8 +71,8 @@ function QueuedMessagesImpl({
               type="button"
               className="oc-queued-btn oc-queued-remove"
               onClick={() => onRemove?.(m.id)}
-              title="Remove from queue"
-              aria-label="Remove from queue"
+              title={m.removeLabel || 'Remove from queue'}
+              aria-label={m.removeLabel || 'Remove from queue'}
             >{'\u00D7'}</button>
           </span>
         </li>
