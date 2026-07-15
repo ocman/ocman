@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -18,6 +19,8 @@ import (
 // to inspect OpenCode sessions.
 type statusSessionReader interface {
 	GetSessions(directory string, since int64) ([]db.Session, error)
+	GetSession(id string) (*db.Session, error)
+	FindRunningToolSessionID(tool, directory string) (string, error)
 }
 
 // childSessionDB is the subset of state.DB needed by the status tools.
@@ -157,6 +160,21 @@ func (t *statusTools) handleGetCurrentSessionID(_ context.Context, req mcplib.Ca
 	}
 
 	directory := req.GetString("directory", "")
+	callerID, callerErr := t.ocDB.FindRunningToolSessionID("get_current_session_id", directory)
+	if errors.Is(callerErr, db.ErrAmbiguousRunningTool) {
+		return mcplib.NewToolResultError("multiple sessions are requesting their ID; retry the call"), nil
+	}
+	if callerErr != nil {
+		log.WithError(callerErr).Warn("failed to identify session invoking get_current_session_id")
+	}
+	if callerID != "" {
+		s, err := t.ocDB.GetSession(callerID)
+		if err == nil {
+			return currentSessionResult(*s, "calling_session"), nil
+		}
+		log.WithError(err).Warn("failed to load session invoking get_current_session_id")
+	}
+
 	sessions, err := t.ocDB.GetSessions(directory, 0)
 	if err != nil {
 		return mcplib.NewToolResultError(fmt.Sprintf("looking up current session: %v", err)), nil
@@ -168,14 +186,17 @@ func (t *statusTools) handleGetCurrentSessionID(_ context.Context, req mcplib.Ca
 		return mcplib.NewToolResultError("no sessions found"), nil
 	}
 
-	s := sessions[0]
+	return currentSessionResult(sessions[0], "most_recent_session"), nil
+}
+
+func currentSessionResult(s db.Session, selectionMode string) *mcplib.CallToolResult {
 	return toolResultJSON(map[string]interface{}{
 		"session_id":     s.ID,
 		"directory":      s.Directory,
 		"title":          s.Title,
 		"time_updated":   s.TimeUpdated,
-		"selection_mode": "most_recent_session",
-	}), nil
+		"selection_mode": selectionMode,
+	})
 }
 
 // handleCancelSession handles the cancel_session tool call.

@@ -55,6 +55,18 @@ type seedMessage struct {
 // openTestOpenCodeDBWithMessages is openTestOpenCodeDB plus message rows,
 // so tests can exercise per-session model inheritance.
 func openTestOpenCodeDBWithMessages(t *testing.T, sessions []db.Session, messages []seedMessage) *db.DB {
+	return openTestOpenCodeDBWithMessagesAndParts(t, sessions, messages, nil)
+}
+
+type seedPart struct {
+	id          string
+	messageID   string
+	sessionID   string
+	timeCreated int64
+	data        string
+}
+
+func openTestOpenCodeDBWithMessagesAndParts(t *testing.T, sessions []db.Session, messages []seedMessage, parts []seedPart) *db.DB {
 	t.Helper()
 
 	path := filepath.Join(t.TempDir(), "opencode.db")
@@ -96,8 +108,8 @@ func openTestOpenCodeDBWithMessages(t *testing.T, sessions []db.Session, message
 	}
 	for _, s := range sessions {
 		_, err = sqlDB.Exec(
-			`INSERT INTO session (id, project_id, title, directory, time_created, time_updated) VALUES (?, '', ?, ?, ?, ?)`,
-			s.ID, s.Title, s.Directory, s.TimeCreated, s.TimeUpdated,
+			`INSERT INTO session (id, project_id, parent_id, title, directory, time_created, time_updated) VALUES (?, '', NULLIF(?, ''), ?, ?, ?, ?)`,
+			s.ID, s.ParentID, s.Title, s.Directory, s.TimeCreated, s.TimeUpdated,
 		)
 		if err != nil {
 			sqlDB.Close()
@@ -112,6 +124,16 @@ func openTestOpenCodeDBWithMessages(t *testing.T, sessions []db.Session, message
 		if err != nil {
 			sqlDB.Close()
 			t.Fatalf("inserting opencode message %d: %v", i, err)
+		}
+	}
+	for _, p := range parts {
+		_, err = sqlDB.Exec(
+			`INSERT INTO part (id, message_id, session_id, time_created, data) VALUES (?, ?, ?, ?, ?)`,
+			p.id, p.messageID, p.sessionID, p.timeCreated, p.data,
+		)
+		if err != nil {
+			sqlDB.Close()
+			t.Fatalf("inserting opencode part %s: %v", p.id, err)
 		}
 	}
 	if err := sqlDB.Close(); err != nil {
@@ -397,6 +419,65 @@ func TestGetCurrentSessionID_FiltersByDirectory(t *testing.T) {
 	}
 	if got.SessionID != "ses_repo" {
 		t.Fatalf("expected directory-filtered session ID, got %q", got.SessionID)
+	}
+}
+
+func TestGetCurrentSessionID_ReturnsCallingSessionInsteadOfMostRecentlyUpdated(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	ocDB := openTestOpenCodeDBWithMessagesAndParts(t, []db.Session{
+		{ID: "ses_caller", ParentID: "ses_parent", Title: "caller", Directory: "/repo", TimeCreated: 3000, TimeUpdated: 4000},
+		{ID: "ses_other", Title: "other active session", Directory: "/repo", TimeCreated: 1000, TimeUpdated: 9000},
+	}, []seedMessage{
+		{sessionID: "ses_caller", timeCreated: 5000, data: `{"role":"assistant"}`},
+	}, []seedPart{
+		{
+			id: "prt_current", messageID: "msg-0", sessionID: "ses_caller", timeCreated: 5000,
+			data: `{"type":"tool","tool":"ocman_get_current_session_id","state":{"status":"running","input":{"directory":"/repo"},"time":{"start":5000}}}`,
+		},
+		{
+			id: "prt_stale", messageID: "msg-0", sessionID: "ses_caller", timeCreated: 4000,
+			data: `{"type":"tool","tool":"ocman_get_current_session_id","state":{"status":"running","input":{"directory":"/repo"},"time":{"start":4000}}}`,
+		},
+	})
+	platform := &fakePlatformForTools{}
+	srv := buildTestMCPServerWithOpenCodeDB(t, stateDB, platform, ocDB)
+
+	result := callTool(t, srv, "get_current_session_id", map[string]interface{}{"directory": "/repo"})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", resultText(result))
+	}
+	var got struct {
+		SessionID     string `json:"session_id"`
+		SelectionMode string `json:"selection_mode"`
+	}
+	if err := json.Unmarshal([]byte(resultText(result)), &got); err != nil {
+		t.Fatalf("expected JSON object: %v", err)
+	}
+	if got.SessionID != "ses_caller" {
+		t.Fatalf("expected calling session ID, got %q", got.SessionID)
+	}
+	if got.SelectionMode != "calling_session" {
+		t.Fatalf("expected calling_session selection mode, got %q", got.SelectionMode)
+	}
+}
+
+func TestGetCurrentSessionID_RejectsAmbiguousConcurrentCallers(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	ocDB := openTestOpenCodeDBWithMessagesAndParts(t, []db.Session{
+		{ID: "ses_a", Title: "a", Directory: "/repo", TimeCreated: 1000, TimeUpdated: 1000},
+		{ID: "ses_b", Title: "b", Directory: "/repo", TimeCreated: 2000, TimeUpdated: 2000},
+	}, []seedMessage{
+		{sessionID: "ses_a", timeCreated: 3000, data: `{"role":"assistant"}`},
+		{sessionID: "ses_b", timeCreated: 3001, data: `{"role":"assistant"}`},
+	}, []seedPart{
+		{id: "prt_a", messageID: "msg-0", sessionID: "ses_a", timeCreated: 3000, data: `{"type":"tool","tool":"ocman_get_current_session_id","state":{"status":"running"}}`},
+		{id: "prt_b", messageID: "msg-1", sessionID: "ses_b", timeCreated: 3001, data: `{"type":"tool","tool":"ocman_get_current_session_id","state":{"status":"running"}}`},
+	})
+	srv := buildTestMCPServerWithOpenCodeDB(t, stateDB, &fakePlatformForTools{}, ocDB)
+
+	result := callTool(t, srv, "get_current_session_id", map[string]interface{}{"directory": "/repo"})
+	if !result.IsError || !strings.Contains(resultText(result), "multiple sessions") {
+		t.Fatalf("expected ambiguous caller error, got %q", resultText(result))
 	}
 }
 
