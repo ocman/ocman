@@ -281,8 +281,7 @@ describe('Workflows', () => {
 		await user.click(screen.getByRole('button', { name: 'Save new version' }));
 		expect(apiMock.publish).toHaveBeenCalledWith(expect.stringContaining('concurrency: 1'));
 		expect(apiMock.start).not.toHaveBeenCalled();
-		await user.click(screen.getByRole('tab', { name: 'Workflows' }));
-		await user.click(screen.getByRole('button', { name: 'Start run' }));
+		await user.click(await screen.findByRole('button', { name: 'Start run' }));
 		expect(apiMock.startActive).toHaveBeenCalledWith('release');
 		await user.click(screen.getByRole('button', { name: 'New workflow' }));
 		expect(screen.getByRole('group', { name: 'Version comparison' })).toHaveTextContent('Publish another revision');

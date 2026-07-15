@@ -860,6 +860,13 @@ func TestCancelTerminatesCommandProcessTree(t *testing.T) {
 		t.Fatalf("unexpected canceled run: %+v", canceled)
 	}
 	if err := syscall.Kill(pid, 0); err == nil {
+		if runtime.GOOS == "linux" {
+			raw, _ := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+			fields := strings.Fields(string(raw))
+			if len(fields) > 2 && fields[2] == "Z" {
+				return
+			}
+		}
 		t.Fatalf("child process %d survived cancellation", pid)
 	}
 }
