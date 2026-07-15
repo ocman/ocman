@@ -131,10 +131,10 @@ test('typing and pressing Enter sends POST /api/session/:id/message', async ({ m
   expect(body.message).toBe('Hello, world!');
 });
 
-test('optimistic user message appears immediately in the thread', async ({ mockedPage: page }) => {
+test('unconfirmed user message does not appear in the thread', async ({ mockedPage: page }) => {
   await goToLiveSession(page);
 
-  // Delay the API response so we can observe the optimistic message
+  // Delay the API response to prove the thread waits for server confirmation.
   await page.route(
     new RegExp(`/api/session/${MOCK_SESSION.id}/message`),
     async (route) => {
@@ -143,11 +143,15 @@ test('optimistic user message appears immediately in the thread', async ({ mocke
     },
   );
 
-  await page.locator('.oc-composer-input').fill('My optimistic message');
-  await page.locator('.oc-composer-input').press('Enter');
+  await page.locator('.oc-composer-input').fill('My unconfirmed message');
+  await Promise.all([
+    page.waitForRequest((request) =>
+      request.url().includes(`/api/session/${MOCK_SESSION.id}/message`) && request.method() === 'POST',
+    ),
+    page.locator('.oc-composer-input').press('Enter'),
+  ]);
 
-  // The user message should appear before the response arrives
-  await expect(page.locator('.oc-msg-user', { hasText: 'My optimistic message' })).toBeVisible({ timeout: 2_000 });
+  await expect(page.getByText('My unconfirmed message', { exact: true })).toHaveCount(0);
 });
 
 test('mocked assistant reply appears in thread via SSE (on page load)', async ({ mockedPage: page }) => {
@@ -342,9 +346,8 @@ test('409 busy response shows a retryable failed banner on the user message', as
   await page.locator('.oc-composer-input').fill('Hello');
   await page.locator('.oc-composer-input').press('Enter');
 
-  // The optimistic user bubble gets a failed banner with the error text
-  // and a Retry button — the prompt itself is preserved on screen.
-  const failedBanner = page.locator('.oc-msg-failed-banner');
+  // The failed prompt is preserved with its error and retry controls.
+  const failedBanner = page.getByRole('alert').filter({ hasText: 'Failed to send' });
   await expect(failedBanner).toBeVisible({ timeout: 3_000 });
   await expect(failedBanner).toContainText(/try again|busy/i);
   await expect(failedBanner.getByRole('button', { name: 'Retry' })).toBeVisible();
@@ -377,7 +380,7 @@ test('failed-send Retry replays the original prompt', async ({ mockedPage: page 
   await page.locator('.oc-composer-input').fill('Replay me');
   await page.locator('.oc-composer-input').press('Enter');
 
-  const failedBanner = page.locator('.oc-msg-failed-banner');
+  const failedBanner = page.getByRole('alert').filter({ hasText: 'Failed to send' });
   await expect(failedBanner).toBeVisible({ timeout: 3_000 });
   // The viewport's auto-scroll MutationObserver can make the button
   // position unstable between frames, causing Playwright's actionability

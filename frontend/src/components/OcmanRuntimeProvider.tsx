@@ -103,10 +103,19 @@ export function OcmanRuntimeProvider({
   // eslint-disable-next-line react-hooks/exhaustive-deps -- sessionId is the intentional cache-key trigger
   const convert = useMemo(() => createConvertMessages(), [sessionId]);
 
-  const converted = useMemo(
-    () => convert(messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById, showReasoning),
-    [convert, messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById, showReasoning],
-  );
+  const converted = useMemo(() => {
+    const serverMessages = convert(messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById, showReasoning);
+    const serverIds = new Set(serverMessages.map((message) => message.id));
+    const missingFailures = (failedSends ?? []).filter((entry) => !serverIds.has(entry.id));
+    if (missingFailures.length === 0) return serverMessages;
+    return [...serverMessages, ...missingFailures.map((entry): ThreadMessageLike => ({
+      id: entry.id,
+      role: 'user',
+      content: entry.text,
+      createdAt: new Date(entry.failedAt),
+      metadata: { custom: { failed: { error: entry.error, imagesDropped: !!entry.imagesDropped } } },
+    }))];
+  }, [convert, messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById, failedSends, showReasoning]);
 
   const isRunning = useMemo(() => computeIsRunning(messages), [messages]);
 
