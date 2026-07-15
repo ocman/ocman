@@ -736,6 +736,34 @@ describe('convertMessages', () => {
     expect(tc!.argsText).toMatch(/^running\n@time:2000,0\nsleep 10$/);
   });
 
+  it('uses live OpenCode tool timing when the SSE part has no timeCreated', () => {
+    const m = makeMessage('m', { role: 'assistant' });
+    const out = convertMessages([m], [
+      makePart('m', {
+        type: 'tool',
+        tool: 'bash',
+        time: { start: 2000 },
+        state: { status: 'running', input: { command: 'sleep 10' } },
+      } as PartData),
+    ]);
+    const tc = asContentArray(out[0].content).find((i) => i.type === 'tool-call') as { argsText: string } | undefined;
+    expect(tc!.argsText).toMatch(/^running\n@time:2000,0\nsleep 10$/);
+  });
+
+  it('persists the completed duration from OpenCode tool timing', () => {
+    const m = makeMessage('m', { role: 'assistant' });
+    const out = convertMessages([m], [
+      makePart('m', {
+        type: 'tool',
+        tool: 'bash',
+        time: { start: 2000, end: 6500 },
+        state: { status: 'completed', input: { command: 'sleep 4.5' } },
+      } as PartData),
+    ]);
+    const tc = asContentArray(out[0].content).find((i) => i.type === 'tool-call') as { argsText: string } | undefined;
+    expect(tc!.argsText).toMatch(/^completed\n@time:2000,6500\nsleep 4.5$/);
+  });
+
   it('renders live bash output from OpenCode running-tool metadata', () => {
     const m = makeMessage('m', { role: 'assistant' });
     const out = convertMessages([m], [

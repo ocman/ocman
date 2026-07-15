@@ -382,10 +382,12 @@ export function createConvertMessages(): ConvertMessagesFn {
     // Returns '' when no useful timing is available.
     const msgCompleted = (m.data.time as { completed?: number } | undefined)?.completed || 0;
     function toolCompletedAt(partIdx: number): number {
+      const currentEnd = msgParts[partIdx]?.time?.end || 0;
+      if (currentEnd) return currentEnd;
       // Walk forward to find the next tool part's timeCreated.
       for (let j = partIdx + 1; j < msgPartsRaw.length; j++) {
         const nextPd = msgParts[j];
-        const nextTime = msgPartsRaw[j].timeCreated ?? 0;
+        const nextTime = msgPartsRaw[j].timeCreated || nextPd?.time?.start || 0;
         if (nextPd && nextPd.type === 'tool' && nextTime) {
           return nextTime;
         }
@@ -394,7 +396,7 @@ export function createConvertMessages(): ConvertMessagesFn {
     }
 
     function toolTimeSuffix(partIdx: number): string {
-      const started = msgPartsRaw[partIdx]?.timeCreated || 0;
+      const started = msgPartsRaw[partIdx]?.timeCreated || msgParts[partIdx]?.time?.start || 0;
       if (!started) return '';
       const ended = toolCompletedAt(partIdx);
       return `\n@time:${started},${ended || 0}`;

@@ -249,6 +249,18 @@ describe('uiStore notificationsEnabled', () => {
   });
 });
 
+describe('uiStore message metadata visibility', () => {
+  beforeEach(() => {
+    useUiStore.setState({ showMessageMetadata: false });
+  });
+
+  it('defaults to hidden and can be enabled', () => {
+    expect(useUiStore.getState().showMessageMetadata).toBe(false);
+    initial.setShowMessageMetadata(true);
+    expect(useUiStore.getState().showMessageMetadata).toBe(true);
+  });
+});
+
 describe('uiStore tool-detail visibility (/details)', () => {
   beforeEach(() => {
     useUiStore.setState({ showToolDetails: true });

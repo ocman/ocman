@@ -217,6 +217,7 @@ const ModelChangeDivider: FC<{ model: string }> = ({ model }) => {
 };
 
 function AssistantMeta() {
+  const showMessageMetadata = useUiStore((s) => s.showMessageMetadata);
   const createdAt = useMessage((m) => m.createdAt);
   const status = useMessage((m) => m.status);
   const content = useMessage((m) => m.content);
@@ -263,7 +264,7 @@ function AssistantMeta() {
           }
         </div>
       )}
-      <div className="oc-msg-meta">
+      {showMessageMetadata && <div className="oc-msg-meta">
         <span
           className="oc-meta-dot"
           style={isError ? { background: 'var(--danger)' } : undefined}
@@ -291,7 +292,7 @@ function AssistantMeta() {
             </span>
           </>
         )}
-      </div>
+      </div>}
     </>
   );
 }

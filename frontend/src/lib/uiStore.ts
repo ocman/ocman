@@ -86,6 +86,11 @@ type UiStore = {
   setShowReasoning: (enabled: boolean) => void;
   toggleShowReasoning: () => void;
 
+  // Timestamp/model details shown after each assistant message section.
+  // Turn summaries remain visible regardless of this preference.
+  showMessageMetadata: boolean;
+  setShowMessageMetadata: (enabled: boolean) => void;
+
   // OS-level Web Notifications. Off by default — enabling requires the
   // user to grant browser permission, so we never preemptively claim
   // they're enabled. Persisted alongside other preferences.
@@ -237,6 +242,9 @@ export const useUiStore = create<UiStore>()(
       setShowReasoning: (enabled) => set({ showReasoning: enabled }),
       toggleShowReasoning: () => set((s) => ({ showReasoning: !s.showReasoning })),
 
+      showMessageMetadata: false,
+      setShowMessageMetadata: (enabled) => set({ showMessageMetadata: enabled }),
+
       notificationsEnabled: false,
       setNotificationsEnabled: (enabled) => set({ notificationsEnabled: enabled }),
 
@@ -375,6 +383,7 @@ export const useUiStore = create<UiStore>()(
         bellEnabled: s.bellEnabled,
         showToolDetails: s.showToolDetails,
         showReasoning: s.showReasoning,
+        showMessageMetadata: s.showMessageMetadata,
         notificationsEnabled: s.notificationsEnabled,
         collapsedProjects: s.collapsedProjects,
         projectOrder: s.projectOrder,

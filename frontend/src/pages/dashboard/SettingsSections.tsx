@@ -98,8 +98,11 @@ export function SessionsSection() {
   const setDashboardTimeRangeDefault = useUiStore((s) => s.setDashboardTimeRangeDefault);
   const sidebarRecentHours = useUiStore((s) => s.sidebarRecentHours);
   const setSidebarRecentHours = useUiStore((s) => s.setSidebarRecentHours);
+  const showMessageMetadata = useUiStore((s) => s.showMessageMetadata);
+  const setShowMessageMetadata = useUiStore((s) => s.setShowMessageMetadata);
   const timeRangeSave = useSettingSave();
   const recentSave = useSettingSave();
+  const messageMetadataSave = useSettingSave();
 
   // Worktree inherit-permissions is a server-side setting (#101), so it
   // is loaded/saved directly via the API rather than through uiStore.
@@ -154,6 +157,17 @@ export function SessionsSection() {
           parse={(raw) => raw * 24}
           save={recentSave}
           onSave={(next) => setSidebarRecentHours(next)}
+        />
+      </SettingRow>
+      <SettingRow
+        label="Message section metadata"
+        desc="Show timestamp, duration, speed, and model after each assistant message section. The summary between turns stays visible."
+      >
+        <SettingToggle
+          ariaLabel="Show metadata between message sections"
+          checked={showMessageMetadata}
+          save={messageMetadataSave}
+          onSave={(next) => setShowMessageMetadata(next)}
         />
       </SettingRow>
       <SettingRow

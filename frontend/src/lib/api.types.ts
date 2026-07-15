@@ -211,6 +211,8 @@ export interface PartData {
   type: string;
   text?: string;
   tool?: string;
+  /** OpenCode tool execution timestamps, present on live SSE snapshots. */
+  time?: { start?: number; end?: number };
   /** Present when type === 'auto-approved' (synthetic notice part). */
   permission?: string;
   patterns?: string[];

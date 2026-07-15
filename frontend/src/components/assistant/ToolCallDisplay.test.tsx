@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { act, render, fireEvent } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 
 const printing = { isPrinting: false, collapse: false };
@@ -16,6 +16,8 @@ type Props = ComponentProps<typeof ToolCallDisplay>;
 const renderTool = (p: Partial<Props>) =>
   // ToolCallDisplay only reads toolName/argsText/result off the props.
   render(<ToolCallDisplay {...({ toolName: 'bash', ...p } as Props)} />);
+
+afterEach(() => vi.useRealTimers());
 
 describe('ToolCallDisplay bash collapse', () => {
   it('collapses the whole body to just the header on click', () => {
@@ -50,6 +52,31 @@ describe('ToolCallDisplay bash collapse', () => {
       printing.isPrinting = false;
       printing.collapse = false;
     }
+  });
+});
+
+describe('ToolCallDisplay bash duration', () => {
+  it('ticks in the header while running and freezes when completed', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(7_000);
+    const { container, rerender } = renderTool({
+      argsText: 'running\n@time:2000,0\nsleep 10',
+    });
+
+    const header = container.querySelector('.oc-tool-header')!;
+    expect(header.querySelector('.oc-tool-duration')?.textContent).toBe('5.0s');
+
+    act(() => vi.advanceTimersByTime(1_000));
+    expect(header.querySelector('.oc-tool-duration')?.textContent).toBe('6.0s');
+
+    rerender(<ToolCallDisplay {...({
+      toolName: 'bash',
+      argsText: 'completed\n@time:2000,7500\nsleep 10',
+    } as Props)} />);
+    expect(header.querySelector('.oc-tool-duration')?.textContent).toBe('5.5s');
+
+    act(() => vi.advanceTimersByTime(1_000));
+    expect(header.querySelector('.oc-tool-duration')?.textContent).toBe('5.5s');
   });
 });
 
