@@ -489,18 +489,10 @@ export function AssistantThread({
     };
   }, []);
 
-  const hasAutoLoadedRef = useRef(false);
   const isJumpingRef = useRef(false);
   useEffect(() => {
-    if (hasMore && !loadingMore && !hasAutoLoadedRef.current && onLoadMore) {
-      hasAutoLoadedRef.current = true;
-      onLoadMore();
-    }
-    if (!hasMore) {
-      hasAutoLoadedRef.current = false;
-    }
     isJumpingRef.current = false;
-  }, [hasMore, loadingMore, onLoadMore]);
+  }, [hasMore, loadingMore]);
 
   // Auto-load older messages when scrolled near the top of the viewport.
   // Attaches a passive scroll listener to the viewport element.
