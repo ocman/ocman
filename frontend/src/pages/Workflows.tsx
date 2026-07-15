@@ -45,10 +45,12 @@ export function Workflows() {
 	const view = searchParams.get('view') === 'author' ? 'author' : 'operations';
 	const operationsView = searchParams.get('tab') === 'runs' ? 'runs' : 'workflows';
 	const query = searchParams.get('q') ?? '';
+	const project = searchParams.get('project') ?? '';
 	const runState = searchParams.get('state') ?? 'all';
 	const runWorkflowID = searchParams.get('workflow') ?? '';
 	const showRevisions = searchParams.get('revisions') === '1';
 	const editingVersionID = searchParams.get('version') ?? '';
+	const editingVersion = versions.find((version) => version.id === editingVersionID);
 	const runOpen = Boolean(searchParams.get('run'));
 	const deferredQuery = useDeferredValue(query.trim().toLowerCase());
 	const latestVersions = Array.from(versions.reduce((latest, version) => {
@@ -56,9 +58,10 @@ export function Workflows() {
 		if (!current || version.revision > current.revision) latest.set(version.workflowId, version);
 		return latest;
 	}, new Map<string, WorkflowVersion>()).values());
-	const visibleVersions = (showRevisions ? versions : latestVersions).filter((version) => !deferredQuery || `${version.name} ${version.workflowId}`.toLowerCase().includes(deferredQuery));
+	const visibleVersions = (showRevisions ? versions : latestVersions).filter((version) => (!project || version.definition.directory === project) && (!deferredQuery || `${version.name} ${version.workflowId}`.toLowerCase().includes(deferredQuery)));
 	const visibleRuns = runs.filter((run) => (runState === 'all' || run.state === runState) && (!runWorkflowID || run.workflowId === runWorkflowID) && (!deferredQuery || run.workflowId.toLowerCase().includes(deferredQuery)));
 	const workflowOptions = latestVersions.map((version) => [version.workflowId, version.name]);
+	const projectOptions = Array.from(new Set(latestVersions.map((version) => version.definition.directory).filter((directory): directory is string => Boolean(directory)))).sort();
 	function updateLocation(values: Record<string, string | undefined>, replace = false) {
 		setSearchParams((params) => {
 			for (const [key, value] of Object.entries(values)) {
@@ -202,6 +205,16 @@ export function Workflows() {
 		}
 	}
 
+	async function deactivate(id: string) {
+		setError('');
+		try {
+			await api.workflows.deactivate(id);
+			await refresh();
+		} catch (reason) {
+			setError(reason instanceof Error ? reason.message : String(reason));
+		}
+	}
+
 	async function archive() {
 		if (!editingVersionID || !window.confirm('Archive this workflow? Its run history and artifacts will be kept.')) return;
 		setError('');
@@ -233,14 +246,14 @@ export function Workflows() {
 				<div className="workflow-tabs workflow-operation-tabs" role="tablist" aria-label="Workflow operations"><Button role="tab" variant="muted" aria-selected={operationsView === 'workflows'} onClick={() => updateLocation({ tab: undefined })}>Workflows</Button><Button role="tab" variant="muted" aria-selected={operationsView === 'runs'} onClick={() => updateLocation({ tab: 'runs' })}>Run history</Button></div>
 				{error && <p className="workflow-operation-error" role="alert">{error}</p>}
 				{operationsView === 'workflows' && <section className="workflow-discovery" aria-label="Workflow discovery">
-					<div className="workflow-filter"><label>Find workflows<SearchField aria-label="Find workflows" value={query} onChange={(event) => updateLocation({ q: event.target.value }, true)} placeholder="Name or ID" /></label><label className="workflow-revision-toggle"><input type="checkbox" checked={showRevisions} onChange={(event) => updateLocation({ revisions: event.target.checked ? '1' : undefined })} /> Show revisions</label></div>
+					<div className="workflow-filter"><label>Find workflows<SearchField aria-label="Find workflows" value={query} onChange={(event) => updateLocation({ q: event.target.value }, true)} placeholder="Name or ID" /></label><label>Project<SelectField aria-label="Project" value={project} onChange={(event) => updateLocation({ project: event.target.value })}><option value="">All projects</option>{projectOptions.map((directory) => <option key={directory} value={directory}>{projectName(directory)}</option>)}</SelectField></label><label className="workflow-revision-toggle"><input type="checkbox" checked={showRevisions} onChange={(event) => updateLocation({ revisions: event.target.checked ? '1' : undefined })} /> Show revisions</label></div>
 					<div className="workflow-list-heading"><h2>Workflows</h2><Button variant="accent" onClick={() => void newWorkflow()}>New workflow</Button></div>
-					{visibleVersions.length > 0 ? <table className="workflow-table"><thead><tr><th>Workflow</th><th>Revision</th><th>Triggers</th><th></th></tr></thead><tbody>{visibleVersions.map((version) => <tr key={version.id}><td><button type="button" aria-label={version.name} onClick={() => updateLocation({ tab: 'runs', workflow: version.workflowId })}>{version.name}<small>{version.workflowId}</small></button></td><td>{version.revision} · <State state={version.active ? 'active' : 'inactive'} /></td><td>{version.triggerStates.length ? version.triggerStates.map((trigger) => <div className="workflow-trigger-summary" key={trigger.id}><strong>{trigger.type}{trigger.type === 'cron' && ` (${trigger.cron})`}{trigger.type === 'interval' && ` (${trigger.intervalSeconds}s)`}</strong></div>) : 'Manual'}</td><td><div className="workflow-controls"><button type="button" onClick={() => void activate(version.id)}>Activate</button><button type="button" onClick={() => editVersion(version)}>Edit</button><a href={api.workflows.exportUrl(version.id)} download={`${version.workflowId}-v${version.revision}.yaml`}>Export</a>{version.active && <button type="button" onClick={() => { updateLocation({ tab: 'runs', workflow: version.workflowId }); void mutate(() => api.workflows.startActive(version.workflowId)); }}>Start run</button>}</div></td></tr>)}</tbody></table> : <p>No workflows match this search.</p>}
+					{visibleVersions.length > 0 ? <table className="workflow-table"><thead><tr><th>Workflow</th><th>Project</th><th>Revision</th><th>Triggers</th><th></th></tr></thead><tbody>{visibleVersions.map((version) => <tr key={version.id}><td><button type="button" aria-label={version.name} onClick={() => updateLocation({ tab: 'runs', workflow: version.workflowId })}>{version.name}<small>{version.workflowId}</small></button></td><td>{version.definition.directory ? <span title={version.definition.directory}>{projectName(version.definition.directory)}</span> : <small>No project</small>}</td><td>{version.revision} · <State state={version.active ? 'active' : 'inactive'} /></td><td>{version.triggerStates.length ? version.triggerStates.map((trigger) => <div className="workflow-trigger-summary" key={trigger.id}><strong>{trigger.type}{trigger.type === 'cron' && ` (${trigger.cron})`}{trigger.type === 'interval' && ` (${trigger.intervalSeconds}s)`}</strong></div>) : 'Manual'}</td><td><div className="workflow-controls"><Button size="small" aria-label="Edit workflow" onClick={() => editVersion(version)}><i className="bi bi-pencil" aria-hidden="true" /></Button>{version.active && <Button size="small" aria-label="Start run" onClick={() => { updateLocation({ tab: 'runs', workflow: version.workflowId }); void mutate(() => api.workflows.startActive(version.workflowId)); }}><i className="bi bi-play-fill" aria-hidden="true" /></Button>}</div></td></tr>)}</tbody></table> : <p>No workflows match this search.</p>}
 				</section>}
 				{operationsView === 'runs' && <section className="workflow-run-list" aria-label="Workflow runs"><div className="workflow-list-heading"><h2>Run history{runWorkflowID && ` · ${runWorkflowID}`}</h2></div><div className="workflow-filter"><label>Find workflows<SearchField aria-label="Find workflows" value={query} onChange={(event) => updateLocation({ q: event.target.value }, true)} placeholder="Name or ID" /></label><label>Workflow<SelectField aria-label="Workflow" value={runWorkflowID} onChange={(event) => updateLocation({ workflow: event.target.value })}><option value="">All workflows</option>{workflowOptions.map(([id, name]) => <option key={id} value={id}>{name} ({id})</option>)}</SelectField></label><label>Run state<SelectField aria-label="Run state" value={runState} onChange={(event) => updateLocation({ state: event.target.value === 'all' ? undefined : event.target.value })}><option value="all">All states</option><option value="active">Active</option><option value="paused">Paused</option><option value="successful">Successful</option><option value="failed">Failed</option><option value="canceled">Canceled</option></SelectField></label>{(query || runWorkflowID || runState !== 'all') && <Button variant="link" className="workflow-clear-filters" onClick={() => updateLocation({ q: undefined, workflow: undefined, state: undefined })}>Clear filters</Button>}</div><table className="workflow-table"><thead><tr><th>Workflow</th><th>State</th><th>Started</th><th>Trigger</th></tr></thead><tbody>{visibleRuns.map((run) => <tr key={run.id} data-selected={selected?.id === run.id || undefined}><td><button type="button" onClick={() => void api.workflows.run(run.id).then(openRun)}>{run.workflowId}<small>{run.id}</small></button></td><td><State state={run.state} /></td><td>{formatTime(run.createdAt)}</td><td>{run.trigger?.type ?? 'manual'}</td></tr>)}</tbody></table>{visibleRuns.length === 0 && <p>No runs match these filters.</p>}</section>}
 				{selected && runOpen && <RunModal run={selected} mutate={mutate} onClose={() => updateLocation({ run: undefined })} onSelectRun={(id) => void api.workflows.run(id).then(openRun).catch((reason) => setError(String(reason)))} />}
 			</> : <>
-				<section className="workflow-author" aria-label="Workflow authoring"><header className="workflow-author-head"><div><span className="workflow-kicker">Immutable workflow revision</span><h2>Author workflow</h2><p>Build and connect steps on the canvas. Source is available for advanced edits.</p></div><div className="workflow-controls"><Button variant="muted" onClick={() => void validate()}>Validate</Button><Button variant="accent" onClick={() => void publish()}>Save new version</Button></div></header>{error && <p role="alert">{error}</p>}{validated ? <WorkflowBuilder definition={validated.definition} source={source} onChange={applyBuilder} onSourceChange={editSourceLive} /> : <label className="workflow-yaml">Workflow YAML or JSON<textarea aria-label="Workflow YAML or JSON" value={source} onChange={(event) => editSource(event.target.value)} spellCheck={false} /></label>}{editingVersionID && <Button variant="muted" className="workflow-archive" onClick={() => void archive()}>Delete workflow</Button>}</section>
+				<section className="workflow-author" aria-label="Workflow authoring"><header className="workflow-author-head"><div><span className="workflow-kicker">Immutable workflow revision</span><h2>Author workflow</h2><p>Build and connect steps on the canvas. Source is available for advanced edits.</p></div><div className="workflow-controls"><Button variant="muted" onClick={() => void validate()}>Validate</Button><Button variant="accent" onClick={() => void publish()}>Save new version</Button></div></header>{error && <p role="alert">{error}</p>}{validated ? <WorkflowBuilder definition={validated.definition} source={source} onChange={applyBuilder} onSourceChange={editSourceLive} /> : <label className="workflow-yaml">Workflow YAML or JSON<textarea aria-label="Workflow YAML or JSON" value={source} onChange={(event) => editSource(event.target.value)} spellCheck={false} /></label>}{editingVersionID && <div className="workflow-controls"><Button variant={editingVersion?.active ? 'muted' : 'accent'} onClick={() => void (editingVersion?.active ? deactivate(editingVersionID) : activate(editingVersionID))}>{editingVersion?.active ? 'Deactivate' : 'Activate'}</Button><Button variant="muted" className="workflow-archive" onClick={() => void archive()}>Delete workflow</Button></div>}</section>
 				<VersionComparison versions={versions} from={compareFrom} to={compareTo} onFrom={setCompareFrom} onTo={setCompareTo} />
 			</>}
 		</main>
@@ -382,6 +395,10 @@ function ArtifactList({ runId, artifacts }: { runId: string; artifacts: Workflow
 
 function State({ state }: { state: string }) {
 	return <strong data-state={state}>{state}</strong>;
+}
+
+function projectName(directory: string) {
+	return directory.replace(/\/+$/, '').split('/').at(-1) || directory;
 }
 
 function formatSize(bytes: number) {

@@ -692,9 +692,9 @@ export const api = {
 			return postWorkflowSource<WorkflowVersion>('/api/workflows', source);
 		},
 		activate: (versionId: string) => postJSON<WorkflowVersion>(`/api/workflows/${encodeURIComponent(versionId)}/activate`, {}),
+		deactivate: (versionId: string) => postJSON<WorkflowVersion>(`/api/workflows/${encodeURIComponent(versionId)}/deactivate`, {}),
 		archive: (versionId: string) => postJSON<void>(`/api/workflows/${encodeURIComponent(versionId)}`, undefined, { method: 'DELETE' }),
 		startActive: (workflowId: string) => postJSON<WorkflowRunDetail>(`/api/workflows/${encodeURIComponent(workflowId)}/start`, {}),
-		exportUrl: (versionId: string) => `/api/workflows/${encodeURIComponent(versionId)}/export`,
 		start: (versionId: string) => postJSON<WorkflowRunDetail>(`/api/workflows/${encodeURIComponent(versionId)}/runs`, {}),
 		runs: (signal?: AbortSignal) => fetchJSON<WorkflowRun[]>('/api/workflow-runs', signal),
 		run: (runId: string, signal?: AbortSignal) => fetchJSON<WorkflowRunDetail>(`/api/workflow-runs/${encodeURIComponent(runId)}`, signal),

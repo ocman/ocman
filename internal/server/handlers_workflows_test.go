@@ -188,7 +188,7 @@ func TestWorkflowPublishLimitsBody(t *testing.T) {
 	}
 }
 
-func TestWorkflowValidateActivateExportAndStartActive(t *testing.T) {
+func TestWorkflowValidateActivateAndStartActive(t *testing.T) {
 	srv := newWorkflowTestServer(t)
 	yamlSource := `id: release
 name: Release
@@ -224,9 +224,15 @@ dependencies: []
 	}
 
 	rec = httptest.NewRecorder()
-	srv.handleWorkflows(rec, httptest.NewRequest(http.MethodGet, "/api/workflows/"+version.ID+"/export", nil))
-	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "application/yaml" || !strings.Contains(rec.Body.String(), "triggers:\n  - id: manual") {
-		t.Fatalf("export: %d %q", rec.Code, rec.Body.String())
+	srv.handleWorkflows(rec, httptest.NewRequest(http.MethodPost, "/api/workflows/"+version.ID+"/deactivate", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"active":false`) {
+		t.Fatalf("deactivate: %d %s", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	srv.handleWorkflows(rec, httptest.NewRequest(http.MethodPost, "/api/workflows/"+version.ID+"/activate", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"active":true`) {
+		t.Fatalf("reactivate: %d %s", rec.Code, rec.Body.String())
 	}
 
 	rec = httptest.NewRecorder()

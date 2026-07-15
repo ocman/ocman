@@ -105,14 +105,13 @@ func (s *Server) handleWorkflows(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, version)
-	case r.Method == http.MethodGet && action == "export":
-		source, err := s.workflowSvc().ExportYAML(r.Context(), versionID)
+	case r.Method == http.MethodPost && action == "deactivate":
+		version, err := s.workflowSvc().Deactivate(r.Context(), versionID)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		w.Header().Set("Content-Type", "application/yaml")
-		_, _ = io.WriteString(w, source)
+		writeJSON(w, version)
 	case r.Method == http.MethodPost && (action == "runs" || action == "start"):
 		var (
 			run workflows.RunDetail

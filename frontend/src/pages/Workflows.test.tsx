@@ -15,9 +15,8 @@ vi.stubGlobal('ResizeObserver', ResizeObserver);
 
 const { apiMock, useWorkflowsMock, listeners, triggerListeners, connectListeners } = vi.hoisted(() => ({
 	apiMock: {
-		versions: vi.fn(), validate: vi.fn(), publish: vi.fn(), activate: vi.fn(), archive: vi.fn(), startActive: vi.fn(), start: vi.fn(), runs: vi.fn(), run: vi.fn(), approve: vi.fn(), pause: vi.fn(), cancel: vi.fn(), resolveUnknown: vi.fn(),
+		versions: vi.fn(), validate: vi.fn(), publish: vi.fn(), activate: vi.fn(), deactivate: vi.fn(), archive: vi.fn(), startActive: vi.fn(), start: vi.fn(), runs: vi.fn(), run: vi.fn(), approve: vi.fn(), pause: vi.fn(), cancel: vi.fn(), resolveUnknown: vi.fn(),
 		artifacts: vi.fn(), artifactDownloadUrl: vi.fn((runId: string, id: string) => `/api/workflow-runs/${runId}/artifacts/${id}/download`),
-		exportUrl: vi.fn(),
 	},
 	useWorkflowsMock: vi.fn(() => true),
 	listeners: [] as Array<(runId: string) => void>,
@@ -47,7 +46,7 @@ import { Workflows } from './Workflows';
 const version: WorkflowVersion = {
 	id: 'wfv_1', workflowId: 'release', name: 'Release approvals', revision: 1, createdAt: 1, active: true,
 	definition: {
-		id: 'release', name: 'Release approvals', version: '1', concurrency: 1,
+		id: 'release', name: 'Release approvals', version: '1', concurrency: 1, directory: '/repos/ocman',
 		triggers: [{ id: 'manual', type: 'manual' }, { id: 'timer', type: 'interval', intervalSeconds: 60, overlap: 'queue' }],
 		nodes: [{ id: 'review', name: 'Review', type: 'approval' }, { id: 'ship', name: 'Ship', type: 'approval' }],
 		dependencies: [{ from: 'review', to: 'ship' }],
@@ -83,8 +82,8 @@ describe('Workflows', () => {
 		apiMock.publish.mockResolvedValue(version);
 		apiMock.validate.mockResolvedValue({ definition: version.definition, canonicalJson: version.definition, yaml: 'id: release\n' });
 		apiMock.activate.mockResolvedValue(version);
+		apiMock.deactivate.mockResolvedValue({ ...version, active: false });
 		apiMock.startActive.mockResolvedValue(activeRun);
-		apiMock.exportUrl.mockReturnValue('/api/workflows/wfv_1/export');
 		apiMock.start.mockResolvedValue(activeRun);
 		apiMock.approve.mockResolvedValue({ ...activeRun, nodes: [{ ...activeRun.nodes[0], state: 'successful' }, { ...activeRun.nodes[1], state: 'ready' }] });
 		apiMock.resolveUnknown.mockResolvedValue(activeRun);
@@ -114,6 +113,15 @@ describe('Workflows', () => {
 		await user.selectOptions(screen.getByRole('combobox', { name: 'Run state' }), 'failed');
 		expect(screen.getByText('nightly')).toBeInTheDocument();
 		expect(screen.queryByText('release', { selector: 'td' })).not.toBeInTheDocument();
+	});
+
+	it('shows and filters workflows by project', async () => {
+		const other = { ...version, id: 'wfv_2', workflowId: 'other', name: 'Other workflow', definition: { ...version.definition, id: 'other', directory: '/repos/other' } };
+		apiMock.versions.mockResolvedValue([version, other]);
+		render(<MemoryRouter initialEntries={['/workflows?project=%2Frepos%2Fother']}><Workflows /></MemoryRouter>);
+
+		expect(await screen.findByRole('button', { name: 'Other workflow' })).toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: 'Release approvals' })).not.toBeInTheDocument();
 	});
 
 	it('shows workflows and run history as separate tables', async () => {
@@ -165,7 +173,7 @@ describe('Workflows', () => {
 		const user = userEvent.setup();
 		render(<MemoryRouter><Workflows /></MemoryRouter>);
 
-		await user.click(await screen.findByRole('button', { name: 'Edit' }));
+		await user.click(await screen.findByRole('button', { name: 'Edit workflow' }));
 		expect(screen.getByRole('heading', { name: 'Author workflow' })).toBeInTheDocument();
 		await user.click(screen.getByRole('tab', { name: 'YAML' }));
 		expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Workflow YAML or JSON' }).value).toContain('"id": "release"');
@@ -177,7 +185,7 @@ describe('Workflows', () => {
 		apiMock.archive.mockResolvedValue(undefined);
 		render(<MemoryRouter><Workflows /></MemoryRouter>);
 
-		await user.click(await screen.findByRole('button', { name: 'Edit' }));
+		await user.click(await screen.findByRole('button', { name: 'Edit workflow' }));
 		await user.click(screen.getByRole('button', { name: 'Delete workflow' }));
 		expect(apiMock.archive).toHaveBeenCalledWith(version.id);
 		expect(await screen.findByRole('button', { name: 'New workflow' })).toBeInTheDocument();
@@ -187,7 +195,7 @@ describe('Workflows', () => {
 		const user = userEvent.setup();
 		apiMock.versions.mockResolvedValue([{ ...version, definition: { ...version.definition, dependencies: null } }]);
 		render(<MemoryRouter><Workflows /></MemoryRouter>);
-		await user.click(await screen.findByRole('button', { name: 'Edit' }));
+		await user.click(await screen.findByRole('button', { name: 'Edit workflow' }));
 		expect(await screen.findByRole('region', { name: 'Workflow builder' })).toBeInTheDocument();
 	});
 
@@ -198,6 +206,15 @@ describe('Workflows', () => {
 		await openRunDetails(user);
 		await user.keyboard('{Escape}');
 		expect(screen.queryByRole('dialog', { name: 'Workflow run details' })).not.toBeInTheDocument();
+	});
+
+	it('deactivates a workflow from its detail view', async () => {
+		const user = userEvent.setup();
+		render(<MemoryRouter><Workflows /></MemoryRouter>);
+
+		await user.click(await screen.findByRole('button', { name: 'Edit workflow' }));
+		await user.click(screen.getByRole('button', { name: 'Deactivate' }));
+		expect(apiMock.deactivate).toHaveBeenCalledWith('wfv_1');
 	});
 
 	it('validates source into the visual builder and reports source errors', async () => {
@@ -265,11 +282,8 @@ describe('Workflows', () => {
 		expect(apiMock.publish).toHaveBeenCalledWith(expect.stringContaining('concurrency: 1'));
 		expect(apiMock.start).not.toHaveBeenCalled();
 		await user.click(screen.getByRole('tab', { name: 'Workflows' }));
-		await user.click(screen.getByRole('button', { name: 'Activate' }));
-		expect(apiMock.activate).toHaveBeenCalledWith('wfv_1');
 		await user.click(screen.getByRole('button', { name: 'Start run' }));
 		expect(apiMock.startActive).toHaveBeenCalledWith('release');
-		expect(screen.getByRole('link', { name: 'Export' })).toHaveAttribute('href', '/api/workflows/wfv_1/export');
 		await user.click(screen.getByRole('button', { name: 'New workflow' }));
 		expect(screen.getByRole('group', { name: 'Version comparison' })).toHaveTextContent('Publish another revision');
 

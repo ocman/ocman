@@ -324,6 +324,21 @@ func (d *DB) ActivateWorkflowVersion(id string, now int64) (*WorkflowVersion, er
 	return d.GetWorkflowVersion(id)
 }
 
+func (d *DB) DeactivateWorkflowVersion(id string, now int64) (*WorkflowVersion, error) {
+	res, err := d.db.Exec(`UPDATE workflow_definition SET active_version_id = NULL, updated_at = ? WHERE active_version_id = ?`, now, id)
+	if err != nil {
+		return nil, fmt.Errorf("deactivating workflow version: %w", err)
+	}
+	changed, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("checking workflow version deactivation: %w", err)
+	}
+	if changed == 0 {
+		return nil, sql.ErrNoRows
+	}
+	return d.GetWorkflowVersion(id)
+}
+
 func (d *DB) GetActiveWorkflowVersion(workflowID string) (*WorkflowVersion, error) {
 	var id string
 	if err := d.db.QueryRow(`SELECT active_version_id FROM workflow_definition WHERE id = ? AND active_version_id IS NOT NULL`, workflowID).Scan(&id); err != nil {

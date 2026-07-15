@@ -2,7 +2,7 @@ import type { ButtonHTMLAttributes, InputHTMLAttributes, SelectHTMLAttributes } 
 import './Control.css';
 
 type Variant = 'accent' | 'muted' | 'default' | 'link';
-type Size = 'normal' | 'large';
+type Size = 'small' | 'normal' | 'large';
 
 function classes(...names: Array<string | undefined>) {
 	return names.filter(Boolean).join(' ');

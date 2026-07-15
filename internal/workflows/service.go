@@ -384,6 +384,7 @@ type Store interface {
 	GetActiveWorkflowVersion(string) (*state.WorkflowVersion, error)
 	ListWorkflowVersions() ([]state.WorkflowVersion, error)
 	ActivateWorkflowVersion(string, int64) (*state.WorkflowVersion, error)
+	DeactivateWorkflowVersion(string, int64) (*state.WorkflowVersion, error)
 	ArchiveWorkflowVersion(string, int64) error
 	InsertWorkflowRun(state.WorkflowRun) error
 	GetWorkflowRun(string) (*state.WorkflowRun, error)
@@ -597,6 +598,14 @@ func (s *Service) Activate(_ context.Context, id string) (Version, error) {
 	return versionFromRow(*row)
 }
 
+func (s *Service) Deactivate(_ context.Context, id string) (Version, error) {
+	row, err := s.store.DeactivateWorkflowVersion(id, s.now().UnixMilli())
+	if err != nil {
+		return Version{}, err
+	}
+	return versionFromRow(*row)
+}
+
 func (s *Service) Archive(_ context.Context, id string) error {
 	return s.store.ArchiveWorkflowVersion(id, s.now().UnixMilli())
 }
@@ -620,22 +629,6 @@ func (s *Service) GetVersion(_ context.Context, id string) (Version, error) {
 	}
 	version.TriggerStates, err = s.triggerStatuses(id, version.Definition.Triggers)
 	return version, err
-}
-
-func (s *Service) ExportYAML(ctx context.Context, id string) (string, error) {
-	version, err := s.GetVersion(ctx, id)
-	if err != nil {
-		return "", err
-	}
-	canonical, err := json.Marshal(version.Definition)
-	if err != nil {
-		return "", fmt.Errorf("encoding workflow definition: %w", err)
-	}
-	validated, err := s.Validate(ctx, canonical)
-	if err != nil {
-		return "", err
-	}
-	return validated.YAML, nil
 }
 
 func (s *Service) ListVersions(_ context.Context) ([]Version, error) {
