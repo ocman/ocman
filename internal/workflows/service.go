@@ -1342,14 +1342,35 @@ func (s *Service) dispatchReady(run RunDetail) {
 
 func (s *Service) executeCommand(ctx context.Context, active *activeCommand, version Version, runID, directory string, node Node, attemptID int64) {
 	redactor := s.runRedactor(version)
-	env := s.secretEnv(version, node.Environment)
+	run, err := s.GetRun(ctx, runID)
+	if err != nil {
+		s.finishCommandError(active, runID, node.ID, redactor, "interpolating workflow node results: "+err.Error())
+		return
+	}
+	command := make([]string, len(node.Command))
+	for index, value := range node.Command {
+		command[index], err = interpolateNodeResults(value, run, node.ID)
+		if err != nil {
+			s.finishCommandError(active, runID, node.ID, redactor, "interpolating workflow node results: "+err.Error())
+			return
+		}
+	}
+	nodeEnv := make(map[string]string, len(node.Environment))
+	for key, value := range node.Environment {
+		nodeEnv[key], err = interpolateNodeResults(value, run, node.ID)
+		if err != nil {
+			s.finishCommandError(active, runID, node.ID, redactor, "interpolating workflow node results: "+err.Error())
+			return
+		}
+	}
+	env := s.secretEnv(version, nodeEnv)
 	if shardDir, err := s.shardDirectory(ctx, version, runID, node.ID); err != nil {
 		s.finishCommandError(active, runID, node.ID, redactor, "provisioning workspace shard: "+err.Error())
 		return
 	} else if shardDir != "" {
 		directory = shardDir
 	}
-	result := s.executor.Execute(ctx, CommandRequest{Directory: directory, Command: node.Command, Environment: env, Permission: node.Permission, Outputs: node.Outputs, RestrictGit: restrictGitFor(version.Definition, node.ID)})
+	result := s.executor.Execute(ctx, CommandRequest{Directory: directory, Command: command, Environment: env, Permission: node.Permission, Outputs: node.Outputs, RestrictGit: restrictGitFor(version.Definition, node.ID)})
 	// Redact known secret values from logs and collected outputs before
 	// anything is persisted (audit) or published (artifacts).
 	result.Stdout = redactor.redact(result.Stdout)
@@ -1659,8 +1680,24 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 				} else if shardDir != "" {
 					agentDir = shardDir
 				}
-				prompt := s.itemPrompt(ctx, run, config.Prompt)
-				session, startErr := s.agent.Start(ctx, AgentRequest{Platform: config.Platform, Directory: agentDir, Prompt: prompt, Model: config.Model, Agent: config.Agent, Reasoning: config.Reasoning, SessionID: existing})
+				segments, err := nodeResultSegments(config.Prompt, run, node.NodeID)
+				if err != nil {
+					if err := s.completeAgentFailure(runID, node.NodeID, attempt.ID, "error", "interpolating workflow node results: "+err.Error()); err != nil {
+						return err
+					}
+					s.changed(runID)
+					progressed = true
+					continue
+				}
+				var prompt strings.Builder
+				for _, segment := range segments {
+					if segment.literal {
+						prompt.WriteString(s.itemPrompt(ctx, run, segment.value))
+					} else {
+						prompt.WriteString(segment.value)
+					}
+				}
+				session, startErr := s.agent.Start(ctx, AgentRequest{Platform: config.Platform, Directory: agentDir, Prompt: prompt.String(), Model: config.Model, Agent: config.Agent, Reasoning: config.Reasoning, SessionID: existing})
 				if startErr != nil {
 					if err := s.completeAgentFailure(runID, node.NodeID, attempt.ID, "error", startErr.Error()); err != nil {
 						return err
