@@ -244,7 +244,7 @@ func (s *Server) handleWorkflowArtifacts(w http.ResponseWriter, r *http.Request,
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	artifact, payload, err := s.workflowSvc().DownloadArtifact(r.Context(), artifactID)
+	artifact, payload, err := s.workflowSvc().DownloadArtifact(r.Context(), runID, artifactID)
 	if errors.Is(err, workflows.ErrPayloadMissing) {
 		http.Error(w, "artifact payload has been cleaned up", http.StatusGone)
 		return

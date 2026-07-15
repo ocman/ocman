@@ -21,9 +21,9 @@ func (e *poolGateExecutor) Execute(ctx context.Context, request CommandRequest) 
 	e.started <- request.Command[0]
 	select {
 	case <-e.release:
-		return CommandResult{State: AttemptSuccessful, ExitCode: 0, Stdout: "null", Outputs: map[string]string{}}
+		return CommandResult{State: AttemptSuccessful, ExitCode: 0, Stdout: "null"}
 	case <-ctx.Done():
-		return CommandResult{State: AttemptCanceled, ExitCode: -1, Error: ctx.Err().Error(), Outputs: map[string]string{}}
+		return CommandResult{State: AttemptCanceled, ExitCode: -1, Error: ctx.Err().Error()}
 	}
 }
 
@@ -333,7 +333,7 @@ func TestUnlimitedByDefault(t *testing.T) {
 	h.svc = NewService(Deps{Store: h.db, Agent: h.agent, Now: func() time.Time { return h.now }, Usage: usage})
 	def := singleAgentDefinition() // no Limits
 	run := publishAndStart(t, h, def)
-	h.agent.results["session-1"] = AgentResult{State: "waiting", FinalMessage: "null", Outputs: map[string]json.RawMessage{}}
+	h.agent.results["session-1"] = AgentResult{State: "waiting", FinalMessage: "null"}
 	if err := h.svc.Tick(context.Background()); err != nil {
 		t.Fatalf("tick: %v", err)
 	}

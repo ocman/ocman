@@ -811,12 +811,6 @@ export interface WorkflowPermissionRule {
 	action: 'allow' | 'deny' | 'ask';
 }
 
-export interface WorkflowCollector {
-	name: string;
-	type: 'text' | 'json_file' | 'file' | 'git_diff' | 'final-message' | 'diff' | 'json-file';
-	path?: string;
-}
-
 export interface WorkflowAgentConfig {
 	platform?: string;
 	directory: string;
@@ -825,7 +819,6 @@ export interface WorkflowAgentConfig {
 	agent?: string;
 	reasoning?: string;
 	sessionAffinity?: string;
-	collectors?: WorkflowCollector[];
 }
 
 export type WorkflowJoinPolicy = 'all-success' | 'always' | 'minimum-success';
@@ -860,7 +853,6 @@ export interface WorkflowNodeDefinition {
 	command?: string[];
 	environment?: Record<string, string>;
 	permission?: WorkflowPermissionRule[];
-	outputs?: WorkflowCollector[];
 	agent?: WorkflowAgentConfig;
 	resources?: WorkflowResourceRequest[];
 	lease?: WorkflowLeaseConfig;
@@ -1027,7 +1019,6 @@ export interface WorkflowAttempt {
 	stdout?: string;
 	stderr?: string;
 	error?: string;
-	outputs?: Record<string, unknown>;
 	stdoutTruncated?: boolean;
 	stderrTruncated?: boolean;
 	platform?: string;

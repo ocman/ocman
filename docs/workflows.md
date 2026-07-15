@@ -7,8 +7,8 @@ version; every run pins that version and its mapped subworkflow versions.
 
 `examples/workflows/adversarial-migration.yaml` is the reusable Bun-style
 campaign. Publish `migration-item.yaml` first, then publish and activate the
-campaign. Its discovery command writes `migration-items.json`, a stable JSON
-array with an `id` and `path`; the map uses `id` as the restart-safe key.
+campaign. Its discovery command prints a stable JSON array with an `id` and
+`path`; the map consumes that Node Result and uses `id` as the restart-safe key.
 `migration-guidance.md` is the shared, source-controlled implementation and
 review policy referenced by the prompts.
 
@@ -33,15 +33,16 @@ they are not a separate node type.
    publish, activate, and start `adversarial-migration.yaml` in the Workflows
    page or through `validate_workflow`, `publish_workflow`, and
    `start_workflow`.
-4. Watch phases, stable map items, attempts, artifacts, resource waits, and
-   held workspace leases in the run view. A failed validation blocks its commit.
+4. Watch phases, stable map items and their Node Results, attempts, historical
+   artifacts, resource waits, and held workspace leases in the run view. A
+   failed validation blocks its commit.
 
 ## Diagnostics Fixture
 
 `examples/workflows/diagnostic-partitions.yaml` captures compiler/test output
-once, writes a stable partition list, and maps the existing item workflow over
-that list. Do not put the expensive diagnostic command in the per-item
-subworkflow: agents consume partitions from the captured artifact rather than
+once, turns its Node Result into a stable partition list, and maps the existing
+item workflow over that list. Do not put the expensive diagnostic command in
+the per-item subworkflow: agents consume the partition Node Result rather than
 rerunning discovery.
 
 ## Safety And Permissions
@@ -66,12 +67,13 @@ approval before the commit coordinator when a human must inspect a batch.
 
 ## Troubleshooting
 
-- **Map has no items:** inspect the discovery `items` artifact; it must be a
-  JSON array with unique non-empty keys.
+- **Map has no items:** inspect the source node's `output`; it must be a JSON
+  array with unique non-empty keys.
 - **A node waits:** inspect the resource pool and workspace lease sections;
   lower demand or raise an explicitly bounded capacity.
-- **An item is unknown after restart:** pause, inspect its diff/artifacts, and
-  resolve the attempt rather than blindly retrying a side effect.
+- **An item is unknown after restart:** pause, inspect its Node Result and
+  historical artifacts, and resolve the attempt rather than blindly retrying a
+  side effect.
 - **Validation failed:** fix the item and rerun the version; never bypass the
   command gate by manually committing in a path-leased worker.
 
@@ -79,8 +81,10 @@ approval before the commit coordinator when a human must inspect a batch.
 
 - **Definition/version/run:** authored DAG, immutable published revision, and
   one execution pinned to that revision.
-- **Node/attempt/artifact:** a graph step, one executor invocation, and its
-  immutable typed output.
+- **Node/attempt/Node Result:** a graph step, one executor invocation, and the
+  canonical `{id, name, started, ended, status, output}` result envelope.
+- **Artifact:** an immutable historical file or payload, not a node-output
+  channel.
 - **Map item/join:** one stable-key child run and the ordered aggregate of item
   outcomes.
 - **Pool/shard/lease:** bounded execution capacity, a run-owned worktree, and

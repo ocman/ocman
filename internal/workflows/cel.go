@@ -8,12 +8,11 @@ import (
 
 const celCostLimit = 1_000
 
-// workflowCELEnv deliberately exposes only completed node outcomes and JSON
-// artifacts. It has no host, secret, filesystem, or template bindings.
+// workflowCELEnv deliberately exposes only completed Node Results. It has no
+// host, secret, filesystem, artifact, or template bindings.
 func workflowCELEnv() (*cel.Env, error) {
 	return cel.NewEnv(
 		cel.Variable("outcomes", cel.MapType(cel.StringType, cel.DynType)),
-		cel.Variable("artifacts", cel.MapType(cel.StringType, cel.DynType)),
 	)
 }
 
@@ -35,7 +34,7 @@ func validateCEL(expression string) error {
 	return nil
 }
 
-func evaluateCEL(expression string, outcomes, artifacts map[string]any) (bool, error) {
+func evaluateCEL(expression string, outcomes map[string]any) (bool, error) {
 	env, err := workflowCELEnv()
 	if err != nil {
 		return false, err
@@ -48,7 +47,7 @@ func evaluateCEL(expression string, outcomes, artifacts map[string]any) (bool, e
 	if err != nil {
 		return false, err
 	}
-	value, _, err := program.Eval(map[string]any{"outcomes": outcomes, "artifacts": artifacts})
+	value, _, err := program.Eval(map[string]any{"outcomes": outcomes})
 	if err != nil {
 		return false, err
 	}

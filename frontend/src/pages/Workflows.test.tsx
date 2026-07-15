@@ -313,7 +313,7 @@ describe('Workflows', () => {
 		await user.click(await screen.findByRole('button', { name: 'Start run' }));
 		expect(await screen.findByRole('alert')).toHaveTextContent('active workflow is unavailable');
 	});
-	it('shows command outcomes, logs, and collected outputs', async () => {
+	it('shows command outcomes, logs, and node output', async () => {
 		const user = userEvent.setup();
 		const commandRun: WorkflowRunDetail = {
 			...activeRun,
@@ -323,7 +323,7 @@ describe('Workflows', () => {
 				result: { id: 'test', name: 'Run tests', started: '1970-01-01T00:00:00.001Z', ended: '1970-01-01T00:00:00.002Z', status: 'failed', output: { error: 'exit status 7' } },
 				attempts: [{
 					id: 2, seq: 1, state: 'failed', startedAt: 1, completedAt: 2, exitCode: 7,
-					stdout: 'test output', stderr: 'test failure', error: 'exit status 7', outputs: { report: '{"failed":1}' },
+					stdout: 'test output', stderr: 'test failure', error: 'exit status 7',
 				}],
 			}],
 		};
@@ -335,7 +335,7 @@ describe('Workflows', () => {
 		expect(await screen.findByText(/failed \(exit 7\)/)).toBeInTheDocument();
 		expect(screen.getByText('test output')).toBeInTheDocument();
 		expect(screen.getByText('test failure')).toBeInTheDocument();
-		expect(screen.getByText('{"failed":1}')).toBeInTheDocument();
+		expect(screen.getByLabelText('node output')).toHaveTextContent('"error": "exit status 7"');
 	});
 
 	it('shows workspace shard leases and ownership', async () => {
@@ -369,7 +369,7 @@ describe('Workflows', () => {
 		render(<MemoryRouter><Workflows /></MemoryRouter>);
 		await openRunDetails(user);
 
-		await screen.findByRole('region', { name: 'Workflow artifacts' });
+		await screen.findByRole('region', { name: 'Historical workflow artifacts' });
 		expect(screen.getByText('report')).toBeInTheDocument();
 		expect(screen.getByText(/json · 2\.0 KB/)).toBeInTheDocument();
 		expect(screen.getAllByText(/review attempt 1/)).toHaveLength(2);
@@ -408,7 +408,7 @@ describe('Workflows', () => {
 			definition: {
 				...version.definition,
 				nodes: [
-					{ id: 'fan', name: 'Fan', type: 'map', map: { source: 'items', key: 'id', join: 'join', subworkflow: { workflowId: 'item' } } },
+					{ id: 'fan', name: 'Fan', type: 'map', map: { source: '${nodes.seed.output}', key: 'id', join: 'join', subworkflow: { workflowId: 'item' } } },
 					{ id: 'join', name: 'Join', type: 'join', join: { policy: 'always' } },
 				],
 				dependencies: [{ from: 'fan', to: 'join' }],
@@ -422,11 +422,11 @@ describe('Workflows', () => {
 				{ mapNode: 'fan', key: 'b', index: 1, childRunId: 'wfr_child_b', state: 'failed' },
 			],
 			nodes: [
-				{ nodeId: 'fan', name: 'Fan', type: 'map', state: 'successful', result: { id: 'fan', name: 'Fan', started: null, ended: null, status: 'successful', output: null }, attempts: [{ id: 1, seq: 1, state: 'successful', startedAt: 1 }] },
+				{ nodeId: 'fan', name: 'Fan', type: 'map', state: 'successful', result: { id: 'fan', name: 'Fan', started: null, ended: null, status: 'successful', output: { items: [{ key: 'a', index: 0, status: 'successful', output: { ok: true } }, { key: 'b', index: 1, status: 'failed', output: { error: 'failed' } }] } }, attempts: [{ id: 1, seq: 1, state: 'successful', startedAt: 1 }] },
 				{
 					nodeId: 'join', name: 'Join', type: 'join', state: 'successful',
-					result: { id: 'join', name: 'Join', started: null, ended: null, status: 'successful', output: null },
-					attempts: [{ id: 2, seq: 1, state: 'successful', startedAt: 1, outputs: { result: { policy: 'always', success: 1, failed: 1, total: 2, items: [{ key: 'a', index: 0, state: 'successful' }, { key: 'b', index: 1, state: 'failed' }] } } }],
+					result: { id: 'join', name: 'Join', started: null, ended: null, status: 'successful', output: { policy: 'always', success: 1, failed: 1, total: 2, items: [{ key: 'a', index: 0, status: 'successful', output: { ok: true } }, { key: 'b', index: 1, status: 'failed', output: { error: 'failed' } }], error: 'join policy failed' } },
+					attempts: [{ id: 2, seq: 1, state: 'successful', startedAt: 1 }],
 				},
 			],
 		};
@@ -447,6 +447,7 @@ describe('Workflows', () => {
 		const items = screen.getByTestId('workflow-map-items');
 		expect(items).toHaveTextContent('a');
 		expect(items).toHaveTextContent('b');
+		expect(screen.getByLabelText('a output')).toHaveTextContent('"ok": true');
 		expect(screen.getAllByRole('button', { name: 'Open item run' })).toHaveLength(2);
 
 		// Opening an item run selects the child run.
@@ -460,6 +461,8 @@ describe('Workflows', () => {
 		expect(join).toHaveTextContent('1/2 succeeded');
 		expect(join).toHaveTextContent('a: successful');
 		expect(join).toHaveTextContent('b: failed');
+		expect(join).toHaveTextContent('join policy failed');
+		expect(screen.getByLabelText('b joined output')).toHaveTextContent('"error": "failed"');
 
 		// Switching inspector nodes resets the map list to its collapsed state.
 		await user.click(screen.getByRole('button', { name: /Phase 1 · map/ }));
@@ -484,7 +487,7 @@ describe('Workflows', () => {
 		await waitFor(() => expect(apiMock.run).toHaveBeenCalledWith('wfr_1'));
 	});
 
-	it('links agent attempts and shows live and collected state', async () => {
+	it('links agent attempts and shows live state', async () => {
 		const user = userEvent.setup();
 		const agentVersion: WorkflowVersion = {
 			...version,
@@ -493,7 +496,7 @@ describe('Workflows', () => {
 		const agentRun: WorkflowRunDetail = {
 			...activeRun,
 			version: agentVersion,
-			nodes: [{ nodeId: 'agent', name: 'Implement', type: 'agent', state: 'running', result: { id: 'agent', name: 'Implement', started: '1970-01-01T00:00:00.001Z', ended: null, status: 'running', output: null }, attempts: [{ id: 2, seq: 1, state: 'running', startedAt: 1, platform: 'any-platform', sessionId: 'session 1', sessionState: 'busy', outputs: { message: 'done' } }] }],
+			nodes: [{ nodeId: 'agent', name: 'Implement', type: 'agent', state: 'running', result: { id: 'agent', name: 'Implement', started: '1970-01-01T00:00:00.001Z', ended: null, status: 'running', output: null }, attempts: [{ id: 2, seq: 1, state: 'running', startedAt: 1, platform: 'any-platform', sessionId: 'session 1', sessionState: 'busy' }] }],
 		};
 		apiMock.versions.mockResolvedValue([agentVersion]);
 		apiMock.runs.mockResolvedValue([agentRun]);
@@ -503,7 +506,6 @@ describe('Workflows', () => {
 
 		expect(await screen.findByRole('link', { name: 'Open agent session' })).toHaveAttribute('href', '/session/session%201');
 		expect(screen.getByText('Session: busy')).toBeInTheDocument();
-		expect(screen.getByText('message: "done"')).toBeInTheDocument();
 		connectListeners[0]();
 		await waitFor(() => expect(apiMock.versions.mock.calls.length).toBeGreaterThan(1));
 	});
@@ -521,7 +523,7 @@ describe('Workflows', () => {
 		await openRunDetails(user);
 
 		expect(screen.getAllByText('unknown')).not.toHaveLength(0);
-		expect(screen.getByText(/command interrupted by server restart/)).toBeInTheDocument();
+		expect(screen.getAllByText(/command interrupted by server restart/)).toHaveLength(2);
 		await user.click(screen.getByRole('button', { name: 'Retry safely' }));
 		expect(apiMock.resolveUnknown).toHaveBeenCalledWith('wfr_1', 9, 'retry');
 	});

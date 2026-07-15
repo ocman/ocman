@@ -2,7 +2,6 @@ package workflows
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,15 +15,11 @@ import (
 type fixtureExecutor struct{}
 
 func (fixtureExecutor) Execute(_ context.Context, req CommandRequest) CommandResult {
-	outputs := map[string]string{}
-	for _, collector := range req.Outputs {
-		value := "ok"
-		if collector.Type == "json_file" || collector.Type == "json-file" {
-			value = `[{"id":"one","path":"src/one.ts"},{"id":"two","path":"src/two.ts"}]`
-		}
-		outputs[collector.Name] = value
+	output := `{"ok":true}`
+	if strings.Contains(strings.Join(req.Command, " "), "discover-migration-items") || strings.Contains(strings.Join(req.Command, " "), "partition-diagnostics") {
+		output = `[{"id":"one","path":"src/one.ts"},{"id":"two","path":"src/two.ts"}]`
 	}
-	return CommandResult{State: AttemptSuccessful, ExitCode: 0, Stdout: "null", Outputs: outputs}
+	return CommandResult{State: AttemptSuccessful, ExitCode: 0, Stdout: output}
 }
 
 type fixtureAgent struct {
@@ -42,16 +37,8 @@ func (a *fixtureAgent) Start(_ context.Context, req AgentRequest) (AgentSession,
 	return AgentSession{ID: id, Platform: req.Platform, State: "busy"}, nil
 }
 
-func (a *fixtureAgent) Inspect(_ context.Context, _ AgentSession, collectors []Collector) (AgentResult, error) {
-	outputs := map[string]json.RawMessage{}
-	for _, collector := range collectors {
-		if collector.Type == "json_file" || collector.Type == "json-file" {
-			outputs[collector.Name] = json.RawMessage(`{"approved":true,"findings":[]}`)
-		} else {
-			outputs[collector.Name] = json.RawMessage(`"fixture diff"`)
-		}
-	}
-	return AgentResult{State: "done", Outputs: outputs}, nil
+func (a *fixtureAgent) Inspect(_ context.Context, _ AgentSession) (AgentResult, error) {
+	return AgentResult{State: "done", FinalMessage: `{"approved":true,"findings":[],"fixed":true}`}, nil
 }
 
 func (*fixtureAgent) Cancel(context.Context, AgentSession) error { return nil }
@@ -122,7 +109,7 @@ func TestAdversarialMigrationFixtureRunsTwoItems(t *testing.T) {
 	agent.mu.Lock()
 	prompts := strings.Join(agent.prompts, "\n")
 	agent.mu.Unlock()
-	if strings.Count(prompts, "Review only the declared implementation diff") != 4 {
+	if strings.Count(prompts, "Review implementation result") != 4 {
 		t.Fatalf("review prompts = %q", prompts)
 	}
 	if !strings.Contains(prompts, "Use only this item and the shared migration guidance") {
@@ -130,13 +117,40 @@ func TestAdversarialMigrationFixtureRunsTwoItems(t *testing.T) {
 	}
 }
 
-func TestDiagnosticPartitionFixtureDoesNotRepeatDiscovery(t *testing.T) {
+func TestDiagnosticPartitionFixtureRunsTwoItems(t *testing.T) {
 	h := newHarness(t)
+	agent := &fixtureAgent{}
+	h.svc = NewService(Deps{Store: h.db, Agent: agent, Blobs: h.blobs, CommandExecutor: fixtureExecutor{}, Now: func() time.Time { return h.now }})
 	directory := filepath.Dir(h.path)
 	if _, err := h.svc.Publish(context.Background(), fixtureForDirectory(t, readMigrationFixture(t, "migration-item.yaml"), directory)); err != nil {
 		t.Fatalf("publish item fixture: %v", err)
 	}
-	if _, err := h.svc.Validate(context.Background(), fixtureForDirectory(t, readMigrationFixture(t, "diagnostic-partitions.yaml"), directory)); err != nil {
-		t.Fatalf("validate diagnostic fixture: %v", err)
+	version, err := h.svc.Publish(context.Background(), fixtureForDirectory(t, readMigrationFixture(t, "diagnostic-partitions.yaml"), directory))
+	if err != nil {
+		t.Fatalf("publish diagnostic fixture: %v", err)
 	}
+	run, err := h.svc.Start(t.Context(), version.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 100 {
+		h.advance()
+		if err := h.svc.Tick(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		current, err := h.svc.GetRun(t.Context(), run.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if current.State == StateSuccessful {
+			if len(current.Children) != 2 {
+				t.Fatalf("mapped items = %d, want 2", len(current.Children))
+			}
+			return
+		}
+		if current.State == StateFailed {
+			t.Fatalf("diagnostic fixture failed: %+v", current.Nodes)
+		}
+	}
+	t.Fatal("diagnostic fixture did not finish")
 }

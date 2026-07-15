@@ -85,8 +85,8 @@ func New(deps Deps) *Host {
 	}
 }
 
-// ReadFile reads a collector output while keeping it inside the requested
-// workflow directory, including after symlink resolution.
+// ReadFile reads a file while keeping it inside the requested directory,
+// including after symlink resolution.
 func (h *Host) ReadFile(_ context.Context, dir, name string) ([]byte, error) {
 	root, err := filepath.EvalSymlinks(dir)
 	if err != nil {
@@ -98,7 +98,7 @@ func (h *Host) ReadFile(_ context.Context, dir, name string) ([]byte, error) {
 	}
 	rel, err := filepath.Rel(root, target)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return nil, fmt.Errorf("collector path escapes workflow directory")
+		return nil, fmt.Errorf("path escapes requested directory")
 	}
 	return os.ReadFile(target)
 }

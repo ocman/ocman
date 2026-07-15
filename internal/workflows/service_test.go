@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -16,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/gitexec"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -41,12 +39,7 @@ const approvalThenAgents = `{
 	"triggers":[{"id":"manual","type":"manual"}],
 	"nodes":[
 		{"id":"approve","name":"Approve","type":"approval"},
-		{"id":"implement","name":"Implement","type":"agent","agent":{"platform":"test","directory":"/repo","prompt":"implement it","sessionAffinity":"work","collectors":[
-			{"name":"message","type":"final-message"},
-			{"name":"patch","type":"diff"},
-			{"name":"notes","type":"file","path":"notes.txt"},
-			{"name":"result","type":"json-file","path":"result.json"}
-		]}},
+		{"id":"implement","name":"Implement","type":"agent","agent":{"platform":"test","directory":"/repo","prompt":"implement it","sessionAffinity":"work"}},
 		{"id":"review","name":"Review","type":"agent","agent":{"platform":"test","directory":"/repo","prompt":"review it","sessionAffinity":"work"}}
 	],
 	"dependencies":[{"from":"approve","to":"implement"},{"from":"implement","to":"review"}]
@@ -84,7 +77,7 @@ func (f *fakeAgentExecutor) Start(_ context.Context, req AgentRequest) (AgentSes
 	return AgentSession{ID: id, Platform: req.Platform, State: "busy"}, nil
 }
 
-func (f *fakeAgentExecutor) Inspect(_ context.Context, session AgentSession, _ []Collector) (AgentResult, error) {
+func (f *fakeAgentExecutor) Inspect(_ context.Context, session AgentSession) (AgentResult, error) {
 	if result, ok := f.results[session.ID]; ok {
 		return result, nil
 	}
@@ -285,7 +278,7 @@ func TestRepeatUntilSuccessAndExhaustion(t *testing.T) {
 		h := newHarness(t)
 		executor := &repeatExecutor{outputs: []string{`{"done":false}`, `{"done":true}`}}
 		h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, CommandExecutor: executor, Blobs: h.blobs})
-		node := Node{ID: "again", Name: "Again", Type: "command", Command: []string{"again"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}, Outputs: []Collector{{Name: "result", Type: "json_file", Path: "result.json"}}, Repeat: &RepeatConfig{Until: `artifacts["again.result"].done == true`, MaxAttempts: 2}}
+		node := Node{ID: "again", Name: "Again", Type: "command", Command: []string{"again"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}, Repeat: &RepeatConfig{Until: `outcomes["again"].output.done == true`, MaxAttempts: 2}}
 		version, err := h.svc.PublishJSON(context.Background(), commandDefinition(t, t.TempDir(), []Node{node}, nil))
 		if err != nil {
 			t.Fatal(err)
@@ -303,7 +296,7 @@ func TestRepeatUntilSuccessAndExhaustion(t *testing.T) {
 		h := newHarness(t)
 		executor := &repeatExecutor{outputs: []string{`{"done":false}`, `{"done":false}`}}
 		h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, CommandExecutor: executor, Blobs: h.blobs})
-		node := Node{ID: "again", Name: "Again", Type: "command", Command: []string{"again"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}, Outputs: []Collector{{Name: "result", Type: "json_file", Path: "result.json"}}, Repeat: &RepeatConfig{Until: `artifacts["again.result"].done == true`, MaxAttempts: 2}}
+		node := Node{ID: "again", Name: "Again", Type: "command", Command: []string{"again"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}, Repeat: &RepeatConfig{Until: `outcomes["again"].output.done == true`, MaxAttempts: 2}}
 		version, err := h.svc.PublishJSON(context.Background(), commandDefinition(t, t.TempDir(), []Node{node}, nil))
 		if err != nil {
 			t.Fatal(err)
@@ -558,7 +551,7 @@ func TestPublishValidation(t *testing.T) {
 		{"self dependency", strings.Replace(sequentialApprovals, `"to":"ship"`, `"to":"review"`, 1), "self dependency"},
 		{"cycle", strings.Replace(sequentialApprovals, `{"from":"review","to":"ship"}`, `{"from":"review","to":"ship"},{"from":"ship","to":"review"}`, 1), "cycle"},
 		{"malformed dependency", strings.Replace(sequentialApprovals, `"from":"review"`, `"from":""`, 1), "dependency endpoints are required"},
-		{"unsafe collector path", strings.Replace(singleAgent, `"prompt":"implement it"`, `"prompt":"implement it","collectors":[{"name":"result","type":"file","path":"../result.json"}]`, 1), "safe relative path"},
+		{"obsolete collector", strings.Replace(singleAgent, `"prompt":"implement it"`, `"prompt":"implement it","collectors":[{"name":"result","type":"file","path":"../result.json"}]`, 1), "collectors are no longer supported"},
 		{"duplicate trigger", strings.Replace(sequentialApprovals, `{"id":"manual","type":"manual"}`, `{"id":"manual","type":"manual"},{"id":"manual","type":"manual"}`, 1), `duplicate trigger "manual"`},
 		{"multiple manual triggers", strings.Replace(sequentialApprovals, `{"id":"manual","type":"manual"}`, `{"id":"manual","type":"manual"},{"id":"other","type":"manual"}`, 1), "only one manual trigger"},
 		{"invalid overlap", strings.Replace(sequentialApprovals, `"type":"manual"`, `"type":"manual","overlap":"later"`, 1), "invalid overlap"},
@@ -606,85 +599,6 @@ func TestRunPauseCancelAndInvalidApproval(t *testing.T) {
 		t.Fatalf("cancel: %v", err)
 	}
 	assertRun(t, canceled, StateCanceled, map[string]string{"review": NodeCanceled, "ship": NodeSkipped})
-}
-
-func TestSequentialCommandsCollectDeclaredOutputs(t *testing.T) {
-	h := newHarness(t)
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "result.json"), []byte(`{"ok":true}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "note.txt"), []byte("collected file"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, ".gitattributes"), []byte("note.txt diff=unsafe\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	textconv := filepath.Join(dir, "textconv.sh")
-	if err := os.WriteFile(textconv, []byte("#!/bin/sh\ntouch textconv-ran\ncat \"$1\"\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if out, err := runTestGit(dir, "init"); err != nil {
-		t.Fatalf("git init: %v: %s", err, out)
-	}
-	if out, err := runTestGit(dir, "config", "diff.unsafe.textconv", textconv); err != nil {
-		t.Fatalf("git config: %v: %s", err, out)
-	}
-	if out, err := runTestGit(dir, "add", "note.txt", ".gitattributes"); err != nil {
-		t.Fatalf("git add: %v: %s", err, out)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "note.txt"), []byte("collected file\nchanged"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	definition := commandDefinition(t, dir, []Node{
-		{
-			ID: "first", Name: "First", Type: "command",
-			Command:     []string{"/bin/sh", "-c", `printf '%s' "$GREETING"`},
-			Environment: map[string]string{"GREETING": "hello"},
-			Permission:  []PermissionRule{{Permission: "bash", Pattern: "/bin/sh -c *", Action: "allow"}},
-			Outputs:     []Collector{{Name: "stdout", Type: "text"}, {Name: "json", Type: "json_file", Path: "result.json"}, {Name: "file", Type: "file", Path: "note.txt"}, {Name: "diff", Type: "git_diff"}},
-		},
-		{
-			ID: "second", Name: "Second", Type: "command",
-			Command:    []string{"/usr/bin/printf", `"done"`},
-			Permission: []PermissionRule{{Permission: "bash", Pattern: "/usr/bin/printf *", Action: "allow"}},
-		},
-	}, []Dependency{{From: "first", To: "second"}})
-	version, err := h.svc.PublishJSON(context.Background(), definition)
-	if err != nil {
-		t.Fatalf("publish: %v", err)
-	}
-	run, err := h.svc.Start(context.Background(), version.ID)
-	if err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	run = waitForRun(t, h.svc, run.ID, StateSuccessful)
-	assertRun(t, run, StateSuccessful, map[string]string{"first": NodeSuccessful, "second": NodeSuccessful})
-	first := run.Nodes[0].Attempts[0]
-	if first.State != AttemptSuccessful || first.ExitCode == nil || *first.ExitCode != 0 || first.Stdout != "hello" || first.CompletedAt == 0 {
-		t.Fatalf("unexpected first attempt: %+v", first)
-	}
-	var legacyOutput map[string]json.RawMessage
-	if err := json.Unmarshal(run.Nodes[0].Result.Output, &legacyOutput); err != nil || string(legacyOutput["stdout"]) != `"hello"` {
-		t.Fatalf("collector command result was not preserved: %s (%v)", run.Nodes[0].Result.Output, err)
-	}
-	if got := string(first.Outputs["json"]); got != `"{\"ok\":true}"` {
-		t.Fatalf("json output: %s", got)
-	}
-	if got := string(first.Outputs["file"]); got != `"collected file\nchanged"` {
-		t.Fatalf("file output: %s", got)
-	}
-	if got := string(first.Outputs["diff"]); !strings.Contains(got, "+changed") {
-		t.Fatalf("git diff output: %s", got)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "textconv-ran")); !os.IsNotExist(err) {
-		t.Fatalf("git diff collector executed repository textconv: %v", err)
-	}
-	h.restart()
-	restored, err := h.svc.GetRun(context.Background(), run.ID)
-	if err != nil || string(restored.Nodes[0].Attempts[0].Outputs["json"]) != `"{\"ok\":true}"` {
-		t.Fatalf("command attempt did not survive restart: %+v, %v", restored, err)
-	}
 }
 
 func TestCommandPublishesNodeResult(t *testing.T) {
@@ -798,12 +712,6 @@ func TestPendingCommandPublishesNullExecutionFields(t *testing.T) {
 	}
 }
 
-func runTestGit(directory string, args ...string) ([]byte, error) {
-	cmd := exec.Command("git", append([]string{"-C", directory}, args...)...)
-	cmd.Env = gitexec.CleanEnv()
-	return cmd.CombinedOutput()
-}
-
 func TestCommandPermissionIsDefaultDeny(t *testing.T) {
 	h := newHarness(t)
 	definition := commandDefinition(t, t.TempDir(), []Node{{
@@ -822,18 +730,6 @@ func TestCommandPermissionIsDefaultDeny(t *testing.T) {
 	attempt := run.Nodes[0].Attempts[0]
 	if attempt.State != AttemptDenied || !strings.Contains(attempt.Error, "permission denied") {
 		t.Fatalf("unexpected denied attempt: %+v", attempt)
-	}
-}
-
-func TestCommandCollectorCountIsBounded(t *testing.T) {
-	h := newHarness(t)
-	node := Node{ID: "many", Name: "Many", Type: "command", Command: []string{"/usr/bin/true"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}}
-	for i := 0; i < 33; i++ {
-		node.Outputs = append(node.Outputs, Collector{Name: fmt.Sprintf("output-%d", i), Type: "text"})
-	}
-	_, err := h.svc.PublishJSON(context.Background(), commandDefinition(t, t.TempDir(), []Node{node}, nil))
-	if err == nil || !strings.Contains(err.Error(), "at most 32 collectors") {
-		t.Fatalf("expected collector bound error, got %v", err)
 	}
 }
 
@@ -877,49 +773,21 @@ func TestCommandPermissionUsesLastMatchingRuleAndExplicitEnvironment(t *testing.
 	}
 }
 
-func TestCollectorCannotFollowSymlinkOutsideWorkflowDirectory(t *testing.T) {
-	h := newHarness(t)
-	dir := t.TempDir()
-	outside := filepath.Join(t.TempDir(), "secret.txt")
-	if err := os.WriteFile(outside, []byte("secret"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(outside, filepath.Join(dir, "result.txt")); err != nil {
-		t.Fatal(err)
-	}
-	node := Node{ID: "collect", Name: "Collect", Type: "command", Command: []string{"/usr/bin/true"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}, Outputs: []Collector{{Name: "file", Type: "file", Path: "result.txt"}}}
-	version, err := h.svc.PublishJSON(context.Background(), commandDefinition(t, dir, []Node{node}, nil))
-	if err != nil {
-		t.Fatal(err)
-	}
-	run, err := h.svc.Start(context.Background(), version.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	run = waitForRun(t, h.svc, run.ID, StateFailed)
-	if !strings.Contains(run.Nodes[0].Attempts[0].Error, "escapes workflow directory") {
-		t.Fatalf("unexpected collector outcome: %+v", run.Nodes[0].Attempts[0])
-	}
-}
-
 func TestCommandOutcomesAndBoundedLogs(t *testing.T) {
 	tests := []struct {
 		name      string
 		command   []string
-		outputs   []Collector
 		wantState string
 		wantError string
 	}{
 		{name: "nonzero exit", command: []string{"/bin/sh", "-c", "printf problem >&2; exit 7"}, wantState: AttemptFailed},
 		{name: "executor error", command: []string{"/definitely/missing"}, wantState: AttemptErrored},
-		{name: "missing collector", command: []string{"/usr/bin/true"}, outputs: []Collector{{Name: "missing", Type: "file", Path: "missing.txt"}}, wantState: AttemptFailed, wantError: "collecting missing"},
-		{name: "malformed json", command: []string{"/bin/sh", "-c", "printf nope > result.json"}, outputs: []Collector{{Name: "json", Type: "json_file", Path: "result.json"}}, wantState: AttemptFailed, wantError: "invalid JSON"},
 		{name: "bounded output", command: []string{"/bin/sh", "-c", "yes x | head -c 100000"}, wantState: AttemptFailed, wantError: "exactly one valid JSON value"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			h := newHarness(t)
-			node := Node{ID: "command", Name: "Command", Type: "command", Command: tt.command, Outputs: tt.outputs, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}}
+			node := Node{ID: "command", Name: "Command", Type: "command", Command: tt.command, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}}
 			version, err := h.svc.PublishJSON(context.Background(), commandDefinition(t, t.TempDir(), []Node{node}, nil))
 			if err != nil {
 				t.Fatal(err)
@@ -1376,20 +1244,20 @@ type repeatExecutor struct {
 func (e *repeatExecutor) Execute(_ context.Context, _ CommandRequest) CommandResult {
 	value := e.outputs[e.index]
 	e.index++
-	return CommandResult{State: AttemptSuccessful, ExitCode: 0, Outputs: map[string]string{"result": value}}
+	return CommandResult{State: AttemptSuccessful, ExitCode: 0, Stdout: value}
 }
 
 func (e *failingGateExecutor) Execute(_ context.Context, request CommandRequest) CommandResult {
 	e.started <- request.Command[0]
 	<-e.release
-	return CommandResult{State: AttemptFailed, ExitCode: 1, Error: "failed", Outputs: map[string]string{}}
+	return CommandResult{State: AttemptFailed, ExitCode: 1, Error: "failed"}
 }
 
 func (e *gatedExecutor) Execute(_ context.Context, request CommandRequest) CommandResult {
 	e.started <- request.Command[0]
 	<-e.release
 	exitCode := 0
-	return CommandResult{State: AttemptSuccessful, ExitCode: exitCode, Stdout: "null", Outputs: map[string]string{}}
+	return CommandResult{State: AttemptSuccessful, ExitCode: exitCode, Stdout: "null"}
 }
 
 func (e *blockingExecutor) Execute(context.Context, CommandRequest) CommandResult {
@@ -1398,7 +1266,7 @@ func (e *blockingExecutor) Execute(context.Context, CommandRequest) CommandResul
 	if e.done != nil {
 		close(e.done)
 	}
-	return CommandResult{State: AttemptSuccessful, ExitCode: 0, Stdout: "null", Outputs: map[string]string{}}
+	return CommandResult{State: AttemptSuccessful, ExitCode: 0, Stdout: "null"}
 }
 
 func commandDefinition(t *testing.T, dir string, nodes []Node, dependencies []Dependency) []byte {
@@ -1446,7 +1314,7 @@ func waitForPidFile(t *testing.T, pidPath string) int {
 	return 0
 }
 
-func TestAgentRunFreshAffinityCollectorsAndIdleCompletion(t *testing.T) {
+func TestAgentRunFreshAffinityAndIdleCompletion(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 	version, err := h.svc.PublishJSON(ctx, []byte(approvalThenAgents))
@@ -1472,12 +1340,7 @@ func TestAgentRunFreshAffinityCollectorsAndIdleCompletion(t *testing.T) {
 		t.Fatalf("missing attempt/session link: %+v", attempt)
 	}
 
-	h.agent.results["session-1"] = AgentResult{State: "waiting", Outputs: map[string]json.RawMessage{
-		"message": json.RawMessage(`"finished"`),
-		"patch":   json.RawMessage(`{"files":[{"path":"main.go"}]}`),
-		"notes":   json.RawMessage(`"review notes"`),
-		"result":  json.RawMessage(`{"ok":true}`),
-	}}
+	h.agent.results["session-1"] = AgentResult{State: "waiting", FinalMessage: `{"ok":true}`}
 	h.advance()
 	if err := h.svc.Tick(ctx); err != nil {
 		t.Fatalf("tick: %v", err)
@@ -1496,9 +1359,8 @@ func TestAgentRunFreshAffinityCollectorsAndIdleCompletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertRun(t, completed, StateSuccessful, map[string]string{"approve": NodeSuccessful, "implement": NodeSuccessful, "review": NodeSuccessful})
-	outputs := completed.Nodes[1].Attempts[0].Outputs
-	if string(outputs["message"]) != `"finished"` || string(outputs["result"]) != `{"ok":true}` {
-		t.Fatalf("collectors not persisted: %s", outputs)
+	if got := string(completed.Nodes[1].Result.Output); got != `{"ok":true}` {
+		t.Fatalf("agent node output = %s", got)
 	}
 }
 

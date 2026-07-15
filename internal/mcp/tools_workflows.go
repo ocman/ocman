@@ -29,13 +29,13 @@ const workflowDefinitionSchema = `Workflow definition JSON. Required top-level f
 
 Node types and configuration:
 - approval: no additional configuration.
-- command: command is a string array; the workflow directory must be an existing absolute path. Optional permission entries are {"permission":"bash","pattern":"...","action":"allow"|"deny"|"ask"}; outputs use {"name":"...","type":"text"|"git_diff"|"file"|"json_file","path":"relative-path"}.
-- agent: agent requires {"directory":"...","prompt":"..."}; optional platform, model, agent, reasoning, sessionAffinity, sessionId, and collectors. Collectors use final-message, diff, file, or json-file; file types require a safe relative path.
+- command: command is a string array; the workflow directory must be an existing absolute path. Optional permission entries are {"permission":"bash","pattern":"...","action":"allow"|"deny"|"ask"}. Successful commands must write exactly one JSON value to stdout.
+- agent: agent requires {"directory":"...","prompt":"..."}; optional platform, model, agent, reasoning, sessionAffinity, and sessionId. Agents must finish with exactly one JSON value; one invalid response gets a corrective retry in the same session.
 - subworkflow: subworkflow requires {"workflowId":"published-workflow-id"}.
-- map: map requires {"source":"upstream-output-name","key":"stable-item-field","subworkflow":{"workflowId":"..."},"join":"join-node-id"}.
+- map: map requires {"source":"${nodes.upstream.output}","key":"stable-item-field","subworkflow":{"workflowId":"..."},"join":"join-node-id"}; source must be an upstream node whose output is an array.
 - join: join requires {"policy":"all-success"|"always"|"minimum-success"}; minimum-success also requires minSuccess > 0.
 
-Dependencies are {"from":"upstream-node-id","to":"downstream-node-id"} and must form a DAG. Optional top-level fields include directory, pools, workspace, limits, retentionDays, and failFast. Validate before publishing.
+Dependencies are {"from":"upstream-node-id","to":"downstream-node-id"} and must form a DAG. Command arguments, environment values, and agent prompts can interpolate transitive dependencies with ${nodes.<id>.output...}; inserted values remain JSON. Optional top-level fields include directory, pools, workspace, limits, retentionDays, and failFast. Validate before publishing.
 
 Minimal valid definition: {"id":"example","name":"Example","version":"1","concurrency":1,"triggers":[{"id":"manual","type":"manual"}],"nodes":[{"id":"approve","name":"Approve","type":"approval"}],"dependencies":[]}.`
 

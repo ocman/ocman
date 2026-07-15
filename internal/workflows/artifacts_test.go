@@ -1,25 +1,9 @@
 package workflows
 
 import (
-	"encoding/json"
 	"testing"
 	"time"
 )
-
-func TestCollectorKindMapping(t *testing.T) {
-	cases := map[string]string{
-		"json_file": KindJSON, "json-file": KindJSON,
-		"file":     KindFile,
-		"git_diff": KindDiff, "diff": KindDiff,
-		"diagnostics": KindDiagnostics,
-		"text":        KindText, "final-message": KindText, "mystery": KindText,
-	}
-	for in, want := range cases {
-		if got := collectorKind(in); got != want {
-			t.Errorf("collectorKind(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
 
 func TestRetentionExpiry(t *testing.T) {
 	created := time.Date(2026, 7, 13, 0, 0, 0, 0, time.UTC)
@@ -58,22 +42,6 @@ func TestRedactorPrefersLongestValueFirst(t *testing.T) {
 	got := r.redact("value=abcdef")
 	if got != "value="+redactionMarker {
 		t.Fatalf("longest-first redaction failed: %q", got)
-	}
-}
-
-func TestRedactOutputs(t *testing.T) {
-	r := newRedactor(map[string]string{"T": "topsecret"})
-	out := r.redactOutputs(map[string]string{"log": "here is topsecret", "clean": "ok"})
-	if out["log"] != "here is "+redactionMarker || out["clean"] != "ok" {
-		t.Fatalf("redactOutputs wrong: %+v", out)
-	}
-}
-
-func TestRedactRawOutputs(t *testing.T) {
-	r := newRedactor(map[string]string{"T": "topsecret"})
-	out := r.redactRawOutputs(map[string]json.RawMessage{"msg": json.RawMessage(`"topsecret here"`)})
-	if string(out["msg"]) != `"`+redactionMarker+` here"` {
-		t.Fatalf("redactRawOutputs wrong: %s", out["msg"])
 	}
 }
 

@@ -11,6 +11,19 @@ import (
 
 var nodeResultReference = regexp.MustCompile(`\$\{nodes\.([^{}]+)\}`)
 
+func isExactNodeResultReference(input string) bool {
+	bounds := nodeResultReference.FindStringIndex(input)
+	return bounds != nil && bounds[0] == 0 && bounds[1] == len(input)
+}
+
+func exactNodeOutputReference(input string) (string, bool) {
+	if !isExactNodeResultReference(input) {
+		return "", false
+	}
+	tail := nodeResultReference.FindStringSubmatch(input)[1]
+	return strings.CutSuffix(tail, ".output")
+}
+
 func interpolateNodeResults(input string, run RunDetail, nodeID string) (string, error) {
 	segments, err := nodeResultSegments(input, run, nodeID)
 	if err != nil {

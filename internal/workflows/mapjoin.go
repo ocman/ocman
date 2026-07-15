@@ -79,7 +79,7 @@ func (s *Service) driveMapNode(ctx context.Context, run RunDetail, node NodeRun,
 		if err := s.expandMap(ctx, run, node, config); err != nil {
 			// A structural error (missing array, duplicate keys) fails the
 			// map node — and thus the run — with a visible reason.
-			if settleErr := s.store.SettleWorkflowNode(run.ID, node.NodeID, attempt.ID, false, "{}", err.Error(), s.now().UnixMilli()); settleErr != nil {
+			if settleErr := s.settleMapNode(ctx, run, node, attempt, false, err.Error()); settleErr != nil {
 				return false, settleErr
 			}
 			s.changed(run.ID)
@@ -92,7 +92,7 @@ func (s *Service) driveMapNode(ctx context.Context, run RunDetail, node NodeRun,
 	// before every item was created. Re-expand idempotently (existing
 	// stable keys are skipped) so no declared item is ever dropped.
 	if err := s.expandMap(ctx, run, node, config); err != nil {
-		if settleErr := s.store.SettleWorkflowNode(run.ID, node.NodeID, attempt.ID, false, "{}", err.Error(), s.now().UnixMilli()); settleErr != nil {
+		if settleErr := s.settleMapNode(ctx, run, node, attempt, false, err.Error()); settleErr != nil {
 			return false, settleErr
 		}
 		s.changed(run.ID)
@@ -112,7 +112,7 @@ func (s *Service) driveMapNode(ctx context.Context, run RunDetail, node NodeRun,
 // aggregation (budgetExceeded counts only same-run sessions). Add cross-run
 // budget rollup when a real map campaign needs a hard descendant cost cap.
 func (s *Service) expandMap(ctx context.Context, run RunDetail, node NodeRun, config *MapConfig) error {
-	array, err := s.mapInputArray(ctx, run.ID, node.NodeID, config)
+	array, err := s.mapInputArray(run, node.NodeID, config)
 	if err != nil {
 		return err
 	}
@@ -193,7 +193,7 @@ func (s *Service) reconcileMap(ctx context.Context, run RunDetail, node NodeRun,
 	if config.FailFast && anyFailed {
 		// Stop unrelated in-flight items immediately.
 		s.cancelChildRuns(ctx, run.ID)
-		if err := s.store.SettleWorkflowNode(run.ID, node.NodeID, attempt.ID, false, "{}", "map stopped by fail-fast after an item failed", s.now().UnixMilli()); err != nil {
+		if err := s.settleMapNode(ctx, run, node, attempt, false, "map stopped by fail-fast after an item failed"); err != nil {
 			return false, err
 		}
 		s.changed(run.ID)
@@ -204,11 +204,19 @@ func (s *Service) reconcileMap(ctx context.Context, run RunDetail, node NodeRun,
 	}
 	// The map node itself always settles successfully once items finish;
 	// the join node applies the success policy over the per-item outcomes.
-	if err := s.store.SettleWorkflowNode(run.ID, node.NodeID, attempt.ID, true, "{}", "", s.now().UnixMilli()); err != nil {
+	if err := s.settleMapNode(ctx, run, node, attempt, true, ""); err != nil {
 		return false, err
 	}
 	s.changed(run.ID)
 	return true, nil
+}
+
+func (s *Service) settleMapNode(ctx context.Context, run RunDetail, node NodeRun, attempt Attempt, successful bool, message string) error {
+	payload, err := s.mapNodeResultOutput(ctx, run, node.NodeID, message)
+	if err != nil {
+		return err
+	}
+	return s.store.SettleWorkflowNode(run.ID, node.NodeID, attempt.ID, successful, string(payload), message, s.now().UnixMilli())
 }
 
 // settleJoinNode aggregates the upstream map's per-item outcomes in input
@@ -239,21 +247,16 @@ func (s *Service) settleJoinNode(ctx context.Context, run RunDetail, node NodeRu
 	result.Success, result.Failed = countOutcomeStates(states)
 	sort.Slice(result.Items, func(i, j int) bool { return result.Items[i].Index < result.Items[j].Index })
 	success := joinSucceeds(config, result)
-	payload, err := json.Marshal(map[string]JoinResult{"result": result})
-	if err != nil {
-		return false, err
-	}
 	errMsg := ""
 	if !success {
 		errMsg = fmt.Sprintf("join policy %q not satisfied (%d/%d succeeded)", config.Policy, result.Success, result.Total)
 	}
-	if err := s.store.SettleWorkflowNode(run.ID, node.NodeID, attempt.ID, success, string(payload), errMsg, s.now().UnixMilli()); err != nil {
+	payload, err := s.joinNodeResultOutput(ctx, run, node.NodeID, errMsg)
+	if err != nil {
 		return false, err
 	}
-	// Publish the join result as a consumable artifact for downstream nodes.
-	if success {
-		encoded, _ := json.Marshal(result)
-		s.storeArtifact(run.ID, node.NodeID, attempt.ID, "result", KindJSON, encoded, run.Version.Definition.RetentionDays)
+	if err := s.store.SettleWorkflowNode(run.ID, node.NodeID, attempt.ID, success, string(payload), errMsg, s.now().UnixMilli()); err != nil {
+		return false, err
 	}
 	s.changed(run.ID)
 	return true, nil
@@ -282,28 +285,14 @@ func joinSucceeds(config *JoinConfig, result JoinResult) bool {
 	}
 }
 
-// mapInputArray resolves the declared JSON array artifact the map consumes
-// from its upstream dependencies.
-func (s *Service) mapInputArray(ctx context.Context, runID, nodeID string, config *MapConfig) ([]json.RawMessage, error) {
-	artifacts, err := s.ConsumableArtifacts(ctx, runID, nodeID)
-	if err != nil {
-		return nil, err
-	}
-	var chosen *Artifact
-	for i := range artifacts {
-		if artifacts[i].Name == config.Source {
-			chosen = &artifacts[i]
-		}
-	}
-	if chosen == nil {
-		return nil, fmt.Errorf("map input artifact %q not produced by an upstream node", config.Source)
-	}
-	_, payload, err := s.DownloadArtifact(ctx, chosen.ID)
+// mapInputArray resolves the declared dependency Node Result JSON array.
+func (s *Service) mapInputArray(run RunDetail, nodeID string, config *MapConfig) ([]json.RawMessage, error) {
+	payload, err := interpolateNodeResults(config.Source, run, nodeID)
 	if err != nil {
 		return nil, fmt.Errorf("reading map input %q: %w", config.Source, err)
 	}
 	var array []json.RawMessage
-	if err := json.Unmarshal(payload, &array); err != nil {
+	if err := json.Unmarshal([]byte(payload), &array); err != nil {
 		return nil, fmt.Errorf("map input %q is not a JSON array: %w", config.Source, err)
 	}
 	return array, nil
@@ -418,15 +407,15 @@ func (s *Service) itemPrompt(ctx context.Context, run RunDetail, prompt string) 
 	if run.ParentRunID == "" || !itemPlaceholder.MatchString(prompt) {
 		return prompt
 	}
-	artifacts, err := s.ListArtifacts(ctx, run.ID)
+	artifacts, err := s.store.ListWorkflowArtifacts(run.ID)
 	if err != nil {
 		return prompt
 	}
 	for _, artifact := range artifacts {
-		if artifact.Name != "item" {
+		if artifact.Name != "item" || artifact.AttemptID != 0 {
 			continue
 		}
-		_, payload, err := s.DownloadArtifact(ctx, artifact.ID)
+		_, payload, err := s.downloadArtifact(artifact.ID, run.ID, true)
 		if err != nil {
 			return prompt
 		}

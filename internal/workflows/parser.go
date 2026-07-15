@@ -23,6 +23,9 @@ func decodeDefinition(source []byte) (Definition, []byte, string, error) {
 	if err := rejectUnsafeYAML(document.Content[0]); err != nil {
 		return Definition{}, nil, "", err
 	}
+	if err := rejectCollectorFields(document.Content[0]); err != nil {
+		return Definition{}, nil, "", err
+	}
 	var extra yaml.Node
 	if err := decoder.Decode(&extra); err != nil && !errors.Is(err, io.EOF) {
 		return Definition{}, nil, "", fmt.Errorf("invalid workflow source: %w", err)
@@ -58,6 +61,47 @@ func decodeDefinition(source []byte) (Definition, []byte, string, error) {
 	}
 	stableYAML, err := encodeDefinitionYAML(definition)
 	return definition, canonical, stableYAML, err
+}
+
+func rejectCollectorFields(root *yaml.Node) error {
+	nodes := mappingValue(root, "nodes")
+	if nodes == nil || nodes.Kind != yaml.SequenceNode {
+		return nil
+	}
+	for _, node := range nodes.Content {
+		if key := mappingKey(node, "outputs"); key != nil {
+			return sourceError(key, "command collectors are no longer supported; write one JSON value to stdout")
+		}
+		agent := mappingValue(node, "agent")
+		if key := mappingKey(agent, "collectors"); key != nil {
+			return sourceError(key, "agent collectors are no longer supported; reply with one JSON value")
+		}
+	}
+	return nil
+}
+
+func mappingValue(node *yaml.Node, name string) *yaml.Node {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return nil
+	}
+	for index := 0; index+1 < len(node.Content); index += 2 {
+		if node.Content[index].Value == name {
+			return node.Content[index+1]
+		}
+	}
+	return nil
+}
+
+func mappingKey(node *yaml.Node, name string) *yaml.Node {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return nil
+	}
+	for index := 0; index+1 < len(node.Content); index += 2 {
+		if node.Content[index].Value == name {
+			return node.Content[index]
+		}
+	}
+	return nil
 }
 
 func encodeDefinitionYAML(definition Definition) (string, error) {

@@ -3,20 +3,14 @@ package workflows
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"syscall"
 	"time"
-
-	"github.com/NoUseFreak/ocman/internal/gitexec"
 )
 
 const maxCommandOutput = 64 << 10
@@ -26,7 +20,6 @@ type CommandRequest struct {
 	Command     []string
 	Environment map[string]string
 	Permission  []PermissionRule
-	Outputs     []Collector
 	// RestrictGit, when non-empty, names git subcommands the caller may
 	// not run because it holds a path-scoped (non-exclusive) workspace
 	// lease. A centralized coordinator owns repository-wide git mutation.
@@ -39,7 +32,6 @@ type CommandResult struct {
 	Stdout          string
 	Stderr          string
 	Error           string
-	Outputs         map[string]string
 	StdoutTruncated bool
 	StderrTruncated bool
 }
@@ -51,7 +43,7 @@ type CommandExecutor interface {
 type localCommandExecutor struct{}
 
 func (localCommandExecutor) Execute(ctx context.Context, req CommandRequest) CommandResult {
-	result := CommandResult{ExitCode: -1, Outputs: map[string]string{}}
+	result := CommandResult{ExitCode: -1}
 	commandText := strings.Join(req.Command, " ")
 	if !commandAllowed(commandText, req.Permission) {
 		result.State = AttemptDenied
@@ -100,15 +92,6 @@ func (localCommandExecutor) Execute(ctx context.Context, req CommandRequest) Com
 		return result
 	}
 	result.ExitCode = 0
-	for _, collector := range req.Outputs {
-		value, err := collectOutput(ctx, req.Directory, collector, result.Stdout)
-		if err != nil {
-			result.State = AttemptFailed
-			result.Error = fmt.Sprintf("collecting %s: %v", collector.Name, err)
-			return result
-		}
-		result.Outputs[collector.Name] = value
-	}
 	result.State = AttemptSuccessful
 	return result
 }
@@ -145,84 +128,6 @@ func commandEnv(environment map[string]string) []string {
 		out = append(out, key+"="+environment[key])
 	}
 	return out
-}
-
-func collectOutput(ctx context.Context, directory string, collector Collector, stdout string) (string, error) {
-	switch collector.Type {
-	case "text":
-		return stdout, nil
-	case "file", "json_file":
-		path, err := scopedPath(directory, collector.Path)
-		if err != nil {
-			return "", err
-		}
-		value, err := readBounded(path)
-		if err != nil {
-			return "", err
-		}
-		if collector.Type == "json_file" && !json.Valid([]byte(value)) {
-			return "", fmt.Errorf("invalid JSON in %s", collector.Path)
-		}
-		return value, nil
-	case "git_diff":
-		cmd := gitexec.Command(ctx, "-C", directory, "diff", "--no-ext-diff", "--no-textconv", "--")
-		output := &boundedBuffer{}
-		cmd.Stdout = output
-		stderr := &boundedBuffer{}
-		cmd.Stderr = stderr
-		if err := cmd.Run(); err != nil {
-			return "", fmt.Errorf("git diff: %w: %s", err, strings.TrimSpace(stderr.String()))
-		}
-		return output.String(), nil
-	default:
-		return "", fmt.Errorf("unsupported collector type %q", collector.Type)
-	}
-}
-
-func scopedPath(directory, name string) (string, error) {
-	if name == "" || filepath.IsAbs(name) {
-		return "", fmt.Errorf("collector path must be relative")
-	}
-	root, err := filepath.EvalSymlinks(directory)
-	if err != nil {
-		return "", err
-	}
-	path, err := filepath.EvalSymlinks(filepath.Join(root, name))
-	if err != nil {
-		return "", err
-	}
-	rel, err := filepath.Rel(root, path)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("collector path escapes workflow directory")
-	}
-	return path, nil
-}
-
-func readBounded(path string) (string, error) {
-	expected, err := os.Stat(path)
-	if err != nil {
-		return "", err
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-	opened, err := file.Stat()
-	if err != nil {
-		return "", err
-	}
-	if !os.SameFile(expected, opened) {
-		return "", fmt.Errorf("collector path changed while opening")
-	}
-	raw, err := io.ReadAll(io.LimitReader(file, maxCommandOutput+1))
-	if err != nil {
-		return "", err
-	}
-	if len(raw) > maxCommandOutput {
-		return "", fmt.Errorf("output exceeds %d bytes", maxCommandOutput)
-	}
-	return string(raw), nil
 }
 
 type boundedBuffer struct {

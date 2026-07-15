@@ -2,7 +2,6 @@ package workflows
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -61,24 +60,6 @@ func artifactFromState(row state.WorkflowArtifact) Artifact {
 	}
 }
 
-// collectorKind maps a producer collector type (command or agent) to its
-// immutable artifact kind. Unknown types fall back to text so nothing is
-// silently dropped.
-func collectorKind(collectorType string) string {
-	switch collectorType {
-	case "json_file", "json-file":
-		return KindJSON
-	case "file":
-		return KindFile
-	case "git_diff", "diff":
-		return KindDiff
-	case "diagnostics":
-		return KindDiagnostics
-	default:
-		return KindText
-	}
-}
-
 // retentionExpiry returns the payload expiry cutoff for an artifact
 // created at `created`, given the workflow's retention override in days
 // (0 = DefaultRetentionDays). A negative override means "never expire"
@@ -131,33 +112,6 @@ func (r *redactor) redact(s string) string {
 	return s
 }
 
-// redactOutputs redacts secret values from a map of collected output
-// values (JSON-encoded), returning a new map. Used before persisting
-// artifact payloads so credentials never land in the store.
-func (r *redactor) redactOutputs(outputs map[string]string) map[string]string {
-	if r == nil || len(r.values) == 0 || len(outputs) == 0 {
-		return outputs
-	}
-	out := make(map[string]string, len(outputs))
-	for name, value := range outputs {
-		out[name] = r.redact(value)
-	}
-	return out
-}
-
-// redactRawOutputs redacts secret values from agent outputs that are
-// stored as raw JSON messages.
-func (r *redactor) redactRawOutputs(outputs map[string]json.RawMessage) map[string]json.RawMessage {
-	if r == nil || len(r.values) == 0 || len(outputs) == 0 {
-		return outputs
-	}
-	out := make(map[string]json.RawMessage, len(outputs))
-	for name, value := range outputs {
-		out[name] = json.RawMessage(r.redact(string(value)))
-	}
-	return out
-}
-
 // resolvedSecrets resolves every declared secret reference to its host
 // value at execution time. Values never leave this map (the definition
 // stores references only).
@@ -197,39 +151,6 @@ func (s *Service) secretEnv(version Version, nodeEnv map[string]string) map[stri
 	return merged
 }
 
-// publishCommandArtifacts stores each collected command output as an
-// immutable artifact (metadata in state.db, payload in the content
-// store). Best-effort: a store failure is logged into the payload as a
-// missing marker rather than failing the whole node.
-func (s *Service) publishCommandArtifacts(version Version, runID string, node Node, attemptID int64, outputs map[string]string) {
-	for _, collector := range node.Outputs {
-		payload, ok := outputs[collector.Name]
-		if !ok {
-			continue
-		}
-		s.storeArtifact(runID, node.ID, attemptID, collector.Name, collectorKind(collector.Type), []byte(payload), version.Definition.RetentionDays)
-	}
-}
-
-// publishAgentArtifacts stores each collected agent output as an
-// immutable artifact. Agent outputs arrive as raw JSON messages.
-func (s *Service) publishAgentArtifacts(version Version, runID, nodeID string, attemptID int64, config *AgentConfig, outputs map[string]json.RawMessage) {
-	if config == nil {
-		return
-	}
-	kinds := make(map[string]string, len(config.Collectors))
-	for _, collector := range config.Collectors {
-		kinds[collector.Name] = collectorKind(collector.Type)
-	}
-	for name, value := range outputs {
-		kind := kinds[name]
-		if kind == "" {
-			kind = KindText
-		}
-		s.storeArtifact(runID, nodeID, attemptID, name, kind, []byte(value), version.Definition.RetentionDays)
-	}
-}
-
 // storeArtifact writes one immutable artifact: payload to the content
 // store (deduplicated), metadata to state.db with a retention expiry.
 func (s *Service) storeArtifact(runID, nodeID string, attemptID int64, name, kind string, payload []byte, retentionDays int) {
@@ -255,7 +176,8 @@ func (s *Service) storeArtifact(runID, nodeID string, attemptID int64, name, kin
 	})
 }
 
-// ListArtifacts returns the immutable artifact metadata for a run.
+// ListArtifacts returns historical/public artifact metadata. Internal map-item
+// payloads are deliberately omitted so they cannot look like node outputs.
 func (s *Service) ListArtifacts(_ context.Context, runID string) ([]Artifact, error) {
 	rows, err := s.store.ListWorkflowArtifacts(runID)
 	if err != nil {
@@ -263,31 +185,10 @@ func (s *Service) ListArtifacts(_ context.Context, runID string) ([]Artifact, er
 	}
 	out := make([]Artifact, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, artifactFromState(row))
-	}
-	return out, nil
-}
-
-// ConsumableArtifacts returns the artifacts a node may consume: only
-// those produced by its declared upstream dependencies (the nodes with
-// a dependency edge into nodeID, transitively). This enforces the
-// declared-input-only contract — a node cannot read artifacts from an
-// unrelated branch it does not depend on.
-func (s *Service) ConsumableArtifacts(ctx context.Context, runID, nodeID string) ([]Artifact, error) {
-	run, err := s.GetRun(ctx, runID)
-	if err != nil {
-		return nil, err
-	}
-	upstream := upstreamNodes(run.Version.Definition.Dependencies, nodeID)
-	all, err := s.ListArtifacts(ctx, runID)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]Artifact, 0, len(all))
-	for _, artifact := range all {
-		if upstream[artifact.NodeID] {
-			out = append(out, artifact)
+		if row.AttemptID == 0 && row.Name == "item" {
+			continue
 		}
+		out = append(out, artifactFromState(row))
 	}
 	return out, nil
 }
@@ -316,10 +217,17 @@ func upstreamNodes(dependencies []Dependency, nodeID string) map[string]bool {
 // DownloadArtifact returns the metadata and payload bytes for an
 // artifact. Returns ErrPayloadMissing (wrapped) when retention cleanup
 // has dropped the payload (metadata is preserved).
-func (s *Service) DownloadArtifact(_ context.Context, id string) (Artifact, []byte, error) {
+func (s *Service) DownloadArtifact(_ context.Context, runID, id string) (Artifact, []byte, error) {
+	return s.downloadArtifact(id, runID, false)
+}
+
+func (s *Service) downloadArtifact(id, runID string, internal bool) (Artifact, []byte, error) {
 	row, err := s.store.GetWorkflowArtifact(id)
 	if err != nil {
 		return Artifact{}, nil, err
+	}
+	if (!internal && row.AttemptID == 0 && row.Name == "item") || (runID != "" && row.RunID != runID) {
+		return Artifact{}, nil, fmt.Errorf("artifact not found")
 	}
 	artifact := artifactFromState(*row)
 	if row.PayloadDeleted {

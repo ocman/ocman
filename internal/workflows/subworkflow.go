@@ -249,7 +249,7 @@ func validateAuthoredDefinition(definition Definition) error {
 				return fmt.Errorf("subworkflow node %q requires a workflowId", node.ID)
 			}
 		case "map":
-			if err := validateMapNode(node, ids); err != nil {
+			if err := validateMapNode(node, ids, upstreamNodes(definition.Dependencies, node.ID)); err != nil {
 				return err
 			}
 		case "join":
@@ -261,15 +261,16 @@ func validateAuthoredDefinition(definition Definition) error {
 	return nil
 }
 
-// validateMapNode checks a map node declares an input source, a stable
+// validateMapNode checks a map node declares a Node Result source, a stable
 // key field, a per-item subworkflow, and a join node that exists.
-func validateMapNode(node Node, ids map[string]bool) error {
+func validateMapNode(node Node, ids, dependencies map[string]bool) error {
 	m := node.Map
 	if m == nil {
 		return fmt.Errorf("map node %q requires a map configuration", node.ID)
 	}
-	if m.Source == "" {
-		return fmt.Errorf("map node %q requires an input source artifact", node.ID)
+	source, valid := exactNodeOutputReference(m.Source)
+	if !valid || !dependencies[source] {
+		return fmt.Errorf("map node %q source must be one ${nodes.<dependency>.output} reference", node.ID)
 	}
 	if m.Key == "" {
 		return fmt.Errorf("map node %q requires a stable key field", node.ID)

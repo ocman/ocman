@@ -149,7 +149,6 @@ type Node struct {
 	Command     []string          `json:"command,omitempty" yaml:"command,omitempty"`
 	Environment map[string]string `json:"environment,omitempty" yaml:"environment,omitempty"`
 	Permission  []PermissionRule  `json:"permission,omitempty" yaml:"permission,omitempty"`
-	Outputs     []Collector       `json:"outputs,omitempty" yaml:"outputs,omitempty"`
 	Agent       *AgentConfig      `json:"agent,omitempty" yaml:"agent,omitempty"`
 	Resources   []ResourceRequest `json:"resources,omitempty" yaml:"resources,omitempty"`
 	Lease       *LeaseConfig      `json:"lease,omitempty" yaml:"lease,omitempty"`
@@ -174,9 +173,9 @@ type SubworkflowRef struct {
 	WorkflowID string `json:"workflowId" yaml:"workflowId"`
 }
 
-// MapConfig fans a declared JSON array artifact out across per-item
-// pinned subworkflow runs. Source names the upstream artifact (a JSON
-// array); Key is a field on each item object used as the stable,
+// MapConfig fans a dependency Node Result JSON array out across per-item
+// pinned subworkflow runs. Source is an explicit ${nodes.*} reference;
+// Key is a field on each item object used as the stable,
 // duplicate-free key so restart/retry never reprocesses a completed
 // item. Subworkflow is the pinned per-item pipeline. Join is the id of
 // the join node that aggregates this map's items.
@@ -215,12 +214,6 @@ type PermissionRule struct {
 	Action     string `json:"action" yaml:"action"`
 }
 
-type Collector struct {
-	Name string `json:"name" yaml:"name"`
-	Type string `json:"type" yaml:"type"`
-	Path string `json:"path,omitempty" yaml:"path,omitempty"`
-}
-
 type AgentConfig struct {
 	Platform        string `json:"platform,omitempty" yaml:"platform,omitempty"`
 	Directory       string `json:"directory" yaml:"directory"`
@@ -231,8 +224,7 @@ type AgentConfig struct {
 	SessionAffinity string `json:"sessionAffinity,omitempty" yaml:"sessionAffinity,omitempty"`
 	// SessionID targets an existing session for loop compatibility prompt
 	// actions. Empty creates a fresh agent session through the normal path.
-	SessionID  string      `json:"sessionId,omitempty" yaml:"sessionId,omitempty"`
-	Collectors []Collector `json:"collectors,omitempty" yaml:"collectors,omitempty"`
+	SessionID string `json:"sessionId,omitempty" yaml:"sessionId,omitempty"`
 }
 
 type AgentRequest struct {
@@ -256,13 +248,12 @@ type AgentSession struct {
 type AgentResult struct {
 	State        string
 	FinalMessage string
-	Outputs      map[string]json.RawMessage
 	Error        string
 }
 
 type AgentExecutor interface {
 	Start(context.Context, AgentRequest) (AgentSession, error)
-	Inspect(context.Context, AgentSession, []Collector) (AgentResult, error)
+	Inspect(context.Context, AgentSession) (AgentResult, error)
 	Cancel(context.Context, AgentSession) error
 }
 
@@ -370,25 +361,25 @@ type NodeResult struct {
 }
 
 type Attempt struct {
-	ID              int64                      `json:"id"`
-	Seq             int                        `json:"seq"`
-	State           string                     `json:"state"`
-	StartedAt       int64                      `json:"startedAt"`
-	CompletedAt     int64                      `json:"completedAt,omitempty"`
-	ExitCode        *int                       `json:"exitCode,omitempty"`
-	Stdout          string                     `json:"stdout,omitempty"`
-	Stderr          string                     `json:"stderr,omitempty"`
-	Error           string                     `json:"error,omitempty"`
-	Outputs         map[string]json.RawMessage `json:"outputs,omitempty"`
-	StdoutTruncated bool                       `json:"stdoutTruncated,omitempty"`
-	StderrTruncated bool                       `json:"stderrTruncated,omitempty"`
-	Platform        string                     `json:"platform,omitempty"`
-	SessionID       string                     `json:"sessionId,omitempty"`
-	SessionState    string                     `json:"sessionState,omitempty"`
-	Affinity        string                     `json:"-"`
-	Directory       string                     `json:"-"`
-	ResolvedAt      int64                      `json:"resolvedAt,omitempty"`
-	ResolvedBy      string                     `json:"resolvedBy,omitempty"`
+	ID              int64  `json:"id"`
+	Seq             int    `json:"seq"`
+	State           string `json:"state"`
+	StartedAt       int64  `json:"startedAt"`
+	CompletedAt     int64  `json:"completedAt,omitempty"`
+	ExitCode        *int   `json:"exitCode,omitempty"`
+	Stdout          string `json:"stdout,omitempty"`
+	Stderr          string `json:"stderr,omitempty"`
+	Error           string `json:"error,omitempty"`
+	StdoutTruncated bool   `json:"stdoutTruncated,omitempty"`
+	StderrTruncated bool   `json:"stderrTruncated,omitempty"`
+	Platform        string `json:"platform,omitempty"`
+	SessionID       string `json:"sessionId,omitempty"`
+	SessionState    string `json:"sessionState,omitempty"`
+	Affinity        string `json:"-"`
+	Directory       string `json:"-"`
+	ResolvedAt      int64  `json:"resolvedAt,omitempty"`
+	ResolvedBy      string `json:"resolvedBy,omitempty"`
+	outputsJSON     string
 }
 
 type Store interface {
@@ -1073,12 +1064,7 @@ func (s *Service) GetRun(ctx context.Context, id string) (RunDetail, error) {
 	for _, row := range run.Nodes {
 		node := NodeRun{NodeID: row.NodeID, Name: row.Name, Type: row.Type, State: row.State, ReadyAt: row.ReadyAt, CompletedAt: row.CompletedAt, Attempts: make([]Attempt, 0, len(row.Attempts)), PinnedVersionID: row.PinnedVersionID}
 		for _, attempt := range row.Attempts {
-			out := Attempt{ID: attempt.ID, Seq: attempt.Seq, State: attempt.State, StartedAt: attempt.StartedAt, CompletedAt: attempt.CompletedAt, ExitCode: attempt.ExitCode, Stdout: attempt.Stdout, Stderr: attempt.Stderr, Error: attempt.Error, StdoutTruncated: attempt.StdoutTruncated, StderrTruncated: attempt.StderrTruncated, Platform: attempt.Platform, SessionID: attempt.SessionID, SessionState: attempt.SessionState, Affinity: attempt.Affinity, Directory: attempt.Directory, ResolvedAt: attempt.ResolvedAt, ResolvedBy: attempt.ResolvedBy}
-			if attempt.OutputsJSON != "" && attempt.OutputsJSON != "{}" {
-				if err := json.Unmarshal([]byte(attempt.OutputsJSON), &out.Outputs); err != nil {
-					return RunDetail{}, fmt.Errorf("decoding workflow outputs: %w", err)
-				}
-			}
+			out := Attempt{ID: attempt.ID, Seq: attempt.Seq, State: attempt.State, StartedAt: attempt.StartedAt, CompletedAt: attempt.CompletedAt, ExitCode: attempt.ExitCode, Stdout: attempt.Stdout, Stderr: attempt.Stderr, Error: attempt.Error, StdoutTruncated: attempt.StdoutTruncated, StderrTruncated: attempt.StderrTruncated, Platform: attempt.Platform, SessionID: attempt.SessionID, SessionState: attempt.SessionState, Affinity: attempt.Affinity, Directory: attempt.Directory, ResolvedAt: attempt.ResolvedAt, ResolvedBy: attempt.ResolvedBy, outputsJSON: attempt.OutputsJSON}
 			node.Attempts = append(node.Attempts, out)
 		}
 		node.Result = nodeResult(node)
@@ -1118,6 +1104,18 @@ func nodeResult(node NodeRun) NodeResult {
 	result.Started = workflowResultTime(node.Attempts[0].StartedAt)
 	result.Ended = workflowResultTime(node.CompletedAt)
 	attempt := node.Attempts[len(node.Attempts)-1]
+	if (node.Type == "map" || node.Type == "join") && attempt.outputsJSON != "" && attempt.outputsJSON != "{}" && json.Valid([]byte(attempt.outputsJSON)) {
+		result.Output = json.RawMessage(attempt.outputsJSON)
+		if node.Type == "join" {
+			var legacy struct {
+				Result json.RawMessage `json:"result"`
+			}
+			if json.Unmarshal(result.Output, &legacy) == nil && len(legacy.Result) > 0 {
+				result.Output = legacy.Result
+			}
+		}
+		return result
+	}
 	if attempt.State != AttemptSuccessful {
 		if attempt.Error != "" {
 			result.Output, _ = json.Marshal(map[string]string{"error": attempt.Error})
@@ -1138,8 +1136,6 @@ func nodeResult(node NodeRun) NodeResult {
 	}
 	if json.Valid([]byte(attempt.Stdout)) {
 		result.Output = json.RawMessage(attempt.Stdout)
-	} else if len(attempt.Outputs) > 0 {
-		result.Output, _ = json.Marshal(attempt.Outputs)
 	}
 	return result
 }
@@ -1152,55 +1148,72 @@ type mapNodeResultItem struct {
 }
 
 func (s *Service) loadAggregateNodeResults(ctx context.Context, detail *RunDetail) error {
-	mapped := make(map[string][]mapNodeResultItem)
 	for index := range detail.Nodes {
 		node := &detail.Nodes[index]
-		if node.Type != "map" || (node.State != NodeSuccessful && node.State != NodeFailed && node.State != NodeCanceled && node.State != NodeSkipped) {
+		if node.Type != "map" || len(node.Result.Output) > 0 || (node.State != NodeSuccessful && node.State != NodeFailed && node.State != NodeCanceled && node.State != NodeSkipped) {
 			continue
 		}
-		items, err := s.loadMapResultItems(ctx, *detail, node.NodeID)
+		output, err := s.mapNodeResultOutput(ctx, *detail, node.NodeID, attemptError(*node))
 		if err != nil {
 			return err
 		}
-		mapped[node.NodeID] = items
-		output := struct {
-			Items []mapNodeResultItem `json:"items"`
-			Error string              `json:"error,omitempty"`
-		}{Items: items}
-		if node.State != NodeSuccessful && len(node.Attempts) > 0 {
-			output.Error = node.Attempts[len(node.Attempts)-1].Error
-		}
-		node.Result.Output, _ = json.Marshal(output)
+		node.Result.Output = output
 	}
 	for index := range detail.Nodes {
 		node := &detail.Nodes[index]
-		if node.Type != "join" || (node.State != NodeSuccessful && node.State != NodeFailed && node.State != NodeCanceled && node.State != NodeSkipped) {
+		if node.Type != "join" || len(node.Result.Output) > 0 || (node.State != NodeSuccessful && node.State != NodeFailed && node.State != NodeCanceled && node.State != NodeSkipped) {
 			continue
 		}
-		items := mapped[mapNodeForJoin(detail.Version.Definition.Nodes, node.NodeID)]
-		config := joinConfig(detail.Version.Definition.Nodes, node.NodeID)
-		if config == nil {
-			continue
+		output, err := s.joinNodeResultOutput(ctx, *detail, node.NodeID, attemptError(*node))
+		if err != nil {
+			return err
 		}
-		output := struct {
-			Policy  string              `json:"policy"`
-			Success int                 `json:"success"`
-			Failed  int                 `json:"failed"`
-			Total   int                 `json:"total"`
-			Items   []mapNodeResultItem `json:"items"`
-			Error   string              `json:"error,omitempty"`
-		}{Policy: config.Policy, Total: len(items), Items: items}
-		states := make([]string, 0, len(items))
-		for _, item := range items {
-			states = append(states, item.Status)
-		}
-		output.Success, output.Failed = countOutcomeStates(states)
-		if node.State != NodeSuccessful && len(node.Attempts) > 0 {
-			output.Error = node.Attempts[len(node.Attempts)-1].Error
-		}
-		node.Result.Output, _ = json.Marshal(output)
+		node.Result.Output = output
 	}
 	return nil
+}
+
+func (s *Service) mapNodeResultOutput(ctx context.Context, detail RunDetail, nodeID, message string) (json.RawMessage, error) {
+	items, err := s.loadMapResultItems(ctx, detail, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(struct {
+		Items []mapNodeResultItem `json:"items"`
+		Error string              `json:"error,omitempty"`
+	}{Items: items, Error: message})
+}
+
+func (s *Service) joinNodeResultOutput(ctx context.Context, detail RunDetail, nodeID, message string) (json.RawMessage, error) {
+	items, err := s.loadMapResultItems(ctx, detail, mapNodeForJoin(detail.Version.Definition.Nodes, nodeID))
+	if err != nil {
+		return nil, err
+	}
+	config := joinConfig(detail.Version.Definition.Nodes, nodeID)
+	if config == nil {
+		return nil, fmt.Errorf("join node %q has no configuration", nodeID)
+	}
+	output := struct {
+		Policy  string              `json:"policy"`
+		Success int                 `json:"success"`
+		Failed  int                 `json:"failed"`
+		Total   int                 `json:"total"`
+		Items   []mapNodeResultItem `json:"items"`
+		Error   string              `json:"error,omitempty"`
+	}{Policy: config.Policy, Total: len(items), Items: items, Error: message}
+	states := make([]string, 0, len(items))
+	for _, item := range items {
+		states = append(states, item.Status)
+	}
+	output.Success, output.Failed = countOutcomeStates(states)
+	return json.Marshal(output)
+}
+
+func attemptError(node NodeRun) string {
+	if node.State == NodeSuccessful || len(node.Attempts) == 0 {
+		return ""
+	}
+	return node.Attempts[len(node.Attempts)-1].Error
 }
 
 // ponytail: terminal map reads load each child run once; batch this only if
@@ -1463,12 +1476,11 @@ func (s *Service) dispatchReady(run RunDetail) {
 		s.running[run.ID][nodeRun.NodeID] = active
 		s.mu.Unlock()
 		definition := definitions[nodeRun.NodeID]
-		attemptID := nodeRun.Attempts[len(nodeRun.Attempts)-1].ID
-		go s.executeCommand(ctx, active, run.Version, run.ID, run.Version.Definition.Directory, definition, attemptID)
+		go s.executeCommand(ctx, active, run.Version, run.ID, run.Version.Definition.Directory, definition)
 	}
 }
 
-func (s *Service) executeCommand(ctx context.Context, active *activeCommand, version Version, runID, directory string, node Node, attemptID int64) {
+func (s *Service) executeCommand(ctx context.Context, active *activeCommand, version Version, runID, directory string, node Node) {
 	redactor := s.runRedactor(version)
 	run, err := s.GetRun(ctx, runID)
 	if err != nil {
@@ -1498,14 +1510,12 @@ func (s *Service) executeCommand(ctx context.Context, active *activeCommand, ver
 	} else if shardDir != "" {
 		directory = shardDir
 	}
-	result := s.executor.Execute(ctx, CommandRequest{Directory: directory, Command: command, Environment: env, Permission: node.Permission, Outputs: node.Outputs, RestrictGit: restrictGitFor(version.Definition, node.ID)})
-	// Redact known secret values from logs and collected outputs before
-	// anything is persisted (audit) or published (artifacts).
+	result := s.executor.Execute(ctx, CommandRequest{Directory: directory, Command: command, Environment: env, Permission: node.Permission, RestrictGit: restrictGitFor(version.Definition, node.ID)})
+	// Redact known secret values from logs before persistence.
 	result.Stdout = redactor.redact(result.Stdout)
 	result.Stderr = redactor.redact(result.Stderr)
 	result.Error = redactor.redact(result.Error)
-	result.Outputs = redactor.redactOutputs(result.Outputs)
-	if result.State == AttemptSuccessful && len(node.Outputs) == 0 && (result.StdoutTruncated || !json.Valid([]byte(result.Stdout))) {
+	if result.State == AttemptSuccessful && (result.StdoutTruncated || !json.Valid([]byte(result.Stdout))) {
 		result.State = AttemptFailed
 		result.Error = "command output must be exactly one valid JSON value"
 	}
@@ -1517,17 +1527,9 @@ func (s *Service) executeCommand(ctx context.Context, active *activeCommand, ver
 			result.Error = "canceled after sibling failure"
 		}
 	}
-	outputs, err := json.Marshal(result.Outputs)
-	if err != nil {
-		result.State, result.Error = AttemptErrored, err.Error()
-		outputs = []byte("{}")
-	}
-	if result.State == AttemptSuccessful {
-		s.publishCommandArtifacts(version, runID, node, attemptID, result.Outputs)
-	}
 	_ = s.store.CompleteWorkflowCommand(runID, node.ID, state.WorkflowCommandResult{
 		State: result.State, ExitCode: result.ExitCode, Stdout: result.Stdout, Stderr: result.Stderr, Error: result.Error,
-		OutputsJSON: string(outputs), StdoutTruncated: result.StdoutTruncated, StderrTruncated: result.StderrTruncated,
+		OutputsJSON: "{}", StdoutTruncated: result.StdoutTruncated, StderrTruncated: result.StderrTruncated,
 	}, s.now().UnixMilli())
 	if completed, err := s.GetRun(context.Background(), runID); err == nil {
 		_, _ = s.applyPolicies(context.Background(), completed)
@@ -1692,7 +1694,7 @@ func (s *Service) agentSessionReachable(ctx context.Context, run RunDetail, node
 	if config == nil {
 		return false, nil
 	}
-	_, err := s.agent.Inspect(ctx, AgentSession{ID: attempt.SessionID, Platform: attempt.Platform, State: attempt.SessionState, Directory: attempt.Directory}, config.Collectors)
+	_, err := s.agent.Inspect(ctx, AgentSession{ID: attempt.SessionID, Platform: attempt.Platform, State: attempt.SessionState, Directory: attempt.Directory})
 	if err != nil {
 		return false, err
 	}
@@ -1846,7 +1848,7 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 				progressed = true
 				continue
 			}
-			result, inspectErr := s.agent.Inspect(ctx, AgentSession{ID: attempt.SessionID, Platform: attempt.Platform, State: attempt.SessionState, Directory: attempt.Directory}, config.Collectors)
+			result, inspectErr := s.agent.Inspect(ctx, AgentSession{ID: attempt.SessionID, Platform: attempt.Platform, State: attempt.SessionState, Directory: attempt.Directory})
 			if inspectErr != nil {
 				return inspectErr
 			}
@@ -1861,22 +1863,11 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 				continue
 			}
 			successful := result.State != "error" && result.State != "failed" && result.State != "canceled"
-			if successful {
-				for _, collector := range config.Collectors {
-					if _, ok := result.Outputs[collector.Name]; !ok {
-						successful = false
-						result.Error = fmt.Sprintf("collector %q produced no output", collector.Name)
-						break
-					}
-				}
-			}
-			// Redact known secret values from agent outputs and error
-			// before persistence and artifact publication.
+			// Redact known secret values before persistence.
 			redactor := s.runRedactor(run.Version)
 			result.FinalMessage = redactor.redact(result.FinalMessage)
-			result.Outputs = redactor.redactRawOutputs(result.Outputs)
 			result.Error = redactor.redact(result.Error)
-			if successful && len(config.Collectors) == 0 && !json.Valid([]byte(result.FinalMessage)) {
+			if successful && !json.Valid([]byte(result.FinalMessage)) {
 				if attempt.SessionState != AgentCorrecting {
 					const correction = "Your previous response was not valid JSON. Reply once with only a valid JSON value for the workflow result."
 					session, err := s.agent.Start(ctx, AgentRequest{Platform: attempt.Platform, Directory: attempt.Directory, Prompt: correction, Model: config.Model, Agent: config.Agent, Reasoning: config.Reasoning, SessionID: attempt.SessionID})
@@ -1900,14 +1891,7 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 				successful = false
 				result.Error = "agent output must be exactly one valid JSON value"
 			}
-			if successful {
-				s.publishAgentArtifacts(run.Version, runID, node.NodeID, attempt.ID, config, result.Outputs)
-			}
-			outputs, err := json.Marshal(result.Outputs)
-			if err != nil {
-				return err
-			}
-			completion := state.WorkflowAgentResult{Successful: successful, SessionState: result.State, Output: result.FinalMessage, OutputsJSON: string(outputs), Error: result.Error}
+			completion := state.WorkflowAgentResult{Successful: successful, SessionState: result.State, Output: result.FinalMessage, OutputsJSON: "{}", Error: result.Error}
 			if err := s.store.CompleteWorkflowAgentNode(runID, node.NodeID, attempt.ID, completion, s.now().UnixMilli()); err != nil {
 				return err
 			}
@@ -1950,11 +1934,11 @@ func (s *Service) applyPolicies(ctx context.Context, run RunDetail) (bool, error
 	}
 	outcomes := make(map[string]any, len(run.Nodes))
 	for _, node := range run.Nodes {
-		outcomes[node.NodeID] = map[string]any{"state": node.State}
-	}
-	artifacts, err := s.celArtifacts(ctx, run.ID)
-	if err != nil {
-		return false, err
+		var output any
+		if len(node.Result.Output) > 0 {
+			_ = json.Unmarshal(node.Result.Output, &output)
+		}
+		outcomes[node.NodeID] = map[string]any{"state": node.State, "output": output}
 	}
 	moved := false
 	for _, node := range run.Nodes {
@@ -1963,7 +1947,7 @@ func (s *Service) applyPolicies(ctx context.Context, run RunDetail) (bool, error
 				if edge.To != node.NodeID || edge.Condition == "" {
 					continue
 				}
-				ok, evalErr := evaluateCEL(edge.Condition, outcomes, artifacts)
+				ok, evalErr := evaluateCEL(edge.Condition, outcomes)
 				if evalErr != nil || !ok {
 					reason := "condition evaluated false"
 					if evalErr != nil {
@@ -1984,7 +1968,7 @@ func (s *Service) applyPolicies(ctx context.Context, run RunDetail) (bool, error
 		if config == nil {
 			continue
 		}
-		ok, evalErr := evaluateCEL(config.Until, outcomes, artifacts)
+		ok, evalErr := evaluateCEL(config.Until, outcomes)
 		if evalErr != nil {
 			if err := s.store.ExhaustWorkflowRepeat(run.ID, node.NodeID, "repeat condition error: "+evalErr.Error(), s.now().UnixMilli()); err != nil {
 				return moved, err
@@ -2020,34 +2004,6 @@ func repeatConfig(nodes []Node, id string) *RepeatConfig {
 		}
 	}
 	return nil
-}
-
-func (s *Service) celArtifacts(ctx context.Context, runID string) (map[string]any, error) {
-	rows, err := s.ListArtifacts(ctx, runID)
-	if err != nil {
-		return nil, err
-	}
-	out := map[string]any{}
-	latest := map[string]int64{}
-	for _, row := range rows {
-		if row.Kind != KindJSON || !row.PayloadAvailable {
-			continue
-		}
-		key := row.NodeID + "." + row.Name
-		if row.AttemptID < latest[key] {
-			continue
-		}
-		_, payload, err := s.DownloadArtifact(ctx, row.ID)
-		if err != nil {
-			return nil, err
-		}
-		var value any
-		if json.Unmarshal(payload, &value) == nil {
-			latest[key] = row.AttemptID
-			out[key] = value
-		}
-	}
-	return out, nil
 }
 
 // budgetExceeded reports whether a run has crossed a configured optional
@@ -2281,26 +2237,6 @@ func validateDefinition(definition Definition) error {
 			if node.Agent == nil || node.Agent.Directory == "" || node.Agent.Prompt == "" {
 				return fmt.Errorf("agent node %q requires directory and prompt", node.ID)
 			}
-			collectorNames := map[string]bool{}
-			for _, collector := range node.Agent.Collectors {
-				if collector.Name == "" || collectorNames[collector.Name] {
-					return fmt.Errorf("agent node %q has invalid collector name", node.ID)
-				}
-				collectorNames[collector.Name] = true
-				switch collector.Type {
-				case "final-message", "diff":
-					if collector.Path != "" {
-						return fmt.Errorf("collector %q does not accept a path", collector.Name)
-					}
-				case "file", "json-file":
-					clean := filepath.Clean(collector.Path)
-					if collector.Path == "" || filepath.IsAbs(collector.Path) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-						return fmt.Errorf("collector %q requires a safe relative path", collector.Name)
-					}
-				default:
-					return fmt.Errorf("unsupported collector type %q", collector.Type)
-				}
-			}
 		}
 		if node.Repeat != nil {
 			if node.Repeat.MaxAttempts <= 0 {
@@ -2417,29 +2353,6 @@ func validateCommandNode(directory string, node Node) error {
 		case "allow", "deny", "ask":
 		default:
 			return fmt.Errorf("invalid permission action %q", rule.Action)
-		}
-	}
-	seen := make(map[string]bool, len(node.Outputs))
-	if len(node.Outputs) > 32 {
-		return fmt.Errorf("at most 32 collectors are allowed")
-	}
-	for _, output := range node.Outputs {
-		if output.Name == "" || seen[output.Name] {
-			return fmt.Errorf("collector names must be present and unique")
-		}
-		seen[output.Name] = true
-		switch output.Type {
-		case "text", "git_diff":
-			if output.Path != "" {
-				return fmt.Errorf("collector %q does not accept a path", output.Name)
-			}
-		case "file", "json_file":
-			clean := filepath.Clean(output.Path)
-			if output.Path == "" || filepath.IsAbs(output.Path) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-				return fmt.Errorf("collector %q path must stay inside workflow directory", output.Name)
-			}
-		default:
-			return fmt.Errorf("unsupported collector type %q", output.Type)
 		}
 	}
 	return nil

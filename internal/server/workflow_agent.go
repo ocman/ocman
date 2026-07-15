@@ -10,7 +10,6 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/workflows"
 )
@@ -18,10 +17,6 @@ import (
 const workflowEngineTickInterval = 5 * time.Second
 
 type workflowAgentExecutor struct{ s *Server }
-
-type workflowFileReader interface {
-	ReadFile(context.Context, string, string) ([]byte, error)
-}
 
 func (e *workflowAgentExecutor) Start(ctx context.Context, req workflows.AgentRequest) (workflows.AgentSession, error) {
 	platformID := req.Platform
@@ -54,7 +49,7 @@ func (e *workflowAgentExecutor) Start(ctx context.Context, req workflows.AgentRe
 	return session, nil
 }
 
-func (e *workflowAgentExecutor) Inspect(ctx context.Context, session workflows.AgentSession, collectors []workflows.Collector) (workflows.AgentResult, error) {
+func (e *workflowAgentExecutor) Inspect(ctx context.Context, session workflows.AgentSession) (workflows.AgentResult, error) {
 	p, ok := e.s.registry.Get(platforms.ID(session.Platform))
 	if !ok {
 		return workflows.AgentResult{}, fmt.Errorf("workflow agent platform %q is unavailable", session.Platform)
@@ -75,50 +70,7 @@ func (e *workflowAgentExecutor) Inspect(ctx context.Context, session workflows.A
 		return result, nil
 	}
 	result.FinalMessage = finalAssistantMessage(detail.Messages, detail.Parts)
-	result.Outputs = make(map[string]json.RawMessage, len(collectors))
-	for _, collector := range collectors {
-		value, err := e.collect(ctx, session.Directory, detail, collector)
-		if err != nil {
-			return workflows.AgentResult{State: "error", Error: err.Error()}, nil
-		}
-		result.Outputs[collector.Name] = value
-	}
 	return result, nil
-}
-
-func (e *workflowAgentExecutor) collect(ctx context.Context, dir string, detail *platforms.SessionDetail, collector workflows.Collector) (json.RawMessage, error) {
-	switch collector.Type {
-	case "final-message":
-		return json.Marshal(finalAssistantMessage(detail.Messages, detail.Parts))
-	case "diff":
-		host := e.s.router().ForDir(dir)
-		if !host.Capabilities().GitDiff {
-			return nil, fmt.Errorf("collector %q: host does not support Git diff", collector.Name)
-		}
-		diff, err := host.GitDiff(ctx, dir, hostsvc.GitDiffOptions{Force: true})
-		if err != nil {
-			return nil, fmt.Errorf("collector %q: %w", collector.Name, err)
-		}
-		return json.Marshal(diff)
-	case "file", "json-file":
-		reader, ok := e.s.router().ForDir(dir).(workflowFileReader)
-		if !ok {
-			return nil, fmt.Errorf("collector %q: host does not support file collection", collector.Name)
-		}
-		content, err := reader.ReadFile(ctx, dir, collector.Path)
-		if err != nil {
-			return nil, fmt.Errorf("collector %q: %w", collector.Name, err)
-		}
-		if collector.Type == "json-file" {
-			if !json.Valid(content) {
-				return nil, fmt.Errorf("collector %q: invalid JSON", collector.Name)
-			}
-			return json.RawMessage(content), nil
-		}
-		return json.Marshal(string(content))
-	default:
-		return nil, fmt.Errorf("collector %q: unsupported type %q", collector.Name, collector.Type)
-	}
 }
 
 func (e *workflowAgentExecutor) Cancel(ctx context.Context, session workflows.AgentSession) error {

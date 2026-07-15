@@ -14,7 +14,7 @@ func TestWorkflowCEL(t *testing.T) {
 		{"invalid", `secrets.token == "x"`, false, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := evaluateCEL(test.expr, map[string]any{"check": map[string]any{"state": "successful"}}, map[string]any{})
+			got, err := evaluateCEL(test.expr, map[string]any{"check": map[string]any{"state": "successful"}})
 			if (err != nil) != test.err || got != test.want {
 				t.Fatalf("evaluateCEL() = %v, %v; want %v, error=%v", got, err, test.want, test.err)
 			}

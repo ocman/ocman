@@ -81,14 +81,15 @@ flowchart TD
    (overlap skip/queue/parallel); a 5 s server tick evaluates triggers
    through narrow forge and session-status adapters. It schedules approval,
   permission-scoped command, and agent nodes from persisted dependency
-  state. The command executor owns directory/environment policy, bounded
-  logs, collectors, and process-tree cancellation; agent attempts
+   state. The command executor owns directory/environment policy, bounded
+  logs, JSON stdout validation, and process-tree cancellation; agent attempts
   create/send/abort through the session service, poll platform-neutral
-  session status, and collect declared messages, diffs, or files through
-  platform/host seams. REST, MCP, and SSE never implement independent
-  transitions. Successful node outputs become immutable, typed artifacts
-  (JSON/text/file/diff/diagnostics): payloads go to a content-addressed
-  `BlobStore` (deduplicated) while metadata lands in state.db. Referenced
+  session status, and decode their final message as JSON. REST, MCP, and SSE
+  never implement independent transitions. Every node exposes one canonical
+  Node Result; dependency-scoped interpolation passes its JSON output to
+  commands, environments, prompts, maps, and CEL policies. The auxiliary
+  content-addressed `BlobStore` remains for internal map-item payloads and
+  historical artifact downloads, not as a second node-output channel. Referenced
    secrets are resolved from host env at execution time and redacted from
    logs and artifact payloads; a background sweep drops payloads past
    their retention window (30-day default, per-workflow override) but
@@ -121,10 +122,10 @@ flowchart TD
 ## 3. Session & Event Data Flow
 
 How a session read and a live update travel through the system. Workflow runs
-use the same SSE channel: discovery writes an immutable item artifact, map
-creates pinned child runs, item phases fan out to independent reviews, then
-fix, validation, and the serialized commit coordinator settle before the run
-view refetches phases, artifacts, pools, and leases.
+use the same SSE channel: discovery publishes a JSON Node Result, map creates
+pinned child runs from it, item phases fan out to independent reviews, then fix,
+validation, and the serialized commit coordinator settle before the run view
+refetches phases, Node Results, historical artifacts, pools, and leases.
 
 ```mermaid
 sequenceDiagram
@@ -151,10 +152,10 @@ problem with OpenCode's DB.
 Workflow state takes the opposite path because it is ocman-owned: publish,
 trigger/manual start, approval, command completion, agent supervision,
 pause, and cancel delegate to `workflows.Service`, which commits
-trigger/version/run/node/attempt state and bounded command/collector output
-to `state.db` before broadcasting a run ID. The browser then refetches the
-authoritative trigger state and run graph, including linked agent sessions
-and collector output.
+trigger/version/run/node/attempt state and canonical JSON Node Results to
+`state.db` before broadcasting a run ID. The browser then refetches the
+authoritative trigger state and run graph, including linked agent sessions and
+map/join aggregate outputs.
 
 ## 4. Frontend Composition
 
@@ -175,5 +176,6 @@ flowchart TD
 - **Client state** — shared Zustand stores hold broad session/workflow state;
   the bounded workflow page keeps its selected run locally and reconciles
   it from REST whenever the shared SSE stream reports a run change. Its run
-  graph labels ordered phases, stable map items, attempts, artifact producers,
-  resource pools, and workspace ownership without inferring platform identity.
+  graph labels ordered phases, stable map items, attempts, Node Results,
+  historical artifacts, resource pools, and workspace ownership without
+  inferring platform identity.

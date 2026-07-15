@@ -22,7 +22,7 @@ func (e *interpolationExecutor) Execute(_ context.Context, request CommandReques
 	if request.Command[0] == "produce" {
 		output = `{"version":1,"large":9007199254740993,"literal":"${nodes.literal}","items":[{"id":7}]}`
 	}
-	return CommandResult{State: AttemptSuccessful, ExitCode: 0, Stdout: output, Outputs: map[string]string{}}
+	return CommandResult{State: AttemptSuccessful, ExitCode: 0, Stdout: output}
 }
 
 func (e *interpolationExecutor) snapshot() []CommandRequest {

@@ -30,10 +30,9 @@ nodes:
       prompt: |
         Implement migration item ${item.id} at ${item.path}.
         Use only this item and the shared migration guidance supplied by the workflow author.
-        Produce a diff artifact; do not stage, reset, stash, commit, or push.
-      collectors:
-        - name: diff
-          type: diff
+        Do not stage, reset, stash, commit, or push.
+        Include the exact `git diff --no-ext-diff --no-textconv --` output.
+        Reply with only JSON: {"summary":"...","diff":"..."}.
   - id: review-correctness
     name: Review correctness independently
     type: agent
@@ -44,12 +43,9 @@ nodes:
       platform: opencode
       directory: /workspace/repository
       prompt: |
-        Review only the declared implementation diff for ${item.id} against the correctness policy.
-        Return structured findings. Do not edit files or use implementer session context.
-      collectors:
-        - name: findings
-          type: json-file
-          path: review-correctness.json
+        Review implementation result ${nodes.implement.output} for ${item.id} against the correctness policy.
+        Do not edit files or use implementer session context.
+        Reply with only JSON: {"approved":true,"findings":[]}.
   - id: review-adversarial
     name: Review adversarially and independently
     type: agent
@@ -60,12 +56,9 @@ nodes:
       platform: opencode
       directory: /workspace/repository
       prompt: |
-        Review only the declared implementation diff for ${item.id} against the adversarial policy.
-        Return structured findings. Do not edit files or use implementer session context.
-      collectors:
-        - name: findings
-          type: json-file
-          path: review-adversarial.json
+        Review implementation result ${nodes.implement.output} for ${item.id} against the adversarial policy.
+        Do not edit files or use implementer session context.
+        Reply with only JSON: {"approved":true,"findings":[]}.
   - id: fix-findings
     name: Join review findings and fix
     type: agent
@@ -76,28 +69,23 @@ nodes:
       mode: path
       paths: ["src"]
     repeat:
-      until: artifacts["review-correctness.findings"].approved == true && artifacts["review-adversarial.findings"].approved == true
+      until: outcomes["fix-findings"].output.fixed == true
       maxAttempts: 2
     agent:
       platform: opencode
       directory: /workspace/repository
       prompt: |
-        Join the two declared structured review findings for ${item.id}, fix verified issues,
-        and produce an updated diff. Do not stage, reset, stash, commit, or push.
-      collectors:
-        - name: diff
-          type: diff
+        Join correctness findings ${nodes.review-correctness.output} and adversarial findings ${nodes.review-adversarial.output}
+        for ${item.id}, then fix verified issues. Do not stage, reset, stash, commit, or push.
+        Reply with only JSON: {"fixed":true,"summary":"..."}.
   - id: validate-item
     name: Validate migration item
     type: command
-    command: ["bun", "test"]
+    command: ["/bin/sh", "-c", "bun test >/dev/null && printf '{\"valid\":true}'"]
     permission:
       - permission: bash
-        pattern: "bun test"
+        pattern: "/bin/sh -c bun test *"
         action: allow
-    outputs:
-      - name: validation
-        type: text
   - id: commit-item
     name: Serialized commit coordinator
     type: command
@@ -107,10 +95,10 @@ nodes:
     lease:
       mode: exclusive
       commit: true
-    command: ["git", "commit", "-am", "migrate item"]
+    command: ["/bin/sh", "-c", "git commit -am 'migrate item' >/dev/null && printf '{\"committed\":true}'"]
     permission:
       - permission: bash
-        pattern: "git commit *"
+        pattern: "/bin/sh -c git commit *"
         action: allow
 dependencies:
   - from: implement

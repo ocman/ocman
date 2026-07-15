@@ -32,6 +32,13 @@ func TestApprovalPublishesNodeResult(t *testing.T) {
 	}
 }
 
+func TestNodeResultReadsLegacyJoinEnvelope(t *testing.T) {
+	node := NodeRun{NodeID: "join", Name: "Join", Type: "join", State: NodeSuccessful, Attempts: []Attempt{{State: AttemptSuccessful, outputsJSON: `{"result":{"policy":"always","items":[]}}`}}}
+	if got := string(nodeResult(node).Output); got != `{"policy":"always","items":[]}` {
+		t.Fatalf("legacy join output = %s", got)
+	}
+}
+
 func TestMapAndJoinPublishChildOutputs(t *testing.T) {
 	h := newHarness(t)
 	agent := newScriptedAgent(map[string]string{"a": "done", "b": "error"})
@@ -50,6 +57,29 @@ func TestMapAndJoinPublishChildOutputs(t *testing.T) {
 	wantJoin := `{"policy":"always","success":1,"failed":1,"total":2,"items":[{"key":"a","index":0,"status":"successful","output":{"ok":true}},{"key":"b","index":1,"status":"failed","output":{"error":"item b failed"}}]}`
 	if joinOutput != wantJoin {
 		t.Fatalf("join output:\n got %s\nwant %s", joinOutput, wantJoin)
+	}
+	stored, err := h.db.GetWorkflowRun(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range stored.Nodes {
+		if node.NodeID == "fan" && node.Attempts[0].OutputsJSON != wantMap {
+			t.Fatalf("stored map output = %s", node.Attempts[0].OutputsJSON)
+		}
+		if node.NodeID == "join" && node.Attempts[0].OutputsJSON != wantJoin {
+			t.Fatalf("stored join output = %s", node.Attempts[0].OutputsJSON)
+		}
+	}
+	h.restart()
+	restarted, err := h.svc.GetRun(t.Context(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := nodeOutput(t, restarted, "fan"); got != wantMap {
+		t.Fatalf("restarted map output = %s", got)
+	}
+	if got := nodeOutput(t, restarted, "join"); got != wantJoin {
+		t.Fatalf("restarted join output = %s", got)
 	}
 }
 
@@ -101,18 +131,18 @@ type childCommandExecutor struct{ fail bool }
 
 func (e childCommandExecutor) Execute(_ context.Context, request CommandRequest) CommandResult {
 	if e.fail && request.Command[0] == "first" {
-		return CommandResult{State: AttemptFailed, ExitCode: 1, Error: "child failed", Outputs: map[string]string{}}
+		return CommandResult{State: AttemptFailed, ExitCode: 1, Error: "child failed"}
 	}
-	return CommandResult{State: AttemptSuccessful, ExitCode: 0, Stdout: `{"node":"` + request.Command[0] + `"}`, Outputs: map[string]string{}}
+	return CommandResult{State: AttemptSuccessful, ExitCode: 0, Stdout: `{"node":"` + request.Command[0] + `"}`}
 }
 
 type nestedMapExecutor struct{}
 
 func (nestedMapExecutor) Execute(_ context.Context, request CommandRequest) CommandResult {
 	if request.Command[0] == "nested-seed" {
-		return CommandResult{State: AttemptSuccessful, ExitCode: 0, Outputs: map[string]string{"nested": `[{"id":"nested"}]`}}
+		return CommandResult{State: AttemptSuccessful, ExitCode: 0, Stdout: `[{"id":"nested"}]`}
 	}
-	return CommandResult{State: AttemptSuccessful, ExitCode: 0, Stdout: `{"leaf":true}`, Outputs: map[string]string{}}
+	return CommandResult{State: AttemptSuccessful, ExitCode: 0, Stdout: `{"leaf":true}`}
 }
 
 func TestMapChildOutputUsesEffectiveWorkflowLeaves(t *testing.T) {
@@ -180,8 +210,8 @@ func TestNestedMapOutputLoadsDescendantResult(t *testing.T) {
 		ID: "item", Name: "Nested item", Version: "1", Concurrency: 2, Directory: directory,
 		Triggers: []Trigger{{ID: "manual", Type: TriggerManual}},
 		Nodes: []Node{
-			{ID: "seed", Name: "Seed", Type: "command", Command: []string{"nested-seed"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}, Outputs: []Collector{{Name: "nested", Type: "json_file", Path: "nested.json"}}},
-			{ID: "fan", Name: "Fan", Type: "map", Map: &MapConfig{Source: "nested", Key: "id", Join: "join", Subworkflow: SubworkflowRef{WorkflowID: "leaf"}}},
+			{ID: "seed", Name: "Seed", Type: "command", Command: []string{"nested-seed"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}},
+			{ID: "fan", Name: "Fan", Type: "map", Map: &MapConfig{Source: `${nodes.seed.output}`, Key: "id", Join: "join", Subworkflow: SubworkflowRef{WorkflowID: "leaf"}}},
 			{ID: "join", Name: "Join", Type: "join", Join: &JoinConfig{Policy: JoinAllSuccess}},
 		},
 		Dependencies: []Dependency{{From: "seed", To: "fan"}, {From: "fan", To: "join"}},
@@ -201,13 +231,19 @@ func TestNestedMapOutputLoadsDescendantResult(t *testing.T) {
 func TestCanceledMapAndJoinCarryCanceledChild(t *testing.T) {
 	h := newHarness(t)
 	version := publishItemAndCampaign(t, h, JoinAlways, 0, false)
+	version = mapVersionWithItems(t, h, version, items("a"))
 	run, err := h.svc.Start(t.Context(), version.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	h.seedArrayArtifact(t, run.ID, items("a"))
-	if _, err := h.svc.Approve(t.Context(), run.ID, "seed"); err != nil {
-		t.Fatal(err)
+	for len(run.Children) == 0 {
+		if err := h.svc.Tick(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		run, err = h.svc.GetRun(t.Context(), run.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	run, err = h.svc.Cancel(t.Context(), run.ID)
 	if err != nil {

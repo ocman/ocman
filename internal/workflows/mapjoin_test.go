@@ -40,7 +40,7 @@ func (a *scriptedAgent) Start(_ context.Context, req AgentRequest) (AgentSession
 	return AgentSession{ID: id, Platform: req.Platform, State: "busy"}, nil
 }
 
-func (a *scriptedAgent) Inspect(_ context.Context, session AgentSession, _ []Collector) (AgentResult, error) {
+func (a *scriptedAgent) Inspect(_ context.Context, session AgentSession) (AgentResult, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	key := a.sessions[session.ID]
@@ -72,7 +72,7 @@ func mapWorkflowJSON(policy string, minSuccess int, failFast bool) string {
 		"triggers":[{"id":"manual","type":"manual"}],
 		"nodes":[
 			{"id":"seed","name":"Seed","type":"approval"},
-			{"id":"fan","name":"Fan","type":"map","map":{"source":"items","key":"id","join":"join","failFast":%t,"subworkflow":{"workflowId":"item"}}},
+			{"id":"fan","name":"Fan","type":"map","map":{"source":"${nodes.seed.output}","key":"id","join":"join","failFast":%t,"subworkflow":{"workflowId":"item"}}},
 			%s,
 			{"id":"report","name":"Report","type":"approval"}
 		],
@@ -82,17 +82,6 @@ func mapWorkflowJSON(policy string, minSuccess int, failFast bool) string {
 			{"from":"join","to":"report"}
 		]
 	}`, failFast, join)
-}
-
-// seedArrayArtifact writes the map input array directly as an artifact
-// produced by the seed node so the map has something to consume.
-func (h *harness) seedArrayArtifact(t *testing.T, runID string, items []map[string]any) {
-	t.Helper()
-	payload, err := json.Marshal(items)
-	if err != nil {
-		t.Fatal(err)
-	}
-	h.svc.storeArtifact(runID, "seed", 0, "items", KindJSON, payload, 0)
 }
 
 func publishItemAndCampaign(t *testing.T, h *harness, policy string, minSuccess int, failFast bool) Version {
@@ -116,18 +105,34 @@ func items(keys ...string) []map[string]any {
 	return out
 }
 
+func TestStableKeyValidation(t *testing.T) {
+	for _, test := range []struct {
+		item string
+		want string
+		err  bool
+	}{
+		{item: `{"id":"a"}`, want: "a"},
+		{item: `{"id":2}`, want: "2"},
+		{item: `[]`, err: true},
+		{item: `{}`, err: true},
+		{item: `{"id":false}`, err: true},
+	} {
+		got, err := stableKey(json.RawMessage(test.item), "id")
+		if got != test.want || (err != nil) != test.err {
+			t.Fatalf("stableKey(%s) = %q, %v", test.item, got, err)
+		}
+	}
+}
+
 // driveMap starts the campaign, approves seed, seeds the array, then ticks
 // until the run settles or a bounded number of ticks elapse.
 func driveMap(t *testing.T, h *harness, version Version, arr []map[string]any) (RunDetail, string) {
 	t.Helper()
 	ctx := context.Background()
+	version = mapVersionWithItems(t, h, version, arr)
 	run, err := h.svc.Start(ctx, version.ID)
 	if err != nil {
 		t.Fatalf("start: %v", err)
-	}
-	h.seedArrayArtifact(t, run.ID, arr)
-	if _, err := h.svc.Approve(ctx, run.ID, "seed"); err != nil {
-		t.Fatalf("approve seed: %v", err)
 	}
 	for i := 0; i < 50; i++ {
 		got, err := h.svc.GetRun(ctx, run.ID)
@@ -152,6 +157,45 @@ func driveMap(t *testing.T, h *harness, version Version, arr []map[string]any) (
 	}
 	got, _ := h.svc.GetRun(ctx, run.ID)
 	return got, run.ID
+}
+
+func mapVersionWithItems(t *testing.T, h *harness, version Version, arr []map[string]any) Version {
+	t.Helper()
+	payload, err := json.Marshal(arr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.svc.executor = mapSeedExecutor{payload: string(payload), next: h.svc.executor}
+	definition := version.Definition
+	definition.Directory = t.TempDir()
+	for index := range definition.Nodes {
+		if definition.Nodes[index].ID == "seed" {
+			definition.Nodes[index].Type = "command"
+			definition.Nodes[index].Command = []string{"map-test-seed"}
+			definition.Nodes[index].Permission = []PermissionRule{{Permission: "bash", Pattern: "map-test-seed", Action: "allow"}}
+		}
+	}
+	raw, err := json.Marshal(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := h.svc.PublishJSON(t.Context(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return updated
+}
+
+type mapSeedExecutor struct {
+	payload string
+	next    CommandExecutor
+}
+
+func (e mapSeedExecutor) Execute(ctx context.Context, request CommandRequest) CommandResult {
+	if request.Command[0] == "map-test-seed" {
+		return CommandResult{State: AttemptSuccessful, ExitCode: 0, Stdout: e.payload}
+	}
+	return e.next.Execute(ctx, request)
 }
 
 func nodeState(run RunDetail, id string) string {
@@ -291,13 +335,10 @@ func TestMapResumesAfterRestartMidFlight(t *testing.T) {
 	pending := &pendingScriptedAgent{scriptedAgent: *newScriptedAgent(nil)}
 	h.svc = NewService(Deps{Store: h.db, Agent: pending, Blobs: h.blobs, Now: func() time.Time { return h.now }})
 	version := publishItemAndCampaign(t, h, JoinAllSuccess, 0, false)
+	version = mapVersionWithItems(t, h, version, items("a", "b", "c"))
 	ctx := context.Background()
 	run, err := h.svc.Start(ctx, version.ID)
 	if err != nil {
-		t.Fatal(err)
-	}
-	h.seedArrayArtifact(t, run.ID, items("a", "b", "c"))
-	if _, err := h.svc.Approve(ctx, run.ID, "seed"); err != nil {
 		t.Fatal(err)
 	}
 	// Expand + launch children while they stay busy.
@@ -347,14 +388,14 @@ type pendingScriptedAgent struct {
 
 func (a *pendingScriptedAgent) release() { a.mu.Lock(); a.released = true; a.mu.Unlock() }
 
-func (a *pendingScriptedAgent) Inspect(ctx context.Context, session AgentSession, collectors []Collector) (AgentResult, error) {
+func (a *pendingScriptedAgent) Inspect(ctx context.Context, session AgentSession) (AgentResult, error) {
 	a.mu.Lock()
 	released := a.released
 	a.mu.Unlock()
 	if !released {
 		return AgentResult{State: "busy"}, nil
 	}
-	return a.scriptedAgent.Inspect(ctx, session, collectors)
+	return a.scriptedAgent.Inspect(ctx, session)
 }
 
 func TestLargeSyntheticMapStaysBounded(t *testing.T) {
@@ -403,15 +444,25 @@ func joinResult(t *testing.T, h *harness, runID, joinNode string) JoinResult {
 		if node.NodeID != joinNode {
 			continue
 		}
-		for _, attempt := range node.Attempts {
-			if raw, ok := attempt.Outputs["result"]; ok {
-				var result JoinResult
-				if err := json.Unmarshal(raw, &result); err != nil {
-					t.Fatalf("decoding join result: %v", err)
-				}
-				return result
-			}
+		var canonical struct {
+			Policy  string `json:"policy"`
+			Success int    `json:"success"`
+			Failed  int    `json:"failed"`
+			Total   int    `json:"total"`
+			Items   []struct {
+				Key    string `json:"key"`
+				Index  int    `json:"index"`
+				Status string `json:"status"`
+			} `json:"items"`
 		}
+		if err := json.Unmarshal(node.Result.Output, &canonical); err != nil {
+			t.Fatalf("decoding join result: %v", err)
+		}
+		result := JoinResult{Policy: canonical.Policy, Success: canonical.Success, Failed: canonical.Failed, Total: canonical.Total}
+		for _, item := range canonical.Items {
+			result.Items = append(result.Items, JoinItem{Key: item.Key, Index: item.Index, State: item.Status})
+		}
+		return result
 	}
 	t.Fatalf("join node %q produced no result", joinNode)
 	return JoinResult{}

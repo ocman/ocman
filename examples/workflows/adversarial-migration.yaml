@@ -24,15 +24,11 @@ nodes:
       - permission: bash
         pattern: "bun scripts/discover-migration-items.ts"
         action: allow
-    outputs:
-      - name: items
-        type: json_file
-        path: migration-items.json
   - id: migrate-items
     name: Map pinned adversarial migration item workflow
     type: map
     map:
-      source: items
+      source: ${nodes.discover.output}
       key: id
       join: migration-summary
       subworkflow:

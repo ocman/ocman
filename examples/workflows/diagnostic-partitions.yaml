@@ -15,27 +15,19 @@ nodes:
       - permission: bash
         pattern: "bun test --reporter=json"
         action: allow
-    outputs:
-      - name: diagnostics
-        type: json_file
-        path: diagnostics.json
   - id: partition-diagnostics
     name: Partition captured diagnostics into stable work items
     type: command
-    command: ["bun", "scripts/partition-diagnostics.ts"]
+    command: ["bun", "scripts/partition-diagnostics.ts", "${nodes.capture-diagnostics.output}"]
     permission:
       - permission: bash
-        pattern: "bun scripts/partition-diagnostics.ts"
+        pattern: "bun scripts/partition-diagnostics.ts *"
         action: allow
-    outputs:
-      - name: items
-        type: json_file
-        path: diagnostic-items.json
   - id: map-diagnostic-items
     name: Map captured diagnostic partitions
     type: map
     map:
-      source: items
+      source: ${nodes.partition-diagnostics.output}
       key: id
       join: diagnostic-summary
       subworkflow:

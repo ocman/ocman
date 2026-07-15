@@ -315,12 +315,13 @@ function RunNode({ run, node, mutate, onSelectRun }: { run: WorkflowRunDetail; n
 			{conditions.map((condition) => <p key={condition} className="workflow-condition">Condition {node.state === 'skipped' ? 'skipped' : 'evaluated'}: <code>{condition}</code></p>)}
 			{node.attempts.length > 1 && <p className="workflow-repeat-history">Repeat history: {node.attempts.map((item) => `#${item.seq} ${item.state}`).join(', ')}</p>}
 			{attempt?.resolvedAt && <p>Resolved by {attempt.resolvedBy || 'user'} · {formatTime(attempt.resolvedAt)}</p>}
+			{node.type !== 'map' && node.type !== 'join' && node.result.output !== null && <pre aria-label="node output">{JSON.stringify(node.result.output, null, 2)}</pre>}
 			{node.type === 'agent' && <AgentNode attempt={attempt} />}
 			{attempt?.state === 'unknown' && run.state === 'paused' && <div className="workflow-controls"><button type="button" onClick={() => void mutate(() => api.workflows.resolveUnknown(run.id, attempt.id, 'successful'))}>Mark succeeded</button><button type="button" onClick={() => void mutate(() => api.workflows.resolveUnknown(run.id, attempt.id, 'failed'))}>Mark failed</button><button type="button" onClick={() => void mutate(() => api.workflows.resolveUnknown(run.id, attempt.id, 'retry'))}>Retry safely</button></div>}
 			{node.type === 'approval' && node.state === 'ready' && run.state === 'active' && <button type="button" onClick={() => void mutate(() => api.workflows.approve(run.id, node.nodeId))}>Approve {node.name}</button>}
 			{attempt && node.type === 'command' && <CommandAttempt attempt={attempt} />}
-			{node.type === 'map' && <MapNode items={(run.children ?? []).filter((item) => item.mapNode === node.nodeId)} error={node.attempts.map((a) => a.error).find(Boolean)} onSelectRun={onSelectRun} />}
-			{node.type === 'join' && <JoinNode attempt={attempt} />}
+			{node.type === 'map' && <MapNode items={(run.children ?? []).filter((item) => item.mapNode === node.nodeId)} output={node.result.output} error={node.attempts.map((a) => a.error).find(Boolean)} onSelectRun={onSelectRun} />}
+			{node.type === 'join' && <JoinNode output={node.result.output} />}
 		</article>
 	);
 }
@@ -330,16 +331,16 @@ function AgentNode({ attempt }: { attempt?: WorkflowRunDetail['nodes'][number]['
 	return (
 		<>
 			{attempt.sessionId && <><Link to={`/session/${encodeURIComponent(attempt.sessionId)}`}>Open agent session</Link><p>Session: {attempt.sessionState}</p></>}
-			{attempt.outputs && Object.entries(attempt.outputs).map(([name, value]) => <p key={name}>{name}: {JSON.stringify(value)}</p>)}
 			{attempt.error && <p role="alert">{attempt.error}</p>}
 		</>
 	);
 }
 
-function MapNode({ items, error, onSelectRun }: { items: WorkflowMapItemRun[]; error?: string; onSelectRun: (id: string) => void }) {
+function MapNode({ items, output, error, onSelectRun }: { items: WorkflowMapItemRun[]; output: unknown; error?: string; onSelectRun: (id: string) => void }) {
 	const [expanded, setExpanded] = useState(false);
 	const counts = items.reduce<Record<string, number>>((acc, item) => { acc[item.state] = (acc[item.state] ?? 0) + 1; return acc; }, {});
 	const summary = Object.entries(counts).map(([state, count]) => `${count} ${state}`).join(', ') || 'no items';
+	const results = output && typeof output === 'object' && 'items' in output ? (output as { items?: { key: string; output: unknown }[] }).items ?? [] : [];
 	return (
 		<div className="workflow-map">
 			{error && <p role="alert">{error}</p>}
@@ -352,6 +353,7 @@ function MapNode({ items, error, onSelectRun }: { items: WorkflowMapItemRun[]; e
 						<li key={item.key} data-state={item.state} data-testid="workflow-map-item">
 							<strong>{item.key}</strong> <small>#{item.index} · <State state={item.state} /></small>
 							{item.childRunId && <button type="button" onClick={() => onSelectRun(item.childRunId!)}>Open item run</button>}
+							{results.find((result) => result.key === item.key)?.output != null && <pre aria-label={`${item.key} output`}>{JSON.stringify(results.find((result) => result.key === item.key)!.output, null, 2)}</pre>}
 						</li>
 					))}
 				</ul>
@@ -360,15 +362,15 @@ function MapNode({ items, error, onSelectRun }: { items: WorkflowMapItemRun[]; e
 	);
 }
 
-function JoinNode({ attempt }: { attempt?: WorkflowRunDetail['nodes'][number]['attempts'][number] }) {
-	const raw = attempt?.outputs?.result;
+function JoinNode({ output: raw }: { output: unknown }) {
 	if (!raw || typeof raw !== 'object') return null;
-	const result = raw as { policy?: string; success?: number; failed?: number; total?: number; items?: { key: string; state: string; index: number }[] };
+	const result = raw as { policy?: string; success?: number; failed?: number; total?: number; error?: string; items?: { key: string; status: string; index: number; output?: unknown }[] };
 	return (
 		<div className="workflow-join" data-testid="workflow-join">
+			{result.error && <p role="alert">{result.error}</p>}
 			<p><strong>{result.policy}</strong> · {result.success ?? 0}/{result.total ?? 0} succeeded</p>
 			<ol className="workflow-join-items">
-				{(result.items ?? []).map((item) => <li key={item.key} data-state={item.state}>{item.key}: <State state={item.state} /></li>)}
+				{(result.items ?? []).map((item) => <li key={item.key} data-state={item.status}>{item.key}: <State state={item.status} />{item.output != null && <pre aria-label={`${item.key} joined output`}>{JSON.stringify(item.output, null, 2)}</pre>}</li>)}
 			</ol>
 		</div>
 	);
@@ -377,8 +379,9 @@ function JoinNode({ attempt }: { attempt?: WorkflowRunDetail['nodes'][number]['a
 function ArtifactList({ runId, artifacts }: { runId: string; artifacts: WorkflowArtifact[] }) {
 	if (artifacts.length === 0) return null;
 	return (
-		<section className="workflow-artifacts" aria-label="Workflow artifacts">
-			<h3>Artifacts</h3>
+		<section className="workflow-artifacts" aria-label="Historical workflow artifacts">
+			<h3>Historical artifacts</h3>
+			<p>Auxiliary inputs and files from older workflow versions. Node output is shown in its Node Result.</p>
 			<ul>
 				{artifacts.map((artifact) => (
 					<li key={artifact.id} data-testid="workflow-artifact">
@@ -426,7 +429,6 @@ function CommandAttempt({ attempt }: { attempt: WorkflowRunDetail['nodes'][numbe
 		{attempt.error && <p><b>Error</b>: {attempt.error}</p>}
 		{attempt.stdout && <pre aria-label="stdout">{attempt.stdout}{attempt.stdoutTruncated && '\n[truncated]'}</pre>}
 		{attempt.stderr && <pre aria-label="stderr">{attempt.stderr}{attempt.stderrTruncated && '\n[truncated]'}</pre>}
-		{Object.entries(attempt.outputs ?? {}).map(([name, value]) => <div key={name}><b>{name}</b><pre>{String(value)}</pre></div>)}
 	</div>;
 }
 

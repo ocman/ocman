@@ -57,14 +57,14 @@ func TestWorkflowRESTApprovalToAgentSession(t *testing.T) {
 			return &platforms.SessionDetail{
 				Session:  &db.Session{ID: id, Platform: "fake", Directory: dir, Status: status},
 				Messages: []db.Message{{ID: "assistant", TimeCreated: 2, Data: json.RawMessage(`{"role":"assistant"}`)}},
-				Parts:    []db.Part{{MessageID: "assistant", Data: json.RawMessage(`{"type":"text","text":"completed work"}`)}},
+				Parts:    []db.Part{{MessageID: "assistant", Data: json.RawMessage(`{"type":"text","text":"{\"completed\":true}"}`)}},
 			}, nil
 		},
 	}
 	registry := platforms.NewRegistry()
 	registry.Register(p)
 	srv := New(nil, openWatcherTestStateDB(t), "", registry, nil)
-	definition := `{"id":"agent-transport","name":"Agent transport","version":"1","concurrency":1,"triggers":[{"id":"manual","type":"manual"}],"nodes":[{"id":"approve","name":"Approve","type":"approval"},{"id":"agent","name":"Agent","type":"agent","agent":{"platform":"fake","directory":` + fmt.Sprintf("%q", dir) + `,"prompt":"do work","collectors":[{"name":"message","type":"final-message"}]}}],"dependencies":[{"from":"approve","to":"agent"}]}`
+	definition := `{"id":"agent-transport","name":"Agent transport","version":"1","concurrency":1,"triggers":[{"id":"manual","type":"manual"}],"nodes":[{"id":"approve","name":"Approve","type":"approval"},{"id":"agent","name":"Agent","type":"agent","agent":{"platform":"fake","directory":` + fmt.Sprintf("%q", dir) + `,"prompt":"do work"}}],"dependencies":[{"from":"approve","to":"agent"}]}`
 	version, err := srv.workflowSvc().PublishJSON(t.Context(), []byte(definition))
 	if err != nil {
 		t.Fatal(err)
@@ -103,7 +103,7 @@ func TestWorkflowRESTApprovalToAgentSession(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &completed); err != nil {
 		t.Fatal(err)
 	}
-	if completed.State != workflows.StateSuccessful || string(completed.Nodes[1].Attempts[0].Outputs["message"]) != `"completed work"` {
+	if completed.State != workflows.StateSuccessful || string(completed.Nodes[1].Result.Output) != `{"completed":true}` {
 		t.Fatalf("idle completion missing from transport: %+v", completed)
 	}
 }
@@ -360,11 +360,7 @@ func TestWorkflowMCPAndRESTShareServiceContract(t *testing.T) {
 func TestWorkflowArtifactRESTListAndDownload(t *testing.T) {
 	srv := newWorkflowTestServer(t)
 	srv.workflowBlobDir = filepath.Join(t.TempDir(), "artifacts")
-	dir := t.TempDir()
-	definition := `{"id":"art","name":"Art","version":"1","concurrency":1,"directory":` + fmt.Sprintf("%q", dir) +
-		`,"triggers":[{"id":"manual","type":"manual"}],"nodes":[{"id":"emit","name":"Emit","type":"command",` +
-		`"command":["/bin/sh","-c","printf produced"],"permission":[{"permission":"bash","pattern":"/bin/sh -c *","action":"allow"}],` +
-		`"outputs":[{"name":"log","type":"text"}]}],"dependencies":[]}`
+	definition := `{"id":"art","name":"Art","version":"1","concurrency":1,"triggers":[{"id":"manual","type":"manual"}],"nodes":[{"id":"emit","name":"Emit","type":"approval"}],"dependencies":[]}`
 	version, err := srv.workflowSvc().PublishJSON(t.Context(), []byte(definition))
 	if err != nil {
 		t.Fatal(err)
@@ -373,17 +369,16 @@ func TestWorkflowArtifactRESTListAndDownload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Command runs asynchronously; wait for success.
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		got, err := srv.workflowSvc().GetRun(t.Context(), run.ID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got.State == workflows.StateSuccessful {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+	payload := []byte("produced")
+	hash, err := workflows.NewBlobStore(srv.workflowBlobDir).Put(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.stateDB.InsertWorkflowArtifact(state.WorkflowArtifact{
+		ID: "artifact-1", RunID: run.ID, NodeID: "emit", Name: "log", Kind: workflows.KindText,
+		ContentHash: hash, SizeBytes: int64(len(payload)), CreatedAt: time.Now().UnixMilli(),
+	}); err != nil {
+		t.Fatal(err)
 	}
 
 	rec := httptest.NewRecorder()
@@ -409,6 +404,11 @@ func TestWorkflowArtifactRESTListAndDownload(t *testing.T) {
 	}
 	if rec.Header().Get("Content-Disposition") == "" {
 		t.Fatal("download missing Content-Disposition")
+	}
+	rec = httptest.NewRecorder()
+	srv.handleWorkflowRuns(rec, httptest.NewRequest(http.MethodGet, "/api/workflow-runs/another-run/artifacts/"+artifacts[0].ID+"/download", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("cross-run download: %d %s", rec.Code, rec.Body.String())
 	}
 
 	// Missing artifact → 404.
