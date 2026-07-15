@@ -24,13 +24,13 @@ func (fixtureExecutor) Execute(_ context.Context, req CommandRequest) CommandRes
 		}
 		outputs[collector.Name] = value
 	}
-	return CommandResult{State: AttemptSuccessful, ExitCode: 0, Outputs: outputs}
+	return CommandResult{State: AttemptSuccessful, ExitCode: 0, Stdout: "null", Outputs: outputs}
 }
 
 type fixtureAgent struct {
-	mu       sync.Mutex
-	next     int
-	prompts  []string
+	mu      sync.Mutex
+	next    int
+	prompts []string
 }
 
 func (a *fixtureAgent) Start(_ context.Context, req AgentRequest) (AgentSession, error) {

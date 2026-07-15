@@ -58,8 +58,8 @@ const activeRun: WorkflowRunDetail = {
 	id: 'wfr_1', workflowId: 'release', versionId: version.id, state: 'active', createdAt: 1, updatedAt: 1, version,
 	trigger: { id: 'timer', type: 'interval', intervalSeconds: 60, overlap: 'queue', versionId: 'wfv_1', firedAt: 60000, detail: 'scheduled (every 1m0s)' },
 	nodes: [
-		{ nodeId: 'review', name: 'Review', type: 'approval', state: 'ready', attempts: [{ id: 1, seq: 1, state: 'waiting', startedAt: 1 }] },
-		{ nodeId: 'ship', name: 'Ship', type: 'approval', state: 'pending', attempts: [] },
+		{ nodeId: 'review', name: 'Review', type: 'approval', state: 'ready', result: { id: 'review', name: 'Review', started: null, ended: null, status: 'ready', output: null }, attempts: [{ id: 1, seq: 1, state: 'waiting', startedAt: 1 }] },
+		{ nodeId: 'ship', name: 'Ship', type: 'approval', state: 'pending', result: { id: 'ship', name: 'Ship', started: null, ended: null, status: 'pending', output: null }, attempts: [] },
 	],
 };
 
@@ -320,6 +320,7 @@ describe('Workflows', () => {
 			state: 'failed',
 			nodes: [{
 				nodeId: 'test', name: 'Run tests', type: 'command', state: 'failed',
+				result: { id: 'test', name: 'Run tests', started: '1970-01-01T00:00:00.001Z', ended: '1970-01-01T00:00:00.002Z', status: 'failed', output: { error: 'exit status 7' } },
 				attempts: [{
 					id: 2, seq: 1, state: 'failed', startedAt: 1, completedAt: 2, exitCode: 7,
 					stdout: 'test output', stderr: 'test failure', error: 'exit status 7', outputs: { report: '{"failed":1}' },
@@ -421,9 +422,10 @@ describe('Workflows', () => {
 				{ mapNode: 'fan', key: 'b', index: 1, childRunId: 'wfr_child_b', state: 'failed' },
 			],
 			nodes: [
-				{ nodeId: 'fan', name: 'Fan', type: 'map', state: 'successful', attempts: [{ id: 1, seq: 1, state: 'successful', startedAt: 1 }] },
+				{ nodeId: 'fan', name: 'Fan', type: 'map', state: 'successful', result: { id: 'fan', name: 'Fan', started: null, ended: null, status: 'successful', output: null }, attempts: [{ id: 1, seq: 1, state: 'successful', startedAt: 1 }] },
 				{
 					nodeId: 'join', name: 'Join', type: 'join', state: 'successful',
+					result: { id: 'join', name: 'Join', started: null, ended: null, status: 'successful', output: null },
 					attempts: [{ id: 2, seq: 1, state: 'successful', startedAt: 1, outputs: { result: { policy: 'always', success: 1, failed: 1, total: 2, items: [{ key: 'a', index: 0, state: 'successful' }, { key: 'b', index: 1, state: 'failed' }] } } }],
 				},
 			],
@@ -469,7 +471,7 @@ describe('Workflows', () => {
 		const childRun: WorkflowRunDetail = {
 			...activeRun,
 			id: 'wfr_child_a', parentRunId: 'wfr_1', parentNodeId: 'fan', itemKey: 'a', itemIndex: 0,
-			nodes: [{ nodeId: 'work', name: 'Work', type: 'agent', state: 'successful', attempts: [{ id: 3, seq: 1, state: 'successful', startedAt: 1 }] }],
+			nodes: [{ nodeId: 'work', name: 'Work', type: 'agent', state: 'successful', result: { id: 'work', name: 'Work', started: null, ended: null, status: 'successful', output: null }, attempts: [{ id: 3, seq: 1, state: 'successful', startedAt: 1 }] }],
 		};
 		apiMock.runs.mockResolvedValue([childRun]);
 		apiMock.run.mockResolvedValue(childRun);
@@ -491,7 +493,7 @@ describe('Workflows', () => {
 		const agentRun: WorkflowRunDetail = {
 			...activeRun,
 			version: agentVersion,
-			nodes: [{ nodeId: 'agent', name: 'Implement', type: 'agent', state: 'running', attempts: [{ id: 2, seq: 1, state: 'running', startedAt: 1, platform: 'any-platform', sessionId: 'session 1', sessionState: 'busy', outputs: { message: 'done' } }] }],
+			nodes: [{ nodeId: 'agent', name: 'Implement', type: 'agent', state: 'running', result: { id: 'agent', name: 'Implement', started: '1970-01-01T00:00:00.001Z', ended: null, status: 'running', output: null }, attempts: [{ id: 2, seq: 1, state: 'running', startedAt: 1, platform: 'any-platform', sessionId: 'session 1', sessionState: 'busy', outputs: { message: 'done' } }] }],
 		};
 		apiMock.versions.mockResolvedValue([agentVersion]);
 		apiMock.runs.mockResolvedValue([agentRun]);
@@ -511,7 +513,7 @@ describe('Workflows', () => {
 		const unknownRun: WorkflowRunDetail = {
 			...activeRun,
 			state: 'paused',
-			nodes: [{ nodeId: 'command', name: 'Commit', type: 'command', state: 'unknown', attempts: [{ id: 9, seq: 1, state: 'unknown', startedAt: 1, error: 'command interrupted by server restart' }] }],
+			nodes: [{ nodeId: 'command', name: 'Commit', type: 'command', state: 'unknown', result: { id: 'command', name: 'Commit', started: '1970-01-01T00:00:00.001Z', ended: null, status: 'unknown', output: { error: 'command interrupted by server restart' } }, attempts: [{ id: 9, seq: 1, state: 'unknown', startedAt: 1, error: 'command interrupted by server restart' }] }],
 		};
 		apiMock.runs.mockResolvedValue([unknownRun]);
 		apiMock.run.mockResolvedValue(unknownRun);

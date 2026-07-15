@@ -640,7 +640,7 @@ func TestSequentialCommandsCollectDeclaredOutputs(t *testing.T) {
 		},
 		{
 			ID: "second", Name: "Second", Type: "command",
-			Command:    []string{"/usr/bin/printf", "done"},
+			Command:    []string{"/usr/bin/printf", `"done"`},
 			Permission: []PermissionRule{{Permission: "bash", Pattern: "/usr/bin/printf *", Action: "allow"}},
 		},
 	}, []Dependency{{From: "first", To: "second"}})
@@ -658,6 +658,10 @@ func TestSequentialCommandsCollectDeclaredOutputs(t *testing.T) {
 	if first.State != AttemptSuccessful || first.ExitCode == nil || *first.ExitCode != 0 || first.Stdout != "hello" || first.CompletedAt == 0 {
 		t.Fatalf("unexpected first attempt: %+v", first)
 	}
+	var legacyOutput map[string]json.RawMessage
+	if err := json.Unmarshal(run.Nodes[0].Result.Output, &legacyOutput); err != nil || string(legacyOutput["stdout"]) != `"hello"` {
+		t.Fatalf("collector command result was not preserved: %s (%v)", run.Nodes[0].Result.Output, err)
+	}
 	if got := string(first.Outputs["json"]); got != `"{\"ok\":true}"` {
 		t.Fatalf("json output: %s", got)
 	}
@@ -674,6 +678,117 @@ func TestSequentialCommandsCollectDeclaredOutputs(t *testing.T) {
 	restored, err := h.svc.GetRun(context.Background(), run.ID)
 	if err != nil || string(restored.Nodes[0].Attempts[0].Outputs["json"]) != `"{\"ok\":true}"` {
 		t.Fatalf("command attempt did not survive restart: %+v, %v", restored, err)
+	}
+}
+
+func TestCommandPublishesNodeResult(t *testing.T) {
+	values := []struct {
+		name string
+		json string
+	}{
+		{"object", `{"version":1,"name":"release","ready":true,"missing":null}`},
+		{"array", `[{"id":1}]`},
+		{"string", `"release"`},
+		{"number", `1.5`},
+		{"boolean", `true`},
+		{"null", `null`},
+	}
+	for _, value := range values {
+		t.Run(value.name, func(t *testing.T) {
+			h := newHarness(t)
+			definition := commandDefinition(t, t.TempDir(), []Node{{
+				ID: "inspect", Name: "Inspect", Type: "command",
+				Command:    []string{"/usr/bin/printf", value.json},
+				Permission: []PermissionRule{{Permission: "bash", Pattern: "/usr/bin/printf *", Action: "allow"}},
+			}}, nil)
+			version, err := h.svc.PublishJSON(t.Context(), definition)
+			if err != nil {
+				t.Fatal(err)
+			}
+			run, err := h.svc.Start(t.Context(), version.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			run = waitForRun(t, h.svc, run.ID, StateSuccessful)
+			got, err := json.Marshal(run.Nodes[0].Result)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := `{"id":"inspect","name":"Inspect","started":"2026-07-13T20:00:00Z","ended":"2026-07-13T20:00:00Z","status":"successful","output":` + value.json + `}`
+			if string(got) != want {
+				t.Fatalf("node result:\n got %s\nwant %s", got, want)
+			}
+		})
+	}
+}
+
+func TestCommandWithInvalidJSONFailsWithoutRerun(t *testing.T) {
+	for _, output := range []string{"", "nope"} {
+		t.Run(fmt.Sprintf("output_%q", output), func(t *testing.T) {
+			h := newHarness(t)
+			dir := t.TempDir()
+			definition := commandDefinition(t, dir, []Node{{
+				ID: "inspect", Name: "Inspect", Type: "command",
+				Command:     []string{"/bin/sh", "-c", "printf x >> attempts; printf %s \"$OUTPUT\""},
+				Environment: map[string]string{"OUTPUT": output},
+				Permission:  []PermissionRule{{Permission: "bash", Pattern: "/bin/sh -c *", Action: "allow"}},
+			}}, nil)
+			version, err := h.svc.PublishJSON(t.Context(), definition)
+			if err != nil {
+				t.Fatal(err)
+			}
+			run, err := h.svc.Start(t.Context(), version.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			run = waitForRun(t, h.svc, run.ID, StateFailed)
+			got, err := json.Marshal(run.Nodes[0].Result)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := `{"id":"inspect","name":"Inspect","started":"2026-07-13T20:00:00Z","ended":"2026-07-13T20:00:00Z","status":"failed","output":{"error":"command output must be exactly one valid JSON value"}}`
+			if string(got) != want {
+				t.Fatalf("node result:\n got %s\nwant %s", got, want)
+			}
+			attempts, err := os.ReadFile(filepath.Join(dir, "attempts"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(attempts) != "x" {
+				t.Fatalf("command ran %d times", len(attempts))
+			}
+		})
+	}
+}
+
+func TestPendingCommandPublishesNullExecutionFields(t *testing.T) {
+	h := newHarness(t)
+	definition := commandDefinition(t, t.TempDir(), []Node{
+		{ID: "approve", Name: "Approve", Type: "approval"},
+		{ID: "inspect", Name: "Inspect", Type: "command", Command: []string{"/usr/bin/printf", "null"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "/usr/bin/printf *", Action: "allow"}}},
+	}, []Dependency{{From: "approve", To: "inspect"}})
+	version, err := h.svc.PublishJSON(t.Context(), definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.svc.Start(t.Context(), version.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	approval, err := json.Marshal(run.Nodes[0].Result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"id":"approve","name":"Approve","started":"2026-07-13T20:00:00Z","ended":null,"status":"ready","output":null}`; string(approval) != want {
+		t.Fatalf("approval result:\n got %s\nwant %s", approval, want)
+	}
+	got, err := json.Marshal(run.Nodes[1].Result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"id":"inspect","name":"Inspect","started":null,"ended":null,"status":"pending","output":null}`
+	if string(got) != want {
+		t.Fatalf("node result:\n got %s\nwant %s", got, want)
 	}
 }
 
@@ -721,7 +836,7 @@ func TestCommandPermissionUsesLastMatchingRuleAndExplicitEnvironment(t *testing.
 	t.Setenv("UNDECLARED_SECRET", "must-not-leak")
 	node := Node{
 		ID: "safe", Name: "Safe", Type: "command",
-		Command:     []string{"/bin/sh", "-c", `test -z "$UNDECLARED_SECRET" && test "$DECLARED" = visible`},
+		Command:     []string{"/bin/sh", "-c", `test -z "$UNDECLARED_SECRET" && test "$DECLARED" = visible && printf null`},
 		Environment: map[string]string{"DECLARED": "visible"},
 		Permission: []PermissionRule{
 			{Permission: "bash", Pattern: "*", Action: "allow"},
@@ -793,7 +908,7 @@ func TestCommandOutcomesAndBoundedLogs(t *testing.T) {
 		{name: "executor error", command: []string{"/definitely/missing"}, wantState: AttemptErrored},
 		{name: "missing collector", command: []string{"/usr/bin/true"}, outputs: []Collector{{Name: "missing", Type: "file", Path: "missing.txt"}}, wantState: AttemptFailed, wantError: "collecting missing"},
 		{name: "malformed json", command: []string{"/bin/sh", "-c", "printf nope > result.json"}, outputs: []Collector{{Name: "json", Type: "json_file", Path: "result.json"}}, wantState: AttemptFailed, wantError: "invalid JSON"},
-		{name: "bounded output", command: []string{"/bin/sh", "-c", "yes x | head -c 100000"}, wantState: AttemptSuccessful},
+		{name: "bounded output", command: []string{"/bin/sh", "-c", "yes x | head -c 100000"}, wantState: AttemptFailed, wantError: "exactly one valid JSON value"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1154,7 +1269,7 @@ func TestCommandConcurrencyCapAndFailurePolicy(t *testing.T) {
 		// sibling is guaranteed to have started regardless of scheduler timing.
 		nodes := []Node{
 			{ID: "fail", Name: "Fail", Type: "command", Command: []string{"/bin/sh", "-c", fmt.Sprintf("while [ ! -f %s ]; do sleep 0.01; done; exit 9", pidPath)}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}},
-			{ID: "sibling", Name: "Sibling", Type: "command", Command: []string{"/bin/sh", "-c", fmt.Sprintf("sleep .3 & echo $! > %s; wait", pidPath)}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}},
+			{ID: "sibling", Name: "Sibling", Type: "command", Command: []string{"/bin/sh", "-c", fmt.Sprintf("sleep .3 & echo $! > %s; wait; printf null", pidPath)}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}},
 		}
 		definition := Definition{ID: "parallel", Name: "Parallel", Version: "1", Concurrency: 2, Directory: dir, Triggers: []Trigger{{ID: "manual", Type: TriggerManual}}, Nodes: nodes}
 		raw, _ := json.Marshal(definition)
@@ -1268,7 +1383,7 @@ func (e *gatedExecutor) Execute(_ context.Context, request CommandRequest) Comma
 	e.started <- request.Command[0]
 	<-e.release
 	exitCode := 0
-	return CommandResult{State: AttemptSuccessful, ExitCode: exitCode, Outputs: map[string]string{}}
+	return CommandResult{State: AttemptSuccessful, ExitCode: exitCode, Stdout: "null", Outputs: map[string]string{}}
 }
 
 func (e *blockingExecutor) Execute(context.Context, CommandRequest) CommandResult {
@@ -1277,7 +1392,7 @@ func (e *blockingExecutor) Execute(context.Context, CommandRequest) CommandResul
 	if e.done != nil {
 		close(e.done)
 	}
-	return CommandResult{State: AttemptSuccessful, ExitCode: 0, Outputs: map[string]string{}}
+	return CommandResult{State: AttemptSuccessful, ExitCode: 0, Stdout: "null", Outputs: map[string]string{}}
 }
 
 func commandDefinition(t *testing.T, dir string, nodes []Node, dependencies []Dependency) []byte {

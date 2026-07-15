@@ -21,7 +21,7 @@ func (e *poolGateExecutor) Execute(ctx context.Context, request CommandRequest) 
 	e.started <- request.Command[0]
 	select {
 	case <-e.release:
-		return CommandResult{State: AttemptSuccessful, ExitCode: 0, Outputs: map[string]string{}}
+		return CommandResult{State: AttemptSuccessful, ExitCode: 0, Stdout: "null", Outputs: map[string]string{}}
 	case <-ctx.Done():
 		return CommandResult{State: AttemptCanceled, ExitCode: -1, Error: ctx.Err().Error(), Outputs: map[string]string{}}
 	}

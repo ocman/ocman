@@ -346,14 +346,24 @@ type ResourcePool struct {
 }
 
 type NodeRun struct {
-	NodeID          string    `json:"nodeId"`
-	Name            string    `json:"name"`
-	Type            string    `json:"type"`
-	State           string    `json:"state"`
-	ReadyAt         int64     `json:"readyAt,omitempty"`
-	CompletedAt     int64     `json:"completedAt,omitempty"`
-	Attempts        []Attempt `json:"attempts"`
-	PinnedVersionID string    `json:"pinnedVersionId,omitempty"`
+	NodeID          string     `json:"nodeId"`
+	Name            string     `json:"name"`
+	Type            string     `json:"type"`
+	State           string     `json:"state"`
+	Result          NodeResult `json:"result"`
+	ReadyAt         int64      `json:"readyAt,omitempty"`
+	CompletedAt     int64      `json:"completedAt,omitempty"`
+	Attempts        []Attempt  `json:"attempts"`
+	PinnedVersionID string     `json:"pinnedVersionId,omitempty"`
+}
+
+type NodeResult struct {
+	ID      string          `json:"id"`
+	Name    string          `json:"name"`
+	Started *string         `json:"started"`
+	Ended   *string         `json:"ended"`
+	Status  string          `json:"status"`
+	Output  json.RawMessage `json:"output"`
 }
 
 type Attempt struct {
@@ -1068,6 +1078,7 @@ func (s *Service) GetRun(ctx context.Context, id string) (RunDetail, error) {
 			}
 			node.Attempts = append(node.Attempts, out)
 		}
+		node.Result = nodeResult(node)
 		detail.Nodes = append(detail.Nodes, node)
 	}
 	leases, err := s.store.ListWorkflowResourceLeases(id)
@@ -1091,6 +1102,37 @@ func (s *Service) GetRun(ctx context.Context, id string) (RunDetail, error) {
 	}
 	detail.Children = children
 	return detail, nil
+}
+
+func nodeResult(node NodeRun) NodeResult {
+	result := NodeResult{ID: node.NodeID, Name: node.Name, Status: node.State}
+	if len(node.Attempts) == 0 {
+		return result
+	}
+	result.Started = workflowResultTime(node.Attempts[0].StartedAt)
+	result.Ended = workflowResultTime(node.CompletedAt)
+	if node.Type != "command" {
+		return result
+	}
+	attempt := node.Attempts[len(node.Attempts)-1]
+	if attempt.State == AttemptSuccessful {
+		if json.Valid([]byte(attempt.Stdout)) {
+			result.Output = json.RawMessage(attempt.Stdout)
+		} else if len(attempt.Outputs) > 0 {
+			result.Output, _ = json.Marshal(attempt.Outputs)
+		}
+	} else {
+		result.Output, _ = json.Marshal(map[string]string{"error": attempt.Error})
+	}
+	return result
+}
+
+func workflowResultTime(milliseconds int64) *string {
+	if milliseconds == 0 {
+		return nil
+	}
+	value := time.UnixMilli(milliseconds).UTC().Format(time.RFC3339Nano)
+	return &value
 }
 
 // mapItemRuns collects every mapped item across the run's map nodes, in
@@ -1312,6 +1354,10 @@ func (s *Service) executeCommand(ctx context.Context, active *activeCommand, ver
 	result.Stderr = redactor.redact(result.Stderr)
 	result.Error = redactor.redact(result.Error)
 	result.Outputs = redactor.redactOutputs(result.Outputs)
+	if result.State == AttemptSuccessful && len(node.Outputs) == 0 && (result.StdoutTruncated || !json.Valid([]byte(result.Stdout))) {
+		result.State = AttemptFailed
+		result.Error = "command output must be exactly one valid JSON value"
+	}
 	stopOwner := false
 	if version.Definition.FailFast && result.State != AttemptSuccessful && result.State != AttemptCanceled {
 		stopOwner = s.stopSiblingCommands(runID, node.ID)

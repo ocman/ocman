@@ -1042,10 +1042,20 @@ export interface WorkflowNodeRun {
 	name: string;
 	type: 'approval' | 'command' | 'agent' | 'map' | 'join';
 	state: WorkflowNodeState;
+	result: WorkflowNodeResult;
 	readyAt?: number;
 	completedAt?: number;
 	attempts: WorkflowAttempt[];
 	pinnedVersionId?: string;
+}
+
+export interface WorkflowNodeResult {
+	id: string;
+	name: string;
+	started: string | null;
+	ended: string | null;
+	status: WorkflowNodeState;
+	output: unknown;
 }
 
 /** A held worktree-shard lease owned by one node attempt. */
