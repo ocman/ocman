@@ -46,8 +46,10 @@ stored on `gh-pages` and updated automatically as `main` advances.
   `coverage/go.json` and `coverage/frontend.json`, each containing at
   least `{ "pct": <number> }` (total line coverage percent).
 - **R2.** Go coverage MUST be measured with
-  `go test ./... -coverprofile -covermode=atomic`; the total is the
-  `total:` row of `go tool cover -func`.
+  `go test ./internal/... -coverpkg=./internal/... -coverprofile
+  -covermode=atomic`; the total is the `total:` row of
+  `go tool cover -func`. Cross-package instrumentation credits code
+  exercised through integration tests to the total.
 - **R3.** Frontend coverage MUST use the already-installed
   `@vitest/coverage-v8` provider with a `json-summary` reporter; the
   total is `total.lines.pct` from `coverage/coverage-summary.json`.

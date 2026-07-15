@@ -28,7 +28,7 @@ Runs both suites with coverage and emits `coverage/go.json` and
 
 Go:
 ```sh
-go test ./... -coverprofile=coverage/go.out -covermode=atomic
+go test ./internal/... -coverpkg=./internal/... -coverprofile=coverage/go.out -covermode=atomic
 pct=$(go tool cover -func=coverage/go.out | awk '/^total:/ {gsub("%","",$3); print $3}')
 ```
 

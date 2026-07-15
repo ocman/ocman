@@ -12,8 +12,10 @@
 #   coverage/frontend.json  { "pct": <n>, "sha": "<commit>", "ts": "<iso8601>" }
 #
 # Go coverage is measured across ./internal/... (the meaningful code;
-# matches `make test-coverage`) with -covermode=atomic so it stays
-# consistent with `make test-race`. Generated files (protobuf/gRPC
+# matches `make test-coverage`) with cross-package instrumentation so
+# integration tests credit the internal packages they exercise, and
+# -covermode=atomic so it stays consistent with `make test-race`.
+# Generated files (protobuf/gRPC
 # *.pb.go) are excluded from the profile before computing the total —
 # they are thousands of untested auto-generated statements that would
 # otherwise distort the ratchet without measuring anything meaningful.
@@ -42,7 +44,7 @@ EOF
 
 collect_go() {
 	echo "==> Go coverage (./internal/...)"
-	go test ./internal/... -coverprofile=coverage/go.raw.out -covermode=atomic
+	go test ./internal/... -coverpkg=./internal/... -coverprofile=coverage/go.raw.out -covermode=atomic
 	# Drop generated files (e.g. *.pb.go) from the profile; the mode
 	# header line (first line) is preserved.
 	grep -vE '\.pb\.go:' coverage/go.raw.out > coverage/go.out
