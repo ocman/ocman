@@ -114,11 +114,52 @@ func TestSessionMessage_BusyQueuesThenFlushesOnIdle(t *testing.T) {
 	}
 }
 
-func TestSessionQueue_ListDeleteMove(t *testing.T) {
+func TestWorkflowStatusInferer_LatestMessageState(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
+	status := "waiting"
+	messages := []db.Message{{ID: "assistant-1", TimeCreated: 200, Data: json.RawMessage(`{"role":"assistant","finish":"stop"}`)}}
 	reg.Register(&fakePlatform{
 		id:       "fake",
 		sessions: []db.Session{mkSession("fake", "s1", "t", 1)},
+		sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+			return &platforms.SessionDetail{
+				Session:  &db.Session{ID: "s1", Status: status},
+				Messages: messages,
+			}, nil
+		},
+	})
+	inferer := &workflowStatusInferer{s: srv}
+
+	if id, createdAt, running, completed, ok := inferer.LatestMessageState(t.Context(), "fake", "s1"); id != "assistant-1" || createdAt != 200 || running || !ok || !completed {
+		t.Fatalf("latest state = (%q, %d, %v, %v, %v), want (assistant-1, 200, false, true, true)", id, createdAt, running, completed, ok)
+	}
+	status = "busy"
+	if _, _, running, completed, ok := inferer.LatestMessageState(t.Context(), "fake", "s1"); !ok || !running || completed {
+		t.Fatalf("busy completion = (%v, %v), want (false, true)", completed, ok)
+	}
+	status = "waiting"
+	messages[0].Data = json.RawMessage(`{"role":"user"}`)
+	if _, _, _, completed, ok := inferer.LatestMessageState(t.Context(), "fake", "s1"); !ok || completed {
+		t.Fatalf("user completion = (%v, %v), want (false, true)", completed, ok)
+	}
+	messages[0].Data = json.RawMessage(`{`)
+	if _, _, _, _, ok := inferer.LatestMessageState(t.Context(), "fake", "s1"); ok {
+		t.Fatal("malformed message unexpectedly resolved")
+	}
+	messages = nil
+	if id, createdAt, running, completed, ok := inferer.LatestMessageState(t.Context(), "fake", "s1"); id != "" || createdAt != 0 || running || !completed || !ok {
+		t.Fatalf("empty session = (%q, %d, %v, %v, %v), want resolved idle baseline", id, createdAt, running, completed, ok)
+	}
+	if _, _, _, _, ok := inferer.LatestMessageState(t.Context(), "fake", "missing"); ok {
+		t.Fatal("missing session unexpectedly resolved")
+	}
+}
+
+func TestSessionQueue_ListDeleteMove(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	reg.Register(&fakePlatform{
+		id:            "fake",
+		sessions:      []db.Session{mkSession("fake", "s1", "t", 1)},
 		sendMessageFn: func(platforms.SendMessageRequest) error { return nil },
 		// Busy so the two posts queue instead of draining.
 		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {

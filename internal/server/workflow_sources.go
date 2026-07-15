@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/NoUseFreak/ocman/internal/workflows"
@@ -19,6 +20,30 @@ func (i *workflowStatusInferer) TurnRunning(ctx context.Context, _ string, sessi
 		return false, false
 	}
 	return detail.Session.Status == "busy", true
+}
+
+func (i *workflowStatusInferer) LatestMessageState(ctx context.Context, _ string, sessionID string) (string, int64, bool, bool, bool) {
+	p, found := i.s.registry.PlatformForSession(ctx, sessionID)
+	if !found {
+		return "", 0, false, false, false
+	}
+	detail, err := p.Session(ctx, sessionID, 1, 0)
+	if err != nil || detail == nil || detail.Session == nil {
+		return "", 0, false, false, false
+	}
+	if len(detail.Messages) == 0 {
+		return "", 0, false, true, true
+	}
+	message := detail.Messages[0]
+	var data struct {
+		Role string `json:"role"`
+	}
+	if json.Unmarshal(message.Data, &data) != nil {
+		return "", 0, false, false, false
+	}
+	running := detail.Session.Status == "busy"
+	completed := data.Role == "assistant" && detail.Session.Status != "busy"
+	return message.ID, message.TimeCreated, running, completed, true
 }
 
 type workflowUsage struct{ s *Server }

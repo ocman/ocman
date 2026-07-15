@@ -64,42 +64,55 @@ type Service struct {
 	mu    sync.Mutex
 	locks map[string]*sync.Mutex
 
-	// drainedSinceIdle[sessionID] is true once a message has been sent
+	// drainGuards[sessionID] records the source message visible before a queued send
 	// for that session and we have NOT yet seen a real session.idle edge.
 	// It gates the enqueue fast-path so a burst of enqueues can't chain
 	// multiple sends into one turn just because the status poll blips to
-	// idle (the last message being a user message reads as idle). Only a
-	// genuine session.idle (Flush) clears it. Guarded by mu.
-	drainedSinceIdle map[string]bool
+	// idle (the last message being a user message reads as idle). A genuine
+	// session.idle or a newer completed assistant message clears it. Guarded by mu.
+	drainGuards    map[string]drainGuard
+	nextGeneration uint64
+}
+
+type completionInferer interface {
+	LatestMessageState(ctx context.Context, platform, sessionID string) (messageID string, createdAt int64, running, completed, ok bool)
+}
+
+type drainGuard struct {
+	generation uint64
+	messageID  string
+	createdAt  int64
 }
 
 // New builds a queue service. notify may be nil.
 func New(store Store, sender Sender, status StatusInferer, notify func(sessionID string)) *Service {
 	return &Service{
-		store:            store,
-		sender:           sender,
-		status:           status,
-		notify:           notify,
-		locks:            map[string]*sync.Mutex{},
-		drainedSinceIdle: map[string]bool{},
+		store:       store,
+		sender:      sender,
+		status:      status,
+		notify:      notify,
+		locks:       map[string]*sync.Mutex{},
+		drainGuards: map[string]drainGuard{},
 	}
 }
 
-func (s *Service) markDrained(sessionID string) {
+func (s *Service) markDrained(sessionID, messageID string, createdAt int64) {
 	s.mu.Lock()
-	s.drainedSinceIdle[sessionID] = true
+	s.nextGeneration++
+	s.drainGuards[sessionID] = drainGuard{generation: s.nextGeneration, messageID: messageID, createdAt: createdAt}
 	s.mu.Unlock()
 }
 
-func (s *Service) hasDrainedSinceIdle(sessionID string) bool {
+func (s *Service) currentDrainGuard(sessionID string) (drainGuard, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.drainedSinceIdle[sessionID]
+	guard, ok := s.drainGuards[sessionID]
+	return guard, ok
 }
 
 func (s *Service) clearDrainedSinceIdle(sessionID string) {
 	s.mu.Lock()
-	delete(s.drainedSinceIdle, sessionID)
+	delete(s.drainGuards, sessionID)
 	s.mu.Unlock()
 }
 
@@ -174,7 +187,7 @@ func (s *Service) Enqueue(ctx context.Context, platformID string, forceQueue boo
 	s.fireNotify(req.SessionID)
 
 	// Idle send fast path — see doc comment.
-	if existing == 0 && !s.hasDrainedSinceIdle(req.SessionID) {
+	if _, guarded := s.currentDrainGuard(req.SessionID); existing == 0 && !guarded {
 		s.drainHead(ctx, platformID, req.SessionID, false)
 	}
 	return nil
@@ -245,6 +258,18 @@ func (s *Service) drainHead(ctx context.Context, platformID, sessionID string, t
 		Agent:     head.Agent,
 		Reasoning: head.Reasoning,
 	}
+	messageID := ""
+	messageCreatedAt := int64(0)
+	if completion, ok := s.status.(completionInferer); ok {
+		var running, resolved bool
+		messageID, messageCreatedAt, running, _, resolved = completion.LatestMessageState(ctx, head.Platform, sessionID)
+		if !resolved && !trustIdle {
+			return
+		}
+		if running && !trustIdle {
+			return
+		}
+	}
 	if err := s.sender.SendNow(ctx, head.Platform, req); err != nil {
 		// Leave the message at the head; a later idle edge retries.
 		log.WithError(err).WithField("sessionID", sessionID).
@@ -258,7 +283,7 @@ func (s *Service) drainHead(ctx context.Context, platformID, sessionID string, t
 	}
 	// This send started a turn; block the enqueue fast-path until a real
 	// session.idle edge confirms it finished.
-	s.markDrained(sessionID)
+	s.markDrained(sessionID, messageID, messageCreatedAt)
 	s.fireNotify(sessionID)
 }
 
@@ -282,13 +307,29 @@ func (s *Service) Sweep(ctx context.Context) {
 	for _, q := range sessions {
 		// Honor the same status-blip guard as the enqueue fast-path: once a
 		// message has drained, don't chain another into the same turn just
-		// because the status poll blips to idle. Only a real session.idle
-		// (Flush) re-arms it.
-		if s.hasDrainedSinceIdle(q.SessionID) {
-			continue
+		// because the status poll blips to idle. A newer completed assistant
+		// message proves the prior turn ended even if its idle edge was missed.
+		guard, guarded := s.currentDrainGuard(q.SessionID)
+		if guarded {
+			completion, supported := s.status.(completionInferer)
+			if !supported {
+				continue
+			}
+			messageID, createdAt, _, completed, ok := completion.LatestMessageState(ctx, q.Platform, q.SessionID)
+			if !ok || !completed || messageID == "" || createdAt <= guard.createdAt || messageID == guard.messageID {
+				continue
+			}
 		}
 		lock := s.lockFor(q.SessionID)
 		lock.Lock()
+		current, stillGuarded := s.currentDrainGuard(q.SessionID)
+		if guarded != stillGuarded || (guarded && current.generation != guard.generation) {
+			lock.Unlock()
+			continue
+		}
+		if stillGuarded {
+			s.clearDrainedSinceIdle(q.SessionID)
+		}
 		s.drainHead(ctx, q.Platform, q.SessionID, false)
 		lock.Unlock()
 	}

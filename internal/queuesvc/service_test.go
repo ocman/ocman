@@ -126,6 +126,7 @@ type recSender struct {
 	mu       sync.Mutex
 	sent     []string
 	failOnce bool
+	onSend   func()
 }
 
 func (r *recSender) SendNow(_ context.Context, _ string, req platforms.SendMessageRequest) error {
@@ -134,6 +135,9 @@ func (r *recSender) SendNow(_ context.Context, _ string, req platforms.SendMessa
 	if r.failOnce {
 		r.failOnce = false
 		return errors.New("boom")
+	}
+	if r.onSend != nil {
+		r.onSend()
 	}
 	r.sent = append(r.sent, req.Message)
 	return nil
@@ -147,12 +151,23 @@ func (r *recSender) messages() []string {
 
 // statusStub reports a fixed busy state.
 type statusStub struct {
-	running bool
-	ok      bool
+	running   bool
+	ok        bool
+	completed bool
+	messageID string
+	createdAt int64
+	onLatest  func()
 }
 
 func (s statusStub) TurnRunning(context.Context, string, string) (bool, bool) {
 	return s.running, s.ok
+}
+
+func (s statusStub) LatestMessageState(context.Context, string, string) (string, int64, bool, bool, bool) {
+	if s.onLatest != nil {
+		s.onLatest()
+	}
+	return s.messageID, s.createdAt, s.running, s.completed, s.ok
 }
 
 func TestEnqueue_IdleSessionSendsImmediately(t *testing.T) {
@@ -365,6 +380,97 @@ func TestSweep_DrainsForceQueuedBacklogWithNoIdleEdge(t *testing.T) {
 	svc.Sweep(context.Background())
 	if got := sender.messages(); len(got) != 1 || got[0] != "one" {
 		t.Fatalf("sweep = %v, want [one] drained (self-heal without idle edge)", got)
+	}
+}
+
+func TestSweep_DrainsAfterStaleGuardAndMissedIdleEdge(t *testing.T) {
+	store := &memStore{}
+	sender := &recSender{}
+	status := &statusStub{running: false, ok: true, messageID: "user-1", createdAt: 1}
+	svc := New(store, sender, status, nil)
+
+	_ = svc.Enqueue(context.Background(), "opencode", false, platforms.SendMessageRequest{SessionID: "s1", Message: "one"})
+	_ = svc.Enqueue(context.Background(), "opencode", true, platforms.SendMessageRequest{SessionID: "s1", Message: "two"})
+	status.messageID = "assistant-1"
+	status.createdAt = 2
+	status.completed = true
+
+	svc.Sweep(context.Background())
+	if got := sender.messages(); len(got) != 2 || got[1] != "two" {
+		t.Fatalf("sweep after missed idle = %v, want [one two]", got)
+	}
+}
+
+func TestSweep_UsesPreSendMessageAsCompletionBaseline(t *testing.T) {
+	store := &memStore{}
+	status := &statusStub{running: false, ok: true, messageID: "assistant-old", createdAt: 1, completed: true}
+	sender := &recSender{onSend: func() {
+		status.messageID = "assistant-new"
+		status.createdAt = 2
+	}}
+	svc := New(store, sender, status, nil)
+
+	_ = svc.Enqueue(context.Background(), "opencode", false, platforms.SendMessageRequest{SessionID: "s1", Message: "one"})
+	_ = svc.Enqueue(context.Background(), "opencode", true, platforms.SendMessageRequest{SessionID: "s1", Message: "two"})
+	svc.Sweep(context.Background())
+
+	if got := sender.messages(); len(got) != 2 || got[1] != "two" {
+		t.Fatalf("fast completion sweep = %v, want [one two]", got)
+	}
+}
+
+func TestSweep_KeepsGuardForOlderCompletedMessage(t *testing.T) {
+	store := &memStore{}
+	sender := &recSender{}
+	status := &statusStub{running: false, ok: true, messageID: "assistant-new", createdAt: 2, completed: true}
+	svc := New(store, sender, status, nil)
+
+	_ = svc.Enqueue(context.Background(), "opencode", false, platforms.SendMessageRequest{SessionID: "s1", Message: "one"})
+	_ = svc.Enqueue(context.Background(), "opencode", true, platforms.SendMessageRequest{SessionID: "s1", Message: "two"})
+	status.messageID = "assistant-old"
+	status.createdAt = 1
+	svc.Sweep(context.Background())
+
+	if got := sender.messages(); len(got) != 1 {
+		t.Fatalf("older completion sweep = %v, want only [one]", got)
+	}
+}
+
+func TestSweep_RechecksGuardGenerationBeforeDrain(t *testing.T) {
+	store := &memStore{}
+	sender := &recSender{}
+	status := &statusStub{running: false, ok: true, messageID: "user-1", createdAt: 1}
+	svc := New(store, sender, status, nil)
+
+	_ = svc.Enqueue(context.Background(), "opencode", false, platforms.SendMessageRequest{SessionID: "s1", Message: "one"})
+	_ = svc.Enqueue(context.Background(), "opencode", true, platforms.SendMessageRequest{SessionID: "s1", Message: "two"})
+	status.messageID = "assistant-1"
+	status.createdAt = 2
+	status.completed = true
+	status.onLatest = func() { svc.markDrained("s1", "replacement", 3) }
+	svc.Sweep(context.Background())
+
+	if got := sender.messages(); len(got) != 1 {
+		t.Fatalf("changed guard sweep = %v, want only [one]", got)
+	}
+}
+
+func TestSweep_DefersSendUntilBaselineIsAvailable(t *testing.T) {
+	store := &memStore{}
+	sender := &recSender{}
+	status := &statusStub{running: false, ok: false}
+	svc := New(store, sender, status, nil)
+
+	_ = svc.Enqueue(context.Background(), "opencode", false, platforms.SendMessageRequest{SessionID: "s1", Message: "one"})
+	_ = svc.Enqueue(context.Background(), "opencode", true, platforms.SendMessageRequest{SessionID: "s1", Message: "two"})
+	status.ok = true
+	status.messageID = "assistant-old"
+	status.createdAt = 1
+	status.completed = true
+	svc.Sweep(context.Background())
+
+	if got := sender.messages(); len(got) != 1 {
+		t.Fatalf("recovered baseline sweep = %v, want only [one]", got)
 	}
 }
 
