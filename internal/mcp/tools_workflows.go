@@ -25,6 +25,20 @@ type workflowService interface {
 
 type workflowTools struct{ svc workflowService }
 
+const workflowDefinitionSchema = `Workflow definition JSON. Required top-level fields: id, name, version, concurrency (>0), triggers (at least one), nodes (at least one), dependencies. Start with a manual trigger: {"id":"manual","type":"manual"}. Each node needs id, name, and type.
+
+Node types and configuration:
+- approval: no additional configuration.
+- command: command is a string array; the workflow directory must be an existing absolute path. Optional permission entries are {"permission":"bash","pattern":"...","action":"allow"|"deny"|"ask"}; outputs use {"name":"...","type":"text"|"git_diff"|"file"|"json_file","path":"relative-path"}.
+- agent: agent requires {"directory":"...","prompt":"..."}; optional platform, model, agent, reasoning, sessionAffinity, sessionId, and collectors. Collectors use final-message, diff, file, or json-file; file types require a safe relative path.
+- subworkflow: subworkflow requires {"workflowId":"published-workflow-id"}.
+- map: map requires {"source":"upstream-output-name","key":"stable-item-field","subworkflow":{"workflowId":"..."},"join":"join-node-id"}.
+- join: join requires {"policy":"all-success"|"always"|"minimum-success"}; minimum-success also requires minSuccess > 0.
+
+Dependencies are {"from":"upstream-node-id","to":"downstream-node-id"} and must form a DAG. Optional top-level fields include directory, pools, workspace, limits, retentionDays, and failFast. Validate before publishing.
+
+Minimal valid definition: {"id":"example","name":"Example","version":"1","concurrency":1,"triggers":[{"id":"manual","type":"manual"}],"nodes":[{"id":"approve","name":"Approve","type":"approval"}],"dependencies":[]}.`
+
 func addWorkflowTools(s *server.MCPServer, t *workflowTools) {
 	for _, tool := range workflowServerTools(t) {
 		s.AddTool(tool.Tool, tool.Handler)
@@ -36,6 +50,7 @@ func workflowServerTools(t *workflowTools) []server.ServerTool {
 		return nil
 	}
 	return []server.ServerTool{
+		{Tool: mcplib.NewTool("get_workflow_schema", mcplib.WithDescription("Get the workflow definition schema and minimal valid JSON example before creating or validating a workflow.")), Handler: t.handleSchema},
 		{Tool: workflowDefinitionTool("validate_workflow", "Validate a workflow JSON definition without publishing it."), Handler: t.handleValidate},
 		{Tool: workflowDefinitionTool("publish_workflow", "Validate and publish an immutable workflow version."), Handler: t.handlePublish},
 		{Tool: mcplib.NewTool("list_workflows", mcplib.WithDescription("List published workflow versions.")), Handler: t.handleListWorkflows},
@@ -51,11 +66,15 @@ func workflowServerTools(t *workflowTools) []server.ServerTool {
 }
 
 func workflowDefinitionTool(name, description string) mcplib.Tool {
-	return mcplib.NewTool(name, mcplib.WithDescription(description), mcplib.WithString("definition", mcplib.Required(), mcplib.Description("Workflow definition as JSON.")))
+	return mcplib.NewTool(name, mcplib.WithDescription(description), mcplib.WithString("definition", mcplib.Required(), mcplib.Description(workflowDefinitionSchema)))
 }
 
 func workflowRunTool(name, description string) mcplib.Tool {
 	return mcplib.NewTool(name, mcplib.WithDescription(description), mcplib.WithString("run_id", mcplib.Required(), mcplib.Description("Workflow run ID.")))
+}
+
+func (t *workflowTools) handleSchema(context.Context, mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	return mcplib.NewToolResultText(workflowDefinitionSchema), nil
 }
 
 func (t *workflowTools) handleValidate(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {

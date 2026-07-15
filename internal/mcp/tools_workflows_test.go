@@ -106,6 +106,37 @@ func TestWorkflowToolsLifecycle(t *testing.T) {
 	}
 }
 
+func TestWorkflowDefinitionToolsDescribeSchema(t *testing.T) {
+	tools := internalmcp.ServerTools(internalmcp.Deps{WorkflowService: workflows.NewService(workflows.Deps{Store: openTestStateDB(t)})})
+	found := 0
+	for _, tool := range tools {
+		if tool.Tool.Name != "validate_workflow" && tool.Tool.Name != "publish_workflow" {
+			continue
+		}
+		found++
+		schema, err := json.Marshal(tool.Tool.InputSchema.Properties["definition"])
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, expected := range []string{"Node types and configuration", "subworkflow", "minimum-success", "Minimal valid definition"} {
+			if !strings.Contains(string(schema), expected) {
+				t.Fatalf("%s definition schema missing %q: %s", tool.Tool.Name, expected, schema)
+			}
+		}
+	}
+	if found != 2 {
+		t.Fatalf("found %d workflow definition tools, want 2", found)
+	}
+}
+
+func TestGetWorkflowSchema(t *testing.T) {
+	srv := buildWorkflowMCPServer(t, openTestStateDB(t))
+	result := callTool(t, srv, "get_workflow_schema", map[string]interface{}{})
+	if result.IsError || !strings.Contains(resultText(result), "Minimal valid definition") {
+		t.Fatalf("get_workflow_schema: %s", resultText(result))
+	}
+}
+
 func TestWorkflowToolsReturnActionableErrors(t *testing.T) {
 	srv := buildWorkflowMCPServer(t, openTestStateDB(t))
 
