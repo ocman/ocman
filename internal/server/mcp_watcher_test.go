@@ -58,10 +58,7 @@ func TestBuildInjectionMessage_Completed(t *testing.T) {
 		Intent: "fix the linting issue",
 	}
 	msg := buildInjectionMessage(cs, "completed", "Fixed 3 lint errors.")
-	if msg == "" {
-		t.Fatal("expected non-empty message")
-	}
-	for _, want := range []string{"fix the linting issue", "child-1", "Fixed 3 lint errors."} {
+	for _, want := range []string{"<task id=\"child-1\" state=\"completed\">", "<task_result>", "Fixed 3 lint errors.", "</task_result>", "</task>"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("message missing %q: %q", want, msg)
 		}
@@ -74,20 +71,8 @@ func TestBuildInjectionMessage_Error(t *testing.T) {
 		Intent: "add tests",
 	}
 	msg := buildInjectionMessage(cs, "error", "compilation failed")
-	if !strings.Contains(msg, "compilation failed") {
+	if !strings.Contains(msg, "state=\"error\"") || !strings.Contains(msg, "<task_error>") || !strings.Contains(msg, "compilation failed") {
 		t.Errorf("expected error detail in message: %q", msg)
-	}
-}
-
-func TestBuildInjectionMessage_WithWorktree(t *testing.T) {
-	cs := state.ChildSession{
-		ID:           "child-3",
-		Intent:       "refactor",
-		WorktreePath: "/tmp/worktrees/repo/refactor",
-	}
-	msg := buildInjectionMessage(cs, "completed", "")
-	if !strings.Contains(msg, "/tmp/worktrees/repo/refactor") {
-		t.Errorf("expected worktree path in message: %q", msg)
 	}
 }
 
@@ -148,7 +133,11 @@ func TestCheckAndInjectChildResults_UpdatesStatus(t *testing.T) {
 		for _, s := range fp.sessions {
 			if s.ID == id {
 				sess := s
-				return &platforms.SessionDetail{Session: &sess}, nil
+				return &platforms.SessionDetail{
+					Session:  &sess,
+					Messages: []db.Message{{ID: "final", TimeCreated: 1, Data: []byte(`{"role":"assistant"}`)}},
+					Parts:    []db.Part{{MessageID: "final", Data: []byte(`{"type":"text","text":"Fixed the actual lint errors."}`)}},
+				}, nil
 			}
 		}
 		return nil, platforms.ErrNotFound
@@ -157,10 +146,7 @@ func TestCheckAndInjectChildResults_UpdatesStatus(t *testing.T) {
 	reg := platforms.NewRegistry()
 	reg.Register(fp)
 
-	s := &Server{
-		stateDB:  sdb,
-		registry: reg,
-	}
+	s := New(nil, sdb, "127.0.0.1:0", reg, nil)
 
 	s.checkAndInjectChildResults(context.Background())
 
@@ -183,8 +169,8 @@ func TestCheckAndInjectChildResults_UpdatesStatus(t *testing.T) {
 	if sentMessages[0].SessionID != "parent-1" {
 		t.Errorf("message sent to wrong session: %q", sentMessages[0].SessionID)
 	}
-	if !strings.Contains(sentMessages[0].Message, "Fix lint") {
-		t.Errorf("message missing session title: %q", sentMessages[0].Message)
+	if !strings.Contains(sentMessages[0].Message, "Fixed the actual lint errors.") {
+		t.Errorf("message missing child final text: %q", sentMessages[0].Message)
 	}
 }
 
@@ -283,7 +269,7 @@ func TestCheckAndInjectChildResults_UnknownStatusCloses(t *testing.T) {
 
 	reg := platforms.NewRegistry()
 	reg.Register(fp)
-	s := &Server{stateDB: sdb, registry: reg}
+	s := New(nil, sdb, "127.0.0.1:0", reg, nil)
 
 	s.checkAndInjectChildResults(context.Background())
 

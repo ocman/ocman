@@ -2,12 +2,10 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
@@ -99,7 +97,7 @@ func (s *Server) processChildSession(ctx context.Context, cs state.ChildSession)
 		"newStatus":       newStatus,
 	}).Info("mcp-watcher: child session status changed")
 
-	// Inject a result message into the parent session when terminal.
+	// Queue a result message for the parent session when terminal.
 	if isTerminalStatus(newStatus) {
 		// Loop-attached children route their completion to the compatibility
 		// workflow. Non-loop children keep the one-shot injection.
@@ -172,21 +170,13 @@ func (s *Server) inferChildStatus(ctx context.Context, cs state.ChildSession) (s
 		// "waiting", "done", "", and any unrecognised status: the LLM
 		// turn has finished (or the session is no longer active), so
 		// close the child session.
-		return "completed", extractSummaryFromSession(*sess)
+		return "completed", finalAssistantMessage(detail.Messages, detail.Parts)
 	}
 }
 
-// extractSummaryFromSession builds a brief summary from a completed session.
-func extractSummaryFromSession(sess db.Session) string {
-	if sess.Title != "" {
-		return fmt.Sprintf("Session '%s' completed (%d messages)", sess.Title, sess.MessageCount)
-	}
-	return fmt.Sprintf("Session completed (%d messages)", sess.MessageCount)
-}
-
-// injectResultIntoParent sends a result notification to the parent session
-// via Platform.SendMessage. Errors are logged but not propagated — the
-// child session result is already stored in state.db.
+// injectResultIntoParent queues the child's terminal turn for its parent.
+// The queue sends it immediately when the parent is idle, or at its next idle
+// edge when it is busy.
 func (s *Server) injectResultIntoParent(ctx context.Context, cs state.ChildSession, status, summary string) {
 	p, ok := s.registry.PlatformForSession(ctx, cs.ParentSessionID)
 	if !ok {
@@ -199,7 +189,7 @@ func (s *Server) injectResultIntoParent(ctx context.Context, cs state.ChildSessi
 
 	msg := buildInjectionMessage(cs, status, summary)
 
-	if err := p.SendMessage(ctx, platforms.SendMessageRequest{
+	if err := s.queueSvc().Enqueue(ctx, string(p.ID()), false, platforms.SendMessageRequest{
 		SessionID: cs.ParentSessionID,
 		Message:   msg,
 	}); err != nil {
@@ -215,31 +205,16 @@ func (s *Server) injectResultIntoParent(ctx context.Context, cs state.ChildSessi
 		"parentSessionID": cs.ParentSessionID,
 		"childSessionID":  cs.ID,
 		"status":          status,
-	}).Info("mcp-watcher: injected result into parent session")
+	}).Info("mcp-watcher: queued result for parent session")
 }
 
 // buildInjectionMessage composes the message injected into the parent session.
 func buildInjectionMessage(cs state.ChildSession, status, summary string) string {
-	var statusLine string
-	switch status {
-	case "completed":
-		statusLine = "✅ Sub-task completed"
-	case "error":
-		statusLine = "❌ Sub-task failed"
-	case "cancelled":
-		statusLine = "🚫 Sub-task cancelled"
-	default:
-		statusLine = fmt.Sprintf("Sub-task %s", status)
+	tag := "task_result"
+	if status != "completed" {
+		tag = "task_error"
 	}
-
-	msg := fmt.Sprintf("%s\n\n**Intent**: %s\n**Session ID**: `%s`", statusLine, cs.Intent, cs.ID)
-	if cs.WorktreePath != "" {
-		msg += fmt.Sprintf("\n**Worktree**: `%s`", cs.WorktreePath)
-	}
-	if summary != "" {
-		msg += fmt.Sprintf("\n\n**Summary**: %s", summary)
-	}
-	return msg
+	return "<task id=\"" + cs.ID + "\" state=\"" + status + "\">\n<" + tag + ">\n" + summary + "\n</" + tag + ">\n</task>"
 }
 
 // isTerminalStatus reports whether a status string is a terminal state.

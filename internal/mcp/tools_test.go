@@ -962,3 +962,38 @@ func TestSendMessageToParent_DeliversToParent(t *testing.T) {
 		t.Fatalf("unexpected delivered message: %q", msg.Message)
 	}
 }
+
+func TestSendMessageToChild_ReopensCompletedChild(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	if err := stateDB.InsertChildSession(state.ChildSession{
+		ID:              "child-reopen",
+		Platform:        "opencode",
+		ParentSessionID: "parent-reopen",
+		Intent:          "inspect logs",
+		Status:          "starting",
+		CreatedAt:       1000,
+	}); err != nil {
+		t.Fatalf("InsertChildSession: %v", err)
+	}
+	if err := stateDB.UpdateChildSession("child-reopen", "completed", "first result", 2000); err != nil {
+		t.Fatalf("UpdateChildSession: %v", err)
+	}
+
+	platform := &fakePlatformForTools{}
+	srv := buildTestMCPServer(t, stateDB, platform)
+	result := callTool(t, srv, "send_message_to_child", map[string]interface{}{
+		"session_id":       "parent-reopen",
+		"child_session_id": "child-reopen",
+		"message":          "Please investigate one more thing.",
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", resultText(result))
+	}
+	child, err := stateDB.GetChildSession("child-reopen")
+	if err != nil {
+		t.Fatalf("GetChildSession: %v", err)
+	}
+	if child.Status != "running" || child.CompletedAt != 0 || child.Summary != "" {
+		t.Fatalf("child after follow-up = %+v, want running with cleared completion", child)
+	}
+}

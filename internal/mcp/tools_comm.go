@@ -19,6 +19,10 @@ type commChildSessionDB interface {
 	GetChildSession(id string) (*state.ChildSession, error)
 }
 
+type childSessionReopener interface {
+	ReopenChildSession(id string) error
+}
+
 // commTools holds dependencies for parent <-> child messaging.
 type commTools struct {
 	stateDB  commChildSessionDB
@@ -91,6 +95,13 @@ func (t *commTools) handleSendMessageToChild(ctx context.Context, req mcplib.Cal
 	delivered := fmt.Sprintf("Message from parent session %s:\n\n%s", parentID, message)
 	if err := t.sendMessage(ctx, childID, delivered); err != nil {
 		return mcplib.NewToolResultError(fmt.Sprintf("sending message to child: %v", err)), nil
+	}
+	reopener, ok := t.stateDB.(childSessionReopener)
+	if !ok {
+		return mcplib.NewToolResultError("reopening child session: state database does not support reopening"), nil
+	}
+	if err := reopener.ReopenChildSession(childID); err != nil {
+		return mcplib.NewToolResultError(fmt.Sprintf("reopening child session: %v", err)), nil
 	}
 
 	return toolResultJSON(map[string]interface{}{

@@ -60,6 +60,20 @@ func (d *DB) UpdateChildSession(id, status, summary string, completedAt int64) e
 	return nil
 }
 
+// ReopenChildSession marks a completed child as awaiting its next turn after
+// its parent sends a follow-up.
+func (d *DB) ReopenChildSession(id string) error {
+	_, err := d.db.Exec(`
+		UPDATE child_sessions
+		SET status = 'running', summary = NULL, completed_at = NULL
+		WHERE id = ?
+	`, id)
+	if err != nil {
+		return fmt.Errorf("reopening child session: %w", err)
+	}
+	return nil
+}
+
 // GetChildSession returns a single child session by ID, or an error
 // wrapping sql.ErrNoRows when not found.
 func (d *DB) GetChildSession(id string) (*ChildSession, error) {

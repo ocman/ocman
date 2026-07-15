@@ -64,12 +64,14 @@ directly (no Vite dev proxy).
 2. Ocman gathers context from the parent session's directory — the last
    10 messages, the current git branch, and `git diff --stat`.
 3. A structured Markdown prompt is assembled and sent to a new OpenCode
-   session. The prompt tells the child to call `send_message_to_parent`
-   with its findings before ending its turn.
-4. A background watcher polls the child session; when it completes,
-   ocman injects a completion notification back into the parent. The
-   notification contains status and session metadata; the child's actual
-   result comes from its `send_message_to_parent` call in step 3.
+   session.
+4. A background watcher polls the child session. After each terminal child
+   turn, it queues the child's final assistant text in a native-style task
+   result envelope for the parent. The queue starts a parent turn immediately
+   when idle, or on the next idle edge when busy. Errors and cancellations are
+   delivered the same way. `send_message_to_parent` remains available for
+   mid-task questions or updates; `send_message_to_child` reopens the child
+   for its next turn.
 
 ## Splitting skill (optional)
 
