@@ -18,7 +18,7 @@ import { composerPropsEqual } from './composerMemo';
 import { useComposerAudio } from './useComposerAudio';
 import { routeComposerSubmit } from './composerSubmit';
 import { getContextWindow, formatTokenCount } from '../../lib/models/contextWindows';
-import { formatCurrency, formatTokensPerSecond } from '../../lib/format';
+import { formatCurrency, formatDuration, formatTokensPerSecond } from '../../lib/format';
 import { BUILTIN_COMMANDS, KNOWN_AGENTS, modelHasVariants } from '../../lib/commands/builtinCommands';
 import { remoteLog } from '../../lib/remoteLog';
 
@@ -68,6 +68,7 @@ function ComposerImpl({
   agents,
   agentsLoaded,
   contextTokens,
+  activeDurationMs,
   sessionId,
   tokensPerSecond,
   tokenStats,
@@ -159,6 +160,7 @@ function ComposerImpl({
    */
   agentsLoaded?: boolean;
   contextTokens?: number;
+  activeDurationMs?: number;
   sessionId?: string;
   tokensPerSecond?: number;
   tokenStats?: {
@@ -1372,7 +1374,12 @@ function ComposerImpl({
               </span>
             );
           })()}
-          <button type="button" className="oc-keybind-hint" onClick={openShortcuts}>{isMacPlatform() ? '⌥+?' : 'Alt+?'} for shortcuts</button>
+          {activeDurationMs != null && activeDurationMs > 0 && (
+            <span title="Total time spent answering">{formatDuration(activeDurationMs)}</span>
+          )}
+          {!isRunning && (
+            <button type="button" className="oc-keybind-hint" onClick={openShortcuts}>{isMacPlatform() ? '⌥+?' : 'Alt+?'} for shortcuts</button>
+          )}
         </span>
       </div>
     </div>

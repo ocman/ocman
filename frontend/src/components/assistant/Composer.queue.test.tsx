@@ -13,4 +13,18 @@ describe('Composer queue', () => {
     fireEvent.click(screen.getByLabelText('Cancel queued shell command'));
     expect(onCancelQueuedShell).toHaveBeenCalledOnce();
   });
+
+  it('shows active duration and hides the shortcut hint while running', () => {
+    const { rerender } = render(
+      <Composer isRunning={false} contextTokens={12_000} activeDurationMs={90_000} />,
+    );
+
+    expect(screen.getByText('1m 30s')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /for shortcuts/i })).toBeInTheDocument();
+
+    rerender(<Composer isRunning contextTokens={12_000} activeDurationMs={90_000} />);
+
+    expect(screen.getByText('1m 30s')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /for shortcuts/i })).not.toBeInTheDocument();
+  });
 });

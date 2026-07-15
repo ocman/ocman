@@ -35,6 +35,7 @@ export interface ComposerMemoProps {
   agents?: unknown;
   agentsLoaded?: boolean;
   contextTokens?: unknown;
+  activeDurationMs?: number;
   sessionId?: string;
   tokensPerSecond?: unknown;
   tokenStats?: TokenStats;
@@ -65,6 +66,7 @@ export const composerPropsEqual = (prev: ComposerMemoProps, next: ComposerMemoPr
   prev.agents === next.agents &&
   prev.agentsLoaded === next.agentsLoaded &&
   prev.contextTokens === next.contextTokens &&
+  prev.activeDurationMs === next.activeDurationMs &&
   prev.sessionId === next.sessionId &&
   prev.tokensPerSecond === next.tokensPerSecond &&
   prev.tokenStats?.input === next.tokenStats?.input &&

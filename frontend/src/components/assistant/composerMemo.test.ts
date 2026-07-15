@@ -19,4 +19,11 @@ describe('composerPropsEqual — queuedMessages', () => {
     const q = [{ id: '1', text: 'hi', hasImages: false }];
     expect(composerPropsEqual({ ...base, queuedMessages: q }, { ...base, queuedMessages: q })).toBe(true);
   });
+
+  it('re-renders when active duration changes', () => {
+    expect(composerPropsEqual(
+      { ...base, activeDurationMs: 1_000 },
+      { ...base, activeDurationMs: 2_000 },
+    )).toBe(false);
+  });
 });
