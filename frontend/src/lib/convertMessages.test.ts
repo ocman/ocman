@@ -253,13 +253,13 @@ describe('convertMessages', () => {
     expect(out[0].content).toBe('one\n\ntwo');
   });
 
-  it('renders reasoning parts as a Markdown blockquote', () => {
+  it('renders reasoning parts as a compact thought line', () => {
     const m = makeMessage('m', { role: 'assistant' });
     const out = convertMessages(
       [m],
       [makePart('m', { type: 'reasoning', text: 'thinking…' })],
     );
-    expect(out[0].content).toBe('> *Reasoning:* thinking…');
+    expect(out[0].content).toBe('> **Thought:** thinking…');
   });
 
   it('drops reasoning parts when showReasoning is false (#290)', () => {
@@ -283,7 +283,7 @@ describe('convertMessages', () => {
     // (shown) result.
     const shown = convert([m], parts, undefined, undefined, undefined, undefined, true);
     const hidden = convert([m], parts, undefined, undefined, undefined, undefined, false);
-    expect(shown[0].content).toBe('> *Reasoning:* thinking…');
+    expect(shown[0].content).toBe('> **Thought:** thinking…');
     expect(hidden[0].content).toBe('');
   });
 

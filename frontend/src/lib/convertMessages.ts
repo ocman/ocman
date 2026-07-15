@@ -661,7 +661,7 @@ export function createConvertMessages(): ConvertMessagesFn {
           // Display-only toggle (#290): drop reasoning blocks entirely
           // when the user has hidden them via `/thinking`.
           if (showReasoning && pd.text?.trim()) {
-            textPieces.push(`> *Reasoning:* ${pd.text}`);
+            textPieces.push(`> **Thought:** ${pd.text}`);
           }
           break;
         case 'patch': {
