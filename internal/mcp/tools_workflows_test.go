@@ -129,6 +129,21 @@ func TestWorkflowDefinitionToolsDescribeSchema(t *testing.T) {
 	}
 }
 
+func TestWorkflowToolRegistrationIsComplete(t *testing.T) {
+	want := map[string]bool{
+		"get_workflow_schema": true, "validate_workflow": true, "publish_workflow": true,
+		"list_workflows": true, "start_workflow": true, "list_workflow_runs": true,
+		"inspect_workflow_run": true, "pause_workflow_run": true, "resume_workflow_run": true,
+		"cancel_workflow_run": true, "approve_workflow_node": true, "resolve_unknown_attempt": true,
+	}
+	for _, tool := range internalmcp.ServerTools(internalmcp.Deps{WorkflowService: workflows.NewService(workflows.Deps{Store: openTestStateDB(t)})}) {
+		delete(want, tool.Tool.Name)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing workflow tools: %#v", want)
+	}
+}
+
 func TestGetWorkflowSchema(t *testing.T) {
 	srv := buildWorkflowMCPServer(t, openTestStateDB(t))
 	result := callTool(t, srv, "get_workflow_schema", map[string]interface{}{})

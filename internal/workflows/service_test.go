@@ -57,6 +57,7 @@ type fakeAgentExecutor struct {
 	results    map[string]AgentResult
 	canceled   []AgentSession
 	startErr   error
+	inspectErr error
 	sessionErr string
 }
 
@@ -78,6 +79,9 @@ func (f *fakeAgentExecutor) Start(_ context.Context, req AgentRequest) (AgentSes
 }
 
 func (f *fakeAgentExecutor) Inspect(_ context.Context, session AgentSession) (AgentResult, error) {
+	if f.inspectErr != nil {
+		return AgentResult{}, f.inspectErr
+	}
 	if result, ok := f.results[session.ID]; ok {
 		return result, nil
 	}
@@ -243,6 +247,45 @@ func TestSequentialApprovalRunPersistsAcrossRestart(t *testing.T) {
 	assertRun(t, completed, StateSuccessful, map[string]string{"review": NodeSuccessful, "ship": NodeSuccessful})
 	if completed.VersionID != version.ID || completed.CompletedAt != h.now.UnixMilli() {
 		t.Fatalf("run is not pinned/completed: %+v", completed)
+	}
+}
+
+func TestWorkflowVersionDeactivateActivateAndArchive(t *testing.T) {
+	h := newHarness(t)
+	v1, err := h.svc.PublishJSON(t.Context(), []byte(sequentialApprovals))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.advance()
+	v2, err := h.svc.PublishJSON(t.Context(), []byte(sequentialApprovals))
+	if err != nil {
+		t.Fatal(err)
+	}
+	deactivated, err := h.svc.Deactivate(t.Context(), v1.ID)
+	if err != nil || deactivated.Active {
+		t.Fatalf("deactivate = %+v, %v", deactivated, err)
+	}
+	if _, err := h.svc.StartActive(t.Context(), v1.WorkflowID); err == nil {
+		t.Fatal("started workflow without an active version")
+	}
+	activated, err := h.svc.Activate(t.Context(), v2.ID)
+	if err != nil || !activated.Active {
+		t.Fatalf("activate = %+v, %v", activated, err)
+	}
+	run, err := h.svc.StartActive(t.Context(), v2.WorkflowID)
+	if err != nil || run.VersionID != v2.ID {
+		t.Fatalf("start active = %+v, %v", run, err)
+	}
+	if err := h.svc.Archive(t.Context(), v2.ID); err != nil {
+		t.Fatal(err)
+	}
+	versions, err := h.svc.ListVersions(t.Context())
+	if err != nil || len(versions) != 0 {
+		t.Fatalf("versions after archive = %+v, %v", versions, err)
+	}
+	persisted, err := h.svc.GetRun(t.Context(), run.ID)
+	if err != nil || persisted.ID != run.ID {
+		t.Fatalf("archiving removed run history: %+v, %v", persisted, err)
 	}
 }
 
@@ -773,6 +816,55 @@ func TestCommandPermissionUsesLastMatchingRuleAndExplicitEnvironment(t *testing.
 	}
 }
 
+type secretCapturingExecutor struct{ request CommandRequest }
+
+func (e *secretCapturingExecutor) Execute(_ context.Context, request CommandRequest) CommandResult {
+	e.request = request
+	return CommandResult{State: AttemptSuccessful, ExitCode: 0, Stdout: `"s3cr3t"`, Stderr: "token=s3cr3t"}
+}
+
+func TestCommandSecretsAreInjectedAndRedacted(t *testing.T) {
+	h := newHarness(t)
+	h.secrets["WORKFLOW_TOKEN"] = "s3cr3t"
+	h.secrets["OVERRIDE_ME"] = "host-value"
+	executor := &secretCapturingExecutor{}
+	h.svc = NewService(Deps{
+		Store: h.db, CommandExecutor: executor, Blobs: h.blobs,
+		ResolveSecret: func(env string) string { return h.secrets[env] },
+		Now:           func() time.Time { return h.now },
+	})
+	definition := Definition{
+		ID: "secrets", Name: "Secrets", Version: "1", Concurrency: 1, Directory: t.TempDir(),
+		Triggers: []Trigger{{ID: "manual", Type: TriggerManual}},
+		Secrets:  []SecretRef{{Name: "token", Env: "WORKFLOW_TOKEN"}, {Name: "override", Env: "OVERRIDE_ME"}},
+		Nodes: []Node{{
+			ID: "emit", Name: "Emit", Type: "command", Command: []string{"emit"},
+			Environment: map[string]string{"OVERRIDE_ME": "node-value"},
+			Permission:  []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}},
+		}},
+	}
+	raw, err := json.Marshal(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	version, err := h.svc.PublishJSON(t.Context(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.svc.Start(t.Context(), version.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run = waitForRun(t, h.svc, run.ID, StateSuccessful)
+	if executor.request.Environment["WORKFLOW_TOKEN"] != "s3cr3t" || executor.request.Environment["OVERRIDE_ME"] != "node-value" {
+		t.Fatalf("resolved environment = %#v", executor.request.Environment)
+	}
+	attempt := run.Nodes[0].Attempts[0]
+	if strings.Contains(attempt.Stdout+attempt.Stderr+attempt.Error, "s3cr3t") || attempt.Stdout != `"***REDACTED***"` || !strings.Contains(attempt.Stderr, redactionMarker) {
+		t.Fatalf("secret leaked in persisted attempt: %+v", attempt)
+	}
+}
+
 func TestCommandOutcomesAndBoundedLogs(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -987,6 +1079,31 @@ func TestTickReattachesLiveAgentWithoutDuplicateDispatch(t *testing.T) {
 	completed, err := h.svc.GetRun(t.Context(), run.ID)
 	if err != nil || completed.State != StateSuccessful {
 		t.Fatalf("reattached agent did not keep reporting state: %+v (%v)", completed, err)
+	}
+}
+
+func TestTickMarksUnreachableAgentUnknown(t *testing.T) {
+	h := newHarness(t)
+	version, err := h.svc.PublishJSON(t.Context(), []byte(singleAgent))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.svc.Start(t.Context(), version.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.agent.inspectErr = errors.New("session unavailable")
+	h.restart()
+	if err := h.svc.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := h.svc.GetRun(t.Context(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt := restored.Nodes[0].Attempts[0]
+	if restored.State != StatePaused || restored.Nodes[0].State != NodeUnknown || attempt.State != AttemptUnknown || !strings.Contains(attempt.Error, "session unavailable") || len(h.agent.starts) != 1 {
+		t.Fatalf("unreachable agent recovery = %+v, starts=%d", restored, len(h.agent.starts))
 	}
 }
 
