@@ -11,11 +11,9 @@
 
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import type { Message, Part } from '../../lib/api';
+import type { Message } from '../../lib/api';
 import {
   usePendingSend,
-  materializePending,
-  type PendingSend,
 } from './usePendingSend';
 
 const SID = 'sess-1';
@@ -92,7 +90,7 @@ describe('usePendingSend — server-confirmed clear', () => {
     expect(result.current.pending).toBe(null);
   });
 
-  it('does NOT clear pending when only the assistant replies (no user message)', () => {
+	it('does NOT clear pending when only the assistant replies (no user message)', () => {
     const { result, rerender } = renderHook(
       ({ messages }: { messages: Message[] }) => {
         const hook = usePendingSend(SID);
@@ -112,8 +110,29 @@ describe('usePendingSend — server-confirmed clear', () => {
         { id: 'm-assist', sessionId: SID, timeCreated: 5, data: { role: 'assistant' } },
       ],
     });
-    expect(result.current.pending?.text).toBe('hello');
-  });
+		expect(result.current.pending?.text).toBe('hello');
+	});
+
+	it('clears when the response starts without a user-message SSE acknowledgment', () => {
+		const { result, rerender } = renderHook(
+			({ messages }: { messages: Message[] }) => {
+				const hook = usePendingSend(SID);
+				hook.observeMessages(messages);
+				return hook;
+			},
+			{ initialProps: { messages: [] as Message[] } },
+		);
+		act(() => {
+			result.current.begin('queued follow-up');
+		});
+
+		// Queued sends may skip the user's message.created event but the
+		// assistant response proves the server accepted the prompt.
+		rerender({
+			messages: [{ id: 'm-assist', sessionId: SID, timeCreated: Date.now() + 1, data: { role: 'assistant' } }],
+		});
+		expect(result.current.pending).toBe(null);
+	});
 
   it('does NOT clear pending when the user message id matches one already present', () => {
     // Edge case: we initialised with a user message already in
@@ -146,62 +165,5 @@ describe('usePendingSend — session reset', () => {
     });
     rerender({ id: 'sess-b' });
     expect(result.current.pending).toBe(null);
-  });
-});
-
-describe('materializePending — concatenation helper', () => {
-  it('appends a user message + parts after the last real message', () => {
-    const pending: PendingSend = {
-      id: 'pending-1',
-      text: 'hi there',
-      startedAt: 1_000,
-    };
-    const messages: Message[] = [makeUserMessage('m-a', 1)];
-    const parts: Part[] = [];
-    const { messages: mergedMessages, parts: mergedParts } = materializePending(
-      SID,
-      pending,
-      messages,
-      parts,
-    );
-    expect(mergedMessages).toHaveLength(2);
-    expect(mergedMessages[1].id).toBe('pending-1');
-    expect(mergedMessages[1].data.role).toBe('user');
-    expect(mergedParts.find((p) => p.messageId === 'pending-1')).toBeDefined();
-  });
-
-  it('emits one part per image plus the text part', () => {
-    const pending: PendingSend = {
-      id: 'pending-1',
-      text: 'caption',
-      images: [
-        { url: 'data:image/png;base64,AAA', mime: 'image/png' },
-        { url: 'data:image/png;base64,BBB', mime: 'image/png' },
-      ],
-      startedAt: 1_000,
-    };
-    const { parts } = materializePending(SID, pending, [], []);
-    expect(parts.filter((p) => p.messageId === 'pending-1')).toHaveLength(3);
-  });
-
-  it('returns the inputs unchanged when pending is null', () => {
-    const messages: Message[] = [];
-    const parts: Part[] = [];
-    const result = materializePending(SID, null, messages, parts);
-    expect(result.messages).toBe(messages);
-    expect(result.parts).toBe(parts);
-  });
-
-  it('regression: user message bubble is visible immediately', () => {
-    // Requirement: when the user types a message and presses send,
-    // the bubble is visible immediately ("pending" affordance optional).
-    const pending: PendingSend = {
-      id: 'pending-1',
-      text: 'my prompt',
-      startedAt: 1_000,
-    };
-    const { messages } = materializePending(SID, pending, [], []);
-    expect(messages).toHaveLength(1);
-    expect(messages[0].data.role).toBe('user');
   });
 });

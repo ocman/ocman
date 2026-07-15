@@ -87,7 +87,7 @@ import { MovePathDialog, MovePicker } from './MovePicker';
 import { useSessionActions } from './useSessionActions';
 import { useMessageQueue } from '../../lib/useMessageQueue';
 import { useSession } from './useSession';
-import { usePendingSend, materializePending } from './usePendingSend';
+import { usePendingSend } from './usePendingSend';
 import { useAutoApprove } from '../../lib/useAutoApprove';
 import { ThreadSkeleton } from '../../components/Skeleton';
 
@@ -192,9 +192,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
     patchSession,
   } = view;
 
-  // Optimistic user-send slot. Lives outside the SessionView; the
-  // bubble is materialised at render time, never written to the
-  // reducer's `messages` array.
+  // Tracks an in-flight send and failed-send retry state. It is never
+  // materialised into the thread; server messages are the source of truth.
   const pending = usePendingSend(id);
   // Auto-clear pending when SSE delivers the real user message.
   // Runs in an effect (not render) so the pending → null setState
@@ -208,13 +207,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
     observeMessages(rawMessages);
   }, [rawMessages, observeMessages]);
 
-  // Materialise pending into the messages/parts that flow into the
-  // converter. When `pending` is null these are the raw view arrays
-  // (reference-equal).
-  const { messages, parts } = useMemo(() => {
-    if (!session) return { messages: rawMessages, parts: rawParts };
-    return materializePending(session.id, pending.pending, rawMessages, rawParts);
-  }, [session, rawMessages, rawParts, pending.pending]);
+  const messages = rawMessages;
+  const parts = rawParts;
 
   // Snapshot of the user's last-seen cutoff for the current session.
   // Used to compute the "first unread" marker and the "N new

@@ -2,12 +2,9 @@
 //
 // Architecture §"The composer / optimistic send":
 //
-//   The composer page owns a `pending` slot. The render path
-//   concatenates `pending` after the last real message when there
-//   is one, so the bubble is visible immediately. The hook clears
-//   `pending` when a `message.created` user message lands that
-//   wasn't in our previous `messages[]`. No synthetic IDs. No
-//   reparenting.
+//   The composer page owns a `pending` slot for in-flight and failed
+//   sends. The thread renders server messages only. The hook clears
+//   `pending` when the server acknowledges the send. No synthetic IDs.
 //
 // Why this is simpler than the legacy `temp-*` id system:
 //
@@ -24,7 +21,7 @@
 // The page wires it into useSessionActions / the Composer.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Message, Part } from '../../lib/api';
+import type { Message } from '../../lib/api';
 
 export interface PendingSendImage {
   url: string;
@@ -33,10 +30,7 @@ export interface PendingSendImage {
 
 export interface PendingSend {
   /**
-   * Stable id for the optimistic bubble. Used as the Message id and
-   * Part messageId on `materializePending`. Generated once on
-   * `begin()`. NOT a `temp-*`-prefixed id — the new pipeline doesn't
-   * special-case the prefix anywhere.
+   * Stable id for retry/failure tracking. Generated once on `begin()`.
    */
   id: string;
   text: string;
@@ -93,6 +87,9 @@ export function usePendingSend(sessionId: string | undefined): UsePendingSendRes
   // render) so the comparison is robust against re-renders /
   // strict-mode double-invoke / random observe ordering.
   const baselineUserIdsRef = useRef<Set<string> | null>(null);
+  // A queued send may not emit the user's message.created event to this
+  // client. A later assistant message proves that the server accepted it.
+  const pendingStartedAtRef = useRef<number | null>(null);
   // Latest `messages` reference observed during render. The
   // session-change effect uses this to recompute the baseline if
   // needed; tests use it to verify lifecycle.
@@ -108,6 +105,7 @@ export function usePendingSend(sessionId: string | undefined): UsePendingSendRes
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPending(null);
     baselineUserIdsRef.current = null;
+    pendingStartedAtRef.current = null;
   }, [sessionId]);
 
   const begin = useCallback<UsePendingSendResult['begin']>((text, images, opts) => {
@@ -122,6 +120,8 @@ export function usePendingSend(sessionId: string | undefined): UsePendingSendRes
     }
     baselineUserIdsRef.current = baseline;
     const id = generateId();
+    const startedAt = Date.now();
+    pendingStartedAtRef.current = startedAt;
     setPending({
       id,
       text,
@@ -129,7 +129,7 @@ export function usePendingSend(sessionId: string | undefined): UsePendingSendRes
       model: opts?.model,
       agent: opts?.agent,
       reasoning: opts?.reasoning,
-      startedAt: Date.now(),
+      startedAt,
     });
     return id;
   }, []);
@@ -141,6 +141,7 @@ export function usePendingSend(sessionId: string | undefined): UsePendingSendRes
   const clear = useCallback(() => {
     setPending(null);
     baselineUserIdsRef.current = null;
+    pendingStartedAtRef.current = null;
   }, []);
 
   const observeMessages = useCallback((messages: Message[]) => {
@@ -155,67 +156,18 @@ export function usePendingSend(sessionId: string | undefined): UsePendingSendRes
       if (!baseline.has(m.id)) {
         setPending((prev) => (prev ? null : prev));
         baselineUserIdsRef.current = null;
+        pendingStartedAtRef.current = null;
         return;
       }
+    }
+    const startedAt = pendingStartedAtRef.current;
+    if (startedAt === null) return;
+    if (messages.some((m) => m.data.role === 'assistant' && m.timeCreated >= startedAt)) {
+      setPending((prev) => (prev ? null : prev));
+      baselineUserIdsRef.current = null;
+      pendingStartedAtRef.current = null;
     }
   }, []);
 
   return { pending, begin, fail, clear, observeMessages };
-}
-
-/**
- * Materialise the pending slot into the messages/parts arrays the
- * converter consumes. When `pending` is null, returns the inputs
- * unchanged (reference-equal) so React downstream caches don't
- * invalidate.
- *
- * Semantics:
- *   - One user Message is appended at the end of `messages` with
- *     `data.role: 'user'` and `timeCreated: pending.startedAt`.
- *   - One text Part is appended with `pending.id`'s message
- *     reference.
- *   - Each image becomes one additional file Part.
- *
- * The renderer is responsible for surfacing the `pending.error`
- * affordance (a small "failed — retry" banner on the bubble); it
- * reads from `pending` directly, not from the materialised message.
- */
-export function materializePending(
-  sessionId: string,
-  pending: PendingSend | null,
-  messages: Message[],
-  parts: Part[],
-): { messages: Message[]; parts: Part[] } {
-  if (!pending) return { messages, parts };
-
-  const userMsg: Message = {
-    id: pending.id,
-    sessionId,
-    timeCreated: pending.startedAt,
-    data: { role: 'user' },
-  };
-  const extraParts: Part[] = [];
-  if (pending.text) {
-    extraParts.push({
-      id: `${pending.id}-text`,
-      messageId: pending.id,
-      sessionId,
-      data: { type: 'text', text: pending.text } as unknown as string,
-    });
-  }
-  if (pending.images) {
-    pending.images.forEach((img, i) => {
-      extraParts.push({
-        id: `${pending.id}-img-${i}`,
-        messageId: pending.id,
-        sessionId,
-        data: { type: 'file', mime: img.mime, url: img.url } as unknown as string,
-      });
-    });
-  }
-
-  return {
-    messages: [...messages, userMsg],
-    parts: [...parts, ...extraParts],
-  };
 }
