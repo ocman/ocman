@@ -170,10 +170,10 @@
 .session-sidebar-group-header.collapsed .session-sidebar-group-label {
   opacity: 0.75;
 }
-/* The pinned group has no drag handle, so its header lacks the 16px
-   drag-handle column that insets the other group headers and their
-   rows. Pad it left to match so it aligns with the grouped items. */
-.session-sidebar-group-pinned .session-sidebar-group-header {
+/* The pinned group has no drag handle, so its header and rows lack the
+   16px column that insets the other grouped items. */
+.session-sidebar-group-pinned .session-sidebar-group-header,
+.session-sidebar-group-pinned .session-sidebar-item {
   padding-left: 16px;
 }
 .session-sidebar-group-header-row .host-badge {

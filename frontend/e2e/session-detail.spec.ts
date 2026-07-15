@@ -471,6 +471,24 @@ test('sidebar shows both mock sessions', async ({ mockedPage: page }) => {
   await expect(page.getByRole('button', { name: /Refactor auth module/ })).toBeVisible({ timeout: 5_000 });
 });
 
+test('pinned session aligns with grouped session rows', async ({ mockedPage: page }) => {
+  await page.route('/api/sessions*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([{ ...MOCK_SESSION, pinned: true, pinnedAt: Date.now() }, MOCK_SESSION_2]),
+    }),
+  );
+
+  await page.goto(SESSION_URL);
+  const pinnedStatus = page.getByRole('button', { name: /Fix the login bug projects\/myapp/ }).getByTitle('Done');
+  const groupedStatus = page.getByRole('button', { name: /Fix the login bug 1m ago/ }).getByTitle('Done');
+  await expect(pinnedStatus).toBeVisible({ timeout: 5_000 });
+
+  const [pinnedBox, groupedBox] = await Promise.all([pinnedStatus.boundingBox(), groupedStatus.boundingBox()]);
+  expect(pinnedBox?.x).toBe(groupedBox?.x);
+});
+
 test('active session sidebar item is aria-selected', async ({ mockedPage: page }) => {
   await page.goto(SESSION_URL);
   const activeItem = page.locator('[aria-selected="true"]', { hasText: 'Fix the login bug' });
