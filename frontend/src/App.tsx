@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -38,11 +38,6 @@ import { useMemoryMonitor } from './lib/useMemoryMonitor';
 import { useLongTaskMonitor } from './lib/useLongTaskMonitor';
 import { installDevHandle as installPerfDevHandle } from './lib/perfRing';
 
-// Disposable #312 workflow prototype — lazy so its fixtures and CSS stay
-// out of the initial bundle. Delete this import and the route when the
-// production workflow UI lands.
-const WorkflowPrototype = lazy(() => import('./pages/WorkflowPrototype'));
-
 // Top-level boundary keyed on the current pathname so navigating away from
 // a crashed route auto-recovers without forcing the user to reload. Inner
 // boundaries (RightPanel panes, AssistantThread, Composer, Dashboard tabs)
@@ -81,7 +76,6 @@ export function LogoNav({ agentLoopsAllowed, workflowsAllowed = false }: { agent
         <Link to="/projects" role="menuitem">Projects</Link>
         {agentLoopsAllowed && <Link to="/loops" role="menuitem">Loops</Link>}
         {workflowsAllowed && <Link to="/workflows" role="menuitem">Workflows</Link>}
-        <Link to="/prototype/workflows" role="menuitem">Workflow lab</Link>
         <Link to="/stats" role="menuitem">Stats</Link>
         <Link to="/usage" role="menuitem">Usage</Link>
         <Link to="/settings" role="menuitem">Settings</Link>
@@ -488,14 +482,6 @@ export function AppRoutes() {
       <Route path="/project/:dir/worktrees" element={<WorktreesView />} />
       <Route path="/project/:dir/loops" element={<Loops />} />
       <Route path="/project/:dir" element={<ProjectDetail />} />
-      <Route
-        path="/prototype/workflows"
-        element={
-          <Suspense fallback={<div className="oc-login-bootstrap">Loading workflow lab…</div>}>
-            <WorkflowPrototype />
-          </Suspense>
-        }
-      />
       <Route path="/session/:id" element={<SessionDetail />} />
     </Routes>
   );
