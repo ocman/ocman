@@ -230,7 +230,7 @@ describe('Workflows', () => {
 		await user.clear(screen.getByRole('textbox', { name: 'Workflow YAML or JSON' }));
 		await user.type(screen.getByRole('textbox', { name: 'Workflow YAML or JSON' }), 'name: one\nname: two');
 		await user.click(screen.getByRole('button', { name: 'Validate' }));
-		expect(await screen.findByRole('alert')).toHaveTextContent('line 2, column 1');
+		expect(await screen.findByRole('alert')).toHaveTextContent('Validation failed: line 2, column 1: duplicate key "name" Hint: Remove or rename the duplicate key.');
 	});
 
 	it('builds typed nodes into the canonical workflow source', async () => {

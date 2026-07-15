@@ -132,7 +132,7 @@ export function Workflows() {
 			if (requestID === validationID.current) setValidated(result);
 		} catch (reason) {
 			if (requestID !== validationID.current) return;
-			setError(reason instanceof Error ? reason.message : String(reason));
+			setError(validationError(reason));
 		}
 	}
 
@@ -150,7 +150,7 @@ export function Workflows() {
 		void api.workflows.validate(value).then((result) => {
 			if (requestID === validationID.current) setValidated(result);
 		}).catch((reason) => {
-			if (requestID === validationID.current) setError(reason instanceof Error ? reason.message : String(reason));
+			if (requestID === validationID.current) setError(validationError(reason));
 		});
 	}
 
@@ -399,6 +399,20 @@ function State({ state }: { state: string }) {
 
 function projectName(directory: string) {
 	return directory.replace(/\/+$/, '').split('/').at(-1) || directory;
+}
+
+function validationError(reason: unknown) {
+	const message = reason instanceof Error ? reason.message : String(reason);
+	const hint = message.includes('duplicate key')
+		? 'Remove or rename the duplicate key.'
+		: message.includes('requires directory')
+			? 'Set the workflow or trigger directory to an existing absolute project path.'
+			: message.includes('requires')
+				? 'Fill in the required setting named in the error.'
+				: message.includes('invalid workflow source')
+					? 'Check the YAML or JSON syntax and field types.'
+					: 'Review the named workflow setting and try again.';
+	return `Validation failed: ${message} Hint: ${hint}`;
 }
 
 function formatSize(bytes: number) {
