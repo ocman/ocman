@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -1103,6 +1104,9 @@ func (s *Service) GetRun(ctx context.Context, id string) (RunDetail, error) {
 		return RunDetail{}, err
 	}
 	detail.Children = children
+	if err := s.loadAggregateNodeResults(ctx, &detail); err != nil {
+		return RunDetail{}, err
+	}
 	return detail, nil
 }
 
@@ -1113,20 +1117,144 @@ func nodeResult(node NodeRun) NodeResult {
 	}
 	result.Started = workflowResultTime(node.Attempts[0].StartedAt)
 	result.Ended = workflowResultTime(node.CompletedAt)
+	attempt := node.Attempts[len(node.Attempts)-1]
+	if attempt.State != AttemptSuccessful {
+		if attempt.Error != "" {
+			result.Output, _ = json.Marshal(map[string]string{"error": attempt.Error})
+		}
+		return result
+	}
+	if node.Type == "approval" {
+		approvedAt := time.UnixMilli(attempt.CompletedAt).UTC().Format(time.RFC3339Nano)
+		result.Output, _ = json.Marshal(struct {
+			Approved   bool    `json:"approved"`
+			ApprovedBy *string `json:"approvedBy"`
+			ApprovedAt string  `json:"approvedAt"`
+		}{Approved: true, ApprovedAt: approvedAt})
+		return result
+	}
 	if node.Type != "command" && node.Type != "agent" {
 		return result
 	}
-	attempt := node.Attempts[len(node.Attempts)-1]
-	if attempt.State == AttemptSuccessful {
-		if json.Valid([]byte(attempt.Stdout)) {
-			result.Output = json.RawMessage(attempt.Stdout)
-		} else if len(attempt.Outputs) > 0 {
-			result.Output, _ = json.Marshal(attempt.Outputs)
-		}
-	} else if attempt.Error != "" {
-		result.Output, _ = json.Marshal(map[string]string{"error": attempt.Error})
+	if json.Valid([]byte(attempt.Stdout)) {
+		result.Output = json.RawMessage(attempt.Stdout)
+	} else if len(attempt.Outputs) > 0 {
+		result.Output, _ = json.Marshal(attempt.Outputs)
 	}
 	return result
+}
+
+type mapNodeResultItem struct {
+	Key    string          `json:"key"`
+	Index  int             `json:"index"`
+	Status string          `json:"status"`
+	Output json.RawMessage `json:"output"`
+}
+
+func (s *Service) loadAggregateNodeResults(ctx context.Context, detail *RunDetail) error {
+	mapped := make(map[string][]mapNodeResultItem)
+	for index := range detail.Nodes {
+		node := &detail.Nodes[index]
+		if node.Type != "map" || (node.State != NodeSuccessful && node.State != NodeFailed && node.State != NodeCanceled && node.State != NodeSkipped) {
+			continue
+		}
+		items, err := s.loadMapResultItems(ctx, *detail, node.NodeID)
+		if err != nil {
+			return err
+		}
+		mapped[node.NodeID] = items
+		output := struct {
+			Items []mapNodeResultItem `json:"items"`
+			Error string              `json:"error,omitempty"`
+		}{Items: items}
+		if node.State != NodeSuccessful && len(node.Attempts) > 0 {
+			output.Error = node.Attempts[len(node.Attempts)-1].Error
+		}
+		node.Result.Output, _ = json.Marshal(output)
+	}
+	for index := range detail.Nodes {
+		node := &detail.Nodes[index]
+		if node.Type != "join" || (node.State != NodeSuccessful && node.State != NodeFailed && node.State != NodeCanceled && node.State != NodeSkipped) {
+			continue
+		}
+		items := mapped[mapNodeForJoin(detail.Version.Definition.Nodes, node.NodeID)]
+		config := joinConfig(detail.Version.Definition.Nodes, node.NodeID)
+		if config == nil {
+			continue
+		}
+		output := struct {
+			Policy  string              `json:"policy"`
+			Success int                 `json:"success"`
+			Failed  int                 `json:"failed"`
+			Total   int                 `json:"total"`
+			Items   []mapNodeResultItem `json:"items"`
+			Error   string              `json:"error,omitempty"`
+		}{Policy: config.Policy, Total: len(items), Items: items}
+		states := make([]string, 0, len(items))
+		for _, item := range items {
+			states = append(states, item.Status)
+		}
+		output.Success, output.Failed = countOutcomeStates(states)
+		if node.State != NodeSuccessful && len(node.Attempts) > 0 {
+			output.Error = node.Attempts[len(node.Attempts)-1].Error
+		}
+		node.Result.Output, _ = json.Marshal(output)
+	}
+	return nil
+}
+
+// ponytail: terminal map reads load each child run once; batch this only if
+// large-map run-detail latency becomes measurable.
+func (s *Service) loadMapResultItems(ctx context.Context, detail RunDetail, mapNodeID string) ([]mapNodeResultItem, error) {
+	result := make([]mapNodeResultItem, 0)
+	for _, item := range detail.Children {
+		if item.MapNode != mapNodeID {
+			continue
+		}
+		mapped := mapNodeResultItem{Key: item.Key, Index: item.Index, Status: item.State}
+		if item.ChildRunID != "" {
+			child, err := s.GetRun(ctx, item.ChildRunID)
+			if err != nil {
+				return nil, err
+			}
+			mapped.Status = child.State
+			mapped.Output, err = finalRunOutput(child)
+			if err != nil {
+				return nil, err
+			}
+		}
+		result = append(result, mapped)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Index < result[j].Index })
+	return result, nil
+}
+
+func finalRunOutput(run RunDetail) (json.RawMessage, error) {
+	active := make(map[string]bool, len(run.Nodes))
+	for _, node := range run.Nodes {
+		active[node.NodeID] = node.State != NodeSkipped
+	}
+	hasActiveDownstream := make(map[string]bool)
+	for _, dependency := range run.Version.Definition.Dependencies {
+		if active[dependency.From] && active[dependency.To] {
+			hasActiveDownstream[dependency.From] = true
+		}
+	}
+	outputs := make(map[string]json.RawMessage)
+	for _, node := range run.Nodes {
+		if active[node.NodeID] && !hasActiveDownstream[node.NodeID] {
+			outputs[node.NodeID] = node.Result.Output
+		}
+	}
+	if len(outputs) == 1 {
+		for _, output := range outputs {
+			return output, nil
+		}
+	}
+	if len(outputs) == 0 {
+		return nil, nil
+	}
+	return json.Marshal(outputs)
 }
 
 func workflowResultTime(milliseconds int64) *string {

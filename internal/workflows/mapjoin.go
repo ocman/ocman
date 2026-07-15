@@ -231,15 +231,12 @@ func (s *Service) settleJoinNode(ctx context.Context, run RunDetail, node NodeRu
 		return false, err
 	}
 	result := JoinResult{Policy: config.Policy, Total: len(items)}
+	states := make([]string, 0, len(items))
 	for _, item := range items {
-		state := item.State
-		if state == StateSuccessful {
-			result.Success++
-		} else {
-			result.Failed++
-		}
-		result.Items = append(result.Items, JoinItem{Key: item.ItemKey, Index: item.ItemIndex, State: state})
+		states = append(states, item.State)
+		result.Items = append(result.Items, JoinItem{Key: item.ItemKey, Index: item.ItemIndex, State: item.State})
 	}
+	result.Success, result.Failed = countOutcomeStates(states)
 	sort.Slice(result.Items, func(i, j int) bool { return result.Items[i].Index < result.Items[j].Index })
 	success := joinSucceeds(config, result)
 	payload, err := json.Marshal(map[string]JoinResult{"result": result})
@@ -260,6 +257,17 @@ func (s *Service) settleJoinNode(ctx context.Context, run RunDetail, node NodeRu
 	}
 	s.changed(run.ID)
 	return true, nil
+}
+
+func countOutcomeStates(states []string) (success, failed int) {
+	for _, state := range states {
+		if state == StateSuccessful {
+			success++
+		} else {
+			failed++
+		}
+	}
+	return success, failed
 }
 
 // joinSucceeds applies the join success policy to the aggregated result.
