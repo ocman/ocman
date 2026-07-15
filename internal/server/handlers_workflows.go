@@ -92,6 +92,12 @@ func (s *Server) handleWorkflows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
+	case r.Method == http.MethodDelete && action == "":
+		if err := s.workflowSvc().Archive(r.Context(), versionID); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	case r.Method == http.MethodPost && action == "activate":
 		version, err := s.workflowSvc().Activate(r.Context(), versionID)
 		if err != nil {

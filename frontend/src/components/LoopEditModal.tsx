@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import './LoopEditModal.css';
+import { Modal } from './Modal';
 import type { Loop, LoopUpdateRequest } from '../lib/api.types';
 import { formatGoDuration, parseGoDuration } from '../lib/loopFormat';
 import { ModelSelect } from './ModelSelect';
@@ -42,15 +43,6 @@ export function LoopEditModal({ loop, onSave, onClose, onPause, onResume, onTrig
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Escape closes the modal (matches MachinePickerModal).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !saving) onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, saving]);
 
   const submit = useCallback(
     async (e: React.FormEvent) => {
@@ -111,17 +103,7 @@ export function LoopEditModal({ loop, onSave, onClose, onPause, onResume, onTrig
   );
 
   return (
-    <div
-      className="oc-loop-modal-backdrop"
-      data-testid="loop-edit-backdrop"
-      onClick={() => !saving && onClose()}
-    >
-      <div
-        className="oc-loop-modal"
-        role="dialog"
-        aria-label="Edit loop settings"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <Modal onClose={onClose} canClose={!saving} label="Edit loop settings" backdropClassName="oc-loop-modal-backdrop" dialogClassName="oc-loop-modal" backdropTestId="loop-edit-backdrop">
         <div className="oc-loop-modal-title">Edit loop</div>
         <form className="oc-loop-modal-form" data-testid="loop-edit-form" onSubmit={submit}>
           <label>
@@ -252,7 +234,6 @@ export function LoopEditModal({ loop, onSave, onClose, onPause, onResume, onTrig
             )
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

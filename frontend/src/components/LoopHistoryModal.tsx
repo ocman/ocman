@@ -1,7 +1,7 @@
-import { useEffect } from 'react';
 import './LoopEditModal.css';
 import type { Loop } from '../lib/api.types';
 import { LoopHistoryView } from './LoopHistoryView';
+import { Modal } from './Modal';
 
 interface LoopHistoryModalProps {
   loop: Loop;
@@ -14,28 +14,13 @@ interface LoopHistoryModalProps {
  * there's no room to expand the history inline.
  */
 export function LoopHistoryModal({ loop, onClose }: LoopHistoryModalProps) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
   return (
-    <div className="oc-loop-modal-backdrop" data-testid="loop-history-backdrop" onClick={onClose}>
-      <div
-        className="oc-loop-modal oc-loop-history-modal"
-        role="dialog"
-        aria-label="Loop history"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <Modal onClose={onClose} label="Loop history" backdropClassName="oc-loop-modal-backdrop" dialogClassName="oc-loop-modal oc-loop-history-modal" backdropTestId="loop-history-backdrop">
         <div className="oc-loop-modal-title">{loop.title || loop.id}</div>
         <LoopHistoryView loop={loop} />
         <div className="oc-loop-modal-actions">
           <button type="button" className="vscode-btn" onClick={onClose}>Close</button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

@@ -1,0 +1,8 @@
+.oc-button, .oc-field { box-sizing: border-box; height: 38px; border: 1px solid var(--border); border-radius: 0; background: var(--bg-card); color: var(--text); font: inherit; font-size: 13px; }
+.oc-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; cursor: pointer; }
+.oc-button:hover { border-color: var(--text-dim); }
+.oc-button--accent { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); color: var(--accent); }
+.oc-button--muted { color: var(--text-muted); }
+.oc-button--large { height: 52px; padding: 0 22px; font-size: 16px; font-weight: 700; }
+.oc-field { min-width: 0; padding: 0 12px; }
+.oc-field--search::placeholder { color: var(--text-dim); }

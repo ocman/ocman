@@ -391,6 +391,7 @@ type Store interface {
 	GetActiveWorkflowVersion(string) (*state.WorkflowVersion, error)
 	ListWorkflowVersions() ([]state.WorkflowVersion, error)
 	ActivateWorkflowVersion(string, int64) (*state.WorkflowVersion, error)
+	ArchiveWorkflowVersion(string, int64) error
 	InsertWorkflowRun(state.WorkflowRun) error
 	GetWorkflowRun(string) (*state.WorkflowRun, error)
 	ListWorkflowRuns() ([]state.WorkflowRun, error)
@@ -601,6 +602,10 @@ func (s *Service) Activate(_ context.Context, id string) (Version, error) {
 		return Version{}, err
 	}
 	return versionFromRow(*row)
+}
+
+func (s *Service) Archive(_ context.Context, id string) error {
+	return s.store.ArchiveWorkflowVersion(id, s.now().UnixMilli())
 }
 
 func (s *Service) StartActive(ctx context.Context, workflowID string) (RunDetail, error) {

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import './LoopEditModal.css';
+import { Modal } from './Modal';
 import type { LoopCreateRequest } from '../lib/api.types';
 import { parseGoDuration } from '../lib/loopFormat';
 import { ModelSelect } from './ModelSelect';
@@ -55,14 +56,6 @@ export function LoopCreateModal({
   const [maxCost, setMaxCost] = useState('5');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !saving) onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, saving]);
 
   const submit = useCallback(
     async (e: React.FormEvent) => {
@@ -148,17 +141,7 @@ export function LoopCreateModal({
   );
 
   return (
-    <div
-      className="oc-loop-modal-backdrop"
-      data-testid="loop-create-backdrop"
-      onClick={() => !saving && onClose()}
-    >
-      <div
-        className="oc-loop-modal"
-        role="dialog"
-        aria-label="Create loop"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <Modal onClose={onClose} canClose={!saving} label="Create loop" backdropClassName="oc-loop-modal-backdrop" dialogClassName="oc-loop-modal" backdropTestId="loop-create-backdrop">
         <div className="oc-loop-modal-title">{parentLoopId ? 'New sub-loop' : 'New loop'}</div>
         <form className="oc-loop-modal-form" data-testid="loop-create-form" onSubmit={submit}>
           <label>
@@ -291,7 +274,6 @@ export function LoopCreateModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 }

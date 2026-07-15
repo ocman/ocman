@@ -19,8 +19,8 @@ async function freshModule() {
 
 describe('parseGitHubUrl', () => {
   it('parses a PR URL', () => {
-    const ref = parseGitHubUrl('https://github.com/aspect-analytics/weave-agent/pull/15');
-    expect(ref).toEqual({ kind: 'pr', owner: 'aspect-analytics', repo: 'weave-agent', number: 15 });
+    const ref = parseGitHubUrl('https://github.com/example-org/example-repo/pull/15');
+    expect(ref).toEqual({ kind: 'pr', owner: 'example-org', repo: 'example-repo', number: 15 });
   });
 
   it('parses a PR URL with trailing path', () => {

@@ -137,7 +137,10 @@ import (
 // The `schema_version` table tracks applied migrations so each step runs
 // exactly once. A fresh database is migrated up to latestSchemaVersion
 // in a single pass.
-const latestSchemaVersion = 32
+//
+//	33 - workflow archive state. Archived definitions stop scheduling but
+//	      retain their run history and artifacts.
+const latestSchemaVersion = 33
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -297,6 +300,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV31(tx)
 	case 32:
 		return migrateToV32(tx)
+	case 33:
+		return migrateToV33(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -1188,4 +1193,9 @@ func migrateToV32(tx *sql.Tx) error {
 		return err
 	}
 	return addColumnIfMissing(tx, "workflow_node_attempt", "resolved_by", "TEXT NOT NULL DEFAULT ''")
+}
+
+func migrateToV33(tx *sql.Tx) error {
+	_, err := tx.Exec(`ALTER TABLE workflow_definition ADD COLUMN archived_at INTEGER`)
+	return err
 }

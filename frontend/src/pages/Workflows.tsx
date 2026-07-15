@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type WorkflowArtifact, type WorkflowDefinition, type WorkflowMapItemRun, type WorkflowRun, type WorkflowRunDetail, type WorkflowValidation, type WorkflowVersion } from '../lib/api';
 import { useWorkflows } from '../lib/useCapabilities';
 import { onSseConnect, onWorkflowRunUpdated, onWorkflowTriggerUpdated } from '../lib/useGlobalEvents';
 import { usePageTitle } from '../lib/headerContext';
+import { WorkflowBuilder } from './WorkflowBuilder';
+import { Button, SearchField, SelectField } from '../components/Control';
+import { Modal } from '../components/Modal';
 import './Workflows.css';
 
 const EXAMPLE = `id: release
@@ -32,16 +35,38 @@ export function Workflows() {
 	const [versions, setVersions] = useState<WorkflowVersion[]>([]);
 	const [runs, setRuns] = useState<WorkflowRun[]>([]);
 	const [selected, setSelected] = useState<WorkflowRunDetail>();
+	const [runOpen, setRunOpen] = useState(false);
 	const selectedID = useRef<string | undefined>(undefined);
 	const validationID = useRef(0);
 	const [error, setError] = useState('');
 	const [validated, setValidated] = useState<WorkflowValidation>();
 	const [compareFrom, setCompareFrom] = useState('');
 	const [compareTo, setCompareTo] = useState('');
+	const [view, setView] = useState<'operations' | 'author'>('operations');
+	const [operationsView, setOperationsView] = useState<'workflows' | 'runs'>('workflows');
+	const [query, setQuery] = useState('');
+	const [runState, setRunState] = useState('all');
+	const [runWorkflowID, setRunWorkflowID] = useState('');
+	const [showRevisions, setShowRevisions] = useState(false);
+	const [editingVersionID, setEditingVersionID] = useState('');
+	const deferredQuery = useDeferredValue(query.trim().toLowerCase());
+	const latestVersions = Array.from(versions.reduce((latest, version) => {
+		const current = latest.get(version.workflowId);
+		if (!current || version.revision > current.revision) latest.set(version.workflowId, version);
+		return latest;
+	}, new Map<string, WorkflowVersion>()).values());
+	const visibleVersions = (showRevisions ? versions : latestVersions).filter((version) => !deferredQuery || `${version.name} ${version.workflowId}`.toLowerCase().includes(deferredQuery));
+	const visibleRuns = runs.filter((run) => (runState === 'all' || run.state === runState) && (!runWorkflowID || run.workflowId === runWorkflowID) && (!deferredQuery || run.workflowId.toLowerCase().includes(deferredQuery)));
+	const workflowOptions = latestVersions.map((version) => [version.workflowId, version.name]);
 
 	function select(run: WorkflowRunDetail) {
 		selectedID.current = run.id;
 		setSelected(run);
+	}
+
+	function openRun(run: WorkflowRunDetail) {
+		select(run);
+		setRunOpen(true);
 	}
 
 	async function refresh() {
@@ -80,7 +105,6 @@ export function Workflows() {
 			if (requestID === validationID.current) setValidated(result);
 		} catch (reason) {
 			if (requestID !== validationID.current) return;
-			setValidated(undefined);
 			setError(reason instanceof Error ? reason.message : String(reason));
 		}
 	}
@@ -92,11 +116,55 @@ export function Workflows() {
 		setError('');
 	}
 
+	function editSourceLive(value: string) {
+		const requestID = ++validationID.current;
+		setSource(value);
+		setError('');
+		void api.workflows.validate(value).then((result) => {
+			if (requestID === validationID.current) setValidated(result);
+		}).catch((reason) => {
+			if (requestID === validationID.current) setError(reason instanceof Error ? reason.message : String(reason));
+		});
+	}
+
+	function editVersion(version: WorkflowVersion) {
+		const nextSource = JSON.stringify(version.definition, null, 2);
+		validationID.current++;
+		setSource(nextSource);
+		setValidated({ definition: version.definition, canonicalJson: version.definition, yaml: nextSource });
+		setEditingVersionID(version.id);
+		setError('');
+		setView('author');
+	}
+
+	async function newWorkflow() {
+		validationID.current++;
+		setSource(EXAMPLE);
+		setValidated(undefined);
+		setEditingVersionID('');
+		setError('');
+		setView('author');
+		try {
+			setValidated(await api.workflows.validate(EXAMPLE));
+		} catch (reason) {
+			setError(reason instanceof Error ? reason.message : String(reason));
+		}
+	}
+
+	function applyBuilder(definition: WorkflowDefinition) {
+		validationID.current++;
+		const nextSource = JSON.stringify(definition, null, 2);
+		setSource(nextSource);
+		setValidated({ definition, canonicalJson: definition, yaml: nextSource });
+		setError('');
+	}
+
 	async function publish() {
 		setError('');
 		try {
 			await api.workflows.publish(source);
 			await refresh();
+			setView('operations');
 		} catch (reason) {
 			setError(reason instanceof Error ? reason.message : String(reason));
 		}
@@ -112,11 +180,23 @@ export function Workflows() {
 		}
 	}
 
+	async function archive() {
+		if (!editingVersionID || !window.confirm('Archive this workflow? Its run history and artifacts will be kept.')) return;
+		setError('');
+		try {
+			await api.workflows.archive(editingVersionID);
+			await refresh();
+			setView('operations');
+		} catch (reason) {
+			setError(reason instanceof Error ? reason.message : String(reason));
+		}
+	}
+
 	async function mutate(action: () => Promise<WorkflowRunDetail>) {
 		setError('');
 		try {
 			const run = await action();
-			select(run);
+			openRun(run);
 			await refresh();
 		} catch (reason) {
 			setError(reason instanceof Error ? reason.message : String(reason));
@@ -127,27 +207,32 @@ export function Workflows() {
 
 	return (
 		<main className="workflow-page" data-testid="workflows-page">
-			<section className="workflow-author" aria-label="Workflow authoring">
-				<div><span className="workflow-kicker">Immutable YAML or JSON definitions</span><h1>Workflow versions</h1><p>Validate a definition, inspect its graph, then publish and activate an immutable version.</p></div>
-				<label>Workflow YAML or JSON<textarea aria-label="Workflow YAML or JSON" value={source} onChange={(event) => editSource(event.target.value)} spellCheck={false} /></label>
-				<div className="workflow-controls"><button type="button" onClick={() => void validate()}>Validate</button><button type="button" onClick={() => void publish()}>Publish version</button></div>
-				{error && <p role="alert">{error}</p>}
-				{validated && <DefinitionGraph definition={validated.definition} />}
-			</section>
-
-			<section className="workflow-history" aria-label="Workflow history">
-				<div><h2>Published versions</h2>{versions.map((version) => <article key={version.id}><strong>{version.name}</strong> <small>rev {version.revision} · {version.definition.version}{version.active ? ' · active' : ''}</small><div className="workflow-controls"><button type="button" onClick={() => void activate(version.id)}>Activate revision {version.revision}</button><a href={api.workflows.exportUrl(version.id)} download={`${version.workflowId}-v${version.revision}.yaml`}>Export revision {version.revision}</a>{version.active && <button type="button" onClick={() => void mutate(() => api.workflows.startActive(version.workflowId))}>Start active {version.workflowId}</button>}</div>{version.triggerStates.map((trigger) => <div className="workflow-trigger" key={trigger.id}><strong>{trigger.id} · {trigger.type} · {trigger.overlap ?? 'skip'}</strong><small>Next {formatTime(trigger.nextCheckAt)} · Last {formatTime(trigger.lastFiredAt)} ({trigger.lastDecision ?? 'never'}) · {trigger.queued} queued{trigger.lastRunId ? ` · run ${trigger.lastRunId}` : ''}</small></div>)}</article>)}</div>
-				<div><h2>Runs</h2>{runs.map((run) => <button type="button" aria-pressed={selected?.id === run.id} key={run.id} onClick={() => void api.workflows.run(run.id).then(select)}>{run.workflowId} <small>{run.state}</small></button>)}</div>
-			</section>
-			<VersionComparison versions={versions} from={compareFrom} to={compareTo} onFrom={setCompareFrom} onTo={setCompareTo} />
-
-			{selected && <RunView run={selected} mutate={mutate} onSelectRun={(id) => void api.workflows.run(id).then(select).catch((reason) => setError(String(reason)))} />}
+			{view === 'operations' ? <>
+				<div className="workflow-tabs workflow-operation-tabs" role="tablist" aria-label="Workflow operations"><Button role="tab" variant="muted" aria-selected={operationsView === 'workflows'} onClick={() => setOperationsView('workflows')}>Workflows</Button><Button role="tab" variant="muted" aria-selected={operationsView === 'runs'} onClick={() => setOperationsView('runs')}>Run history</Button></div>
+				{error && <p className="workflow-operation-error" role="alert">{error}</p>}
+				{operationsView === 'workflows' && <section className="workflow-discovery" aria-label="Workflow discovery">
+					<div className="workflow-filter"><label>Find workflows<SearchField aria-label="Find workflows" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name or ID" /></label><label className="workflow-revision-toggle"><input type="checkbox" checked={showRevisions} onChange={(event) => setShowRevisions(event.target.checked)} /> Show revisions</label></div>
+					<div className="workflow-list-heading"><h2>Workflows</h2><Button variant="accent" onClick={() => void newWorkflow()}>New workflow</Button></div>
+					{visibleVersions.length > 0 ? <table className="workflow-table"><thead><tr><th>Workflow</th><th>Revision</th><th>Triggers</th><th></th></tr></thead><tbody>{visibleVersions.map((version) => <tr key={version.id}><td><button type="button" aria-label={version.name} onClick={() => { setRunWorkflowID(version.workflowId); setOperationsView('runs'); }}>{version.name}<small>{version.workflowId}</small></button></td><td>{version.revision} · <State state={version.active ? 'active' : 'inactive'} /></td><td>{version.triggerStates.length ? version.triggerStates.map((trigger) => <div className="workflow-trigger-summary" key={trigger.id}><strong>{trigger.type}{trigger.type === 'cron' && ` (${trigger.cron})`}{trigger.type === 'interval' && ` (${trigger.intervalSeconds}s)`}</strong></div>) : 'Manual'}</td><td><div className="workflow-controls"><button type="button" onClick={() => void activate(version.id)}>Activate</button><button type="button" onClick={() => editVersion(version)}>Edit</button><a href={api.workflows.exportUrl(version.id)} download={`${version.workflowId}-v${version.revision}.yaml`}>Export</a>{version.active && <button type="button" onClick={() => void mutate(() => api.workflows.startActive(version.workflowId))}>Start run</button>}</div></td></tr>)}</tbody></table> : <p>No workflows match this search.</p>}
+				</section>}
+				{operationsView === 'runs' && <section className="workflow-run-list" aria-label="Workflow runs"><div className="workflow-list-heading"><h2>Run history{runWorkflowID && ` · ${runWorkflowID}`}</h2>{runWorkflowID && <Button variant="muted" onClick={() => setRunWorkflowID('')}>All workflows</Button>}</div><div className="workflow-filter"><label>Find workflows<SearchField aria-label="Find workflows" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name or ID" /></label><label>Workflow<SelectField aria-label="Workflow" value={runWorkflowID} onChange={(event) => setRunWorkflowID(event.target.value)}><option value="">All workflows</option>{workflowOptions.map(([id, name]) => <option key={id} value={id}>{name} ({id})</option>)}</SelectField></label><label>Run state<SelectField aria-label="Run state" value={runState} onChange={(event) => setRunState(event.target.value)}><option value="all">All states</option><option value="active">Active</option><option value="paused">Paused</option><option value="successful">Successful</option><option value="failed">Failed</option><option value="canceled">Canceled</option></SelectField></label></div><table className="workflow-table"><thead><tr><th>Workflow</th><th>State</th><th>Started</th><th>Trigger</th></tr></thead><tbody>{visibleRuns.map((run) => <tr key={run.id} data-selected={selected?.id === run.id || undefined}><td><button type="button" onClick={() => void api.workflows.run(run.id).then(openRun)}>{run.workflowId}<small>{run.id}</small></button></td><td><State state={run.state} /></td><td>{formatTime(run.createdAt)}</td><td>{run.trigger?.type ?? 'manual'}</td></tr>)}</tbody></table>{visibleRuns.length === 0 && <p>No runs match these filters.</p>}</section>}
+				{selected && runOpen && <RunModal run={selected} mutate={mutate} onClose={() => setRunOpen(false)} onSelectRun={(id) => void api.workflows.run(id).then(openRun).catch((reason) => setError(String(reason)))} />}
+			</> : <>
+				<section className="workflow-author" aria-label="Workflow authoring"><header className="workflow-author-head"><div><span className="workflow-kicker">Immutable workflow revision</span><h2>Author workflow</h2><p>Build and connect steps on the canvas. Source is available for advanced edits.</p></div><div className="workflow-controls"><Button variant="muted" onClick={() => void validate()}>Validate</Button><Button variant="accent" onClick={() => void publish()}>Save new version</Button></div></header>{error && <p role="alert">{error}</p>}{validated ? <WorkflowBuilder definition={validated.definition} source={source} onChange={applyBuilder} onSourceChange={editSourceLive} /> : <label className="workflow-yaml">Workflow YAML or JSON<textarea aria-label="Workflow YAML or JSON" value={source} onChange={(event) => editSource(event.target.value)} spellCheck={false} /></label>}{editingVersionID && <Button variant="muted" className="workflow-archive" onClick={() => void archive()}>Delete workflow</Button>}</section>
+				<VersionComparison versions={versions} from={compareFrom} to={compareTo} onFrom={setCompareFrom} onTo={setCompareTo} />
+			</>}
 		</main>
 	);
 }
 
+function RunModal({ run, mutate, onClose, onSelectRun }: { run: WorkflowRunDetail; mutate: (action: () => Promise<WorkflowRunDetail>) => Promise<void>; onClose: () => void; onSelectRun: (id: string) => void }) {
+	return <Modal onClose={onClose} label="Workflow run details" backdropClassName="workflow-run-modal-backdrop" dialogClassName="workflow-run-modal"><button className="workflow-run-modal-close" type="button" onClick={onClose}>Close</button><RunView run={run} mutate={mutate} onSelectRun={onSelectRun} /></Modal>;
+}
+
 function RunView({ run, mutate, onSelectRun }: { run: WorkflowRunDetail; mutate: (action: () => Promise<WorkflowRunDetail>) => Promise<void>; onSelectRun: (id: string) => void }) {
 	const [artifacts, setArtifacts] = useState<WorkflowArtifact[]>([]);
+	const [selectedNodeID, setSelectedNodeID] = useState(run.nodes[0]?.nodeId);
+	const selectedNode = run.nodes.find((node) => node.nodeId === selectedNodeID) ?? run.nodes[0];
 	useEffect(() => {
 		let active = true;
 		void api.workflows.artifacts(run.id).then((next) => { if (active) setArtifacts(next); }).catch(() => { if (active) setArtifacts([]); });
@@ -160,29 +245,18 @@ function RunView({ run, mutate, onSelectRun }: { run: WorkflowRunDetail; mutate:
 			{run.trigger && <p className="workflow-run-trigger"><strong>{run.trigger.id} · {run.trigger.type} · {run.trigger.overlap ?? 'skip'}</strong> · {run.trigger.detail} · fired {formatTime(run.trigger.firedAt)}</p>}
 			{run.resources && run.resources.length > 0 && <ul className="workflow-resources" aria-label="Resource pools">{run.resources.map((pool) => <li key={pool.pool || 'run'}><strong>{pool.pool || 'run concurrency'}</strong>: {pool.held}/{pool.capacity} held{pool.waiting && pool.waiting.length > 0 && <span> · waiting: {pool.waiting.join(', ')}</span>}</li>)}</ul>}
 			{run.workspace && run.workspace.length > 0 && <ul className="workflow-leases" aria-label="Workspace leases">{run.workspace.map((lease) => <li key={lease.nodeId}><strong>{lease.nodeId}</strong>: shard {lease.shard} · {lease.mode}{lease.commit && ' (commit)'}{lease.paths && lease.paths.length > 0 && <span> · {lease.paths.join(', ')}</span>}{lease.host && <span> · host {lease.host}</span>}{lease.shardPath && <span> · {lease.shardPath}</span>}</li>)}</ul>}
-			<p className="workflow-kicker" aria-label="Node state legend">States: pending, ready, running, successful, failed, skipped, canceled, unknown</p>
-			<div className="workflow-graph" role="region" aria-label="Workflow run graph">
-				{run.nodes.map((node, index) => (
-					<div className="workflow-step" key={node.nodeId}>
-						{index > 0 && <span aria-hidden="true">-&gt;</span>}
-						<RunNode run={run} node={node} mutate={mutate} onSelectRun={onSelectRun} />
-					</div>
-				))}
-			</div>
+			<div className="workflow-run-layout"><div><p className="workflow-kicker" aria-label="Node state legend">States: pending, ready, running, successful, failed, skipped, canceled, unknown</p><div className="workflow-graph" role="region" aria-label="Workflow run graph">{run.nodes.map((node, index) => <div className="workflow-step" key={node.nodeId}>{index > 0 && <span aria-hidden="true">-&gt;</span>}<button type="button" className="workflow-run-node" data-state={node.state} aria-pressed={selectedNode?.nodeId === node.nodeId} onClick={() => setSelectedNodeID(node.nodeId)}><small>Phase {index + 1} · {node.type}</small><strong>{node.name}</strong><State state={node.state} /></button></div>)}</div></div><aside className="workflow-run-inspector" aria-label="Selected node details">{selectedNode ? <RunNode run={run} node={selectedNode} mutate={mutate} onSelectRun={onSelectRun} /> : <p>No nodes in this run.</p>}</aside></div>
 			<ArtifactList runId={run.id} artifacts={artifacts} />
 		</section>
 	);
 }
 
-function DefinitionGraph({ definition }: { definition: WorkflowDefinition }) {
-	return <div className="workflow-graph" role="region" aria-label="Workflow definition graph">{definition.nodes.map((node) => <article key={node.id}><small>{node.type} · {node.id}</small><h3>{node.name}</h3>{node.subworkflow && <p>Uses {node.subworkflow.workflowId}</p>}<p>{definition.dependencies.filter((dependency) => dependency.to === node.id).map((dependency) => dependency.from).join(', ') || 'Entry node'}</p></article>)}</div>;
-}
-
 function VersionComparison({ versions, from, to, onFrom, onTo }: { versions: WorkflowVersion[]; from: string; to: string; onFrom: (id: string) => void; onTo: (id: string) => void }) {
 	if (!versions.length) return null;
 	const left = versions.find((version) => version.id === from) ?? versions[0];
-	const right = versions.find((version) => version.id === to) ?? versions[0];
-	return <section className="workflow-run" role="region" aria-label="Version comparison"><h2>Compare versions</h2><div className="workflow-controls"><label>Compare from<select aria-label="Compare from" value={left.id} onChange={(event) => onFrom(event.target.value)}>{versions.map((version) => <option key={version.id} value={version.id}>Revision {version.revision}</option>)}</select></label><label>Compare to<select aria-label="Compare to" value={right.id} onChange={(event) => onTo(event.target.value)}>{versions.map((version) => <option key={version.id} value={version.id}>Revision {version.revision}</option>)}</select></label></div><div className="workflow-history"><pre>Revision {left.revision}{'\n'}{JSON.stringify(left.definition, null, 2)}</pre><pre>Revision {right.revision}{'\n'}{JSON.stringify(right.definition, null, 2)}</pre></div></section>;
+	const revisions = versions.filter((version) => version.workflowId === left.workflowId);
+	const right = revisions.find((version) => version.id === to && version.id !== left.id) ?? revisions.find((version) => version.id !== left.id);
+	return <details className="workflow-comparison" aria-label="Version comparison"><summary>Compare revisions{revisions.length > 1 ? ` · ${left.name}` : ''}</summary>{revisions.length < 2 ? <p>Publish another revision of {left.name} to compare it.</p> : <section className="workflow-run"><div className="workflow-controls"><label>Compare from<select aria-label="Compare from" value={left.id} onChange={(event) => onFrom(event.target.value)}>{revisions.map((version) => <option key={version.id} value={version.id}>Revision {version.revision}</option>)}</select></label><label>Compare to<select aria-label="Compare to" value={right!.id} onChange={(event) => onTo(event.target.value)}>{revisions.filter((version) => version.id !== left.id).map((version) => <option key={version.id} value={version.id}>Revision {version.revision}</option>)}</select></label></div><div className="workflow-history"><pre>Revision {left.revision}{'\n'}{JSON.stringify(left.definition, null, 2)}</pre><pre>Revision {right!.revision}{'\n'}{JSON.stringify(right!.definition, null, 2)}</pre></div></section>}</details>;
 }
 
 function RunNode({ run, node, mutate, onSelectRun }: { run: WorkflowRunDetail; node: WorkflowRunDetail['nodes'][number]; mutate: (action: () => Promise<WorkflowRunDetail>) => Promise<void>; onSelectRun: (id: string) => void }) {
@@ -190,7 +264,7 @@ function RunNode({ run, node, mutate, onSelectRun }: { run: WorkflowRunDetail; n
 	const phase = run.nodes.findIndex((candidate) => candidate.nodeId === node.nodeId) + 1;
 	const definition = run.version.definition.nodes.find((candidate) => candidate.id === node.nodeId);
 	const lease = run.workspace?.find((candidate) => candidate.nodeId === node.nodeId);
-	const conditions = run.version.definition.dependencies.filter((edge) => edge.to === node.nodeId && edge.condition).map((edge) => edge.condition!);
+	const conditions = (run.version.definition.dependencies ?? []).filter((edge) => edge.to === node.nodeId && edge.condition).map((edge) => edge.condition!);
 	const attemptLine = attempt
 		? `Attempt ${attempt.seq}: ${attempt.state}${attempt.exitCode !== undefined && attempt.exitCode >= 0 ? ` (exit ${attempt.exitCode})` : ''}`
 		: 'Not attempted';

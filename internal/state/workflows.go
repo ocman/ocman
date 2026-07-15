@@ -266,6 +266,7 @@ func (d *DB) ListWorkflowVersions() ([]WorkflowVersion, error) {
 		       COALESCE(d.active_version_id = v.id, 0)
 		FROM workflow_version v
 		JOIN workflow_definition d ON d.id = v.workflow_id
+		WHERE d.archived_at IS NULL
 		ORDER BY v.created_at DESC, v.revision DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("listing workflow versions: %w", err)
@@ -280,6 +281,18 @@ func (d *DB) ListWorkflowVersions() ([]WorkflowVersion, error) {
 		out = append(out, v)
 	}
 	return out, rows.Err()
+}
+
+func (d *DB) ArchiveWorkflowVersion(id string, now int64) error {
+	res, err := d.db.Exec(`UPDATE workflow_definition SET archived_at = ?, active_version_id = NULL, updated_at = ? WHERE id = (SELECT workflow_id FROM workflow_version WHERE id = ?) AND archived_at IS NULL`, now, now, id)
+	if err != nil {
+		return fmt.Errorf("archiving workflow version: %w", err)
+	}
+	changed, err := res.RowsAffected()
+	if err != nil || changed != 1 {
+		return fmt.Errorf("workflow version %q not found", id)
+	}
+	return nil
 }
 
 func (d *DB) workflowVersionNodes(id string) ([]WorkflowNode, error) {

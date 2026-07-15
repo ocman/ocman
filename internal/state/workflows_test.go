@@ -1,10 +1,37 @@
 package state
 
 import (
+	"database/sql"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestArchiveWorkflowVersionHidesDefinitionButKeepsRuns(t *testing.T) {
+	db := openTestStateDB(t)
+	version, err := db.InsertWorkflowVersion(WorkflowVersion{ID: "version-1", WorkflowID: "workflow-1", Name: "Workflow", MetadataVersion: "1", DefinitionJSON: `{}`, Concurrency: 1, CreatedAt: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.InsertWorkflowRun(WorkflowRun{ID: "run-1", WorkflowID: version.WorkflowID, VersionID: version.ID, State: "successful", CreatedAt: 1, UpdatedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ArchiveWorkflowVersion(version.ID, 2); err != nil {
+		t.Fatal(err)
+	}
+	versions, err := db.ListWorkflowVersions()
+	if err != nil || len(versions) != 0 {
+		t.Fatalf("archived workflow still listed: %#v, %v", versions, err)
+	}
+	runs, err := db.ListWorkflowRuns()
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("archiving removed run history: %#v, %v", runs, err)
+	}
+	if _, err := db.GetActiveWorkflowVersion(version.WorkflowID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("archived workflow remained active: %v", err)
+	}
+}
 
 func TestResolveWorkflowAttempt(t *testing.T) {
 	db := openTestStateDB(t)
