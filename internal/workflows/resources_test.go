@@ -333,7 +333,7 @@ func TestUnlimitedByDefault(t *testing.T) {
 	h.svc = NewService(Deps{Store: h.db, Agent: h.agent, Now: func() time.Time { return h.now }, Usage: usage})
 	def := singleAgentDefinition() // no Limits
 	run := publishAndStart(t, h, def)
-	h.agent.results["session-1"] = AgentResult{State: "waiting", Outputs: map[string]json.RawMessage{}}
+	h.agent.results["session-1"] = AgentResult{State: "waiting", FinalMessage: "null", Outputs: map[string]json.RawMessage{}}
 	if err := h.svc.Tick(context.Background()); err != nil {
 		t.Fatalf("tick: %v", err)
 	}

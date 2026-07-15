@@ -95,6 +95,14 @@ type WorkflowCommandResult struct {
 	StderrTruncated bool
 }
 
+type WorkflowAgentResult struct {
+	Successful   bool
+	SessionState string
+	Output       string
+	OutputsJSON  string
+	Error        string
+}
+
 // WorkflowResourceRequest is one pool acquisition an attempt needs. Pool
 // "" is the implicit run-concurrency cap. Capacity is the pool's total.
 type WorkflowResourceRequest struct {
@@ -651,26 +659,26 @@ func (d *DB) SetWorkflowAgentSessionState(runID, nodeID string, attemptID int64,
 	return nil
 }
 
-func (d *DB) CompleteWorkflowAgentNode(runID, nodeID string, attemptID int64, successful bool, sessionState, outputsJSON, attemptError string, now int64) error {
+func (d *DB) CompleteWorkflowAgentNode(runID, nodeID string, attemptID int64, result WorkflowAgentResult, now int64) error {
 	tx, err := d.db.Begin()
 	if err != nil {
 		return fmt.Errorf("beginning workflow agent completion: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 	nodeState, attemptState := "failed", "failed"
-	if successful {
+	if result.Successful {
 		nodeState, attemptState = "successful", "successful"
 	}
 	if _, err = tx.Exec(`UPDATE workflow_node_run SET state = ?, completed_at = ? WHERE run_id = ? AND node_id = ? AND state = 'running'`, nodeState, now, runID, nodeID); err != nil {
 		return fmt.Errorf("completing workflow agent node: %w", err)
 	}
-	if _, err = tx.Exec(`UPDATE workflow_node_attempt SET state = ?, session_state = ?, outputs_json = ?, error = ?, completed_at = ? WHERE id = ? AND state IN ('starting', 'running')`, attemptState, sessionState, outputsJSON, attemptError, now, attemptID); err != nil {
+	if _, err = tx.Exec(`UPDATE workflow_node_attempt SET state = ?, session_state = ?, stdout = ?, outputs_json = ?, error = ?, completed_at = ? WHERE id = ? AND state IN ('starting', 'running')`, attemptState, result.SessionState, result.Output, result.OutputsJSON, result.Error, now, attemptID); err != nil {
 		return fmt.Errorf("completing workflow agent attempt: %w", err)
 	}
 	if err = releaseWorkflowResources(tx, runID, nodeID); err != nil {
 		return err
 	}
-	if !successful {
+	if !result.Successful {
 		return completeWorkflowNodeTx(tx, runID, now)
 	}
 	return completeWorkflowNodeTx(tx, runID, now)

@@ -74,6 +74,7 @@ func (e *workflowAgentExecutor) Inspect(ctx context.Context, session workflows.A
 		result.Error = detail.Session.LastErrorMessage
 		return result, nil
 	}
+	result.FinalMessage = finalAssistantMessage(detail.Messages, detail.Parts)
 	result.Outputs = make(map[string]json.RawMessage, len(collectors))
 	for _, collector := range collectors {
 		value, err := e.collect(ctx, session.Directory, detail, collector)

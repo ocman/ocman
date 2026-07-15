@@ -43,6 +43,7 @@ const (
 	AttemptErrored    = "errored"
 	AttemptDenied     = "denied"
 	AttemptUnknown    = "unknown"
+	AgentCorrecting   = "correcting"
 
 	ResolutionSucceeded = "successful"
 	ResolutionFailed    = "failed"
@@ -252,9 +253,10 @@ type AgentSession struct {
 }
 
 type AgentResult struct {
-	State   string
-	Outputs map[string]json.RawMessage
-	Error   string
+	State        string
+	FinalMessage string
+	Outputs      map[string]json.RawMessage
+	Error        string
 }
 
 type AgentExecutor interface {
@@ -420,7 +422,7 @@ type Store interface {
 	SetWorkflowWorkspaceShardPath(string, string, string) error
 	AttachWorkflowAgentSession(string, string, int64, string, string, string, int64) error
 	SetWorkflowAgentSessionState(string, string, int64, string, string, int64) error
-	CompleteWorkflowAgentNode(string, string, int64, bool, string, string, string, int64) error
+	CompleteWorkflowAgentNode(string, string, int64, state.WorkflowAgentResult, int64) error
 	ResolveWorkflowAttempt(string, int64, string, int64) error
 	ResolveWorkflowAttemptBy(string, int64, string, string, int64) error
 	MarkWorkflowAttemptUnknown(string, string, int64, string, int64) error
@@ -1111,7 +1113,7 @@ func nodeResult(node NodeRun) NodeResult {
 	}
 	result.Started = workflowResultTime(node.Attempts[0].StartedAt)
 	result.Ended = workflowResultTime(node.CompletedAt)
-	if node.Type != "command" {
+	if node.Type != "command" && node.Type != "agent" {
 		return result
 	}
 	attempt := node.Attempts[len(node.Attempts)-1]
@@ -1121,7 +1123,7 @@ func nodeResult(node NodeRun) NodeResult {
 		} else if len(attempt.Outputs) > 0 {
 			result.Output, _ = json.Marshal(attempt.Outputs)
 		}
-	} else {
+	} else if attempt.Error != "" {
 		result.Output, _ = json.Marshal(map[string]string{"error": attempt.Error})
 	}
 	return result
@@ -1648,7 +1650,7 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 				}
 				agentDir := config.Directory
 				if shardDir, shardErr := s.shardDirectory(ctx, run.Version, runID, node.NodeID); shardErr != nil {
-					if err := s.store.CompleteWorkflowAgentNode(runID, node.NodeID, attempt.ID, false, "error", "{}", "provisioning workspace shard: "+shardErr.Error(), s.now().UnixMilli()); err != nil {
+					if err := s.completeAgentFailure(runID, node.NodeID, attempt.ID, "error", "provisioning workspace shard: "+shardErr.Error()); err != nil {
 						return err
 					}
 					s.changed(runID)
@@ -1660,7 +1662,7 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 				prompt := s.itemPrompt(ctx, run, config.Prompt)
 				session, startErr := s.agent.Start(ctx, AgentRequest{Platform: config.Platform, Directory: agentDir, Prompt: prompt, Model: config.Model, Agent: config.Agent, Reasoning: config.Reasoning, SessionID: existing})
 				if startErr != nil {
-					if err := s.store.CompleteWorkflowAgentNode(runID, node.NodeID, attempt.ID, false, "error", "{}", startErr.Error(), s.now().UnixMilli()); err != nil {
+					if err := s.completeAgentFailure(runID, node.NodeID, attempt.ID, "error", startErr.Error()); err != nil {
 						return err
 					}
 					s.changed(runID)
@@ -1671,7 +1673,7 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 					return err
 				}
 				if session.Error != "" {
-					if err := s.store.CompleteWorkflowAgentNode(runID, node.NodeID, attempt.ID, false, session.State, "{}", session.Error, s.now().UnixMilli()); err != nil {
+					if err := s.completeAgentFailure(runID, node.NodeID, attempt.ID, session.State, session.Error); err != nil {
 						return err
 					}
 				}
@@ -1684,7 +1686,11 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 				return inspectErr
 			}
 			if result.State == "busy" || result.State == "running" {
-				if err := s.store.SetWorkflowAgentSessionState(runID, node.NodeID, attempt.ID, result.State, "", s.now().UnixMilli()); err != nil {
+				sessionState := result.State
+				if attempt.SessionState == AgentCorrecting {
+					sessionState = AgentCorrecting
+				}
+				if err := s.store.SetWorkflowAgentSessionState(runID, node.NodeID, attempt.ID, sessionState, "", s.now().UnixMilli()); err != nil {
 					return err
 				}
 				continue
@@ -1702,8 +1708,33 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 			// Redact known secret values from agent outputs and error
 			// before persistence and artifact publication.
 			redactor := s.runRedactor(run.Version)
+			result.FinalMessage = redactor.redact(result.FinalMessage)
 			result.Outputs = redactor.redactRawOutputs(result.Outputs)
 			result.Error = redactor.redact(result.Error)
+			if successful && len(config.Collectors) == 0 && !json.Valid([]byte(result.FinalMessage)) {
+				if attempt.SessionState != AgentCorrecting {
+					const correction = "Your previous response was not valid JSON. Reply once with only a valid JSON value for the workflow result."
+					session, err := s.agent.Start(ctx, AgentRequest{Platform: attempt.Platform, Directory: attempt.Directory, Prompt: correction, Model: config.Model, Agent: config.Agent, Reasoning: config.Reasoning, SessionID: attempt.SessionID})
+					if err != nil {
+						if err := s.completeAgentFailure(runID, node.NodeID, attempt.ID, "error", err.Error()); err != nil {
+							return err
+						}
+					}
+					if err == nil && session.Error != "" {
+						if err := s.completeAgentFailure(runID, node.NodeID, attempt.ID, session.State, session.Error); err != nil {
+							return err
+						}
+					} else if err == nil {
+						if err := s.store.SetWorkflowAgentSessionState(runID, node.NodeID, attempt.ID, AgentCorrecting, "", s.now().UnixMilli()); err != nil {
+							return err
+						}
+					}
+					s.changed(runID)
+					return nil
+				}
+				successful = false
+				result.Error = "agent output must be exactly one valid JSON value"
+			}
 			if successful {
 				s.publishAgentArtifacts(run.Version, runID, node.NodeID, attempt.ID, config, result.Outputs)
 			}
@@ -1711,7 +1742,8 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 			if err != nil {
 				return err
 			}
-			if err := s.store.CompleteWorkflowAgentNode(runID, node.NodeID, attempt.ID, successful, result.State, string(outputs), result.Error, s.now().UnixMilli()); err != nil {
+			completion := state.WorkflowAgentResult{Successful: successful, SessionState: result.State, Output: result.FinalMessage, OutputsJSON: string(outputs), Error: result.Error}
+			if err := s.store.CompleteWorkflowAgentNode(runID, node.NodeID, attempt.ID, completion, s.now().UnixMilli()); err != nil {
 				return err
 			}
 			if completed, err := s.GetRun(ctx, runID); err == nil {
@@ -1726,6 +1758,11 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 			return nil
 		}
 	}
+}
+
+func (s *Service) completeAgentFailure(runID, nodeID string, attemptID int64, sessionState, message string) error {
+	result := state.WorkflowAgentResult{SessionState: sessionState, OutputsJSON: "{}", Error: message}
+	return s.store.CompleteWorkflowAgentNode(runID, nodeID, attemptID, result, s.now().UnixMilli())
 }
 
 // applyPolicies evaluates conditions before a ready node is dispatched and

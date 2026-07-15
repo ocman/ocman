@@ -60,10 +60,11 @@ const singleAgent = `{
 }`
 
 type fakeAgentExecutor struct {
-	starts   []AgentRequest
-	results  map[string]AgentResult
-	canceled []AgentSession
-	startErr error
+	starts     []AgentRequest
+	results    map[string]AgentResult
+	canceled   []AgentSession
+	startErr   error
+	sessionErr string
 }
 
 func (f *fakeAgentExecutor) Start(_ context.Context, req AgentRequest) (AgentSession, error) {
@@ -74,6 +75,11 @@ func (f *fakeAgentExecutor) Start(_ context.Context, req AgentRequest) (AgentSes
 	id := req.SessionID
 	if id == "" {
 		id = "session-1"
+	} else {
+		delete(f.results, id)
+	}
+	if f.sessionErr != "" {
+		return AgentSession{ID: id, Platform: req.Platform, State: "error", Error: f.sessionErr}, nil
 	}
 	return AgentSession{ID: id, Platform: req.Platform, State: "busy"}, nil
 }
@@ -1106,7 +1112,7 @@ func TestTickReattachesLiveAgentWithoutDuplicateDispatch(t *testing.T) {
 	if restored.State != StateActive || restored.Nodes[0].Attempts[0].State != AttemptRunning || len(h.agent.starts) != 1 {
 		t.Fatalf("live agent was not reattached exactly once: run=%+v starts=%+v", restored, h.agent.starts)
 	}
-	h.agent.results["session-1"] = AgentResult{State: "done"}
+	h.agent.results["session-1"] = AgentResult{State: "done", FinalMessage: "null"}
 	if err := h.svc.Tick(t.Context()); err != nil {
 		t.Fatal(err)
 	}
@@ -1480,7 +1486,7 @@ func TestAgentRunFreshAffinityCollectorsAndIdleCompletion(t *testing.T) {
 		t.Fatalf("explicit affinity did not reuse session: %+v", h.agent.starts)
 	}
 
-	h.agent.results["session-1"] = AgentResult{State: "done"}
+	h.agent.results["session-1"] = AgentResult{State: "done", FinalMessage: "null"}
 	h.advance()
 	if err := h.svc.Tick(ctx); err != nil {
 		t.Fatalf("final tick: %v", err)
@@ -1493,6 +1499,155 @@ func TestAgentRunFreshAffinityCollectorsAndIdleCompletion(t *testing.T) {
 	outputs := completed.Nodes[1].Attempts[0].Outputs
 	if string(outputs["message"]) != `"finished"` || string(outputs["result"]) != `{"ok":true}` {
 		t.Fatalf("collectors not persisted: %s", outputs)
+	}
+}
+
+func TestAgentNodeResultCorrectsInvalidJSONOnce(t *testing.T) {
+	const correction = "Your previous response was not valid JSON. Reply once with only a valid JSON value for the workflow result."
+
+	t.Run("corrected response succeeds", func(t *testing.T) {
+		h := newHarness(t)
+		version, err := h.svc.PublishJSON(t.Context(), []byte(singleAgent))
+		if err != nil {
+			t.Fatal(err)
+		}
+		run, err := h.svc.Start(t.Context(), version.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.agent.results["session-1"] = AgentResult{State: "done", FinalMessage: "not json"}
+		if err := h.svc.Tick(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if len(h.agent.starts) != 2 || h.agent.starts[1].SessionID != "session-1" || h.agent.starts[1].Prompt != correction {
+			t.Fatalf("correction was not sent to the agent session: %+v", h.agent.starts)
+		}
+		correcting, err := h.svc.GetRun(t.Context(), run.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if correcting.Nodes[0].Attempts[0].SessionState != "correcting" {
+			t.Fatalf("correction state was not persisted: %+v", correcting.Nodes[0].Attempts[0])
+		}
+		if correcting.Nodes[0].Result.Output != nil {
+			t.Fatalf("running correction exposed output: %s", correcting.Nodes[0].Result.Output)
+		}
+		h.agent.results["session-1"] = AgentResult{State: "busy"}
+		if err := h.svc.Tick(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		stillCorrecting, err := h.svc.GetRun(t.Context(), run.ID)
+		if err != nil || stillCorrecting.Nodes[0].Attempts[0].SessionState != AgentCorrecting {
+			t.Fatalf("busy agent lost correction state: %+v (%v)", stillCorrecting.Nodes[0].Attempts[0], err)
+		}
+
+		h.restart()
+		h.agent.results["session-1"] = AgentResult{State: "done", FinalMessage: `{"ok":true}`}
+		if err := h.svc.Tick(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		completed := waitForRun(t, h.svc, run.ID, StateSuccessful)
+		if got := string(completed.Nodes[0].Result.Output); got != `{"ok":true}` {
+			t.Fatalf("agent result output = %s", got)
+		}
+	})
+
+	t.Run("second invalid response fails", func(t *testing.T) {
+		h := newHarness(t)
+		version, err := h.svc.PublishJSON(t.Context(), []byte(singleAgent))
+		if err != nil {
+			t.Fatal(err)
+		}
+		run, err := h.svc.Start(t.Context(), version.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.agent.results["session-1"] = AgentResult{State: "done", FinalMessage: "still invalid"}
+		if err := h.svc.Tick(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		h.agent.results["session-1"] = AgentResult{State: "done", FinalMessage: "still invalid"}
+		if err := h.svc.Tick(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		failed := waitForRun(t, h.svc, run.ID, StateFailed)
+		if len(h.agent.starts) != 2 {
+			t.Fatalf("agent received %d messages, want initial plus one correction", len(h.agent.starts))
+		}
+		if got := string(failed.Nodes[0].Result.Output); got != `{"error":"agent output must be exactly one valid JSON value"}` {
+			t.Fatalf("agent failure output = %s", got)
+		}
+	})
+
+	t.Run("correction send failure fails", func(t *testing.T) {
+		h := newHarness(t)
+		version, err := h.svc.PublishJSON(t.Context(), []byte(singleAgent))
+		if err != nil {
+			t.Fatal(err)
+		}
+		run, err := h.svc.Start(t.Context(), version.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.agent.results["session-1"] = AgentResult{State: "done", FinalMessage: "invalid"}
+		h.agent.startErr = errors.New("correction failed")
+		if err := h.svc.Tick(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		failed := waitForRun(t, h.svc, run.ID, StateFailed)
+		if failed.Nodes[0].Attempts[0].Error != "correction failed" {
+			t.Fatalf("correction failure was not persisted: %+v", failed.Nodes[0].Attempts[0])
+		}
+	})
+
+	t.Run("correction session error fails", func(t *testing.T) {
+		h := newHarness(t)
+		version, err := h.svc.PublishJSON(t.Context(), []byte(singleAgent))
+		if err != nil {
+			t.Fatal(err)
+		}
+		run, err := h.svc.Start(t.Context(), version.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.agent.results["session-1"] = AgentResult{State: "done", FinalMessage: "invalid"}
+		h.agent.sessionErr = "send failed"
+		if err := h.svc.Tick(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		failed := waitForRun(t, h.svc, run.ID, StateFailed)
+		if failed.Nodes[0].Attempts[0].Error != "send failed" {
+			t.Fatalf("correction session error was not persisted: %+v", failed.Nodes[0].Attempts[0])
+		}
+	})
+}
+
+func TestAgentNodeResultPreservesJSONTypes(t *testing.T) {
+	for _, value := range []string{`{"ok":true}`, `[{"id":1}]`, `"release"`, `1.5`, `true`, `null`} {
+		t.Run(value, func(t *testing.T) {
+			h := newHarness(t)
+			version, err := h.svc.PublishJSON(t.Context(), []byte(singleAgent))
+			if err != nil {
+				t.Fatal(err)
+			}
+			run, err := h.svc.Start(t.Context(), version.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			h.agent.results["session-1"] = AgentResult{State: "done", FinalMessage: value}
+			if err := h.svc.Tick(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			completed := waitForRun(t, h.svc, run.ID, StateSuccessful)
+			got, err := json.Marshal(completed.Nodes[0].Result)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := `{"id":"implement","name":"Implement","started":"2026-07-13T20:00:00Z","ended":"2026-07-13T20:00:00Z","status":"successful","output":` + value + `}`
+			if string(got) != want {
+				t.Fatalf("node result:\n got %s\nwant %s", got, want)
+			}
+		})
 	}
 }
 

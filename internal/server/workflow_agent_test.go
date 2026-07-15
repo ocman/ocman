@@ -86,6 +86,51 @@ func TestWorkflowAgentStartKeepsCreatedSessionWhenPromptFails(t *testing.T) {
 	}
 }
 
+func TestWorkflowAgentStartSendsCorrectionToExistingSession(t *testing.T) {
+	const correction = "Your previous response was not valid JSON. Reply once with only a valid JSON value for the workflow result."
+	var sent platforms.SendMessageRequest
+	p := &fakePlatform{
+		id: "fake",
+		sendMessageFn: func(req platforms.SendMessageRequest) error {
+			sent = req
+			return nil
+		},
+	}
+	registry := platforms.NewRegistry()
+	registry.Register(p)
+	srv := New(nil, openWatcherTestStateDB(t), "", registry, nil)
+	session, err := (&workflowAgentExecutor{s: srv}).Start(t.Context(), workflows.AgentRequest{Platform: "fake", Directory: t.TempDir(), Prompt: correction, SessionID: "session-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.ID != "session-1" || sent.SessionID != "session-1" || sent.Message != correction {
+		t.Fatalf("correction was not sent to the existing session: session=%+v request=%+v", session, sent)
+	}
+}
+
+func TestWorkflowAgentInspectReturnsFinalMessage(t *testing.T) {
+	p := &fakePlatform{
+		id: "fake",
+		sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+			return &platforms.SessionDetail{
+				Session:  &db.Session{ID: "session-1", Status: "done"},
+				Messages: []db.Message{{ID: "message-1", TimeCreated: 1, Data: json.RawMessage(`{"role":"assistant"}`)}},
+				Parts:    []db.Part{{MessageID: "message-1", Data: json.RawMessage(`{"type":"text","text":"{\"ok\":true}"}`)}},
+			}, nil
+		},
+	}
+	registry := platforms.NewRegistry()
+	registry.Register(p)
+	srv := New(nil, openWatcherTestStateDB(t), "", registry, nil)
+	result, err := (&workflowAgentExecutor{s: srv}).Inspect(t.Context(), workflows.AgentSession{ID: "session-1", Platform: "fake"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != "done" || result.FinalMessage != `{"ok":true}` {
+		t.Fatalf("agent result = %+v", result)
+	}
+}
+
 func TestWorkflowAgentCancelUsesSessionService(t *testing.T) {
 	var aborted string
 	p := &fakePlatform{id: "fake", abortFn: func(req platforms.AbortRequest) error {

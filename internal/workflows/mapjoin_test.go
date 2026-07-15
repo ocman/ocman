@@ -48,9 +48,9 @@ func (a *scriptedAgent) Inspect(_ context.Context, session AgentSession, _ []Col
 	case "error":
 		return AgentResult{State: "error", Error: "item " + key + " failed"}, nil
 	case "done", "":
-		return AgentResult{State: "done"}, nil
+		return AgentResult{State: "done", FinalMessage: `{"ok":true}`}, nil
 	}
-	return AgentResult{State: "done"}, nil
+	return AgentResult{State: "done", FinalMessage: `{"ok":true}`}, nil
 }
 
 func (a *scriptedAgent) Cancel(context.Context, AgentSession) error { return nil }
