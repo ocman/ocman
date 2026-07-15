@@ -69,6 +69,128 @@ func TestResolveWorkflowAttempt(t *testing.T) {
 	}
 }
 
+func TestWorkflowLifecyclePersistence(t *testing.T) {
+	db := openTestStateDB(t)
+	definition := WorkflowVersion{
+		WorkflowID: "workflow-1", Name: "Workflow", MetadataVersion: "1", DefinitionJSON: `{}`,
+		Concurrency: 2, RetentionDays: 7,
+		Nodes: []WorkflowNode{
+			{ID: "build", Name: "Build", Type: "command", Position: 0},
+			{ID: "review", Name: "Review", Type: "agent", Position: 1},
+		},
+		Dependencies: []WorkflowDependency{{From: "build", To: "review"}},
+	}
+	definition.ID, definition.CreatedAt = "version-1", 1
+	v1, err := db.InsertWorkflowVersion(definition)
+	if err != nil || !v1.Active || v1.Revision != 1 {
+		t.Fatalf("insert first version: %+v, %v", v1, err)
+	}
+	definition.ID, definition.CreatedAt = "version-2", 2
+	v2, err := db.InsertWorkflowVersion(definition)
+	if err != nil || v2.Active || v2.Revision != 2 {
+		t.Fatalf("insert second version: %+v, %v", v2, err)
+	}
+	activeV2, err := db.ActivateWorkflowVersion(v2.ID, 3)
+	if err != nil || !activeV2.Active || len(activeV2.Nodes) != 2 || len(activeV2.Dependencies) != 1 {
+		t.Fatalf("activate second version: %+v, %v", activeV2, err)
+	}
+	versions, err := db.ListWorkflowVersions()
+	if err != nil || len(versions) != 2 {
+		t.Fatalf("list versions: %+v, %v", versions, err)
+	}
+	if _, err := db.DeactivateWorkflowVersion(v2.ID, 4); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ActivateWorkflowVersion(v2.ID, 5); err != nil {
+		t.Fatal(err)
+	}
+	active, err := db.GetActiveWorkflowVersion(v2.WorkflowID)
+	if err != nil || active.ID != v2.ID {
+		t.Fatalf("active version: %+v, %v", active, err)
+	}
+
+	run := WorkflowRun{
+		ID: "run-1", WorkflowID: v2.WorkflowID, VersionID: v2.ID, State: "active",
+		CreatedAt: 10, UpdatedAt: 10, TriggerSnapshotJSON: `{"type":"manual"}`,
+		Nodes: []WorkflowNodeRun{
+			{NodeID: "build", State: "ready", Position: 0, ReadyAt: 10},
+			{NodeID: "review", State: "pending", Position: 1},
+		},
+	}
+	if err := db.InsertWorkflowRun(run); err != nil {
+		t.Fatal(err)
+	}
+	if started, err := db.StartWorkflowCommand(run.ID, "build", []WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 2}}, nil, 11); err != nil || !started {
+		t.Fatalf("start command: %v, %v", started, err)
+	}
+	if err := db.CompleteWorkflowCommand(run.ID, "build", WorkflowCommandResult{State: "successful", ExitCode: 0, Stdout: `{"built":true}`, OutputsJSON: `{"built":true}`}, 12); err != nil {
+		t.Fatal(err)
+	}
+	persisted, err := db.GetWorkflowRun(run.ID)
+	if err != nil || persisted.State != "active" || persisted.Nodes[1].State != "ready" {
+		t.Fatalf("command completion: %+v, %v", persisted, err)
+	}
+	attemptID := persisted.Nodes[1].Attempts[0].ID
+	if claimed, err := db.ClaimWorkflowAgentAttempt(run.ID, "review", attemptID, "host", "/repo", []WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 2}}, nil, 13); err != nil || !claimed {
+		t.Fatalf("claim agent: %v, %v", claimed, err)
+	}
+	if err := db.AttachWorkflowAgentSession(run.ID, "review", attemptID, "opencode", "session-1", "busy", 14); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetWorkflowAgentSessionState(run.ID, "review", attemptID, "idle", "", 15); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CompleteWorkflowAgentNode(run.ID, "review", attemptID, WorkflowAgentResult{Successful: true, SessionState: "idle", Output: `{"approved":true}`, OutputsJSON: `{"approved":true}`}, 16); err != nil {
+		t.Fatal(err)
+	}
+	persisted, err = db.GetWorkflowRun(run.ID)
+	if err != nil || persisted.State != "successful" || persisted.CompletedAt != 16 || persisted.Nodes[1].Attempts[0].OutputsJSON != `{"approved":true}` {
+		t.Fatalf("agent completion: %+v, %v", persisted, err)
+	}
+	runs, err := db.ListWorkflowRuns()
+	if err != nil || len(runs) != 1 || runs[0].TriggerSnapshotJSON != run.TriggerSnapshotJSON {
+		t.Fatalf("list runs: %+v, %v", runs, err)
+	}
+
+	child := WorkflowRun{ID: "run-child", WorkflowID: v2.WorkflowID, VersionID: v2.ID, State: "successful", CreatedAt: 20, UpdatedAt: 20, ParentRunID: run.ID, ParentNodeID: "review", ItemKey: "item", ItemIndex: 1}
+	if err := db.InsertWorkflowRun(child); err != nil {
+		t.Fatal(err)
+	}
+	children, err := db.ListWorkflowChildRuns(run.ID)
+	if err != nil || len(children) != 1 || children[0].ItemKey != "item" || children[0].ItemIndex != 1 {
+		t.Fatalf("list child runs: %+v, %v", children, err)
+	}
+
+	for _, id := range []string{"run-cancel", "run-fail"} {
+		candidate := run
+		candidate.ID, candidate.CreatedAt, candidate.UpdatedAt = id, 30, 30
+		if err := db.InsertWorkflowRun(candidate); err != nil {
+			t.Fatal(err)
+		}
+		if started, err := db.StartWorkflowCommand(id, "build", []WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 2}}, nil, 31); err != nil || !started {
+			t.Fatalf("start %s: %v, %v", id, started, err)
+		}
+	}
+	if err := db.SetWorkflowRunState("run-cancel", "active", "paused", 32); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetWorkflowRunState("run-cancel", "paused", "active", 33); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetWorkflowRunState("run-cancel", "active", "canceled", 34); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.FailWorkflowRun("run-fail", "budget exhausted", 35); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []struct{ id, state string }{{"run-cancel", "canceled"}, {"run-fail", "failed"}} {
+		got, err := db.GetWorkflowRun(want.id)
+		if err != nil || got.State != want.state || got.CompletedAt == 0 {
+			t.Fatalf("settled run %s: %+v, %v", want.id, got, err)
+		}
+	}
+}
+
 // seedResourceRun creates a two-command run with waiting attempts so the
 // resource-acquisition store methods can be driven directly.
 func seedResourceRun(t *testing.T) *DB {
