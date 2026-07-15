@@ -111,6 +111,8 @@ flowchart TD
 - **internal/mcp** — prompt composer + session launcher + tool
   handlers; all side effects go through the same `Platform` interface
   the HTTP layer uses.
+- **internal/opencodeskills** — extracts binary-embedded ocman skills into
+  XDG data and installs only ocman-owned symlinks for OpenCode discovery.
 - **internal/state** — the only writable store; migrations, settings,
   workflows, child sessions.
 - **forge / integrations** — forge-agnostic types in `forge`,
