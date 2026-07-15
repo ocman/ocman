@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"flag"
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -26,6 +28,12 @@ import (
 // version is overridden at build time via -ldflags='-X main.version=...'.
 // It's surfaced as service.version on every OTel resource.
 var version = "dev"
+
+//go:embed .opencode/skills/ocman-session-splitting/SKILL.md
+var sessionSplittingSkill []byte
+
+//go:embed .opencode/skills/ocman-workflows/SKILL.md
+var workflowsSkill []byte
 
 // authPasswordEnv is the environment variable consulted for the auth
 // password when neither -auth-password-file nor -auth-password is set.
@@ -63,6 +71,9 @@ func main() {
 	// color when stdout isn't a TTY — which it isn't under `make dev`/air
 	// (piped). ForceColors keeps the color; FullTimestamp adds the date.
 	log.SetFormatter(&log.TextFormatter{ForceColors: true, FullTimestamp: true})
+	if err := installOcmanSkills(); err != nil {
+		log.WithError(err).Warn("installing embedded ocman skills")
+	}
 
 	// When started by launchd / a login item after a reboot, ocman
 	// inherits a minimal PATH that omits homebrew and version-manager
@@ -239,6 +250,60 @@ func main() {
 	}
 
 	log.Info("server stopped gracefully")
+}
+
+func installOcmanSkills() error {
+	dataHome := os.Getenv("XDG_DATA_HOME")
+	if dataHome == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		dataHome = filepath.Join(home, ".local", "share")
+	}
+	configHome := os.Getenv("XDG_CONFIG_HOME")
+	if configHome == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		configHome = filepath.Join(home, ".config")
+	}
+	skills := map[string][]byte{
+		"ocman-session-splitting": sessionSplittingSkill,
+		"ocman-workflows":         workflowsSkill,
+	}
+	for name, content := range skills {
+		target := filepath.Join(dataHome, "ocman", "opencode", "skills", name, "SKILL.md")
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(target, content, 0o644); err != nil {
+			return err
+		}
+		link := filepath.Join(configHome, "opencode", "skills", name)
+		if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+			return err
+		}
+		if info, err := os.Lstat(link); err == nil {
+			if info.Mode()&os.ModeSymlink == 0 {
+				log.WithField("skill", name).Warn("ocman skill name already owned by user; skipping")
+				continue
+			}
+			destination, err := os.Readlink(link)
+			if err != nil || destination != filepath.Dir(target) {
+				log.WithField("skill", name).Warn("ocman skill symlink points elsewhere; skipping")
+				continue
+			}
+			continue
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		if err := os.Symlink(filepath.Dir(target), link); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // resolveAuthPassword picks the password from env > file > flag, in
