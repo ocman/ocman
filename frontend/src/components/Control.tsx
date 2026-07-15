@@ -1,7 +1,7 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, SelectHTMLAttributes } from 'react';
 import './Control.css';
 
-type Variant = 'accent' | 'muted' | 'default';
+type Variant = 'accent' | 'muted' | 'default' | 'link';
 type Size = 'normal' | 'large';
 
 function classes(...names: Array<string | undefined>) {

@@ -127,10 +127,24 @@ describe('Workflows', () => {
 		await user.click(screen.getByRole('button', { name: 'Release approvals' }));
 		expect(screen.getByRole('columnheader', { name: 'Started' })).toBeInTheDocument();
 		expect(screen.getByRole('heading', { name: /Run history.*release/ })).toBeInTheDocument();
-		await user.click(screen.getByRole('button', { name: 'All workflows' }));
+		await user.click(screen.getByRole('button', { name: 'Clear filters' }));
 		await user.click(screen.getByRole('button', { name: /nightly.*wfr_2/ }));
 		expect(apiMock.run).toHaveBeenCalledWith('wfr_2');
 		expect(await screen.findByRole('dialog', { name: 'Workflow run details' })).toBeInTheDocument();
+	});
+
+	it('restores the selected workflow run from the URL', async () => {
+		render(<MemoryRouter initialEntries={['/workflows?tab=runs&workflow=release&run=wfr_1']}><Workflows /></MemoryRouter>);
+
+		expect(await screen.findByRole('heading', { name: /Run history.*release/ })).toBeInTheDocument();
+		expect(await screen.findByRole('dialog', { name: 'Workflow run details' })).toBeInTheDocument();
+	});
+
+	it('restores an editor version from the URL', async () => {
+		render(<MemoryRouter initialEntries={['/workflows?view=author&version=wfv_1']}><Workflows /></MemoryRouter>);
+
+		expect(await screen.findByRole('region', { name: 'Workflow authoring' })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Delete workflow' })).toBeInTheDocument();
 	});
 
 	it('shows only the latest revision of each workflow', async () => {
@@ -188,7 +202,7 @@ describe('Workflows', () => {
 
 	it('validates source into the visual builder and reports source errors', async () => {
 		const user = userEvent.setup();
-		render(<Workflows />);
+		render(<MemoryRouter><Workflows /></MemoryRouter>);
 
 		await user.click(screen.getByRole('tab', { name: 'Workflows' }));
 		await user.click(screen.getByRole('button', { name: 'New workflow' }));
@@ -204,7 +218,7 @@ describe('Workflows', () => {
 
 	it('builds typed nodes into the canonical workflow source', async () => {
 		const user = userEvent.setup();
-		render(<Workflows />);
+		render(<MemoryRouter><Workflows /></MemoryRouter>);
 		await user.click(screen.getByRole('button', { name: 'New workflow' }));
 		await screen.findByRole('region', { name: 'Workflow builder' });
 		await user.click(screen.getByRole('button', { name: '+ Add' }));
@@ -222,7 +236,7 @@ describe('Workflows', () => {
 		const user = userEvent.setup();
 		let resolve!: (value: unknown) => void;
 		apiMock.validate.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
-		render(<Workflows />);
+		render(<MemoryRouter><Workflows /></MemoryRouter>);
 		await user.click(screen.getByRole('button', { name: 'New workflow' }));
 		await user.click(screen.getByRole('tab', { name: 'YAML' }));
 		await user.clear(screen.getByRole('textbox', { name: 'Workflow YAML or JSON' }));
@@ -236,6 +250,9 @@ describe('Workflows', () => {
 
 		await openRunDetails(user);
 		await screen.findByRole('region', { name: 'Workflow run graph' });
+		const status = screen.getByRole('dialog', { name: 'Workflow run details' }).querySelector('.workflow-run-status');
+		expect(status).toHaveTextContent('active');
+		expect(status?.querySelector('.workflow-run-spinner')).toBeInTheDocument();
 		expect(screen.getByText('Attempt 1: waiting')).toBeInTheDocument();
 		expect(screen.getAllByText(/timer · interval · queue/)).toHaveLength(1);
 		expect(screen.getByText(/scheduled \(every 1m0s\)/)).toBeInTheDocument();
@@ -267,7 +284,7 @@ describe('Workflows', () => {
 	it('publishes automated-only versions without trying a manual start', async () => {
 		const user = userEvent.setup();
 		apiMock.publish.mockResolvedValue({ ...version, definition: { ...version.definition, triggers: [{ id: 'timer', type: 'interval', intervalSeconds: 60 }] } });
-		render(<Workflows />);
+		render(<MemoryRouter><Workflows /></MemoryRouter>);
 		await user.click(screen.getByRole('button', { name: 'New workflow' }));
 		await user.click(screen.getByRole('button', { name: 'Save new version' }));
 		expect(apiMock.publish).toHaveBeenCalled();
@@ -277,7 +294,7 @@ describe('Workflows', () => {
 	it('shows a start-run error in Operations', async () => {
 		const user = userEvent.setup();
 		apiMock.startActive.mockRejectedValueOnce(new Error('active workflow is unavailable'));
-		render(<Workflows />);
+		render(<MemoryRouter><Workflows /></MemoryRouter>);
 		await user.click(await screen.findByRole('button', { name: 'Start run' }));
 		expect(await screen.findByRole('alert')).toHaveTextContent('active workflow is unavailable');
 	});
@@ -361,11 +378,11 @@ describe('Workflows', () => {
 		await openRunDetails(user);
 
 		expect(await screen.findByRole('region', { name: 'Workflow run graph' })).toBeInTheDocument();
-		const pools = screen.getByRole('list', { name: 'Resource pools' });
-		expect(pools).toHaveTextContent('run concurrency');
-		expect(pools).toHaveTextContent('1/2 held');
+		const pools = screen.getByRole('region', { name: 'Resource pools' });
+		expect(pools).toHaveTextContent('Run capacity');
+		expect(pools).toHaveTextContent('1 of 2 in use');
 		expect(pools).toHaveTextContent('compiler');
-		expect(pools).toHaveTextContent('waiting: ship');
+		expect(pools).toHaveTextContent('Waiting: ship');
 	});
 
 	it('collapses and expands mapped items and links child and joined results', async () => {
@@ -404,7 +421,7 @@ describe('Workflows', () => {
 
 		// Collapsed by default: item rows hidden, summary shown.
 		const toggle = await screen.findByRole('button', { name: /Expand 2 mapped items/ });
-		expect(screen.getByLabelText('Node state legend')).toHaveTextContent('successful');
+		expect(screen.getByRole('button', { name: /Fan/ })).toHaveAttribute('data-state', 'successful');
 		expect(screen.getByText('Phase 1 · map · fan')).toBeInTheDocument();
 		expect(screen.queryByTestId('workflow-map-items')).not.toBeInTheDocument();
 

@@ -3,6 +3,8 @@
 .oc-button:hover { border-color: var(--text-dim); }
 .oc-button--accent { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); color: var(--accent); }
 .oc-button--muted { color: var(--text-muted); }
+.oc-button--link { border-color: transparent; color: var(--text-muted); background: transparent; text-decoration: underline; text-underline-offset: 3px; }
+.oc-button--link:hover { border-color: transparent; color: var(--accent); }
 .oc-button--large { height: 52px; padding: 0 22px; font-size: 16px; font-weight: 700; }
 .oc-field { min-width: 0; padding: 0 12px; }
 .oc-field--search::placeholder { color: var(--text-dim); }

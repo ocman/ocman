@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api, type WorkflowArtifact, type WorkflowDefinition, type WorkflowMapItemRun, type WorkflowRun, type WorkflowRunDetail, type WorkflowValidation, type WorkflowVersion } from '../lib/api';
 import { useWorkflows } from '../lib/useCapabilities';
 import { onSseConnect, onWorkflowRunUpdated, onWorkflowTriggerUpdated } from '../lib/useGlobalEvents';
@@ -31,24 +31,25 @@ dependencies:
 export function Workflows() {
 	usePageTitle('Workflows');
 	const enabled = useWorkflows();
+	const [searchParams, setSearchParams] = useSearchParams();
 	const [source, setSource] = useState(EXAMPLE);
 	const [versions, setVersions] = useState<WorkflowVersion[]>([]);
 	const [runs, setRuns] = useState<WorkflowRun[]>([]);
 	const [selected, setSelected] = useState<WorkflowRunDetail>();
-	const [runOpen, setRunOpen] = useState(false);
 	const selectedID = useRef<string | undefined>(undefined);
 	const validationID = useRef(0);
 	const [error, setError] = useState('');
 	const [validated, setValidated] = useState<WorkflowValidation>();
 	const [compareFrom, setCompareFrom] = useState('');
 	const [compareTo, setCompareTo] = useState('');
-	const [view, setView] = useState<'operations' | 'author'>('operations');
-	const [operationsView, setOperationsView] = useState<'workflows' | 'runs'>('workflows');
-	const [query, setQuery] = useState('');
-	const [runState, setRunState] = useState('all');
-	const [runWorkflowID, setRunWorkflowID] = useState('');
-	const [showRevisions, setShowRevisions] = useState(false);
-	const [editingVersionID, setEditingVersionID] = useState('');
+	const view = searchParams.get('view') === 'author' ? 'author' : 'operations';
+	const operationsView = searchParams.get('tab') === 'runs' ? 'runs' : 'workflows';
+	const query = searchParams.get('q') ?? '';
+	const runState = searchParams.get('state') ?? 'all';
+	const runWorkflowID = searchParams.get('workflow') ?? '';
+	const showRevisions = searchParams.get('revisions') === '1';
+	const editingVersionID = searchParams.get('version') ?? '';
+	const runOpen = Boolean(searchParams.get('run'));
 	const deferredQuery = useDeferredValue(query.trim().toLowerCase());
 	const latestVersions = Array.from(versions.reduce((latest, version) => {
 		const current = latest.get(version.workflowId);
@@ -58,6 +59,15 @@ export function Workflows() {
 	const visibleVersions = (showRevisions ? versions : latestVersions).filter((version) => !deferredQuery || `${version.name} ${version.workflowId}`.toLowerCase().includes(deferredQuery));
 	const visibleRuns = runs.filter((run) => (runState === 'all' || run.state === runState) && (!runWorkflowID || run.workflowId === runWorkflowID) && (!deferredQuery || run.workflowId.toLowerCase().includes(deferredQuery)));
 	const workflowOptions = latestVersions.map((version) => [version.workflowId, version.name]);
+	function updateLocation(values: Record<string, string | undefined>, replace = false) {
+		setSearchParams((params) => {
+			for (const [key, value] of Object.entries(values)) {
+				if (value) params.set(key, value);
+				else params.delete(key);
+			}
+			return params;
+		}, { replace });
+	}
 
 	function select(run: WorkflowRunDetail) {
 		selectedID.current = run.id;
@@ -66,7 +76,7 @@ export function Workflows() {
 
 	function openRun(run: WorkflowRunDetail) {
 		select(run);
-		setRunOpen(true);
+		updateLocation({ run: run.id });
 	}
 
 	async function refresh() {
@@ -96,6 +106,20 @@ export function Workflows() {
 	// Selection lives in a ref so reconnects refresh it without resubscribing.
 	// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [enabled]);
+
+	useEffect(() => {
+		selectedID.current = searchParams.get('run') ?? undefined;
+		if (!selectedID.current) setSelected(undefined);
+	}, [searchParams]);
+
+	useEffect(() => {
+		if (!editingVersionID) return;
+		const version = versions.find((candidate) => candidate.id === editingVersionID);
+		if (!version) return;
+		const nextSource = JSON.stringify(version.definition, null, 2);
+		setSource(nextSource);
+		setValidated({ definition: version.definition, canonicalJson: version.definition, yaml: nextSource });
+	}, [editingVersionID, versions]);
 
 	async function validate() {
 		const requestID = ++validationID.current;
@@ -132,18 +156,16 @@ export function Workflows() {
 		validationID.current++;
 		setSource(nextSource);
 		setValidated({ definition: version.definition, canonicalJson: version.definition, yaml: nextSource });
-		setEditingVersionID(version.id);
+		updateLocation({ view: 'author', version: version.id });
 		setError('');
-		setView('author');
 	}
 
 	async function newWorkflow() {
 		validationID.current++;
 		setSource(EXAMPLE);
 		setValidated(undefined);
-		setEditingVersionID('');
+		updateLocation({ view: 'author', version: undefined });
 		setError('');
-		setView('author');
 		try {
 			setValidated(await api.workflows.validate(EXAMPLE));
 		} catch (reason) {
@@ -164,7 +186,7 @@ export function Workflows() {
 		try {
 			await api.workflows.publish(source);
 			await refresh();
-			setView('operations');
+			updateLocation({ view: undefined, version: undefined });
 		} catch (reason) {
 			setError(reason instanceof Error ? reason.message : String(reason));
 		}
@@ -186,7 +208,7 @@ export function Workflows() {
 		try {
 			await api.workflows.archive(editingVersionID);
 			await refresh();
-			setView('operations');
+			updateLocation({ view: undefined, version: undefined });
 		} catch (reason) {
 			setError(reason instanceof Error ? reason.message : String(reason));
 		}
@@ -208,15 +230,15 @@ export function Workflows() {
 	return (
 		<main className="workflow-page" data-testid="workflows-page">
 			{view === 'operations' ? <>
-				<div className="workflow-tabs workflow-operation-tabs" role="tablist" aria-label="Workflow operations"><Button role="tab" variant="muted" aria-selected={operationsView === 'workflows'} onClick={() => setOperationsView('workflows')}>Workflows</Button><Button role="tab" variant="muted" aria-selected={operationsView === 'runs'} onClick={() => setOperationsView('runs')}>Run history</Button></div>
+				<div className="workflow-tabs workflow-operation-tabs" role="tablist" aria-label="Workflow operations"><Button role="tab" variant="muted" aria-selected={operationsView === 'workflows'} onClick={() => updateLocation({ tab: undefined })}>Workflows</Button><Button role="tab" variant="muted" aria-selected={operationsView === 'runs'} onClick={() => updateLocation({ tab: 'runs' })}>Run history</Button></div>
 				{error && <p className="workflow-operation-error" role="alert">{error}</p>}
 				{operationsView === 'workflows' && <section className="workflow-discovery" aria-label="Workflow discovery">
-					<div className="workflow-filter"><label>Find workflows<SearchField aria-label="Find workflows" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name or ID" /></label><label className="workflow-revision-toggle"><input type="checkbox" checked={showRevisions} onChange={(event) => setShowRevisions(event.target.checked)} /> Show revisions</label></div>
+					<div className="workflow-filter"><label>Find workflows<SearchField aria-label="Find workflows" value={query} onChange={(event) => updateLocation({ q: event.target.value }, true)} placeholder="Name or ID" /></label><label className="workflow-revision-toggle"><input type="checkbox" checked={showRevisions} onChange={(event) => updateLocation({ revisions: event.target.checked ? '1' : undefined })} /> Show revisions</label></div>
 					<div className="workflow-list-heading"><h2>Workflows</h2><Button variant="accent" onClick={() => void newWorkflow()}>New workflow</Button></div>
-					{visibleVersions.length > 0 ? <table className="workflow-table"><thead><tr><th>Workflow</th><th>Revision</th><th>Triggers</th><th></th></tr></thead><tbody>{visibleVersions.map((version) => <tr key={version.id}><td><button type="button" aria-label={version.name} onClick={() => { setRunWorkflowID(version.workflowId); setOperationsView('runs'); }}>{version.name}<small>{version.workflowId}</small></button></td><td>{version.revision} · <State state={version.active ? 'active' : 'inactive'} /></td><td>{version.triggerStates.length ? version.triggerStates.map((trigger) => <div className="workflow-trigger-summary" key={trigger.id}><strong>{trigger.type}{trigger.type === 'cron' && ` (${trigger.cron})`}{trigger.type === 'interval' && ` (${trigger.intervalSeconds}s)`}</strong></div>) : 'Manual'}</td><td><div className="workflow-controls"><button type="button" onClick={() => void activate(version.id)}>Activate</button><button type="button" onClick={() => editVersion(version)}>Edit</button><a href={api.workflows.exportUrl(version.id)} download={`${version.workflowId}-v${version.revision}.yaml`}>Export</a>{version.active && <button type="button" onClick={() => void mutate(() => api.workflows.startActive(version.workflowId))}>Start run</button>}</div></td></tr>)}</tbody></table> : <p>No workflows match this search.</p>}
+					{visibleVersions.length > 0 ? <table className="workflow-table"><thead><tr><th>Workflow</th><th>Revision</th><th>Triggers</th><th></th></tr></thead><tbody>{visibleVersions.map((version) => <tr key={version.id}><td><button type="button" aria-label={version.name} onClick={() => updateLocation({ tab: 'runs', workflow: version.workflowId })}>{version.name}<small>{version.workflowId}</small></button></td><td>{version.revision} · <State state={version.active ? 'active' : 'inactive'} /></td><td>{version.triggerStates.length ? version.triggerStates.map((trigger) => <div className="workflow-trigger-summary" key={trigger.id}><strong>{trigger.type}{trigger.type === 'cron' && ` (${trigger.cron})`}{trigger.type === 'interval' && ` (${trigger.intervalSeconds}s)`}</strong></div>) : 'Manual'}</td><td><div className="workflow-controls"><button type="button" onClick={() => void activate(version.id)}>Activate</button><button type="button" onClick={() => editVersion(version)}>Edit</button><a href={api.workflows.exportUrl(version.id)} download={`${version.workflowId}-v${version.revision}.yaml`}>Export</a>{version.active && <button type="button" onClick={() => { updateLocation({ tab: 'runs', workflow: version.workflowId }); void mutate(() => api.workflows.startActive(version.workflowId)); }}>Start run</button>}</div></td></tr>)}</tbody></table> : <p>No workflows match this search.</p>}
 				</section>}
-				{operationsView === 'runs' && <section className="workflow-run-list" aria-label="Workflow runs"><div className="workflow-list-heading"><h2>Run history{runWorkflowID && ` · ${runWorkflowID}`}</h2>{runWorkflowID && <Button variant="muted" onClick={() => setRunWorkflowID('')}>All workflows</Button>}</div><div className="workflow-filter"><label>Find workflows<SearchField aria-label="Find workflows" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name or ID" /></label><label>Workflow<SelectField aria-label="Workflow" value={runWorkflowID} onChange={(event) => setRunWorkflowID(event.target.value)}><option value="">All workflows</option>{workflowOptions.map(([id, name]) => <option key={id} value={id}>{name} ({id})</option>)}</SelectField></label><label>Run state<SelectField aria-label="Run state" value={runState} onChange={(event) => setRunState(event.target.value)}><option value="all">All states</option><option value="active">Active</option><option value="paused">Paused</option><option value="successful">Successful</option><option value="failed">Failed</option><option value="canceled">Canceled</option></SelectField></label></div><table className="workflow-table"><thead><tr><th>Workflow</th><th>State</th><th>Started</th><th>Trigger</th></tr></thead><tbody>{visibleRuns.map((run) => <tr key={run.id} data-selected={selected?.id === run.id || undefined}><td><button type="button" onClick={() => void api.workflows.run(run.id).then(openRun)}>{run.workflowId}<small>{run.id}</small></button></td><td><State state={run.state} /></td><td>{formatTime(run.createdAt)}</td><td>{run.trigger?.type ?? 'manual'}</td></tr>)}</tbody></table>{visibleRuns.length === 0 && <p>No runs match these filters.</p>}</section>}
-				{selected && runOpen && <RunModal run={selected} mutate={mutate} onClose={() => setRunOpen(false)} onSelectRun={(id) => void api.workflows.run(id).then(openRun).catch((reason) => setError(String(reason)))} />}
+				{operationsView === 'runs' && <section className="workflow-run-list" aria-label="Workflow runs"><div className="workflow-list-heading"><h2>Run history{runWorkflowID && ` · ${runWorkflowID}`}</h2></div><div className="workflow-filter"><label>Find workflows<SearchField aria-label="Find workflows" value={query} onChange={(event) => updateLocation({ q: event.target.value }, true)} placeholder="Name or ID" /></label><label>Workflow<SelectField aria-label="Workflow" value={runWorkflowID} onChange={(event) => updateLocation({ workflow: event.target.value })}><option value="">All workflows</option>{workflowOptions.map(([id, name]) => <option key={id} value={id}>{name} ({id})</option>)}</SelectField></label><label>Run state<SelectField aria-label="Run state" value={runState} onChange={(event) => updateLocation({ state: event.target.value === 'all' ? undefined : event.target.value })}><option value="all">All states</option><option value="active">Active</option><option value="paused">Paused</option><option value="successful">Successful</option><option value="failed">Failed</option><option value="canceled">Canceled</option></SelectField></label>{(query || runWorkflowID || runState !== 'all') && <Button variant="link" className="workflow-clear-filters" onClick={() => updateLocation({ q: undefined, workflow: undefined, state: undefined })}>Clear filters</Button>}</div><table className="workflow-table"><thead><tr><th>Workflow</th><th>State</th><th>Started</th><th>Trigger</th></tr></thead><tbody>{visibleRuns.map((run) => <tr key={run.id} data-selected={selected?.id === run.id || undefined}><td><button type="button" onClick={() => void api.workflows.run(run.id).then(openRun)}>{run.workflowId}<small>{run.id}</small></button></td><td><State state={run.state} /></td><td>{formatTime(run.createdAt)}</td><td>{run.trigger?.type ?? 'manual'}</td></tr>)}</tbody></table>{visibleRuns.length === 0 && <p>No runs match these filters.</p>}</section>}
+				{selected && runOpen && <RunModal run={selected} mutate={mutate} onClose={() => updateLocation({ run: undefined })} onSelectRun={(id) => void api.workflows.run(id).then(openRun).catch((reason) => setError(String(reason)))} />}
 			</> : <>
 				<section className="workflow-author" aria-label="Workflow authoring"><header className="workflow-author-head"><div><span className="workflow-kicker">Immutable workflow revision</span><h2>Author workflow</h2><p>Build and connect steps on the canvas. Source is available for advanced edits.</p></div><div className="workflow-controls"><Button variant="muted" onClick={() => void validate()}>Validate</Button><Button variant="accent" onClick={() => void publish()}>Save new version</Button></div></header>{error && <p role="alert">{error}</p>}{validated ? <WorkflowBuilder definition={validated.definition} source={source} onChange={applyBuilder} onSourceChange={editSourceLive} /> : <label className="workflow-yaml">Workflow YAML or JSON<textarea aria-label="Workflow YAML or JSON" value={source} onChange={(event) => editSource(event.target.value)} spellCheck={false} /></label>}{editingVersionID && <Button variant="muted" className="workflow-archive" onClick={() => void archive()}>Delete workflow</Button>}</section>
 				<VersionComparison versions={versions} from={compareFrom} to={compareTo} onFrom={setCompareFrom} onTo={setCompareTo} />
@@ -240,12 +262,12 @@ function RunView({ run, mutate, onSelectRun }: { run: WorkflowRunDetail; mutate:
 	}, [run.id, run.state, run.updatedAt]);
 	return (
 		<section className="workflow-run" aria-label="Workflow run">
-			<header><div><span className="workflow-kicker">{run.id}</span><h2>{run.version.name}</h2><p>Revision {run.version.revision} · definition {run.version.definition.version} · <State state={run.state} /></p></div><div className="workflow-controls">{run.state === 'active' && <button type="button" onClick={() => void mutate(() => api.workflows.pause(run.id))}>Pause run</button>}{(run.state === 'active' || run.state === 'paused') && <button type="button" onClick={() => void mutate(() => api.workflows.cancel(run.id))}>Cancel run</button>}</div></header>
+			<header><div><span className="workflow-kicker">{run.id}</span><h2>{run.version.name}</h2><p>Revision {run.version.revision} · definition {run.version.definition.version}</p></div><div className="workflow-run-actions"><span className="workflow-run-status" data-state={run.state}>{run.state === 'active' && <span className="workflow-run-spinner" aria-hidden="true" />}<State state={run.state} /></span><div className="workflow-controls">{run.state === 'active' && <button type="button" onClick={() => void mutate(() => api.workflows.pause(run.id))}>Pause run</button>}{(run.state === 'active' || run.state === 'paused') && <button type="button" onClick={() => void mutate(() => api.workflows.cancel(run.id))}>Cancel run</button>}</div></div></header>
 			{run.parentRunId && <p className="workflow-run-parent">Mapped item <strong>{run.itemKey}</strong> of <button type="button" onClick={() => onSelectRun(run.parentRunId!)}>parent run {run.parentNodeId}</button></p>}
 			{run.trigger && <p className="workflow-run-trigger"><strong>{run.trigger.id} · {run.trigger.type} · {run.trigger.overlap ?? 'skip'}</strong> · {run.trigger.detail} · fired {formatTime(run.trigger.firedAt)}</p>}
-			{run.resources && run.resources.length > 0 && <ul className="workflow-resources" aria-label="Resource pools">{run.resources.map((pool) => <li key={pool.pool || 'run'}><strong>{pool.pool || 'run concurrency'}</strong>: {pool.held}/{pool.capacity} held{pool.waiting && pool.waiting.length > 0 && <span> · waiting: {pool.waiting.join(', ')}</span>}</li>)}</ul>}
+			{run.resources && run.resources.length > 0 && <section className="workflow-resources" aria-label="Resource pools">{run.resources.map((pool) => <div className="workflow-resource" key={pool.pool || 'run'}><span>{pool.pool || 'Run capacity'}</span><strong>{pool.held === 0 ? `${pool.capacity} available` : `${pool.held} of ${pool.capacity} in use`}</strong>{pool.waiting && pool.waiting.length > 0 && <small>Waiting: {pool.waiting.join(', ')}</small>}</div>)}</section>}
 			{run.workspace && run.workspace.length > 0 && <ul className="workflow-leases" aria-label="Workspace leases">{run.workspace.map((lease) => <li key={lease.nodeId}><strong>{lease.nodeId}</strong>: shard {lease.shard} · {lease.mode}{lease.commit && ' (commit)'}{lease.paths && lease.paths.length > 0 && <span> · {lease.paths.join(', ')}</span>}{lease.host && <span> · host {lease.host}</span>}{lease.shardPath && <span> · {lease.shardPath}</span>}</li>)}</ul>}
-			<div className="workflow-run-layout"><div><p className="workflow-kicker" aria-label="Node state legend">States: pending, ready, running, successful, failed, skipped, canceled, unknown</p><div className="workflow-graph" role="region" aria-label="Workflow run graph">{run.nodes.map((node, index) => <div className="workflow-step" key={node.nodeId}>{index > 0 && <span aria-hidden="true">-&gt;</span>}<button type="button" className="workflow-run-node" data-state={node.state} aria-pressed={selectedNode?.nodeId === node.nodeId} onClick={() => setSelectedNodeID(node.nodeId)}><small>Phase {index + 1} · {node.type}</small><strong>{node.name}</strong><State state={node.state} /></button></div>)}</div></div><aside className="workflow-run-inspector" aria-label="Selected node details">{selectedNode ? <RunNode run={run} node={selectedNode} mutate={mutate} onSelectRun={onSelectRun} /> : <p>No nodes in this run.</p>}</aside></div>
+			<div className="workflow-run-layout"><div><div className="workflow-graph" role="region" aria-label="Workflow run graph">{run.nodes.map((node, index) => <div className="workflow-step" key={node.nodeId}>{index > 0 && <span aria-hidden="true">-&gt;</span>}<button type="button" className="workflow-run-node" data-state={node.state} aria-pressed={selectedNode?.nodeId === node.nodeId} onClick={() => setSelectedNodeID(node.nodeId)}><small>Phase {index + 1} · {node.type}</small><strong>{node.name}</strong><State state={node.state} /></button></div>)}</div></div><aside className="workflow-run-inspector" aria-label="Selected node details">{selectedNode ? <RunNode run={run} node={selectedNode} mutate={mutate} onSelectRun={onSelectRun} /> : <p>No nodes in this run.</p>}</aside></div>
 			<ArtifactList runId={run.id} artifacts={artifacts} />
 		</section>
 	);
