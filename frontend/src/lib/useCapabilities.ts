@@ -189,16 +189,6 @@ export function useMultiHost(): boolean {
   return (all?.hosts?.length ?? 0) > 1;
 }
 
-/**
- * Returns true when the agent-loops feature is usable: the state DB is
- * present and an OpenCode adapter is available. Gates the Loops view and
- * the /loop palette command. Conservative default (false) during load.
- */
-export function useAgentLoops(): boolean {
-  const all = useCapabilities();
-  return all?.agentLoops?.enabled === true;
-}
-
 export function useWorkflows(): boolean {
   const all = useCapabilities();
   return all?.workflows?.enabled === true;

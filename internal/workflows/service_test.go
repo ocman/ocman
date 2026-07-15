@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/gitexec"
-	"github.com/NoUseFreak/ocman/internal/loops"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -127,11 +126,11 @@ type harness struct {
 
 type workflowFakeForge struct {
 	mu    sync.Mutex
-	state loops.PRState
+	state PRState
 	err   error
 }
 
-func (f *workflowFakeForge) PollPR(context.Context, string, int) (loops.PRState, error) {
+func (f *workflowFakeForge) PollPR(context.Context, string, int) (PRState, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.state, f.err
@@ -1584,92 +1583,6 @@ func TestTriggerOverlapPoliciesAndQueuedRestart(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestEvaluateTriggers_RunsActiveLoopCompatibilityWorkflow(t *testing.T) {
-	h := newHarness(t)
-	if err := h.db.InsertLoop(state.Loop{ID: "loop_legacy", Platform: "opencode", RootSessionID: "session", TriggerType: loops.TriggerSchedule, ActionType: loops.ActionPromptRoot, StopConditions: `{"max_cost_usd":1}`, State: loops.StateActive, CreatedAt: h.now.UnixMilli(), UpdatedAt: h.now.UnixMilli()}); err != nil {
-		t.Fatal(err)
-	}
-	definition := strings.Replace(sequentialApprovals,
-		`"version":"2026.07",`,
-		`"version":"2026.07","loopCompat":{"loopId":"loop_legacy"},`, 1)
-	definition = strings.Replace(definition,
-		`{"id":"manual","type":"manual"}`,
-		`{"id":"timer","type":"interval","intervalSeconds":60}`, 1)
-	if _, err := h.svc.PublishJSON(context.Background(), []byte(definition)); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := h.svc.EvaluateTriggers(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	runs, err := h.svc.ListRuns(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(runs) != 1 {
-		t.Fatalf("loop compatibility workflow was not dispatched: %+v", runs)
-	}
-}
-
-func TestEvaluateTriggers_SkipsPausedLoopCompatibilityWorkflow(t *testing.T) {
-	h := newHarness(t)
-	if err := h.db.InsertLoop(state.Loop{ID: "loop_paused", Platform: "opencode", RootSessionID: "session", TriggerType: loops.TriggerSchedule, ActionType: loops.ActionPromptRoot, StopConditions: `{"max_cost_usd":1}`, State: loops.StatePaused, CreatedAt: h.now.UnixMilli(), UpdatedAt: h.now.UnixMilli()}); err != nil {
-		t.Fatal(err)
-	}
-	definition := strings.Replace(sequentialApprovals,
-		`"version":"2026.07",`,
-		`"version":"2026.07","loopCompat":{"loopId":"loop_paused"},`, 1)
-	definition = strings.Replace(definition,
-		`{"id":"manual","type":"manual"}`,
-		`{"id":"timer","type":"interval","intervalSeconds":60}`, 1)
-	if _, err := h.svc.PublishJSON(context.Background(), []byte(definition)); err != nil {
-		t.Fatal(err)
-	}
-	if err := h.svc.EvaluateTriggers(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	runs, err := h.svc.ListRuns(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(runs) != 0 {
-		t.Fatalf("paused loop compatibility workflow was dispatched: %+v", runs)
-	}
-}
-
-func TestTick_KeepsActiveLoopCompatibilityWorkflowRun(t *testing.T) {
-	h := newHarness(t)
-	definition := strings.Replace(sequentialApprovals,
-		`"version":"2026.07",`,
-		`"version":"2026.07","loopCompat":{"loopId":"loop_legacy"},`, 1)
-	definition = strings.Replace(definition,
-		`{"id":"manual","type":"manual"}`,
-		`{"id":"timer","type":"interval","intervalSeconds":60}`, 1)
-	version, err := h.svc.PublishJSON(context.Background(), []byte(definition))
-	if err != nil {
-		t.Fatal(err)
-	}
-	stored, err := h.db.GetWorkflowVersion(version.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	run := h.svc.newRun(*stored, TriggerSnapshot{Trigger: Trigger{ID: "timer", Type: TriggerInterval}, VersionID: version.ID, FiredAt: h.now.UnixMilli()})
-	if err := h.db.InsertWorkflowRun(run); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := h.svc.Tick(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	got, err := h.svc.GetRun(context.Background(), run.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.State != StateActive {
-		t.Fatalf("active compatibility run state = %q, want %q", got.State, StateActive)
 	}
 }
 

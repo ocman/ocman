@@ -31,7 +31,7 @@ flowchart LR
 - **opencode.db** — foreign data, opened read-only; ocman never writes
   to it.
  - **state.db** — ocman's own state: archive flags, child sessions,
-   loops, immutable workflow versions/runs, workflow artifact metadata,
+    immutable workflow versions/runs, workflow artifact metadata,
    workflow resource/workspace leases, settings, and remote tokens.
 - **workflow-artifacts/** — content-addressed store (under the ocman
   data dir, next to state.db) holding large, deduplicated, immutable
@@ -49,7 +49,6 @@ The Go package graph, collapsed to the seams that matter.
 flowchart TD
     Server[internal/server<br/>HTTP, SSE, handlers] --> Registry[platforms.Registry<br/>session seam]
     Server --> Router[hostsvc.Router<br/>host/dir seam]
-    Server --> Loops[loops.Service<br/>trigger→action engine]
     Server --> Workflows[workflows.Service<br/>durable DAG lifecycle]
     Workflows --> Registry
     Workflows --> Router
@@ -76,14 +75,11 @@ flowchart TD
 - **platforms/opencode** — wraps the read-only DB queries
   (`internal/db`) plus an HTTP client to live instances, with
   `lsof`-based port discovery.
-- **loops.Service** — pure domain logic behind small interfaces;
-  driven by a 5 s tick goroutine in the server; shared by REST and
-  MCP.
 - **workflows.Service** — shared validation, durable trigger, and
   run-lifecycle seam for immutable workflow versions. Durable
   manual/interval/cron/PR/completion triggers create version-pinned runs
-  (overlap skip/queue/parallel); a 5 s server tick reuses loop timing,
-  forge, and session-status adapters. It schedules approval,
+   (overlap skip/queue/parallel); a 5 s server tick evaluates triggers
+   through narrow forge and session-status adapters. It schedules approval,
   permission-scoped command, and agent nodes from persisted dependency
   state. The command executor owns directory/environment policy, bounded
   logs, collectors, and process-tree cancellation; agent attempts
@@ -106,26 +102,17 @@ flowchart TD
    serialized per-shard git state. Leases carry an optional owning-host
    identity, release only after the attempt settles, and are visible in
    the run UI.
-- **Loop → workflow migration (#325)** — on upgrade, migration v28 makes a
-  one-time copy of every persisted loop into a one-node workflow definition
-  (matching trigger + preserved loop policies under `definition_json`
-  `.loopCompat`) and turns each loop iteration into a historical workflow run
-  + node attempt. `loop_workflow_map` keeps loop identifiers resolvable to
-  their new workflow ids. The copy is idempotent (already-mapped loops are
-  skipped) and interrupted-safe (it runs inside the migration transaction).
-  The original `loops` / `loop_iterations` tables and the loop
-   REST/MCP/UI surfaces are **left intact as compatibility wrappers for one
-   release**. They retain loop identifiers and payloads, while mapped loops
-   execute only through the workflow scheduler; `loops.Service` translates
-   compatibility controls to the mapped workflow trigger. **Planned removal:**
-   `/api/loops`, the loop MCP tools, and the standalone Loops UI are slated
-   for deletion one release after this workflow-backed compatibility release;
-   until then loop and workflow surfaces coexist.
+- **Legacy loop migration (#325)** — migration v28 copies persisted legacy
+  loops into ordinary one-node workflow definitions and turns each iteration
+  into a historical workflow run + node attempt. `loop_workflow_map` makes
+  the transaction-safe copy idempotent. The legacy tables are retained only
+  as non-destructive upgrade input and historical data; no API, MCP, UI, or
+  runtime scheduler reads them.
 - **internal/mcp** — prompt composer + session launcher + tool
   handlers; all side effects go through the same `Platform` interface
   the HTTP layer uses.
 - **internal/state** — the only writable store; migrations, settings,
-  loops, child sessions.
+  workflows, child sessions.
 - **forge / integrations** — forge-agnostic types in `forge`,
   per-forge HTTP clients in `integrations/{github,forgejo}`.
 
@@ -152,7 +139,7 @@ sequenceDiagram
     A->>D: SQL json_extract / HTTP proxy
     D-->>B: JSON (status inferred at query time)
      Note over S,E: background: workflow engine + trigger ticks,<br/>child-session watcher, remote gRPC streams
-    E-->>B: SSE (session.updated, loop.updated, workflow.run.updated)
+     E-->>B: SSE (session.updated, workflow.run.updated)
 ```
 
 Key property: status is *inferred*, not stored — ocman derives session
@@ -172,7 +159,7 @@ and collector output.
 ```mermaid
 flowchart TD
     Pages[pages/<br/>routes] --> Comp[components/<br/>~80 components]
-    Pages --> Stores[Client state<br/>sessions, loops, workflows]
+     Pages --> Stores[Client state<br/>sessions, workflows]
     Comp --> Stores
     Stores --> API[lib/ API client]
     Stores --> SSE[SSE subscription]
@@ -183,7 +170,7 @@ flowchart TD
 
 - **Capability gating** — the UI never branches on platform identity;
   features toggle via `/api/capabilities` (enforced by a lint script).
-- **Client state** — shared Zustand stores hold broad session/loop state;
+- **Client state** — shared Zustand stores hold broad session/workflow state;
   the bounded workflow page keeps its selected run locally and reconciles
   it from REST whenever the shared SSE stream reports a run change. Its run
   graph labels ordered phases, stable map items, attempts, artifact producers,

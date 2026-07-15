@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import Fuse from 'fuse.js';
 import { useApiStore } from '../lib/apiStore';
 import { useUiStore } from '../lib/uiStore';
-import { useWorktreeSessions, useAgentLoops } from '../lib/useCapabilities';
+import { useWorktreeSessions } from '../lib/useCapabilities';
 import { cleanTitle, relativeTime, shortPath } from '../lib/format';
 import type { Session, Project, DirectoryBrowseEntry, DirectorySearchEntry } from '../lib/api';
 import { useTmux } from '../lib/useTmux';
@@ -78,14 +78,6 @@ const WORKTREE_COMMAND: CommandItem = {
   description: 'New worktree session',
 };
 
-// `cmd.loops` is the /loop palette entry. Capability-gated on agentLoops.
-const LOOPS_COMMAND: CommandItem = {
-  kind: 'command',
-  id: 'cmd.loops',
-  label: 'loops',
-  description: 'View agent loops',
-};
-
 const SCOPED_COMMANDS: ScopedItem[] = [
   { kind: 'scoped', id: 'scoped.model', label: 'model', description: 'Change model (session-scoped)' },
   { kind: 'scoped', id: 'scoped.agent', label: 'agent', description: 'Switch agent (session-scoped)' },
@@ -153,7 +145,6 @@ export function CommandPalette() {
   const refreshCachedSessions = useApiStore((s) => s.refreshCachedSessions);
   const tmux = useTmux();
   const worktreeSessionsAllowed = useWorktreeSessions();
-  const agentLoopsAllowed = useAgentLoops();
   const openWorktreeForm = useUiStore((s) => s.openWorktreeForm);
   const {
     paletteOpen,
@@ -248,9 +239,8 @@ export function CommandPalette() {
   const staticCommands = useMemo(() => {
     const cmds = [...STATIC_COMMANDS];
     if (worktreeSessionsAllowed) cmds.push(WORKTREE_COMMAND);
-    if (agentLoopsAllowed) cmds.push(LOOPS_COMMAND);
     return cmds;
-  }, [worktreeSessionsAllowed, agentLoopsAllowed]);
+  }, [worktreeSessionsAllowed]);
 
   // Best-effort project inference for `cmd.worktree` so invoking /wt
   // from a project page or session page pre-fills the project field.
@@ -593,8 +583,6 @@ export function CommandPalette() {
         navigate('/stats');
       } else if (item.id === 'cmd.usage') {
         navigate('/usage');
-      } else if (item.id === 'cmd.loops') {
-        navigate('/loops');
       }
     }
   }

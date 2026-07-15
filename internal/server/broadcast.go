@@ -285,22 +285,6 @@ func (s *Server) broadcastSessionCreated(info sessionsvc.CreatedSession) {
 	s.broadcastGlobalEvent("ocman.session.changed", payload)
 }
 
-// broadcastLoopUpdated broadcasts that an agent loop's state changed
-// (iteration advance, transition, budget crossing), so the Loops view
-// updates live without busy-polling (AD-10).
-func (s *Server) broadcastLoopUpdated(loopID string) {
-	if loopID == "" {
-		return
-	}
-	payload, err := json.Marshal(map[string]interface{}{
-		"loopId": loopID,
-	})
-	if err != nil {
-		return
-	}
-	s.broadcastGlobalEvent("loop.updated", payload)
-}
-
 func (s *Server) broadcastWorkflowRunUpdated(runID string) {
 	if runID == "" {
 		return

@@ -125,9 +125,8 @@ func TestMigrateV28_CopiesEachLoopToOneNodeWorkflow(t *testing.T) {
 		if nodeCount != 1 {
 			t.Errorf("%s: %d nodes, want 1 (one-node workflow)", loopID, nodeCount)
 		}
-		// The loop's compatibility policies survive round-trip.
-		if !strings.Contains(definition, `"loopCompat"`) {
-			t.Errorf("%s: loopCompat policies not preserved: %s", loopID, definition)
+		if strings.Contains(definition, `"loopCompat"`) {
+			t.Errorf("%s: legacy runtime metadata leaked into workflow: %s", loopID, definition)
 		}
 		// The definition JSON decodes into the workflow-definition shape
 		// the workflows domain consumes (one node, one trigger, concurrency

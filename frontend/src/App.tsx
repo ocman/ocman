@@ -6,7 +6,6 @@ import { useHotkeys } from 'react-hotkeys-hook';
 import { DashboardLayout, SessionsTab, ProjectsTab, StatsTab, UsageTab, SettingsTab } from './pages/Dashboard';
 import { ProjectDetail } from './pages/ProjectDetail';
 import { WorktreesView } from './pages/WorktreesView';
-import { Loops } from './pages/Loops';
 import { Workflows } from './pages/Workflows';
 import { SessionDetail } from './pages/session-detail';
 import { SharedConversationView } from './pages/SharedConversationView';
@@ -19,7 +18,7 @@ import { WorktreeFormModal } from './components/WorktreeFormModal';
 import { MachinePickerModal } from './components/MachinePickerModal';
 import { PlatformBadge } from './components/PlatformBadge';
 import { HostBadge } from './components/HostBadge';
-import { useAgentLoops, useWorkflows } from './lib/useCapabilities';
+import { useWorkflows } from './lib/useCapabilities';
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useFaviconNotify } from './lib/useFaviconNotify';
@@ -57,7 +56,7 @@ function RoutesBoundary({ children }: { children: ReactNode }) {
 // force-hides the menu after clicking an item (CSS :hover alone can't
 // close while the cursor is still over the menu). Moving the mouse away
 // resets it so hover works again next time.
-export function LogoNav({ agentLoopsAllowed, workflowsAllowed = false }: { agentLoopsAllowed: boolean; workflowsAllowed?: boolean }) {
+export function LogoNav({ workflowsAllowed = false }: { workflowsAllowed?: boolean }) {
   const [closed, setClosed] = useState(false);
   return (
     <span
@@ -74,7 +73,6 @@ export function LogoNav({ agentLoopsAllowed, workflowsAllowed = false }: { agent
       <div className="logo-nav-popover" role="menu" onClick={() => setClosed(true)}>
         <Link to="/sessions" role="menuitem">Sessions</Link>
         <Link to="/projects" role="menuitem">Projects</Link>
-        {agentLoopsAllowed && <Link to="/loops" role="menuitem">Loops</Link>}
         {workflowsAllowed && <Link to="/workflows" role="menuitem">Workflows</Link>}
         <Link to="/stats" role="menuitem">Stats</Link>
         <Link to="/usage" role="menuitem">Usage</Link>
@@ -87,7 +85,6 @@ export function LogoNav({ agentLoopsAllowed, workflowsAllowed = false }: { agent
 function Header() {
   const location = useLocation();
   const path = location.pathname;
-  const agentLoopsAllowed = useAgentLoops();
   const workflowsAllowed = useWorkflows();
   const { info } = useHeaderInfo();
   const routeSessionId = path.startsWith('/session/')
@@ -125,7 +122,7 @@ function Header() {
   return (
     <header>
       <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.4em' }}>
-        <LogoNav agentLoopsAllowed={agentLoopsAllowed} workflowsAllowed={workflowsAllowed} />
+        <LogoNav workflowsAllowed={workflowsAllowed} />
         <span>{breadcrumb}</span>
       </h1>
       <div className="header-right">
@@ -475,12 +472,10 @@ export function AppRoutes() {
         <Route path="/projects" element={<ProjectsTab />} />
         <Route path="/stats" element={<StatsTab />} />
         <Route path="/usage" element={<UsageTab />} />
-        <Route path="/loops" element={<Loops />} />
         <Route path="/workflows" element={<Workflows />} />
         <Route path="/settings" element={<SettingsTab />} />
       </Route>
       <Route path="/project/:dir/worktrees" element={<WorktreesView />} />
-      <Route path="/project/:dir/loops" element={<Loops />} />
       <Route path="/project/:dir" element={<ProjectDetail />} />
       <Route path="/session/:id" element={<SessionDetail />} />
     </Routes>

@@ -15,7 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/loops"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -76,14 +75,10 @@ type Definition struct {
 	Pools         []Pool           `json:"pools,omitempty" yaml:"pools,omitempty"`
 	Workspace     *WorkspaceConfig `json:"workspace,omitempty" yaml:"workspace,omitempty"`
 	Limits        *Limits          `json:"limits,omitempty" yaml:"limits,omitempty"`
-	// LoopCompat marks a one-node workflow projected from the legacy loop
-	// system. The workflow engine executes it while the loop remains the
-	// compatibility read model and control surface.
-	LoopCompat   json.RawMessage `json:"loopCompat,omitempty" yaml:"loopCompat,omitempty"`
-	Triggers     []Trigger       `json:"triggers" yaml:"triggers"`
-	Nodes        []Node          `json:"nodes" yaml:"nodes"`
-	Dependencies []Dependency    `json:"dependencies" yaml:"dependencies"`
-	FailFast     bool            `json:"failFast,omitempty" yaml:"failFast,omitempty"`
+	Triggers      []Trigger        `json:"triggers" yaml:"triggers"`
+	Nodes         []Node           `json:"nodes" yaml:"nodes"`
+	Dependencies  []Dependency     `json:"dependencies" yaml:"dependencies"`
+	FailFast      bool             `json:"failFast,omitempty" yaml:"failFast,omitempty"`
 
 	// SubworkflowRefs records the workflow ids this version references
 	// through subworkflow and map nodes at publish time. Inlining removes
@@ -386,8 +381,6 @@ type Attempt struct {
 type Store interface {
 	InsertWorkflowVersion(state.WorkflowVersion) (state.WorkflowVersion, error)
 	GetWorkflowVersion(string) (*state.WorkflowVersion, error)
-	GetLoop(string) (*state.Loop, error)
-	GetLoopWorkflow(string) (state.LoopWorkflow, error)
 	GetActiveWorkflowVersion(string) (*state.WorkflowVersion, error)
 	ListWorkflowVersions() ([]state.WorkflowVersion, error)
 	ActivateWorkflowVersion(string, int64) (*state.WorkflowVersion, error)
@@ -452,11 +445,11 @@ type Deps struct {
 	Now             func() time.Time
 	Notify          func(runID string)
 	NotifyTrigger   func()
-	Forge           loops.ForgePoller
-	Status          loops.SessionStatusInferer
+	Forge           ForgePoller
+	Status          SessionStatusInferer
 	CommandExecutor CommandExecutor
 	Agent           AgentExecutor
-	Usage           loops.UsageSource
+	Usage           UsageSource
 	// Blobs is the content-addressed payload store for artifacts. When
 	// nil, artifact payloads are not persisted (metadata-only fallback).
 	Blobs *BlobStore
@@ -470,11 +463,11 @@ type Service struct {
 	now            func() time.Time
 	notify         func(string)
 	notifyTrigger  func()
-	forge          loops.ForgePoller
-	status         loops.SessionStatusInferer
+	forge          ForgePoller
+	status         SessionStatusInferer
 	executor       CommandExecutor
 	agent          AgentExecutor
-	usage          loops.UsageSource
+	usage          UsageSource
 	workspace      WorkspaceProvider
 	blobs          *BlobStore
 	resolveSecret  func(string) string
@@ -863,13 +856,6 @@ func (s *Service) EvaluateTriggers(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		enabled, err := s.compatibilitySchedulingEnabled(parsed.Definition)
-		if err != nil {
-			return err
-		}
-		if !enabled {
-			continue
-		}
 		for _, trigger := range parsed.Definition.Triggers {
 			if _, err := s.drainQueued(ctx, *version, normalizedTrigger(trigger)); err != nil {
 				errs = append(errs, err)
@@ -889,13 +875,6 @@ func (s *Service) EvaluateTriggers(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		enabled, err := s.compatibilitySchedulingEnabled(parsed.Definition)
-		if err != nil {
-			return err
-		}
-		if !enabled {
-			continue
-		}
 		for _, trigger := range parsed.Definition.Triggers {
 			if trigger.Type == TriggerManual {
 				continue
@@ -906,68 +885,6 @@ func (s *Service) EvaluateTriggers(ctx context.Context) error {
 		}
 	}
 	return errors.Join(errs...)
-}
-
-// TriggerCompatibility forces a mapped legacy loop through its workflow
-// trigger. It is used by the legacy trigger/step controls; normal scheduling
-// remains in EvaluateTriggers.
-func (s *Service) TriggerCompatibility(ctx context.Context, loopID string) error {
-	mapping, err := s.store.GetLoopWorkflow(loopID)
-	if err != nil {
-		return err
-	}
-	loop, err := s.store.GetLoop(loopID)
-	if err != nil {
-		return err
-	}
-	if loop.State != loops.StateActive && loop.State != loops.StatePaused {
-		return fmt.Errorf("loop %s is not runnable (state=%s)", loopID, loop.State)
-	}
-	version, err := s.store.GetWorkflowVersion(mapping.VersionID)
-	if err != nil {
-		return err
-	}
-	parsed, err := versionFromRow(*version)
-	if err != nil {
-		return err
-	}
-	if compatibilityLoopID(parsed.Definition) != loopID {
-		return fmt.Errorf("workflow mapping for loop %s is invalid", loopID)
-	}
-	for _, trigger := range parsed.Definition.Triggers {
-		if trigger.ID == mapping.TriggerID {
-			_, err := s.fire(ctx, *version, trigger, "manual trigger", s.now().UnixMilli())
-			return err
-		}
-	}
-	return fmt.Errorf("workflow trigger for loop %s is missing", loopID)
-}
-
-func compatibilityLoopID(definition Definition) string {
-	if len(definition.LoopCompat) == 0 {
-		return ""
-	}
-	var compat struct {
-		LoopID string `json:"loopId"`
-	}
-	if json.Unmarshal(definition.LoopCompat, &compat) != nil {
-		return ""
-	}
-	return compat.LoopID
-}
-
-// compatibilitySchedulingEnabled makes the loop state controls authoritative
-// for both fresh and queued workflow trigger firings.
-func (s *Service) compatibilitySchedulingEnabled(definition Definition) (bool, error) {
-	loopID := compatibilityLoopID(definition)
-	if loopID == "" {
-		return true, nil
-	}
-	loop, err := s.store.GetLoop(loopID)
-	if err != nil {
-		return false, err
-	}
-	return loop.State == loops.StateActive, nil
 }
 
 func (s *Service) evaluateTrigger(ctx context.Context, version state.WorkflowVersion, trigger Trigger) error {
@@ -1041,7 +958,7 @@ func (s *Service) drainQueued(ctx context.Context, version state.WorkflowVersion
 	return true, nil
 }
 
-func (s *Service) shouldFire(ctx context.Context, trigger Trigger, row state.WorkflowTriggerState, now time.Time) (bool, string, *loops.TriggerConfig, *bool, error) {
+func (s *Service) shouldFire(ctx context.Context, trigger Trigger, row state.WorkflowTriggerState, now time.Time) (bool, string, *triggerConfig, *bool, error) {
 	switch trigger.Type {
 	case TriggerChildCompletion, TriggerTurnCompletion:
 		if s.status == nil {
@@ -1058,45 +975,66 @@ func (s *Service) shouldFire(ctx context.Context, trigger Trigger, row state.Wor
 		}
 		return fire, detail, nil, &running, nil
 	}
-	config := loops.TriggerConfig{IntervalSeconds: trigger.IntervalSeconds, CronExpr: trigger.Cron, PRNumber: trigger.PRNumber, PollSeconds: trigger.PollSeconds}
+	config := triggerConfig{IntervalSeconds: trigger.IntervalSeconds, CronExpr: trigger.Cron, PRNumber: trigger.PRNumber, PollSeconds: trigger.PollSeconds}
 	if row.DetectionJSON != "" {
 		_ = json.Unmarshal([]byte(row.DetectionJSON), &config)
 	}
-	loopType := loops.TriggerSchedule
 	last := row.LastFiredAt
 	switch trigger.Type {
+	case TriggerInterval:
+		interval := time.Duration(trigger.IntervalSeconds) * time.Second
+		if interval < time.Minute {
+			interval = time.Minute
+		}
+		return last == 0 || !now.Before(time.UnixMilli(last).Add(interval)), "scheduled", nil, nil, nil
 	case TriggerCron:
-		loopType = loops.TriggerCron
+		schedule, err := parseCron(trigger.Cron)
+		if err != nil {
+			return false, "", nil, nil, err
+		}
 		if last == 0 {
+			if row.LastCheckedAt == 0 {
+				return schedule.matches(now.Truncate(time.Minute)), "cron", nil, nil, nil
+			}
 			last = row.LastCheckedAt
 		}
+		scheduled, ok := schedule.prev(now)
+		return ok && scheduled.UnixMilli() > last, "cron", nil, nil, nil
 	case TriggerPR:
-		loopType, last = loops.TriggerPREvent, 0
+		if s.forge == nil {
+			return false, "", nil, nil, fmt.Errorf("pr trigger requires a forge poller")
+		}
+		previous := config
+		current, err := s.forge.PollPR(ctx, trigger.Directory, trigger.PRNumber)
+		if err != nil {
+			return false, "", nil, nil, err
+		}
+		config.LastHeadSHA, config.Merged = current.HeadSHA, current.Merged
+		return previous.LastHeadSHA != "" && current.HeadSHA != previous.LastHeadSHA, "PR updated", &config, nil, nil
 	}
-	fire, detail, updated, err := loops.EvaluateTrigger(ctx, loopType, state.Loop{LastFiredAt: last, Directory: trigger.Directory, Platform: trigger.Platform, RootSessionID: trigger.SessionID}, config, now, s.status, s.forge)
-	return fire, detail, updated, nil, err
+	return false, "", nil, nil, fmt.Errorf("unknown workflow trigger %q", trigger.Type)
 }
 
 func nextCheck(trigger Trigger, lastFired int64, now time.Time) int64 {
 	switch trigger.Type {
 	case TriggerInterval:
 		interval := time.Duration(trigger.IntervalSeconds) * time.Second
-		if interval < loops.MinScheduleInterval {
-			interval = loops.MinScheduleInterval
+		if interval < time.Minute {
+			interval = time.Minute
 		}
 		if lastFired == 0 {
 			return now.Add(interval).UnixMilli()
 		}
 		return time.UnixMilli(lastFired).Add(interval).UnixMilli()
 	case TriggerCron:
-		next, ok, _ := loops.NextCron(trigger.Cron, now)
+		next, ok, _ := nextCron(trigger.Cron, now)
 		if ok {
 			return next.UnixMilli()
 		}
 	case TriggerPR:
 		poll := time.Duration(trigger.PollSeconds) * time.Second
-		if poll < loops.MinPRPollInterval {
-			poll = loops.MinPRPollInterval
+		if poll < 30*time.Second {
+			poll = 30 * time.Second
 		}
 		return now.Add(poll).UnixMilli()
 	case TriggerChildCompletion, TriggerTurnCompletion:
@@ -1650,9 +1588,6 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 			}
 			config := agentConfig(run.Version.Definition.Nodes, node.NodeID)
 			if config == nil {
-				config = compatibilityAgentConfig(run.Version.Definition)
-			}
-			if config == nil {
 				return fmt.Errorf("agent node %q has no configuration", node.NodeID)
 			}
 			attempt := node.Attempts[len(node.Attempts)-1]
@@ -2001,34 +1936,6 @@ func agentConfig(nodes []Node, id string) *AgentConfig {
 	return nil
 }
 
-// compatibilityAgentConfig keeps definitions written by the original #325
-// migration runnable. New projections persist the same fields on the agent
-// node, but existing installations only have loopCompat metadata.
-func compatibilityAgentConfig(definition Definition) *AgentConfig {
-	if len(definition.LoopCompat) == 0 {
-		return nil
-	}
-	var compat struct {
-		ActionType     string `json:"actionType"`
-		ActionTemplate string `json:"actionTemplate"`
-		RootSessionID  string `json:"rootSessionId"`
-		TriggerConfig  struct {
-			TargetSessionID string `json:"target_session_id"`
-		} `json:"triggerConfig"`
-	}
-	if json.Unmarshal(definition.LoopCompat, &compat) != nil {
-		return nil
-	}
-	config := &AgentConfig{Directory: definition.Directory, Prompt: compat.ActionTemplate}
-	switch compat.ActionType {
-	case loops.ActionPromptRoot:
-		config.SessionID = compat.RootSessionID
-	case loops.ActionPromptChild:
-		config.SessionID = compat.TriggerConfig.TargetSessionID
-	}
-	return config
-}
-
 func affinitySession(run RunDetail, currentNode string, config *AgentConfig) string {
 	if config == nil || config.SessionAffinity == "" {
 		return ""
@@ -2311,7 +2218,7 @@ func validateTrigger(trigger Trigger) error {
 			return fmt.Errorf("trigger %q intervalSeconds must be positive", trigger.ID)
 		}
 	case TriggerCron:
-		if err := loops.ValidateCron(trigger.Cron); err != nil {
+		if _, err := parseCron(trigger.Cron); err != nil {
 			return fmt.Errorf("trigger %q has invalid cron: %w", trigger.ID, err)
 		}
 	case TriggerPR:

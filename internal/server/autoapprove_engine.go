@@ -11,7 +11,7 @@ import (
 // autoapprove_engine.go wires the internal/autoapprove domain package
 // into the server: it adapts server internals (state DB, OpenCode DB,
 // registry, broadcast hub) to the package's Deps seam, mirroring
-// loop_engine.go for internal/loops.
+// autoapprove engine wiring.
 
 // aaSvc returns the auto-approve service, building it lazily on first
 // use so bare &Server{} test constructions work and so the dependency

@@ -50,7 +50,6 @@ vi.mock('../lib/apiStore', () => ({
 
 vi.mock('../lib/useCapabilities', () => ({
   useWorktreeSessions: () => false,
-  useAgentLoops: () => false,
 }));
 
 vi.mock('../lib/machinePicker', () => ({

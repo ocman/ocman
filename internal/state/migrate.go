@@ -109,15 +109,12 @@ import (
 //	27 - workflow resource pools. Adds a durable workflow_resource_lease
 //	      table recording held pool/run-concurrency capacity per attempt,
 //	      so acquisition is atomic and survives restart reconciliation.
-//	28 - loops → one-node workflows (#325). One-time copy: every persisted
+//	28 - legacy loops → one-node workflows (#325). One-time copy: every persisted
 //	      loop becomes a one-node workflow definition/version with the
 //	      corresponding trigger + preserved loop policies, and each loop
 //	      iteration becomes a historical workflow run + node attempt.
-//	      `loop_workflow_map` keeps loop identifiers resolvable to the new
-//	      workflow ids. Idempotent (skips already-mapped loops) and
-//	      interrupted-safe (runs inside the migration transaction). The
-//	      original loop tables are left intact so the existing loop
-//	      REST/MCP/UI compatibility surfaces keep working for one release.
+//	      `loop_workflow_map` makes the copy idempotent. The original loop
+//	      tables are retained as upgrade input and historical data only.
 //	29 - workspace shards + leases (#320). Adds the durable
 //	      `workflow_workspace_lease` table recording which attempt owns a
 //	      worktree shard, in exclusive or path mode, with normalized path

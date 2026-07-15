@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -499,24 +498,6 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 			"enabled": true,
 			"url":     s.mcpServerURL(),
 		},
-		"agentLoops": map[string]interface{}{
-			"enabled": s.agentLoopsEnabled(ctx),
-		},
 		"workflows": map[string]bool{"enabled": s.stateDB != nil},
 	})
-}
-
-// agentLoopsEnabled reports whether the agent-loops feature is usable:
-// the state DB is present (loops persist there) and the OpenCode adapter
-// is available (the only platform that drives loops in v1).
-func (s *Server) agentLoopsEnabled(ctx context.Context) bool {
-	if s.stateDB == nil || s.registry == nil {
-		return false
-	}
-	for _, p := range s.registry.Platforms() {
-		if string(p.ID()) == "opencode" && p.Available(ctx) {
-			return true
-		}
-	}
-	return false
 }

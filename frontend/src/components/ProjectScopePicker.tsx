@@ -42,7 +42,7 @@ export interface ProjectScopePickerProps {
    * When true, render `label` as a visible caption above the select so
    * the control lines up with the other captioned `.metrics-filter`
    * controls (Stats / Usage). Off by default: most callers (Dashboard,
-   * Loops) show the picker bare.
+   * standalone pages) show the picker bare.
    */
   showLabel?: boolean;
 }

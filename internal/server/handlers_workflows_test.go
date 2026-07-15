@@ -446,6 +446,13 @@ func TestCapabilitiesExposeWorkflowsWithoutPlatform(t *testing.T) {
 	if !response.Workflows.Enabled {
 		t.Fatal("workflows should depend on state DB, not a platform")
 	}
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &keys); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := keys["agentLoops"]; ok {
+		t.Fatal("legacy loop capability must not be exposed")
+	}
 }
 
 // TestWorkspaceProviderCreatesAndReusesShard drives the real host-local

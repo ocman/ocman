@@ -41,12 +41,6 @@ type Deps struct {
 	// ErrPlatformUnreachable.
 	EnsureProjectOpencode ProjectOpencodeEnsurer
 
-	// LoopService drives the agent-loops MCP tools (create_loop, etc.).
-	// Optional: nil disables the loop tools (e.g. no state DB). The
-	// concrete type is *loops.Service; declared as loopService so this
-	// package stays decoupled from the concrete service.
-	LoopService loopService
-
 	// WorkflowService drives workflow authoring and run-control tools.
 	// Optional: nil disables workflow tools.
 	WorkflowService workflowService
@@ -117,8 +111,6 @@ func New(deps Deps) *Server {
 	}
 	addCommTools(s, comm)
 
-	// Register agent-loops tools (no-op when LoopService is nil).
-	addLoopTools(s, &loopTools{svc: deps.LoopService, platform: deps.PlatformID})
 	addWorkflowTools(s, &workflowTools{svc: deps.WorkflowService})
 
 	// Wrap in a StreamableHTTPServer (implements http.Handler).
@@ -188,7 +180,6 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 		{Tool: sendMessageToChildTool(), Handler: comm.handleSendMessageToChild},
 		{Tool: sendMessageToParentTool(), Handler: comm.handleSendMessageToParent},
 	}
-	tools = append(tools, loopServerTools(&loopTools{svc: deps.LoopService, platform: deps.PlatformID})...)
 	tools = append(tools, workflowServerTools(&workflowTools{svc: deps.WorkflowService})...)
 	return tools
 }

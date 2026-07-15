@@ -1,7 +1,7 @@
 // Package sessionsvc owns session-mutation semantics — input
 // validation, adapter selection, and side-effect hooks — so the REST
 // handlers, the MCP tools, and the remote gRPC server share one code
-// path (the same shape loops.Service gives agent loops).
+// path.
 package sessionsvc
 
 import (

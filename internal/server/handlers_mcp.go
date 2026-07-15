@@ -21,7 +21,6 @@ func (s *Server) buildMCPHandler() http.Handler {
 		EnsureProjectOpencode: internalmcp.ProjectOpencodeEnsurer(s.ensureProjectOpencodePort),
 	}
 	if s.stateDB != nil {
-		deps.LoopService = s.loopSvc()
 		deps.WorkflowService = s.workflowSvc()
 	}
 	return internalmcp.New(deps).Handler()

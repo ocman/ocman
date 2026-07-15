@@ -115,7 +115,7 @@ handlers don't bypass the `Host` seam). User-facing docs:
 - `internal/sessionsvc/` — session mutation service (validation,
   adapter selection, side-effect hooks). REST handlers, MCP tools,
   and the remote gRPC server all delegate session mutations to it
-  (one code path, like `loops.Service` for agent loops).
+  (one shared mutation path).
 - `internal/queuesvc/` — follow-up message queue (#58). Composer
   sends made while a session is mid-turn are enqueued in `state.db`
   (shared across every client, survives a client moving machines) and
@@ -150,8 +150,7 @@ handlers don't bypass the `Host` seam). User-facing docs:
 - `internal/autoapprove/` — the LLM-judged permission auto-approve
   pipeline (judge, per-permission state machine, safe-command cache,
   SSE tee/sinks, headless watcher). Wired into the server through an
-  `autoapprove.Deps` seam by `internal/server/autoapprove_engine.go`,
-  mirroring `internal/loops`.
+   `autoapprove.Deps` seam by `internal/server/autoapprove_engine.go`.
 - `frontend/` — React + TypeScript + Vite SPA (port 8228 in dev).
 - `internal/server/static/` — Vite build output; embedded into the Go
   binary via `//go:embed`. Gitignored except for `robots.txt`, which
@@ -325,43 +324,6 @@ Implementation notes:
 
 User-facing setup, the full tool table, and the splitting workflow are
 documented in `docs/mcp.md`.
-
-## Agent loops
-
-Ocman keeps **agent loops** as one-release compatibility wrappers over
-one-node workflows. The workflow scheduler owns their trigger and action
-execution; loop identifiers and controls remain available during the
-transition.
-
-- **Domain** lives in `internal/loops/` (`Service`, triggers, action
-  dispatch, stop evaluation, template rendering, workflow derivation),
-  decoupled from `internal/server` via small interfaces (Store,
-  Messenger, Launcher, ForgePoller, SessionStatusInferer, UsageSource).
-- **Engine**: `internal/server/workflow_engine.go` evaluates loop-compatible
-  workflow triggers alongside native workflows. `loop_workflow_map` resolves
-  legacy loop IDs, and the loop service forwards manual controls to the mapped
-  workflow trigger. The compatibility surfaces are removed one release after
-  this workflow-backed release.
-- **State** (migration v15): `loops` + `loop_iterations` tables, plus a
-  nullable `child_sessions.loop_id` linking spawned children to a loop.
-  `loop_iterations` doubles as an idempotency outbox (a `pending` row is
-  written before each side effect).
-- **Triggers**: `schedule` (interval, floor 60 s), `pr_event` (poll the
-  PR-sidebar forge for head-SHA change / merge, floor 30 s),
-  `child_complete`, `turn_complete`. **Actions**: `prompt_root`,
-  `prompt_child`, `spawn_child`, `spawn_worktree`.
-- **Safety (AD-6)**: stop conditions are evaluated *before every action*,
-  and a budget (`max_cost_usd` or `max_tokens`) is **mandatory** —
-  `create_loop` and `POST /api/loops` reject a loop without one. Defaults:
-  `max_iterations=25`, `max_duration=8h`, `error_streak=3`.
-- **Control surface**: REST `/api/loops` (localhost-only) and MCP tools
-  (`create_loop`, `list_loops`, `get_loop_status`, `delete_loop`,
-  `pause_loop`, `resume_loop`, `restart_loop`, `step_loop`) both delegate to the same
-  `loops.Service`. Loop *policy* lives in
-  `.opencode/skills/ocman-agent-loops/SKILL.md`.
-- **UI**: capability-gated on `agentLoops` (`/api/capabilities`). The
-  Loops view (`/loops`, `/project/<dir>/loops`) is SSE-driven via the
-  `loop.updated` broadcast and a Zustand store (`loopsStore.ts`).
 
 ## Architecture doc
 

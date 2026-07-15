@@ -41,7 +41,7 @@ func (s *Server) runQueueSweep(ctx context.Context) {
 var queueServiceFn func(s *Server) *queuesvc.Service
 
 // queueSvc returns the follow-up message queue service, building it on
-// first use (mirrors loopSvc).
+// first use.
 func (s *Server) queueSvc() *queuesvc.Service {
 	s.queueSvcOnce.Do(func() {
 		if queueServiceFn != nil {
@@ -51,7 +51,7 @@ func (s *Server) queueSvc() *queuesvc.Service {
 		s.queueSvcCached = queuesvc.New(
 			s.stateDB,
 			&queueSender{s: s},
-			&loopStatusInferer{s: s}, // reuse the loop engine's busy check
+			&workflowStatusInferer{s: s},
 			func(sessionID string) { s.broadcastQueueUpdated(sessionID) },
 		)
 	})

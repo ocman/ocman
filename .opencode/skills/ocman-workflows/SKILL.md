@@ -66,6 +66,3 @@ values. The current approval-only tracer has no artifacts, so the list is empty.
 - `start_workflow`, `list_workflow_runs`, `inspect_workflow_run`
 - `pause_workflow_run`, `resume_workflow_run`, `cancel_workflow_run`
 - `approve_workflow_node`, `resolve_unknown_attempt`
-
-Agent Loops remain a separate compatibility surface. Do not replace loop tool
-calls with workflow tools until the compatibility migration ships.

@@ -78,28 +78,8 @@ function handleSurface(raw: string): void {
   recheckNotifyData();
 }
 
-// loopUpdated listeners: the loops store registers here so an agent-loop
-// state change broadcast (loop.updated) triggers a live refresh without
-// opening a second EventSource (AD-10).
-const loopUpdatedListeners = new Set<(loopId: string) => void>();
 const workflowRunUpdatedListeners = new Set<(runId: string) => void>();
 const workflowTriggerUpdatedListeners = new Set<() => void>();
-
-/** Register a callback fired on every loop.updated broadcast. */
-export function onLoopUpdated(cb: (loopId: string) => void): () => void {
-  loopUpdatedListeners.add(cb);
-  return () => loopUpdatedListeners.delete(cb);
-}
-
-function handleLoopUpdated(raw: string): void {
-  let loopId = '';
-  try {
-    loopId = (JSON.parse(raw) as { loopId?: string }).loopId ?? '';
-  } catch {
-    return;
-  }
-  for (const cb of loopUpdatedListeners) cb(loopId);
-}
 
 export function onWorkflowRunUpdated(cb: (runId: string) => void): () => void {
 	workflowRunUpdatedListeners.add(cb);
@@ -200,9 +180,6 @@ function open(): void {
   });
   source.addEventListener('ocman.session.changed', (e) => {
     handleSessionChanged((e as MessageEvent).data);
-  });
-  source.addEventListener('loop.updated', (e) => {
-    handleLoopUpdated((e as MessageEvent).data);
   });
 	source.addEventListener('workflow.run.updated', (e) => {
 		handleWorkflowRunUpdated((e as MessageEvent).data);

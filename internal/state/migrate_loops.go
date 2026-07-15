@@ -9,19 +9,17 @@ import (
 // migrateToV28 performs the one-time loop → one-node workflow copy (#325).
 //
 // Each persisted (non-deleted) loop is converted into a one-node workflow
-// definition + version carrying the corresponding trigger and the loop's
-// preserved policies (under definition_json ".loopCompat"). Each loop
+// definition + version carrying the corresponding trigger and action. Each loop
 // iteration becomes a historical workflow run with one node run + node
 // attempt, mapping the iteration outcome to run/attempt state as faithfully
 // as the stored data permits. `loop_workflow_map` records the loop→workflow
-// id mapping so existing loop identifiers stay resolvable.
+// id mapping so the copy is idempotent across interrupted upgrades.
 //
 // The copy is idempotent (loops already in `loop_workflow_map` are skipped)
 // and interrupted-safe (it runs inside the migration transaction, so a crash
 // rolls the whole step back and a re-run starts clean). The original `loops`
-// / `loop_iterations` tables are intentionally left untouched: the existing
-// loop REST/MCP/UI surfaces remain compatibility wrappers over them for one
-// release (see docs/architecture.md and the loop→workflow removal note).
+// / `loop_iterations` tables are intentionally left untouched for this
+// non-destructive upgrade, but no runtime code reads them afterward.
 func migrateToV28(tx *sql.Tx) error {
 	// Defense-in-depth for the pre-merge single-feature v26 branches: ensure
 	// the artifact and resource-lease objects exist before the loop copy runs,
@@ -93,8 +91,8 @@ func migrateToV28(tx *sql.Tx) error {
 
 	for _, l := range loopsToMigrate {
 		if err := migrateLoopToWorkflow(tx, l.id, l.name, l.platform, l.rootSessionID, l.directory, l.triggerType,
-			l.triggerConfig, l.actionType, l.actionTemplate, l.stopConditions,
-			l.state, l.createdAt, l.updatedAt, l.model, l.agent, l.reasoning); err != nil {
+			l.triggerConfig, l.actionType, l.actionTemplate,
+			l.createdAt, l.updatedAt, l.model, l.agent, l.reasoning); err != nil {
 			return fmt.Errorf("migrating loop %s: %w", l.id, err)
 		}
 	}
@@ -102,7 +100,7 @@ func migrateToV28(tx *sql.Tx) error {
 }
 
 func migrateLoopToWorkflow(tx *sql.Tx, loopID, name, platform, rootSessionID, directory, triggerType, triggerConfig,
-	actionType, actionTemplate, stopConditions, loopState string, createdAt, updatedAt int64, model, agent, reasoning string) error {
+	actionType, actionTemplate string, createdAt, updatedAt int64, model, agent, reasoning string) error {
 	workflowID := "wf_loop_" + loopID
 	versionID := "wfv_loop_" + loopID
 	nodeID := "action"
@@ -113,24 +111,6 @@ func migrateLoopToWorkflow(tx *sql.Tx, loopID, name, platform, rootSessionID, di
 	trigger["directory"] = directory
 	trigger["platform"] = platform
 	trigger["sessionId"] = rootSessionID
-
-	// Preserve the loop's original settings verbatim so nothing is lost in
-	// the copy (faithful as data permits). CEL/repeat/etc. are absent for a
-	// one-node compatibility workflow.
-	loopCompat := map[string]any{
-		"loopId":         loopID,
-		"actionType":     actionType,
-		"actionTemplate": actionTemplate,
-		"triggerType":    triggerType,
-		"state":          loopState,
-		"rootSessionId":  rootSessionID,
-	}
-	if triggerConfig != "" && triggerConfig != "{}" {
-		loopCompat["triggerConfig"] = json.RawMessage(triggerConfig)
-	}
-	if stopConditions != "" && stopConditions != "{}" {
-		loopCompat["stopConditions"] = json.RawMessage(stopConditions)
-	}
 
 	agentConfig := map[string]any{"platform": platform, "directory": directory, "prompt": actionTemplate, "model": model, "agent": agent, "reasoning": reasoning}
 	if actionType == "prompt_root" {
@@ -158,7 +138,6 @@ func migrateLoopToWorkflow(tx *sql.Tx, loopID, name, platform, rootSessionID, di
 			"agent": agentConfig,
 		}},
 		"dependencies": []any{},
-		"loopCompat":   loopCompat,
 	}
 	definitionJSON, err := json.Marshal(definition)
 	if err != nil {

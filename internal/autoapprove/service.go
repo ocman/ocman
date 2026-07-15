@@ -7,7 +7,7 @@
 //
 // The HTTP layer lives in internal/server; it talks to this package
 // through Service, whose external dependencies are injected via Deps
-// (mirroring the internal/loops pattern).
+// (using the same lazy service pattern as other server services).
 package autoapprove
 
 import (

@@ -87,11 +87,6 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// the worktree create-and-launch endpoint.
 	mux.HandleFunc("/api/project/handle", requirePOST(requireLocalhost(s.handleProjectHandle)))
 
-	// Agent loops — localhost-only (AD-8). The handler does its own
-	// GET/POST dispatch across /api/loops and /api/loops/{id}[/action].
-	loopsHandler := requireLocalhost(s.handleLoops)
-	mux.HandleFunc("/api/loops", loopsHandler)
-	mux.HandleFunc("/api/loops/", loopsHandler)
 	workflowHandler := requireLocalhost(s.handleWorkflows)
 	mux.HandleFunc("/api/workflows", workflowHandler)
 	mux.HandleFunc("/api/workflows/", workflowHandler)

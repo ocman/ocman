@@ -68,12 +68,6 @@ export type {
   ShareLink,
   GlobalShareLink,
   SharedConversation,
-  Loop,
-  LoopDetail,
-  LoopCreateRequest,
-  LoopIteration,
-  LoopTriggerConfig,
-  LoopStopConditions,
 	WorkflowVersion,
 	WorkflowDefinition,
 	WorkflowValidation,
@@ -123,10 +117,6 @@ import type {
   RemoteStatus,
   RemoteAccessStatus,
   ResolveTargetsResponse,
-  Loop,
-  LoopDetail,
-  LoopCreateRequest,
-  LoopUpdateRequest,
 	WorkflowVersion,
 	WorkflowValidation,
 	WorkflowRun,
@@ -694,42 +684,6 @@ export const api = {
       postJSON<WorktreeCreateResponse>('/api/worktree/create-and-launch', req),
     remove: (req: WorktreeRemoveRequest): Promise<{ removed: boolean }> =>
       postJSON<{ removed: boolean }>('/api/worktree/remove', req),
-  },
-  /**
-   * Agent-loops API (localhost-only on the backend). Gated in the UI by
-   * useAgentLoops(); see spec/agent-loops.
-   */
-  loops: {
-    list: (params: { session?: string; dir?: string } = {}, signal?: AbortSignal) => {
-      const q = new URLSearchParams();
-      if (params.session) q.set('session', params.session);
-      if (params.dir) q.set('dir', params.dir);
-      const qs = q.toString();
-      return fetchJSON<Loop[]>(`/api/loops${qs ? '?' + qs : ''}`, signal);
-    },
-    get: (id: string, signal?: AbortSignal) =>
-      fetchJSON<LoopDetail>(`/api/loops/${encodeURIComponent(id)}`, signal),
-    create: (req: LoopCreateRequest) => postJSON<Loop, LoopCreateRequest>('/api/loops', req),
-    update: (id: string, req: LoopUpdateRequest) =>
-      postJSON<Loop, LoopUpdateRequest>(`/api/loops/${encodeURIComponent(id)}`, req, {
-        method: 'PATCH',
-      }),
-    delete: (id: string) =>
-      postJSON<{ ok: boolean }>(`/api/loops/${encodeURIComponent(id)}`, undefined, { method: 'DELETE' }),
-    pause: (id: string) =>
-      postJSON<{ ok: boolean }>(`/api/loops/${encodeURIComponent(id)}/pause`, {}),
-    resume: (id: string) =>
-      postJSON<{ ok: boolean }>(`/api/loops/${encodeURIComponent(id)}/resume`, {}),
-    // Restart a completed/errored loop: resets run-state counters and
-    // reactivates it. Returns the refreshed loop view.
-    restart: (id: string) =>
-      postJSON<Loop>(`/api/loops/${encodeURIComponent(id)}/restart`, {}),
-    step: (id: string) =>
-      postJSON<{ ok: boolean }>(`/api/loops/${encodeURIComponent(id)}/step`, {}),
-    // Force a schedule loop to fire its action now, bypassing the
-    // interval throttle (stop conditions still enforced server-side).
-    trigger: (id: string) =>
-      postJSON<{ ok: boolean }>(`/api/loops/${encodeURIComponent(id)}/trigger`, {}),
   },
 	workflows: {
 		versions: (signal?: AbortSignal) => fetchJSON<WorkflowVersion[]>('/api/workflows', signal),

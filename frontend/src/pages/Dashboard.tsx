@@ -5,7 +5,7 @@ import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, ArcElement, T
 import type { Project, Session } from '../lib/api';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useUiStore } from '../lib/uiStore';
-import { useAgentLoops, useWorkflows } from '../lib/useCapabilities';
+import { useWorkflows } from '../lib/useCapabilities';
 import { useSessions as useTQSessions, useProjects as useTQProjects } from '../lib/queries';
 import { DashboardContext, type DashboardCtx } from './dashboard/context';
 
@@ -30,10 +30,9 @@ const EMPTY_PROJECTS: Project[] = [];
 export function DashboardLayout() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const agentLoopsAllowed = useAgentLoops();
   const workflowsAllowed = useWorkflows();
 
-  const isOnDashboard = location.pathname === '/sessions' || location.pathname === '/projects' || location.pathname === '/stats' || location.pathname === '/usage' || location.pathname === '/loops' || location.pathname === '/workflows' || location.pathname === '/settings';
+  const isOnDashboard = location.pathname === '/sessions' || location.pathname === '/projects' || location.pathname === '/stats' || location.pathname === '/usage' || location.pathname === '/workflows' || location.pathname === '/settings';
 
   const dashboardTimeRangeDefault = useUiStore((s) => s.dashboardTimeRangeDefault);
   const tParam = searchParams.get('t');
@@ -121,9 +120,6 @@ export function DashboardLayout() {
         <div className="nav-tabs">
           <NavLink to="/sessions" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Sessions</NavLink>
           <NavLink to="/projects" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Projects</NavLink>
-          {agentLoopsAllowed && (
-            <NavLink to="/loops" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Loops</NavLink>
-          )}
           {workflowsAllowed && <NavLink to="/workflows" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Workflows</NavLink>}
           <NavLink to="/stats" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Stats</NavLink>
           <NavLink to="/usage" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Usage</NavLink>

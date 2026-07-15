@@ -99,37 +99,7 @@ func (s *Server) processChildSession(ctx context.Context, cs state.ChildSession)
 
 	// Queue a result message for the parent session when terminal.
 	if isTerminalStatus(newStatus) {
-		// Loop-attached children route their completion to the compatibility
-		// workflow. Non-loop children keep the one-shot injection.
-		if cs.LoopID != "" {
-			s.routeChildCompletionToLoop(ctx, cs)
-			return
-		}
 		s.injectResultIntoParent(ctx, cs, newStatus, summary)
-	}
-}
-
-// routeChildCompletionToLoop nudges the owning compatibility workflow now
-// that one of its children has reached a terminal state. The workflow trigger
-// engine would catch it on its next tick; this just shortens the latency.
-func (s *Server) routeChildCompletionToLoop(ctx context.Context, cs state.ChildSession) {
-	l, err := s.stateDB.GetLoop(cs.LoopID)
-	if err != nil {
-		log.WithFields(log.Fields{"loopID": cs.LoopID, "childID": cs.ID, "error": err}).
-			Warn("mcp-watcher: loading loop for child completion")
-		return
-	}
-	if l.State != "active" {
-		return
-	}
-	if _, err := s.stateDB.GetLoopWorkflow(cs.LoopID); err != nil {
-		log.WithFields(log.Fields{"loopID": cs.LoopID, "childID": cs.ID, "error": err}).
-			Warn("mcp-watcher: loading loop workflow map")
-		return
-	}
-	if err := s.workflowSvc().TriggerCompatibility(ctx, l.ID); err != nil {
-		log.WithFields(log.Fields{"loopID": cs.LoopID, "error": err}).
-			Warn("mcp-watcher: routing child completion to loop")
 	}
 }
 

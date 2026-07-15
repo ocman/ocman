@@ -29,9 +29,9 @@ func (s *Server) workflowSvc() *workflows.Service {
 			Blobs:         workflows.NewBlobStore(blobDir),
 			Notify:        s.broadcastWorkflowRunUpdated,
 			NotifyTrigger: s.broadcastWorkflowTriggerUpdated,
-			Forge:         &loopForge{s: s},
-			Status:        &loopStatusInferer{s: s},
-			Usage:         &loopUsage{s: s},
+			Forge:         &workflowForge{s: s},
+			Status:        &workflowStatusInferer{s: s},
+			Usage:         &workflowUsage{s: s},
 		})
 	})
 	return s.workflowSvcCached
