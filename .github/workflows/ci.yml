@@ -68,6 +68,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Install tmux
+        run: sudo apt-get update && sudo apt-get install -y tmux
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
