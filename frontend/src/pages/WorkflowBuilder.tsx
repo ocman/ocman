@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Graph, layout } from '@dagrejs/dagre';
 import { addEdge, Background, Controls, Handle, Position, ReactFlow, type Connection, type Edge, type Node, type NodeProps, useEdgesState, useNodesState } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import type { WorkflowDefinition } from '../lib/api';
@@ -10,7 +11,14 @@ const nodeTypes = { workflow: WorkflowNode };
 const nodeTypesList: WorkflowNodeDefinition['type'][] = ['approval', 'agent', 'command', 'subworkflow', 'map', 'join'];
 
 function flowNodes(definition: WorkflowDefinition): FlowNode[] {
-	return definition.nodes.map((node, index) => ({ id: node.id, type: 'workflow', position: { x: 40 + (index % 3) * 230, y: 40 + Math.floor(index / 3) * 150 }, data: { node } }));
+	const graph = new Graph().setGraph({ rankdir: 'TB', nodesep: 80, ranksep: 80, marginx: 40, marginy: 40 }).setDefaultEdgeLabel(() => ({}));
+	definition.nodes.forEach((node) => graph.setNode(node.id, { width: 195, height: 72 }));
+	(definition.dependencies ?? []).forEach(({ from, to }) => graph.setEdge(from, to));
+	layout(graph);
+	return definition.nodes.map((node) => {
+		const position = graph.node(node.id);
+		return { id: node.id, type: 'workflow', position: { x: position.x - position.width / 2, y: position.y - position.height / 2 }, data: { node } };
+	});
 }
 
 function flowEdges(definition: WorkflowDefinition): Edge[] {
