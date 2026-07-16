@@ -474,6 +474,41 @@ describe('reduceSessionView — session.status / session.idle', () => {
     expect(view.session?.status).toBe('done');
     expect(view._refetchRequested).toBe(true);
   });
+
+  it('marks a completed user shell message as done without an LLM finish', () => {
+    let view = makeView({ session: makeSession({ status: 'busy' }) });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.updated', {
+        info: { id: 'm-shell', sessionID: SID, role: 'assistant' },
+        parts: [{
+          id: 'p-shell', messageID: 'm-shell', sessionID: SID,
+          type: 'tool', tool: 'bash', state: { status: 'completed' },
+        }],
+      }),
+    });
+
+    expect(view.session?.status).toBe('done');
+  });
+
+  it('keeps an LLM turn busy when its message contains a step-start', () => {
+    let view = makeView({ session: makeSession({ status: 'done' }) });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.updated', {
+        info: { id: 'm-agent', sessionID: SID, role: 'assistant' },
+        parts: [
+          { id: 'p-start', messageID: 'm-agent', sessionID: SID, type: 'step-start' },
+          {
+            id: 'p-tool', messageID: 'm-agent', sessionID: SID,
+            type: 'tool', tool: 'bash', state: { status: 'completed' },
+          },
+        ],
+      }),
+    });
+
+    expect(view.session?.status).toBe('busy');
+  });
 });
 
 describe('reduceSessionView — permission prompts', () => {

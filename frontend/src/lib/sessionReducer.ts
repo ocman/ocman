@@ -440,10 +440,22 @@ function normaliseStatus(raw: unknown): SessionMetadata['status'] | null {
  * existing inferStatusFromMessage helper, but inlined so the
  * reducer is self-contained.
  */
-function inferStatusFromMessage(msg: Message): SessionMetadata['status'] | null {
+function inferStatusFromMessage(msg: Message, rawParts: unknown): SessionMetadata['status'] | null {
   if (msg.data.role !== 'assistant') return 'done';
   if (msg.data.finish === 'error' || msg.data.error) return 'error';
   if (msg.data.finish) return 'waiting';
+  if (Array.isArray(rawParts)) {
+    let hasPart = false;
+    for (const rawPart of rawParts) {
+      if (!rawPart || typeof rawPart !== 'object') continue;
+      hasPart = true;
+      const part = rawPart as Record<string, unknown>;
+      if (part.type === 'step-start') return 'busy';
+      const state = part.state as Record<string, unknown> | undefined;
+      if (state?.status === 'running') return 'busy';
+    }
+    if (hasPart) return 'done';
+  }
   return 'busy';
 }
 
@@ -715,7 +727,7 @@ function reduceMessageSnapshot(state: SessionView, event: SseEvent): SessionView
 
   let nextSession = state.session;
   if (extracted.message.data.role === 'assistant' && state.session) {
-    const inferred = inferStatusFromMessage(extracted.message);
+    const inferred = inferStatusFromMessage(extracted.message, event.properties?.parts);
     if (inferred && state.session.status !== inferred) {
       nextSession = { ...state.session, status: inferred };
     }
