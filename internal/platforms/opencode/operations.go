@@ -617,7 +617,8 @@ func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSession
 		// decodeURIComponent; url.PathEscape is the matching encoder.
 		httpReq.Header.Set("x-opencode-directory", url.PathEscape(req.Directory))
 	}
-	resp, err := openCodeClient.Do(httpReq)
+	// Session creation may outlive the shared API timeout; the caller context still bounds it.
+	resp, err := (&http.Client{Transport: openCodeClient.Transport}).Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("opencode create-session: %w", err)
 	}

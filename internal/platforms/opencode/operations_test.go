@@ -551,6 +551,33 @@ func TestCreateSession_ProvidedPortSkipsScan(t *testing.T) {
 	}
 }
 
+func TestCreateSession_WaitsForCallerDeadline(t *testing.T) {
+	const sid = "sess-slow-create"
+
+	previousTimeout := openCodeClient.Timeout
+	openCodeClient.Timeout = 10 * time.Millisecond
+	t.Cleanup(func() { openCodeClient.Timeout = previousTimeout })
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(25 * time.Millisecond)
+		_, _ = w.Write([]byte(`{"id":"` + sid + `"}`))
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	resp, err := New(nil, nil).CreateSession(ctx, platforms.CreateSessionRequest{
+		Directory: "/tmp/slow-create",
+		Port:      strings.TrimPrefix(srv.URL, "http://127.0.0.1:"),
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	if resp.ID != sid {
+		t.Fatalf("CreateSession ID = %q, want %q", resp.ID, sid)
+	}
+}
+
 func TestParseOpenCodeModelRef(t *testing.T) {
 	tests := []struct {
 		name         string
