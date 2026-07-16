@@ -53,12 +53,13 @@ const singleAgent = `{
 }`
 
 type fakeAgentExecutor struct {
-	starts     []AgentRequest
-	results    map[string]AgentResult
-	canceled   []AgentSession
-	startErr   error
-	inspectErr error
-	sessionErr string
+	starts            []AgentRequest
+	results           map[string]AgentResult
+	canceled          []AgentSession
+	startErr          error
+	inspectErr        error
+	sessionErr        string
+	keepResultOnReuse bool
 }
 
 func (f *fakeAgentExecutor) Start(_ context.Context, req AgentRequest) (AgentSession, error) {
@@ -69,7 +70,7 @@ func (f *fakeAgentExecutor) Start(_ context.Context, req AgentRequest) (AgentSes
 	id := req.SessionID
 	if id == "" {
 		id = "session-1"
-	} else {
+	} else if !f.keepResultOnReuse {
 		delete(f.results, id)
 	}
 	if f.sessionErr != "" {
@@ -1478,6 +1479,44 @@ func TestAgentRunFreshAffinityAndIdleCompletion(t *testing.T) {
 	assertRun(t, completed, StateSuccessful, map[string]string{"approve": NodeSuccessful, "implement": NodeSuccessful, "review": NodeSuccessful})
 	if got := string(completed.Nodes[1].Result.Output); got != `{"ok":true}` {
 		t.Fatalf("agent node output = %s", got)
+	}
+}
+
+func TestAgentAffinityDoesNotConsumePreviousTurnResult(t *testing.T) {
+	h := newHarness(t)
+	h.agent.keepResultOnReuse = true
+	version, err := h.svc.PublishJSON(t.Context(), []byte(approvalThenAgents))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.svc.Start(t.Context(), version.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.Approve(t.Context(), run.ID, "approve"); err != nil {
+		t.Fatal(err)
+	}
+
+	h.agent.results["session-1"] = AgentResult{State: "waiting", FinalMessage: `{"step":"implement"}`}
+	if err := h.svc.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := h.svc.GetRun(t.Context(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != StateActive || got.Nodes[2].State != NodeRunning {
+		t.Fatalf("reused session consumed the previous turn result: run=%s review=%s", got.State, got.Nodes[2].State)
+	}
+
+	h.agent.results["session-1"] = AgentResult{State: "waiting", FinalMessage: `{"step":"review"}`}
+	if err := h.svc.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	got, err = h.svc.GetRun(t.Context(), run.ID)
+	if err != nil || got.State != StateSuccessful {
+		t.Fatalf("run did not complete with the new turn result: run=%s err=%v", got.State, err)
 	}
 }
 

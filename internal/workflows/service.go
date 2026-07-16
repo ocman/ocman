@@ -1774,6 +1774,7 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 			return err
 		}
 		progressed := mapMoved
+		startedAgent := false
 		for _, node := range run.Nodes {
 			if node.Type != "agent" || (node.State != NodeReady && node.State != NodeRunning) || len(node.Attempts) == 0 {
 				continue
@@ -1843,6 +1844,8 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 					if err := s.completeAgentFailure(runID, node.NodeID, attempt.ID, session.State, session.Error); err != nil {
 						return err
 					}
+				} else {
+					startedAgent = true
 				}
 				s.changed(runID)
 				progressed = true
@@ -1902,6 +1905,9 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 			}
 			s.changed(runID)
 			progressed = true
+		}
+		if startedAgent {
+			return nil
 		}
 		if !progressed {
 			return nil
