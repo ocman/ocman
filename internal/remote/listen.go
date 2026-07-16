@@ -17,10 +17,12 @@ type ListenConfig struct {
 	Addr string
 	// Token is the remote-access token inbound hubs must present.
 	Token string
-	// TLSCertFile / TLSKeyFile enable TLS when both are non-empty
-	// (AD-4). Empty = plaintext (suitable for a trusted overlay).
+	// TLSCertFile and TLSKeyFile enable TLS. They must be set together.
 	TLSCertFile string
 	TLSKeyFile  string
+	// TrustedOverlay explicitly permits plaintext for an authenticated
+	// private network such as Tailscale or WireGuard.
+	TrustedOverlay bool
 }
 
 // Listener bundles a running gRPC server with its net.Listener so the
@@ -48,6 +50,15 @@ func (l *Listener) Stop() { l.grpc.GracefulStop() }
 // bearer-token interceptors and optional TLS. It does not start serving;
 // call Serve (typically in a goroutine).
 func NewListener(cfg ListenConfig, srv *Server) (*Listener, error) {
+	hasCert := cfg.TLSCertFile != ""
+	hasKey := cfg.TLSKeyFile != ""
+	if hasCert != hasKey {
+		return nil, fmt.Errorf("remote: TLS certificate and key must be provided together")
+	}
+	if !hasCert && !cfg.TrustedOverlay {
+		return nil, fmt.Errorf("remote: TLS is required unless trusted overlay is explicitly enabled")
+	}
+
 	ln, err := net.Listen("tcp", cfg.Addr)
 	if err != nil {
 		return nil, fmt.Errorf("remote: listen %s: %w", cfg.Addr, err)
@@ -59,7 +70,7 @@ func NewListener(cfg ListenConfig, srv *Server) (*Listener, error) {
 		grpc.StreamInterceptor(stream),
 	}
 
-	useTLS := cfg.TLSCertFile != "" && cfg.TLSKeyFile != ""
+	useTLS := hasCert
 	if useTLS {
 		cert, err := tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
 		if err != nil {

@@ -29,13 +29,13 @@ import (
 func startRealRemote(t *testing.T, token, instanceID string, reg *platforms.Registry) string {
 	t.Helper()
 	srv := NewServer(reg, localStubHost{}, instanceID, "v-test")
-	ln, err := NewListener(ListenConfig{Addr: "127.0.0.1:0", Token: token}, srv)
+	ln, err := NewListener(ListenConfig{Addr: "127.0.0.1:0", Token: token, TrustedOverlay: true}, srv)
 	if err != nil {
 		t.Fatalf("listener: %v", err)
 	}
 	go func() { _ = ln.Serve() }()
 	t.Cleanup(ln.Stop)
-	return ln.Addr()
+	return "grpc://" + ln.Addr()
 }
 
 // startRealRemoteAt serves on a fixed address (used to restart a remote on
@@ -43,7 +43,7 @@ func startRealRemote(t *testing.T, token, instanceID string, reg *platforms.Regi
 func startRealRemoteAt(t *testing.T, addr, token, instanceID string, reg *platforms.Registry) func() {
 	t.Helper()
 	srv := NewServer(reg, localStubHost{}, instanceID, "v-test")
-	ln, err := NewListener(ListenConfig{Addr: addr, Token: token}, srv)
+	ln, err := NewListener(ListenConfig{Addr: addr, Token: token, TrustedOverlay: true}, srv)
 	if err != nil {
 		t.Fatalf("listener %s: %v", addr, err)
 	}
@@ -83,7 +83,7 @@ func TestManager_ReconnectsAfterRemoteRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.AddRemote(addr, "tok", "Box"); err != nil {
+	if _, err := store.AddRemote("grpc://"+addr, "tok", "Box"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -148,7 +148,7 @@ func TestManager_RetriesWhenOfflineAtStartup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.AddRemote(addr, "tok", "Box"); err != nil {
+	if _, err := store.AddRemote("grpc://"+addr, "tok", "Box"); err != nil {
 		t.Fatal(err)
 	}
 

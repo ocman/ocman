@@ -30,7 +30,7 @@ func TestRemotePlatform_SliceReads_MapUnavailable(t *testing.T) {
 	reg.Register(&fakePlatform{id: "opencode"})
 	stop := startRealRemoteAt(t, addr, "tok", "rid", reg)
 
-	conn := NewRemoteConn(addr, "tok")
+	conn := NewRemoteConn("grpc://"+addr, "tok")
 	if err := conn.Connect(context.Background()); err != nil {
 		stop()
 		t.Fatalf("connect: %v", err)

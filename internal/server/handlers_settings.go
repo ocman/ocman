@@ -17,6 +17,7 @@ type remoteAccessStatus struct {
 	Listening  bool   `json:"listening"`
 	ListenAddr string `json:"listenAddr"`
 	TLS        bool   `json:"tls"`
+	Transport  string `json:"transport"`
 	TokenSet   bool   `json:"tokenSet"`
 }
 
@@ -29,6 +30,12 @@ func (s *Server) handleRemoteAccess(w http.ResponseWriter, _ *http.Request) {
 		Listening:  s.remoteAccess.listening,
 		ListenAddr: s.remoteAccess.listenAddr,
 		TLS:        s.remoteAccess.tls,
+	}
+	if status.Listening {
+		status.Transport = "trusted-overlay"
+		if status.TLS {
+			status.Transport = "tls"
+		}
 	}
 	if s.stateDB != nil {
 		if ident, err := s.stateDB.InstanceIdentity(); err == nil {

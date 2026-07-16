@@ -95,7 +95,8 @@ each machine you want to manage remotely, start ocman with a gRPC listen
 address:
 
 ```sh
-ocman -remote-listen 0.0.0.0:8230
+ocman -remote-listen 0.0.0.0:8230 \
+  -remote-tls-cert cert.pem -remote-tls-key key.pem
 ```
 
 Then on the hub, open **Settings → Remotes → Attach a remote**, paste the

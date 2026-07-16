@@ -1,6 +1,9 @@
 package remote
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestUseTLSAndDialTarget(t *testing.T) {
 	cases := []struct {
@@ -22,6 +25,19 @@ func TestUseTLSAndDialTarget(t *testing.T) {
 		if got := dialTarget(c.addr); got != c.wantDial {
 			t.Errorf("dialTarget(%q) = %q, want %q", c.addr, got, c.wantDial)
 		}
+	}
+}
+
+func TestRemoteConnRequiresExplicitPlaintextOptIn(t *testing.T) {
+	bare := NewRemoteConn("ws.local:8230", "tok")
+	if bare.trustedOverlay() {
+		t.Fatal("bare address must not opt into plaintext")
+	}
+	if err := bare.Connect(context.Background()); err == nil {
+		t.Fatal("bare address must be rejected before dialing")
+	}
+	if !NewRemoteConn("grpc://ws.local:8230", "tok").trustedOverlay() {
+		t.Fatal("grpc scheme must explicitly opt into trusted-overlay plaintext")
 	}
 }
 

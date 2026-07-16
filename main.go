@@ -99,7 +99,11 @@ func main() {
 	remoteListen := flag.String("remote-listen", "", "bind address for the remote-access gRPC server (e.g. 0.0.0.0:8230); empty disables it (multi-remote support)")
 	remoteTLSCert := flag.String("remote-tls-cert", "", "TLS certificate file for the remote-access gRPC server (enables TLS together with -remote-tls-key)")
 	remoteTLSKey := flag.String("remote-tls-key", "", "TLS key file for the remote-access gRPC server")
+	remoteTrustedOverlay := flag.Bool("remote-trusted-overlay", false, "explicitly allow plaintext remote gRPC on a trusted overlay network")
 	flag.Parse()
+	if err := validateRemoteTransport(*remoteListen, *remoteTLSCert, *remoteTLSKey, *remoteTrustedOverlay); err != nil {
+		log.Fatal(err)
+	}
 
 	// Resolve the public base URL: flag wins, then env. Empty leaves
 	// the "derive from request Host" behaviour in the server.
@@ -232,7 +236,7 @@ func main() {
 		// Start the remote-access gRPC server when -remote-listen is set
 		// (multi-remote support). Off by default so single-host installs
 		// are byte-for-byte unchanged (NFR-6).
-		listening, listenAddr, tlsOn := startRemoteServer(ctx, srv, ident, *remoteListen, *remoteTLSCert, *remoteTLSKey)
+		listening, listenAddr, tlsOn := startRemoteServer(ctx, srv, ident, *remoteListen, *remoteTLSCert, *remoteTLSKey, *remoteTrustedOverlay)
 		srv.WithRemoteAccess(ident.InstanceID, listenAddr, listening, tlsOn)
 
 		// Start the hub-side remote manager: it loads any saved remotes
@@ -253,6 +257,19 @@ func main() {
 	}
 
 	log.Info("server stopped gracefully")
+}
+
+func validateRemoteTransport(listenAddr, tlsCert, tlsKey string, trustedOverlay bool) error {
+	if listenAddr == "" {
+		return nil
+	}
+	if (tlsCert == "") != (tlsKey == "") {
+		return fmt.Errorf("remote TLS certificate and key must be provided together")
+	}
+	if tlsCert == "" && !trustedOverlay {
+		return fmt.Errorf("remote TLS is required unless -remote-trusted-overlay is set")
+	}
+	return nil
 }
 
 // resolveAuthPassword picks the password from env > file > flag, in
@@ -339,24 +356,25 @@ func buildAuth(stateDB *state.DB, flagValue, fileValue string, ttl time.Duration
 // is non-empty. It returns (listening, boundAddr, tls). On failure it
 // logs and returns listening=false so the HTTP server still starts —
 // the remote surface is opt-in and must never block normal operation.
-func startRemoteServer(ctx context.Context, srv *server.Server, ident state.InstanceIdentity, listenAddr, tlsCert, tlsKey string) (bool, string, bool) {
+func startRemoteServer(ctx context.Context, srv *server.Server, ident state.InstanceIdentity, listenAddr, tlsCert, tlsKey string, trustedOverlay bool) (bool, string, bool) {
 	if listenAddr == "" {
 		return false, "", false
 	}
 	rsrv := remote.NewServer(srv.Registry(), srv.RemoteServerHost(), ident.InstanceID, version).
 		UseSessions(srv.SessionService())
 	ln, err := remote.NewListener(remote.ListenConfig{
-		Addr:        listenAddr,
-		Token:       ident.RemoteToken,
-		TLSCertFile: tlsCert,
-		TLSKeyFile:  tlsKey,
+		Addr:           listenAddr,
+		Token:          ident.RemoteToken,
+		TLSCertFile:    tlsCert,
+		TLSKeyFile:     tlsKey,
+		TrustedOverlay: trustedOverlay,
 	}, rsrv)
 	if err != nil {
 		log.WithError(err).Error("remote: failed to start gRPC server; continuing without it")
 		return false, "", false
 	}
 	if !ln.TLS() {
-		log.WithField("addr", ln.Addr()).Warn("remote: gRPC server running WITHOUT TLS (bearer token only); use a trusted overlay or -remote-tls-*")
+		log.WithField("addr", ln.Addr()).Info("remote: gRPC server using trusted-overlay plaintext transport")
 	}
 	go func() {
 		if err := ln.Serve(); err != nil {
@@ -367,7 +385,11 @@ func startRemoteServer(ctx context.Context, srv *server.Server, ident state.Inst
 		<-ctx.Done()
 		ln.Stop()
 	}()
-	log.WithFields(log.Fields{"addr": ln.Addr(), "tls": ln.TLS()}).Info("remote: gRPC server listening")
+	transport := "trusted-overlay"
+	if ln.TLS() {
+		transport = "tls"
+	}
+	log.WithFields(log.Fields{"addr": ln.Addr(), "transport": transport}).Info("remote: gRPC server listening")
 	return true, ln.Addr(), ln.TLS()
 }
 

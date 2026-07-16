@@ -51,12 +51,16 @@ func NewRemoteConn(address, token string) *RemoteConn {
 	return &RemoteConn{address: address, token: token, health: HealthConnecting}
 }
 
-// useTLS reports whether the configured address requests TLS. A
-// grpcs:// or https:// scheme means TLS; everything else is plaintext
-// (suitable for a trusted overlay).
+// useTLS reports whether the configured address requests TLS.
 func (c *RemoteConn) useTLS() bool {
 	a := strings.ToLower(c.address)
 	return strings.HasPrefix(a, "grpcs://") || strings.HasPrefix(a, "https://")
+}
+
+// trustedOverlay reports whether the address explicitly opts into
+// plaintext gRPC on a private network.
+func (c *RemoteConn) trustedOverlay() bool {
+	return strings.HasPrefix(strings.ToLower(c.address), "grpc://")
 }
 
 // dialTarget strips a scheme prefix from the configured address for the
@@ -74,6 +78,10 @@ func dialTarget(address string) string {
 // Returns an error on dial/handshake failure; health reflects the cause.
 func (c *RemoteConn) Connect(ctx context.Context) error {
 	c.setHealth(HealthConnecting)
+	if !c.useTLS() && !c.trustedOverlay() {
+		c.setHealth(HealthOffline)
+		return fmt.Errorf("remote: address %q requires grpcs:// or explicit grpc:// trusted overlay", c.address)
+	}
 
 	// Drop any previous transport before redialing (reconnect path) so
 	// we don't leak the old grpc.ClientConn.

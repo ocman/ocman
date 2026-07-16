@@ -28,6 +28,9 @@ func TestHandleRemoteAccess_ReportsIdentityNoToken(t *testing.T) {
 	if !got.Listening || got.ListenAddr != "0.0.0.0:8230" {
 		t.Errorf("listen status: %+v", got)
 	}
+	if got.Transport != "trusted-overlay" {
+		t.Errorf("transport: got %q, want trusted-overlay", got.Transport)
+	}
 	if !got.TokenSet {
 		t.Error("expected tokenSet true (stateDB seeds identity)")
 	}

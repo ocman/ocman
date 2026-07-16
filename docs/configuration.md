@@ -26,6 +26,7 @@ Ocman's own state (archived/seen flags, auth secret, favorites, cached projects)
 | `-remote-listen` | _(unset, off)_ | Bind address for the remote-access gRPC server (multi-remote), e.g. `0.0.0.0:8230`. Empty disables it. |
 | `-remote-tls-cert` | _(unset)_ | TLS certificate file for the remote-access gRPC server (enables TLS with `-remote-tls-key`). |
 | `-remote-tls-key` | _(unset)_ | TLS key file for the remote-access gRPC server. |
+| `-remote-trusted-overlay` | `false` | Explicitly allow plaintext remote gRPC on a trusted overlay network. |
 
 ## Environment variables
 
@@ -72,9 +73,9 @@ sessions from one hub. On a machine you want to manage remotely, start
 its gRPC server:
 
 ```sh
-ocman -remote-listen 0.0.0.0:8230            # plaintext (use a trusted overlay)
 ocman -remote-listen 0.0.0.0:8230 \
-  -remote-tls-cert cert.pem -remote-tls-key key.pem   # with TLS
+  -remote-tls-cert cert.pem -remote-tls-key key.pem   # secure default
+ocman -remote-listen 0.0.0.0:8230 -remote-trusted-overlay # Tailscale/WireGuard only
 ```
 
 Then attach it from the hub's **Settings → Remotes** page using the

@@ -36,8 +36,8 @@ cwd, and tmux windows all live on the remote.
 - Network reachability from the hub to each remote's gRPC port. ocman
   does **not** manage networking — use direct reachability, a VPN, or a
   trusted overlay such as Tailscale / WireGuard.
-- Optional but recommended: TLS, or a trusted overlay network if you run
-  the gRPC channel in plaintext.
+- TLS certificates, unless both machines use a trusted overlay such as
+  Tailscale or WireGuard.
 
 ## Step-by-step setup
 
@@ -49,7 +49,8 @@ reach it across the network:
 
 ```sh
 # On the workstation you want to manage remotely:
-ocman -remote-listen 0.0.0.0:8230
+ocman -remote-listen 0.0.0.0:8230 \
+  -remote-tls-cert cert.pem -remote-tls-key key.pem
 ```
 
 This starts the gRPC server **in addition to** the normal web UI on
@@ -80,9 +81,10 @@ the web UI password (`OCMAN_AUTH_PASSWORD`).
 Open the hub's dashboard → **Settings → Remotes → Attach a remote** and
 enter:
 
-- **Address** — the remote's gRPC address, e.g. `workstation.lan:8230`.
-  Prefix with `grpcs://` (or `https://`) to dial over TLS; a bare
-  `host:port` (or `grpc://`) uses plaintext.
+- **Address** — use `grpcs://workstation.lan:8230` to dial TLS. Plaintext
+  requires an explicit `grpc://` address and `-remote-trusted-overlay` on
+  the remote; use it only over Tailscale, WireGuard, or an equivalent private
+  overlay.
 - **Token** — the value you revealed in step 2.
 - **Display name** (optional) — a friendly label for the host badge.
 
@@ -123,12 +125,10 @@ address/token edited.
 
 - **Token auth is mandatory** on the gRPC channel; a missing or wrong
   token is rejected and shown as `auth-failed` on the hub.
-- **TLS is recommended.** Enable it on the remote by starting it with
-  `-remote-tls-cert` and `-remote-tls-key`, and dial it from the hub
-  with a `grpcs://` address. Without TLS the channel is plaintext and
-  should only run over a trusted overlay (matching ocman's existing
-  localhost-trusting posture). The remote logs a warning when it starts
-  without TLS.
+- **TLS is the default requirement.** Start the remote with both
+  `-remote-tls-cert` and `-remote-tls-key`, and use a `grpcs://` address on
+  the hub. Plaintext requires both `-remote-trusted-overlay` on the remote
+  and an explicit `grpc://` address on the hub; bare addresses are rejected.
 - Stored remote tokens on the hub are encrypted at rest with an
   app-local key and are never returned to the browser. This protects
   against casual disclosure, not against an attacker who can read both
@@ -140,8 +140,9 @@ address/token edited.
 | Flag | Default | Where | Description |
 |------|---------|-------|-------------|
 | `-remote-listen` | _(unset, off)_ | remote | Bind address for the remote-access gRPC server, e.g. `0.0.0.0:8230`. Empty disables it. |
-| `-remote-tls-cert` | _(unset)_ | remote | TLS certificate file. Enables TLS together with `-remote-tls-key`. |
+| `-remote-tls-cert` | _(unset)_ | remote | TLS certificate file. Required with `-remote-tls-key` unless using a trusted overlay. |
 | `-remote-tls-key` | _(unset)_ | remote | TLS key file. |
+| `-remote-trusted-overlay` | `false` | remote | Explicitly allow plaintext only on a trusted overlay network. |
 
 No hub-side flags are needed — remotes are added at runtime from the
 Settings page and persisted in `state.db`.
