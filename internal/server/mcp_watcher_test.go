@@ -174,6 +174,53 @@ func TestCheckAndInjectChildResults_UpdatesStatus(t *testing.T) {
 	}
 }
 
+func TestCheckAndInjectChildResults_WaitsForAssistantAfterFollowUp(t *testing.T) {
+	sdb := openWatcherTestStateDB(t)
+	insertWatcherChildSession(t, sdb, "child-follow-up", "parent-1", "running")
+
+	var sentMessages []platforms.SendMessageRequest
+	fp := &fakePlatform{
+		id: "opencode",
+		sessions: []db.Session{
+			{ID: "child-follow-up", Status: "waiting"},
+			{ID: "parent-1", Status: "waiting"},
+		},
+	}
+	fp.sendMessageFn = func(req platforms.SendMessageRequest) error {
+		sentMessages = append(sentMessages, req)
+		return nil
+	}
+	fp.sessionDetailFn = func(id string) (*platforms.SessionDetail, error) {
+		for _, session := range fp.sessions {
+			if session.ID == id {
+				sess := session
+				return &platforms.SessionDetail{
+					Session:  &sess,
+					Messages: []db.Message{{ID: "follow-up", TimeCreated: 2, Data: []byte(`{"role":"user"}`)}},
+				}, nil
+			}
+		}
+		return nil, platforms.ErrNotFound
+	}
+
+	reg := platforms.NewRegistry()
+	reg.Register(fp)
+	s := New(nil, sdb, "127.0.0.1:0", reg, nil)
+
+	s.checkAndInjectChildResults(context.Background())
+
+	cs, err := sdb.GetChildSession("child-follow-up")
+	if err != nil {
+		t.Fatalf("GetChildSession: %v", err)
+	}
+	if cs.Status != "running" {
+		t.Errorf("status = %q, want running until the assistant finishes", cs.Status)
+	}
+	if len(sentMessages) != 0 {
+		t.Errorf("injected %d result messages before the assistant finished", len(sentMessages))
+	}
+}
+
 // TestInferChildStatus_Mapping verifies how OpenCode session statuses map to
 // child session statuses. The previously-buggy cases are the unrecognised /
 // empty statuses: they used to fall through to ("", "") which left the child

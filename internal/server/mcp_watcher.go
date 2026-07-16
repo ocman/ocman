@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -137,6 +138,14 @@ func (s *Server) inferChildStatus(ctx context.Context, cs state.ChildSession) (s
 	case "error":
 		return "error", sess.LastErrorMessage
 	default:
+		if len(detail.Messages) > 0 {
+			var data struct {
+				Role string `json:"role"`
+			}
+			if json.Unmarshal(detail.Messages[len(detail.Messages)-1].Data, &data) == nil && data.Role == "user" {
+				return "running", ""
+			}
+		}
 		// "waiting", "done", "", and any unrecognised status: the LLM
 		// turn has finished (or the session is no longer active), so
 		// close the child session.
