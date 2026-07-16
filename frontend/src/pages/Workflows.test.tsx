@@ -405,6 +405,22 @@ describe('Workflows', () => {
     expect(screen.getByRole('complementary', { name: 'Workflow properties' })).toHaveTextContent(
       'Triggers and schedule',
     );
+    await user.click(screen.getByRole('button', { name: '+ Add' }));
+    await user.click(screen.getByRole('menuitem', { name: 'command' }));
+    await user.type(screen.getByLabelText('Command'), 'pnpm test');
+    await user.click(screen.getByRole('tab', { name: 'YAML' }));
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Workflow YAML or JSON' }).value).toContain(
+      'pnpm test',
+    );
+    await user.click(screen.getByRole('tab', { name: 'Editor' }));
+    await user.click(screen.getByRole('button', { name: 'Delete node' }));
+    await user.click(screen.getByRole('button', { name: '+ Add' }));
+    await user.click(screen.getByRole('menuitem', { name: 'subworkflow' }));
+    await user.type(screen.getByLabelText('Workflow ID'), 'release-child');
+    await user.click(screen.getByRole('tab', { name: 'YAML' }));
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Workflow YAML or JSON' }).value).toContain(
+      'release-child',
+    );
   });
 
   it('does not show a stale graph when source changes during validation', async () => {
