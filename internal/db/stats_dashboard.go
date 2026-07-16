@@ -233,7 +233,7 @@ type bucketAcc struct {
 	totalCost          float64
 	totalCalcCost      float64
 	totalEffectiveCost float64
-	// costByModel sums the platform-reported Cost in this bucket
+	// costByModel sums the effective cost in this bucket
 	// partitioned by model key ("provider/model" or "" when missing).
 	// Used by buildDashboardSeries to assemble the cost-by-model
 	// cumulative series.
@@ -308,7 +308,7 @@ func (d *DB) aggregateSummaryAndBuckets(dashboard *MetricsDashboard, filtered []
 		b.totalCost += entry.Cost
 		b.totalCalcCost += entry.CalcCost
 		b.totalEffectiveCost += entry.EffectiveCost
-		b.costByModel[entry.Model] += entry.Cost
+		b.costByModel[entry.Model] += entry.EffectiveCost
 		b.count++
 	}
 
@@ -393,7 +393,7 @@ func buildDashboardSeries(buckets map[string]*bucketAcc, bucketOrder []string, b
 
 // buildCostByModelSeries derives the per-model cumulative cost series
 // used by the stacked cost chart. Models are ranked by total
-// (whole-window) platform-reported cost; the top costByModelTopN are
+// (whole-window) effective cost; the top costByModelTopN are
 // kept individually and the remainder folded into a single "Other"
 // bucket. Empty model keys (rows without a resolved model) are also
 // rolled into "Other" rather than rendering an unlabelled stack.

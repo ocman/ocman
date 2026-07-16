@@ -334,6 +334,40 @@ func TestGetMetricsDashboard_CostByModel_BasicSplit(t *testing.T) {
 	}
 }
 
+func TestGetMetricsDashboard_CostByModel_UsesEstimatedCostWhenReportedCostIsZero(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "session", "/p", now, now)
+	for i, model := range []string{"gpt-5.6-sol", "terra"} {
+		insertMessage(t, db, model, "s1", now+int64(i), map[string]interface{}{
+			"role":       "assistant",
+			"finish":     "end_turn",
+			"providerID": "openai",
+			"modelID":    model,
+			"cost":       0,
+			"tokens":     map[string]interface{}{"input": 100, "output": 50},
+		})
+	}
+
+	dash, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+		Days: 30, Pricing: stubPricing{inputRate: 0.01, outputRate: 0.02},
+	})
+	if err != nil {
+		t.Fatalf("GetMetricsDashboard: %v", err)
+	}
+	if got := dash.CostByModel.Models; len(got) != 2 || got[0] != "openai/gpt-5.6-sol" || got[1] != "openai/terra" {
+		t.Fatalf("CostByModel.Models = %v, want GPT Sol and Terra", got)
+	}
+	last := dash.CostByModel.Series[len(dash.CostByModel.Series)-1]
+	for i, got := range last.Costs {
+		if want := 2.0; floatNotClose(got, want) {
+			t.Errorf("final cumulative cost for %s = %v, want %v", dash.CostByModel.Models[i], got, want)
+		}
+	}
+}
+
 // TestGetMetricsDashboard_CostByModel_TopNAndOther verifies the "Top N
 // + Other" rollup: when more than costByModelTopN distinct models
 // appear, the lower-ranked ones are folded into a single trailing
