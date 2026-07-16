@@ -12,6 +12,11 @@
 Ocman's own state (archived/seen flags, auth secret, favorites, cached projects) lives in
 `~/.local/share/ocman/state.db`, auto-created on first run with automatic schema migration.
 
+The HTTP server limits request-header read time and idle keep-alive connections. Browser
+responses deny framing and MIME sniffing and use a Content Security Policy. The policy
+intentionally permits inline styles, external/data/blob images, blob workers, and WebSocket
+connections because the current SPA, attachments, service worker, and terminal require them.
+
 ## Flags
 
 | Flag | Default | Description |

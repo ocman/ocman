@@ -23,6 +23,8 @@ import (
 // stay at DEBUG.
 const slowRequestThreshold = 5 * time.Second
 
+const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http: https:; connect-src 'self' ws: wss:; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; manifest-src 'self'"
+
 // statusRecorder is a tiny http.ResponseWriter shim that captures the
 // final status code written by the wrapped handler. We need this
 // because http.ResponseWriter doesn't expose the status after the
@@ -126,6 +128,16 @@ func requireLocalhost(h http.HandlerFunc) http.HandlerFunc {
 		}
 		h(w, r)
 	}
+}
+
+func withSecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Security-Policy", contentSecurityPolicy)
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // noiseSkip returns true for paths that we deliberately do not log:

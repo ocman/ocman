@@ -241,3 +241,23 @@ func TestStatusRecorder_HijackUnsupported(t *testing.T) {
 		t.Fatal("expected an error when the underlying writer can't hijack")
 	}
 }
+
+func TestWithSecurityHeaders(t *testing.T) {
+	h := withSecurityHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	want := map[string]string{
+		"Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http: https:; connect-src 'self' ws: wss:; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; manifest-src 'self'",
+		"X-Frame-Options":         "DENY",
+		"X-Content-Type-Options":  "nosniff",
+		"Referrer-Policy":         "no-referrer",
+	}
+	for name, value := range want {
+		if got := rr.Header().Get(name); got != value {
+			t.Errorf("%s: got %q, want %q", name, got, value)
+		}
+	}
+}
