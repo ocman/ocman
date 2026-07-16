@@ -831,13 +831,31 @@
 }
 
 /* Subagent task link */
+.oc-task-expand,
 .oc-task-link {
   color: var(--overlay0);
   font-size: 11px;
   flex-shrink: 0;
 }
-.oc-tool-task .oc-tool-header:hover .oc-task-link {
+.oc-task-expand {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 0;
+}
+.oc-tool-task .oc-tool-header:hover .oc-task-link,
+.oc-task-expand:hover {
   color: var(--accent);
+}
+.oc-task-activity {
+  margin: -2px 12px 8px 34px;
+  color: var(--overlay0);
+  font-family: var(--font-conversation-mono);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Subagent streaming preview (while task is running, before final output).

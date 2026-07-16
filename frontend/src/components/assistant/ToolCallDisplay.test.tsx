@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { act, render, fireEvent } from '@testing-library/react';
+import { act, render, fireEvent, screen } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 
 const printing = { isPrinting: false, collapse: false };
@@ -108,5 +108,77 @@ describe('ToolCallDisplay auto-approved notice', () => {
     });
     expect(container.querySelector('.oc-auto-approved-patterns')).toBeNull();
     expect(queryByTestId('auto-approved-reasoning')).toBeNull();
+  });
+});
+
+describe('ToolCallDisplay subagent task', () => {
+  const subSession = (text: string) => ({
+    messages: [{ id: 'sub-m1', sessionId: 'ses_sub', timeCreated: 1, data: { role: 'assistant' } }],
+    parts: [{ id: 'sub-p1', messageId: 'sub-m1', sessionId: 'ses_sub', data: { type: 'text', text } }],
+  });
+
+  it.each([
+    ['running', 'Running'],
+    ['completed', 'Completed'],
+    ['error', 'Error'],
+  ])('renders %s tasks compactly by default', (status, statusTitle) => {
+    renderTool({
+      toolName: '__task__',
+      argsText: `${status}\nInspect implementation`,
+      result: JSON.stringify({ taskId: 'ses_sub', subSession: subSession('Found the relevant component') }),
+    });
+
+    expect(screen.getByTitle(statusTitle)).toBeTruthy();
+    expect(screen.getByText('Inspect implementation')).toBeTruthy();
+    expect(screen.getByText('Found the relevant component')).toBeTruthy();
+    expect(screen.queryByTestId('embedded-thread')).toBeNull();
+  });
+
+  it('updates the latest activity and falls back when none is available', () => {
+    const { rerender } = renderTool({
+      toolName: '__task__',
+      argsText: 'running\nInspect implementation',
+      result: JSON.stringify({ taskId: 'ses_sub' }),
+    });
+    expect(screen.getByText('Waiting for activity...')).toBeTruthy();
+
+    rerender(<ToolCallDisplay {...({
+      toolName: '__task__',
+      argsText: 'running\nInspect implementation',
+      result: JSON.stringify({
+        taskId: 'ses_sub',
+        subSession: subSession('Found the first file'),
+        liveTools: [{ toolName: 'Grep', summary: 'Searching for consumers' }],
+      }),
+    } as Props)} />);
+    expect(screen.getByText('Grep: Searching for consumers')).toBeTruthy();
+    expect(screen.queryByText('Waiting for activity...')).toBeNull();
+  });
+
+  it('expands and collapses the thread independently from session navigation', () => {
+    renderTool({
+      toolName: '__task__',
+      argsText: 'completed\nInspect implementation',
+      result: JSON.stringify({ taskId: 'ses_sub', subSession: subSession('Full subagent output') }),
+    });
+
+    const sessionLink = screen.getByRole('link', { name: 'Open detailed subagent session' });
+    expect(sessionLink.getAttribute('href')).toBe('/session/ses_sub');
+    expect(screen.queryByTestId('embedded-thread')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand subagent task' }));
+    expect(screen.getByTestId('embedded-thread')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse subagent task' }));
+    expect(screen.queryByTestId('embedded-thread')).toBeNull();
+  });
+
+  it('uses a one-line summary hook for narrow layouts', () => {
+    renderTool({
+      toolName: '__task__',
+      argsText: 'completed\nInspect implementation',
+      result: JSON.stringify({ taskOutput: 'A long final summary that must not make the compact card taller on narrow screens.' }),
+    });
+
+    expect(screen.getByTestId('subagent-activity').className).toContain('oc-task-activity');
   });
 });
