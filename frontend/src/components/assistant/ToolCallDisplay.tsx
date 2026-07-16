@@ -32,10 +32,11 @@ import type { FC } from 'react';
 import { EmbeddedThread } from '../EmbeddedThread';
 import { MarkdownText } from './MarkdownText';
 
-const ToolDuration: FC<{ startedAt: number; completedAt: number; isRunning: boolean }> = ({
+const ToolDuration: FC<{ startedAt: number; completedAt: number; isRunning: boolean; label?: string }> = ({
   startedAt,
   completedAt,
   isRunning,
+  label,
 }) => {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
@@ -49,8 +50,32 @@ const ToolDuration: FC<{ startedAt: number; completedAt: number; isRunning: bool
     : completedAt > startedAt
       ? completedAt - startedAt
       : 0;
+  if (label) {
+    const duration = elapsed > 0 ? ` (${formatToolDuration(elapsed)})` : '';
+    return <span className="oc-tool-label">{label}{duration}</span>;
+  }
   if (elapsed <= 0) return null;
   return <span className="oc-tool-duration">{formatToolDuration(elapsed)}</span>;
+};
+
+const bashSpinnerFrames = ['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷'];
+
+const BashStatusIcon: FC<{ isRunning: boolean; statusClass: string; statusTitle: string }> = ({
+  isRunning,
+  statusClass,
+  statusTitle,
+}) => {
+  const [frame, setFrame] = useState(0);
+  useEffect(() => {
+    if (!isRunning) return;
+    const id = setInterval(() => setFrame((current) => (current + 1) % bashSpinnerFrames.length), 80);
+    return () => clearInterval(id);
+  }, [isRunning]);
+
+  if (isRunning) {
+    return <span className={`oc-tool-icon ${statusClass} oc-tool-spinner`} title={statusTitle} aria-hidden="true" data-testid="bash-spinner">{bashSpinnerFrames[frame]}</span>;
+  }
+  return <i className={`bi bi-terminal-fill oc-tool-icon ${statusClass}`} title={statusTitle} aria-hidden="true" />;
 };
 
 // Structured diff payload emitted by convertMessages.ts for edit/write tools.
@@ -585,6 +610,7 @@ export const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsTe
   const isBash = toolName === 'bash' || toolName === 'mcp_bash';
   if (isBash) {
     const command = outputDisplay ? (detail || title) : title;
+    const bashLabel = title && title !== command ? title : toolName;
     const bashOutput = outputDisplay || detail;
     const bashIsLong = shellOutputIsLong(bashOutput);
     // Two independent axes:
@@ -600,9 +626,10 @@ export const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsTe
     return (
       <div className={`oc-tool oc-tool-shell ${userExecutedTool ? 'oc-tool-shell-user' : ''} ${statusClass} ${!collapsed && bashExpanded ? 'oc-tool-expanded' : ''} ${collapsed ? 'oc-tool-collapsed' : ''}`}>
         <div className="oc-tool-header" onClick={() => setCollapsed(!collapsedState)} style={{ cursor: 'pointer' }}>
-          <i className={`bi bi-terminal-fill oc-tool-icon ${statusClass}`} title={statusTitle} aria-hidden="true" />
-          <span className="oc-tool-label">{title && title !== command ? title : toolName}</span>
-          {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} />}
+          <BashStatusIcon isRunning={toolStatus === 'running'} statusClass={statusClass} statusTitle={statusTitle} />
+          {timeInfo
+            ? <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} label={bashLabel} />
+            : <span className="oc-tool-label">{bashLabel}</span>}
         </div>
         {!collapsed && (
           <div className="oc-tool-content" onClick={() => !bashExpanded && setExpanded(true)} style={!bashExpanded ? { cursor: 'pointer' } : undefined}>

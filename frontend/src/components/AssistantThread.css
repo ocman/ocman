@@ -385,6 +385,7 @@
 .oc-tool-icon.oc-tool-done { color: var(--accent2); }
 .oc-tool-icon.oc-tool-error { color: var(--danger); opacity: 0.6; }
 .oc-tool-icon.oc-tool-running { color: var(--accent); opacity: 0.6; animation: pulse 1.2s ease-in-out infinite; }
+.oc-tool-icon.oc-tool-spinner { animation: none; }
 
 .oc-tool-type-icon {
   font-size: 11px;

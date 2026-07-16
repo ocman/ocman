@@ -93,19 +93,31 @@ describe('ToolCallDisplay bash duration', () => {
     });
 
     const header = container.querySelector('.oc-tool-header')!;
-    expect(header.querySelector('.oc-tool-duration')?.textContent).toBe('5.0s');
+    expect(header.querySelector('.oc-tool-label')?.textContent).toBe('bash (5.0s)');
 
     act(() => vi.advanceTimersByTime(1_000));
-    expect(header.querySelector('.oc-tool-duration')?.textContent).toBe('6.0s');
+    expect(header.querySelector('.oc-tool-label')?.textContent).toBe('bash (6.0s)');
 
     rerender(<ToolCallDisplay {...({
       toolName: 'bash',
       argsText: 'completed\n@time:2000,7500\nsleep 10',
     } as Props)} />);
-    expect(header.querySelector('.oc-tool-duration')?.textContent).toBe('5.5s');
+    expect(header.querySelector('.oc-tool-label')?.textContent).toBe('bash (5.5s)');
 
     act(() => vi.advanceTimersByTime(1_000));
-    expect(header.querySelector('.oc-tool-duration')?.textContent).toBe('5.5s');
+    expect(header.querySelector('.oc-tool-label')?.textContent).toBe('bash (5.5s)');
+  });
+
+  it('cycles the running icon through braille spinner frames', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(7_000);
+    renderTool({ argsText: 'running\n@time:2000,0\nsleep 10' });
+
+    const spinner = screen.getByTestId('bash-spinner');
+    expect(spinner.textContent).toBe('⣾');
+
+    act(() => vi.advanceTimersByTime(80));
+    expect(spinner.textContent).toBe('⣽');
   });
 });
 
