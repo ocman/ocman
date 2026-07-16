@@ -11,6 +11,8 @@
 
 Ocman's own state (archived/seen flags, auth secret, favorites, cached projects) lives in
 `~/.local/share/ocman/state.db`, auto-created on first run with automatic schema migration.
+Startup enforces owner-only permissions (`0700` for the directory and `0600` for the database
+and SQLite sidecars) and fails rather than continuing if existing paths cannot be secured.
 
 The HTTP server limits request-header read time and idle keep-alive connections. Browser
 responses deny framing and MIME sniffing and use a Content Security Policy. The policy

@@ -132,8 +132,8 @@ address/token edited.
 - Stored remote tokens on the hub are encrypted at rest with an
   app-local key and are never returned to the browser. This protects
   against casual disclosure, not against an attacker who can read both
-  the state DB and the app-local secret — keep filesystem permissions
-  tight.
+  the state DB and the app-local secret. Ocman enforces owner-only filesystem
+  permissions on these files at startup.
 
 ## Flags
 

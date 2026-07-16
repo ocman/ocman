@@ -47,8 +47,8 @@ func DefaultDataDir() string {
 // Open opens the ocman state database and ensures the schema exists.
 // Runs any pending migrations exactly once; safe to call on every boot.
 func Open(path string) (*DB, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, fmt.Errorf("creating state directory: %w", err)
+	if err := secureStatePaths(path); err != nil {
+		return nil, err
 	}
 
 	dsn := fmt.Sprintf("file:%s?_busy_timeout=5000&_journal_mode=WAL", path)
@@ -80,6 +80,10 @@ func Open(path string) (*DB, error) {
 		db.Close()
 		return nil, err
 	}
+	if err := secureStatePaths(path); err != nil {
+		db.Close()
+		return nil, err
+	}
 	_, _ = otelsql.RegisterDBStatsMetrics(db,
 		otelsql.WithAttributes(
 			semconv.DBSystemSqlite,
@@ -88,6 +92,50 @@ func Open(path string) (*DB, error) {
 	)
 
 	return stateDB, nil
+}
+
+func secureStatePaths(path string) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("creating state directory: %w", err)
+	}
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return fmt.Errorf("checking state directory: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return fmt.Errorf("state directory %q must be a real directory", dir)
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return fmt.Errorf("securing state directory: %w", err)
+	}
+
+	for i, candidate := range []string{path, path + "-wal", path + "-shm", path + "-journal"} {
+		info, err := os.Lstat(candidate)
+		if os.IsNotExist(err) {
+			if i != 0 {
+				continue
+			}
+			file, createErr := os.OpenFile(candidate, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
+			if createErr != nil {
+				return fmt.Errorf("creating state database: %w", createErr)
+			}
+			if closeErr := file.Close(); closeErr != nil {
+				return fmt.Errorf("closing new state database: %w", closeErr)
+			}
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("checking state file %q: %w", candidate, err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return fmt.Errorf("state file %q must be a regular file", candidate)
+		}
+		if err := os.Chmod(candidate, 0o600); err != nil {
+			return fmt.Errorf("securing state file %q: %w", candidate, err)
+		}
+	}
+	return nil
 }
 
 // OpenFromSQL wraps an existing *sql.DB in a state.DB and runs

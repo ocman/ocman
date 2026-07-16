@@ -308,9 +308,95 @@ func TestOpen_CreatesDirectoryAndSchema(t *testing.T) {
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
 		t.Fatal("database file was not created")
 	}
+	assertFileMode(t, filepath.Dir(dbPath), 0o700)
+	assertFileMode(t, dbPath, 0o600)
 
 	if err := stateDB.ArchiveSession("opencode", "test", 123); err != nil {
 		t.Fatalf("ArchiveSession after Open: %v", err)
+	}
+}
+
+func TestOpen_RepairsPermissionsWithoutDataLoss(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "state")
+	dbPath := filepath.Join(dir, "state.db")
+	db, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("initial Open: %v", err)
+	}
+	if err := db.ArchiveSession("opencode", "kept", 123); err != nil {
+		t.Fatalf("ArchiveSession: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if err := os.Chmod(dir, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dbPath, 0o666); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err = Open(dbPath)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer db.Close()
+	archived, err := db.ArchivedSessions()
+	if err != nil {
+		t.Fatalf("ArchivedSessions: %v", err)
+	}
+	if _, ok := archived[Key{Platform: "opencode", SessionID: "kept"}]; !ok {
+		t.Fatal("existing state was not preserved")
+	}
+	assertFileMode(t, dir, 0o700)
+	assertFileMode(t, dbPath, 0o600)
+}
+
+func TestSecureStatePaths_RepairsSidecars(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "state", "state.db")
+	if err := secureStatePaths(dbPath); err != nil {
+		t.Fatalf("secureStatePaths: %v", err)
+	}
+	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
+		path := dbPath + suffix
+		if err := os.WriteFile(path, nil, 0o666); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(path, 0o666); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := secureStatePaths(dbPath); err != nil {
+		t.Fatalf("repair sidecars: %v", err)
+	}
+	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
+		assertFileMode(t, dbPath+suffix, 0o600)
+	}
+}
+
+func TestOpen_RejectsSymlinkedDatabase(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.db")
+	if err := os.WriteFile(target, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "state.db")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(link); err == nil {
+		t.Fatal("Open accepted a symlinked state database")
+	}
+}
+
+func assertFileMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Errorf("%s mode = %04o, want %04o", path, got, want)
 	}
 }
 
