@@ -1,5 +1,7 @@
 package platforms
 
+import "context"
+
 // This file defines the request/response value types passed across the
 // Platform operation methods. Keeping them here (instead of in
 // platform.go) lets Platform's method list read as documentation of
@@ -90,6 +92,23 @@ type RejectQuestionRequest struct {
 // AbortRequest aborts an in-flight session response.
 type AbortRequest struct {
 	SessionID string
+}
+
+// RevertSessionRequest restores the working tree and transcript to before a message.
+type RevertSessionRequest struct {
+	SessionID string
+	MessageID string
+}
+
+// UnrevertSessionRequest restores messages previously reverted in a session.
+type UnrevertSessionRequest struct {
+	SessionID string
+}
+
+// SessionReverter is implemented by platforms with a live session-history API.
+type SessionReverter interface {
+	Revert(context.Context, RevertSessionRequest) error
+	Unrevert(context.Context, UnrevertSessionRequest) error
 }
 
 // RenameSessionRequest sets a new title for a session.

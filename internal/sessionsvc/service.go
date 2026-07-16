@@ -149,6 +149,38 @@ func (s *Service) Abort(ctx context.Context, platformID string, req platforms.Ab
 	return p.Abort(ctx, req)
 }
 
+// Revert restores the session and working tree to before a message.
+func (s *Service) Revert(ctx context.Context, platformID string, req platforms.RevertSessionRequest) error {
+	if req.SessionID == "" || req.MessageID == "" {
+		return validation("session ID and message ID are required")
+	}
+	p, err := s.resolve(ctx, req.SessionID, platformID)
+	if err != nil {
+		return err
+	}
+	reverter, ok := p.(platforms.SessionReverter)
+	if !ok {
+		return platforms.ErrUnsupported
+	}
+	return reverter.Revert(ctx, req)
+}
+
+// Unrevert restores messages previously reverted in a session.
+func (s *Service) Unrevert(ctx context.Context, platformID string, req platforms.UnrevertSessionRequest) error {
+	if req.SessionID == "" {
+		return validation("session ID is required")
+	}
+	p, err := s.resolve(ctx, req.SessionID, platformID)
+	if err != nil {
+		return err
+	}
+	reverter, ok := p.(platforms.SessionReverter)
+	if !ok {
+		return platforms.ErrUnsupported
+	}
+	return reverter.Unrevert(ctx, req)
+}
+
 // Compact compacts a session's history.
 func (s *Service) Compact(ctx context.Context, platformID string, req platforms.CompactRequest) error {
 	if req.ProviderID == "" || req.ModelID == "" {

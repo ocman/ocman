@@ -870,6 +870,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     setShowDisconnectedToast,
     setRestartToastMessage,
     setCopyToastMessage,
+    refreshThread: reload,
   });
 
   const handleMoveDestination = useCallback((directory: string) => {

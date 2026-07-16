@@ -341,6 +341,8 @@ var sessionSubRoutes = []sessionSubRoute{
 	{http.MethodPost, "{id}/command", (*Server).handleSessionCommand},
 	{http.MethodPost, "{id}/shell", (*Server).handleSessionShell},
 	{http.MethodPost, "{id}/abort", (*Server).handleSessionAbort},
+	{http.MethodPost, "{id}/revert", (*Server).handleSessionRevert},
+	{http.MethodPost, "{id}/unrevert", (*Server).handleSessionUnrevert},
 	{http.MethodPost, "{id}/compact", (*Server).handleSessionCompact},
 	{http.MethodPost, "{id}/fork", (*Server).handleSessionFork},
 	{http.MethodPost, "{id}/move", (*Server).handleSessionMove},

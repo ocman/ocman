@@ -31,6 +31,8 @@ type fakePlatform struct {
 	creates     []platforms.CreateSessionRequest
 	forks       []platforms.ForkSessionRequest
 	moves       []platforms.MoveSessionRequest
+	reverts     []platforms.RevertSessionRequest
+	unreverts   []platforms.UnrevertSessionRequest
 }
 
 func (f *fakePlatform) ID() platforms.ID                 { return f.id }
@@ -87,6 +89,14 @@ func (f *fakePlatform) MoveSession(_ context.Context, req platforms.MoveSessionR
 	f.moves = append(f.moves, req)
 	return nil
 }
+func (f *fakePlatform) Revert(_ context.Context, req platforms.RevertSessionRequest) error {
+	f.reverts = append(f.reverts, req)
+	return nil
+}
+func (f *fakePlatform) Unrevert(_ context.Context, req platforms.UnrevertSessionRequest) error {
+	f.unreverts = append(f.unreverts, req)
+	return nil
+}
 
 // fakeRegistry serves Get from byID and PlatformForSession from owner.
 type fakeRegistry struct {
@@ -125,6 +135,25 @@ func newService(p *fakePlatform, hooks Hooks) (*Service, *fakeRegistry) {
 func isValidation(err error) bool {
 	var ve *ValidationError
 	return errors.As(err, &ve)
+}
+
+func TestRevertAndUnrevert(t *testing.T) {
+	p := &fakePlatform{id: "opencode", available: true}
+	svc, _ := newService(p, Hooks{})
+	ctx := context.Background()
+
+	if err := svc.Revert(ctx, "opencode", platforms.RevertSessionRequest{SessionID: "s1", MessageID: "m1"}); err != nil {
+		t.Fatalf("Revert: %v", err)
+	}
+	if err := svc.Unrevert(ctx, "opencode", platforms.UnrevertSessionRequest{SessionID: "s1"}); err != nil {
+		t.Fatalf("Unrevert: %v", err)
+	}
+	if got := p.reverts; len(got) != 1 || got[0].MessageID != "m1" {
+		t.Fatalf("reverts = %#v", got)
+	}
+	if got := p.unreverts; len(got) != 1 || got[0].SessionID != "s1" {
+		t.Fatalf("unreverts = %#v", got)
+	}
 }
 
 func TestValidationErrors(t *testing.T) {

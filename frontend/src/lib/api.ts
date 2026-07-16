@@ -625,6 +625,18 @@ export const api = {
       undefined,
       { parseJSON: false },
     ),
+  revertSession: (sessionId: string, messageID: string) =>
+    postJSON<void>(
+      `/api/session/${encodeURIComponent(sessionId)}/revert`,
+      { messageID },
+      { parseJSON: false },
+    ),
+  unrevertSession: (sessionId: string) =>
+    postJSON<void>(
+      `/api/session/${encodeURIComponent(sessionId)}/unrevert`,
+      undefined,
+      { parseJSON: false },
+    ),
   tmuxClients: (signal?: AbortSignal) => fetchJSON<{ available: boolean; clients: TmuxClient[] }>('/api/tmux/clients', signal),
   tmuxSessions: (signal?: AbortSignal) => fetchJSON<{ available: boolean; sessions: TmuxSession[] }>('/api/tmux/sessions', signal),
   tmuxSwitch: (session: string, client?: string) => {

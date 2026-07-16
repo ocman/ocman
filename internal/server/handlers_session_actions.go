@@ -168,6 +168,32 @@ func (s *Server) handleSessionAbort(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleSessionRevert(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		MessageID string `json:"messageID"`
+	}
+	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+		return
+	}
+	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
+		if err := s.sessions.Revert(r.Context(), platformHint(r), platforms.RevertSessionRequest{SessionID: sessionID, MessageID: req.MessageID}); err != nil {
+			writeSessionSvcError(w, "reverting session", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+func (s *Server) handleSessionUnrevert(w http.ResponseWriter, r *http.Request) {
+	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
+		if err := s.sessions.Unrevert(r.Context(), platformHint(r), platforms.UnrevertSessionRequest{SessionID: sessionID}); err != nil {
+			writeSessionSvcError(w, "restoring session", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
 func (s *Server) handleSessionCompact(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ProviderID string `json:"providerID"`

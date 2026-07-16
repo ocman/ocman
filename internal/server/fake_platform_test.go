@@ -68,6 +68,8 @@ type fakePlatform struct {
 	forkSessionFn func(req platforms.ForkSessionRequest) (*platforms.CreateSessionResponse, error)
 	moveSessionFn func(req platforms.MoveSessionRequest) error
 	abortFn       func(req platforms.AbortRequest) error
+	revertFn      func(req platforms.RevertSessionRequest) error
+	unrevertFn    func(req platforms.UnrevertSessionRequest) error
 }
 
 func (f *fakePlatform) ID() platforms.ID {
@@ -195,6 +197,20 @@ func (f *fakePlatform) RejectQuestion(context.Context, platforms.RejectQuestionR
 func (f *fakePlatform) Abort(_ context.Context, req platforms.AbortRequest) error {
 	if f.abortFn != nil {
 		return f.abortFn(req)
+	}
+	return platforms.ErrUnsupported
+}
+
+func (f *fakePlatform) Revert(_ context.Context, req platforms.RevertSessionRequest) error {
+	if f.revertFn != nil {
+		return f.revertFn(req)
+	}
+	return platforms.ErrUnsupported
+}
+
+func (f *fakePlatform) Unrevert(_ context.Context, req platforms.UnrevertSessionRequest) error {
+	if f.unrevertFn != nil {
+		return f.unrevertFn(req)
 	}
 	return platforms.ErrUnsupported
 }

@@ -427,6 +427,38 @@ func (a *Adapter) Abort(ctx context.Context, req platforms.AbortRequest) error {
 	return postJSON(ctx, port, fmt.Sprintf("/session/%s/abort", req.SessionID), []byte("{}"))
 }
 
+// Revert restores the session and working tree to before MessageID.
+func (a *Adapter) Revert(ctx context.Context, req platforms.RevertSessionRequest) error {
+	port, _, err := a.resolvePort(req.SessionID)
+	if err != nil {
+		return err
+	}
+	payload, err := marshalRequest(map[string]string{"messageID": req.MessageID})
+	if err != nil {
+		return err
+	}
+	if err := postJSON(ctx, port, fmt.Sprintf("/session/%s/revert", req.SessionID), payload); err != nil {
+		return err
+	}
+	sessionCache.invalidate(port, "/session/"+req.SessionID)
+	sessionCache.invalidate(port, "/session/"+req.SessionID+"/message")
+	return nil
+}
+
+// Unrevert restores all messages previously reverted in a session.
+func (a *Adapter) Unrevert(ctx context.Context, req platforms.UnrevertSessionRequest) error {
+	port, _, err := a.resolvePort(req.SessionID)
+	if err != nil {
+		return err
+	}
+	if err := postJSON(ctx, port, fmt.Sprintf("/session/%s/unrevert", req.SessionID), []byte("{}")); err != nil {
+		return err
+	}
+	sessionCache.invalidate(port, "/session/"+req.SessionID)
+	sessionCache.invalidate(port, "/session/"+req.SessionID+"/message")
+	return nil
+}
+
 // RenameSession sets a new title for a session.
 func (a *Adapter) RenameSession(ctx context.Context, req platforms.RenameSessionRequest) error {
 	port, _, err := a.resolvePort(req.SessionID)

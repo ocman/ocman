@@ -30,7 +30,11 @@ vi.mock('../../lib/apiStore', () => ({
   ),
 }));
 
-vi.mock('../../lib/api', () => ({ api: {} }));
+const { revertSession, unrevertSession } = vi.hoisted(() => ({
+  revertSession: vi.fn().mockResolvedValue(undefined),
+  unrevertSession: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('../../lib/api', () => ({ api: { revertSession, unrevertSession } }));
 vi.mock('../../lib/remoteLog', () => ({ remoteLog: { error: vi.fn() } }));
 
 const begin = vi.fn().mockReturnValue('entry-1');
@@ -78,6 +82,44 @@ function makeOptions(isRunningRef: MutableRefObject<boolean>): UseSessionActions
 beforeEach(() => {
   sendMessage.mockClear();
   begin.mockClear();
+  revertSession.mockClear();
+  unrevertSession.mockClear();
+});
+
+describe('useSessionActions — undo and redo (#293)', () => {
+  it('shows the disconnected notice instead of calling OpenCode when it is not live', async () => {
+    const options = makeOptions({ current: false });
+    options.portAvailable = false;
+    const { result } = renderHook(() => useSessionActions(options));
+
+    await act(async () => { await result.current.handleCommand('redo', ''); });
+
+    expect(unrevertSession).not.toHaveBeenCalled();
+    expect(options.setShowDisconnectedToast).toHaveBeenCalledWith(true);
+  });
+
+  it('reverts the last message then reloads the thread', async () => {
+    const options = makeOptions({ current: false });
+    options.messagesRef.current = [{ id: 'msg-1' } as never];
+    options.refreshThread = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() => useSessionActions(options));
+
+    await act(async () => { await result.current.handleCommand('undo', ''); });
+
+    expect(revertSession).toHaveBeenCalledWith('sess-1', 'msg-1');
+    expect(options.refreshThread).toHaveBeenCalledOnce();
+  });
+
+  it('restores reverted messages then reloads the thread', async () => {
+    const options = makeOptions({ current: false });
+    options.refreshThread = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() => useSessionActions(options));
+
+    await act(async () => { await result.current.handleCommand('redo', ''); });
+
+    expect(unrevertSession).toHaveBeenCalledWith('sess-1');
+    expect(options.refreshThread).toHaveBeenCalledOnce();
+  });
 });
 
 describe('useSessionActions — handleSend queue behaviour (#58)', () => {

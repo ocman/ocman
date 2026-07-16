@@ -17,6 +17,52 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
+func TestRevertAndUnrevert_ProxyOpenCodeContract(t *testing.T) {
+	const sid = "sess-revert"
+	const dir = "/tmp/proj-revert"
+	var calls []struct {
+		path string
+		body string
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		calls = append(calls, struct {
+			path string
+			body string
+		}{r.URL.Path, string(body)})
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"` + sid + `"}`))
+	}))
+	defer srv.Close()
+
+	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+	restore := setDiscoverPortsImplForTests(func() map[string]string { return map[string]string{dir: port} })
+	defer restore()
+	resetPortCacheForTests()
+	database := newTestDBWithSession(t, sid, dir)
+	a := New(database, nil)
+
+	if err := a.Revert(context.Background(), platforms.RevertSessionRequest{SessionID: sid, MessageID: "msg-1"}); err != nil {
+		t.Fatalf("Revert: %v", err)
+	}
+	if err := a.Unrevert(context.Background(), platforms.UnrevertSessionRequest{SessionID: sid}); err != nil {
+		t.Fatalf("Unrevert: %v", err)
+	}
+	if got, want := calls[0].path, "/session/"+sid+"/revert"; got != want {
+		t.Errorf("revert path = %q, want %q", got, want)
+	}
+	if got, want := calls[0].body, `{"messageID":"msg-1"}`; got != want {
+		t.Errorf("revert body = %s, want %s", got, want)
+	}
+	if got, want := calls[1].path, "/session/"+sid+"/unrevert"; got != want {
+		t.Errorf("unrevert path = %q, want %q", got, want)
+	}
+	if got, want := calls[1].body, "{}"; got != want {
+		t.Errorf("unrevert body = %s, want %s", got, want)
+	}
+}
+
 // TestProxyEvents_SessionCacheInvalidatedOnDisconnect reproduces the
 // "missing messages after switching sessions" bug.
 //

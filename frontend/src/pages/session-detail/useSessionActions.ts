@@ -76,6 +76,7 @@ export interface UseSessionActionsOptions {
   setRestartToastMessage: Dispatch<SetStateAction<string | null>>;
   /** Transient feedback toast for the `/copy` command. */
   setCopyToastMessage: Dispatch<SetStateAction<string | null>>;
+  refreshThread?: () => Promise<void>;
 }
 
 export interface UseSessionActionsResult {
@@ -153,6 +154,7 @@ export function useSessionActions({
   setShowDisconnectedToast,
   setRestartToastMessage,
   setCopyToastMessage,
+  refreshThread,
 }: UseSessionActionsOptions): UseSessionActionsResult {
   const [awaitingAssistantResponse, setAwaitingAssistantResponse] = useState(false);
   // Shell command waiting for the current turn to finish. Mirrored in
@@ -470,6 +472,26 @@ export function useSessionActions({
       return;
     }
 
+    if (command === 'undo' || command === 'redo') {
+      if (!portAvailable) {
+        setShowDisconnectedToast(true);
+        return;
+      }
+      try {
+        if (command === 'undo') {
+          const last = messagesRef.current.at(-1);
+          if (!last) return;
+          await api.revertSession(session.id, last.id);
+        } else {
+          await api.unrevertSession(session.id);
+        }
+        await refreshThread?.();
+      } catch (e) {
+        remoteLog.error(`Failed to ${command} session`, e);
+      }
+      return;
+    }
+
     if (!portAvailable) return;
 
     if (command === 'compact') {
@@ -575,7 +597,7 @@ export function useSessionActions({
       remoteLog.error('Failed to execute command', e);
       pending.fail(e instanceof Error ? e.message : 'Unknown error');
     }
-  }, [activeAgent, archiveSession, caps.fork, caps.move, createSession, launchOpencodeInTmux, tmuxAvailable, seedNewSession, handleCompact, handleNewSession, handleTmuxShortcut, handleVSCodeShortcut, navigate, navigateToSession, openWorktreeForm, portAvailable, recentSessionsRef, messagesRef, partsRef, selectedAgent, selectedModel, session, setShowForkPicker, setShowMovePicker, setShowRenameModal, setShowRenameToast, setRestartToastMessage, setCopyToastMessage, pending]);
+  }, [activeAgent, archiveSession, caps.fork, caps.move, createSession, launchOpencodeInTmux, tmuxAvailable, seedNewSession, handleCompact, handleNewSession, handleTmuxShortcut, handleVSCodeShortcut, navigate, navigateToSession, openWorktreeForm, portAvailable, recentSessionsRef, messagesRef, partsRef, refreshThread, selectedAgent, selectedModel, session, setShowForkPicker, setShowDisconnectedToast, setShowMovePicker, setShowRenameModal, setShowRenameToast, setRestartToastMessage, setCopyToastMessage, pending]);
 
   return {
     awaitingAssistantResponse,
