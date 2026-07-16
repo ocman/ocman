@@ -1,0 +1,6 @@
+coverage/
+dist/
+playwright-report/
+pnpm-lock.yaml
+src/wailsjs/
+test-results/
