@@ -755,6 +755,28 @@ describe('SessionDetail — sidebar polling', () => {
   });
 });
 
+describe('SessionDetail — session tree usage', () => {
+  it('shows totals for the current session and nested subagents', async () => {
+    const root = makeSession({ id: 'sess_1', totalInputTokens: 10, totalOutputTokens: 20, totalCost: 0.1 });
+    const child = makeSession({ id: 'sess_child', parentId: root.id, totalInputTokens: 30, totalOutputTokens: 40, totalCost: 0.2 });
+    const grandchild = makeSession({ id: 'sess_grandchild', parentId: child.id, totalInputTokens: 50, totalOutputTokens: 60, totalCost: 0.3 });
+    renderSessionPage({
+      sessionId: root.id,
+      detail: makeSessionDetail(root, { contextTokenCount: 100 }),
+      sessions: [root],
+      apiOverrides: { sessions: vi.fn().mockResolvedValue([root, child, grandchild]) },
+    });
+
+    await flushPromises(8);
+    fireEvent.click(await screen.findByTitle('Click for token usage details'));
+
+    const title = await screen.findByText('Session + subagents (3)');
+    expect(title.parentElement).toHaveTextContent('Input90');
+    expect(title.parentElement).toHaveTextContent('Output120');
+    expect(title.parentElement).toHaveTextContent('Reported cost$0.6000');
+  });
+});
+
 describe('SessionDetail — permission prompt', () => {
   // listPermissions is only called when the sidebar reports the
   // current session has a pending permission. The fixture below

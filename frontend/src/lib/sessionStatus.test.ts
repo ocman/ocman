@@ -7,6 +7,7 @@ import {
   isSessionRunning,
   computeLiveTokens,
   mergeTokenStats,
+  aggregateSessionTreeStats,
   deriveActiveModelAndAgent,
   type SessionWithDefaults,
 } from './sessionStatus';
@@ -242,6 +243,26 @@ describe('mergeTokenStats', () => {
     expect(stats.input).toBe(5);
     expect(stats.output).toBe(10);
     expect(stats.contextWindow).toBeUndefined();
+  });
+});
+
+describe('aggregateSessionTreeStats', () => {
+  it('sums the current session and all descendants', () => {
+    const root = makeSession({ id: 'root', totalInputTokens: 10, totalOutputTokens: 20, totalCost: 0.1 });
+    const child = makeSession({ id: 'child', parentId: 'root', totalInputTokens: 30, totalOutputTokens: 40, totalCost: 0.2 });
+    const grandchild = makeSession({ id: 'grandchild', parentId: 'child', totalInputTokens: 50, totalOutputTokens: 60, totalCost: 0.3 });
+    const unrelated = makeSession({ id: 'other', parentId: 'root', platform: 'remote', totalInputTokens: 1_000 });
+
+    const totals = aggregateSessionTreeStats(root, [grandchild, unrelated, child, root], {
+      input: 15,
+      output: 25,
+      reasoning: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalCost: 0.15,
+    });
+    expect(totals).toMatchObject({ input: 95, output: 125, sessions: 3 });
+    expect(totals.totalCost).toBeCloseTo(0.65);
   });
 });
 

@@ -17,7 +17,7 @@ import { useStickyNavigate } from '../../lib/useStickyNavigate';
 import * as Toast from '@radix-ui/react-toast';
 import './SessionDetail.css';
 import { api, sessionExportMarkdownUrl } from '../../lib/api';
-import type { SessionWarning } from '../../lib/api';
+import type { Session, SessionWarning } from '../../lib/api';
 import { cleanTitle, shortPath } from '../../lib/format';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { canLaunchSession } from './launchGate';
@@ -49,6 +49,7 @@ import {
   isSessionRunning,
   computeLiveTokens,
   mergeTokenStats,
+  aggregateSessionTreeStats,
   deriveActiveModelAndAgent,
   agentModelRef,
 } from '../../lib/sessionStatus';
@@ -367,6 +368,15 @@ export function SessionDetail({ id }: SessionDetailProps) {
     abortSignalRef: abortControllerRef,
     navigate,
   });
+  const [sessionIndex, setSessionIndex] = useState<{ rootId: string; sessions: Session[] } | null>(null);
+  useEffect(() => {
+    if (!session?.id) return;
+    let cancelled = false;
+    api.sessions({ limit: 10_000 }).then((sessions) => {
+      if (!cancelled) setSessionIndex({ rootId: session.id, sessions: sessions || [] });
+    }).catch((err) => remoteLog.warn('session usage index fetch failed', err));
+    return () => { cancelled = true; };
+  }, [session?.id]);
   const { infos: siblingGitInfos } = useGitInfo(
     recentSessions.map((s) => s.directory).filter(Boolean),
   );
@@ -681,6 +691,14 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const tokenStats = useMemo(
     () => mergeTokenStats(session, liveTokens),
     [session, liveTokens],
+  );
+  const sessionTreeStats = useMemo(
+    () => session ? aggregateSessionTreeStats(
+      session,
+      [...(sessionIndex?.rootId === session.id ? sessionIndex.sessions : []), ...recentSessions],
+      tokenStats,
+    ) : undefined,
+    [session, sessionIndex, recentSessions, tokenStats],
   );
 
   // Header info.
@@ -1416,6 +1434,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                           sessionId={session?.id}
                           tokensPerSecond={liveTokensPerSecond ?? undefined}
                           tokenStats={tokenStats}
+                          sessionTreeStats={sessionTreeStats}
                           selectedReasoning={selectedReasoning}
                           onReasoningChange={setSelectedReasoning}
                           onLaunchRequest={launchHintActive ? () => { void handleLaunchOpencode(); } : undefined}

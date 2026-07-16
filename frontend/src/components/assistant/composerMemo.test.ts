@@ -26,4 +26,11 @@ describe('composerPropsEqual — queuedMessages', () => {
       { ...base, activeDurationMs: 2_000 },
     )).toBe(false);
   });
+
+  it('re-renders when session tree usage changes', () => {
+    expect(composerPropsEqual(
+      { ...base, sessionTreeStats: { input: 10, output: 20, totalCost: 0.1, sessions: 2 } },
+      { ...base, sessionTreeStats: { input: 30, output: 20, totalCost: 0.1, sessions: 2 } },
+    )).toBe(false);
+  });
 });

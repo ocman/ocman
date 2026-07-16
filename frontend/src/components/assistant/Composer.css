@@ -550,6 +550,12 @@
   color: var(--overlay0);
   margin-bottom: 10px;
 }
+.oc-token-popover-subtitle {
+  color: var(--overlay0);
+  font-size: 10px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
 .oc-token-popover-rows {
   display: flex;
   flex-direction: column;

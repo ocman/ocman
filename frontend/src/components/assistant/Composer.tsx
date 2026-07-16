@@ -72,6 +72,7 @@ function ComposerImpl({
   sessionId,
   tokensPerSecond,
   tokenStats,
+  sessionTreeStats,
   selectedReasoning,
   onReasoningChange,
   disabledHint,
@@ -171,6 +172,12 @@ function ComposerImpl({
     cacheWrite: number;
     totalCost: number;
     contextWindow?: number;
+  };
+  sessionTreeStats?: {
+    input: number;
+    output: number;
+    totalCost: number;
+    sessions: number;
   };
   selectedReasoning?: string;
   onReasoningChange?: (reasoning: string) => void;
@@ -1368,6 +1375,26 @@ function ComposerImpl({
                           {estCostLoading ? '…' : estCost ? (estCost.known ? `$${estCost.cost.toFixed(4)}` : 'unknown model') : 'n/a'}
                         </span>
                       </div>
+                      {sessionTreeStats && sessionTreeStats.sessions > 1 && (
+                        <>
+                          <div className="oc-token-popover-divider" />
+                          <div className="oc-token-popover-subtitle">
+                            Session + subagents ({sessionTreeStats.sessions})
+                          </div>
+                          <div className="oc-token-popover-row">
+                            <span className="oc-token-popover-label">Input</span>
+                            <span className="oc-token-popover-value">{sessionTreeStats.input.toLocaleString()}</span>
+                          </div>
+                          <div className="oc-token-popover-row">
+                            <span className="oc-token-popover-label">Output</span>
+                            <span className="oc-token-popover-value">{sessionTreeStats.output.toLocaleString()}</span>
+                          </div>
+                          <div className="oc-token-popover-row">
+                            <span className="oc-token-popover-label">Reported cost</span>
+                            <span className="oc-token-popover-value">${sessionTreeStats.totalCost.toFixed(4)}</span>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 )}

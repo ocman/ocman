@@ -159,6 +159,7 @@ export function makeApiStub() {
   return {
     capabilities: vi.fn().mockResolvedValue({ platforms: [] }),
     projects: vi.fn().mockResolvedValue([]),
+    sessions: vi.fn().mockResolvedValue([]),
     // `session` is the raw module-level fetch used by the new
     // useSession hook. Tests override the resolved value per-test
     // via `apiOverrides.session = ...`; the default is set in
@@ -438,6 +439,7 @@ export function renderSessionPage(opts: RenderOptions = {}): RenderHandle {
   // return the per-test detail fixture. Tests that need different
   // behaviour can override via `apiOverrides.session = ...`.
   mockState.apiStub.session = vi.fn().mockResolvedValue(detail);
+  mockState.apiStub.sessions = vi.fn().mockResolvedValue(opts.sessions ?? [detail.session]);
   if (opts.apiOverrides) {
     Object.assign(mockState.apiStub, opts.apiOverrides);
   }

@@ -16,6 +16,10 @@ interface TokenStats {
   totalCost?: number;
 }
 
+interface SessionTreeStats extends TokenStats {
+  sessions?: number;
+}
+
 // The subset of Composer props the comparator inspects. Kept structural
 // (not tied to the component's full prop type) so this file has no import
 // cycle with Composer.tsx.
@@ -39,6 +43,7 @@ export interface ComposerMemoProps {
   sessionId?: string;
   tokensPerSecond?: unknown;
   tokenStats?: TokenStats;
+  sessionTreeStats?: SessionTreeStats;
   selectedReasoning?: unknown;
   directory?: string;
   newConversation?: boolean;
@@ -72,6 +77,10 @@ export const composerPropsEqual = (prev: ComposerMemoProps, next: ComposerMemoPr
   prev.tokenStats?.input === next.tokenStats?.input &&
   prev.tokenStats?.output === next.tokenStats?.output &&
   prev.tokenStats?.totalCost === next.tokenStats?.totalCost &&
+  prev.sessionTreeStats?.input === next.sessionTreeStats?.input &&
+  prev.sessionTreeStats?.output === next.sessionTreeStats?.output &&
+  prev.sessionTreeStats?.totalCost === next.sessionTreeStats?.totalCost &&
+  prev.sessionTreeStats?.sessions === next.sessionTreeStats?.sessions &&
   prev.selectedReasoning === next.selectedReasoning &&
   prev.directory === next.directory &&
   prev.newConversation === next.newConversation &&

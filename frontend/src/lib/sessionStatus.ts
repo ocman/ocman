@@ -30,6 +30,13 @@ export interface TokenStats {
   contextWindow?: number;
 }
 
+export interface SessionTreeStats {
+  input: number;
+  output: number;
+  totalCost: number;
+  sessions: number;
+}
+
 /**
  * Convenience union: a session-shaped value that may carry the
  * page-only fields (`contextTokenCount`, `defaultAgent`,
@@ -156,6 +163,36 @@ export function mergeTokenStats(
     totalCost: displayCost,
     contextWindow: session?.contextTokenCount,
   };
+}
+
+/** Sum the root's live totals with every known descendant session. */
+export function aggregateSessionTreeStats(
+  root: Session,
+  sessions: Session[],
+  rootStats: TokenStats,
+): SessionTreeStats {
+  const children = new Map<string, Session[]>();
+  for (const session of sessions) {
+    if (session.platform !== root.platform || !session.parentId) continue;
+    const siblings = children.get(session.parentId) || [];
+    siblings.push(session);
+    children.set(session.parentId, siblings);
+  }
+
+  const totals = { input: rootStats.input, output: rootStats.output, totalCost: rootStats.totalCost, sessions: 1 };
+  const seen = new Set([root.id]);
+  const pending = [...(children.get(root.id) || [])];
+  while (pending.length > 0) {
+    const session = pending.pop()!;
+    if (seen.has(session.id)) continue;
+    seen.add(session.id);
+    totals.input += session.totalInputTokens || 0;
+    totals.output += session.totalOutputTokens || 0;
+    totals.totalCost += session.totalCost || 0;
+    totals.sessions += 1;
+    pending.push(...(children.get(session.id) || []));
+  }
+  return totals;
 }
 
 /**
