@@ -595,6 +595,7 @@ export const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsTe
     const forcePrintCollapse = isPrinting && printCollapse;
     const collapsed = forcePrintCollapse || (collapsedState && !forcePrintExpand);
     const bashExpanded = expanded || !bashIsLong;
+    const bashOutputDisplay = bashExpanded ? bashOutput : shellOutputPreview(bashOutput);
     const toggleLabel = expanded ? 'Collapse output' : 'Show full output';
     return (
       <div className={`oc-tool oc-tool-shell ${userExecutedTool ? 'oc-tool-shell-user' : ''} ${statusClass} ${!collapsed && bashExpanded ? 'oc-tool-expanded' : ''} ${collapsed ? 'oc-tool-collapsed' : ''}`}>
@@ -606,7 +607,7 @@ export const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsTe
         {!collapsed && (
           <div className="oc-tool-content" onClick={() => !bashExpanded && setExpanded(true)} style={!bashExpanded ? { cursor: 'pointer' } : undefined}>
             <pre className="oc-shell-block" data-testid="shell-output-block">
-{command && <><span className="oc-shell-prompt">$</span> <span className="oc-shell-cmd">{command}</span>{bashOutput ? '\n' : ''}</>}{bashOutput && <AnsiText text={bashOutput} />}
+{command && <><span className="oc-shell-prompt">$</span> <span className="oc-shell-cmd">{command}</span>{bashOutputDisplay ? '\n' : ''}</>}{bashOutputDisplay && <AnsiText text={bashOutputDisplay} />}
             </pre>
             {userExecutedTool && (
               <div className="oc-shell-attribution">The following tool was executed by the user</div>
@@ -669,7 +670,7 @@ export const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsTe
 };
 
 const TOOL_OUTPUT_PREVIEW_CHARS = 5000;
-const SHELL_OUTPUT_PREVIEW_LINES = 30;
+const SHELL_OUTPUT_PREVIEW_LINES = 12;
 
 function toolOutputPreview(output: string, expanded: boolean): string {
   if (expanded || output.length <= TOOL_OUTPUT_PREVIEW_CHARS) return output;
@@ -677,5 +678,9 @@ function toolOutputPreview(output: string, expanded: boolean): string {
 }
 
 function shellOutputIsLong(output: string): boolean {
-  return output.split('\n').length > SHELL_OUTPUT_PREVIEW_LINES;
+  return output.length > TOOL_OUTPUT_PREVIEW_CHARS || output.split('\n').length > SHELL_OUTPUT_PREVIEW_LINES;
+}
+
+function shellOutputPreview(output: string): string {
+  return output.split('\n').slice(0, SHELL_OUTPUT_PREVIEW_LINES).join('\n').slice(0, TOOL_OUTPUT_PREVIEW_CHARS);
 }

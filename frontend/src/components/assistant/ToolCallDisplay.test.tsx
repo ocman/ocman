@@ -53,6 +53,31 @@ describe('ToolCallDisplay bash collapse', () => {
       printing.collapse = false;
     }
   });
+
+  it('previews 12 lines and shows the full output on request', () => {
+    const output = Array.from({ length: 13 }, (_, i) => `line ${i + 1}`).join('\n');
+    renderTool({
+      argsText: JSON.stringify({ command: 'many-lines' }),
+      result: output,
+    });
+
+    expect(screen.getByTestId('shell-output-block').textContent).toContain('line 12');
+    expect(screen.getByTestId('shell-output-block').textContent).not.toContain('line 13');
+    fireEvent.click(screen.getByRole('button', { name: 'Show full output' }));
+    expect(screen.getByTestId('shell-output-block').textContent).toContain('line 13');
+  });
+
+  it('previews 5000 characters and shows the full output on request', () => {
+    const output = `${'a'.repeat(5000)}LAST`;
+    renderTool({
+      argsText: JSON.stringify({ command: 'many-characters' }),
+      result: output,
+    });
+
+    expect(screen.getByTestId('shell-output-block').textContent).not.toContain('LAST');
+    fireEvent.click(screen.getByRole('button', { name: 'Show full output' }));
+    expect(screen.getByTestId('shell-output-block').textContent).toContain('LAST');
+  });
 });
 
 describe('ToolCallDisplay bash duration', () => {
