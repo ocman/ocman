@@ -67,12 +67,12 @@ directly (no Vite dev proxy).
 3. A structured Markdown prompt is assembled and sent to a new OpenCode
    session.
 4. A background watcher polls the child session. After each terminal child
-   turn, it queues the child's final assistant text in a native-style task
-   result envelope for the parent. The queue starts a parent turn immediately
-   when idle, or on the next idle edge when busy. Errors and cancellations are
-   delivered the same way. `send_message_to_parent` remains available for
-   mid-task questions or updates; `send_message_to_child` reopens the child
-   for its next turn.
+   turn, it queues the child's final assistant text as explicitly untrusted JSON
+   data for the parent, preserving its intent and status without treating child
+   text as instructions. The queue starts a parent turn immediately when idle,
+   or on the next idle edge when busy. Errors, cancellations, and direct
+   `send_message_to_parent` updates use the same trust boundary;
+   `send_message_to_child` reopens the child for its next turn.
 
 ## Splitting skill (optional)
 

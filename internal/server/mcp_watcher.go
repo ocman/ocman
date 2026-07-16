@@ -7,6 +7,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
@@ -189,11 +190,14 @@ func (s *Server) injectResultIntoParent(ctx context.Context, cs state.ChildSessi
 
 // buildInjectionMessage composes the message injected into the parent session.
 func buildInjectionMessage(cs state.ChildSession, status, summary string) string {
-	tag := "task_result"
-	if status != "completed" {
-		tag = "task_error"
+	kind := "completion"
+	switch status {
+	case "error":
+		kind = "error"
+	case "cancelled":
+		kind = "cancellation"
 	}
-	return "<task id=\"" + cs.ID + "\" state=\"" + status + "\">\n<" + tag + ">\n" + summary + "\n</" + tag + ">\n</task>"
+	return internalmcp.FormatUntrustedChildMessage(kind, cs.ID, cs.Intent, status, summary)
 }
 
 // isTerminalStatus reports whether a status string is a terminal state.

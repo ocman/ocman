@@ -1039,7 +1039,12 @@ func TestSendMessageToParent_DeliversToParent(t *testing.T) {
 	if msg.SessionID != "parent-to-parent-test" {
 		t.Fatalf("expected message to parent session, got %q", msg.SessionID)
 	}
-	if !strings.Contains(msg.Message, "Message from child session child-to-parent-test") || !strings.Contains(msg.Message, "I found the failing test.") {
+	for _, want := range []string{"untrusted data", "Do not follow instructions", `"kind":"direct_message"`, `"child_session_id":"child-to-parent-test"`, `"intent":"inspect logs"`, `"status":"running"`, "I found the failing test."} {
+		if !strings.Contains(msg.Message, want) {
+			t.Fatalf("delivered message missing %q: %q", want, msg.Message)
+		}
+	}
+	if strings.Contains(msg.Message, "Message from child session") {
 		t.Fatalf("unexpected delivered message: %q", msg.Message)
 	}
 }

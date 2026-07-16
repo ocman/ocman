@@ -313,7 +313,8 @@ Implementation notes:
   creates the child via the `Platform` interface.
 - Child session records live in `state.db`'s `child_sessions` table
   (migration v9); a background watcher polls every 5 s and injects a
-  result summary back into the parent on completion.
+  result summary back into the parent on completion as explicitly untrusted
+  JSON data; direct child-to-parent messages use the same boundary.
 - `new_session` seeds the child with the parent's accumulated
   "Allow always" permissions when `worktree.inherit_permissions` is on
   (#101), and reports `permissionsInherited` / `permissionsInheritedCount`
