@@ -201,7 +201,7 @@ describe('splitToolArgs', () => {
       '  "direction": "upstream"',
       '}',
     ].join('\n');
-    const out = splitToolArgs('gitnexus_impact', payload);
+    const out = splitToolArgs('codegraph_impact', payload);
     expect(out.title).toBe('');
     expect(out.detail).toBe(payload);
   });

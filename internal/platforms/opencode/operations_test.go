@@ -1220,7 +1220,7 @@ func TestSlashCommands_ParsesSource(t *testing.T) {
 		_, _ = w.Write([]byte(`[
 			{"name":"init","description":"setup","source":"command"},
 			{"name":"pr-review","description":"review a PR","source":"skill"},
-			{"name":"gitnexus:map","description":"mcp tool","source":"mcp"}
+			{"name":"codegraph:map","description":"mcp tool","source":"mcp"}
 		]`))
 	}))
 	defer srv.Close()
@@ -1247,7 +1247,7 @@ func TestSlashCommands_ParsesSource(t *testing.T) {
 	if bySource["pr-review"] != "skill" {
 		t.Errorf("pr-review source = %q, want skill", bySource["pr-review"])
 	}
-	if bySource["gitnexus:map"] != "mcp" {
-		t.Errorf("gitnexus:map source = %q, want mcp", bySource["gitnexus:map"])
+	if bySource["codegraph:map"] != "mcp" {
+		t.Errorf("codegraph:map source = %q, want mcp", bySource["codegraph:map"])
 	}
 }

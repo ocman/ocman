@@ -8,7 +8,7 @@ const commands: SlashCommand[] = [
   { name: 'init', description: 'setup', source: 'command' },
   { name: 'pr-review', description: 'review a PR', source: 'skill' },
   { name: 'create-commit', description: 'make a commit', source: 'skill' },
-  { name: 'gitnexus:map', description: 'mcp tool', source: 'mcp' },
+  { name: 'codegraph:map', description: 'mcp tool', source: 'mcp' },
   { name: 'legacy', description: 'no source field' },
 ];
 
@@ -24,7 +24,7 @@ describe('SkillPicker', () => {
     expect(screen.getByText('pr-review')).toBeInTheDocument();
     expect(screen.getByText('create-commit')).toBeInTheDocument();
     expect(screen.queryByText('init')).not.toBeInTheDocument();
-    expect(screen.queryByText('gitnexus:map')).not.toBeInTheDocument();
+    expect(screen.queryByText('codegraph:map')).not.toBeInTheDocument();
     expect(screen.queryByText('legacy')).not.toBeInTheDocument();
   });
 
