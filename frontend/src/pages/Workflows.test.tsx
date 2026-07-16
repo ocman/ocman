@@ -421,6 +421,27 @@ describe('Workflows', () => {
     expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Workflow YAML or JSON' }).value).toContain(
       'release-child',
     );
+    await user.click(screen.getByRole('tab', { name: 'Editor' }));
+    await user.click(screen.getByRole('button', { name: 'Delete node' }));
+    await user.click(screen.getByRole('button', { name: '+ Add' }));
+    await user.click(screen.getByRole('menuitem', { name: 'map' }));
+    await user.type(screen.getByLabelText('Items source'), 'nodes.discover.output');
+    await user.type(screen.getByLabelText('Item key'), 'id');
+    await user.type(screen.getByLabelText('Subworkflow ID'), 'release-item');
+    await user.type(screen.getByLabelText('Join node'), 'join_1');
+    await user.click(screen.getByRole('tab', { name: 'YAML' }));
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Workflow YAML or JSON' }).value).toContain(
+      'release-item',
+    );
+    await user.click(screen.getByRole('tab', { name: 'Editor' }));
+    await user.click(screen.getByRole('button', { name: 'Delete node' }));
+    await user.click(screen.getByRole('button', { name: '+ Add' }));
+    await user.click(screen.getByRole('menuitem', { name: 'join' }));
+    await user.selectOptions(screen.getByLabelText('Policy'), 'always');
+    await user.click(screen.getByRole('tab', { name: 'YAML' }));
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Workflow YAML or JSON' }).value).toContain(
+      '"policy": "always"',
+    );
   });
 
   it('does not show a stale graph when source changes during validation', async () => {
