@@ -2,6 +2,10 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { act, render, fireEvent, screen } from '@testing-library/react';
 import type { ComponentProps } from 'react';
+// @ts-expect-error Vitest runs in Node; application types intentionally exclude Node globals.
+import { readFileSync } from 'node:fs';
+
+const assistantThreadCss = readFileSync('src/components/AssistantThread.css', 'utf8');
 
 const printing = { isPrinting: false, collapse: false };
 vi.mock('../../lib/useIsPrinting', () => ({ useIsPrinting: () => printing.isPrinting }));
@@ -133,6 +137,22 @@ describe('ToolCallDisplay auto-approved notice', () => {
     });
     expect(container.querySelector('.oc-auto-approved-patterns')).toBeNull();
     expect(queryByTestId('auto-approved-reasoning')).toBeNull();
+  });
+});
+
+describe('ToolCallDisplay generic tool', () => {
+  it('scrolls overflowing input and output blocks when expanded', () => {
+    const scrollRule = assistantThreadCss.match(/\.oc-tool-compact-body \.oc-tool-pre\s*\{[^}]*\}/)?.[0] || '';
+    const { container } = renderTool({
+      toolName: 'custom_tool',
+      argsText: `completed\n${JSON.stringify({ input: 'line\n'.repeat(40) })}`,
+      result: 'output\n'.repeat(40),
+    });
+
+    fireEvent.click(container.querySelector('.oc-tool-compact-line')!);
+    const blocks = container.querySelectorAll<HTMLElement>('.oc-tool-compact-body .oc-tool-pre');
+    expect(blocks).toHaveLength(2);
+    expect(scrollRule).toContain('overflow: auto');
   });
 });
 

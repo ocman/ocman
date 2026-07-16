@@ -828,6 +828,7 @@
 }
 .oc-tool-compact-body .oc-tool-pre {
   margin: 4px 0;
+  overflow: auto;
 }
 
 /* Subagent task link */
