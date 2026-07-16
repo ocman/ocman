@@ -209,6 +209,9 @@ func TestTermWebSocketRejectsForeignOrigin(t *testing.T) {
 	if conn != nil {
 		conn.Close()
 	}
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
+	}
 	if err == nil {
 		t.Fatal("foreign-origin WebSocket unexpectedly connected")
 	}
