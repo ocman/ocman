@@ -378,7 +378,7 @@ describe('Workflows', () => {
     );
   });
 
-  it('builds typed nodes into the canonical workflow source', async () => {
+  it('builds agent nodes into the canonical workflow source', async () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter>
@@ -405,6 +405,16 @@ describe('Workflows', () => {
     expect(screen.getByRole('complementary', { name: 'Workflow properties' })).toHaveTextContent(
       'Triggers and schedule',
     );
+  });
+
+  it('builds command nodes into the canonical workflow source', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <Workflows />
+      </MemoryRouter>,
+    );
+    await user.click(screen.getByRole('button', { name: 'New workflow' }));
     await user.click(screen.getByRole('button', { name: '+ Add' }));
     await user.click(screen.getByRole('menuitem', { name: 'command' }));
     await user.type(screen.getByLabelText('Command'), 'pnpm test');
@@ -412,8 +422,16 @@ describe('Workflows', () => {
     expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Workflow YAML or JSON' }).value).toContain(
       'pnpm test',
     );
-    await user.click(screen.getByRole('tab', { name: 'Editor' }));
-    await user.click(screen.getByRole('button', { name: 'Delete node' }));
+  });
+
+  it('builds subworkflow nodes into the canonical workflow source', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <Workflows />
+      </MemoryRouter>,
+    );
+    await user.click(screen.getByRole('button', { name: 'New workflow' }));
     await user.click(screen.getByRole('button', { name: '+ Add' }));
     await user.click(screen.getByRole('menuitem', { name: 'subworkflow' }));
     await user.type(screen.getByLabelText('Workflow ID'), 'release-child');
@@ -421,8 +439,16 @@ describe('Workflows', () => {
     expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Workflow YAML or JSON' }).value).toContain(
       'release-child',
     );
-    await user.click(screen.getByRole('tab', { name: 'Editor' }));
-    await user.click(screen.getByRole('button', { name: 'Delete node' }));
+  });
+
+  it('builds map nodes into the canonical workflow source', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <Workflows />
+      </MemoryRouter>,
+    );
+    await user.click(screen.getByRole('button', { name: 'New workflow' }));
     await user.click(screen.getByRole('button', { name: '+ Add' }));
     await user.click(screen.getByRole('menuitem', { name: 'map' }));
     await user.type(screen.getByLabelText('Items source'), 'nodes.discover.output');
@@ -433,8 +459,16 @@ describe('Workflows', () => {
     expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Workflow YAML or JSON' }).value).toContain(
       'release-item',
     );
-    await user.click(screen.getByRole('tab', { name: 'Editor' }));
-    await user.click(screen.getByRole('button', { name: 'Delete node' }));
+  });
+
+  it('builds join nodes into the canonical workflow source', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <Workflows />
+      </MemoryRouter>,
+    );
+    await user.click(screen.getByRole('button', { name: 'New workflow' }));
     await user.click(screen.getByRole('button', { name: '+ Add' }));
     await user.click(screen.getByRole('menuitem', { name: 'join' }));
     await user.selectOptions(screen.getByLabelText('Policy'), 'always');
