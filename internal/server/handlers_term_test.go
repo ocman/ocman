@@ -192,3 +192,27 @@ func TestWSTermConn_FrameClassification(t *testing.T) {
 	}
 	<-done
 }
+
+func TestTermWebSocketRejectsForeignOrigin(t *testing.T) {
+	s := &Server{}
+	h := s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := termUpgrader.Upgrade(w, r, nil)
+		if err == nil {
+			conn.Close()
+		}
+	})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	header := http.Header{"Origin": []string{"https://evil.example"}}
+	conn, resp, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), header)
+	if conn != nil {
+		conn.Close()
+	}
+	if err == nil {
+		t.Fatal("foreign-origin WebSocket unexpectedly connected")
+	}
+	if resp == nil || resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("foreign-origin status = %#v, want 403", resp)
+	}
+}

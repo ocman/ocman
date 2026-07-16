@@ -85,7 +85,7 @@ func (s *Server) handleSessionCommand(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSessionRestartOpencode(w http.ResponseWriter, r *http.Request) {
-	if !isLoopback(r) {
+	if !s.isPrivilegedRequest(r) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}

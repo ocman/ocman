@@ -349,8 +349,8 @@ detail into the prose below each one.
   (OpenCode). *Agent* = a composer-level role within a session
   (OpenCode's `build` / `plan` / user-defined subagent).
 - API routes use `requireGET` / `requirePOST` wrappers for method
-  enforcement. Some routes (tmux, hook receiver) additionally require
-  `localhost` origin via `requireLocalhost`.
+  enforcement. Privileged host-control routes additionally use
+  `requireLocalhost`, which checks both the loopback peer and browser origin.
 - Frontend state management uses Zustand. Routing uses
   react-router-dom.
 - Tests live alongside code as `*_test.go` / `*.test.ts(x)`. Prefer

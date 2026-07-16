@@ -432,6 +432,18 @@ func TestWorkflowMCPRouteIsLocalhostOnly(t *testing.T) {
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("remote MCP request: want 403, got %d", rec.Code)
 	}
+
+	for _, path := range []string{"/mcp", "/api/workflows", "/api/workflow-runs/run/start"} {
+		req = httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+		req.RemoteAddr = "127.0.0.1:1234"
+		req.Host = "localhost:8228"
+		req.Header.Set("Origin", "https://evil.example")
+		rec = httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("hostile origin %s: want 403, got %d", path, rec.Code)
+		}
+	}
 }
 
 func TestCapabilitiesExposeWorkflowsWithoutPlatform(t *testing.T) {

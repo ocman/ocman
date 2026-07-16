@@ -18,6 +18,9 @@ The HTTP server limits request-header read time and idle keep-alive connections.
 responses deny framing and MIME sniffing and use a Content Security Policy. The policy
 intentionally permits inline styles, external/data/blob images, blob workers, and WebSocket
 connections because the current SPA, attachments, service worker, and terminal require them.
+Privileged localhost routes reject cross-origin browser requests. Origin-less local CLI and
+MCP clients remain supported. Browser access through a local reverse proxy requires password
+authentication and an `OCMAN_PUBLIC_BASE_URL` matching the external origin.
 
 ## Flags
 

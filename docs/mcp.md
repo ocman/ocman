@@ -17,7 +17,8 @@ The server uses the Streamable HTTP transport at:
   dev server proxies `/mcp` to the backend on `:8229`.
 
 The current URL is also exposed via `/api/capabilities` as
-`mcpServer.url`. The endpoint is **localhost-only**.
+`mcpServer.url`. The endpoint is **localhost-only**. Origin-less native MCP
+clients are supported; cross-origin browser requests are rejected.
 
 ## Setup
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -119,15 +120,75 @@ func isLoopback(r *http.Request) bool {
 	return host == "127.0.0.1" || host == "::1"
 }
 
-// requireLocalhost wraps a handler to reject non-loopback requests.
-func requireLocalhost(h http.HandlerFunc) http.HandlerFunc {
+// requireLocalhost protects host-control routes from both network and browser
+// cross-origin access while preserving Origin-less local CLI/MCP clients.
+func (s *Server) requireLocalhost(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !isLoopback(r) {
+		if !s.isPrivilegedRequest(r) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		h(w, r)
 	}
+}
+
+func (s *Server) isPrivilegedRequest(r *http.Request) bool {
+	if !isLoopback(r) || strings.EqualFold(r.Header.Get("Sec-Fetch-Site"), "cross-site") {
+		return false
+	}
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	if len(r.Header.Values("Origin")) != 1 {
+		return false
+	}
+	u, normalized, ok := parseBrowserOrigin(origin)
+	if !ok {
+		return false
+	}
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	requestOrigin := scheme + "://" + strings.ToLower(r.Host)
+	publicOrigin := ""
+	if configured, err := url.Parse(s.publicBaseURL); err == nil && configured.Scheme != "" && configured.Host != "" {
+		publicOrigin = strings.ToLower(configured.Scheme) + "://" + strings.ToLower(configured.Host)
+	}
+	if normalized != requestOrigin && normalized != publicOrigin {
+		return false
+	}
+	if isLoopbackHostname(u.Hostname()) {
+		return s.auth == nil || s.auth.trustLocalhost || s.auth.hasValidCookie(r)
+	}
+	return s.auth != nil && s.auth.hasValidCookie(r)
+}
+
+func parseBrowserOrigin(origin string) (*url.URL, string, bool) {
+	u, err := url.Parse(origin)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+		return nil, "", false
+	}
+	return u, strings.ToLower(u.Scheme) + "://" + strings.ToLower(u.Host), true
+}
+
+func isLoopbackHostname(host string) bool {
+	host = strings.ToLower(host)
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func browserOriginMatchesHost(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	u, _, ok := parseBrowserOrigin(origin)
+	return ok && strings.EqualFold(u.Host, r.Host)
 }
 
 func withSecurityHeaders(next http.Handler) http.Handler {

@@ -20,13 +20,12 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	//
 	// s.get / s.post compose method + auth checks so the route table
 	// stays readable. Routes that are localhost-only (tmux, debug log,
-	// hooks) skip the auth layer because isLoopback is strictly
-	// stricter than auth.
+	// hooks) use the localhost guard, which also validates browser origin.
 	mux.HandleFunc("/api/stats", s.get(s.handleStats))
 	mux.HandleFunc("/api/metrics", s.get(s.handleMetrics))
 	mux.HandleFunc("/api/projects", s.get(s.handleProjects))
-	mux.HandleFunc("/api/filesystem/directories", requireGET(requireLocalhost(s.handleFilesystemDirectories)))
-	mux.HandleFunc("/api/filesystem/directory-search", requireGET(requireLocalhost(s.handleFilesystemDirectorySearch)))
+	mux.HandleFunc("/api/filesystem/directories", requireGET(s.requireLocalhost(s.handleFilesystemDirectories)))
+	mux.HandleFunc("/api/filesystem/directory-search", requireGET(s.requireLocalhost(s.handleFilesystemDirectorySearch)))
 	mux.HandleFunc("/api/system/stats", s.get(s.handleSystemStats))
 	mux.HandleFunc("/api/sessions", s.requireAuth(s.handleSessionsRoot)) // GET = list, POST = create
 	mux.HandleFunc("/api/sessions/notify", s.get(s.handleSessionsNotify))
@@ -48,21 +47,21 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/git/diff", s.get(s.handleGitDiff))
 	mux.HandleFunc("/api/git/info", s.get(s.handleGitInfo))
 	mux.HandleFunc("/api/git/branches", s.get(s.handleGitBranches))
-	mux.HandleFunc("/api/git/checkout", requirePOST(requireLocalhost(s.handleGitCheckout)))
-	mux.HandleFunc("/api/tmux/clients", requireGET(requireLocalhost(s.handleTmuxClients)))
-	mux.HandleFunc("/api/tmux/sessions", requireGET(requireLocalhost(s.handleTmuxSessions)))
-	mux.HandleFunc("/api/tmux/switch", requirePOST(requireLocalhost(s.handleTmuxSwitch)))
-	mux.HandleFunc("/api/tmux/launch-opencode", requirePOST(requireLocalhost(s.handleTmuxLaunchOpencode)))
+	mux.HandleFunc("/api/git/checkout", requirePOST(s.requireLocalhost(s.handleGitCheckout)))
+	mux.HandleFunc("/api/tmux/clients", requireGET(s.requireLocalhost(s.handleTmuxClients)))
+	mux.HandleFunc("/api/tmux/sessions", requireGET(s.requireLocalhost(s.handleTmuxSessions)))
+	mux.HandleFunc("/api/tmux/switch", requirePOST(s.requireLocalhost(s.handleTmuxSwitch)))
+	mux.HandleFunc("/api/tmux/launch-opencode", requirePOST(s.requireLocalhost(s.handleTmuxLaunchOpencode)))
 	// Live terminal: WebSocket bridge that attaches an in-app xterm.js
 	// terminal to an existing tmux target via a PTY. localhost-only —
 	// this is a live shell. The WS upgrade is a GET that hijacks the
 	// connection, so it is NOT wrapped in requireGET (that wrapper can
 	// interfere with the upgrade).
-	mux.HandleFunc("/api/term/ws", requireLocalhost(s.handleTermWS))
+	mux.HandleFunc("/api/term/ws", s.requireLocalhost(s.handleTermWS))
 	// Terminal-window management (list / create / kill the dedicated
 	// `ocman-term-*` windows backing the in-app terminal tabs). Method
 	// is dispatched inside the handler (GET/POST/DELETE). localhost-only.
-	mux.HandleFunc("/api/term/windows", requireLocalhost(s.handleTermWindows))
+	mux.HandleFunc("/api/term/windows", s.requireLocalhost(s.handleTermWindows))
 
 	// Worktree endpoints. List + default-base-ref are read-only and
 	// safe to expose to authenticated clients; create-and-launch
@@ -70,8 +69,8 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// localhost-only like the other launch endpoints.
 	mux.HandleFunc("/api/worktree/list", s.get(s.handleWorktreeList))
 	mux.HandleFunc("/api/worktree/default-base-ref", s.get(s.handleWorktreeDefaultBaseRef))
-	mux.HandleFunc("/api/worktree/create-and-launch", requirePOST(requireLocalhost(s.handleWorktreeCreateAndLaunch)))
-	mux.HandleFunc("/api/worktree/remove", requirePOST(requireLocalhost(s.handleWorktreeRemove)))
+	mux.HandleFunc("/api/worktree/create-and-launch", requirePOST(s.requireLocalhost(s.handleWorktreeCreateAndLaunch)))
+	mux.HandleFunc("/api/worktree/remove", requirePOST(s.requireLocalhost(s.handleWorktreeRemove)))
 
 	// PR/Issue sidebar endpoints — see spec/pr-issue-sidebar/. Read-only
 	// proxies to GitHub / Forgejo, scoped to the project at ?dir=<abs>.
@@ -85,19 +84,19 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/project/archive", s.post(s.handleProjectArchive))
 	// Launch endpoint: spawns tmux/opencode, so localhost-only like
 	// the worktree create-and-launch endpoint.
-	mux.HandleFunc("/api/project/handle", requirePOST(requireLocalhost(s.handleProjectHandle)))
+	mux.HandleFunc("/api/project/handle", requirePOST(s.requireLocalhost(s.handleProjectHandle)))
 
-	workflowHandler := requireLocalhost(s.handleWorkflows)
+	workflowHandler := s.requireLocalhost(s.handleWorkflows)
 	mux.HandleFunc("/api/workflows", workflowHandler)
 	mux.HandleFunc("/api/workflows/", workflowHandler)
-	workflowRunHandler := requireLocalhost(s.handleWorkflowRuns)
+	workflowRunHandler := s.requireLocalhost(s.handleWorkflowRuns)
 	mux.HandleFunc("/api/workflow-runs", workflowRunHandler)
 	mux.HandleFunc("/api/workflow-runs/", workflowRunHandler)
 
 	// MCP server — localhost-only, enabled by default. Exposes the
 	// session-split tools (new_session, etc.)
 	// to AI coding agents via the Model Context Protocol.
-	mcpHandler := requireLocalhost(s.buildMCPHandler().ServeHTTP)
+	mcpHandler := s.requireLocalhost(s.buildMCPHandler().ServeHTTP)
 	mux.HandleFunc("/mcp", mcpHandler)
 	mux.HandleFunc("/mcp/", mcpHandler)
 
@@ -144,7 +143,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// Best-effort remote-logging sink for the frontend. Localhost-only so
 	// it can't be used to flood logs from the network. See
 	// handleDebugLog for the JSON shape.
-	mux.HandleFunc("/api/debug/log", requirePOST(requireLocalhost(s.handleDebugLog)))
+	mux.HandleFunc("/api/debug/log", requirePOST(s.requireLocalhost(s.handleDebugLog)))
 
 	// Static files with SPA fallback
 	staticContent, err := fs.Sub(staticFS, "static")

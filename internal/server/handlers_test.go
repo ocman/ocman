@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	_ "modernc.org/sqlite"
 
@@ -107,29 +108,74 @@ func TestRequirePOST(t *testing.T) {
 // --- requireLocalhost tests ---
 
 func TestRequireLocalhost(t *testing.T) {
-	handler := requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+	handler := (&Server{}).requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
 	tests := []struct {
 		name       string
 		remoteAddr string
+		host       string
+		origin     string
+		fetchSite  string
 		wantCode   int
 	}{
-		{"IPv4 loopback", "127.0.0.1:12345", http.StatusOK},
-		{"IPv6 loopback", "[::1]:12345", http.StatusOK},
-		{"external IP", "192.168.1.100:12345", http.StatusForbidden},
+		{"IPv4 native", "127.0.0.1:12345", "localhost:8228", "", "", http.StatusOK},
+		{"IPv6 native", "[::1]:12345", "[::1]:8228", "", "", http.StatusOK},
+		{"external IP", "192.168.1.100:12345", "localhost:8228", "", "", http.StatusForbidden},
+		{"same origin browser", "127.0.0.1:12345", "localhost:8228", "http://localhost:8228", "same-origin", http.StatusOK},
+		{"foreign origin", "127.0.0.1:12345", "localhost:8228", "https://evil.example", "cross-site", http.StatusForbidden},
+		{"null origin", "127.0.0.1:12345", "localhost:8228", "null", "", http.StatusForbidden},
+		{"scheme mismatch", "127.0.0.1:12345", "localhost:8228", "https://localhost:8228", "", http.StatusForbidden},
+		{"port mismatch", "127.0.0.1:12345", "localhost:8228", "http://localhost:9999", "", http.StatusForbidden},
+		{"fetch metadata only", "127.0.0.1:12345", "localhost:8228", "", "cross-site", http.StatusForbidden},
+		{"DNS rebinding host", "127.0.0.1:12345", "evil.example", "http://evil.example", "same-origin", http.StatusForbidden},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/test", nil)
 			req.RemoteAddr = tt.remoteAddr
+			req.Host = tt.host
+			if tt.origin != "" {
+				req.Header.Set("Origin", tt.origin)
+			}
+			if tt.fetchSite != "" {
+				req.Header.Set("Sec-Fetch-Site", tt.fetchSite)
+			}
 			rr := httptest.NewRecorder()
 			handler(rr, req)
 			if rr.Code != tt.wantCode {
 				t.Errorf("RemoteAddr=%q: expected %d, got %d", tt.remoteAddr, tt.wantCode, rr.Code)
 			}
 		})
+	}
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	req.Host = "localhost:8228"
+	req.Header.Add("Origin", "http://localhost:8228")
+	req.Header.Add("Origin", "https://evil.example")
+	rr := httptest.NewRecorder()
+	handler(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("multiple origins: expected 403, got %d", rr.Code)
+	}
+}
+
+func TestRequireLocalhost_AllowsAuthenticatedPublicOrigin(t *testing.T) {
+	auth := newTestAuth(t, "hunter2", withTrustLocalhost())
+	srv := &Server{auth: auth, publicBaseURL: "https://ocman.example.com"}
+	handler := srv.requireLocalhost(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	req := httptest.NewRequest(http.MethodPost, "http://ocman.example.com/test", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	req.Host = "ocman.example.com"
+	req.Header.Set("Origin", "https://ocman.example.com")
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: auth.signToken(time.Now().Add(time.Hour))})
+	rr := httptest.NewRecorder()
+	handler(rr, req)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("authenticated public origin: got %d, want 204", rr.Code)
 	}
 }
 

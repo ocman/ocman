@@ -20,9 +20,7 @@ import (
 var termUpgrader = websocket.Upgrader{
 	ReadBufferSize:  4096,
 	WriteBufferSize: 4096,
-	CheckOrigin: func(r *http.Request) bool {
-		return isLoopback(r)
-	},
+	CheckOrigin:     browserOriginMatchesHost,
 }
 
 // termResize is the only control message the client sends as text JSON.
@@ -111,7 +109,9 @@ func (s *Server) handleTermWS(w http.ResponseWriter, r *http.Request) {
 	}
 	readonly := r.URL.Query().Get("readonly") == "1"
 
-	conn, err := termUpgrader.Upgrade(w, r, nil)
+	upgrader := termUpgrader
+	upgrader.CheckOrigin = s.isPrivilegedRequest
+	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		// Upgrade already wrote an error response.
 		log.WithError(err).Debug("term ws upgrade failed")
