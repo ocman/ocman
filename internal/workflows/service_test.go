@@ -982,8 +982,9 @@ func TestPauseLetsRunningCommandSettleAndCommandCannotBeApproved(t *testing.T) {
 
 func TestTickMarksInterruptedCommandUnknown(t *testing.T) {
 	h := newHarness(t)
-	executor := &blockingExecutor{started: make(chan struct{}), release: make(chan struct{}), done: make(chan struct{})}
-	h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, CommandExecutor: executor, Agent: h.agent})
+	executor := &blockingExecutor{started: make(chan struct{}), release: make(chan struct{})}
+	completed := make(chan struct{}, 8)
+	h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, Notify: func(string) { completed <- struct{}{} }, CommandExecutor: executor, Agent: h.agent})
 	node := Node{ID: "command", Name: "Command", Type: "command", Command: []string{"/usr/bin/true"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}}
 	version, err := h.svc.PublishJSON(context.Background(), commandDefinition(t, t.TempDir(), []Node{node}, nil))
 	if err != nil {
@@ -994,6 +995,9 @@ func TestTickMarksInterruptedCommandUnknown(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-executor.started
+	for len(completed) > 0 {
+		<-completed
+	}
 	h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, Agent: h.agent})
 	if err := h.svc.Tick(context.Background()); err != nil {
 		t.Fatal(err)
@@ -1006,7 +1010,7 @@ func TestTickMarksInterruptedCommandUnknown(t *testing.T) {
 		t.Fatalf("interrupted command was replayed instead of paused as unknown: %+v", failed)
 	}
 	close(executor.release)
-	<-executor.done
+	<-completed
 }
 
 func TestTickRetriesInterruptedAgentLaunch(t *testing.T) {
@@ -1110,8 +1114,9 @@ func TestTickMarksUnreachableAgentUnknown(t *testing.T) {
 
 func TestResolveUnknownRecordsAuditAndAllowsRetry(t *testing.T) {
 	h := newHarness(t)
-	interrupted := &blockingExecutor{started: make(chan struct{}), release: make(chan struct{}), done: make(chan struct{})}
-	h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, CommandExecutor: interrupted})
+	interrupted := &blockingExecutor{started: make(chan struct{}), release: make(chan struct{})}
+	interruptedCompleted := make(chan struct{}, 8)
+	h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, Notify: func(string) { interruptedCompleted <- struct{}{} }, CommandExecutor: interrupted})
 	node := Node{ID: "command", Name: "Command", Type: "command", Command: []string{"/usr/bin/true"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}}
 	version, err := h.svc.PublishJSON(t.Context(), commandDefinition(t, t.TempDir(), []Node{node}, nil))
 	if err != nil {
@@ -1122,8 +1127,12 @@ func TestResolveUnknownRecordsAuditAndAllowsRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-interrupted.started
-	replacement := &blockingExecutor{started: make(chan struct{}), release: make(chan struct{}), done: make(chan struct{})}
-	h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, CommandExecutor: replacement})
+	for len(interruptedCompleted) > 0 {
+		<-interruptedCompleted
+	}
+	replacement := &blockingExecutor{started: make(chan struct{}), release: make(chan struct{})}
+	replacementCompleted := make(chan struct{}, 8)
+	h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, Notify: func(string) { replacementCompleted <- struct{}{} }, CommandExecutor: replacement})
 	if err := h.svc.Tick(t.Context()); err != nil {
 		t.Fatal(err)
 	}
@@ -1139,10 +1148,13 @@ func TestResolveUnknownRecordsAuditAndAllowsRetry(t *testing.T) {
 		t.Fatalf("unknown retry did not audit and dispatch one replacement: %+v", retried)
 	}
 	<-replacement.started
+	for len(replacementCompleted) > 0 {
+		<-replacementCompleted
+	}
 	close(replacement.release)
-	<-replacement.done
+	<-replacementCompleted
 	close(interrupted.release)
-	<-interrupted.done
+	<-interruptedCompleted
 }
 
 func TestResolveUnknownCanSettleSucceededOrFailed(t *testing.T) {
@@ -1341,7 +1353,6 @@ func TestCommandConcurrencyCapAndFailurePolicy(t *testing.T) {
 type blockingExecutor struct {
 	started chan struct{}
 	release chan struct{}
-	done    chan struct{}
 }
 
 type gatedExecutor struct {
@@ -1381,9 +1392,6 @@ func (e *gatedExecutor) Execute(_ context.Context, request CommandRequest) Comma
 func (e *blockingExecutor) Execute(context.Context, CommandRequest) CommandResult {
 	close(e.started)
 	<-e.release
-	if e.done != nil {
-		close(e.done)
-	}
 	return CommandResult{State: AttemptSuccessful, ExitCode: 0, Stdout: "null"}
 }
 
