@@ -84,6 +84,8 @@ export interface UseSessionResult extends SessionView {
   reload: () => Promise<void>;
   /** Prepend an older page. Idempotent across overlapping ids. */
   loadMore: () => Promise<void>;
+  /** Replace the paged message set with fetched history for an explicit jump. */
+  hydrateHistory: (messages: Message[], parts: Part[]) => void;
   /** True for first load until the initial fetch resolves. */
   loading: boolean;
   /** True while a loadMore is in flight. */
@@ -799,11 +801,18 @@ export function useSession(
     }
   }, [sessionId, loadingMore, fetchSession, pageSize, routedPlatform]);
 
+  const hydrateHistory = useCallback((messages: Message[], parts: Part[]) => {
+    const current = viewRef.current;
+    dispatch({ type: 'load', view: { ...current, messages, parts } });
+    setTotalMessages((total) => Math.max(total, messages.length));
+  }, []);
+
   return {
     ...view,
     status,
     reload,
     loadMore,
+    hydrateHistory,
     loading,
     loadingMore,
     loadError,

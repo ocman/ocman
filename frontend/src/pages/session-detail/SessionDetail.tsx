@@ -84,6 +84,7 @@ import { SessionToasts } from './SessionToasts';
 import { SessionSidebar, type SidebarProjectGroup } from './SessionSidebar';
 import { RenameModal } from './RenameModal';
 import { ForkPicker } from './ForkPicker';
+import { MessageJumpPicker } from './MessageJumpPicker';
 import { MovePathDialog, MovePicker } from './MovePicker';
 import { useSessionActions } from './useSessionActions';
 import { useMessageQueue } from '../../lib/useMessageQueue';
@@ -118,6 +119,7 @@ function HeaderActionsPortal({ children }: { children: React.ReactNode }) {
 /** Memory bound on the in-memory message list. */
 const MAX_RETAINED_MESSAGES = 200;
 const TRIMMED_RETAINED_MESSAGES = 150;
+const ALL_MESSAGES_LIMIT = 2_147_483_647;
 const THREAD_BOUNDARY_AUTO_RECOVERY_COOLDOWN_MS = 5_000;
 
 function sessionWarningKey(sessionId: string, warning: SessionWarning): string {
@@ -187,6 +189,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     changesDirtyTick,
     reload,
     loadMore,
+    hydrateHistory,
     clearPrompt,
     setPendingPermission,
     setPendingQuestion,
@@ -451,6 +454,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const [showForkPicker, setShowForkPicker] = useState(false);
   const [showMovePicker, setShowMovePicker] = useState(false);
   const [showMovePathDialog, setShowMovePathDialog] = useState(false);
+  const [showMessageJumpPicker, setShowMessageJumpPicker] = useState(false);
+  const [messageJumpHistory, setMessageJumpHistory] = useState<{ sessionId: string; messages: typeof messages; parts: typeof parts } | null>(null);
   const [showRenameToast, setShowRenameToast] = useState(false);
   const [showCreateSessionErrorToast, setShowCreateSessionErrorToast] = useState(false);
   const [showDisconnectedToast, setShowDisconnectedToast] = useState(false);
@@ -995,6 +1000,21 @@ export function SessionDetail({ id }: SessionDetailProps) {
     handleTmuxShortcut,
     handleVSCodeShortcut,
     handleNewSession,
+    openMessageJumpPicker: () => {
+      setShowMessageJumpPicker(true);
+      if (!session) return;
+      void api.session(session.id, ALL_MESSAGES_LIMIT, 0, undefined, session.platform)
+        .then((detail) => {
+          const messageIds = new Set(detail.messages.map((message) => message.id));
+          const partIds = new Set(detail.parts.map((part) => part.id));
+          setMessageJumpHistory({
+            sessionId: session.id,
+            messages: [...detail.messages, ...messages.filter((message) => !messageIds.has(message.id))],
+            parts: [...detail.parts, ...parts.filter((part) => !partIds.has(part.id))],
+          });
+        })
+        .catch((error) => remoteLog.error('Failed to load message jump history', error));
+    },
   });
 
   const hasMore = messages.length < totalMessages;
@@ -1505,6 +1525,24 @@ export function SessionDetail({ id }: SessionDetailProps) {
                         remoteLog.error('Failed to fork session', error);
                         pending.fail(error instanceof Error ? error.message : 'Unknown error');
                       });
+                  }}
+                />
+              )}
+              {showMessageJumpPicker && session && (
+                <MessageJumpPicker
+                  open
+                  messages={messageJumpHistory?.sessionId === session.id ? messageJumpHistory.messages : messages}
+                  parts={messageJumpHistory?.sessionId === session.id ? messageJumpHistory.parts : parts}
+                  onClose={() => setShowMessageJumpPicker(false)}
+                  onSelect={(messageId) => {
+                    if (!messages.some((message) => message.id === messageId) && messageJumpHistory?.sessionId === session.id) {
+                      hydrateHistory(messageJumpHistory.messages, messageJumpHistory.parts);
+                    }
+                    setScrollToMessageBookmark({
+                      sessionId: session.id,
+                      id: messageId,
+                      tick: Date.now(),
+                    });
                   }}
                 />
               )}

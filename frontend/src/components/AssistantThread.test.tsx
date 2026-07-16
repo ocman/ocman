@@ -28,8 +28,8 @@ const { message } = vi.hoisted(() => ({
 vi.mock('@assistant-ui/react', async () => {
   const React = await import('react');
   const Root = ({ children, className }: { children: ReactNode; className?: string }) => <div className={className}>{children}</div>;
-  const Viewport = React.forwardRef<HTMLDivElement, { children: ReactNode; className?: string }>(
-    ({ children, className }, ref) => <div ref={ref} className={className}>{children}</div>,
+  const Viewport = React.forwardRef<HTMLDivElement, { children: ReactNode; className?: string; autoScroll?: boolean }>(
+    ({ children, className, autoScroll }, ref) => <div ref={ref} className={className} data-auto-scroll={String(autoScroll)}>{children}</div>,
   );
   return {
     ThreadPrimitive: {
@@ -87,6 +87,14 @@ describe('AssistantThread pagination', () => {
     render(<AssistantThread hasMore onLoadMore={onLoadMore} />);
 
     expect(onLoadMore).not.toHaveBeenCalled();
+  });
+});
+
+describe('AssistantThread message jumps', () => {
+  it('disables assistant-ui auto-scroll so it cannot override a jump', () => {
+    const { container } = render(<AssistantThread />);
+
+    expect(container.querySelector('.oc-thread-viewport')).toHaveAttribute('data-auto-scroll', 'false');
   });
 });
 

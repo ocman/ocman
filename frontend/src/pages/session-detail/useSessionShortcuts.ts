@@ -20,6 +20,8 @@ export interface UseSessionShortcutsOptions {
   handleVSCodeShortcut: () => void;
   /** Create a new session in the current project. */
   handleNewSession: (title?: string) => Promise<void>;
+  /** Open the user-message jump picker. */
+  openMessageJumpPicker: () => void;
 }
 
 /**
@@ -30,6 +32,7 @@ export interface UseSessionShortcutsOptions {
  *   Alt+V         — open in VS Code
  *   Alt+C         — create new session in current project
  *   Alt+M         — open the model-change palette
+ *   Alt+G         — open the user-message jump picker
  *
  * Internally uses useSyncRef to mirror handler / state values into
  * stable refs so the useShortcut registrations don't re-bind on
@@ -44,6 +47,7 @@ export function useSessionShortcuts({
   handleTmuxShortcut,
   handleVSCodeShortcut,
   handleNewSession,
+  openMessageJumpPicker,
 }: UseSessionShortcutsOptions) {
   // Mirror the latest handler / state values into refs so shortcut
   // descriptors below can reference them without forcing a re-bind
@@ -51,6 +55,7 @@ export function useSessionShortcuts({
   const handleTmuxShortcutRef = useSyncRef(handleTmuxShortcut);
   const handleVSCodeShortcutRef = useSyncRef(handleVSCodeShortcut);
   const handleNewSessionRef = useSyncRef(handleNewSession);
+  const openMessageJumpPickerRef = useSyncRef(openMessageJumpPicker);
   const matchingTmuxSessionRef = useSyncRef(matchingTmuxSession);
   const sessionRef = useSyncRef(session);
   const portAvailableRef = useSyncRef(portAvailable);
@@ -128,6 +133,18 @@ export function useSessionShortcuts({
   }), []);
 
   useShortcut(changeModelShortcut);
+
+  const messageJumpShortcut = useMemo(() => ({
+    id: 'session.jump-to-message',
+    scope: 'session' as const,
+    keys: { code: 'KeyG', alt: true },
+    description: 'Jump to user message',
+    enabled: () => !!sessionRef.current,
+    handler: () => openMessageJumpPickerRef.current(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), []);
+
+  useShortcut(messageJumpShortcut);
 
   // Expose the synced refs so the page can use them where it
   // currently passes them to other code (e.g. SSE handler reading

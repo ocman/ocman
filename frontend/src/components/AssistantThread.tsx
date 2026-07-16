@@ -672,12 +672,12 @@ export function AssistantThread({
     <div ref={threadRef} style={{ display: 'flex', flex: 1, minHeight: 0 }}>
       <MessageBookmarkContext.Provider value={bookmarkContextValue}>
       <ThreadPrimitive.Root className={`oc-thread${showToolDetails ? '' : ' oc-hide-tool-details'}`}>
-        {/* No `autoScroll` prop: the library's built-in auto-scroll uses a
-            1px at-bottom tolerance that races with streaming DOM growth and
-            snaps the viewport down even when the user has scrolled up to
-            read. useStickyBottom owns all auto-scroll with an 80px band that
-            respects a deliberate scroll-up. */}
-        <ThreadPrimitive.Viewport ref={setViewportRef} className="oc-thread-viewport">
+        {/* Disable the library's built-in auto-scroll, which uses a
+             1px at-bottom tolerance that races with streaming DOM growth and
+             snaps the viewport down even when the user has scrolled up to
+             read. useStickyBottom owns all auto-scroll with an 80px band that
+             respects a deliberate scroll-up. */}
+        <ThreadPrimitive.Viewport ref={setViewportRef} className="oc-thread-viewport" autoScroll={false}>
           {hasMore && loadingMore && (
             <div className="oc-load-more">
               <span className="oc-spinner" /> Loading older messages...

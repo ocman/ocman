@@ -153,6 +153,23 @@ describe('useSession — initial load', () => {
     expect(result.current.status).toBe('live');
   });
 
+  it('hydrates fetched history so an unloaded message can be scrolled to', async () => {
+    const detail = makeDetail({
+      messages: [{ id: 'new', sessionId: SID, timeCreated: 2_000, data: { role: 'user' } }],
+    });
+    const fetchSession = vi.fn().mockResolvedValue(detail);
+    const { result } = renderHook(() => useSession(SID, { fetchSession }));
+    await waitFor(() => expect(result.current.session?.id).toBe(SID));
+
+    act(() => result.current.hydrateHistory(
+      [{ id: 'old', sessionId: SID, timeCreated: 1_000, data: { role: 'user' } }, ...detail.messages],
+      [{ id: 'old-part', messageId: 'old', sessionId: SID, data: { type: 'text', text: 'Older prompt' } }],
+    ));
+
+    expect(result.current.messages.map((message) => message.id)).toEqual(['old', 'new']);
+    expect(result.current.parts[0]?.messageId).toBe('old');
+  });
+
   it('skips when id is undefined', () => {
     const fetchSession = vi.fn();
     const { result } = renderHook(() => useSession(undefined, { fetchSession }));
