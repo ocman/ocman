@@ -1430,7 +1430,7 @@ test('user message after a shell command is NOT flagged as queued', async ({ moc
   await expect(secondUserMsg).not.toHaveClass(/oc-msg-queued/);
 });
 
-test('long shell output collapses to a scrollable 30-line field and can be toggled', async ({ mockedPage: page }) => {
+test('long shell output shows a 12-line preview and can be toggled', async ({ mockedPage: page }) => {
   const sessionId = MOCK_SESSION.id;
   const now = Date.now();
   const fullOutput = Array.from({ length: 40 }, (_, index) => `shell-output-line-${index + 1}`).join('\n');
@@ -1463,16 +1463,14 @@ test('long shell output collapses to a scrollable 30-line field and can be toggl
 
   const shellOutputBlock = page.getByTestId('shell-output-block');
   await expect(shellOutputBlock).toBeVisible();
-  await expect(shellOutputBlock).toContainText('shell-output-line-30');
-  await expect(shellOutputBlock).toContainText('shell-output-line-40');
-  await expect(shellOutputBlock).toHaveJSProperty('scrollTop', 0);
-  expect(await shellOutputBlock.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await expect(shellOutputBlock).toContainText('shell-output-line-12');
+  await expect(shellOutputBlock).not.toContainText('shell-output-line-13');
 
   await page.getByRole('button', { name: 'Show full output' }).click();
-  expect(await shellOutputBlock.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(false);
+  await expect(shellOutputBlock).toContainText('shell-output-line-40');
 
   await page.getByRole('button', { name: 'Collapse output' }).click();
-  expect(await shellOutputBlock.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await expect(shellOutputBlock).not.toContainText('shell-output-line-13');
 });
 
 test('multiple user messages after shell commands do NOT cascade as queued', async ({ mockedPage: page }) => {
