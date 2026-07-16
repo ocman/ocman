@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Composer } from './Composer';
+
+afterEach(() => vi.useRealTimers());
 
 describe('Composer queue', () => {
   it('renders queued shell commands in the follow-up queue', () => {
@@ -15,6 +17,8 @@ describe('Composer queue', () => {
   });
 
   it('shows active duration and hides the shortcut hint while running', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
     const { rerender } = render(
       <Composer isRunning={false} contextTokens={12_000} activeDurationMs={90_000} />,
     );
@@ -26,5 +30,9 @@ describe('Composer queue', () => {
 
     expect(screen.getByText('1m 30s')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /for shortcuts/i })).not.toBeInTheDocument();
+
+    act(() => vi.advanceTimersByTime(1_000));
+
+    expect(screen.getByText('1m 31s')).toBeInTheDocument();
   });
 });

@@ -210,6 +210,7 @@ function ComposerImpl({
   const [showTokenPopover, setShowTokenPopover] = useState(false);
   const [estCost, setEstCost] = useState<{ cost: number; known: boolean } | null>(null);
   const [estCostLoading, setEstCostLoading] = useState(false);
+  const [displayDurationMs, setDisplayDurationMs] = useState(activeDurationMs ?? 0);
   const tokenPopoverRef = useRef<HTMLDivElement>(null);
   const openShortcuts = useUiStore((s) => s.openShortcuts);
 
@@ -234,6 +235,25 @@ function ComposerImpl({
   const sessionIdRef = useRef(sessionId);
   const onAbortRef = useRef(onAbort);
   const { clearDraftNow, scheduleDraftSave } = useComposerDrafts(inputRef, sessionId, sessionIdRef);
+
+  useEffect(() => {
+    const baseDurationMs = activeDurationMs ?? 0;
+    if (!isRunning) return;
+
+    const startedAt = Date.now();
+    const updateDuration = () => {
+      setDisplayDurationMs(baseDurationMs + Date.now() - startedAt);
+    };
+    const initialTimer = window.setTimeout(updateDuration, 0);
+    const timer = window.setInterval(updateDuration, 1_000);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(timer);
+    };
+  }, [activeDurationMs, isRunning]);
+
+  const visibleDurationMs = isRunning ? displayDurationMs : (activeDurationMs ?? 0);
+
   // Stable across the component's life (useComposerDrafts memoizes them), but
   // held in refs so the long-lived keydown/input effect (deps: []) always
   // calls the current instance without re-binding listeners.
@@ -1401,8 +1421,8 @@ function ComposerImpl({
               </span>
             );
           })()}
-          {activeDurationMs != null && activeDurationMs > 0 && (
-            <span title="Total time spent answering">{formatDuration(activeDurationMs)}</span>
+          {visibleDurationMs > 0 && (
+            <span title="Total time spent answering">{formatDuration(visibleDurationMs)}</span>
           )}
           {!isRunning && (
             <button type="button" className="oc-keybind-hint" onClick={openShortcuts}>{isMacPlatform() ? '⌥+?' : 'Alt+?'} for shortcuts</button>
