@@ -809,6 +809,53 @@ describe('SessionDetail — permission prompt', () => {
     }, { timeout: 4000 });
   });
 
+  it('renders a pending permission from a running native subagent', async () => {
+    const parent = makeSession({
+      id: 'sess_parent',
+      title: 'App Security Review',
+      directory: '/Users/dries/src/github.com/aspect-analytics/platform-service',
+      pendingPermission: true,
+    });
+    const childId = 'sess_native_child';
+    const child = makeSession({ id: childId, parentId: parent.id, directory: parent.directory });
+    const permission = { ...permPayload, sessionID: childId };
+    const listPermissionsSpy = vi.fn().mockImplementation((sessionId: string) =>
+      Promise.resolve(sessionId === childId ? [permission] : []),
+    );
+    const handle = renderSessionPage({
+      sessionId: parent.id,
+      detail: makeSessionDetail(parent, {
+        messages: [{
+          id: 'msg_assistant',
+          sessionId: parent.id,
+          timeCreated: Date.now(),
+          data: { role: 'assistant' },
+        }],
+        parts: [{
+          id: 'part_task',
+          messageId: 'msg_assistant',
+          sessionId: parent.id,
+          data: {
+            type: 'tool',
+            tool: 'task',
+            state: {
+              status: 'running',
+              metadata: { sessionId: childId, parentSessionId: parent.id },
+            },
+          } as never,
+        }],
+      }),
+      sessions: [parent, child],
+      apiOverrides: { sessionTasks: vi.fn().mockResolvedValue({ tasks: {} }) },
+      storeOverrides: { listPermissions: listPermissionsSpy },
+    });
+
+    await flushPromises(8);
+    expect(listPermissionsSpy).toHaveBeenCalledWith(parent.id);
+    await waitFor(() => expect(listPermissionsSpy).toHaveBeenCalledWith(childId));
+    await waitFor(() => expect(handle.result.container.textContent).toContain('Run shell command'));
+  });
+
   it('renders a child prompt even when its worktree is not marked live', async () => {
     const child = makeSession({
       id: 'sess_child',

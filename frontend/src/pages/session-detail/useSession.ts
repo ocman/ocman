@@ -278,28 +278,12 @@ export function useSession(
   );
   const setPendingPermission = useCallback(
     (perm: import('../../lib/sseHelpers').PendingPermission | null) => {
-      // Synthesise a permission.asked event when setting; route
-      // through `clearPrompt` when clearing. Both go via the
-      // reducer so the view-state mutation surface stays single-
-      // entry.
       if (perm === null) {
         // No id to clear by — page-level callers always know the id;
         // they should use clearPrompt directly.
         return;
       }
-      dispatch({
-        type: 'sse',
-        event: {
-          type: 'permission.asked',
-          properties: {
-            id: perm.permissionId,
-            permission: perm.permission,
-            patterns: perm.patterns,
-            metadata: perm.metadata,
-            sessionID: perm.sessionId,
-          },
-        },
-      });
+      dispatch({ type: 'setPendingPermission', permission: perm });
     },
     [],
   );

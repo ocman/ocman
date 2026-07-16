@@ -380,6 +380,19 @@ export function SessionDetail({ id }: SessionDetailProps) {
     }).catch((err) => remoteLog.warn('session usage index fetch failed', err));
     return () => { cancelled = true; };
   }, [session?.id]);
+  const promptSessionIds = useMemo(() => {
+    const ids = new Set(id ? [id] : []);
+    const sessions = sessionIndex?.rootId === id ? (sessionIndex?.sessions ?? []) : [];
+    for (let added = true; added;) {
+      added = false;
+      for (const candidate of sessions) {
+        if (!candidate.parentId || !ids.has(candidate.parentId) || ids.has(candidate.id)) continue;
+        ids.add(candidate.id);
+        added = true;
+      }
+    }
+    return [...ids];
+  }, [id, sessionIndex]);
   const { infos: siblingGitInfos } = useGitInfo(
     recentSessions.map((s) => s.directory).filter(Boolean),
   );
@@ -583,9 +596,9 @@ export function SessionDetail({ id }: SessionDetailProps) {
   useEffect(() => {
     if (!id) return;
     if ((restHasPerm || sidebarHasPerm) && pendingPermission === null) {
-      listPermissions(id)
-        .then((perms) => {
-          for (const raw of perms) {
+      Promise.all(promptSessionIds.map((sessionId) => listPermissions(sessionId)))
+        .then((permissionLists) => {
+          for (const raw of permissionLists.flat()) {
             const p = raw as Record<string, unknown>;
             const perm = extractPendingPermission({ type: 'permission.asked', properties: p });
             if (!perm) continue;
@@ -612,7 +625,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     }
   }, [id, restHasPerm, restHasQuestion, sidebarHasPerm, sidebarHasQuestion,
     pendingPermission, pendingQuestion,
-    listPermissions, listQuestions, setPermissionError, setPendingPermission,
+    listPermissions, listQuestions, promptSessionIds, setPermissionError, setPendingPermission,
     setPendingQuestion]);
 
   // Poll-driven dismissal fallback. When a question is answered

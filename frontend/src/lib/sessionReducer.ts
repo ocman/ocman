@@ -181,6 +181,7 @@ export type SessionAction =
    */
   | { type: 'load'; view: SessionView; mode?: 'replace' | 'reconcile' }
   | { type: 'sse'; event: SseEvent }
+  | { type: 'setPendingPermission'; permission: PendingPermission }
   | { type: 'clearPrompt'; kind: 'permission' | 'question'; id: string }
   | { type: 'patchSession'; patch: Partial<SessionMetadata> }
   | { type: 'addNotice'; notice: AutoApprovedNoticePayload }
@@ -568,6 +569,15 @@ export function reduceSessionView(state: SessionView, action: SessionAction): Se
         return { ...state, pendingQuestion: null };
       }
       return state;
+    }
+    case 'setPendingPermission': {
+      if (state.pendingPermission?.permissionId === action.permission.permissionId) return state;
+      return {
+        ...state,
+        pendingPermission: action.permission,
+        judgeStartsAt: null,
+        judgeReasoning: null,
+      };
     }
     case 'patchSession': {
       if (!state.session) return state;
