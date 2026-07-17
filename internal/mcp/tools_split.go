@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
@@ -31,7 +32,16 @@ type splitTools struct {
 	platform string // platform ID, e.g. "opencode"
 	// inherit provides the parent's approved permissions and the
 	// inherit-on/off setting. Nil = inheritance disabled.
-	inherit permissionInheriter
+	inherit      permissionInheriter
+	results      *ChildResultBroker
+	store        childResultStore
+	disconnected func(childID string)
+}
+
+type childResultStore interface {
+	GetChildSession(id string) (*state.ChildSession, error)
+	ListDisconnectedChildSessions(parentSessionID string) ([]state.ChildSession, error)
+	SetChildResultDelivery(id, delivery string) error
 }
 
 // inheritedRules builds the parent's always-allow ruleset for a child
@@ -89,7 +99,7 @@ func mergeInheritedRules(caller, inherited []platforms.PermissionRule) []platfor
 // newSessionTool returns the mcp-go tool definition for new_session.
 func newSessionTool() mcplib.Tool {
 	return mcplib.NewTool("new_session",
-		mcplib.WithDescription("Launch a child OpenCode session. By default it shares the parent's working directory; set worktree=true to run it in a fresh git worktree instead."),
+		mcplib.WithDescription("Run a child OpenCode session and return its terminal result. By default it shares the parent's working directory; set worktree=true to run it in a fresh git worktree instead."),
 		mcplib.WithString("session_id",
 			mcplib.Required(),
 			mcplib.Description("Parent session ID."),
@@ -140,9 +150,18 @@ func newSessionTool() mcplib.Tool {
 	)
 }
 
+func awaitSessionResultTool() mcplib.Tool {
+	return mcplib.NewTool("await_session_result",
+		mcplib.WithDescription("Reconnect to a disconnected new_session call and wait for the original child result without sending another prompt."),
+		mcplib.WithString("session_id", mcplib.Required(), mcplib.Description("Parent session ID.")),
+		mcplib.WithString("child_session_id", mcplib.Description("Child session ID. Omit when the parent has exactly one disconnected child.")),
+	)
+}
+
 // addSplitTools registers the new_session tool on the MCP server.
 func addSplitTools(s *server.MCPServer, t *splitTools) {
 	s.AddTool(newSessionTool(), t.handleNewSession)
+	s.AddTool(awaitSessionResultTool(), t.handleAwaitSessionResult)
 }
 
 // handleNewSession handles the new_session tool call. It dispatches to the
@@ -208,6 +227,117 @@ func (t *splitTools) handleNewSession(ctx context.Context, req mcplib.CallToolRe
 		"intent":           intent,
 	}
 	addInheritanceResult(result, inheritedCount, inheritErr)
+	if err := t.awaitChildResult(ctx, childID, result); err != nil {
+		return mcplib.NewToolResultError(fmt.Sprintf("waiting for child session: %v", err)), nil
+	}
+	return toolResultJSON(result), nil
+}
+
+func (t *splitTools) awaitChildResult(ctx context.Context, childID string, result map[string]interface{}) error {
+	if t.results == nil {
+		return nil
+	}
+	childResult, err := t.results.Wait(ctx, childID)
+	if err != nil {
+		if t.store != nil {
+			_ = t.store.SetChildResultDelivery(childID, "disconnected")
+		}
+		if t.disconnected != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+			t.disconnected(childID)
+		}
+		return err
+	}
+	if t.store != nil {
+		if err := t.store.SetChildResultDelivery(childID, "delivered"); err != nil {
+			return err
+		}
+	}
+	result["status"] = childResult.Status
+	if childResult.Summary != "" {
+		result["summary"] = childResult.Summary
+	}
+	return nil
+}
+
+func (t *splitTools) handleAwaitSessionResult(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	parentID, err := req.RequireString("session_id")
+	if err != nil {
+		return mcplib.NewToolResultError("session_id is required"), nil
+	}
+	if t.store == nil || t.results == nil {
+		return mcplib.NewToolResultError("child result recovery is unavailable"), nil
+	}
+
+	var child *state.ChildSession
+	childID := req.GetString("child_session_id", "")
+	if childID != "" {
+		child, err = t.store.GetChildSession(childID)
+		if err != nil {
+			return mcplib.NewToolResultError(fmt.Sprintf("child session not found: %v", err)), nil
+		}
+		if child.ParentSessionID != parentID {
+			return mcplib.NewToolResultError("child session does not belong to parent"), nil
+		}
+	} else {
+		children, listErr := t.store.ListDisconnectedChildSessions(parentID)
+		if listErr != nil {
+			return mcplib.NewToolResultError(fmt.Sprintf("finding disconnected child: %v", listErr)), nil
+		}
+		if len(children) == 0 {
+			return mcplib.NewToolResultError("no disconnected child session found"), nil
+		}
+		if len(children) > 1 {
+			return mcplib.NewToolResultError("multiple disconnected child sessions found; child_session_id is required"), nil
+		}
+		child = &children[0]
+	}
+
+	result := map[string]interface{}{
+		"child_session_id": child.ID,
+		"status":           child.Status,
+		"intent":           child.Intent,
+	}
+	if child.ResultDelivery == "waiting" {
+		return mcplib.NewToolResultError("child session result is still connected to its original call"), nil
+	}
+	if child.ResultDelivery == "detached" {
+		return mcplib.NewToolResultError("child session was not launched by a resumable call"), nil
+	}
+	if isTerminalStatus(child.Status) {
+		if child.Summary != "" {
+			result["summary"] = child.Summary
+		}
+		if err := t.store.SetChildResultDelivery(child.ID, "delivered"); err != nil {
+			return mcplib.NewToolResultError(fmt.Sprintf("marking child result delivered: %v", err)), nil
+		}
+		return toolResultJSON(result), nil
+	}
+	if child.ResultDelivery != "disconnected" {
+		return mcplib.NewToolResultError(fmt.Sprintf("child session result is %s, not disconnected", child.ResultDelivery)), nil
+	}
+
+	t.results.Register(child.ID)
+	if err := t.store.SetChildResultDelivery(child.ID, "waiting"); err != nil {
+		t.results.Unregister(child.ID)
+		return mcplib.NewToolResultError(fmt.Sprintf("reconnecting child result: %v", err)), nil
+	}
+	latest, err := t.store.GetChildSession(child.ID)
+	if err != nil {
+		t.results.Unregister(child.ID)
+		return mcplib.NewToolResultError(fmt.Sprintf("refreshing child session: %v", err)), nil
+	}
+	if isTerminalStatus(latest.Status) {
+		t.results.Unregister(child.ID)
+		result["status"] = latest.Status
+		if latest.Summary != "" {
+			result["summary"] = latest.Summary
+		}
+		_ = t.store.SetChildResultDelivery(child.ID, "delivered")
+		return toolResultJSON(result), nil
+	}
+	if err := t.awaitChildResult(ctx, child.ID, result); err != nil {
+		return mcplib.NewToolResultError(fmt.Sprintf("waiting for child session: %v", err)), nil
+	}
 	return toolResultJSON(result), nil
 }
 
@@ -292,6 +422,9 @@ func (t *splitTools) launchWorktree(ctx context.Context, req mcplib.CallToolRequ
 		"intent":           intent,
 	}
 	addInheritanceResult(result, inheritedCount, inheritErr)
+	if err := t.awaitChildResult(ctx, childID, result); err != nil {
+		return mcplib.NewToolResultError(fmt.Sprintf("waiting for child session: %v", err)), nil
+	}
 	return toolResultJSON(result), nil
 }
 

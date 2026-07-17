@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/mcptest"
@@ -154,6 +155,7 @@ type fakePlatformForTools struct {
 	createSessionID  string
 	createSessionErr error
 	sendMessageErr   error
+	sendMessageFn    func(platforms.SendMessageRequest)
 	sentMessages     []platforms.SendMessageRequest
 	permReqs         []platforms.SetPermissionRulesRequest
 	liveRules        []platforms.PermissionRule
@@ -183,6 +185,9 @@ func (f *fakePlatformForTools) CreateSession(_ context.Context, _ platforms.Crea
 
 func (f *fakePlatformForTools) SendMessage(_ context.Context, req platforms.SendMessageRequest) error {
 	f.sentMessages = append(f.sentMessages, req)
+	if f.sendMessageFn != nil {
+		f.sendMessageFn(req)
+	}
 	return f.sendMessageErr
 }
 
@@ -277,6 +282,10 @@ func buildTestMCPServer(t *testing.T, stateDB *state.DB, platform *fakePlatformF
 }
 
 func buildTestMCPServerWithOpenCodeDB(t *testing.T, stateDB *state.DB, platform *fakePlatformForTools, ocDB *db.DB) *mcptest.Server {
+	return buildTestMCPServerWithResults(t, stateDB, platform, ocDB, nil)
+}
+
+func buildTestMCPServerWithResults(t *testing.T, stateDB *state.DB, platform *fakePlatformForTools, ocDB *db.DB, results *internalmcp.ChildResultBroker) *mcptest.Server {
 	t.Helper()
 
 	fakeWT := internalmcp.WorktreeCreator(func(_ context.Context, req git.CreateWorktreeRequest) (*git.CreateWorktreeResult, error) {
@@ -296,6 +305,7 @@ func buildTestMCPServerWithOpenCodeDB(t *testing.T, stateDB *state.DB, platform 
 		PlatformID:            "opencode",
 		CreateWorktree:        fakeWT,
 		EnsureProjectOpencode: fakeEnsure,
+		ChildResults:          results,
 	}
 
 	tools := internalmcp.ServerTools(deps)
@@ -688,6 +698,190 @@ func TestNewSession_PassesModelAndUsesParentDir(t *testing.T) {
 	}
 	if cs.WorktreePath != "" {
 		t.Fatalf("expected no worktree for default new_session, got %q", cs.WorktreePath)
+	}
+}
+
+func TestNewSession_ReturnsChildResult(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	ocDB := openTestOpenCodeDB(t, []db.Session{
+		{ID: "parent-result", Title: "parent", Directory: "/repo", TimeCreated: 1000, TimeUpdated: 2000},
+	})
+	results := internalmcp.NewChildResultBroker()
+	platform := &fakePlatformForTools{createSessionID: "child-result"}
+	platform.sendMessageFn = func(_ platforms.SendMessageRequest) {
+		if !results.Deliver("child-result", internalmcp.ChildResult{Status: "completed", Summary: "Reviewed the diff."}) {
+			t.Error("child result had no waiting MCP call")
+		}
+	}
+	srv := buildTestMCPServerWithResults(t, stateDB, platform, ocDB, results)
+
+	result := callTool(t, srv, "new_session", map[string]interface{}{
+		"session_id": "parent-result",
+		"intent":     "review the diff",
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", resultText(result))
+	}
+	var got struct {
+		Status  string `json:"status"`
+		Summary string `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(resultText(result)), &got); err != nil {
+		t.Fatalf("decoding result: %v", err)
+	}
+	if got.Status != "completed" || got.Summary != "Reviewed the diff." {
+		t.Fatalf("unexpected child result: %+v", got)
+	}
+}
+
+func TestAwaitSessionResult_ResumesDisconnectedChildWithoutSendingPrompt(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	if err := stateDB.InsertChildSession(state.ChildSession{
+		ID:              "child-resume",
+		Platform:        "opencode",
+		ParentSessionID: "parent-resume",
+		Intent:          "review the diff",
+		Status:          "completed",
+		CreatedAt:       1000,
+		ResultDelivery:  "disconnected",
+	}); err != nil {
+		t.Fatalf("InsertChildSession: %v", err)
+	}
+	if err := stateDB.UpdateChildSession("child-resume", "completed", "Original child result.", 2000); err != nil {
+		t.Fatalf("UpdateChildSession: %v", err)
+	}
+	platform := &fakePlatformForTools{}
+	results := internalmcp.NewChildResultBroker()
+	srv := buildTestMCPServerWithResults(t, stateDB, platform, nil, results)
+
+	result := callTool(t, srv, "await_session_result", map[string]interface{}{
+		"session_id": "parent-resume",
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", resultText(result))
+	}
+	if !strings.Contains(resultText(result), "Original child result.") {
+		t.Fatalf("missing original result: %s", resultText(result))
+	}
+	if len(platform.sentMessages) != 0 {
+		t.Fatalf("resume sent %d new prompts", len(platform.sentMessages))
+	}
+}
+
+func TestAwaitSessionResult_ReconnectsRunningChild(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	if err := stateDB.InsertChildSession(state.ChildSession{
+		ID:              "child-running",
+		Platform:        "opencode",
+		ParentSessionID: "parent-running",
+		Intent:          "run checks",
+		Status:          "running",
+		CreatedAt:       1000,
+		ResultDelivery:  "disconnected",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	results := internalmcp.NewChildResultBroker()
+	go func() {
+		deadline := time.Now().Add(time.Second)
+		for !results.Deliver("child-running", internalmcp.ChildResult{Status: "completed", Summary: "Checks passed."}) {
+			if time.Now().After(deadline) {
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}()
+	srv := buildTestMCPServerWithResults(t, stateDB, &fakePlatformForTools{}, nil, results)
+
+	req := mcplib.CallToolRequest{}
+	req.Params.Name = "await_session_result"
+	req.Params.Arguments = map[string]interface{}{
+		"session_id":       "parent-running",
+		"child_session_id": "child-running",
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	result, err := srv.Client().CallTool(ctx, req)
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if result.IsError || !strings.Contains(resultText(result), "Checks passed.") {
+		t.Fatalf("unexpected resumed result: %s", resultText(result))
+	}
+	child, err := stateDB.GetChildSession("child-running")
+	if err != nil || child.ResultDelivery != "delivered" {
+		t.Fatalf("child delivery state = %+v, %v", child, err)
+	}
+}
+
+func TestAwaitSessionResult_RejectsAmbiguousDisconnectedChildren(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	for _, childID := range []string{"child-a", "child-b"} {
+		if err := stateDB.InsertChildSession(state.ChildSession{
+			ID: childID, Platform: "opencode", ParentSessionID: "parent-many",
+			Intent: "task", Status: "running", CreatedAt: 1000, ResultDelivery: "disconnected",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	srv := buildTestMCPServerWithResults(t, stateDB, &fakePlatformForTools{}, nil, internalmcp.NewChildResultBroker())
+
+	result := callTool(t, srv, "await_session_result", map[string]interface{}{"session_id": "parent-many"})
+	if !result.IsError || !strings.Contains(resultText(result), "multiple disconnected") {
+		t.Fatalf("unexpected ambiguity result: %s", resultText(result))
+	}
+}
+
+func TestAwaitSessionResult_RejectsInvalidRecoveryTargets(t *testing.T) {
+	tests := []struct {
+		name      string
+		parentID  string
+		childID   string
+		child     *state.ChildSession
+		wantError string
+	}{
+		{name: "missing parent", wantError: "session_id is required"},
+		{name: "no disconnected child", parentID: "parent", wantError: "no disconnected child"},
+		{name: "unknown explicit child", parentID: "parent", childID: "missing", wantError: "child session not found"},
+		{
+			name: "wrong parent", parentID: "other", childID: "child", wantError: "does not belong",
+			child: &state.ChildSession{ID: "child", ParentSessionID: "parent", Status: "running", ResultDelivery: "disconnected"},
+		},
+		{
+			name: "still connected", parentID: "parent", childID: "child", wantError: "still connected",
+			child: &state.ChildSession{ID: "child", ParentSessionID: "parent", Status: "running", ResultDelivery: "waiting"},
+		},
+		{
+			name: "detached launch", parentID: "parent", childID: "child", wantError: "not launched by a resumable call",
+			child: &state.ChildSession{ID: "child", ParentSessionID: "parent", Status: "running", ResultDelivery: "detached"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stateDB := openTestStateDB(t)
+			if tt.child != nil {
+				tt.child.Platform = "opencode"
+				tt.child.Intent = "task"
+				tt.child.CreatedAt = 1000
+				if err := stateDB.InsertChildSession(*tt.child); err != nil {
+					t.Fatal(err)
+				}
+			}
+			srv := buildTestMCPServerWithResults(t, stateDB, &fakePlatformForTools{}, nil, internalmcp.NewChildResultBroker())
+			args := map[string]interface{}{}
+			if tt.parentID != "" {
+				args["session_id"] = tt.parentID
+			}
+			if tt.childID != "" {
+				args["child_session_id"] = tt.childID
+			}
+
+			result := callTool(t, srv, "await_session_result", args)
+			if !result.IsError || !strings.Contains(resultText(result), tt.wantError) {
+				t.Fatalf("result = %q, want error containing %q", resultText(result), tt.wantError)
+			}
+		})
 	}
 }
 

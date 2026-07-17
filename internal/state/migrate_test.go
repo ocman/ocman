@@ -461,6 +461,25 @@ func TestMigrate_FreshDB_CreatesSchemaAtLatestVersion(t *testing.T) {
 	}
 }
 
+func TestMigrate_V34AddsChildResultDeliveryState(t *testing.T) {
+	sqlDB, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
+	if err := migrate(sqlDB); err != nil {
+		t.Fatal(err)
+	}
+
+	var count int
+	if err := sqlDB.QueryRow(`SELECT count(*) FROM pragma_table_info('child_sessions') WHERE name = 'result_delivery'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("child_sessions.result_delivery columns = %d, want 1", count)
+	}
+}
+
 func TestMigrate_RecoveryV30ComponentDBUpgrades(t *testing.T) {
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {

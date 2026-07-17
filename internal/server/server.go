@@ -19,6 +19,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
+	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/queuesvc"
@@ -108,6 +109,7 @@ type Server struct {
 	// queueSvcOnce. See queue.go.
 	queueSvcCached *queuesvc.Service
 	queueSvcOnce   sync.Once
+	childResults   *internalmcp.ChildResultBroker
 
 	// launchProjectOpencodeFn is the local Host's LaunchProjectOpencode
 	// dep. Defaults to the real tmux launcher; tests override it with a
@@ -146,6 +148,7 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		integrations: newForgeClients(),
 		startTime:    time.Now(),
 		broadcastHub: newBroadcastHub(),
+		childResults: internalmcp.NewChildResultBroker(),
 
 		launchProjectOpencodeFn: launchProjectOpencode,
 	}

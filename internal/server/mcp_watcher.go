@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -49,8 +50,8 @@ func (s *Server) runChildSessionWatcher(ctx context.Context) {
 // checkAndInjectChildResults is the per-tick body of the watcher. It:
 //  1. Queries state.db for non-terminal child sessions.
 //  2. For each, infers the current status via the platform adapter.
-//  3. If the status has changed to a terminal state, updates state.db
-//     and injects a result message into the parent session.
+//  3. If the status has changed to a terminal state, updates state.db and
+//     returns it to a waiting MCP call, or injects it into a detached parent.
 func (s *Server) checkAndInjectChildResults(ctx context.Context) {
 	if s.stateDB == nil {
 		return
@@ -70,8 +71,7 @@ func (s *Server) checkAndInjectChildResults(ctx context.Context) {
 	}
 }
 
-// processChildSession checks one child session and injects a result if
-// it has reached a terminal state.
+// processChildSession checks one child session and delivers its terminal result.
 func (s *Server) processChildSession(ctx context.Context, cs state.ChildSession) {
 	// Infer the current status via the platform adapter.
 	newStatus, summary := s.inferChildStatus(ctx, cs)
@@ -101,6 +101,14 @@ func (s *Server) processChildSession(ctx context.Context, cs state.ChildSession)
 
 	// Queue a result message for the parent session when terminal.
 	if isTerminalStatus(newStatus) {
+		if s.childResults != nil && s.childResults.Deliver(cs.ID, internalmcp.ChildResult{Status: newStatus, Summary: summary}) {
+			return
+		}
+		latest, err := s.stateDB.GetChildSession(cs.ID)
+		if err == nil && (latest.ResultDelivery == "waiting" || latest.ResultDelivery == "disconnected") {
+			_ = s.stateDB.SetChildResultDelivery(cs.ID, "disconnected")
+			return
+		}
 		s.injectResultIntoParent(ctx, cs, newStatus, summary)
 	}
 }
@@ -186,6 +194,32 @@ func (s *Server) injectResultIntoParent(ctx context.Context, cs state.ChildSessi
 		"childSessionID":  cs.ID,
 		"status":          status,
 	}).Info("mcp-watcher: queued result for parent session")
+}
+
+// deferChildResultReconnect queues recovery guidance behind the parent's
+// active turn. It never sends another prompt to the child.
+func (s *Server) deferChildResultReconnect(childID string) {
+	if s.stateDB == nil {
+		return
+	}
+	cs, err := s.stateDB.GetChildSession(childID)
+	if err != nil {
+		log.WithError(err).WithField("childSessionID", childID).Warn("mcp: loading disconnected child session")
+		return
+	}
+	message := fmt.Sprintf(
+		"The result wait for child session %q disconnected. Resume the existing child without sending a new prompt by calling await_session_result with session_id %q and child_session_id %q. Do not call new_session again.",
+		cs.ID, cs.ParentSessionID, cs.ID,
+	)
+	if err := s.queueSvc().Enqueue(context.Background(), cs.Platform, true, platforms.SendMessageRequest{
+		SessionID: cs.ParentSessionID,
+		Message:   message,
+	}); err != nil {
+		log.WithError(err).WithFields(log.Fields{
+			"childSessionID":  cs.ID,
+			"parentSessionID": cs.ParentSessionID,
+		}).Warn("mcp: queueing child result reconnect reminder")
+	}
 }
 
 // buildInjectionMessage composes the message injected into the parent session.

@@ -187,6 +187,131 @@ func TestCheckAndInjectChildResults_UpdatesStatus(t *testing.T) {
 	}
 }
 
+func TestCheckAndInjectChildResults_ReturnsToWaitingMCPCall(t *testing.T) {
+	sdb := openWatcherTestStateDB(t)
+	insertWatcherChildSession(t, sdb, "child-waiting", "parent-1", "running")
+
+	var sentMessages []platforms.SendMessageRequest
+	fp := &fakePlatform{
+		id: "opencode",
+		sessions: []db.Session{
+			{ID: "child-waiting", Status: "done"},
+			{ID: "parent-1", Status: "waiting"},
+		},
+	}
+	fp.sendMessageFn = func(req platforms.SendMessageRequest) error {
+		sentMessages = append(sentMessages, req)
+		return nil
+	}
+	fp.sessionDetailFn = func(id string) (*platforms.SessionDetail, error) {
+		for _, session := range fp.sessions {
+			if session.ID == id {
+				sess := session
+				return &platforms.SessionDetail{Session: &sess}, nil
+			}
+		}
+		return nil, platforms.ErrNotFound
+	}
+
+	reg := platforms.NewRegistry()
+	reg.Register(fp)
+	s := New(nil, sdb, "127.0.0.1:0", reg, nil)
+	s.childResults.Register("child-waiting")
+
+	s.checkAndInjectChildResults(context.Background())
+
+	if len(sentMessages) != 0 {
+		t.Fatalf("queued %d duplicate parent messages", len(sentMessages))
+	}
+	result, err := s.childResults.Wait(context.Background(), "child-waiting")
+	if err != nil || result.Status != "completed" {
+		t.Fatalf("waiting MCP result = %+v, %v", result, err)
+	}
+}
+
+func TestCheckAndInjectChildResults_PreservesDisconnectedResultAfterRestart(t *testing.T) {
+	sdb := openWatcherTestStateDB(t)
+	insertWatcherChildSession(t, sdb, "child-restart", "parent-1", "running")
+	if err := sdb.SetChildResultDelivery("child-restart", "waiting"); err != nil {
+		t.Fatal(err)
+	}
+
+	var sentMessages []platforms.SendMessageRequest
+	fp := &fakePlatform{
+		id: "opencode",
+		sessions: []db.Session{
+			{ID: "child-restart", Status: "done"},
+			{ID: "parent-1", Status: "waiting"},
+		},
+	}
+	fp.sendMessageFn = func(req platforms.SendMessageRequest) error {
+		sentMessages = append(sentMessages, req)
+		return nil
+	}
+	fp.sessionDetailFn = func(id string) (*platforms.SessionDetail, error) {
+		for _, session := range fp.sessions {
+			if session.ID == id {
+				sess := session
+				return &platforms.SessionDetail{Session: &sess}, nil
+			}
+		}
+		return nil, platforms.ErrNotFound
+	}
+	reg := platforms.NewRegistry()
+	reg.Register(fp)
+	s := New(nil, sdb, "127.0.0.1:0", reg, nil)
+
+	s.checkAndInjectChildResults(context.Background())
+
+	child, err := sdb.GetChildSession("child-restart")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if child.ResultDelivery != "disconnected" || child.Status != "completed" {
+		t.Fatalf("child after restart = %+v", child)
+	}
+	if len(sentMessages) != 0 {
+		t.Fatalf("restart sent %d replacement parent prompts", len(sentMessages))
+	}
+}
+
+func TestDeferChildResultReconnect_QueuesAwaitReminder(t *testing.T) {
+	sdb := openWatcherTestStateDB(t)
+	insertWatcherChildSession(t, sdb, "child-disconnected", "parent-1", "running")
+	s := New(nil, sdb, "127.0.0.1:0", platforms.NewRegistry(), nil)
+
+	s.deferChildResultReconnect("child-disconnected")
+
+	messages, err := sdb.ListQueuedMessages("opencode", "parent-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("queued messages = %d, want 1", len(messages))
+	}
+	for _, want := range []string{"await_session_result", "parent-1", "child-disconnected", "without sending a new prompt"} {
+		if !strings.Contains(messages[0].Text, want) {
+			t.Errorf("reminder missing %q: %q", want, messages[0].Text)
+		}
+	}
+}
+
+func TestDeferChildResultReconnect_MissingStateOrChildIsIgnored(t *testing.T) {
+	(&Server{}).deferChildResultReconnect("missing")
+
+	sdb := openWatcherTestStateDB(t)
+	s := New(nil, sdb, "127.0.0.1:0", platforms.NewRegistry(), nil)
+	s.deferChildResultReconnect("missing")
+
+	messages, err := sdb.ListQueuedMessages("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 0 {
+		t.Fatalf("queued %d reminders for missing child", len(messages))
+	}
+}
+
 func TestCheckAndInjectChildResults_WaitsForAssistantAfterFollowUp(t *testing.T) {
 	sdb := openWatcherTestStateDB(t)
 	insertWatcherChildSession(t, sdb, "child-follow-up", "parent-1", "running")

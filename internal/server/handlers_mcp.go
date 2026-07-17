@@ -19,6 +19,8 @@ func (s *Server) buildMCPHandler() http.Handler {
 		Platform:              s.sessions.Client("opencode"),
 		PlatformID:            "opencode",
 		EnsureProjectOpencode: internalmcp.ProjectOpencodeEnsurer(s.ensureProjectOpencodePort),
+		ChildResults:          s.childResults,
+		ChildDisconnected:     s.deferChildResultReconnect,
 	}
 	if s.stateDB != nil {
 		deps.WorkflowService = s.workflowSvc()

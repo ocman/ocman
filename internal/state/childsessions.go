@@ -19,20 +19,24 @@ type ChildSession struct {
 	CreatedAt       int64  `json:"createdAt"`
 	CompletedAt     int64  `json:"completedAt"`       // 0 until terminal state
 	Summary         string `json:"summary,omitempty"` // populated on completion
+	ResultDelivery  string `json:"resultDelivery"`    // detached, waiting, disconnected, delivered
 }
 
 // InsertChildSession persists a new child session record. The initial
 // status is always "starting"; callers update it via UpdateChildSession.
 func (d *DB) InsertChildSession(cs ChildSession) error {
+	if cs.ResultDelivery == "" {
+		cs.ResultDelivery = "detached"
+	}
 	_, err := d.db.Exec(`
 		INSERT INTO child_sessions
 			(id, platform, parent_session_id, intent, composed_prompt,
-			 worktree_path, branch, tmux_target, status, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 worktree_path, branch, tmux_target, status, created_at, result_delivery)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		cs.ID, cs.Platform, cs.ParentSessionID, cs.Intent, cs.ComposedPrompt,
 		nullableString(cs.WorktreePath), nullableString(cs.Branch),
-		nullableString(cs.TmuxTarget), cs.Status, cs.CreatedAt,
+		nullableString(cs.TmuxTarget), cs.Status, cs.CreatedAt, cs.ResultDelivery,
 	)
 	if err != nil {
 		return fmt.Errorf("inserting child session: %w", err)
@@ -81,12 +85,12 @@ func (d *DB) GetChildSession(id string) (*ChildSession, error) {
 	err := d.db.QueryRow(`
 		SELECT id, platform, parent_session_id, intent, composed_prompt,
 		       worktree_path, branch, tmux_target, status,
-		       created_at, completed_at, summary
+		       created_at, completed_at, summary, result_delivery
 		FROM child_sessions WHERE id = ?
 	`, id).Scan(
 		&cs.ID, &cs.Platform, &cs.ParentSessionID, &cs.Intent, &cs.ComposedPrompt,
 		&worktreePath, &branch, &tmuxTarget, &cs.Status,
-		&cs.CreatedAt, &completedAt, &summary,
+		&cs.CreatedAt, &completedAt, &summary, &cs.ResultDelivery,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("getting child session: %w", err)
@@ -107,7 +111,7 @@ func (d *DB) ListChildSessionsByParent(parentSessionID string) ([]ChildSession, 
 	rows, err := d.db.Query(`
 		SELECT id, platform, parent_session_id, intent, composed_prompt,
 		       worktree_path, branch, tmux_target, status,
-		       created_at, completed_at, summary
+		       created_at, completed_at, summary, result_delivery
 		FROM child_sessions
 		WHERE parent_session_id = ?
 		ORDER BY created_at DESC
@@ -126,7 +130,7 @@ func (d *DB) ListNonTerminalChildSessions() ([]ChildSession, error) {
 	rows, err := d.db.Query(`
 		SELECT id, platform, parent_session_id, intent, composed_prompt,
 		       worktree_path, branch, tmux_target, status,
-		       created_at, completed_at, summary
+		       created_at, completed_at, summary, result_delivery
 		FROM child_sessions
 		WHERE status IN ('starting', 'running')
 		ORDER BY created_at ASC
@@ -152,6 +156,30 @@ func (d *DB) CancelChildSession(id string, cancelledAt int64) error {
 		return fmt.Errorf("cancelling child session: %w", err)
 	}
 	return nil
+}
+
+func (d *DB) SetChildResultDelivery(id, delivery string) error {
+	_, err := d.db.Exec(`UPDATE child_sessions SET result_delivery = ? WHERE id = ?`, delivery, id)
+	if err != nil {
+		return fmt.Errorf("updating child result delivery: %w", err)
+	}
+	return nil
+}
+
+func (d *DB) ListDisconnectedChildSessions(parentSessionID string) ([]ChildSession, error) {
+	rows, err := d.db.Query(`
+		SELECT id, platform, parent_session_id, intent, composed_prompt,
+		       worktree_path, branch, tmux_target, status,
+		       created_at, completed_at, summary, result_delivery
+		FROM child_sessions
+		WHERE parent_session_id = ? AND result_delivery = 'disconnected'
+		ORDER BY created_at DESC
+	`, parentSessionID)
+	if err != nil {
+		return nil, fmt.Errorf("listing disconnected child sessions: %w", err)
+	}
+	defer rows.Close()
+	return scanChildSessions(rows)
 }
 
 // ChildSessionParents returns a map of every MCP-spawned child
@@ -194,7 +222,7 @@ func scanChildSessions(rows *sql.Rows) ([]ChildSession, error) {
 		if err := rows.Scan(
 			&cs.ID, &cs.Platform, &cs.ParentSessionID, &cs.Intent, &cs.ComposedPrompt,
 			&worktreePath, &branch, &tmuxTarget, &cs.Status,
-			&cs.CreatedAt, &completedAt, &summary,
+			&cs.CreatedAt, &completedAt, &summary, &cs.ResultDelivery,
 		); err != nil {
 			return nil, fmt.Errorf("scanning child session: %w", err)
 		}

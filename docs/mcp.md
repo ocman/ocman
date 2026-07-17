@@ -45,7 +45,8 @@ directly (no Vite dev proxy).
 
 | Tool | Description |
 |------|-------------|
-| `new_session` | Launch a new OpenCode child session with a context-enriched prompt. Shares the parent's directory by default; set `worktree=true` (with a `branch`) to run it in a fresh git worktree. Accepts an optional `model` (`"provider/model"`) for the child; when omitted the child inherits the parent session's current model. |
+| `new_session` | Run a new OpenCode child session with a context-enriched prompt and return its terminal status and final assistant text. Shares the parent's directory by default; set `worktree=true` (with a `branch`) to run it in a fresh git worktree. Accepts an optional `model` (`"provider/model"`) for the child; when omitted the child inherits the parent session's current model. |
+| `await_session_result` | Reconnect to a disconnected `new_session` call and wait for the original child result without sending another prompt. A child ID is optional when the parent has exactly one disconnected child. |
 | `get_current_session_id` | Return the most recently updated OpenCode session ID known to ocman, optionally filtered by project directory. |
 | `get_session_status` | Check the status of a previously spawned child session. |
 | `list_child_sessions` | List all child sessions spawned from a parent session. |
@@ -66,12 +67,12 @@ directly (no Vite dev proxy).
    10 messages, the current git branch, and `git diff --stat`.
 3. A structured Markdown prompt is assembled and sent to a new OpenCode
    session.
-4. A background watcher polls the child session. After each terminal child
-   turn, it queues the child's final assistant text as explicitly untrusted JSON
-   data for the parent, preserving its intent and status without treating child
-   text as instructions. The queue starts a parent turn immediately when idle,
-   or on the next idle edge when busy. Errors, cancellations, and direct
-   `send_message_to_parent` updates use the same trust boundary;
+4. A background watcher polls the child session. After the terminal child turn,
+   `new_session` returns its status and final assistant text directly. If the MCP
+   caller disconnects, ocman defers a parent reminder to call
+   `await_session_result`, which reconnects to that wait without prompting the
+   child again, including after an ocman restart. Direct
+   `send_message_to_parent` updates retain the explicit untrusted data boundary;
    `send_message_to_child` reopens the child for its next turn.
 
 ## Splitting skill (optional)

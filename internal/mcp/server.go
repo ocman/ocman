@@ -44,6 +44,14 @@ type Deps struct {
 	// WorkflowService drives workflow authoring and run-control tools.
 	// Optional: nil disables workflow tools.
 	WorkflowService workflowService
+
+	// ChildResults makes new_session wait for the background watcher and
+	// return the child's terminal result. Nil preserves detached behavior.
+	ChildResults *ChildResultBroker
+
+	// ChildDisconnected queues recovery guidance for the parent when a
+	// synchronous child-result request disconnects.
+	ChildDisconnected func(childID string)
 }
 
 // Server wraps the mcp-go MCPServer and exposes an http.Handler.
@@ -76,7 +84,7 @@ func New(deps Deps) *Server {
 		adapter,
 		deps.CreateWorktree,
 		deps.EnsureProjectOpencode,
-	)
+	).WithChildResults(deps.ChildResults)
 
 	// Build the mcp-go server.
 	s := mcpserver.NewMCPServer(
@@ -87,10 +95,13 @@ func New(deps Deps) *Server {
 
 	// Register split tools.
 	split := &splitTools{
-		composer: composer,
-		launcher: launcher,
-		platform: deps.PlatformID,
-		inherit:  inheritProvider(deps.StateDB),
+		composer:     composer,
+		launcher:     launcher,
+		platform:     deps.PlatformID,
+		inherit:      inheritProvider(deps.StateDB),
+		results:      deps.ChildResults,
+		store:        deps.StateDB,
+		disconnected: deps.ChildDisconnected,
 	}
 	addSplitTools(s, split)
 
@@ -149,13 +160,16 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 		adapter,
 		deps.CreateWorktree,
 		deps.EnsureProjectOpencode,
-	)
+	).WithChildResults(deps.ChildResults)
 
 	split := &splitTools{
-		composer: composer,
-		launcher: launcher,
-		platform: deps.PlatformID,
-		inherit:  inheritProvider(deps.StateDB),
+		composer:     composer,
+		launcher:     launcher,
+		platform:     deps.PlatformID,
+		inherit:      inheritProvider(deps.StateDB),
+		results:      deps.ChildResults,
+		store:        deps.StateDB,
+		disconnected: deps.ChildDisconnected,
 	}
 
 	var ocDB statusSessionReader
@@ -173,6 +187,7 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 
 	tools := []mcpserver.ServerTool{
 		{Tool: newSessionTool(), Handler: split.handleNewSession},
+		{Tool: awaitSessionResultTool(), Handler: split.handleAwaitSessionResult},
 		{Tool: getSessionStatusTool(), Handler: status.handleGetSessionStatus},
 		{Tool: getCurrentSessionIDTool(), Handler: status.handleGetCurrentSessionID},
 		{Tool: listChildSessionsTool(), Handler: status.handleListChildSessions},

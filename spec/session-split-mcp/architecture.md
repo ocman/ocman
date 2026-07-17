@@ -385,8 +385,8 @@ so it can be tested independently.
 
 - **Responsibility**: Background goroutine that polls `state.db` for child
   sessions in non-terminal states, checks their completion status against
-  OpenCode's DB, updates `state.db`, and injects result messages into parent
-  sessions.
+  OpenCode's DB, updates `state.db`, and returns results through waiting MCP
+  calls. Persisted delivery state lets a disconnected caller resume the wait.
 - **Interfaces**:
   ```go
   func (s *Server) runChildSessionWatcher(ctx context.Context)

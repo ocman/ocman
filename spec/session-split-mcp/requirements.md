@@ -10,8 +10,8 @@ part of the existing ocman process.
 The core workflow: while working on a feature, the model (or user) notices a
 separable concern — a bug fix, a refactor, a spike — and calls a split tool.
 ocman composes a focused prompt enriched with context from the current session,
-launches a new OpenCode session (optionally in a fresh worktree), and when that
-child session completes, injects the result back into the parent session.
+launches a new OpenCode session (optionally in a fresh worktree), and returns
+the result through the waiting MCP call when that child session completes.
 
 ## Goals
 
@@ -177,20 +177,18 @@ sessions. The MCP is consumed by:
   - The composed prompt is stored alongside the child session record in
     `state.db` for auditability.
 
-### FR-8: Callback injection into parent session
+### FR-8: Child result delivery
 
 - **Description**: When a child session completes (status transitions to
-  `completed` or `error`), ocman automatically injects a result notification
-  back into the parent session's conversation.
+  `completed` or `error`), ocman returns the result from the waiting split tool.
 - **Acceptance Criteria**:
-  - The parent session receives a message summarising the child session's
-    outcome (what was done, any relevant output, errors if applicable).
-  - Injection happens without user intervention.
-  - If injection fails (e.g. the parent session is no longer active), the
-    failure is logged but does not surface as an error to the user.
-- **Note**: The exact injection mechanism depends on OpenCode's API capabilities
-  and is an open question (see Open Questions). This requirement defines the
-  *desired behaviour*; the implementation approach is deferred to the architect.
+  - The split tool result includes the child session's terminal status and final
+    assistant text.
+  - Delivery happens without user intervention.
+  - If the MCP caller disconnects, it can reconnect to the original wait
+    without sending another child prompt, including after an ocman restart.
+  - Ocman queues a reconnect reminder for the parent and defers it until the
+    parent's active turn is idle.
 
 ## Non-Functional Requirements
 

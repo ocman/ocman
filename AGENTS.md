@@ -303,7 +303,7 @@ diffs minimal and match the surrounding code.
 Ocman embeds a localhost-only MCP server (`internal/mcp/`, mounted at
 `/mcp` by the server package) exposing session-split + parent/child
 message tools (`new_session`,
-`get_current_session_id`, `get_session_status`, `list_child_sessions`,
+`await_session_result`, `get_current_session_id`, `get_session_status`, `list_child_sessions`,
 `cancel_session`, `send_message_to_child`, `send_message_to_parent`).
 
 Implementation notes:
@@ -312,9 +312,11 @@ Implementation notes:
   (last 10 messages, git branch, `git diff --stat`); `SessionLauncher`
   creates the child via the `Platform` interface.
 - Child session records live in `state.db`'s `child_sessions` table
-  (migration v9); a background watcher polls every 5 s and injects a
-  result summary back into the parent on completion as explicitly untrusted
-  JSON data; direct child-to-parent messages use the same boundary.
+  (migration v9); a background watcher polls every 5 s and returns the result
+  through the waiting `new_session` MCP call. Migration v34 persists delivery
+  state so `await_session_result` can reconnect after a request disconnect or
+  ocman restart without re-prompting the child; disconnects also defer a queued
+  reconnect reminder until the parent is idle.
 - `new_session` seeds the child with the parent's accumulated
   "Allow always" permissions when `worktree.inherit_permissions` is on
   (#101), and reports `permissionsInherited` / `permissionsInheritedCount`

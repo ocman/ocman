@@ -96,6 +96,12 @@ type SessionLauncher struct {
 	platform       platformAdapter
 	createWorktree worktreeCreator
 	ensureOpencode projectOpencodeEnsurer
+	childResults   *ChildResultBroker
+}
+
+func (l *SessionLauncher) WithChildResults(results *ChildResultBroker) *SessionLauncher {
+	l.childResults = results
+	return l
 }
 
 // NewSessionLauncher creates a SessionLauncher with production dependencies.
@@ -165,6 +171,9 @@ func (l *SessionLauncher) launchWithPort(ctx context.Context, req LaunchRequest,
 		return "", fmt.Errorf("creating child session: %w", err)
 	}
 	childID := resp.ID
+	if l.childResults != nil {
+		l.childResults.Register(childID)
+	}
 
 	// Apply the requested permission ruleset before the first message so
 	// it runs under those rules. Best-effort: the session exists; a
@@ -211,6 +220,9 @@ func (l *SessionLauncher) launchWithPort(ctx context.Context, req LaunchRequest,
 		TmuxTarget:      req.TmuxTarget,
 		Status:          "starting",
 		CreatedAt:       time.Now().UnixMilli(),
+	}
+	if l.childResults != nil {
+		cs.ResultDelivery = "waiting"
 	}
 	if err := l.stateDB.InsertChildSession(cs); err != nil {
 		// Log but don't fail: the session is running; we just can't

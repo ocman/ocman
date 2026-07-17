@@ -708,8 +708,32 @@ func TestInsertChildSession_RoundTrip(t *testing.T) {
 	if got.Status != "starting" {
 		t.Errorf("Status: got %q, want %q", got.Status, "starting")
 	}
+	if got.ResultDelivery != "detached" {
+		t.Errorf("ResultDelivery: got %q, want detached", got.ResultDelivery)
+	}
 	if got.CompletedAt != 0 {
 		t.Errorf("CompletedAt: expected 0, got %d", got.CompletedAt)
+	}
+}
+
+func TestDisconnectedChildSessions(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	for _, id := range []string{"child-a", "child-b"} {
+		if err := db.InsertChildSession(makeChildSession(id, "parent-1")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.SetChildResultDelivery("child-b", "disconnected"); err != nil {
+		t.Fatal(err)
+	}
+
+	children, err := db.ListDisconnectedChildSessions("parent-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(children) != 1 || children[0].ID != "child-b" || children[0].ResultDelivery != "disconnected" {
+		t.Fatalf("disconnected children = %+v", children)
 	}
 }
 

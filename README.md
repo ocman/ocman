@@ -80,7 +80,7 @@ See [docs/configuration.md](docs/configuration.md) for the full flag and environ
 Ocman works as a dashboard without any agent integration. It also embeds an
 optional, localhost-only **MCP server** so an AI agent can split work into
 child OpenCode sessions or isolated git worktrees and coordinate between them
-(`new_session`, `get_session_status`, `list_child_sessions`,
+(`new_session`, `await_session_result`, `get_session_status`, `list_child_sessions`,
 `cancel_session`, and parent/child message tools).
 
 Point your OpenCode config at `http://localhost:8229/mcp` (or

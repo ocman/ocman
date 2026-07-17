@@ -137,7 +137,8 @@ import (
 //
 //	33 - workflow archive state. Archived definitions stop scheduling but
 //	      retain their run history and artifacts.
-const latestSchemaVersion = 33
+//	34 - add child_sessions.result_delivery for reconnectable MCP waits.
+const latestSchemaVersion = 34
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -299,6 +300,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV32(tx)
 	case 33:
 		return migrateToV33(tx)
+	case 34:
+		return migrateToV34(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -1194,5 +1197,10 @@ func migrateToV32(tx *sql.Tx) error {
 
 func migrateToV33(tx *sql.Tx) error {
 	_, err := tx.Exec(`ALTER TABLE workflow_definition ADD COLUMN archived_at INTEGER`)
+	return err
+}
+
+func migrateToV34(tx *sql.Tx) error {
+	_, err := tx.Exec(`ALTER TABLE child_sessions ADD COLUMN result_delivery TEXT NOT NULL DEFAULT 'detached'`)
 	return err
 }
