@@ -44,7 +44,8 @@ EOF
 
 collect_go() {
 	echo "==> Go coverage (./internal/...)"
-	go test ./internal/... -coverpkg=./internal/... -coverprofile=coverage/go.raw.out -covermode=atomic
+	# Go 1.26 invokes an unavailable covdata tool for packages without test files.
+	go test $(go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./internal/...) -coverpkg=./internal/... -coverprofile=coverage/go.raw.out -covermode=atomic
 	# Drop generated files (e.g. *.pb.go) from the profile; the mode
 	# header line (first line) is preserved.
 	grep -vE '\.pb\.go:' coverage/go.raw.out > coverage/go.out
