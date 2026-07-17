@@ -38,72 +38,100 @@ jobs:
       - name: Typecheck
         working-directory: frontend
         run: pnpm exec tsc -b
-      - name: Test
-        working-directory: frontend
-        run: pnpm test
       - name: Platform-branching guard
         run: ./scripts/check-platform-branching.sh
       - name: Settings-row guard
         run: ./scripts/check-settings-rows.sh
+      - name: Test with coverage
+        run: make coverage SUITE=frontend
+      - name: Fetch coverage baseline
+        run: ./scripts/coverage-fetch-baseline.sh baseline
+      - name: Check coverage ratchet
+        run: make coverage-check BASELINE_DIR=baseline SUITE=frontend
+      - name: Save coverage result
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: frontend-coverage
+          path: |
+            coverage/frontend.json
+            coverage/ratchet-result.json
+          retention-days: 1
 
   backend:
     name: Backend
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - run: go vet ./...
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v7
-        with:
-          version: v2.11.4
-      - run: go test ./...
-
-  coverage:
-    name: Coverage Ratchet
     runs-on: ubuntu-latest
     env:
       TERM: xterm-256color
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Install tmux
-        run: apt-get update && apt-get install -y tmux
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: Install tmux
+        run: apt-get update && apt-get install -y tmux
+      - run: go vet ./...
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.11.4
+      - name: Test root package
+        run: go test .
+      - name: Test internal packages with coverage
+        run: make coverage SUITE=go
+      - name: Fetch coverage baseline
+        run: ./scripts/coverage-fetch-baseline.sh baseline
+      - name: Check coverage ratchet
+        run: make coverage-check BASELINE_DIR=baseline SUITE=go
+      - name: Save coverage result
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: backend-coverage
+          path: |
+            coverage/go.json
+            coverage/ratchet-result.json
+          retention-days: 1
+
+  coverage-results:
+    name: Coverage Results
+    needs: [frontend, backend]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 25
-      - name: Install pnpm
-        run: npm install -g pnpm@10.11.1
-      - name: Cache pnpm store
-        uses: actions/cache@v4
+      - name: Download frontend result
+        continue-on-error: true
+        uses: actions/download-artifact@v3
         with:
-          path: ~/.local/share/pnpm/store
-          key: pnpm-${{ runner.os }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
-          restore-keys: pnpm-${{ runner.os }}-
-      - name: Install dependencies
-        working-directory: frontend
-        run: pnpm install --frozen-lockfile
-      - name: Determine changed suites
-        id: suites
-        run: ./scripts/coverage-changed-suites.sh
-      - name: Collect coverage
-        if: steps.suites.outputs.suites != ''
-        run: make coverage SUITE="${{ steps.suites.outputs.suites }}"
-      - name: Fetch baseline from gh-pages
-        if: steps.suites.outputs.suites != ''
-        run: ./scripts/coverage-fetch-baseline.sh baseline
-      - name: Check coverage ratchet
-        id: ratchet
-        if: steps.suites.outputs.suites != ''
-        run: make coverage-check BASELINE_DIR=baseline SUITE="${{ steps.suites.outputs.check }}"
+          name: frontend-coverage
+          path: coverage/frontend
+      - name: Download backend result
+        continue-on-error: true
+        uses: actions/download-artifact@v3
+        with:
+          name: backend-coverage
+          path: coverage/backend
+      - name: Merge coverage results
+        run: |
+          mkdir -p coverage
+          node - <<'NODE'
+          const fs = require('fs')
+          const files = ['coverage/frontend/ratchet-result.json', 'coverage/backend/ratchet-result.json']
+          const results = files.filter(fs.existsSync).map(file => JSON.parse(fs.readFileSync(file)))
+          if (results.length) fs.writeFileSync('coverage/ratchet-result.json', JSON.stringify({
+            overall: results.every(result => result.overall === 'pass') ? 'pass' : 'fail',
+            tolerance: results[0].tolerance,
+            suites: results.flatMap(result => result.suites),
+          }))
+          NODE
       - name: Comment coverage delta on PR
-        if: always() && github.event_name == 'pull_request' && steps.suites.outputs.suites != ''
+        if: github.event_name == 'pull_request'
         env:
           FORGEJO_API_URL: ${{ github.api_url }}
           REPOSITORY: ${{ github.repository }}
@@ -111,13 +139,16 @@ jobs:
           TOKEN: ${{ github.token }}
         run: ./scripts/coverage-pr-comment.sh
       - name: Publish baseline to gh-pages
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.frontend.result == 'success' && needs.backend.result == 'success'
         env:
           SERVER_URL: ${{ github.server_url }}
           REPOSITORY: ${{ github.repository }}
           GITHUB_SHA: ${{ github.sha }}
           TOKEN: ${{ secrets.RELEASE_PAT || github.token }}
-        run: ./scripts/coverage-publish-baseline.sh
+        run: |
+          cp coverage/frontend/frontend.json coverage/frontend.json
+          cp coverage/backend/go.json coverage/go.json
+          ./scripts/coverage-publish-baseline.sh
 
   e2e:
     name: Playwright E2E

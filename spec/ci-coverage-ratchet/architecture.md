@@ -82,7 +82,9 @@ and the baseline lives on a remote branch (would break offline / before
 
 Coverage enforcement instead lives in two places:
 
-- **CI** — the `coverage` job (authoritative gate).
+- **CI** — the frontend and backend jobs each run their own ratchet
+  (authoritative gates), reusing their test run instead of repeating both
+  suites in a third job.
 - **Pre-push git hook** — opt-in via `make install-hooks`. Added to
   `.pre-commit-config.yaml` as **two** `stages: [pre-push]` hooks,
   `coverage-ratchet-backend` (`files: '\.go$'`) and
@@ -110,25 +112,20 @@ coverage: {
 
 ## CI wiring (`.github/workflows/ci.yml`)
 
-### New `coverage` job (runs on PR and on main push)
-Depends on `[frontend, backend]` so it only computes coverage once the
-suites are green.
+### Per-suite ratchets (run on PR and on main push)
+The frontend and backend jobs collect and check their own coverage. This
+keeps the gates independent and avoids installing both toolchains in a
+separate coverage job. Each uploads its JSON result as a short-lived
+artifact.
 
 ```
-needs: [frontend, backend]
-steps:
-  - checkout (fetch-depth: 0)
-  - setup-go, setup-node, install pnpm + deps
-  - run: make coverage
-  # --- fetch baseline from gh-pages ---
-  - run: |
-      mkdir -p baseline
-      if git fetch --depth=1 origin gh-pages 2>/dev/null; then
-        git --work-tree=baseline checkout origin/gh-pages -- coverage/ 2>/dev/null || true
-        mv baseline/coverage/* baseline/ 2>/dev/null || true
-      fi
-  - run: make coverage-check BASELINE_DIR=baseline
+frontend: make coverage SUITE=frontend && make coverage-check SUITE=frontend
+backend:  make coverage SUITE=go       && make coverage-check SUITE=go
 ```
+
+A lightweight `coverage-results` job downloads both artifacts to produce the
+combined PR comment and, after both gates pass on `main`, publish the combined
+baseline to `gh-pages`.
 
 ### PR comment step (R9) — after coverage-check, `if: always()`
 Reuses the Forgejo API pattern already in the `tag` job
