@@ -13,6 +13,7 @@ export type {
   PartData,
   SessionDetail,
   TaskSessionData,
+  ChildSessionReference,
   SessionEdit,
   FileChange,
   WorkingTreeFile,
@@ -81,6 +82,7 @@ export type {
 import type {
   AuthMe,
   CapabilitiesResponse,
+  ChildSessionReference,
   FavoriteEntry,
   MetricsDashboard,
   DirectoryBrowseResponse,
@@ -390,7 +392,7 @@ export const api = {
    * thread preview inside Task tool cards.
    */
   sessionTasks: (sessionId: string, taskIds: string[], signal?: AbortSignal) =>
-    fetchJSON<{ tasks: Record<string, TaskSessionData> }>(
+    fetchJSON<{ tasks: Record<string, TaskSessionData>; children?: ChildSessionReference[] }>(
       `/api/session/${encodeURIComponent(sessionId)}/tasks?ids=${taskIds.map(encodeURIComponent).join(',')}`,
       signal,
     ),

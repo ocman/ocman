@@ -4,9 +4,15 @@
 // (MAX_SUBAGENT_TOKEN_ENTRIES) protects against unbounded growth
 // during long subagent runs.
 
-import { describe, expect, it } from 'vitest';
-import { act, renderHook } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { useSubagentTracking } from './useSubagentTracking';
+import { api, type Part } from '../../lib/api';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 
 describe('useSubagentTracking', () => {
   it('exposes a stable setSubagentTokens identity across renders', () => {
@@ -46,5 +52,48 @@ describe('useSubagentTracking', () => {
     expect(result.current.subagentTokens.size).toBeLessThanOrEqual(256);
     expect(result.current.subagentTokens.has('m0')).toBe(false);
     expect(result.current.subagentTokens.has(`m${N - 1}`)).toBe(true);
+  });
+
+  it('loads child session references while new_session is running', async () => {
+    const part = {
+      id: 'tool-1',
+      messageId: 'message-1',
+      sessionId: 'parent-1',
+      timeCreated: 1000,
+      data: { type: 'tool', tool: 'new_session', state: { status: 'running', input: { intent: 'Explain' } } },
+    } as Part;
+    vi.spyOn(api, 'sessionTasks').mockResolvedValue({
+      tasks: {},
+      children: [{ id: 'child-1', intent: 'Explain', status: 'running', createdAt: 1100 }],
+    });
+
+    const { result } = renderHook(() => useSubagentTracking([part], 'parent-1'));
+
+    await waitFor(() => expect(result.current.childSessions[0]?.id).toBe('child-1'));
+  });
+
+  it('retries quickly when the child record races the first lookup', async () => {
+    vi.useFakeTimers();
+    const part = {
+      id: 'tool-1',
+      messageId: 'message-1',
+      sessionId: 'parent-1',
+      timeCreated: 1000,
+      data: { type: 'tool', tool: 'new_session', state: { status: 'running', input: { intent: 'Explain' } } },
+    } as Part;
+    const request = vi.spyOn(api, 'sessionTasks')
+      .mockResolvedValueOnce({ tasks: {}, children: [] })
+      .mockResolvedValue({
+        tasks: {},
+        children: [{ id: 'child-1', intent: 'Explain', status: 'running', createdAt: 1100 }],
+      });
+
+    const { result } = renderHook(() => useSubagentTracking([part], 'parent-1'));
+    await act(async () => { await Promise.resolve(); });
+    expect(request).toHaveBeenCalledTimes(1);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(250); });
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(result.current.childSessions[0]?.id).toBe('child-1');
   });
 });

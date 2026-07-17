@@ -1,5 +1,5 @@
 import type { ThreadMessageLike } from '@assistant-ui/react';
-import type { Message, Part, PartData, FilePart, TaskSessionData } from './api';
+import type { ChildSessionReference, Message, Part, PartData, FilePart, TaskSessionData } from './api';
 import type { FailedSend } from './failedSends';
 import { extractTaskId } from './taskId';
 import { messageModelRef } from './turnStats';
@@ -122,6 +122,7 @@ type ConvertedCacheEntry = {
   modelChangedTo: string;
   /** Whether reasoning parts were rendered into this result (#290). */
   showReasoning: boolean;
+  childSessions: ChildSessionReference[] | undefined;
   result: ThreadMessageLike;
 };
 const convertedMessageCache = new WeakMap<Message, ConvertedCacheEntry>();
@@ -211,6 +212,7 @@ export type ConvertMessagesFn = (
   projectDirectory?: string,
   failedById?: Record<string, FailedSend>,
   showReasoning?: boolean,
+  childSessions?: ChildSessionReference[],
 ) => ThreadMessageLike[];
 
 /**
@@ -253,6 +255,7 @@ export function createConvertMessages(): ConvertMessagesFn {
     // from the rendered content (the `/thinking` toggle, #290). Defaults
     // to true so non-React callers and the default instance are unchanged.
     showReasoning: boolean = true,
+    childSessions?: ChildSessionReference[],
   ): ThreadMessageLike[] {
     // Reuse the bucketed `partsByMsg` index when the input parts
     // array is the same reference we saw last time. Saves an O(N)
@@ -287,6 +290,32 @@ export function createConvertMessages(): ConvertMessagesFn {
       prevModel = ref;
     }
 
+  const childSessionByPart: Record<string, string> = {};
+  const claimedChildSessions = new Set<string>();
+  for (const part of [...parts].sort((a, b) => (a.timeCreated || 0) - (b.timeCreated || 0))) {
+    const data = parsePart(part);
+    const tool = data.tool;
+    if (data.type !== 'tool' || (tool !== 'new_session' && tool !== 'mcp_new_session' && tool !== 'ocman_new_session')) continue;
+    const state = data.state || {};
+    let output: Record<string, unknown> = {};
+    try {
+      output = (typeof state.output === 'string' ? JSON.parse(state.output) : state.output) as Record<string, unknown> || {};
+    } catch { /* running calls have no complete output yet */ }
+    let childID = typeof output.child_session_id === 'string' ? output.child_session_id : '';
+    if (!childID) {
+      const intent = (state.input as Record<string, string> | undefined)?.intent;
+      const child = childSessions
+        ?.filter((candidate) => candidate.intent === intent
+          && !claimedChildSessions.has(candidate.id)
+          && (!part.timeCreated || candidate.createdAt >= part.timeCreated - 5000))
+        .sort((a, b) => a.createdAt - b.createdAt)[0];
+      childID = child?.id || '';
+    }
+    if (childID) {
+      childSessionByPart[part.id] = childID;
+      claimedChildSessions.add(childID);
+    }
+  }
   const result = filtered.map((m, idx): ThreadMessageLike => {
     // Synthetic notice messages (auto-approve, etc.) are rendered as a
     // special assistant-role entry so they appear inline in the thread.
@@ -360,6 +389,7 @@ export function createConvertMessages(): ConvertMessagesFn {
       cached.msgAgent === msgAgent &&
       cached.modelChangedTo === modelChangedTo &&
       cached.showReasoning === showReasoning
+      && cached.childSessions === childSessions
     ) {
       return cached.result;
     }
@@ -538,7 +568,8 @@ export function createConvertMessages(): ConvertMessagesFn {
             try {
               childResult = (typeof st.output === 'string' ? JSON.parse(st.output) : st.output) as Record<string, unknown> || {};
             } catch { /* keep the card useful while output is incomplete */ }
-            const childID = typeof childResult.child_session_id === 'string' ? childResult.child_session_id : '';
+            let childID = typeof childResult.child_session_id === 'string' ? childResult.child_session_id : '';
+            if (!childID) childID = childSessionByPart[msgPartsRaw[partIdx]?.id] || '';
             const childStatus = typeof childResult.status === 'string' ? childResult.status : toolStatus(st.status, partIdx);
             const summary = typeof childResult.summary === 'string' ? childResult.summary : '';
             toolCalls.push({
@@ -824,6 +855,7 @@ export function createConvertMessages(): ConvertMessagesFn {
       msgAgent,
       modelChangedTo,
       showReasoning,
+      childSessions,
       result,
     });
 

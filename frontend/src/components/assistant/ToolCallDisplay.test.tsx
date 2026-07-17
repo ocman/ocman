@@ -2,6 +2,7 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { act, render, fireEvent, screen } from '@testing-library/react';
 import type { ComponentProps } from 'react';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 // @ts-expect-error Vitest runs in Node; application types intentionally exclude Node globals.
 import { readFileSync } from 'node:fs';
 
@@ -19,7 +20,7 @@ import { ToolCallDisplay } from './ToolCallDisplay';
 type Props = ComponentProps<typeof ToolCallDisplay>;
 const renderTool = (p: Partial<Props>) =>
   // ToolCallDisplay only reads toolName/argsText/result off the props.
-  render(<ToolCallDisplay {...({ toolName: 'bash', ...p } as Props)} />);
+  render(<ToolCallDisplay {...({ toolName: 'bash', ...p } as Props)} />, { wrapper: MemoryRouter });
 
 afterEach(() => vi.useRealTimers());
 
@@ -172,6 +173,24 @@ describe('ToolCallDisplay subagent task', () => {
   const subSession = (text: string) => ({
     messages: [{ id: 'sub-m1', sessionId: 'ses_sub', timeCreated: 1, data: { role: 'assistant' } }],
     parts: [{ id: 'sub-p1', messageId: 'sub-m1', sessionId: 'ses_sub', data: { type: 'text', text } }],
+  });
+
+  it('navigates to the child session without reloading the document', () => {
+    const Location = () => <span data-testid="location">{useLocation().pathname}</span>;
+    render(
+      <MemoryRouter>
+        <ToolCallDisplay {...({
+          toolName: '__task__',
+          argsText: 'running\nInspect implementation',
+          result: JSON.stringify({ taskId: 'ses_sub' }),
+        } as Props)} />
+        <Location />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: 'Open detailed subagent session' }));
+
+    expect(screen.getByTestId('location').textContent).toBe('/session/ses_sub');
   });
 
   it.each([

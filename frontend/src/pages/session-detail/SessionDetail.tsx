@@ -328,6 +328,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     subagentTokens,
     setSubagentTokens,
     taskLiveOutput,
+    childSessions,
   } = useSubagentTracking(parts, id);
   const { setInfo } = useHeaderInfo();
   usePageTitle(cleanTitle(session?.title) || 'Session');
@@ -1366,6 +1367,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
               agents={agents}
               modelEntries={modelEntries}
               taskLiveOutput={taskLiveOutput}
+              childSessions={childSessions}
               projectDirectory={session.directory}
               failedSends={failedSends}
               onRetryFailedSend={handleRetrySend}

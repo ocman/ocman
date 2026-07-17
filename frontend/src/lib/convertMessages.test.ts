@@ -467,6 +467,46 @@ describe('convertMessages', () => {
     });
   });
 
+  it('links a running new_session card before its terminal output arrives', () => {
+    const m = makeMessage('m', { role: 'assistant' });
+    const out = convertMessages(
+      [m],
+      [makePart('m', {
+        type: 'tool',
+        tool: 'new_session',
+        state: { status: 'running', input: { intent: 'Explain the recent work' } },
+      } as PartData)],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      [{ id: 'ses_child', intent: 'Explain the recent work', status: 'running', createdAt: 1100 }],
+    );
+    const items = asContentArray(out[0].content);
+    const tc = items.find((i) => i.type === 'tool-call') as { result?: string };
+
+    expect(JSON.parse(tc.result as string)).toMatchObject({ taskId: 'ses_child' });
+  });
+
+  it('assigns same-intent running new_session calls to distinct children', () => {
+    const m = makeMessage('m', { role: 'assistant' });
+    const out = convertMessages(
+      [m],
+      [
+        makePart('m', { type: 'tool', tool: 'new_session', state: { status: 'running', input: { intent: 'Review' } } } as PartData, 'p1', 1000),
+        makePart('m', { type: 'tool', tool: 'new_session', state: { status: 'running', input: { intent: 'Review' } } } as PartData, 'p2', 2000),
+      ],
+      undefined, undefined, undefined, undefined, true,
+      [
+        { id: 'child-1', intent: 'Review', status: 'running', createdAt: 1100 },
+        { id: 'child-2', intent: 'Review', status: 'running', createdAt: 2100 },
+      ],
+    );
+    const calls = asContentArray(out[0].content).filter((item) => item.type === 'tool-call') as Array<{ result?: string }>;
+    expect(calls.map((call) => JSON.parse(call.result as string).taskId)).toEqual(['child-1', 'child-2']);
+  });
+
   it('renders question calls as __question__ tool-calls', () => {
     const m = makeMessage('m', { role: 'assistant' });
     const out = convertMessages([m], [

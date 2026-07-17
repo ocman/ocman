@@ -306,6 +306,13 @@ export interface TaskSessionData {
   parts: Part[];
 }
 
+export interface ChildSessionReference {
+  id: string;
+  intent: string;
+  status: string;
+  createdAt: number;
+}
+
 // One file-touching tool call inside a session. Returned as part of
 // SessionChanges; the sidebar expands these inside the per-file
 // "individual edits" disclosure. `patch` is the unified-diff body

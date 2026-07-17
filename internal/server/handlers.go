@@ -385,12 +385,16 @@ func (s *Server) dispatchSessionSubpath(w http.ResponseWriter, r *http.Request) 
 
 	pathMatched := false
 	for _, route := range sessionSubRoutes {
-		if _, ok := matchSessionSubRoute(route.pattern, trimmed); !ok {
+		params, ok := matchSessionSubRoute(route.pattern, trimmed)
+		if !ok {
 			continue
 		}
 		pathMatched = true
 		if r.Method != route.method {
 			continue
+		}
+		for name, value := range params {
+			r.SetPathValue(name, value)
 		}
 		route.handler(s, w, r)
 		return

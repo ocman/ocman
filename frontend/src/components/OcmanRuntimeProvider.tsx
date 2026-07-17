@@ -5,7 +5,7 @@ import {
   type AppendMessage,
   type ThreadMessageLike,
 } from '@assistant-ui/react';
-import type { AgentInfo, Message, Part, SessionModelEntry, TaskSessionData } from '../lib/api';
+import type { AgentInfo, ChildSessionReference, Message, Part, SessionModelEntry, TaskSessionData } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
 import { useUiStore } from '../lib/uiStore';
 import { AgentsContext } from '../lib/agentColor';
@@ -36,6 +36,7 @@ interface Props {
   modelEntries?: SessionModelEntry[];
   // Sub-session data from task sessions for embedded thread rendering.
   taskLiveOutput?: Record<string, TaskSessionData>;
+  childSessions?: ChildSessionReference[];
   // Absolute path of the session's working directory. Used to display
   // file paths in muted read lines as project-relative instead of just
   // basenames, so the reader can locate the file in their checkout.
@@ -57,6 +58,7 @@ export function OcmanRuntimeProvider({
   agents,
   modelEntries,
   taskLiveOutput,
+  childSessions,
   projectDirectory,
   failedSends,
   onRetryFailedSend,
@@ -104,7 +106,7 @@ export function OcmanRuntimeProvider({
   const convert = useMemo(() => createConvertMessages(), [sessionId]);
 
   const converted = useMemo(() => {
-    const serverMessages = convert(messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById, showReasoning);
+    const serverMessages = convert(messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById, showReasoning, childSessions);
     const serverIds = new Set(serverMessages.map((message) => message.id));
     const missingFailures = (failedSends ?? []).filter((entry) => !serverIds.has(entry.id));
     if (missingFailures.length === 0) return serverMessages;
@@ -115,7 +117,7 @@ export function OcmanRuntimeProvider({
       createdAt: new Date(entry.failedAt),
       metadata: { custom: { failed: { error: entry.error, imagesDropped: !!entry.imagesDropped } } },
     }))];
-  }, [convert, messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById, failedSends, showReasoning]);
+  }, [convert, messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById, failedSends, showReasoning, childSessions]);
 
   const isRunning = useMemo(() => computeIsRunning(messages), [messages]);
 

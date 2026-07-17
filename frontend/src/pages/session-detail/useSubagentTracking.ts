@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
-import type { Part, TaskSessionData } from '../../lib/api';
+import type { ChildSessionReference, Part, TaskSessionData } from '../../lib/api';
 import { api } from '../../lib/api';
 import { extractTaskId, isTaskTool } from '../../lib/taskId';
 
@@ -52,6 +52,7 @@ export interface UseSubagentTrackingResult {
   /** Sub-session data per subagent task, keyed by task id. */
   taskLiveOutput: Record<string, TaskSessionData>;
   setTaskLiveOutput: Dispatch<SetStateAction<Record<string, TaskSessionData>>>;
+  childSessions: ChildSessionReference[];
 }
 
 /**
@@ -77,6 +78,7 @@ export function useSubagentTracking(
 ): UseSubagentTrackingResult {
   const [subagentTokens, setSubagentTokensRaw] = useState<SubagentTokenMap>(new Map());
   const [taskLiveOutput, setTaskLiveOutput] = useState<Record<string, TaskSessionData>>({});
+  const [childSessions, setChildSessions] = useState<ChildSessionReference[]>([]);
 
   // Wrap the setter in a stable identity that always trims trailing
   // entries past the cap. Stability matters because the new
@@ -137,6 +139,55 @@ export function useSubagentTracking(
     }
     return running;
   }, [parts]);
+
+  const runningNewSessions = useMemo(() => parts.flatMap((part) => {
+    const data = typeof part.data === 'string'
+      ? (() => { try { return JSON.parse(part.data); } catch { return null; } })()
+      : part.data;
+    if (!data || typeof data !== 'object') return [];
+    const record = data as Record<string, unknown>;
+    const tool = record.tool;
+    const state = record.state as Record<string, unknown> | undefined;
+    const input = state?.input as Record<string, string> | undefined;
+    const isNewSession = tool === 'new_session' || tool === 'mcp_new_session' || tool === 'ocman_new_session';
+    return isNewSession && state?.status === 'running' ? [{ id: part.id, intent: input?.intent || '' }] : [];
+  }), [parts]);
+  const runningNewSessionKey = runningNewSessions.map(({ id, intent }) => `${id}:${intent}`).join(',');
+
+  useEffect(() => {
+    if (!sessionId || runningNewSessions.length === 0) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      try {
+        const response = await api.sessionTasks(sessionId, [], controller.signal);
+        if (controller.signal.aborted) return;
+        const children = response.children || [];
+        setChildSessions((previous) => previous.length === children.length
+          && previous.every((child, index) => child.id === children[index]?.id
+            && child.status === children[index]?.status)
+          ? previous
+          : children);
+        const unmatched = [...children];
+        const allLinked = runningNewSessions.every(({ intent }) => {
+          const index = unmatched.findIndex((child) => child.intent === intent);
+          if (index < 0) return false;
+          unmatched.splice(index, 1);
+          return true;
+        });
+        if (!allLinked) timer = setTimeout(poll, 250);
+      } catch {
+        if (!controller.signal.aborted) timer = setTimeout(poll, 250);
+      }
+    };
+    poll();
+    return () => {
+      controller.abort();
+      if (timer) clearTimeout(timer);
+    };
+    // The part IDs make this effect restart when the running calls change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runningNewSessionKey, sessionId]);
 
   // Poll the running tasks for their sub-session data. Effect
   // re-fires whenever the *count* of running tasks changes — using
@@ -243,5 +294,6 @@ export function useSubagentTracking(
     setSubagentTokens,
     taskLiveOutput,
     setTaskLiveOutput,
+    childSessions,
   };
 }

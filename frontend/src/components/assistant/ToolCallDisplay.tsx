@@ -4,6 +4,7 @@
 // AssistantThread.tsx so thread mechanics and tool renderers grow
 // independently.
 import React, { useState, useEffect, Suspense } from 'react';
+import { Link } from 'react-router-dom';
 import { MultiFileDiff, PatchDiff } from '@pierre/diffs/react';
 import { DIFF_OPTIONS } from '../diffOptions';
 import { type ToolCallMessagePartProps } from '@assistant-ui/react';
@@ -425,7 +426,7 @@ export const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsTe
           <span className="oc-tool-label">{label}</span>
           <span className={`oc-task-status ${statusClass}`}>{statusTitle}</span>
           {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={taskStatus === 'running'} />}
-          {sessionId && <a className="oc-task-link" href={`/session/${sessionId}`} aria-label="Open detailed subagent session">{'\u2197'}</a>}
+          {sessionId && <Link className="oc-task-link" to={`/session/${encodeURIComponent(sessionId)}`} aria-label="Open detailed subagent session">{'\u2197'}</Link>}
         </div>
         {taskOutput ? (
           <div
