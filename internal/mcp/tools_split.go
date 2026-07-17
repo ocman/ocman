@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -16,6 +17,8 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
+
+const childResultProgressInterval = 10 * time.Second
 
 // permissionInheriter is the slice of *state.DB the split tools need to
 // inherit the parent's always-allow permissions into a child (issue
@@ -227,16 +230,18 @@ func (t *splitTools) handleNewSession(ctx context.Context, req mcplib.CallToolRe
 		"intent":           intent,
 	}
 	addInheritanceResult(result, inheritedCount, inheritErr)
-	if err := t.awaitChildResult(ctx, childID, result); err != nil {
+	if err := t.awaitChildResult(ctx, req, childID, result); err != nil {
 		return mcplib.NewToolResultError(fmt.Sprintf("waiting for child session: %v", err)), nil
 	}
 	return toolResultJSON(result), nil
 }
 
-func (t *splitTools) awaitChildResult(ctx context.Context, childID string, result map[string]interface{}) error {
+func (t *splitTools) awaitChildResult(ctx context.Context, req mcplib.CallToolRequest, childID string, result map[string]interface{}) error {
 	if t.results == nil {
 		return nil
 	}
+	stopProgress := startChildResultProgress(ctx, req, childID)
+	defer stopProgress()
 	childResult, err := t.results.Wait(ctx, childID)
 	if err != nil {
 		if t.store != nil {
@@ -257,6 +262,51 @@ func (t *splitTools) awaitChildResult(ctx context.Context, childID string, resul
 		result["summary"] = childResult.Summary
 	}
 	return nil
+}
+
+func startChildResultProgress(ctx context.Context, req mcplib.CallToolRequest, childID string) func() {
+	if req.Params.Meta == nil || req.Params.Meta.ProgressToken == nil {
+		return func() {}
+	}
+	srv := server.ServerFromContext(ctx)
+	if srv == nil {
+		return func() {}
+	}
+	token := req.Params.Meta.ProgressToken
+	done := make(chan struct{})
+	go runChildResultProgress(ctx, done, childResultProgressInterval, func(step int) {
+		if err := srv.SendNotificationToClient(ctx, "notifications/progress", map[string]interface{}{
+			"progressToken": token,
+			"progress":      step,
+			"message":       fmt.Sprintf("Waiting for child session %s", childID),
+		}); err != nil {
+			log.WithError(err).WithField("childSessionID", childID).Debug("mcp: sending child result progress")
+		}
+	})
+	return func() { close(done) }
+}
+
+func runChildResultProgress(ctx context.Context, done <-chan struct{}, interval time.Duration, notify func(step int)) {
+	select {
+	case <-ctx.Done():
+		return
+	case <-done:
+		return
+	default:
+	}
+	notify(1)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for step := 2; ; step++ {
+		select {
+		case <-ctx.Done():
+			return
+		case <-done:
+			return
+		case <-ticker.C:
+			notify(step)
+		}
+	}
 }
 
 func (t *splitTools) handleAwaitSessionResult(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
@@ -335,7 +385,7 @@ func (t *splitTools) handleAwaitSessionResult(ctx context.Context, req mcplib.Ca
 		_ = t.store.SetChildResultDelivery(child.ID, "delivered")
 		return toolResultJSON(result), nil
 	}
-	if err := t.awaitChildResult(ctx, child.ID, result); err != nil {
+	if err := t.awaitChildResult(ctx, req, child.ID, result); err != nil {
 		return mcplib.NewToolResultError(fmt.Sprintf("waiting for child session: %v", err)), nil
 	}
 	return toolResultJSON(result), nil
@@ -422,7 +472,7 @@ func (t *splitTools) launchWorktree(ctx context.Context, req mcplib.CallToolRequ
 		"intent":           intent,
 	}
 	addInheritanceResult(result, inheritedCount, inheritErr)
-	if err := t.awaitChildResult(ctx, childID, result); err != nil {
+	if err := t.awaitChildResult(ctx, req, childID, result); err != nil {
 		return mcplib.NewToolResultError(fmt.Sprintf("waiting for child session: %v", err)), nil
 	}
 	return toolResultJSON(result), nil

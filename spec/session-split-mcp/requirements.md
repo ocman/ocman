@@ -185,6 +185,8 @@ sessions. The MCP is consumed by:
   - The split tool result includes the child session's terminal status and final
     assistant text.
   - Delivery happens without user intervention.
+  - While waiting, ocman emits periodic MCP progress notifications so a
+    progress-aware client does not time out an active child.
   - If the MCP caller disconnects, it can reconnect to the original wait
     without sending another child prompt, including after an ocman restart.
   - Ocman queues a reconnect reminder for the parent and defers it until the

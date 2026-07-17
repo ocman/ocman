@@ -316,7 +316,8 @@ Implementation notes:
   through the waiting `new_session` MCP call. Migration v34 persists delivery
   state so `await_session_result` can reconnect after a request disconnect or
   ocman restart without re-prompting the child; disconnects also defer a queued
-  reconnect reminder until the parent is idle.
+  reconnect reminder until the parent is idle. Both waits emit request-scoped
+  MCP progress immediately and every 10 s to reset OpenCode's request timeout.
 - `new_session` seeds the child with the parent's accumulated
   "Allow always" permissions when `worktree.inherit_permissions` is on
   (#101), and reports `permissionsInherited` / `permissionsInheritedCount`

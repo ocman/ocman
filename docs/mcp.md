@@ -68,10 +68,11 @@ directly (no Vite dev proxy).
 3. A structured Markdown prompt is assembled and sent to a new OpenCode
    session.
 4. A background watcher polls the child session. After the terminal child turn,
-   `new_session` returns its status and final assistant text directly. If the MCP
-   caller disconnects, ocman defers a parent reminder to call
-   `await_session_result`, which reconnects to that wait without prompting the
-   child again, including after an ocman restart. Direct
+   `new_session` returns its status and final assistant text directly. While it
+   waits, ocman emits MCP progress immediately and every 10 seconds so clients
+   keep the request alive. If the MCP caller disconnects, ocman defers a parent
+   reminder to call `await_session_result`, which reconnects to that wait without
+   prompting the child again, including after an ocman restart. Direct
    `send_message_to_parent` updates retain the explicit untrusted data boundary;
    `send_message_to_child` reopens the child for its next turn.
 

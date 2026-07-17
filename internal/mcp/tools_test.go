@@ -12,8 +12,10 @@ import (
 	"testing"
 	"time"
 
+	mcpclient "github.com/mark3labs/mcp-go/client"
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/mcptest"
+	mcpserver "github.com/mark3labs/mcp-go/server"
 	_ "modernc.org/sqlite"
 
 	"github.com/NoUseFreak/ocman/internal/db"
@@ -782,31 +784,62 @@ func TestAwaitSessionResult_ReconnectsRunningChild(t *testing.T) {
 		t.Fatal(err)
 	}
 	results := internalmcp.NewChildResultBroker()
+	progress := make(chan mcplib.JSONRPCNotification, 1)
+	observedProgress := make(chan mcplib.JSONRPCNotification, 1)
 	go func() {
-		deadline := time.Now().Add(time.Second)
-		for !results.Deliver("child-running", internalmcp.ChildResult{Status: "completed", Summary: "Checks passed."}) {
-			if time.Now().After(deadline) {
-				return
-			}
-			time.Sleep(time.Millisecond)
-		}
+		notification := <-progress
+		observedProgress <- notification
+		results.Deliver("child-running", internalmcp.ChildResult{Status: "completed", Summary: "Checks passed."})
 	}()
-	srv := buildTestMCPServerWithResults(t, stateDB, &fakePlatformForTools{}, nil, results)
+	tools := internalmcp.ServerTools(internalmcp.Deps{
+		StateDB:      stateDB,
+		Platform:     &fakePlatformForTools{},
+		PlatformID:   "opencode",
+		ChildResults: results,
+	})
+	mcpServer := mcpserver.NewMCPServer("test", "1.0.0")
+	mcpServer.AddTools(tools...)
+	httpServer := mcpserver.NewTestStreamableHTTPServer(mcpServer)
+	t.Cleanup(httpServer.Close)
+	client, err := mcpclient.NewStreamableHttpClient(httpServer.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Initialize(context.Background(), mcplib.InitializeRequest{Params: mcplib.InitializeParams{
+		ProtocolVersion: mcplib.LATEST_PROTOCOL_VERSION,
+		ClientInfo:      mcplib.Implementation{Name: "test", Version: "1.0.0"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	client.OnNotification(func(notification mcplib.JSONRPCNotification) {
+		if notification.Method == "notifications/progress" {
+			progress <- notification
+		}
+	})
 
 	req := mcplib.CallToolRequest{}
 	req.Params.Name = "await_session_result"
+	req.Params.Meta = &mcplib.Meta{ProgressToken: "child-progress"}
 	req.Params.Arguments = map[string]interface{}{
 		"session_id":       "parent-running",
 		"child_session_id": "child-running",
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	result, err := srv.Client().CallTool(ctx, req)
+	result, err := client.CallTool(ctx, req)
 	if err != nil {
 		t.Fatalf("CallTool: %v", err)
 	}
 	if result.IsError || !strings.Contains(resultText(result), "Checks passed.") {
 		t.Fatalf("unexpected resumed result: %s", resultText(result))
+	}
+	notification := <-observedProgress
+	if notification.Params.AdditionalFields["progressToken"] != "child-progress" {
+		t.Fatalf("progress token = %#v", notification.Params.AdditionalFields["progressToken"])
 	}
 	child, err := stateDB.GetChildSession("child-running")
 	if err != nil || child.ResultDelivery != "delivered" {
