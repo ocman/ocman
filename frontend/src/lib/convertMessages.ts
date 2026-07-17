@@ -79,16 +79,20 @@ export function relativizePath(absPath: string, projectDir: string): string {
 /**
  * Determine if the session is actively running based on the last
  * message. The assistant is running if the last message has no
- * finish reason (still streaming). Any finish value ("stop",
- * "tool-calls", etc.) means that turn is done. A message with an
- * error object is also not running.
+ * finish reason or completion timestamp (still streaming). Any finish
+ * value, completion timestamp, or error means that turn is done.
  */
 export function computeIsRunning(messages: Message[]): boolean {
   if (messages.length === 0) return false;
   const last = messages[messages.length - 1];
   if (!last.data) return false;
   if (last.data.role === 'user') return true;
-  if (last.data.role === 'assistant' && !last.data.finish && !last.data.error) return true;
+  if (
+    last.data.role === 'assistant' &&
+    !last.data.finish &&
+    !last.data.error &&
+    last.data.time?.completed === undefined
+  ) return true;
   return false;
 }
 

@@ -77,6 +77,17 @@ describe('computeTurnStats — model', () => {
   });
 });
 
+describe('computeTurnStats — completion', () => {
+  it('does not keep a completed tool-only assistant message live', () => {
+    const messages = [
+      makeMessage('u', { role: 'user' }, 1),
+      makeMessage('a', { role: 'assistant', time: { created: 2, completed: 3 } }, 2),
+    ];
+
+    expect(computeTurnStats(messages, []).get('a')?.isLive).toBe(false);
+  });
+});
+
 describe('latestTurnModel', () => {
   it('uses the completed latest turn, not the previous turn', () => {
     const messages = [

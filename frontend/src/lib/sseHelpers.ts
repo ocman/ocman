@@ -77,6 +77,7 @@ export function extractMessageFromEvent(
       mode: info.mode as string | undefined,
       cost: typeof info.cost === 'number' ? info.cost : undefined,
       tokens: info.tokens as Message['data']['tokens'],
+      time: info.time as Message['data']['time'],
       error: info.error as Message['data']['error'],
     },
   };

@@ -39,7 +39,7 @@ export interface TurnAggregate {
   toolCalls: number;
   /** Average output tok/s across LLM calls in the turn that have timing. */
   tps: number | null;
-  /** True when the last assistant message has no finish reason yet. */
+  /** True when the last assistant message has neither finished nor completed. */
   isLive: boolean;
   /** Unix ms when the user message was sent (turn start). */
   startedAt: number;
@@ -172,9 +172,10 @@ export function computeTurnStats(
 
     // The last turn stays live while the session is running, even if its
     // trailing message reports `finish: "tool-calls"` (an intermediate
-    // tool step). Only an error or a non-running session ends it. Earlier
-    // turns are live only when their trailing message has no finish yet.
-    const isLive = lastAsst.data.error
+    // tool step). A completion timestamp, error, or non-running session ends
+    // it. Earlier turns are live only when their trailing message is incomplete.
+    const isCompleted = lastAsst.data.time?.completed !== undefined;
+    const isLive = lastAsst.data.error || isCompleted
       ? false
       : isLastTurn
         ? isRunning || !lastAsst.data.finish

@@ -39,11 +39,12 @@ describe('extractMessageFromEvent', () => {
     expect(out!.parts).toEqual([]);
   });
 
-  it('uses the timeCreated from info.time when present', () => {
+  it('preserves the message time including completion when present', () => {
     const out = extractMessageFromEvent({
-      properties: { info: { id: 'm1', time: { created: 12345 } } },
+      properties: { info: { id: 'm1', time: { created: 12345, completed: 12346 } } },
     }, SID);
     expect(out!.message.timeCreated).toBe(12345);
+    expect(out!.message.data.time).toEqual({ created: 12345, completed: 12346 });
   });
 
   it('reads payload at the top level when there is no `properties` envelope', () => {

@@ -131,6 +131,15 @@ describe('isSessionRunning', () => {
     expect(isSessionRunning(makeMessage('m', { role: 'assistant', finish: 'stop' }), 'busy')).toBe(true);
   });
 
+  it('returns false for a completed tool-only assistant message despite stale busy status', () => {
+    expect(
+      isSessionRunning(
+        makeMessage('m', { role: 'assistant', time: { created: 1, completed: 2 } }),
+        'busy',
+      ),
+    ).toBe(false);
+  });
+
   it('returns true for a streaming assistant message (no finish, no error)', () => {
     expect(isSessionRunning(makeMessage('m', { role: 'assistant' }))).toBe(true);
   });

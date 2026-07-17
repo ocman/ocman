@@ -86,6 +86,11 @@ export function deriveRawStatus(lastMsg: Message | null): Session['status'] {
   return 'busy';
 }
 
+function isCompletedToolOnlyAssistant(message: Message | null): boolean {
+  const data = message?.data;
+  return data?.role === 'assistant' && !data.finish && !data.error && data.time?.completed !== undefined;
+}
+
 /**
  * The assistant is "running" whenever the last message is from the
  * assistant with no `finish` reason and no `error` (still streaming).
@@ -104,6 +109,9 @@ export function isSessionRunning(
   awaitingAssistantResponse = false,
 ): boolean {
   if (awaitingAssistantResponse && lastMsg?.data?.role === 'user') return true;
+  // A direct !bash command is stored as an assistant envelope without a
+  // finish reason, but its completion timestamp proves no turn is active.
+  if (isCompletedToolOnlyAssistant(lastMsg)) return false;
   if (sessionStatus === 'busy') return true;
   if (sessionStatus === 'error' || sessionStatus === 'done') return false;
   if (!lastMsg) return false;

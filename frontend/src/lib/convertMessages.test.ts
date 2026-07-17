@@ -180,6 +180,12 @@ describe('computeIsRunning', () => {
   it('returns false when the last assistant message has an error', () => {
     expect(computeIsRunning([makeMessage('m', { role: 'assistant', error: { name: 'x' } })])).toBe(false);
   });
+
+  it('returns false for a completed tool-only assistant message', () => {
+    expect(computeIsRunning([
+      makeMessage('m', { role: 'assistant', time: { created: 1, completed: 2 } }),
+    ])).toBe(false);
+  });
 });
 
 describe('isSynthesizedTerminal', () => {
