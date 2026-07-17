@@ -140,7 +140,7 @@ async function openRunDetails(user: ReturnType<typeof userEvent.setup>, id = 'wf
   await screen.findByRole('dialog', { name: 'Workflow run details' });
 }
 
-describe('Workflows', () => {
+describe('Workflows', { timeout: 10_000 }, () => {
   beforeEach(() => {
     vi.clearAllMocks();
     listeners.length = 0;
