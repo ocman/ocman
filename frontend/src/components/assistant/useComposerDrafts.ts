@@ -46,8 +46,6 @@ export function useComposerDrafts(
     if (!el || !sessionId) return;
     const draft = getDraft(sessionId);
     el.value = draft;
-    el.style.height = 'auto';
-    if (draft) el.style.height = Math.min(el.scrollHeight, 200) + 'px';
     el.focus();
   }, [sessionId, inputRef]);
 

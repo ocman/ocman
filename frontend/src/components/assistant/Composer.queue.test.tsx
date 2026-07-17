@@ -36,3 +36,14 @@ describe('Composer queue', () => {
     expect(screen.getByText('1m 31s')).toBeInTheDocument();
   });
 });
+
+describe('Composer input', () => {
+  it('does not rewrite its height while typing', () => {
+    render(<Composer isRunning={false} />);
+    const input = screen.getByRole('textbox');
+
+    fireEvent.input(input, { target: { value: 'hello' } });
+
+    expect((input as HTMLTextAreaElement).style.height).toBe('');
+  });
+});

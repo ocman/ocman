@@ -439,8 +439,6 @@ function ComposerImpl({
     const el = inputRef.current;
     if (!el) return;
     el.value = '/' + skill + ' ';
-    el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 200) + 'px';
     el.focus();
     const sid = sessionIdRef.current;
     if (sid) scheduleDraftSave(sid, () => el.value);
@@ -450,7 +448,6 @@ function ComposerImpl({
     const el = inputRef.current;
     if (!el) return;
     el.value = '';
-    el.style.height = 'auto';
     setShowSlashMenu(false);
     setSlashFilter('');
     setSlashIndex(0);
@@ -492,8 +489,6 @@ function ComposerImpl({
       return;
     }
     el.value = '/' + cmd.name + ' ';
-    el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 200) + 'px';
     el.focus();
     setShowSlashMenu(false);
     setSlashFilter('');
@@ -639,7 +634,6 @@ function ComposerImpl({
         e.preventDefault();
         setIsBashModeRef.current(false);
         el.value = '';
-        el.style.height = 'auto';
         el.dispatchEvent(new CustomEvent('oc-slash-update', { detail: { show: false, filter: '' } }));
         el.dispatchEvent(new CustomEvent('oc-clear-images'));
         el.dispatchEvent(new CustomEvent('oc-clear-files'));
@@ -667,7 +661,6 @@ function ComposerImpl({
           // Picker/dialog commands are client-only: don't dispatch them.
           if (['model', 'agent', 'agents', 'help', 'skills'].includes(route.command)) {
             el.value = '';
-            el.style.height = 'auto';
             const sid = sessionIdRef.current;
             if (sid) clearDraftNow(sid);
             const evt = route.command === 'model'
@@ -697,7 +690,6 @@ function ComposerImpl({
 
         setIsBashModeRef.current(false);
         el.value = '';
-        el.style.height = 'auto';
         el.dispatchEvent(new CustomEvent('oc-slash-update', { detail: { show: false, filter: '' } }));
         const sid = sessionIdRef.current;
         if (sid) clearDraftNow(sid);
@@ -707,9 +699,6 @@ function ComposerImpl({
     };
 
     const handleInput = () => {
-      el.style.height = 'auto';
-      el.style.height = Math.min(el.scrollHeight, 200) + 'px';
-
       const val = el.value;
       // Detect bash mode when input starts with !, but only when the
       // active platform actually supports shell execution. On
@@ -800,22 +789,18 @@ function ComposerImpl({
     };
     const handleModelPickerOpen = (e: Event) => {
       el.value = '';
-      el.style.height = 'auto';
       openModelPicker(((e as CustomEvent).detail as string) || '');
     };
     const handleAgentPickerOpen = (e: Event) => {
       el.value = '';
-      el.style.height = 'auto';
       openAgentPicker(((e as CustomEvent).detail as string) || '');
     };
     const handleHelpOpen = () => {
       el.value = '';
-      el.style.height = 'auto';
       setHelpOpen(true);
     };
     const handleSkillPickerOpen = (e: Event) => {
       el.value = '';
-      el.style.height = 'auto';
       openSkillPicker(((e as CustomEvent).detail as string) || '');
     };
     const handleBashMode = (e: Event) => {
