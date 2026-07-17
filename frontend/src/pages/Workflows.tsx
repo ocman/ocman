@@ -13,7 +13,7 @@ import {
 import { useWorkflows } from '../lib/useCapabilities';
 import { onSseConnect, onWorkflowRunUpdated, onWorkflowTriggerUpdated } from '../lib/useGlobalEvents';
 import { usePageTitle } from '../lib/headerContext';
-import { WorkflowBuilder } from './WorkflowBuilder';
+import { WorkflowBuilder, WorkflowRunGraph } from './WorkflowBuilder';
 import { Button, SearchField, SelectField } from '../components/Control';
 import { Modal } from '../components/Modal';
 import './Workflows.css';
@@ -721,28 +721,12 @@ function RunView({
         </ul>
       )}
       <div className="workflow-run-layout">
-        <div>
-          <div className="workflow-graph" role="region" aria-label="Workflow run graph">
-            {run.nodes.map((node, index) => (
-              <div className="workflow-step" key={node.nodeId}>
-                {index > 0 && <span aria-hidden="true">-&gt;</span>}
-                <button
-                  type="button"
-                  className="workflow-run-node"
-                  data-state={node.state}
-                  aria-pressed={selectedNode?.nodeId === node.nodeId}
-                  onClick={() => setSelectedNodeID(node.nodeId)}
-                >
-                  <small>
-                    Phase {index + 1} · {node.type}
-                  </small>
-                  <strong>{node.name}</strong>
-                  <State state={node.state} />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
+        <WorkflowRunGraph
+          definition={run.version.definition}
+          runs={run.nodes}
+          selectedID={selectedNode?.nodeId}
+          onSelect={setSelectedNodeID}
+        />
         <aside className="workflow-run-inspector" aria-label="Selected node details">
           {selectedNode ? (
             <RunNode run={run} node={selectedNode} mutate={mutate} onSelectRun={onSelectRun} />

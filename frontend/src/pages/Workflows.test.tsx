@@ -545,6 +545,25 @@ describe('Workflows', { timeout: 10_000 }, () => {
     await waitFor(() => expect(apiMock.versions.mock.calls.length).toBeGreaterThanOrEqual(6));
   });
 
+  it('renders run progress on the dependency graph', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <Workflows />
+      </MemoryRouter>,
+    );
+
+    await openRunDetails(user);
+    screen.getByRole('region', { name: 'Workflow run graph' });
+    const review = screen.getByTestId('rf__node-review');
+    const ship = screen.getByTestId('rf__node-ship');
+    const y = (node: HTMLElement) => Number(/translate\([^,]+,\s*([\d.-]+)px\)/.exec(node.style.transform)?.[1]);
+    expect(review.querySelector('.workflow-canvas-node')).toHaveAttribute('data-state', 'ready');
+    expect(ship.querySelector('.workflow-canvas-node')).toHaveAttribute('data-state', 'pending');
+    expect(y(review)).toBeLessThan(y(ship));
+    expect(y(ship) - y(review)).toBeGreaterThan(250);
+  });
+
   it('publishes automated-only versions without trying a manual start', async () => {
     const user = userEvent.setup();
     apiMock.publish.mockResolvedValue({
@@ -818,7 +837,10 @@ describe('Workflows', { timeout: 10_000 }, () => {
 
     // Collapsed by default: item rows hidden, summary shown.
     const toggle = await screen.findByRole('button', { name: /Expand 2 mapped items/ });
-    expect(screen.getByRole('button', { name: /Fan/ })).toHaveAttribute('data-state', 'successful');
+    expect(screen.getByTestId('rf__node-fan').querySelector('.workflow-canvas-node')).toHaveAttribute(
+      'data-state',
+      'successful',
+    );
     expect(screen.getByText('Phase 1 · map · fan')).toBeInTheDocument();
     expect(screen.queryByTestId('workflow-map-items')).not.toBeInTheDocument();
 
@@ -835,7 +857,7 @@ describe('Workflows', { timeout: 10_000 }, () => {
     await waitFor(() => expect(apiMock.run).toHaveBeenCalledWith('wfr_child_a'));
 
     // Join renders the input-ordered per-item statuses.
-    await user.click(screen.getByRole('button', { name: /Phase 2 · join/ }));
+    await user.click(screen.getByTestId('rf__node-join').querySelector('.workflow-canvas-node')!);
     const join = screen.getByTestId('workflow-join');
     expect(join).toHaveTextContent('always');
     expect(join).toHaveTextContent('1/2 succeeded');
@@ -845,7 +867,7 @@ describe('Workflows', { timeout: 10_000 }, () => {
     expect(screen.getByLabelText('b joined output')).toHaveTextContent('"error": "failed"');
 
     // Switching inspector nodes resets the map list to its collapsed state.
-    await user.click(screen.getByRole('button', { name: /Phase 1 · map/ }));
+    await user.click(screen.getByTestId('rf__node-fan').querySelector('.workflow-canvas-node')!);
     expect(screen.queryByTestId('workflow-map-items')).not.toBeInTheDocument();
   });
 

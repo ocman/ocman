@@ -16,28 +16,31 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import type { WorkflowDefinition } from '../lib/api';
-import type { WorkflowNodeDefinition } from '../lib/api.types';
+import type { WorkflowNodeDefinition, WorkflowNodeRun } from '../lib/api.types';
 import { Button } from '../components/Control';
 import { ModelSelect } from '../components/ModelSelect';
 
-type FlowNode = Node<{ node: WorkflowNodeDefinition }, 'workflow'>;
+type FlowNode = Node<{ node: WorkflowNodeDefinition; run?: WorkflowNodeRun; phase?: number }, 'workflow'>;
 const nodeTypes = { workflow: WorkflowNode };
 const nodeTypesList: WorkflowNodeDefinition['type'][] = ['approval', 'agent', 'command', 'subworkflow', 'map', 'join'];
 
-function flowNodes(definition: WorkflowDefinition): FlowNode[] {
+function flowNodes(definition: WorkflowDefinition, runs: WorkflowNodeRun[] = [], selectedID?: string): FlowNode[] {
+  const isRun = runs.length > 0;
   const graph = new Graph()
-    .setGraph({ rankdir: 'TB', nodesep: 80, ranksep: 80, marginx: 40, marginy: 40 })
+    .setGraph({ rankdir: 'TB', nodesep: 80, ranksep: isRun ? 120 : 80, marginx: 40, marginy: 40 })
     .setDefaultEdgeLabel(() => ({}));
-  definition.nodes.forEach((node) => graph.setNode(node.id, { width: 195, height: 72 }));
+  definition.nodes.forEach((node) => graph.setNode(node.id, { width: isRun ? 245 : 195, height: isRun ? 180 : 72 }));
   (definition.dependencies ?? []).forEach(({ from, to }) => graph.setEdge(from, to));
   layout(graph);
   return definition.nodes.map((node) => {
     const position = graph.node(node.id);
+    const phase = runs.findIndex((run) => run.nodeId === node.id);
     return {
       id: node.id,
       type: 'workflow',
       position: { x: position.x - position.width / 2, y: position.y - position.height / 2 },
-      data: { node },
+      selected: node.id === selectedID,
+      data: { node, run: runs[phase], phase: phase >= 0 ? phase + 1 : undefined },
     };
   });
 }
@@ -52,12 +55,49 @@ function flowEdges(definition: WorkflowDefinition): Edge[] {
 
 function WorkflowNode({ data, selected }: NodeProps<FlowNode>) {
   return (
-    <div className="workflow-canvas-node" data-selected={selected || undefined} data-type={data.node.type}>
+    <div
+      className={`workflow-canvas-node${data.run ? ' nodrag nopan' : ''}`}
+      data-selected={selected || undefined}
+      data-type={data.node.type}
+      data-state={data.run?.state}
+    >
       <Handle type="target" position={Position.Top} />
-      <small>{data.node.type}</small>
+      <small>{data.phase ? `Phase ${data.phase} · ${data.node.type}` : data.node.type}</small>
       <strong>{data.node.name}</strong>
       <span>{data.node.id}</span>
+      {data.run && <strong data-state={data.run.state}>{data.run.state}</strong>}
       <Handle type="source" position={Position.Bottom} />
+    </div>
+  );
+}
+
+export function WorkflowRunGraph({
+  definition,
+  runs,
+  selectedID,
+  onSelect,
+}: {
+  definition: WorkflowDefinition;
+  runs: WorkflowNodeRun[];
+  selectedID?: string;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div className="workflow-canvas workflow-run-graph" role="region" aria-label="Workflow run graph">
+      <ReactFlow
+        nodes={flowNodes(definition, runs, selectedID)}
+        edges={flowEdges(definition)}
+        nodeTypes={nodeTypes}
+        nodesDraggable={false}
+        nodesConnectable={false}
+        onNodeClick={(_, node) => onSelect(node.id)}
+        minZoom={0.1}
+        fitViewOptions={{ padding: 0.2 }}
+        fitView
+      >
+        <Background gap={16} />
+        <Controls />
+      </ReactFlow>
     </div>
   );
 }
