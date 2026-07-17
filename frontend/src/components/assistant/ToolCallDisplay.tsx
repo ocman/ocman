@@ -29,7 +29,6 @@ import {
   type QuestionData,
 } from '../../lib/threadHelpers';
 import type { FC } from 'react';
-import { EmbeddedThread } from '../EmbeddedThread';
 import { MarkdownText } from './MarkdownText';
 
 const ToolDuration: FC<{ startedAt: number; completedAt: number; isRunning: boolean; label?: string }> = ({
@@ -303,12 +302,10 @@ function AutoApprovedNotice({
 
 function taskActivity(
   liveTools: { toolName: string; summary?: string }[],
-  taskOutput: string,
   parts: import('../../lib/api').Part[],
 ) {
   const liveTool = liveTools.at(-1);
   if (liveTool) return `${liveTool.toolName}${liveTool.summary ? `: ${liveTool.summary}` : ''}`;
-  if (taskOutput) return taskOutput.replace(/\s+/g, ' ').trim();
 
   for (let i = parts.length - 1; i >= 0; i--) {
     const data = parts[i].data;
@@ -392,8 +389,7 @@ export const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsTe
     );
   }
 
-  // Subagent tasks render as a compact card with an embedded thread preview.
-  // Clicking the header navigates to the full sub-session page.
+  // Subagent tasks render their final result as a short markdown preview.
   if (toolName === '__task__') {
     const lines = (argsText || '').split('\n');
     const taskStatus = lines[0] || 'running';
@@ -403,60 +399,52 @@ export const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsTe
     let taskOutput = '';
     type LiveTool = { toolName: string; summary?: string; subagentId?: string; startedAt?: string };
     let liveTools: LiveTool[] = [];
-    let subMessages: import('../../lib/api').Message[] = [];
     let subParts: import('../../lib/api').Part[] = [];
     try {
       const parsed = JSON.parse(typeof result === 'string' ? result : '{}');
       sessionId = parsed.taskId || '';
-      taskOutput = (parsed.taskOutput || '').replace(/^<task_result>\n?/, '').replace(/\n?<\/task_result>$/, '').trim();
+      const rawTaskOutput = parsed.taskOutput || '';
+      taskOutput = (rawTaskOutput.match(/<task_result(?:\s[^>]*)?>([\s\S]*?)(?:<\/task_result>|$)/i)?.[1] ?? rawTaskOutput).trim();
       if (Array.isArray(parsed.liveTools)) liveTools = parsed.liveTools as LiveTool[];
       if (parsed.subSession) {
-        const sub = parsed.subSession as { messages?: unknown[]; parts?: unknown[] };
-        if (Array.isArray(sub.messages)) subMessages = sub.messages as import('../../lib/api').Message[];
+        const sub = parsed.subSession as { parts?: unknown[] };
         if (Array.isArray(sub.parts)) subParts = sub.parts as import('../../lib/api').Part[];
       }
     } catch { /* ignore */ }
 
-    let statusIcon = '\u2022';
     let statusClass = 'oc-tool-running';
     let statusTitle = 'Running';
-    if (taskStatus === 'completed') { statusIcon = '\u2713'; statusClass = 'oc-tool-done'; statusTitle = 'Completed'; }
-    else if (taskStatus === 'error') { statusIcon = '\u2717'; statusClass = 'oc-tool-error'; statusTitle = 'Error'; }
+    if (taskStatus === 'completed') { statusClass = 'oc-tool-done'; statusTitle = 'Completed'; }
+    else if (taskStatus === 'error') { statusClass = 'oc-tool-error'; statusTitle = 'Error'; }
 
-    // Show the embedded thread when we have sub-session data.
-    const hasSubSession = subMessages.length > 0;
-    const canExpand = hasSubSession || Boolean(taskOutput);
-    const activity = taskActivity(liveTools, taskOutput, subParts);
+    const activity = taskActivity(liveTools, subParts);
 
     return (
       <div className={`oc-tool oc-tool-task ${statusClass} ${taskExpanded ? 'oc-tool-expanded' : ''}`}>
         <div className="oc-tool-header">
-          <span className={`oc-tool-icon ${statusClass}`} title={statusTitle}>{statusIcon}</span>
           <span className="oc-tool-label">{label}</span>
+          <span className={`oc-task-status ${statusClass}`}>{statusTitle}</span>
           {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={taskStatus === 'running'} />}
-          {canExpand && (
-            <button
-              type="button"
-              className="oc-task-expand"
-              aria-expanded={taskExpanded}
-              aria-label={`${taskExpanded ? 'Collapse' : 'Expand'} subagent task`}
-              onClick={() => setTaskExpanded((expanded) => !expanded)}
-            >
-              {taskExpanded ? 'Collapse' : 'Expand'}
-            </button>
-          )}
           {sessionId && <a className="oc-task-link" href={`/session/${sessionId}`} aria-label="Open detailed subagent session">{'\u2197'}</a>}
         </div>
-        <div className="oc-task-activity" data-testid="subagent-activity" title={activity} aria-live="polite">{activity}</div>
-        {taskExpanded && hasSubSession && (
-          <div className="oc-tool-content">
-            <EmbeddedThread messages={subMessages} parts={subParts} />
+        {taskOutput ? (
+          <div
+            className={`oc-task-result oc-md ${taskExpanded ? 'oc-task-result-expanded' : ''}`}
+            role="button"
+            tabIndex={0}
+            aria-expanded={taskExpanded}
+            aria-label={`${taskExpanded ? 'Collapse' : 'Expand'} subagent task result`}
+            onClick={() => setTaskExpanded((expanded) => !expanded)}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return;
+              event.preventDefault();
+              setTaskExpanded((expanded) => !expanded);
+            }}
+          >
+            <MarkdownText text={taskOutput} />
           </div>
-        )}
-        {taskExpanded && !hasSubSession && taskOutput && (
-          <div className="oc-tool-content">
-            <div className="oc-tool-pre oc-tool-output oc-md"><MarkdownText text={taskOutput} /></div>
-          </div>
+        ) : (
+          <div className="oc-task-activity" data-testid="subagent-activity" title={activity} aria-live="polite">{activity}</div>
         )}
       </div>
     );

@@ -179,16 +179,17 @@ describe('ToolCallDisplay subagent task', () => {
     ['completed', 'Completed'],
     ['error', 'Error'],
   ])('renders %s tasks compactly by default', (status, statusTitle) => {
-    renderTool({
+    const { container } = renderTool({
       toolName: '__task__',
       argsText: `${status}\nInspect implementation`,
-      result: JSON.stringify({ taskId: 'ses_sub', subSession: subSession('Found the relevant component') }),
+      result: JSON.stringify({ taskId: 'ses_sub', taskOutput: '**Found** the relevant component' }),
     });
 
-    expect(screen.getByTitle(statusTitle)).toBeTruthy();
-    expect(screen.getByText('Inspect implementation')).toBeTruthy();
-    expect(screen.getByText('Found the relevant component')).toBeTruthy();
-    expect(screen.queryByTestId('embedded-thread')).toBeNull();
+    const header = container.querySelector('.oc-tool-header')!;
+    expect(header.children[0].textContent).toBe('Inspect implementation');
+    expect(header.children[1].textContent).toBe(statusTitle);
+    expect(screen.getByText('Found')).toBeTruthy();
+    expect(container.querySelector('.oc-task-result strong')?.textContent).toBe('Found');
   });
 
   it('updates the latest activity and falls back when none is available', () => {
@@ -212,30 +213,56 @@ describe('ToolCallDisplay subagent task', () => {
     expect(screen.queryByText('Waiting for activity...')).toBeNull();
   });
 
-  it('expands and collapses the thread independently from session navigation', () => {
-    renderTool({
+  it('expands and collapses the full markdown result by clicking the body', () => {
+    const { container } = renderTool({
       toolName: '__task__',
       argsText: 'completed\nInspect implementation',
-      result: JSON.stringify({ taskId: 'ses_sub', subSession: subSession('Full subagent output') }),
+      result: JSON.stringify({ taskId: 'ses_sub', taskOutput: 'First line\n\nSecond line' }),
     });
 
     const sessionLink = screen.getByRole('link', { name: 'Open detailed subagent session' });
     expect(sessionLink.getAttribute('href')).toBe('/session/ses_sub');
-    expect(screen.queryByTestId('embedded-thread')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Expand subagent task' })).toBeNull();
+    const body = container.querySelector('.oc-task-result')!;
+    expect(body.className).not.toContain('oc-task-result-expanded');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Expand subagent task' }));
-    expect(screen.getByTestId('embedded-thread')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Collapse subagent task' }));
-    expect(screen.queryByTestId('embedded-thread')).toBeNull();
+    fireEvent.click(body);
+    expect(body.className).toContain('oc-task-result-expanded');
+    fireEvent.keyDown(body, { key: 'Enter' });
+    expect(body.className).not.toContain('oc-task-result-expanded');
   });
 
-  it('uses a one-line summary hook for narrow layouts', () => {
+  it('limits the result preview to a few lines', () => {
     renderTool({
       toolName: '__task__',
       argsText: 'completed\nInspect implementation',
       result: JSON.stringify({ taskOutput: 'A long final summary that must not make the compact card taller on narrow screens.' }),
     });
 
-    expect(screen.getByTestId('subagent-activity').className).toContain('oc-task-activity');
+    const resultRule = assistantThreadCss.match(/\.oc-task-result\s*\{[^}]*\}/)?.[0] || '';
+    expect(resultRule).toContain('max-height: 6em');
+    expect(resultRule).toContain('overflow: hidden');
+  });
+
+  it('renders only the content inside the task result XML wrapper', () => {
+    const { container } = renderTool({
+      toolName: '__task__',
+      argsText: 'completed\nInspect implementation',
+      result: JSON.stringify({ taskOutput: '  <task_result source="agent">\n**Done**\n</task_result>\nmetadata' }),
+    });
+
+    expect(container.querySelector('.oc-task-result')?.textContent).toBe('Done');
+    expect(container.querySelector('.oc-task-result strong')?.textContent).toBe('Done');
+  });
+
+  it('strips task XML when truncation removed the closing tags', () => {
+    const { container } = renderTool({
+      toolName: '__task__',
+      argsText: 'completed\nAudit auth and APIs',
+      result: JSON.stringify({ taskOutput: '<task id="ses_sub" state="completed"> <task_result> ## Critical\nFinding' }),
+    });
+
+    expect(container.querySelector('.oc-task-result')?.textContent).toBe('Critical\nFinding');
+    expect(container.querySelector('.oc-task-result')?.textContent).not.toContain('<task');
   });
 });

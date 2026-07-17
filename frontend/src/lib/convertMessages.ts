@@ -533,6 +533,26 @@ export function createConvertMessages(): ConvertMessagesFn {
               result: undefined,
             });
             break;
+          } else if (toolName === 'new_session' || toolName === 'mcp_new_session' || toolName === 'ocman_new_session') {
+            let childResult: Record<string, unknown> = {};
+            try {
+              childResult = (typeof st.output === 'string' ? JSON.parse(st.output) : st.output) as Record<string, unknown> || {};
+            } catch { /* keep the card useful while output is incomplete */ }
+            const childID = typeof childResult.child_session_id === 'string' ? childResult.child_session_id : '';
+            const childStatus = typeof childResult.status === 'string' ? childResult.status : toolStatus(st.status, partIdx);
+            const summary = typeof childResult.summary === 'string' ? childResult.summary : '';
+            toolCalls.push({
+              type: 'tool-call' as const,
+              toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
+              toolName: '__task__',
+              argsText: `${childStatus}${toolTimeSuffix(partIdx)}\n${inp.intent || title || 'Child session'}`,
+              result: JSON.stringify({
+                taskId: childID,
+                taskOutput: summary,
+                subSession: childID ? taskLiveOutput?.[childID] : undefined,
+              }),
+            });
+            break;
           } else if (
             toolName === 'task' ||
             toolName === 'mcp_task' ||

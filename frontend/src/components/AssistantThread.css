@@ -832,26 +832,30 @@
   overflow: auto;
 }
 
-/* Subagent task link */
-.oc-task-expand,
+/* Subagent task card */
+.oc-task-status {
+  flex-shrink: 0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--overlay0);
+}
+.oc-task-status.oc-tool-done { color: var(--accent2); }
+.oc-task-status.oc-tool-error { color: var(--danger); }
+.oc-task-status.oc-tool-running {
+  color: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
 .oc-task-link {
   color: var(--overlay0);
   font-size: 11px;
   flex-shrink: 0;
 }
-.oc-task-expand {
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-  font-family: inherit;
-  padding: 0;
-}
-.oc-tool-task .oc-tool-header:hover .oc-task-link,
-.oc-task-expand:hover {
+.oc-tool-task .oc-tool-header:hover .oc-task-link {
   color: var(--accent);
 }
 .oc-task-activity {
-  margin: -2px 12px 8px 34px;
+  margin: -2px 12px 8px;
   color: var(--overlay0);
   font-family: var(--font-conversation-mono);
   font-size: 11px;
@@ -859,6 +863,21 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.oc-task-result {
+  max-height: 6em;
+  margin: -2px 12px 10px;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.oc-task-result:focus-visible { outline: 1px solid var(--accent); }
+.oc-task-result-expanded { max-height: none; }
+.oc-task-result > :first-child,
+.oc-task-result > :first-child > :first-child { margin-top: 0; }
+.oc-task-result > :last-child,
+.oc-task-result > :last-child > :last-child { margin-bottom: 0; }
 
 /* Subagent streaming preview (while task is running, before final output).
    Small, scroll-pinned container that tails the subagent's latest stdout. */

@@ -443,6 +443,30 @@ describe('convertMessages', () => {
     expect(parsedResult.subSession).toBeUndefined();
   });
 
+  it.each(['new_session', 'mcp_new_session', 'ocman_new_session'])('renders %s child sessions as task cards', (tool) => {
+    const m = makeMessage('m', { role: 'assistant' });
+    const out = convertMessages([m], [
+      makePart('m', {
+        type: 'tool',
+        tool,
+        state: {
+          status: 'completed',
+          input: { intent: 'Audit auth and APIs' },
+          output: JSON.stringify({ child_session_id: 'ses_child', status: 'completed', summary: '**Found** two issues.' }),
+        },
+      } as PartData),
+    ]);
+    const items = asContentArray(out[0].content);
+    const tc = items.find((i) => i.type === 'tool-call') as { toolName: string; argsText: string; result?: string };
+
+    expect(tc.toolName).toBe('__task__');
+    expect(tc.argsText).toBe('completed\nAudit auth and APIs');
+    expect(JSON.parse(tc.result as string)).toMatchObject({
+      taskId: 'ses_child',
+      taskOutput: '**Found** two issues.',
+    });
+  });
+
   it('renders question calls as __question__ tool-calls', () => {
     const m = makeMessage('m', { role: 'assistant' });
     const out = convertMessages([m], [
