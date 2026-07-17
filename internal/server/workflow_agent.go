@@ -69,6 +69,14 @@ func (e *workflowAgentExecutor) Inspect(ctx context.Context, session workflows.A
 		result.Error = detail.Session.LastErrorMessage
 		return result, nil
 	}
+	if session.State == workflows.AgentCorrecting {
+		var ok bool
+		result.FinalMessage, ok = correctionAssistantMessage(detail.Messages, detail.Parts)
+		if !ok {
+			result.State = "busy"
+		}
+		return result, nil
+	}
 	result.FinalMessage = finalAssistantMessage(detail.Messages, detail.Parts)
 	return result, nil
 }
@@ -78,6 +86,22 @@ func (e *workflowAgentExecutor) Cancel(ctx context.Context, session workflows.Ag
 }
 
 func finalAssistantMessage(messages []db.Message, parts []db.Part) string {
+	text, _ := assistantMessage(messages, parts)
+	return text
+}
+
+func correctionAssistantMessage(messages []db.Message, parts []db.Part) (string, bool) {
+	start := 0
+	for i, message := range messages {
+		var data db.MessageData
+		if json.Unmarshal(message.Data, &data) == nil && data.Role == "user" {
+			start = i + 1
+		}
+	}
+	return assistantMessage(messages[start:], parts)
+}
+
+func assistantMessage(messages []db.Message, parts []db.Part) (string, bool) {
 	var latest db.Message
 	for _, message := range messages {
 		var data db.MessageData
@@ -98,7 +122,7 @@ func finalAssistantMessage(messages []db.Message, parts []db.Part) string {
 			text = append(text, data.Text)
 		}
 	}
-	return strings.Join(text, "\n")
+	return strings.Join(text, "\n"), latest.ID != ""
 }
 
 func (s *Server) runWorkflowEngine(ctx context.Context) {

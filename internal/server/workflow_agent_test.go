@@ -76,6 +76,44 @@ func TestWorkflowAgentInspectReturnsFinalMessage(t *testing.T) {
 	}
 }
 
+func TestWorkflowAgentInspectWaitsForCorrectionResponse(t *testing.T) {
+	messages := []db.Message{
+		{ID: "prompt", TimeCreated: 1, Data: json.RawMessage(`{"role":"user"}`)},
+		{ID: "invalid", TimeCreated: 2, Data: json.RawMessage(`{"role":"assistant"}`)},
+		{ID: "correction", TimeCreated: 3, Data: json.RawMessage(`{"role":"user"}`)},
+	}
+	parts := []db.Part{{MessageID: "invalid", Data: json.RawMessage(`{"type":"text","text":"not json"}`)}}
+	p := &fakePlatform{
+		id: "fake",
+		sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+			return &platforms.SessionDetail{
+				Session:  &db.Session{ID: "session-1", Status: "done"},
+				Messages: messages,
+				Parts:    parts,
+			}, nil
+		},
+	}
+	registry := platforms.NewRegistry()
+	registry.Register(p)
+	srv := New(nil, openWatcherTestStateDB(t), "", registry, nil)
+	result, err := (&workflowAgentExecutor{s: srv}).Inspect(t.Context(), workflows.AgentSession{ID: "session-1", Platform: "fake", State: workflows.AgentCorrecting})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != "busy" || result.FinalMessage != "" {
+		t.Fatalf("stale response was consumed during correction: %+v", result)
+	}
+	messages = append(messages, db.Message{ID: "corrected", TimeCreated: 4, Data: json.RawMessage(`{"role":"assistant"}`)})
+	parts = append(parts, db.Part{MessageID: "corrected", Data: json.RawMessage(`{"type":"text","text":"{\"ok\":true}"}`)})
+	result, err = (&workflowAgentExecutor{s: srv}).Inspect(t.Context(), workflows.AgentSession{ID: "session-1", Platform: "fake", State: workflows.AgentCorrecting})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != "done" || result.FinalMessage != `{"ok":true}` {
+		t.Fatalf("corrected response was not consumed: %+v", result)
+	}
+}
+
 func TestWorkflowAgentCancelUsesSessionService(t *testing.T) {
 	var aborted string
 	p := &fakePlatform{id: "fake", abortFn: func(req platforms.AbortRequest) error {
