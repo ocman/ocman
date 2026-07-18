@@ -82,9 +82,11 @@ flowchart TD
    through narrow forge and session-status adapters. It schedules approval,
   permission-scoped command, and agent nodes from persisted dependency
    state. The command executor owns directory/environment policy, bounded
-  logs, JSON stdout validation, and process-tree cancellation; agent attempts
-  create/send/abort through the session service, poll platform-neutral
-  session status, and decode their final message as JSON. REST, MCP, and SSE
+   logs, JSON stdout validation, and process-tree cancellation; agent attempts
+   create/send/abort through the session service and poll platform-neutral
+   session status. Agents with an `outputSchema` receive that JSON Schema in
+   their prompt and have their final value validated by `jsonschema`; agents
+   without one only need to complete successfully. REST, MCP, and SSE
   never implement independent transitions. Every node exposes one canonical
   Node Result; dependency-scoped interpolation passes its JSON output to
   commands, environments, prompts, maps, and CEL policies. The auxiliary

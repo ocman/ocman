@@ -32,7 +32,12 @@ nodes:
         Use only this item and the shared migration guidance supplied by the workflow author.
         Do not stage, reset, stash, commit, or push.
         Include the exact `git diff --no-ext-diff --no-textconv --` output.
-        Reply with only JSON: {"summary":"...","diff":"..."}.
+      outputSchema:
+        type: object
+        properties:
+          summary: {type: string}
+          diff: {type: string}
+        required: [summary, diff]
   - id: review-correctness
     name: Review correctness independently
     type: agent
@@ -45,7 +50,12 @@ nodes:
       prompt: |
         Review implementation result ${nodes.implement.output} for ${item.id} against the correctness policy.
         Do not edit files or use implementer session context.
-        Reply with only JSON: {"approved":true,"findings":[]}.
+      outputSchema:
+        type: object
+        properties:
+          approved: {type: boolean}
+          findings: {type: array}
+        required: [approved, findings]
   - id: review-adversarial
     name: Review adversarially and independently
     type: agent
@@ -58,7 +68,12 @@ nodes:
       prompt: |
         Review implementation result ${nodes.implement.output} for ${item.id} against the adversarial policy.
         Do not edit files or use implementer session context.
-        Reply with only JSON: {"approved":true,"findings":[]}.
+      outputSchema:
+        type: object
+        properties:
+          approved: {type: boolean}
+          findings: {type: array}
+        required: [approved, findings]
   - id: fix-findings
     name: Join review findings and fix
     type: agent
@@ -77,7 +92,12 @@ nodes:
       prompt: |
         Join correctness findings ${nodes.review-correctness.output} and adversarial findings ${nodes.review-adversarial.output}
         for ${item.id}, then fix verified issues. Do not stage, reset, stash, commit, or push.
-        Reply with only JSON: {"fixed":true,"summary":"..."}.
+      outputSchema:
+        type: object
+        properties:
+          fixed: {type: boolean}
+          summary: {type: string}
+        required: [fixed, summary]
   - id: validate-item
     name: Validate migration item
     type: command

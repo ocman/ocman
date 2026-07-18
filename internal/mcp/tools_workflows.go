@@ -30,7 +30,7 @@ const workflowDefinitionSchema = `Workflow definition JSON. Required top-level f
 Node types and configuration:
 - approval: no additional configuration.
 - command: command is a string array; the workflow directory must be an existing absolute path. Optional permission entries are {"permission":"bash","pattern":"...","action":"allow"|"deny"|"ask"}. Successful commands must write exactly one JSON value to stdout.
-- agent: agent requires {"directory":"...","prompt":"..."}; optional platform, model, agent, reasoning, sessionAffinity, and sessionId. Agents must finish with exactly one JSON value; one invalid response gets a corrective retry in the same session.
+- agent: agent requires {"directory":"...","prompt":"..."}; optional platform, model, agent, reasoning, sessionAffinity, sessionId, and outputSchema. Without outputSchema, any completed response succeeds. With outputSchema, it must be a valid JSON Schema; the runtime includes it in the prompt, strips a surrounding Markdown code fence, validates the response against it, and gives one corrective retry.
 - subworkflow: subworkflow requires {"workflowId":"published-workflow-id"}.
 - map: map requires {"source":"${nodes.upstream.output}","key":"stable-item-field","subworkflow":{"workflowId":"..."},"join":"join-node-id"}; source must be an upstream node whose output is an array.
 - join: join requires {"policy":"all-success"|"always"|"minimum-success"}; minimum-success also requires minSuccess > 0.

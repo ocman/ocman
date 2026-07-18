@@ -147,7 +147,7 @@ func TestWorkflowToolRegistrationIsComplete(t *testing.T) {
 func TestGetWorkflowSchema(t *testing.T) {
 	srv := buildWorkflowMCPServer(t, openTestStateDB(t))
 	result := callTool(t, srv, "get_workflow_schema", map[string]interface{}{})
-	if result.IsError || !strings.Contains(resultText(result), "Minimal valid definition") {
+	if result.IsError || !strings.Contains(resultText(result), "Minimal valid definition") || !strings.Contains(resultText(result), "outputSchema") {
 		t.Fatalf("get_workflow_schema: %s", resultText(result))
 	}
 }

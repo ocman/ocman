@@ -824,6 +824,7 @@ export interface WorkflowAgentConfig {
 	platform?: string;
 	directory: string;
 	prompt: string;
+	outputSchema?: boolean | Record<string, unknown>;
 	model?: string;
 	agent?: string;
 	reasoning?: string;

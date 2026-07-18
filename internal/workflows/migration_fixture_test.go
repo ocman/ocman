@@ -38,7 +38,7 @@ func (a *fixtureAgent) Start(_ context.Context, req AgentRequest) (AgentSession,
 }
 
 func (a *fixtureAgent) Inspect(_ context.Context, _ AgentSession) (AgentResult, error) {
-	return AgentResult{State: "done", FinalMessage: `{"approved":true,"findings":[],"fixed":true}`}, nil
+	return AgentResult{State: "done", FinalMessage: `{"summary":"done","diff":"","approved":true,"findings":[],"fixed":true}`}, nil
 }
 
 func (*fixtureAgent) Cancel(context.Context, AgentSession) error { return nil }

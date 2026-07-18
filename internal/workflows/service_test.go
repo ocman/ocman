@@ -40,13 +40,20 @@ const approvalThenAgents = `{
 	"triggers":[{"id":"manual","type":"manual"}],
 	"nodes":[
 		{"id":"approve","name":"Approve","type":"approval"},
-		{"id":"implement","name":"Implement","type":"agent","agent":{"platform":"test","directory":"/repo","prompt":"implement it","sessionAffinity":"work"}},
-		{"id":"review","name":"Review","type":"agent","agent":{"platform":"test","directory":"/repo","prompt":"review it","sessionAffinity":"work"}}
+		{"id":"implement","name":"Implement","type":"agent","agent":{"platform":"test","directory":"/repo","prompt":"implement it","sessionAffinity":"work","outputSchema":{}}},
+		{"id":"review","name":"Review","type":"agent","agent":{"platform":"test","directory":"/repo","prompt":"review it","sessionAffinity":"work","outputSchema":{}}}
 	],
 	"dependencies":[{"from":"approve","to":"implement"},{"from":"implement","to":"review"}]
 }`
 
 const singleAgent = `{
+	"id":"implement","name":"Implement","version":"1","concurrency":1,
+	"triggers":[{"id":"manual","type":"manual"}],
+	"nodes":[{"id":"implement","name":"Implement","type":"agent","agent":{"platform":"test","directory":"/repo","prompt":"implement it","outputSchema":{}}}],
+	"dependencies":[]
+}`
+
+const singleAgentWithoutSchema = `{
 	"id":"implement","name":"Implement","version":"1","concurrency":1,
 	"triggers":[{"id":"manual","type":"manual"}],
 	"nodes":[{"id":"implement","name":"Implement","type":"agent","agent":{"platform":"test","directory":"/repo","prompt":"implement it"}}],
@@ -605,6 +612,8 @@ func TestPublishValidation(t *testing.T) {
 		{"invalid PR", strings.Replace(sequentialApprovals, `"type":"manual"`, `"type":"pr"`, 1), "requires prNumber and directory"},
 		{"invalid completion", strings.Replace(sequentialApprovals, `"type":"manual"`, `"type":"turn_completion"`, 1), "requires sessionId"},
 		{"unsupported trigger", strings.Replace(sequentialApprovals, `"type":"manual"`, `"type":"webhook"`, 1), "unsupported type"},
+		{"invalid output schema", strings.Replace(singleAgent, `"outputSchema":{}`, `"outputSchema":{"type":1}`, 1), "invalid outputSchema"},
+		{"external output schema reference", strings.Replace(singleAgent, `"outputSchema":{}`, `"outputSchema":{"$ref":"https://example.com/schema.json"}`, 1), "external references are not supported"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -902,6 +911,25 @@ func TestCommandOutcomesAndBoundedLogs(t *testing.T) {
 				t.Fatalf("stdout was not bounded: len=%d truncated=%v", len(attempt.Stdout), attempt.StdoutTruncated)
 			}
 		})
+	}
+}
+
+func TestCommandOutputStripsMarkdownFence(t *testing.T) {
+	h := newHarness(t)
+	node := Node{ID: "command", Name: "Command", Type: "command",
+		Command:    []string{"/bin/sh", "-c", "printf '```json\\n{\"ok\":true}\\n```\\n'"},
+		Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}}
+	version, err := h.svc.PublishJSON(context.Background(), commandDefinition(t, t.TempDir(), []Node{node}, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.svc.Start(context.Background(), version.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run = waitForRun(t, h.svc, run.ID, StateSuccessful)
+	if got := string(run.Nodes[0].Result.Output); got != `{"ok":true}` {
+		t.Fatalf("fenced command output was not unwrapped: %s", got)
 	}
 }
 
@@ -1557,7 +1585,7 @@ func TestAgentAffinityDoesNotConsumePreviousTurnResult(t *testing.T) {
 }
 
 func TestAgentNodeResultCorrectsInvalidJSONOnce(t *testing.T) {
-	const correction = "Your previous response was not valid JSON. Reply once with only a valid JSON value for the workflow result."
+	correction := "Your previous response did not match the required output schema. Reply once with a matching JSON value." + jsonOutputInstruction(map[string]any{})
 
 	t.Run("corrected response succeeds", func(t *testing.T) {
 		h := newHarness(t)
@@ -1628,7 +1656,7 @@ func TestAgentNodeResultCorrectsInvalidJSONOnce(t *testing.T) {
 		if len(h.agent.starts) != 2 {
 			t.Fatalf("agent received %d messages, want initial plus one correction", len(h.agent.starts))
 		}
-		if got := string(failed.Nodes[0].Result.Output); got != `{"error":"agent output must be exactly one valid JSON value"}` {
+		if got := string(failed.Nodes[0].Result.Output); got != `{"error":"agent output must match outputSchema"}` {
 			t.Fatalf("agent failure output = %s", got)
 		}
 	})
@@ -1702,6 +1730,84 @@ func TestAgentNodeResultPreservesJSONTypes(t *testing.T) {
 				t.Fatalf("node result:\n got %s\nwant %s", got, want)
 			}
 		})
+	}
+}
+
+func TestAgentNodeResultStripsMarkdownFence(t *testing.T) {
+	h := newHarness(t)
+	version, err := h.svc.PublishJSON(t.Context(), []byte(singleAgent))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.svc.Start(t.Context(), version.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.agent.results["session-1"] = AgentResult{State: "done", FinalMessage: "```json\n{\"ok\":true}\n```"}
+	if err := h.svc.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	completed := waitForRun(t, h.svc, run.ID, StateSuccessful)
+	if got := string(completed.Nodes[0].Result.Output); got != `{"ok":true}` {
+		t.Fatalf("fenced agent output was not unwrapped: %s", got)
+	}
+	// A fenced value must succeed on the first turn — no correction round-trip.
+	if len(h.agent.starts) != 1 {
+		t.Fatalf("fenced JSON triggered a correction: %d agent messages", len(h.agent.starts))
+	}
+}
+
+func TestAgentNodeWithoutOutputSchemaAcceptsText(t *testing.T) {
+	h := newHarness(t)
+	version, err := h.svc.PublishJSON(t.Context(), []byte(singleAgentWithoutSchema))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.svc.Start(t.Context(), version.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(h.agent.starts[0].Prompt, "valid JSON") {
+		t.Fatalf("schema-free prompt requires JSON: %q", h.agent.starts[0].Prompt)
+	}
+	h.agent.results["session-1"] = AgentResult{State: "done", FinalMessage: "implementation completed"}
+	if err := h.svc.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	completed := waitForRun(t, h.svc, run.ID, StateSuccessful)
+	if completed.Nodes[0].Attempts[0].Stdout != "implementation completed" || len(h.agent.starts) != 1 {
+		t.Fatalf("schema-free result was not accepted: %+v", completed.Nodes[0].Attempts[0])
+	}
+}
+
+func TestAgentNodeValidatesOutputSchema(t *testing.T) {
+	h := newHarness(t)
+	definition := strings.Replace(singleAgent, `"outputSchema":{}`, `"outputSchema":{"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"],"additionalProperties":false}`, 1)
+	version, err := h.svc.PublishJSON(t.Context(), []byte(definition))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.svc.Start(t.Context(), version.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(h.agent.starts[0].Prompt, `"required":["ok"]`) {
+		t.Fatalf("agent prompt omitted output schema: %q", h.agent.starts[0].Prompt)
+	}
+	h.agent.results["session-1"] = AgentResult{State: "done", FinalMessage: `{"ok":"yes"}`}
+	if err := h.svc.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(h.agent.starts) != 2 || !strings.Contains(h.agent.starts[1].Prompt, `"required":["ok"]`) {
+		t.Fatalf("schema correction was not sent: %+v", h.agent.starts)
+	}
+	h.agent.results["session-1"] = AgentResult{State: "done", FinalMessage: `{"ok":true}`}
+	if err := h.svc.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	completed := waitForRun(t, h.svc, run.ID, StateSuccessful)
+	if got := string(completed.Nodes[0].Result.Output); got != `{"ok":true}` {
+		t.Fatalf("validated output = %s", got)
 	}
 }
 

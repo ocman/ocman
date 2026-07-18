@@ -218,6 +218,7 @@ type AgentConfig struct {
 	Platform        string `json:"platform,omitempty" yaml:"platform,omitempty"`
 	Directory       string `json:"directory" yaml:"directory"`
 	Prompt          string `json:"prompt" yaml:"prompt"`
+	OutputSchema    any    `json:"outputSchema,omitempty" yaml:"outputSchema,omitempty"`
 	Model           string `json:"model,omitempty" yaml:"model,omitempty"`
 	Agent           string `json:"agent,omitempty" yaml:"agent,omitempty"`
 	Reasoning       string `json:"reasoning,omitempty" yaml:"reasoning,omitempty"`
@@ -1515,6 +1516,11 @@ func (s *Service) executeCommand(ctx context.Context, active *activeCommand, ver
 	result.Stdout = redactor.redact(result.Stdout)
 	result.Stderr = redactor.redact(result.Stderr)
 	result.Error = redactor.redact(result.Error)
+	// Forgive a Markdown code fence around the JSON output (truncated
+	// output can't be un-fenced reliably, so leave it to fail).
+	if !result.StdoutTruncated {
+		result.Stdout = stripJSONFence(result.Stdout)
+	}
 	if result.State == AttemptSuccessful && (result.StdoutTruncated || !json.Valid([]byte(result.Stdout))) {
 		result.State = AttemptFailed
 		result.Error = "command output must be exactly one valid JSON value"
@@ -1828,6 +1834,9 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 						prompt.WriteString(segment.value)
 					}
 				}
+				if config.OutputSchema != nil {
+					prompt.WriteString(jsonOutputInstruction(config.OutputSchema))
+				}
 				session, startErr := s.agent.Start(ctx, AgentRequest{Platform: config.Platform, Directory: agentDir, Prompt: prompt.String(), Model: config.Model, Agent: config.Agent, Reasoning: config.Reasoning, SessionID: existing})
 				if startErr != nil {
 					if err := s.completeAgentFailure(runID, node.NodeID, attempt.ID, "error", startErr.Error()); err != nil {
@@ -1870,9 +1879,13 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 			redactor := s.runRedactor(run.Version)
 			result.FinalMessage = redactor.redact(result.FinalMessage)
 			result.Error = redactor.redact(result.Error)
-			if successful && !json.Valid([]byte(result.FinalMessage)) {
+			if successful && config.OutputSchema != nil {
+				// Forgive a Markdown code fence around schema-bound JSON.
+				result.FinalMessage = stripJSONFence(result.FinalMessage)
+			}
+			if successful && config.OutputSchema != nil && validateJSONOutput(result.FinalMessage, config.OutputSchema) != nil {
 				if attempt.SessionState != AgentCorrecting {
-					const correction = "Your previous response was not valid JSON. Reply once with only a valid JSON value for the workflow result."
+					correction := "Your previous response did not match the required output schema. Reply once with a matching JSON value." + jsonOutputInstruction(config.OutputSchema)
 					session, err := s.agent.Start(ctx, AgentRequest{Platform: attempt.Platform, Directory: attempt.Directory, Prompt: correction, Model: config.Model, Agent: config.Agent, Reasoning: config.Reasoning, SessionID: attempt.SessionID})
 					if err != nil {
 						if err := s.completeAgentFailure(runID, node.NodeID, attempt.ID, "error", err.Error()); err != nil {
@@ -1892,7 +1905,7 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 					return nil
 				}
 				successful = false
-				result.Error = "agent output must be exactly one valid JSON value"
+				result.Error = "agent output must match outputSchema"
 			}
 			completion := state.WorkflowAgentResult{Successful: successful, SessionState: result.State, Output: result.FinalMessage, OutputsJSON: "{}", Error: result.Error}
 			if err := s.store.CompleteWorkflowAgentNode(runID, node.NodeID, attempt.ID, completion, s.now().UnixMilli()); err != nil {
@@ -2242,6 +2255,11 @@ func validateDefinition(definition Definition) error {
 		if node.Type == "agent" {
 			if node.Agent == nil || node.Agent.Directory == "" || node.Agent.Prompt == "" {
 				return fmt.Errorf("agent node %q requires directory and prompt", node.ID)
+			}
+			if node.Agent.OutputSchema != nil {
+				if _, err := compileOutputSchema(node.Agent.OutputSchema); err != nil {
+					return fmt.Errorf("agent node %q has invalid outputSchema: %w", node.ID, err)
+				}
 			}
 		}
 		if node.Repeat != nil {

@@ -23,6 +23,14 @@ The generic map join aggregates item outcomes in stable input order. Sibling
 review findings are joined by the fixer through its two declared dependencies;
 they are not a separate node type.
 
+## Agent Output
+
+Agent completion does not require JSON by default. Set `agent.outputSchema` when
+downstream nodes need structured output. Validate and publish compile the JSON
+Schema, and each run includes it in the agent prompt and validates the final
+response against it. A surrounding Markdown code fence is ignored. External
+schema references are rejected; use local `$defs` and fragment `$ref` values.
+
 ## Run It
 
 1. Copy the examples into the repository being migrated and replace
