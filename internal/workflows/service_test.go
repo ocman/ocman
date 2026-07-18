@@ -2,6 +2,7 @@ package workflows
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1487,6 +1488,33 @@ func TestAgentRunFreshAffinityAndIdleCompletion(t *testing.T) {
 	assertRun(t, completed, StateSuccessful, map[string]string{"approve": NodeSuccessful, "implement": NodeSuccessful, "review": NodeSuccessful})
 	if got := string(completed.Nodes[1].Result.Output); got != `{"ok":true}` {
 		t.Fatalf("agent node output = %s", got)
+	}
+}
+
+func TestAgentRunMissingPublishedConfigurationExplainsRecovery(t *testing.T) {
+	h := newHarness(t)
+	version, err := h.svc.PublishJSON(t.Context(), []byte(singleAgent))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.svc.Start(t.Context(), version.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := sql.Open("sqlite", h.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`UPDATE workflow_version SET definition_json = json_remove(definition_json, '$.nodes[0].agent') WHERE id = ?`, version.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	err = h.svc.Tick(t.Context())
+	want := fmt.Sprintf("workflow run %q cannot continue: agent node %q has no configuration in published version %q; cancel this run, publish a corrected workflow with agent.directory and agent.prompt, then start a new run", run.ID, "implement", version.ID)
+	if err == nil || err.Error() != want {
+		t.Fatalf("tick error = %q, want %q", err, want)
 	}
 }
 

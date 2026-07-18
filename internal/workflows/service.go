@@ -1781,7 +1781,7 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 			}
 			config := agentConfig(run.Version.Definition.Nodes, node.NodeID)
 			if config == nil {
-				return fmt.Errorf("agent node %q has no configuration", node.NodeID)
+				return fmt.Errorf("workflow run %q cannot continue: agent node %q has no configuration in published version %q; cancel this run, publish a corrected workflow with agent.directory and agent.prompt, then start a new run", run.ID, node.NodeID, run.VersionID)
 			}
 			attempt := node.Attempts[len(node.Attempts)-1]
 			if attempt.SessionID == "" {
