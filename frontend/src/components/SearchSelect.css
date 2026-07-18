@@ -1,0 +1,62 @@
+.oc-search-select {
+  position: relative;
+}
+.oc-search-select > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 7px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  background: var(--bg);
+  text-align: left;
+}
+.oc-search-select > button > span {
+  font: inherit;
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.oc-search-select-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  width: max-content;
+  min-width: 100%;
+  max-width: 300%;
+  box-sizing: border-box;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--base, var(--bg));
+  box-shadow: 0 8px 24px rgb(0 0 0 / 25%);
+}
+.oc-search-select-menu input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 4px;
+}
+.oc-search-select-menu [role='listbox'] {
+  display: grid;
+  max-height: 220px;
+  overflow: auto;
+}
+.oc-search-select-menu [role='option'] {
+  padding: 7px;
+  border: 0;
+  color: var(--text);
+  background: var(--base, var(--bg));
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.oc-search-select-menu [role='option']:hover,
+.oc-search-select-menu [role='option']:focus,
+.oc-search-select-menu [aria-selected='true'] {
+  background: var(--bg-hover);
+}
+.oc-search-select-menu small {
+  padding: 8px;
+  color: var(--text-muted);
+}

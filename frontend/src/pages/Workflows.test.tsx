@@ -15,6 +15,7 @@ vi.stubGlobal('ResizeObserver', ResizeObserver);
 
 const { apiMock, useWorkflowsMock, listeners, triggerListeners, connectListeners } = vi.hoisted(() => ({
   apiMock: {
+    models: vi.fn(),
     versions: vi.fn(),
     validate: vi.fn(),
     publish: vi.fn(),
@@ -38,7 +39,7 @@ const { apiMock, useWorkflowsMock, listeners, triggerListeners, connectListeners
   connectListeners: [] as Array<() => void>,
 }));
 
-vi.mock('../lib/api', () => ({ api: { workflows: apiMock } }));
+vi.mock('../lib/api', () => ({ api: { models: apiMock.models, workflows: apiMock } }));
 vi.mock('../lib/useCapabilities', () => ({ useWorkflows: useWorkflowsMock }));
 vi.mock('../lib/useGlobalEvents', () => ({
   onWorkflowRunUpdated: (listener: (runId: string) => void) => {
@@ -147,6 +148,9 @@ describe('Workflows', { timeout: 10_000 }, () => {
     triggerListeners.length = 0;
     connectListeners.length = 0;
     useWorkflowsMock.mockReturnValue(true);
+    apiMock.models.mockResolvedValue([
+      { provider: 'openai', model: 'gpt-5', count: 2, tokensIn: 0, tokensOut: 0, cacheRead: 0, cacheWrite: 0 },
+    ]);
     apiMock.versions.mockResolvedValue([version]);
     apiMock.runs.mockResolvedValue([activeRun]);
     apiMock.run.mockResolvedValue(activeRun);
@@ -391,7 +395,9 @@ describe('Workflows', { timeout: 10_000 }, () => {
     await user.click(screen.getByRole('menuitem', { name: 'agent' }));
     expect(screen.getByRole('complementary', { name: 'Node properties' })).toHaveTextContent('Agent');
     await user.type(screen.getByLabelText('Prompt'), 'Review the change');
-    await user.type(screen.getByLabelText('Model'), 'openai/gpt-5');
+    await user.click(screen.getByRole('combobox', { name: 'Model' }));
+    await user.type(screen.getByRole('textbox', { name: 'Search models' }), 'opnai');
+    await user.click(screen.getByRole('option', { name: 'openai/gpt-5' }));
     await user.type(screen.getByLabelText('Variant'), 'high');
     await user.type(screen.getByLabelText('Agent'), 'build');
     await user.click(screen.getByRole('tab', { name: 'YAML' }));

@@ -165,6 +165,13 @@ describe('StatsTab effective-cost UI', () => {
     expect(screen.getByRole('columnheader', { name: 'Reported / Est.' })).toBeInTheDocument();
   });
 
+  it('filters metrics through the shared agent select', () => {
+    renderStats();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Agent' }));
+    fireEvent.click(screen.getByRole('option', { name: 'build' }));
+    expect(useMetrics).toHaveBeenLastCalledWith(expect.objectContaining({ agent: 'build' }));
+  });
+
   it('switches to the session and request tables which also carry effective cost columns', () => {
     renderStats();
 

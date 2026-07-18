@@ -11,6 +11,7 @@ import {
 } from '../../lib/chartConfig';
 import { usePageTitle } from '../../lib/headerContext';
 import { ProjectScopePicker } from '../../components/ProjectScopePicker';
+import { SearchSelect } from '../../components/SearchSelect';
 import { useActivity, useModels, useHourly, useHourlyTokens } from '../../lib/queries';
 import { useDashboard } from './context';
 
@@ -54,21 +55,11 @@ export function UsageTab() {
         <ProjectScopePicker projects={projects} value={dirScope} onChange={setDirScope} showLabel />
         <label className="metrics-filter">
           <span>Model</span>
-          <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}>
-            <option value="">All models</option>
-            {allModels.map((m) => {
-              const key = `${m.provider}/${m.model}`;
-              return <option key={key} value={key}>{m.model}</option>;
-            })}
-          </select>
+          <SearchSelect value={selectedModel} ariaLabel="Model" placeholder="All models" searchLabel="Search models" onChange={setSelectedModel} options={[{ value: '', label: 'All models' }, ...allModels.map((model) => ({ value: `${model.provider}/${model.model}`, label: model.model }))]} />
         </label>
         <label className="metrics-filter metrics-filter-small">
           <span>Last</span>
-          <select value={usageDays} onChange={(e) => setUsageDays(Number(e.target.value))}>
-            {USAGE_RANGE_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
+          <SearchSelect value={String(usageDays)} ariaLabel="Last" placeholder="Select range" searchLabel="Search ranges" onChange={(value) => setUsageDays(Number(value))} options={USAGE_RANGE_OPTIONS.map((option) => ({ value: String(option.value), label: option.label }))} />
         </label>
       </div>
 

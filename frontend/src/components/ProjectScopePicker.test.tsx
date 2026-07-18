@@ -1,4 +1,7 @@
-import { describe, it, expect } from 'vitest';
+// @vitest-environment jsdom
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ProjectScopePicker } from './ProjectScopePicker';
 import { buildScopeTree, flattenForOptions } from '../lib/projectTree';
@@ -10,10 +13,7 @@ describe('flattenForOptions', () => {
 
   it('emits one entry per node, depth-first, with depth set', () => {
     // /a/b branches into c and d.
-    const tree = buildScopeTree([
-      { directory: '/a/b/c' },
-      { directory: '/a/b/d' },
-    ]);
+    const tree = buildScopeTree([{ directory: '/a/b/c' }, { directory: '/a/b/d' }]);
     const flat = flattenForOptions(tree);
     // First entry is the collapsed branching node, then its two leaves.
     expect(flat[0].path).toBe('/a/b');
@@ -47,52 +47,38 @@ describe('flattenForOptions', () => {
 
 describe('ProjectScopePicker', () => {
   it('renders a default "All projects" option', () => {
-    const html = renderToStaticMarkup(
-      <ProjectScopePicker projects={[]} value="" onChange={() => {}} />,
-    );
+    const html = renderToStaticMarkup(<ProjectScopePicker projects={[]} value="" onChange={() => {}} />);
     expect(html).toContain('All projects');
   });
 
-  it('renders one option per scope node with the path as value', () => {
-    const projects = [
-      { directory: '/repo/a' },
-      { directory: '/repo/b' },
-    ];
-    const html = renderToStaticMarkup(
-      <ProjectScopePicker projects={projects} value="" onChange={() => {}} />,
-    );
-    expect(html).toContain('value="/repo"'); // the branching parent
-    expect(html).toContain('value="/repo/a"');
-    expect(html).toContain('value="/repo/b"');
+  it('renders and selects every project scope', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const projects = [{ directory: '/repo/a' }, { directory: '/repo/b' }];
+    render(<ProjectScopePicker projects={projects} value="" onChange={onChange} />);
+    await user.click(screen.getByRole('combobox', { name: 'Project scope' }));
+    expect(screen.getAllByRole('option')).toHaveLength(4);
+    await user.click(screen.getByRole('option', { name: /repo\/a/ }));
+    expect(onChange).toHaveBeenCalledWith('/repo/a');
   });
 
   it('hides the visible caption by default and shows it with showLabel', () => {
-    const bare = renderToStaticMarkup(
-      <ProjectScopePicker projects={[]} value="" onChange={() => {}} />,
-    );
+    const bare = renderToStaticMarkup(<ProjectScopePicker projects={[]} value="" onChange={() => {}} />);
     expect(bare).not.toContain('<span>Project scope</span>');
 
-    const labelled = renderToStaticMarkup(
-      <ProjectScopePicker projects={[]} value="" onChange={() => {}} showLabel />,
-    );
+    const labelled = renderToStaticMarkup(<ProjectScopePicker projects={[]} value="" onChange={() => {}} showLabel />);
     expect(labelled).toContain('<span>Project scope</span>');
   });
 
   it('marks the active scope as selected', () => {
     const projects = [{ directory: '/repo/a' }, { directory: '/repo/b' }];
-    const html = renderToStaticMarkup(
-      <ProjectScopePicker projects={projects} value="/repo/a" onChange={() => {}} />,
-    );
-    // React DOM SSR renders defaultValue/value semantics on <select>;
-    // the selected option gets a `selected` attribute in static markup.
-    expect(html).toMatch(/value="\/repo\/a"[^>]*selected/);
+    render(<ProjectScopePicker projects={projects} value="/repo/a" onChange={() => {}} />);
+    expect(screen.getByRole('combobox', { name: 'Project scope' })).toHaveTextContent('repo/a');
   });
 
   it('disables itself when there are no projects to scope by', () => {
-    const html = renderToStaticMarkup(
-      <ProjectScopePicker projects={[]} value="" onChange={() => {}} />,
-    );
-    expect(html).toMatch(/<select[^>]*disabled/);
+    render(<ProjectScopePicker projects={[]} value="" onChange={() => {}} />);
+    expect(screen.getByRole('combobox', { name: 'Project scope' })).toBeDisabled();
   });
 
   it('does not branch on platform (lint guard)', () => {
@@ -102,9 +88,7 @@ describe('ProjectScopePicker', () => {
     // current behaviour at the unit level so the invariant is doubly
     // enforced.
     const projects = [{ directory: '/repo/a' }];
-    const html = renderToStaticMarkup(
-      <ProjectScopePicker projects={projects} value="" onChange={() => {}} />,
-    );
+    const html = renderToStaticMarkup(<ProjectScopePicker projects={projects} value="" onChange={() => {}} />);
     expect(html).not.toContain('opencode');
     expect(html).not.toContain('claude-code');
   });

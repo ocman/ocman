@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { buildScopeTree, flattenForOptions } from '../lib/projectTree';
 import { shortPath } from '../lib/format';
+import { SearchSelect } from './SearchSelect';
 
 /**
  * ProjectScopePicker — a single dropdown that lets the user scope the
@@ -11,13 +12,6 @@ import { shortPath } from '../lib/format';
  * directories and intermediate parent directories are selectable, so the
  * user can scope to e.g. one repo, the whole org, or the whole host —
  * exactly the use case described in the feature request.
- *
- * The control is intentionally a flat <select> with indented <option>s
- * rather than a custom popover. Reasons:
- *
- *   - Native accessibility (keyboard, focus, screen reader) for free.
- *   - Visually consistent with the existing `metrics-filter` controls.
- *   - Trivially testable without @testing-library/react.
  *
  * See spec/stats-project-filter/architecture.md (AD-1, AD-3, AD-8).
  */
@@ -51,7 +45,13 @@ export interface ProjectScopePickerProps {
 // without relying on CSS that <option> elements don't render.
 const INDENT = '\u2003';
 
-export function ProjectScopePicker({ projects, value, onChange, label = 'Project scope', showLabel = false }: ProjectScopePickerProps) {
+export function ProjectScopePicker({
+  projects,
+  value,
+  onChange,
+  label = 'Project scope',
+  showLabel = false,
+}: ProjectScopePickerProps) {
   // Memoise so we don't rebuild the trie on every parent re-render. The
   // input list reference changes whenever `projects` is reloaded, which
   // is rare relative to render frequency.
@@ -62,30 +62,21 @@ export function ProjectScopePicker({ projects, value, onChange, label = 'Project
   return (
     <label className="metrics-filter">
       {showLabel && <span>{label}</span>}
-      <select
+      <SearchSelect
         value={value}
         disabled={disabled}
-        aria-label={label}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        <option value="">All projects</option>
-        {options.map((opt) => {
-          // Use shortPath() for the visible label so long absolute paths
-          // ('/Users/foo/...') don't dominate the dropdown. The full path
-          // remains in the option's title attribute and value, so users
-          // can hover to disambiguate and the URL ?dir= still carries
-          // the absolute path.
-          const display = INDENT.repeat(opt.depth) + shortPath(opt.path);
-          const suffix =
-            opt.projectCount > 1 ? ` (${opt.projectCount} projects)` : '';
-          return (
-            <option key={opt.path} value={opt.path} title={opt.path}>
-              {display}
-              {suffix}
-            </option>
-          );
-        })}
-      </select>
+        ariaLabel={label}
+        placeholder="All projects"
+        searchLabel="Search projects"
+        onChange={onChange}
+        options={[
+          { value: '', label: 'All projects' },
+          ...options.map((option) => ({
+            value: option.path,
+            label: `${INDENT.repeat(option.depth)}${shortPath(option.path)}${option.projectCount > 1 ? ` (${option.projectCount} projects)` : ''}`,
+          })),
+        ]}
+      />
     </label>
   );
 }

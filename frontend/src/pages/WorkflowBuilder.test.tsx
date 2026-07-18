@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { WorkflowDefinition } from '../lib/api';
 import { WorkflowBuilder } from './WorkflowBuilder';
 
+vi.mock('../lib/api', () => ({ api: { models: vi.fn().mockResolvedValue([]) } }));
+
 class ResizeObserver {
   observe() {}
   unobserve() {}

@@ -18,6 +18,7 @@ import '@xyflow/react/dist/style.css';
 import type { WorkflowDefinition } from '../lib/api';
 import type { WorkflowNodeDefinition } from '../lib/api.types';
 import { Button } from '../components/Control';
+import { ModelSelect } from '../components/ModelSelect';
 
 type FlowNode = Node<{ node: WorkflowNodeDefinition }, 'workflow'>;
 const nodeTypes = { workflow: WorkflowNode };
@@ -415,12 +416,10 @@ function NodePanel({
           </label>
           <label>
             Model
-            <input
-              placeholder="provider/model"
+            <ModelSelect
               value={node.agent?.model ?? ''}
-              onChange={(event) =>
-                onUpdate({ ...node, agent: { ...node.agent!, model: event.target.value || undefined } })
-              }
+              directory={definition.directory}
+              onChange={(model) => onUpdate({ ...node, agent: { ...node.agent!, model: model || undefined } })}
             />
           </label>
           <label>

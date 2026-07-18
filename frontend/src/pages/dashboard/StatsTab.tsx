@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { renderModel } from '../../lib/format';
 import { usePageTitle } from '../../lib/headerContext';
 import { ProjectScopePicker } from '../../components/ProjectScopePicker';
+import { SearchSelect } from '../../components/SearchSelect';
 import { useMetrics } from '../../lib/queries';
 import { useDashboard } from './context';
 import { MetricsPagination } from './shared';
@@ -60,6 +61,8 @@ export function StatsTab() {
   const metrics = metricsQ.data ?? null;
   const metricsLoading = metricsQ.isLoading;
   const metricsError = metricsQ.error instanceof Error ? metricsQ.error.message : null;
+  const agentOptions = [{ value: '', label: 'All agents' }, ...(metrics?.availableAgents ?? []).map((agent) => ({ value: agent, label: agent }))];
+  const modelOptions = [{ value: '', label: 'All models' }, ...(metrics?.availableModels ?? []).map((model) => ({ value: model, label: renderModel(model) }))];
 
   return (
     <div className="metrics-page">
@@ -67,29 +70,15 @@ export function StatsTab() {
         <ProjectScopePicker projects={projects} value={dirScope} onChange={setDirScope} showLabel />
         <label className="metrics-filter">
           <span>Agent</span>
-          <select value={selectedAgent} onChange={(e) => setSelectedAgent(e.target.value)}>
-            <option value="">All agents</option>
-            {(metrics?.availableAgents ?? []).map((agent) => (
-              <option key={agent} value={agent}>{agent}</option>
-            ))}
-          </select>
+          <SearchSelect value={selectedAgent} ariaLabel="Agent" placeholder="All agents" searchLabel="Search agents" onChange={setSelectedAgent} options={agentOptions} />
         </label>
         <label className="metrics-filter">
           <span>Model</span>
-          <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}>
-            <option value="">All models</option>
-            {(metrics?.availableModels ?? []).map((model) => (
-              <option key={model} value={model}>{renderModel(model)}</option>
-            ))}
-          </select>
+          <SearchSelect value={selectedModel} ariaLabel="Model" placeholder="All models" searchLabel="Search models" onChange={setSelectedModel} options={modelOptions} />
         </label>
         <label className="metrics-filter metrics-filter-small">
           <span>Last</span>
-          <select value={metricsDays} onChange={(e) => setMetricsDays(Number(e.target.value))}>
-            {METRICS_RANGE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
+          <SearchSelect value={String(metricsDays)} ariaLabel="Last" placeholder="Select range" searchLabel="Search ranges" onChange={(value) => setMetricsDays(Number(value))} options={METRICS_RANGE_OPTIONS.map((option) => ({ value: String(option.value), label: option.label }))} />
         </label>
       </div>
 
