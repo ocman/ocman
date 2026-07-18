@@ -235,7 +235,8 @@ test('stats tab renders metrics summary cards', async ({ mockedPage: page }) => 
 
 test('stats tab shows agent and model filter dropdowns', async ({ mockedPage: page }) => {
   await page.goto('/stats');
-  await expect(page.locator('select').first()).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Agent' })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Model' })).toBeVisible();
 });
 
 test('stats tab shows session log sub-tab', async ({ mockedPage: page }) => {
@@ -261,21 +262,22 @@ test('stats tab project log sub-tab switches view', async ({ mockedPage: page })
 
 test('usage tab renders project-scope, model, and date-range filters', async ({ mockedPage: page }) => {
   await page.goto('/usage');
-  // Three <select> controls: Project scope, Model, and Last N days
-  const selects = page.locator('.metrics-filter select');
+  // Three SearchSelect controls: Project scope, Model, and Last N days
+  const selects = page.locator('.metrics-filter .oc-search-select');
   await expect(selects).toHaveCount(3);
 });
 
 test('usage tab shows "All models" option in model filter', async ({ mockedPage: page }) => {
   await page.goto('/usage');
-  // Model filter is the second select (after Project scope picker)
-  const modelSelect = page.locator('.metrics-filter select').nth(1);
-  await expect(modelSelect.locator('option', { hasText: 'All models' })).toBeAttached();
+  // Open the Model filter and assert the "All models" option is listed.
+  await page.getByRole('combobox', { name: 'Model' }).click();
+  await expect(page.getByRole('option', { name: 'All models' })).toBeVisible();
 });
 
 test('usage tab can change date range', async ({ mockedPage: page }) => {
   await page.goto('/usage');
-  const rangeSelect = page.locator('.metrics-filter select').last();
-  await rangeSelect.selectOption({ label: '7 days' });
-  await expect(rangeSelect).toHaveValue('7');
+  const rangeSelect = page.getByRole('combobox', { name: 'Last' });
+  await rangeSelect.click();
+  await page.getByRole('option', { name: '7 days' }).click();
+  await expect(rangeSelect).toHaveText('7 days');
 });
