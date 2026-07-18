@@ -102,6 +102,15 @@
 .workflow-run-status[data-state="failed"], .workflow-run-status[data-state="canceled"] { border-color: var(--danger); color: var(--danger); }
 .workflow-run-spinner { width: 10px; height: 10px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: workflow-spin .7s linear infinite; }
 @keyframes workflow-spin { to { transform: rotate(360deg); } }
+.workflow-run-activity { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; }
+.workflow-run-activity > div { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; padding: 9px; border: 1px solid var(--border); background: var(--bg); }
+.workflow-run-activity strong { margin-right: auto; font: 11px var(--font-mono); text-transform: uppercase; letter-spacing: .06em; }
+.workflow-run-activity strong span { margin-left: 4px; color: var(--text-muted); }
+.workflow-run-activity button { display: grid; gap: 1px; padding: 5px 8px; text-align: left; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text); }
+.workflow-run-activity button:hover, .workflow-run-activity button:focus-visible { border-color: var(--accent); }
+.workflow-run-activity button small, .workflow-run-activity > div > small { color: var(--text-muted); font: 10px var(--font-mono); }
+.workflow-run-activity [data-kind="approval"] { border-left: 3px solid var(--blue); }
+.workflow-run-activity [data-kind="running"] { border-left: 3px solid var(--teal); }
 .workflow-controls { display: flex; gap: 8px; align-items: start; }
 .workflow-run-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; }
 .workflow-run-inspector { min-width: 0; overflow: auto; border: 1px solid var(--border); background: var(--bg); }
@@ -174,4 +183,4 @@
 .workflow-run-layout { gap: 0; border: 1px solid var(--border); }
 .workflow-run-graph { background: color-mix(in srgb, var(--base, var(--bg)) 84%, transparent); }
 .workflow-run-inspector { border: 0; border-left: 1px solid var(--border); background: var(--base, var(--bg-secondary)); }
-@media (max-width: 720px) { .workflow-page { padding: 12px; } .workflow-page-header, .workflow-author, .workflow-history, .workflow-author-head { display: grid; grid-template-columns: 1fr; } .workflow-builder-layout, .workflow-run-layout { grid-template-columns: 1fr; height: auto; } .workflow-canvas { height: 440px; } .workflow-node-panel { border-top: 1px solid var(--border); border-left: 0; } .workflow-run header { display: block; padding-right: 48px; } .workflow-run-actions { display: flex; flex-wrap: wrap; margin-top: 12px; } .workflow-discovery, .workflow-run-list { overflow-x: auto; } .workflow-run-modal-backdrop { padding: 0; } .workflow-run-modal { width: 100vw; max-height: 100vh; } }
+@media (max-width: 720px) { .workflow-page { padding: 12px; } .workflow-page-header, .workflow-author, .workflow-history, .workflow-author-head { display: grid; grid-template-columns: 1fr; } .workflow-builder-layout, .workflow-run-layout, .workflow-run-activity { grid-template-columns: 1fr; height: auto; } .workflow-canvas { height: 440px; } .workflow-node-panel { border-top: 1px solid var(--border); border-left: 0; } .workflow-run header { display: block; padding-right: 48px; } .workflow-run-actions { display: flex; flex-wrap: wrap; margin-top: 12px; } .workflow-discovery, .workflow-run-list { overflow-x: auto; } .workflow-run-modal-backdrop { padding: 0; } .workflow-run-modal { width: 100vw; max-height: 100vh; } }

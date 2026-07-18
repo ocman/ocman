@@ -259,6 +259,46 @@ describe('Workflows', { timeout: 10_000 }, () => {
     expect(await screen.findByRole('dialog', { name: 'Workflow run details' })).toBeInTheDocument();
   });
 
+  it('surfaces approvals and running nodes as shortcuts to their details', async () => {
+    const user = userEvent.setup();
+    const run = {
+      ...activeRun,
+      version: {
+        ...version,
+        definition: {
+          ...version.definition,
+          nodes: [...version.definition.nodes, { id: 'build', name: 'Build release', type: 'command' as const }],
+        },
+      },
+      nodes: [
+        ...activeRun.nodes,
+        {
+          nodeId: 'build',
+          name: 'Build release',
+          type: 'command' as const,
+          state: 'running' as const,
+          result: { id: 'build', name: 'Build release', started: 'now', ended: null, status: 'running' as const, output: null },
+          attempts: [{ id: 2, seq: 1, state: 'running' as const, startedAt: 2 }],
+        },
+      ],
+    };
+    apiMock.run.mockResolvedValue(run);
+    render(
+      <MemoryRouter>
+        <Workflows />
+      </MemoryRouter>,
+    );
+
+    await openRunDetails(user);
+    const activity = screen.getByRole('region', { name: 'Run activity' });
+    expect(activity).toHaveTextContent('Needs approval 1');
+    expect(activity).toHaveTextContent('Running now 1');
+    await user.click(screen.getByRole('button', { name: 'View running node Build release' }));
+    expect(screen.getByRole('complementary', { name: 'Selected node details' })).toHaveTextContent('Build release');
+    await user.click(screen.getByRole('button', { name: 'View approval Review' }));
+    expect(screen.getByRole('button', { name: 'Approve Review' })).toBeInTheDocument();
+  });
+
   it('restores an editor version from the URL', async () => {
     render(
       <MemoryRouter initialEntries={['/workflows?view=author&version=wfv_1']}>

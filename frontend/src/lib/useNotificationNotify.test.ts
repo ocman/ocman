@@ -1,9 +1,12 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import {
   __evaluateForTests,
+  __evaluateWorkflowForTests,
+  __notificationDetailsForTests,
   __resetForTests,
   type NotifyShape,
 } from './useNotificationNotify';
+import type { WorkflowRunDetail } from './api';
 
 // We exercise the pure controller (`__evaluateForTests`) rather than the
 // React hook or any DOM listeners, matching the pattern in
@@ -22,6 +25,37 @@ function s(
   extras: Partial<NotifyShape> = {},
 ): NotifyShape {
   return { id, status, seen: false, ...extras };
+}
+
+function workflow(overrides: Partial<WorkflowRunDetail> = {}): WorkflowRunDetail {
+  return {
+    id: 'run-1',
+    workflowId: 'release',
+    versionId: 'version-1',
+    state: 'active',
+    createdAt: 1,
+    updatedAt: 2,
+    version: {
+      id: 'version-1',
+      workflowId: 'release',
+      name: 'Release',
+      revision: 1,
+      createdAt: 1,
+      active: true,
+      definition: { id: 'release', name: 'Release', version: '1', concurrency: 1, triggers: [], nodes: [], dependencies: [] },
+      triggerStates: [],
+    },
+    nodes: [{
+      nodeId: 'review',
+      name: 'Review release',
+      type: 'approval',
+      state: 'ready',
+      readyAt: 2,
+      result: { id: 'review', name: 'Review release', started: null, ended: null, status: 'ready', output: null },
+      attempts: [],
+    }],
+    ...overrides,
+  };
 }
 
 describe('useNotificationNotify controller', () => {
@@ -190,5 +224,60 @@ describe('useNotificationNotify controller', () => {
     });
     expect(out).toHaveLength(1);
     expect(out[0].kind).toBe('prompt');
+  });
+});
+
+describe('workflow approval notifications', () => {
+  beforeEach(() => {
+    __resetForTests();
+  });
+
+  it('fires once for each ready approval in an active run', () => {
+    const run = workflow();
+    expect(__evaluateWorkflowForTests(run, true, 'granted')).toEqual([{
+      kind: 'workflow-approval',
+      runId: 'run-1',
+      workflowId: 'release',
+      workflowName: 'Release',
+      nodeId: 'review',
+      nodeName: 'Review release',
+    }]);
+    expect(__evaluateWorkflowForTests(run, true, 'granted')).toEqual([]);
+  });
+
+  it('builds a persistent notification that links to the blocking run', () => {
+    const [decision] = __evaluateWorkflowForTests(workflow(), true, 'granted');
+    expect(__notificationDetailsForTests(decision)).toEqual({
+      title: 'ocman — approval required: Release',
+      body: 'Review release is waiting for your approval.',
+      url: '/workflows?tab=runs&workflow=release&run=run-1',
+      tag: 'ocman:run-1:review',
+      requireInteraction: true,
+    });
+  });
+
+  it('keeps existing session notification details unchanged', () => {
+    expect(__notificationDetailsForTests({ kind: 'prompt', sessionId: 'session-1' })).toMatchObject({
+      title: 'ocman — input required',
+      url: '/session/session-1',
+      requireInteraction: true,
+    });
+    expect(__notificationDetailsForTests({ kind: 'completed', sessionId: 'session-1' })).toMatchObject({
+      title: 'ocman — session finished',
+      requireInteraction: false,
+    });
+  });
+
+  it('ignores non-blocking runs and disabled notifications', () => {
+    expect(__evaluateWorkflowForTests(workflow({ state: 'paused' }), true, 'granted')).toEqual([]);
+    expect(__evaluateWorkflowForTests(workflow(), false, 'granted')).toEqual([]);
+    expect(__evaluateWorkflowForTests(workflow(), true, 'default')).toEqual([]);
+
+    const settled = workflow();
+    settled.nodes[0].state = 'successful';
+    expect(__evaluateWorkflowForTests(settled, true, 'granted')).toEqual([]);
+    settled.nodes[0].state = 'ready';
+    settled.nodes[0].type = 'command';
+    expect(__evaluateWorkflowForTests(settled, true, 'granted')).toEqual([]);
   });
 });

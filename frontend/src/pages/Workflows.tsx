@@ -634,7 +634,14 @@ function RunView({
 }) {
   const [artifacts, setArtifacts] = useState<WorkflowArtifact[]>([]);
   const [selectedNodeID, setSelectedNodeID] = useState(run.nodes[0]?.nodeId);
+  const inspectorRef = useRef<HTMLElement>(null);
   const selectedNode = run.nodes.find((node) => node.nodeId === selectedNodeID) ?? run.nodes[0];
+  const approvals = run.nodes.filter((node) => node.type === 'approval' && node.state === 'ready');
+  const running = run.nodes.filter((node) => node.state === 'running');
+  function revealNode(id: string) {
+    setSelectedNodeID(id);
+    inspectorRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+  }
   useEffect(() => {
     let active = true;
     void api.workflows
@@ -694,6 +701,24 @@ function RunView({
           · {run.trigger.detail} · fired {formatTime(run.trigger.firedAt)}
         </p>
       )}
+      <section className="workflow-run-activity" aria-label="Run activity">
+        <div data-kind="approval">
+          <strong>Needs approval <span>{approvals.length}</span></strong>
+          {approvals.length ? approvals.map((node) => (
+            <button key={node.nodeId} type="button" aria-label={`View approval ${node.name}`} onClick={() => revealNode(node.nodeId)}>
+              {node.name}<small>{node.nodeId}</small>
+            </button>
+          )) : <small>None</small>}
+        </div>
+        <div data-kind="running">
+          <strong>Running now <span>{running.length}</span></strong>
+          {running.length ? running.map((node) => (
+            <button key={node.nodeId} type="button" aria-label={`View running node ${node.name}`} onClick={() => revealNode(node.nodeId)}>
+              {node.name}<small>{node.nodeId}</small>
+            </button>
+          )) : <small>None</small>}
+        </div>
+      </section>
       {run.resources && run.resources.length > 0 && (
         <section className="workflow-resources" aria-label="Resource pools">
           {run.resources.map((pool) => (
@@ -727,7 +752,7 @@ function RunView({
           selectedID={selectedNode?.nodeId}
           onSelect={setSelectedNodeID}
         />
-        <aside className="workflow-run-inspector" aria-label="Selected node details">
+        <aside ref={inspectorRef} className="workflow-run-inspector" aria-label="Selected node details">
           {selectedNode ? (
             <RunNode run={run} node={selectedNode} mutate={mutate} onSelectRun={onSelectRun} />
           ) : (

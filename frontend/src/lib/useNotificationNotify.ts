@@ -1,11 +1,13 @@
 import { useEffect, useRef } from 'react';
-import type { NotifyEntry } from './api';
+import { api, type NotifyEntry, type WorkflowRunDetail } from './api';
+import { onWorkflowRunUpdated } from './useGlobalEvents';
 import { notifyStateKey, useNotifyBaseline } from './useNotifyBaseline';
 import { useUiStore } from './uiStore';
 
 /**
  * Fires OS-level Web Notifications (system toasts / installed-PWA
- * notifications) when sessions complete or block on user input.
+ * notifications) when sessions complete, block on user input, or a
+ * workflow needs approval.
  *
  * Sibling to useFaviconNotify and useBellNotify — same data source,
  * same baseline-snapshot pattern. Each hook is independent so users can
@@ -41,6 +43,15 @@ export type Decision = {
   sessionId: string;
 };
 
+export type WorkflowDecision = {
+  kind: 'workflow-approval';
+  runId: string;
+  workflowId: string;
+  workflowName: string;
+  nodeId: string;
+  nodeName: string;
+};
+
 type EvaluateInput = {
   sessions: NotifyShape[];
   hidden: boolean;
@@ -58,6 +69,7 @@ const stateKey = notifyStateKey;
 // reset). Tracked at module scope so the hook can be re-rendered without
 // losing dedupe state, and so tests can flush it via __resetForTests.
 let firedKeys = new Set<string>();
+let workflowFiredKeys = new Set<string>();
 
 /**
  * Pure decision function. Given a snapshot of session state plus
@@ -104,9 +116,34 @@ export function __evaluateForTests(input: EvaluateInput): Decision[] {
   return out;
 }
 
+export function __evaluateWorkflowForTests(
+  run: WorkflowRunDetail,
+  enabled: boolean,
+  permission: NotificationPermission | 'unsupported',
+): WorkflowDecision[] {
+  if (!enabled || permission !== 'granted' || run.state !== 'active') return [];
+  const out: WorkflowDecision[] = [];
+  for (const node of run.nodes) {
+    if (node.type !== 'approval' || node.state !== 'ready') continue;
+    const key = `${run.id}|${node.nodeId}|${node.readyAt ?? 0}`;
+    if (workflowFiredKeys.has(key)) continue;
+    workflowFiredKeys.add(key);
+    out.push({
+      kind: 'workflow-approval',
+      runId: run.id,
+      workflowId: run.workflowId,
+      workflowName: run.version.name,
+      nodeId: node.nodeId,
+      nodeName: node.name,
+    });
+  }
+  return out;
+}
+
 /** Test-only: flush the per-tab "already fired" cache. */
 export function __resetForTests() {
   firedKeys = new Set();
+  workflowFiredKeys = new Set();
 }
 
 /** Returns the current Notification permission, or 'unsupported' on platforms without the API. */
@@ -136,31 +173,50 @@ export function notificationsSupported(): boolean {
   return typeof window !== 'undefined' && typeof Notification !== 'undefined';
 }
 
-function spawnNotification(d: Decision) {
-  if (typeof Notification === 'undefined') return;
+export function __notificationDetailsForTests(d: Decision | WorkflowDecision) {
+  const isWorkflow = d.kind === 'workflow-approval';
   const isPrompt = d.kind === 'prompt';
-  const title = isPrompt ? 'ocman — input required' : 'ocman — session finished';
-  const body = isPrompt
+  const title = isWorkflow
+    ? `ocman — approval required: ${d.workflowName}`
+    : isPrompt ? 'ocman — input required' : 'ocman — session finished';
+  const body = isWorkflow
+    ? `${d.nodeName} is waiting for your approval.`
+    : isPrompt
     ? 'A session is waiting on your response.'
     : 'A coding-agent session has finished running.';
+  const url = isWorkflow
+    ? `/workflows?${new URLSearchParams({ tab: 'runs', workflow: d.workflowId, run: d.runId })}`
+    : `/session/${d.sessionId}`;
+  return {
+    title,
+    body,
+    url,
+    tag: isWorkflow ? `ocman:${d.runId}:${d.nodeId}` : `ocman:${d.sessionId}:${d.kind}`,
+    requireInteraction: isPrompt || isWorkflow,
+  };
+}
+
+function spawnNotification(d: Decision | WorkflowDecision) {
+  if (typeof Notification === 'undefined') return;
+  const details = __notificationDetailsForTests(d);
   try {
-    const n = new Notification(title, {
-      body,
+    const n = new Notification(details.title, {
+      body: details.body,
       icon: '/apple-touch-icon.png',
       badge: '/favicon-32.png',
-      tag: `ocman:${d.sessionId}:${d.kind}`,
-      requireInteraction: isPrompt,
-      // Stash the session id on the notification so the click handler
-      // can route to the right page. `data` survives across the SW
+      tag: details.tag,
+      requireInteraction: details.requireInteraction,
+      // Stash the target on the notification so the click handler can
+      // route to the right page. `data` survives across the SW
       // boundary too (used by the SW's notificationclick handler).
-      data: { sessionId: d.sessionId, kind: d.kind, url: `/session/${d.sessionId}` },
+      data: { ...d, url: details.url },
     });
     n.onclick = (event) => {
       event.preventDefault();
       window.focus();
       // Use replace-style nav so the back button returns to wherever
       // the user came from rather than a blank tab.
-      window.location.assign(`/session/${d.sessionId}`);
+      window.location.assign(details.url);
       n.close();
     };
   } catch {
@@ -205,4 +261,18 @@ export function useNotificationNotify() {
       },
     },
   );
+
+  useEffect(() => onWorkflowRunUpdated(async (runId) => {
+    if (!enabledRef.current) return;
+    const permission = readPermission();
+    if (permission !== 'granted') return;
+    try {
+      const run = await api.workflows.run(runId);
+      for (const decision of __evaluateWorkflowForTests(run, enabledRef.current, permission)) {
+        spawnNotification(decision);
+      }
+    } catch {
+      // A later workflow update retries; notification failure must not affect the run.
+    }
+  }), []);
 }
