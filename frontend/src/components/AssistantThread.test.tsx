@@ -15,19 +15,20 @@ vi.hoisted(() => {
   });
 });
 
-const { message } = vi.hoisted(() => ({
+const { message, threadState } = vi.hoisted(() => ({
   message: {
     id: 'assistant-1',
     content: [{ type: 'text', text: 'Reply' }],
     createdAt: new Date('2026-07-16T12:00:00Z'),
     status: { type: 'complete' },
-    metadata: { custom: { model: 'openai/gpt-5', time: { created: 1000, completed: 2000 }, tokens: { output: 10 } } },
+    metadata: { custom: { model: 'openai/gpt-5', time: { created: 1000, completed: 2000 }, tokens: { output: 10 } } as Record<string, unknown> },
   },
+  threadState: { renderUser: false },
 }));
 
 vi.mock('@assistant-ui/react', async () => {
   const React = await import('react');
-  const Root = ({ children, className }: { children: ReactNode; className?: string }) => <div className={className}>{children}</div>;
+  const Root = ({ children, className, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div className={className} {...props}>{children}</div>;
   const Viewport = React.forwardRef<HTMLDivElement, { children: ReactNode; className?: string; autoScroll?: boolean }>(
     ({ children, className, autoScroll }, ref) => <div ref={ref} className={className} data-auto-scroll={String(autoScroll)}>{children}</div>,
   );
@@ -36,7 +37,9 @@ vi.mock('@assistant-ui/react', async () => {
       Root,
       Viewport,
       Empty: ({ children }: { children: ReactNode }) => <>{children}</>,
-      Messages: ({ components }: { components: { AssistantMessage: React.ComponentType } }) => <components.AssistantMessage />,
+      Messages: ({ components }: { components: { UserMessage: React.ComponentType; AssistantMessage: React.ComponentType } }) => (
+        threadState.renderUser ? <components.UserMessage /> : <components.AssistantMessage />
+      ),
       ViewportFooter: React.forwardRef<HTMLDivElement, { children: ReactNode; className?: string }>(
         ({ children, className }, ref) => <div ref={ref} className={className}>{children}</div>,
       ),
@@ -77,6 +80,8 @@ class StubResizeObserver {
 beforeEach(() => {
   vi.stubGlobal('ResizeObserver', StubResizeObserver);
   useUiStore.getState().setShowMessageMetadata(false);
+  threadState.renderUser = false;
+  message.metadata.custom = { model: 'openai/gpt-5', time: { created: 1000, completed: 2000 }, tokens: { output: 10 } };
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -112,5 +117,25 @@ describe('AssistantThread message metadata', () => {
     const { container } = render(<AssistantThread />);
 
     expect(container.querySelector('.oc-msg-meta')).not.toBeNull();
+  });
+});
+
+describe('AssistantThread agent updates', () => {
+  it('labels child-to-parent messages separately from user messages', () => {
+    threadState.renderUser = true;
+    message.metadata.custom = {
+      childMessage: {
+        kind: 'direct_message',
+        childSessionId: 'child-1',
+        intent: 'Inspect the failing test',
+        status: 'running',
+      },
+    };
+
+    const { getByText, getByTestId } = render(<AssistantThread />);
+
+    expect(getByText('Agent update')).toBeInTheDocument();
+    expect(getByText('Inspect the failing test')).toBeInTheDocument();
+    expect(getByTestId('agent-update-message')).toBeInTheDocument();
   });
 });

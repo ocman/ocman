@@ -77,6 +77,33 @@
   border-left: 3px solid var(--accent3);
   padding: 16px 20px;
 }
+.oc-msg-agent-update {
+  background: color-mix(in srgb, var(--accent4) 8%, var(--bg-card));
+  border-color: color-mix(in srgb, var(--accent4) 35%, var(--border));
+  border-left-color: var(--accent4);
+}
+.oc-msg-agent-update-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 10px;
+  color: var(--accent4);
+  font-size: 12px;
+}
+.oc-msg-agent-update-header > span {
+  color: var(--text-dim);
+}
+.oc-msg-agent-update-header > span:not(.oc-msg-agent-update-status) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.oc-msg-agent-update-status {
+  margin-left: auto;
+  flex-shrink: 0;
+  text-transform: capitalize;
+}
 /* Failed-send banner attached to a user-message bubble. The bubble keeps
    its normal layout; the banner sits underneath the body and offers
    Retry / Dismiss without disturbing the surrounding thread spacing. */

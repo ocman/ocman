@@ -90,6 +90,9 @@ const UserMessage: FC = () => {
   const id = useMessage((m) => m.id);
   const custom = useMessage((m) => m.metadata?.custom as Record<string, unknown> | undefined);
   const agent = typeof custom?.agent === 'string' ? (custom.agent as string) : undefined;
+  const childMessage = custom?.childMessage && typeof custom.childMessage === 'object'
+    ? custom.childMessage as { childSessionId?: string; intent?: string; status?: string }
+    : undefined;
   const failed = (custom?.failed && typeof custom.failed === 'object')
     ? (custom.failed as { error?: string; imagesDropped?: boolean })
     : undefined;
@@ -100,7 +103,7 @@ const UserMessage: FC = () => {
   let borderStyle: React.CSSProperties | undefined;
   if (failed) {
     borderStyle = { borderLeftColor: 'var(--danger)' };
-  } else if (agent) {
+  } else if (agent && !childMessage) {
     borderStyle = { borderLeftColor: agentBorder };
   }
   const hasContent = content.some(
@@ -112,11 +115,20 @@ const UserMessage: FC = () => {
 
   return (
     <MessagePrimitive.Root
-      className={`oc-msg oc-msg-user${failed ? ' oc-msg-failed' : ''}`}
+      className={`oc-msg oc-msg-user${childMessage ? ' oc-msg-agent-update' : ''}${failed ? ' oc-msg-failed' : ''}`}
       data-message-id={id}
+      data-testid={childMessage ? 'agent-update-message' : undefined}
       style={borderStyle}
     >
       <MessageBookmarkButton messageId={id} />
+      {childMessage && (
+        <div className="oc-msg-agent-update-header" title={childMessage.childSessionId}>
+          <i className="bi bi-robot" aria-hidden="true" />
+          <strong>Agent update</strong>
+          {childMessage.intent && <span>{childMessage.intent}</span>}
+          {childMessage.status && <span className="oc-msg-agent-update-status">{childMessage.status}</span>}
+        </div>
+      )}
       <div className="oc-msg-body">
         <MessagePrimitive.Content components={USER_PART_COMPONENTS} />
       </div>
