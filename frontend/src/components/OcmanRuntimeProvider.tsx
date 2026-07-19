@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AssistantRuntimeProvider,
   useExternalStoreRuntime,
@@ -11,7 +11,7 @@ import { useUiStore } from '../lib/uiStore';
 import { AgentsContext } from '../lib/agentColor';
 import { FailedSendsContext, type FailedSendsContextValue } from '../lib/failedSendsContext';
 import type { FailedSend } from '../lib/failedSends';
-import { computeIsRunning, createConvertMessages } from '../lib/convertMessages';
+import { computeIsRunning, createConvertMessages, parsePart } from '../lib/convertMessages';
 import { computeTurnStats, ModelLabelsContext, TurnStatsContext } from '../lib/turnStats';
 import { formatModelRef } from '../lib/sessionStatus';
 
@@ -77,6 +77,17 @@ export function OcmanRuntimeProvider({
   const sendMessage = useApiStore((state) => state.sendMessage);
   // Display-only reasoning visibility (the `/thinking` toggle, #290).
   const showReasoning = useUiStore((state) => state.showReasoning);
+  const hasActiveReasoning = useMemo(() => showReasoning && parts.some((part) => {
+    const data = parsePart(part);
+    return data.type === 'reasoning' && data.time?.start !== undefined && data.time.end === undefined;
+  }), [parts, showReasoning]);
+  const [reasoningNow, setReasoningNow] = useState(Date.now);
+  useEffect(() => {
+    if (!hasActiveReasoning) return;
+    setReasoningNow(Date.now());
+    const timer = window.setInterval(() => setReasoningNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [hasActiveReasoning]);
 
   // Index failed sends by their optimistic message id so convertMessages can
   // attach the failure metadata (and the AssistantThread renderer can pull
@@ -106,7 +117,7 @@ export function OcmanRuntimeProvider({
   const convert = useMemo(() => createConvertMessages(), [sessionId]);
 
   const converted = useMemo(() => {
-    const serverMessages = convert(messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById, showReasoning, childSessions);
+    const serverMessages = convert(messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById, showReasoning, childSessions, reasoningNow);
     const serverIds = new Set(serverMessages.map((message) => message.id));
     const missingFailures = (failedSends ?? []).filter((entry) => !serverIds.has(entry.id));
     if (missingFailures.length === 0) return serverMessages;
@@ -117,7 +128,7 @@ export function OcmanRuntimeProvider({
       createdAt: new Date(entry.failedAt),
       metadata: { custom: { failed: { error: entry.error, imagesDropped: !!entry.imagesDropped } } },
     }))];
-  }, [convert, messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById, failedSends, showReasoning, childSessions]);
+  }, [convert, messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById, failedSends, showReasoning, childSessions, reasoningNow]);
 
   const isRunning = useMemo(() => computeIsRunning(messages), [messages]);
 

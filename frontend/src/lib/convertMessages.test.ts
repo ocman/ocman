@@ -304,6 +304,16 @@ describe('convertMessages', () => {
     expect(out[0].content).toBe('> **Thinking:** thinking…');
   });
 
+  it('renders elapsed time for unfinished reasoning parts', () => {
+    const m = makeMessage('m', { role: 'assistant' });
+    const out = convertMessages(
+      [m],
+      [makePart('m', { type: 'reasoning', text: 'thinking…', time: { start: 1000 } })],
+      undefined, undefined, undefined, undefined, true, undefined, 8800,
+    );
+    expect(out[0].content).toBe('> **Thinking:** thinking… · 7.8s');
+  });
+
   it('renders finished reasoning parts as a thought', () => {
     const m = makeMessage('m', { role: 'assistant' });
     const out = convertMessages(

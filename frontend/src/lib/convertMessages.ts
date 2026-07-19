@@ -149,6 +149,8 @@ type ConvertedCacheEntry = {
   modelChangedTo: string;
   /** Whether reasoning parts were rendered into this result (#290). */
   showReasoning: boolean;
+  /** Current clock value when this message contains active reasoning. */
+  reasoningNow: number;
   childSessions: ChildSessionReference[] | undefined;
   result: ThreadMessageLike;
 };
@@ -240,6 +242,7 @@ export type ConvertMessagesFn = (
   failedById?: Record<string, FailedSend>,
   showReasoning?: boolean,
   childSessions?: ChildSessionReference[],
+  now?: number,
 ) => ThreadMessageLike[];
 
 /**
@@ -283,6 +286,7 @@ export function createConvertMessages(): ConvertMessagesFn {
     // to true so non-React callers and the default instance are unchanged.
     showReasoning: boolean = true,
     childSessions?: ChildSessionReference[],
+    now: number = Date.now(),
   ): ThreadMessageLike[] {
     // Reuse the bucketed `partsByMsg` index when the input parts
     // array is the same reference we saw last time. Saves an O(N)
@@ -405,6 +409,10 @@ export function createConvertMessages(): ConvertMessagesFn {
     // on every call even when the underlying Part objects are stable.
     const modelChangedTo = modelChangedById[m.id] || '';
     const msgPartsRaw = partsByMsg[m.id] || EMPTY_PARTS;
+    const reasoningNow = showReasoning && msgPartsRaw.some((part) => {
+      const data = parsePart(part);
+      return data.type === 'reasoning' && data.time?.start !== undefined && data.time.end === undefined;
+    }) ? now : 0;
     const cached = convertedMessageCache.get(m);
     if (
       cached &&
@@ -415,7 +423,8 @@ export function createConvertMessages(): ConvertMessagesFn {
       cached.failedById === failedById &&
       cached.msgAgent === msgAgent &&
       cached.modelChangedTo === modelChangedTo &&
-      cached.showReasoning === showReasoning
+      cached.showReasoning === showReasoning &&
+      cached.reasoningNow === reasoningNow
       && cached.childSessions === childSessions
     ) {
       return cached.result;
@@ -753,8 +762,8 @@ export function createConvertMessages(): ConvertMessagesFn {
           // when the user has hidden them via `/thinking`.
           if (showReasoning && pd.text?.trim()) {
             const { start, end } = pd.time ?? {};
-            const duration = end !== undefined && start !== undefined
-              ? ` · ${formatSeconds(Math.max(0, end - start) / 1000)}`
+            const duration = start !== undefined
+              ? ` · ${formatSeconds(Math.max(0, (end ?? now) - start) / 1000)}`
               : '';
             textPieces.push(`> **${end !== undefined ? 'Thought' : 'Thinking'}:** ${pd.text}${duration}`);
           }
@@ -900,6 +909,7 @@ export function createConvertMessages(): ConvertMessagesFn {
       msgAgent,
       modelChangedTo,
       showReasoning,
+      reasoningNow,
       childSessions,
       result,
     });
