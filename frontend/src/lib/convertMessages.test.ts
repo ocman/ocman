@@ -295,13 +295,22 @@ describe('convertMessages', () => {
     expect(out[0].content).toBe('one\n\ntwo');
   });
 
-  it('renders reasoning parts as a compact thought line', () => {
+  it('renders unfinished reasoning parts as thinking', () => {
     const m = makeMessage('m', { role: 'assistant' });
     const out = convertMessages(
       [m],
       [makePart('m', { type: 'reasoning', text: 'thinking…' })],
     );
-    expect(out[0].content).toBe('> **Thought:** thinking…');
+    expect(out[0].content).toBe('> **Thinking:** thinking…');
+  });
+
+  it('renders finished reasoning parts as a thought', () => {
+    const m = makeMessage('m', { role: 'assistant' });
+    const out = convertMessages(
+      [m],
+      [makePart('m', { type: 'reasoning', text: 'done', time: { start: 1, end: 2 } })],
+    );
+    expect(out[0].content).toBe('> **Thought:** done');
   });
 
   it('drops reasoning parts when showReasoning is false (#290)', () => {
@@ -318,7 +327,7 @@ describe('convertMessages', () => {
 
   it('re-renders reasoning when showReasoning flips for the same message (#290)', () => {
     const m = makeMessage('m', { role: 'assistant' });
-    const parts = [makePart('m', { type: 'reasoning', text: 'thinking…' })];
+    const parts = [makePart('m', { type: 'reasoning', text: 'thinking…', time: { start: 1, end: 2 } })];
     const convert = createConvertMessages();
     // Same message identity, opposite toggle values: the cache key must
     // include showReasoning or the second call would return the stale
