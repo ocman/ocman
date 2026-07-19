@@ -308,9 +308,9 @@ describe('convertMessages', () => {
     const m = makeMessage('m', { role: 'assistant' });
     const out = convertMessages(
       [m],
-      [makePart('m', { type: 'reasoning', text: 'done', time: { start: 1, end: 2 } })],
+      [makePart('m', { type: 'reasoning', text: 'done', time: { start: 1000, end: 8800 } })],
     );
-    expect(out[0].content).toBe('> **Thought:** done');
+    expect(out[0].content).toBe('> **Thought:** done · 7.8s');
   });
 
   it('drops reasoning parts when showReasoning is false (#290)', () => {
@@ -327,7 +327,7 @@ describe('convertMessages', () => {
 
   it('re-renders reasoning when showReasoning flips for the same message (#290)', () => {
     const m = makeMessage('m', { role: 'assistant' });
-    const parts = [makePart('m', { type: 'reasoning', text: 'thinking…', time: { start: 1, end: 2 } })];
+    const parts = [makePart('m', { type: 'reasoning', text: 'thinking…', time: { end: 2 } })];
     const convert = createConvertMessages();
     // Same message identity, opposite toggle values: the cache key must
     // include showReasoning or the second call would return the stale

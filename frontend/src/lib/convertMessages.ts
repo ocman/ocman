@@ -3,6 +3,7 @@ import type { ChildSessionReference, Message, Part, PartData, FilePart, TaskSess
 import type { FailedSend } from './failedSends';
 import { extractTaskId } from './taskId';
 import { messageModelRef } from './turnStats';
+import { formatSeconds } from './format';
 
 /**
  * Returns true when the MIME type denotes an image (`image/...`).
@@ -747,13 +748,18 @@ export function createConvertMessages(): ConvertMessagesFn {
           }
           break;
         }
-        case 'reasoning':
+        case 'reasoning': {
           // Display-only toggle (#290): drop reasoning blocks entirely
           // when the user has hidden them via `/thinking`.
           if (showReasoning && pd.text?.trim()) {
-            textPieces.push(`> **${pd.time?.end === undefined ? 'Thinking' : 'Thought'}:** ${pd.text}`);
+            const { start, end } = pd.time ?? {};
+            const duration = end !== undefined && start !== undefined
+              ? ` · ${formatSeconds(Math.max(0, end - start) / 1000)}`
+              : '';
+            textPieces.push(`> **${end !== undefined ? 'Thought' : 'Thinking'}:** ${pd.text}${duration}`);
           }
           break;
+        }
         case 'patch': {
           const file = pd.file || pd.path || 'unknown file';
           const diff = pd.content || pd.diff || '';
