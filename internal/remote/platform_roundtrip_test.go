@@ -212,8 +212,14 @@ func TestRemoteHost_AllMethods(t *testing.T) {
 	if _, err := rh.LaunchTmux(ctx, hostsvc.LaunchTmuxRequest{Directory: "/x"}); err != nil {
 		t.Errorf("LaunchTmux: %v", err)
 	}
-	if res, err := rh.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: "/x"}); err != nil || res.Port != "1234" {
+	if res, err := rh.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: "/x"}); err != nil || res.Port() != "1234" {
 		t.Errorf("EnsureProjectOpencode = %+v, %v", res, err)
+	}
+	// RestartProjectOpencode marshals req+result across the same gRPC seam;
+	// localStubHost returns a distinct endpoint (:5678) + Launched=true so
+	// the roundtrip is observable, not aliased to the ensure result.
+	if res, err := rh.RestartProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: "/x"}); err != nil || res.Port() != "5678" || !res.Launched {
+		t.Errorf("RestartProjectOpencode = %+v, %v", res, err)
 	}
 	if _, err := rh.TmuxSessions(ctx); err != nil {
 		t.Errorf("TmuxSessions: %v", err)

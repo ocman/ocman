@@ -20,8 +20,8 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
+	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/queuesvc"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
@@ -111,11 +111,11 @@ type Server struct {
 	queueSvcOnce   sync.Once
 	childResults   *internalmcp.ChildResultBroker
 
-	// launchProjectOpencodeFn is the local Host's LaunchProjectOpencode
-	// dep. Defaults to the real tmux launcher; tests override it with a
-	// no-op so session-mode handlers don't spawn (and leak) real tmux
-	// sessions in temp dirs.
-	launchProjectOpencodeFn func(dir, permissionJSON string) (string, error)
+	// runtime is the local Host's ocruntime.Runtime, injected into
+	// newLocalHost. Defaults to the native tmux runtime; tests override it
+	// (before the host router is built) with a fake so session-mode
+	// handlers don't spawn (and leak) real tmux sessions in temp dirs.
+	runtime ocruntime.Runtime
 }
 
 // remoteAccessInfo holds this instance's own remote-access surface for
@@ -150,9 +150,10 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		broadcastHub: newBroadcastHub(),
 		childResults: internalmcp.NewChildResultBroker(),
 
-		launchProjectOpencodeFn: launchProjectOpencode,
+		runtime: ocruntime.NewNativeRuntime(),
 	}
-	s.hostRouter = hostsvc.NewRouter(s.newLocalHost())
+	// The host router is built lazily (see router()) so tests can override
+	// s.runtime after New before the local Host is constructed.
 	// registryRef (not the registry itself) so the service follows a
 	// swapped s.registry — tests replace it after construction.
 	s.sessions = sessionsvc.New(registryRef{s}, sessionsvc.Hooks{
@@ -206,11 +207,11 @@ func (s *Server) SessionService() *sessionsvc.Service { return s.sessions }
 // sites directly). See internal/hostsvc/local.
 func (s *Server) newLocalHost() hostsvc.Host {
 	return hostlocal.New(hostlocal.Deps{
-		LaunchTmux: tmux.LaunchOpencode,
-		LaunchProjectOpencode: func(dir, permissionJSON string) (string, error) {
-			return s.launchProjectOpencodeFn(dir, permissionJSON)
-		},
-		DiscoverPort: opencode.DiscoverOpenCodePortFresh,
+		LaunchTmux:   tmux.LaunchOpencode,
+		Runtime:      s.runtime,
+		ManagedStore: managedStoreOrNil(s.stateDB),
+		// The managed ensure path launches/probes through Runtime (#390),
+		// so the old LaunchProjectOpencode/DiscoverPort deps are gone.
 		// CreateSession routes worktree-session creation through the shared
 		// session-mutation service (same validated path + hooks as REST/MCP).
 		// Resolved lazily: s.sessions is assigned after newLocalHost runs.
@@ -225,6 +226,47 @@ func (s *Server) newLocalHost() hostsvc.Host {
 		TermKillWindow:   term.KillWindow,
 		TermAttach:       term.AttachLocalPTY,
 	})
+}
+
+// managedStore adapts state.DB to hostlocal.ManagedStore, converting
+// between the host's ManagedInstance and the state layer's decoupled
+// plain struct. Returns nil when there is no state DB so the host falls
+// back to its in-memory map (soft: a missing store never breaks launch).
+type managedStore struct{ db *state.DB }
+
+func managedStoreOrNil(db *state.DB) hostlocal.ManagedStore {
+	if db == nil {
+		return nil
+	}
+	return managedStore{db: db}
+}
+
+func (m managedStore) Upsert(repoRoot string, inst hostlocal.ManagedInstance) error {
+	return m.db.UpsertManagedOpencode(repoRoot, state.ManagedInstance{
+		Endpoint:   inst.Endpoint,
+		Kind:       inst.Kind,
+		RuntimeID:  inst.RuntimeID,
+		PID:        inst.PID,
+		LaunchedAt: inst.LaunchedAt,
+	}, inst.LaunchedAt)
+}
+
+func (m managedStore) Get(repoRoot string) (hostlocal.ManagedInstance, bool, error) {
+	mi, ok, err := m.db.GetManagedOpencode(repoRoot)
+	if err != nil || !ok {
+		return hostlocal.ManagedInstance{}, ok, err
+	}
+	return hostlocal.ManagedInstance{
+		Endpoint:   mi.Endpoint,
+		Kind:       mi.Kind,
+		RuntimeID:  mi.RuntimeID,
+		PID:        mi.PID,
+		LaunchedAt: mi.LaunchedAt,
+	}, true, nil
+}
+
+func (m managedStore) Delete(repoRoot string) error {
+	return m.db.DeleteManagedOpencode(repoRoot)
 }
 
 // WithAutoApproveDefault sets the server-wide default for auto-approve.

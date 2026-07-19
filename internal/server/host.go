@@ -63,6 +63,10 @@ func (s *Server) hostCaps() hostsvc.HostCaps {
 		Tmux:      tmuxOK,
 		Projects:  s.db != nil,
 		Whisper:   whisper.Available(),
+		// Launch availability is opencode-on-PATH plus the native runtime's
+		// prerequisite (tmux) today; a future container runtime drops the
+		// tmux dependency. Gated separately from Tmux (#390 / AD-8).
+		OpencodeLaunch: opencodeOK && tmuxOK,
 	}
 }
 
@@ -81,18 +85,5 @@ func (s *Server) ensureProjectOpencodePort(ctx context.Context, dir string) (str
 	if err != nil {
 		return "", err
 	}
-	return res.Port, nil
-}
-
-// launchProjectOpencode launches (idempotently) a single opencode in a
-// tmux session rooted at dir, seeding the pane with the given
-// OPENCODE_PERMISSION JSON. It is the LaunchProjectOpencode dep for the
-// local Host's EnsureProjectOpencode primitive.
-func launchProjectOpencode(dir, permissionJSON string) (string, error) {
-	env := map[string]string{}
-	if permissionJSON != "" {
-		env["OPENCODE_PERMISSION"] = permissionJSON
-	}
-	session, _, err := tmux.LaunchOpencodeEnv(dir, env)
-	return session, err
+	return res.Port(), nil
 }

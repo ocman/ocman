@@ -10,7 +10,10 @@ import type { WorktreeEntry } from '../lib/api';
 // browser. Mock them to thin, deterministic stubs so the test can focus
 // on the delete flow (the only logic this suite cares about).
 vi.mock('../lib/headerContext', () => ({ usePageTitle: () => {} }));
-vi.mock('../lib/useCapabilities', () => ({ useWorktreeSessions: () => true }));
+// Launch affordances gate on opencodeLaunch (AD-8 / #393), not tmux.
+// `launchAllowed` lets individual tests flip the flag.
+const launchState = { allowed: true };
+vi.mock('../lib/useCapabilities', () => ({ useOpencodeLaunch: () => launchState.allowed }));
 vi.mock('../lib/shortcuts', () => ({ openVSCode: () => {} }));
 vi.mock('../lib/uiStore', () => ({
   useUiStore: (selector: (s: { openWorktreeForm: () => void }) => unknown) =>
@@ -49,12 +52,29 @@ function renderView() {
 
 describe('WorktreesView delete flow', () => {
   beforeEach(() => {
+    launchState.allowed = true;
     vi.spyOn(api.worktree, 'list').mockResolvedValue({
       worktrees: [wt({ path: '/repo', branch: 'main', main: true }), wt()],
     });
   });
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  // AD-8 / #393: launch affordance shows when opencodeLaunch is on and
+  // is fully hidden (unavailable notice) when off — independent of tmux.
+  it('renders worktrees when opencodeLaunch is on', async () => {
+    launchState.allowed = true;
+    renderView();
+    expect(await screen.findByText('feature')).toBeInTheDocument();
+    expect(screen.queryByText(/unavailable on this host/i)).not.toBeInTheDocument();
+  });
+
+  it('hides the launch UI when opencodeLaunch is off', async () => {
+    launchState.allowed = false;
+    renderView();
+    expect(await screen.findByText(/unavailable on this host/i)).toBeInTheDocument();
+    expect(screen.queryByText('feature')).not.toBeInTheDocument();
   });
 
   it('does not offer Delete on the main worktree', async () => {

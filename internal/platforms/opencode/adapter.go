@@ -119,10 +119,10 @@ func (a *Adapter) Capabilities() platforms.Capabilities {
 		SessionInfo:       true,
 		AutoApprove:       true,
 		PermissionRules:   true,
-		// OpenCode only exposes an HTTP API when it's started with an
-		// explicit --port flag. `--port 0` asks OpenCode to pick a free
-		// port and advertises it via lsof, which ocman scans.
-		LiveConnectionHint: "Start OpenCode with `opencode --port 0` so ocman can discover and connect to it.",
+		// ocman launches and manages the OpenCode instance for each
+		// project itself (EnsureProjectOpencode), so no live connection
+		// means the managed instance isn't running yet.
+		LiveConnectionHint: "Launch a session to start OpenCode for this project.",
 	}
 }
 

@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v6.33.4
-// source: remote.proto
+// source: internal/remote/proto/remote.proto
 
 package remotepb
 
@@ -57,6 +57,7 @@ const (
 	Ocman_RemoveWorktree_FullMethodName         = "/ocman.remote.v1.Ocman/RemoveWorktree"
 	Ocman_LaunchTmux_FullMethodName             = "/ocman.remote.v1.Ocman/LaunchTmux"
 	Ocman_EnsureProjectOpencode_FullMethodName  = "/ocman.remote.v1.Ocman/EnsureProjectOpencode"
+	Ocman_RestartProjectOpencode_FullMethodName = "/ocman.remote.v1.Ocman/RestartProjectOpencode"
 	Ocman_TmuxSessions_FullMethodName           = "/ocman.remote.v1.Ocman/TmuxSessions"
 	Ocman_HostCapabilities_FullMethodName       = "/ocman.remote.v1.Ocman/HostCapabilities"
 	Ocman_TermWindows_FullMethodName            = "/ocman.remote.v1.Ocman/TermWindows"
@@ -126,6 +127,7 @@ type OcmanClient interface {
 	RemoveWorktree(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*Empty, error)
 	LaunchTmux(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 	EnsureProjectOpencode(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
+	RestartProjectOpencode(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 	TmuxSessions(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*JsonResp, error)
 	HostCapabilities(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*JsonResp, error)
 	// In-app terminal windows (directory-scoped, executed on the owner).
@@ -538,6 +540,16 @@ func (c *ocmanClient) EnsureProjectOpencode(ctx context.Context, in *JsonReq, op
 	return out, nil
 }
 
+func (c *ocmanClient) RestartProjectOpencode(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(JsonResp)
+	err := c.cc.Invoke(ctx, Ocman_RestartProjectOpencode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *ocmanClient) TmuxSessions(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*JsonResp, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(JsonResp)
@@ -689,6 +701,7 @@ type OcmanServer interface {
 	RemoveWorktree(context.Context, *JsonReq) (*Empty, error)
 	LaunchTmux(context.Context, *JsonReq) (*JsonResp, error)
 	EnsureProjectOpencode(context.Context, *JsonReq) (*JsonResp, error)
+	RestartProjectOpencode(context.Context, *JsonReq) (*JsonResp, error)
 	TmuxSessions(context.Context, *Empty) (*JsonResp, error)
 	HostCapabilities(context.Context, *Empty) (*JsonResp, error)
 	// In-app terminal windows (directory-scoped, executed on the owner).
@@ -825,6 +838,9 @@ func (UnimplementedOcmanServer) LaunchTmux(context.Context, *JsonReq) (*JsonResp
 }
 func (UnimplementedOcmanServer) EnsureProjectOpencode(context.Context, *JsonReq) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method EnsureProjectOpencode not implemented")
+}
+func (UnimplementedOcmanServer) RestartProjectOpencode(context.Context, *JsonReq) (*JsonResp, error) {
+	return nil, status.Error(codes.Unimplemented, "method RestartProjectOpencode not implemented")
 }
 func (UnimplementedOcmanServer) TmuxSessions(context.Context, *Empty) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method TmuxSessions not implemented")
@@ -1548,6 +1564,24 @@ func _Ocman_EnsureProjectOpencode_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Ocman_RestartProjectOpencode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JsonReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).RestartProjectOpencode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_RestartProjectOpencode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).RestartProjectOpencode(ctx, req.(*JsonReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Ocman_TmuxSessions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(Empty)
 	if err := dec(in); err != nil {
@@ -1830,6 +1864,10 @@ var Ocman_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Ocman_EnsureProjectOpencode_Handler,
 		},
 		{
+			MethodName: "RestartProjectOpencode",
+			Handler:    _Ocman_RestartProjectOpencode_Handler,
+		},
+		{
 			MethodName: "TmuxSessions",
 			Handler:    _Ocman_TmuxSessions_Handler,
 		},
@@ -1872,5 +1910,5 @@ var Ocman_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "remote.proto",
+	Metadata: "internal/remote/proto/remote.proto",
 }

@@ -458,6 +458,15 @@ func (s *Server) EnsureProjectOpencode(ctx context.Context, req *pb.JsonReq) (*p
 	return jsonResp(s.host.EnsureProjectOpencode(ctx, er))
 }
 
+func (s *Server) RestartProjectOpencode(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
+	var er hostsvc.EnsureProjectOpencodeRequest
+	if err := unmarshalJSON(req.Payload, &er); err != nil {
+		return nil, err
+	}
+	log.WithField("projectDir", er.ProjectDir).Info("remote: restart-project-opencode request from hub")
+	return jsonResp(s.host.RestartProjectOpencode(ctx, er))
+}
+
 func (s *Server) TmuxSessions(ctx context.Context, _ *pb.Empty) (*pb.JsonResp, error) {
 	return jsonResp(s.host.TmuxSessions(ctx))
 }

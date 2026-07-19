@@ -18,9 +18,11 @@ package hostsvc
 
 import (
 	"context"
+	"net/url"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/git"
+	"github.com/NoUseFreak/ocman/internal/ocruntime"
 )
 
 // HostCaps reports which directory-scoped capabilities a host supports.
@@ -33,6 +35,12 @@ type HostCaps struct {
 	Tmux      bool `json:"tmux"`
 	Projects  bool `json:"projects"`
 	Whisper   bool `json:"whisper"`
+	// OpencodeLaunch reports whether the host can launch a managed
+	// OpenCode instance (its ocruntime.Runtime is usable). Distinct from
+	// Tmux: a future container runtime can launch without tmux, and the
+	// tmux binary can be present without opencode on PATH. The frontend
+	// gates managed-launch UI on this flag (#390 / AD-8).
+	OpencodeLaunch bool `json:"opencodeLaunch"`
 }
 
 // TermWindow is one in-app terminal window with a display title. Mirrors
@@ -131,14 +139,31 @@ type EnsureProjectOpencodeRequest struct {
 	ProjectDir string `json:"projectDir"`
 }
 
-// EnsureProjectOpencodeResult reports the discovered/launched opencode
-// port, plus the resolved repo root and tmux session name for
-// observability.
+// EnsureProjectOpencodeResult reports a reachable OpenCode instance for a
+// project: the full Endpoint URL, the resolved repo root, the opaque
+// runtime Instance (its ID is the tmux session name for the native
+// runtime, kept for observability), and whether this call launched it.
+// The managed path is runtime-neutral: callers use Endpoint (or the
+// Port() accessor) and never depend on lsof discovery (#390 / AD-2).
 type EnsureProjectOpencodeResult struct {
-	Port        string `json:"port"`
-	RepoRoot    string `json:"repoRoot"`
-	TmuxSession string `json:"tmuxSession"`
-	Launched    bool   `json:"launched"`
+	Endpoint string             `json:"endpoint"`
+	RepoRoot string             `json:"repoRoot"`
+	Runtime  ocruntime.Instance `json:"runtime"`
+	Launched bool               `json:"launched"`
+}
+
+// Port returns the TCP port from the instance Endpoint, or "" when the
+// endpoint is missing or unparseable. Provided for callers that still
+// thread a raw port (e.g. CreateSession) rather than a full URL.
+func (r EnsureProjectOpencodeResult) Port() string {
+	if r.Endpoint == "" {
+		return ""
+	}
+	u, err := url.Parse(r.Endpoint)
+	if err != nil {
+		return ""
+	}
+	return u.Port()
 }
 
 // TmuxSession is one tmux session reported by TmuxSessions.
@@ -201,13 +226,24 @@ type Host interface {
 
 	// EnsureProjectOpencode guarantees exactly one running opencode
 	// instance for the project containing req.ProjectDir, rooted at the
-	// project's main checkout. It discovers a running instance and, if
-	// none exists, launches exactly one (seeding a scoped
-	// external_directory permission) and waits for its port. Idempotent:
-	// a second call returns the running instance and launches nothing.
-	// Returns git.ErrNotARepo when the directory is not inside a repo.
-	// Runs on the owning host (R-C).
+	// project's main checkout. It checks the current managed instance and
+	// its health (Probe) and, if none exists or it is unhealthy, launches
+	// exactly one via the host's ocruntime.Runtime (seeding a scoped
+	// external_directory permission) and waits for it to serve.
+	// Idempotent and concurrency-safe: overlapping calls for one repo root
+	// launch at most one instance and all receive the same healthy
+	// endpoint. Returns git.ErrNotARepo when the directory is not inside a
+	// repo. Runs on the owning host (R-C).
 	EnsureProjectOpencode(ctx context.Context, req EnsureProjectOpencodeRequest) (*EnsureProjectOpencodeResult, error)
+
+	// RestartProjectOpencode stops the project's currently tracked managed
+	// instance (if any) and then re-ensures it, launching a fresh one.
+	// Runs under the same singleflight key as EnsureProjectOpencode so a
+	// restart cannot race an ensure. A Stop failure is soft (logged, then
+	// the relaunch proceeds). Returns the fresh result with Launched=true.
+	// Owner-routed via Router.ForDir exactly like EnsureProjectOpencode, so
+	// it works for local and remote native instances (AD-7).
+	RestartProjectOpencode(ctx context.Context, req EnsureProjectOpencodeRequest) (*EnsureProjectOpencodeResult, error)
 
 	// TmuxSessions lists the host's tmux sessions.
 	TmuxSessions(ctx context.Context) ([]TmuxSession, error)

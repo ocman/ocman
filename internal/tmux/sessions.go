@@ -373,6 +373,55 @@ func envArgs(env map[string]string) []string {
 // nothing in the rc file (mise, starship, …) can race for keystrokes.
 const OpencodeCommand = "exec opencode --port 0"
 
+// OpencodeCommandForPort builds the pane command for a specific,
+// caller-allocated port (used by internal/ocruntime, which allocates a
+// free loopback port itself instead of letting opencode pick with
+// `--port 0`). Same `exec opencode` shape as OpencodeCommand so the
+// pane behaves identically otherwise.
+func OpencodeCommandForPort(port int) string {
+	return fmt.Sprintf("exec opencode --port %d", port)
+}
+
+// LaunchOpencodeCmdEnvWith is the env-aware, idempotent launcher that
+// runs an explicit pane command (e.g. one carrying a specific --port).
+// It is the port-threading analogue of LaunchOpencodeEnvWith: same
+// session matching (dot/underscore skew aware), same idempotent
+// short-circuit, but the caller supplies the command instead of the
+// hardcoded --port 0 one.
+func LaunchOpencodeCmdEnvWith(r Runner, directory, command string, idempotent bool, env map[string]string) (string, bool, error) {
+	sessionName := SessionNameForPath(directory)
+	if !ValidComponent.MatchString(sessionName) {
+		return "", false, fmt.Errorf("derived tmux session name %q contains invalid characters", sessionName)
+	}
+
+	sessionExists := false
+	wantPath := filepath.Clean(directory)
+	if existing, err := r.ListSessions(); err == nil {
+		for _, ts := range existing {
+			if filepath.Clean(ts.ResolvedPath) == wantPath {
+				sessionExists = true
+				sessionName = ts.Name
+				break
+			}
+		}
+	}
+
+	if idempotent && sessionExists {
+		return sessionName, false, nil
+	}
+
+	if !sessionExists {
+		if err := r.NewSessionEnv(sessionName, directory, command, env); err != nil {
+			return "", false, fmt.Errorf("tmux new-session: %w", err)
+		}
+	} else {
+		if err := r.NewWindowEnv(sessionName, directory, command, env); err != nil {
+			return "", false, fmt.Errorf("tmux new-window: %w", err)
+		}
+	}
+	return sessionName, true, nil
+}
+
 // LaunchOpencode finds or creates a tmux session named after the given
 // directory, opens a new window in it, and runs `opencode --port 0` there.
 // It returns the name of the tmux session that was used/created.

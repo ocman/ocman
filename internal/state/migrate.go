@@ -138,7 +138,11 @@ import (
 //	33 - workflow archive state. Archived definitions stop scheduling but
 //	      retain their run history and artifacts.
 //	34 - add child_sessions.result_delivery for reconnectable MCP waits.
-const latestSchemaVersion = 34
+//	35 - add `managed_opencode` table keyed by canonical repo_root. Persists
+//	      each project's managed OpenCode instance (endpoint/kind/runtime_id/
+//	      pid/launched_at) so it survives an ocman restart. The host always
+//	      re-probes health before trusting a persisted row (AD-5, #391).
+const latestSchemaVersion = 35
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -302,6 +306,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV33(tx)
 	case 34:
 		return migrateToV34(tx)
+	case 35:
+		return migrateToV35(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -1202,5 +1208,23 @@ func migrateToV33(tx *sql.Tx) error {
 
 func migrateToV34(tx *sql.Tx) error {
 	_, err := tx.Exec(`ALTER TABLE child_sessions ADD COLUMN result_delivery TEXT NOT NULL DEFAULT 'detached'`)
+	return err
+}
+
+// migrateToV35 creates the managed_opencode table. Each row persists one
+// project's managed OpenCode instance keyed by its canonical repo_root, so
+// the instance can be re-probed and reused after an ocman restart instead
+// of blindly relaunching (AD-5, #391).
+func migrateToV35(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE managed_opencode (
+			repo_root   TEXT    PRIMARY KEY,
+			endpoint    TEXT    NOT NULL DEFAULT '',
+			kind        TEXT    NOT NULL DEFAULT '',
+			runtime_id  TEXT    NOT NULL DEFAULT '',
+			pid         INTEGER NOT NULL DEFAULT 0,
+			launched_at INTEGER NOT NULL DEFAULT 0
+		)
+	`)
 	return err
 }

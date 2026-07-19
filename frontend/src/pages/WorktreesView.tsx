@@ -7,7 +7,7 @@ import { usePageTitle } from '../lib/headerContext';
 import { openVSCode } from '../lib/shortcuts';
 import { relativeTime, shortPath } from '../lib/format';
 import { useUiStore } from '../lib/uiStore';
-import { useWorktreeSessions } from '../lib/useCapabilities';
+import { useOpencodeLaunch } from '../lib/useCapabilities';
 import { sessionsForWorktree } from '../lib/worktrees';
 import { WorktreesTableSkeleton } from '../components/Skeleton';
 import './Dashboard.css';
@@ -19,7 +19,7 @@ export function WorktreesView() {
   usePageTitle(projectDir ? `${shortPath(projectDir)} · Worktrees` : 'Worktrees');
 
   const navigate = useNavigate();
-  const allowed = useWorktreeSessions();
+  const allowed = useOpencodeLaunch();
   const openWorktreeForm = useUiStore((s) => s.openWorktreeForm);
   const cachedSessions = useApiStore((s) => s.cachedSessions);
   const refreshCachedSessions = useApiStore((s) => s.refreshCachedSessions);

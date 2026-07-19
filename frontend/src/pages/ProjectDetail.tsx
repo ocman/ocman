@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { usePageTitle } from '../lib/headerContext';
 import { SessionTable } from '../components/SessionTable';
 import { useTmux } from '../lib/useTmux';
-import { useWorktreeSessions } from '../lib/useCapabilities';
+import { useOpencodeLaunch } from '../lib/useCapabilities';
 import { shortPath } from '../lib/format';
 import { openVSCode } from '../lib/shortcuts';
 import { useShortcut } from '../lib/shortcutRegistry';
@@ -70,7 +70,7 @@ export function ProjectDetail() {
   usePageTitle(projectName);
   const navigate = useNavigate();
   const tmux = useTmux();
-  const worktreeSessionsAllowed = useWorktreeSessions();
+  const launchAllowed = useOpencodeLaunch();
   const matchingTmuxSession = directory ? tmux.findSession(directory) : undefined;
   const [pendingTmuxSession, setPendingTmuxSession] = useState<string | null>(null);
   const [pickerPos, setPickerPos] = useState<{ top: number; left: number } | null>(null);
@@ -200,7 +200,7 @@ export function ProjectDetail() {
         {directory && (
           <button type="button" className="vscode-btn" onClick={handleOpenVSCode} title="Open in VS Code (V)">VS Code</button>
         )}
-        {directory && worktreeSessionsAllowed && (
+        {directory && launchAllowed && (
           <button
             type="button"
             className="oc-time-range-btn"

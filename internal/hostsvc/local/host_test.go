@@ -172,9 +172,9 @@ func TestLocalHost_CreateWorktreeSession(t *testing.T) {
 	repo := initRepo(t)
 	var gotDirectory, gotPort string
 	h := New(Deps{
-		// Instance already running: EnsureProjectOpencode returns its
-		// port and launches nothing.
-		DiscoverPort: func(string) string { return "4242" },
+		// The project instance launches on port 4242 and is healthy, so
+		// CreateSession is created against it.
+		Runtime: &fakeRuntime{endpoint: "http://127.0.0.1:4242"},
 		CreateSession: func(_ context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 			gotDirectory, gotPort = req.Directory, req.Port
 			return &platforms.CreateSessionResponse{ID: "ses_worktree"}, nil
@@ -208,7 +208,7 @@ func TestLocalHost_CreateWorktreeSession(t *testing.T) {
 func TestLocalHost_RemoveWorktree(t *testing.T) {
 	repo := initRepo(t)
 	h := New(Deps{
-		DiscoverPort: func(string) string { return "4242" },
+		Runtime: &fakeRuntime{endpoint: "http://127.0.0.1:4242"},
 		CreateSession: func(_ context.Context, _ platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 			return &platforms.CreateSessionResponse{ID: "ses_x"}, nil
 		},

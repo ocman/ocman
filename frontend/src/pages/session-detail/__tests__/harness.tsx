@@ -221,6 +221,7 @@ vi.mock('../../../lib/useCapabilities', () => ({
   useMultiPlatform: () => false,
   useMultiHost: () => false,
   useWorktreeSessions: () => false,
+  useOpencodeLaunch: () => false,
 }));
 
 vi.mock('../../../lib/useTmux', () => ({

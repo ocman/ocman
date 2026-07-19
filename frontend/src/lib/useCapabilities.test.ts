@@ -38,6 +38,20 @@ function makeResponse(overrides: Partial<CapabilitiesResponse> = {}): Capabiliti
       },
     ],
     worktreeSessions: false,
+    hosts: [
+      {
+        remoteId: 'local',
+        remoteName: 'This machine',
+        capabilities: {
+          gitDiff: true,
+          worktrees: true,
+          tmux: true,
+          projects: true,
+          whisper: true,
+          opencodeLaunch: true,
+        },
+      },
+    ],
     ...overrides,
   };
 }
@@ -103,6 +117,7 @@ describe('useCapabilities module surface', () => {
     expect(typeof mod.usePlatformCapabilities).toBe('function');
     expect(typeof mod.useMultiPlatform).toBe('function');
     expect(typeof mod.useWorktreeSessions).toBe('function');
+    expect(typeof mod.useOpencodeLaunch).toBe('function');
   });
 });
 
@@ -294,5 +309,42 @@ describe('useMultiPlatform / useWorktreeSessions', () => {
     on.tickHook(() => on.mod.useCapabilities());
     await on.flush();
     expect(on.tickHook(() => on.mod.useWorktreeSessions())).toBe(true);
+  });
+
+  // AD-8 / #393: launch affordances gate on the local host's
+  // opencodeLaunch flag, independent of tmux. Prove both directions
+  // while flipping tmux the *opposite* way so the assertion can't be
+  // silently reading tmux.
+  it('useOpencodeLaunch reflects the local host opencodeLaunch flag, independent of tmux', async () => {
+    const localHost = (opencodeLaunch: boolean, tmux: boolean) => ({
+      hosts: [
+        {
+          remoteId: 'local',
+          remoteName: 'This machine',
+          capabilities: {
+            gitDiff: true,
+            worktrees: true,
+            tmux,
+            projects: true,
+            whisper: true,
+            opencodeLaunch,
+          },
+        },
+      ],
+    });
+
+    // launch on, tmux off → still true (decoupled from tmux).
+    const on = await loadFreshModule(makeResponse(localHost(true, false)));
+    on.tickHook(() => on.mod.useCapabilities());
+    await on.flush();
+    expect(on.tickHook(() => on.mod.useOpencodeLaunch())).toBe(true);
+
+    vi.resetModules();
+
+    // launch off, tmux on → false (doesn't leak from tmux).
+    const off = await loadFreshModule(makeResponse(localHost(false, true)));
+    off.tickHook(() => off.mod.useCapabilities());
+    await off.flush();
+    expect(off.tickHook(() => off.mod.useOpencodeLaunch())).toBe(false);
   });
 });

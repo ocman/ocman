@@ -18,15 +18,40 @@ Ocman also supports **on-demand OpenCode worktree sessions** via the
 view (`/project/<dir>/worktrees`). The feature shells out to
 `git worktree add` under `<repo-parent>/.worktrees/<repo>/<slug>/`, then
 runs the session in-app: ocman keeps **one** `opencode` instance per
-project (rooted at the main checkout, launched idempotently via
+project (rooted at the main checkout, ensured via
 `EnsureProjectOpencode`) and creates the worktree (and same-directory)
 sessions on that instance with a per-session working directory. There is
 no per-worktree tmux window; a single project instance serves every
 worktree, so parallel sessions still get isolated files, rebuilds, and
-staging area without spawning an opencode/tmux process each. When
-`EnsureProjectOpencode` launches the instance it seeds the pane with a
-scoped `external_directory` `OPENCODE_PERMISSION` rule for the project's
-`.worktrees/<repo>` root so worktree paths are pre-approved.
+staging area without spawning an opencode/tmux process each.
+
+The managed instance lifecycle is **runtime-neutral** (#376,
+`internal/ocruntime`): an `ocruntime.Runtime` interface
+(`Launch`/`Probe`/`Stop`) abstracts how the instance is hosted, with a
+native-tmux implementation today and a container runtime planned (epic
+#375). `EnsureProjectOpencode` (on `hostsvc.Host`, owner-routed via
+`Router.ForDir`) is the only path that launches opencode for a project.
+It **allocates a free loopback port itself**
+(`ocruntime.AllocateLoopbackPort`, bind→close) and launches
+`opencode --port N` — the managed path no longer relies on `lsof` port
+discovery. Health is an **API probe**: `GET {endpoint}/config` returning
+200, not mere listener presence. Concurrent ensure calls for one repo
+root collapse via `singleflight` (at-most-one launch); the call probes
+the current instance and reuses it when healthy, else relaunches.
+`EnsureProjectOpencodeResult` exposes the full `Endpoint` URL (plus a
+`Port()` accessor), the resolved `RepoRoot`, the opaque
+`ocruntime.Instance` (whose `ID` is the tmux session name, kept for
+observability), and `Launched`. Each managed instance is persisted in
+`state.db`'s `managed_opencode` table (migration v35) keyed by canonical
+repo root, so it survives an ocman restart; on recovery a persisted row
+is **always re-probed** before being trusted — a dead row is discarded
+and the project relaunches. `RestartProjectOpencode` (same owner
+routing, works local + remote over the gRPC seam) stops the tracked
+instance and relaunches under the same `singleflight` key.
+
+When `EnsureProjectOpencode` launches the instance it seeds the pane with
+a scoped `external_directory` `OPENCODE_PERMISSION` rule for the
+project's `.worktrees/<repo>` root so worktree paths are pre-approved.
 **Limitation:** an opencode instance that was *already running* before
 the /wt launch was not seeded with that rule; the runtime autoapprove
 pipeline covers the gap for those pre-existing instances.
@@ -142,6 +167,17 @@ handlers don't bypass the `Host` seam). User-facing docs:
 - `internal/tmux/` — tmux process control: session/window listing,
   name derivation/validation, opencode launchers (runner seams for
   tests). HTTP handlers stay in `internal/server`.
+- `internal/ocruntime/` — runtime-neutral managed-opencode lifecycle
+  (#376). A `Runtime` interface (`Launch`/`Probe`/`Stop`) abstracts how a
+  project's opencode instance is hosted; the native-tmux implementation
+  runs `opencode --port N` on an ocman-allocated loopback port and probes
+  `GET {endpoint}/config` for health. Plug point for the container
+  runtime (epic #375). Driven by `hostsvc/local`'s
+  `EnsureProjectOpencode` / `RestartProjectOpencode`, which persist each
+  instance in `state.db`'s `managed_opencode` table (v35, probe-on-
+  recovery). Launch capability is surfaced as the `HostCaps.OpencodeLaunch`
+  (`opencodeLaunch`) flag, distinct from `Tmux`; the frontend gates
+  managed-launch UI on it.
 - `internal/term/` — in-app browser terminals: window naming/hashing,
   window management in the dedicated `ocman-term` tmux session, and
   the PTY bridge. WebSocket/REST layer stays in `internal/server`.

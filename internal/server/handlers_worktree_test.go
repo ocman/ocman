@@ -383,14 +383,14 @@ func TestHandleWorktreeCreateAndLaunch_HappyPath(t *testing.T) {
 	repo := initWorktreeTestRepo(t)
 
 	// #268: /wt now runs the session in-app. Inject a local host whose
-	// DiscoverPort finds the (fake) already-running project instance and
+	// Runtime launches a (fake) healthy project instance on port 5599 and
 	// whose CreateSession returns a canned session ID. Real git creates
 	// the worktree, so the returned slug/path are genuine.
 	var createDir, createPort string
 	var createCalls int
 	srv := &Server{}
 	srv.hostRouter = hostsvc.NewRouter(hostlocal.New(hostlocal.Deps{
-		DiscoverPort: func(string) string { return "5599" },
+		Runtime: fakeRuntime{endpoint: "http://127.0.0.1:5599"},
 		CreateSession: func(_ context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 			createCalls++
 			createDir, createPort = req.Directory, req.Port
@@ -484,7 +484,7 @@ func worktreeInheritTestServer(t *testing.T, capture *[]platforms.SetPermissionR
 	reg.Register(fake)
 
 	srv.hostRouter = hostsvc.NewRouter(hostlocal.New(hostlocal.Deps{
-		DiscoverPort: func(string) string { return "5599" },
+		Runtime: fakeRuntime{endpoint: "http://127.0.0.1:5599"},
 		CreateSession: func(_ context.Context, _ platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 			return &platforms.CreateSessionResponse{ID: "ses_wt_inh"}, nil
 		},

@@ -5,7 +5,7 @@ import { api } from '../lib/api';
 import type { Project } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
 import { useUiStore } from '../lib/uiStore';
-import { useWorktreeSessions } from '../lib/useCapabilities';
+import { useOpencodeLaunch } from '../lib/useCapabilities';
 
 // Submit progress states surfaced to the user. The modal stays open
 // across all of them so submit feels like a single waiting step rather
@@ -44,7 +44,7 @@ export function WorktreeFormModal() {
   const initialBranch = useUiStore((s) => s.worktreeFormBranch);
   const parentSessionId = useUiStore((s) => s.worktreeFormParentSessionId);
   const close = useUiStore((s) => s.closeWorktreeForm);
-  const allowed = useWorktreeSessions();
+  const allowed = useOpencodeLaunch();
 
   if (!open) return null;
 

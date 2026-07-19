@@ -57,6 +57,7 @@ flowchart TD
     Registry --> RP[remote.Platform<br/>gRPC-backed]
     OC --> DB[internal/db<br/>read-only queries]
     Router --> Local[hostsvc/local<br/>git, tmux, worktree]
+    Local --> OCRT[internal/ocruntime<br/>Runtime: launch/probe/stop]
     Server --> State[internal/state<br/>state.db]
     Server --> Forge[forge + integrations<br/>GitHub/Forgejo clients]
 ```
@@ -71,10 +72,19 @@ flowchart TD
   trick as the registry. Worktree sessions run **in-app on the
   project's single opencode instance** (one per project, ensured via
   `EnsureProjectOpencode`) with a per-session working directory — there
-  is no per-worktree opencode/tmux process.
+  is no per-worktree opencode/tmux process. `EnsureProjectOpencodeResult`
+  is runtime-neutral: callers use the full `Endpoint` URL (or its
+  `Port()`) plus an opaque `ocruntime.Instance`, never lsof discovery.
+  `RestartProjectOpencode` stops and relaunches the tracked instance.
+- **internal/ocruntime** — the runtime abstraction behind the managed
+  launch path. A `Runtime` interface (`Launch`/`Probe`/`Stop`) hides
+  *how* a project's opencode is hosted; the native-tmux implementation
+  runs `opencode --port N` on an ocman-allocated loopback port and
+  probes `GET {endpoint}/config` for health. It is the plug point for
+  the container runtime (epic #375) as a second implementation.
 - **platforms/opencode** — wraps the read-only DB queries
-  (`internal/db`) plus an HTTP client to live instances, with
-  `lsof`-based port discovery.
+  (`internal/db`) plus an HTTP client that attaches to live instances,
+  with `lsof`-based discovery for instances started outside ocman.
 - **workflows.Service** — shared validation, durable trigger, and
   run-lifecycle seam for immutable workflow versions. Durable
   manual/interval/cron/PR/completion triggers create version-pinned runs

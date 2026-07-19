@@ -49,7 +49,7 @@ vi.mock('../lib/apiStore', () => ({
 }));
 
 vi.mock('../lib/useCapabilities', () => ({
-  useWorktreeSessions: () => false,
+  useOpencodeLaunch: () => false,
 }));
 
 vi.mock('../lib/machinePicker', () => ({

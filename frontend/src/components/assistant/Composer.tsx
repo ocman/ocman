@@ -122,7 +122,7 @@ function ComposerImpl({
   disabled?: boolean;
   /**
    * User-facing hint explaining *why* the composer is disabled and
-   * how to fix it (e.g. "Start OpenCode with `opencode --port 0` ..."
+   * how to fix it (e.g. "Launch a session to start OpenCode ..."
    * for OpenCode). Shown as the textarea placeholder when disabled.
    * Falls back to a generic "No live connection" message.
    */

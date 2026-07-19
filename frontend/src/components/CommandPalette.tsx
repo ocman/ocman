@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import Fuse from 'fuse.js';
 import { useApiStore } from '../lib/apiStore';
 import { useUiStore } from '../lib/uiStore';
-import { useWorktreeSessions } from '../lib/useCapabilities';
+import { useOpencodeLaunch } from '../lib/useCapabilities';
 import { cleanTitle, relativeTime, shortPath } from '../lib/format';
 import type { Session, Project, DirectoryBrowseEntry, DirectorySearchEntry } from '../lib/api';
 import { useTmux } from '../lib/useTmux';
@@ -69,7 +69,7 @@ const STATIC_COMMANDS: CommandItem[] = [
 ];
 
 // `cmd.worktree` is the /wt palette entry. Listed separately so it can
-// be filtered out by useWorktreeSessions() without mutating
+// be filtered out by useOpencodeLaunch() without mutating
 // STATIC_COMMANDS in place.
 const WORKTREE_COMMAND: CommandItem = {
   kind: 'command',
@@ -144,7 +144,7 @@ export function CommandPalette() {
   const seedNewSession = useApiStore((s) => s.seedNewSession);
   const refreshCachedSessions = useApiStore((s) => s.refreshCachedSessions);
   const tmux = useTmux();
-  const worktreeSessionsAllowed = useWorktreeSessions();
+  const launchAllowed = useOpencodeLaunch();
   const openWorktreeForm = useUiStore((s) => s.openWorktreeForm);
   const {
     paletteOpen,
@@ -235,12 +235,13 @@ export function CommandPalette() {
   }, [browseDirectories]);
 
   // Effective static commands list. WORKTREE_COMMAND only appears when
-  // the host supports the /wt feature (capability-gated; AD-7).
+  // the host can launch a managed OpenCode instance (launch-gated on
+  // opencodeLaunch, not tmux; AD-8 / #393).
   const staticCommands = useMemo(() => {
     const cmds = [...STATIC_COMMANDS];
-    if (worktreeSessionsAllowed) cmds.push(WORKTREE_COMMAND);
+    if (launchAllowed) cmds.push(WORKTREE_COMMAND);
     return cmds;
-  }, [worktreeSessionsAllowed]);
+  }, [launchAllowed]);
 
   // Best-effort project inference for `cmd.worktree` so invoking /wt
   // from a project page or session page pre-fills the project field.

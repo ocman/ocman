@@ -20,7 +20,7 @@ vi.mock('../lib/api', () => ({
   },
 }));
 vi.mock('../lib/useCapabilities', () => ({
-  useWorktreeSessions: () => true,
+  useOpencodeLaunch: () => true,
 }));
 vi.mock('../lib/apiStore', () => ({
   useApiStore: (sel: (s: Record<string, unknown>) => unknown) =>

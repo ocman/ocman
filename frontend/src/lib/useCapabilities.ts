@@ -178,6 +178,25 @@ export function useWorktreeSessions(): boolean {
 }
 
 /**
+ * Returns true when the local host can launch a managed OpenCode
+ * instance (opencode + a usable runtime). Distinct from the tmux
+ * capability so a future tmux-less (container) host still offers
+ * launch. Launch affordances (/wt, worktree launch, new-session-into-
+ * project) gate on this; the tmux-session UI keeps gating on tmux
+ * (AD-8, #393).
+ *
+ * Reads the local host entry ("local"); falls back to the first host
+ * when that id isn't present (defensive). False during the initial
+ * load — same conservative default as every other capability flag.
+ */
+export function useOpencodeLaunch(): boolean {
+  const all = useCapabilities();
+  const hosts = all?.hosts ?? [];
+  const local = hosts.find((h) => h.remoteId === 'local') ?? hosts[0];
+  return local?.capabilities.opencodeLaunch === true;
+}
+
+/**
  * Returns true when more than one host (machine) is present — i.e. at
  * least one remote is connected in addition to the local machine. Host
  * badges use this to hide themselves on a single-host install where the

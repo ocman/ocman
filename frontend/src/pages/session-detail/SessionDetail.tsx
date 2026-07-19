@@ -40,7 +40,7 @@ import { useUiStore } from '../../lib/uiStore';
 import { useTmux } from '../../lib/useTmux';
 import { useApiStore } from '../../lib/apiStore';
 import { useGitInfo } from '../../lib/useGitInfo';
-import { usePlatformCapabilities, useWorktreeSessions } from '../../lib/useCapabilities';
+import { usePlatformCapabilities, useOpencodeLaunch } from '../../lib/useCapabilities';
 import { listFailedSends, type FailedSend } from '../../lib/failedSends';
 import { getProjectModel, saveProjectModel } from '../../lib/projectModel';
 import { recheckFaviconNotify } from '../../lib/useFaviconNotify';
@@ -284,7 +284,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
 
   // Capability flags for the owning platform.
   const caps = usePlatformCapabilities(session?.platform);
-  const worktreesSupported = useWorktreeSessions();
+  const worktreesSupported = useOpencodeLaunch();
 
   const [whisperAvailable, setWhisperAvailable] = useState(false);
 

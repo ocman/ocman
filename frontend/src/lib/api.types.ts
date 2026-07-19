@@ -736,7 +736,7 @@ export interface PlatformCapabilities {
   /**
    * Short, user-facing message explaining how to establish the live
    * connection to a running agent instance when it's missing (e.g.
-   * "Start OpenCode with `opencode --port 0` ..." for OpenCode).
+   * "Launch a session to start OpenCode ..." for OpenCode).
    * Empty / absent when the platform has no such setup step.
    */
   liveConnectionHint?: string;
@@ -782,6 +782,12 @@ export interface HostCapabilities {
   tmux: boolean;
   projects: boolean;
   whisper: boolean;
+  /**
+   * Host can launch a managed OpenCode instance (its runtime is usable).
+   * Distinct from `tmux`: a future container runtime launches without
+   * tmux. Launch affordances gate on this, not on `tmux` (AD-8, #393).
+   */
+  opencodeLaunch: boolean;
 }
 
 /** One machine's host capabilities, grouped under its host identity. */

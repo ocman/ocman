@@ -184,6 +184,23 @@ func (h *remoteHost) EnsureProjectOpencode(ctx context.Context, req hostsvc.Ensu
 	return &out, unmarshalJSON(resp.Payload, &out)
 }
 
+func (h *remoteHost) RestartProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+	client := h.conn.Client()
+	if client == nil {
+		return nil, ErrRemoteOffline
+	}
+	b, err := marshalJSON(req)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.RestartProjectOpencode(ctx, &pb.JsonReq{Payload: b})
+	if err != nil {
+		return nil, err
+	}
+	var out hostsvc.EnsureProjectOpencodeResult
+	return &out, unmarshalJSON(resp.Payload, &out)
+}
+
 func (h *remoteHost) TmuxSessions(ctx context.Context) ([]hostsvc.TmuxSession, error) {
 	client := h.conn.Client()
 	if client == nil {

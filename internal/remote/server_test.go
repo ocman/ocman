@@ -16,6 +16,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
@@ -160,7 +161,10 @@ func (localStubHost) LaunchTmux(context.Context, hostsvc.LaunchTmuxRequest) (*ho
 	return &hostsvc.LaunchTmuxResult{Session: "sess"}, nil
 }
 func (localStubHost) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
-	return &hostsvc.EnsureProjectOpencodeResult{Port: "1234", RepoRoot: "/repo", TmuxSession: "sess"}, nil
+	return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:1234", RepoRoot: "/repo", Runtime: ocruntime.Instance{ID: "sess"}}, nil
+}
+func (localStubHost) RestartProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+	return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:5678", RepoRoot: "/repo", Runtime: ocruntime.Instance{ID: "restarted"}, Launched: true}, nil
 }
 func (localStubHost) TmuxSessions(context.Context) ([]hostsvc.TmuxSession, error) { return nil, nil }
 func (localStubHost) Projects(context.Context) ([]db.ProjectStats, error) {

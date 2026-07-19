@@ -103,6 +103,20 @@ async function installDefaultRoutes(page: Page) {
       contentType: 'application/json',
       body: JSON.stringify({
         worktreeSessions: true,
+        hosts: [
+          {
+            remoteId: 'local',
+            remoteName: 'This machine',
+            capabilities: {
+              gitDiff: true,
+              worktrees: true,
+              tmux: true,
+              projects: true,
+              whisper: false,
+              opencodeLaunch: true,
+            },
+          },
+        ],
         platforms: [
           {
             id: 'opencode',
@@ -484,6 +498,20 @@ export function sseMessage(opts: {
 export function makeCapabilitiesWithPort() {
   return {
     worktreeSessions: true,
+    hosts: [
+      {
+        remoteId: 'local',
+        remoteName: 'This machine',
+        capabilities: {
+          gitDiff: true,
+          worktrees: true,
+          tmux: true,
+          projects: true,
+          whisper: false,
+          opencodeLaunch: true,
+        },
+      },
+    ],
     platforms: [
       {
         id: 'opencode',

@@ -92,7 +92,8 @@ func testServer(t *testing.T) *Server {
 	srv := New(database, stateDB, "127.0.0.1:0", reg, nil)
 	// Never spawn real tmux/opencode from tests — that leaks a tmux
 	// session per run (the temp dir is cleaned up, the session isn't).
-	srv.launchProjectOpencodeFn = func(string, string) (string, error) { return "", nil }
+	// Override before the host router is built lazily on first use.
+	srv.runtime = fakeRuntime{}
 	return srv
 }
 
@@ -1258,7 +1259,7 @@ func testServerWithRawDB(t *testing.T) (*Server, *sql.DB) {
 	reg := platforms.NewRegistry()
 	reg.Register(opencodeplatform.New(database, stateDB))
 	srv := New(database, stateDB, "127.0.0.1:0", reg, nil)
-	srv.launchProjectOpencodeFn = func(string, string) (string, error) { return "", nil }
+	srv.runtime = fakeRuntime{}
 	return srv, setupDB
 }
 
