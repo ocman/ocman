@@ -12,6 +12,7 @@ package local
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -25,6 +26,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
@@ -321,7 +323,8 @@ func (h *Host) ensureLocked(ctx context.Context, repoRoot string) (*hostsvc.Ensu
 	// before we trust it (AD-5). A dead persisted row is discarded so the
 	// launch path below relaunches.
 	if inst := h.reuseCandidate(repoRoot); inst != nil {
-		if h.runtime.Probe(ctx, inst) {
+		probeErr := h.runtime.Probe(ctx, inst)
+		if probeErr == nil {
 			h.setInstance(repoRoot, inst)
 			return &hostsvc.EnsureProjectOpencodeResult{
 				Endpoint: inst.Endpoint,
@@ -329,6 +332,17 @@ func (h *Host) ensureLocked(ctx context.Context, repoRoot string) (*hostsvc.Ensu
 				Runtime:  *inst,
 			}, nil
 		}
+		if errors.Is(probeErr, ocapi.ErrAuthentication) {
+			log.WithField("repoRoot", repoRoot).Warn("host: managed opencode authentication failed; relaunching")
+		} else {
+			log.WithError(probeErr).WithField("repoRoot", repoRoot).Debug("host: managed opencode probe failed; relaunching")
+		}
+		// Launch is idempotent by tmux session name, so stop the stale
+		// process first to apply a rotated credential.
+		if err := h.runtime.Stop(ctx, inst); err != nil {
+			log.WithError(err).WithField("repoRoot", repoRoot).Warn("host: stopping stale managed opencode")
+		}
+		h.clearInstance(repoRoot)
 		// Dead -> drop the persisted row so a stale endpoint can't be
 		// reused after this relaunch.
 		if h.store != nil {
@@ -482,8 +496,12 @@ func (h *Host) clearInstance(repoRoot string) {
 func (h *Host) waitForProbe(ctx context.Context, inst *ocruntime.Instance) error {
 	deadline := time.Now().Add(h.portWaitTimeout)
 	for {
-		if h.runtime.Probe(ctx, inst) {
+		err := h.runtime.Probe(ctx, inst)
+		if err == nil {
 			return nil
+		}
+		if errors.Is(err, ocapi.ErrAuthentication) {
+			return fmt.Errorf("managed OpenCode authentication failed: %w", err)
 		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("opencode launched for %q but did not become healthy within %s", inst.Endpoint, h.portWaitTimeout)

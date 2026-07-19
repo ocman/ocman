@@ -19,7 +19,7 @@ flowchart LR
     Ocman -->|read-only SQLite| OCDB[(opencode.db)]
     Ocman -->|read/write SQLite| StateDB[(state.db)]
     Ocman -->|artifact payloads| Blobs[(workflow-artifacts)]
-    Ocman -->|HTTP proxy| OCInst[Running OpenCode<br/>instances]
+    Ocman -->|Authenticated HTTP/SSE proxy| OCInst[Running OpenCode<br/>instances]
     Ocman -->|exec| Shell[git / tmux / lsof<br/>worktrees]
     Ocman -->|REST| Forges[GitHub / Forgejo]
     Ocman <-->|gRPC + token| Remotes[Remote ocman<br/>instances]
@@ -82,7 +82,7 @@ flowchart TD
   launch path. A `Runtime` interface (`Launch`/`Probe`/`Stop`) hides
   *how* a project's opencode is hosted; the native-tmux implementation
   runs `opencode --port N` on an ocman-allocated loopback port and
-  probes `GET {endpoint}/config` for health. It is the plug point for
+  probes authenticated `GET {endpoint}/config` for health. It is the plug point for
   the container runtime (epic #375) as a second implementation.
 - **platforms/opencode** — wraps the read-only DB queries
   (`internal/db`) plus an HTTP client that attaches to live instances,

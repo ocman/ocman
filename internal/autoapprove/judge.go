@@ -13,6 +13,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	opencode "github.com/NoUseFreak/ocman/internal/platforms/opencode"
 )
 
@@ -241,11 +242,12 @@ type PermissionJudge struct {
 
 // newPermissionJudge returns a PermissionJudge wired against the
 // real OpenCode port discovery.
-func newPermissionJudge() *PermissionJudge {
+func newPermissionJudge(auth ocapi.Auth) *PermissionJudge {
 	return &PermissionJudge{
 		openCodePort: opencode.DiscoverOpenCodePort,
 		httpClient: &http.Client{
-			Timeout: judgeTimeout,
+			Timeout:   judgeTimeout,
+			Transport: auth.Transport(http.DefaultTransport),
 		},
 		modelProvider: judgeModelProvider,
 		modelID:       judgeModelID,

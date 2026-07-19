@@ -18,6 +18,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/srvtiming"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -49,6 +50,7 @@ type Adapter struct {
 	db        *db.DB
 	favorites FavoritesReader
 	pricing   CostCalculator
+	auth      ocapi.Auth
 	// childLinks reads ocman's own MCP/worktree child->parent links
 	// from state.db so pending prompts from those children bubble to
 	// their parent (OpenCode never records a parent_id for them). Nil
@@ -65,7 +67,7 @@ type Adapter struct {
 // the legacy two-arg shape for tests and call sites that don't need
 // calculated cost.
 func New(database *db.DB, favorites FavoritesReader) *Adapter {
-	return &Adapter{db: database, favorites: favorites, childLinks: childLinksFrom(favorites)}
+	return newAdapter(database, favorites, nil, ocapi.New(""))
 }
 
 // NewWithPricing is like New but also wires in a pricing table used to
@@ -73,7 +75,17 @@ func New(database *db.DB, favorites FavoritesReader) *Adapter {
 // zero (typical of subscription-plan sessions: the API was hit but the
 // message metadata records cost=0).
 func NewWithPricing(database *db.DB, favorites FavoritesReader, pricing CostCalculator) *Adapter {
-	return &Adapter{db: database, favorites: favorites, pricing: pricing, childLinks: childLinksFrom(favorites)}
+	return newAdapter(database, favorites, pricing, ocapi.New(""))
+}
+
+// NewWithPricingAndAuth wires the host-local OpenCode API credential.
+func NewWithPricingAndAuth(database *db.DB, favorites FavoritesReader, pricing CostCalculator, auth ocapi.Auth) *Adapter {
+	return newAdapter(database, favorites, pricing, auth)
+}
+
+func newAdapter(database *db.DB, favorites FavoritesReader, pricing CostCalculator, auth ocapi.Auth) *Adapter {
+	configureHTTPAuth(auth)
+	return &Adapter{db: database, favorites: favorites, pricing: pricing, auth: auth, childLinks: childLinksFrom(favorites)}
 }
 
 // childLinksFrom returns favorites as an mcpParentLookup when it also

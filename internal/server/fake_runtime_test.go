@@ -23,6 +23,6 @@ func (f fakeRuntime) Launch(_ context.Context, spec ocruntime.LaunchSpec) (*ocru
 	return &ocruntime.Instance{Endpoint: ep, Kind: ocruntime.KindNativeTmux, ID: "sess-name"}, nil
 }
 
-func (f fakeRuntime) Probe(context.Context, *ocruntime.Instance) bool { return true }
+func (f fakeRuntime) Probe(context.Context, *ocruntime.Instance) error { return nil }
 
 func (f fakeRuntime) Stop(context.Context, *ocruntime.Instance) error { return nil }

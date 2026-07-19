@@ -20,6 +20,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
@@ -116,7 +117,8 @@ type Server struct {
 	// newLocalHost. Defaults to the native tmux runtime; tests override it
 	// (before the host router is built) with a fake so session-mode
 	// handlers don't spawn (and leak) real tmux sessions in temp dirs.
-	runtime ocruntime.Runtime
+	runtime      ocruntime.Runtime
+	openCodeAuth ocapi.Auth
 }
 
 // remoteAccessInfo holds this instance's own remote-access surface for
@@ -171,6 +173,14 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 			s.refreshProjectsIndexAsync()
 		},
 	})
+	return s
+}
+
+// WithOpenCodeAuth configures managed launch, probes, judge, and watcher
+// traffic. The credential remains backend-only.
+func (s *Server) WithOpenCodeAuth(auth ocapi.Auth) *Server {
+	s.openCodeAuth = auth
+	s.runtime = ocruntime.NewNativeRuntimeWithAuth(auth)
 	return s
 }
 

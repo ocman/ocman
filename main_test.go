@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"testing"
@@ -47,6 +48,39 @@ func TestResolveAuthPassword_Precedence(t *testing.T) {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestResolveOpenCodePassword(t *testing.T) {
+	dir := t.TempDir()
+	passwordFile := filepath.Join(dir, "opencode-password")
+	if err := os.WriteFile(passwordFile, []byte("from-file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv(opencodeServerPasswordEnv, "from-env")
+	got, err := resolveOpenCodePassword(passwordFile, true)
+	if err != nil || got != "from-env" {
+		t.Fatalf("env precedence: password=%q err=%v", got, err)
+	}
+
+	t.Setenv(opencodeServerPasswordEnv, "")
+	got, err = resolveOpenCodePassword(passwordFile, true)
+	if err != nil || got != "from-file" {
+		t.Fatalf("file precedence: password=%q err=%v", got, err)
+	}
+
+	got, err = resolveOpenCodePassword("", true)
+	if err != nil || got == "" {
+		t.Fatalf("generated password: password empty=%v err=%v", got == "", err)
+	}
+	if _, err := base64.RawURLEncoding.DecodeString(got); err != nil {
+		t.Fatalf("generated password is not raw URL-safe base64: %v", err)
+	}
+
+	got, err = resolveOpenCodePassword("", false)
+	if err != nil || got != "" {
+		t.Fatalf("disabled: password=%q err=%v", got, err)
 	}
 }
 

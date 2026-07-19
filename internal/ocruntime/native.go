@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/tmux"
 )
 
@@ -22,11 +23,16 @@ type NativeRuntime struct {
 
 	// httpClient probes /config; nil uses the package default.
 	httpClient *http.Client
+	auth       ocapi.Auth
 }
 
 // NewNativeRuntime returns a NativeRuntime wired to the real tmux
 // launcher.
 func NewNativeRuntime() *NativeRuntime {
+	return NewNativeRuntimeWithAuth(ocapi.New(""))
+}
+
+func NewNativeRuntimeWithAuth(auth ocapi.Auth) *NativeRuntime {
 	return &NativeRuntime{
 		launch: func(directory, command string, env map[string]string) (string, error) {
 			// The host already checked for a healthy project server. A tmux
@@ -35,6 +41,7 @@ func NewNativeRuntime() *NativeRuntime {
 			return name, err
 		},
 		kill: tmux.DefaultRunner.KillSession,
+		auth: auth,
 	}
 }
 
@@ -57,6 +64,7 @@ func (r *NativeRuntime) Launch(_ context.Context, spec LaunchSpec) (*Instance, e
 	if spec.PermissionJSON != "" {
 		env["OPENCODE_PERMISSION"] = spec.PermissionJSON
 	}
+	r.auth.AddServerEnv(env)
 
 	command := tmux.OpencodeCommandForPort(spec.Port)
 	session, err := r.launch(spec.RepoRoot, command, env)
@@ -71,14 +79,14 @@ func (r *NativeRuntime) Launch(_ context.Context, spec LaunchSpec) (*Instance, e
 	}, nil
 }
 
-// Probe returns true only when GET {Endpoint}/config answers 200.
-func (r *NativeRuntime) Probe(ctx context.Context, inst *Instance) bool {
+// Probe returns nil only when GET {Endpoint}/config answers 200.
+func (r *NativeRuntime) Probe(ctx context.Context, inst *Instance) error {
 	if inst == nil || inst.Endpoint == "" {
-		return false
+		return ErrProbeUnreachable
 	}
 	client := r.httpClient
 	if client == nil {
-		client = defaultProbeClient
+		client = &http.Client{Timeout: defaultProbeClient.Timeout, Transport: r.auth.Transport(http.DefaultTransport)}
 	}
 	return probeConfig(ctx, client, inst.Endpoint)
 }

@@ -20,6 +20,7 @@ import (
 func (s *Server) aaSvc() *autoapprove.Service {
 	s.aaOnce.Do(func() {
 		deps := autoapprove.Deps{
+			OpenCodeAuth: s.openCodeAuth,
 			SessionDir: func(sessionID string) (string, error) {
 				if s.db == nil {
 					return "", errors.New("no OpenCode DB")

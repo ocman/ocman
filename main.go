@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	_ "embed"
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"os"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/gui"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/opencodeskills"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	opencodeplatform "github.com/NoUseFreak/ocman/internal/platforms/opencode"
@@ -40,6 +43,8 @@ var workflowsSkill []byte
 // Env wins because it's the most common deployment channel (launchd,
 // systemd, Docker) and keeps the secret out of shell history.
 const authPasswordEnv = "OCMAN_AUTH_PASSWORD"
+
+const opencodeServerPasswordEnv = "OPENCODE_SERVER_PASSWORD"
 
 // authTrustLocalhostEnv opts localhost out of auth. The env var is
 // treated truthy for "1", "true", "yes", "on" (case-insensitive);
@@ -93,6 +98,8 @@ func main() {
 	authPasswordFile := flag.String("auth-password-file", "", "read auth password from file (trimmed of trailing whitespace)")
 	authSessionTTL := flag.Duration("auth-session-ttl", 30*24*time.Hour, "auth cookie lifetime")
 	authTrustLocalhost := flag.Bool("auth-trust-localhost", false, "exempt loopback clients from auth (dev-mode escape hatch; also OCMAN_AUTH_TRUST_LOCALHOST)")
+	opencodePasswordFile := flag.String("opencode-server-password-file", "", "read the managed OpenCode API password from a file")
+	opencodeGeneratePassword := flag.Bool("opencode-server-generate-password", false, "generate an ephemeral managed OpenCode API password at startup")
 	otelEndpoint := flag.String("otel", "", "OTLP endpoint URL (e.g. http://localhost:4318 or grpc://localhost:4317). Empty disables telemetry. Falls back to OTEL_EXPORTER_OTLP_ENDPOINT.")
 	autoApprove := flag.Bool("auto-approve", false, "default new sessions to auto-approve mode (uses OpenCode's running instance as the LLM judge)")
 	publicBaseURL := flag.String("public-base-url", "", "externally reachable base URL for share links (e.g. https://ocman.example.com); falls back to "+publicBaseURLEnv+" env, then the request Host")
@@ -180,6 +187,12 @@ func main() {
 	}
 	defer stateDB.Close()
 
+	opencodePassword, err := resolveOpenCodePassword(*opencodePasswordFile, *opencodeGeneratePassword)
+	if err != nil {
+		log.Fatalf("Failed to configure OpenCode server auth: %v", err)
+	}
+	opencodeAuth := ocapi.New(opencodePassword)
+
 	// Ensure this instance has a stable random identity + remote-access
 	// token (multi-remote support). Generated and persisted on first
 	// startup; reused thereafter. No networking is started here — the
@@ -201,7 +214,7 @@ func main() {
 	// running; calls into it just see an empty table until then.
 	registry := platforms.NewRegistry()
 	if enabledPlatforms[string(opencodeplatform.PlatformID)] {
-		registry.Register(opencodeplatform.NewWithPricing(database, stateDB, pricing.Load()))
+		registry.Register(opencodeplatform.NewWithPricingAndAuth(database, stateDB, pricing.Load(), opencodeAuth))
 		// Keep the unfiltered sessions cache warm so /api/sessions and
 		// notify polls read from memory instead of blocking ~5s on the
 		// GetSessions query (which has heavy per-session subqueries).
@@ -222,6 +235,7 @@ func main() {
 		// pin a port with --gui-addr=127.0.0.1:8229 if needed.
 		listenAddr := *guiAddr
 		srv := server.New(database, stateDB, listenAddr, registry, auth).
+			WithOpenCodeAuth(opencodeAuth).
 			WithAutoApproveDefault(*autoApprove).
 			WithPublicBaseURL(resolvedBaseURL).
 			WithRemoteAccess(ident.InstanceID, "", false, false)
@@ -230,6 +244,7 @@ func main() {
 		}
 	} else {
 		srv := server.New(database, stateDB, *addr, registry, auth).
+			WithOpenCodeAuth(opencodeAuth).
 			WithAutoApproveDefault(*autoApprove).
 			WithPublicBaseURL(resolvedBaseURL)
 
@@ -257,6 +272,28 @@ func main() {
 	}
 
 	log.Info("server stopped gracefully")
+}
+
+// resolveOpenCodePassword uses env > file > generated > disabled.
+func resolveOpenCodePassword(fileValue string, generate bool) (string, error) {
+	if value := strings.TrimRight(os.Getenv(opencodeServerPasswordEnv), "\r\n"); value != "" {
+		return value, nil
+	}
+	if fileValue != "" {
+		b, err := os.ReadFile(fileValue)
+		if err != nil {
+			return "", fmt.Errorf("reading %s: %w", fileValue, err)
+		}
+		return strings.TrimRight(string(b), " \t\r\n"), nil
+	}
+	if !generate {
+		return "", nil
+	}
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generating OpenCode server password: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 func validateRemoteTransport(listenAddr, tlsCert, tlsKey string, trustedOverlay bool) error {

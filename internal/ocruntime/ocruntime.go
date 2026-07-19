@@ -8,10 +8,13 @@ package ocruntime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 )
 
 // LaunchSpec describes a requested OpenCode instance. The port is
@@ -23,10 +26,6 @@ type LaunchSpec struct {
 	Host           string // host to bind/reach (e.g. "127.0.0.1")
 	Port           int    // ocman-allocated port
 	PermissionJSON string // seeded as OPENCODE_PERMISSION (empty = none)
-
-	// ponytail: no Secret field yet — added by #377 when the runtime
-	// starts minting a per-instance auth secret. LaunchSpec is where it
-	// will arrive from the host.
 }
 
 // Instance is a launched OpenCode instance.
@@ -35,21 +34,18 @@ type Instance struct {
 	Kind     string // runtime kind, e.g. "native-tmux"
 	ID       string // runtime-specific handle (tmux session name here)
 	PID      int    // process id when known (0 for tmux — the pane owns it)
-
-	// ponytail: unexported secret placeholder for #377. Kept private so
-	// callers can't read/set it until the auth-secret work lands; the
-	// runtime will populate it at Launch and use it to authenticate
-	// Probe/Stop.
-	secret string //nolint:unused
 }
+
+var ErrProbeUnreachable = errors.New("OpenCode instance is unreachable")
 
 // Runtime hosts a project's OpenCode instance.
 type Runtime interface {
 	// Launch starts an instance for spec and returns its handle. The
 	// caller-allocated spec.Port is threaded to the process.
 	Launch(ctx context.Context, spec LaunchSpec) (*Instance, error)
-	// Probe reports whether the instance is up and serving.
-	Probe(ctx context.Context, inst *Instance) bool
+	// Probe returns nil when the instance is serving, ErrAuthentication
+	// for a credential mismatch, or ErrProbeUnreachable otherwise.
+	Probe(ctx context.Context, inst *Instance) error
 	// Stop tears the instance down.
 	Stop(ctx context.Context, inst *Instance) error
 }
@@ -74,18 +70,24 @@ func AllocateLoopbackPort() (int, error) {
 // probeConfig reports whether GET {endpoint}/config answers 200. It is
 // the shared Probe implementation, split out so tests can drive it
 // against an httptest server. A non-200, a refused connection, or any
-// transport error all mean "not up".
-func probeConfig(ctx context.Context, client *http.Client, endpoint string) bool {
+// transport error is classified as unreachable; 401/403 is authentication.
+func probeConfig(ctx context.Context, client *http.Client, endpoint string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/config", nil)
 	if err != nil {
-		return false
+		return fmt.Errorf("%w: %w", ErrProbeUnreachable, err)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return false
+		if errors.Is(err, ocapi.ErrAuthentication) {
+			return err
+		}
+		return fmt.Errorf("%w: %w", ErrProbeUnreachable, err)
 	}
 	defer resp.Body.Close()
-	return resp.StatusCode == http.StatusOK
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%w: upstream HTTP %d", ErrProbeUnreachable, resp.StatusCode)
+	}
+	return nil
 }
 
 var defaultProbeClient = &http.Client{Timeout: 2 * time.Second}

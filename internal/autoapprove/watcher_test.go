@@ -2,6 +2,7 @@ package autoapprove
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -102,6 +104,39 @@ func permissionAskedEvent(sessionID, permissionID, permission, command string) s
 		`{"id":"evt_x","type":"permission.asked","properties":{"id":%q,"sessionID":%q,"permission":%q,"patterns":[],"metadata":{"command":%q}}}`,
 		permissionID, sessionID, permission, command,
 	) + "\n\n"
+}
+
+func TestAutoApproveWatcherAuthenticatesSSE(t *testing.T) {
+	const password = "watcher-secret"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, pass, ok := r.BasicAuth()
+		if !ok || pass != password {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(permissionAskedEvent("ses-auth", "perm-auth", "Bash", "pwd")))
+	}))
+	defer server.Close()
+	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
+
+	svc := NewService(Deps{OpenCodeAuth: ocapi.New(password)})
+	w := newAutoApproveWatcher(svc)
+	called := false
+	w.onPermission = func(_ platforms.ID, _ platforms.Platform, _, _, _ string, _ []string, _ map[string]any) {
+		called = true
+	}
+	if err := w.streamOnce(context.Background(), port); err != nil {
+		t.Fatalf("streamOnce: %v", err)
+	}
+	if !called {
+		t.Fatal("authenticated watcher did not process event")
+	}
+
+	bad := newAutoApproveWatcher(NewService(Deps{OpenCodeAuth: ocapi.New("wrong")}))
+	if err := bad.streamOnce(context.Background(), port); !errors.Is(err, ocapi.ErrAuthentication) {
+		t.Fatalf("invalid watcher credential = %v, want authentication error", err)
+	}
 }
 
 // TestAutoApproveWatcher_FiresOnPermissionWithoutFrontend is the

@@ -1,12 +1,11 @@
 package server
 
 import (
-	"errors"
 	"net/http"
 	"strings"
 
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/tmux"
 )
 
 // --- Session-scoped mutating endpoints ---
@@ -89,10 +88,6 @@ func (s *Server) handleSessionRestartOpencode(w http.ResponseWriter, r *http.Req
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	if !tmux.IsAvailable() {
-		http.Error(w, "tmux is not available", http.StatusServiceUnavailable)
-		return
-	}
 	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
 		detail, err := adapter.Session(r.Context(), sessionID, 0, 0)
 		if err != nil {
@@ -103,16 +98,12 @@ func (s *Server) handleSessionRestartOpencode(w http.ResponseWriter, r *http.Req
 			http.Error(w, "session not found", http.StatusNotFound)
 			return
 		}
-		target, err := tmux.RestartOpencode(detail.Session.Directory)
+		result, err := s.router().ForDir(detail.Session.Directory).RestartProjectOpencode(r.Context(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: detail.Session.Directory})
 		if err != nil {
-			if errors.Is(err, tmux.ErrNoManagedOpencodePane) {
-				http.Error(w, "no tmux-managed OpenCode pane found for this session", http.StatusConflict)
-				return
-			}
 			serverError(w, "restarting opencode", err)
 			return
 		}
-		writeJSON(w, map[string]string{"target": target})
+		writeJSON(w, map[string]string{"target": result.Runtime.ID})
 	})
 }
 

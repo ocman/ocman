@@ -60,11 +60,14 @@ func (f *fakeRuntime) Launch(_ context.Context, spec ocruntime.LaunchSpec) (*ocr
 	return &ocruntime.Instance{Endpoint: ep, Kind: ocruntime.KindNativeTmux, ID: "sess-name"}, nil
 }
 
-func (f *fakeRuntime) Probe(_ context.Context, inst *ocruntime.Instance) bool {
+func (f *fakeRuntime) Probe(_ context.Context, inst *ocruntime.Instance) error {
 	if f.probe != nil {
-		return f.probe(inst)
+		if f.probe(inst) {
+			return nil
+		}
+		return ocruntime.ErrProbeUnreachable
 	}
-	return true
+	return nil
 }
 
 func (f *fakeRuntime) Stop(_ context.Context, _ *ocruntime.Instance) error {

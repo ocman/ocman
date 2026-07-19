@@ -10,6 +10,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 )
@@ -108,10 +109,14 @@ type autoApproveWatcher struct {
 // tests; in that case the default onPermission is a no-op so callers
 // must inject their own.
 func newAutoApproveWatcher(svc *Service) *autoApproveWatcher {
+	auth := ocapi.New("")
+	if svc != nil {
+		auth = svc.deps.OpenCodeAuth
+	}
 	w := &autoApproveWatcher{
 		svc:            svc,
 		discoverPorts:  opencode.DiscoverOpenCodePorts,
-		httpClient:     &http.Client{}, // no timeout — SSE is long-lived
+		httpClient:     &http.Client{Transport: auth.Transport(http.DefaultTransport)}, // no timeout — SSE is long-lived
 		rescanInterval: autoApproveRescanInterval,
 		reconnectDelay: autoApproveReconnectDelay,
 		subs:           make(map[string]context.CancelFunc),

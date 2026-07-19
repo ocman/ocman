@@ -4,14 +4,37 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 )
+
+func TestPermissionJudgeAuthenticatesRequests(t *testing.T) {
+	const password = "judge-secret"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, pass, ok := r.BasicAuth()
+		if !ok || pass != password {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"info":{"role":"user"},"parts":[{"type":"text","text":"hello"}]}]`))
+	}))
+	defer server.Close()
+	u, _ := url.Parse(server.URL)
+
+	j := newPermissionJudge(ocapi.New(password))
+	if got := j.recentUserMessages(context.Background(), u.Port(), "session"); got == nil {
+		t.Fatal("authenticated judge request failed")
+	}
+}
 
 // TestNewPermissionJudgeDefaults verifies the constructor wires the
 // built-in model + a non-nil HTTP client and port-discovery func.
 func TestNewPermissionJudgeDefaults(t *testing.T) {
-	j := newPermissionJudge()
+	j := newPermissionJudge(ocapi.New(""))
 	if j.modelProvider != judgeModelProvider || j.modelID != judgeModelID {
 		t.Errorf("model = %q/%q, want %q/%q", j.modelProvider, j.modelID, judgeModelProvider, judgeModelID)
 	}
@@ -78,7 +101,7 @@ func TestRecentUserMessages(t *testing.T) {
 	defer srv.Close()
 	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
 
-	j := newPermissionJudge()
+	j := newPermissionJudge(ocapi.New(""))
 	got := j.recentUserMessages(context.Background(), port, "ses-1")
 	want := []string{"first", "second"}
 	if len(got) != len(want) {

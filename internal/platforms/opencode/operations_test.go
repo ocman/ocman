@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -174,6 +175,73 @@ func TestResolvePortCtxFallsBackToSessionProbe(t *testing.T) {
 	}
 	if port != fake.Port() {
 		t.Fatalf("resolvePortCtx port = %q, want %q", port, fake.Port())
+	}
+}
+
+func TestAdapterAuthenticatesHTTPAndSSE(t *testing.T) {
+	const sid, dir, password = "sess-auth", "/tmp/proj-auth", "adapter-secret"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != ocapi.DefaultUsername || pass != password {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		switch r.URL.Path {
+		case "/event":
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte(": authenticated\n\n"))
+		case "/session/" + sid + "/prompt_async":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
+	withTestPort(t, dir, port)
+	database := newTestDBWithSession(t, sid, dir)
+	a := NewWithPricingAndAuth(database, nil, nil, ocapi.New(password))
+	t.Cleanup(func() { configureHTTPAuth(ocapi.New("")) })
+
+	var events bytes.Buffer
+	if err := a.ProxyEvents(context.Background(), sid, &events, nil); err != nil {
+		t.Fatalf("ProxyEvents: %v", err)
+	}
+	if !strings.Contains(events.String(), "authenticated") {
+		t.Fatalf("SSE output = %q", events.String())
+	}
+	if err := a.SendMessage(context.Background(), platforms.SendMessageRequest{SessionID: sid, Message: "hello"}); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+
+	bad := NewWithPricingAndAuth(database, nil, nil, ocapi.New("wrong"))
+	if err := bad.ProxyEvents(context.Background(), sid, io.Discard, nil); !errors.Is(err, ocapi.ErrAuthentication) {
+		t.Fatalf("invalid SSE credential = %v, want authentication error", err)
+	}
+}
+
+func TestAdapterProxiesUnauthenticatedSSEWhenAuthDisabled(t *testing.T) {
+	const sid, dir = "sess-no-auth", "/tmp/proj-no-auth"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("Authorization = %q, want empty", got)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(": unauthenticated\n\n"))
+	}))
+	defer server.Close()
+
+	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
+	withTestPort(t, dir, port)
+	a := New(newTestDBWithSession(t, sid, dir), nil)
+
+	var events bytes.Buffer
+	if err := a.ProxyEvents(context.Background(), sid, &events, nil); err != nil {
+		t.Fatalf("ProxyEvents: %v", err)
+	}
+	if !strings.Contains(events.String(), "unauthenticated") {
+		t.Fatalf("SSE output = %q", events.String())
 	}
 }
 

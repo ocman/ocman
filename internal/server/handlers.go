@@ -16,6 +16,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/queuesvc"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
@@ -161,6 +162,11 @@ func writePlatformError(w http.ResponseWriter, msg string, err error) {
 	}
 	if errors.Is(err, platforms.ErrPlatformUnreachable) {
 		http.Error(w, "no running platform instance for this location", http.StatusServiceUnavailable)
+		return
+	}
+	if errors.Is(err, ocapi.ErrAuthentication) {
+		log.WithError(err).Error(msg)
+		http.Error(w, "OpenCode authentication failed; check the configured server password", http.StatusBadGateway)
 		return
 	}
 	if errors.Is(err, platforms.ErrUpstreamRejected) {

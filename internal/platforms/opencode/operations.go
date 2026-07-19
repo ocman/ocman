@@ -14,6 +14,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/srvtiming"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -49,7 +50,10 @@ func (a *Adapter) resolvePortCtx(ctx context.Context, sessionID string) (port st
 	}
 	port = resolveOpenCodePortForSessionCtx(ctx, sessionID, s.Directory)
 	if port == "" {
-		port = resolveOpenCodePortBySession(ctx, sessionID)
+		port, err = resolveOpenCodePortBySession(ctx, sessionID)
+		if err != nil {
+			return "", s, err
+		}
 	}
 	if port == "" {
 		return "", s, fmt.Errorf("no running OpenCode instance for session %s: %w", sessionID, platforms.ErrPlatformUnreachable)
@@ -58,8 +62,8 @@ func (a *Adapter) resolvePortCtx(ctx context.Context, sessionID string) (port st
 	return port, s, nil
 }
 
-func resolveOpenCodePortBySession(ctx context.Context, sessionID string) string {
-	client := http.Client{Timeout: 500 * time.Millisecond}
+func resolveOpenCodePortBySession(ctx context.Context, sessionID string) (string, error) {
+	client := http.Client{Timeout: 500 * time.Millisecond, Transport: openCodeClient.Transport}
 	for _, server := range discoverOpenCodeServers() {
 		if server.port == "" {
 			continue
@@ -70,15 +74,18 @@ func resolveOpenCodePortBySession(ctx context.Context, sessionID string) string 
 		}
 		resp, err := client.Do(req)
 		if err != nil {
+			if errors.Is(err, ocapi.ErrAuthentication) {
+				return "", err
+			}
 			continue
 		}
 		_, _ = io.Copy(io.Discard, resp.Body)
 		_ = resp.Body.Close()
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			return server.port
+			return server.port, nil
 		}
 	}
-	return ""
+	return "", nil
 }
 
 // --- Catalogs ---

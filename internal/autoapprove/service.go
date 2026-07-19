@@ -18,6 +18,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
@@ -42,6 +43,9 @@ type SettingsStore interface {
 // is optional — nil fields turn the corresponding side effect into a
 // no-op, which is what the tests rely on.
 type Deps struct {
+	// OpenCodeAuth authenticates judge and headless watcher traffic.
+	OpenCodeAuth ocapi.Auth
+
 	// Store persists/loads settings and approval audit rows. May be nil.
 	Store SettingsStore
 
@@ -119,7 +123,7 @@ type Service struct {
 func NewService(deps Deps) *Service {
 	return &Service{
 		deps:             deps,
-		judge:            newPermissionJudge(),
+		judge:            newPermissionJudge(deps.OpenCodeAuth),
 		sseSessions:      make(map[string]*Sink),
 		autoApprove:      make(map[string]*autoApproveStatus),
 		safeCommandCache: make(map[string]map[string]string),

@@ -33,6 +33,8 @@ authentication and an `OCMAN_PUBLIC_BASE_URL` matching the external origin.
 | `-auth-password-file` | _(unset)_ | Read auth password from file (trailing whitespace trimmed). |
 | `-auth-session-ttl` | `720h` (30 days) | Auth cookie lifetime. |
 | `-auth-trust-localhost` | `false` | Exempt loopback clients from auth. Also `OCMAN_AUTH_TRUST_LOCALHOST=1`. |
+| `-opencode-server-password-file` | _(unset)_ | Read the managed OpenCode API password from a file (trailing whitespace trimmed). |
+| `-opencode-server-generate-password` | `false` | Generate an ephemeral managed OpenCode API password at startup. |
 | `-remote-listen` | _(unset, off)_ | Bind address for the remote-access gRPC server (multi-remote), e.g. `0.0.0.0:8230`. Empty disables it. |
 | `-remote-tls-cert` | _(unset)_ | TLS certificate file for the remote-access gRPC server (enables TLS with `-remote-tls-key`). |
 | `-remote-tls-key` | _(unset)_ | TLS key file for the remote-access gRPC server. |
@@ -44,6 +46,7 @@ authentication and an `OCMAN_PUBLIC_BASE_URL` matching the external origin.
 |----------|-------------|
 | `OCMAN_AUTH_PASSWORD` | Auth password. Empty string is treated as unset. |
 | `OCMAN_AUTH_TRUST_LOCALHOST` | Truthy value enables the loopback auth bypass. |
+| `OPENCODE_SERVER_PASSWORD` | Password for managed OpenCode servers and all ocman-to-OpenCode HTTP/SSE traffic. |
 | `OCMAN_ALLOWED_HOSTS` | Vite dev/preview only: comma-separated extra hostnames allowed by the dev server (e.g. `foo.tailnet.ts.net,bar.lan`). |
 
 ## Authentication
@@ -75,6 +78,28 @@ opencode --port 0   # let OpenCode pick a free port
 
 Ocman discovers listening OpenCode processes via `lsof` and auto-connects. Without `--port`,
 sessions are still readable from the database but interactive features stay disabled.
+
+### OpenCode server authentication
+
+OpenCode authentication is disabled by default, preserving compatibility with native instances
+started without authentication. To protect ocman-managed instances, configure one source in this
+precedence order:
+
+1. `OPENCODE_SERVER_PASSWORD` environment variable
+2. `-opencode-server-password-file /path/to/file`
+3. `-opencode-server-generate-password`
+
+Ocman injects the selected password as `OPENCODE_SERVER_PASSWORD` when it launches OpenCode and
+uses OpenCode's default `opencode` HTTP Basic Auth username for every API and SSE request. The
+password stays in backend memory and the managed process environment; it is not stored in
+`state.db`, returned to the browser, or included in runtime diagnostics.
+
+To rotate a supplied password, update the environment variable or file and restart ocman, then
+restart each managed OpenCode instance from its session action (or let the next managed ensure
+replace an instance whose credential no longer matches). Generated passwords are intentionally
+ephemeral: every ocman restart creates a new value, and recovered managed instances are stopped
+and relaunched on first use. Unmanaged authenticated instances must use the same configured
+password; otherwise ocman reports an authentication failure rather than an unreachable instance.
 
 ## Multi-remote support (optional)
 

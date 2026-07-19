@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/srvtiming"
 )
@@ -22,7 +23,13 @@ import (
 // calls to local OpenCode instances.
 var openCodeClient = &http.Client{
 	Timeout:   10 * time.Second,
-	Transport: otelhttp.NewTransport(http.DefaultTransport),
+	Transport: otelhttp.NewTransport(ocapi.New("").Transport(http.DefaultTransport)),
+}
+
+func configureHTTPAuth(auth ocapi.Auth) {
+	// Keep auth inside instrumentation so even opt-in HTTP header capture
+	// observes the original request without Authorization.
+	openCodeClient.Transport = otelhttp.NewTransport(auth.Transport(http.DefaultTransport))
 }
 
 // pendingPromptTimeout caps how long the dashboard's `/api/sessions` fan-out

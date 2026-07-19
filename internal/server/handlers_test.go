@@ -16,6 +16,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/gitexec"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -286,6 +287,22 @@ func TestWritePlatformError_MapsUnknownTo502(t *testing.T) {
 	writePlatformError(rr, "sending message", errors.New("unexpected"))
 	if rr.Code != http.StatusBadGateway {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadGateway)
+	}
+}
+
+func TestWritePlatformError_MapsAuthenticationWithoutSecret(t *testing.T) {
+	const secret = "do-not-expose"
+	rr := httptest.NewRecorder()
+	err := fmt.Errorf("request failed: %w", ocapi.ErrAuthentication)
+	writePlatformError(rr, "sending message", err)
+	if rr.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadGateway)
+	}
+	if !strings.Contains(rr.Body.String(), "authentication failed") {
+		t.Fatalf("body missing auth diagnostic: %q", rr.Body.String())
+	}
+	if strings.Contains(rr.Body.String(), secret) {
+		t.Fatalf("body exposed secret: %q", rr.Body.String())
 	}
 }
 

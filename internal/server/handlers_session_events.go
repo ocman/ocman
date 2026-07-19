@@ -12,6 +12,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
 )
@@ -149,6 +150,13 @@ func (s *Server) serveSessionEvents(w http.ResponseWriter, r *http.Request, sess
 		http.Error(w, "no running platform instance for this location", http.StatusServiceUnavailable)
 		log.WithFields(log.Fields{"sessionID": sessionID}).
 			Debug("SSE proxy: no running platform instance; returning 503")
+		return
+	}
+	if errors.Is(err, ocapi.ErrAuthentication) && !lw.wrote {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "OpenCode authentication failed")
+		http.Error(w, "OpenCode authentication failed; check the configured server password", http.StatusBadGateway)
+		log.WithField("sessionID", sessionID).Error("SSE proxy: OpenCode authentication failed")
 		return
 	}
 	span.RecordError(err)

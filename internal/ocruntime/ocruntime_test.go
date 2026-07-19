@@ -2,12 +2,16 @@ package ocruntime
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 )
 
 // TestAllocateLoopbackPort_BindsSuccessfully is the runnable self-check
@@ -46,9 +50,9 @@ func (f *fakeLaunch) fn(dir, command string, env map[string]string) (string, err
 	return f.session, f.err
 }
 
-func TestNativeLaunch_ThreadsPortAndPermission(t *testing.T) {
+func TestNativeLaunch_ThreadsPortPermissionAndPassword(t *testing.T) {
 	f := &fakeLaunch{}
-	rt := &NativeRuntime{launch: f.fn}
+	rt := &NativeRuntime{launch: f.fn, auth: ocapi.New("managed-secret")}
 
 	inst, err := rt.Launch(context.Background(), LaunchSpec{
 		RepoRoot:       "/home/u/src/repo",
@@ -73,6 +77,22 @@ func TestNativeLaunch_ThreadsPortAndPermission(t *testing.T) {
 	if got := f.env["OPENCODE_PERMISSION"]; got != `{"external_directory":{}}` {
 		t.Errorf("OPENCODE_PERMISSION = %q, want seeded JSON", got)
 	}
+	if got := f.env["OPENCODE_SERVER_PASSWORD"]; got != "managed-secret" {
+		t.Error("OPENCODE_SERVER_PASSWORD was not injected")
+	}
+	if got := f.env["OPENCODE_SERVER_USERNAME"]; got != ocapi.DefaultUsername {
+		t.Errorf("OPENCODE_SERVER_USERNAME = %q", got)
+	}
+	if strings.Contains(f.command, "managed-secret") {
+		t.Error("password exposed in pane command")
+	}
+	encoded, err := json.Marshal(inst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "managed-secret") {
+		t.Error("password exposed in runtime diagnostics")
+	}
 	// Instance shape.
 	if inst.Endpoint != "http://127.0.0.1:41235" {
 		t.Errorf("Endpoint = %q, want http://127.0.0.1:41235", inst.Endpoint)
@@ -89,8 +109,7 @@ func TestNativeLaunch_DefaultsHostAndOmitsEmptyPermission(t *testing.T) {
 	f := &fakeLaunch{session: "sess"}
 	rt := &NativeRuntime{launch: f.fn}
 
-	inst, err := rt.Launch(context.Background(), LaunchSpec{RepoRoot: "/r", Port: 9},
-	)
+	inst, err := rt.Launch(context.Background(), LaunchSpec{RepoRoot: "/r", Port: 9})
 	if err != nil {
 		t.Fatalf("Launch: %v", err)
 	}
@@ -99,6 +118,12 @@ func TestNativeLaunch_DefaultsHostAndOmitsEmptyPermission(t *testing.T) {
 	}
 	if _, ok := f.env["OPENCODE_PERMISSION"]; ok {
 		t.Error("OPENCODE_PERMISSION should be absent when PermissionJSON empty")
+	}
+	if _, ok := f.env["OPENCODE_SERVER_PASSWORD"]; ok {
+		t.Error("OPENCODE_SERVER_PASSWORD should be absent when auth disabled")
+	}
+	if _, ok := f.env["OPENCODE_SERVER_USERNAME"]; ok {
+		t.Error("OPENCODE_SERVER_USERNAME should be absent when auth disabled")
 	}
 }
 
@@ -122,9 +147,15 @@ func TestNativeLaunch_Validation(t *testing.T) {
 }
 
 func TestNativeProbe(t *testing.T) {
+	const password = "probe-secret"
 	ok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/config" {
 			t.Errorf("probed path = %q, want /config", r.URL.Path)
+		}
+		_, pass, valid := r.BasicAuth()
+		if !valid || pass != password {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -142,24 +173,29 @@ func TestNativeProbe(t *testing.T) {
 	}
 	refused := "http://127.0.0.1:" + strconv.Itoa(refusedPort)
 
-	rt := NewNativeRuntime()
+	rt := NewNativeRuntimeWithAuth(ocapi.New(password))
 	tests := []struct {
 		name string
 		inst *Instance
-		want bool
+		want error
 	}{
-		{"200", &Instance{Endpoint: ok.URL}, true},
-		{"500", &Instance{Endpoint: bad.URL}, false},
-		{"refused", &Instance{Endpoint: refused}, false},
-		{"nil instance", nil, false},
-		{"empty endpoint", &Instance{}, false},
+		{"200", &Instance{Endpoint: ok.URL}, nil},
+		{"500", &Instance{Endpoint: bad.URL}, ErrProbeUnreachable},
+		{"refused", &Instance{Endpoint: refused}, ErrProbeUnreachable},
+		{"nil instance", nil, ErrProbeUnreachable},
+		{"empty endpoint", &Instance{}, ErrProbeUnreachable},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := rt.Probe(context.Background(), tt.inst); got != tt.want {
+			if got := rt.Probe(context.Background(), tt.inst); !errors.Is(got, tt.want) {
 				t.Errorf("Probe = %v, want %v", got, tt.want)
 			}
 		})
+	}
+
+	wrong := NewNativeRuntimeWithAuth(ocapi.New("wrong"))
+	if err := wrong.Probe(context.Background(), &Instance{Endpoint: ok.URL}); !errors.Is(err, ocapi.ErrAuthentication) {
+		t.Fatalf("wrong credential probe = %v, want authentication error", err)
 	}
 }
 
