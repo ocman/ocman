@@ -6,8 +6,9 @@
  * Flow:
  *   1. Call `createSession`.
  *   2. If it rejects with code === 'unreachable' AND tmux is available,
- *      launch `opencode --port 0` in a new tmux window via
- *      `launchOpencodeInTmux`, then retry the createSession call a few
+ *      ask the backend to ensure the project's managed opencode instance
+ *      is running via `launchOpencodeInTmux` (which now routes through
+ *      EnsureProjectOpencode), then retry the createSession call a few
  *      times while the new opencode process comes up and starts
  *      listening.
  *   3. The /wt flow has already launched opencode in a tmux window, so

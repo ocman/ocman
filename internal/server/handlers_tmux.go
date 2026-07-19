@@ -111,14 +111,21 @@ func (s *Server) handleTmuxLaunchOpencode(w http.ResponseWriter, r *http.Request
 	if req.RemoteID != "" {
 		host = s.router().ForRemote(req.RemoteID)
 	}
-	res, err := host.LaunchTmux(r.Context(), hostsvc.LaunchTmuxRequest{Directory: req.Directory})
+	// Route through EnsureProjectOpencode (not the raw tmux launcher) so
+	// this manual new-session bootstrap shares the singleflight guard and
+	// managed registry with the automatic paths (worktree / MCP). Without
+	// this a user-driven launch could race an ensure and create a second
+	// competing instance for the same project (#376 AC-3).
+	res, err := host.EnsureProjectOpencode(r.Context(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: req.Directory})
 	if err != nil {
 		log.WithError(err).Error("failed to launch opencode in tmux")
 		serverError(w, "launching opencode in tmux", err)
 		return
 	}
 
-	writeJSON(w, map[string]string{"session": res.Session})
+	// The runtime ID is the tmux session name for the native runtime;
+	// kept as "session" for wire compatibility with the frontend.
+	writeJSON(w, map[string]string{"session": res.Runtime.ID})
 }
 
 func (s *Server) handleTmuxSwitch(w http.ResponseWriter, r *http.Request) {

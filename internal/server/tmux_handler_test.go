@@ -12,32 +12,35 @@ import (
 	"github.com/NoUseFreak/ocman/internal/term"
 )
 
-func TestHandleTmuxLaunchOpencodeRoutesToRemoteHost(t *testing.T) {
+// The manual new-session bootstrap (POST /api/tmux/launch-opencode) must
+// route through EnsureProjectOpencode — not the raw tmux launcher — so it
+// shares the singleflight guard and managed registry with the automatic
+// launch paths and cannot create a competing instance (#376 AC-3). We
+// prove the handler funnels through EnsureProjectOpencode by asserting the
+// returned "session" is the managed runtime's instance ID.
+func TestHandleTmuxLaunchOpencodeRoutesThroughEnsure(t *testing.T) {
+	repo := initWorktreeTestRepo(t)
 	srv := testServer(t)
-	var launchedDir string
 	srv.HostRouter().RegisterRemote("abc", local.New(local.Deps{
-		LaunchTmux: func(directory string) (string, error) {
-			launchedDir = directory
-			return "remote-session", nil
-		},
+		Runtime: fakeRuntime{endpoint: "http://127.0.0.1:5599"},
 	}))
 
-	req := httptest.NewRequest(http.MethodPost, "/api/tmux/launch-opencode", bytes.NewBufferString(`{"directory":"/remote/repo","remoteId":"abc"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/tmux/launch-opencode",
+		bytes.NewBufferString(`{"directory":"`+repo+`","remoteId":"abc"}`))
 	rec := httptest.NewRecorder()
 	srv.handleTmuxLaunchOpencode(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
-	if launchedDir != "/remote/repo" {
-		t.Fatalf("launched dir = %q, want /remote/repo", launchedDir)
-	}
 	var got map[string]string
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if got["session"] != "remote-session" {
-		t.Fatalf("session = %q, want remote-session", got["session"])
+	// fakeRuntime.Launch returns an instance with ID "sess-name"; the
+	// handler surfaces the managed runtime ID as "session".
+	if got["session"] != "sess-name" {
+		t.Fatalf("session = %q, want sess-name (managed runtime ID)", got["session"])
 	}
 }
 
