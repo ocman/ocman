@@ -22,6 +22,7 @@ import (
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/queuesvc"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
@@ -209,9 +210,8 @@ func (s *Server) newLocalHost() hostsvc.Host {
 	return hostlocal.New(hostlocal.Deps{
 		LaunchTmux:   tmux.LaunchOpencode,
 		Runtime:      s.runtime,
+		DiscoverPort: opencode.DiscoverOpenCodePortFresh,
 		ManagedStore: managedStoreOrNil(s.stateDB),
-		// The managed ensure path launches/probes through Runtime (#390),
-		// so the old LaunchProjectOpencode/DiscoverPort deps are gone.
 		// CreateSession routes worktree-session creation through the shared
 		// session-mutation service (same validated path + hooks as REST/MCP).
 		// Resolved lazily: s.sessions is assigned after newLocalHost runs.

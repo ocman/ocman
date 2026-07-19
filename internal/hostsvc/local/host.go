@@ -47,6 +47,9 @@ type Deps struct {
 	// in a tmux session). Injected so tests can drive EnsureProjectOpencode
 	// against a fake Runtime and a container runtime can land later (#375).
 	Runtime ocruntime.Runtime
+	// DiscoverPort returns the port of an already-running OpenCode server
+	// rooted at the project, or "" when none exists.
+	DiscoverPort func(directory string) string
 	// ManagedStore persists managed-instance records so a project's
 	// opencode survives an ocman restart (#391, AD-5). Optional: when nil
 	// the host falls back to the in-memory map alone. When present, the
@@ -331,6 +334,25 @@ func (h *Host) ensureLocked(ctx context.Context, repoRoot string) (*hostsvc.Ensu
 		if h.store != nil {
 			if err := h.store.Delete(repoRoot); err != nil {
 				log.WithError(err).WithField("repoRoot", repoRoot).Warn("host: deleting stale managed opencode row")
+			}
+		}
+	}
+
+	// Adopt servers that predate the managed registry (or were started
+	// outside ocman) before launching another instance for the project.
+	if h.deps.DiscoverPort != nil {
+		if port := h.deps.DiscoverPort(repoRoot); port != "" {
+			inst := &ocruntime.Instance{
+				Endpoint: "http://127.0.0.1:" + port,
+				Kind:     ocruntime.KindNativeTmux,
+			}
+			if h.runtime.Probe(ctx, inst) {
+				h.setInstance(repoRoot, inst)
+				return &hostsvc.EnsureProjectOpencodeResult{
+					Endpoint: inst.Endpoint,
+					RepoRoot: repoRoot,
+					Runtime:  *inst,
+				}, nil
 			}
 		}
 	}

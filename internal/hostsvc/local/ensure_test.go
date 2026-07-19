@@ -131,6 +131,29 @@ func TestEnsureProjectOpencode_LaunchesAndSeeds(t *testing.T) {
 	}
 }
 
+func TestEnsureProjectOpencode_AdoptsDiscoveredServer(t *testing.T) {
+	repo := initRepo(t)
+	rt := &fakeRuntime{}
+	h := New(Deps{
+		Runtime:      rt,
+		DiscoverPort: func(string) string { return "4096" },
+	})
+
+	res, err := h.EnsureProjectOpencode(context.Background(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: repo})
+	if err != nil {
+		t.Fatalf("EnsureProjectOpencode: %v", err)
+	}
+	if rt.launchCount() != 0 {
+		t.Fatalf("launched %d times; want existing server reused", rt.launchCount())
+	}
+	if res.Endpoint != "http://127.0.0.1:4096" {
+		t.Fatalf("Endpoint = %q, want discovered endpoint", res.Endpoint)
+	}
+	if res.Launched {
+		t.Fatal("Launched should be false for a discovered server")
+	}
+}
+
 // TestEnsureProjectOpencode_ReusesHealthyInstance: a second sequential call
 // reuses the healthy instance the first launched — launches nothing more.
 func TestEnsureProjectOpencode_ReusesHealthyInstance(t *testing.T) {

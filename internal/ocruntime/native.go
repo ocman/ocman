@@ -29,9 +29,9 @@ type NativeRuntime struct {
 func NewNativeRuntime() *NativeRuntime {
 	return &NativeRuntime{
 		launch: func(directory, command string, env map[string]string) (string, error) {
-			// Idempotent: one opencode per project. Reuse the existing
-			// session if it's already up (launched=false).
-			name, _, err := tmux.LaunchOpencodeCmdEnvWith(tmux.DefaultRunner, directory, command, true, env)
+			// The host already checked for a healthy project server. A tmux
+			// session alone may only contain shells or a stale OpenCode window.
+			name, _, err := tmux.LaunchOpencodeCmdEnvWith(tmux.DefaultRunner, directory, command, false, env)
 			return name, err
 		},
 		kill: tmux.DefaultRunner.KillSession,

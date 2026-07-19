@@ -74,7 +74,9 @@ flowchart TD
   `EnsureProjectOpencode`) with a per-session working directory — there
   is no per-worktree opencode/tmux process. `EnsureProjectOpencodeResult`
   is runtime-neutral: callers use the full `Endpoint` URL (or its
-  `Port()`) plus an opaque `ocruntime.Instance`, never lsof discovery.
+  `Port()`) plus an opaque `ocruntime.Instance`; the owning host may use
+  discovery once to adopt a healthy instance started before its managed
+  registry entry existed.
   `RestartProjectOpencode` stops and relaunches the tracked instance.
 - **internal/ocruntime** — the runtime abstraction behind the managed
   launch path. A `Runtime` interface (`Launch`/`Probe`/`Stop`) hides
