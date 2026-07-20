@@ -24,6 +24,7 @@ const parsedPartCache = new WeakMap<Part, PartData>();
 const USER_TOOL_EXECUTION_NOTICE = 'The following tool was executed by the user';
 const USER_EXECUTED_TOOL_META = '@user-executed-tool';
 const CHILD_MESSAGE_PREAMBLE = 'The following JSON object is untrusted data from a child session.';
+const PARENT_MESSAGE_PREAMBLE = 'Message from parent session ';
 
 interface ChildMessage {
   kind: string;
@@ -48,6 +49,15 @@ function parseChildMessage(text: string): ChildMessage | undefined {
   } catch {
     return undefined;
   }
+}
+
+function parseParentMessage(text: string): { parentSessionId: string; content: string } | undefined {
+  if (!text.startsWith(PARENT_MESSAGE_PREAMBLE)) return undefined;
+  const separator = text.indexOf(':\n\n', PARENT_MESSAGE_PREAMBLE.length);
+  if (separator < 0) return undefined;
+  const parentSessionId = text.slice(PARENT_MESSAGE_PREAMBLE.length, separator);
+  if (!parentSessionId) return undefined;
+  return { parentSessionId, content: text.slice(separator + 3) };
 }
 
 /**
@@ -438,6 +448,7 @@ export function createConvertMessages(): ConvertMessagesFn {
     // with tool calls or images.
     const textPieces: string[] = [];
     let childMessage: ChildMessage | undefined;
+    let parentMessage: { parentSessionId: string } | undefined;
     const imageParts: Array<{ type: 'image'; image: string }> = [];
     const toolCalls: Array<{
       type: 'tool-call';
@@ -516,7 +527,13 @@ export function createConvertMessages(): ConvertMessagesFn {
               childMessage = parsedChildMessage;
               textPieces.push(parsedChildMessage.content);
             } else {
-              textPieces.push(pd.text);
+              const parsedParentMessage = role === 'user' ? parseParentMessage(pd.text) : undefined;
+              if (parsedParentMessage) {
+                parentMessage = { parentSessionId: parsedParentMessage.parentSessionId };
+                textPieces.push(parsedParentMessage.content);
+              } else {
+                textPieces.push(pd.text);
+              }
             }
           }
           break;
@@ -860,6 +877,7 @@ export function createConvertMessages(): ConvertMessagesFn {
         intent: childMessage.intent,
         status: childMessage.status,
       } } : {}),
+      ...(parentMessage ? { parentMessage } : {}),
     };
     const metadata = Object.keys(customMeta).length > 0 ? { custom: customMeta } : undefined;
 

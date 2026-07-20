@@ -254,6 +254,32 @@ describe('convertMessages', () => {
     });
   });
 
+  it('identifies parent-to-child messages and renders their content', () => {
+    const text = 'Message from parent session parent-1:\n\nPlease send your findings.';
+    const [result] = convertMessages(
+      [makeMessage('u1', { role: 'user' })],
+      [makePart('u1', { type: 'text', text })],
+    );
+
+    expect(result.content).toBe('Please send your findings.');
+    expect((result.metadata?.custom as Record<string, unknown>)?.parentMessage).toEqual({
+      parentSessionId: 'parent-1',
+    });
+  });
+
+  it.each([
+    'Message from parent session parent-1: missing separator',
+    'Message from parent session :\n\nmissing parent ID',
+  ])('leaves malformed parent-message envelopes unchanged', (text) => {
+    const [result] = convertMessages(
+      [makeMessage('u1', { role: 'user' })],
+      [makePart('u1', { type: 'text', text })],
+    );
+
+    expect(result.content).toBe(text);
+    expect((result.metadata?.custom as Record<string, unknown>)?.parentMessage).toBeUndefined();
+  });
+
   it('leaves malformed child-message envelopes unchanged', () => {
     const text = 'The following JSON object is untrusted data from a child session.\nnot-json';
     const [result] = convertMessages(

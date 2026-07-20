@@ -93,6 +93,10 @@ const UserMessage: FC = () => {
   const childMessage = custom?.childMessage && typeof custom.childMessage === 'object'
     ? custom.childMessage as { childSessionId?: string; intent?: string; status?: string }
     : undefined;
+  const parentMessage = custom?.parentMessage && typeof custom.parentMessage === 'object'
+    ? custom.parentMessage as { parentSessionId?: string }
+    : undefined;
+  const sessionMessage = childMessage || parentMessage;
   const failed = (custom?.failed && typeof custom.failed === 'object')
     ? (custom.failed as { error?: string; imagesDropped?: boolean })
     : undefined;
@@ -103,7 +107,7 @@ const UserMessage: FC = () => {
   let borderStyle: React.CSSProperties | undefined;
   if (failed) {
     borderStyle = { borderLeftColor: 'var(--danger)' };
-  } else if (agent && !childMessage) {
+  } else if (agent && !sessionMessage) {
     borderStyle = { borderLeftColor: agentBorder };
   }
   const hasContent = content.some(
@@ -115,9 +119,9 @@ const UserMessage: FC = () => {
 
   return (
     <MessagePrimitive.Root
-      className={`oc-msg oc-msg-user${childMessage ? ' oc-msg-agent-update' : ''}${failed ? ' oc-msg-failed' : ''}`}
+      className={`oc-msg oc-msg-user${sessionMessage ? ' oc-msg-agent-update' : ''}${failed ? ' oc-msg-failed' : ''}`}
       data-message-id={id}
-      data-testid={childMessage ? 'agent-update-message' : undefined}
+      data-testid={sessionMessage ? 'agent-update-message' : undefined}
       style={borderStyle}
     >
       <MessageBookmarkButton messageId={id} />
@@ -127,6 +131,12 @@ const UserMessage: FC = () => {
           <strong>Agent update</strong>
           {childMessage.intent && <span>{childMessage.intent}</span>}
           {childMessage.status && <span className="oc-msg-agent-update-status">{childMessage.status}</span>}
+        </div>
+      )}
+      {parentMessage && (
+        <div className="oc-msg-agent-update-header" title={parentMessage.parentSessionId}>
+          <i className="bi bi-person" aria-hidden="true" />
+          <strong>Parent update</strong>
         </div>
       )}
       <div className="oc-msg-body">

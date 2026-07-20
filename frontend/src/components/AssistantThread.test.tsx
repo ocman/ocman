@@ -138,4 +138,16 @@ describe('AssistantThread agent updates', () => {
     expect(getByText('Inspect the failing test')).toBeInTheDocument();
     expect(getByTestId('agent-update-message')).toBeInTheDocument();
   });
+
+  it('labels parent-to-child messages separately from user messages', () => {
+    threadState.renderUser = true;
+    message.metadata.custom = {
+      parentMessage: { parentSessionId: 'parent-1' },
+    };
+
+    const { getByText, getByTestId } = render(<AssistantThread />);
+
+    expect(getByText('Parent update')).toBeInTheDocument();
+    expect(getByTestId('agent-update-message')).toHaveAttribute('class', expect.stringContaining('oc-msg-agent-update'));
+  });
 });
