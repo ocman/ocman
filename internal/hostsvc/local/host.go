@@ -360,7 +360,7 @@ func (h *Host) ensureLocked(ctx context.Context, repoRoot string) (*hostsvc.Ensu
 				Endpoint: "http://127.0.0.1:" + port,
 				Kind:     ocruntime.KindNativeTmux,
 			}
-			if h.runtime.Probe(ctx, inst) {
+			if h.runtime.Probe(ctx, inst) == nil {
 				h.setInstance(repoRoot, inst)
 				return &hostsvc.EnsureProjectOpencodeResult{
 					Endpoint: inst.Endpoint,
