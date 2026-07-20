@@ -12,6 +12,7 @@ import { renderHook, act } from '@testing-library/react';
 import { createRef } from 'react';
 import type { MutableRefObject } from 'react';
 import { useSessionActions, type UseSessionActionsOptions } from './useSessionActions';
+import { BackendUnavailableError } from '../../lib/api';
 
 const sendMessage = vi.fn().mockResolvedValue(undefined);
 
@@ -34,7 +35,10 @@ const { revertSession, unrevertSession } = vi.hoisted(() => ({
   revertSession: vi.fn().mockResolvedValue(undefined),
   unrevertSession: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('../../lib/api', () => ({ api: { revertSession, unrevertSession } }));
+vi.mock('../../lib/api', () => ({
+  api: { revertSession, unrevertSession },
+  BackendUnavailableError: class BackendUnavailableError extends Error {},
+}));
 vi.mock('../../lib/remoteLog', () => ({ remoteLog: { error: vi.fn() } }));
 
 const begin = vi.fn().mockReturnValue('entry-1');
@@ -149,5 +153,16 @@ describe('useSessionActions — handleSend queue behaviour (#58)', () => {
     expect(begin).toHaveBeenCalledTimes(1);
     // performSend still POSTs the message.
     expect(sendMessage).toHaveBeenCalled();
+  });
+
+  it('lets the composer retry backend outages instead of recording a failed send', async () => {
+    sendMessage.mockRejectedValueOnce(new BackendUnavailableError());
+    const options = makeOptions({ current: false });
+    const { result } = renderHook(() => useSessionActions(options));
+
+    await expect(act(async () => result.current.handleSend('keep trying'))).rejects.toBeInstanceOf(BackendUnavailableError);
+
+    expect(options.pending.fail).not.toHaveBeenCalled();
+    expect(options.setFailedSends).not.toHaveBeenCalled();
   });
 });

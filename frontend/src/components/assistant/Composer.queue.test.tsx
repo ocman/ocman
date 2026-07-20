@@ -2,6 +2,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Composer } from './Composer';
+import { BackendUnavailableError } from '../../lib/api';
 
 afterEach(() => vi.useRealTimers());
 
@@ -45,5 +46,27 @@ describe('Composer input', () => {
     fireEvent.input(input, { target: { value: 'hello' } });
 
     expect((input as HTMLTextAreaElement).style.height).toBe('');
+  });
+
+  it('keeps the draft locked and retries while the backend is unavailable', async () => {
+    vi.useFakeTimers();
+    const onSend = vi.fn()
+      .mockRejectedValueOnce(new BackendUnavailableError())
+      .mockResolvedValueOnce(undefined);
+    render(<Composer isRunning={false} onSend={onSend} />);
+    const input = screen.getByRole('textbox');
+
+    fireEvent.input(input, { target: { value: 'keep this message' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await act(async () => {});
+    expect(input).toHaveValue('keep this message');
+    expect(input).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Sending message' })).toBeDisabled();
+
+    await act(async () => { vi.advanceTimersByTime(1_000); });
+    expect(onSend).toHaveBeenCalledTimes(2);
+    expect(input).toHaveValue('');
+    expect(input).not.toBeDisabled();
   });
 });

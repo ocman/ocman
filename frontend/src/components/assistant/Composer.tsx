@@ -4,7 +4,7 @@ import { useComposerDrafts } from './useComposerDrafts';
 import { isMacPlatform } from '../../lib/shortcuts';
 import { useShortcut } from '../../lib/shortcutRegistry';
 import { useUiStore } from '../../lib/uiStore';
-import { api, type SlashCommand, type AgentInfo, type SessionModelEntry } from '../../lib/api';
+import { api, BackendUnavailableError, type SlashCommand, type AgentInfo, type SessionModelEntry } from '../../lib/api';
 import { agentColor } from '../../lib/agentColor';
 import { ModelPicker } from './ModelPicker';
 import { AgentPicker } from './AgentPicker';
@@ -222,14 +222,11 @@ function ComposerImpl({
   const disabledRef = useRef(disabled);
   const [images, setImages] = useState<AttachedImage[]>([]);
   const [files, setFiles] = useState<AttachedFileRef[]>([]);
-  // sending: a send POST is in flight. While true the composer is disabled
-  // so the user can't fire a second send before the first completes — by
-  // the time it clears, the server's queue.updated broadcast has already
-  // reflected the new item (or the message started a turn). This makes the
-  // send a simple blocking round-trip and removes any need for optimistic
-  // queue state.
+  // Keep the draft locked until the send succeeds. Backend outages retry;
+  // other errors unlock the unchanged draft for manual correction/retry.
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
+  const mountedRef = useRef(true);
   const imagesRef = useRef<AttachedImage[]>([]);
   const filesRef = useRef<AttachedFileRef[]>([]);
   const sessionIdRef = useRef(sessionId);
@@ -267,6 +264,10 @@ function ComposerImpl({
   useEffect(() => { isRunningRef.current = isRunning; }, [isRunning]);
   useEffect(() => { disabledRef.current = disabled; }, [disabled]);
   useEffect(() => { sendingRef.current = sending; }, [sending]);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   // Auto-focus the composer input when the component becomes visible.
   useEffect(() => {
@@ -559,16 +560,29 @@ function ComposerImpl({
     const el = inputRef.current;
     if (!el) return;
 
-    // runSend blocks the composer for the duration of the send POST. The
-    // input is already cleared by the caller; disabling until the promise
-    // resolves means that by the time the user can type again, the server
-    // has processed the message (and, for a mid-turn send, emitted the
-    // queue.updated broadcast). onSend may return void (sync) — Promise
-    // .resolve normalises both.
-    const runSend = (text: string, imgs?: AttachedImage[]) => {
-      const ret = onSendRef.current?.(text, imgs);
+    const runSend = async (text: string, imgs?: AttachedImage[]) => {
+      sendingRef.current = true;
       setSending(true);
-      Promise.resolve(ret).finally(() => setSending(false));
+      while (mountedRef.current) {
+        try {
+          await onSendRef.current?.(text, imgs);
+          el.value = '';
+          el.dispatchEvent(new CustomEvent('oc-slash-update', { detail: { show: false, filter: '' } }));
+          el.dispatchEvent(new CustomEvent('oc-bash-mode', { detail: false }));
+          el.dispatchEvent(new CustomEvent('oc-clear-images'));
+          el.dispatchEvent(new CustomEvent('oc-clear-files'));
+          const sid = sessionIdRef.current;
+          if (sid) clearDraftNow(sid);
+          break;
+        } catch (err) {
+          if (!(err instanceof BackendUnavailableError)) break;
+          await new Promise(resolve => window.setTimeout(resolve, 1_000));
+        }
+      }
+      if (mountedRef.current) {
+        sendingRef.current = false;
+        setSending(false);
+      }
     };
 
     const handleInputKeyDown = (e: KeyboardEvent) => {
@@ -680,12 +694,14 @@ function ComposerImpl({
           // `noop` only reaches here when attachments are present; send
           // with empty text in that case.
           const text = route.kind === 'send' ? route.text : '';
-          runSend(withFileReferences(text), imgs.length > 0 ? imgs : undefined);
+          void runSend(withFileReferences(text), imgs.length > 0 ? imgs : undefined);
+          return;
         } else {
           // route.kind === 'shell' but no onShell handler (capability
           // mis-wiring). Fall back to a plain prompt rather than
           // silently dropping the user's input.
-          runSend(withFileReferences(raw.trim()), imgs.length > 0 ? imgs : undefined);
+          void runSend(withFileReferences(raw.trim()), imgs.length > 0 ? imgs : undefined);
+          return;
         }
 
         setIsBashModeRef.current(false);
@@ -1247,10 +1263,10 @@ function ComposerImpl({
             ) : (
               <button
                 type="button"
-                className="oc-bar-send"
+                className={`oc-bar-send${sending ? ' oc-bar-send-sending' : ''}`}
                 disabled={uiDisabled}
-                title="Send (Enter)"
-                aria-label="Send message"
+                title={sending ? 'Sending message' : 'Send (Enter)'}
+                aria-label={sending ? 'Sending message' : 'Send message'}
                 onClick={() => {
                   // Reuse the textarea's existing Enter submit path so
                   // button and keyboard stay behaviourally identical.
@@ -1259,9 +1275,13 @@ function ComposerImpl({
                   );
                 }}
               >
-                <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-                  <path d="M8 13V3M8 3L4 7M8 3l4 4" stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+                {sending ? (
+                  <span className="oc-spinner oc-bar-send-spinner" aria-hidden="true" />
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M8 13V3M8 3L4 7M8 3l4 4" stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
               </button>
             )}
           </div>

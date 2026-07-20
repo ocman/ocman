@@ -482,7 +482,9 @@
 }
 .oc-bar-send:hover:not(:disabled) { filter: brightness(1.1); }
 .oc-bar-send:disabled { opacity: 0.4; cursor: not-allowed; }
+.oc-bar-send.oc-bar-send-sending { opacity: 1; cursor: wait; }
 .oc-bar-send.oc-bar-send-stop { background: var(--red); }
+.oc-bar-send-spinner { width: 14px; height: 14px; border-color: rgba(255, 255, 255, 0.4); border-top-color: currentColor; }
 .oc-keybind-hint { color: var(--overlay0); font-size: 11px; background: none; border: none; padding: 0; cursor: pointer; }
 .oc-keybind-hint:hover { color: var(--text); }
 .oc-bar-hint { color: var(--overlay0); }

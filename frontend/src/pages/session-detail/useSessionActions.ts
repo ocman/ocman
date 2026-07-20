@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react';
 import { flushSync } from 'react-dom';
-import { api, type PlatformCapabilities } from '../../lib/api';
+import { api, BackendUnavailableError, type PlatformCapabilities } from '../../lib/api';
 import type { AttachedImage } from '../../components/assistant/Composer';
 import type { PendingPermission } from '../../lib/sseHelpers';
 import type { PendingQuestion } from '../../components/session/QuestionPrompt';
@@ -181,7 +181,8 @@ export function useSessionActions({
     agent: string | undefined,
     reasoning: string | undefined,
   ) => {
-    if (!session || !portAvailable) return;
+    if (!session) return;
+    if (!portAvailable) throw new BackendUnavailableError();
     if (pendingPermission || pendingQuestion) return;
 
     setAwaitingAssistantResponse(true);
@@ -195,6 +196,7 @@ export function useSessionActions({
       removeFailedSend(session.id, entryId);
     } catch (e) {
       setAwaitingAssistantResponse(false);
+      if (e instanceof BackendUnavailableError) throw e;
       remoteLog.error('Failed to send message', e);
       const msg = e instanceof Error ? e.message : '';
       if (msg.includes('no running OpenCode instance')) {
@@ -227,7 +229,8 @@ export function useSessionActions({
   }, [pendingPermission, pendingQuestion, portAvailable, sendMessage, session, setFailedSends, pending, setShowDisconnectedToast]);
 
   const handleSend = useCallback(async (text: string, images?: AttachedImage[]) => {
-    if (!session || !portAvailable) return;
+    if (!session) return;
+    if (!portAvailable) throw new BackendUnavailableError();
     if (pendingPermission || pendingQuestion) return;
     // Mid-turn: the POST will be queued server-side (#58), not sent. Do
     // NOT show an optimistic thread bubble — a user message that follows
@@ -247,7 +250,10 @@ export function useSessionActions({
         selectedReasoning || undefined,
         session.platform,
         true, // queue: agent is mid-turn — hold, don't drain into the turn
-      ).catch((e) => remoteLog.error('Failed to queue message', e));
+      ).catch((e) => {
+        remoteLog.error('Failed to queue message', e);
+        if (e instanceof BackendUnavailableError) throw e;
+      });
       return;
     }
     // Idle: begin a pending send — generates a stable id, sets the bubble
