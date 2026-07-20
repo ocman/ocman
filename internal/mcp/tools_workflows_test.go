@@ -2,6 +2,7 @@ package mcp_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -135,12 +136,33 @@ func TestWorkflowToolRegistrationIsComplete(t *testing.T) {
 		"list_workflows": true, "start_workflow": true, "list_workflow_runs": true,
 		"inspect_workflow_run": true, "pause_workflow_run": true, "resume_workflow_run": true,
 		"cancel_workflow_run": true, "approve_workflow_node": true, "resolve_unknown_attempt": true,
+		"retry_workflow_from_node": true,
 	}
 	for _, tool := range internalmcp.ServerTools(internalmcp.Deps{WorkflowService: workflows.NewService(workflows.Deps{Store: openTestStateDB(t)})}) {
 		delete(want, tool.Tool.Name)
 	}
 	if len(want) != 0 {
 		t.Fatalf("missing workflow tools: %#v", want)
+	}
+}
+
+func TestRetryWorkflowFromNode(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	srv := buildWorkflowMCPServer(t, stateDB)
+	published := resultObject(t, srv, "publish_workflow", map[string]interface{}{"definition": workflowDefinition})
+	started := resultObject(t, srv, "start_workflow", map[string]interface{}{"version_id": published["version_id"]})
+	runID := started["run_id"].(string)
+	resultObject(t, srv, "approve_workflow_node", map[string]interface{}{"run_id": runID, "node_id": "review"})
+	resultObject(t, srv, "approve_workflow_node", map[string]interface{}{"run_id": runID, "node_id": "ship"})
+	adjusted := strings.Replace(workflowDefinition, `"name":"Ship"`, `"name":"Ship adjusted"`, 1)
+	v2 := resultObject(t, srv, "publish_workflow", map[string]interface{}{"definition": adjusted})
+	retried := resultObject(t, srv, "retry_workflow_from_node", map[string]interface{}{"run_id": runID, "node_id": "ship", "version_id": v2["version_id"]})
+	if retried["retry_of_run_id"] != runID || retried["retry_from_node_id"] != "ship" || retried["version_id"] != v2["version_id"] {
+		t.Fatalf("retry result = %#v", retried)
+	}
+	inspected := resultObject(t, srv, "inspect_workflow_run", map[string]interface{}{"run_id": retried["run_id"]})
+	if !strings.Contains(fmt.Sprint(inspected), "reused_attempt_id") {
+		t.Fatalf("retry provenance missing from inspection: %#v", inspected)
 	}
 }
 

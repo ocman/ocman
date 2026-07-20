@@ -47,6 +47,8 @@ type WorkflowRun struct {
 	ParentNodeID        string
 	ItemKey             string
 	ItemIndex           int
+	RetryOfRunID        string
+	RetryFromNodeID     string
 	Nodes               []WorkflowNodeRun
 }
 
@@ -82,6 +84,7 @@ type WorkflowAttempt struct {
 	Directory       string
 	ResolvedAt      int64
 	ResolvedBy      string
+	ReusedAttemptID int64
 }
 
 type WorkflowCommandResult struct {
@@ -392,7 +395,7 @@ type workflowRunExecer interface {
 }
 
 func insertWorkflowRun(exec workflowRunExecer, run WorkflowRun) error {
-	if _, err := exec.Exec(`INSERT INTO workflow_run (id, workflow_id, version_id, state, created_at, updated_at, trigger_snapshot_json, parent_run_id, parent_node_id, item_key, item_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, run.ID, run.WorkflowID, run.VersionID, run.State, run.CreatedAt, run.UpdatedAt, nullableString(run.TriggerSnapshotJSON), nullableString(run.ParentRunID), nullableString(run.ParentNodeID), nullableString(run.ItemKey), nullableInt(int64(run.ItemIndex))); err != nil {
+	if _, err := exec.Exec(`INSERT INTO workflow_run (id, workflow_id, version_id, state, created_at, updated_at, trigger_snapshot_json, parent_run_id, parent_node_id, item_key, item_index, retry_of_run_id, retry_from_node_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, run.ID, run.WorkflowID, run.VersionID, run.State, run.CreatedAt, run.UpdatedAt, nullableString(run.TriggerSnapshotJSON), nullableString(run.ParentRunID), nullableString(run.ParentNodeID), nullableString(run.ItemKey), nullableInt(int64(run.ItemIndex)), nullableString(run.RetryOfRunID), nullableString(run.RetryFromNodeID)); err != nil {
 		return fmt.Errorf("inserting workflow run: %w", err)
 	}
 	for _, node := range run.Nodes {
@@ -404,12 +407,17 @@ func insertWorkflowRun(exec workflowRunExecer, run WorkflowRun) error {
 				return fmt.Errorf("inserting approval attempt: %w", err)
 			}
 		}
+		for _, attempt := range node.Attempts {
+			if _, err := exec.Exec(`INSERT INTO workflow_node_attempt (run_id, node_id, seq, state, started_at, completed_at, exit_code, stdout, stderr, error, outputs_json, stdout_truncated, stderr_truncated, platform, session_id, session_state, affinity, directory, resolved_at, resolved_by, reused_attempt_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, run.ID, node.NodeID, attempt.Seq, attempt.State, attempt.StartedAt, nullableInt(attempt.CompletedAt), attempt.ExitCode, attempt.Stdout, attempt.Stderr, attempt.Error, attempt.OutputsJSON, attempt.StdoutTruncated, attempt.StderrTruncated, attempt.Platform, attempt.SessionID, attempt.SessionState, attempt.Affinity, attempt.Directory, nullableInt(attempt.ResolvedAt), attempt.ResolvedBy, nullableInt(attempt.ReusedAttemptID)); err != nil {
+				return fmt.Errorf("inserting reused workflow attempt: %w", err)
+			}
+		}
 	}
 	return nil
 }
 
 func (d *DB) ListWorkflowRuns() ([]WorkflowRun, error) {
-	rows, err := d.db.Query(`SELECT id, workflow_id, version_id, state, created_at, updated_at, COALESCE(completed_at, 0), COALESCE(trigger_snapshot_json, ''), COALESCE(parent_run_id, ''), COALESCE(parent_node_id, ''), COALESCE(item_key, ''), COALESCE(item_index, 0) FROM workflow_run ORDER BY created_at DESC, id DESC`)
+	rows, err := d.db.Query(`SELECT id, workflow_id, version_id, state, created_at, updated_at, COALESCE(completed_at, 0), COALESCE(trigger_snapshot_json, ''), COALESCE(parent_run_id, ''), COALESCE(parent_node_id, ''), COALESCE(item_key, ''), COALESCE(item_index, 0), COALESCE(retry_of_run_id, ''), COALESCE(retry_from_node_id, '') FROM workflow_run ORDER BY created_at DESC, id DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("listing workflow runs: %w", err)
 	}
@@ -417,7 +425,7 @@ func (d *DB) ListWorkflowRuns() ([]WorkflowRun, error) {
 	var out []WorkflowRun
 	for rows.Next() {
 		var run WorkflowRun
-		if err := rows.Scan(&run.ID, &run.WorkflowID, &run.VersionID, &run.State, &run.CreatedAt, &run.UpdatedAt, &run.CompletedAt, &run.TriggerSnapshotJSON, &run.ParentRunID, &run.ParentNodeID, &run.ItemKey, &run.ItemIndex); err != nil {
+		if err := rows.Scan(&run.ID, &run.WorkflowID, &run.VersionID, &run.State, &run.CreatedAt, &run.UpdatedAt, &run.CompletedAt, &run.TriggerSnapshotJSON, &run.ParentRunID, &run.ParentNodeID, &run.ItemKey, &run.ItemIndex, &run.RetryOfRunID, &run.RetryFromNodeID); err != nil {
 			return nil, fmt.Errorf("scanning workflow run: %w", err)
 		}
 		out = append(out, run)
@@ -428,7 +436,7 @@ func (d *DB) ListWorkflowRuns() ([]WorkflowRun, error) {
 // ListWorkflowChildRuns returns the child (mapped-item) runs of a parent
 // run, ordered by their input item index.
 func (d *DB) ListWorkflowChildRuns(parentRunID string) ([]WorkflowRun, error) {
-	rows, err := d.db.Query(`SELECT id, workflow_id, version_id, state, created_at, updated_at, COALESCE(completed_at, 0), COALESCE(trigger_snapshot_json, ''), COALESCE(parent_run_id, ''), COALESCE(parent_node_id, ''), COALESCE(item_key, ''), COALESCE(item_index, 0) FROM workflow_run WHERE parent_run_id = ? ORDER BY parent_node_id, item_index`, parentRunID)
+	rows, err := d.db.Query(`SELECT id, workflow_id, version_id, state, created_at, updated_at, COALESCE(completed_at, 0), COALESCE(trigger_snapshot_json, ''), COALESCE(parent_run_id, ''), COALESCE(parent_node_id, ''), COALESCE(item_key, ''), COALESCE(item_index, 0), COALESCE(retry_of_run_id, ''), COALESCE(retry_from_node_id, '') FROM workflow_run WHERE parent_run_id = ? ORDER BY parent_node_id, item_index`, parentRunID)
 	if err != nil {
 		return nil, fmt.Errorf("listing workflow child runs: %w", err)
 	}
@@ -436,7 +444,7 @@ func (d *DB) ListWorkflowChildRuns(parentRunID string) ([]WorkflowRun, error) {
 	var out []WorkflowRun
 	for rows.Next() {
 		var run WorkflowRun
-		if err := rows.Scan(&run.ID, &run.WorkflowID, &run.VersionID, &run.State, &run.CreatedAt, &run.UpdatedAt, &run.CompletedAt, &run.TriggerSnapshotJSON, &run.ParentRunID, &run.ParentNodeID, &run.ItemKey, &run.ItemIndex); err != nil {
+		if err := rows.Scan(&run.ID, &run.WorkflowID, &run.VersionID, &run.State, &run.CreatedAt, &run.UpdatedAt, &run.CompletedAt, &run.TriggerSnapshotJSON, &run.ParentRunID, &run.ParentNodeID, &run.ItemKey, &run.ItemIndex, &run.RetryOfRunID, &run.RetryFromNodeID); err != nil {
 			return nil, fmt.Errorf("scanning workflow child run: %w", err)
 		}
 		out = append(out, run)
@@ -446,7 +454,7 @@ func (d *DB) ListWorkflowChildRuns(parentRunID string) ([]WorkflowRun, error) {
 
 func (d *DB) GetWorkflowRun(id string) (*WorkflowRun, error) {
 	var run WorkflowRun
-	err := d.db.QueryRow(`SELECT id, workflow_id, version_id, state, created_at, updated_at, COALESCE(completed_at, 0), COALESCE(trigger_snapshot_json, ''), COALESCE(parent_run_id, ''), COALESCE(parent_node_id, ''), COALESCE(item_key, ''), COALESCE(item_index, 0) FROM workflow_run WHERE id = ?`, id).Scan(&run.ID, &run.WorkflowID, &run.VersionID, &run.State, &run.CreatedAt, &run.UpdatedAt, &run.CompletedAt, &run.TriggerSnapshotJSON, &run.ParentRunID, &run.ParentNodeID, &run.ItemKey, &run.ItemIndex)
+	err := d.db.QueryRow(`SELECT id, workflow_id, version_id, state, created_at, updated_at, COALESCE(completed_at, 0), COALESCE(trigger_snapshot_json, ''), COALESCE(parent_run_id, ''), COALESCE(parent_node_id, ''), COALESCE(item_key, ''), COALESCE(item_index, 0), COALESCE(retry_of_run_id, ''), COALESCE(retry_from_node_id, '') FROM workflow_run WHERE id = ?`, id).Scan(&run.ID, &run.WorkflowID, &run.VersionID, &run.State, &run.CreatedAt, &run.UpdatedAt, &run.CompletedAt, &run.TriggerSnapshotJSON, &run.ParentRunID, &run.ParentNodeID, &run.ItemKey, &run.ItemIndex, &run.RetryOfRunID, &run.RetryFromNodeID)
 	if err != nil {
 		return nil, fmt.Errorf("getting workflow run: %w", err)
 	}
@@ -486,7 +494,7 @@ func (d *DB) workflowAttempts(runID, nodeID string) ([]WorkflowAttempt, error) {
 		SELECT id, seq, state, started_at, COALESCE(completed_at, 0), exit_code,
 		       stdout, stderr, error, outputs_json, stdout_truncated, stderr_truncated,
 		       platform, session_id, session_state, affinity, directory,
-		       COALESCE(resolved_at, 0), resolved_by
+		       COALESCE(resolved_at, 0), resolved_by, COALESCE(reused_attempt_id, 0)
 		FROM workflow_node_attempt WHERE run_id = ? AND node_id = ? ORDER BY seq`, runID, nodeID)
 	if err != nil {
 		return nil, fmt.Errorf("listing workflow attempts: %w", err)
@@ -495,7 +503,7 @@ func (d *DB) workflowAttempts(runID, nodeID string) ([]WorkflowAttempt, error) {
 	var out []WorkflowAttempt
 	for rows.Next() {
 		var attempt WorkflowAttempt
-		if err := rows.Scan(&attempt.ID, &attempt.Seq, &attempt.State, &attempt.StartedAt, &attempt.CompletedAt, &attempt.ExitCode, &attempt.Stdout, &attempt.Stderr, &attempt.Error, &attempt.OutputsJSON, &attempt.StdoutTruncated, &attempt.StderrTruncated, &attempt.Platform, &attempt.SessionID, &attempt.SessionState, &attempt.Affinity, &attempt.Directory, &attempt.ResolvedAt, &attempt.ResolvedBy); err != nil {
+		if err := rows.Scan(&attempt.ID, &attempt.Seq, &attempt.State, &attempt.StartedAt, &attempt.CompletedAt, &attempt.ExitCode, &attempt.Stdout, &attempt.Stderr, &attempt.Error, &attempt.OutputsJSON, &attempt.StdoutTruncated, &attempt.StderrTruncated, &attempt.Platform, &attempt.SessionID, &attempt.SessionState, &attempt.Affinity, &attempt.Directory, &attempt.ResolvedAt, &attempt.ResolvedBy, &attempt.ReusedAttemptID); err != nil {
 			return nil, fmt.Errorf("scanning workflow attempt: %w", err)
 		}
 		out = append(out, attempt)

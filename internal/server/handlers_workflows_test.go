@@ -179,6 +179,42 @@ func TestWorkflowRESTLifecycleAndSSE(t *testing.T) {
 	}
 }
 
+func TestWorkflowRESTRetryFromNode(t *testing.T) {
+	srv := newWorkflowTestServer(t)
+	v1, err := srv.workflowSvc().PublishJSON(t.Context(), []byte(workflowRequest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := srv.workflowSvc().Start(t.Context(), v1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = srv.workflowSvc().Approve(t.Context(), run.ID, "review"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = srv.workflowSvc().Approve(t.Context(), run.ID, "ship"); err != nil {
+		t.Fatal(err)
+	}
+	v2, err := srv.workflowSvc().PublishJSON(t.Context(), []byte(strings.Replace(workflowRequest, `"name":"Ship"`, `"name":"Ship adjusted"`, 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	body := strings.NewReader(`{"versionId":"` + v2.ID + `"}`)
+	srv.handleWorkflowRuns(rec, httptest.NewRequest(http.MethodPost, "/api/workflow-runs/"+run.ID+"/retry-from/ship", body))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("retry: %d %s", rec.Code, rec.Body.String())
+	}
+	var retried workflows.RunDetail
+	if err := json.Unmarshal(rec.Body.Bytes(), &retried); err != nil {
+		t.Fatal(err)
+	}
+	if retried.RetryOfRunID != run.ID || retried.RetryFromNodeID != "ship" || retried.VersionID != v2.ID {
+		t.Fatalf("retry lineage/version = %+v", retried.Run)
+	}
+}
+
 func TestWorkflowPublishLimitsBody(t *testing.T) {
 	srv := newWorkflowTestServer(t)
 	rec := httptest.NewRecorder()

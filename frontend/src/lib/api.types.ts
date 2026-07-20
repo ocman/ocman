@@ -1023,6 +1023,8 @@ export interface WorkflowRun {
 	parentNodeId?: string;
 	itemKey?: string;
 	itemIndex?: number;
+	retryOfRunId?: string;
+	retryFromNodeId?: string;
 }
 
 export interface WorkflowAttempt {
@@ -1042,6 +1044,7 @@ export interface WorkflowAttempt {
 	sessionState?: string;
 	resolvedAt?: number;
 	resolvedBy?: string;
+	reusedAttemptId?: number;
 }
 
 export interface WorkflowNodeRun {

@@ -8,6 +8,39 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+func TestMigrateV36PreservesWorkflowRetrySources(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`
+		CREATE TABLE workflow_run (id TEXT PRIMARY KEY);
+		CREATE TABLE workflow_node_attempt (id INTEGER PRIMARY KEY);
+		INSERT INTO workflow_run (id) VALUES ('run1');
+		INSERT INTO workflow_node_attempt (id) VALUES (7);
+	`); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateToV36(tx); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var runID string
+	if err := db.QueryRow(`SELECT id FROM workflow_run`).Scan(&runID); err != nil || runID != "run1" {
+		t.Fatalf("workflow run after migration = %q, %v", runID, err)
+	}
+	if _, err := db.Exec(`UPDATE workflow_run SET retry_of_run_id = 'source', retry_from_node_id = 'fix'; UPDATE workflow_node_attempt SET reused_attempt_id = 3`); err != nil {
+		t.Fatalf("retry columns unavailable: %v", err)
+	}
+}
+
 func TestMigrateV25BackfillsManualWorkflowTrigger(t *testing.T) {
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {

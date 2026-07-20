@@ -73,6 +73,21 @@ agent/compiler/commit pools to the host, and declare the smallest path leases.
 Change the validation command to the project's real test command. Add an
 approval before the commit coordinator when a human must inspect a batch.
 
+## Retry From A Node
+
+After a run succeeds or fails, select a node and choose **Retry from**. Ocman
+creates a new run on the workflow's active immutable version, reuses successful
+nodes before that point, and executes the selected node and its descendants.
+Publish and activate an adjusted version first when fixing the workflow itself.
+The new run links to the source run, and every reused attempt records its source
+attempt ID.
+
+Nodes and dependencies before the retry point must be unchanged and successful.
+Retries are currently limited to static approval, command, and agent DAGs
+without managed workspaces; map, join, and workspace workflows must be started
+again. Active, paused, canceled, and unknown runs cannot be used as retry
+sources.
+
 ## Troubleshooting
 
 - **Map has no items:** inspect the source node's `output`; it must be a JSON

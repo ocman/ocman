@@ -213,6 +213,21 @@ func (s *Server) handleWorkflowRuns(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		run, err = s.workflowSvc().ResolveUnknown(r.Context(), runID, attemptID, body.Resolution)
+	case "retry-from":
+		if extra == "" {
+			http.Error(w, "node id is required", http.StatusBadRequest)
+			return
+		}
+		var body struct {
+			VersionID string `json:"versionId"`
+		}
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBody))
+		decoder.DisallowUnknownFields()
+		if decodeErr := decoder.Decode(&body); decodeErr != nil {
+			http.Error(w, "invalid retry request: "+decodeErr.Error(), http.StatusBadRequest)
+			return
+		}
+		run, err = s.workflowSvc().RetryFrom(r.Context(), runID, extra, body.VersionID)
 	default:
 		http.Error(w, "not found", http.StatusNotFound)
 		return

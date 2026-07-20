@@ -282,18 +282,20 @@ type Version struct {
 }
 
 type Run struct {
-	ID           string           `json:"id"`
-	WorkflowID   string           `json:"workflowId"`
-	VersionID    string           `json:"versionId"`
-	State        string           `json:"state"`
-	CreatedAt    int64            `json:"createdAt"`
-	UpdatedAt    int64            `json:"updatedAt"`
-	CompletedAt  int64            `json:"completedAt,omitempty"`
-	Trigger      *TriggerSnapshot `json:"trigger,omitempty"`
-	ParentRunID  string           `json:"parentRunId,omitempty"`
-	ParentNodeID string           `json:"parentNodeId,omitempty"`
-	ItemKey      string           `json:"itemKey,omitempty"`
-	ItemIndex    int              `json:"itemIndex,omitempty"`
+	ID              string           `json:"id"`
+	WorkflowID      string           `json:"workflowId"`
+	VersionID       string           `json:"versionId"`
+	State           string           `json:"state"`
+	CreatedAt       int64            `json:"createdAt"`
+	UpdatedAt       int64            `json:"updatedAt"`
+	CompletedAt     int64            `json:"completedAt,omitempty"`
+	Trigger         *TriggerSnapshot `json:"trigger,omitempty"`
+	ParentRunID     string           `json:"parentRunId,omitempty"`
+	ParentNodeID    string           `json:"parentNodeId,omitempty"`
+	ItemKey         string           `json:"itemKey,omitempty"`
+	ItemIndex       int              `json:"itemIndex,omitempty"`
+	RetryOfRunID    string           `json:"retryOfRunId,omitempty"`
+	RetryFromNodeID string           `json:"retryFromNodeId,omitempty"`
 }
 
 type RunDetail struct {
@@ -380,6 +382,7 @@ type Attempt struct {
 	Directory       string `json:"-"`
 	ResolvedAt      int64  `json:"resolvedAt,omitempty"`
 	ResolvedBy      string `json:"resolvedBy,omitempty"`
+	ReusedAttemptID int64  `json:"reusedAttemptId,omitempty"`
 	outputsJSON     string
 }
 
@@ -698,6 +701,159 @@ func (s *Service) Start(ctx context.Context, versionID string) (RunDetail, error
 		}
 	}
 	return RunDetail{}, fmt.Errorf("workflow version has no manual trigger")
+}
+
+// RetryFrom creates a new run pinned to targetVersionID, reusing completed
+// nodes outside the selected node's descendant closure. The source run stays
+// immutable and provides an auditable checkpoint for the derived run.
+func (s *Service) RetryFrom(ctx context.Context, sourceRunID, nodeID, targetVersionID string) (RunDetail, error) {
+	source, err := s.GetRun(ctx, sourceRunID)
+	if err != nil {
+		return RunDetail{}, err
+	}
+	if source.State != StateSuccessful && source.State != StateFailed {
+		return RunDetail{}, fmt.Errorf("workflow run must be successful or failed before retry")
+	}
+	var targetRow *state.WorkflowVersion
+	if targetVersionID == "" {
+		targetRow, err = s.store.GetActiveWorkflowVersion(source.WorkflowID)
+	} else {
+		targetRow, err = s.store.GetWorkflowVersion(targetVersionID)
+	}
+	if err != nil {
+		return RunDetail{}, err
+	}
+	target, err := versionFromRow(*targetRow)
+	if err != nil {
+		return RunDetail{}, err
+	}
+	if target.WorkflowID != source.WorkflowID {
+		return RunDetail{}, fmt.Errorf("retry version belongs to workflow %q, want %q", target.WorkflowID, source.WorkflowID)
+	}
+	sourceClosure, sourceFound := descendantClosure(source.Version.Definition, nodeID)
+	targetClosure, targetFound := descendantClosure(target.Definition, nodeID)
+	if !sourceFound || !targetFound {
+		return RunDetail{}, fmt.Errorf("workflow node %q must exist in both versions", nodeID)
+	}
+	if err := validateRetryBoundary(source, target, sourceClosure, targetClosure); err != nil {
+		return RunDetail{}, err
+	}
+
+	sourceNodes := make(map[string]NodeRun, len(source.Nodes))
+	for _, node := range source.Nodes {
+		sourceNodes[node.NodeID] = node
+	}
+	now := s.now().UnixMilli()
+	run := state.WorkflowRun{ID: newID("wfr"), WorkflowID: target.WorkflowID, VersionID: target.ID, State: StateActive, CreatedAt: now, UpdatedAt: now, RetryOfRunID: source.ID, RetryFromNodeID: nodeID}
+	for _, node := range targetRow.Nodes {
+		nodeRun := state.WorkflowNodeRun{NodeID: node.ID, Type: node.Type, Position: node.Position, State: NodePending}
+		if node.ID == nodeID {
+			nodeRun.State, nodeRun.ReadyAt = NodeReady, now
+		} else if !targetClosure[node.ID] {
+			previous := sourceNodes[node.ID]
+			attempt := previous.Attempts[len(previous.Attempts)-1]
+			nodeRun.State, nodeRun.CompletedAt = NodeSuccessful, previous.CompletedAt
+			nodeRun.Attempts = []state.WorkflowAttempt{{Seq: 1, State: AttemptSuccessful, StartedAt: attempt.StartedAt, CompletedAt: attempt.CompletedAt, ExitCode: attempt.ExitCode, Stdout: attempt.Stdout, Stderr: attempt.Stderr, Error: attempt.Error, OutputsJSON: attempt.outputsJSON, StdoutTruncated: attempt.StdoutTruncated, StderrTruncated: attempt.StderrTruncated, ReusedAttemptID: attempt.ID}}
+		}
+		run.Nodes = append(run.Nodes, nodeRun)
+	}
+	if err := s.store.InsertWorkflowRun(run); err != nil {
+		return RunDetail{}, err
+	}
+	s.markOwned(run.ID)
+	s.changed(run.ID)
+	if err := s.dispatch(ctx, run.ID); err != nil {
+		return RunDetail{}, err
+	}
+	return s.GetRun(ctx, run.ID)
+}
+
+func descendantClosure(def Definition, nodeID string) (map[string]bool, bool) {
+	closure := map[string]bool{nodeID: true}
+	found := false
+	for _, node := range def.Nodes {
+		found = found || node.ID == nodeID
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, dep := range def.Dependencies {
+			if closure[dep.From] && !closure[dep.To] {
+				closure[dep.To], changed = true, true
+			}
+		}
+	}
+	return closure, found
+}
+
+func validateRetryBoundary(source RunDetail, target Version, sourceClosure, targetClosure map[string]bool) error {
+	sourceDefs := make(map[string]Node, len(source.Version.Definition.Nodes))
+	targetDefs := make(map[string]Node, len(target.Definition.Nodes))
+	for _, node := range source.Version.Definition.Nodes {
+		sourceDefs[node.ID] = node
+		if node.Type == "map" || node.Type == "join" {
+			return fmt.Errorf("retry from node does not yet support map or join workflows")
+		}
+	}
+	for _, node := range target.Definition.Nodes {
+		targetDefs[node.ID] = node
+		if node.Type == "map" || node.Type == "join" {
+			return fmt.Errorf("retry from node does not yet support map or join workflows")
+		}
+	}
+	states := make(map[string]NodeRun, len(source.Nodes))
+	for _, node := range source.Nodes {
+		states[node.NodeID] = node
+	}
+	for id, sourceNode := range sourceDefs {
+		if sourceClosure[id] {
+			continue
+		}
+		targetNode, ok := targetDefs[id]
+		if !ok || targetClosure[id] || !sameJSON(sourceNode, targetNode) {
+			return fmt.Errorf("node %q before the retry point changed between versions", id)
+		}
+		runNode := states[id]
+		if runNode.State != NodeSuccessful || len(runNode.Attempts) == 0 || runNode.Attempts[len(runNode.Attempts)-1].State != AttemptSuccessful {
+			return fmt.Errorf("node %q before the retry point did not complete successfully", id)
+		}
+	}
+	for id := range targetDefs {
+		if !targetClosure[id] && sourceClosure[id] {
+			return fmt.Errorf("node %q moved before the retry point", id)
+		}
+		if !targetClosure[id] {
+			if _, ok := sourceDefs[id]; !ok {
+				return fmt.Errorf("node %q was added before the retry point", id)
+			}
+		}
+	}
+	if !sameDependenciesOutsideClosure(source.Version.Definition.Dependencies, target.Definition.Dependencies, sourceClosure, targetClosure) {
+		return fmt.Errorf("dependencies before the retry point changed between versions")
+	}
+	return nil
+}
+
+func sameJSON(left, right any) bool {
+	a, _ := json.Marshal(left)
+	b, _ := json.Marshal(right)
+	return string(a) == string(b)
+}
+
+func sameDependenciesOutsideClosure(source, target []Dependency, sourceClosure, targetClosure map[string]bool) bool {
+	left, right := map[string]bool{}, map[string]bool{}
+	for _, dep := range source {
+		if !sourceClosure[dep.From] && !sourceClosure[dep.To] {
+			encoded, _ := json.Marshal(dep)
+			left[string(encoded)] = true
+		}
+	}
+	for _, dep := range target {
+		if !targetClosure[dep.From] && !targetClosure[dep.To] {
+			encoded, _ := json.Marshal(dep)
+			right[string(encoded)] = true
+		}
+	}
+	return sameJSON(left, right)
 }
 
 func (s *Service) newRun(version state.WorkflowVersion, snapshot TriggerSnapshot) state.WorkflowRun {
@@ -1065,7 +1221,7 @@ func (s *Service) GetRun(ctx context.Context, id string) (RunDetail, error) {
 	for _, row := range run.Nodes {
 		node := NodeRun{NodeID: row.NodeID, Name: row.Name, Type: row.Type, State: row.State, ReadyAt: row.ReadyAt, CompletedAt: row.CompletedAt, Attempts: make([]Attempt, 0, len(row.Attempts)), PinnedVersionID: row.PinnedVersionID}
 		for _, attempt := range row.Attempts {
-			out := Attempt{ID: attempt.ID, Seq: attempt.Seq, State: attempt.State, StartedAt: attempt.StartedAt, CompletedAt: attempt.CompletedAt, ExitCode: attempt.ExitCode, Stdout: attempt.Stdout, Stderr: attempt.Stderr, Error: attempt.Error, StdoutTruncated: attempt.StdoutTruncated, StderrTruncated: attempt.StderrTruncated, Platform: attempt.Platform, SessionID: attempt.SessionID, SessionState: attempt.SessionState, Affinity: attempt.Affinity, Directory: attempt.Directory, ResolvedAt: attempt.ResolvedAt, ResolvedBy: attempt.ResolvedBy, outputsJSON: attempt.OutputsJSON}
+			out := Attempt{ID: attempt.ID, Seq: attempt.Seq, State: attempt.State, StartedAt: attempt.StartedAt, CompletedAt: attempt.CompletedAt, ExitCode: attempt.ExitCode, Stdout: attempt.Stdout, Stderr: attempt.Stderr, Error: attempt.Error, StdoutTruncated: attempt.StdoutTruncated, StderrTruncated: attempt.StderrTruncated, Platform: attempt.Platform, SessionID: attempt.SessionID, SessionState: attempt.SessionState, Affinity: attempt.Affinity, Directory: attempt.Directory, ResolvedAt: attempt.ResolvedAt, ResolvedBy: attempt.ResolvedBy, ReusedAttemptID: attempt.ReusedAttemptID, outputsJSON: attempt.OutputsJSON}
 			node.Attempts = append(node.Attempts, out)
 		}
 		node.Result = nodeResult(node)
@@ -2498,7 +2654,7 @@ func versionFromState(row state.WorkflowVersion, definition Definition) Version 
 }
 
 func runFromState(row state.WorkflowRun) Run {
-	run := Run{ID: row.ID, WorkflowID: row.WorkflowID, VersionID: row.VersionID, State: row.State, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, CompletedAt: row.CompletedAt, ParentRunID: row.ParentRunID, ParentNodeID: row.ParentNodeID, ItemKey: row.ItemKey, ItemIndex: row.ItemIndex}
+	run := Run{ID: row.ID, WorkflowID: row.WorkflowID, VersionID: row.VersionID, State: row.State, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, CompletedAt: row.CompletedAt, ParentRunID: row.ParentRunID, ParentNodeID: row.ParentNodeID, ItemKey: row.ItemKey, ItemIndex: row.ItemIndex, RetryOfRunID: row.RetryOfRunID, RetryFromNodeID: row.RetryFromNodeID}
 	if row.TriggerSnapshotJSON != "" {
 		var snapshot TriggerSnapshot
 		if json.Unmarshal([]byte(row.TriggerSnapshotJSON), &snapshot) == nil {

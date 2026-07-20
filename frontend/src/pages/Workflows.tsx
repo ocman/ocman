@@ -520,6 +520,7 @@ export function Workflows() {
           {selected && runOpen && (
             <RunModal
               run={selected}
+              targetVersion={versions.find((version) => version.workflowId === selected.workflowId && version.active) ?? selected.version}
               mutate={mutate}
               onClose={() => updateLocation({ run: undefined })}
               onSelectRun={(id) =>
@@ -599,11 +600,13 @@ export function Workflows() {
 
 function RunModal({
   run,
+  targetVersion,
   mutate,
   onClose,
   onSelectRun,
 }: {
   run: WorkflowRunDetail;
+  targetVersion: WorkflowVersion;
   mutate: (action: () => Promise<WorkflowRunDetail>) => Promise<void>;
   onClose: () => void;
   onSelectRun: (id: string) => void;
@@ -618,17 +621,19 @@ function RunModal({
       <button className="workflow-run-modal-close" type="button" onClick={onClose}>
         Close
       </button>
-      <RunView run={run} mutate={mutate} onSelectRun={onSelectRun} />
+      <RunView run={run} targetVersion={targetVersion} mutate={mutate} onSelectRun={onSelectRun} />
     </Modal>
   );
 }
 
 function RunView({
   run,
+  targetVersion,
   mutate,
   onSelectRun,
 }: {
   run: WorkflowRunDetail;
+  targetVersion: WorkflowVersion;
   mutate: (action: () => Promise<WorkflowRunDetail>) => Promise<void>;
   onSelectRun: (id: string) => void;
 }) {
@@ -693,6 +698,14 @@ function RunView({
           </button>
         </p>
       )}
+      {run.retryOfRunId && (
+        <p className="workflow-run-parent">
+          Retried from <strong>{run.retryFromNodeId}</strong> in{' '}
+          <button type="button" onClick={() => onSelectRun(run.retryOfRunId!)}>
+            run {run.retryOfRunId}
+          </button>
+        </p>
+      )}
       {run.trigger && (
         <p className="workflow-run-trigger">
           <strong>
@@ -754,7 +767,7 @@ function RunView({
         />
         <aside ref={inspectorRef} className="workflow-run-inspector" aria-label="Selected node details">
           {selectedNode ? (
-            <RunNode run={run} node={selectedNode} mutate={mutate} onSelectRun={onSelectRun} />
+            <RunNode run={run} node={selectedNode} targetVersion={targetVersion} mutate={mutate} onSelectRun={onSelectRun} />
           ) : (
             <p>No nodes in this run.</p>
           )}
@@ -836,11 +849,13 @@ function VersionComparison({
 function RunNode({
   run,
   node,
+  targetVersion,
   mutate,
   onSelectRun,
 }: {
   run: WorkflowRunDetail;
   node: WorkflowRunDetail['nodes'][number];
+  targetVersion: WorkflowVersion;
   mutate: (action: () => Promise<WorkflowRunDetail>) => Promise<void>;
   onSelectRun: (id: string) => void;
 }) {
@@ -854,6 +869,9 @@ function RunNode({
   const attemptLine = attempt
     ? `Attempt ${attempt.seq}: ${attempt.state}${attempt.exitCode !== undefined && attempt.exitCode >= 0 ? ` (exit ${attempt.exitCode})` : ''}`
     : 'Not attempted';
+  const retrySupported = !run.version.definition.workspace && !targetVersion.definition.workspace &&
+    !run.version.definition.nodes.some((candidate) => candidate.type === 'map' || candidate.type === 'join') &&
+    !targetVersion.definition.nodes.some((candidate) => candidate.type === 'map' || candidate.type === 'join');
   return (
     <article data-state={node.state}>
       <small>
@@ -889,6 +907,7 @@ function RunNode({
           Resolved by {attempt.resolvedBy || 'user'} · {formatTime(attempt.resolvedAt)}
         </p>
       )}
+      {attempt?.reusedAttemptId && <p>Reused attempt {attempt.reusedAttemptId}</p>}
       {node.type !== 'map' && node.type !== 'join' && node.result.output !== null && (
         <pre aria-label="node output">{JSON.stringify(node.result.output, null, 2)}</pre>
       )}
@@ -918,6 +937,17 @@ function RunNode({
       {node.type === 'approval' && node.state === 'ready' && run.state === 'active' && (
         <button type="button" onClick={() => void mutate(() => api.workflows.approve(run.id, node.nodeId))}>
           Approve {node.name}
+        </button>
+      )}
+      {(run.state === 'successful' || run.state === 'failed') && retrySupported && (
+        <button
+          type="button"
+          onClick={() => {
+            if (window.confirm(`Retry ${node.name} and its descendants on revision ${targetVersion.revision}? This may repeat external side effects.`))
+              void mutate(() => api.workflows.retryFrom(run.id, node.nodeId, targetVersion.id));
+          }}
+        >
+          Retry from {node.name} on revision {targetVersion.revision}
         </button>
       )}
       {attempt && node.type === 'command' && <CommandAttempt attempt={attempt} />}

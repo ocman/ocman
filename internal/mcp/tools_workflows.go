@@ -21,6 +21,7 @@ type workflowService interface {
 	Cancel(context.Context, string) (workflows.RunDetail, error)
 	Approve(context.Context, string, string) (workflows.RunDetail, error)
 	ResolveUnknown(context.Context, string, int64, string) (workflows.RunDetail, error)
+	RetryFrom(context.Context, string, string, string) (workflows.RunDetail, error)
 }
 
 type workflowTools struct{ svc workflowService }
@@ -62,6 +63,7 @@ func workflowServerTools(t *workflowTools) []server.ServerTool {
 		{Tool: workflowRunTool("cancel_workflow_run", "Cancel a workflow run."), Handler: t.control("cancel")},
 		{Tool: mcplib.NewTool("approve_workflow_node", mcplib.WithDescription("Approve a waiting workflow node."), mcplib.WithString("run_id", mcplib.Required()), mcplib.WithString("node_id", mcplib.Required())), Handler: t.handleApprove},
 		{Tool: mcplib.NewTool("resolve_unknown_attempt", mcplib.WithDescription("Resolve an unknown workflow attempt after inspection."), mcplib.WithString("run_id", mcplib.Required()), mcplib.WithNumber("attempt_id", mcplib.Required()), mcplib.WithString("resolution", mcplib.Required(), mcplib.Enum(workflows.AttemptSuccessful, workflows.AttemptFailed))), Handler: t.handleResolveUnknown},
+		{Tool: mcplib.NewTool("retry_workflow_from_node", mcplib.WithDescription("Create a derived run that reuses successful work before a chosen node and runs that node onward on an immutable workflow version."), mcplib.WithString("run_id", mcplib.Required()), mcplib.WithString("node_id", mcplib.Required()), mcplib.WithString("version_id", mcplib.Description("Target workflow version; defaults to the active version."))), Handler: t.handleRetryFrom},
 	}
 }
 
@@ -213,12 +215,32 @@ func (t *workflowTools) handleResolveUnknown(ctx context.Context, req mcplib.Cal
 	return toolResultJSON(workflowRunSummary(run.Run)), nil
 }
 
+func (t *workflowTools) handleRetryFrom(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	runID, err := req.RequireString("run_id")
+	if err != nil {
+		return mcplib.NewToolResultError("run_id is required"), nil
+	}
+	nodeID, err := req.RequireString("node_id")
+	if err != nil {
+		return mcplib.NewToolResultError("node_id is required"), nil
+	}
+	run, err := t.svc.RetryFrom(ctx, runID, nodeID, req.GetString("version_id", ""))
+	if err != nil {
+		return mcplib.NewToolResultError(err.Error()), nil
+	}
+	return toolResultJSON(workflowRunSummary(run.Run)), nil
+}
+
 func workflowVersionSummary(version workflows.Version) map[string]interface{} {
 	return map[string]interface{}{"workflow_id": version.WorkflowID, "version_id": version.ID, "name": version.Name, "revision": version.Revision, "version": version.Definition.Version, "created_at": version.CreatedAt}
 }
 
 func workflowRunSummary(run workflows.Run) map[string]interface{} {
-	return map[string]interface{}{"run_id": run.ID, "workflow_id": run.WorkflowID, "version_id": run.VersionID, "state": run.State, "created_at": run.CreatedAt, "updated_at": run.UpdatedAt}
+	out := map[string]interface{}{"run_id": run.ID, "workflow_id": run.WorkflowID, "version_id": run.VersionID, "state": run.State, "created_at": run.CreatedAt, "updated_at": run.UpdatedAt}
+	if run.RetryOfRunID != "" {
+		out["retry_of_run_id"], out["retry_from_node_id"] = run.RetryOfRunID, run.RetryFromNodeID
+	}
+	return out
 }
 
 func workflowRunDetail(run workflows.RunDetail) map[string]interface{} {
@@ -227,7 +249,11 @@ func workflowRunDetail(run workflows.RunDetail) map[string]interface{} {
 	for _, node := range run.Nodes {
 		attempts := make([]map[string]interface{}, 0, len(node.Attempts))
 		for _, attempt := range node.Attempts {
-			attempts = append(attempts, map[string]interface{}{"attempt_id": attempt.ID, "sequence": attempt.Seq, "state": attempt.State, "started_at": attempt.StartedAt, "completed_at": attempt.CompletedAt})
+			item := map[string]interface{}{"attempt_id": attempt.ID, "sequence": attempt.Seq, "state": attempt.State, "started_at": attempt.StartedAt, "completed_at": attempt.CompletedAt}
+			if attempt.ReusedAttemptID != 0 {
+				item["reused_attempt_id"] = attempt.ReusedAttemptID
+			}
+			attempts = append(attempts, item)
 		}
 		nodes = append(nodes, map[string]interface{}{"node_id": node.NodeID, "name": node.Name, "type": node.Type, "state": node.State, "attempts": attempts})
 	}

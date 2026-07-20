@@ -30,6 +30,7 @@ const { apiMock, useWorkflowsMock, listeners, triggerListeners, connectListeners
     pause: vi.fn(),
     cancel: vi.fn(),
     resolveUnknown: vi.fn(),
+    retryFrom: vi.fn(),
     artifacts: vi.fn(),
     artifactDownloadUrl: vi.fn((runId: string, id: string) => `/api/workflow-runs/${runId}/artifacts/${id}/download`),
   },
@@ -1042,5 +1043,29 @@ describe('Workflows', { timeout: 10_000 }, () => {
     expect(screen.getAllByText(/command interrupted by server restart/)).toHaveLength(2);
     await user.click(screen.getByRole('button', { name: 'Retry safely' }));
     expect(apiMock.resolveUnknown).toHaveBeenCalledWith('wfr_1', 9, 'retry');
+  });
+
+  it('retries a settled workflow from the selected node', async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const failedRun: WorkflowRunDetail = {
+      ...activeRun,
+      state: 'failed',
+      nodes: [{ ...activeRun.nodes[0], state: 'failed' }],
+    };
+    apiMock.runs.mockResolvedValue([failedRun]);
+    apiMock.run.mockResolvedValue(failedRun);
+    apiMock.retryFrom.mockResolvedValue({ ...failedRun, id: 'wfr_retry', state: 'active' });
+    render(
+      <MemoryRouter>
+        <Workflows />
+      </MemoryRouter>,
+    );
+    await openRunDetails(user);
+
+    await user.click(screen.getByRole('button', { name: `Retry from ${failedRun.nodes[0].name} on revision 1` }));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('may repeat external side effects'));
+    expect(apiMock.retryFrom).toHaveBeenCalledWith('wfr_1', failedRun.nodes[0].nodeId, 'wfv_1');
+    confirm.mockRestore();
   });
 });

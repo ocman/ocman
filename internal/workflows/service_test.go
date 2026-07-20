@@ -259,6 +259,116 @@ func TestSequentialApprovalRunPersistsAcrossRestart(t *testing.T) {
 	}
 }
 
+func TestRetryFromNodeUsesNewVersionAndReusesCompletedAncestors(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	v1, err := h.svc.PublishJSON(ctx, []byte(sequentialApprovals))
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := h.svc.Start(ctx, v1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = h.svc.Approve(ctx, source.ID, "review"); err != nil {
+		t.Fatal(err)
+	}
+	source, err = h.svc.Approve(ctx, source.ID, "ship")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	adjusted := strings.Replace(sequentialApprovals, `"version":"2026.07"`, `"version":"2026.08"`, 1)
+	adjusted = strings.Replace(adjusted, `"name":"Ship"`, `"name":"Ship adjusted"`, 1)
+	v2, err := h.svc.PublishJSON(ctx, []byte(adjusted))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	retried, err := h.svc.RetryFrom(ctx, source.ID, "ship", v2.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertRun(t, retried, StateActive, map[string]string{"review": NodeSuccessful, "ship": NodeReady})
+	if retried.ID == source.ID || retried.VersionID != v2.ID || retried.RetryOfRunID != source.ID || retried.RetryFromNodeID != "ship" {
+		t.Fatalf("retry lineage/version = %+v", retried.Run)
+	}
+	if len(retried.Nodes[0].Attempts) != 1 || retried.Nodes[0].Attempts[0].ReusedAttemptID != source.Nodes[0].Attempts[0].ID {
+		t.Fatalf("ancestor attempt was not reused with provenance: %+v", retried.Nodes[0].Attempts)
+	}
+	if len(retried.Nodes[1].Attempts) != 1 || retried.Nodes[1].Attempts[0].State != AttemptWaiting {
+		t.Fatalf("selected node was not readied: %+v", retried.Nodes[1].Attempts)
+	}
+}
+
+func TestRetryFromFailedCommandRunsOnlySelectedClosure(t *testing.T) {
+	h := newHarness(t)
+	executor := &retryCommandExecutor{}
+	h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, CommandExecutor: executor})
+	dir := t.TempDir()
+	allow := []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}
+	nodes := []Node{
+		{ID: "prepare", Name: "Prepare", Type: "command", Command: []string{"prepare"}, Permission: allow},
+		{ID: "fix", Name: "Fix", Type: "command", Command: []string{"bad"}, Permission: allow},
+		{ID: "verify", Name: "Verify", Type: "command", Command: []string{"verify"}, Permission: allow},
+	}
+	v1, err := h.svc.PublishJSON(t.Context(), commandDefinition(t, dir, nodes, []Dependency{{From: "prepare", To: "fix"}, {From: "fix", To: "verify"}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	started, err := h.svc.Start(t.Context(), v1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failed := waitForRun(t, h.svc, started.ID, StateFailed)
+	if failed.Nodes[0].State != NodeSuccessful || failed.Nodes[1].State != NodeFailed || failed.Nodes[2].State != NodeSkipped {
+		t.Fatalf("source states = %+v", failed.Nodes)
+	}
+
+	nodes[1].Command = []string{"fixed"}
+	v2, err := h.svc.PublishJSON(t.Context(), commandDefinition(t, dir, nodes, []Dependency{{From: "prepare", To: "fix"}, {From: "fix", To: "verify"}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	retried, err := h.svc.RetryFrom(t.Context(), failed.ID, "fix", v2.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := waitForRun(t, h.svc, retried.ID, StateSuccessful)
+	if done.Nodes[0].Attempts[0].ReusedAttemptID == 0 || executor.count("prepare") != 1 || executor.count("fixed") != 1 || executor.count("verify") != 1 {
+		t.Fatalf("retry execution = %+v, calls = %v", done.Nodes, executor.snapshot())
+	}
+}
+
+func TestRetryFromNodeRejectsUnsettledRunsAndChangedAncestors(t *testing.T) {
+	h := newHarness(t)
+	v1, err := h.svc.PublishJSON(t.Context(), []byte(sequentialApprovals))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.svc.Start(t.Context(), v1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = h.svc.RetryFrom(t.Context(), run.ID, "review", v1.ID); err == nil || !strings.Contains(err.Error(), "must be successful or failed") {
+		t.Fatalf("unsettled retry error = %v", err)
+	}
+	if _, err = h.svc.Approve(t.Context(), run.ID, "review"); err != nil {
+		t.Fatal(err)
+	}
+	if run, err = h.svc.Approve(t.Context(), run.ID, "ship"); err != nil {
+		t.Fatal(err)
+	}
+	changed := strings.Replace(sequentialApprovals, `"name":"Review"`, `"name":"Changed review"`, 1)
+	v2, err := h.svc.PublishJSON(t.Context(), []byte(changed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = h.svc.RetryFrom(t.Context(), run.ID, "ship", v2.ID); err == nil || !strings.Contains(err.Error(), `node "review" before the retry point changed`) {
+		t.Fatalf("changed ancestor retry error = %v", err)
+	}
+}
+
 func TestWorkflowVersionDeactivateActivateAndArchive(t *testing.T) {
 	h := newHarness(t)
 	v1, err := h.svc.PublishJSON(t.Context(), []byte(sequentialApprovals))
@@ -1397,6 +1507,39 @@ type failingGateExecutor struct {
 type repeatExecutor struct {
 	outputs []string
 	index   int
+}
+
+type retryCommandExecutor struct {
+	mu    sync.Mutex
+	calls []string
+}
+
+func (e *retryCommandExecutor) Execute(_ context.Context, request CommandRequest) CommandResult {
+	e.mu.Lock()
+	e.calls = append(e.calls, request.Command[0])
+	e.mu.Unlock()
+	if request.Command[0] == "bad" {
+		return CommandResult{State: AttemptFailed, ExitCode: 1, Error: "failed"}
+	}
+	return CommandResult{State: AttemptSuccessful, ExitCode: 0, Stdout: `{"ok":true}`}
+}
+
+func (e *retryCommandExecutor) count(command string) int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	count := 0
+	for _, call := range e.calls {
+		if call == command {
+			count++
+		}
+	}
+	return count
+}
+
+func (e *retryCommandExecutor) snapshot() []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return append([]string(nil), e.calls...)
 }
 
 func (e *repeatExecutor) Execute(_ context.Context, _ CommandRequest) CommandResult {

@@ -716,6 +716,7 @@ export const api = {
 		pause: (runId: string) => postJSON<WorkflowRunDetail>(`/api/workflow-runs/${encodeURIComponent(runId)}/pause`, {}),
 		cancel: (runId: string) => postJSON<WorkflowRunDetail>(`/api/workflow-runs/${encodeURIComponent(runId)}/cancel`, {}),
 		resolveUnknown: (runId: string, attemptId: number, resolution: 'successful' | 'failed' | 'retry') => postJSON<WorkflowRunDetail>(`/api/workflow-runs/${encodeURIComponent(runId)}/resolve-unknown/${attemptId}`, { resolution }),
+		retryFrom: (runId: string, nodeId: string, versionId?: string) => postJSON<WorkflowRunDetail>(`/api/workflow-runs/${encodeURIComponent(runId)}/retry-from/${encodeURIComponent(nodeId)}`, { versionId: versionId ?? '' }),
 		artifacts: (runId: string, signal?: AbortSignal) => fetchJSON<WorkflowArtifact[]>(`/api/workflow-runs/${encodeURIComponent(runId)}/artifacts`, signal),
 		artifactDownloadUrl: (runId: string, artifactId: string) => `/api/workflow-runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(artifactId)}/download`,
 	},

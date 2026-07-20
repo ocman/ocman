@@ -142,7 +142,8 @@ import (
 //	      each project's managed OpenCode instance (endpoint/kind/runtime_id/
 //	      pid/launched_at) so it survives an ocman restart. The host always
 //	      re-probes health before trusting a persisted row (AD-5, #391).
-const latestSchemaVersion = 35
+//	36 - add retry lineage to workflow runs and reused-attempt provenance.
+const latestSchemaVersion = 36
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -308,6 +309,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV34(tx)
 	case 35:
 		return migrateToV35(tx)
+	case 36:
+		return migrateToV36(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -1227,4 +1230,17 @@ func migrateToV35(tx *sql.Tx) error {
 		)
 	`)
 	return err
+}
+
+func migrateToV36(tx *sql.Tx) error {
+	for _, change := range []struct{ table, column, definition string }{
+		{"workflow_run", "retry_of_run_id", "TEXT"},
+		{"workflow_run", "retry_from_node_id", "TEXT"},
+		{"workflow_node_attempt", "reused_attempt_id", "INTEGER"},
+	} {
+		if err := addColumnIfMissing(tx, change.table, change.column, change.definition); err != nil {
+			return err
+		}
+	}
+	return nil
 }
