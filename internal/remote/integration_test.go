@@ -90,6 +90,7 @@ func TestManager_ReconnectsAfterRemoteRestart(t *testing.T) {
 	hubReg := platforms.NewRegistry()
 	router := hostsvc.NewRouter(localStubHost{})
 	mgr := NewManager(hubReg, router, store, "opencode")
+	t.Cleanup(mgr.Stop)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	mgr.Start(ctx)
@@ -155,6 +156,7 @@ func TestManager_RetriesWhenOfflineAtStartup(t *testing.T) {
 	hubReg := platforms.NewRegistry()
 	router := hostsvc.NewRouter(localStubHost{})
 	mgr := NewManager(hubReg, router, store, "opencode")
+	t.Cleanup(mgr.Stop)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	mgr.Start(ctx)
@@ -203,6 +205,7 @@ func TestManager_AuthFailedDoesNotRetry(t *testing.T) {
 	hubReg := platforms.NewRegistry()
 	router := hostsvc.NewRouter(localStubHost{})
 	mgr := NewManager(hubReg, router, store, "opencode")
+	t.Cleanup(mgr.Stop)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	mgr.Start(ctx)
@@ -318,6 +321,7 @@ func TestManager_RegistersRemotePlatform(t *testing.T) {
 	hubReg := platforms.NewRegistry()
 	router := hostsvc.NewRouter(localStubHost{})
 	mgr := NewManager(hubReg, router, store, "opencode")
+	t.Cleanup(mgr.Stop)
 
 	mgr.Start(context.Background())
 

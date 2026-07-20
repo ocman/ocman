@@ -110,7 +110,7 @@ func TestHandleRemoteUpdate_Validation(t *testing.T) {
 	}
 
 	// Replace token (exercises the token!=nil branch).
-	tok := `{"displayName":"x","address":"a:2","enabled":true,"token":"newtok"}`
+	tok := `{"displayName":"x","address":"a:2","enabled":false,"token":"newtok"}`
 	rep := httptest.NewRequest(http.MethodPut, "/api/remotes/"+strconv.FormatInt(id, 10),
 		bytes.NewBufferString(tok))
 	rep.Header.Set("Content-Type", "application/json")

@@ -26,11 +26,15 @@ type Manager struct {
 	store    *state.DB
 	base     string // base platform id remotes expose (v1: "opencode")
 
-	// baseCtx is the manager's own lifetime context, captured in Start.
+	// baseCtx is the manager's own lifetime context, replaced in Start.
 	// Background connect goroutines derive from it (not a request ctx)
 	// so a reconnect triggered by an HTTP handler isn't cancelled the
 	// instant the handler returns.
-	baseCtx context.Context
+	baseCtx     context.Context
+	cancel      context.CancelFunc
+	lifecycleMu sync.Mutex
+	connectors  sync.WaitGroup
+	stopped     bool
 
 	mu      sync.RWMutex
 	remotes map[int64]*managedRemote // keyed by hub-local id
@@ -55,11 +59,14 @@ type managedRemote struct {
 // NewManager creates a Manager. base is the platform id remotes expose
 // (v1 OpenCode-only).
 func NewManager(registry *platforms.Registry, router *hostsvc.Router, store *state.DB, base string) *Manager {
+	ctx, cancel := context.WithCancel(context.Background())
 	m := &Manager{
 		registry:  registry,
 		router:    router,
 		store:     store,
 		base:      base,
+		baseCtx:   ctx,
+		cancel:    cancel,
 		remotes:   make(map[int64]*managedRemote),
 		inventory: make(map[string][]ProjectIdentity),
 	}
@@ -74,7 +81,14 @@ func NewManager(registry *platforms.Registry, router *hostsvc.Router, store *sta
 // Returns immediately; connections progress asynchronously so a slow or
 // offline remote never blocks startup (NFR-1).
 func (m *Manager) Start(ctx context.Context) {
-	m.baseCtx = ctx
+	m.lifecycleMu.Lock()
+	if m.stopped {
+		m.lifecycleMu.Unlock()
+		return
+	}
+	m.cancel()
+	m.baseCtx, m.cancel = context.WithCancel(ctx)
+	m.lifecycleMu.Unlock()
 	if m.store == nil {
 		return
 	}
@@ -117,6 +131,11 @@ func (m *Manager) dial(r state.Remote) {
 	conn := NewRemoteConn(r.Address, token)
 	mr := &managedRemote{localID: r.LocalID, conn: conn, name: displayName(r)}
 
+	m.lifecycleMu.Lock()
+	if m.stopped {
+		m.lifecycleMu.Unlock()
+		return
+	}
 	m.mu.Lock()
 	// Replace any existing managed remote for this id.
 	if old, ok := m.remotes[r.LocalID]; ok {
@@ -125,13 +144,13 @@ func (m *Manager) dial(r state.Remote) {
 	m.remotes[r.LocalID] = mr
 	m.mu.Unlock()
 
-	// Detach from any request ctx: the connect goroutine outlives the
-	// caller. Fall back to Background if Start hasn't run (tests).
-	bg := m.baseCtx
-	if bg == nil {
-		bg = context.Background()
-	}
-	go m.connectAndRegister(bg, mr, r.LocalID)
+	m.connectors.Add(1)
+	ctx := m.baseCtx
+	m.lifecycleMu.Unlock()
+	go func() {
+		defer m.connectors.Done()
+		m.connectAndRegister(ctx, mr, r.LocalID)
+	}()
 }
 
 // reconnect backoff bounds. Auth/version failures are not retried (a
@@ -355,8 +374,16 @@ func (m *Manager) unregisterLocked(mr *managedRemote) {
 	}
 }
 
-// Stop closes every managed connection.
+// Stop waits for every connector to finish before tearing down its adapters.
 func (m *Manager) Stop() {
+	m.lifecycleMu.Lock()
+	if !m.stopped {
+		m.stopped = true
+		m.cancel()
+	}
+	m.lifecycleMu.Unlock()
+	m.connectors.Wait()
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, mr := range m.remotes {
