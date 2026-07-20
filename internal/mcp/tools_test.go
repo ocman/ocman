@@ -703,6 +703,36 @@ func TestNewSession_PassesModelAndUsesParentDir(t *testing.T) {
 	}
 }
 
+func TestNewSession_RejectsChildParent(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	if err := stateDB.InsertChildSession(state.ChildSession{
+		ID:              "existing-child",
+		Platform:        "opencode",
+		ParentSessionID: "root",
+		Intent:          "review the diff",
+		Status:          "running",
+		CreatedAt:       1000,
+	}); err != nil {
+		t.Fatalf("InsertChildSession: %v", err)
+	}
+	ocDB := openTestOpenCodeDB(t, []db.Session{
+		{ID: "existing-child", Title: "child", Directory: "/repo", TimeCreated: 1000, TimeUpdated: 2000},
+	})
+	platform := &fakePlatformForTools{createSessionID: "grandchild"}
+	srv := buildTestMCPServerWithOpenCodeDB(t, stateDB, platform, ocDB)
+
+	result := callTool(t, srv, "new_session", map[string]interface{}{
+		"session_id": "existing-child",
+		"intent":     "delegate the review",
+	})
+	if !result.IsError || !strings.Contains(resultText(result), "limited to one generation") {
+		t.Fatalf("expected child creation rejection, got %s", resultText(result))
+	}
+	if len(platform.sentMessages) != 0 {
+		t.Fatalf("expected no child launch, got %d sent messages", len(platform.sentMessages))
+	}
+}
+
 func TestNewSession_ReturnsChildResult(t *testing.T) {
 	stateDB := openTestStateDB(t)
 	ocDB := openTestOpenCodeDB(t, []db.Session{

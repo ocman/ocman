@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -102,7 +103,7 @@ func mergeInheritedRules(caller, inherited []platforms.PermissionRule) []platfor
 // newSessionTool returns the mcp-go tool definition for new_session.
 func newSessionTool() mcplib.Tool {
 	return mcplib.NewTool("new_session",
-		mcplib.WithDescription("Run a child OpenCode session and return its terminal result. By default it shares the parent's working directory; set worktree=true to run it in a fresh git worktree instead."),
+		mcplib.WithDescription("Run a child OpenCode session and return its terminal result. Child sessions cannot create further children. By default it shares the parent's working directory; set worktree=true to run it in a fresh git worktree instead."),
 		mcplib.WithString("session_id",
 			mcplib.Required(),
 			mcplib.Description("Parent session ID."),
@@ -174,6 +175,13 @@ func (t *splitTools) handleNewSession(ctx context.Context, req mcplib.CallToolRe
 	sessionID, err := req.RequireString("session_id")
 	if err != nil {
 		return mcplib.NewToolResultError("session_id is required"), nil
+	}
+	if t.store != nil {
+		if _, err := t.store.GetChildSession(sessionID); err == nil {
+			return mcplib.NewToolResultError("new_session is limited to one generation"), nil
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return mcplib.NewToolResultError(fmt.Sprintf("checking parent session: %v", err)), nil
+		}
 	}
 	intent, err := req.RequireString("intent")
 	if err != nil {
