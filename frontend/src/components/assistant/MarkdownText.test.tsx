@@ -1,6 +1,14 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+class ResizeObserver {
+  observe() {}
+  disconnect() {}
+  unobserve() {}
+}
+vi.stubGlobal('ResizeObserver', ResizeObserver);
 
 const { initializeMermaid, renderDiagram } = vi.hoisted(() => ({
   initializeMermaid: vi.fn(),
@@ -33,6 +41,32 @@ describe('MarkdownText', () => {
       }),
     }));
     expect(screen.getByLabelText('diagram')).toBeInTheDocument();
+  });
+
+  it('opens Mermaid diagrams in a zoomable modal', async () => {
+    const user = userEvent.setup();
+    render(<MarkdownText text={'```mermaid\nflowchart LR\n  A --> B\n```'} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Expand Mermaid diagram' }));
+    const dialog = screen.getByRole('dialog', { name: 'Mermaid diagram' });
+    const diagram = dialog.querySelector<HTMLElement>('.oc-mermaid-modal-diagram');
+
+    expect(dialog.parentElement?.parentElement).toBe(document.body);
+    expect(screen.getByLabelText('Mermaid diagram viewport')).toBeInTheDocument();
+    expect(diagram).toBeInTheDocument();
+    expect(screen.getByText('100%')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Zoom in' }));
+    expect(screen.getByText('125%')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Zoom out' }));
+    expect(screen.getByText('100%')).toBeInTheDocument();
+
+    const viewport = screen.getByLabelText('Mermaid diagram viewport');
+    fireEvent.touchStart(viewport, { touches: [{ clientX: 50, clientY: 100, pageX: 50, pageY: 100 }, { clientX: 150, clientY: 100, pageX: 150, pageY: 100 }] });
+    fireEvent.touchMove(viewport, { touches: [{ clientX: 25, clientY: 100, pageX: 25, pageY: 100 }, { clientX: 175, clientY: 100, pageX: 175, pageY: 100 }] });
+    expect(screen.getByText('180%')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Close diagram' }));
+    expect(dialog).not.toBeInTheDocument();
   });
 
   it('keeps ordinary code blocks unchanged', () => {

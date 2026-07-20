@@ -2,11 +2,14 @@
 // react-markdown wired with stable plugin/component references plus a
 // copy-button code block. Extracted from AssistantThread.tsx.
 import { isValidElement, useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
+import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
 import type { FC, ReactNode } from 'react';
 import { LinkPreviewStrip } from '../GitHubLinkPreview';
+import { Modal } from '../Modal';
 
 let mermaidPromise: Promise<typeof import('mermaid')['default']> | undefined;
 function loadMermaid() {
@@ -73,6 +76,8 @@ function nodeText(node: ReactNode): string {
 function MermaidDiagram({ source }: { source: string }) {
   const id = `oc-mermaid-${useId().replaceAll(':', '')}`;
   const [result, setResult] = useState({ source: '', svg: '', failed: false });
+  const [expanded, setExpanded] = useState(false);
+  const [zoom, setZoom] = useState(1);
 
   useEffect(() => {
     let active = true;
@@ -84,12 +89,61 @@ function MermaidDiagram({ source }: { source: string }) {
   }, [id, source]);
 
   if (result.source === source && result.failed) return <pre><code>{source}</code></pre>;
+  if (result.source !== source) return <div className="oc-mermaid" aria-label="Mermaid diagram" />;
   return (
-    <div
-      className="oc-mermaid"
-      aria-label="Mermaid diagram"
-      dangerouslySetInnerHTML={result.source === source ? { __html: result.svg } : undefined}
-    />
+    <>
+      <button
+        type="button"
+        className="oc-mermaid"
+        aria-label="Expand Mermaid diagram"
+        onClick={() => { setZoom(1); setExpanded(true); }}
+        dangerouslySetInnerHTML={{ __html: result.svg }}
+      />
+      {expanded && createPortal(
+        <Modal label="Mermaid diagram" onClose={() => setExpanded(false)} backdropClassName="oc-mermaid-modal-backdrop" dialogClassName="oc-mermaid-modal">
+          <TransformWrapper
+            minScale={0.25}
+            maxScale={4}
+            centerOnInit
+            centerZoomedOut
+            disablePadding
+            smooth={false}
+            wheel={{ step: 0.01 }}
+            pinch={{ step: 8, disabled: false, allowPanning: true }}
+            panning={{ allowMiddleClickPan: false, allowRightClickPan: false }}
+            doubleClick={{ disabled: true }}
+            onTransform={(_, state) => setZoom(state.scale)}
+          >
+            {({ zoomIn, zoomOut }) => (
+              <>
+                <div className="oc-mermaid-modal-toolbar">
+                  <button type="button" aria-label="Zoom out" title="Zoom out" onClick={() => zoomOut(0.25, 0)}>
+                    <i className="bi bi-dash-lg" aria-hidden="true" />
+                  </button>
+                  <span>{Math.round(zoom * 100)}%</span>
+                  <button type="button" aria-label="Zoom in" title="Zoom in" onClick={() => zoomIn(0.25, 0)}>
+                    <i className="bi bi-plus-lg" aria-hidden="true" />
+                  </button>
+                  <button type="button" aria-label="Close diagram" title="Close diagram" onClick={() => setExpanded(false)}>
+                    <i className="bi bi-x-lg" aria-hidden="true" />
+                  </button>
+                </div>
+                <TransformComponent
+                  wrapperClass="oc-mermaid-modal-viewport"
+                  contentClass="oc-mermaid-modal-content"
+                  wrapperStyle={{ width: '100%', height: '100%' }}
+                  contentStyle={{ width: '100%', height: '100%' }}
+                  wrapperProps={{ 'aria-label': 'Mermaid diagram viewport' }}
+                >
+                  <div className="oc-mermaid-modal-diagram" dangerouslySetInnerHTML={{ __html: result.svg }} />
+                </TransformComponent>
+              </>
+            )}
+          </TransformWrapper>
+        </Modal>,
+        document.body,
+      )}
+    </>
   );
 }
 
