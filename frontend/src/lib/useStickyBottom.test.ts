@@ -24,6 +24,7 @@ import { useStickyBottom } from './useStickyBottom';
 
 interface FakeViewport {
   el: HTMLElement;
+  setScrollTop: (value: number) => void;
   // Counters for the layout-forcing reads.
   scrollTopReads: number;
   scrollHeightReads: number;
@@ -41,6 +42,7 @@ function makeFakeViewport({
 
   const fv: FakeViewport = {
     el,
+    setScrollTop: (value) => { scrollTop = value; },
     scrollTopReads: 0,
     scrollHeightReads: 0,
     clientHeightReads: 0,
@@ -205,6 +207,22 @@ describe('useStickyBottom — rAF coalescing', () => {
     vi.advanceTimersByTime(20);
 
     expect(fv.scrollToCalls).toBe(0);
+  });
+
+  it('keeps the viewport in place when content changes after the user scrolls up', () => {
+    const fv = makeFakeViewport({ scrollTop: 950, scrollHeight: 2000, clientHeight: 1000 });
+    setupHook(fv);
+
+    resizeCbs[0]?.();
+    vi.advanceTimersByTime(20);
+    expect(fv.scrollToCalls).toBe(1);
+
+    fv.setScrollTop(100);
+    fv.el.dispatchEvent(new Event('scroll'));
+    resizeCbs[0]?.();
+    vi.advanceTimersByTime(20);
+
+    expect(fv.scrollToCalls).toBe(1);
   });
 
   it('cancels any pending rAF on teardown', () => {

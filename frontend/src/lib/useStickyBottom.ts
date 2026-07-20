@@ -45,13 +45,6 @@ export function useStickyBottom(
   // outside React's render cycle and mutating state would queue
   // unnecessary re-renders.
   const stickyRef = useRef(true);
-  // Set to true just before a programmatic scrollTo so the next
-  // 'scroll' event (which scrollTo will fire) is ignored. Without
-  // this, a content-driven scrollToBottom would synthesise a fake
-  // "user scrolled" event at the new (already-at-bottom) position
-  // and the state machine would briefly toggle through an
-  // intermediate state.
-  const suppressScrollEventRef = useRef(false);
 
   useEffect(() => {
     const el = viewportRef.current;
@@ -73,15 +66,10 @@ export function useStickyBottom(
       // 'auto' (instant) — `behavior: 'smooth'` would visibly chase
       // streaming chunks and disorient the user. The library uses
       // 'instant' for the same reason on resize.
-      suppressScrollEventRef.current = true;
       el.scrollTo({ top: el.scrollHeight, behavior: 'auto' });
     };
 
     const onUserScroll = () => {
-      if (suppressScrollEventRef.current) {
-        suppressScrollEventRef.current = false;
-        return;
-      }
       const { nextSticky } = decideStickyAction({
         isNear: isNearBottom(metrics(), threshold),
         kind: 'user-scroll',
