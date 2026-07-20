@@ -569,20 +569,14 @@
 }
 
 /* Shell command - terminal style */
-.oc-tool-shell-user {
-  border-left: 3px solid color-mix(in srgb, var(--accent) 45%, var(--border));
-  background: var(--bg-card);
+.oc-tool-shell {
+  background: transparent;
+  border: 0;
+  margin: 4px 0;
+  overflow: visible;
 }
-.oc-tool-shell-user .oc-tool-header:hover {
-  background: rgba(255,255,255,0.02);
-}
-.oc-tool-shell-user .oc-tool-icon,
-.oc-tool-shell-user .oc-tool-label {
-  color: var(--text-dim);
-  opacity: 0.85;
-}
-.oc-tool-shell-user .oc-tool-duration {
-  color: var(--text-dim);
+.oc-tool-shell .oc-tool-content {
+  padding: 0;
 }
 .oc-shell-block {
   background: rgba(0, 0, 0, 0.35);
@@ -606,13 +600,10 @@
   color: var(--accent);
   user-select: none;
 }
+.oc-shell-description {
+  color: var(--text-dim);
+}
 .oc-shell-cmd {
-  color: var(--accent2);
-}
-.oc-tool-shell-user .oc-shell-prompt {
-  color: var(--accent);
-}
-.oc-tool-shell-user .oc-shell-cmd {
   color: var(--accent2);
 }
 .oc-shell-attribution {

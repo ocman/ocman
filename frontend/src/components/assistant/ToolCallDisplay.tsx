@@ -60,22 +60,15 @@ const ToolDuration: FC<{ startedAt: number; completedAt: number; isRunning: bool
 
 const bashSpinnerFrames = ['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷'];
 
-const BashStatusIcon: FC<{ isRunning: boolean; statusClass: string; statusTitle: string }> = ({
-  isRunning,
-  statusClass,
-  statusTitle,
-}) => {
+const BashPrompt: FC<{ running: boolean }> = ({ running }) => {
   const [frame, setFrame] = useState(0);
   useEffect(() => {
-    if (!isRunning) return;
+    if (!running) return;
     const id = setInterval(() => setFrame((current) => (current + 1) % bashSpinnerFrames.length), 80);
     return () => clearInterval(id);
-  }, [isRunning]);
+  }, [running]);
 
-  if (isRunning) {
-    return <span className={`oc-tool-icon ${statusClass} oc-tool-spinner`} title={statusTitle} aria-hidden="true" data-testid="bash-spinner">{bashSpinnerFrames[frame]}</span>;
-  }
-  return <i className={`bi bi-terminal-fill oc-tool-icon ${statusClass}`} title={statusTitle} aria-hidden="true" />;
+  return <span className="oc-shell-prompt" data-testid={running ? 'bash-spinner' : undefined} title={running ? 'Running' : undefined}>{running ? bashSpinnerFrames[frame] : '$'}</span>;
 };
 
 // Structured diff payload emitted by convertMessages.ts for edit/write tools.
@@ -326,8 +319,6 @@ function taskActivity(
 export const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArgsText, result }) => {
   const [expandedState, setExpanded] = useState(false);
   const [taskExpandedState, setTaskExpanded] = useState(false);
-  // Collapse hides the entire tool body, leaving only the header/title.
-  const [collapsedState, setCollapsed] = useState(false);
   // While printing / saving to PDF, force every block open so the
   // exported transcript is complete. CSS lifts the max-height caps
   // (see the @media print block in tokens.css); this additionally
@@ -599,31 +590,19 @@ export const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsTe
   const isBash = toolName === 'bash' || toolName === 'mcp_bash';
   if (isBash) {
     const command = outputDisplay ? (detail || title) : title;
-    const bashLabel = title && title !== command ? title : toolName;
+    const description = title && title !== command ? title : '';
     const bashOutput = outputDisplay || detail;
     const bashIsLong = shellOutputIsLong(bashOutput);
-    // Two independent axes:
-    //   collapsed  -> hide the whole body, show only the header (title).
-    //   expanded   -> when open, show full output vs the truncated preview.
-    // The shared-page "Collapse tool outputs" toggle (printCollapse while
-    // printing) collapses everything to header-only too.
     const forcePrintCollapse = isPrinting && printCollapse;
-    const collapsed = forcePrintCollapse || (collapsedState && !forcePrintExpand);
     const bashExpanded = expanded || !bashIsLong;
     const bashOutputDisplay = bashExpanded ? bashOutput : shellOutputPreview(bashOutput);
     const toggleLabel = expanded ? 'Collapse output' : 'Show full output';
     return (
-      <div className={`oc-tool oc-tool-shell ${userExecutedTool ? 'oc-tool-shell-user' : ''} ${statusClass} ${!collapsed && bashExpanded ? 'oc-tool-expanded' : ''} ${collapsed ? 'oc-tool-collapsed' : ''}`}>
-        <div className="oc-tool-header" onClick={() => setCollapsed(!collapsedState)} style={{ cursor: 'pointer' }}>
-          <BashStatusIcon isRunning={toolStatus === 'running'} statusClass={statusClass} statusTitle={statusTitle} />
-          {timeInfo
-            ? <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} label={bashLabel} />
-            : <span className="oc-tool-label">{bashLabel}</span>}
-        </div>
-        {!collapsed && (
+      <div className={`oc-tool oc-tool-shell ${bashExpanded ? 'oc-tool-expanded' : ''}`}>
+        {!forcePrintCollapse && (
           <div className="oc-tool-content" onClick={() => !bashExpanded && setExpanded(true)} style={!bashExpanded ? { cursor: 'pointer' } : undefined}>
             <pre className="oc-shell-block" data-testid="shell-output-block">
-{command && <><span className="oc-shell-prompt">$</span> <span className="oc-shell-cmd">{command}</span>{bashOutputDisplay ? '\n' : ''}</>}{bashOutputDisplay && <AnsiText text={bashOutputDisplay} />}
+{description && <><span className="oc-shell-description"># {description}</span>{'\n\n'}</>}{command && <><BashPrompt running={toolStatus === 'running'} /> <span className="oc-shell-cmd">{command}</span>{bashOutputDisplay ? '\n' : ''}</>}{bashOutputDisplay && <AnsiText text={bashOutputDisplay} />}
             </pre>
             {userExecutedTool && (
               <div className="oc-shell-attribution">The following tool was executed by the user</div>

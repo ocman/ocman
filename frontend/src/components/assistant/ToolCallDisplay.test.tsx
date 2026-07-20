@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { afterEach, describe, it, expect, vi } from 'vitest';
-import { act, render, fireEvent, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { render, fireEvent, screen } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 // @ts-expect-error Vitest runs in Node; application types intentionally exclude Node globals.
@@ -22,24 +22,48 @@ const renderTool = (p: Partial<Props>) =>
   // ToolCallDisplay only reads toolName/argsText/result off the props.
   render(<ToolCallDisplay {...({ toolName: 'bash', ...p } as Props)} />, { wrapper: MemoryRouter });
 
-afterEach(() => vi.useRealTimers());
-
-describe('ToolCallDisplay bash collapse', () => {
-  it('collapses the whole body to just the header on click', () => {
+describe('ToolCallDisplay bash output', () => {
+  it('renders the command without a bash header or outer box', () => {
     const { container } = renderTool({
-      argsText: JSON.stringify({ command: 'echo hi' }),
+      argsText: 'completed\necho hi',
       result: 'hi',
     });
-    const tool = container.querySelector('.oc-tool-shell')!;
-    // Open by default: the output block is present.
-    expect(tool.querySelector('[data-testid="shell-output-block"]')).not.toBeNull();
-    // Clicking the header collapses: no output at all, header remains.
-    fireEvent.click(tool.querySelector('.oc-tool-header')!);
-    expect(tool.querySelector('[data-testid="shell-output-block"]')).toBeNull();
-    expect(tool.querySelector('.oc-tool-label')).not.toBeNull();
-    // Clicking again re-expands.
-    fireEvent.click(tool.querySelector('.oc-tool-header')!);
-    expect(tool.querySelector('[data-testid="shell-output-block"]')).not.toBeNull();
+
+    expect(container.querySelector('.oc-tool-header')).toBeNull();
+    expect(screen.getByTestId('shell-output-block').textContent).toBe('$ echo hi\nhi');
+    const shellRule = assistantThreadCss.match(/\.oc-tool-shell\s*\{[^}]*\}/)?.[0] || '';
+    expect(shellRule).toContain('border: 0');
+    expect(shellRule).toContain('background: transparent');
+  });
+
+  it('renders an optional description as a shell comment', () => {
+    const { rerender } = renderTool({
+      argsText: 'completed\nRunning in frontend\npnpm test',
+      result: 'passed',
+    });
+
+    expect(screen.getByTestId('shell-output-block').textContent).toBe('# Running in frontend\n\n$ pnpm test\npassed');
+
+    rerender(<ToolCallDisplay {...({
+      toolName: 'bash',
+      argsText: 'completed\npnpm test',
+      result: 'passed',
+    } as Props)} />);
+    expect(screen.getByTestId('shell-output-block').textContent).not.toContain('#');
+  });
+
+  it('shows the running indicator in place of the shell prompt', () => {
+    const { rerender } = renderTool({ argsText: 'running\nsleep 10' });
+
+    expect(screen.getByTestId('bash-spinner').textContent).toBe('⣾');
+    expect(screen.getByTestId('shell-output-block').textContent).toBe('⣾ sleep 10');
+
+    rerender(<ToolCallDisplay {...({
+      toolName: 'bash',
+      argsText: 'completed\nsleep 10',
+    } as Props)} />);
+    expect(screen.queryByTestId('bash-spinner')).toBeNull();
+    expect(screen.getByTestId('shell-output-block').textContent).toBe('$ sleep 10');
   });
 
   it('hides the body while printing with collapse-tools on', () => {
@@ -52,7 +76,6 @@ describe('ToolCallDisplay bash collapse', () => {
       });
       const tool = container.querySelector('.oc-tool-shell')!;
       expect(tool.querySelector('[data-testid="shell-output-block"]')).toBeNull();
-      expect(tool.querySelector('.oc-tool-label')).not.toBeNull();
     } finally {
       printing.isPrinting = false;
       printing.collapse = false;
@@ -82,43 +105,6 @@ describe('ToolCallDisplay bash collapse', () => {
     expect(screen.getByTestId('shell-output-block').textContent).not.toContain('LAST');
     fireEvent.click(screen.getByRole('button', { name: 'Show full output' }));
     expect(screen.getByTestId('shell-output-block').textContent).toContain('LAST');
-  });
-});
-
-describe('ToolCallDisplay bash duration', () => {
-  it('ticks in the header while running and freezes when completed', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(7_000);
-    const { container, rerender } = renderTool({
-      argsText: 'running\n@time:2000,0\nsleep 10',
-    });
-
-    const header = container.querySelector('.oc-tool-header')!;
-    expect(header.querySelector('.oc-tool-label')?.textContent).toBe('bash (5.0s)');
-
-    act(() => vi.advanceTimersByTime(1_000));
-    expect(header.querySelector('.oc-tool-label')?.textContent).toBe('bash (6.0s)');
-
-    rerender(<ToolCallDisplay {...({
-      toolName: 'bash',
-      argsText: 'completed\n@time:2000,7500\nsleep 10',
-    } as Props)} />);
-    expect(header.querySelector('.oc-tool-label')?.textContent).toBe('bash (5.5s)');
-
-    act(() => vi.advanceTimersByTime(1_000));
-    expect(header.querySelector('.oc-tool-label')?.textContent).toBe('bash (5.5s)');
-  });
-
-  it('cycles the running icon through braille spinner frames', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(7_000);
-    renderTool({ argsText: 'running\n@time:2000,0\nsleep 10' });
-
-    const spinner = screen.getByTestId('bash-spinner');
-    expect(spinner.textContent).toBe('⣾');
-
-    act(() => vi.advanceTimersByTime(80));
-    expect(spinner.textContent).toBe('⣽');
   });
 });
 
