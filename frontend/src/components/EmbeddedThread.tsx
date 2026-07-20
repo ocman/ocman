@@ -17,21 +17,7 @@ import type { ThreadMessageLike } from '@assistant-ui/react';
 import type { Message, Part } from '../lib/api';
 import { convertMessages } from '../lib/convertMessages';
 import { isMutedTool } from '../lib/mutedTools';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeHighlight from 'rehype-highlight';
-
-// Reuse the same plugin arrays to keep react-markdown's processor cache stable.
-const REMARK_PLUGINS = [remarkGfm];
-const REHYPE_PLUGINS = [rehypeHighlight];
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function EmbeddedLink(props: any) {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { node: _node, ...rest } = props;
-  return <a {...rest} target="_blank" rel="noopener noreferrer" />;
-}
-const MD_COMPONENTS = { a: EmbeddedLink };
+import { MarkdownContent } from './assistant/MarkdownText';
 
 /** Render a single content item from a converted ThreadMessageLike. */
 function ContentItem({ item }: { item: unknown }) {
@@ -43,13 +29,7 @@ function ContentItem({ item }: { item: unknown }) {
     if (!text.trim()) return null;
     return (
       <div className="oc-md">
-        <ReactMarkdown
-          remarkPlugins={REMARK_PLUGINS}
-          rehypePlugins={REHYPE_PLUGINS}
-          components={MD_COMPONENTS}
-        >
-          {text}
-        </ReactMarkdown>
+        <MarkdownContent text={text} />
       </div>
     );
   }
