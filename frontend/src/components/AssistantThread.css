@@ -596,6 +596,7 @@
   max-height: none;
   overflow: visible;
 }
+.oc-shell-output-toggle { opacity: 0.65; }
 .oc-shell-prompt {
   color: var(--accent);
   user-select: none;

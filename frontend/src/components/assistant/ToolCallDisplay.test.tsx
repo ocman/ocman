@@ -91,8 +91,13 @@ describe('ToolCallDisplay bash output', () => {
 
     expect(screen.getByTestId('shell-output-block').textContent).toContain('line 12');
     expect(screen.getByTestId('shell-output-block').textContent).not.toContain('line 13');
-    fireEvent.click(screen.getByRole('button', { name: 'Show full output' }));
+    const toggle = screen.getByRole('button', { name: 'Show full output' });
+    expect(screen.getByTestId('shell-output-block').contains(toggle)).toBe(true);
+    const toggleRule = assistantThreadCss.match(/\.oc-shell-output-toggle\s*\{[^}]*\}/)?.[0] || '';
+    expect(toggleRule).toContain('opacity: 0.65');
+    fireEvent.click(toggle);
     expect(screen.getByTestId('shell-output-block').textContent).toContain('line 13');
+    expect(screen.getByRole('button', { name: 'Collapse output' })).toBe(toggle);
   });
 
   it('previews 5000 characters and shows the full output on request', () => {

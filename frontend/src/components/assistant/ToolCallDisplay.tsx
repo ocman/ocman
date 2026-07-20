@@ -603,21 +603,21 @@ export const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsTe
           <div className="oc-tool-content" onClick={() => !bashExpanded && setExpanded(true)} style={!bashExpanded ? { cursor: 'pointer' } : undefined}>
             <pre className="oc-shell-block" data-testid="shell-output-block">
 {description && <><span className="oc-shell-description"># {description}</span>{'\n\n'}</>}{command && <><BashPrompt running={toolStatus === 'running'} /> <span className="oc-shell-cmd">{command}</span>{bashOutputDisplay ? '\n' : ''}</>}{bashOutputDisplay && <AnsiText text={bashOutputDisplay} />}
+              {bashIsLong && (
+                <button
+                  type="button"
+                  className="oc-tool-expand oc-shell-output-toggle"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setExpanded(!expanded);
+                  }}
+                >
+                  {toggleLabel}
+                </button>
+              )}
             </pre>
             {userExecutedTool && (
               <div className="oc-shell-attribution">The following tool was executed by the user</div>
-            )}
-            {bashIsLong && (
-              <button
-                type="button"
-                className="oc-tool-expand"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setExpanded(!expanded);
-                }}
-              >
-                {toggleLabel}
-              </button>
             )}
           </div>
         )}
