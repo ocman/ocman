@@ -69,7 +69,10 @@ per IP; trusted-localhost clients skip the limiter.
 
 ## OpenCode: enabling interactive features
 
-To use the composer, permission replies, abort, and compact, start OpenCode with an explicit port:
+Sessions launched from ocman (command palette, Worktrees view, PR/Issue sidebar) are interactive
+out of the box: ocman manages one OpenCode instance per project on a port it allocates itself.
+
+For OpenCode instances you start yourself, use an explicit port so ocman can discover them:
 
 ```sh
 opencode --port 0   # let OpenCode pick a free port
@@ -77,7 +80,8 @@ opencode --port 0   # let OpenCode pick a free port
 ```
 
 Ocman discovers listening OpenCode processes via `lsof` and auto-connects. Without `--port`,
-sessions are still readable from the database but interactive features stay disabled.
+externally launched sessions are still readable from the database but interactive features stay
+disabled.
 
 ### OpenCode server authentication
 

@@ -55,14 +55,17 @@ Alternative — strip the quarantine attribute from a terminal:
 xattr -dr com.apple.quarantine /Applications/ocman.app
 ```
 
-For interactive features (composer, permission replies, abort) start OpenCode with an explicit port:
+The easiest way to get interactive sessions (composer, permission replies, abort) is to launch
+them from ocman itself — via the command palette (`/wt` for worktrees) or the per-project
+Worktrees view. Ocman manages one OpenCode instance per project and connects automatically.
+
+If you prefer running OpenCode yourself, start it with an explicit port so ocman can discover it:
 
 ```sh
 opencode --port 0   # let OpenCode pick a free port
 ```
 
-Ocman auto-discovers listening OpenCode processes and connects. Without `--port`, sessions are
-still readable but the composer stays disabled — the UI shows a hint to re-launch with `--port 0`.
+Without `--port`, externally launched sessions are still readable but the composer stays disabled.
 
 ## Configuration
 
