@@ -33,22 +33,26 @@ func FormatUntrustedChildMessage(kind, childID, intent, status, content string) 
 // commChildSessionDB is the subset of state.DB needed by the communication tools.
 type commChildSessionDB interface {
 	GetChildSession(id string) (*state.ChildSession, error)
+	ReopenChildSession(id, delivery string) error
+	SetChildResultDelivery(id, delivery string) error
 }
 
-type childSessionReopener interface {
-	ReopenChildSession(id string) error
+type childSessionGetter interface {
+	GetChildSession(id string) (*state.ChildSession, error)
 }
 
 // commTools holds dependencies for parent <-> child messaging.
 type commTools struct {
-	stateDB  commChildSessionDB
-	platform platformAdapter
+	stateDB      commChildSessionDB
+	platform     platformAdapter
+	results      *ChildResultBroker
+	disconnected func(childID string)
 }
 
 // sendMessageToChildTool returns the tool definition for send_message_to_child.
 func sendMessageToChildTool() mcplib.Tool {
 	return mcplib.NewTool("send_message_to_child",
-		mcplib.WithDescription("Send a message to a child session."),
+		mcplib.WithDescription("Send a message to a child session. Returns immediately by default; set wait=true to return the completed follow-up response."),
 		mcplib.WithString("session_id",
 			mcplib.Required(),
 			mcplib.Description("Parent session ID."),
@@ -60,6 +64,9 @@ func sendMessageToChildTool() mcplib.Tool {
 		mcplib.WithString("message",
 			mcplib.Required(),
 			mcplib.Description("Message."),
+		),
+		mcplib.WithBoolean("wait",
+			mcplib.Description("Wait for the next completed child turn and return it. Defaults to false; false delivers the completed turn to the parent asynchronously."),
 		),
 	)
 }
@@ -108,25 +115,44 @@ func (t *commTools) handleSendMessageToChild(ctx context.Context, req mcplib.Cal
 		return mcplib.NewToolResultError(fmt.Sprintf("child session %s does not belong to parent session %s", childID, parentID)), nil
 	}
 
+	wait := req.GetBool("wait", false)
+	if wait {
+		if t.results == nil {
+			return mcplib.NewToolResultError("child result waiting is unavailable"), nil
+		}
+		t.results.Register(childID)
+	}
 	delivered := fmt.Sprintf("Message from parent session %s:\n\n%s", parentID, message)
 	if err := t.sendMessage(ctx, childID, delivered); err != nil {
+		if wait {
+			t.results.Unregister(childID)
+		}
 		return mcplib.NewToolResultError(fmt.Sprintf("sending message to child: %v", err)), nil
 	}
-	reopener, ok := t.stateDB.(childSessionReopener)
-	if !ok {
-		return mcplib.NewToolResultError("reopening child session: state database does not support reopening"), nil
+	delivery := "detached"
+	if wait {
+		delivery = "waiting"
 	}
-	if err := reopener.ReopenChildSession(childID); err != nil {
+	if err := t.stateDB.ReopenChildSession(childID, delivery); err != nil {
+		if wait {
+			t.results.Unregister(childID)
+		}
 		return mcplib.NewToolResultError(fmt.Sprintf("reopening child session: %v", err)), nil
 	}
 
-	return toolResultJSON(map[string]interface{}{
+	result := map[string]interface{}{
 		"delivered":        true,
 		"to_session_id":    childID,
 		"from_session_id":  parentID,
 		"relationship":     "parent_to_child",
 		"child_session_id": childID,
-	}), nil
+	}
+	if wait {
+		if err := awaitChildResult(ctx, req, childID, result, t.results, t.stateDB, t.disconnected); err != nil {
+			return mcplib.NewToolResultError(fmt.Sprintf("waiting for child session: %v", err)), nil
+		}
+	}
+	return toolResultJSON(result), nil
 }
 
 // handleSendMessageToParent handles the send_message_to_parent tool call.
@@ -166,7 +192,7 @@ func (t *commTools) handleSendMessageToParent(ctx context.Context, req mcplib.Ca
 // and generic lookup failures to MCP tool errors. The second return
 // value is non-nil on failure. Shared by the comm and status tools so
 // the error wording can't drift between handlers.
-func lookupChildSession(db commChildSessionDB, childID string) (*state.ChildSession, *mcplib.CallToolResult) {
+func lookupChildSession(db childSessionGetter, childID string) (*state.ChildSession, *mcplib.CallToolResult) {
 	cs, err := db.GetChildSession(childID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

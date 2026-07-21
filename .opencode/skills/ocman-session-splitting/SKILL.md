@@ -50,9 +50,9 @@ A worktree/child inherits the parent's "Allow always" permissions at split time 
 
 Use `get_session_status` for one child. Use `list_child_sessions` for all children from the current parent. Use `cancel_session` for stale or wrong child work.
 
-If `new_session` disconnects, ocman defers a reminder to the parent. Follow it by calling `await_session_result` with the supplied parent and child IDs. This resumes the original wait and never sends another child prompt.
+Use `new_session(wait=false)` when work can continue in parallel; ocman returns the child ID immediately and delivers the final response to the parent. Use `await_session_result` with that child ID only when explicit synchronization is needed. If a waiting call disconnects, follow ocman's deferred reminder with `await_session_result`; this resumes the original wait and never sends another child prompt.
 
-Use `send_message_to_child` only for meaningful follow-up instructions. `new_session` returns the first finished child turn directly; later turns are delivered to the parent automatically. Children should use `send_message_to_parent` only for mid-task findings or to ask for direction.
+Use `send_message_to_child` only for meaningful follow-up instructions. It returns immediately and delivers the next completed turn to the parent by default; pass `wait=true` when the response is needed inline. Children should use `send_message_to_parent` only for mid-task findings or to ask for direction.
 
 ## Prompt Shape
 

@@ -64,12 +64,12 @@ func (d *DB) UpdateChildSession(id, status, summary string, completedAt int64) e
 
 // ReopenChildSession marks a completed child as awaiting its next turn after
 // its parent sends a follow-up.
-func (d *DB) ReopenChildSession(id string) error {
+func (d *DB) ReopenChildSession(id, delivery string) error {
 	_, err := d.db.Exec(`
 		UPDATE child_sessions
-		SET status = 'running', summary = NULL, completed_at = NULL
+		SET status = 'running', summary = NULL, completed_at = NULL, result_delivery = ?
 		WHERE id = ?
-	`, id)
+	`, delivery, id)
 	if err != nil {
 		return fmt.Errorf("reopening child session: %w", err)
 	}
@@ -123,20 +123,20 @@ func (d *DB) ListChildSessionsByParent(parentSessionID string) ([]ChildSession, 
 	return scanChildSessions(rows)
 }
 
-// ListNonTerminalChildSessions returns all child sessions whose status
-// is "starting" or "running". Used by the watcher loop to find sessions
-// that need their completion status checked.
-func (d *DB) ListNonTerminalChildSessions() ([]ChildSession, error) {
+// ListPendingChildSessions returns active children plus detached terminal
+// results that still need durable parent delivery.
+func (d *DB) ListPendingChildSessions() ([]ChildSession, error) {
 	rows, err := d.db.Query(`
 		SELECT id, platform, parent_session_id, intent, composed_prompt,
 		       worktree_path, branch, tmux_target, status,
 		       created_at, completed_at, summary, result_delivery
 		FROM child_sessions
 		WHERE status IN ('starting', 'running')
+		   OR (status IN ('completed', 'error', 'cancelled') AND result_delivery = 'detached')
 		ORDER BY created_at ASC
 	`)
 	if err != nil {
-		return nil, fmt.Errorf("listing non-terminal child sessions: %w", err)
+		return nil, fmt.Errorf("listing pending child sessions: %w", err)
 	}
 	defer rows.Close()
 	return scanChildSessions(rows)

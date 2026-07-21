@@ -48,6 +48,10 @@ type childResultStore interface {
 	SetChildResultDelivery(id, delivery string) error
 }
 
+type childResultDeliveryStore interface {
+	SetChildResultDelivery(id, delivery string) error
+}
+
 // inheritedRules builds the parent's always-allow ruleset for a child
 // launch when the setting is on. Soft-fail: returns (nil, 0, note) on
 // any error so the caller can proceed with the launch and surface the
@@ -103,7 +107,7 @@ func mergeInheritedRules(caller, inherited []platforms.PermissionRule) []platfor
 // newSessionTool returns the mcp-go tool definition for new_session.
 func newSessionTool() mcplib.Tool {
 	return mcplib.NewTool("new_session",
-		mcplib.WithDescription("Run a child OpenCode session and return its terminal result. Child sessions cannot create further children. By default it shares the parent's working directory; set worktree=true to run it in a fresh git worktree instead."),
+		mcplib.WithDescription("Run a child OpenCode session. It waits for the terminal result by default; set wait=false to return immediately and deliver the final response to the parent asynchronously. Child sessions cannot create further children. By default it shares the parent's working directory; set worktree=true to run it in a fresh git worktree instead."),
 		mcplib.WithString("session_id",
 			mcplib.Required(),
 			mcplib.Description("Parent session ID."),
@@ -141,6 +145,9 @@ func newSessionTool() mcplib.Tool {
 		mcplib.WithString("base_ref",
 			mcplib.Description("Base ref for the worktree. Defaults to the repo default branch. Only used when worktree=true."),
 		),
+		mcplib.WithBoolean("wait",
+			mcplib.Description("Wait for the child result. Defaults to true; false returns the child session ID immediately and delivers the completed turn to the parent asynchronously."),
+		),
 		mcplib.WithObject("context_options",
 			mcplib.Description("Prompt context toggles. Defaults true."),
 			mcplib.Properties(map[string]interface{}{
@@ -156,7 +163,7 @@ func newSessionTool() mcplib.Tool {
 
 func awaitSessionResultTool() mcplib.Tool {
 	return mcplib.NewTool("await_session_result",
-		mcplib.WithDescription("Reconnect to a disconnected new_session call and wait for the original child result without sending another prompt."),
+		mcplib.WithDescription("Wait for an asynchronous child or reconnect to a disconnected result wait without sending another prompt."),
 		mcplib.WithString("session_id", mcplib.Required(), mcplib.Description("Parent session ID.")),
 		mcplib.WithString("child_session_id", mcplib.Description("Child session ID. Omit when the parent has exactly one disconnected child.")),
 	)
@@ -227,6 +234,7 @@ func (t *splitTools) handleNewSession(ctx context.Context, req mcplib.CallToolRe
 		Agent:           settings.Agent,
 		Reasoning:       settings.Reasoning,
 		PermissionRules: mergeInheritedRules(settings.PermissionRules, inherited),
+		WaitForResult:   settings.WaitForResult,
 	})
 	if err != nil {
 		return mcplib.NewToolResultError(fmt.Sprintf("launching child session: %v", err)), nil
@@ -238,30 +246,32 @@ func (t *splitTools) handleNewSession(ctx context.Context, req mcplib.CallToolRe
 		"intent":           intent,
 	}
 	addInheritanceResult(result, inheritedCount, inheritErr)
-	if err := t.awaitChildResult(ctx, req, childID, result); err != nil {
-		return mcplib.NewToolResultError(fmt.Sprintf("waiting for child session: %v", err)), nil
+	if settings.WaitForResult {
+		if err := awaitChildResult(ctx, req, childID, result, t.results, t.store, t.disconnected); err != nil {
+			return mcplib.NewToolResultError(fmt.Sprintf("waiting for child session: %v", err)), nil
+		}
 	}
 	return toolResultJSON(result), nil
 }
 
-func (t *splitTools) awaitChildResult(ctx context.Context, req mcplib.CallToolRequest, childID string, result map[string]interface{}) error {
-	if t.results == nil {
+func awaitChildResult(ctx context.Context, req mcplib.CallToolRequest, childID string, result map[string]interface{}, results *ChildResultBroker, store childResultDeliveryStore, disconnected func(string)) error {
+	if results == nil {
 		return nil
 	}
 	stopProgress := startChildResultProgress(ctx, req, childID)
 	defer stopProgress()
-	childResult, err := t.results.Wait(ctx, childID)
+	childResult, err := results.Wait(ctx, childID)
 	if err != nil {
-		if t.store != nil {
-			_ = t.store.SetChildResultDelivery(childID, "disconnected")
+		if store != nil {
+			_ = store.SetChildResultDelivery(childID, "disconnected")
 		}
-		if t.disconnected != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
-			t.disconnected(childID)
+		if disconnected != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+			disconnected(childID)
 		}
 		return err
 	}
-	if t.store != nil {
-		if err := t.store.SetChildResultDelivery(childID, "delivered"); err != nil {
+	if store != nil {
+		if err := store.SetChildResultDelivery(childID, "delivered"); err != nil {
 			return err
 		}
 	}
@@ -358,9 +368,6 @@ func (t *splitTools) handleAwaitSessionResult(ctx context.Context, req mcplib.Ca
 	if child.ResultDelivery == "waiting" {
 		return mcplib.NewToolResultError("child session result is still connected to its original call"), nil
 	}
-	if child.ResultDelivery == "detached" {
-		return mcplib.NewToolResultError("child session was not launched by a resumable call"), nil
-	}
 	if isTerminalStatus(child.Status) {
 		if child.Summary != "" {
 			result["summary"] = child.Summary
@@ -370,7 +377,7 @@ func (t *splitTools) handleAwaitSessionResult(ctx context.Context, req mcplib.Ca
 		}
 		return toolResultJSON(result), nil
 	}
-	if child.ResultDelivery != "disconnected" {
+	if child.ResultDelivery != "disconnected" && child.ResultDelivery != "detached" {
 		return mcplib.NewToolResultError(fmt.Sprintf("child session result is %s, not disconnected", child.ResultDelivery)), nil
 	}
 
@@ -393,7 +400,7 @@ func (t *splitTools) handleAwaitSessionResult(ctx context.Context, req mcplib.Ca
 		_ = t.store.SetChildResultDelivery(child.ID, "delivered")
 		return toolResultJSON(result), nil
 	}
-	if err := t.awaitChildResult(ctx, req, child.ID, result); err != nil {
+	if err := awaitChildResult(ctx, req, child.ID, result, t.results, t.store, t.disconnected); err != nil {
 		return mcplib.NewToolResultError(fmt.Sprintf("waiting for child session: %v", err)), nil
 	}
 	return toolResultJSON(result), nil
@@ -460,6 +467,7 @@ func (t *splitTools) launchWorktree(ctx context.Context, req mcplib.CallToolRequ
 			Agent:           settings.Agent,
 			Reasoning:       settings.Reasoning,
 			PermissionRules: mergeInheritedRules(settings.PermissionRules, inherited),
+			WaitForResult:   settings.WaitForResult,
 		},
 		git.CreateWorktreeRequest{
 			RepoRoot:  repoRoot,
@@ -480,8 +488,10 @@ func (t *splitTools) launchWorktree(ctx context.Context, req mcplib.CallToolRequ
 		"intent":           intent,
 	}
 	addInheritanceResult(result, inheritedCount, inheritErr)
-	if err := t.awaitChildResult(ctx, req, childID, result); err != nil {
-		return mcplib.NewToolResultError(fmt.Sprintf("waiting for child session: %v", err)), nil
+	if settings.WaitForResult {
+		if err := awaitChildResult(ctx, req, childID, result, t.results, t.store, t.disconnected); err != nil {
+			return mcplib.NewToolResultError(fmt.Sprintf("waiting for child session: %v", err)), nil
+		}
 	}
 	return toolResultJSON(result), nil
 }
@@ -494,6 +504,7 @@ type sessionSettings struct {
 	Agent           string
 	Reasoning       string
 	PermissionRules []platforms.PermissionRule
+	WaitForResult   bool
 }
 
 // parseSessionSettings extracts model/agent/reasoning/permission from the
@@ -504,6 +515,7 @@ func parseSessionSettings(req mcplib.CallToolRequest) sessionSettings {
 		Agent:           req.GetString("agent", ""),
 		Reasoning:       req.GetString("reasoning", ""),
 		PermissionRules: parsePermissionRules(req),
+		WaitForResult:   req.GetBool("wait", true),
 	}
 }
 

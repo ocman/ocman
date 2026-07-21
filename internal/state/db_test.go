@@ -877,7 +877,7 @@ func TestChildSessionParents(t *testing.T) {
 	}
 }
 
-func TestListNonTerminalChildSessions(t *testing.T) {
+func TestListPendingChildSessions(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 
@@ -894,16 +894,16 @@ func TestListNonTerminalChildSessions(t *testing.T) {
 		}
 	}
 
-	active, err := db.ListNonTerminalChildSessions()
+	active, err := db.ListPendingChildSessions()
 	if err != nil {
-		t.Fatalf("ListNonTerminalChildSessions: %v", err)
+		t.Fatalf("ListPendingChildSessions: %v", err)
 	}
-	if len(active) != 2 {
-		t.Fatalf("expected 2 non-terminal sessions, got %d", len(active))
+	if len(active) != 3 {
+		t.Fatalf("expected 3 pending sessions, got %d", len(active))
 	}
-	ids := map[string]bool{active[0].ID: true, active[1].ID: true}
-	if !ids["child-x"] || !ids["child-y"] {
-		t.Errorf("expected child-x and child-y, got %v", ids)
+	ids := map[string]bool{active[0].ID: true, active[1].ID: true, active[2].ID: true}
+	if !ids["child-x"] || !ids["child-y"] || !ids["child-z"] {
+		t.Errorf("expected active children and detached terminal result, got %v", ids)
 	}
 }
 

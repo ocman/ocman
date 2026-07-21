@@ -80,7 +80,7 @@ func TestAwaitChildResult_MarksCancelledWaitDisconnected(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	if err := tools.awaitChildResult(ctx, mcplib.CallToolRequest{}, "child-1", map[string]interface{}{}); !errors.Is(err, context.Canceled) {
+	if err := awaitChildResult(ctx, mcplib.CallToolRequest{}, "child-1", map[string]interface{}{}, tools.results, tools.store, tools.disconnected); !errors.Is(err, context.Canceled) {
 		t.Fatalf("await error = %v, want context.Canceled", err)
 	}
 	if store.delivery != "disconnected" {

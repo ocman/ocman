@@ -45,13 +45,13 @@ directly (no Vite dev proxy).
 
 | Tool | Description |
 |------|-------------|
-| `new_session` | Run a new OpenCode child session with a context-enriched prompt and return its terminal status and final assistant text. Child sessions cannot create further children. Shares the parent's directory by default; set `worktree=true` (with a `branch`) to run it in a fresh git worktree. Accepts an optional `model` (`"provider/model"`) for the child; when omitted the child inherits the parent session's current model. |
-| `await_session_result` | Reconnect to a disconnected `new_session` call and wait for the original child result without sending another prompt. A child ID is optional when the parent has exactly one disconnected child. |
+| `new_session` | Run a new OpenCode child session with a context-enriched prompt. It waits for the terminal result by default; set `wait=false` to return the child ID immediately and deliver the final response to the parent asynchronously. Child sessions cannot create further children. Shares the parent's directory by default; set `worktree=true` (with a `branch`) to run it in a fresh git worktree. Accepts an optional `model` (`"provider/model"`) for the child; when omitted the child inherits the parent session's current model. |
+| `await_session_result` | Explicitly wait for an asynchronous child or reconnect to a disconnected result wait without sending another prompt. A child ID is optional when the parent has exactly one disconnected child. |
 | `get_current_session_id` | Return the most recently updated OpenCode session ID known to ocman, optionally filtered by project directory. |
 | `get_session_status` | Check the status of a previously spawned child session. |
 | `list_child_sessions` | List all child sessions spawned from a parent session. |
 | `cancel_session` | Cancel a running child session (kills its tmux window). |
-| `send_message_to_child` | Send a message from a parent session to one of its child sessions. |
+| `send_message_to_child` | Send a message from a parent session to one of its child sessions. Returns immediately by default and delivers the completed turn to the parent asynchronously; set `wait=true` to return the response directly. |
 | `send_message_to_parent` | Send a message from a child session back to its parent session. |
 | `validate_workflow` / `publish_workflow` / `list_workflows` | Validate, publish immutable versions, and list workflows. |
 | `start_workflow` / `list_workflow_runs` / `inspect_workflow_run` | Start a pinned or active version and inspect compact run state. |
@@ -68,13 +68,16 @@ directly (no Vite dev proxy).
 3. A structured Markdown prompt is assembled and sent to a new OpenCode
    session.
 4. A background watcher polls the child session. After the terminal child turn,
-   `new_session` returns its status and final assistant text directly. While it
+   `new_session` returns its status and final assistant text directly, or queues
+   it for the parent when called with `wait=false`. While a synchronous call
    waits, ocman emits MCP progress immediately and every 10 seconds so clients
    keep the request alive. If the MCP caller disconnects, ocman defers a parent
    reminder to call `await_session_result`, which reconnects to that wait without
-   prompting the child again, including after an ocman restart. Direct
+   prompting the child again, including after an ocman restart. An explicit
+   child ID also lets `await_session_result` synchronize an asynchronous call. Direct
    `send_message_to_parent` updates retain the explicit untrusted data boundary;
-   `send_message_to_child` reopens the child for its next turn.
+   `send_message_to_child` reopens the child for its next turn and supports the
+   same direct-result behavior with `wait=true`.
 
 ## Splitting skill (optional)
 

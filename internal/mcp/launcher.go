@@ -48,6 +48,8 @@ type LaunchRequest struct {
 	// TmuxTarget is the tmux session or session:window used to launch
 	// the child (empty for same-directory sessions when no tmux launch is needed).
 	TmuxTarget string
+	// WaitForResult connects this child turn to the calling MCP request.
+	WaitForResult bool
 }
 
 // childSessionStore is the subset of state.DB used by SessionLauncher.
@@ -171,7 +173,7 @@ func (l *SessionLauncher) launchWithPort(ctx context.Context, req LaunchRequest,
 		return "", fmt.Errorf("creating child session: %w", err)
 	}
 	childID := resp.ID
-	if l.childResults != nil {
+	if req.WaitForResult && l.childResults != nil {
 		l.childResults.Register(childID)
 	}
 
@@ -221,7 +223,7 @@ func (l *SessionLauncher) launchWithPort(ctx context.Context, req LaunchRequest,
 		Status:          "starting",
 		CreatedAt:       time.Now().UnixMilli(),
 	}
-	if l.childResults != nil {
+	if req.WaitForResult && l.childResults != nil {
 		cs.ResultDelivery = "waiting"
 	}
 	if err := l.stateDB.InsertChildSession(cs); err != nil {

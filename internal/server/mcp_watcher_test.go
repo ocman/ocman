@@ -275,6 +275,35 @@ func TestCheckAndInjectChildResults_PreservesDisconnectedResultAfterRestart(t *t
 	}
 }
 
+func TestCheckAndInjectChildResults_DeliversDetachedTerminalResultOnceAfterRestart(t *testing.T) {
+	sdb := openWatcherTestStateDB(t)
+	insertWatcherChildSession(t, sdb, "child-detached", "parent-1", "running")
+	if err := sdb.UpdateChildSession("child-detached", "completed", "Finished async work.", 2000); err != nil {
+		t.Fatal(err)
+	}
+
+	var sentMessages []platforms.SendMessageRequest
+	fp := &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "parent-1", Status: "waiting"}}}
+	fp.sendMessageFn = func(req platforms.SendMessageRequest) error {
+		sentMessages = append(sentMessages, req)
+		return nil
+	}
+	reg := platforms.NewRegistry()
+	reg.Register(fp)
+	s := New(nil, sdb, "127.0.0.1:0", reg, nil)
+
+	s.checkAndInjectChildResults(context.Background())
+	s.checkAndInjectChildResults(context.Background())
+
+	if len(sentMessages) != 1 || !strings.Contains(sentMessages[0].Message, "Finished async work.") {
+		t.Fatalf("delivered messages = %+v, want one async result", sentMessages)
+	}
+	child, err := sdb.GetChildSession("child-detached")
+	if err != nil || child.ResultDelivery != "delivered" {
+		t.Fatalf("child delivery state = %+v, %v", child, err)
+	}
+}
+
 func TestDeferChildResultReconnect_QueuesAwaitReminder(t *testing.T) {
 	sdb := openWatcherTestStateDB(t)
 	insertWatcherChildSession(t, sdb, "child-disconnected", "parent-1", "running")
@@ -476,11 +505,14 @@ func TestCheckAndInjectChildResults_UnknownStatusCloses(t *testing.T) {
 	}
 }
 
-func TestCheckAndInjectChildResults_AlreadyTerminal(t *testing.T) {
+func TestCheckAndInjectChildResults_AlreadyDeliveredTerminal(t *testing.T) {
 	sdb := openWatcherTestStateDB(t)
 	insertWatcherChildSession(t, sdb, "child-done", "parent-1", "completed")
+	if err := sdb.SetChildResultDelivery("child-done", "delivered"); err != nil {
+		t.Fatal(err)
+	}
 
 	s := &Server{stateDB: sdb}
-	// Should be a no-op: completed sessions are not in the non-terminal list.
+	// Should be a no-op: the terminal result was already delivered.
 	s.checkAndInjectChildResults(context.Background())
 }

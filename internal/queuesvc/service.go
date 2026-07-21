@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 
 	log "github.com/sirupsen/logrus"
@@ -146,11 +147,21 @@ var ErrEmptyMessage = errors.New("message or images required")
 // queue intact even if the status poll blips to idle. A genuine
 // session.idle (via Flush) drains a backlog.
 func (s *Service) Enqueue(ctx context.Context, platformID string, forceQueue bool, req platforms.SendMessageRequest) error {
+	return s.enqueue(ctx, newID(), false, platformID, forceQueue, req)
+}
+
+// EnqueueOnce durably queues a held message with a stable ID. Repeating the
+// same call is a no-op, allowing completion delivery to recover after restart.
+func (s *Service) EnqueueOnce(ctx context.Context, id, platformID string, req platforms.SendMessageRequest) error {
+	return s.enqueue(ctx, id, true, platformID, true, req)
+}
+
+func (s *Service) enqueue(ctx context.Context, id string, once bool, platformID string, forceQueue bool, req platforms.SendMessageRequest) error {
 	if req.Message == "" && len(req.Images) == 0 {
 		return ErrEmptyMessage
 	}
 	m := state.QueuedMessage{
-		ID:         newID(),
+		ID:         id,
 		Platform:   platformID,
 		SessionID:  req.SessionID,
 		Text:       req.Message,
@@ -164,6 +175,18 @@ func (s *Service) Enqueue(ctx context.Context, platformID string, forceQueue boo
 	lock := s.lockFor(req.SessionID)
 	lock.Lock()
 	defer lock.Unlock()
+	if once {
+		queuedPlatform, queuedSession, ok, err := s.store.GetQueuedMessageSession(id)
+		if err != nil {
+			return err
+		}
+		if ok {
+			if queuedPlatform != platformID || queuedSession != req.SessionID {
+				return fmt.Errorf("queued message id %q belongs to another session", id)
+			}
+			return nil
+		}
+	}
 
 	existing, err := s.store.CountQueuedMessages(platformID, req.SessionID)
 	if err != nil {

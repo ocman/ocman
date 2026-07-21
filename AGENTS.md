@@ -354,6 +354,10 @@ Implementation notes:
   ocman restart without re-prompting the child; disconnects also defer a queued
   reconnect reminder until the parent is idle. Both waits emit request-scoped
   MCP progress immediately and every 10 s to reset OpenCode's request timeout.
+- `new_session` waits by default, or returns the child ID immediately with
+  `wait=false` and queues its final response to the parent. `send_message_to_child`
+  returns immediately by default and supports `wait=true` for inline follow-up
+  results. Both paths reuse the persisted delivery state and child watcher.
 - `new_session` seeds the child with the parent's accumulated
   "Allow always" permissions when `worktree.inherit_permissions` is on
   (#101), and reports `permissionsInherited` / `permissionsInheritedCount`

@@ -117,8 +117,10 @@ func New(deps Deps) *Server {
 	addStatusTools(s, status)
 
 	comm := &commTools{
-		stateDB:  deps.StateDB,
-		platform: adapter,
+		stateDB:      deps.StateDB,
+		platform:     adapter,
+		results:      deps.ChildResults,
+		disconnected: deps.ChildDisconnected,
 	}
 	addCommTools(s, comm)
 
@@ -181,8 +183,10 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 		ocDB:    ocDB,
 	}
 	comm := &commTools{
-		stateDB:  deps.StateDB,
-		platform: adapter,
+		stateDB:      deps.StateDB,
+		platform:     adapter,
+		results:      deps.ChildResults,
+		disconnected: deps.ChildDisconnected,
 	}
 
 	tools := []mcpserver.ServerTool{

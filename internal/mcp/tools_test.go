@@ -766,6 +766,39 @@ func TestNewSession_ReturnsChildResult(t *testing.T) {
 	}
 }
 
+func TestNewSession_AsyncReturnsImmediatelyAndDetachesResult(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	ocDB := openTestOpenCodeDB(t, []db.Session{
+		{ID: "parent-async", Title: "parent", Directory: "/repo", TimeCreated: 1000, TimeUpdated: 2000},
+	})
+	results := internalmcp.NewChildResultBroker()
+	platform := &fakePlatformForTools{createSessionID: "child-async"}
+	claimedWaiter := false
+	platform.sendMessageFn = func(_ platforms.SendMessageRequest) {
+		claimedWaiter = results.Deliver("child-async", internalmcp.ChildResult{Status: "completed"})
+	}
+	srv := buildTestMCPServerWithResults(t, stateDB, platform, ocDB, results)
+
+	result := callTool(t, srv, "new_session", map[string]interface{}{
+		"session_id": "parent-async",
+		"intent":     "review the diff",
+		"wait":       false,
+	})
+	if result.IsError || !strings.Contains(resultText(result), `"child_session_id": "child-async"`) {
+		t.Fatalf("unexpected async result: %s", resultText(result))
+	}
+	child, err := stateDB.GetChildSession("child-async")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if child.ResultDelivery != "detached" {
+		t.Fatalf("result delivery = %q, want detached", child.ResultDelivery)
+	}
+	if claimedWaiter || results.Deliver("child-async", internalmcp.ChildResult{Status: "completed"}) {
+		t.Fatal("async child registered a synchronous result waiter")
+	}
+}
+
 func TestAwaitSessionResult_ResumesDisconnectedChildWithoutSendingPrompt(t *testing.T) {
 	stateDB := openTestStateDB(t)
 	if err := stateDB.InsertChildSession(state.ChildSession{
@@ -877,6 +910,34 @@ func TestAwaitSessionResult_ReconnectsRunningChild(t *testing.T) {
 	}
 }
 
+func TestAwaitSessionResult_WaitsForDetachedAsyncChild(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	if err := stateDB.InsertChildSession(state.ChildSession{
+		ID: "child-async-wait", Platform: "opencode", ParentSessionID: "parent-async-wait",
+		Intent: "run checks", Status: "running", CreatedAt: 1000, ResultDelivery: "detached",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	results := internalmcp.NewChildResultBroker()
+	srv := buildTestMCPServerWithResults(t, stateDB, &fakePlatformForTools{}, nil, results)
+	delivered := make(chan struct{})
+	go func() {
+		defer close(delivered)
+		for !results.Deliver("child-async-wait", internalmcp.ChildResult{Status: "completed", Summary: "Checks passed."}) {
+			time.Sleep(time.Millisecond)
+		}
+	}()
+
+	result := callTool(t, srv, "await_session_result", map[string]interface{}{
+		"session_id":       "parent-async-wait",
+		"child_session_id": "child-async-wait",
+	})
+	<-delivered
+	if result.IsError || !strings.Contains(resultText(result), "Checks passed.") {
+		t.Fatalf("unexpected async wait result: %s", resultText(result))
+	}
+}
+
 func TestAwaitSessionResult_RejectsAmbiguousDisconnectedChildren(t *testing.T) {
 	stateDB := openTestStateDB(t)
 	for _, childID := range []string{"child-a", "child-b"} {
@@ -913,10 +974,6 @@ func TestAwaitSessionResult_RejectsInvalidRecoveryTargets(t *testing.T) {
 		{
 			name: "still connected", parentID: "parent", childID: "child", wantError: "still connected",
 			child: &state.ChildSession{ID: "child", ParentSessionID: "parent", Status: "running", ResultDelivery: "waiting"},
-		},
-		{
-			name: "detached launch", parentID: "parent", childID: "child", wantError: "not launched by a resumable call",
-			child: &state.ChildSession{ID: "child", ParentSessionID: "parent", Status: "running", ResultDelivery: "detached"},
 		},
 	}
 
@@ -1315,6 +1372,7 @@ func TestSendMessageToChild_ReopensCompletedChild(t *testing.T) {
 		Intent:          "inspect logs",
 		Status:          "starting",
 		CreatedAt:       1000,
+		ResultDelivery:  "delivered",
 	}); err != nil {
 		t.Fatalf("InsertChildSession: %v", err)
 	}
@@ -1336,7 +1394,39 @@ func TestSendMessageToChild_ReopensCompletedChild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetChildSession: %v", err)
 	}
-	if child.Status != "running" || child.CompletedAt != 0 || child.Summary != "" {
+	if child.Status != "running" || child.CompletedAt != 0 || child.Summary != "" || child.ResultDelivery != "detached" {
 		t.Fatalf("child after follow-up = %+v, want running with cleared completion", child)
+	}
+}
+
+func TestSendMessageToChild_WaitsForNextResultWhenRequested(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	if err := stateDB.InsertChildSession(state.ChildSession{
+		ID: "child-follow-up-wait", Platform: "opencode", ParentSessionID: "parent-follow-up-wait",
+		Intent: "inspect logs", Status: "completed", CreatedAt: 1000, ResultDelivery: "delivered",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	results := internalmcp.NewChildResultBroker()
+	platform := &fakePlatformForTools{}
+	platform.sendMessageFn = func(_ platforms.SendMessageRequest) {
+		if !results.Deliver("child-follow-up-wait", internalmcp.ChildResult{Status: "completed", Summary: "Found the race."}) {
+			t.Error("follow-up result had no waiting MCP call")
+		}
+	}
+	srv := buildTestMCPServerWithResults(t, stateDB, platform, nil, results)
+
+	result := callTool(t, srv, "send_message_to_child", map[string]interface{}{
+		"session_id":       "parent-follow-up-wait",
+		"child_session_id": "child-follow-up-wait",
+		"message":          "Check the race.",
+		"wait":             true,
+	})
+	if result.IsError || !strings.Contains(resultText(result), "Found the race.") {
+		t.Fatalf("unexpected follow-up result: %s", resultText(result))
+	}
+	child, err := stateDB.GetChildSession("child-follow-up-wait")
+	if err != nil || child.ResultDelivery != "delivered" {
+		t.Fatalf("child delivery state = %+v, %v", child, err)
 	}
 }
