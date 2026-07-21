@@ -148,20 +148,10 @@ export function SessionSidebar({
   // after the composer has already gone idle).
   const renderRow = (sib: Session, inGroup: boolean, depth = 0) => {
     const displayStatus = sib.id === activeId ? optimisticStatus : sib.status;
-    // When a row sits inside a project group, surface the
-    // worktree distinction (if any) next to the platform
-    // badge so siblings stay distinguishable. The group
-    // header already shows the project root; we only add a
-    // hint when the session's actual cwd diverges from it
-    // (i.e. it's a worktree, not the main checkout). For
-    // those, the worktree slug — the final path segment of
-    // <repo-parent>/.worktrees/<repo>/<slug> — is what the
-    // user typed as the branch name in /wt, so we show that
-    // alone with a small worktree icon. (Earlier versions
-    // tried to slice the cwd by the project-root length,
-    // but projectRoot isn't a prefix of cwd for worktrees,
-    // so the result was a meaningless `.worktrees/<repo>/…`
-    // string that got RTL-ellipsised into "trees/<repo>/…".)
+    // Grouped rows no longer carry their own git line — the directory
+    // sub-header above them shows the branch/worktree once for all
+    // siblings. Ungrouped rows (the pinned group) keep the project
+    // path + git line since they have no directory sub-header.
     const projectRoot = projectRootForDirectory(sib.directory || '');
     const isWorktree = !!sib.directory && sib.directory !== projectRoot;
     return (
@@ -216,13 +206,15 @@ export function SessionSidebar({
             {cleanTitle(sib.title) || 'Untitled'}
           </span>
           {!inGroup && (
-            <span className="session-sidebar-project">
-              <span className="session-sidebar-project-path">
-                <ShortPath path={isWorktree ? projectRoot : sib.directory} />
+            <>
+              <span className="session-sidebar-project">
+                <span className="session-sidebar-project-path">
+                  <ShortPath path={isWorktree ? projectRoot : sib.directory} />
+                </span>
               </span>
-            </span>
+              <GitStatusLine info={siblingGitInfos[sib.directory]} icon={isWorktree ? 'worktree' : 'branch'} />
+            </>
           )}
-          <GitStatusLine info={siblingGitInfos[sib.directory]} icon={isWorktree ? 'worktree' : 'branch'} />
         </span>
         <span className="session-sidebar-meta">
           <span className="session-sidebar-time" title={new Date(sib.timeUpdated).toLocaleString()}>{relativeTime(sib.timeUpdated)}</span>
@@ -304,6 +296,75 @@ export function SessionSidebar({
         {nestSessions(group.sessions).map(({ session: sib, depth }) => renderRow(sib, false, depth))}
       </div>
     );
+  };
+
+  // Sessions of one project group, sub-grouped by working directory:
+  // the main checkout first, then each worktree (most recently active
+  // first). Every directory gets one small sub-header carrying the
+  // branch/worktree identity, so individual rows stay a single line.
+  const renderDirGroups = (
+    group: SidebarProjectGroup,
+    hostRemoteId?: string,
+    hostPlatform?: string,
+  ) => {
+    const byDir = new Map<string, Session[]>();
+    for (const s of group.sessions) {
+      const dir = s.directory || group.directory;
+      const bucket = byDir.get(dir);
+      if (bucket) bucket.push(s);
+      else byDir.set(dir, [s]);
+    }
+    const latest = (dir: string) =>
+      Math.max(...(byDir.get(dir) ?? []).map((s) => s.timeUpdated));
+    const dirs = [...byDir.keys()].sort((a, b) => {
+      const aMain = a === group.directory ? 0 : 1;
+      const bMain = b === group.directory ? 0 : 1;
+      if (aMain !== bMain) return aMain - bMain;
+      return latest(b) - latest(a);
+    });
+    return dirs.map((dir) => {
+      const isWorktree = dir !== group.directory;
+      const info = siblingGitInfos[dir];
+      // Worktree slug — the final path segment of
+      // <repo-parent>/.worktrees/<repo>/<slug> — is what the user
+      // typed as the branch name in /wt; fall back to it when git
+      // info hasn't loaded yet.
+      const slug = dir.split('/').filter(Boolean).pop() || dir;
+      const showHeader = isWorktree || !!info?.branch;
+      const dirSessions = byDir.get(dir) ?? [];
+      const dirLabel = info?.branch ?? slug;
+      return (
+        <div key={dir} className="session-sidebar-dir-group">
+          {showHeader && (
+            <div className="session-sidebar-dir-header" title={dir}>
+              <span className="session-sidebar-dir-label">
+                {info?.branch ? (
+                  <GitStatusLine info={info} icon={isWorktree ? 'worktree' : 'branch'} />
+                ) : (
+                  <span className="git-status">
+                    <i className="bi bi-diagram-2 git-status-icon" aria-hidden="true" />
+                    <span className="git-status-branch">{slug}</span>
+                  </span>
+                )}
+              </span>
+              <button
+                type="button"
+                className="session-sidebar-group-new"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void onNewSessionInDirectory(dir, hostRemoteId, hostPlatform);
+                }}
+                title={`New session on ${dirLabel}`}
+                aria-label={`New session on ${dirLabel}`}
+              >+</button>
+            </div>
+          )}
+          {nestSessions(dirSessions).map(({ session: sib, depth }) =>
+            renderRow(sib, true, depth),
+          )}
+        </div>
+      );
+    });
   };
 
   // Header + session rows for a single (non-pinned) project group.
@@ -389,7 +450,7 @@ export function SessionSidebar({
             ><ArchiveIcon /></button>
           )}
         </div>
-        {!collapsed && nestSessions(group.sessions).map(({ session: sib, depth }) => renderRow(sib, true, depth))}
+        {!collapsed && renderDirGroups(group, hostRemoteId, hostPlatform)}
       </>
     );
   };

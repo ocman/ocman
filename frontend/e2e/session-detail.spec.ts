@@ -501,8 +501,13 @@ test('clicking a sidebar session navigates to that session', async ({ mockedPage
   await expect(page).toHaveURL(`/session/${MOCK_SESSION_2.id}`);
 });
 
-test('sidebar archive button is visible on session items', async ({ mockedPage: page }) => {
+test('sidebar archive button appears when hovering a session item', async ({ mockedPage: page }) => {
   await page.goto(SESSION_URL);
+  // The meta column shows the relative time until hover swaps it for
+  // the pin + archive buttons.
+  const row = page.getByTestId('session-sidebar').getByRole('button', { name: /Refactor auth module/ });
+  await expect(row).toBeVisible({ timeout: 5_000 });
+  await row.hover();
   const archiveBtns = page.getByRole('button', { name: 'Archive session' });
   await expect(archiveBtns.first()).toBeVisible({ timeout: 5_000 });
 });

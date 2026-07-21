@@ -76,17 +76,70 @@ function renderSidebar(
 }
 
 describe('SessionSidebar', () => {
-  it('shows the git branch on the session row, not the group header', () => {
+  it('shows the git branch once in the directory sub-header, not per row', () => {
     const group: SidebarProjectGroup = {
       directory: '/repo',
-      sessions: [session()],
+      sessions: [session(), session({ id: 's2', title: 'Other thing' })],
       lastUpdated: 1,
       aggregate: { kind: 'none' },
     };
 
     renderSidebar(group, { '/repo': gitInfo('main') });
 
-    expect(screen.getByTitle('Current branch: main')).toHaveTextContent('main');
+    expect(screen.getAllByTitle('Current branch: main')).toHaveLength(1);
+  });
+
+  it('groups worktree sessions under their own sub-header, main checkout first', () => {
+    const wt = '/parent/.worktrees/repo/feat-x';
+    const group: SidebarProjectGroup = {
+      directory: '/parent/repo',
+      sessions: [
+        session({ id: 'w1', title: 'Worktree work', directory: wt, timeUpdated: 9 }),
+        session({ id: 'm1', title: 'Main work', directory: '/parent/repo', timeUpdated: 1 }),
+      ],
+      lastUpdated: 9,
+      aggregate: { kind: 'none' },
+    };
+
+    renderSidebar(group, {
+      '/parent/repo': gitInfo('main'),
+      [wt]: gitInfo('feat-x'),
+    });
+
+    const headers = [...document.querySelectorAll('.session-sidebar-dir-header')];
+    expect(headers.map((h) => h.getAttribute('title'))).toEqual(['/parent/repo', wt]);
+    expect(screen.getByTitle('Current branch: feat-x')).toBeInTheDocument();
+  });
+
+  it('dir sub-header "+" launches a new session in that directory', () => {
+    const wt = '/parent/.worktrees/repo/feat-x';
+    const onAdd = vi.fn();
+    const group: SidebarProjectGroup = {
+      directory: '/parent/repo',
+      sessions: [session({ id: 'w1', directory: wt })],
+      lastUpdated: 1,
+      aggregate: { kind: 'none' },
+    };
+
+    renderSidebar(group, { [wt]: gitInfo('feat-x') }, onAdd);
+
+    screen.getByRole('button', { name: 'New session on feat-x' }).click();
+
+    expect(onAdd).toHaveBeenCalledWith(wt, undefined, 'opencode');
+  });
+
+  it('falls back to the worktree slug when git info is missing', () => {
+    const wt = '/parent/.worktrees/repo/feat-y';
+    const group: SidebarProjectGroup = {
+      directory: '/parent/repo',
+      sessions: [session({ id: 'w2', directory: wt })],
+      lastUpdated: 1,
+      aggregate: { kind: 'none' },
+    };
+
+    renderSidebar(group, {});
+
+    expect(screen.getByTitle(wt)).toHaveTextContent('feat-y');
   });
 
   it('shows the host badge for a session-less remote project group', () => {

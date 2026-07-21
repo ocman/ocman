@@ -231,7 +231,11 @@ test('archive button in session detail sidebar navigates away from archived sess
   );
   await setupSessionPage(page);
 
-  // Wait for the sidebar to show sessions
+  // Wait for the sidebar to show sessions, then hover the row so the
+  // archive button swaps into the meta column.
+  const row = page.locator('.session-sidebar-item').first();
+  await expect(row).toBeVisible({ timeout: 5_000 });
+  await row.hover();
   await expect(page.locator('.session-sidebar-archive-btn').first()).toBeVisible({ timeout: 5_000 });
   await page.locator('.session-sidebar-archive-btn').first().click();
 

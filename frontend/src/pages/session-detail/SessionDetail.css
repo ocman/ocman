@@ -207,17 +207,69 @@
   justify-content: center;
   padding: 16px 0;
 }
+/* Directory sub-group inside a project group: one branch/worktree
+   header shared by all session rows below it. */
+.session-sidebar-dir-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 7px 0 7px 16px;
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--accent) 2%, var(--bg));
+}
+.session-sidebar-dir-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  transition: padding-right 0.12s ease;
+}
+.session-sidebar-dir-header .git-status {
+  margin-top: 0;
+  font-size: 11px;
+}
+/* Overlay the new-session action so the branch owns the full width
+   until hover. The button matches the compact session-card actions. */
+.session-sidebar-dir-header .session-sidebar-group-new {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--bg);
+  font-size: 13px;
+  transform: translateY(-50%);
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.session-sidebar-dir-header:hover .session-sidebar-group-new,
+.session-sidebar-dir-header:focus-within .session-sidebar-group-new {
+  opacity: 1;
+}
+.session-sidebar-dir-header:hover .session-sidebar-dir-label,
+.session-sidebar-dir-header:focus-within .session-sidebar-dir-label {
+  padding-right: 28px;
+}
+.session-sidebar-dir-header .session-sidebar-group-new:hover {
+  background: var(--accent);
+  color: var(--white);
+  border-color: var(--accent);
+}
 .session-sidebar-item {
   position: relative;
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  padding: 10px 12px 10px 0;
+  padding: 7px 12px 7px 0;
   cursor: pointer;
-  border-bottom: 1px solid var(--border);
   overflow: hidden;
   max-height: 76px;
-  transition: background 0.1s, opacity 0.22s ease, transform 0.22s ease, max-height 0.22s ease, padding 0.22s ease, border-color 0.22s ease;
+  transition: background 0.1s, opacity 0.22s ease, transform 0.22s ease, max-height 0.22s ease, padding 0.22s ease;
 }
 .session-sidebar-item:hover { background: var(--bg-hover); }
 .session-sidebar-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
@@ -238,7 +290,6 @@
   max-height: 0;
   padding-top: 0;
   padding-bottom: 0;
-  border-color: transparent;
   pointer-events: none;
 }
 .session-sidebar-item-body {
@@ -305,35 +356,37 @@
 
 .session-sidebar-meta {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  justify-content: space-between;
-  align-self: stretch;
-  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+  min-height: 20px;
 }
 .session-sidebar-time {
   font-size: 10px;
   color: var(--overlay0);
   white-space: nowrap;
   flex-shrink: 0;
-  padding-top: 2px;
 }
 /* Row container for pin + archive buttons */
 .session-sidebar-actions {
-  display: flex;
+  display: none;
   align-items: center;
   gap: 2px;
-  margin-top: auto;
+}
+.session-sidebar-item:hover .session-sidebar-time,
+.session-sidebar-item:focus-visible .session-sidebar-time {
+  display: none;
+}
+.session-sidebar-item:hover .session-sidebar-actions,
+.session-sidebar-item:focus-visible .session-sidebar-actions {
+  display: flex;
 }
 
-/* Pin button — hidden by default, visible on hover or when pinned.
-   Matches the archive button's border + hover style. */
+/* Pin button — matches the archive button's border + hover style. */
 .session-sidebar-pin-btn {
   width: 20px;
   height: 20px;
   min-width: 20px;
-  opacity: 0;
-  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 0;
@@ -350,25 +403,14 @@
   color: var(--white);
   border-color: var(--accent);
 }
-.session-sidebar-pin-btn.pinned { opacity: 1; color: var(--accent4); }
+.session-sidebar-pin-btn.pinned { color: var(--accent4); }
 .session-sidebar-pin-btn.pinned:hover { background: var(--accent); color: var(--white); border-color: var(--accent); }
-.session-sidebar-item:hover .session-sidebar-pin-btn,
-.session-sidebar-item:focus-visible .session-sidebar-pin-btn,
-.session-sidebar-item.active .session-sidebar-pin-btn {
-  opacity: 1;
-}
 
 .session-sidebar-archive-btn {
   width: 20px;
   height: 20px;
   min-width: 20px;
-  opacity: 0;
-  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-}
-.session-sidebar-item:hover .session-sidebar-archive-btn,
-.session-sidebar-item:focus-visible .session-sidebar-archive-btn,
-.session-sidebar-item.active .session-sidebar-archive-btn {
-  opacity: 1;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 /* Pinned group header icon */
@@ -399,8 +441,9 @@
 @media (max-width: 768px) {
   .session-layout { flex-direction: column; }
   .session-sidebar { width: 100% !important; height: 160px; border-right: none; border-bottom: 1px solid var(--border); }
-  .session-sidebar-archive-btn { opacity: 1; }
-  .session-sidebar-pin-btn { opacity: 1; }
+  /* No hover on touch: show the buttons instead of the time. */
+  .session-sidebar-time { display: none; }
+  .session-sidebar-actions { display: flex; }
 }
 
 .oc-rename-backdrop {
