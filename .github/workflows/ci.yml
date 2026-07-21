@@ -212,47 +212,9 @@ jobs:
           path: ocman
           retention-days: 7
 
-  build-desktop-macos:
-    name: Build Desktop (macOS arm64)
-    runs-on: macos-arm64
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 25
-      - name: Install pnpm
-        run: |
-          npm install -g pnpm@10.11.1
-          pnpm config set store-dir ~/.local/share/pnpm/store
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: ~/.local/share/pnpm/store
-          key: pnpm-${{ runner.os }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
-          restore-keys: pnpm-${{ runner.os }}-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - name: Install librsvg (rsvg-convert)
-        run: brew install librsvg
-      - name: Install Wails CLI
-        run: |
-          go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: pnpm install --frozen-lockfile
-      - name: Build desktop app
-        run: make build-desktop
-      - uses: actions/upload-artifact@v3
-        with:
-          name: ocman-desktop-darwin-arm64
-          path: build/bin/ocman.app
-          retention-days: 7
-
   tag:
     name: Semantic Tag
-    needs: [frontend, backend, e2e, build, build-desktop-macos]
+    needs: [frontend, backend, e2e, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
