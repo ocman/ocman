@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -434,6 +436,153 @@ func TestSessionQueueDelete_BestEffortOnMissing(t *testing.T) {
 	srv.handleSessionQueueDelete(rr, req)
 	if rr.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204 (best-effort delete); body=%s", rr.Code, rr.Body)
+	}
+}
+
+// ensureStubHost is a hostsvc.Host double whose only real method is
+// EnsureProjectOpencode; everything else panics via the nil embedded
+// interface (tests here never call it).
+type ensureStubHost struct {
+	hostsvc.Host
+	ensure func(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error)
+}
+
+func (h *ensureStubHost) EnsureProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+	return h.ensure(ctx, req)
+}
+
+// A send into a session whose opencode instance is stale/gone must
+// relaunch the project's instance via EnsureProjectOpencode and retry
+// the send once.
+func TestSessionMessage_UnreachableRelaunchesOpencodeAndRetries(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	var mu sync.Mutex
+	var sent []string
+	attempts := 0
+	reg.Register(&fakePlatform{
+		id:       "fake",
+		sessions: []db.Session{mkSession("fake", "s1", "t", 1)},
+		sendMessageFn: func(req platforms.SendMessageRequest) error {
+			mu.Lock()
+			defer mu.Unlock()
+			attempts++
+			if attempts == 1 {
+				return platforms.ErrPlatformUnreachable
+			}
+			sent = append(sent, req.Message)
+			return nil
+		},
+		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+			return &platforms.SessionDetail{Session: &db.Session{ID: id, Status: "done", Directory: "/home/u/proj"}}, nil
+		},
+	})
+	var ensuredDirs []string
+	srv.hostRouter = hostsvc.NewRouter(&ensureStubHost{
+		ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+			mu.Lock()
+			ensuredDirs = append(ensuredDirs, req.ProjectDir)
+			mu.Unlock()
+			return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:5599", RepoRoot: req.ProjectDir, Launched: true}, nil
+		},
+	})
+
+	rr := postMessage(t, srv, "s1", `{"message":"hello"}`)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204; body=%s", rr.Code, rr.Body)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(ensuredDirs) != 1 || ensuredDirs[0] != "/home/u/proj" {
+		t.Fatalf("ensured dirs = %v, want [/home/u/proj]", ensuredDirs)
+	}
+	if attempts != 2 || len(sent) != 1 || sent[0] != "hello" {
+		t.Fatalf("attempts = %d, sent = %v; want retry to deliver [hello]", attempts, sent)
+	}
+	// Delivered: the queue must be empty.
+	if list, _ := srv.queueSvc().List("fake", "s1"); len(list) != 0 {
+		t.Fatalf("queue = %+v, want empty after delivered retry", list)
+	}
+}
+
+// Worktree sessions run on the project's shared instance: the relaunch
+// must fold the worktree directory back to the main checkout.
+func TestSessionMessage_RelaunchFoldsWorktreeToProjectRoot(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	var mu sync.Mutex
+	attempts := 0
+	reg.Register(&fakePlatform{
+		id:       "fake",
+		sessions: []db.Session{mkSession("fake", "s1", "t", 1)},
+		sendMessageFn: func(platforms.SendMessageRequest) error {
+			mu.Lock()
+			defer mu.Unlock()
+			attempts++
+			if attempts == 1 {
+				return platforms.ErrPlatformUnreachable
+			}
+			return nil
+		},
+		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+			return &platforms.SessionDetail{Session: &db.Session{ID: id, Status: "done", Directory: "/home/u/.worktrees/proj/feat"}}, nil
+		},
+	})
+	var ensuredDirs []string
+	srv.hostRouter = hostsvc.NewRouter(&ensureStubHost{
+		ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+			mu.Lock()
+			ensuredDirs = append(ensuredDirs, req.ProjectDir)
+			mu.Unlock()
+			return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:5599", RepoRoot: req.ProjectDir}, nil
+		},
+	})
+
+	if rr := postMessage(t, srv, "s1", `{"message":"hello"}`); rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d; body=%s", rr.Code, rr.Body)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(ensuredDirs) != 1 || ensuredDirs[0] != "/home/u/proj" {
+		t.Fatalf("ensured dirs = %v, want folded [/home/u/proj]", ensuredDirs)
+	}
+}
+
+// When the relaunch itself fails, the message must stay queued so the
+// next idle edge / sweep retries (which retries the relaunch too).
+func TestSessionMessage_RelaunchFails_MessageStaysQueued(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	var mu sync.Mutex
+	attempts := 0
+	reg.Register(&fakePlatform{
+		id:       "fake",
+		sessions: []db.Session{mkSession("fake", "s1", "t", 1)},
+		sendMessageFn: func(platforms.SendMessageRequest) error {
+			mu.Lock()
+			defer mu.Unlock()
+			attempts++
+			return platforms.ErrPlatformUnreachable
+		},
+		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+			return &platforms.SessionDetail{Session: &db.Session{ID: id, Status: "done", Directory: "/home/u/proj"}}, nil
+		},
+	})
+	srv.hostRouter = hostsvc.NewRouter(&ensureStubHost{
+		ensure: func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+			return nil, errors.New("tmux not available")
+		},
+	})
+
+	// Enqueue accepts (204) even though the drain failed; the row stays.
+	if rr := postMessage(t, srv, "s1", `{"message":"hello"}`); rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d; body=%s", rr.Code, rr.Body)
+	}
+	mu.Lock()
+	if attempts != 1 {
+		mu.Unlock()
+		t.Fatalf("attempts = %d, want 1 (no retry when relaunch failed)", attempts)
+	}
+	mu.Unlock()
+	if list, _ := srv.queueSvc().List("fake", "s1"); len(list) != 1 || list[0].Text != "hello" {
+		t.Fatalf("queue = %+v, want [hello] retained for a later retry", list)
 	}
 }
 

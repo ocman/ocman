@@ -3,8 +3,12 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
+	log "github.com/sirupsen/logrus"
+
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/queuesvc"
 )
@@ -64,7 +68,58 @@ func (s *Server) queueSvc() *queuesvc.Service {
 type queueSender struct{ s *Server }
 
 func (q *queueSender) SendNow(ctx context.Context, platformID string, req platforms.SendMessageRequest) error {
+	err := q.s.sessions.SendMessage(ctx, platformID, req)
+	if err == nil || !errors.Is(err, platforms.ErrPlatformUnreachable) {
+		return err
+	}
+	// The session's opencode instance is stale/gone. Relaunch the
+	// project's single instance and retry the send once. On failure the
+	// message stays at the queue head, so the next idle edge or sweep
+	// retries — relaunch included.
+	if !q.s.relaunchOpencodeForSession(ctx, platformID, req.SessionID) {
+		return err
+	}
 	return q.s.sessions.SendMessage(ctx, platformID, req)
+}
+
+// relaunchOpencodeForSession resolves the session's project root and runs
+// EnsureProjectOpencode through the owning host (ForDir — a remote
+// session relaunches on its own machine; probe-reuse makes it a no-op
+// when the instance is actually healthy). Returns whether the instance is
+// now usable. Soft-fail: any resolution or launch error returns false and
+// leaves the caller's original error intact.
+func (s *Server) relaunchOpencodeForSession(ctx context.Context, platformID, sessionID string) bool {
+	adapter, ok := s.adapterForSession(ctx, platformID, sessionID)
+	if !ok {
+		return false
+	}
+	detail, err := adapter.Session(ctx, sessionID, 0, 0)
+	if err != nil || detail == nil || detail.Session == nil || detail.Session.Directory == "" {
+		return false
+	}
+	// Worktree sessions run on the project's shared instance rooted at
+	// the main checkout; fold the worktree path back to it.
+	dir := projectRootForDirectory(detail.Session.Directory)
+	res, err := s.router().ForDir(dir).EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: dir})
+	if err != nil {
+		log.WithError(err).WithFields(log.Fields{"sessionID": sessionID, "directory": dir}).
+			Warn("relaunching opencode for unreachable session")
+		return false
+	}
+	if res.Launched {
+		log.WithFields(log.Fields{"sessionID": sessionID, "directory": dir, "endpoint": res.Endpoint}).
+			Info("relaunched opencode for unreachable session")
+	}
+	return true
+}
+
+// adapterForSession mirrors sessionsvc's resolution order: an explicit
+// platform ID wins (AD-2b), else the registry's reverse lookup.
+func (s *Server) adapterForSession(ctx context.Context, platformID, sessionID string) (platforms.Platform, bool) {
+	if platformID != "" {
+		return s.registry.Get(platforms.ID(platformID))
+	}
+	return s.registry.PlatformForSession(ctx, sessionID)
 }
 
 // onSessionIdle handles the session.idle edge: it broadcasts idle (as
