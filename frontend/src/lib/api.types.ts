@@ -397,6 +397,10 @@ export interface MCPServer {
   name: string;
   status: string;
   error?: string;
+  // Platform-supplied command the user can run to authenticate the
+  // server (e.g. "opencode mcp auth <name>"). Present when status
+  // indicates authentication is required.
+  authHint?: string;
 }
 
 // One configured LSP plus its current status. `id` is the platform-

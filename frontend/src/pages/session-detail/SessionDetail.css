@@ -508,6 +508,41 @@
   background: var(--danger-solid);
 }
 
+/* Warning toasts follow the prompt-toast look — solid surface with a
+   colored left border — so they stay readable over any content. */
+.oc-toast-root.warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: var(--surface1);
+  color: var(--text);
+  border-left: 4px solid var(--warning);
+}
+
+.oc-toast-root.warning strong {
+  color: var(--warning);
+}
+
+.oc-toast-root.warning code {
+  font-size: 12px;
+  background: var(--bg);
+  padding: 0 3px;
+}
+
+.oc-toast-close {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.oc-toast-close:hover {
+  opacity: 1;
+}
+
 .oc-toast-root[data-state='open'] {
   animation: slideInUp 0.2s ease-out;
 }
@@ -559,6 +594,16 @@
 .oc-toast-action:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+.oc-toast-root.warning .oc-toast-action {
+  background: transparent;
+  border-color: var(--warning);
+  color: var(--warning);
+}
+
+.oc-toast-root.warning .oc-toast-action:hover {
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
 }
 
 @keyframes slideInUp {

@@ -123,10 +123,17 @@ type ContextInfo struct {
 // Error is an optional human-readable explanation surfaced when the
 // upstream attaches one (e.g. "Failed to get tools" on a failed
 // remote MCP). Empty when no error message is available.
+//
+// AuthHint is an optional platform-specific command the user can run
+// to authenticate the server (e.g. "opencode mcp auth <name>").
+// Adapters set it when Status indicates authentication is required;
+// the frontend renders it verbatim so it never has to branch on
+// platform (AD-12a).
 type MCPServer struct {
-	Name   string `json:"name"`
-	Status string `json:"status"`
-	Error  string `json:"error,omitempty"`
+	Name     string `json:"name"`
+	Status   string `json:"status"`
+	Error    string `json:"error,omitempty"`
+	AuthHint string `json:"authHint,omitempty"`
 }
 
 // LSPServer is one configured LSP plus its current status. ID is the

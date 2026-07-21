@@ -56,7 +56,7 @@ func TestBuildSessionInfo(t *testing.T) {
 					Model:  "anthropic/claude-sonnet-4",
 				},
 				MCPServers: []platforms.MCPServer{
-					{Name: "devtoys", Status: "needs_auth"},
+					{Name: "devtoys", Status: "needs_auth", AuthHint: "opencode mcp auth devtoys"},
 					{Name: "weave", Status: "failed", Error: "Failed to get tools"},
 				},
 				LSPServers: []platforms.LSPServer{

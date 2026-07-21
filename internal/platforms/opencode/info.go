@@ -508,11 +508,15 @@ func buildSessionInfo(
 	}
 
 	for name, entry := range mcp {
-		info.MCPServers = append(info.MCPServers, platforms.MCPServer{
+		s := platforms.MCPServer{
 			Name:   name,
 			Status: entry.Status,
 			Error:  entry.Error,
-		})
+		}
+		if entry.Status == "needs_auth" {
+			s.AuthHint = "opencode mcp auth " + name
+		}
+		info.MCPServers = append(info.MCPServers, s)
 	}
 	// Stable order: MCP comes off the wire as a JSON object (no
 	// inherent order). Alphabetical by name is predictable and matches

@@ -36,6 +36,7 @@ import { ErrorBoundary, type FallbackRender } from '../../components/ErrorBounda
 import { RateLimitBanner } from '../../components/RateLimitBanner';
 import { PermissionModeLock } from '../../components/PermissionModeLock';
 import { SessionWarningBanner } from '../../components/SessionWarningBanner';
+import { McpAuthBanner } from '../../components/McpAuthBanner';
 import { useUiStore } from '../../lib/uiStore';
 import { useTmux } from '../../lib/useTmux';
 import { useApiStore } from '../../lib/apiStore';
@@ -261,6 +262,12 @@ export function SessionDetail({ id }: SessionDetailProps) {
       return next;
     });
   }, [session]);
+
+  const changeModelFromNotice = useCallback(() => {
+    const composer = document.querySelector('.oc-composer-input') as HTMLTextAreaElement | null;
+    composer?.dispatchEvent(new CustomEvent('oc-model-picker-open', { detail: '' }));
+    composer?.focus();
+  }, []);
 
   const handleScrollToMessageBookmark = useCallback((bookmark: MessageBookmark) => {
     const updateScrollRequest = () => {
@@ -1405,16 +1412,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
                           {unreadMessageCount} new message{unreadMessageCount === 1 ? '' : 's'}
                         </button>
                       )}
-                      {visibleSessionWarnings.map((warning) => (
-                        <SessionWarningBanner
-                          key={sessionWarningKey(session.id, warning)}
-                          warning={warning}
-                          onDismiss={() => dismissSessionWarning(warning)}
-                        />
-                      ))}
-                      {session.notice && (
-                        <RateLimitBanner notice={session.notice} />
-                      )}
                       {pendingPermission && caps.respondPermission ? (
                         <PermissionPrompt
                           permission={pendingPermission}
@@ -1613,6 +1610,25 @@ export function SessionDetail({ id }: SessionDetailProps) {
             onRemoveMessageBookmark={handleRemoveMessageBookmark}
             onScrollToMessageBookmark={handleScrollToMessageBookmark}
           />
+        )}
+        {session && (
+          <>
+            {visibleSessionWarnings.map((warning) => (
+              <SessionWarningBanner
+                key={sessionWarningKey(session.id, warning)}
+                warning={warning}
+                onDismiss={() => dismissSessionWarning(warning)}
+              />
+            ))}
+            {session.notice && (
+              <RateLimitBanner
+                key={session.id}
+                notice={session.notice}
+                onChangeModel={caps.composer && !hasPendingPrompt ? changeModelFromNotice : undefined}
+              />
+            )}
+            <McpAuthBanner sessionId={session.id} platformId={session.platform} />
+          </>
         )}
         <SessionToasts
           showRenameToast={showRenameToast}

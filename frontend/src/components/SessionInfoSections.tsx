@@ -207,7 +207,10 @@ export function LiveSection({
                 {mcpServers.map((s) => (
                   <li key={s.name} className="oc-info-list-item">
                     <span className="oc-info-list-name">{s.name}</span>
-                    <span className="oc-info-status" title={s.error || statusLabel(s.status)}>
+                    <span
+                      className="oc-info-status"
+                      title={(s.authHint && `Run: ${s.authHint}`) || s.error || statusLabel(s.status)}
+                    >
                       {statusLabel(s.status)}
                     </span>
                   </li>

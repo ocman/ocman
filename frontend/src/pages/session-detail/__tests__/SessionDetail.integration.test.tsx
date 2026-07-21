@@ -1357,6 +1357,8 @@ describe('SessionDetail — rate-limit notice', () => {
     );
     expect(maxDepthCalls).toHaveLength(0);
     expect(screen.getByTestId('session-layout')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Change model' }));
+    expect(await screen.findByPlaceholderText(/Select a model/)).toBeInTheDocument();
 
     errorSpy.mockRestore();
   });
