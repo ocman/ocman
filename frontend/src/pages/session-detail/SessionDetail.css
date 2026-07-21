@@ -146,27 +146,6 @@
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--text);
 }
-/* Aggregate status dot. Replaces the old chevron so a collapsed header
-   can surface the most important child state at a glance (pending "!",
-   error "!", busy pulse, idle neutral) — same visual vocabulary as
-   per-session rows. Collapse state is conveyed by `aria-expanded` and
-   a small indent on collapsed rows rather than by a chevron. */
-.session-sidebar-group-status {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 12px;
-  height: 12px;
-}
-/* StatusBadge's compact variants ship a top margin meant to align with
-   the first line of a wrapping two-line session row. The group header
-   is single-line, so reset the offset to keep the dot vertically
-   centred with the label. */
-.session-sidebar-group-status .status-dot-compact,
-.session-sidebar-group-status .status-icon-compact {
-  margin-top: 0;
-}
 .session-sidebar-group-header.collapsed .session-sidebar-group-label {
   opacity: 0.75;
 }

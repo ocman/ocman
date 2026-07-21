@@ -274,21 +274,10 @@ export function SessionSidebar({
   const renderPinnedGroup = (group: SidebarProjectGroup) => {
     // The "Pinned" group is always expanded and has a
     // distinct header (pin icon, no collapse, no "+", not draggable).
-    const agg = group.aggregate;
-    const dotStatus =
-      agg.kind === 'error' ? 'error'
-        : agg.kind === 'busy' ? 'busy'
-          : agg.kind === 'waiting' ? 'waiting'
-            : 'done';
-    const dotPending = agg.kind === 'pending';
-    const dotSeen = agg.kind === 'none';
     return (
       <div key="__pinned__" className="session-sidebar-group session-sidebar-group-pinned">
         <div className="session-sidebar-group-header-row">
           <div className="session-sidebar-group-header" title="Pinned sessions">
-            <span className="session-sidebar-group-status">
-              <StatusBadge status={dotStatus} compact pending={dotPending} seen={dotSeen} />
-            </span>
             <i className="bi bi-pin-fill session-sidebar-pinned-icon" aria-hidden="true" />
             <span className="session-sidebar-group-label">Pinned</span>
           </div>
@@ -385,29 +374,6 @@ export function SessionSidebar({
     const hostRemoteId = remoteSession?.remoteId ?? group.remoteId;
     const hostRemoteName = remoteSession?.remoteName ?? group.remoteName;
     const hostPlatform = remoteSession?.platform ?? group.platform ?? group.sessions[0]?.platform;
-    // The status dot surfaces the rolled-up aggregate: the same visual
-    // vocabulary as per-session rows (pending "!", error "!", busy
-    // pulse, idle neutral), so a collapsed header tells you at a glance
-    // which project needs attention. The header toggles collapse on
-    // click; state is conveyed by `aria-expanded`.
-    const agg = group.aggregate;
-    const dotStatus =
-      agg.kind === 'error' ? 'error'
-        : agg.kind === 'busy' ? 'busy'
-          : agg.kind === 'waiting' ? 'waiting'
-            : 'done';
-    const dotPending = agg.kind === 'pending';
-    const dotSeen = agg.kind === 'none';
-    const aggTitle =
-      agg.kind === 'pending'
-        ? `${agg.count} session${agg.count === 1 ? '' : 's'} waiting for your response`
-        : agg.kind === 'error'
-          ? `${agg.count} session${agg.count === 1 ? '' : 's'} with unseen errors`
-          : agg.kind === 'busy'
-            ? `${agg.count} running`
-            : agg.kind === 'waiting'
-              ? `${agg.count} unread`
-              : `${group.sessions.length} session${group.sessions.length === 1 ? '' : 's'}`;
     return (
       <>
         <div className="session-sidebar-group-header-row">
@@ -419,9 +385,6 @@ export function SessionSidebar({
             title={group.directory || 'Unknown project'}
             onClick={() => toggleCollapsedProject(group.directory)}
           >
-            <span className="session-sidebar-group-status" title={aggTitle}>
-              <StatusBadge status={dotStatus} compact pending={dotPending} seen={dotSeen} />
-            </span>
             <span className="session-sidebar-group-label">{label}</span>
           </button>
           <HostBadge remoteName={hostRemoteName} remoteId={hostRemoteId} stale={remoteSession?.stale} />
