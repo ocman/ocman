@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import type { TmuxState } from '../../lib/useTmux';
 import type { TmuxSession } from '../../lib/api';
 import { remoteLog } from '../../lib/remoteLog';
 import { launchAndWait } from '../../lib/launchAndWait';
+import { useClickOutside } from '../../lib/useClickOutside';
 
 /**
  * Coordinates of the floating tmux-client picker, in viewport pixels.
@@ -89,17 +90,7 @@ export function useTmuxActions(
   const [pickerPos, setPickerPos] = useState<PickerPosition | null>(null);
   const pickerRef = useRef<HTMLDivElement | null>(null);
 
-  // Close the picker when the user clicks anywhere outside it.
-  useEffect(() => {
-    if (!pendingTmuxSession) return;
-    const handle = (e: MouseEvent) => {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        setPendingTmuxSession(null);
-      }
-    };
-    document.addEventListener('mousedown', handle);
-    return () => document.removeEventListener('mousedown', handle);
-  }, [pendingTmuxSession]);
+  useClickOutside(pickerRef, !!pendingTmuxSession, () => setPendingTmuxSession(null));
 
   const matchingTmuxSession = directory ? tmux.findSession(directory) : undefined;
 

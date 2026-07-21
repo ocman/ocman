@@ -4,6 +4,7 @@ import { usePageTitle } from '../lib/headerContext';
 import { SessionTable } from '../components/SessionTable';
 import { useTmux } from '../lib/useTmux';
 import { useOpencodeLaunch } from '../lib/useCapabilities';
+import { useClickOutside } from '../lib/useClickOutside';
 import { shortPath } from '../lib/format';
 import { openVSCode } from '../lib/shortcuts';
 import { useShortcut } from '../lib/shortcutRegistry';
@@ -97,16 +98,7 @@ export function ProjectDetail() {
     }, { replace: true });
   }, [setSearchParams]);
 
-  useEffect(() => {
-    if (!pendingTmuxSession) return;
-    const handle = (e: MouseEvent) => {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        setPendingTmuxSession(null);
-      }
-    };
-    document.addEventListener('mousedown', handle);
-    return () => document.removeEventListener('mousedown', handle);
-  }, [pendingTmuxSession]);
+  useClickOutside(pickerRef, !!pendingTmuxSession, () => setPendingTmuxSession(null));
 
   // TanStack Query handles dedup, cancellation, stale-while-revalidate,
   // and visibility pausing automatically (Wave 3 / P4+P5 fix).

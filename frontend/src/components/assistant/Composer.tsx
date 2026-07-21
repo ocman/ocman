@@ -11,6 +11,7 @@ import { AgentPicker } from './AgentPicker';
 import { SkillPicker } from './SkillPicker';
 import { ReasoningPicker } from './ReasoningPicker';
 import { HelpDialog } from './HelpDialog';
+import { useClickOutside } from '../../lib/useClickOutside';
 import { TargetSelector } from './ComposerSelectorRow';
 import { SlashCommandMenu } from './SlashCommandMenu';
 import { QueuedMessages } from './QueuedMessages';
@@ -863,16 +864,7 @@ function ComposerImpl({
     addImageFiles(files);
   }, [disabled, addImageFiles]);
 
-  useEffect(() => {
-    if (!showTokenPopover) return;
-    const handler = (e: MouseEvent) => {
-      if (tokenPopoverRef.current && !tokenPopoverRef.current.contains(e.target as Node)) {
-        setShowTokenPopover(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showTokenPopover]);
+  useClickOutside(tokenPopoverRef, showTokenPopover, () => setShowTokenPopover(false));
 
   const effectiveModel = selectedModel || '';
 

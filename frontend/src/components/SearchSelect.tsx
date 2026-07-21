@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import Fuse from 'fuse.js';
+import { useClickOutside } from '../lib/useClickOutside';
 import './Control.css';
 import './SearchSelect.css';
 
@@ -38,14 +39,11 @@ export function SearchSelect({
   );
   const visible = query ? fuse.search(query).map(({ item }) => item) : options;
 
+  useClickOutside(root, open, () => setOpen(false));
+
   useEffect(() => {
     if (!open) return;
     search.current?.focus();
-    const close = (event: MouseEvent) => {
-      if (!root.current?.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
   }, [open]);
 
   const selected = options.find((option) => option.value === value);
