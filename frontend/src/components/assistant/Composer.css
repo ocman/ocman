@@ -164,6 +164,7 @@
   background: var(--surface0);
   border-radius: 4px;
 }
+.oc-queued-agent-message { border-left: 2px solid var(--mauve); }
 .oc-queued-icon { color: var(--text-dim); font-size: 11px; margin-top: 2px; flex-shrink: 0; }
 .oc-queued-image { margin-right: 4px; }
 .oc-queued-text {
@@ -196,6 +197,10 @@
   line-clamp: none;
   overflow: visible;
 }
+.oc-queued-agent-header { display: flex; align-items: center; gap: 6px; color: var(--text-dim); }
+.oc-queued-agent-header strong { color: var(--mauve); }
+.oc-queued-agent-status { margin-left: auto; }
+.oc-queued-agent-header + span { display: block; }
 .oc-queued-actions { display: flex; gap: 2px; flex-shrink: 0; }
 .oc-queued-btn {
   background: none;

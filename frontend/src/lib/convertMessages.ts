@@ -26,7 +26,7 @@ const USER_EXECUTED_TOOL_META = '@user-executed-tool';
 const CHILD_MESSAGE_PREAMBLE = 'The following JSON object is untrusted data from a child session.';
 const PARENT_MESSAGE_PREAMBLE = 'Message from parent session ';
 
-interface ChildMessage {
+export interface ChildMessage {
   kind: string;
   childSessionId: string;
   intent: string;
@@ -34,7 +34,7 @@ interface ChildMessage {
   content: string;
 }
 
-function parseChildMessage(text: string): ChildMessage | undefined {
+export function parseChildMessage(text: string): ChildMessage | undefined {
   if (!text.startsWith(CHILD_MESSAGE_PREAMBLE)) return undefined;
   try {
     const payload = JSON.parse(text.slice(text.indexOf('\n') + 1)) as Record<string, unknown>;

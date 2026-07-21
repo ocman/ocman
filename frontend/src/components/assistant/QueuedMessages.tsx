@@ -1,4 +1,5 @@
 import { memo, useState } from 'react';
+import { parseChildMessage } from '../../lib/convertMessages';
 
 export interface QueuedMessageItem {
   id: string;
@@ -37,46 +38,58 @@ function QueuedMessagesImpl({
       data-testid="queued-messages"
       aria-label="Queued follow-up messages"
     >
-      {messages.map((m, i) => (
-        <li key={m.id} className="oc-queued-message">
-          <i className="bi bi-hourglass-split oc-queued-icon" aria-hidden="true" />
-          <button
-            type="button"
-            className={`oc-queued-text${expanded[m.id] ? ' oc-queued-text-expanded' : ''}`}
-            title={expanded[m.id] ? 'Collapse' : m.text}
-            aria-expanded={!!expanded[m.id]}
-            onClick={() => toggle(m.id)}
-          >
-            {m.hasImages && <i className="bi bi-image oc-queued-image" aria-hidden="true" />}
-            {m.text || (m.hasImages ? '(image)' : '')}
-          </button>
-          <span className="oc-queued-actions">
+      {messages.map((m, i) => {
+        const childMessage = parseChildMessage(m.text);
+        return (
+          <li key={m.id} className={`oc-queued-message${childMessage ? ' oc-queued-agent-message' : ''}`}>
+            <i className="bi bi-hourglass-split oc-queued-icon" aria-hidden="true" />
             <button
               type="button"
-              className="oc-queued-btn"
-              disabled={m.canMove === false || i === 0 || messages[i - 1]?.canMove === false}
-              onClick={() => onMove?.(m.id, -1)}
-              title="Move up"
-              aria-label="Move up"
-            ><i className="bi bi-arrow-up" aria-hidden="true" /></button>
-            <button
-              type="button"
-              className="oc-queued-btn"
-              disabled={m.canMove === false || i === messages.length - 1 || messages[i + 1]?.canMove === false}
-              onClick={() => onMove?.(m.id, 1)}
-              title="Move down"
-              aria-label="Move down"
-            ><i className="bi bi-arrow-down" aria-hidden="true" /></button>
-            <button
-              type="button"
-              className="oc-queued-btn oc-queued-remove"
-              onClick={() => onRemove?.(m.id)}
-              title={m.removeLabel || 'Remove from queue'}
-              aria-label={m.removeLabel || 'Remove from queue'}
-            >{'\u00D7'}</button>
-          </span>
-        </li>
-      ))}
+              className={`oc-queued-text${expanded[m.id] ? ' oc-queued-text-expanded' : ''}`}
+              title={expanded[m.id] ? 'Collapse' : (childMessage?.content || m.text)}
+              aria-expanded={!!expanded[m.id]}
+              onClick={() => toggle(m.id)}
+            >
+              {m.hasImages && <i className="bi bi-image oc-queued-image" aria-hidden="true" />}
+              {childMessage ? (
+                <>
+                  <span className="oc-queued-agent-header">
+                    <strong>Agent update</strong>
+                    {childMessage.intent && <span>{childMessage.intent}</span>}
+                    {childMessage.status && <span className="oc-queued-agent-status">{childMessage.status}</span>}
+                  </span>
+                  <span>{childMessage.content}</span>
+                </>
+              ) : m.text || (m.hasImages ? '(image)' : '')}
+            </button>
+            <span className="oc-queued-actions">
+              <button
+                type="button"
+                className="oc-queued-btn"
+                disabled={m.canMove === false || i === 0 || messages[i - 1]?.canMove === false}
+                onClick={() => onMove?.(m.id, -1)}
+                title="Move up"
+                aria-label="Move up"
+              ><i className="bi bi-arrow-up" aria-hidden="true" /></button>
+              <button
+                type="button"
+                className="oc-queued-btn"
+                disabled={m.canMove === false || i === messages.length - 1 || messages[i + 1]?.canMove === false}
+                onClick={() => onMove?.(m.id, 1)}
+                title="Move down"
+                aria-label="Move down"
+              ><i className="bi bi-arrow-down" aria-hidden="true" /></button>
+              <button
+                type="button"
+                className="oc-queued-btn oc-queued-remove"
+                onClick={() => onRemove?.(m.id)}
+                title={m.removeLabel || 'Remove from queue'}
+                aria-label={m.removeLabel || 'Remove from queue'}
+              >{'\u00D7'}</button>
+            </span>
+          </li>
+        );
+      })}
     </ul>
   );
 }
