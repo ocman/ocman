@@ -64,3 +64,20 @@ func TestHandleRevealRemoteToken_ReturnsPlaintext(t *testing.T) {
 		t.Errorf("reveal token mismatch: got %q want %q", got["token"], ident.RemoteToken)
 	}
 }
+
+func TestRevealRemoteTokenRouteRejectsNonLoopback(t *testing.T) {
+	srv := testServer(t)
+	mux, err := srv.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/settings/remote-access/reveal-token", nil)
+	req.RemoteAddr = "192.0.2.1:1234"
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("status: got %d, want %d", rr.Code, http.StatusForbidden)
+	}
+}

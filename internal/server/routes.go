@@ -133,7 +133,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// Remote-access surface for multi-remote support: this instance's
 	// own instance ID + gRPC-listen status, and an explicit token reveal.
 	mux.HandleFunc("/api/settings/remote-access", s.get(s.handleRemoteAccess))
-	mux.HandleFunc("/api/settings/remote-access/reveal-token", s.post(s.handleRevealRemoteToken))
+	mux.HandleFunc("/api/settings/remote-access/reveal-token", s.post(s.requireLocalhost(s.handleRevealRemoteToken)))
 	// Hub-side remote management (multi-remote support). CRUD + reconnect.
 	mux.HandleFunc("/api/remotes", s.requireAuth(s.handleRemotes))
 	mux.HandleFunc("/api/remotes/", s.requireAuth(s.handleRemoteByID))
