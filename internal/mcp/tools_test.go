@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -791,8 +792,8 @@ func TestNewSession_AsyncReturnsImmediatelyAndDetachesResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if child.ResultDelivery != "detached" {
-		t.Fatalf("result delivery = %q, want detached", child.ResultDelivery)
+	if child.ResultDelivery != "async_pending" {
+		t.Fatalf("result delivery = %q, want async_pending", child.ResultDelivery)
 	}
 	if claimedWaiter || results.Deliver("child-async", internalmcp.ChildResult{Status: "completed"}) {
 		t.Fatal("async child registered a synchronous result waiter")
@@ -914,7 +915,7 @@ func TestAwaitSessionResult_WaitsForDetachedAsyncChild(t *testing.T) {
 	stateDB := openTestStateDB(t)
 	if err := stateDB.InsertChildSession(state.ChildSession{
 		ID: "child-async-wait", Platform: "opencode", ParentSessionID: "parent-async-wait",
-		Intent: "run checks", Status: "running", CreatedAt: 1000, ResultDelivery: "detached",
+		Intent: "run checks", Status: "running", CreatedAt: 1000, ResultDelivery: "async_pending",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -935,6 +936,24 @@ func TestAwaitSessionResult_WaitsForDetachedAsyncChild(t *testing.T) {
 	<-delivered
 	if result.IsError || !strings.Contains(resultText(result), "Checks passed.") {
 		t.Fatalf("unexpected async wait result: %s", resultText(result))
+	}
+}
+
+func TestAwaitSessionResult_RejectsResultClaimedByAsyncDelivery(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	if err := stateDB.InsertChildSession(state.ChildSession{
+		ID: "child-auto-owned", Platform: "opencode", ParentSessionID: "parent-auto-owned",
+		Intent: "run checks", Status: "completed", CreatedAt: 1000, ResultDelivery: "async_queueing",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	srv := buildTestMCPServerWithResults(t, stateDB, &fakePlatformForTools{}, nil, internalmcp.NewChildResultBroker())
+	result := callTool(t, srv, "await_session_result", map[string]interface{}{
+		"session_id":       "parent-auto-owned",
+		"child_session_id": "child-auto-owned",
+	})
+	if !result.IsError || !strings.Contains(resultText(result), "asynchronous delivery") {
+		t.Fatalf("unexpected claimed result response: %s", resultText(result))
 	}
 }
 
@@ -974,6 +993,10 @@ func TestAwaitSessionResult_RejectsInvalidRecoveryTargets(t *testing.T) {
 		{
 			name: "still connected", parentID: "parent", childID: "child", wantError: "still connected",
 			child: &state.ChildSession{ID: "child", ParentSessionID: "parent", Status: "running", ResultDelivery: "waiting"},
+		},
+		{
+			name: "legacy detached", parentID: "parent", childID: "child", wantError: "predates asynchronous",
+			child: &state.ChildSession{ID: "child", ParentSessionID: "parent", Status: "running", ResultDelivery: "detached"},
 		},
 	}
 
@@ -1394,8 +1417,67 @@ func TestSendMessageToChild_ReopensCompletedChild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetChildSession: %v", err)
 	}
-	if child.Status != "running" || child.CompletedAt != 0 || child.Summary != "" || child.ResultDelivery != "detached" {
+	if child.Status != "running" || child.CompletedAt != 0 || child.Summary != "" || child.ResultDelivery != "async_pending" {
 		t.Fatalf("child after follow-up = %+v, want running with cleared completion", child)
+	}
+}
+
+func TestSendMessageToChild_RestoresCompletionWhenSendFails(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	if err := stateDB.InsertChildSession(state.ChildSession{
+		ID: "child-send-fails", Platform: "opencode", ParentSessionID: "parent-send-fails",
+		Intent: "inspect logs", Status: "running", CreatedAt: 1000, ResultDelivery: "delivered",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := stateDB.UpdateChildSession("child-send-fails", "completed", "first result", 2000); err != nil {
+		t.Fatal(err)
+	}
+	platform := &fakePlatformForTools{sendMessageErr: errors.New("offline")}
+	srv := buildTestMCPServer(t, stateDB, platform)
+	result := callTool(t, srv, "send_message_to_child", map[string]interface{}{
+		"session_id": "parent-send-fails", "child_session_id": "child-send-fails", "message": "retry",
+	})
+	if !result.IsError {
+		t.Fatal("failed send unexpectedly succeeded")
+	}
+	child, err := stateDB.GetChildSession("child-send-fails")
+	if err != nil || child.Status != "completed" || child.CompletedAt != 2000 || child.Summary != "first result" || child.ResultDelivery != "delivered" {
+		t.Fatalf("restored child = %+v, %v", child, err)
+	}
+}
+
+func TestSendMessageToChild_ConcurrentFollowupHasSingleWinner(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	if err := stateDB.InsertChildSession(state.ChildSession{
+		ID: "child-concurrent", Platform: "opencode", ParentSessionID: "parent-concurrent",
+		Intent: "inspect logs", Status: "completed", CreatedAt: 1000, ResultDelivery: "delivered",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	platform := &fakePlatformForTools{sendMessageFn: func(_ platforms.SendMessageRequest) {
+		close(entered)
+		<-release
+	}}
+	srv := buildTestMCPServer(t, stateDB, platform)
+	first := make(chan *mcplib.CallToolResult, 1)
+	go func() {
+		first <- callTool(t, srv, "send_message_to_child", map[string]interface{}{
+			"session_id": "parent-concurrent", "child_session_id": "child-concurrent", "message": "first",
+		})
+	}()
+	<-entered
+	second := callTool(t, srv, "send_message_to_child", map[string]interface{}{
+		"session_id": "parent-concurrent", "child_session_id": "child-concurrent", "message": "second",
+	})
+	close(release)
+	if !second.IsError || (<-first).IsError {
+		t.Fatalf("concurrent results: first success, second=%s", resultText(second))
+	}
+	if len(platform.sentMessages) != 1 {
+		t.Fatalf("sent %d concurrent follow-ups", len(platform.sentMessages))
 	}
 }
 
@@ -1428,5 +1510,58 @@ func TestSendMessageToChild_WaitsForNextResultWhenRequested(t *testing.T) {
 	child, err := stateDB.GetChildSession("child-follow-up-wait")
 	if err != nil || child.ResultDelivery != "delivered" {
 		t.Fatalf("child delivery state = %+v, %v", child, err)
+	}
+}
+
+func TestSendMessageToChild_WaitSurvivesConcurrentCancellation(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	if err := stateDB.InsertChildSession(state.ChildSession{
+		ID: "child-follow-up-cancel", Platform: "opencode", ParentSessionID: "parent-follow-up-cancel",
+		Intent: "inspect logs", Status: "completed", CreatedAt: 1000, ResultDelivery: "delivered",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	results := internalmcp.NewChildResultBroker()
+	platform := &fakePlatformForTools{sendMessageFn: func(_ platforms.SendMessageRequest) {
+		claimed, err := stateDB.CompleteChildFollowup("child-follow-up-cancel", state.ChildResultWaitSending, "waiting")
+		if err != nil || !claimed {
+			t.Errorf("cancellation recovery = %v, %v", claimed, err)
+		}
+		results.Deliver("child-follow-up-cancel", internalmcp.ChildResult{Status: "cancelled"})
+	}}
+	srv := buildTestMCPServerWithResults(t, stateDB, platform, nil, results)
+	result := callTool(t, srv, "send_message_to_child", map[string]interface{}{
+		"session_id": "parent-follow-up-cancel", "child_session_id": "child-follow-up-cancel",
+		"message": "Check again.", "wait": true,
+	})
+	if result.IsError || !strings.Contains(resultText(result), `"status": "cancelled"`) {
+		t.Fatalf("cancelled follow-up = %s", resultText(result))
+	}
+}
+
+func TestSendMessageToChild_RejectsPendingPreviousResult(t *testing.T) {
+	for _, delivery := range []string{"waiting", "disconnected", "async_pending", "async_queueing"} {
+		t.Run(delivery, func(t *testing.T) {
+			stateDB := openTestStateDB(t)
+			if err := stateDB.InsertChildSession(state.ChildSession{
+				ID: "child-pending-follow-up", Platform: "opencode", ParentSessionID: "parent-pending-follow-up",
+				Intent: "inspect logs", Status: "completed", CreatedAt: 1000, ResultDelivery: delivery,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			platform := &fakePlatformForTools{}
+			srv := buildTestMCPServerWithResults(t, stateDB, platform, nil, internalmcp.NewChildResultBroker())
+			result := callTool(t, srv, "send_message_to_child", map[string]interface{}{
+				"session_id":       "parent-pending-follow-up",
+				"child_session_id": "child-pending-follow-up",
+				"message":          "One more thing.",
+			})
+			if !result.IsError || !strings.Contains(resultText(result), "previous result") {
+				t.Fatalf("unexpected result: %s", resultText(result))
+			}
+			if len(platform.sentMessages) != 0 {
+				t.Fatalf("sent %d messages while previous result was %s", len(platform.sentMessages), delivery)
+			}
+		})
 	}
 }

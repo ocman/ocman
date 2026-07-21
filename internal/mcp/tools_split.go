@@ -45,11 +45,11 @@ type splitTools struct {
 type childResultStore interface {
 	GetChildSession(id string) (*state.ChildSession, error)
 	ListDisconnectedChildSessions(parentSessionID string) ([]state.ChildSession, error)
-	SetChildResultDelivery(id, delivery string) error
+	CompareAndSetChildResultDelivery(id, from, to string) (bool, error)
 }
 
 type childResultDeliveryStore interface {
-	SetChildResultDelivery(id, delivery string) error
+	CompareAndSetChildResultDelivery(id, from, to string) (bool, error)
 }
 
 // inheritedRules builds the parent's always-allow ruleset for a child
@@ -260,19 +260,25 @@ func awaitChildResult(ctx context.Context, req mcplib.CallToolRequest, childID s
 	}
 	stopProgress := startChildResultProgress(ctx, req, childID)
 	defer stopProgress()
-	childResult, err := results.Wait(ctx, childID)
+	defer results.Unregister(childID)
+	childResult, err := results.WaitOwned(ctx, childID)
 	if err != nil {
+		claimed := true
 		if store != nil {
-			_ = store.SetChildResultDelivery(childID, "disconnected")
+			claimed, _ = store.CompareAndSetChildResultDelivery(childID, "waiting", "disconnected")
 		}
-		if disconnected != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+		if claimed && disconnected != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
 			disconnected(childID)
 		}
 		return err
 	}
 	if store != nil {
-		if err := store.SetChildResultDelivery(childID, "delivered"); err != nil {
+		claimed, err := store.CompareAndSetChildResultDelivery(childID, "waiting", "delivered")
+		if err != nil {
 			return err
+		}
+		if !claimed {
+			return fmt.Errorf("child session %s result waiter lost delivery ownership", childID)
 		}
 	}
 	result["status"] = childResult.Status
@@ -368,23 +374,52 @@ func (t *splitTools) handleAwaitSessionResult(ctx context.Context, req mcplib.Ca
 	if child.ResultDelivery == "waiting" {
 		return mcplib.NewToolResultError("child session result is still connected to its original call"), nil
 	}
+	if child.ResultDelivery == "detached" {
+		return mcplib.NewToolResultError("child session predates asynchronous result delivery"), nil
+	}
+	if child.ResultDelivery == state.ChildResultAsyncQueueing || child.ResultDelivery == "delivered" {
+		return mcplib.NewToolResultError("child session result belongs to asynchronous delivery"), nil
+	}
 	if isTerminalStatus(child.Status) {
+		if child.ResultDelivery == state.ChildResultAsyncPending {
+			claimed, claimErr := t.store.CompareAndSetChildResultDelivery(child.ID, state.ChildResultAsyncPending, "delivered")
+			if claimErr != nil {
+				return mcplib.NewToolResultError(fmt.Sprintf("claiming child result: %v", claimErr)), nil
+			}
+			if !claimed {
+				return mcplib.NewToolResultError("child session result was claimed by asynchronous delivery"), nil
+			}
+		}
 		if child.Summary != "" {
 			result["summary"] = child.Summary
 		}
-		if err := t.store.SetChildResultDelivery(child.ID, "delivered"); err != nil {
+		if child.ResultDelivery == "disconnected" {
+			var claimed bool
+			claimed, err = t.store.CompareAndSetChildResultDelivery(child.ID, "disconnected", "delivered")
+			if err == nil && !claimed {
+				return mcplib.NewToolResultError("child session result was claimed by another delivery"), nil
+			}
+		}
+		if err != nil {
 			return mcplib.NewToolResultError(fmt.Sprintf("marking child result delivered: %v", err)), nil
 		}
 		return toolResultJSON(result), nil
 	}
-	if child.ResultDelivery != "disconnected" && child.ResultDelivery != "detached" {
+	if child.ResultDelivery != "disconnected" && child.ResultDelivery != state.ChildResultAsyncPending {
 		return mcplib.NewToolResultError(fmt.Sprintf("child session result is %s, not disconnected", child.ResultDelivery)), nil
 	}
 
-	t.results.Register(child.ID)
-	if err := t.store.SetChildResultDelivery(child.ID, "waiting"); err != nil {
+	if !t.results.Register(child.ID) {
+		return mcplib.NewToolResultError("child session already has a result waiter"), nil
+	}
+	claimed, err := t.store.CompareAndSetChildResultDelivery(child.ID, child.ResultDelivery, "waiting")
+	if err != nil {
 		t.results.Unregister(child.ID)
 		return mcplib.NewToolResultError(fmt.Sprintf("reconnecting child result: %v", err)), nil
+	}
+	if !claimed {
+		t.results.Unregister(child.ID)
+		return mcplib.NewToolResultError("child session result was claimed by another delivery"), nil
 	}
 	latest, err := t.store.GetChildSession(child.ID)
 	if err != nil {
@@ -392,12 +427,18 @@ func (t *splitTools) handleAwaitSessionResult(ctx context.Context, req mcplib.Ca
 		return mcplib.NewToolResultError(fmt.Sprintf("refreshing child session: %v", err)), nil
 	}
 	if isTerminalStatus(latest.Status) {
+		claimed, claimErr := t.store.CompareAndSetChildResultDelivery(child.ID, "waiting", "delivered")
 		t.results.Unregister(child.ID)
+		if claimErr != nil {
+			return mcplib.NewToolResultError(fmt.Sprintf("marking child result delivered: %v", claimErr)), nil
+		}
+		if !claimed {
+			return mcplib.NewToolResultError("child session result was claimed by another delivery"), nil
+		}
 		result["status"] = latest.Status
 		if latest.Summary != "" {
 			result["summary"] = latest.Summary
 		}
-		_ = t.store.SetChildResultDelivery(child.ID, "delivered")
 		return toolResultJSON(result), nil
 	}
 	if err := awaitChildResult(ctx, req, child.ID, result, t.results, t.store, t.disconnected); err != nil {

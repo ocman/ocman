@@ -26,6 +26,10 @@ func (m *memStore) EnqueueMessage(msg state.QueuedMessage) error {
 	return nil
 }
 
+func (m *memStore) EnqueueClaimedChildResult(_ string, msg state.QueuedMessage) (bool, error) {
+	return true, m.EnqueueMessage(msg)
+}
+
 func (m *memStore) CountQueuedMessages(platform, sessionID string) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -121,23 +125,18 @@ func (m *memStore) MoveQueuedMessage(id string, direction int) (bool, error) {
 	return true, nil
 }
 
-func TestEnqueueOnceIsIdempotentAndHeld(t *testing.T) {
+func TestEnqueueChildResultIsHeld(t *testing.T) {
 	store := &memStore{}
 	sender := &recSender{}
 	svc := New(store, sender, statusStub{running: false, ok: true}, nil)
 	req := platforms.SendMessageRequest{SessionID: "parent", Message: "child result"}
 
-	if err := svc.EnqueueOnce(context.Background(), "child-result:1", "opencode", req); err != nil {
-		t.Fatal(err)
-	}
-	if err := svc.EnqueueOnce(context.Background(), "child-result:1", "opencode", req); err != nil {
+	queued, err := svc.EnqueueChildResult(context.Background(), "child-1", "child-result:1", "opencode", req)
+	if err != nil || !queued {
 		t.Fatal(err)
 	}
 	if len(store.msgs) != 1 || len(sender.sent) != 0 {
 		t.Fatalf("queued=%d sent=%d, want one held message", len(store.msgs), len(sender.sent))
-	}
-	if err := svc.EnqueueOnce(context.Background(), "child-result:1", "opencode", platforms.SendMessageRequest{SessionID: "other", Message: "x"}); err == nil {
-		t.Fatal("reusing an id for another session should fail")
 	}
 }
 

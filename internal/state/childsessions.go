@@ -5,6 +5,13 @@ import (
 	"fmt"
 )
 
+const (
+	ChildResultAsyncPending  = "async_pending"
+	ChildResultAsyncQueueing = "async_queueing"
+	ChildResultAsyncSending  = "async_sending"
+	ChildResultWaitSending   = "wait_sending"
+)
+
 // ChildSession holds the data for one MCP-spawned child session.
 type ChildSession struct {
 	ID              string `json:"id"`
@@ -15,11 +22,11 @@ type ChildSession struct {
 	WorktreePath    string `json:"worktreePath,omitempty"` // empty for split_to_session
 	Branch          string `json:"branch,omitempty"`       // empty for split_to_session
 	TmuxTarget      string `json:"tmuxTarget,omitempty"`   // tmux session or session:window
-	Status          string `json:"status"`                 // starting, running, completed, error, cancelled
+	Status          string `json:"status"`                 // starting, sending, running, completed, error, cancelled
 	CreatedAt       int64  `json:"createdAt"`
 	CompletedAt     int64  `json:"completedAt"`       // 0 until terminal state
 	Summary         string `json:"summary,omitempty"` // populated on completion
-	ResultDelivery  string `json:"resultDelivery"`    // detached, waiting, disconnected, delivered
+	ResultDelivery  string `json:"resultDelivery"`    // detached (legacy), async_pending, async_queueing, waiting, disconnected, delivered
 }
 
 // InsertChildSession persists a new child session record. The initial
@@ -64,14 +71,43 @@ func (d *DB) UpdateChildSession(id, status, summary string, completedAt int64) e
 
 // ReopenChildSession marks a completed child as awaiting its next turn after
 // its parent sends a follow-up.
-func (d *DB) ReopenChildSession(id, delivery string) error {
+func (d *DB) ClaimChildFollowup(id, previousDelivery, sendingDelivery string) (bool, error) {
+	result, err := d.db.Exec(`
+		UPDATE child_sessions
+		SET status = 'sending', result_delivery = ?
+		WHERE id = ? AND result_delivery = ?
+	`, sendingDelivery, id, previousDelivery)
+	if err != nil {
+		return false, fmt.Errorf("claiming child follow-up: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	return changed == 1, err
+}
+
+func (d *DB) CompleteChildFollowup(id, sendingDelivery, delivery string) (bool, error) {
+	result, err := d.db.Exec(`
+		UPDATE child_sessions
+		SET status = CASE WHEN status = 'sending' THEN 'running' ELSE status END,
+		    summary = CASE WHEN status = 'sending' THEN NULL ELSE summary END,
+		    completed_at = CASE WHEN status = 'sending' THEN NULL ELSE completed_at END,
+		    result_delivery = ?
+		WHERE id = ? AND result_delivery = ?
+	`, delivery, id, sendingDelivery)
+	if err != nil {
+		return false, fmt.Errorf("completing child follow-up: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	return changed == 1, err
+}
+
+func (d *DB) RestoreChildFollowup(id string, cs ChildSession, sendingDelivery string) error {
 	_, err := d.db.Exec(`
 		UPDATE child_sessions
-		SET status = 'running', summary = NULL, completed_at = NULL, result_delivery = ?
-		WHERE id = ?
-	`, delivery, id)
+		SET status = ?, result_delivery = ?
+		WHERE id = ? AND status = 'sending' AND result_delivery = ?
+	`, cs.Status, cs.ResultDelivery, id, sendingDelivery)
 	if err != nil {
-		return fmt.Errorf("reopening child session: %w", err)
+		return fmt.Errorf("restoring child follow-up: %w", err)
 	}
 	return nil
 }
@@ -123,16 +159,16 @@ func (d *DB) ListChildSessionsByParent(parentSessionID string) ([]ChildSession, 
 	return scanChildSessions(rows)
 }
 
-// ListPendingChildSessions returns active children plus detached terminal
-// results that still need durable parent delivery.
+// ListPendingChildSessions returns active children plus new async terminal
+// results. Legacy "detached" rows are intentionally excluded.
 func (d *DB) ListPendingChildSessions() ([]ChildSession, error) {
 	rows, err := d.db.Query(`
 		SELECT id, platform, parent_session_id, intent, composed_prompt,
 		       worktree_path, branch, tmux_target, status,
 		       created_at, completed_at, summary, result_delivery
 		FROM child_sessions
-		WHERE status IN ('starting', 'running')
-		   OR (status IN ('completed', 'error', 'cancelled') AND result_delivery = 'detached')
+		WHERE status IN ('starting', 'running', 'sending')
+		   OR (status IN ('completed', 'error', 'cancelled') AND result_delivery IN ('async_sending', 'wait_sending', 'async_pending', 'async_queueing', 'waiting'))
 		ORDER BY created_at ASC
 	`)
 	if err != nil {
@@ -164,6 +200,15 @@ func (d *DB) SetChildResultDelivery(id, delivery string) error {
 		return fmt.Errorf("updating child result delivery: %w", err)
 	}
 	return nil
+}
+
+func (d *DB) CompareAndSetChildResultDelivery(id, from, to string) (bool, error) {
+	result, err := d.db.Exec(`UPDATE child_sessions SET result_delivery = ? WHERE id = ? AND result_delivery = ?`, to, id, from)
+	if err != nil {
+		return false, fmt.Errorf("claiming child result delivery: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	return changed == 1, err
 }
 
 func (d *DB) ListDisconnectedChildSessions(parentSessionID string) ([]ChildSession, error) {

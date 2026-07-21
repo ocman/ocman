@@ -37,9 +37,24 @@ func TestRunChildResultProgress_EmitsPeriodically(t *testing.T) {
 	}
 	close(done)
 }
-func (f *fakeChildResultStore) SetChildResultDelivery(_ string, delivery string) error {
-	f.delivery = delivery
-	return nil
+func (f *fakeChildResultStore) CompareAndSetChildResultDelivery(_ string, from, to string) (bool, error) {
+	if f.delivery != from {
+		return false, nil
+	}
+	f.delivery = to
+	return true, nil
+}
+
+type blockingChildResultStore struct {
+	fakeChildResultStore
+	transitioning chan struct{}
+	resume        chan struct{}
+}
+
+func (f *blockingChildResultStore) CompareAndSetChildResultDelivery(id, from, to string) (bool, error) {
+	close(f.transitioning)
+	<-f.resume
+	return f.fakeChildResultStore.CompareAndSetChildResultDelivery(id, from, to)
 }
 
 func TestChildResultBroker_CancelDetachesWaiter(t *testing.T) {
@@ -65,10 +80,38 @@ func TestChildResultBroker_Unregister(t *testing.T) {
 	}
 }
 
+func TestChildResultBroker_ReportsRegistration(t *testing.T) {
+	broker := NewChildResultBroker()
+	if broker.Registered("child-1") {
+		t.Fatal("unregistered child reported active")
+	}
+	broker.Register("child-1")
+	if !broker.Registered("child-1") {
+		t.Fatal("registered child reported inactive")
+	}
+}
+
+func TestChildResultBroker_RegisterDoesNotReplaceWaiter(t *testing.T) {
+	broker := NewChildResultBroker()
+	if !broker.Register("child-1") {
+		t.Fatal("first waiter was rejected")
+	}
+	if broker.Register("child-1") {
+		t.Fatal("second waiter replaced the first")
+	}
+	if !broker.Deliver("child-1", ChildResult{Status: "completed"}) {
+		t.Fatal("original waiter was stranded")
+	}
+	result, err := broker.Wait(context.Background(), "child-1")
+	if err != nil || result.Status != "completed" {
+		t.Fatalf("original waiter result = %+v, %v", result, err)
+	}
+}
+
 func TestAwaitChildResult_MarksCancelledWaitDisconnected(t *testing.T) {
 	broker := NewChildResultBroker()
 	broker.Register("child-1")
-	store := &fakeChildResultStore{}
+	store := &fakeChildResultStore{delivery: "waiting"}
 	notified := ""
 	tools := &splitTools{
 		results: broker,
@@ -88,5 +131,35 @@ func TestAwaitChildResult_MarksCancelledWaitDisconnected(t *testing.T) {
 	}
 	if notified != "child-1" {
 		t.Fatalf("disconnect notification child = %q, want child-1", notified)
+	}
+}
+
+func TestAwaitChildResultKeepsWaiterRegisteredUntilStateTransition(t *testing.T) {
+	broker := NewChildResultBroker()
+	if !broker.Register("child-1") {
+		t.Fatal("registering waiter")
+	}
+	store := &blockingChildResultStore{
+		fakeChildResultStore: fakeChildResultStore{delivery: "waiting"},
+		transitioning:        make(chan struct{}),
+		resume:               make(chan struct{}),
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- awaitChildResult(context.Background(), mcplib.CallToolRequest{}, "child-1", map[string]interface{}{}, broker, store, nil)
+	}()
+	if !broker.Deliver("child-1", ChildResult{Status: "completed"}) {
+		t.Fatal("delivering result")
+	}
+	<-store.transitioning
+	if broker.Register("child-1") {
+		t.Fatal("next-turn waiter entered before delivery state committed")
+	}
+	close(store.resume)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if !broker.Register("child-1") {
+		t.Fatal("waiter was not released after delivery state committed")
 	}
 }

@@ -358,6 +358,9 @@ Implementation notes:
   `wait=false` and queues its final response to the parent. `send_message_to_child`
   returns immediately by default and supports `wait=true` for inline follow-up
   results. Both paths reuse the persisted delivery state and child watcher.
+  New async turns use persisted `*_sending`/`async_pending`/`async_queueing` states; legacy migration-v34
+  `detached` rows are never replayed. Queue insertion and the final `delivered`
+  transition are atomic, and feedback remains held for a real idle edge/sweep.
 - `new_session` seeds the child with the parent's accumulated
   "Allow always" permissions when `worktree.inherit_permissions` is on
   (#101), and reports `permissionsInherited` / `permissionsInheritedCount`

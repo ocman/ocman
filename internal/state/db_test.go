@@ -887,8 +887,11 @@ func TestListPendingChildSessions(t *testing.T) {
 	cs2.Status = "running"
 	cs3 := makeChildSession("child-z", "parent-1")
 	cs3.Status = "completed"
+	cs4 := makeChildSession("child-pending", "parent-1")
+	cs4.Status = "completed"
+	cs4.ResultDelivery = "async_pending"
 
-	for _, cs := range []ChildSession{cs1, cs2, cs3} {
+	for _, cs := range []ChildSession{cs1, cs2, cs3, cs4} {
 		if err := db.InsertChildSession(cs); err != nil {
 			t.Fatalf("InsertChildSession %s: %v", cs.ID, err)
 		}
@@ -899,11 +902,37 @@ func TestListPendingChildSessions(t *testing.T) {
 		t.Fatalf("ListPendingChildSessions: %v", err)
 	}
 	if len(active) != 3 {
-		t.Fatalf("expected 3 pending sessions, got %d", len(active))
+		t.Fatalf("expected active sessions and new async result only, got %d", len(active))
 	}
 	ids := map[string]bool{active[0].ID: true, active[1].ID: true, active[2].ID: true}
-	if !ids["child-x"] || !ids["child-y"] || !ids["child-z"] {
-		t.Errorf("expected active children and detached terminal result, got %v", ids)
+	if !ids["child-x"] || !ids["child-y"] || !ids["child-pending"] || ids["child-z"] {
+		t.Errorf("legacy detached terminal result should not be pending: %v", ids)
+	}
+}
+
+func TestCompareAndSetChildResultDeliveryHasSingleWinner(t *testing.T) {
+	for _, first := range []string{"waiting", "async_queueing"} {
+		t.Run(first+" wins", func(t *testing.T) {
+			db := openTestStateDB(t)
+			defer db.Close()
+			cs := makeChildSession("child-claim", "parent-1")
+			cs.ResultDelivery = "async_pending"
+			if err := db.InsertChildSession(cs); err != nil {
+				t.Fatal(err)
+			}
+			won, err := db.CompareAndSetChildResultDelivery("child-claim", "async_pending", first)
+			if err != nil || !won {
+				t.Fatalf("first claim = %v, %v", won, err)
+			}
+			second := "waiting"
+			if first == second {
+				second = "async_queueing"
+			}
+			won, err = db.CompareAndSetChildResultDelivery("child-claim", "async_pending", second)
+			if err != nil || won {
+				t.Fatalf("second claim = %v, %v; want lost interleaving", won, err)
+			}
+		})
 	}
 }
 

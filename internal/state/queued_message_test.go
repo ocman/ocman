@@ -183,3 +183,60 @@ func TestDeleteQueuedMessage_ReportsMiss(t *testing.T) {
 		t.Fatal("deleting a non-existent id reported a hit")
 	}
 }
+
+func TestEnqueueClaimedChildResultIsAtomicAndNotReplayable(t *testing.T) {
+	db := openQueueTestDB(t)
+	if err := db.InsertChildSession(ChildSession{
+		ID: "child-1", Platform: "opencode", ParentSessionID: "parent-1",
+		Intent: "task", Status: "completed", CreatedAt: 1, ResultDelivery: "async_queueing",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	msg := QueuedMessage{ID: "child-result:1", Platform: "opencode", SessionID: "parent-1", Text: "done", CreatedAt: 2}
+
+	queued, err := db.EnqueueClaimedChildResult("child-1", msg)
+	if err != nil || !queued {
+		t.Fatalf("first enqueue = %v, %v", queued, err)
+	}
+	child, _ := db.GetChildSession("child-1")
+	if child.ResultDelivery != "delivered" {
+		t.Fatalf("delivery = %q, want delivered", child.ResultDelivery)
+	}
+	if deleted, err := db.DeleteQueuedMessage(msg.ID); err != nil || !deleted {
+		t.Fatalf("draining queued result = %v, %v", deleted, err)
+	}
+	queued, err = db.EnqueueClaimedChildResult("child-1", msg)
+	if err != nil || queued {
+		t.Fatalf("replay after drain = %v, %v; want no-op", queued, err)
+	}
+	if messages, _ := db.ListQueuedMessages("opencode", "parent-1"); len(messages) != 0 {
+		t.Fatalf("replayed %d child results", len(messages))
+	}
+}
+
+func TestEnqueueClaimedChildResultRollsBackFailedQueueInsert(t *testing.T) {
+	db := openQueueTestDB(t)
+	if err := db.InsertChildSession(ChildSession{
+		ID: "child-1", Platform: "opencode", ParentSessionID: "parent-1",
+		Intent: "task", Status: "completed", CreatedAt: 1, ResultDelivery: "async_queueing",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	msg := QueuedMessage{ID: "collision", Platform: "opencode", SessionID: "parent-1", Text: "done", CreatedAt: 2}
+	if err := db.EnqueueMessage(QueuedMessage{ID: msg.ID, Platform: "opencode", SessionID: "other", Text: "existing", CreatedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if queued, err := db.EnqueueClaimedChildResult("child-1", msg); err == nil || queued {
+		t.Fatalf("colliding enqueue = %v, %v; want rollback", queued, err)
+	}
+	child, _ := db.GetChildSession("child-1")
+	if child.ResultDelivery != "async_queueing" {
+		t.Fatalf("delivery after rollback = %q", child.ResultDelivery)
+	}
+	if _, err := db.DeleteQueuedMessage(msg.ID); err != nil {
+		t.Fatal(err)
+	}
+	if queued, err := db.EnqueueClaimedChildResult("child-1", msg); err != nil || !queued {
+		t.Fatalf("recovered enqueue = %v, %v", queued, err)
+	}
+}

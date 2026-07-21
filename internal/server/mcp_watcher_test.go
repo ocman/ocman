@@ -46,6 +46,7 @@ func insertWatcherChildSession(t *testing.T, sdb *state.DB, id, parentID, status
 		ComposedPrompt:  "## Task\ntest\n",
 		Status:          status,
 		CreatedAt:       time.Now().UnixMilli(),
+		ResultDelivery:  state.ChildResultAsyncPending,
 	}
 	if err := sdb.InsertChildSession(cs); err != nil {
 		t.Fatalf("InsertChildSession %s: %v", id, err)
@@ -175,15 +176,16 @@ func TestCheckAndInjectChildResults_UpdatesStatus(t *testing.T) {
 		t.Error("expected CompletedAt to be set")
 	}
 
-	// Verify the result was injected into the parent session.
-	if len(sentMessages) != 1 {
-		t.Fatalf("expected 1 injected message, got %d", len(sentMessages))
+	// Async feedback is held until a real idle edge or sweep.
+	if len(sentMessages) != 0 {
+		t.Fatalf("expected no immediate messages, got %d", len(sentMessages))
 	}
-	if sentMessages[0].SessionID != "parent-1" {
-		t.Errorf("message sent to wrong session: %q", sentMessages[0].SessionID)
+	queued, err := sdb.ListQueuedMessages("opencode", "parent-1")
+	if err != nil || len(queued) != 1 {
+		t.Fatalf("queued messages = %+v, %v", queued, err)
 	}
-	if !strings.Contains(sentMessages[0].Message, "Fixed the actual lint errors.") {
-		t.Errorf("message missing child final text: %q", sentMessages[0].Message)
+	if !strings.Contains(queued[0].Text, "Fixed the actual lint errors.") {
+		t.Errorf("queued message missing child final text: %q", queued[0].Text)
 	}
 }
 
@@ -217,6 +219,9 @@ func TestCheckAndInjectChildResults_ReturnsToWaitingMCPCall(t *testing.T) {
 	reg.Register(fp)
 	s := New(nil, sdb, "127.0.0.1:0", reg, nil)
 	s.childResults.Register("child-waiting")
+	if err := sdb.SetChildResultDelivery("child-waiting", "waiting"); err != nil {
+		t.Fatal(err)
+	}
 
 	s.checkAndInjectChildResults(context.Background())
 
@@ -275,15 +280,90 @@ func TestCheckAndInjectChildResults_PreservesDisconnectedResultAfterRestart(t *t
 	}
 }
 
-func TestCheckAndInjectChildResults_DeliversDetachedTerminalResultOnceAfterRestart(t *testing.T) {
+func TestCheckAndInjectChildResults_RecoversTerminalWaitingResultAfterRestart(t *testing.T) {
 	sdb := openWatcherTestStateDB(t)
-	insertWatcherChildSession(t, sdb, "child-detached", "parent-1", "running")
-	if err := sdb.UpdateChildSession("child-detached", "completed", "Finished async work.", 2000); err != nil {
+	insertWatcherChildSession(t, sdb, "child-terminal-wait", "parent-1", "completed")
+	if err := sdb.SetChildResultDelivery("child-terminal-wait", "waiting"); err != nil {
+		t.Fatal(err)
+	}
+	s := New(nil, sdb, "127.0.0.1:0", platforms.NewRegistry(), nil)
+	s.checkAndInjectChildResults(context.Background())
+	child, err := sdb.GetChildSession("child-terminal-wait")
+	if err != nil || child.ResultDelivery != "disconnected" {
+		t.Fatalf("recovered child = %+v, %v", child, err)
+	}
+}
+
+func TestCheckAndInjectChildResults_RecoversInterruptedFollowupSend(t *testing.T) {
+	for _, tt := range []struct{ sending, delivery string }{
+		{state.ChildResultAsyncSending, state.ChildResultAsyncPending},
+		{state.ChildResultWaitSending, "waiting"},
+	} {
+		t.Run(tt.sending, func(t *testing.T) {
+			sdb := openWatcherTestStateDB(t)
+			insertWatcherChildSession(t, sdb, "child-sending", "parent-1", "sending")
+			if err := sdb.SetChildResultDelivery("child-sending", tt.sending); err != nil {
+				t.Fatal(err)
+			}
+			s := New(nil, sdb, "127.0.0.1:0", platforms.NewRegistry(), nil)
+			s.checkAndInjectChildResults(context.Background())
+			child, err := sdb.GetChildSession("child-sending")
+			if err != nil || child.Status != "running" || child.ResultDelivery != tt.delivery {
+				t.Fatalf("recovered child = %+v, %v", child, err)
+			}
+		})
+	}
+}
+
+func TestCheckAndInjectChildResults_DoesNotRecoverLiveFollowupSend(t *testing.T) {
+	sdb := openWatcherTestStateDB(t)
+	insertWatcherChildSession(t, sdb, "child-live-send", "parent-1", "sending")
+	if err := sdb.SetChildResultDelivery("child-live-send", state.ChildResultAsyncSending); err != nil {
+		t.Fatal(err)
+	}
+	s := New(nil, sdb, "127.0.0.1:0", platforms.NewRegistry(), nil)
+	s.childResults.Register("child-live-send")
+	s.checkAndInjectChildResults(context.Background())
+	child, err := sdb.GetChildSession("child-live-send")
+	if err != nil || child.Status != "sending" || child.ResultDelivery != state.ChildResultAsyncSending {
+		t.Fatalf("live send changed = %+v, %v", child, err)
+	}
+	s.childResults.Unregister("child-live-send")
+	s.checkAndInjectChildResults(context.Background())
+	child, err = sdb.GetChildSession("child-live-send")
+	if err != nil || child.Status != "running" || child.ResultDelivery != state.ChildResultAsyncPending {
+		t.Fatalf("restart recovery = %+v, %v", child, err)
+	}
+}
+
+func TestCheckAndInjectChildResults_DeliversCancellationDuringFollowupSend(t *testing.T) {
+	sdb := openWatcherTestStateDB(t)
+	insertWatcherChildSession(t, sdb, "child-cancel-send", "parent-1", "cancelled")
+	if err := sdb.SetChildResultDelivery("child-cancel-send", state.ChildResultWaitSending); err != nil {
+		t.Fatal(err)
+	}
+	s := New(nil, sdb, "127.0.0.1:0", platforms.NewRegistry(), nil)
+	s.childResults.Register("child-cancel-send")
+	s.checkAndInjectChildResults(context.Background())
+	s.checkAndInjectChildResults(context.Background())
+	result, err := s.childResults.Wait(context.Background(), "child-cancel-send")
+	if err != nil || result.Status != "cancelled" {
+		t.Fatalf("cancelled result = %+v, %v", result, err)
+	}
+}
+
+func TestCheckAndInjectChildResults_HoldsAsyncResultUntilParentIdle(t *testing.T) {
+	sdb := openWatcherTestStateDB(t)
+	insertWatcherChildSession(t, sdb, "child-async", "parent-1", "running")
+	if err := sdb.SetChildResultDelivery("child-async", "async_pending"); err != nil {
+		t.Fatal(err)
+	}
+	if err := sdb.UpdateChildSession("child-async", "completed", "Finished async work.", 2000); err != nil {
 		t.Fatal(err)
 	}
 
 	var sentMessages []platforms.SendMessageRequest
-	fp := &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "parent-1", Status: "waiting"}}}
+	fp := &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "parent-1", Status: "busy"}}}
 	fp.sendMessageFn = func(req platforms.SendMessageRequest) error {
 		sentMessages = append(sentMessages, req)
 		return nil
@@ -295,12 +375,51 @@ func TestCheckAndInjectChildResults_DeliversDetachedTerminalResultOnceAfterResta
 	s.checkAndInjectChildResults(context.Background())
 	s.checkAndInjectChildResults(context.Background())
 
-	if len(sentMessages) != 1 || !strings.Contains(sentMessages[0].Message, "Finished async work.") {
-		t.Fatalf("delivered messages = %+v, want one async result", sentMessages)
+	if len(sentMessages) != 0 {
+		t.Fatalf("busy parent received %d async results", len(sentMessages))
 	}
-	child, err := sdb.GetChildSession("child-detached")
+	queued, err := sdb.ListQueuedMessages("opencode", "parent-1")
+	if err != nil || len(queued) != 1 || !strings.Contains(queued[0].Text, "Finished async work.") {
+		t.Fatalf("queued messages = %+v, %v", queued, err)
+	}
+	child, err := sdb.GetChildSession("child-async")
 	if err != nil || child.ResultDelivery != "delivered" {
 		t.Fatalf("child delivery state = %+v, %v", child, err)
+	}
+	fp.sessions[0].Status = "waiting"
+	s.queueSvc().Flush(context.Background(), "opencode", "parent-1")
+	if len(sentMessages) != 1 || !strings.Contains(sentMessages[0].Message, "Finished async work.") {
+		t.Fatalf("idle parent deliveries = %+v, want one async result", sentMessages)
+	}
+}
+
+func TestCheckAndInjectChildResults_RecoversQueueingClaimAfterRestart(t *testing.T) {
+	sdb := openWatcherTestStateDB(t)
+	insertWatcherChildSession(t, sdb, "child-recover-queue", "parent-1", "completed")
+	if err := sdb.SetChildResultDelivery("child-recover-queue", "async_pending"); err != nil {
+		t.Fatal(err)
+	}
+	if err := sdb.UpdateChildSession("child-recover-queue", "completed", "Recovered result.", 2000); err != nil {
+		t.Fatal(err)
+	}
+
+	s := New(nil, sdb, "127.0.0.1:0", platforms.NewRegistry(), nil)
+	s.checkAndInjectChildResults(context.Background())
+	child, err := sdb.GetChildSession("child-recover-queue")
+	if err != nil || child.ResultDelivery != "async_queueing" {
+		t.Fatalf("failed delivery claim = %+v, %v", child, err)
+	}
+
+	fp := &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "parent-1", Status: "busy"}}}
+	reg := platforms.NewRegistry()
+	reg.Register(fp)
+	s.registry = reg
+	s.checkAndInjectChildResults(context.Background())
+	s.checkAndInjectChildResults(context.Background())
+	child, err = sdb.GetChildSession("child-recover-queue")
+	queued, queueErr := sdb.ListQueuedMessages("opencode", "parent-1")
+	if err != nil || queueErr != nil || child.ResultDelivery != "delivered" || len(queued) != 1 {
+		t.Fatalf("recovered child=%+v queued=%+v errors=%v/%v", child, queued, err, queueErr)
 	}
 }
 
@@ -497,11 +616,12 @@ func TestCheckAndInjectChildResults_UnknownStatusCloses(t *testing.T) {
 	if cs.CompletedAt == 0 {
 		t.Error("expected CompletedAt to be set")
 	}
-	if len(sentMessages) != 1 {
-		t.Fatalf("expected 1 injected message into parent, got %d", len(sentMessages))
+	if len(sentMessages) != 0 {
+		t.Fatalf("expected held result, got %d immediate messages", len(sentMessages))
 	}
-	if sentMessages[0].SessionID != "parent-1" {
-		t.Errorf("message sent to wrong session: %q", sentMessages[0].SessionID)
+	queued, err := sdb.ListQueuedMessages("opencode", "parent-1")
+	if err != nil || len(queued) != 1 {
+		t.Fatalf("queued messages = %+v, %v", queued, err)
 	}
 }
 
@@ -515,4 +635,44 @@ func TestCheckAndInjectChildResults_AlreadyDeliveredTerminal(t *testing.T) {
 	s := &Server{stateDB: sdb}
 	// Should be a no-op: the terminal result was already delivered.
 	s.checkAndInjectChildResults(context.Background())
+}
+
+func TestCheckAndInjectChildResults_LegacyDetachedTerminalIsIgnored(t *testing.T) {
+	sdb := openWatcherTestStateDB(t)
+	insertWatcherChildSession(t, sdb, "child-legacy", "parent-1", "completed")
+	if err := sdb.SetChildResultDelivery("child-legacy", "detached"); err != nil {
+		t.Fatal(err)
+	}
+	s := New(nil, sdb, "127.0.0.1:0", platforms.NewRegistry(), nil)
+	s.checkAndInjectChildResults(context.Background())
+	queued, err := sdb.ListQueuedMessages("", "parent-1")
+	if err != nil || len(queued) != 0 {
+		t.Fatalf("legacy result queue = %+v, %v", queued, err)
+	}
+}
+
+func TestCheckAndInjectChildResults_ActiveLegacyDetachedStillDelivers(t *testing.T) {
+	sdb := openWatcherTestStateDB(t)
+	insertWatcherChildSession(t, sdb, "child-legacy-active", "parent-1", "running")
+	if err := sdb.SetChildResultDelivery("child-legacy-active", "detached"); err != nil {
+		t.Fatal(err)
+	}
+	fp := &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "child-legacy-active", Status: "done"}, {ID: "parent-1", Status: "busy"}}}
+	fp.sessionDetailFn = func(id string) (*platforms.SessionDetail, error) {
+		for _, session := range fp.sessions {
+			if session.ID == id {
+				sess := session
+				return &platforms.SessionDetail{Session: &sess}, nil
+			}
+		}
+		return nil, platforms.ErrNotFound
+	}
+	reg := platforms.NewRegistry()
+	reg.Register(fp)
+	s := New(nil, sdb, "127.0.0.1:0", reg, nil)
+	s.checkAndInjectChildResults(context.Background())
+	queued, err := sdb.ListQueuedMessages("opencode", "parent-1")
+	if err != nil || len(queued) != 1 {
+		t.Fatalf("legacy active queue = %+v, %v", queued, err)
+	}
 }

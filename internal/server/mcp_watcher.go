@@ -51,7 +51,7 @@ func (s *Server) runChildSessionWatcher(ctx context.Context) {
 //  1. Queries state.db for non-terminal child sessions.
 //  2. For each, infers the current status via the platform adapter.
 //  3. If the status has changed to a terminal state, updates state.db and
-//     returns it to a waiting MCP call, or injects it into a detached parent.
+//     returns it to a waiting MCP call, or queues explicitly asynchronous feedback.
 func (s *Server) checkAndInjectChildResults(ctx context.Context) {
 	if s.stateDB == nil {
 		return
@@ -73,6 +73,17 @@ func (s *Server) checkAndInjectChildResults(ctx context.Context) {
 
 // processChildSession checks one child session and delivers its terminal result.
 func (s *Server) processChildSession(ctx context.Context, cs state.ChildSession) {
+	if cs.ResultDelivery == state.ChildResultAsyncSending || cs.ResultDelivery == state.ChildResultWaitSending {
+		if cs.Status == "sending" && s.childResults != nil && s.childResults.Registered(cs.ID) {
+			return
+		}
+		delivery := state.ChildResultAsyncPending
+		if cs.ResultDelivery == state.ChildResultWaitSending {
+			delivery = "waiting"
+		}
+		_, _ = s.stateDB.CompleteChildFollowup(cs.ID, cs.ResultDelivery, delivery)
+		return
+	}
 	if isTerminalStatus(cs.Status) {
 		s.deliverChildResult(ctx, cs, cs.Status, cs.Summary)
 		return
@@ -110,25 +121,41 @@ func (s *Server) processChildSession(ctx context.Context, cs state.ChildSession)
 }
 
 func (s *Server) deliverChildResult(ctx context.Context, cs state.ChildSession, status, summary string) {
-	if s.childResults != nil && s.childResults.Deliver(cs.ID, internalmcp.ChildResult{Status: status, Summary: summary}) {
-		return
-	}
 	latest, err := s.stateDB.GetChildSession(cs.ID)
 	if err != nil {
 		return
 	}
-	if latest.ResultDelivery == "waiting" || latest.ResultDelivery == "disconnected" {
-		_ = s.stateDB.SetChildResultDelivery(cs.ID, "disconnected")
+	switch latest.ResultDelivery {
+	case "waiting":
+		if s.childResults != nil && s.childResults.Deliver(cs.ID, internalmcp.ChildResult{Status: status, Summary: summary}) {
+			return
+		}
+		_, _ = s.stateDB.CompareAndSetChildResultDelivery(cs.ID, "waiting", "disconnected")
+		return
+	case state.ChildResultAsyncPending:
+		claimed, claimErr := s.stateDB.CompareAndSetChildResultDelivery(cs.ID, state.ChildResultAsyncPending, state.ChildResultAsyncQueueing)
+		if claimErr != nil {
+			log.WithError(claimErr).WithField("childSessionID", cs.ID).Warn("mcp-watcher: claiming async child result")
+			return
+		}
+		if !claimed {
+			return
+		}
+		latest.ResultDelivery = state.ChildResultAsyncQueueing
+	case state.ChildResultAsyncQueueing:
+	case "detached":
+		if isTerminalStatus(cs.Status) {
+			return
+		}
+		claimed, claimErr := s.stateDB.CompareAndSetChildResultDelivery(cs.ID, "detached", state.ChildResultAsyncQueueing)
+		if claimErr != nil || !claimed {
+			return
+		}
+		latest.ResultDelivery = state.ChildResultAsyncQueueing
+	default:
 		return
 	}
-	if latest.ResultDelivery != "detached" || !s.injectResultIntoParent(ctx, *latest, status, summary) {
-		return
-	}
-	if err := s.stateDB.SetChildResultDelivery(cs.ID, "delivered"); err != nil {
-		log.WithError(err).WithField("childSessionID", cs.ID).Warn("mcp-watcher: marking child result delivered")
-		return
-	}
-	s.queueSvc().Flush(ctx, "", cs.ParentSessionID)
+	s.injectResultIntoParent(ctx, *latest, status, summary)
 }
 
 // inferChildStatus looks up the child session via the platform adapter
@@ -180,32 +207,35 @@ func (s *Server) inferChildStatus(ctx context.Context, cs state.ChildSession) (s
 	}
 }
 
-// injectResultIntoParent queues the child's terminal turn for its parent.
-// The queue sends it immediately when the parent is idle, or at its next idle
-// edge when it is busy.
-func (s *Server) injectResultIntoParent(ctx context.Context, cs state.ChildSession, status, summary string) bool {
+// injectResultIntoParent durably holds the child's terminal turn for the
+// parent's next real idle edge or queue sweep.
+func (s *Server) injectResultIntoParent(ctx context.Context, cs state.ChildSession, status, summary string) {
 	p, ok := s.registry.PlatformForSession(ctx, cs.ParentSessionID)
 	if !ok {
 		log.WithFields(log.Fields{
 			"parentSessionID": cs.ParentSessionID,
 			"childSessionID":  cs.ID,
 		}).Warn("mcp-watcher: parent session platform not found; skipping injection")
-		return false
+		return
 	}
 
 	msg := buildInjectionMessage(cs, status, summary)
 
 	queueID := fmt.Sprintf("child-result:%s:%d", cs.ID, cs.CompletedAt)
-	if err := s.queueSvc().EnqueueOnce(ctx, queueID, string(p.ID()), platforms.SendMessageRequest{
+	queued, err := s.queueSvc().EnqueueChildResult(ctx, cs.ID, queueID, string(p.ID()), platforms.SendMessageRequest{
 		SessionID: cs.ParentSessionID,
 		Message:   msg,
-	}); err != nil {
+	})
+	if err != nil {
 		log.WithFields(log.Fields{
 			"parentSessionID": cs.ParentSessionID,
 			"childSessionID":  cs.ID,
 			"error":           err,
 		}).Warn("mcp-watcher: failed to inject result into parent session")
-		return false
+		return
+	}
+	if !queued {
+		return
 	}
 
 	log.WithFields(log.Fields{
@@ -213,7 +243,6 @@ func (s *Server) injectResultIntoParent(ctx context.Context, cs state.ChildSessi
 		"childSessionID":  cs.ID,
 		"status":          status,
 	}).Info("mcp-watcher: queued result for parent session")
-	return true
 }
 
 // deferChildResultReconnect queues recovery guidance behind the parent's

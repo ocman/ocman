@@ -46,7 +46,7 @@ type Deps struct {
 	WorkflowService workflowService
 
 	// ChildResults makes new_session wait for the background watcher and
-	// return the child's terminal result. Nil preserves detached behavior.
+	// return the child's terminal result. Nil disables synchronous waits.
 	ChildResults *ChildResultBroker
 
 	// ChildDisconnected queues recovery guidance for the parent when a

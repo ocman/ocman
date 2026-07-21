@@ -23,11 +23,16 @@ func NewChildResultBroker() *ChildResultBroker {
 	return &ChildResultBroker{waiters: make(map[string]chan ChildResult)}
 }
 
-// Register marks a child result for delivery through its MCP call.
-func (b *ChildResultBroker) Register(childID string) {
+// Register marks a child result for delivery through its MCP call. It refuses
+// to replace an existing waiter.
+func (b *ChildResultBroker) Register(childID string) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if _, exists := b.waiters[childID]; exists {
+		return false
+	}
 	b.waiters[childID] = make(chan ChildResult, 1)
+	return true
 }
 
 func (b *ChildResultBroker) Unregister(childID string) {
@@ -36,8 +41,15 @@ func (b *ChildResultBroker) Unregister(childID string) {
 	delete(b.waiters, childID)
 }
 
-// Deliver sends a result to a waiting MCP call. False means the caller is
-// detached, so the watcher should use its existing parent-message fallback.
+func (b *ChildResultBroker) Registered(childID string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	_, ok := b.waiters[childID]
+	return ok
+}
+
+// Deliver sends a result to a waiting MCP call. False means no synchronous
+// caller owns the result.
 func (b *ChildResultBroker) Deliver(childID string, result ChildResult) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -55,6 +67,14 @@ func (b *ChildResultBroker) Deliver(childID string, result ChildResult) bool {
 // Wait blocks until the watcher delivers the child's terminal result or the
 // MCP request is cancelled.
 func (b *ChildResultBroker) Wait(ctx context.Context, childID string) (ChildResult, error) {
+	return b.wait(ctx, childID, true)
+}
+
+func (b *ChildResultBroker) WaitOwned(ctx context.Context, childID string) (ChildResult, error) {
+	return b.wait(ctx, childID, false)
+}
+
+func (b *ChildResultBroker) wait(ctx context.Context, childID string, remove bool) (ChildResult, error) {
 	b.mu.Lock()
 	ch, ok := b.waiters[childID]
 	b.mu.Unlock()
@@ -62,19 +82,25 @@ func (b *ChildResultBroker) Wait(ctx context.Context, childID string) (ChildResu
 		return ChildResult{}, fmt.Errorf("child session %s is not registered", childID)
 	}
 	if err := ctx.Err(); err != nil {
-		b.remove(childID, ch)
+		if remove {
+			b.remove(childID, ch)
+		}
 		return ChildResult{}, err
 	}
 
 	select {
 	case result := <-ch:
-		b.remove(childID, ch)
+		if remove {
+			b.remove(childID, ch)
+		}
 		if err := ctx.Err(); err != nil {
 			return ChildResult{}, err
 		}
 		return result, nil
 	case <-ctx.Done():
-		b.remove(childID, ch)
+		if remove {
+			b.remove(childID, ch)
+		}
 		return ChildResult{}, ctx.Err()
 	}
 }

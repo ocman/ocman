@@ -33,8 +33,10 @@ func FormatUntrustedChildMessage(kind, childID, intent, status, content string) 
 // commChildSessionDB is the subset of state.DB needed by the communication tools.
 type commChildSessionDB interface {
 	GetChildSession(id string) (*state.ChildSession, error)
-	ReopenChildSession(id, delivery string) error
-	SetChildResultDelivery(id, delivery string) error
+	ClaimChildFollowup(id, previousDelivery, sendingDelivery string) (bool, error)
+	CompleteChildFollowup(id, sendingDelivery, delivery string) (bool, error)
+	RestoreChildFollowup(id string, cs state.ChildSession, sendingDelivery string) error
+	CompareAndSetChildResultDelivery(id, from, to string) (bool, error)
 }
 
 type childSessionGetter interface {
@@ -114,30 +116,66 @@ func (t *commTools) handleSendMessageToChild(ctx context.Context, req mcplib.Cal
 	if cs.ParentSessionID != parentID {
 		return mcplib.NewToolResultError(fmt.Sprintf("child session %s does not belong to parent session %s", childID, parentID)), nil
 	}
+	if cs.ResultDelivery != "delivered" && cs.ResultDelivery != "detached" {
+		return mcplib.NewToolResultError("child session previous result is still pending delivery"), nil
+	}
 
 	wait := req.GetBool("wait", false)
-	if wait {
-		if t.results == nil {
-			return mcplib.NewToolResultError("child result waiting is unavailable"), nil
+	if wait && t.results == nil {
+		return mcplib.NewToolResultError("child result waiting is unavailable"), nil
+	}
+	reserved := false
+	if t.results != nil {
+		if !t.results.Register(childID) {
+			return mcplib.NewToolResultError("child session already has a result waiter"), nil
 		}
-		t.results.Register(childID)
+		reserved = true
+	}
+	sendingDelivery := state.ChildResultAsyncSending
+	if wait {
+		sendingDelivery = state.ChildResultWaitSending
+	}
+	claimed, err := t.stateDB.ClaimChildFollowup(childID, cs.ResultDelivery, sendingDelivery)
+	if err != nil {
+		if reserved {
+			t.results.Unregister(childID)
+		}
+		return mcplib.NewToolResultError(fmt.Sprintf("claiming child follow-up: %v", err)), nil
+	}
+	if !claimed {
+		if reserved {
+			t.results.Unregister(childID)
+		}
+		return mcplib.NewToolResultError("child session follow-up was claimed by another request"), nil
 	}
 	delivered := fmt.Sprintf("Message from parent session %s:\n\n%s", parentID, message)
 	if err := t.sendMessage(ctx, childID, delivered); err != nil {
-		if wait {
+		_ = t.stateDB.RestoreChildFollowup(childID, *cs, sendingDelivery)
+		if reserved {
 			t.results.Unregister(childID)
 		}
 		return mcplib.NewToolResultError(fmt.Sprintf("sending message to child: %v", err)), nil
 	}
-	delivery := "detached"
+	delivery := state.ChildResultAsyncPending
 	if wait {
 		delivery = "waiting"
 	}
-	if err := t.stateDB.ReopenChildSession(childID, delivery); err != nil {
-		if wait {
+	claimed, err = t.stateDB.CompleteChildFollowup(childID, sendingDelivery, delivery)
+	if err != nil {
+		if reserved {
 			t.results.Unregister(childID)
 		}
 		return mcplib.NewToolResultError(fmt.Sprintf("reopening child session: %v", err)), nil
+	}
+	if !claimed {
+		latest, getErr := t.stateDB.GetChildSession(childID)
+		alreadyRecovered := getErr == nil && ((wait && latest.ResultDelivery == "waiting") || (!wait && (latest.ResultDelivery == state.ChildResultAsyncPending || latest.ResultDelivery == state.ChildResultAsyncQueueing || latest.ResultDelivery == "delivered")))
+		if !alreadyRecovered {
+			if reserved {
+				t.results.Unregister(childID)
+			}
+			return mcplib.NewToolResultError("child follow-up delivery ownership was lost"), nil
+		}
 	}
 
 	result := map[string]interface{}{
@@ -151,6 +189,8 @@ func (t *commTools) handleSendMessageToChild(ctx context.Context, req mcplib.Cal
 		if err := awaitChildResult(ctx, req, childID, result, t.results, t.stateDB, t.disconnected); err != nil {
 			return mcplib.NewToolResultError(fmt.Sprintf("waiting for child session: %v", err)), nil
 		}
+	} else if reserved {
+		t.results.Unregister(childID)
 	}
 	return toolResultJSON(result), nil
 }

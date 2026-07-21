@@ -173,8 +173,10 @@ func (l *SessionLauncher) launchWithPort(ctx context.Context, req LaunchRequest,
 		return "", fmt.Errorf("creating child session: %w", err)
 	}
 	childID := resp.ID
-	if req.WaitForResult && l.childResults != nil {
-		l.childResults.Register(childID)
+	if req.ParentSessionID != "" && req.WaitForResult && l.childResults != nil {
+		if !l.childResults.Register(childID) {
+			return "", fmt.Errorf("child session %s already has a result waiter", childID)
+		}
 	}
 
 	// Apply the requested permission ruleset before the first message so
@@ -223,8 +225,12 @@ func (l *SessionLauncher) launchWithPort(ctx context.Context, req LaunchRequest,
 		Status:          "starting",
 		CreatedAt:       time.Now().UnixMilli(),
 	}
-	if req.WaitForResult && l.childResults != nil {
+	if req.ParentSessionID == "" {
+		cs.ResultDelivery = "detached"
+	} else if req.WaitForResult && l.childResults != nil {
 		cs.ResultDelivery = "waiting"
+	} else {
+		cs.ResultDelivery = state.ChildResultAsyncPending
 	}
 	if err := l.stateDB.InsertChildSession(cs); err != nil {
 		// Log but don't fail: the session is running; we just can't

@@ -133,6 +133,19 @@ func TestLaunch_CreatesSessionAndSendsPrompt(t *testing.T) {
 	}
 }
 
+func TestLaunch_ParentlessSessionDoesNotQueueAsyncFeedback(t *testing.T) {
+	db := openTestStateDB(t)
+	launcher := NewSessionLauncher(db, &fakePlatformAdapter{createSessionID: "standalone"}, noopWorktreeCreator, noopEnsurer)
+
+	if _, err := launcher.Launch(context.Background(), LaunchRequest{Platform: "opencode", Directory: "/repo"}); err != nil {
+		t.Fatal(err)
+	}
+	child, err := db.GetChildSession("standalone")
+	if err != nil || child.ResultDelivery != "detached" {
+		t.Fatalf("parentless child = %+v, %v", child, err)
+	}
+}
+
 func TestLaunch_ThreadsAgentReasoningAndPermissions(t *testing.T) {
 	db := openTestStateDB(t)
 	platform := &fakePlatformAdapter{createSessionID: "child-set"}
