@@ -100,6 +100,16 @@ describe('PRRow open-in-browser icon', () => {
   });
 });
 
+describe('PRRow detail slots', () => {
+  it('keeps cross-fork guidance in the shared detail shell', () => {
+    render(<PRRow pr={makePR({ crossFork: true })} directory="/repo" remote="origin" />);
+
+    fireEvent.click(screen.getByRole('button', { expanded: false }));
+    expect(screen.getByText('Cross-fork PR — worktree launch will fetch the PR ref.')).toBeInTheDocument();
+    expect(screen.getByTestId('launch-split-button')).toBeInTheDocument();
+  });
+});
+
 describe('PRRow CI build-status indicator', () => {
   beforeEach(() => {
     vi.restoreAllMocks();

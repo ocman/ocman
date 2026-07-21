@@ -38,6 +38,7 @@ describe('IssueRow', () => {
 
     fireEvent.click(screen.getByRole('button', { expanded: false }));
     expect(screen.getByTestId('issue-detail-7')).toBeInTheDocument();
+    expect(screen.getByTestId('launch-split-button')).toBeInTheDocument();
   });
 
   it('renders the body as markdown when present', () => {

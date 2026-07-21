@@ -1,11 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import type { CIState, Check, PR, PRChecks } from '../../lib/upstreamApi';
 import { fetchPRChecks } from '../../lib/upstreamApi';
-import { LaunchSplitButton } from './LaunchSplitButton';
-import { OpenInBrowser } from './OpenInBrowser';
-import { RowMeta } from './RowMeta';
+import { ExpandableRow } from './ExpandableRow';
 
 interface PRRowProps {
   pr: PR;
@@ -31,7 +27,6 @@ interface PRRowProps {
  * note in FR-7; can be tightened later).
  */
 export function PRRow({ pr, directory, remote, currentBranch }: PRRowProps) {
-  const [expanded, setExpanded] = useState(false);
   const checks = usePRChecks(pr, directory, remote);
 
   // Cross-fork PRs share their head branch name with the user's
@@ -48,81 +43,41 @@ export function PRRow({ pr, directory, remote, currentBranch }: PRRowProps) {
   const canFetchCI = !!pr.headSha;
 
   return (
-    <li
-      className={
-        `oc-upstream-row oc-upstream-row-pr` +
-        (expanded ? ' expanded' : '') +
-        (isCurrentBranch ? ' current-branch' : '')
-      }
-      data-testid={`pr-row-${pr.number}`}
+    <ExpandableRow
+      type="pr"
+      number={pr.number}
+      title={pr.title}
+      body={pr.body}
+      author={pr.author}
+      status={pr.status}
+      updatedAt={pr.updatedAt}
+      labels={pr.labels}
+      assignees={pr.assignees}
+      url={pr.url}
+      host={pr.host}
+      directory={directory}
+      remote={remote}
+      crossFork={pr.crossFork}
+      className={isCurrentBranch ? 'current-branch' : undefined}
       onMouseEnter={canFetchCI ? checks.load : undefined}
-    >
-      <div className="oc-upstream-row-head">
-        <button
-          type="button"
-          className="oc-upstream-row-summary"
-          onClick={() => {
-            setExpanded((e) => !e);
-            if (canFetchCI) checks.load();
-          }}
-          aria-expanded={expanded}
+      onToggle={canFetchCI ? checks.load : undefined}
+      summaryPrefix={<CIDot state={canFetchCI ? checks.state : 'unknown'} prNumber={pr.number} />}
+      summarySuffix={isCurrentBranch ? (
+        <span
+          className="oc-upstream-row-current-branch"
+          title={`Matches your current branch: ${pr.branch}`}
+          data-testid={`pr-row-${pr.number}-current-branch`}
         >
-          <CIDot state={canFetchCI ? checks.state : 'unknown'} prNumber={pr.number} />
-          <span className="oc-upstream-row-number">#{pr.number}</span>
-          <span className="oc-upstream-row-title">{pr.title}</span>
-          {isCurrentBranch && (
-            <span
-              className="oc-upstream-row-current-branch"
-              title={`Matches your current branch: ${pr.branch}`}
-              data-testid={`pr-row-${pr.number}-current-branch`}
-            >
-              current
-            </span>
-          )}
-          <StatusBadge status={pr.status} />
-        </button>
-        <OpenInBrowser url={pr.url} host={pr.host} testId={`pr-row-${pr.number}-open`} />
-      </div>
-      <RowMeta
-        author={pr.author}
-        updatedAt={pr.updatedAt}
-        labels={pr.labels}
-        assignees={pr.assignees}
-      />
-      {expanded && (
-        <div className="oc-upstream-row-detail" data-testid={`pr-detail-${pr.number}`}>
-          <a className="oc-upstream-row-link" href={pr.url} target="_blank" rel="noreferrer noopener">
-            View on {pr.host}
-          </a>
-          {pr.crossFork && (
-            <div className="oc-upstream-row-fork-note">
-              Cross-fork PR — worktree launch will fetch the PR ref.
-            </div>
-          )}
-          <div className="oc-upstream-row-body">
-            {pr.body ? (
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{pr.body}</ReactMarkdown>
-            ) : (
-              <em>No description.</em>
-            )}
-          </div>
-          {canFetchCI && <CIChecks checks={checks} prNumber={pr.number} />}
-          <LaunchSplitButton
-            directory={directory}
-            remote={remote}
-            type="pr"
-            number={pr.number}
-            crossFork={pr.crossFork}
-          />
+          current
+        </span>
+      ) : undefined}
+      detailBeforeBody={pr.crossFork ? (
+        <div className="oc-upstream-row-fork-note">
+          Cross-fork PR — worktree launch will fetch the PR ref.
         </div>
-      )}
-    </li>
-  );
-}
-
-function StatusBadge({ status }: { status: PR['status'] }) {
-  return (
-    <span className={`oc-upstream-status oc-upstream-status-${status}`}>{status}</span>
+      ) : undefined}
+      detailAfterBody={canFetchCI ? <CIChecks checks={checks} prNumber={pr.number} /> : undefined}
+    />
   );
 }
 
