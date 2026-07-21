@@ -20,6 +20,10 @@
   flex-direction: column;
 }
 
+.oc-wt-form {
+  display: contents;
+}
+
 .oc-wt-modal header {
   display: flex;
   align-items: center;

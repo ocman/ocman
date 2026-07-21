@@ -4,6 +4,7 @@ import {
   CommandListPicker,
   type PickerEntryBase,
 } from '../../components/assistant/CommandListPicker';
+import { Modal } from '../../components/Modal';
 
 const NEW_DIRECTORY = '__new_directory__';
 
@@ -84,27 +85,29 @@ export function MovePathDialog({ onSelect, onClose }: MovePathDialogProps) {
   };
 
   return (
-    <div className="oc-rename-backdrop" onClick={onClose}>
-      <div className="oc-rename-dialog" onClick={(event) => event.stopPropagation()}>
-        <h3>Move Session</h3>
-        <input
-          className="oc-rename-input"
-          type="text"
-          value={directory}
-          onChange={(event) => setDirectory(event.target.value)}
-          placeholder="Project directory"
-          aria-label="Project directory"
-          autoFocus
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') submit();
-            if (event.key === 'Escape') onClose();
-          }}
-        />
-        <div className="oc-rename-actions">
-          <button className="oc-rename-btn oc-rename-btn-submit" onClick={submit}>Move</button>
-          <button className="oc-rename-btn oc-rename-btn-cancel" onClick={onClose}>Cancel</button>
-        </div>
+    <Modal
+      backdropClassName="oc-rename-backdrop"
+      dialogClassName="oc-rename-dialog"
+      label="Move Session"
+      onClose={onClose}
+    >
+      <h3>Move Session</h3>
+      <input
+        className="oc-rename-input"
+        type="text"
+        value={directory}
+        onChange={(event) => setDirectory(event.target.value)}
+        placeholder="Project directory"
+        aria-label="Project directory"
+        autoFocus
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') submit();
+        }}
+      />
+      <div className="oc-rename-actions">
+        <button className="oc-rename-btn oc-rename-btn-submit" onClick={submit}>Move</button>
+        <button className="oc-rename-btn oc-rename-btn-cancel" onClick={onClose}>Cancel</button>
       </div>
-    </div>
+    </Modal>
   );
 }

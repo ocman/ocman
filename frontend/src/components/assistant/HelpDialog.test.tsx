@@ -20,6 +20,7 @@ describe('HelpDialog', () => {
 
   it('lists every command with its description, sorted by name', () => {
     render(<HelpDialog open commands={commands} onClose={() => {}} />);
+    expect(screen.getByRole('dialog', { name: 'Slash commands' })).toBeInTheDocument();
     expect(screen.getByText('/archive')).toBeTruthy();
     expect(screen.getByText('/model')).toBeTruthy();
     expect(screen.getByText('/noop')).toBeTruthy();

@@ -6,6 +6,7 @@ import {
   type MachinePickerState,
 } from '../lib/machinePicker';
 import type { TargetCandidate } from '../lib/api.types';
+import { Modal } from './Modal';
 
 /**
  * MachinePickerModal renders the new-session machine picker (AD-15).
@@ -20,15 +21,6 @@ export function MachinePickerModal() {
 
   useEffect(() => subscribeMachinePicker(setState), []);
 
-  useEffect(() => {
-    if (!state.open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') resolveMachineChoice(null);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [state.open]);
-
   if (!state.open) return null;
 
   const hasMatches = state.candidates.length > 0;
@@ -39,43 +31,38 @@ export function MachinePickerModal() {
     : [{ remoteId: 'local', remoteName: 'This machine', platform: 'opencode', dir: state.dir }, ...state.remotes];
 
   return (
-    <div
-      className="machine-picker-backdrop"
-      data-testid="machine-picker-backdrop"
-      onClick={() => resolveMachineChoice(null)}
+    <Modal
+      backdropClassName="machine-picker-backdrop"
+      backdropTestId="machine-picker-backdrop"
+      dialogClassName="machine-picker"
+      label="Choose a machine"
+      onClose={() => resolveMachineChoice(null)}
     >
-      <div
-        className="machine-picker"
-        role="dialog"
-        aria-label="Choose a machine"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="machine-picker-title">
-          {hasMatches ? 'Choose a machine' : 'Project not found on any machine'}
-        </div>
-        <div className="machine-picker-desc">
-          {hasMatches
-            ? 'This project exists on more than one machine. Where should the session run?'
-            : 'Pick a machine to start the session on.'}
-        </div>
-        <ul className="machine-picker-list">
-          {options.map((c) => (
-            <li key={c.platform + c.remoteId}>
-              <button
-                type="button"
-                className="machine-picker-option"
-                onClick={() => resolveMachineChoice({ platform: c.platform, remoteId: c.remoteId })}
-              >
-                <span className="machine-picker-name">{c.remoteName}</span>
-                {c.dir && <span className="machine-picker-dir mono">{c.dir}</span>}
-              </button>
-            </li>
-          ))}
-        </ul>
-        <button type="button" className="machine-picker-cancel" onClick={() => resolveMachineChoice(null)}>
-          Cancel
-        </button>
+      <div className="machine-picker-title">
+        {hasMatches ? 'Choose a machine' : 'Project not found on any machine'}
       </div>
-    </div>
+      <div className="machine-picker-desc">
+        {hasMatches
+          ? 'This project exists on more than one machine. Where should the session run?'
+          : 'Pick a machine to start the session on.'}
+      </div>
+      <ul className="machine-picker-list">
+        {options.map((c) => (
+          <li key={c.platform + c.remoteId}>
+            <button
+              type="button"
+              className="machine-picker-option"
+              onClick={() => resolveMachineChoice({ platform: c.platform, remoteId: c.remoteId })}
+            >
+              <span className="machine-picker-name">{c.remoteName}</span>
+              {c.dir && <span className="machine-picker-dir mono">{c.dir}</span>}
+            </button>
+          </li>
+        ))}
+      </ul>
+      <button type="button" className="machine-picker-cancel" onClick={() => resolveMachineChoice(null)}>
+        Cancel
+      </button>
+    </Modal>
   );
 }

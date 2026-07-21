@@ -7,6 +7,7 @@ import {
   type Scope,
   type Shortcut,
 } from '../lib/shortcutRegistry';
+import { Modal } from './Modal';
 
 interface Props {
   open: boolean;
@@ -71,45 +72,42 @@ export function KeyboardShortcutsDialog({ open, onClose }: Props) {
   const hasAnyContextScope = CONTEXT_SCOPES.some((scope) => groups[scope].length > 0);
 
   return (
-    <div className="oc-shortcuts-backdrop" onClick={onClose}>
-      <div
-        className="oc-shortcuts-dialog"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Keyboard shortcuts"
-      >
-        <div className="oc-shortcuts-header">
-          <div>
-            <h2>Keyboard shortcuts</h2>
-            <p>Site-wide shortcuts and actions available on the current page.</p>
-          </div>
-          <button
-            type="button"
-            className="oc-shortcuts-close"
-            onClick={onClose}
-            aria-label="Close keyboard shortcuts"
-          >
-            <i className="bi bi-x-lg" />
-          </button>
+    <Modal
+      backdropClassName="oc-shortcuts-backdrop"
+      dialogClassName="oc-shortcuts-dialog"
+      label="Keyboard shortcuts"
+      onClose={onClose}
+    >
+      <div className="oc-shortcuts-header">
+        <div>
+          <h2>Keyboard shortcuts</h2>
+          <p>Site-wide shortcuts and actions available on the current page.</p>
         </div>
-        <div className={`oc-shortcuts-body${hasAnyContextScope ? '' : ' oc-shortcuts-body-single'}`}>
-          {hasAnyContextScope && (
-            <div className="oc-shortcuts-column">
-              {CONTEXT_SCOPES.map((scope) => (
-                <ShortcutSection
-                  key={scope}
-                  title={SCOPE_LABELS[scope] || scope}
-                  shortcuts={groups[scope]}
-                />
-              ))}
-            </div>
-          )}
+        <button
+          type="button"
+          className="oc-shortcuts-close"
+          onClick={onClose}
+          aria-label="Close keyboard shortcuts"
+        >
+          <i className="bi bi-x-lg" />
+        </button>
+      </div>
+      <div className={`oc-shortcuts-body${hasAnyContextScope ? '' : ' oc-shortcuts-body-single'}`}>
+        {hasAnyContextScope && (
           <div className="oc-shortcuts-column">
-            <ShortcutSection title="Site-wide shortcuts" shortcuts={groups.site} />
+            {CONTEXT_SCOPES.map((scope) => (
+              <ShortcutSection
+                key={scope}
+                title={SCOPE_LABELS[scope] || scope}
+                shortcuts={groups[scope]}
+              />
+            ))}
           </div>
+        )}
+        <div className="oc-shortcuts-column">
+          <ShortcutSection title="Site-wide shortcuts" shortcuts={groups.site} />
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

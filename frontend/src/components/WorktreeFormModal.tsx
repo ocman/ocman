@@ -6,6 +6,7 @@ import type { Project } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
 import { useUiStore } from '../lib/uiStore';
 import { useOpencodeLaunch } from '../lib/useCapabilities';
+import { Modal } from './Modal';
 
 // Submit progress states surfaced to the user. The modal stays open
 // across all of them so submit feels like a single waiting step rather
@@ -54,18 +55,21 @@ export function WorktreeFormModal() {
     // useUiStore.getState() in dev tools), surface a clear message
     // rather than failing on the API call.
     return (
-      <div className="oc-wt-backdrop" onClick={close}>
-        <div className="oc-wt-modal" onClick={(e) => e.stopPropagation()}>
-          <header><h2>Worktree sessions unavailable</h2></header>
-          <div className="oc-wt-body">
-            <p>
-              The /wt feature requires git, tmux, and opencode on PATH,
-              plus an OpenCode platform adapter registered.
-            </p>
-          </div>
-          <footer><button type="button" onClick={close}>Close</button></footer>
+      <Modal
+        backdropClassName="oc-wt-backdrop"
+        dialogClassName="oc-wt-modal"
+        label="Worktree sessions unavailable"
+        onClose={close}
+      >
+        <header><h2>Worktree sessions unavailable</h2></header>
+        <div className="oc-wt-body">
+          <p>
+            The /wt feature requires git, tmux, and opencode on PATH,
+            plus an OpenCode platform adapter registered.
+          </p>
         </div>
-      </div>
+        <footer><button type="button" onClick={close}>Close</button></footer>
+      </Modal>
     );
   }
 
@@ -167,18 +171,6 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, close }:
     close();
   }, [submitting, close]);
 
-  // ESC closes the modal (when not submitting).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        handleClose();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [handleClose]);
-
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -242,8 +234,14 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, close }:
     : null;
 
   return (
-    <div className="oc-wt-backdrop" onClick={handleClose}>
-      <form className="oc-wt-modal" onClick={(e) => e.stopPropagation()} onSubmit={onSubmit}>
+    <Modal
+      backdropClassName="oc-wt-backdrop"
+      dialogClassName="oc-wt-modal"
+      label="New worktree session"
+      onClose={handleClose}
+      canClose={!submitting}
+    >
+      <form className="oc-wt-form" onSubmit={onSubmit}>
         <header>
           <h2>New worktree session</h2>
           <kbd className="oc-wt-kbd">ESC</kbd>
@@ -358,6 +356,6 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, close }:
           </button>
         </footer>
       </form>
-    </div>
+    </Modal>
   );
 }
