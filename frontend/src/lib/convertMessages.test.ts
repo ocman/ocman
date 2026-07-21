@@ -1202,7 +1202,7 @@ describe('convertMessages — model-change metadata', () => {
     expect(custom(asst)?.modelChangedTo).toBeUndefined();
   });
 
-  it('flags the assistant message that switches to a new model', () => {
+  it('flags the user message that triggers a switch to a new model', () => {
     const convert = createConvertMessages();
     const out = convert(
       [
@@ -1214,6 +1214,20 @@ describe('convertMessages — model-change metadata', () => {
       [],
     );
     expect(custom(out.find((m) => m.id === 'a1')!)?.modelChangedTo).toBeUndefined();
+    expect(custom(out.find((m) => m.id === 'a2')!)?.modelChangedTo).toBeUndefined();
+    // The divider is attributed to the user turn that triggered the switch.
+    expect(custom(out.find((m) => m.id === 'u2')!)?.modelChangedTo).toBe('openai/gpt-5');
+  });
+
+  it('falls back to the assistant message when no user turn precedes the switch', () => {
+    const convert = createConvertMessages();
+    const out = convert(
+      [
+        makeMessage('a1', { role: 'assistant', providerID: 'anthropic', modelID: 'opus-4' }, 1),
+        makeMessage('a2', { role: 'assistant', providerID: 'openai', modelID: 'gpt-5' }, 2),
+      ],
+      [],
+    );
     expect(custom(out.find((m) => m.id === 'a2')!)?.modelChangedTo).toBe('openai/gpt-5');
   });
 

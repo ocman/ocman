@@ -314,19 +314,23 @@ export function createConvertMessages(): ConvertMessagesFn {
       (m) => m.data?.role === 'user' || m.data?.role === 'assistant' || m.data?.role === 'notice',
     );
 
-    // Detect mid-conversation model switches. Walk the assistant
-    // messages in order; the first message carrying a model seeds the
-    // baseline (no chip), and any later assistant message whose model
-    // differs from the previously-active one is flagged so the renderer
-    // can draw a "model changed" divider before it.
+    // Detect mid-conversation model switches. Walk the messages in
+    // order tracking the last user message; the first assistant message
+    // carrying a model seeds the baseline (no chip), and any later
+    // assistant message whose model differs from the previously-active
+    // one flags the user message that triggered it so the renderer can
+    // draw a "model changed" divider above that user turn. Falls back to
+    // the assistant message when no preceding user message exists.
     const modelChangedById: Record<string, string> = {};
     let prevModel = '';
+    let lastUserId = '';
     for (const m of filtered) {
+      if (m.data?.role === 'user') lastUserId = m.id;
       if (m.data?.role !== 'assistant') continue;
       const ref = messageModelRef(m);
       if (!ref) continue;
       if (prevModel && ref !== prevModel) {
-        modelChangedById[m.id] = ref;
+        modelChangedById[lastUserId || m.id] = ref;
       }
       prevModel = ref;
     }

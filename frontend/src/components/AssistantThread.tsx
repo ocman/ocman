@@ -96,6 +96,7 @@ const UserMessage: FC = () => {
   const parentMessage = custom?.parentMessage && typeof custom.parentMessage === 'object'
     ? custom.parentMessage as { parentSessionId?: string }
     : undefined;
+  const modelChangedTo = typeof custom?.modelChangedTo === 'string' ? (custom.modelChangedTo as string) : undefined;
   const sessionMessage = childMessage || parentMessage;
   const failed = (custom?.failed && typeof custom.failed === 'object')
     ? (custom.failed as { error?: string; imagesDropped?: boolean })
@@ -118,6 +119,8 @@ const UserMessage: FC = () => {
   if (!hasContent && !failed) return null;
 
   return (
+    <>
+      {modelChangedTo && <ModelChangeDivider model={modelChangedTo} />}
     <MessagePrimitive.Root
       className={`oc-msg oc-msg-user${sessionMessage ? ' oc-msg-agent-update' : ''}${failed ? ' oc-msg-failed' : ''}`}
       data-message-id={id}
@@ -167,6 +170,7 @@ const UserMessage: FC = () => {
         </div>
       )}
     </MessagePrimitive.Root>
+    </>
   );
 };
 
