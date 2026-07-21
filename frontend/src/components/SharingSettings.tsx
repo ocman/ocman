@@ -93,14 +93,12 @@ export function SharingSettings() {
         />
       </SettingRow>
 
-      <div className="settings-row settings-row--block">
-        <div className="settings-row-info">
-          <div className="settings-row-label">Shared sessions</div>
-          <div className="settings-row-desc">
-            Every active public share link. Open the session to inspect it, or
-            revoke a link to make it stop working immediately.
-          </div>
-        </div>
+      <SettingRow
+        block
+        label="Shared sessions"
+        desc={<>Every active public share link. Open the session to inspect it, or
+          revoke a link to make it stop working immediately.</>}
+      >
         {error && (
           <div className="oc-share-menu-error" role="alert">{error}</div>
         )}
@@ -142,7 +140,7 @@ export function SharingSettings() {
             ))}
           </ul>
         )}
-      </div>
+      </SettingRow>
     </div>
   );
 }

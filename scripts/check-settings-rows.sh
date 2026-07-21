@@ -22,7 +22,7 @@ matches=$(
 		--glob 'frontend/src/**/*.tsx' \
 		--glob '!**/SettingRow.tsx' \
 		--glob '!**/*.test.tsx' \
-		"className=[\"']settings-row[\"']" "$ROOT" || true
+		"className=[\"']settings-row(?:[[:space:]]|[\"'])" "$ROOT" || true
 )
 
 offenders=$(echo "$matches" | grep -v 'ocman:allow-raw-setting' | sed '/^$/d' || true)

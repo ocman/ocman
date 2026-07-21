@@ -7,6 +7,7 @@ import { useAuthStore } from '../../lib/authStore';
 import { useUiStore } from '../../lib/uiStore';
 import { useApiStore } from '../../lib/apiStore';
 import { usePwaInstall } from '../../lib/usePwaInstall';
+import { SettingRow } from '../../components/SettingRow';
 import {
   NotificationsSection,
   SessionsSection,
@@ -102,32 +103,27 @@ export function SettingsTab() {
 
         <div className="settings-section" hidden={active !== 'templates'}>
           <h2 className="settings-section-title">PR &amp; Issue templates</h2>
-          <div className="settings-row settings-row--block">
-            <div className="settings-row-info">
-              <div className="settings-row-label">Launch prompt templates</div>
-              <div className="settings-row-desc">
-                The prompt sent to a new agent session when you click
-                &ldquo;Handle this PR/Issue&rdquo; in the sidebar. Edit the
-                templates below; placeholders are substituted at launch
-                time.
-              </div>
-            </div>
+          <SettingRow
+            block
+            label="Launch prompt templates"
+            desc={<>The prompt sent to a new agent session when you click
+              &ldquo;Handle this PR/Issue&rdquo; in the sidebar. Edit the
+              templates below; placeholders are substituted at launch
+              time.</>}
+          >
             <PromptTemplateSettings />
-          </div>
+          </SettingRow>
         </div>
 
         {showAppSection && (
           <div className="settings-section" hidden={active !== 'app'}>
             <h2 className="settings-section-title">App</h2>
-            <div className="settings-row"> {/* ocman:allow-raw-setting — action button, no saved value */}
-              <div className="settings-row-info">
-                <div className="settings-row-label">Install ocman</div>
-                <div className="settings-row-desc">
-                  {installed
-                    ? 'ocman is installed as an app on this device. Launch it from your dock or app launcher to use it in its own window.'
-                    : 'Install ocman as a standalone app with its own window and dock icon. The web version keeps working in any browser tab.'}
-                </div>
-              </div>
+            <SettingRow
+              label="Install ocman"
+              desc={installed
+                ? 'ocman is installed as an app on this device. Launch it from your dock or app launcher to use it in its own window.'
+                : 'Install ocman as a standalone app with its own window and dock icon. The web version keeps working in any browser tab.'}
+            >
               <button
                 type="button"
                 className="vscode-btn"
@@ -136,18 +132,14 @@ export function SettingsTab() {
               >
                 {installed ? 'Installed' : 'Install'}
               </button>
-            </div>
+            </SettingRow>
           </div>
         )}
 
         {authRequired && (
           <div className="settings-section" hidden={active !== 'account'}>
             <h2 className="settings-section-title">Account</h2>
-            <div className="settings-row"> {/* ocman:allow-raw-setting — action button, no saved value */}
-              <div className="settings-row-info">
-                <div className="settings-row-label">Session</div>
-                <div className="settings-row-desc">Sign out of the current session.</div>
-              </div>
+            <SettingRow label="Session" desc="Sign out of the current session.">
               <button
                 type="button"
                 className="vscode-btn"
@@ -155,7 +147,7 @@ export function SettingsTab() {
               >
                 Sign out
               </button>
-            </div>
+            </SettingRow>
           </div>
         )}
       </div>

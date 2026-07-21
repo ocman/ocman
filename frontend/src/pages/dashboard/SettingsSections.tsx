@@ -300,18 +300,18 @@ export function AutoApproveSection() {
         />
       </SettingRow>
 
-      <div className="settings-row settings-row--block">
-        <div className="settings-row-info">
-          <div className="settings-row-label">
+      <SettingRow
+        block
+        label={
+          <>
             Reviewer prompt sections
             <SaveStatus state={sectionsSave.state} />
-          </div>
-          <div className="settings-row-desc">
-            Extra rules appended to the AI reviewer&apos;s prompt. Each section
-            appears as a named block the model reads before deciding. Use this
-            to allow or deny specific patterns your team knows are safe.
-          </div>
-        </div>
+          </>
+        }
+        desc={<>Extra rules appended to the AI reviewer&apos;s prompt. Each section
+          appears as a named block the model reads before deciding. Use this
+          to allow or deny specific patterns your team knows are safe.</>}
+      >
         <div className="settings-prompt-sections">
           {promptSections.map((section, i) => (
             <PromptSectionEditor
@@ -333,7 +333,7 @@ export function AutoApproveSection() {
             + Add section
           </button>
         </div>
-      </div>
+      </SettingRow>
     </>
   );
 }
