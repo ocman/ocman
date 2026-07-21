@@ -106,8 +106,8 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// you prove yourself; /logout just clears a cookie and is
 	// idempotent for an already-anonymous client.
 	mux.HandleFunc("/api/auth/me", requireGET(s.handleAuthMe))
-	mux.HandleFunc("/api/auth/login", requirePOST(s.handleAuthLogin))
-	mux.HandleFunc("/api/auth/logout", requirePOST(s.handleAuthLogout))
+	mux.HandleFunc("/api/auth/login", requirePOST(s.csrfGuard(s.handleAuthLogin)))
+	mux.HandleFunc("/api/auth/logout", requirePOST(s.csrfGuard(s.handleAuthLogout)))
 
 	// Integration endpoints. These proxy requests to third-party APIs
 	// using server-side credentials discovered at startup.

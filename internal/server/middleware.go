@@ -133,7 +133,28 @@ func (s *Server) requireLocalhost(h http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) isPrivilegedRequest(r *http.Request) bool {
-	if !isLoopback(r) || strings.EqualFold(r.Header.Get("Sec-Fetch-Site"), "cross-site") {
+	if !isLoopback(r) || !s.csrfSafe(r) {
+		return false
+	}
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	u, _, _ := parseBrowserOrigin(origin) // csrfSafe already validated it parses
+	if isLoopbackHostname(u.Hostname()) {
+		return s.auth == nil || s.auth.trustLocalhost || s.auth.hasValidCookie(r)
+	}
+	return s.auth != nil && s.auth.hasValidCookie(r)
+}
+
+// csrfSafe is the browser-origin half of isPrivilegedRequest, without
+// the loopback-peer requirement: state-changing requests must not be
+// flagged cross-site by fetch metadata, and if an Origin header is
+// present it must match the request's own origin (or the configured
+// public base URL). Origin-less clients (CLI, curl, MCP) pass. Applied
+// to API routes via requireAuth regardless of auth config (#410).
+func (s *Server) csrfSafe(r *http.Request) bool {
+	if strings.EqualFold(r.Header.Get("Sec-Fetch-Site"), "cross-site") {
 		return false
 	}
 	origin := r.Header.Get("Origin")
@@ -143,7 +164,7 @@ func (s *Server) isPrivilegedRequest(r *http.Request) bool {
 	if len(r.Header.Values("Origin")) != 1 {
 		return false
 	}
-	u, normalized, ok := parseBrowserOrigin(origin)
+	_, normalized, ok := parseBrowserOrigin(origin)
 	if !ok {
 		return false
 	}
@@ -156,13 +177,17 @@ func (s *Server) isPrivilegedRequest(r *http.Request) bool {
 	if configured, err := url.Parse(s.publicBaseURL); err == nil && configured.Scheme != "" && configured.Host != "" {
 		publicOrigin = strings.ToLower(configured.Scheme) + "://" + strings.ToLower(configured.Host)
 	}
-	if normalized != requestOrigin && normalized != publicOrigin {
-		return false
+	return normalized == requestOrigin || normalized == publicOrigin
+}
+
+func (s *Server) csrfGuard(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions && !s.csrfSafe(r) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		h(w, r)
 	}
-	if isLoopbackHostname(u.Hostname()) {
-		return s.auth == nil || s.auth.trustLocalhost || s.auth.hasValidCookie(r)
-	}
-	return s.auth != nil && s.auth.hasValidCookie(r)
 }
 
 func parseBrowserOrigin(origin string) (*url.URL, string, bool) {

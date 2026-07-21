@@ -180,6 +180,48 @@ func TestRequireLocalhost_AllowsAuthenticatedPublicOrigin(t *testing.T) {
 	}
 }
 
+// --- s.post CSRF guard tests (#410) ---
+
+// A cross-site POST must be rejected even when auth is disabled;
+// Origin-less local CLI clients must keep working.
+func TestPostCSRFGuard_AuthDisabled(t *testing.T) {
+	srv := &Server{}
+	handler := srv.post(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	tests := []struct {
+		name      string
+		origin    string
+		fetchSite string
+		wantCode  int
+	}{
+		{"no origin (CLI)", "", "", http.StatusNoContent},
+		{"same origin", "http://localhost:8228", "same-origin", http.StatusNoContent},
+		{"cross-site origin", "https://evil.example", "cross-site", http.StatusForbidden},
+		{"mismatched origin only", "http://localhost:9999", "", http.StatusForbidden},
+		{"fetch metadata only", "", "cross-site", http.StatusForbidden},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/test", nil)
+			req.RemoteAddr = "127.0.0.1:12345"
+			req.Host = "localhost:8228"
+			if tt.origin != "" {
+				req.Header.Set("Origin", tt.origin)
+			}
+			if tt.fetchSite != "" {
+				req.Header.Set("Sec-Fetch-Site", tt.fetchSite)
+			}
+			rr := httptest.NewRecorder()
+			handler(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Errorf("got %d, want %d", rr.Code, tt.wantCode)
+			}
+		})
+	}
+}
+
 // --- isLoopback tests ---
 
 func TestIsLoopback(t *testing.T) {

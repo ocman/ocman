@@ -208,16 +208,16 @@ func isSecure(r *http.Request) bool {
 // --- middleware ---
 
 // requireAuth wraps a handler so clients must present a valid auth
-// cookie. When auth is disabled (s.auth == nil) the wrapper is a
-// pass-through. When auth.trustLocalhost is true, loopback clients
-// bypass the check (the dev-mode escape hatch); otherwise even
+// cookie. Unsafe browser requests must also pass the CSRF check, even
+// when auth is disabled. When auth.trustLocalhost is true, loopback
+// clients bypass the check (the dev-mode escape hatch); otherwise even
 // localhost must authenticate.
 //
 // The middleware deliberately doesn't authenticate static asset
 // requests: the SPA and its lockscreen must be reachable even for an
 // unauthenticated client. Only API routes return 401.
 func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return s.csrfGuard(func(w http.ResponseWriter, r *http.Request) {
 		if s.auth == nil {
 			next(w, r)
 			return
@@ -231,7 +231,7 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
-	}
+	})
 }
 
 // --- handlers ---

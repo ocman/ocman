@@ -205,6 +205,21 @@ func TestRequireAuth_PassthroughWhenDisabled(t *testing.T) {
 	}
 }
 
+func TestRequireAuth_RejectsCrossSitePostWhenDisabled(t *testing.T) {
+	handler := (&Server{}).requireAuth(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	req := httptest.NewRequest(http.MethodPost, "http://localhost:8228/api/sessions", nil)
+	req.Header.Set("Origin", "https://evil.example")
+	rr := httptest.NewRecorder()
+
+	handler(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rr.Code)
+	}
+}
+
 // TestRequireAuth_LoopbackBypasses_WhenTrusted pins the opt-in
 // escape hatch: with TrustLocalhost set, loopback clients are not
 // gated and pass through without presenting a cookie.
