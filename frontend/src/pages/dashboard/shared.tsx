@@ -1,7 +1,7 @@
 /**
  * Shared sub-components and constants used by multiple Dashboard tab components.
  */
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 
 // ---------------------------------------------------------------------------
 // MetricCard
@@ -21,9 +21,9 @@ export function MetricCard({ label, value, subvalue, tone }: { label: string; va
 // ChartCard
 // ---------------------------------------------------------------------------
 
-export function ChartCard({ title, children }: { title: string; children: ReactNode }) {
+export function ChartCard({ title, children, style }: { title: string; children: ReactNode; style?: CSSProperties }) {
   return (
-    <div className="chart-card metrics-chart-card">
+    <div className="chart-card metrics-chart-card" style={style}>
       <h3>{title}</h3>
       <div className="metrics-chart-body">{children}</div>
     </div>
@@ -69,5 +69,4 @@ export function MetricsPagination({
     </div>
   );
 }
-
 

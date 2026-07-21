@@ -14,6 +14,7 @@ import { ProjectScopePicker } from '../../components/ProjectScopePicker';
 import { SearchSelect } from '../../components/SearchSelect';
 import { useActivity, useModels, useHourly, useHourlyTokens } from '../../lib/queries';
 import { useDashboard } from './context';
+import { ChartCard } from './shared';
 
 const USAGE_RANGE_OPTIONS = [
   { label: '7 days', value: 7 },
@@ -72,46 +73,35 @@ export function UsageTab() {
         </div>
       ) : (
         <>
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16, marginBottom: 24 }}>
-        <div className="chart-card metrics-chart-card">
-          <h3>Daily Messages</h3>
-          <div className="metrics-chart-body">
-            <Bar data={{
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16, marginBottom: 24 }}>
+            <ChartCard title="Daily Messages">
+              <Bar data={{
               labels: activity.map((d) => d.date.slice(5)),
               datasets: [
                 { label: 'User Prompts', data: activity.map((d) => d.userMessages), backgroundColor: 'rgba(166, 227, 161, 0.6)', borderRadius: 2 },
                 { label: 'Assistant Turns', data: activity.map((d) => d.messages), backgroundColor: 'rgba(137, 180, 250, 0.6)', borderRadius: 2 },
               ],
-            }} options={BAR_OPTIONS_SESSIONS} />
-          </div>
-        </div>
-        <div className="chart-card metrics-chart-card">
-          <h3>Model Usage</h3>
-          <div className="metrics-chart-body">
-            <Doughnut data={{
+              }} options={BAR_OPTIONS_SESSIONS} />
+            </ChartCard>
+            <ChartCard title="Model Usage">
+              <Doughnut data={{
               labels: sortedModels.map((m) => m.model),
               datasets: [{ data: sortedModels.map((m) => m.count), backgroundColor: CHART_COLORS, borderWidth: 0 }],
-            }} options={{ responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { position: 'bottom', labels: { color: '#bac2de', boxWidth: 12, padding: 8, font: { size: 11 } } } } }} />
+              }} options={{ responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { position: 'bottom', labels: { color: '#bac2de', boxWidth: 12, padding: 8, font: { size: 11 } } } } }} />
+            </ChartCard>
           </div>
-        </div>
-      </div>
 
-      {hourlyTokens.length > 0 && <HourlyTokensChart data={hourlyTokens} />}
+          {hourlyTokens.length > 0 && <HourlyTokensChart data={hourlyTokens} />}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16, marginBottom: 32 }}>
-        <div className="chart-card metrics-chart-card">
-          <h3>Sessions by Hour of Day</h3>
-          <div className="metrics-chart-body">
-            <Bar data={{
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16, marginBottom: 32 }}>
+            <ChartCard title="Sessions by Hour of Day">
+              <Bar data={{
               labels: hourly.map((h) => h.hour + ':00'),
               datasets: [{ label: 'Sessions', data: hourly.map((h) => h.sessions), backgroundColor: hourly.map((h) => h.sessions > 0 ? 'rgba(166, 227, 161, 0.6)' : 'rgba(166, 227, 161, 0.1)'), borderRadius: 2 }],
-            }} options={BAR_OPTIONS_HOURLY} />
-          </div>
-        </div>
-        <div className="chart-card metrics-chart-card">
-          <h3>Tokens by Model</h3>
-          <div className="metrics-chart-body">
-            <Bar data={{
+              }} options={BAR_OPTIONS_HOURLY} />
+            </ChartCard>
+            <ChartCard title="Tokens by Model">
+              <Bar data={{
               labels: sortedModels.map((m) => m.model.length > 20 ? m.model.slice(0, 20) + '...' : m.model),
               datasets: [
                 { label: 'Input', data: sortedModels.map((m) => m.tokensIn), backgroundColor: 'rgba(137, 180, 250, 0.6)', borderRadius: 2 },
@@ -119,10 +109,9 @@ export function UsageTab() {
                 { label: 'Cache Read', data: sortedModels.map((m) => m.cacheRead ?? 0), backgroundColor: 'rgba(166, 227, 161, 0.6)', borderRadius: 2 },
                 { label: 'Cache Write', data: sortedModels.map((m) => m.cacheWrite ?? 0), backgroundColor: 'rgba(249, 226, 175, 0.6)', borderRadius: 2 },
               ],
-            }} options={BAR_OPTIONS_TOKENS_BY_MODEL} />
+              }} options={BAR_OPTIONS_TOKENS_BY_MODEL} />
+            </ChartCard>
           </div>
-        </div>
-      </div>
         </>
       )}
     </div>
@@ -178,27 +167,24 @@ function HourlyTokensChart({ data }: { data: HourlyTokensByModel[] }) {
   });
 
   return (
-    <div className="chart-card metrics-chart-card" style={{ marginBottom: 24 }}>
-      <h3>Tokens per Hour by Model (last 7 days)</h3>
-      <div className="metrics-chart-body">
-        <Bar data={{ labels, datasets }} options={{
-          ...BAR_OPTIONS_HOURLY_TOKENS,
-          plugins: {
-            ...BAR_OPTIONS_HOURLY_TOKENS.plugins,
-            tooltip: {
-              callbacks: {
-                title: (items) => { const idx = items[0]?.dataIndex; return idx != null ? `${slots[idx].slice(0, 10)} ${slots[idx].slice(11)}:00` : ''; },
-                label: (ctx) => `${ctx.dataset.label}: ${formatCompactNumber(ctx.raw as number)} tokens`,
-              },
+    <ChartCard title="Tokens per Hour by Model (last 7 days)" style={{ marginBottom: 24 }}>
+      <Bar data={{ labels, datasets }} options={{
+        ...BAR_OPTIONS_HOURLY_TOKENS,
+        plugins: {
+          ...BAR_OPTIONS_HOURLY_TOKENS.plugins,
+          tooltip: {
+            callbacks: {
+              title: (items) => { const idx = items[0]?.dataIndex; return idx != null ? `${slots[idx].slice(0, 10)} ${slots[idx].slice(11)}:00` : ''; },
+              label: (ctx) => `${ctx.dataset.label}: ${formatCompactNumber(ctx.raw as number)} tokens`,
             },
           },
-          scales: {
-            ...BAR_OPTIONS_HOURLY_TOKENS.scales,
-            x: { ...BAR_OPTIONS_HOURLY_TOKENS.scales.x, ticks: { maxRotation: 0, autoSkip: false, callback: (_: unknown, idx: number) => labels[idx] || null } },
-          },
-        }} />
-      </div>
-    </div>
+        },
+        scales: {
+          ...BAR_OPTIONS_HOURLY_TOKENS.scales,
+          x: { ...BAR_OPTIONS_HOURLY_TOKENS.scales.x, ticks: { maxRotation: 0, autoSkip: false, callback: (_: unknown, idx: number) => labels[idx] || null } },
+        },
+      }} />
+    </ChartCard>
   );
 }
 
