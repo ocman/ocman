@@ -3,7 +3,7 @@
 // events, a per-permission state machine with dedup and cancellation,
 // a transient-session LLM judge, a per-session safe-command cache, and
 // a headless watcher that subscribes to every running OpenCode
-// instance's /event stream.
+// instance's /global/event stream.
 //
 // The HTTP layer lives in internal/server; it talks to this package
 // through Service, whose external dependencies are injected via Deps

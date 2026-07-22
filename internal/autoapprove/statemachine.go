@@ -430,7 +430,7 @@ func (s *Service) emitPermissionPending(sessionID, permissionID string, judgeSta
 // currently-registered SSE sink.
 //
 // Why this exists: the headless autoApproveWatcher subscribes to
-// OpenCode's /event stream from server startup, so it routinely
+// OpenCode's /global/event stream from server startup, so it routinely
 // observes (and claims, judges, or completes) permission.asked events
 // before any frontend tab is open. When the user later opens the
 // session, the REST resurrection path calls Ensure again —

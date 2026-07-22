@@ -24,7 +24,7 @@ const (
 	autoApproveRescanInterval = 10 * time.Second
 
 	// autoApproveReconnectDelay is the cooldown between an upstream
-	// /event stream closing (clean EOF, network error, or OpenCode
+	// /global/event stream closing (clean EOF, network error, or OpenCode
 	// shutdown) and the watcher reconnecting. Short enough that a
 	// real OpenCode restart doesn't leave a noticeable auto-approve
 	// gap; long enough that a hard-down OpenCode doesn't spin the
@@ -33,7 +33,7 @@ const (
 )
 
 // autoApproveWatcher drives the headless auto-approve pipeline by
-// subscribing directly to each running OpenCode instance's /event SSE
+// subscribing directly to each running OpenCode instance's /global/event SSE
 // stream, independent of any frontend connection.
 //
 // The legacy flow only fired auto-approve when a browser tab was open
@@ -142,7 +142,11 @@ func newAutoApproveWatcher(svc *Service) *autoApproveWatcher {
 			// instantly even when the user answered from the OpenCode TUI
 			// or another browser tab. The watcher is always connected, so
 			// this fires regardless of which (if any) tab is open.
-			svc.broadcastPermissionResolved(sessionID, permissionID, "replied")
+			reason := "replied"
+			if reply == "reject" {
+				reason = "rejected"
+			}
+			svc.broadcastPermissionResolved(sessionID, permissionID, reason)
 		}
 	}
 	return w
@@ -188,6 +192,9 @@ func (w *autoApproveWatcher) tick(parentCtx context.Context) {
 	for port, cancel := range w.subs {
 		if _, stillUp := live[port]; !stillUp {
 			cancel()
+			if adapter, ok := w.svc.OpencodeAdapter().(*opencode.Adapter); ok {
+				adapter.ClearPromptsForPort(port)
+			}
 			delete(w.subs, port)
 		}
 	}
@@ -230,7 +237,7 @@ func (w *autoApproveWatcher) shutdown() {
 	}
 }
 
-// subscribe holds a single long-lived /event SSE connection to the
+// subscribe holds a single long-lived /global/event SSE connection to the
 // OpenCode instance on the given port. It reuses Tee to
 // parse permission.asked / permission.replied events out of the byte
 // stream and routes them to onPermission / onPermissionReplied.
@@ -289,23 +296,25 @@ func (w *autoApproveWatcher) handleSessionChanged(sessionID string) {
 	}
 }
 
-// streamOnce opens one /event SSE connection and feeds bytes into a
+// streamOnce opens one /global/event SSE connection and feeds bytes into a
 // Tee until the connection ends. Returns when the
 // upstream closes (nil on clean EOF, error otherwise) or when ctx is
 // cancelled.
 func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error {
-	apiURL := fmt.Sprintf("http://127.0.0.1:%s/event", port)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	streamCtx, cancelStream := context.WithCancel(ctx)
+	defer cancelStream()
+	apiURL := fmt.Sprintf("http://127.0.0.1:%s/global/event", port)
+	req, err := http.NewRequestWithContext(streamCtx, http.MethodGet, apiURL, nil)
 	if err != nil {
-		return fmt.Errorf("build /event request: %w", err)
+		return fmt.Errorf("build /global/event request: %w", err)
 	}
 	resp, err := w.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("connect /event: %w", err)
+		return fmt.Errorf("connect /global/event: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("/event upstream HTTP %d", resp.StatusCode)
+		return fmt.Errorf("/global/event upstream HTTP %d", resp.StatusCode)
 	}
 
 	// Resolve the OpenCode adapter once per stream; if the registry
@@ -314,6 +323,44 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 	// Ensure will fail safe by short-circuiting. The
 	// platform ID is still propagated so logs are useful.
 	adapter := w.svc.OpencodeAdapter()
+	ocAdapter, _ := adapter.(*opencode.Adapter)
+	portGeneration := uint64(0)
+	firstReconciliationFinished := make(chan struct{})
+	if ocAdapter != nil {
+		portGeneration = ocAdapter.PromptPortGeneration(port)
+		directories := w.directoriesForPort(port)
+		onPermission := func(prompt platforms.LivePrompt) {
+			if w.onPermission == nil {
+				return
+			}
+			sessionID, _ := prompt["sessionID"].(string)
+			permissionID, _ := prompt["id"].(string)
+			permission, _ := prompt["permission"].(string)
+			metadata, _ := prompt["metadata"].(map[string]any)
+			patterns := promptStrings(prompt["patterns"])
+			if sessionID != "" && permissionID != "" {
+				w.onPermission(opencode.PlatformID, adapter, sessionID, permissionID, permission, patterns, metadata)
+				if w.svc != nil && w.svc.deps.BroadcastSessionChanged != nil {
+					w.svc.deps.BroadcastSessionChanged(sessionID)
+				}
+			}
+		}
+		first := ocAdapter.StartPromptReconciliation(ctx, port, directories, onPermission)
+		go func() {
+			ok := <-first
+			close(firstReconciliationFinished)
+			for !ok {
+				select {
+				case <-streamCtx.Done():
+					return
+				case <-time.After(w.reconnectDelay):
+				}
+				ok = <-ocAdapter.StartPromptReconciliation(streamCtx, port, directories, onPermission)
+			}
+		}()
+	} else {
+		close(firstReconciliationFinished)
+	}
 
 	tee := &Tee{
 		W:     io.Discard, // we only need the parsing side; nothing else consumes this stream
@@ -326,6 +373,22 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 		OnPermissionReplied: func(sessionID, permissionID, reply string) {
 			if w.onPermissionReplied != nil {
 				w.onPermissionReplied(sessionID, permissionID, reply)
+			}
+		},
+		OnPromptAsked: func(directory, kind string, prompt platforms.LivePrompt) {
+			if ocAdapter != nil {
+				ocAdapter.ObservePromptAskedFromPort(port, portGeneration, directory, kind, prompt)
+			}
+			if sessionID, _ := prompt["sessionID"].(string); sessionID != "" && w.svc != nil && w.svc.deps.BroadcastSessionChanged != nil {
+				w.svc.deps.BroadcastSessionChanged(sessionID)
+			}
+		},
+		OnPromptResolved: func(directory, kind, sessionID, requestID string) {
+			if ocAdapter != nil {
+				ocAdapter.ObservePromptResolved(directory, kind, sessionID, requestID)
+			}
+			if sessionID != "" && w.svc != nil && w.svc.deps.BroadcastSessionChanged != nil {
+				w.svc.deps.BroadcastSessionChanged(sessionID)
 			}
 		},
 		OnQuestionResolved: func(sessionID, requestID, reason string) {
@@ -345,10 +408,39 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 	// returns nil on clean EOF and a non-nil error on read failure or
 	// ctx cancel (the request context propagates to the body reader).
 	_, err = io.Copy(tee, resp.Body)
+	<-firstReconciliationFinished
 	if err != nil && ctx.Err() == nil {
-		return fmt.Errorf("read /event: %w", err)
+		return fmt.Errorf("read /global/event: %w", err)
 	}
 	return nil
+}
+
+func promptStrings(value any) []string {
+	switch values := value.(type) {
+	case []string:
+		return values
+	case []any:
+		out := make([]string, 0, len(values))
+		for _, value := range values {
+			if text, ok := value.(string); ok {
+				out = append(out, text)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func (w *autoApproveWatcher) directoriesForPort(port string) []string {
+	byDirectory := w.discoverPorts()
+	directories := make([]string, 0, len(byDirectory))
+	for directory, candidate := range byDirectory {
+		if candidate == port {
+			directories = append(directories, directory)
+		}
+	}
+	return directories
 }
 
 // RunWatcher is the top-level entry point invoked by the server's

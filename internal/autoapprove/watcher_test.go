@@ -15,6 +15,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 )
 
 // fakeOpenCodeEventServer is a minimal test double for OpenCode's
@@ -46,7 +47,7 @@ func newFakeOpenCodeEventServer(events []string) *fakeOpenCodeEventServer {
 }
 
 func (f *fakeOpenCodeEventServer) handle(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/event" {
+	if r.URL.Path != "/global/event" {
 		http.NotFound(w, r)
 		return
 	}
@@ -104,6 +105,234 @@ func permissionAskedEvent(sessionID, permissionID, permission, command string) s
 		`{"id":"evt_x","type":"permission.asked","properties":{"id":%q,"sessionID":%q,"permission":%q,"patterns":[],"metadata":{"command":%q}}}`,
 		permissionID, sessionID, permission, command,
 	) + "\n\n"
+}
+
+func wrappedPermissionAskedEvent(directory, sessionID, permissionID string) string {
+	return "data: " + fmt.Sprintf(
+		`{"directory":%q,"payload":{"type":"permission.asked","properties":{"id":%q,"sessionID":%q,"permission":"Bash","patterns":[],"metadata":{}}}}`,
+		directory, permissionID, sessionID,
+	) + "\n\n"
+}
+
+func TestAutoApproveWatcher_UsesOneGlobalStreamForSharedPort(t *testing.T) {
+	var globalHits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/global/event" {
+			http.NotFound(w, r)
+			return
+		}
+		globalHits.Add(1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(wrappedPermissionAskedEvent("/repo/worktree", "ses-global", "perm-global")))
+	}))
+	defer server.Close()
+	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
+
+	asks := make(chan string, 1)
+	w := newAutoApproveWatcher(nil)
+	w.discoverPorts = func() map[string]string {
+		return map[string]string{"/repo": port, "/repo/worktree": port}
+	}
+	w.onPermission = func(_ platforms.ID, _ platforms.Platform, sessionID, permissionID, _ string, _ []string, _ map[string]any) {
+		asks <- sessionID + "/" + permissionID
+	}
+	w.rescanInterval = time.Second
+	w.reconnectDelay = time.Second
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go w.run(ctx)
+
+	select {
+	case got := <-asks:
+		if got != "ses-global/perm-global" {
+			t.Fatalf("permission = %q, want ses-global/perm-global", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("wrapped permission was not dispatched")
+	}
+	if got := globalHits.Load(); got != 1 {
+		t.Fatalf("global stream connections = %d, want 1", got)
+	}
+}
+
+func TestAutoApproveWatcherUpdatesPromptRegistryFromWrappedEvents(t *testing.T) {
+	events := []string{
+		`{"directory":"/repo/a","payload":{"type":"permission.asked","properties":{"id":"perm-1","sessionID":"ses-1","permission":"Bash"}}}`,
+		`{"directory":"/repo/a","payload":{"type":"permission.rejected","properties":{"requestID":"perm-1","sessionID":"ses-1"}}}`,
+		`{"directory":"/repo/a","payload":{"type":"question.asked","properties":{"id":"question-rejected","sessionID":"ses-1","questions":[]}}}`,
+		`{"directory":"/repo/a","payload":{"type":"question.rejected","properties":{"requestID":"question-rejected","sessionID":"ses-1"}}}`,
+		`{"directory":"/repo/a","payload":{"type":"question.asked","properties":{"id":"question-replied","sessionID":"ses-1","questions":[]}}}`,
+		`{"directory":"/repo/a","payload":{"type":"question.replied","properties":{"requestID":"question-replied","sessionID":"ses-1"}}}`,
+		`{"directory":"/repo/a","payload":{"type":"question.asked","properties":{"id":"question-pending","sessionID":"ses-1","questions":[]}}}`,
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, event := range events {
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", event)
+		}
+	}))
+	defer server.Close()
+
+	adapter := opencode.New(nil, nil)
+	var changed atomic.Int32
+	svc := NewService(Deps{
+		OpencodePlatform:        func() platforms.Platform { return adapter },
+		BroadcastSessionChanged: func(string) { changed.Add(1) },
+	})
+	w := newAutoApproveWatcher(svc)
+	if err := w.streamOnce(context.Background(), strings.TrimPrefix(server.URL, "http://127.0.0.1:")); err != nil {
+		t.Fatalf("streamOnce: %v", err)
+	}
+
+	permissions, _ := adapter.ListPermissions(context.Background(), "ses-1")
+	if len(permissions) != 0 {
+		t.Fatalf("permissions = %#v, want replied permission removed", permissions)
+	}
+	questions, _ := adapter.ListQuestions(context.Background(), "ses-1")
+	if len(questions) != 1 || questions[0]["id"] != "question-pending" {
+		t.Fatalf("questions = %#v, want question-pending", questions)
+	}
+	if got := changed.Load(); got != int32(len(events)) {
+		t.Fatalf("session change broadcasts = %d, want %d prompt edges", got, len(events))
+	}
+}
+
+func TestAutoApproveWatcherBroadcastsRejectedPermission(t *testing.T) {
+	var got string
+	svc := NewService(Deps{BroadcastPermissionResolved: func(_, _, reason string) { got = reason }})
+	w := newAutoApproveWatcher(svc)
+	w.onPermissionReplied("ses-1", "perm-1", "reject")
+	if got != "rejected" {
+		t.Fatalf("resolution reason = %q, want rejected", got)
+	}
+}
+
+func TestAutoApproveWatcherConnectsBeforePromptReconciliation(t *testing.T) {
+	var mu sync.Mutex
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		mu.Unlock()
+		if r.URL.Path == "/global/event" {
+			w.Header().Set("Content-Type", "text/event-stream")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/question" && r.URL.Query().Get("directory") == "/repo/a" {
+			_, _ = w.Write([]byte(`[{"id":"q-snapshot","sessionID":"ses-snapshot","questions":[]}]`))
+			return
+		}
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
+
+	adapter := opencode.New(nil, nil)
+	svc := NewService(Deps{OpencodePlatform: func() platforms.Platform { return adapter }})
+	w := newAutoApproveWatcher(svc)
+	w.discoverPorts = func() map[string]string {
+		return map[string]string{"/repo/a": port, "/repo/b": port}
+	}
+	if err := w.streamOnce(context.Background(), port); err != nil {
+		t.Fatalf("streamOnce: %v", err)
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	questions, _ := adapter.ListQuestions(context.Background(), "ses-snapshot")
+	if len(questions) != 1 {
+		t.Fatalf("questions = %#v, want reconciled snapshot", questions)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(paths) == 0 || paths[0] != "/global/event" {
+		t.Fatalf("request order = %v, want /global/event first", paths)
+	}
+}
+
+func TestAutoApproveWatcherReconcilesPendingPermissionIntoAutoApprove(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", map[bool]string{true: "text/event-stream", false: "application/json"}[r.URL.Path == "/global/event"])
+		if r.URL.Path == "/permission" {
+			_, _ = w.Write([]byte(`[{"id":"perm-snapshot","sessionID":"ses-snapshot","permission":"Bash","patterns":[],"metadata":{}}]`))
+			return
+		}
+		if r.URL.Path != "/global/event" {
+			_, _ = w.Write([]byte(`[]`))
+		}
+	}))
+	defer server.Close()
+	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
+
+	adapter := opencode.New(nil, nil)
+	svc := NewService(Deps{OpencodePlatform: func() platforms.Platform { return adapter }})
+	w := newAutoApproveWatcher(svc)
+	w.discoverPorts = func() map[string]string { return map[string]string{"/repo/a": port} }
+	got := make(chan string, 1)
+	w.onPermission = func(_ platforms.ID, _ platforms.Platform, sessionID, permissionID, _ string, _ []string, _ map[string]any) {
+		got <- sessionID + "/" + permissionID
+	}
+	if err := w.streamOnce(context.Background(), port); err != nil {
+		t.Fatalf("streamOnce: %v", err)
+	}
+	select {
+	case value := <-got:
+		if value != "ses-snapshot/perm-snapshot" {
+			t.Fatalf("reconciled permission = %q", value)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("pending snapshot did not enter auto-approve")
+	}
+}
+
+func TestAutoApproveWatcherRetriesFailedReconciliationOnHealthyStream(t *testing.T) {
+	releaseStream := make(chan struct{})
+	var permissionHits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/global/event" {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.(http.Flusher).Flush()
+			<-releaseStream
+			return
+		}
+		if r.URL.Path == "/permission" && permissionHits.Add(1) <= 3 {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/permission" {
+			_, _ = w.Write([]byte(`[{"id":"perm-retried","sessionID":"ses-retried","permission":"Bash","patterns":[],"metadata":{}}]`))
+			return
+		}
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
+
+	adapter := opencode.New(nil, nil)
+	svc := NewService(Deps{OpencodePlatform: func() platforms.Platform { return adapter }})
+	w := newAutoApproveWatcher(svc)
+	w.discoverPorts = func() map[string]string { return map[string]string{"/repo/retry": port} }
+	w.reconnectDelay = time.Millisecond
+	got := make(chan string, 1)
+	w.onPermission = func(_ platforms.ID, _ platforms.Platform, sessionID, permissionID, _ string, _ []string, _ map[string]any) {
+		got <- sessionID + "/" + permissionID
+	}
+	done := make(chan error, 1)
+	go func() { done <- w.streamOnce(context.Background(), port) }()
+	select {
+	case value := <-got:
+		if value != "ses-retried/perm-retried" {
+			t.Fatalf("retried permission=%q", value)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("failed reconciliation was not retried")
+	}
+	close(releaseStream)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestAutoApproveWatcherAuthenticatesSSE(t *testing.T) {

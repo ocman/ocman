@@ -154,6 +154,13 @@ func TestBubbleUpPromptsToParent(t *testing.T) {
 			mcpParents: map[string]string{"child": "parent"},
 			want:       map[string]bool{"child": true, "parent": true},
 		},
+		{
+			name:       "native grandchild beneath MCP child reaches root",
+			prompted:   map[string]bool{"grandchild": true},
+			parents:    map[string]string{"grandchild": "mcpchild"},
+			mcpParents: map[string]string{"mcpchild": "parent"},
+			want:       map[string]bool{"grandchild": true, "parent": true},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -193,42 +200,6 @@ func TestBubbleUpPromptsToParent_MCPOnly(t *testing.T) {
 	got := bubbleUpPromptsToParent(prompted, nil, mcpLookup)
 	if len(got) != 2 || !got["mcpchild"] || !got["parent"] {
 		t.Errorf("MCP-only lookup should bubble to parent, got %v", got)
-	}
-}
-
-// TestMCPChildSessionIDs verifies the reverse lookup: given a parent
-// session ID, return the IDs of every ocman MCP/worktree child linked
-// to it in state.db. This feeds listPrompts's subagentIDs so a child's
-// permission/question prompt is recognised as relevant on the parent
-// page (the child has no OpenCode parent_id, so /children and
-// GetSubagentSessionIDs both miss it — see #268 regression).
-func TestMCPChildSessionIDs(t *testing.T) {
-	mcp := stubMCPParentLookup{parents: map[string]string{
-		"childA": "parent1",
-		"childB": "parent1",
-		"childC": "parent2",
-	}}
-	got := mcpChildSessionIDs(mcp, "parent1")
-	want := map[string]bool{"childA": true, "childB": true}
-	if len(got) != len(want) {
-		t.Fatalf("got %v, want children of parent1 only", got)
-	}
-	for _, id := range got {
-		if !want[id] {
-			t.Errorf("unexpected child %q for parent1", id)
-		}
-	}
-}
-
-// TestMCPChildSessionIDs_NilAndEmpty degrades cleanly: a nil reader or
-// an empty parent ID yields no children rather than panicking.
-func TestMCPChildSessionIDs_NilAndEmpty(t *testing.T) {
-	if got := mcpChildSessionIDs(nil, "parent1"); got != nil {
-		t.Errorf("nil reader should yield nil, got %v", got)
-	}
-	mcp := stubMCPParentLookup{parents: map[string]string{"childA": "parent1"}}
-	if got := mcpChildSessionIDs(mcp, ""); got != nil {
-		t.Errorf("empty parent should yield nil, got %v", got)
 	}
 }
 

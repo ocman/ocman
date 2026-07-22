@@ -270,7 +270,7 @@ func getSessionDefaultsCached(d dbSessionDefaults, excludeSessionID, directory s
 // Subsequent stats overlay (live connection, pending prompts)
 // still runs uncached because it depends on transient OpenCode
 // HTTP state that's already cached at finer granularity
-// (pendingPromptCache, port discovery).
+// (port discovery).
 
 // sessionsTTL must exceed the frontend poll interval (5s for the
 // dashboard/project views, ~10s for notify) or every poll lands on

@@ -2,8 +2,37 @@ package autoapprove
 
 import (
 	"bytes"
+	"reflect"
 	"testing"
+
+	"github.com/NoUseFreak/ocman/internal/platforms"
 )
+
+func TestTeeWrappedResolutionCarriesDirectory(t *testing.T) {
+	var got string
+	tee := &Tee{
+		W: &bytes.Buffer{},
+		OnPromptResolved: func(directory, kind, sessionID, requestID string) {
+			got = directory + "/" + kind + "/" + sessionID + "/" + requestID
+		},
+	}
+	_, _ = tee.Write([]byte("data: {\"directory\":\"/repo/worktree\",\"payload\":{\"type\":\"question.rejected\",\"properties\":{\"sessionID\":\"ses-1\",\"requestID\":\"q-1\"}}}\n\n"))
+	if got != "/repo/worktree/question/ses-1/q-1" {
+		t.Fatalf("resolution = %q, want directory-qualified callback", got)
+	}
+}
+
+func TestTeeNormalizesV2PermissionEvent(t *testing.T) {
+	var got platforms.LivePrompt
+	tee := &Tee{
+		W:             &bytes.Buffer{},
+		OnPromptAsked: func(_ string, _ string, prompt platforms.LivePrompt) { got = prompt },
+	}
+	_, _ = tee.Write([]byte(`data: {"directory":"/repo","payload":{"type":"permission.v2.asked","properties":{"id":"per-v2","sessionID":"ses-v2","action":"bash","resources":["git commit *"],"metadata":{}}}}` + "\n\n"))
+	if got["permission"] != "bash" || !reflect.DeepEqual(got["patterns"], []string{"git commit *"}) {
+		t.Fatalf("normalized prompt = %#v", got)
+	}
+}
 
 // TestSsePermissionTeeQuestionAndIdle verifies the tee parses
 // question.replied / question.rejected / session.idle events and fires

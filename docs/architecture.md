@@ -86,7 +86,9 @@ flowchart TD
   the container runtime (epic #375) as a second implementation.
 - **platforms/opencode** — wraps the read-only DB queries
   (`internal/db`) plus an HTTP client that attaches to live instances,
-  with `lsof`-based discovery for instances started outside ocman.
+  with `lsof`-based discovery for instances started outside ocman. One
+  process-wide `/global/event` stream per instance keeps pending permission
+  and question state in memory across all session directories.
 - **workflows.Service** — shared validation, durable trigger, and
   run-lifecycle seam for immutable workflow versions. Durable
   manual/interval/cron/PR/completion triggers create version-pinned runs
@@ -153,7 +155,9 @@ sequenceDiagram
     B->>S: GET /api/sessions
     S->>R: resolve platform/host
     R->>A: ListSessions()
-    A->>D: SQL json_extract / HTTP proxy
+    D-->>A: background /global/event prompt updates
+    A->>D: SQL json_extract
+    A->>A: overlay pending prompt registry
     D-->>B: JSON (status inferred at query time)
      Note over S,E: background: workflow engine + trigger ticks,<br/>child-session watcher, remote gRPC streams
      E-->>B: SSE (session.updated, workflow.run.updated)

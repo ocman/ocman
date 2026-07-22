@@ -79,6 +79,9 @@ func (s *Server) handleSessionAutoApproveSet(w http.ResponseWriter, r *http.Requ
 // caller is the toggle handler, which has already persisted the new
 // state and must not fail on a best-effort resurrection.
 func (s *Server) resumeAutoApproveForPending(ctx context.Context, adapter platforms.Platform, sessionID string) {
+	if isRemotePlatformID(string(adapter.ID())) {
+		return
+	}
 	entries, err := adapter.ListPermissions(ctx, sessionID)
 	if err != nil {
 		log.WithError(err).WithFields(log.Fields{
@@ -95,7 +98,7 @@ func (s *Server) resumeAutoApproveForPending(ctx context.Context, adapter platfo
 		}
 		patterns := extractPermissionPatterns(entry)
 		metadata := extractPermissionMetadata(entry)
-		s.aaSvc().Ensure(adapter.ID(), adapter, sessionID, permissionID, permission, patterns, metadata)
+		s.aaSvc().Ensure(adapter.ID(), adapter, promptSessionID(entry, sessionID), permissionID, permission, patterns, metadata)
 	}
 }
 

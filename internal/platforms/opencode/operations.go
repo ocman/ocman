@@ -371,31 +371,24 @@ func (a *Adapter) ExecuteCommand(ctx context.Context, req platforms.ExecuteComma
 
 // RespondPermission answers a pending permission prompt.
 func (a *Adapter) RespondPermission(ctx context.Context, req platforms.RespondPermissionRequest) error {
-	port, _, err := a.resolvePort(req.SessionID)
+	port, session, err := a.resolvePort(req.SessionID)
 	if err != nil {
 		return err
 	}
-	payload, err := marshalRequest(map[string]interface{}{"response": req.Reply})
+	payload, err := marshalRequest(map[string]interface{}{"reply": req.Reply})
 	if err != nil {
 		return err
 	}
-	if err := postJSON(ctx, port, fmt.Sprintf("/session/%s/permissions/%s", req.SessionID, req.PermissionID), payload); err != nil {
+	if err := postJSONForDirectory(ctx, port, fmt.Sprintf("/permission/%s/reply", req.PermissionID), session.Directory, payload); err != nil {
 		return err
 	}
-	// The pending-prompt cache (3 s TTL) backs the sidebar's
-	// pendingPermission flag. Without this invalidation, the sidebar
-	// keeps showing the bell for up to ~6 s after auto-approve (one TTL
-	// before the cache expires, plus one sidebar poll interval) — long
-	// enough to feel like the auto-approve didn't fire. Drop the entry
-	// so the next /api/sessions fan-out fetches a fresh list from
-	// OpenCode without the just-resolved prompt.
-	getPendingPromptCache().invalidate(port, "/permission")
+	a.ObservePromptResolved(session.Directory, "permission", req.SessionID, req.PermissionID)
 	return nil
 }
 
 // RespondQuestion replies to a pending question prompt.
 func (a *Adapter) RespondQuestion(ctx context.Context, req platforms.RespondQuestionRequest) error {
-	port, _, err := a.resolvePort(req.SessionID)
+	port, session, err := a.resolvePort(req.SessionID)
 	if err != nil {
 		return err
 	}
@@ -403,25 +396,35 @@ func (a *Adapter) RespondQuestion(ctx context.Context, req platforms.RespondQues
 	if err != nil {
 		return err
 	}
-	if err := postJSON(ctx, port, fmt.Sprintf("/question/%s/reply", req.RequestID), payload); err != nil {
+	directory := session.Directory
+	promptSessionID := req.SessionID
+	if entry, ok := a.prompts.find("question", req.RequestID); ok {
+		directory = entry.directory
+		promptSessionID = promptString(entry.prompt, "sessionID")
+	}
+	if err := postJSONForDirectory(ctx, port, fmt.Sprintf("/question/%s/reply", req.RequestID), directory, payload); err != nil {
 		return err
 	}
-	// See RespondPermission: drop the cached /question list so the
-	// sidebar's pendingQuestion flag clears immediately on the next poll.
-	getPendingPromptCache().invalidate(port, "/question")
+	a.ObservePromptResolved(directory, "question", promptSessionID, req.RequestID)
 	return nil
 }
 
 // RejectQuestion dismisses a pending question prompt.
 func (a *Adapter) RejectQuestion(ctx context.Context, req platforms.RejectQuestionRequest) error {
-	port, _, err := a.resolvePort(req.SessionID)
+	port, session, err := a.resolvePort(req.SessionID)
 	if err != nil {
 		return err
 	}
-	if err := postJSON(ctx, port, fmt.Sprintf("/question/%s/reject", req.RequestID), []byte("{}")); err != nil {
+	directory := session.Directory
+	promptSessionID := req.SessionID
+	if entry, ok := a.prompts.find("question", req.RequestID); ok {
+		directory = entry.directory
+		promptSessionID = promptString(entry.prompt, "sessionID")
+	}
+	if err := postJSONForDirectory(ctx, port, fmt.Sprintf("/question/%s/reject", req.RequestID), directory, []byte("{}")); err != nil {
 		return err
 	}
-	getPendingPromptCache().invalidate(port, "/question")
+	a.ObservePromptResolved(directory, "question", promptSessionID, req.RequestID)
 	return nil
 }
 

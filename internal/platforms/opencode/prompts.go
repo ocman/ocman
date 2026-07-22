@@ -2,10 +2,10 @@ package opencode
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 // Pending-prompt listing: permission and question prompts fetched
@@ -16,153 +16,116 @@ import (
 // directory. Filters out prompts for other sessions — the frontend
 // only cares about those it could act on.
 func (a *Adapter) ListPermissions(ctx context.Context, sessionID string) ([]platforms.LivePrompt, error) {
-	return a.listPrompts(ctx, sessionID, "/permission")
+	return a.listObservedPrompts("permission", sessionID), nil
 }
 
 // ListQuestions returns pending question prompts for the session.
 func (a *Adapter) ListQuestions(ctx context.Context, sessionID string) ([]platforms.LivePrompt, error) {
-	return a.listPrompts(ctx, sessionID, "/question")
-}
-
-func (a *Adapter) listPrompts(ctx context.Context, sessionID, path string) ([]platforms.LivePrompt, error) {
-	port, _, err := a.resolvePortCtx(ctx, sessionID)
-	if err != nil {
-		return nil, nil
-	}
-	body, ok := getJSON(ctx, port, path)
-	if !ok {
-		return nil, nil
-	}
-	var raw []map[string]interface{}
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, nil
-	}
-	// Subagent prompts carry the subagent's session ID, not the parent's.
-	// Bubble them up so the parent session's UI can render and respond to
-	// them — otherwise OpenCode stalls waiting on a prompt the user can't
-	// see (the subagent sessions are hidden from the listing).
-	//
-	// We're already on the live path (resolvePort succeeded), so prefer
-	// OpenCode's GET /session/:id/children over the read-only DB. This
-	// removes a DB hit from RespondPermission's neighbour code and keeps
-	// the live mutating path API-pure. Falls back to the DB on upstream
-	// failure so prompts still bubble when, e.g., OpenCode briefly drops
-	// the children endpoint (older versions, transient errors).
-	subagentIDs := fetchSubagentSessionIDs(ctx, port, sessionID)
-	if subagentIDs == nil && a.db != nil {
-		subagentIDs, _ = a.db.GetSubagentSessionIDs(sessionID)
-	}
-	// ocman MCP/worktree children have no OpenCode parent_id (since
-	// #268 they run on the shared project instance), so neither the
-	// /children endpoint nor GetSubagentSessionIDs finds them. Add
-	// ocman's own child_sessions links so their prompts bubble to the
-	// parent page. Additive: never drops OpenCode-known subagents.
-	subagentIDs = append(subagentIDs, mcpChildSessionIDs(a.childLinks, sessionID)...)
-	return filterPromptsForSession(raw, sessionID, subagentIDs), nil
-}
-
-// mcpChildSessionIDs returns the IDs of every ocman MCP/worktree child
-// session linked to parentID in state.db. Returns nil for a nil reader,
-// an empty parentID, or a read error — the result is best-effort UI
-// plumbing, never a hard dependency.
-func mcpChildSessionIDs(mcpConn mcpParentLookup, parentID string) []string {
-	if mcpConn == nil || parentID == "" {
-		return nil
-	}
-	links, err := mcpConn.ChildSessionParents()
-	if err != nil || len(links) == 0 {
-		return nil
-	}
-	var out []string
-	for key, parent := range links {
-		if parent == parentID {
-			out = append(out, key.SessionID)
+	if port, session, err := a.resolvePortCtx(ctx, sessionID); err == nil {
+		directories := append([]string{session.Directory}, a.descendantDirectories(sessionID)...)
+		for _, entry := range a.observedPromptEntries("question", sessionID) {
+			directories = append(directories, entry.directory)
+		}
+		if ok := <-a.startPromptReconciliation(ctx, port, uniqueStrings(directories), []string{"question"}, false); !ok {
+			return nil, fmt.Errorf("refreshing pending questions: %w", platforms.ErrPlatformUnreachable)
 		}
 	}
-	return out
+	return a.listObservedPrompts("question", sessionID), nil
 }
 
-// fetchSubagentSessionIDs walks GET /session/:id/children on the
-// running OpenCode instance and returns every descendant session ID.
-// Returns nil when the root request fails so callers can fall back to
-// the DB lookup; a failed descendant request retains the IDs already
-// discovered — the result is best-effort UI plumbing, never a hard
-// dependency.
-//
-// Each direct-child lookup is routed through catalogCache. A session's
-// children change only when a subagent spawns, so the 30s TTL keeps
-// polling cheap while still exposing nested Task subagents.
-func fetchSubagentSessionIDs(ctx context.Context, port, sessionID string) []string {
+func (a *Adapter) descendantDirectories(sessionID string) []string {
+	if a.db == nil {
+		return nil
+	}
+	mcpChildren := make(map[string][]string)
+	if a.childLinks != nil {
+		if parents, err := a.childLinks.ChildSessionParents(); err == nil {
+			for key, parentID := range parents {
+				mcpChildren[parentID] = append(mcpChildren[parentID], key.SessionID)
+			}
+		}
+	}
+	ids := make(map[string]bool)
 	queue := []string{sessionID}
-	seen := map[string]bool{sessionID: true}
-	var out []string
 	for len(queue) > 0 {
-		id := queue[0]
+		parentID := queue[0]
 		queue = queue[1:]
-		body, ok := getJSONCached(ctx, port, fmt.Sprintf("/session/%s/children", id))
-		if !ok {
-			if id == sessionID {
-				return nil
+		children, _ := a.db.GetSubagentSessionIDs(parentID)
+		children = append(children, mcpChildren[parentID]...)
+		for _, childID := range children {
+			if !ids[childID] {
+				ids[childID] = true
+				queue = append(queue, childID)
 			}
-			continue
 		}
-		for _, childID := range parseSubagentChildIDs(body) {
-			if seen[childID] {
-				continue
-			}
-			seen[childID] = true
-			out = append(out, childID)
-			queue = append(queue, childID)
+	}
+	var directories []string
+	for id := range ids {
+		if session, err := a.db.GetSession(id); err == nil {
+			directories = append(directories, session.Directory)
+		}
+	}
+	return uniqueStrings(directories)
+}
+
+func (a *Adapter) listObservedPrompts(kind, sessionID string) []platforms.LivePrompt {
+	entries := a.observedPromptEntries(kind, sessionID)
+	out := make([]platforms.LivePrompt, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, entry.prompt)
+	}
+	return out
+}
+
+func (a *Adapter) observedPromptEntries(kind, sessionID string) []livePromptEntry {
+	entries := a.prompts.listEntries(kind)
+	ids := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		prompt := entry.prompt
+		ids = append(ids, promptString(prompt, "sessionID"))
+	}
+	parents := map[string]string{}
+	if a.db != nil {
+		parents, _ = a.db.GetSessionParentIDs(ids)
+	}
+	mcpParents := map[state.Key]string{}
+	if a.childLinks != nil {
+		mcpParents, _ = a.childLinks.ChildSessionParents()
+	}
+
+	out := make([]livePromptEntry, 0, len(entries))
+	for _, entry := range entries {
+		prompt := entry.prompt
+		promptSessionID := promptString(prompt, "sessionID")
+		nativeAncestor := parents[promptSessionID]
+		if promptSessionID == sessionID || nativeAncestor == sessionID || mcpDescendsFrom(mcpParents, promptSessionID, sessionID) || mcpDescendsFrom(mcpParents, nativeAncestor, sessionID) {
+			out = append(out, entry)
 		}
 	}
 	return out
 }
 
-// parseSubagentChildIDs extracts the `id` field of every entry in
-// OpenCode's GET /session/:id/children response. Permissive: ignores
-// entries with an empty/missing id and returns nil for malformed
-// payloads (so listPrompts's nil-check triggers the DB fallback
-// rather than treating "broken upstream" as "no children").
-func parseSubagentChildIDs(body []byte) []string {
-	var raw []map[string]interface{}
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil
-	}
-	if len(raw) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(raw))
-	for _, entry := range raw {
-		if id, ok := entry["id"].(string); ok && id != "" {
-			out = append(out, id)
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if value != "" && !seen[value] {
+			seen[value] = true
+			out = append(out, value)
 		}
-	}
-	if len(out) == 0 {
-		return nil
 	}
 	return out
 }
 
-// filterPromptsForSession returns the subset of OpenCode prompt entries
-// (from /permission or /question) that belong to the given session or any
-// of its subagents. Entries without a sessionID are kept as-is — older
-// OpenCode versions emit parent-scoped prompts that way.
-//
-// Kept as a pure function so the inclusion logic is testable without
-// spinning up an HTTP server or running OpenCode.
-func filterPromptsForSession(raw []map[string]interface{}, sessionID string, subagentIDs []string) []platforms.LivePrompt {
-	allowed := make(map[string]bool, 1+len(subagentIDs))
-	allowed[sessionID] = true
-	for _, id := range subagentIDs {
-		allowed[id] = true
-	}
-	out := make([]platforms.LivePrompt, 0, len(raw))
-	for _, r := range raw {
-		sid, hasSID := r["sessionID"].(string)
-		if hasSID && sid != "" && !allowed[sid] {
-			continue
+func mcpDescendsFrom(parents map[state.Key]string, childID, ancestorID string) bool {
+	seen := make(map[string]bool)
+	for childID != "" && !seen[childID] {
+		seen[childID] = true
+		parentID := parents[state.Key{Platform: string(PlatformID), SessionID: childID}]
+		if parentID == ancestorID {
+			return true
 		}
-		out = append(out, platforms.LivePrompt(r))
+		childID = parentID
 	}
-	return out
+	return false
 }

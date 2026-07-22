@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -15,17 +16,16 @@ import (
 // ProxyEvents streams OpenCode's /event SSE to w until the upstream
 // connection closes or ctx is cancelled.
 func (a *Adapter) ProxyEvents(ctx context.Context, sessionID string, w io.Writer, flush func()) error {
-	port, _, err := a.resolvePort(sessionID)
+	port, session, err := a.resolvePort(sessionID)
 	if err != nil {
 		return err
 	}
 
-	apiURL := fmt.Sprintf("http://127.0.0.1:%s/event", port)
+	apiURL := fmt.Sprintf("http://127.0.0.1:%s/event?directory=%s", port, url.QueryEscape(session.Directory))
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return fmt.Errorf("opencode events: %w", err)
 	}
-
 	// Invalidate the session cache when the SSE stream ends, regardless
 	// of how it ends (clean EOF, client disconnect, or context cancel).
 	// Without this, a user switching sessions and returning within the

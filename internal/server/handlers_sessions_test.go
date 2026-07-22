@@ -632,6 +632,16 @@ func TestHandleSession_UnarchivesOnOpen(t *testing.T) {
 
 // --- POST /api/session/{id}/auto-approve ---
 
+func TestPromptSessionIDPrefersIssuingChild(t *testing.T) {
+	entry := platforms.LivePrompt{"sessionID": "ses-child"}
+	if got := promptSessionID(entry, "ses-parent"); got != "ses-child" {
+		t.Fatalf("prompt session = %q, want child", got)
+	}
+	if got := promptSessionID(platforms.LivePrompt{}, "ses-parent"); got != "ses-parent" {
+		t.Fatalf("fallback prompt session = %q, want parent", got)
+	}
+}
+
 // TestHandleSessionAutoApproveSet_EnablingTriggersJudgeForPending is the
 // regression for the "enabling auto-approve shows 'starting…' forever"
 // bug: when a permission prompt is already on screen and the user

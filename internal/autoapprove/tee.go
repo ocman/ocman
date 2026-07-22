@@ -10,6 +10,8 @@ import (
 	"sync"
 
 	log "github.com/sirupsen/logrus"
+
+	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
 // Tee wraps an io.Writer and tees the SSE byte stream to a
@@ -30,8 +32,8 @@ type Tee struct {
 	// onPermission fires when the upstream emits permission.asked.
 	//
 	// sessionID is the session ID *from the event payload*, not the
-	// session that owns the SSE connection. OpenCode's /event stream
-	// is process-wide and carries events for every active session, so
+	// session that owns the SSE connection. OpenCode's directory-scoped
+	// /event stream carries events for every session in that directory, so
 	// the tee on session A's connection will see permission.asked for
 	// session B's prompts too. Routing must use the event's sessionID
 	// — if we used the connection's sessionID, the approval notice
@@ -48,6 +50,11 @@ type Tee struct {
 	// capture "Allow always" approvals into the parent's shadow
 	// allowlist (issue #101).
 	OnPermissionReplied func(sessionID, permissionID, reply string)
+	// OnPromptAsked and OnPromptResolved expose all prompt lifecycle
+	// events to the adapter's live registry. Directory is populated by
+	// /global/event and empty for direct /event streams.
+	OnPromptAsked    func(directory, kind string, prompt platforms.LivePrompt)
+	OnPromptResolved func(directory, kind, sessionID, requestID string)
 	// onQuestionResolved fires when the upstream emits question.replied
 	// or question.rejected, so cross-page prompt toasts for the
 	// session's question can clear. reason is "replied" or "rejected".
@@ -167,6 +174,22 @@ func splitSSELines(b []byte) [][]byte {
 // envelope's "type" field. Field names match the OpenCode OpenAPI
 // schema (PermissionRequest / EventPermissionReplied).
 func (t *Tee) dispatchEvent(eventType, dataJSON string) {
+	t.dispatchEventInDirectory(eventType, dataJSON, "")
+}
+
+func (t *Tee) dispatchEventInDirectory(eventType, dataJSON, directory string) {
+	// /global/event wraps the regular event envelope with its directory.
+	// Feed the payload back through the same dispatcher so direct /event
+	// streams and legacy flat payloads keep their existing behavior.
+	var global struct {
+		Directory string          `json:"directory"`
+		Payload   json.RawMessage `json:"payload"`
+	}
+	if err := json.Unmarshal([]byte(dataJSON), &global); err == nil && len(global.Payload) > 0 {
+		t.dispatchEventInDirectory("", string(global.Payload), global.Directory)
+		return
+	}
+
 	// Resolve the effective event type: named-channel header wins if
 	// present, otherwise fall back to the JSON envelope's "type" field
 	// (the default-channel shape that OpenCode uses).
@@ -181,14 +204,18 @@ func (t *Tee) dispatchEvent(eventType, dataJSON string) {
 		effectiveType = typeOnly.Type
 	}
 	switch effectiveType {
-	case "permission.asked":
-		t.dispatchPermissionAsked(dataJSON)
-	case "permission.replied":
-		t.dispatchPermissionReplied(dataJSON)
+	case "permission.asked", "permission.v2.asked":
+		t.dispatchPermissionAsked(directory, dataJSON)
+	case "permission.replied", "permission.v2.replied":
+		t.dispatchPermissionReplied(directory, dataJSON, "")
+	case "permission.rejected":
+		t.dispatchPermissionReplied(directory, dataJSON, "reject")
+	case "question.asked":
+		t.dispatchQuestionAsked(directory, dataJSON)
 	case "question.replied":
-		t.dispatchQuestionResolved(dataJSON, "replied")
+		t.dispatchQuestionResolved(directory, dataJSON, "replied")
 	case "question.rejected":
-		t.dispatchQuestionResolved(dataJSON, "rejected")
+		t.dispatchQuestionResolved(directory, dataJSON, "rejected")
 	case "session.idle":
 		t.dispatchSessionIdle(dataJSON)
 	case "session.updated":
@@ -202,16 +229,18 @@ func (t *Tee) dispatchEvent(eventType, dataJSON string) {
 // distinguish two permission requests with the same generic label.
 //
 // sessionID is extracted from the payload (NOT from the SSE connection
-// owner) because OpenCode's /event stream is process-wide: a single
-// connection sees events for every session in that process. Using the
+// owner) because OpenCode's /event stream carries every session in the
+// selected directory. Using the
 // connection's session ID for routing would attribute every other
 // session's auto-approved notice to the connection's session.
-func (t *Tee) dispatchPermissionAsked(dataJSON string) {
+func (t *Tee) dispatchPermissionAsked(directory, dataJSON string) {
 	type permProps struct {
 		ID         string         `json:"id"`
 		SessionID  string         `json:"sessionID"`
 		Permission string         `json:"permission"`
 		Patterns   []string       `json:"patterns"`
+		Action     string         `json:"action"`
+		Resources  []string       `json:"resources"`
 		Metadata   map[string]any `json:"metadata"`
 	}
 	var envelope struct {
@@ -229,6 +258,12 @@ func (t *Tee) dispatchPermissionAsked(dataJSON string) {
 			return
 		}
 	}
+	if props.Permission == "" {
+		props.Permission = props.Action
+	}
+	if len(props.Patterns) == 0 {
+		props.Patterns = props.Resources
+	}
 	if props.ID == "" || props.Permission == "" || props.SessionID == "" {
 		return
 	}
@@ -241,6 +276,12 @@ func (t *Tee) dispatchPermissionAsked(dataJSON string) {
 	if t.OnPermission != nil {
 		t.OnPermission(props.SessionID, props.ID, props.Permission, props.Patterns, props.Metadata)
 	}
+	if t.OnPromptAsked != nil {
+		prompt := eventProperties(dataJSON)
+		prompt["permission"] = props.Permission
+		prompt["patterns"] = props.Patterns
+		t.OnPromptAsked(directory, "permission", prompt)
+	}
 }
 
 // dispatchPermissionReplied extracts the permission ID from a
@@ -251,7 +292,7 @@ func (t *Tee) dispatchPermissionAsked(dataJSON string) {
 //
 // sessionID is extracted from the payload for the same reason as in
 // dispatchPermissionAsked: a single tee sees events for every session.
-func (t *Tee) dispatchPermissionReplied(dataJSON string) {
+func (t *Tee) dispatchPermissionReplied(directory, dataJSON, fallbackReply string) {
 	type repliedProps struct {
 		SessionID string `json:"sessionID"`
 		RequestID string `json:"requestID"`
@@ -279,6 +320,9 @@ func (t *Tee) dispatchPermissionReplied(dataJSON string) {
 	if permissionID == "" || props.SessionID == "" {
 		return
 	}
+	if props.Reply == "" {
+		props.Reply = fallbackReply
+	}
 	log.WithFields(log.Fields{
 		"sessionID":    props.SessionID,
 		"permissionID": permissionID,
@@ -287,6 +331,19 @@ func (t *Tee) dispatchPermissionReplied(dataJSON string) {
 	if t.OnPermissionReplied != nil {
 		t.OnPermissionReplied(props.SessionID, permissionID, props.Reply)
 	}
+	if t.OnPromptResolved != nil {
+		t.OnPromptResolved(directory, "permission", props.SessionID, permissionID)
+	}
+}
+
+func (t *Tee) dispatchQuestionAsked(directory, dataJSON string) {
+	prompt := eventProperties(dataJSON)
+	if promptString(prompt, "sessionID") == "" || promptString(prompt, "id") == "" {
+		return
+	}
+	if t.OnPromptAsked != nil {
+		t.OnPromptAsked(directory, "question", prompt)
+	}
 }
 
 // dispatchQuestionResolved extracts the session + request IDs from a
@@ -294,8 +351,8 @@ func (t *Tee) dispatchPermissionReplied(dataJSON string) {
 // onQuestionResolved. OpenCode uses `requestID`; both casings and the
 // `id` fallback are accepted for robustness across shapes. sessionID is
 // taken from the payload (the tee sees every session's events).
-func (t *Tee) dispatchQuestionResolved(dataJSON, reason string) {
-	if t.OnQuestionResolved == nil {
+func (t *Tee) dispatchQuestionResolved(directory, dataJSON, reason string) {
+	if t.OnQuestionResolved == nil && t.OnPromptResolved == nil {
 		return
 	}
 	type qProps struct {
@@ -324,7 +381,35 @@ func (t *Tee) dispatchQuestionResolved(dataJSON, reason string) {
 	if sessionID == "" {
 		return
 	}
-	t.OnQuestionResolved(sessionID, requestID, reason)
+	if t.OnQuestionResolved != nil {
+		t.OnQuestionResolved(sessionID, requestID, reason)
+	}
+	if requestID != "" && t.OnPromptResolved != nil {
+		t.OnPromptResolved(directory, "question", sessionID, requestID)
+	}
+}
+
+func eventProperties(dataJSON string) platforms.LivePrompt {
+	var envelope struct {
+		Properties json.RawMessage `json:"properties"`
+	}
+	if err := json.Unmarshal([]byte(dataJSON), &envelope); err != nil {
+		return nil
+	}
+	raw := []byte(dataJSON)
+	if len(envelope.Properties) > 0 {
+		raw = envelope.Properties
+	}
+	var prompt platforms.LivePrompt
+	if err := json.Unmarshal(raw, &prompt); err != nil {
+		return nil
+	}
+	return prompt
+}
+
+func promptString(prompt platforms.LivePrompt, key string) string {
+	value, _ := prompt[key].(string)
+	return value
 }
 
 // dispatchSessionIdle extracts the session ID from a session.idle event

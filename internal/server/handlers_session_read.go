@@ -67,18 +67,27 @@ func (s *Server) handleSessionPermissions(w http.ResponseWriter, r *http.Request
 		// judge, leaving the UI stuck on the prompt indefinitely.
 		// ensureAutoApprove deduplicates against the SSE tee so we
 		// don't double-judge a permission that arrives via both paths.
-		for _, entry := range entries {
-			permissionID, _ := entry["id"].(string)
-			permission, _ := entry["permission"].(string)
-			if permissionID == "" || permission == "" {
-				continue
+		if !isRemotePlatformID(string(adapter.ID())) {
+			for _, entry := range entries {
+				permissionID, _ := entry["id"].(string)
+				permission, _ := entry["permission"].(string)
+				if permissionID == "" || permission == "" {
+					continue
+				}
+				patterns := extractPermissionPatterns(entry)
+				metadata := extractPermissionMetadata(entry)
+				s.aaSvc().Ensure(adapter.ID(), adapter, promptSessionID(entry, sessionID), permissionID, permission, patterns, metadata)
 			}
-			patterns := extractPermissionPatterns(entry)
-			metadata := extractPermissionMetadata(entry)
-			s.aaSvc().Ensure(adapter.ID(), adapter, sessionID, permissionID, permission, patterns, metadata)
 		}
 		writeJSON(w, entries)
 	})
+}
+
+func promptSessionID(entry platforms.LivePrompt, fallback string) string {
+	if sessionID, _ := entry["sessionID"].(string); sessionID != "" {
+		return sessionID
+	}
+	return fallback
 }
 
 // extractPermissionPatterns reads the "patterns" array from a

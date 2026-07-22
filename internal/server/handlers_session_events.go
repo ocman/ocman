@@ -88,8 +88,8 @@ func (s *Server) serveSessionEvents(w http.ResponseWriter, r *http.Request, sess
 	// against in-flight goroutines so only one judge ever runs per
 	// permission.
 	//
-	// OpenCode's /event stream is process-wide — every event for every
-	// session in that OpenCode process flows through this connection.
+	// OpenCode's /event stream is directory-scoped — every event for
+	// sessions in the selected directory flows through this connection.
 	// The callback's `evtSessionID` argument carries the *event's*
 	// session ID (extracted from the payload) so the auto-approve
 	// pipeline routes the verdict, the persistence, and the

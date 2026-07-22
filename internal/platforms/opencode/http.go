@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -99,6 +100,10 @@ func getJSONCached(ctx context.Context, port, path string) ([]byte, bool) {
 // an error describing the upstream status otherwise.
 func postJSON(ctx context.Context, port, path string, payload []byte) error {
 	return sendJSON(ctx, http.MethodPost, port, path, payload)
+}
+
+func postJSONForDirectory(ctx context.Context, port, path, directory string, payload []byte) error {
+	return postJSON(ctx, port, path+"?directory="+url.QueryEscape(directory), payload)
 }
 
 // patchJSON performs a PATCH with a JSON body. Returns nil on 2xx,

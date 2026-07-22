@@ -12,7 +12,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -56,6 +55,7 @@ type Adapter struct {
 	// their parent (OpenCode never records a parent_id for them). Nil
 	// when the favorites reader isn't a full state.db (tests).
 	childLinks mcpParentLookup
+	prompts    *livePromptRegistry
 }
 
 // New returns a new OpenCode adapter backed by the given read-only DB.
@@ -85,7 +85,7 @@ func NewWithPricingAndAuth(database *db.DB, favorites FavoritesReader, pricing C
 
 func newAdapter(database *db.DB, favorites FavoritesReader, pricing CostCalculator, auth ocapi.Auth) *Adapter {
 	configureHTTPAuth(auth)
-	return &Adapter{db: database, favorites: favorites, pricing: pricing, auth: auth, childLinks: childLinksFrom(favorites)}
+	return &Adapter{db: database, favorites: favorites, pricing: pricing, auth: auth, childLinks: childLinksFrom(favorites), prompts: newLivePromptRegistry()}
 }
 
 // childLinksFrom returns favorites as an mcpParentLookup when it also
@@ -140,9 +140,8 @@ func (a *Adapter) Capabilities() platforms.Capabilities {
 
 // Sessions returns all OpenCode sessions, optionally filtered by directory
 // and/or updated-after timestamp. In addition to Platform, the adapter
-// populates LiveConnection, PendingPermission, and PendingQuestion by
-// probing running OpenCode instances — the server package no longer
-// needs to know about lsof or OpenCode HTTP endpoints to list sessions.
+// populates LiveConnection from port discovery and pending prompt flags
+// from the global event registry.
 func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.Session, error) {
 	if a.db == nil {
 		return nil, nil
@@ -160,15 +159,14 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 	// about here.
 	sessions = append([]db.Session(nil), sessions...)
 
-	// Fan out to every running OpenCode instance to collect liveness
-	// flags. Failures are silent — this is a best-effort UI hint.
+	// Discover live instances for connection flags. Pending prompts come
+	// from the global event watcher, so session listing never fans out to
+	// every instance's /permission and /question endpoints.
 	portsPhase := srvtiming.Begin(ctx, "lsof_ports")
 	ports := discoverOpenCodePorts()
 	portsPhase.End()
 
-	promptsPhase := srvtiming.Begin(ctx, "pending_prompts")
-	pendingPerms, pendingQuestions := collectPendingPromptsByDir(ports)
-	promptsPhase.EndWithDesc(fmt.Sprintf("%d instances", len(ports)))
+	pendingPerms, pendingQuestions := a.prompts.pendingSessionIDs()
 
 	// OpenCode emits subagent prompts with the subagent's session ID,
 	// not the parent's. The listing only contains parent sessions
@@ -249,10 +247,18 @@ func bubbleUpPromptsToParent(prompted map[string]bool, dbConn parentLookup, mcpC
 	if mcpConn != nil {
 		if mcpParents, err := mcpConn.ChildSessionParents(); err == nil {
 			for _, id := range ids {
-				if _, ok := parents[id]; ok {
-					continue // OpenCode parent_id wins
+				parent := parents[id]
+				if parent == "" {
+					parent = mcpParents[state.Key{Platform: string(PlatformID), SessionID: id}]
 				}
-				if parent, ok := mcpParents[state.Key{Platform: string(PlatformID), SessionID: id}]; ok && parent != "" {
+				for parent != "" {
+					next := mcpParents[state.Key{Platform: string(PlatformID), SessionID: parent}]
+					if next == "" {
+						break
+					}
+					parent = next
+				}
+				if parent != "" {
 					parents[id] = parent
 				}
 			}
@@ -467,8 +473,6 @@ func (a *Adapter) SessionChanges(_ context.Context, sessionID string) (*platform
 	return aggregateChanges(sessionID, directory, parts), nil
 }
 
-// LiveStatus returns nil: OpenCode uses on-demand port discovery rather
-// than maintaining an in-memory hook-driven live-state cache. The server
-// computes liveConnection/pending flags at Sessions() time using the
-// discovered port map.
+// LiveStatus returns nil: OpenCode overlays live connection and prompt
+// state directly in Sessions.
 func (a *Adapter) LiveStatus(string) *platforms.LiveState { return nil }

@@ -81,7 +81,7 @@ func (s *Service) Ensure(
 
 // backgroundAutoApprove is the authoritative auto-approve engine.
 // It fires whenever an SSE permission.asked event is observed on an
-// OpenCode /event stream — either via the frontend-driven tee in
+// OpenCode event stream — either via the frontend-driven /event tee in
 // serveSessionEvents (active while a browser tab is open) or via the
 // headless runAutoApproveWatcher (active for the lifetime of the
 // ocman process). Both entry points funnel through Ensure,

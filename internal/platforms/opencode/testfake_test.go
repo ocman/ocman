@@ -177,6 +177,17 @@ func withTestPort(t *testing.T, dir, port string) {
 // minimal OpenCode schema and a single session row. Returned *db.DB is
 // closed in t.Cleanup.
 func newTestDBWithSession(t *testing.T, sessionID, directory string) *db.DB {
+	return newTestDBWithSessions(t, []testSession{{id: sessionID, directory: directory}})
+}
+
+type testSession struct {
+	id        string
+	directory string
+	parentID  *string
+	busy      bool
+}
+
+func newTestDBWithSessions(t *testing.T, sessions []testSession) *db.DB {
 	t.Helper()
 	tmp := t.TempDir() + "/opencode.db"
 	setup, err := sql.Open("sqlite", tmp)
@@ -215,13 +226,24 @@ func newTestDBWithSession(t *testing.T, sessionID, directory string) *db.DB {
 		setup.Close()
 		t.Fatalf("creating schema: %v", err)
 	}
-	if _, err := setup.Exec(
-		`INSERT INTO session (id, title, directory, time_created, time_updated)
-		 VALUES (?, ?, ?, ?, ?)`,
-		sessionID, "test", directory, 1000, 1000,
-	); err != nil {
-		setup.Close()
-		t.Fatalf("seed session: %v", err)
+	for _, session := range sessions {
+		if _, err := setup.Exec(
+			`INSERT INTO session (id, parent_id, title, directory, time_created, time_updated)
+			 VALUES (?, ?, ?, ?, ?, ?)`,
+			session.id, session.parentID, "test", session.directory, 1000, 1000,
+		); err != nil {
+			setup.Close()
+			t.Fatalf("seed session: %v", err)
+		}
+		if session.busy {
+			if _, err := setup.Exec(
+				`INSERT INTO message (id, session_id, time_created, data) VALUES (?, ?, ?, '{"role":"assistant"}')`,
+				"msg-"+session.id, session.id, 1000,
+			); err != nil {
+				setup.Close()
+				t.Fatalf("seed busy message: %v", err)
+			}
+		}
 	}
 	setup.Close()
 
