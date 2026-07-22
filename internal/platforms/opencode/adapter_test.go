@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -225,6 +226,25 @@ func TestChildLinksFrom(t *testing.T) {
 	}
 	if got := childLinksFrom(favWithLinks{}); got == nil {
 		t.Errorf("favorites implementing mcpParentLookup should be returned")
+	}
+}
+
+func TestApplyMCPParentLink(t *testing.T) {
+	links := map[state.Key]string{
+		{Platform: string(PlatformID), SessionID: "mcp-child"}:    "mcp-parent",
+		{Platform: string(PlatformID), SessionID: "native-child"}: "wrong-parent",
+	}
+
+	mcpChild := db.Session{ID: "mcp-child"}
+	applyMCPParentLink(&mcpChild, links)
+	if mcpChild.ParentID != "mcp-parent" {
+		t.Errorf("MCP child ParentID = %q, want mcp-parent", mcpChild.ParentID)
+	}
+
+	nativeChild := db.Session{ID: "native-child", ParentID: "native-parent"}
+	applyMCPParentLink(&nativeChild, links)
+	if nativeChild.ParentID != "native-parent" {
+		t.Errorf("native ParentID = %q, want native-parent", nativeChild.ParentID)
 	}
 }
 

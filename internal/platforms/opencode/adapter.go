@@ -158,6 +158,10 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 	// value type with no pointer-shared mutable state we'd care
 	// about here.
 	sessions = append([]db.Session(nil), sessions...)
+	var childParents map[state.Key]string
+	if a.childLinks != nil {
+		childParents, _ = a.childLinks.ChildSessionParents()
+	}
 
 	// Discover live instances for connection flags. Pending prompts come
 	// from the global event watcher, so session listing never fans out to
@@ -180,6 +184,7 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 
 	for i := range sessions {
 		sessions[i].Platform = string(PlatformID)
+		applyMCPParentLink(&sessions[i], childParents)
 		if directoryHasLivePort(ports, sessions[i].Directory) {
 			sessions[i].LiveConnection = true
 		}
@@ -293,6 +298,23 @@ type mcpParentLookup interface {
 	ChildSessionParents() (map[state.Key]string, error)
 }
 
+func applyMCPParentLink(session *db.Session, links map[state.Key]string) {
+	if session == nil || session.ParentID != "" {
+		return
+	}
+	session.ParentID = links[state.Key{Platform: string(PlatformID), SessionID: session.ID}]
+}
+
+func (a *Adapter) applyMCPParentLink(session *db.Session) {
+	if a.childLinks == nil {
+		return
+	}
+	links, err := a.childLinks.ChildSessionParents()
+	if err == nil {
+		applyMCPParentLink(session, links)
+	}
+}
+
 // Owns reports whether this OpenCode session ID exists in the local
 // OpenCode database. It does NOT touch the live HTTP API or the lsof
 // port discovery path, so it's cheap enough to call from the
@@ -318,6 +340,7 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 	detail, ok := a.fetchSessionFromOpenCodeCtx(ctx, id, limit, offset)
 	livePhase.EndWithDesc("fetchSessionFromOpenCode (incl lsof + 2x HTTP)")
 	if ok {
+		a.applyMCPParentLink(detail.Session)
 		return detail, nil
 	}
 
@@ -334,6 +357,7 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 		return nil, err
 	}
 	session.Platform = string(PlatformID)
+	a.applyMCPParentLink(session)
 
 	messages, err := a.db.GetSessionMessages(id)
 	if err != nil {

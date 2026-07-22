@@ -756,6 +756,21 @@ describe('SessionDetail — sidebar polling', () => {
 });
 
 describe('SessionDetail — session tree usage', () => {
+  it('links a child session to its named parent above the conversation', async () => {
+    const parent = makeSession({ id: 'sess_parent', title: 'Parent planning session' });
+    const child = makeSession({ id: 'sess_child', parentId: parent.id });
+    renderSessionPage({
+      sessionId: child.id,
+      detail: makeSessionDetail(child),
+      sessions: [parent, child],
+      apiOverrides: { sessions: vi.fn().mockResolvedValue([parent, child]) },
+    });
+
+    const link = await screen.findByRole('link', { name: 'Parent planning session' });
+    expect(link).toHaveAttribute('href', '/session/sess_parent');
+    expect(link.closest('[role="note"]')).toHaveTextContent('Child session of');
+  });
+
   it('shows totals for the current session and nested subagents', async () => {
     const root = makeSession({ id: 'sess_1', totalInputTokens: 10, totalOutputTokens: 20, totalCost: 0.1 });
     const child = makeSession({ id: 'sess_child', parentId: root.id, totalInputTokens: 30, totalOutputTokens: 40, totalCost: 0.2 });

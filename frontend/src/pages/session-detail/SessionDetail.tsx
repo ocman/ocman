@@ -11,7 +11,7 @@
 // individual UI surfaces.
 
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { createPortal, flushSync } from 'react-dom';
 import { useStickyNavigate } from '../../lib/useStickyNavigate';
 import * as Toast from '@radix-ui/react-toast';
@@ -388,6 +388,10 @@ export function SessionDetail({ id }: SessionDetailProps) {
     }).catch((err) => remoteLog.warn('session usage index fetch failed', err));
     return () => { cancelled = true; };
   }, [session?.id]);
+  const parentSession = session?.parentId
+    ? sessionIndex?.sessions.find((candidate) => candidate.id === session.parentId)
+      ?? recentSessions.find((candidate) => candidate.id === session.parentId)
+    : undefined;
   const promptSessionIds = useMemo(() => {
     const ids = new Set(id ? [id] : []);
     const sessions = sessionIndex?.rootId === id ? (sessionIndex?.sessions ?? []) : [];
@@ -1380,6 +1384,15 @@ export function SessionDetail({ id }: SessionDetailProps) {
               onRetryFailedSend={handleRetrySend}
               onDismissFailedSend={handleDismissFailedSend}
             >
+              {session.parentId && (
+                <aside className="oc-parent-session-note" role="note">
+                  <i className="bi bi-arrow-return-left" aria-hidden="true" />
+                  <span>Child session of</span>
+                  <Link to={`/session/${encodeURIComponent(session.parentId)}`}>
+                    {cleanTitle(parentSession?.title) || 'Parent session'}
+                  </Link>
+                </aside>
+              )}
               <ErrorBoundary
                 name="session:thread"
                 resetKey={`${session.id}:${threadBoundaryResetNonce}`}
