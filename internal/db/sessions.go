@@ -155,12 +155,10 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 		role, finish, lastErr := derefStr(lastRole), derefStr(lastFinish), derefStr(lastError)
 		s.Status = InferSessionStatus(role, finish, lastErr, lastSynthTerminal == 1)
 
-		// Drop subagent sessions entirely. A subagent (non-empty
-		// parent_id) is a Task-tool / split child that should never
-		// surface in the session list — it belongs to its parent's
-		// thread, not the top-level listing. Parent (top-level)
-		// sessions are always kept.
-		if s.ParentID != "" {
+		// Keep active subagents so the UI can nest them under their
+		// parent; completed children have already bubbled their useful
+		// output up and only add noise to the session list.
+		if s.ParentID != "" && s.Status != "busy" {
 			continue
 		}
 
@@ -169,7 +167,7 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 		// subagent)"). These are created directly on the OpenCode
 		// port so the parent_id check above never catches them, yet
 		// they should never surface as top-level rows. Subagents with
-		// a real parent_id are still nested under their parent above.
+		// a real parent_id are handled above.
 		if s.ParentID == "" && strings.HasSuffix(s.Title, " subagent)") {
 			continue
 		}

@@ -4,7 +4,7 @@ import type { Session } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
 import { useUiStore } from '../../lib/uiStore';
 import { filterVisibleSessions } from '../../lib/sessionVisibility';
-import { computeSidebarHash, filterOrphanChildren, pickNextSessionAfterArchive, resolveOpenSession } from '../../lib/sidebarHelpers';
+import { computeSidebarHash, filterInactiveChildren, pickNextSessionAfterArchive, resolveOpenSession } from '../../lib/sidebarHelpers';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { remoteLog } from '../../lib/remoteLog';
 
@@ -131,9 +131,9 @@ export function useSidebarSessions({
       // coerce here so .find() / filterVisibleSessions never see null.
       const result = (await getSessions({ since, limit: RECENT_SESSIONS_LIMIT + 5 }, signal)) ?? [];
       if (signal?.aborted) return;
-      // Drop orphan subagent/child sessions so they aren't promoted to
-      // standalone top-level rows (e.g. "... (@explore subagent)").
-      const rooted = filterOrphanChildren(result, id);
+      // Child sessions are useful while active; completed output has
+      // already bubbled up to the parent.
+      const rooted = filterInactiveChildren(result, id);
       const visible = (showArchivedRecentRef.current ? rooted : filterVisibleSessions(rooted))
         .slice(0, RECENT_SESSIONS_LIMIT);
       // The re-inject below only works if the open session is in the

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Session } from './api';
-import { computeSidebarHash, filterOrphanChildren, pickNextSessionAfterArchive, resolveOpenSession, rollupGroupStatus } from './sidebarHelpers';
+import { computeSidebarHash, filterInactiveChildren, pickNextSessionAfterArchive, resolveOpenSession, rollupGroupStatus } from './sidebarHelpers';
 import { vi } from 'vitest';
 
 function makeSession(overrides: Partial<Session> = {}): Session {
@@ -36,21 +36,21 @@ function makeSession(overrides: Partial<Session> = {}): Session {
   };
 }
 
-describe('filterOrphanChildren', () => {
+describe('filterInactiveChildren', () => {
   it('drops a child whose parent is not in the list', () => {
     const sessions = [
       makeSession({ id: 'top' }),
       makeSession({ id: 'orphan', parentId: 'missing-parent' }),
     ];
-    expect(filterOrphanChildren(sessions).map((s) => s.id)).toEqual(['top']);
+    expect(filterInactiveChildren(sessions).map((s) => s.id)).toEqual(['top']);
   });
 
-  it('keeps a child whose parent is present (so it can nest)', () => {
+  it('drops a completed child even when its parent is present', () => {
     const sessions = [
       makeSession({ id: 'parent' }),
       makeSession({ id: 'child', parentId: 'parent' }),
     ];
-    expect(filterOrphanChildren(sessions).map((s) => s.id)).toEqual(['parent', 'child']);
+    expect(filterInactiveChildren(sessions).map((s) => s.id)).toEqual(['parent']);
   });
 
   it('keeps the currently-open session even if it is an orphan child', () => {
@@ -58,12 +58,12 @@ describe('filterOrphanChildren', () => {
       makeSession({ id: 'top' }),
       makeSession({ id: 'open', parentId: 'missing-parent' }),
     ];
-    expect(filterOrphanChildren(sessions, 'open').map((s) => s.id)).toEqual(['top', 'open']);
+    expect(filterInactiveChildren(sessions, 'open').map((s) => s.id)).toEqual(['top', 'open']);
   });
 
   it('keeps plain top-level sessions', () => {
     const sessions = [makeSession({ id: 'a' }), makeSession({ id: 'b' })];
-    expect(filterOrphanChildren(sessions).map((s) => s.id)).toEqual(['a', 'b']);
+    expect(filterInactiveChildren(sessions).map((s) => s.id)).toEqual(['a', 'b']);
   });
 
   it('keeps an orphan child while it is active, drops it once done', () => {
@@ -73,7 +73,7 @@ describe('filterOrphanChildren', () => {
       makeSession({ id: 'prompt', parentId: 'missing', status: 'done', pendingPermission: true }),
       makeSession({ id: 'gone', parentId: 'missing', status: 'done' }),
     ];
-    expect(filterOrphanChildren(active).map((s) => s.id)).toEqual(['top', 'busy', 'prompt']);
+    expect(filterInactiveChildren(active).map((s) => s.id)).toEqual(['top', 'busy', 'prompt']);
   });
 });
 

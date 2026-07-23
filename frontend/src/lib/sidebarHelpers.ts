@@ -21,29 +21,23 @@ export function computeSidebarHash(sessions: readonly Session[]): string {
 }
 
 /**
- * Drop orphan subagent/child sessions from a flat sidebar list.
+ * Drop inactive subagent/child sessions from a flat sidebar list.
  *
- * A child (one with a `parentId`) only belongs nested under its parent.
- * When the parent is outside the fetched window, `nestSessions` would
- * promote the orphan to a standalone top-level row (e.g.
- * "... (@explore subagent)"). We keep a child when its parent is
- * present in the same list, when it is the currently-open session, or
- * when it is still active (busy / has a pending prompt) — an active
- * subagent like @explore should stay visible until it finishes, then
- * drop out once its parent leaves the window.
+ * A child remains useful while it is busy or waiting for input. Once it
+ * completes, its result has bubbled up to the parent and it only adds
+ * noise. The currently-open child remains visible so its sidebar row
+ * does not disappear while the user is viewing it.
  */
-export function filterOrphanChildren(
+export function filterInactiveChildren(
   sessions: readonly Session[],
   currentId?: string,
 ): Session[] {
-  const presentIds = new Set(sessions.map((s) => s.id));
   const isActive = (s: Session) =>
     s.status === 'busy' || s.pendingPermission || s.pendingQuestion;
   return sessions.filter(
     (s) =>
       !s.parentId ||
       s.id === currentId ||
-      presentIds.has(s.parentId) ||
       isActive(s),
   );
 }
