@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
+	"strings"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -130,11 +132,14 @@ func nextScheduleRun(timing string, runAt, intervalMinutes int64, expression, ti
 		}
 		return runAt, nil
 	case TimingInterval:
-		if intervalMinutes <= 0 {
+		if intervalMinutes <= 0 || intervalMinutes > math.MaxInt64/int64(time.Minute) {
 			return 0, ErrValidation
 		}
 		return after.Add(time.Duration(intervalMinutes) * time.Minute).UnixMilli(), nil
 	case TimingCron:
+		if len(strings.Fields(expression)) != 5 {
+			return 0, ErrValidation
+		}
 		schedule, err := cron.ParseStandard(expression)
 		if err != nil {
 			return 0, err

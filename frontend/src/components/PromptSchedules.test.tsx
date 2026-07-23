@@ -111,3 +111,10 @@ it('creates recurring schedules and toggles enabled state', async () => {
   await user.click(within(row).getByRole('button', { name: 'Disable' }));
   expect(apiMock.setEnabled).toHaveBeenCalledWith('ps_recurring', false);
 });
+
+it('renders the next occurrence in the configured timezone', async () => {
+  const runAt = Date.parse('2030-01-02T03:04:00Z');
+  apiMock.list.mockResolvedValue([{ ...scheduled, runAt, timezone: 'America/New_York' }]);
+  render(<MemoryRouter><PromptSchedules directory="/repo" /></MemoryRouter>);
+  expect(await screen.findByText(`Next: ${new Date(runAt).toLocaleString(undefined, { timeZone: 'America/New_York' })}`)).toBeInTheDocument();
+});

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"math"
 	"sync"
 	"testing"
 	"time"
@@ -277,6 +278,21 @@ func TestCronTimezoneAndDisabledSchedule(t *testing.T) {
 	got, err := svc.SetEnabled(t.Context(), created.ID, true)
 	if err != nil || !got.Enabled || got.RunAt <= now.UnixMilli() {
 		t.Fatalf("SetEnabled: schedule=%+v err=%v", got, err)
+	}
+}
+
+func TestCreateRejectsUnsafeRecurringTiming(t *testing.T) {
+	for name, req := range map[string]promptScheduleCreateRequest{
+		"overflowing interval": {Directory: "/repo", Prompt: "go", TimingType: TimingInterval, IntervalMinutes: math.MaxInt64},
+		"embedded timezone":    {Directory: "/repo", Prompt: "go", TimingType: TimingCron, Cron: "CRON_TZ=UTC 0 9 * * *", Timezone: "Europe/Brussels"},
+		"descriptor":           {Directory: "/repo", Prompt: "go", TimingType: TimingCron, Cron: "@every 5m", Timezone: "UTC"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := testPromptScheduleService(newFakeStore(), &fakeSessions{}).Create(t.Context(), req)
+			if !errors.Is(err, ErrValidation) {
+				t.Fatalf("Create error = %v, want validation error", err)
+			}
+		})
 	}
 }
 

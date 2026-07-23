@@ -81,7 +81,7 @@ export function PromptSchedules({ directory, remoteId = 'local' }: { directory: 
     }
   };
 
-  const toggle = async (schedule: PromptSchedule) => {
+  const toggleEnabled = async (schedule: PromptSchedule) => {
     setBusy(schedule.id);
     setError('');
     try {
@@ -130,7 +130,7 @@ export function PromptSchedules({ directory, remoteId = 'local' }: { directory: 
             <div className="prompt-schedule-meta">
               <strong>{schedule.state}</strong>
               <span>{schedule.timingType} / {schedule.sessionMode} / {schedule.timezone}</span>
-              <time dateTime={new Date(schedule.runAt).toISOString()}>Next: {new Date(schedule.runAt).toLocaleString()}</time>
+              <time dateTime={new Date(schedule.runAt).toISOString()}>Next: {new Date(schedule.runAt).toLocaleString(undefined, { timeZone: schedule.timezone })}</time>
             </div>
             <pre>{schedule.prompt}</pre>
             {schedule.error && <p className="prompt-schedule-error" role="alert">{schedule.error}</p>}
@@ -139,7 +139,7 @@ export function PromptSchedules({ directory, remoteId = 'local' }: { directory: 
                 <button className="oc-time-range-btn" disabled={busy === schedule.id} onClick={() => act(schedule, 'run')}>Run now</button>
                 <button className="oc-time-range-btn" disabled={busy === schedule.id} onClick={() => act(schedule, 'cancel')}>Cancel</button>
               </>}
-              {schedule.timingType !== 'once' && schedule.state !== 'running' && <button className="oc-time-range-btn" disabled={busy === schedule.id} onClick={() => toggle(schedule)}>{schedule.enabled ? 'Disable' : 'Enable'}</button>}
+              {schedule.timingType !== 'once' && schedule.state !== 'running' && <button className="oc-time-range-btn" disabled={busy === schedule.id} onClick={() => toggleEnabled(schedule)}>{schedule.enabled ? 'Disable' : 'Enable'}</button>}
               {schedule.sessionId && <Link to={`/session/${encodeURIComponent(schedule.sessionId)}?platform=${encodeURIComponent(schedule.platform ?? '')}`}>Open session</Link>}
             </div>
           </article>

@@ -119,12 +119,13 @@ flowchart TD
    serialized per-shard git state. Leases carry an optional owning-host
    identity, release only after the attempt settles, and are visible in
    the run UI.
-- **server prompt-schedule service** — the narrow one-time scheduler. It atomically
-  claims due `state.db` rows before creating a fresh OpenCode session through
-  `sessionsvc`, sends the stored prompt unchanged, and persists the linked
-  session or terminal error. On restart, persisted `running` claims become
-  failed rather than being replayed, preventing duplicate external dispatch
-  when completion is unknown.
+ - **server prompt-schedule service** — the native prompt scheduler. It calculates
+   one-time, interval, and five-field cron occurrences with `robfig/cron`, then
+   atomically claims due `state.db` rows before sending the stored prompt through
+   `sessionsvc`. Each occurrence either creates a fresh OpenCode session or queues
+   into the schedule-owned session. On restart, persisted `running` claims become
+   failed rather than being replayed, preventing duplicate external dispatch when
+   completion is unknown.
 - **Legacy loop migration (#325)** — migration v28 copies persisted legacy
   loops into ordinary one-node workflow definitions and turns each iteration
   into a historical workflow run + node attempt. `loop_workflow_map` makes

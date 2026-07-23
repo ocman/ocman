@@ -36,7 +36,10 @@ func (m managedPromptSessions) CreateScheduledSession(ctx context.Context, remot
 
 func (m managedPromptSessions) SendScheduledMessage(ctx context.Context, platformID string, req platforms.SendMessageRequest, queue bool) error {
 	if queue {
-		return m.server.queueSvc().Enqueue(ctx, platformID, false, req)
+		// Persist reuse occurrences without an immediate send. A real idle edge
+		// or the queue sweep dispatches them, so an uncertain send is never
+		// recorded as a successful schedule occurrence.
+		return m.server.queueSvc().Enqueue(ctx, platformID, true, req)
 	}
 	return m.server.sessions.SendMessage(ctx, platformID, req)
 }
