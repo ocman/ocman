@@ -58,7 +58,7 @@ func (f *fakeStore) ClaimPromptSchedule(id string, now int64, force bool) (state
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	schedule, ok := f.schedules[id]
-	if !ok || schedule.State != StateScheduled || (!force && schedule.RunAt > now) {
+	if !ok || schedule.State != StateScheduled || (!force && (!schedule.Enabled || schedule.RunAt > now)) {
 		return schedule, false, nil
 	}
 	schedule.State, schedule.StartedAt, schedule.UpdatedAt = StateRunning, now, now
@@ -70,7 +70,7 @@ func (f *fakeStore) ClaimNextDuePromptSchedule(now int64) (state.PromptSchedule,
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for id, schedule := range f.schedules {
-		if schedule.State == StateScheduled && schedule.RunAt <= now {
+		if schedule.State == StateScheduled && schedule.Enabled && schedule.RunAt <= now {
 			schedule.State, schedule.StartedAt, schedule.UpdatedAt = StateRunning, now, now
 			f.schedules[id] = schedule
 			return schedule, true, nil
@@ -109,6 +109,30 @@ func (f *fakeStore) FinishPromptSchedule(id, stateValue, errorText string, now i
 	return nil
 }
 
+func (f *fakeStore) CompletePromptSchedule(id string, nextRunAt, now int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	schedule := f.schedules[id]
+	schedule.State, schedule.RunAt, schedule.Error, schedule.FinishedAt, schedule.UpdatedAt = StateScheduled, nextRunAt, "", now, now
+	f.schedules[id] = schedule
+	return nil
+}
+
+func (f *fakeStore) SetPromptScheduleEnabled(id string, enabled bool, runAt, now int64) (state.PromptSchedule, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	schedule, ok := f.schedules[id]
+	if !ok {
+		return schedule, state.ErrPromptScheduleNotFound
+	}
+	schedule.Enabled, schedule.RunAt, schedule.UpdatedAt = enabled, runAt, now
+	if enabled {
+		schedule.State, schedule.Error = StateScheduled, ""
+	}
+	f.schedules[id] = schedule
+	return schedule, nil
+}
+
 func (f *fakeStore) FailRunningPromptSchedules(now int64, errorText string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -127,6 +151,7 @@ func (f *fakeStore) FailRunningPromptSchedules(now int64, errorText string) erro
 type fakeSessions struct {
 	created []platforms.CreateSessionRequest
 	sent    []platforms.SendMessageRequest
+	queued  []bool
 	create  error
 	send    error
 }
@@ -139,8 +164,9 @@ func (f *fakeSessions) CreateScheduledSession(_ context.Context, _ string, direc
 	return "opencode", &platforms.CreateSessionResponse{ID: "session-1"}, nil
 }
 
-func (f *fakeSessions) SendScheduledMessage(_ context.Context, _ string, req platforms.SendMessageRequest) error {
+func (f *fakeSessions) SendScheduledMessage(_ context.Context, _ string, req platforms.SendMessageRequest, queue bool) error {
 	f.sent = append(f.sent, req)
+	f.queued = append(f.queued, queue)
 	return f.send
 }
 
@@ -189,6 +215,68 @@ func TestTickCreatesOneSessionAndSendsPromptUnchanged(t *testing.T) {
 	}
 	if got.State != StateCompleted || got.SessionID != "session-1" || got.Platform != "opencode" {
 		t.Fatalf("schedule=%+v", got)
+	}
+}
+
+func TestRecurringFreshAndReuseSessions(t *testing.T) {
+	for _, mode := range []string{SessionModeFresh, SessionModeReuse} {
+		t.Run(mode, func(t *testing.T) {
+			store := newFakeStore()
+			sessions := &fakeSessions{}
+			now := time.Date(2030, 1, 1, 9, 0, 0, 0, time.UTC)
+			svc := newPromptScheduleService(store, sessions, func() time.Time { return now }, func() string { return "schedule-1" })
+			created, err := svc.Create(t.Context(), promptScheduleCreateRequest{
+				Directory: "/repo", Prompt: "go", TimingType: TimingInterval, IntervalMinutes: 10,
+				Timezone: "Europe/Brussels", SessionMode: mode,
+			})
+			if err != nil || created.RunAt != now.Add(10*time.Minute).UnixMilli() || !created.Enabled {
+				t.Fatalf("Create: schedule=%+v err=%v", created, err)
+			}
+
+			now = now.Add(10 * time.Minute)
+			if err := svc.Tick(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			now = now.Add(10 * time.Minute)
+			if err := svc.Tick(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			wantCreated := 2
+			if mode == SessionModeReuse {
+				wantCreated = 1
+			}
+			got, _ := svc.Get(t.Context(), created.ID)
+			if len(sessions.created) != wantCreated || len(sessions.sent) != 2 || got.State != StateScheduled || got.RunAt != now.Add(10*time.Minute).UnixMilli() {
+				t.Fatalf("created=%d sent=%d schedule=%+v", len(sessions.created), len(sessions.sent), got)
+			}
+			if mode == SessionModeReuse && (sessions.queued[0] || !sessions.queued[1]) {
+				t.Fatalf("reuse queue decisions=%v", sessions.queued)
+			}
+		})
+	}
+}
+
+func TestCronTimezoneAndDisabledSchedule(t *testing.T) {
+	store := newFakeStore()
+	sessions := &fakeSessions{}
+	now := time.Date(2030, 1, 1, 8, 30, 0, 0, time.UTC)
+	svc := newPromptScheduleService(store, sessions, func() time.Time { return now }, func() string { return "schedule-1" })
+	created, err := svc.Create(t.Context(), promptScheduleCreateRequest{
+		Directory: "/repo", Prompt: "go", TimingType: TimingCron, Cron: "0 9 * * *", Timezone: "Europe/Brussels", SessionMode: SessionModeFresh,
+	})
+	if err != nil || created.RunAt != time.Date(2030, 1, 2, 8, 0, 0, 0, time.UTC).UnixMilli() {
+		t.Fatalf("Create: schedule=%+v err=%v", created, err)
+	}
+	if _, err := svc.SetEnabled(t.Context(), created.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	now = time.Date(2030, 1, 2, 9, 0, 0, 0, time.UTC)
+	if err := svc.Tick(t.Context()); err != nil || len(sessions.created) != 0 {
+		t.Fatalf("Tick: created=%d err=%v", len(sessions.created), err)
+	}
+	got, err := svc.SetEnabled(t.Context(), created.ID, true)
+	if err != nil || !got.Enabled || got.RunAt <= now.UnixMilli() {
+		t.Fatalf("SetEnabled: schedule=%+v err=%v", got, err)
 	}
 }
 

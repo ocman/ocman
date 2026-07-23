@@ -8,6 +8,11 @@ export function PromptSchedules({ directory, remoteId = 'local' }: { directory: 
   const [schedules, setSchedules] = useState<PromptSchedule[]>([]);
   const [prompt, setPrompt] = useState('');
   const [runAt, setRunAt] = useState('');
+  const [timingType, setTimingType] = useState<'once' | 'interval' | 'cron'>('once');
+  const [intervalMinutes, setIntervalMinutes] = useState('60');
+  const [cron, setCron] = useState('0 9 * * *');
+  const [timezone, setTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
+  const [sessionMode, setSessionMode] = useState<'fresh' | 'reuse'>('fresh');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const listVersion = useRef(0);
@@ -44,7 +49,12 @@ export function PromptSchedules({ directory, remoteId = 'local' }: { directory: 
     setBusy('create');
     setError('');
     try {
-      const schedule = await api.promptSchedules.create({ directory, remoteId, prompt, runAt: Date.parse(runAt) });
+      const schedule = await api.promptSchedules.create({
+        directory, remoteId, prompt, timingType, timezone, sessionMode,
+        ...(timingType === 'once' ? { runAt: Date.parse(runAt) } : {}),
+        ...(timingType === 'interval' ? { intervalMinutes: Number(intervalMinutes) } : {}),
+        ...(timingType === 'cron' ? { cron } : {}),
+      });
       listVersion.current++;
       setSchedules((current) => [schedule, ...current]);
       setPrompt('');
@@ -71,6 +81,19 @@ export function PromptSchedules({ directory, remoteId = 'local' }: { directory: 
     }
   };
 
+  const toggle = async (schedule: PromptSchedule) => {
+    setBusy(schedule.id);
+    setError('');
+    try {
+      replace(await api.promptSchedules.setEnabled(schedule.id, !schedule.enabled));
+      listVersion.current++;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Schedule action failed');
+    } finally {
+      setBusy('');
+    }
+  };
+
   return (
     <section className="prompt-schedules" aria-labelledby="prompt-schedules-title">
       <h3 id="prompt-schedules-title">Scheduled prompts</h3>
@@ -80,8 +103,23 @@ export function PromptSchedules({ directory, remoteId = 'local' }: { directory: 
           <textarea required value={prompt} onChange={(event) => setPrompt(event.target.value)} />
         </label>
         <label>
-          Run at
-          <input type="datetime-local" required value={runAt} onChange={(event) => setRunAt(event.target.value)} />
+          Timing
+          <select value={timingType} onChange={(event) => setTimingType(event.target.value as typeof timingType)}>
+            <option value="once">Once</option>
+            <option value="interval">Interval</option>
+            <option value="cron">Cron</option>
+          </select>
+        </label>
+        {timingType === 'once' && <label>Run at<input type="datetime-local" required value={runAt} onChange={(event) => setRunAt(event.target.value)} /></label>}
+        {timingType === 'interval' && <label>Every (minutes)<input type="number" min="1" required value={intervalMinutes} onChange={(event) => setIntervalMinutes(event.target.value)} /></label>}
+        {timingType === 'cron' && <label>Cron<input required value={cron} onChange={(event) => setCron(event.target.value)} /></label>}
+        <label>Timezone<input required value={timezone} onChange={(event) => setTimezone(event.target.value)} /></label>
+        <label>
+          Session mode
+          <select value={sessionMode} onChange={(event) => setSessionMode(event.target.value as typeof sessionMode)}>
+            <option value="fresh">Fresh session</option>
+            <option value="reuse">Reuse session</option>
+          </select>
         </label>
         <button className="oc-time-range-btn" disabled={busy === 'create'}>Schedule prompt</button>
       </form>
@@ -91,7 +129,8 @@ export function PromptSchedules({ directory, remoteId = 'local' }: { directory: 
           <article key={schedule.id} className="prompt-schedule-item">
             <div className="prompt-schedule-meta">
               <strong>{schedule.state}</strong>
-              <time dateTime={new Date(schedule.runAt).toISOString()}>{new Date(schedule.runAt).toLocaleString()}</time>
+              <span>{schedule.timingType} / {schedule.sessionMode} / {schedule.timezone}</span>
+              <time dateTime={new Date(schedule.runAt).toISOString()}>Next: {new Date(schedule.runAt).toLocaleString()}</time>
             </div>
             <pre>{schedule.prompt}</pre>
             {schedule.error && <p className="prompt-schedule-error" role="alert">{schedule.error}</p>}
@@ -100,6 +139,7 @@ export function PromptSchedules({ directory, remoteId = 'local' }: { directory: 
                 <button className="oc-time-range-btn" disabled={busy === schedule.id} onClick={() => act(schedule, 'run')}>Run now</button>
                 <button className="oc-time-range-btn" disabled={busy === schedule.id} onClick={() => act(schedule, 'cancel')}>Cancel</button>
               </>}
+              {schedule.timingType !== 'once' && schedule.state !== 'running' && <button className="oc-time-range-btn" disabled={busy === schedule.id} onClick={() => toggle(schedule)}>{schedule.enabled ? 'Disable' : 'Enable'}</button>}
               {schedule.sessionId && <Link to={`/session/${encodeURIComponent(schedule.sessionId)}?platform=${encodeURIComponent(schedule.platform ?? '')}`}>Open session</Link>}
             </div>
           </article>

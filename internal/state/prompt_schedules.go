@@ -9,26 +9,33 @@ import (
 var ErrPromptScheduleNotFound = errors.New("prompt schedule not found")
 
 type PromptSchedule struct {
-	ID         string `json:"id"`
-	Directory  string `json:"directory"`
-	RemoteID   string `json:"remoteId"`
-	Prompt     string `json:"prompt"`
-	State      string `json:"state"`
-	Platform   string `json:"platform,omitempty"`
-	SessionID  string `json:"sessionId,omitempty"`
-	Error      string `json:"error,omitempty"`
-	RunAt      int64  `json:"runAt"`
-	CreatedAt  int64  `json:"createdAt"`
-	UpdatedAt  int64  `json:"updatedAt"`
-	StartedAt  int64  `json:"startedAt,omitempty"`
-	FinishedAt int64  `json:"finishedAt,omitempty"`
+	ID              string `json:"id"`
+	Directory       string `json:"directory"`
+	RemoteID        string `json:"remoteId"`
+	Prompt          string `json:"prompt"`
+	State           string `json:"state"`
+	Platform        string `json:"platform,omitempty"`
+	SessionID       string `json:"sessionId,omitempty"`
+	Error           string `json:"error,omitempty"`
+	RunAt           int64  `json:"runAt"`
+	TimingType      string `json:"timingType"`
+	IntervalMinutes int64  `json:"intervalMinutes,omitempty"`
+	Cron            string `json:"cron,omitempty"`
+	Timezone        string `json:"timezone"`
+	Enabled         bool   `json:"enabled"`
+	SessionMode     string `json:"sessionMode"`
+	CreatedAt       int64  `json:"createdAt"`
+	UpdatedAt       int64  `json:"updatedAt"`
+	StartedAt       int64  `json:"startedAt,omitempty"`
+	FinishedAt      int64  `json:"finishedAt,omitempty"`
 }
 
 func (d *DB) CreatePromptSchedule(schedule PromptSchedule) error {
 	_, err := d.db.Exec(`INSERT INTO prompt_schedule
-		(id, directory, remote_id, prompt, run_at, state, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, schedule.ID, schedule.Directory, schedule.RemoteID, schedule.Prompt,
-		schedule.RunAt, schedule.State, schedule.CreatedAt, schedule.UpdatedAt)
+		(id, directory, remote_id, prompt, run_at, state, timing_type, interval_minutes, cron, timezone, enabled, session_mode, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, schedule.ID, schedule.Directory, schedule.RemoteID, schedule.Prompt,
+		schedule.RunAt, schedule.State, schedule.TimingType, schedule.IntervalMinutes, schedule.Cron, schedule.Timezone,
+		schedule.Enabled, schedule.SessionMode, schedule.CreatedAt, schedule.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("creating prompt schedule: %w", err)
 	}
@@ -36,6 +43,7 @@ func (d *DB) CreatePromptSchedule(schedule PromptSchedule) error {
 }
 
 const promptScheduleColumns = `id, directory, remote_id, prompt, run_at, state, platform, session_id, error,
+	timing_type, interval_minutes, cron, timezone, enabled, session_mode,
 	created_at, updated_at, started_at, finished_at`
 
 type promptScheduleScanner interface{ Scan(...any) error }
@@ -43,7 +51,8 @@ type promptScheduleScanner interface{ Scan(...any) error }
 func scanPromptSchedule(row promptScheduleScanner) (PromptSchedule, error) {
 	var s PromptSchedule
 	err := row.Scan(&s.ID, &s.Directory, &s.RemoteID, &s.Prompt, &s.RunAt, &s.State, &s.Platform,
-		&s.SessionID, &s.Error, &s.CreatedAt, &s.UpdatedAt, &s.StartedAt, &s.FinishedAt)
+		&s.SessionID, &s.Error, &s.TimingType, &s.IntervalMinutes, &s.Cron, &s.Timezone, &s.Enabled,
+		&s.SessionMode, &s.CreatedAt, &s.UpdatedAt, &s.StartedAt, &s.FinishedAt)
 	return s, err
 }
 
@@ -106,7 +115,7 @@ func (d *DB) ClaimNextDuePromptSchedule(now int64) (PromptSchedule, bool, error)
 	}
 	defer func() { _ = tx.Rollback() }()
 	var id string
-	err = tx.QueryRow(`SELECT id FROM prompt_schedule WHERE state = 'scheduled' AND run_at <= ? ORDER BY run_at, id LIMIT 1`, now).Scan(&id)
+	err = tx.QueryRow(`SELECT id FROM prompt_schedule WHERE state = 'scheduled' AND enabled = 1 AND run_at <= ? ORDER BY run_at, id LIMIT 1`, now).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PromptSchedule{}, false, nil
 	}
@@ -156,6 +165,19 @@ func (d *DB) LinkPromptScheduleSession(id, platform, sessionID string, now int64
 func (d *DB) FinishPromptSchedule(id, stateValue, errorText string, now int64) error {
 	_, err := d.db.Exec(`UPDATE prompt_schedule SET state = ?, error = ?, finished_at = ?, updated_at = ? WHERE id = ? AND state = 'running'`, stateValue, errorText, now, now, id)
 	return err
+}
+
+func (d *DB) CompletePromptSchedule(id string, nextRunAt, now int64) error {
+	_, err := d.db.Exec(`UPDATE prompt_schedule SET state = 'scheduled', run_at = ?, error = '', finished_at = ?, updated_at = ? WHERE id = ? AND state = 'running'`, nextRunAt, now, now, id)
+	return err
+}
+
+func (d *DB) SetPromptScheduleEnabled(id string, enabled bool, runAt, now int64) (PromptSchedule, error) {
+	_, err := d.db.Exec(`UPDATE prompt_schedule SET enabled = ?, run_at = ?, state = CASE WHEN ? THEN 'scheduled' ELSE state END, error = CASE WHEN ? THEN '' ELSE error END, updated_at = ? WHERE id = ? AND state != 'running'`, enabled, runAt, enabled, enabled, now, id)
+	if err != nil {
+		return PromptSchedule{}, err
+	}
+	return d.GetPromptSchedule(id)
 }
 
 func (d *DB) FailRunningPromptSchedules(now int64, errorText string) error {

@@ -145,7 +145,8 @@ import (
 //	36 - add retry lineage to workflow runs and reused-attempt provenance.
 //	37 - one-time project prompt schedules with durable dispatch state and
 //	     resulting session linkage.
-const latestSchemaVersion = 37
+//	38 - recurring prompt timing, enablement, timezone, and session reuse.
+const latestSchemaVersion = 38
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -315,6 +316,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV36(tx)
 	case 37:
 		return migrateToV37(tx)
+	case 38:
+		return migrateToV38(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -1270,4 +1273,20 @@ func migrateToV37(tx *sql.Tx) error {
 		CREATE INDEX prompt_schedule_directory ON prompt_schedule(remote_id, directory, created_at DESC);
 	`)
 	return err
+}
+
+func migrateToV38(tx *sql.Tx) error {
+	for _, change := range []struct{ column, definition string }{
+		{"timing_type", "TEXT NOT NULL DEFAULT 'once'"},
+		{"interval_minutes", "INTEGER NOT NULL DEFAULT 0"},
+		{"cron", "TEXT NOT NULL DEFAULT ''"},
+		{"timezone", "TEXT NOT NULL DEFAULT 'UTC'"},
+		{"enabled", "INTEGER NOT NULL DEFAULT 1"},
+		{"session_mode", "TEXT NOT NULL DEFAULT 'fresh'"},
+	} {
+		if err := addColumnIfMissing(tx, "prompt_schedule", change.column, change.definition); err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -34,7 +34,10 @@ func (m managedPromptSessions) CreateScheduledSession(ctx context.Context, remot
 	return platformID, resp, err
 }
 
-func (m managedPromptSessions) SendScheduledMessage(ctx context.Context, platformID string, req platforms.SendMessageRequest) error {
+func (m managedPromptSessions) SendScheduledMessage(ctx context.Context, platformID string, req platforms.SendMessageRequest, queue bool) error {
+	if queue {
+		return m.server.queueSvc().Enqueue(ctx, platformID, false, req)
+	}
 	return m.server.sessions.SendMessage(ctx, platformID, req)
 }
 
@@ -66,15 +69,18 @@ func (s *Server) handlePromptSchedules(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, schedule)
 		return
 	}
-	if r.Method != http.MethodPost || (action != "cancel" && action != "run-now") {
+	if r.Method != http.MethodPost || (action != "cancel" && action != "run-now" && action != "enable" && action != "disable") {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var schedule state.PromptSchedule
 	var err error
-	if action == "cancel" {
+	switch action {
+	case "cancel":
 		schedule, err = s.promptScheduleSvc.Cancel(r.Context(), id)
-	} else {
+	case "enable", "disable":
+		schedule, err = s.promptScheduleSvc.SetEnabled(r.Context(), id, action == "enable")
+	default:
 		schedule, err = s.promptScheduleSvc.RunNow(r.Context(), id)
 	}
 	if err != nil {

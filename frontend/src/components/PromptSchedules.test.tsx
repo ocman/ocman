@@ -11,6 +11,7 @@ const { apiMock } = vi.hoisted(() => ({
     get: vi.fn(),
     cancel: vi.fn(),
     runNow: vi.fn(),
+    setEnabled: vi.fn(),
   },
 }));
 
@@ -21,6 +22,7 @@ import { PromptSchedules } from './PromptSchedules';
 const scheduled = {
   id: 'ps_old', directory: '/repo', remoteId: 'local', prompt: 'inspect me', state: 'scheduled' as const,
   runAt: Date.parse('2030-01-02T03:04:00Z'), createdAt: 1, updatedAt: 1,
+  timingType: 'once' as const, timezone: 'UTC', enabled: true, sessionMode: 'fresh' as const,
 };
 
 beforeEach(() => {
@@ -43,9 +45,9 @@ it('covers create, list, inspect, cancel, run-now, and linked-session lifecycle'
   await user.type(screen.getByLabelText('Scheduled prompt'), ' exact{enter}');
   await user.type(screen.getByLabelText('Run at'), '2031-02-03T04:05');
   await user.click(screen.getByRole('button', { name: 'Schedule prompt' }));
-  await waitFor(() => expect(apiMock.create).toHaveBeenCalledWith({
+  await waitFor(() => expect(apiMock.create).toHaveBeenCalledWith(expect.objectContaining({
     directory: '/repo', remoteId: 'local', prompt: ' exact\n', runAt: Date.parse('2031-02-03T04:05'),
-  }));
+  })));
 
   const createdRow = screen.getAllByText('scheduled')[0].closest('article');
   if (!createdRow) throw new Error('created schedule row missing');
@@ -82,4 +84,30 @@ it('refreshes background execution state', async () => {
   await act(async () => { vi.advanceTimersByTime(5000); });
   expect(screen.getByRole('link', { name: 'Open session' })).toHaveAttribute('href', '/session/background-session?platform=opencode');
   vi.useRealTimers();
+});
+
+it('creates recurring schedules and toggles enabled state', async () => {
+  const user = userEvent.setup();
+  const recurring = {
+    ...scheduled, id: 'ps_recurring', prompt: 'repeat', timingType: 'interval' as const, intervalMinutes: 15,
+    timezone: 'Europe/Brussels', enabled: true, sessionMode: 'reuse' as const,
+  };
+  apiMock.create.mockResolvedValue(recurring);
+  apiMock.setEnabled.mockResolvedValue({ ...recurring, enabled: false });
+  render(<MemoryRouter><PromptSchedules directory="/repo" /></MemoryRouter>);
+
+  await user.type(screen.getByLabelText('Scheduled prompt'), 'repeat');
+  await user.selectOptions(screen.getByLabelText('Timing'), 'interval');
+  await user.clear(screen.getByLabelText('Every (minutes)'));
+  await user.type(screen.getByLabelText('Every (minutes)'), '15');
+  await user.selectOptions(screen.getByLabelText('Session mode'), 'reuse');
+  await user.click(screen.getByRole('button', { name: 'Schedule prompt' }));
+  await waitFor(() => expect(apiMock.create).toHaveBeenCalledWith(expect.objectContaining({
+    timingType: 'interval', intervalMinutes: 15, sessionMode: 'reuse', timezone: expect.any(String),
+  })));
+
+  const row = screen.getByText('repeat').closest('article');
+  if (!row) throw new Error('recurring schedule row missing');
+  await user.click(within(row).getByRole('button', { name: 'Disable' }));
+  expect(apiMock.setEnabled).toHaveBeenCalledWith('ps_recurring', false);
 });

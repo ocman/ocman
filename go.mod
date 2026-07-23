@@ -9,6 +9,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/mark3labs/mcp-go v0.43.2
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/sirupsen/logrus v1.9.4
 	github.com/uptrace/opentelemetry-go-extra/otellogrus v0.3.2
 	github.com/wailsapp/wails/v2 v2.12.0

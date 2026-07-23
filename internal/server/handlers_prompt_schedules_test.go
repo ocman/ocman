@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -46,6 +47,29 @@ func TestManagedPromptSessionsEnsuresProjectInstance(t *testing.T) {
 	}
 	if ensured != "/repo" || created.Directory != "/repo" || created.Port != "5599" {
 		t.Fatalf("ensured=%q created=%+v", ensured, created)
+	}
+}
+
+func TestManagedPromptSessionsQueuesForBusyReusedSession(t *testing.T) {
+	srv, registry := newSessionsTestServer(t)
+	sent := 0
+	registry.Register(&fakePlatform{
+		id:       "opencode",
+		sessions: []db.Session{mkSession("opencode", "reused", "scheduled", 1)},
+		sendMessageFn: func(platforms.SendMessageRequest) error {
+			sent++
+			return nil
+		},
+		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+			return &platforms.SessionDetail{Session: &db.Session{ID: id, Status: "busy"}}, nil
+		},
+	})
+	if err := (managedPromptSessions{srv}).SendScheduledMessage(t.Context(), "opencode", platforms.SendMessageRequest{SessionID: "reused", Message: "again"}, true); err != nil {
+		t.Fatal(err)
+	}
+	queued, err := srv.queueSvc().List("opencode", "reused")
+	if err != nil || len(queued) != 1 || sent != 0 {
+		t.Fatalf("queued=%+v sent=%d err=%v", queued, sent, err)
 	}
 }
 
@@ -118,6 +142,30 @@ func TestPromptScheduleHTTPCancelAndValidation(t *testing.T) {
 	srv.handlePromptSchedules(missing, httptest.NewRequest(http.MethodPost, "/api/prompt-schedules/missing/run-now", nil))
 	if missing.Code != http.StatusNotFound {
 		t.Fatalf("run missing: %d %s", missing.Code, missing.Body.String())
+	}
+}
+
+func TestPromptScheduleHTTPRecurringReuseAndEnablement(t *testing.T) {
+	srv := testServer(t)
+	now := time.Date(2030, 1, 1, 8, 30, 0, 0, time.UTC)
+	srv.promptScheduleSvc = newPromptScheduleService(srv.stateDB, &fakeSessions{}, func() time.Time { return now }, func() string { return "ps_recurring" })
+
+	request := func(path, body string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		srv.handlePromptSchedules(rec, httptest.NewRequest(http.MethodPost, path, strings.NewReader(body)))
+		return rec
+	}
+	create := request("/api/prompt-schedules", `{"directory":"/repo","prompt":"repeat","timingType":"cron","cron":"0 9 * * *","timezone":"Europe/Brussels","sessionMode":"reuse"}`)
+	if create.Code != http.StatusCreated || !strings.Contains(create.Body.String(), `"sessionMode":"reuse"`) || !strings.Contains(create.Body.String(), `"enabled":true`) {
+		t.Fatalf("create: %d %s", create.Code, create.Body.String())
+	}
+	disabled := request("/api/prompt-schedules/ps_recurring/disable", "")
+	if disabled.Code != http.StatusOK || !strings.Contains(disabled.Body.String(), `"enabled":false`) {
+		t.Fatalf("disable: %d %s", disabled.Code, disabled.Body.String())
+	}
+	enabled := request("/api/prompt-schedules/ps_recurring/enable", "")
+	if enabled.Code != http.StatusOK || !strings.Contains(enabled.Body.String(), `"enabled":true`) {
+		t.Fatalf("enable: %d %s", enabled.Code, enabled.Body.String())
 	}
 }
 

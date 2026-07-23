@@ -10,14 +10,20 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/robfig/cron/v3"
 )
 
 const (
-	StateScheduled = "scheduled"
-	StateRunning   = "running"
-	StateCompleted = "completed"
-	StateFailed    = "failed"
-	StateCanceled  = "canceled"
+	StateScheduled   = "scheduled"
+	StateRunning     = "running"
+	StateCompleted   = "completed"
+	StateFailed      = "failed"
+	StateCanceled    = "canceled"
+	TimingOnce       = "once"
+	TimingInterval   = "interval"
+	TimingCron       = "cron"
+	SessionModeFresh = "fresh"
+	SessionModeReuse = "reuse"
 )
 
 var (
@@ -34,12 +40,14 @@ type Store interface {
 	CancelPromptSchedule(string, int64) (state.PromptSchedule, bool, error)
 	LinkPromptScheduleSession(string, string, string, int64) error
 	FinishPromptSchedule(string, string, string, int64) error
+	CompletePromptSchedule(string, int64, int64) error
+	SetPromptScheduleEnabled(string, bool, int64, int64) (state.PromptSchedule, error)
 	FailRunningPromptSchedules(int64, string) error
 }
 
 type Sessions interface {
 	CreateScheduledSession(context.Context, string, string) (string, *platforms.CreateSessionResponse, error)
-	SendScheduledMessage(context.Context, string, platforms.SendMessageRequest) error
+	SendScheduledMessage(context.Context, string, platforms.SendMessageRequest, bool) error
 }
 
 type promptScheduleService struct {
@@ -50,10 +58,16 @@ type promptScheduleService struct {
 }
 
 type promptScheduleCreateRequest struct {
-	Directory string `json:"directory"`
-	RemoteID  string `json:"remoteId"`
-	Prompt    string `json:"prompt"`
-	RunAt     int64  `json:"runAt"`
+	Directory       string `json:"directory"`
+	RemoteID        string `json:"remoteId"`
+	Prompt          string `json:"prompt"`
+	RunAt           int64  `json:"runAt"`
+	TimingType      string `json:"timingType"`
+	IntervalMinutes int64  `json:"intervalMinutes"`
+	Cron            string `json:"cron"`
+	Timezone        string `json:"timezone"`
+	Enabled         *bool  `json:"enabled"`
+	SessionMode     string `json:"sessionMode"`
 }
 
 func newPromptScheduleService(store Store, sessions Sessions, now func() time.Time, newID func() string) *promptScheduleService {
@@ -73,15 +87,62 @@ func scheduleID() string {
 }
 
 func (s *promptScheduleService) Create(_ context.Context, req promptScheduleCreateRequest) (state.PromptSchedule, error) {
-	now := s.now().UnixMilli()
-	if req.Directory == "" || req.Prompt == "" || req.RunAt <= now {
-		return state.PromptSchedule{}, fmt.Errorf("directory, prompt, and a future runAt are required: %w", ErrValidation)
+	now := s.now()
+	if req.Directory == "" || req.Prompt == "" {
+		return state.PromptSchedule{}, fmt.Errorf("directory and prompt are required: %w", ErrValidation)
 	}
 	if req.RemoteID == "" {
 		req.RemoteID = "local"
 	}
-	schedule := state.PromptSchedule{ID: s.newID(), Directory: req.Directory, RemoteID: req.RemoteID, Prompt: req.Prompt, RunAt: req.RunAt, State: StateScheduled, CreatedAt: now, UpdatedAt: now}
+	if req.TimingType == "" {
+		req.TimingType = TimingOnce
+	}
+	if req.Timezone == "" {
+		req.Timezone = "UTC"
+	}
+	if req.SessionMode == "" {
+		req.SessionMode = SessionModeFresh
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	runAt, err := nextScheduleRun(req.TimingType, req.RunAt, req.IntervalMinutes, req.Cron, req.Timezone, now)
+	if err != nil || (req.SessionMode != SessionModeFresh && req.SessionMode != SessionModeReuse) {
+		return state.PromptSchedule{}, fmt.Errorf("invalid timing, timezone, or session mode: %w", ErrValidation)
+	}
+	nowMS := now.UnixMilli()
+	schedule := state.PromptSchedule{ID: s.newID(), Directory: req.Directory, RemoteID: req.RemoteID, Prompt: req.Prompt,
+		RunAt: runAt, TimingType: req.TimingType, IntervalMinutes: req.IntervalMinutes, Cron: req.Cron,
+		Timezone: req.Timezone, Enabled: enabled, SessionMode: req.SessionMode, State: StateScheduled, CreatedAt: nowMS, UpdatedAt: nowMS}
 	return schedule, s.store.CreatePromptSchedule(schedule)
+}
+
+func nextScheduleRun(timing string, runAt, intervalMinutes int64, expression, timezone string, after time.Time) (int64, error) {
+	location, err := time.LoadLocation(timezone)
+	if err != nil {
+		return 0, err
+	}
+	switch timing {
+	case TimingOnce:
+		if runAt <= after.UnixMilli() {
+			return 0, ErrValidation
+		}
+		return runAt, nil
+	case TimingInterval:
+		if intervalMinutes <= 0 {
+			return 0, ErrValidation
+		}
+		return after.Add(time.Duration(intervalMinutes) * time.Minute).UnixMilli(), nil
+	case TimingCron:
+		schedule, err := cron.ParseStandard(expression)
+		if err != nil {
+			return 0, err
+		}
+		return schedule.Next(after.In(location)).UnixMilli(), nil
+	default:
+		return 0, ErrValidation
+	}
 }
 
 func (s *promptScheduleService) List(_ context.Context, directory, remoteID string) ([]state.PromptSchedule, error) {
@@ -107,6 +168,21 @@ func (s *promptScheduleService) Cancel(_ context.Context, id string) (state.Prom
 		return schedule, fmt.Errorf("only scheduled prompts can be canceled: %w", ErrInvalidState)
 	}
 	return schedule, nil
+}
+
+func (s *promptScheduleService) SetEnabled(_ context.Context, id string, enabled bool) (state.PromptSchedule, error) {
+	schedule, err := s.store.GetPromptSchedule(id)
+	if err != nil {
+		return schedule, err
+	}
+	runAt := schedule.RunAt
+	if enabled && (schedule.TimingType == TimingInterval || schedule.TimingType == TimingCron) {
+		runAt, err = nextScheduleRun(schedule.TimingType, schedule.RunAt, schedule.IntervalMinutes, schedule.Cron, schedule.Timezone, s.now())
+		if err != nil {
+			return schedule, err
+		}
+	}
+	return s.store.SetPromptScheduleEnabled(id, enabled, runAt, s.now().UnixMilli())
 }
 
 func (s *promptScheduleService) RunNow(ctx context.Context, id string) (state.PromptSchedule, error) {
@@ -143,16 +219,27 @@ func (s *promptScheduleService) Tick(ctx context.Context) error {
 }
 
 func (s *promptScheduleService) dispatch(ctx context.Context, schedule state.PromptSchedule) error {
-	platformID, resp, err := s.sessions.CreateScheduledSession(ctx, schedule.RemoteID, schedule.Directory)
-	if err != nil {
+	platformID, sessionID := schedule.Platform, schedule.SessionID
+	reusing := schedule.SessionMode == SessionModeReuse && sessionID != ""
+	if !reusing {
+		createdPlatform, resp, err := s.sessions.CreateScheduledSession(ctx, schedule.RemoteID, schedule.Directory)
+		if err != nil {
+			return s.finishFailed(schedule.ID, err)
+		}
+		platformID, sessionID = createdPlatform, resp.ID
+		if err := s.store.LinkPromptScheduleSession(schedule.ID, platformID, sessionID, s.now().UnixMilli()); err != nil {
+			return s.finishFailed(schedule.ID, fmt.Errorf("linking scheduled session: %w", err))
+		}
+	}
+	if err := s.sessions.SendScheduledMessage(ctx, platformID, platforms.SendMessageRequest{SessionID: sessionID, Message: schedule.Prompt}, reusing); err != nil {
 		return s.finishFailed(schedule.ID, err)
 	}
-	now := s.now().UnixMilli()
-	if err := s.store.LinkPromptScheduleSession(schedule.ID, platformID, resp.ID, now); err != nil {
-		return s.finishFailed(schedule.ID, fmt.Errorf("linking scheduled session: %w", err))
-	}
-	if err := s.sessions.SendScheduledMessage(ctx, platformID, platforms.SendMessageRequest{SessionID: resp.ID, Message: schedule.Prompt}); err != nil {
-		return s.finishFailed(schedule.ID, err)
+	if schedule.TimingType != TimingOnce {
+		next, err := nextScheduleRun(schedule.TimingType, schedule.RunAt, schedule.IntervalMinutes, schedule.Cron, schedule.Timezone, s.now())
+		if err != nil {
+			return s.finishFailed(schedule.ID, err)
+		}
+		return s.store.CompletePromptSchedule(schedule.ID, next, s.now().UnixMilli())
 	}
 	return s.store.FinishPromptSchedule(schedule.ID, StateCompleted, "", s.now().UnixMilli())
 }

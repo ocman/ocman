@@ -41,6 +41,12 @@ export interface PromptSchedule {
   sessionId?: string;
   error?: string;
   runAt: number;
+  timingType: 'once' | 'interval' | 'cron';
+  intervalMinutes?: number;
+  cron?: string;
+  timezone: string;
+  enabled: boolean;
+  sessionMode: 'fresh' | 'reuse';
   createdAt: number;
   updatedAt: number;
   startedAt?: number;
