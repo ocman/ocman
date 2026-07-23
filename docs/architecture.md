@@ -49,7 +49,7 @@ The Go package graph, collapsed to the seams that matter.
 flowchart TD
     Server[internal/server<br/>HTTP, SSE, handlers] --> Registry[platforms.Registry<br/>session seam]
     Server --> Router[hostsvc.Router<br/>host/dir seam]
-    Server --> Workflows[workflows.Service<br/>durable DAG lifecycle]
+    Server --> Workflows[automation services<br/>workflows + prompt schedules]
     Workflows --> Registry
     Workflows --> Router
     Server --> MCP[internal/mcp<br/>MCP tools]
@@ -119,6 +119,12 @@ flowchart TD
    serialized per-shard git state. Leases carry an optional owning-host
    identity, release only after the attempt settles, and are visible in
    the run UI.
+- **server prompt-schedule service** — the narrow one-time scheduler. It atomically
+  claims due `state.db` rows before creating a fresh OpenCode session through
+  `sessionsvc`, sends the stored prompt unchanged, and persists the linked
+  session or terminal error. On restart, persisted `running` claims become
+  failed rather than being replayed, preventing duplicate external dispatch
+  when completion is unknown.
 - **Legacy loop migration (#325)** — migration v28 copies persisted legacy
   loops into ordinary one-node workflow definitions and turns each iteration
   into a historical workflow run + node attempt. `loop_workflow_map` makes
@@ -131,7 +137,7 @@ flowchart TD
 - **internal/opencodeskills** — extracts binary-embedded ocman skills into
   XDG data and installs only ocman-owned symlinks for OpenCode discovery.
 - **internal/state** — the only writable store; migrations, settings,
-  workflows, child sessions.
+  workflows, prompt schedules, child sessions.
 - **forge / integrations** — forge-agnostic types in `forge`,
   per-forge HTTP clients in `integrations/{github,forgejo}`.
 
@@ -159,7 +165,7 @@ sequenceDiagram
     A->>D: SQL json_extract
     A->>A: overlay pending prompt registry
     D-->>B: JSON (status inferred at query time)
-     Note over S,E: background: workflow engine + trigger ticks,<br/>child-session watcher, remote gRPC streams
+     Note over S,E: background: workflow + prompt-schedule ticks,<br/>child-session watcher, remote gRPC streams
      E-->>B: SSE (session.updated, workflow.run.updated)
 ```
 
@@ -174,6 +180,11 @@ trigger/version/run/node/attempt state and canonical JSON Node Results to
 `state.db` before broadcasting a run ID. The browser then refetches the
 authoritative trigger state and run graph, including linked agent sessions and
 map/join aggregate outputs.
+
+One-time prompt schedules are also ocman-owned. The project page creates and
+lists them over REST; the scheduler first commits a durable `running` claim,
+then creates and prompts a session through the shared session mutation service.
+The same row stores completion/error state and the session link shown by the UI.
 
 ## 4. Frontend Composition
 

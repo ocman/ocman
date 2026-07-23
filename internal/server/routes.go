@@ -86,6 +86,9 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// Launch endpoint: spawns tmux/opencode, so localhost-only like
 	// the worktree create-and-launch endpoint.
 	mux.HandleFunc("/api/project/handle", requirePOST(s.requireLocalhost(s.handleProjectHandle)))
+	promptScheduleHandler := s.requireLocalhost(s.handlePromptSchedules)
+	mux.HandleFunc("/api/prompt-schedules", promptScheduleHandler)
+	mux.HandleFunc("/api/prompt-schedules/", promptScheduleHandler)
 
 	workflowHandler := s.requireLocalhost(s.handleWorkflows)
 	mux.HandleFunc("/api/workflows", workflowHandler)

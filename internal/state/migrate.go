@@ -143,7 +143,9 @@ import (
 //	      pid/launched_at) so it survives an ocman restart. The host always
 //	      re-probes health before trusting a persisted row (AD-5, #391).
 //	36 - add retry lineage to workflow runs and reused-attempt provenance.
-const latestSchemaVersion = 36
+//	37 - one-time project prompt schedules with durable dispatch state and
+//	     resulting session linkage.
+const latestSchemaVersion = 37
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -311,6 +313,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV35(tx)
 	case 36:
 		return migrateToV36(tx)
+	case 37:
+		return migrateToV37(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -1243,4 +1247,26 @@ func migrateToV36(tx *sql.Tx) error {
 		}
 	}
 	return nil
+}
+
+func migrateToV37(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE prompt_schedule (
+			id          TEXT PRIMARY KEY,
+			directory   TEXT NOT NULL,
+			prompt      TEXT NOT NULL,
+			run_at      INTEGER NOT NULL,
+			state       TEXT NOT NULL CHECK (state IN ('scheduled', 'running', 'completed', 'failed', 'canceled')),
+			platform    TEXT NOT NULL DEFAULT '',
+			session_id  TEXT NOT NULL DEFAULT '',
+			error       TEXT NOT NULL DEFAULT '',
+			created_at  INTEGER NOT NULL,
+			updated_at  INTEGER NOT NULL,
+			started_at  INTEGER NOT NULL DEFAULT 0,
+			finished_at INTEGER NOT NULL DEFAULT 0
+		);
+		CREATE INDEX prompt_schedule_due ON prompt_schedule(state, run_at);
+		CREATE INDEX prompt_schedule_directory ON prompt_schedule(directory, created_at DESC);
+	`)
+	return err
 }

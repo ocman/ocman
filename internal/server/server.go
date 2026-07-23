@@ -104,7 +104,8 @@ type Server struct {
 	// workflowBlobDir overrides the content-addressed artifact payload
 	// directory. Empty = <ocman data dir>/workflow-artifacts. Tests set
 	// it to a temp dir.
-	workflowBlobDir string
+	workflowBlobDir   string
+	promptScheduleSvc *promptScheduleService
 
 	// queueSvcCached is the follow-up message queue service (#58), built
 	// lazily on first use. Guarded by
@@ -173,6 +174,9 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 			s.refreshProjectsIndexAsync()
 		},
 	})
+	if stateDB != nil {
+		s.promptScheduleSvc = newPromptScheduleService(stateDB, managedPromptSessions{s}, nil, nil)
+	}
 	return s
 }
 
@@ -354,6 +358,12 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 		s.aaSvc().SetJudgeDelayMs(state.DefaultJudgeDelayMs)
 	}
 
+	if s.promptScheduleSvc != nil {
+		if err := s.promptScheduleSvc.Recover(); err != nil {
+			return fmt.Errorf("recovering interrupted prompt schedules: %w", err)
+		}
+	}
+
 	go s.runAutoArchiveLoop(ctx)
 	go s.runProjectsIndexLoop(ctx)
 	go s.runLLMMetricsLoop(ctx)
@@ -361,6 +371,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	go s.runWorkflowEngine(ctx)
 	go s.runWorkflowTriggerEngine(ctx)
 	go s.runQueueSweep(ctx)
+	go s.runPromptSchedules(ctx)
 	// Headless auto-approve: subscribe directly to each OpenCode
 	// instance's /event SSE stream so permission.asked events drive
 	// the judge even when no browser tab is open. Without this, the

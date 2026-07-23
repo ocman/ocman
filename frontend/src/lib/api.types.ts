@@ -31,6 +31,21 @@ export interface NotifyEntry {
   directory?: string;
 }
 
+export interface PromptSchedule {
+  id: string;
+  directory: string;
+  prompt: string;
+  state: 'scheduled' | 'running' | 'completed' | 'failed' | 'canceled';
+  platform?: string;
+  sessionId?: string;
+  error?: string;
+  runAt: number;
+  createdAt: number;
+  updatedAt: number;
+  startedAt?: number;
+  finishedAt?: number;
+}
+
 export interface Session {
   id: string;
 	/**

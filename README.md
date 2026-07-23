@@ -17,6 +17,7 @@ Supports [OpenCode](https://github.com/anomalyco/opencode) and [Claude Code](htt
 - **Command palette** — Unified ⌘K palette for jumping between sessions, settings, and actions, with in-app notifications.
 - **Slash commands** — `/new [title]` to create a session, `/clear` to archive the current one and start fresh, plus keyboard-driven session rename.
 - **Tmux integration** — Launch or auto-launch an OpenCode instance inside tmux directly from the UI.
+- **Scheduled prompts** — Run one stored project prompt later in a fresh OpenCode session, with durable status and session linkage.
 - **Multi-remote** — Attach other ocman instances over the network and manage every machine's sessions from one dashboard, with a host badge per session and machine-aware new-session creation. See [docs/multi-remote.md](docs/multi-remote.md).
 - **Diff & changes view** — Syntax-highlighted diffs inline in the thread, plus a *Changes* sidebar combining session edits with the working-tree `git` diff.
 - **Stats dashboard** — Per-project metrics, wall-clock totals, token/pricing graphs, and system stats.
@@ -118,6 +119,7 @@ security notes, and troubleshooting.
 - [Multi-remote support](docs/multi-remote.md) — manage sessions across machines
 - [MCP integration](docs/mcp.md) — agent-driven session splitting
 - [Workflows](docs/workflows.md) — authoring and safely running migration campaigns
+- [Scheduled prompts](docs/scheduled-prompts.md) — one-time project prompt scheduling
 - [Contributing](docs/contributing.md) — architecture, project structure, development workflow
 
 ## License

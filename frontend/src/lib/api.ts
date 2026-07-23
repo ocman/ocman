@@ -76,6 +76,7 @@ export type {
 	WorkflowRunDetail,
 	WorkflowArtifact,
 	WorkflowMapItemRun,
+	PromptSchedule,
 } from './api.types';
 
 // Type imports used by the api object below.
@@ -124,6 +125,7 @@ import type {
 	WorkflowRun,
 	WorkflowRunDetail,
 	WorkflowArtifact,
+	PromptSchedule,
 } from './api.types';
 
 /**
@@ -699,6 +701,13 @@ export const api = {
     remove: (req: WorktreeRemoveRequest): Promise<{ removed: boolean }> =>
       postJSON<{ removed: boolean }>('/api/worktree/remove', req),
   },
+	promptSchedules: {
+		list: (directory: string, signal?: AbortSignal) => fetchJSON<PromptSchedule[]>(`/api/prompt-schedules?directory=${encodeURIComponent(directory)}`, signal),
+		get: (id: string, signal?: AbortSignal) => fetchJSON<PromptSchedule>(`/api/prompt-schedules/${encodeURIComponent(id)}`, signal),
+		create: (req: { directory: string; prompt: string; runAt: number }) => postJSON<PromptSchedule>('/api/prompt-schedules', req),
+		cancel: (id: string) => postJSON<PromptSchedule>(`/api/prompt-schedules/${encodeURIComponent(id)}/cancel`, {}),
+		runNow: (id: string) => postJSON<PromptSchedule>(`/api/prompt-schedules/${encodeURIComponent(id)}/run-now`, {}),
+	},
 	workflows: {
 		versions: (signal?: AbortSignal) => fetchJSON<WorkflowVersion[]>('/api/workflows', signal),
 		validate: (source: string) => postWorkflowSource<WorkflowValidation>('/api/workflows/validate', source),

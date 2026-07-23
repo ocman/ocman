@@ -1,0 +1,31 @@
+.prompt-schedules {
+  margin: 24px 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.prompt-schedules h3 { margin: 0 0 12px; }
+
+.prompt-schedule-form {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(180px, auto) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.prompt-schedule-form label { display: grid; gap: 5px; color: var(--text-muted); font-size: 12px; }
+.prompt-schedule-form textarea,
+.prompt-schedule-form input { box-sizing: border-box; min-height: 36px; padding: 8px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 5px; }
+.prompt-schedule-form textarea { min-height: 64px; resize: vertical; }
+.prompt-schedule-list { display: grid; gap: 8px; margin-top: 14px; }
+.prompt-schedule-item { padding: 12px; background: var(--bg-secondary); border-radius: 6px; }
+.prompt-schedule-meta,
+.prompt-schedule-actions { display: flex; gap: 10px; align-items: center; }
+.prompt-schedule-meta { justify-content: space-between; color: var(--text-muted); font-size: 12px; }
+.prompt-schedule-item pre { margin: 10px 0; white-space: pre-wrap; font: inherit; }
+.prompt-schedule-error { color: var(--danger); }
+
+@media (max-width: 720px) {
+  .prompt-schedule-form { grid-template-columns: 1fr; }
+}
