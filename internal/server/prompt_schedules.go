@@ -20,8 +20,8 @@ const promptScheduleTickInterval = 5 * time.Second
 
 type managedPromptSessions struct{ server *Server }
 
-func (m managedPromptSessions) CreateScheduledSession(ctx context.Context, directory string) (string, *platforms.CreateSessionResponse, error) {
-	host := m.server.router().ForDir(directory)
+func (m managedPromptSessions) CreateScheduledSession(ctx context.Context, remoteID, directory string) (string, *platforms.CreateSessionResponse, error) {
+	host := m.server.router().ForRemote(remoteID)
 	ensured, err := host.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: directory})
 	if err != nil {
 		return "", nil, err
@@ -60,7 +60,7 @@ func (s *Server) handlePromptSchedules(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			serverError(w, "getting prompt schedule", err)
 			return
 		}
 		writeJSON(w, schedule)
@@ -84,7 +84,11 @@ func (s *Server) handlePromptSchedules(w http.ResponseWriter, r *http.Request) {
 		} else if errors.Is(err, ErrInvalidState) {
 			status = http.StatusConflict
 		}
-		http.Error(w, err.Error(), status)
+		if status == http.StatusInternalServerError {
+			serverError(w, "updating prompt schedule", err)
+		} else {
+			http.Error(w, err.Error(), status)
+		}
 		return
 	}
 	writeJSON(w, schedule)
@@ -93,13 +97,17 @@ func (s *Server) handlePromptSchedules(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePromptScheduleCollection(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		schedules, err := s.promptScheduleSvc.List(r.Context(), r.URL.Query().Get("directory"))
+		schedules, err := s.promptScheduleSvc.List(r.Context(), r.URL.Query().Get("directory"), r.URL.Query().Get("remoteId"))
 		if err != nil {
 			status := http.StatusInternalServerError
 			if errors.Is(err, ErrValidation) {
 				status = http.StatusBadRequest
 			}
-			http.Error(w, err.Error(), status)
+			if status == http.StatusInternalServerError {
+				serverError(w, "listing prompt schedules", err)
+			} else {
+				http.Error(w, err.Error(), status)
+			}
 			return
 		}
 		if schedules == nil {
@@ -118,7 +126,11 @@ func (s *Server) handlePromptScheduleCollection(w http.ResponseWriter, r *http.R
 			if errors.Is(err, ErrValidation) {
 				status = http.StatusBadRequest
 			}
-			http.Error(w, err.Error(), status)
+			if status == http.StatusInternalServerError {
+				serverError(w, "creating prompt schedule", err)
+			} else {
+				http.Error(w, err.Error(), status)
+			}
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")

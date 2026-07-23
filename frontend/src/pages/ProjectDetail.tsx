@@ -217,7 +217,7 @@ export function ProjectDetail() {
           onClick={() => setExcludeArchived(!excludeArchived)}
         >Exclude archived</button>
       </div>
-      {directory && <PromptSchedules directory={directory} />}
+      {directory && launchAllowed && <PromptSchedules directory={directory} />}
       <SessionTable sessions={sessions} showProject={false} loading={!sessionsLoaded} includeArchived={!excludeArchived} />
     </div>
   );

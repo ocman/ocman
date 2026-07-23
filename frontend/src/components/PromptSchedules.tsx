@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { api, type PromptSchedule } from '../lib/api';
 import './PromptSchedules.css';
 
-export function PromptSchedules({ directory }: { directory: string }) {
+export function PromptSchedules({ directory, remoteId = 'local' }: { directory: string; remoteId?: string }) {
   const [schedules, setSchedules] = useState<PromptSchedule[]>([]);
   const [prompt, setPrompt] = useState('');
   const [runAt, setRunAt] = useState('');
@@ -18,7 +18,7 @@ export function PromptSchedules({ directory }: { directory: string }) {
     setError('');
     const load = () => {
       const version = ++listVersion.current;
-      return api.promptSchedules.list(directory, controller.signal).then((next) => {
+      return api.promptSchedules.list(directory, remoteId, controller.signal).then((next) => {
         if (version === listVersion.current) {
           setSchedules(next);
           setError('');
@@ -33,7 +33,7 @@ export function PromptSchedules({ directory }: { directory: string }) {
       controller.abort();
       window.clearInterval(interval);
     };
-  }, [directory]);
+  }, [directory, remoteId]);
 
   const replace = (schedule: PromptSchedule) => {
     setSchedules((current) => current.map((item) => item.id === schedule.id ? schedule : item));
@@ -44,7 +44,7 @@ export function PromptSchedules({ directory }: { directory: string }) {
     setBusy('create');
     setError('');
     try {
-      const schedule = await api.promptSchedules.create({ directory, prompt, runAt: Date.parse(runAt) });
+      const schedule = await api.promptSchedules.create({ directory, remoteId, prompt, runAt: Date.parse(runAt) });
       listVersion.current++;
       setSchedules((current) => [schedule, ...current]);
       setPrompt('');
@@ -100,7 +100,7 @@ export function PromptSchedules({ directory }: { directory: string }) {
                 <button className="oc-time-range-btn" disabled={busy === schedule.id} onClick={() => act(schedule, 'run')}>Run now</button>
                 <button className="oc-time-range-btn" disabled={busy === schedule.id} onClick={() => act(schedule, 'cancel')}>Cancel</button>
               </>}
-              {schedule.sessionId && <Link to={`/session/${encodeURIComponent(schedule.sessionId)}`}>Open session</Link>}
+              {schedule.sessionId && <Link to={`/session/${encodeURIComponent(schedule.sessionId)}?platform=${encodeURIComponent(schedule.platform ?? '')}`}>Open session</Link>}
             </div>
           </article>
         ))}

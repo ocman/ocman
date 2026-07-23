@@ -702,9 +702,9 @@ export const api = {
       postJSON<{ removed: boolean }>('/api/worktree/remove', req),
   },
 	promptSchedules: {
-		list: (directory: string, signal?: AbortSignal) => fetchJSON<PromptSchedule[]>(`/api/prompt-schedules?directory=${encodeURIComponent(directory)}`, signal),
+		list: (directory: string, remoteId = 'local', signal?: AbortSignal) => fetchJSON<PromptSchedule[]>(`/api/prompt-schedules?directory=${encodeURIComponent(directory)}&remoteId=${encodeURIComponent(remoteId)}`, signal),
 		get: (id: string, signal?: AbortSignal) => fetchJSON<PromptSchedule>(`/api/prompt-schedules/${encodeURIComponent(id)}`, signal),
-		create: (req: { directory: string; prompt: string; runAt: number }) => postJSON<PromptSchedule>('/api/prompt-schedules', req),
+		create: (req: { directory: string; remoteId: string; prompt: string; runAt: number }) => postJSON<PromptSchedule>('/api/prompt-schedules', req),
 		cancel: (id: string) => postJSON<PromptSchedule>(`/api/prompt-schedules/${encodeURIComponent(id)}/cancel`, {}),
 		runNow: (id: string) => postJSON<PromptSchedule>(`/api/prompt-schedules/${encodeURIComponent(id)}/run-now`, {}),
 	},

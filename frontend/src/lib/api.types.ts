@@ -34,6 +34,7 @@ export interface NotifyEntry {
 export interface PromptSchedule {
   id: string;
   directory: string;
+  remoteId: string;
   prompt: string;
   state: 'scheduled' | 'running' | 'completed' | 'failed' | 'canceled';
   platform?: string;

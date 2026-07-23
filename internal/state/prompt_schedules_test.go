@@ -5,7 +5,7 @@ import "testing"
 func TestPromptSchedulePersistenceAndAtomicClaim(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
-	schedule := PromptSchedule{ID: "ps_1", Directory: "/repo", Prompt: "exact\n", RunAt: 1000, State: "scheduled", CreatedAt: 500, UpdatedAt: 500}
+	schedule := PromptSchedule{ID: "ps_1", Directory: "/repo", RemoteID: "local", Prompt: "exact\n", RunAt: 1000, State: "scheduled", CreatedAt: 500, UpdatedAt: 500}
 	if err := db.CreatePromptSchedule(schedule); err != nil {
 		t.Fatal(err)
 	}
@@ -32,9 +32,9 @@ func TestPromptScheduleClaimsDueRowsOneAtATimeAndCancel(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	for _, schedule := range []PromptSchedule{
-		{ID: "due", Directory: "/a", Prompt: "a", RunAt: 1000, State: "scheduled", CreatedAt: 1, UpdatedAt: 1},
-		{ID: "later", Directory: "/a", Prompt: "b", RunAt: 3000, State: "scheduled", CreatedAt: 2, UpdatedAt: 2},
-		{ID: "other", Directory: "/b", Prompt: "c", RunAt: 1000, State: "scheduled", CreatedAt: 3, UpdatedAt: 3},
+		{ID: "due", Directory: "/a", RemoteID: "local", Prompt: "a", RunAt: 1000, State: "scheduled", CreatedAt: 1, UpdatedAt: 1},
+		{ID: "later", Directory: "/a", RemoteID: "local", Prompt: "b", RunAt: 3000, State: "scheduled", CreatedAt: 2, UpdatedAt: 2},
+		{ID: "other", Directory: "/b", RemoteID: "local", Prompt: "c", RunAt: 1000, State: "scheduled", CreatedAt: 3, UpdatedAt: 3},
 	} {
 		if err := db.CreatePromptSchedule(schedule); err != nil {
 			t.Fatal(err)
@@ -51,7 +51,7 @@ func TestPromptScheduleClaimsDueRowsOneAtATimeAndCancel(t *testing.T) {
 	if _, ok, err := db.ClaimNextDuePromptSchedule(2000); err != nil || ok {
 		t.Fatalf("third claim: ok=%v err=%v", ok, err)
 	}
-	listed, err := db.ListPromptSchedules("/a")
+	listed, err := db.ListPromptSchedules("/a", "local")
 	if err != nil || len(listed) != 2 {
 		t.Fatalf("listed=%+v err=%v", listed, err)
 	}
@@ -65,8 +65,8 @@ func TestPromptScheduleRecoveryFailsRunningOnly(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	for _, schedule := range []PromptSchedule{
-		{ID: "running", Directory: "/a", Prompt: "a", RunAt: 1, State: "scheduled", CreatedAt: 1, UpdatedAt: 1},
-		{ID: "waiting", Directory: "/a", Prompt: "b", RunAt: 2, State: "scheduled", CreatedAt: 1, UpdatedAt: 1},
+		{ID: "running", Directory: "/a", RemoteID: "local", Prompt: "a", RunAt: 1, State: "scheduled", CreatedAt: 1, UpdatedAt: 1},
+		{ID: "waiting", Directory: "/a", RemoteID: "local", Prompt: "b", RunAt: 2, State: "scheduled", CreatedAt: 1, UpdatedAt: 1},
 	} {
 		if err := db.CreatePromptSchedule(schedule); err != nil {
 			t.Fatal(err)

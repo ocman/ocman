@@ -11,6 +11,7 @@ var ErrPromptScheduleNotFound = errors.New("prompt schedule not found")
 type PromptSchedule struct {
 	ID         string `json:"id"`
 	Directory  string `json:"directory"`
+	RemoteID   string `json:"remoteId"`
 	Prompt     string `json:"prompt"`
 	State      string `json:"state"`
 	Platform   string `json:"platform,omitempty"`
@@ -25,8 +26,8 @@ type PromptSchedule struct {
 
 func (d *DB) CreatePromptSchedule(schedule PromptSchedule) error {
 	_, err := d.db.Exec(`INSERT INTO prompt_schedule
-		(id, directory, prompt, run_at, state, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`, schedule.ID, schedule.Directory, schedule.Prompt,
+		(id, directory, remote_id, prompt, run_at, state, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, schedule.ID, schedule.Directory, schedule.RemoteID, schedule.Prompt,
 		schedule.RunAt, schedule.State, schedule.CreatedAt, schedule.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("creating prompt schedule: %w", err)
@@ -34,14 +35,14 @@ func (d *DB) CreatePromptSchedule(schedule PromptSchedule) error {
 	return nil
 }
 
-const promptScheduleColumns = `id, directory, prompt, run_at, state, platform, session_id, error,
+const promptScheduleColumns = `id, directory, remote_id, prompt, run_at, state, platform, session_id, error,
 	created_at, updated_at, started_at, finished_at`
 
 type promptScheduleScanner interface{ Scan(...any) error }
 
 func scanPromptSchedule(row promptScheduleScanner) (PromptSchedule, error) {
 	var s PromptSchedule
-	err := row.Scan(&s.ID, &s.Directory, &s.Prompt, &s.RunAt, &s.State, &s.Platform,
+	err := row.Scan(&s.ID, &s.Directory, &s.RemoteID, &s.Prompt, &s.RunAt, &s.State, &s.Platform,
 		&s.SessionID, &s.Error, &s.CreatedAt, &s.UpdatedAt, &s.StartedAt, &s.FinishedAt)
 	return s, err
 }
@@ -57,8 +58,8 @@ func (d *DB) GetPromptSchedule(id string) (PromptSchedule, error) {
 	return s, nil
 }
 
-func (d *DB) ListPromptSchedules(directory string) ([]PromptSchedule, error) {
-	rows, err := d.db.Query(`SELECT `+promptScheduleColumns+` FROM prompt_schedule WHERE directory = ? ORDER BY created_at DESC, id`, directory)
+func (d *DB) ListPromptSchedules(directory, remoteID string) ([]PromptSchedule, error) {
+	rows, err := d.db.Query(`SELECT `+promptScheduleColumns+` FROM prompt_schedule WHERE directory = ? AND remote_id = ? ORDER BY created_at DESC, id`, directory, remoteID)
 	if err != nil {
 		return nil, fmt.Errorf("listing prompt schedules: %w", err)
 	}

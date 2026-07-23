@@ -40,7 +40,7 @@ func TestManagedPromptSessionsEnsuresProjectInstance(t *testing.T) {
 	}})
 	srv.registry = reg
 
-	platformID, session, err := (managedPromptSessions{srv}).CreateScheduledSession(t.Context(), "/repo")
+	platformID, session, err := (managedPromptSessions{srv}).CreateScheduledSession(t.Context(), "local", "/repo")
 	if err != nil || platformID != "opencode" || session.ID != "scheduled-session" {
 		t.Fatalf("platform=%q session=%+v err=%v", platformID, session, err)
 	}

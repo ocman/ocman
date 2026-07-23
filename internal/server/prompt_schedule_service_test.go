@@ -29,7 +29,7 @@ func (f *fakeStore) CreatePromptSchedule(schedule state.PromptSchedule) error {
 	return nil
 }
 
-func (f *fakeStore) ListPromptSchedules(directory string) ([]state.PromptSchedule, error) {
+func (f *fakeStore) ListPromptSchedules(directory, remoteID string) ([]state.PromptSchedule, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.listErr != nil {
@@ -37,7 +37,7 @@ func (f *fakeStore) ListPromptSchedules(directory string) ([]state.PromptSchedul
 	}
 	var out []state.PromptSchedule
 	for _, schedule := range f.schedules {
-		if schedule.Directory == directory {
+		if schedule.Directory == directory && schedule.RemoteID == remoteID {
 			out = append(out, schedule)
 		}
 	}
@@ -131,7 +131,7 @@ type fakeSessions struct {
 	send    error
 }
 
-func (f *fakeSessions) CreateScheduledSession(_ context.Context, directory string) (string, *platforms.CreateSessionResponse, error) {
+func (f *fakeSessions) CreateScheduledSession(_ context.Context, _ string, directory string) (string, *platforms.CreateSessionResponse, error) {
 	f.created = append(f.created, platforms.CreateSessionRequest{Directory: directory})
 	if f.create != nil {
 		return "", nil, f.create
@@ -155,7 +155,7 @@ func TestCreateListInspectAndCancel(t *testing.T) {
 	if err != nil || schedule.Prompt != " unchanged \n" || schedule.State != StateScheduled {
 		t.Fatalf("Create: schedule=%+v err=%v", schedule, err)
 	}
-	listed, err := svc.List(context.Background(), "/repo")
+	listed, err := svc.List(context.Background(), "/repo", "local")
 	if err != nil || len(listed) != 1 {
 		t.Fatalf("List: schedules=%+v err=%v", listed, err)
 	}

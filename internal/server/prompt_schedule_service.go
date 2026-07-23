@@ -27,7 +27,7 @@ var (
 
 type Store interface {
 	CreatePromptSchedule(state.PromptSchedule) error
-	ListPromptSchedules(string) ([]state.PromptSchedule, error)
+	ListPromptSchedules(string, string) ([]state.PromptSchedule, error)
 	GetPromptSchedule(string) (state.PromptSchedule, error)
 	ClaimPromptSchedule(string, int64, bool) (state.PromptSchedule, bool, error)
 	ClaimNextDuePromptSchedule(int64) (state.PromptSchedule, bool, error)
@@ -38,7 +38,7 @@ type Store interface {
 }
 
 type Sessions interface {
-	CreateScheduledSession(context.Context, string) (string, *platforms.CreateSessionResponse, error)
+	CreateScheduledSession(context.Context, string, string) (string, *platforms.CreateSessionResponse, error)
 	SendScheduledMessage(context.Context, string, platforms.SendMessageRequest) error
 }
 
@@ -51,6 +51,7 @@ type promptScheduleService struct {
 
 type promptScheduleCreateRequest struct {
 	Directory string `json:"directory"`
+	RemoteID  string `json:"remoteId"`
 	Prompt    string `json:"prompt"`
 	RunAt     int64  `json:"runAt"`
 }
@@ -76,15 +77,21 @@ func (s *promptScheduleService) Create(_ context.Context, req promptScheduleCrea
 	if req.Directory == "" || req.Prompt == "" || req.RunAt <= now {
 		return state.PromptSchedule{}, fmt.Errorf("directory, prompt, and a future runAt are required: %w", ErrValidation)
 	}
-	schedule := state.PromptSchedule{ID: s.newID(), Directory: req.Directory, Prompt: req.Prompt, RunAt: req.RunAt, State: StateScheduled, CreatedAt: now, UpdatedAt: now}
+	if req.RemoteID == "" {
+		req.RemoteID = "local"
+	}
+	schedule := state.PromptSchedule{ID: s.newID(), Directory: req.Directory, RemoteID: req.RemoteID, Prompt: req.Prompt, RunAt: req.RunAt, State: StateScheduled, CreatedAt: now, UpdatedAt: now}
 	return schedule, s.store.CreatePromptSchedule(schedule)
 }
 
-func (s *promptScheduleService) List(_ context.Context, directory string) ([]state.PromptSchedule, error) {
+func (s *promptScheduleService) List(_ context.Context, directory, remoteID string) ([]state.PromptSchedule, error) {
 	if directory == "" {
 		return nil, fmt.Errorf("directory is required: %w", ErrValidation)
 	}
-	return s.store.ListPromptSchedules(directory)
+	if remoteID == "" {
+		remoteID = "local"
+	}
+	return s.store.ListPromptSchedules(directory, remoteID)
 }
 
 func (s *promptScheduleService) Get(_ context.Context, id string) (state.PromptSchedule, error) {
@@ -136,13 +143,13 @@ func (s *promptScheduleService) Tick(ctx context.Context) error {
 }
 
 func (s *promptScheduleService) dispatch(ctx context.Context, schedule state.PromptSchedule) error {
-	platformID, resp, err := s.sessions.CreateScheduledSession(ctx, schedule.Directory)
+	platformID, resp, err := s.sessions.CreateScheduledSession(ctx, schedule.RemoteID, schedule.Directory)
 	if err != nil {
 		return s.finishFailed(schedule.ID, err)
 	}
 	now := s.now().UnixMilli()
 	if err := s.store.LinkPromptScheduleSession(schedule.ID, platformID, resp.ID, now); err != nil {
-		return fmt.Errorf("linking scheduled session: %w", err)
+		return s.finishFailed(schedule.ID, fmt.Errorf("linking scheduled session: %w", err))
 	}
 	if err := s.sessions.SendScheduledMessage(ctx, platformID, platforms.SendMessageRequest{SessionID: resp.ID, Message: schedule.Prompt}); err != nil {
 		return s.finishFailed(schedule.ID, err)

@@ -1254,6 +1254,7 @@ func migrateToV37(tx *sql.Tx) error {
 		CREATE TABLE prompt_schedule (
 			id          TEXT PRIMARY KEY,
 			directory   TEXT NOT NULL,
+			remote_id   TEXT NOT NULL DEFAULT 'local',
 			prompt      TEXT NOT NULL,
 			run_at      INTEGER NOT NULL,
 			state       TEXT NOT NULL CHECK (state IN ('scheduled', 'running', 'completed', 'failed', 'canceled')),
@@ -1266,7 +1267,7 @@ func migrateToV37(tx *sql.Tx) error {
 			finished_at INTEGER NOT NULL DEFAULT 0
 		);
 		CREATE INDEX prompt_schedule_due ON prompt_schedule(state, run_at);
-		CREATE INDEX prompt_schedule_directory ON prompt_schedule(directory, created_at DESC);
+		CREATE INDEX prompt_schedule_directory ON prompt_schedule(remote_id, directory, created_at DESC);
 	`)
 	return err
 }
