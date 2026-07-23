@@ -12,6 +12,8 @@ import { useUpstreams } from '../lib/useUpstreams';
 import type { Session } from '../lib/api';
 import type { MessageBookmark, MessageBookmarkGroup } from '../lib/messageBookmarks';
 import { MessageBookmarksPane } from './MessageBookmarksPane';
+import { BeadsPane } from './BeadsPane';
+import { useBeadsStatus } from '../lib/useBeadsStatus';
 import {
   DndContext,
   DragOverlay,
@@ -58,6 +60,7 @@ const TAB_LABELS: Record<ChangesSidebarTab, string> = {
   'working-tree': 'Working tree',
   bookmarks: 'Bookmarks',
   upstream: 'PRs & Issues',
+  beads: 'Beads',
 };
 
 // Info = info-circle icon (context / MCP / LSP overview).
@@ -72,6 +75,7 @@ const TAB_ICONS: Record<ChangesSidebarTab, string> = {
   'working-tree': 'bi-git',
   bookmarks: 'bi-bookmarks',
   upstream: 'bi-inbox',
+  beads: 'bi-diagram-3',
 };
 
 // Default strip order, used as a fallback when the persisted order
@@ -83,6 +87,7 @@ const DEFAULT_TAB_ORDER: ChangesSidebarTab[] = [
   'working-tree',
   'bookmarks',
   'upstream',
+  'beads',
 ];
 
 // Minimum height fraction a single pane is allowed to occupy. Stops
@@ -157,15 +162,23 @@ export function RightPanel({
   // discoverable without cluttering projects that genuinely have
   // no upstream.
   const upstreamsResult = useUpstreams(directory);
+  const beadsResult = useBeadsStatus(
+    directory,
+    session ? session.remoteId || 'local' : undefined,
+    openTabs.includes('beads'),
+  );
+  const beadsAvailable = beadsResult.data?.available === true;
 
   // Reconcile the persisted order against the known tab set: this
   // tolerates older persisted state that's missing newer tabs.
-  const stripOrder = useMemo(
+  const allTabOrder = useMemo(
     () => reconcileTabOrder(persistedOrder),
     [persistedOrder],
   );
-
-  const collapsed = openTabs.length === 0;
+  const stripOrder = useMemo(
+    () => allTabOrder.filter((tab) => tab !== 'beads' || beadsAvailable),
+    [allTabOrder, beadsAvailable],
+  );
 
   // Render panes in the user-defined strip order (stripOrder),
   // filtered down to the panes currently open. Sorting follows the
@@ -175,6 +188,7 @@ export function RightPanel({
     () => stripOrder.filter((t) => openTabs.includes(t)),
     [stripOrder, openTabs],
   );
+  const collapsed = orderedOpenTabs.length === 0;
 
   // Normalise the size fractions so they sum to 1 across the ordered
   // open tabs. Tabs without a stored size get an even share of
@@ -216,12 +230,12 @@ export function RightPanel({
       setDraggingTab(null);
       const { active, over } = event;
       if (!over || active.id === over.id) return;
-      const from = stripOrder.indexOf(active.id as ChangesSidebarTab);
-      const to = stripOrder.indexOf(over.id as ChangesSidebarTab);
+      const from = allTabOrder.indexOf(active.id as ChangesSidebarTab);
+      const to = allTabOrder.indexOf(over.id as ChangesSidebarTab);
       if (from === -1 || to === -1) return;
-      setTabOrder(arrayMove(stripOrder, from, to));
+      setTabOrder(arrayMove(allTabOrder, from, to));
     },
-    [stripOrder, setTabOrder],
+    [allTabOrder, setTabOrder],
   );
 
   const handleDragCancel = useCallback(() => {
@@ -247,7 +261,7 @@ export function RightPanel({
             <SortableStripIcon
               key={t}
               tab={t}
-              active={openTabs.includes(t)}
+              active={orderedOpenTabs.includes(t)}
               onToggle={() => toggleTab(t)}
             />
           ))}
@@ -296,6 +310,7 @@ export function RightPanel({
             onRemoveMessageBookmark={onRemoveMessageBookmark}
             onScrollToMessageBookmark={onScrollToMessageBookmark}
             upstreams={upstreamsResult.upstreams}
+            beadsResult={beadsResult}
             // First pane has no top divider; subsequent panes do
             // and their header doubles as a resize handle for the
             // boundary above.
@@ -421,6 +436,7 @@ interface PaneProps {
   // consumes this; the other panes ignore it. Resolved at RightPanel
   // level so we don't re-detect per pane.
   upstreams: import('../lib/upstreamApi').Upstream[];
+  beadsResult: ReturnType<typeof useBeadsStatus>;
   divider: boolean;
   size: number;
   // When non-null, the pane header doubles as a resize handle for
@@ -443,6 +459,7 @@ function Pane({
   onRemoveMessageBookmark,
   onScrollToMessageBookmark,
   upstreams,
+  beadsResult,
   divider,
   size,
   resizeAboveIdx,
@@ -543,6 +560,16 @@ function Pane({
               upstreams={upstreams}
               embedded
               onSummaryChange={handleSummary}
+              onRefresh={handleRefresh}
+              onLoadingChange={handleLoadingChange}
+            />
+          )}
+          {tab === 'beads' && beadsResult.data?.available && (
+            <BeadsPane
+              status={beadsResult.data}
+              loading={beadsResult.isFetching}
+              error={beadsResult.error}
+              refresh={beadsResult.refetch}
               onRefresh={handleRefresh}
               onLoadingChange={handleLoadingChange}
             />

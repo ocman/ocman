@@ -327,3 +327,143 @@
   display: block;
   -webkit-line-clamp: unset;
 }
+.oc-beads-pane {
+  font-size: 12px;
+  height: 100%;
+  overflow: auto;
+  padding: 0.5rem 0.65rem;
+}
+
+.oc-beads-tree,
+.oc-beads-tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.oc-beads-tree {
+  --oc-beads-circle-size: 10px;
+  --oc-beads-elbow-height: 9px;
+}
+
+.oc-beads-ticket {
+  align-items: start;
+  display: grid;
+  gap: 5px;
+  grid-template-columns: var(--oc-beads-marker-width) minmax(0, 1fr);
+}
+
+.oc-beads-marker {
+  align-self: stretch;
+  position: relative;
+  width: var(--oc-beads-marker-width);
+}
+
+.oc-beads-guide,
+.oc-beads-child-bridge {
+  border-left: 1px solid var(--border);
+  bottom: 0;
+  position: absolute;
+  top: 0;
+}
+
+.oc-beads-child-bridge {
+  top: 14px;
+}
+
+.oc-beads-branch {
+  border-left: 1px solid var(--border);
+  height: var(--oc-beads-elbow-height);
+  position: absolute;
+  top: 0;
+  width: 7px;
+}
+
+.oc-beads-branch.continues {
+  bottom: 0;
+  height: auto;
+}
+
+.oc-beads-branch::after {
+  border-top: 1px solid var(--border);
+  content: '';
+  left: 0;
+  position: absolute;
+  top: var(--oc-beads-elbow-height);
+  width: 7px;
+}
+
+.oc-beads-status {
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  box-sizing: border-box;
+  color: var(--accent2);
+  height: var(--oc-beads-circle-size);
+  position: absolute;
+  top: 4px;
+  width: var(--oc-beads-circle-size);
+  z-index: 1;
+}
+
+.oc-beads-status.in_progress {
+  background: linear-gradient(90deg, currentColor 50%, transparent 50%);
+  color: var(--accent4);
+}
+.oc-beads-status.blocked { background: var(--danger); color: var(--danger); }
+.oc-beads-status.deferred { color: var(--accent); }
+
+.oc-beads-content {
+  min-width: 0;
+  padding: 4px 0;
+}
+
+.oc-beads-main,
+.oc-beads-details {
+  align-items: baseline;
+  display: flex;
+  gap: 0.35rem;
+  line-height: 1.35;
+  min-width: 0;
+}
+
+.oc-beads-priority,
+.oc-beads-type {
+  color: var(--text-dim);
+  font-size: inherit;
+  white-space: nowrap;
+}
+
+.oc-beads-id {
+  color: var(--text-dim);
+  font-size: 0.9em;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.oc-beads-title {
+  line-height: 1.35;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.oc-beads-error {
+  align-items: center;
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+  padding: 0.4rem 0.5rem;
+}
+
+.oc-beads-error button {
+  background: none;
+  border: 0;
+  color: inherit;
+  text-decoration: underline;
+}
+
+.oc-beads-empty {
+  color: var(--text-dim);
+  margin: 0.5rem 0;
+}

@@ -60,6 +60,7 @@ const (
 	Ocman_RestartProjectOpencode_FullMethodName = "/ocman.remote.v1.Ocman/RestartProjectOpencode"
 	Ocman_TmuxSessions_FullMethodName           = "/ocman.remote.v1.Ocman/TmuxSessions"
 	Ocman_HostCapabilities_FullMethodName       = "/ocman.remote.v1.Ocman/HostCapabilities"
+	Ocman_BeadsStatus_FullMethodName            = "/ocman.remote.v1.Ocman/BeadsStatus"
 	Ocman_TermWindows_FullMethodName            = "/ocman.remote.v1.Ocman/TermWindows"
 	Ocman_TermCreateWindow_FullMethodName       = "/ocman.remote.v1.Ocman/TermCreateWindow"
 	Ocman_TermKillWindow_FullMethodName         = "/ocman.remote.v1.Ocman/TermKillWindow"
@@ -130,6 +131,7 @@ type OcmanClient interface {
 	RestartProjectOpencode(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 	TmuxSessions(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*JsonResp, error)
 	HostCapabilities(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*JsonResp, error)
+	BeadsStatus(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 	// In-app terminal windows (directory-scoped, executed on the owner).
 	TermWindows(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 	TermCreateWindow(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
@@ -570,6 +572,16 @@ func (c *ocmanClient) HostCapabilities(ctx context.Context, in *Empty, opts ...g
 	return out, nil
 }
 
+func (c *ocmanClient) BeadsStatus(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(JsonResp)
+	err := c.cc.Invoke(ctx, Ocman_BeadsStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *ocmanClient) TermWindows(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(JsonResp)
@@ -704,6 +716,7 @@ type OcmanServer interface {
 	RestartProjectOpencode(context.Context, *JsonReq) (*JsonResp, error)
 	TmuxSessions(context.Context, *Empty) (*JsonResp, error)
 	HostCapabilities(context.Context, *Empty) (*JsonResp, error)
+	BeadsStatus(context.Context, *JsonReq) (*JsonResp, error)
 	// In-app terminal windows (directory-scoped, executed on the owner).
 	TermWindows(context.Context, *JsonReq) (*JsonResp, error)
 	TermCreateWindow(context.Context, *JsonReq) (*JsonResp, error)
@@ -847,6 +860,9 @@ func (UnimplementedOcmanServer) TmuxSessions(context.Context, *Empty) (*JsonResp
 }
 func (UnimplementedOcmanServer) HostCapabilities(context.Context, *Empty) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method HostCapabilities not implemented")
+}
+func (UnimplementedOcmanServer) BeadsStatus(context.Context, *JsonReq) (*JsonResp, error) {
+	return nil, status.Error(codes.Unimplemented, "method BeadsStatus not implemented")
 }
 func (UnimplementedOcmanServer) TermWindows(context.Context, *JsonReq) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method TermWindows not implemented")
@@ -1618,6 +1634,24 @@ func _Ocman_HostCapabilities_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Ocman_BeadsStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JsonReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).BeadsStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_BeadsStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).BeadsStatus(ctx, req.(*JsonReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Ocman_TermWindows_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(JsonReq)
 	if err := dec(in); err != nil {
@@ -1874,6 +1908,10 @@ var Ocman_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "HostCapabilities",
 			Handler:    _Ocman_HostCapabilities_Handler,
+		},
+		{
+			MethodName: "BeadsStatus",
+			Handler:    _Ocman_BeadsStatus_Handler,
 		},
 		{
 			MethodName: "TermWindows",

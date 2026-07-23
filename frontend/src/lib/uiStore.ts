@@ -37,7 +37,7 @@ export type PaletteCommand =
 // it stacks above the change-related panes. 'upstream' is the PR/Issue
 // sidebar (spec/pr-issue-sidebar/), only shown when the current project
 // has a supported GitHub/Forgejo remote.
-export type ChangesSidebarTab = 'info' | 'session' | 'working-tree' | 'bookmarks' | 'upstream';
+export type ChangesSidebarTab = 'info' | 'session' | 'working-tree' | 'bookmarks' | 'upstream' | 'beads';
 
 // Per-tab height fraction in split mode. Sums to 1 across openTabs.
 // Values are pinned to a minimum of 0.1 so a pane can't be dragged
@@ -271,7 +271,7 @@ export const useUiStore = create<UiStore>()(
       setPromptSections: (sections) => set({ promptSections: sections }),
 
       changesSidebarOpenTabs: ['session'],
-      changesSidebarTabOrder: ['info', 'session', 'working-tree', 'bookmarks', 'upstream'],
+      changesSidebarTabOrder: ['info', 'session', 'working-tree', 'bookmarks', 'upstream', 'beads'],
       setChangesSidebarTabOrder: (order) => set({ changesSidebarTabOrder: order }),
       changesSidebarTabSizes: {},
       toggleChangesSidebarTab: (tab) =>

@@ -101,9 +101,10 @@ type ManagedStore interface {
 
 // Host is the local hostsvc.Host implementation.
 type Host struct {
-	deps    Deps
-	runtime ocruntime.Runtime
-	store   ManagedStore
+	deps        Deps
+	runtime     ocruntime.Runtime
+	store       ManagedStore
+	beadsRunner beadsRunner
 
 	// sf collapses concurrent EnsureProjectOpencode calls for the same
 	// repo root into a single launch (AD-9). ensure keys on repoRoot.
@@ -136,6 +137,7 @@ func New(deps Deps) *Host {
 		deps:             deps,
 		runtime:          rt,
 		store:            deps.ManagedStore,
+		beadsRunner:      execBeadsRunner{},
 		instances:        map[string]*ocruntime.Instance{},
 		portWaitTimeout:  15 * time.Second,
 		portWaitInterval: 200 * time.Millisecond,

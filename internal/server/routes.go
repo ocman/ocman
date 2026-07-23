@@ -79,6 +79,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/project/issues", s.get(s.handleProjectIssues))
 	mux.HandleFunc("/api/project/pr-checks", s.get(s.handleProjectPRChecks))
 	mux.HandleFunc("/api/project/forge-user", s.get(s.handleProjectForgeUser))
+	mux.HandleFunc("/api/project/beads-status", s.get(s.handleProjectBeadsStatus))
 	// Project archive state (own state.db; no launch), same auth posture
 	// as the per-session archive endpoint.
 	mux.HandleFunc("/api/project/archive", s.post(s.handleProjectArchive))

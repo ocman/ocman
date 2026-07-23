@@ -475,6 +475,16 @@ func (s *Server) HostCapabilities(_ context.Context, _ *pb.Empty) (*pb.JsonResp,
 	return jsonResp(s.host.Capabilities(), nil)
 }
 
+func (s *Server) BeadsStatus(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
+	var args struct {
+		Dir string `json:"dir"`
+	}
+	if err := unmarshalJSON(req.Payload, &args); err != nil {
+		return nil, err
+	}
+	return jsonResp(s.host.BeadsStatus(ctx, args.Dir))
+}
+
 // --- Terminal ---
 
 func (s *Server) TermWindows(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {

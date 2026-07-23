@@ -20,7 +20,7 @@ flowchart LR
     Ocman -->|read/write SQLite| StateDB[(state.db)]
     Ocman -->|artifact payloads| Blobs[(workflow-artifacts)]
     Ocman -->|Authenticated HTTP/SSE proxy| OCInst[Running OpenCode<br/>instances]
-    Ocman -->|exec| Shell[git / tmux / lsof<br/>worktrees]
+    Ocman -->|exec| Shell[git / tmux / lsof / bd<br/>worktrees and status]
     Ocman -->|REST| Forges[GitHub / Forgejo]
     Ocman <-->|gRPC + token| Remotes[Remote ocman<br/>instances]
     Ocman -.->|OTLP, optional| Otel[Telemetry collector]
@@ -56,7 +56,7 @@ flowchart TD
     Registry --> OC[platforms/opencode<br/>adapter]
     Registry --> RP[remote.Platform<br/>gRPC-backed]
     OC --> DB[internal/db<br/>read-only queries]
-    Router --> Local[hostsvc/local<br/>git, tmux, worktree]
+    Router --> Local[hostsvc/local<br/>git, tmux, worktree, Beads]
     Local --> OCRT[internal/ocruntime<br/>Runtime: launch/probe/stop]
     Server --> State[internal/state<br/>state.db]
     Server --> Forge[forge + integrations<br/>GitHub/Forgejo clients]
@@ -67,7 +67,7 @@ flowchart TD
 - **platforms.Registry** — session-scoped seam. One adapter per
   platform; remotes register as compound-ID platforms so handlers
   can't tell local from remote.
-- **hostsvc.Router** — directory-scoped seam (git, worktrees, tmux,
+- **hostsvc.Router** — directory-scoped seam (git, worktrees, tmux, Beads,
   projects); resolves the owning host and delegates. Same transparency
   trick as the registry. Worktree sessions run **in-app on the
   project's single opencode instance** (one per project, ensured via
@@ -196,4 +196,8 @@ flowchart TD
   it from REST whenever the shared SSE stream reports a run change. Its run
   graph labels ordered phases, stable map items, attempts, Node Results,
   historical artifacts, resource pools, and workspace ownership without
-  inferring platform identity.
+   inferring platform identity.
+- **Beads status** — the right panel queries the repository owner's
+  `hostsvc.Host` through `/api/project/beads-status`; remote owners proxy the
+  same operation over gRPC. Ticket data stays in the repository and is polled
+  only while the available pane is open.

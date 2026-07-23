@@ -79,7 +79,7 @@ describe('uiStore changesSidebar tab management', () => {
     useUiStore.setState({
       changesSidebarOpenTabs: ['session'],
       changesSidebarTabSizes: {},
-      changesSidebarTabOrder: ['info', 'session', 'working-tree', 'bookmarks', 'upstream'],
+      changesSidebarTabOrder: ['info', 'session', 'working-tree', 'bookmarks', 'upstream', 'beads'],
     });
   });
 
@@ -154,13 +154,14 @@ describe('uiStore changesSidebar tab management', () => {
   });
 
   it('setChangesSidebarTabOrder persists a user-reordered strip', () => {
-    initial.setChangesSidebarTabOrder(['working-tree', 'session', 'info', 'bookmarks', 'upstream']);
+    initial.setChangesSidebarTabOrder(['working-tree', 'session', 'info', 'bookmarks', 'upstream', 'beads']);
     expect(useUiStore.getState().changesSidebarTabOrder).toEqual([
       'working-tree',
       'session',
       'info',
       'bookmarks',
       'upstream',
+      'beads',
     ]);
   });
 });

@@ -35,6 +35,20 @@ func (h *remoteHost) Capabilities() hostsvc.HostCaps {
 	return caps
 }
 
+func (h *remoteHost) BeadsStatus(ctx context.Context, dir string) (hostsvc.BeadsStatus, error) {
+	client := h.conn.Client()
+	if client == nil {
+		return hostsvc.BeadsStatus{}, ErrRemoteOffline
+	}
+	b, _ := marshalJSON(map[string]string{"dir": dir})
+	resp, err := client.BeadsStatus(ctx, &pb.JsonReq{Payload: b})
+	if err != nil {
+		return hostsvc.BeadsStatus{}, err
+	}
+	var out hostsvc.BeadsStatus
+	return out, unmarshalJSON(resp.Payload, &out)
+}
+
 func (h *remoteHost) GitInfo(ctx context.Context, dirs []string) (map[string]git.Info, error) {
 	client := h.conn.Client()
 	if client == nil {
