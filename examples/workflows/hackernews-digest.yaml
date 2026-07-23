@@ -1,0 +1,144 @@
+# Command-only workflow for the external Dagu runner (ocman-2jk.4).
+#
+# All nodes are command nodes and the only trigger is manual, so ocman can
+# start it through the "Dagu" action on the Workflows page: ocman submits this
+# as an inline Dagu spec to its private local Dagu server and reads graph
+# state and step logs back from Dagu.
+#
+# The graph fans out — five independent summarize steps run in parallel once
+# `filter` completes — then `digest` joins them and `theme` distills the
+# overall theme. Steps shell out through `sh -c` because they use pipes and
+# redirects; scratch files live in Dagu's working directory. Requires `curl`
+# and `jq` on the host.
+#
+# `directory` must be an absolute path that already exists — it is required by
+# ocman's publish validation for command nodes and becomes Dagu's working_dir
+# (scratch files land there). Create it first, e.g.
+# `mkdir -p /tmp/ocman-hackernews-digest`, or point it at a real project dir.
+#
+# The `theme` step is still a command node — it shells out to `opencode run`
+# for the summary rather than being a native agent step (those are
+# ocman-2jk.5). It needs `opencode` on PATH and logged in, so it runs when you
+# invoke `dagu` directly; ocman's managed Dagu process gets a minimal
+# environment with no LLM credentials, so drop this step to run purely through
+# the "Dagu" button.
+id: hackernews-digest
+name: Hacker News digest
+version: "1"
+concurrency: 5
+directory: /tmp/ocman-hackernews-digest
+triggers:
+  - id: manual
+    type: manual
+nodes:
+  - id: fetch
+    name: Fetch top story ids
+    type: command
+    command:
+      - sh
+      - -c
+      - |
+        curl -sf --max-time 20 "https://hacker-news.firebaseio.com/v0/topstories.json" > topstories.json
+  - id: filter
+    name: Keep the top 5 ids
+    type: command
+    command:
+      - sh
+      - -c
+      - |
+        jq -r '.[0:5][]' topstories.json > ids.txt
+  - id: summarize-1
+    name: Summarize story 1
+    type: command
+    command:
+      - sh
+      - -c
+      - |
+        id=$(sed -n '1p' ids.txt)
+        curl -sf --max-time 20 "https://hacker-news.firebaseio.com/v0/item/${id}.json" \
+          | jq -r '"1. \(.title) — \(.score // 0) pts — \(.url // "no url")"' > summary-1.txt
+  - id: summarize-2
+    name: Summarize story 2
+    type: command
+    command:
+      - sh
+      - -c
+      - |
+        id=$(sed -n '2p' ids.txt)
+        curl -sf --max-time 20 "https://hacker-news.firebaseio.com/v0/item/${id}.json" \
+          | jq -r '"2. \(.title) — \(.score // 0) pts — \(.url // "no url")"' > summary-2.txt
+  - id: summarize-3
+    name: Summarize story 3
+    type: command
+    command:
+      - sh
+      - -c
+      - |
+        id=$(sed -n '3p' ids.txt)
+        curl -sf --max-time 20 "https://hacker-news.firebaseio.com/v0/item/${id}.json" \
+          | jq -r '"3. \(.title) — \(.score // 0) pts — \(.url // "no url")"' > summary-3.txt
+  - id: summarize-4
+    name: Summarize story 4
+    type: command
+    command:
+      - sh
+      - -c
+      - |
+        id=$(sed -n '4p' ids.txt)
+        curl -sf --max-time 20 "https://hacker-news.firebaseio.com/v0/item/${id}.json" \
+          | jq -r '"4. \(.title) — \(.score // 0) pts — \(.url // "no url")"' > summary-4.txt
+  - id: summarize-5
+    name: Summarize story 5
+    type: command
+    command:
+      - sh
+      - -c
+      - |
+        id=$(sed -n '5p' ids.txt)
+        curl -sf --max-time 20 "https://hacker-news.firebaseio.com/v0/item/${id}.json" \
+          | jq -r '"5. \(.title) — \(.score // 0) pts — \(.url // "no url")"' > summary-5.txt
+  - id: digest
+    name: Assemble the digest
+    type: command
+    command:
+      - sh
+      - -c
+      - |
+        echo "# Hacker News Top 5" > digest.md
+        cat summary-1.txt summary-2.txt summary-3.txt summary-4.txt summary-5.txt >> digest.md
+        cat digest.md
+  - id: theme
+    name: Summarize the overall theme
+    type: command
+    command:
+      - sh
+      - -c
+      - |
+        stories=$(cat digest.md)
+        opencode run "Summarize the general theme of these Hacker News top stories in 2-3 sentences. Output only the summary, no preamble. Stories: ${stories}" > theme.md
+        cat theme.md
+dependencies:
+  - from: fetch
+    to: filter
+  - from: filter
+    to: summarize-1
+  - from: filter
+    to: summarize-2
+  - from: filter
+    to: summarize-3
+  - from: filter
+    to: summarize-4
+  - from: filter
+    to: summarize-5
+  - from: summarize-1
+    to: digest
+  - from: summarize-2
+    to: digest
+  - from: summarize-3
+    to: digest
+  - from: summarize-4
+    to: digest
+  - from: summarize-5
+    to: digest
+  - from: digest
+    to: theme
