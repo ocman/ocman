@@ -77,6 +77,7 @@ export type {
 	WorkflowArtifact,
 	WorkflowMapItemRun,
 	PromptSchedule,
+	DaguStatus,
 } from './api.types';
 
 // Type imports used by the api object below.
@@ -126,6 +127,7 @@ import type {
 	WorkflowRunDetail,
 	WorkflowArtifact,
 	PromptSchedule,
+	DaguStatus,
 } from './api.types';
 
 /**
@@ -708,6 +710,9 @@ export const api = {
 		cancel: (id: string) => postJSON<PromptSchedule>(`/api/prompt-schedules/${encodeURIComponent(id)}/cancel`, {}),
 		runNow: (id: string) => postJSON<PromptSchedule>(`/api/prompt-schedules/${encodeURIComponent(id)}/run-now`, {}),
 		setEnabled: (id: string, enabled: boolean) => postJSON<PromptSchedule>(`/api/prompt-schedules/${encodeURIComponent(id)}/${enabled ? 'enable' : 'disable'}`, {}),
+	},
+	dagu: {
+		status: (remoteId = 'local', signal?: AbortSignal) => fetchJSON<DaguStatus>(`/api/dagu/status?remoteId=${encodeURIComponent(remoteId)}`, signal),
 	},
 	workflows: {
 		versions: (signal?: AbortSignal) => fetchJSON<WorkflowVersion[]>('/api/workflows', signal),

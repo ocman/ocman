@@ -16,6 +16,7 @@ import { usePageTitle } from '../lib/headerContext';
 import { WorkflowBuilder, WorkflowRunGraph } from './WorkflowBuilder';
 import { Button, SearchField, SelectField } from '../components/Control';
 import { Modal } from '../components/Modal';
+import { DaguStatus } from '../components/DaguStatus';
 import './Workflows.css';
 
 const EXAMPLE = `id: release
@@ -286,6 +287,7 @@ export function Workflows() {
 
   return (
     <main className="workflow-page" data-testid="workflows-page">
+      <DaguStatus />
       {view === 'operations' ? (
         <>
           <div className="workflow-tabs workflow-operation-tabs" role="tablist" aria-label="Workflow operations">

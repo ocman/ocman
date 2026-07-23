@@ -23,6 +23,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/singleflight"
 
+	"github.com/NoUseFreak/ocman/internal/dagu"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
@@ -171,6 +172,8 @@ func (h *Host) Capabilities() hostsvc.HostCaps {
 	}
 	return hostsvc.HostCaps{}
 }
+
+func (h *Host) DaguStatus(ctx context.Context) dagu.Result { return dagu.Detect(ctx) }
 
 func (h *Host) GitInfo(ctx context.Context, dirs []string) (map[string]git.Info, error) {
 	return git.LookupMany(ctx, dirs), nil

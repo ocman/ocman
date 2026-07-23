@@ -53,6 +53,12 @@ export interface PromptSchedule {
   finishedAt?: number;
 }
 
+export interface DaguStatus {
+  status: 'unavailable' | 'compatible' | 'unsupported';
+  version?: string;
+  installCommand: string;
+}
+
 export interface Session {
   id: string;
 	/**

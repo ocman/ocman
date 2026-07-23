@@ -1,0 +1,13 @@
+.dagu-status {
+  align-items: flex-start;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  padding: 0.9rem 1rem;
+}
+
+.dagu-status p { margin: 0.35rem 0; }
+.dagu-status code { overflow-wrap: anywhere; }

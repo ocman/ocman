@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/dagu"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/git"
 )
@@ -15,6 +16,9 @@ func (h stubHost) RemoteID() string       { return h.id }
 func (h stubHost) Capabilities() HostCaps { return HostCaps{} }
 func (h stubHost) BeadsStatus(context.Context, string) (BeadsStatus, error) {
 	return BeadsStatus{}, nil
+}
+func (h stubHost) DaguStatus(context.Context) dagu.Result {
+	return dagu.Result{Status: dagu.Unavailable}
 }
 func (h stubHost) GitInfo(context.Context, []string) (map[string]git.Info, error) {
 	return nil, nil

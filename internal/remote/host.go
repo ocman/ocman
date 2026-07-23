@@ -3,6 +3,7 @@ package remote
 import (
 	"context"
 
+	"github.com/NoUseFreak/ocman/internal/dagu"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
@@ -226,6 +227,22 @@ func (h *remoteHost) TmuxSessions(ctx context.Context) ([]hostsvc.TmuxSession, e
 	}
 	var out []hostsvc.TmuxSession
 	return out, unmarshalJSON(resp.Payload, &out)
+}
+
+func (h *remoteHost) DaguStatus(ctx context.Context) dagu.Result {
+	client := h.conn.Client()
+	if client == nil {
+		return dagu.Result{Status: dagu.Unavailable}
+	}
+	resp, err := client.DaguStatus(ctx, &pb.Empty{})
+	if err != nil {
+		return dagu.Result{Status: dagu.Unavailable}
+	}
+	var out dagu.Result
+	if unmarshalJSON(resp.Payload, &out) != nil {
+		return dagu.Result{Status: dagu.Unsupported}
+	}
+	return out
 }
 
 func (h *remoteHost) Projects(ctx context.Context) ([]db.ProjectStats, error) {

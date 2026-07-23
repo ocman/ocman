@@ -67,6 +67,7 @@ service Ocman {
   rpc TmuxSessions(Empty) returns (JsonResp);
   rpc HostCapabilities(Empty) returns (JsonResp);         // hostsvc.HostCaps
   rpc BeadsStatus(JsonReq) returns (JsonResp);            // {dir} -> hostsvc.BeadsStatus
+  rpc DaguStatus(Empty) returns (JsonResp);               // dagu.Result
 
   // In-app terminal windows (directory-scoped, executed on the owner).
   rpc TermWindows(JsonReq) returns (JsonResp);            // {dir} -> {windows:[...]}

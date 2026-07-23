@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/dagu"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -223,6 +224,9 @@ func TestRemoteHost_AllMethods(t *testing.T) {
 	}
 	if _, err := rh.TmuxSessions(ctx); err != nil {
 		t.Errorf("TmuxSessions: %v", err)
+	}
+	if got := rh.DaguStatus(ctx); got.Status != dagu.Compatible || got.Version != "2.1.0" {
+		t.Errorf("DaguStatus: %+v", got)
 	}
 	if _, err := rh.Projects(ctx); err != nil {
 		t.Errorf("Projects: %v", err)

@@ -40,7 +40,13 @@ const { apiMock, useWorkflowsMock, listeners, triggerListeners, connectListeners
   connectListeners: [] as Array<() => void>,
 }));
 
-vi.mock('../lib/api', () => ({ api: { models: apiMock.models, workflows: apiMock } }));
+vi.mock('../lib/api', () => ({
+  api: {
+    models: apiMock.models,
+    workflows: apiMock,
+    dagu: { status: vi.fn().mockResolvedValue({ status: 'compatible', version: '2.1.0', installCommand: 'brew install dagu' }) },
+  },
+}));
 vi.mock('../lib/useCapabilities', () => ({ useWorkflows: useWorkflowsMock }));
 vi.mock('../lib/useGlobalEvents', () => ({
   onWorkflowRunUpdated: (listener: (runId: string) => void) => {

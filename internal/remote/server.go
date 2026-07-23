@@ -485,6 +485,10 @@ func (s *Server) BeadsStatus(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp
 	return jsonResp(s.host.BeadsStatus(ctx, args.Dir))
 }
 
+func (s *Server) DaguStatus(ctx context.Context, _ *pb.Empty) (*pb.JsonResp, error) {
+	return jsonResp(s.host.DaguStatus(ctx), nil)
+}
+
 // --- Terminal ---
 
 func (s *Server) TermWindows(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {

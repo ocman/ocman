@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
+	"github.com/NoUseFreak/ocman/internal/dagu"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
@@ -139,6 +140,9 @@ func (localStubHost) Capabilities() hostsvc.HostCaps {
 }
 func (localStubHost) BeadsStatus(context.Context, string) (hostsvc.BeadsStatus, error) {
 	return hostsvc.BeadsStatus{}, nil
+}
+func (localStubHost) DaguStatus(context.Context) dagu.Result {
+	return dagu.Result{Status: dagu.Compatible, Version: "2.1.0"}
 }
 func (localStubHost) GitInfo(context.Context, []string) (map[string]git.Info, error) {
 	return map[string]git.Info{}, nil

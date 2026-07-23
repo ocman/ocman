@@ -20,7 +20,7 @@ flowchart LR
     Ocman -->|read/write SQLite| StateDB[(state.db)]
     Ocman -->|artifact payloads| Blobs[(workflow-artifacts)]
     Ocman -->|Authenticated HTTP/SSE proxy| OCInst[Running OpenCode<br/>instances]
-    Ocman -->|exec| Shell[git / tmux / lsof / bd<br/>worktrees and status]
+    Ocman -->|exec| Shell[git / tmux / lsof / bd / Dagu<br/>host tools]
     Ocman -->|REST| Forges[GitHub / Forgejo]
     Ocman <-->|gRPC + token| Remotes[Remote ocman<br/>instances]
     Ocman -.->|OTLP, optional| Otel[Telemetry collector]
@@ -40,6 +40,9 @@ flowchart LR
   keeping the audit metadata.
 - **Remote ocman instances** — the hub dials remotes over gRPC and
   re-exposes their sessions/hosts transparently.
+- **Dagu** — an optional, separately installed CLI. Ocman only runs
+  `dagu version` for compatibility detection at this stage; it does not
+  bundle Dagu, start its server, or launch workflows.
 
 ## 2. Backend Composition
 
@@ -57,7 +60,7 @@ flowchart TD
     Registry --> RP[remote.Platform<br/>gRPC-backed]
     OC --> DB[internal/db<br/>read-only queries]
     Router --> Local[hostsvc/local<br/>git, tmux, worktree, Beads]
-    Local --> OCRT[internal/ocruntime<br/>Runtime: launch/probe/stop]
+    Local --> HostTools[host integrations<br/>ocruntime + dagu detector]
     Server --> State[internal/state<br/>state.db]
     Server --> Forge[forge + integrations<br/>GitHub/Forgejo clients]
 ```
@@ -84,6 +87,9 @@ flowchart TD
   runs `opencode --port N` on an ocman-allocated loopback port and
   probes authenticated `GET {endpoint}/config` for health. It is the plug point for
   the container runtime (epic #375) as a second implementation.
+- **internal/dagu** — a command-runner-backed, read-only detector for the
+  optional Dagu executable. `hostsvc.Host` owner-routing keeps local and
+  remote compatibility reports tied to the machine where Dagu is installed.
 - **platforms/opencode** — wraps the read-only DB queries
   (`internal/db`) plus an HTTP client that attaches to live instances,
   with `lsof`-based discovery for instances started outside ocman. One
