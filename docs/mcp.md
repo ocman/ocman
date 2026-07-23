@@ -88,7 +88,7 @@ for *when and how* to split work, so the MCP tool descriptions can stay
 short and action-focused:
 
 ```text
-.opencode/skills/ocman-session-splitting/SKILL.md
+.opencode/skills/ocman-sessions/SKILL.md
 ```
 
 Workflow authoring and control guidance lives in:

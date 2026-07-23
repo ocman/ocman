@@ -435,7 +435,7 @@ Implementation notes:
   (#101), and reports `permissionsInherited` / `permissionsInheritedCount`
   (and `permissionsInheritError` on a soft failure) in its result.
 - Agent splitting *policy* lives in
-  `.opencode/skills/ocman-session-splitting/SKILL.md` so MCP tool
+  `.opencode/skills/ocman-sessions/SKILL.md` so MCP tool
   descriptions stay short and action-focused.
 
 User-facing setup, the full tool table, and the splitting workflow are

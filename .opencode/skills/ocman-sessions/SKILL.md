@@ -1,9 +1,9 @@
 ---
-name: ocman-session-splitting
+name: ocman-sessions
 description: Use when splitting ocman/OpenCode work into child sessions, parallel sessions, or git worktrees via MCP, or when a task needs to change files in a different project than the current working directory.
 ---
 
-# Ocman Session Splitting
+# Ocman Sessions
 
 Use ocman MCP tools as small orchestration actions. Keep policy in this skill, not in MCP help tools or large tool descriptions.
 

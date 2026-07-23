@@ -32,7 +32,7 @@ import (
 // It's surfaced as service.version on every OTel resource.
 var version = "dev"
 
-//go:embed .opencode/skills/ocman-session-splitting/SKILL.md
+//go:embed .opencode/skills/ocman-sessions/SKILL.md
 var sessionSplittingSkill []byte
 
 //go:embed .opencode/skills/ocman-workflows/SKILL.md
@@ -77,7 +77,7 @@ func main() {
 	// (piped). ForceColors keeps the color; FullTimestamp adds the date.
 	log.SetFormatter(&log.TextFormatter{ForceColors: true, FullTimestamp: true})
 	if err := opencodeskills.Install(map[string][]byte{
-		"ocman-session-splitting": sessionSplittingSkill,
+		"ocman-sessions": sessionSplittingSkill,
 		"ocman-workflows":         workflowsSkill,
 	}); err != nil {
 		log.WithError(err).Warn("installing embedded ocman skills")
