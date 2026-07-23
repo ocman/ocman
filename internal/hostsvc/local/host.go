@@ -30,12 +30,14 @@ import (
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/workflows"
 )
 
 // Deps carries the host operations that live in the server package
 // (tmux, projects, whisper availability). They are injected so this
 // package does not import server.
 type Deps struct {
+	Dagu DaguService
 	// LaunchTmux runs `opencode --port 0` in a tmux session for the
 	// directory, returning the session name.
 	LaunchTmux func(directory string) (string, error)
@@ -76,6 +78,13 @@ type Deps struct {
 	// TermAttach attaches a local PTY to the selected window and bridges
 	// it to conn until either side closes.
 	TermAttach func(ctx context.Context, req hostsvc.TermAttachRequest, conn hostsvc.TermConn) error
+}
+
+type DaguService interface {
+	Status(ctx context.Context) dagu.Result
+	Start(ctx context.Context, definition workflows.Definition) (dagu.Run, error)
+	GetRun(ctx context.Context, name, id string) (dagu.Run, error)
+	Cancel(ctx context.Context, name, id string) error
 }
 
 // ManagedInstance is the host's view of a persisted managed instance.
@@ -173,7 +182,33 @@ func (h *Host) Capabilities() hostsvc.HostCaps {
 	return hostsvc.HostCaps{}
 }
 
-func (h *Host) DaguStatus(ctx context.Context) dagu.Result { return dagu.Detect(ctx) }
+func (h *Host) DaguStatus(ctx context.Context) dagu.Result {
+	if h.deps.Dagu != nil {
+		return h.deps.Dagu.Status(ctx)
+	}
+	return dagu.Detect(ctx)
+}
+
+func (h *Host) StartDaguWorkflow(ctx context.Context, definition workflows.Definition) (dagu.Run, error) {
+	if h.deps.Dagu == nil {
+		return dagu.Run{}, errors.New("dagu workflow service unavailable")
+	}
+	return h.deps.Dagu.Start(ctx, definition)
+}
+
+func (h *Host) GetDaguRun(ctx context.Context, name, id string) (dagu.Run, error) {
+	if h.deps.Dagu == nil {
+		return dagu.Run{}, errors.New("dagu workflow service unavailable")
+	}
+	return h.deps.Dagu.GetRun(ctx, name, id)
+}
+
+func (h *Host) CancelDaguRun(ctx context.Context, name, id string) error {
+	if h.deps.Dagu == nil {
+		return errors.New("dagu workflow service unavailable")
+	}
+	return h.deps.Dagu.Cancel(ctx, name, id)
+}
 
 func (h *Host) GitInfo(ctx context.Context, dirs []string) (map[string]git.Info, error) {
 	return git.LookupMany(ctx, dirs), nil

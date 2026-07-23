@@ -2,6 +2,8 @@ package dagu
 
 import (
 	"context"
+	"io"
+	"os"
 	"os/exec"
 	"regexp"
 	"runtime"
@@ -27,11 +29,48 @@ type Runner interface {
 	Output(ctx context.Context, name string, args ...string) ([]byte, error)
 }
 
+type Process interface {
+	Wait() error
+	Kill() error
+}
+
+type ManagerRunner interface {
+	Runner
+	Start(name string, args, env []string) (Process, error)
+}
+
 type osRunner struct{}
 
 func (osRunner) LookPath(name string) (string, error) { return exec.LookPath(name) }
 func (osRunner) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
 	return exec.CommandContext(ctx, name, args...).Output()
+}
+func (osRunner) Start(name string, args, env []string) (Process, error) {
+	cmd := exec.Command(name, args...)
+	prepareProcess(cmd)
+	cmd.Env = env
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	return osProcess{cmd}, nil
+}
+
+type osProcess struct{ cmd *exec.Cmd }
+
+func (p osProcess) Wait() error { return p.cmd.Wait() }
+func (p osProcess) Kill() error { return killProcess(p.cmd) }
+
+func processEnvironment(home string) []string {
+	env := []string{"HOME=" + home, "DAGU_HOME=" + home, "DAGU_AUTH_MODE=none"}
+	for _, value := range os.Environ() {
+		name, _, _ := strings.Cut(value, "=")
+		if name == "PATH" || name == "SHELL" || name == "TMPDIR" || name == "LANG" || name == "LC_ALL" || name == "TZ" || name == "USER" {
+			env = append(env, value)
+		}
+	}
+	return env
 }
 
 type Detector struct {

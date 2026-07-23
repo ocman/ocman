@@ -1,5 +1,9 @@
 .workflow-page { flex: 1; overflow: auto; padding: 24px; background: var(--bg); color: var(--text); }
 .workflow-page button { cursor: pointer; }
+.workflow-dagu-nodes { display: grid; gap: 10px; padding: 0; list-style: none; }
+.workflow-dagu-nodes li { border-left: 3px solid var(--accent); padding: 10px 12px; background: var(--bg); }
+.workflow-dagu-nodes h3, .workflow-dagu-nodes p { margin: 0 0 6px; }
+.workflow-dagu-nodes pre { overflow: auto; margin: 8px 0 0; padding: 10px; background: var(--bg-secondary); }
 .workflow-page-header, .workflow-author, .workflow-history, .workflow-run, .workflow-discovery, .workflow-run-list { max-width: 1100px; margin: 0 auto 18px; border: 1px solid var(--border); background: var(--bg-secondary); padding: 18px; }
 .workflow-page-header { display: flex; align-items: end; justify-content: space-between; gap: 18px; }
 .workflow-page-header h1 { margin: 4px 0; }

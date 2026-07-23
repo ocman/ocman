@@ -8,6 +8,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
+	"github.com/NoUseFreak/ocman/internal/workflows"
 )
 
 // remoteHost implements hostsvc.Host by proxying each directory-scoped
@@ -243,6 +244,47 @@ func (h *remoteHost) DaguStatus(ctx context.Context) dagu.Result {
 		return dagu.Result{Status: dagu.Unsupported}
 	}
 	return out
+}
+
+func (h *remoteHost) StartDaguWorkflow(ctx context.Context, definition workflows.Definition) (dagu.Run, error) {
+	client := h.conn.Client()
+	if client == nil {
+		return dagu.Run{}, ErrRemoteOffline
+	}
+	payload, err := marshalJSON(definition)
+	if err != nil {
+		return dagu.Run{}, err
+	}
+	resp, err := client.StartDaguWorkflow(ctx, &pb.JsonReq{Payload: payload})
+	if err != nil {
+		return dagu.Run{}, err
+	}
+	var run dagu.Run
+	return run, unmarshalJSON(resp.Payload, &run)
+}
+
+func (h *remoteHost) GetDaguRun(ctx context.Context, name, id string) (dagu.Run, error) {
+	client := h.conn.Client()
+	if client == nil {
+		return dagu.Run{}, ErrRemoteOffline
+	}
+	payload, _ := marshalJSON(map[string]string{"name": name, "id": id})
+	resp, err := client.GetDaguRun(ctx, &pb.JsonReq{Payload: payload})
+	if err != nil {
+		return dagu.Run{}, err
+	}
+	var run dagu.Run
+	return run, unmarshalJSON(resp.Payload, &run)
+}
+
+func (h *remoteHost) CancelDaguRun(ctx context.Context, name, id string) error {
+	client := h.conn.Client()
+	if client == nil {
+		return ErrRemoteOffline
+	}
+	payload, _ := marshalJSON(map[string]string{"name": name, "id": id})
+	_, err := client.CancelDaguRun(ctx, &pb.JsonReq{Payload: payload})
+	return err
 }
 
 func (h *remoteHost) Projects(ctx context.Context) ([]db.ProjectStats, error) {

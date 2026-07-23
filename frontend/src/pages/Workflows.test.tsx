@@ -13,7 +13,7 @@ class ResizeObserver {
 
 vi.stubGlobal('ResizeObserver', ResizeObserver);
 
-const { apiMock, useWorkflowsMock, listeners, triggerListeners, connectListeners } = vi.hoisted(() => ({
+const { apiMock, daguMock, useWorkflowsMock, listeners, triggerListeners, connectListeners } = vi.hoisted(() => ({
   apiMock: {
     models: vi.fn(),
     versions: vi.fn(),
@@ -34,6 +34,12 @@ const { apiMock, useWorkflowsMock, listeners, triggerListeners, connectListeners
     artifacts: vi.fn(),
     artifactDownloadUrl: vi.fn((runId: string, id: string) => `/api/workflow-runs/${runId}/artifacts/${id}/download`),
   },
+  daguMock: {
+    status: vi.fn().mockResolvedValue({ status: 'compatible', version: '2.1.0', installCommand: 'brew install dagu' }),
+    start: vi.fn(),
+    run: vi.fn(),
+    cancel: vi.fn(),
+  },
   useWorkflowsMock: vi.fn(() => true),
   listeners: [] as Array<(runId: string) => void>,
   triggerListeners: [] as Array<() => void>,
@@ -44,7 +50,7 @@ vi.mock('../lib/api', () => ({
   api: {
     models: apiMock.models,
     workflows: apiMock,
-    dagu: { status: vi.fn().mockResolvedValue({ status: 'compatible', version: '2.1.0', installCommand: 'brew install dagu' }) },
+    dagu: daguMock,
   },
 }));
 vi.mock('../lib/useCapabilities', () => ({ useWorkflows: useWorkflowsMock }));
@@ -180,6 +186,48 @@ describe('Workflows', { timeout: 10_000 }, () => {
     });
     apiMock.resolveUnknown.mockResolvedValue(activeRun);
     apiMock.artifacts.mockResolvedValue([]);
+    daguMock.start.mockResolvedValue({ id: 'dagu-run-1', name: 'commands' });
+    daguMock.run.mockResolvedValue({
+      id: 'dagu-run-1', name: 'commands', status: 'running',
+      nodes: [
+        { name: 'Build', status: 'succeeded', log: 'built\n' },
+        { name: 'Ship', status: 'running', depends: ['Build'], log: 'shipping\n' },
+      ],
+    });
+    daguMock.cancel.mockResolvedValue({ ok: true });
+  });
+
+  it('runs and cancels command-only workflows through Dagu', async () => {
+    const user = userEvent.setup();
+    const commandVersion: WorkflowVersion = {
+      ...version,
+      id: 'wfv_commands',
+      workflowId: 'commands',
+      name: 'Commands',
+      definition: {
+        ...version.definition,
+        id: 'commands',
+        name: 'Commands',
+        triggers: [{ id: 'manual', type: 'manual' }],
+        nodes: [
+          { id: 'build', name: 'Build', type: 'command', command: ['make', 'build'] },
+          { id: 'ship', name: 'Ship', type: 'command', command: ['./ship'] },
+        ],
+        dependencies: [{ from: 'build', to: 'ship' }],
+      },
+      triggerStates: [],
+    };
+    apiMock.versions.mockResolvedValue([commandVersion]);
+    render(<MemoryRouter><Workflows /></MemoryRouter>);
+
+    await user.click(await screen.findByRole('button', { name: 'Start Commands with Dagu' }));
+    expect(await screen.findByRole('dialog', { name: 'Dagu run details' })).toBeInTheDocument();
+    expect(screen.getByText('built')).toBeInTheDocument();
+    expect(screen.getByText('Depends on Build')).toBeInTheDocument();
+    expect(daguMock.start).toHaveBeenCalledWith(commandVersion.definition, 'local');
+
+    await user.click(screen.getByRole('button', { name: 'Cancel Dagu run' }));
+    expect(daguMock.cancel).toHaveBeenCalledWith('commands', 'dagu-run-1', 'local');
   });
 
   it('is capability gated', () => {

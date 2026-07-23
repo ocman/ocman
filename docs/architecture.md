@@ -20,7 +20,7 @@ flowchart LR
     Ocman -->|read/write SQLite| StateDB[(state.db)]
     Ocman -->|artifact payloads| Blobs[(workflow-artifacts)]
     Ocman -->|Authenticated HTTP/SSE proxy| OCInst[Running OpenCode<br/>instances]
-    Ocman -->|exec| Shell[git / tmux / lsof / bd / Dagu<br/>host tools]
+    Ocman -->|exec + loopback REST| Shell[git / tmux / lsof / bd / Dagu<br/>host tools]
     Ocman -->|REST| Forges[GitHub / Forgejo]
     Ocman <-->|gRPC + token| Remotes[Remote ocman<br/>instances]
     Ocman -.->|OTLP, optional| Otel[Telemetry collector]
@@ -40,9 +40,11 @@ flowchart LR
   keeping the audit metadata.
 - **Remote ocman instances** — the hub dials remotes over gRPC and
   re-exposes their sessions/hosts transparently.
-- **Dagu** — an optional, separately installed CLI. Ocman only runs
-  `dagu version` for compatibility detection at this stage; it does not
-  bundle Dagu, start its server, or launch workflows.
+- **Dagu** — an optional, separately installed 2.x CLI. On the first external
+  workflow action, the owning ocman host starts one private loopback-only Dagu
+  server under `~/.local/share/ocman/dagu`. Ocman submits command-only inline
+  specs and reads graph state and step logs back through Dagu's REST API; Dagu
+  remains the source of truth and receives no LLM credentials.
 
 ## 2. Backend Composition
 
@@ -60,7 +62,7 @@ flowchart TD
     Registry --> RP[remote.Platform<br/>gRPC-backed]
     OC --> DB[internal/db<br/>read-only queries]
     Router --> Local[hostsvc/local<br/>git, tmux, worktree, Beads]
-    Local --> HostTools[host integrations<br/>ocruntime + dagu detector]
+    Local --> HostTools[host integrations<br/>ocruntime + Dagu manager]
     Server --> State[internal/state<br/>state.db]
     Server --> Forge[forge + integrations<br/>GitHub/Forgejo clients]
 ```
@@ -87,9 +89,11 @@ flowchart TD
   runs `opencode --port N` on an ocman-allocated loopback port and
   probes authenticated `GET {endpoint}/config` for health. It is the plug point for
   the container runtime (epic #375) as a second implementation.
-- **internal/dagu** — a command-runner-backed, read-only detector for the
-  optional Dagu executable. `hostsvc.Host` owner-routing keeps local and
-  remote compatibility reports tied to the machine where Dagu is installed.
+- **internal/dagu** — detects the optional executable, supervises one lazy
+  private Dagu server, translates command-only definitions to inline Dagu
+  specs, and traces runs through Dagu's REST API. `hostsvc.Host` and the remote
+  gRPC seam keep launch, observation, logs, and cancellation on the owning
+  machine. No external run graph or log is copied into `state.db`.
 - **platforms/opencode** — wraps the read-only DB queries
   (`internal/db`) plus an HTTP client that attaches to live instances,
   with `lsof`-based discovery for instances started outside ocman. One

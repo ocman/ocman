@@ -13,6 +13,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
+	"github.com/NoUseFreak/ocman/internal/workflows"
 )
 
 // connectedPair spins an in-process remote server over a fakePlatform +
@@ -227,6 +228,16 @@ func TestRemoteHost_AllMethods(t *testing.T) {
 	}
 	if got := rh.DaguStatus(ctx); got.Status != dagu.Compatible || got.Version != "2.1.0" {
 		t.Errorf("DaguStatus: %+v", got)
+	}
+	definition := workflows.Definition{ID: "release", Nodes: []workflows.Node{{ID: "build", Name: "Build", Type: "command", Command: []string{"true"}}}}
+	if run, err := rh.StartDaguWorkflow(ctx, definition); err != nil || run.ID != "run-1" {
+		t.Errorf("StartDaguWorkflow = %+v, %v", run, err)
+	}
+	if run, err := rh.GetDaguRun(ctx, "release", "run-1"); err != nil || run.Status != "running" {
+		t.Errorf("GetDaguRun = %+v, %v", run, err)
+	}
+	if err := rh.CancelDaguRun(ctx, "release", "run-1"); err != nil {
+		t.Errorf("CancelDaguRun: %v", err)
 	}
 	if _, err := rh.Projects(ctx); err != nil {
 		t.Errorf("Projects: %v", err)

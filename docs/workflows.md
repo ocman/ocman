@@ -3,6 +3,20 @@
 Workflows are source-controlled YAML or JSON DAGs. Publish creates an immutable
 version; every run pins that version and its mapped subworkflow versions.
 
+## Command Workflows With Dagu
+
+Install Dagu 2.x separately, then use **Dagu** beside a published workflow whose
+nodes are all commands and whose triggers are manual. Ocman starts a private
+loopback-only Dagu server on demand, chooses the owning machine through the
+normal machine picker, and opens a run view with Dagu's node state and step
+logs. Canceling there stops that Dagu run.
+
+Dagu stores the external run graph and logs under
+`~/.local/share/ocman/dagu`; ocman does not duplicate them in `state.db`.
+Agent, approval, map, join, subworkflow, repeat, scheduled, permission, resource,
+lease, and workspace behavior stays on the native engine and is not translated.
+The private Dagu process receives a minimal environment with no LLM credentials.
+
 ## Migration Preset
 
 `examples/workflows/adversarial-migration.yaml` is the reusable Bun-style

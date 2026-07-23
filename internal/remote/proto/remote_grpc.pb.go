@@ -62,6 +62,9 @@ const (
 	Ocman_HostCapabilities_FullMethodName       = "/ocman.remote.v1.Ocman/HostCapabilities"
 	Ocman_BeadsStatus_FullMethodName            = "/ocman.remote.v1.Ocman/BeadsStatus"
 	Ocman_DaguStatus_FullMethodName             = "/ocman.remote.v1.Ocman/DaguStatus"
+	Ocman_StartDaguWorkflow_FullMethodName      = "/ocman.remote.v1.Ocman/StartDaguWorkflow"
+	Ocman_GetDaguRun_FullMethodName             = "/ocman.remote.v1.Ocman/GetDaguRun"
+	Ocman_CancelDaguRun_FullMethodName          = "/ocman.remote.v1.Ocman/CancelDaguRun"
 	Ocman_TermWindows_FullMethodName            = "/ocman.remote.v1.Ocman/TermWindows"
 	Ocman_TermCreateWindow_FullMethodName       = "/ocman.remote.v1.Ocman/TermCreateWindow"
 	Ocman_TermKillWindow_FullMethodName         = "/ocman.remote.v1.Ocman/TermKillWindow"
@@ -134,6 +137,9 @@ type OcmanClient interface {
 	HostCapabilities(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*JsonResp, error)
 	BeadsStatus(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 	DaguStatus(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*JsonResp, error)
+	StartDaguWorkflow(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
+	GetDaguRun(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
+	CancelDaguRun(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*Empty, error)
 	// In-app terminal windows (directory-scoped, executed on the owner).
 	TermWindows(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 	TermCreateWindow(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
@@ -594,6 +600,36 @@ func (c *ocmanClient) DaguStatus(ctx context.Context, in *Empty, opts ...grpc.Ca
 	return out, nil
 }
 
+func (c *ocmanClient) StartDaguWorkflow(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(JsonResp)
+	err := c.cc.Invoke(ctx, Ocman_StartDaguWorkflow_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *ocmanClient) GetDaguRun(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(JsonResp)
+	err := c.cc.Invoke(ctx, Ocman_GetDaguRun_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *ocmanClient) CancelDaguRun(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Ocman_CancelDaguRun_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *ocmanClient) TermWindows(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(JsonResp)
@@ -730,6 +766,9 @@ type OcmanServer interface {
 	HostCapabilities(context.Context, *Empty) (*JsonResp, error)
 	BeadsStatus(context.Context, *JsonReq) (*JsonResp, error)
 	DaguStatus(context.Context, *Empty) (*JsonResp, error)
+	StartDaguWorkflow(context.Context, *JsonReq) (*JsonResp, error)
+	GetDaguRun(context.Context, *JsonReq) (*JsonResp, error)
+	CancelDaguRun(context.Context, *JsonReq) (*Empty, error)
 	// In-app terminal windows (directory-scoped, executed on the owner).
 	TermWindows(context.Context, *JsonReq) (*JsonResp, error)
 	TermCreateWindow(context.Context, *JsonReq) (*JsonResp, error)
@@ -879,6 +918,15 @@ func (UnimplementedOcmanServer) BeadsStatus(context.Context, *JsonReq) (*JsonRes
 }
 func (UnimplementedOcmanServer) DaguStatus(context.Context, *Empty) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method DaguStatus not implemented")
+}
+func (UnimplementedOcmanServer) StartDaguWorkflow(context.Context, *JsonReq) (*JsonResp, error) {
+	return nil, status.Error(codes.Unimplemented, "method StartDaguWorkflow not implemented")
+}
+func (UnimplementedOcmanServer) GetDaguRun(context.Context, *JsonReq) (*JsonResp, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetDaguRun not implemented")
+}
+func (UnimplementedOcmanServer) CancelDaguRun(context.Context, *JsonReq) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method CancelDaguRun not implemented")
 }
 func (UnimplementedOcmanServer) TermWindows(context.Context, *JsonReq) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method TermWindows not implemented")
@@ -1686,6 +1734,60 @@ func _Ocman_DaguStatus_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Ocman_StartDaguWorkflow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JsonReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).StartDaguWorkflow(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_StartDaguWorkflow_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).StartDaguWorkflow(ctx, req.(*JsonReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Ocman_GetDaguRun_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JsonReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).GetDaguRun(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_GetDaguRun_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).GetDaguRun(ctx, req.(*JsonReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Ocman_CancelDaguRun_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JsonReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).CancelDaguRun(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_CancelDaguRun_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).CancelDaguRun(ctx, req.(*JsonReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Ocman_TermWindows_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(JsonReq)
 	if err := dec(in); err != nil {
@@ -1950,6 +2052,18 @@ var Ocman_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DaguStatus",
 			Handler:    _Ocman_DaguStatus_Handler,
+		},
+		{
+			MethodName: "StartDaguWorkflow",
+			Handler:    _Ocman_StartDaguWorkflow_Handler,
+		},
+		{
+			MethodName: "GetDaguRun",
+			Handler:    _Ocman_GetDaguRun_Handler,
+		},
+		{
+			MethodName: "CancelDaguRun",
+			Handler:    _Ocman_CancelDaguRun_Handler,
 		},
 		{
 			MethodName: "TermWindows",

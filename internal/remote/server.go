@@ -13,6 +13,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
+	"github.com/NoUseFreak/ocman/internal/workflows"
 )
 
 // Server is the remote-side gRPC service. It is a thin translation layer
@@ -487,6 +488,36 @@ func (s *Server) BeadsStatus(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp
 
 func (s *Server) DaguStatus(ctx context.Context, _ *pb.Empty) (*pb.JsonResp, error) {
 	return jsonResp(s.host.DaguStatus(ctx), nil)
+}
+
+func (s *Server) StartDaguWorkflow(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
+	var definition workflows.Definition
+	if err := unmarshalJSON(req.Payload, &definition); err != nil {
+		return nil, err
+	}
+	return jsonResp(s.host.StartDaguWorkflow(ctx, definition))
+}
+
+func (s *Server) GetDaguRun(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
+	var target struct {
+		Name string `json:"name"`
+		ID   string `json:"id"`
+	}
+	if err := unmarshalJSON(req.Payload, &target); err != nil {
+		return nil, err
+	}
+	return jsonResp(s.host.GetDaguRun(ctx, target.Name, target.ID))
+}
+
+func (s *Server) CancelDaguRun(ctx context.Context, req *pb.JsonReq) (*pb.Empty, error) {
+	var target struct {
+		Name string `json:"name"`
+		ID   string `json:"id"`
+	}
+	if err := unmarshalJSON(req.Payload, &target); err != nil {
+		return nil, err
+	}
+	return &pb.Empty{}, s.host.CancelDaguRun(ctx, target.Name, target.ID)
 }
 
 // --- Terminal ---

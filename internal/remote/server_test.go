@@ -21,6 +21,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
+	"github.com/NoUseFreak/ocman/internal/workflows"
 )
 
 // --- fakes ---
@@ -144,6 +145,13 @@ func (localStubHost) BeadsStatus(context.Context, string) (hostsvc.BeadsStatus, 
 func (localStubHost) DaguStatus(context.Context) dagu.Result {
 	return dagu.Result{Status: dagu.Compatible, Version: "2.1.0"}
 }
+func (localStubHost) StartDaguWorkflow(context.Context, workflows.Definition) (dagu.Run, error) {
+	return dagu.Run{ID: "run-1", Name: "release"}, nil
+}
+func (localStubHost) GetDaguRun(context.Context, string, string) (dagu.Run, error) {
+	return dagu.Run{ID: "run-1", Name: "release", Status: "running"}, nil
+}
+func (localStubHost) CancelDaguRun(context.Context, string, string) error { return nil }
 func (localStubHost) GitInfo(context.Context, []string) (map[string]git.Info, error) {
 	return map[string]git.Info{}, nil
 }

@@ -16,6 +16,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
+	"github.com/NoUseFreak/ocman/internal/dagu"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
@@ -120,6 +121,7 @@ type Server struct {
 	// handlers don't spawn (and leak) real tmux sessions in temp dirs.
 	runtime      ocruntime.Runtime
 	openCodeAuth ocapi.Auth
+	daguManager  *dagu.Manager
 }
 
 // remoteAccessInfo holds this instance's own remote-access surface for
@@ -221,7 +223,11 @@ func (s *Server) SessionService() *sessionsvc.Service { return s.sessions }
 // dependency-injected local Host (which owns the the git package call
 // sites directly). See internal/hostsvc/local.
 func (s *Server) newLocalHost() hostsvc.Host {
+	if s.daguManager == nil {
+		s.daguManager = dagu.NewManager(state.DefaultDataDir()+"/dagu", nil, nil)
+	}
 	return hostlocal.New(hostlocal.Deps{
+		Dagu:         s.daguManager,
 		LaunchTmux:   tmux.LaunchOpencode,
 		Runtime:      s.runtime,
 		DiscoverPort: opencode.DiscoverOpenCodePortFresh,
@@ -346,6 +352,11 @@ func (s *Server) Start(ctx context.Context) error {
 // This variant is used by the GUI mode, which picks the port before handing
 // the listener here so Wails can point its proxy at the correct address.
 func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
+	defer func() {
+		if s.daguManager != nil {
+			_ = s.daguManager.Close()
+		}
+	}()
 	// Seed the cached judge delay so the first permission event has it
 	// available without a DB round-trip.
 	if s.stateDB != nil {
