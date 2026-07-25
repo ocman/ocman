@@ -451,16 +451,39 @@ func SweepLegacySessions() {
 	if !tmux.IsAvailable() {
 		return
 	}
+	sweepLegacySessions(listSessionNames, killSession)
+}
+
+func listSessionNames() ([]string, error) {
 	out, err := exec.Command("tmux", "list-sessions", "-F", "#{session_name}").Output()
+	if err != nil {
+		return nil, err
+	}
+	return strings.Split(strings.TrimSpace(string(out)), "\n"), nil
+}
+
+func killSession(name string) error {
+	return exec.Command("tmux", "kill-session", "-t", name).Run()
+}
+
+// sweepLegacySessions is the seam-injected core of SweepLegacySessions so
+// tests can assert which sessions get killed without a real tmux server.
+func sweepLegacySessions(list func() ([]string, error), kill func(string) error) {
+	names, err := list()
 	if err != nil {
 		return
 	}
-	for _, name := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if strings.HasPrefix(name, "ocman-view-") {
-			if err := exec.Command("tmux", "kill-session", "-t", name).Run(); err != nil {
-				log.WithError(err).WithField("session", name).
-					Debug("sweeping legacy ocman-view session")
-			}
+	for _, name := range names {
+		if !strings.HasPrefix(name, legacyViewPrefix) {
+			continue
+		}
+		if err := kill(name); err != nil {
+			log.WithError(err).WithField("session", name).
+				Debug("sweeping legacy ocman-view session")
 		}
 	}
 }
+
+// legacyViewPrefix names the ephemeral viewer sessions of the previous
+// implementation. Only sessions carrying it are swept.
+const legacyViewPrefix = "ocman-view-"

@@ -109,17 +109,58 @@ func TestIsTerminalStatus(t *testing.T) {
 	}
 }
 
+// watchProbePlatform returns a fake platform that counts every adapter
+// call the watcher could make, so a "no-op" claim can be asserted rather
+// than merely survived.
+func watchProbePlatform() (*fakePlatform, *int, *int) {
+	details, sends := 0, 0
+	fp := &fakePlatform{
+		id:       "opencode",
+		sessions: []db.Session{{ID: "parent-1", Status: "waiting"}},
+	}
+	fp.sessionDetailFn = func(string) (*platforms.SessionDetail, error) {
+		details++
+		return nil, platforms.ErrNotFound
+	}
+	fp.sendMessageFn = func(platforms.SendMessageRequest) error {
+		sends++
+		return nil
+	}
+	return fp, &details, &sends
+}
+
 func TestCheckAndInjectChildResults_NoStateDB(t *testing.T) {
-	// Should not panic when stateDB is nil.
-	s := &Server{}
+	fp, details, sends := watchProbePlatform()
+	reg := platforms.NewRegistry()
+	reg.Register(fp)
+
+	s := New(nil, nil, "127.0.0.1:0", reg, nil)
 	s.checkAndInjectChildResults(context.Background())
+
+	if *details != 0 || *sends != 0 {
+		t.Fatalf("watcher touched the platform without a state DB: %d details, %d sends", *details, *sends)
+	}
 }
 
 func TestCheckAndInjectChildResults_NoChildren(t *testing.T) {
 	sdb := openWatcherTestStateDB(t)
-	s := &Server{stateDB: sdb}
-	// Should be a no-op when there are no non-terminal children.
+	fp, details, sends := watchProbePlatform()
+	reg := platforms.NewRegistry()
+	reg.Register(fp)
+
+	s := New(nil, sdb, "127.0.0.1:0", reg, nil)
 	s.checkAndInjectChildResults(context.Background())
+
+	if *details != 0 || *sends != 0 {
+		t.Fatalf("watcher touched the platform with no pending children: %d details, %d sends", *details, *sends)
+	}
+	queued, err := sdb.ListQueuedMessages("opencode", "parent-1")
+	if err != nil {
+		t.Fatalf("ListQueuedMessages: %v", err)
+	}
+	if len(queued) != 0 {
+		t.Fatalf("expected no queued messages, got %d", len(queued))
+	}
 }
 
 func TestCheckAndInjectChildResults_UpdatesStatus(t *testing.T) {

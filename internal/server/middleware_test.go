@@ -227,10 +227,19 @@ func TestStatusRecorder_DelegatesFlush(t *testing.T) {
 }
 
 func TestStatusRecorder_FlushUnsupported(t *testing.T) {
-	// A writer without Flush must not panic — Flush is a no-op.
+	// A writer without Flush must not panic — Flush is a no-op that
+	// leaves the recorded status untouched.
 	type plainWriter struct{ http.ResponseWriter }
-	rec := &statusRecorder{ResponseWriter: plainWriter{httptest.NewRecorder()}}
+	inner := httptest.NewRecorder()
+	rec := &statusRecorder{ResponseWriter: plainWriter{inner}}
+	rec.WriteHeader(http.StatusTeapot)
 	rec.Flush() // must not panic
+	if rec.status != http.StatusTeapot {
+		t.Fatalf("Flush clobbered the recorded status: got %d", rec.status)
+	}
+	if inner.Code != http.StatusTeapot {
+		t.Fatalf("underlying writer status = %d, want %d", inner.Code, http.StatusTeapot)
+	}
 }
 
 func TestStatusRecorder_HijackUnsupported(t *testing.T) {

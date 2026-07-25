@@ -1,6 +1,7 @@
 package opencode
 
 import (
+	"reflect"
 	"testing"
 )
 
@@ -80,8 +81,11 @@ func TestTruncatePartOutput_NoTextOrState(t *testing.T) {
 		"type": "tool-call",
 		"id":   "abc",
 	}
-	// Should not panic
 	truncatePartOutput(part)
+	// A part with nothing truncatable must come back byte-identical.
+	if !reflect.DeepEqual(part, map[string]interface{}{"type": "tool-call", "id": "abc"}) {
+		t.Fatalf("part was mutated: %#v", part)
+	}
 }
 
 // --- convertOpenCodeMessages tests ---

@@ -78,9 +78,16 @@ func TestSanitiseName_DropsInvalidCharacters(t *testing.T) {
 }
 
 func TestRecord_NoopWhenContextHasNoCollector(t *testing.T) {
-	// Must not panic.
+	// Must not panic, and must still run the timed function.
 	Record(context.Background(), "x", time.Millisecond, "")
-	TimeIt(context.Background(), "y", func() {})
+	ran := false
+	TimeIt(context.Background(), "y", func() { ran = true })
+	if !ran {
+		t.Fatal("TimeIt dropped the function when no collector is attached")
+	}
+	if c := FromContext(context.Background()); c != nil {
+		t.Fatalf("bare context should carry no collector, got %#v", c)
+	}
 }
 
 func TestRecord_RoundTripThroughContext(t *testing.T) {
@@ -180,6 +187,11 @@ func TestBegin_ZeroPhaseEndIsNoop(t *testing.T) {
 	var p Phase
 	p.End() // must not panic
 	p.EndWithDesc("ignored")
+	// A zero Phase must stay inert: nothing recorded anywhere.
+	c := NewCollector()
+	if got := c.Header(); got != "" {
+		t.Fatalf("zero Phase leaked into a collector: %q", got)
+	}
 }
 
 func TestPhase_EndWithDescPropagatesToCollectorAndSpan(t *testing.T) {

@@ -2,11 +2,13 @@ package term
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -203,12 +205,54 @@ func TestAllTermWindowNames_TmuxPermissionErrorReturnsError(t *testing.T) {
 	}
 }
 
-// TestSweepLegacyTermSessions_NoPanic ensures the boot-time sweep is
-// safe to call regardless of tmux state (it must be a no-op rather than
-// erroring when tmux is missing or no legacy sessions exist).
-func TestSweepLegacyTermSessions_NoPanic(t *testing.T) {
-	// Should never panic or block; result is environment-dependent.
-	SweepLegacySessions()
+// TestSweepLegacySessions asserts the boot-time sweep kills exactly the
+// legacy `ocman-view-<uuid>` sessions and leaves everything else — the
+// user's own sessions and the shared ocman-term session — alone.
+func TestSweepLegacySessions(t *testing.T) {
+	listErr := errors.New("tmux not running")
+	tests := []struct {
+		name     string
+		sessions []string
+		listErr  error
+		killErr  error
+		want     []string
+	}{
+		{
+			name:     "kills only legacy view sessions",
+			sessions: []string{"ocman-view-abc", "my-work", SessionName, "ocman-view-def"},
+			want:     []string{"ocman-view-abc", "ocman-view-def"},
+		},
+		{
+			name:     "leaves the shared term session alone",
+			sessions: []string{SessionName},
+		},
+		{
+			name:    "list failure is a silent no-op",
+			listErr: listErr,
+		},
+		{
+			name:     "kill failure does not abort the sweep",
+			sessions: []string{"ocman-view-abc", "ocman-view-def"},
+			killErr:  errors.New("session not found"),
+			want:     []string{"ocman-view-abc", "ocman-view-def"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var killed []string
+			sweepLegacySessions(
+				func() ([]string, error) { return tc.sessions, tc.listErr },
+				func(name string) error {
+					killed = append(killed, name)
+					return tc.killErr
+				},
+			)
+			if !slices.Equal(killed, tc.want) {
+				t.Fatalf("killed %v, want %v", killed, tc.want)
+			}
+		})
+	}
 }
 
 // guard against accidental session-name drift: the session name must
