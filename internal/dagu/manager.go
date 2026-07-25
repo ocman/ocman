@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"sync"
@@ -24,6 +25,23 @@ type Manager struct {
 	mu       sync.Mutex
 	process  Process
 	endpoint string
+	// resolveVersion resolves a map node's pinned subworkflow version.
+	// Nil rejects mapping workflows rather than starting a parent whose
+	// child DAGs cannot be produced.
+	resolveVersion func(string) (workflows.Definition, error)
+}
+
+// DAGsDir is where compiled child DAGs live. Dagu resolves `dag.run`
+// targets by name from this directory, so a mapped child must be on
+// disk before its parent starts.
+func (m *Manager) DAGsDir() string { return filepath.Join(m.home, "dags") }
+
+// SetVersionResolver supplies the lookup used to compile a map node's
+// pinned per-item subworkflow.
+func (m *Manager) SetVersionResolver(resolve func(string) (workflows.Definition, error)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.resolveVersion = resolve
 }
 
 func NewManager(home string, runner ManagerRunner, client *http.Client) *Manager {
@@ -55,7 +73,7 @@ func (m *Manager) Ensure(ctx context.Context) error {
 	if status.Status != Compatible {
 		return fmt.Errorf("dagu 2.x is not available")
 	}
-	if err := os.MkdirAll(m.home, 0700); err != nil {
+	if err := os.MkdirAll(filepath.Join(m.home, "dags"), 0700); err != nil {
 		return fmt.Errorf("create Dagu home: %w", err)
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -68,7 +86,9 @@ func (m *Manager) Ensure(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	process, err := m.runner.Start(path, []string{"server", "--host", "127.0.0.1", "--port", strconv.Itoa(port)}, processEnvironment(m.home))
+	// `server` and not `start-all`: ocman owns every schedule, so dagu
+	// runs no scheduler and only executes runs ocman posts.
+	process, err := m.runner.Start(path, []string{"server", "--host", "127.0.0.1", "--port", strconv.Itoa(port), "--dags", filepath.Join(m.home, "dags")}, processEnvironment(m.home))
 	if err != nil {
 		return fmt.Errorf("start Dagu: %w", err)
 	}
@@ -125,7 +145,26 @@ func (m *Manager) Start(ctx context.Context, definition workflows.Definition) (R
 	if err := m.Ensure(ctx); err != nil {
 		return Run{}, err
 	}
-	return NewClient(m.currentEndpoint(), m.http).Start(ctx, definition)
+	id, err := newRunID()
+	if err != nil {
+		return Run{}, err
+	}
+	m.mu.Lock()
+	resolve := m.resolveVersion
+	m.mu.Unlock()
+	compiled, err := Compile(definition, CompileOptions{RunID: id, ResolveVersion: resolve})
+	if err != nil {
+		return Run{}, err
+	}
+	// Children must land before the parent starts, or dagu resolves
+	// `dag.run` against a name that does not exist yet.
+	for name, spec := range compiled.Children {
+		target := filepath.Join(m.DAGsDir(), name+".yaml")
+		if err := os.WriteFile(target, spec, 0600); err != nil {
+			return Run{}, fmt.Errorf("write child DAG %s: %w", name, err)
+		}
+	}
+	return NewClient(m.currentEndpoint(), m.http).StartSpec(ctx, definition.ID, id, compiled.Spec)
 }
 
 func (m *Manager) GetRun(ctx context.Context, name, id string) (Run, error) {

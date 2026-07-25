@@ -48,42 +48,62 @@ func TestClientStartUsesInlineSpecAndStableRunID(t *testing.T) {
 	if run.ID == "" || run.ID != body.DAGRunID || run.Name != "release" || body.Name != "release" {
 		t.Fatalf("run = %+v, request = %+v", run, body)
 	}
-	for _, want := range []string{"working_dir: /repo", "name: Build", "run: printf %s 'hello world'", "MODE: test", "depends:", "- Build"} {
+	for _, want := range []string{"working_dir: /repo", "name: build", "command: printf %s 'hello world'", "MODE: test", "depends:", "- build"} {
 		if !strings.Contains(body.Spec, want) {
 			t.Errorf("spec missing %q:\n%s", want, body.Spec)
 		}
 	}
 }
 
-func TestClientRejectsNonCommandWorkflow(t *testing.T) {
+// Start refuses to post a run it cannot faithfully compile, so an
+// unsupported definition fails before any request reaches dagu.
+func TestClientRejectsUncompilableWorkflow(t *testing.T) {
+	for name, mutate := range map[string]func(*workflows.Definition){
+		"fail fast":      func(d *workflows.Definition) { d.FailFast = true },
+		"resource pools": func(d *workflows.Definition) { d.Pools = []workflows.Pool{{Name: "p", Capacity: 1}} },
+		// A map needs its child DAGs on disk, which only the manager can
+		// do, so the bare client must refuse rather than start a parent
+		// whose `dag.run` target does not exist.
+		"map without a DAGs directory": func(d *workflows.Definition) {
+			d.Nodes[1] = workflows.Node{ID: "ship", Name: "Ship", Type: "map", Map: &workflows.MapConfig{
+				Source: "${nodes.build.output}", Key: "id", Join: "done", VersionID: "ver-1"}}
+			d.Nodes = append(d.Nodes, workflows.Node{ID: "done", Name: "Done", Type: "join",
+				Join: &workflows.JoinConfig{Policy: workflows.JoinAllSuccess}})
+			d.Dependencies = append(d.Dependencies, workflows.Dependency{From: "ship", To: "done"})
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			definition := commandDefinition()
+			mutate(&definition)
+			// A reachable host would mean a failure to compile had let a
+			// request through; "unused" cannot resolve, so any request
+			// surfaces as a dial error rather than a compile error.
+			_, err := NewClient("http://unused", http.DefaultClient).Start(context.Background(), definition)
+			if err == nil || strings.Contains(err.Error(), "dial") {
+				t.Fatalf("error = %v, want a compile failure", err)
+			}
+		})
+	}
+}
+
+// Ocman owns triggering and the agent shim is a plain command, so
+// neither a non-manual trigger nor an agent node blocks compilation.
+func TestClientAcceptsAgentNodesAndScheduledTriggers(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			DAGRunID string `json:"dagRunId"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewEncoder(w).Encode(map[string]string{"dagRunId": body.DAGRunID})
+	}))
+	defer server.Close()
+
 	definition := commandDefinition()
-	definition.Nodes[0].Type = "agent"
-	if _, err := NewClient("http://unused", http.DefaultClient).Start(context.Background(), definition); err == nil || !strings.Contains(err.Error(), "command") {
-		t.Fatalf("error = %v", err)
-	}
-
-	definition = commandDefinition()
-	definition.Triggers = append(definition.Triggers, workflows.Trigger{ID: "cron", Type: workflows.TriggerCron})
-	if _, err := NewClient("http://unused", http.DefaultClient).Start(context.Background(), definition); err == nil || !strings.Contains(err.Error(), "manual") {
-		t.Fatalf("error = %v", err)
-	}
-
-	definition = commandDefinition()
-	definition.Dependencies[0].Condition = "failed"
-	if _, err := NewClient("http://unused", http.DefaultClient).Start(context.Background(), definition); err == nil || !strings.Contains(err.Error(), "unconditional") {
-		t.Fatalf("error = %v", err)
-	}
-
-	definition = commandDefinition()
-	definition.FailFast = true
-	if _, err := NewClient("http://unused", http.DefaultClient).Start(context.Background(), definition); err == nil || !strings.Contains(err.Error(), "fail-fast") {
-		t.Fatalf("error = %v", err)
-	}
-
-	definition = commandDefinition()
-	definition.Nodes[0].Command = []string{"echo", "${nodes.build.output}"}
-	if _, err := NewClient("http://unused", http.DefaultClient).Start(context.Background(), definition); err == nil || !strings.Contains(err.Error(), "interpolation") {
-		t.Fatalf("error = %v", err)
+	definition.Triggers = append(definition.Triggers, workflows.Trigger{ID: "cron", Type: workflows.TriggerCron, Cron: "0 3 * * *"})
+	definition.Nodes[1] = workflows.Node{ID: "ship", Name: "Ship", Type: "agent",
+		Agent: &workflows.AgentConfig{Directory: "/repo", Prompt: "ship it"}}
+	if _, err := NewClient(server.URL, server.Client()).Start(context.Background(), definition); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -95,6 +115,9 @@ func TestClientReadsDaguGraphAndStepLogs(t *testing.T) {
 		case "/api/v1/dag-runs/release/run-1/steps/Build/log":
 			if r.URL.Query().Get("tail") != "1000" {
 				t.Errorf("tail = %q", r.URL.Query().Get("tail"))
+			}
+			if r.URL.Query().Get("stream") != "stdout" {
+				t.Errorf("stream = %q", r.URL.Query().Get("stream"))
 			}
 			_, _ = io.WriteString(w, `{"content":"built\n"}`)
 		case "/api/v1/dag-runs/release/run-1/steps/Ship/log":

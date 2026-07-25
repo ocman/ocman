@@ -99,6 +99,13 @@ func referencedNode(reference string, ancestors map[string]bool) (string, string
 	return match, strings.TrimPrefix(strings.TrimPrefix(reference, match), ".")
 }
 
+// TransitiveDependencies reports every node the given node transitively
+// depends on. Compilation to an external runner needs the same scope the
+// interpolator uses, so both share this walk.
+func TransitiveDependencies(definition Definition, nodeID string) map[string]bool {
+	return transitiveDependencies(definition, nodeID)
+}
+
 func transitiveDependencies(definition Definition, nodeID string) map[string]bool {
 	incoming := make(map[string][]string)
 	for _, dependency := range definition.Dependencies {

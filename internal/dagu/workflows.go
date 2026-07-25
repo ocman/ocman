@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/NoUseFreak/ocman/internal/workflows"
-	"gopkg.in/yaml.v3"
 )
 
 type Run struct {
@@ -45,19 +44,28 @@ func NewClient(endpoint string, client *http.Client) *Client {
 }
 
 func (c *Client) Start(ctx context.Context, definition workflows.Definition) (Run, error) {
-	spec, err := commandSpec(definition)
-	if err != nil {
-		return Run{}, err
-	}
 	id, err := newRunID()
 	if err != nil {
 		return Run{}, err
 	}
+	compiled, err := Compile(definition, CompileOptions{RunID: id})
+	if err != nil {
+		return Run{}, err
+	}
+	if len(compiled.Children) > 0 {
+		return Run{}, fmt.Errorf("workflow maps over a subworkflow; start it through the manager so child DAGs reach the DAGs directory")
+	}
+	return c.StartSpec(ctx, definition.ID, id, compiled.Spec)
+}
+
+// StartSpec posts an already-compiled spec under a caller-chosen run ID,
+// which lets ocman use its own run ID as the dagu dagRunId.
+func (c *Client) StartSpec(ctx context.Context, name, id string, spec []byte) (Run, error) {
 	body := struct {
 		Spec     string `json:"spec"`
 		Name     string `json:"name"`
 		DAGRunID string `json:"dagRunId"`
-	}{string(spec), definition.ID, id}
+	}{string(spec), name, id}
 	var response struct {
 		DAGRunID string `json:"dagRunId"`
 	}
@@ -67,7 +75,7 @@ func (c *Client) Start(ctx context.Context, definition workflows.Definition) (Ru
 	if response.DAGRunID != id {
 		return Run{}, fmt.Errorf("dagu returned run ID %q, want %q", response.DAGRunID, id)
 	}
-	return Run{ID: id, Name: definition.ID}, nil
+	return Run{ID: id, Name: name}, nil
 }
 
 func (c *Client) GetRun(ctx context.Context, name, id string) (Run, error) {
@@ -97,7 +105,7 @@ func (c *Client) GetRun(ctx context.Context, name, id string) (Run, error) {
 		var log struct {
 			Content string `json:"content"`
 		}
-		err := c.doJSON(ctx, http.MethodGet, path+"/steps/"+url.PathEscape(node.Name)+"/log?tail=1000", nil, &log)
+		err := c.doJSON(ctx, http.MethodGet, path+"/steps/"+url.PathEscape(node.Name)+"/log?tail=1000&stream=stdout", nil, &log)
 		if err != nil && !isHTTPStatus(err, http.StatusNotFound) {
 			return Run{}, err
 		}
@@ -163,66 +171,6 @@ func newRunID() (string, error) {
 		return "", fmt.Errorf("generate Dagu run ID: %w", err)
 	}
 	return "ocman-" + hex.EncodeToString(random), nil
-}
-
-func commandSpec(definition workflows.Definition) ([]byte, error) {
-	if definition.ID == "" || len(definition.Nodes) == 0 {
-		return nil, fmt.Errorf("command workflow requires an ID and nodes")
-	}
-	for _, trigger := range definition.Triggers {
-		if trigger.Type != workflows.TriggerManual {
-			return nil, fmt.Errorf("dagu workflows support manual triggers only")
-		}
-	}
-	if len(definition.Secrets) > 0 || len(definition.Pools) > 0 || definition.Workspace != nil || definition.Limits != nil || definition.FailFast || len(definition.SubworkflowRefs) > 0 {
-		return nil, fmt.Errorf("dagu command workflows do not support native secrets, pools, workspaces, limits, or fail-fast behavior")
-	}
-	names := make(map[string]string, len(definition.Nodes))
-	for _, node := range definition.Nodes {
-		if node.ID == "" || node.Name == "" || node.Type != "command" || len(node.Command) == 0 {
-			return nil, fmt.Errorf("dagu workflows support command nodes only")
-		}
-		if len(node.Permission) > 0 || len(node.Resources) > 0 || node.Lease != nil || node.Repeat != nil {
-			return nil, fmt.Errorf("dagu command nodes do not support native permissions, resources, leases, or repeats")
-		}
-		for _, arg := range node.Command {
-			if strings.Contains(arg, "${nodes.") {
-				return nil, fmt.Errorf("dagu command workflows do not support native node interpolation")
-			}
-		}
-		for _, value := range node.Environment {
-			if strings.Contains(value, "${nodes.") {
-				return nil, fmt.Errorf("dagu command workflows do not support native node interpolation")
-			}
-		}
-		names[node.ID] = node.Name
-	}
-	for _, dependency := range definition.Dependencies {
-		if names[dependency.From] == "" || names[dependency.To] == "" || dependency.Condition != "" {
-			return nil, fmt.Errorf("dagu workflows require unconditional dependencies between command nodes")
-		}
-	}
-	type step struct {
-		Name    string            `yaml:"name"`
-		Run     string            `yaml:"run"`
-		Dir     string            `yaml:"dir,omitempty"`
-		Env     map[string]string `yaml:"env,omitempty"`
-		Depends []string          `yaml:"depends,omitempty"`
-	}
-	spec := struct {
-		WorkingDir string `yaml:"working_dir,omitempty"`
-		Steps      []step `yaml:"steps"`
-	}{WorkingDir: definition.Directory}
-	for _, node := range definition.Nodes {
-		item := step{Name: node.Name, Run: shellCommand(node.Command), Env: node.Environment}
-		for _, dependency := range definition.Dependencies {
-			if dependency.To == node.ID {
-				item.Depends = append(item.Depends, names[dependency.From])
-			}
-		}
-		spec.Steps = append(spec.Steps, item)
-	}
-	return yaml.Marshal(spec)
 }
 
 func shellCommand(args []string) string {
