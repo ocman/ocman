@@ -171,7 +171,7 @@ func (s *promptScheduleService) Cancel(_ context.Context, id string) (state.Prom
 		return schedule, err
 	}
 	if !ok {
-		return schedule, fmt.Errorf("only scheduled prompts can be canceled: %w", ErrInvalidState)
+		return schedule, fmt.Errorf("only scheduled or running prompts can be canceled: %w", ErrInvalidState)
 	}
 	return schedule, nil
 }

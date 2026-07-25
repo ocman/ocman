@@ -99,8 +99,11 @@ func (f *fakeStore) CancelPromptSchedule(id string, now int64) (state.PromptSche
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	schedule, ok := f.schedules[id]
-	if !ok || schedule.State != StateScheduled {
+	if !ok || (schedule.State != StateScheduled && schedule.State != StateRunning) {
 		return schedule, false, nil
+	}
+	if schedule.State == StateRunning {
+		schedule.FinishedAt = now
 	}
 	schedule.State, schedule.UpdatedAt = StateCanceled, now
 	f.schedules[id] = schedule
@@ -111,6 +114,9 @@ func (f *fakeStore) LinkPromptScheduleSession(id, platform, sessionID string, no
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	schedule := f.schedules[id]
+	if schedule.State != StateRunning {
+		return state.ErrPromptScheduleSuperseded
+	}
 	schedule.Platform, schedule.SessionID, schedule.UpdatedAt = platform, sessionID, now
 	f.schedules[id] = schedule
 	return nil
@@ -120,6 +126,9 @@ func (f *fakeStore) FinishPromptSchedule(id, stateValue, errorText string, now i
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	schedule := f.schedules[id]
+	if schedule.State != StateRunning {
+		return state.ErrPromptScheduleSuperseded
+	}
 	schedule.State, schedule.Error, schedule.FinishedAt, schedule.UpdatedAt = stateValue, errorText, now, now
 	f.schedules[id] = schedule
 	return nil
@@ -129,6 +138,9 @@ func (f *fakeStore) CompletePromptSchedule(id string, nextRunAt, now int64) erro
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	schedule := f.schedules[id]
+	if schedule.State != StateRunning {
+		return state.ErrPromptScheduleSuperseded
+	}
 	schedule.State, schedule.RunAt, schedule.Error, schedule.FinishedAt, schedule.UpdatedAt = StateScheduled, nextRunAt, "", now, now
 	f.schedules[id] = schedule
 	return nil
@@ -138,6 +150,9 @@ func (f *fakeStore) ReschedulePromptSchedule(id string, nextRunAt int64, errorTe
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	schedule := f.schedules[id]
+	if schedule.State != StateRunning {
+		return state.ErrPromptScheduleSuperseded
+	}
 	schedule.State, schedule.RunAt, schedule.Error, schedule.FinishedAt, schedule.UpdatedAt = StateScheduled, nextRunAt, errorText, now, now
 	f.schedules[id] = schedule
 	return nil
@@ -153,6 +168,8 @@ func (f *fakeStore) SetPromptScheduleEnabled(id string, enabled bool, runAt, now
 	schedule.Enabled, schedule.RunAt, schedule.UpdatedAt = enabled, runAt, now
 	if enabled {
 		schedule.State, schedule.Error = StateScheduled, ""
+	} else if schedule.State == StateRunning {
+		schedule.State, schedule.FinishedAt = StateScheduled, now
 	}
 	f.schedules[id] = schedule
 	return schedule, nil

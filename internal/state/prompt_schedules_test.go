@@ -188,6 +188,52 @@ func TestPromptScheduleClaimSkipsArchivedReuseSession(t *testing.T) {
 	}
 }
 
+func TestCancelRunningPromptSchedulePreventsLateCompletion(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	schedule := PromptSchedule{ID: "running", Directory: "/repo", RemoteID: "local", Prompt: "go", RunAt: 1000, State: "scheduled", TimingType: "interval", IntervalMinutes: 10, Timezone: "UTC", Enabled: true, SessionMode: "fresh", CreatedAt: 1, UpdatedAt: 1}
+	if err := db.CreatePromptSchedule(schedule); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := db.ClaimPromptSchedule(schedule.ID, 1000, true); err != nil || !ok {
+		t.Fatalf("claim: ok=%v err=%v", ok, err)
+	}
+	canceled, ok, err := db.CancelPromptSchedule(schedule.ID, 1100)
+	if err != nil || !ok || canceled.State != "canceled" {
+		t.Fatalf("cancel=%+v ok=%v err=%v", canceled, ok, err)
+	}
+	if err := db.CompletePromptSchedule(schedule.ID, 2000, 1200); err == nil {
+		t.Fatal("late completion succeeded")
+	}
+	got, _ := db.GetPromptSchedule(schedule.ID)
+	if got.State != "canceled" {
+		t.Fatalf("schedule=%+v", got)
+	}
+}
+
+func TestDisableRunningPromptSchedulePreventsLateReschedule(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	schedule := PromptSchedule{ID: "running", Directory: "/repo", RemoteID: "local", Prompt: "go", RunAt: 1000, State: "scheduled", TimingType: "interval", IntervalMinutes: 10, Timezone: "UTC", Enabled: true, SessionMode: "fresh", CreatedAt: 1, UpdatedAt: 1}
+	if err := db.CreatePromptSchedule(schedule); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := db.ClaimPromptSchedule(schedule.ID, 1000, true); err != nil || !ok {
+		t.Fatalf("claim: ok=%v err=%v", ok, err)
+	}
+	disabled, err := db.SetPromptScheduleEnabled(schedule.ID, false, schedule.RunAt, 1100)
+	if err != nil || disabled.Enabled || disabled.State != "scheduled" {
+		t.Fatalf("disabled=%+v err=%v", disabled, err)
+	}
+	if err := db.ReschedulePromptSchedule(schedule.ID, 2000, "late", 1200); err == nil {
+		t.Fatal("late reschedule succeeded")
+	}
+	got, _ := db.GetPromptSchedule(schedule.ID)
+	if got.State != "scheduled" || got.Enabled {
+		t.Fatalf("schedule=%+v", got)
+	}
+}
+
 func TestPromptScheduleV38MigrationDefaultsExistingRows(t *testing.T) {
 	raw, err := sql.Open("sqlite", ":memory:")
 	if err != nil {

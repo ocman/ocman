@@ -6,7 +6,10 @@ import (
 	"fmt"
 )
 
-var ErrPromptScheduleNotFound = errors.New("prompt schedule not found")
+var (
+	ErrPromptScheduleNotFound   = errors.New("prompt schedule not found")
+	ErrPromptScheduleSuperseded = errors.New("prompt schedule state changed")
+)
 
 type PromptSchedule struct {
 	ID              string `json:"id"`
@@ -198,7 +201,7 @@ func (d *DB) ClaimNextDuePromptSchedule(now int64) (PromptSchedule, bool, error)
 }
 
 func (d *DB) CancelPromptSchedule(id string, now int64) (PromptSchedule, bool, error) {
-	result, err := d.db.Exec(`UPDATE prompt_schedule SET state = 'canceled', updated_at = ? WHERE id = ? AND state = 'scheduled'`, now, id)
+	result, err := d.db.Exec(`UPDATE prompt_schedule SET state = 'canceled', finished_at = CASE WHEN state = 'running' THEN ? ELSE finished_at END, updated_at = ? WHERE id = ? AND state IN ('scheduled', 'running')`, now, now, id)
 	if err != nil {
 		return PromptSchedule{}, false, err
 	}
@@ -215,31 +218,50 @@ func (d *DB) CancelPromptSchedule(id string, now int64) (PromptSchedule, bool, e
 }
 
 func (d *DB) LinkPromptScheduleSession(id, platform, sessionID string, now int64) error {
-	_, err := d.db.Exec(`UPDATE prompt_schedule SET platform = ?, session_id = ?, updated_at = ? WHERE id = ? AND state = 'running'`, platform, sessionID, now, id)
-	return err
+	result, err := d.db.Exec(`UPDATE prompt_schedule SET platform = ?, session_id = ?, updated_at = ? WHERE id = ? AND state = 'running'`, platform, sessionID, now, id)
+	return promptScheduleUpdate(result, err)
 }
 
 func (d *DB) FinishPromptSchedule(id, stateValue, errorText string, now int64) error {
-	_, err := d.db.Exec(`UPDATE prompt_schedule SET state = ?, error = ?, finished_at = ?, updated_at = ? WHERE id = ? AND state = 'running'`, stateValue, errorText, now, now, id)
-	return err
+	result, err := d.db.Exec(`UPDATE prompt_schedule SET state = ?, error = ?, finished_at = ?, updated_at = ? WHERE id = ? AND state = 'running'`, stateValue, errorText, now, now, id)
+	return promptScheduleUpdate(result, err)
 }
 
 func (d *DB) CompletePromptSchedule(id string, nextRunAt, now int64) error {
-	_, err := d.db.Exec(`UPDATE prompt_schedule SET state = 'scheduled', run_at = ?, error = '', finished_at = ?, updated_at = ? WHERE id = ? AND state = 'running'`, nextRunAt, now, now, id)
-	return err
+	result, err := d.db.Exec(`UPDATE prompt_schedule SET state = 'scheduled', run_at = ?, error = '', finished_at = ?, updated_at = ? WHERE id = ? AND state = 'running'`, nextRunAt, now, now, id)
+	return promptScheduleUpdate(result, err)
 }
 
 func (d *DB) ReschedulePromptSchedule(id string, nextRunAt int64, errorText string, now int64) error {
-	_, err := d.db.Exec(`UPDATE prompt_schedule SET state = 'scheduled', run_at = ?, error = ?, finished_at = ?, updated_at = ? WHERE id = ? AND state = 'running'`, nextRunAt, errorText, now, now, id)
-	return err
+	result, err := d.db.Exec(`UPDATE prompt_schedule SET state = 'scheduled', run_at = ?, error = ?, finished_at = ?, updated_at = ? WHERE id = ? AND state = 'running'`, nextRunAt, errorText, now, now, id)
+	return promptScheduleUpdate(result, err)
 }
 
 func (d *DB) SetPromptScheduleEnabled(id string, enabled bool, runAt, now int64) (PromptSchedule, error) {
-	_, err := d.db.Exec(`UPDATE prompt_schedule SET enabled = ?, run_at = ?, state = CASE WHEN ? THEN 'scheduled' ELSE state END, error = CASE WHEN ? THEN '' ELSE error END, updated_at = ? WHERE id = ? AND state != 'running'`, enabled, runAt, enabled, enabled, now, id)
+	var err error
+	if enabled {
+		_, err = d.db.Exec(`UPDATE prompt_schedule SET enabled = 1, run_at = ?, state = 'scheduled', error = '', updated_at = ? WHERE id = ? AND state != 'running'`, runAt, now, id)
+	} else {
+		_, err = d.db.Exec(`UPDATE prompt_schedule SET enabled = 0, run_at = ?, state = CASE WHEN state = 'running' THEN 'scheduled' ELSE state END, finished_at = CASE WHEN state = 'running' THEN ? ELSE finished_at END, updated_at = ? WHERE id = ?`, runAt, now, now, id)
+	}
 	if err != nil {
 		return PromptSchedule{}, err
 	}
 	return d.GetPromptSchedule(id)
+}
+
+func promptScheduleUpdate(result sql.Result, err error) error {
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed == 0 {
+		return ErrPromptScheduleSuperseded
+	}
+	return nil
 }
 
 func (d *DB) FailRunningPromptSchedules(now int64, errorText string) error {
