@@ -78,6 +78,10 @@ func TestPromptScheduleRecoveryFailsRunningOnly(t *testing.T) {
 	if _, ok, err := db.ClaimPromptSchedule("running", 3, true); err != nil || !ok {
 		t.Fatalf("claim: ok=%v err=%v", ok, err)
 	}
+	runningRows, err := db.ListRunningPromptSchedules()
+	if err != nil || len(runningRows) != 1 || runningRows[0].ID != "running" {
+		t.Fatalf("running rows=%+v err=%v", runningRows, err)
+	}
 	if err := db.FailRunningPromptSchedules(4, "interrupted"); err != nil {
 		t.Fatal(err)
 	}

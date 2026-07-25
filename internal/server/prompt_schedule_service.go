@@ -36,6 +36,7 @@ var (
 type Store interface {
 	CreatePromptSchedule(state.PromptSchedule) error
 	ListPromptSchedules(string, string) ([]state.PromptSchedule, error)
+	ListRunningPromptSchedules() ([]state.PromptSchedule, error)
 	GetPromptSchedule(string) (state.PromptSchedule, error)
 	ClaimPromptSchedule(string, int64, bool) (state.PromptSchedule, bool, error)
 	ClaimNextDuePromptSchedule(int64) (state.PromptSchedule, bool, error)
@@ -45,7 +46,6 @@ type Store interface {
 	CompletePromptSchedule(string, int64, int64) error
 	ReschedulePromptSchedule(string, int64, string, int64) error
 	SetPromptScheduleEnabled(string, bool, int64, int64) (state.PromptSchedule, error)
-	FailRunningPromptSchedules(int64, string) error
 }
 
 type Sessions interface {
@@ -206,7 +206,26 @@ func (s *promptScheduleService) RunNow(ctx context.Context, id string) (state.Pr
 }
 
 func (s *promptScheduleService) Recover() error {
-	return s.store.FailRunningPromptSchedules(s.now().UnixMilli(), "dispatch interrupted by restart; not retried to prevent duplicate session creation")
+	const interrupted = "dispatch interrupted by restart; not retried to prevent duplicate session creation"
+	schedules, err := s.store.ListRunningPromptSchedules()
+	if err != nil {
+		return err
+	}
+	now := s.now()
+	var recoveryErr error
+	for _, schedule := range schedules {
+		if schedule.TimingType == TimingOnce {
+			recoveryErr = errors.Join(recoveryErr, s.finishFailed(schedule.ID, errors.New(interrupted)))
+			continue
+		}
+		next, err := nextScheduleRun(schedule.TimingType, schedule.RunAt, schedule.IntervalMinutes, schedule.Cron, schedule.Timezone, now)
+		if err != nil {
+			recoveryErr = errors.Join(recoveryErr, s.finishFailed(schedule.ID, err))
+			continue
+		}
+		recoveryErr = errors.Join(recoveryErr, s.store.ReschedulePromptSchedule(schedule.ID, next, interrupted, now.UnixMilli()))
+	}
+	return recoveryErr
 }
 
 func (s *promptScheduleService) Tick(ctx context.Context) error {

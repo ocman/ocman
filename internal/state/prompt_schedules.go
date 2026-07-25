@@ -84,6 +84,23 @@ func (d *DB) ListPromptSchedules(directory, remoteID string) ([]PromptSchedule, 
 	return out, rows.Err()
 }
 
+func (d *DB) ListRunningPromptSchedules() ([]PromptSchedule, error) {
+	rows, err := d.db.Query(`SELECT ` + promptScheduleColumns + ` FROM prompt_schedule WHERE state = 'running' ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("listing running prompt schedules: %w", err)
+	}
+	defer rows.Close()
+	var out []PromptSchedule
+	for rows.Next() {
+		s, err := scanPromptSchedule(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scanning running prompt schedule: %w", err)
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
 func (d *DB) ClaimPromptSchedule(id string, now int64, force bool) (PromptSchedule, bool, error) {
 	query := `UPDATE prompt_schedule SET state = 'running', started_at = ?, updated_at = ?
 		WHERE id = ? AND state = 'scheduled'`

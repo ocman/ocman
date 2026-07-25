@@ -45,6 +45,21 @@ func (f *fakeStore) ListPromptSchedules(directory, remoteID string) ([]state.Pro
 	return out, nil
 }
 
+func (f *fakeStore) ListRunningPromptSchedules() ([]state.PromptSchedule, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.recoverErr != nil {
+		return nil, f.recoverErr
+	}
+	var out []state.PromptSchedule
+	for _, schedule := range f.schedules {
+		if schedule.State == StateRunning {
+			out = append(out, schedule)
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeStore) GetPromptSchedule(id string) (state.PromptSchedule, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -404,6 +419,33 @@ func TestRecoverMarksInterruptedDispatchFailedWithoutReplaying(t *testing.T) {
 	got, _ := svc.Get(context.Background(), "interrupted")
 	if got.State != StateFailed || got.Error == "" || len(sessions.created) != 0 {
 		t.Fatalf("schedule=%+v created=%d", got, len(sessions.created))
+	}
+}
+
+func TestRecoverPreservesValidRecurringSchedules(t *testing.T) {
+	store := newFakeStore()
+	for _, schedule := range []state.PromptSchedule{
+		{ID: "once", State: StateRunning, TimingType: TimingOnce, Timezone: "UTC"},
+		{ID: "interval", State: StateRunning, TimingType: TimingInterval, IntervalMinutes: 10, Timezone: "UTC"},
+		{ID: "cron", State: StateRunning, TimingType: TimingCron, Cron: "*/5 * * * *", Timezone: "UTC"},
+		{ID: "corrupt", State: StateRunning, TimingType: TimingInterval, IntervalMinutes: 0, Timezone: "UTC"},
+	} {
+		store.schedules[schedule.ID] = schedule
+	}
+
+	if err := testPromptScheduleService(store, &fakeSessions{}).Recover(); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.schedules["once"]; got.State != StateFailed || got.Error == "" {
+		t.Fatalf("once=%+v", got)
+	}
+	for _, id := range []string{"interval", "cron"} {
+		if got := store.schedules[id]; got.State != StateScheduled || got.RunAt <= 2000 || got.Error == "" {
+			t.Fatalf("%s=%+v", id, got)
+		}
+	}
+	if got := store.schedules["corrupt"]; got.State != StateFailed || got.Error == "" {
+		t.Fatalf("corrupt=%+v", got)
 	}
 }
 
