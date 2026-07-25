@@ -22,7 +22,13 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
+
+// waitTimeout is deliberately generous: these tests coordinate real gRPC
+// dials and supervisor goroutines, so a tight budget only buys flakes on
+// a loaded CI runner. A passing run exits as soon as the condition holds.
+const waitTimeout = 10 * time.Second
 
 // startRealRemote spins a remote-side gRPC server on a real loopback port
 // and returns its address so a RemoteConn can dial it like a real remote.
@@ -97,14 +103,10 @@ func TestManager_ReconnectsAfterRemoteRestart(t *testing.T) {
 
 	waitForPlatform := func(instanceID string) {
 		id := platforms.ID(CompoundPlatformID(instanceID, "opencode"))
-		deadline := time.Now().Add(10 * time.Second)
-		for time.Now().Before(deadline) {
-			if _, ok := hubReg.Get(id); ok {
-				return
-			}
-			time.Sleep(20 * time.Millisecond)
-		}
-		t.Fatalf("platform for %s never registered", instanceID)
+		testutil.WaitFor(t, waitTimeout, "platform "+instanceID+" to register", func() bool {
+			_, ok := hubReg.Get(id)
+			return ok
+		})
 	}
 
 	waitForPlatform("inst-1")
@@ -149,7 +151,8 @@ func TestManager_RetriesWhenOfflineAtStartup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.AddRemote("grpc://"+addr, "tok", "Box"); err != nil {
+	localID, err := store.AddRemote("grpc://"+addr, "tok", "Box")
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -161,8 +164,13 @@ func TestManager_RetriesWhenOfflineAtStartup(t *testing.T) {
 	defer cancel()
 	mgr.Start(ctx)
 
-	// Give the supervisor a few failed attempts before bringing it up.
-	time.Sleep(120 * time.Millisecond)
+	// Let the supervisor actually fail at least once before bringing the
+	// remote up — polling for the unhealthy state instead of sleeping a
+	// fixed 120ms keeps the test both faster and stronger.
+	testutil.WaitFor(t, waitTimeout, "the supervisor to record a failed attempt", func() bool {
+		conn, ok := mgr.Conn(localID)
+		return ok && conn.Health() != HealthConnected
+	})
 
 	remoteReg := platforms.NewRegistry()
 	remoteReg.Register(&fakePlatform{id: "opencode"})
@@ -170,14 +178,10 @@ func TestManager_RetriesWhenOfflineAtStartup(t *testing.T) {
 	t.Cleanup(stop)
 
 	id := platforms.ID(CompoundPlatformID("late", "opencode"))
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, ok := hubReg.Get(id); ok {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatal("platform never registered after remote came up")
+	testutil.WaitFor(t, waitTimeout, "the platform to register after the remote came up", func() bool {
+		_, ok := hubReg.Get(id)
+		return ok
+	})
 }
 
 // TestManager_AuthFailedDoesNotRetry ensures a bad token stops the
@@ -211,13 +215,10 @@ func TestManager_AuthFailedDoesNotRetry(t *testing.T) {
 	mgr.Start(ctx)
 
 	// Health should settle on auth-failed and no platform registers.
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if conn, ok := mgr.Conn(localID); ok && conn.Health() == HealthAuthFailed {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	testutil.WaitFor(t, waitTimeout, "health to settle on auth-failed", func() bool {
+		conn, ok := mgr.Conn(localID)
+		return ok && conn.Health() == HealthAuthFailed
+	})
 	conn, ok := mgr.Conn(localID)
 	if !ok || conn.Health() != HealthAuthFailed {
 		t.Fatalf("expected auth-failed health, got ok=%v health=%v", ok, func() Health {
@@ -327,18 +328,12 @@ func TestManager_RegistersRemotePlatform(t *testing.T) {
 
 	// The connection happens in a goroutine; poll until the remote
 	// platform appears in the hub registry.
-	deadline := time.Now().Add(3 * time.Second)
 	var rp platforms.Platform
-	for time.Now().Before(deadline) {
-		if p, ok := hubReg.Get(platforms.ID(CompoundPlatformID("abc123", "opencode"))); ok {
-			rp = p
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if rp == nil {
-		t.Fatal("remote platform never registered in hub registry")
-	}
+	testutil.WaitFor(t, waitTimeout, "the remote platform to register in the hub registry", func() bool {
+		p, ok := hubReg.Get(platforms.ID(CompoundPlatformID("abc123", "opencode")))
+		rp = p
+		return ok
+	})
 
 	// A remote session is visible and stamped with host identity.
 	sessions, err := rp.Sessions(context.Background(), "", 0)

@@ -16,7 +16,13 @@ import (
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
+
+// waitTimeout is deliberately generous: these tests coordinate real
+// goroutines and HTTP connections, so a tight budget only buys flakes on
+// a loaded CI runner. A passing run exits as soon as the condition holds.
+const waitTimeout = 10 * time.Second
 
 // fakeOpenCodeEventServer is a minimal test double for OpenCode's
 // HTTP server, specifically the /event SSE endpoint. It streams a
@@ -238,12 +244,10 @@ func TestAutoApproveWatcherConnectsBeforePromptReconciliation(t *testing.T) {
 	if err := w.streamOnce(context.Background(), port); err != nil {
 		t.Fatalf("streamOnce: %v", err)
 	}
-	time.Sleep(50 * time.Millisecond)
-
-	questions, _ := adapter.ListQuestions(context.Background(), "ses-snapshot")
-	if len(questions) != 1 {
-		t.Fatalf("questions = %#v, want reconciled snapshot", questions)
-	}
+	testutil.WaitFor(t, waitTimeout, "the question snapshot to be reconciled", func() bool {
+		questions, _ := adapter.ListQuestions(context.Background(), "ses-snapshot")
+		return len(questions) == 1
+	})
 	mu.Lock()
 	defer mu.Unlock()
 	if len(paths) == 0 || paths[0] != "/global/event" {
@@ -447,32 +451,17 @@ func TestAutoApproveWatcher_CancelsSubscriptionWhenPortDisappears(t *testing.T) 
 	defer cancel()
 	go w.run(ctx)
 
-	// Wait for the watcher to subscribe to the port.
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if atomic.LoadInt32(&fake.conns) >= 1 {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if atomic.LoadInt32(&fake.conns) < 1 {
-		t.Fatal("watcher did not subscribe within 2s")
-	}
+	testutil.WaitFor(t, waitTimeout, "the watcher to subscribe to the port", func() bool {
+		return atomic.LoadInt32(&fake.conns) >= 1
+	})
 
 	// Port disappears.
 	ports.Store(map[string]string{})
 
 	// The watcher must cancel its sub on the next tick.
-	deadline = time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if atomic.LoadInt32(&fake.conns) == 0 {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if c := atomic.LoadInt32(&fake.conns); c != 0 {
-		t.Errorf("expected 0 open connections after port disappeared, got %d", c)
-	}
+	testutil.WaitFor(t, waitTimeout, "the subscription to close after the port disappeared", func() bool {
+		return atomic.LoadInt32(&fake.conns) == 0
+	})
 }
 
 // TestAutoApproveWatcher_ReconnectsAfterUpstreamClose verifies that when
@@ -499,18 +488,10 @@ func TestAutoApproveWatcher_ReconnectsAfterUpstreamClose(t *testing.T) {
 	defer cancel()
 	go w.run(ctx)
 
-	// Expect at least 3 connections within 2 seconds, confirming
-	// reconnect is happening.
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if atomic.LoadInt32(&fake.totalHit) >= 3 {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if hits := atomic.LoadInt32(&fake.totalHit); hits < 3 {
-		t.Errorf("expected at least 3 reconnects within 2s, got %d", hits)
-	}
+	// Expect at least 3 connections, confirming reconnect is happening.
+	testutil.WaitFor(t, waitTimeout, "at least 3 reconnects", func() bool {
+		return atomic.LoadInt32(&fake.totalHit) >= 3
+	})
 }
 
 // TestAutoApproveWatcher_StopsOnContextCancel verifies clean shutdown:
@@ -531,31 +512,15 @@ func TestAutoApproveWatcher_StopsOnContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	go w.run(ctx)
 
-	// Wait for the watcher to subscribe.
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if atomic.LoadInt32(&fake.conns) >= 1 {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if atomic.LoadInt32(&fake.conns) < 1 {
-		t.Fatal("watcher did not subscribe within 2s")
-	}
+	testutil.WaitFor(t, waitTimeout, "the watcher to subscribe", func() bool {
+		return atomic.LoadInt32(&fake.conns) >= 1
+	})
 
 	cancel()
 
-	// All connections must close within a short window.
-	deadline = time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if atomic.LoadInt32(&fake.conns) == 0 {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if c := atomic.LoadInt32(&fake.conns); c != 0 {
-		t.Errorf("expected 0 open connections after cancel, got %d", c)
-	}
+	testutil.WaitFor(t, waitTimeout, "all connections to close after cancel", func() bool {
+		return atomic.LoadInt32(&fake.conns) == 0
+	})
 }
 
 // TestAutoApproveWatcher_DedupesSamePort verifies that a port already
@@ -577,8 +542,16 @@ func TestAutoApproveWatcher_DedupesSamePort(t *testing.T) {
 	defer cancel()
 	go w.run(ctx)
 
-	// Let several ticks fire.
-	time.Sleep(200 * time.Millisecond)
+	// Wait for the first subscription deterministically, so a loaded
+	// runner can't turn "slow to connect" into "deduped".
+	testutil.WaitFor(t, waitTimeout, "the watcher to subscribe", func() bool {
+		return atomic.LoadInt32(&fake.conns) >= 1
+	})
+
+	// Then let several rescan ticks fire. This one has to be a sleep:
+	// the assertion is that *no* extra connection appears, and absence
+	// of an event can't be polled for.
+	time.Sleep(20 * w.rescanInterval)
 
 	if c := atomic.LoadInt32(&fake.conns); c != 1 {
 		t.Errorf("expected exactly 1 open connection, got %d", c)
@@ -601,8 +574,10 @@ func TestServer_RunAutoApproveWatcher_RespectsContext(t *testing.T) {
 		close(done)
 	}()
 
-	// Give the watcher a moment to actually start up so cancel races
-	// the first tick rather than running before it.
+	// Deliberate sleep, not a missing WaitFor: the point is to let cancel
+	// race the first tick rather than land before it. There is no
+	// condition to poll for, and the assertion below is a bounded select,
+	// so a mistimed sleep exercises a different path but never flakes.
 	time.Sleep(20 * time.Millisecond)
 	cancel()
 

@@ -17,7 +17,14 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
+
+// waitTimeout is deliberately generous: these tests drive a real
+// scheduler and real child processes, so a tight budget only buys flakes
+// on a loaded CI runner. A passing run exits as soon as the condition
+// holds.
+const waitTimeout = 15 * time.Second
 
 const sequentialApprovals = `{
 	"id":"release",
@@ -476,20 +483,16 @@ func TestRepeatUntilSuccessAndExhaustion(t *testing.T) {
 
 func waitForRepeatRun(t *testing.T, svc *Service, runID, state string, attempts int) RunDetail {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
 	var last RunDetail
-	for time.Now().Before(deadline) {
+	testutil.WaitFor(t, waitTimeout, fmt.Sprintf("repeat run %s to reach %s after %d attempts", runID, state, attempts), func() bool {
 		run, err := svc.GetRun(context.Background(), runID)
-		if err == nil {
-			last = run
+		if err != nil {
+			return false
 		}
-		if err == nil && run.State == state && len(run.Nodes) == 1 && len(run.Nodes[0].Attempts) == attempts {
-			return run
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("repeat run %s did not reach %s after %d attempts: %+v", runID, state, attempts, last)
-	return RunDetail{}
+		last = run
+		return run.State == state && len(run.Nodes) == 1 && len(run.Nodes[0].Attempts) == attempts
+	})
+	return last
 }
 
 func TestPublishCreatesImmutableVersions(t *testing.T) {
@@ -1061,18 +1064,14 @@ func TestCancelTerminatesCommandProcessTree(t *testing.T) {
 	}
 	pidPath := filepath.Join(dir, "child.pid")
 	var pid int
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
+	testutil.WaitFor(t, waitTimeout, "the child process to write its pid file", func() bool {
 		raw, readErr := os.ReadFile(pidPath)
-		if readErr == nil {
-			pid, _ = strconv.Atoi(strings.TrimSpace(string(raw)))
-			break
+		if readErr != nil {
+			return false
 		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if pid == 0 {
-		t.Fatal("child process did not start")
-	}
+		pid, _ = strconv.Atoi(strings.TrimSpace(string(raw)))
+		return pid != 0
+	})
 	canceled, err := h.svc.Cancel(context.Background(), run.ID)
 	if err != nil {
 		t.Fatalf("cancel: %v", err)
@@ -1582,34 +1581,30 @@ func waitForRun(t *testing.T, svc *Service, id string, states ...string) RunDeta
 	for _, state := range states {
 		wanted[state] = true
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		run, err := svc.GetRun(context.Background(), id)
+	var run RunDetail
+	testutil.WaitFor(t, waitTimeout, fmt.Sprintf("run %s to reach %v", id, states), func() bool {
+		var err error
+		run, err = svc.GetRun(context.Background(), id)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if wanted[run.State] {
-			return run
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("run %s did not reach %v", id, states)
-	return RunDetail{}
+		return wanted[run.State]
+	})
+	return run
 }
 
 func waitForPidFile(t *testing.T, pidPath string) int {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if value, err := os.ReadFile(pidPath); err == nil {
-			if pid, perr := strconv.Atoi(strings.TrimSpace(string(value))); perr == nil && pid > 0 {
-				return pid
-			}
+	var pid int
+	testutil.WaitFor(t, waitTimeout, "sibling child to write pid file "+pidPath, func() bool {
+		value, err := os.ReadFile(pidPath)
+		if err != nil {
+			return false
 		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("sibling child did not write pid file %s", pidPath)
-	return 0
+		pid, err = strconv.Atoi(strings.TrimSpace(string(value)))
+		return err == nil && pid > 0
+	})
+	return pid
 }
 
 func TestAgentRunFreshAffinityAndIdleCompletion(t *testing.T) {
