@@ -95,24 +95,37 @@ func TestLaunchOpencodeEnvWith_EnvOnNewWindow(t *testing.T) {
 
 // fakeEnvRunner records the env-aware runner calls.
 type fakeEnvRunner struct {
-	existing []Session
+	existing    []Session
+	listErr     error
+	newEnvErr   error
+	newWinErr   error
+	newSessions []string
 
 	newSessionEnv []map[string]string
 	newSessionCmd []string
 	newWindowEnv  []map[string]string
+	newWindowCmd  []string
 }
 
 func (f *fakeEnvRunner) toRunner() Runner {
 	return Runner{
-		ListSessions: func() ([]Session, error) { return f.existing, nil },
+		ListSessions: func() ([]Session, error) { return f.existing, f.listErr },
 		ListWindows:  func(string) ([]Window, error) { return nil, nil },
-		NewSessionEnv: func(_, _, command string, env map[string]string) error {
+		NewSessionEnv: func(name, _, command string, env map[string]string) error {
+			if f.newEnvErr != nil {
+				return f.newEnvErr
+			}
+			f.newSessions = append(f.newSessions, name)
 			f.newSessionEnv = append(f.newSessionEnv, env)
 			f.newSessionCmd = append(f.newSessionCmd, command)
 			return nil
 		},
-		NewWindowEnv: func(_, _, _ string, env map[string]string) error {
+		NewWindowEnv: func(_, _, command string, env map[string]string) error {
+			if f.newWinErr != nil {
+				return f.newWinErr
+			}
 			f.newWindowEnv = append(f.newWindowEnv, env)
+			f.newWindowCmd = append(f.newWindowCmd, command)
 			return nil
 		},
 	}
