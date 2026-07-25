@@ -50,6 +50,20 @@ func TestManagedPromptSessionsEnsuresProjectInstance(t *testing.T) {
 	}
 }
 
+func TestManagedPromptSessionsRejectsUnknownRemote(t *testing.T) {
+	srv := testServer(t)
+	ensureCalls := 0
+	srv.hostRouter = hostsvc.NewRouter(&promptEnsureHost{ensure: func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+		ensureCalls++
+		return nil, errors.New("local host called")
+	}})
+
+	_, _, err := (managedPromptSessions{srv}).CreateScheduledSession(t.Context(), "build-box", "/repo")
+	if !errors.Is(err, ErrPromptScheduleRemoteUnavailable) || ensureCalls != 0 {
+		t.Fatalf("err=%v local ensure calls=%d", err, ensureCalls)
+	}
+}
+
 func TestManagedPromptSessionsQueuesForBusyReusedSession(t *testing.T) {
 	srv, registry := newSessionsTestServer(t)
 	sent := 0

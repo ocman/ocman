@@ -87,6 +87,17 @@ func (r *Router) ForRemote(remoteID string) Host {
 	return r.local
 }
 
+// LookupRemote resolves an explicit owner without falling back for unknown remotes.
+func (r *Router) LookupRemote(remoteID string) (Host, bool) {
+	if remoteID == "" || remoteID == "local" {
+		return r.local, true
+	}
+	r.mu.RLock()
+	h, ok := r.remotes[remoteID]
+	r.mu.RUnlock()
+	return h, ok
+}
+
 // ForDir resolves the owner of an absolute directory. It consults the
 // installed dirResolver (inventory cache) when present; everything else
 // resolves to the local Host.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -18,10 +19,15 @@ import (
 
 const promptScheduleTickInterval = 5 * time.Second
 
+var ErrPromptScheduleRemoteUnavailable = errors.New("prompt schedule remote unavailable")
+
 type managedPromptSessions struct{ server *Server }
 
 func (m managedPromptSessions) CreateScheduledSession(ctx context.Context, remoteID, directory string) (string, *platforms.CreateSessionResponse, error) {
-	host := m.server.router().ForRemote(remoteID)
+	host, ok := m.server.router().LookupRemote(remoteID)
+	if !ok {
+		return "", nil, fmt.Errorf("%w: %s", ErrPromptScheduleRemoteUnavailable, remoteID)
+	}
 	ensured, err := host.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: directory})
 	if err != nil {
 		return "", nil, err

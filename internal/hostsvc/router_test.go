@@ -83,6 +83,21 @@ func TestRouter_ForRemote(t *testing.T) {
 	}
 }
 
+func TestRouter_LookupRemote(t *testing.T) {
+	local := stubHost{id: "local"}
+	r := NewRouter(local)
+	r.RegisterRemote("abc", stubHost{id: "abc"})
+
+	for _, id := range []string{"", "local", "abc"} {
+		if _, ok := r.LookupRemote(id); !ok {
+			t.Errorf("LookupRemote(%q) not found", id)
+		}
+	}
+	if host, ok := r.LookupRemote("unknown"); ok || host != nil {
+		t.Errorf("unknown remote = (%v, %v), want (nil, false)", host, ok)
+	}
+}
+
 func TestRouter_ForDir(t *testing.T) {
 	local := stubHost{id: "local"}
 	r := NewRouter(local)
