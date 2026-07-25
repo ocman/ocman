@@ -128,6 +128,66 @@ func TestRecurringPromptSchedulePersistenceAndDisabledClaim(t *testing.T) {
 	}
 }
 
+func TestPromptScheduleClaimSkipsArchivedProject(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	for _, schedule := range []PromptSchedule{
+		{ID: "archived", Directory: "/src/.worktrees/repo/topic", RemoteID: "local", Prompt: "a", RunAt: 1000, State: "scheduled", TimingType: "once", Timezone: "UTC", Enabled: true, SessionMode: "fresh", CreatedAt: 1, UpdatedAt: 1},
+		{ID: "unrelated", Directory: "/other", RemoteID: "local", Prompt: "b", RunAt: 1000, State: "scheduled", TimingType: "once", Timezone: "UTC", Enabled: true, SessionMode: "fresh", CreatedAt: 1, UpdatedAt: 1},
+	} {
+		if err := db.CreatePromptSchedule(schedule); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.ArchiveProject("/src/repo"); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := db.ClaimNextDuePromptSchedule(2000)
+	if err != nil || !ok || got.ID != "unrelated" {
+		t.Fatalf("claim=%+v ok=%v err=%v", got, ok, err)
+	}
+	if err := db.UnarchiveProject("/src/repo"); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err = db.ClaimNextDuePromptSchedule(2000)
+	if err != nil || !ok || got.ID != "archived" {
+		t.Fatalf("claim after unarchive=%+v ok=%v err=%v", got, ok, err)
+	}
+}
+
+func TestPromptScheduleClaimSkipsArchivedReuseSession(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	for _, schedule := range []PromptSchedule{
+		{ID: "archived", Directory: "/repo", RemoteID: "local", Prompt: "a", Platform: "opencode", SessionID: "s1", RunAt: 1000, State: "scheduled", TimingType: "once", Timezone: "UTC", Enabled: true, SessionMode: "reuse", CreatedAt: 1, UpdatedAt: 1},
+		{ID: "unrelated", Directory: "/repo", RemoteID: "local", Prompt: "b", Platform: "opencode", SessionID: "s2", RunAt: 1000, State: "scheduled", TimingType: "once", Timezone: "UTC", Enabled: true, SessionMode: "reuse", CreatedAt: 1, UpdatedAt: 1},
+	} {
+		if err := db.CreatePromptSchedule(schedule); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.db.Exec(`UPDATE prompt_schedule SET platform = 'opencode', session_id = CASE id WHEN 'archived' THEN 's1' ELSE 's2' END`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ArchiveSession("opencode", "s1", 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ArchiveProject("/other"); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := db.ClaimNextDuePromptSchedule(2000)
+	if err != nil || !ok || got.ID != "unrelated" {
+		t.Fatalf("claim=%+v ok=%v err=%v", got, ok, err)
+	}
+	if err := db.UnarchiveSession("opencode", "s1"); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err = db.ClaimNextDuePromptSchedule(2000)
+	if err != nil || !ok || got.ID != "archived" {
+		t.Fatalf("claim after unarchive=%+v ok=%v err=%v", got, ok, err)
+	}
+}
+
 func TestPromptScheduleV38MigrationDefaultsExistingRows(t *testing.T) {
 	raw, err := sql.Open("sqlite", ":memory:")
 	if err != nil {

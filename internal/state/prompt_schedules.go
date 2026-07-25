@@ -125,19 +125,59 @@ func (d *DB) ClaimPromptSchedule(id string, now int64, force bool) (PromptSchedu
 	return s, err == nil, err
 }
 
+// ClaimNextDuePromptSchedule skips archived work without changing its due time,
+// so an overdue schedule becomes eligible immediately after unarchive.
 func (d *DB) ClaimNextDuePromptSchedule(now int64) (PromptSchedule, bool, error) {
 	tx, err := d.db.Begin()
 	if err != nil {
 		return PromptSchedule{}, false, fmt.Errorf("claiming due prompt schedule: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	var id string
-	err = tx.QueryRow(`SELECT id FROM prompt_schedule WHERE state = 'scheduled' AND enabled = 1 AND run_at <= ? ORDER BY run_at, id LIMIT 1`, now).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return PromptSchedule{}, false, nil
-	}
+	type candidate struct{ id, directory, sessionMode, platform, sessionID string }
+	rows, err := tx.Query(`SELECT id, directory, session_mode, platform, session_id FROM prompt_schedule WHERE state = 'scheduled' AND enabled = 1 AND run_at <= ? ORDER BY run_at, id`, now)
 	if err != nil {
 		return PromptSchedule{}, false, err
+	}
+	var candidates []candidate
+	for rows.Next() {
+		var candidate candidate
+		if err := rows.Scan(&candidate.id, &candidate.directory, &candidate.sessionMode, &candidate.platform, &candidate.sessionID); err != nil {
+			_ = rows.Close()
+			return PromptSchedule{}, false, err
+		}
+		candidates = append(candidates, candidate)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return PromptSchedule{}, false, err
+	}
+	if err := rows.Close(); err != nil {
+		return PromptSchedule{}, false, err
+	}
+	var id string
+	for _, candidate := range candidates {
+		var archived int
+		err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM archived_project WHERE project_root = ?)`, ProjectRootForDirectory(candidate.directory)).Scan(&archived)
+		if err != nil {
+			return PromptSchedule{}, false, err
+		}
+		if archived != 0 {
+			continue
+		}
+		if candidate.sessionMode == "reuse" && candidate.platform != "" && candidate.sessionID != "" {
+			err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM archived_session WHERE platform = ? AND session_id = ?)`, candidate.platform, candidate.sessionID).Scan(&archived)
+			if err != nil {
+				return PromptSchedule{}, false, err
+			}
+			if archived != 0 {
+				continue
+			}
+		}
+		id = candidate.id
+		break
+	}
+	if id == "" {
+		return PromptSchedule{}, false, nil
 	}
 	result, err := tx.Exec(`UPDATE prompt_schedule SET state = 'running', started_at = ?, updated_at = ? WHERE id = ? AND state = 'scheduled'`, now, now, id)
 	if err != nil {

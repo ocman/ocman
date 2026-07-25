@@ -2,8 +2,36 @@ package state
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
+
+// ProjectRootForDirectory folds a managed worktree path to its project root.
+func ProjectRootForDirectory(directory string) string {
+	if directory == "" {
+		return directory
+	}
+	cleaned := directory
+	if len(cleaned) > 1 && strings.HasSuffix(cleaned, "/") {
+		cleaned = cleaned[:len(cleaned)-1]
+	}
+	parts := strings.Split(cleaned, "/")
+	idx := -1
+	for i, part := range parts {
+		if part == ".worktrees" {
+			idx = i
+			break
+		}
+	}
+	if idx <= 0 || len(parts) < idx+3 {
+		return cleaned
+	}
+	prefix := strings.Join(parts[:idx], "/")
+	if prefix == "" {
+		return cleaned
+	}
+	return prefix + "/" + parts[idx+1]
+}
 
 // ArchiveSession records a session as archived at its current update
 // timestamp for the given platform.

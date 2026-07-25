@@ -3,6 +3,8 @@ package server
 import (
 	"net/http"
 	"strings"
+
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 // projectRootForDirectory folds a session's directory back to the repo
@@ -15,40 +17,7 @@ import (
 // Any path that doesn't match the worktree layout is returned unchanged
 // (trailing slash stripped), so unmanaged projects stay self-grouping.
 func projectRootForDirectory(directory string) string {
-	if directory == "" {
-		return directory
-	}
-	cleaned := directory
-	if len(cleaned) > 1 && strings.HasSuffix(cleaned, "/") {
-		cleaned = cleaned[:len(cleaned)-1]
-	}
-
-	parts := strings.Split(cleaned, "/")
-	idx := -1
-	for i, p := range parts {
-		if p == ".worktrees" {
-			idx = i
-			break
-		}
-	}
-	if idx < 0 {
-		return cleaned
-	}
-	// Need at least <prefix>/.worktrees/<repo>/<slug>.
-	if len(parts) < idx+3 {
-		return cleaned
-	}
-	// idx==0 (relative path starting with .worktrees) has no prefix.
-	if idx == 0 {
-		return cleaned
-	}
-	prefix := strings.Join(parts[:idx], "/")
-	// Absolute path directly under "/" (prefix=="" from leading slash):
-	// can't distinguish from a real "/repo", so don't fold.
-	if prefix == "" {
-		return cleaned
-	}
-	return prefix + "/" + parts[idx+1]
+	return state.ProjectRootForDirectory(directory)
 }
 
 // handleProjectArchive archives or unarchives a project, keyed by its
