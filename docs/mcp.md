@@ -53,10 +53,12 @@ directly (no Vite dev proxy).
 | `cancel_session` | Cancel a running child session (kills its tmux window). |
 | `send_message_to_child` | Send a message from a parent session to one of its child sessions. Returns immediately by default and delivers the completed turn to the parent asynchronously; set `wait=true` to return the response directly. |
 | `send_message_to_parent` | Send a message from a child session back to its parent session. |
+| `get_workflow_schema` | Get the workflow definition schema and a minimal valid JSON example. |
 | `validate_workflow` / `publish_workflow` / `list_workflows` | Validate, publish immutable versions, and list workflows. |
 | `start_workflow` / `list_workflow_runs` / `inspect_workflow_run` | Start a pinned or active version and inspect compact run state. |
 | `pause_workflow_run` / `resume_workflow_run` / `cancel_workflow_run` | Control workflow run scheduling and cancellation. |
 | `approve_workflow_node` / `resolve_unknown_attempt` | Approve waiting nodes or resolve externally verified unknown attempts. |
+| `retry_workflow_from_node` | Derive a run that reuses successful work before a node and re-runs from that node onward. |
 
 ## How splitting works
 

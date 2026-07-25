@@ -130,9 +130,12 @@ handlers don't bypass the `Host` seam). User-facing docs:
 
 ## Repository layout
 
-- `main.go` — entrypoint; parses `-addr`, `-db`, and `-platforms`
-  flags, opens databases, registers platform adapters, starts the
-  server.
+- `main.go` — entrypoint; parses the CLI flags (run `ocman -h`, or read
+  the `flag.` block in `main.go` for the authoritative list), opens
+  databases, registers platform adapters, starts the server. Note
+  `-gui` / `-gui-addr`: with `-gui` the process opens a native Wails
+  desktop window (`internal/gui`) around the same HTTP server instead
+  of only serving HTTP.
 - `internal/platforms/` — `Platform` interface, `Registry`, common
   types/errors.
 - `internal/platforms/opencode/` — OpenCode adapter wrapping the DB
@@ -187,6 +190,35 @@ handlers don't bypass the `Host` seam). User-facing docs:
   pipeline (judge, per-permission state machine, safe-command cache,
   SSE tee/sinks, headless watcher). Wired into the server through an
    `autoapprove.Deps` seam by `internal/server/autoapprove_engine.go`.
+- `internal/hostsvc/` — the directory/host-scoped adapter seam (`Host`,
+  `Router`), the directory analogue of `platforms.Platform`.
+  `internal/hostsvc/local/` is the only package that reaches for
+  git/tmux/whisper directly; handlers resolve an owner and delegate.
+- `internal/remote/` — multi-remote gRPC client/server plus the
+  generated `proto` stubs (regenerate with `make proto`).
+- `internal/gitexec/` — hardened `git` subprocess construction (strips
+  `GIT_DIR`/`GIT_INDEX_FILE`, disables terminal prompts and optional
+  locks). Every git invocation must go through it.
+- `internal/git/` — repository queries built on `gitexec` (branches,
+  status, worktrees, diffs).
+- `internal/forge/` — GitHub/Forgejo PR + issue clients behind one
+  interface; feeds the PRs & Issues sidebar.
+- `internal/workflows/` — DAG workflow engine (definitions, scheduling,
+  node runs/attempts) on top of `internal/state`. See
+  `docs/workflows.md`.
+- `internal/permissions/` — builds the inherited permission ruleset for
+  a worktree/child session (#101).
+- `internal/pricing/` — LiteLLM model-pricing fetch/cache + cost
+  calculation for the usage metrics views.
+- `internal/ocapi/` — host-local auth shared by every ocman client that
+  talks to OpenCode's HTTP API.
+- `internal/opencodeskills/` — installs ocman-owned embedded skills into
+  OpenCode's global skill directory.
+- `internal/srvtiming/` — per-request phase timing rendered into the
+  `Server-Timing` response header; no-op outside an HTTP request.
+- `internal/telemetry/` — OpenTelemetry wiring (see Key details).
+- `internal/gui/` — Wails desktop shell used by `-gui`; wraps the same
+  HTTP server in a native WebView window.
 - `frontend/` — React + TypeScript + Vite SPA (port 8228 in dev).
 - `internal/server/static/` — Vite build output; embedded into the Go
   binary via `//go:embed`. Gitignored except for `robots.txt`, which
@@ -202,15 +234,34 @@ make dev-prod         # backend (air :8229) + frontend (vite preview :8228, manu
 make dev-prod-watch   # backend (air :8229) + frontend (vite preview :8228, auto-rebuild)
 make dev-backend      # air only (Go on :8229)
 make dev-frontend     # vite only (React on :8228, proxies /api to :8229)
-make test             # runs `go test ./...` + `vitest run`
-make lint             # runs go vet, tsc -b, eslint, and the platform-branching check
+make dev-remote       # backend with the remote-access gRPC server on :8230
+make kill-dev         # kill orphans squatting on 8228/8229/8230
+
+make test             # go test ./... + vitest run
+make test-backend     # go test ./...
+make test-frontend    # vitest run
+make test-race        # go test -race ./internal/...
+make test-fuzz        # run every Fuzz* target for 10s
+make test-e2e         # build frontend, then Playwright
+make test-all-fast    # backend + frontend + e2e in parallel, fail fast
+make coverage         # collect coverage/*.json (SUITE=go|frontend|all)
+make coverage-check   # ratchet coverage/*.json against $(BASELINE_DIR)
+
+make lint             # go vet, golangci-lint, tsc -b, eslint + the three guards
 make build            # production: pnpm install + pnpm build, then go build -o ocman .
+make build-desktop    # Wails desktop app (the -gui path) into build/bin/
+make proto            # regenerate internal/remote/proto stubs (needs protoc)
+make install-hooks    # pre-commit + pre-push hooks
 make clean            # removes ocman binary, tmp/, and static/assets/
+
 make otel-up          # start Grafana LGTM stack (Loki/Tempo/Mimir + OTLP) at :3000/:4317/:4318
 make otel-down        # stop the LGTM stack
 make otel-logs        # tail LGTM container logs
 make otel-reset       # stop + wipe persisted telemetry data
 ```
+
+`make help` lists every target carrying a `## ` doc comment; the
+Makefile is the authoritative list.
 
 - `mise` provides `air` (Go live-reload), `node`, and `pnpm`. Run
   `mise install` if any of them are missing. **Use `pnpm`** for all
@@ -258,24 +309,42 @@ assets are embedded.
 
 ## Verification
 
-CI runs these checks (`.github/workflows/ci.yml`):
+CI is defined in `.github/workflows/ci.yml`. **It runs on Forgejo
+Actions**, which reads `.github/workflows/` as a fallback — there is
+deliberately no `.forgejo/` or `.gitea/` directory, and the workflow is
+Forgejo-aware (see the pnpm-install comment near the top and the
+`FORGEJO_API_URL: ${{ github.api_url }}` env). Do not "fix" it by
+moving files out of `.github/`.
+
+Jobs and the checks they run:
 
 ```sh
-cd frontend && pnpm lint          # ESLint
-cd frontend && pnpm exec tsc -b   # TypeScript typecheck
-cd frontend && pnpm test          # vitest (81 tests)
-go test ./...                     # Go unit + integration tests (180+ tests)
-go vet ./...                      # Go vet
-./scripts/check-platform-branching.sh
-                                  # catches `platform === 'opencode'` style
-                                  # branching in the frontend; the rule is
-                                  # enforced by AD-12a.
-make build                        # full production build (frontend + Go)
+# Frontend job
+cd frontend && pnpm lint            # ESLint
+cd frontend && pnpm exec tsc -b     # TypeScript typecheck
+./scripts/check-platform-branching.sh  # AD-12a: no `platform === '...'`
+./scripts/check-settings-rows.sh       # no hand-rolled settings-row markup
+make coverage SUITE=frontend        # vitest with coverage
+make coverage-check SUITE=frontend  # coverage ratchet vs the gh-pages baseline
+
+# Backend job
+go vet ./...
+golangci-lint run                   # config in .golangci.yml (pinned version)
+go test .                           # root package
+make coverage SUITE=go              # internal/... with coverage
+make coverage-check SUITE=go        # coverage ratchet
+
+# Other jobs
+pnpm test:e2e                       # Playwright e2e (chromium)
+make build                          # full production build (frontend + Go)
 ```
 
-All of the above are wrapped by `make test` and `make lint` for local
-use. The repo has no Go formatter/linter config beyond `go vet`; keep
-diffs minimal and match the surrounding code.
+Locally, `make test` and `make lint` cover the same ground.
+`make lint` runs `go vet`, `golangci-lint run`, `tsc -b`, `pnpm lint`,
+and the three guard scripts (platform-branching, host-helpers,
+settings-rows). Install `golangci-lint` locally — CI enforces it and
+`.golangci.yml` enables linters beyond the standard set. Keep diffs
+minimal and match the surrounding code.
 
 ## Key details
 
@@ -290,7 +359,7 @@ diffs minimal and match the surrounding code.
   auto-creates its schema, and runs a versioned migration on startup.
 - **OpenCode port discovery** uses `lsof` to find processes named
   `opencode` listening on TCP, then resolves their cwd. macOS/Linux
-  only. Cached with a 3-second TTL.
+  only. Cached with a 10-second TTL.
 - **Session status** for OpenCode is inferred at query time from the
   last message's `role`, `finish`, and `error` fields.
 - **Auto-archive**: background goroutine archives sessions inactive
@@ -338,9 +407,9 @@ diffs minimal and match the surrounding code.
 
 Ocman embeds a localhost-only MCP server (`internal/mcp/`, mounted at
 `/mcp` by the server package) exposing session-split + parent/child
-message tools (`new_session`,
-`await_session_result`, `get_current_session_id`, `get_session_status`, `list_child_sessions`,
-`cancel_session`, `send_message_to_child`, `send_message_to_parent`).
+message tools plus the workflow control tools. The authoritative tool
+list is the table in [`docs/mcp.md`](docs/mcp.md#tools) — don't
+duplicate it here.
 
 Implementation notes:
 

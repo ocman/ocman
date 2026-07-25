@@ -253,9 +253,9 @@ func getSessionDefaultsCached(d dbSessionDefaults, excludeSessionID, directory s
 // GetSessions) every few seconds, so without caching we pay the
 // full cost on every poll.
 //
-// 3s TTL is the trade-off: short enough that "I started a new
-// session in another tab" feels instant, long enough that the
-// 5s poll cycle hits the cache after the first miss. The cache
+// The TTL (sessionsTTL, below) is the trade-off: short enough
+// that "I started a new session in another tab" feels instant,
+// long enough that the 5s poll cycle hits the cache. The cache
 // is keyed by directory only — directory-filtered listings (the
 // project drill-down view) and the global listing are
 // independent, but the `since` filter is applied to the cached
