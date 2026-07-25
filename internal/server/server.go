@@ -381,6 +381,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	go s.runChildSessionWatcher(ctx)
 	go s.runWorkflowEngine(ctx)
 	go s.runWorkflowTriggerEngine(ctx)
+	go s.runWorkflowMirror(ctx)
 	go s.runQueueSweep(ctx)
 	go s.runPromptSchedules(ctx)
 	// Headless auto-approve: subscribe directly to each OpenCode

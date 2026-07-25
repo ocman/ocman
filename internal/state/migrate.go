@@ -146,7 +146,9 @@ import (
 //	37 - one-time project prompt schedules with durable dispatch state and
 //	     resulting session linkage.
 //	38 - recurring prompt timing, enablement, timezone, and session reuse.
-const latestSchemaVersion = 38
+//	39 - link a workflow run to the external runner execution that drives
+//	     it, so the run mirror can find the Dagu run for an active row.
+const latestSchemaVersion = 39
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -318,6 +320,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV37(tx)
 	case 38:
 		return migrateToV38(tx)
+	case 39:
+		return migrateToV39(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -1272,6 +1276,24 @@ func migrateToV37(tx *sql.Tx) error {
 		CREATE INDEX prompt_schedule_due ON prompt_schedule(state, run_at);
 		CREATE INDEX prompt_schedule_directory ON prompt_schedule(remote_id, directory, created_at DESC);
 	`)
+	return err
+}
+
+// migrateToV39 links a run to its external runner execution. Ocman
+// supplies the Dagu run id itself, so the two are usually equal; the
+// column stays explicit because the runner is pluggable and a recovered
+// run must be findable after a restart.
+func migrateToV39(tx *sql.Tx) error {
+	for _, change := range []struct{ column, definition string }{
+		{"external_run_id", "TEXT NOT NULL DEFAULT ''"},
+		{"external_runner", "TEXT NOT NULL DEFAULT ''"},
+	} {
+		if err := addColumnIfMissing(tx, "workflow_run", change.column, change.definition); err != nil {
+			return err
+		}
+	}
+	_, err := tx.Exec(`CREATE INDEX IF NOT EXISTS idx_workflow_run_external
+		ON workflow_run (external_run_id) WHERE external_run_id != ''`)
 	return err
 }
 

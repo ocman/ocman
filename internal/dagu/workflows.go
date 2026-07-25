@@ -12,23 +12,42 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/workflows"
 )
 
 type Run struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Status string `json:"status,omitempty"`
-	Nodes  []Node `json:"nodes,omitempty"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Status     string `json:"status,omitempty"`
+	StartedAt  int64  `json:"startedAt,omitempty"`
+	FinishedAt int64  `json:"finishedAt,omitempty"`
+	Nodes      []Node `json:"nodes,omitempty"`
 }
 
 type Node struct {
-	Name    string   `json:"name"`
-	Status  string   `json:"status"`
-	Depends []string `json:"depends,omitempty"`
-	Error   string   `json:"error,omitempty"`
-	Log     string   `json:"log,omitempty"`
+	Name       string   `json:"name"`
+	Status     string   `json:"status"`
+	Depends    []string `json:"depends,omitempty"`
+	Error      string   `json:"error,omitempty"`
+	Log        string   `json:"log,omitempty"`
+	StartedAt  int64    `json:"startedAt,omitempty"`
+	FinishedAt int64    `json:"finishedAt,omitempty"`
+}
+
+// parseTime converts a Dagu timestamp to Unix milliseconds. Dagu leaves
+// the field empty for anything that has not reached that point yet, and
+// uses a placeholder for a step that never ran.
+func parseTime(value string) int64 {
+	if value == "" || value == "-" {
+		return 0
+	}
+	stamp, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return 0
+	}
+	return stamp.UnixMilli()
 }
 
 type Client struct {
@@ -82,16 +101,20 @@ func (c *Client) GetRun(ctx context.Context, name, id string) (Run, error) {
 	path := runPath(name, id)
 	var response struct {
 		DAGRunDetails struct {
-			DAGRunID string `json:"dagRunId"`
-			Name     string `json:"name"`
-			Status   string `json:"statusLabel"`
-			Nodes    []struct {
+			DAGRunID   string `json:"dagRunId"`
+			Name       string `json:"name"`
+			Status     string `json:"statusLabel"`
+			StartedAt  string `json:"startedAt"`
+			FinishedAt string `json:"finishedAt"`
+			Nodes      []struct {
 				Step struct {
 					Name    string   `json:"name"`
 					Depends []string `json:"depends"`
 				} `json:"step"`
-				Status string `json:"statusLabel"`
-				Error  string `json:"error"`
+				Status     string `json:"statusLabel"`
+				Error      string `json:"error"`
+				StartedAt  string `json:"startedAt"`
+				FinishedAt string `json:"finishedAt"`
 			} `json:"nodes"`
 		} `json:"dagRunDetails"`
 	}
@@ -99,9 +122,11 @@ func (c *Client) GetRun(ctx context.Context, name, id string) (Run, error) {
 		return Run{}, err
 	}
 	detail := response.DAGRunDetails
-	run := Run{ID: detail.DAGRunID, Name: detail.Name, Status: detail.Status}
+	run := Run{ID: detail.DAGRunID, Name: detail.Name, Status: detail.Status,
+		StartedAt: parseTime(detail.StartedAt), FinishedAt: parseTime(detail.FinishedAt)}
 	for _, source := range detail.Nodes {
-		node := Node{Name: source.Step.Name, Status: source.Status, Depends: source.Step.Depends, Error: source.Error}
+		node := Node{Name: source.Step.Name, Status: source.Status, Depends: source.Step.Depends, Error: source.Error,
+			StartedAt: parseTime(source.StartedAt), FinishedAt: parseTime(source.FinishedAt)}
 		var log struct {
 			Content string `json:"content"`
 		}
