@@ -60,11 +60,18 @@ func (d *DB) GetDailyActivity(since int64, modelFilter, dir string) ([]DailyActi
 		}
 	}
 
-	// Count assistant messages per day, excluding messages from subagent sessions.
+	// Count assistant messages per day, excluding messages from subagent
+	// sessions. Only the model-filtered path needs the message JSON: without
+	// a filter we let SQLite do the counting rather than shipping every
+	// assistant message's blob over just to increment a counter.
+	selectExpr, groupBy := "count(*) as messages", "\n		GROUP BY day"
+	if modelFilter != "" {
+		selectExpr, groupBy = "m.data", ""
+	}
 	query2 := `
 		SELECT
 			date(m.time_created / 1000, 'unixepoch', 'localtime') as day,
-			m.data
+			` + selectExpr + `
 		FROM message m
 		JOIN session s ON s.id = m.session_id
 		WHERE json_extract(m.data, '$.role') = 'assistant'
@@ -75,7 +82,7 @@ func (d *DB) GetDailyActivity(since int64, modelFilter, dir string) ([]DailyActi
 		query2 += "\n		  AND " + dirFrag
 		args2 = append(args2, dirArgs...)
 	}
-	query2 += `
+	query2 += groupBy + `
 		ORDER BY day
 	`
 	rows2, err := d.db.Query(query2, args2...)
@@ -84,29 +91,39 @@ func (d *DB) GetDailyActivity(since int64, modelFilter, dir string) ([]DailyActi
 	}
 	defer rows2.Close()
 
+	addMessages := func(day string, n int) {
+		if da, ok := dayMap[day]; ok {
+			da.Messages += n
+		} else {
+			dayMap[day] = &DailyActivity{Date: day, Messages: n}
+		}
+	}
+
 	for rows2.Next() {
 		var day string
+		if modelFilter == "" {
+			var count int
+			if err := rows2.Scan(&day, &count); err != nil {
+				log.WithError(err).Warn("failed to scan message activity row")
+				continue
+			}
+			addMessages(day, count)
+			continue
+		}
 		var raw string
 		if err := rows2.Scan(&day, &raw); err != nil {
 			log.WithError(err).Warn("failed to scan message activity row")
 			continue
 		}
-		if modelFilter != "" {
-			var md MessageData
-			if err := json.Unmarshal([]byte(raw), &md); err != nil {
-				continue
-			}
-			provider, model := extractModelProvider(md)
-			key := modelKey(provider, model)
-			if key != modelFilter && model != modelFilter {
-				continue
-			}
+		var md MessageData
+		if err := json.Unmarshal([]byte(raw), &md); err != nil {
+			continue
 		}
-		if da, ok := dayMap[day]; ok {
-			da.Messages++
-		} else {
-			dayMap[day] = &DailyActivity{Date: day, Messages: 1}
+		provider, model := extractModelProvider(md)
+		if key := modelKey(provider, model); key != modelFilter && model != modelFilter {
+			continue
 		}
+		addMessages(day, 1)
 	}
 	if err := rows2.Err(); err != nil {
 		return nil, err

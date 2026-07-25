@@ -1284,6 +1284,54 @@ func TestGetDailyActivity_UserMessages(t *testing.T) {
 	}
 }
 
+// TestGetDailyActivity_ModelFilter pins the two assistant-message counting
+// paths against each other: unfiltered counts in SQL, filtered decodes each
+// message's JSON. Both must agree on the same fixture, and the filter must
+// actually exclude other models.
+func TestGetDailyActivity_ModelFilter(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Session", "/project", now, now)
+	for _, m := range []struct{ id, model string }{
+		{"a1", "claude"}, {"a2", "claude"}, {"a3", "gpt"},
+	} {
+		insertMessage(t, db, m.id, "s1", now, map[string]interface{}{
+			"role": "assistant", "providerID": "anthropic", "modelID": m.model,
+		})
+	}
+
+	today := time.Now().Format("2006-01-02")
+	messagesToday := func(t *testing.T, modelFilter string) int {
+		t.Helper()
+		result, err := db.GetDailyActivity(0, modelFilter, "")
+		if err != nil {
+			t.Fatalf("GetDailyActivity(%q): %v", modelFilter, err)
+		}
+		for _, d := range result {
+			if d.Date == today {
+				return d.Messages
+			}
+		}
+		t.Fatalf("today's entry missing for filter %q", modelFilter)
+		return 0
+	}
+
+	if got := messagesToday(t, ""); got != 3 {
+		t.Errorf("unfiltered Messages = %d, want 3", got)
+	}
+	if got := messagesToday(t, "anthropic/claude"); got != 2 {
+		t.Errorf("provider/model filtered Messages = %d, want 2", got)
+	}
+	if got := messagesToday(t, "gpt"); got != 1 {
+		t.Errorf("bare-model filtered Messages = %d, want 1", got)
+	}
+	if got := messagesToday(t, "nope/nothing"); got != 0 {
+		t.Errorf("unmatched filter Messages = %d, want 0", got)
+	}
+}
+
 // --- GetNewAssistantMessages tests ---
 
 func TestGetNewAssistantMessages(t *testing.T) {
