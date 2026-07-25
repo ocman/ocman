@@ -81,11 +81,11 @@ export function PromptSchedules({ directory, remoteId = 'local' }: { directory: 
     }
   };
 
-  const toggleEnabled = async (schedule: PromptSchedule) => {
+  const setEnabled = async (schedule: PromptSchedule, enabled: boolean) => {
     setBusy(schedule.id);
     setError('');
     try {
-      replace(await api.promptSchedules.setEnabled(schedule.id, !schedule.enabled));
+      replace(await api.promptSchedules.setEnabled(schedule.id, enabled));
       listVersion.current++;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Schedule action failed');
@@ -139,7 +139,8 @@ export function PromptSchedules({ directory, remoteId = 'local' }: { directory: 
                 <button className="oc-time-range-btn" disabled={busy === schedule.id} onClick={() => act(schedule, 'run')}>Run now</button>
                 <button className="oc-time-range-btn" disabled={busy === schedule.id} onClick={() => act(schedule, 'cancel')}>Cancel</button>
               </>}
-              {schedule.timingType !== 'once' && schedule.state !== 'running' && <button className="oc-time-range-btn" disabled={busy === schedule.id} onClick={() => toggleEnabled(schedule)}>{schedule.enabled ? 'Disable' : 'Enable'}</button>}
+              {schedule.state === 'failed' && schedule.timingType !== 'once' && <button className="oc-time-range-btn" disabled={busy === schedule.id} onClick={() => setEnabled(schedule, true)}>Retry schedule</button>}
+              {schedule.timingType !== 'once' && schedule.state !== 'running' && <button className="oc-time-range-btn" disabled={busy === schedule.id} onClick={() => setEnabled(schedule, !schedule.enabled)}>{schedule.enabled ? 'Disable' : 'Enable'}</button>}
               {schedule.sessionId && <Link to={`/session/${encodeURIComponent(schedule.sessionId)}?platform=${encodeURIComponent(schedule.platform ?? '')}`}>Open session</Link>}
             </div>
           </article>

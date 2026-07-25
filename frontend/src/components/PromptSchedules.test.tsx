@@ -112,6 +112,21 @@ it('creates recurring schedules and toggles enabled state', async () => {
   expect(apiMock.setEnabled).toHaveBeenCalledWith('ps_recurring', false);
 });
 
+it('retries a failed recurring schedule even when it is still enabled', async () => {
+  const user = userEvent.setup();
+  const failed = {
+    ...scheduled, id: 'ps_failed', timingType: 'interval' as const, intervalMinutes: 15,
+    state: 'failed' as const, enabled: true, error: 'remote unavailable',
+  };
+  apiMock.list.mockResolvedValue([failed]);
+  apiMock.setEnabled.mockResolvedValue({ ...failed, state: 'scheduled', error: undefined });
+  render(<MemoryRouter><PromptSchedules directory="/repo" /></MemoryRouter>);
+
+  await user.click(await screen.findByRole('button', { name: 'Retry schedule' }));
+  expect(apiMock.setEnabled).toHaveBeenCalledWith('ps_failed', true);
+  expect(screen.getByText('scheduled')).toBeInTheDocument();
+});
+
 it('renders the next occurrence in the configured timezone', async () => {
   const runAt = Date.parse('2030-01-02T03:04:00Z');
   apiMock.list.mockResolvedValue([{ ...scheduled, runAt, timezone: 'America/New_York' }]);
