@@ -11,10 +11,12 @@ import (
 	"github.com/NoUseFreak/ocman/internal/gitexec"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 func initRepo(t *testing.T) string {
 	t.Helper()
+	testutil.RequireGit(t)
 	dir := t.TempDir()
 	run := func(args ...string) {
 		cmd := exec.Command("git", args...)

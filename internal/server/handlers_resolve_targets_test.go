@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/remote"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 func TestHandleResolveTargets_SingleHostLocalOnly(t *testing.T) {
@@ -55,6 +56,7 @@ func TestHandleResolveTargets_RequiresDir(t *testing.T) {
 // localGitOrigin returns a non-empty URL.
 func initOriginRepo(t *testing.T) string {
 	t.Helper()
+	testutil.RequireGit(t)
 	dir := t.TempDir()
 	run := func(args ...string) {
 		cmd := exec.Command("git", args...)

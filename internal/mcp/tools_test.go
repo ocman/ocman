@@ -25,6 +25,7 @@ import (
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 // openTestStateDB creates an in-memory state.DB for tool tests.
@@ -1082,6 +1083,7 @@ func TestNewSession_ExplicitModelOverridesParent(t *testing.T) {
 }
 
 func TestNewSession_WorktreeInheritsParentModel(t *testing.T) {
+	testutil.RequireGit(t)
 	repoDir := t.TempDir()
 	for _, args := range [][]string{
 		{"init"},
@@ -1178,6 +1180,7 @@ func TestNewSession_WorktreeRequiresBranch(t *testing.T) {
 }
 
 func TestNewSession_WorktreeCreatesWithModel(t *testing.T) {
+	testutil.RequireGit(t)
 	repoDir := t.TempDir()
 	for _, args := range [][]string{
 		{"init"},

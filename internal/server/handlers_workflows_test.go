@@ -21,6 +21,7 @@ import (
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 	"github.com/NoUseFreak/ocman/internal/workflows"
 )
 
@@ -513,6 +514,7 @@ func TestCapabilitiesExposeWorkflowsWithoutPlatform(t *testing.T) {
 // worktree shard provider end to end against a temporary git repo, proving
 // it creates a shard worktree and reuses it idempotently.
 func TestWorkspaceProviderCreatesAndReusesShard(t *testing.T) {
+	testutil.RequireGit(t)
 	repo := t.TempDir()
 	for _, args := range [][]string{
 		{"init"}, {"config", "user.email", "t@t"}, {"config", "user.name", "t"},
