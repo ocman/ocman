@@ -119,6 +119,15 @@ func (f *fakeStore) CompletePromptSchedule(id string, nextRunAt, now int64) erro
 	return nil
 }
 
+func (f *fakeStore) ReschedulePromptSchedule(id string, nextRunAt int64, errorText string, now int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	schedule := f.schedules[id]
+	schedule.State, schedule.RunAt, schedule.Error, schedule.FinishedAt, schedule.UpdatedAt = StateScheduled, nextRunAt, errorText, now, now
+	f.schedules[id] = schedule
+	return nil
+}
+
 func (f *fakeStore) SetPromptScheduleEnabled(id string, enabled bool, runAt, now int64) (state.PromptSchedule, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -322,6 +331,48 @@ func TestRunNowAndErrorsPersist(t *testing.T) {
 	got, err := svc.RunNow(context.Background(), created.ID)
 	if err != nil || got.State != StateFailed || got.Error != "send failed" || got.SessionID != "session-1" {
 		t.Fatalf("RunNow: schedule=%+v err=%v", got, err)
+	}
+}
+
+func TestRecurringDispatchFailuresReschedule(t *testing.T) {
+	for name, sessions := range map[string]*fakeSessions{
+		"create": {create: errors.New("create failed")},
+		"send":   {send: errors.New("send failed")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := newFakeStore()
+			store.schedules["recurring"] = state.PromptSchedule{ID: "recurring", Directory: "/repo", Prompt: "go", RunAt: 1000, State: StateScheduled, TimingType: TimingInterval, IntervalMinutes: 10, Timezone: "UTC", Enabled: true, SessionMode: SessionModeFresh}
+			if err := testPromptScheduleService(store, sessions).Tick(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			got := store.schedules["recurring"]
+			if got.State != StateScheduled || got.RunAt != time.UnixMilli(2000).Add(10*time.Minute).UnixMilli() || got.Error == "" {
+				t.Fatalf("schedule=%+v", got)
+			}
+		})
+	}
+}
+
+func TestOnceDispatchFailureStaysFailed(t *testing.T) {
+	store := newFakeStore()
+	store.schedules["once"] = state.PromptSchedule{ID: "once", Directory: "/repo", Prompt: "go", RunAt: 1000, State: StateScheduled, TimingType: TimingOnce, Timezone: "UTC", Enabled: true, SessionMode: SessionModeFresh}
+	if err := testPromptScheduleService(store, &fakeSessions{create: errors.New("create failed")}).Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.schedules["once"]; got.State != StateFailed || got.Error != "create failed" {
+		t.Fatalf("schedule=%+v", got)
+	}
+}
+
+func TestCanceledDispatchLeavesScheduleRunning(t *testing.T) {
+	store := newFakeStore()
+	store.schedules["canceled"] = state.PromptSchedule{ID: "canceled", Directory: "/repo", Prompt: "go", RunAt: 1000, State: StateScheduled, TimingType: TimingInterval, IntervalMinutes: 10, Timezone: "UTC", Enabled: true, SessionMode: SessionModeFresh}
+	err := testPromptScheduleService(store, &fakeSessions{create: context.Canceled}).Tick(t.Context())
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Tick error = %v", err)
+	}
+	if got := store.schedules["canceled"]; got.State != StateRunning || got.Error != "" {
+		t.Fatalf("schedule=%+v", got)
 	}
 }
 

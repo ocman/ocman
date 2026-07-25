@@ -43,6 +43,7 @@ type Store interface {
 	LinkPromptScheduleSession(string, string, string, int64) error
 	FinishPromptSchedule(string, string, string, int64) error
 	CompletePromptSchedule(string, int64, int64) error
+	ReschedulePromptSchedule(string, int64, string, int64) error
 	SetPromptScheduleEnabled(string, bool, int64, int64) (state.PromptSchedule, error)
 	FailRunningPromptSchedules(int64, string) error
 }
@@ -229,15 +230,15 @@ func (s *promptScheduleService) dispatch(ctx context.Context, schedule state.Pro
 	if !reusing {
 		createdPlatform, resp, err := s.sessions.CreateScheduledSession(ctx, schedule.RemoteID, schedule.Directory)
 		if err != nil {
-			return s.finishFailed(schedule.ID, err)
+			return s.finishDispatchError(schedule, err)
 		}
 		platformID, sessionID = createdPlatform, resp.ID
 		if err := s.store.LinkPromptScheduleSession(schedule.ID, platformID, sessionID, s.now().UnixMilli()); err != nil {
-			return s.finishFailed(schedule.ID, fmt.Errorf("linking scheduled session: %w", err))
+			return s.finishDispatchError(schedule, fmt.Errorf("linking scheduled session: %w", err))
 		}
 	}
 	if err := s.sessions.SendScheduledMessage(ctx, platformID, platforms.SendMessageRequest{SessionID: sessionID, Message: schedule.Prompt}, reusing); err != nil {
-		return s.finishFailed(schedule.ID, err)
+		return s.finishDispatchError(schedule, err)
 	}
 	if schedule.TimingType != TimingOnce {
 		next, err := nextScheduleRun(schedule.TimingType, schedule.RunAt, schedule.IntervalMinutes, schedule.Cron, schedule.Timezone, s.now())
@@ -247,6 +248,24 @@ func (s *promptScheduleService) dispatch(ctx context.Context, schedule state.Pro
 		return s.store.CompletePromptSchedule(schedule.ID, next, s.now().UnixMilli())
 	}
 	return s.store.FinishPromptSchedule(schedule.ID, StateCompleted, "", s.now().UnixMilli())
+}
+
+func (s *promptScheduleService) finishDispatchError(schedule state.PromptSchedule, cause error) error {
+	if errors.Is(cause, context.Canceled) {
+		return cause
+	}
+	if schedule.TimingType == TimingOnce {
+		return s.finishFailed(schedule.ID, cause)
+	}
+	now := s.now()
+	next, err := nextScheduleRun(schedule.TimingType, schedule.RunAt, schedule.IntervalMinutes, schedule.Cron, schedule.Timezone, now)
+	if err != nil {
+		return s.finishFailed(schedule.ID, err)
+	}
+	if err := s.store.ReschedulePromptSchedule(schedule.ID, next, cause.Error(), now.UnixMilli()); err != nil {
+		return fmt.Errorf("rescheduling after %w: %w", cause, err)
+	}
+	return nil
 }
 
 func (s *promptScheduleService) finishFailed(id string, cause error) error {

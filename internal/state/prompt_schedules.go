@@ -172,6 +172,11 @@ func (d *DB) CompletePromptSchedule(id string, nextRunAt, now int64) error {
 	return err
 }
 
+func (d *DB) ReschedulePromptSchedule(id string, nextRunAt int64, errorText string, now int64) error {
+	_, err := d.db.Exec(`UPDATE prompt_schedule SET state = 'scheduled', run_at = ?, error = ?, finished_at = ?, updated_at = ? WHERE id = ? AND state = 'running'`, nextRunAt, errorText, now, now, id)
+	return err
+}
+
 func (d *DB) SetPromptScheduleEnabled(id string, enabled bool, runAt, now int64) (PromptSchedule, error) {
 	_, err := d.db.Exec(`UPDATE prompt_schedule SET enabled = ?, run_at = ?, state = CASE WHEN ? THEN 'scheduled' ELSE state END, error = CASE WHEN ? THEN '' ELSE error END, updated_at = ? WHERE id = ? AND state != 'running'`, enabled, runAt, enabled, enabled, now, id)
 	if err != nil {

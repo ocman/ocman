@@ -109,12 +109,18 @@ func TestRecurringPromptSchedulePersistenceAndDisabledClaim(t *testing.T) {
 	if _, ok, err := db.ClaimNextDuePromptSchedule(2000); err != nil || !ok {
 		t.Fatalf("enabled claim: ok=%v err=%v", ok, err)
 	}
-	if err := db.CompletePromptSchedule(schedule.ID, 3000, 2100); err != nil {
+	if err := db.ReschedulePromptSchedule(schedule.ID, 3000, "temporary failure", 2100); err != nil {
 		t.Fatal(err)
 	}
 	got, _ = db.GetPromptSchedule(schedule.ID)
-	if got.State != "scheduled" || got.RunAt != 3000 {
-		t.Fatalf("completed recurring schedule=%+v", got)
+	if got.State != "scheduled" || got.RunAt != 3000 || got.Error != "temporary failure" {
+		t.Fatalf("rescheduled recurring schedule=%+v", got)
+	}
+	if _, ok, err := db.ClaimNextDuePromptSchedule(3000); err != nil || !ok {
+		t.Fatalf("reclaim: ok=%v err=%v", ok, err)
+	}
+	if err := db.CompletePromptSchedule(schedule.ID, 4000, 3100); err != nil {
+		t.Fatal(err)
 	}
 }
 
