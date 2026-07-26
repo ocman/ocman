@@ -157,9 +157,11 @@ func (s *Server) runPromptSchedules(ctx context.Context) {
 	ticker := time.NewTicker(promptScheduleTickInterval)
 	defer ticker.Stop()
 	for {
-		if err := s.promptScheduleSvc.Tick(ctx); err != nil {
-			log.WithError(err).Warn("prompt-schedules: tick")
-		}
+		runWithRecover("prompt-schedules", func() {
+			if err := s.promptScheduleSvc.Tick(ctx); err != nil {
+				log.WithError(err).Warn("prompt-schedules: tick")
+			}
+		})
 		select {
 		case <-ctx.Done():
 			return
