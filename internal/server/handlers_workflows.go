@@ -79,8 +79,7 @@ func (s *Server) handleWorkflows(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			w.WriteHeader(http.StatusCreated)
-			writeJSON(w, version)
+			writeJSONStatus(w, http.StatusCreated, version)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -126,8 +125,7 @@ func (s *Server) handleWorkflows(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		w.WriteHeader(http.StatusCreated)
-		writeJSON(w, run)
+		writeJSONStatus(w, http.StatusCreated, run)
 	default:
 		http.Error(w, "not found", http.StatusNotFound)
 	}

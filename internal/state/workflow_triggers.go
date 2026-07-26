@@ -24,6 +24,7 @@ func (d *DB) ListCurrentWorkflowVersions() ([]WorkflowVersion, error) {
 		       v.definition_json, v.concurrency, v.created_at
 		FROM workflow_version v
 		JOIN workflow_definition d ON d.id = v.workflow_id AND d.current_revision = v.revision
+		WHERE d.archived_at IS NULL
 		ORDER BY v.created_at, v.id`)
 	if err != nil {
 		return nil, fmt.Errorf("listing current workflow versions: %w", err)
@@ -46,6 +47,8 @@ func (d *DB) ListQueuedWorkflowVersions() ([]WorkflowVersion, error) {
 		       v.definition_json, v.concurrency, v.created_at
 		FROM workflow_version v
 		JOIN workflow_trigger_firing f ON f.version_id = v.id AND f.decision = 'queued'
+		JOIN workflow_definition d ON d.id = v.workflow_id
+		WHERE d.archived_at IS NULL
 		GROUP BY v.id ORDER BY min(f.id)`)
 	if err != nil {
 		return nil, fmt.Errorf("listing queued workflow versions: %w", err)

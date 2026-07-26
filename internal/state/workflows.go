@@ -750,6 +750,12 @@ func completeWorkflowNodeTx(tx *sql.Tx, runID string, now int64) error {
 		}
 		ready = append(ready, id)
 	}
+	// rows.Err() before acting: a driver error mid-iteration would
+	// otherwise silently truncate the ready set and strand the run.
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("iterating ready workflow nodes: %w", err)
+	}
 	if err := rows.Close(); err != nil {
 		return err
 	}
@@ -829,6 +835,12 @@ func (d *DB) ApproveWorkflowNode(runID, nodeID string, now int64) error {
 				return fmt.Errorf("scanning ready workflow node: %w", err)
 			}
 			ready = append(ready, node)
+		}
+		// rows.Err() before acting: a driver error mid-iteration would
+		// otherwise silently truncate the ready set and strand the run.
+		if err = rows.Err(); err != nil {
+			rows.Close()
+			return fmt.Errorf("iterating ready workflow nodes: %w", err)
 		}
 		if err = rows.Close(); err != nil {
 			return err
@@ -1021,6 +1033,12 @@ func (d *DB) ResolveWorkflowAttemptBy(runID string, attemptID int64, resolution,
 					return err
 				}
 				ready = append(ready, id)
+			}
+			// rows.Err() before acting: a driver error mid-iteration
+			// would otherwise silently truncate the unblocked set.
+			if err = rows.Err(); err != nil {
+				rows.Close()
+				return fmt.Errorf("iterating nodes unblocked by resolution: %w", err)
 			}
 			if err = rows.Close(); err != nil {
 				return err

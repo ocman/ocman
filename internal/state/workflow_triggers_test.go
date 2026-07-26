@@ -59,6 +59,45 @@ func TestWorkflowTriggerQueuePersistsAndStartsAtomically(t *testing.T) {
 	}
 }
 
+// Archiving a workflow must stop it scheduling. The trigger scheduler
+// iterates ListCurrentWorkflowVersions / ListQueuedWorkflowVersions, so
+// both have to honour workflow_definition.archived_at the same way the
+// user-facing ListWorkflowVersions does.
+func TestArchivedWorkflowVersionsStopScheduling(t *testing.T) {
+	db := openTestStateDB(t)
+	version, err := db.InsertWorkflowVersion(WorkflowVersion{
+		ID: "version-1", WorkflowID: "workflow-1", Name: "Workflow", MetadataVersion: "1", DefinitionJSON: `{}`,
+		Concurrency: 1, CreatedAt: 1, Nodes: []WorkflowNode{{ID: "approve", Name: "Approve", Type: "approval"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	firing := WorkflowTriggerFiring{VersionID: version.ID, TriggerID: "cron", FiredAt: 2, Detail: "slot", SnapshotJSON: `{"id":"cron"}`, Decision: "queued"}
+	triggerState := WorkflowTriggerState{VersionID: version.ID, TriggerID: "cron", DetectionJSON: `{"slot":1}`, LastDecision: "queued", LastCheckedAt: 2, NextCheckAt: 3}
+	if err := db.CommitWorkflowTriggerFiring(nil, firing, triggerState); err != nil {
+		t.Fatal(err)
+	}
+
+	// Sanity: schedulable before archiving.
+	if current, err := db.ListCurrentWorkflowVersions(); err != nil || len(current) != 1 {
+		t.Fatalf("pre-archive current versions: %+v, %v", current, err)
+	}
+	if queued, err := db.ListQueuedWorkflowVersions(); err != nil || len(queued) != 1 {
+		t.Fatalf("pre-archive queued versions: %+v, %v", queued, err)
+	}
+
+	if err := db.ArchiveWorkflowVersion(version.ID, 5); err != nil {
+		t.Fatal(err)
+	}
+
+	if current, err := db.ListCurrentWorkflowVersions(); err != nil || len(current) != 0 {
+		t.Fatalf("archived workflow still scheduled by ListCurrentWorkflowVersions: %+v, %v", current, err)
+	}
+	if queued, err := db.ListQueuedWorkflowVersions(); err != nil || len(queued) != 0 {
+		t.Fatalf("archived workflow still scheduled by ListQueuedWorkflowVersions: %+v, %v", queued, err)
+	}
+}
+
 func TestWorkflowTriggerFiringRollsBackRunOnFailure(t *testing.T) {
 	db := openTestStateDB(t)
 	version, err := db.InsertWorkflowVersion(WorkflowVersion{ID: "version-1", WorkflowID: "workflow-1", Name: "Workflow", MetadataVersion: "1", DefinitionJSON: `{}`, Concurrency: 1, CreatedAt: 1})

@@ -672,17 +672,22 @@ func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSession
 		ID string `json:"id"`
 	}
 	body, _ := io.ReadAll(resp.Body)
-	if err := json.Unmarshal(body, &parsed); err != nil || parsed.ID == "" {
-		// Fall back to the raw body so callers can still see whatever
-		// OpenCode returned; but if we got a parseable ID, prefer that.
+	// A session without an ID is unusable — the caller can never address
+	// it. Fail loudly rather than returning a "created" session with an
+	// empty ID, surfacing the raw body so the cause is visible.
+	if err := json.Unmarshal(body, &parsed); err != nil {
 		if len(body) == 0 {
 			return nil, errors.New("opencode create-session: empty response")
 		}
+		return nil, fmt.Errorf("opencode create-session: unparseable response: %s", strings.TrimSpace(string(body)))
+	}
+	if parsed.ID == "" {
+		return nil, fmt.Errorf("opencode create-session: response carried no session id: %s", strings.TrimSpace(string(body)))
 	}
 	createPhase.EndWithDesc("opencode POST /session")
 
 	// If a custom title was provided, set it immediately after creation.
-	if req.Title != "" && parsed.ID != "" {
+	if req.Title != "" {
 		titlePhase := srvtiming.Begin(ctx, "http_title")
 		payload, err := marshalRequest(map[string]string{"title": req.Title})
 		if err != nil {
@@ -737,6 +742,3 @@ func boolField(m map[string]interface{}, key string) bool {
 	}
 	return false
 }
-
-// Lightly-annotated alias so the public Platform interface doesn't leak
-// the OpenCode-specific raw struct name.

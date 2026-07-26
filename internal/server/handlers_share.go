@@ -102,8 +102,7 @@ func (s *Server) handleCreateSessionShare(w http.ResponseWriter, r *http.Request
 			serverError(w, "creating share link", err)
 			return
 		}
-		w.WriteHeader(http.StatusCreated)
-		writeJSON(w, s.shareLinkView(r, link))
+		writeJSONStatus(w, http.StatusCreated, s.shareLinkView(r, link))
 	})
 }
 

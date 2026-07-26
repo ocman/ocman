@@ -132,9 +132,11 @@ func (s *Server) runWorkflowEngine(ctx context.Context) {
 	ticker := time.NewTicker(workflowEngineTickInterval)
 	defer ticker.Stop()
 	for {
-		if err := s.workflowSvc().Tick(ctx); err != nil {
-			log.WithError(err).Warn("workflow-engine: tick")
-		}
+		runWithRecover("workflow-engine", func() {
+			if err := s.workflowSvc().Tick(ctx); err != nil {
+				log.WithError(err).Warn("workflow-engine: tick")
+			}
+		})
 		select {
 		case <-ctx.Done():
 			return

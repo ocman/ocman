@@ -19,9 +19,16 @@ import (
 // the Server was constructed directly (e.g. some tests use &Server{}
 // rather than New). Handlers must resolve host operations through this.
 func (s *Server) router() *hostsvc.Router {
-	if s.hostRouter == nil {
-		s.hostRouter = hostsvc.NewRouter(s.newLocalHost())
-	}
+	// Once, not a bare nil check: StartOnListener launches background
+	// loops (auto-archive, prompt schedules, ...) that reach router()
+	// concurrently with the first HTTP handlers, and an unguarded lazy
+	// assignment races them. The nil check stays *inside* the Once so a
+	// test that installs its own router before first use still wins.
+	s.hostRouterOnce.Do(func() {
+		if s.hostRouter == nil {
+			s.hostRouter = hostsvc.NewRouter(s.newLocalHost())
+		}
+	})
 	return s.hostRouter
 }
 

@@ -87,7 +87,8 @@ type Server struct {
 	// explicit remote owner (AD-16). git/worktree/tmux/projects handlers
 	// delegate through it instead of calling host helpers directly, so
 	// remote support is automatic once remote hosts are registered.
-	hostRouter *hostsvc.Router
+	hostRouter     *hostsvc.Router
+	hostRouterOnce sync.Once
 
 	// remotes is the hub-side manager of attached remote connections
 	// (multi-remote support). Nil for single-host installs. The /api/
@@ -207,11 +208,11 @@ func (r registryRef) PlatformForSession(ctx context.Context, sessionID string) (
 // response. The new session already exists; the index only feeds cached
 // stats, which the background ticker also keeps fresh.
 func (s *Server) refreshProjectsIndexAsync() {
-	go func() {
+	go runWithRecover("projects-index-async", func() {
 		if err := s.refreshProjectsIndex(); err != nil {
 			log.WithError(err).Warn("refreshing projects index after session creation")
 		}
-	}()
+	})
 }
 
 // SessionService returns the session mutation service so main.go can
@@ -349,6 +350,10 @@ func (s *Server) Start(ctx context.Context) error {
 // This variant is used by the GUI mode, which picks the port before handing
 // the listener here so Wails can point its proxy at the correct address.
 func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
+	// Build the host router on this goroutine, before any background loop
+	// or handler can reach it. router() assigns lazily, and the loops
+	// started below race that assignment otherwise.
+	s.router()
 	// Seed the cached judge delay so the first permission event has it
 	// available without a DB round-trip.
 	if s.stateDB != nil {
@@ -655,9 +660,21 @@ func (s *Server) post(h http.HandlerFunc) http.HandlerFunc {
 	return requirePOST(s.requireAuth(h))
 }
 
-// writeJSON writes a JSON response.
+// writeJSON writes a JSON response with an implicit 200 status.
 func writeJSON(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		log.WithError(err).Error("failed to encode JSON response")
+	}
+}
+
+// writeJSONStatus writes a JSON response with an explicit status code.
+// Callers must not call WriteHeader themselves first: the header map is
+// flushed by WriteHeader, so a Content-Type set afterwards is silently
+// dropped and the client sniffs the type instead.
+func writeJSONStatus(w http.ResponseWriter, status int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(data); err != nil {
 		log.WithError(err).Error("failed to encode JSON response")
 	}

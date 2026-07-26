@@ -68,6 +68,13 @@ func TestCreateListRevokeShareLink(t *testing.T) {
 	if createRR.Code != http.StatusCreated {
 		t.Fatalf("create status = %d, want 201; body=%s", createRR.Code, createRR.Body)
 	}
+	// The 201 must still carry a JSON content type. Setting the header
+	// after WriteHeader silently drops it and leaves the client sniffing.
+	// Read it off Result(), which honours the WriteHeader snapshot the
+	// way a real client does; Header() returns the still-mutable map.
+	if ct := createRR.Result().Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Errorf("create Content-Type = %q, want application/json", ct)
+	}
 	var created shareLinkView
 	if err := json.Unmarshal(createRR.Body.Bytes(), &created); err != nil {
 		t.Fatalf("unmarshal created: %v", err)

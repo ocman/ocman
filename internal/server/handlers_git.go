@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"path/filepath"
@@ -121,8 +120,7 @@ func (s *Server) handleGitCheckout(w http.ResponseWriter, r *http.Request) {
 		Dir    string `json:"dir"`
 		Branch string `json:"branch"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+	if !readAndUnmarshal(w, r, maxRequestBody, &body) {
 		return
 	}
 	if body.Dir == "" || body.Branch == "" {
