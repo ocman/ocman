@@ -116,3 +116,60 @@ func TestWorkflowTriggerFiringRollsBackRunOnFailure(t *testing.T) {
 		t.Fatal("failed firing transaction retained its run")
 	}
 }
+
+// The scheduler drives triggers from ListCurrentWorkflowVersions. That
+// has to mean the version the user activated, not merely the newest one
+// published: deactivating a workflow is how a user stops it running, and
+// the run view offers no start button once it is inactive.
+func TestDeactivatedWorkflowStopsScheduling(t *testing.T) {
+	db := openTestStateDB(t)
+	version, err := db.InsertWorkflowVersion(WorkflowVersion{ID: "v1", WorkflowID: "w1", Name: "W",
+		MetadataVersion: "1", DefinitionJSON: `{}`, Concurrency: 1, CreatedAt: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !version.Active {
+		t.Fatal("first published revision should be active")
+	}
+	if current, err := db.ListCurrentWorkflowVersions(); err != nil || len(current) != 1 {
+		t.Fatalf("active workflow not schedulable: %#v, %v", current, err)
+	}
+	if _, err := db.DeactivateWorkflowVersion(version.ID, 2); err != nil {
+		t.Fatal(err)
+	}
+	current, err := db.ListCurrentWorkflowVersions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != 0 {
+		t.Fatalf("deactivated workflow still scheduled: %#v", current)
+	}
+}
+
+// Publishing a revision does not activate it; only revision 1 activates
+// automatically. Scheduling the newest revision would silently run a
+// version the user never activated, and a different one from the manual
+// start button, which uses the active version.
+func TestSchedulingFollowsTheActiveRevisionNotTheNewest(t *testing.T) {
+	db := openTestStateDB(t)
+	first, err := db.InsertWorkflowVersion(WorkflowVersion{ID: "v1", WorkflowID: "w1", Name: "W",
+		MetadataVersion: "1", DefinitionJSON: `{"rev":1}`, Concurrency: 1, CreatedAt: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.InsertWorkflowVersion(WorkflowVersion{ID: "v2", WorkflowID: "w1", Name: "W",
+		MetadataVersion: "1", DefinitionJSON: `{"rev":2}`, Concurrency: 1, CreatedAt: 2}); err != nil {
+		t.Fatal(err)
+	}
+	active, err := db.GetActiveWorkflowVersion("w1")
+	if err != nil || active.ID != first.ID {
+		t.Fatalf("active version = %+v, %v; want %s", active, err, first.ID)
+	}
+	current, err := db.ListCurrentWorkflowVersions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != 1 || current[0].ID != first.ID {
+		t.Fatalf("scheduler picked %#v, want the active version %s", current, first.ID)
+	}
+}
