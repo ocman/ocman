@@ -17,6 +17,17 @@ const (
 	// childSessionWatchInterval is how often the watcher polls for
 	// child session completion.
 	childSessionWatchInterval = 5 * time.Second
+
+	// childOrphanPollLimit is how many consecutive polls may fail to
+	// resolve a child (or its parent) before the row is reaped. A remote
+	// mid-reconnect resolves again well within this; a deleted session
+	// never will.
+	childOrphanPollLimit = 12
+
+	// childOrphanGrace is how long after creation a child is exempt from
+	// reaping, so a session that has not yet appeared in the platform's
+	// listing is never mistaken for a deleted one.
+	childOrphanGrace = 2 * time.Minute
 )
 
 // childSessionWatchTickFn is the per-tick body of runChildSessionWatcher,
@@ -90,7 +101,16 @@ func (s *Server) processChildSession(ctx context.Context, cs state.ChildSession)
 	}
 	// Infer the current status via the platform adapter.
 	newStatus, summary := s.inferChildStatus(ctx, cs)
-	if newStatus == "" || newStatus == cs.Status {
+	if newStatus == "" {
+		// The session resolves on no platform: deleted in OpenCode, or
+		// its owning remote was removed. Left alone the row stays
+		// non-terminal forever, costs a registry fan-out every tick
+		// (a gRPC round trip per remote), and strands any waiter.
+		s.reapOrphanChild(ctx, cs, "child session is no longer available (deleted, or its machine was removed)")
+		return
+	}
+	s.clearChildUnresolved(cs.ID)
+	if newStatus == cs.Status {
 		return
 	}
 
@@ -120,6 +140,52 @@ func (s *Server) processChildSession(ctx context.Context, cs state.ChildSession)
 	}
 }
 
+// reapOrphanChild settles a child the watcher can no longer resolve, so
+// the row leaves ListPendingChildSessions and any waiter is released.
+// Only after childOrphanPollLimit consecutive failures, and never within
+// childOrphanGrace of creation, so a brief remote outage or a session
+// that has not yet surfaced is not mistaken for a deleted one.
+func (s *Server) reapOrphanChild(ctx context.Context, cs state.ChildSession, reason string) {
+	if time.Since(time.UnixMilli(cs.CreatedAt)) < childOrphanGrace {
+		return
+	}
+	if s.recordChildUnresolved(cs.ID) < childOrphanPollLimit {
+		return
+	}
+	s.clearChildUnresolved(cs.ID)
+	log.WithFields(log.Fields{
+		"childSessionID":  cs.ID,
+		"parentSessionID": cs.ParentSessionID,
+		"reason":          reason,
+	}).Warn("mcp-watcher: reaping unresolvable child session")
+
+	if err := s.stateDB.UpdateChildSession(cs.ID, "error", reason, time.Now().UnixMilli()); err != nil {
+		log.WithError(err).WithField("childSessionID", cs.ID).Warn("mcp-watcher: reaping child session")
+		return
+	}
+	cs.Status = "error"
+	cs.Summary = reason
+	s.deliverChildResult(ctx, cs, "error", reason)
+}
+
+// recordChildUnresolved counts a consecutive failed resolution and
+// returns the running total.
+func (s *Server) recordChildUnresolved(childID string) int {
+	s.childUnresolvedMu.Lock()
+	defer s.childUnresolvedMu.Unlock()
+	if s.childUnresolved == nil {
+		s.childUnresolved = map[string]int{}
+	}
+	s.childUnresolved[childID]++
+	return s.childUnresolved[childID]
+}
+
+func (s *Server) clearChildUnresolved(childID string) {
+	s.childUnresolvedMu.Lock()
+	delete(s.childUnresolved, childID)
+	s.childUnresolvedMu.Unlock()
+}
+
 func (s *Server) deliverChildResult(ctx context.Context, cs state.ChildSession, status, summary string) {
 	latest, err := s.stateDB.GetChildSession(cs.ID)
 	if err != nil {
@@ -130,7 +196,16 @@ func (s *Server) deliverChildResult(ctx context.Context, cs state.ChildSession, 
 		if s.childResults != nil && s.childResults.Deliver(cs.ID, internalmcp.ChildResult{Status: status, Summary: summary}) {
 			return
 		}
-		_, _ = s.stateDB.CompareAndSetChildResultDelivery(cs.ID, "waiting", "disconnected")
+		// No in-process waiter: ocman restarted while the parent was
+		// blocked on new_session. awaitChildResult tells the parent to
+		// reconnect when IT observes the disconnect, but after a restart
+		// the broker is empty and nobody does — so the parent hears
+		// nothing and typically re-runs new_session, duplicating the
+		// child's work. Enqueue the same reminder here.
+		disconnected, err := s.stateDB.CompareAndSetChildResultDelivery(cs.ID, "waiting", "disconnected")
+		if err == nil && disconnected {
+			s.deferChildResultReconnect(cs.ID)
+		}
 		return
 	case state.ChildResultAsyncPending:
 		claimed, claimErr := s.stateDB.CompareAndSetChildResultDelivery(cs.ID, state.ChildResultAsyncPending, state.ChildResultAsyncQueueing)
@@ -212,10 +287,41 @@ func (s *Server) inferChildStatus(ctx context.Context, cs state.ChildSession) (s
 func (s *Server) injectResultIntoParent(ctx context.Context, cs state.ChildSession, status, summary string) {
 	p, ok := s.registry.PlatformForSession(ctx, cs.ParentSessionID)
 	if !ok {
+		// No parent to deliver to. Retrying forever re-listed this row
+		// every tick and logged a WARN each time; once the parent has
+		// been unresolvable for long enough, drop the result.
+		if s.recordChildUnresolved(cs.ID) >= childOrphanPollLimit {
+			s.clearChildUnresolved(cs.ID)
+			log.WithFields(log.Fields{
+				"parentSessionID": cs.ParentSessionID,
+				"childSessionID":  cs.ID,
+			}).Warn("mcp-watcher: dropping child result; parent session is gone")
+			_ = s.stateDB.SetChildResultDelivery(cs.ID, "delivered")
+			return
+		}
 		log.WithFields(log.Fields{
 			"parentSessionID": cs.ParentSessionID,
 			"childSessionID":  cs.ID,
-		}).Warn("mcp-watcher: parent session platform not found; skipping injection")
+		}).Debug("mcp-watcher: parent session platform not found; skipping injection")
+		return
+	}
+	s.clearChildUnresolved(cs.ID)
+
+	// The parent was archived while the child was working. Injecting the
+	// result would advance the parent's time_updated, auto-unarchive it,
+	// and start a fresh turn in a session the user deliberately hid.
+	// Drop the injection — the child's status and summary stay readable
+	// via list_child_sessions and the UI — and settle the row so the
+	// watcher stops revisiting it.
+	if archived, err := s.stateDB.IsSessionArchived(string(p.ID()), cs.ParentSessionID); err != nil {
+		log.WithError(err).WithField("parentSessionID", cs.ParentSessionID).
+			Warn("mcp-watcher: checking parent archive state")
+	} else if archived {
+		log.WithFields(log.Fields{
+			"parentSessionID": cs.ParentSessionID,
+			"childSessionID":  cs.ID,
+		}).Info("mcp-watcher: parent session is archived; dropping child result")
+		_ = s.stateDB.SetChildResultDelivery(cs.ID, "delivered")
 		return
 	}
 

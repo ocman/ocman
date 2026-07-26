@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/XSAM/otelsql"
+	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel/attribute"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	_ "modernc.org/sqlite"
@@ -153,7 +154,71 @@ func OpenFromSQL(sqlDB *sql.DB) (*DB, error) {
 // init bootstraps the schema to latestSchemaVersion. See migrate.go
 // for the migration plan.
 func (d *DB) init() error {
-	return migrate(d.db)
+	if err := migrate(d.db); err != nil {
+		return err
+	}
+	enableForeignKeysIfClean(d.db)
+	return nil
+}
+
+// enableForeignKeysIfClean turns on SQLite's foreign-key enforcement,
+// but only for a database that already satisfies its declared
+// constraints. The pragma defaults OFF and nothing set it, so every
+// REFERENCES clause in the workflow tables has been decorative; turning
+// it on blindly would start failing writes on any existing database that
+// already violates one. PRAGMA foreign_key_check answers that per
+// machine, so each install decides for itself.
+//
+// Soft-fail throughout: enforcement is a safety net, never a reason to
+// refuse to start.
+//
+// ponytail: a full check at every boot. It scans the FK-bearing tables
+// (hundreds of rows in practice); gate it on a recorded schema version
+// only if someone's database grows enough for it to show up at startup.
+//
+// The pragma is per-connection. The state handle is pinned to a single
+// connection with no idle timeout, so it holds for the process. If the
+// driver ever did recycle it, the pragma would revert to OFF — today's
+// behaviour, so the failure mode is losing enforcement, not breaking
+// writes. Move it into the DSN if that ever needs to be guaranteed.
+func enableForeignKeysIfClean(db *sql.DB) {
+	violations, err := foreignKeyViolations(db)
+	if err != nil {
+		log.WithError(err).Warn("state: checking foreign keys; leaving enforcement off")
+		return
+	}
+	if len(violations) > 0 {
+		log.WithField("violations", violations).
+			Warn("state: existing rows violate declared foreign keys; leaving enforcement off")
+		return
+	}
+	if _, err := db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
+		log.WithError(err).Warn("state: enabling foreign keys")
+	}
+}
+
+// foreignKeyViolations returns "child -> parent" descriptions for every
+// row that breaks a declared foreign key.
+func foreignKeyViolations(db *sql.DB) ([]string, error) {
+	rows, err := db.Query(`PRAGMA foreign_key_check`)
+	if err != nil {
+		return nil, fmt.Errorf("foreign_key_check: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var table, parent string
+		var rowid sql.NullInt64
+		var fkID int
+		if err := rows.Scan(&table, &rowid, &parent, &fkID); err != nil {
+			return nil, fmt.Errorf("scanning foreign_key_check: %w", err)
+		}
+		out = append(out, table+" -> "+parent)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading foreign_key_check: %w", err)
+	}
+	return out, nil
 }
 
 // Close closes the state database.

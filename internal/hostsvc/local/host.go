@@ -478,7 +478,9 @@ func (h *Host) reuseCandidate(repoRoot string) *ocruntime.Instance {
 	if !ok {
 		return nil
 	}
-	return &ocruntime.Instance{Endpoint: mi.Endpoint, Kind: mi.Kind, ID: mi.RuntimeID, PID: mi.PID}
+	// RepoRoot lets Probe reject a recycled port now serving a different
+	// project instead of adopting a stranger's instance for this repo.
+	return &ocruntime.Instance{Endpoint: mi.Endpoint, Kind: mi.Kind, ID: mi.RuntimeID, PID: mi.PID, RepoRoot: repoRoot}
 }
 
 func (h *Host) setInstance(repoRoot string, inst *ocruntime.Instance) {

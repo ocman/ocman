@@ -137,7 +137,15 @@ func (s *Server) handleWorktreeRemove(w http.ResponseWriter, r *http.Request) {
 
 	host := s.router().ForDir(req.ProjectDir)
 	if req.RemoteID != "" {
-		host = s.router().ForRemote(req.RemoteID)
+		// Fail closed: a stale/disconnected remote ID must not degrade
+		// to the hub, which would `git worktree remove --force` the
+		// hub's identically-pathed worktree and destroy real work.
+		h, ok := s.router().LookupRemote(req.RemoteID)
+		if !ok {
+			http.Error(w, "remote "+req.RemoteID+" is not connected", http.StatusConflict)
+			return
+		}
+		host = h
 	}
 
 	log.WithFields(log.Fields{

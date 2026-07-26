@@ -38,6 +38,7 @@ type Store interface {
 	MoveQueuedMessage(id string, direction int) (bool, error)
 	GetQueuedMessageSession(id string) (platform, sessionID string, ok bool, err error)
 	SessionsWithQueuedMessages() ([]state.QueuedSession, error)
+	RecordQueuedMessageFailure(id, reason string) (bool, error)
 }
 
 // Sender forwards a queued message to the owning platform. The server
@@ -293,9 +294,24 @@ func (s *Service) drainHead(ctx context.Context, platformID, sessionID string, t
 		}
 	}
 	if err := s.sender.SendNow(ctx, head.Platform, req); err != nil {
-		// Leave the message at the head; a later idle edge retries.
-		log.WithError(err).WithField("sessionID", sessionID).
-			Warn("queuesvc: sending queued message")
+		// Leave the message at the head; a later idle edge retries. But
+		// count the failure: the drain is strictly head-first, so a
+		// message that can never send (deleted session, unregistered
+		// platform) would otherwise block every later message on this
+		// session forever, with only a log line to show for it.
+		blocked, recErr := s.store.RecordQueuedMessageFailure(head.ID, err.Error())
+		if recErr != nil {
+			log.WithError(recErr).WithField("messageID", head.ID).
+				Warn("queuesvc: recording send failure")
+		}
+		entry := log.WithError(err).WithField("sessionID", sessionID)
+		if blocked {
+			entry.WithField("messageID", head.ID).
+				Error("queuesvc: queued message set aside after repeated send failures")
+			s.fireNotify(sessionID)
+		} else {
+			entry.Warn("queuesvc: sending queued message")
+		}
 		return
 	}
 	if _, err := s.store.DeleteQueuedMessage(head.ID); err != nil {

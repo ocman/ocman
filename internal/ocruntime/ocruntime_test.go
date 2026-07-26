@@ -199,6 +199,80 @@ func TestNativeProbe(t *testing.T) {
 	}
 }
 
+// instanceServer serves the two endpoints Probe uses, reporting the
+// given worktree as its project root.
+func instanceServer(t *testing.T, worktree string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/config":
+			w.WriteHeader(http.StatusOK)
+		case "/project/current":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"worktree": worktree})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// TestNativeProbe_VerifiesIdentity covers the ephemeral-port reuse
+// hazard: project A's persisted endpoint can be answered by a DIFFERENT
+// project's opencode after A died and the port was recycled. A 200 on
+// /config alone is not proof the right instance answered.
+func TestNativeProbe_VerifiesIdentity(t *testing.T) {
+	rt := NewNativeRuntime()
+	other := instanceServer(t, "/home/u/src/project-b")
+
+	// Someone else's instance on our old port must read as unreachable
+	// so the caller stops it and relaunches.
+	err := rt.Probe(context.Background(), &Instance{
+		Endpoint: other.URL,
+		RepoRoot: "/home/u/src/project-a",
+	})
+	if !errors.Is(err, ErrProbeUnreachable) {
+		t.Errorf("probe of a foreign instance = %v, want ErrProbeUnreachable", err)
+	}
+
+	// Our own instance still probes healthy.
+	mine := instanceServer(t, "/home/u/src/project-a")
+	if err := rt.Probe(context.Background(), &Instance{
+		Endpoint: mine.URL,
+		RepoRoot: "/home/u/src/project-a",
+	}); err != nil {
+		t.Errorf("probe of the matching instance = %v, want nil", err)
+	}
+
+	// No expected root recorded (adopted/legacy instance) -> config-only.
+	if err := rt.Probe(context.Background(), &Instance{Endpoint: other.URL}); err != nil {
+		t.Errorf("probe without RepoRoot = %v, want nil", err)
+	}
+}
+
+// TestNativeProbe_IdentityUnavailable keeps an instance that cannot
+// answer /project/current usable: an older opencode must not be
+// declared dead just because it lacks the endpoint.
+func TestNativeProbe_IdentityUnavailable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/config" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	err := NewNativeRuntime().Probe(context.Background(), &Instance{
+		Endpoint: srv.URL,
+		RepoRoot: "/home/u/src/project-a",
+	})
+	if err != nil {
+		t.Errorf("Probe = %v, want nil when identity is unavailable", err)
+	}
+}
+
 func TestNativeStop(t *testing.T) {
 	var killed string
 	rt := &NativeRuntime{kill: func(s string) error { killed = s; return nil }}

@@ -147,3 +147,41 @@ func TestEnsureProjectOpencode_RecoversFromStore(t *testing.T) {
 		})
 	}
 }
+
+// TestEnsureProjectOpencode_PersistedRowCarriesRepoRoot pins that the
+// recovered instance tells the runtime which project it must be serving.
+// Loopback ports are recycled, so without this the probe cannot tell our
+// dead instance's port from another project's live one.
+func TestEnsureProjectOpencode_PersistedRowCarriesRepoRoot(t *testing.T) {
+	repo := initRepo(t)
+	ctx := context.Background()
+	repoRoot, err := git.ResolveRepoRoot(ctx, repo)
+	if err != nil {
+		t.Fatalf("resolve repo root: %v", err)
+	}
+
+	const persistedEndpoint = "http://127.0.0.1:41235"
+	store := newFakeStore()
+	store.rows[repoRoot] = ManagedInstance{Endpoint: persistedEndpoint, Kind: ocruntime.KindNativeTmux, RuntimeID: "sess"}
+
+	var probedRoot string
+	rt := &fakeRuntime{
+		endpoint: "http://127.0.0.1:6666",
+		probe: func(inst *ocruntime.Instance) bool {
+			if inst.Endpoint == persistedEndpoint {
+				probedRoot = inst.RepoRoot
+			}
+			return true
+		},
+	}
+	h := New(Deps{Runtime: rt, ManagedStore: store})
+	h.portWaitTimeout = time.Second
+	h.portWaitInterval = 5 * time.Millisecond
+
+	if _, err := h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: repo}); err != nil {
+		t.Fatalf("EnsureProjectOpencode: %v", err)
+	}
+	if probedRoot != repoRoot {
+		t.Errorf("probed RepoRoot = %q; want %q", probedRoot, repoRoot)
+	}
+}

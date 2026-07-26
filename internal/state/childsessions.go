@@ -112,6 +112,16 @@ func (d *DB) RestoreChildFollowup(id string, cs ChildSession, sendingDelivery st
 	return nil
 }
 
+// UpdateChildSessionCreatedAt backdates a child session's creation time.
+// Used to age a row past the watcher's orphan grace period.
+func (d *DB) UpdateChildSessionCreatedAt(id string, createdAt int64) error {
+	_, err := d.db.Exec(`UPDATE child_sessions SET created_at = ? WHERE id = ?`, createdAt, id)
+	if err != nil {
+		return fmt.Errorf("updating child session created_at: %w", err)
+	}
+	return nil
+}
+
 // GetChildSession returns a single child session by ID, or an error
 // wrapping sql.ErrNoRows when not found.
 func (d *DB) GetChildSession(id string) (*ChildSession, error) {

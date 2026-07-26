@@ -143,7 +143,13 @@ import (
 //	      pid/launched_at) so it survives an ocman restart. The host always
 //	      re-probes health before trusting a persisted row (AD-5, #391).
 //	36 - add retry lineage to workflow runs and reused-attempt provenance.
-const latestSchemaVersion = 36
+//	37 - add queued_message.attempts/last_error/blocked so a permanently
+//	      unsendable follow-up is dead-lettered instead of blocking every
+//	      later message on that session forever.
+//	38 - add `unarchived_entity` recording when the user last unarchived a
+//	      session or project, so auto-archive does not immediately re-hide
+//	      something they deliberately brought back.
+const latestSchemaVersion = 38
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -311,6 +317,10 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV35(tx)
 	case 36:
 		return migrateToV36(tx)
+	case 37:
+		return migrateToV37(tx)
+	case 38:
+		return migrateToV38(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -1241,6 +1251,41 @@ func migrateToV36(tx *sql.Tx) error {
 		if err := addColumnIfMissing(tx, change.table, change.column, change.definition); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// migrateToV37 gives queued messages a send-failure record so one
+// permanently unsendable message can be set aside instead of stalling
+// the rest of its session's queue (the drain is strictly head-first).
+func migrateToV37(tx *sql.Tx) error {
+	for _, change := range []struct{ table, column, definition string }{
+		{"queued_message", "attempts", "INTEGER NOT NULL DEFAULT 0"},
+		{"queued_message", "last_error", "TEXT NOT NULL DEFAULT ''"},
+		{"queued_message", "blocked", "INTEGER NOT NULL DEFAULT 0"},
+	} {
+		if err := addColumnIfMissing(tx, change.table, change.column, change.definition); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// migrateToV38 records user unarchive intent. Unarchiving only deletes
+// the archive marker, so the auto-archive loops — which re-derive state
+// purely from inactivity, and run at boot — silently re-hid anything the
+// user had just brought back.
+func migrateToV38(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS unarchived_entity (
+			kind          TEXT NOT NULL,
+			entity_key    TEXT NOT NULL,
+			unarchived_at INTEGER NOT NULL,
+			PRIMARY KEY (kind, entity_key)
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("creating unarchived_entity: %w", err)
 	}
 	return nil
 }

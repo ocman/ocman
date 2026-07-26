@@ -20,7 +20,19 @@ type QueuedMessage struct {
 	Agent      string `json:"agent,omitempty"`
 	Reasoning  string `json:"reasoning,omitempty"`
 	CreatedAt  int64  `json:"createdAt"`
+	// Attempts counts consecutive failed sends. Once it reaches
+	// QueuedMessageAttemptLimit the row is Blocked: it stays visible with
+	// LastError but is skipped by the drain so the rest of the queue moves.
+	Attempts  int    `json:"attempts,omitempty"`
+	LastError string `json:"lastError,omitempty"`
+	Blocked   bool   `json:"blocked,omitempty"`
 }
+
+// QueuedMessageAttemptLimit is how many consecutive send failures a
+// queued message tolerates before it is set aside. "opencode is
+// restarting" recovers well within this; "the session was deleted"
+// never will.
+const QueuedMessageAttemptLimit = 5
 
 // EnqueueMessage appends a queued message to the tail of its session's
 // queue (position = current max + 1). The id is caller-supplied so the
@@ -106,18 +118,20 @@ func (d *DB) CountQueuedMessages(platform, sessionID string) (int, error) {
 // for a session, or (nil, nil) when the queue is empty. An empty platform
 // matches any platform (the idle-driven flush knows only the session id;
 // the head row carries the authoritative platform).
+// Blocked rows are skipped so a dead-lettered message does not stall
+// everything queued behind it.
 func (d *DB) HeadQueuedMessage(platform, sessionID string) (*QueuedMessage, error) {
 	var m QueuedMessage
 	err := d.db.QueryRow(`
 		SELECT id, platform, session_id, position, text, images_json,
-		       model, agent, reasoning, created_at
+		       model, agent, reasoning, created_at, attempts, last_error, blocked
 		FROM queued_message
-		WHERE (? = '' OR platform = ?) AND session_id = ?
+		WHERE (? = '' OR platform = ?) AND session_id = ? AND blocked = 0
 		ORDER BY position ASC
 		LIMIT 1
 	`, platform, platform, sessionID).Scan(
 		&m.ID, &m.Platform, &m.SessionID, &m.Position, &m.Text, &m.ImagesJSON,
-		&m.Model, &m.Agent, &m.Reasoning, &m.CreatedAt,
+		&m.Model, &m.Agent, &m.Reasoning, &m.CreatedAt, &m.Attempts, &m.LastError, &m.Blocked,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -137,12 +151,25 @@ type QueuedSession struct {
 }
 
 // SessionsWithQueuedMessages returns every distinct (platform, session)
-// that currently has at least one queued message. The periodic sweep
-// uses it to drain backlogs that never got a session.idle edge (e.g.
-// rows stranded before a fix, or a swallowed edge).
+// that currently has at least one drainable queued message. The periodic
+// sweep uses it to drain backlogs that never got a session.idle edge
+// (e.g. rows stranded before a fix, or a swallowed edge).
+//
+// Archived sessions are excluded. Sending into one advances its
+// time_updated past archived_at, which auto-unarchives it: the session
+// the user abandoned pops back into the sidebar having burned tokens on
+// a turn they walked away from. The predicate lives in the query so it
+// cannot race the archive handler. Blocked rows are excluded too — a
+// session whose queue is entirely dead-lettered has nothing to drain.
 func (d *DB) SessionsWithQueuedMessages() ([]QueuedSession, error) {
 	rows, err := d.db.Query(`
-		SELECT DISTINCT platform, session_id FROM queued_message
+		SELECT DISTINCT q.platform, q.session_id
+		FROM queued_message q
+		WHERE q.blocked = 0
+		  AND NOT EXISTS (
+			SELECT 1 FROM archived_session a
+			WHERE a.platform = q.platform AND a.session_id = q.session_id
+		  )
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("listing sessions with queued messages: %w", err)
@@ -169,7 +196,7 @@ func (d *DB) ListQueuedMessages(platform, sessionID string) ([]QueuedMessage, er
 	// idle-edge flush, the queue.updated broadcast) resolve it.
 	rows, err := d.db.Query(`
 		SELECT id, platform, session_id, position, text, images_json,
-		       model, agent, reasoning, created_at
+		       model, agent, reasoning, created_at, attempts, last_error, blocked
 		FROM queued_message
 		WHERE (? = '' OR platform = ?) AND session_id = ?
 		ORDER BY position ASC
@@ -183,7 +210,7 @@ func (d *DB) ListQueuedMessages(platform, sessionID string) ([]QueuedMessage, er
 		var m QueuedMessage
 		if err := rows.Scan(
 			&m.ID, &m.Platform, &m.SessionID, &m.Position, &m.Text, &m.ImagesJSON,
-			&m.Model, &m.Agent, &m.Reasoning, &m.CreatedAt,
+			&m.Model, &m.Agent, &m.Reasoning, &m.CreatedAt, &m.Attempts, &m.LastError, &m.Blocked,
 		); err != nil {
 			return nil, fmt.Errorf("scanning queued message: %w", err)
 		}
@@ -193,6 +220,50 @@ func (d *DB) ListQueuedMessages(platform, sessionID string) ([]QueuedMessage, er
 		return nil, fmt.Errorf("reading queued messages: %w", err)
 	}
 	return out, nil
+}
+
+// RecordQueuedMessageFailure counts a failed send for a queued message
+// and reports whether that failure exhausted its budget. An exhausted
+// message is blocked: it stays in the queue (visible, with the reason)
+// but is skipped by the drain, so the messages behind it are no longer
+// stuck behind something that will never send.
+func (d *DB) RecordQueuedMessageFailure(id, reason string) (blocked bool, err error) {
+	res, err := d.db.Exec(`
+		UPDATE queued_message
+		SET attempts = attempts + 1,
+		    last_error = ?,
+		    blocked = CASE WHEN attempts + 1 >= ? THEN 1 ELSE 0 END
+		WHERE id = ?
+	`, reason, QueuedMessageAttemptLimit, id)
+	if err != nil {
+		return false, fmt.Errorf("recording queued message failure: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return false, nil
+	}
+	err = d.db.QueryRow(`SELECT blocked FROM queued_message WHERE id = ?`, id).Scan(&blocked)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("reading queued message block state: %w", err)
+	}
+	return blocked, nil
+}
+
+// ClearQueuedMessagesForSession drops a session's whole queue. Used when
+// the user archives a session: the follow-ups they queued are part of the
+// work being abandoned.
+func (d *DB) ClearQueuedMessagesForSession(platform, sessionID string) (int64, error) {
+	res, err := d.db.Exec(
+		`DELETE FROM queued_message WHERE platform = ? AND session_id = ?`,
+		platform, sessionID,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("clearing queued messages: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
 }
 
 // DeleteQueuedMessage removes a single queued message by id. Returns

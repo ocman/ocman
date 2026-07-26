@@ -1055,8 +1055,21 @@ func (d *DB) MarkWorkflowAttemptUnknown(runID, nodeID string, attemptID int64, r
 		return fmt.Errorf("beginning unknown attempt transition: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err = tx.Exec(`UPDATE workflow_node_attempt SET state = 'unknown', error = ?, completed_at = ? WHERE id = ? AND state IN ('starting', 'running')`, reason, now, attemptID); err != nil {
+	res, err := tx.Exec(`UPDATE workflow_node_attempt SET state = 'unknown', error = ?, completed_at = ? WHERE id = ? AND state IN ('starting', 'running')`, reason, now, attemptID)
+	if err != nil {
 		return fmt.Errorf("marking attempt unknown: %w", err)
+	}
+	// The caller decides to mark an attempt unknown from a snapshot read
+	// without the dispatch lock, then does network I/O before writing —
+	// so the attempt can settle in between. Only the attempt update was
+	// guarded, so a settled attempt still flipped its node to unknown and
+	// paused the run: ResolveWorkflowAttemptBy then rejects the node
+	// (attempt is not 'unknown') and RetryFrom needs successful/failed,
+	// leaving it stuck on a paused run that only cancelling can clear.
+	if changed, err := res.RowsAffected(); err != nil {
+		return fmt.Errorf("marking attempt unknown: %w", err)
+	} else if changed == 0 {
+		return nil
 	}
 	if _, err = tx.Exec(`UPDATE workflow_node_run SET state = 'unknown' WHERE run_id = ? AND node_id = ?`, runID, nodeID); err != nil {
 		return fmt.Errorf("marking node unknown: %w", err)
