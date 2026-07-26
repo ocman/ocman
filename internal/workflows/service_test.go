@@ -2578,11 +2578,11 @@ func assertRun(t *testing.T, run RunDetail, state string, nodes map[string]strin
 	}
 }
 
-// Reactivating a cron workflow after a long pause must not replay every
-// slot it missed. Firing records last_fired_at as the moment it fired,
-// not the slot it stood in for, so a month of downtime collapses into a
-// single catch-up run.
-func TestReactivatedCronFiresOnceNotOncePerMissedSlot(t *testing.T) {
+// Reactivating a cron workflow must wait for its next real slot. A
+// trigger's due-ness is measured from its last firing, so a workflow off
+// since last month looks overdue the instant it returns; switching a
+// "0 1 * * *" job back on at midday should not run it at midday.
+func TestReactivatedCronWaitsForItsNextSlot(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 	definition := strings.Replace(sequentialApprovals,
@@ -2592,7 +2592,6 @@ func TestReactivatedCronFiresOnceNotOncePerMissedSlot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Establish the baseline, then take the workflow out of service.
 	if err := h.svc.EvaluateTriggers(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -2607,11 +2606,13 @@ func TestReactivatedCronFiresOnceNotOncePerMissedSlot(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	runs, _ := h.svc.ListRuns(ctx)
-	if len(runs) != 0 {
+	if runs, _ := h.svc.ListRuns(ctx); len(runs) != 0 {
 		t.Fatalf("deactivated cron fired %d run(s): %+v", len(runs), runs)
 	}
 
+	// Reactivate mid-morning, nowhere near the 01:00 slot. Nothing may
+	// run yet: the month of missed slots is not a backlog to replay.
+	h.now = h.now.Add(11 * time.Hour) // 2026-08-13 07:00
 	if _, err := h.svc.Activate(ctx, version.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -2620,8 +2621,19 @@ func TestReactivatedCronFiresOnceNotOncePerMissedSlot(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	runs, _ = h.svc.ListRuns(ctx)
+	if runs, _ := h.svc.ListRuns(ctx); len(runs) != 0 {
+		t.Fatalf("reactivation fired immediately instead of waiting: %+v", runs)
+	}
+
+	// The next 01:00 arrives and it runs exactly once.
+	h.now = h.now.Add(19 * time.Hour) // 2026-08-14 02:00, past the 01:00 slot
+	for i := 0; i < 3; i++ {
+		if err := h.svc.EvaluateTriggers(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runs, _ := h.svc.ListRuns(ctx)
 	if len(runs) != 1 {
-		t.Fatalf("reactivation produced %d runs, want exactly 1: %+v", len(runs), runs)
+		t.Fatalf("next slot produced %d runs, want exactly 1: %+v", len(runs), runs)
 	}
 }
