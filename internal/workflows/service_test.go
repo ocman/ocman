@@ -2306,3 +2306,46 @@ func assertRun(t *testing.T, run RunDetail, state string, nodes map[string]strin
 		}
 	}
 }
+
+type recordingRunner struct {
+	handled bool
+	err     error
+	calls   []string
+}
+
+func (r *recordingRunner) StartRun(_ context.Context, runID string, _ Definition) (bool, error) {
+	r.calls = append(r.calls, runID)
+	return r.handled, r.err
+}
+
+// A runner that cannot express a definition declines, and the run must
+// fall through to ocman's own dispatcher rather than failing.
+func TestStartExternallyDeclinedFallsBackToDispatcher(t *testing.T) {
+	service := &Service{}
+	handled, err := service.startExternally(context.Background(), "run-1", state.WorkflowVersion{})
+	if handled || err != nil {
+		t.Fatalf("no runner: handled = %v, err = %v", handled, err)
+	}
+
+	runner := &recordingRunner{}
+	service.SetExternalRunner(runner)
+	version := state.WorkflowVersion{ID: "v1", WorkflowID: "w", DefinitionJSON: `{"id":"w","nodes":[]}`}
+	handled, err = service.startExternally(context.Background(), "run-1", version)
+	if handled || err != nil {
+		t.Fatalf("declined: handled = %v, err = %v", handled, err)
+	}
+	if len(runner.calls) != 1 || runner.calls[0] != "run-1" {
+		t.Fatalf("calls = %v", runner.calls)
+	}
+}
+
+// A runner that accepted the run and then failed must surface the error,
+// never fall back: a partly completed handoff would run a node twice.
+func TestStartExternallyPropagatesHandoffFailure(t *testing.T) {
+	service := &Service{}
+	service.SetExternalRunner(&recordingRunner{err: errors.New("boom")})
+	version := state.WorkflowVersion{ID: "v1", WorkflowID: "w", DefinitionJSON: `{"id":"w","nodes":[]}`}
+	if _, err := service.startExternally(context.Background(), "run-1", version); err == nil {
+		t.Fatal("handoff failure was swallowed")
+	}
+}

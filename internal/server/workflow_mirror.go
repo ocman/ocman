@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net"
 	"strings"
 	"time"
@@ -139,4 +141,55 @@ func loopbackEndpoint(addr string) string {
 		return "http://127.0.0.1:8229"
 	}
 	return "http://127.0.0.1:" + port
+}
+
+// daguRunner routes a freshly created run to Dagu when the compiler can
+// express it. Ocman still owns authoring, versioning, triggering, and
+// history; Dagu only executes the graph.
+//
+// A definition the compiler rejects is declined rather than failed, so
+// features Dagu cannot yet express — resource pools, managed
+// workspaces, path leases, secrets, run limits, fail-fast, and repeat —
+// keep running on ocman's own dispatcher.
+type daguRunner struct{ s *Server }
+
+func (r daguRunner) StartRun(ctx context.Context, runID string, definition workflows.Definition) (bool, error) {
+	if r.s.daguManager == nil || r.s.stateDB == nil {
+		return false, nil
+	}
+	compiled, err := r.s.daguManager.CompileRun(definition, runID)
+	if err != nil {
+		log.WithError(err).WithField("workflow", definition.ID).
+			Debug("workflow-runner: definition not expressible in Dagu, using the native dispatcher")
+		return false, nil
+	}
+	run, err := r.s.daguManager.StartCompiled(ctx, definition.ID, runID, compiled)
+	if err != nil {
+		// The runner was supposed to take this run and could not. Failing
+		// is right: silently falling back would run an agent twice if the
+		// handoff turns out to have partly succeeded.
+		return false, fmt.Errorf("start run on Dagu: %w", err)
+	}
+	if err := r.s.stateDB.SetWorkflowRunExternal(runID, run.ID, runnerDagu, time.Now().UnixMilli()); err != nil {
+		return false, fmt.Errorf("link run to Dagu execution: %w", err)
+	}
+	return true, nil
+}
+
+// workflowVersionDefinition resolves a pinned version id to its
+// immutable definition, which is how a map node's per-item child is
+// compiled.
+func (s *Server) workflowVersionDefinition(versionID string) (workflows.Definition, error) {
+	if s.stateDB == nil {
+		return workflows.Definition{}, fmt.Errorf("state database is unavailable")
+	}
+	version, err := s.stateDB.GetWorkflowVersion(versionID)
+	if err != nil || version == nil {
+		return workflows.Definition{}, fmt.Errorf("workflow version %q not found", versionID)
+	}
+	var definition workflows.Definition
+	if err := json.Unmarshal([]byte(version.DefinitionJSON), &definition); err != nil {
+		return workflows.Definition{}, fmt.Errorf("reading definition %q: %w", versionID, err)
+	}
+	return definition, nil
 }

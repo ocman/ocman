@@ -252,6 +252,16 @@ type AgentResult struct {
 	Error        string
 }
 
+// ExternalRunner executes a run outside ocman's own dispatcher. Ocman
+// still owns authoring, versioning, triggering, and history; the runner
+// only executes the graph.
+type ExternalRunner interface {
+	// StartRun begins executing runID. It reports false when the
+	// definition uses features the runner cannot express, which leaves
+	// the run to ocman's own dispatcher rather than failing it.
+	StartRun(ctx context.Context, runID string, definition Definition) (bool, error)
+}
+
 type AgentExecutor interface {
 	Start(context.Context, AgentRequest) (AgentSession, error)
 	Inspect(context.Context, AgentSession) (AgentResult, error)
@@ -480,6 +490,7 @@ type Service struct {
 	workspace      WorkspaceProvider
 	blobs          *BlobStore
 	resolveSecret  func(string) string
+	externalRunner ExternalRunner
 	dispatchMu     sync.Mutex
 	triggerMu      sync.Mutex
 	mu             sync.Mutex
@@ -939,10 +950,37 @@ func (s *Service) fireLocked(ctx context.Context, version state.WorkflowVersion,
 	s.markOwned(run.ID)
 	s.triggerChanged()
 	s.changed(run.ID)
-	if err := s.dispatch(ctx, run.ID); err != nil {
+	handled, err := s.startExternally(ctx, run.ID, version)
+	if err != nil {
 		return RunDetail{}, err
 	}
+	if !handled {
+		if err := s.dispatch(ctx, run.ID); err != nil {
+			return RunDetail{}, err
+		}
+	}
 	return s.GetRun(ctx, run.ID)
+}
+
+// SetExternalRunner installs the runner that executes accepted runs.
+// Nil keeps every run on ocman's own dispatcher.
+func (s *Service) SetExternalRunner(runner ExternalRunner) {
+	s.externalRunner = runner
+}
+
+// startExternally offers a freshly created run to the external runner.
+// A runner that cannot express the definition declines, and the run
+// falls back to ocman's dispatcher; only a real failure to hand off is
+// an error.
+func (s *Service) startExternally(ctx context.Context, runID string, version state.WorkflowVersion) (bool, error) {
+	if s.externalRunner == nil {
+		return false, nil
+	}
+	parsed, err := versionFromRow(version)
+	if err != nil {
+		return false, err
+	}
+	return s.externalRunner.StartRun(ctx, runID, parsed.Definition)
 }
 
 func (s *Service) ListRuns(_ context.Context) ([]Run, error) {

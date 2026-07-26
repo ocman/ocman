@@ -33,6 +33,13 @@ func (s *Server) workflowSvc() *workflows.Service {
 			Status:        &workflowStatusInferer{s: s},
 			Usage:         &workflowUsage{s: s},
 		})
+		// Dagu executes every run it can express; the native dispatcher
+		// keeps the rest. The resolver lets a map node's pinned per-item
+		// version be compiled into a child DAG.
+		if s.daguManager != nil {
+			s.daguManager.SetVersionResolver(s.workflowVersionDefinition)
+			s.workflowSvcCached.SetExternalRunner(daguRunner{s: s})
+		}
 	})
 	return s.workflowSvcCached
 }

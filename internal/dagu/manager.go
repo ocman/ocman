@@ -170,15 +170,34 @@ func (m *Manager) Start(ctx context.Context, definition workflows.Definition) (R
 	if err != nil {
 		return Run{}, err
 	}
+	return m.StartCompiled(ctx, definition.ID, id, compiled)
+}
+
+// CompileRun renders a definition for this manager, using its version
+// resolver and shim. It is separate from starting so a caller can decide
+// whether the runner supports a definition before creating anything.
+func (m *Manager) CompileRun(definition workflows.Definition, runID string) (Compiled, error) {
+	m.mu.Lock()
+	resolve := m.resolveVersion
+	m.mu.Unlock()
+	return Compile(definition, CompileOptions{RunID: runID, ResolveVersion: resolve, Shim: m.stepShim()})
+}
+
+// StartCompiled posts an already-compiled run under a caller-chosen id,
+// which lets ocman use its own run id as the Dagu run id.
+func (m *Manager) StartCompiled(ctx context.Context, name, id string, compiled Compiled) (Run, error) {
+	if err := m.Ensure(ctx); err != nil {
+		return Run{}, err
+	}
 	// Children must land before the parent starts, or dagu resolves
 	// `dag.run` against a name that does not exist yet.
-	for name, spec := range compiled.Children {
-		target := filepath.Join(m.DAGsDir(), name+".yaml")
+	for child, spec := range compiled.Children {
+		target := filepath.Join(m.DAGsDir(), child+".yaml")
 		if err := os.WriteFile(target, spec, 0600); err != nil {
-			return Run{}, fmt.Errorf("write child DAG %s: %w", name, err)
+			return Run{}, fmt.Errorf("write child DAG %s: %w", child, err)
 		}
 	}
-	return NewClient(m.currentEndpoint(), m.http).StartSpec(ctx, definition.ID, id, compiled.Spec)
+	return NewClient(m.currentEndpoint(), m.http).StartSpec(ctx, name, id, compiled.Spec)
 }
 
 func (m *Manager) GetRun(ctx context.Context, name, id string) (Run, error) {
