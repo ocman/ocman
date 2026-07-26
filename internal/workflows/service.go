@@ -117,11 +117,15 @@ type Trigger struct {
 	Overlap         string `json:"overlap,omitempty" yaml:"overlap,omitempty"`
 	IntervalSeconds int    `json:"intervalSeconds,omitempty" yaml:"intervalSeconds,omitempty"`
 	Cron            string `json:"cron,omitempty" yaml:"cron,omitempty"`
-	PRNumber        int    `json:"prNumber,omitempty" yaml:"prNumber,omitempty"`
-	PollSeconds     int    `json:"pollSeconds,omitempty" yaml:"pollSeconds,omitempty"`
-	Directory       string `json:"directory,omitempty" yaml:"directory,omitempty"`
-	Platform        string `json:"platform,omitempty" yaml:"platform,omitempty"`
-	SessionID       string `json:"sessionId,omitempty" yaml:"sessionId,omitempty"`
+	// Timezone evaluates a cron trigger in a fixed location, so a
+	// schedule means the same wall-clock time wherever ocman runs. Empty
+	// keeps the historical server-local behaviour.
+	Timezone    string `json:"timezone,omitempty" yaml:"timezone,omitempty"`
+	PRNumber    int    `json:"prNumber,omitempty" yaml:"prNumber,omitempty"`
+	PollSeconds int    `json:"pollSeconds,omitempty" yaml:"pollSeconds,omitempty"`
+	Directory   string `json:"directory,omitempty" yaml:"directory,omitempty"`
+	Platform    string `json:"platform,omitempty" yaml:"platform,omitempty"`
+	SessionID   string `json:"sessionId,omitempty" yaml:"sessionId,omitempty"`
 }
 
 type TriggerSnapshot struct {
@@ -1180,18 +1184,20 @@ func (s *Service) shouldFire(ctx context.Context, trigger Trigger, row state.Wor
 		}
 		return last == 0 || !now.Before(time.UnixMilli(last).Add(interval)), "scheduled", nil, nil, nil
 	case TriggerCron:
-		schedule, err := parseCron(trigger.Cron)
+		schedule, err := parseCron(trigger.Cron, trigger.Timezone)
 		if err != nil {
 			return false, "", nil, nil, err
 		}
 		if last == 0 {
+			// Never fired. Anchor on the first check so a newly created
+			// trigger does not immediately fire for a slot that passed
+			// before it existed.
 			if row.LastCheckedAt == 0 {
-				return schedule.matches(now.Truncate(time.Minute)), "cron", nil, nil, nil
+				return false, "cron", nil, nil, nil
 			}
 			last = row.LastCheckedAt
 		}
-		scheduled, ok := schedule.prev(now)
-		return ok && scheduled.UnixMilli() > last, "cron", nil, nil, nil
+		return schedule.firedSince(time.UnixMilli(last), now), "cron", nil, nil, nil
 	case TriggerPR:
 		if s.forge == nil {
 			return false, "", nil, nil, fmt.Errorf("pr trigger requires a forge poller")
@@ -1219,7 +1225,7 @@ func nextCheck(trigger Trigger, lastFired int64, now time.Time) int64 {
 		}
 		return time.UnixMilli(lastFired).Add(interval).UnixMilli()
 	case TriggerCron:
-		next, ok, _ := nextCron(trigger.Cron, now)
+		next, ok, _ := nextCron(trigger.Cron, trigger.Timezone, now)
 		if ok {
 			return next.UnixMilli()
 		}
@@ -2590,7 +2596,7 @@ func validateTrigger(trigger Trigger) error {
 			return fmt.Errorf("trigger %q intervalSeconds must be positive", trigger.ID)
 		}
 	case TriggerCron:
-		if _, err := parseCron(trigger.Cron); err != nil {
+		if _, err := parseCron(trigger.Cron, trigger.Timezone); err != nil {
 			return fmt.Errorf("trigger %q has invalid cron: %w", trigger.ID, err)
 		}
 	case TriggerPR:
