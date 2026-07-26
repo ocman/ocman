@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useEffectEvent, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   api,
@@ -9,7 +9,6 @@ import {
   type WorkflowRunDetail,
   type WorkflowValidation,
   type WorkflowVersion,
-  type DaguRun,
 } from '../lib/api';
 import { useWorkflows } from '../lib/useCapabilities';
 import { onSseConnect, onWorkflowRunUpdated, onWorkflowTriggerUpdated } from '../lib/useGlobalEvents';
@@ -18,7 +17,6 @@ import { WorkflowBuilder, WorkflowRunGraph } from './WorkflowBuilder';
 import { Button, SearchField, SelectField } from '../components/Control';
 import { Modal } from '../components/Modal';
 import { DaguStatus } from '../components/DaguStatus';
-import { resolveTargetForDir } from '../lib/machinePicker';
 import './Workflows.css';
 
 const EXAMPLE = `id: release
@@ -48,7 +46,6 @@ export function Workflows() {
   const [versions, setVersions] = useState<WorkflowVersion[]>([]);
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [selected, setSelected] = useState<WorkflowRunDetail>();
-  const [daguRun, setDaguRun] = useState<{ run: DaguRun; remoteId: string }>();
   const selectedID = useRef<string | undefined>(undefined);
   const validationID = useRef(0);
   const [error, setError] = useState('');
@@ -281,19 +278,6 @@ export function Workflows() {
     }
   }
 
-  async function startDagu(version: WorkflowVersion) {
-    setError('');
-    try {
-      const target = await resolveTargetForDir(version.definition.directory ?? '');
-      if (!target) return;
-      const remoteId = target.remoteId ?? 'local';
-      const started = await api.dagu.start(version.definition, remoteId);
-      setDaguRun({ run: await api.dagu.run(started.name, started.id, remoteId), remoteId });
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    }
-  }
-
   if (!enabled)
     return (
       <main className="workflow-page">
@@ -435,15 +419,6 @@ export function Workflows() {
                                 }}
                               >
                                 <i className="bi bi-play-fill" aria-hidden="true" />
-                              </Button>
-                            )}
-                            {canRunWithDagu(version.definition) && (
-                              <Button
-                                size="small"
-                                aria-label={`Start ${version.name} with Dagu`}
-                                onClick={() => void startDagu(version)}
-                              >
-                                Dagu
                               </Button>
                             )}
                           </div>
@@ -621,126 +596,7 @@ export function Workflows() {
           />
         </>
       )}
-      {daguRun && (
-        <DaguRunModal
-          run={daguRun.run}
-          remoteId={daguRun.remoteId}
-          onChange={(run) => setDaguRun((current) => current && { ...current, run })}
-          onClose={() => setDaguRun(undefined)}
-        />
-      )}
     </main>
-  );
-}
-
-function canRunWithDagu(definition: WorkflowDefinition) {
-  const unsupported =
-    definition.secrets?.length ||
-    definition.pools?.length ||
-    definition.workspace ||
-    definition.limits ||
-    definition.failFast;
-  return (
-    !unsupported &&
-    definition.nodes.length > 0 &&
-    definition.nodes.every(
-      (node) =>
-        node.type === 'command' &&
-        !node.permission?.length &&
-        !node.resources?.length &&
-        !node.lease &&
-        !node.repeat,
-    ) &&
-    definition.triggers.every((trigger) => trigger.type === 'manual') &&
-    definition.dependencies.every((dependency) => !dependency.condition)
-  );
-}
-
-function DaguRunModal({
-  run,
-  remoteId,
-  onChange,
-  onClose,
-}: {
-  run: DaguRun;
-  remoteId: string;
-  onChange: (run: DaguRun) => void;
-  onClose: () => void;
-}) {
-  const [pollError, setPollError] = useState('');
-  async function update() {
-    try {
-      onChange(await api.dagu.run(run.name, run.id, remoteId));
-      setPollError('');
-    } catch (reason) {
-      setPollError(reason instanceof Error ? reason.message : String(reason));
-    }
-  }
-  const poll = useEffectEvent(update);
-  const terminal = ['succeeded', 'failed', 'aborted', 'partially_succeeded', 'rejected'].includes(
-    run.status ?? '',
-  );
-  useEffect(() => {
-    if (terminal) return;
-    let stopped = false;
-    let timer = window.setTimeout(tick, 1000);
-    async function tick() {
-      await poll();
-      if (!stopped) timer = window.setTimeout(tick, 1000);
-    }
-    return () => {
-      stopped = true;
-      window.clearTimeout(timer);
-    };
-  }, [run.id, remoteId, terminal]);
-  return (
-    <Modal
-      onClose={onClose}
-      label="Dagu run details"
-      backdropClassName="workflow-run-modal-backdrop"
-      dialogClassName="workflow-run-modal"
-    >
-      <button className="workflow-run-modal-close" type="button" onClick={onClose}>
-        Close
-      </button>
-      <section className="workflow-run" aria-label="Dagu workflow run">
-        <header>
-          <div>
-            <span className="workflow-kicker">{run.id}</span>
-            <h2>{run.name}</h2>
-          </div>
-          <div className="workflow-run-actions">
-            <State state={run.status ?? 'not_started'} />
-            {!terminal && (
-              <button
-                type="button"
-                onClick={() =>
-                  void api.dagu
-                    .cancel(run.name, run.id, remoteId)
-                    .then(update)
-                    .catch((reason) => setPollError(reason instanceof Error ? reason.message : String(reason)))
-                }
-              >
-                Cancel Dagu run
-              </button>
-            )}
-          </div>
-        </header>
-        {pollError && <p role="alert">{pollError}</p>}
-        <ol className="workflow-dagu-nodes">
-          {run.nodes?.map((node) => (
-            <li key={node.name}>
-              <h3>
-                {node.name} · <State state={node.status} />
-              </h3>
-              {node.depends?.length ? <p>Depends on {node.depends.join(', ')}</p> : null}
-              {node.error && <p role="alert">{node.error}</p>}
-              {node.log && <pre>{node.log}</pre>}
-            </li>
-          ))}
-        </ol>
-      </section>
-    </Modal>
   );
 }
 

@@ -186,18 +186,12 @@ describe('Workflows', { timeout: 10_000 }, () => {
     });
     apiMock.resolveUnknown.mockResolvedValue(activeRun);
     apiMock.artifacts.mockResolvedValue([]);
-    daguMock.start.mockResolvedValue({ id: 'dagu-run-1', name: 'commands' });
-    daguMock.run.mockResolvedValue({
-      id: 'dagu-run-1', name: 'commands', status: 'running',
-      nodes: [
-        { name: 'Build', status: 'succeeded', log: 'built\n' },
-        { name: 'Ship', status: 'running', depends: ['Build'], log: 'shipping\n' },
-      ],
-    });
-    daguMock.cancel.mockResolvedValue({ ok: true });
   });
 
-  it('runs and cancels command-only workflows through Dagu', async () => {
+  // Dagu is the runner for every workflow it can express, and routing
+  // happens server-side. A second, conditionally shown start button made
+  // it look like some workflows ran differently from others.
+  it('offers one start control regardless of what the workflow contains', async () => {
     const user = userEvent.setup();
     const commandVersion: WorkflowVersion = {
       ...version,
@@ -220,14 +214,13 @@ describe('Workflows', { timeout: 10_000 }, () => {
     apiMock.versions.mockResolvedValue([commandVersion]);
     render(<MemoryRouter><Workflows /></MemoryRouter>);
 
-    await user.click(await screen.findByRole('button', { name: 'Start Commands with Dagu' }));
-    expect(await screen.findByRole('dialog', { name: 'Dagu run details' })).toBeInTheDocument();
-    expect(screen.getByText('built')).toBeInTheDocument();
-    expect(screen.getByText('Depends on Build')).toBeInTheDocument();
-    expect(daguMock.start).toHaveBeenCalledWith(commandVersion.definition, 'local');
+    expect(await screen.findByRole('button', { name: 'Start run' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /with Dagu/ })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Cancel Dagu run' }));
-    expect(daguMock.cancel).toHaveBeenCalledWith('commands', 'dagu-run-1', 'local');
+    await user.click(screen.getByRole('button', { name: 'Start run' }));
+    expect(apiMock.startActive).toHaveBeenCalledWith('commands');
+    // Starting never reaches Dagu directly; ocman decides the runner.
+    expect(daguMock.start).not.toHaveBeenCalled();
   });
 
   it('is capability gated', () => {
