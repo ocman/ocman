@@ -2577,3 +2577,51 @@ func assertRun(t *testing.T, run RunDetail, state string, nodes map[string]strin
 		}
 	}
 }
+
+// Reactivating a cron workflow after a long pause must not replay every
+// slot it missed. Firing records last_fired_at as the moment it fired,
+// not the slot it stood in for, so a month of downtime collapses into a
+// single catch-up run.
+func TestReactivatedCronFiresOnceNotOncePerMissedSlot(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	definition := strings.Replace(sequentialApprovals,
+		`{"id":"manual","type":"manual"}`,
+		`{"id":"cron","type":"cron","cron":"0 1 * * *"}`, 1)
+	version, err := h.svc.PublishJSON(ctx, []byte(definition))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Establish the baseline, then take the workflow out of service.
+	if err := h.svc.EvaluateTriggers(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.Deactivate(ctx, version.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// A month of daily slots pass while it is inactive.
+	h.now = h.now.Add(30 * 24 * time.Hour)
+	for i := 0; i < 5; i++ {
+		if err := h.svc.EvaluateTriggers(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runs, _ := h.svc.ListRuns(ctx)
+	if len(runs) != 0 {
+		t.Fatalf("deactivated cron fired %d run(s): %+v", len(runs), runs)
+	}
+
+	if _, err := h.svc.Activate(ctx, version.ID); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 5; i++ {
+		if err := h.svc.EvaluateTriggers(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runs, _ = h.svc.ListRuns(ctx)
+	if len(runs) != 1 {
+		t.Fatalf("reactivation produced %d runs, want exactly 1: %+v", len(runs), runs)
+	}
+}
