@@ -234,7 +234,7 @@ func TestDisableRunningPromptSchedulePreventsLateReschedule(t *testing.T) {
 	}
 }
 
-func TestPromptScheduleV38MigrationDefaultsExistingRows(t *testing.T) {
+func TestPromptScheduleV40MigrationDefaultsExistingRows(t *testing.T) {
 	raw, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatal(err)
@@ -247,7 +247,7 @@ func TestPromptScheduleV38MigrationDefaultsExistingRows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for version := 1; version <= 37; version++ {
+	for version := 1; version <= 39; version++ {
 		if err := applyMigration(tx, version); err != nil {
 			t.Fatalf("migrate v%d: %v", version, err)
 		}

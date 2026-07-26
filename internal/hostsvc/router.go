@@ -87,7 +87,13 @@ func (r *Router) ForRemote(remoteID string) Host {
 	return r.local
 }
 
-// LookupRemote resolves an explicit owner without falling back for unknown remotes.
+// LookupRemote is the strict counterpart of ForRemote: it reports
+// whether remoteID actually resolves to a registered owner. Callers
+// holding a *persisted* remote ID (a saved schedule, a stored worktree
+// record) must use this — with ForRemote a stale ID silently binds to
+// the local host and the action runs on the wrong machine.
+//
+// An empty or "local" remoteID is the local host (ok=true).
 func (r *Router) LookupRemote(remoteID string) (Host, bool) {
 	if remoteID == "" || remoteID == "local" {
 		return r.local, true

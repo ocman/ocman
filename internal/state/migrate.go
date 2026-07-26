@@ -143,12 +143,18 @@ import (
 //	      pid/launched_at) so it survives an ocman restart. The host always
 //	      re-probes health before trusting a persisted row (AD-5, #391).
 //	36 - add retry lineage to workflow runs and reused-attempt provenance.
-//	37 - one-time project prompt schedules with durable dispatch state and
+//	37 - add queued_message.attempts/last_error/blocked so a permanently
+//	      unsendable follow-up is dead-lettered instead of blocking every
+//	      later message on that session forever.
+//	38 - add `unarchived_entity` recording when the user last unarchived a
+//	      session or project, so auto-archive does not immediately re-hide
+//	      something they deliberately brought back.
+//	39 - one-time project prompt schedules with durable dispatch state and
 //	     resulting session linkage.
-//	38 - recurring prompt timing, enablement, timezone, and session reuse.
-//	39 - link a workflow run to the external runner execution that drives
+//	40 - recurring prompt timing, enablement, timezone, and session reuse.
+//	41 - link a workflow run to the external runner execution that drives
 //	     it, so the run mirror can find the Dagu run for an active row.
-const latestSchemaVersion = 39
+const latestSchemaVersion = 41
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -322,6 +328,10 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV38(tx)
 	case 39:
 		return migrateToV39(tx)
+	case 40:
+		return migrateToV40(tx)
+	case 41:
+		return migrateToV41(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -1256,7 +1266,41 @@ func migrateToV36(tx *sql.Tx) error {
 	return nil
 }
 
+// migrateToV37 gives queued messages a send-failure record so one
+// permanently unsendable message can be set aside instead of stalling
+// the rest of its session's queue (the drain is strictly head-first).
 func migrateToV37(tx *sql.Tx) error {
+	for _, change := range []struct{ table, column, definition string }{
+		{"queued_message", "attempts", "INTEGER NOT NULL DEFAULT 0"},
+		{"queued_message", "last_error", "TEXT NOT NULL DEFAULT ''"},
+		{"queued_message", "blocked", "INTEGER NOT NULL DEFAULT 0"},
+	} {
+		if err := addColumnIfMissing(tx, change.table, change.column, change.definition); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// migrateToV38 records user unarchive intent. Unarchiving only deletes
+// the archive marker, so the auto-archive loops — which re-derive state
+// purely from inactivity, and run at boot — silently re-hid anything the
+// user had just brought back.
+func migrateToV38(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS unarchived_entity (
+			kind          TEXT NOT NULL,
+			entity_key    TEXT NOT NULL,
+			unarchived_at INTEGER NOT NULL,
+			PRIMARY KEY (kind, entity_key)
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("creating unarchived_entity: %w", err)
+	}
+	return nil
+}
+func migrateToV39(tx *sql.Tx) error {
 	_, err := tx.Exec(`
 		CREATE TABLE prompt_schedule (
 			id          TEXT PRIMARY KEY,
@@ -1279,11 +1323,11 @@ func migrateToV37(tx *sql.Tx) error {
 	return err
 }
 
-// migrateToV39 links a run to its external runner execution. Ocman
+// migrateToV41 links a run to its external runner execution. Ocman
 // supplies the Dagu run id itself, so the two are usually equal; the
 // column stays explicit because the runner is pluggable and a recovered
 // run must be findable after a restart.
-func migrateToV39(tx *sql.Tx) error {
+func migrateToV41(tx *sql.Tx) error {
 	for _, change := range []struct{ column, definition string }{
 		{"external_run_id", "TEXT NOT NULL DEFAULT ''"},
 		{"external_runner", "TEXT NOT NULL DEFAULT ''"},
@@ -1297,7 +1341,7 @@ func migrateToV39(tx *sql.Tx) error {
 	return err
 }
 
-func migrateToV38(tx *sql.Tx) error {
+func migrateToV40(tx *sql.Tx) error {
 	for _, change := range []struct{ column, definition string }{
 		{"timing_type", "TEXT NOT NULL DEFAULT 'once'"},
 		{"interval_minutes", "INTEGER NOT NULL DEFAULT 0"},

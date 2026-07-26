@@ -84,17 +84,24 @@ func TestRouter_ForRemote(t *testing.T) {
 }
 
 func TestRouter_LookupRemote(t *testing.T) {
-	local := stubHost{id: "local"}
-	r := NewRouter(local)
+	r := NewRouter(stubHost{id: "local"})
 	r.RegisterRemote("abc", stubHost{id: "abc"})
 
-	for _, id := range []string{"", "local", "abc"} {
-		if _, ok := r.LookupRemote(id); !ok {
-			t.Errorf("LookupRemote(%q) not found", id)
+	for _, id := range []string{"", "local"} {
+		if h, ok := r.LookupRemote(id); !ok || h.RemoteID() != "local" {
+			t.Errorf("LookupRemote(%q) = %v, %v; want local, true", id, h, ok)
 		}
 	}
-	if host, ok := r.LookupRemote("unknown"); ok || host != nil {
-		t.Errorf("unknown remote = (%v, %v), want (nil, false)", host, ok)
+	if h, ok := r.LookupRemote("abc"); !ok || h.RemoteID() != "abc" {
+		t.Errorf("LookupRemote(abc) = %v, %v; want abc, true", h, ok)
+	}
+	// Strict: an unknown ID must NOT degrade to local.
+	if h, ok := r.LookupRemote("unknown"); ok {
+		t.Errorf("LookupRemote(unknown) = %v, true; want false", h)
+	}
+	r.UnregisterRemote("abc")
+	if h, ok := r.LookupRemote("abc"); ok {
+		t.Errorf("LookupRemote after unregister = %v, true; want false", h)
 	}
 }
 

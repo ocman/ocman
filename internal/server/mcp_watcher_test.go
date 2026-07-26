@@ -321,6 +321,208 @@ func TestCheckAndInjectChildResults_PreservesDisconnectedResultAfterRestart(t *t
 	}
 }
 
+// TestCheckAndInjectChildResults_RemindsParentAfterRestartDisconnect
+// covers the restart path: the in-memory broker is empty, so Deliver
+// fails and the row CASes to "disconnected". Without a reminder the
+// parent agent is told nothing, never learns await_session_result
+// exists, and most likely re-runs new_session — duplicating the work
+// the child already did.
+func TestCheckAndInjectChildResults_RemindsParentAfterRestartDisconnect(t *testing.T) {
+	sdb := openWatcherTestStateDB(t)
+	insertWatcherChildSession(t, sdb, "child-restart-remind", "parent-1", "running")
+	if err := sdb.SetChildResultDelivery("child-restart-remind", "waiting"); err != nil {
+		t.Fatal(err)
+	}
+
+	fp := &fakePlatform{
+		id: "opencode",
+		sessions: []db.Session{
+			{ID: "child-restart-remind", Status: "done"},
+			{ID: "parent-1", Status: "waiting"},
+		},
+	}
+	fp.sessionDetailFn = func(id string) (*platforms.SessionDetail, error) {
+		for _, session := range fp.sessions {
+			if session.ID == id {
+				sess := session
+				return &platforms.SessionDetail{Session: &sess}, nil
+			}
+		}
+		return nil, platforms.ErrNotFound
+	}
+	reg := platforms.NewRegistry()
+	reg.Register(fp)
+	s := New(nil, sdb, "127.0.0.1:0", reg, nil)
+
+	s.checkAndInjectChildResults(context.Background())
+
+	queued, err := sdb.ListQueuedMessages("", "parent-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(queued) != 1 {
+		t.Fatalf("queued = %+v, want one reconnect reminder", queued)
+	}
+	if !strings.Contains(queued[0].Text, "await_session_result") {
+		t.Errorf("reminder missing await_session_result guidance: %q", queued[0].Text)
+	}
+}
+
+// TestCheckAndInjectChildResults_ReapsUnresolvableChild covers the
+// orphan path: a child whose session no longer resolves on any platform
+// stays "running" forever, is re-listed every 5s (a registry fan-out
+// per tick, forever), and any await_session_result on it never returns.
+func TestCheckAndInjectChildResults_ReapsUnresolvableChild(t *testing.T) {
+	sdb := openWatcherTestStateDB(t)
+	insertWatcherChildSession(t, sdb, "child-vanished", "parent-1", "running")
+	// Age it past the grace period so a just-created child is not reaped.
+	if err := sdb.UpdateChildSessionCreatedAt("child-vanished",
+		time.Now().Add(-2*childOrphanGrace).UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+
+	// The registry knows the parent but not the child.
+	fp := &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "parent-1", Status: "waiting"}}}
+	fp.sessionDetailFn = func(id string) (*platforms.SessionDetail, error) {
+		if id == "parent-1" {
+			sess := fp.sessions[0]
+			return &platforms.SessionDetail{Session: &sess}, nil
+		}
+		return nil, platforms.ErrNotFound
+	}
+	reg := platforms.NewRegistry()
+	reg.Register(fp)
+	s := New(nil, sdb, "127.0.0.1:0", reg, nil)
+
+	// Below the limit the child is left alone: a remote may be briefly
+	// disconnected and come back.
+	for i := 1; i < childOrphanPollLimit; i++ {
+		s.checkAndInjectChildResults(context.Background())
+		child, err := sdb.GetChildSession("child-vanished")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if child.Status != "running" {
+			t.Fatalf("child reaped after %d polls, want %d", i, childOrphanPollLimit)
+		}
+	}
+
+	s.checkAndInjectChildResults(context.Background())
+	child, err := sdb.GetChildSession("child-vanished")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isTerminalStatus(child.Status) {
+		t.Fatalf("child status = %q, want a terminal state", child.Status)
+	}
+	// Terminal + delivered means it stops coming back every tick.
+	pending, err := sdb.ListPendingChildSessions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range pending {
+		if p.ID == "child-vanished" {
+			t.Fatalf("reaped child still pending: %+v", p)
+		}
+	}
+}
+
+// TestCheckAndInjectChildResults_SkipsArchivedParent pins that a child
+// completing after its parent was archived does not resurrect the
+// parent. Injecting the result advances the parent's time_updated,
+// which auto-unarchives it: the session the user deliberately hid
+// reappears and starts a new turn on its own.
+func TestCheckAndInjectChildResults_SkipsArchivedParent(t *testing.T) {
+	sdb := openWatcherTestStateDB(t)
+	insertWatcherChildSession(t, sdb, "child-archived-parent", "parent-1", "running")
+	if err := sdb.ArchiveSession("opencode", "parent-1", time.Now().UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+
+	fp := &fakePlatform{
+		id: "opencode",
+		sessions: []db.Session{
+			{ID: "child-archived-parent", Status: "done"},
+			{ID: "parent-1", Status: "waiting"},
+		},
+	}
+	fp.sessionDetailFn = func(id string) (*platforms.SessionDetail, error) {
+		for _, session := range fp.sessions {
+			if session.ID == id {
+				sess := session
+				return &platforms.SessionDetail{Session: &sess}, nil
+			}
+		}
+		return nil, platforms.ErrNotFound
+	}
+	reg := platforms.NewRegistry()
+	reg.Register(fp)
+	s := New(nil, sdb, "127.0.0.1:0", reg, nil)
+
+	s.checkAndInjectChildResults(context.Background())
+
+	queued, err := sdb.ListQueuedMessages("", "parent-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(queued) != 0 {
+		t.Fatalf("queued %+v for an archived parent, want nothing", queued)
+	}
+
+	// The child must still settle: its outcome stays readable, and the
+	// row must not loop through the watcher forever.
+	child, err := sdb.GetChildSession("child-archived-parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if child.Status != "completed" {
+		t.Errorf("child status = %q, want completed", child.Status)
+	}
+	pending, err := sdb.ListPendingChildSessions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range pending {
+		if p.ID == "child-archived-parent" {
+			t.Fatalf("child still pending after its result was dropped: %+v", p)
+		}
+	}
+}
+
+// TestCheckAndInjectChildResults_ReapsChildWithVanishedParent covers the
+// same shape for a deleted PARENT: injection returned early with no
+// state change, so the row looped forever and logged a WARN every tick.
+func TestCheckAndInjectChildResults_ReapsChildWithVanishedParent(t *testing.T) {
+	sdb := openWatcherTestStateDB(t)
+	insertWatcherChildSession(t, sdb, "child-orphan", "parent-gone", "running")
+
+	fp := &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "child-orphan", Status: "done"}}}
+	fp.sessionDetailFn = func(id string) (*platforms.SessionDetail, error) {
+		if id == "child-orphan" {
+			sess := fp.sessions[0]
+			return &platforms.SessionDetail{Session: &sess}, nil
+		}
+		return nil, platforms.ErrNotFound
+	}
+	reg := platforms.NewRegistry()
+	reg.Register(fp)
+	s := New(nil, sdb, "127.0.0.1:0", reg, nil)
+
+	for i := 0; i < childOrphanPollLimit; i++ {
+		s.checkAndInjectChildResults(context.Background())
+	}
+
+	pending, err := sdb.ListPendingChildSessions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range pending {
+		if p.ID == "child-orphan" {
+			t.Fatalf("child with a deleted parent still pending: %+v", p)
+		}
+	}
+}
+
 func TestCheckAndInjectChildResults_RecoversTerminalWaitingResultAfterRestart(t *testing.T) {
 	sdb := openWatcherTestStateDB(t)
 	insertWatcherChildSession(t, sdb, "child-terminal-wait", "parent-1", "completed")

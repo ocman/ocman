@@ -1,6 +1,8 @@
 package state
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -46,10 +48,12 @@ func (d *DB) ArchiveSession(platform, sessionID string, sessionTimeUpdated int64
 	if err != nil {
 		return fmt.Errorf("archiving session: %w", err)
 	}
-	return nil
+	return d.clearUnarchive(unarchiveKindSession, sessionKey(platform, sessionID))
 }
 
-// UnarchiveSession removes a session's archived marker (per platform).
+// UnarchiveSession removes a session's archived marker (per platform)
+// and records the user's intent so auto-archive does not immediately
+// re-hide it.
 func (d *DB) UnarchiveSession(platform, sessionID string) error {
 	_, err := d.db.Exec(
 		`DELETE FROM archived_session WHERE platform = ? AND session_id = ?`,
@@ -58,7 +62,107 @@ func (d *DB) UnarchiveSession(platform, sessionID string) error {
 	if err != nil {
 		return fmt.Errorf("unarchiving session: %w", err)
 	}
+	return d.recordUnarchive(unarchiveKindSession, sessionKey(platform, sessionID))
+}
+
+const (
+	unarchiveKindSession = "session"
+	unarchiveKindProject = "project"
+)
+
+// sessionKey packs a (platform, session) pair into one unarchive key.
+// Platform ids never contain a NUL, so the pair round-trips unambiguously.
+func sessionKey(platform, sessionID string) string {
+	return platform + "\x00" + sessionID
+}
+
+// recordUnarchive stamps when the user last brought an entity back.
+func (d *DB) recordUnarchive(kind, key string) error {
+	_, err := d.db.Exec(`
+		INSERT INTO unarchived_entity (kind, entity_key, unarchived_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(kind, entity_key) DO UPDATE SET
+			unarchived_at = excluded.unarchived_at
+	`, kind, key, time.Now().UnixMilli())
+	if err != nil {
+		return fmt.Errorf("recording unarchive: %w", err)
+	}
 	return nil
+}
+
+// clearUnarchive drops the intent marker. Called when the entity is
+// archived again: the newer archive supersedes the older unarchive.
+func (d *DB) clearUnarchive(kind, key string) error {
+	_, err := d.db.Exec(`DELETE FROM unarchived_entity WHERE kind = ? AND entity_key = ?`, kind, key)
+	if err != nil {
+		return fmt.Errorf("clearing unarchive: %w", err)
+	}
+	return nil
+}
+
+// SessionsUnarchivedSince returns the sessions the user unarchived at or
+// after cutoff. Auto-archive skips them so a deliberate unarchive is not
+// undone by the same inactivity that archived the session originally.
+func (d *DB) SessionsUnarchivedSince(cutoff int64) (map[Key]bool, error) {
+	keys, err := d.unarchivedSince(unarchiveKindSession, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[Key]bool, len(keys))
+	for key := range keys {
+		platform, sessionID, found := strings.Cut(key, "\x00")
+		if !found {
+			continue
+		}
+		out[Key{Platform: platform, SessionID: sessionID}] = true
+	}
+	return out, nil
+}
+
+// ProjectsUnarchivedSince returns the project roots the user unarchived
+// at or after cutoff.
+func (d *DB) ProjectsUnarchivedSince(cutoff int64) (map[string]bool, error) {
+	return d.unarchivedSince(unarchiveKindProject, cutoff)
+}
+
+func (d *DB) unarchivedSince(kind string, cutoff int64) (map[string]bool, error) {
+	rows, err := d.db.Query(
+		`SELECT entity_key FROM unarchived_entity WHERE kind = ? AND unarchived_at >= ?`,
+		kind, cutoff,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("listing unarchived entities: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, fmt.Errorf("scanning unarchived entity: %w", err)
+		}
+		out[key] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading unarchived entities: %w", err)
+	}
+	return out, nil
+}
+
+// IsSessionArchived reports whether a single session currently carries
+// an archive marker.
+func (d *DB) IsSessionArchived(platform, sessionID string) (bool, error) {
+	var one int
+	err := d.db.QueryRow(
+		`SELECT 1 FROM archived_session WHERE platform = ? AND session_id = ?`,
+		platform, sessionID,
+	).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("checking archived session: %w", err)
+	}
+	return true, nil
 }
 
 // ArchivedSessions returns every archived session's time_updated,
@@ -99,10 +203,11 @@ func (d *DB) ArchiveProject(projectRoot string) error {
 	if err != nil {
 		return fmt.Errorf("archiving project: %w", err)
 	}
-	return nil
+	return d.clearUnarchive(unarchiveKindProject, projectRoot)
 }
 
-// UnarchiveProject removes a project's archived marker.
+// UnarchiveProject removes a project's archived marker and records the
+// user's intent so auto-archive does not immediately re-hide it.
 func (d *DB) UnarchiveProject(projectRoot string) error {
 	_, err := d.db.Exec(
 		`DELETE FROM archived_project WHERE project_root = ?`,
@@ -111,7 +216,7 @@ func (d *DB) UnarchiveProject(projectRoot string) error {
 	if err != nil {
 		return fmt.Errorf("unarchiving project: %w", err)
 	}
-	return nil
+	return d.recordUnarchive(unarchiveKindProject, projectRoot)
 }
 
 // ArchivedProjects returns every archived project's archived_at time,

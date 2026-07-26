@@ -254,9 +254,20 @@ func (m *Manager) unregisterAdapters(mr *managedRemote) {
 	if mr.host != nil && mr.conn != nil {
 		if rid := mr.conn.RemoteID(); rid != "" {
 			m.router.UnregisterRemote(rid)
+			m.evictInventory(rid)
 		}
 		mr.host = nil
 	}
+}
+
+// evictInventory drops a remote's cached project list. Must happen
+// wherever the router entry is dropped: resolveDir would otherwise keep
+// mapping the remote's dirs to a dead remote ID, which ForRemote then
+// degrades to the local host — silently running the action on the hub.
+func (m *Manager) evictInventory(remoteID string) {
+	m.invMu.Lock()
+	delete(m.inventory, remoteID)
+	m.invMu.Unlock()
 }
 
 // sleepCtx sleeps for d unless ctx is cancelled first. Returns false if
@@ -369,6 +380,7 @@ func (m *Manager) unregisterLocked(mr *managedRemote) {
 	if mr.conn != nil {
 		if rid := mr.conn.RemoteID(); rid != "" {
 			m.router.UnregisterRemote(rid)
+			m.evictInventory(rid)
 		}
 		mr.conn.Close()
 	}

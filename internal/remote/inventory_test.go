@@ -162,6 +162,36 @@ func TestManager_EnabledRemotesAndInventoryLoop(t *testing.T) {
 	}
 }
 
+// TestManager_RemoveEvictsInventory pins that removing a remote also
+// drops its cached project inventory. Otherwise resolveDir keeps
+// returning the dead remote ID, ForRemote degrades that to local, and
+// dir-scoped actions silently run on the hub instead.
+func TestManager_RemoveEvictsInventory(t *testing.T) {
+	remoteReg := platforms.NewRegistry()
+	remoteReg.Register(&fakePlatform{id: "opencode"})
+	addr := startRealRemote(t, "tok", "abc123", remoteReg)
+
+	store := newStateDB(t)
+	mgr := NewManager(platforms.NewRegistry(), hostsvc.NewRouter(localStubHost{}), store, "opencode")
+	t.Cleanup(mgr.Stop)
+	id, err := mgr.Add(addr, "tok", "Box")
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForRegister(t, mgr.registry, "r-abc123:opencode")
+	mgr.RefreshInventories(context.Background())
+	if got := mgr.resolveDir("/home/u/app"); got != "abc123" {
+		t.Fatalf("precondition: resolveDir = %q, want abc123", got)
+	}
+
+	if err := mgr.Remove(id); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if got := mgr.resolveDir("/home/u/app"); got != "" {
+		t.Errorf("resolveDir after Remove = %q; want local (stale inventory not evicted)", got)
+	}
+}
+
 func TestDisplayNameFallbacks(t *testing.T) {
 	if got := displayName(state.Remote{DisplayName: "Name"}); got != "Name" {
 		t.Errorf("got %q", got)

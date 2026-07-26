@@ -296,6 +296,31 @@ func TestHandleWorktreeRemove_NonRepo(t *testing.T) {
 	}
 }
 
+// TestHandleWorktreeRemove_UnknownRemote confirms a remove aimed at a
+// remote that is no longer registered fails closed with 409 instead of
+// silently deleting the hub's identically-pathed worktree.
+func TestHandleWorktreeRemove_UnknownRemote(t *testing.T) {
+	repo := initWorktreeTestRepo(t)
+	wtPath := filepath.Join(t.TempDir(), "wt")
+	add := exec.Command("git", "-C", repo, "worktree", "add", "-b", "feature/remote", wtPath, "main")
+	add.Env = cleanGitEnvForTest()
+	if out, err := add.CombinedOutput(); err != nil {
+		t.Fatalf("seed worktree: %v\n%s", err, out)
+	}
+
+	srv := &Server{}
+	body := `{"projectDir":"` + repo + `","path":"` + wtPath + `","force":true,"remoteId":"gone"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/worktree/remove", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	srv.handleWorktreeRemove(rr, req)
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status = %d; want 409 (body: %q)", rr.Code, rr.Body.String())
+	}
+	if _, statErr := os.Stat(wtPath); statErr != nil {
+		t.Errorf("local worktree was destroyed by a remote-scoped remove: %v", statErr)
+	}
+}
+
 // TestHandleWorktreeRemove_MainWorktree confirms removing the primary
 // checkout returns 409 (git refuses; we classify it).
 func TestHandleWorktreeRemove_MainWorktree(t *testing.T) {

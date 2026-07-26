@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -348,6 +349,54 @@ func TestHandleSessionAttachment_SavesFileToCache(t *testing.T) {
 	}
 	if strings.Contains(got.Path, projectDir) {
 		t.Fatalf("attachment path should not be inside project dir: %s", got.Path)
+	}
+}
+
+// TestSweepComposerAttachments covers the unbounded-growth fix: nothing
+// ever deleted composer uploads, so real user content (screenshots,
+// PDFs, logs) accumulated forever in a directory macOS does not purge.
+func TestSweepComposerAttachments(t *testing.T) {
+	root := t.TempDir()
+	sessionDir := filepath.Join(root, "projhash", "s1")
+	if err := os.MkdirAll(sessionDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fresh := filepath.Join(sessionDir, "1-fresh.png")
+	stale := filepath.Join(sessionDir, "2-stale.png")
+	for _, p := range []string{fresh, stale} {
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := time.Now().Add(-2 * composerAttachmentTTL)
+	if err := os.Chtimes(stale, old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	removed := sweepComposerAttachments(root, composerAttachmentTTL)
+	if removed != 1 {
+		t.Errorf("removed = %d, want 1", removed)
+	}
+	if _, err := os.Stat(fresh); err != nil {
+		t.Errorf("recent attachment was deleted: %v", err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Errorf("stale attachment survived the sweep: %v", err)
+	}
+
+	// Emptied directories are cleaned up too, so the tree does not grow
+	// one dead folder per session forever.
+	if err := os.Chtimes(fresh, old, old); err != nil {
+		t.Fatal(err)
+	}
+	sweepComposerAttachments(root, composerAttachmentTTL)
+	if _, err := os.Stat(sessionDir); !os.IsNotExist(err) {
+		t.Errorf("empty session directory survived the sweep: %v", err)
+	}
+
+	// A missing root is not an error.
+	if got := sweepComposerAttachments(filepath.Join(root, "nope"), composerAttachmentTTL); got != 0 {
+		t.Errorf("sweep of a missing root = %d, want 0", got)
 	}
 }
 

@@ -1237,8 +1237,13 @@ func TestTickMarksUnreachableAgentUnknown(t *testing.T) {
 	}
 	h.agent.inspectErr = errors.New("session unavailable")
 	h.restart()
-	if err := h.svc.Tick(t.Context()); err != nil {
-		t.Fatal(err)
+	// A persistently unreachable session settles as unknown; the first
+	// failures are tolerated so a restarting opencode does not pause
+	// every in-flight run (see TestRestartDoesNotPauseOnTransientInspectFailure).
+	for i := 0; i <= inspectFailureLimit; i++ {
+		if err := h.svc.Tick(t.Context()); err != nil {
+			t.Fatal(err)
+		}
 	}
 	restored, err := h.svc.GetRun(t.Context(), run.ID)
 	if err != nil {
@@ -1293,6 +1298,93 @@ func TestResolveUnknownRecordsAuditAndAllowsRetry(t *testing.T) {
 	<-replacementCompleted
 	close(interrupted.release)
 	<-interruptedCompleted
+}
+
+// TestRestartDoesNotPauseOnTransientInspectFailure pins that restarting
+// ocman independently of opencode does not pause every in-flight agent
+// workflow. On the first tick after restart ANY Inspect error — including
+// "opencode hasn't finished starting" or "platform not registered yet" —
+// marked the attempt unknown and paused the run, each needing a human
+// click, even though the sessions were reachable seconds later.
+func TestRestartDoesNotPauseOnTransientInspectFailure(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	version, err := h.svc.PublishJSON(ctx, []byte(singleAgent))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.svc.Start(ctx, version.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.svc.Tick(ctx); err != nil { // launch the agent session
+		t.Fatal(err)
+	}
+
+	h.restart()
+	// opencode is still coming up: the probe fails on the first ticks.
+	h.agent.inspectErr = errors.New("connection refused")
+	h.advance()
+	if err := h.svc.Tick(ctx); err != nil {
+		t.Fatalf("tick: %v", err)
+	}
+	got, err := h.svc.GetRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != StateActive {
+		t.Fatalf("run = %q after one failed probe; want it still active", got.State)
+	}
+
+	// opencode finishes starting; the run reconciles normally.
+	h.agent.inspectErr = nil
+	h.agent.results["session-1"] = AgentResult{State: "done", FinalMessage: `{"ok":true}`}
+	h.advance()
+	if err := h.svc.Tick(ctx); err != nil {
+		t.Fatal(err)
+	}
+	settled, err := h.svc.GetRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settled.State == StatePaused {
+		t.Fatalf("run paused despite the session coming back: %+v", settled)
+	}
+}
+
+// TestRestartPausesAfterPersistentInspectFailure is the other half: a
+// session that stays unreachable must still end up unknown/paused for a
+// human to resolve.
+func TestRestartPausesAfterPersistentInspectFailure(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	version, err := h.svc.PublishJSON(ctx, []byte(singleAgent))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.svc.Start(ctx, version.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.svc.Tick(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	h.restart()
+	h.agent.inspectErr = errors.New("session deleted")
+	for i := 0; i <= inspectFailureLimit; i++ {
+		h.advance()
+		if err := h.svc.Tick(ctx); err != nil {
+			t.Fatalf("tick %d: %v", i, err)
+		}
+	}
+	got, err := h.svc.GetRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != StatePaused {
+		t.Fatalf("run = %q, want paused after a persistently unreachable session", got.State)
+	}
 }
 
 func TestResolveUnknownCanSettleSucceededOrFailed(t *testing.T) {
@@ -1677,10 +1769,140 @@ func TestAgentRunMissingPublishedConfigurationExplainsRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = h.svc.Tick(t.Context())
+	// A published definition missing agent config is deterministic and
+	// permanent: settle the node instead of erroring on every tick
+	// forever (which starved every other active run).
+	if err := h.svc.Tick(t.Context()); err != nil {
+		t.Fatalf("tick error = %v, want nil", err)
+	}
 	want := fmt.Sprintf("workflow run %q cannot continue: agent node %q has no configuration in published version %q; cancel this run, publish a corrected workflow with agent.directory and agent.prompt, then start a new run", run.ID, "implement", version.ID)
-	if err == nil || err.Error() != want {
-		t.Fatalf("tick error = %q, want %q", err, want)
+	settled, err := h.svc.GetRun(t.Context(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settled.Nodes[0].State != NodeFailed {
+		t.Fatalf("node state = %q, want %q", settled.Nodes[0].State, NodeFailed)
+	}
+	attempts := settled.Nodes[0].Attempts
+	if got := attempts[len(attempts)-1].Error; got != want {
+		t.Fatalf("attempt error = %q, want %q", got, want)
+	}
+	if settled.State != StateFailed {
+		t.Fatalf("run state = %q, want %q", settled.State, StateFailed)
+	}
+}
+
+// TestTickIsolatesFailingRuns pins that one run that cannot make
+// progress does not starve the others. Runs are listed created_at DESC,
+// so before this a poisoned newest run blocked every older run from
+// ever dispatching again.
+func TestTickIsolatesFailingRuns(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+
+	healthyVersion, err := h.svc.PublishJSON(ctx, []byte(singleAgent))
+	if err != nil {
+		t.Fatal(err)
+	}
+	healthy, err := h.svc.Start(ctx, healthyVersion.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A newer run whose published definition lost its agent config.
+	// Runs are listed created_at DESC, so Tick visits this one first.
+	h.advance()
+	brokenVersion, err := h.svc.PublishJSON(ctx, []byte(strings.ReplaceAll(singleAgent, "implement", "beta")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	broken, err := h.svc.Start(ctx, brokenVersion.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", h.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`UPDATE workflow_version SET definition_json = json_remove(definition_json, '$.nodes[0].agent') WHERE id = ?`, brokenVersion.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := h.svc.Tick(ctx); err != nil {
+		t.Fatalf("tick: %v", err)
+	}
+
+	gotBroken, err := h.svc.GetRun(ctx, broken.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotBroken.Nodes[0].State != NodeFailed {
+		t.Errorf("broken node state = %q, want %q", gotBroken.Nodes[0].State, NodeFailed)
+	}
+	gotHealthy, err := h.svc.GetRun(ctx, healthy.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotHealthy.Nodes[0].Attempts[0].SessionID == "" {
+		t.Error("healthy run never dispatched: it was starved by the broken run")
+	}
+}
+
+// TestTickSurvivesTransientInspectFailure pins that a blip inspecting an
+// agent session neither propagates out of Tick nor immediately pauses
+// the run, and that a persistent failure eventually settles the attempt
+// as unknown rather than erroring forever.
+func TestTickSurvivesTransientInspectFailure(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	version, err := h.svc.PublishJSON(ctx, []byte(singleAgent))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.svc.Start(ctx, version.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.svc.Tick(ctx); err != nil { // launches the agent session
+		t.Fatal(err)
+	}
+
+	h.agent.inspectErr = errors.New("opencode restarting")
+	for i := 0; i < inspectFailureLimit-1; i++ {
+		h.advance()
+		if err := h.svc.Tick(ctx); err != nil {
+			t.Fatalf("tick %d propagated a transient inspect error: %v", i, err)
+		}
+		got, err := h.svc.GetRun(ctx, run.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.State != StateActive {
+			t.Fatalf("run paused after %d transient failures; want still active", i+1)
+		}
+	}
+
+	// A blip that clears must reset the counter, not accumulate.
+	h.agent.inspectErr = nil
+	h.advance()
+	if err := h.svc.Tick(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	h.agent.inspectErr = errors.New("session deleted")
+	for i := 0; i < inspectFailureLimit; i++ {
+		h.advance()
+		if err := h.svc.Tick(ctx); err != nil {
+			t.Fatalf("persistent inspect failure propagated out of Tick: %v", err)
+		}
+	}
+	got, err := h.svc.GetRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Nodes[0].State != NodeUnknown {
+		t.Fatalf("node state = %q, want %q after a persistent inspect failure", got.Nodes[0].State, NodeUnknown)
 	}
 }
 
@@ -1961,8 +2183,57 @@ func TestAgentTerminalErrorAndCancellation(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if run.State != StateFailed || run.Nodes[0].Attempts[0].Error != "create failed" {
-			t.Fatalf("launch failure not persisted: %+v", run)
+		// A launch error is retried a bounded number of times before the
+		// run is failed: opencode restarting must not kill the workflow.
+		if run.State != StateActive {
+			t.Fatalf("run failed on the first launch error: %+v", run)
+		}
+		for i := 0; i < agentLaunchAttemptLimit && run.State == StateActive; i++ {
+			h.advance()
+			if err := h.svc.Tick(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			if run, err = h.svc.GetRun(t.Context(), run.ID); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if run.State != StateFailed {
+			t.Fatalf("run did not fail after exhausting launch retries: %+v", run)
+		}
+		last := run.Nodes[0].Attempts[len(run.Nodes[0].Attempts)-1]
+		if last.Error != "create failed" {
+			t.Fatalf("launch failure not persisted: %+v", last)
+		}
+	})
+
+	t.Run("launch error recovers", func(t *testing.T) {
+		h := newHarness(t)
+		h.agent.startErr = errors.New("connection refused")
+		version, err := h.svc.PublishJSON(t.Context(), []byte(singleAgent))
+		if err != nil {
+			t.Fatal(err)
+		}
+		run, err := h.svc.Start(t.Context(), version.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// opencode comes back before the retries run out.
+		h.agent.startErr = nil
+		h.advance()
+		if err := h.svc.Tick(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		got, err := h.svc.GetRun(t.Context(), run.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.State != StateActive {
+			t.Fatalf("run = %q, want it to survive a transient launch failure", got.State)
+		}
+		last := got.Nodes[0].Attempts[len(got.Nodes[0].Attempts)-1]
+		if last.SessionID == "" {
+			t.Fatalf("agent never relaunched after the blip: %+v", last)
 		}
 	})
 

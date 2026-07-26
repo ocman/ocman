@@ -1191,6 +1191,51 @@ func TestAutoArchiveProjects(t *testing.T) {
 	}
 }
 
+// TestAutoArchiveRespectsRecentUnarchive pins that unarchiving is not
+// silently undone. Unarchive only DELETEs the marker, and the archive
+// loops re-derive state purely from inactivity — and run immediately at
+// boot — so unarchiving an old session or project to look at it and
+// then restarting ocman re-hid it.
+func TestAutoArchiveRespectsRecentUnarchive(t *testing.T) {
+	srv, rawDB := testServerWithRawDB(t)
+	defer rawDB.Close()
+
+	if _, err := rawDB.Exec(
+		`INSERT INTO session (id, title, directory, time_created, time_updated)
+		 VALUES ('old-session', 'ancient', '/tmp/stale', 1000, 1000)`,
+	); err != nil {
+		t.Fatalf("seeding session: %v", err)
+	}
+	opencodeplatform.ResetCachesForTests()
+
+	// The user goes looking for the old work and unarchives it.
+	if err := srv.stateDB.UnarchiveSession("opencode", "old-session"); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.stateDB.UnarchiveProject(projectRootForDirectory("/tmp/stale")); err != nil {
+		t.Fatal(err)
+	}
+
+	// ocman restarts for an unrelated reason; both loops run at boot.
+	srv.autoArchiveInactiveSessions()
+	srv.autoArchiveInactiveProjects()
+
+	archivedSessions, err := srv.stateDB.ArchivedSessions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := archivedSessions[state.Key{Platform: "opencode", SessionID: "old-session"}]; ok {
+		t.Error("session the user just unarchived was silently re-archived")
+	}
+	archivedProjects, err := srv.stateDB.ArchivedProjects()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := archivedProjects[projectRootForDirectory("/tmp/stale")]; ok {
+		t.Error("project the user just unarchived was silently re-archived")
+	}
+}
+
 // testServerWithRawDB is like testServer but also returns a raw *sql.DB
 // handle to the same OpenCode database so tests can seed additional rows.
 func testServerWithRawDB(t *testing.T) (*Server, *sql.DB) {

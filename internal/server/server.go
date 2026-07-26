@@ -115,6 +115,13 @@ type Server struct {
 	queueSvcOnce   sync.Once
 	childResults   *internalmcp.ChildResultBroker
 
+	// childUnresolved counts consecutive polls in which a child session
+	// (or its parent) could not be resolved on any platform, so the
+	// watcher can reap a genuinely deleted one without reaping a remote
+	// that is merely reconnecting. See mcp_watcher.go.
+	childUnresolvedMu sync.Mutex
+	childUnresolved   map[string]int
+
 	// runtime is the local Host's ocruntime.Runtime, injected into
 	// newLocalHost. Defaults to the native tmux runtime; tests override it
 	// (before the host router is built) with a fake so session-mode
@@ -482,6 +489,9 @@ func newHTTPServer(addr string, handler http.Handler) *http.Server {
 var autoArchiveTickFn = func(s *Server) {
 	s.autoArchiveInactiveSessions()
 	s.autoArchiveInactiveProjects()
+	if removed := sweepComposerAttachments(composerAttachmentRoot(), composerAttachmentTTL); removed > 0 {
+		log.WithField("removed", removed).Info("swept expired composer attachments")
+	}
 }
 
 func (s *Server) runAutoArchiveLoop(ctx context.Context) {
@@ -514,6 +524,17 @@ func (s *Server) autoArchiveInactiveSessions() {
 
 	archivedCount := 0
 
+	// Sessions the user deliberately brought back more recently than the
+	// inactivity cutoff. Without this the loop — which runs at boot and
+	// re-derives archive state purely from inactivity — silently re-hid
+	// anything unarchived just to look at it.
+	keep, err := s.stateDB.SessionsUnarchivedSince(cutoff)
+	if err != nil {
+		span.RecordError(err)
+		log.WithError(err).Error("listing recently unarchived sessions")
+		keep = nil
+	}
+
 	for _, adapter := range s.registry.Platforms() {
 		if !adapter.Available(ctx) {
 			continue
@@ -526,6 +547,9 @@ func (s *Server) autoArchiveInactiveSessions() {
 			continue
 		}
 		for _, session := range sessions {
+			if keep[state.Key{Platform: string(adapter.ID()), SessionID: session.ID}] {
+				continue
+			}
 			if err := s.stateDB.ArchiveSession(string(adapter.ID()), session.ID, session.TimeUpdated); err != nil {
 				span.RecordError(err)
 				log.WithFields(log.Fields{
@@ -591,12 +615,23 @@ func (s *Server) autoArchiveInactiveProjects() {
 		}
 	}
 
+	// Same guard as sessions: don't undo a deliberate unarchive.
+	keep, err := s.stateDB.ProjectsUnarchivedSince(cutoff)
+	if err != nil {
+		span.RecordError(err)
+		log.WithError(err).Error("listing recently unarchived projects")
+		keep = nil
+	}
+
 	archivedCount := 0
 	for root, last := range newest {
 		if last >= cutoff {
 			continue
 		}
 		if _, ok := archived[root]; ok {
+			continue
+		}
+		if keep[root] {
 			continue
 		}
 		if err := s.stateDB.ArchiveProject(root); err != nil {

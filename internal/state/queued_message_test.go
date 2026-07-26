@@ -112,6 +112,111 @@ func TestSessionsWithQueuedMessages_DistinctSessions(t *testing.T) {
 	}
 }
 
+// TestSessionsWithQueuedMessages_SkipsArchived pins that the drain
+// sweep ignores archived sessions. Sending into one advances its
+// time_updated past archived_at, which auto-unarchives it — the session
+// resurrects itself and burns tokens on an abandoned turn.
+func TestSessionsWithQueuedMessages_SkipsArchived(t *testing.T) {
+	db := openQueueTestDB(t)
+	_ = db.EnqueueMessage(QueuedMessage{ID: "a", Platform: "opencode", SessionID: "live", Text: "a", CreatedAt: 1})
+	_ = db.EnqueueMessage(QueuedMessage{ID: "b", Platform: "opencode", SessionID: "gone", Text: "b", CreatedAt: 1})
+	if err := db.ArchiveSession("opencode", "gone", 100); err != nil {
+		t.Fatalf("ArchiveSession: %v", err)
+	}
+
+	got, err := db.SessionsWithQueuedMessages()
+	if err != nil {
+		t.Fatalf("SessionsWithQueuedMessages: %v", err)
+	}
+	if len(got) != 1 || got[0].SessionID != "live" {
+		t.Fatalf("got %+v, want only the unarchived session", got)
+	}
+
+	// Unarchiving makes it eligible again.
+	if err := db.UnarchiveSession("opencode", "gone"); err != nil {
+		t.Fatalf("UnarchiveSession: %v", err)
+	}
+	if got, _ := db.SessionsWithQueuedMessages(); len(got) != 2 {
+		t.Fatalf("got %+v after unarchive, want both sessions", got)
+	}
+}
+
+// TestQueuedMessageBlocking pins the dead-letter path: a message that
+// keeps failing to send must stop blocking the rest of its session's
+// queue. The drain is strictly head-first, so one permanently
+// unsendable message silently stalled every later message forever.
+func TestQueuedMessageBlocking(t *testing.T) {
+	db := openQueueTestDB(t)
+	for _, id := range []string{"stuck", "next"} {
+		if err := db.EnqueueMessage(QueuedMessage{ID: id, Platform: "opencode", SessionID: "s1", Text: id, CreatedAt: 1}); err != nil {
+			t.Fatalf("EnqueueMessage %s: %v", id, err)
+		}
+	}
+
+	// Failures below the limit keep the message at the head for retry.
+	for i := 1; i < QueuedMessageAttemptLimit; i++ {
+		blocked, err := db.RecordQueuedMessageFailure("stuck", "boom")
+		if err != nil {
+			t.Fatalf("RecordQueuedMessageFailure: %v", err)
+		}
+		if blocked {
+			t.Fatalf("message blocked after %d attempts, want %d", i, QueuedMessageAttemptLimit)
+		}
+		head, _ := db.HeadQueuedMessage("opencode", "s1")
+		if head == nil || head.ID != "stuck" {
+			t.Fatalf("head = %v, want stuck while retrying", head)
+		}
+	}
+
+	blocked, err := db.RecordQueuedMessageFailure("stuck", "session deleted")
+	if err != nil {
+		t.Fatalf("RecordQueuedMessageFailure: %v", err)
+	}
+	if !blocked {
+		t.Fatalf("message not blocked after %d attempts", QueuedMessageAttemptLimit)
+	}
+
+	// The rest of the queue drains past it.
+	head, err := db.HeadQueuedMessage("opencode", "s1")
+	if err != nil {
+		t.Fatalf("HeadQueuedMessage: %v", err)
+	}
+	if head == nil || head.ID != "next" {
+		t.Fatalf("head = %v, want next once stuck is blocked", head)
+	}
+
+	// The blocked row stays visible to the user, with its reason.
+	all, err := db.ListQueuedMessages("opencode", "s1")
+	if err != nil {
+		t.Fatalf("ListQueuedMessages: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("listed %d messages, want both", len(all))
+	}
+	var stuck *QueuedMessage
+	for i := range all {
+		if all[i].ID == "stuck" {
+			stuck = &all[i]
+		}
+	}
+	if stuck == nil || !stuck.Blocked || stuck.LastError != "session deleted" {
+		t.Fatalf("blocked row = %+v, want Blocked with its last error", stuck)
+	}
+
+	// A session whose whole queue is blocked is not swept.
+	if _, err := db.RecordQueuedMessageFailure("next", "boom"); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i < QueuedMessageAttemptLimit; i++ {
+		if _, err := db.RecordQueuedMessageFailure("next", "boom"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, _ := db.SessionsWithQueuedMessages(); len(got) != 0 {
+		t.Fatalf("got %+v, want no sweepable sessions when all rows are blocked", got)
+	}
+}
+
 func TestSessionsWithQueuedMessages_EmptyWhenNoQueue(t *testing.T) {
 	db := openQueueTestDB(t)
 	got, err := db.SessionsWithQueuedMessages()

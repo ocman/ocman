@@ -8,10 +8,13 @@ package ocruntime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/ocapi"
@@ -34,6 +37,11 @@ type Instance struct {
 	Kind     string // runtime kind, e.g. "native-tmux"
 	ID       string // runtime-specific handle (tmux session name here)
 	PID      int    // process id when known (0 for tmux — the pane owns it)
+	// RepoRoot is the project this endpoint is expected to serve. Probe
+	// checks the live instance against it so a recycled port answering
+	// from a different project reads as unreachable. Empty disables the
+	// check (adopted instances we did not launch).
+	RepoRoot string
 }
 
 var ErrProbeUnreachable = errors.New("OpenCode instance is unreachable")
@@ -88,6 +96,51 @@ func probeConfig(ctx context.Context, client *http.Client, endpoint string) erro
 		return fmt.Errorf("%w: upstream HTTP %d", ErrProbeUnreachable, resp.StatusCode)
 	}
 	return nil
+}
+
+// probeIdentity reports whether the instance answering endpoint is
+// rooted at repoRoot. Loopback ports are OS-ephemeral and get recycled:
+// after a project's opencode dies another project can be handed the same
+// port, and a /config 200 from that stranger would otherwise be accepted
+// as the original instance — sessions then land in the wrong repo.
+//
+// Only a positive contradiction fails. An instance that cannot report
+// its root (older opencode, unexpected payload) is left alone.
+func probeIdentity(ctx context.Context, client *http.Client, endpoint, repoRoot string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/project/current", nil)
+	if err != nil {
+		return nil
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+	var payload struct {
+		Worktree string `json:"worktree"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload); err != nil || payload.Worktree == "" {
+		return nil
+	}
+	if sameDir(payload.Worktree, repoRoot) {
+		return nil
+	}
+	return fmt.Errorf("%w: endpoint serves %q, expected %q", ErrProbeUnreachable, payload.Worktree, repoRoot)
+}
+
+// sameDir compares two paths, falling back to symlink resolution so a
+// symlinked checkout (/tmp vs /private/tmp on macOS) is not read as a
+// different project.
+func sameDir(a, b string) bool {
+	if filepath.Clean(a) == filepath.Clean(b) {
+		return true
+	}
+	ra, errA := filepath.EvalSymlinks(a)
+	rb, errB := filepath.EvalSymlinks(b)
+	return errA == nil && errB == nil && ra == rb
 }
 
 var defaultProbeClient = &http.Client{Timeout: 2 * time.Second}

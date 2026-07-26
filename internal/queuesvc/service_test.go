@@ -46,12 +46,30 @@ func (m *memStore) HeadQueuedMessage(platform, sessionID string) (*state.QueuedM
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i := range m.msgs {
+		if m.msgs[i].Blocked {
+			continue
+		}
 		if m.msgs[i].SessionID == sessionID && (platform == "" || m.msgs[i].Platform == platform) {
 			c := m.msgs[i]
 			return &c, nil
 		}
 	}
 	return nil, nil
+}
+
+func (m *memStore) RecordQueuedMessageFailure(id, reason string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.msgs {
+		if m.msgs[i].ID != id {
+			continue
+		}
+		m.msgs[i].Attempts++
+		m.msgs[i].LastError = reason
+		m.msgs[i].Blocked = m.msgs[i].Attempts >= state.QueuedMessageAttemptLimit
+		return m.msgs[i].Blocked, nil
+	}
+	return false, nil
 }
 
 func (m *memStore) DeleteQueuedMessage(id string) (bool, error) {
@@ -499,6 +517,56 @@ func TestEnqueue_EmptyRejected(t *testing.T) {
 	if !errors.Is(err, ErrEmptyMessage) {
 		t.Fatalf("err = %v, want ErrEmptyMessage", err)
 	}
+}
+
+// TestFlush_UnsendableHeadStopsBlockingQueue pins the dead-letter path.
+// The drain is strictly head-first, so before this a message that could
+// never send (deleted session, unregistered platform) silently stalled
+// every later message on that session forever.
+func TestFlush_UnsendableHeadStopsBlockingQueue(t *testing.T) {
+	store := &memStore{}
+	sender := &alwaysFailFirstSender{failFor: "poison"}
+	svc := New(store, sender, statusStub{running: false, ok: true}, nil)
+
+	_ = store.EnqueueMessage(state.QueuedMessage{ID: "p", Platform: "opencode", SessionID: "s1", Text: "poison"})
+	_ = store.EnqueueMessage(state.QueuedMessage{ID: "n", Platform: "opencode", SessionID: "s1", Text: "next"})
+
+	for i := 0; i < state.QueuedMessageAttemptLimit; i++ {
+		svc.Flush(context.Background(), "opencode", "s1")
+	}
+	if got := sender.messages(); len(got) != 0 {
+		t.Fatalf("sent = %v, want nothing while the head keeps failing", got)
+	}
+
+	// Once the head is set aside, the rest of the queue moves again.
+	svc.Flush(context.Background(), "opencode", "s1")
+	if got := sender.messages(); len(got) != 1 || got[0] != "next" {
+		t.Fatalf("sent = %v, want [next] once the poison message is blocked", got)
+	}
+}
+
+// alwaysFailFirstSender fails every send of one specific message and
+// records the rest.
+type alwaysFailFirstSender struct {
+	mu      sync.Mutex
+	failFor string
+	sent    []string
+}
+
+func (s *alwaysFailFirstSender) SendNow(_ context.Context, _ string, req platforms.SendMessageRequest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if req.Message == s.failFor {
+		return errors.New("session not found")
+	}
+	s.sent = append(s.sent, req.Message)
+	return nil
+}
+
+func (s *alwaysFailFirstSender) messages() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.sent...)
 }
 
 func TestFlush_UnknownStatusDoesNotSend(t *testing.T) {

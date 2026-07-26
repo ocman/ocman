@@ -507,7 +507,19 @@ type Service struct {
 	stopping       map[string]bool
 	ownedRuns      map[string]bool
 	reconciledRuns map[string]bool
+	// inspectFailures counts consecutive Inspect failures per attempt so
+	// a transient blip does not settle a live attempt as unknown. Reset
+	// on the first success; entries are dropped once the attempt settles.
+	inspectFailures map[int64]int
 }
+
+// inspectFailureLimit is how many consecutive Inspect failures an agent
+// attempt tolerates before it is treated as genuinely unreachable.
+const inspectFailureLimit = 3
+
+// agentLaunchAttemptLimit caps how many times an agent node's launch is
+// retried before the node fails.
+const agentLaunchAttemptLimit = 3
 
 type activeCommand struct {
 	cancel context.CancelFunc
@@ -542,9 +554,27 @@ func NewService(deps Deps) *Service {
 		resolveSecret:  resolveSecret,
 		running:        make(map[string]map[string]*activeCommand),
 		stopping:       make(map[string]bool),
-		ownedRuns:      make(map[string]bool),
-		reconciledRuns: make(map[string]bool),
+		ownedRuns:       make(map[string]bool),
+		reconciledRuns:  make(map[string]bool),
+		inspectFailures: make(map[int64]int),
 	}
+}
+
+// recordInspectFailure counts a failed Inspect for an attempt and
+// reports whether the attempt has now failed enough consecutive times
+// to be treated as unreachable.
+func (s *Service) recordInspectFailure(attemptID int64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.inspectFailures[attemptID]++
+	return s.inspectFailures[attemptID] >= inspectFailureLimit
+}
+
+// clearInspectFailures forgets an attempt's failure streak.
+func (s *Service) clearInspectFailures(attemptID int64) {
+	s.mu.Lock()
+	delete(s.inspectFailures, attemptID)
+	s.mu.Unlock()
 }
 
 func (s *Service) ValidateJSON(_ context.Context, source []byte) (Definition, error) {
@@ -1842,32 +1872,52 @@ func (s *Service) stopSiblingCommands(runID, nodeID string) bool {
 	return true
 }
 
+// Tick advances every active run. A run that cannot make progress is
+// isolated: its error is collected and the loop continues. Returning on
+// the first failure starved every run ordered after the poisoned one —
+// permanently, since reconciledRuns is already set for the process
+// lifetime and runs are listed newest-first.
 func (s *Service) Tick(ctx context.Context) error {
 	runs, err := s.store.ListWorkflowRuns()
 	if err != nil {
 		return err
 	}
+	var errs []error
 	for _, run := range runs {
-		if run.State == StateActive {
-			if !s.ownsRun(run.ID) && !s.wasReconciled(run.ID) {
-				if err := s.recoverInterrupted(ctx, run.ID); err != nil {
-					return err
-				}
-				s.markReconciled(run.ID)
+		if run.State != StateActive {
+			continue
+		}
+		if !s.ownsRun(run.ID) && !s.wasReconciled(run.ID) {
+			done, err := s.recoverInterrupted(ctx, run.ID)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("recovering workflow run %q: %w", run.ID, err))
+				continue
 			}
-			if err := s.dispatch(ctx, run.ID); err != nil {
-				return err
+			// Not done means a probe failed in a way that may clear (a
+			// remote reconnecting, opencode still starting). Retry on
+			// the next tick rather than committing to unknown.
+			if !done {
+				continue
 			}
+			s.markReconciled(run.ID)
+		}
+		if err := s.dispatch(ctx, run.ID); err != nil {
+			errs = append(errs, fmt.Errorf("dispatching workflow run %q: %w", run.ID, err))
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
-func (s *Service) recoverInterrupted(ctx context.Context, runID string) error {
+// recoverInterrupted reconciles a run this process does not own after a
+// restart. The bool reports whether reconciliation completed: false
+// means a probe failed in a way that may still clear, so the caller
+// should retry on a later tick instead of marking the run reconciled.
+func (s *Service) recoverInterrupted(ctx context.Context, runID string) (bool, error) {
 	run, err := s.GetRun(ctx, runID)
 	if err != nil {
-		return err
+		return false, err
 	}
+	done := true
 	for _, node := range run.Nodes {
 		if len(node.Attempts) == 0 {
 			continue
@@ -1876,29 +1926,43 @@ func (s *Service) recoverInterrupted(ctx context.Context, runID string) error {
 		switch {
 		case node.Type == "command" && attempt.State == AttemptRunning && !s.commandActive(runID, node.NodeID):
 			if err := s.store.MarkWorkflowAttemptUnknown(runID, node.NodeID, attempt.ID, "command interrupted by server restart", s.now().UnixMilli()); err != nil {
-				return err
+				return false, err
 			}
 			s.changed(runID)
 		case node.Type == "agent" && attempt.State == AttemptStarting && attempt.SessionID == "":
 			if err := s.store.RetryWorkflowAttempt(runID, node.NodeID, attempt.ID, "agent launch interrupted by server restart", "recovery", s.now().UnixMilli()); err != nil {
-				return err
+				return false, err
 			}
 			s.changed(runID)
 		case node.Type == "agent" && attempt.State == AttemptRunning && attempt.SessionID != "":
-			reachable, err := s.agentSessionReachable(ctx, run, node, attempt)
-			if err != nil || !reachable {
-				reason := "agent session interrupted by server restart"
-				if err != nil {
-					reason = fmt.Sprintf("agent session unreachable after restart: %s", err)
-				}
-				if err := s.store.MarkWorkflowAttemptUnknown(runID, node.NodeID, attempt.ID, reason, s.now().UnixMilli()); err != nil {
-					return err
-				}
-				s.changed(runID)
+			reachable, probeErr := s.agentSessionReachable(ctx, run, node, attempt)
+			if reachable {
+				s.clearInspectFailures(attempt.ID)
+				continue
 			}
+			reason := "agent session interrupted by server restart"
+			if probeErr != nil {
+				// ocman restarts independently of opencode, so the first
+				// ticks after a restart routinely fail with "still
+				// starting" or "platform not registered yet". Committing
+				// to unknown there left every in-flight agent workflow
+				// paused awaiting a human click, for sessions that were
+				// reachable seconds later. Defer instead, and only give
+				// up once the failure proves persistent.
+				if !s.recordInspectFailure(attempt.ID) {
+					done = false
+					continue
+				}
+				s.clearInspectFailures(attempt.ID)
+				reason = fmt.Sprintf("agent session unreachable after restart: %s", probeErr)
+			}
+			if err := s.store.MarkWorkflowAttemptUnknown(runID, node.NodeID, attempt.ID, reason, s.now().UnixMilli()); err != nil {
+				return false, err
+			}
+			s.changed(runID)
 		}
 	}
-	return nil
+	return done, nil
 }
 
 // agentSessionReachable reports whether an agent attempt's OpenCode session
@@ -1998,11 +2062,20 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 			if node.Type != "agent" || (node.State != NodeReady && node.State != NodeRunning) || len(node.Attempts) == 0 {
 				continue
 			}
+			attempt := node.Attempts[len(node.Attempts)-1]
 			config := agentConfig(run.Version.Definition.Nodes, node.NodeID)
 			if config == nil {
-				return fmt.Errorf("workflow run %q cannot continue: agent node %q has no configuration in published version %q; cancel this run, publish a corrected workflow with agent.directory and agent.prompt, then start a new run", run.ID, node.NodeID, run.VersionID)
+				// Deterministic and permanent: the published version is
+				// immutable, so this cannot start succeeding. Settle the
+				// node instead of erroring on every tick forever.
+				if err := s.completeAgentFailure(runID, node.NodeID, attempt.ID, "error",
+					fmt.Sprintf("workflow run %q cannot continue: agent node %q has no configuration in published version %q; cancel this run, publish a corrected workflow with agent.directory and agent.prompt, then start a new run", run.ID, node.NodeID, run.VersionID)); err != nil {
+					return err
+				}
+				s.changed(runID)
+				progressed = true
+				continue
 			}
-			attempt := node.Attempts[len(node.Attempts)-1]
 			if attempt.SessionID == "" {
 				existing := config.SessionID
 				if existing == "" {
@@ -2052,6 +2125,27 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 				}
 				session, startErr := s.agent.Start(ctx, AgentRequest{Platform: config.Platform, Directory: agentDir, Prompt: prompt.String(), Model: config.Model, Agent: config.Agent, Reasoning: config.Reasoning, SessionID: existing})
 				if startErr != nil {
+					// A launch failure is usually transport-class:
+					// opencode restarting, a remote blip, an HTTP
+					// timeout. Failing the node outright killed
+					// multi-hour workflows at node 12 of 20 because
+					// opencode happened to be cycling. Retry the launch
+					// a bounded number of times (the deterministic
+					// failures — missing config, bad interpolation,
+					// workspace errors — are settled above and never
+					// reach here); after that, fail as before.
+					if len(node.Attempts) < agentLaunchAttemptLimit {
+						if err := s.store.RetryWorkflowAttempt(runID, node.NodeID, attempt.ID, startErr.Error(), "launch-retry", s.now().UnixMilli()); err != nil {
+							return err
+						}
+						// Return rather than looping: retrying inside
+						// this dispatch would burn the whole budget in
+						// one pass, which gives the transient condition
+						// no time to clear. The fresh waiting attempt is
+						// picked up on the next tick.
+						s.changed(runID)
+						return nil
+					}
 					if err := s.completeAgentFailure(runID, node.NodeID, attempt.ID, "error", startErr.Error()); err != nil {
 						return err
 					}
@@ -2075,8 +2169,25 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 			}
 			result, inspectErr := s.agent.Inspect(ctx, AgentSession{ID: attempt.SessionID, Platform: attempt.Platform, State: attempt.SessionState, Directory: attempt.Directory})
 			if inspectErr != nil {
-				return inspectErr
+				// Inspect fails permanently once the platform adapter is
+				// gone (remote disconnected) or the session was deleted.
+				// Propagating that stalled the whole engine, so settle
+				// the attempt the way restart recovery does — but only
+				// after the failure proves persistent, so a one-tick
+				// blip doesn't pause a healthy run.
+				if !s.recordInspectFailure(attempt.ID) {
+					continue
+				}
+				s.clearInspectFailures(attempt.ID)
+				if err := s.store.MarkWorkflowAttemptUnknown(runID, node.NodeID, attempt.ID,
+					fmt.Sprintf("agent session unreachable: %s", inspectErr), s.now().UnixMilli()); err != nil {
+					return err
+				}
+				s.changed(runID)
+				progressed = true
+				continue
 			}
+			s.clearInspectFailures(attempt.ID)
 			if result.State == "busy" || result.State == "running" {
 				sessionState := result.State
 				if attempt.SessionState == AgentCorrecting {

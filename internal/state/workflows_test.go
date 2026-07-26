@@ -69,6 +69,71 @@ func TestResolveWorkflowAttempt(t *testing.T) {
 	}
 }
 
+// TestMarkWorkflowAttemptUnknownIgnoresSettledAttempt pins that an
+// attempt which settled between the caller's snapshot and its write is
+// left alone. recoverInterrupted reads a GetRun snapshot without
+// dispatchMu and then does network I/O before writing, so the attempt
+// can settle in between. Only the attempt update was state-guarded, so
+// it matched zero rows while the node still flipped to unknown and the
+// run still paused — leaving a node ResolveWorkflowAttemptBy rejects
+// ("unknown attempt not found") on a paused run that RetryFrom also
+// refuses. Only cancelling could clear it.
+func TestMarkWorkflowAttemptUnknownIgnoresSettledAttempt(t *testing.T) {
+	db := openTestStateDB(t)
+	if _, err := db.InsertWorkflowVersion(WorkflowVersion{
+		ID: "version-1", WorkflowID: "workflow-1", Name: "Workflow", MetadataVersion: "1",
+		DefinitionJSON: `{"id":"workflow-1","name":"Workflow","version":"1","concurrency":1,"nodes":[{"id":"review","name":"Review","type":"agent"}],"dependencies":[]}`,
+		Concurrency:    1, CreatedAt: 1, Nodes: []WorkflowNode{{ID: "review", Name: "Review", Type: "agent"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.InsertWorkflowRun(WorkflowRun{
+		ID: "run-1", WorkflowID: "workflow-1", VersionID: "version-1", State: "active",
+		CreatedAt: 1, UpdatedAt: 1,
+		Nodes:     []WorkflowNodeRun{{NodeID: "review", Type: "agent", State: "ready"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	run, err := db.GetWorkflowRun("run-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	attemptID := run.Nodes[0].Attempts[0].ID
+	if _, err := db.db.Exec(`UPDATE workflow_node_attempt SET state = 'running' WHERE id = ?;
+		UPDATE workflow_node_run SET state = 'running' WHERE run_id = 'run-1' AND node_id = 'review'`, attemptID); err != nil {
+		t.Fatal(err)
+	}
+
+	// The attempt settles successfully while the caller is mid-probe.
+	if err := db.CompleteWorkflowAgentNode("run-1", "review", attemptID,
+		WorkflowAgentResult{Successful: true, SessionState: "done", OutputsJSON: "{}"}, 2); err != nil {
+		t.Fatal(err)
+	}
+	if settled, err := db.GetWorkflowRun("run-1"); err != nil {
+		t.Fatal(err)
+	} else if settled.Nodes[0].Attempts[0].State != "successful" {
+		t.Fatalf("precondition: attempt = %+v, want settled successful", settled.Nodes[0].Attempts[0])
+	}
+
+	if err := db.MarkWorkflowAttemptUnknown("run-1", "review", attemptID, "unreachable", 3); err != nil {
+		t.Fatal(err)
+	}
+
+	after, err := db.GetWorkflowRun("run-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Nodes[0].State == "unknown" {
+		t.Errorf("node flipped to unknown despite the attempt already settling")
+	}
+	if after.State == "paused" {
+		t.Errorf("run paused despite the attempt already settling")
+	}
+	if got := after.Nodes[0].Attempts[0].State; got != "successful" {
+		t.Errorf("attempt state = %q, want it left settled", got)
+	}
+}
+
 func TestWorkflowLifecyclePersistence(t *testing.T) {
 	db := openTestStateDB(t)
 	definition := WorkflowVersion{

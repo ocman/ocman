@@ -76,10 +76,13 @@ func (r *NativeRuntime) Launch(_ context.Context, spec LaunchSpec) (*Instance, e
 		Endpoint: fmt.Sprintf("http://%s:%d", host, spec.Port),
 		Kind:     KindNativeTmux,
 		ID:       session,
+		RepoRoot: spec.RepoRoot,
 	}, nil
 }
 
-// Probe returns nil only when GET {Endpoint}/config answers 200.
+// Probe returns nil only when GET {Endpoint}/config answers 200 and,
+// when the instance records an expected RepoRoot, the instance actually
+// serving that endpoint is rooted there.
 func (r *NativeRuntime) Probe(ctx context.Context, inst *Instance) error {
 	if inst == nil || inst.Endpoint == "" {
 		return ErrProbeUnreachable
@@ -88,7 +91,13 @@ func (r *NativeRuntime) Probe(ctx context.Context, inst *Instance) error {
 	if client == nil {
 		client = &http.Client{Timeout: defaultProbeClient.Timeout, Transport: r.auth.Transport(http.DefaultTransport)}
 	}
-	return probeConfig(ctx, client, inst.Endpoint)
+	if err := probeConfig(ctx, client, inst.Endpoint); err != nil {
+		return err
+	}
+	if inst.RepoRoot == "" {
+		return nil
+	}
+	return probeIdentity(ctx, client, inst.Endpoint, inst.RepoRoot)
 }
 
 // Stop kills the tmux session backing the instance.
