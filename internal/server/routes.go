@@ -98,6 +98,10 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	workflowRunHandler := s.requireLocalhost(s.handleWorkflowRuns)
 	mux.HandleFunc("/api/workflow-runs", workflowRunHandler)
 	mux.HandleFunc("/api/workflow-runs/", workflowRunHandler)
+	// Backs `ocman workflow-step`, which the external runner executes for
+	// node types it cannot run itself. Localhost-only: it drives agent
+	// sessions and settles run state.
+	mux.HandleFunc("/api/workflow-steps", s.requireLocalhost(requirePOST(s.handleWorkflowStep)))
 
 	// MCP server — localhost-only, enabled by default. Exposes the
 	// session-split tools (new_session, etc.)

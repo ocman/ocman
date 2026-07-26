@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/NoUseFreak/ocman/internal/workflows"
@@ -213,7 +214,15 @@ func compileNode(definition workflows.Definition, node workflows.Node, variables
 		if source == "" {
 			return daguStep{}, fmt.Errorf("join node is not referenced by any map node")
 		}
-		step.Command, step.Env = shimStep(shim, "join", node.ID, options.RunID, child)
+		policy := workflows.JoinAllSuccess
+		minimum := 0
+		if node.Join != nil {
+			policy, minimum = node.Join.Policy, node.Join.MinSuccess
+		}
+		// The policy travels in the command rather than being looked up,
+		// so the aggregate arithmetic needs no round trip to ocman.
+		step.Command, step.Env = shimStep(shim, "join", node.ID, options.RunID, child,
+			"--policy", policy, "--min-success", strconv.Itoa(minimum))
 		step.Env["OCMAN_MAP_RESULT"] = "${" + variables[source] + "}"
 	case "map":
 		if err := compileMap(definition, node, variables, options, &step, children); err != nil {
@@ -273,10 +282,15 @@ func compileMap(definition workflows.Definition, node workflows.Node, variables 
 // addressed by parent run and stable item key, because dagu creates the
 // per-item runs itself and ocman only learns their identity from the
 // key it passed down.
-func shimStep(shim, kind, nodeID, runID string, child bool) (string, map[string]string) {
-	command := shellCommand([]string{shim, "workflow-step", kind, "--node", nodeID})
+func shimStep(shim, kind, nodeID, runID string, child bool, extra ...string) (string, map[string]string) {
+	arguments := []string{shim, "workflow-step", kind}
 	if !child {
-		return shellCommand([]string{shim, "workflow-step", kind, "--run", runID, "--node", nodeID}), map[string]string{}
+		arguments = append(arguments, "--run", runID)
+	}
+	arguments = append(append(arguments, "--node", nodeID), extra...)
+	command := shellCommand(arguments)
+	if !child {
+		return command, map[string]string{}
 	}
 	return command, map[string]string{
 		"OCMAN_PARENT_RUN": "${" + paramParentRun + "}",

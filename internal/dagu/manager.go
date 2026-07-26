@@ -29,6 +29,20 @@ type Manager struct {
 	// Nil rejects mapping workflows rather than starting a parent whose
 	// child DAGs cannot be produced.
 	resolveVersion func(string) (workflows.Definition, error)
+	// ocmanEndpoint is handed to the Dagu process so the shim it spawns
+	// can call back into ocman.
+	ocmanEndpoint string
+	// shim is the binary compiled specs invoke for agent, approval,
+	// join, and condition steps. Defaults to the running executable so a
+	// step always runs the same build as the server that scheduled it.
+	shim string
+}
+
+// SetOcmanEndpoint records the URL the workflow-step shim calls back on.
+func (m *Manager) SetOcmanEndpoint(endpoint string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ocmanEndpoint = endpoint
 }
 
 // DAGsDir is where compiled child DAGs live. Dagu resolves `dag.run`
@@ -88,7 +102,7 @@ func (m *Manager) Ensure(ctx context.Context) error {
 	}
 	// `server` and not `start-all`: ocman owns every schedule, so dagu
 	// runs no scheduler and only executes runs ocman posts.
-	process, err := m.runner.Start(path, []string{"server", "--host", "127.0.0.1", "--port", strconv.Itoa(port), "--dags", filepath.Join(m.home, "dags")}, processEnvironment(m.home))
+	process, err := m.runner.Start(path, []string{"server", "--host", "127.0.0.1", "--port", strconv.Itoa(port), "--dags", filepath.Join(m.home, "dags")}, processEnvironment(m.home, m.ocmanEndpoint))
 	if err != nil {
 		return fmt.Errorf("start Dagu: %w", err)
 	}
@@ -152,7 +166,7 @@ func (m *Manager) Start(ctx context.Context, definition workflows.Definition) (R
 	m.mu.Lock()
 	resolve := m.resolveVersion
 	m.mu.Unlock()
-	compiled, err := Compile(definition, CompileOptions{RunID: id, ResolveVersion: resolve})
+	compiled, err := Compile(definition, CompileOptions{RunID: id, ResolveVersion: resolve, Shim: m.stepShim()})
 	if err != nil {
 		return Run{}, err
 	}
@@ -179,6 +193,21 @@ func (m *Manager) Cancel(ctx context.Context, name, id string) error {
 		return err
 	}
 	return NewClient(m.currentEndpoint(), m.http).Cancel(ctx, name, id)
+}
+
+// stepShim resolves the binary a compiled spec invokes for shim steps.
+// Falling back to PATH keeps a test or an unusual deployment working.
+func (m *Manager) stepShim() string {
+	m.mu.Lock()
+	configured := m.shim
+	m.mu.Unlock()
+	if configured != "" {
+		return configured
+	}
+	if executable, err := os.Executable(); err == nil {
+		return executable
+	}
+	return ""
 }
 
 func (m *Manager) currentEndpoint() string {

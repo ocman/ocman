@@ -62,8 +62,14 @@ type osProcess struct{ cmd *exec.Cmd }
 func (p osProcess) Wait() error { return p.cmd.Wait() }
 func (p osProcess) Kill() error { return killProcess(p.cmd) }
 
-func processEnvironment(home string) []string {
+// processEnvironment builds the minimal environment the private Dagu
+// process runs with. It carries no LLM credentials; ocmanEndpoint is the
+// one addition, so the workflow-step shim Dagu spawns can reach ocman.
+func processEnvironment(home, ocmanEndpoint string) []string {
 	env := []string{"HOME=" + home, "DAGU_HOME=" + home, "DAGU_AUTH_MODE=none"}
+	if ocmanEndpoint != "" {
+		env = append(env, "OCMAN_ENDPOINT="+ocmanEndpoint)
+	}
 	for _, value := range os.Environ() {
 		name, _, _ := strings.Cut(value, "=")
 		if name == "PATH" || name == "SHELL" || name == "TMPDIR" || name == "LANG" || name == "LC_ALL" || name == "TZ" || name == "USER" {

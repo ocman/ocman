@@ -26,6 +26,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/server"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
+	"github.com/NoUseFreak/ocman/internal/workflowstep"
 )
 
 // version is overridden at build time via -ldflags='-X main.version=...'.
@@ -70,6 +71,14 @@ func main() {
 	// mistake a server startup error for a binding failure.
 	if os.Getenv("WAILS_BINDINGS") != "" {
 		os.Exit(0)
+	}
+
+	// `ocman workflow-step ...` is how the external workflow runner
+	// executes agent, approval, join, and conditional nodes. It runs as a
+	// short-lived child process of the runner, not as the server, so it
+	// short-circuits before any server setup.
+	if len(os.Args) > 1 && os.Args[1] == "workflow-step" {
+		os.Exit(workflowstep.Run(os.Args[2:], os.Stdout, os.Stderr))
 	}
 
 	// Colored text logs. logrus already defaults to text, but disables

@@ -57,3 +57,11 @@ func evaluateCEL(expression string, outcomes map[string]any) (bool, error) {
 	}
 	return result, nil
 }
+
+// EvaluateCondition evaluates an edge condition against completed Node
+// Results. The external-runner shim needs the same evaluator the native
+// dispatcher uses, so the sandboxed environment stays the single
+// definition of what a condition may see.
+func EvaluateCondition(expression string, outcomes map[string]any) (bool, error) {
+	return evaluateCEL(expression, outcomes)
+}

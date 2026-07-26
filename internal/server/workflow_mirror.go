@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"net"
+	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -125,4 +127,16 @@ func (s *Server) mirrorRun(ctx context.Context, run state.ExternalWorkflowRun) {
 	if changed {
 		s.broadcastWorkflowRunUpdated(run.RunID)
 	}
+}
+
+// loopbackEndpoint turns a listen address into a URL the workflow-step
+// shim can reach. A wildcard or empty host binds every interface, so
+// loopback is always a valid way back in and keeps the callback off the
+// network.
+func loopbackEndpoint(addr string) string {
+	_, port, err := net.SplitHostPort(strings.TrimSpace(addr))
+	if err != nil || port == "" {
+		return "http://127.0.0.1:8229"
+	}
+	return "http://127.0.0.1:" + port
 }
