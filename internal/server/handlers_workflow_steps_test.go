@@ -72,3 +72,20 @@ func TestLoopbackEndpointKeepsCallbackLocal(t *testing.T) {
 		}
 	}
 }
+
+// The runner spawns `ocman workflow-step`, which needs ocman's real
+// address to call back on. Defining the setter without calling it left
+// the shim falling back to the default port, which only works when
+// ocman happens to be bound there.
+func TestLocalHostWiresTheShimCallbackEndpoint(t *testing.T) {
+	s := testServer(t)
+	s.addr = "127.0.0.1:9411"
+	s.daguManager = nil
+	s.newLocalHost()
+	if s.daguManager == nil {
+		t.Fatal("local host did not build a Dagu manager")
+	}
+	if got := s.daguManager.OcmanEndpoint(); got != "http://127.0.0.1:9411" {
+		t.Fatalf("shim callback endpoint = %q, want http://127.0.0.1:9411", got)
+	}
+}

@@ -38,6 +38,13 @@ type Manager struct {
 	shim string
 }
 
+// OcmanEndpoint reports the callback URL handed to the Dagu process.
+func (m *Manager) OcmanEndpoint() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.ocmanEndpoint
+}
+
 // SetOcmanEndpoint records the URL the workflow-step shim calls back on.
 func (m *Manager) SetOcmanEndpoint(endpoint string) {
 	m.mu.Lock()

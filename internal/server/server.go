@@ -225,6 +225,11 @@ func (s *Server) SessionService() *sessionsvc.Service { return s.sessions }
 func (s *Server) newLocalHost() hostsvc.Host {
 	if s.daguManager == nil {
 		s.daguManager = dagu.NewManager(state.DefaultDataDir()+"/dagu", nil, nil)
+		// The runner spawns `ocman workflow-step`, which calls back here
+		// for agent, approval, and conditional nodes. Without this the
+		// shim falls back to the default port and cannot reach an ocman
+		// bound anywhere else.
+		s.daguManager.SetOcmanEndpoint(loopbackEndpoint(s.addr))
 	}
 	return hostlocal.New(hostlocal.Deps{
 		Dagu:         s.daguManager,
