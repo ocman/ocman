@@ -40,11 +40,13 @@ flowchart LR
   keeping the audit metadata.
 - **Remote ocman instances** — the hub dials remotes over gRPC and
   re-exposes their sessions/hosts transparently.
-- **Dagu** — an optional, separately installed 2.x CLI. On the first external
-  workflow action, the owning ocman host starts one private loopback-only Dagu
-  server under `~/.local/share/ocman/dagu`. Ocman submits command-only inline
-  specs and reads graph state and step logs back through Dagu's REST API; Dagu
-  remains the source of truth and receives no LLM credentials.
+- **Dagu** — a separately installed 2.x CLI, and the workflow runner. On
+  the first workflow action the owning ocman host starts one private
+  loopback-only Dagu server under `~/.local/share/ocman/dagu`. Ocman owns
+  authoring, versioning, triggering, and history; Dagu only executes the
+  graph. Ocman compiles a pinned version to an inline spec, posts it under
+  ocman's own run id, and polls run state back. Compiled specs carry no
+  schedule and no auto-retry, and the process receives no LLM credentials.
 
 ## 2. Backend Composition
 
@@ -89,11 +91,17 @@ flowchart TD
   runs `opencode --port N` on an ocman-allocated loopback port and
   probes authenticated `GET {endpoint}/config` for health. It is the plug point for
   the container runtime (epic #375) as a second implementation.
-- **internal/dagu** — detects the optional executable, supervises one lazy
-  private Dagu server, translates command-only definitions to inline Dagu
-  specs, and traces runs through Dagu's REST API. `hostsvc.Host` and the remote
-  gRPC seam keep launch, observation, logs, and cancellation on the owning
-  machine. No external run graph or log is copied into `state.db`.
+- **internal/dagu** — detects the executable, supervises one lazy private
+  Dagu server, and compiles a workflow version to a Dagu spec. The compiler
+  covers command, agent, approval, map, and join nodes plus conditional
+  edges; a map fans out through `dag.run` over a pinned child DAG written to
+  the Dagu DAGs directory. `hostsvc.Host` and the remote gRPC seam keep
+  launch, observation, logs, and cancellation on the owning machine.
+- **internal/workflowstep** — `ocman workflow-step`, the command Dagu runs
+  for node types it cannot express. Agent, approval, and conditional steps
+  call back into ocman over loopback; a join applies its policy locally.
+  The real node configuration stays in ocman, so prompts and credentials
+  never reach a spec or a Dagu step log.
 - **platforms/opencode** — wraps the read-only DB queries
   (`internal/db`) plus an HTTP client that attaches to live instances,
   with `lsof`-based discovery for instances started outside ocman. One
@@ -188,7 +196,12 @@ Workflow state takes the opposite path because it is ocman-owned: publish,
 trigger/manual start, approval, command completion, agent supervision,
 pause, and cancel delegate to `workflows.Service`, which commits
 trigger/version/run/node/attempt state and canonical JSON Node Results to
-`state.db` before broadcasting a run ID. The browser then refetches the
+`state.db` before broadcasting a run ID. A newly created run is offered to
+the `workflows.ExternalRunner` seam first: Dagu takes every definition the
+compiler can express, and the native dispatcher keeps the rest. Runs Dagu
+executes reach the UI through a one-way mirror that polls Dagu and projects
+run, node, and attempt rows back onto `state.db`, so the API and run view
+are identical either way. The browser then refetches the
 authoritative trigger state and run graph, including linked agent sessions and
 map/join aggregate outputs.
 

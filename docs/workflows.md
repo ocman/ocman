@@ -3,19 +3,37 @@
 Workflows are source-controlled YAML or JSON DAGs. Publish creates an immutable
 version; every run pins that version and its mapped subworkflow versions.
 
-## Command Workflows With Dagu
+## The Runner
 
-Install Dagu 2.x separately, then use **Dagu** beside a published workflow whose
-nodes are all commands and whose triggers are manual. Ocman starts a private
-loopback-only Dagu server on demand, chooses the owning machine through the
-normal machine picker, and opens a run view with Dagu's node state and step
-logs. Canceling there stops that Dagu run.
+Install Dagu 2.x separately. Ocman starts one private loopback-only Dagu
+server on demand under `~/.local/share/ocman/dagu` and uses it to execute
+workflow runs.
 
-Dagu stores the external run graph and logs under
-`~/.local/share/ocman/dagu`; ocman does not duplicate them in `state.db`.
-Agent, approval, map, join, subworkflow, repeat, scheduled, permission, resource,
-lease, and workspace behavior stays on the native engine and is not translated.
-The private Dagu process receives a minimal environment with no LLM credentials.
+Ocman keeps everything except execution: authoring, validation, immutable
+versions, triggers and their overlap policy, run history, artifacts, and the
+UI. Dagu resolves the graph, runs steps, passes outputs, and propagates
+skips. Because ocman owns scheduling, a compiled spec carries no `schedule`
+and Dagu runs no scheduler of its own.
+
+Runs reach the run view through a one-way mirror: ocman polls Dagu and
+projects run, node, and attempt state back into `state.db`. Polling rather
+than callbacks means a run survives an ocman restart and cannot miss an
+event. Nothing reads execution state back out to drive scheduling.
+
+Dagu only runs shell commands, so agent, approval, join, and conditional
+nodes are executed by `ocman workflow-step`, which the compiled spec
+invokes. The real node configuration stays in ocman: prompts, models, and
+credentials never reach a spec or a Dagu step log, and the private Dagu
+process gets a minimal environment with no LLM credentials.
+
+Features with no verified translation yet — resource pools, managed
+workspaces, path leases, secrets, run limits, fail-fast, and repeat — keep
+running on ocman's native dispatcher. A definition using them is declined by
+the compiler and routed there automatically, so nothing has to change in the
+workflow.
+
+Cron triggers accept a `timezone`, so a schedule means the same wall-clock
+time wherever ocman runs.
 
 ## Migration Preset
 
