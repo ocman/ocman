@@ -24,7 +24,10 @@ func commandDefinition() workflows.Definition {
 	}
 }
 
-func TestClientStartUsesInlineSpecAndStableRunID(t *testing.T) {
+// Ocman posts an already-compiled spec under its own run id, so the
+// ocman run and the Dagu run share an identifier and need no lookup
+// table between them.
+func TestClientStartSpecUsesInlineSpecAndCallerRunID(t *testing.T) {
 	var body struct {
 		Spec     string `json:"spec"`
 		Name     string `json:"name"`
@@ -41,69 +44,33 @@ func TestClientStartUsesInlineSpecAndStableRunID(t *testing.T) {
 	}))
 	defer server.Close()
 
-	run, err := NewClient(server.URL, server.Client()).Start(context.Background(), commandDefinition())
+	compiled, err := Compile(commandDefinition(), CompileOptions{RunID: "wfr_1"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if run.ID == "" || run.ID != body.DAGRunID || run.Name != "release" || body.Name != "release" {
+	run, err := NewClient(server.URL, server.Client()).StartSpec(context.Background(), "release", "wfr_1", compiled.Spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.ID != "wfr_1" || body.DAGRunID != "wfr_1" || run.Name != "release" || body.Name != "release" {
 		t.Fatalf("run = %+v, request = %+v", run, body)
 	}
-	for _, want := range []string{"working_dir: /repo", "name: build", "command: printf %s 'hello world'", "MODE: test", "depends:", "- build"} {
+	for _, want := range []string{"working_dir: /repo", "name: build", "command: printf %s 'hello world'"} {
 		if !strings.Contains(body.Spec, want) {
 			t.Errorf("spec missing %q:\n%s", want, body.Spec)
 		}
 	}
 }
 
-// Start refuses to post a run it cannot faithfully compile, so an
-// unsupported definition fails before any request reaches dagu.
-func TestClientRejectsUncompilableWorkflow(t *testing.T) {
-	for name, mutate := range map[string]func(*workflows.Definition){
-		"fail fast":      func(d *workflows.Definition) { d.FailFast = true },
-		"resource pools": func(d *workflows.Definition) { d.Pools = []workflows.Pool{{Name: "p", Capacity: 1}} },
-		// A map needs its child DAGs on disk, which only the manager can
-		// do, so the bare client must refuse rather than start a parent
-		// whose `dag.run` target does not exist.
-		"map without a DAGs directory": func(d *workflows.Definition) {
-			d.Nodes[1] = workflows.Node{ID: "ship", Name: "Ship", Type: "map", Map: &workflows.MapConfig{
-				Source: "${nodes.build.output}", Key: "id", Join: "done", VersionID: "ver-1"}}
-			d.Nodes = append(d.Nodes, workflows.Node{ID: "done", Name: "Done", Type: "join",
-				Join: &workflows.JoinConfig{Policy: workflows.JoinAllSuccess}})
-			d.Dependencies = append(d.Dependencies, workflows.Dependency{From: "ship", To: "done"})
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			definition := commandDefinition()
-			mutate(&definition)
-			// A reachable host would mean a failure to compile had let a
-			// request through; "unused" cannot resolve, so any request
-			// surfaces as a dial error rather than a compile error.
-			_, err := NewClient("http://unused", http.DefaultClient).Start(context.Background(), definition)
-			if err == nil || strings.Contains(err.Error(), "dial") {
-				t.Fatalf("error = %v, want a compile failure", err)
-			}
-		})
-	}
-}
-
-// Ocman owns triggering and the agent shim is a plain command, so
-// neither a non-manual trigger nor an agent node blocks compilation.
-func TestClientAcceptsAgentNodesAndScheduledTriggers(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			DAGRunID string `json:"dagRunId"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		_ = json.NewEncoder(w).Encode(map[string]string{"dagRunId": body.DAGRunID})
+// A mismatched id in the response would leave ocman polling the wrong
+// run for the rest of its life.
+func TestClientStartSpecRejectsMismatchedRunID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{"dagRunId": "someone-else"})
 	}))
 	defer server.Close()
-
-	definition := commandDefinition()
-	definition.Triggers = append(definition.Triggers, workflows.Trigger{ID: "cron", Type: workflows.TriggerCron, Cron: "0 3 * * *"})
-	definition.Nodes[1] = workflows.Node{ID: "ship", Name: "Ship", Type: "agent",
-		Agent: &workflows.AgentConfig{Directory: "/repo", Prompt: "ship it"}}
-	if _, err := NewClient(server.URL, server.Client()).Start(context.Background(), definition); err != nil {
-		t.Fatal(err)
+	if _, err := NewClient(server.URL, server.Client()).StartSpec(context.Background(), "release", "wfr_1", []byte("steps: []")); err == nil {
+		t.Fatal("accepted a mismatched run ID")
 	}
 }
 

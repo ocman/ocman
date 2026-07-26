@@ -193,3 +193,18 @@ func (s *Server) workflowVersionDefinition(versionID string) (workflows.Definiti
 	}
 	return definition, nil
 }
+
+func (r daguRunner) CancelRun(ctx context.Context, runID string) error {
+	if r.s.daguManager == nil || r.s.stateDB == nil {
+		return nil
+	}
+	external, err := r.s.stateDB.GetWorkflowRunExternal(runID)
+	if err != nil {
+		return err
+	}
+	// A run the native dispatcher owns has nothing to stop here.
+	if external.ExternalID == "" || external.Runner != runnerDagu {
+		return nil
+	}
+	return r.s.daguManager.Cancel(ctx, external.WorkflowID, external.ExternalID)
+}

@@ -2308,9 +2308,16 @@ func assertRun(t *testing.T, run RunDetail, state string, nodes map[string]strin
 }
 
 type recordingRunner struct {
-	handled bool
-	err     error
-	calls   []string
+	handled   bool
+	err       error
+	calls     []string
+	cancelErr error
+	canceled  []string
+}
+
+func (r *recordingRunner) CancelRun(_ context.Context, runID string) error {
+	r.canceled = append(r.canceled, runID)
+	return r.cancelErr
 }
 
 func (r *recordingRunner) StartRun(_ context.Context, runID string, _ Definition) (bool, error) {
@@ -2347,5 +2354,58 @@ func TestStartExternallyPropagatesHandoffFailure(t *testing.T) {
 	version := state.WorkflowVersion{ID: "v1", WorkflowID: "w", DefinitionJSON: `{"id":"w","nodes":[]}`}
 	if _, err := service.startExternally(context.Background(), "run-1", version); err == nil {
 		t.Fatal("handoff failure was swallowed")
+	}
+}
+
+// Marking a run canceled removes it from the mirror's polling set, so a
+// runner that failed to stop it would leave work executing unobserved.
+func TestCancelRefusesWhenTheExternalRunnerCannotStop(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	version, err := h.svc.PublishJSON(ctx, []byte(sequentialApprovals))
+	if err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	run, err := h.svc.Start(ctx, version.ID)
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	runner := &recordingRunner{cancelErr: errors.New("dagu unreachable")}
+	h.svc.SetExternalRunner(runner)
+	if _, err := h.svc.Cancel(ctx, run.ID); err == nil {
+		t.Fatal("cancel succeeded while the external run was still going")
+	}
+	if len(runner.canceled) != 1 || runner.canceled[0] != run.ID {
+		t.Fatalf("canceled = %v", runner.canceled)
+	}
+	after, err := h.svc.GetRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.State != StateActive {
+		t.Fatalf("run was marked %s despite the runner failing to stop it", after.State)
+	}
+}
+
+// A run ocman's own dispatcher owns still cancels normally.
+func TestCancelSucceedsWhenTheRunnerStops(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	version, err := h.svc.PublishJSON(ctx, []byte(sequentialApprovals))
+	if err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	run, err := h.svc.Start(ctx, version.ID)
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	h.svc.SetExternalRunner(&recordingRunner{})
+	canceled, err := h.svc.Cancel(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if canceled.State != StateCanceled {
+		t.Fatalf("state = %s", canceled.State)
 	}
 }

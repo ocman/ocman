@@ -24,7 +24,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
-	"github.com/NoUseFreak/ocman/internal/workflows"
 )
 
 // HostCaps reports which directory-scoped capabilities a host supports.
@@ -212,9 +211,6 @@ type Host interface {
 	// DaguStatus detects the separately installed Dagu CLI without
 	// starting a process or workflow.
 	DaguStatus(ctx context.Context) dagu.Result
-	StartDaguWorkflow(ctx context.Context, definition workflows.Definition) (dagu.Run, error)
-	GetDaguRun(ctx context.Context, name, id string) (dagu.Run, error)
-	CancelDaguRun(ctx context.Context, name, id string) error
 
 	// GitInfo returns per-directory git status for each dir.
 	GitInfo(ctx context.Context, dirs []string) (map[string]git.Info, error)

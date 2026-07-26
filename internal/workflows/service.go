@@ -264,6 +264,11 @@ type ExternalRunner interface {
 	// definition uses features the runner cannot express, which leaves
 	// the run to ocman's own dispatcher rather than failing it.
 	StartRun(ctx context.Context, runID string, definition Definition) (bool, error)
+	// CancelRun stops a run the runner owns. Runs it never took are a
+	// no-op. A failure here must not be swallowed: once ocman marks a run
+	// canceled it stops polling it, so an uncanceled external run would
+	// keep executing unobserved.
+	CancelRun(ctx context.Context, runID string) error
 }
 
 type AgentExecutor interface {
@@ -1598,6 +1603,14 @@ func (s *Service) Cancel(ctx context.Context, runID string) (RunDetail, error) {
 	}
 	if run.State != StateActive && run.State != StatePaused {
 		return RunDetail{}, fmt.Errorf("workflow run cannot be canceled from %s", run.State)
+	}
+	// Stop the external runner first. Marking the run canceled takes it
+	// out of the mirror's polling set, so a failure to stop it there
+	// would leave work running that nothing is watching.
+	if s.externalRunner != nil {
+		if err := s.externalRunner.CancelRun(ctx, runID); err != nil {
+			return RunDetail{}, fmt.Errorf("cancel run on the external runner: %w", err)
+		}
 	}
 	s.mu.Lock()
 	s.stopping[runID] = true

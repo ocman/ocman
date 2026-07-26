@@ -3,8 +3,6 @@ package dagu
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,8 +11,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
-	"github.com/NoUseFreak/ocman/internal/workflows"
 )
 
 type Run struct {
@@ -60,21 +56,6 @@ func NewClient(endpoint string, client *http.Client) *Client {
 		client = http.DefaultClient
 	}
 	return &Client{endpoint: strings.TrimRight(endpoint, "/"), http: client}
-}
-
-func (c *Client) Start(ctx context.Context, definition workflows.Definition) (Run, error) {
-	id, err := newRunID()
-	if err != nil {
-		return Run{}, err
-	}
-	compiled, err := Compile(definition, CompileOptions{RunID: id})
-	if err != nil {
-		return Run{}, err
-	}
-	if len(compiled.Children) > 0 {
-		return Run{}, fmt.Errorf("workflow maps over a subworkflow; start it through the manager so child DAGs reach the DAGs directory")
-	}
-	return c.StartSpec(ctx, definition.ID, id, compiled.Spec)
 }
 
 // StartSpec posts an already-compiled spec under a caller-chosen run ID,
@@ -188,14 +169,6 @@ func (c *Client) doJSON(ctx context.Context, method, path string, input, output 
 		return nil
 	}
 	return json.NewDecoder(resp.Body).Decode(output)
-}
-
-func newRunID() (string, error) {
-	random := make([]byte, 16)
-	if _, err := rand.Read(random); err != nil {
-		return "", fmt.Errorf("generate Dagu run ID: %w", err)
-	}
-	return "ocman-" + hex.EncodeToString(random), nil
 }
 
 func shellCommand(args []string) string {

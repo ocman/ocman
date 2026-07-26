@@ -470,7 +470,9 @@ func TestWorkflowMCPRouteIsLocalhostOnly(t *testing.T) {
 		t.Fatalf("remote MCP request: want 403, got %d", rec.Code)
 	}
 
-	for _, path := range []string{"/mcp", "/api/workflows", "/api/workflow-runs/run/start", "/api/dagu/runs/start"} {
+	// /api/workflow-steps is included because the shim endpoint drives
+	// agent sessions and settles run state.
+	for _, path := range []string{"/mcp", "/api/workflows", "/api/workflow-runs/run/start", "/api/workflow-steps"} {
 		req = httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
 		req.RemoteAddr = "127.0.0.1:1234"
 		req.Host = "localhost:8228"

@@ -30,7 +30,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/workflows"
 )
 
 // Deps carries the host operations that live in the server package
@@ -80,11 +79,11 @@ type Deps struct {
 	TermAttach func(ctx context.Context, req hostsvc.TermAttachRequest, conn hostsvc.TermConn) error
 }
 
+// DaguService reports whether the workflow runner is usable on this
+// host. Runs are started and observed by the workflow service, not
+// through the host seam.
 type DaguService interface {
 	Status(ctx context.Context) dagu.Result
-	Start(ctx context.Context, definition workflows.Definition) (dagu.Run, error)
-	GetRun(ctx context.Context, name, id string) (dagu.Run, error)
-	Cancel(ctx context.Context, name, id string) error
 }
 
 // ManagedInstance is the host's view of a persisted managed instance.
@@ -187,27 +186,6 @@ func (h *Host) DaguStatus(ctx context.Context) dagu.Result {
 		return h.deps.Dagu.Status(ctx)
 	}
 	return dagu.Detect(ctx)
-}
-
-func (h *Host) StartDaguWorkflow(ctx context.Context, definition workflows.Definition) (dagu.Run, error) {
-	if h.deps.Dagu == nil {
-		return dagu.Run{}, errors.New("dagu workflow service unavailable")
-	}
-	return h.deps.Dagu.Start(ctx, definition)
-}
-
-func (h *Host) GetDaguRun(ctx context.Context, name, id string) (dagu.Run, error) {
-	if h.deps.Dagu == nil {
-		return dagu.Run{}, errors.New("dagu workflow service unavailable")
-	}
-	return h.deps.Dagu.GetRun(ctx, name, id)
-}
-
-func (h *Host) CancelDaguRun(ctx context.Context, name, id string) error {
-	if h.deps.Dagu == nil {
-		return errors.New("dagu workflow service unavailable")
-	}
-	return h.deps.Dagu.Cancel(ctx, name, id)
 }
 
 func (h *Host) GitInfo(ctx context.Context, dirs []string) (map[string]git.Info, error) {

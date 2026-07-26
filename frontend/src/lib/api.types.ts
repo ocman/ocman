@@ -59,21 +59,6 @@ export interface DaguStatus {
   installCommand: string;
 }
 
-export interface DaguRunNode {
-  name: string;
-  status: string;
-  depends?: string[];
-  error?: string;
-  log?: string;
-}
-
-export interface DaguRun {
-  id: string;
-  name: string;
-  status?: string;
-  nodes?: DaguRunNode[];
-}
-
 export interface Session {
   id: string;
 	/**

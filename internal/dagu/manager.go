@@ -155,24 +155,6 @@ func (m *Manager) healthy(ctx context.Context) bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-func (m *Manager) Start(ctx context.Context, definition workflows.Definition) (Run, error) {
-	if err := m.Ensure(ctx); err != nil {
-		return Run{}, err
-	}
-	id, err := newRunID()
-	if err != nil {
-		return Run{}, err
-	}
-	m.mu.Lock()
-	resolve := m.resolveVersion
-	m.mu.Unlock()
-	compiled, err := Compile(definition, CompileOptions{RunID: id, ResolveVersion: resolve, Shim: m.stepShim()})
-	if err != nil {
-		return Run{}, err
-	}
-	return m.StartCompiled(ctx, definition.ID, id, compiled)
-}
-
 // CompileRun renders a definition for this manager, using its version
 // resolver and shim. It is separate from starting so a caller can decide
 // whether the runner supports a definition before creating anything.

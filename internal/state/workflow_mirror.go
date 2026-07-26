@@ -166,3 +166,19 @@ func mirrorWorkflowNode(tx *sql.Tx, runID string, node WorkflowMirrorNode) (bool
 	}
 	return true, nil
 }
+
+// GetWorkflowRunExternal returns the external execution driving a run,
+// or an empty record when ocman's own dispatcher owns it.
+func (d *DB) GetWorkflowRunExternal(runID string) (ExternalWorkflowRun, error) {
+	run := ExternalWorkflowRun{RunID: runID}
+	err := d.db.QueryRow(
+		`SELECT workflow_id, external_run_id, external_runner FROM workflow_run WHERE id = ?`,
+		runID).Scan(&run.WorkflowID, &run.ExternalID, &run.Runner)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ExternalWorkflowRun{}, fmt.Errorf("unknown workflow run %q", runID)
+	}
+	if err != nil {
+		return ExternalWorkflowRun{}, fmt.Errorf("reading external workflow run: %w", err)
+	}
+	return run, nil
+}
