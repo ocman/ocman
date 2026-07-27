@@ -171,6 +171,14 @@ export function SessionSidebar({
           }
           onNavigateToSession(sib.id);
         }}
+        // Middle click archives the row. preventDefault on mousedown stops
+        // the browser's middle-click autoscroll from kicking in.
+        onMouseDown={(e) => { if (e.button === 1) e.preventDefault(); }}
+        onAuxClick={(e) => {
+          if (e.button !== 1) return;
+          e.preventDefault();
+          onArchiveSession(e, sib);
+        }}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { SessionSidebar, type SidebarProjectGroup } from './SessionSidebar';
 import type { GitInfo, Session } from '../../lib/api';
 
@@ -36,6 +36,7 @@ function renderSidebar(
   group: SidebarProjectGroup,
   infos: Record<string, GitInfo>,
   onNewSessionInDirectory: (directory: string, remoteId?: string, platform?: string) => void = vi.fn(),
+  onArchiveSession: (e: React.MouseEvent, s: Session) => void = vi.fn(),
 ) {
   return render(
     <SessionSidebar
@@ -66,7 +67,7 @@ function renderSidebar(
         launchOpencode: vi.fn(),
       }}
       onNavigateToSession={vi.fn()}
-      onArchiveSession={vi.fn()}
+      onArchiveSession={onArchiveSession}
       onPinSession={vi.fn()}
       onClientSelect={vi.fn()}
       onNewSessionInDirectory={onNewSessionInDirectory}
@@ -157,6 +158,29 @@ describe('SessionSidebar', () => {
 
     expect(screen.getByText('Box')).toBeInTheDocument();
     multiHost.mockReturnValue(false);
+  });
+
+  it('archives a row on middle click but not on right click', () => {
+    const onArchive = vi.fn();
+    const group: SidebarProjectGroup = {
+      directory: '/repo',
+      sessions: [session()],
+      lastUpdated: 1,
+      aggregate: { kind: 'none' },
+    };
+
+    renderSidebar(group, {}, vi.fn(), onArchive);
+    const row = screen.getByText('Fix thing').closest('.session-sidebar-item')!;
+
+    const aux = (button: number) =>
+      fireEvent(row, new MouseEvent('auxclick', { bubbles: true, button }));
+
+    aux(2);
+    expect(onArchive).not.toHaveBeenCalled();
+
+    aux(1);
+    expect(onArchive).toHaveBeenCalledTimes(1);
+    expect(onArchive.mock.calls[0][1].id).toBe('s');
   });
 
   it('forwards the group host + platform when adding a session to a remote project', () => {
