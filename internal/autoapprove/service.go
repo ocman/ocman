@@ -15,6 +15,7 @@ import (
 	"io"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 
 	log "github.com/sirupsen/logrus"
 
@@ -90,9 +91,9 @@ type Service struct {
 
 	// judgeDelayMs is the cached value of the judge delay setting.
 	// Seeded at startup and updated whenever the setting is changed via
-	// the API. Accessed without a lock — reads/writes are int64 and
-	// the worst case is a stale value for one permission event.
-	judgeDelayMs int64
+	// the API — written from an HTTP handler and read from the watcher
+	// and SSE tee goroutines, hence atomic.
+	judgeDelayMs atomic.Int64
 
 	// sseSessions maps sessionID -> the live SSE writer for any
 	// currently-connected client. See RegisterSink.
@@ -164,11 +165,11 @@ func (s *Service) OpencodeAdapter() platforms.Platform {
 }
 
 // JudgeDelayMs returns the cached judge delay.
-func (s *Service) JudgeDelayMs() int64 { return s.judgeDelayMs }
+func (s *Service) JudgeDelayMs() int64 { return s.judgeDelayMs.Load() }
 
 // SetJudgeDelayMs updates the cached judge delay (called at startup
 // seeding and whenever the setting changes via the API).
-func (s *Service) SetJudgeDelayMs(ms int64) { s.judgeDelayMs = ms }
+func (s *Service) SetJudgeDelayMs(ms int64) { s.judgeDelayMs.Store(ms) }
 
 // JudgeModel returns the judge's current model selection. Empty when
 // the service has no judge. Used by the settings handler tests to
@@ -177,7 +178,7 @@ func (s *Service) JudgeModel() (provider, modelID string) {
 	if s == nil || s.judge == nil {
 		return "", ""
 	}
-	return s.judge.modelProvider, s.judge.modelID
+	return s.judge.model()
 }
 
 // ReloadJudgeModel re-reads the persisted judge model setting and
@@ -189,11 +190,9 @@ func (s *Service) ReloadJudgeModel() {
 		return
 	}
 	if provider, modelID, ok := loadJudgeModel(s.deps.Store); ok {
-		s.judge.modelProvider = provider
-		s.judge.modelID = modelID
+		s.judge.setModel(provider, modelID)
 	} else {
-		s.judge.modelProvider = judgeModelProvider
-		s.judge.modelID = judgeModelID
+		s.judge.setModel(judgeModelProvider, judgeModelID)
 	}
 }
 

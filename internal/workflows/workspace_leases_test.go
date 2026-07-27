@@ -37,7 +37,7 @@ func (f *fakeWorkspaceProvider) EnsureShard(_ context.Context, _ string, _ strin
 func workspaceGateService(t *testing.T, e *poolGateExecutor, provider WorkspaceProvider) *harness {
 	t.Helper()
 	h := newHarness(t)
-	h.svc = NewService(Deps{Store: h.db, Workspace: provider, CommandExecutor: e, Now: func() time.Time { return h.now }})
+	h.svc = NewService(Deps{Store: h.db, Workspace: provider, CommandExecutor: e, Now: h.clock})
 	return h
 }
 
@@ -150,7 +150,7 @@ func TestOverlappingPathLeasesSerialize(t *testing.T) {
 func TestPathLeasedGitMutationDenied(t *testing.T) {
 	h := newHarness(t)
 	provider := newFakeWorkspaceProvider(t.TempDir())
-	h.svc = NewService(Deps{Store: h.db, Workspace: provider, Now: func() time.Time { return h.now }})
+	h.svc = NewService(Deps{Store: h.db, Workspace: provider, Now: h.clock})
 	def := Definition{
 		ID: "gitdeny", Name: "GitDeny", Version: "1", Concurrency: 1, Directory: t.TempDir(),
 		Triggers:  []Trigger{{ID: "manual", Type: TriggerManual}},

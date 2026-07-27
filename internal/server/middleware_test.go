@@ -270,3 +270,108 @@ func TestWithSecurityHeaders(t *testing.T) {
 		}
 	}
 }
+
+// --- host allowlist tests ---
+
+func TestWithHostAllowlist(t *testing.T) {
+	tests := []struct {
+		name          string
+		publicBaseURL string
+		host          string
+		wantCode      int
+	}{
+		{"loopback name", "", "localhost:8228", http.StatusOK},
+		{"loopback name no port", "", "localhost", http.StatusOK},
+		{"loopback subdomain", "", "app.localhost:8228", http.StatusOK},
+		{"loopback IPv4", "", "127.0.0.1:8228", http.StatusOK},
+		{"loopback IPv6", "", "[::1]:8228", http.StatusOK},
+		{"LAN IP literal", "", "192.168.1.5:8228", http.StatusOK},
+		{"empty host", "", "", http.StatusOK},
+		{"rebound name", "", "evil.example", http.StatusMisdirectedRequest},
+		{"rebound name with port", "", "evil.example:8228", http.StatusMisdirectedRequest},
+		{"public base URL host", "https://ocman.example.com", "ocman.example.com", http.StatusOK},
+		{"public base URL host cased", "https://ocman.example.com", "OCMAN.example.com", http.StatusOK},
+		{"other name with public base URL", "https://ocman.example.com", "evil.example", http.StatusMisdirectedRequest},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := &Server{publicBaseURL: tt.publicBaseURL}
+			h := srv.withHostAllowlist(ringHandler(0, http.StatusOK))
+			req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
+			req.Host = tt.host
+			rr := httptest.NewRecorder()
+			h.ServeHTTP(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Errorf("Host=%q: got %d, want %d", tt.host, rr.Code, tt.wantCode)
+			}
+		})
+	}
+}
+
+// TestWithHostAllowlist_ClosesRequireAuthRebinding is the requireAuth
+// counterpart to the "DNS rebinding host" case in TestRequireLocalhost.
+// requireAuth is csrfGuard + a nil-auth passthrough, and auth is off by
+// default, so a rebound origin used to reach privileged /api/session
+// routes unchallenged.
+func TestWithHostAllowlist_ClosesRequireAuthRebinding(t *testing.T) {
+	srv := &Server{}
+	reached := false
+	inner := srv.requireAuth(func(w http.ResponseWriter, _ *http.Request) {
+		reached = true
+		w.WriteHeader(http.StatusOK)
+	})
+	h := srv.withHostAllowlist(inner)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/session/abc/shell", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	req.Host = "evil.example"
+	req.Header.Set("Origin", "http://evil.example")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusMisdirectedRequest {
+		t.Errorf("rebound host: got %d, want %d", rr.Code, http.StatusMisdirectedRequest)
+	}
+	if reached {
+		t.Error("rebound host reached the handler")
+	}
+}
+
+// --- Origin-less loopback auth ---
+
+// TestIsPrivilegedRequest_OriginlessRespectsAuth pins that "loopback
+// peer, no Origin header" is not itself a credential. Behind a reverse
+// proxy every forwarded request has RemoteAddr 127.0.0.1 and non-browser
+// clients send no Origin, so returning true unconditionally handed the
+// whole network unauthenticated access to tmux/worktree/terminal routes.
+func TestIsPrivilegedRequest_OriginlessRespectsAuth(t *testing.T) {
+	authed := newTestAuth(t, "hunter2")
+	trusting := newTestAuth(t, "hunter2", withTrustLocalhost())
+
+	tests := []struct {
+		name   string
+		auth   *Auth
+		cookie bool
+		want   bool
+	}{
+		{"auth disabled", nil, false, true},
+		{"auth on, no cookie", authed, false, false},
+		{"auth on, valid cookie", authed, true, true},
+		{"auth on, trust localhost", trusting, false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := &Server{auth: tt.auth}
+			req := httptest.NewRequest(http.MethodPost, "/api/tmux/launch-opencode", nil)
+			req.RemoteAddr = "127.0.0.1:12345"
+			req.Host = "localhost:8228"
+			if tt.cookie {
+				req.AddCookie(&http.Cookie{Name: authCookieName, Value: tt.auth.signToken(time.Now().Add(time.Hour))})
+			}
+			if got := srv.isPrivilegedRequest(req); got != tt.want {
+				t.Errorf("isPrivilegedRequest() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

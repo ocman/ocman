@@ -3,12 +3,14 @@ package autoapprove
 import (
 	"context"
 	"encoding/json"
+	"sort"
 	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/safety"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -47,7 +49,7 @@ func (s *Service) Ensure(
 	// goroutine's sleep use the same value. The goroutine re-reads it
 	// inside backgroundAutoApprove for cases where the setting was
 	// changed between the asked event and the judge starting.
-	delayMs := s.judgeDelayMs
+	delayMs := s.judgeDelayMs.Load()
 	judgeStartsAt := time.Now().Add(time.Duration(delayMs) * time.Millisecond).UnixMilli()
 
 	ctx, ok := s.claimAutoApproveWithStart(context.Background(), sessionID, permissionID, judgeStartsAt)
@@ -133,6 +135,20 @@ func (s *Service) backgroundAutoApprove(
 		return
 	}
 
+	// Hard denylist. Checked before the safe-command cache and before
+	// the judge, because both are reachable by untrusted input: the
+	// judge prompt interpolates the agent's own command text, and one
+	// safe verdict caches by md5(command) and is inherited by every
+	// child session without re-judging. No verdict, cache entry, or
+	// inherited approval may auto-approve a denylisted action.
+	if reason := deniedReason(permission, patterns, metadata); reason != "" {
+		logger.WithField("reason", reason).
+			Warn("background auto-approve: refusing, command is on the hard denylist")
+		s.recordJudgedWithReasoning(sessionID, permissionID, verdictUnsafe, "blocked by ocman's hard denylist: "+reason)
+		s.emitFlagged(sessionID, permissionID, "blocked by ocman's hard denylist: "+reason)
+		return
+	}
+
 	// Safe-command cache short-circuit. When the *exact same* Bash
 	// command was previously approved in this session — or in any
 	// ancestor session, so a child inherits the parent's approvals —
@@ -172,7 +188,7 @@ func (s *Service) backgroundAutoApprove(
 	// The pending event was already emitted synchronously by the tee's
 	// onPermission callback using the cached delay; we re-read here to
 	// ensure the actual sleep matches the persisted value.
-	delayMs := s.judgeDelayMs
+	delayMs := s.judgeDelayMs.Load()
 	if s.deps.Store != nil {
 		if d, err := s.deps.Store.GetJudgeDelayMs(); err == nil {
 			delayMs = d
@@ -184,8 +200,7 @@ func (s *Service) backgroundAutoApprove(
 	// to the judgeModel* constants seeded in newPermissionJudge.
 	if s.judge != nil && s.deps.Store != nil {
 		if provider, modelID, ok := loadJudgeModel(s.deps.Store); ok {
-			s.judge.modelProvider = provider
-			s.judge.modelID = modelID
+			s.judge.setModel(provider, modelID)
 		}
 	}
 
@@ -319,18 +334,7 @@ func (s *Service) backgroundAutoApprove(
 		// We emit the event when there is something useful to show
 		// (reasoning is the practical floor).
 		if result.Reasoning != "" {
-			flaggedPayload, err := json.Marshal(map[string]string{
-				"permissionId": permissionID,
-				"sessionID":    sessionID,
-				"reasoning":    result.Reasoning,
-			})
-			if err == nil {
-				s.emitSessionSseEvent(sessionID, "ocman.permission.flagged", flaggedPayload)
-				// Broadcast so background sessions that the judge flagged
-				// for human review surface in the bell / favicon / toast
-				// immediately instead of waiting for the next notify poll.
-				s.broadcastGlobalEvent("ocman.permission.flagged", flaggedPayload)
-			}
+			s.emitFlagged(sessionID, permissionID, result.Reasoning)
 		}
 		return
 	}
@@ -439,4 +443,44 @@ func (s *Service) respondAndPersistSafeApproval(
 	s.broadcastPermissionResolved(sessionID, permissionID, "auto-approved")
 
 	logger.Info("background auto-approve: permission approved")
+}
+
+// deniedReason reports why a permission request is hard-denied, or ""
+// when nothing on the denylist matches. It scans the human-readable
+// permission text, the patterns, and every string-valued entry in the
+// tool metadata (the Bash command, an Edit/Write file path, a Webfetch
+// URL) so the denylist covers non-Bash tools too.
+func deniedReason(permission string, patterns []string, metadata map[string]any) string {
+	texts := make([]string, 0, len(patterns)+len(metadata)+1)
+	texts = append(texts, permission)
+	texts = append(texts, patterns...)
+	// Sorted so the reported reason is deterministic across runs.
+	keys := make([]string, 0, len(metadata))
+	for key := range metadata {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if value, ok := metadata[key].(string); ok {
+			texts = append(texts, value)
+		}
+	}
+	return safety.DeniedAny(texts...)
+}
+
+// emitFlagged tells connected clients that a permission was left for
+// the human, with the one-line reason. Broadcast as well as
+// session-scoped so a background session surfaces in the bell / favicon
+// / toast immediately instead of waiting for the next notify poll.
+func (s *Service) emitFlagged(sessionID, permissionID, reasoning string) {
+	payload, err := json.Marshal(map[string]string{
+		"permissionId": permissionID,
+		"sessionID":    sessionID,
+		"reasoning":    reasoning,
+	})
+	if err != nil {
+		return
+	}
+	s.emitSessionSseEvent(sessionID, "ocman.permission.flagged", payload)
+	s.broadcastGlobalEvent("ocman.permission.flagged", payload)
 }

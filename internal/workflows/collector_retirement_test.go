@@ -50,7 +50,7 @@ func (resultMapExecutor) Execute(_ context.Context, request CommandRequest) Comm
 
 func TestMapConsumesDependencyNodeResult(t *testing.T) {
 	h := newHarness(t)
-	h.svc = NewService(Deps{Store: h.db, CommandExecutor: resultMapExecutor{}, Blobs: h.blobs, Now: func() time.Time { return h.now }})
+	h.svc = NewService(Deps{Store: h.db, CommandExecutor: resultMapExecutor{}, Blobs: h.blobs, Now: h.clock})
 	directory := t.TempDir()
 	publishDefinition(t, h, Definition{
 		ID: "item", Name: "Item", Version: "1", Concurrency: 1, Directory: directory,

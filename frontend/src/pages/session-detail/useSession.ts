@@ -120,7 +120,10 @@ export interface UseSessionResult extends SessionView {
   clearPrompt: (kind: 'permission' | 'question', id: string) => void;
   /** Imperatively set a pending permission. Used by the sidebar→
    *  detail reverse sync when poll discovers a prompt SSE missed. */
-  setPendingPermission: (perm: import('../../lib/sseHelpers').PendingPermission | null) => void;
+  setPendingPermission: (
+    perm: import('../../lib/sseHelpers').PendingPermission | null,
+    ownerIds?: string[],
+  ) => void;
   /** Imperatively set a pending question. Same rationale as
    *  setPendingPermission. */
   setPendingQuestion: (q: import('../../components/session/QuestionPrompt').PendingQuestion | null) => void;
@@ -277,13 +280,13 @@ export function useSession(
     [],
   );
   const setPendingPermission = useCallback(
-    (perm: import('../../lib/sseHelpers').PendingPermission | null) => {
+    (perm: import('../../lib/sseHelpers').PendingPermission | null, ownerIds?: string[]) => {
       if (perm === null) {
         // No id to clear by — page-level callers always know the id;
         // they should use clearPrompt directly.
         return;
       }
-      dispatch({ type: 'setPendingPermission', permission: perm });
+      dispatch({ type: 'setPendingPermission', permission: perm, ownerIds });
     },
     [],
   );

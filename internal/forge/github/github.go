@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -71,17 +72,17 @@ func (c *Client) Authenticated() bool { return c.token != "" }
 
 // GetPR fetches pull-request metadata.
 func (c *Client) GetPR(owner, repo string, number int) (map[string]interface{}, error) {
-	return c.get(fmt.Sprintf("/repos/%s/%s/pulls/%d", owner, repo, number))
+	return c.get(fmt.Sprintf("/repos/%s/%s/pulls/%d", url.PathEscape(owner), url.PathEscape(repo), number))
 }
 
 // GetIssue fetches issue metadata (also works for PRs via the issues endpoint).
 func (c *Client) GetIssue(owner, repo string, number int) (map[string]interface{}, error) {
-	return c.get(fmt.Sprintf("/repos/%s/%s/issues/%d", owner, repo, number))
+	return c.get(fmt.Sprintf("/repos/%s/%s/issues/%d", url.PathEscape(owner), url.PathEscape(repo), number))
 }
 
 // GetCommit fetches commit metadata.
 func (c *Client) GetCommit(owner, repo, sha string) (map[string]interface{}, error) {
-	return c.get(fmt.Sprintf("/repos/%s/%s/commits/%s", owner, repo, sha))
+	return c.get(fmt.Sprintf("/repos/%s/%s/commits/%s", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(sha)))
 }
 
 func (c *Client) get(path string) (map[string]interface{}, error) {

@@ -95,7 +95,7 @@ func TestResourcePoolValidation(t *testing.T) {
 func TestNamedPoolCapsConcurrentCommands(t *testing.T) {
 	h := newHarness(t)
 	executor := &poolGateExecutor{started: make(chan string, 2), release: make(chan struct{})}
-	h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, CommandExecutor: executor})
+	h.svc = NewService(Deps{Store: h.db, Now: h.clock, CommandExecutor: executor})
 	def := Definition{
 		ID: "pools", Name: "Pools", Version: "1", Concurrency: 2, Directory: t.TempDir(),
 		Triggers: []Trigger{{ID: "manual", Type: TriggerManual}},
@@ -143,7 +143,7 @@ func compilerHeld(leases []state.WorkflowResourceLease) int {
 func TestConcurrencyCapAcrossPools(t *testing.T) {
 	h := newHarness(t)
 	executor := &poolGateExecutor{started: make(chan string, 3), release: make(chan struct{})}
-	h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, CommandExecutor: executor})
+	h.svc = NewService(Deps{Store: h.db, Now: h.clock, CommandExecutor: executor})
 	def := Definition{
 		ID: "cap", Name: "Cap", Version: "1", Concurrency: 1, Directory: t.TempDir(),
 		Triggers: []Trigger{{ID: "manual", Type: TriggerManual}},
@@ -191,7 +191,7 @@ func TestResourceReleaseOnFailure(t *testing.T) {
 func TestResourceReleaseOnCancel(t *testing.T) {
 	h := newHarness(t)
 	executor := &poolGateExecutor{started: make(chan string, 1), release: make(chan struct{})}
-	h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, CommandExecutor: executor})
+	h.svc = NewService(Deps{Store: h.db, Now: h.clock, CommandExecutor: executor})
 	def := Definition{
 		ID: "cancel", Name: "Cancel", Version: "1", Concurrency: 1, Directory: t.TempDir(),
 		Triggers: []Trigger{{ID: "manual", Type: TriggerManual}},
@@ -216,7 +216,7 @@ func TestResourceReleaseOnCancel(t *testing.T) {
 func TestResourceWaitsAreVisibleAndDurable(t *testing.T) {
 	h := newHarness(t)
 	executor := &poolGateExecutor{started: make(chan string, 2), release: make(chan struct{})}
-	h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, CommandExecutor: executor})
+	h.svc = NewService(Deps{Store: h.db, Now: h.clock, CommandExecutor: executor})
 	def := Definition{
 		ID: "waits", Name: "Waits", Version: "1", Concurrency: 2, Directory: t.TempDir(),
 		Triggers: []Trigger{{ID: "manual", Type: TriggerManual}},
@@ -283,7 +283,7 @@ func (f *fakeWorkflowUsage) SessionUsage(_ context.Context, ids []string) (int64
 func TestCostLimitStopsRun(t *testing.T) {
 	h := newHarness(t)
 	usage := &fakeWorkflowUsage{perSessionCost: 10, perSessionTokens: 0, ok: true}
-	h.svc = NewService(Deps{Store: h.db, Agent: h.agent, Now: func() time.Time { return h.now }, Usage: usage})
+	h.svc = NewService(Deps{Store: h.db, Agent: h.agent, Now: h.clock, Usage: usage})
 	def := singleAgentDefinition()
 	def.Limits = &Limits{MaxCostUSD: 5}
 	run := publishAndStart(t, h, def)
@@ -308,12 +308,12 @@ func TestCostLimitStopsRun(t *testing.T) {
 // TestDurationLimitStopsRun proves the wall-clock duration limit fails a run.
 func TestDurationLimitStopsRun(t *testing.T) {
 	h := newHarness(t)
-	h.svc = NewService(Deps{Store: h.db, Agent: h.agent, Now: func() time.Time { return h.now }})
+	h.svc = NewService(Deps{Store: h.db, Agent: h.agent, Now: h.clock})
 	def := singleAgentDefinition()
 	def.Limits = &Limits{MaxDurationSecs: 60}
 	run := publishAndStart(t, h, def)
 	// Advance the clock past the duration limit, then tick.
-	h.now = h.now.Add(2 * time.Minute)
+	h.setNow(h.clock().Add(2 * time.Minute))
 	if err := h.svc.Tick(context.Background()); err != nil {
 		t.Fatalf("tick: %v", err)
 	}
@@ -330,7 +330,7 @@ func TestDurationLimitStopsRun(t *testing.T) {
 func TestUnlimitedByDefault(t *testing.T) {
 	h := newHarness(t)
 	usage := &fakeWorkflowUsage{perSessionCost: 1000, perSessionTokens: 1_000_000, ok: true}
-	h.svc = NewService(Deps{Store: h.db, Agent: h.agent, Now: func() time.Time { return h.now }, Usage: usage})
+	h.svc = NewService(Deps{Store: h.db, Agent: h.agent, Now: h.clock, Usage: usage})
 	def := singleAgentDefinition() // no Limits
 	run := publishAndStart(t, h, def)
 	h.agent.results["session-1"] = AgentResult{State: "waiting", FinalMessage: "null"}

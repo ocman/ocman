@@ -20,6 +20,12 @@ The current URL is also exposed via `/api/capabilities` as
 `mcpServer.url`. The endpoint is **localhost-only**. Origin-less native MCP
 clients are supported; cross-origin browser requests are rejected.
 
+If you run ocman with password auth (`OCMAN_AUTH_PASSWORD` etc.), the MCP
+endpoint requires a valid auth cookie too — an MCP client that cannot send
+one gets `403`. Pass `-auth-trust-localhost` (or
+`OCMAN_AUTH_TRUST_LOCALHOST=1`) to keep local MCP clients working; the
+loopback bypass is then the credential.
+
 ## Setup
 
 Add the server to your project's `opencode.json` (or the global

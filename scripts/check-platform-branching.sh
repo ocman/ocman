@@ -15,6 +15,14 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
+# ripgrep is not preinstalled on every CI image. Without this check the
+# `rg ... || true` calls below swallow exit 127 and the guard passes
+# vacuously — the exact silent rot this guard exists to prevent.
+command -v rg >/dev/null 2>&1 || {
+	echo "check-platform-branching: ripgrep (rg) is required but not installed" >&2
+	exit 1
+}
+
 # Look for:
 #   session.platform === 'xxx'
 #   session?.platform === "xxx"

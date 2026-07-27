@@ -207,12 +207,21 @@ func (m *Manager) connectAndRegister(ctx context.Context, mr *managedRemote, loc
 		delay = reconnectBaseDelay
 		loggedFailure = false
 
-		mr.platform = newRemotePlatform(mr.conn, m.base, func() string {
+		// mr.platform / mr.host are read under m.mu by sessionCount and
+		// unregisterLocked, so publish them under the same lock — a
+		// concurrent Stop()/disconnect() must never observe a
+		// half-written adapter pair. Register outside the lock: the
+		// registry and router have their own, and holding m.mu across
+		// them would couple the two lock orders for no benefit.
+		platform := newRemotePlatform(mr.conn, m.base, func() string {
 			return m.displayNameFor(localID)
 		})
-		mr.host = newRemoteHost(mr.conn)
-		m.registry.Register(mr.platform)
-		m.router.RegisterRemote(mr.conn.RemoteID(), mr.host)
+		host := newRemoteHost(mr.conn)
+		m.mu.Lock()
+		mr.platform, mr.host = platform, host
+		m.mu.Unlock()
+		m.registry.Register(platform)
+		m.router.RegisterRemote(mr.conn.RemoteID(), host)
 		m.persistHealth(localID, mr.conn)
 		m.refreshInventory(ctx, mr)
 
@@ -246,17 +255,22 @@ func (m *Manager) stillManaged(localID int64, mr *managedRemote) bool {
 
 // unregisterAdapters removes a managed remote's registry/router entries
 // (without closing the conn, which the supervisor keeps to reconnect).
+// Clears the fields under m.mu for the same reason the supervisor
+// publishes them under it, then does the deregistration outside.
 func (m *Manager) unregisterAdapters(mr *managedRemote) {
-	if mr.platform != nil {
-		m.registry.Unregister(mr.platform.ID())
-		mr.platform = nil
+	m.mu.Lock()
+	platform, host := mr.platform, mr.host
+	mr.platform, mr.host = nil, nil
+	m.mu.Unlock()
+
+	if platform != nil {
+		m.registry.Unregister(platform.ID())
 	}
-	if mr.host != nil && mr.conn != nil {
+	if host != nil && mr.conn != nil {
 		if rid := mr.conn.RemoteID(); rid != "" {
 			m.router.UnregisterRemote(rid)
 			m.evictInventory(rid)
 		}
-		mr.host = nil
 	}
 }
 
@@ -362,12 +376,18 @@ func (m *Manager) persistHealth(localID int64, conn *RemoteConn) {
 func (m *Manager) displayNameFor(localID int64) string {
 	m.mu.RLock()
 	mr, ok := m.remotes[localID]
-	m.mu.RUnlock()
-	if ok && mr.name != "" {
-		return mr.name
+	var name string
+	var conn *RemoteConn
+	if ok {
+		// mr.name is written by updateName under m.mu; read it here.
+		name, conn = mr.name, mr.conn
 	}
-	if ok && mr.conn != nil {
-		return mr.conn.Hostname()
+	m.mu.RUnlock()
+	if name != "" {
+		return name
+	}
+	if conn != nil {
+		return conn.Hostname()
 	}
 	return "remote"
 }
@@ -475,13 +495,17 @@ func (m *Manager) List() ([]RemoteStatus, error) {
 func (m *Manager) sessionCount(localID int64) int {
 	m.mu.RLock()
 	mr, ok := m.remotes[localID]
+	var platform *remotePlatform
+	if ok {
+		platform = mr.platform
+	}
 	m.mu.RUnlock()
-	if !ok || mr.platform == nil {
+	if platform == nil {
 		return 0
 	}
-	mr.platform.mu.RLock()
-	defer mr.platform.mu.RUnlock()
-	return len(mr.platform.owned)
+	platform.mu.RLock()
+	defer platform.mu.RUnlock()
+	return len(platform.owned)
 }
 
 // Add persists a new remote and dials it in the background. Returns the
@@ -618,7 +642,7 @@ func (m *Manager) EnabledRemotes() []TargetCandidate {
 		rid := mr.conn.RemoteID()
 		out = append(out, TargetCandidate{
 			RemoteID:   rid,
-			RemoteName: m.nameForRemoteID(rid),
+			RemoteName: m.nameForRemoteIDLocked(rid),
 			Platform:   CompoundPlatformID(rid, m.base),
 		})
 	}
@@ -663,6 +687,13 @@ func (m *Manager) RemoteProjects() []db.ProjectStats {
 func (m *Manager) nameForRemoteID(remoteID string) string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	return m.nameForRemoteIDLocked(remoteID)
+}
+
+// nameForRemoteIDLocked is nameForRemoteID for callers already holding
+// m.mu. Go's RWMutex is not reentrant: a writer arriving between an
+// outer RLock and a nested one blocks both, deadlocking the manager.
+func (m *Manager) nameForRemoteIDLocked(remoteID string) string {
 	for _, mr := range m.remotes {
 		if mr.conn != nil && mr.conn.RemoteID() == remoteID {
 			if mr.name != "" {

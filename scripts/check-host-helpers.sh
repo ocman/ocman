@@ -3,12 +3,12 @@
 # helper directly instead of going through the hostsvc.Host seam
 # (architecture.md AD-16, rule R-A).
 #
-# Directory-scoped host operations (git, worktree, tmux launch) must be
-# resolved via s.router().ForDir(dir) / ForRemote(remoteId) and delegated
-# to a hostsvc.Host. The local Host (internal/hostsvc/local) is the only
-# place that may call gitinfo.*/worktree.* directly; the server-package
-# tmux launchers live in tmux.go and are wired into the local Host from
-# host.go.
+# Directory-scoped host operations (git, worktree, tmux, terminals) must
+# be resolved via s.router().ForDir(dir) / ForRemote(remoteId) / Local()
+# and delegated to a hostsvc.Host. The local Host
+# (internal/hostsvc/local) is the only place that may call git.*/term.*
+# directly; the server-package tmux launchers live in tmux.go and are
+# wired into the local Host from host.go.
 #
 # This keeps remote support automatic: a new host feature added on the
 # seam works for remotes without the handler knowing. A handler that
@@ -23,24 +23,49 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
+# ripgrep is not preinstalled on every CI image. Without this check the
+# `rg ... || true` calls below swallow exit 127 and the guard passes
+# vacuously — the exact silent rot this guard exists to prevent.
+command -v rg >/dev/null 2>&1 || {
+	echo "check-host-helpers: ripgrep (rg) is required but not installed" >&2
+	exit 1
+}
+
 # Naked host-helper call patterns. These are function *calls* (note the
-# trailing "("), so sentinel-error and type references like
-# gitinfo.ErrNotRepo or hostsvc.WorktreeSessionResult are not flagged.
+# trailing "("), so sentinel-error and type references like git.ErrNotRepo
+# or hostsvc.WorktreeSessionResult are not flagged.
+#
+# Keep this list in sync with the exported host-local helpers: `rg
+# '^func [A-Z]' internal/git internal/tmux internal/term`. Pure
+# predicates and name derivations (git.SlugForBranch, tmux.IsAvailable,
+# tmux.SessionNameForPath, term.IsWindowForDir, term.WindowPrefix) are
+# deliberately absent — they touch no host state, so a handler calling
+# them still works for a remote project.
 PATTERNS=(
-	"gitinfo\\.GetDiff\\("
-	"gitinfo\\.Lookup\\("
-	"gitinfo\\.LookupMany\\("
-	"worktree\\.Create\\("
-	"worktree\\.List\\("
-	"worktree\\.ResolveRepoRoot\\("
-	"worktree\\.ResolveBaseRef\\("
-	"launchOpencodeInTmux\\("
-	"launchOpencodeInProjectTmuxWindow\\("
-	"attachLocalPTY\\("
-	"localTermWindows\\("
-	"localTermKillWindow\\("
-	"createTermWindow\\("
-	"ensureTermWindow\\("
+	# internal/git — repository reads and mutations
+	"git\\.GetDiff\\("
+	"git\\.Lookup\\("
+	"git\\.LookupMany\\("
+	"git\\.ListBranches\\("
+	"git\\.Checkout\\("
+	"git\\.ListWorktrees\\("
+	"git\\.CreateWorktree\\("
+	"git\\.RemoveWorktree\\("
+	"git\\.ResolveRepoRoot\\("
+	"git\\.ResolveBaseRef\\("
+	# internal/tmux — process control on this machine
+	"tmux\\.ListClients\\("
+	"tmux\\.ListSessions\\("
+	"tmux\\.ListWindows\\("
+	"tmux\\.SwitchClient\\("
+	"tmux\\.KillTarget\\("
+	"tmux\\.LaunchOpencode[A-Za-z]*\\("
+	"tmux\\.RestartOpencode[A-Za-z]*\\("
+	# internal/term — in-app terminal windows and PTYs
+	"term\\.AttachLocalPTY\\("
+	"term\\.CreateWindow\\("
+	"term\\.Windows\\("
+	"term\\.KillWindow\\("
 )
 
 # Files allowed to reference these directly:

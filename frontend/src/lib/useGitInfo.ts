@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { fetchJSON } from './api';
 import type { GitInfo } from './api';
 
 /**
@@ -72,18 +73,15 @@ export async function fetchGitInfoOnce(
   const param = buildDirsQueryParam(dirs);
   if (param === null) return {};
 
-  let resp: Response;
+  // fetchJSON (not raw fetch) so a 401 raises AuthError and reaches the
+  // lockscreen hook instead of surfacing as a generic pane error.
   try {
-    resp = await fetch(`/api/git/info?dirs=${param}`, { signal });
+    return await fetchJSON<Record<string, GitInfo>>(`/api/git/info?dirs=${param}`, signal);
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') return {};
     if (signal?.aborted) return {};
     throw err;
   }
-  if (!resp.ok) {
-    throw new Error(`/api/git/info returned ${resp.status}`);
-  }
-  return (await resp.json()) as Record<string, GitInfo>;
 }
 
 // Module-level helpers exposed for tests; not part of the public API.

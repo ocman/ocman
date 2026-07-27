@@ -607,14 +607,19 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const restHasQuestion = session?.pendingQuestion ?? false;
   useEffect(() => {
     if (!id) return;
+    // These fetches outlive a navigation. Without the flag, a response
+    // that lands after the user moved from session A to B injects A's
+    // prompt into B and disables B's composer behind a phantom dialog.
+    let cancelled = false;
     if ((restHasPerm || sidebarHasPerm) && pendingPermission === null) {
       Promise.all(promptSessionIds.map((sessionId) => listPermissions(sessionId)))
         .then((permissionLists) => {
+          if (cancelled) return;
           for (const raw of permissionLists.flat()) {
             const p = raw as Record<string, unknown>;
             const perm = extractPendingPermission({ type: 'permission.asked', properties: p });
             if (!perm) continue;
-            setPendingPermission(perm);
+            setPendingPermission(perm, promptSessionIds);
             setPermissionError(null);
             break;
           }
@@ -624,6 +629,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     if ((restHasQuestion || sidebarHasQuestion) && pendingQuestion === null) {
       listQuestions(id)
         .then((questions) => {
+          if (cancelled) return;
           for (const raw of questions) {
             const q = raw as Record<string, unknown>;
             const question = extractPendingQuestion({ type: 'question.asked', properties: q });
@@ -635,6 +641,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
         })
         .catch(() => { /* sidebar will retry */ });
     }
+    return () => { cancelled = true; };
   }, [id, restHasPerm, restHasQuestion, sidebarHasPerm, sidebarHasQuestion,
     pendingPermission, pendingQuestion,
     listPermissions, listQuestions, promptSessionIds, setPermissionError, setPendingPermission,

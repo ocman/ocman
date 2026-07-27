@@ -19,8 +19,17 @@ responses deny framing and MIME sniffing and use a Content Security Policy. The 
 intentionally permits inline styles, external/data/blob images, blob workers, and WebSocket
 connections because the current SPA, attachments, service worker, and terminal require them.
 Privileged localhost routes reject cross-origin browser requests. Origin-less local CLI and
-MCP clients remain supported. Browser access through a local reverse proxy requires password
-authentication and an `OCMAN_PUBLIC_BASE_URL` matching the external origin.
+MCP clients remain supported, but when password auth is configured they must present a valid
+auth cookie like everyone else — a loopback peer address is not a credential behind a reverse
+proxy. Use `-auth-trust-localhost` to restore the unauthenticated local path. Browser access
+through a local reverse proxy requires password authentication and an `OCMAN_PUBLIC_BASE_URL`
+matching the external origin.
+
+Every request is also checked against a **Host allowlist** before routing, which blocks DNS
+rebinding. Allowed hosts are loopback names (`localhost`, `*.localhost`, `127.0.0.1`, `::1`),
+bare IP literals, and the host of `OCMAN_PUBLIC_BASE_URL`. Anything else gets
+`421 Misdirected Request`. If you reach ocman through a hostname (a tunnel, a Tailscale
+MagicDNS name, a reverse proxy), set `OCMAN_PUBLIC_BASE_URL` to that external origin.
 
 ## Flags
 

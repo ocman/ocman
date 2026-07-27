@@ -16,6 +16,8 @@ import (
 	"sync"
 	"time"
 
+	log "github.com/sirupsen/logrus"
+
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -1719,10 +1721,10 @@ func (s *Service) executeCommand(ctx context.Context, active *activeCommand, ver
 			result.Error = "canceled after sibling failure"
 		}
 	}
-	_ = s.store.CompleteWorkflowCommand(runID, node.ID, state.WorkflowCommandResult{
+	s.completeCommandAttempt(runID, node.ID, state.WorkflowCommandResult{
 		State: result.State, ExitCode: result.ExitCode, Stdout: result.Stdout, Stderr: result.Stderr, Error: result.Error,
 		OutputsJSON: "{}", StdoutTruncated: result.StdoutTruncated, StderrTruncated: result.StderrTruncated,
-	}, s.now().UnixMilli())
+	})
 	if completed, err := s.GetRun(context.Background(), runID); err == nil {
 		_, _ = s.applyPolicies(context.Background(), completed)
 	}
@@ -1738,6 +1740,62 @@ func (s *Service) executeCommand(ctx context.Context, active *activeCommand, ver
 	s.mu.Unlock()
 	_ = s.dispatch(context.Background(), runID)
 	s.changed(runID)
+}
+
+// commandCompleteAttempts / commandCompleteRetryDelay bound the retry
+// of a command's terminal write. Short: the store is a local SQLite
+// file, so the realistic failure is a transient lock, not an outage.
+const (
+	commandCompleteAttempts   = 3
+	commandCompleteRetryDelay = 50 * time.Millisecond
+)
+
+// completeCommandAttempt records a command attempt's terminal result.
+// This is the only transition out of the running attempt state, so a
+// discarded error means the attempt's capacity is never released and
+// the node stays running until an ocman restart triggers
+// recoverInterrupted — the run stalls silently, with no signal anywhere.
+//
+// Retry a few times, then fall back to marking the attempt unknown,
+// which releases its leases and pauses the run so a human is asked to
+// resolve it instead of the run hanging forever.
+func (s *Service) completeCommandAttempt(runID, nodeID string, result state.WorkflowCommandResult) {
+	var err error
+	for attempt := range commandCompleteAttempts {
+		if err = s.store.CompleteWorkflowCommand(runID, nodeID, result, s.now().UnixMilli()); err == nil {
+			return
+		}
+		if attempt < commandCompleteAttempts-1 {
+			time.Sleep(commandCompleteRetryDelay)
+		}
+	}
+	log.WithFields(log.Fields{"runID": runID, "nodeID": nodeID, "error": err}).
+		Error("workflow: recording command completion failed; marking the attempt unknown")
+	s.markCommandAttemptUnknown(runID, nodeID, err)
+}
+
+// markCommandAttemptUnknown is completeCommandAttempt's last resort.
+// Best-effort by construction: if this fails too there is nothing left
+// but the log line and recoverInterrupted on the next restart.
+func (s *Service) markCommandAttemptUnknown(runID, nodeID string, cause error) {
+	run, err := s.GetRun(context.Background(), runID)
+	if err != nil {
+		log.WithFields(log.Fields{"runID": runID, "nodeID": nodeID, "error": err}).
+			Error("workflow: could not load the run to mark its command attempt unknown")
+		return
+	}
+	for _, node := range run.Nodes {
+		if node.NodeID != nodeID || len(node.Attempts) == 0 {
+			continue
+		}
+		attempt := node.Attempts[len(node.Attempts)-1]
+		reason := fmt.Sprintf("recording command completion failed: %v", cause)
+		if err := s.store.MarkWorkflowAttemptUnknown(runID, nodeID, attempt.ID, reason, s.now().UnixMilli()); err != nil {
+			log.WithFields(log.Fields{"runID": runID, "nodeID": nodeID, "error": err}).
+				Error("workflow: marking the command attempt unknown failed")
+		}
+		return
+	}
 }
 
 // shardDirectory resolves the on-disk worktree directory for a node's
@@ -1780,9 +1838,9 @@ func (s *Service) shardDirectory(ctx context.Context, version Version, runID, no
 // provisioning failed) and releases its held capacity, mirroring the
 // bookkeeping executeCommand does on a normal completion.
 func (s *Service) finishCommandError(active *activeCommand, runID, nodeID string, red *redactor, message string) {
-	_ = s.store.CompleteWorkflowCommand(runID, nodeID, state.WorkflowCommandResult{
+	s.completeCommandAttempt(runID, nodeID, state.WorkflowCommandResult{
 		State: AttemptErrored, ExitCode: -1, Error: red.redact(message), OutputsJSON: "{}",
-	}, s.now().UnixMilli())
+	})
 	s.mu.Lock()
 	delete(s.running[runID], nodeID)
 	if len(s.running[runID]) == 0 {
