@@ -1,6 +1,8 @@
 // Wire types and helpers for the PR/Issue sidebar feature.
 // Backend contract: see spec/pr-issue-sidebar/architecture.md (API design).
 
+import { fetchJSON, postJSON, raiseAuthError } from './api';
+
 export type RemoteType = 'github' | 'forgejo';
 
 export interface Upstream {
@@ -137,6 +139,7 @@ export async function fetchUpstreams(dir: string, signal?: AbortSignal): Promise
   if (!resp.ok) {
     // 404 = not a git repo; treat as "no upstreams" rather than an error.
     if (resp.status === 404) return [];
+    if (resp.status === 401) throw raiseAuthError();
     throw new Error(`upstreams: ${resp.status}`);
   }
   const json = (await resp.json()) as { upstreams: Upstream[] };
@@ -161,6 +164,7 @@ export async function fetchPRs(opts: {
   const resp = await fetch(`/api/project/prs?${q.toString()}`, { signal: opts.signal });
   if (!resp.ok) {
     const env = await safeError(resp);
+    if (sessionExpired(resp, env)) throw raiseAuthError();
     throw new UpstreamApiError(env, resp.status);
   }
   return (await resp.json()) as ListPRsResponse;
@@ -184,6 +188,7 @@ export async function fetchIssues(opts: {
   const resp = await fetch(`/api/project/issues?${q.toString()}`, { signal: opts.signal });
   if (!resp.ok) {
     const env = await safeError(resp);
+    if (sessionExpired(resp, env)) throw raiseAuthError();
     throw new UpstreamApiError(env, resp.status);
   }
   return (await resp.json()) as ListIssuesResponse;
@@ -205,6 +210,7 @@ export async function fetchPRChecks(opts: {
   const resp = await fetch(`/api/project/pr-checks?${q.toString()}`, { signal: opts.signal });
   if (!resp.ok) {
     const env = await safeError(resp);
+    if (sessionExpired(resp, env)) throw raiseAuthError();
     throw new UpstreamApiError(env, resp.status);
   }
   return (await resp.json()) as PRChecks;
@@ -217,7 +223,12 @@ export async function fetchForgeUser(opts: {
 }): Promise<{ login: string; host: string } | null> {
   const q = new URLSearchParams({ dir: opts.dir, remote: opts.remote });
   const resp = await fetch(`/api/project/forge-user?${q.toString()}`, { signal: opts.signal });
-  if (resp.status === 401) return null; // unauthenticated — disable "mine" for this remote
+  if (resp.status === 401) {
+    // A forge-level 401 always carries an error envelope; a bare 401 is
+    // ocman's own auth middleware telling us the cookie expired.
+    if (sessionExpired(resp, await safeError(resp))) throw raiseAuthError();
+    return null; // unauthenticated — disable "mine" for this remote
+  }
   if (!resp.ok) throw new Error(`forge-user: ${resp.status}`);
   return (await resp.json()) as { login: string; host: string };
 }
@@ -230,25 +241,18 @@ export async function postHandle(req: HandleRequest): Promise<HandleResponse> {
   });
   if (!resp.ok) {
     const env = await safeError(resp);
+    if (sessionExpired(resp, env)) throw raiseAuthError();
     throw new UpstreamApiError(env, resp.status);
   }
   return (await resp.json()) as HandleResponse;
 }
 
 export async function fetchPromptTemplates(): Promise<PromptTemplates> {
-  const resp = await fetch('/api/settings/prompt-templates');
-  if (!resp.ok) throw new Error(`prompt-templates: ${resp.status}`);
-  return (await resp.json()) as PromptTemplates;
+  return fetchJSON<PromptTemplates>('/api/settings/prompt-templates');
 }
 
 export async function savePromptTemplates(t: Partial<PromptTemplates>): Promise<PromptTemplates> {
-  const resp = await fetch('/api/settings/prompt-templates', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(t),
-  });
-  if (!resp.ok) throw new Error(`prompt-templates POST: ${resp.status}`);
-  return (await resp.json()) as PromptTemplates;
+  return postJSON<PromptTemplates, Partial<PromptTemplates>>('/api/settings/prompt-templates', t);
 }
 
 // UpstreamApiError carries the structured error envelope returned by
@@ -264,6 +268,15 @@ export class UpstreamApiError extends Error {
     this.envelope = envelope;
     this.status = status;
   }
+}
+
+// sessionExpired distinguishes "your ocman cookie expired" from "you
+// have no GITHUB_TOKEN". Both are 401, but every forge-level 401 from
+// these handlers carries a JSON error envelope, while ocman's auth
+// middleware answers with a bare "unauthorized" body. Only the latter
+// should flip the whole app to the lockscreen.
+function sessionExpired(resp: Response, envelope: ErrorEnvelope | null): boolean {
+  return resp.status === 401 && envelope === null;
 }
 
 async function safeError(resp: Response): Promise<ErrorEnvelope | null> {

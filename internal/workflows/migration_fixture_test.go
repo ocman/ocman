@@ -60,7 +60,7 @@ func fixtureForDirectory(t *testing.T, source []byte, directory string) []byte {
 func TestAdversarialMigrationFixtureRunsTwoItems(t *testing.T) {
 	h := newHarness(t)
 	agent := &fixtureAgent{}
-	h.svc = NewService(Deps{Store: h.db, Agent: agent, Blobs: h.blobs, CommandExecutor: fixtureExecutor{}, Now: func() time.Time { return h.now }})
+	h.svc = NewService(Deps{Store: h.db, Agent: agent, Blobs: h.blobs, CommandExecutor: fixtureExecutor{}, Now: h.clock})
 	ctx := context.Background()
 	directory := filepath.Dir(h.path)
 	if _, err := h.svc.Publish(ctx, fixtureForDirectory(t, readMigrationFixture(t, "migration-item.yaml"), directory)); err != nil {
@@ -120,7 +120,7 @@ func TestAdversarialMigrationFixtureRunsTwoItems(t *testing.T) {
 func TestDiagnosticPartitionFixtureRunsTwoItems(t *testing.T) {
 	h := newHarness(t)
 	agent := &fixtureAgent{}
-	h.svc = NewService(Deps{Store: h.db, Agent: agent, Blobs: h.blobs, CommandExecutor: fixtureExecutor{}, Now: func() time.Time { return h.now }})
+	h.svc = NewService(Deps{Store: h.db, Agent: agent, Blobs: h.blobs, CommandExecutor: fixtureExecutor{}, Now: h.clock})
 	directory := filepath.Dir(h.path)
 	if _, err := h.svc.Publish(context.Background(), fixtureForDirectory(t, readMigrationFixture(t, "migration-item.yaml"), directory)); err != nil {
 		t.Fatalf("publish item fixture: %v", err)

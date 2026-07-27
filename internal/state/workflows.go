@@ -323,14 +323,40 @@ func (d *DB) workflowVersionNodes(id string) ([]WorkflowNode, error) {
 	return out, rows.Err()
 }
 
+// ActivateWorkflowVersion makes a version the one the scheduler fires,
+// and rebaselines its triggers to now.
+//
+// The rebaseline is what stops a wall-clock cron firing the moment it is
+// switched back on. A trigger's due-ness is measured from its last
+// firing, so a workflow inactive since last month looks overdue the
+// instant it returns: reactivating a "0 3 * * *" job at 14:00 would run
+// it at 14:00. Moving the baseline to now means the next slot decides,
+// while a genuinely missed slot during a brief restart is still honoured
+// because nothing reactivated.
 func (d *DB) ActivateWorkflowVersion(id string, now int64) (*WorkflowVersion, error) {
-	res, err := d.db.Exec(`UPDATE workflow_definition SET active_version_id = ?, updated_at = ? WHERE id = (SELECT workflow_id FROM workflow_version WHERE id = ?)`, id, now, id)
+	tx, err := d.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("activating workflow version: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	res, err := tx.Exec(`UPDATE workflow_definition SET active_version_id = ?, updated_at = ? WHERE id = (SELECT workflow_id FROM workflow_version WHERE id = ?)`, id, now, id)
 	if err != nil {
 		return nil, fmt.Errorf("activating workflow version: %w", err)
 	}
 	changed, err := res.RowsAffected()
 	if err != nil || changed != 1 {
 		return nil, fmt.Errorf("workflow version %q not found", id)
+	}
+	// last_fired_at = NULL with last_checked_at set is the same baseline
+	// a freshly published trigger gets, so this reuses the existing
+	// "start measuring from here" path rather than inventing a second one.
+	if _, err := tx.Exec(`UPDATE workflow_trigger_state
+		SET last_fired_at = NULL, last_checked_at = ?, next_check_at = NULL
+		WHERE version_id = ?`, now, id); err != nil {
+		return nil, fmt.Errorf("rebaselining workflow triggers: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("committing workflow activation: %w", err)
 	}
 	return d.GetWorkflowVersion(id)
 }
@@ -750,6 +776,12 @@ func completeWorkflowNodeTx(tx *sql.Tx, runID string, now int64) error {
 		}
 		ready = append(ready, id)
 	}
+	// rows.Err() before acting: a driver error mid-iteration would
+	// otherwise silently truncate the ready set and strand the run.
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("iterating ready workflow nodes: %w", err)
+	}
 	if err := rows.Close(); err != nil {
 		return err
 	}
@@ -829,6 +861,12 @@ func (d *DB) ApproveWorkflowNode(runID, nodeID string, now int64) error {
 				return fmt.Errorf("scanning ready workflow node: %w", err)
 			}
 			ready = append(ready, node)
+		}
+		// rows.Err() before acting: a driver error mid-iteration would
+		// otherwise silently truncate the ready set and strand the run.
+		if err = rows.Err(); err != nil {
+			rows.Close()
+			return fmt.Errorf("iterating ready workflow nodes: %w", err)
 		}
 		if err = rows.Close(); err != nil {
 			return err
@@ -1021,6 +1059,12 @@ func (d *DB) ResolveWorkflowAttemptBy(runID string, attemptID int64, resolution,
 					return err
 				}
 				ready = append(ready, id)
+			}
+			// rows.Err() before acting: a driver error mid-iteration
+			// would otherwise silently truncate the unblocked set.
+			if err = rows.Err(); err != nil {
+				rows.Close()
+				return fmt.Errorf("iterating nodes unblocked by resolution: %w", err)
 			}
 			if err = rows.Close(); err != nil {
 				return err

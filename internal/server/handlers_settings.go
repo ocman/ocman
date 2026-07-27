@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
@@ -146,8 +145,7 @@ func (s *Server) handleSetJudgeDelay(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		DelayMs int64 `json:"delayMs"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+	if !readAndUnmarshal(w, r, maxRequestBody, &body) {
 		return
 	}
 	if s.stateDB == nil {
@@ -199,8 +197,7 @@ func (s *Server) handleSetJudgeModel(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Model string `json:"model"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+	if !readAndUnmarshal(w, r, maxRequestBody, &body) {
 		return
 	}
 	if s.stateDB == nil {

@@ -18,12 +18,20 @@ type WorkflowTriggerFiring struct {
 	FiredAt, StartedAt                                          int64
 }
 
+// ListCurrentWorkflowVersions returns the versions the trigger
+// scheduler may fire. That is the version the user activated, not the
+// newest published revision: publishing does not activate (only revision
+// 1 does), and deactivating is how a user stops a workflow running.
+// Keying on current_revision instead fired revisions nobody activated
+// and kept firing after a deactivation. Archiving clears
+// active_version_id too, so the archived_at check is belt and braces.
 func (d *DB) ListCurrentWorkflowVersions() ([]WorkflowVersion, error) {
 	rows, err := d.db.Query(`
 		SELECT v.id, v.workflow_id, v.name, v.revision, v.metadata_version,
 		       v.definition_json, v.concurrency, v.created_at
 		FROM workflow_version v
-		JOIN workflow_definition d ON d.id = v.workflow_id AND d.current_revision = v.revision
+		JOIN workflow_definition d ON d.id = v.workflow_id AND d.active_version_id = v.id
+		WHERE d.archived_at IS NULL
 		ORDER BY v.created_at, v.id`)
 	if err != nil {
 		return nil, fmt.Errorf("listing current workflow versions: %w", err)
@@ -40,12 +48,18 @@ func (d *DB) ListCurrentWorkflowVersions() ([]WorkflowVersion, error) {
 	return out, rows.Err()
 }
 
+// ListQueuedWorkflowVersions drains firings an overlap policy queued.
+// A queued firing for a version that has since been deactivated is left
+// in place rather than started: the user turned the workflow off after
+// it queued, and reactivating releases the backlog.
 func (d *DB) ListQueuedWorkflowVersions() ([]WorkflowVersion, error) {
 	rows, err := d.db.Query(`
 		SELECT v.id, v.workflow_id, v.name, v.revision, v.metadata_version,
 		       v.definition_json, v.concurrency, v.created_at
 		FROM workflow_version v
 		JOIN workflow_trigger_firing f ON f.version_id = v.id AND f.decision = 'queued'
+		JOIN workflow_definition d ON d.id = v.workflow_id AND d.active_version_id = v.id
+		WHERE d.archived_at IS NULL
 		GROUP BY v.id ORDER BY min(f.id)`)
 	if err != nil {
 		return nil, fmt.Errorf("listing queued workflow versions: %w", err)

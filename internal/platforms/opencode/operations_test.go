@@ -570,6 +570,54 @@ func TestCreateSession_SendsDirectory(t *testing.T) {
 	}
 }
 
+// TestCreateSession_RejectsUnusableResponse proves CreateSession never
+// reports success without an addressable session ID. A 2xx whose body is
+// unparseable, or which carries an empty/missing id, previously fell
+// through the `len(body) == 0` guard and returned (&{ID:""}, nil) — a
+// "created" session the caller can never address.
+func TestCreateSession_RejectsUnusableResponse(t *testing.T) {
+	const dir = "/private/tmp/create-session-bad-body"
+
+	for _, tt := range []struct {
+		name string
+		body string
+	}{
+		{"unparseable body", `not json at all`},
+		{"empty id", `{"id":""}`},
+		{"missing id", `{"title":"x"}`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost && r.URL.Path == "/session" {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte(tt.body))
+					return
+				}
+				http.NotFound(w, r)
+			}))
+			defer srv.Close()
+
+			port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+			restore := setDiscoverPortsImplForTests(func() map[string]string {
+				return map[string]string{dir: port}
+			})
+			defer restore()
+			resetPortCacheForTests()
+			resetSessionPortAffinityForTests()
+			defer resetSessionPortAffinityForTests()
+
+			a := New(nil, nil)
+			resp, err := a.CreateSession(context.Background(), platforms.CreateSessionRequest{Directory: dir})
+			if err == nil {
+				t.Fatalf("CreateSession succeeded with unusable response %q: %+v", tt.body, resp)
+			}
+			if resp != nil {
+				t.Fatalf("CreateSession returned a response alongside an error: %+v", resp)
+			}
+		})
+	}
+}
+
 // TestCreateSession_EncodesDirectoryHeader proves the x-opencode-directory
 // header value is URL-encoded so a worktree path containing a space (or
 // other characters unsafe in a raw header value) round-trips intact.

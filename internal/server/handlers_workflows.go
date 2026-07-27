@@ -86,8 +86,7 @@ func (s *Server) handleWorkflows(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			w.WriteHeader(http.StatusCreated)
-			writeJSON(w, version)
+			writeJSONStatus(w, http.StatusCreated, version)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -133,8 +132,7 @@ func (s *Server) handleWorkflows(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		w.WriteHeader(http.StatusCreated)
-		writeJSON(w, run)
+		writeJSONStatus(w, http.StatusCreated, run)
 	default:
 		http.Error(w, "not found", http.StatusNotFound)
 	}
@@ -325,16 +323,16 @@ func (workflowWorkspaceProvider) EnsureShard(ctx context.Context, runID, repo st
 	if repo == "" {
 		return "", fmt.Errorf("workspace shard requires a repository directory")
 	}
-	root, err := git.ResolveRepoRoot(ctx, repo)
+	root, err := git.ResolveRepoRoot(ctx, repo) // ocman:allow-host-helper — local-only scheduler, #320 AD-27
 	if err != nil {
 		return "", err
 	}
 	branch := fmt.Sprintf("ocman/wf-%s-shard-%d", runID, shard)
-	res, err := git.CreateWorktree(ctx, git.CreateWorktreeRequest{
+	res, err := git.CreateWorktree(ctx, git.CreateWorktreeRequest{ // ocman:allow-host-helper — local-only scheduler, #320 AD-27
 		RepoRoot:  root,
 		Branch:    branch,
 		NewBranch: true,
-		BaseRef:   git.ResolveBaseRef(ctx, root),
+		BaseRef:   git.ResolveBaseRef(ctx, root), // ocman:allow-host-helper — local-only scheduler, #320 AD-27
 	})
 	if err != nil {
 		return "", err

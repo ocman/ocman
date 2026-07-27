@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
-	"time"
 )
 
 func TestApprovalPublishesNodeResult(t *testing.T) {
@@ -42,7 +41,7 @@ func TestNodeResultReadsLegacyJoinEnvelope(t *testing.T) {
 func TestMapAndJoinPublishChildOutputs(t *testing.T) {
 	h := newHarness(t)
 	agent := newScriptedAgent(map[string]string{"a": "done", "b": "error"})
-	h.svc = NewService(Deps{Store: h.db, Agent: agent, Blobs: h.blobs, Now: func() time.Time { return h.now }})
+	h.svc = NewService(Deps{Store: h.db, Agent: agent, Blobs: h.blobs, Now: h.clock})
 	version := publishItemAndCampaign(t, h, JoinAlways, 0, false)
 	run, _ := driveMap(t, h, version, items("a", "b"))
 	if run.State != StateSuccessful {
@@ -87,7 +86,7 @@ func TestFailedMapAndJoinKeepDiagnostics(t *testing.T) {
 	t.Run("join policy failure", func(t *testing.T) {
 		h := newHarness(t)
 		agent := newScriptedAgent(map[string]string{"a": "done", "b": "error"})
-		h.svc = NewService(Deps{Store: h.db, Agent: agent, Blobs: h.blobs, Now: func() time.Time { return h.now }})
+		h.svc = NewService(Deps{Store: h.db, Agent: agent, Blobs: h.blobs, Now: h.clock})
 		version := publishItemAndCampaign(t, h, JoinAllSuccess, 0, false)
 		run, _ := driveMap(t, h, version, items("a", "b"))
 		if run.State != StateFailed {
@@ -103,7 +102,7 @@ func TestFailedMapAndJoinKeepDiagnostics(t *testing.T) {
 	t.Run("map fail-fast", func(t *testing.T) {
 		h := newHarness(t)
 		agent := newScriptedAgent(map[string]string{"a": "error"})
-		h.svc = NewService(Deps{Store: h.db, Agent: agent, Blobs: h.blobs, Now: func() time.Time { return h.now }})
+		h.svc = NewService(Deps{Store: h.db, Agent: agent, Blobs: h.blobs, Now: h.clock})
 		version := publishItemAndCampaign(t, h, JoinAlways, 0, true)
 		run, _ := driveMap(t, h, version, items("a"))
 		if run.State != StateFailed {
@@ -119,7 +118,7 @@ func TestFailedMapAndJoinKeepDiagnostics(t *testing.T) {
 
 func TestEmptyMapPublishesEmptyItems(t *testing.T) {
 	h := newHarness(t)
-	h.svc = NewService(Deps{Store: h.db, Agent: newScriptedAgent(nil), Blobs: h.blobs, Now: func() time.Time { return h.now }})
+	h.svc = NewService(Deps{Store: h.db, Agent: newScriptedAgent(nil), Blobs: h.blobs, Now: h.clock})
 	version := publishItemAndCampaign(t, h, JoinAlways, 0, false)
 	run, _ := driveMap(t, h, version, items())
 	if got := nodeOutput(t, run, "fan"); got != `{"items":[]}` {
@@ -148,7 +147,7 @@ func (nestedMapExecutor) Execute(_ context.Context, request CommandRequest) Comm
 func TestMapChildOutputUsesEffectiveWorkflowLeaves(t *testing.T) {
 	t.Run("parallel leaves", func(t *testing.T) {
 		h := newHarness(t)
-		h.svc = NewService(Deps{Store: h.db, CommandExecutor: childCommandExecutor{}, Blobs: h.blobs, Now: func() time.Time { return h.now }})
+		h.svc = NewService(Deps{Store: h.db, CommandExecutor: childCommandExecutor{}, Blobs: h.blobs, Now: h.clock})
 		publishCommandChild(t, h, nil)
 		version, err := h.svc.PublishJSON(t.Context(), []byte(mapWorkflowJSON(JoinAlways, 0, false)))
 		if err != nil {
@@ -163,7 +162,7 @@ func TestMapChildOutputUsesEffectiveWorkflowLeaves(t *testing.T) {
 
 	t.Run("failed node before skipped leaf", func(t *testing.T) {
 		h := newHarness(t)
-		h.svc = NewService(Deps{Store: h.db, CommandExecutor: childCommandExecutor{fail: true}, Blobs: h.blobs, Now: func() time.Time { return h.now }})
+		h.svc = NewService(Deps{Store: h.db, CommandExecutor: childCommandExecutor{fail: true}, Blobs: h.blobs, Now: h.clock})
 		publishCommandChild(t, h, []Dependency{{From: "first", To: "second"}})
 		version, err := h.svc.PublishJSON(t.Context(), []byte(mapWorkflowJSON(JoinAlways, 0, false)))
 		if err != nil {
@@ -198,7 +197,7 @@ func TestSkippedMapAndJoinKeepOutputSchemas(t *testing.T) {
 
 func TestNestedMapOutputLoadsDescendantResult(t *testing.T) {
 	h := newHarness(t)
-	h.svc = NewService(Deps{Store: h.db, CommandExecutor: nestedMapExecutor{}, Blobs: h.blobs, Now: func() time.Time { return h.now }})
+	h.svc = NewService(Deps{Store: h.db, CommandExecutor: nestedMapExecutor{}, Blobs: h.blobs, Now: h.clock})
 	directory := t.TempDir()
 	leaf := Definition{
 		ID: "leaf", Name: "Leaf", Version: "1", Concurrency: 1, Directory: directory,

@@ -88,7 +88,8 @@ type Server struct {
 	// explicit remote owner (AD-16). git/worktree/tmux/projects handlers
 	// delegate through it instead of calling host helpers directly, so
 	// remote support is automatic once remote hosts are registered.
-	hostRouter *hostsvc.Router
+	hostRouter     *hostsvc.Router
+	hostRouterOnce sync.Once
 
 	// remotes is the hub-side manager of attached remote connections
 	// (multi-remote support). Nil for single-host installs. The /api/
@@ -213,11 +214,11 @@ func (r registryRef) PlatformForSession(ctx context.Context, sessionID string) (
 // response. The new session already exists; the index only feeds cached
 // stats, which the background ticker also keeps fresh.
 func (s *Server) refreshProjectsIndexAsync() {
-	go func() {
+	go runWithRecover("projects-index-async", func() {
 		if err := s.refreshProjectsIndex(); err != nil {
 			log.WithError(err).Warn("refreshing projects index after session creation")
 		}
-	}()
+	})
 }
 
 // SessionService returns the session mutation service so main.go can
@@ -369,6 +370,10 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 			_ = s.daguManager.Close()
 		}
 	}()
+	// Build the host router on this goroutine, before any background loop
+	// or handler can reach it. router() assigns lazily, and the loops
+	// started below race that assignment otherwise.
+	s.router()
 	// Seed the cached judge delay so the first permission event has it
 	// available without a DB round-trip.
 	if s.stateDB != nil {
@@ -424,13 +429,15 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// and the debug-log sink are skipped inside the middleware (see
 	// noiseSkip) to keep the log readable.
 	//
-	// Layering (outer -> inner): security headers -> request timing -> OTel -> mux.
+	// Layering (outer -> inner): host allowlist -> security headers ->
+	// request timing -> OTel -> mux. The allowlist is outermost so a
+	// DNS-rebound Host never reaches a route, authenticated or not.
 	// otelhttp sits closest to the mux so its server span wraps just
 	// the route handlers; withRequestTiming wraps the whole thing so
 	// Server-Timing captures otelhttp's overhead too. otelhttp is a
 	// no-op when telemetry is disabled (its global TracerProvider is
 	// the SDK noop in that case).
-	httpServer := newHTTPServer(ln.Addr().String(), withSecurityHeaders(withRequestTiming(withOTel(mux))))
+	httpServer := newHTTPServer(ln.Addr().String(), s.withHostAllowlist(withSecurityHeaders(withRequestTiming(withOTel(mux)))))
 
 	// Sweep orphaned ephemeral terminal-viewer sessions left by an
 	// earlier process (e.g. after an air rebuild / crash). They can
@@ -683,9 +690,21 @@ func (s *Server) post(h http.HandlerFunc) http.HandlerFunc {
 	return requirePOST(s.requireAuth(h))
 }
 
-// writeJSON writes a JSON response.
+// writeJSON writes a JSON response with an implicit 200 status.
 func writeJSON(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		log.WithError(err).Error("failed to encode JSON response")
+	}
+}
+
+// writeJSONStatus writes a JSON response with an explicit status code.
+// Callers must not call WriteHeader themselves first: the header map is
+// flushed by WriteHeader, so a Content-Type set afterwards is silently
+// dropped and the client sniffs the type instead.
+func writeJSONStatus(w http.ResponseWriter, status int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(data); err != nil {
 		log.WithError(err).Error("failed to encode JSON response")
 	}

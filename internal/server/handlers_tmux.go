@@ -20,7 +20,11 @@ func (s *Server) handleTmuxClients(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	clients, err := tmux.ListClients()
+	// A tmux client is a TTY attached on the machine running ocman.
+	// There is no directory to route by and no remote equivalent on the
+	// Host seam: switching a remote's tmux client from this browser
+	// would attach nothing the user can see.
+	clients, err := tmux.ListClients() // ocman:allow-host-helper — machine-local by definition
 	if err != nil {
 		if tmux.IsServerNotRunningError(err) {
 			writeJSON(w, map[string]interface{}{
@@ -43,35 +47,50 @@ func (s *Server) handleTmuxClients(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// tmuxSessionRow is the wire shape of one row in /api/tmux/sessions.
+// Named explicitly because the handler now sources rows from the
+// hostsvc.Host seam (hostsvc.TmuxSession) rather than tmux.Session, and
+// the frontend keys off resolvedPath.
+type tmuxSessionRow struct {
+	Name         string `json:"name"`
+	ResolvedPath string `json:"resolvedPath"`
+}
+
 func (s *Server) handleTmuxSessions(w http.ResponseWriter, r *http.Request) {
 	if !tmux.IsAvailable() {
 		writeJSON(w, map[string]interface{}{
 			"available": false,
-			"sessions":  []tmux.Session{},
+			"sessions":  []tmuxSessionRow{},
 		})
 		return
 	}
 
-	sessions, err := tmux.ListSessions()
+	// Through the Host seam (AD-16 R-A) rather than tmux.ListSessions:
+	// the route is directory-less, so Local() is the owner.
+	sessions, err := s.router().Local().TmuxSessions(r.Context())
 	if err != nil {
 		if tmux.IsServerNotRunningError(err) {
 			writeJSON(w, map[string]interface{}{
 				"available": true,
-				"sessions":  []tmux.Session{},
+				"sessions":  []tmuxSessionRow{},
 			})
 			return
 		}
 		log.WithError(err).Error("listing tmux sessions")
 		writeJSON(w, map[string]interface{}{
 			"available": false,
-			"sessions":  []tmux.Session{},
+			"sessions":  []tmuxSessionRow{},
 		})
 		return
 	}
 
+	rows := make([]tmuxSessionRow, 0, len(sessions))
+	for _, ts := range sessions {
+		rows = append(rows, tmuxSessionRow{Name: ts.Name, ResolvedPath: ts.Path})
+	}
 	writeJSON(w, map[string]interface{}{
 		"available": true,
-		"sessions":  sessions,
+		"sessions":  rows,
 	})
 }
 

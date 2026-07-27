@@ -49,6 +49,7 @@ export interface ComposerMemoProps {
   newConversation?: boolean;
   worktreesSupported?: boolean;
   permissionControl?: unknown;
+  shellExec?: boolean;
   models?: unknown[];
   modelEntries?: ModelEntry[];
 }
@@ -86,6 +87,11 @@ export const composerPropsEqual = (prev: ComposerMemoProps, next: ComposerMemoPr
   prev.newConversation === next.newConversation &&
   prev.worktreesSupported === next.worktreesSupported &&
   prev.permissionControl === next.permissionControl &&
+  // Composer mirrors shellExec into a ref via an effect and reads it only
+  // through that ref. Skipping the render on a false->true flip leaves the
+  // ref stale, so a `!`-prefixed command is sent to the LLM as a prompt
+  // instead of being executed.
+  prev.shellExec === next.shellExec &&
   (prev.models?.length || 0) === (next.models?.length || 0) &&
   (prev.models || []).every((model, i) => model === (next.models || [])[i]) &&
   // Re-render when model availability data changes so the "not available"

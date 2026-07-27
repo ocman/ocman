@@ -11,10 +11,10 @@ import (
 // persisted row after a restart, but is a plain struct so internal/state
 // stays decoupled from internal/ocruntime (the host layer converts).
 type ManagedInstance struct {
-	Endpoint  string
-	Kind      string
-	RuntimeID string
-	PID       int
+	Endpoint   string
+	Kind       string
+	RuntimeID  string
+	PID        int
 	LaunchedAt time.Time
 }
 

@@ -34,7 +34,7 @@ func (e *interpolationExecutor) snapshot() []CommandRequest {
 func TestDependencyNodeResultsAreInterpolated(t *testing.T) {
 	h := newHarness(t)
 	executor := &interpolationExecutor{}
-	h.svc = NewService(Deps{Store: h.db, Agent: h.agent, CommandExecutor: executor, Now: func() time.Time { return h.now }})
+	h.svc = NewService(Deps{Store: h.db, Agent: h.agent, CommandExecutor: executor, Now: h.clock})
 	const producerID = "sub/produce.v1"
 	nodes := []Node{
 		{ID: producerID, Name: "Produce", Type: "command", Command: []string{"produce"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}},
@@ -115,7 +115,7 @@ func TestInvalidNodeResultInterpolationFailsBeforeExecution(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			h := newHarness(t)
 			executor := &interpolationExecutor{}
-			h.svc = NewService(Deps{Store: h.db, CommandExecutor: executor, Now: func() time.Time { return h.now }})
+			h.svc = NewService(Deps{Store: h.db, CommandExecutor: executor, Now: h.clock})
 			consumer := Node{ID: "consume", Name: "Consume", Type: "command", Command: []string{"consume"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}}
 			if test.environment {
 				consumer.Environment = map[string]string{"VALUE": test.reference}
@@ -150,7 +150,7 @@ func TestInvalidNodeResultInterpolationFailsBeforeExecution(t *testing.T) {
 func TestMappedItemCannotInjectNodeInterpolation(t *testing.T) {
 	h := newHarness(t)
 	agent := newScriptedAgent(nil)
-	h.svc = NewService(Deps{Store: h.db, Agent: agent, Blobs: h.blobs, Now: func() time.Time { return h.now }})
+	h.svc = NewService(Deps{Store: h.db, Agent: agent, Blobs: h.blobs, Now: h.clock})
 	version := publishItemAndCampaign(t, h, JoinAllSuccess, 0, false)
 	run, _ := driveMap(t, h, version, items(`${nodes.seed.output}`))
 	if run.State != StateSuccessful {
@@ -161,7 +161,7 @@ func TestMappedItemCannotInjectNodeInterpolation(t *testing.T) {
 func TestInvalidAgentInterpolationFailsBeforeSessionStart(t *testing.T) {
 	h := newHarness(t)
 	executor := &interpolationExecutor{}
-	h.svc = NewService(Deps{Store: h.db, Agent: h.agent, CommandExecutor: executor, Now: func() time.Time { return h.now }})
+	h.svc = NewService(Deps{Store: h.db, Agent: h.agent, CommandExecutor: executor, Now: h.clock})
 	nodes := []Node{
 		{ID: "produce", Name: "Produce", Type: "command", Command: []string{"produce"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}},
 		{ID: "review", Name: "Review", Type: "agent", Agent: &AgentConfig{Platform: "test", Directory: "/repo", Prompt: `${nodes.produce.output.missing}`}},

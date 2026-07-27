@@ -29,13 +29,14 @@ func (s *Server) runQueueSweep(ctx context.Context) {
 	}
 	tick := time.NewTicker(queueSweepInterval)
 	defer tick.Stop()
-	s.queueSvc().Sweep(ctx)
+	sweep := func() { runWithRecover("queue-sweep", func() { s.queueSvc().Sweep(ctx) }) }
+	sweep()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-tick.C:
-			s.queueSvc().Sweep(ctx)
+			sweep()
 		}
 	}
 }
@@ -132,11 +133,11 @@ func (s *Server) onSessionIdle(sessionID string) {
 	if s.stateDB == nil {
 		return
 	}
-	go func() {
+	go runWithRecover("queue-flush", func() {
 		// platformID empty: the queue head row carries the authoritative
 		// platform, and the busy check resolves the session by id.
 		s.queueSvc().Flush(context.Background(), "", sessionID)
-	}()
+	})
 }
 
 // broadcastQueueUpdated broadcasts that a session's follow-up queue
