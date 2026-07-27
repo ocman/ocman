@@ -217,14 +217,27 @@ async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
   }
 }
 
+/**
+ * raiseAuthError reports an expired ocman session and returns the
+ * AuthError for the caller to throw. Use it from the few call sites
+ * that cannot go through fetchJSON / postJSON because they need the
+ * raw Response (upstreamApi keeps the backend's structured error
+ * envelopes to drive its rate-limit / forge-auth banners). Without
+ * this fan-out those panes render a generic error on an expired
+ * cookie instead of redirecting to the lockscreen.
+ */
+export function raiseAuthError(message = 'unauthorized'): AuthError {
+  const err = new AuthError(message);
+  onAuthError(err);
+  return err;
+}
+
 // Internal: surface a 401 as an AuthError and notify the registered
 // handler. Callers that catch this will receive an AuthError; anyone
 // who doesn't catch still lets the handler update global auth state.
 async function throwForStatus(resp: Response): Promise<never> {
   if (resp.status === 401) {
-    const err = new AuthError(await resp.text().catch(() => 'unauthorized'));
-    onAuthError(err);
-    throw err;
+    throw raiseAuthError(await resp.text().catch(() => 'unauthorized'));
   }
   throw new Error(await resp.text());
 }

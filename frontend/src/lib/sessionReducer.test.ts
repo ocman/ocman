@@ -1075,3 +1075,53 @@ describe('reconcile load — longest-wins for delta-owned streaming fields', () 
     expect((decoded.state as Record<string, unknown>).output).toBe('line1\nline2\n');
   });
 });
+
+// regression: navigating A -> B while a reverse-sync listPermissions
+// call is in flight used to inject A's prompt into B, disabling B's
+// composer behind a dialog that could never be answered. The reducer
+// now drops a permission that belongs to another session, while still
+// accepting prompts bubbled up from the page session's subagents.
+describe('setPendingPermission session guard', () => {
+  const perm = (sessionId: string) => ({
+    permissionId: 'perm-1',
+    permission: 'Bash command',
+    patterns: [],
+    sessionId,
+    askedAt: 1_000,
+  });
+
+  it('accepts a permission for the current session', () => {
+    const next = reduceSessionView(initialSessionView(SID), {
+      type: 'setPendingPermission',
+      permission: perm(SID),
+    });
+    expect(next.pendingPermission?.permissionId).toBe('perm-1');
+  });
+
+  it('accepts a legacy permission with no sessionId', () => {
+    const next = reduceSessionView(initialSessionView(SID), {
+      type: 'setPendingPermission',
+      permission: perm(''),
+    });
+    expect(next.pendingPermission?.permissionId).toBe('perm-1');
+  });
+
+  it('drops a permission belonging to another session', () => {
+    const state = initialSessionView(SID);
+    const next = reduceSessionView(state, {
+      type: 'setPendingPermission',
+      permission: perm('sess-other'),
+    });
+    expect(next).toBe(state);
+    expect(next.pendingPermission).toBeNull();
+  });
+
+  it('accepts a subagent permission listed in ownerIds', () => {
+    const next = reduceSessionView(initialSessionView(SID), {
+      type: 'setPendingPermission',
+      permission: perm('sess-subagent'),
+      ownerIds: [SID, 'sess-subagent'],
+    });
+    expect(next.pendingPermission?.permissionId).toBe('perm-1');
+  });
+});

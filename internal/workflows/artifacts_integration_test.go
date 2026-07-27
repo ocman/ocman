@@ -40,7 +40,7 @@ func (h *harness) storeTestArtifact(t *testing.T, payload string, retentionDays 
 func TestArtifactContentAddressingRetentionAndRestart(t *testing.T) {
 	h := newHarness(t)
 	runID, artifact := h.storeTestArtifact(t, `{"ok":true}`, 7)
-	if artifact.ContentHash == "" || artifact.ExpiresAt != retentionExpiry(h.now, 7) {
+	if artifact.ContentHash == "" || artifact.ExpiresAt != retentionExpiry(h.clock(), 7) {
 		t.Fatalf("artifact metadata = %+v", artifact)
 	}
 	_, payload, err := h.svc.DownloadArtifact(t.Context(), runID, artifact.ID)
@@ -61,7 +61,7 @@ func TestArtifactDedupAndCleanup(t *testing.T) {
 	if first.ContentHash != second.ContentHash || first.ID == second.ID {
 		t.Fatalf("artifact dedup metadata = %+v %+v", first, second)
 	}
-	h.now = h.now.Add(48 * time.Hour)
+	h.setNow(h.clock().Add(48 * time.Hour))
 	removed, err := h.svc.CleanupExpiredPayloads(t.Context())
 	if err != nil || removed != 1 {
 		t.Fatalf("cleanup removed %d: %v", removed, err)

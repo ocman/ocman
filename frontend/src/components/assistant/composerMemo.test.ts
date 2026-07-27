@@ -33,4 +33,24 @@ describe('composerPropsEqual — queuedMessages', () => {
       { ...base, sessionTreeStats: { input: 30, output: 20, totalCost: 0.1, sessions: 2 } },
     )).toBe(false);
   });
+
+  // Regression: Composer copies shellExec into a ref inside an effect
+  // keyed on [shellExec] and only ever reads the ref. If the comparator
+  // omits shellExec, a false->true flip (capabilities arriving after
+  // first paint) skips the render, so the effect never runs and the ref
+  // stays false — a `!ls` command is sent to the LLM as a plain prompt.
+  it('re-renders when shellExec capability flips', () => {
+    expect(composerPropsEqual(
+      { ...base, shellExec: false },
+      { ...base, shellExec: true },
+    )).toBe(false);
+    expect(composerPropsEqual(
+      { ...base, shellExec: undefined },
+      { ...base, shellExec: true },
+    )).toBe(false);
+    expect(composerPropsEqual(
+      { ...base, shellExec: true },
+      { ...base, shellExec: true },
+    )).toBe(true);
+  });
 });

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sync"
 
 	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel/attribute"
@@ -46,12 +47,6 @@ func (s *Server) serveSessionEvents(w http.ResponseWriter, r *http.Request, sess
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 
-	flusher, _ := w.(http.Flusher)
-	var flush func()
-	if flusher != nil {
-		flush = flusher.Flush
-	}
-
 	// Wrap the writer so we can detect whether ProxyEvents ever produced
 	// any output. When the platform is unreachable (no live OpenCode
 	// instance for this session's directory), ProxyEvents returns
@@ -68,6 +63,15 @@ func (s *Server) serveSessionEvents(w http.ResponseWriter, r *http.Request, sess
 	// and stops reconnecting — the connection slot is freed and the UI
 	// recovers.
 	lw := &lazyHeaderWriter{ResponseWriter: w}
+
+	// Every write to the ResponseWriter — from the tee, from a sink, and
+	// the accompanying flushes — goes through lw so they all take one
+	// lock. Keep flush nil when the writer can't stream so callers that
+	// branch on it behave as before.
+	var flush func()
+	if _, ok := w.(http.Flusher); ok {
+		flush = lw.Flush
+	}
 
 	// Register this writer so non-SSE code paths (REST permission
 	// listing, prompt resurrection on session re-open) can push
@@ -144,7 +148,7 @@ func (s *Server) serveSessionEvents(w http.ResponseWriter, r *http.Request, sess
 	// this is a normal steady state when OpenCode isn't running for
 	// the session's directory (e.g. right after a machine reboot),
 	// not a fault worth a WARN.
-	if errors.Is(err, platforms.ErrPlatformUnreachable) && !lw.wrote {
+	if errors.Is(err, platforms.ErrPlatformUnreachable) && !lw.Wrote() {
 		span.AddEvent("platform unreachable — returning 503")
 		span.SetStatus(codes.Ok, "platform unreachable")
 		http.Error(w, "no running platform instance for this location", http.StatusServiceUnavailable)
@@ -152,7 +156,7 @@ func (s *Server) serveSessionEvents(w http.ResponseWriter, r *http.Request, sess
 			Debug("SSE proxy: no running platform instance; returning 503")
 		return
 	}
-	if errors.Is(err, ocapi.ErrAuthentication) && !lw.wrote {
+	if errors.Is(err, ocapi.ErrAuthentication) && !lw.Wrote() {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "OpenCode authentication failed")
 		http.Error(w, "OpenCode authentication failed; check the configured server password", http.StatusBadGateway)
@@ -170,26 +174,44 @@ func (s *Server) serveSessionEvents(w http.ResponseWriter, r *http.Request, sess
 // status when ProxyEvents fails before producing any output (e.g. no
 // live OpenCode instance for the session's directory).
 //
-// Once `wrote` flips to true the wrapper is a transparent pass-through;
-// only the first Write needs the bookkeeping. WriteHeader is forwarded
-// directly so anything that explicitly sets a status (the 503 fast-
-// path below) bypasses the wrapper entirely.
+// WriteHeader is forwarded directly so anything that explicitly sets a
+// status (the 503 fast-path above) bypasses the wrapper entirely.
+//
+// It is also the serialisation point for the SSE response body. Two
+// independent goroutines write to it: the request goroutine via
+// Tee -> ProxyEvents, and the auto-approve background goroutine via the
+// registered Sink. Sink.mu only serialises sinks against each other,
+// not against ProxyEvents, so without this mutex the `wrote` bool races
+// and two SSE frames can interleave mid-write.
 type lazyHeaderWriter struct {
 	http.ResponseWriter
+	mu    sync.Mutex
 	wrote bool
 }
 
 func (l *lazyHeaderWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	if !l.wrote && len(p) > 0 {
 		l.wrote = true
 	}
 	return l.ResponseWriter.Write(p)
 }
 
+// Wrote reports whether any bytes have reached the client yet.
+func (l *lazyHeaderWriter) Wrote() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.wrote
+}
+
 // Flush forwards to the underlying ResponseWriter when it supports
 // http.Flusher. SSE relies on Flush after every event, so this
-// must work even when no bytes have been written yet.
+// must work even when no bytes have been written yet. Takes the same
+// lock as Write so a flush can't land between two halves of a frame.
 func (l *lazyHeaderWriter) Flush() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	if f, ok := l.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}

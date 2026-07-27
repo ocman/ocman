@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 )
 
 // scriptedAgent drives per-item subworkflow agent nodes deterministically.
@@ -209,7 +208,7 @@ func nodeState(run RunDetail, id string) string {
 
 func TestMapEmptyListSkipsToJoin(t *testing.T) {
 	h := newHarness(t)
-	h.svc = NewService(Deps{Store: h.db, Agent: newScriptedAgent(nil), Blobs: h.blobs, Now: func() time.Time { return h.now }})
+	h.svc = NewService(Deps{Store: h.db, Agent: newScriptedAgent(nil), Blobs: h.blobs, Now: h.clock})
 	version := publishItemAndCampaign(t, h, JoinAllSuccess, 0, false)
 	done, runID := driveMap(t, h, version, items())
 	if done.State != StateSuccessful {
@@ -222,7 +221,7 @@ func TestMapEmptyListSkipsToJoin(t *testing.T) {
 
 func TestMapRejectsDuplicateStableKeys(t *testing.T) {
 	h := newHarness(t)
-	h.svc = NewService(Deps{Store: h.db, Agent: newScriptedAgent(nil), Blobs: h.blobs, Now: func() time.Time { return h.now }})
+	h.svc = NewService(Deps{Store: h.db, Agent: newScriptedAgent(nil), Blobs: h.blobs, Now: h.clock})
 	version := publishItemAndCampaign(t, h, JoinAllSuccess, 0, false)
 	done, _ := driveMap(t, h, version, items("a", "b", "a"))
 	if done.State != StateFailed {
@@ -235,7 +234,7 @@ func TestMapRejectsDuplicateStableKeys(t *testing.T) {
 
 func TestMapJoinInputOrderAndPerItemStatus(t *testing.T) {
 	h := newHarness(t)
-	h.svc = NewService(Deps{Store: h.db, Agent: newScriptedAgent(map[string]string{"b": "error"}), Blobs: h.blobs, Now: func() time.Time { return h.now }})
+	h.svc = NewService(Deps{Store: h.db, Agent: newScriptedAgent(map[string]string{"b": "error"}), Blobs: h.blobs, Now: h.clock})
 	version := publishItemAndCampaign(t, h, JoinAlways, 0, false)
 	done, runID := driveMap(t, h, version, items("a", "b", "c"))
 	if done.State != StateSuccessful {
@@ -259,7 +258,7 @@ func TestMapJoinInputOrderAndPerItemStatus(t *testing.T) {
 
 func TestMapPartialFailureContinuesUnrelatedItems(t *testing.T) {
 	h := newHarness(t)
-	h.svc = NewService(Deps{Store: h.db, Agent: newScriptedAgent(map[string]string{"b": "error"}), Blobs: h.blobs, Now: func() time.Time { return h.now }})
+	h.svc = NewService(Deps{Store: h.db, Agent: newScriptedAgent(map[string]string{"b": "error"}), Blobs: h.blobs, Now: h.clock})
 	version := publishItemAndCampaign(t, h, JoinMinimumSuccess, 2, false)
 	done, runID := driveMap(t, h, version, items("a", "b", "c"))
 	if done.State != StateSuccessful {
@@ -279,7 +278,7 @@ func TestMapPartialFailureContinuesUnrelatedItems(t *testing.T) {
 
 func TestMapFailFastStopsRun(t *testing.T) {
 	h := newHarness(t)
-	h.svc = NewService(Deps{Store: h.db, Agent: newScriptedAgent(map[string]string{"b": "error"}), Blobs: h.blobs, Now: func() time.Time { return h.now }})
+	h.svc = NewService(Deps{Store: h.db, Agent: newScriptedAgent(map[string]string{"b": "error"}), Blobs: h.blobs, Now: h.clock})
 	version := publishItemAndCampaign(t, h, JoinAlways, 0, true)
 	done, _ := driveMap(t, h, version, items("a", "b", "c"))
 	if done.State != StateFailed {
@@ -289,7 +288,7 @@ func TestMapFailFastStopsRun(t *testing.T) {
 
 func TestMapAllSuccessFailsWhenAnyItemFails(t *testing.T) {
 	h := newHarness(t)
-	h.svc = NewService(Deps{Store: h.db, Agent: newScriptedAgent(map[string]string{"c": "error"}), Blobs: h.blobs, Now: func() time.Time { return h.now }})
+	h.svc = NewService(Deps{Store: h.db, Agent: newScriptedAgent(map[string]string{"c": "error"}), Blobs: h.blobs, Now: h.clock})
 	version := publishItemAndCampaign(t, h, JoinAllSuccess, 0, false)
 	done, _ := driveMap(t, h, version, items("a", "b", "c"))
 	if done.State != StateFailed {
@@ -300,7 +299,7 @@ func TestMapAllSuccessFailsWhenAnyItemFails(t *testing.T) {
 func TestMapRestartDoesNotReprocessCompletedKeys(t *testing.T) {
 	h := newHarness(t)
 	agent := newScriptedAgent(nil)
-	h.svc = NewService(Deps{Store: h.db, Agent: agent, Blobs: h.blobs, Now: func() time.Time { return h.now }})
+	h.svc = NewService(Deps{Store: h.db, Agent: agent, Blobs: h.blobs, Now: h.clock})
 	version := publishItemAndCampaign(t, h, JoinAllSuccess, 0, false)
 	done, runID := driveMap(t, h, version, items("a", "b", "c"))
 	if done.State != StateSuccessful {
@@ -312,7 +311,7 @@ func TestMapRestartDoesNotReprocessCompletedKeys(t *testing.T) {
 	}
 	// Restart and tick again: completed stable keys must not relaunch.
 	h.restart()
-	h.svc = NewService(Deps{Store: h.db, Agent: agent, Blobs: h.blobs, Now: func() time.Time { return h.now }})
+	h.svc = NewService(Deps{Store: h.db, Agent: agent, Blobs: h.blobs, Now: h.clock})
 	if err := h.svc.Tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +332,7 @@ func TestMapResumesAfterRestartMidFlight(t *testing.T) {
 	// pendingAgent leaves items "busy" until flipped, so a restart lands
 	// with the map running and children in flight.
 	pending := &pendingScriptedAgent{scriptedAgent: *newScriptedAgent(nil)}
-	h.svc = NewService(Deps{Store: h.db, Agent: pending, Blobs: h.blobs, Now: func() time.Time { return h.now }})
+	h.svc = NewService(Deps{Store: h.db, Agent: pending, Blobs: h.blobs, Now: h.clock})
 	version := publishItemAndCampaign(t, h, JoinAllSuccess, 0, false)
 	version = mapVersionWithItems(t, h, version, items("a", "b", "c"))
 	ctx := context.Background()
@@ -353,7 +352,7 @@ func TestMapResumesAfterRestartMidFlight(t *testing.T) {
 	// Restart, let items finish, and drive to completion.
 	h.restart()
 	pending.release()
-	h.svc = NewService(Deps{Store: h.db, Agent: pending, Blobs: h.blobs, Now: func() time.Time { return h.now }})
+	h.svc = NewService(Deps{Store: h.db, Agent: pending, Blobs: h.blobs, Now: h.clock})
 	for i := 0; i < 50; i++ {
 		got, _ := h.svc.GetRun(ctx, run.ID)
 		if nodeState(got, "report") == NodeReady {
@@ -400,7 +399,7 @@ func (a *pendingScriptedAgent) Inspect(ctx context.Context, session AgentSession
 
 func TestLargeSyntheticMapStaysBounded(t *testing.T) {
 	h := newHarness(t)
-	h.svc = NewService(Deps{Store: h.db, Agent: newScriptedAgent(nil), Blobs: h.blobs, Now: func() time.Time { return h.now }})
+	h.svc = NewService(Deps{Store: h.db, Agent: newScriptedAgent(nil), Blobs: h.blobs, Now: h.clock})
 	version := publishItemAndCampaign(t, h, JoinAllSuccess, 0, false)
 	var keys []string
 	for i := 0; i < 200; i++ {

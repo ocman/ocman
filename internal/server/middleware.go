@@ -138,13 +138,24 @@ func (s *Server) isPrivilegedRequest(r *http.Request) bool {
 	}
 	origin := r.Header.Get("Origin")
 	if origin == "" {
-		return true
+		// Origin-less loopback client (CLI, curl, MCP). "Loopback peer"
+		// is not a credential behind a reverse proxy: every forwarded
+		// request has RemoteAddr 127.0.0.1. Configured auth applies here
+		// too, per the documented "auth applies to every client" rule.
+		return s.localClientAuthorized(r)
 	}
 	u, _, _ := parseBrowserOrigin(origin) // csrfSafe already validated it parses
 	if isLoopbackHostname(u.Hostname()) {
-		return s.auth == nil || s.auth.trustLocalhost || s.auth.hasValidCookie(r)
+		return s.localClientAuthorized(r)
 	}
 	return s.auth != nil && s.auth.hasValidCookie(r)
+}
+
+// localClientAuthorized reports whether a loopback client may reach a
+// privileged route: always when auth is off or explicitly trusts
+// localhost, otherwise only with a valid cookie.
+func (s *Server) localClientAuthorized(r *http.Request) bool {
+	return s.auth == nil || s.auth.trustLocalhost || s.auth.hasValidCookie(r)
 }
 
 // csrfSafe is the browser-origin half of isPrivilegedRequest, without
@@ -214,6 +225,49 @@ func browserOriginMatchesHost(r *http.Request) bool {
 	}
 	u, _, ok := parseBrowserOrigin(origin)
 	return ok && strings.EqualFold(u.Host, r.Host)
+}
+
+// allowedHost reports whether the request's Host header names an
+// origin ocman is willing to serve. csrfSafe compares the Origin
+// header against the request's *own* Host, so a DNS-rebound page
+// (evil.example resolving to 127.0.0.1) is self-consistent and passes
+// every origin check — the Host itself has to be validated separately.
+//
+// Allowed: loopback hostname literals, bare IP literals (a browser
+// only sends those when the user typed the IP, so DNS can't be
+// rebound onto them), and the host of the configured
+// OCMAN_PUBLIC_BASE_URL. Everything else is rejected.
+func (s *Server) allowedHost(host string) bool {
+	if host == "" {
+		return true // HTTP/1.0 client; no DNS name to rebind.
+	}
+	hostname := host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		hostname = h
+	}
+	hostname = strings.Trim(hostname, "[]")
+	if isLoopbackHostname(hostname) || net.ParseIP(hostname) != nil {
+		return true
+	}
+	configured, err := url.Parse(s.publicBaseURL)
+	if err != nil || configured.Host == "" {
+		return false
+	}
+	return strings.EqualFold(configured.Host, host) || strings.EqualFold(configured.Hostname(), hostname)
+}
+
+// withHostAllowlist rejects requests whose Host header is not on the
+// allowlist with 421 Misdirected Request. Wraps the entire mux so no
+// route — authenticated or not — can be reached via DNS rebinding.
+func (s *Server) withHostAllowlist(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.allowedHost(r.Host) {
+			log.WithField("host", r.Host).Warn("rejecting request with unrecognized Host header")
+			http.Error(w, "misdirected request", http.StatusMisdirectedRequest)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func withSecurityHeaders(next http.Handler) http.Handler {

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/safety"
 )
 
 const maxCommandOutput = 64 << 10
@@ -45,6 +47,11 @@ type localCommandExecutor struct{}
 func (localCommandExecutor) Execute(ctx context.Context, req CommandRequest) CommandResult {
 	result := CommandResult{ExitCode: -1}
 	commandText := strings.Join(req.Command, " ")
+	if reason := safety.Denied(commandText); reason != "" {
+		result.State = AttemptDenied
+		result.Error = "command blocked by the hard denylist (" + reason + "): " + commandText
+		return result
+	}
 	if !commandAllowed(commandText, req.Permission) {
 		result.State = AttemptDenied
 		result.Error = "permission denied for command: " + commandText
@@ -96,7 +103,15 @@ func (localCommandExecutor) Execute(ctx context.Context, req CommandRequest) Com
 	return result
 }
 
+// commandAllowed gates a workflow command node. The permission rules
+// come from the workflow definition, which an agent can publish, so a
+// definition carrying `{"permission":"bash","pattern":"*","action":
+// "allow"}` would otherwise authorise anything. The shared hard
+// denylist is checked first and no rule can override it.
 func commandAllowed(command string, rules []PermissionRule) bool {
+	if safety.Denied(command) != "" {
+		return false
+	}
 	action := "deny"
 	for _, rule := range rules {
 		if rule.Permission == "bash" && globMatch(rule.Pattern, command) {

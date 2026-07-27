@@ -181,7 +181,7 @@ export type SessionAction =
    */
   | { type: 'load'; view: SessionView; mode?: 'replace' | 'reconcile' }
   | { type: 'sse'; event: SseEvent }
-  | { type: 'setPendingPermission'; permission: PendingPermission }
+  | { type: 'setPendingPermission'; permission: PendingPermission; ownerIds?: string[] }
   | { type: 'clearPrompt'; kind: 'permission' | 'question'; id: string }
   | { type: 'patchSession'; patch: Partial<SessionMetadata> }
   | { type: 'addNotice'; notice: AutoApprovedNoticePayload }
@@ -583,6 +583,15 @@ export function reduceSessionView(state: SessionView, action: SessionAction): Se
       return state;
     }
     case 'setPendingPermission': {
+      // Session guard, mirroring the `sse` case below. The reverse-sync
+      // fetch that dispatches this outlives a navigation, so without it
+      // a late response for session A injects A's prompt into B and
+      // disables B's composer behind a dialog it can never answer.
+      // An empty sessionId is a legacy payload meaning "this session";
+      // ownerIds carries the page session's subagent descendants, whose
+      // prompts deliberately surface on the parent row.
+      const owner = action.permission.sessionId;
+      if (owner && owner !== state.sessionId && !action.ownerIds?.includes(owner)) return state;
       if (state.pendingPermission?.permissionId === action.permission.permissionId) return state;
       return {
         ...state,

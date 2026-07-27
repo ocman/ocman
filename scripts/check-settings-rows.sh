@@ -17,6 +17,14 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
+# ripgrep is not preinstalled on every CI image. Without this check the
+# `rg ... || true` calls below swallow exit 127 and the guard passes
+# vacuously — the exact silent rot this guard exists to prevent.
+command -v rg >/dev/null 2>&1 || {
+	echo "check-settings-rows: ripgrep (rg) is required but not installed" >&2
+	exit 1
+}
+
 matches=$(
 	rg -n --no-messages \
 		--glob 'frontend/src/**/*.tsx' \

@@ -38,10 +38,18 @@ jobs:
       - name: Typecheck
         working-directory: frontend
         run: pnpm exec tsc -b
+      # The guard scripts all scan with ripgrep, which the runner image
+      # does not ship. They were passing vacuously on exit 127.
+      - name: Install ripgrep
+        run: apt-get update && apt-get install -y ripgrep
       - name: Platform-branching guard
         run: ./scripts/check-platform-branching.sh
       - name: Settings-row guard
         run: ./scripts/check-settings-rows.sh
+      - name: Host-helper guard
+        run: |
+          ./scripts/check_host_helpers_test.sh
+          ./scripts/check-host-helpers.sh
       - name: Test with coverage
         run: make coverage SUITE=frontend
       - name: Fetch coverage baseline
@@ -68,8 +76,54 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # Only the pnpm store was cached. internal/server alone is ~100s
+      # cold, and the suite now runs twice (once for coverage, once
+      # under -race), so a cold build cache costs several minutes.
+      - name: Cache Go build and module cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          restore-keys: go-${{ runner.os }}-
       - name: Install tmux
         run: apt-get update && apt-get install -y tmux
+      - name: go.mod tidy check
+        run: go mod tidy -diff
+      # Nothing detected drift between remote.proto and its committed
+      # stubs. protoc is pinned by digest because the generator stamps
+      # its own version into the output, so an unpinned toolchain would
+      # diff on the comment header alone.
+      - name: Install protoc
+        env:
+          PROTOC_VERSION: 33.4
+          PROTOC_SHA256_X86_64: c0040ea9aef08fdeb2c74ca609b18d5fdbfc44ea0042fcfbfb38860d35f7dd66
+          PROTOC_SHA256_AARCH64: 15aa988f4a6090636525ec236a8e4b3aab41eef402751bd5bb2df6afd9b7b5a5
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64)  arch=x86_64;   sha="${PROTOC_SHA256_X86_64}" ;;
+            aarch64) arch=aarch_64; sha="${PROTOC_SHA256_AARCH64}" ;;
+            *)       echo "Unsupported arch: $(uname -m)"; exit 1 ;;
+          esac
+          zip="protoc-${PROTOC_VERSION}-linux-${arch}.zip"
+          curl -sSfL --output "${zip}" \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${zip}"
+          printf '%s  %s\n' "${sha}" "${zip}" | sha256sum --check --strict
+          unzip -q -o "${zip}" -d /usr/local
+          rm -f "${zip}"
+          protoc --version
+      - name: Install protoc Go plugins
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
+      - name: Generated gRPC stubs are current
+        run: |
+          make proto
+          git diff --exit-code -- internal/remote/proto
+      - name: Desktop build tags compile
+        run: go build -tags desktop,exclude_graphdriver_devicemapper ./...
       - run: go vet ./...
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
@@ -79,6 +133,19 @@ jobs:
         run: go test .
       - name: Test internal packages with coverage
         run: make coverage SUITE=go
+      # ThreadSanitizer aborts on this runner ("unsupported VMA range:
+      # Found 47 - Supported 48"): its arm64 shadow mapping needs a
+      # 48-bit VA kernel and the host has 47. Nothing a container can
+      # change, so skip rather than fail — `make test-race` stays the
+      # local pre-PR check and starts guarding CI the day the runner is
+      # x86_64 or 48-bit.
+      - name: Race detector
+        run: |
+          if [ "$(uname -m)" != x86_64 ]; then
+            echo "skipping: ThreadSanitizer is unsupported on $(uname -m) runners"
+            exit 0
+          fi
+          make test-race
       - name: Fetch coverage baseline
         run: ./scripts/coverage-fetch-baseline.sh baseline
       - name: Check coverage ratchet
@@ -106,13 +173,11 @@ jobs:
         with:
           node-version: 25
       - name: Download frontend result
-        continue-on-error: true
         uses: actions/download-artifact@v3
         with:
           name: frontend-coverage
           path: coverage/frontend
       - name: Download backend result
-        continue-on-error: true
         uses: actions/download-artifact@v3
         with:
           name: backend-coverage
@@ -205,6 +270,14 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: Cache Go build and module cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          restore-keys: go-${{ runner.os }}-
       - run: make build
       - uses: actions/upload-artifact@v3
         with:
@@ -325,16 +398,30 @@ jobs:
             # First release: let git-cliff walk the full history.
             printf 'range=\n' >> "${GITHUB_OUTPUT}"
           fi
+      # Pinned by digest: this job holds secrets.RELEASE_PAT and
+      # contents: write, so an unverified tarball piped straight into tar
+      # would be a supply-chain foothold. Update both digests when
+      # bumping the version.
       - name: Install git-cliff
         if: steps.decide.outputs.release == 'true'
+        env:
+          GIT_CLIFF_VERSION: 2.13.1
+          GIT_CLIFF_SHA256_X86_64: 200d2535da6d9703f3bcc8a4d159c3b55eacdb01cf2148c55b3eee9dd04d5249
+          GIT_CLIFF_SHA256_AARCH64: 4054c124b926c117f3fa048939bc8be0a954f29f3b6f367627e8cb22c1971882
         run: |
+          set -euo pipefail
           case "$(uname -m)" in
-            x86_64)  arch=x86_64 ;;
-            aarch64) arch=aarch64 ;;
+            x86_64)  arch=x86_64;  sha="${GIT_CLIFF_SHA256_X86_64}" ;;
+            aarch64) arch=aarch64; sha="${GIT_CLIFF_SHA256_AARCH64}" ;;
             *)       echo "Unsupported arch: $(uname -m)"; exit 1 ;;
           esac
-          curl -sSfL "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-${arch}-unknown-linux-musl.tar.gz" \
-            | tar -xz --strip-components=1 -C /usr/local/bin "git-cliff-2.13.1/git-cliff"
+          tarball="git-cliff-${GIT_CLIFF_VERSION}-${arch}-unknown-linux-musl.tar.gz"
+          curl -sSfL --output "${tarball}" \
+            "https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/${tarball}"
+          printf '%s  %s\n' "${sha}" "${tarball}" | sha256sum --check --strict
+          tar -xz --strip-components=1 -C /usr/local/bin \
+            -f "${tarball}" "git-cliff-${GIT_CLIFF_VERSION}/git-cliff"
+          rm -f "${tarball}"
           git-cliff --version
       - name: Render changelog
         if: steps.decide.outputs.release == 'true'

@@ -133,6 +133,7 @@ type harness struct {
 	path           string
 	blobDir        string
 	db             *state.DB
+	nowMu          sync.RWMutex
 	now            time.Time
 	forge          *workflowFakeForge
 	status         *workflowFakeStatus
@@ -197,7 +198,7 @@ func (h *harness) open() {
 	}
 	h.db = db
 	h.blobs = NewBlobStore(h.blobDir)
-	h.svc = NewService(Deps{Store: db, Agent: h.agent, Blobs: h.blobs, ResolveSecret: func(env string) string { return h.secrets[env] }, Now: func() time.Time { return h.now }, Forge: h.forge, Status: h.status, NotifyTrigger: func() { h.triggerChanges++ }})
+	h.svc = NewService(Deps{Store: db, Agent: h.agent, Blobs: h.blobs, ResolveSecret: func(env string) string { return h.secrets[env] }, Now: h.clock, Forge: h.forge, Status: h.status, NotifyTrigger: func() { h.triggerChanges++ }})
 }
 
 func (h *harness) restart() {
@@ -209,7 +210,23 @@ func (h *harness) restart() {
 	h.open()
 }
 
-func (h *harness) advance() { h.now = h.now.Add(time.Minute) }
+func (h *harness) advance() { h.setNow(h.clock().Add(time.Minute)) }
+
+// clock / setNow guard the fake clock. Command nodes execute on
+// background goroutines that call Deps.Now while the test goroutine
+// advances time, so both sides have to go through the mutex or -race
+// flags the field.
+func (h *harness) clock() time.Time {
+	h.nowMu.RLock()
+	defer h.nowMu.RUnlock()
+	return h.now
+}
+
+func (h *harness) setNow(t time.Time) {
+	h.nowMu.Lock()
+	defer h.nowMu.Unlock()
+	h.now = t
+}
 
 func TestSequentialApprovalRunPersistsAcrossRestart(t *testing.T) {
 	h := newHarness(t)
@@ -248,7 +265,7 @@ func TestSequentialApprovalRunPersistsAcrossRestart(t *testing.T) {
 		t.Fatalf("get after first approval: %v", err)
 	}
 	assertRun(t, afterFirst, StateActive, map[string]string{"review": NodeSuccessful, "ship": NodeReady})
-	if len(afterFirst.Nodes[0].Attempts) != 1 || afterFirst.Nodes[0].Attempts[0].CompletedAt != h.now.UnixMilli() {
+	if len(afterFirst.Nodes[0].Attempts) != 1 || afterFirst.Nodes[0].Attempts[0].CompletedAt != h.clock().UnixMilli() {
 		t.Fatalf("first attempt history not completed durably: %+v", afterFirst.Nodes[0].Attempts)
 	}
 	if len(afterFirst.Nodes[1].Attempts) != 1 || afterFirst.Nodes[1].Attempts[0].State != AttemptWaiting {
@@ -261,7 +278,7 @@ func TestSequentialApprovalRunPersistsAcrossRestart(t *testing.T) {
 		t.Fatalf("approve ship: %v", err)
 	}
 	assertRun(t, completed, StateSuccessful, map[string]string{"review": NodeSuccessful, "ship": NodeSuccessful})
-	if completed.VersionID != version.ID || completed.CompletedAt != h.now.UnixMilli() {
+	if completed.VersionID != version.ID || completed.CompletedAt != h.clock().UnixMilli() {
 		t.Fatalf("run is not pinned/completed: %+v", completed)
 	}
 }
@@ -311,7 +328,7 @@ func TestRetryFromNodeUsesNewVersionAndReusesCompletedAncestors(t *testing.T) {
 func TestRetryFromFailedCommandRunsOnlySelectedClosure(t *testing.T) {
 	h := newHarness(t)
 	executor := &retryCommandExecutor{}
-	h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, CommandExecutor: executor})
+	h.svc = NewService(Deps{Store: h.db, Now: h.clock, CommandExecutor: executor})
 	dir := t.TempDir()
 	allow := []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}
 	nodes := []Node{
@@ -446,7 +463,7 @@ func TestRepeatUntilSuccessAndExhaustion(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		h := newHarness(t)
 		executor := &repeatExecutor{outputs: []string{`{"done":false}`, `{"done":true}`}}
-		h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, CommandExecutor: executor, Blobs: h.blobs})
+		h.svc = NewService(Deps{Store: h.db, Now: h.clock, CommandExecutor: executor, Blobs: h.blobs})
 		node := Node{ID: "again", Name: "Again", Type: "command", Command: []string{"again"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}, Repeat: &RepeatConfig{Until: `outcomes["again"].output.done == true`, MaxAttempts: 2}}
 		version, err := h.svc.PublishJSON(context.Background(), commandDefinition(t, t.TempDir(), []Node{node}, nil))
 		if err != nil {
@@ -464,7 +481,7 @@ func TestRepeatUntilSuccessAndExhaustion(t *testing.T) {
 	t.Run("exhaustion", func(t *testing.T) {
 		h := newHarness(t)
 		executor := &repeatExecutor{outputs: []string{`{"done":false}`, `{"done":false}`}}
-		h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, CommandExecutor: executor, Blobs: h.blobs})
+		h.svc = NewService(Deps{Store: h.db, Now: h.clock, CommandExecutor: executor, Blobs: h.blobs})
 		node := Node{ID: "again", Name: "Again", Type: "command", Command: []string{"again"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}, Repeat: &RepeatConfig{Until: `outcomes["again"].output.done == true`, MaxAttempts: 2}}
 		version, err := h.svc.PublishJSON(context.Background(), commandDefinition(t, t.TempDir(), []Node{node}, nil))
 		if err != nil {
@@ -955,7 +972,7 @@ func TestCommandSecretsAreInjectedAndRedacted(t *testing.T) {
 	h.svc = NewService(Deps{
 		Store: h.db, CommandExecutor: executor, Blobs: h.blobs,
 		ResolveSecret: func(env string) string { return h.secrets[env] },
-		Now:           func() time.Time { return h.now },
+		Now:           h.clock,
 	})
 	definition := Definition{
 		ID: "secrets", Name: "Secrets", Version: "1", Concurrency: 1, Directory: t.TempDir(),
@@ -1094,7 +1111,7 @@ func TestCancelTerminatesCommandProcessTree(t *testing.T) {
 func TestPauseLetsRunningCommandSettleAndCommandCannotBeApproved(t *testing.T) {
 	h := newHarness(t)
 	executor := &blockingExecutor{started: make(chan struct{}), release: make(chan struct{})}
-	h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, CommandExecutor: executor})
+	h.svc = NewService(Deps{Store: h.db, Now: h.clock, CommandExecutor: executor})
 	node := Node{ID: "command", Name: "Command", Type: "command", Command: []string{"/usr/bin/true"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}}
 	version, err := h.svc.PublishJSON(context.Background(), commandDefinition(t, t.TempDir(), []Node{node}, nil))
 	if err != nil {
@@ -1122,7 +1139,7 @@ func TestTickMarksInterruptedCommandUnknown(t *testing.T) {
 	h := newHarness(t)
 	executor := &blockingExecutor{started: make(chan struct{}), release: make(chan struct{})}
 	completed := make(chan struct{}, 8)
-	h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, Notify: func(string) { completed <- struct{}{} }, CommandExecutor: executor, Agent: h.agent})
+	h.svc = NewService(Deps{Store: h.db, Now: h.clock, Notify: func(string) { completed <- struct{}{} }, CommandExecutor: executor, Agent: h.agent})
 	node := Node{ID: "command", Name: "Command", Type: "command", Command: []string{"/usr/bin/true"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}}
 	version, err := h.svc.PublishJSON(context.Background(), commandDefinition(t, t.TempDir(), []Node{node}, nil))
 	if err != nil {
@@ -1136,7 +1153,7 @@ func TestTickMarksInterruptedCommandUnknown(t *testing.T) {
 	for len(completed) > 0 {
 		<-completed
 	}
-	h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, Agent: h.agent})
+	h.svc = NewService(Deps{Store: h.db, Now: h.clock, Agent: h.agent})
 	if err := h.svc.Tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -1159,7 +1176,7 @@ func TestTickRetriesInterruptedAgentLaunch(t *testing.T) {
 	}
 	run := state.WorkflowRun{
 		ID: "interrupted-agent", WorkflowID: version.WorkflowID, VersionID: version.ID,
-		State: StateActive, CreatedAt: h.now.UnixMilli(), UpdatedAt: h.now.UnixMilli(),
+		State: StateActive, CreatedAt: h.clock().UnixMilli(), UpdatedAt: h.clock().UnixMilli(),
 		Nodes: []state.WorkflowNodeRun{{NodeID: "implement", Type: "agent", State: NodeReady}},
 	}
 	if err := h.db.InsertWorkflowRun(run); err != nil {
@@ -1170,7 +1187,7 @@ func TestTickRetriesInterruptedAgentLaunch(t *testing.T) {
 		t.Fatal(err)
 	}
 	attemptID := stored.Nodes[0].Attempts[0].ID
-	if claimed, err := h.db.ClaimWorkflowAgentAttempt(run.ID, "implement", attemptID, "", "/repo", []state.WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 1}}, nil, h.now.UnixMilli()); err != nil || !claimed {
+	if claimed, err := h.db.ClaimWorkflowAgentAttempt(run.ID, "implement", attemptID, "", "/repo", []state.WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 1}}, nil, h.clock().UnixMilli()); err != nil || !claimed {
 		t.Fatalf("claim interrupted agent: claimed=%v err=%v", claimed, err)
 	}
 	if err := h.svc.Tick(context.Background()); err != nil {
@@ -1259,7 +1276,7 @@ func TestResolveUnknownRecordsAuditAndAllowsRetry(t *testing.T) {
 	h := newHarness(t)
 	interrupted := &blockingExecutor{started: make(chan struct{}), release: make(chan struct{})}
 	interruptedCompleted := make(chan struct{}, 8)
-	h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, Notify: func(string) { interruptedCompleted <- struct{}{} }, CommandExecutor: interrupted})
+	h.svc = NewService(Deps{Store: h.db, Now: h.clock, Notify: func(string) { interruptedCompleted <- struct{}{} }, CommandExecutor: interrupted})
 	node := Node{ID: "command", Name: "Command", Type: "command", Command: []string{"/usr/bin/true"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}}
 	version, err := h.svc.PublishJSON(t.Context(), commandDefinition(t, t.TempDir(), []Node{node}, nil))
 	if err != nil {
@@ -1275,7 +1292,7 @@ func TestResolveUnknownRecordsAuditAndAllowsRetry(t *testing.T) {
 	}
 	replacement := &blockingExecutor{started: make(chan struct{}), release: make(chan struct{})}
 	replacementCompleted := make(chan struct{}, 8)
-	h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, Notify: func(string) { replacementCompleted <- struct{}{} }, CommandExecutor: replacement})
+	h.svc = NewService(Deps{Store: h.db, Now: h.clock, Notify: func(string) { replacementCompleted <- struct{}{} }, CommandExecutor: replacement})
 	if err := h.svc.Tick(t.Context()); err != nil {
 		t.Fatal(err)
 	}
@@ -1396,7 +1413,7 @@ func TestResolveUnknownCanSettleSucceededOrFailed(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			run := state.WorkflowRun{ID: "unknown-" + resolution, WorkflowID: version.WorkflowID, VersionID: version.ID, State: StateActive, CreatedAt: h.now.UnixMilli(), UpdatedAt: h.now.UnixMilli(), Nodes: []state.WorkflowNodeRun{{NodeID: "command", Type: "command", State: NodeReady}}}
+			run := state.WorkflowRun{ID: "unknown-" + resolution, WorkflowID: version.WorkflowID, VersionID: version.ID, State: StateActive, CreatedAt: h.clock().UnixMilli(), UpdatedAt: h.clock().UnixMilli(), Nodes: []state.WorkflowNodeRun{{NodeID: "command", Type: "command", State: NodeReady}}}
 			if err := h.db.InsertWorkflowRun(run); err != nil {
 				t.Fatal(err)
 			}
@@ -1405,10 +1422,10 @@ func TestResolveUnknownCanSettleSucceededOrFailed(t *testing.T) {
 				t.Fatal(err)
 			}
 			attemptID := stored.Nodes[0].Attempts[0].ID
-			if claimed, err := h.db.ClaimWorkflowAgentAttempt(run.ID, "command", attemptID, "", "", []state.WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 1}}, nil, h.now.UnixMilli()); err != nil || !claimed {
+			if claimed, err := h.db.ClaimWorkflowAgentAttempt(run.ID, "command", attemptID, "", "", []state.WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 1}}, nil, h.clock().UnixMilli()); err != nil || !claimed {
 				t.Fatalf("claim attempt: claimed=%v err=%v", claimed, err)
 			}
-			if err := h.db.MarkWorkflowAttemptUnknown(run.ID, "command", attemptID, "interrupted", h.now.UnixMilli()); err != nil {
+			if err := h.db.MarkWorkflowAttemptUnknown(run.ID, "command", attemptID, "interrupted", h.clock().UnixMilli()); err != nil {
 				t.Fatal(err)
 			}
 			resolved, err := h.svc.ResolveUnknown(t.Context(), run.ID, attemptID, resolution)
@@ -1432,7 +1449,7 @@ func TestResolveUnknownSuccessReadiesDependents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run := state.WorkflowRun{ID: "unknown-upstream", WorkflowID: version.WorkflowID, VersionID: version.ID, State: StateActive, CreatedAt: h.now.UnixMilli(), UpdatedAt: h.now.UnixMilli(), Nodes: []state.WorkflowNodeRun{{NodeID: "review", Type: "approval", State: NodeReady}, {NodeID: "ship", Type: "approval", State: NodePending}}}
+	run := state.WorkflowRun{ID: "unknown-upstream", WorkflowID: version.WorkflowID, VersionID: version.ID, State: StateActive, CreatedAt: h.clock().UnixMilli(), UpdatedAt: h.clock().UnixMilli(), Nodes: []state.WorkflowNodeRun{{NodeID: "review", Type: "approval", State: NodeReady}, {NodeID: "ship", Type: "approval", State: NodePending}}}
 	if err := h.db.InsertWorkflowRun(run); err != nil {
 		t.Fatal(err)
 	}
@@ -1441,10 +1458,10 @@ func TestResolveUnknownSuccessReadiesDependents(t *testing.T) {
 		t.Fatal(err)
 	}
 	attemptID := stored.Nodes[0].Attempts[0].ID
-	if claimed, err := h.db.ClaimWorkflowAgentAttempt(run.ID, "review", attemptID, "", "", []state.WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 1}}, nil, h.now.UnixMilli()); err != nil || !claimed {
+	if claimed, err := h.db.ClaimWorkflowAgentAttempt(run.ID, "review", attemptID, "", "", []state.WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 1}}, nil, h.clock().UnixMilli()); err != nil || !claimed {
 		t.Fatalf("claim attempt: claimed=%v err=%v", claimed, err)
 	}
-	if err := h.db.MarkWorkflowAttemptUnknown(run.ID, "review", attemptID, "interrupted", h.now.UnixMilli()); err != nil {
+	if err := h.db.MarkWorkflowAttemptUnknown(run.ID, "review", attemptID, "interrupted", h.clock().UnixMilli()); err != nil {
 		t.Fatal(err)
 	}
 	resolved, err := h.svc.ResolveUnknown(t.Context(), run.ID, attemptID, ResolutionSucceeded)
@@ -1461,7 +1478,7 @@ func TestCommandConcurrencyCapAndFailurePolicy(t *testing.T) {
 	t.Run("cap", func(t *testing.T) {
 		h := newHarness(t)
 		executor := &gatedExecutor{started: make(chan string, 2), release: make(chan struct{})}
-		h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, CommandExecutor: executor})
+		h.svc = NewService(Deps{Store: h.db, Now: h.clock, CommandExecutor: executor})
 		nodes := []Node{
 			{ID: "one", Name: "One", Type: "command", Command: []string{"one"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}},
 			{ID: "two", Name: "Two", Type: "command", Command: []string{"two"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}},
@@ -1547,7 +1564,7 @@ func TestCommandConcurrencyCapAndFailurePolicy(t *testing.T) {
 	t.Run("independent queued command can dispatch after failures", func(t *testing.T) {
 		h := newHarness(t)
 		executor := &failingGateExecutor{started: make(chan string, 3), release: make(chan struct{})}
-		h.svc = NewService(Deps{Store: h.db, Now: func() time.Time { return h.now }, CommandExecutor: executor})
+		h.svc = NewService(Deps{Store: h.db, Now: h.clock, CommandExecutor: executor})
 		nodes := []Node{
 			{ID: "one", Name: "One", Type: "command", Command: []string{"one"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}},
 			{ID: "two", Name: "Two", Type: "command", Command: []string{"two"}, Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}},
@@ -2386,7 +2403,7 @@ func TestTriggerOverlapPoliciesAndQueuedRestart(t *testing.T) {
 			if err := h.svc.EvaluateTriggers(context.Background()); err != nil {
 				t.Fatal(err)
 			}
-			h.now = h.now.Add(time.Minute)
+			h.setNow(h.clock().Add(time.Minute))
 			if err := h.svc.EvaluateTriggers(context.Background()); err != nil {
 				t.Fatal(err)
 			}
@@ -2424,7 +2441,7 @@ func TestTriggerOverlapPoliciesAndQueuedRestart(t *testing.T) {
 				}
 				runs, _ = h.svc.ListRuns(context.Background())
 				status, _ = h.svc.GetTrigger(context.Background(), version.ID, "timer")
-				if len(runs) != 2 || status.Queued != 0 || runs[0].VersionID != version.ID || runs[0].Trigger == nil || runs[0].Trigger.FiredAt != h.now.UnixMilli() {
+				if len(runs) != 2 || status.Queued != 0 || runs[0].VersionID != version.ID || runs[0].Trigger == nil || runs[0].Trigger.FiredAt != h.clock().UnixMilli() {
 					t.Fatalf("queued firing did not survive restart: runs=%+v status=%+v", runs, status)
 				}
 			}
@@ -2449,14 +2466,14 @@ func TestCronDoesNotBackfireHistoricalSlots(t *testing.T) {
 		t.Fatalf("cron backfired: %+v", runs)
 	}
 	status, _ := h.svc.GetTrigger(context.Background(), version.ID, "cron")
-	if status.NextCheckAt <= h.now.UnixMilli() {
+	if status.NextCheckAt <= h.clock().UnixMilli() {
 		t.Fatalf("missing future cron check: %+v", status)
 	}
 	if h.triggerChanges == 0 {
 		t.Fatal("cron baseline did not notify trigger observers")
 	}
 	h.restart()
-	h.now = time.Date(2026, 7, 14, 1, 5, 0, 0, time.UTC)
+	h.setNow(time.Date(2026, 7, 14, 1, 5, 0, 0, time.UTC))
 	if err := h.svc.EvaluateTriggers(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -2483,7 +2500,7 @@ func TestPRTriggerPersistsDetectionState(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.restart()
-	h.now = h.now.Add(30 * time.Second)
+	h.setNow(h.clock().Add(30 * time.Second))
 	h.forge.state.HeadSHA = "b"
 	if err := h.svc.EvaluateTriggers(context.Background()); err != nil {
 		t.Fatal(err)
@@ -2493,7 +2510,7 @@ func TestPRTriggerPersistsDetectionState(t *testing.T) {
 	}
 	runs, _ := h.svc.ListRuns(context.Background())
 	status, _ := h.svc.GetTrigger(context.Background(), version.ID, "pr")
-	if len(runs) != 1 || status.LastFiredAt != h.now.UnixMilli() || status.LastDecision != DecisionStarted {
+	if len(runs) != 1 || status.LastFiredAt != h.clock().UnixMilli() || status.LastDecision != DecisionStarted {
 		t.Fatalf("PR event was lost or duplicated: runs=%+v status=%+v", runs, status)
 	}
 }
@@ -2534,7 +2551,7 @@ func TestCompletionTriggersFireOncePerIdleEdge(t *testing.T) {
 				t.Fatal(err)
 			}
 			h.status.running["session-1"] = false
-			h.now = h.now.Add(5 * time.Second)
+			h.setNow(h.clock().Add(5 * time.Second))
 			if err := h.svc.EvaluateTriggers(context.Background()); err != nil {
 				t.Fatal(err)
 			}
@@ -2546,12 +2563,12 @@ func TestCompletionTriggersFireOncePerIdleEdge(t *testing.T) {
 				t.Fatalf("idle state double-fired: %+v", runs)
 			}
 			h.status.running["session-1"] = true
-			h.now = h.now.Add(5 * time.Second)
+			h.setNow(h.clock().Add(5 * time.Second))
 			if err := h.svc.EvaluateTriggers(context.Background()); err != nil {
 				t.Fatal(err)
 			}
 			h.status.running["session-1"] = false
-			h.now = h.now.Add(5 * time.Second)
+			h.setNow(h.clock().Add(5 * time.Second))
 			if err := h.svc.EvaluateTriggers(context.Background()); err != nil {
 				t.Fatal(err)
 			}

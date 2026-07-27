@@ -146,3 +146,36 @@ func TestHandleIntegrationsStatus_ReportsForgejoHosts(t *testing.T) {
 		t.Errorf("expected forgejo hosts in status payload, got %s", body)
 	}
 }
+
+// TestGitHubPreviewRejectsTraversalCaptures pins that the owner/repo
+// capture groups don't accept path-traversal payloads. With [^/]+ a
+// crafted url= smuggled `..` and `#` through, and since Go's transport
+// does not normalise dot segments the request URI became /repos/../user
+// — which GitHub resolves to /user, leaking the token owner's private
+// profile. The route is a plain GET, so it was reachable through the
+// DNS-rebinding hole closed in a4c49fd.
+func TestGitHubPreviewRejectsTraversalCaptures(t *testing.T) {
+	tests := []struct {
+		name    string
+		rawURL  string
+		matched bool
+	}{
+		{"ordinary PR", "https://github.com/NoUseFreak/ocman/pull/1", true},
+		{"ordinary issue", "https://github.com/NoUseFreak/ocman/issues/1", true},
+		{"ordinary commit", "https://github.com/NoUseFreak/ocman/commit/abcdef1", true},
+		{"dot-segment owner", "https://github.com/..%2Fuser%23/x/pull/1", false},
+		{"encoded slash in repo", "https://github.com/a/..%2F..%2Fuser/issues/1", false},
+		{"fragment in owner", "https://github.com/own#er/x/pull/1", false},
+		{"percent in repo", "https://github.com/a/re%2Fpo/pull/1", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ghPRRE.MatchString(tt.rawURL) ||
+				ghIssueRE.MatchString(tt.rawURL) ||
+				ghCommitRE.MatchString(tt.rawURL)
+			if got != tt.matched {
+				t.Errorf("matched = %v, want %v for %q", got, tt.matched, tt.rawURL)
+			}
+		})
+	}
+}

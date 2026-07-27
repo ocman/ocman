@@ -61,10 +61,17 @@ func (s *Server) handleIntegrationsStatus(w http.ResponseWriter, r *http.Request
 // ---------------------------------------------------------------------------
 
 // Patterns for recognising GitHub URL types.
+//
+// The owner/repo groups are restricted to GitHub's actual name charset
+// rather than [^/]+. With [^/]+ a crafted url= could smuggle `..` and
+// `#` into the capture (`..%2Fuser%23`), and since Go's transport does
+// not normalise dot segments the request URI became `/repos/../user`,
+// which GitHub resolves to `/user` — leaking the token owner's private
+// profile. The client also path-escapes these; both layers are cheap.
 var (
-	ghPRRE     = regexp.MustCompile(`^https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)`)
-	ghIssueRE  = regexp.MustCompile(`^https?://github\.com/([^/]+)/([^/]+)/issues/(\d+)`)
-	ghCommitRE = regexp.MustCompile(`^https?://github\.com/([^/]+)/([^/]+)/commit/([0-9a-f]{5,40})`)
+	ghPRRE     = regexp.MustCompile(`^https?://github\.com/([A-Za-z0-9._-]+)/([A-Za-z0-9._-]+)/pull/(\d+)`)
+	ghIssueRE  = regexp.MustCompile(`^https?://github\.com/([A-Za-z0-9._-]+)/([A-Za-z0-9._-]+)/issues/(\d+)`)
+	ghCommitRE = regexp.MustCompile(`^https?://github\.com/([A-Za-z0-9._-]+)/([A-Za-z0-9._-]+)/commit/([0-9a-f]{5,40})`)
 )
 
 // handleGitHubPreview proxies a GitHub API request for PR / issue / commit

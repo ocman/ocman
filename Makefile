@@ -348,11 +348,16 @@ lint-frontend:
 lint-platform-branching:
 	./scripts/check-platform-branching.sh
 
-# Guard against HTTP handlers calling host-local helpers (gitinfo/worktree/
-# tmux launch) directly instead of routing through the hostsvc.Host seam,
-# which would silently break for remote projects (architecture.md AD-16/R-A).
+# Guard against HTTP handlers calling host-local helpers (git/tmux/term)
+# directly instead of routing through the hostsvc.Host seam, which would
+# silently break for remote projects (architecture.md AD-16/R-A).
 # Suppress justified exceptions with a trailing `// ocman:allow-host-helper`.
+#
+# The self-test runs first: the guard once rotted into a no-op because
+# its patterns named renamed identifiers, so it must prove it still
+# catches a planted bypass before its verdict is worth anything.
 lint-host-helpers:
+	./scripts/check_host_helpers_test.sh
 	./scripts/check-host-helpers.sh
 
 # Guard against hand-rolled `settings-row` markup that skips the

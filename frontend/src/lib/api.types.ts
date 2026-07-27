@@ -1305,7 +1305,6 @@ export interface TmuxClient {
 export interface TmuxSession {
   name: string;
   resolvedPath: string;
-  windows: number;
 }
 
 /**

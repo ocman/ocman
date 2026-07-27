@@ -396,13 +396,15 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// and the debug-log sink are skipped inside the middleware (see
 	// noiseSkip) to keep the log readable.
 	//
-	// Layering (outer -> inner): security headers -> request timing -> OTel -> mux.
+	// Layering (outer -> inner): host allowlist -> security headers ->
+	// request timing -> OTel -> mux. The allowlist is outermost so a
+	// DNS-rebound Host never reaches a route, authenticated or not.
 	// otelhttp sits closest to the mux so its server span wraps just
 	// the route handlers; withRequestTiming wraps the whole thing so
 	// Server-Timing captures otelhttp's overhead too. otelhttp is a
 	// no-op when telemetry is disabled (its global TracerProvider is
 	// the SDK noop in that case).
-	httpServer := newHTTPServer(ln.Addr().String(), withSecurityHeaders(withRequestTiming(withOTel(mux))))
+	httpServer := newHTTPServer(ln.Addr().String(), s.withHostAllowlist(withSecurityHeaders(withRequestTiming(withOTel(mux)))))
 
 	// Sweep orphaned ephemeral terminal-viewer sessions left by an
 	// earlier process (e.g. after an air rebuild / crash). They can

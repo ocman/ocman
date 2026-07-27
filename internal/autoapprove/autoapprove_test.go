@@ -292,10 +292,9 @@ func TestEnsureAutoApproveReplaysStateOnShortCircuit(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			buf := &bytes.Buffer{}
 			s := &Service{
-				sseSessions:  make(map[string]*Sink),
-				autoApprove:  make(map[string]*autoApproveStatus),
-				deps:         Deps{DefaultEnabled: true},
-				judgeDelayMs: 0,
+				sseSessions: make(map[string]*Sink),
+				autoApprove: make(map[string]*autoApproveStatus),
+				deps:        Deps{DefaultEnabled: true},
 			}
 			s.RegisterSink("ses-1", buf, nil)
 
@@ -341,11 +340,11 @@ func TestEnsureAutoApproveReplaysStateOnShortCircuit(t *testing.T) {
 // replays the cached pending state to the now-connected sink.
 func TestEnsureAutoApprove_BugRepro_FrontendConnectsAfterWatcherClaimed(t *testing.T) {
 	s := &Service{
-		sseSessions:  make(map[string]*Sink),
-		autoApprove:  make(map[string]*autoApproveStatus),
-		deps:         Deps{DefaultEnabled: true},
-		judgeDelayMs: 3000,
+		sseSessions: make(map[string]*Sink),
+		autoApprove: make(map[string]*autoApproveStatus),
+		deps:        Deps{DefaultEnabled: true},
 	}
+	s.SetJudgeDelayMs(3000)
 
 	// 1. Simulate the watcher claiming first — frontend not yet open,
 	//    no sink registered.
@@ -578,18 +577,20 @@ func TestParseJudgeResponse(t *testing.T) {
 			verdictSafe,
 			"spaced out.",
 		},
-		// Fallback keyword scan — verdict only, reasoning empty.
-		{"bare SAFE", "SAFE", verdictSafe, ""},
+		// Anything that isn't a parseable JSON verdict fails closed.
+		// There is no keyword-scan fallback: a prose reply that merely
+		// contains "safe" must not auto-approve.
+		{"bare SAFE", "SAFE", verdictUnsafe, ""},
 		{"bare UNSAFE", "UNSAFE", verdictUnsafe, ""},
-		{"lowercase safe fallback", "safe", verdictSafe, ""},
-		{"lowercase unsafe fallback", "unsafe", verdictUnsafe, ""},
-		{"SAFE with leading whitespace", "  SAFE  ", verdictSafe, ""},
+		{"lowercase safe prose", "safe", verdictUnsafe, ""},
+		{"lowercase unsafe prose", "unsafe", verdictUnsafe, ""},
+		{"SAFE with leading whitespace", "  SAFE  ", verdictUnsafe, ""},
 		{"explanation with UNSAFE", "This is UNSAFE because it modifies files.", verdictUnsafe, ""},
-		{"explanation with SAFE", "The action is SAFE — it only reads files.", verdictSafe, ""},
+		{"explanation with SAFE", "The action is SAFE — it only reads files.", verdictUnsafe, ""},
+		{"refusal containing safely", "I can't verify this safely without more context.", verdictUnsafe, ""},
+		{"hedged refusal", "It's probably safe but I'd rather not say.", verdictUnsafe, ""},
 		{"empty string defaults unsafe", "", verdictUnsafe, ""},
 		{"unrelated text defaults unsafe", "I cannot determine this.", verdictUnsafe, ""},
-		// UNSAFE contains SAFE as a substring — must detect UNSAFE first.
-		{"UNSAFE keyword scan", "UNSAFE", verdictUnsafe, ""},
 	}
 
 	for _, tt := range tests {
@@ -1220,13 +1221,12 @@ func TestBackgroundAutoApprove_SafeCommandCacheHit(t *testing.T) {
 		autoApprove:      make(map[string]*autoApproveStatus),
 		deps:             Deps{DefaultEnabled: true},
 		safeCommandCache: make(map[string]map[string]string),
-		// judgeDelayMs deliberately large: a cache hit must bypass the
-		// delay. If the implementation incorrectly waits, the test
-		// will time out below.
-		judgeDelayMs: 30000,
 		// judge=nil: any attempt to consult the LLM panics, proving
 		// the cache short-circuit fired.
 	}
+	// Delay deliberately large: a cache hit must bypass it. If the
+	// implementation incorrectly waits, the test times out below.
+	s.SetJudgeDelayMs(30000)
 	s.RegisterSink(sessionID, buf, nil)
 
 	// Seed the safe-command cache as if the judge had previously
@@ -1320,7 +1320,6 @@ func TestBackgroundAutoApprove_SafeCommandCacheMiss_DifferentSession(t *testing.
 		autoApprove:      make(map[string]*autoApproveStatus),
 		deps:             Deps{DefaultEnabled: true},
 		safeCommandCache: make(map[string]map[string]string),
-		judgeDelayMs:     0,
 	}
 
 	// Cache hit exists for session A only.

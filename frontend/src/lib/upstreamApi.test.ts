@@ -9,6 +9,7 @@ import {
   UpstreamApiError,
   type ListPRsResponse,
 } from './upstreamApi';
+import { AuthError, registerAuthErrorHandler } from './api';
 
 describe('upstreamApi', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
@@ -213,15 +214,86 @@ describe('upstreamApi', () => {
       expect(got).toEqual({ login: 'alice', host: 'github.com' });
     });
 
-    it('returns null on 401 (unauthenticated)', async () => {
-      fetchSpy.mockResolvedValue(new Response('unauthorized', { status: 401 }));
+    // The backend answers a forge-auth failure with an error envelope
+    // (writeProjectListError), so that is what the fixture models.
+    it('returns null on a forge 401 (unauthenticated against the forge)', async () => {
+      fetchSpy.mockResolvedValue(
+        new Response(JSON.stringify({ error: { code: 'auth_required', message: 'not authenticated' } }), { status: 401 }),
+      );
       const got = await fetchForgeUser({ dir: '/x', remote: 'origin' });
       expect(got).toBeNull();
+    });
+
+    // A bare 401 is ocman's own auth middleware: the cookie expired, so
+    // the app must reach the lockscreen rather than silently disabling
+    // the "mine" filter.
+    it('raises AuthError on a bare 401 (expired ocman session)', async () => {
+      fetchSpy.mockResolvedValue(new Response('unauthorized', { status: 401 }));
+      await expect(fetchForgeUser({ dir: '/x', remote: 'origin' })).rejects.toThrow(AuthError);
     });
 
     it('throws on other non-2xx', async () => {
       fetchSpy.mockResolvedValue(new Response('boom', { status: 500 }));
       await expect(fetchForgeUser({ dir: '/x', remote: 'origin' })).rejects.toThrow(/500/);
+    });
+  });
+
+  // Regression: these helpers used raw fetch(), so only fetchJSON /
+  // postJSON call throwForStatus and fan a 401 out to onAuthError. On an
+  // expired cookie the panes rendered a generic error instead of
+  // redirecting to the lockscreen.
+  describe('expired ocman session', () => {
+    let seen: AuthError[];
+    let restore: ReturnType<typeof registerAuthErrorHandler>;
+    beforeEach(() => {
+      seen = [];
+      restore = registerAuthErrorHandler((err) => { seen.push(err); });
+    });
+    afterEach(() => { registerAuthErrorHandler(restore); });
+
+    const bare401 = () => new Response('unauthorized', { status: 401 });
+
+    it('fetchUpstreams reports the auth error', async () => {
+      fetchSpy.mockResolvedValue(bare401());
+      await expect(fetchUpstreams('/x')).rejects.toThrow(AuthError);
+      expect(seen).toHaveLength(1);
+    });
+
+    it('fetchPRs reports the auth error', async () => {
+      fetchSpy.mockResolvedValue(bare401());
+      await expect(fetchPRs({ dir: '/x', remote: 'origin', state: 'open', mine: undefined, page: 1 }))
+        .rejects.toThrow(AuthError);
+      expect(seen).toHaveLength(1);
+    });
+
+    it('fetchIssues reports the auth error', async () => {
+      fetchSpy.mockResolvedValue(bare401());
+      await expect(fetchIssues({ dir: '/x', remote: 'origin', state: 'open', mine: undefined, page: 1 }))
+        .rejects.toThrow(AuthError);
+      expect(seen).toHaveLength(1);
+    });
+
+    it('fetchPRChecks reports the auth error', async () => {
+      fetchSpy.mockResolvedValue(bare401());
+      await expect(fetchPRChecks({ dir: '/x', remote: 'origin', sha: 'abc' })).rejects.toThrow(AuthError);
+      expect(seen).toHaveLength(1);
+    });
+
+    it('postHandle reports the auth error', async () => {
+      fetchSpy.mockResolvedValue(bare401());
+      await expect(postHandle({ dir: '/x', remote: 'origin', type: 'pr', number: 1, mode: 'session' }))
+        .rejects.toThrow(AuthError);
+      expect(seen).toHaveLength(1);
+    });
+
+    // A forge-level 401 carries an envelope and must NOT log the user out.
+    it('leaves a forge 401 alone', async () => {
+      fetchSpy.mockResolvedValue(
+        new Response(JSON.stringify({ error: { code: 'auth_required', message: 'no token' } }), { status: 401 }),
+      );
+      await expect(fetchPRs({ dir: '/x', remote: 'origin', state: 'open', mine: undefined, page: 1 }))
+        .rejects.toThrow(UpstreamApiError);
+      expect(seen).toHaveLength(0);
     });
   });
 });
