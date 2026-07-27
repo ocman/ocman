@@ -132,8 +132,10 @@ type OpenCodeProvidersResponse struct {
 // fetchOpenCodeProviders calls GET /provider on the running OpenCode instance.
 func fetchOpenCodeProviders(port string) (OpenCodeProvidersResponse, bool) {
 	var empty OpenCodeProvidersResponse
-	body, ok := getJSONCached(context.Background(), port, "/provider")
-	if !ok {
+	body, err := getJSONCached(context.Background(), port, "/provider")
+	if err != nil {
+		logFetchFailure(err, log.Fields{"port": port, "endpoint": "/provider"},
+			"opencode: provider catalog fetch failed")
 		return empty, false
 	}
 	var parsed OpenCodeProvidersResponse

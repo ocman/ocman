@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
@@ -57,29 +60,33 @@ var catalogCache = newHTTPCacheNamed(30*time.Second, "opencode.catalog_http")
 var sessionCache = newHTTPCacheNamed(5*time.Second, "opencode.session_http")
 
 // getJSON performs a GET to the OpenCode instance and returns the body
-// bytes and true iff the response was 200 OK with a JSON content type.
-func getJSON(ctx context.Context, port, path string) ([]byte, bool) {
+// bytes, or an error describing why the call did not yield a 200 OK
+// JSON response. The error exists purely for logging: callers that
+// tolerate upstream failure still degrade to an empty result, but the
+// WARN line they emit can name the cause (ctx cancelled, connection
+// refused, 404, HTML error page, ...) instead of "failed".
+func getJSON(ctx context.Context, port, path string) ([]byte, error) {
 	apiURL := fmt.Sprintf("http://127.0.0.1:%s%s", port, path)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
-		return nil, false
+		return nil, err
 	}
 	resp, err := openCodeClient.Do(req)
 	if err != nil {
-		return nil, false
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, false
+		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
 	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
-		return nil, false
+		return nil, fmt.Errorf("unexpected content-type %q", ct)
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, false
+		return nil, err
 	}
-	return body, true
+	return body, nil
 }
 
 // getJSONCached is getJSON wrapped through catalogCache. Callers that
@@ -90,10 +97,37 @@ func getJSON(ctx context.Context, port, path string) ([]byte, bool) {
 // runs (singleflighted across concurrent callers), and a successful
 // 200/JSON response is cached for catalogCache's TTL. Failures are
 // not cached — see httpCache.getOrFetch.
-func getJSONCached(ctx context.Context, port, path string) ([]byte, bool) {
-	return catalogCache.getOrFetch(port, path, func() ([]byte, bool) {
-		return getJSON(ctx, port, path)
+// The returned error is the fetch failure when this caller ran the
+// fetch itself. Callers that lost the singleflight race to a failing
+// fetch get errFetchFailed (no cause available) — good enough for a
+// log line, since the caller that did the work logs the real reason.
+func getJSONCached(ctx context.Context, port, path string) ([]byte, error) {
+	var fetchErr error
+	body, ok := catalogCache.getOrFetch(port, path, func() ([]byte, bool) {
+		b, err := getJSON(ctx, port, path)
+		fetchErr = err
+		return b, err == nil
 	})
+	if !ok {
+		if fetchErr != nil {
+			return nil, fetchErr
+		}
+		return nil, errFetchFailed
+	}
+	return body, nil
+}
+
+// logFetchFailure logs a tolerated upstream fetch failure. A cancelled
+// caller context (browser navigated away, aborted poll, closed SSE) is
+// not an upstream problem, so it logs at DEBUG; everything else is a
+// real failure and stays at WARN.
+func logFetchFailure(err error, fields log.Fields, msg string) {
+	entry := log.WithFields(fields).WithField("error", err)
+	if errors.Is(err, context.Canceled) {
+		entry.Debug(msg)
+		return
+	}
+	entry.Warn(msg)
 }
 
 // postJSON performs a POST with a JSON body. Returns nil on 2xx,

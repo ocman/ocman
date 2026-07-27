@@ -42,6 +42,37 @@ func TestAgentCatalog_LogsWarnOnFetchFailure(t *testing.T) {
 	}
 }
 
+// TestAgentCatalog_CancelledContextIsNotWarn: a caller that goes away
+// (browser navigation, aborted poll) cancels the request context. That
+// is not an upstream failure, so it must not show up as a WARN.
+func TestAgentCatalog_CancelledContextIsNotWarn(t *testing.T) {
+	const sid = "sess-1"
+	const dir = "/tmp/proj"
+
+	fake := newOpencodeFake(t)
+	withTestPort(t, dir, fake.Port())
+	database := newTestDBWithSession(t, sid, dir)
+
+	hook := logtest.NewLocal(logrus.StandardLogger())
+	defer logrus.StandardLogger().ReplaceHooks(make(logrus.LevelHooks))
+	prev := logrus.GetLevel()
+	logrus.SetLevel(logrus.DebugLevel)
+	defer logrus.SetLevel(prev)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := New(database, nil).AgentCatalog(ctx, sid); err != nil {
+		t.Fatalf("AgentCatalog: unexpected error: %v", err)
+	}
+
+	if findLog(hook, logrus.WarnLevel, "agent catalog fetch failed") {
+		t.Error("cancelled context logged at WARN; want DEBUG")
+	}
+	if !findLog(hook, logrus.DebugLevel, "agent catalog fetch failed") {
+		t.Errorf("expected DEBUG line for cancelled context; got %d entries", len(hook.AllEntries()))
+	}
+}
+
 // TestAgentCatalog_MapsOpenCodeFields verifies ocman maps OpenCode's
 // /agent schema (mode/hidden/native) onto AgentCatalogEntry so the
 // frontend picker can section project agents correctly. Regression for

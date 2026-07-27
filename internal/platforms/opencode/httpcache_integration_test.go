@@ -31,14 +31,14 @@ func TestGetJSONCached_HitsUpstreamOnceAcrossCalls(t *testing.T) {
 	const path = "/test_getjsoncached_unique_1"
 
 	// First call: cold miss, should hit upstream.
-	body, ok := getJSONCached(context.Background(), port, path)
-	if !ok || string(body) != `{"ok":true}` {
-		t.Fatalf("first call: ok=%v body=%q", ok, string(body))
+	body, err := getJSONCached(context.Background(), port, path)
+	if err != nil || string(body) != `{"ok":true}` {
+		t.Fatalf("first call: err=%v body=%q", err, string(body))
 	}
 	// Second call: warm hit, must not hit upstream.
-	body, ok = getJSONCached(context.Background(), port, path)
-	if !ok || string(body) != `{"ok":true}` {
-		t.Fatalf("second call: ok=%v body=%q", ok, string(body))
+	body, err = getJSONCached(context.Background(), port, path)
+	if err != nil || string(body) != `{"ok":true}` {
+		t.Fatalf("second call: err=%v body=%q", err, string(body))
 	}
 	if got := atomic.LoadInt32(&hits); got != 1 {
 		t.Errorf("upstream hit %d times, want 1 (cache miss → fetch → hit)", got)
@@ -60,11 +60,13 @@ func TestGetJSONCached_FailureNotCached(t *testing.T) {
 	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
 	const path = "/test_getjsoncached_unique_2"
 
-	if _, ok := getJSONCached(context.Background(), port, path); ok {
-		t.Error("first call: expected ok=false on 500")
+	if _, err := getJSONCached(context.Background(), port, path); err == nil {
+		t.Error("first call: expected an error on 500")
+	} else if !strings.Contains(err.Error(), "500") {
+		t.Errorf("first call: error should name the status, got %v", err)
 	}
-	if _, ok := getJSONCached(context.Background(), port, path); ok {
-		t.Error("second call: expected ok=false on 500 (failure not cached)")
+	if _, err := getJSONCached(context.Background(), port, path); err == nil {
+		t.Error("second call: expected an error on 500 (failure not cached)")
 	}
 	if got := atomic.LoadInt32(&hits); got != 2 {
 		t.Errorf("upstream hit %d times, want 2 (each call should retry)", got)

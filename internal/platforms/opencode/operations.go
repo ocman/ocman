@@ -112,10 +112,10 @@ func (a *Adapter) AgentCatalog(ctx context.Context, sessionID string) ([]platfor
 			Debug("opencode: agent catalog unavailable (no live port)")
 		return nil, nil
 	}
-	body, ok := getJSONCached(ctx, port, "/agent")
-	if !ok {
-		log.WithFields(log.Fields{"sessionID": sessionID, "port": port, "endpoint": "/agent"}).
-			Warn("opencode: agent catalog fetch failed; returning empty list")
+	body, fetchErr := getJSONCached(ctx, port, "/agent")
+	if fetchErr != nil {
+		logFetchFailure(fetchErr, log.Fields{"sessionID": sessionID, "port": port, "endpoint": "/agent"},
+			"opencode: agent catalog fetch failed; returning empty list")
 		return nil, nil
 	}
 	var raw []map[string]interface{}
@@ -154,10 +154,10 @@ func (a *Adapter) SlashCommands(ctx context.Context, sessionID string) ([]platfo
 			Debug("opencode: slash commands unavailable (no live port)")
 		return nil, nil
 	}
-	body, ok := getJSONCached(ctx, port, "/command")
-	if !ok {
-		log.WithFields(log.Fields{"sessionID": sessionID, "port": port, "endpoint": "/command"}).
-			Warn("opencode: slash commands fetch failed; returning empty list")
+	body, fetchErr := getJSONCached(ctx, port, "/command")
+	if fetchErr != nil {
+		logFetchFailure(fetchErr, log.Fields{"sessionID": sessionID, "port": port, "endpoint": "/command"},
+			"opencode: slash commands fetch failed; returning empty list")
 		return nil, nil
 	}
 	var raw []map[string]interface{}
