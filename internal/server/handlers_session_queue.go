@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strings"
 
+	log "github.com/sirupsen/logrus"
+
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -26,6 +28,7 @@ func (s *Server) handleSessionQueueList(w http.ResponseWriter, r *http.Request) 
 	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
 		msgs, err := s.queueSvc().List(platformHint(r), sessionID)
 		if err != nil {
+			log.WithError(err).WithField("session", sessionID).Error("listing message queue")
 			http.Error(w, "failed to list queue", http.StatusInternalServerError)
 			return
 		}
@@ -50,6 +53,7 @@ func (s *Server) handleSessionQueueDelete(w http.ResponseWriter, r *http.Request
 			return
 		}
 		if _, err := s.queueSvc().Remove(sessionID, qmid); err != nil {
+			log.WithError(err).WithField("queued", qmid).Error("removing queued message")
 			http.Error(w, "failed to remove queued message", http.StatusInternalServerError)
 			return
 		}
@@ -79,6 +83,7 @@ func (s *Server) handleSessionQueueMove(w http.ResponseWriter, r *http.Request) 
 		}
 		moved, err := s.queueSvc().Move(sessionID, qmid, req.Direction)
 		if err != nil {
+			log.WithError(err).WithField("queued", qmid).Error("moving queued message")
 			http.Error(w, "failed to move queued message", http.StatusInternalServerError)
 			return
 		}

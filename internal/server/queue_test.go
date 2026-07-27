@@ -220,6 +220,46 @@ func TestSessionQueue_ListDeleteMove(t *testing.T) {
 	}
 }
 
+// A store failure (e.g. a schema drift where queued_message is missing a
+// column) must surface as a 500 rather than an empty queue, and must be
+// logged so it is diagnosable from the server side.
+func TestSessionQueue_StoreFailureIs500(t *testing.T) {
+	srv, _ := newSessionsTestServer(t)
+	// Closing the state DB makes every queue store call fail.
+	srv.stateDB.Close()
+
+	for _, tc := range []struct {
+		name string
+		req  *http.Request
+		fn   func(http.ResponseWriter, *http.Request)
+	}{
+		{
+			"list",
+			httptest.NewRequest(http.MethodGet, "/api/session/s1/queue?platform=fake", nil),
+			srv.handleSessionQueueList,
+		},
+		{
+			"delete",
+			httptest.NewRequest(http.MethodDelete, "/api/session/s1/queue/q_1?platform=fake", nil),
+			srv.handleSessionQueueDelete,
+		},
+		{
+			"move",
+			httptest.NewRequest(http.MethodPost, "/api/session/s1/queue/q_1/move?platform=fake",
+				strings.NewReader(`{"direction":-1}`)),
+			srv.handleSessionQueueMove,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			tc.fn(rr, tc.req)
+			if rr.Code != http.StatusInternalServerError {
+				t.Fatalf("status = %d, want 500; body=%s", rr.Code, rr.Body)
+			}
+		})
+	}
+}
+
 // The queue.updated broadcast must carry the session's full queue so
 // clients apply it directly without a refetch.
 func TestBroadcastQueueUpdated_CarriesFullQueue(t *testing.T) {
