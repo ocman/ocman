@@ -30,6 +30,12 @@ cd "$ROOT"
 
 SUITE="${1:-all}"
 
+# Floor on the number of testable ./internal/... packages. A silently
+# shorter list under-reports the total and fails the ratchet for the
+# wrong reason; bump this when packages are added, never lower it to
+# make a run pass.
+MIN_GO_TEST_PACKAGES="${MIN_GO_TEST_PACKAGES:-27}"
+
 mkdir -p coverage
 
 SHA="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
@@ -45,7 +51,23 @@ EOF
 collect_go() {
 	echo "==> Go coverage (./internal/...)"
 	# Go 1.26 invokes an unavailable covdata tool for packages without test files.
-	go test $(go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./internal/...) -coverpkg=./internal/... -coverprofile=coverage/go.raw.out -covermode=atomic
+	#
+	# The list is assigned before use on purpose: `set -e` does not fire on
+	# a command substitution used as an argument, so a partially failing
+	# `go list` silently dropped packages, `go test` still exited 0, and the
+	# total came out points lower than reality. A separate `local` keeps the
+	# assignment's own exit status, which `local pkgs="$(...)"` would mask.
+	local pkgs
+	pkgs="$(go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./internal/...)"
+	local count
+	count="$(printf '%s\n' "$pkgs" | grep -c .)"
+	echo "    packages under test: ${count}"
+	if [ "$count" -lt "$MIN_GO_TEST_PACKAGES" ]; then
+		echo "coverage-collect: only ${count} testable Go packages found, expected at least ${MIN_GO_TEST_PACKAGES}; refusing to report an under-measured total" >&2
+		exit 1
+	fi
+	# shellcheck disable=SC2086 # word splitting is the point
+	go test $pkgs -coverpkg=./internal/... -coverprofile=coverage/go.raw.out -covermode=atomic
 	# Drop generated files (e.g. *.pb.go) from the profile; the mode
 	# header line (first line) is preserved.
 	grep -vE '\.pb\.go:' coverage/go.raw.out > coverage/go.out
