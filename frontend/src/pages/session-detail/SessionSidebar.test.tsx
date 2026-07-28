@@ -37,13 +37,14 @@ function renderSidebar(
   infos: Record<string, GitInfo>,
   onNewSessionInDirectory: (directory: string, remoteId?: string, platform?: string) => void = vi.fn(),
   onArchiveSession: (e: React.MouseEvent, s: Session) => void = vi.fn(),
+  setShowArchivedRecent: (updater: (current: boolean) => boolean) => void = vi.fn(),
 ) {
   return render(
     <SessionSidebar
       activeId="s"
       sidebarWidth={300}
       showArchivedRecent={false}
-      setShowArchivedRecent={vi.fn()}
+      setShowArchivedRecent={setShowArchivedRecent}
       loadingRecentSessions={false}
       recentSessions={group.sessions}
       sidebarProjectGroups={[group]}
@@ -223,5 +224,60 @@ describe('SessionSidebar', () => {
     screen.getByRole('button', { name: 'New session in dries/other' }).click();
 
     expect(onAdd).toHaveBeenCalledWith('/home/dries/other', undefined, 'opencode');
+  });
+
+  it('opens filters with archived off and children on by default', () => {
+    const setShowArchived = vi.fn();
+    const group: SidebarProjectGroup = {
+      directory: '/repo',
+      sessions: [session()],
+      lastUpdated: 1,
+      aggregate: { kind: 'none' },
+    };
+
+    renderSidebar(group, {}, vi.fn(), vi.fn(), setShowArchived);
+    fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
+
+    const archived = screen.getByRole('checkbox', { name: 'Show archived' });
+    expect(archived).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Show children' })).toBeChecked();
+
+    fireEvent.click(archived);
+    expect(setShowArchived).toHaveBeenCalledOnce();
+    expect(setShowArchived.mock.calls[0][0](false)).toBe(true);
+  });
+
+  it('hides child sessions from the filter popup', () => {
+    const group: SidebarProjectGroup = {
+      directory: '/repo',
+      sessions: [session(), session({ id: 'child', title: 'Child task', parentId: 's' })],
+      lastUpdated: 1,
+      aggregate: { kind: 'none' },
+    };
+
+    renderSidebar(group, {});
+    fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Show children' }));
+
+    expect(screen.queryByText('Child task')).not.toBeInTheDocument();
+    expect(screen.getByText('Fix thing')).toBeInTheDocument();
+  });
+
+  it('turns the heading into a fuzzy title search', () => {
+    const group: SidebarProjectGroup = {
+      directory: '/repo',
+      sessions: [session(), session({ id: 'other', title: 'Unrelated work' })],
+      lastUpdated: 1,
+      aggregate: { kind: 'none' },
+    };
+
+    renderSidebar(group, {});
+    fireEvent.click(screen.getByRole('button', { name: 'Search sessions' }));
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), {
+      target: { value: 'fxthg' },
+    });
+
+    expect(screen.getByText('Fix thing')).toBeInTheDocument();
+    expect(screen.queryByText('Unrelated work')).not.toBeInTheDocument();
   });
 });

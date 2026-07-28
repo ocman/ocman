@@ -30,6 +30,31 @@
   text-transform: uppercase;
   letter-spacing: 0.4px;
 }
+.session-sidebar-heading {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  cursor: text;
+}
+.session-sidebar-search {
+  min-width: 0;
+  height: 24px;
+  flex: 1;
+  margin-right: 8px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  text-transform: none;
+}
+.session-sidebar-search::placeholder { color: var(--text-dim); }
 .session-sidebar-new {
   min-width: 24px;
   height: 24px;
@@ -46,16 +71,43 @@
   justify-content: center;
   transition: all 0.15s;
 }
-.session-sidebar-new:hover {
+.session-sidebar-new:hover,
+.session-sidebar-new.active {
   background: var(--accent);
   color: var(--white);
   border-color: var(--accent);
 }
 .session-sidebar-header-actions {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
 }
+.session-sidebar-filters {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 5;
+  width: 170px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface0);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 12px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.session-sidebar-filters label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  cursor: pointer;
+}
+.session-sidebar-filters label:hover { background: var(--bg-hover); }
+.session-sidebar-filters input { accent-color: var(--accent); }
 /* Project grouping (sidebarView === 'projects') */
 .session-sidebar-group {
   display: flex;

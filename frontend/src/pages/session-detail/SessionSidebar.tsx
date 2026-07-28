@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useRef, useEffect, useCallback, useMemo } from 'react';
+import { useRef, useEffect, useCallback, useMemo, useState } from 'react';
 import {
   DndContext,
   KeyboardSensor,
@@ -19,7 +19,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { Session } from '../../lib/api';
-import { cleanTitle, shortPath, relativeTime } from '../../lib/format';
+import { cleanTitle, fuzzyMatch, shortPath, relativeTime } from '../../lib/format';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { StatusBadge } from '../../components/StatusBadge';
 import { HostBadge } from '../../components/HostBadge';
@@ -31,6 +31,7 @@ import { GettingStartedEmpty } from '../../components/GettingStartedEmpty';
 import { rollupGroupStatus } from '../../lib/sidebarHelpers';
 import { nestSessions } from '../../lib/nestSessions';
 import { remoteLog } from '../../lib/remoteLog';
+import { useClickOutside } from '../../lib/useClickOutside';
 import { ArchiveIcon, ArchiveFilterIcon } from './SidebarIcons';
 import type { TmuxState } from '../../lib/useTmux';
 import type { GitInfo } from '../../lib/api';
@@ -112,6 +113,13 @@ export function SessionSidebar({
   onArchiveProject,
 }: SessionSidebarProps) {
   const sidebarListRef = useRef<HTMLDivElement>(null);
+  const filterRef = useRef<HTMLDivElement>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [showChildren, setShowChildren] = useState(true);
+  const [searching, setSearching] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  useClickOutside(filterRef, filtersOpen, () => setFiltersOpen(false));
 
   // Keep the active session's sidebar row visible. The list doesn't reorder
   // to follow the cursor, so when the user switches sessions (or flips
@@ -254,10 +262,22 @@ export function SessionSidebar({
 
   // The pinned group always renders first and is never reorderable;
   // the remaining project groups are drag-sortable.
-  const pinnedGroup = sidebarProjectGroups.find((g) => g.isPinned);
+  const filteredProjectGroups = useMemo(() => {
+    const query = searchQuery.trim();
+    if (showChildren && !query) return sidebarProjectGroups;
+    return sidebarProjectGroups.flatMap((group) => {
+      const sessions = group.sessions.filter((session) =>
+        (showChildren || !session.parentId) &&
+        (!query || fuzzyMatch(query, cleanTitle(session.title))),
+      );
+      return query && sessions.length === 0 ? [] : [{ ...group, sessions }];
+    });
+  }, [sidebarProjectGroups, searchQuery, showChildren]);
+
+  const pinnedGroup = filteredProjectGroups.find((g) => g.isPinned && g.sessions.length > 0);
   const sortableGroups = useMemo(
-    () => sidebarProjectGroups.filter((g) => !g.isPinned),
-    [sidebarProjectGroups],
+    () => filteredProjectGroups.filter((g) => !g.isPinned),
+    [filteredProjectGroups],
   );
 
   const dndSensors = useSensors(
@@ -270,13 +290,13 @@ export function SessionSidebar({
     (event: DragEndEvent) => {
       const { active, over } = event;
       if (!over || active.id === over.id) return;
-      const dirs = sortableGroups.map((g) => g.directory);
+      const dirs = sidebarProjectGroups.filter((group) => !group.isPinned).map((group) => group.directory);
       const from = dirs.indexOf(active.id as string);
       const to = dirs.indexOf(over.id as string);
       if (from === -1 || to === -1) return;
       onReorderProjects(arrayMove(dirs, from, to));
     },
-    [sortableGroups, onReorderProjects],
+    [sidebarProjectGroups, onReorderProjects],
   );
 
   const renderPinnedGroup = (group: SidebarProjectGroup) => {
@@ -455,19 +475,63 @@ export function SessionSidebar({
     <div className="session-sidebar" data-testid="session-sidebar" style={{ width: sidebarWidth }}>
       <SidebarResizer />
       <div className="session-sidebar-header">
-        <span className="session-sidebar-heading" data-testid="sidebar-heading">
-          <span>Sessions</span>
-        </span>
-        <div className="session-sidebar-header-actions">
+        {searching ? (
+          <input
+            type="search"
+            className="session-sidebar-search"
+            aria-label="Search sessions"
+            placeholder="Search sessions"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== 'Escape') return;
+              setSearchQuery('');
+              setSearching(false);
+            }}
+            autoFocus
+          />
+        ) : (
           <button
             type="button"
-            className={`session-sidebar-new${showArchivedRecent ? ' active' : ''}`}
-            onClick={() => {
-              setShowArchivedRecent(current => !current);
-            }}
-            title={showArchivedRecent ? 'Hide archived sessions' : 'Include archived sessions'}
-            aria-label={showArchivedRecent ? 'Hide archived sessions' : 'Include archived sessions'}
+            className="session-sidebar-heading"
+            data-testid="sidebar-heading"
+            aria-label="Search sessions"
+            onClick={() => setSearching(true)}
+          >Sessions</button>
+        )}
+        <div className="session-sidebar-header-actions" ref={filterRef}>
+          <button
+            type="button"
+            className={`session-sidebar-new${showArchivedRecent || !showChildren ? ' active' : ''}`}
+            onClick={() => setFiltersOpen((open) => !open)}
+            title="Filter sessions"
+            aria-label="Filter sessions"
+            aria-expanded={filtersOpen}
+            aria-controls="session-sidebar-filters"
           ><ArchiveFilterIcon /></button>
+          {filtersOpen && (
+            <div id="session-sidebar-filters" className="session-sidebar-filters" role="group" aria-label="Session filters">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={showArchivedRecent}
+                  onChange={(event) => {
+                    const checked = event.target.checked;
+                    setShowArchivedRecent(() => checked);
+                  }}
+                />
+                <span>Show archived</span>
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={showChildren}
+                  onChange={(event) => setShowChildren(event.target.checked)}
+                />
+                <span>Show children</span>
+              </label>
+            </div>
+          )}
         </div>
       </div>
       {pendingTmuxSession && pickerPos && (
