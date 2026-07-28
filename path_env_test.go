@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"strings"
@@ -52,5 +53,20 @@ func TestEnsureToolPathRecoversBinary(t *testing.T) {
 	ensureToolPath()
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Errorf("ensureToolPath did not restore sh on PATH: %v (PATH=%q)", err, os.Getenv("PATH"))
+	}
+}
+
+// TestLoginShellCmdDetachedFromTerminal guards the Ctrl+C regression:
+// the interactive login shell must not be able to grab ocman's
+// controlling terminal's foreground process group (which left ocman
+// backgrounded so Ctrl+C never reached it). The command must run in its
+// own process group (Setpgid) with stdin detached.
+func TestLoginShellCmdDetachedFromTerminal(t *testing.T) {
+	cmd := loginShellCmd(context.Background(), "/bin/sh")
+	if cmd.Stdin != nil {
+		t.Errorf("stdin must be detached; got %v", cmd.Stdin)
+	}
+	if cmd.SysProcAttr == nil || !cmd.SysProcAttr.Setpgid {
+		t.Errorf("shell must run in its own process group (Setpgid); got %+v", cmd.SysProcAttr)
 	}
 }
