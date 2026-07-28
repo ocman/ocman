@@ -25,6 +25,7 @@ interface SessionTreeStats extends TokenStats {
 // cycle with Composer.tsx.
 export interface ComposerMemoProps {
   isRunning?: boolean;
+  onAbort?: unknown;
   queuedShellCommand?: string | null;
   onCancelQueuedShell?: unknown;
   disabled?: boolean;
@@ -56,6 +57,10 @@ export interface ComposerMemoProps {
 
 export const composerPropsEqual = (prev: ComposerMemoProps, next: ComposerMemoProps) =>
   prev.isRunning === next.isRunning &&
+  // Esc / stop button read onAbort (directly and via a synced ref). If the
+  // handler's identity changes but the render is skipped, both go stale and
+  // abort silently no-ops until some other prop forces a re-render.
+  prev.onAbort === next.onAbort &&
   prev.queuedShellCommand === next.queuedShellCommand &&
   prev.onCancelQueuedShell === next.onCancelQueuedShell &&
   prev.disabled === next.disabled &&

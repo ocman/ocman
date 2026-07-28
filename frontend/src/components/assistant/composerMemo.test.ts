@@ -39,6 +39,18 @@ describe('composerPropsEqual — queuedMessages', () => {
   // omits shellExec, a false->true flip (capabilities arriving after
   // first paint) skips the render, so the effect never runs and the ref
   // stays false — a `!ls` command is sent to the LLM as a plain prompt.
+  // Regression: Esc / the stop button call onAbort (directly and via a
+  // synced ref). handleAbort no-ops until session/portAvailable resolve,
+  // then changes identity. If the comparator omits onAbort, that render is
+  // skipped and both keep the stale no-op closure — stop/Esc silently do
+  // nothing while running until an unrelated prop forces a re-render.
+  it('re-renders when onAbort identity changes', () => {
+    const a = () => {};
+    const b = () => {};
+    expect(composerPropsEqual({ ...base, onAbort: a }, { ...base, onAbort: b })).toBe(false);
+    expect(composerPropsEqual({ ...base, onAbort: a }, { ...base, onAbort: a })).toBe(true);
+  });
+
   it('re-renders when shellExec capability flips', () => {
     expect(composerPropsEqual(
       { ...base, shellExec: false },
