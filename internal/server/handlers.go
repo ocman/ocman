@@ -19,6 +19,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/queuesvc"
+	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 )
 
@@ -438,9 +439,31 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		"platform":  req.Platform,
 		"directory": req.Directory,
 	}).Info("hub: create session request")
+	// A remote session must have its project's opencode instance running
+	// before Create, else the remote fails immediately when the directory
+	// has no running instance (a freshly-attached remote). Route the ensure
+	// to the platform's owning host via the compound id — the authoritative
+	// owner. Local Create discovers/launches its own port and needs no
+	// pre-ensure here.
+	var port string
+	remoteID, _ := remote.SplitPlatformID(req.Platform)
+	if remoteID != "" && req.Directory != "" {
+		host := s.router().ForRemote(remoteID)
+		ensured, err := host.EnsureProjectOpencode(r.Context(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: req.Directory})
+		if err != nil {
+			log.WithError(err).WithFields(log.Fields{
+				"platform":  req.Platform,
+				"directory": req.Directory,
+			}).Warn("hub: ensure project opencode failed")
+			writeSessionSvcError(w, "creating session", err)
+			return
+		}
+		port = ensured.Port()
+	}
 	resp, err := s.sessions.Create(r.Context(), req.Platform, platforms.CreateSessionRequest{
 		Directory: req.Directory,
 		Title:     req.Title,
+		Port:      port,
 	})
 	if err != nil {
 		log.WithError(err).WithFields(log.Fields{

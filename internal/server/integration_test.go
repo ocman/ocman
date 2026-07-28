@@ -16,6 +16,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	opencodeplatform "github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -278,6 +279,46 @@ func TestHandleCreateSession_RefreshesProjectsIndex(t *testing.T) {
 			t.Fatalf("expected projects index to include created project, got %+v", projects)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestHandleCreateSession_RemoteEnsuresBeforeCreate pins the fix for the
+// "no running OpenCode instance for directory" failure: a remote session
+// must ensure the project's opencode instance (routed to the owning host
+// via the compound platform id) before Create, and pass the ensured port.
+func TestHandleCreateSession_RemoteEnsuresBeforeCreate(t *testing.T) {
+	srv := testServer(t)
+	var ensured string
+	srv.hostRouter = hostsvc.NewRouter(&promptEnsureHost{ensure: func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+		t.Fatal("local host must not be ensured for a remote session")
+		return nil, nil
+	}})
+	srv.hostRouter.RegisterRemote("rem1", &promptEnsureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+		ensured = req.ProjectDir
+		return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:7788", RepoRoot: req.ProjectDir}, nil
+	}})
+
+	var created platforms.CreateSessionRequest
+	reg := platforms.NewRegistry()
+	reg.Register(&fakePlatform{id: "r-rem1:opencode", createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+		created = req
+		return &platforms.CreateSessionResponse{ID: "remote-session"}, nil
+	}})
+	srv.registry = reg
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sessions",
+		strings.NewReader(`{"platform":"r-rem1:opencode","directory":"/home/dries"}`))
+	rr := httptest.NewRecorder()
+	srv.handleCreateSession(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if ensured != "/home/dries" {
+		t.Fatalf("remote host was not ensured; ensured=%q", ensured)
+	}
+	if created.Port != "7788" {
+		t.Fatalf("create did not receive ensured port; got %q", created.Port)
 	}
 }
 
