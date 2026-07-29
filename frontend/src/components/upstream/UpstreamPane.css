@@ -396,7 +396,7 @@ a.oc-upstream-ci-check-name:hover {
 
 .oc-upstream-row-meta {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 8px;
   margin-top: 4px;
@@ -407,12 +407,16 @@ a.oc-upstream-ci-check-name:hover {
 
 .oc-upstream-row-author {
   color: var(--subtext0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
-.oc-upstream-row-time::before {
-  content: '·';
-  margin-right: 8px;
-  opacity: 0.5;
+.oc-upstream-row-time {
+  margin-left: auto;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .oc-upstream-row-labels {
@@ -435,7 +439,7 @@ a.oc-upstream-ci-check-name:hover {
 .oc-upstream-row-assignees {
   display: inline-flex;
   gap: 2px;
-  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .oc-upstream-row-assignee {

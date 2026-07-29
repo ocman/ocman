@@ -19,7 +19,6 @@ export function RowMeta({ author, updatedAt, labels, assignees }: RowMetaProps) 
   return (
     <div className="oc-upstream-row-meta">
       <span className="oc-upstream-row-author">by {author}</span>
-      <span className="oc-upstream-row-time">{relativeTimeISO(updatedAt)}</span>
       {labels && labels.length > 0 ? (
         <span className="oc-upstream-row-labels">
           {labels.map((l) => (
@@ -34,6 +33,7 @@ export function RowMeta({ author, updatedAt, labels, assignees }: RowMetaProps) 
           ))}
         </span>
       ) : null}
+      <span className="oc-upstream-row-time">{relativeTimeISO(updatedAt)}</span>
       {assignees && assignees.length > 0 ? (
         <span className="oc-upstream-row-assignees">
           {assignees.slice(0, 3).map((u) => (
