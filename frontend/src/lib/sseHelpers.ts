@@ -16,6 +16,7 @@ export interface PendingPermission {
   permissionId: string;
   permission: string;
   patterns: string[];
+  always?: string[];
   metadata?: Record<string, unknown>;
   sessionId: string;
   /** Unix-ms timestamp of when this permission prompt was first received.
@@ -206,6 +207,11 @@ export function extractPendingPermission(node: unknown): PendingPermission | nul
     ? rawPatterns.filter((p): p is string => typeof p === 'string')
     : [];
 
+  const rawAlways = properties.always;
+  const always = Array.isArray(rawAlways)
+    ? rawAlways.filter((p): p is string => typeof p === 'string')
+    : undefined;
+
   const metadata = properties.metadata && typeof properties.metadata === 'object' && !Array.isArray(properties.metadata)
     ? properties.metadata as Record<string, unknown>
     : undefined;
@@ -217,6 +223,7 @@ export function extractPendingPermission(node: unknown): PendingPermission | nul
     permissionId: id,
     permission,
     patterns,
+    ...(always ? { always } : {}),
     ...(metadata ? { metadata } : {}),
     sessionId,
     askedAt: Date.now(),

@@ -6,6 +6,7 @@ export interface PendingPermission {
   permissionId: string;
   permission: string;
   patterns: string[];
+  always?: string[];
   metadata?: Record<string, unknown>;
   /** Unix-ms timestamp of when this permission was first received.
    *  Used to anchor the countdown so it survives component remounts. */
@@ -188,6 +189,7 @@ export function PermissionPrompt({
   // Effective "checking" state: backend confirmed via SSE.
   const effectiveChecking = autoApproveChecking ?? false;
   const action = permissionAction(permission.metadata);
+  const alwaysPatterns = permission.always ?? permission.patterns;
 
   // Auto-focus on mount and when the step changes so keys work without a click.
   useLayoutEffect(() => {
@@ -361,9 +363,9 @@ export function PermissionPrompt({
             <div className="oc-permission-desc">
               This will allow the following patterns for the remainder of this session.
             </div>
-            {permission.patterns.length > 0 ? (
+            {alwaysPatterns.length > 0 ? (
               <div className="oc-permission-patterns">
-                {permission.patterns.map((p) => (
+                {alwaysPatterns.map((p) => (
                   <div key={p} className="oc-permission-pattern">- {p}</div>
                 ))}
               </div>

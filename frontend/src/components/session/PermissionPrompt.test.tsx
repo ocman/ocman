@@ -131,6 +131,28 @@ describe('PermissionPrompt', () => {
     expect(screen.getByText('git status --short')).toBeInTheDocument();
   });
 
+  it('shows OpenCode always-allow patterns on confirmation', () => {
+    vi.useFakeTimers();
+    render(
+      <PermissionPrompt
+        permission={{
+          ...permission,
+          patterns: ['git commit --amend && git push --force-with-lease'],
+          always: ['git commit *', 'git push *'],
+        }}
+        onReply={vi.fn()}
+      />,
+    );
+
+    act(() => { vi.advanceTimersByTime(SETTLE_MS + 1); });
+    act(() => { screen.getByRole('button', { name: 'Allow always' }).click(); });
+
+    expect(screen.getByText('- git commit *')).toBeInTheDocument();
+    expect(screen.getByText('- git push *')).toBeInTheDocument();
+    expect(screen.queryByText('- git commit --amend && git push --force-with-lease')).not.toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
   describe('auto-approve footer (server-driven)', () => {
     beforeEach(() => {
       vi.useFakeTimers();

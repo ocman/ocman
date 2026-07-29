@@ -178,19 +178,21 @@ describe('extractPendingPermission', () => {
     expect(out?.sessionId).toBe('');
   });
 
-  it('captures sessionID and patterns when present', () => {
+  it('captures sessionID and permission patterns when present', () => {
     const out = extractPendingPermission({
       type: 'permission.asked',
       properties: {
         id: 'p1',
         permission: 'Run shell command?',
         patterns: ['ls *', 1, 'git status'],
+        always: ['ls *', 1, 'git *'],
         metadata: { command: 'git status' },
         sessionID: 'sub_1',
       },
     });
     expect(out?.permission).toBe('Run shell command?');
     expect(out?.patterns).toEqual(['ls *', 'git status']); // non-string filtered
+    expect(out?.always).toEqual(['ls *', 'git *']);
     expect(out?.metadata).toEqual({ command: 'git status' });
     expect(out?.sessionId).toBe('sub_1');
   });
