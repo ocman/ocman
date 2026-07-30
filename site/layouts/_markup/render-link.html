@@ -1,0 +1,18 @@
+{{- /* Turns the repo docs' relative *.md links into site URLs, wherever the
+       file got mounted. ponytail: linear scan over pages — the site is ~20
+       pages; index by filename if that ever hurts. */ -}}
+{{- $dest := .Destination -}}
+{{- $url := urls.Parse $dest -}}
+{{- if and (not $url.Scheme) (hasSuffix $url.Path ".md") -}}
+  {{- $fragment := cond $url.Fragment (printf "#%s" $url.Fragment) "" -}}
+  {{- $name := path.Base $url.Path -}}
+  {{- $target := "" -}}
+  {{- range site.Pages -}}
+    {{- if and .File (hasSuffix .File.Filename (printf "/%s" $name)) -}}
+      {{- $target = .RelPermalink -}}
+    {{- end -}}
+  {{- end -}}
+  {{- $dest = printf "%s%s" (or $target (printf "%s/" (strings.TrimSuffix ".md" $url.Path))) $fragment -}}
+{{- end -}}
+{{- $isExternal := hasPrefix $dest "http" -}}
+<a href="{{ $dest | safeURL }}"{{ with .Title }} title="{{ . }}"{{ end }}{{ if $isExternal }} target="_blank" rel="noopener"{{ end }}>{{ .Text | safeHTML }}</a>

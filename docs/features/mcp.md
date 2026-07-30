@@ -1,4 +1,7 @@
-# MCP server (agent integration)
+---
+title: MCP server
+weight: 3
+---
 
 Ocman embeds an optional **MCP (Model Context Protocol)** server so an AI
 coding agent — or you, through the agent — can split work from an active

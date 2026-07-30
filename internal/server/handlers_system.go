@@ -353,7 +353,7 @@ func (s *Server) handleDebugLog(w http.ResponseWriter, r *http.Request) {
 // The `db` block is included only when ocman has an OpenCode read-only
 // handle (i.e. when the opencode platform adapter is registered). It
 // surfaces database/sql's connection-pool stats so we can watch for
-// the failure modes documented in docs/profiling.md.
+// the failure modes documented in docs/other/profiling.md.
 func (s *Server) handleSystemStats(w http.ResponseWriter, r *http.Request) {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)

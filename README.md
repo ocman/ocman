@@ -18,7 +18,7 @@ Supports [OpenCode](https://github.com/anomalyco/opencode) and [Claude Code](htt
 - **Slash commands** — `/new [title]` to create a session, `/clear` to archive the current one and start fresh, plus keyboard-driven session rename.
 - **Tmux integration** — Launch or auto-launch an OpenCode instance inside tmux directly from the UI.
 - **Scheduled prompts** — Run one stored project prompt later in a fresh OpenCode session, with durable status and session linkage.
-- **Multi-remote** — Attach other ocman instances over the network and manage every machine's sessions from one dashboard, with a host badge per session and machine-aware new-session creation. See [docs/multi-remote.md](docs/multi-remote.md).
+- **Multi-remote** — Attach other ocman instances over the network and manage every machine's sessions from one dashboard, with a host badge per session and machine-aware new-session creation. See [Multi-remote](docs/features/multi-remote.md).
 - **Diff & changes view** — Syntax-highlighted diffs inline in the thread, plus a *Changes* sidebar combining session edits with the working-tree `git` diff.
 - **Stats dashboard** — Per-project metrics, wall-clock totals, token/pricing graphs, and system stats.
 - **Model picker** — Per-platform favorites and a refreshable catalog so new models appear without restarting.
@@ -77,7 +77,7 @@ Without `--port`, externally launched sessions are still readable but the compos
 ./ocman -platforms opencode,claude-code  # enable multiple platforms
 ```
 
-See [docs/configuration.md](docs/configuration.md) for the full flag and environment variable reference, including authentication setup.
+See [Configuration](docs/configuration/_index.md) for the full flag and environment variable reference, including authentication setup.
 
 ## Optional agent integration
 
@@ -89,7 +89,7 @@ child OpenCode sessions or isolated git worktrees and coordinate between them
 
 Point your OpenCode config at `http://localhost:8229/mcp` (or
 `http://localhost:8228/mcp` via the `make dev` proxy). See the
-[MCP integration guide](docs/mcp.md) for setup, the full tool list, and the
+[MCP integration guide](docs/features/mcp.md) for setup, the full tool list, and the
 optional session-splitting skill.
 
 ## Managing sessions across machines
@@ -110,17 +110,26 @@ a host badge. Opening, driving, and creating sessions all route to the
 owning machine automatically.
 
 This is off by default — a plain `./ocman` with no remotes is unchanged.
-See the step-by-step [multi-remote guide](docs/multi-remote.md) for TLS,
+See the step-by-step [multi-remote guide](docs/features/multi-remote.md) for TLS,
 security notes, and troubleshooting.
 
 ## Documentation
 
-- [Configuration](docs/configuration.md) — flags, env vars, authentication
-- [Multi-remote support](docs/multi-remote.md) — manage sessions across machines
-- [MCP integration](docs/mcp.md) — agent-driven session splitting
-- [Workflows](docs/workflows.md) — authoring and safely running migration campaigns
-- [Scheduled prompts](docs/scheduled-prompts.md) — one-time project prompt scheduling
-- [Contributing](docs/contributing.md) — architecture, project structure, development workflow
+`docs/` mirrors the site structure — five chapters, same layout in the repo
+and on the rendered site (`make docs`).
+
+- **Introduction** — [what ocman is, install, first session](docs/introduction/_index.md)
+- **Features** — [overview](docs/features/_index.md) ·
+  [multi-remote](docs/features/multi-remote.md) ·
+  [MCP integration](docs/features/mcp.md) ·
+  [workflows](docs/features/workflows.md) ·
+  [scheduled prompts](docs/features/scheduled-prompts.md)
+- **Configuration** — [flags, env vars, authentication](docs/configuration/_index.md)
+- **FAQ** — [short answers](docs/faq/_index.md)
+- **Other** — [architecture](docs/other/architecture.md) ·
+  [contributing](docs/other/contributing.md) ·
+  [profiling](docs/other/profiling.md) ·
+  [releases](docs/other/releases.md)
 
 ## License
 

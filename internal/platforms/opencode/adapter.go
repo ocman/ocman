@@ -460,7 +460,7 @@ func (a *Adapter) UnreadCounts(_ context.Context, cutoffs map[string]int64) (map
 // likely to dominate (it pulls every part for the session, which can
 // be hundreds of rows of JSON-blob data) so we time it separately
 // from the metadata fetch and the in-memory aggregation. The split
-// landed alongside the optimization plan in docs/profiling.md (B5):
+// landed alongside the optimization plan in docs/other/profiling.md (B5):
 // a single sample showed this endpoint at 1.87s with no obvious cost
 // driver, and we want a per-call breakdown rather than a guess.
 func (a *Adapter) SessionChanges(_ context.Context, sessionID string) (*platforms.SessionChanges, error) {

@@ -126,7 +126,7 @@ type Session struct {
 	// the request path via a synchronous fan-out of `git status` per
 	// directory. It now lives in the git package (git.Info)
 	// and is served by /api/git/info, fetched on demand by the
-	// frontend components that need it. See docs/profiling.md.
+	// frontend components that need it. See docs/other/profiling.md.
 
 	// Internal-only fields used by the notice normalizer. Populated
 	// by the DB query / adapter but never serialized to JSON.

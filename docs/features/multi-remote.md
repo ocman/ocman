@@ -1,4 +1,7 @@
-# Multi-remote support
+---
+title: Multi-remote
+weight: 2
+---
 
 Manage coding-agent sessions running on **several machines** from one
 ocman dashboard. One ocman acts as the **hub**; it attaches to other

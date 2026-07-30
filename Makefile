@@ -1,4 +1,4 @@
-.PHONY: dev dev-backend dev-remote dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-platform-branching lint-settings-rows otel-up otel-down otel-logs otel-reset caddy-up caddy-down caddy-cert install-hooks help
+.PHONY: docs docs-build dev dev-backend dev-remote dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-platform-branching lint-settings-rows otel-up otel-down otel-logs otel-reset caddy-up caddy-down caddy-cert install-hooks help
 
 # --- OTel dev defaults ----------------------------------------------------
 #
@@ -71,6 +71,20 @@ kill-dev:
 	@lsof -tiTCP:8230 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true
 	@pkill -x air 2>/dev/null || true
 	@echo "Done. Run 'make dev' / 'make dev-remote' / 'make dev-prod-watch' to restart."
+
+# Marketing/docs site (Hugo, sources in site/, content mounted from docs/)
+# Reachable from other machines by default; override DOCS_HOST so generated
+# links point at the address you browse from, e.g.
+#   make docs DOCS_HOST=192.168.1.20
+DOCS_BIND ?= 0.0.0.0
+DOCS_HOST ?= localhost
+DOCS_PORT ?= 1313
+docs: ## Serve the docs site with live reload and open it (DOCS_BIND/DOCS_HOST/DOCS_PORT)
+	cd site && hugo server --bind $(DOCS_BIND) --port $(DOCS_PORT) \
+		--baseURL http://$(DOCS_HOST) --openBrowser --navigateToChanged
+
+docs-build: ## Build the static docs site into site/public
+	cd site && hugo --minify --gc
 
 # Production build
 build: build-frontend build-backend

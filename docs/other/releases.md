@@ -1,4 +1,7 @@
-# Releases
+---
+title: Releases
+weight: 9
+---
 
 This repository creates release tags automatically from Conventional Commit messages on `main`.
 

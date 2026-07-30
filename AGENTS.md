@@ -126,7 +126,7 @@ as SSE. New-session creation is machine-aware via
 frontend stays host-agnostic (host badge + capability flags, no
 remote-identity branching; `scripts/check-host-helpers.sh` enforces that
 handlers don't bypass the `Host` seam). User-facing docs:
-`docs/multi-remote.md`. Full design: `spec/multi-remote-support/`.
+`docs/features/multi-remote.md`. Full design: `spec/multi-remote-support/`.
 
 ## Repository layout
 
@@ -205,7 +205,7 @@ handlers don't bypass the `Host` seam). User-facing docs:
   interface; feeds the PRs & Issues sidebar.
 - `internal/workflows/` — DAG workflow engine (definitions, scheduling,
   node runs/attempts) on top of `internal/state`. See
-  `docs/workflows.md`.
+  `docs/features/workflows.md`.
 - `internal/permissions/` — builds the inherited permission ruleset for
   a worktree/child session (#101).
 - `internal/pricing/` — LiteLLM model-pricing fetch/cache + cost
@@ -223,8 +223,15 @@ handlers don't bypass the `Host` seam). User-facing docs:
 - `internal/server/static/` — Vite build output; embedded into the Go
   binary via `//go:embed`. Gitignored except for `robots.txt`, which
   is kept as a permanent placeholder so `go:embed static/*` always has
-  at least one file to embed (avoiding churn from build-hashed assets
-  like `index.html`).
+   at least one file to embed (avoiding churn from build-hashed assets
+   like `index.html`).
+- `site/` — Hugo (Hextra theme) marketing/docs site. Holds only the
+  landing page, templates and config; **all documentation content lives
+  in `docs/`**, mounted read-only via `hugo.toml`. `docs/` mirrors the
+  site's five chapters — `introduction/`, `features/`,
+  `configuration/`, `faq/`, `other/` — with a `_index.md` per chapter
+  and `title:`/`weight:` front matter driving nav order. Serve it with
+  `make docs`, build with `make docs-build`.
 
 ## Dev commands
 
@@ -253,6 +260,9 @@ make build-desktop    # Wails desktop app (the -gui path) into build/bin/
 make proto            # regenerate internal/remote/proto stubs (needs protoc)
 make install-hooks    # pre-commit + pre-push hooks
 make clean            # removes ocman binary, tmp/, and static/assets/
+
+make docs             # Hugo docs/marketing site with live reload (:1313, DOCS_HOST/DOCS_BIND/DOCS_PORT)
+make docs-build       # static site into site/public
 
 make otel-up          # start Grafana LGTM stack (Loki/Tempo/Mimir + OTLP) at :3000/:4317/:4318
 make otel-down        # stop the LGTM stack
@@ -374,7 +384,7 @@ minimal and match the surrounding code.
   `srvtiming` boundaries; a logrus hook stamps `trace_id`/`span_id`.
   `make otel-up` runs the bundled Grafana LGTM stack and the `make dev*`
   targets auto-export the dev endpoint. User-facing config (URL scheme →
-  transport, `OTEL_*` vars, dashboard) is in `docs/configuration.md`;
+  transport, `OTEL_*` vars, dashboard) is in `docs/configuration/_index.md`;
   dashboard provisioning in `observability/`.
 - **Tmux session name character limitations**: `tmux.SessionNameForPath`
   derives a session name from the worktree directory. tmux itself
@@ -401,14 +411,14 @@ minimal and match the surrounding code.
   `state.db`'s `auth_secret` table, logins rate-limited 5/min/IP. The
   precedence (`OCMAN_AUTH_PASSWORD` > `-auth-password-file` >
   `-auth-password`), the `-auth-trust-localhost` escape hatch, and full
-  setup are documented in `docs/configuration.md`.
+  setup are documented in `docs/configuration/_index.md`.
 
 ## MCP server
 
 Ocman embeds a localhost-only MCP server (`internal/mcp/`, mounted at
 `/mcp` by the server package) exposing session-split + parent/child
 message tools plus the workflow control tools. The authoritative tool
-list is the table in [`docs/mcp.md`](docs/mcp.md#tools) — don't
+list is the table in [`docs/features/mcp.md`](docs/features/mcp.md#tools) — don't
 duplicate it here.
 
 Implementation notes:
@@ -439,11 +449,11 @@ Implementation notes:
   descriptions stay short and action-focused.
 
 User-facing setup, the full tool table, and the splitting workflow are
-documented in `docs/mcp.md`.
+documented in `docs/features/mcp.md`.
 
 ## Architecture doc
 
-`docs/architecture.md` holds the Mermaid architecture diagrams (system
+`docs/other/architecture.md` holds the Mermaid architecture diagrams (system
 context, backend composition, session/event data flow, frontend
 composition). When a change alters what those diagrams show — a new or
 merged `internal/` package, a new external dependency (database, forge,

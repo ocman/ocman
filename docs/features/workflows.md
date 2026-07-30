@@ -1,4 +1,7 @@
-# Workflows
+---
+title: Workflows
+weight: 4
+---
 
 Workflows are source-controlled YAML or JSON DAGs. Publish creates an immutable
 version; every run pins that version and its mapped subworkflow versions.

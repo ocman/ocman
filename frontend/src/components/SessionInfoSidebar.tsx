@@ -94,7 +94,7 @@ export function SessionInfoSidebar({
   // Per-session git info now comes from /api/git/info, fetched
   // on-demand here while the sidebar is mounted, instead of being
   // attached to every /api/sessions response by the backend (which
-  // produced fork-pressure pauses; see docs/profiling.md).
+  // produced fork-pressure pauses; see docs/other/profiling.md).
   //
   // useGitInfo internally normalises the input list to a stable
   // query param so this fresh array literal on every render is

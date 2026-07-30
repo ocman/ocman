@@ -1,0 +1,40 @@
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    name: Build and publish site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+      - name: Install Hugo
+        run: |
+          curl -sSL -o hugo.deb \
+            https://github.com/gohugoio/hugo/releases/download/v0.164.0/hugo_extended_0.164.0_linux-amd64.deb
+          sudo dpkg -i hugo.deb
+      - name: Build
+        run: make docs-build
+      # ponytail: force-push a single commit; the pages branch is a build
+      # artifact, not history. Keep history if you ever need rollbacks.
+      - name: Publish to pages branch
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd site/public
+          echo "ocman.stenic.io" > .domains
+          git init -q -b pages
+          git config user.name "ocman-ci"
+          git config user.email "ci@ocman.stenic.io"
+          git add -A
+          git commit -qm "Deploy ${{ github.sha }}"
+          git push -qf "https://x-access-token:$TOKEN@${GITHUB_SERVER_URL#https://}/${GITHUB_REPOSITORY}.git" pages

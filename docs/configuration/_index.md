@@ -1,4 +1,7 @@
-# Configuration
+---
+title: Configuration
+weight: 3
+---
 
 ## Running ocman
 
@@ -128,7 +131,7 @@ ocman -remote-listen 0.0.0.0:8230 -remote-trusted-overlay # Tailscale/WireGuard 
 
 Then attach it from the hub's **Settings → Remotes** page using the
 remote's address and access token. Off by default — a fresh install with
-no remotes is unchanged. See [multi-remote.md](multi-remote.md) for the
+no remotes is unchanged. See [multi-remote](../features/multi-remote.md) for the
 full step-by-step guide, security notes, and troubleshooting.
 
 ## OpenTelemetry (optional)

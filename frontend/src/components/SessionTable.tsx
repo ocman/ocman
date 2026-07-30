@@ -497,7 +497,7 @@ export function SessionTable({ sessions, showProject, loading, includeArchived }
                      `git status` per directory on every dashboard
                      poll. That fork-fan-out caused multi-second
                      pauses across unrelated handlers (see
-                     docs/profiling.md), and dashboard branch
+                     docs/other/profiling.md), and dashboard branch
                      indicators aren't worth that cost. Branch info
                      still appears in SessionDetail's right-hand
                      sidebar and in the sibling-sessions list there;

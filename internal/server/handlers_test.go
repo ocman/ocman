@@ -460,7 +460,7 @@ func TestSystemStats(t *testing.T) {
 // TestSystemStats_IncludesDBPoolWhenDBPresent verifies that the
 // handler surfaces the read-only DB connection-pool stats when the
 // adapter is actually registered. These fields drive the diagnostic
-// pattern documented in docs/profiling.md: if `wait_count` ever
+// pattern documented in docs/other/profiling.md: if `wait_count` ever
 // climbs, ocman is throttling its own queries on the pool cap and we
 // need to either bump the cap or reduce concurrency.
 func TestSystemStats_IncludesDBPoolWhenDBPresent(t *testing.T) {

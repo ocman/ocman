@@ -37,3 +37,9 @@ graphify-out/
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# Hugo site build output (site/)
+site/public/
+site/resources/
+site/.hugo_build.lock
+site/_vendor/

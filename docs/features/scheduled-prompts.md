@@ -1,4 +1,7 @@
-# Scheduled Prompts
+---
+title: Scheduled prompts
+weight: 5
+---
 
 Open a project's detail page to schedule a prompt once, at an interval, or with
 a standard five-field cron expression. Recurring schedules use an explicit IANA

@@ -1,4 +1,7 @@
-# Ocman Architecture
+---
+title: Architecture
+weight: 6
+---
 
 ## Introduction
 

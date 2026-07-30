@@ -75,7 +75,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	// /api/sessions handler used to fan out up to 8 concurrent
 	// `git status` subprocesses per request, which produced
 	// fork-pressure pauses on macOS (multi-second hiccups across
-	// unrelated handlers; see docs/profiling.md). Components that
+	// unrelated handlers; see docs/other/profiling.md). Components that
 	// need per-directory git state now request /api/git/info
 	// explicitly while they're mounted, so subprocess work is
 	// scoped to "the user is actually looking at this directory"

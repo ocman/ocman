@@ -12,7 +12,7 @@ import (
 // fork() pressure on the Go runtime — every fork briefly stops the
 // world while the address space is duplicated, and a burst of
 // unbounded forks was observed to cause multi-second pauses across
-// unrelated handlers (see docs/profiling.md).
+// unrelated handlers (see docs/other/profiling.md).
 const defaultLookupManyWorkers = 8
 
 // LookupMany returns Info for every unique non-empty directory in

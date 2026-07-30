@@ -1,4 +1,7 @@
-# Profiling
+---
+title: Profiling
+weight: 8
+---
 
 Status snapshot and roadmap for ocman's frontend/backend performance work.
 This document records (a) the suspects we identified during recon,

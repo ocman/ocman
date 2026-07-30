@@ -8,7 +8,7 @@
 > directory; there is no per-worktree opencode/tmux process. The
 > per-worktree tmux launcher (`tmux.LaunchWorktreeWindow*`, the
 > `ocman-worktree` session) has been removed. See AGENTS.md and
-> `docs/architecture.md` for the current model. The rest of this
+> `docs/other/architecture.md` for the current model. The rest of this
 > document (git worktree creation, `/api/worktree/...`, slug rules,
 > frontend) is still accurate.
 

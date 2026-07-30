@@ -1,0 +1,91 @@
+baseURL = "https://ocman.stenic.io/"
+title = "ocman"
+enableRobotsTXT = true
+enableGitInfo = false
+
+[module]
+  [[module.imports]]
+    path = "github.com/imfing/hextra"
+  # ponytail: mount the repo's existing docs/ instead of copying them.
+  [[module.mounts]]
+    source = "content"
+    target = "content"
+  # docs/ mirrors the site structure 1:1 (introduction / features /
+  # configuration / faq / other), so one mount is enough.
+  [[module.mounts]]
+    source = "../docs"
+    target = "content/docs"
+  [[module.mounts]]
+    source = "../docs/sessions.png"
+    target = "static/sessions.png"
+  # The app's own icons, served verbatim (same files the SPA uses).
+  [[module.mounts]]
+    source = "../frontend/public"
+    target = "static"
+    files = ["! sw.js", "! robots.txt", "! manifest.webmanifest"]
+  # Aliases for the names the theme's templates expect.
+  # ponytail: PNG bytes behind favicon.ico — browsers sniff it, and it keeps
+  # Hextra's own .ico from answering bare /favicon.ico requests.
+  [[module.mounts]]
+    source = "../frontend/public/favicon.svg"
+    target = "static/images/logo.svg"
+  [[module.mounts]]
+    source = "../frontend/public/favicon-32.png"
+    target = "static/favicon-32x32.png"
+  [[module.mounts]]
+    source = "../frontend/public/favicon-32.png"
+    target = "static/favicon-16x16.png"
+  [[module.mounts]]
+    source = "../frontend/public/favicon-32.png"
+    target = "static/favicon.ico"
+  [[module.mounts]]
+    source = "../frontend/public/apple-touch-icon.png"
+    target = "static/android-chrome-192x192.png"
+  [[module.mounts]]
+    source = "../frontend/public/apple-touch-icon.png"
+    target = "static/android-chrome-512x512.png"
+  [[module.mounts]]
+    source = "static"
+    target = "static"
+  [[module.mounts]]
+    source = "assets"
+    target = "assets"
+  [[module.mounts]]
+    source = "layouts"
+    target = "layouts"
+
+[markup.goldmark.renderer]
+  unsafe = true
+[markup.highlight]
+  noClasses = false
+[markup.tableOfContents]
+  startLevel = 2
+  endLevel = 3
+
+[menu]
+  [[menu.main]]
+    name = "Docs"
+    pageRef = "/docs"
+    weight = 1
+  [[menu.main]]
+    name = "Releases"
+    url = "https://forgejo.nousefreak.be/dries/ocman/releases"
+    weight = 2
+  [[menu.main]]
+    name = "Source"
+    url = "https://forgejo.nousefreak.be/dries/ocman"
+    weight = 3
+
+[params]
+  [params.navbar]
+    displayTitle = true
+    displayLogo = true
+    [params.navbar.logo]
+      path = "images/logo.svg"
+      width = 28
+      height = 28
+  [params.footer]
+    displayCopyright = false
+    displayPoweredBy = false
+  [params.editURL]
+    enable = false

@@ -185,7 +185,7 @@ export interface SessionWarning {
  * GitStatusLine. No longer attached to Session payloads — fetching
  * it eagerly forced the backend to fork `git status` on every
  * dashboard poll, producing multi-second pauses (see
- * docs/profiling.md).
+ * docs/other/profiling.md).
  */
 export interface GitInfo {
   branch: string;

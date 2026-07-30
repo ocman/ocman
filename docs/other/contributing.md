@@ -1,4 +1,7 @@
-# Contributing
+---
+title: Contributing
+weight: 7
+---
 
 ## Architecture
 

@@ -18,7 +18,7 @@ import (
 // indicator next to a session row, replacing the previous
 // per-`/api/sessions`-request fork-fan-out which dragged the
 // dashboard's tail latency to multi-second pauses (see
-// docs/profiling.md).
+// docs/other/profiling.md).
 //
 // Query parameters:
 //   - `dirs` (required): comma-separated absolute paths. At least
