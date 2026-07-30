@@ -56,6 +56,42 @@ func TestSessionMessage_IdleSendsImmediately(t *testing.T) {
 	}
 }
 
+// A mid-turn send WITHOUT the queue flag (a plain Enter in the composer)
+// goes straight to the platform so the running turn picks it up. It used
+// to be force-queued, which delayed it until the whole turn ended.
+func TestSessionMessage_BusySendsNowWithoutQueueFlag(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	var mu sync.Mutex
+	var sent []string
+	reg.Register(&fakePlatform{
+		id:       "fake",
+		sessions: []db.Session{mkSession("fake", "s1", "t", 1)},
+		sendMessageFn: func(req platforms.SendMessageRequest) error {
+			mu.Lock()
+			sent = append(sent, req.Message)
+			mu.Unlock()
+			return nil
+		},
+		// Mid-turn for the whole test.
+		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+			return &platforms.SessionDetail{Session: &db.Session{ID: id, Status: "busy"}}, nil
+		},
+	})
+
+	if rr := postMessage(t, srv, "s1", `{"message":"interleave me"}`); rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204; body=%s", rr.Code, rr.Body)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(sent) != 1 || sent[0] != "interleave me" {
+		t.Fatalf("sent = %v, want [interleave me] (mid-turn send is not held)", sent)
+	}
+	if n, err := srv.stateDB.CountQueuedMessages("fake", "s1"); err != nil || n != 0 {
+		t.Fatalf("queued = %d (err %v), want 0", n, err)
+	}
+}
+
 func TestSessionMessage_BusyQueuesThenFlushesOnIdle(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	var mu sync.Mutex
@@ -81,11 +117,12 @@ func TestSessionMessage_BusyQueuesThenFlushesOnIdle(t *testing.T) {
 		},
 	})
 
-	// Two follow-ups while busy: both accepted (204) but neither sent.
-	if rr := postMessage(t, srv, "s1", `{"message":"one"}`); rr.Code != http.StatusNoContent {
+	// Two explicitly queued follow-ups (Ctrl+Enter): both accepted (204)
+	// but neither sent.
+	if rr := postMessage(t, srv, "s1", `{"message":"one","queue":true}`); rr.Code != http.StatusNoContent {
 		t.Fatalf("first post status = %d; body=%s", rr.Code, rr.Body)
 	}
-	if rr := postMessage(t, srv, "s1", `{"message":"two"}`); rr.Code != http.StatusNoContent {
+	if rr := postMessage(t, srv, "s1", `{"message":"two","queue":true}`); rr.Code != http.StatusNoContent {
 		t.Fatalf("second post status = %d; body=%s", rr.Code, rr.Body)
 	}
 	mu.Lock()
@@ -163,14 +200,13 @@ func TestSessionQueue_ListDeleteMove(t *testing.T) {
 		id:            "fake",
 		sessions:      []db.Session{mkSession("fake", "s1", "t", 1)},
 		sendMessageFn: func(platforms.SendMessageRequest) error { return nil },
-		// Busy so the two posts queue instead of draining.
 		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
 			return &platforms.SessionDetail{Session: &db.Session{ID: id, Status: "busy"}}, nil
 		},
 	})
-	// Queue two follow-ups.
-	postMessage(t, srv, "s1", `{"message":"one"}`)
-	postMessage(t, srv, "s1", `{"message":"two"}`)
+	// Queue two follow-ups (Ctrl+Enter → queue:true holds them).
+	postMessage(t, srv, "s1", `{"message":"one","queue":true}`)
+	postMessage(t, srv, "s1", `{"message":"two","queue":true}`)
 
 	// GET the queue.
 	list := func() []queuedMessageView {
@@ -268,7 +304,6 @@ func TestBroadcastQueueUpdated_CarriesFullQueue(t *testing.T) {
 		id:            "fake",
 		sessions:      []db.Session{mkSession("fake", "s1", "t", 1)},
 		sendMessageFn: func(platforms.SendMessageRequest) error { return nil },
-		// Busy so the posts queue instead of draining.
 		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
 			return &platforms.SessionDetail{Session: &db.Session{ID: id, Status: "busy"}}, nil
 		},
@@ -277,8 +312,8 @@ func TestBroadcastQueueUpdated_CarriesFullQueue(t *testing.T) {
 	sub, unsub := srv.broadcastHub.subscribe()
 	defer unsub()
 
-	postMessage(t, srv, "s1", `{"message":"one"}`)
-	postMessage(t, srv, "s1", `{"message":"two"}`)
+	postMessage(t, srv, "s1", `{"message":"one","queue":true}`)
+	postMessage(t, srv, "s1", `{"message":"two","queue":true}`)
 
 	// Drain the buffered broadcasts; the last one reflects the full queue.
 	var last broadcastEvent
@@ -353,12 +388,12 @@ func TestQueueMutations_ReachTheWireAsQueueUpdated(t *testing.T) {
 	sub, unsub := srv.broadcastHub.subscribe()
 	defer unsub()
 
-	// --- Enqueue: two mid-turn holds. ---
-	postMessage(t, srv, "s1", `{"message":"one"}`)
+	// --- Enqueue: two explicit holds (Ctrl+Enter). ---
+	postMessage(t, srv, "s1", `{"message":"one","queue":true}`)
 	if got := drainQueueUpdated(t, sub.ch); len(got) != 1 || got[0].Text != "one" {
 		t.Fatalf("after enqueue #1 = %+v, want [one]", got)
 	}
-	postMessage(t, srv, "s1", `{"message":"two"}`)
+	postMessage(t, srv, "s1", `{"message":"two","queue":true}`)
 	if got := drainQueueUpdated(t, sub.ch); len(got) != 2 {
 		t.Fatalf("after enqueue #2 = %+v, want 2 items", got)
 	}
@@ -412,7 +447,7 @@ func TestSSEStream_DrainDeliversEmptyQueueOverTheWire(t *testing.T) {
 	})
 
 	// Queue one message mid-turn (row persisted, nothing sent).
-	postMessage(t, srv, "s1", `{"message":"only"}`)
+	postMessage(t, srv, "s1", `{"message":"only","queue":true}`)
 
 	// Open the real SSE stream.
 	rr := httptest.NewRecorder()
@@ -586,8 +621,48 @@ func TestSessionMessage_RelaunchFoldsWorktreeToProjectRoot(t *testing.T) {
 	}
 }
 
-// When the relaunch itself fails, the message must stay queued so the
-// next idle edge / sweep retries (which retries the relaunch too).
+// A direct send whose relaunch also fails surfaces the error to the
+// client (which owns the retry via the failed-send banner) instead of
+// silently parking the message in a queue the user never asked for.
+func TestSessionMessage_RelaunchFails_DirectSendSurfacesError(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	var mu sync.Mutex
+	attempts := 0
+	reg.Register(&fakePlatform{
+		id:       "fake",
+		sessions: []db.Session{mkSession("fake", "s1", "t", 1)},
+		sendMessageFn: func(platforms.SendMessageRequest) error {
+			mu.Lock()
+			defer mu.Unlock()
+			attempts++
+			return platforms.ErrPlatformUnreachable
+		},
+		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+			return &platforms.SessionDetail{Session: &db.Session{ID: id, Status: "done", Directory: "/home/u/proj"}}, nil
+		},
+	})
+	srv.hostRouter = hostsvc.NewRouter(&ensureStubHost{
+		ensure: func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+			return nil, errors.New("tmux not available")
+		},
+	})
+
+	if rr := postMessage(t, srv, "s1", `{"message":"hello"}`); rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503; body=%s", rr.Code, rr.Body)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1 (no retry when relaunch failed)", attempts)
+	}
+	if list, _ := srv.queueSvc().List("fake", "s1"); len(list) != 0 {
+		t.Fatalf("queue = %+v, want empty (a direct send is not parked)", list)
+	}
+}
+
+// When the relaunch itself fails while draining a queued message, the
+// message must stay queued so the next idle edge / sweep retries (which
+// retries the relaunch too).
 func TestSessionMessage_RelaunchFails_MessageStaysQueued(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	var mu sync.Mutex
@@ -611,10 +686,11 @@ func TestSessionMessage_RelaunchFails_MessageStaysQueued(t *testing.T) {
 		},
 	})
 
-	// Enqueue accepts (204) even though the drain failed; the row stays.
-	if rr := postMessage(t, srv, "s1", `{"message":"hello"}`); rr.Code != http.StatusNoContent {
+	// Enqueue accepts (204); the idle-edge drain then fails and the row stays.
+	if rr := postMessage(t, srv, "s1", `{"message":"hello","queue":true}`); rr.Code != http.StatusNoContent {
 		t.Fatalf("status = %d; body=%s", rr.Code, rr.Body)
 	}
+	srv.queueSvc().Flush(t.Context(), "", "s1")
 	mu.Lock()
 	if attempts != 1 {
 		mu.Unlock()

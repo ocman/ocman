@@ -84,7 +84,12 @@ function ComposerImpl({
   worktreesSupported,
   permissionControl,
 }: {
-  onSend?: (text: string, images?: AttachedImage[]) => void | Promise<void>;
+  /**
+   * Submit a prompt. `queue` is true when the user pressed
+   * Ctrl/Cmd+Enter — hold the prompt for the session's next idle edge
+   * instead of sending it into the running turn.
+   */
+  onSend?: (text: string, images?: AttachedImage[], queue?: boolean) => void | Promise<void>;
   onCommand?: (command: string, args: string) => void;
   /**
    * Called when the user submits a `!`-prefixed shell command on a
@@ -108,10 +113,10 @@ function ComposerImpl({
   /** Drop the queued shell command without running it. */
   onCancelQueuedShell?: () => void;
   /**
-   * Follow-up prompts queued while the agent is mid-turn (#58). They
-   * send one per turn as the session goes idle. Shown as a list under
-   * the composer with remove / reorder controls. Empty / undefined →
-   * nothing rendered.
+   * Follow-up prompts the user explicitly queued with Ctrl/Cmd+Enter
+   * (#58). They send one per turn as the session goes idle. Shown as a
+   * list under the composer with remove / reorder controls. Empty /
+   * undefined → nothing rendered.
    */
   queuedMessages?: { id: string; text: string; hasImages: boolean }[];
   /** Remove a queued follow-up without sending it. */
@@ -561,12 +566,12 @@ function ComposerImpl({
     const el = inputRef.current;
     if (!el) return;
 
-    const runSend = async (text: string, imgs?: AttachedImage[]) => {
+    const runSend = async (text: string, imgs?: AttachedImage[], queue?: boolean) => {
       sendingRef.current = true;
       setSending(true);
       while (mountedRef.current) {
         try {
-          await onSendRef.current?.(text, imgs);
+          await onSendRef.current?.(text, imgs, queue);
           el.value = '';
           el.dispatchEvent(new CustomEvent('oc-slash-update', { detail: { show: false, filter: '' } }));
           el.dispatchEvent(new CustomEvent('oc-bash-mode', { detail: false }));
@@ -662,6 +667,11 @@ function ComposerImpl({
         const raw = el.value;
         const imgs = imagesRef.current;
         const fileRefs = filesRef.current;
+        // Ctrl/Cmd+Enter = queue for the next idle edge; plain Enter =
+        // send now (mid-turn sends interleave into the running turn).
+        // Only prompts can be queued — slash commands and `!` shell
+        // commands have their own dispatch paths.
+        const queue = e.ctrlKey || e.metaKey;
         const route = routeComposerSubmit(raw, { shellExec: shellExecRef.current });
 
         // No text: only proceed if there are attachments to reference.
@@ -695,13 +705,13 @@ function ComposerImpl({
           // `noop` only reaches here when attachments are present; send
           // with empty text in that case.
           const text = route.kind === 'send' ? route.text : '';
-          void runSend(withFileReferences(text), imgs.length > 0 ? imgs : undefined);
+          void runSend(withFileReferences(text), imgs.length > 0 ? imgs : undefined, queue);
           return;
         } else {
           // route.kind === 'shell' but no onShell handler (capability
           // mis-wiring). Fall back to a plain prompt rather than
           // silently dropping the user's input.
-          void runSend(withFileReferences(raw.trim()), imgs.length > 0 ? imgs : undefined);
+          void runSend(withFileReferences(raw.trim()), imgs.length > 0 ? imgs : undefined, queue);
           return;
         }
 
@@ -1257,13 +1267,19 @@ function ComposerImpl({
                 type="button"
                 className={`oc-bar-send${sending ? ' oc-bar-send-sending' : ''}`}
                 disabled={uiDisabled}
-                title={sending ? 'Sending message' : 'Send (Enter)'}
+                title={sending ? 'Sending message' : 'Send (Enter) · Queue for next idle (Ctrl+Enter)'}
                 aria-label={sending ? 'Sending message' : 'Send message'}
-                onClick={() => {
+                onClick={(e) => {
                   // Reuse the textarea's existing Enter submit path so
-                  // button and keyboard stay behaviourally identical.
+                  // button and keyboard stay behaviourally identical —
+                  // Ctrl/Cmd+click queues, exactly like Ctrl/Cmd+Enter.
                   inputRef.current?.dispatchEvent(
-                    new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+                    new KeyboardEvent('keydown', {
+                      key: 'Enter',
+                      ctrlKey: e.ctrlKey,
+                      metaKey: e.metaKey,
+                      bubbles: true,
+                    }),
                   );
                 }}
               >

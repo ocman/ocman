@@ -48,6 +48,24 @@ describe('Composer input', () => {
     expect((input as HTMLTextAreaElement).style.height).toBe('');
   });
 
+  // Enter sends now (mid-turn included); Ctrl/Cmd+Enter is the explicit
+  // "hold this for the next idle edge" gesture (#58).
+  it.each([
+    ['Enter', {}, false],
+    ['Ctrl+Enter', { ctrlKey: true }, true],
+    ['Cmd+Enter', { metaKey: true }, true],
+  ])('routes %s to onSend with queue=%o', async (_label, modifiers, expected) => {
+    const onSend = vi.fn().mockResolvedValue(undefined);
+    render(<Composer isRunning onSend={onSend} />);
+    const input = screen.getByRole('textbox');
+
+    fireEvent.input(input, { target: { value: 'follow up' } });
+    fireEvent.keyDown(input, { key: 'Enter', ...modifiers });
+    await act(async () => {});
+
+    expect(onSend).toHaveBeenCalledWith('follow up', undefined, expected);
+  });
+
   it('keeps the draft locked and retries while the backend is unavailable', async () => {
     vi.useFakeTimers();
     const onSend = vi.fn()

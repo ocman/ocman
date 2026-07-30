@@ -20,12 +20,16 @@ func (s *Server) handleSessionMessage(w http.ResponseWriter, r *http.Request) {
 		Model     string `json:"model"`
 		Agent     string `json:"agent"`
 		Reasoning string `json:"reasoning"`
-		// Queue, when true, tells the server this send was made while the
-		// agent was mid-turn and must be QUEUED — never drained into the
-		// running turn. The client knows this authoritatively from the
-		// live SSE stream (isRunning); the server's own status inference
-		// reads the lagging DB and can wrongly report idle, which would
-		// send the message immediately (#58). This flag is the fix.
+		// Queue, when true, holds the message in the follow-up queue for
+		// the session's next idle edge instead of delivering it now. The
+		// client sets it from an explicit user gesture (Ctrl/Cmd+Enter in
+		// the composer), never from inferred status — the server's own
+		// inference reads the lagging DB and can't be trusted for this
+		// (#58).
+		//
+		// When false the message is sent straight through, even mid-turn:
+		// OpenCode interleaves it into the running turn, which is the
+		// point of a plain Enter send.
 		Queue bool `json:"queue"`
 	}
 	if !readAndUnmarshal(w, r, maxSendMessageBody, &req) {
@@ -36,19 +40,25 @@ func (s *Server) handleSessionMessage(w http.ResponseWriter, r *http.Request) {
 		for _, img := range req.Images {
 			images = append(images, platforms.ImageAttachment{URL: img.URL, Mime: img.Mime})
 		}
-		// Composer sends always enqueue (#58). When the client marks the
-		// send as queued (agent mid-turn), the server holds it for the
-		// next session.idle edge. Otherwise the enqueue fast-path drains
-		// it immediately if the session is idle. Enqueue validates
-		// message-or-images.
-		if err := s.queueSvc().Enqueue(r.Context(), platformHint(r), req.Queue, platforms.SendMessageRequest{
+		send := platforms.SendMessageRequest{
 			SessionID: sessionID,
 			Message:   req.Message,
 			Images:    images,
 			Model:     req.Model,
 			Agent:     req.Agent,
 			Reasoning: req.Reasoning,
-		}); err != nil {
+		}
+		// Queue explicitly requested (#58): hold for the next idle edge.
+		// Otherwise deliver now — mid-turn included, so a plain Enter
+		// send is picked up by the running turn instead of waiting for
+		// it to finish. Both paths validate message-or-images.
+		var err error
+		if req.Queue {
+			err = s.queueSvc().Enqueue(r.Context(), platformHint(r), true, send)
+		} else {
+			err = s.sendNow(r.Context(), platformHint(r), send)
+		}
+		if err != nil {
 			writeSessionSvcError(w, "sending message", err)
 			return
 		}

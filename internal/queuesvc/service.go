@@ -1,8 +1,12 @@
-// Package queuesvc owns the follow-up message queue: prompts a user
-// submits while a session is mid-turn are appended here and drained one
-// at a time on each session.idle edge. The queue lives server-side (in
-// state.db) so it is shared across every connected client and survives a
-// client moving machines — #58.
+// Package queuesvc owns the follow-up message queue: prompts the user
+// explicitly defers (Ctrl/Cmd+Enter in the composer) are appended here
+// and drained one at a time on each session.idle edge. The queue lives
+// server-side (in state.db) so it is shared across every connected
+// client and survives a client moving machines — #58.
+//
+// A plain Enter send never reaches this package: it goes straight to the
+// platform, mid-turn included, so the running turn picks it up instead of
+// the user waiting out the whole turn.
 //
 // Design (race-free by construction):
 //   - Enqueue is unconditional: SendMessage always appends. There is no
@@ -135,14 +139,14 @@ var ErrEmptyMessage = errors.New("message or images required")
 
 // Enqueue appends a message to the session's queue.
 //
-// forceQueue is the client's authoritative "the agent is mid-turn" signal
-// (derived from the live SSE stream). When true, the message is HELD — it
-// is never drained here and waits for the next session.idle edge. This is
-// the fix for #58: the server's own status inference reads the lagging DB
-// and can wrongly report idle mid-turn, which would send the message
-// immediately instead of queueing it.
+// forceQueue is the caller's authoritative "hold this" signal — the
+// user's Ctrl/Cmd+Enter gesture, or an internal deferral (child results,
+// scheduled prompts). When true, the message is HELD: it is never drained
+// here and waits for the next session.idle edge. It is deliberately NOT
+// derived from inferred status, which reads the lagging DB and can wrongly
+// report idle mid-turn (#58).
 //
-// When forceQueue is false (an idle send) the fast path may drain it now:
+// When forceQueue is false the fast path may drain it now:
 // only if it is the sole queued message AND nothing has drained since the
 // last idle edge. That "first item only" rule keeps a busy session's
 // queue intact even if the status poll blips to idle. A genuine
@@ -174,7 +178,7 @@ func (s *Service) Enqueue(ctx context.Context, platformID string, forceQueue boo
 	if err := s.store.EnqueueMessage(m); err != nil {
 		return err
 	}
-	// The client says the turn is running: hold the message. Do NOT mark
+	// The caller asked to hold the message. Do NOT mark
 	// drained here — nothing has been sent yet. Marking drained would
 	// disarm the Sweep backstop, so a forceQueue message whose
 	// session.idle edge never arrives (watcher disconnected, edge not

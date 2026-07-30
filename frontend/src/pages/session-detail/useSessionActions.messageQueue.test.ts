@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 //
-// #58: when the session is mid-turn, handleSend must NOT create an
-// optimistic thread bubble (pending.begin) — that renders as a big
-// "QUEUED" message in the thread, duplicating the compact queue list
-// under the composer. It should POST directly (which enqueues
-// server-side) and let the queue list surface it. When idle, the normal
-// optimistic-bubble path runs.
+// #58: queueing is an explicit user gesture (Ctrl/Cmd+Enter), not an
+// inference from the running state. handleSend(text, images, queue=true)
+// must POST with queue=true and NOT create an optimistic thread bubble
+// (pending.begin) — the compact queue list under the composer owns it.
+// Without the flag the normal optimistic-bubble send runs, mid-turn
+// included, so the running turn picks the prompt up instead of the user
+// waiting for the whole turn to end.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
@@ -127,24 +128,39 @@ describe('useSessionActions — undo and redo (#293)', () => {
 });
 
 describe('useSessionActions — handleSend queue behaviour (#58)', () => {
-  it('mid-turn: POSTs directly and does NOT create an optimistic bubble', async () => {
-    const isRunningRef = { current: true };
-    const { result } = renderHook(() => useSessionActions(makeOptions(isRunningRef)));
+  it('queue=true: POSTs with the queue flag and shows no optimistic bubble', async () => {
+    const { result } = renderHook(() => useSessionActions(makeOptions({ current: true })));
 
     await act(async () => {
-      await result.current.handleSend('follow up');
+      await result.current.handleSend('follow up', undefined, true);
     });
 
-    expect(begin).not.toHaveBeenCalled(); // no "QUEUED" thread bubble
-    // queue=true (last arg) tells the server to hold it, not drain it.
+    expect(begin).not.toHaveBeenCalled(); // no thread bubble; it's held
+    // queue=true (last arg) tells the server to hold it for the next idle edge.
     expect(sendMessage).toHaveBeenCalledWith(
       'sess-1', 'follow up', undefined, 'anthropic/x', 'build', undefined, 'opencode', true,
     );
   });
 
+  // Regression: a plain Enter send mid-turn used to be force-queued,
+  // so it only reached the agent after the whole turn ended. It must go
+  // out immediately (queue flag falsy) and get an optimistic bubble.
+  it('mid-turn without the queue flag: sends now, optimistic bubble and all', async () => {
+    const { result } = renderHook(() => useSessionActions(makeOptions({ current: true })));
+
+    await act(async () => {
+      await result.current.handleSend('interleave me');
+    });
+
+    expect(begin).toHaveBeenCalledTimes(1);
+    // performSend omits the queue flag entirely — the server sends now.
+    expect(sendMessage).toHaveBeenCalledWith(
+      'sess-1', 'interleave me', undefined, 'anthropic/x', 'build', undefined, 'opencode',
+    );
+  });
+
   it('idle: uses the optimistic-bubble path', async () => {
-    const isRunningRef = { current: false };
-    const { result } = renderHook(() => useSessionActions(makeOptions(isRunningRef)));
+    const { result } = renderHook(() => useSessionActions(makeOptions({ current: false })));
 
     await act(async () => {
       await result.current.handleSend('first message');

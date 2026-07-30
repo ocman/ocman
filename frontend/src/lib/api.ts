@@ -515,9 +515,10 @@ export const api = {
     agent?: string,
     reasoning?: string,
     platform?: string,
-    // queue=true tells the server this send was made while the agent was
-    // mid-turn: hold it in the follow-up queue, don't drain it into the
-    // running turn (#58). The client knows this from the live SSE stream.
+    // queue=true holds the message in the follow-up queue for the
+    // session's next idle edge instead of sending it now (#58). Set from
+    // the user's explicit Ctrl/Cmd+Enter gesture. Without it the server
+    // sends immediately, mid-turn included.
     queue?: boolean,
   ) => {
     const query = platform ? `?platform=${encodeURIComponent(platform)}` : '';

@@ -144,17 +144,23 @@ handlers don't bypass the `Host` seam). User-facing docs:
   adapter selection, side-effect hooks). REST handlers, MCP tools,
   and the remote gRPC server all delegate session mutations to it
   (one shared mutation path).
-- `internal/queuesvc/` — follow-up message queue (#58). Composer
-  sends made while a session is mid-turn are enqueued in `state.db`
-  (shared across every client, survives a client moving machines) and
-  drained one-per-turn on the `session.idle` edge. Enqueue is
-  unconditional; flush is the sole send gate (serialized per session)
-  so there's no check-then-act race. The idle-edge flush trusts the edge
-  and does **not** re-check the (lagging) inferred status, so a genuine
-  turn-end never leaves the head stranded. A periodic `Sweep`
-  (`runQueueSweep`, 15 s) is the backstop: it drains one message from each
-  idle session with a standing backlog, self-healing rows that never got
-  an idle edge. Wired in `internal/server/queue.go`.
+- `internal/queuesvc/` — follow-up message queue (#58). Queueing is an
+  **explicit user gesture**: plain **Enter** in the composer sends
+  immediately (mid-turn included — OpenCode interleaves the prompt into
+  the running turn), while **Ctrl/Cmd+Enter** holds it in `state.db`
+  (shared across every client, survives a client moving machines) to be
+  drained one-per-turn on the `session.idle` edge. The `queue` flag on
+  `POST /api/session/{id}/message` selects the path; when it is false the
+  handler calls `Server.sendNow` and never touches the queue. The flag is
+  never derived from inferred status, which lags the SSE stream. Held
+  messages are drained only by flush (serialized per session), so there's
+  no check-then-act race. The idle-edge flush trusts the edge and does
+  **not** re-check the (lagging) inferred status, so a genuine turn-end
+  never leaves the head stranded. A periodic `Sweep` (`runQueueSweep`,
+  15 s) is the backstop: it drains one message from each idle session with
+  a standing backlog, self-healing rows that never got an idle edge.
+  Internal deferrals (MCP child results, scheduled prompts) enqueue the
+  same way. Wired in `internal/server/queue.go`.
 - `internal/db/` — read-only SQLite queries against OpenCode's
   `session`, `message`, `part` tables; uses `json_extract` heavily.
 - `internal/state/` — writable SQLite database

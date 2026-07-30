@@ -64,23 +64,31 @@ func (s *Server) queueSvc() *queuesvc.Service {
 }
 
 // queueSender implements queuesvc.Sender by forwarding to sessionsvc's
-// direct-send path. Only the queue drains through here; the composer
-// handler enqueues, so there is no recursion.
+// direct-send path. The composer's own "send now" path calls sendNow
+// directly rather than through the queue, so there is no recursion.
 type queueSender struct{ s *Server }
 
 func (q *queueSender) SendNow(ctx context.Context, platformID string, req platforms.SendMessageRequest) error {
-	err := q.s.sessions.SendMessage(ctx, platformID, req)
+	return q.s.sendNow(ctx, platformID, req)
+}
+
+// sendNow delivers a message to the platform immediately, retrying once
+// behind a relaunch when the session's opencode instance is stale/gone.
+// Shared by the queue drain and by the composer's explicit "send now"
+// path (an Enter send, which interleaves into a running turn).
+func (s *Server) sendNow(ctx context.Context, platformID string, req platforms.SendMessageRequest) error {
+	err := s.sessions.SendMessage(ctx, platformID, req)
 	if err == nil || !errors.Is(err, platforms.ErrPlatformUnreachable) {
 		return err
 	}
 	// The session's opencode instance is stale/gone. Relaunch the
 	// project's single instance and retry the send once. On failure the
-	// message stays at the queue head, so the next idle edge or sweep
-	// retries — relaunch included.
-	if !q.s.relaunchOpencodeForSession(ctx, platformID, req.SessionID) {
+	// queued message stays at the head, so the next idle edge or sweep
+	// retries — relaunch included; a direct send surfaces the error.
+	if !s.relaunchOpencodeForSession(ctx, platformID, req.SessionID) {
 		return err
 	}
-	return q.s.sessions.SendMessage(ctx, platformID, req)
+	return s.sessions.SendMessage(ctx, platformID, req)
 }
 
 // relaunchOpencodeForSession resolves the session's project root and runs
@@ -125,9 +133,9 @@ func (s *Server) adapterForSession(ctx context.Context, platformID, sessionID st
 
 // onSessionIdle handles the session.idle edge: it broadcasts idle (as
 // before) and drains the session's follow-up queue. The flush is the
-// authoritative send gate (#58) — enqueue never sends directly, so the
-// idle edge is what actually delivers queued follow-ups. Runs in its own
-// goroutine so a slow platform send can't stall the SSE watcher.
+// authoritative send gate for held messages (#58) — a Ctrl+Enter enqueue
+// never sends directly, so the idle edge is what delivers it. Runs in its
+// own goroutine so a slow platform send can't stall the SSE watcher.
 func (s *Server) onSessionIdle(sessionID string) {
 	s.broadcastSessionIdle(sessionID)
 	if s.stateDB == nil {
