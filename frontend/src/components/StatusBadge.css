@@ -29,6 +29,12 @@
 .status-dot-compact.status-error { background: var(--danger); }
 /* seen/idle = grey, cancels any animation */
 .status-dot-compact.status-seen { background: var(--text-dim); animation: none; }
+/* unsent draft = hollow orange ring; must stay after .status-seen to win */
+.status-dot-compact.has-draft {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--accent4);
+  animation: none;
+}
 
 /* Compact error icon (replaces dot with ! icon) */
 .status-icon-compact {

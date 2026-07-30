@@ -8,6 +8,8 @@ interface StatusBadgeProps {
   seen?: boolean;
   /** A pending permission/question prompt needs the user's attention. */
   pending?: boolean;
+  /** An unsent composer draft is parked on this session. */
+  draft?: boolean;
   /** Override the default tooltip text (e.g. to surface a rate-limit notice). */
   titleOverride?: string;
 }
@@ -22,7 +24,7 @@ function ExclamationIcon() {
   );
 }
 
-export function StatusBadge({ status, compact, seen, pending, titleOverride }: StatusBadgeProps) {
+export function StatusBadge({ status, compact, seen, pending, draft, titleOverride }: StatusBadgeProps) {
   if (compact) {
     // A pending permission/question outranks the normal status because it
     // requires user action — show a pulsing "!" icon in the attention color.
@@ -46,10 +48,12 @@ export function StatusBadge({ status, compact, seen, pending, titleOverride }: S
         </span>
       );
     }
+    // An unsent draft turns the dot into a hollow ring. ponytail: only the
+    // dot branch — pending/error already render their own attention icon.
     return (
       <span
-        className={`status-dot-compact status-${status}${seen ? ' status-seen' : ''}`}
-        title={titleOverride || labels[status] || status}
+        className={`status-dot-compact status-${status}${seen ? ' status-seen' : ''}${draft ? ' has-draft' : ''}`}
+        title={draft ? 'Unsent draft' : titleOverride || labels[status] || status}
       />
     );
   }

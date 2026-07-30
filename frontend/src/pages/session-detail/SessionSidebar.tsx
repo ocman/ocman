@@ -32,6 +32,7 @@ import { rollupGroupStatus } from '../../lib/sidebarHelpers';
 import { nestSessions } from '../../lib/nestSessions';
 import { remoteLog } from '../../lib/remoteLog';
 import { useClickOutside } from '../../lib/useClickOutside';
+import { useDraftSessionIds } from '../../lib/composerDraft';
 import { ArchiveIcon, ArchiveFilterIcon } from './SidebarIcons';
 import type { TmuxState } from '../../lib/useTmux';
 import type { GitInfo } from '../../lib/api';
@@ -118,6 +119,7 @@ export function SessionSidebar({
   const [showChildren, setShowChildren] = useState(true);
   const [searching, setSearching] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const draftSessionIds = useDraftSessionIds();
 
   useClickOutside(filterRef, filtersOpen, () => setFiltersOpen(false));
 
@@ -215,6 +217,7 @@ export function SessionSidebar({
           compact
           seen={(displayStatus === 'waiting' || displayStatus === 'error' || displayStatus === 'done') && sib.seen}
           pending={sib.pendingPermission || sib.pendingQuestion}
+          draft={draftSessionIds.has(sib.id)}
           titleOverride={sib.notice?.message}
         />
         <span className="session-sidebar-item-body">
