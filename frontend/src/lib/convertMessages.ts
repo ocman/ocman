@@ -60,6 +60,15 @@ function parseParentMessage(text: string): { parentSessionId: string; content: s
   return { parentSessionId, content: text.slice(separator + 3) };
 }
 
+function displayErrorMessage(message: string): string {
+  try {
+    const parsed = JSON.parse(message) as { error?: { message?: unknown } };
+    return typeof parsed.error?.message === 'string' ? parsed.error.message : message;
+  } catch {
+    return message;
+  }
+}
+
 /**
  * Parse a `Part`'s `data` field into a typed `PartData`. The result
  * is cached per Part instance, so identical part references skip
@@ -848,7 +857,7 @@ export function createConvertMessages(): ConvertMessagesFn {
       const errName = m.data.error.name || 'Error';
       const isAbort = errName === 'MessageAbortedError' || errName === 'AbortError';
       if (!isAbort) {
-        const errMessage = m.data.error.data?.message || 'An unknown error occurred';
+        const errMessage = displayErrorMessage(m.data.error.data?.message || 'An unknown error occurred');
         textPieces.push(`**${errName}:** ${errMessage}`);
       }
     }

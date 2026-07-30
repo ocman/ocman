@@ -806,6 +806,23 @@ describe('convertMessages', () => {
     expect(out2[0].content).toBe('');
   });
 
+  it('renders the message from a JSON error envelope', () => {
+    const envelope = JSON.stringify({
+      type: 'error',
+      sequence_number: 13,
+      error: {
+        type: 'invalid_request',
+        code: 'cyber_policy',
+        message: 'This content was flagged for possible cybersecurity risk.',
+      },
+    });
+    const m = makeMessage('m', { role: 'assistant', error: { name: 'APIError', data: { message: envelope } } });
+
+    const [out] = convertMessages([m], []);
+
+    expect(out.content).toBe('**APIError:** This content was flagged for possible cybersecurity risk.');
+  });
+
   it('sets msgStatus to running for in-flight assistant messages', () => {
     const m = makeMessage('m', { role: 'assistant' });
     const out = convertMessages([m], []);
