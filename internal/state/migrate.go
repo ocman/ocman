@@ -16,8 +16,8 @@ import (
 //	    sign auth cookies. Persisting the key across restarts keeps
 //	    logged-in clients logged in up to the cookie TTL.
 //	4 - add `model_favorite` table keyed by (platform, provider_id,
-//	    model_id). Scoped per-platform so OpenCode's "claude-opus-4"
-//	    and Claude Code's same model are tracked independently, mirroring
+//	    model_id). Scoped per-platform so the same model id under two
+//	    platforms is tracked independently, mirroring
 //	    how archived_session / seen_session are scoped.
 //	5 - add `pinned_session` table keyed by (platform, session_id).
 //	    Lets the user pin sessions to the top of the sidebar. The
@@ -417,7 +417,7 @@ func migrateToV3(tx *sql.Tx) error {
 // scoping of archived_session / seen_session.
 //
 // provider_id may be empty for platforms that don't have a provider
-// concept (Claude Code treats the model id as the whole thing), but
+// concept (some treat the model id as the whole thing), but
 // is still part of the PK so "anthropic/claude-opus-4" doesn't collide
 // with a bare "claude-opus-4".
 func migrateToV4(tx *sql.Tx) error {

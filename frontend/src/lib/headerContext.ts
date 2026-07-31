@@ -7,8 +7,8 @@ export interface HeaderInfo {
   /**
    * Stable identifier of the coding-agent platform that owns the
    * currently-viewed session. The header renders a PlatformBadge
-   * when this is set so users can tell OpenCode / Claude Code
-   * sessions apart at a glance.
+   * when this is set so users can tell sessions from different
+   * platforms apart at a glance.
    */
   sessionPlatform?: string;
   /**

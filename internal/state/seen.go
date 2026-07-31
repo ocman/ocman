@@ -6,8 +6,8 @@ import (
 )
 
 // MarkSessionSeen records the latest session update the user has
-// viewed for the given platform/session. Per-platform: Claude Code's
-// session "abc123" and OpenCode's session "abc123" are independent.
+// viewed for the given platform/session. Per-platform: two platforms'
+// session "abc123" are tracked independently.
 func (d *DB) MarkSessionSeen(platform, sessionID string, sessionTimeUpdated int64) error {
 	_, err := d.db.Exec(`
 		INSERT INTO seen_session (platform, session_id, session_time_updated, seen_at)

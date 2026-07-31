@@ -3,7 +3,7 @@
 // Terminology. Ocman distinguishes two different "agent" concepts:
 //
 //   - Platform: the coding-agent tool that produces a session — OpenCode,
-//     Claude Code, Codex, Gemini, ... This package is about platforms.
+//     Codex, Gemini, ... This package is about platforms.
 //     Every Session in ocman is owned by exactly one platform.
 //   - Agent: the narrower, composer-level concept surfaced by some
 //     platforms (notably OpenCode's /agent catalog: "build", "plan",
@@ -62,7 +62,7 @@ type SessionWarning struct {
 //
 // "AgentCatalog" here refers to a platform's composer-agent catalog —
 // OpenCode's /agent endpoint with its "build"/"plan"/subagent roles.
-// Platforms with no such concept (Claude Code) report false.
+// Platforms with no such concept report false.
 type Capabilities struct {
 	Composer          bool `json:"composer"`
 	RespondPermission bool `json:"respondPermission"`
@@ -100,8 +100,8 @@ type Capabilities struct {
 	// LiveConnectionHint is a short, user-facing message explaining how
 	// to establish the live connection to a running agent instance when
 	// it's missing. Shown by the frontend next to disabled composers.
-	// Empty when the platform has no such setup step (e.g. Claude Code,
-	// whose live connection is based on CLI availability rather than a
+	// Empty when the platform has no such setup step (e.g. one whose
+	// live connection is based on CLI availability rather than a
 	// discoverable port).
 	LiveConnectionHint string `json:"liveConnectionHint,omitempty"`
 
@@ -119,7 +119,7 @@ type Capabilities struct {
 }
 
 // LiveState captures in-memory live status for a session, updated by
-// out-of-band events (e.g. Claude Code hooks). Adapters that don't track
+// out-of-band events (e.g. platform hooks). Adapters that don't track
 // live state return nil from LiveStatus.
 type LiveState struct {
 	Status            string    `json:"status"` // "busy", "waiting", "done", "error"
@@ -127,8 +127,8 @@ type LiveState struct {
 	PendingQuestion   bool      `json:"pendingQuestion"`
 	LastEventAt       time.Time `json:"lastEventAt"`
 	// CurrentTools lists tool calls that are currently running on
-	// behalf of this session's subagents (Claude Code Task tool_use
-	// blocks). Populated from PreToolUse / PostToolUse / SubagentStop
+	// behalf of this session's subagents (Task tool_use blocks).
+	// Populated from PreToolUse / PostToolUse / SubagentStop
 	// hooks; empty when no live tool activity has been observed.
 	// Consumed by the frontend to render a live list of tool calls
 	// under a running subagent Task.
@@ -142,8 +142,8 @@ type LiveState struct {
 // empty.
 type LiveTool struct {
 	// SubagentID correlates this tool call with the Task tool_use
-	// that spawned the sub-agent. Derived by Claude Code from the
-	// hook's transcript_path (agent-<id>.jsonl).
+	// that spawned the sub-agent. Derived by the platform adapter from
+	// the hook's transcript path.
 	SubagentID string `json:"subagentId,omitempty"`
 
 	// ToolName is the raw tool identifier (e.g. "Read", "Grep").

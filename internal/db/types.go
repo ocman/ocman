@@ -41,14 +41,14 @@ func InferSessionStatus(lastRole, lastFinish, lastError string, synthesizedTermi
 	return "done"
 }
 
-// Session represents a coding-platform session (OpenCode, Claude Code, ...).
+// Session represents a coding-platform session (OpenCode, ...).
 //
 // Fields that have no equivalent in a given platform are zero-valued or nil;
 // see FR-14 in spec/multi-agent-support/requirements.md. The Platform field
 // identifies the owning adapter and is populated by every adapter.
 //
 // Terminology: Platform here is the coding-agent tool producing the session
-// (OpenCode / Claude Code / ...). Don't confuse it with the composer-level
+// (OpenCode, ...). Don't confuse it with the composer-level
 // "agent" role exposed by some platforms (MessageData.Agent below, OpenCode's
 // /agent catalog) — that's a narrower concept within a single session.
 type Session struct {
@@ -84,8 +84,7 @@ type Session struct {
 	Status            string  `json:"status"` // "waiting", "busy", "done", or "error"
 	// LiveConnection is true when the adapter has a live channel to this
 	// session's running agent process. For OpenCode this means a --port
-	// was discovered for the session's cwd; for Claude Code it means the
-	// jsonl is currently held open or a hook event was observed recently.
+	// was discovered for the session's cwd.
 	LiveConnection    bool `json:"liveConnection"`
 	PendingPermission bool `json:"pendingPermission"` // agent has a pending permission request for this session
 	PendingQuestion   bool `json:"pendingQuestion"`   // agent has a pending question for this session

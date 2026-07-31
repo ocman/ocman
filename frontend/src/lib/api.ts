@@ -392,15 +392,14 @@ export const api = {
     fetchJSON<SharedConversation>(`/api/share/${encodeURIComponent(token)}`, signal),
   // Aggregated per-file change summary for a session. Returns
   // supported=false (with HTTP 200) when the owning platform doesn't
-  // implement aggregation (Claude Code today).
+  // implement aggregation.
   sessionChanges: (id: string, signal?: AbortSignal) =>
     fetchJSON<SessionChanges>(`/api/session/${encodeURIComponent(id)}/changes`, signal),
   // Per-session info snapshot consumed by the right-hand "Session info"
   // panel: context-window usage, configured MCP servers and their
   // status, configured LSP servers and their status. Returns
   // supported=false (HTTP 200) when the owning platform can't produce
-  // a meaningful snapshot (Claude Code today, or OpenCode without a
-  // live port).
+  // a meaningful snapshot (e.g. OpenCode without a live port).
   sessionInfo: (id: string, signal?: AbortSignal) =>
     fetchJSON<SessionInfo>(`/api/session/${encodeURIComponent(id)}/info`, signal),
   /**

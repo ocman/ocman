@@ -672,7 +672,7 @@ export function createConvertMessages(): ConvertMessagesFn {
             let taskOutput = '';
             const status = toolStatus(st.status, partIdx);
             if (typeof st.output === 'string' && st.output.trim()) {
-              // Claude Code wraps the final output in <task_result>
+              // Some platforms wrap the final output in <task_result>
               // tags; strip the OpenCode task_id line if present.
               taskOutput = truncate(
                 st.output.replace(/task_id:\s*ses_[^\s)]+[^\n]*\n?/, '').trim(),
@@ -686,7 +686,7 @@ export function createConvertMessages(): ConvertMessagesFn {
             if (taskId && taskLiveOutput?.[taskId]) {
               subSession = taskLiveOutput[taskId];
             }
-            // Live tool list comes from the Claude Code hook cache,
+            // Live tool list comes from the platform hook cache,
             // injected by the backend into state.metadata.liveTools
             // for the most recent running Task tool_use.
             type LiveTool = { toolName: string; summary?: string; subagentId?: string; startedAt?: string };

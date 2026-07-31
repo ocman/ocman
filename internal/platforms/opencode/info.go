@@ -409,9 +409,9 @@ func messageCountsFromMessages(messages []db.Message) platforms.MessageCounts {
 }
 
 // todoToolNames is the set of tool names that represent a todowrite
-// invocation across platforms. We support OpenCode's snake_case and
-// Claude Code's PascalCase variants (plus their MCP-prefixed forms)
-// so the panel works against any session.
+// invocation across platforms. We support both the snake_case and
+// PascalCase variants (plus their MCP-prefixed forms) so the panel
+// works against any session.
 var todoToolNames = map[string]struct{}{
 	"todowrite":     {},
 	"TodoWrite":     {},

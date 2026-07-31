@@ -264,8 +264,8 @@ describe('useMultiPlatform / useWorktreeSessions', () => {
       platforms: [
         ...makeResponse().platforms,
         {
-          id: 'claude-code',
-          displayName: 'Claude Code',
+          id: 'other',
+          displayName: 'Other',
           available: true,
           capabilities: { ...makeResponse().platforms[0].capabilities },
         },

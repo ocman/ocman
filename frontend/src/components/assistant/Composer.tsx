@@ -101,7 +101,7 @@ function ComposerImpl({
    * Capability flag from the active platform (caps.shellExec).
    * When false, `!`-prefixed input falls through to onSend as a
    * normal LLM prompt — preserving today's behaviour on platforms
-   * without a shell-tool primitive (Claude Code).
+   * without a shell-tool primitive.
    */
   shellExec?: boolean;
   /**
@@ -729,7 +729,7 @@ function ComposerImpl({
       const val = el.value;
       // Detect bash mode when input starts with !, but only when the
       // active platform actually supports shell execution. On
-      // platforms without it (Claude Code) `!` is just a literal
+      // platforms without it `!` is just a literal
       // character in the prompt and shouldn't get a special pill.
       el.dispatchEvent(new CustomEvent('oc-bash-mode', { detail: val.startsWith('!') && shellExecRef.current }));
       

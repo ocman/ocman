@@ -15,8 +15,8 @@ var ErrUnsupported = errors.New("platforms: capability not supported by this ada
 // the adapter. Handlers translate this into HTTP 404.
 var ErrNotFound = errors.New("platforms: not found")
 
-// ErrBusy is returned by interactive operations (currently
-// SendMessage on Claude Code) when the target session is mid-turn and
+// ErrBusy is returned by interactive operations (SendMessage on
+// platforms that can't interleave) when the target session is mid-turn and
 // accepting another prompt would corrupt the conversation tree. See
 // AD-13 and spec/multi-agent-support/phase7/findings.md. Handlers
 // translate this into HTTP 409 Conflict.

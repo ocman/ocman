@@ -134,7 +134,7 @@ func (s *Server) handleSessionQuestions(w http.ResponseWriter, r *http.Request) 
 
 // handleSessionChanges aggregates every file-touching tool call in a
 // session into a per-file changes summary. Adapters that don't support
-// the operation (Claude Code) are surfaced as a Supported=false payload
+// the operation are surfaced as a Supported=false payload
 // rather than an HTTP error so the frontend has a single shape to render.
 func (s *Server) handleSessionChanges(w http.ResponseWriter, r *http.Request) {
 	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {

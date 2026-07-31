@@ -950,7 +950,7 @@
 }
 
 /* Live list of in-flight tool calls under a running subagent Task.
-   Hook-driven (Claude Code): PreToolUse appends, PostToolUse removes. */
+   Hook-driven: PreToolUse appends, PostToolUse removes. */
 .oc-task-live-tools {
   list-style: none;
   margin: 4px 0;

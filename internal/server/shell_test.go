@@ -80,7 +80,7 @@ func TestHandleSessionShell_RejectsEmptyCommand(t *testing.T) {
 }
 
 // TestHandleSessionShell_UnsupportedReturns501 verifies that adapters
-// without ShellExec support (Claude Code) surface ErrUnsupported as
+// without ShellExec support surface ErrUnsupported as
 // 501 Not Implemented — same contract as ExecuteCommand on platforms
 // without a slash-command catalog.
 func TestHandleSessionShell_UnsupportedReturns501(t *testing.T) {

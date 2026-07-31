@@ -619,7 +619,7 @@
     {
       "type": "timeseries",
       "title": "Cache entries",
-      "description": "Current entry count per in-memory cache. A monotonic climb on an unbounded cache is the signature of a key-cardinality leak (see the opencode.sessions_list investigation). Bounded caches (claudecode.jsonl, max 20) should stay flat near their cap once warm.",
+      "description": "Current entry count per in-memory cache. A monotonic climb on an unbounded cache is the signature of a key-cardinality leak (see the opencode.sessions_list investigation). Bounded caches should stay flat near their cap once warm.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 7, "w": 8, "x": 0, "y": 92 },
       "targets": [

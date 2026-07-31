@@ -5,7 +5,7 @@
 // and route notification clicks back to the right session.
 // We deliberately do NOT cache anything here — ocman is an
 // always-online dashboard and stale caches would mask live state from
-// /api/* endpoints (OpenCode port discovery, Claude Code hooks, etc).
+// /api/* endpoints (OpenCode port discovery, live session state, etc).
 //
 // `skipWaiting` + `clients.claim` keep updates instant: when a new
 // build ships, every open tab and installed-PWA window starts using

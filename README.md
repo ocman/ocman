@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A web dashboard for browsing and driving your coding-agent sessions.
-Supports [OpenCode](https://github.com/anomalyco/opencode) and [Claude Code](https://claude.ai/code).
+Supports [OpenCode](https://github.com/anomalyco/opencode).
 
 ![ocman dashboard](docs/sessions.png)
 

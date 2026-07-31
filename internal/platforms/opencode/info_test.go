@@ -507,7 +507,7 @@ func TestLatestTodosFromParts(t *testing.T) {
 		}
 	})
 
-	t.Run("matches Claude Code TodoWrite tool name", func(t *testing.T) {
+	t.Run("matches the PascalCase TodoWrite tool name", func(t *testing.T) {
 		part := makeTodoPart(t, "TodoWrite", []any{
 			map[string]any{"content": "cc", "status": "pending", "priority": "medium"},
 		})

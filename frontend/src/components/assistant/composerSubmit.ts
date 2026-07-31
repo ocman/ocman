@@ -8,7 +8,7 @@
  * Centralising the decision here keeps the Composer's keydown
  * handler small and lets us TDD the routing — including the
  * shellExec capability gate that disables `!`-prefix shell mode on
- * platforms without a shell-tool primitive (e.g. Claude Code).
+ * platforms without a shell-tool primitive.
  */
 
 export type ComposerSubmitRoute =
@@ -30,7 +30,7 @@ export function routeComposerSubmit(
   if (!trimmed) return { kind: 'noop' };
 
   // `!`-prefix → raw shell, but only when the platform reports
-  // caps.shellExec. On platforms without it (Claude Code) we keep
+  // caps.shellExec. On platforms without it we keep
   // today's behaviour and let the LLM see the literal `!ls` prompt.
   if (trimmed.startsWith('!') && caps.shellExec) {
     const command = trimmed.slice(1).trim();

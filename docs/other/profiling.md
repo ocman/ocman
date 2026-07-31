@@ -15,9 +15,6 @@ and it wasn't clear whether the cause was slow API calls or the UI.
 
 ocman's default deployment runs only the OpenCode adapter
 (`-platforms opencode`). Findings below assume that configuration.
-Claude Code-specific concerns (jsonl scanner, 20-entry parse cache)
-are documented separately in `spec/multi-agent-support/` and are
-*not* in scope for this profiling effort.
 
 ### Polling map (steady state, idle session)
 

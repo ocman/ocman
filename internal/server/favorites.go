@@ -111,7 +111,7 @@ func (s *Server) readFavoriteBody(w http.ResponseWriter, r *http.Request) (favor
 		return favoriteEntry{}, false
 	}
 	// Provider may legitimately be empty for platforms that don't
-	// have a provider concept (Claude Code). No validation beyond
+	// have a provider concept. No validation beyond
 	// trimming.
 	return req, true
 }

@@ -110,7 +110,7 @@ func observeCacheSizes(_ context.Context, observer metric.Int64Observer) error {
 type CacheMetrics struct {
 	// Name is the value emitted as the `cache` attribute. Pick a
 	// dotted path that's unique within ocman, e.g. "opencode.sessions"
-	// or "claudecode.live".
+	// or "forge.prs".
 	Name string
 }
 

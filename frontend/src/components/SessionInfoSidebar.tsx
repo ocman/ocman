@@ -26,8 +26,7 @@ import type { TodoItem } from '../lib/todos';
 //     visible regardless of which right-panel pane is active.
 //   - Todo: most-recent todowrite tool call from the loaded `parts`,
 //     rendered as a checklist. Hidden when no todo state exists yet.
-//     Cross-platform (matches OpenCode `todowrite` and Claude Code
-//     `TodoWrite`).
+//     Cross-platform (matches both `todowrite` and `TodoWrite`).
 //   - Tokens: input / output / cache read / cache write totals,
 //     summed from the loaded `messages`. Cross-platform.
 //   - Context: tokens used + % of model context window.
@@ -143,8 +142,7 @@ export function SessionInfoSidebar({
   //  - Cost: what the platform recorded as billed (sum of
   //    `data.cost` across assistant messages). Falls back to
   //    `session.totalCost` (same source, SQL-summed) when the
-  //    SessionInfo endpoint hasn't loaded yet or doesn't exist
-  //    (Claude Code today).
+  //    SessionInfo endpoint hasn't loaded yet or doesn't exist.
   //  - Est: token-derived estimate from the pricing table, computed
   //    server-side. Only meaningful for the OpenCode SessionInfo
   //    endpoint. We hide the Est row when it's 0 to avoid a

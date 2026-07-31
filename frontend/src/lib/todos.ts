@@ -14,7 +14,7 @@ export interface TodoItem {
   priority: string;
 }
 
-// parseTodos pulls a TodoItem[] out of an OpenCode / Claude Code
+// parseTodos pulls a TodoItem[] out of a platform's
 // `todowrite` tool call. The tool's input arrives in two shapes
 // across versions and platforms:
 //

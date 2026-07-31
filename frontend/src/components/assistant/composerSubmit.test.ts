@@ -61,7 +61,7 @@ describe('routeComposerSubmit', () => {
     expect(routeComposerSubmit('!   ', { shellExec: true })).toEqual<ComposerSubmitRoute>({ kind: 'noop' });
   });
 
-  it('falls back to send when shellExec is false (Claude Code, etc.)', () => {
+  it('falls back to send when shellExec is false', () => {
     const got = routeComposerSubmit('!ls -la', { shellExec: false });
     expect(got).toEqual<ComposerSubmitRoute>({ kind: 'send', text: '!ls -la' });
   });

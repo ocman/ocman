@@ -4,9 +4,9 @@
  * lookups (read / grep / glob / webfetch) whose results are usually
  * verbose log noise the user does not want to scan unless it failed.
  *
- * Both the unprefixed names (used by Claude Code) and the
- * `mcp_`-prefixed names (used by OpenCode) are listed because the
- * frontend renders both platforms uniformly.
+ * Both the unprefixed names and the `mcp_`-prefixed names (used by
+ * OpenCode) are listed because the frontend renders every platform
+ * uniformly.
  */
 export const MUTED_TOOL_NAMES: ReadonlySet<string> = new Set([
   '__read__',

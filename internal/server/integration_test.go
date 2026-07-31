@@ -1172,9 +1172,8 @@ func TestServerStart_ShutdownOnCancel(t *testing.T) {
 }
 
 // TestAutoArchive_UsesRegistry verifies the auto-archive pass iterates
-// registered agents (as opposed to calling s.db directly) so that in
-// future phases Claude Code sessions will be picked up for the same
-// archive logic.
+// registered agents (as opposed to calling s.db directly) so that every
+// platform's sessions are picked up for the same archive logic.
 func TestAutoArchive_UsesRegistry(t *testing.T) {
 	srv, rawDB := testServerWithRawDB(t)
 	defer rawDB.Close()
@@ -1512,7 +1511,7 @@ func TestHandleSessionChanges_OpenCodeAggregates(t *testing.T) {
 }
 
 // TestHandleSessionChanges_UnsupportedReturns200 verifies that
-// adapters that report ErrUnsupported (Claude Code) yield an HTTP 200
+// adapters that report ErrUnsupported yield an HTTP 200
 // response with Supported=false rather than an HTTP error, so the
 // frontend has a single shape to handle.
 func TestHandleSessionChanges_UnsupportedReturns200(t *testing.T) {
@@ -1615,8 +1614,8 @@ func TestHandleSessionInfo_PlatformPayload(t *testing.T) {
 }
 
 // TestHandleSessionInfo_UnsupportedReturns200 verifies that adapters
-// reporting ErrUnsupported (Claude Code, or OpenCode without a live
-// port) yield an HTTP 200 with Supported=false and non-nil empty
+// reporting ErrUnsupported (e.g. OpenCode without a live port) yield
+// an HTTP 200 with Supported=false and non-nil empty
 // slices, mirroring the SessionChanges contract so the frontend has
 // one shape to render.
 func TestHandleSessionInfo_UnsupportedReturns200(t *testing.T) {

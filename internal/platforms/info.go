@@ -17,7 +17,7 @@ package platforms
 //     live channel is unavailable, `Supported=false` and these fields
 //     are zero/empty.
 //
-// Adapters that don't expose any of this (Claude Code today) return
+// Adapters that don't expose any of this return
 // ErrUnsupported from Platform.SessionInfo; the HTTP layer translates
 // that into a Supported=false payload with empty slices.
 type SessionInfo struct {
@@ -45,7 +45,7 @@ type SessionInfo struct {
 // emit the breakdown — the frontend falls back to the legacy single
 // `messageCount` value in that case.
 //
-// "Assistant" mirrors the OpenCode / Claude Code role label and is
+// "Assistant" mirrors the OpenCode role label and is
 // rendered as "agent" in the UI; the wire format keeps the role-
 // vocabulary name for parity with the underlying message data.
 type MessageCounts struct {
@@ -65,7 +65,7 @@ type TokenTotals struct {
 	CacheWrite int64 `json:"cacheWrite"`
 }
 
-// TodoItem mirrors the OpenCode / Claude Code todowrite tool's per-
+// TodoItem mirrors the todowrite tool's per-
 // row shape: a content string, a lifecycle status ("pending",
 // "in_progress", "completed"), and an optional priority hint.
 //

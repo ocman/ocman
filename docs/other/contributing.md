@@ -49,7 +49,6 @@ frontend/                                  React + TypeScript + Vite SPA
 e2e/                                       Playwright end-to-end suite
 internal/platforms/                        Platform interface, Registry, common types/errors
 internal/platforms/opencode/               OpenCode adapter (DB + HTTP proxy)
-internal/platforms/claudecode/             Claude Code adapter (JSONL scanner, hook handler)
 internal/db/                               SQLite queries against OpenCode's DB
 internal/state/                            ocman's own writable state DB (archived/seen,
                                             auth secret, favorites, cached projects)
