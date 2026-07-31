@@ -1,0 +1,12 @@
+/* ponytail: mermaid sets an inline max-width from its own layout, which
+   renders diagrams tiny. Force them to the content width. */
+pre.mermaid {
+  display: block;
+  width: 100%;
+}
+
+pre.mermaid svg {
+  max-width: 100% !important;
+  width: 100%;
+  height: auto;
+}

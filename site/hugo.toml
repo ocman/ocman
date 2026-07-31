@@ -77,7 +77,12 @@ enableGitInfo = false
     weight = 3
 
 [params]
+  # ponytail: default "normal" caps the page at 80rem, which leaves ~670px for
+  # content once the two sidebars are subtracted — mermaid diagrams end up tiny.
+  [params.page]
+    width = "full"
   [params.navbar]
+    width = "full"
     displayTitle = true
     displayLogo = true
     [params.navbar.logo]

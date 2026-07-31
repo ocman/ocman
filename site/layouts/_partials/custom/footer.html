@@ -4,3 +4,24 @@
 <div class="hx:py-12 hx:text-xs hx:text-center hx:sm:text-left">
   © {{ now.Year }} Dries De Peuter · <a href="https://forgejo.nousefreak.be/dries/ocman/src/branch/main/LICENSE">MIT licensed</a>
 </div>
+
+{{- /* ponytail: mermaid derives the viewBox from its own layout pass, which
+       overshoots the real drawing (dead space on the right) whenever the
+       browser's text metrics differ. Retighten it from the rendered bbox. */ -}}
+<script>
+  (() => {
+    const tighten = (svg) => {
+      const b = svg.getBBox();
+      if (!b.width || !b.height) return;
+      const p = 8;
+      svg.setAttribute("viewBox", `${b.x - p} ${b.y - p} ${b.width + p * 2} ${b.height + p * 2}`);
+    };
+    const sweep = () => document.querySelectorAll("pre.mermaid[data-processed] > svg").forEach(tighten);
+    let t;
+    new MutationObserver(() => {
+      clearTimeout(t);
+      t = setTimeout(sweep, 100);
+    }).observe(document.body, { subtree: true, childList: true, attributeFilter: ["data-processed"] });
+    addEventListener("load", sweep);
+  })();
+</script>
