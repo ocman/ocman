@@ -148,8 +148,19 @@ jobs:
           make test-race
       - name: Fetch coverage baseline
         run: ./scripts/coverage-fetch-baseline.sh baseline
+      # Go coverage of background goroutines (SSE loops, watchers, queue
+      # sweepers) depends on how much of them ran before the test binary
+      # exited, so a loaded runner measures a point or two low — #485 hit
+      # -1.7% with every per-package number within 0.1% of a passing run.
+      # Re-measure once before failing: a real regression reproduces.
       - name: Check coverage ratchet
-        run: make coverage-check BASELINE_DIR=baseline SUITE=go
+        run: |
+          if make coverage-check BASELINE_DIR=baseline SUITE=go; then
+            exit 0
+          fi
+          echo "::warning::Go coverage ratchet failed; re-measuring once"
+          make coverage SUITE=go
+          make coverage-check BASELINE_DIR=baseline SUITE=go
       - name: Save coverage result
         if: always()
         uses: actions/upload-artifact@v3
