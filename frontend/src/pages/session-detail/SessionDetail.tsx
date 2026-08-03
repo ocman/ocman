@@ -652,14 +652,13 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // not reliably emit a `question.replied` SSE event, so the reducer
   // never clears the prompt and it stays on screen indefinitely.
   //
-  // We can't trust the sidebar's pendingQuestion flag here: the
-  // sidebar poll merges with `live.pendingQuestion || server` (see
-  // useSidebarSessions), so once SSE sets it true it never flips back
-  // to false. Instead, poll OpenCode's authoritative live `/question`
-  // list directly: when the currently-pending requestId is no longer
-  // in it, the question has been answered/cancelled somewhere and the
-  // prompt must come down. Matching on the requestId (rather than an
-  // empty list) avoids dismissing a freshly-asked follow-up question.
+  // The sidebar's pendingQuestion flag is too coarse to drive this: it
+  // says "some prompt exists for this row" (subagent prompts bubble up)
+  // and lags a 3 s poll. Instead, poll OpenCode's authoritative live
+  // `/question` list directly: when the currently-pending requestId is
+  // no longer in it, the question has been answered/cancelled somewhere
+  // and the prompt must come down. Matching on the requestId (rather
+  // than an empty list) avoids dismissing a freshly-asked follow-up.
   const pendingQuestionRequestId = pendingQuestion?.requestId ?? null;
   useEffect(() => {
     if (!id || !pendingQuestionRequestId || !portAvailable) return;

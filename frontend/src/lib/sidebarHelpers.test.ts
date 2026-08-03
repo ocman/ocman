@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Session } from './api';
-import { computeSidebarHash, filterInactiveChildren, pickNextSessionAfterArchive, resolveOpenSession, rollupGroupStatus } from './sidebarHelpers';
+import { computeSidebarHash, filterInactiveChildren, pickNextSessionAfterArchive, mergeSidebarSessions, resolveOpenSession, rollupGroupStatus } from './sidebarHelpers';
 import { vi } from 'vitest';
 
 function makeSession(overrides: Partial<Session> = {}): Session {
@@ -355,5 +355,30 @@ describe('resolveOpenSession', () => {
     expect(res.session).toBeUndefined();
     expect(res.cache).toBeNull();
     expect(onError).toHaveBeenCalledWith(err);
+  });
+});
+
+describe('mergeSidebarSessions', () => {
+  it('clears a pending permission flag once the server reports it answered', () => {
+    const current = [makeSession({ id: 'a', pendingPermission: true, pendingQuestion: true })];
+    const next = [makeSession({ id: 'a', pendingPermission: false, pendingQuestion: false })];
+    const merged = mergeSidebarSessions(next, current, 'a');
+    expect(merged[0].pendingPermission).toBe(false);
+    expect(merged[0].pendingQuestion).toBe(false);
+  });
+
+  it('keeps a store busy status over a stale non-busy poll, and seen sticky', () => {
+    const current = [makeSession({ id: 'a', status: 'busy', seen: true })];
+    const next = [makeSession({ id: 'a', status: 'done', seen: false })];
+    const merged = mergeSidebarSessions(next, current, undefined);
+    expect(merged[0].status).toBe('busy');
+    expect(merged[0].seen).toBe(true);
+  });
+
+  it('forces the active session unarchived even with no store row', () => {
+    const next = [makeSession({ id: 'a', archived: true }), makeSession({ id: 'b', archived: true })];
+    const merged = mergeSidebarSessions(next, [], 'a');
+    expect(merged[0].archived).toBe(false);
+    expect(merged[1].archived).toBe(true);
   });
 });

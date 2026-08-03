@@ -79,6 +79,43 @@ export async function resolveOpenSession(opts: {
 }
 
 /**
+ * Merge a fresh /api/sessions poll result over the current store rows.
+ *
+ * The poll is authoritative for everything except the two fields that
+ * SSE-driven optimistic writes may have set more recently:
+ *
+ *   - `status`: a store 'busy' outranks a stale non-busy server status;
+ *   - `seen`: monotonic, never un-seen by a stale response.
+ *
+ * The pending permission/question flags are deliberately NOT sticky.
+ * They used to be merged as `live.pending… || server`, which also
+ * preserved values that came from an earlier *poll*, so a badge lit by
+ * the backend could never go out again once the prompt was answered.
+ * The optimistic write still lights the badge instantly; the next poll
+ * (≤3 s) is what turns it off.
+ *
+ * `activeId` is forced unarchived: opening a session unarchives it
+ * server-side, so a poll that raced that write must not show it
+ * archived.
+ */
+export function mergeSidebarSessions(
+  next: readonly Session[],
+  current: readonly Session[],
+  activeId?: string,
+): Session[] {
+  return next.map((s) => {
+    const unarchived = s.id === activeId ? { ...s, archived: false } : s;
+    const live = current.find((ls) => ls.id === s.id);
+    if (!live) return unarchived;
+    return {
+      ...unarchived,
+      status: live.status === 'busy' && s.status !== 'busy' ? 'busy' : s.status,
+      seen: live.seen || s.seen,
+    };
+  });
+}
+
+/**
  * Pick the session to navigate to after archiving the active session
  * from the sidebar.
  *

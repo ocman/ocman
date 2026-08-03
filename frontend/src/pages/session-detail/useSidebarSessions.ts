@@ -4,7 +4,7 @@ import type { Session } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
 import { useUiStore } from '../../lib/uiStore';
 import { filterVisibleSessions } from '../../lib/sessionVisibility';
-import { computeSidebarHash, filterInactiveChildren, pickNextSessionAfterArchive, resolveOpenSession } from '../../lib/sidebarHelpers';
+import { computeSidebarHash, filterInactiveChildren, mergeSidebarSessions, pickNextSessionAfterArchive, resolveOpenSession } from '../../lib/sidebarHelpers';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { remoteLog } from '../../lib/remoteLog';
 
@@ -64,8 +64,9 @@ export interface UseSidebarSessionsResult {
  *   - the polled list of sessions in the last 72 h, refreshed every
  *     3 s while the tab is visible. The list lives in Zustand
  *     (useApiStore.recentSessions) so SSE-derived optimistic writes
- *     from the session-detail page survive navigation and are never
- *     clobbered by the poll (last write wins);
+ *     from the session-detail page survive navigation; the poll then
+ *     merges over them (see mergeSidebarSessions for which fields are
+ *     sticky and which the server owns);
  *   - the archived-session toggle and its ref-mirror;
  *   - the optimistic archive flow (delayed 220 ms so the fade-out
  *     animation can play) plus the in-flight ids set used by the
@@ -154,32 +155,11 @@ export function useSidebarSessions({
         ? [current, ...visible].slice(0, RECENT_SESSIONS_LIMIT)
         : visible;
 
-      // The poll is the authoritative source for the full list, but
-      // optimistic writes (status, seen, pendingPermission/Question) made
-      // via patchRecentSession may have arrived since the last poll.
-      // Preserve those fields so a stale server response doesn't clobber them.
-      const currentStore = useApiStore.getState().recentSessions;
-      const merged = nextRecentSessions.map((s) => {
-        // The active session is always unarchived on open (handleSession
-        // unarchives it server-side). Force the flag off so a poll that
-        // raced the server-side unarchive can't show it as archived —
-        // this holds even on the very first poll (empty store, no `live`).
-        const unarchived = s.id === id ? { ...s, archived: false } : s;
-        const live = currentStore.find((ls) => ls.id === s.id);
-        if (!live) return unarchived;
-        // Prefer the more-recent status: if the store has 'busy' and the
-        // server still shows a stale status, keep 'busy'. In all other
-        // cases the poll wins (it is the source of truth for terminal states).
-        const status = live.status === 'busy' && s.status !== 'busy' ? 'busy' : s.status;
-        return {
-          ...unarchived,
-          status,
-          // Preserve seen/pending flags that the SSE may have set more recently.
-          seen: live.seen || s.seen,
-          pendingPermission: live.pendingPermission || s.pendingPermission,
-          pendingQuestion: live.pendingQuestion || s.pendingQuestion,
-        };
-      });
+      const merged = mergeSidebarSessions(
+        nextRecentSessions,
+        useApiStore.getState().recentSessions,
+        id,
+      );
 
       const hash = computeSidebarHash(merged);
       storeSetRecentSessions(merged, hash);
