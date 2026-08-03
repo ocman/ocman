@@ -62,6 +62,7 @@ directly (no Vite dev proxy).
 | `cancel_session` | Cancel a running child session (kills its tmux window). |
 | `send_message_to_child` | Send a message from a parent session to one of its child sessions. Returns immediately by default and delivers the completed turn to the parent asynchronously; set `wait=true` to return the response directly. |
 | `send_message_to_parent` | Send a message from a child session back to its parent session. |
+| `embed_file` | Make a file on disk viewable to the user in the ocman UI. Takes an absolute `path` (plus an optional `label`) and returns a signed URL and a markdown snippet the agent pastes into its reply. Images and SVGs render inline in the conversation; PDFs and other types open or download in the browser. See [Embedding generated assets](#embedding-generated-assets). |
 | `get_workflow_schema` | Get the workflow definition schema and a minimal valid JSON example. |
 | `validate_workflow` / `publish_workflow` / `list_workflows` | Validate, publish immutable versions, and list workflows. |
 | `start_workflow` / `list_workflow_runs` / `inspect_workflow_run` | Start a pinned or active version and inspect compact run state. |
@@ -89,6 +90,30 @@ directly (no Vite dev proxy).
    `send_message_to_parent` updates retain the explicit untrusted data boundary;
    `send_message_to_child` reopens the child for its next turn and supports the
    same direct-result behavior with `wait=true`.
+
+## Embedding generated assets
+
+Agents routinely produce files a chat transcript cannot show: a rendered
+chart, an SVG diagram, a generated PDF. `embed_file` closes that gap.
+
+1. The agent writes the file to disk as usual.
+2. It calls `embed_file` with the absolute `path`.
+3. Ocman returns a URL under `/api/file/{token}` plus a `markdown`
+   snippet, which the agent includes in its reply.
+4. The ocman UI renders that markdown: images and SVGs appear inline in
+   the conversation, other types become a link the browser opens or
+   downloads.
+
+The token is an HMAC over the absolute path, signed with a key persisted
+in `state.db`, so links keep working across restarts but a hand-crafted
+or altered path is rejected with `403`. The endpoint sits behind the
+normal dashboard auth guard, and responses carry `nosniff` plus a
+`Content-Security-Policy: sandbox` header so an SVG or HTML asset opened
+as a top-level document cannot run script.
+
+Because MCP callers are local and already run as your user, the tool does
+not restrict which paths may be embedded — an agent that can call it can
+already read those files directly.
 
 ## Splitting skill (optional)
 
