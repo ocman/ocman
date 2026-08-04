@@ -273,7 +273,7 @@ func (s *Server) broadcastSessionCreated(info sessionsvc.CreatedSession) {
 		Title:       info.Title,
 		TimeCreated: now,
 		TimeUpdated: now,
-		Status:      "waiting",
+		Status:      db.StatusWaiting,
 	}
 	payload, err := json.Marshal(map[string]interface{}{
 		"sessionID": info.ID,

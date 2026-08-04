@@ -151,16 +151,13 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 		s.ParentID = derefStr(parentID)
 		s.DurationMs = s.TimeUpdated - s.TimeCreated
 
-		// Determine session status based on the last message.
+		// Provisional status from the last message. The owning adapter
+		// re-settles it against the live turn signal (see
+		// SettleSessionStatus) before anything user-visible reads it;
+		// that is also where inactive children are filtered out, since
+		// deciding that here would use the un-settled guess.
 		role, finish, lastErr := derefStr(lastRole), derefStr(lastFinish), derefStr(lastError)
 		s.Status = InferSessionStatus(role, finish, lastErr, lastSynthTerminal == 1)
-
-		// Keep active subagents so the UI can nest them under their
-		// parent; completed children have already bubbled their useful
-		// output up and only add noise to the session list.
-		if s.ParentID != "" && s.Status != "busy" {
-			continue
-		}
 
 		// Hide parentless sessions whose title marks them as a
 		// subagent (e.g. "(auto-approve subagent)", "(@explore
@@ -185,6 +182,29 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 		return sessions, err
 	}
 	return sessions, nil
+}
+
+// FilterInactiveChildren drops subagent sessions that are not currently
+// running a turn. Active subagents are kept so the UI can nest them under
+// their parent; finished ones have already bubbled their useful output up
+// and only add noise to the session list.
+//
+// It keys off the platform's own parent id (OpenCode's session.parent_id),
+// so it must run before ocman's MCP/worktree child links are stamped onto
+// ParentID — those children are ordinary top-level sessions and must never
+// be hidden. It must also run *after* SettleSessionStatus: filtering on the
+// un-settled guess drops a child whose turn just started (its last message
+// is still the user prompt, which infers as "done").
+// The input slice is never mutated: callers may hold a cached, shared one.
+func FilterInactiveChildren(sessions []Session) []Session {
+	out := make([]Session, 0, len(sessions))
+	for _, s := range sessions {
+		if s.ParentID != "" && s.Status != StatusBusy {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
 }
 
 // GetSession returns a single session by ID.

@@ -8,6 +8,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/NoUseFreak/ocman/internal/db"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -249,23 +250,26 @@ func (s *Server) inferChildStatus(ctx context.Context, cs state.ChildSession) (s
 	}
 
 	sess := detail.Session
-	// Map OpenCode's session status to our child session status.
-	//
-	// OpenCode documents four statuses ("waiting", "busy", "done",
-	// "error"; see db.Session.Status), but only "busy" means the LLM is
-	// still working. Any other value — including an empty string or a
-	// status this code doesn't recognise — means the turn is no longer
-	// running, so we treat it as terminal. Previously the switch fell
-	// through to ("", "") for unrecognised statuses, which left the
-	// child session stuck in "starting"/"running" forever: the watcher
-	// kept re-polling it every tick, never marked it terminal, and never
-	// injected a result into the parent. That is the "prompt handled by
-	// the LLM but the session never closes" bug.
+	// Map the session status (see db.SessionStatus) to our child session
+	// status. Only "busy" means the LLM is still working. Any other value
+	// — including an empty string or a status this code doesn't recognise
+	// — means the turn is no longer running, so we treat it as terminal.
+	// Previously the switch fell through to ("", "") for unrecognised
+	// statuses, which left the child session stuck in
+	// "starting"/"running" forever: the watcher kept re-polling it every
+	// tick, never marked it terminal, and never injected a result into
+	// the parent. That is the "prompt handled by the LLM but the session
+	// never closes" bug.
 	switch sess.Status {
-	case "busy":
+	case db.StatusBusy:
 		return "running", ""
-	case "error":
+	case db.StatusError:
 		return "error", sess.LastErrorMessage
+	case db.StatusInterrupted:
+		// The process running the child died mid-turn. Report it as an
+		// error so the parent learns the work was lost instead of
+		// receiving a truncated turn as a finished result.
+		return "error", "child session was interrupted before the turn finished"
 	default:
 		if len(detail.Messages) > 0 {
 			var data struct {

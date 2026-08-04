@@ -254,7 +254,7 @@ func filterPartsUntyped(parts []map[string]interface{}, msgIDs map[string]bool) 
 
 // sessionFromOpenCode builds a typed *db.Session from the OpenCode
 // /session/{id} response.
-func sessionFromOpenCode(oc map[string]interface{}, stats messageStats, userMsgCount int, status string) *db.Session {
+func sessionFromOpenCode(oc map[string]interface{}, stats messageStats, userMsgCount int, status db.SessionStatus) *db.Session {
 	timeMap, _ := oc["time"].(map[string]interface{})
 	summaryMap, _ := oc["summary"].(map[string]interface{})
 

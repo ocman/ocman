@@ -11,6 +11,12 @@ sidebar:
 Sessions are grouped by project with status indicators and a `+` button to
 start new ones. Sessions inactive for three days are archived automatically.
 
+A session's status comes from the agent's own turn lifecycle, so it tracks
+the work rather than trailing it: **busy** while a turn runs, **waiting**
+when it finishes, **error** when it fails, and **interrupted** when the
+agent process stopped mid-turn (killed, crashed, machine rebooted) so the
+turn can never complete.
+
 **Live composer** — send messages, answer permission prompts, abort and
 compact a running session from the browser. Streaming output renders live.
 Plain <kbd>Enter</kbd> sends immediately (mid-turn too); <kbd>Ctrl/⌘+Enter</kbd>

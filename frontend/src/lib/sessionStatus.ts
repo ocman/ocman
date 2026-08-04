@@ -1,4 +1,4 @@
-import type { AgentInfo, Message, Session } from './api';
+import type { AgentInfo, Message, Session, SessionStatus } from './api';
 
 /**
  * Aggregate token / cost counts derived from a single page of message
@@ -73,9 +73,11 @@ export function agentModelRef(agent: AgentInfo | undefined): string {
 
 /**
  * Derive an optimistic raw status from the most recent message.
- * Mirrors the server-side derivation in `internal/db/types.go` so
- * the next poll confirms (rather than corrects) the optimistic
- * value.
+ * Mirrors the server-side `InferSessionStatus` in `internal/db/types.go`,
+ * with the same caveat: message shape is not a lifecycle signal. It only
+ * bridges the gap until the next `session.status` event or poll delivers
+ * the agent's own answer, and `busy` here means "no terminal state
+ * recorded", not "running".
  */
 export function deriveRawStatus(lastMsg: Message | null): Session['status'] {
   if (!lastMsg) return 'done';
@@ -84,6 +86,17 @@ export function deriveRawStatus(lastMsg: Message | null): Session['status'] {
   if (data?.finish === 'error' || data?.error) return 'error';
   if (data?.finish) return 'waiting';
   return 'busy';
+}
+
+/**
+ * True for statuses that mean no turn is running. Anything but `busy`
+ * qualifies, including `interrupted` — the turn is over, it just didn't
+ * reach a conclusion. Callers use it to grey out a dot the user has
+ * already seen; keeping the check in one place is what stops a newly
+ * added status from silently missing a branch.
+ */
+export function isTerminalStatus(status: SessionStatus | null | undefined): boolean {
+  return status !== null && status !== undefined && status !== 'busy';
 }
 
 function isCompletedToolOnlyAssistant(message: Message | null): boolean {
@@ -113,7 +126,7 @@ export function isSessionRunning(
   // finish reason, but its completion timestamp proves no turn is active.
   if (isCompletedToolOnlyAssistant(lastMsg)) return false;
   if (sessionStatus === 'busy') return true;
-  if (sessionStatus === 'error' || sessionStatus === 'done') return false;
+  if (sessionStatus === 'error' || sessionStatus === 'done' || sessionStatus === 'interrupted') return false;
   if (!lastMsg) return false;
   const data = lastMsg.data;
   if (data?.role === 'assistant' && !data?.finish && !data?.error) return true;

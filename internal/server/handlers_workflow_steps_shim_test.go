@@ -311,7 +311,7 @@ func workflowStepRun(t *testing.T, definition *string) (*Server, workflows.RunDe
 
 // agentStepServer wires a fake platform whose session settles in the
 // given status, and returns the agent node pointing at it.
-func agentStepServer(t *testing.T, status, message string, send func(platforms.SendMessageRequest) error) (*Server, workflows.Node) {
+func agentStepServer(t *testing.T, status db.SessionStatus, message string, send func(platforms.SendMessageRequest) error) (*Server, workflows.Node) {
 	t.Helper()
 	dir := t.TempDir()
 	p := &fakePlatform{

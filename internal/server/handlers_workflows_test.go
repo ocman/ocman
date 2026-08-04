@@ -39,7 +39,7 @@ func newWorkflowTestServer(t *testing.T) *Server {
 
 func TestWorkflowRESTApprovalToAgentSession(t *testing.T) {
 	dir := t.TempDir()
-	status := "busy"
+	status := db.StatusBusy
 	var sent platforms.SendMessageRequest
 	p := &fakePlatform{
 		id:       "fake",
@@ -91,7 +91,7 @@ func TestWorkflowRESTApprovalToAgentSession(t *testing.T) {
 		t.Fatalf("transport omitted session link/state: %+v", attempt)
 	}
 
-	status = "waiting"
+	status = db.StatusWaiting
 	if err := srv.workflowSvc().Tick(t.Context()); err != nil {
 		t.Fatal(err)
 	}

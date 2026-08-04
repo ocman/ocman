@@ -11,6 +11,9 @@
 .status-done { background: rgba(88, 166, 255, 0.15); color: var(--accent); }
 .status-error .status-dot { background: var(--danger); }
 .status-error { background: rgba(243, 139, 168, 0.15); color: var(--danger); }
+/* interrupted = the turn was lost, not failed: warning colour, no pulse */
+.status-interrupted .status-dot { background: var(--accent4); animation: none; }
+.status-interrupted { background: rgba(240, 136, 62, 0.15); color: var(--accent4); }
 
 /* Compact status dot (sidebar) */
 .status-dot-compact {
@@ -27,6 +30,7 @@
 /* done (unread) = blue */
 .status-dot-compact.status-done { background: var(--accent); }
 .status-dot-compact.status-error { background: var(--danger); }
+.status-dot-compact.status-interrupted { background: var(--accent4); animation: none; }
 /* seen/idle = grey, cancels any animation */
 .status-dot-compact.status-seen { background: var(--text-dim); animation: none; }
 /* unsent draft = hollow orange ring; must stay after .status-seen to win */

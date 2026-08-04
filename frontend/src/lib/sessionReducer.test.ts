@@ -465,6 +465,26 @@ describe('reduceSessionView — session.status / session.idle', () => {
     expect(view.session?.status).toBe('busy');
   });
 
+  // `retry` is a provider backoff *within* a turn, so the turn is still
+  // running. Mirrors turnRunning() on the backend.
+  it('maps `retry` to `busy`', () => {
+    let view = makeView({ session: makeSession({ status: 'waiting' }) });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('session.status', { status: { type: 'retry', attempt: 2 } }),
+    });
+    expect(view.session?.status).toBe('busy');
+  });
+
+  it('accepts interrupted', () => {
+    let view = makeView({ session: makeSession({ status: 'busy' }) });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('session.status', { status: 'interrupted' }),
+    });
+    expect(view.session?.status).toBe('interrupted');
+  });
+
   it('maps `idle` to `done` and flags a refetch via the reducer result', () => {
     let view = makeView({ session: makeSession({ status: 'busy' }) });
     view = reduceSessionView(view, {

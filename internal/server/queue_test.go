@@ -108,9 +108,9 @@ func TestSessionMessage_BusyQueuesThenFlushesOnIdle(t *testing.T) {
 		},
 		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
 			mu.Lock()
-			status := "done"
+			status := db.StatusDone
 			if busy {
-				status = "busy"
+				status = db.StatusBusy
 			}
 			mu.Unlock()
 			return &platforms.SessionDetail{Session: &db.Session{ID: id, Status: status}}, nil
@@ -155,7 +155,7 @@ func TestSessionMessage_BusyQueuesThenFlushesOnIdle(t *testing.T) {
 
 func TestWorkflowStatusInferer_LatestMessageState(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
-	status := "waiting"
+	status := db.StatusWaiting
 	messages := []db.Message{{ID: "assistant-1", TimeCreated: 200, Data: json.RawMessage(`{"role":"assistant","finish":"stop"}`)}}
 	reg.Register(&fakePlatform{
 		id:       "fake",
@@ -172,11 +172,11 @@ func TestWorkflowStatusInferer_LatestMessageState(t *testing.T) {
 	if id, createdAt, running, completed, ok := inferer.LatestMessageState(t.Context(), "fake", "s1"); id != "assistant-1" || createdAt != 200 || running || !ok || !completed {
 		t.Fatalf("latest state = (%q, %d, %v, %v, %v), want (assistant-1, 200, false, true, true)", id, createdAt, running, completed, ok)
 	}
-	status = "busy"
+	status = db.StatusBusy
 	if _, _, running, completed, ok := inferer.LatestMessageState(t.Context(), "fake", "s1"); !ok || !running || completed {
 		t.Fatalf("busy completion = (%v, %v), want (false, true)", completed, ok)
 	}
-	status = "waiting"
+	status = db.StatusWaiting
 	messages[0].Data = json.RawMessage(`{"role":"user"}`)
 	if _, _, _, completed, ok := inferer.LatestMessageState(t.Context(), "fake", "s1"); !ok || completed {
 		t.Fatalf("user completion = (%v, %v), want (false, true)", completed, ok)
@@ -377,9 +377,9 @@ func TestQueueMutations_ReachTheWireAsQueueUpdated(t *testing.T) {
 		sessions:      []db.Session{mkSession("fake", "s1", "t", 1)},
 		sendMessageFn: func(platforms.SendMessageRequest) error { return nil },
 		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
-			status := "done"
+			status := db.StatusDone
 			if busy {
-				status = "busy"
+				status = db.StatusBusy
 			}
 			return &platforms.SessionDetail{Session: &db.Session{ID: id, Status: status}}, nil
 		},
@@ -438,9 +438,9 @@ func TestSSEStream_DrainDeliversEmptyQueueOverTheWire(t *testing.T) {
 		sessions:      []db.Session{mkSession("fake", "s1", "t", 1)},
 		sendMessageFn: func(platforms.SendMessageRequest) error { return nil },
 		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
-			status := "done"
+			status := db.StatusDone
 			if busy {
-				status = "busy"
+				status = db.StatusBusy
 			}
 			return &platforms.SessionDetail{Session: &db.Session{ID: id, Status: status}}, nil
 		},

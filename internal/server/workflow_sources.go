@@ -5,11 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/workflows"
 )
 
 type workflowStatusInferer struct{ s *Server }
 
+// TurnRunning reports whether a turn is in flight. Since #488 the status it
+// reads is settled against the agent's own turn signal rather than inferred
+// from the last message's shape, so a true answer here means the agent says
+// it is working — not that ocman guessed so from a missing `finish`.
 func (i *workflowStatusInferer) TurnRunning(ctx context.Context, _ string, sessionID string) (bool, bool) {
 	p, found := i.s.registry.PlatformForSession(ctx, sessionID)
 	if !found {
@@ -19,7 +24,7 @@ func (i *workflowStatusInferer) TurnRunning(ctx context.Context, _ string, sessi
 	if err != nil || detail == nil || detail.Session == nil {
 		return false, false
 	}
-	return detail.Session.Status == "busy", true
+	return detail.Session.Status == db.StatusBusy, true
 }
 
 func (i *workflowStatusInferer) LatestMessageState(ctx context.Context, _ string, sessionID string) (string, int64, bool, bool, bool) {
@@ -41,8 +46,8 @@ func (i *workflowStatusInferer) LatestMessageState(ctx context.Context, _ string
 	if json.Unmarshal(message.Data, &data) != nil {
 		return "", 0, false, false, false
 	}
-	running := detail.Session.Status == "busy"
-	completed := data.Role == "assistant" && detail.Session.Status != "busy"
+	running := detail.Session.Status == db.StatusBusy
+	completed := data.Role == "assistant" && detail.Session.Status != db.StatusBusy
 	return message.ID, message.TimeCreated, running, completed, true
 }
 

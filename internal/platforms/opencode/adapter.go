@@ -56,6 +56,10 @@ type Adapter struct {
 	// when the favorites reader isn't a full state.db (tests).
 	childLinks mcpParentLookup
 	prompts    *livePromptRegistry
+	// turns is the live view of which sessions are running a turn, fed
+	// from each instance's /session/status snapshot and session.status
+	// events. See live_status.go.
+	turns *liveStatusRegistry
 }
 
 // New returns a new OpenCode adapter backed by the given read-only DB.
@@ -85,7 +89,7 @@ func NewWithPricingAndAuth(database *db.DB, favorites FavoritesReader, pricing C
 
 func newAdapter(database *db.DB, favorites FavoritesReader, pricing CostCalculator, auth ocapi.Auth) *Adapter {
 	configureHTTPAuth(auth)
-	return &Adapter{db: database, favorites: favorites, pricing: pricing, auth: auth, childLinks: childLinksFrom(favorites), prompts: newLivePromptRegistry()}
+	return &Adapter{db: database, favorites: favorites, pricing: pricing, auth: auth, childLinks: childLinksFrom(favorites), prompts: newLivePromptRegistry(), turns: newLiveStatusRegistry()}
 }
 
 // childLinksFrom returns favorites as an mcpParentLookup when it also
@@ -170,6 +174,16 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 	ports := discoverOpenCodePorts()
 	portsPhase.End()
 
+	// Settle every status against the live turn signal before anything
+	// else reads it, then drop the children that turn out to be idle.
+	// Both steps precede applyMCPParentLink below: the child filter keys
+	// off OpenCode's own parent_id, and ocman's MCP/worktree children are
+	// top-level sessions that must never be hidden.
+	for i := range sessions {
+		sessions[i].Status = a.settleStatus(sessions[i].ID, sessions[i].Directory, sessions[i].Status, ports)
+	}
+	sessions = db.FilterInactiveChildren(sessions)
+
 	pendingPerms, pendingQuestions := a.prompts.pendingSessionIDs()
 
 	// OpenCode emits subagent prompts with the subagent's session ID,
@@ -206,15 +220,7 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 // Without the fold, worktree sessions report LiveConnection=false,
 // which disables the composer and the question-prompt UI for them.
 func directoryHasLivePort(ports map[string]string, directory string) bool {
-	if _, ok := ports[normalizePortDirectory(directory)]; ok {
-		return true
-	}
-	root := foldWorktreeToProjectRoot(directory)
-	if root == directory {
-		return false
-	}
-	_, ok := ports[normalizePortDirectory(root)]
-	return ok
+	return portForDirectory(ports, directory) != ""
 }
 
 // bubbleUpPromptsToParent adds the parent session ID for every prompted
@@ -365,6 +371,7 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 		return nil, err
 	}
 	applySessionDetailMetadataFromMessages(session, messages)
+	session.Status = a.settleStatus(id, session.Directory, session.Status, discoverOpenCodePorts())
 	parts, err := a.db.GetSessionParts(id)
 	if err != nil {
 		fallbackPhase.End()
@@ -391,6 +398,9 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 	}, nil
 }
 
+// applySessionDetailMetadataFromMessages fills in the status *inference*
+// and error metadata from the stored messages. The caller must re-settle
+// Status against the live turn signal (see Adapter.settleStatus).
 func applySessionDetailMetadataFromMessages(session *db.Session, messages []db.Message) {
 	if session == nil {
 		return

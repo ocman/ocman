@@ -5,6 +5,7 @@ import {
   agentModelRef,
   deriveRawStatus,
   isSessionRunning,
+  isTerminalStatus,
   computeLiveTokens,
   mergeTokenStats,
   aggregateSessionTreeStats,
@@ -114,7 +115,30 @@ describe('deriveRawStatus', () => {
   });
 });
 
+describe('isTerminalStatus', () => {
+  it('is false only for busy', () => {
+    expect(isTerminalStatus('busy')).toBe(false);
+  });
+
+  it('is true for every settled state, including interrupted', () => {
+    for (const status of ['waiting', 'done', 'error', 'interrupted'] as const) {
+      expect(isTerminalStatus(status)).toBe(true);
+    }
+  });
+
+  it('is false when the status is unknown', () => {
+    expect(isTerminalStatus(null)).toBe(false);
+    expect(isTerminalStatus(undefined)).toBe(false);
+  });
+});
+
 describe('isSessionRunning', () => {
+  it('returns false for an interrupted session even mid-stream', () => {
+    // The last message looks like a live stream, but the agent that owned
+    // the turn is gone.
+    expect(isSessionRunning(makeMessage('m', { role: 'assistant' }), 'interrupted')).toBe(false);
+  });
+
   it('returns false when there is no last message', () => {
     expect(isSessionRunning(null)).toBe(false);
   });

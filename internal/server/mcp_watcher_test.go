@@ -759,7 +759,7 @@ func TestCheckAndInjectChildResults_WaitsForAssistantAfterFollowUp(t *testing.T)
 func TestInferChildStatus_Mapping(t *testing.T) {
 	tests := []struct {
 		name           string
-		opencodeStatus string
+		opencodeStatus db.SessionStatus
 		lastErr        string
 		wantStatus     string
 		wantTerminal   bool

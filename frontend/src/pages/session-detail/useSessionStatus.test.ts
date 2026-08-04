@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import type { Message } from '../../lib/api';
+import type { Message, SessionStatus } from '../../lib/api';
 import { useSessionStatus } from './useSessionStatus';
 import type { SubagentTokenMap } from './useSubagentTracking';
 
@@ -59,7 +59,7 @@ interface HookProps {
   lastMsg: Message | null;
   messages: Message[];
   subagentTokens: SubagentTokenMap;
-  sessionStatus?: 'busy' | 'waiting' | 'done' | 'error';
+  sessionStatus?: SessionStatus;
   awaitingAssistantResponse?: boolean;
   recentWorkEventAt?: number | null;
   isRunning: boolean;
@@ -113,7 +113,6 @@ describe('useSessionStatus', () => {
       pendingQuestion: null,
     });
 
-    expect(result.current.rawOptimisticStatus).toBe('waiting');
     expect(result.current.optimisticStatus).toBe('waiting');
   });
 
@@ -133,7 +132,6 @@ describe('useSessionStatus', () => {
       pendingQuestion: null,
     });
 
-    expect(result.current.rawOptimisticStatus).toBe('error');
     expect(result.current.optimisticStatus).toBe('error');
   });
 
@@ -147,7 +145,6 @@ describe('useSessionStatus', () => {
       pendingQuestion: null,
     });
 
-    expect(result.current.rawOptimisticStatus).toBe('done');
     expect(result.current.optimisticStatus).toBe('done');
   });
 
@@ -167,7 +164,6 @@ describe('useSessionStatus', () => {
       pendingQuestion: null,
     });
 
-    expect(result.current.rawOptimisticStatus).toBe('busy');
     expect(result.current.optimisticStatus).toBe('busy');
   });
 
@@ -186,7 +182,6 @@ describe('useSessionStatus', () => {
       pendingQuestion: null,
     });
 
-    expect(result.current.rawOptimisticStatus).toBe('busy');
     expect(result.current.optimisticStatus).toBe('busy');
   });
 
@@ -208,7 +203,6 @@ describe('useSessionStatus', () => {
       pendingQuestion: null,
     });
 
-    expect(result.current.rawOptimisticStatus).toBe('busy');
     expect(result.current.optimisticStatus).toBe('busy');
   });
 
@@ -231,7 +225,6 @@ describe('useSessionStatus', () => {
       pendingQuestion: null,
     });
 
-    expect(result.current.rawOptimisticStatus).toBe('busy');
     expect(result.current.optimisticStatus).toBe('busy');
   });
 
@@ -254,11 +247,10 @@ describe('useSessionStatus', () => {
       pendingQuestion: null,
     });
 
-    expect(result.current.rawOptimisticStatus).toBe('done');
     expect(result.current.optimisticStatus).toBe('done');
   });
 
-  it('drops back to waiting when the work-event window expires', () => {
+  it('drops back to waiting as soon as the work-event window expires', () => {
     const t0 = Date.now();
     const messages: Message[] = [
       userMessage('u1', t0 - 5_000),
@@ -277,19 +269,80 @@ describe('useSessionStatus', () => {
       pendingQuestion: null,
     });
 
-    expect(result.current.rawOptimisticStatus).toBe('busy');
+    expect(result.current.optimisticStatus).toBe('busy');
 
     act(() => {
       vi.advanceTimersByTime(600);
     });
 
-    expect(result.current.rawOptimisticStatus).toBe('waiting');
-    expect(result.current.optimisticStatus).toBe('busy');
+    // No grace window: the transition lands as soon as the work-event
+    // window expires. The badge no longer holds a stale 'busy'.
+    expect(result.current.optimisticStatus).toBe('waiting');
+  });
+  // #488: an interrupted session's last message is an unfinished assistant
+  // turn, which every local heuristic reads as "still streaming". The
+  // backend already knows the process that owned it is gone, so the badge
+  // must follow the backend and stop spinning.
+  it('reports interrupted instead of spinning on a lost turn', () => {
+    const t0 = Date.now();
+    const messages: Message[] = [
+      userMessage('u1', t0 - 60_000),
+      streamingAssistantMessage('a1', t0 - 59_000),
+    ];
 
-    act(() => {
-      vi.advanceTimersByTime(3_100);
+    const { result } = buildHook({
+      lastMsg: messages[messages.length - 1],
+      messages,
+      subagentTokens: new Map(),
+      sessionStatus: 'interrupted',
+      awaitingAssistantResponse: false,
+      recentWorkEventAt: null,
+      isRunning: false,
+      pendingPermission: null,
+      pendingQuestion: null,
     });
 
-    expect(result.current.optimisticStatus).toBe('waiting');
+    expect(result.current.optimisticStatus).toBe('interrupted');
+  });
+
+  it('lets a fresh prompt outrank a stale interrupted status', () => {
+    const t0 = Date.now();
+    const messages: Message[] = [userMessage('u1', t0 - 100)];
+
+    const { result } = buildHook({
+      lastMsg: messages[messages.length - 1],
+      messages,
+      subagentTokens: new Map(),
+      sessionStatus: 'interrupted',
+      awaitingAssistantResponse: true,
+      recentWorkEventAt: null,
+      isRunning: false,
+      pendingPermission: null,
+      pendingQuestion: null,
+    });
+
+    expect(result.current.optimisticStatus).toBe('busy');
+  });
+
+  it('still reports error when an interrupted session also errored', () => {
+    const t0 = Date.now();
+    const messages: Message[] = [
+      userMessage('u1', t0 - 5_000),
+      erroredAssistantMessage('a1', t0 - 1_000),
+    ];
+
+    const { result } = buildHook({
+      lastMsg: messages[messages.length - 1],
+      messages,
+      subagentTokens: new Map(),
+      sessionStatus: 'interrupted',
+      awaitingAssistantResponse: false,
+      recentWorkEventAt: null,
+      isRunning: false,
+      pendingPermission: null,
+      pendingQuestion: null,
+    });
+
+    expect(result.current.optimisticStatus).toBe('error');
   });
 });

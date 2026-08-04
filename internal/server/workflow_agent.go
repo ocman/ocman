@@ -61,11 +61,19 @@ func (e *workflowAgentExecutor) Inspect(ctx context.Context, session workflows.A
 	if detail == nil || detail.Session == nil {
 		return workflows.AgentResult{}, fmt.Errorf("workflow agent session %q was not found", session.ID)
 	}
-	result := workflows.AgentResult{State: detail.Session.Status}
-	if result.State == "busy" {
+	result := workflows.AgentResult{State: string(detail.Session.Status)}
+	if result.State == string(db.StatusBusy) {
 		return result, nil
 	}
-	if result.State == "error" {
+	// The agent process owning this turn is gone, so the node will never
+	// get a final message. Fail it rather than fall through and harvest a
+	// half-finished answer as if it were complete.
+	if result.State == string(db.StatusInterrupted) {
+		result.State = string(db.StatusError)
+		result.Error = "session was interrupted before the turn finished"
+		return result, nil
+	}
+	if result.State == string(db.StatusError) {
 		result.Error = detail.Session.LastErrorMessage
 		return result, nil
 	}

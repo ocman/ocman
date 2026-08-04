@@ -63,6 +63,14 @@ type Tee struct {
 	// onSessionIdle fires when the upstream emits session.idle (the
 	// agent finished a turn). Optional — nil means idle isn't observed.
 	OnSessionIdle func(sessionID string)
+	// OnSessionStatus fires when the upstream emits session.status, the
+	// agent's own turn-lifecycle signal. statusType is OpenCode's
+	// SessionStatus discriminator: "busy", "retry" (provider backoff
+	// within a turn) or "idle". This is the authoritative busy/not-busy
+	// answer; ocman's message-shape inference only decides which
+	// terminal state a settled session is in. Optional — nil means turn
+	// state isn't observed on this tee.
+	OnSessionStatus func(sessionID, statusType string)
 	// onSessionChanged fires when the upstream emits session.updated
 	// (session created or mutated). Used to push new-session detection
 	// instead of waiting for the next list poll. Optional — nil means
@@ -218,6 +226,8 @@ func (t *Tee) dispatchEventInDirectory(eventType, dataJSON, directory string) {
 		t.dispatchQuestionResolved(directory, dataJSON, "rejected")
 	case "session.idle":
 		t.dispatchSessionIdle(dataJSON)
+	case "session.status":
+		t.dispatchSessionStatus(dataJSON)
 	case "session.updated":
 		t.dispatchSessionChanged(dataJSON)
 	}
@@ -442,6 +452,69 @@ func (t *Tee) dispatchSessionIdle(dataJSON string) {
 		return
 	}
 	t.OnSessionIdle(sessionID)
+}
+
+// dispatchSessionStatus extracts the session ID and turn state from a
+// session.status event and fires OnSessionStatus. OpenCode's payload is
+//
+//	{"type":"session.status","properties":{"sessionID":"ses_…","status":{"type":"busy"}}}
+//
+// The status field is accepted both as that object and as a bare string, and
+// the session ID in either casing, so a shape change upstream degrades to a
+// dropped event rather than a panic.
+func (t *Tee) dispatchSessionStatus(dataJSON string) {
+	if t.OnSessionStatus == nil {
+		return
+	}
+	type statusProps struct {
+		SessionID  string          `json:"sessionID"`
+		SessionID2 string          `json:"sessionId"`
+		Status     json.RawMessage `json:"status"`
+	}
+	var envelope struct {
+		Properties *statusProps `json:"properties"`
+		// The v2 event shape carries the same fields under "data".
+		Data *statusProps `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(dataJSON), &envelope); err != nil {
+		return
+	}
+	props := statusProps{}
+	switch {
+	case envelope.Properties != nil:
+		props = *envelope.Properties
+	case envelope.Data != nil:
+		props = *envelope.Data
+	default:
+		if err := json.Unmarshal([]byte(dataJSON), &props); err != nil {
+			return
+		}
+	}
+	sessionID := firstNonEmpty(props.SessionID, props.SessionID2)
+	if sessionID == "" {
+		return
+	}
+	t.OnSessionStatus(sessionID, sessionStatusType(props.Status))
+}
+
+// sessionStatusType reads the discriminator out of an OpenCode
+// SessionStatus value, accepting either {"type":"busy"} or "busy". An
+// unparseable value yields "", which every consumer treats as not-running.
+func sessionStatusType(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var typed struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(raw, &typed); err == nil && typed.Type != "" {
+		return typed.Type
+	}
+	var bare string
+	if err := json.Unmarshal(raw, &bare); err == nil {
+		return bare
+	}
+	return ""
 }
 
 // dispatchSessionChanged extracts the session ID from a session.updated

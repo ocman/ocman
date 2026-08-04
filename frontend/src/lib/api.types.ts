@@ -11,6 +11,23 @@
  */
 
 /**
+ * Lifecycle state ocman reports for a session. Mirrors the closed set in
+ * `db.SessionStatus` (internal/db/types.go) one-for-one; keep the two in
+ * sync so `tsc` catches an unhandled value the same way Go does.
+ *
+ * The backend derives this from the agent's own turn signal, not from the
+ * shape of the last stored message, so it can be trusted as-is:
+ *
+ * - `busy`        a turn is running right now
+ * - `waiting`     the turn finished and is awaiting the user
+ * - `done`        settled, nothing awaiting a reply
+ * - `error`       the last turn ended in an error
+ * - `interrupted` a turn was in flight but the agent process that owned
+ *                 it is gone, so it will never finish
+ */
+export type SessionStatus = 'waiting' | 'busy' | 'done' | 'error' | 'interrupted';
+
+/**
  * Minimal per-session projection returned by /api/sessions/notify.
  * Only sessions that could drive the favicon/title notification state
  * (or the in-app prompt toast) are included in the response, so the
@@ -107,7 +124,7 @@ export interface Session {
   totalInputTokens: number;
   totalOutputTokens: number;
   totalCost: number;
-  status: 'waiting' | 'busy' | 'done' | 'error';
+  status: SessionStatus;
 	/**
 	 * True when the owning adapter has a live channel to this session's
 	 * running agent process. For OpenCode this means a --port was

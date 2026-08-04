@@ -94,13 +94,13 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 // useful "session needs input" message ("Refactor auth (/repo/foo)")
 // with a deep link, without a second round-trip.
 type notifyEntry struct {
-	ID                string `json:"id"`
-	Status            string `json:"status"`
-	Seen              bool   `json:"seen"`
-	PendingPermission bool   `json:"pendingPermission,omitempty"`
-	PendingQuestion   bool   `json:"pendingQuestion,omitempty"`
-	Title             string `json:"title,omitempty"`
-	Directory         string `json:"directory,omitempty"`
+	ID                string           `json:"id"`
+	Status            db.SessionStatus `json:"status"`
+	Seen              bool             `json:"seen"`
+	PendingPermission bool             `json:"pendingPermission,omitempty"`
+	PendingQuestion   bool             `json:"pendingQuestion,omitempty"`
+	Title             string           `json:"title,omitempty"`
+	Directory         string           `json:"directory,omitempty"`
 }
 
 // handleSessionsNotify returns a minimal projection of the sessions
@@ -133,7 +133,7 @@ func (s *Server) handleSessionsNotify(w http.ResponseWriter, r *http.Request) {
 	for i := range all {
 		se := &all[i]
 		hasPrompt := se.PendingPermission || se.PendingQuestion
-		isUnseenTerminal := (se.Status == "waiting" || se.Status == "error") && !se.Seen
+		isUnseenTerminal := (se.Status == db.StatusWaiting || se.Status == db.StatusError) && !se.Seen
 		if !hasPrompt && !isUnseenTerminal {
 			continue
 		}

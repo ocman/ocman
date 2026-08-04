@@ -167,13 +167,13 @@ export function useSidebarSessions({
         const unarchived = s.id === id ? { ...s, archived: false } : s;
         const live = currentStore.find((ls) => ls.id === s.id);
         if (!live) return unarchived;
-        // Prefer the more-recent status: if the store has 'busy' and the
-        // server still shows a stale status, keep 'busy'. In all other
-        // cases the poll wins (it is the source of truth for terminal states).
-        const status = live.status === 'busy' && s.status !== 'busy' ? 'busy' : s.status;
+        // The poll's status always wins. Sticky-busy used to live here
+        // because the server derived status from the last message's shape
+        // and could not be trusted to be current; it now reports the
+        // agent's own turn state, so overriding it would only keep a
+        // finished turn spinning.
         return {
           ...unarchived,
-          status,
           // Preserve seen/pending flags that the SSE may have set more recently.
           seen: live.seen || s.seen,
           pendingPermission: live.pendingPermission || s.pendingPermission,
