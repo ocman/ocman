@@ -10,6 +10,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
@@ -419,11 +420,7 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 				return
 			}
 			ocAdapter.ObserveSessionStatus(port, statusGeneration, sessionID, statusType)
-			// Push the transition instead of waiting out the list poll,
-			// so the status badge tracks the turn rather than trailing it.
-			if w.svc != nil && w.svc.deps.BroadcastSessionChanged != nil {
-				w.svc.deps.BroadcastSessionChanged(sessionID)
-			}
+			w.broadcastSessionStatus(ocAdapter, port, sessionID, statusType)
 		},
 		OnSessionIdle: func(sessionID string) {
 			// session.idle is the same edge as session.status=idle, but
@@ -431,6 +428,7 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 			// status event can't leave the session pinned busy.
 			if ocAdapter != nil {
 				ocAdapter.ObserveSessionStatus(port, statusGeneration, sessionID, "idle")
+				w.broadcastSessionStatus(ocAdapter, port, sessionID, "idle")
 			}
 			if w.svc != nil && w.svc.deps.BroadcastSessionIdle != nil {
 				w.svc.deps.BroadcastSessionIdle(sessionID)
@@ -448,6 +446,24 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 		return fmt.Errorf("read /global/event: %w", err)
 	}
 	return nil
+}
+
+func (w *autoApproveWatcher) broadcastSessionStatus(adapter *opencode.Adapter, port, sessionID, statusType string) {
+	if w.svc == nil || w.svc.deps.BroadcastSessionStatus == nil {
+		return
+	}
+	status := db.StatusBusy
+	if statusType == "idle" {
+		var err error
+		status, err = adapter.SessionStatusOnPort(sessionID, port)
+		if err != nil {
+			if w.svc.deps.BroadcastSessionChanged != nil {
+				w.svc.deps.BroadcastSessionChanged(sessionID)
+			}
+			return
+		}
+	}
+	w.svc.deps.BroadcastSessionStatus(sessionID, status)
 }
 
 func promptStrings(value any) []string {

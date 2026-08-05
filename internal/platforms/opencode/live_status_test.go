@@ -276,6 +276,20 @@ func TestSessions_SettledInstanceEndsStaleBusy(t *testing.T) {
 	}
 }
 
+func TestSessionStatusOnPortSettlesIdleWithoutListCache(t *testing.T) {
+	database := newTestDBWithSessions(t, []testSession{{id: "ses-1", directory: "/repo/main", busy: true}})
+	a := New(database, nil)
+	a.ObserveSessionStatus("7777", 0, "ses-1", "idle")
+
+	status, err := a.SessionStatusOnPort("ses-1", "7777")
+	if err != nil {
+		t.Fatalf("SessionStatusOnPort: %v", err)
+	}
+	if status != db.StatusDone {
+		t.Fatalf("status = %q, want done", status)
+	}
+}
+
 // A session whose agent process is gone mid-turn must settle as interrupted
 // rather than spin forever.
 func TestSessions_DeadInstanceReportsInterrupted(t *testing.T) {

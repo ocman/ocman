@@ -19,6 +19,8 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/NoUseFreak/ocman/internal/db"
+
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -73,6 +75,7 @@ type Deps struct {
 	BroadcastQuestionResolved   func(sessionID, requestID, reason string)
 	BroadcastSessionIdle        func(sessionID string)
 	BroadcastSessionChanged     func(sessionID string)
+	BroadcastSessionStatus      func(sessionID string, status db.SessionStatus)
 	BroadcastGlobalEvent        func(event string, data []byte)
 
 	// DefaultEnabled is the server-wide auto-approve default applied
