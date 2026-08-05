@@ -225,15 +225,26 @@ export function isSynthesizedTerminal(msgParts: Part[]): boolean {
 }
 
 /**
- * The last tool part created at or before `ts`, from a list already
- * sorted ascending by `timeCreated`. That is the tool a permission
- * asked at `ts` belongs to, since OpenCode creates the tool part
- * before it asks. Returns undefined when nothing was running yet.
+ * When a part was created, in unix ms. `timeCreated` comes from the DB
+ * column and is therefore absent on live SSE part snapshots
+ * (`reducePartSnapshot` builds the Part without it), so fall back to
+ * the tool's own `time.start` — same fallback as `toolTimeSuffix`.
+ * Returns 0 when neither is known.
+ */
+function partStartedAt(p: Part): number {
+  return p.timeCreated || parsePart(p).time?.start || 0;
+}
+
+/**
+ * The last tool part started at or before `ts`, from a list already
+ * sorted ascending by start time. That is the tool a permission asked
+ * at `ts` belongs to, since OpenCode creates the tool part before it
+ * asks. Returns undefined when nothing was running yet.
  */
 function lastToolPartBefore(sortedToolParts: Part[], ts: number): Part | undefined {
   let target: Part | undefined;
   for (const p of sortedToolParts) {
-    if ((p.timeCreated || 0) > ts) break;
+    if (partStartedAt(p) > ts) break;
     target = p;
   }
   return target;
@@ -347,8 +358,8 @@ export function createConvertMessages(): ConvertMessagesFn {
     const notices = messages.filter((m) => m.data?.role === 'notice');
     if (notices.length > 0) {
       const toolParts = parts
-        .filter((p) => !!p.timeCreated && parsePart(p).type === 'tool')
-        .sort((a, b) => (a.timeCreated || 0) - (b.timeCreated || 0));
+        .filter((p) => parsePart(p).type === 'tool' && partStartedAt(p) > 0)
+        .sort((a, b) => partStartedAt(a) - partStartedAt(b));
       for (const notice of notices) {
         for (const pd of (partsByMsg[notice.id] || EMPTY_PARTS).map(parsePart)) {
           if (pd.type !== 'auto-approved') continue;

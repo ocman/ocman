@@ -155,6 +155,32 @@ describe('AI approval footnotes', () => {
     expect(calls[2].argsText).not.toContain('@approved:');
   });
 
+  it('matches live SSE tool parts, which carry time.start but no timeCreated', () => {
+    const messages: Message[] = [
+      makeMessage('a1', { role: 'assistant' }, 100),
+      { id: 'ocman-notice-p1', sessionId: 's', timeCreated: 250, data: { role: 'notice' } },
+    ];
+    // reducePartSnapshot builds parts without `timeCreated`.
+    const livePart: Part = {
+      id: 't1',
+      messageId: 'a1',
+      sessionId: 's',
+      data: {
+        type: 'tool',
+        tool: 'bash',
+        time: { start: 200 },
+        state: { status: 'running', input: { command: 'rm -rf /tmp/foo' } },
+      } as unknown as string,
+    } as Part;
+    const parts = [livePart, makePart('ocman-notice-p1', approval, 'n1-part', 250)];
+
+    const out = createConvertMessages()(messages, parts);
+
+    expect(out).toHaveLength(1);
+    const call = asContentArray(out[0].content)[0];
+    expect(call.type === 'tool-call' && call.argsText).toContain('@approved:');
+  });
+
   it('keeps the standalone notice when no tool part precedes the approval', () => {
     const messages: Message[] = [
       { id: 'ocman-notice-p1', sessionId: 's', timeCreated: 50, data: { role: 'notice' } },
