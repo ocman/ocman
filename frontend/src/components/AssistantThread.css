@@ -1327,3 +1327,54 @@
   font-style: italic;
   font-size: 11px;
 }
+
+/* AI approval as a footnote on the tool call it unblocked. Hugs the
+ * block above (negative margin) so it reads as part of that tool. */
+.oc-ai-approval-footnote {
+  margin: -2px 0 4px 18px;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+}
+
+.oc-ai-approval-toggle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: var(--overlay1);
+}
+
+.oc-ai-approval-toggle:hover {
+  color: var(--green);
+}
+
+.oc-ai-approval-icon {
+  color: var(--green);
+}
+
+.oc-ai-approval-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+  padding-left: 10px;
+  border-left: 1px solid var(--surface1);
+}
+
+.oc-ai-approval-permission {
+  color: var(--text);
+}
+
+.oc-ai-approval-patterns {
+  color: var(--overlay0);
+  word-break: break-all;
+}
+
+.oc-ai-approval-reasoning {
+  color: var(--overlay1);
+  font-style: italic;
+}

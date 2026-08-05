@@ -4,6 +4,7 @@ import type { FailedSend } from './failedSends';
 import { extractTaskId } from './taskId';
 import { messageModelRef } from './turnStats';
 import { formatSeconds } from './format';
+import { encodeToolApproval, type ToolApproval } from './threadHelpers';
 
 /**
  * Returns true when the MIME type denotes an image (`image/...`).
@@ -171,6 +172,8 @@ type ConvertedCacheEntry = {
   /** Current clock value when this message contains active reasoning. */
   reasoningNow: number;
   childSessions: ChildSessionReference[] | undefined;
+  /** Signature of the AI approvals footnoted onto this message's tools. */
+  approvalSig: string;
   result: ThreadMessageLike;
 };
 const convertedMessageCache = new WeakMap<Message, ConvertedCacheEntry>();
@@ -219,6 +222,21 @@ export function isSynthesizedTerminal(msgParts: Part[]): boolean {
     if (state && state.status === 'running') return false;
   }
   return true;
+}
+
+/**
+ * The last tool part created at or before `ts`, from a list already
+ * sorted ascending by `timeCreated`. That is the tool a permission
+ * asked at `ts` belongs to, since OpenCode creates the tool part
+ * before it asks. Returns undefined when nothing was running yet.
+ */
+function lastToolPartBefore(sortedToolParts: Part[], ts: number): Part | undefined {
+  let target: Part | undefined;
+  for (const p of sortedToolParts) {
+    if ((p.timeCreated || 0) > ts) break;
+    target = p;
+  }
+  return target;
 }
 
 /** Build (or rebuild) the `messageId → parts[]` index. */
@@ -319,8 +337,38 @@ export function createConvertMessages(): ConvertMessagesFn {
       state.lastPartsByMsg = partsByMsg;
     }
 
+    // AI auto-approvals render as a footnote on the tool call they
+    // unblocked instead of a standalone block. A permission is always
+    // asked *while* a tool runs, so the approved tool is the most
+    // recently created tool part at approval time. An approval that
+    // matches no tool part keeps its standalone notice.
+    const approvalsByPartId: Record<string, ToolApproval[]> = {};
+    const inlinedNotices = new Set<string>();
+    const notices = messages.filter((m) => m.data?.role === 'notice');
+    if (notices.length > 0) {
+      const toolParts = parts
+        .filter((p) => !!p.timeCreated && parsePart(p).type === 'tool')
+        .sort((a, b) => (a.timeCreated || 0) - (b.timeCreated || 0));
+      for (const notice of notices) {
+        for (const pd of (partsByMsg[notice.id] || EMPTY_PARTS).map(parsePart)) {
+          if (pd.type !== 'auto-approved') continue;
+          const target = lastToolPartBefore(toolParts, notice.timeCreated);
+          if (!target) continue;
+          const list = approvalsByPartId[target.id] || (approvalsByPartId[target.id] = []);
+          list.push({
+            permission: pd.permission || '',
+            patterns: pd.patterns || [],
+            reasoning: pd.reasoning || '',
+          });
+          inlinedNotices.add(notice.id);
+        }
+      }
+    }
+    const hasApprovals = inlinedNotices.size > 0;
+
     const filtered = messages.filter(
-      (m) => m.data?.role === 'user' || m.data?.role === 'assistant' || m.data?.role === 'notice',
+      (m) => m.data?.role === 'user' || m.data?.role === 'assistant'
+        || (m.data?.role === 'notice' && !inlinedNotices.has(m.id)),
     );
 
     // Detect mid-conversation model switches. Walk the messages in
@@ -436,10 +484,19 @@ export function createConvertMessages(): ConvertMessagesFn {
       const data = parsePart(part);
       return data.type === 'reasoning' && data.time?.start !== undefined && data.time.end === undefined;
     }) ? now : 0;
+    // Approvals arrive after the tool part they annotate, so they must
+    // participate in the cache key or the footnote never shows up.
+    const approvalSig = hasApprovals
+      ? msgPartsRaw
+        .map((p) => (approvalsByPartId[p.id] ? `${p.id}:${approvalsByPartId[p.id].length}` : ''))
+        .filter(Boolean)
+        .join(',')
+      : '';
     const cached = convertedMessageCache.get(m);
     if (
       cached &&
       partsEqual(cached.parts, msgPartsRaw) &&
+      cached.approvalSig === approvalSig &&
       cached.pendingAgent === pendingAgent &&
       cached.taskLiveOutput === taskLiveOutput &&
       cached.projectDirectory === projectDirectory &&
@@ -528,6 +585,7 @@ export function createConvertMessages(): ConvertMessagesFn {
       // Skip non-renderable lifecycle parts
       if (pd.type === 'step-start' || pd.type === 'step-finish' || pd.type === 'snapshot') return;
 
+      const toolCallsBefore = toolCalls.length;
       switch (pd.type) {
         case 'text':
           if (pd.text?.trim()) {
@@ -848,6 +906,16 @@ export function createConvertMessages(): ConvertMessagesFn {
           break;
         }
       }
+
+      // Footnote any AI approval that unblocked this part onto the
+      // tool call(s) it produced.
+      const approvals = approvalsByPartId[msgPartsRaw[partIdx]?.id || ''];
+      if (approvals) {
+        const markers = approvals.map(encodeToolApproval).join('');
+        for (let i = toolCallsBefore; i < toolCalls.length; i++) {
+          toolCalls[i].argsText += markers;
+        }
+      }
     });
 
     // If the message has an error object, inject the error details
@@ -942,6 +1010,7 @@ export function createConvertMessages(): ConvertMessagesFn {
       showReasoning,
       reasoningNow,
       childSessions,
+      approvalSig,
       result,
     });
 

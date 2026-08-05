@@ -144,6 +144,49 @@ describe('ToolCallDisplay auto-approved notice', () => {
   });
 });
 
+describe('ToolCallDisplay AI approval footnote', () => {
+  const approvedBash = (approval: Record<string, unknown>) => ({
+    argsText: `completed\nrm -rf /tmp/foo\n@approved:${JSON.stringify(approval)}`,
+    result: 'gone',
+  });
+
+  it('renders the footnote collapsed and keeps the marker out of the command', () => {
+    const { container, queryByTestId } = renderTool(
+      approvedBash({ permission: 'bash', patterns: ['rm -rf /tmp/foo'], reasoning: 'Temp dir only.' }),
+    );
+
+    expect(screen.getByTestId('shell-output-block').textContent).toBe('$ rm -rf /tmp/foo\ngone');
+    expect(container.querySelector('.oc-ai-approval-footnote')).not.toBeNull();
+    expect(queryByTestId('ai-approval-detail')).toBeNull();
+  });
+
+  it('reveals permission, patterns and reasoning on click', () => {
+    const { getByTestId } = renderTool(
+      approvedBash({ permission: 'bash', patterns: ['rm -rf /tmp/foo'], reasoning: 'Temp dir only.' }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Auto-approved by AI/ }));
+    const detail = getByTestId('ai-approval-detail');
+    expect(detail.textContent).toContain('bash');
+    expect(detail.textContent).toContain('rm -rf /tmp/foo');
+    expect(detail.textContent).toContain('Temp dir only.');
+  });
+
+  it('renders no footnote when the tool carries no approval marker', () => {
+    const { container } = renderTool({ argsText: 'completed\necho hi', result: 'hi' });
+    expect(container.querySelector('.oc-ai-approval-footnote')).toBeNull();
+  });
+
+  it('footnotes muted-line tools too', () => {
+    const { container } = renderTool({
+      toolName: '__read__',
+      argsText: 'Read /etc/hosts\n@approved:{"permission":"external_directory","patterns":["/etc/hosts"],"reasoning":"Read only."}',
+    });
+    expect(container.querySelector('.oc-read-line')!.textContent).toBe('\u2192Read /etc/hosts');
+    expect(container.querySelector('.oc-ai-approval-footnote')).not.toBeNull();
+  });
+});
+
 describe('ToolCallDisplay generic tool', () => {
   it('scrolls overflowing input and output blocks when expanded', () => {
     const scrollRule = assistantThreadCss.match(/\.oc-tool-compact-body \.oc-tool-pre\s*\{[^}]*\}/)?.[0] || '';
