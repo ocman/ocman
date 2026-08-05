@@ -255,6 +255,21 @@ func (s *Server) broadcastSessionChanged(sessionID string) {
 	s.broadcastGlobalEvent("ocman.session.changed", payload)
 }
 
+func (s *Server) broadcastSessionStatus(sessionID string, status db.SessionStatus) {
+	if sessionID == "" {
+		return
+	}
+	payload, err := json.Marshal(map[string]interface{}{
+		"sessionID": sessionID,
+		"patch": map[string]interface{}{
+			"status": status,
+		},
+	})
+	if err == nil {
+		s.broadcastGlobalEvent("ocman.session.changed", payload)
+	}
+}
+
 // broadcastSessionCreated broadcasts a freshly-created (or moved)
 // session with a provisional list row the frontend can insert
 // immediately, ahead of the authoritative refetch the same event
@@ -273,7 +288,7 @@ func (s *Server) broadcastSessionCreated(info sessionsvc.CreatedSession) {
 		Title:       info.Title,
 		TimeCreated: now,
 		TimeUpdated: now,
-		Status:      "waiting",
+		Status:      db.StatusWaiting,
 	}
 	payload, err := json.Marshal(map[string]interface{}{
 		"sessionID": info.ID,

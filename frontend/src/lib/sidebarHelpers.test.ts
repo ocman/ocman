@@ -367,11 +367,11 @@ describe('mergeSidebarSessions', () => {
     expect(merged[0].pendingQuestion).toBe(false);
   });
 
-  it('keeps a store busy status over a stale non-busy poll, and seen sticky', () => {
+  it('lets the poll status win over a store busy, and keeps seen sticky', () => {
     const current = [makeSession({ id: 'a', status: 'busy', seen: true })];
     const next = [makeSession({ id: 'a', status: 'done', seen: false })];
     const merged = mergeSidebarSessions(next, current, undefined);
-    expect(merged[0].status).toBe('busy');
+    expect(merged[0].status).toBe('done');
     expect(merged[0].seen).toBe(true);
   });
 

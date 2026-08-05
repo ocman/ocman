@@ -58,6 +58,17 @@ type UiStore = {
   // it. Missing entries are treated as expanded.
   collapsedProjects: string[];
   toggleCollapsedProject: (directory: string) => void;
+  /**
+   * Drop `directories` from the collapsed set, persisting the expansion.
+   * Called when a session is opened so its project group stays open after
+   * the user navigates elsewhere — collapsing is a deliberate click, so it
+   * must never be undone by a derived, unpersisted expansion (which used
+   * to hide the session the user had just been working in).
+   *
+   * A no-op returns the previous state so callers can invoke it from an
+   * effect without triggering a re-render loop.
+   */
+  expandProjects: (directories: string[]) => void;
 
   // User-controlled order of project groups in the "projects" sidebar
   // view. Stored as an ordered list of project root directories. The
@@ -228,6 +239,14 @@ export const useUiStore = create<UiStore>()(
             ? s.collapsedProjects.filter((d) => d !== directory)
             : [...s.collapsedProjects, directory],
         })),
+      expandProjects: (directories) =>
+        set((s) => {
+          const drop = new Set(directories);
+          const next = s.collapsedProjects.filter((d) => !drop.has(d));
+          // Nothing was collapsed: keep the old array so the reference is
+          // stable and subscribers don't re-render.
+          return next.length === s.collapsedProjects.length ? s : { collapsedProjects: next };
+        }),
 
       projectOrder: [],
       setProjectOrder: (order) => set({ projectOrder: order }),

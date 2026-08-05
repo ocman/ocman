@@ -10,6 +10,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
@@ -194,6 +195,11 @@ func (w *autoApproveWatcher) tick(parentCtx context.Context) {
 			cancel()
 			if adapter, ok := w.svc.OpencodeAdapter().(*opencode.Adapter); ok {
 				adapter.ClearPromptsForPort(port)
+				// Forget this instance's turn states too: sessions it
+				// was running are now unobservable, which is what
+				// settles an unfinished turn as interrupted instead of
+				// leaving it busy forever.
+				adapter.ClearSessionStatusForPort(port)
 			}
 			delete(w.subs, port)
 		}
@@ -325,9 +331,22 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 	adapter := w.svc.OpencodeAdapter()
 	ocAdapter, _ := adapter.(*opencode.Adapter)
 	portGeneration := uint64(0)
+	statusGeneration := uint64(0)
 	firstReconciliationFinished := make(chan struct{})
 	if ocAdapter != nil {
 		portGeneration = ocAdapter.PromptPortGeneration(port)
+		// Seed the live turn state from the instance's own snapshot
+		// before the stream can tell us anything. Without this a
+		// session that was already mid-turn when ocman connected (or
+		// restarted) would have no live entry, and the status would
+		// fall back to message-shape inference. The seed is what makes
+		// the live view survive an ocman restart without ocman
+		// persisting a copy of state OpenCode owns.
+		statusGeneration = ocAdapter.StatusPortGeneration(port)
+		if !ocAdapter.SeedSessionStatusFromInstance(streamCtx, port, statusGeneration) {
+			logger := log.WithField("port", port)
+			logger.Debug("autoapprove-watcher: /session/status snapshot unavailable, turn state stays unobserved")
+		}
 		directories := w.directoriesForPort(port)
 		onPermission := func(prompt platforms.LivePrompt) {
 			if w.onPermission == nil {
@@ -396,7 +415,21 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 				w.svc.deps.BroadcastQuestionResolved(sessionID, requestID, reason)
 			}
 		},
+		OnSessionStatus: func(sessionID, statusType string) {
+			if ocAdapter == nil {
+				return
+			}
+			ocAdapter.ObserveSessionStatus(port, statusGeneration, sessionID, statusType)
+			w.broadcastSessionStatus(ocAdapter, port, sessionID, statusType)
+		},
 		OnSessionIdle: func(sessionID string) {
+			// session.idle is the same edge as session.status=idle, but
+			// OpenCode emits it separately; record it so a missed
+			// status event can't leave the session pinned busy.
+			if ocAdapter != nil {
+				ocAdapter.ObserveSessionStatus(port, statusGeneration, sessionID, "idle")
+				w.broadcastSessionStatus(ocAdapter, port, sessionID, "idle")
+			}
 			if w.svc != nil && w.svc.deps.BroadcastSessionIdle != nil {
 				w.svc.deps.BroadcastSessionIdle(sessionID)
 			}
@@ -413,6 +446,24 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 		return fmt.Errorf("read /global/event: %w", err)
 	}
 	return nil
+}
+
+func (w *autoApproveWatcher) broadcastSessionStatus(adapter *opencode.Adapter, port, sessionID, statusType string) {
+	if w.svc == nil || w.svc.deps.BroadcastSessionStatus == nil {
+		return
+	}
+	status := db.StatusBusy
+	if statusType == "idle" {
+		var err error
+		status, err = adapter.SessionStatusOnPort(sessionID, port)
+		if err != nil {
+			if w.svc.deps.BroadcastSessionChanged != nil {
+				w.svc.deps.BroadcastSessionChanged(sessionID)
+			}
+			return
+		}
+	}
+	w.svc.deps.BroadcastSessionStatus(sessionID, status)
 }
 
 func promptStrings(value any) []string {

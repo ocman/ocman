@@ -376,8 +376,29 @@ minimal and match the surrounding code.
 - **OpenCode port discovery** uses `lsof` to find processes named
   `opencode` listening on TCP, then resolves their cwd. macOS/Linux
   only. Cached with a 10-second TTL.
-- **Session status** for OpenCode is inferred at query time from the
-  last message's `role`, `finish`, and `error` fields.
+- **Session status** is a closed, typed set — `db.SessionStatus`
+  (`busy`, `waiting`, `done`, `error`, `interrupted`), mirrored by the
+  exported TS `SessionStatus` union. It is **settled from the agent's own
+  turn lifecycle**, not guessed from stored messages (#488). One function
+  decides it, `db.SettleSessionStatus(turn, live, inferred)`:
+  - The live signal comes from OpenCode itself —
+    `GET /session/status` (`{sessionID: {type: "busy"|"retry"|"idle"}}`),
+    seeded per instance when the autoapprove watcher connects and kept
+    current from `session.status` events on `/global/event`. It lives in
+    `internal/platforms/opencode/live_status.go`, keyed by instance port,
+    and is dropped wholesale when a port disappears. Nothing is
+    persisted: OpenCode owns this state, so a restart re-seeds instead of
+    trusting a stale copy.
+  - `db.InferSessionStatus` (last message's `role`/`finish`/`error`) is
+    demoted to answering one question: *which* terminal state a settled
+    session is in. It is never read as "running".
+  - No live view + an unfinished turn = `interrupted`: the process that
+    owned the turn is gone, so it can never finish.
+  Consequently there is no `STATUS_GRACE_MS` debounce and no sticky-busy
+  merge in the sidebar — the value no longer lags, so compensating for
+  lag would only add staleness. The queue's idle-edge flush still trusts
+  the edge, but only for ordering independence, not because the status
+  can't be trusted.
 - **Auto-archive**: background goroutine archives sessions inactive
   for 3+ days (checked every 24 h). Runs against all registered
   platforms.

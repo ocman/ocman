@@ -6,6 +6,7 @@ import { record as recordPerf, templatePath } from './perfRing';
 export type {
   NotifyEntry,
   Session,
+  SessionStatus,
   GitInfo,
   Message,
   Part,

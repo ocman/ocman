@@ -65,6 +65,13 @@ type Server struct {
 	// -public-base-url flag. Trailing slash is trimmed.
 	publicBaseURL string
 
+	// fileKey signs the opaque tokens behind GET /api/file/{token}, the
+	// proxy that lets the browser view assets an agent generated on
+	// disk (see handlers_file.go). Loaded once, on first use.
+	fileKey     []byte
+	fileKeyErr  error
+	fileKeyOnce sync.Once
+
 	// aaSvcCached is the auto-approve domain service
 	// (internal/autoapprove), built lazily on first use via aaSvc() so
 	// the dependency fields are wired by then. See autoapprove_engine.go.

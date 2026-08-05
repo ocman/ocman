@@ -7,15 +7,14 @@ import { filterVisibleSessions } from '../../lib/sessionVisibility';
 import { computeSidebarHash, filterInactiveChildren, mergeSidebarSessions, pickNextSessionAfterArchive, resolveOpenSession } from '../../lib/sidebarHelpers';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { remoteLog } from '../../lib/remoteLog';
+import { onSessionChanged, onSseConnect } from '../../lib/useGlobalEvents';
 
 const RECENT_SESSIONS_LIMIT = 15;
 /**
- * How often the Recent Sessions sidebar re-polls /api/sessions. Kept
- * low enough to feel live, but not so low that we hammer the OpenCode
- * port-discovery + per-instance HTTP fan-out on every tick. Polling
- * is paused while the tab is hidden.
+ * Reconciliation backstop for events missed while disconnected. Normal
+ * updates arrive through the global SSE stream.
  */
-const SIDEBAR_REFRESH_MS = 3000;
+const SIDEBAR_REFRESH_MS = 3 * 60 * 1000;
 /**
  * How long to delay archive completion so the row's fade-out
  * animation can finish. Matches the CSS transition.
@@ -61,8 +60,8 @@ export interface UseSidebarSessionsResult {
 /**
  * Owns everything the Recent Sessions sidebar needs:
  *
- *   - the polled list of sessions in the last 72 h, refreshed every
- *     3 s while the tab is visible. The list lives in Zustand
+ *   - the list of sessions in the last 72 h, refreshed from global SSE
+ *     invalidations with a slow reconciliation poll. It lives in Zustand
  *     (useApiStore.recentSessions) so SSE-derived optimistic writes
  *     from the session-detail page survive navigation; the poll then
  *     merges over them (see mergeSidebarSessions for which fields are
@@ -95,10 +94,10 @@ export function useSidebarSessions({
   const storeSetRecentSessions = useApiStore((s) => s.setRecentSessions);
   const patchRecentSession = useApiStore((s) => s.patchRecentSession);
   const sidebarRecentHours = useUiStore((s) => s.sidebarRecentHours);
+  const expandProjects = useUiStore((s) => s.expandProjects);
 
-  // Mirror the configured window into a ref so the polling closure
-  // reads the latest value without re-creating loadRecentSessions
-  // (which would restart the 3 s poll interval on every settings edit).
+  // Mirror the configured window into a ref so refresh callbacks read
+  // the latest value without re-creating loadRecentSessions.
   const sidebarRecentHoursRef = useRef(sidebarRecentHours);
   useEffect(() => {
     sidebarRecentHoursRef.current = sidebarRecentHours;
@@ -118,7 +117,7 @@ export function useSidebarSessions({
 
   // Fallback for the open session when it falls outside the recent
   // window / the backend's fetch limit: fetched once by id and cached
-  // here so we don't hit /api/session on every 3 s poll. Reset when the
+  // here so reconciliation doesn't repeatedly hit /api/session. Reset when the
   // active session changes.
   const openSessionFallbackRef = useRef<Session | null>(null);
   useEffect(() => {
@@ -192,7 +191,28 @@ export function useSidebarSessions({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showArchivedRecent, loadRecentSessions]);
 
-  // Polling loop, paused while the tab is hidden.
+  // SSE is the primary invalidation path. Re-fetch after reconnecting to
+  // reconcile events missed during the gap.
+  useEffect(() => {
+    const refresh = () => {
+      loadRecentSessions(abortSignalRef.current?.signal)
+        .catch((err) => remoteLog.error('Failed to refresh recent sessions', err));
+    };
+    const unsubscribeChanged = onSessionChanged((sessionID, _session, patch) => {
+      if (patch && useApiStore.getState().recentSessions.some((session) => session.id === sessionID)) {
+        patchRecentSession(sessionID, patch);
+        return;
+      }
+      refresh();
+    });
+    const unsubscribeConnect = onSseConnect(refresh);
+    return () => {
+      unsubscribeChanged();
+      unsubscribeConnect();
+    };
+  }, [loadRecentSessions, abortSignalRef, patchRecentSession]);
+
+  // Slow reconciliation loop, paused while the tab is hidden.
   useEffect(() => {
     let refreshId: number | null = null;
     const start = () => {
@@ -298,18 +318,30 @@ export function useSidebarSessions({
     });
   }, [pinSession, patchRecentSession]);
 
-  // Collapsed state as a Set for O(1) membership checks in render.
-  // The current session's group is force-expanded regardless of
-  // persisted state so the user can always see where they are.
-  const collapsedProjectSet = useMemo(() => {
-    const set = new Set(collapsedProjects);
+  // Opening a session expands its project group for good. This used to be
+  // derived per-render and never persisted, so navigating to another
+  // project re-collapsed the group and the session the user had just been
+  // working in vanished from the sidebar (it survived a reload, because the
+  // collapse is persisted). Expanding once per opened session keeps
+  // collapsing a deliberate user action: it is not re-applied on later
+  // sidebar updates, so the user can still collapse the project they are in.
+  const expandedForRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!id || expandedForRef.current === id) return;
     const currentDir = recentSessions.find((s) => s.id === id)?.directory;
-    if (currentDir) {
-      set.delete(currentDir); // legacy keys persisted before fold
-      set.delete(projectRootForDirectory(currentDir));
-    }
-    return set;
-  }, [collapsedProjects, recentSessions, id]);
+    // The list may not have loaded yet; retry when it changes.
+    if (!currentDir) return;
+    expandedForRef.current = id;
+    // Both keys: the raw directory (legacy entries persisted before the
+    // worktree fold) and the folded project root.
+    expandProjects([currentDir, projectRootForDirectory(currentDir)]);
+  }, [id, recentSessions, expandProjects]);
+
+  // Collapsed state as a Set for O(1) membership checks in render.
+  const collapsedProjectSet = useMemo(
+    () => new Set(collapsedProjects),
+    [collapsedProjects],
+  );
 
   return {
     recentSessions,

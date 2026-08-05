@@ -1,6 +1,17 @@
 import './StatusBadge.css';
 
-const labels: Record<string, string> = { waiting: 'Waiting', busy: 'Busy', done: 'Done', error: 'Error' };
+const labels: Record<string, string> = {
+  waiting: 'Waiting',
+  busy: 'Busy',
+  done: 'Done',
+  error: 'Error',
+  interrupted: 'Interrupted',
+};
+
+/** Tooltip for states whose one-word label doesn't explain itself. */
+const hints: Record<string, string> = {
+  interrupted: 'Interrupted — the agent process stopped before the turn finished',
+};
 
 interface StatusBadgeProps {
   status: string;
@@ -53,7 +64,7 @@ export function StatusBadge({ status, compact, seen, pending, draft, titleOverri
     return (
       <span
         className={`status-dot-compact status-${status}${seen ? ' status-seen' : ''}${draft ? ' has-draft' : ''}`}
-        title={draft ? 'Unsent draft' : titleOverride || labels[status] || status}
+        title={draft ? 'Unsent draft' : titleOverride || hints[status] || labels[status] || status}
       />
     );
   }
@@ -68,7 +79,7 @@ export function StatusBadge({ status, compact, seen, pending, draft, titleOverri
     );
   }
   return (
-    <span className={`status-indicator status-${status}`}>
+    <span className={`status-indicator status-${status}`} title={hints[status] || undefined}>
       <span className="status-dot" />
       {labels[status] || status}
     </span>

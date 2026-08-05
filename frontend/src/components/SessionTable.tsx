@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import type { Session, GitInfo, Project } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
 import { cleanTitle, formatDuration, relativeTime, shortPath } from '../lib/format';
+import { isTerminalStatus } from '../lib/sessionStatus';
 import { StatusBadge } from './StatusBadge';
 import { HostBadge } from './HostBadge';
 import { filterVisibleSessions } from '../lib/sessionVisibility';
@@ -361,7 +362,7 @@ export function GroupedSessionTable({
                 </thead>
                 <tbody>
                   {nestSessions(group.sessions).map(({ session: s, depth }) => {
-                    const seenLatest = (s.status === 'waiting' || s.status === 'error' || s.status === 'done') && s.seen;
+                    const seenLatest = isTerminalStatus(s.status) && s.seen;
                     const pending = s.pendingPermission || s.pendingQuestion;
                     return (
                       <tr
@@ -468,7 +469,7 @@ export function SessionTable({ sessions, showProject, loading, includeArchived }
       </thead>
       <tbody>
         {nestSessions(visibleSessions).map(({ session: s, depth }) => {
-          const seenLatest = (s.status === 'waiting' || s.status === 'error' || s.status === 'done') && s.seen;
+          const seenLatest = isTerminalStatus(s.status) && s.seen;
           const pending = s.pendingPermission || s.pendingQuestion;
           return (
             <tr

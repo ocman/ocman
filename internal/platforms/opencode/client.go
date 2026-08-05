@@ -247,7 +247,7 @@ func (a *Adapter) fetchSessionFromOpenCodeCtx(ctx context.Context, sessionID str
 			Warn("opencode: fetching session defaults for live path")
 	}
 
-	sessionStatus := "done"
+	inferredStatus := db.StatusDone
 	lastErrorName := ""
 	lastErrorMessage := ""
 	lastErrorAt := int64(0)
@@ -279,9 +279,13 @@ func (a *Adapter) fetchSessionFromOpenCodeCtx(ctx context.Context, sessionID str
 			if rawIdx := len(ocMessages) - 1; rawIdx >= 0 {
 				synthTerminal = isSynthesizedTerminal(ocMessages[rawIdx])
 			}
-			sessionStatus = db.InferSessionStatus(role, finish, lastErr, synthTerminal)
+			inferredStatus = db.InferSessionStatus(role, finish, lastErr, synthTerminal)
 		}
 	}
+	// This path only runs with a live instance on `port`, so the live turn
+	// signal is authoritative here; the inference above only decides which
+	// terminal state a settled session is in.
+	sessionStatus := a.settleStatusOnPort(sessionID, port, inferredStatus)
 
 	userMsgCount := 0
 	for _, m := range untypedMessages {

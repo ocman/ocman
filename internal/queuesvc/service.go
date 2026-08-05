@@ -241,11 +241,16 @@ func (s *Service) Flush(ctx context.Context, platformID, sessionID string) {
 	// turn.
 	s.clearDrainedSinceIdle(sessionID)
 	// trustIdle=true: session.idle IS the authoritative turn-finished
-	// signal. Do NOT re-check the inferred status here — it's derived from
-	// the last assistant message's finish field, which lags the SSE edge,
-	// so it can still read "busy" at this instant. Consulting it would
-	// swallow the drain and strand the queue, because no further idle edge
-	// arrives for a now-genuinely-idle session.
+	// signal, so the flush acts on the edge alone.
+	//
+	// Since #488 the status gate this skips is no longer a guess derived
+	// from the last message's shape — it reads the agent's own turn state
+	// — so the old "never derive from inferred status" caveat is gone.
+	// Trusting the edge outright still matters for a narrower reason: it
+	// makes the drain independent of the order in which session.idle and
+	// session.status arrive, and of a failed status snapshot. A gate that
+	// read busy at this instant for either reason would swallow the drain
+	// and strand the queue, since no second idle edge is coming.
 	s.drainHead(ctx, platformID, sessionID, true)
 }
 
@@ -257,7 +262,7 @@ func (s *Service) Flush(ctx context.Context, platformID, sessionID string) {
 // trustIdle distinguishes the two callers: Flush (session.idle edge)
 // passes true because the edge itself proves the turn ended; the enqueue
 // fast-path passes false because it has no such proof and must gate on
-// the inferred status.
+// the session's reported status.
 func (s *Service) drainHead(ctx context.Context, platformID, sessionID string, trustIdle bool) {
 	// Busy gate: never send into a running turn — but only when we don't
 	// already have an authoritative idle signal (see Flush).
@@ -332,10 +337,11 @@ func (s *Service) drainHead(ctx context.Context, platformID, sessionID string, t
 // Sweep drains one message from every session whose queue is non-empty
 // and whose turn is currently idle. It is the self-healing safety net for
 // backlogs that never received a session.idle edge — rows stranded before
-// a fix, or an edge swallowed by a lagging status poll. Unlike Flush it
-// does NOT trust an authoritative idle edge (there is none), so it gates
-// on the inferred status (trustIdle=false): a session that reads busy is
-// left for the next sweep or its real idle edge.
+// a fix, or an edge lost because ocman wasn't connected to the instance
+// when it fired. Unlike Flush it does NOT trust an authoritative idle edge
+// (there is none), so it gates on the session's reported status
+// (trustIdle=false): a session that reads busy is left for the next sweep
+// or its real idle edge.
 //
 // One message per session per sweep, matching the one-follow-up-per-turn
 // contract: draining the head starts a turn, and the next sweep (or idle

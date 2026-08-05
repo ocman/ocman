@@ -1,20 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { Message, Session } from '../../lib/api';
 import { deriveRawStatus } from '../../lib/sessionStatus';
-import { useSyncRef } from '../../lib/useSyncRef';
 import type { PendingPermission } from '../../lib/sseHelpers';
 import type { PendingQuestion } from '../../components/session/QuestionPrompt';
 import type { SubagentTokenMap } from './useSubagentTracking';
 import { trackRender } from '../../lib/renderRateMonitor';
-
-/**
- * How long to keep the session marked `busy` after the underlying
- * raw status flips to `waiting`. Tool-call turn boundaries can flip
- * `busy → waiting → busy` in tens of milliseconds; debouncing the
- * waiting transition keeps the status badge from strobing.
- */
-const STATUS_GRACE_MS = 3000;
 
 /**
  * Work-event freshness window. Only real work-producing events
@@ -58,13 +49,14 @@ export interface UseSessionStatusOptions {
 }
 
 export interface UseSessionStatusResult {
-  /** Status without the debounce — flickers on tool-call boundaries. */
-  rawOptimisticStatus: Session['status'];
   /**
-   * Status displayed in the badge. Identical to `rawOptimisticStatus`
-   * except that `busy → waiting` transitions are held for
-   * STATUS_GRACE_MS so quick tool-call gaps don't flash a "waiting"
-   * pulse before the next turn starts.
+   * Status displayed in the badge.
+   *
+   * There is no debounce: `sessionStatus` is the agent's own turn state
+   * (see db.SettleSessionStatus), so it stays `busy` across tool-call
+   * boundaries instead of flickering to `waiting` between steps. A grace
+   * window used to hide that flicker; it only added three seconds of
+   * staleness once the underlying status stopped lagging.
    */
   optimisticStatus: Session['status'];
   /**
@@ -88,6 +80,40 @@ export interface UseSessionStatusResult {
  * can clear the map when a run ends — a fresh run shouldn't carry
  * subagent tokens from the previous one into its TPS window.
  */
+/**
+ * Fold the reported session status together with the local signals into
+ * the status the badge shows. Precedence, highest first:
+ *
+ *  1. `error`       — either source saw a failure.
+ *  2. `busy`        — the user just sent a prompt; this outranks a stale
+ *                     `interrupted`, since they revived the session and
+ *                     the backend hasn't caught up yet.
+ *  3. `interrupted` — the agent process that owned the turn is gone, so
+ *                     the local streaming signals describe a turn that
+ *                     can never finish. Treating them as work would spin
+ *                     the badge forever.
+ *  4. `busy`        — any other active-work signal.
+ *  5. `done`        — the backend says the session is settled.
+ */
+function resolveOptimisticStatus({
+  fromMessage,
+  sessionStatus,
+  justSentPrompt,
+  hasActiveWork,
+}: {
+  fromMessage: Session['status'];
+  sessionStatus: Session['status'] | null | undefined;
+  justSentPrompt: boolean;
+  hasActiveWork: boolean;
+}): Session['status'] {
+  if (sessionStatus === 'error' || fromMessage === 'error') return 'error';
+  if (justSentPrompt) return 'busy';
+  if (sessionStatus === 'interrupted') return 'interrupted';
+  if (hasActiveWork) return 'busy';
+  if (sessionStatus === 'done') return 'done';
+  return fromMessage;
+}
+
 export function useSessionStatus({
   lastMsg,
   messages,
@@ -113,74 +139,32 @@ export function useSessionStatus({
   // not contribute here.
   const assistantStreaming =
     lastMsg?.data?.role === 'assistant' && !lastMsg.data.finish && !lastMsg.data.error;
+  // Reading the clock during render is deliberate and bounded: the
+  // work-expiry effect below schedules a re-render for the exact moment
+  // this comparison flips, so the derived status can't go stale. Before
+  // #488 the value reached the badge through a debounce state, which hid
+  // the read from this rule; the debounce is gone, the read isn't new.
   const recentWorkActive =
-    recentWorkEventAt !== null && Date.now() - recentWorkEventAt < WORK_EVENT_ACTIVE_MS;
+    recentWorkEventAt !== null &&
+    // eslint-disable-next-line react-hooks/purity -- see above: the expiry timer re-renders when this flips.
+    Date.now() - recentWorkEventAt < WORK_EVENT_ACTIVE_MS;
+  const justSentPrompt = awaitingAssistantResponse && lastMsg?.data?.role === 'user';
   const hasActiveWork =
-    (awaitingAssistantResponse && lastMsg?.data?.role === 'user') ||
+    justSentPrompt ||
     assistantStreaming ||
     sessionStatus === 'busy' ||
     recentWorkActive;
 
-  let rawOptimisticStatus = rawStatusFromMessage;
-  if (sessionStatus === 'error' || rawStatusFromMessage === 'error') {
-    rawOptimisticStatus = 'error';
-  } else if (hasActiveWork) {
-    rawOptimisticStatus = 'busy';
-  } else if (sessionStatus === 'done') {
-    rawOptimisticStatus = 'done';
-  }
-
-  // Debounced status: when transitioning from "busy" to "waiting",
-  // hold "busy" for a grace period before committing. If the agent
-  // starts a new turn within that window the "waiting" flash is
-  // suppressed entirely. Transitions to "error", "done", or "busy"
-  // are applied immediately.
-  const [optimisticStatus, setOptimisticStatus] = useState<Session['status']>(rawOptimisticStatus);
-  const optimisticStatusRef = useSyncRef(optimisticStatus);
-  const statusGraceRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (statusGraceRef.current !== null) window.clearTimeout(statusGraceRef.current);
-    };
-  }, []);
-
-  // The synchronous setOptimisticStatus call below is intentional:
-  // when the raw status changes to anything other than the
-  // busy→waiting transition, we want the badge to update on the
-  // very next paint. Debouncing busy→waiting via the timeout
-  // arm above is the only path that defers the update.
-  //
-  // IMPORTANT: `optimisticStatus` is read via ref instead of being
-  // listed as a dependency. Listing it would create a self-referencing
-  // cycle (the effect sets the value it depends on), doubling the
-  // render count per status change and amplifying other re-render
-  // cascades.
-  useEffect(() => {
-    const currentOptimistic = optimisticStatusRef.current;
-    if (rawOptimisticStatus === currentOptimistic) {
-      // Already in sync — clear any pending grace timer.
-      if (statusGraceRef.current !== null) {
-        window.clearTimeout(statusGraceRef.current);
-        statusGraceRef.current = null;
-      }
-      return;
-    }
-    if (currentOptimistic === 'busy' && rawOptimisticStatus === 'waiting') {
-      if (statusGraceRef.current !== null) return; // timer already running
-      statusGraceRef.current = window.setTimeout(() => {
-        statusGraceRef.current = null;
-        setOptimisticStatus(rawOptimisticStatus);
-      }, STATUS_GRACE_MS);
-      return;
-    }
-    if (statusGraceRef.current !== null) {
-      window.clearTimeout(statusGraceRef.current);
-      statusGraceRef.current = null;
-    }
-    setOptimisticStatus(rawOptimisticStatus);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- optimisticStatusRef is a stable ref; listing optimisticStatus here would create a self-referencing render cycle.
-  }, [rawOptimisticStatus]);
+  // No debounce: `sessionStatus` already reflects the agent's own turn
+  // state, and the message-shape fallback only fills the gap until the
+  // next event lands. Deferring transitions here would re-introduce
+  // exactly the lag this hook used to compensate for.
+  const optimisticStatus = resolveOptimisticStatus({
+    fromMessage: rawStatusFromMessage,
+    sessionStatus,
+    justSentPrompt,
+    hasActiveWork,
+  });
 
   const [, setWorkExpiryTick] = useState(0);
   useEffect(() => {
@@ -265,7 +249,6 @@ export function useSessionStatus({
   }, [isRunning, messages, subagentTokens, setSubagentTokens, pendingPermission, pendingQuestion]);
 
   return {
-    rawOptimisticStatus,
     optimisticStatus,
     liveTokensPerSecond,
   };

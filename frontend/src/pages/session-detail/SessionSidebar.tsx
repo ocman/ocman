@@ -21,6 +21,7 @@ import { CSS } from '@dnd-kit/utilities';
 import type { Session } from '../../lib/api';
 import { cleanTitle, fuzzyMatch, shortPath, relativeTime } from '../../lib/format';
 import { projectRootForDirectory } from '../../lib/worktrees';
+import { isTerminalStatus } from '../../lib/sessionStatus';
 import { StatusBadge } from '../../components/StatusBadge';
 import { HostBadge } from '../../components/HostBadge';
 import { ShortPath, GitStatusLine } from '../../components/SessionTable';
@@ -215,7 +216,7 @@ export function SessionSidebar({
         <StatusBadge
           status={displayStatus}
           compact
-          seen={(displayStatus === 'waiting' || displayStatus === 'error' || displayStatus === 'done') && sib.seen}
+          seen={isTerminalStatus(displayStatus) && sib.seen}
           pending={sib.pendingPermission || sib.pendingQuestion}
           draft={draftSessionIds.has(sib.id)}
           titleOverride={sib.notice?.message}

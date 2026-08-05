@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -236,7 +237,7 @@ func (a *Adapter) promptDirectories(port string, discovered []string) []string {
 		return out
 	}
 	for _, session := range sessions {
-		if session.Status != "busy" {
+		if session.Status != db.StatusBusy {
 			continue
 		}
 		root := normalizePortDirectory(foldWorktreeToProjectRoot(session.Directory))

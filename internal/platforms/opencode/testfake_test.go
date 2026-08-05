@@ -31,6 +31,11 @@ type opencodeFake struct {
 	// the matching path. Zero = 200.
 	sessionStatus  int
 	messagesStatus int
+	// turnStatus is the GET /session/status body: sessionID -> the
+	// OpenCode SessionStatus discriminator ("busy", "retry", "idle").
+	// turnStatusCode overrides the response status; zero = 200.
+	turnStatus     map[string]string
+	turnStatusCode int
 	// failJSON, when set, causes the next response to be malformed.
 	failJSON bool
 	// agentBody, when set, is served verbatim for GET /agent.
@@ -67,6 +72,30 @@ func (f *opencodeFake) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	failJSON := f.failJSON
 	f.mu.Unlock()
 
+	// /session/status → live turn state per session. Must precede the
+	// /session/ prefix branches below, which would otherwise treat
+	// "status" as a session id.
+	if r.URL.Path == "/session/status" {
+		f.mu.Lock()
+		status := f.turnStatusCode
+		turns := f.turnStatus
+		f.mu.Unlock()
+		if status != 0 {
+			http.Error(w, fmt.Sprintf("upstream %d", status), status)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if failJSON {
+			_, _ = w.Write([]byte("not json"))
+			return
+		}
+		out := map[string]map[string]string{}
+		for sessionID, statusType := range turns {
+			out[sessionID] = map[string]string{"type": statusType}
+		}
+		_ = json.NewEncoder(w).Encode(out)
+		return
+	}
 	// /session/{id}/message  → message list
 	if strings.HasPrefix(r.URL.Path, "/session/") && strings.HasSuffix(r.URL.Path, "/message") {
 		id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/session/"), "/message")

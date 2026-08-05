@@ -81,11 +81,13 @@ export async function resolveOpenSession(opts: {
 /**
  * Merge a fresh /api/sessions poll result over the current store rows.
  *
- * The poll is authoritative for everything except the two fields that
- * SSE-driven optimistic writes may have set more recently:
+ * The poll is authoritative for everything except `seen`, which is
+ * monotonic and must never be un-seen by a stale response.
  *
- *   - `status`: a store 'busy' outranks a stale non-busy server status;
- *   - `seen`: monotonic, never un-seen by a stale response.
+ * `status` is not sticky either: sticky-busy used to live here because
+ * the server derived status from the last message's shape and could not
+ * be trusted to be current; it now reports the agent's own turn state,
+ * so overriding it would only keep a finished turn spinning.
  *
  * The pending permission/question flags are deliberately NOT sticky.
  * They used to be merged as `live.pending… || server`, which also
@@ -109,7 +111,6 @@ export function mergeSidebarSessions(
     if (!live) return unarchived;
     return {
       ...unarchived,
-      status: live.status === 'busy' && s.status !== 'busy' ? 'busy' : s.status,
       seen: live.seen || s.seen,
     };
   });

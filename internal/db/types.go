@@ -4,16 +4,103 @@ import (
 	"encoding/json"
 )
 
-// InferSessionStatus determines the session status from the last message's attributes.
+// SessionStatus is the platform-agnostic lifecycle state ocman reports for
+// a session. The set is closed — every value is declared below, and the
+// TypeScript `SessionStatus` union in frontend/src/lib/api.types.ts mirrors
+// it one-for-one. Use the constants rather than bare strings so a typo is a
+// compile error instead of a silently unhandled branch.
+type SessionStatus string
+
+const (
+	// StatusBusy means a turn is running right now.
+	StatusBusy SessionStatus = "busy"
+	// StatusWaiting means the last turn finished and is awaiting the user.
+	StatusWaiting SessionStatus = "waiting"
+	// StatusDone means the session is settled with nothing awaiting a reply.
+	StatusDone SessionStatus = "done"
+	// StatusError means the last turn ended in an error.
+	StatusError SessionStatus = "error"
+	// StatusInterrupted means a turn was in flight but the agent process
+	// that owned it is gone (killed, crashed, machine rebooted). The turn
+	// will never finish, so reporting "busy" would spin forever.
+	StatusInterrupted SessionStatus = "interrupted"
+)
+
+// String implements fmt.Stringer.
+func (s SessionStatus) String() string { return string(s) }
+
+// TurnState is the *live* lifecycle signal for a session, sourced from the
+// agent process itself rather than guessed from stored message shape. For
+// OpenCode it comes from `GET /session/status` (seeded when ocman connects
+// to an instance) kept current by `session.status` events on
+// /global/event; see internal/platforms/opencode/live_status.go.
+type TurnState int
+
+const (
+	// TurnUnobserved means ocman has no live view of this session: no
+	// agent process was found for its directory, or one was found but
+	// ocman has not yet read its status snapshot.
+	TurnUnobserved TurnState = iota
+	// TurnRunning means the agent reports a turn in flight.
+	TurnRunning
+	// TurnSettled means the agent is reachable and reports no turn in
+	// flight for this session.
+	TurnSettled
+)
+
+// SettleSessionStatus is the single rule that decides a session's reported
+// status. It is the only place the live signal and the stored-message
+// inference are combined; every read path funnels through it.
+//
+//	turn        | live  | inferred | result
+//	------------|-------|----------|-------------
+//	Running     | *     | *        | busy        (the agent says so)
+//	Settled     | *     | busy     | done        (turn ended; no finish stored yet)
+//	Settled     | *     | other    | inferred    (which terminal state)
+//	Unobserved  | false | busy     | interrupted (nothing is running it)
+//	Unobserved  | *     | other    | inferred
+//	Unobserved  | true  | busy     | busy        (instance up, snapshot pending)
+//
+// The asymmetry is deliberate: only the agent can say a turn *is* running,
+// and only the absence of an agent can say an unfinished turn is dead.
+// Message shape is trusted for one question alone — which terminal state a
+// settled session is in — because that is the one thing it actually records.
+func SettleSessionStatus(turn TurnState, live bool, inferred SessionStatus) SessionStatus {
+	switch turn {
+	case TurnRunning:
+		return StatusBusy
+	case TurnSettled:
+		if inferred == StatusBusy {
+			return StatusDone
+		}
+		return inferred
+	case TurnUnobserved:
+		if inferred == StatusBusy && !live {
+			return StatusInterrupted
+		}
+		return inferred
+	}
+	return inferred
+}
+
+// InferSessionStatus reports what the last stored message implies about a
+// session, and nothing more. It is NOT a lifecycle signal: an assistant
+// message does not mean a turn ended (OpenCode emits several per turn,
+// between tool calls) and a missing `finish` does not mean work is in
+// flight. Feed the result to SettleSessionStatus together with the live
+// TurnState, which is authoritative for busy/not-busy.
+//
+// The mapping:
 //   - "error"   = last assistant message has an error or finish == "error"
 //   - "waiting" = last assistant message has a finish reason (turn complete)
-//   - "busy"    = last message is assistant with no finish reason (still streaming)
+//   - "busy"    = last message is assistant with no finish reason — read as
+//     "no terminal state recorded", not as "running"
 //   - "done"    = no messages, last message is from the user, or last message
-//                 is a synthesized non-LLM assistant message that has already
-//                 reached its terminal state (e.g. the assistant envelope
-//                 produced by POST /session/{id}/shell, which holds a single
-//                 completed bash tool part and never receives a `finish`
-//                 because no LLM turn ran).
+//     is a synthesized non-LLM assistant message that has already
+//     reached its terminal state (e.g. the assistant envelope
+//     produced by POST /session/{id}/shell, which holds a single
+//     completed bash tool part and never receives a `finish`
+//     because no LLM turn ran).
 //
 // synthesizedTerminal is true when the last message is an assistant message
 // whose parts indicate a non-LLM origin that has already finished:
@@ -25,20 +112,20 @@ import (
 // the session is reported as "done" instead of the misleading "busy". This
 // stops the busy spinner — and the cascading "queued" badge on subsequent
 // user messages — from sticking forever after a `!`-prefixed shell command.
-func InferSessionStatus(lastRole, lastFinish, lastError string, synthesizedTerminal bool) string {
+func InferSessionStatus(lastRole, lastFinish, lastError string, synthesizedTerminal bool) SessionStatus {
 	if lastRole == "assistant" {
 		if lastFinish == "error" || lastError != "" {
-			return "error"
+			return StatusError
 		}
 		if lastFinish != "" {
-			return "waiting"
+			return StatusWaiting
 		}
 		if synthesizedTerminal {
-			return "done"
+			return StatusDone
 		}
-		return "busy"
+		return StatusBusy
 	}
-	return "done"
+	return StatusDone
 }
 
 // Session represents a coding-platform session (OpenCode, ...).
@@ -52,26 +139,26 @@ func InferSessionStatus(lastRole, lastFinish, lastError string, synthesizedTermi
 // "agent" role exposed by some platforms (MessageData.Agent below, OpenCode's
 // /agent catalog) — that's a narrower concept within a single session.
 type Session struct {
-	ID                string  `json:"id"`
-	Platform          string  `json:"platform"` // owning adapter ID, e.g. "opencode", "claude-code"
-	ProjectID         string  `json:"projectId"`
+	ID        string `json:"id"`
+	Platform  string `json:"platform"` // owning adapter ID, e.g. "opencode", "claude-code"
+	ProjectID string `json:"projectId"`
 	// ParentID is the session this one descends from, when any. Two
 	// independent sources can populate it: OpenCode's own
 	// `session.parent_id` (subagent sessions), and ocman's
 	// state.db `child_sessions.parent_session_id` (sessions spawned
 	// via the MCP split tools). Empty for top-level sessions. The
 	// frontend uses it to render the list as a parent/child tree.
-	ParentID          string  `json:"parentId,omitempty"`
-	Title             string  `json:"title"`
-	Directory         string  `json:"directory"`
-	TimeCreated       int64   `json:"timeCreated"`
-	TimeUpdated       int64   `json:"timeUpdated"`
-	SummaryAdditions  *int    `json:"summaryAdditions"`
-	SummaryDeletions  *int    `json:"summaryDeletions"`
-	SummaryFiles      *int    `json:"summaryFiles"`
-	ShareURL          *string `json:"shareUrl"`
-	MessageCount      int     `json:"messageCount"`
-	DurationMs        int64   `json:"durationMs"`
+	ParentID         string  `json:"parentId,omitempty"`
+	Title            string  `json:"title"`
+	Directory        string  `json:"directory"`
+	TimeCreated      int64   `json:"timeCreated"`
+	TimeUpdated      int64   `json:"timeUpdated"`
+	SummaryAdditions *int    `json:"summaryAdditions"`
+	SummaryDeletions *int    `json:"summaryDeletions"`
+	SummaryFiles     *int    `json:"summaryFiles"`
+	ShareURL         *string `json:"shareUrl"`
+	MessageCount     int     `json:"messageCount"`
+	DurationMs       int64   `json:"durationMs"`
 	// ActiveDurationMs is the time the agent was actually working on a
 	// turn, computed as the sum of (time.completed - time.created)
 	// across assistant messages. Excludes idle gaps between turns
@@ -81,17 +168,19 @@ type Session struct {
 	TotalInputTokens  int64   `json:"totalInputTokens"`
 	TotalOutputTokens int64   `json:"totalOutputTokens"`
 	TotalCost         float64 `json:"totalCost"`
-	Status            string  `json:"status"` // "waiting", "busy", "done", or "error"
+	// Status is the reported lifecycle state. Always produced by
+	// SettleSessionStatus — never assigned from raw inference alone.
+	Status SessionStatus `json:"status"`
 	// LiveConnection is true when the adapter has a live channel to this
 	// session's running agent process. For OpenCode this means a --port
 	// was discovered for the session's cwd.
-	LiveConnection    bool `json:"liveConnection"`
-	PendingPermission bool `json:"pendingPermission"` // agent has a pending permission request for this session
-	PendingQuestion   bool `json:"pendingQuestion"`   // agent has a pending question for this session
-	Archived bool  `json:"archived"`
-	Seen     bool  `json:"seen"`
-	Pinned   bool  `json:"pinned"`
-	PinnedAt int64 `json:"pinnedAt"`
+	LiveConnection    bool  `json:"liveConnection"`
+	PendingPermission bool  `json:"pendingPermission"` // agent has a pending permission request for this session
+	PendingQuestion   bool  `json:"pendingQuestion"`   // agent has a pending question for this session
+	Archived          bool  `json:"archived"`
+	Seen              bool  `json:"seen"`
+	Pinned            bool  `json:"pinned"`
+	PinnedAt          int64 `json:"pinnedAt"`
 	// SeenTimeUpdated is the session's time_updated at the moment the
 	// user last viewed it (0 when never seen). Used by the frontend to
 	// compute a "first unread" marker and a per-session unread badge
@@ -249,17 +338,17 @@ type MetricsSummary struct {
 // MetricsPoint holds chart data for a time bucket (hour or day).
 type MetricsPoint struct {
 	// Label is the human-readable bucket label ("2026-04-16 14" or "2026-04-16").
-	Label               string  `json:"label"`
+	Label                   string  `json:"label"`
 	AvgOutputTokensSec      float64 `json:"avgOutputTokensSec"`
 	CumulativeCost          float64 `json:"cumulativeCost"`
 	CumulativeCalcCost      float64 `json:"cumulativeCalcCost"`
 	CumulativeEffectiveCost float64 `json:"cumulativeEffectiveCost"`
-	InputTokens         int64   `json:"inputTokens"`
-	CacheReadTokens     int64   `json:"cacheReadTokens"`
-	OutputTokens        int64   `json:"outputTokens"`
-	AvgDurationMs       float64 `json:"avgDurationMs"`
-	AvgCacheEfficiency  float64 `json:"avgCacheEfficiency"`
-	Count               int     `json:"count"`
+	InputTokens             int64   `json:"inputTokens"`
+	CacheReadTokens         int64   `json:"cacheReadTokens"`
+	OutputTokens            int64   `json:"outputTokens"`
+	AvgDurationMs           float64 `json:"avgDurationMs"`
+	AvgCacheEfficiency      float64 `json:"avgCacheEfficiency"`
+	Count                   int     `json:"count"`
 }
 
 // StopReasonCount holds the count for a stop reason.
@@ -293,21 +382,21 @@ type RequestLogEntry struct {
 // currently-applied agent/model/time filters, so it reflects the same scope as
 // the other metrics panels on the dashboard.
 type SessionLogEntry struct {
-	ID               string   `json:"id"`
-	Title            string   `json:"title"`
-	Directory        string   `json:"directory"`
-	FirstRequestTime int64    `json:"firstRequestTime"`
-	LastRequestTime  int64    `json:"lastRequestTime"`
-	Requests         int      `json:"requests"`
-	InputTokens      int64    `json:"inputTokens"`
-	OutputTokens     int64    `json:"outputTokens"`
-	CacheReadTokens  int64    `json:"cacheReadTokens"`
-	CacheWriteTokens int64    `json:"cacheWriteTokens"`
-	TotalTokens      int64    `json:"totalTokens"`
-	TotalDurationMs  int64    `json:"totalDurationMs"`
-	AvgTokensPerSec  float64  `json:"avgTokensPerSec"`
-	Cost             float64  `json:"cost"`
-	CalcCost         float64  `json:"calcCost"`
+	ID               string  `json:"id"`
+	Title            string  `json:"title"`
+	Directory        string  `json:"directory"`
+	FirstRequestTime int64   `json:"firstRequestTime"`
+	LastRequestTime  int64   `json:"lastRequestTime"`
+	Requests         int     `json:"requests"`
+	InputTokens      int64   `json:"inputTokens"`
+	OutputTokens     int64   `json:"outputTokens"`
+	CacheReadTokens  int64   `json:"cacheReadTokens"`
+	CacheWriteTokens int64   `json:"cacheWriteTokens"`
+	TotalTokens      int64   `json:"totalTokens"`
+	TotalDurationMs  int64   `json:"totalDurationMs"`
+	AvgTokensPerSec  float64 `json:"avgTokensPerSec"`
+	Cost             float64 `json:"cost"`
+	CalcCost         float64 `json:"calcCost"`
 	// EffectiveCost sums each request's effective cost (reported when
 	// >0, else estimate) so it reconciles with the dashboard summary.
 	EffectiveCost float64  `json:"effectiveCost"`
@@ -318,18 +407,18 @@ type SessionLogEntry struct {
 
 // ProjectLogEntry holds per-project (directory) aggregated metrics.
 type ProjectLogEntry struct {
-	Directory        string   `json:"directory"`
-	Sessions         int      `json:"sessions"`
-	Requests         int      `json:"requests"`
-	InputTokens      int64    `json:"inputTokens"`
-	OutputTokens     int64    `json:"outputTokens"`
-	CacheReadTokens  int64    `json:"cacheReadTokens"`
-	CacheWriteTokens int64    `json:"cacheWriteTokens"`
-	TotalTokens      int64    `json:"totalTokens"`
-	TotalDurationMs  int64    `json:"totalDurationMs"`
-	AvgTokensPerSec  float64  `json:"avgTokensPerSec"`
-	Cost             float64  `json:"cost"`
-	CalcCost         float64  `json:"calcCost"`
+	Directory        string  `json:"directory"`
+	Sessions         int     `json:"sessions"`
+	Requests         int     `json:"requests"`
+	InputTokens      int64   `json:"inputTokens"`
+	OutputTokens     int64   `json:"outputTokens"`
+	CacheReadTokens  int64   `json:"cacheReadTokens"`
+	CacheWriteTokens int64   `json:"cacheWriteTokens"`
+	TotalTokens      int64   `json:"totalTokens"`
+	TotalDurationMs  int64   `json:"totalDurationMs"`
+	AvgTokensPerSec  float64 `json:"avgTokensPerSec"`
+	Cost             float64 `json:"cost"`
+	CalcCost         float64 `json:"calcCost"`
 	// EffectiveCost sums each request's effective cost (reported when
 	// >0, else estimate) so it reconciles with the dashboard summary.
 	EffectiveCost   float64  `json:"effectiveCost"`
@@ -429,8 +518,8 @@ type HourlyActivity struct {
 // counters and histograms — no raw JSON, no session metadata.
 type LLMMessageRow struct {
 	TimeCreated      int64
-	SessionID        string  // owning session, for per-session metric scoping
-	Model            string  // "provider/model"
+	SessionID        string // owning session, for per-session metric scoping
+	Model            string // "provider/model"
 	InputTokens      int64
 	OutputTokens     int64
 	CacheReadTokens  int64

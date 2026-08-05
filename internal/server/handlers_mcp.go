@@ -21,6 +21,7 @@ func (s *Server) buildMCPHandler() http.Handler {
 		EnsureProjectOpencode: internalmcp.ProjectOpencodeEnsurer(s.ensureProjectOpencodePort),
 		ChildResults:          s.childResults,
 		ChildDisconnected:     s.deferChildResultReconnect,
+		SignFile:              s.FileURL,
 	}
 	if s.stateDB != nil {
 		deps.WorkflowService = s.workflowSvc()

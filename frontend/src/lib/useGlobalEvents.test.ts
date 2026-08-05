@@ -80,7 +80,7 @@ describe('useGlobalEvents session.changed handler', () => {
     const cb = vi.fn();
     const unsub = onSessionChanged(cb);
     __handleSessionChangedForTests(JSON.stringify({ sessionID: 'sess-new' }));
-    expect(cb).toHaveBeenCalledWith('sess-new', undefined);
+    expect(cb).toHaveBeenCalledWith('sess-new', undefined, undefined);
     unsub();
     __handleSessionChangedForTests(JSON.stringify({ sessionID: 'sess-2' }));
     expect(cb).toHaveBeenCalledTimes(1); // not called after unsubscribe
@@ -91,7 +91,16 @@ describe('useGlobalEvents session.changed handler', () => {
     const unsub = onSessionChanged(cb);
     const session = { id: 'sess-new', directory: '/repo/a' };
     __handleSessionChangedForTests(JSON.stringify({ sessionID: 'sess-new', session }));
-    expect(cb).toHaveBeenCalledWith('sess-new', session);
+    expect(cb).toHaveBeenCalledWith('sess-new', session, undefined);
+    unsub();
+  });
+
+  it('forwards a session patch when present', () => {
+    const cb = vi.fn();
+    const unsub = onSessionChanged(cb);
+    const patch = { status: 'busy' };
+    __handleSessionChangedForTests(JSON.stringify({ sessionID: 'sess-live', patch }));
+    expect(cb).toHaveBeenCalledWith('sess-live', undefined, patch);
     unsub();
   });
 

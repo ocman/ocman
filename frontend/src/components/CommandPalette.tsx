@@ -7,6 +7,7 @@ import { useApiStore } from '../lib/apiStore';
 import { useUiStore } from '../lib/uiStore';
 import { useOpencodeLaunch } from '../lib/useCapabilities';
 import { cleanTitle, relativeTime, shortPath } from '../lib/format';
+import { isTerminalStatus } from '../lib/sessionStatus';
 import type { Session, Project, DirectoryBrowseEntry, DirectorySearchEntry } from '../lib/api';
 import { useTmux } from '../lib/useTmux';
 import { createSessionWithLaunch } from '../lib/createSessionWithLaunch';
@@ -696,7 +697,7 @@ export function CommandPalette() {
             if (item.kind === 'session') {
               const session = item.session;
               const pending = session.pendingPermission || session.pendingQuestion;
-              const cmdSeen = (session.status === 'waiting' || session.status === 'error' || session.status === 'done') && session.seen;
+              const cmdSeen = isTerminalStatus(session.status) && session.seen;
               return (
                 <div
                   key={session.id}

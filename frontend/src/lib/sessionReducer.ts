@@ -417,9 +417,13 @@ function eventSessionId(event: SseEvent): string | null {
 }
 
 /**
- * Reduce a single status string ("waiting" / "busy" / "done" /
- * "error" / "idle") into the canonical Session.status. Returns
- * `null` for unrecognised values.
+ * Reduce a single status value into the canonical Session.status.
+ * Returns `null` for unrecognised values.
+ *
+ * Accepts both a bare string and OpenCode's `SessionStatus` object shape
+ * (`{type: 'idle' | 'busy' | 'retry'}`). `idle` maps to `done` and `retry`
+ * — a provider backoff *within* a turn — maps to `busy`, matching
+ * `turnRunning` on the backend.
  */
 function normaliseStatus(raw: unknown): SessionMetadata['status'] | null {
   let s: string | undefined;
@@ -431,7 +435,8 @@ function normaliseStatus(raw: unknown): SessionMetadata['status'] | null {
   }
   if (!s) return null;
   if (s === 'idle') return 'done';
-  if (s === 'waiting' || s === 'busy' || s === 'done' || s === 'error') return s;
+  if (s === 'retry') return 'busy';
+  if (s === 'waiting' || s === 'busy' || s === 'done' || s === 'error' || s === 'interrupted') return s;
   return null;
 }
 

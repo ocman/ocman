@@ -143,7 +143,7 @@ func parseDuration(s string) (int64, bool) {
 // status is "error" and whose latest error matches a known transient
 // pattern. Returns nil when no notice applies.
 func deriveSessionNotice(s db.Session) *db.SessionNotice {
-	if s.Status != "error" {
+	if s.Status != db.StatusError {
 		return nil
 	}
 

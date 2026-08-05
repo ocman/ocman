@@ -44,6 +44,8 @@ type SessionEventPayload = {
    * for change events that only know the id.
    */
   session?: Session;
+  /** Fields that can be applied directly to an existing session row. */
+  patch?: Partial<Session>;
 };
 
 function parsePayload(raw: string): SessionEventPayload | null {
@@ -104,7 +106,11 @@ function handleWorkflowRunUpdated(raw: string): void {
 // react to a session.changed broadcast by refreshing the session list,
 // so a newly-created session appears immediately instead of on the next
 // poll tick.
-const sessionChangedListeners = new Set<(sessionId: string, session?: Session) => void>();
+const sessionChangedListeners = new Set<(
+  sessionId: string,
+  session?: Session,
+  patch?: Partial<Session>,
+) => void>();
 
 /**
  * Register a callback fired on every ocman.session.changed broadcast.
@@ -112,7 +118,9 @@ const sessionChangedListeners = new Set<(sessionId: string, session?: Session) =
  * one (freshly-created sessions), so listeners can insert it before the
  * authoritative refetch.
  */
-export function onSessionChanged(cb: (sessionId: string, session?: Session) => void): () => void {
+export function onSessionChanged(
+  cb: (sessionId: string, session?: Session, patch?: Partial<Session>) => void,
+): () => void {
   sessionChangedListeners.add(cb);
   return () => sessionChangedListeners.delete(cb);
 }
@@ -121,7 +129,7 @@ function handleSessionChanged(raw: string): void {
   const parsed = parsePayload(raw);
   const sessionId = parsed?.sessionID;
   if (!sessionId) return;
-  for (const cb of sessionChangedListeners) cb(sessionId, parsed?.session);
+  for (const cb of sessionChangedListeners) cb(sessionId, parsed?.session, parsed?.patch);
 }
 
 // queueUpdatedListeners: the composer's queue view registers here so a

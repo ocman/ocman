@@ -2,12 +2,36 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/db"
 )
+
+func TestBroadcastSessionStatusCarriesPatch(t *testing.T) {
+	srv := &Server{broadcastHub: newBroadcastHub()}
+	sub, unsubscribe := srv.broadcastHub.subscribe()
+	defer unsubscribe()
+
+	srv.broadcastSessionStatus("s1", db.StatusBusy)
+	ev := <-sub.ch
+	var payload struct {
+		SessionID string `json:"sessionID"`
+		Patch     struct {
+			Status db.SessionStatus `json:"status"`
+		} `json:"patch"`
+	}
+	if err := json.Unmarshal(ev.data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if ev.event != "ocman.session.changed" || payload.SessionID != "s1" || payload.Patch.Status != db.StatusBusy {
+		t.Fatalf("unexpected event: %+v payload=%+v", ev, payload)
+	}
+}
 
 func TestBroadcastHubFanOut(t *testing.T) {
 	h := newBroadcastHub()

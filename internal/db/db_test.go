@@ -116,7 +116,7 @@ func TestInferSessionStatus(t *testing.T) {
 		finish              string
 		lastError           string
 		synthesizedTerminal bool
-		wantStatus          string
+		wantStatus          SessionStatus
 	}{
 		{"no messages (empty role)", "", "", "", false, "done"},
 		{"user message last", "user", "", "", false, "done"},
@@ -143,6 +143,96 @@ func TestInferSessionStatus(t *testing.T) {
 					tt.role, tt.finish, tt.lastError, tt.synthesizedTerminal, got, tt.wantStatus)
 			}
 		})
+	}
+}
+
+// --- SettleSessionStatus tests ---
+
+// TestSettleSessionStatus covers the full cross-product of the live turn
+// signal and the message-shape inference, plus the three explicit
+// non-signals from issue #488: an assistant message does not settle a turn,
+// a session steered into a new turn stays busy, and a dead agent process
+// settles an unfinished turn instead of leaving it busy forever.
+func TestSettleSessionStatus(t *testing.T) {
+	tests := []struct {
+		name     string
+		turn     TurnState
+		live     bool
+		inferred SessionStatus
+		want     SessionStatus
+	}{
+		// The agent says a turn is running: that wins over every shape.
+		{"running beats inferred done", TurnRunning, true, StatusDone, StatusBusy},
+		{"running beats inferred waiting", TurnRunning, true, StatusWaiting, StatusBusy},
+		{"running beats inferred error", TurnRunning, true, StatusError, StatusBusy},
+		{"running without live flag still busy", TurnRunning, false, StatusDone, StatusBusy},
+
+		// Non-signal 1: OpenCode emits several assistant messages per
+		// turn, between tool calls. A finished one infers as "waiting",
+		// but while the agent reports the turn running it stays busy.
+		{"assistant message mid-turn does not settle", TurnRunning, true, StatusWaiting, StatusBusy},
+
+		// Non-signal 2: steering. The user's prompt is the last message,
+		// which infers as "done" (non-assistant role), yet the agent is
+		// running the new turn.
+		{"steering into a new turn stays busy", TurnRunning, true, StatusDone, StatusBusy},
+
+		// Settled: inference is trusted for *which* terminal state only.
+		{"settled keeps waiting", TurnSettled, true, StatusWaiting, StatusWaiting},
+		{"settled keeps error", TurnSettled, true, StatusError, StatusError},
+		{"settled keeps done", TurnSettled, true, StatusDone, StatusDone},
+		{"settled downgrades stale busy to done", TurnSettled, true, StatusBusy, StatusDone},
+
+		// Non-signal 3: process death. Nothing is running the turn and no
+		// agent is reachable, so it can never finish.
+		{"dead instance interrupts unfinished turn", TurnUnobserved, false, StatusBusy, StatusInterrupted},
+		// The instance is up but its snapshot hasn't been read yet:
+		// keep the inference rather than claim the turn died.
+		{"unobserved but live keeps busy", TurnUnobserved, true, StatusBusy, StatusBusy},
+		{"unobserved keeps terminal states", TurnUnobserved, false, StatusWaiting, StatusWaiting},
+		{"unobserved keeps error", TurnUnobserved, false, StatusError, StatusError},
+		{"unobserved keeps done", TurnUnobserved, false, StatusDone, StatusDone},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := SettleSessionStatus(tt.turn, tt.live, tt.inferred)
+			if got != tt.want {
+				t.Errorf("SettleSessionStatus(%v, live=%v, %q) = %q, want %q",
+					tt.turn, tt.live, tt.inferred, got, tt.want)
+			}
+		})
+	}
+}
+
+// A never-settled session must never be reported as interrupted just
+// because it has no messages: interrupted means a turn was lost.
+func TestSettleSessionStatus_EmptySessionIsNotInterrupted(t *testing.T) {
+	inferred := InferSessionStatus("", "", "", false)
+	if got := SettleSessionStatus(TurnUnobserved, false, inferred); got != StatusDone {
+		t.Errorf("empty session settled as %q, want done", got)
+	}
+}
+
+func TestFilterInactiveChildren(t *testing.T) {
+	in := []Session{
+		{ID: "parent", Status: StatusWaiting},
+		{ID: "child-busy", ParentID: "parent", Status: StatusBusy},
+		{ID: "child-done", ParentID: "parent", Status: StatusDone},
+		{ID: "child-interrupted", ParentID: "parent", Status: StatusInterrupted},
+	}
+	got := FilterInactiveChildren(in)
+	want := []string{"parent", "child-busy"}
+	if len(got) != len(want) {
+		t.Fatalf("got %d sessions, want %d", len(got), len(want))
+	}
+	for i, id := range want {
+		if got[i].ID != id {
+			t.Errorf("session %d = %q, want %q", i, got[i].ID, id)
+		}
+	}
+	// The input must survive untouched: callers may pass a cached slice.
+	if len(in) != 4 || in[2].ID != "child-done" {
+		t.Errorf("FilterInactiveChildren mutated its input: %+v", in)
 	}
 }
 
@@ -241,8 +331,10 @@ func TestGetSessions_FilterBySince(t *testing.T) {
 }
 
 // TestGetSessions_IncludesActiveSubagents verifies that active subagents
-// are returned for nesting under their parent while completed ones stay
-// out of the session list.
+// survive FilterInactiveChildren for nesting under their parent while
+// completed ones are dropped. GetSessions itself returns every row: the
+// filter runs in the adapter, after the status has been settled against
+// the live turn signal.
 func TestGetSessions_IncludesActiveSubagents(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
@@ -258,10 +350,14 @@ func TestGetSessions_IncludesActiveSubagents(t *testing.T) {
 	insertSubagent(t, db, "child-busy", "parent", "Task (build subagent)", "/project", now, now)
 	insertMessage(t, db, "m1", "child-busy", now, map[string]interface{}{"role": "assistant"})
 
-	sessions, err := db.GetSessions("", 0)
+	raw, err := db.GetSessions("", 0)
 	if err != nil {
 		t.Fatalf("GetSessions: %v", err)
 	}
+	if len(raw) != 3 {
+		t.Fatalf("GetSessions should return every row unfiltered, got %d", len(raw))
+	}
+	sessions := FilterInactiveChildren(raw)
 
 	got := map[string]Session{}
 	for _, s := range sessions {

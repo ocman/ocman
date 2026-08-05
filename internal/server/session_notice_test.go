@@ -257,7 +257,7 @@ func TestDeriveSessionNotice_ErroredWithProviderOverloadInName(t *testing.T) {
 }
 
 func TestDeriveSessionNotice_NonErrorStatus(t *testing.T) {
-	for _, status := range []string{"done", "waiting", "busy"} {
+	for _, status := range []db.SessionStatus{db.StatusDone, db.StatusWaiting, db.StatusBusy, db.StatusInterrupted} {
 		s := db.Session{
 			Status:           status,
 			LastErrorMessage: "rate limit exceeded",

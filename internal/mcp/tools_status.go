@@ -179,6 +179,9 @@ func (t *statusTools) handleGetCurrentSessionID(_ context.Context, req mcplib.Ca
 	if err != nil {
 		return mcplib.NewToolResultError(fmt.Sprintf("looking up current session: %v", err)), nil
 	}
+	// GetSessions returns raw rows; drop finished subagents so the
+	// most-recent fallback below can't hand back a Task-tool session.
+	sessions = db.FilterInactiveChildren(sessions)
 	if len(sessions) == 0 {
 		if directory != "" {
 			return mcplib.NewToolResultError(fmt.Sprintf("no sessions found for directory: %s", directory)), nil

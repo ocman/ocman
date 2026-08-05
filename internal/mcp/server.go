@@ -52,6 +52,11 @@ type Deps struct {
 	// ChildDisconnected queues recovery guidance for the parent when a
 	// synchronous child-result request disconnects.
 	ChildDisconnected func(childID string)
+
+	// SignFile mints a browser-reachable URL for a file on disk, backing
+	// the embed_file tool. Optional: nil makes embed_file report that
+	// file embedding is unavailable.
+	SignFile FileSigner
 }
 
 // Server wraps the mcp-go MCPServer and exposes an http.Handler.
@@ -123,6 +128,8 @@ func New(deps Deps) *Server {
 		disconnected: deps.ChildDisconnected,
 	}
 	addCommTools(s, comm)
+
+	addFileTools(s, &fileTools{sign: deps.SignFile})
 
 	addWorkflowTools(s, &workflowTools{svc: deps.WorkflowService})
 
@@ -198,6 +205,7 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 		{Tool: cancelSessionTool(), Handler: status.handleCancelSession},
 		{Tool: sendMessageToChildTool(), Handler: comm.handleSendMessageToChild},
 		{Tool: sendMessageToParentTool(), Handler: comm.handleSendMessageToParent},
+		{Tool: embedFileTool(), Handler: (&fileTools{sign: deps.SignFile}).handleEmbedFile},
 	}
 	tools = append(tools, workflowServerTools(&workflowTools{svc: deps.WorkflowService})...)
 	return tools

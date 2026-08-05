@@ -157,3 +157,100 @@ func TestSsePermissionTeeSessionChanged(t *testing.T) {
 		})
 	}
 }
+
+// TestTeeSessionStatus verifies the tee parses session.status — the agent's
+// own turn-lifecycle signal — out of every payload shape OpenCode uses, and
+// drops shapes it can't read instead of guessing.
+func TestTeeSessionStatus(t *testing.T) {
+	tests := []struct {
+		name        string
+		sseData     string
+		wantSession string
+		wantStatus  string
+	}{
+		{
+			name:        "busy via properties",
+			sseData:     "data: " + `{"type":"session.status","properties":{"sessionID":"ses-1","status":{"type":"busy"}}}` + "\n\n",
+			wantSession: "ses-1",
+			wantStatus:  "busy",
+		},
+		{
+			name:        "idle via properties",
+			sseData:     "data: " + `{"type":"session.status","properties":{"sessionID":"ses-1","status":{"type":"idle"}}}` + "\n\n",
+			wantSession: "ses-1",
+			wantStatus:  "idle",
+		},
+		{
+			name:        "retry is a turn-internal backoff",
+			sseData:     "data: " + `{"type":"session.status","properties":{"sessionID":"ses-1","status":{"type":"retry","attempt":2,"message":"overloaded","next":1000}}}` + "\n\n",
+			wantSession: "ses-1",
+			wantStatus:  "retry",
+		},
+		{
+			name:        "v2 data envelope",
+			sseData:     "data: " + `{"type":"session.status","data":{"sessionID":"ses-2","status":{"type":"busy"}}}` + "\n\n",
+			wantSession: "ses-2",
+			wantStatus:  "busy",
+		},
+		{
+			name:        "lowercase sessionId",
+			sseData:     "data: " + `{"type":"session.status","properties":{"sessionId":"ses-3","status":{"type":"busy"}}}` + "\n\n",
+			wantSession: "ses-3",
+			wantStatus:  "busy",
+		},
+		{
+			name:        "bare string status",
+			sseData:     "data: " + `{"type":"session.status","properties":{"sessionID":"ses-4","status":"busy"}}` + "\n\n",
+			wantSession: "ses-4",
+			wantStatus:  "busy",
+		},
+		{
+			name:        "wrapped by /global/event",
+			sseData:     "data: " + `{"directory":"/repo","payload":{"type":"session.status","properties":{"sessionID":"ses-5","status":{"type":"busy"}}}}` + "\n\n",
+			wantSession: "ses-5",
+			wantStatus:  "busy",
+		},
+		{
+			name:        "unreadable status yields not-running",
+			sseData:     "data: " + `{"type":"session.status","properties":{"sessionID":"ses-6","status":42}}` + "\n\n",
+			wantSession: "ses-6",
+			wantStatus:  "",
+		},
+		{
+			name:        "missing session id fires nothing",
+			sseData:     "data: " + `{"type":"session.status","properties":{"status":{"type":"busy"}}}` + "\n\n",
+			wantSession: "",
+			wantStatus:  "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotSession, gotStatus string
+			tee := &Tee{
+				W: &bytes.Buffer{},
+				OnSessionStatus: func(sessionID, statusType string) {
+					gotSession, gotStatus = sessionID, statusType
+				},
+			}
+			if _, err := tee.Write([]byte(tc.sseData)); err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+			if gotSession != tc.wantSession {
+				t.Errorf("session = %q, want %q", gotSession, tc.wantSession)
+			}
+			if gotStatus != tc.wantStatus {
+				t.Errorf("status = %q, want %q", gotStatus, tc.wantStatus)
+			}
+		})
+	}
+}
+
+// A tee with no OnSessionStatus must ignore the event rather than panic:
+// the browser-facing SSE proxy wires only the permission callbacks.
+func TestTeeSessionStatusWithoutCallback(t *testing.T) {
+	tee := &Tee{W: &bytes.Buffer{}}
+	if _, err := tee.Write([]byte("data: " + `{"type":"session.status","properties":{"sessionID":"ses-1","status":{"type":"busy"}}}` + "\n\n")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+}

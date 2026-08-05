@@ -35,6 +35,10 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// the only credential: anyone with the unguessable URL can view the
 	// conversation read-only, even when password auth is configured.
 	mux.HandleFunc("/api/share/", requireGET(s.handleSharePublic))
+	// Signed proxy for agent-generated assets (images, SVG, PDF, ...).
+	// The HMAC in the token is what authorises the path; auth still
+	// applies on top.
+	mux.HandleFunc("/api/file/", s.get(s.handleFileProxy))
 	mux.HandleFunc("/api/activity", s.get(s.handleActivity))
 	mux.HandleFunc("/api/models", s.get(s.handleModels))
 	mux.HandleFunc("/api/hourly", s.get(s.handleHourly))
