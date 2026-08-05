@@ -1328,40 +1328,36 @@
   font-size: 11px;
 }
 
-/* AI approval as a footnote on the tool call it unblocked. Hugs the
- * block above (negative margin) so it reads as part of that tool. */
+/* AI approval as a footnote under the tool's box — same treatment as
+ * .oc-shell-attribution, tucked up against the block above. */
 .oc-ai-approval-footnote {
-  margin: -2px 0 4px 18px;
-  font-family: 'SF Mono', Consolas, monospace;
+  margin-top: -3px;
+  margin-bottom: 4px;
+  font-family: var(--font-conversation-mono);
   font-size: 11px;
+  color: var(--text-dim);
+  opacity: 0.75;
 }
 
 .oc-ai-approval-toggle {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
   padding: 0;
   border: 0;
   background: none;
   cursor: pointer;
   font: inherit;
-  color: var(--overlay1);
+  color: inherit;
 }
 
 .oc-ai-approval-toggle:hover {
-  color: var(--green);
-}
-
-.oc-ai-approval-icon {
-  color: var(--green);
+  text-decoration: underline;
 }
 
 .oc-ai-approval-detail {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin-top: 2px;
-  padding-left: 10px;
+  margin-top: 3px;
+  padding-left: 8px;
   border-left: 1px solid var(--surface1);
 }
 

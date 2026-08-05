@@ -336,8 +336,7 @@ function AiApprovalFootnote({ approvals }: { approvals: ToolApproval[] }) {
         aria-expanded={open}
         onClick={() => setOpen(!openState)}
       >
-        <span className="oc-ai-approval-icon" aria-hidden="true">&#10003;</span>
-        Auto-approved by AI
+        approved by ai
       </button>
       {open && (
         <div className="oc-ai-approval-detail" data-testid="ai-approval-detail">

@@ -156,8 +156,13 @@ describe('ToolCallDisplay AI approval footnote', () => {
     );
 
     expect(screen.getByTestId('shell-output-block').textContent).toBe('$ rm -rf /tmp/foo\ngone');
-    expect(container.querySelector('.oc-ai-approval-footnote')).not.toBeNull();
+    const footnote = container.querySelector('.oc-ai-approval-footnote')!;
+    expect(footnote.textContent).toBe('approved by ai');
     expect(queryByTestId('ai-approval-detail')).toBeNull();
+    // Footnote sits below the tool's box, not inside it.
+    const box = container.querySelector('.oc-tool-shell')!;
+    expect(box.contains(footnote)).toBe(false);
+    expect(box.compareDocumentPosition(footnote) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('reveals permission, patterns and reasoning on click', () => {
@@ -165,7 +170,7 @@ describe('ToolCallDisplay AI approval footnote', () => {
       approvedBash({ permission: 'bash', patterns: ['rm -rf /tmp/foo'], reasoning: 'Temp dir only.' }),
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /Auto-approved by AI/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'approved by ai' }));
     const detail = getByTestId('ai-approval-detail');
     expect(detail.textContent).toContain('bash');
     expect(detail.textContent).toContain('rm -rf /tmp/foo');
