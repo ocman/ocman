@@ -93,6 +93,7 @@ export function useSidebarSessions({
   const storeSetRecentSessions = useApiStore((s) => s.setRecentSessions);
   const patchRecentSession = useApiStore((s) => s.patchRecentSession);
   const sidebarRecentHours = useUiStore((s) => s.sidebarRecentHours);
+  const expandProjects = useUiStore((s) => s.expandProjects);
 
   // Mirror the configured window into a ref so refresh callbacks read
   // the latest value without re-creating loadRecentSessions.
@@ -337,18 +338,30 @@ export function useSidebarSessions({
     });
   }, [pinSession, patchRecentSession]);
 
-  // Collapsed state as a Set for O(1) membership checks in render.
-  // The current session's group is force-expanded regardless of
-  // persisted state so the user can always see where they are.
-  const collapsedProjectSet = useMemo(() => {
-    const set = new Set(collapsedProjects);
+  // Opening a session expands its project group for good. This used to be
+  // derived per-render and never persisted, so navigating to another
+  // project re-collapsed the group and the session the user had just been
+  // working in vanished from the sidebar (it survived a reload, because the
+  // collapse is persisted). Expanding once per opened session keeps
+  // collapsing a deliberate user action: it is not re-applied on later
+  // sidebar updates, so the user can still collapse the project they are in.
+  const expandedForRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!id || expandedForRef.current === id) return;
     const currentDir = recentSessions.find((s) => s.id === id)?.directory;
-    if (currentDir) {
-      set.delete(currentDir); // legacy keys persisted before fold
-      set.delete(projectRootForDirectory(currentDir));
-    }
-    return set;
-  }, [collapsedProjects, recentSessions, id]);
+    // The list may not have loaded yet; retry when it changes.
+    if (!currentDir) return;
+    expandedForRef.current = id;
+    // Both keys: the raw directory (legacy entries persisted before the
+    // worktree fold) and the folded project root.
+    expandProjects([currentDir, projectRootForDirectory(currentDir)]);
+  }, [id, recentSessions, expandProjects]);
+
+  // Collapsed state as a Set for O(1) membership checks in render.
+  const collapsedProjectSet = useMemo(
+    () => new Set(collapsedProjects),
+    [collapsedProjects],
+  );
 
   return {
     recentSessions,
