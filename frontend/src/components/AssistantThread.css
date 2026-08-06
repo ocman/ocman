@@ -8,6 +8,13 @@
   flex-direction: column;
   gap: 12px;
   padding: 0 16px;
+  /* Browser scroll anchoring is deliberately left ON (the default).
+     useStickyBottom only owns "follow the tail"; the browser owns
+     keeping the reading position stable when content above the
+     viewport changes height, which is exactly what the message trim
+     dropping older rows needs. Disabling it would make that a visible
+     jump. See lib/useStickyBottom.ts for why the anchoring adjustment
+     no longer confuses the follow logic. */
   /* On-mount fade signals "you just switched sessions". The viewport is
      remounted on every id change (OcmanRuntimeProvider has key={session.id}),
      so this plays naturally on navigation. Opacity-only to avoid layout
@@ -1090,26 +1097,15 @@
   font-family: 'SF Mono', Consolas, monospace;
   font-size: 11px;
   white-space: nowrap;
-  /* Delay the *appearance* by 400ms (opacity/visibility entries win over
-     `all` for the same properties). During streaming, size jumps from
-     truncated bash output make the library's 1px at-bottom check flip
-     off/on every chunk; the sticky-bottom hook scrolls back within a
-     frame, so a short show-delay swallows the flicker entirely while a
-     real scroll-up still reveals the button almost immediately. */
-  transition: all 0.15s, opacity 0.15s ease 0.4s, visibility 0s linear 0.4s;
+  /* Visibility is a mount/unmount driven by the hysteresis band in
+     lib/stickyBottom.ts, so no show-delay is needed to hide flicker —
+     see the comment at the render site in AssistantThread.tsx. */
+  transition: color 0.15s, border-color 0.15s;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   z-index: 51;
   pointer-events: auto;
 }
 .oc-scroll-btn:hover { color: var(--accent); border-color: var(--accent); }
-.oc-scroll-btn:disabled {
-  /* Hide instantly (no transition) but keep the element in the tree so
-     the delayed-show transition above can run when it re-enables. */
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transition: none;
-}
 
 /* Status bar for port unavailable */
 .chat-input-status { font-size: 12px; color: var(--text-dim); margin-top: 6px; font-family: 'SF Mono', Consolas, monospace; }

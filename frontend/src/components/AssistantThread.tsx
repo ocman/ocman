@@ -557,15 +557,18 @@ export function AssistantThread({
     wasLoadingRef.current = !!loadingMore;
   }, [loadingMore]);
 
-  // Companion auto-scroll. ThreadPrimitive.Viewport's built-in
-  // `autoScroll` decides "is at bottom" with a hardcoded 1px
-  // tolerance, which is too strict for streaming chats: the composer
-  // textarea growing or a code block reflowing during streaming
-  // routinely leaves the user a few pixels above the bottom, after
-  // which the library stops following new messages. useStickyBottom
-  // relaxes that to ~80px so the conversation keeps tracking the
-  // bottom while the user is "near" it. See lib/useStickyBottom.ts.
-  useStickyBottom(viewportRef);
+  // Companion auto-scroll, replacing ThreadPrimitive.Viewport's built-in
+  // `autoScroll` (disabled below): its hardcoded 1px at-bottom tolerance
+  // races streaming DOM growth. useStickyBottom follows the tail until
+  // the user gestures away from it, and drives the scroll-to-bottom
+  // affordance. See lib/useStickyBottom.ts.
+  //
+  // The composer renders inside the viewport (as ViewportFooter), so its
+  // subtree is excluded from gesture detection — otherwise clicking into
+  // the textarea to type would read as "stop following the reply".
+  const { showScrollToBottom, scrollToBottom } = useStickyBottom(viewportRef, {
+    ignoreGesturesWithin: '.oc-viewport-footer',
+  });
 
   // Alt+H / Alt+L (Option+H / Option+L on Mac) jump between user messages in
   // the history. Alt+H: previous user message (up). Alt+L: next user message
@@ -718,9 +721,23 @@ export function AssistantThread({
             {composer}
           </ThreadPrimitive.ViewportFooter>
         </ThreadPrimitive.Viewport>
-        <ThreadPrimitive.ScrollToBottom className="oc-scroll-btn">
-          Scroll to bottom
-        </ThreadPrimitive.ScrollToBottom>
+        {/* Our own affordance rather than ThreadPrimitive.ScrollToBottom:
+             the primitive's visibility comes from the library's 1px
+             at-bottom check, which flips off and on with every streaming
+             size jump. That was previously papered over with a 400ms CSS
+             show-delay; useStickyBottom drives this from a hysteresis
+             band instead, so it is stable without a timer and appears
+             immediately on a real scroll-up. */}
+        {showScrollToBottom && (
+          <button
+            type="button"
+            className="oc-scroll-btn"
+            data-testid="scroll-to-bottom"
+            onClick={scrollToBottom}
+          >
+            Scroll to bottom
+          </button>
+        )}
       </ThreadPrimitive.Root>
       </MessageBookmarkContext.Provider>
     </div>

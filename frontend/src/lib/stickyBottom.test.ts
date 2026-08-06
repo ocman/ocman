@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { isNearBottom, decideStickyAction, NEAR_BOTTOM_THRESHOLD_PX } from './stickyBottom';
+import {
+  isNearBottom,
+  decideStickyAction,
+  distanceFromBottom,
+  nextPillVisible,
+  NEAR_BOTTOM_THRESHOLD_PX,
+  PILL_SHOW_DISTANCE_PX,
+} from './stickyBottom';
 
 // `@assistant-ui/react`'s viewport considers the user "at the bottom"
 // only when within 1px of `scrollHeight - clientHeight`. That breaks
@@ -62,44 +69,105 @@ describe('isNearBottom', () => {
   });
 });
 
+describe('distanceFromBottom', () => {
+  it('measures the unseen content below the viewport', () => {
+    expect(distanceFromBottom({ scrollTop: 100, scrollHeight: 2000, clientHeight: 1000 })).toBe(900);
+  });
+
+  it('is zero when the content fits without scrolling', () => {
+    expect(distanceFromBottom({ scrollTop: 0, scrollHeight: 100, clientHeight: 200 })).toBe(0);
+  });
+
+  it('never reports a negative distance when the browser over-scrolls', () => {
+    // Rubber-band / over-scroll can transiently report a scrollTop past
+    // the maximum, which would otherwise yield a negative distance and
+    // make the hysteresis comparisons behave oddly.
+    expect(distanceFromBottom({ scrollTop: 1200, scrollHeight: 2000, clientHeight: 1000 })).toBe(0);
+  });
+});
+
+describe('nextPillVisible', () => {
+  // The band exists because a single threshold flickers: streaming
+  // content jumps the scroll height by tens of pixels at a time.
+
+  it('reveals the affordance only past the show distance', () => {
+    expect(nextPillVisible(false, PILL_SHOW_DISTANCE_PX)).toBe(false);
+    expect(nextPillVisible(false, PILL_SHOW_DISTANCE_PX + 1)).toBe(true);
+  });
+
+  it('hides it again only within the near-bottom threshold', () => {
+    expect(nextPillVisible(true, NEAR_BOTTOM_THRESHOLD_PX + 1)).toBe(true);
+    expect(nextPillVisible(true, NEAR_BOTTOM_THRESHOLD_PX)).toBe(false);
+  });
+
+  it('holds its current value inside the band, whichever way it was entered', () => {
+    // This is the anti-flicker property: a size jump that lands anywhere
+    // between the two thresholds changes nothing.
+    for (const distance of [NEAR_BOTTOM_THRESHOLD_PX + 1, 150, PILL_SHOW_DISTANCE_PX]) {
+      expect(nextPillVisible(false, distance)).toBe(false);
+      expect(nextPillVisible(true, distance)).toBe(true);
+    }
+  });
+
+  it('keeps the two thresholds far enough apart to absorb streaming noise', () => {
+    expect(PILL_SHOW_DISTANCE_PX).toBeGreaterThan(NEAR_BOTTOM_THRESHOLD_PX * 2);
+  });
+});
+
 describe('decideStickyAction', () => {
-  // The hook drives two outputs from each scroll/mutation event:
+  // The hook drives two outputs from each scroll/mutation/gesture event:
   //   - nextSticky: should the hook keep pulling the user to the bottom?
   //   - scroll: should we programmatically scrollTo the bottom now?
   //
-  // For content events the decision also depends on `currentSticky`: when
-  // the hook was already following the tail, a transient "not near bottom"
-  // reading (caused by scrollHeight growing before scrollTop updates) must
-  // not disengage sticky.
+  // Sticky is a mode the user leaves by gesturing. Content events carry
+  // the mode forward; they do not re-derive it from geometry.
 
-  it('engages sticky on content growth when the user is near the bottom', () => {
-    expect(
-      decideStickyAction({ isNear: true, kind: 'content' }),
-    ).toEqual({ nextSticky: true, scroll: true });
+  it('follows the tail on content growth while engaged, regardless of geometry', () => {
+    // The reason `isNear` is not consulted: while following, growth
+    // below the fold makes the viewport look far from the bottom on the
+    // very tick that should scroll it there.
+    for (const isNear of [true, false]) {
+      expect(
+        decideStickyAction({ isNear, kind: 'content', currentSticky: true }),
+      ).toEqual({ nextSticky: true, scroll: true });
+    }
   });
 
-  it('does not engage sticky on content growth when the user has scrolled up and was not sticky', () => {
-    expect(
-      decideStickyAction({ isNear: false, kind: 'content', currentSticky: false }),
-    ).toEqual({ nextSticky: false, scroll: false });
+  it('leaves the viewport alone on content growth while disengaged, regardless of geometry', () => {
+    // The mirror case, and the one that used to break: a shrink above
+    // the fold (message trim, tool block collapsing, scroll anchoring)
+    // moves scrollTop into the near-bottom band without the user
+    // touching anything. Reading that as "they're back at the bottom"
+    // re-engaged the follow and dragged them out of the history.
+    for (const isNear of [true, false]) {
+      expect(
+        decideStickyAction({ isNear, kind: 'content', currentSticky: false }),
+      ).toEqual({ nextSticky: false, scroll: false });
+    }
   });
 
-  it('stays sticky and scrolls on content growth when sticky was true but isNear is momentarily false (race condition fix)', () => {
-    // This is the core bug fix: when new DOM is appended, scrollHeight
-    // grows before the browser updates scrollTop. The rAF tick may see
-    // isNear === false even though the user never scrolled up. Without
-    // passing currentSticky, decideStickyAction would disengage the tail
-    // and the chat would stop following new messages silently.
-    expect(
-      decideStickyAction({ isNear: false, kind: 'content', currentSticky: true }),
-    ).toEqual({ nextSticky: true, scroll: true });
+  it('defaults currentSticky to false when omitted', () => {
+    expect(decideStickyAction({ kind: 'content' })).toEqual({ nextSticky: false, scroll: false });
   });
 
-  it('defaults currentSticky to false when omitted (backward-compatible)', () => {
-    // Callers that don't pass currentSticky behave as they did before.
-    expect(
-      decideStickyAction({ isNear: false, kind: 'content' }),
-    ).toEqual({ nextSticky: false, scroll: false });
+  it('disengages on a scroll gesture, whatever the state', () => {
+    // A wheel/touch gesture is applied on the compositor thread frames
+    // before its `scroll` event reaches JS. Acting on the gesture is
+    // what closes the window in which a content tick could read stale
+    // geometry and scroll the reader back down.
+    for (const currentSticky of [true, false]) {
+      for (const isNear of [true, false]) {
+        expect(
+          decideStickyAction({ isNear, kind: 'gesture', currentSticky }),
+        ).toEqual({ nextSticky: false, scroll: false });
+      }
+    }
+  });
+
+  it('never scrolls on a gesture', () => {
+    // Scrolling in response to the user scrolling is the feedback loop
+    // this whole module exists to avoid.
+    expect(decideStickyAction({ kind: 'gesture', currentSticky: true }).scroll).toBe(false);
   });
 
   it('disengages sticky when the user scrolls up past the threshold', () => {
