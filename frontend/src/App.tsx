@@ -25,6 +25,7 @@ import { useFaviconNotify } from './lib/useFaviconNotify';
 import { useBellNotify } from './lib/useBellNotify';
 import { useNotificationNotify } from './lib/useNotificationNotify';
 import { PromptToastNotify } from './components/PromptToastNotify';
+import { McpConfigPrompt } from './components/McpConfigPrompt';
 import { LaunchProgressOverlay } from './components/LaunchProgressOverlay';
 import { useAuthStore } from './lib/authStore';
 import { useUiStore } from './lib/uiStore';
@@ -443,6 +444,7 @@ function AuthenticatedApp() {
         <BellNotify />
         <NotificationNotify />
         <PromptToastNotify />
+        <McpConfigPrompt />
         <LaunchProgressOverlay />
         <ServiceWorkerNavListener />
         <PerformanceCleanup />

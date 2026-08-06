@@ -87,6 +87,8 @@ import type {
   CapabilitiesResponse,
   ChildSessionReference,
   FavoriteEntry,
+  McpConfigStatus,
+  McpConfigInstallResult,
   MetricsDashboard,
   DirectoryBrowseResponse,
   DirectorySearchResponse,
@@ -371,6 +373,15 @@ export const api = {
       undefined,
       { method: 'DELETE', parseJSON: false },
     ),
+  // --- MCP registration in OpenCode's global config ---
+  // Whether OpenCode's global config points at ocman's MCP endpoint.
+  getMcpConfig: (signal?: AbortSignal) =>
+    fetchJSON<McpConfigStatus>('/api/mcp/config', signal),
+  // Write the ocman entry into that config (backs the original up
+  // first). Localhost-only on the server.
+  installMcpConfig: () =>
+    postJSON<McpConfigInstallResult>('/api/mcp/config/install', undefined),
+
   // --- Global sharing settings + list (Settings page) ---
   // Whether public sharing is allowed (master toggle, on by default).
   getSharingEnabled: (signal?: AbortSignal) =>

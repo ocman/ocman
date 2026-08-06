@@ -438,6 +438,29 @@ export interface SessionChanges {
 // Status uses the upstream platform's vocabulary verbatim ("connected"
 // / "needs_auth" / "failed" / future values) — the renderer styles known
 // values and falls back to neutral styling for the rest.
+// Whether OpenCode's global config registers ocman as an MCP server.
+// `editable` is false when ocman refuses to rewrite the file (JSONC
+// comments would be lost); `reason` then explains why. A non-empty
+// `currentUrl` with `configured: false` means the entry exists but is
+// stale — usually an old port.
+export interface McpConfigStatus {
+  path: string;
+  configured: boolean;
+  currentUrl?: string;
+  wantUrl: string;
+  editable: boolean;
+  reason?: string;
+}
+
+// Result of writing the ocman entry. `backupPath` is empty when there
+// was no pre-existing config to back up.
+export interface McpConfigInstallResult {
+  installed: boolean;
+  path: string;
+  backupPath: string;
+  url: string;
+}
+
 export interface MCPServer {
   name: string;
   status: string;

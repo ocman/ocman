@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -11,7 +12,58 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
+	"github.com/NoUseFreak/ocman/internal/opencodeconfig"
 )
+
+// handleMCPConfigStatus reports whether OpenCode's global config
+// registers ocman's MCP endpoint, so the UI can offer to install it.
+// Never fails the request on a config problem: an unreadable or
+// hand-commented config is a status to display, not an error.
+func (s *Server) handleMCPConfigStatus(w http.ResponseWriter, _ *http.Request) {
+	st, err := opencodeconfig.Check(s.mcpServerURL())
+	if err != nil {
+		log.WithError(err).Debug("mcp: cannot resolve opencode config path")
+		writeJSON(w, map[string]interface{}{
+			"configured": false,
+			"editable":   false,
+			"reason":     err.Error(),
+			"wantUrl":    s.mcpServerURL(),
+		})
+		return
+	}
+	writeJSON(w, st)
+}
+
+// handleMCPConfigInstall writes the ocman MCP entry into OpenCode's
+// global config, backing up the original first. Localhost-only: it
+// modifies a file in the user's home directory.
+func (s *Server) handleMCPConfigInstall(w http.ResponseWriter, _ *http.Request) {
+	url := s.mcpServerURL()
+	backup, err := opencodeconfig.Install(url)
+	if err != nil {
+		log.WithError(err).Warn("mcp: installing opencode config failed")
+		status := http.StatusInternalServerError
+		if errors.Is(err, opencodeconfig.ErrNotEditable) {
+			// The config is the user's to fix; not a server fault.
+			status = http.StatusConflict
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	st, err := opencodeconfig.Check(url)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	log.WithFields(log.Fields{"path": st.Path, "backup": backup, "url": url}).
+		Info("mcp: registered ocman in the OpenCode config")
+	writeJSON(w, map[string]interface{}{
+		"installed":  st.Configured,
+		"path":       st.Path,
+		"backupPath": backup,
+		"url":        url,
+	})
+}
 
 // mcpHandler returns the shared MCP handler. Both the main mux and the
 // dedicated loopback listener serve the same instance, so MCP session

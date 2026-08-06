@@ -36,8 +36,21 @@ listener entirely.
 
 ## Setup
 
-Add the server to your project's `opencode.json` (or the global
-`~/.config/opencode/config.json`):
+Ocman checks OpenCode's global config on every page load and, if it doesn't
+find its own entry, shows a toast offering to install it. Clicking **Install**
+writes the entry below into `~/.config/opencode/opencode.json`
+(`$XDG_CONFIG_HOME` and `OPENCODE_CONFIG` are honoured), after copying the
+original to `opencode.<timestamp>-backup.json` in the same directory. Every
+other key in the file — including any other MCP servers — is preserved.
+**Restart OpenCode afterwards**; it reads the config at startup.
+
+Ocman won't touch a config it can't rewrite losslessly (a `.jsonc` file, or a
+`.json` file with comments): the toast then shows the URL to paste in
+yourself. It also offers to update a stale entry, e.g. one still pointing at
+an older port. The same information is available at `GET /api/mcp/config`.
+
+To do it by hand, add the server to your project's `opencode.json` or the
+global config:
 
 ```json
 {

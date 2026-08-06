@@ -116,6 +116,12 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/mcp", mcpHandler)
 	mux.HandleFunc("/mcp/", mcpHandler)
 
+	// Registration of ocman in OpenCode's global config. The install
+	// route writes a file in the user's home directory, so it's
+	// localhost-only like the other host-control routes.
+	mux.HandleFunc("/api/mcp/config", s.get(s.handleMCPConfigStatus))
+	mux.HandleFunc("/api/mcp/config/install", s.requireLocalhost(requirePOST(s.handleMCPConfigInstall)))
+
 	// Auth endpoints. /me is unauthenticated by design (the SPA needs
 	// to learn its auth state before it can show the lockscreen).
 	// /login and /logout are also unauthenticated — /login is where

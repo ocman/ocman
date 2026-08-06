@@ -221,6 +221,14 @@ handlers don't bypass the `Host` seam). User-facing docs:
   talks to OpenCode's HTTP API.
 - `internal/opencodeskills/` — installs ocman-owned embedded skills into
   OpenCode's global skill directory.
+- `internal/opencodeconfig/` — reads/writes the `mcp.ocman` entry in
+  OpenCode's global config (`~/.config/opencode/opencode.json`, honouring
+  `$XDG_CONFIG_HOME`/`OPENCODE_CONFIG`). Backs the original up to
+  `opencode.<timestamp>-backup.json`, writes atomically, and refuses any
+  config it can't round-trip losslessly (`.jsonc`, or comments in a
+  `.json`) so hand-written files are never mangled. Drives the
+  `McpConfigPrompt` toast via `GET /api/mcp/config` +
+  `POST /api/mcp/config/install`.
 - `internal/srvtiming/` — per-request phase timing rendered into the
   `Server-Timing` response header; no-op outside an HTTP request.
 - `internal/telemetry/` — OpenTelemetry wiring (see Key details).
@@ -451,6 +459,11 @@ duplicate it here.
 
 Implementation notes:
 
+- Registration is self-service: `McpConfigPrompt` (mounted at the app
+  root) polls `GET /api/mcp/config` once per load and offers an Install
+  button that POSTs `/api/mcp/config/install`, writing the entry through
+  `internal/opencodeconfig` (backup first, refuses non-round-trippable
+  configs). OpenCode must be restarted to pick it up.
 - Two mounts, one handler (`Server.mcpHandler`, built once): the main mux
   at `/mcp` under `requireLocalhost` (password auth applies), and a
   dedicated loopback-bound listener (`-mcp-addr`, default
