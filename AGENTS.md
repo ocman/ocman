@@ -81,12 +81,13 @@ session row so the user can see and answer them.
 just its immediate parent, so a prompt on a grandchild subagent still
 surfaces on the row the user is watching.
 
-Ocman also embeds an **MCP (Model Context Protocol) server** at
-`http://localhost:8229/mcp` (Go backend) / `http://localhost:8228/mcp`
-(via Vite dev proxy). This lets AI coding agents (and users via
-the agent) split work from an active session into new parallel sessions
-or isolated git worktrees. See the **MCP server** section below for
-setup and available tools.
+Ocman also embeds an **MCP (Model Context Protocol) server** on its own
+loopback-only listener, `http://127.0.0.1:8227/mcp` (`-mcp-addr`), plus
+the same endpoint on the web UI's port (`:8229`, or `:8228` via the Vite
+dev proxy). This lets AI coding agents (and users via the agent) split
+work from an active session into new parallel sessions or isolated git
+worktrees. See the **MCP server** section below for setup and available
+tools.
 
 Ocman also surfaces **PRs and Issues** from the active project's
 upstream forge (GitHub or Forgejo) in a sidebar pane next to Session
@@ -450,6 +451,14 @@ duplicate it here.
 
 Implementation notes:
 
+- Two mounts, one handler (`Server.mcpHandler`, built once): the main mux
+  at `/mcp` under `requireLocalhost` (password auth applies), and a
+  dedicated loopback-bound listener (`-mcp-addr`, default
+  `127.0.0.1:8227`, `startMCPListener`) under `requireLoopbackPeer`,
+  which treats the loopback peer as the credential. The second listener
+  exists because native MCP clients can't send an auth cookie; binding it
+  separately keeps it unreachable through a reverse proxy pointed at
+  `-addr`. Non-loopback `-mcp-addr` values are refused (fails closed).
 - `PromptComposer` enriches caller intent with parent-session context
   (last 10 messages, git branch, `git diff --stat`); `SessionLauncher`
   creates the child via the `Platform` interface.

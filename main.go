@@ -111,6 +111,7 @@ func main() {
 	opencodeGeneratePassword := flag.Bool("opencode-server-generate-password", false, "generate an ephemeral managed OpenCode API password at startup")
 	otelEndpoint := flag.String("otel", "", "OTLP endpoint URL (e.g. http://localhost:4318 or grpc://localhost:4317). Empty disables telemetry. Falls back to OTEL_EXPORTER_OTLP_ENDPOINT.")
 	autoApprove := flag.Bool("auto-approve", false, "default new sessions to auto-approve mode (uses OpenCode's running instance as the LLM judge)")
+	mcpAddr := flag.String("mcp-addr", "127.0.0.1:8227", "loopback listen address for the MCP endpoint; local clients reach it without auth, so it must be a loopback address. Empty disables the dedicated listener (/mcp then only lives on -addr, behind auth).")
 	publicBaseURL := flag.String("public-base-url", "", "externally reachable base URL for share links (e.g. https://ocman.example.com); falls back to "+publicBaseURLEnv+" env, then the request Host")
 	remoteListen := flag.String("remote-listen", "", "bind address for the remote-access gRPC server (e.g. 0.0.0.0:8230); empty disables it (multi-remote support)")
 	remoteTLSCert := flag.String("remote-tls-cert", "", "TLS certificate file for the remote-access gRPC server (enables TLS together with -remote-tls-key)")
@@ -247,6 +248,7 @@ func main() {
 			WithOpenCodeAuth(opencodeAuth).
 			WithAutoApproveDefault(*autoApprove).
 			WithPublicBaseURL(resolvedBaseURL).
+			WithMCPAddr(*mcpAddr).
 			WithRemoteAccess(ident.InstanceID, "", false, false)
 		if err := gui.RunGUI(ctx, srv, listenAddr); err != nil {
 			log.Fatalf("GUI error: %v", err)
@@ -255,7 +257,8 @@ func main() {
 		srv := server.New(database, stateDB, *addr, registry, auth).
 			WithOpenCodeAuth(opencodeAuth).
 			WithAutoApproveDefault(*autoApprove).
-			WithPublicBaseURL(resolvedBaseURL)
+			WithPublicBaseURL(resolvedBaseURL).
+			WithMCPAddr(*mcpAddr)
 
 		// Start the remote-access gRPC server when -remote-listen is set
 		// (multi-remote support). Off by default so single-host installs

@@ -132,6 +132,26 @@ func (s *Server) requireLocalhost(h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// requireLoopbackPeer is requireLocalhost minus the password check: the
+// loopback peer address *is* the credential. Used only for /mcp, where
+// native MCP clients cannot present an auth cookie and configuring a
+// separate token per client is worse than the exposure.
+//
+// ponytail: behind a reverse proxy that forwards /mcp every request looks
+// loopback, so this would be world-reachable. Don't proxy /mcp; if you must,
+// block it at the proxy or use a bearer token instead.
+func (s *Server) requireLoopbackPeer(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// csrfSafe still applies: a page on another origin must not be
+		// able to drive MCP tools from the user's browser.
+		if !isLoopback(r) || !s.csrfSafe(r) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		h(w, r)
+	}
+}
+
 func (s *Server) isPrivilegedRequest(r *http.Request) bool {
 	if !isLoopback(r) || !s.csrfSafe(r) {
 		return false

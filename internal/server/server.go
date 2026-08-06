@@ -65,6 +65,17 @@ type Server struct {
 	// -public-base-url flag. Trailing slash is trimmed.
 	publicBaseURL string
 
+	// mcpAddr is the loopback address of the dedicated MCP listener.
+	// Empty means "no dedicated listener" — /mcp is then only reachable
+	// on the main port, where password auth applies like everywhere
+	// else. See startMCPListener. Set via WithMCPAddr (-mcp-addr).
+	mcpAddr string
+
+	// mcpHandlerCached is the shared MCP handler. Both the main mux and
+	// the dedicated listener serve the same instance.
+	mcpHandlerCached http.Handler
+	mcpHandlerOnce   sync.Once
+
 	// fileKey signs the opaque tokens behind GET /api/file/{token}, the
 	// proxy that lets the browser view assets an agent generated on
 	// disk (see handlers_file.go). Loaded once, on first use.
@@ -445,6 +456,11 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// no-op when telemetry is disabled (its global TracerProvider is
 	// the SDK noop in that case).
 	httpServer := newHTTPServer(ln.Addr().String(), s.withHostAllowlist(withSecurityHeaders(withRequestTiming(withOTel(mux)))))
+
+	// The MCP endpoint also gets its own loopback-only listener so local
+	// MCP clients work without a cookie, without exposing the tools
+	// through a reverse proxy on the main port.
+	defer s.startMCPListener()()
 
 	// Sweep orphaned ephemeral terminal-viewer sessions left by an
 	// earlier process (e.g. after an air rebuild / crash). They can

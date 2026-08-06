@@ -180,6 +180,47 @@ func TestRequireLocalhost_AllowsAuthenticatedPublicOrigin(t *testing.T) {
 	}
 }
 
+// requireLoopbackPeer backs /mcp: native MCP clients can't send an auth
+// cookie, so a loopback peer is accepted even with a password configured.
+func TestRequireLoopbackPeer(t *testing.T) {
+	srv := &Server{auth: newTestAuth(t, "hunter2")}
+	handler := srv.requireLoopbackPeer(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	tests := []struct {
+		name       string
+		remoteAddr string
+		origin     string
+		fetchSite  string
+		wantCode   int
+	}{
+		{"origin-less loopback", "127.0.0.1:12345", "", "", http.StatusNoContent},
+		{"IPv6 loopback", "[::1]:12345", "", "", http.StatusNoContent},
+		{"same origin browser", "127.0.0.1:12345", "http://localhost:8228", "same-origin", http.StatusNoContent},
+		{"external IP", "192.0.2.1:12345", "", "", http.StatusForbidden},
+		{"foreign origin", "127.0.0.1:12345", "https://evil.example", "cross-site", http.StatusForbidden},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+			req.RemoteAddr = tt.remoteAddr
+			req.Host = "localhost:8228"
+			if tt.origin != "" {
+				req.Header.Set("Origin", tt.origin)
+			}
+			if tt.fetchSite != "" {
+				req.Header.Set("Sec-Fetch-Site", tt.fetchSite)
+			}
+			rr := httptest.NewRecorder()
+			handler(rr, req)
+			if rr.Code != tt.wantCode {
+				t.Errorf("want %d, got %d", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
 // --- s.post CSRF guard tests (#410) ---
 
 // A cross-site POST must be rejected even when auth is disabled;

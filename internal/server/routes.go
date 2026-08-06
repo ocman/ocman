@@ -109,7 +109,10 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// MCP server — localhost-only, enabled by default. Exposes the
 	// session-split tools (new_session, etc.)
 	// to AI coding agents via the Model Context Protocol.
-	mcpHandler := s.requireLocalhost(s.buildMCPHandler().ServeHTTP)
+	// Password auth applies here like everywhere else. Clients that
+	// can't send a cookie use the dedicated loopback listener instead
+	// (-mcp-addr, see startMCPListener).
+	mcpHandler := s.requireLocalhost(s.mcpHandler().ServeHTTP)
 	mux.HandleFunc("/mcp", mcpHandler)
 	mux.HandleFunc("/mcp/", mcpHandler)
 

@@ -24,7 +24,10 @@ connections because the current SPA, attachments, service worker, and terminal r
 Privileged localhost routes reject cross-origin browser requests. Origin-less local CLI and
 MCP clients remain supported, but when password auth is configured they must present a valid
 auth cookie like everyone else — a loopback peer address is not a credential behind a reverse
-proxy. Use `-auth-trust-localhost` to restore the unauthenticated local path. Browser access
+proxy. Use `-auth-trust-localhost` to restore the unauthenticated local path. MCP clients,
+which cannot send a cookie, instead use the separate loopback-only listener on `-mcp-addr`
+(`127.0.0.1:8227` by default); it is unreachable through a proxy pointed at `-addr`, and ocman
+refuses to bind it to a non-loopback address. Browser access
 through a local reverse proxy requires password authentication and an `OCMAN_PUBLIC_BASE_URL`
 matching the external origin.
 
@@ -40,6 +43,7 @@ MagicDNS name, a reverse proxy), set `OCMAN_PUBLIC_BASE_URL` to that external or
 |------|---------|-------------|
 | `-addr` | `127.0.0.1:8228` | Listen address. |
 | `-db` | `~/.local/share/opencode/opencode.db` | Path to OpenCode's SQLite DB. Opened read-only. |
+| `-mcp-addr` | `127.0.0.1:8227` | Loopback listen address for the MCP endpoint. Local clients reach it without auth, so non-loopback addresses are refused. Empty disables it. |
 | `-platforms` | `opencode` | Comma-separated list of platforms to enable (`opencode`, `claude-code`). |
 | `-auth-password` | _(unset)_ | Password to require. Prefer `OCMAN_AUTH_PASSWORD` or `-auth-password-file`. |
 | `-auth-password-file` | _(unset)_ | Read auth password from file (trailing whitespace trimmed). |

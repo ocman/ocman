@@ -13,21 +13,26 @@ you want agent-driven session splitting.
 
 ## Endpoint
 
-The server uses the Streamable HTTP transport at:
+The server uses the Streamable HTTP transport and listens on its **own
+loopback-only port**, separate from the web UI:
 
-- `http://localhost:8229/mcp` — the production binary (Go backend).
-- `http://localhost:8228/mcp` — during development (`make dev`); the Vite
-  dev server proxies `/mcp` to the backend on `:8229`.
+- `http://127.0.0.1:8227/mcp` — the dedicated MCP listener (`-mcp-addr`).
+  Works the same in dev and production, and needs no credentials.
+- `http://localhost:8228/mcp` (dev) / `http://localhost:8229/mcp`
+  (production binary) — the same endpoint on the web UI's port. Subject to
+  password auth, so a native MCP client gets `403` when auth is configured.
 
-The current URL is also exposed via `/api/capabilities` as
-`mcpServer.url`. The endpoint is **localhost-only**. Origin-less native MCP
-clients are supported; cross-origin browser requests are rejected.
+The recommended URL is also exposed via `/api/capabilities` as
+`mcpServer.url`. Both paths are **localhost-only**: origin-less native MCP
+clients are supported, cross-origin browser requests are rejected.
 
-If you run ocman with password auth (`OCMAN_AUTH_PASSWORD` etc.), the MCP
-endpoint requires a valid auth cookie too — an MCP client that cannot send
-one gets `403`. Pass `-auth-trust-localhost` (or
-`OCMAN_AUTH_TRUST_LOCALHOST=1`) to keep local MCP clients working; the
-loopback bypass is then the credential.
+The dedicated listener exists because MCP clients cannot present an auth
+cookie, so it has to treat the loopback peer address as the credential. That
+would be unsafe on the web UI's port — behind a reverse proxy every forwarded
+request arrives from `127.0.0.1` — so it gets a listener bound to loopback
+only, which a proxy on the main port cannot reach. Ocman refuses to bind
+`-mcp-addr` to a non-loopback address; `-mcp-addr ""` disables the dedicated
+listener entirely.
 
 ## Setup
 
@@ -40,15 +45,15 @@ Add the server to your project's `opencode.json` (or the global
   "mcp": {
     "ocman": {
       "type": "remote",
-      "url": "http://localhost:8228/mcp",
+      "url": "http://127.0.0.1:8227/mcp",
       "enabled": true
     }
   }
 }
 ```
 
-Use `http://localhost:8229/mcp` when running the production binary
-directly (no Vite dev proxy).
+The MCP port is fixed, so this config works for both `make dev` and the
+production binary. Change it if you moved the listener with `-mcp-addr`.
 
 ## Tools
 
