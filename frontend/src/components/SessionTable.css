@@ -50,6 +50,22 @@
 .oc-session-group-status .status-icon-compact {
   margin-top: 0;
 }
+/* Disclosure triangle: the only cue that a group is collapsed when it has
+   no visible rows (e.g. an empty project). */
+.oc-session-group-header::before {
+  content: '';
+  flex-shrink: 0;
+  width: 0;
+  height: 0;
+  border-left: 4px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transform: rotate(90deg);
+  transition: transform 0.12s ease;
+}
+.oc-session-group-header.collapsed::before {
+  transform: none;
+}
 .oc-session-group-header.collapsed .oc-session-group-label {
   opacity: 0.75;
 }
