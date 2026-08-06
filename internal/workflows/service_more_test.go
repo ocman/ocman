@@ -163,6 +163,14 @@ func TestValidateDefinitionRejectsMalformedWorkflows(t *testing.T) {
 	if err := validateDefinition(definitionWith(dir, func(*Definition) {})); err != nil {
 		t.Fatalf("valid definition rejected: %v", err)
 	}
+	// A reusable definition with command nodes and no directory must
+	// publish: the directory is resolved per run, not per definition.
+	reusable := definitionWith("", func(d *Definition) {
+		d.Nodes = []Node{{ID: "a", Name: "A", Type: "command", Command: []string{"true"}}}
+	})
+	if err := validateDefinition(reusable); err != nil {
+		t.Fatalf("reusable definition without a directory rejected: %v", err)
+	}
 }
 
 func TestValidateCommandNode(t *testing.T) {
@@ -174,10 +182,6 @@ func TestValidateCommandNode(t *testing.T) {
 		node      Node
 		want      string
 	}{
-		{"empty directory", "", ok, "workflow directory must be absolute"},
-		{"relative directory", "relative/path", ok, "workflow directory must be absolute"},
-		{"missing directory", filepath.Join(dir, "nope"), ok, "workflow directory must exist"},
-		{"directory is a file", writeTempFile(t, dir), ok, "workflow directory must exist"},
 		{"no command", dir, Node{ID: "a", Name: "A", Type: "command"}, "command is required"},
 		{"empty argv0", dir, Node{ID: "a", Name: "A", Type: "command", Command: []string{""}}, "command is required"},
 		{"NUL in argument", dir, Node{ID: "a", Name: "A", Type: "command", Command: []string{"echo", "a\x00b"}}, "command contains NUL"},
@@ -194,7 +198,7 @@ func TestValidateCommandNode(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := validateCommandNode(tc.directory, tc.node)
+			err := validateCommandNode(tc.node)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("validateCommandNode error = %v, want containing %q", err, tc.want)
 			}
@@ -203,8 +207,55 @@ func TestValidateCommandNode(t *testing.T) {
 	valid := ok
 	valid.Environment = map[string]string{"OK_1": "value"}
 	valid.Permission = []PermissionRule{{Permission: "bash", Pattern: "true*", Action: "allow"}}
-	if err := validateCommandNode(dir, valid); err != nil {
+	if err := validateCommandNode(valid); err != nil {
 		t.Fatalf("valid command node rejected: %v", err)
+	}
+	// A reusable definition publishes fine without any directory; the
+	// directory is a run-time concern.
+	if err := validateCommandNode(ok); err != nil {
+		t.Fatalf("command node rejected without a directory: %v", err)
+	}
+}
+
+// TestCommandDirectoryCheckedAtRunTime proves a reusable definition without a
+// directory publishes cleanly and only fails when a run actually needs a
+// working directory.
+func TestCommandDirectoryCheckedAtRunTime(t *testing.T) {
+	h := newHarness(t)
+	run := publishAndStart(t, h, Definition{
+		ID: "reusable", Name: "Reusable", Version: "1", Concurrency: 1,
+		Triggers: []Trigger{{ID: "manual", Type: TriggerManual}},
+		Nodes: []Node{{ID: "a", Name: "A", Type: "command", Command: []string{"true"},
+			Permission: []PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}}},
+	})
+	done := waitForRun(t, h.svc, run.ID, StateFailed)
+	if len(done.Nodes) != 1 || !strings.Contains(done.Nodes[0].Attempts[0].Error, "workflow directory must be absolute") {
+		t.Fatalf("expected a run-time directory error, got %+v", done.Nodes)
+	}
+}
+
+func TestValidateRunDirectory(t *testing.T) {
+	dir := t.TempDir()
+	tests := []struct {
+		name      string
+		directory string
+		want      string
+	}{
+		{"empty directory", "", "workflow directory must be absolute"},
+		{"relative directory", "relative/path", "workflow directory must be absolute"},
+		{"missing directory", filepath.Join(dir, "nope"), "workflow directory must exist"},
+		{"directory is a file", writeTempFile(t, dir), "workflow directory must exist"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateRunDirectory(tc.directory)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("validateRunDirectory error = %v, want containing %q", err, tc.want)
+			}
+		})
+	}
+	if err := validateRunDirectory(dir); err != nil {
+		t.Fatalf("valid directory rejected: %v", err)
 	}
 }
 

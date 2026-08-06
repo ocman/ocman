@@ -1750,6 +1750,11 @@ func (s *Service) executeCommand(ctx context.Context, active *activeCommand, ver
 		}
 	}
 	env := s.secretEnv(version, nodeEnv)
+	if err := validateRunDirectory(directory); err != nil {
+		s.finishCommandError(active, runID, node.ID, redactor, err.Error())
+		return
+	}
+	// A shard path comes from the WorkspaceProvider, which owns creating it.
 	if shardDir, err := s.shardDirectory(ctx, version, runID, node.ID); err != nil {
 		s.finishCommandError(active, runID, node.ID, redactor, "provisioning workspace shard: "+err.Error())
 		return
@@ -2630,7 +2635,7 @@ func validateDefinition(definition Definition) error {
 			return fmt.Errorf("unsupported node type %q", node.Type)
 		}
 		if node.Type == "command" {
-			if err := validateCommandNode(definition.Directory, node); err != nil {
+			if err := validateCommandNode(node); err != nil {
 				return fmt.Errorf("node %q: %w", node.ID, err)
 			}
 		}
@@ -2731,13 +2736,24 @@ func validateDefinition(definition Definition) error {
 
 var environmentName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-func validateCommandNode(directory string, node Node) error {
+// validateRunDirectory checks the working directory a command node is about
+// to run in. Run time, not publish time: the same definition may be reused
+// across projects.
+func validateRunDirectory(directory string) error {
 	if directory == "" || !filepath.IsAbs(directory) {
 		return fmt.Errorf("workflow directory must be absolute for command nodes")
 	}
 	if info, err := os.Stat(directory); err != nil || !info.IsDir() {
-		return fmt.Errorf("workflow directory must exist")
+		return fmt.Errorf("workflow directory must exist: %s", directory)
 	}
+	return nil
+}
+
+// validateCommandNode checks the node's own shape. The workflow directory
+// is deliberately *not* validated here: a reusable workflow is authored
+// once and run against any project, so the directory is only known (and
+// only checked) at run time by validateRunDirectory.
+func validateCommandNode(node Node) error {
 	if len(node.Command) == 0 || node.Command[0] == "" {
 		return fmt.Errorf("command is required")
 	}
