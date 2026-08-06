@@ -18,13 +18,14 @@
 // the viewport's scroll-related getters.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { useRef, type RefObject } from 'react';
 import { useStickyBottom } from './useStickyBottom';
 
 interface FakeViewport {
   el: HTMLElement;
   setScrollTop: (value: number) => void;
+  setScrollHeight: (value: number) => void;
   // Counters for the layout-forcing reads.
   scrollTopReads: number;
   scrollHeightReads: number;
@@ -43,6 +44,7 @@ function makeFakeViewport({
   const fv: FakeViewport = {
     el,
     setScrollTop: (value) => { scrollTop = value; },
+    setScrollHeight: (value) => { scrollHeight = value; },
     scrollTopReads: 0,
     scrollHeightReads: 0,
     clientHeightReads: 0,
@@ -126,8 +128,7 @@ afterEach(() => {
 function setupHook(fv: FakeViewport) {
   return renderHook(() => {
     const ref = useRef<HTMLElement | null>(fv.el);
-    useStickyBottom(ref as RefObject<HTMLElement | null>);
-    return null;
+    return useStickyBottom(ref as RefObject<HTMLElement | null>);
   });
 }
 
@@ -151,27 +152,30 @@ describe('useStickyBottom — rAF coalescing', () => {
     // because the rAF hasn't fired.
     expect(fv.scrollTopReads).toBe(baselineScrollTopReads);
 
-    // Advance one frame; the coalesced handler runs once.
+    // Advance one frame; the coalesced handler runs once. A content tick
+    // decides from the sticky mode alone, so it costs *no* scrollTop
+    // read — 100 mutations force zero position reads, not one per frame.
     vi.advanceTimersByTime(20);
-    expect(fv.scrollTopReads - baselineScrollTopReads).toBe(1);
+    expect(fv.scrollTopReads - baselineScrollTopReads).toBe(0);
+    // The scroll itself still needs the target, so scrollHeight is read.
     expect(fv.scrollHeightReads).toBeGreaterThan(0);
+    expect(fv.scrollToCalls).toBe(1);
   });
 
   it('schedules a fresh frame when mutations arrive after a previous flush', () => {
     const fv = makeFakeViewport({ scrollTop: 950, scrollHeight: 1100, clientHeight: 1000 });
     setupHook(fv);
 
-    const baseline = fv.scrollTopReads;
-
-    // Frame 1: 10 mutations → 1 layout read
+    // Frame 1: 10 mutations → one coalesced flush
     for (let i = 0; i < 10; i++) resizeCbs[0]?.();
     vi.advanceTimersByTime(20);
-    expect(fv.scrollTopReads - baseline).toBe(1);
+    expect(fv.scrollToCalls).toBe(1);
 
-    // Frame 2: 10 more mutations → 1 more layout read
+    // Frame 2: 10 more mutations → one more flush, i.e. the rAF is
+    // re-armed after a flush rather than latched shut.
     for (let i = 0; i < 10; i++) resizeCbs[0]?.();
     vi.advanceTimersByTime(20);
-    expect(fv.scrollTopReads - baseline).toBe(2);
+    expect(fv.scrollToCalls).toBe(2);
   });
 
   it('skips style-only mutations to avoid the library feedback loop', () => {
@@ -223,6 +227,211 @@ describe('useStickyBottom — rAF coalescing', () => {
     vi.advanceTimersByTime(20);
 
     expect(fv.scrollToCalls).toBe(1);
+  });
+
+  // A wheel/touch gesture is applied on the compositor thread frames
+  // before its `scroll` event is dispatched to JS. In that window the
+  // geometry still reads "near the bottom", so a content tick landing
+  // there used to conclude the user had not moved and scroll them back
+  // down — the "it keeps yanking me to the bottom while I'm reading"
+  // report. Acting on the gesture itself closes the window.
+  describe.each([
+    ['wheel', () => new Event('wheel')],
+    ['touchmove', () => new Event('touchmove')],
+    ['pointerdown', () => new Event('pointerdown')],
+  ])('%s gesture', (_name, makeEvent) => {
+    it('disengages before the scroll event lands, so a content tick does not chase the bottom', () => {
+      const fv = makeFakeViewport({ scrollTop: 950, scrollHeight: 2000, clientHeight: 1000 });
+      setupHook(fv);
+
+      // Engaged: a content tick follows the tail.
+      resizeCbs[0]?.();
+      vi.advanceTimersByTime(20);
+      expect(fv.scrollToCalls).toBe(1);
+
+      // The user scrolls up. The gesture fires; the `scroll` event has
+      // not been dispatched yet, so the geometry is deliberately left
+      // reading near-bottom to reproduce the stale read.
+      fv.el.dispatchEvent(makeEvent());
+
+      resizeCbs[0]?.();
+      vi.advanceTimersByTime(20);
+
+      expect(fv.scrollToCalls).toBe(1);
+    });
+  });
+
+  it('re-engages once the offset lands back inside the near-bottom band', () => {
+    const fv = makeFakeViewport({ scrollTop: 950, scrollHeight: 2000, clientHeight: 1000 });
+    setupHook(fv);
+
+    // Gesture away, then confirm the follow is off.
+    fv.el.dispatchEvent(new Event('wheel'));
+    fv.setScrollTop(100);
+    fv.el.dispatchEvent(new Event('scroll'));
+    resizeCbs[0]?.();
+    vi.advanceTimersByTime(20);
+    expect(fv.scrollToCalls).toBe(0);
+
+    // Scroll back down into the band: follow resumes without the user
+    // having to click the scroll-to-bottom button.
+    fv.setScrollTop(1000);
+    fv.el.dispatchEvent(new Event('scroll'));
+    resizeCbs[0]?.();
+    vi.advanceTimersByTime(20);
+    expect(fv.scrollToCalls).toBe(1);
+  });
+
+  it('keeps following when content shrinks above the fold without a gesture', () => {
+    // The message trim dropping older messages, or a tool block
+    // collapsing, moves scrollTop without the user touching anything.
+    // Geometry is no longer consulted on content ticks precisely so this
+    // cannot be mistaken for intent in either direction.
+    const fv = makeFakeViewport({ scrollTop: 950, scrollHeight: 2000, clientHeight: 1000 });
+    setupHook(fv);
+
+    resizeCbs[0]?.();
+    vi.advanceTimersByTime(20);
+    expect(fv.scrollToCalls).toBe(1);
+
+    // Content above the viewport vanishes; the browser lowers scrollTop.
+    // No gesture, no scroll event attributable to the user.
+    fv.setScrollTop(400);
+    resizeCbs[0]?.();
+    vi.advanceTimersByTime(20);
+    expect(fv.scrollToCalls).toBe(2);
+  });
+
+  describe('scroll-to-bottom affordance', () => {
+    it('stays hidden while following the tail', () => {
+      const fv = makeFakeViewport({ scrollTop: 950, scrollHeight: 2000, clientHeight: 1000 });
+      const { result } = setupHook(fv);
+
+      resizeCbs[0]?.();
+      vi.advanceTimersByTime(20);
+
+      expect(result.current.showScrollToBottom).toBe(false);
+    });
+
+    it('appears once the user is well clear of the bottom', () => {
+      const fv = makeFakeViewport({ scrollTop: 950, scrollHeight: 2000, clientHeight: 1000 });
+      const { result } = setupHook(fv);
+
+      // Distance 700 — past the show threshold.
+      fv.setScrollTop(300);
+      act(() => { fv.el.dispatchEvent(new Event('scroll')); });
+
+      expect(result.current.showScrollToBottom).toBe(true);
+    });
+
+    it('holds visibility steady across a streaming size jump inside the band', () => {
+      // The flicker this replaces: a truncated bash block resolving moves
+      // the distance by tens of pixels. Inside the band nothing changes.
+      const fv = makeFakeViewport({ scrollTop: 850, scrollHeight: 2000, clientHeight: 1000 });
+      const { result } = setupHook(fv);
+
+      // Distance 150 — inside the 80..240 band, entered from hidden.
+      act(() => { fv.el.dispatchEvent(new Event('scroll')); });
+      expect(result.current.showScrollToBottom).toBe(false);
+
+      fv.setScrollTop(800); // distance 200, still inside the band
+      act(() => { fv.el.dispatchEvent(new Event('scroll')); });
+      expect(result.current.showScrollToBottom).toBe(false);
+    });
+
+    it('appears when content grows below a disengaged viewport, with no scroll event', () => {
+      // Nothing scrolls here, so only the content tick can notice. This
+      // is why the tick still reads geometry on the disengaged path.
+      //
+      // Start disengaged but *inside* the band (distance 200), so the
+      // affordance is hidden and only the growth can reveal it.
+      const fv = makeFakeViewport({ scrollTop: 1000, scrollHeight: 2200, clientHeight: 1000 });
+      const { result } = setupHook(fv);
+
+      fv.el.dispatchEvent(new Event('wheel'));
+      act(() => { fv.el.dispatchEvent(new Event('scroll')); });
+      expect(result.current.showScrollToBottom).toBe(false);
+
+      // A long reply streams in below the fold.
+      fv.setScrollHeight(5000);
+
+      act(() => {
+        resizeCbs[0]?.();
+        vi.advanceTimersByTime(20);
+      });
+
+      expect(result.current.showScrollToBottom).toBe(true);
+    });
+
+    it('re-engages follow and hides itself when invoked', () => {
+      const fv = makeFakeViewport({ scrollTop: 100, scrollHeight: 5000, clientHeight: 1000 });
+      const { result } = setupHook(fv);
+
+      act(() => { fv.el.dispatchEvent(new Event('scroll')); });
+      expect(result.current.showScrollToBottom).toBe(true);
+
+      act(() => { result.current.scrollToBottom(); });
+      expect(result.current.showScrollToBottom).toBe(false);
+      expect(fv.scrollToCalls).toBe(1);
+
+      // Follow is back on: the next content tick tracks the tail even
+      // though the geometry still says we are far from it.
+      act(() => {
+        resizeCbs[0]?.();
+        vi.advanceTimersByTime(20);
+      });
+      expect(fv.scrollToCalls).toBe(2);
+    });
+  });
+
+  it('ignores gestures from an excluded subtree, so typing does not stop the follow', () => {
+    // The composer renders inside the scroll container, so a pointerdown
+    // on the textarea bubbles up to the viewport. Treating that as
+    // "stop following" would break the ordinary act of clicking into the
+    // composer to reply while the previous answer streams in.
+    const fv = makeFakeViewport({ scrollTop: 950, scrollHeight: 2000, clientHeight: 1000 });
+    const composer = document.createElement('div');
+    composer.className = 'oc-viewport-footer';
+    const textarea = document.createElement('textarea');
+    composer.appendChild(textarea);
+    fv.el.appendChild(composer);
+
+    renderHook(() => {
+      const ref = useRef<HTMLElement | null>(fv.el);
+      return useStickyBottom(ref as RefObject<HTMLElement | null>, {
+        ignoreGesturesWithin: '.oc-viewport-footer',
+      });
+    });
+
+    resizeCbs[0]?.();
+    vi.advanceTimersByTime(20);
+    expect(fv.scrollToCalls).toBe(1);
+
+    // Gesture from inside the composer — must not disengage.
+    textarea.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    resizeCbs[0]?.();
+    vi.advanceTimersByTime(20);
+    expect(fv.scrollToCalls).toBe(2);
+
+    // …while the same gesture on the transcript still does.
+    fv.el.dispatchEvent(new Event('pointerdown'));
+    resizeCbs[0]?.();
+    vi.advanceTimersByTime(20);
+    expect(fv.scrollToCalls).toBe(2);
+  });
+
+  it('removes the gesture listeners on teardown', () => {
+    const fv = makeFakeViewport({ scrollTop: 950, scrollHeight: 2000, clientHeight: 1000 });
+    const { unmount } = setupHook(fv);
+    const removeSpy = vi.spyOn(fv.el, 'removeEventListener');
+
+    unmount();
+
+    const removed = removeSpy.mock.calls.map(([type]) => type);
+    expect(removed).toContain('wheel');
+    expect(removed).toContain('touchmove');
+    expect(removed).toContain('pointerdown');
+    expect(removed).toContain('scroll');
   });
 
   it('cancels any pending rAF on teardown', () => {

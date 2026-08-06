@@ -32,6 +32,26 @@ export interface ScrollMetrics {
 }
 
 /**
+ * How far the viewport must be from the bottom before the
+ * scroll-to-bottom affordance appears.
+ *
+ * Deliberately well past `NEAR_BOTTOM_THRESHOLD_PX`: together the two
+ * form a hysteresis band (show past 240px, hide within 80px, hold
+ * between). Streaming content routinely jumps the scroll height by tens
+ * of pixels — a truncated bash block resolving, a code fence
+ * highlighting — and a single threshold turns each of those into a
+ * flash of the button. A 160px-wide band cannot be crossed by that
+ * noise, so the visibility is stable without a timer.
+ */
+export const PILL_SHOW_DISTANCE_PX = 240;
+
+/** Pixels of unseen content below the viewport. */
+export function distanceFromBottom({ scrollTop, scrollHeight, clientHeight }: ScrollMetrics): number {
+  if (scrollHeight <= clientHeight) return 0;
+  return Math.max(0, scrollHeight - scrollTop - clientHeight);
+}
+
+/**
  * Returns true when the viewport is within `threshold` pixels of the
  * bottom (or when the content is too short to scroll at all).
  */
@@ -39,33 +59,53 @@ export function isNearBottom(
   metrics: ScrollMetrics,
   threshold: number = NEAR_BOTTOM_THRESHOLD_PX,
 ): boolean {
-  const { scrollTop, scrollHeight, clientHeight } = metrics;
+  const { scrollHeight, clientHeight } = metrics;
   if (scrollHeight <= clientHeight) return true;
-  const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-  return distanceFromBottom <= threshold;
+  return distanceFromBottom(metrics) <= threshold;
 }
 
-export type StickyEventKind = 'content' | 'user-scroll';
+/**
+ * Whether the scroll-to-bottom affordance should be visible, given
+ * whether it is visible now. Hysteresis: crossing `showAt` reveals it,
+ * and only coming back within `hideAt` hides it again.
+ *
+ * This replaces a 400ms CSS show-delay that existed to swallow exactly
+ * the flicker the band now prevents outright — a delay hides the
+ * symptom but also makes a deliberate scroll-up feel unresponsive.
+ */
+export function nextPillVisible(
+  visible: boolean,
+  distance: number,
+  hideAt: number = NEAR_BOTTOM_THRESHOLD_PX,
+  showAt: number = PILL_SHOW_DISTANCE_PX,
+): boolean {
+  return visible ? distance > hideAt : distance > showAt;
+}
+
+export type StickyEventKind = 'content' | 'user-scroll' | 'gesture';
 
 export interface StickyDecisionInput {
-  /** Whether the viewport is currently within the near-bottom band. */
-  isNear: boolean;
+  /**
+   * Whether the viewport is currently within the near-bottom band.
+   * Only read for 'user-scroll' — see `decideStickyAction`.
+   */
+  isNear?: boolean;
   /**
    * What triggered the decision:
    *  - 'content': DOM grew (new message, streaming chunk, image loaded)
-   *  - 'user-scroll': the user scrolled the viewport
+   *  - 'user-scroll': the viewport's scroll offset changed
+   *  - 'gesture': the user physically moved the viewport (wheel, touch
+   *    drag, scrollbar press)
    */
   kind: StickyEventKind;
   /**
-   * The sticky state *before* this event. Only used for 'content' events.
+   * The sticky state *before* this event.
    *
-   * When `true`, content growth keeps sticky engaged and scrolls to the
-   * bottom even if `isNear` is momentarily false — this handles the race
-   * where new DOM is appended but the browser hasn't yet propagated the
-   * scroll position, causing a false "not near bottom" reading.
+   * For 'content' this is the whole decision: we follow the tail because
+   * the user has not gestured away from it, not because of where the
+   * viewport currently sits.
    *
-   * Defaults to `false` when omitted (preserves old behaviour for callers
-   * that don't track sticky state).
+   * Defaults to `false` when omitted.
    */
   currentSticky?: boolean;
 }
@@ -83,34 +123,40 @@ export interface StickyDecision {
 /**
  * State-machine for the sticky-bottom hook.
  *
- * Rules:
- *  1. Content growth while near-bottom: stay/become sticky and scroll.
- *  2. Content growth while NOT near-bottom AND already sticky: stay
- *     sticky and scroll. This handles the common race where new DOM
- *     is appended (scrollHeight grows) but the browser hasn't yet
- *     propagated the updated scroll offset, so `isNear` transiently
- *     reads false even though the user never moved. Without this
- *     rule, a single bad rAF tick disengages sticky and the chat
- *     stops following new messages silently.
- *  3. Content growth while NOT near-bottom AND NOT sticky: do nothing —
- *     the user is deliberately reading older content.
- *  4. User scrolls into the near-bottom band: re-engage sticky (so
- *     subsequent content events resume pulling) but do NOT scroll
- *     (the user is already where they want to be).
- *  5. User scrolls out of the near-bottom band: disengage sticky.
- *     Programmatic scrolling here would fight the user.
+ * Sticky is a mode the user leaves by *gesturing*, not a property of
+ * where the viewport happens to sit. That distinction is the whole
+ * design:
+ *
+ *  - 'gesture' (wheel, touch drag, scrollbar press): disengage, always
+ *    and immediately. A wheel scroll is applied on the compositor
+ *    thread frames before its `scroll` event reaches JS, so a content
+ *    tick landing in that window used to read the *stale* pre-scroll
+ *    geometry, conclude "still near the bottom", and yank the reader
+ *    back down mid-stream. The gesture arrives first, so acting on it
+ *    closes that window instead of trying to out-guess it.
+ *
+ *  - 'content' (new message, streaming chunk, image decoded): follow
+ *    the tail iff we were already following. Deliberately does NOT
+ *    consult `isNear`. Geometry lies here in both directions: growth
+ *    below the fold makes a following viewport look far from the
+ *    bottom, while a shrink above it (message trim, a tool block
+ *    collapsing, browser scroll anchoring) lowers `scrollTop` without
+ *    the user touching anything. Reading either as intent is what made
+ *    the follow drop silently. Not reading geometry at all also means
+ *    a content tick costs no forced layout.
+ *
+ *  - 'user-scroll' (the offset actually changed): re-engage when the
+ *    viewport lands inside the near-bottom band, disengage when it
+ *    doesn't. This is what re-arms follow after the user scrolls back
+ *    down, and what disengages on a programmatic jump to an older
+ *    message. Never scrolls — that would fight the user.
  */
-export function decideStickyAction({ isNear, kind, currentSticky = false }: StickyDecisionInput): StickyDecision {
-  if (kind === 'content') {
-    if (isNear || currentSticky) return { nextSticky: true, scroll: true };
-    // Content grew while the user was deliberately reading older messages
-    // (sticky was already off and they're not near the bottom) — leave
-    // them alone. Sticky stays false so a future user-scroll back into
-    // the near-bottom band re-engages it cleanly.
-    return { nextSticky: false, scroll: false };
-  }
-  // kind === 'user-scroll' — never scroll programmatically (would fight
-  // the user). Re-engage sticky if the user landed in the near-bottom
-  // band; disengage otherwise.
+export function decideStickyAction({
+  isNear = false,
+  kind,
+  currentSticky = false,
+}: StickyDecisionInput): StickyDecision {
+  if (kind === 'gesture') return { nextSticky: false, scroll: false };
+  if (kind === 'content') return { nextSticky: currentSticky, scroll: currentSticky };
   return { nextSticky: isNear, scroll: false };
 }

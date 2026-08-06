@@ -661,6 +661,53 @@ export function parseQuestions(argsText: string): QuestionData[] | null {
   return null;
 }
 
+/** One AI auto-approval attached to the tool call it unblocked. */
+export interface ToolApproval {
+  /** OpenCode permission type, e.g. `bash` / `edit` / `external_directory`. */
+  permission: string;
+  /** Resources the approval covered (command, paths, ...). */
+  patterns: string[];
+  /** Judge's one-line conclusion. Empty for legacy approvals. */
+  reasoning: string;
+}
+
+/**
+ * Marker line prefix used to smuggle approvals through the stringly-typed
+ * `argsText` channel, same trick as `@time:` / `@user-executed-tool`.
+ */
+export const APPROVAL_META = '@approved:';
+
+/** Encode one approval as an `argsText` marker line (leading newline). */
+export function encodeToolApproval(approval: ToolApproval): string {
+  return `\n${APPROVAL_META}${JSON.stringify(approval)}`;
+}
+
+/**
+ * Pull every `@approved:` marker line out of argsText. Returns the
+ * decoded approvals plus argsText with those lines removed so the
+ * downstream renderers never see them.
+ */
+export function parseToolApprovals(argsText: string): {
+  approvals: ToolApproval[];
+  strippedArgs: string;
+} {
+  if (!argsText.includes(APPROVAL_META)) return { approvals: [], strippedArgs: argsText };
+  const approvals: ToolApproval[] = [];
+  const kept = argsText.split('\n').filter((line) => {
+    if (!line.startsWith(APPROVAL_META)) return true;
+    try {
+      const parsed = JSON.parse(line.slice(APPROVAL_META.length)) as Partial<ToolApproval>;
+      approvals.push({
+        permission: parsed.permission || '',
+        patterns: parsed.patterns || [],
+        reasoning: parsed.reasoning || '',
+      });
+    } catch { /* keep the tool renderable on a malformed marker */ }
+    return false;
+  });
+  return { approvals, strippedArgs: kept.join('\n') };
+}
+
 /**
  * Extract tool timing from the `@time:` line encoded in argsText.
  * Returns `{ startedAt, completedAt }` in unix ms, or null when no

@@ -557,15 +557,18 @@ export function AssistantThread({
     wasLoadingRef.current = !!loadingMore;
   }, [loadingMore]);
 
-  // Companion auto-scroll. ThreadPrimitive.Viewport's built-in
-  // `autoScroll` decides "is at bottom" with a hardcoded 1px
-  // tolerance, which is too strict for streaming chats: the composer
-  // textarea growing or a code block reflowing during streaming
-  // routinely leaves the user a few pixels above the bottom, after
-  // which the library stops following new messages. useStickyBottom
-  // relaxes that to ~80px so the conversation keeps tracking the
-  // bottom while the user is "near" it. See lib/useStickyBottom.ts.
-  useStickyBottom(viewportRef);
+  // Companion auto-scroll, replacing ThreadPrimitive.Viewport's built-in
+  // `autoScroll` (disabled below): its hardcoded 1px at-bottom tolerance
+  // races streaming DOM growth. useStickyBottom follows the tail until
+  // the user gestures away from it, and drives the scroll-to-bottom
+  // affordance. See lib/useStickyBottom.ts.
+  //
+  // The composer renders inside the viewport (as ViewportFooter), so its
+  // subtree is excluded from gesture detection — otherwise clicking into
+  // the textarea to type would read as "stop following the reply".
+  const { showScrollToBottom, scrollToBottom } = useStickyBottom(viewportRef, {
+    ignoreGesturesWithin: '.oc-viewport-footer',
+  });
 
   // Alt+H / Alt+L (Option+H / Option+L on Mac) jump between user messages in
   // the history. Alt+H: previous user message (up). Alt+L: next user message
@@ -702,8 +705,27 @@ export function AssistantThread({
              1px at-bottom tolerance that races with streaming DOM growth and
              snaps the viewport down even when the user has scrolled up to
              read. useStickyBottom owns all auto-scroll with an 80px band that
-             respects a deliberate scroll-up. */}
-        <ThreadPrimitive.Viewport ref={setViewportRef} className="oc-thread-viewport" autoScroll={false}>
+             respects a deliberate scroll-up.
+
+             `autoScroll={false}` is not enough on its own:
+             `scrollToBottomOnRunStart` defaults to true and is checked
+             independently of it. Worse, it does not just scroll once — it
+             latches `scrollingToBottomBehaviorRef`, which the library's
+             content-resize handler then re-applies on *every* subsequent
+             resize. That latch is only cleared by a scroll event that lands
+             at the bottom, so scrolling up never clears it: one run start
+             means every later streaming chunk drags the reader back down.
+
+             `scrollToBottomOnInitialize` / `scrollToBottomOnThreadSwitch` are
+             deliberately left enabled — they fire at mount, which is the one
+             moment the tail *is* where the user wants to be, and they are
+             what opens a conversation at the bottom today. */}
+        <ThreadPrimitive.Viewport
+          ref={setViewportRef}
+          className="oc-thread-viewport"
+          autoScroll={false}
+          scrollToBottomOnRunStart={false}
+        >
           {hasMore && loadingMore && (
             <div className="oc-load-more">
               <span className="oc-spinner" /> Loading older messages...
@@ -718,9 +740,23 @@ export function AssistantThread({
             {composer}
           </ThreadPrimitive.ViewportFooter>
         </ThreadPrimitive.Viewport>
-        <ThreadPrimitive.ScrollToBottom className="oc-scroll-btn">
-          Scroll to bottom
-        </ThreadPrimitive.ScrollToBottom>
+        {/* Our own affordance rather than ThreadPrimitive.ScrollToBottom:
+             the primitive's visibility comes from the library's 1px
+             at-bottom check, which flips off and on with every streaming
+             size jump. That was previously papered over with a 400ms CSS
+             show-delay; useStickyBottom drives this from a hysteresis
+             band instead, so it is stable without a timer and appears
+             immediately on a real scroll-up. */}
+        {showScrollToBottom && (
+          <button
+            type="button"
+            className="oc-scroll-btn"
+            data-testid="scroll-to-bottom"
+            onClick={scrollToBottom}
+          >
+            Scroll to bottom
+          </button>
+        )}
       </ThreadPrimitive.Root>
       </MessageBookmarkContext.Provider>
     </div>

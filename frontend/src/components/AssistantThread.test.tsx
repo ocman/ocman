@@ -29,8 +29,25 @@ const { message, threadState } = vi.hoisted(() => ({
 vi.mock('@assistant-ui/react', async () => {
   const React = await import('react');
   const Root = ({ children, className, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div className={className} {...props}>{children}</div>;
-  const Viewport = React.forwardRef<HTMLDivElement, { children: ReactNode; className?: string; autoScroll?: boolean }>(
-    ({ children, className, autoScroll }, ref) => <div ref={ref} className={className} data-auto-scroll={String(autoScroll)}>{children}</div>,
+  const Viewport = React.forwardRef<
+    HTMLDivElement,
+    {
+      children: ReactNode;
+      className?: string;
+      autoScroll?: boolean;
+      scrollToBottomOnRunStart?: boolean;
+    }
+  >(
+    ({ children, className, autoScroll, scrollToBottomOnRunStart }, ref) => (
+      <div
+        ref={ref}
+        className={className}
+        data-auto-scroll={String(autoScroll)}
+        data-scroll-on-run-start={String(scrollToBottomOnRunStart)}
+      >
+        {children}
+      </div>
+    ),
   );
   return {
     ThreadPrimitive: {
@@ -100,6 +117,20 @@ describe('AssistantThread message jumps', () => {
     const { container } = render(<AssistantThread />);
 
     expect(container.querySelector('.oc-thread-viewport')).toHaveAttribute('data-auto-scroll', 'false');
+  });
+
+  it('disables the library scroll-to-bottom-on-run-start latch', () => {
+    // `autoScroll={false}` does not cover this one: the library checks it
+    // independently, and it latches a re-scroll that its content-resize
+    // handler re-applies on every later resize. The latch is only cleared
+    // by a scroll landing at the bottom, so a scroll-up never clears it —
+    // one run start and every streaming chunk drags the reader down.
+    const { container } = render(<AssistantThread />);
+
+    expect(container.querySelector('.oc-thread-viewport')).toHaveAttribute(
+      'data-scroll-on-run-start',
+      'false',
+    );
   });
 });
 

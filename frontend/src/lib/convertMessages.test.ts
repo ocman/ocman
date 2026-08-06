@@ -111,6 +111,108 @@ describe('notice messages', () => {
   });
 });
 
+describe('AI approval footnotes', () => {
+  const approval: PartData = {
+    type: 'auto-approved',
+    permission: 'bash',
+    patterns: ['rm -rf /tmp/foo'],
+    reasoning: 'Temp dir only.',
+  };
+
+  function toolPart(messageId: string, id: string, command: string, timeCreated: number): Part {
+    return makePart(
+      messageId,
+      { type: 'tool', tool: 'bash', state: { status: 'completed', input: { command } } } as PartData,
+      id,
+      timeCreated,
+    );
+  }
+
+  it('attaches the approval to the tool that was running at approval time', () => {
+    const messages: Message[] = [
+      makeMessage('a1', { role: 'assistant' }, 100),
+      { id: 'ocman-notice-p1', sessionId: 's', timeCreated: 250, data: { role: 'notice' } },
+    ];
+    const parts = [
+      toolPart('a1', 't1', 'echo first', 150),
+      toolPart('a1', 't2', 'rm -rf /tmp/foo', 200),
+      toolPart('a1', 't3', 'echo after', 300),
+      makePart('ocman-notice-p1', approval, 'n1-part', 250),
+    ];
+
+    const out = createConvertMessages()(messages, parts);
+
+    // The standalone notice message is gone; the approval rides on t2.
+    expect(out).toHaveLength(1);
+    const calls = asContentArray(out[0].content).filter((c) => c.type === 'tool-call');
+    expect(calls).toHaveLength(3);
+    expect(calls[0].argsText).not.toContain('@approved:');
+    expect(calls[1].argsText).toContain(`@approved:${JSON.stringify({
+      permission: 'bash',
+      patterns: ['rm -rf /tmp/foo'],
+      reasoning: 'Temp dir only.',
+    })}`);
+    expect(calls[2].argsText).not.toContain('@approved:');
+  });
+
+  it('matches live SSE tool parts, which carry time.start but no timeCreated', () => {
+    const messages: Message[] = [
+      makeMessage('a1', { role: 'assistant' }, 100),
+      { id: 'ocman-notice-p1', sessionId: 's', timeCreated: 250, data: { role: 'notice' } },
+    ];
+    // reducePartSnapshot builds parts without `timeCreated`.
+    const livePart: Part = {
+      id: 't1',
+      messageId: 'a1',
+      sessionId: 's',
+      data: {
+        type: 'tool',
+        tool: 'bash',
+        time: { start: 200 },
+        state: { status: 'running', input: { command: 'rm -rf /tmp/foo' } },
+      } as unknown as string,
+    } as Part;
+    const parts = [livePart, makePart('ocman-notice-p1', approval, 'n1-part', 250)];
+
+    const out = createConvertMessages()(messages, parts);
+
+    expect(out).toHaveLength(1);
+    const call = asContentArray(out[0].content)[0];
+    expect(call.type === 'tool-call' && call.argsText).toContain('@approved:');
+  });
+
+  it('keeps the standalone notice when no tool part precedes the approval', () => {
+    const messages: Message[] = [
+      { id: 'ocman-notice-p1', sessionId: 's', timeCreated: 50, data: { role: 'notice' } },
+      makeMessage('a1', { role: 'assistant' }, 100),
+    ];
+    const parts = [
+      makePart('ocman-notice-p1', approval, 'n1-part', 50),
+      toolPart('a1', 't1', 'echo first', 150),
+    ];
+
+    const out = createConvertMessages()(messages, parts);
+
+    expect(out).toHaveLength(2);
+    const notice = asContentArray(out[0].content)[0];
+    expect(notice.type === 'tool-call' && notice.toolName).toBe('ocman:auto-approved');
+  });
+
+  it('invalidates the per-message cache when an approval arrives later', () => {
+    const convert = createConvertMessages();
+    const assistant = makeMessage('a1', { role: 'assistant' }, 100);
+    const tool = toolPart('a1', 't1', 'rm -rf /tmp/foo', 150);
+
+    const before = asContentArray(convert([assistant], [tool])[0].content)[0];
+    expect(before.type === 'tool-call' && before.argsText).not.toContain('@approved:');
+
+    const notice: Message = { id: 'ocman-notice-p1', sessionId: 's', timeCreated: 200, data: { role: 'notice' } };
+    const after = convert([assistant, notice], [tool, makePart('ocman-notice-p1', approval, 'n1-part', 200)]);
+    const call = asContentArray(after[0].content)[0];
+    expect(call.type === 'tool-call' && call.argsText).toContain('@approved:');
+  });
+});
+
 describe('truncate', () => {
   it('returns the empty string for falsy inputs', () => {
     expect(truncate('', 10)).toBe('');

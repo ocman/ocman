@@ -25,9 +25,11 @@ import {
   parseQuestionAnswers,
   parseQuestions,
   parseToolTime,
+  parseToolApprovals,
   formatToolDuration,
   type ApplyPatchFileDiff,
   type QuestionData,
+  type ToolApproval,
 } from '../../lib/threadHelpers';
 import type { FC } from 'react';
 import { MarkdownText } from './MarkdownText';
@@ -316,7 +318,63 @@ function taskActivity(
   return 'Waiting for activity...';
 }
 
-export const ToolCallDisplay: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArgsText, result }) => {
+/**
+ * AI auto-approval shown as a footnote under the tool call it
+ * unblocked. Collapsed to a single muted line; clicking reveals the
+ * judge's reasoning and the resources it covered.
+ */
+function AiApprovalFootnote({ approvals }: { approvals: ToolApproval[] }) {
+  const [openState, setOpen] = useState(false);
+  const isPrinting = useIsPrinting();
+  const printCollapse = usePrintCollapse();
+  const open = openState || (isPrinting && !printCollapse);
+  return (
+    <div className="oc-ai-approval-footnote">
+      <button
+        type="button"
+        className="oc-ai-approval-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen(!openState)}
+      >
+        Approved by AI
+      </button>
+      {open && (
+        <div className="oc-ai-approval-detail" data-testid="ai-approval-detail">
+          {approvals.map((approval, i) => (
+            <div className="oc-ai-approval-entry" key={i}>
+              {approval.permission && (
+                <div className="oc-ai-approval-permission">{approval.permission}</div>
+              )}
+              {approval.patterns.length > 0 && (
+                <div className="oc-ai-approval-patterns">{approval.patterns.join(', ')}</div>
+              )}
+              {approval.reasoning && (
+                <div className="oc-ai-approval-reasoning">{approval.reasoning}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Tool-call renderer. Splits the AI-approval markers off argsText and
+ * renders them as a footnote below whatever the tool itself renders.
+ */
+export const ToolCallDisplay: FC<ToolCallMessagePartProps> = (props) => {
+  const { approvals, strippedArgs } = parseToolApprovals(props.argsText || '');
+  if (approvals.length === 0) return <ToolCallBody {...props} />;
+  return (
+    <>
+      <ToolCallBody {...props} argsText={strippedArgs} />
+      <AiApprovalFootnote approvals={approvals} />
+    </>
+  );
+};
+
+const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArgsText, result }) => {
   const [expandedState, setExpanded] = useState(false);
   const [taskExpandedState, setTaskExpanded] = useState(false);
   // While printing / saving to PDF, force every block open so the

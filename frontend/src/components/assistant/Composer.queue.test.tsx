@@ -66,6 +66,86 @@ describe('Composer input', () => {
     expect(onSend).toHaveBeenCalledWith('follow up', undefined, expected);
   });
 
+  // The textarea is disabled while sending, and a real browser blurs a
+  // focused control when it becomes disabled — re-enabling does not put
+  // focus back, so the caret was lost after every Enter.
+  //
+  // jsdom implements neither half of that: it does not blur on disable,
+  // and `.blur()` on an already-disabled element is a no-op. So the drop
+  // to <body> is staged here by focusing a throwaway element and removing
+  // it. The faithful version of this lives in e2e/composer.spec.ts, in a
+  // real browser; this one pins the restore logic cheaply.
+  const dropFocusToBody = () => {
+    const sacrifice = document.createElement('input');
+    document.body.appendChild(sacrifice);
+    sacrifice.focus();
+    sacrifice.remove();
+  };
+
+  it('returns focus to the textarea after a send completes', async () => {
+    const onSend = vi.fn().mockResolvedValue(undefined);
+    render(<Composer isRunning onSend={onSend} />);
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement;
+
+    // Let the mount auto-focus settle first. It runs on a setTimeout(0)
+    // and re-focuses the composer whenever the active element is not a
+    // text field — if it is still pending it lands after the drop below
+    // and hides whether the send restored focus or not.
+    await act(async () => { await new Promise((r) => setTimeout(r, 1)); });
+
+    input.focus();
+    expect(document.activeElement).toBe(input);
+
+    fireEvent.input(input, { target: { value: 'hello' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    dropFocusToBody(); // what the browser does when `disabled` flips on
+    expect(document.activeElement).toBe(document.body);
+    await act(async () => {});
+
+    expect(document.activeElement).toBe(input);
+  });
+
+  it('leaves focus alone when the user moved it during the send', async () => {
+    const onSend = vi.fn().mockResolvedValue(undefined);
+    render(<Composer isRunning onSend={onSend} />);
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement;
+    const outside = document.createElement('button');
+    document.body.appendChild(outside);
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 1)); });
+
+    input.focus();
+    fireEvent.input(input, { target: { value: 'hello' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    outside.focus(); // user clicks away mid-send
+    await act(async () => {});
+
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
+  });
+
+  it('does not steal focus when the send was started from elsewhere', async () => {
+    const onSend = vi.fn().mockResolvedValue(undefined);
+    render(<Composer isRunning onSend={onSend} />);
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement;
+    const outside = document.createElement('button');
+    document.body.appendChild(outside);
+
+    // Let the mount auto-focus settle first, otherwise its setTimeout(0)
+    // lands mid-test and moves focus for reasons unrelated to sending.
+    await act(async () => { await new Promise((r) => setTimeout(r, 1)); });
+
+    fireEvent.input(input, { target: { value: 'hello' } });
+    outside.focus();
+    expect(document.activeElement).toBe(outside);
+
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await act(async () => {});
+
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
+  });
+
   it('keeps the draft locked and retries while the backend is unavailable', async () => {
     vi.useFakeTimers();
     const onSend = vi.fn()
