@@ -275,6 +275,32 @@ function ComposerImpl({
     return () => { mountedRef.current = false; };
   }, []);
 
+  // Put the caret back after a send.
+  //
+  // The textarea is `disabled` while sending (uiDisabled), and disabling a
+  // focused control blurs it — re-enabling does not put focus back, so
+  // after pressing Enter the caret was gone and the next keystroke went
+  // nowhere. Restoring has to wait for the commit that clears `disabled`,
+  // because focus() on a disabled element is a no-op; an effect keyed on
+  // `sending` is exactly that moment.
+  //
+  // Two conditions, both required. The composer must have owned focus when
+  // the send started — a send can also come from the send button or a slash
+  // command while the user is elsewhere, and stealing focus there would be
+  // worse than losing it. And focus must still be on the floor: the disable
+  // drops it to <body>, so anything else means the user deliberately moved
+  // during the send and we leave them where they are.
+  const restoreFocusAfterSendRef = useRef(false);
+  useEffect(() => {
+    if (sending || !restoreFocusAfterSendRef.current) return;
+    restoreFocusAfterSendRef.current = false;
+    const el = inputRef.current;
+    if (!el || el.disabled) return;
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    el.focus();
+  }, [sending]);
+
   // Auto-focus the composer input when the component becomes visible.
   useEffect(() => {
     if (!disabled && inputRef.current) {
@@ -567,6 +593,8 @@ function ComposerImpl({
     if (!el) return;
 
     const runSend = async (text: string, imgs?: AttachedImage[], queue?: boolean) => {
+      // Captured before the disable blurs it. See the restore effect above.
+      const hadFocus = document.activeElement === el;
       sendingRef.current = true;
       setSending(true);
       while (mountedRef.current) {
@@ -587,6 +615,7 @@ function ComposerImpl({
       }
       if (mountedRef.current) {
         sendingRef.current = false;
+        restoreFocusAfterSendRef.current = hadFocus;
         setSending(false);
       }
     };

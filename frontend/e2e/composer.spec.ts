@@ -131,6 +131,28 @@ test('typing and pressing Enter sends POST /api/session/:id/message', async ({ m
   expect(body.message).toBe('Hello, world!');
 });
 
+test('the composer keeps focus after sending with Enter', async ({ mockedPage: page }) => {
+  // The textarea is disabled while the send is in flight, and a browser
+  // blurs a focused control when it becomes disabled — re-enabling does
+  // not put focus back. Without an explicit restore the caret is gone and
+  // the next keystroke goes nowhere. jsdom implements neither half of that
+  // behaviour, so this has to be checked in a real browser.
+  await goToLiveSession(page);
+
+  await page.route(
+    new RegExp(`/api/session/${MOCK_SESSION.id}/message`),
+    (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }),
+  );
+
+  const composer = page.locator('.oc-composer-input');
+  await composer.click();
+  await composer.fill('Hello, world!');
+  await composer.press('Enter');
+
+  await expect(composer).toBeEnabled();
+  await expect(composer).toBeFocused();
+});
+
 test('unconfirmed user message does not appear in the thread', async ({ mockedPage: page }) => {
   await goToLiveSession(page);
 
