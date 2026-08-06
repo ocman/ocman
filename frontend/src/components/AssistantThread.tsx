@@ -705,8 +705,27 @@ export function AssistantThread({
              1px at-bottom tolerance that races with streaming DOM growth and
              snaps the viewport down even when the user has scrolled up to
              read. useStickyBottom owns all auto-scroll with an 80px band that
-             respects a deliberate scroll-up. */}
-        <ThreadPrimitive.Viewport ref={setViewportRef} className="oc-thread-viewport" autoScroll={false}>
+             respects a deliberate scroll-up.
+
+             `autoScroll={false}` is not enough on its own:
+             `scrollToBottomOnRunStart` defaults to true and is checked
+             independently of it. Worse, it does not just scroll once — it
+             latches `scrollingToBottomBehaviorRef`, which the library's
+             content-resize handler then re-applies on *every* subsequent
+             resize. That latch is only cleared by a scroll event that lands
+             at the bottom, so scrolling up never clears it: one run start
+             means every later streaming chunk drags the reader back down.
+
+             `scrollToBottomOnInitialize` / `scrollToBottomOnThreadSwitch` are
+             deliberately left enabled — they fire at mount, which is the one
+             moment the tail *is* where the user wants to be, and they are
+             what opens a conversation at the bottom today. */}
+        <ThreadPrimitive.Viewport
+          ref={setViewportRef}
+          className="oc-thread-viewport"
+          autoScroll={false}
+          scrollToBottomOnRunStart={false}
+        >
           {hasMore && loadingMore && (
             <div className="oc-load-more">
               <span className="oc-spinner" /> Loading older messages...
