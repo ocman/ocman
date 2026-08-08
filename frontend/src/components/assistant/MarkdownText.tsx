@@ -7,7 +7,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
-import type { FC, ReactNode } from 'react';
+import type { ComponentProps, FC, ReactNode } from 'react';
 import { LinkPreviewStrip } from '../GitHubLinkPreview';
 import { Modal } from '../Modal';
 
@@ -73,11 +73,64 @@ function nodeText(node: ReactNode): string {
   return '';
 }
 
+function ZoomableGraphicModal({ label, closeLabel, maxScale = 4, onClose, children }: {
+  label: string;
+  closeLabel: string;
+  maxScale?: number;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const [zoom, setZoom] = useState(1);
+  return createPortal(
+    <Modal label={label} onClose={onClose} backdropClassName="oc-mermaid-modal-backdrop" dialogClassName="oc-mermaid-modal">
+      <TransformWrapper
+        minScale={0.25}
+        maxScale={maxScale}
+        centerOnInit
+        centerZoomedOut
+        disablePadding
+        smooth={false}
+        wheel={{ step: 0.01 }}
+        pinch={{ step: 8, disabled: false, allowPanning: true }}
+        panning={{ allowMiddleClickPan: false, allowRightClickPan: false }}
+        doubleClick={{ disabled: true }}
+        onTransform={(_, state) => setZoom(state.scale)}
+      >
+        {({ zoomIn, zoomOut }) => (
+          <>
+            <div className="oc-mermaid-modal-toolbar">
+              <button type="button" aria-label="Zoom out" title="Zoom out" onClick={() => zoomOut(0.25, 0)}>
+                <i className="bi bi-dash-lg" aria-hidden="true" />
+              </button>
+              <span>{Math.round(zoom * 100)}%</span>
+              <button type="button" aria-label="Zoom in" title="Zoom in" onClick={() => zoomIn(0.25, 0)}>
+                <i className="bi bi-plus-lg" aria-hidden="true" />
+              </button>
+              <button type="button" aria-label={closeLabel} title={closeLabel} onClick={onClose}>
+                <i className="bi bi-x-lg" aria-hidden="true" />
+              </button>
+            </div>
+            <TransformComponent
+              wrapperClass="oc-mermaid-modal-viewport"
+              contentClass="oc-mermaid-modal-content"
+              wrapperStyle={{ width: '100%', height: '100%' }}
+              contentStyle={{ width: '100%', height: '100%' }}
+              wrapperProps={{ 'aria-label': `${label} viewport` }}
+            >
+              {children}
+            </TransformComponent>
+          </>
+        )}
+      </TransformWrapper>
+    </Modal>,
+    document.body,
+  );
+}
+
 function MermaidDiagram({ source }: { source: string }) {
   const id = `oc-mermaid-${useId().replaceAll(':', '')}`;
   const [result, setResult] = useState({ source: '', svg: '', failed: false });
   const [expanded, setExpanded] = useState(false);
-  const [zoom, setZoom] = useState(1);
 
   useEffect(() => {
     let active = true;
@@ -96,52 +149,32 @@ function MermaidDiagram({ source }: { source: string }) {
         type="button"
         className="oc-mermaid"
         aria-label="Expand Mermaid diagram"
-        onClick={() => { setZoom(1); setExpanded(true); }}
+        onClick={() => setExpanded(true)}
         dangerouslySetInnerHTML={{ __html: result.svg }}
       />
-      {expanded && createPortal(
-        <Modal label="Mermaid diagram" onClose={() => setExpanded(false)} backdropClassName="oc-mermaid-modal-backdrop" dialogClassName="oc-mermaid-modal">
-          <TransformWrapper
-            minScale={0.25}
-            maxScale={4}
-            centerOnInit
-            centerZoomedOut
-            disablePadding
-            smooth={false}
-            wheel={{ step: 0.01 }}
-            pinch={{ step: 8, disabled: false, allowPanning: true }}
-            panning={{ allowMiddleClickPan: false, allowRightClickPan: false }}
-            doubleClick={{ disabled: true }}
-            onTransform={(_, state) => setZoom(state.scale)}
-          >
-            {({ zoomIn, zoomOut }) => (
-              <>
-                <div className="oc-mermaid-modal-toolbar">
-                  <button type="button" aria-label="Zoom out" title="Zoom out" onClick={() => zoomOut(0.25, 0)}>
-                    <i className="bi bi-dash-lg" aria-hidden="true" />
-                  </button>
-                  <span>{Math.round(zoom * 100)}%</span>
-                  <button type="button" aria-label="Zoom in" title="Zoom in" onClick={() => zoomIn(0.25, 0)}>
-                    <i className="bi bi-plus-lg" aria-hidden="true" />
-                  </button>
-                  <button type="button" aria-label="Close diagram" title="Close diagram" onClick={() => setExpanded(false)}>
-                    <i className="bi bi-x-lg" aria-hidden="true" />
-                  </button>
-                </div>
-                <TransformComponent
-                  wrapperClass="oc-mermaid-modal-viewport"
-                  contentClass="oc-mermaid-modal-content"
-                  wrapperStyle={{ width: '100%', height: '100%' }}
-                  contentStyle={{ width: '100%', height: '100%' }}
-                  wrapperProps={{ 'aria-label': 'Mermaid diagram viewport' }}
-                >
-                  <div className="oc-mermaid-modal-diagram" dangerouslySetInnerHTML={{ __html: result.svg }} />
-                </TransformComponent>
-              </>
-            )}
-          </TransformWrapper>
-        </Modal>,
-        document.body,
+      {expanded && (
+        <ZoomableGraphicModal label="Mermaid diagram" closeLabel="Close diagram" onClose={() => setExpanded(false)}>
+          <div className="oc-mermaid-modal-diagram" dangerouslySetInnerHTML={{ __html: result.svg }} />
+        </ZoomableGraphicModal>
+      )}
+    </>
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function MarkdownImage({ node: _node, alt = '', ...props }: ComponentProps<'img'> & { node?: unknown }) {
+  const [expanded, setExpanded] = useState(false);
+  const label = alt || 'Image';
+
+  return (
+    <>
+      <button type="button" className="oc-md-image" aria-label={`Expand ${label}`} onClick={() => setExpanded(true)}>
+        <img alt={alt} {...props} />
+      </button>
+      {expanded && (
+        <ZoomableGraphicModal label={label} closeLabel="Close image" maxScale={8} onClose={() => setExpanded(false)}>
+          <img className="oc-image-modal-graphic" alt={alt} {...props} />
+        </ZoomableGraphicModal>
       )}
     </>
   );
@@ -190,7 +223,7 @@ function MarkdownLink(props: any) {
 // internal unified-processor cache on every streaming chunk.
 const REMARK_PLUGINS = [remarkGfm];
 const REHYPE_PLUGINS = [rehypeHighlight];
-const MARKDOWN_COMPONENTS = { pre: CodeBlockPre, a: MarkdownLink };
+const MARKDOWN_COMPONENTS = { pre: CodeBlockPre, a: MarkdownLink, img: MarkdownImage };
 
 export const MarkdownContent: FC<{ text: string }> = ({ text }) => {
   if (!text.trim()) return null;

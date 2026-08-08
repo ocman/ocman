@@ -69,6 +69,20 @@ describe('MarkdownText', () => {
     expect(dialog).not.toBeInTheDocument();
   });
 
+  it('opens embedded images in a wheel-zoomable modal', async () => {
+    const user = userEvent.setup();
+    render(<MarkdownText text="![Garden wiring](/api/file/token)" />);
+
+    await user.click(screen.getByRole('button', { name: 'Expand Garden wiring' }));
+    const dialog = screen.getByRole('dialog', { name: 'Garden wiring' });
+    const viewport = screen.getByLabelText('Garden wiring viewport');
+
+    expect(dialog.parentElement?.parentElement).toBe(document.body);
+    expect(screen.getByText('100%')).toBeInTheDocument();
+    fireEvent.wheel(viewport, { deltaY: -100 });
+    await waitFor(() => expect(screen.queryByText('100%')).not.toBeInTheDocument());
+  });
+
   it('keeps ordinary code blocks unchanged', () => {
     render(<MarkdownText text={'```ts\nconst answer = 42\n```'} />);
 
