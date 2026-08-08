@@ -250,6 +250,9 @@ func TestPromptReconciliationIncludesWorktreeSessionDirectories(t *testing.T) {
 		root     = "/repo/project"
 		worktree = "/repo/.worktrees/project/feature"
 	)
+	// promptDirectories reads the shared sessions cache; another test's
+	// entry would otherwise satisfy the lookup.
+	ResetCachesForTests()
 	seen := make(map[string]bool)
 	var mu sync.Mutex
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

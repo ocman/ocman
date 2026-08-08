@@ -232,7 +232,12 @@ func (a *Adapter) promptDirectories(port string, discovered []string) []string {
 	if a.db == nil {
 		return out
 	}
-	sessions, err := a.db.GetSessions("", 0)
+	// Read through the cache: the raw query is a full scan with
+	// json_extract over every message, and this runs on every SSE
+	// reconnect for every discovered instance. Uncached it pinned a
+	// core and starved the 4-connection read pool, which is what made
+	// message sends and permission replies time out.
+	sessions, err := getSessionsCached(a.db, "", 0)
 	if err != nil {
 		return out
 	}

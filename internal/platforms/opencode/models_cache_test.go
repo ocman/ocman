@@ -501,6 +501,8 @@ func (f *fakeGetSessionsDB) GetSessions(directory string, since int64) ([]db.Ses
 func resetSessionsCache() {
 	sessionsMu.Lock()
 	sessionsCached = map[sessionsKey]sessionsEntry{}
+	lastRefreshEnd = time.Time{}
+	lastRefreshCost = 0
 	sessionsMu.Unlock()
 }
 
@@ -883,5 +885,73 @@ func TestStartSessionsRefresher_StopsOnContextCancel(t *testing.T) {
 	// Allow at most one in-flight refresh to land after cancel.
 	if after > settled+1 {
 		t.Errorf("refresher kept querying after cancel: %d -> %d", settled, after)
+	}
+}
+
+func TestRefreshDelayCapsDutyCycle(t *testing.T) {
+	tests := []struct {
+		name    string
+		elapsed time.Duration
+		want    time.Duration
+	}{
+		{"fast query waits the full interval", 100 * time.Millisecond, sessionsRefreshInterval},
+		{"query at the interval waits the interval", sessionsRefreshInterval, sessionsRefreshInterval},
+		{"slow query waits as long as it took", 30 * time.Second, 30 * time.Second},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := refreshDelay(tc.elapsed); got != tc.want {
+				t.Fatalf("refreshDelay(%v) = %v, want %v", tc.elapsed, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestInvalidateSessionsCache_FloorsOnQueryCost pins that invalidation
+// can't drive the (multi-second, on a real DB) sessions query faster than
+// the query itself takes. Unfloored, every first-seen session ID dropped
+// the next read into another full scan, so with several busy OpenCode
+// instances the query ran continuously and starved the read pool.
+func TestInvalidateSessionsCache_FloorsOnQueryCost(t *testing.T) {
+	resetSessionsCache()
+	t.Cleanup(resetSessionsCache)
+
+	d := &fakeGetSessionsDB{out: []db.Session{{ID: "s1"}}}
+	if _, err := getSessionsCached(d, "", 0); err != nil {
+		t.Fatalf("warm: %v", err)
+	}
+	if c := d.calls.Load(); c != 1 {
+		t.Fatalf("warm: calls = %d, want 1", c)
+	}
+
+	// Pretend the pass we just made cost a long time. The floor is then
+	// well in the future, so invalidation must not force a re-query.
+	sessionsMu.Lock()
+	lastRefreshCost = time.Hour
+	sessionsMu.Unlock()
+
+	for i := 0; i < 5; i++ {
+		InvalidateSessionsCache()
+		if _, err := getSessionsCached(d, "", 0); err != nil {
+			t.Fatalf("read %d: %v", i, err)
+		}
+	}
+	if c := d.calls.Load(); c != 1 {
+		t.Errorf("calls = %d, want 1: invalidation bypassed the cost floor", c)
+	}
+
+	// Once a query duration has elapsed since the last pass, the same
+	// invalidation does force a fresh read.
+	sessionsMu.Lock()
+	lastRefreshCost = time.Millisecond
+	lastRefreshEnd = time.Now().Add(-time.Second)
+	sessionsMu.Unlock()
+
+	InvalidateSessionsCache()
+	if _, err := getSessionsCached(d, "", 0); err != nil {
+		t.Fatalf("post-floor read: %v", err)
+	}
+	if c := d.calls.Load(); c != 2 {
+		t.Errorf("calls = %d, want 2: invalidation stopped working", c)
 	}
 }

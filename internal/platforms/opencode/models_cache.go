@@ -299,6 +299,14 @@ var (
 	sessionsMu     sync.RWMutex
 	sessionsCached = map[sessionsKey]sessionsEntry{}
 	sessionsFlight singleflight.Group
+	// lastRefreshEnd / lastRefreshCost record when the most recent
+	// successful unfiltered refresh finished and what it cost. Both are
+	// guarded by sessionsMu. They exist so the query's own cost can rate
+	// limit how often it runs: on a multi-GB OpenCode DB a pass takes
+	// seconds, and anything that triggers passes faster than that pins a
+	// core and exhausts the read pool.
+	lastRefreshEnd  time.Time
+	lastRefreshCost time.Duration
 )
 
 // StartSessionsRefresher keeps the unfiltered sessions cache warm by
@@ -311,13 +319,18 @@ func StartSessionsRefresher(ctx context.Context, d dbGetSessions) {
 	go func() {
 		// Warm immediately so the first request after startup hits cache.
 		refreshSessions(d, "")
-		t := time.NewTicker(sessionsRefreshInterval)
-		defer t.Stop()
 		for {
+			// Never spend more than half our time refreshing. On a
+			// multi-GB OpenCode DB the query can take longer than
+			// sessionsRefreshInterval, and a fixed ticker then runs it
+			// back-to-back forever — one core pinned, read pool
+			// exhausted, every other request timing out.
+			// ponytail: fixed 50% duty cycle, make it adaptive if the
+			// staleness ever matters more than the CPU.
 			select {
 			case <-ctx.Done():
 				return
-			case <-t.C:
+			case <-time.After(refreshDelay(lastRefreshDuration())):
 				// Refresh in place. We do NOT delete the entry first:
 				// against the live OpenCode DB (multi-GB file, many
 				// concurrent writers) the query can stall on the WAL
@@ -335,17 +348,58 @@ func StartSessionsRefresher(ctx context.Context, d dbGetSessions) {
 	}()
 }
 
+// refreshDelay is how long the refresher waits before its next pass:
+// at least sessionsRefreshInterval, but never less than the previous
+// pass took, capping the refresher at a 50% duty cycle.
+func refreshDelay(elapsed time.Duration) time.Duration {
+	if elapsed > sessionsRefreshInterval {
+		return elapsed
+	}
+	return sessionsRefreshInterval
+}
+
+// lastRefreshDuration reports what the most recent successful refresh
+// cost, or 0 if none has completed yet.
+func lastRefreshDuration() time.Duration {
+	sessionsMu.RLock()
+	defer sessionsMu.RUnlock()
+	return lastRefreshCost
+}
+
+// invalidationFloor is the earliest an invalidated entry may expire:
+// one query duration after the last refresh finished. Returning a time
+// in the past (the common case — nothing has refreshed recently) means
+// "expire now". It only defers when a pass just finished, which is what
+// stops a burst of session.updated events from chaining full scans
+// back-to-back. Callers must hold sessionsMu.
+func invalidationFloor() time.Time {
+	return lastRefreshEnd.Add(lastRefreshCost)
+}
+
 // InvalidateSessionsCache marks every cached sessions entry as expired
 // so the next getSessionsCached read fetches fresh data. It does NOT
 // delete the entries: the last good value is retained for the
 // stale-on-busy fallback if the fresh fetch stalls on the live DB.
 // Called when an upstream session.updated event arrives so a new
 // session surfaces without waiting out sessionsTTL / the refresher.
+//
+// The new expiry is floored at invalidationFloor rather than set to the
+// zero time. Every first-seen session ID invalidates, and with several
+// OpenCode instances (each spawning subagents) that is a steady stream —
+// unfloored, each one dropped straight into another multi-second full
+// scan, so the query ran continuously no matter what the refresher's own
+// pacing said. The floor costs at most one query duration of extra lag
+// before a new session appears, which is the floor of what's achievable
+// anyway.
 func InvalidateSessionsCache() {
 	sessionsMu.Lock()
+	floor := invalidationFloor()
 	for k, e := range sessionsCached {
-		e.expiresAt = time.Time{} // zero time is always "expired"
-		sessionsCached[k] = e
+		// Only ever bring an expiry forward, never push it back.
+		if floor.Before(e.expiresAt) {
+			e.expiresAt = floor
+			sessionsCached[k] = e
+		}
 	}
 	sessionsMu.Unlock()
 }
@@ -368,6 +422,8 @@ func ResetCachesForTests() {
 
 	sessionsMu.Lock()
 	sessionsCached = map[sessionsKey]sessionsEntry{}
+	lastRefreshEnd = time.Time{}
+	lastRefreshCost = 0
 	sessionsMu.Unlock()
 }
 
@@ -450,15 +506,19 @@ func refreshSessions(d dbGetSessions, directory string) ([]db.Session, error) {
 		}
 		sessionsMu.RUnlock()
 
+		started := time.Now()
 		sessions, err := d.GetSessions(directory, 0)
 		if err != nil {
 			return nil, err
 		}
+		done := time.Now()
 		sessionsMu.Lock()
 		sessionsCached[key] = sessionsEntry{
 			sessions:  sessions,
-			expiresAt: time.Now().Add(sessionsTTL),
+			expiresAt: done.Add(sessionsTTL),
 		}
+		lastRefreshEnd = done
+		lastRefreshCost = done.Sub(started)
 		sessionsMu.Unlock()
 		return sessions, nil
 	})
