@@ -199,6 +199,19 @@ func (h *remoteHost) EnsureProjectOpencode(ctx context.Context, req hostsvc.Ensu
 	return &out, unmarshalJSON(resp.Payload, &out)
 }
 
+func (h *remoteHost) StopProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) error {
+	client := h.conn.Client()
+	if client == nil {
+		return ErrRemoteOffline
+	}
+	b, err := marshalJSON(req)
+	if err != nil {
+		return err
+	}
+	_, err = client.StopProjectOpencode(ctx, &pb.JsonReq{Payload: b})
+	return err
+}
+
 func (h *remoteHost) RestartProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
 	client := h.conn.Client()
 	if client == nil {

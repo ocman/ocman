@@ -57,6 +57,7 @@ const (
 	Ocman_RemoveWorktree_FullMethodName         = "/ocman.remote.v1.Ocman/RemoveWorktree"
 	Ocman_LaunchTmux_FullMethodName             = "/ocman.remote.v1.Ocman/LaunchTmux"
 	Ocman_EnsureProjectOpencode_FullMethodName  = "/ocman.remote.v1.Ocman/EnsureProjectOpencode"
+	Ocman_StopProjectOpencode_FullMethodName    = "/ocman.remote.v1.Ocman/StopProjectOpencode"
 	Ocman_RestartProjectOpencode_FullMethodName = "/ocman.remote.v1.Ocman/RestartProjectOpencode"
 	Ocman_TmuxSessions_FullMethodName           = "/ocman.remote.v1.Ocman/TmuxSessions"
 	Ocman_HostCapabilities_FullMethodName       = "/ocman.remote.v1.Ocman/HostCapabilities"
@@ -129,6 +130,7 @@ type OcmanClient interface {
 	RemoveWorktree(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*Empty, error)
 	LaunchTmux(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 	EnsureProjectOpencode(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
+	StopProjectOpencode(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*Empty, error)
 	RestartProjectOpencode(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 	TmuxSessions(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*JsonResp, error)
 	HostCapabilities(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*JsonResp, error)
@@ -544,6 +546,16 @@ func (c *ocmanClient) EnsureProjectOpencode(ctx context.Context, in *JsonReq, op
 	return out, nil
 }
 
+func (c *ocmanClient) StopProjectOpencode(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Ocman_StopProjectOpencode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *ocmanClient) RestartProjectOpencode(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(JsonResp)
@@ -725,6 +737,7 @@ type OcmanServer interface {
 	RemoveWorktree(context.Context, *JsonReq) (*Empty, error)
 	LaunchTmux(context.Context, *JsonReq) (*JsonResp, error)
 	EnsureProjectOpencode(context.Context, *JsonReq) (*JsonResp, error)
+	StopProjectOpencode(context.Context, *JsonReq) (*Empty, error)
 	RestartProjectOpencode(context.Context, *JsonReq) (*JsonResp, error)
 	TmuxSessions(context.Context, *Empty) (*JsonResp, error)
 	HostCapabilities(context.Context, *Empty) (*JsonResp, error)
@@ -864,6 +877,9 @@ func (UnimplementedOcmanServer) LaunchTmux(context.Context, *JsonReq) (*JsonResp
 }
 func (UnimplementedOcmanServer) EnsureProjectOpencode(context.Context, *JsonReq) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method EnsureProjectOpencode not implemented")
+}
+func (UnimplementedOcmanServer) StopProjectOpencode(context.Context, *JsonReq) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method StopProjectOpencode not implemented")
 }
 func (UnimplementedOcmanServer) RestartProjectOpencode(context.Context, *JsonReq) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method RestartProjectOpencode not implemented")
@@ -1596,6 +1612,24 @@ func _Ocman_EnsureProjectOpencode_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Ocman_StopProjectOpencode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JsonReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).StopProjectOpencode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_StopProjectOpencode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).StopProjectOpencode(ctx, req.(*JsonReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Ocman_RestartProjectOpencode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(JsonReq)
 	if err := dec(in); err != nil {
@@ -1930,6 +1964,10 @@ var Ocman_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "EnsureProjectOpencode",
 			Handler:    _Ocman_EnsureProjectOpencode_Handler,
+		},
+		{
+			MethodName: "StopProjectOpencode",
+			Handler:    _Ocman_StopProjectOpencode_Handler,
 		},
 		{
 			MethodName: "RestartProjectOpencode",

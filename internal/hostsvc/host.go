@@ -260,6 +260,10 @@ type Host interface {
 	// repo. Runs on the owning host (R-C).
 	EnsureProjectOpencode(ctx context.Context, req EnsureProjectOpencodeRequest) (*EnsureProjectOpencodeResult, error)
 
+	// StopProjectOpencode stops and forgets the project's tracked managed
+	// instance. It is a no-op when no instance is tracked.
+	StopProjectOpencode(ctx context.Context, req EnsureProjectOpencodeRequest) error
+
 	// RestartProjectOpencode stops the project's currently tracked managed
 	// instance (if any) and then re-ensures it, launching a fresh one.
 	// Runs under the same singleflight key as EnsureProjectOpencode so a

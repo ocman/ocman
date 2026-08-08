@@ -163,3 +163,27 @@ func TestRestartProjectOpencode_ClearsStoreRow(t *testing.T) {
 		t.Errorf("store row endpoint = %q; want the NEW endpoint %q", row.Endpoint, res.Endpoint)
 	}
 }
+
+func TestStopProjectOpencode_StopsAndForgetsInstance(t *testing.T) {
+	repo := initRepo(t)
+	rt := &fakeRuntime{endpoint: "http://127.0.0.1:8111"}
+	store := newFakeStore()
+	h := New(Deps{Runtime: rt, ManagedStore: store})
+	ctx := context.Background()
+
+	if _, err := h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: repo}); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	if err := h.StopProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: repo}); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	if rt.stopCount() != 1 {
+		t.Fatalf("Stop called %d times; want 1", rt.stopCount())
+	}
+	if err := h.StopProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: repo}); err != nil {
+		t.Fatalf("second stop: %v", err)
+	}
+	if rt.stopCount() != 1 {
+		t.Fatalf("second stop called runtime again; count = %d", rt.stopCount())
+	}
+}

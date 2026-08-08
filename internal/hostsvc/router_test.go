@@ -48,6 +48,9 @@ func (h stubHost) LaunchTmux(context.Context, LaunchTmuxRequest) (*LaunchTmuxRes
 func (h stubHost) EnsureProjectOpencode(context.Context, EnsureProjectOpencodeRequest) (*EnsureProjectOpencodeResult, error) {
 	return nil, nil
 }
+func (h stubHost) StopProjectOpencode(context.Context, EnsureProjectOpencodeRequest) error {
+	return nil
+}
 func (h stubHost) RestartProjectOpencode(context.Context, EnsureProjectOpencodeRequest) (*EnsureProjectOpencodeResult, error) {
 	return nil, nil
 }

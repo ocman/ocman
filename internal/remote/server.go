@@ -458,6 +458,15 @@ func (s *Server) EnsureProjectOpencode(ctx context.Context, req *pb.JsonReq) (*p
 	return jsonResp(s.host.EnsureProjectOpencode(ctx, er))
 }
 
+func (s *Server) StopProjectOpencode(ctx context.Context, req *pb.JsonReq) (*pb.Empty, error) {
+	var er hostsvc.EnsureProjectOpencodeRequest
+	if err := unmarshalJSON(req.Payload, &er); err != nil {
+		return nil, err
+	}
+	log.WithField("projectDir", er.ProjectDir).Info("remote: stop-project-opencode request from hub")
+	return &pb.Empty{}, s.host.StopProjectOpencode(ctx, er)
+}
+
 func (s *Server) RestartProjectOpencode(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
 	var er hostsvc.EnsureProjectOpencodeRequest
 	if err := unmarshalJSON(req.Payload, &er); err != nil {

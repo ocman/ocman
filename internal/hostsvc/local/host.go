@@ -312,6 +312,31 @@ func (h *Host) EnsureProjectOpencode(ctx context.Context, req hostsvc.EnsureProj
 	return v.(*hostsvc.EnsureProjectOpencodeResult), nil
 }
 
+func (h *Host) StopProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) error {
+	repoRoot, err := git.ResolveRepoRoot(ctx, req.ProjectDir)
+	if err != nil {
+		if errors.Is(err, git.ErrNotARepo) {
+			return nil
+		}
+		return err
+	}
+	_, err, _ = h.sf.Do(repoRoot, func() (any, error) {
+		if inst := h.reuseCandidate(repoRoot); inst != nil {
+			if err := h.runtime.Stop(ctx, inst); err != nil {
+				return nil, err
+			}
+		}
+		h.clearInstance(repoRoot)
+		if h.store != nil {
+			if err := h.store.Delete(repoRoot); err != nil {
+				return nil, err
+			}
+		}
+		return nil, nil
+	})
+	return err
+}
+
 // RestartProjectOpencode stops the project's currently tracked managed
 // instance (if any) then re-ensures it, launching a fresh one (AD-7). It
 // runs under the SAME singleflight key as EnsureProjectOpencode so a

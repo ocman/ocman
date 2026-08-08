@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -43,6 +44,10 @@ func (s *Server) handleProjectArchive(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	if req.Archived {
+		if err := s.router().ForDir(root).StopProjectOpencode(r.Context(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: root}); err != nil {
+			serverError(w, "stopping project opencode", err)
+			return
+		}
 		err = s.stateDB.ArchiveProject(root)
 	} else {
 		err = s.stateDB.UnarchiveProject(root)

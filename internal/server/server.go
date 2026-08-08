@@ -664,6 +664,12 @@ func (s *Server) autoArchiveInactiveProjects() {
 		if keep[root] {
 			continue
 		}
+		if err := s.router().Local().StopProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: root}); err != nil {
+			span.RecordError(err)
+			log.WithFields(log.Fields{"projectRoot": root, "error": err}).
+				Error("stopping opencode for auto-archived project")
+			continue
+		}
 		if err := s.stateDB.ArchiveProject(root); err != nil {
 			span.RecordError(err)
 			log.WithFields(log.Fields{"projectRoot": root, "error": err}).

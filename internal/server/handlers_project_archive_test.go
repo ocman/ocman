@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,7 +9,18 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
 )
+
+type projectArchiveHost struct {
+	hostsvc.Host
+	stopped string
+}
+
+func (h *projectArchiveHost) StopProjectOpencode(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) error {
+	h.stopped = req.ProjectDir
+	return nil
+}
 
 func TestProjectRootForDirectory(t *testing.T) {
 	cases := []struct {
@@ -163,6 +175,18 @@ func TestProjectArchive_FoldsWorktreeToRoot(t *testing.T) {
 	projects := getProjects(t, srv)
 	if len(projects) != 1 || !projects[0].Archived {
 		t.Fatalf("expected worktree project archived via folded root, got %+v", projects)
+	}
+}
+
+func TestProjectArchive_StopsProjectOpencode(t *testing.T) {
+	srv := testServer(t)
+	host := &projectArchiveHost{}
+	srv.hostRouter = hostsvc.NewRouter(host)
+
+	postProjectArchive(t, srv, "/src/.worktrees/foo/feat", true)
+
+	if host.stopped != "/src/foo" {
+		t.Fatalf("stopped project = %q, want /src/foo", host.stopped)
 	}
 }
 
