@@ -664,11 +664,12 @@ func (s *Server) autoArchiveInactiveProjects() {
 		if keep[root] {
 			continue
 		}
+		// Best-effort, same as the manual archive handler: a dead tmux
+		// session or missing directory must not block auto-archiving.
 		if err := s.router().Local().StopProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: root}); err != nil {
 			span.RecordError(err)
 			log.WithFields(log.Fields{"projectRoot": root, "error": err}).
-				Error("stopping opencode for auto-archived project")
-			continue
+				Warn("stopping opencode for auto-archived project")
 		}
 		if err := s.stateDB.ArchiveProject(root); err != nil {
 			span.RecordError(err)

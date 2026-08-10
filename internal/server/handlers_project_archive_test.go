@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,11 +16,12 @@ import (
 type projectArchiveHost struct {
 	hostsvc.Host
 	stopped string
+	stopErr error
 }
 
 func (h *projectArchiveHost) StopProjectOpencode(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) error {
 	h.stopped = req.ProjectDir
-	return nil
+	return h.stopErr
 }
 
 func TestProjectRootForDirectory(t *testing.T) {
@@ -187,6 +189,22 @@ func TestProjectArchive_StopsProjectOpencode(t *testing.T) {
 
 	if host.stopped != "/src/foo" {
 		t.Fatalf("stopped project = %q, want /src/foo", host.stopped)
+	}
+}
+
+// TestProjectArchive_SucceedsWhenStopFails is the regression for archive
+// silently failing: stopping the managed opencode is best-effort (a dead
+// tmux session, a removed directory or an unreachable remote all error),
+// so it must not fail the archive itself.
+func TestProjectArchive_SucceedsWhenStopFails(t *testing.T) {
+	srv := testServer(t)
+	srv.hostRouter = hostsvc.NewRouter(&projectArchiveHost{stopErr: errors.New("can't find session")})
+
+	postProjectArchive(t, srv, "/src/foo", true)
+
+	archived, _ := srv.stateDB.ArchivedProjects()
+	if _, ok := archived["/src/foo"]; !ok {
+		t.Fatalf("expected /src/foo archived despite stop error, got %v", archived)
 	}
 }
 

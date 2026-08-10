@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strings"
 
+	log "github.com/sirupsen/logrus"
+
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
@@ -44,9 +46,11 @@ func (s *Server) handleProjectArchive(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	if req.Archived {
+		// Best-effort: a dead tmux session, a removed/non-git directory
+		// or an unreachable remote must not block the bookkeeping the
+		// user actually asked for.
 		if err := s.router().ForDir(root).StopProjectOpencode(r.Context(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: root}); err != nil {
-			serverError(w, "stopping project opencode", err)
-			return
+			log.WithError(err).WithField("project", root).Warn("archive: stopping project opencode")
 		}
 		err = s.stateDB.ArchiveProject(root)
 	} else {
