@@ -3,7 +3,6 @@ import type { Message, Session } from './api';
 import {
   formatModelRef,
   agentModelRef,
-  deriveRawStatus,
   isSessionRunning,
   isTerminalStatus,
   computeLiveTokens,
@@ -84,34 +83,6 @@ describe('agentModelRef', () => {
     expect(
       agentModelRef({ name: 'plan', model: { providerID: 'openai', modelID: 'gpt-5' } }),
     ).toBe('openai/gpt-5');
-  });
-});
-
-describe('deriveRawStatus', () => {
-  it('returns done when there is no last message', () => {
-    expect(deriveRawStatus(null)).toBe('done');
-  });
-
-  it('returns done for a user message', () => {
-    expect(deriveRawStatus(makeMessage('m', { role: 'user' }))).toBe('done');
-  });
-
-  it('returns busy for an in-flight assistant message', () => {
-    expect(deriveRawStatus(makeMessage('m', { role: 'assistant' }))).toBe('busy');
-  });
-
-  it('returns waiting for a finished assistant message', () => {
-    expect(deriveRawStatus(makeMessage('m', { role: 'assistant', finish: 'stop' }))).toBe('waiting');
-  });
-
-  it('returns error when finish === "error"', () => {
-    expect(deriveRawStatus(makeMessage('m', { role: 'assistant', finish: 'error' }))).toBe('error');
-  });
-
-  it('returns error when data.error is set even without finish', () => {
-    expect(
-      deriveRawStatus(makeMessage('m', { role: 'assistant', error: { name: 'boom' } })),
-    ).toBe('error');
   });
 });
 

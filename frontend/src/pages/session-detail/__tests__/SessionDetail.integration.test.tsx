@@ -1339,8 +1339,23 @@ describe('SessionDetail — sidebar archive', () => {
   });
 });
 
-describe('SessionDetail — error finish on assistant message', () => {
-  it('flips the session status to error when the SSE message reports finish=error', async () => {
+describe('SessionDetail — status badge follows the backend', () => {
+  const erroredMessage = {
+    type: 'message.created',
+    properties: {
+      info: {
+        id: 'msg_1',
+        sessionID: 'sess_1',
+        role: 'assistant',
+        finish: 'error',
+        error: { name: 'Boom', data: { message: 'kaboom' } },
+        time: { created: 1_000 },
+      },
+      parts: [],
+    },
+  };
+
+  it('flips to error when a session.status event reports it', async () => {
     const handle = renderSessionPage({ sessionId: 'sess_1' });
     await flushPromises();
     await waitFor(() => expect(handle.sse()).toBeDefined());
@@ -1348,18 +1363,8 @@ describe('SessionDetail — error finish on assistant message', () => {
     act(() => {
       handle.sse()!.open();
       handle.sse()!.emitMessage({
-        type: 'message.created',
-        properties: {
-          info: {
-            id: 'msg_1',
-            sessionID: 'sess_1',
-            role: 'assistant',
-            finish: 'error',
-            error: { name: 'Boom', data: { message: 'kaboom' } },
-            time: { created: Date.now() },
-          },
-          parts: [],
-        },
+        type: 'session.status',
+        properties: { sessionID: 'sess_1', status: 'error' },
       });
     });
 
@@ -1368,6 +1373,55 @@ describe('SessionDetail — error finish on assistant message', () => {
       // component when `session.status === 'error'`.
       expect(handle.result.container.querySelector('.status-error')).toBeInTheDocument();
     });
+  });
+
+  // The backend settles lifecycle status from the agent's own turn
+  // (db.SettleSessionStatus). A message snapshot must not re-derive it:
+  // doing so overwrote the authoritative value with a local guess.
+  it('does not let a message snapshot overwrite the reported status', async () => {
+    const handle = renderSessionPage({ sessionId: 'sess_1' });
+    await flushPromises();
+    await waitFor(() => expect(handle.sse()).toBeDefined());
+
+    act(() => {
+      handle.sse()!.open();
+      handle.sse()!.emitMessage({
+        type: 'session.status',
+        properties: { sessionID: 'sess_1', status: { type: 'busy' } },
+      });
+    });
+    await waitFor(() => {
+      expect(handle.result.container.querySelector('.status-busy')).toBeInTheDocument();
+    });
+
+    act(() => { handle.sse()!.emitMessage(erroredMessage); });
+    await flushPromises(8);
+
+    expect(handle.result.container.querySelector('.status-busy')).toBeInTheDocument();
+    expect(handle.result.container.querySelector('.status-error')).not.toBeInTheDocument();
+  });
+
+  // Regression guard for the shared-state overwrite: the page's display
+  // status is local, and must never be written back into the row every
+  // other view reads.
+  it('does not write its display status into shared recent-session state', async () => {
+    const patchRecentSession = vi.fn();
+    const handle = renderSessionPage({
+      sessionId: 'sess_1',
+      storeOverrides: { patchRecentSession },
+    });
+    await flushPromises(8);
+    await waitFor(() => expect(handle.sse()).toBeDefined());
+
+    act(() => {
+      handle.sse()!.open();
+      handle.sse()!.emitMessage(erroredMessage);
+    });
+    await flushPromises(8);
+
+    for (const call of patchRecentSession.mock.calls) {
+      expect(call[1]).not.toHaveProperty('status');
+    }
   });
 });
 

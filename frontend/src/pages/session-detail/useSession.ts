@@ -105,11 +105,6 @@ export interface UseSessionResult extends SessionView {
   /** Last 50 SSE events (when `debug: true`). */
   sseDebugEvents: SseDebugEvent[];
   /**
-   * Timestamp of the most recent work-producing SSE event, or null.
-   * Drives the busy→waiting debounce in useSessionStatus.
-   */
-  recentWorkEventAt: number | null;
-  /**
    * Tick that bumps when an edit/write tool part lands. Wired to the
    * right-panel changes/info refresh.
    */
@@ -139,7 +134,6 @@ export interface UseSessionResult extends SessionView {
 }
 
 const DEFAULT_PAGE_SIZE = 30;
-const WORK_BUMP_THROTTLE_MS = 100;
 const DEBUG_RING_SIZE = 50;
 
 function normalizeSseEnvelope(event: SseEvent): SseEvent {
@@ -258,7 +252,6 @@ export function useSession(
   const [sseReconnectAttempt, setSseReconnectAttempt] = useState(0);
   const [sseNextRetryAt, setSseNextRetryAt] = useState<number | null>(null);
   const [sseDebugEvents, setSseDebugEvents] = useState<SseDebugEvent[]>([]);
-  const [recentWorkEventAt, setRecentWorkEventAt] = useState<number | null>(null);
   const [changesDirtyTick, setChangesDirtyTick] = useState(0);
 
   // Refs hold non-reactive pieces. retryNowRef / reloadRef expose
@@ -273,7 +266,6 @@ export function useSession(
   const loadMoreInFlightRef = useRef(false);
   const reloadRef = useRef<() => Promise<void>>(async () => {});
   const retryNowRef = useRef<() => void>(() => {});
-  const workBumpAtRef = useRef<number>(0);
   // Snapshot of the latest view, kept current via render-phase
   // assignment. `loadMore` reads from it without taking a dep.
   const viewRef = useRef(view);
@@ -439,13 +431,6 @@ export function useSession(
     let attempt = 0;
     let hasConnectedOnce = false;
 
-    const bumpWorkEvent = () => {
-      const now = Date.now();
-      if (now - workBumpAtRef.current < WORK_BUMP_THROTTLE_MS) return;
-      workBumpAtRef.current = now;
-      setRecentWorkEventAt(now);
-    };
-
     // Refetch trigger for `session.diff` events. The server emits
     // these when an edit/write tool's `state.metadata.filediff` is
     // ready; without a fast refetch the user sees an empty tool
@@ -567,14 +552,6 @@ export function useSession(
         // Derive bumped/dirtied signals from event type. The
         // reducer itself stays platform-agnostic; these effects
         // are SSE-handler-side only.
-        if (
-          parsed.type === 'message.created' ||
-          parsed.type === 'message.updated' ||
-          parsed.type === 'message.part.updated' ||
-          parsed.type === 'message.part.delta'
-        ) {
-          bumpWorkEvent();
-        }
         if (parsed.type === 'message.part.updated') {
           const props = parsed.properties || {};
           const part = props.part as Record<string, unknown> | undefined;
@@ -743,8 +720,6 @@ export function useSession(
       setSseReconnectAttempt(0);
       setSseNextRetryAt(null);
       setSseDebugEvents([]);
-      setRecentWorkEventAt(null);
-      workBumpAtRef.current = 0;
     };
   // We deliberately depend on sessionId/routedPlatform only. Options are captured
   // via closure on mount; tests don't change them at runtime and
@@ -828,7 +803,6 @@ export function useSession(
     sseNextRetryAt,
     retryNow,
     sseDebugEvents,
-    recentWorkEventAt,
     changesDirtyTick,
     clearPrompt,
     setPendingPermission,

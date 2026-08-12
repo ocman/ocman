@@ -186,7 +186,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
     sseNextRetryAt,
     retryNow: sseRetryNow,
     sseDebugEvents,
-    recentWorkEventAt,
     changesDirtyTick,
     reload,
     loadMore,
@@ -1098,15 +1097,17 @@ export function SessionDetail({ id }: SessionDetailProps) {
     setSubagentTokens,
     sessionStatus: session?.status,
     awaitingAssistantResponse,
-    recentWorkEventAt,
     isRunning,
     pendingPermission,
     pendingQuestion,
   });
-  useEffect(() => {
-    if (!id) return;
-    patchRecentSession(id, { status: optimisticStatus });
-  }, [id, optimisticStatus, patchRecentSession]);
+  // No status mirror into recentSessions. `optimisticStatus` carries a
+  // local send affordance, and writing it into shared state let a
+  // page-local guess overwrite the authoritative value for every other
+  // consumer of the row. The sidebar already gets the settled status
+  // straight from the `ocman.session.changed` patch (see
+  // useSidebarSessions); the active row layers the affordance on for
+  // display only.
 
   // Flag for the composer's "launch session" button.
   const launchHintActive = canLaunchSession({

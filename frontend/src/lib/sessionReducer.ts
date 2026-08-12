@@ -441,30 +441,6 @@ function normaliseStatus(raw: unknown): SessionMetadata['status'] | null {
 }
 
 /**
- * Status updates from a snapshot follow the same rule as the
- * existing inferStatusFromMessage helper, but inlined so the
- * reducer is self-contained.
- */
-function inferStatusFromMessage(msg: Message, rawParts: unknown): SessionMetadata['status'] | null {
-  if (msg.data.role !== 'assistant') return 'done';
-  if (msg.data.finish === 'error' || msg.data.error) return 'error';
-  if (msg.data.finish) return 'waiting';
-  if (Array.isArray(rawParts)) {
-    let hasPart = false;
-    for (const rawPart of rawParts) {
-      if (!rawPart || typeof rawPart !== 'object') continue;
-      hasPart = true;
-      const part = rawPart as Record<string, unknown>;
-      if (part.type === 'step-start') return 'busy';
-      const state = part.state as Record<string, unknown> | undefined;
-      if (state?.status === 'running') return 'busy';
-    }
-    if (hasPart) return 'done';
-  }
-  return 'busy';
-}
-
-/**
  * Reconcile-mode load: merge `incoming` into `state` such that
  * messages and parts the server returns supersede their in-memory
  * counterparts (by id), but in-memory entries the server doesn't
@@ -739,26 +715,20 @@ function reduceMessageSnapshot(state: SessionView, event: SseEvent): SessionView
     nextParts = upsertSnapshotPart(nextParts, part, ownedFields);
   }
 
-  let nextSession = state.session;
-  if (extracted.message.data.role === 'assistant' && state.session) {
-    const inferred = inferStatusFromMessage(extracted.message, event.properties?.parts);
-    if (inferred && state.session.status !== inferred) {
-      nextSession = { ...state.session, status: inferred };
-    }
-  }
-
-  if (
-    nextMessages === state.messages
-    && nextParts === state.parts
-    && nextSession === state.session
-  ) {
+  // Deliberately does NOT touch session.status. The backend settles
+  // lifecycle status from the agent's own turn (db.SettleSessionStatus)
+  // and delivers it via the REST snapshot and `session.status` events;
+  // message shape only ever decided *which* terminal state, so
+  // re-deriving it here just overwrote the authoritative value with a
+  // guess. The "just sent, awaiting the assistant" affordance lives in
+  // useSessionActions' awaitingAssistantResponse flag instead.
+  if (nextMessages === state.messages && nextParts === state.parts) {
     return state;
   }
   return {
     ...state,
     messages: nextMessages,
     parts: nextParts,
-    session: nextSession,
     _deltaOwnedFields: ownedFields,
   };
 }

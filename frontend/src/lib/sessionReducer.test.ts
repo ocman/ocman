@@ -495,8 +495,19 @@ describe('reduceSessionView — session.status / session.idle', () => {
     expect(view._refetchRequested).toBe(true);
   });
 
-  it('marks a completed user shell message as done without an LLM finish', () => {
-    let view = makeView({ session: makeSession({ status: 'busy' }) });
+  // The backend settles lifecycle status from the agent's own turn
+  // (db.SettleSessionStatus); message shape is not a lifecycle signal.
+  // A message snapshot arriving after a session.status event must not
+  // re-derive and overwrite it.
+  it('does not overwrite a busy status with a message snapshot', () => {
+    let view = makeView({ session: makeSession({ status: 'done' }) });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('session.status', { status: { type: 'busy' } }),
+    });
+    expect(view.session?.status).toBe('busy');
+
+    // A completed tool-only assistant envelope used to infer `done`.
     view = reduceSessionView(view, {
       type: 'sse',
       event: sseEvent('message.updated', {
@@ -507,11 +518,12 @@ describe('reduceSessionView — session.status / session.idle', () => {
         }],
       }),
     });
-
-    expect(view.session?.status).toBe('done');
+    expect(view.session?.status).toBe('busy');
+    // The message itself is still applied.
+    expect(view.messages.map((m) => m.id)).toContain('m-shell');
   });
 
-  it('keeps an LLM turn busy when its message contains a step-start', () => {
+  it('does not overwrite a settled status with an in-flight message snapshot', () => {
     let view = makeView({ session: makeSession({ status: 'done' }) });
     view = reduceSessionView(view, {
       type: 'sse',
@@ -519,15 +531,21 @@ describe('reduceSessionView — session.status / session.idle', () => {
         info: { id: 'm-agent', sessionID: SID, role: 'assistant' },
         parts: [
           { id: 'p-start', messageID: 'm-agent', sessionID: SID, type: 'step-start' },
-          {
-            id: 'p-tool', messageID: 'm-agent', sessionID: SID,
-            type: 'tool', tool: 'bash', state: { status: 'completed' },
-          },
         ],
       }),
     });
+    expect(view.session?.status).toBe('done');
+  });
 
-    expect(view.session?.status).toBe('busy');
+  it('does not overwrite an error status reported by session.status', () => {
+    let view = makeView({ session: makeSession({ status: 'error' }) });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.updated', {
+        info: { id: 'm-ok', sessionID: SID, role: 'assistant', finish: 'stop' },
+      }),
+    });
+    expect(view.session?.status).toBe('error');
   });
 });
 

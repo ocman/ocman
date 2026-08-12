@@ -72,23 +72,6 @@ export function agentModelRef(agent: AgentInfo | undefined): string {
 }
 
 /**
- * Derive an optimistic raw status from the most recent message.
- * Mirrors the server-side `InferSessionStatus` in `internal/db/types.go`,
- * with the same caveat: message shape is not a lifecycle signal. It only
- * bridges the gap until the next `session.status` event or poll delivers
- * the agent's own answer, and `busy` here means "no terminal state
- * recorded", not "running".
- */
-export function deriveRawStatus(lastMsg: Message | null): Session['status'] {
-  if (!lastMsg) return 'done';
-  const data = lastMsg.data;
-  if (data?.role !== 'assistant') return 'done';
-  if (data?.finish === 'error' || data?.error) return 'error';
-  if (data?.finish) return 'waiting';
-  return 'busy';
-}
-
-/**
  * True for statuses that mean no turn is running. Anything but `busy`
  * qualifies, including `interrupted` — the turn is over, it just didn't
  * reach a conclusion. Callers use it to grey out a dot the user has
