@@ -169,6 +169,55 @@ describe('backend-down error classification', () => {
   });
 });
 
+// Every endpoint that reads the raw Response instead of going through
+// fetchJSON / postJSON must still route a 401 into the global auth
+// fan-out, otherwise an expired cookie shows a generic error instead of
+// the lockscreen (see authStore.ts).
+describe('raw-response endpoints raise AuthError on 401', () => {
+  const cases: Array<[string, () => Promise<unknown>]> = [
+    ['createSession', () => api.createSession('/some/dir')],
+    ['sendMessage', () => api.sendMessage('s1', 'hi')],
+    ['queuedMessages', () => api.queuedMessages('s1')],
+    ['deleteQueuedMessage', () => api.deleteQueuedMessage('s1', 'q1')],
+    ['moveQueuedMessage', () => api.moveQueuedMessage('s1', 'q1', 1)],
+    ['uploadComposerAttachment', () => api.uploadComposerAttachment('s1', new File(['x'], 'x.png'))],
+    ['term.createWindow', () => api.term.createWindow('/dir')],
+    ['term.killWindow', () => api.term.killWindow('/dir', 'w1')],
+    ['transcribe', () => api.transcribe(new Blob(['x'], { type: 'audio/webm' }))],
+    ['workflows.validate', () => api.workflows.validate('name: x')],
+    ['workflows.publish', () => api.workflows.publish('name: x')],
+  ];
+
+  for (const [name, call] of cases) {
+    it(`${name} throws AuthError and notifies the handler`, async () => {
+      stubFetch(() => new Response('unauthorized', { status: 401 }));
+      const handler = vi.fn();
+      registerAuthErrorHandler(handler);
+      await expect(call()).rejects.toBeInstanceOf(AuthError);
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
+  }
+
+  it('keeps createSession 503 tagged as unreachable', async () => {
+    stubFetch(() => new Response('no instance', { status: 503 }));
+    const err = await api.createSession('/dir').catch((e) => e);
+    expect(err).not.toBeInstanceOf(AuthError);
+    expect((err as Error & { code?: string }).code).toBe('unreachable');
+  });
+
+  it('keeps sendMessage 409 tagged as busy', async () => {
+    stubFetch(() => new Response('busy', { status: 409 }));
+    const err = await api.sendMessage('s1', 'hi').catch((e) => e);
+    expect(err).not.toBeInstanceOf(AuthError);
+    expect((err as Error & { code?: string }).code).toBe('busy');
+  });
+
+  it('keeps deleteQueuedMessage tolerant of 404', async () => {
+    stubFetch(() => new Response('gone', { status: 404 }));
+    await expect(api.deleteQueuedMessage('s1', 'q1')).resolves.toBeUndefined();
+  });
+});
+
 describe('registerAuthErrorHandler', () => {
   it('returns the previous handler so callers can restore', () => {
     const h1 = vi.fn();
