@@ -658,7 +658,7 @@ func TestHandleSession_UnarchivesOnOpen(t *testing.T) {
 	if err := srv.stateDB.ArchiveSession("opencode", "s1", 1000); err != nil {
 		t.Fatalf("ArchiveSession: %v", err)
 	}
-	if err := srv.stateDB.ArchiveProject(root); err != nil {
+	if err := srv.stateDB.ArchiveProject(state.LocalRemoteID, root); err != nil {
 		t.Fatalf("ArchiveProject: %v", err)
 	}
 
@@ -674,7 +674,7 @@ func TestHandleSession_UnarchivesOnOpen(t *testing.T) {
 		t.Error("session should be unarchived after open")
 	}
 	archivedProjects, _ := srv.stateDB.ArchivedProjects()
-	if _, ok := archivedProjects[root]; ok {
+	if _, ok := archivedProjects[state.ProjectKey{RemoteID: state.LocalRemoteID, Root: root}]; ok {
 		t.Error("project should be unarchived after open")
 	}
 }

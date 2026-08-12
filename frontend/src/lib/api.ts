@@ -465,8 +465,11 @@ export const api = {
     postJSON<{ branch: string }>('/api/git/checkout', { dir, branch }),
   archiveSession: (platform: string, sessionId: string, timeUpdated: number, archived = true) =>
     postJSON<{ ok: boolean }>('/api/session/archive', { platform, sessionId, timeUpdated, archived }),
-  archiveProject: (directory: string, archived = true) =>
-    postJSON<{ ok: boolean }>('/api/project/archive', { directory, archived }),
+  // A project is identified by (remoteId, directory): the same absolute
+  // path exists on every attached machine, so the owning host has to ride
+  // along or the hub archives its own copy instead.
+  archiveProject: (directory: string, archived = true, remoteId?: string) =>
+    postJSON<{ ok: boolean }>('/api/project/archive', { directory, archived, remoteId }),
   markSessionSeen: (platform: string, sessionId: string, timeUpdated: number) =>
     postJSON<{ ok: boolean }>('/api/session/seen', { platform, sessionId, timeUpdated }),
   pinSession: (platform: string, sessionId: string, pinned: boolean) =>

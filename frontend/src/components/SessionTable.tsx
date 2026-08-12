@@ -170,10 +170,10 @@ export function GroupedSessionTable({
     }
   };
 
-  const handleArchiveProject = async (directory: string, archived: boolean) => {
+  const handleArchiveProject = async (directory: string, archived: boolean, remoteId?: string) => {
     setLocalProjectArchived(prev => new Map(prev).set(directory, archived));
     try {
-      await archiveProject(directory, archived);
+      await archiveProject(directory, archived, remoteId);
     } catch (err) {
       remoteLog.error('Failed to archive project', err);
       setLocalProjectArchived(prev => {
@@ -328,7 +328,7 @@ export function GroupedSessionTable({
                       className="oc-project-menu-item"
                       onClick={(e) => {
                         (e.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open');
-                        void handleArchiveProject(group.directory, !archived);
+                        void handleArchiveProject(group.directory, !archived, remoteSession?.remoteId);
                       }}
                     >{archived ? 'Unarchive project' : 'Archive project'}</button>
                   </div>

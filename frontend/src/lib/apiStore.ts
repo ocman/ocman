@@ -111,7 +111,7 @@ type ApiStore = {
   getSessionInfo: (id: string, signal?: AbortSignal) => Promise<SessionInfo>;
   getGitDiff: (dir: string, opts?: { fresh?: boolean }, signal?: AbortSignal) => Promise<WorkingTreeDiff>;
   archiveSession: (platform: string, sessionId: string, timeUpdated: number, archived?: boolean) => Promise<{ ok: boolean }>;
-  archiveProject: (directory: string, archived?: boolean) => Promise<{ ok: boolean }>;
+  archiveProject: (directory: string, archived?: boolean, remoteId?: string) => Promise<{ ok: boolean }>;
   markSessionSeen: (platform: string, sessionId: string, timeUpdated: number) => Promise<{ ok: boolean }>;
   pinSession: (platform: string, sessionId: string, pinned: boolean) => Promise<{ ok: boolean }>;
   getModels: (signal?: AbortSignal) => Promise<ModelUsage[]>;
@@ -335,7 +335,7 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   getSessionInfo: (id, signal) => get().runRequest(`session:info:${id}`, () => api.sessionInfo(id, signal)),
   getGitDiff: (dir, opts, signal) => get().runRequest(`git:diff:${dir}`, () => api.gitDiff(dir, opts, signal)),
   archiveSession: (platform, sessionId, timeUpdated, archived = true) => get().runRequest(`session:archive:${sessionId}`, () => api.archiveSession(platform, sessionId, timeUpdated, archived)),
-  archiveProject: (directory, archived = true) => get().runRequest(`project:archive:${directory}`, () => api.archiveProject(directory, archived)),
+  archiveProject: (directory, archived = true, remoteId) => get().runRequest(`project:archive:${remoteId ?? 'local'}:${directory}`, () => api.archiveProject(directory, archived, remoteId)),
   markSessionSeen: (platform, sessionId, timeUpdated) => get().runRequest(`session:seen:${sessionId}`, () => api.markSessionSeen(platform, sessionId, timeUpdated)),
   pinSession: (platform, sessionId, pinned) => get().runRequest(`session:pin:${sessionId}`, () => api.pinSession(platform, sessionId, pinned)),
   getModels: (signal) => get().runRequest('models:get', () => api.models(undefined, signal)),

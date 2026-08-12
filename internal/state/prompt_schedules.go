@@ -136,15 +136,15 @@ func (d *DB) ClaimNextDuePromptSchedule(now int64) (PromptSchedule, bool, error)
 		return PromptSchedule{}, false, fmt.Errorf("claiming due prompt schedule: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	type candidate struct{ id, directory, sessionMode, platform, sessionID string }
-	rows, err := tx.Query(`SELECT id, directory, session_mode, platform, session_id FROM prompt_schedule WHERE state = 'scheduled' AND enabled = 1 AND run_at <= ? ORDER BY run_at, id`, now)
+	type candidate struct{ id, directory, remoteID, sessionMode, platform, sessionID string }
+	rows, err := tx.Query(`SELECT id, directory, remote_id, session_mode, platform, session_id FROM prompt_schedule WHERE state = 'scheduled' AND enabled = 1 AND run_at <= ? ORDER BY run_at, id`, now)
 	if err != nil {
 		return PromptSchedule{}, false, err
 	}
 	var candidates []candidate
 	for rows.Next() {
 		var candidate candidate
-		if err := rows.Scan(&candidate.id, &candidate.directory, &candidate.sessionMode, &candidate.platform, &candidate.sessionID); err != nil {
+		if err := rows.Scan(&candidate.id, &candidate.directory, &candidate.remoteID, &candidate.sessionMode, &candidate.platform, &candidate.sessionID); err != nil {
 			_ = rows.Close()
 			return PromptSchedule{}, false, err
 		}
@@ -160,7 +160,12 @@ func (d *DB) ClaimNextDuePromptSchedule(now int64) (PromptSchedule, bool, error)
 	var id string
 	for _, candidate := range candidates {
 		var archived int
-		err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM archived_project WHERE project_root = ?)`, ProjectRootForDirectory(candidate.directory)).Scan(&archived)
+		// The schedule's own host decides: an archived /repo on another
+		// machine says nothing about this one.
+		err = tx.QueryRow(
+			`SELECT EXISTS(SELECT 1 FROM archived_project WHERE remote_id = ? AND project_root = ?)`,
+			NormalizeRemoteID(candidate.remoteID), ProjectRootForDirectory(candidate.directory),
+		).Scan(&archived)
 		if err != nil {
 			return PromptSchedule{}, false, err
 		}

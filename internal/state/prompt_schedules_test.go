@@ -139,19 +139,51 @@ func TestPromptScheduleClaimSkipsArchivedProject(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := db.ArchiveProject("/src/repo"); err != nil {
+	if err := db.ArchiveProject("local", "/src/repo"); err != nil {
 		t.Fatal(err)
 	}
 	got, ok, err := db.ClaimNextDuePromptSchedule(2000)
 	if err != nil || !ok || got.ID != "unrelated" {
 		t.Fatalf("claim=%+v ok=%v err=%v", got, ok, err)
 	}
-	if err := db.UnarchiveProject("/src/repo"); err != nil {
+	if err := db.UnarchiveProject("local", "/src/repo"); err != nil {
 		t.Fatal(err)
 	}
 	got, ok, err = db.ClaimNextDuePromptSchedule(2000)
 	if err != nil || !ok || got.ID != "archived" {
 		t.Fatalf("claim after unarchive=%+v ok=%v err=%v", got, ok, err)
+	}
+}
+
+// The archived-project check is per host: archiving /repo on the hub must
+// not stop a schedule that runs the same path on another machine.
+func TestPromptScheduleClaimArchiveCheckIsPerHost(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	if err := db.CreatePromptSchedule(PromptSchedule{
+		ID: "remote", Directory: "/repo", RemoteID: "r-A", Prompt: "a", RunAt: 1000,
+		State: "scheduled", TimingType: "once", Timezone: "UTC", Enabled: true,
+		SessionMode: "fresh", CreatedAt: 1, UpdatedAt: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ArchiveProject("local", "/repo"); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := db.ClaimNextDuePromptSchedule(2000)
+	if err != nil || !ok || got.ID != "remote" {
+		t.Fatalf("claim=%+v ok=%v err=%v; want the remote schedule to run despite the local archive", got, ok, err)
+	}
+
+	// Archiving the remote's own copy does stop it.
+	if err := db.ReschedulePromptSchedule(got.ID, 1000, "", 2100); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ArchiveProject("r-A", "/repo"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := db.ClaimNextDuePromptSchedule(3000); err != nil || ok {
+		t.Fatalf("claim after the remote's own archive: ok=%v err=%v, want none", ok, err)
 	}
 }
 
@@ -172,7 +204,7 @@ func TestPromptScheduleClaimSkipsArchivedReuseSession(t *testing.T) {
 	if err := db.ArchiveSession("opencode", "s1", 1); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.ArchiveProject("/other"); err != nil {
+	if err := db.ArchiveProject("local", "/other"); err != nil {
 		t.Fatal(err)
 	}
 	got, ok, err := db.ClaimNextDuePromptSchedule(2000)

@@ -862,7 +862,7 @@ func TestApplySessionState_AutoUnarchivesUpdatedSession(t *testing.T) {
 // projects).
 func TestApplySessionState_MarksArchivedByProject(t *testing.T) {
 	srv := testServer(t)
-	if err := srv.stateDB.ArchiveProject("/src/foo"); err != nil {
+	if err := srv.stateDB.ArchiveProject(state.LocalRemoteID, "/src/foo"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -887,11 +887,11 @@ func TestApplySessionState_MarksArchivedByProject(t *testing.T) {
 // will drop the project marker once it sees the newer activity).
 func TestApplySessionState_ProjectArchiveRespectsNewerActivity(t *testing.T) {
 	srv := testServer(t)
-	if err := srv.stateDB.ArchiveProject("/src/foo"); err != nil {
+	if err := srv.stateDB.ArchiveProject(state.LocalRemoteID, "/src/foo"); err != nil {
 		t.Fatal(err)
 	}
 	archivedProjects, _ := srv.stateDB.ArchivedProjects()
-	archivedAt := archivedProjects["/src/foo"]
+	archivedAt := archivedProjects[state.ProjectKey{RemoteID: state.LocalRemoteID, Root: "/src/foo"}]
 
 	sessions := []db.Session{
 		{ID: "s1", Platform: "opencode", Directory: "/src/foo", TimeUpdated: archivedAt + 1000},
@@ -1223,10 +1223,10 @@ func TestAutoArchiveProjects(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ArchivedProjects: %v", err)
 	}
-	if _, ok := archived[projectRootForDirectory("/tmp/stale")]; !ok {
+	if _, ok := archived[localProjectKey("/tmp/stale")]; !ok {
 		t.Errorf("expected /tmp/stale to be auto-archived, got %+v", archived)
 	}
-	if _, ok := archived[projectRootForDirectory("/tmp/active")]; ok {
+	if _, ok := archived[localProjectKey("/tmp/active")]; ok {
 		t.Errorf("expected /tmp/active to stay unarchived, got %+v", archived)
 	}
 }
@@ -1252,7 +1252,7 @@ func TestAutoArchiveRespectsRecentUnarchive(t *testing.T) {
 	if err := srv.stateDB.UnarchiveSession("opencode", "old-session"); err != nil {
 		t.Fatal(err)
 	}
-	if err := srv.stateDB.UnarchiveProject(projectRootForDirectory("/tmp/stale")); err != nil {
+	if err := srv.stateDB.UnarchiveProject(state.LocalRemoteID, projectRootForDirectory("/tmp/stale")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1271,7 +1271,7 @@ func TestAutoArchiveRespectsRecentUnarchive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := archivedProjects[projectRootForDirectory("/tmp/stale")]; ok {
+	if _, ok := archivedProjects[localProjectKey("/tmp/stale")]; ok {
 		t.Error("project the user just unarchived was silently re-archived")
 	}
 }
@@ -1717,4 +1717,10 @@ func TestHandleSessionsNotify_IncludesTitleAndDirectory(t *testing.T) {
 	if e.Directory != "/repo/foo" {
 		t.Errorf("Directory = %q, want %q", e.Directory, "/repo/foo")
 	}
+}
+
+// localProjectKey is the archive identity of a project on the machine ocman
+// runs on: (local, folded root).
+func localProjectKey(directory string) state.ProjectKey {
+	return state.ProjectKey{RemoteID: state.LocalRemoteID, Root: projectRootForDirectory(directory)}
 }

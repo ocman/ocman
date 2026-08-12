@@ -81,7 +81,7 @@ export interface SessionSidebarProps {
   onPinSession: (e: React.MouseEvent, session: Session) => void;
   onClientSelect: (tty: string) => void;
   onNewSessionInDirectory: (directory: string, remoteId?: string, platform?: string) => void;
-  onArchiveProject: (directory: string) => void;
+  onArchiveProject: (directory: string, remoteId?: string) => void;
 }
 
 /**
@@ -438,7 +438,7 @@ export function SessionSidebar({
               className="session-sidebar-group-new"
               onClick={(e) => {
                 e.stopPropagation();
-                onArchiveProject(group.directory);
+                onArchiveProject(group.directory, hostRemoteId);
               }}
               title={`Archive ${label}`}
               aria-label={`Archive ${label}`}

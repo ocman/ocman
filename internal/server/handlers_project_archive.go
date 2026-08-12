@@ -29,11 +29,17 @@ func projectRootForDirectory(directory string) string {
 // sessions, and auto-unarchives (server-side, in handleProjects) once a
 // session's activity is newer than archived_at.
 //
-// POST /api/project/archive  { directory, archived }
+// Archive state is host-qualified: a project is (remoteID, root), because
+// the same absolute path exists on every attached machine. An explicit
+// remoteId wins; otherwise the owning host is resolved from the directory,
+// exactly as the opencode-stop below is routed.
+//
+// POST /api/project/archive  { directory, archived, remoteId? }
 func (s *Server) handleProjectArchive(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Directory string `json:"directory"`
 		Archived  bool   `json:"archived"`
+		RemoteID  string `json:"remoteId"`
 	}
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
 		return
@@ -43,18 +49,22 @@ func (s *Server) handleProjectArchive(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "directory is required", http.StatusBadRequest)
 		return
 	}
+	remoteID := strings.TrimSpace(req.RemoteID)
+	if remoteID == "" {
+		remoteID = s.router().ForDir(root).RemoteID()
+	}
 
 	var err error
 	if req.Archived {
 		// Best-effort: a dead tmux session, a removed/non-git directory
 		// or an unreachable remote must not block the bookkeeping the
 		// user actually asked for.
-		if err := s.router().ForDir(root).StopProjectOpencode(r.Context(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: root}); err != nil {
+		if err := s.router().ForRemote(remoteID).StopProjectOpencode(r.Context(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: root}); err != nil {
 			log.WithError(err).WithField("project", root).Warn("archive: stopping project opencode")
 		}
-		err = s.stateDB.ArchiveProject(root)
+		err = s.stateDB.ArchiveProject(remoteID, root)
 	} else {
-		err = s.stateDB.UnarchiveProject(root)
+		err = s.stateDB.UnarchiveProject(remoteID, root)
 	}
 	if err != nil {
 		serverError(w, "updating archived project state", err)

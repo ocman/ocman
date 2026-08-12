@@ -1219,11 +1219,11 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // Archive a project from the sidebar: hide its group immediately, then
   // persist + refetch /api/projects. Revert the optimistic hide on error.
   const handleArchiveProjectFromSidebar = useCallback(
-    (directory: string) => {
+    (directory: string, remoteId?: string) => {
       const root = projectRootForDirectory(directory);
       if (!root) return;
       setArchivedProjectRoots((prev) => new Set(prev).add(root));
-      archiveProject(root, true)
+      archiveProject(root, true, remoteId)
         .then(() => projectsQuery.refetch())
         .catch((err) => {
           remoteLog.error('Failed to archive project', err);

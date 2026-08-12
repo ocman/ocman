@@ -641,7 +641,8 @@ func (s *Server) autoArchiveInactiveProjects() {
 		return
 	}
 
-	// Newest activity per folded root.
+	// Newest activity per folded root. This loop only sees the hub's own
+	// projects (router().Local()), so every key is the local host.
 	newest := map[string]int64{}
 	for _, p := range projects {
 		root := projectRootForDirectory(p.Directory)
@@ -663,10 +664,11 @@ func (s *Server) autoArchiveInactiveProjects() {
 		if last >= cutoff {
 			continue
 		}
-		if _, ok := archived[root]; ok {
+		key := state.ProjectKey{RemoteID: state.LocalRemoteID, Root: root}
+		if _, ok := archived[key]; ok {
 			continue
 		}
-		if keep[root] {
+		if keep[key] {
 			continue
 		}
 		// Best-effort, same as the manual archive handler: a dead tmux
@@ -676,7 +678,7 @@ func (s *Server) autoArchiveInactiveProjects() {
 			log.WithFields(log.Fields{"projectRoot": root, "error": err}).
 				Warn("stopping opencode for auto-archived project")
 		}
-		if err := s.stateDB.ArchiveProject(root); err != nil {
+		if err := s.stateDB.ArchiveProject(state.LocalRemoteID, root); err != nil {
 			span.RecordError(err)
 			log.WithFields(log.Fields{"projectRoot": root, "error": err}).
 				Error("auto-archiving inactive project")

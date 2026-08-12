@@ -263,8 +263,10 @@ func (s *Server) applySessionState(sessions []db.Session) error {
 		// project was archived (in which case handleProjects will
 		// auto-unarchive the whole project on the next projects fetch).
 		if len(archivedProjects) > 0 {
-			root := projectRootForDirectory(sessions[i].Directory)
-			if projectArchivedAt, ok := archivedProjects[root]; ok && sessions[i].TimeUpdated <= projectArchivedAt {
+			// Per owning host: an archived /repo on another machine says
+			// nothing about this session's project.
+			key := projectArchiveKey(sessions[i].RemoteID, sessions[i].Directory)
+			if projectArchivedAt, ok := archivedProjects[key]; ok && sessions[i].TimeUpdated <= projectArchivedAt {
 				sessions[i].Archived = true
 			}
 		}

@@ -126,7 +126,20 @@ describe('GroupedSessionTable project archive', () => {
     const details = container.querySelector('details.oc-project-menu') as HTMLDetailsElement;
     details.open = true;
     fireEvent.click(screen.getByText('Archive project'));
-    expect(mocks.apiState.archiveProject).toHaveBeenCalledWith('/src/foo', true);
+    // No remote session in the group → the local host owns this project.
+    expect(mocks.apiState.archiveProject).toHaveBeenCalledWith('/src/foo', true, undefined);
+  });
+
+  it('names the owning host when archiving a remote project', () => {
+    const sessions = [
+      makeSession({ id: 's1', directory: '/src/foo', remoteId: 'r1', remoteName: 'box' }),
+    ];
+    const { container } = renderGrouped({ sessions });
+
+    const details = container.querySelector('details.oc-project-menu') as HTMLDetailsElement;
+    details.open = true;
+    fireEvent.click(screen.getByText('Archive project'));
+    expect(mocks.apiState.archiveProject).toHaveBeenCalledWith('/src/foo', true, 'r1');
   });
 
   it('folds worktree sessions to the repo root group', () => {

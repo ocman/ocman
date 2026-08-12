@@ -15,6 +15,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/pricing"
+	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/whisper"
 )
 
@@ -146,6 +147,11 @@ func foldWorktreeProjects(projects []db.ProjectStats) []db.ProjectStats {
 // auto-unarchives (and the marker is deleted) when any of its sessions'
 // activity (LastUsed) is newer than archived_at, mirroring the per-
 // session archive semantics in applySessionState.
+//
+// Everything is keyed per owning host (remoteID, root), matching
+// foldWorktreeProjects: the same path on two machines is two projects, so
+// one host's archive must not hide the other's and activity on one must not
+// unarchive the other.
 func (s *Server) applyProjectArchiveState(projects []db.ProjectStats) error {
 	archived, err := s.stateDB.ArchivedProjects()
 	if err != nil {
@@ -155,32 +161,41 @@ func (s *Server) applyProjectArchiveState(projects []db.ProjectStats) error {
 		return nil
 	}
 
-	// Newest activity per folded root across all matching directories.
-	newest := map[string]int64{}
+	// Newest activity per (host, folded root) across all matching directories.
+	newest := map[state.ProjectKey]int64{}
 	for _, p := range projects {
-		root := projectRootForDirectory(p.Directory)
-		if p.LastUsed > newest[root] {
-			newest[root] = p.LastUsed
+		key := projectArchiveKey(p.RemoteID, p.Directory)
+		if p.LastUsed > newest[key] {
+			newest[key] = p.LastUsed
 		}
 	}
 
-	// Auto-unarchive any root with newer activity than its archive
+	// Auto-unarchive any project with newer activity than its archive
 	// time, persisting the change so it stays unarchived.
-	for root, archivedAt := range archived {
-		if newest[root] > archivedAt {
-			if err := s.stateDB.UnarchiveProject(root); err != nil {
+	for key, archivedAt := range archived {
+		if newest[key] > archivedAt {
+			if err := s.stateDB.UnarchiveProject(key.RemoteID, key.Root); err != nil {
 				return err
 			}
-			delete(archived, root)
+			delete(archived, key)
 		}
 	}
 
 	for i := range projects {
-		if _, ok := archived[projectRootForDirectory(projects[i].Directory)]; ok {
+		if _, ok := archived[projectArchiveKey(projects[i].RemoteID, projects[i].Directory)]; ok {
 			projects[i].Archived = true
 		}
 	}
 	return nil
+}
+
+// projectArchiveKey builds a project's archive identity: its owning host
+// plus its folded repo root. An unstamped RemoteID means the local machine.
+func projectArchiveKey(remoteID, directory string) state.ProjectKey {
+	return state.ProjectKey{
+		RemoteID: state.NormalizeRemoteID(remoteID),
+		Root:     projectRootForDirectory(directory),
+	}
 }
 
 func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {

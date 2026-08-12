@@ -48,7 +48,7 @@ func (d *DB) ArchiveSession(platform, sessionID string, sessionTimeUpdated int64
 	if err != nil {
 		return fmt.Errorf("archiving session: %w", err)
 	}
-	return d.clearUnarchive(unarchiveKindSession, sessionKey(platform, sessionID))
+	return d.clearUnarchive(unarchiveKindSession, LocalRemoteID, sessionKey(platform, sessionID))
 }
 
 // UnarchiveSession removes a session's archived marker (per platform)
@@ -62,28 +62,52 @@ func (d *DB) UnarchiveSession(platform, sessionID string) error {
 	if err != nil {
 		return fmt.Errorf("unarchiving session: %w", err)
 	}
-	return d.recordUnarchive(unarchiveKindSession, sessionKey(platform, sessionID))
+	return d.recordUnarchive(unarchiveKindSession, LocalRemoteID, sessionKey(platform, sessionID))
 }
 
 const (
 	unarchiveKindSession = "session"
 	unarchiveKindProject = "project"
+
+	// LocalRemoteID is the routing/display sentinel for the machine ocman
+	// itself runs on, matching hostsvc's local Host.
+	LocalRemoteID = "local"
 )
+
+// NormalizeRemoteID maps the "unset" spellings of a host owner to the local
+// sentinel, so a project row an adapter never stamped keys the same way as
+// one the local host stamped itself.
+func NormalizeRemoteID(remoteID string) string {
+	if remoteID == "" {
+		return LocalRemoteID
+	}
+	return remoteID
+}
+
+// ProjectKey is a project's full identity. The root alone is not one: with
+// multi-remote, /home/u/app can exist on the hub and on every attached
+// machine, and they are different projects.
+type ProjectKey struct {
+	RemoteID string
+	Root     string
+}
 
 // sessionKey packs a (platform, session) pair into one unarchive key.
 // Platform ids never contain a NUL, so the pair round-trips unambiguously.
+// A session's owning remote is already encoded in its compound platform id
+// (`r-<remote>:opencode`), so session rows always carry remote_id 'local'.
 func sessionKey(platform, sessionID string) string {
 	return platform + "\x00" + sessionID
 }
 
 // recordUnarchive stamps when the user last brought an entity back.
-func (d *DB) recordUnarchive(kind, key string) error {
+func (d *DB) recordUnarchive(kind, remoteID, key string) error {
 	_, err := d.db.Exec(`
-		INSERT INTO unarchived_entity (kind, entity_key, unarchived_at)
-		VALUES (?, ?, ?)
-		ON CONFLICT(kind, entity_key) DO UPDATE SET
+		INSERT INTO unarchived_entity (kind, remote_id, entity_key, unarchived_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(kind, remote_id, entity_key) DO UPDATE SET
 			unarchived_at = excluded.unarchived_at
-	`, kind, key, time.Now().UnixMilli())
+	`, kind, NormalizeRemoteID(remoteID), key, time.Now().UnixMilli())
 	if err != nil {
 		return fmt.Errorf("recording unarchive: %w", err)
 	}
@@ -92,8 +116,11 @@ func (d *DB) recordUnarchive(kind, key string) error {
 
 // clearUnarchive drops the intent marker. Called when the entity is
 // archived again: the newer archive supersedes the older unarchive.
-func (d *DB) clearUnarchive(kind, key string) error {
-	_, err := d.db.Exec(`DELETE FROM unarchived_entity WHERE kind = ? AND entity_key = ?`, kind, key)
+func (d *DB) clearUnarchive(kind, remoteID, key string) error {
+	_, err := d.db.Exec(
+		`DELETE FROM unarchived_entity WHERE kind = ? AND remote_id = ? AND entity_key = ?`,
+		kind, NormalizeRemoteID(remoteID), key,
+	)
 	if err != nil {
 		return fmt.Errorf("clearing unarchive: %w", err)
 	}
@@ -110,7 +137,7 @@ func (d *DB) SessionsUnarchivedSince(cutoff int64) (map[Key]bool, error) {
 	}
 	out := make(map[Key]bool, len(keys))
 	for key := range keys {
-		platform, sessionID, found := strings.Cut(key, "\x00")
+		platform, sessionID, found := strings.Cut(key.Root, "\x00")
 		if !found {
 			continue
 		}
@@ -119,25 +146,26 @@ func (d *DB) SessionsUnarchivedSince(cutoff int64) (map[Key]bool, error) {
 	return out, nil
 }
 
-// ProjectsUnarchivedSince returns the project roots the user unarchived
-// at or after cutoff.
-func (d *DB) ProjectsUnarchivedSince(cutoff int64) (map[string]bool, error) {
+// ProjectsUnarchivedSince returns the projects the user unarchived at or
+// after cutoff, keyed by (remoteID, root) so a deliberate unarchive on one
+// machine does not shield the same path on another.
+func (d *DB) ProjectsUnarchivedSince(cutoff int64) (map[ProjectKey]bool, error) {
 	return d.unarchivedSince(unarchiveKindProject, cutoff)
 }
 
-func (d *DB) unarchivedSince(kind string, cutoff int64) (map[string]bool, error) {
+func (d *DB) unarchivedSince(kind string, cutoff int64) (map[ProjectKey]bool, error) {
 	rows, err := d.db.Query(
-		`SELECT entity_key FROM unarchived_entity WHERE kind = ? AND unarchived_at >= ?`,
+		`SELECT remote_id, entity_key FROM unarchived_entity WHERE kind = ? AND unarchived_at >= ?`,
 		kind, cutoff,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("listing unarchived entities: %w", err)
 	}
 	defer rows.Close()
-	out := map[string]bool{}
+	out := map[ProjectKey]bool{}
 	for rows.Next() {
-		var key string
-		if err := rows.Scan(&key); err != nil {
+		var key ProjectKey
+		if err := rows.Scan(&key.RemoteID, &key.Root); err != nil {
 			return nil, fmt.Errorf("scanning unarchived entity: %w", err)
 		}
 		out[key] = true
@@ -190,52 +218,53 @@ func (d *DB) ArchivedSessions() (map[Key]int64, error) {
 	return archived, nil
 }
 
-// ArchiveProject records a project (keyed by its folded project-root
-// directory) as archived at the current time. Re-archiving refreshes
+// ArchiveProject records a project as archived at the current time. The key
+// is (remoteID, folded project root): the same path on another machine is a
+// different project and keeps its own state. Re-archiving refreshes
 // archived_at so future session activity can auto-unarchive it.
-func (d *DB) ArchiveProject(projectRoot string) error {
+func (d *DB) ArchiveProject(remoteID, projectRoot string) error {
 	_, err := d.db.Exec(`
-		INSERT INTO archived_project (project_root, archived_at)
-		VALUES (?, ?)
-		ON CONFLICT(project_root) DO UPDATE SET
+		INSERT INTO archived_project (remote_id, project_root, archived_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(remote_id, project_root) DO UPDATE SET
 			archived_at = excluded.archived_at
-	`, projectRoot, time.Now().UnixMilli())
+	`, NormalizeRemoteID(remoteID), projectRoot, time.Now().UnixMilli())
 	if err != nil {
 		return fmt.Errorf("archiving project: %w", err)
 	}
-	return d.clearUnarchive(unarchiveKindProject, projectRoot)
+	return d.clearUnarchive(unarchiveKindProject, remoteID, projectRoot)
 }
 
-// UnarchiveProject removes a project's archived marker and records the
-// user's intent so auto-archive does not immediately re-hide it.
-func (d *DB) UnarchiveProject(projectRoot string) error {
+// UnarchiveProject removes one host's archived marker for a project and
+// records the user's intent so auto-archive does not immediately re-hide it.
+func (d *DB) UnarchiveProject(remoteID, projectRoot string) error {
 	_, err := d.db.Exec(
-		`DELETE FROM archived_project WHERE project_root = ?`,
-		projectRoot,
+		`DELETE FROM archived_project WHERE remote_id = ? AND project_root = ?`,
+		NormalizeRemoteID(remoteID), projectRoot,
 	)
 	if err != nil {
 		return fmt.Errorf("unarchiving project: %w", err)
 	}
-	return d.recordUnarchive(unarchiveKindProject, projectRoot)
+	return d.recordUnarchive(unarchiveKindProject, remoteID, projectRoot)
 }
 
-// ArchivedProjects returns every archived project's archived_at time,
-// keyed by the folded project-root directory.
-func (d *DB) ArchivedProjects() (map[string]int64, error) {
-	rows, err := d.db.Query(`SELECT project_root, archived_at FROM archived_project`)
+// ArchivedProjects returns every archived project's archived_at time, keyed
+// by (remoteID, folded project root).
+func (d *DB) ArchivedProjects() (map[ProjectKey]int64, error) {
+	rows, err := d.db.Query(`SELECT remote_id, project_root, archived_at FROM archived_project`)
 	if err != nil {
 		return nil, fmt.Errorf("listing archived projects: %w", err)
 	}
 	defer rows.Close()
 
-	archived := make(map[string]int64)
+	archived := make(map[ProjectKey]int64)
 	for rows.Next() {
-		var root string
+		var key ProjectKey
 		var archivedAt int64
-		if err := rows.Scan(&root, &archivedAt); err != nil {
+		if err := rows.Scan(&key.RemoteID, &key.Root, &archivedAt); err != nil {
 			return nil, fmt.Errorf("scanning archived project: %w", err)
 		}
-		archived[root] = archivedAt
+		archived[key] = archivedAt
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("reading archived projects: %w", err)

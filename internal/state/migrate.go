@@ -154,7 +154,12 @@ import (
 //	40 - recurring prompt timing, enablement, timezone, and session reuse.
 //	41 - link a workflow run to the external runner execution that drives
 //	     it, so the run mirror can find the Dagu run for an active row.
-const latestSchemaVersion = 41
+//	42 - host-qualify project archive state. A project's identity is
+//	     (remote_id, project_root): the same absolute path exists on
+//	     several machines, and keying on the path alone archived every
+//	     host's copy at once. Adds remote_id to `archived_project` and
+//	     `unarchived_entity`, backfilling existing rows as 'local'.
+const latestSchemaVersion = 42
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -341,6 +346,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV40(tx)
 	case 41:
 		return migrateToV41(tx)
+	case 42:
+		return migrateToV42(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -1362,6 +1369,47 @@ func migrateToV40(tx *sql.Tx) error {
 		if err := addColumnIfMissing(tx, "prompt_schedule", change.column, change.definition); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// migrateToV42 host-qualifies project archive state. A project's identity is
+// (remote_id, project_root): with multi-remote, the same absolute path exists
+// on several machines, so keying archive state on the path alone archived
+// every host's copy at once — and activity on one host auto-unarchived
+// another's. SQLite cannot alter a primary key, so both tables are rebuilt.
+//
+// Existing rows are backfilled as 'local': a database written before this
+// change can only describe the machine ocman itself runs on. Session
+// unarchive-intent rows get 'local' too — their key already carries the
+// platform, which encodes the owning remote.
+func migrateToV42(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE archived_project_v42 (
+			remote_id    TEXT    NOT NULL DEFAULT 'local',
+			project_root TEXT    NOT NULL,
+			archived_at  INTEGER NOT NULL,
+			PRIMARY KEY (remote_id, project_root)
+		);
+		INSERT INTO archived_project_v42 (remote_id, project_root, archived_at)
+			SELECT 'local', project_root, archived_at FROM archived_project;
+		DROP TABLE archived_project;
+		ALTER TABLE archived_project_v42 RENAME TO archived_project;
+
+		CREATE TABLE unarchived_entity_v42 (
+			kind          TEXT NOT NULL,
+			remote_id     TEXT NOT NULL DEFAULT 'local',
+			entity_key    TEXT NOT NULL,
+			unarchived_at INTEGER NOT NULL,
+			PRIMARY KEY (kind, remote_id, entity_key)
+		);
+		INSERT INTO unarchived_entity_v42 (kind, remote_id, entity_key, unarchived_at)
+			SELECT kind, 'local', entity_key, unarchived_at FROM unarchived_entity;
+		DROP TABLE unarchived_entity;
+		ALTER TABLE unarchived_entity_v42 RENAME TO unarchived_entity;
+	`)
+	if err != nil {
+		return fmt.Errorf("host-qualifying project archive state: %w", err)
 	}
 	return nil
 }

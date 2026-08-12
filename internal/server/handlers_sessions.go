@@ -192,7 +192,9 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		if err := s.stateDB.UnarchiveSession(string(adapter.ID()), sessionID); err != nil {
 			log.Printf("unarchiving session on open: %v", err)
 		}
-		if err := s.stateDB.UnarchiveProject(projectRootForDirectory(detail.Session.Directory)); err != nil {
+		// Local-only path (remote sessions are skipped above), so the
+		// project being unarchived is the hub's own copy.
+		if err := s.stateDB.UnarchiveProject(state.LocalRemoteID, projectRootForDirectory(detail.Session.Directory)); err != nil {
 			log.Printf("unarchiving project on open: %v", err)
 		}
 	}

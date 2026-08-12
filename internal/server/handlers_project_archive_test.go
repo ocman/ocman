@@ -11,6 +11,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 type projectArchiveHost struct {
@@ -18,6 +19,8 @@ type projectArchiveHost struct {
 	stopped string
 	stopErr error
 }
+
+func (h *projectArchiveHost) RemoteID() string { return state.LocalRemoteID }
 
 func (h *projectArchiveHost) StopProjectOpencode(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) error {
 	h.stopped = req.ProjectDir
@@ -203,7 +206,7 @@ func TestProjectArchive_SucceedsWhenStopFails(t *testing.T) {
 	postProjectArchive(t, srv, "/src/foo", true)
 
 	archived, _ := srv.stateDB.ArchivedProjects()
-	if _, ok := archived["/src/foo"]; !ok {
+	if _, ok := archived[state.ProjectKey{RemoteID: state.LocalRemoteID, Root: "/src/foo"}]; !ok {
 		t.Fatalf("expected /src/foo archived despite stop error, got %v", archived)
 	}
 }
@@ -224,7 +227,9 @@ func TestProjectArchive_AppliesToRemoteProjects(t *testing.T) {
 		}
 	}
 
-	postProjectArchive(t, srv, "/remote/repo", true)
+	// The client names the owning host: the hub cannot tell from the path
+	// alone which machine /remote/repo lives on.
+	postProjectArchiveOn(t, srv, "r1", "/remote/repo", true)
 
 	// Through the full handler: the remote project must be flagged
 	// archived (pre-fix it bypassed applyProjectArchiveState and stayed
@@ -242,6 +247,72 @@ func TestProjectArchive_AppliesToRemoteProjects(t *testing.T) {
 	}
 	if archived, _ := srv.stateDB.ArchivedProjects(); len(archived) != 0 {
 		t.Errorf("expected archive marker deleted, got %v", archived)
+	}
+}
+
+func postProjectArchiveOn(t *testing.T, srv *Server, remoteID, dir string, archived bool) {
+	t.Helper()
+	body, _ := json.Marshal(map[string]any{"directory": dir, "archived": archived, "remoteId": remoteID})
+	req := httptest.NewRequest(http.MethodPost, "/api/project/archive", strings.NewReader(string(body)))
+	rr := httptest.NewRecorder()
+	srv.handleProjectArchive(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("archive %s:%q=%v: expected 200, got %d: %s", remoteID, dir, archived, rr.Code, rr.Body.String())
+	}
+}
+
+// A project's identity is (remoteID, root). The same absolute path exists on
+// several machines, so archiving one machine's copy must not hide the other's
+// — and activity on one must not auto-unarchive the other.
+func TestProjectArchive_IsPerHost(t *testing.T) {
+	srv, rawDB := testServerWithRawDB(t)
+	defer rawDB.Close()
+
+	const shared = "/repo/shared"
+	if _, err := rawDB.Exec(
+		`INSERT INTO session (id, title, directory, time_created, time_updated)
+		 VALUES ('s-1', 'local', '`+shared+`', 1000, 1000)`,
+	); err != nil {
+		t.Fatalf("seeding session: %v", err)
+	}
+	if err := srv.refreshProjectsIndex(); err != nil {
+		t.Fatalf("projects refresh: %v", err)
+	}
+	remoteLastUsed := int64(100)
+	srv.remoteProjectsFn = func() []db.ProjectStats {
+		return []db.ProjectStats{{Directory: shared, RemoteID: "r1", RemoteName: "box", LastUsed: remoteLastUsed}}
+	}
+
+	// Archive the remote's copy only.
+	postProjectArchiveOn(t, srv, "r1", shared, true)
+
+	byRemote := map[string]db.ProjectStats{}
+	for _, p := range getProjects(t, srv) {
+		byRemote[p.RemoteID] = p
+	}
+	if len(byRemote) != 2 {
+		t.Fatalf("projects = %+v, want one row per host", byRemote)
+	}
+	if !byRemote["r1"].Archived {
+		t.Fatalf("remote project = %+v, want archived", byRemote["r1"])
+	}
+	if byRemote[""].Archived {
+		t.Fatalf("local project = %+v, want untouched by the remote's archive", byRemote[""])
+	}
+
+	// Fresh activity on the LOCAL copy must not auto-unarchive the remote's.
+	if _, err := rawDB.Exec(`UPDATE session SET time_updated = 9999999999999 WHERE id = 's-1'`); err != nil {
+		t.Fatalf("bumping activity: %v", err)
+	}
+	if err := srv.refreshProjectsIndex(); err != nil {
+		t.Fatalf("projects refresh 2: %v", err)
+	}
+	byRemote = map[string]db.ProjectStats{}
+	for _, p := range getProjects(t, srv) {
+		byRemote[p.RemoteID] = p
+	}
+	if !byRemote["r1"].Archived {
+		t.Fatalf("remote project = %+v, want still archived: the activity was on another host", byRemote["r1"])
 	}
 }
 
