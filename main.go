@@ -59,6 +59,11 @@ const authTrustLocalhostEnv = "OCMAN_AUTH_TRUST_LOCALHOST"
 // scheme + Host header, which is correct for localhost / dev.
 const publicBaseURLEnv = "OCMAN_PUBLIC_BASE_URL"
 
+// insecureNoAuthEnv is the env equivalent of -insecure-no-auth: it
+// allows binding a non-loopback listen address with no password
+// configured. Same truthy spellings as the other bool env vars.
+const insecureNoAuthEnv = "OCMAN_INSECURE_NO_AUTH"
+
 // knownPlatforms lists the valid values for the -platforms flag.
 var knownPlatforms = map[string]bool{
 	string(opencodeplatform.PlatformID): true,
@@ -117,8 +122,25 @@ func main() {
 	remoteTLSCert := flag.String("remote-tls-cert", "", "TLS certificate file for the remote-access gRPC server (enables TLS together with -remote-tls-key)")
 	remoteTLSKey := flag.String("remote-tls-key", "", "TLS key file for the remote-access gRPC server")
 	remoteTrustedOverlay := flag.Bool("remote-trusted-overlay", false, "explicitly allow plaintext remote gRPC on a trusted overlay network")
+	insecureNoAuth := flag.Bool("insecure-no-auth", false, "allow a non-loopback -addr/-gui-addr with no password configured (also "+insecureNoAuthEnv+"=1)")
 	flag.Parse()
 	if err := validateRemoteTransport(*remoteListen, *remoteTLSCert, *remoteTLSKey, *remoteTrustedOverlay); err != nil {
+		log.Fatal(err)
+	}
+
+	// Refuse to expose an unauthenticated dashboard beyond loopback:
+	// every session route (message, command, shell) would be usable by
+	// anyone who can reach the port.
+	authPasswordValue, err := resolveAuthPassword(*authPassword, *authPasswordFile)
+	if err != nil {
+		log.Fatalf("Failed to configure auth: %v", err)
+	}
+	httpListenAddr := *addr
+	if *guiMode {
+		httpListenAddr = *guiAddr
+	}
+	if err := validateListenExposure(httpListenAddr, authPasswordValue != "",
+		*insecureNoAuth || parseBoolEnv(os.Getenv(insecureNoAuthEnv))); err != nil {
 		log.Fatal(err)
 	}
 
@@ -243,14 +265,13 @@ func main() {
 	if *guiMode {
 		// gui-addr defaults to 127.0.0.1:0 (ephemeral). Callers can
 		// pin a port with --gui-addr=127.0.0.1:8229 if needed.
-		listenAddr := *guiAddr
-		srv := server.New(database, stateDB, listenAddr, registry, auth).
+		srv := server.New(database, stateDB, httpListenAddr, registry, auth).
 			WithOpenCodeAuth(opencodeAuth).
 			WithAutoApproveDefault(*autoApprove).
 			WithPublicBaseURL(resolvedBaseURL).
 			WithMCPAddr(*mcpAddr).
 			WithRemoteAccess(ident.InstanceID, "", false, false)
-		if err := gui.RunGUI(ctx, srv, listenAddr); err != nil {
+		if err := gui.RunGUI(ctx, srv, httpListenAddr); err != nil {
 			log.Fatalf("GUI error: %v", err)
 		}
 	} else {
@@ -306,6 +327,21 @@ func resolveOpenCodePassword(fileValue string, generate bool) (string, error) {
 		return "", fmt.Errorf("generating OpenCode server password: %w", err)
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// validateListenExposure refuses a startup that would expose ocman's
+// full session-control API — sending messages, running shell commands,
+// launching agents — to anyone who can reach the listen address. Only
+// loopback binds are unauthenticated-safe; everything else needs a
+// password or an explicit opt-out.
+func validateListenExposure(addr string, authConfigured, allowInsecure bool) error {
+	if authConfigured || allowInsecure || isLoopbackAddr(addr) {
+		return nil
+	}
+	return fmt.Errorf("refusing to listen on %s with no password configured: "+
+		"anyone who can reach that address could drive your coding agents. "+
+		"Set %s (or -auth-password-file), bind to 127.0.0.1, or pass -insecure-no-auth (%s=1) to override",
+		addr, authPasswordEnv, insecureNoAuthEnv)
 }
 
 func validateRemoteTransport(listenAddr, tlsCert, tlsKey string, trustedOverlay bool) error {
@@ -466,7 +502,8 @@ func isAppBundle() bool {
 
 // isLoopbackAddr returns true when the listener's host part is a
 // loopback literal. Pure-string check because the listener hasn't
-// opened yet at this point.
+// opened yet at this point. A bare ":8228" is NOT loopback: Go binds
+// every interface when the host is empty.
 func isLoopbackAddr(addr string) bool {
 	host := addr
 	if idx := strings.LastIndex(host, ":"); idx >= 0 {
@@ -474,5 +511,5 @@ func isLoopbackAddr(addr string) bool {
 	}
 	host = strings.TrimPrefix(host, "[")
 	host = strings.TrimSuffix(host, "]")
-	return host == "" || host == "127.0.0.1" || host == "::1" || host == "localhost"
+	return host == "127.0.0.1" || host == "::1" || host == "localhost"
 }

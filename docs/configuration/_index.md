@@ -55,6 +55,7 @@ MagicDNS name, a reverse proxy), set `OCMAN_PUBLIC_BASE_URL` to that external or
 | `-remote-tls-cert` | _(unset)_ | TLS certificate file for the remote-access gRPC server (enables TLS with `-remote-tls-key`). |
 | `-remote-tls-key` | _(unset)_ | TLS key file for the remote-access gRPC server. |
 | `-remote-trusted-overlay` | `false` | Explicitly allow plaintext remote gRPC on a trusted overlay network. |
+| `-insecure-no-auth` | `false` | Allow a non-loopback `-addr` / `-gui-addr` with no password configured. Also `OCMAN_INSECURE_NO_AUTH=1`. |
 
 ## Environment variables
 
@@ -62,12 +63,17 @@ MagicDNS name, a reverse proxy), set `OCMAN_PUBLIC_BASE_URL` to that external or
 |----------|-------------|
 | `OCMAN_AUTH_PASSWORD` | Auth password. Empty string is treated as unset. |
 | `OCMAN_AUTH_TRUST_LOCALHOST` | Truthy value enables the loopback auth bypass. |
+| `OCMAN_INSECURE_NO_AUTH` | Truthy value allows a non-loopback listen address with no password configured. |
 | `OPENCODE_SERVER_PASSWORD` | Password for managed OpenCode servers and all ocman-to-OpenCode HTTP/SSE traffic. |
 | `OCMAN_ALLOWED_HOSTS` | Vite dev/preview only: comma-separated extra hostnames allowed by the dev server (e.g. `foo.tailnet.ts.net,bar.lan`). |
 
 ## Authentication
 
-By default ocman binds `127.0.0.1:8228` and serves unauthenticated. To require a password —
+By default ocman binds `127.0.0.1:8228` and serves unauthenticated. Any other listen address
+(`0.0.0.0:8228`, a bare `:8228`, a LAN IP) **requires** a password: ocman refuses to start
+without one, because session routes can send messages, run commands, and launch agents.
+Override with `-insecure-no-auth` (or `OCMAN_INSECURE_NO_AUTH=1`) only on a network you
+control. To require a password —
 for example when exposing over a tunnel, Tailscale, or any non-loopback listener — set one of
 the following (precedence in order listed):
 

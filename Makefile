@@ -208,7 +208,7 @@ installer-linux: ## Build Linux binary archive (cross-compiled from any host)
 	@echo "  Without them, run without --gui for the browser-based UI."
 
 run: build
-	./ocman -addr 0.0.0.0:8228
+	./ocman -addr 127.0.0.1:8228
 
 clean:
 	rm -rf ocman tmp internal/server/static/assets

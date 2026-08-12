@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -157,6 +158,41 @@ func TestValidateRemoteTransport(t *testing.T) {
 	}
 }
 
+// TestValidateListenExposure pins the startup refusal: a listener
+// reachable from off-box with no password configured is an open remote
+// control for the operator's coding agents, so ocman must refuse to
+// start unless the operator explicitly opts out.
+func TestValidateListenExposure(t *testing.T) {
+	tests := []struct {
+		name           string
+		addr           string
+		authConfigured bool
+		allowInsecure  bool
+		wantErr        bool
+	}{
+		{"loopback without auth still starts", "127.0.0.1:8228", false, false, false},
+		{"loopback name without auth still starts", "localhost:8228", false, false, false},
+		{"ipv6 loopback without auth still starts", "[::1]:8228", false, false, false},
+		{"wildcard without auth refuses", "0.0.0.0:8228", false, false, true},
+		{"bare port without auth refuses", ":8228", false, false, true},
+		{"lan address without auth refuses", "192.168.1.10:8228", false, false, true},
+		{"wildcard with auth starts", "0.0.0.0:8228", true, false, false},
+		{"wildcard with explicit opt-out starts", "0.0.0.0:8228", false, true, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateListenExposure(tt.addr, tt.authConfigured, tt.allowInsecure)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validateListenExposure(%q, auth=%v, insecure=%v) error = %v, wantErr %v",
+					tt.addr, tt.authConfigured, tt.allowInsecure, err, tt.wantErr)
+			}
+			if tt.wantErr && !strings.Contains(err.Error(), "-insecure-no-auth") {
+				t.Errorf("error must name the opt-out flag, got: %v", err)
+			}
+		})
+	}
+}
+
 func TestIsLoopbackAddr(t *testing.T) {
 	tests := []struct {
 		addr string
@@ -165,7 +201,7 @@ func TestIsLoopbackAddr(t *testing.T) {
 		{"127.0.0.1:8228", true},
 		{"[::1]:8228", true},
 		{"localhost:8228", true},
-		{":8228", true}, // bare port = all loopback by convention for this check
+		{":8228", false}, // bare port binds every interface, not just loopback
 		{"0.0.0.0:8228", false},
 		{"192.168.1.10:8228", false},
 		{"[2001:db8::1]:8228", false},
