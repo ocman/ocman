@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -269,13 +270,25 @@ type fakeWorkflowUsage struct {
 	perSessionTokens int64
 	perSessionCost   float64
 	ok               bool
+
+	mu    sync.Mutex
+	asked []state.Key
 }
 
-func (f *fakeWorkflowUsage) SessionUsage(_ context.Context, ids []string) (int64, float64, bool) {
+func (f *fakeWorkflowUsage) SessionUsage(_ context.Context, sessions []state.Key) (int64, float64, bool) {
 	if !f.ok {
 		return 0, 0, false
 	}
-	return int64(len(ids)) * f.perSessionTokens, float64(len(ids)) * f.perSessionCost, true
+	f.mu.Lock()
+	f.asked = append(f.asked, sessions...)
+	f.mu.Unlock()
+	return int64(len(sessions)) * f.perSessionTokens, float64(len(sessions)) * f.perSessionCost, true
+}
+
+func (f *fakeWorkflowUsage) askedFor() []state.Key {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]state.Key(nil), f.asked...)
 }
 
 // TestCostLimitStopsRun proves a configured cost limit fails the run once

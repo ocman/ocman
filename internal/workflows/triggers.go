@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/robfig/cron/v3"
+
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 type PRState struct {
@@ -18,12 +20,17 @@ type ForgePoller interface {
 	PollPR(context.Context, string, int) (PRState, error)
 }
 
+// SessionStatusInferer answers "is this session's turn still running?" for
+// a full (platform, sessionID) identity — the same bare id can exist on
+// several machines, and reading the wrong one settles an attempt early.
 type SessionStatusInferer interface {
-	TurnRunning(context.Context, string, string) (bool, bool)
+	TurnRunning(ctx context.Context, platform, sessionID string) (running, ok bool)
 }
 
+// UsageSource aggregates tokens and cost over agent sessions identified by
+// (platform, sessionID). state.Key is that pair.
 type UsageSource interface {
-	SessionUsage(context.Context, []string) (int64, float64, bool)
+	SessionUsage(context.Context, []state.Key) (int64, float64, bool)
 }
 
 type triggerConfig struct {

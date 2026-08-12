@@ -415,7 +415,7 @@ func TestBudgetExceededHonoursEveryLimit(t *testing.T) {
 		detail.Version.Definition.Limits = limits
 		attempts := make([]Attempt, 0, len(sessions))
 		for _, id := range sessions {
-			attempts = append(attempts, Attempt{SessionID: id})
+			attempts = append(attempts, Attempt{Platform: "opencode", SessionID: id})
 		}
 		detail.Nodes = []NodeRun{{NodeID: "a", Attempts: attempts}}
 		return detail
@@ -447,6 +447,23 @@ func TestBudgetExceededHonoursEveryLimit(t *testing.T) {
 			}
 		})
 	}
+
+	// A session reference is (platform, sessionID). Usage is asked for the
+	// pair the attempt recorded, so a run is never billed for a same-id
+	// session on another machine; an attempt that stored no platform is
+	// left out rather than resolved by bare id.
+	t.Run("usage is asked for the full identity", func(t *testing.T) {
+		usage := &fakeWorkflowUsage{ok: true, perSessionCost: 1}
+		svc := NewService(Deps{Usage: usage, Now: func() time.Time { return now }})
+		detail := run(&Limits{MaxCostUSD: 100}, "s1")
+		detail.Nodes[0].Attempts[0].Platform = "r-A:opencode"
+		detail.Nodes[0].Attempts = append(detail.Nodes[0].Attempts, Attempt{SessionID: "s1"})
+		svc.budgetExceeded(context.Background(), detail)
+		asked := usage.askedFor()
+		if len(asked) != 1 || asked[0] != (state.Key{Platform: "r-A:opencode", SessionID: "s1"}) {
+			t.Fatalf("usage asked for %+v, want only the remote (platform, session) pair", asked)
+		}
+	})
 }
 
 func TestWorkspaceRequestAndGitRestriction(t *testing.T) {

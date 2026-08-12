@@ -189,8 +189,15 @@ func TestWorkflowStatusInferer_LatestMessageState(t *testing.T) {
 	if id, createdAt, running, completed, ok := inferer.LatestMessageState(t.Context(), "fake", "s1"); id != "" || createdAt != 0 || running || !completed || !ok {
 		t.Fatalf("empty session = (%q, %d, %v, %v, %v), want resolved idle baseline", id, createdAt, running, completed, ok)
 	}
-	if _, _, _, _, ok := inferer.LatestMessageState(t.Context(), "fake", "missing"); ok {
+	// No platform named: the caller (a hand-written workflow trigger) falls
+	// back to the reverse lookup, which cannot resolve an unknown session.
+	if _, _, _, _, ok := inferer.LatestMessageState(t.Context(), "", "missing"); ok {
 		t.Fatal("missing session unexpectedly resolved")
+	}
+	// A named platform that isn't registered fails closed rather than
+	// resolving the id on some other machine.
+	if _, _, _, _, ok := inferer.LatestMessageState(t.Context(), "r-GONE:fake", "s1"); ok {
+		t.Fatal("unregistered platform unexpectedly resolved")
 	}
 }
 

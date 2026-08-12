@@ -2429,12 +2429,17 @@ func (s *Service) budgetExceeded(ctx context.Context, run RunDetail) (bool, stri
 	if (limits.MaxCostUSD <= 0 && limits.MaxTokens <= 0) || s.usage == nil {
 		return false, ""
 	}
-	var sessions []string
+	// Each attempt records the platform it started its session on. Both
+	// halves are required: a bare session id can collide across machines,
+	// and billing a run for another machine's session is worse than
+	// under-counting a legacy attempt that never stored its platform.
+	var sessions []state.Key
 	for _, node := range run.Nodes {
 		for _, attempt := range node.Attempts {
-			if attempt.SessionID != "" {
-				sessions = append(sessions, attempt.SessionID)
+			if attempt.SessionID == "" || attempt.Platform == "" {
+				continue
 			}
+			sessions = append(sessions, state.Key{Platform: attempt.Platform, SessionID: attempt.SessionID})
 		}
 	}
 	if len(sessions) == 0 {
