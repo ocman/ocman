@@ -4,8 +4,9 @@
  * within the size budget; the session and project tables share the same
  * 13-column layout via the MetricsRowCells helper.
  */
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Bar, Doughnut, Line } from 'react-chartjs-2';
+import './StatsLogTables.css';
 import type { MetricsDashboard, ProjectLogEntry } from '../../lib/api';
 import {
   cleanTitle,
@@ -267,8 +268,12 @@ export function SessionLogTable({
             <tr key={session.id} onClick={() => navigate(`/session/${encodeURIComponent(session.id)}`)}>
               <td>{pageOffset + idx + 1}</td>
               <td title={cleanTitle(session.title)}>
-                <div>{cleanTitle(session.title) || <span style={dim}>untitled</span>}</div>
-                {session.directory && <div className="metrics-session-project">{shortPath(session.directory)}</div>}
+                {/* The row-wide onClick is mouse-only; this link is the
+                    keyboard/AT path into the session. */}
+                <Link className="metrics-row-link" to={`/session/${encodeURIComponent(session.id)}`}>
+                  <div>{cleanTitle(session.title) || <span style={dim}>untitled</span>}</div>
+                  {session.directory && <div className="metrics-session-project">{shortPath(session.directory)}</div>}
+                </Link>
               </td>
               <td title={formatDateTimeShort(session.lastRequestTime)}>{relativeTime(session.lastRequestTime)}</td>
               <MetricsRowCells e={session} />
@@ -306,7 +311,9 @@ export function ProjectLogTable({
             <tr key={project.directory} onClick={() => navigate(`/project/${encodeURIComponent(project.directory)}`)}>
               <td>{pageOffset + idx + 1}</td>
               <td title={project.directory}>
-                <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{shortPath(project.directory)}</span>
+                <Link className="metrics-row-link" to={`/project/${encodeURIComponent(project.directory)}`}>
+                  <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{shortPath(project.directory)}</span>
+                </Link>
               </td>
               <td>{formatNumber(project.sessions)}</td>
               <MetricsRowCells e={project} />
@@ -352,7 +359,11 @@ export function RequestLogTable({
             <tr key={request.id} onClick={() => navigate(`/session/${encodeURIComponent(request.sessionId)}`)}>
               <td>{pageOffset + idx + 1}</td>
               <td>{formatDateTimeShort(request.timeCreated)}</td>
-              <td className="mono">{shortSessionID(request.sessionId)}</td>
+              <td className="mono">
+                <Link className="metrics-row-link" to={`/session/${encodeURIComponent(request.sessionId)}`}>
+                  {shortSessionID(request.sessionId)}
+                </Link>
+              </td>
               <td>{renderModel(request.model)}</td>
               <td>{formatNumber(request.inputTokens)}</td>
               <td>{formatNumber(request.outputTokens)}</td>

@@ -149,6 +149,27 @@ test('clicking a session row navigates to session detail', async ({ mockedPage: 
   await expect(page).toHaveURL(`/session/${MOCK_SESSION.id}`);
 });
 
+test('tabbing to a session row and pressing Enter navigates to session detail', async ({
+  mockedPage: page,
+}) => {
+  await page.goto('/sessions');
+  // The row-wide onClick is mouse-only, so the row's primary cell has to
+  // expose a real link: reachable with Tab, activated with Enter.
+  const rowLink = page.getByRole('link', { name: /Fix the login bug/ });
+  await expect(rowLink).toBeVisible();
+
+  // Walk the tab order from the top of the document until the row link
+  // takes focus (nav links and toolbar controls come first).
+  for (let i = 0; i < 40; i++) {
+    await page.keyboard.press('Tab');
+    if (await rowLink.evaluate((el) => el === document.activeElement)) break;
+  }
+  await expect(rowLink).toBeFocused();
+
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(`/session/${MOCK_SESSION.id}`);
+});
+
 test('sessions tab shows empty state when no sessions', async ({ mockedPage: page }) => {
   await page.route('/api/sessions*', (route) =>
     route.fulfill({

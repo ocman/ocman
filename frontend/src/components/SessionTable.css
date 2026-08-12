@@ -221,6 +221,15 @@
   user-select: none;
 }
 
+/* The primary cell's link wrapper. Purely semantic: it inherits every
+   visual from the cell content it wraps so the row looks unchanged. */
+.session-row-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  font: inherit;
+}
+
 /* Session title with ellipsis overflow */
 .session-title {
   color: var(--accent);

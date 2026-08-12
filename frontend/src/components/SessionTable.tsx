@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import './SessionTable.css';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import type { Session, GitInfo, Project } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
 import { cleanTitle, formatDuration, relativeTime, shortPath } from '../lib/format';
@@ -371,17 +371,22 @@ export function GroupedSessionTable({
                         onClick={() => navigate(`/session/${s.id}`)}
                       >
                         <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            {depth > 0 && (
-                              <span className="session-child-branch" style={{ '--depth': depth } as React.CSSProperties} aria-hidden="true">&#9492;&#9472;</span>
-                            )}
-                            <StatusBadge status={s.status} compact seen={seenLatest} pending={pending} />
-                            <span className="session-title">{cleanTitle(s.title) || 'Untitled'}</span>
-                            <UnreadBadge session={s} />
-                          </div>
-                          <div className="mono">
-                            {s.id}
-                          </div>
+                          {/* The row-wide onClick is mouse-only; this link is
+                              the keyboard/AT path into the session (and makes
+                              the row middle-clickable). */}
+                          <Link className="session-row-link" to={`/session/${s.id}`}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              {depth > 0 && (
+                                <span className="session-child-branch" style={{ '--depth': depth } as React.CSSProperties} aria-hidden="true">&#9492;&#9472;</span>
+                              )}
+                              <StatusBadge status={s.status} compact seen={seenLatest} pending={pending} />
+                              <span className="session-title">{cleanTitle(s.title) || 'Untitled'}</span>
+                              <UnreadBadge session={s} />
+                            </div>
+                            <div className="mono">
+                              {s.id}
+                            </div>
+                          </Link>
                         </td>
                         <td className="mono">{s.messageCount} msgs &middot; {formatDuration(s.durationMs)}</td>
                         <td><span title={new Date(s.timeCreated).toLocaleString()}>{relativeTime(s.timeCreated)}</span></td>
@@ -478,17 +483,19 @@ export function SessionTable({ sessions, showProject, loading, includeArchived }
               onClick={() => navigate(`/session/${s.id}`)}
             >
               <td>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {depth > 0 && (
-                    <span className="session-child-branch" style={{ '--depth': depth } as React.CSSProperties} aria-hidden="true">&#9492;&#9472;</span>
-                  )}
-                  <StatusBadge status={s.status} compact seen={seenLatest} pending={pending} />
-                  <span className="session-title">{cleanTitle(s.title) || 'Untitled'}</span>
-                  <UnreadBadge session={s} />
-                </div>
-                <div className="mono">
-                  {s.id}
-                </div>
+                <Link className="session-row-link" to={`/session/${s.id}`}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {depth > 0 && (
+                      <span className="session-child-branch" style={{ '--depth': depth } as React.CSSProperties} aria-hidden="true">&#9492;&#9472;</span>
+                    )}
+                    <StatusBadge status={s.status} compact seen={seenLatest} pending={pending} />
+                    <span className="session-title">{cleanTitle(s.title) || 'Untitled'}</span>
+                    <UnreadBadge session={s} />
+                  </div>
+                  <div className="mono">
+                    {s.id}
+                  </div>
+                </Link>
               </td>
               {showProject && (
                  <td className="mono">

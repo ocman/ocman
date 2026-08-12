@@ -1,0 +1,8 @@
+/* Log-table row links. Semantics only: the link inherits every visual
+   from the cell content it wraps, so the rows look exactly as before. */
+.metrics-row-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  font: inherit;
+}
