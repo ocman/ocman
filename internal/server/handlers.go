@@ -41,15 +41,47 @@ func validateID(id string) bool {
 	return id != "" && len(id) <= 256 && validIDPattern.MatchString(id)
 }
 
+// bodyReadTimeout bounds how long a handler will wait for a bounded,
+// fully-buffered request body. Applied per handler rather than as
+// http.Server.ReadTimeout, which would also cut off SSE streams,
+// WebSocket terminals, and multi-megabyte uploads. A var so tests can
+// shrink it.
+var bodyReadTimeout = 30 * time.Second
+
+// uploadReadTimeout is the same bound for the upload handlers (audio,
+// composer attachments), which move tens of megabytes and can
+// legitimately take much longer on a slow link.
+var uploadReadTimeout = 5 * time.Minute
+
+// setBodyReadDeadline bounds the time spent reading this request's body,
+// so a client that trickles bytes can't pin a goroutine indefinitely.
+// No-op when the ResponseWriter doesn't support it (e.g. httptest
+// recorders), which is why the error is dropped.
+func setBodyReadDeadline(w http.ResponseWriter, d time.Duration) {
+	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(d))
+}
+
+// clearBodyReadDeadline drops the deadline once the body is in hand, so
+// a handler that then does slow work (git, tmux, an upstream agent call)
+// isn't affected by a leftover deadline on the connection.
+func clearBodyReadDeadline(w http.ResponseWriter) {
+	_ = http.NewResponseController(w).SetReadDeadline(time.Time{})
+}
+
 // readAndUnmarshal reads the request body (up to maxBytes) and unmarshals
 // it into dst. Returns false and writes an HTTP error if reading or
 // parsing fails.
 func readAndUnmarshal(w http.ResponseWriter, r *http.Request, maxBytes int64, dst interface{}) bool {
+	setBodyReadDeadline(w, bodyReadTimeout)
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxBytes))
 	if err != nil {
+		// Deliberately leave the (expired) deadline in place: clearing
+		// it here would make net/http block forever draining the body
+		// the client never finished sending.
 		http.Error(w, "failed to read body", http.StatusBadRequest)
 		return false
 	}
+	clearBodyReadDeadline(w)
 	if err := json.Unmarshal(body, dst); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return false

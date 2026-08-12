@@ -255,6 +255,7 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxAudioUpload)
+	setBodyReadDeadline(w, uploadReadTimeout)
 
 	file, header, err := r.FormFile("audio")
 	if err != nil {
@@ -263,6 +264,8 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
+	// Body is in hand; transcription itself can take minutes.
+	clearBodyReadDeadline(w)
 
 	ext := filepath.Ext(header.Filename)
 	if ext == "" {

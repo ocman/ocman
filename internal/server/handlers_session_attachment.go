@@ -21,6 +21,7 @@ const maxComposerAttachmentBytes = 100 << 20
 func (s *Server) handleSessionAttachment(w http.ResponseWriter, r *http.Request) {
 	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
 		r.Body = http.MaxBytesReader(w, r.Body, maxComposerAttachmentBytes)
+		setBodyReadDeadline(w, uploadReadTimeout)
 		if err := r.ParseMultipartForm(8 << 20); err != nil {
 			http.Error(w, "failed to read attachment", http.StatusBadRequest)
 			return
@@ -34,6 +35,8 @@ func (s *Server) handleSessionAttachment(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		defer file.Close()
+		// Body is in hand; the rest of the handler talks to the platform.
+		clearBodyReadDeadline(w)
 
 		detail, err := adapter.Session(r.Context(), sessionID, 0, 0)
 		if err != nil {

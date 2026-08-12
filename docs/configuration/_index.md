@@ -17,7 +17,10 @@ Ocman's own state (archived/seen flags, auth secret, favorites, cached projects)
 Startup enforces owner-only permissions (`0700` for the directory and `0600` for the database
 and SQLite sidecars) and fails rather than continuing if existing paths cannot be secured.
 
-The HTTP server limits request-header read time and idle keep-alive connections. Browser
+The HTTP server limits request-header read time and idle keep-alive connections, and bounds how
+long a request *body* may take to arrive (30 s for normal API calls, 5 min for uploads). There is
+deliberately no global read/write timeout, so SSE streams and in-app terminals are unaffected.
+Responses read from upstream services (OpenCode, GitHub/Forgejo) are size-limited. Browser
 responses deny framing and MIME sniffing and use a Content Security Policy. The policy
 intentionally permits inline styles, external/data/blob images, blob workers, and WebSocket
 connections because the current SPA, attachments, service worker, and terminal require them.
