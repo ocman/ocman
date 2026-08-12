@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Fails CI when an HTTP handler in internal/server calls a host-local
-# helper directly instead of going through the hostsvc.Host seam
-# (architecture.md AD-16, rule R-A).
+# Fails CI when an HTTP handler in internal/server, or a tool in
+# internal/mcp, calls a host-local helper directly instead of going
+# through the hostsvc.Host seam (architecture.md AD-16, rule R-A).
 #
 # Directory-scoped host operations (git, worktree, tmux, terminals) must
 # be resolved via s.resolveOwner(w, dir, remoteId) / s.router().ForDir(dir)
@@ -9,6 +9,11 @@
 # (internal/hostsvc/local) is the only place that may call git.*/term.*
 # directly; the server-package tmux launchers live in tmux.go and are
 # wired into the local Host from host.go.
+#
+# internal/mcp is covered too: MCP tools split work into worktrees and
+# cancel sessions, and they get owner-routed adapters injected by the
+# server package (mcp.WorktreeSessionCreator, mcp.GitContextReader,
+# mcp.TmuxTargetKiller) instead of importing git/tmux themselves.
 #
 # This keeps remote support automatic: a new host feature added on the
 # seam works for remotes without the handler knowing. A handler that
@@ -70,16 +75,15 @@ PATTERNS=(
 
 # Files allowed to reference these directly:
 #   tmux.go        — defines the tmux launchers themselves
-#   host.go        — wires server helpers into the local Host
-#   handlers_mcp.go, handlers_project_handle.go — MCP launch path
-#     (per-host MCP, out of v1 remote scope); passes the launcher by value
+#   host.go        — wires server helpers into the local Host, and holds
+#                    the deliberate fail-closed tmux kill for legacy MCP
+#                    child sessions (marked ocman:allow-host-helper)
 EXCLUDES=(
 	"--glob" "!internal/server/*_test.go"
+	"--glob" "!internal/mcp/*_test.go"
 	"--glob" "!internal/server/tmux.go"
 	"--glob" "!internal/server/term.go"
 	"--glob" "!internal/server/host.go"
-	"--glob" "!internal/server/handlers_mcp.go"
-	"--glob" "!internal/server/handlers_project_handle.go"
 )
 
 FOUND=0
@@ -87,13 +91,14 @@ for pattern in "${PATTERNS[@]}"; do
 	matches=$(
 		rg -n --no-messages \
 			--glob 'internal/server/*.go' \
+			--glob 'internal/mcp/*.go' \
 			"${EXCLUDES[@]}" \
 			"$pattern" "$ROOT" || true
 	)
 	if [[ -n "$matches" ]]; then
 		offenders=$(echo "$matches" | grep -v 'ocman:allow-host-helper' || true)
 		if [[ -n "$offenders" ]]; then
-			echo "Host-helper bypass detected (use s.resolveOwner / s.router().ForDir -> hostsvc.Host):" >&2
+			echo "Host-helper bypass detected (route through hostsvc.Host: s.router().ForDir/ForRemote, or an injected owner-routed adapter):" >&2
 			echo "$offenders" >&2
 			FOUND=1
 		fi
@@ -101,7 +106,7 @@ for pattern in "${PATTERNS[@]}"; do
 done
 
 if [[ $FOUND -eq 0 ]]; then
-	echo "check-host-helpers: no naked host-helper calls in server handlers."
+	echo "check-host-helpers: no naked host-helper calls in server handlers or MCP tools."
 fi
 
 exit $FOUND

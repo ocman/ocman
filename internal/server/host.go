@@ -2,11 +2,15 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os/exec"
+	"strings"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/tmux"
 	"github.com/NoUseFreak/ocman/internal/whisper"
 )
@@ -132,4 +136,72 @@ func (s *Server) ensureProjectOpencodePort(ctx context.Context, dir string) (str
 		return "", err
 	}
 	return res.Port(), nil
+}
+
+// hostWorktreeSession creates a worktree and its session on the host that
+// owns the project directory. It is the mcp.WorktreeSessionCreator the
+// SessionLauncher uses, so an MCP split for a remote-owned project
+// creates the worktree on that machine instead of on the hub (AD-16).
+func (s *Server) hostWorktreeSession(ctx context.Context, req internalmcp.WorktreeSessionRequest) (*internalmcp.WorktreeSessionResult, error) {
+	res, err := s.router().ForDir(req.ParentDir).CreateWorktreeSession(ctx, hostsvc.WorktreeSessionRequest{
+		ProjectDir: req.ParentDir,
+		Branch:     req.Branch,
+		NewBranch:  req.NewBranch,
+		BaseRef:    req.BaseRef,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &internalmcp.WorktreeSessionResult{
+		SessionID:    res.SessionID,
+		WorktreePath: res.WorktreePath,
+		Branch:       res.Branch,
+	}, nil
+}
+
+// hostGitContext reads the branch + uncommitted-changes summary for dir
+// from the host that owns it, for MCP prompt enrichment. Both halves are
+// soft: a host that can't answer just yields less context, never an
+// error — but it is always *that* host, never the hub's copy of the path.
+func (s *Server) hostGitContext(ctx context.Context, dir string) (internalmcp.GitContext, error) {
+	host := s.router().ForDir(dir)
+	var out internalmcp.GitContext
+	if info, err := host.GitInfo(ctx, []string{dir}); err == nil {
+		out.Branch = info[dir].Branch
+	}
+	if diff, err := host.GitDiff(ctx, dir, hostsvc.GitDiffOptions{}); err == nil && diff != nil {
+		out.DiffStat = formatDiffStat(diff.Files)
+	}
+	return out, nil
+}
+
+// formatDiffStat renders a `git diff --stat`-shaped summary from the
+// host's structured diff, so the prompt keeps its familiar shape without
+// a second (shell) way to ask for the same data.
+func formatDiffStat(files []git.DiffFile) string {
+	if len(files) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	var additions, deletions int
+	for _, f := range files {
+		fmt.Fprintf(&b, " %s | %d +, %d -\n", f.Path, f.Additions, f.Deletions)
+		additions += f.Additions
+		deletions += f.Deletions
+	}
+	fmt.Fprintf(&b, " %d file(s) changed, %d insertion(s)(+), %d deletion(s)(-)",
+		len(files), additions, deletions)
+	return b.String()
+}
+
+// killHostTmuxTarget kills a legacy child session's tmux target on the
+// host that owns its worktree. hostsvc.Host has no kill-target method, so
+// a remote owner fails closed with a clear error instead of killing a
+// same-named pane on the hub; cancel_session treats that as a soft
+// failure and still marks the child cancelled.
+func (s *Server) killHostTmuxTarget(_ context.Context, dir, target string) error {
+	if host := s.router().ForDir(dir); host.RemoteID() != "" && host.RemoteID() != "local" {
+		return fmt.Errorf("killing a tmux target is not supported for remote-owned sessions (owner %s)", host.RemoteID())
+	}
+	return tmux.KillTarget(target) // ocman:allow-host-helper
 }

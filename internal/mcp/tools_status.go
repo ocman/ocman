@@ -12,8 +12,16 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/tmux"
 )
+
+// TmuxTargetKiller kills a tmux target on the host that owns dir. It is
+// the mcp-side narrowing of a host operation (AD-16): the server package
+// injects an owner-routed adapter, so cancelling a child never kills a
+// pane on the hub for a project owned by another machine.
+//
+// Nil (or an error) makes the kill a no-op: cancel_session still marks
+// the child cancelled, exactly as when tmux itself refuses.
+type TmuxTargetKiller func(ctx context.Context, dir, target string) error
 
 // statusSessionReader is the subset of db.DB needed by the status tools
 // to inspect OpenCode sessions.
@@ -34,6 +42,9 @@ type childSessionDB interface {
 type statusTools struct {
 	stateDB childSessionDB
 	ocDB    statusSessionReader // may be nil when OpenCode DB is unavailable
+	// killTmux tears down a legacy child's tmux target on the host that
+	// owns it. Nil skips the kill entirely.
+	killTmux TmuxTargetKiller
 }
 
 // getSessionStatusTool returns the tool definition for get_session_status.
@@ -203,7 +214,7 @@ func currentSessionResult(s db.Session, selectionMode string) *mcplib.CallToolRe
 }
 
 // handleCancelSession handles the cancel_session tool call.
-func (t *statusTools) handleCancelSession(_ context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+func (t *statusTools) handleCancelSession(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	childID, err := req.RequireString("child_session_id")
 	if err != nil {
 		return mcplib.NewToolResultError("child_session_id is required"), nil
@@ -223,9 +234,12 @@ func (t *statusTools) handleCancelSession(_ context.Context, req mcplib.CallTool
 		return toolResultJSON(result), nil
 	}
 
-	// Kill the tmux window/session if we have a target.
-	if cs.TmuxTarget != "" {
-		if err := tmux.KillTarget(cs.TmuxTarget); err != nil {
+	// Kill the tmux window/session if we have a target. Only legacy
+	// records carry one (worktree children run in-app since #268), and it
+	// is a host operation: route it to the owner of the child's worktree
+	// rather than killing a same-named pane on this machine.
+	if cs.TmuxTarget != "" && t.killTmux != nil {
+		if err := t.killTmux(ctx, cs.WorktreePath, cs.TmuxTarget); err != nil {
 			log.WithFields(log.Fields{
 				"childSessionID": childID,
 				"tmuxTarget":     cs.TmuxTarget,

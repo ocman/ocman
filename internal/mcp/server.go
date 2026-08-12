@@ -6,7 +6,6 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -29,9 +28,19 @@ type Deps struct {
 	// (e.g. "opencode").
 	PlatformID string
 
-	// CreateWorktree is the worktree creation function. Defaults to
-	// git.CreateWorktree when nil.
-	CreateWorktree WorktreeCreator
+	// CreateWorktreeSession creates a worktree plus its session on the
+	// host that owns the project directory. The server package injects
+	// an adapter over the owner-resolved hostsvc.Host (AD-16). Nil makes
+	// worktree splits fail closed instead of running git on the hub.
+	CreateWorktreeSession WorktreeSessionCreator
+
+	// GitContext reads branch + diffstat prompt context from the host
+	// that owns a directory. Nil omits the git enrichment.
+	GitContext GitContextReader
+
+	// KillTmuxTarget kills a legacy child's tmux target on the host that
+	// owns it. Nil skips the kill.
+	KillTmuxTarget TmuxTargetKiller
 
 	// EnsureProjectOpencode guarantees the project's single opencode
 	// instance is running for a directory and returns its port. The
@@ -67,27 +76,15 @@ type Server struct {
 // New constructs a Server from the given dependencies, registers all
 // MCP tools, and wraps the result in a StreamableHTTPServer.
 func New(deps Deps) *Server {
-	// Apply defaults for injectable functions.
-	if deps.CreateWorktree == nil {
-		deps.CreateWorktree = git.CreateWorktree
-	}
-
 	adapter := deps.Platform
 
-	// Build the prompt composer.
-	var composer *PromptComposer
-	if deps.OcDB != nil {
-		composer = NewPromptComposer(deps.OcDB)
-	} else {
-		// Nil DB: composer will return minimal prompts (intent only).
-		composer = NewPromptComposer(&nullSessionReader{})
-	}
+	composer := newComposer(deps)
 
 	// Build the session launcher.
 	launcher := NewSessionLauncher(
 		deps.StateDB,
 		adapter,
-		deps.CreateWorktree,
+		deps.CreateWorktreeSession,
 		deps.EnsureProjectOpencode,
 	).WithChildResults(deps.ChildResults)
 
@@ -116,8 +113,9 @@ func New(deps Deps) *Server {
 		ocDB = deps.OcDB
 	}
 	status := &statusTools{
-		stateDB: deps.StateDB,
-		ocDB:    ocDB,
+		stateDB:  deps.StateDB,
+		ocDB:     ocDB,
+		killTmux: deps.KillTmuxTarget,
 	}
 	addStatusTools(s, status)
 
@@ -151,23 +149,14 @@ func (s *Server) Handler() http.Handler {
 // dependencies. Used by tests that want to register tools into an mcptest
 // server without going through the full HTTP transport.
 func ServerTools(deps Deps) []mcpserver.ServerTool {
-	if deps.CreateWorktree == nil {
-		deps.CreateWorktree = git.CreateWorktree
-	}
-
 	adapter := deps.Platform
 
-	var composer *PromptComposer
-	if deps.OcDB != nil {
-		composer = NewPromptComposer(deps.OcDB)
-	} else {
-		composer = NewPromptComposer(&nullSessionReader{})
-	}
+	composer := newComposer(deps)
 
 	launcher := NewSessionLauncher(
 		deps.StateDB,
 		adapter,
-		deps.CreateWorktree,
+		deps.CreateWorktreeSession,
 		deps.EnsureProjectOpencode,
 	).WithChildResults(deps.ChildResults)
 
@@ -186,8 +175,9 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 		ocDB = deps.OcDB
 	}
 	status := &statusTools{
-		stateDB: deps.StateDB,
-		ocDB:    ocDB,
+		stateDB:  deps.StateDB,
+		ocDB:     ocDB,
+		killTmux: deps.KillTmuxTarget,
 	}
 	comm := &commTools{
 		stateDB:      deps.StateDB,
@@ -209,6 +199,17 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 	}
 	tools = append(tools, workflowServerTools(&workflowTools{svc: deps.WorkflowService})...)
 	return tools
+}
+
+// newComposer builds the prompt composer: the OpenCode DB for session
+// history, and the owner-routed git reader for branch/diffstat context.
+// A nil DB yields minimal prompts (intent only).
+func newComposer(deps Deps) *PromptComposer {
+	var reader sessionReader = &nullSessionReader{}
+	if deps.OcDB != nil {
+		reader = deps.OcDB
+	}
+	return NewPromptComposer(reader, deps.GitContext)
 }
 
 // inheritProvider returns the permission-inheritance dependency for the

@@ -7,7 +7,6 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
@@ -74,9 +73,38 @@ type SessionClient interface {
 // platformAdapter is the internal alias used within the package.
 type platformAdapter = SessionClient
 
-// WorktreeCreator abstracts git.CreateWorktree for testing.
-// Exported so the server package and tests can reference the type.
-type WorktreeCreator func(ctx context.Context, req git.CreateWorktreeRequest) (*git.CreateWorktreeResult, error)
+// WorktreeSessionRequest asks the host that owns ParentDir to create (or
+// reuse) a worktree for Branch and open a session rooted at it.
+type WorktreeSessionRequest struct {
+	// ParentDir is any absolute path inside the project on the owning
+	// host; the host resolves the repo root itself.
+	ParentDir string
+	Branch    string
+	// NewBranch creates Branch off BaseRef instead of checking out an
+	// existing branch.
+	NewBranch bool
+	// BaseRef is the base for a new branch. Empty lets the owning host
+	// pick its default base ref.
+	BaseRef string
+}
+
+// WorktreeSessionResult is what the owning host created.
+type WorktreeSessionResult struct {
+	SessionID    string
+	WorktreePath string
+	Branch       string
+}
+
+// WorktreeSessionCreator creates a worktree *and* its session on the host
+// that owns the request's ParentDir. It is the mcp-side narrowing of
+// hostsvc.Host.CreateWorktreeSession (mirroring ProjectOpencodeEnsurer),
+// so this package never runs git itself: the server package injects an
+// adapter over the owner-resolved Host (Router.ForDir), which for a
+// remote-owned project creates the worktree on that machine (AD-16).
+//
+// Nil makes the worktree split fail closed — better a clear error than a
+// worktree silently created on the wrong machine.
+type WorktreeSessionCreator func(ctx context.Context, req WorktreeSessionRequest) (*WorktreeSessionResult, error)
 
 // ProjectOpencodeEnsurer guarantees the project's single opencode
 // instance is running for the given directory and returns its HTTP port.
@@ -86,8 +114,8 @@ type WorktreeCreator func(ctx context.Context, req git.CreateWorktreeRequest) (*
 // Exported so the server package and tests can reference the type.
 type ProjectOpencodeEnsurer func(ctx context.Context, dir string) (port string, err error)
 
-// worktreeCreator is the internal alias used within the package.
-type worktreeCreator = WorktreeCreator
+// worktreeSessionCreator is the internal alias used within the package.
+type worktreeSessionCreator = WorktreeSessionCreator
 
 // projectOpencodeEnsurer is the internal alias used within the package.
 type projectOpencodeEnsurer = ProjectOpencodeEnsurer
@@ -96,7 +124,7 @@ type projectOpencodeEnsurer = ProjectOpencodeEnsurer
 type SessionLauncher struct {
 	stateDB        childSessionStore
 	platform       platformAdapter
-	createWorktree worktreeCreator
+	createWorktree worktreeSessionCreator
 	ensureOpencode projectOpencodeEnsurer
 	childResults   *ChildResultBroker
 }
@@ -107,15 +135,16 @@ func (l *SessionLauncher) WithChildResults(results *ChildResultBroker) *SessionL
 }
 
 // NewSessionLauncher creates a SessionLauncher with production dependencies.
-// createWorktree and ensureOpencode are injected so tests can substitute
-// fakes without requiring real git/opencode. ensureOpencode makes both
-// same-directory and worktree splits self-heal: it launches the project's
-// single opencode instance when none is running, then Launch creates the
-// session in-app against the returned port (#268).
+// createWorktree and ensureOpencode are owner-routed host adapters
+// injected by the server package (and faked in tests), so no host
+// operation runs on the hub for a remote-owned project. ensureOpencode
+// makes both same-directory and worktree splits self-heal: it launches the
+// project's single opencode instance when none is running, then Launch
+// creates the session in-app against the returned port (#268).
 func NewSessionLauncher(
 	stateDB childSessionStore,
 	platform platformAdapter,
-	createWorktree worktreeCreator,
+	createWorktree worktreeSessionCreator,
 	ensureOpencode projectOpencodeEnsurer,
 ) *SessionLauncher {
 	return &SessionLauncher{
@@ -172,10 +201,19 @@ func (l *SessionLauncher) launchWithPort(ctx context.Context, req LaunchRequest,
 	if err != nil {
 		return "", fmt.Errorf("creating child session: %w", err)
 	}
-	childID := resp.ID
+	return resp.ID, l.AttachChild(ctx, req, resp.ID)
+}
+
+// AttachChild finishes a child launch for an already-created session:
+// it registers the result waiter, applies the requested permission
+// ruleset, sends the composed prompt and persists the child record.
+// Split out so the worktree path — where the *owning host* creates the
+// session (hostsvc.Host.CreateWorktreeSession) — shares one code path
+// with the same-directory path.
+func (l *SessionLauncher) AttachChild(ctx context.Context, req LaunchRequest, childID string) error {
 	if req.ParentSessionID != "" && req.WaitForResult && l.childResults != nil {
 		if !l.childResults.Register(childID) {
-			return "", fmt.Errorf("child session %s already has a result waiter", childID)
+			return fmt.Errorf("child session %s already has a result waiter", childID)
 		}
 	}
 
@@ -241,41 +279,43 @@ func (l *SessionLauncher) launchWithPort(ctx context.Context, req LaunchRequest,
 		}).Warn("mcp: failed to persist child session record")
 	}
 
-	return childID, nil
+	return nil
 }
 
-// LaunchWithWorktree creates a git worktree, ensures the project's single
-// opencode instance is running (rooted at the repo's main checkout), then
-// creates an in-app session rooted at the worktree on that instance's
-// port (#268 — no per-worktree tmux window). It returns the child session
-// ID and the worktree creation result.
+// CreateWorktreeSession asks the host that owns req.ParentDir to create
+// (or reuse) the worktree and open a session rooted at it. The owning
+// host does the whole host-side job — repo-root resolution, `git worktree
+// add`, ensuring the project's single opencode instance, creating the
+// in-app session on it (#268) — so none of it runs on the hub for a
+// remote-owned project. Fails closed when no host adapter was injected.
+func (l *SessionLauncher) CreateWorktreeSession(ctx context.Context, req WorktreeSessionRequest) (*WorktreeSessionResult, error) {
+	if l.createWorktree == nil {
+		return nil, fmt.Errorf("worktree sessions are unavailable: no host adapter wired")
+	}
+	res, err := l.createWorktree(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("creating worktree session: %w", err)
+	}
+	if res == nil || res.SessionID == "" {
+		return nil, fmt.Errorf("creating worktree session: host returned no session")
+	}
+	return res, nil
+}
+
+// LaunchWithWorktree creates the worktree session on the owning host and
+// attaches the child (prompt, permission rules, state.db record). It
+// returns the child session ID and the host's worktree result.
 func (l *SessionLauncher) LaunchWithWorktree(
 	ctx context.Context,
 	req LaunchRequest,
-	wtReq git.CreateWorktreeRequest,
-) (childID string, wtResult *git.CreateWorktreeResult, err error) {
-	// Create (or reuse) the worktree.
-	wtResult, err = l.createWorktree(ctx, wtReq)
+	wtReq WorktreeSessionRequest,
+) (childID string, wtResult *WorktreeSessionResult, err error) {
+	wtResult, err = l.CreateWorktreeSession(ctx, wtReq)
 	if err != nil {
-		return "", nil, fmt.Errorf("creating worktree: %w", err)
+		return "", nil, err
 	}
-
-	req.WorktreePath = wtResult.Path
+	req.WorktreePath = wtResult.WorktreePath
 	req.Branch = wtResult.Branch
-	req.Directory = wtResult.Path
-
-	// Ensure the project's single opencode instance against the repo's
-	// main checkout (NOT the worktree path, whose git top-level differs),
-	// then create the session in-app on that port.
-	port := ""
-	if l.ensureOpencode != nil {
-		p, ensErr := l.ensureOpencode(ctx, wtReq.RepoRoot)
-		if ensErr != nil {
-			return "", wtResult, fmt.Errorf("ensuring project opencode: %w", ensErr)
-		}
-		port = p
-	}
-
-	childID, err = l.launchWithPort(ctx, req, port)
-	return childID, wtResult, err
+	req.Directory = wtResult.WorktreePath
+	return wtResult.SessionID, wtResult, l.AttachChild(ctx, req, wtResult.SessionID)
 }

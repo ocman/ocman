@@ -116,9 +116,16 @@ func (s *scriptedChildStore) CompareAndSetChildResultDelivery(id, from, to strin
 // platform adapter, mirroring the production wiring.
 func newSplitTools(t *testing.T, reader sessionReader, platform platformAdapter) *splitTools {
 	t.Helper()
-	launcher := NewSessionLauncher(openTestStateDB(t), platform, noopWorktreeCreator, noopEnsurer)
+	return newSplitToolsWithCreator(t, reader, platform, noopWorktreeCreator)
+}
+
+// newSplitToolsWithCreator is newSplitTools with an explicit stand-in for
+// the owning host's CreateWorktreeSession.
+func newSplitToolsWithCreator(t *testing.T, reader sessionReader, platform platformAdapter, creator WorktreeSessionCreator) *splitTools {
+	t.Helper()
+	launcher := NewSessionLauncher(openTestStateDB(t), platform, creator, noopEnsurer)
 	return &splitTools{
-		composer: NewPromptComposer(reader).withGitRunner(noopGit),
+		composer: NewPromptComposer(reader, noopGit),
 		launcher: launcher,
 		platform: "opencode",
 	}
@@ -399,6 +406,7 @@ func TestLaunchWorktree_ErrorPaths(t *testing.T) {
 		name     string
 		reader   sessionReader
 		platform *fakePlatformAdapter
+		creator  WorktreeSessionCreator
 		want     string
 	}{
 		{
@@ -407,15 +415,19 @@ func TestLaunchWorktree_ErrorPaths(t *testing.T) {
 			want:   "session not found: vanished",
 		},
 		{
-			name:   "repo root cannot be resolved",
-			reader: &fakeSessionReader{session: &db.Session{ID: "p1", Directory: ""}},
-			want:   "resolving repo root:",
+			name:   "no host adapter is wired",
+			reader: &fakeSessionReader{session: &db.Session{ID: "p1", Directory: repoRoot}},
+			// creator left nil: must fail closed, not fall back to
+			// creating a worktree on this machine.
+			want: "worktree sessions are unavailable",
 		},
 		{
-			name:     "launching worktree session fails",
-			reader:   &fakeSessionReader{session: &db.Session{ID: "p1", Directory: repoRoot}},
-			platform: &fakePlatformAdapter{createSessionErr: errors.New("unreachable")},
-			want:     "launching worktree session:",
+			name:   "the owning host refuses",
+			reader: &fakeSessionReader{session: &db.Session{ID: "p1", Directory: repoRoot}},
+			creator: func(context.Context, WorktreeSessionRequest) (*WorktreeSessionResult, error) {
+				return nil, errors.New("branch is checked out elsewhere")
+			},
+			want: "launching worktree session:",
 		},
 	}
 	for _, tt := range tests {
@@ -424,7 +436,7 @@ func TestLaunchWorktree_ErrorPaths(t *testing.T) {
 			if platform == nil {
 				platform = &fakePlatformAdapter{}
 			}
-			tools := newSplitTools(t, tt.reader, platform)
+			tools := newSplitToolsWithCreator(t, tt.reader, platform, tt.creator)
 			res, err := tools.launchWorktree(context.Background(),
 				splitToolReq(map[string]any{"branch": "feat-x"}),
 				"p1", "do a thing", sessionSettings{})

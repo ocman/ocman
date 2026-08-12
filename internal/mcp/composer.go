@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/gitexec"
 )
 
 const (
@@ -63,34 +62,36 @@ type sessionReader interface {
 	GetSessionMessages(sessionID string) ([]db.Message, error)
 }
 
-// gitRunner abstracts the git CLI calls used by PromptComposer so tests
-// can inject a fake without requiring a real git repository.
-type gitRunner func(ctx context.Context, dir string, args ...string) (string, error)
-
-// defaultGitRunner runs git in the given directory and returns stdout.
-func defaultGitRunner(ctx context.Context, dir string, args ...string) (string, error) {
-	return gitexec.Output(ctx, dir, args...)
+// GitContext is the git-derived prompt enrichment for one directory:
+// the current branch and a `diff --stat`-style summary of uncommitted
+// changes. Both fields are optional.
+type GitContext struct {
+	Branch   string
+	DiffStat string
 }
+
+// GitContextReader returns the GitContext for dir *on the host that owns
+// dir*. It is the mcp-side narrowing of hostsvc.Host's GitInfo/GitDiff
+// (mirroring ProjectOpencodeEnsurer) so this package never shells out to
+// git itself: the server package injects an adapter over the
+// owner-resolved Host (Router.ForDir), which for a remote-owned project
+// reads the remote's working tree rather than the hub's (AD-16).
+//
+// A nil reader means "no owner-scoped read available"; the composer then
+// omits the git enrichment instead of reading this machine.
+type GitContextReader func(ctx context.Context, dir string) (GitContext, error)
 
 // PromptComposer assembles an enriched prompt for a child session from
 // the caller's intent and automatically extracted context sources.
 type PromptComposer struct {
-	db     sessionReader
-	runGit gitRunner
+	db         sessionReader
+	gitContext GitContextReader
 }
 
-// NewPromptComposer creates a PromptComposer backed by the given DB.
-func NewPromptComposer(database sessionReader) *PromptComposer {
-	return &PromptComposer{
-		db:     database,
-		runGit: defaultGitRunner,
-	}
-}
-
-// withGitRunner returns a copy of the composer with a custom git runner.
-// Used in tests to inject a fake without a real git repository.
-func (c *PromptComposer) withGitRunner(r gitRunner) *PromptComposer {
-	return &PromptComposer{db: c.db, runGit: r}
+// NewPromptComposer creates a PromptComposer backed by the given DB and
+// the owner-routed git reader. A nil reader disables the git sections.
+func NewPromptComposer(database sessionReader, gitContext GitContextReader) *PromptComposer {
+	return &PromptComposer{db: database, gitContext: gitContext}
 }
 
 // Compose assembles the enriched prompt. It collects each enabled context
@@ -129,17 +130,18 @@ func (c *PromptComposer) Compose(ctx context.Context, sessionID, intent string, 
 		projectMeta = buildProjectMeta(&s)
 	}
 
-	var gitBranch string
-	if opts.GitBranch && dir != "" {
-		if branch, err := c.runGit(ctx, dir, "branch", "--show-current"); err == nil {
-			gitBranch = branch
-		}
-	}
-
-	var gitDiffStat string
-	if opts.GitDiffStat && dir != "" {
-		if diff, err := c.runGit(ctx, dir, "diff", "--stat"); err == nil {
-			gitDiffStat = diff
+	// Git enrichment comes from the host that owns dir. Without an
+	// owner-scoped reader (or on any error) both sections are omitted —
+	// never filled in by reading this machine's copy of the path.
+	var gitBranch, gitDiffStat string
+	if (opts.GitBranch || opts.GitDiffStat) && dir != "" && c.gitContext != nil {
+		if gc, err := c.gitContext(ctx, dir); err == nil {
+			if opts.GitBranch {
+				gitBranch = gc.Branch
+			}
+			if opts.GitDiffStat {
+				gitDiffStat = gc.DiffStat
+			}
 		}
 	}
 

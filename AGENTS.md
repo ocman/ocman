@@ -479,6 +479,16 @@ Implementation notes:
 - `PromptComposer` enriches caller intent with parent-session context
   (last 10 messages, git branch, `git diff --stat`); `SessionLauncher`
   creates the child via the `Platform` interface.
+- Host operations obey AD-16: `internal/mcp` imports neither `git` nor
+  `tmux`. The server injects owner-routed adapters over
+  `hostsvc.Router.ForDir` — `WorktreeSessionCreator`
+  (`Host.CreateWorktreeSession`, so a worktree split runs on the machine
+  that owns the project), `GitContextReader` (`GitInfo` + `GitDiff` for
+  the branch/diffstat prompt sections, omitted when the owner can't
+  answer) and `TmuxTargetKiller`. `check-host-helpers.sh` covers
+  `internal/mcp` alongside `internal/server`. Killing a legacy child's
+  tmux target has no `Host` method, so it **fails closed** for a
+  remote-owned session rather than killing a same-named pane on the hub.
 - Child session records live in `state.db`'s `child_sessions` table
   (migration v9); a background watcher polls every 5 s and returns the result
   through the waiting `new_session` MCP call. Migration v34 persists delivery

@@ -63,6 +63,8 @@ flowchart TD
     Workflows --> Registry
     Workflows --> Router
     Server --> MCP[internal/mcp<br/>MCP tools]
+    MCP --> Registry
+    MCP --> Router
     Registry --> OC[platforms/opencode<br/>adapter]
     Registry --> RP[remote.Platform<br/>gRPC-backed]
     OC --> DB[internal/db<br/>read-only queries]
@@ -155,7 +157,10 @@ flowchart TD
   runtime scheduler reads them.
 - **internal/mcp** — prompt composer + session launcher + tool
   handlers; all side effects go through the same `Platform` interface
-  the HTTP layer uses.
+  the HTTP layer uses, and every *host* operation (worktree creation,
+  git prompt context, tmux kill) through owner-routed adapters the
+  server injects over `hostsvc.Router.ForDir` — the package imports
+  neither `git` nor `tmux`.
 - **internal/opencodeskills** — extracts binary-embedded ocman skills into
   XDG data and installs only ocman-owned symlinks for OpenCode discovery.
 - **internal/state** — the only writable store; migrations, settings,

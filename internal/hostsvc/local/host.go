@@ -229,11 +229,19 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 	if err != nil {
 		return nil, err
 	}
+	// A caller that can't resolve a base ref itself (the MCP split path,
+	// which must not run git off-host) leaves it empty; resolve the
+	// repo's default here rather than silently branching off whatever
+	// HEAD the main checkout happens to be on.
+	baseRef := req.BaseRef
+	if req.NewBranch && baseRef == "" {
+		baseRef = git.ResolveBaseRef(ctx, repoRoot)
+	}
 	res, err := git.CreateWorktree(ctx, git.CreateWorktreeRequest{
 		RepoRoot:  repoRoot,
 		Branch:    req.Branch,
 		NewBranch: req.NewBranch,
-		BaseRef:   req.BaseRef,
+		BaseRef:   baseRef,
 	})
 	if err != nil {
 		return nil, err

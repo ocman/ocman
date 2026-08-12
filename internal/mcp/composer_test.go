@@ -32,22 +32,16 @@ func makeMsg(role, text string) db.Message {
 	return db.Message{ID: "m1", SessionID: "s1", Data: json.RawMessage(data)}
 }
 
-// noopGit is a gitRunner that always returns empty strings.
-func noopGit(_ context.Context, _ string, _ ...string) (string, error) {
-	return "", nil
+// noopGit is a GitContextReader that reports no git context.
+func noopGit(_ context.Context, _ string) (GitContext, error) {
+	return GitContext{}, nil
 }
 
-// fakeGit returns a gitRunner that returns predefined values for
-// specific subcommands.
-func fakeGit(branch, diffStat string) gitRunner {
-	return func(_ context.Context, _ string, args ...string) (string, error) {
-		if len(args) >= 1 && args[0] == "branch" {
-			return branch, nil
-		}
-		if len(args) >= 1 && args[0] == "diff" {
-			return diffStat, nil
-		}
-		return "", nil
+// fakeGit returns a GitContextReader that reports fixed values, as the
+// owning host would.
+func fakeGit(branch, diffStat string) GitContextReader {
+	return func(_ context.Context, _ string) (GitContext, error) {
+		return GitContext{Branch: branch, DiffStat: diffStat}, nil
 	}
 }
 
@@ -55,7 +49,7 @@ func TestCompose_ContainsIntent(t *testing.T) {
 	reader := &fakeSessionReader{
 		session: &db.Session{ID: "s1", Directory: "/repo"},
 	}
-	c := NewPromptComposer(reader).withGitRunner(noopGit)
+	c := NewPromptComposer(reader, noopGit)
 
 	prompt, err := c.Compose(context.Background(), "s1", "fix the linting issue", DefaultContextOptions())
 	if err != nil {
@@ -76,7 +70,7 @@ func TestCompose_ProjectMeta(t *testing.T) {
 	reader := &fakeSessionReader{
 		session: &db.Session{ID: "s1", Directory: "/home/user/repo", Title: "My Feature"},
 	}
-	c := NewPromptComposer(reader).withGitRunner(noopGit)
+	c := NewPromptComposer(reader, noopGit)
 
 	prompt, _ := c.Compose(context.Background(), "s1", "intent", DefaultContextOptions())
 	if !strings.Contains(prompt, "/home/user/repo") {
@@ -91,7 +85,7 @@ func TestCompose_GitBranchAndDiff(t *testing.T) {
 	reader := &fakeSessionReader{
 		session: &db.Session{ID: "s1", Directory: "/repo"},
 	}
-	c := NewPromptComposer(reader).withGitRunner(fakeGit("feature/my-branch", " main.go | 5 +++++"))
+	c := NewPromptComposer(reader, fakeGit("feature/my-branch", " main.go | 5 +++++"))
 
 	prompt, _ := c.Compose(context.Background(), "s1", "intent", DefaultContextOptions())
 	if !strings.Contains(prompt, "feature/my-branch") {
@@ -109,11 +103,11 @@ func TestCompose_DirOverride(t *testing.T) {
 	override := "/repo/.worktrees/x"
 
 	var gitDirs []string
-	runner := func(_ context.Context, dir string, _ ...string) (string, error) {
+	runner := func(_ context.Context, dir string) (GitContext, error) {
 		gitDirs = append(gitDirs, dir)
-		return "", nil
+		return GitContext{}, nil
 	}
-	c := NewPromptComposer(reader).withGitRunner(runner)
+	c := NewPromptComposer(reader, GitContextReader(runner))
 
 	opts := DefaultContextOptions()
 	opts.DirOverride = override
@@ -143,7 +137,7 @@ func TestCompose_RecentMessages(t *testing.T) {
 			makeMsg("assistant", "I will fix the linting errors now"),
 		},
 	}
-	c := NewPromptComposer(reader).withGitRunner(noopGit)
+	c := NewPromptComposer(reader, noopGit)
 
 	prompt, _ := c.Compose(context.Background(), "s1", "intent", DefaultContextOptions())
 	if !strings.Contains(prompt, "fix the linting errors") {
@@ -161,7 +155,7 @@ func TestCompose_DisabledContextOptions(t *testing.T) {
 			makeMsg("user", "some message"),
 		},
 	}
-	c := NewPromptComposer(reader).withGitRunner(fakeGit("main", "file.go | 1 +"))
+	c := NewPromptComposer(reader, fakeGit("main", "file.go | 1 +"))
 
 	opts := ContextOptions{
 		RecentMessages: false,
@@ -202,7 +196,7 @@ func TestCompose_CharacterCap(t *testing.T) {
 		session:  &db.Session{ID: "s1", Directory: "/repo"},
 		messages: msgs,
 	}
-	c := NewPromptComposer(reader).withGitRunner(noopGit)
+	c := NewPromptComposer(reader, noopGit)
 
 	opts := DefaultContextOptions()
 	opts.MaxChars = 500
@@ -220,7 +214,7 @@ func TestCompose_MissingSession(t *testing.T) {
 		session: nil,
 		sessErr: errors.New("session not found"),
 	}
-	c := NewPromptComposer(reader).withGitRunner(noopGit)
+	c := NewPromptComposer(reader, noopGit)
 
 	prompt, err := c.Compose(context.Background(), "s1", "my intent", DefaultContextOptions())
 	if err != nil {
@@ -303,8 +297,8 @@ func TestParentModel(t *testing.T) {
 			name: "latest wins, skips unmarshalable and model-less rows",
 			st: &splitTools{composer: &PromptComposer{db: &fakeSessionReader{messages: []db.Message{
 				msg(`{"providerID":"openai","modelID":"gpt-5"}`),
-				msg(`{"role":"user"}`),  // no model -> skip
-				msg(`not json`),         // unmarshal error -> skip
+				msg(`{"role":"user"}`),                                         // no model -> skip
+				msg(`not json`),                                                // unmarshal error -> skip
 				msg(`{"model":{"providerID":"anthropic","modelID":"claude"}}`), // nested wins (latest)
 			}}}},
 			sid:  "s1",

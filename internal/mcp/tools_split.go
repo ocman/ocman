@@ -13,7 +13,6 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/permissions"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -468,25 +467,29 @@ func (t *splitTools) launchWorktree(ctx context.Context, req mcplib.CallToolRequ
 
 	opts := parseContextOptions(req)
 
-	// Look up the parent session's directory to find the repo root.
+	// Look up the parent session's directory: it identifies the project
+	// and, through the router, the host that owns it.
 	session, err := t.composer.db.GetSession(sessionID)
 	if err != nil {
 		return mcplib.NewToolResultError(fmt.Sprintf("session not found: %v", err)), nil
 	}
 
-	repoRoot, err := git.ResolveRepoRoot(ctx, session.Directory)
+	// The owning host resolves the repo root, creates the worktree and
+	// opens the session on the project's opencode instance. An empty
+	// base_ref lets it pick its own default (AD-16: no local git here).
+	wtResult, err := t.launcher.CreateWorktreeSession(ctx, WorktreeSessionRequest{
+		ParentDir: session.Directory,
+		Branch:    branch,
+		NewBranch: true,
+		BaseRef:   baseRef,
+	})
 	if err != nil {
-		return mcplib.NewToolResultError(fmt.Sprintf("resolving repo root: %v", err)), nil
+		return mcplib.NewToolResultError(fmt.Sprintf("launching worktree session: %v", err)), nil
 	}
 
-	// If no base_ref provided, resolve the default.
-	if baseRef == "" {
-		baseRef = git.ResolveBaseRef(ctx, repoRoot)
-	}
-
-	// Point the prompt at the worktree dir that's about to be created, not
-	// the parent checkout.
-	opts.DirOverride = git.WorktreePathFor(repoRoot, branch)
+	// Point the prompt at the worktree the host actually created, not the
+	// parent checkout.
+	opts.DirOverride = wtResult.WorktreePath
 
 	// Compose the enriched prompt.
 	prompt, err := t.composer.Compose(ctx, sessionID, intent, opts)
@@ -497,33 +500,27 @@ func (t *splitTools) launchWorktree(ctx context.Context, req mcplib.CallToolRequ
 	// Inherit the parent's always-allow permissions (issue #101).
 	inherited, inheritedCount, inheritErr := t.inheritedRules(sessionID)
 
-	childID, wtResult, err := t.launcher.LaunchWithWorktree(
-		ctx,
-		LaunchRequest{
-			ParentSessionID: sessionID,
-			Platform:        t.platform,
-			Intent:          intent,
-			ComposedPrompt:  prompt,
-			Model:           settings.Model,
-			Agent:           settings.Agent,
-			Reasoning:       settings.Reasoning,
-			PermissionRules: mergeInheritedRules(settings.PermissionRules, inherited),
-			WaitForResult:   settings.WaitForResult,
-		},
-		git.CreateWorktreeRequest{
-			RepoRoot:  repoRoot,
-			Branch:    branch,
-			NewBranch: true,
-			BaseRef:   baseRef,
-		},
-	)
-	if err != nil {
+	childID := wtResult.SessionID
+	if err := t.launcher.AttachChild(ctx, LaunchRequest{
+		ParentSessionID: sessionID,
+		Platform:        t.platform,
+		Directory:       wtResult.WorktreePath,
+		WorktreePath:    wtResult.WorktreePath,
+		Branch:          wtResult.Branch,
+		Intent:          intent,
+		ComposedPrompt:  prompt,
+		Model:           settings.Model,
+		Agent:           settings.Agent,
+		Reasoning:       settings.Reasoning,
+		PermissionRules: mergeInheritedRules(settings.PermissionRules, inherited),
+		WaitForResult:   settings.WaitForResult,
+	}, childID); err != nil {
 		return mcplib.NewToolResultError(fmt.Sprintf("launching worktree session: %v", err)), nil
 	}
 
 	result := map[string]interface{}{
 		"child_session_id": childID,
-		"worktree_path":    wtResult.Path,
+		"worktree_path":    wtResult.WorktreePath,
 		"branch":           wtResult.Branch,
 		"status":           "starting",
 		"intent":           intent,

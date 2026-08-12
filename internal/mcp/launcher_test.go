@@ -8,7 +8,6 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
@@ -67,14 +66,21 @@ func (f *fakePlatformAdapter) SendMessage(_ context.Context, req platforms.SendM
 	return f.sendMessageErr
 }
 
-// noopWorktreeCreator is a worktreeCreator that always succeeds.
-func noopWorktreeCreator(_ context.Context, req git.CreateWorktreeRequest) (*git.CreateWorktreeResult, error) {
-	return &git.CreateWorktreeResult{
-		Path:   "/tmp/worktrees/repo/" + req.Branch,
-		Branch: req.Branch,
-		Reused: false,
-	}, nil
+// hostWorktreeCreator fakes the owning host's CreateWorktreeSession: it
+// creates both the worktree and the session rooted at it, exactly as
+// hostsvc.Host does on the machine that owns the project.
+func hostWorktreeCreator(sessionID string) WorktreeSessionCreator {
+	return func(_ context.Context, req WorktreeSessionRequest) (*WorktreeSessionResult, error) {
+		return &WorktreeSessionResult{
+			SessionID:    sessionID,
+			WorktreePath: "/tmp/worktrees/repo/" + req.Branch,
+			Branch:       req.Branch,
+		}, nil
+	}
 }
+
+// noopWorktreeCreator is a WorktreeSessionCreator that always succeeds.
+var noopWorktreeCreator = hostWorktreeCreator("child-wt-host")
 
 // noopEnsurer is a ProjectOpencodeEnsurer that always returns a port
 // (simulates the project instance already running / launched).
@@ -286,9 +292,9 @@ func TestLaunch_SendMessageError_DoesNotFail(t *testing.T) {
 
 func TestLaunchWithWorktree_Success(t *testing.T) {
 	db := openTestStateDB(t)
-	platform := &fakePlatformAdapter{createSessionID: "child-wt-1"}
+	platform := &fakePlatformAdapter{}
 
-	launcher := NewSessionLauncher(db, platform, noopWorktreeCreator, noopEnsurer)
+	launcher := NewSessionLauncher(db, platform, hostWorktreeCreator("child-wt-1"), noopEnsurer)
 
 	childID, wtResult, err := launcher.LaunchWithWorktree(
 		context.Background(),
@@ -298,8 +304,8 @@ func TestLaunchWithWorktree_Success(t *testing.T) {
 			Intent:          "fix lint in worktree",
 			ComposedPrompt:  "## Task\nfix lint\n",
 		},
-		git.CreateWorktreeRequest{
-			RepoRoot:  "/repo",
+		WorktreeSessionRequest{
+			ParentDir: "/repo",
 			Branch:    "fix-lint",
 			NewBranch: true,
 			BaseRef:   "main",
@@ -332,38 +338,76 @@ func TestLaunchWithWorktree_Success(t *testing.T) {
 	}
 }
 
-// TestLaunchWithWorktree_EnsuresProjectInstance proves LaunchWithWorktree
-// ensures the project's single opencode instance against the repo root
-// (not the worktree path) and threads that port into CreateSession.
-func TestLaunchWithWorktree_EnsuresProjectInstance(t *testing.T) {
+// TestLaunchWithWorktree_DelegatesEverythingToTheOwningHost pins AD-16:
+// the worktree, the project's opencode instance and the session itself
+// are all created by the owning host in one call, so the launcher must
+// not ensure an instance or create a session on the hub. (The host-side
+// behaviour — ensure against the repo root, session rooted at the
+// worktree — is covered by internal/hostsvc/local's host tests.)
+func TestLaunchWithWorktree_DelegatesEverythingToTheOwningHost(t *testing.T) {
 	db := openTestStateDB(t)
-	platform := &fakePlatformAdapter{createSessionID: "child-wt-2"}
+	platform := &fakePlatformAdapter{createSessionID: "hub-created-session"}
 
-	var ensuredDir string
-	ensurer := func(_ context.Context, dir string) (string, error) {
-		ensuredDir = dir
+	ensureCalls := 0
+	ensurer := func(_ context.Context, _ string) (string, error) {
+		ensureCalls++
 		return "9090", nil
 	}
-	launcher := NewSessionLauncher(db, platform, noopWorktreeCreator, ensurer)
+	var gotReq WorktreeSessionRequest
+	creator := func(_ context.Context, req WorktreeSessionRequest) (*WorktreeSessionResult, error) {
+		gotReq = req
+		return &WorktreeSessionResult{
+			SessionID:    "host-created-session",
+			WorktreePath: "/repo/.worktrees/repo/fix",
+			Branch:       "fix",
+		}, nil
+	}
+	launcher := NewSessionLauncher(db, platform, creator, ensurer)
 
-	_, wtResult, err := launcher.LaunchWithWorktree(
+	childID, wtResult, err := launcher.LaunchWithWorktree(
 		context.Background(),
 		LaunchRequest{Platform: "opencode", ComposedPrompt: "go"},
-		git.CreateWorktreeRequest{RepoRoot: "/repo", Branch: "fix", NewBranch: true, BaseRef: "main"},
+		WorktreeSessionRequest{ParentDir: "/repo", Branch: "fix", NewBranch: true, BaseRef: "main"},
 	)
 	if err != nil {
 		t.Fatalf("LaunchWithWorktree: %v", err)
 	}
-	// Ensured against the repo root, not the worktree path.
-	if ensuredDir != "/repo" {
-		t.Errorf("ensured dir = %q; want /repo (repo root)", ensuredDir)
+	if gotReq.ParentDir != "/repo" || gotReq.Branch != "fix" || !gotReq.NewBranch || gotReq.BaseRef != "main" {
+		t.Errorf("host request = %+v; want the caller's worktree request verbatim", gotReq)
 	}
-	// The session is created rooted at the worktree path on the ensured port.
-	if platform.createReq.Directory != wtResult.Path {
-		t.Errorf("CreateSession dir = %q; want worktree %q", platform.createReq.Directory, wtResult.Path)
+	if childID != "host-created-session" || wtResult.WorktreePath != "/repo/.worktrees/repo/fix" {
+		t.Errorf("child = %q at %q; want the host's session/worktree", childID, wtResult.WorktreePath)
 	}
-	if platform.createReq.Port != "9090" {
-		t.Errorf("CreateSession port = %q; want ensured 9090", platform.createReq.Port)
+	if ensureCalls != 0 {
+		t.Errorf("ensureOpencode called %d times; the owning host ensures its own instance", ensureCalls)
+	}
+	if platform.createReq.Directory != "" {
+		t.Errorf("CreateSession ran on the hub for %q; the owning host creates the session", platform.createReq.Directory)
+	}
+	// The prompt still goes to the host-created session.
+	if len(platform.sentMessages) != 1 || platform.sentMessages[0].SessionID != "host-created-session" {
+		t.Errorf("prompt not sent to the host-created session: %+v", platform.sentMessages)
+	}
+}
+
+// TestLaunchWithWorktree_FailsClosedWithoutHostAdapter proves the split
+// refuses rather than falling back to a local git worktree when no
+// owner-routed host adapter is wired.
+func TestLaunchWithWorktree_FailsClosedWithoutHostAdapter(t *testing.T) {
+	db := openTestStateDB(t)
+	platform := &fakePlatformAdapter{}
+	launcher := NewSessionLauncher(db, platform, nil, noopEnsurer)
+
+	_, _, err := launcher.LaunchWithWorktree(
+		context.Background(),
+		LaunchRequest{Platform: "opencode"},
+		WorktreeSessionRequest{ParentDir: "/repo", Branch: "fix"},
+	)
+	if err == nil {
+		t.Fatal("expected a failure when no host adapter is wired")
+	}
+	if platform.createReq.Directory != "" {
+		t.Errorf("created a session anyway for %q", platform.createReq.Directory)
 	}
 }
 
@@ -444,7 +488,7 @@ func TestLaunchWithWorktree_WorktreeCreateError(t *testing.T) {
 	db := openTestStateDB(t)
 	platform := &fakePlatformAdapter{}
 
-	failingCreator := func(_ context.Context, _ git.CreateWorktreeRequest) (*git.CreateWorktreeResult, error) {
+	failingCreator := func(_ context.Context, _ WorktreeSessionRequest) (*WorktreeSessionResult, error) {
 		return nil, errors.New("branch already checked out")
 	}
 
@@ -453,7 +497,7 @@ func TestLaunchWithWorktree_WorktreeCreateError(t *testing.T) {
 	_, _, err := launcher.LaunchWithWorktree(
 		context.Background(),
 		LaunchRequest{ParentSessionID: "parent-1", Platform: "opencode"},
-		git.CreateWorktreeRequest{RepoRoot: "/repo", Branch: "fix-lint"},
+		WorktreeSessionRequest{ParentDir: "/repo", Branch: "fix-lint"},
 	)
 	if err == nil {
 		t.Fatal("expected error when worktree creation fails")

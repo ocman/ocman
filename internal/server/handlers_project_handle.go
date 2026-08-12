@@ -150,7 +150,9 @@ func (s *Server) handleProjectHandleWorktree(
 		// "issue/<n>-<slug-of-title>" if we have a title.
 		branch = issueBranchName(req.Number, vars["title"])
 		newBranch = true
-		baseRef = git.ResolveBaseRef(r.Context(), repoRoot)
+		// baseRef stays empty on purpose: the host that owns the project
+		// resolves the repo's default base ref when creating the worktree
+		// (AD-16), so this never runs git on the hub for a remote project.
 
 	case "pr":
 		// Decide same-repo vs cross-fork. The PR row carries the
@@ -203,8 +205,8 @@ func (s *Server) handleProjectHandleWorktree(
 			Intent:         req.intentOrDefault(),
 			ComposedPrompt: prompt,
 		},
-		git.CreateWorktreeRequest{
-			RepoRoot:  repoRoot,
+		internalmcp.WorktreeSessionRequest{
+			ParentDir: repoRoot,
 			Branch:    branch,
 			NewBranch: newBranch,
 			BaseRef:   baseRef,
@@ -218,7 +220,7 @@ func (s *Server) handleProjectHandleWorktree(
 	writeJSON(w, map[string]interface{}{
 		"childSessionId": childID,
 		"mode":           "worktree",
-		"worktreePath":   wtResult.Path,
+		"worktreePath":   wtResult.WorktreePath,
 		"branch":         wtResult.Branch,
 	})
 }
@@ -406,7 +408,7 @@ func (s *Server) newSessionLauncher() *internalmcp.SessionLauncher {
 	return internalmcp.NewSessionLauncher(
 		s.stateDB,
 		s.sessions.Client("opencode"),
-		git.CreateWorktree,
+		internalmcp.WorktreeSessionCreator(s.hostWorktreeSession),
 		internalmcp.ProjectOpencodeEnsurer(s.ensureProjectOpencodePort),
 	)
 }

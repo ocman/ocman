@@ -20,7 +20,6 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/gitexec"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -163,6 +162,9 @@ type fakePlatformForTools struct {
 	sentMessages     []platforms.SendMessageRequest
 	permReqs         []platforms.SetPermissionRulesRequest
 	liveRules        []platforms.PermissionRule
+	// createCalls counts CreateSession calls, so a test can assert a
+	// session was created by the owning host rather than here.
+	createCalls int
 }
 
 func (f *fakePlatformForTools) ID() platforms.ID { return "opencode" }
@@ -177,6 +179,7 @@ func (f *fakePlatformForTools) PermissionRules(_ context.Context, _ string) ([]p
 }
 
 func (f *fakePlatformForTools) CreateSession(_ context.Context, _ platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+	f.createCalls++
 	if f.createSessionErr != nil {
 		return nil, f.createSessionErr
 	}
@@ -292,10 +295,17 @@ func buildTestMCPServerWithOpenCodeDB(t *testing.T, stateDB *state.DB, platform 
 func buildTestMCPServerWithResults(t *testing.T, stateDB *state.DB, platform *fakePlatformForTools, ocDB *db.DB, results *internalmcp.ChildResultBroker) *mcptest.Server {
 	t.Helper()
 
-	fakeWT := internalmcp.WorktreeCreator(func(_ context.Context, req git.CreateWorktreeRequest) (*git.CreateWorktreeResult, error) {
-		return &git.CreateWorktreeResult{
-			Path:   "/tmp/worktrees/repo/" + req.Branch,
-			Branch: req.Branch,
+	// Stands in for the owning host: it creates the worktree *and* the
+	// session rooted at it, like hostsvc.Host.CreateWorktreeSession.
+	fakeWT := internalmcp.WorktreeSessionCreator(func(_ context.Context, req internalmcp.WorktreeSessionRequest) (*internalmcp.WorktreeSessionResult, error) {
+		id := platform.createSessionID
+		if id == "" {
+			id = "child-tool-test"
+		}
+		return &internalmcp.WorktreeSessionResult{
+			SessionID:    id,
+			WorktreePath: "/tmp/worktrees/repo/" + req.Branch,
+			Branch:       req.Branch,
 		}, nil
 	})
 	fakeEnsure := internalmcp.ProjectOpencodeEnsurer(func(_ context.Context, _ string) (string, error) {
@@ -307,9 +317,12 @@ func buildTestMCPServerWithResults(t *testing.T, stateDB *state.DB, platform *fa
 		StateDB:               stateDB,
 		Platform:              platform,
 		PlatformID:            "opencode",
-		CreateWorktree:        fakeWT,
+		CreateWorktreeSession: fakeWT,
 		EnsureProjectOpencode: fakeEnsure,
 		ChildResults:          results,
+		GitContext: internalmcp.GitContextReader(func(_ context.Context, _ string) (internalmcp.GitContext, error) {
+			return internalmcp.GitContext{}, nil
+		}),
 	}
 
 	tools := internalmcp.ServerTools(deps)
