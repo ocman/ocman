@@ -118,8 +118,12 @@ one `remotePlatform` adapter (compound platform id `r-<remoteID>:opencode`,
 AD-2) and one `remoteHost` per connected remote. Two adapter seams keep
 this transparent: session-scoped work goes through `platforms.Platform` +
 `Registry`, directory-scoped work (git/worktree/tmux/projects) through the
-new `hostsvc.Host` + `hostsvc.Router` (`ForRemote`/`ForDir`) — handlers
-resolve an owner and delegate, so the HTTP layer is unchanged. Host-local
+new `hostsvc.Host` + `hostsvc.Router` (`LookupRemote`/`ForDir`) — handlers
+resolve an owner and delegate, so the HTTP layer is unchanged. An
+explicitly client-supplied `remoteId` is always resolved through
+`Server.resolveOwner`, which fails closed with 409 when that remote is not
+registered; only *inferred* ownership (`ForDir`) may degrade to the hub.
+Host-local
 actions (tmux, worktrees) execute on the owning host. The browser still
 talks REST/SSE to the hub only; the hub re-emits remote gRPC event streams
 as SSE. New-session creation is machine-aware via

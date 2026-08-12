@@ -5,10 +5,11 @@ import "sync"
 // Router resolves the owning Host for a directory or an explicit remote
 // owner. It is the directory analogue of Registry.PlatformForSession.
 //
-// ForRemote is the preferred path whenever the caller already knows the
-// owner (the session list, project inventory, and machine picker all do).
-// ForDir is a convenience fallback for local/legacy calls; in v1 (and
-// for any path physically on the hub) it resolves to the local Host.
+// LookupRemote is the preferred path whenever the caller already knows
+// the owner (the session list, project inventory, and machine picker all
+// do); it fails closed on an unknown owner. ForDir is the fallback for
+// local/legacy calls; in v1 (and for any path physically on the hub) it
+// resolves to the local Host.
 // Phase 8 upgrades ForDir to consult the project-inventory cache so a
 // dir that unambiguously matches a remote's known project resolves to
 // that remote's Host.
@@ -71,10 +72,12 @@ func (r *Router) Remotes() map[string]Host {
 	return out
 }
 
-// ForRemote returns the Host for an explicit owner. An empty or "local"
-// remoteID, or an unknown remote, resolves to the local Host so callers
-// degrade gracefully rather than failing closed.
-func (r *Router) ForRemote(remoteID string) Host {
+// forRemote returns the Host for a remoteID, degrading an empty, "local"
+// or unknown ID to the local Host. It is deliberately unexported: this
+// permissive fallback is only correct for *inferred* ownership (ForDir,
+// whose inventory cache can lag a disconnect). Callers holding an
+// explicit remote ID must use LookupRemote and fail closed.
+func (r *Router) forRemote(remoteID string) Host {
 	if remoteID == "" || remoteID == "local" {
 		return r.local
 	}
@@ -87,11 +90,12 @@ func (r *Router) ForRemote(remoteID string) Host {
 	return r.local
 }
 
-// LookupRemote is the strict counterpart of ForRemote: it reports
-// whether remoteID actually resolves to a registered owner. Callers
-// holding a *persisted* remote ID (a saved schedule, a stored worktree
-// record) must use this — with ForRemote a stale ID silently binds to
-// the local host and the action runs on the wrong machine.
+// LookupRemote resolves an explicit owner strictly: it reports whether
+// remoteID actually resolves to a registered owner. Every caller holding
+// a client-supplied or persisted remote ID (a request field, a saved
+// schedule, a stored worktree record) must use this — a permissive lookup
+// silently binds a stale ID to the local host and runs the action on the
+// wrong machine.
 //
 // An empty or "local" remoteID is the local host (ok=true).
 func (r *Router) LookupRemote(remoteID string) (Host, bool) {
@@ -114,5 +118,5 @@ func (r *Router) ForDir(dir string) Host {
 	if resolver == nil {
 		return r.local
 	}
-	return r.ForRemote(resolver(dir))
+	return r.forRemote(resolver(dir))
 }

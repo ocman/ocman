@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"net/http"
 	"os/exec"
 
 	"github.com/NoUseFreak/ocman/internal/db"
@@ -30,6 +31,25 @@ func (s *Server) router() *hostsvc.Router {
 		}
 	})
 	return s.hostRouter
+}
+
+// resolveOwner resolves the Host that owns an action. When the client
+// named an owner explicitly it must resolve to a *registered* one: a
+// stale, disconnected or mistyped remote ID must never degrade to the
+// hub, which would run the action (worktree creation, process launch,
+// live shell) on the wrong machine. It writes a 409 and returns false in
+// that case. An empty remoteID falls back to directory inference; ""/
+// "local" resolve to this machine.
+func (s *Server) resolveOwner(w http.ResponseWriter, dir, remoteID string) (hostsvc.Host, bool) {
+	if remoteID == "" {
+		return s.router().ForDir(dir), true
+	}
+	host, ok := s.router().LookupRemote(remoteID)
+	if !ok {
+		http.Error(w, "remote "+remoteID+" is not connected", http.StatusConflict)
+		return nil, false
+	}
+	return host, true
 }
 
 // hostTmuxSessions adapts listTmuxSessions to the hostsvc shape.

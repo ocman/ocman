@@ -61,27 +61,30 @@ func (h stubHost) TermCreateWindow(context.Context, string) (string, error)     
 func (h stubHost) TermKillWindow(context.Context, string, string) error          { return nil }
 func (h stubHost) TermAttach(context.Context, TermAttachRequest, TermConn) error { return nil }
 
-func TestRouter_ForRemote(t *testing.T) {
+// forRemote is only reachable through ForDir (inferred ownership), where
+// degrading an unknown ID to local is deliberate: the inventory cache can
+// lag a disconnect. Explicit owners go through LookupRemote instead.
+func TestRouter_forRemote(t *testing.T) {
 	local := stubHost{id: "local"}
 	r := NewRouter(local)
 	remote := stubHost{id: "abc"}
 	r.RegisterRemote("abc", remote)
 
-	if r.ForRemote("").RemoteID() != "local" {
+	if r.forRemote("").RemoteID() != "local" {
 		t.Error("empty remoteID should resolve to local")
 	}
-	if r.ForRemote("local").RemoteID() != "local" {
+	if r.forRemote("local").RemoteID() != "local" {
 		t.Error("'local' should resolve to local")
 	}
-	if r.ForRemote("abc").RemoteID() != "abc" {
+	if r.forRemote("abc").RemoteID() != "abc" {
 		t.Error("known remote should resolve to itself")
 	}
-	if r.ForRemote("unknown").RemoteID() != "local" {
+	if r.forRemote("unknown").RemoteID() != "local" {
 		t.Error("unknown remote should degrade to local")
 	}
 
 	r.UnregisterRemote("abc")
-	if r.ForRemote("abc").RemoteID() != "local" {
+	if r.forRemote("abc").RemoteID() != "local" {
 		t.Error("unregistered remote should degrade to local")
 	}
 }

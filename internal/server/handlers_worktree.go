@@ -135,17 +135,12 @@ func (s *Server) handleWorktreeRemove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	host := s.router().ForDir(req.ProjectDir)
-	if req.RemoteID != "" {
-		// Fail closed: a stale/disconnected remote ID must not degrade
-		// to the hub, which would `git worktree remove --force` the
-		// hub's identically-pathed worktree and destroy real work.
-		h, ok := s.router().LookupRemote(req.RemoteID)
-		if !ok {
-			http.Error(w, "remote "+req.RemoteID+" is not connected", http.StatusConflict)
-			return
-		}
-		host = h
+	// Fail closed on an explicit owner: a stale/disconnected remote ID
+	// must not degrade to the hub, which would `git worktree remove
+	// --force` the hub's identically-pathed worktree and destroy real work.
+	host, ok := s.resolveOwner(w, req.ProjectDir, req.RemoteID)
+	if !ok {
+		return
 	}
 
 	log.WithFields(log.Fields{
@@ -244,12 +239,12 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 		"remoteId":   req.RemoteID,
 	}).Info("worktree: create and launch")
 
-	// Resolve the owning host: ForRemote when the caller named the owner
-	// (preferred, AD-16b), else ForDir inference for backward-compatible
-	// local behaviour.
-	host := s.router().ForDir(req.ProjectDir)
-	if req.RemoteID != "" {
-		host = s.router().ForRemote(req.RemoteID)
+	// Resolve the owning host: the explicit owner when the caller named
+	// one (preferred, AD-16b), else ForDir inference for
+	// backward-compatible local behaviour.
+	host, ok := s.resolveOwner(w, req.ProjectDir, req.RemoteID)
+	if !ok {
+		return
 	}
 	res, err := host.CreateWorktreeSession(r.Context(), hostsvc.WorktreeSessionRequest{
 		ProjectDir: req.ProjectDir,

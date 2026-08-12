@@ -276,7 +276,7 @@ func (m *Manager) unregisterAdapters(mr *managedRemote) {
 
 // evictInventory drops a remote's cached project list. Must happen
 // wherever the router entry is dropped: resolveDir would otherwise keep
-// mapping the remote's dirs to a dead remote ID, which ForRemote then
+// mapping the remote's dirs to a dead remote ID, which ForDir then
 // degrades to the local host — silently running the action on the hub.
 func (m *Manager) evictInventory(remoteID string) {
 	m.invMu.Lock()

@@ -7,5 +7,9 @@ import "net/http"
 // API. Only availability is surfaced: the UI tells the user to install
 // Dagu when workflows would otherwise not run.
 func (s *Server) handleDaguStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, s.router().ForRemote(r.URL.Query().Get("remoteId")).DaguStatus(r.Context()))
+	host, ok := s.resolveOwner(w, "", r.URL.Query().Get("remoteId"))
+	if !ok {
+		return
+	}
+	writeJSON(w, host.DaguStatus(r.Context()))
 }

@@ -4,7 +4,7 @@
 # (architecture.md AD-16, rule R-A).
 #
 # Directory-scoped host operations (git, worktree, tmux, terminals) must
-# be resolved via s.router().ForDir(dir) / ForRemote(remoteId) / Local()
+# be resolved via s.resolveOwner(w, dir, remoteId) / s.router().ForDir(dir)
 # and delegated to a hostsvc.Host. The local Host
 # (internal/hostsvc/local) is the only place that may call git.*/term.*
 # directly; the server-package tmux launchers live in tmux.go and are
@@ -93,7 +93,7 @@ for pattern in "${PATTERNS[@]}"; do
 	if [[ -n "$matches" ]]; then
 		offenders=$(echo "$matches" | grep -v 'ocman:allow-host-helper' || true)
 		if [[ -n "$offenders" ]]; then
-			echo "Host-helper bypass detected (use s.router().ForDir/ForRemote -> hostsvc.Host):" >&2
+			echo "Host-helper bypass detected (use s.resolveOwner / s.router().ForDir -> hostsvc.Host):" >&2
 			echo "$offenders" >&2
 			FOUND=1
 		fi

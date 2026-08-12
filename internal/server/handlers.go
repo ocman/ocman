@@ -448,7 +448,10 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	var port string
 	remoteID, _ := remote.SplitPlatformID(req.Platform)
 	if remoteID != "" && req.Directory != "" {
-		host := s.router().ForRemote(remoteID)
+		host, ok := s.resolveOwner(w, req.Directory, remoteID)
+		if !ok {
+			return
+		}
 		ensured, err := host.EnsureProjectOpencode(r.Context(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: req.Directory})
 		if err != nil {
 			log.WithError(err).WithFields(log.Fields{

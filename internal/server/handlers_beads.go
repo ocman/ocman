@@ -12,13 +12,9 @@ func (s *Server) handleProjectBeadsStatus(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	host := s.router().ForDir(dir)
-	if remoteID := r.URL.Query().Get("remoteId"); remoteID != "" {
-		host = s.router().ForRemote(remoteID)
-		if remoteID != "local" && host.RemoteID() != remoteID {
-			http.Error(w, "unknown remote owner", http.StatusBadRequest)
-			return
-		}
+	host, ok := s.resolveOwner(w, dir, r.URL.Query().Get("remoteId"))
+	if !ok {
+		return
 	}
 
 	status, err := host.BeadsStatus(r.Context(), dir)

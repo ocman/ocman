@@ -164,7 +164,7 @@ func TestManager_EnabledRemotesAndInventoryLoop(t *testing.T) {
 
 // TestManager_RemoveEvictsInventory pins that removing a remote also
 // drops its cached project inventory. Otherwise resolveDir keeps
-// returning the dead remote ID, ForRemote degrades that to local, and
+// returning the dead remote ID, ForDir degrades that to local, and
 // dir-scoped actions silently run on the hub instead.
 func TestManager_RemoveEvictsInventory(t *testing.T) {
 	remoteReg := platforms.NewRegistry()

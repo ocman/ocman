@@ -126,9 +126,9 @@ func (s *Server) handleTmuxLaunchOpencode(w http.ResponseWriter, r *http.Request
 		"remoteId":  req.RemoteID,
 	}).Info("launching opencode in tmux")
 
-	host := s.router().ForDir(req.Directory)
-	if req.RemoteID != "" {
-		host = s.router().ForRemote(req.RemoteID)
+	host, ok := s.resolveOwner(w, req.Directory, req.RemoteID)
+	if !ok {
+		return
 	}
 	// Route through EnsureProjectOpencode (not the raw tmux launcher) so
 	// this manual new-session bootstrap shares the singleflight guard and

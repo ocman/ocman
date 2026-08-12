@@ -348,7 +348,7 @@ func TestManager_RegistersRemotePlatform(t *testing.T) {
 	}
 
 	// The remote host is registered in the router.
-	if router.ForRemote("abc123").RemoteID() != "abc123" {
+	if h, ok := router.LookupRemote("abc123"); !ok || h.RemoteID() != "abc123" {
 		t.Fatal("remote host not registered in router")
 	}
 }

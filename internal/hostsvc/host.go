@@ -2,7 +2,7 @@
 // directory analogue of internal/platforms. Where Platform owns
 // session-scoped operations resolved by Registry.PlatformForSession,
 // Host owns directory-scoped operations (git, worktree, tmux, projects,
-// whisper) resolved by Router.ForDir / Router.ForRemote.
+// whisper) resolved by Router.ForDir / Router.LookupRemote.
 //
 // The rule that keeps remote support from becoming a tax on every
 // future feature: every operation that touches a machine's filesystem,

@@ -93,11 +93,13 @@ func (s *Server) handleTermWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Resolve the owning host: a remote project's terminal must open a
-	// shell on the remote machine, not the hub (R-C). ForRemote wins when
-	// the client names an owner; otherwise fall back to dir resolution.
-	host := s.router().ForDir(dir)
-	if rid := r.URL.Query().Get("remoteId"); rid != "" {
-		host = s.router().ForRemote(rid)
+	// shell on the remote machine, not the hub (R-C). An explicitly named
+	// owner wins (and must be connected); otherwise fall back to dir
+	// resolution. Resolve before the upgrade so a rejected owner gets a
+	// plain HTTP error instead of a WebSocket that opens a hub shell.
+	host, ok := s.resolveOwner(w, dir, r.URL.Query().Get("remoteId"))
+	if !ok {
+		return
 	}
 
 	windowName := r.URL.Query().Get("window")
@@ -170,9 +172,9 @@ func (s *Server) handleTermWindowsList(w http.ResponseWriter, r *http.Request) {
 	if !validDir(w, dir) {
 		return
 	}
-	host := s.router().ForDir(dir)
-	if rid := r.URL.Query().Get("remoteId"); rid != "" {
-		host = s.router().ForRemote(rid)
+	host, ok := s.resolveOwner(w, dir, r.URL.Query().Get("remoteId"))
+	if !ok {
+		return
 	}
 	windows, err := host.TermWindows(r.Context(), dir)
 	if err != nil {
@@ -193,9 +195,9 @@ func (s *Server) handleTermWindowsCreate(w http.ResponseWriter, r *http.Request)
 	if !validDir(w, req.Dir) {
 		return
 	}
-	host := s.router().ForDir(req.Dir)
-	if req.RemoteID != "" {
-		host = s.router().ForRemote(req.RemoteID)
+	host, ok := s.resolveOwner(w, req.Dir, req.RemoteID)
+	if !ok {
+		return
 	}
 	name, err := host.TermCreateWindow(r.Context(), req.Dir)
 	if err != nil {
@@ -221,9 +223,9 @@ func (s *Server) handleTermWindowsDelete(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "terminal window not found", http.StatusNotFound)
 		return
 	}
-	host := s.router().ForDir(req.Dir)
-	if req.RemoteID != "" {
-		host = s.router().ForRemote(req.RemoteID)
+	host, ok := s.resolveOwner(w, req.Dir, req.RemoteID)
+	if !ok {
+		return
 	}
 	if err := host.TermKillWindow(r.Context(), req.Dir, req.Window); err != nil {
 		serverError(w, "killing terminal window", err)
