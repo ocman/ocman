@@ -146,8 +146,8 @@ func TestSharingSettingToggleAndGuard(t *testing.T) {
 	if postRR.Code != http.StatusOK {
 		t.Fatalf("post status = %d, want 200; body=%s", postRR.Code, postRR.Body)
 	}
-	if srv.sharingEnabled() {
-		t.Fatal("sharing should be disabled after POST")
+	if enabled, err := srv.sharingEnabled(); err != nil || enabled {
+		t.Fatalf("sharing should be disabled after POST (enabled=%v, err=%v)", enabled, err)
 	}
 
 	// Create is now rejected with 403.
@@ -164,6 +164,38 @@ func TestSharingSettingToggleAndGuard(t *testing.T) {
 	srv.dispatchSessionSubpath(create2, httptest.NewRequest(http.MethodPost, "/api/session/ses_guard/share", nil))
 	if create2.Code != http.StatusCreated {
 		t.Fatalf("create status = %d, want 201 after re-enable; body=%s", create2.Code, create2.Body)
+	}
+}
+
+// TestSharingFailsClosedOnStateError proves the sharing gate fails
+// CLOSED. A transient state-DB read error must not re-enable minting
+// public, unauthenticated links after an operator disabled sharing.
+func TestSharingFailsClosedOnStateError(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	registerShareFake(reg, "ses_failclosed")
+
+	// Break the setting read the same way a broken/locked DB would.
+	if err := srv.stateDB.Close(); err != nil {
+		t.Fatalf("close state db: %v", err)
+	}
+
+	if _, err := srv.sharingEnabled(); err == nil {
+		t.Fatal("sharingEnabled must report the read error, not assume enabled")
+	}
+
+	createRR := httptest.NewRecorder()
+	srv.dispatchSessionSubpath(createRR, httptest.NewRequest(http.MethodPost, "/api/session/ses_failclosed/share", nil))
+	if createRR.Code != http.StatusServiceUnavailable {
+		t.Fatalf("create status = %d, want 503 when the sharing setting can't be read; body=%s",
+			createRR.Code, createRR.Body)
+	}
+
+	// The read-only status endpoint reports unavailable rather than
+	// claiming sharing is on.
+	getRR := httptest.NewRecorder()
+	srv.handleSharingSetting(getRR, httptest.NewRequest(http.MethodGet, "/api/settings/sharing", nil))
+	if getRR.Code != http.StatusServiceUnavailable {
+		t.Fatalf("GET status = %d, want 503 when the setting can't be read; body=%s", getRR.Code, getRR.Body)
 	}
 }
 

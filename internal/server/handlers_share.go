@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 
+	log "github.com/sirupsen/logrus"
+
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -22,16 +24,22 @@ const exportFetchLimit = 100000
 const settingSharingEnabled = "sharing_enabled"
 
 // sharingEnabled reports whether share-link creation is allowed. Absent
-// setting (or any value other than "false") means enabled.
-func (s *Server) sharingEnabled() bool {
+// setting (or any value other than "false") means enabled. A read error
+// is returned, never swallowed: callers must fail closed, otherwise a
+// transient DB error silently re-enables minting public unauthenticated
+// links after an operator turned sharing off.
+func (s *Server) sharingEnabled() (bool, error) {
 	if s.stateDB == nil {
-		return true
+		return true, nil
 	}
 	v, ok, err := s.stateDB.GetSetting(settingSharingEnabled)
-	if err != nil || !ok {
-		return true
+	if err != nil {
+		return false, err
 	}
-	return v != "false"
+	if !ok {
+		return true, nil
+	}
+	return v != "false", nil
 }
 
 // shareTokenPattern reuses the same safe-character constraint as
@@ -92,7 +100,13 @@ func (s *Server) handleCreateSessionShare(w http.ResponseWriter, r *http.Request
 			http.Error(w, "state database not available", http.StatusServiceUnavailable)
 			return
 		}
-		if !s.sharingEnabled() {
+		enabled, err := s.sharingEnabled()
+		if err != nil {
+			log.WithError(err).Error("reading sharing setting")
+			http.Error(w, "sharing state unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if !enabled {
 			http.Error(w, "sharing is disabled", http.StatusForbidden)
 			return
 		}
@@ -146,7 +160,13 @@ func (s *Server) handleSharingSetting(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, map[string]bool{"enabled": s.sharingEnabled()})
+		enabled, err := s.sharingEnabled()
+		if err != nil {
+			log.WithError(err).Error("reading sharing setting")
+			http.Error(w, "sharing state unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		writeJSON(w, map[string]bool{"enabled": enabled})
 	case http.MethodPost:
 		var body struct {
 			Enabled bool `json:"enabled"`
