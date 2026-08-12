@@ -290,21 +290,63 @@ func TestEnsureProjectOpencode_NonRepo(t *testing.T) {
 	}
 }
 
-// TestEnsureProjectOpencode_HealthTimeout: launch succeeds but the instance
-// never becomes healthy (Probe always false) -> a timeout error, launched
-// exactly once.
+// TestEnsureProjectOpencode_HealthTimeout: launch succeeds but the
+// instance never becomes healthy -> an error, launched exactly once, and
+// nothing left behind. A launched-but-unhealthy instance is a leak, not a
+// cache entry: leaving it running (and cached/persisted) strands a tmux
+// process on an occupied port and hands the next caller a dead endpoint.
+// Covered for both failure shapes: the probe budget running out, and the
+// caller's context being cancelled mid-wait.
 func TestEnsureProjectOpencode_HealthTimeout(t *testing.T) {
-	repo := initRepo(t)
-	rt := &fakeRuntime{probe: func(*ocruntime.Instance) bool { return false }}
-	h := New(Deps{Runtime: rt})
-	h.portWaitTimeout = 30 * time.Millisecond
-	h.portWaitInterval = 5 * time.Millisecond
-
-	_, err := h.EnsureProjectOpencode(context.Background(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: repo})
-	if err == nil {
-		t.Fatal("expected a timeout error when the instance never becomes healthy")
+	tests := []struct {
+		name string
+		// cancelOnProbe cancels the caller's context from inside the
+		// first health probe: deterministically mid-wait, after the
+		// launch has already happened.
+		cancelOnProbe bool
+	}{
+		{name: "probe budget exhausted"},
+		{name: "context cancelled while waiting", cancelOnProbe: true},
 	}
-	if rt.launchCount() != 1 {
-		t.Errorf("launched %d times; want exactly 1", rt.launchCount())
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := initRepo(t)
+			repoRoot, err := git.ResolveRepoRoot(context.Background(), repo)
+			if err != nil {
+				t.Fatalf("resolve repo root: %v", err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			t.Cleanup(cancel)
+			store := newFakeStore()
+			rt := &fakeRuntime{probe: func(*ocruntime.Instance) bool {
+				if tc.cancelOnProbe {
+					cancel()
+				}
+				return false
+			}}
+			h := New(Deps{Runtime: rt, ManagedStore: store})
+			h.portWaitTimeout = time.Second
+			h.portWaitInterval = 5 * time.Millisecond
+
+			_, err = h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: repo})
+			if err == nil {
+				t.Fatal("expected an error when the instance never becomes healthy")
+			}
+			if rt.launchCount() != 1 {
+				t.Errorf("launched %d times; want exactly 1", rt.launchCount())
+			}
+			// The unhealthy process must be stopped exactly once — not
+			// left running, and not stopped repeatedly.
+			if rt.stopCount() != 1 {
+				t.Errorf("stops = %d; want exactly 1 (the unhealthy instance)", rt.stopCount())
+			}
+			if inst := h.currentInstance(repoRoot); inst != nil {
+				t.Errorf("cached instance = %+v; want none after a failed launch", inst)
+			}
+			if store.has(repoRoot) {
+				t.Error("persisted row survived a failed launch")
+			}
+		})
 	}
 }

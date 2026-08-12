@@ -466,12 +466,25 @@ func (h *Host) launchAndTrack(ctx context.Context, repoRoot string) (*hostsvc.En
 		log.WithError(err).WithField("repoRoot", repoRoot).Error("host: failed to launch project opencode")
 		return nil, err
 	}
-	h.setInstance(repoRoot, inst)
-
 	// Wait for the launched instance to actually serve the OpenCode API.
-	if err := h.waitForProbe(ctx, inst); err != nil {
-		return nil, err
+	// An instance that never gets there is a leak, not a cache entry:
+	// stop it (best-effort, on an uncancellable context so a cancelled
+	// caller still gets cleaned up) and drop any tracked/persisted state,
+	// then surface the original probe failure.
+	if probeErr := h.waitForProbe(ctx, inst); probeErr != nil {
+		log.WithError(probeErr).WithField("repoRoot", repoRoot).Error("host: launched opencode never became healthy; stopping it")
+		if err := h.runtime.Stop(context.WithoutCancel(ctx), inst); err != nil {
+			log.WithError(err).WithField("repoRoot", repoRoot).Warn("host: stopping unhealthy managed opencode")
+		}
+		h.clearInstance(repoRoot)
+		if h.store != nil {
+			if err := h.store.Delete(repoRoot); err != nil {
+				log.WithError(err).WithField("repoRoot", repoRoot).Warn("host: deleting managed opencode row after failed launch")
+			}
+		}
+		return nil, probeErr
 	}
+	h.setInstance(repoRoot, inst)
 
 	// Persist so the instance survives a restart. Soft-fail: a store error
 	// must not break an otherwise-successful launch.
