@@ -59,17 +59,33 @@ function MessageBookmarkButton({ messageId }: { messageId: string }) {
  * counter that ticks every second.
  */
 
-const ImageDisplay: FC<{ image: string; filename?: string }> = ({ image, filename }) => {
+/**
+ * An attached conversation image. The <img> sits inside a button (the
+ * same pattern MarkdownText uses for markdown images) so expanding it
+ * works from the keyboard and is announced as a toggle.
+ *
+ * Exported for tests: the thread renders it through assistant-ui's part
+ * components, which the suite mocks out.
+ */
+export const ImageDisplay: FC<{ image: string; filename?: string }> = ({ image, filename }) => {
   const [expanded, setExpanded] = useState(false);
+  const label = filename || 'Image';
   return (
     <div className="oc-image-wrap">
-      <img
-        src={image}
-        alt={filename || 'Image'}
-        className={`oc-image${expanded ? ' oc-image-expanded' : ''}`}
+      <button
+        type="button"
+        className="oc-image-toggle"
+        aria-expanded={expanded}
+        aria-label={`${expanded ? 'Collapse' : 'Expand'} ${label}`}
         onClick={() => setExpanded(!expanded)}
-        loading="lazy"
-      />
+      >
+        <img
+          src={image}
+          alt={label}
+          className={`oc-image${expanded ? ' oc-image-expanded' : ''}`}
+          loading="lazy"
+        />
+      </button>
       {filename && <div className="oc-image-label">{filename}</div>}
     </div>
   );

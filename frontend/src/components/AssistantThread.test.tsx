@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 
 vi.hoisted(() => {
@@ -86,7 +87,7 @@ vi.mock('../lib/turnStats', () => ({
   }),
 }));
 
-import { AssistantThread } from './AssistantThread';
+import { AssistantThread, ImageDisplay } from './AssistantThread';
 import { useUiStore } from '../lib/uiStore';
 
 class StubResizeObserver {
@@ -101,6 +102,30 @@ beforeEach(() => {
   message.metadata.custom = { model: 'openai/gpt-5', time: { created: 1000, completed: 2000 }, tokens: { output: 10 } };
 });
 afterEach(() => vi.unstubAllGlobals());
+
+describe('AssistantThread attached images', () => {
+  it('expands an attached image from the keyboard', async () => {
+    const user = userEvent.setup();
+    render(<ImageDisplay image="data:image/png;base64,AA" filename="shot.png" />);
+
+    // Same pattern as MarkdownText's MarkdownImage: the <img> lives inside
+    // a real button, so it is focusable and announced as a toggle.
+    const toggle = screen.getByRole('button', { name: 'Expand shot.png' });
+    await user.tab();
+    expect(toggle).toHaveFocus();
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    await user.keyboard('{Enter}');
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: 'Collapse shot.png' })).toBe(toggle);
+    expect(screen.getByAltText('shot.png').className).toContain('oc-image-expanded');
+  });
+
+  it('falls back to a generic label when the attachment has no filename', () => {
+    render(<ImageDisplay image="data:image/png;base64,AA" />);
+    expect(screen.getByRole('button', { name: 'Expand Image' })).toBeInTheDocument();
+  });
+});
 
 describe('AssistantThread pagination', () => {
   it('does not load older messages when a thread first mounts at its tail', () => {

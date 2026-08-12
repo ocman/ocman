@@ -1014,6 +1014,16 @@
 .oc-image-wrap {
   margin: 8px 0;
 }
+/* Button wrapper around an attached image: no visual of its own, it
+   just makes the image's expand toggle focusable. */
+.oc-image-toggle {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  max-width: 100%;
+}
 .oc-image {
   max-width: 400px;
   max-height: 300px;
