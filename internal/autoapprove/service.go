@@ -73,7 +73,10 @@ type Deps struct {
 	// optional.
 	BroadcastPermissionResolved func(sessionID, permissionID, reason string)
 	BroadcastQuestionResolved   func(sessionID, requestID, reason string)
-	BroadcastSessionIdle        func(sessionID string)
+	// BroadcastSessionIdle carries the platform the edge came from: a
+	// session's identity is (platform, sessionID), and the consumer drains
+	// that session's message queue with it.
+	BroadcastSessionIdle func(platformID, sessionID string)
 	BroadcastSessionChanged     func(sessionID string)
 	BroadcastSessionStatus      func(sessionID string, status db.SessionStatus)
 	BroadcastGlobalEvent        func(event string, data []byte)

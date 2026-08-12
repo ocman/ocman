@@ -45,20 +45,56 @@ func TestEnqueueAndHead_FIFOOrder(t *testing.T) {
 	}
 }
 
-func TestHead_EmptyPlatformMatchesAny(t *testing.T) {
+// The delivery path must never wildcard on platform: an empty platform
+// used to match every platform, so an idle edge from the local instance
+// could pop a remote session's head just because the bare ids collided.
+func TestDeliveryQueriesDoNotWildcardPlatform(t *testing.T) {
 	db := openQueueTestDB(t)
 	if err := db.EnqueueMessage(QueuedMessage{
 		ID: "id-1", Platform: "r-box:opencode", SessionID: "s1", Text: "hi", CreatedAt: 1,
 	}); err != nil {
 		t.Fatalf("EnqueueMessage: %v", err)
 	}
-	// The idle-driven flush only knows the session id.
+
 	head, err := db.HeadQueuedMessage("", "s1")
+	if err != nil {
+		t.Fatalf("HeadQueuedMessage: %v", err)
+	}
+	if head != nil {
+		t.Fatalf("head = %+v, want nil: an empty platform is not an identity", head)
+	}
+	if n, err := db.CountQueuedMessages("", "s1"); err != nil || n != 0 {
+		t.Fatalf("count = %d (err %v), want 0 for an empty platform", n, err)
+	}
+	if msgs, err := db.ListQueuedMessages("", "s1"); err != nil || len(msgs) != 0 {
+		t.Fatalf("list = %+v (err %v), want none for an empty platform", msgs, err)
+	}
+
+	// Naming the owner resolves it.
+	head, err = db.HeadQueuedMessage("r-box:opencode", "s1")
 	if err != nil || head == nil {
-		t.Fatalf("HeadQueuedMessage empty platform: %v head=%v", err, head)
+		t.Fatalf("HeadQueuedMessage(owner): %v head=%v", err, head)
 	}
 	if head.Platform != "r-box:opencode" {
 		t.Fatalf("head platform = %q, want the stored compound id", head.Platform)
+	}
+}
+
+// The read-only list endpoint keeps an explicit cross-platform query for
+// clients that never learned to send ?platform=. It is the single
+// documented exception, and it is never used to drain.
+func TestListQueuedMessagesAnyPlatform(t *testing.T) {
+	db := openQueueTestDB(t)
+	_ = db.EnqueueMessage(QueuedMessage{ID: "a", Platform: "opencode", SessionID: "s1", Text: "a", CreatedAt: 1})
+	_ = db.EnqueueMessage(QueuedMessage{ID: "b", Platform: "r-box:opencode", SessionID: "s1", Text: "b", CreatedAt: 1})
+	_ = db.EnqueueMessage(QueuedMessage{ID: "c", Platform: "opencode", SessionID: "s2", Text: "c", CreatedAt: 1})
+
+	got, err := db.ListQueuedMessagesAnyPlatform("s1")
+	if err != nil {
+		t.Fatalf("ListQueuedMessagesAnyPlatform: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("list = %+v, want both platforms' rows for s1", got)
 	}
 }
 

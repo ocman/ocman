@@ -35,7 +35,7 @@ func (m *memStore) CountQueuedMessages(platform, sessionID string) (int, error) 
 	defer m.mu.Unlock()
 	n := 0
 	for _, msg := range m.msgs {
-		if msg.SessionID == sessionID && (platform == "" || msg.Platform == platform) {
+		if msg.SessionID == sessionID && msg.Platform == platform {
 			n++
 		}
 	}
@@ -49,7 +49,7 @@ func (m *memStore) HeadQueuedMessage(platform, sessionID string) (*state.QueuedM
 		if m.msgs[i].Blocked {
 			continue
 		}
-		if m.msgs[i].SessionID == sessionID && (platform == "" || m.msgs[i].Platform == platform) {
+		if m.msgs[i].SessionID == sessionID && m.msgs[i].Platform == platform {
 			c := m.msgs[i]
 			return &c, nil
 		}
@@ -89,7 +89,19 @@ func (m *memStore) ListQueuedMessages(platform, sessionID string) ([]state.Queue
 	defer m.mu.Unlock()
 	var out []state.QueuedMessage
 	for _, msg := range m.msgs {
-		if msg.SessionID == sessionID && (platform == "" || msg.Platform == platform) {
+		if msg.SessionID == sessionID && msg.Platform == platform {
+			out = append(out, msg)
+		}
+	}
+	return out, nil
+}
+
+func (m *memStore) ListQueuedMessagesAnyPlatform(sessionID string) ([]state.QueuedMessage, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []state.QueuedMessage
+	for _, msg := range m.msgs {
+		if msg.SessionID == sessionID {
 			out = append(out, msg)
 		}
 	}
@@ -239,19 +251,19 @@ func TestEnqueue_BusyThenOnePerIdleEdge(t *testing.T) {
 	// First idle edge: exactly one message sends (the oldest), not both.
 	// The send starts a new turn; the next idle edge sends the next.
 	status.running = false
-	svc.Flush(context.Background(), "", "s1")
+	svc.Flush(context.Background(), "opencode", "s1")
 	if got := sender.messages(); len(got) != 1 || got[0] != "one" {
 		t.Fatalf("after 1st idle = %v, want exactly [one] (one per turn, FIFO)", got)
 	}
 
 	// Second idle edge: the next queued message sends.
-	svc.Flush(context.Background(), "", "s1")
+	svc.Flush(context.Background(), "opencode", "s1")
 	if got := sender.messages(); len(got) != 2 || got[1] != "two" {
 		t.Fatalf("after 2nd idle = %v, want [one two] (FIFO)", got)
 	}
 
 	// Third idle edge with an empty queue: no-op.
-	svc.Flush(context.Background(), "", "s1")
+	svc.Flush(context.Background(), "opencode", "s1")
 	if got := sender.messages(); len(got) != 2 {
 		t.Fatalf("after empty flush = %v, want unchanged [one two]", got)
 	}
@@ -316,7 +328,7 @@ func TestFlush_IdleEdgeDrainsDespiteLaggingBusyStatus(t *testing.T) {
 	// A genuine session.idle edge fires. Even though the status poll still
 	// lags at "busy", exactly one message must drain (session.idle is the
 	// authoritative turn-finished signal).
-	svc.Flush(context.Background(), "", "s1")
+	svc.Flush(context.Background(), "opencode", "s1")
 	if got := sender.messages(); len(got) != 1 || got[0] != "one" {
 		t.Fatalf("after idle edge = %v, want [one] drained despite lagging busy status", got)
 	}
@@ -360,7 +372,7 @@ func TestSweep_DrainsStrandedBacklogWhenIdle(t *testing.T) {
 
 	// The real idle edge fires once the turn finishes: it clears the guard
 	// and drains the next queued message.
-	svc.Flush(context.Background(), "", "s1")
+	svc.Flush(context.Background(), "opencode", "s1")
 	if got := sender.messages(); len(got) != 2 || got[1] != "two" {
 		t.Fatalf("after idle edge = %v, want [one two]", got)
 	}
@@ -484,7 +496,7 @@ func TestSweep_RechecksGuardGenerationBeforeDrain(t *testing.T) {
 	status.messageID = "assistant-1"
 	status.createdAt = 2
 	status.completed = true
-	status.onLatest = func() { svc.markDrained("s1", "replacement", 3) }
+	status.onLatest = func() { svc.markDrained(sessionKey{Platform: "opencode", SessionID: "s1"}, "replacement", 3) }
 	svc.Sweep(context.Background())
 
 	if got := sender.messages(); len(got) != 1 {
@@ -577,7 +589,7 @@ func TestFlush_UnknownStatusDoesNotSend(t *testing.T) {
 	svc := New(store, sender, statusStub{running: false, ok: false}, nil)
 
 	_ = store.EnqueueMessage(state.QueuedMessage{ID: "x", Platform: "opencode", SessionID: "s1", Text: "hi"})
-	svc.Flush(context.Background(), "", "s1")
+	svc.Flush(context.Background(), "opencode", "s1")
 	// ok=false means "unknown" — the gate only blocks on known-running,
 	// so an unknown status flushes (session presumed idle). Assert the
 	// message drained so we don't strand queued work on flaky status.
@@ -592,10 +604,10 @@ func TestFlush_SendErrorLeavesHead(t *testing.T) {
 	svc := New(store, sender, statusStub{running: false, ok: true}, nil)
 
 	_ = store.EnqueueMessage(state.QueuedMessage{ID: "x", Platform: "opencode", SessionID: "s1", Text: "hi"})
-	svc.Flush(context.Background(), "", "s1")
+	svc.Flush(context.Background(), "opencode", "s1")
 
 	// Send failed → message must remain at the head for retry.
-	head, _ := store.HeadQueuedMessage("", "s1")
+	head, _ := store.HeadQueuedMessage("opencode", "s1")
 	if head == nil || head.ID != "x" {
 		t.Fatalf("head = %v, want the failed message left for retry", head)
 	}
@@ -645,29 +657,29 @@ func TestMove_RejectsWrongSessionAndBoundary(t *testing.T) {
 func TestEnqueue_FiresNotify(t *testing.T) {
 	var mu sync.Mutex
 	var notified []string
-	svc := New(&memStore{}, &recSender{}, statusStub{running: true, ok: true}, func(sid string) {
+	svc := New(&memStore{}, &recSender{}, statusStub{running: true, ok: true}, func(platform, sid string) {
 		mu.Lock()
-		notified = append(notified, sid)
+		notified = append(notified, platform+"/"+sid)
 		mu.Unlock()
 	})
 	_ = svc.Enqueue(context.Background(), "opencode", false, platforms.SendMessageRequest{SessionID: "s1", Message: "hi"})
 	mu.Lock()
 	defer mu.Unlock()
-	if len(notified) == 0 || notified[0] != "s1" {
-		t.Fatalf("notified = %v, want [s1]", notified)
+	if len(notified) == 0 || notified[0] != "opencode/s1" {
+		t.Fatalf("notified = %v, want [opencode/s1]", notified)
 	}
 }
 
-// notifyRec records every notify(sessionID) call, thread-safe.
+// notifyRec records every notify(platform, sessionID) call, thread-safe.
 type notifyRec struct {
 	mu   sync.Mutex
 	sids []string
 }
 
-func (n *notifyRec) fn() func(string) {
-	return func(sid string) {
+func (n *notifyRec) fn() func(string, string) {
+	return func(platform, sid string) {
 		n.mu.Lock()
-		n.sids = append(n.sids, sid)
+		n.sids = append(n.sids, platform+"/"+sid)
 		n.mu.Unlock()
 	}
 }
@@ -716,7 +728,7 @@ func TestNotify_FiresForEveryQueueMutation(t *testing.T) {
 		rec.mu.Lock()
 		rec.sids = nil
 		rec.mu.Unlock()
-		svc.Flush(context.Background(), "", "s1")
+		svc.Flush(context.Background(), "opencode", "s1")
 		if rec.count() != 1 {
 			t.Fatalf("Flush drain notify count = %d, want 1", rec.count())
 		}
@@ -795,7 +807,7 @@ func TestNotify_FiresForEveryQueueMutation(t *testing.T) {
 		_ = store.EnqueueMessage(state.QueuedMessage{ID: "x", Platform: "opencode", SessionID: "s1", Text: "hi"})
 		// Sender fails once → drainHead leaves the head, no delete, no notify.
 		svc := New(store, &recSender{failOnce: true}, statusStub{running: false, ok: true}, rec.fn())
-		svc.Flush(context.Background(), "", "s1")
+		svc.Flush(context.Background(), "opencode", "s1")
 		if rec.count() != 0 {
 			t.Fatalf("failed-send notify count = %d, want 0 (no state change)", rec.count())
 		}

@@ -26,7 +26,17 @@ type queuedMessageView struct {
 // follow-up messages waiting for the session's next idle edge (#58).
 func (s *Server) handleSessionQueueList(w http.ResponseWriter, r *http.Request) {
 	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
-		msgs, err := s.queueSvc().List(platformHint(r), sessionID)
+		// The platform parameter is optional on this read-only endpoint, so
+		// a client that only has the bare session id falls back to the
+		// explicit cross-platform list (the one documented exception —
+		// see queuesvc.Service.ListAnyPlatform).
+		var msgs []state.QueuedMessage
+		var err error
+		if platform := platformHint(r); platform != "" {
+			msgs, err = s.queueSvc().List(platform, sessionID)
+		} else {
+			msgs, err = s.queueSvc().ListAnyPlatform(sessionID)
+		}
 		if err != nil {
 			log.WithError(err).WithField("session", sessionID).Error("listing message queue")
 			http.Error(w, "failed to list queue", http.StatusInternalServerError)

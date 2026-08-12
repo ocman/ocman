@@ -431,7 +431,9 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 				w.broadcastSessionStatus(ocAdapter, port, sessionID, "idle")
 			}
 			if w.svc != nil && w.svc.deps.BroadcastSessionIdle != nil {
-				w.svc.deps.BroadcastSessionIdle(sessionID)
+				// This watcher tails one local OpenCode instance, so the
+				// edge belongs to the local opencode platform.
+				w.svc.deps.BroadcastSessionIdle(string(opencode.PlatformID), sessionID)
 			}
 		},
 		OnSessionChanged: w.handleSessionChanged,

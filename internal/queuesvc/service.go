@@ -38,6 +38,7 @@ type Store interface {
 	CountQueuedMessages(platform, sessionID string) (int, error)
 	HeadQueuedMessage(platform, sessionID string) (*state.QueuedMessage, error)
 	ListQueuedMessages(platform, sessionID string) ([]state.QueuedMessage, error)
+	ListQueuedMessagesAnyPlatform(sessionID string) ([]state.QueuedMessage, error)
 	DeleteQueuedMessage(id string) (bool, error)
 	MoveQueuedMessage(id string, direction int) (bool, error)
 	GetQueuedMessageSession(id string) (platform, sessionID string, ok bool, err error)
@@ -58,25 +59,35 @@ type StatusInferer interface {
 	TurnRunning(ctx context.Context, platform, sessionID string) (running, ok bool)
 }
 
+// sessionKey is a session's full identity: the same bare session id can
+// exist on several machines (a local `opencode/s1` and a remote
+// `r-A:opencode/s1`), so every map in this package is keyed by the pair.
+// Keying by the bare id let one machine's idle edge drain — or suppress —
+// another machine's queue.
+type sessionKey struct {
+	Platform  string
+	SessionID string
+}
+
 // Service manages the follow-up queue.
 type Service struct {
 	store  Store
 	sender Sender
 	status StatusInferer
-	notify func(sessionID string) // optional; broadcast queue.updated
+	notify func(platform, sessionID string) // optional; broadcast queue.updated
 
 	// One lock per session serializes flush drains so an enqueue-driven
 	// flush and an idle-driven flush cannot pop the same head twice.
 	mu    sync.Mutex
-	locks map[string]*sync.Mutex
+	locks map[sessionKey]*sync.Mutex
 
-	// drainGuards[sessionID] records the source message visible before a queued send
+	// drainGuards[key] records the source message visible before a queued send
 	// for that session and we have NOT yet seen a real session.idle edge.
 	// It gates the enqueue fast-path so a burst of enqueues can't chain
 	// multiple sends into one turn just because the status poll blips to
 	// idle (the last message being a user message reads as idle). A genuine
 	// session.idle or a newer completed assistant message clears it. Guarded by mu.
-	drainGuards    map[string]drainGuard
+	drainGuards    map[sessionKey]drainGuard
 	nextGeneration uint64
 }
 
@@ -91,44 +102,44 @@ type drainGuard struct {
 }
 
 // New builds a queue service. notify may be nil.
-func New(store Store, sender Sender, status StatusInferer, notify func(sessionID string)) *Service {
+func New(store Store, sender Sender, status StatusInferer, notify func(platform, sessionID string)) *Service {
 	return &Service{
 		store:       store,
 		sender:      sender,
 		status:      status,
 		notify:      notify,
-		locks:       map[string]*sync.Mutex{},
-		drainGuards: map[string]drainGuard{},
+		locks:       map[sessionKey]*sync.Mutex{},
+		drainGuards: map[sessionKey]drainGuard{},
 	}
 }
 
-func (s *Service) markDrained(sessionID, messageID string, createdAt int64) {
+func (s *Service) markDrained(key sessionKey, messageID string, createdAt int64) {
 	s.mu.Lock()
 	s.nextGeneration++
-	s.drainGuards[sessionID] = drainGuard{generation: s.nextGeneration, messageID: messageID, createdAt: createdAt}
+	s.drainGuards[key] = drainGuard{generation: s.nextGeneration, messageID: messageID, createdAt: createdAt}
 	s.mu.Unlock()
 }
 
-func (s *Service) currentDrainGuard(sessionID string) (drainGuard, bool) {
+func (s *Service) currentDrainGuard(key sessionKey) (drainGuard, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	guard, ok := s.drainGuards[sessionID]
+	guard, ok := s.drainGuards[key]
 	return guard, ok
 }
 
-func (s *Service) clearDrainedSinceIdle(sessionID string) {
+func (s *Service) clearDrainedSinceIdle(key sessionKey) {
 	s.mu.Lock()
-	delete(s.drainGuards, sessionID)
+	delete(s.drainGuards, key)
 	s.mu.Unlock()
 }
 
-func (s *Service) lockFor(sessionID string) *sync.Mutex {
+func (s *Service) lockFor(key sessionKey) *sync.Mutex {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	m, ok := s.locks[sessionID]
+	m, ok := s.locks[key]
 	if !ok {
 		m = &sync.Mutex{}
-		s.locks[sessionID] = m
+		s.locks[key] = m
 	}
 	return m
 }
@@ -167,7 +178,8 @@ func (s *Service) Enqueue(ctx context.Context, platformID string, forceQueue boo
 		CreatedAt:  nowMillis(),
 	}
 
-	lock := s.lockFor(req.SessionID)
+	key := sessionKey{Platform: platformID, SessionID: req.SessionID}
+	lock := s.lockFor(key)
 	lock.Lock()
 	defer lock.Unlock()
 
@@ -187,14 +199,14 @@ func (s *Service) Enqueue(ctx context.Context, platformID string, forceQueue boo
 	// what keeps Sweep from sending into a still-running turn; the guard
 	// is only set once a message is actually sent (in drainHead).
 	if forceQueue {
-		s.fireNotify(req.SessionID)
+		s.fireNotify(key)
 		return nil
 	}
-	s.fireNotify(req.SessionID)
+	s.fireNotify(key)
 
 	// Idle send fast path — see doc comment.
-	if _, guarded := s.currentDrainGuard(req.SessionID); existing == 0 && !guarded {
-		s.drainHead(ctx, platformID, req.SessionID, false)
+	if _, guarded := s.currentDrainGuard(key); existing == 0 && !guarded {
+		s.drainHead(ctx, key, false)
 	}
 	return nil
 }
@@ -210,12 +222,13 @@ func (s *Service) EnqueueChildResult(ctx context.Context, childID, id, platformI
 		ImagesJSON: encodeImages(req.Images), Model: req.Model, Agent: req.Agent,
 		Reasoning: req.Reasoning, CreatedAt: nowMillis(),
 	}
-	lock := s.lockFor(req.SessionID)
+	key := sessionKey{Platform: platformID, SessionID: req.SessionID}
+	lock := s.lockFor(key)
 	lock.Lock()
 	defer lock.Unlock()
 	queued, err := s.store.EnqueueClaimedChildResult(childID, m)
 	if err == nil && queued {
-		s.fireNotify(req.SessionID)
+		s.fireNotify(key)
 	}
 	return queued, err
 }
@@ -230,16 +243,18 @@ func (s *Service) EnqueueChildResult(ctx context.Context, childID, id, platformI
 // Serialized per-session by a lock so an enqueue-driven flush and an
 // idle-driven flush can never send the same head twice.
 //
-// platformID may be empty when driven by a session.idle event that only
-// knows the session id; the head row carries the authoritative platform.
+// platformID is required: a session's identity is (platform, sessionID),
+// and the same bare id can exist on several machines. Flushing on the bare
+// id let a local instance's idle edge drain a remote session's queue.
 func (s *Service) Flush(ctx context.Context, platformID, sessionID string) {
-	lock := s.lockFor(sessionID)
+	key := sessionKey{Platform: platformID, SessionID: sessionID}
+	lock := s.lockFor(key)
 	lock.Lock()
 	defer lock.Unlock()
 	// A real idle edge re-arms the enqueue fast-path: the previous turn
 	// has genuinely finished, so the next drained message starts a fresh
 	// turn.
-	s.clearDrainedSinceIdle(sessionID)
+	s.clearDrainedSinceIdle(key)
 	// trustIdle=true: session.idle IS the authoritative turn-finished
 	// signal, so the flush acts on the edge alone.
 	//
@@ -251,7 +266,7 @@ func (s *Service) Flush(ctx context.Context, platformID, sessionID string) {
 	// session.status arrive, and of a failed status snapshot. A gate that
 	// read busy at this instant for either reason would swallow the drain
 	// and strand the queue, since no second idle edge is coming.
-	s.drainHead(ctx, platformID, sessionID, true)
+	s.drainHead(ctx, key, true)
 }
 
 // drainHead sends the single oldest queued message. The caller MUST hold
@@ -263,16 +278,17 @@ func (s *Service) Flush(ctx context.Context, platformID, sessionID string) {
 // passes true because the edge itself proves the turn ended; the enqueue
 // fast-path passes false because it has no such proof and must gate on
 // the session's reported status.
-func (s *Service) drainHead(ctx context.Context, platformID, sessionID string, trustIdle bool) {
+func (s *Service) drainHead(ctx context.Context, key sessionKey, trustIdle bool) {
+	sessionID := key.SessionID
 	// Busy gate: never send into a running turn — but only when we don't
 	// already have an authoritative idle signal (see Flush).
 	if !trustIdle {
-		if running, ok := s.status.TurnRunning(ctx, platformID, sessionID); ok && running {
+		if running, ok := s.status.TurnRunning(ctx, key.Platform, sessionID); ok && running {
 			return
 		}
 	}
 
-	head, err := s.store.HeadQueuedMessage(platformID, sessionID)
+	head, err := s.store.HeadQueuedMessage(key.Platform, sessionID)
 	if err != nil {
 		log.WithError(err).WithField("sessionID", sessionID).
 			Warn("queuesvc: reading queue head")
@@ -317,7 +333,7 @@ func (s *Service) drainHead(ctx context.Context, platformID, sessionID string, t
 		if blocked {
 			entry.WithField("messageID", head.ID).
 				Error("queuesvc: queued message set aside after repeated send failures")
-			s.fireNotify(sessionID)
+			s.fireNotify(key)
 		} else {
 			entry.Warn("queuesvc: sending queued message")
 		}
@@ -330,8 +346,8 @@ func (s *Service) drainHead(ctx context.Context, platformID, sessionID string, t
 	}
 	// This send started a turn; block the enqueue fast-path until a real
 	// session.idle edge confirms it finished.
-	s.markDrained(sessionID, messageID, messageCreatedAt)
-	s.fireNotify(sessionID)
+	s.markDrained(key, messageID, messageCreatedAt)
+	s.fireNotify(key)
 }
 
 // Sweep drains one message from every session whose queue is non-empty
@@ -357,7 +373,8 @@ func (s *Service) Sweep(ctx context.Context) {
 		// message has drained, don't chain another into the same turn just
 		// because the status poll blips to idle. A newer completed assistant
 		// message proves the prior turn ended even if its idle edge was missed.
-		guard, guarded := s.currentDrainGuard(q.SessionID)
+		key := sessionKey{Platform: q.Platform, SessionID: q.SessionID}
+		guard, guarded := s.currentDrainGuard(key)
 		if guarded {
 			completion, supported := s.status.(completionInferer)
 			if !supported {
@@ -368,17 +385,17 @@ func (s *Service) Sweep(ctx context.Context) {
 				continue
 			}
 		}
-		lock := s.lockFor(q.SessionID)
+		lock := s.lockFor(key)
 		lock.Lock()
-		current, stillGuarded := s.currentDrainGuard(q.SessionID)
+		current, stillGuarded := s.currentDrainGuard(key)
 		if guarded != stillGuarded || (guarded && current.generation != guard.generation) {
 			lock.Unlock()
 			continue
 		}
 		if stillGuarded {
-			s.clearDrainedSinceIdle(q.SessionID)
+			s.clearDrainedSinceIdle(key)
 		}
-		s.drainHead(ctx, q.Platform, q.SessionID, false)
+		s.drainHead(ctx, key, false)
 		lock.Unlock()
 	}
 }
@@ -388,11 +405,20 @@ func (s *Service) List(platformID, sessionID string) ([]state.QueuedMessage, err
 	return s.store.ListQueuedMessages(platformID, sessionID)
 }
 
+// ListAnyPlatform is the one deliberate cross-platform read: the queue
+// list endpoint's `platform` query parameter is optional, so an older
+// client (or a deep link) can ask for a session's queue without naming its
+// owner. It is read-only and never feeds a drain — every mutating path
+// resolves the full (platform, sessionID) identity first.
+func (s *Service) ListAnyPlatform(sessionID string) ([]state.QueuedMessage, error) {
+	return s.store.ListQueuedMessagesAnyPlatform(sessionID)
+}
+
 // Remove deletes a queued message by id, but only if it belongs to the
 // given session (so one session can't mutate another's queue). Returns
 // whether a row was removed.
 func (s *Service) Remove(sessionID, id string) (bool, error) {
-	_, owner, ok, err := s.store.GetQueuedMessageSession(id)
+	platform, owner, ok, err := s.store.GetQueuedMessageSession(id)
 	if err != nil {
 		return false, err
 	}
@@ -404,7 +430,9 @@ func (s *Service) Remove(sessionID, id string) (bool, error) {
 		return false, err
 	}
 	if removed {
-		s.fireNotify(sessionID)
+		// The row's own platform is authoritative: the caller only knows
+		// the bare session id, which several machines can share.
+		s.fireNotify(sessionKey{Platform: platform, SessionID: sessionID})
 	}
 	return removed, nil
 }
@@ -414,7 +442,7 @@ func (s *Service) Remove(sessionID, id string) (bool, error) {
 // the message belongs to the given session. Returns whether a swap
 // happened (false at a boundary or on a mismatch).
 func (s *Service) Move(sessionID, id string, direction int) (bool, error) {
-	_, owner, ok, err := s.store.GetQueuedMessageSession(id)
+	platform, owner, ok, err := s.store.GetQueuedMessageSession(id)
 	if err != nil {
 		return false, err
 	}
@@ -426,14 +454,14 @@ func (s *Service) Move(sessionID, id string, direction int) (bool, error) {
 		return false, err
 	}
 	if moved {
-		s.fireNotify(sessionID)
+		s.fireNotify(sessionKey{Platform: platform, SessionID: sessionID})
 	}
 	return moved, nil
 }
 
-func (s *Service) fireNotify(sessionID string) {
+func (s *Service) fireNotify(key sessionKey) {
 	if s.notify != nil {
-		s.notify(sessionID)
+		s.notify(key.Platform, key.SessionID)
 	}
 }
 

@@ -100,14 +100,17 @@ func (d *DB) EnqueueClaimedChildResult(childID string, m QueuedMessage) (bool, e
 // CountQueuedMessages returns how many messages are queued for a session.
 // Used by the enqueue path to decide whether a just-added message is the
 // only one (so it may fast-path flush) vs. joining an existing backlog
-// (which must wait for a real session.idle edge). An empty platform
-// matches any platform.
+// (which must wait for a real session.idle edge).
+//
+// A session's identity is (platform, sessionID) and the platform is matched
+// exactly: an empty platform matches nothing. It used to wildcard, which let
+// a session id shared by two machines pool into one queue.
 func (d *DB) CountQueuedMessages(platform, sessionID string) (int, error) {
 	var n int
 	err := d.db.QueryRow(`
 		SELECT COUNT(*) FROM queued_message
-		WHERE (? = '' OR platform = ?) AND session_id = ?
-	`, platform, platform, sessionID).Scan(&n)
+		WHERE platform = ? AND session_id = ?
+	`, platform, sessionID).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("counting queued messages: %w", err)
 	}
@@ -115,21 +118,21 @@ func (d *DB) CountQueuedMessages(platform, sessionID string) (int, error) {
 }
 
 // HeadQueuedMessage returns the lowest-position (oldest) queued message
-// for a session, or (nil, nil) when the queue is empty. An empty platform
-// matches any platform (the idle-driven flush knows only the session id;
-// the head row carries the authoritative platform).
-// Blocked rows are skipped so a dead-lettered message does not stall
-// everything queued behind it.
+// for a session, or (nil, nil) when the queue is empty. The platform is
+// matched exactly — an empty platform matches nothing, so an idle edge that
+// lost its platform can no longer pop a same-id session's head on another
+// machine. Blocked rows are skipped so a dead-lettered message does not
+// stall everything queued behind it.
 func (d *DB) HeadQueuedMessage(platform, sessionID string) (*QueuedMessage, error) {
 	var m QueuedMessage
 	err := d.db.QueryRow(`
 		SELECT id, platform, session_id, position, text, images_json,
 		       model, agent, reasoning, created_at, attempts, last_error, blocked
 		FROM queued_message
-		WHERE (? = '' OR platform = ?) AND session_id = ? AND blocked = 0
+		WHERE platform = ? AND session_id = ? AND blocked = 0
 		ORDER BY position ASC
 		LIMIT 1
-	`, platform, platform, sessionID).Scan(
+	`, platform, sessionID).Scan(
 		&m.ID, &m.Platform, &m.SessionID, &m.Position, &m.Text, &m.ImagesJSON,
 		&m.Model, &m.Agent, &m.Reasoning, &m.CreatedAt, &m.Attempts, &m.LastError, &m.Blocked,
 	)
@@ -189,18 +192,37 @@ func (d *DB) SessionsWithQueuedMessages() ([]QueuedSession, error) {
 	return out, nil
 }
 
-// ListQueuedMessages returns a session's queue ordered oldest-first.
+// ListQueuedMessages returns a session's queue ordered oldest-first. The
+// platform is matched exactly (see HeadQueuedMessage).
 func (d *DB) ListQueuedMessages(platform, sessionID string) ([]QueuedMessage, error) {
-	// An empty platform matches any platform (wildcard), mirroring
-	// HeadQueuedMessage — so callers that only know the session id (the
-	// idle-edge flush, the queue.updated broadcast) resolve it.
-	rows, err := d.db.Query(`
+	return d.queuedMessages(`
 		SELECT id, platform, session_id, position, text, images_json,
 		       model, agent, reasoning, created_at, attempts, last_error, blocked
 		FROM queued_message
-		WHERE (? = '' OR platform = ?) AND session_id = ?
+		WHERE platform = ? AND session_id = ?
 		ORDER BY position ASC
-	`, platform, platform, sessionID)
+	`, platform, sessionID)
+}
+
+// ListQueuedMessagesAnyPlatform lists a session's queue across every
+// platform. It is the single deliberate cross-platform query left in this
+// file, kept for the read-only GET /api/session/{id}/queue endpoint whose
+// `platform` parameter is optional — an older client, or a hand-built URL,
+// has only the bare session id. Nothing about delivery may use it: with two
+// machines sharing a session id it returns both queues, which is acceptable
+// for a display list and never for a drain.
+func (d *DB) ListQueuedMessagesAnyPlatform(sessionID string) ([]QueuedMessage, error) {
+	return d.queuedMessages(`
+		SELECT id, platform, session_id, position, text, images_json,
+		       model, agent, reasoning, created_at, attempts, last_error, blocked
+		FROM queued_message
+		WHERE session_id = ?
+		ORDER BY platform ASC, position ASC
+	`, sessionID)
+}
+
+func (d *DB) queuedMessages(query string, args ...any) ([]QueuedMessage, error) {
+	rows, err := d.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("listing queued messages: %w", err)
 	}

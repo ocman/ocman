@@ -136,7 +136,7 @@ func TestSessionMessage_BusyQueuesThenFlushesOnIdle(t *testing.T) {
 
 	// onSessionIdle flushes in a goroutine; call Flush synchronously to
 	// avoid a race in the test (same code path, no goroutine).
-	srv.queueSvc().Flush(t.Context(), "", "s1")
+	srv.queueSvc().Flush(t.Context(), "fake", "s1")
 	mu.Lock()
 	if len(sent) != 1 || sent[0] != "one" {
 		mu.Unlock()
@@ -145,7 +145,7 @@ func TestSessionMessage_BusyQueuesThenFlushesOnIdle(t *testing.T) {
 	mu.Unlock()
 
 	// Next idle edge sends the second.
-	srv.queueSvc().Flush(t.Context(), "", "s1")
+	srv.queueSvc().Flush(t.Context(), "fake", "s1")
 	mu.Lock()
 	defer mu.Unlock()
 	if len(sent) != 2 || sent[1] != "two" {
@@ -419,7 +419,7 @@ func TestQueueMutations_ReachTheWireAsQueueUpdated(t *testing.T) {
 
 	// --- Drain: session goes idle, Flush sends+deletes 'one' → []. ---
 	busy = false
-	srv.queueSvc().Flush(t.Context(), "", "s1")
+	srv.queueSvc().Flush(t.Context(), "fake", "s1")
 	if got := drainQueueUpdated(t, sub.ch); len(got) != 0 {
 		t.Fatalf("after drain = %+v, want [] (empty list clears the UI)", got)
 	}
@@ -468,7 +468,7 @@ func TestSSEStream_DrainDeliversEmptyQueueOverTheWire(t *testing.T) {
 
 	// Drain on idle: send + delete + broadcast empty list.
 	busy = false
-	srv.queueSvc().Flush(t.Context(), "", "s1")
+	srv.queueSvc().Flush(t.Context(), "fake", "s1")
 
 	time.Sleep(30 * time.Millisecond)
 	cancel()
@@ -690,7 +690,7 @@ func TestSessionMessage_RelaunchFails_MessageStaysQueued(t *testing.T) {
 	if rr := postMessage(t, srv, "s1", `{"message":"hello","queue":true}`); rr.Code != http.StatusNoContent {
 		t.Fatalf("status = %d; body=%s", rr.Code, rr.Body)
 	}
-	srv.queueSvc().Flush(t.Context(), "", "s1")
+	srv.queueSvc().Flush(t.Context(), "fake", "s1")
 	mu.Lock()
 	if attempts != 1 {
 		mu.Unlock()

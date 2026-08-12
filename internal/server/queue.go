@@ -57,7 +57,7 @@ func (s *Server) queueSvc() *queuesvc.Service {
 			s.stateDB,
 			&queueSender{s: s},
 			&workflowStatusInferer{s: s},
-			func(sessionID string) { s.broadcastQueueUpdated(sessionID) },
+			func(platform, sessionID string) { s.broadcastQueueUpdated(platform, sessionID) },
 		)
 	})
 	return s.queueSvcCached
@@ -136,15 +136,17 @@ func (s *Server) adapterForSession(ctx context.Context, platformID, sessionID st
 // authoritative send gate for held messages (#58) — a Ctrl+Enter enqueue
 // never sends directly, so the idle edge is what delivers it. Runs in its
 // own goroutine so a slow platform send can't stall the SSE watcher.
-func (s *Server) onSessionIdle(sessionID string) {
+//
+// platformID names the instance the edge came from. It is required: a bare
+// session id is not an identity, and flushing on one let an idle edge from
+// this machine drain a remote session that happened to share the id.
+func (s *Server) onSessionIdle(platformID, sessionID string) {
 	s.broadcastSessionIdle(sessionID)
-	if s.stateDB == nil {
+	if s.stateDB == nil || platformID == "" {
 		return
 	}
 	go runWithRecover("queue-flush", func() {
-		// platformID empty: the queue head row carries the authoritative
-		// platform, and the busy check resolves the session by id.
-		s.queueSvc().Flush(context.Background(), "", sessionID)
+		s.queueSvc().Flush(context.Background(), platformID, sessionID)
 	})
 }
 
@@ -153,15 +155,15 @@ func (s *Server) onSessionIdle(sessionID string) {
 // queue so clients apply it directly without a refetch. The messages key
 // is always present (an empty queue sends []), so the client can trust it
 // as authoritative rather than polling.
-func (s *Server) broadcastQueueUpdated(sessionID string) {
-	if sessionID == "" {
+func (s *Server) broadcastQueueUpdated(platform, sessionID string) {
+	if sessionID == "" || platform == "" {
 		return
 	}
-	// Platform empty: List resolves the session by id across platforms,
-	// matching how Flush drains it. A read error just omits messages so
-	// the client falls back to a refetch.
+	// Scoped to the owning platform: a same-id session on another machine
+	// has its own queue and its own broadcast. A read error just omits
+	// messages so the client falls back to a refetch.
 	var messages []queuedMessageView
-	if msgs, err := s.queueSvc().List("", sessionID); err == nil {
+	if msgs, err := s.queueSvc().List(platform, sessionID); err == nil {
 		messages = make([]queuedMessageView, 0, len(msgs))
 		for _, m := range msgs {
 			messages = append(messages, toQueuedMessageView(m))

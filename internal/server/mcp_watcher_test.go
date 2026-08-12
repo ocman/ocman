@@ -356,7 +356,7 @@ func TestCheckAndInjectChildResults_RemindsParentAfterRestartDisconnect(t *testi
 
 	s.checkAndInjectChildResults(context.Background())
 
-	queued, err := sdb.ListQueuedMessages("", "parent-1")
+	queued, err := sdb.ListQueuedMessagesAnyPlatform("parent-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -461,7 +461,7 @@ func TestCheckAndInjectChildResults_SkipsArchivedParent(t *testing.T) {
 
 	s.checkAndInjectChildResults(context.Background())
 
-	queued, err := sdb.ListQueuedMessages("", "parent-1")
+	queued, err := sdb.ListQueuedMessagesAnyPlatform("parent-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -694,7 +694,7 @@ func TestDeferChildResultReconnect_MissingStateOrChildIsIgnored(t *testing.T) {
 	s := New(nil, sdb, "127.0.0.1:0", platforms.NewRegistry(), nil)
 	s.deferChildResultReconnect("missing")
 
-	messages, err := sdb.ListQueuedMessages("", "")
+	messages, err := sdb.ListQueuedMessagesAnyPlatform("")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -888,7 +888,7 @@ func TestCheckAndInjectChildResults_LegacyDetachedTerminalIsIgnored(t *testing.T
 	}
 	s := New(nil, sdb, "127.0.0.1:0", platforms.NewRegistry(), nil)
 	s.checkAndInjectChildResults(context.Background())
-	queued, err := sdb.ListQueuedMessages("", "parent-1")
+	queued, err := sdb.ListQueuedMessagesAnyPlatform("parent-1")
 	if err != nil || len(queued) != 0 {
 		t.Fatalf("legacy result queue = %+v, %v", queued, err)
 	}
