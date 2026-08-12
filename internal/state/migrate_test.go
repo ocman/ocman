@@ -774,3 +774,32 @@ func TestMigrate_V14_CreatesRemoteTables(t *testing.T) {
 		t.Error("expected UNIQUE remote_id to reject duplicate")
 	}
 }
+
+// TestMigrateRejectsNewerSchema pins the downgrade guard: a database
+// written by a newer ocman must not be opened by an older binary, which
+// would silently run its old queries against an unknown schema.
+func TestMigrateRejectsNewerSchema(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := migrate(db); err != nil {
+		t.Fatalf("migrate fresh: %v", err)
+	}
+	// Pretend a newer ocman migrated this database further.
+	future := latestSchemaVersion + 3
+	if _, err := db.Exec(
+		`INSERT INTO schema_version (version, applied_at) VALUES (?, 0)`, future,
+	); err != nil {
+		t.Fatalf("seed future version: %v", err)
+	}
+
+	err = migrate(db)
+	if err == nil {
+		t.Fatal("migrate accepted a schema newer than this binary understands")
+	}
+	if !strings.Contains(err.Error(), "newer ocman") {
+		t.Errorf("error should name the cause, got: %v", err)
+	}
+}

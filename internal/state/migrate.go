@@ -171,6 +171,15 @@ func migrate(db *sql.DB) error {
 	if err != nil {
 		return err
 	}
+	if current > latestSchemaVersion {
+		// A newer ocman already migrated this database. The loop below
+		// would be a silent no-op and we'd run this binary's older
+		// queries against a schema we don't know — refuse instead.
+		return fmt.Errorf(
+			"state database is at schema v%d but this ocman only understands v%d: "+
+				"it was created by a newer ocman; upgrade ocman (or point -db at a different state database)",
+			current, latestSchemaVersion)
+	}
 
 	tx, err := db.Begin()
 	if err != nil {
