@@ -313,6 +313,28 @@ describe('CommandPalette project mode', () => {
     expect(mocks.apiState.browseDirectories).toHaveBeenCalledWith(undefined, expect.any(AbortSignal));
   });
 
+  it('exposes the results as listbox options the input drives', async () => {
+    mocks.uiState.paletteMode = 'command';
+
+    renderPalette();
+
+    const input = await screen.findByPlaceholderText('> commands, :stats, sessions...');
+    expect(input).toHaveAttribute('role', 'combobox');
+    expect(input).toHaveAttribute('aria-expanded', 'true');
+
+    let options = screen.getAllByRole('option');
+    expect(options.length).toBeGreaterThan(1);
+    expect(options[0]).toHaveAttribute('aria-selected', 'true');
+    expect(input).toHaveAttribute('aria-activedescendant', options[0].id);
+
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+
+    options = screen.getAllByRole('option');
+    expect(options[0]).toHaveAttribute('aria-selected', 'false');
+    expect(options[1]).toHaveAttribute('aria-selected', 'true');
+    expect(input).toHaveAttribute('aria-activedescendant', options[1].id);
+  });
+
   it('opens the known-project picker for the scoped new-session command', async () => {
     mocks.uiState.paletteMode = 'command';
 

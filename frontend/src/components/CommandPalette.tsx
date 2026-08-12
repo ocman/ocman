@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useId, useRef, useMemo, useCallback } from 'react';
 import './CommandPalette.css';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -133,6 +133,16 @@ export function CommandPalette() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  // Results are a listbox driven from the input (combobox +
+  // aria-activedescendant): focus stays in the search field, which the
+  // arrow-key handling already assumes.
+  const listId = useId();
+  const optionId = (index: number) => `${listId}-option-${index}`;
+  const optionProps = (index: number) => ({
+    id: optionId(index),
+    role: 'option',
+    'aria-selected': index === selectedIndex,
+  });
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
@@ -621,6 +631,11 @@ export function CommandPalette() {
             ref={inputRef}
             className="oc-cmd-input"
             type="text"
+            role="combobox"
+            aria-expanded="true"
+            aria-autocomplete="list"
+            aria-controls={listId}
+            aria-activedescendant={results.length > 0 ? optionId(selectedIndex) : undefined}
             placeholder={
               mode === 'command'
                 ? '> commands, :stats, sessions...'
@@ -665,9 +680,9 @@ export function CommandPalette() {
             )}
           </div>
         )}
-        <div className="oc-cmd-results" ref={listRef}>
+        <div className="oc-cmd-results" id={listId} role="listbox" aria-label="Results" ref={listRef}>
           {results.length === 0 && (
-            <div className="oc-cmd-empty">
+            <div className="oc-cmd-empty" role="presentation">
               {mode === 'project' && projectBrowser.open && projectBrowser.loading
                 ? 'Loading directories...'
                 : mode === 'project' && projectBrowser.open && projectBrowser.error
@@ -701,6 +716,7 @@ export function CommandPalette() {
               return (
                 <div
                   key={session.id}
+                  {...optionProps(i)}
                   className={`oc-cmd-item${i === selectedIndex ? ' oc-cmd-item--selected' : ''}`}
                   onClick={() => handleSelect(item)}
                   onMouseMove={() => setSelectedIndex(i)}
@@ -729,6 +745,7 @@ export function CommandPalette() {
               return (
                 <div
                   key={`project:${proj.remoteId ?? 'local'}:${proj.directory}`}
+                  {...optionProps(i)}
                   className={`oc-cmd-item oc-cmd-item--command${i === selectedIndex ? ' oc-cmd-item--selected' : ''}`}
                   onClick={() => handleSelect(item)}
                   onMouseMove={() => setSelectedIndex(i)}
@@ -753,6 +770,7 @@ export function CommandPalette() {
               return (
                 <div
                   key={`browse-parent:${item.directory}`}
+                  {...optionProps(i)}
                   className={`oc-cmd-item oc-cmd-item--command${i === selectedIndex ? ' oc-cmd-item--selected' : ''}`}
                   onClick={() => handleSelect(item)}
                   onMouseMove={() => setSelectedIndex(i)}
@@ -770,6 +788,7 @@ export function CommandPalette() {
               return (
                 <div
                   key={`browse-directory:${item.entry.path}`}
+                  {...optionProps(i)}
                   className={`oc-cmd-item oc-cmd-item--command${i === selectedIndex ? ' oc-cmd-item--selected' : ''}`}
                   onClick={() => handleSelect(item)}
                   onMouseMove={() => setSelectedIndex(i)}
@@ -787,6 +806,7 @@ export function CommandPalette() {
               return (
                 <div
                   key={`browse-search-directory:${item.entry.path}`}
+                  {...optionProps(i)}
                   className={`oc-cmd-item oc-cmd-item--command${i === selectedIndex ? ' oc-cmd-item--selected' : ''}`}
                   onClick={() => handleSelect(item)}
                   onMouseMove={() => setSelectedIndex(i)}
@@ -806,6 +826,7 @@ export function CommandPalette() {
               return (
                 <div
                   key="new-project"
+                  {...optionProps(i)}
                   className={`oc-cmd-item oc-cmd-item--command${i === selectedIndex ? ' oc-cmd-item--selected' : ''}`}
                   onClick={() => handleSelect(item)}
                   onMouseMove={() => setSelectedIndex(i)}
@@ -822,6 +843,7 @@ export function CommandPalette() {
             if (item.kind === 'command' || item.kind === 'nav' || item.kind === 'scoped') return (
               <div
                 key={item.id}
+                {...optionProps(i)}
                 className={`oc-cmd-item oc-cmd-item--command${i === selectedIndex ? ' oc-cmd-item--selected' : ''}`}
                 onClick={() => handleSelect(item)}
                 onMouseMove={() => setSelectedIndex(i)}

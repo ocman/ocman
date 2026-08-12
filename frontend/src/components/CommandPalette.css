@@ -118,6 +118,15 @@
   padding: 8px 16px;
   cursor: pointer;
   transition: background 0.1s;
+  /* Button resets: pickers that put focus on the rows themselves render
+     them as <button>, and they must match the <div> rows exactly. */
+  width: 100%;
+  text-align: left;
+  appearance: none;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
 }
 .oc-cmd-item--selected {
   background: var(--bg-hover);

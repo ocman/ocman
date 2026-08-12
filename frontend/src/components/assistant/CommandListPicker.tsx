@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import Fuse, { type IFuseOptions } from 'fuse.js';
+import { Modal } from '../Modal';
 import '../CommandPalette.css';
 import './ModelPicker.css';
 
@@ -121,6 +122,11 @@ export function CommandListPicker<T extends PickerEntryBase>({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  // The list is a listbox driven from the input (combobox +
+  // aria-activedescendant): focus stays in the search field, which is
+  // what the arrow keys already assume.
+  const listId = useId();
+  const optionId = (index: number) => `${listId}-option-${index}`;
 
   useEffect(() => {
     if (!open) return;
@@ -185,19 +191,6 @@ export function CommandListPicker<T extends PickerEntryBase>({
     onClose();
   }, [onSelect, onClose]);
 
-  // Close on Escape regardless of focus target.
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [open, onClose]);
-
   const onInputKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -223,54 +216,65 @@ export function CommandListPicker<T extends PickerEntryBase>({
   const total = entries.length;
 
   return createPortal(
-    <div className="oc-cmd-backdrop" onClick={onClose}>
-      <div className="oc-cmd-palette oc-model-picker" onClick={(e) => e.stopPropagation()}>
-        <div className="oc-cmd-input-wrap">
-          <i className="bi bi-search oc-cmd-search-icon" />
-          <input
-            ref={inputRef}
-            className="oc-cmd-input"
-            type="text"
-            placeholder={placeholder(total)}
-            value={query}
-            onChange={(e) => { setQuery(e.target.value); setSelectedIndex(0); }}
-            onKeyDown={onInputKeyDown}
-          />
-          <kbd className="oc-cmd-kbd">ESC</kbd>
-        </div>
-        <div className="oc-cmd-results" ref={listRef}>
-          {filteredEntries.length === 0 && (
-            <div className="oc-cmd-empty">{emptyMessage}</div>
-          )}
-          {items.map((it, i) => {
-            if (it.kind === 'header') {
-              return <div key={it.key} className="oc-model-picker-header">{it.label}</div>;
-            }
-            const e = it.entry;
-            return (
-              <div
-                key={it.key}
-                className={`oc-cmd-item oc-model-picker-row${i === activeItemIndex ? ' oc-cmd-item--selected' : ''}`}
-                onClick={() => pick(e.value)}
-                onMouseEnter={() => {
-                  const idx = entryIndexes.indexOf(i);
-                  if (idx >= 0) setSelectedIndex(idx);
-                }}
-              >
-                <span
-                  className="oc-model-picker-check"
-                  aria-hidden="true"
-                  data-active={isCurrent(e) ? 'true' : 'false'}
-                >
-                  {isCurrent(e) ? <i className="bi bi-check2" /> : null}
-                </span>
-                {renderRow(e)}
-              </div>
-            );
-          })}
-        </div>
+    <Modal
+      label={placeholder(total)}
+      onClose={onClose}
+      backdropClassName="oc-cmd-backdrop"
+      dialogClassName="oc-cmd-palette oc-model-picker"
+    >
+      <div className="oc-cmd-input-wrap">
+        <i className="bi bi-search oc-cmd-search-icon" />
+        <input
+          ref={inputRef}
+          className="oc-cmd-input"
+          type="text"
+          role="combobox"
+          aria-expanded="true"
+          aria-autocomplete="list"
+          aria-controls={listId}
+          aria-activedescendant={activeItemIndex >= 0 ? optionId(activeItemIndex) : undefined}
+          placeholder={placeholder(total)}
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setSelectedIndex(0); }}
+          onKeyDown={onInputKeyDown}
+        />
+        <kbd className="oc-cmd-kbd">ESC</kbd>
       </div>
-    </div>,
+      <div className="oc-cmd-results" id={listId} role="listbox" aria-label={placeholder(total)} ref={listRef}>
+        {filteredEntries.length === 0 && (
+          <div className="oc-cmd-empty" role="presentation">{emptyMessage}</div>
+        )}
+        {items.map((it, i) => {
+          if (it.kind === 'header') {
+            return <div key={it.key} className="oc-model-picker-header" role="presentation">{it.label}</div>;
+          }
+          const e = it.entry;
+          return (
+            <div
+              key={it.key}
+              id={optionId(i)}
+              role="option"
+              aria-selected={i === activeItemIndex}
+              className={`oc-cmd-item oc-model-picker-row${i === activeItemIndex ? ' oc-cmd-item--selected' : ''}`}
+              onClick={() => pick(e.value)}
+              onMouseEnter={() => {
+                const idx = entryIndexes.indexOf(i);
+                if (idx >= 0) setSelectedIndex(idx);
+              }}
+            >
+              <span
+                className="oc-model-picker-check"
+                aria-hidden="true"
+                data-active={isCurrent(e) ? 'true' : 'false'}
+              >
+                {isCurrent(e) ? <i className="bi bi-check2" /> : null}
+              </span>
+              {renderRow(e)}
+            </div>
+          );
+        })}
+      </div>
+    </Modal>,
     document.body,
   );
 }

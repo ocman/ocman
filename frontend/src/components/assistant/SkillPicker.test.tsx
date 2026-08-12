@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { SkillPicker } from './SkillPicker';
 import type { SlashCommand } from '../../lib/api';
@@ -34,6 +34,28 @@ describe('SkillPicker', () => {
 
     fireEvent.click(screen.getByText('pr-review'));
     expect(onSelect).toHaveBeenCalledWith('pr-review');
+  });
+
+  it('exposes the rows as listbox options the search input drives', async () => {
+    const onSelect = vi.fn();
+    render(<SkillPicker open commands={commands} onSelect={onSelect} onClose={() => {}} />);
+
+    const input = screen.getByRole('combobox');
+    await waitFor(() => expect(input).toHaveFocus());
+    expect(input).toHaveAttribute('aria-expanded', 'true');
+
+    let options = screen.getAllByRole('option');
+    expect(options).toHaveLength(2);
+    expect(options[0]).toHaveAttribute('aria-selected', 'true');
+    expect(input).toHaveAttribute('aria-activedescendant', options[0].id);
+
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    options = screen.getAllByRole('option');
+    expect(options[1]).toHaveAttribute('aria-selected', 'true');
+    expect(input).toHaveAttribute('aria-activedescendant', options[1].id);
+
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSelect).toHaveBeenCalledWith('create-commit');
   });
 
   it('shows the empty message when no skills are present', () => {
