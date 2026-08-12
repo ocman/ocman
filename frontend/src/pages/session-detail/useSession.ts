@@ -119,14 +119,16 @@ export interface UseSessionResult extends SessionView {
    *  through the reducer's clearPrompt action. */
   clearPrompt: (kind: 'permission' | 'question', id: string) => void;
   /** Imperatively set a pending permission. Used by the sidebar→
-   *  detail reverse sync when poll discovers a prompt SSE missed. */
+   *  detail reverse sync when poll discovers a prompt SSE missed.
+   *  Set-only by design — clearing goes through the id-safe
+   *  `clearPrompt`, so the type forbids passing null. */
   setPendingPermission: (
-    perm: import('../../lib/sseHelpers').PendingPermission | null,
+    perm: import('../../lib/sseHelpers').PendingPermission,
     ownerIds?: string[],
   ) => void;
   /** Imperatively set a pending question. Same rationale as
-   *  setPendingPermission. */
-  setPendingQuestion: (q: import('../../components/session/QuestionPrompt').PendingQuestion | null) => void;
+   *  setPendingPermission, including the set-only contract. */
+  setPendingQuestion: (q: import('../../components/session/QuestionPrompt').PendingQuestion) => void;
   /** Apply a partial patch to the session metadata. Used for
    *  page-local self-mutations like rename / mark-seen. */
   patchSession: (patch: Partial<import('../../lib/sessionReducer').SessionMetadata>) => void;
@@ -280,19 +282,13 @@ export function useSession(
     [],
   );
   const setPendingPermission = useCallback(
-    (perm: import('../../lib/sseHelpers').PendingPermission | null, ownerIds?: string[]) => {
-      if (perm === null) {
-        // No id to clear by — page-level callers always know the id;
-        // they should use clearPrompt directly.
-        return;
-      }
+    (perm: import('../../lib/sseHelpers').PendingPermission, ownerIds?: string[]) => {
       dispatch({ type: 'setPendingPermission', permission: perm, ownerIds });
     },
     [],
   );
   const setPendingQuestion = useCallback(
-    (q: import('../../components/session/QuestionPrompt').PendingQuestion | null) => {
-      if (q === null) return;
+    (q: import('../../components/session/QuestionPrompt').PendingQuestion) => {
       dispatch({
         type: 'sse',
         event: {

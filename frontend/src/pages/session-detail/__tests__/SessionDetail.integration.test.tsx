@@ -948,6 +948,36 @@ describe('SessionDetail — question prompt', () => {
       expect(handle.result.container.textContent).toContain('Pick a colour');
     }, { timeout: 4000 });
   });
+
+  // A question answered outside ocman (another browser tab, or the
+  // OpenCode CLI) does not reliably produce a `question.replied` event.
+  // The 3 s poll is the only thing that takes the dialog down; if it
+  // can't, the prompt blocks the composer forever.
+  it('dismisses the question once the live list drops its request id', async () => {
+    let answered = false;
+    const listQuestions = vi.fn(() => Promise.resolve(answered ? [] : [questionPayload]));
+    // Fake timers must be installed before the mount: the poll's
+    // setInterval is registered during the mount effect.
+    vi.useFakeTimers();
+    try {
+      const handle = renderSessionPage({
+        sessionId: 'sess_1',
+        detail: makeSessionDetail(sessionWithQ),
+        sessions: [sessionWithQ],
+        storeOverrides: { listQuestions },
+      });
+      await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+      expect(handle.result.container.textContent).toContain('Pick a colour');
+
+      answered = true;
+      // Two poll ticks: one to observe the drop, one to prove the
+      // dialog doesn't get re-hydrated from session storage.
+      await act(async () => { await vi.advanceTimersByTimeAsync(6500); });
+      expect(handle.result.container.textContent).not.toContain('Pick a colour');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('SessionDetail — composer send', () => {

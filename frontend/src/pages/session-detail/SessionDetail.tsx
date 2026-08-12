@@ -673,7 +673,10 @@ export function SessionDetail({ id }: SessionDetailProps) {
             return q?.requestId === pendingQuestionRequestId;
           });
           if (stillPending) return;
-          setPendingQuestion(null);
+          // clearPrompt is the id-safe path: it only takes the dialog
+          // down if the request id still matches, so a follow-up asked
+          // between the poll and its response survives.
+          clearPrompt('question', pendingQuestionRequestId);
           clearPendingQuestion(id);
         })
         .catch(() => { /* leave the prompt up; the next tick retries */ });
@@ -687,7 +690,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [id, pendingQuestionRequestId, portAvailable, listQuestions, setPendingQuestion]);
+  }, [id, pendingQuestionRequestId, portAvailable, listQuestions, clearPrompt]);
 
   // Mark session as seen on entry. Opening a session also unarchives it
   // server-side (handleSession), so optimistically clear the archived flag
