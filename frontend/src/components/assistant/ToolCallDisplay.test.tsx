@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ComponentProps } from 'react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 // @ts-expect-error Vitest runs in Node; application types intentionally exclude Node globals.
@@ -189,6 +190,66 @@ describe('ToolCallDisplay AI approval footnote', () => {
     });
     expect(container.querySelector('.oc-read-line')!.textContent).toBe('\u2192Read /etc/hosts');
     expect(container.querySelector('.oc-ai-approval-footnote')).not.toBeNull();
+  });
+});
+
+describe('ToolCallDisplay expand toggles', () => {
+  // Every expand/collapse affordance must be a real button: focusable,
+  // Enter/Space-activatable and carrying its state in aria-expanded.
+  const variants: [string, Partial<Props>][] = [
+    ['a patch card', {
+      toolName: 'apply_patch',
+      argsText: 'completed\n*** Begin Patch\n*** Update File: a.ts\n-old\n+new\n*** End Patch',
+      result: 'ok',
+    }],
+    ['an edit card', {
+      toolName: 'edit',
+      argsText: 'completed\n{"filePath":"a.ts"}',
+      result: 'x'.repeat(600),
+    }],
+    ['a generic tool line', {
+      toolName: 'custom_tool',
+      argsText: 'completed\n{"input":"value"}',
+      result: 'output',
+    }],
+  ];
+
+  it.each(variants)('%s toggles from the keyboard', async (_label, props) => {
+    const user = userEvent.setup();
+    renderTool(props);
+
+    const toggle = screen.getAllByRole('button', { expanded: false })[0];
+    // An accessible name, so the toggle is announced as more than "button".
+    expect(toggle.textContent?.trim()).not.toBe('');
+
+    await user.tab();
+    expect(toggle).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await user.keyboard(' ');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('exposes the shell output toggle state', () => {
+    renderTool({
+      argsText: JSON.stringify({ command: 'many-lines' }),
+      result: Array.from({ length: 13 }, (_, i) => `line ${i + 1}`).join('\n'),
+    });
+    const toggle = screen.getByRole('button', { name: 'Show full output' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('leaves the always-visible task list header non-interactive', () => {
+    const { container } = renderTool({
+      toolName: 'todowrite',
+      argsText: `completed\n${JSON.stringify({ todos: [{ content: 'Ship it', status: 'pending' }] })}`,
+    });
+    // The task list is never collapsed, so its header carries no toggle
+    // at all rather than a mouse-only one that does nothing.
+    expect(container.querySelector('.oc-tool-header')!.tagName).toBe('DIV');
+    expect(screen.getByText('Ship it')).toBeTruthy();
   });
 });
 

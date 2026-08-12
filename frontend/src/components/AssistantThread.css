@@ -423,6 +423,9 @@
   display: none;
 }
 
+/* Shared by the non-interactive header (task list / subagent task) and
+   the <button> toggle on collapsible cards. The button resets keep the
+   two visually identical. */
 .oc-tool-header {
   display: flex;
   align-items: center;
@@ -432,6 +435,13 @@
   user-select: none;
   font-family: var(--font-conversation-mono);
   font-size: 12px;
+  line-height: inherit;
+  width: 100%;
+  text-align: left;
+  appearance: none;
+  background: none;
+  border: 0;
+  color: inherit;
 }
 .oc-tool-header:hover { background: rgba(255,255,255,0.02); }
 
@@ -835,6 +845,13 @@
   padding: 0;
   line-height: 1.4;
   user-select: none;
+  /* Button resets: the collapsible variant is a <button>, the inert one
+     a <div>, and they must render identically. */
+  width: 100%;
+  text-align: left;
+  appearance: none;
+  background: none;
+  border: 0;
 }
 .oc-tool-compact-line:hover {
   color: var(--text);

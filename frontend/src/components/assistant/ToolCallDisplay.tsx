@@ -582,7 +582,9 @@ const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArg
   if (todos) {
     return (
       <div className={`oc-tool ${statusClass}`}>
-        <div className="oc-tool-header" onClick={() => setExpanded(!expanded)}>
+        {/* The task list is always rendered, so this header has nothing
+            to expand — it carries no toggle at all. */}
+        <div className="oc-tool-header">
           <i className={`bi bi-check2-square oc-tool-icon ${statusClass}`} title={statusTitle} aria-hidden="true" />
           <span className="oc-tool-label">{title && title !== toolName ? title : 'Task list'}</span>
           {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} />}
@@ -603,11 +605,16 @@ const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArg
 
     return (
       <div className={`oc-tool oc-tool-patch ${statusClass} ${expanded ? 'oc-tool-expanded' : ''}`}>
-        <div className="oc-tool-header" onClick={() => setExpanded(!expanded)}>
+        <button
+          type="button"
+          className="oc-tool-header"
+          aria-expanded={expanded}
+          onClick={() => setExpanded(!expanded)}
+        >
           <span className={`oc-tool-icon ${statusClass}`} title={statusTitle}>{statusIcon}</span>
           <span className="oc-tool-label">{patchSummary}</span>
           {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} />}
-        </div>
+        </button>
         {patchBody && (
           <div className="oc-tool-content" onClick={() => !expanded && setExpanded(true)} style={!expanded ? { cursor: 'pointer' } : undefined}>
             {renderPatch(patchBody)}
@@ -624,11 +631,16 @@ const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArg
     const diffPayload = parseDiffPayload(result as string | null | undefined);
     return (
       <div className={`oc-tool oc-tool-edit ${statusClass} ${expanded || diffPayload ? 'oc-tool-expanded' : ''}`}>
-        <div className="oc-tool-header" onClick={() => setExpanded(!expanded)}>
+        <button
+          type="button"
+          className="oc-tool-header"
+          aria-expanded={expanded}
+          onClick={() => setExpanded(!expanded)}
+        >
           <i className={`bi bi-pencil-fill oc-tool-icon ${statusClass}`} title={statusTitle} aria-hidden="true" />
           <span className="oc-tool-label">{title || toolName}</span>
           {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} />}
-        </div>
+        </button>
         {(diffPayload || outputDisplay) && (
           <div className="oc-tool-content" onClick={() => !expanded && !diffPayload && setExpanded(true)} style={!expanded && !diffPayload ? { cursor: 'pointer' } : undefined}>
             {diffPayload
@@ -665,6 +677,7 @@ const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArg
                 <button
                   type="button"
                   className="oc-tool-expand oc-shell-output-toggle"
+                  aria-expanded={expanded}
                   onClick={(event) => {
                     event.stopPropagation();
                     setExpanded(!expanded);
@@ -697,19 +710,32 @@ const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArg
     expanded ? 'oc-tool-compact-expanded' : '',
   ].filter(Boolean).join(' ');
   const hasBody = !!(detail || outputDisplay);
+  const compactLine = (
+    <>
+      <span className="oc-read-arrow" aria-hidden="true" title={statusTitle}>{arrowIcon}</span>
+      <span className="oc-tool-compact-name">{toolName}</span>
+      {summary && <span className="oc-tool-compact-summary">{summary}</span>}
+      {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} />}
+    </>
+  );
 
   return (
     <div className={compactClass}>
-      <div
-        className="oc-tool-compact-line"
-        onClick={hasBody ? () => setExpanded(!expanded) : undefined}
-        style={hasBody ? { cursor: 'pointer' } : undefined}
-      >
-        <span className="oc-read-arrow" aria-hidden="true" title={statusTitle}>{arrowIcon}</span>
-        <span className="oc-tool-compact-name">{toolName}</span>
-        {summary && <span className="oc-tool-compact-summary">{summary}</span>}
-        {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} />}
-      </div>
+      {/* A button only when there is something to reveal; an inert line
+          otherwise, so nothing focusable does nothing. */}
+      {hasBody ? (
+        <button
+          type="button"
+          className="oc-tool-compact-line"
+          aria-expanded={expanded}
+          style={{ cursor: 'pointer' }}
+          onClick={() => setExpanded(!expanded)}
+        >
+          {compactLine}
+        </button>
+      ) : (
+        <div className="oc-tool-compact-line">{compactLine}</div>
+      )}
       {expanded && hasBody && (
         <div className="oc-tool-compact-body">
           {detail && <pre className="oc-tool-pre">{detail}</pre>}
