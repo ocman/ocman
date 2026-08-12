@@ -671,7 +671,10 @@ func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSession
 	var parsed struct {
 		ID string `json:"id"`
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, readErr := readLimited(resp.Body, maxUpstreamErrorBytes)
+	if readErr != nil {
+		return nil, fmt.Errorf("opencode create-session: %w", readErr)
+	}
 	// A session without an ID is unusable — the caller can never address
 	// it. Fail loudly rather than returning a "created" session with an
 	// empty ID, surfacing the raw body so the cause is visible.

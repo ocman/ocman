@@ -8,6 +8,7 @@ package forgehttp
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -20,6 +21,11 @@ import (
 // defaultTimeout bounds a forge API call when the caller doesn't supply
 // its own *http.Client.
 const defaultTimeout = 10 * time.Second
+
+// MaxResponseBytes bounds a forge API response. PR/issue list pages with
+// full bodies are tens of KB; 8 MiB leaves a wide margin while keeping a
+// misbehaving (or impersonated) forge from filling ocman's heap.
+const MaxResponseBytes int64 = 8 << 20
 
 // Get issues req using client (or a default 10s client when nil), reads
 // the full body, parses rate-limit headers, and returns body +
@@ -36,9 +42,15 @@ func Get(ctx context.Context, client *http.Client, req *http.Request) ([]byte, f
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	// Bounded read: reads one byte past the limit so an oversized body is
+	// reported as an error instead of silently truncated into invalid JSON.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxResponseBytes+1))
 	if err != nil {
 		return nil, forge.RateLimit{}, resp.StatusCode, err
+	}
+	if int64(len(body)) > MaxResponseBytes {
+		return nil, forge.RateLimit{}, resp.StatusCode,
+			fmt.Errorf("forge response too large (over %d bytes)", MaxResponseBytes)
 	}
 	rl := ParseRateLimit(resp.Header, resp.StatusCode == http.StatusTooManyRequests)
 	return body, rl, resp.StatusCode, nil

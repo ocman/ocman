@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -46,8 +45,12 @@ func rawGet(port, path string) ([]byte, bool) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, false
 	}
-	body, err := io.ReadAll(resp.Body)
+	// Conversation payloads are the biggest thing ocman reads from
+	// OpenCode; bound them so a runaway response can't be buffered whole.
+	body, err := readLimited(resp.Body, maxUpstreamConversationBytes)
 	if err != nil {
+		log.WithFields(log.Fields{"port": port, "path": path, "error": err}).
+			Warn("opencode: upstream response refused")
 		return nil, false
 	}
 	return body, true

@@ -20,6 +20,41 @@ import (
 // HTTP plumbing for talking to a running OpenCode instance: TTL
 // caches, JSON GET/POST/PATCH helpers, and upstream error extraction.
 
+// Upstream response size limits. OpenCode is a local process, but it is
+// still a separate program: a bug or a wedged proxy answering with an
+// endless body must not be buffered into ocman's heap.
+const (
+	// maxUpstreamErrorBytes bounds error bodies and small acks (a
+	// created session id). These are a sentence or two of JSON.
+	maxUpstreamErrorBytes int64 = 64 << 10
+
+	// maxUpstreamConfigBytes bounds config and catalog payloads
+	// (/config, /agent, /command, /provider). The provider catalog is
+	// the biggest of these at a few hundred KB today; 8 MiB leaves a
+	// wide margin without allowing an unbounded read.
+	maxUpstreamConfigBytes int64 = 8 << 20
+
+	// maxUpstreamConversationBytes bounds a whole conversation payload
+	// (/session/{id}/message), which legitimately reaches tens of MB
+	// for a long session with inline images.
+	maxUpstreamConversationBytes int64 = 64 << 20
+)
+
+// readLimited reads at most limit bytes and fails if the body is bigger,
+// so an oversized upstream response is refused rather than buffered. It
+// reads limit+1 bytes to tell "exactly at the limit" from "truncated" —
+// silently truncating would surface as a confusing JSON parse error.
+func readLimited(r io.Reader, limit int64) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > limit {
+		return nil, fmt.Errorf("upstream response too large (over %d bytes)", limit)
+	}
+	return body, nil
+}
+
 // --- Helpers ---
 
 // catalogCache is a process-wide TTL cache for upstream OpenCode
@@ -82,7 +117,7 @@ func getJSON(ctx context.Context, port, path string) ([]byte, error) {
 	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
 		return nil, fmt.Errorf("unexpected content-type %q", ct)
 	}
-	body, err := io.ReadAll(resp.Body)
+	body, err := readLimited(resp.Body, maxUpstreamConfigBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +196,10 @@ func postJSONReturning(ctx context.Context, port, path string, payload []byte) (
 		return nil, fmt.Errorf("opencode %s: %w", path, err)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, readErr := readLimited(resp.Body, maxUpstreamConfigBytes)
+	if readErr != nil {
+		return nil, fmt.Errorf("opencode %s: %w", path, readErr)
+	}
 	if resp.StatusCode >= 400 {
 		if resp.StatusCode < 500 {
 			ue := &platforms.UpstreamError{
@@ -199,7 +237,10 @@ func sendJSON(ctx context.Context, method, port, path string, payload []byte) er
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
+		body, readErr := readLimited(resp.Body, maxUpstreamErrorBytes)
+		if readErr != nil {
+			return fmt.Errorf("opencode %s: upstream HTTP %d: %w", path, resp.StatusCode, readErr)
+		}
 		if resp.StatusCode < 500 {
 			ue := &platforms.UpstreamError{
 				Status:  resp.StatusCode,
