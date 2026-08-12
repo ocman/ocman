@@ -489,6 +489,20 @@ export function AppRoutes() {
 export function RootRedirect() {
   const sessionsQ = useSessions({ limit: 1 });
   if (sessionsQ.isLoading) return null;
-  const latest = sessionsQ.data?.[0];
+  // A failed query is not "no sessions". Redirecting to /session/new on
+  // failure hides a backend outage behind the onboarding screen and
+  // navigates the user away from whatever they had open.
+  if (sessionsQ.isError || !sessionsQ.data) {
+    const message = sessionsQ.error instanceof Error
+      ? sessionsQ.error.message
+      : 'Could not load sessions.';
+    return (
+      <div className="oc-error-banner">
+        {message}
+        <button type="button" onClick={() => void sessionsQ.refetch()}>Retry</button>
+      </div>
+    );
+  }
+  const latest = sessionsQ.data[0];
   return <Navigate to={latest ? `/session/${latest.id}` : '/session/new'} replace />;
 }
