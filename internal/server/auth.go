@@ -44,6 +44,13 @@ type Auth struct {
 	cookieName     string
 	trustLocalhost bool
 
+	// secureCookies forces the Secure attribute even when the request
+	// itself arrived over plain HTTP. Set from the configured public
+	// base URL (see Server.WithPublicBaseURL) so the documented
+	// "TLS-terminating reverse proxy" deployment still gets a
+	// Secure-only cookie. Configuration, not a client-supplied header.
+	secureCookies bool
+
 	// limiter gates /api/auth/login attempts per source IP. Zero
 	// value is usable.
 	limiter loginLimiter
@@ -179,7 +186,7 @@ func (a *Auth) issueCookie(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   int(a.cookieTTL.Seconds()),
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   isSecure(r),
+		Secure:   a.cookieSecure(r),
 	})
 }
 
@@ -193,16 +200,30 @@ func (a *Auth) clearCookie(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   -1,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   isSecure(r),
+		Secure:   a.cookieSecure(r),
 	})
 }
 
-// isSecure returns true if the request arrived over TLS. We don't
-// trust X-Forwarded-Proto by default — ocman doesn't know whether a
-// proxy sits in front of it, and taking the header at face value
-// would let a local attacker downgrade the cookie.
-func isSecure(r *http.Request) bool {
-	return r.TLS != nil
+// cookieSecure decides the Secure attribute. A direct TLS request is
+// obviously secure; beyond that we only trust *configuration* — an
+// https:// public base URL, meaning the operator told us TLS is
+// terminated in front of ocman. X-Forwarded-Proto is still not trusted
+// here: it's client-supplied, so a local attacker could use it to
+// downgrade the cookie. (Generated share URLs do read it, but a wrong
+// scheme there yields a broken link, not a leaked credential.)
+func (a *Auth) cookieSecure(r *http.Request) bool {
+	if a != nil && a.secureCookies {
+		return true
+	}
+	return r != nil && r.TLS != nil
+}
+
+// setSecureCookies marks every future auth cookie Secure. Called by the
+// server once the public base URL is known.
+func (a *Auth) setSecureCookies(on bool) {
+	if a != nil {
+		a.secureCookies = on
+	}
 }
 
 // --- middleware ---

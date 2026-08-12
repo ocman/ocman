@@ -89,6 +89,12 @@ The password is bcrypt-hashed at startup. Auth cookies are HMAC-signed (stateles
 persisted in `state.db` so sessions survive restarts. Login attempts are rate-limited to 5/min
 per IP; trusted-localhost clients skip the limiter.
 
+Auth cookies are marked `Secure` when the request arrives over TLS **or** when
+`OCMAN_PUBLIC_BASE_URL` / `-public-base-url` is an `https://` URL — behind a TLS-terminating
+reverse proxy the request itself looks like plain HTTP, so set the public base URL to the
+external `https://` origin and the cookie will never be sent over cleartext. The client-supplied
+`X-Forwarded-Proto` header is deliberately not trusted for this decision.
+
 ## OpenCode: enabling interactive features
 
 Sessions launched from ocman (command palette, Worktrees view, PR/Issue sidebar) are interactive

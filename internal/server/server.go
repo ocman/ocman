@@ -332,8 +332,13 @@ func (s *Server) WithAutoApproveDefault(enabled bool) *Server {
 // absolute share links. Empty leaves the "derive from request Host"
 // behaviour in place. The trailing slash is trimmed so callers can
 // concatenate paths directly. Must be called before Start.
+//
+// An https:// base URL also marks auth cookies Secure: it's the
+// operator telling us TLS is terminated in front of ocman, which
+// r.TLS can't see.
 func (s *Server) WithPublicBaseURL(base string) *Server {
 	s.publicBaseURL = strings.TrimRight(strings.TrimSpace(base), "/")
+	s.auth.setSecureCookies(strings.HasPrefix(strings.ToLower(s.publicBaseURL), "https://"))
 	return s
 }
 

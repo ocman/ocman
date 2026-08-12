@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
 // newTestAuth builds an Auth with the given plaintext password and a
@@ -768,5 +770,54 @@ func TestClientIP(t *testing.T) {
 		if got := clientIP(r); got != tt.want {
 			t.Errorf("clientIP(%q) = %q, want %q", tt.remote, got, tt.want)
 		}
+	}
+}
+
+// TestCookieSecureFollowsPublicBaseURL covers the TLS-terminating-proxy
+// deployment: r.TLS is nil on the hop from the proxy, so deriving Secure
+// from it alone ships a 30-day auth cookie over a scheme the browser may
+// downgrade. The configured public base URL is trusted config (unlike
+// X-Forwarded-Proto), so an https:// one marks the cookie Secure.
+func TestCookieSecureFollowsPublicBaseURL(t *testing.T) {
+	tests := []struct {
+		name       string
+		baseURL    string
+		wantSecure bool
+	}{
+		{"https public base URL", "https://ocman.example.com", true},
+		{"https base URL with trailing slash", "https://ocman.example.com/", true},
+		{"http public base URL", "http://ocman.example.com", false},
+		{"no public base URL", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := New(nil, nil, "127.0.0.1:0", platforms.NewRegistry(), newTestAuth(t, "hunter2")).
+				WithPublicBaseURL(tt.baseURL)
+
+			w := httptest.NewRecorder()
+			// Plain HTTP request: exactly what a reverse proxy forwards.
+			r := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"password":"hunter2"}`))
+			srv.handleAuthLogin(w, r)
+
+			cookies := w.Result().Cookies()
+			if len(cookies) != 1 {
+				t.Fatalf("expected one cookie, got %+v (status %d)", cookies, w.Code)
+			}
+			if cookies[0].Secure != tt.wantSecure {
+				t.Errorf("cookie Secure = %v, want %v", cookies[0].Secure, tt.wantSecure)
+			}
+
+			// Logout's clearing cookie must match, or the browser keeps
+			// the Secure one alongside a non-Secure empty duplicate.
+			lw := httptest.NewRecorder()
+			srv.handleAuthLogout(lw, httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil))
+			cleared := lw.Result().Cookies()
+			if len(cleared) != 1 {
+				t.Fatalf("expected one clearing cookie, got %+v", cleared)
+			}
+			if cleared[0].Secure != tt.wantSecure {
+				t.Errorf("clearing cookie Secure = %v, want %v", cleared[0].Secure, tt.wantSecure)
+			}
+		})
 	}
 }
