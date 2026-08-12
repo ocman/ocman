@@ -48,6 +48,8 @@ export function Workflows() {
   const [selected, setSelected] = useState<WorkflowRunDetail>();
   const selectedID = useRef<string | undefined>(undefined);
   const validationID = useRef(0);
+  // Generation counter for refresh(); see the comment on refresh().
+  const refreshID = useRef(0);
   const [error, setError] = useState('');
   const [validated, setValidated] = useState<WorkflowValidation>();
   const [compareFrom, setCompareFrom] = useState('');
@@ -114,14 +116,27 @@ export function Workflows() {
     updateLocation({ run: run.id });
   }
 
+  // refresh() is triggered from mount, every workflow-run and trigger
+  // event, every SSE reconnect, and every mutation — so several are
+  // routinely in flight at once. A monotonically increasing id makes the
+  // newest one the only one allowed to write: without it a slow older
+  // response landing last regressed the run list and reopened stale run
+  // details. Checked after every await, since each is a chance to be
+  // superseded.
   async function refresh() {
+    const generation = ++refreshID.current;
+    const current = () => refreshID.current === generation;
     const [nextVersions, nextRuns] = await Promise.all([api.workflows.versions(), api.workflows.runs()]);
+    if (!current()) return;
     setVersions(nextVersions);
     setRuns(nextRuns);
-    setCompareFrom((current) => current || nextVersions[1]?.id || nextVersions[0]?.id || '');
-    setCompareTo((current) => current || nextVersions[0]?.id || '');
+    setCompareFrom((value) => value || nextVersions[1]?.id || nextVersions[0]?.id || '');
+    setCompareTo((value) => value || nextVersions[0]?.id || '');
     const id = selectedID.current ?? nextRuns[0]?.id;
-    if (id) select(await api.workflows.run(id));
+    if (!id) return;
+    const run = await api.workflows.run(id);
+    if (!current()) return;
+    select(run);
   }
 
   useEffect(() => {
@@ -502,7 +517,15 @@ export function Workflows() {
                   {visibleRuns.map((run) => (
                     <tr key={run.id} data-selected={selected?.id === run.id || undefined}>
                       <td>
-                        <button type="button" onClick={() => void api.workflows.run(run.id).then(openRun)}>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void api.workflows
+                              .run(run.id)
+                              .then(openRun)
+                              .catch((reason) => setError(String(reason)))
+                          }
+                        >
                           {run.workflowId}
                           <small>{run.id}</small>
                         </button>
