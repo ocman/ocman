@@ -44,6 +44,13 @@ type Manager struct {
 	// (AD-8). Used by ResolveTargets and the router's dir resolver.
 	invMu     sync.RWMutex
 	inventory map[string][]ProjectIdentity
+
+	// beforeAdapterRegister, when non-nil, runs in the supervisor after a
+	// successful connect and before the remote's adapters are published
+	// and registered. Test seam for pinning the
+	// disconnect-during-registration interleaving; nil in production. Set
+	// before Start.
+	beforeAdapterRegister func()
 }
 
 // managedRemote bundles a RemoteConn with its registered adapters and the
@@ -207,21 +214,20 @@ func (m *Manager) connectAndRegister(ctx context.Context, mr *managedRemote, loc
 		delay = reconnectBaseDelay
 		loggedFailure = false
 
-		// mr.platform / mr.host are read under m.mu by sessionCount and
-		// unregisterLocked, so publish them under the same lock — a
-		// concurrent Stop()/disconnect() must never observe a
-		// half-written adapter pair. Register outside the lock: the
-		// registry and router have their own, and holding m.mu across
-		// them would couple the two lock orders for no benefit.
+		if m.beforeAdapterRegister != nil {
+			m.beforeAdapterRegister()
+		}
 		platform := newRemotePlatform(mr.conn, m.base, func() string {
 			return m.displayNameFor(localID)
 		})
 		host := newRemoteHost(mr.conn)
-		m.mu.Lock()
-		mr.platform, mr.host = platform, host
-		m.mu.Unlock()
-		m.registry.Register(platform)
-		m.router.RegisterRemote(mr.conn.RemoteID(), host)
+		if !m.publishAdapters(localID, mr, platform, host) {
+			// Superseded while connecting: a newer dial or a
+			// disconnect/removal owns this id now. Drop the transport we
+			// just brought up and stop supervising.
+			mr.conn.Close()
+			return
+		}
 		m.persistHealth(localID, mr.conn)
 		m.refreshInventory(ctx, mr)
 
@@ -242,6 +248,42 @@ func (m *Manager) connectAndRegister(ctx context.Context, mr *managedRemote, loc
 		m.persistHealth(localID, mr.conn)
 		log.WithField("remote", localID).Info("remote: disconnected, reconnecting")
 	}
+}
+
+// publishAdapters publishes mr's adapters and registers them with the
+// registry/router, but only while mr is still the managed remote for
+// localID. Returns false when superseded, in which case nothing was
+// registered and the caller must stop supervising mr.
+//
+// Ownership is checked and the registration performed in one critical
+// section, because the two must be atomic with respect to disconnect():
+// with the check, the publication and the registration as separate steps,
+// a disconnect landing in between removed the manager entry first (finding
+// nothing registered yet, so unregisterLocked was a no-op) and this
+// goroutine then registered adapters that no manager entry was left to
+// remove — a stale platform/host wired to a dead connection forever.
+// Serialising on m.mu means a concurrent disconnect either runs first (we
+// see we're superseded and register nothing) or runs after (it tears down
+// exactly what we published). Holding m.mu across the registry/router
+// calls introduces no new lock ordering: unregisterLocked already
+// unregisters both while holding it, and neither the registry nor the
+// router calls back into the Manager.
+func (m *Manager) publishAdapters(localID int64, mr *managedRemote, platform *remotePlatform, host *remoteHost) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.remotes[localID] != mr {
+		return false
+	}
+	// mr.platform / mr.host are read under m.mu by sessionCount and
+	// unregisterLocked, so publish them under the same lock — a
+	// concurrent Stop()/disconnect() must never observe a half-written
+	// adapter pair.
+	mr.platform, mr.host = platform, host
+	m.registry.Register(platform)
+	if rid := mr.conn.RemoteID(); rid != "" {
+		m.router.RegisterRemote(rid, host)
+	}
+	return true
 }
 
 // stillManaged reports whether mr is the current managed remote for
