@@ -498,6 +498,99 @@ describe('useSession — session change', () => {
   });
 });
 
+describe('useSession — loadMore', () => {
+  function msg(id: string, sessionId: string) {
+    return { id, sessionId, timeCreated: 1_000, data: { role: 'user' as const } };
+  }
+
+  it('prepends an older page to the current session', async () => {
+    const head = makeDetail({ messages: [msg('m2', SID)], totalMessages: 2 });
+    const older = makeDetail({ messages: [msg('m1', SID)], totalMessages: 2 });
+    const fetchSession = vi.fn()
+      .mockResolvedValueOnce(head)
+      .mockResolvedValueOnce(older);
+    const { result } = renderHook(() => useSession(SID, { fetchSession }));
+    await waitFor(() => expect(result.current.messages).toHaveLength(1));
+
+    await act(async () => { await result.current.loadMore(); });
+
+    expect(result.current.messages.map((m) => m.id)).toEqual(['m1', 'm2']);
+  });
+
+  // A pagination response that lands after the user navigated away
+  // used to be dispatched against the captured (old) view, splicing
+  // session A's history into session B.
+  it('cannot modify the new session when it resolves after a session change', async () => {
+    const detailA = makeDetail({
+      session: { ...makeDetail().session, id: 'sess-a' },
+      messages: [msg('a2', 'sess-a')],
+      totalMessages: 2,
+    });
+    const detailB = makeDetail({
+      session: { ...makeDetail().session, id: 'sess-b' },
+      messages: [msg('b1', 'sess-b')],
+      totalMessages: 1,
+    });
+    const olderA = makeDetail({
+      session: { ...makeDetail().session, id: 'sess-a' },
+      messages: [msg('a1', 'sess-a')],
+      totalMessages: 2,
+    });
+
+    let releaseOlderA: () => void = () => {};
+    const olderAGate = new Promise<void>((resolve) => { releaseOlderA = resolve; });
+
+    const fetchSession = vi.fn((id: string, _limit: number, offset: number) => {
+      if (id === 'sess-b') return Promise.resolve(detailB);
+      if (offset > 0) return olderAGate.then(() => olderA);
+      return Promise.resolve(detailA);
+    });
+
+    const { result, rerender } = renderHook(({ id }) => useSession(id, { fetchSession }), {
+      initialProps: { id: 'sess-a' as string | undefined },
+    });
+    await waitFor(() => expect(result.current.session?.id).toBe('sess-a'));
+
+    // Start pagination for A, then navigate to B before it resolves.
+    const pending = result.current.loadMore();
+    rerender({ id: 'sess-b' });
+    await waitFor(() => expect(result.current.session?.id).toBe('sess-b'));
+
+    await act(async () => {
+      releaseOlderA();
+      await pending;
+    });
+
+    expect(result.current.sessionId).toBe('sess-b');
+    expect(result.current.session?.id).toBe('sess-b');
+    expect(result.current.messages.map((m) => m.id)).toEqual(['b1']);
+  });
+
+  it('ignores a second call while one is already in flight', async () => {
+    const head = makeDetail({ messages: [msg('m2', SID)], totalMessages: 3 });
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const fetchSession = vi.fn((_id: string, _limit: number, offset: number) => {
+      if (offset > 0) return gate.then(() => makeDetail({ messages: [msg('m1', SID)], totalMessages: 3 }));
+      return Promise.resolve(head);
+    });
+    const { result } = renderHook(() => useSession(SID, { fetchSession }));
+    await waitFor(() => expect(result.current.messages).toHaveLength(1));
+
+    // Both calls issued in the same tick — `loadingMore` state has not
+    // re-rendered yet, so only an in-flight ref can block the second.
+    const first = result.current.loadMore();
+    const second = result.current.loadMore();
+    await act(async () => {
+      release();
+      await Promise.all([first, second]);
+    });
+
+    // 1 head fetch + exactly 1 pagination fetch.
+    expect(fetchSession).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('useSession — unmount', () => {
   it('closes the EventSource on unmount', async () => {
     const fetchSession = vi.fn().mockResolvedValue(makeDetail());

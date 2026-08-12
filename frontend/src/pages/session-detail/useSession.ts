@@ -265,6 +265,12 @@ export function useSession(
   // imperative handles across the effect-closure boundary without
   // forcing the effect to re-run.
   const abortRef = useRef<AbortController | null>(null);
+  // Pagination has its own controller so the session effect's cleanup
+  // can cancel an in-flight older-page fetch on navigation, plus an
+  // in-flight flag that (unlike the `loadingMore` state) is current
+  // within the same tick.
+  const loadMoreAbortRef = useRef<AbortController | null>(null);
+  const loadMoreInFlightRef = useRef(false);
   const reloadRef = useRef<() => Promise<void>>(async () => {});
   const retryNowRef = useRef<() => void>(() => {});
   const workBumpAtRef = useRef<number>(0);
@@ -724,6 +730,8 @@ export function useSession(
       cancelled = true;
       abortRef.current?.abort();
       abortRef.current = null;
+      loadMoreAbortRef.current?.abort();
+      loadMoreAbortRef.current = null;
       evtSource?.close();
       evtSource = null;
       if (reconnectTimer) {
@@ -750,14 +758,27 @@ export function useSession(
   // useSessionMessages.loadMore but writes through the reducer via
   // a synthesised `load` action that preserves delta-owned fields.
   const loadMore = useCallback(async () => {
-    if (!sessionId || loadingMore) return;
+    // The ref, not the `loadingMore` state, is what makes this
+    // re-entrant-safe: two calls in the same tick both see the
+    // pre-render state value.
+    if (!sessionId || loadMoreInFlightRef.current) return;
+    loadMoreInFlightRef.current = true;
     setLoadingMore(true);
-    const current = viewRef.current;
-    const offset = current.messages.length;
+    const offset = viewRef.current.messages.length;
     const controller = new AbortController();
+    loadMoreAbortRef.current?.abort();
+    loadMoreAbortRef.current = controller;
     try {
       const detail = await fetchSession(sessionId, pageSize, offset, controller.signal, routedPlatform);
       if (controller.signal.aborted) return;
+      // Re-read the view instead of using the pre-fetch snapshot: SSE
+      // may have appended messages while the page was in flight, and
+      // a navigation may have replaced the view entirely. Dispatching
+      // the stale snapshot would drop the former and splice the old
+      // session's history into the new one.
+      const current = viewRef.current;
+      if (current.sessionId !== sessionId) return;
+      if (detail.session.id !== sessionId) return;
       const newMsgs = detail.messages || [];
       const newParts = detail.parts || [];
       if (newMsgs.length === 0) return;
@@ -780,9 +801,11 @@ export function useSession(
       // important.
       remoteLog.error('loadMore failed', err);
     } finally {
+      if (loadMoreAbortRef.current === controller) loadMoreAbortRef.current = null;
+      loadMoreInFlightRef.current = false;
       setLoadingMore(false);
     }
-  }, [sessionId, loadingMore, fetchSession, pageSize, routedPlatform]);
+  }, [sessionId, fetchSession, pageSize, routedPlatform]);
 
   const hydrateHistory = useCallback((messages: Message[], parts: Part[]) => {
     const current = viewRef.current;
