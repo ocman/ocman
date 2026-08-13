@@ -90,7 +90,9 @@ sidebar views) without fear of regressions.
   - Additionally, the following inline logic is extracted and tested:
     `computeLiveTokens`, `mergeTokenStats`,
     `deriveActiveModelAndAgent`, `isSessionRunning`,
-    `deriveRawStatus`, `computeSidebarHash`, `rollupGroupStatus`.
+    `deriveRawStatus` (since deleted in #507 — status is settled by the
+    backend, not re-derived from message shape), `computeSidebarHash`,
+    `rollupGroupStatus`.
 
 ### FR-4: Decompose `Composer.tsx` into focused hooks and utilities
 

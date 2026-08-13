@@ -410,8 +410,10 @@ export function extractPartFromEvent(
 #### `lib/sessionStatus.ts`
 
 ```ts
-/** Derive the raw optimistic status from the last message. */
-export function deriveRawStatus(lastMsg: Message | null): string;
+/* Historical: `deriveRawStatus` was extracted here in Phase 1 and has
+   since been deleted (#507). The backend settles lifecycle status from
+   the agent's own turn (db.SettleSessionStatus); the frontend no longer
+   re-derives one from message shape. */
 
 /** Check if the session is currently running. */
 export function isSessionRunning(lastMsg: Message | null): boolean;
@@ -693,7 +695,8 @@ the shared helpers; tests pass.
 
 #### Step 1.3 — `lib/sessionStatus.ts`
 
-1. Extract `deriveRawStatus`, `isSessionRunning`,
+1. Extract `deriveRawStatus` (since deleted, see above),
+   `isSessionRunning`,
    `computeLiveTokens`, `mergeTokenStats`,
    `deriveActiveModelAndAgent` from `SessionDetail.tsx`.
 2. Write tests for each function.
