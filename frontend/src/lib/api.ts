@@ -252,7 +252,9 @@ export function raiseAuthError(message = 'unauthorized'): AuthError {
  */
 export async function raiseForUnauthorized(resp: Response): Promise<void> {
   if (resp.status !== 401) return;
-  throw raiseAuthError(await resp.text().catch(() => 'unauthorized'));
+  // An empty body has to fall through to raiseAuthError's default: ''
+  // would produce a message-less AuthError.
+  throw raiseAuthError((await resp.text().catch(() => '')) || undefined);
 }
 
 // Internal: surface a 401 as an AuthError and notify the registered

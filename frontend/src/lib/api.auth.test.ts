@@ -216,6 +216,18 @@ describe('raw-response endpoints raise AuthError on 401', () => {
     stubFetch(() => new Response('gone', { status: 404 }));
     await expect(api.deleteQueuedMessage('s1', 'q1')).resolves.toBeUndefined();
   });
+
+  // A 401 with no body used to pass '' straight through, defeating the
+  // default and producing a message-less AuthError.
+  it.each<[string, () => Promise<unknown>]>([
+    ['a raw-response endpoint', () => api.sendMessage('s1', 'hi')],
+    ['fetchJSON', () => fetchJSON('/api/thing')],
+  ])('falls back to a default message on an empty 401 body from %s', async (_label, call) => {
+    stubFetch(() => new Response('', { status: 401 }));
+    const err = await call().catch((e) => e);
+    expect(err).toBeInstanceOf(AuthError);
+    expect((err as Error).message).toBe('unauthorized');
+  });
 });
 
 describe('registerAuthErrorHandler', () => {
