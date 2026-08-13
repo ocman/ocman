@@ -33,6 +33,17 @@ func (h *projectArchiveHost) StopProjectOpencode(_ context.Context, req hostsvc.
 	return h.stopErr
 }
 
+type projectArchiveRemoteHost struct {
+	hostsvc.Host
+	remoteID string
+}
+
+func (h *projectArchiveRemoteHost) RemoteID() string { return h.remoteID }
+
+func (*projectArchiveRemoteHost) StopProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) error {
+	return nil
+}
+
 func TestProjectRootForDirectory(t *testing.T) {
 	cases := []struct {
 		in, want string
@@ -236,6 +247,7 @@ func TestProjectArchive_AppliesToRemoteProjects(t *testing.T) {
 
 	// The client names the owning host: the hub cannot tell from the path
 	// alone which machine /remote/repo lives on.
+	srv.router().RegisterRemote("r1", &projectArchiveRemoteHost{remoteID: "r1"})
 	postProjectArchiveOn(t, srv, "r1", "/remote/repo", true)
 
 	// Through the full handler: the remote project must be flagged
@@ -279,7 +291,7 @@ func TestProjectArchive_IsPerHost(t *testing.T) {
 	const shared = "/repo/shared"
 	if _, err := rawDB.Exec(
 		`INSERT INTO session (id, title, directory, time_created, time_updated)
-		 VALUES ('s-1', 'local', '`+shared+`', 1000, 1000)`,
+		 VALUES ('s-1', 'local', '` + shared + `', 1000, 1000)`,
 	); err != nil {
 		t.Fatalf("seeding session: %v", err)
 	}
@@ -292,6 +304,7 @@ func TestProjectArchive_IsPerHost(t *testing.T) {
 	}
 
 	// Archive the remote's copy only.
+	srv.router().RegisterRemote("r1", &projectArchiveRemoteHost{remoteID: "r1"})
 	postProjectArchiveOn(t, srv, "r1", shared, true)
 
 	byRemote := map[string]db.ProjectStats{}
