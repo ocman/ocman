@@ -19,6 +19,9 @@ type mcpRoutingHost struct {
 
 	wtReq  *hostsvc.WorktreeSessionRequest
 	gitDir string
+
+	diffCalls int
+	truncated bool
 }
 
 func (h *mcpRoutingHost) RemoteID() string { return h.id }
@@ -38,11 +41,13 @@ func (h *mcpRoutingHost) GitInfo(_ context.Context, dirs []string) (map[string]g
 }
 
 func (h *mcpRoutingHost) GitDiff(_ context.Context, dir string, _ hostsvc.GitDiffOptions) (*git.Diff, error) {
+	h.diffCalls++
 	return &git.Diff{
-		Repo: dir,
+		Repo:      dir,
+		Truncated: h.truncated,
 		Files: []git.DiffFile{
 			{Path: "a.go", Additions: 3, Deletions: 1},
-			{Path: "b.go", Additions: 1, Deletions: 0},
+			{Path: "b.go", Additions: 1, Deletions: 0, Status: "untracked"},
 		},
 	}, nil
 }
@@ -101,7 +106,7 @@ func TestHostGitContext_RoutesToOwner(t *testing.T) {
 	const remoteDir = "/remote/repo"
 	srv, local, remote := routerWithRemote(t, remoteDir)
 
-	gc, err := srv.hostGitContext(context.Background(), remoteDir)
+	gc, err := srv.hostGitContext(context.Background(), remoteDir, true)
 	if err != nil {
 		t.Fatalf("hostGitContext: %v", err)
 	}
@@ -114,10 +119,53 @@ func TestHostGitContext_RoutesToOwner(t *testing.T) {
 	if gc.Branch != "branch-on-r1" {
 		t.Errorf("branch = %q; want the owner's branch", gc.Branch)
 	}
-	for _, want := range []string{"a.go | 3 +, 1 -", "b.go | 1 +, 0 -", "2 file(s) changed, 4 insertion(s)(+), 1 deletion(s)(-)"} {
-		if !strings.Contains(gc.DiffStat, want) {
-			t.Errorf("diffstat %q missing %q", gc.DiffStat, want)
+	for _, want := range []string{"a.go +3 -1", "b.go +1 -0 (untracked)", "2 file(s) changed, +4 -1"} {
+		if !strings.Contains(gc.Changes, want) {
+			t.Errorf("change summary %q missing %q", gc.Changes, want)
 		}
+	}
+	if strings.Contains(gc.Changes, "truncated") {
+		t.Errorf("change summary %q claims truncation for a complete diff", gc.Changes)
+	}
+}
+
+// TestHostGitContext_BranchOnlyDoesNotFetchTheDiff pins that asking for
+// the branch alone never pulls a full `git diff` (patch bodies plus
+// untracked file contents, up to 2 MB, marshalled over gRPC for a remote
+// owner) just to throw it away.
+func TestHostGitContext_BranchOnlyDoesNotFetchTheDiff(t *testing.T) {
+	const remoteDir = "/remote/repo"
+	srv, _, remote := routerWithRemote(t, remoteDir)
+
+	gc, err := srv.hostGitContext(context.Background(), remoteDir, false)
+	if err != nil {
+		t.Fatalf("hostGitContext: %v", err)
+	}
+	if remote.diffCalls != 0 {
+		t.Errorf("fetched %d diff(s) for a branch-only request", remote.diffCalls)
+	}
+	if gc.Changes != "" {
+		t.Errorf("changes = %q; want empty for a branch-only request", gc.Changes)
+	}
+	if gc.Branch != "branch-on-r1" {
+		t.Errorf("branch = %q; want the owner's branch", gc.Branch)
+	}
+}
+
+// TestHostGitContext_LabelsATruncatedDiff pins that a diff the host had
+// to cut short is reported as such: the counts are a floor, not a fact,
+// and an unlabelled undercount reads as authoritative to an agent.
+func TestHostGitContext_LabelsATruncatedDiff(t *testing.T) {
+	const remoteDir = "/remote/repo"
+	srv, _, remote := routerWithRemote(t, remoteDir)
+	remote.truncated = true
+
+	gc, err := srv.hostGitContext(context.Background(), remoteDir, true)
+	if err != nil {
+		t.Fatalf("hostGitContext: %v", err)
+	}
+	if !strings.Contains(gc.Changes, "truncated") {
+		t.Errorf("change summary %q does not mark the truncation", gc.Changes)
 	}
 }
 
@@ -141,11 +189,11 @@ func TestKillHostTmuxTarget_FailsClosedForRemoteOwner(t *testing.T) {
 // less context, not an error (the split must still proceed).
 func TestGitContextIsSoftOnHostErrors(t *testing.T) {
 	srv := &Server{hostRouter: hostsvc.NewRouter(&failingGitHost{})}
-	gc, err := srv.hostGitContext(context.Background(), "/anywhere")
+	gc, err := srv.hostGitContext(context.Background(), "/anywhere", true)
 	if err != nil {
 		t.Fatalf("hostGitContext must be soft, got %v", err)
 	}
-	if gc.Branch != "" || gc.DiffStat != "" {
+	if gc.Branch != "" || gc.Changes != "" {
 		t.Errorf("expected empty context, got %+v", gc)
 	}
 }

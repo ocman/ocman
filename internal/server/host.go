@@ -159,38 +159,56 @@ func (s *Server) hostWorktreeSession(ctx context.Context, req internalmcp.Worktr
 	}, nil
 }
 
-// hostGitContext reads the branch + uncommitted-changes summary for dir
-// from the host that owns it, for MCP prompt enrichment. Both halves are
-// soft: a host that can't answer just yields less context, never an
-// error — but it is always *that* host, never the hub's copy of the path.
-func (s *Server) hostGitContext(ctx context.Context, dir string) (internalmcp.GitContext, error) {
+// hostGitContext reads the branch and, when wantChanges, the
+// uncommitted-changes summary for dir from the host that owns it, for MCP
+// prompt enrichment. Both halves are soft: a host that can't answer just
+// yields less context, never an error — but it is always *that* host,
+// never the hub's copy of the path.
+//
+// wantChanges is not a nicety: GitDiff carries every patch body plus the
+// contents of untracked files (up to 2 MB), marshalled over gRPC for a
+// remote owner. Fetching that to derive a summary the caller then
+// discards is the whole cost of the call for none of the value.
+func (s *Server) hostGitContext(ctx context.Context, dir string, wantChanges bool) (internalmcp.GitContext, error) {
 	host := s.router().ForDir(dir)
 	var out internalmcp.GitContext
 	if info, err := host.GitInfo(ctx, []string{dir}); err == nil {
 		out.Branch = info[dir].Branch
 	}
+	if !wantChanges {
+		return out, nil
+	}
 	if diff, err := host.GitDiff(ctx, dir, hostsvc.GitDiffOptions{}); err == nil && diff != nil {
-		out.DiffStat = formatDiffStat(diff.Files)
+		out.Changes = formatChangeSummary(diff)
 	}
 	return out, nil
 }
 
-// formatDiffStat renders a `git diff --stat`-shaped summary from the
-// host's structured diff, so the prompt keeps its familiar shape without
-// a second (shell) way to ask for the same data.
-func formatDiffStat(files []git.DiffFile) string {
-	if len(files) == 0 {
+// formatChangeSummary renders a per-file summary of the host's structured
+// diff. Deliberately *not* `git diff --stat` shape: this counts untracked
+// files too (--stat does not), so borrowing --stat's layout would invite
+// an agent to read it as the real thing. Truncation is labelled because
+// the host drops files past a size cap, which makes the counts a floor
+// rather than a fact.
+func formatChangeSummary(diff *git.Diff) string {
+	if len(diff.Files) == 0 {
 		return ""
 	}
 	var b strings.Builder
 	var additions, deletions int
-	for _, f := range files {
-		fmt.Fprintf(&b, " %s | %d +, %d -\n", f.Path, f.Additions, f.Deletions)
+	for _, f := range diff.Files {
+		fmt.Fprintf(&b, "%s +%d -%d", f.Path, f.Additions, f.Deletions)
+		if f.Status == "untracked" {
+			b.WriteString(" (untracked)")
+		}
+		b.WriteString("\n")
 		additions += f.Additions
 		deletions += f.Deletions
 	}
-	fmt.Fprintf(&b, " %d file(s) changed, %d insertion(s)(+), %d deletion(s)(-)",
-		len(files), additions, deletions)
+	fmt.Fprintf(&b, "%d file(s) changed, +%d -%d", len(diff.Files), additions, deletions)
+	if diff.Truncated {
+		b.WriteString(" (truncated: more files changed than are listed)")
+	}
 	return b.String()
 }
 

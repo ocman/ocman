@@ -143,9 +143,9 @@ func TestNewSession_GitContextComesFromTheOwningHost(t *testing.T) {
 		StateDB:    stateDB,
 		Platform:   platform,
 		PlatformID: "opencode",
-		GitContext: internalmcp.GitContextReader(func(_ context.Context, dir string) (internalmcp.GitContext, error) {
+		GitContext: internalmcp.GitContextReader(func(_ context.Context, dir string, _ bool) (internalmcp.GitContext, error) {
 			gotDirs = append(gotDirs, dir)
-			return internalmcp.GitContext{Branch: "owner-branch", DiffStat: " owner.go | 1 +, 0 -"}, nil
+			return internalmcp.GitContext{Branch: "owner-branch", Changes: "owner.go +1 -0"}, nil
 		}),
 	})
 

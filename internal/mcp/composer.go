@@ -63,11 +63,13 @@ type sessionReader interface {
 }
 
 // GitContext is the git-derived prompt enrichment for one directory:
-// the current branch and a `diff --stat`-style summary of uncommitted
-// changes. Both fields are optional.
+// the current branch and a summary of uncommitted changes. Both fields
+// are optional. Changes is ocman's own per-file summary, not `git diff
+// --stat` output — it counts untracked files and says so when the host
+// had to truncate.
 type GitContext struct {
-	Branch   string
-	DiffStat string
+	Branch  string
+	Changes string
 }
 
 // GitContextReader returns the GitContext for dir *on the host that owns
@@ -77,9 +79,14 @@ type GitContext struct {
 // owner-resolved Host (Router.ForDir), which for a remote-owned project
 // reads the remote's working tree rather than the hub's (AD-16).
 //
+// wantChanges must be false when only the branch is wanted: filling
+// Changes means fetching the whole working-tree diff (patch bodies and
+// untracked file contents) from the owner, which is wasted work — and,
+// for a remote, a wasted gRPC payload — if it is going to be dropped.
+//
 // A nil reader means "no owner-scoped read available"; the composer then
 // omits the git enrichment instead of reading this machine.
-type GitContextReader func(ctx context.Context, dir string) (GitContext, error)
+type GitContextReader func(ctx context.Context, dir string, wantChanges bool) (GitContext, error)
 
 // PromptComposer assembles an enriched prompt for a child session from
 // the caller's intent and automatically extracted context sources.
@@ -133,15 +140,13 @@ func (c *PromptComposer) Compose(ctx context.Context, sessionID, intent string, 
 	// Git enrichment comes from the host that owns dir. Without an
 	// owner-scoped reader (or on any error) both sections are omitted —
 	// never filled in by reading this machine's copy of the path.
-	var gitBranch, gitDiffStat string
+	var gitBranch, gitChanges string
 	if (opts.GitBranch || opts.GitDiffStat) && dir != "" && c.gitContext != nil {
-		if gc, err := c.gitContext(ctx, dir); err == nil {
+		if gc, err := c.gitContext(ctx, dir, opts.GitDiffStat); err == nil {
 			if opts.GitBranch {
 				gitBranch = gc.Branch
 			}
-			if opts.GitDiffStat {
-				gitDiffStat = gc.DiffStat
-			}
+			gitChanges = gc.Changes
 		}
 	}
 
@@ -187,10 +192,10 @@ func (c *PromptComposer) Compose(ctx context.Context, sessionID, intent string, 
 		fmt.Fprintf(&buf, "\n")
 	}
 
-	// Git diff stat — truncatable.
+	// Uncommitted changes — truncatable.
 	diffStatSection := ""
-	if gitDiffStat != "" {
-		diffStatSection = fmt.Sprintf("## Uncommitted Changes\n\n```\n%s\n```\n\n", gitDiffStat)
+	if gitChanges != "" {
+		diffStatSection = fmt.Sprintf("## Uncommitted Changes\n\n```\n%s\n```\n\n", gitChanges)
 	}
 
 	// Recent messages — truncatable (most likely to be large).

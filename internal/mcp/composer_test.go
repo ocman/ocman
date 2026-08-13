@@ -33,15 +33,19 @@ func makeMsg(role, text string) db.Message {
 }
 
 // noopGit is a GitContextReader that reports no git context.
-func noopGit(_ context.Context, _ string) (GitContext, error) {
+func noopGit(_ context.Context, _ string, _ bool) (GitContext, error) {
 	return GitContext{}, nil
 }
 
 // fakeGit returns a GitContextReader that reports fixed values, as the
 // owning host would.
-func fakeGit(branch, diffStat string) GitContextReader {
-	return func(_ context.Context, _ string) (GitContext, error) {
-		return GitContext{Branch: branch, DiffStat: diffStat}, nil
+func fakeGit(branch, changes string) GitContextReader {
+	return func(_ context.Context, _ string, wantChanges bool) (GitContext, error) {
+		gc := GitContext{Branch: branch}
+		if wantChanges {
+			gc.Changes = changes
+		}
+		return gc, nil
 	}
 }
 
@@ -103,7 +107,7 @@ func TestCompose_DirOverride(t *testing.T) {
 	override := "/repo/.worktrees/x"
 
 	var gitDirs []string
-	runner := func(_ context.Context, dir string) (GitContext, error) {
+	runner := func(_ context.Context, dir string, _ bool) (GitContext, error) {
 		gitDirs = append(gitDirs, dir)
 		return GitContext{}, nil
 	}

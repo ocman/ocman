@@ -320,7 +320,7 @@ func buildTestMCPServerWithResults(t *testing.T, stateDB *state.DB, platform *fa
 		CreateWorktreeSession: fakeWT,
 		EnsureProjectOpencode: fakeEnsure,
 		ChildResults:          results,
-		GitContext: internalmcp.GitContextReader(func(_ context.Context, _ string) (internalmcp.GitContext, error) {
+		GitContext: internalmcp.GitContextReader(func(_ context.Context, _ string, _ bool) (internalmcp.GitContext, error) {
 			return internalmcp.GitContext{}, nil
 		}),
 	}
