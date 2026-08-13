@@ -21,8 +21,11 @@ type fakeRuntime struct {
 	launches int32
 	stops    int32
 	// stopErr, when set, is returned by Stop (to prove restart soft-fails).
-	stopErr  error
-	lastSpec ocruntime.LaunchSpec
+	stopErr error
+	// stopCtxErr records the ctx.Err() seen by the last Stop call, so a
+	// test can prove cleanup does not run on a cancelled context.
+	stopCtxErr error
+	lastSpec   ocruntime.LaunchSpec
 	// endpoint is the endpoint reported by each launched Instance.
 	endpoint string
 	// launchErr, when set, is returned by Launch.
@@ -70,13 +73,25 @@ func (f *fakeRuntime) Probe(_ context.Context, inst *ocruntime.Instance) error {
 	return nil
 }
 
-func (f *fakeRuntime) Stop(_ context.Context, _ *ocruntime.Instance) error {
+func (f *fakeRuntime) Stop(ctx context.Context, _ *ocruntime.Instance) error {
 	atomic.AddInt32(&f.stops, 1)
+	f.mu.Lock()
+	f.stopCtxErr = ctx.Err()
+	f.mu.Unlock()
 	return f.stopErr
 }
 
 func (f *fakeRuntime) launchCount() int { return int(atomic.LoadInt32(&f.launches)) }
 func (f *fakeRuntime) stopCount() int   { return int(atomic.LoadInt32(&f.stops)) }
+
+// lastStopCtxErr reports the ctx.Err() observed by the most recent Stop.
+// Non-nil means Stop ran on a context that was already cancelled — the
+// cleanup would be a no-op against a real runtime.
+func (f *fakeRuntime) lastStopCtxErr() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.stopCtxErr
+}
 
 func (f *fakeRuntime) spec() ocruntime.LaunchSpec {
 	f.mu.Lock()
@@ -347,6 +362,12 @@ func TestEnsureProjectOpencode_HealthTimeout(t *testing.T) {
 			// left running, and not stopped repeatedly.
 			if rt.stopCount() != 1 {
 				t.Errorf("stops = %d; want exactly 1 (the unhealthy instance)", rt.stopCount())
+			}
+			// The cleanup must run on an uncancellable context. Passing
+			// the caller's ctx through would make Stop a no-op exactly
+			// when the caller cancelled — the case that leaks a process.
+			if err := rt.lastStopCtxErr(); err != nil {
+				t.Errorf("Stop ran on a cancelled context (%v); cleanup must use context.WithoutCancel", err)
 			}
 			if inst := h.currentInstance(repoRoot); inst != nil {
 				t.Errorf("cached instance = %+v; want none after a failed launch", inst)
