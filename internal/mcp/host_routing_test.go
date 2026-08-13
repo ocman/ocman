@@ -2,6 +2,7 @@ package mcp_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -255,6 +256,66 @@ func TestCancelSession_WithoutHostSeamStillCancels(t *testing.T) {
 		t.Fatalf("cancel_session: %s", resultText(result))
 	}
 	assertChildCancelled(t, stateDB, "child-no-killer")
+}
+
+// TestCancelSession_ReportsARefusedTmuxKill pins that a kill the owning
+// host refused is visible in the result. The child is marked terminal
+// either way, so a retry short-circuits as idempotent success — if this
+// call claimed unqualified success the pane would be leaked with nothing
+// anywhere saying so.
+func TestCancelSession_ReportsARefusedTmuxKill(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	worktree := remoteOwnedDir + "/.worktrees/feat"
+	seedCancellableChild(t, stateDB, "child-kill-refused", worktree)
+
+	srv := buildMCPServerWithDeps(t, internalmcp.Deps{
+		StateDB:    stateDB,
+		Platform:   &fakePlatformForTools{},
+		PlatformID: "opencode",
+		KillTmuxTarget: internalmcp.TmuxTargetKiller(func(context.Context, string, string) error {
+			return errors.New("not supported for remote-owned sessions (owner r1)")
+		}),
+	})
+
+	result := callTool(t, srv, "cancel_session", map[string]interface{}{
+		"child_session_id": "child-kill-refused",
+	})
+	if result.IsError {
+		t.Fatalf("cancel_session: %s", resultText(result))
+	}
+	text := resultText(result)
+	for _, want := range []string{`"success": false`, "not supported for remote-owned sessions", "some-session:1"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("result %s missing %q", text, want)
+		}
+	}
+	// The state transition still happened: leaving the child non-terminal
+	// would strand it forever.
+	assertChildCancelled(t, stateDB, "child-kill-refused")
+}
+
+// TestCancelSession_ReportsASkippedTmuxKill pins the same for the no-
+// adapter case: nothing was killed, so nothing may claim it was.
+func TestCancelSession_ReportsASkippedTmuxKill(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	seedCancellableChild(t, stateDB, "child-kill-skipped", remoteOwnedDir+"/.worktrees/feat")
+
+	srv := buildMCPServerWithDeps(t, internalmcp.Deps{
+		StateDB:    stateDB,
+		Platform:   &fakePlatformForTools{},
+		PlatformID: "opencode",
+	})
+
+	result := callTool(t, srv, "cancel_session", map[string]interface{}{
+		"child_session_id": "child-kill-skipped",
+	})
+	if result.IsError {
+		t.Fatalf("cancel_session: %s", resultText(result))
+	}
+	if text := resultText(result); !strings.Contains(text, "skipped") {
+		t.Errorf("result %s does not report the skipped kill", text)
+	}
+	assertChildCancelled(t, stateDB, "child-kill-skipped")
 }
 
 // seedCancellableChild inserts a running child that carries a legacy tmux

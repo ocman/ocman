@@ -225,11 +225,18 @@ func (t *statusTools) handleCancelSession(ctx context.Context, req mcplib.CallTo
 		return toolErr, nil
 	}
 
-	// If already in a terminal state, treat as idempotent success.
+	// If already in a terminal state, treat as idempotent success. A
+	// legacy tmux target is *not* retried here, so name it: a pane that
+	// outlived a failed kill on the first call would otherwise be leaked
+	// with nothing anywhere saying so.
 	if isTerminalStatus(cs.Status) {
 		result := map[string]interface{}{
 			"success": true,
 			"message": fmt.Sprintf("session is already in terminal state: %s", cs.Status),
+		}
+		if cs.TmuxTarget != "" {
+			result["tmuxTarget"] = cs.TmuxTarget
+			result["tmuxKill"] = "not attempted: already terminal"
 		}
 		return toolResultJSON(result), nil
 	}
@@ -238,8 +245,15 @@ func (t *statusTools) handleCancelSession(ctx context.Context, req mcplib.CallTo
 	// records carry one (worktree children run in-app since #268), and it
 	// is a host operation: route it to the owner of the child's worktree
 	// rather than killing a same-named pane on this machine.
-	if cs.TmuxTarget != "" && t.killTmux != nil {
+	killOutcome := ""
+	switch {
+	case cs.TmuxTarget == "":
+		// Nothing to kill; the common case since #268.
+	case t.killTmux == nil:
+		killOutcome = "skipped: no owner-routed killer wired"
+	default:
 		if err := t.killTmux(ctx, cs.WorktreePath, cs.TmuxTarget); err != nil {
+			killOutcome = "failed: " + err.Error()
 			log.WithFields(log.Fields{
 				"childSessionID": childID,
 				"tmuxTarget":     cs.TmuxTarget,
@@ -247,6 +261,8 @@ func (t *statusTools) handleCancelSession(ctx context.Context, req mcplib.CallTo
 			}).Warn("mcp: cancel_session: tmux kill failed (continuing)")
 			// Don't fail: update state.db regardless so the session
 			// doesn't get stuck in a non-terminal state.
+		} else {
+			killOutcome = "ok"
 		}
 	}
 
@@ -254,9 +270,23 @@ func (t *statusTools) handleCancelSession(ctx context.Context, req mcplib.CallTo
 		return mcplib.NewToolResultError(fmt.Sprintf("cancelling child session: %v", err)), nil
 	}
 
+	// The state transition always succeeded by here; "success" reports
+	// whether the *cancellation* is complete. A surviving pane is not a
+	// cancelled session, and the caller can't discover that on a retry
+	// (the record is terminal now), so it has to be said here.
 	result := map[string]interface{}{
 		"success": true,
 		"message": fmt.Sprintf("session %s cancelled", childID),
+	}
+	if killOutcome != "" {
+		result["tmuxTarget"] = cs.TmuxTarget
+		result["tmuxKill"] = killOutcome
+		if killOutcome != "ok" {
+			result["success"] = false
+			result["message"] = fmt.Sprintf(
+				"session %s was marked cancelled, but its tmux target %q was not killed (%s); it may still be running on the machine that owns %s",
+				childID, cs.TmuxTarget, killOutcome, cs.WorktreePath)
+		}
 	}
 	return toolResultJSON(result), nil
 }

@@ -215,8 +215,16 @@ func formatChangeSummary(diff *git.Diff) string {
 // killHostTmuxTarget kills a legacy child session's tmux target on the
 // host that owns its worktree. hostsvc.Host has no kill-target method, so
 // a remote owner fails closed with a clear error instead of killing a
-// same-named pane on the hub; cancel_session treats that as a soft
-// failure and still marks the child cancelled.
+// same-named pane on the hub; cancel_session still marks the child
+// cancelled but reports the refusal (tmuxKill/success) rather than
+// claiming the pane is gone.
+//
+// No seam method exists because nothing writes TmuxTarget any more: it is
+// a pre-#268 column, and pre-#268 ocman was single-machine, so a row that
+// carries one is by construction hub-owned. A remote-owned legacy row
+// would need the same worktree path to exist in a remote's inventory. If
+// that ever shows up, the fix is a Host.KillTmuxTarget across the gRPC
+// seam, not widening this.
 func (s *Server) killHostTmuxTarget(_ context.Context, dir, target string) error {
 	if host := s.router().ForDir(dir); host.RemoteID() != "" && host.RemoteID() != "local" {
 		return fmt.Errorf("killing a tmux target is not supported for remote-owned sessions (owner %s)", host.RemoteID())
