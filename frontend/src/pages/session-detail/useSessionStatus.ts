@@ -44,7 +44,7 @@ export interface UseSessionStatusResult {
    * `waiting` between steps. A grace window used to hide that flicker;
    * it only added staleness once the underlying status stopped lagging.
    */
-  optimisticStatus: Session['status'];
+  displayStatus: Session['status'];
   /**
    * Output tokens per second, scoped to the current run window.
    * `null` when the assistant isn't running, when there isn't enough
@@ -115,7 +115,7 @@ export function useSessionStatus({
   trackRender('useSessionStatus', { isRunning, lastMsgId: lastMsg?.id });
   const justSentPrompt = awaitingAssistantResponse && lastMsg?.data?.role === 'user';
   const lastMsgErrored = lastMsg?.data?.finish === 'error' || !!lastMsg?.data?.error;
-  const optimisticStatus = resolveDisplayStatus(sessionStatus, justSentPrompt, lastMsgErrored);
+  const displayStatus = resolveDisplayStatus(sessionStatus, justSentPrompt, lastMsgErrored);
 
   // Live tokens-per-second: sum output tokens across all assistant
   // messages in the current run window (since the last user message)
@@ -196,7 +196,7 @@ export function useSessionStatus({
   }, [isRunning, messages, subagentTokens, setSubagentTokens, pendingPermission, pendingQuestion]);
 
   return {
-    optimisticStatus,
+    displayStatus,
     liveTokensPerSecond,
   };
 }

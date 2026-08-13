@@ -70,7 +70,7 @@ export interface SessionSidebarProps {
   collapsedProjectSet: Set<string>;
   toggleCollapsedProject: (dir: string) => void;
   siblingGitInfos: Record<string, GitInfo>;
-  optimisticStatus: Session['status'];
+  activeDisplayStatus: Session['status'];
   debugMode: boolean;
   pendingTmuxSession: string | null;
   pickerPos: { top: number; left: number } | null;
@@ -101,7 +101,7 @@ export function SessionSidebar({
   collapsedProjectSet,
   toggleCollapsedProject,
   siblingGitInfos,
-  optimisticStatus,
+  activeDisplayStatus,
   debugMode,
   pendingTmuxSession,
   pickerPos,
@@ -158,7 +158,7 @@ export function SessionSidebar({
   // using the poll value here would leave the sidebar pulse running
   // after the composer has already gone idle).
   const renderRow = (sib: Session, inGroup: boolean, depth = 0) => {
-    const displayStatus = sib.id === activeId ? optimisticStatus : sib.status;
+    const displayStatus = sib.id === activeId ? activeDisplayStatus : sib.status;
     // Grouped rows no longer carry their own git line — the directory
     // sub-header above them shows the branch/worktree once for all
     // siblings. Ungrouped rows (the pinned group) keep the project

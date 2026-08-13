@@ -1090,7 +1090,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     if (!isRunning) flushQueuedShell();
   }, [isRunning, flushQueuedShell]);
 
-  const { optimisticStatus, liveTokensPerSecond } = useSessionStatus({
+  const { displayStatus, liveTokensPerSecond } = useSessionStatus({
     lastMsg,
     messages,
     subagentTokens,
@@ -1101,13 +1101,13 @@ export function SessionDetail({ id }: SessionDetailProps) {
     pendingPermission,
     pendingQuestion,
   });
-  // No status mirror into recentSessions. `optimisticStatus` carries a
-  // local send affordance, and writing it into shared state let a
-  // page-local guess overwrite the authoritative value for every other
-  // consumer of the row. The sidebar already gets the settled status
-  // straight from the `ocman.session.changed` patch (see
-  // useSidebarSessions); the active row layers the affordance on for
-  // display only.
+  // No status mirror into recentSessions. `displayStatus` layers a send
+  // affordance and the errored-tail signal on top of the reported
+  // status, and writing it into shared state let a page-local view
+  // overwrite the authoritative value for every other consumer of the
+  // row. The sidebar already gets the settled status straight from the
+  // `ocman.session.changed` patch (see useSidebarSessions); the active
+  // row layers those on for display only.
 
   // Flag for the composer's "launch session" button.
   const launchHintActive = canLaunchSession({
@@ -1129,7 +1129,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     }
 
     const effectiveStatus = (s: typeof recentSessions[0]): typeof s.status =>
-      s.id === id ? optimisticStatus : s.status;
+      s.id === id ? displayStatus : s.status;
     const rollup = (sessions: typeof recentSessions) => rollupGroupStatus(sessions, effectiveStatus);
 
     const groups: SidebarProjectGroup[] = Array.from(buckets.entries()).map(([directory, sessions]) => {
@@ -1208,7 +1208,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     }
 
     return visibleGroups;
-  }, [recentSessions, id, optimisticStatus, projectOrder, allProjects, archivedProjectRoots]);
+  }, [recentSessions, id, displayStatus, projectOrder, allProjects, archivedProjectRoots]);
 
   // Persist a new drag-and-drop order of the (non-pinned) project
   // groups. The synthetic "__pinned__" group is excluded — it always
@@ -1257,7 +1257,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
           collapsedProjectSet={collapsedProjectSet}
           toggleCollapsedProject={toggleCollapsedProject}
           siblingGitInfos={siblingGitInfos}
-          optimisticStatus={optimisticStatus}
+          activeDisplayStatus={displayStatus}
           debugMode={debugMode}
           pendingTmuxSession={pendingTmuxSession}
           pickerPos={pickerPos}

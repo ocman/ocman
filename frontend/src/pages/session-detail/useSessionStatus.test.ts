@@ -121,7 +121,7 @@ describe('useSessionStatus', () => {
       pendingQuestion: null,
     });
 
-    expect(result.current.optimisticStatus).toBe(sessionStatus);
+    expect(result.current.displayStatus).toBe(sessionStatus);
   });
 
   it('does not derive waiting from a finished assistant message', () => {
@@ -141,7 +141,7 @@ describe('useSessionStatus', () => {
       pendingQuestion: null,
     });
 
-    expect(result.current.optimisticStatus).toBe('busy');
+    expect(result.current.displayStatus).toBe('busy');
   });
 
   it('does not derive error from an errored assistant message', () => {
@@ -161,7 +161,7 @@ describe('useSessionStatus', () => {
       pendingQuestion: null,
     });
 
-    expect(result.current.optimisticStatus).toBe('busy');
+    expect(result.current.displayStatus).toBe('busy');
   });
 
   // OpenCode's session.status vocabulary is busy|retry|idle only
@@ -190,7 +190,7 @@ describe('useSessionStatus', () => {
       pendingQuestion: null,
     });
 
-    expect(result.current.optimisticStatus).toBe('error');
+    expect(result.current.displayStatus).toBe('error');
   });
 
   it('reports error for a finish=error tail', () => {
@@ -213,7 +213,7 @@ describe('useSessionStatus', () => {
       pendingQuestion: null,
     });
 
-    expect(result.current.optimisticStatus).toBe('error');
+    expect(result.current.displayStatus).toBe('error');
   });
 
   it('does not derive busy from a streaming assistant message', () => {
@@ -235,7 +235,7 @@ describe('useSessionStatus', () => {
 
     // #488: an interrupted turn's last message looks like live streaming
     // to every local heuristic. The backend knows the process is gone.
-    expect(result.current.optimisticStatus).toBe('interrupted');
+    expect(result.current.displayStatus).toBe('interrupted');
   });
 
   it('falls back to done when no status has been reported yet', () => {
@@ -248,7 +248,7 @@ describe('useSessionStatus', () => {
       pendingQuestion: null,
     });
 
-    expect(result.current.optimisticStatus).toBe('done');
+    expect(result.current.displayStatus).toBe('done');
   });
 
   it('shows busy while awaiting the first assistant response after a user send', () => {
@@ -266,7 +266,7 @@ describe('useSessionStatus', () => {
       pendingQuestion: null,
     });
 
-    expect(result.current.optimisticStatus).toBe('busy');
+    expect(result.current.displayStatus).toBe('busy');
   });
 
   it('lets a fresh prompt outrank a stale interrupted status', () => {
@@ -284,7 +284,7 @@ describe('useSessionStatus', () => {
       pendingQuestion: null,
     });
 
-    expect(result.current.optimisticStatus).toBe('busy');
+    expect(result.current.displayStatus).toBe('busy');
   });
 
   // The send affordance only applies while the user's own message is
@@ -308,6 +308,6 @@ describe('useSessionStatus', () => {
       pendingQuestion: null,
     });
 
-    expect(result.current.optimisticStatus).toBe('waiting');
+    expect(result.current.displayStatus).toBe('waiting');
   });
 });

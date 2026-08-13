@@ -53,7 +53,7 @@ function renderSidebar(
       collapsedProjectSet={new Set()}
       toggleCollapsedProject={vi.fn()}
       siblingGitInfos={infos}
-      optimisticStatus="done"
+      activeDisplayStatus="done"
       debugMode={false}
       pendingTmuxSession={null}
       pickerPos={null}
