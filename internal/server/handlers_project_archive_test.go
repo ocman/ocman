@@ -16,11 +16,17 @@ import (
 
 type projectArchiveHost struct {
 	hostsvc.Host
+	remoteID string
 	stopped string
 	stopErr error
 }
 
-func (h *projectArchiveHost) RemoteID() string { return state.LocalRemoteID }
+func (h *projectArchiveHost) RemoteID() string {
+	if h.remoteID != "" {
+		return h.remoteID
+	}
+	return state.LocalRemoteID
+}
 
 func (h *projectArchiveHost) StopProjectOpencode(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) error {
 	h.stopped = req.ProjectDir
@@ -218,6 +224,7 @@ func TestProjectArchive_SucceedsWhenStopFails(t *testing.T) {
 func TestProjectArchive_AppliesToRemoteProjects(t *testing.T) {
 	srv, rawDB := testServerWithRawDB(t)
 	defer rawDB.Close()
+	srv.router().RegisterRemote("r1", &projectArchiveHost{remoteID: "r1"})
 
 	// Inject a remote project the way handleProjects appends them.
 	remoteLastUsed := int64(100)
@@ -267,6 +274,7 @@ func postProjectArchiveOn(t *testing.T, srv *Server, remoteID, dir string, archi
 func TestProjectArchive_IsPerHost(t *testing.T) {
 	srv, rawDB := testServerWithRawDB(t)
 	defer rawDB.Close()
+	srv.router().RegisterRemote("r1", &projectArchiveHost{remoteID: "r1"})
 
 	const shared = "/repo/shared"
 	if _, err := rawDB.Exec(
@@ -324,5 +332,16 @@ func TestProjectArchive_MissingDirectory(t *testing.T) {
 	srv.handleProjectArchive(rr, req)
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for empty directory, got %d", rr.Code)
+	}
+}
+
+func TestProjectArchive_RejectsDisconnectedRemote(t *testing.T) {
+	srv := testServer(t)
+	body, _ := json.Marshal(map[string]any{"directory": "/remote/repo", "archived": true, "remoteId": "r1"})
+	req := httptest.NewRequest(http.MethodPost, "/api/project/archive", strings.NewReader(string(body)))
+	rr := httptest.NewRecorder()
+	srv.handleProjectArchive(rr, req)
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 for disconnected remote, got %d: %s", rr.Code, rr.Body.String())
 	}
 }

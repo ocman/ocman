@@ -50,16 +50,18 @@ func (s *Server) handleProjectArchive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	remoteID := strings.TrimSpace(req.RemoteID)
-	if remoteID == "" {
-		remoteID = s.router().ForDir(root).RemoteID()
+	host, ok := s.resolveOwner(w, root, remoteID)
+	if !ok {
+		return
 	}
+	remoteID = host.RemoteID()
 
 	var err error
 	if req.Archived {
 		// Best-effort: a dead tmux session, a removed/non-git directory
 		// or an unreachable remote must not block the bookkeeping the
 		// user actually asked for.
-		if err := s.router().ForRemote(remoteID).StopProjectOpencode(r.Context(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: root}); err != nil {
+		if err := host.StopProjectOpencode(r.Context(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: root}); err != nil {
 			log.WithError(err).WithField("project", root).Warn("archive: stopping project opencode")
 		}
 		err = s.stateDB.ArchiveProject(remoteID, root)
