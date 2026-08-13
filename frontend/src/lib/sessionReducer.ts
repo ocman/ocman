@@ -770,6 +770,11 @@ function reducePartSnapshot(state: SessionView, props: Record<string, unknown>):
     nextMessages = upsertMessage(state.messages, stub);
   }
 
+  // A running/pending tool part is a *live* signal, not a message
+  // snapshot: it says a turn is in flight right now. Unlike
+  // reduceMessageSnapshot (which used to re-derive a terminal state from
+  // stored message shape and had to stop), this is what keeps the badge
+  // busy between `session.status` events — do not remove it.
   let nextSession = state.session;
   const rawState = rawPart.state as Record<string, unknown> | undefined;
   const status = rawState?.status;
@@ -845,7 +850,9 @@ function reducePartDelta(state: SessionView, props: Record<string, unknown>): Se
   // The streaming part implies the session is busy — but only flip
   // if we know it isn't already. Mirrors the legacy behaviour where
   // delta arrival drives the "running" indicator before the next
-  // session.status event lands.
+  // session.status event lands. Same rationale as reducePartSnapshot:
+  // this is a live signal, not a re-derivation from stored message
+  // shape, and removing it leaves the badge stale mid-turn.
   let nextSession = state.session;
   if (state.session && state.session.status !== 'busy') {
     nextSession = { ...state.session, status: 'busy' };
