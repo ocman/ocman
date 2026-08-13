@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/dagu"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 	"github.com/NoUseFreak/ocman/internal/term"
 )
 
@@ -65,6 +68,18 @@ func (h *ownerSpy) BeadsStatus(context.Context, string) (hostsvc.BeadsStatus, er
 func (h *ownerSpy) DaguStatus(context.Context) dagu.Result {
 	h.hit()
 	return dagu.Result{}
+}
+
+// newOwnerTestServer builds the minimal Server these owner-routing tests
+// need. s.sessions is stubbed over an empty registry rather than left
+// nil: handleCreateSession dereferences it once owner resolution lets the
+// request through, and a nil deref panics the whole test binary instead
+// of failing one subtest with a readable message.
+func newOwnerTestServer(spy *ownerSpy) *Server {
+	return &Server{
+		hostRouter: hostsvc.NewRouter(spy),
+		sessions:   sessionsvc.New(platforms.NewRegistry(), sessionsvc.Hooks{}),
+	}
 }
 
 // TestHandlersFailClosedOnUnknownRemote pins the fail-closed contract for
@@ -146,7 +161,7 @@ func TestHandlersFailClosedOnUnknownRemote(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			spy := &ownerSpy{}
 			// No remotes registered: "gone" is a disconnected remote.
-			s := &Server{hostRouter: hostsvc.NewRouter(spy)}
+			s := newOwnerTestServer(spy)
 			rr := httptest.NewRecorder()
 			tt.invoke(s, rr)
 
@@ -184,21 +199,119 @@ func TestHandlersFailClosedOnUnknownRemote(t *testing.T) {
 }
 
 // TestHandlersAcceptLocalOwner guards the other side of the fail-closed
-// change: an empty or "local" remote ID must keep resolving to the hub.
+// change: an empty or "local" remote ID must keep resolving to the hub,
+// on *every* handler that went through resolveOwner — a fail-closed
+// helper that also rejected the local host would break the single-machine
+// case, which is the common one.
+//
+// The universal assertion is "not rejected as an unconnected owner".
+// Handlers that deterministically reach the host additionally assert the
+// local host actually ran; handleTermWS can't (it needs a real WebSocket
+// upgrade) and handleCreateSession's local path never carries a remote
+// ID at all, so both only assert the absence of a rejection.
 func TestHandlersAcceptLocalOwner(t *testing.T) {
-	for _, remoteID := range []string{"", "local"} {
-		t.Run("remoteId="+remoteID, func(t *testing.T) {
-			spy := &ownerSpy{}
-			s := &Server{hostRouter: hostsvc.NewRouter(spy)}
-			rr := httptest.NewRecorder()
-			body := `{"dir":"/repo","remoteId":"` + remoteID + `"}`
-			s.handleTermWindows(rr, httptest.NewRequest(http.MethodPost, "/api/term/windows", strings.NewReader(body)))
-			if rr.Code != http.StatusOK {
-				t.Fatalf("status = %d; want 200 (body: %q)", rr.Code, rr.Body.String())
-			}
-			if spy.count() != 1 {
-				t.Errorf("local host executed %d time(s); want 1", spy.count())
-			}
-		})
+	const dir = "/repo"
+
+	tests := []struct {
+		name string
+		// skipUnless names a binary the local path requires; the subtest
+		// is skipped when it isn't installed.
+		skipUnless string
+		// wantHostCall is false for handlers that stop before reaching
+		// the host for reasons unrelated to owner resolution.
+		wantHostCall bool
+		invoke       func(*Server, http.ResponseWriter, string)
+	}{
+		{
+			name:         "worktree create and launch",
+			skipUnless:   "git",
+			wantHostCall: true,
+			invoke: func(s *Server, w http.ResponseWriter, rid string) {
+				body := `{"projectDir":"` + dir + `","branch":"feature/x","remoteId":"` + rid + `"}`
+				s.handleWorktreeCreateAndLaunch(w, httptest.NewRequest(http.MethodPost, "/api/worktree/create-and-launch", strings.NewReader(body)))
+			},
+		},
+		{
+			name:         "tmux launch opencode",
+			skipUnless:   "tmux",
+			wantHostCall: true,
+			invoke: func(s *Server, w http.ResponseWriter, rid string) {
+				body := `{"directory":"` + dir + `","remoteId":"` + rid + `"}`
+				s.handleTmuxLaunchOpencode(w, httptest.NewRequest(http.MethodPost, "/api/tmux/launch-opencode", strings.NewReader(body)))
+			},
+		},
+		{
+			name: "terminal websocket attach",
+			invoke: func(s *Server, w http.ResponseWriter, rid string) {
+				s.handleTermWS(w, httptest.NewRequest(http.MethodGet, "/api/term/ws?dir="+dir+"&remoteId="+rid, nil))
+			},
+		},
+		{
+			name:         "terminal windows list",
+			wantHostCall: true,
+			invoke: func(s *Server, w http.ResponseWriter, rid string) {
+				s.handleTermWindows(w, httptest.NewRequest(http.MethodGet, "/api/term/windows?dir="+dir+"&remoteId="+rid, nil))
+			},
+		},
+		{
+			name:         "terminal window create",
+			wantHostCall: true,
+			invoke: func(s *Server, w http.ResponseWriter, rid string) {
+				body := `{"dir":"` + dir + `","remoteId":"` + rid + `"}`
+				s.handleTermWindows(w, httptest.NewRequest(http.MethodPost, "/api/term/windows", strings.NewReader(body)))
+			},
+		},
+		{
+			name:         "terminal window delete",
+			wantHostCall: true,
+			invoke: func(s *Server, w http.ResponseWriter, rid string) {
+				body := `{"dir":"` + dir + `","window":"` + term.WindowPrefix(dir) + `1","remoteId":"` + rid + `"}`
+				s.handleTermWindows(w, httptest.NewRequest(http.MethodDelete, "/api/term/windows", strings.NewReader(body)))
+			},
+		},
+		{
+			name:         "beads status",
+			wantHostCall: true,
+			invoke: func(s *Server, w http.ResponseWriter, rid string) {
+				s.handleProjectBeadsStatus(w, httptest.NewRequest(http.MethodGet, "/api/project/beads-status?dir="+dir+"&remoteId="+rid, nil))
+			},
+		},
+		{
+			name:         "dagu status",
+			wantHostCall: true,
+			invoke: func(s *Server, w http.ResponseWriter, rid string) {
+				s.handleDaguStatus(w, httptest.NewRequest(http.MethodGet, "/api/dagu/status?remoteId="+rid, nil))
+			},
+		},
+		{
+			name: "create session on a local platform",
+			invoke: func(s *Server, w http.ResponseWriter, _ string) {
+				body := `{"platform":"opencode","directory":"` + dir + `"}`
+				s.handleCreateSession(w, httptest.NewRequest(http.MethodPost, "/api/sessions", strings.NewReader(body)))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		for _, remoteID := range []string{"", "local"} {
+			t.Run(tt.name+"/remoteId="+remoteID, func(t *testing.T) {
+				if tt.skipUnless != "" {
+					if _, err := exec.LookPath(tt.skipUnless); err != nil {
+						t.Skipf("%s not available", tt.skipUnless)
+					}
+				}
+				spy := &ownerSpy{}
+				s := newOwnerTestServer(spy)
+				rr := httptest.NewRecorder()
+				tt.invoke(s, rr, remoteID)
+
+				if strings.Contains(rr.Body.String(), "remote_not_connected") {
+					t.Errorf("local owner rejected as unconnected: %d %q", rr.Code, rr.Body.String())
+				}
+				if tt.wantHostCall && spy.count() != 1 {
+					t.Errorf("local host executed %d time(s); want 1 (status %d, body %q)", spy.count(), rr.Code, rr.Body.String())
+				}
+			})
+		}
 	}
 }
