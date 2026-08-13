@@ -37,9 +37,28 @@ describe('ToolCallDisplay bash output', () => {
     expect(shellRule).toContain('background: transparent');
   });
 
+  it('keeps a multi-line command intact instead of reading line one as a description', () => {
+    renderTool({
+      argsText: "completed\ngit commit -F - <<'MSG'\nfeat: thing\nMSG",
+      result: '',
+    });
+
+    expect(screen.getByTestId('shell-output-block').textContent).toBe(
+      "$ git commit -F - <<'MSG'\nfeat: thing\nMSG",
+    );
+  });
+
+  it('syntax-highlights the command as bash', () => {
+    const { container } = renderTool({ argsText: 'completed\ngrep -n "foo" file', result: '' });
+
+    const cmd = container.querySelector('.oc-shell-cmd')!;
+    expect(cmd.querySelector('[class^="hljs-"]')).not.toBeNull();
+    expect(cmd.textContent).toBe('grep -n "foo" file');
+  });
+
   it('renders an optional description as a shell comment', () => {
     const { rerender } = renderTool({
-      argsText: 'completed\nRunning in frontend\npnpm test',
+      argsText: 'completed\n@desc:Running in frontend\npnpm test',
       result: 'passed',
     });
 

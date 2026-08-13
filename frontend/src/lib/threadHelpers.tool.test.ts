@@ -1,5 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { parseToolTime, formatToolDuration } from './threadHelpers';
+import { parseToolTime, parseShellDescription, formatToolDuration } from './threadHelpers';
+
+describe('parseShellDescription', () => {
+  it('strips the @desc: line and returns its text', () => {
+    const out = parseShellDescription('completed\n@desc:Amend it\ngit commit\nmore');
+    expect(out.description).toBe('Amend it');
+    expect(out.strippedArgs).toBe('completed\ngit commit\nmore');
+  });
+
+  it('leaves args untouched when no marker is present', () => {
+    const out = parseShellDescription("completed\ncat <<'X'\n@desc: not a marker\nX");
+    expect(out.description).toBe('');
+    expect(out.strippedArgs).toBe("completed\ncat <<'X'\n@desc: not a marker\nX");
+  });
+});
 
 describe('parseToolTime', () => {
   it('extracts timing from a @time: line after the status', () => {

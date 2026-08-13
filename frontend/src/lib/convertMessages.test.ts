@@ -991,6 +991,39 @@ describe('convertMessages', () => {
     expect(tc!.argsText).toMatch(/^completed\n@time:2000,0\nls$/);
   });
 
+  it('encodes a shell description as a @desc: marker and leaves the command intact', () => {
+    const command = "git commit -F - <<'MSG'\nfeat: thing\nMSG";
+    const m = makeMessage('m', { role: 'assistant' });
+    const out = convertMessages([m], [
+      makePart('m', {
+        type: 'tool',
+        tool: 'bash',
+        state: { status: 'completed', title: 'Amend the commit', input: { command }, output: '' },
+      } as PartData, '', 2000),
+    ]);
+    const items = asContentArray(out[0].content);
+    const tc = items.find((i) => i.type === 'tool-call') as { argsText: string } | undefined;
+    expect(tc!.argsText).toBe(`completed\n@time:2000,0\n@desc:Amend the commit\n${command}`);
+  });
+
+  it.each([
+    ['the first command line', "git commit -F - <<'MSG'"],
+    ['the whole command with newlines collapsed', "git commit -F - <<'MSG' feat: thing MSG"],
+  ])('drops a shell title that is %s', (_label, title) => {
+    const command = "git commit -F - <<'MSG'\nfeat: thing\nMSG";
+    const m = makeMessage('m', { role: 'assistant' });
+    const out = convertMessages([m], [
+      makePart('m', {
+        type: 'tool',
+        tool: 'bash',
+        state: { status: 'completed', title, input: { command }, output: '' },
+      } as PartData, '', 2000),
+    ]);
+    const items = asContentArray(out[0].content);
+    const tc = items.find((i) => i.type === 'tool-call') as { argsText: string } | undefined;
+    expect(tc!.argsText).toBe(`completed\n@time:2000,0\n${command}`);
+  });
+
   it('keeps shell tools running when OpenCode reports a running status', () => {
     const m = makeMessage('m', { role: 'assistant' });
     const out = convertMessages([m], [

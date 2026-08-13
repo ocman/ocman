@@ -4,7 +4,7 @@ import type { FailedSend } from './failedSends';
 import { extractTaskId } from './taskId';
 import { messageModelRef } from './turnStats';
 import { formatSeconds } from './format';
-import { encodeToolApproval, type ToolApproval } from './threadHelpers';
+import { encodeToolApproval, SHELL_DESC_META, type ToolApproval } from './threadHelpers';
 
 /**
  * Returns true when the MIME type denotes an image (`image/...`).
@@ -585,6 +585,23 @@ export function createConvertMessages(): ConvertMessagesFn {
       return userExecutedToolSuffix(toolName);
     }
 
+    // Shell tools keep their command verbatim in argsText: the description
+    // travels as a `@desc:` marker line, so a multi-line command (heredoc)
+    // never has its first line mistaken for a description. Titles that just
+    // restate the command are dropped.
+    function toolTitleEncoding(toolName: string, title: string, command: string): { meta: string; titleLine: string } {
+      if (toolName !== 'bash' && toolName !== 'mcp_bash') {
+        return { meta: '', titleLine: title ? title + '\n' : '' };
+      }
+      // OpenCode titles a bash part with the command itself, newlines
+      // collapsed to spaces — compare whitespace-insensitively so that
+      // never shows up as a description.
+      const flatten = (s: string) => s.replace(/\s+/g, ' ').trim();
+      const desc = flatten(title);
+      const redundant = !desc || flatten(command).startsWith(desc.replace(/…\s*$/, ''));
+      return { meta: redundant ? '' : `\n${SHELL_DESC_META}${desc}`, titleLine: '' };
+    }
+
     function toolOutput(st: NonNullable<PartData['state']>): string {
       const output = st.output ?? st.metadata?.output;
       if (typeof output === 'string') return output;
@@ -837,11 +854,12 @@ export function createConvertMessages(): ConvertMessagesFn {
             resultText = toolOutput(st);
           }
 
+          const enc = toolTitleEncoding(toolName, title, argsText);
           toolCalls.push({
             type: 'tool-call' as const,
             toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
             toolName,
-            argsText: `${toolStatus(st.status, partIdx)}${toolTimeSuffix(partIdx)}${shellUserExecutedSuffix(toolName, st.metadata)}\n${title ? title + '\n' : ''}${argsText}`,
+            argsText: `${toolStatus(st.status, partIdx)}${toolTimeSuffix(partIdx)}${shellUserExecutedSuffix(toolName, st.metadata)}${enc.meta}\n${enc.titleLine}${argsText}`,
             result: resultText || undefined,
           });
 
@@ -907,11 +925,12 @@ export function createConvertMessages(): ConvertMessagesFn {
             if (s !== '{}') argsText = s;
           }
           const resultText = toolOutput(st);
+          const enc = toolTitleEncoding(toolName, title, argsText);
           toolCalls.push({
             type: 'tool-call' as const,
             toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
             toolName,
-            argsText: `${toolStatus(st.status, partIdx)}${toolTimeSuffix(partIdx)}${shellUserExecutedSuffix(toolName, st.metadata)}\n${title ? title + '\n' : ''}${argsText}`,
+            argsText: `${toolStatus(st.status, partIdx)}${toolTimeSuffix(partIdx)}${shellUserExecutedSuffix(toolName, st.metadata)}${enc.meta}\n${enc.titleLine}${argsText}`,
             result: resultText || undefined,
           });
           break;

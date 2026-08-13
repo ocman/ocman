@@ -26,6 +26,7 @@ import {
   parseQuestions,
   parseToolTime,
   parseToolApprovals,
+  parseShellDescription,
   formatToolDuration,
   type ApplyPatchFileDiff,
   type QuestionData,
@@ -420,7 +421,8 @@ const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArg
   // Extract timing data from the @time: line, if present.
   const timeInfo = parseToolTime(rawArgsText || '');
   const argsTextWithMeta = timeInfo ? timeInfo.strippedArgs : (rawArgsText || '');
-  const argsLines = argsTextWithMeta.split('\n');
+  const { description: shellDescription, strippedArgs: argsTextNoDesc } = parseShellDescription(argsTextWithMeta);
+  const argsLines = argsTextNoDesc.split('\n');
   const userExecutedTool = argsLines.includes('@user-executed-tool');
   const argsText = argsLines.filter((line) => line !== '@user-executed-tool').join('\n');
 
@@ -659,9 +661,11 @@ const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArg
   // Shell commands get a terminal-style rendering
   const isBash = toolName === 'bash' || toolName === 'mcp_bash';
   if (isBash) {
-    const command = outputDisplay ? (detail || title) : title;
-    const description = title && title !== command ? title : '';
-    const bashOutput = outputDisplay || detail;
+    // The command is whatever is left after the status/meta lines, kept
+    // verbatim — multi-line commands (heredocs) render as typed.
+    const command = remainingArgs.trim();
+    const description = shellDescription;
+    const bashOutput = outputDisplay;
     const bashIsLong = shellOutputIsLong(bashOutput);
     const forcePrintCollapse = isPrinting && printCollapse;
     const bashExpanded = expanded || !bashIsLong;
@@ -672,7 +676,7 @@ const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArg
         {!forcePrintCollapse && (
           <div className="oc-tool-content" onClick={() => !bashExpanded && setExpanded(true)} style={!bashExpanded ? { cursor: 'pointer' } : undefined}>
             <pre className="oc-shell-block" data-testid="shell-output-block">
-{description && <><span className="oc-shell-description"># {description}</span>{'\n\n'}</>}{command && <><BashPrompt running={toolStatus === 'running'} /> <span className="oc-shell-cmd">{command}</span>{bashOutputDisplay ? '\n' : ''}</>}{bashOutputDisplay && <AnsiText text={bashOutputDisplay} />}
+{description && <><span className="oc-shell-description"># {description}</span>{'\n\n'}</>}{command && <><BashPrompt running={toolStatus === 'running'} /> <span className="oc-shell-cmd" dangerouslySetInnerHTML={{ __html: highlightDiffCode(command, 'bash') }} />{bashOutputDisplay ? '\n' : ''}</>}{bashOutputDisplay && <AnsiText text={bashOutputDisplay} />}
               {bashIsLong && (
                 <button
                   type="button"

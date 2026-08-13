@@ -709,6 +709,32 @@ export function parseToolApprovals(argsText: string): {
 }
 
 /**
+ * Marker line prefix carrying a shell tool's human description, so the
+ * command itself stays byte-for-byte intact in argsText. Without it a
+ * multi-line command (heredoc, quoted block) has its first line
+ * mistaken for the description.
+ */
+export const SHELL_DESC_META = '@desc:';
+
+/**
+ * Pull the `@desc:` marker out of argsText. Only the contiguous meta
+ * block right after the status line is scanned, so a command whose own
+ * body contains an `@desc:` line is left alone.
+ */
+export function parseShellDescription(argsText: string): { description: string; strippedArgs: string } {
+  if (!argsText.includes(SHELL_DESC_META)) return { description: '', strippedArgs: argsText };
+  const lines = argsText.split('\n');
+  for (let i = 1; i < lines.length && lines[i].startsWith('@'); i++) {
+    if (!lines[i].startsWith(SHELL_DESC_META)) continue;
+    return {
+      description: lines[i].slice(SHELL_DESC_META.length),
+      strippedArgs: [...lines.slice(0, i), ...lines.slice(i + 1)].join('\n'),
+    };
+  }
+  return { description: '', strippedArgs: argsText };
+}
+
+/**
  * Extract tool timing from the `@time:` line encoded in argsText.
  * Returns `{ startedAt, completedAt }` in unix ms, or null when no
  * timing data is present. Also strips the `@time:` line from the
