@@ -154,7 +154,6 @@ import (
 //	40 - recurring prompt timing, enablement, timezone, and session reuse.
 //	41 - link a workflow run to the external runner execution that drives
 //	     it, so the run mirror can find the Dagu run for an active row.
-<<<<<<< HEAD
 //	42 - host-qualify project archive state. A project's identity is
 //	     (remote_id, project_root): the same absolute path exists on
 //	     several machines, and keying on the path alone archived every

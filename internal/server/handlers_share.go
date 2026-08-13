@@ -7,11 +7,9 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/share"
 	"github.com/NoUseFreak/ocman/internal/state"
-	log "github.com/sirupsen/logrus"
 )
 
 // exportFetchLimit is the per-fetch message cap used when assembling a
