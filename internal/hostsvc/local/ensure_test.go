@@ -319,6 +319,13 @@ func TestEnsureProjectOpencode_HealthTimeout(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			t.Cleanup(cancel)
 			store := newFakeStore()
+			// Seed a stale persisted row and make Get fail, so
+			// reuseCandidate returns nil (the launch path runs) while the
+			// row is still there for the failure branch to delete.
+			// Without this the store starts empty and "no row survived"
+			// is vacuously true whether or not the code deletes anything.
+			store.rows[repoRoot] = ManagedInstance{Endpoint: "http://127.0.0.1:6666"}
+			store.getErr = errors.New("transient read failure")
 			rt := &fakeRuntime{probe: func(*ocruntime.Instance) bool {
 				if tc.cancelOnProbe {
 					cancel()

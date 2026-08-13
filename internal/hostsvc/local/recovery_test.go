@@ -17,6 +17,10 @@ type fakeStore struct {
 	mu      sync.Mutex
 	rows    map[string]ManagedInstance
 	deletes int
+	// getErr, when set, is returned by Get. It lets a test leave a row
+	// in place while making reuseCandidate return nil, so the launch
+	// path runs with a stale row still persisted.
+	getErr error
 }
 
 func newFakeStore() *fakeStore { return &fakeStore{rows: map[string]ManagedInstance{}} }
@@ -31,6 +35,9 @@ func (f *fakeStore) Upsert(repoRoot string, inst ManagedInstance) error {
 func (f *fakeStore) Get(repoRoot string) (ManagedInstance, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.getErr != nil {
+		return ManagedInstance{}, false, f.getErr
+	}
 	mi, ok := f.rows[repoRoot]
 	return mi, ok, nil
 }
