@@ -63,6 +63,21 @@ describe('RootRedirect', () => {
     expect(refetch).toHaveBeenCalled();
   });
 
+  // Only `isError` means the query failed. A settled query with an
+  // undefined payload is still a success, and labelling it a failure
+  // would show a backend-outage banner over a working backend.
+  it('treats a settled query with no payload as no sessions', async () => {
+    vi.mocked(useSessions).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: undefined,
+    } as never);
+
+    renderRootRedirect();
+
+    expect(await screen.findByTestId('location')).toHaveTextContent('/session/new');
+  });
+
   it('renders nothing while the query is still loading', () => {
     vi.mocked(useSessions).mockReturnValue({ isLoading: true, data: undefined } as never);
 

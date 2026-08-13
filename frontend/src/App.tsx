@@ -492,7 +492,7 @@ export function RootRedirect() {
   // A failed query is not "no sessions". Redirecting to /session/new on
   // failure hides a backend outage behind the onboarding screen and
   // navigates the user away from whatever they had open.
-  if (sessionsQ.isError || !sessionsQ.data) {
+  if (sessionsQ.isError) {
     const message = sessionsQ.error instanceof Error
       ? sessionsQ.error.message
       : 'Could not load sessions.';
@@ -503,6 +503,9 @@ export function RootRedirect() {
       </div>
     );
   }
-  const latest = sessionsQ.data[0];
+  // Only `isError` is failure: a settled query with an undefined payload
+  // is still a success, and treating it as an outage would put an error
+  // banner over a working backend.
+  const latest = (sessionsQ.data ?? [])[0];
   return <Navigate to={latest ? `/session/${latest.id}` : '/session/new'} replace />;
 }
