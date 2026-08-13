@@ -221,6 +221,7 @@ describe('useStickyBottom — rAF coalescing', () => {
     vi.advanceTimersByTime(20);
     expect(fv.scrollToCalls).toBe(1);
 
+    fv.el.dispatchEvent(new WheelEvent('wheel', { deltaY: -10 }));
     fv.setScrollTop(100);
     fv.el.dispatchEvent(new Event('scroll'));
     resizeCbs[0]?.();
@@ -235,12 +236,7 @@ describe('useStickyBottom — rAF coalescing', () => {
   // there used to conclude the user had not moved and scroll them back
   // down — the "it keeps yanking me to the bottom while I'm reading"
   // report. Acting on the gesture itself closes the window.
-  describe.each([
-    ['wheel', () => new Event('wheel')],
-    ['touchmove', () => new Event('touchmove')],
-    ['pointerdown', () => new Event('pointerdown')],
-  ])('%s gesture', (_name, makeEvent) => {
-    it('disengages before the scroll event lands, so a content tick does not chase the bottom', () => {
+  it('disengages before an upward wheel scroll lands, so content does not chase the bottom', () => {
       const fv = makeFakeViewport({ scrollTop: 950, scrollHeight: 2000, clientHeight: 1000 });
       setupHook(fv);
 
@@ -252,13 +248,12 @@ describe('useStickyBottom — rAF coalescing', () => {
       // The user scrolls up. The gesture fires; the `scroll` event has
       // not been dispatched yet, so the geometry is deliberately left
       // reading near-bottom to reproduce the stale read.
-      fv.el.dispatchEvent(makeEvent());
+      fv.el.dispatchEvent(new WheelEvent('wheel', { deltaY: -10 }));
 
       resizeCbs[0]?.();
       vi.advanceTimersByTime(20);
 
       expect(fv.scrollToCalls).toBe(1);
-    });
   });
 
   it('re-engages once the offset lands back inside the near-bottom band', () => {
@@ -266,7 +261,7 @@ describe('useStickyBottom — rAF coalescing', () => {
     setupHook(fv);
 
     // Gesture away, then confirm the follow is off.
-    fv.el.dispatchEvent(new Event('wheel'));
+    fv.el.dispatchEvent(new WheelEvent('wheel', { deltaY: -10 }));
     fv.setScrollTop(100);
     fv.el.dispatchEvent(new Event('scroll'));
     resizeCbs[0]?.();
@@ -279,6 +274,40 @@ describe('useStickyBottom — rAF coalescing', () => {
     fv.el.dispatchEvent(new Event('scroll'));
     resizeCbs[0]?.();
     vi.advanceTimersByTime(20);
+    expect(fv.scrollToCalls).toBe(1);
+  });
+
+  it('keeps following after a click inside the conversation', () => {
+    const fv = makeFakeViewport({ scrollTop: 1000, scrollHeight: 2000, clientHeight: 1000 });
+    setupHook(fv);
+
+    fv.el.dispatchEvent(new Event('pointerdown'));
+    resizeCbs[0]?.();
+    vi.advanceTimersByTime(20);
+
+    expect(fv.scrollToCalls).toBe(1);
+  });
+
+  it('keeps following after a wheel-down at the bottom', () => {
+    const fv = makeFakeViewport({ scrollTop: 1000, scrollHeight: 2000, clientHeight: 1000 });
+    setupHook(fv);
+
+    fv.el.dispatchEvent(new WheelEvent('wheel', { deltaY: 10 }));
+    resizeCbs[0]?.();
+    vi.advanceTimersByTime(20);
+
+    expect(fv.scrollToCalls).toBe(1);
+  });
+
+  it('keeps following after a browser scroll event without an upward gesture', () => {
+    const fv = makeFakeViewport({ scrollTop: 1000, scrollHeight: 2000, clientHeight: 1000 });
+    setupHook(fv);
+
+    fv.setScrollTop(800);
+    fv.el.dispatchEvent(new Event('scroll'));
+    resizeCbs[0]?.();
+    vi.advanceTimersByTime(20);
+
     expect(fv.scrollToCalls).toBe(1);
   });
 
@@ -413,11 +442,11 @@ describe('useStickyBottom — rAF coalescing', () => {
     vi.advanceTimersByTime(20);
     expect(fv.scrollToCalls).toBe(2);
 
-    // …while the same gesture on the transcript still does.
+    // A click on the transcript is not a scroll gesture either.
     fv.el.dispatchEvent(new Event('pointerdown'));
     resizeCbs[0]?.();
     vi.advanceTimersByTime(20);
-    expect(fv.scrollToCalls).toBe(2);
+    expect(fv.scrollToCalls).toBe(3);
   });
 
   it('removes the gesture listeners on teardown', () => {

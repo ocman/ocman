@@ -112,13 +112,12 @@ export function useStickyBottom(
       el.scrollTo({ top: el.scrollHeight, behavior: 'auto' });
     };
 
-    const onUserScroll = () => {
+    const onScroll = () => {
       const m = metrics();
-      const { nextSticky } = decideStickyAction({
-        isNear: isNearBottom(m, threshold),
-        kind: 'user-scroll',
-      });
-      stickyRef.current = nextSticky;
+      // A scroll event has no source: browser anchoring, content shrinking,
+      // focus, and user input all produce the same event. Only an explicit
+      // upward gesture may leave follow mode; landing at the tail re-arms it.
+      if (isNearBottom(m, threshold)) stickyRef.current = true;
       const distance = distanceFromBottom(m);
       setShowScrollToBottom((visible) => nextPillVisible(visible, distance));
     };
@@ -134,22 +133,50 @@ export function useStickyBottom(
     // trying to read" report. The gesture event fires first, so the
     // cheapest correct fix is to believe it.
     //
-    // Deliberately not `keydown`: the composer lives inside this
-    // viewport, so typing would read as a gesture and stop the follow
-    // mid-reply. Keyboard scrolling (Alt+Up/Down) moves the offset and
-    // is handled by `onUserScroll` on the resulting `scroll` event.
+    // Typing in the composer must not leave follow mode. Navigation keys
+    // are handled separately because their resulting scroll event has no
+    // source information.
     //
-    // `pointerdown` is included so a scrollbar drag counts — it produces
-    // neither a wheel nor a touchmove — which is also why gestures from
-    // inside `ignoreGesturesWithin` have to be filtered out rather than
-    // the event simply being dropped.
-    const onGesture = (event: Event) => {
+    const isIgnoredGesture = (event: Event) => {
       if (ignoreGesturesWithin) {
         const target = event.target;
-        if (target instanceof Element && target.closest(ignoreGesturesWithin)) return;
+        if (target instanceof Element && target.closest(ignoreGesturesWithin)) return true;
       }
+      return false;
+    };
+
+    const disengage = () => {
       const { nextSticky } = decideStickyAction({ kind: 'gesture' });
       stickyRef.current = nextSticky;
+    };
+
+    // A click is not a scroll. Wheel/touch input only leaves follow mode when
+    // it moves toward older messages; scrolling back down is re-armed by the
+    // resulting scroll event once it reaches the tail.
+    const onWheel = (event: WheelEvent) => {
+      if (!isIgnoredGesture(event) && event.deltaY < 0) disengage();
+    };
+    const onTouchMove = (event: TouchEvent) => {
+      const touch = event.touches?.[0];
+      if (!isIgnoredGesture(event) && touch && lastTouchY !== null && touch.clientY > lastTouchY) {
+        disengage();
+      }
+      lastTouchY = touch?.clientY ?? null;
+    };
+    let lastTouchY: number | null = null;
+    const onTouchStart = (event: TouchEvent) => {
+      lastTouchY = isIgnoredGesture(event) ? null : (event.touches?.[0]?.clientY ?? null);
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      const rect = el.getBoundingClientRect();
+      if (!isIgnoredGesture(event) && el.offsetWidth > el.clientWidth && event.clientX >= rect.left + el.clientWidth) {
+        disengage();
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      const scrollsUp = ['ArrowUp', 'PageUp', 'Home'].includes(event.code)
+        || (event.code === 'Space' && event.shiftKey);
+      if (!isIgnoredGesture(event) && scrollsUp) disengage();
     };
 
     // rAF-coalesced content-change handler.
@@ -199,10 +226,12 @@ export function useStickyBottom(
       });
     };
 
-    el.addEventListener('scroll', onUserScroll, { passive: true });
-    el.addEventListener('wheel', onGesture, { passive: true });
-    el.addEventListener('touchmove', onGesture, { passive: true });
-    el.addEventListener('pointerdown', onGesture, { passive: true });
+    el.addEventListener('scroll', onScroll, { passive: true });
+    el.addEventListener('wheel', onWheel, { passive: true });
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: true });
+    el.addEventListener('pointerdown', onPointerDown, { passive: true });
+    el.addEventListener('keydown', onKeyDown);
 
     // Observe both DOM mutations (new messages, streaming chunks) and
     // size changes (images decoding, code blocks reflowing, composer
@@ -231,10 +260,12 @@ export function useStickyBottom(
     });
 
     return () => {
-      el.removeEventListener('scroll', onUserScroll);
-      el.removeEventListener('wheel', onGesture);
-      el.removeEventListener('touchmove', onGesture);
-      el.removeEventListener('pointerdown', onGesture);
+      el.removeEventListener('scroll', onScroll);
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('pointerdown', onPointerDown);
+      el.removeEventListener('keydown', onKeyDown);
       resizeObserver.disconnect();
       mutationObserver.disconnect();
       if (rafHandle !== null) cancelAnimationFrame(rafHandle);

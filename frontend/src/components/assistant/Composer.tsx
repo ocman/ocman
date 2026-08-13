@@ -298,7 +298,7 @@ function ComposerImpl({
     if (!el || el.disabled) return;
     const active = document.activeElement;
     if (active && active !== document.body) return;
-    el.focus();
+    el.focus({ preventScroll: true });
   }, [sending]);
 
   // Auto-focus the composer input when the component becomes visible.
