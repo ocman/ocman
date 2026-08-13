@@ -79,12 +79,14 @@ dev-frontend:
 #   make dev-relay RELAY_TTL=1m           # exercise expiry sweeps
 #   make dev-relay RELAY_STORE=/tmp/other # a store that survives make clean
 RELAY_PORT  ?= 8231
+RELAY_ADDR  ?= 0.0.0.0:$(RELAY_PORT)
 RELAY_STORE ?= tmp/relay-data
 RELAY_TTL   ?= 720h
 
 dev-relay: ## Run the share relay locally (:8231, store in tmp/relay-data)
 	@mkdir -p tmp
 	@echo "Starting ocman share relay..."
+	@echo "  Bind:             $(RELAY_ADDR)"
 	@echo "  API:              http://localhost:$(RELAY_PORT)/s"
 	@echo "  Health:           http://localhost:$(RELAY_PORT)/healthz"
 	@echo "  Store:            $(RELAY_STORE)"
@@ -96,7 +98,7 @@ dev-relay: ## Run the share relay locally (:8231, store in tmp/relay-data)
 	fi
 	@echo ""
 	@exec go run ./cmd/ocman-relay \
-		-addr 127.0.0.1:$(RELAY_PORT) \
+		-addr $(RELAY_ADDR) \
 		-store $(RELAY_STORE) \
 		-ttl $(RELAY_TTL)
 

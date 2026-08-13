@@ -79,17 +79,18 @@ func (s *Server) createRelayShare(ctx context.Context, link state.ShareLink, ada
 		_ = client.Delete(ctx, allocation)
 		return link, err
 	}
-	payload, err := json.Marshal(relayChunk{Session: detail.Session, Messages: detail.Messages, Parts: detail.Parts, ReadOnly: true})
-	if err != nil {
-		_ = client.Delete(ctx, allocation)
-		return link, fmt.Errorf("encoding relay snapshot: %w", err)
-	}
-	sealed, err := share.Seal(key, allocation.ID, 0, payload)
+	chunks, err := splitShareSnapshot(
+		detail.Session,
+		detail.Messages,
+		truncateShareParts(detail.Parts, sharePartTextLimit),
+		shareChunkBudget(allocation.MaxChunkBytes),
+	)
 	if err != nil {
 		_ = client.Delete(ctx, allocation)
 		return link, err
 	}
-	if err := client.Put(ctx, allocation, 0, sealed); err != nil {
+	lastSeq, err := s.uploadChunks(ctx, client, allocation, key, 0, chunks)
+	if err != nil {
 		_ = client.Delete(ctx, allocation)
 		return link, err
 	}
@@ -97,15 +98,60 @@ func (s *Server) createRelayShare(ctx context.Context, link state.ShareLink, ada
 		_ = client.Delete(ctx, allocation)
 		return link, err
 	}
-	if err := s.stateDB.SetShareRelaySeq(link.Token, 0); err != nil {
+	if err := s.stateDB.SetShareRelaySeq(link.Token, lastSeq); err != nil {
 		return link, err
 	}
 	link.RelayURL = s.relayURL
 	link.RelayID = allocation.ID
 	link.RelayKey = key.String()
 	link.RelayDeleteToken = allocation.DeleteToken
-	link.RelayLastSeq = 0
+	link.RelayLastSeq = lastSeq
 	return link, nil
+}
+
+// uploadChunks seals and uploads chunks starting at firstSeq, returning
+// the last sequence number written.
+func (s *Server) uploadChunks(
+	ctx context.Context,
+	client share.RelayClient,
+	allocation share.RelayAllocation,
+	key share.Key,
+	firstSeq uint64,
+	chunks []relayChunk,
+) (int64, error) {
+	if allocation.MaxChunks > 0 && (firstSeq >= uint64(allocation.MaxChunks) || len(chunks) > allocation.MaxChunks-int(firstSeq)) {
+		return int64(firstSeq) - 1, shareTooLarge("share has too many chunks")
+	}
+
+	lastSeq := int64(firstSeq) - 1
+	var totalBytes int64
+	for i, chunk := range chunks {
+		payload, err := json.Marshal(chunk)
+		if err != nil {
+			return lastSeq, fmt.Errorf("encoding relay chunk: %w", err)
+		}
+		seq := firstSeq + uint64(i)
+		sealed, err := share.Seal(key, allocation.ID, seq, payload)
+		if err != nil {
+			return lastSeq, err
+		}
+		if allocation.MaxChunkBytes > 0 && int64(len(sealed)) > allocation.MaxChunkBytes {
+			return lastSeq, shareTooLarge("chunk is too large after encryption")
+		}
+		totalBytes += int64(len(sealed))
+		if allocation.MaxShareBytes > 0 && totalBytes > allocation.MaxShareBytes {
+			return lastSeq, shareTooLarge("share is too large")
+		}
+		if err := client.Put(ctx, allocation, seq, sealed); err != nil {
+			return lastSeq, err
+		}
+		lastSeq = int64(seq)
+	}
+	return lastSeq, nil
+}
+
+func shareTooLarge(message string) error {
+	return &share.RelayError{Op: "uploading", Status: http.StatusRequestEntityTooLarge, Message: message}
 }
 
 // publishCompletedTurn appends only the latest completed user/assistant
@@ -121,11 +167,8 @@ func (s *Server) publishCompletedTurn(ctx context.Context, adapter platforms.Pla
 	if err != nil {
 		return err
 	}
-	chunk := latestCompletedTurn(detail.Session, detail.Messages, detail.Parts)
-	payload, err := json.Marshal(chunk)
-	if err != nil {
-		return err
-	}
+	turn := latestCompletedTurn(detail.Session, detail.Messages, truncateShareParts(detail.Parts, sharePartTextLimit))
+
 	for _, link := range links {
 		if link.RelayID == "" {
 			continue
@@ -134,17 +177,26 @@ func (s *Server) publishCompletedTurn(ctx context.Context, adapter platforms.Pla
 		if err != nil {
 			return err
 		}
-		seq := uint64(link.RelayLastSeq + 1)
-		sealed, err := share.Seal(key, link.RelayID, seq, payload)
+		// A single turn can exceed the chunk limit on its own (many tool
+		// calls), so it is split the same way the initial snapshot is.
+		chunks, err := splitShareSnapshot(turn.Session, turn.Messages, turn.Parts, shareChunkBudget(0))
 		if err != nil {
 			return err
 		}
-		allocation := share.RelayAllocation{ID: link.RelayID, DeleteToken: link.RelayDeleteToken}
-		if err := s.relayClient(link.RelayURL).Put(ctx, allocation, seq, sealed); err != nil {
+		allocation := share.RelayAllocation{
+			ID: link.RelayID, DeleteToken: link.RelayDeleteToken,
+			// Existing shares predate negotiated limits; retain the relay
+			// defaults as a safe fallback until they are recreated.
+			MaxChunkBytes: 1 << 20,
+		}
+		lastSeq, err := s.uploadChunks(ctx, s.relayClient(link.RelayURL), allocation, key, uint64(link.RelayLastSeq+1), chunks)
+		if err != nil {
 			return err
 		}
-		if err := s.stateDB.SetShareRelaySeq(link.Token, int64(seq)); err != nil {
-			return err
+		if lastSeq > link.RelayLastSeq {
+			if err := s.stateDB.SetShareRelaySeq(link.Token, lastSeq); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

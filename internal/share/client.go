@@ -13,9 +13,16 @@ import (
 
 // RelayAllocation is the relay-side identity and credential returned
 // when creating a share. The delete token authorises both PUT and DELETE.
+//
+// The relay also echoes its limits so a writer can size chunks against
+// the server it is actually talking to instead of assuming a default
+// that a differently-configured relay would reject.
 type RelayAllocation struct {
-	ID          string `json:"id"`
-	DeleteToken string `json:"deleteToken"`
+	ID            string `json:"id"`
+	DeleteToken   string `json:"deleteToken"`
+	MaxChunkBytes int64  `json:"maxChunkBytes"`
+	MaxChunks     int    `json:"maxChunks"`
+	MaxShareBytes int64  `json:"maxShareBytes"`
 }
 
 // RelayClient writes sealed chunks to a share relay.

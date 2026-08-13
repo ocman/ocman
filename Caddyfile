@@ -15,8 +15,24 @@
 # Then open https://driess-macbook-pro.tail5f13e4.ts.net on your iPad
 # (must be connected to Tailscale).
 
-driess-macbook-pro.tail5f13e4.ts.net {
-	reverse_proxy localhost:8228
+{$OCMAN_CADDY_HOST:localhost} {
+	# Relay routes need HTTPS: the share viewer decrypts with WebCrypto,
+	# which browsers disable for non-localhost HTTP origins.
+	handle /s {
+		reverse_proxy localhost:8231
+	}
+
+	handle /s/* {
+		reverse_proxy localhost:8231
+	}
+
+	handle /v/* {
+		reverse_proxy localhost:8231
+	}
+
+	handle {
+		reverse_proxy localhost:8228
+	}
 
 	tls {
 		get_certificate tailscale
